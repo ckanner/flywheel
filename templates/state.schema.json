@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/state.schema.json",
+  "title": "Flywheel state.json (DESIGN.md §5.2 + v0.8)",
+  "description": "Single source of truth, written ONLY by the orchestrator. Agents write done-reports; the orchestrator validates progress and updates the ledger itself. revision is a compare-and-set counter.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
+  "properties": {
+    "schema-version": { "type": "integer", "minimum": 1 },
+    "slug": { "type": "string", "minLength": 1 },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "CAS counter, incremented on every orchestrator write. A stale writer loses."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "running", "paused", "stopped", "completed", "escalated", "budget-stopped"]
+    },
+    "current-milestone": {
+      "type": ["string", "null"],
+      "pattern": "^M-\\d{2,}$"
+    },
+    "plan-session": {
+      "type": ["object", "null"],
+      "description": "Resident Plan session handle (§4.1): captured from the kimi CLI stream on first plan call, reused via `kimi -r <id>`; rebuilt cold from the contract layer on session death.",
+      "properties": {
+        "session-id": { "type": "string" },
+        "channel": { "type": "string" },
+        "created-at": { "type": "string" },
+        "updated-at": { "type": "string" },
+        "resumes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "milestones": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["pending", "in-progress", "closed"] },
+          "gate": {
+            "type": ["object", "null"],
+            "description": "Milestone gate (L2/L3) outcome + judge verdict (§7 终验), recorded when the milestone closes.",
+            "properties": {
+              "pass": { "type": "boolean" },
+              "levels": { "type": "object" },
+              "judge": {
+                "type": ["object", "null"],
+                "properties": {
+                  "verdict": { "type": "string" },
+                  "score": { "type": ["number", "null"] },
+                  "reasons": { "type": "array" },
+                  "error": { "type": "string" },
+                  "at": { "type": "string" }
+                }
+              },
+              "at": { "type": "string" }
+            }
+          },
+          "closed-at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "packets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["milestone", "status", "route", "attempts", "failed-attempts", "plan-revisions", "interrupted", "retry-history", "evidence"],
+        "properties": {
+          "milestone": { "type": "string", "pattern": "^M-\\d{2,}$" },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "awaiting-credentials",
+              "executing",
+              "executed",
+              "l1-passed",
+              "l1-failed",
+              "review-failed",
+              "completed",
+              "interrupted",
+              "escalated",
+              "inbox"
+            ]
+          },
+          "route": { "type": "string", "enum": ["frontend", "default", "hard"] },
+          "attempts": { "type": "integer", "minimum": 0, "description": "Execute spawns performed." },
+          "failed-attempts": { "type": "integer", "minimum": 0, "description": "Attempts that failed. Escalation when failed-attempts >= packet escalation.max-retries." },
+          "plan-revisions": { "type": "integer", "minimum": 0, "description": "Times the Plan Loop revised this packet after escalation. >1 consecutive failure rounds goes to inbox." },
+          "interrupted": { "type": "boolean", "description": "Set when the orchestrator restarts and finds this unit mid-flight; artifacts are preserved, never silently reset to pending." },
+          "needs-live-credentials": { "type": "boolean" },
+          "artifacts": { "type": "array", "items": { "type": "string" } },
+          "exit": {
+            "type": ["object", "null"],
+            "description": "Exit contract, orthogonally recorded (DESIGN.md §6): a timeout trapped into exit 0 must not read as green.",
+            "properties": {
+              "exitCode": { "type": ["integer", "null"] },
+              "signal": { "type": ["string", "null"] },
+              "timedOut": { "type": "boolean" },
+              "idleTimedOut": { "type": "boolean" },
+              "wallTimedOut": { "type": "boolean" }
+            }
+          },
+          "base-ref": {
+            "type": ["string", "null"],
+            "description": "Git ref recorded before the executor runs; all boundary judgement diffs against it, so executor self-commits cannot drain the diff (§4.2/§4.4). Null when the workspace is not a git checkout."
+          },
+          "commit": {
+            "type": ["object", "null"],
+            "description": "Unit-granularity commit made by the orchestrator at completion (§4.2): {sha, message, at} or {skipped|error}.",
+            "properties": {
+              "sha": { "type": ["string", "null"] },
+              "message": { "type": "string" },
+              "skipped": { "type": "string" },
+              "error": { "type": "string" },
+              "at": { "type": "string" }
+            }
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["executor", "l1", "review"],
+            "description": "Three evidence levels, different strength: executor self-report < L1 deterministic pass < Review verdict.",
+            "properties": {
+              "executor": {
+                "type": ["object", "null"],
+                "properties": {
+                  "done-report": { "type": "string" },
+                  "requirements-covered": { "type": "array" },
+                  "changed-files": { "type": "array" },
+                  "failures": { "type": "array" },
+                  "at": { "type": "string" }
+                }
+              },
+              "l1": {
+                "type": ["object", "null"],
+                "properties": {
+                  "pass": { "type": "boolean" },
+                  "commands": { "type": "array" },
+                  "boundary": { "type": ["object", "null"] },
+                  "at": { "type": "string" }
+                }
+              },
+              "review": {
+                "type": ["object", "null"],
+                "properties": {
+                  "verdict": { "type": "string", "enum": ["pass", "return", "verification-gap"] },
+                  "score": { "type": ["number", "null"] },
+                  "reasons": { "type": "array" },
+                  "at": { "type": "string" }
+                }
+              },
+              "credentials": {
+                "type": ["object", "null"],
+                "description": "Live-credentials approval evidence (§9): which env keys a human approved for injection, which were actually present/injected, and when.",
+                "properties": {
+                  "approved-env": { "type": "array", "items": { "type": "string" } },
+                  "injected-env": { "type": "array", "items": { "type": "string" } },
+                  "missing-env": { "type": "array", "items": { "type": "string" } },
+                  "source": { "type": "string" },
+                  "at": { "type": "string" }
+                }
+              },
+              "defect-injection": {
+                "type": ["object", "null"],
+                "description": "Spot-check result (DESIGN.md §4.3), when sampled."
+              }
+            }
+          },
+          "last-failure-signature": { "type": ["string", "null"], "description": "For spin detection: identical consecutive signatures escalate." },
+          "retry-history": {
+            "type": "array",
+            "description": "Every retry is auditable: error code, policy, planned delay (DESIGN.md §6).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["at", "scope", "error-code", "policy", "planned-delay-ms"],
+              "properties": {
+                "at": { "type": "string" },
+                "scope": { "type": "string", "enum": ["transport", "attempt", "fallback"] },
+                "error-code": {
+                  "type": "string",
+                  "enum": ["AUTH", "QUOTA", "RATE_LIMIT", "SERVER", "TRANSPORT", "TIMEOUT", "EMPTY_RESPONSE", "INVALID_REQUEST", "CONTEXT_WINDOW_EXCEEDED", "L1_FAILED", "REVIEW_RETURNED", "SPIN"]
+                },
+                "policy": { "type": "string" },
+                "planned-delay-ms": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "updated-at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enforce", "daily-token-limit", "daily", "totals", "cache"],
+      "properties": {
+        "enforce": { "type": "string", "enum": ["off", "soft", "hard"] },
+        "daily-token-limit": { "type": ["integer", "null"] },
+        "daily": {
+          "type": "object",
+          "description": "Per-day token/cost accumulation, keyed by YYYY-MM-DD.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "tokens": { "type": "integer", "minimum": 0 },
+              "cost-usd": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "input": { "type": "integer", "minimum": 0 },
+            "output": { "type": "integer", "minimum": 0 },
+            "reasoning": { "type": "integer", "minimum": 0 },
+            "cache-read": { "type": "integer", "minimum": 0 },
+            "cache-write": { "type": "integer", "minimum": 0 },
+            "tokens": { "type": "integer", "minimum": 0 },
+            "cost-usd": { "type": "number", "minimum": 0 }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "description": "Cache hit rate is a first-class engineering metric (DESIGN.md §2 rule 10), tracked per provider.",
+          "properties": {
+            "hit-rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "by-provider": { "type": "object" }
+          }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "last-progress-at": {
+      "type": ["string", "null"],
+      "description": "Timestamp of last validated progress; used for stall/link-death detection (DESIGN.md §6)."
+    },
+    "inbox": {
+      "type": "array",
+      "description": "Escalations addressed to a human.",
+      "items": {
+        "type": "object",
+        "required": ["at", "reason"],
+        "properties": {
+          "at": { "type": "string" },
+          "packet-id": { "type": ["string", "null"] },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

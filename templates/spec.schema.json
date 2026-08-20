@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/spec.schema.json",
+  "title": "Flywheel Spec (DESIGN.md §5.3, §4.1)",
+  "description": "Schema for the YAML frontmatter of spec.md: numbered atomic requirements (R-01...) plus the requirement-to-milestone mapping.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec-version", "title", "goal", "milestones", "requirements"],
+  "properties": {
+    "spec-version": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "goal": { "type": "string", "minLength": 1 },
+    "non-goals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicitly out of scope (product judgement stays outside the loops)."
+    },
+    "milestones": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^M-\\d{2,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "gate": {
+            "type": "string",
+            "description": "Human-readable close condition; the executable gate is the union of its packets' L2/L3 acceptance."
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "milestone"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^R-\\d{2,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "milestone": { "type": "string", "pattern": "^M-\\d{2,}$" },
+          "verification": {
+            "type": "string",
+            "description": "How this requirement is independently verified (acceptance command or review point)."
+          }
+        }
+      }
+    }
+  }
+}
