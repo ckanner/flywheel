@@ -77,6 +77,7 @@ function emptyPacketState(packet) {
     exit: null,
     'base-ref': null,
     commit: null,
+    worktree: null,
     evidence: { executor: null, l1: null, review: null, 'defect-injection': null },
     'last-failure-signature': null,
     'retry-history': [],

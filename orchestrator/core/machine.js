@@ -14,13 +14,13 @@
 // are retries/budget exhausted). Anything requiring judgement is delegated
 // to the Plan/Review agents or to a human (§2 rule 1).
 
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { loadSpec, loadPackets, milestoneOfPacket } from './contracts.js';
 import { loadState, saveState, initState, stateExists, markInterruptedUnits, recordUsage, ensurePacketStates } from './state.js';
 import { evaluateExitContract } from './exit-contract.js';
 import { parseDoneReport } from './done-report.js';
-import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText, foreignDirtyFiles } from './verify.js';
+import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText, foreignDirtyFiles, ensureUnitWorktree, mergeUnitWorktree, removeUnitWorktree, commitTaskDirChanges } from './verify.js';
 import { LEDGER_FILES, LEDGER_DIRS, isLedgerTaskPath, COMMIT_VOLATILE_FILES } from './ledger.js';
 import { classifyError, isRetryable, shouldFallback, computeBackoff, extractRetryAfterMs } from './errors.js';
 import { checkBudget, failureSignature, detectSpin } from './circuit-breaker.js';
@@ -64,9 +64,11 @@ export function assertNoRunningOrchestrator(taskDir) {
 }
 
 /**
- * P1-1 caveat guard: warn when the worktree is dirty OUTSIDE the task dir —
- * the scoped unit commit diffs everything since the base ref, so pre-existing
- * uncommitted WIP would be swept into a unit commit. Warn, never block.
+ * P1-1 caveat guard for the IN-PLACE fallback only (worktree unavailable or
+ * disabled): the scoped unit commit diffs everything since the base ref, so
+ * pre-existing uncommitted WIP would be swept into a unit commit. Warn,
+ * never block. Worktree mode needs no warning — the executor never sees the
+ * main checkout.
  */
 export async function warnIfForeignDirty(ctx) {
   const foreign = await foreignDirtyFiles(ctx.cwd, taskDirPrefix(ctx));
@@ -75,6 +77,15 @@ export async function warnIfForeignDirty(ctx) {
       `WARNING: ${foreign.length} dirty file(s) outside the task dir at run start (e.g. ${foreign.slice(0, 3).join(', ')}) — unit commits are scoped to base-ref diffs and WILL include these pre-existing changes`,
     );
   }
+}
+
+function unitCwd(ctx, packet) {
+  const ps = ctx.state.packets[packet['packet-id']];
+  // A stale reference (worktree removed at completion) must never be used —
+  // manual --only steps on a completed unit fall back to the main checkout,
+  // where the merged code lives.
+  if (ps.worktree?.mode === 'worktree' && existsSync(ps.worktree.path)) return ps.worktree.path;
+  return ctx.cwd;
 }
 
 /**
@@ -178,6 +189,7 @@ function watchdogOpts(ctx) {
     killGraceMs: w['kill-grace-ms'],
   };
 }
+
 
 /**
  * The unit diff judged for boundaries is the EXECUTOR's diff. Only the
@@ -379,9 +391,22 @@ async function executeStep(ctx, packet) {
   if (ps['base-ref'] == null) {
     ps['base-ref'] = await getBaseRef(ctx.cwd);
   }
+  if (ps.worktree && ps.worktree.mode === 'worktree' && !existsSync(ps.worktree.path)) {
+    ps.worktree = null; // removed at completion — re-create on demand
+  }
+  if (ps['base-ref'] && !ps.worktree) {
+    if (ctx.config.worktree?.enabled !== false) {
+      ps.worktree = await ensureUnitWorktree(ctx.cwd, { slug: ctx.state.slug, packetId: id, baseRef: ps['base-ref'] });
+      if (ps.worktree.mode === 'in-place') {
+        ctx.log(`${id}: worktree unavailable (${ps.worktree.reason}) — running in-place`);
+      }
+    }
+    if (unitCwd(ctx, packet) === ctx.cwd) await warnIfForeignDirty(ctx);
+  }
   ps['updated-at'] = nowIso();
   save(ctx);
 
+  const uCwd = unitCwd(ctx, packet);
   const binding = resolveBinding(ctx.config, 'execute', packet.route);
   let channel = binding.channel;
   let currentBinding = binding;
@@ -403,12 +428,12 @@ async function executeStep(ctx, packet) {
       save(ctx);
       return { success: false, errorCode: 'AUTH' };
     }
-    const prompt = buildExecutePrompt({ packet, spec: ctx.spec, taskDir: ctx.taskDir, cwd: ctx.cwd, attempt: ps.attempts });
+    const prompt = buildExecutePrompt({ packet, spec: ctx.spec, taskDir: ctx.taskDir, cwd: uCwd, attempt: ps.attempts });
     visitedChannels.add(channel);
     const result = await ctx.drivers.execute.execute({
       packet,
       taskDir: ctx.taskDir,
-      cwd: ctx.cwd,
+      cwd: uCwd,
       prompt,
       model: currentBinding.model,
       binding: currentBinding,
@@ -508,15 +533,28 @@ async function executeStep(ctx, packet) {
 /**
  * L1 step (§4.4): orchestrator runs the acceptance commands directly, then
  * judges test/boundary integrity from the git diff. Coverage gate = one L1
- * command in the packet; nothing special here.
+ * command in the packet; nothing special here. In worktree mode the gates
+ * and the diff run INSIDE the unit worktree; the main checkout is additionally
+ * scanned for contract tampering (the executor knows the taskDir absolute
+ * path — its ledger dirt is excluded, user WIP outside the task dir ignored).
  */
 async function l1Step(ctx, packet) {
   const id = packet['packet-id'];
   const ps = ctx.state.packets[id];
   const timeoutMs = ctx.config.verify?.['command-timeout-ms'];
   const envAllowlist = ctx.config.verify?.['env-allowlist'] ?? [];
-  const gate = await runGateCommands(packet.acceptance.L1 ?? [], { cwd: ctx.cwd, timeoutMs, envAllowlist });
-  const { executorFiles, contractViolations } = partitionChangedFiles(ctx, await getChangedFiles(ctx.cwd, ps['base-ref']));
+  const uCwd = unitCwd(ctx, packet);
+  const gate = await runGateCommands(packet.acceptance.L1 ?? [], { cwd: uCwd, timeoutMs, envAllowlist });
+  const { executorFiles, contractViolations } = partitionChangedFiles(ctx, await getChangedFiles(uCwd, ps['base-ref']));
+  if (ps.worktree?.mode === 'worktree') {
+    const prefix = taskDirPrefix(ctx);
+    const mainFiles = await getChangedFiles(ctx.cwd, ps['base-ref']);
+    for (const f of mainFiles ?? []) {
+      if (f.startsWith(prefix) && CONTRACT_FILE_RE.test(f.slice(prefix.length))) {
+        contractViolations.push({ type: 'contract-file', path: f });
+      }
+    }
+  }
   const boundary = checkBoundaries(executorFiles, packet.boundaries, ctx.config.verify?.['test-file-patterns']);
   if (contractViolations.length > 0) {
     // Executor touched the contract layer itself (spec/packets/config) — fail.
@@ -628,12 +666,13 @@ async function reviewStep(ctx, packet, { defectInjection = null } = {}) {
   const id = packet['packet-id'];
   const ps = ctx.state.packets[id];
 
-  const { executorFiles } = partitionChangedFiles(ctx, await getChangedFiles(ctx.cwd, ps['base-ref']));
+  const uCwd = unitCwd(ctx, packet);
+  const { executorFiles } = partitionChangedFiles(ctx, await getChangedFiles(uCwd, ps['base-ref']));
   const diffSummary = executorFiles
     ? `changed files (git diff ${ps['base-ref'] ?? 'HEAD'}, ledger excluded):\n${executorFiles.map((f) => `- ${f}`).join('\n')}`
     : `changed files (executor-reported):\n${(ps.evidence.executor?.['changed-files'] ?? []).map((f) => `- ${f}`).join('\n')}`;
   // §4.3 promises the reviewer the real git diff, not a file list (#11).
-  const diffText = await getDiffText(ctx.cwd, ps['base-ref'], { exclude: ledgerExcludes(ctx) });
+  const diffText = await getDiffText(uCwd, ps['base-ref'], { exclude: ledgerExcludes(ctx) });
   const prompt = buildReviewPrompt({ packet, l1Evidence: ps.evidence.l1, diffSummary, diffText, defectInjection });
 
   const r = await agentVerdictStep(ctx, {
@@ -898,6 +937,20 @@ async function escalatePacket(ctx, packet) {
       ctx.packetList = fresh;
       ctx.packets = Object.fromEntries(fresh.map((p) => [p['packet-id'], p]));
       ensurePacketStates(ctx.state, fresh);
+      // v0.16: the revision is a legitimate contract change — commit it in
+      // the main checkout (contract layer stays committed), then REBUILD the
+      // unit worktree from the revision commit: the executor redoes the unit
+      // against the revised contract in a clean checkout, and the tamper scan
+      // sees a revision checkpoint, not an executor violation.
+      const revisionCommit = await commitTaskDirChanges(
+        ctx.cwd, taskDirPrefix(ctx), `docs(${ctx.state.slug}): plan revision ${ps['plan-revisions'] + 1}`,
+        { excludePaths: commitExcludes(ctx), onlyFiles: CONTRACT_FILE_RE },
+      );
+      if (ps.worktree?.mode === 'worktree' && revisionCommit.sha) {
+        await removeUnitWorktree(ctx.cwd, ps.worktree); // discard stale checkout + branch
+        ps.worktree = null;
+        ps['base-ref'] = revisionCommit.sha; // re-anchor at the revision checkpoint
+      }
       ps['plan-revisions'] += 1;
       ps['failed-attempts'] = 0;
       ps['last-failure-signature'] = null;
@@ -932,14 +985,42 @@ async function completeUnit(ctx, packet, note = null) {
   ps.status = 'completed';
   ps['updated-at'] = nowIso();
   touchProgress(ctx);
-  save(ctx); // state.json says "completed" before the commit captures it
-  // Unit-granularity commit, owned by the orchestrator (§4.2), SCOPED to the
-  // unit's changes since the recorded base ref; volatile ledger files (live
-  // log, metrics, pid) excluded.
-  ps.commit = await commitUnitChanges(ctx.cwd, packet, { excludePaths: commitExcludes(ctx), baseRef: ps['base-ref'] });
-  const commitNote = ps.commit.sha
-    ? `commit ${ps.commit.sha.slice(0, 8)}`
-    : `commit skipped (${ps.commit.skipped ?? ps.commit.error ?? 'unknown'})`;
+  save(ctx); // state.json says "completed" before the commits capture it
+
+  let commitNote;
+  if (ps.worktree?.mode === 'worktree') {
+    // v0.16 flow: code commit inside the worktree -> ff-merge into the main
+    // checkout -> remove worktree+branch -> ledger commit in the main
+    // checkout (restricted to docs/<slug>/).
+    const codeCommit = await commitUnitChanges(ps.worktree.path, packet, {});
+    const merge = codeCommit.sha ? await mergeUnitWorktree(ctx.cwd, ps.worktree.branch) : { merged: null, error: 'no code commit' };
+    if (merge.merged) {
+      await removeUnitWorktree(ctx.cwd, ps.worktree);
+    } else {
+      ctx.log(`${id}: merge --ff-only failed (${merge.error}) — worktree preserved at ${ps.worktree.path} for human resolution`);
+    }
+    const ledgerCommit = await commitUnitChanges(ctx.cwd, packet, {
+      excludePaths: commitExcludes(ctx),
+      baseRef: ps['base-ref'],
+      restrictToPrefix: taskDirPrefix(ctx),
+    });
+    ps.commit = {
+      sha: codeCommit.sha ?? ledgerCommit.sha,
+      message: codeCommit.message ?? ledgerCommit.message,
+      at: nowIso(),
+      'ledger-sha': ledgerCommit.sha ?? null,
+      'merge-error': merge.error,
+    };
+    commitNote = ps.commit.sha
+      ? `commit ${ps.commit.sha.slice(0, 8)}${ps.commit['ledger-sha'] ? ` + ledger ${ps.commit['ledger-sha'].slice(0, 8)}` : ''}${merge.error ? ` (merge error: ${merge.error})` : ''}`
+      : `commit skipped (${ps.commit['ledger-sha'] ? 'code merged but ledger commit missing' : codeCommit.error ?? codeCommit.skipped ?? 'unknown'})`;
+  } else {
+    // In-place fallback (non-git or worktree unavailable): one scoped commit.
+    ps.commit = await commitUnitChanges(ctx.cwd, packet, { excludePaths: commitExcludes(ctx), baseRef: ps['base-ref'] });
+    commitNote = ps.commit.sha
+      ? `commit ${ps.commit.sha.slice(0, 8)}`
+      : `commit skipped (${ps.commit.skipped ?? ps.commit.error ?? 'unknown'})`;
+  }
   appendRetro(ctx, `- ${nowIso()} packet ${id}: completed (attempts=${ps.attempts}, failed=${ps['failed-attempts']}, ${commitNote}${note ? `, ${note}` : ''})`);
   save(ctx);
 }
@@ -982,7 +1063,7 @@ async function maybeDefectInjection(ctx, packet) {
   const outcome = await runDefectInjection({
     patchFile: di.patch,
     testCmd: di['test-cmd'],
-    cwd: ctx.cwd,
+    cwd: unitCwd(ctx, packet),
     timeoutMs: ctx.config.verify?.['command-timeout-ms'],
     envAllowlist: ctx.config.verify?.['env-allowlist'] ?? [],
     forbidPaths: ledgerExcludes(ctx),
@@ -1191,7 +1272,6 @@ export async function runTask(opts) {
   const ctx = createContext(opts);
   const { pauseBefore = null } = opts;
   assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
-  await warnIfForeignDirty(ctx);
   writePid(ctx);
   // Graceful stop (§9 kill switch): kill in-flight child process groups and
   // await quiescence before exiting, so no orphan writes to the workspace.
@@ -1216,7 +1296,6 @@ export async function runTask(opts) {
       ms.status = 'in-progress';
       const budgetStart = { tokens: ctx.state.budget.totals.tokens, cost: ctx.state.budget.totals['cost-usd'] };
       save(ctx);
-
       const plan = await planStep(ctx, milestone);
       if (plan.stopped) return summary(ctx);
       if (!plan.ok) {
@@ -1229,11 +1308,16 @@ export async function runTask(opts) {
       }
       // P1: the planner may have revised contract files during this routine
       // step — reload them, exactly like the escalation path (P0-2 symmetry).
-      // The plan output is otherwise only observed by the next restart.
       const freshPackets = loadPackets(ctx.taskDir, ctx.spec);
       ctx.packetList = freshPackets;
       ctx.packets = Object.fromEntries(freshPackets.map((p) => [p['packet-id'], p]));
       ensurePacketStates(ctx.state, freshPackets);
+      // v0.16: CONTRACT-ONLY commit (dirty ledger stays uncommitted — a
+      // ledger commit here would move HEAD and break ff-merges of paused
+      // units' worktrees). No changes = no commit = HEAD unmoved.
+      await commitTaskDirChanges(ctx.cwd, taskDirPrefix(ctx), `docs(${ctx.state.slug}): plan update`, {
+        excludePaths: commitExcludes(ctx), onlyFiles: CONTRACT_FILE_RE,
+      });
       save(ctx);
 
       for (;;) {
@@ -1326,7 +1410,6 @@ export async function runSingleStep(opts) {
   const ctx = createContext(opts);
   const { only, packetId = null } = opts;
   assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
-  await warnIfForeignDirty(ctx);
   writePid(ctx);
   const onSigterm = () => {
     ctx.log('SIGTERM received — killing in-flight children, then exiting');

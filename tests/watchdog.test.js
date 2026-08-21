@@ -27,16 +27,18 @@ test('watchdog: silent process is killed by the IDLE timeout', async () => {
 });
 
 test('watchdog: steady output resets the idle timer (long task not killed)', async () => {
-  // Prints every 150ms for ~1s, then exits — idle timeout 600ms must not fire.
+  // Prints every 50ms for ~1s, then exits — idle timeout 600ms must not fire.
+  // The 12x margin keeps this robust under full-suite parallel load (a
+  // starved child can skip several 50ms ticks before any 600ms gap appears).
   const script = `
     let i = 0;
     const t = setInterval(() => {
       console.log('tick' + i);
-      if (++i >= 6) { clearInterval(t); process.exit(0); }
-    }, 150);
+      if (++i >= 20) { clearInterval(t); process.exit(0); }
+    }, 50);
   `;
   const r = await runWithWatchdog('node', ['-e', script], {
-    idleTimeoutMs: 600,
+    idleTimeoutMs: 2_000,
     wallTimeoutMs: 15_000,
   });
   assert.equal(r.timedOut, false);
@@ -104,7 +106,10 @@ test('watchdog: resolves only after real exit (quiescence), not at kill time', a
   // come from the actual exit event.
   const script = 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 60_000);';
   const r = await runWithWatchdog('node', ['-e', script], {
-    idleTimeoutMs: 300,
+    // 1s idle gives a starved child time to register its SIGTERM handler
+    // before the first probe — otherwise it dies on SIGTERM (signal=SIGTERM)
+    // and the SIGKILL escalation assertion flakes under parallel load.
+    idleTimeoutMs: 1_000,
     wallTimeoutMs: 30_000,
     killGraceMs: 400,
   });

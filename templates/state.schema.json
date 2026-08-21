@@ -121,6 +121,17 @@
               "at": { "type": "string" }
             }
           },
+          "worktree": {
+            "type": ["object", "null"],
+            "description": "Per-unit git worktree (v0.16 §4.2): {path, branch, mode}. Executor runs inside it when mode=worktree; null when the unit ran in-place (non-git checkout or worktree unavailable).",
+            "properties": {
+              "path": { "type": "string" },
+              "branch": { "type": "string" },
+              "mode": { "type": "string", "enum": ["worktree", "in-place"] },
+              "reason": { "type": "string" }
+            },
+            "required": ["path", "branch", "mode"]
+          },
           "evidence": {
             "type": "object",
             "additionalProperties": false,

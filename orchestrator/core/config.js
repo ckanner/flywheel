@@ -11,6 +11,7 @@ export const CONFIG_DEFAULTS = {
   retry: { 'base-delay-ms': 500, 'max-delay-ms': 10_000, jitter: 0.1, 'max-transport-retries': 5 },
   'defect-injection': { 'every-n-units': 5, 'test-file-ratio-boost': 0.5 },
   verify: { 'command-timeout-ms': 300_000 },
+  worktree: { enabled: true },
 };
 
 export class ConfigError extends Error {}
@@ -65,6 +66,9 @@ export function loadConfig(taskDir, cwd) {
   const everyN = config['defect-injection']?.['every-n-units'];
   if (everyN !== undefined && (!Number.isInteger(everyN) || everyN < 1)) {
     throw new ConfigError(`${file}: defect-injection.every-n-units must be an integer >= 1`);
+  }
+  if (config.worktree?.enabled !== undefined && typeof config.worktree.enabled !== 'boolean') {
+    throw new ConfigError(`${file}: worktree.enabled must be a boolean`);
   }
   return { ...config, _file: file };
 }

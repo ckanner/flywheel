@@ -4,7 +4,7 @@
 > Flywheel：编排器如飞轮——把间断、不稳定的 agent 运行，通过磁盘状态储能为连续平稳的推进。
 > 本文档是一套多 loop agent 编排系统的完整设计。目标读者：项目维护者本人。
 > 设计依据：Addy Osmani《Loop Engineering》、Anthropic/OpenAI/Cursor 官方案例、文档协议驱动 agent 循环的实战经验，以及 2026-08 对 kimi code / pi / oh-my-pi / oh-my-openagent / zcode 五个 harness 和 Kimi K3 / DeepSeek V4 系列模型的调研（来源见附录 A）。
-> 变更记录：
+> - v0.16 — **单元级 worktree 隔离**（2026-08-21，用户裁决，关闭 P1-1 WIP caveat）：执行单元在独立 git worktree 中运行（checkout 在仓库旁的 `<repo-parent>/.flywheel-worktrees/<repo>-<slug>-<packet-id>/`——放进 `<repo>/.git/` 会与 git 的 per-worktree 管理目录冲突；分支 `flywheel/<slug>/<packet-id>`，从单元 base-ref 创建）——executor 只见干净工作区，主 checkout 的用户 WIP 不可能被卷入或冲突。L1 与缺陷注入在 worktree 内跑；契约防篡改检查同时盯主 checkout 的 taskDir（executor 知道其绝对路径）。闸门全绿后：worktree 内提交代码 → 主 checkout `ff-merge` → 删除 worktree 与分支 → 编排器在主 checkout 只提交契约/账本文件（限定 `docs/<slug>/`）。done-report 仍由 executor 以绝对路径写回主 checkout 账本区。崩溃恢复复用既有 worktree（路径确定性）；非 git 仓库或 worktree 不可用回退原地执行（原串行模式，脏工作区告警仅在该模式生效）。config `worktree.enabled`（默认 true）。
 > - v0.15 — 用户裁决（2026-08-20）：**移除 DeepSeek 直连降级链**（不需要；降级链 = opencode-go → opencode Zen 按量，OpenCode 体系内兜底）；**缺陷注入从可选开关改为常备机制**（无 enabled 开关；缺 patch/test-cmd 配置 = 契约缺陷进 inbox 提示人工配置）；**Plan（kimi CLI）token 不可观测接受现状**（stream-json 无 usage，不为此前置降级 harness）；真实 403 报文验证关闭（不专门处理，模式表误判按 retro 修正）。
 > - v0.14 — 全代码设计符合性审计后修订（2026-08-20）：**验收测试改由 Plan Loop 编写（DC1=B，executor 不写/不改任何测试文件）**；verification-gap 一律退回 Plan 加强验收后复验、永不以 gap 完成（DC2）；缺陷注入判 fail → inbox 叫人（DC3）；空转检测语义明确为"错误码+失败命令相同且变更文件 Jaccard ≥ 0.7"（DC4）；缓存命中率逐 provider 阈值报警、soft 警告（DC5）；§9 凭证清单补 KIMI_API_KEY/kimi OAuth（DC6）。kimi code 可用性（含 frontend 路由）经用户确认，不再列为风险项。
 > - v0.13 — §11.6 关闭（2026-08-20）：`hard` 升级通道首选 **K3**（V4 Pro 留作该路由降级渠道）。用户确立长期决策原则：**质量/效率/速度优先，成本不计入**。
@@ -134,8 +134,9 @@
 
 工作目录与提交语义：
 
-- **串行期不用 worktree**：单一 checkout，每个执行单元结束时提交一次（单元粒度可回滚、可审计）。
-- **契约层文件全部是已提交内容**（spec、packet、state）：git worktree 只看得见已提交内容，并行期"先提交契约再 spawn"是硬规则；executor 的 worktree 从任务分支创建，编排器在闸门通过后合并。
+- **单元级 worktree 隔离（v0.16，默认开启）**：每个执行单元在独立 git worktree（checkout 在仓库旁 `<repo-parent>/.flywheel-worktrees/<repo>-<slug>-<packet-id>/`——不能放 `<repo>/.git/` 下，那是 git 的 per-worktree 管理目录；分支 `flywheel/<slug>/<packet-id>`，从单元 base-ref 创建）中运行：executor 只见干净工作区，主 checkout 的用户 WIP 不会被卷入或冲突；崩溃恢复按确定性路径复用既有 worktree。L1/缺陷注入在 worktree 内跑；契约防篡改检查同时盯主 checkout 的 taskDir（executor 知道其绝对路径）。闸门全绿后：worktree 内提交代码（单元粒度可回滚、可审计）→ 主 checkout `ff-merge` 该分支 → 删除 worktree 与分支 → 编排器在主 checkout 只提交契约/账本文件（限定 `docs/<slug>/`，state.json/retro/reports 照旧进 git）。done-report 由 executor 以绝对路径写回主 checkout 的账本区。**Planner 修订**（escalation 或里程碑起步的常规 plan）：契约变更以 contract-only 提交落盘（脏账本不卷入，避免移动 HEAD 破坏 ff-merge），单元 worktree **重建**（旧 checkout 丢弃，executor 按修订后契约重做，base-ref 重新锚定到修订提交）。
+- **回退**：非 git 仓库或 worktree 不可用（config `worktree.enabled: false`）→ 原地执行（原串行模式）：单一 checkout，单元结束时提交一次；该模式下启动前未提交 WIP 仍会被单元提交卷入，编排器在 fallback 时发脏工作区告警。
+- **契约层文件全部是已提交内容**（spec、packet、state）：并行期"先提交契约再 spawn"是硬规则；executor 的 worktree 从任务分支创建，编排器在闸门通过后合并。
 
 实测支撑：Composio 30 任务跨 harness 实测（SaaS 工作流任务，非编码基准），V4 Flash 在 pi 上通过率第一（66.7%）、单次成功成本最低（$0.028）；编码场景的独立证据见 Databricks 基准（同模型同 effort 下 harness 间成本差 2×、质量持平，简单 harness 如 pi 表现最佳，附录 A）。
 
@@ -300,8 +301,8 @@ for milestone in spec.milestones:
 ---
 
 ## 9. 安全与合规
+- **执行隔离（v0.16 落地 worktree，v0.10 决策无容器维持）**：Execute 在单元级 git worktree 中本机运行（§4.2）；无容器沙箱，信任模型同日常 kimi code auto 模式。缓解措施：worktree 隔离 + 每单元 git 提交（可回滚）+ git diff 事后判定测试/boundaries 完整性（§4.4）+ 进程组 kill 到 quiescence（§6）。**触发重评**：接入不可信输入（Intake 外部 issue、依赖引入陌生代码、涉网任务）前必须重新评估容器化。
 
-- **执行隔离（v0.10 决策：现阶段无容器）**：Execute/Review 会话本机直接运行，信任模型同日常 kimi code auto 模式。缓解措施：每单元 git 提交（可回滚）+ git diff 事后判定测试/boundaries 完整性（§4.4）+ 进程组 kill 到 quiescence（§6）。**触发重评**：接入不可信输入（Intake 外部 issue、依赖引入陌生代码、涉网任务）前必须重新评估容器化。
 - **凭证卫生**：executor 环境只注入任务所需的最低价值 key——pi 通道为 `OPENCODE_API_KEY`，hard 路由为 `KIMI_API_KEY`（v0.14 DC6 补录）；frontend/Plan 走 kimi code 订阅 OAuth（用户本机已登录，无 key 注入）；`needs-live-credentials` 任务经人工批准后按名单注入。一律无 SSH agent、无 git 推送凭证；编排器持有其余全部凭证。
 - **kill switch**：编排器单点可停；预算 hard 档是长时间无人值守时的最后一道闸。
 - **合规灰区台账**：OpenCode Go / Kimi 订阅的自动化条款风险记录在案，OpenCode Zen 按量降级配置常备（v0.15：DeepSeek 直连已裁决不采用）。

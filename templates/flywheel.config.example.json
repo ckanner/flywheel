@@ -148,6 +148,10 @@
     "command-timeout-ms": 300000,
     "test-file-patterns": ["(^|/)(tests?|__tests__|spec)/", "\\.(test|spec)\\.[cm]?[jt]sx?$"]
   },
+  "worktree": {
+    "enabled": true,
+    "_note": "per-unit git worktree isolation (DESIGN.md §4.2 v0.16): the executor runs in a clean checkout next to the repo; unavailable (non-git repo / git worktree broken) or disabled falls back to in-place execution with a dirty-worktree warning"
+  },
   "pricing": {
     "_note": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself; DeepSeek direct uses peak/off-peak pricing (§7).",
     "deepseek-v4-flash": {"input": 0.28, "output": 0.42, "cache-read": 0.028},

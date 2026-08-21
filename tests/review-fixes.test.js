@@ -67,32 +67,39 @@ function git(dir, args) {
 // P1-1: scoped unit commit
 // ---------------------------------------------------------------------------
 
-test('P1-1 caveat: foreign dirty files warn at run start; task-dir ledger dirt does not', async () => {
+test('P1-1 caveat: worktree mode isolates user WIP; the in-place fallback warns about it', async () => {
+  // WORKTREE mode (default): dirty user WIP outside the task dir is neither
+  // warned about (irrelevant — the executor works in a clean worktree) nor
+  // swept into any commit.
   const fx = makeGitFixture({ extraFiles: ['src/app.ts'] });
-  // Pre-existing uncommitted WIP outside the task dir — exactly what the
-  // scoped unit commit will sweep in.
   appendFileSync(join(fx.root, 'src/app.ts'), '// user wip\n');
-  // Task-dir runtime dirt is expected on a resume — must NOT warn.
-  writeFileSync(join(fx.taskDir, 'metrics.jsonl'), '{"ts":"x"}\n', 'utf8');
-
   const warnings = [];
   const result = await runTask({
     taskDir: fx.taskDir, cwd: fx.root, config: loadConfig(fx.taskDir, fx.root),
     drivers: wrapDrivers(), sleep: noSleep, log: (m) => warnings.push(m),
   });
   assert.equal(result.status, 'completed');
-  assert.ok(warnings.some((w) => /dirty file\(s\) outside the task dir/.test(w)), `warnings: ${JSON.stringify(warnings)}`);
-  assert.ok(warnings.some((w) => w.includes('src/app.ts')), 'names the foreign file');
-  assert.ok(!warnings.some((w) => /metrics\.jsonl/.test(w)), 'task-dir ledger dirt does not warn');
+  assert.ok(!warnings.some((w) => /dirty file/.test(w)), `warnings: ${JSON.stringify(warnings)}`);
+  // The user's WIP is still uncommitted in the main checkout after the run.
+  assert.match(git(fx.root, ['status', '--porcelain']), /M src\/app\.ts/);
 
-  // Clean worktree at start: no warning.
+  // IN-PLACE fallback (worktree disabled): the warning fires. The config
+  // change is COMMITTED first — an uncommitted contract change would itself
+  // be a (correctly detected) contract violation.
   const fx2 = makeGitFixture({ extraFiles: ['src/app.ts'] });
+  appendFileSync(join(fx2.root, 'src/app.ts'), '// user wip\n');
+  const cfg2 = JSON.parse(readFileSync(join(fx2.taskDir, 'flywheel.config.json'), 'utf8'));
+  cfg2.worktree = { enabled: false };
+  writeFileSync(join(fx2.taskDir, 'flywheel.config.json'), JSON.stringify(cfg2), 'utf8');
+  git(fx2.root, ['add', 'docs/minitask/flywheel.config.json']);
+  git(fx2.root, ['commit', '-q', '-m', 'chore: disable worktree for the test']);
   const warnings2 = [];
   await runTask({
     taskDir: fx2.taskDir, cwd: fx2.root, config: loadConfig(fx2.taskDir, fx2.root),
     drivers: wrapDrivers(), sleep: noSleep, log: (m) => warnings2.push(m),
   });
-  assert.ok(!warnings2.some((w) => /dirty file/.test(w)), `unexpected warnings: ${JSON.stringify(warnings2)}`);
+  assert.ok(warnings2.some((w) => /dirty file\(s\) outside the task dir/.test(w)), `warnings: ${JSON.stringify(warnings2)}`);
+  assert.ok(warnings2.some((w) => w.includes('src/app.ts')), 'names the foreign file');
 });
 
 test('P1-1: unit commit is scoped — volatile ledger files never enter git history', async () => {
@@ -109,6 +116,7 @@ test('P1-1: unit commit is scoped — volatile ledger files never enter git hist
   assert.equal(result.status, 'completed');
   const p = loadState(fx.taskDir).packets['M01-T01'];
   assert.ok(p.commit.sha, 'unit commit exists');
+  assert.ok(p.commit['ledger-sha'], 'ledger commit recorded (worktree mode)');
 
   const inCommit = (sha, rel) => {
     try {
@@ -118,18 +126,23 @@ test('P1-1: unit commit is scoped — volatile ledger files never enter git hist
       return false;
     }
   };
-  // Executor work and contract-layer files land in the commit...
-  assert.ok(inCommit(p.commit.sha, 'build/M01-T01.txt'), 'executor artifact committed');
-  assert.ok(inCommit(p.commit.sha, 'docs/minitask/state.json'), 'state.json committed (contract layer)');
-  assert.ok(inCommit(p.commit.sha, 'docs/minitask/reports/M01-T01.done.json'), 'done-report committed (evidence)');
-  // ...the volatile runtime files do NOT.
-  assert.ok(!inCommit(p.commit.sha, 'docs/minitask/metrics.jsonl'), 'metrics.jsonl excluded from the commit');
-  assert.ok(!inCommit(p.commit.sha, 'docs/minitask/orchestrator.log'), 'orchestrator.log excluded from the commit');
-  assert.ok(!inCommit(p.commit.sha, 'docs/minitask/orchestrator.pid'), 'orchestrator.pid excluded from the commit');
-  // The pre-existing user file is untouched by the unit commit.
-  const unitTree = git(fx.root, ['show', '--name-only', '--format=', p.commit.sha]).split('\n').filter(Boolean);
-  assert.ok(!unitTree.includes('user-wip.ts'), 'user wip not swept into the unit commit');
+  // v0.16 two-commit flow: the CODE commit (worktree) carries the executor's
+  // work; the LEDGER commit (main checkout) carries the contract/ledger files.
+  assert.ok(inCommit(p.commit.sha, 'build/M01-T01.txt'), 'executor artifact in the code commit');
+  assert.ok(inCommit(p.commit['ledger-sha'], 'docs/minitask/state.json'), 'state.json in the ledger commit');
+  assert.ok(inCommit(p.commit['ledger-sha'], 'docs/minitask/reports/M01-T01.done.json'), 'done-report in the ledger commit (evidence)');
+  // ...the volatile runtime files are in NEITHER.
+  for (const sha of [p.commit.sha, p.commit['ledger-sha']]) {
+    assert.ok(!inCommit(sha, 'docs/minitask/metrics.jsonl'), 'metrics.jsonl excluded from the commit');
+    assert.ok(!inCommit(sha, 'docs/minitask/orchestrator.log'), 'orchestrator.log excluded from the commit');
+    assert.ok(!inCommit(sha, 'docs/minitask/orchestrator.pid'), 'orchestrator.pid excluded from the commit');
+  }
+  // The pre-existing user file is untouched by either commit.
+  const codeTree = git(fx.root, ['show', '--name-only', '--format=', p.commit.sha]).split('\n').filter(Boolean);
+  const ledgerTree = git(fx.root, ['show', '--name-only', '--format=', p.commit['ledger-sha']]).split('\n').filter(Boolean);
+  assert.ok(!codeTree.includes('user-wip.ts') && !ledgerTree.includes('user-wip.ts'), 'user wip not swept into any commit');
 });
+
 
 test('P1-1: commitUnitChanges only stages the unit diff — files unchanged since base are untouched', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flywheel-scoped-'));

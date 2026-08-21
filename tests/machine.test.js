@@ -500,10 +500,13 @@ test('machine: orchestrator commits each completed unit (§4.2) and records base
     assert.match(p.commit.message, new RegExp(`feat\\(M-01\\): ${id}`));
     assert.match(log, new RegExp(`feat\\(M-01\\): ${id}`));
   }
-  // Unit granularity: T01's commit is the parent of T02's commit.
+  // Unit granularity: T01's code commit is an ancestor of T02's code commit
+  // (v0.16: each unit = code commit in its worktree, merged, then a ledger
+  // commit in the main checkout — the parent of T02's code commit is T01's
+  // ledger commit, not T01's code commit).
   const t01 = state.packets['M01-T01'].commit.sha;
   const t02 = state.packets['M01-T02'].commit.sha;
-  assert.equal(git(['rev-parse', `${t02}^`]).trim(), t01);
+  git(['merge-base', '--is-ancestor', t01, t02]);
 });
 
 test('machine: executor self-committing test-file changes cannot bypass boundary judgement', async () => {
@@ -514,10 +517,11 @@ test('machine: executor self-committing test-file changes cannot bypass boundary
   const drivers = wrapDrivers({
     execute: async (args) => {
       const r = await mock.execute(args);
-      // Executor weakens an existing TEST FILE and commits it itself.
-      appendFileSync(join(fx.root, 'tests/existing.test.ts'), '// weakened assertion\n');
-      execFileSync('git', ['-C', fx.root, '-c', 'user.name=exec', '-c', 'user.email=exec@x', 'add', '-A']);
-      execFileSync('git', ['-C', fx.root, '-c', 'user.name=exec', '-c', 'user.email=exec@x', 'commit', '-q', '-m', 'wip']);
+      // Executor weakens an existing TEST FILE and commits it itself — in the
+      // WORKTREE (args.cwd), exactly where a real executor would work.
+      appendFileSync(join(args.cwd, 'tests/existing.test.ts'), '// weakened assertion\n');
+      execFileSync('git', ['-C', args.cwd, '-c', 'user.name=exec', '-c', 'user.email=exec@x', 'add', '-A']);
+      execFileSync('git', ['-C', args.cwd, '-c', 'user.name=exec', '-c', 'user.email=exec@x', 'commit', '-q', '-m', 'wip']);
       return r;
     },
   });

@@ -8,6 +8,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { join, dirname, basename } from 'node:path';
 import { milestoneOfPacket, parseExpect } from './contracts.js';
 
 import { gateEnv } from './child-env.js';
@@ -87,6 +88,70 @@ export async function foreignDirtyFiles(cwd, taskDirPrefix) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Per-unit git worktree isolation (DESIGN.md §4.2 v0.16)
+// ---------------------------------------------------------------------------
+
+
+/** Deterministic names for a unit's worktree: branch + checkout path.
+ * The checkout lives OUTSIDE the repo (sibling dir) — a path inside
+ * `<repo>/.git/` collides with git's own per-worktree admin directory. */
+export function worktreeNames(cwd, slug, packetId) {
+  const repoName = basename(cwd) || 'repo';
+  return {
+    branch: `flywheel/${slug}/${packetId}`,
+    path: join(dirname(cwd), '.flywheel-worktrees', `${repoName}-${slug}-${packetId}`),
+  };
+}
+
+/**
+ * Ensure the unit worktree exists at its deterministic path, created from the
+ * unit base ref. An existing worktree (crash resume) is reused — its content
+ * is preserved. Returns { path, branch, mode: 'worktree' } or
+ * { mode: 'in-place', reason } when the workspace is not a git checkout or
+ * git worktree is unavailable.
+ */
+export async function ensureUnitWorktree(cwd, { slug, packetId, baseRef }) {
+  const { branch, path } = worktreeNames(cwd, slug, packetId);
+  try {
+    await execFileAsync('git', ['-C', path, 'rev-parse', '--git-dir'], { maxBuffer: 1024 * 1024 });
+    return { path, branch, mode: 'worktree' }; // exists: resume reuses it
+  } catch {
+    // create below
+  }
+  try {
+    await execFileAsync('git', ['-C', cwd, 'worktree', 'add', '-f', '-B', branch, path, baseRef], {
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return { path, branch, mode: 'worktree' };
+  } catch (err) {
+    return { mode: 'in-place', path, branch, reason: `git worktree add failed: ${String(err.message ?? err)}` };
+  }
+}
+
+/** Fast-forward the unit branch into the main checkout. Never force: a moved
+ * main HEAD (user committed during the unit) is a reported error, not an
+ * overwrite. Returns { merged: <git output> | null, error } . */
+export async function mergeUnitWorktree(cwd, branch) {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'merge', '--ff-only', branch], { maxBuffer: 4 * 1024 * 1024 });
+    return { merged: stdout.trim(), error: null };
+  } catch (err) {
+    return { merged: null, error: String(err.message ?? err) };
+  }
+}
+
+/** Remove the unit worktree and delete its branch (best effort — a failed
+ * cleanup must never destroy the unit's verdict). */
+export async function removeUnitWorktree(cwd, { branch, path }) {
+  try {
+    await execFileAsync('git', ['-C', cwd, 'worktree', 'remove', '--force', path], { maxBuffer: 4 * 1024 * 1024 });
+  } catch { /* best effort */ }
+  try {
+    await execFileAsync('git', ['-C', cwd, 'branch', '-D', branch], { maxBuffer: 4 * 1024 * 1024 });
+  } catch { /* best effort */ }
+}
+
 // Well-known empty-tree sha: diff base for repositories with zero commits.
 export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
@@ -162,19 +227,16 @@ export async function getDiffText(cwd, baseRef, { exclude = [] } = {}) {
   }
 }
 
+
 /**
- * Unit-granularity commit (§4.2: one commit per execution unit, rollback-able
- * and auditable). The ORCHESTRATOR owns this — never the executor.
- * The commit is SCOPED to the unit's own changes: everything modified or
- * added since the unit base ref (recorded on the FIRST attempt — the same
- * anchor the boundary judgement uses), minus `excludePaths` (the
- * orchestrator's volatile runtime files). Never `git add -A` — that would
- * sweep unrelated user work and the live orchestrator.log into the unit
- * commit. Skips with a recorded reason when the workspace is not a git
- * checkout or nothing changed; commit failures are reported, not thrown
- * (bookkeeping must not destroy verified work).
+ * Unit-granularity commit (§4.2): the ORCHESTRATOR owns it — never the
+ * executor. Scoped to the unit's changes since the recorded base ref, minus
+ * `excludePaths` (volatile runtime files); `restrictToPrefix` additionally
+ * narrows the commit to one directory (the worktree-mode ledger commit in
+ * the main checkout: only `docs/<slug>/`). Never `git add -A`. Failures are
+ * reported, not thrown (bookkeeping must not destroy verified work).
  */
-export async function commitUnitChanges(cwd, packet, { excludePaths = [], baseRef = null } = {}) {
+export async function commitUnitChanges(cwd, packet, { excludePaths = [], baseRef = null, restrictToPrefix = null } = {}) {
   const id = packet['packet-id'];
   const milestone = milestoneOfPacket(id);
   const goal = String(packet.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 50);
@@ -187,7 +249,7 @@ export async function commitUnitChanges(cwd, packet, { excludePaths = [], baseRe
       return { sha: null, skipped: 'changed-file scan failed', message, at: new Date().toISOString() };
     }
     const exclude = new Set(excludePaths);
-    const addList = changed.filter((f) => !exclude.has(f));
+    const addList = changed.filter((f) => !exclude.has(f) && (restrictToPrefix === null || f.startsWith(restrictToPrefix)));
     if (addList.length === 0) return { sha: null, skipped: 'no changes', message, at: new Date().toISOString() };
     const identity = ['-c', 'user.name=flywheel-orchestrator', '-c', 'user.email=flywheel-orchestrator@localhost'];
     await execFileAsync('git', ['-C', cwd, ...identity, 'add', '--', ...addList], { maxBuffer: 4 * 1024 * 1024 });
@@ -203,7 +265,38 @@ function globToRegExp(glob) {
   const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
   return new RegExp(`^${escaped}`);
 }
-
+/**
+ * Commit the task directory's current changes with a caller-chosen message.
+ * Used after planner revisions — the contract layer must stay committed
+ * content (hard rule: the worktree only sees committed contracts, and the
+ * tamper scan diffs against a base that knows about legitimate revisions).
+ * `onlyFiles` (regex, matched against the repo-relative path) narrows the
+ * commit to e.g. contract files only — a planner-revision commit must NOT
+ * sweep dirty ledger files, or it would move HEAD and break ff-merges.
+ */
+export async function commitTaskDirChanges(cwd, prefix, message, { excludePaths = [], onlyFiles = null } = {}) {
+  try {
+    const base = await getBaseRef(cwd);
+    if (base === null) return { sha: null, skipped: 'not a git checkout' };
+    const changed = await getChangedFiles(cwd, base);
+    if (changed === null) return { sha: null, skipped: 'changed-file scan failed' };
+    const exclude = new Set(excludePaths);
+    const addList = changed.filter((f) => {
+      if (!f.startsWith(prefix) || exclude.has(f)) return false;
+      if (!onlyFiles) return true;
+      const inner = f.slice(prefix.length);
+      return onlyFiles.test(inner) || onlyFiles.test(f);
+    });
+    if (addList.length === 0) return { sha: null, skipped: 'no changes' };
+    const identity = ['-c', 'user.name=flywheel-orchestrator', '-c', 'user.email=flywheel-orchestrator@localhost'];
+    await execFileAsync('git', ['-C', cwd, ...identity, 'add', '--', ...addList], { maxBuffer: 4 * 1024 * 1024 });
+    await execFileAsync('git', ['-C', cwd, ...identity, 'commit', '-m', message], { maxBuffer: 4 * 1024 * 1024 });
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', 'HEAD'], { maxBuffer: 1024 * 1024 });
+    return { sha: stdout.trim(), at: new Date().toISOString() };
+  } catch (err) {
+    return { sha: null, error: String(err.message ?? err) };
+  }
+}
 /**
  * Pure boundary check over a list of changed files.
  *
