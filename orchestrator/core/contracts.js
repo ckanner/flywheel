@@ -30,6 +30,20 @@ function requireFields(data, fields, file) {
   }
 }
 
+const EXPECT_RE = /^exit (\d+)$/;
+
+/**
+ * Parse an acceptance `expect` field. Contracts are validated at LOAD time —
+ * a bad expect must fail fast in `validatePacket`, never crash the
+ * orchestrator mid-run after the executor already finished (P1: an uncaught
+ * throw here would turn one contract typo into a spawn-crash loop).
+ */
+export function parseExpect(expect) {
+  const m = EXPECT_RE.exec(String(expect).trim());
+  if (!m) throw new ContractError(`unsupported expect: ${expect} (want "exit N")`);
+  return parseInt(m[1], 10);
+}
+
 const PACKET_ID_RE = /^M(\d{2,})-T(\d{2,})$/;
 
 // Exactly the §5.1 field set — anything else is rejected (schema
@@ -71,12 +85,44 @@ export function validatePacket(data, file = 'packet') {
   if (!Array.isArray(data['context-files'])) {
     throw new ContractError(`${file}: context-files must be an array (use [] when none)`);
   }
+  if (!data['context-files'].every((s) => typeof s === 'string')) {
+    throw new ContractError(`${file}: context-files entries must be strings`);
+  }
+  if ('cache-scope' in data && (!Array.isArray(data['cache-scope']) || !data['cache-scope'].every((s) => typeof s === 'string'))) {
+    throw new ContractError(`${file}: cache-scope must be an array of strings`);
+  }
   if (typeof data.boundaries !== 'object' || data.boundaries === null || Array.isArray(data.boundaries)) {
     throw new ContractError(`${file}: boundaries must be a mapping ({must-not-touch: [...], max-files: n})`);
+  }
+  if ('max-files' in data.boundaries && (!Number.isInteger(data.boundaries['max-files']) || data.boundaries['max-files'] < 1)) {
+    throw new ContractError(`${file}: boundaries.max-files must be an integer >= 1`);
+  }
+  if (typeof data['review-rubric'] !== 'string') {
+    throw new ContractError(`${file}: review-rubric must be a string`);
+  }
+  if (typeof data['done-report-format'] !== 'object' || data['done-report-format'] === null || Array.isArray(data['done-report-format'])) {
+    throw new ContractError(`${file}: done-report-format must be a mapping`);
   }
   const acc = data.acceptance;
   if (typeof acc !== 'object' || !Array.isArray(acc.L1) || acc.L1.length === 0) {
     throw new ContractError(`${file}: acceptance.L1 must be a non-empty array`);
+  }
+  // P1: validate every acceptance entry at load time. The orchestrator runs
+  // these commands itself; a malformed expect must be caught when the
+  // contract is read, not after a spawn (crash -> restart -> re-spawn loop).
+  for (const level of ['L1', 'L2', 'L3']) {
+    if (!(level in acc)) continue;
+    if (!Array.isArray(acc[level])) throw new ContractError(`${file}: acceptance.${level} must be an array`);
+    for (const entry of acc[level]) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+        throw new ContractError(`${file}: acceptance.${level} entries must be {cmd|script, expect}`);
+      }
+      const command = entry.cmd ?? entry.script;
+      if (typeof command !== 'string' || command.trim() === '') {
+        throw new ContractError(`${file}: acceptance.${level} entry needs a non-empty cmd or script`);
+      }
+      parseExpect(entry.expect);
+    }
   }
   const esc = data.escalation;
   if (typeof esc !== 'object' || !Number.isInteger(esc['max-retries']) || esc['max-retries'] < 1 || !['return-to-planner', 'inbox'].includes(esc['on-fail'])) {
@@ -97,10 +143,11 @@ export function validateSpec(data, file = 'spec.md') {
   const reqIds = new Set();
   for (const r of data.requirements) {
     if (!r.id || !r.milestone) throw new ContractError(`${file}: every requirement needs id and milestone`);
+    if (reqIds.has(r.id)) throw new ContractError(`${file}: duplicate requirement id ${r.id}`);
+    reqIds.add(r.id);
     if (!milestoneIds.has(r.milestone)) {
       throw new ContractError(`${file}: requirement ${r.id} maps to unknown milestone ${r.milestone}`);
     }
-    reqIds.add(r.id);
   }
   return { ...data, _reqIds: reqIds, _milestoneIds: milestoneIds };
 }

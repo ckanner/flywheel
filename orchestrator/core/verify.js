@@ -8,7 +8,8 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { milestoneOfPacket } from './contracts.js';
+import { milestoneOfPacket, parseExpect } from './contracts.js';
+
 import { gateEnv } from './child-env.js';
 
 export { gateEnv } from './child-env.js';
@@ -20,11 +21,8 @@ export const DEFAULT_TEST_FILE_PATTERNS = [
   '\\.(test|spec)\\.[cm]?[jt]sx?$',
 ];
 
-export function parseExpect(expect) {
-  const m = /^exit (\d+)$/.exec(String(expect).trim());
-  if (!m) throw new Error(`unsupported expect: ${expect}`);
-  return parseInt(m[1], 10);
-}
+export { parseExpect } from './contracts.js';
+
 
 /**
  * Run one gate level's commands (L1/L2/L3) in the task workspace.
@@ -146,24 +144,32 @@ export async function getDiffText(cwd, baseRef, { exclude = [] } = {}) {
 /**
  * Unit-granularity commit (§4.2: one commit per execution unit, rollback-able
  * and auditable). The ORCHESTRATOR owns this — never the executor.
- * Skips with a recorded reason when the workspace is not a git checkout or
- * nothing changed; commit failures are reported, not thrown (bookkeeping must
- * not destroy verified work).
+ * The commit is SCOPED to the unit's own changes: everything modified or
+ * added since the unit base ref (recorded on the FIRST attempt — the same
+ * anchor the boundary judgement uses), minus `excludePaths` (the
+ * orchestrator's volatile runtime files). Never `git add -A` — that would
+ * sweep unrelated user work and the live orchestrator.log into the unit
+ * commit. Skips with a recorded reason when the workspace is not a git
+ * checkout or nothing changed; commit failures are reported, not thrown
+ * (bookkeeping must not destroy verified work).
  */
-export async function commitUnitChanges(cwd, packet) {
+export async function commitUnitChanges(cwd, packet, { excludePaths = [], baseRef = null } = {}) {
   const id = packet['packet-id'];
   const milestone = milestoneOfPacket(id);
   const goal = String(packet.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 50);
   const message = `feat(${milestone}): ${id} ${goal}`.trim();
   try {
-    const base = await getBaseRef(cwd);
+    const base = baseRef ?? (await getBaseRef(cwd));
     if (base === null) return { sha: null, skipped: 'not a git checkout', message, at: new Date().toISOString() };
-    const status = await execFileAsync('git', ['-C', cwd, 'status', '--porcelain'], { maxBuffer: 4 * 1024 * 1024 });
-    if (status.stdout.trim() === '') {
-      return { sha: null, skipped: 'no changes', message, at: new Date().toISOString() };
+    const changed = await getChangedFiles(cwd, base);
+    if (changed === null) {
+      return { sha: null, skipped: 'changed-file scan failed', message, at: new Date().toISOString() };
     }
+    const exclude = new Set(excludePaths);
+    const addList = changed.filter((f) => !exclude.has(f));
+    if (addList.length === 0) return { sha: null, skipped: 'no changes', message, at: new Date().toISOString() };
     const identity = ['-c', 'user.name=flywheel-orchestrator', '-c', 'user.email=flywheel-orchestrator@localhost'];
-    await execFileAsync('git', ['-C', cwd, ...identity, 'add', '-A'], { maxBuffer: 4 * 1024 * 1024 });
+    await execFileAsync('git', ['-C', cwd, ...identity, 'add', '--', ...addList], { maxBuffer: 4 * 1024 * 1024 });
     await execFileAsync('git', ['-C', cwd, ...identity, 'commit', '-m', message], { maxBuffer: 4 * 1024 * 1024 });
     const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', 'HEAD'], { maxBuffer: 1024 * 1024 });
     return { sha: stdout.trim(), message, at: new Date().toISOString() };

@@ -17,11 +17,11 @@
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { loadSpec, loadPackets, milestoneOfPacket } from './contracts.js';
-import { loadState, saveState, initState, stateExists, markInterruptedUnits, recordUsage } from './state.js';
+import { loadState, saveState, initState, stateExists, markInterruptedUnits, recordUsage, ensurePacketStates } from './state.js';
 import { evaluateExitContract } from './exit-contract.js';
 import { parseDoneReport } from './done-report.js';
 import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText } from './verify.js';
-import { LEDGER_FILES, LEDGER_DIRS, isLedgerTaskPath } from './ledger.js';
+import { LEDGER_FILES, LEDGER_DIRS, isLedgerTaskPath, COMMIT_VOLATILE_FILES } from './ledger.js';
 import { classifyError, isRetryable, shouldFallback, computeBackoff, extractRetryAfterMs } from './errors.js';
 import { checkBudget, failureSignature, detectSpin } from './circuit-breaker.js';
 import { resolveBinding, nextChannel, modelForChannel, envKeyForChannel, missingChannelEnv, authFallbackAllowed } from './fallback.js';
@@ -31,13 +31,36 @@ import { killActiveChildren } from './watchdog.js';
 import { buildExecutePrompt, buildReviewPrompt, buildPlanPrompt, buildJudgePrompt, parseReviewVerdict } from './prompts.js';
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 export function pidFile(taskDir) {
   return join(taskDir, 'orchestrator.pid');
 }
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+/**
+ * Single-instance guard: a pid file owned by a LIVE process means another
+ * orchestrator runs this task — starting anyway would clobber the pid file
+ * and make `flywheel stop` kill the wrong (dead) process, orphaning the real
+ * one. Stale pid files (dead pid / unreadable) are safe to overwrite.
+ */
+export function assertNoRunningOrchestrator(taskDir) {
+  const file = pidFile(taskDir);
+  if (!existsSync(file)) return;
+  let pid = null;
+  try {
+    pid = JSON.parse(readFileSync(file, 'utf8')).pid;
+  } catch {
+    return; // unreadable = stale, overwrite below
+  }
+  if (!Number.isInteger(pid)) return;
+  try {
+    process.kill(pid, 0); // signal 0: existence probe, no signal delivered
+  } catch {
+    return; // dead process = stale pid file
+  }
+  throw new Error(`another orchestrator is running this task (pid ${pid}) — stop it first: flywheel stop <slug>`);
 }
 
 /**
@@ -55,6 +78,9 @@ export function createContext({ taskDir, cwd = process.cwd(), config, drivers, l
     state = initState(spec.slug ?? taskDir.split('/').filter(Boolean).pop(), spec, packetList, config);
     fresh = true;
   }
+  // A planner revision may have added packets to the contract layer since the
+  // state was last written; every loaded packet must have a state entry.
+  ensurePacketStates(state, packetList);
   return {
     taskDir,
     cwd,
@@ -155,6 +181,13 @@ function taskDirPrefix(ctx) {
 function ledgerExcludes(ctx) {
   const prefix = taskDirPrefix(ctx);
   return [...LEDGER_FILES].map((f) => `${prefix}${f}`).concat(LEDGER_DIRS.map((d) => `${prefix}${d}`));
+}
+
+/** Volatile runtime files excluded from the unit commit (P1: never commit
+ * the live orchestrator.log or append-only metrics). */
+function commitExcludes(ctx) {
+  const prefix = taskDirPrefix(ctx);
+  return [...COMMIT_VOLATILE_FILES].map((f) => `${prefix}${f}`);
 }
 
 function partitionChangedFiles(ctx, changedFiles) {
@@ -845,10 +878,12 @@ async function escalatePacket(ctx, packet) {
       ctx.log(`planner unavailable (${plan.errorCode}) — skipping revision, straight to inbox`);
     } else {
       // P0-2: the planner may have rewritten contract files — reload them, or
-      // the next round would run on the stale in-memory packet.
+      // the next round would run on the stale in-memory packet. The planner
+      // may also have ADDED packets; sync state entries for them.
       const fresh = loadPackets(ctx.taskDir, ctx.spec);
       ctx.packetList = fresh;
       ctx.packets = Object.fromEntries(fresh.map((p) => [p['packet-id'], p]));
+      ensurePacketStates(ctx.state, fresh);
       ps['plan-revisions'] += 1;
       ps['failed-attempts'] = 0;
       ps['last-failure-signature'] = null;
@@ -884,9 +919,10 @@ async function completeUnit(ctx, packet, note = null) {
   ps['updated-at'] = nowIso();
   touchProgress(ctx);
   save(ctx); // state.json says "completed" before the commit captures it
-
-  // Unit-granularity commit, owned by the orchestrator (§4.2).
-  ps.commit = await commitUnitChanges(ctx.cwd, packet);
+  // Unit-granularity commit, owned by the orchestrator (§4.2), SCOPED to the
+  // unit's changes since the recorded base ref; volatile ledger files (live
+  // log, metrics, pid) excluded.
+  ps.commit = await commitUnitChanges(ctx.cwd, packet, { excludePaths: commitExcludes(ctx), baseRef: ps['base-ref'] });
   const commitNote = ps.commit.sha
     ? `commit ${ps.commit.sha.slice(0, 8)}`
     : `commit skipped (${ps.commit.skipped ?? ps.commit.error ?? 'unknown'})`;
@@ -964,6 +1000,27 @@ async function processPacket(ctx, packet0, { pauseBefore } = {}) {
   let packet = packet0;
   const id = packet['packet-id'];
   const ps = ctx.state.packets[id];
+
+  // P2: a packet already escalated to the inbox must not re-spawn or re-append
+  // inbox entries on re-run — the human re-arms by editing state.json (§12).
+  // The credentials flow is the exception: there the human's fix IS the
+  // approval file, so its appearance after an approval timeout re-arms the
+  // unit.
+  if (ps.status === 'inbox') {
+    const approvalFile = join(ctx.taskDir, 'approvals', `${id}.json`);
+    if (packet['needs-live-credentials'] === true && !ps.evidence.credentials && existsSync(approvalFile)) {
+      ctx.log(`${id}: approval file appeared after inbox escalation — re-arming`);
+      ps.status = 'pending';
+      ps['updated-at'] = nowIso();
+      save(ctx);
+    } else {
+      ctx.log(`${id}: already escalated to inbox — waiting for human (edit state.json to re-arm)`);
+      // The task is still escalated; a re-run must not flip it to "running".
+      ctx.state.status = 'escalated';
+      save(ctx);
+      return 'stop';
+    }
+  }
 
   if (ps.status === 'interrupted') {
     ctx.log(`${id}: resuming interrupted unit (artifacts preserved, no penalty)`);
@@ -1119,6 +1176,7 @@ function clearPid(ctx) {
 export async function runTask(opts) {
   const ctx = createContext(opts);
   const { pauseBefore = null } = opts;
+  assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
   writePid(ctx);
   // Graceful stop (§9 kill switch): kill in-flight child process groups and
   // await quiescence before exiting, so no orphan writes to the workspace.
@@ -1149,12 +1207,20 @@ export async function runTask(opts) {
       if (plan.stopped) return summary(ctx);
       if (!plan.ok) {
         ctx.state.status = 'escalated';
-        const entry = { at: nowIso(), 'packet-id': null, reason: `plan step failed on every channel (last: ${plan.errorCode}). Human needed.` };
+        const entry = { at: nowIso(), 'packet-id': null, milestone: milestone.id, reason: `plan step failed on every channel (last: ${plan.errorCode}). Human needed.` };
         ctx.state.inbox.push(entry);
         appendInbox(ctx, entry);
         save(ctx);
         return summary(ctx);
       }
+      // P1: the planner may have revised contract files during this routine
+      // step — reload them, exactly like the escalation path (P0-2 symmetry).
+      // The plan output is otherwise only observed by the next restart.
+      const freshPackets = loadPackets(ctx.taskDir, ctx.spec);
+      ctx.packetList = freshPackets;
+      ctx.packets = Object.fromEntries(freshPackets.map((p) => [p['packet-id'], p]));
+      ensurePacketStates(ctx.state, freshPackets);
+      save(ctx);
 
       for (;;) {
         const packet = nextActionablePacket(ctx, milestone.id);
@@ -1166,7 +1232,7 @@ export async function runTask(opts) {
       const gate = await milestoneGateStep(ctx, milestone);
       if (!gate.pass) {
         ctx.state.status = 'escalated';
-        const entry = { at: nowIso(), 'packet-id': null, reason: `milestone ${milestone.id} gate (L2/L3) failed` };
+        const entry = { at: nowIso(), 'packet-id': null, milestone: milestone.id, reason: `milestone ${milestone.id} gate (L2/L3) failed` };
         ctx.state.inbox.push(entry);
         appendInbox(ctx, entry);
         save(ctx);
@@ -1181,6 +1247,7 @@ export async function runTask(opts) {
         const entry = {
           at: nowIso(),
           'packet-id': null,
+          milestone: milestone.id,
           reason: `milestone ${milestone.id} judge verdict: ${judge.verdict?.verdict ?? judge.errorCode} — ${(judge.verdict?.reasons ?? []).join('; ') || 'see metrics'}`,
         };
         ctx.state.inbox.push(entry);
@@ -1218,10 +1285,20 @@ function milestoneSummaryLine(ctx, milestone, budgetStart) {
   const scopeChanges = states.reduce((n, p) => n + p['retry-history'].filter((r) => r.policy === 'return-to-planner').length, 0);
   const tokens = ctx.state.budget.totals.tokens - budgetStart.tokens;
   const cost = Math.round((ctx.state.budget.totals['cost-usd'] - budgetStart.cost) * 1e8) / 1e8;
+  // P2: interventions counted for THIS milestone only (entry.milestone, or the
+  // entry's packet id resolving to this milestone) — never the whole-task
+  // inbox, which grows with every later escalation.
+  const humanInterventions = ctx.state.inbox.filter((e) => {
+    if (e.milestone === milestone.id) return true;
+    if (e['packet-id']) {
+      try { return milestoneOfPacket(e['packet-id']) === milestone.id; } catch { return false; }
+    }
+    return false;
+  }).length;
   return [
     `  summary: rounds=${attempts}, defects(review-failed)=${reviewFailed}, reopens=${reopens}, ` +
     `scope-changes=${scopeChanges} (return-to-planner revisions), budget=+${tokens} tokens / $${cost}, ` +
-    `human-interventions=${ctx.state.inbox.length}`,
+    `human-interventions=${humanInterventions}`,
     '  improvements (<=3, placeholder — filled by Plan/human): -',
   ].join('\n');
 }
@@ -1234,6 +1311,7 @@ function milestoneSummaryLine(ctx, milestone, budgetStart) {
 export async function runSingleStep(opts) {
   const ctx = createContext(opts);
   const { only, packetId = null } = opts;
+  assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
   writePid(ctx);
   const onSigterm = () => {
     ctx.log('SIGTERM received — killing in-flight children, then exiting');
