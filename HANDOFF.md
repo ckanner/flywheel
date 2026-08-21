@@ -1,6 +1,6 @@
 # Flywheel — 新 Session 交接上下文
 
-> 给接续工作的 agent：你在 `~/Documents/projects/flywheel/`（git 已 init 但**尚无 commit**）。仓库已含完整实现：bin / orchestrator / templates / skills / tests / drills / README（核心 2026-08-20 建成，npm test 166/166 全绿）。
+> 给接续工作的 agent：你在 `~/Documents/projects/flywheel/`（git 已 init，主线 main）。仓库已含完整实现：bin / orchestrator / templates / skills / tests / drills / README / AGENTS.md（核心 2026-08-20 建成，npm test 206/206 全绿）。
 > **第一步先通读 `DESIGN.md`（v0.15，约 500 行）**，它是唯一权威设计文档。§2 的十条设计铁律是最高约束，任何实现决策不得与之冲突。
 
 ## 项目一句话
@@ -25,13 +25,15 @@ Flywheel（飞轮）是一套 loop engineering 系统：外部编排器进程（
 - pi 0.84.0 已装；`OPENCODE_API_KEY`、`KIMI_API_KEY` 已在环境变量中；pi 的 `opencode-go` provider 目录里有 `deepseek-v4-flash` 和 `deepseek-v4-pro`。
 - 编辑格式 A/B 已跑（结果在 DESIGN.md 附录 C）：**Execute Loop 用 pi 原生编辑协议，不引入 hashline**。
 - pi CLI 驱动链路（`pi -p --model opencode-go/deepseek-v4-flash --no-session`）实测可用。
+- **pi 目录 maxTokens 覆盖（2026-08-21 修正，重要）**：OpenCode Go 上游拒绝 pi 目录里 `deepseek-v4-flash/-pro` 的默认 `maxTokens: 384000`（上限 131072），400 错误藏在事件流里且 pi 仍 exit 0。已写用户级 `~/.pi/agent/models.json`，对 opencode-go 与 opencode 两个 provider 的 flash/pro 模型 `modelOverrides.maxTokens = 131072`。**删掉或换机需重建该文件**；pi 目录刷新后若 maxTokens 被修复可移除。
 
 ## 下一步任务（按顺序）
 
 1. ~~实证门槛 §10 第 2 项~~（**已完成 2026-08-18**：Go 透传 `reasoning_effort` 确认，max 档推理量为 low 档 2.4–3.4 倍；Execute/Review/Judge 保留 Go 通道；pi L0 冒烟通过。数据与注意事项见 DESIGN.md 附录 D）。
 2. ~~实证门槛 §10 第 3 项~~（**2026-08-20 用户确认关闭**：kimi code 长驻/1M/max 可用性（含 frontend 路由）经用户确认，不再实测；驱动冒烟已通过，看门狗兜底）。已知限制：kimi stream-json 无 usage 暴露，Plan 的 token 暂不可观测。
 3. ~~实证门槛 §10 第 4 项~~（**已关闭 2026-08-20**：403 演练完成（401/403 分类修正）；v0.15 裁决 DeepSeek 直连不采用、占位链已移除，降级链 = opencode-go → opencode(Zen 按量)；真实 403 报文不再专门验证）。
-4. ~~核心建设~~（**全部完成 2026-08-20**）：`orchestrator/`（Node CLI，bin 名 flywheel）、`templates/`、`skills/`（10 个 SKILL.md）。当日完成：kimi 驱动、Judge、needs-live-credentials、403 演练；**7 块并行设计符合性审计 → v0.14（DC1=B 验收测试由 Plan 编写，DC2–DC6 六项裁决）→ 22 项修复**（缺陷注入 CAS 崩溃、Plan 修订重载、hard 降级断链、评审真 diff、pause 恢复、stop 杀在途工作等）；**外挂模块已建**：Intake（`flywheel intake`）、Garden（`flywheel garden`）。`npm test` **166/166 全绿**（含真实 pi/kimi 冒烟、/tmp 真 git 演练）。已知缺口：kimi stream-json 无 usage（v0.15 接受现状）、L2/L3 隔离环境（接功能任务时建）、局部并行（暂缓）。v0.15 裁决：DeepSeek 直连降级不采用（链 = Go→Zen 按量）、缺陷注入常备无开关、真实 403 不专门验证。§11.2/§11.3/§11.6 均已决；决策原则：质量/效率/速度优先，成本不计入。
+4. ~~核心建设~~（**全部完成 2026-08-20**）：`orchestrator/`（Node CLI，bin 名 flywheel）、`templates/`、`skills/`（10 个 SKILL.md）。当日完成：kimi 驱动、Judge、needs-live-credentials、403 演练；**7 块并行设计符合性审计 → v0.14（DC1=B 验收测试由 Plan 编写，DC2–DC6 六项裁决）→ 22 项修复**（缺陷注入 CAS 崩溃、Plan 修订重载、hard 降级断链、评审真 diff、pause 恢复、stop 杀在途工作等）；**外挂模块已建**：Intake（`flywheel intake`）、Garden（`flywheel garden`）。`npm test` **206/206 全绿**（含真实 pi/kimi 冒烟、/tmp 真 git 演练）。已知缺口：kimi stream-json 无 usage（v0.15 接受现状）、L2/L3 隔离环境（接功能任务时建）、局部并行（暂缓）。v0.15 裁决：DeepSeek 直连降级不采用（链 = Go→Zen 按量）、缺陷注入常备无开关、真实 403 不专门验证。§11.2/§11.3/§11.6 均已决；决策原则：质量/效率/速度优先，成本不计入。
+5. ~~架构评审修复~~（**完成 2026-08-21**）：架构师评审后一轮修复（P1×4 + P2×8 + skill 层 4 项）：单元提交改为**限定范围**（单元 diff − 易变 ledger：metrics.jsonl/orchestrator.log/orchestrator.pid，不再 `git add -A` 卷入用户 WIP 与活日志）；**单实例 pid 护栏**（并发 run 拒绝启动，stale pid 自动清理；CAS 冲突转人话）；**常规 plan 步后重载契约**（与 escalate 路径对称，Planner 新增 packet 自动建 state 条目）；**验收 expect 在契约装载时校验**（坏 expect 不再造成 spawn-崩溃循环）；**inbox 重跑护栏**（已升级 packet 重跑不再 spawn、不重复 inbox 条目；凭证批准文件出现可自动 re-arm）；retro 汇总的 human-interventions 按里程碑计数；config version 校验；skills 加 version、去 whenToUse、锚文件定位仓库根；skill-format-check + CI（GitHub Actions）+ AGENTS.md 仓库宪法；文档漂移修齐（v0.15/206）。
 
 ## 工作规则
 

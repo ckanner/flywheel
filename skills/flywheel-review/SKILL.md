@@ -1,14 +1,16 @@
 ---
 name: flywheel-review
+metadata:
+  version: "1.0.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
-compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
+compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 arguments:
   - name: slug
     description: 任务目录路径，如 docs/<slug>
     required: true
   - name: unit-id
-    description: 可选，指定评审单元（如 M02-T03）；缺省取当前里程碑下一个待评审单元
+    description: 可选，指定评审单元（如 M02-T03）；缺省取当前里程碑第一个未完成 packet（其 L1 未绿时 CLI 会报错，建议明确给 unit id）
     required: false
 ---
 
@@ -26,11 +28,11 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    ```bash
    # 重跑某单元评审
    flywheel run docs/<slug> --only review --unit M02-T03
-   # 或不指定：当前里程碑下一个待评审单元
+   # 或不指定：当前里程碑第一个未完成 packet（L1 未绿会报错——先 execute/verify）
    flywheel run docs/<slug> --only review
    ```
 
-   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js run docs/<slug> --only review [--unit M02-T03]`（<flywheel-repo> = 本 skill 所在仓库根，可由 ${KIMI_SKILL_DIR} 向上两级定位；注意 ${KIMI_SKILL_DIR} 可能指向软链路径本身，建议优先 npm link）。
+   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js run docs/<slug> --only review [--unit M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不可用就问用户。建议优先 npm link）。
 
 3. **翻译结果**：verdict（pass / return / verification-gap）、分数、理由；
    return 时转述具体修改要求、失败证据、涉及位置、完成条件；

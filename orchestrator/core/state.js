@@ -84,6 +84,19 @@ function emptyPacketState(packet) {
   };
 }
 
+/**
+ * Ensure every loaded packet has a state entry. The Plan Loop may ADD packets
+ * mid-run (scope revisions); a packet without a state entry would crash
+ * processPacket. Called after every contract reload and at context creation.
+ */
+export function ensurePacketStates(state, packets) {
+  for (const p of packets) {
+    if (!(p['packet-id'] in state.packets)) {
+      state.packets[p['packet-id']] = emptyPacketState(p);
+    }
+  }
+}
+
 /** Build the initial state.json content for a task (what $flywheel-new emits). */
 export function initState(slug, spec, packets, config) {
   const milestones = {};

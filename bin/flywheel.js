@@ -19,7 +19,7 @@ import { installSkills, repoRoot } from '../orchestrator/modules/install-skills.
 const ONLY_STEPS = ['plan', 'execute', 'review', 'verify'];
 
 function usage() {
-  console.log(`flywheel — Loop Engineering 编排器（DESIGN.md v0.14）
+  console.log(`flywheel — Loop Engineering 编排器（DESIGN.md v0.15）
 
 用法:
   flywheel run <docs/slug> [--only plan|execute|review|verify] [--packet ID|--unit ID] [--pause-before review]
@@ -232,6 +232,11 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err?.code === 'CAS_CONFLICT') {
+    console.error('[flywheel] 状态冲突（CAS）：另一个编排器可能正在写该任务的 state.json。先 `flywheel stop docs/<slug>` 确认停止，再重试。');
+    process.exitCode = 1;
+    return;
+  }
   console.error(`[flywheel] 错误: ${err.message}`);
   process.exitCode = 1;
 });

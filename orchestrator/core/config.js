@@ -50,6 +50,10 @@ export function loadConfig(taskDir, cwd) {
     throw new ConfigError(`${file}: invalid JSON: ${err.message}`);
   }
   const config = deepMerge(CONFIG_DEFAULTS, raw);
+  // §5 version discipline: the config is a contract layer file too (铁律 6).
+  if (raw.version !== undefined && (!Number.isInteger(raw.version) || raw.version < 1)) {
+    throw new ConfigError(`${file}: version must be a positive integer`);
+  }
   const enforce = config.budget.enforce;
   if (!['off', 'soft', 'hard'].includes(enforce)) {
     throw new ConfigError(`${file}: budget.enforce must be off|soft|hard`);

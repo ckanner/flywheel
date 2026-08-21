@@ -1,8 +1,10 @@
 ---
 name: flywheel-run
+metadata:
+  version: "1.0.0"
 description: Start the Flywheel orchestrator on a task (docs/<slug>) as an independent process — triggers ALL loops fully automatically. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start a flywheel task.
-compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 whenToUse: 当用户已人审契约、要全自动启动某个 flywheel 任务（"启动/跑这个任务"）时使用。
+compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 arguments:
   - name: slug
     description: 任务目录路径，如 docs/<slug>
@@ -28,10 +30,11 @@ session is spawned by the orchestrator as a separate harness session.
      > docs/<slug>/orchestrator.log 2>&1 &
    ```
 
-   未 `npm link` 时：`cd <目标仓库根> && nohup node <flywheel-repo>/bin/flywheel.js run docs/<slug> > docs/<slug>/orchestrator.log 2>&1 &`（<flywheel-repo> = 本 skill 所在仓库根，可由 ${KIMI_SKILL_DIR} 向上两级定位；注意 ${KIMI_SKILL_DIR} 可能指向软链路径本身，建议优先 npm link）。
+   未 `npm link` 时：`cd <目标仓库根> && nohup node <flywheel-repo>/bin/flywheel.js run docs/<slug> > docs/<slug>/orchestrator.log 2>&1 &`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不可用就问用户。建议优先 npm link）。
 3. **确认存活**：等 2 秒，检查进程仍在、`docs/<slug>/orchestrator.pid` 已写入、
    `state.json` 的 status 变为 running。拉起失败 → 读
-   `docs/<slug>/orchestrator.log` 报告原因。
+   `docs/<slug>/orchestrator.log` 报告原因。注意：若任务此前已升级到 inbox，
+   run 会立即停在 `escalated`（不重复打扰人）——先让用户处理 inbox 再拉起。
 4. **翻译结果**，告诉用户：编排器已在后台运行（pid）、如何看进度
    （`/skill:flywheel-status docs/<slug>`）、如何停（`/skill:flywheel-stop docs/<slug>`）、
    日志位置。提醒：关掉本会话窗口不影响运行。

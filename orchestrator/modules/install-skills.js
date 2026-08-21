@@ -4,11 +4,15 @@
 // --copy makes a snapshot for distribution. Idempotent: an existing entry is
 // reported and skipped unless --force replaces it.
 
-import { readdirSync, existsSync, lstatSync, mkdirSync, symlinkSync, cpSync, unlinkSync, readFileSync, readlinkSync } from 'node:fs';
+import { readdirSync, existsSync, lstatSync, mkdirSync, symlinkSync, cpSync, unlinkSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
+
+/** Anchor written next to the installed skills so SKILL.md instructions can
+ * locate the flywheel repo root via ${KIMI_SKILL_DIR}/../<this file>. */
+export const ANCHOR_FILE = 'flywheel-home.txt';
 export function repoRoot() {
   return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
@@ -55,6 +59,11 @@ export function installSkills({ force = false, copy = false, project = null, hom
   const skillsDir = join(root, 'skills');
   const targetBase = project ? join(project, '.agents', 'skills') : join(homeDir, '.agents', 'skills');
   mkdirSync(targetBase, { recursive: true });
+  // Anchor file: skills locate the flywheel repo root through
+  // "${KIMI_SKILL_DIR}/../flywheel-home.txt" regardless of symlink
+  // resolution — walking up two levels is unreliable under symlinks
+  // (the install point is the stable reference, not the link target).
+  writeFileSync(join(targetBase, ANCHOR_FILE), `${root}\n`, 'utf8');
 
   const results = [];
   for (const name of listRepoSkills(root)) {

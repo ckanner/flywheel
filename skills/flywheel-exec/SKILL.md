@@ -1,8 +1,10 @@
 ---
 name: flywheel-exec
+metadata:
+  version: "1.0.0"
 description: Trigger only the Execute Loop for a Flywheel task, optionally for one packet (single state transition). Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
-compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
+compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI.
 arguments:
   - name: slug
     description: 任务目录路径，如 docs/<slug>
@@ -29,7 +31,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run docs/<slug> --only execute
    ```
 
-   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js run docs/<slug> --only execute [--packet M02-T03]`（<flywheel-repo> = 本 skill 所在仓库根，可由 ${KIMI_SKILL_DIR} 向上两级定位；注意 ${KIMI_SKILL_DIR} 可能指向软链路径本身，建议优先 npm link）。
+   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js run docs/<slug> --only execute [--packet M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不可用就问用户。建议优先 npm link）。
 
 3. **翻译结果**：执行是否通过出口契约（进程终态/stderr/交付物三项独立判定）、
    done-report 是否合法、token 与成本增量、state 中该 packet 的新状态

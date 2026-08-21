@@ -1,8 +1,10 @@
 ---
 name: flywheel-new
+metadata:
+  version: "1.0.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + state.json), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
-compatibility: Requires write access + git in the target repository; generated contracts follow the schemas in the flywheel repo templates/.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
+compatibility: Requires write access + git in the target repository; generated contracts follow the schemas in the flywheel repo templates/.
 arguments:
   - name: requirement
     description: 一句话需求描述（自然语言），或 triage-inbox 中 approved 候选的指纹/标题
@@ -31,7 +33,7 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
 2. **问意图**：只问意图类问题（范围、取舍、优先级、验收标准的主观部分）。
    一次问清，不要挤牙膏。
 3. **生成契约**：在目标仓库创建 `docs/<slug>/`：
-   - `spec.md` — 用 `flywheel 仓库/templates/spec.example.md` 的格式（flywheel 仓库根可由 ${KIMI_SKILL_DIR} 向上两级定位）：编号需求
+   - `spec.md` — 用 `flywheel 仓库/templates/spec.example.md` 的格式（flywheel 仓库根定位：`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt`，或 skill 直接来自仓库内时向上两级）：编号需求
      R-01…R-n（每项可独立验证）+ 需求→里程碑映射 + 里程碑表。
    - `task-packet-<id>.md` — 每个执行单元一个，frontmatter 遵守
      `templates/task-packet.schema.json`：packet-id（M<NN>-T<NN>）、
@@ -44,6 +46,9 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      （revision 0，status pending，全部 packet pending）。
    - `flywheel.config.json` — 从 `templates/flywheel.config.example.json`
      复制并按需调整。
+   - `.gitignore` — 任务目录级，内容三行：`orchestrator.log`、
+     `orchestrator.pid`、`metrics.jsonl`（运行时易变产物；state.json/
+     retro.md/inbox.md/reports/ 属于契约层，**不要**忽略）。
    - **随 packet 提供验收测试**：executor 不写/不改任何测试文件，
      验收测试由你（任务生成者，之后是 Plan Loop）编写并随契约提交。
 4. **提交契约文件（硬规则）**：在目标仓库执行
