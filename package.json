@@ -1,13 +1,14 @@
 {
   "name": "flywheel",
   "version": "0.1.0",
-  "description": "Flywheel — Loop Engineering system: a deterministic orchestrator driving Plan/Execute/Review agent loops (DESIGN.md v0.11)",
+  "description": "Flywheel — Loop Engineering system: a deterministic orchestrator driving Plan/Execute/Review agent loops (DESIGN.md v0.15)",
   "type": "module",
   "bin": {
     "flywheel": "bin/flywheel.js"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "skill-format-check": "node scripts/skill-format-check.js"
   },
   "engines": {
     "node": ">=20"

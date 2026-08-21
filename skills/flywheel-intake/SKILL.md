@@ -1,8 +1,8 @@
 ---
 name: flywheel-intake
+version: 1.0.0
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
 compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and pi >=0.84 (triage runs V4 Flash); github-issues sources also need the gh CLI.
-whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
 arguments:
   - name: slug
     description: 任务目录路径，如 docs/<slug>
@@ -31,7 +31,7 @@ here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求�
    flywheel intake docs/<slug> --source ci-failures
    ```
 
-   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js intake docs/<slug> [--source ci-failures]`（<flywheel-repo> = 本 skill 所在仓库根，可由 ${KIMI_SKILL_DIR} 向上两级定位；注意 ${KIMI_SKILL_DIR} 可能指向软链路径本身，建议优先 npm link）。
+   未 `npm link` 时：`node <flywheel-repo>/bin/flywheel.js intake docs/<slug> [--source ci-failures]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不可用就问用户。建议优先 npm link）。
 
 3. **翻译结果**，用人话讲：
    - 扫到多少候选、多少是新的、多少因指纹重复被跳过；
