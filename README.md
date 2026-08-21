@@ -6,7 +6,7 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.14）。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
+权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.15）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
 
 ## 安装
 
@@ -41,7 +41,7 @@ flywheel install-skills --copy
 flywheel install-skills --project /path/to/project
 ```
 
-装完后在 kimi code 或 pi 里用 `/skill:<name>` 调用，例如 `/skill:flywheel-run`。
+装完后在 kimi code 或 pi 里用 `/skill:<name>` 调用，例如 `/skill:flywheel-run`。安装时会在 skills 安装点写入锚文件 `flywheel-home.txt`，skill 用它定位本仓库根（软链/复制安装都有效）。
 
 ## skills 一览（都只是按钮，不含 loop 逻辑）
 
@@ -123,10 +123,11 @@ orchestrator.pid / orchestrator.log   # 运行中的进程文件与 nohup 日志
 npm test          # 全部：单元 + mock 端到端 + 真实 pi/kimi 冒烟（无凭证时自动跳过）
 ```
 
-当前 166 个测试。真实冒烟需要本机 pi/kimi 与对应环境变量；mock 驱动覆盖全部编排逻辑，可在无凭证环境完整运行。
+当前 206 个测试。真实冒烟需要本机 pi/kimi 与对应环境变量；mock 驱动覆盖全部编排逻辑，可在无凭证环境完整运行。另有 `npm run skill-format-check` 校验 skills frontmatter（进 CI）。
 
 ## 文档入口
 
 - [DESIGN.md](DESIGN.md) — 权威设计文档（§2 设计铁律是最高约束）
+- [AGENTS.md](AGENTS.md) — 仓库工作宪法（构建/闸门/硬契约）
 - [HANDOFF.md](HANDOFF.md) — 新会话交接上下文
 - [drills/](drills/README.md) — 实证演练记录与环境事实基线
