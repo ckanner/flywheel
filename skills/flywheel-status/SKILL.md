@@ -11,7 +11,7 @@ arguments:
 
 # flywheel-status — 看进度（只读）
 
-Button only (DESIGN.md §13): read state + translate. Writes nothing.
+Button only: read state + translate. Writes nothing.
 
 ## 步骤
 

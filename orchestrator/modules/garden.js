@@ -18,7 +18,9 @@ export function extractFailurePatterns(retroContent, { minCount = 2 } = {}) {
   const buckets = new Map();
   for (const rawLine of retroContent.split('\n')) {
     const line = rawLine.trim();
-    if (!/INBOX|failed|escalated|spin/i.test(line)) continue;
+    // Failure evidence only: "failed=0" success lines and summary lines like
+    // "defects(review-failed)=0" are NOT failures (P1-14, user-verified).
+    if (!/failed=[1-9]\d*\b|INBOX|escalated/.test(line)) continue;
     const normalized = line
       .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '')
       .replace(/M\d{2,}-T\d{2,}/g, '<packet>')

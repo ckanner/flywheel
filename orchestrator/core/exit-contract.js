@@ -25,10 +25,11 @@ export function evaluateExitContract({ result, deliverables = [] }) {
   const stderrOk = !stderrError;
   if (!stderrOk) reasons.push(`stderr: looks like ${stderrError}`);
 
-  // 3. Deliverables exist and are valid
+  // 3. Deliverables exist and are valid (an EMPTY deliverable list is a
+  // failure too — a contract with nothing to check checks nothing).
   const missing = deliverables.filter((d) => !d.exists);
   const invalid = deliverables.filter((d) => d.exists && !d.valid);
-  const deliverablesOk = missing.length === 0 && invalid.length === 0;
+  const deliverablesOk = deliverables.length > 0 && missing.length === 0 && invalid.length === 0;
   for (const d of missing) reasons.push(`deliverable missing: ${d.path}`);
   for (const d of invalid) reasons.push(`deliverable invalid: ${d.path} (${d.detail || 'schema'})`);
 

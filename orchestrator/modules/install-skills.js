@@ -4,7 +4,7 @@
 // --copy makes a snapshot for distribution. Idempotent: an existing entry is
 // reported and skipped unless --force replaces it.
 
-import { readdirSync, existsSync, lstatSync, mkdirSync, symlinkSync, cpSync, rmSync, readFileSync } from 'node:fs';
+import { readdirSync, existsSync, lstatSync, mkdirSync, symlinkSync, cpSync, unlinkSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -65,11 +65,30 @@ export function installSkills({ force = false, copy = false, project = null, hom
       continue;
     }
     if (entryExists(dest)) {
-      if (!force) {
-        results.push({ name, dest, action: 'skipped', reason: 'already installed' });
+      const lst = lstatSync(dest);
+      if (lst.isSymbolicLink()) {
+        const target = readlinkSync(dest);
+        if (!force) {
+          // Report stale links honestly instead of "already installed" (P1-11).
+          if (target !== src || !existsSync(target)) {
+            results.push({ name, dest, action: 'stale', reason: `symlink -> ${target} (expected ${src}; re-run with --force)` });
+            continue;
+          }
+          results.push({ name, dest, action: 'skipped', reason: 'already installed' });
+          continue;
+        }
+        unlinkSync(dest); // symlink: remove the link itself, never the target
+      } else if (lst.isFile()) {
+        if (!force) {
+          results.push({ name, dest, action: 'skipped', reason: 'already installed (file)' });
+          continue;
+        }
+        unlinkSync(dest); // plain file: safe to remove
+      } else {
+        // A real directory is NEVER auto-deleted, even with --force (P1-11).
+        results.push({ name, dest, action: 'error', reason: 'a real directory already exists here — refusing to remove it; handle it manually' });
         continue;
       }
-      rmSync(dest, { recursive: true, force: true });
     }
     if (copy) {
       cpSync(src, dest, { recursive: true });

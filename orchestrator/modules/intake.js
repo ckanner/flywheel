@@ -16,7 +16,8 @@ import { gateEnv } from '../core/verify.js';
 const defaultExec = promisify(execFile);
 
 export function fingerprint(sourceName, title) {
-  return createHash('sha256').update(`${sourceName}${title}`).digest('hex').slice(0, 12);
+  // "::" separator: no (source, title) pair can collide by concatenation.
+  return createHash('sha256').update(`${sourceName}::${title}`).digest('hex').slice(0, 12);
 }
 
 /** Fetch candidates from one configured source. `exec` is injectable for tests. */
@@ -29,7 +30,9 @@ export async function fetchSourceCandidates(source, { cwd, exec = defaultExec } 
     const { stdout } = await exec('gh', args, { cwd, env: gateEnv(), maxBuffer: 4 * 1024 * 1024 });
     const issues = JSON.parse(stdout);
     return issues.map((i) => ({
-      title: i.title,
+      // Whitespace-fold title/summary: a raw newline could smuggle an
+      // "- approval: approved" line into the inbox (P1-9, user-verified).
+      title: String(i.title ?? '').replace(/\s+/g, ' ').trim(),
       summary: String(i.body ?? '').replace(/\s+/g, ' ').slice(0, 300),
       url: i.url,
       source: source.name,
@@ -46,12 +49,18 @@ export async function fetchSourceCandidates(source, { cwd, exec = defaultExec } 
         try {
           const obj = JSON.parse(trimmed);
           if (obj.title) {
-            candidates.push({ title: String(obj.title), summary: String(obj.summary ?? ''), url: obj.url ?? null, source: source.name, sourceType: source.type });
+            candidates.push({
+              title: String(obj.title).replace(/\s+/g, ' ').trim(),
+              summary: String(obj.summary ?? '').replace(/\s+/g, ' ').trim(),
+              url: obj.url ?? null,
+              source: source.name,
+              sourceType: source.type,
+            });
             continue;
           }
         } catch { /* fall through to plain-line */ }
       }
-      candidates.push({ title: trimmed, summary: '', url: null, source: source.name, sourceType: source.type });
+      candidates.push({ title: trimmed.replace(/\s+/g, ' '), summary: '', url: null, source: source.name, sourceType: source.type });
     }
     return candidates;
   }
@@ -90,7 +99,7 @@ function candidateSection(candidate, fp) {
     `- url: ${candidate.url ?? '—'}`,
     `- summary: ${candidate.summary || '—'}`,
     `- triage: pending`,
-    `- approval: pending  (human: change to "approved" to pick this up for $flywheel-new)`,
+    `- approval: pending  (human: change to "approved" to pick this up for /skill:flywheel-new)`,
     `<!-- fp:${fp} -->`,
     '',
   ].join('\n');
@@ -98,7 +107,9 @@ function candidateSection(candidate, fp) {
 
 function writeTriageVerdict(content, fp, verdict) {
   const blockRe = new RegExp(`(## ${fp} —[\\s\\S]*?)- triage: pending`, 'm');
-  return content.replace(blockRe, `$1- triage: ${verdict.verdict} — ${verdict.reason}`);
+  // Function-form replacement: an LLM reason containing $& or $1 must never
+  // be interpreted as a replacement pattern (P1-9, user-verified).
+  return content.replace(blockRe, (_match, head) => `${head}- triage: ${verdict.verdict} — ${verdict.reason}`);
 }
 
 /** Candidates the human marked approved (input for $flywheel-new; §4.5 人确认). */
@@ -167,8 +178,9 @@ export async function runIntake({ taskDir, cwd = process.cwd(), config, drivers,
   for (const c of all) {
     const fp = fingerprint(c.source, c.title);
     if (knownFps.has(fp)) {
-      duplicates += 1;
+      duplicates += 1; // covers both inbox-known AND within-batch repeats (P1-9)
     } else {
+      knownFps.add(fp);
       fresh.push({ ...c, fp });
     }
   }

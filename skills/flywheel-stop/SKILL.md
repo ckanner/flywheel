@@ -11,7 +11,7 @@ arguments:
 
 # flywheel-stop — 停止编排器
 
-Button only (DESIGN.md §13): validate + invoke CLI + translate. No loop logic here.
+Button only: validate + invoke CLI + translate. No loop logic here.
 
 ## 步骤
 

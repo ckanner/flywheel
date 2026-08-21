@@ -33,11 +33,22 @@ test('classifyError: status-code patterns are token-boundaried (no "500ms" kills
   assert.equal(classifyError({ exitCode: 0, stderr: 'done in 500ms' }), null);
   assert.equal(classifyError({ exitCode: 0, stderr: 'compiled in 403ms, 4291 files' }), null);
   assert.equal(classifyError({ exitCode: 1, stderr: 'listening on port 4291, then crashed' }), 'TRANSPORT'); // stays "unknown"
+  // P0-6 number-internal forms (user-verified):
+  assert.equal(classifyError({ exitCode: 0, stderr: 'processed 1,500 rows' }), null);
+  assert.equal(classifyError({ exitCode: 0, stderr: 'latency p50 429.5ms' }), null);
   // Real code shapes still classify.
   assert.equal(classifyError({ exitCode: 1, stderr: 'HTTP 500 from upstream' }), 'SERVER');
   assert.equal(classifyError({ exitCode: 1, stderr: 'Error: HTTP 429 too many requests' }), 'RATE_LIMIT');
   assert.equal(classifyError({ exitCode: 1, stderr: '401: {"type":"AuthError"}' }), 'AUTH');
   assert.equal(classifyError({ exitCode: 1, stderr: 'HTTP 403 Forbidden' }), 'QUOTA');
+});
+
+test('classifyError: TIMEOUT patterns respect word boundaries and negation (P0-6)', () => {
+  assert.equal(classifyError({ exitCode: 0, stderr: 'called setTimeout(handle, 100)' }), null);
+  assert.equal(classifyError({ exitCode: 0, stderr: 'did not time out; all good' }), null);
+  assert.equal(classifyError({ exitCode: 0, stderr: "didn't time out" }), null);
+  assert.equal(classifyError({ exitCode: 1, stderr: 'request timed out after 30s' }), 'TIMEOUT');
+  assert.equal(classifyError({ exitCode: 1, stderr: 'gateway timeout exceeded' }), 'TIMEOUT');
 });
 
 test('classifyError: clean exit with clean stderr is not an error', () => {
@@ -84,10 +95,12 @@ test('computeBackoff: jitter stays within +/-10%', () => {
   }
 });
 
-test('computeBackoff: Retry-After wins when larger', () => {
+test('computeBackoff: Retry-After wins when larger but is CAPPED at maxDelayMs (P0-5)', () => {
   const random = () => 0.5;
   assert.equal(computeBackoff(0, { retryAfterMs: 3000, random }), 3000);
   assert.equal(computeBackoff(3, { retryAfterMs: 1000, random }), 4000); // computed wins when larger
+  // Untrusted provider hint must never park the loop for hours.
+  assert.equal(computeBackoff(0, { retryAfterMs: 24 * 3600 * 1000, random }), 10_000);
 });
 
 test('extractRetryAfterMs parses header-style hints', () => {

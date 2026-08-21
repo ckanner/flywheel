@@ -36,15 +36,18 @@ export function nextChannel(config, channel) {
 /**
  * Model + harness to use when falling back to another channel for a role.
  * A channel may imply a harness switch (e.g. kimi-subscription -> kimi-coding
- * moves Plan from the kimi CLI to pi). Falls back to the primary binding's
- * model when the channel declares no explicit mapping.
- * @returns {{model: string, harness: string|null}}
+ * moves Plan from the kimi CLI to pi). Returns null when the channel declares
+ * NO explicit mapping for the role — falling back to the primary binding's
+ * model would assemble an invalid cross-provider combo (P1-12①), so the
+ * chain ends there instead.
+ * @returns {{model: string, harness: string|null}|null}
  */
 export function modelForChannel(config, channel, role, route = null) {
   const key = role === 'execute' ? (route ?? 'default') : role;
   const mapped = config.channels?.[channel]?.models?.[key];
+  if (!mapped) return null;
   return {
-    model: mapped ?? resolveBinding(config, role, route).model,
+    model: mapped,
     harness: config.channels?.[channel]?.harness ?? null,
   };
 }
@@ -52,4 +55,27 @@ export function modelForChannel(config, channel, role, route = null) {
 /** Env var name that must hold the channel's API key, or null (subscription login). */
 export function envKeyForChannel(config, channel) {
   return config.channels?.[channel]?.['env-key'] ?? null;
+}
+
+/**
+ * The channel declares an env-key that is unset in the environment, or null
+ * when it is set / the channel needs none (kimi-subscription OAuth).
+ * Callers must fail loud instead of spawning keyless (P1-12②).
+ */
+export function missingChannelEnv(config, channel) {
+  const envKey = envKeyForChannel(config, channel);
+  return envKey && !process.env[envKey] ? envKey : null;
+}
+
+/**
+ * P0-7 (user-verified): AUTH never falls back for key-based channels (a bad
+ * key is broken config). But a subscription/OAuth channel (env-key: null)
+ * whose login died SHOULD fall back when the next channel has a key — that is
+ * exactly what the pay-as-you-go fallback is for.
+ */
+export function authFallbackAllowed(config, channel, code) {
+  if (code !== 'AUTH') return false;
+  if (envKeyForChannel(config, channel) !== null) return false;
+  const next = nextChannel(config, channel);
+  return next !== null && envKeyForChannel(config, next) !== null;
 }

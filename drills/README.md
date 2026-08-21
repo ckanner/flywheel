@@ -25,4 +25,6 @@ DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。每个演�
   `KIMI_MODEL_THINKING_EFFORT=max`（官方，kimi provider 专用，
   优先级高于 config.toml，不写用户全局配置）。
 - `NODE_TEST_CONTEXT` 会沿 env 继承：嵌套 `node --test` 在 child 模式下
-  失败也退出 0。编排器跑验收命令前必须 scrub（verify.js `gateEnv`）。
+  失败也退出 0。编排器跑验收命令前必须 scrub（`core/child-env.js`
+  `gateEnv`；且 gate 环境整体已是白名单——任何 API key 都不会进入
+  L1/L2/L3 命令环境，P0-4）。

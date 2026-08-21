@@ -30,10 +30,10 @@ export function shouldFallback(code) {
   return FALLBACK_CODES.includes(code);
 }
 
-// Numeric status codes are matched only at token boundaries (start or a
-// non-alphanumeric, followed by a non-alphanumeric or end): "500ms" or
-// "port 4291" must never read as HTTP 500/429 and kill a healthy unit.
-const statusCode = (digits) => new RegExp(`(^|[^0-9A-Za-z])${digits}(?![0-9A-Za-z])`, 'i');
+// Numeric status codes are matched only at token boundaries, excluding
+// number-internal forms: "500ms", "1,500", "429.5", "port 4291" must never
+// read as HTTP 500/429 and kill a healthy unit (P0-6 — user-verified).
+const statusCode = (digits) => new RegExp(`(^|[^0-9A-Za-z.,])${digits}(?![0-9A-Za-z.,])`, 'i');
 
 const PATTERNS = [
   // Order matters: first match wins. More specific patterns first.
@@ -44,7 +44,9 @@ const PATTERNS = [
   ['AUTH', new RegExp(`${statusCode('401').source}|unauthorized|invalid api key|authentication failed|autherror`, 'i')],
   ['QUOTA', new RegExp(`${statusCode('403').source}|forbidden|quota|insufficient.{0,20}(balance|credit|fund|quota)|payment required|billing`, 'i')],
   ['SERVER', new RegExp(`${statusCode('5\\d\\d').source}|server error|internal error|bad gateway|service unavailable|overloaded`, 'i')],
-  ['TIMEOUT', /timed? ?out|timeout|deadline exceeded/i],
+  // Word-bounded so "setTimeout()" never classifies; negation lookbehind so
+  // "did not time out" stays a success (P0-6).
+  ['TIMEOUT', /(?<!\bnot\s)(?<!n't\s)\btimed?\s?out\b|\btimeout\b|\bdeadline exceeded\b/i],
   ['TRANSPORT', /econnrefused|econnreset|enotfound|eai_again|socket hang up|network error|fetch failed|connection refused|dns/i],
   ['INVALID_REQUEST', new RegExp(`${statusCode('400').source}|invalid request|bad request|malformed`, 'i')],
 ];
@@ -77,7 +79,8 @@ export function classifyError({ exitCode = null, signal = null, timedOut = false
   return null;
 }
 
-/** Extract a Retry-After hint (seconds or HTTP date) from provider output. */
+/** Extract a Retry-After hint (integer SECONDS only, header-style; the
+ * HTTP-date form is NOT parsed and yields 0). */
 export function extractRetryAfterMs(text = '') {
   const m = /retry-after:\s*(\d+)/i.exec(text);
   if (m) return parseInt(m[1], 10) * 1000;
@@ -85,15 +88,17 @@ export function extractRetryAfterMs(text = '') {
 }
 
 /**
- * Exponential backoff with jitter (DESIGN.md §6: 500ms -> 10s, +/-10% jitter,
- * honoring the provider's Retry-After).
+ * Exponential backoff with jitter (DESIGN.md §6: 500ms -> 10s, +/-10% jitter).
+ * The provider's Retry-After is honored but CAPPED at maxDelayMs — it comes
+ * from untrusted provider output and must never park the loop for hours
+ * (P0-5, user-verified).
  *
  * @param {number} attempt zero-based retry attempt index
  * @param {object} opts
  * @param {number} [opts.baseDelayMs=500]
  * @param {number} [opts.maxDelayMs=10000]
  * @param {number} [opts.jitter=0.1]
- * @param {number} [opts.retryAfterMs=0] provider hint; wins when larger
+ * @param {number} [opts.retryAfterMs=0] provider hint; wins when larger, capped
  * @param {() => number} [opts.random] injectable for deterministic tests
  */
 export function computeBackoff(attempt, {
@@ -106,5 +111,5 @@ export function computeBackoff(attempt, {
   const exponential = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
   const spread = exponential * jitter;
   const jittered = exponential - spread + random() * 2 * spread;
-  return Math.round(Math.max(jittered, retryAfterMs));
+  return Math.round(Math.min(Math.max(jittered, retryAfterMs), maxDelayMs));
 }

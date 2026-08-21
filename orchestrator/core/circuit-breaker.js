@@ -71,7 +71,13 @@ export const SPIN_JACCARD_THRESHOLD = 0.7;
  */
 export function detectSpin(previousSignature, currentSignature, consecutiveFailures) {
   if (consecutiveFailures < 2 || previousSignature === null) return false;
-  const prev = JSON.parse(previousSignature);
-  const curr = JSON.parse(currentSignature);
+  let prev;
+  let curr;
+  try {
+    prev = JSON.parse(previousSignature);
+    curr = JSON.parse(currentSignature);
+  } catch {
+    return false; // a corrupted stored signature never blocks progress
+  }
   return prev.key === curr.key && jaccard(prev.files, curr.files) >= SPIN_JACCARD_THRESHOLD;
 }

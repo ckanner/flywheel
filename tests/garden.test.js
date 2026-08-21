@@ -29,6 +29,22 @@ test('extractFailurePatterns: normalized patterns repeating >= 2 times', () => {
   assert.equal(extractFailurePatterns('- all good here\n').length, 0);
 });
 
+test('extractFailurePatterns: success lines and summary lines are NOT failure evidence (P1-14)', () => {
+  const retro = [
+    '- 2026-08-19T01:00:00Z packet M01-T01: completed (attempts=1, failed=0, commit abc12345)',
+    '- 2026-08-19T02:00:00Z packet M01-T02: completed (attempts=2, failed=1, commit abc12345)', // failed=1 IS failure evidence
+    '- 2026-08-19T03:00:00Z packet M01-T03: completed (attempts=2, failed=1, commit abc12345)',
+    '  summary: rounds=4, defects(review-failed)=1, reopens=0, scope-changes=0 (return-to-planner revisions), budget=+100 tokens / $0.01, human-interventions=0',
+  ].join('\n');
+  const patterns = extractFailurePatterns(retro);
+  assert.equal(patterns.length, 1);
+  assert.equal(patterns[0].count, 2); // the two failed=1 lines
+  assert.match(patterns[0].pattern, /failed=<n>/);
+  // "failed=0" success lines and "defects(review-failed)=N" summary lines excluded
+  assert.ok(!patterns[0].lines.some((l) => l.includes('failed=0')));
+  assert.ok(!patterns[0].lines.some((l) => l.includes('summary:')));
+});
+
 test('validateGardenProposals: evidence citation is mandatory', () => {
   const good = [
     '## GP-01 — Harden retries',

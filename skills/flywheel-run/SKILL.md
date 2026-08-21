@@ -11,7 +11,7 @@ arguments:
 
 # flywheel-run — 拉起编排器（触发全部 loop）
 
-This skill is only a button (DESIGN.md §13): validate params, launch the
+This skill is only a button: validate params, launch the
 orchestrator as an **independent process**, confirm it is alive, report the
 status entry point. You do NOT do any loop work yourself — the real Plan
 session is spawned by the orchestrator as a separate harness session.

@@ -6,9 +6,10 @@
 // before a task exists still append metrics.jsonl.
 
 import { join } from 'node:path';
-import { appendMetrics, promptHash, estimateCostUsd } from '../core/metrics.js';
+import { existsSync } from 'node:fs';
+import { appendMetrics, promptHash, estimateCostUsd, priceForModel } from '../core/metrics.js';
 import { classifyError, isRetryable, shouldFallback, computeBackoff, extractRetryAfterMs } from '../core/errors.js';
-import { nextChannel, modelForChannel, envKeyForChannel } from '../core/fallback.js';
+import { nextChannel, modelForChannel, envKeyForChannel, missingChannelEnv, authFallbackAllowed } from '../core/fallback.js';
 import { stateExists, loadState, saveState, recordUsage } from '../core/state.js';
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -47,8 +48,7 @@ export function moduleApiKeysFor(config, channel) {
 
 function recordModuleMetrics(mctx, { role, model, harness, channel, prompt, result, errorCode }) {
   const usage = result.usage ?? null;
-  const shortModel = (model ?? '').split('/').pop();
-  const costUsd = result.costUsd ?? estimateCostUsd(usage, mctx.config.pricing?.[shortModel] ?? null);
+  const costUsd = result.costUsd ?? estimateCostUsd(usage, priceForModel(mctx.config.pricing, model));
   appendMetrics(mctx.metricsFile, {
     role,
     'packet-id': null,
@@ -67,7 +67,11 @@ function recordModuleMetrics(mctx, { role, model, harness, channel, prompt, resu
     attempt: null,
   });
   // Token/cost recording never turns off — land it in state.json when present.
-  if (usage && stateExists(mctx.taskDir)) {
+  // But NEVER while the orchestrator is running (pid file): a module writing
+  // state mid-run would bump the revision and crash the run's next CAS save
+  // (P0-10, user-verified). Metrics.jsonl above is unaffected (append-only).
+  const orchestratorRunning = existsSync(join(mctx.taskDir, 'orchestrator.pid'));
+  if (usage && stateExists(mctx.taskDir) && !orchestratorRunning) {
     try {
       const state = loadState(mctx.taskDir);
       recordUsage(state, usage, { provider: result.provider ?? channel ?? 'unknown', costUsd });
@@ -75,6 +79,8 @@ function recordModuleMetrics(mctx, { role, model, harness, channel, prompt, resu
     } catch (err) {
       mctx.log(`budget recording skipped: ${err.message}`);
     }
+  } else if (usage && orchestratorRunning) {
+    mctx.log('orchestrator is running — state.json budget write skipped (metrics.jsonl still recorded)');
   }
 }
 
@@ -93,6 +99,12 @@ export async function callAgent(mctx, { role, binding, prompt, sessionId = null 
   let lastCode = 'TRANSPORT';
 
   for (let t = 0; t <= maxTransport; t++) {
+    // Fail loud instead of spawning keyless into pi's auth.json trap (P1-12②).
+    const missingKey = (mctx.config.drivers?.[role] ?? 'real') === 'mock' ? null : missingChannelEnv(mctx.config, channel);
+    if (missingKey) {
+      mctx.log(`${role}: fail-loud — channel ${channel} requires env ${missingKey} (not set)`);
+      return { ok: false, text: '', errorCode: 'AUTH', channel, model: currentBinding.model };
+    }
     visitedChannels.add(channel);
     const result = await mctx.drivers[role][role]({
       taskDir: mctx.taskDir,
@@ -120,15 +132,18 @@ export async function callAgent(mctx, { role, binding, prompt, sessionId = null 
 
     mctx.log(`${role} transport ${t}: ${code}`);
 
-    if (shouldFallback(code)) {
+    if (shouldFallback(code) || authFallbackAllowed(mctx.config, channel, code)) {
       const next = nextChannel(mctx.config, channel);
-      if (next && !visitedChannels.has(next)) {
+      const mapped = next ? modelForChannel(mctx.config, next, role) : null;
+      if (next && !visitedChannels.has(next) && mapped) {
         mctx.log(`${role} fallback: ${channel} -> ${next} (${code})`);
-        const mapped = modelForChannel(mctx.config, next, role);
         channel = next;
         currentBinding = { ...binding, model: mapped.model, harness: mapped.harness ?? binding.harness };
         t -= 1; // fallback does not consume a transport retry
         continue;
+      }
+      if (next && !mapped) {
+        mctx.log(`${role} fallback chain ends: no model mapping for ${role} on ${next} (P1-12①)`);
       }
     }
     if (!isRetryable(code)) {

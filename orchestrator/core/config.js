@@ -54,5 +54,13 @@ export function loadConfig(taskDir, cwd) {
   if (!['off', 'soft', 'hard'].includes(enforce)) {
     throw new ConfigError(`${file}: budget.enforce must be off|soft|hard`);
   }
+  const dailyLimit = config.budget['daily-token-limit'];
+  if (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit <= 0)) {
+    throw new ConfigError(`${file}: budget.daily-token-limit must be a positive integer or null`);
+  }
+  const everyN = config['defect-injection']?.['every-n-units'];
+  if (everyN !== undefined && (!Number.isInteger(everyN) || everyN < 1)) {
+    throw new ConfigError(`${file}: defect-injection.every-n-units must be an integer >= 1`);
+  }
   return { ...config, _file: file };
 }

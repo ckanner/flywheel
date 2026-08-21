@@ -167,9 +167,10 @@ export function runWithWatchdog(command, args = [], opts = {}) {
       finish({ spawnError, stdout, stderr, truncated });
     });
 
-    // Await quiescence: we resolve only from 'exit' (or 'error'), i.e. after the
-    // process really died — never right after sending the kill signal.
-    child.on('exit', (exitCode, signal) => {
+    // Await quiescence: resolve on 'close' (not 'exit') — 'exit' can fire while
+    // stdio still has buffered output; 'close' guarantees the streams flushed,
+    // so a trailing agent_settled/errorMessage event can't be lost.
+    child.on('close', (exitCode, signal) => {
       if (killSent) {
         // Best-effort last sweep: the group leader is dead, but a grandchild
         // that trapped SIGTERM may linger — never leave an orphan behind.

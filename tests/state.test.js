@@ -116,3 +116,14 @@ test('state: recordUsage accumulates totals, daily bucket, and per-provider cach
   assert.equal(bp['hit-rate'], 0.5); // 100 cacheRead / 200 input
   assert.equal(state.budget.cache['hit-rate'], 0.5);
 });
+
+test('state: daily ledger is pruned to the last 31 days (P2)', () => {
+  const state = initState('x', { milestones: [{ id: 'M-01', title: 'm' }] }, []);
+  for (let i = 1; i <= 40; i++) {
+    recordUsage(state, { input: 1, output: 1, totalTokens: 2 }, { day: `2026-06-${String(i).padStart(2, '0')}` });
+  }
+  const keys = Object.keys(state.budget.daily);
+  assert.ok(keys.length <= 31, `got ${keys.length}`);
+  assert.ok(keys.includes('2026-06-40')); // newest kept
+  assert.ok(!keys.includes('2026-06-01')); // oldest pruned
+});

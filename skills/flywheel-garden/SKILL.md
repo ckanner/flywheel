@@ -9,10 +9,10 @@ arguments:
     required: true
 ---
 
-# flywheel-garden — 知识资产维护提案（外挂模块，§4.6）
+# flywheel-garden — 知识资产维护提案（外挂模块）
 
-Button only (DESIGN.md §13): validate + invoke CLI + translate. No loop logic
-here。Garden **只产提案，绝不自动应用**——改的是 loop 自己的知识资产，
+Button only: validate + invoke CLI + translate. No loop logic
+here. Garden **只产提案，绝不自动应用**——改的是 loop 自己的知识资产，
 应用权在人。
 
 ## 步骤

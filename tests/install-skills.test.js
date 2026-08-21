@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readlinkSync, lstatSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readlinkSync, lstatSync, existsSync, symlinkSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installSkills, listRepoSkills, skillFrontmatterOk, repoRoot } from '../orchestrator/modules/install-skills.js';
@@ -54,20 +54,28 @@ test('install-skills: --copy makes a real directory snapshot', () => {
   assert.match(readFileSync(join(dest, 'SKILL.md'), 'utf8'), /name: alpha-skill/);
 });
 
-test('install-skills: --force replaces an existing entry', () => {
+test('install-skills: --force replaces a stale symlink but NEVER deletes a real directory (P1-11)', () => {
   const { home, root } = fakeHome();
   const dest = join(home, '.agents', 'skills', 'alpha-skill');
+
+  // stale symlink (points elsewhere): reported stale without --force
+  mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
+  symlinkSync(join(root, 'skills', 'beta-skill'), dest, 'dir');
+  let r = installSkills({ homeDir: home, root });
+  assert.equal(r.results.find((x) => x.name === 'alpha-skill').action, 'stale');
+  // --force replaces the stale symlink
+  r = installSkills({ homeDir: home, root, force: true });
+  assert.equal(r.results.find((x) => x.name === 'alpha-skill').action, 'linked');
+  assert.equal(readlinkSync(dest), join(root, 'skills', 'alpha-skill'));
+
+  // real directory + --force: refused, content untouched
+  unlinkSync(dest);
   mkdirSync(dest, { recursive: true });
-  writeFileSync(join(dest, 'SKILL.md'), 'stale content');
-  // without --force: skipped, stale stays
-  const skipped = installSkills({ homeDir: home, root });
-  assert.equal(skipped.results.find((r) => r.name === 'alpha-skill').action, 'skipped');
-  assert.match(readFileSync(join(dest, 'SKILL.md'), 'utf8'), /stale content/);
-  // with --force: replaced by the symlink
-  const forced = installSkills({ homeDir: home, root, force: true });
-  assert.equal(forced.results.find((r) => r.name === 'alpha-skill').action, 'linked');
-  assert.equal(lstatSync(dest).isSymbolicLink(), true);
-  assert.match(readFileSync(join(dest, 'SKILL.md'), 'utf8'), /name: alpha-skill/);
+  writeFileSync(join(dest, 'SKILL.md'), 'precious user content');
+  r = installSkills({ homeDir: home, root, force: true });
+  assert.equal(r.results.find((x) => x.name === 'alpha-skill').action, 'error');
+  assert.match(r.results.find((x) => x.name === 'alpha-skill').reason, /refusing/);
+  assert.match(readFileSync(join(dest, 'SKILL.md'), 'utf8'), /precious user content/);
 });
 
 test('install-skills: --project installs into <project>/.agents/skills', () => {

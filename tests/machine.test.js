@@ -99,6 +99,31 @@ test('machine: empty deliverable (exit 0, nothing written) = EMPTY_RESPONSE, ret
   assert.ok(p['retry-history'].some((r) => r['error-code'] === 'EMPTY_RESPONSE' && r.policy === 'backoff'));
 });
 
+test('machine: done-report with non-string elements = EMPTY_RESPONSE retry (P0-8)', async () => {
+  const fx = makeFixture();
+  let calls = 0;
+  const mock = createMockDriver();
+  const drivers = wrapDrivers({
+    execute: async (args) => {
+      calls += 1;
+      if (args.packet['packet-id'] === 'M01-T01' && calls === 1) {
+        const r = await mock.execute(args);
+        // Corrupt report: nested array element passes no more (P0-8).
+        writeFileSync(
+          join(args.taskDir, 'reports', 'M01-T01.done.json'),
+          JSON.stringify({ 'requirements-covered': [['R-01']], 'changed-files': [], 'commands-run': [], failures: [] }),
+        );
+        return r;
+      }
+      return mock.execute(args);
+    },
+  });
+  const result = await runTask(ctx(fx, drivers));
+  assert.equal(result.status, 'completed'); // second attempt writes a clean report
+  const p = loadState(fx.taskDir).packets['M01-T01'];
+  assert.ok(p['retry-history'].some((r) => r['error-code'] === 'EMPTY_RESPONSE'));
+});
+
 test('machine: retries exhausted -> return-to-planner -> still failing -> inbox', async () => {
   const fx = makeFixture();
   const drivers = wrapDrivers({ execute: async () => failResult('502 bad gateway') });
@@ -388,7 +413,9 @@ test('machine: budget enforce=soft warns and continues', async () => {
   const result = await runTask(ctx(fx, wrapDrivers()));
   assert.equal(result.status, 'completed');
   const state = loadState(fx.taskDir);
-  assert.ok(state.budget.warnings.length > 0);
+  // P2: the warning message is day-stable, so repeated spawns add exactly ONE.
+  assert.equal(state.budget.warnings.length, 1);
+  assert.match(state.budget.warnings[0], /daily token budget exceeded/);
 });
 
 test('machine: 403/quota falls back to the next configured channel', async () => {

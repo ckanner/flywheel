@@ -14,13 +14,13 @@ arguments:
 
 # flywheel-review — 只触发 Review Loop
 
-Button only (DESIGN.md §13): validate + invoke CLI + translate. No loop logic here.
+Button only: validate + invoke CLI + translate. No loop logic here.
 
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 契约文件齐全；目标单元的 **L1 已通过**
    （`state.json` 中该 packet 的 `evidence.l1.pass === true`）——评审只在确定性
-   验收全绿之后开口（设计铁律 4）。若给了 unit id，确认 packet 存在。
+   验收全绿之后开口。若给了 unit id，确认 packet 存在。
 2. **调用**（在目标仓库根执行）：
 
    ```bash

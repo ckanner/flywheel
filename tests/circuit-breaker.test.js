@@ -66,3 +66,9 @@ test('detectSpin (DC4): same failure mode AND file-set Jaccard >= 0.7', () => {
   assert.equal(detectSpin(sig(['a']), other, 2), false);
   assert.equal(detectSpin(null, sig(['a']), 2), false);
 });
+
+test('detectSpin: a corrupted stored signature never crashes the loop (P2)', () => {
+  const sig = failureSignature({ errorCodes: ['L1_FAILED'], failedCommands: [], changedFiles: ['a'] });
+  assert.equal(detectSpin('{not json', sig, 2), false);
+  assert.equal(detectSpin(sig, '{not json', 2), false);
+});

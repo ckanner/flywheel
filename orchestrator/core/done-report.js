@@ -30,6 +30,10 @@ export function parseDoneReport(content, format = null) {
       errors.push(`missing-key: ${key}`);
     } else if (!Array.isArray(report[key])) {
       errors.push(`not-an-array: ${key}`);
+    } else if (!report[key].every((el) => typeof el === 'string')) {
+      // Non-string elements (nested arrays/objects) silently broke spin
+      // detection's set comparisons downstream (P0-8, user-verified).
+      errors.push(`non-string-element: ${key}`);
     }
   }
 

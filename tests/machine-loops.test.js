@@ -252,6 +252,63 @@ test('plan channel fallback: quota error switches to the next channel with its h
   assert.equal(fb.harness, 'pi'); // harness switch travels with the channel
 });
 
+test('plan: AUTH on the subscription channel (env-key null, login died) DOES fall back (P0-7)', async () => {
+  const fx = makeFixture();
+  const seen = [];
+  const drivers = wrapDrivers({
+    plan: async (args) => {
+      seen.push(args.channel);
+      if (args.channel === 'kimi-subscription') {
+        return okResult({ exitCode: 1, stderr: '401 unauthorized', errorMessage: '401: unauthorized' });
+      }
+      return okResult({ sessionId: 'session_kc', text: 'ok' });
+    },
+  });
+  const result = await runTask(ctx(fx, drivers));
+  assert.equal(result.status, 'completed');
+  assert.deepEqual([...new Set(seen)], ['kimi-subscription', 'kimi-coding']); // OAuth death -> keyed fallback used
+});
+
+test('plan: fallback chain ENDS when the next channel has no model mapping for the role (P1-12①)', async () => {
+  const fx = makeFixture();
+  const seen = [];
+  const drivers = wrapDrivers({
+    plan: async (args) => {
+      seen.push(args.channel);
+      if (args.channel === 'kimi-subscription') {
+        return okResult({ exitCode: 1, stderr: '403', errorMessage: '403: fair use' });
+      }
+      // kimi-coding then hits quota; its fallback (opencode) has NO models.plan
+      // mapping — the chain must END, not re-invoke kimi on a wrong provider.
+      return okResult({ exitCode: 1, stderr: '403', errorMessage: '403: quota' });
+    },
+  });
+  const result = await runTask(ctx(fx, drivers));
+  assert.equal(result.status, 'escalated');
+  assert.ok(!seen.includes('opencode'), 'no cross-provider phantom call');
+  assert.ok(loadState(fx.taskDir).inbox.some((e) => /plan step failed/.test(e.reason)));
+});
+
+test('plan/execute: channel env-key declared but unset -> fail loud, driver never spawned (P1-12②)', async () => {
+  const fx = makeFixture();
+  // Real driver selection activates the guard; the injected driver is a spy,
+  // so nothing real spawns even if the guard regresses.
+  const cfg = JSON.parse(readFileSync(join(fx.taskDir, 'flywheel.config.json'), 'utf8'));
+  cfg.drivers.execute = 'real';
+  cfg.channels['opencode-go']['env-key'] = 'FLYWHEEL_DEFINITELY_MISSING_KEY';
+  writeFileSync(join(fx.taskDir, 'flywheel.config.json'), JSON.stringify(cfg));
+  delete process.env.FLYWHEEL_DEFINITELY_MISSING_KEY;
+  let spawned = false;
+  const drivers = wrapDrivers({
+    execute: async () => { spawned = true; return okResult(); },
+  });
+  const result = await runTask(ctx(fx, drivers));
+  assert.equal(spawned, false, 'driver spawned despite missing channel key');
+  assert.equal(result.status, 'escalated'); // AUTH fail-loud -> attempt failures -> inbox
+  const p = loadState(fx.taskDir).packets['M01-T01'];
+  assert.ok(p['retry-history'].some((r) => /fail-loud.*FLYWHEEL_DEFINITELY_MISSING_KEY/.test(r.policy)));
+});
+
 // --- needs-live-credentials (§9) ---------------------------------------------
 
 test('credentials: approval injects only the approved keys and records evidence', async () => {

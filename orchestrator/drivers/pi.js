@@ -9,22 +9,9 @@
 // executor key (OPENCODE_API_KEY) plus what the CLI needs to run. Nothing else.
 
 import { runWithWatchdog } from '../core/watchdog.js';
+import { buildChildEnv } from '../core/child-env.js';
 
-const CHILD_ENV_KEYS = [
-  'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'TERM', 'SHELL', 'USER', 'LOGNAME',
-  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME',
-];
-
-export function buildChildEnv(baseEnv = process.env, apiKeys = {}) {
-  const env = {};
-  for (const k of CHILD_ENV_KEYS) {
-    if (baseEnv[k] !== undefined) env[k] = baseEnv[k];
-  }
-  for (const [k, v] of Object.entries(apiKeys)) {
-    if (v !== undefined && v !== null) env[k] = v;
-  }
-  return env;
-}
+export { CHILD_ENV_KEYS, buildChildEnv } from '../core/child-env.js';
 
 /** Parse pi's NDJSON event stream: aggregate usage, final text, settled flag,
  * and — critically — stream-level errors. pi exits 0 even when the provider

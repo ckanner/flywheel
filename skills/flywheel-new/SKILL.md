@@ -9,7 +9,7 @@ arguments:
     required: true
 ---
 
-# flywheel-new — 任务生成器（DESIGN.md §12 第 1 步）
+# flywheel-new — 任务生成器
 
 You are the task generator. You turn a **frozen-intent** requirement into Flywheel
 contract files. You contain no loop logic — the orchestrator runs the loops later.
@@ -44,9 +44,9 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      （revision 0，status pending，全部 packet pending）。
    - `flywheel.config.json` — 从 `templates/flywheel.config.example.json`
      复制并按需调整。
-   - **随 packet 提供验收测试**（v0.14 DC1）：executor 不写/不改任何测试文件，
+   - **随 packet 提供验收测试**：executor 不写/不改任何测试文件，
      验收测试由你（任务生成者，之后是 Plan Loop）编写并随契约提交。
-4. **提交契约文件（§12 第 1 步"并提交"，硬规则）**：在目标仓库执行
+4. **提交契约文件（硬规则）**：在目标仓库执行
    `git add docs/<slug>` 并 `git commit`（conventional 风格 message，如
    `docs(<slug>): add flywheel task contracts`）。契约层文件全部是已提交
    内容——未提交的契约对编排器与 worktree 不可见。

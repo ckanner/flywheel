@@ -21,10 +21,11 @@ import { loadState, saveState, initState, stateExists, markInterruptedUnits, rec
 import { evaluateExitContract } from './exit-contract.js';
 import { parseDoneReport } from './done-report.js';
 import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText } from './verify.js';
+import { LEDGER_FILES, LEDGER_DIRS, isLedgerTaskPath } from './ledger.js';
 import { classifyError, isRetryable, shouldFallback, computeBackoff, extractRetryAfterMs } from './errors.js';
 import { checkBudget, failureSignature, detectSpin } from './circuit-breaker.js';
-import { resolveBinding, nextChannel, modelForChannel, envKeyForChannel } from './fallback.js';
-import { appendMetrics, promptHash, estimateCostUsd } from './metrics.js';
+import { resolveBinding, nextChannel, modelForChannel, envKeyForChannel, missingChannelEnv, authFallbackAllowed } from './fallback.js';
+import { appendMetrics, promptHash, estimateCostUsd, priceForModel } from './metrics.js';
 import { shouldSample, runDefectInjection } from './defect-injection.js';
 import { killActiveChildren } from './watchdog.js';
 import { buildExecutePrompt, buildReviewPrompt, buildPlanPrompt, buildJudgePrompt, parseReviewVerdict } from './prompts.js';
@@ -87,8 +88,7 @@ function touchProgress(ctx) {
 
 function recordSpawnMetrics(ctx, { role, packetId, model, harness, channel, prompt, result, errorCode, attempt }) {
   const usage = result.usage ?? null;
-  const shortModel = (model ?? '').split('/').pop();
-  const costUsd = result.costUsd ?? estimateCostUsd(usage, ctx.config.pricing?.[shortModel] ?? null);
+  const costUsd = result.costUsd ?? estimateCostUsd(usage, priceForModel(ctx.config.pricing, model));
   const cacheHitRate = usage && usage.input > 0 ? Math.round(((usage.cacheRead ?? 0) / usage.input) * 1000) / 1000 : null;
   appendMetrics(ctx.metricsFile, {
     role,
@@ -142,12 +142,10 @@ function watchdogOpts(ctx) {
 /**
  * The unit diff judged for boundaries is the EXECUTOR's diff. Only the
  * orchestrator's own ledger files inside the task directory are excluded
- * (state.json, reports/, retro.md, metrics.jsonl, inbox.md, orchestrator.pid,
- * approvals/) — contract files (spec.md / task-packet-*.md / config) stay IN:
- * an executor tampering with the contract is a violation (#审计: 收窄过滤).
+ * (constants from core/ledger.js, single source of truth) — contract files
+ * (spec.md / task-packet-*.md / config) stay IN: an executor tampering with
+ * the contract is a violation.
  */
-const LEDGER_FILES = new Set(['state.json', 'retro.md', 'metrics.jsonl', 'inbox.md', 'orchestrator.pid', 'orchestrator.log']);
-const LEDGER_DIRS = ['reports/', 'approvals/'];
 const CONTRACT_FILE_RE = /^(spec\.md|task-packet-.*\.md|flywheel\.config\.json)$/;
 
 function taskDirPrefix(ctx) {
@@ -170,7 +168,7 @@ function partitionChangedFiles(ctx, changedFiles) {
       continue;
     }
     const inner = f.slice(prefix.length);
-    if (LEDGER_FILES.has(inner) || LEDGER_DIRS.some((d) => inner.startsWith(d))) continue;
+    if (isLedgerTaskPath(inner)) continue;
     if (CONTRACT_FILE_RE.test(inner)) contractViolations.push({ type: 'contract-file', path: f });
     else executorFiles.push(f);
   }
@@ -181,6 +179,17 @@ function partitionChangedFiles(ctx, changedFiles) {
 function channelApiKey(ctx, channel) {
   const envKey = envKeyForChannel(ctx.config, channel);
   return envKey && process.env[envKey] ? process.env[envKey] : null;
+}
+
+/**
+ * Fail-loud guard (P1-12②): a channel declaring an env-key that is unset must
+ * NOT spawn — pi would silently fall back to its global auth.json otherwise.
+ * Only enforced for real drivers (mock/fixture drivers need no keys).
+ * Returns the missing env var name, or null.
+ */
+function missingKeyForRealDriver(ctx, role, channel) {
+  if ((ctx.config.drivers?.[role] ?? 'real') === 'mock') return null;
+  return missingChannelEnv(ctx.config, channel);
 }
 
 /**
@@ -196,7 +205,9 @@ function budgetGate(ctx) {
     return 'stop';
   }
   if (verdict.action === 'warn') {
-    const msg = `budget soft warning: ${verdict.reason}`;
+    // P2: dedupe by day — a volatile counter in the message would add a new
+    // warning per spawn and bloat state.json.
+    const msg = `budget soft warning: daily token budget exceeded (${new Date().toISOString().slice(0, 10)})`;
     if (!ctx.state.budget.warnings.includes(msg)) ctx.state.budget.warnings.push(msg);
     ctx.log(msg);
   }
@@ -338,6 +349,13 @@ async function executeStep(ctx, packet) {
 
   for (let t = 0; t <= maxTransport; t++) {
     if (budgetGate(ctx) === 'stop') return { success: false, stopped: true };
+    // Fail loud instead of spawning keyless into pi's auth.json trap (P1-12②).
+    const missingKey = missingKeyForRealDriver(ctx, 'execute', channel);
+    if (missingKey) {
+      recordRetry(ctx, ps, { scope: 'transport', 'error-code': 'AUTH', policy: `fail-loud: channel ${channel} requires env ${missingKey} (not set)`, 'planned-delay-ms': 0 });
+      save(ctx);
+      return { success: false, errorCode: 'AUTH' };
+    }
     const prompt = buildExecutePrompt({ packet, spec: ctx.spec, taskDir: ctx.taskDir, cwd: ctx.cwd, attempt: ps.attempts });
     visitedChannels.add(channel);
     const result = await ctx.drivers.execute.execute({
@@ -400,18 +418,23 @@ async function executeStep(ctx, packet) {
 
     ctx.log(`execute ${id} attempt ${ps.attempts} transport ${t}: ${code} (${contract.reasons.join('; ') || 'spawn error'})`);
 
-    // Channel fallback (降级): rate limit / quota (403) -> next configured channel.
-    if (shouldFallback(code)) {
+    // Channel fallback (降级): rate limit / quota (403) -> next configured
+    // channel; AUTH only for subscription channels with a keyed fallback
+    // waiting (P0-7).
+    if (shouldFallback(code) || authFallbackAllowed(ctx.config, channel, code)) {
       const next = nextChannel(ctx.config, channel);
-      if (next && !visitedChannels.has(next)) {
+      const mapped = next ? modelForChannel(ctx.config, next, 'execute', packet.route) : null;
+      if (next && !visitedChannels.has(next) && mapped) {
         recordRetry(ctx, ps, { scope: 'fallback', 'error-code': code, policy: `channel ${channel} -> ${next}` });
         ctx.log(`fallback: ${channel} -> ${next} (${code})`);
-        const mapped = modelForChannel(ctx.config, next, 'execute', packet.route);
         channel = next;
         currentBinding = { ...binding, model: mapped.model, harness: mapped.harness ?? binding.harness };
         t -= 1; // fallback does not consume a transport retry
         save(ctx);
         continue;
+      }
+      if (next && !mapped) {
+        ctx.log(`fallback chain ends: no model mapping for execute/${packet.route} on ${next} (P1-12①)`);
       }
     }
 
@@ -444,7 +467,8 @@ async function l1Step(ctx, packet) {
   const id = packet['packet-id'];
   const ps = ctx.state.packets[id];
   const timeoutMs = ctx.config.verify?.['command-timeout-ms'];
-  const gate = await runGateCommands(packet.acceptance.L1 ?? [], { cwd: ctx.cwd, timeoutMs });
+  const envAllowlist = ctx.config.verify?.['env-allowlist'] ?? [];
+  const gate = await runGateCommands(packet.acceptance.L1 ?? [], { cwd: ctx.cwd, timeoutMs, envAllowlist });
   const { executorFiles, contractViolations } = partitionChangedFiles(ctx, await getChangedFiles(ctx.cwd, ps['base-ref']));
   const boundary = checkBoundaries(executorFiles, packet.boundaries, ctx.config.verify?.['test-file-patterns']);
   if (contractViolations.length > 0) {
@@ -477,6 +501,16 @@ async function agentVerdictStep(ctx, { role, binding, prompt, packetId = null, a
 
   for (let t = 0; t <= maxTransport; t++) {
     if (budgetGate(ctx) === 'stop') return { ok: false, stopped: true };
+    // Fail loud instead of spawning keyless into pi's auth.json trap (P1-12②).
+    const missingKey = missingKeyForRealDriver(ctx, role, channel);
+    if (missingKey) {
+      if (ps) {
+        recordRetry(ctx, ps, { scope: 'transport', 'error-code': 'AUTH', policy: `fail-loud: channel ${channel} requires env ${missingKey} (not set)` });
+        save(ctx);
+      }
+      ctx.log(`${role}: fail-loud — channel ${channel} requires env ${missingKey} (not set)`);
+      return { ok: false, errorCode: 'AUTH' };
+    }
     visitedChannels.add(channel);
     const result = await ctx.drivers[role][role]({
       taskDir: ctx.taskDir,
@@ -502,16 +536,19 @@ async function agentVerdictStep(ctx, { role, binding, prompt, packetId = null, a
 
     ctx.log(`${role}${packetId ? ` ${packetId}` : ''} transport ${t}: failed/unparseable (${code})`);
 
-    if (shouldFallback(code)) {
+    if (shouldFallback(code) || authFallbackAllowed(ctx.config, channel, code)) {
       const next = nextChannel(ctx.config, channel);
-      if (next && !visitedChannels.has(next)) {
+      const mapped = next ? modelForChannel(ctx.config, next, role) : null;
+      if (next && !visitedChannels.has(next) && mapped) {
         if (ps) recordRetry(ctx, ps, { scope: 'fallback', 'error-code': code, policy: `channel ${channel} -> ${next}` });
-        const mapped = modelForChannel(ctx.config, next, role);
         channel = next;
         currentBinding = { ...binding, model: mapped.model, harness: mapped.harness ?? binding.harness };
         t -= 1;
         if (ps) save(ctx);
         continue;
+      }
+      if (next && !mapped) {
+        ctx.log(`${role} fallback chain ends: no model mapping for ${role} on ${next} (P1-12①)`);
       }
     }
     if (!isRetryable(code)) {
@@ -596,6 +633,7 @@ async function judgeStep(ctx, milestone) {
 async function milestoneGateStep(ctx, milestone) {
   const packets = ctx.packetList.filter((p) => milestoneOfPacket(p['packet-id']) === milestone.id);
   const timeoutMs = ctx.config.verify?.['command-timeout-ms'];
+  const envAllowlist = ctx.config.verify?.['env-allowlist'] ?? [];
   const levels = {};
   let pass = true;
   for (const level of ['L2', 'L3']) {
@@ -604,7 +642,7 @@ async function milestoneGateStep(ctx, milestone) {
       levels[level] = { pass: true, results: [], skipped: true };
       continue;
     }
-    const gate = await runGateCommands(commands, { cwd: ctx.cwd, timeoutMs });
+    const gate = await runGateCommands(commands, { cwd: ctx.cwd, timeoutMs, envAllowlist });
     levels[level] = gate;
     if (!gate.pass) pass = false;
   }
@@ -687,6 +725,12 @@ async function planStep(ctx, milestone) {
   let transportRetries = 0;
   for (;;) {
     if (budgetGate(ctx) === 'stop') return { ok: false, stopped: true, packets };
+    // Fail loud instead of spawning keyless (P1-12②).
+    const missingKey = missingKeyForRealDriver(ctx, 'plan', channel);
+    if (missingKey) {
+      ctx.log(`plan: fail-loud — channel ${channel} requires env ${missingKey} (not set)`);
+      return { ok: false, errorCode: 'AUTH', packets };
+    }
     ({ result, code } = await attempt({ sessionId, coldStart: !sessionId, channel, currentBinding }));
     if (!code) break;
 
@@ -696,17 +740,21 @@ async function planStep(ctx, milestone) {
       sessionId = null;
       continue;
     }
-    // Channel fallback (降级), e.g. subscription 403 -> kimi-coding via pi.
-    if (shouldFallback(code)) {
+    // Channel fallback (降级): quota/rate-limit, plus AUTH on subscription
+    // channels with a keyed fallback waiting (P0-7).
+    if (shouldFallback(code) || authFallbackAllowed(ctx.config, channel, code)) {
       const next = nextChannel(ctx.config, channel);
-      if (next && !visited.has(next)) {
+      const mapped = next ? modelForChannel(ctx.config, next, 'plan') : null;
+      if (next && !visited.has(next) && mapped) {
         visited.add(next);
         ctx.log(`plan fallback: ${channel} -> ${next} (${code})`);
-        const mapped = modelForChannel(ctx.config, next, 'plan');
         channel = next;
         currentBinding = { ...binding, model: mapped.model, harness: mapped.harness ?? binding.harness };
         sessionId = null; // a new channel starts a new session
         continue;
+      }
+      if (next && !mapped) {
+        ctx.log(`plan fallback chain ends: no model mapping for plan on ${next} (P1-12①)`);
       }
     }
     // Transient failures back off and retry instead of going straight to inbox.
@@ -849,42 +897,56 @@ async function completeUnit(ctx, packet, note = null) {
 /**
  * Defect-injection spot check (§4.3): deterministic, ALWAYS ON (user decision
  * 2026-08-20 — no switch), runs BETWEEN L1 and Review; the outcome feeds the
- * reviewer. Returns the outcome when sampled (pass or fail), null otherwise.
- * A sampled unit whose task lacks patch/test-cmd config is a contract defect:
- * inbox a human (unit still completes).
+ * reviewer. Returns the outcome object when sampled, null otherwise.
+ * Case handling lives here (P0-2): only `fake-tests` and `restore-failed`
+ * stop the unit; `uninjectable` / `baseline-red` / missing-config inbox a
+ * human and let the unit continue.
  */
 async function maybeDefectInjection(ctx, packet) {
   const di = ctx.config['defect-injection'] ?? {};
   const ps = ctx.state.packets[packet['packet-id']];
   const completedCount = Object.values(ctx.state.packets).filter((p) => p.status === 'completed').length;
-  const changed = ps.evidence.executor?.['changed-files'] ?? [];
-  const testRatio = changed.length === 0 ? 0 : changed.filter((f) => /(^|\/)(tests?|__tests__)\//.test(f)).length / changed.length;
+  // Test-file ratio from the AUTHORITATIVE diff (l1 boundary), shared patterns
+  // with verify — not the executor's self-report (P2).
+  const patterns = (ctx.config.verify?.['test-file-patterns'] ?? []).map((p) => new RegExp(p));
+  const changed = ps.evidence.l1?.boundary?.changedFiles ?? ps.evidence.executor?.['changed-files'] ?? [];
+  const testRatio = changed.length === 0 ? 0 : changed.filter((f) => patterns.some((re) => re.test(f))).length / changed.length;
   if (!shouldSample(completedCount, { ...di, testFileRatio: testRatio })) return null;
-  if (!di.patch || !di['test-cmd']) {
-    ps.evidence['defect-injection'] = {
-      skipped: 'missing-config',
-      detail: 'sampled but defect-injection.patch/test-cmd not configured for this task',
-      at: nowIso(),
-    };
-    const entry = {
-      at: nowIso(),
-      'packet-id': packet['packet-id'],
-      reason: `defect injection sampled for ${packet['packet-id']} but defect-injection.patch/test-cmd are not configured in flywheel.config.json — a human should add them for this task.`,
-    };
+
+  const inboxContinue = (reason, evidence) => {
+    ps.evidence['defect-injection'] = { ...evidence, at: nowIso() };
+    const entry = { at: nowIso(), 'packet-id': packet['packet-id'], reason };
     ctx.state.inbox.push(entry);
     appendInbox(ctx, entry);
     save(ctx);
     return null;
+  };
+
+  if (!di.patch || !di['test-cmd']) {
+    return inboxContinue(
+      `defect injection sampled for ${packet['packet-id']} but defect-injection.patch/test-cmd are not configured in flywheel.config.json — a human should add them for this task.`,
+      { skipped: 'missing-config', detail: 'sampled but defect-injection.patch/test-cmd not configured for this task' },
+    );
   }
+
   const outcome = await runDefectInjection({
     patchFile: di.patch,
     testCmd: di['test-cmd'],
     cwd: ctx.cwd,
     timeoutMs: ctx.config.verify?.['command-timeout-ms'],
+    envAllowlist: ctx.config.verify?.['env-allowlist'] ?? [],
+    forbidPaths: ledgerExcludes(ctx),
   });
   ps.evidence['defect-injection'] = { ...outcome, at: nowIso() };
   save(ctx);
-  return outcome;
+
+  if (outcome.outcome === 'pass') return outcome;
+  if (outcome.outcome === 'fake-tests' || outcome.outcome === 'restore-failed') return outcome; // caller stops (DC3)
+  // uninjectable / baseline-red: inbox a human, never accuse fake tests (P0-2).
+  return inboxContinue(
+    `defect injection for ${packet['packet-id']}: ${outcome.outcome} — ${outcome.detail ?? ''} (human should refresh the patch / fix the suite)`,
+    outcome,
+  );
 }
 
 /** Valid done-report still on disk (pause/resume and interrupt recovery). */
@@ -955,20 +1017,23 @@ async function processPacket(ctx, packet0, { pauseBefore } = {}) {
       }
 
       // Defect-injection spot check BETWEEN L1 and Review (§4.3); the outcome
-      // feeds the reviewer. fail = fake tests proven -> inbox (v0.14 DC3).
+      // feeds the reviewer. fake-tests / restore-failed -> inbox + stop
+      // (v0.14 DC3); other non-pass cases already inboxed-and-continued (P0-2).
       pendingInjection = await maybeDefectInjection(ctx, packet);
-      if (pendingInjection && !pendingInjection.pass) {
+      if (pendingInjection && (pendingInjection.outcome === 'fake-tests' || pendingInjection.outcome === 'restore-failed')) {
         ps.status = 'inbox';
         ps['updated-at'] = nowIso();
         const entry = {
           at: nowIso(),
           'packet-id': id,
-          reason: `defect injection FAILED for ${id}: injected defect did not turn the tests red (fake/weak tests proven). Human needed.`,
+          reason: pendingInjection.outcome === 'fake-tests'
+            ? `defect injection FAILED for ${id}: injected defect did not turn the tests red (fake/weak tests proven). Human needed.`
+            : `defect injection for ${id}: restore via git apply -R FAILED — the workspace may still hold the injected defect. Human needed.`,
         };
         ctx.state.inbox.push(entry);
         ctx.state.status = 'escalated';
         appendInbox(ctx, entry);
-        appendRetro(ctx, `- ${entry.at} packet ${id}: INBOX — defect injection failed (fake tests)`);
+        appendRetro(ctx, `- ${entry.at} packet ${id}: INBOX — defect injection ${pendingInjection.outcome}`);
         save(ctx);
         return 'stop';
       }

@@ -70,3 +70,13 @@ test('exit contract: signal kill without timeout is not success', () => {
   assert.equal(r.ok, false);
   assert.equal(r.processOk, false);
 });
+
+test('exit contract: an EMPTY deliverable list fails (nothing checked = nothing proven)', () => {
+  const r = evaluateExitContract({
+    result: { exitCode: 0, signal: null, timedOut: false, stderr: '' },
+    deliverables: [],
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.deliverablesOk, false);
+  assert.equal(r.errorCode, 'EMPTY_RESPONSE');
+});

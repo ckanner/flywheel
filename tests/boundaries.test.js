@@ -177,3 +177,23 @@ test('gateEnv: NODE_TEST_CONTEXT is scrubbed so nested runners keep true exit co
   );
   assert.equal(gate.pass, false); // the red test must read red, never green-washed
 });
+
+test('gateEnv (P0-4): whitelisted env — API keys never reach gate commands', async () => {
+  const env = gateEnv({ PATH: '/usr/bin', HOME: '/h', OPENCODE_API_KEY: 'secret', KIMI_API_KEY: 'secret2', CUSTOM: 'x' });
+  assert.equal(env.PATH, '/usr/bin');
+  assert.equal(env.HOME, '/h');
+  assert.equal(env.OPENCODE_API_KEY, undefined);
+  assert.equal(env.KIMI_API_KEY, undefined);
+  assert.equal(env.CUSTOM, undefined);
+  // explicit allowlist escape (config verify.env-allowlist)
+  const withAllow = gateEnv({ PATH: '/bin', NPM_CONFIG_REGISTRY: 'https://priv' }, { allow: ['NPM_CONFIG_REGISTRY'] });
+  assert.equal(withAllow.NPM_CONFIG_REGISTRY, 'https://priv');
+
+  // End to end: a gate command running executor code sees no keys.
+  const cwd = mkdtempSync(join(tmpdir(), 'flywheel-gate-'));
+  const gate = await runGateCommands(
+    [{ cmd: 'test -z "$OPENCODE_API_KEY" -a -z "$KIMI_API_KEY"', expect: 'exit 0' }],
+    { cwd, env: { ...process.env, OPENCODE_API_KEY: 'probe', KIMI_API_KEY: 'probe' } },
+  );
+  assert.equal(gate.pass, true, 'keys leaked into gate env');
+});

@@ -32,12 +32,12 @@ done-report-format:
   failures: []
 ---
 
-# Work instructions (DESIGN.md §4.2 执行纪律)
+# Work instructions
 
 You are the executor for exactly one task packet. You only do this one thing.
 
 1. Read the contract above and every file in `context-files` before writing code.
-2. **Implement only — never write or modify tests** (v0.14 DC1). Acceptance
+2. **Implement only — never write or modify tests**. Acceptance
    tests are provided with this packet by the Plan Loop, or already exist in
    the repo. Creating or modifying ANY test file fails this unit: the
    orchestrator checks the git diff after you finish.

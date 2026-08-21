@@ -61,7 +61,7 @@ export function buildExecutePrompt({ packet, spec, taskDir, cwd = null, attempt 
     '',
     '## Work discipline',
     '1. Read the contract and every context file before writing code.',
-    '2. IMPLEMENT ONLY — never write or modify tests (v0.14 DC1). Acceptance tests are provided by the contract or already exist in the repo. Creating or modifying ANY test file fails this unit (git diff is checked).',
+    '2. IMPLEMENT ONLY — never write or modify tests. Acceptance tests are provided by the contract or already exist in the repo. Creating or modifying ANY test file fails this unit (git diff is checked).',
     '3. If the design is hard to test, that is a design defect: STOP and escalate so the Plan Loop can adjust — do not touch tests yourself.',
     '4. Run the acceptance commands yourself and report exactly which passed and which failed.',
     '5. NEVER declare the task done. Completion is judged externally by acceptance commands and review.',
@@ -116,14 +116,14 @@ export function buildReviewPrompt({ packet, l1Evidence, diffSummary, diffText = 
     '',
     '## Your checks',
     '- Code quality, project conventions, design intent, security hazards.',
-    '- Test assertion quality: coverage proves execution, not assertion validity. Remember the executor never writes tests (DC1) — any test file in the diff is already a boundary violation.',
+    '- Test assertion quality: coverage proves execution, not assertion validity. Remember the executor never writes tests — any test file in the diff is already a boundary violation.',
     '- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.',
     '- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.',
     '',
     '## Output',
     'End your reply with a final line containing ONLY this JSON:',
     '{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."]}',
-    'Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap (v0.14 DC2).',
+    'Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap.',
   );
   return sections.join('\n');
 }
@@ -141,7 +141,7 @@ export function buildPlanPrompt({ spec, state, milestone, packets, coldStart = f
     '',
     `## Task: issue/confirm packets for milestone ${milestone.id}`,
     `Existing packets: ${packets.map((p) => p['packet-id']).join(', ') || 'none'}`,
-    'Confirm the packet sequence for this milestone, revise returned packets, or strengthen acceptance after a verification-gap. Scope changes are yours alone to make. Acceptance tests are YOURS to provide or strengthen — the executor never writes tests (v0.14 DC1).',
+    'Confirm the packet sequence for this milestone, revise returned packets, or strengthen acceptance after a verification-gap. Scope changes are yours alone to make. Acceptance tests are YOURS to provide or strengthen — the executor never writes tests.',
   ];
   if (coldStart) {
     // §4.1 session rebuild: the contract layer is the only memory — a fresh

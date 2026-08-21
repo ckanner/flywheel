@@ -9,6 +9,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { milestoneOfPacket } from './contracts.js';
+import { gateEnv } from './child-env.js';
+
+export { gateEnv } from './child-env.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,19 +19,6 @@ export const DEFAULT_TEST_FILE_PATTERNS = [
   '(^|/)(tests?|__tests__|spec)/',
   '\\.(test|spec)\\.[cm]?[jt]sx?$',
 ];
-
-/**
- * Environment for gate commands. NODE_TEST_CONTEXT must be scrubbed: when the
- * orchestrator itself runs under `node --test` (or any runner child), a nested
- * `node --test` inherits "child" mode and reports to the parent instead of
- * exiting non-zero on failure — red tests would read green (verified
- * 2026-08-20). The oracle needs true exit codes.
- */
-export function gateEnv(env = process.env) {
-  const out = { ...env };
-  delete out.NODE_TEST_CONTEXT;
-  return out;
-}
 
 export function parseExpect(expect) {
   const m = /^exit (\d+)$/.exec(String(expect).trim());
@@ -39,11 +29,14 @@ export function parseExpect(expect) {
 /**
  * Run one gate level's commands (L1/L2/L3) in the task workspace.
  * Every command runs; no early stop, so the report is complete.
+ * Commands get a WHITELISTED env (P0-4) — they execute executor-written code
+ * and must not see the orchestrator's keys; config verify.env-allowlist is
+ * the only explicit escape.
  *
  * @param {Array<{cmd?:string, script?:string, expect:string}>} commands
- * @param {{cwd:string, env?:object, timeoutMs?:number}} opts
+ * @param {{cwd:string, env?:object, timeoutMs?:number, envAllowlist?:string[]}} opts
  */
-export async function runGateCommands(commands = [], { cwd, env, timeoutMs = 300_000 } = {}) {
+export async function runGateCommands(commands = [], { cwd, env, timeoutMs = 300_000, envAllowlist = [] } = {}) {
   const results = [];
   for (const entry of commands) {
     const expected = parseExpect(entry.expect);
@@ -54,7 +47,7 @@ export async function runGateCommands(commands = [], { cwd, env, timeoutMs = 300
     try {
       await execFileAsync('/bin/sh', ['-c', command], {
         cwd,
-        env: gateEnv(env),
+        env: gateEnv(env ?? process.env, { allow: envAllowlist }),
         timeout: timeoutMs,
         maxBuffer: 4 * 1024 * 1024,
       });

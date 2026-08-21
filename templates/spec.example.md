@@ -29,7 +29,7 @@ requirements:
 
 # Spec: Auth token foundation
 
-Frozen contract. Scope changes can only be made by the Plan Loop (DESIGN.md §4.1).
+Frozen contract. Scope changes can only be made by the Plan Loop.
 
 ## Numbered requirements
 

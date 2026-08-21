@@ -20,6 +20,17 @@ export function appendMetrics(file, entry) {
 }
 
 /**
+ * Price lookup for a model id (P1-13): try the full id, the short id
+ * (after the last "/"), then the kimi-prefixed short id — "kimi-code/k3"
+ * and "kimi-coding/k3" must both land on the "kimi-k3" pricing entry.
+ */
+export function priceForModel(pricing, model) {
+  if (!pricing || !model) return null;
+  const short = model.split('/').pop();
+  return pricing[model] ?? pricing[short] ?? pricing[`kimi-${short}`] ?? null;
+}
+
+/**
  * Cost fallback when the driver does not report one (DESIGN.md 附录 D: usage
  * details may be missing fields; never assume they exist).
  *
@@ -32,5 +43,8 @@ export function estimateCostUsd(usage, price) {
   const input = ((usage.input ?? 0) / perM) * (price.input ?? 0);
   const output = ((usage.output ?? 0) / perM) * (price.output ?? 0);
   const cacheRead = ((usage.cacheRead ?? 0) / perM) * (price['cache-read'] ?? 0);
-  return Math.round((input + output + cacheRead) * 1e8) / 1e8;
+  // Cache writes are billed at the uncached input rate (DeepSeek semantics);
+  // pi's usage buckets are disjoint (verified in pi dist usage-totals.js).
+  const cacheWrite = ((usage.cacheWrite ?? 0) / perM) * (price.input ?? 0);
+  return Math.round((input + output + cacheRead + cacheWrite) * 1e8) / 1e8;
 }

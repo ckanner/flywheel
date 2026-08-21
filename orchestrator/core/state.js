@@ -138,6 +138,12 @@ export function recordUsage(state, usage, { provider = 'unknown', costUsd = null
   const b = state.budget;
   const d = day ?? todayKeyOf(new Date());
   b.daily[d] ??= { tokens: 0, 'cost-usd': 0 };
+  // Prune the daily ledger to the last 31 days (P2: state.json must not grow
+  // unboundedly across long-running tasks).
+  const days = Object.keys(b.daily).sort();
+  while (days.length > 31) {
+    delete b.daily[days.shift()];
+  }
   const input = usage?.input ?? 0;
   const output = usage?.output ?? 0;
   const reasoning = usage?.reasoning ?? 0;

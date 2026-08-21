@@ -54,6 +54,18 @@ test('done-report: wrong type for a key is reported', () => {
   assert.ok(r.errors.some((e) => e.includes('requirements-covered')));
 });
 
+test('done-report: non-string ELEMENTS are rejected (P0-8 — they broke spin detection sets)', () => {
+  for (const bad of [
+    { 'requirements-covered': [['R-01']], 'changed-files': [], 'commands-run': [], failures: [] },
+    { 'requirements-covered': ['R-01'], 'changed-files': [{ path: 'a.ts' }], 'commands-run': [], failures: [] },
+    { 'requirements-covered': [], 'changed-files': [], 'commands-run': [], failures: [null] },
+  ]) {
+    const r = parseDoneReport(JSON.stringify(bad), FORMAT);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.ok(r.errors.some((e) => e.includes('non-string-element')), r.errors.join(','));
+  }
+});
+
 test('done-report: extra keys are tolerated', () => {
   const r = parseDoneReport(JSON.stringify({
     'requirements-covered': [],

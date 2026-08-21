@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { runTask } from '../orchestrator/core/machine.js';
@@ -84,20 +84,22 @@ test('P0-1: injection runs BEFORE review, reviewer sees the outcome, ledger unto
   // Injection outcome recorded as evidence and it PASSED (tests caught the defect).
   const di = p.evidence['defect-injection'];
   assert.ok(di, 'defect-injection evidence recorded');
-  assert.equal(di.pass, true);
+  assert.equal(di.outcome, 'pass');
   assert.equal(di.testsWentRed, true);
-  assert.equal(di.workspaceClean, true);
+  assert.equal(di.restored, true); // via git apply -R (P0-1)
+  assert.equal(di.baselineGreen, true);
 
   // §4.3: the outcome was fed to the reviewer.
   assert.ok(reviewPrompts.length > 0);
   assert.match(reviewPrompts[0], /Defect-injection spot check/);
   assert.match(reviewPrompts[0], /"testsWentRed": true/);
 
-  // The scoped restore never touched the ledger: state.json is a valid,
-  // CAS-consistent chain right to the end, and the source file is byte-restored.
+  // The reverse-apply restore never touched the ledger or the executor's
+  // work: state.json CAS chain intact, source byte-restored, build artifact kept.
   assert.equal(state.status, 'completed');
   assert.ok(state.revision > 2);
   assert.equal(readFileSync(join(fx.root, 'src', 'sum.js'), 'utf8'), SUM_SRC);
+  assert.ok(existsSync(join(fx.root, 'build', 'M01-T01.txt')), 'executor artifact preserved through injection+restore');
   const status = execFileSync('git', ['-C', fx.root, 'status', '--porcelain', '--', 'src/sum.js', 'sum.test.js'], { encoding: 'utf8' });
   assert.equal(status.trim(), '');
 });
@@ -111,11 +113,51 @@ test('P0-1/DC3: injection the tests do NOT catch escalates to inbox (fake tests 
   const state = loadState(fx.taskDir);
   const p = state.packets['M01-T01'];
   assert.equal(p.status, 'inbox');
-  assert.equal(p.evidence['defect-injection'].pass, false);
+  assert.equal(p.evidence['defect-injection'].outcome, 'fake-tests');
   assert.equal(p.evidence['defect-injection'].testsWentRed, false);
-  assert.ok(state.inbox.some((e) => /defect injection FAILED/.test(e.reason)));
+  assert.ok(state.inbox.some((e) => /fake\/weak tests/.test(e.reason)));
   assert.equal(reviewCalls, 0, 'reviewer is not asked once fake tests are proven');
   // Restore still left the tree and the ledger intact.
   assert.equal(readFileSync(join(fx.root, 'src', 'sum.js'), 'utf8'), SUM_SRC);
   assert.ok(state.revision > 0);
+});
+
+test('P0-2: stale patch = uninjectable -> inbox for a refresh, unit still completes (no fake-test accusation)', async () => {
+  // Patch context does not match the file content -> git apply fails.
+  const fx = diFixture('stale.patch', `--- a/src/sum.js
++++ b/src/sum.js
+@@ -1,3 +1,3 @@
+ export function sum(a, b) {
+-  return a * b;
++  return a / b;
+ }
+`);
+  const result = await runTask(ctx(fx, wrapDrivers()));
+  assert.equal(result.status, 'completed');
+  const state = loadState(fx.taskDir);
+  const p = state.packets['M01-T01'];
+  assert.equal(p.status, 'completed');
+  assert.equal(p.evidence['defect-injection'].outcome, 'uninjectable');
+  assert.ok(state.inbox.some((e) => /uninjectable/.test(e.reason)));
+  assert.ok(!state.inbox.some((e) => /fake\/weak tests/.test(e.reason))); // no false accusation
+});
+
+test('P0-2: baseline red = inbox (broken suite), unit still completes', async () => {
+  const fx = diFixture('defect.patch', `--- a/src/sum.js
++++ b/src/sum.js
+@@ -1,3 +1,3 @@
+ export function sum(a, b) {
+-  return a + b;
++  return a - b;
+ }
+`);
+  // Break the suite itself BEFORE the run (baseline must fail).
+  writeFileSync(join(fx.root, 'src', 'sum.js'), 'export function sum(a, b) {\n  return a * b;\n}\n');
+  execFileSync('git', ['-C', fx.root, '-c', 'user.name=t', '-c', 'user.email=t@l', 'commit', '-qam', 'break suite']);
+  const result = await runTask(ctx(fx, wrapDrivers()));
+  assert.equal(result.status, 'completed');
+  const p = loadState(fx.taskDir).packets['M01-T01'];
+  assert.equal(p.status, 'completed');
+  assert.equal(p.evidence['defect-injection'].outcome, 'baseline-red');
+  assert.ok(loadState(fx.taskDir).inbox.some((e) => /baseline-red/.test(e.reason)));
 });

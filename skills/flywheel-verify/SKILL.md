@@ -14,7 +14,7 @@ arguments:
 
 # flywheel-verify — 只触发验证闸门
 
-Button only (DESIGN.md §13): validate + invoke CLI + translate. No loop logic
+Button only: validate + invoke CLI + translate. No loop logic
 here — and no model either: verification is the orchestrator running commands.
 
 ## 步骤

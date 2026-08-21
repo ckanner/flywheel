@@ -12,11 +12,11 @@ arguments:
     required: false
 ---
 
-# flywheel-intake — 扫任务源进 triage（外挂模块，§4.5）
+# flywheel-intake — 扫任务源进 triage（外挂模块）
 
-Button only (DESIGN.md §13): validate + invoke CLI + translate. No loop logic
+Button only: validate + invoke CLI + translate. No loop logic
 here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求永远走
-`/skill:flywheel-new` + 人审（§12）。
+`/skill:flywheel-new` + 人审。
 
 ## 步骤
 
