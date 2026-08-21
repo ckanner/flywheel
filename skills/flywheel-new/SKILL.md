@@ -1,7 +1,9 @@
 ---
 name: flywheel-new
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + state.json), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
+whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: Requires write access + git in the target repository; generated contracts follow the schemas in the flywheel repo templates/.
 arguments:
   - name: requirement

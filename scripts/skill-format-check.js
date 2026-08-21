@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Skill format gate (repo-local, zero deps): every skills/<name>/SKILL.md must
 // carry YAML frontmatter with `name` (matching the directory), a non-empty
-// `description`, and a `version`. name+description are the Agent Skills
-// standard contract; version is this repo's own discipline (DESIGN.md 铁律 6).
+// `description`, and a version inside the spec's `metadata` map
+// (agentskills.io/specification: metadata = string->string map; top-level
+// version is not a spec field). name+description are the Agent Skills
+// standard contract; kimi code additionally consumes whenToUse/arguments.
 // Modeled on larksuite/cli's scripts/skill-format-check (CI-gated).
 //
 // Usage: node scripts/skill-format-check.js [skills-dir]   (default: <repo>/skills)
-
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,10 +41,13 @@ export function checkSkills(skillsDir) {
       continue;
     }
     const fm = m[1];
-    for (const field of ['name', 'description', 'version']) {
+    for (const field of ['name', 'description']) {
       if (!new RegExp(`^${field}:\\s*\\S`, 'm').test(fm)) {
         errors.push(`${name}: frontmatter missing non-empty '${field}'`);
       }
+    }
+    if (!/^metadata:[ \t]*\n[ \t]+version:[ \t]*\S/m.test(fm)) {
+      errors.push(`${name}: frontmatter missing metadata.version (spec: metadata is a string->string map)`);
     }
     const nameMatch = /^name:\s*(\S+)/m.exec(fm);
     if (nameMatch && nameMatch[1] !== name) {

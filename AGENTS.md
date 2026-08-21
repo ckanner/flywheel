@@ -26,10 +26,10 @@ npm run skill-format-check     # frontmatter gate for skills/
 
 Real smoke tests (`pi-smoke`, `kimi-smoke`) need the harness CLIs and
 `OPENCODE_API_KEY` / `KIMI_API_KEY`; they skip cleanly when absent. They also
-depend on environment facts recorded in HANDOFF.md (e.g. `~/.pi/agent/models.json`
-overrides) — if a real smoke fails, read HANDOFF.md before touching product code.
+depend on environment facts recorded in HANDOFF.md (e.g. `~/.pi/agent/models.json` overrides) — if a real smoke fails, read HANDOFF.md before touching product code.
 
 ## Hard Contracts
+
 
 - **state.json**: written ONLY by the orchestrator, every write compare-and-set
   on `revision`, atomic (tmp+rename). Agents and skills never write it.
@@ -46,8 +46,10 @@ overrides) — if a real smoke fails, read HANDOFF.md before touching product co
   volatile trio (metrics.jsonl / orchestrator.log / orchestrator.pid).
 - **Skills are buttons**: a SKILL.md contains validation + CLI invocation +
   translation, never loop logic. Frontmatter requires `name` (matching the
-  directory), non-empty `description`, `version` — enforced by
-  `npm run skill-format-check` in CI.
+  directory), non-empty `description`, and `metadata.version` (the Agent
+  Skills spec's metadata map; top-level version is not a spec field). kimi
+  code's `whenToUse`/`arguments` extension fields are load-bearing for
+  auto-invocation — keep them. Enforced by `npm run skill-format-check` in CI.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
   `status`/`stop` print human-readable text. Errors go to stderr. Exit codes:
   `0` ok, `1` usage/runtime error, `3` escalated / budget-stopped / failed

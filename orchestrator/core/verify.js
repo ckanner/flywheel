@@ -66,6 +66,27 @@ export async function runGateCommands(commands = [], { cwd, env, timeoutMs = 300
   return { pass: results.every((r) => r.pass), results };
 }
 
+/**
+ * Dirty worktree paths OUTSIDE the task dir (repo-relative, status porcelain
+ * parsed). Returns null when the workspace is not a git checkout.
+ *
+ * The task dir is orchestrator-owned and expected to change (contract and
+ * ledger files); anything ELSE dirty at run start is pre-existing WIP the
+ * scoped unit commit would sweep in (P1-1 caveat — the diff is "everything
+ * since the base ref", not "everything the executor touched").
+ */
+export async function foreignDirtyFiles(cwd, taskDirPrefix) {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'status', '--porcelain'], { maxBuffer: 4 * 1024 * 1024 });
+    return stdout
+      .split('\n')
+      .map((line) => line.slice(3).trim())
+      .filter((f) => f && !f.startsWith(taskDirPrefix));
+  } catch {
+    return null;
+  }
+}
+
 // Well-known empty-tree sha: diff base for repositories with zero commits.
 export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 

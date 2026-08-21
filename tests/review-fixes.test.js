@@ -10,7 +10,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +66,34 @@ function git(dir, args) {
 // ---------------------------------------------------------------------------
 // P1-1: scoped unit commit
 // ---------------------------------------------------------------------------
+
+test('P1-1 caveat: foreign dirty files warn at run start; task-dir ledger dirt does not', async () => {
+  const fx = makeGitFixture({ extraFiles: ['src/app.ts'] });
+  // Pre-existing uncommitted WIP outside the task dir — exactly what the
+  // scoped unit commit will sweep in.
+  appendFileSync(join(fx.root, 'src/app.ts'), '// user wip\n');
+  // Task-dir runtime dirt is expected on a resume — must NOT warn.
+  writeFileSync(join(fx.taskDir, 'metrics.jsonl'), '{"ts":"x"}\n', 'utf8');
+
+  const warnings = [];
+  const result = await runTask({
+    taskDir: fx.taskDir, cwd: fx.root, config: loadConfig(fx.taskDir, fx.root),
+    drivers: wrapDrivers(), sleep: noSleep, log: (m) => warnings.push(m),
+  });
+  assert.equal(result.status, 'completed');
+  assert.ok(warnings.some((w) => /dirty file\(s\) outside the task dir/.test(w)), `warnings: ${JSON.stringify(warnings)}`);
+  assert.ok(warnings.some((w) => w.includes('src/app.ts')), 'names the foreign file');
+  assert.ok(!warnings.some((w) => /metrics\.jsonl/.test(w)), 'task-dir ledger dirt does not warn');
+
+  // Clean worktree at start: no warning.
+  const fx2 = makeGitFixture({ extraFiles: ['src/app.ts'] });
+  const warnings2 = [];
+  await runTask({
+    taskDir: fx2.taskDir, cwd: fx2.root, config: loadConfig(fx2.taskDir, fx2.root),
+    drivers: wrapDrivers(), sleep: noSleep, log: (m) => warnings2.push(m),
+  });
+  assert.ok(!warnings2.some((w) => /dirty file/.test(w)), `unexpected warnings: ${JSON.stringify(warnings2)}`);
+});
 
 test('P1-1: unit commit is scoped — volatile ledger files never enter git history', async () => {
   const fx = makeGitFixture({ extraFiles: ['src/app.ts'] });
@@ -284,7 +313,7 @@ test('install-skills writes the flywheel-home.txt anchor next to the skills', ()
   const home = mkdtempSync(join(tmpdir(), 'flywheel-anchor-'));
   const root = mkdtempSync(join(tmpdir(), 'flywheel-repo-'));
   mkdirSync(join(root, 'skills', 'demo-skill'), { recursive: true });
-  writeFileSync(join(root, 'skills', 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: demo\nversion: 1.0.0\n---\n\n# demo\n', 'utf8');
+  writeFileSync(join(root, 'skills', 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: demo\nmetadata:\n  version: "1.0.0"\n---\n\n# demo\n', 'utf8');
   const { targetBase } = installSkills({ homeDir: home, root });
   const anchor = readFileSync(join(targetBase, 'flywheel-home.txt'), 'utf8');
   assert.equal(anchor.trim(), root);

@@ -23,7 +23,7 @@ test('skill-format: violations are reported — missing version, wrong name, no 
   const dir = mkdtempSync(join(tmpdir(), 'flywheel-skillfmt-'));
   const ok = join(dir, 'good-skill');
   mkdirSync(ok, { recursive: true });
-  writeFileSync(join(ok, 'SKILL.md'), '---\nname: good-skill\ndescription: demo\nversion: 1.0.0\n---\n\n# good\n', 'utf8');
+  writeFileSync(join(ok, 'SKILL.md'), '---\nname: good-skill\ndescription: demo\nmetadata:\n  version: "1.0.0"\n---\n\n# good\n', 'utf8');
 
   const noVersion = join(dir, 'no-version');
   mkdirSync(noVersion, { recursive: true });
@@ -31,7 +31,7 @@ test('skill-format: violations are reported — missing version, wrong name, no 
 
   const wrongName = join(dir, 'wrong-name');
   mkdirSync(wrongName, { recursive: true });
-  writeFileSync(join(wrongName, 'SKILL.md'), '---\nname: other\ndescription: x\nversion: 1.0.0\n---\n\n# x\n', 'utf8');
+  writeFileSync(join(wrongName, 'SKILL.md'), '---\nname: other\ndescription: x\nmetadata:\n  version: "1.0.0"\n---\n\n# x\n', 'utf8');
 
   const noFm = join(dir, 'no-frontmatter');
   mkdirSync(noFm, { recursive: true });

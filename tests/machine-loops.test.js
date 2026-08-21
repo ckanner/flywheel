@@ -363,21 +363,28 @@ test('credentials: waiting state is visible as awaiting-credentials while pollin
   const fx = makeFixture();
   const file = join(fx.taskDir, 'task-packet-M01-T01.md');
   writeFileSync(file, readFileSync(file, 'utf8').replace('needs-live-credentials: false', 'needs-live-credentials: true'));
-  // Approve mid-wait, and observe the intermediate state while polling.
-  setTimeout(() => {
-    mkdirSync(join(fx.taskDir, 'approvals'), { recursive: true });
-    writeFileSync(join(fx.taskDir, 'approvals', 'M01-T01.json'), JSON.stringify({ 'approved-env': [] }));
-  }, 60);
+  // Generous approval timeout: the test approves only AFTER observing the
+  // awaiting state. A tight timeout would race the observation loop (the
+  // original 60ms-approval variant flaked under full-suite parallel load).
+  const cfgFile = join(fx.taskDir, 'flywheel.config.json');
+  const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'));
+  cfg.credentials = { 'poll-interval-ms': 10, 'timeout-ms': 30_000 };
+  writeFileSync(cfgFile, JSON.stringify(cfg), 'utf8');
+
   const run = runTask(ctx(fx, wrapDrivers(), realSleep));
+  // 1. Observe the intermediate state (the machine announces at its own pace).
   let midState = null;
-  for (let i = 0; i < 40 && midState === null; i++) {
+  for (let i = 0; i < 1000 && midState === null; i++) {
     await new Promise((r) => setTimeout(r, 5));
     const s = JSON.parse(readFileSync(join(fx.taskDir, 'state.json'), 'utf8'));
     if (s.packets['M01-T01'].status === 'awaiting-credentials') midState = s;
   }
-  const result = await run;
   assert.ok(midState, 'awaiting-credentials was observable while polling');
   assert.ok(midState.inbox.some((e) => /approved-env/.test(e.reason))); // human was asked
+  // 2. Only now approve — the machine picks it up on its next poll.
+  mkdirSync(join(fx.taskDir, 'approvals'), { recursive: true });
+  writeFileSync(join(fx.taskDir, 'approvals', 'M01-T01.json'), JSON.stringify({ 'approved-env': [] }));
+  const result = await run;
   assert.equal(result.status, 'completed');
   const p = loadState(fx.taskDir).packets['M01-T01'];
   assert.deepEqual(p.evidence.credentials['approved-env'], []);

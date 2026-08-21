@@ -1,7 +1,9 @@
 ---
 name: flywheel-intake
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
+whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
 compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js) and pi >=0.84 (triage runs V4 Flash); github-issues sources also need the gh CLI.
 arguments:
   - name: slug

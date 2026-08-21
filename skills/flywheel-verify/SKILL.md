@@ -1,7 +1,9 @@
 ---
 name: flywheel-verify
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
+whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js). No harness CLI needed — verification is model-free.
 arguments:
   - name: slug

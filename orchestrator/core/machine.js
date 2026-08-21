@@ -20,7 +20,7 @@ import { loadSpec, loadPackets, milestoneOfPacket } from './contracts.js';
 import { loadState, saveState, initState, stateExists, markInterruptedUnits, recordUsage, ensurePacketStates } from './state.js';
 import { evaluateExitContract } from './exit-contract.js';
 import { parseDoneReport } from './done-report.js';
-import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText } from './verify.js';
+import { runGateCommands, getChangedFiles, checkBoundaries, getBaseRef, commitUnitChanges, getDiffText, foreignDirtyFiles } from './verify.js';
 import { LEDGER_FILES, LEDGER_DIRS, isLedgerTaskPath, COMMIT_VOLATILE_FILES } from './ledger.js';
 import { classifyError, isRetryable, shouldFallback, computeBackoff, extractRetryAfterMs } from './errors.js';
 import { checkBudget, failureSignature, detectSpin } from './circuit-breaker.js';
@@ -61,6 +61,20 @@ export function assertNoRunningOrchestrator(taskDir) {
     return; // dead process = stale pid file
   }
   throw new Error(`another orchestrator is running this task (pid ${pid}) — stop it first: flywheel stop <slug>`);
+}
+
+/**
+ * P1-1 caveat guard: warn when the worktree is dirty OUTSIDE the task dir —
+ * the scoped unit commit diffs everything since the base ref, so pre-existing
+ * uncommitted WIP would be swept into a unit commit. Warn, never block.
+ */
+export async function warnIfForeignDirty(ctx) {
+  const foreign = await foreignDirtyFiles(ctx.cwd, taskDirPrefix(ctx));
+  if (foreign && foreign.length > 0) {
+    ctx.log(
+      `WARNING: ${foreign.length} dirty file(s) outside the task dir at run start (e.g. ${foreign.slice(0, 3).join(', ')}) — unit commits are scoped to base-ref diffs and WILL include these pre-existing changes`,
+    );
+  }
 }
 
 /**
@@ -1177,6 +1191,7 @@ export async function runTask(opts) {
   const ctx = createContext(opts);
   const { pauseBefore = null } = opts;
   assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
+  await warnIfForeignDirty(ctx);
   writePid(ctx);
   // Graceful stop (§9 kill switch): kill in-flight child process groups and
   // await quiescence before exiting, so no orphan writes to the workspace.
@@ -1184,7 +1199,6 @@ export async function runTask(opts) {
     ctx.log('SIGTERM received — killing in-flight children, then exiting');
     killActiveChildren().finally(() => process.exit(143));
   };
-  process.once('SIGTERM', onSigterm);
   try {
     // Crash recovery: never silently reset in-flight units (§5.2).
     const interrupted = markInterruptedUnits(ctx.state);
@@ -1312,6 +1326,7 @@ export async function runSingleStep(opts) {
   const ctx = createContext(opts);
   const { only, packetId = null } = opts;
   assertNoRunningOrchestrator(ctx.taskDir); // P1: single instance per task
+  await warnIfForeignDirty(ctx);
   writePid(ctx);
   const onSigterm = () => {
     ctx.log('SIGTERM received — killing in-flight children, then exiting');

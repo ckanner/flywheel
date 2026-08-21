@@ -1,7 +1,9 @@
 ---
 name: flywheel-stop
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Stop the Flywheel orchestrator for a task and freeze its state. Use when the user says "/skill:flywheel-stop docs/<slug>" or wants to halt a running flywheel task.
+whenToUse: 当用户要停止正在运行的编排器（干预、预算控制、异常处理）时使用。
 compatibility: Requires the flywheel CLI (Node.js >=20; run "npm link" in the flywheel repo, or fall back to node <flywheel-repo>/bin/flywheel.js).
 arguments:
   - name: slug
