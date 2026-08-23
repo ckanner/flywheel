@@ -1,46 +1,50 @@
 # Flywheel — 新 Session 交接上下文
 
-> 给接续工作的 agent：你在 `~/Documents/projects/flywheel/`（git 已 init，主线 main）。仓库已含完整实现：bin / orchestrator / templates / skills / tests / drills / README / AGENTS.md（核心 2026-08-20 建成，npm test 206/206 全绿）。
-> **第一步先通读 `DESIGN.md`（v0.15，约 500 行）**，它是唯一权威设计文档。§2 的十条设计铁律是最高约束，任何实现决策不得与之冲突。
+> 给接续工作的 agent：你在 `~/Documents/projects/flywheel/`（git 主线 main）。
+> 仓库为 **Go 版全量实现**（2026-08-22 迁移完成）：cmd / internal / templates / skills / scripts。
+> **第一步先通读 `DESIGN.md`（v0.17，约 500 行）**，它是唯一权威设计文档。§2 的十条设计铁律是最高约束，任何实现决策不得与之冲突。
 
 ## 项目一句话
 
-Flywheel（飞轮）是一套 loop engineering 系统：外部编排器进程（不是 agent）驱动多个 agent loop（规划/执行/评审），接收已冻结的需求，自动完成软件任务的规划、实现、评审与分层验证，全程可无人值守，异常升级给人。
+Flywheel（飞轮）是一套 loop engineering 系统：外部编排器进程（不是 agent）驱动多个 agent loop（规划/执行/评审），接收已冻结的需求，自动完成软件任务的规划、实现、评审与分层验证，全程无人值守，异常升级给人。
+
+## 构建与验收（唯一闸门）
+
+```bash
+go build ./... && make quality-gate   # vet + fmt-check + 覆盖率 100% 门禁
+```
+
+- Go >= 1.27；依赖 cobra/yaml.v3/jsonschema v6/testify（`go.mod` 为准）。
+- **覆盖率 100% 是硬门禁**：反向驱动可测性（sleep/now/env/log 注入缝）；禁魔改单测绕过；不可达防御分支删代码+注释。
+- skills frontmatter 规范由 internal/skillsembed 测试强制（真 YAML 解析 + name/version/description/whenToUse/arguments），CI 阻断。
 
 ## 已定型的关键决策（细节全在 DESIGN.md）
 
-- **编排器是确定性代码**（Node.js CLI），不是 skill、不是 agent；skill 只是触发按钮。
-- **三个主 loop**：Plan = kimi code + Kimi K3（长驻会话）；Execute = pi + DeepSeek V4 Flash（每单元全新会话，CLI `pi -p` 驱动，容器内）；Review = pi + DeepSeek V4 Pro（全新会话）。
-- **全部模型 reasoning_effort=max**；会话级模型隔离（一个会话从生到死只绑一个模型，跨角色只传文本契约）。
-- **执行路由**：packet 带 `route` 字段；`frontend` → kimi code + K3，`default` → pi + V4 Flash，`hard` → K3（已决，§11.6；V4 Pro 为降级渠道）。
-- **验证体系**：L1 确定性（含变更代码 100% 覆盖率闸门 + 存量 ratchet）→ Review（LLM 评审）→ 里程碑关闭前 L2/L3（真实环境端到端）。
-- **state.json 只由编排器写入**（v0.7 修订）：agent 只写 done-report，编排器校验推进后自行更新；缺陷注入为编排器确定性脚本执行的抽检；Plan 长驻会话死亡走冷启动重建协议。
-- **无容器沙箱**（v0.10 决策）：Execute/Review 本机直跑，信任模型同日常 kimi code auto 模式；测试/boundaries 完整性靠 git diff 事后判定；executor 环境只注入低价值 executor key；接入不可信输入前重新评估容器化。
-- **契约层**：spec.md（编号需求 R-01…）+ task-packet（带 contract-version）+ state.json（编排器唯一信源）+ retro.md；全部进 git、全部已提交。
-- **触发方式**：skill 族（`/skill:flywheel-new/run/plan/exec/review/verify/status/stop`），编排器以独立进程拉起，不住在任何 harness 会话里。
-- **渠道**：Kimi 走 kimi code 订阅；DeepSeek 走 OpenCode Go 订阅（注意 Pro 月额度仅 $15），DeepSeek 直连 API 作降级备份。
+- **编排器是确定性 Go CLI**（cobra 命令树），不是 skill、不是 agent；skill 只是触发按钮。
+- **三个主 loop**：Plan = kimi code + Kimi K3（长驻会话）；Execute = pi + DeepSeek V4 Flash（每单元全新会话）；Review = pi + DeepSeek V4 Pro（全新会话）。Judge = pi(kimi-coding) + K3。
+- **全部模型 reasoning_effort=max**；会话级模型隔离；跨角色只传文本契约。
+- **单元级 worktree 隔离**（v0.16）：worktree 在仓库旁 `.flywheel-worktrees/`，ff-merge 回主 checkout，账本提交限定 docs/<slug>/；不可用回退原地执行。
+- **state.json 只由编排器写入**：CAS revision、tmp+rename 原子写；agent 只写 done-report。
+- **无容器沙箱**：本机直跑；git diff 事后判定边界；executor 环境白名单注入低价值 key。
+- **渠道降级链**：opencode-go → opencode（QUOTA/RATE_LIMIT 触发；AUTH 不降级）；kimi 订阅 → kimi-coding。
 
-## 本机环境事实（已验证）
+## 审计修复已全部落地（v0.17，勿回退）
 
-- pi 0.84.0 已装；`OPENCODE_API_KEY`、`KIMI_API_KEY` 已在环境变量中；pi 的 `opencode-go` provider 目录里有 `deepseek-v4-flash` 和 `deepseek-v4-pro`。
-- 编辑格式 A/B 已跑（结果在 DESIGN.md 附录 C）：**Execute Loop 用 pi 原生编辑协议，不引入 hashline**。
-- pi CLI 驱动链路（`pi -p --model opencode-go/deepseek-v4-flash --no-session`）实测可用。
-- **pi 目录 maxTokens 覆盖（2026-08-21 修正，重要）**：OpenCode Go 上游拒绝 pi 目录里 `deepseek-v4-flash/-pro` 的默认 `maxTokens: 384000`（上限 131072），400 错误藏在事件流里且 pi 仍 exit 0。已写用户级 `~/.pi/agent/models.json`，对 opencode-go 与 opencode 两个 provider 的 flash/pro 模型 `modelOverrides.maxTokens = 131072`。**删掉或换机需重建该文件**；pi 目录刷新后若 maxTokens 被修复可移除。
+P1 kill switch（RunTask 注册 SIGTERM → 杀子进程组 → quiescence → exit 143）；skills frontmatter YAML 合法化 + 真 YAML 门禁；P2 in-place base-ref 重锚、空转检测用 L1 权威 diff、先 commit 再 completed、resume 补缺陷注入；P3 日志走 stderr、install-skills actionText 含 stale 等。
 
-## 下一步任务（按顺序）
+## 本机环境事实
 
-1. ~~实证门槛 §10 第 2 项~~（**已完成 2026-08-18**：Go 透传 `reasoning_effort` 确认，max 档推理量为 low 档 2.4–3.4 倍；Execute/Review/Judge 保留 Go 通道；pi L0 冒烟通过。数据与注意事项见 DESIGN.md 附录 D）。
-2. ~~实证门槛 §10 第 3 项~~（**2026-08-20 用户确认关闭**：kimi code 长驻/1M/max 可用性（含 frontend 路由）经用户确认，不再实测；驱动冒烟已通过，看门狗兜底）。已知限制：kimi stream-json 无 usage 暴露，Plan 的 token 暂不可观测。
-3. ~~实证门槛 §10 第 4 项~~（**已关闭 2026-08-20**：403 演练完成（401/403 分类修正）；v0.15 裁决 DeepSeek 直连不采用、占位链已移除，降级链 = opencode-go → opencode(Zen 按量)；真实 403 报文不再专门验证）。
-4. ~~核心建设~~（**完成 2026-08-20**）：`orchestrator/`（Node CLI，bin 名 flywheel）、`templates/`、`skills/`（10 个 SKILL.md）、外挂 Intake/Garden；`npm test` 全绿（含真实 pi/kimi 冒烟）。已知缺口：kimi stream-json 无 usage（v0.15 接受现状）、L2/L3 隔离环境（接功能任务时建）、局部并行（暂缓）。
-5. ~~架构评审修复~~（**完成 2026-08-21**）：架构师评审后一轮修复（P1×4 + P2×8 + skill 层 4 项）：单元提交改为**限定范围**（单元 diff − 易变 ledger：metrics.jsonl/orchestrator.log/orchestrator.pid，不再 `git add -A` 卷入用户 WIP 与活日志）；**单实例 pid 护栏**（并发 run 拒绝启动，stale pid 自动清理；CAS 冲突转人话）；**常规 plan 步后重载契约**（与 escalate 路径对称，Planner 新增 packet 自动建 state 条目）；**验收 expect 在契约装载时校验**（坏 expect 不再造成 spawn-崩溃循环）；**inbox 重跑护栏**（已升级 packet 重跑不再 spawn、不重复 inbox 条目；凭证批准文件出现可自动 re-arm）；retro 汇总的 human-interventions 按里程碑计数；config version 校验；skills 加 version、去 whenToUse、锚文件定位仓库根；skill-format-check + CI（GitHub Actions）+ AGENTS.md 仓库宪法；文档漂移修齐。
-6. ~~worktree 隔离~~（**完成 2026-08-21，v0.16，用户裁决**）：每个执行单元在独立 git worktree 中运行（checkout 在仓库旁 `<repo-parent>/.flywheel-worktrees/<repo>-<slug>-<packet>/`——放 `<repo>/.git/` 下会与 git per-worktree 管理目录冲突，实测后修正；分支 `flywheel/<slug>/<packet>`，从单元 base-ref 创建）。executor 只见干净工作区：主 checkout 的用户 WIP 永不被卷入或冲突（P1-1 caveat 关闭）。流程：worktree 内提交代码 → 主 checkout `ff-merge` → 删除 worktree/分支 → 主 checkout 只提交契约/账本（限定 docs/<slug>/，ps.commit = 代码提交 + ledger-sha）。契约防篡改检查同时盯主 checkout 的 taskDir（executor 知道其绝对路径）。崩溃恢复按确定性路径复用既有 worktree。非 git 仓库或 worktree 不可用（config `worktree.enabled: false`）回退原地执行，该模式保留脏工作区告警。
+- macOS arm64；Go 工具链经 mise 管理（默认 go@1.27.0）。⚠️ shell PATH 硬编码了旧版 go 1.26 路径——新会话先 `go version` 核对，不对则 `eval "$(mise env)"`。
+- pi 0.84.0 已装；`OPENCODE_API_KEY`、`KIMI_API_KEY` 在环境变量；`~/.pi/agent/models.json` 有 maxTokens=131072 覆盖（删掉或换机需重建）。
+- kimi stream-json 无 usage 暴露：Plan 的 token 不可观测（接受现状，看门狗兜底）。
+- git remote origin → github.com/ckanner/flywheel（ssh）；gh 已登录 ckanner。
 
+## 下一步（迁移完成后）
 
-## 工作规则
+1. 用真实任务（mimir 头部 S4-0/S0-00/M1-1）做首次实战演练，按 §10 实证门槛逐项验证。
+2. goreleaser 发布流程首跑（tag → release → npm 包 @ckanner/flywheel 安装冒烟）。
+3. retro.md 积累后跑 `flywheel garden`，检验知识资产维护循环。
 
-- **不要擅自 git commit / push**；任何 git 变更先问用户。
-- 不偏离 DESIGN.md 的设计；发现设计错误时先与用户讨论，改文档（变更记录升版本），再改代码。
-- 首批任务：目标仓库 mimir（`~/Documents/projects/mimir`，§11.2 已决），取其头部任务 S4-0/S0-00/M1-1 经 `/skill:flywheel-new` 生成契约；live 凭证任务（S2/S3 等）等核心链路稳定后再接。
-- 与用户交流用中文；仓库内代码与文档语言遵循现有惯例（DESIGN.md 为中文）。
-- **决策原则（2026-08-20 用户确立）：质量/效率/速度优先，成本不计入**。模型/通道选型、架构取舍时不再权衡价格因素；订阅额度与账单归用户管理。
+## 决策原则
+
+**质量/效率/速度优先，成本不计入**（2026-08-20 用户确立）。模型/通道选型、架构取舍不再权衡价格因素。

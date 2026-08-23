@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Flywheel（飞轮）is a loop-engineering system: a deterministic Node.js
+Flywheel（飞轮）is a loop-engineering system: a deterministic Go
 orchestrator drives Plan / Execute / Review agent loops from frozen contracts
 on disk, unattended, escalating to a human when stuck. This repo holds the
-orchestrator (`bin/` + `orchestrator/`), the contract templates
-(`templates/`), the button skills (`skills/`), and the test suite.
+orchestrator (`cmd/` + `internal/`), the contract templates (`templates/`),
+and the button skills (`skills/`).
 
 DESIGN.md is the authoritative design document. Its §2 十条设计铁律 are the
 highest constraint: any implementation decision that conflicts with them is
@@ -16,44 +16,51 @@ mechanically checkable.
 ## Build & Test
 
 ```bash
-npm ci                         # only runtime dependency: yaml
-npm test                       # full gate: unit + mock e2e + real pi/kimi smoke
-                               # (real smoke auto-skips without creds; see below)
-npm run skill-format-check     # frontmatter gate for skills/
+go build ./...            # 需要 Go >= 1.27（唯一构建依赖）
+make test                 # go test ./... 全部包
+make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外）
+make quality-gate         # vet + fmt-check + coverage —— CI 同款，唯一验收闸门
 ```
 
-`npm test` is the ONLY acceptance gate. Do not yield work without it green.
-
-Real smoke tests (`pi-smoke`, `kimi-smoke`) need the harness CLIs and
-`OPENCODE_API_KEY` / `KIMI_API_KEY`; they skip cleanly when absent. They also
-depend on environment facts recorded in HANDOFF.md (e.g. `~/.pi/agent/models.json` overrides) — if a real smoke fails, read HANDOFF.md before touching product code.
+`make quality-gate` 绿是交付的唯一标准。真实 pi/kimi 冒烟不在默认门禁内；
+mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
 
 ## Hard Contracts
 
-
-- **state.json**: written ONLY by the orchestrator, every write compare-and-set
-  on `revision`, atomic (tmp+rename). Agents and skills never write it.
-- **Error taxonomy**: `ERROR_CODES` / `RETRYABLE_CODES` / `FALLBACK_CODES` in
-  `orchestrator/core/errors.js` are a wire contract. Changes are design changes:
-  update DESIGN.md §6 and the 变更记录 first, then code, then tests.
-- **Contract field set**: `PACKET_ALLOWED_FIELDS` in `orchestrator/core/contracts.js`
-  must stay in lockstep with `templates/task-packet.schema.json`
-  (`additionalProperties:false`). Validation happens at LOAD time — a malformed
-  acceptance must fail fast, never crash mid-run after a spawn.
+- **state.json**: written ONLY by the orchestrator, every write is
+  compare-and-set on `revision`, atomic (tmp+rename). Agents and skills never
+  write it. `internal/state` owns all reads/writes.
+- **Contract field set**: `templates/*.schema.json` is the single source of
+  truth; validation happens at LOAD time via jsonschema (internal/contract) —
+  a malformed acceptance must fail fast, never crash mid-run after a spawn.
+- **Error taxonomy**: `internal/errs` codes (AUTH/QUOTA/RATE_LIMIT/SERVER/
+  TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED)
+  are a wire contract. Changes are design changes: update DESIGN.md §6 and the
+  变更记录 first, then code, then tests.
 - **Ledger zone**: paths inside `docs/<slug>/` are classified by
-  `orchestrator/core/ledger.js` (single source of truth). Executor-diff
-  judgement excludes ledger paths; unit commits additionally exclude the
-  volatile trio (metrics.jsonl / orchestrator.log / orchestrator.pid).
+  `internal/ledger`. Boundary judgement excludes ledger paths; unit commits
+  additionally exclude the volatile trio (metrics.jsonl / orchestrator.log /
+  orchestrator.pid).
 - **Skills are buttons**: a SKILL.md contains validation + CLI invocation +
-  translation, never loop logic. Frontmatter requires `name` (matching the
-  directory), non-empty `description`, and `metadata.version` (the Agent
-  Skills spec's metadata map; top-level version is not a spec field). kimi
-  code's `whenToUse`/`arguments` extension fields are load-bearing for
-  auto-invocation — keep them. Enforced by `npm run skill-format-check` in CI.
+  translation, never loop logic. Frontmatter requires `name` matching the
+  directory, non-empty `description`, `metadata.version`, and — kimi code
+  extensions that auto-invocation depends on — non-empty `whenToUse` and
+  `arguments`. Enforced by internal/skillsembed tests (real YAML parsing,
+  CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
-  `status`/`stop` print human-readable text. Errors go to stderr. Exit codes:
-  `0` ok, `1` usage/runtime error, `3` escalated / budget-stopped / failed
-  manual step.
+  `status`/`stop`/`install-skills` print human-readable text; errors go to
+  stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /
+  budget-stopped / failed manual step.
+- **SIGTERM kill switch**: machine.RunTask registers SIGTERM → kills in-flight
+  child process groups → awaits quiescence → exits 143. Never remove this.
+
+## Coverage Discipline
+
+100% statement coverage per package is a hard gate (`make coverage`). It is a
+design tool: unreachable defensive branches get deleted (with a comment citing
+why), everything else gets an injection seam (sleep/now/env/log/clock) rather
+than a mocked-out test. Do not loosen the gate; do not write tests that assert
+implementation trivia to chase the number.
 
 ## Git Discipline
 
