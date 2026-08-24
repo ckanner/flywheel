@@ -369,7 +369,7 @@ for milestone in spec.milestones:
    - 问答纪律：**意图类的它问你，事实类的它自己查证**。技术事实不许问人（自己读代码/跑命令验证，写进 spec 附证据）；意图歧义不许猜（停下来问清楚再生成）。草稿生成后停下，等人审。**冻结点 = 人审契约**：不要求源素材（目标仓库的设计文档等）预先定稿——你审过契约即冻结，此后范围变更只能走 Plan Loop 修订。
 2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界。契约质量决定产出质量，审契约比审代码便宜得多。
 3. **启动（在 harness 里扣扳机）**：`/skill:flywheel-run docs/<slug>`——skill 让 agent 把编排器**以独立进程拉起**（launchd/nohup，不依赖当前会话存活）、确认存活、报告状态入口；之后关掉 harness 窗口不影响运行。CLI `flywheel run` 是底层接口与后路。`/skill:flywheel-status` / `/skill:flywheel-stop` 同理。
-   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。
+   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。注意 `--pause-before` 与 `--only` 互斥（单步天然逐步执行，组合直接报错）；skill 侧经 `/skill:flywheel-run docs/<slug> [pause]` 的可选参数使用。
 4. **观察与干预（在哪都行）**：`flywheel status` 或让 harness 里的 agent 读 state.json/retro.md 讲进度；干预 = `flywheel stop` / 改 state.json / 写 inbox.md——全是文件操作。
 5. **交付**：分支/PR 留给人最终确认合并（外层循环归人）。
 
@@ -384,7 +384,7 @@ for milestone in spec.milestones:
 | Skill | 触发什么 | 背后动作 |
 |---|---|---|
 | `/skill:flywheel-new "需求"` | 任务生成（对话式） | 调研仓库 → 问意图问题 → 生成 spec+packets+state → 停下等人审 |
-| `/skill:flywheel-run docs/<slug>` | **全部 loop（全自动）** | 以独立进程拉起编排器，确认存活，报告状态入口 |
+| `/skill:flywheel-run docs/<slug> [pause]` | **全部 loop（全自动）** | 以独立进程拉起编排器，确认存活，报告状态入口；`pause=review` 为监督冻结点 |
 | `/skill:flywheel-plan docs/<slug>` | 只触发 Plan Loop | `flywheel run --only plan` |
 | `/skill:flywheel-exec docs/<slug> [packet]` | 只触发 Execute Loop | `flywheel run --only execute [--packet M02-T03]` |
 | `/skill:flywheel-review docs/<slug> [unit]` | 只触发 Review Loop | `flywheel run --only review [--unit M02-T03]` |

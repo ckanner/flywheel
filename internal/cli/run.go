@@ -41,6 +41,11 @@ func runCmd() *cobra.Command {
 			if pauseBefore != "" && pauseBefore != "review" {
 				return fmt.Errorf("--pause-before 只支持: review")
 			}
+			// v0.18：--only 单步本身就是一步一停，pause 语义不存在——
+			// 静默忽略会让使用者误以为冻结点已生效，fail-loud。
+			if only != "" && pauseBefore != "" {
+				return fmt.Errorf("--pause-before 不适用于 --only 单步模式（单步天然逐步执行）；去掉 --only 即为冻结点全自动")
+			}
 			cfg, err := config.Load(taskDir, mustCwd())
 			if err != nil {
 				return err

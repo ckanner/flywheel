@@ -524,6 +524,14 @@ func TestRunPauseBeforeRejectsNonReview(t *testing.T) {
 	assert.Contains(t, out, "--pause-before 只支持: review")
 }
 
+// TestRunPauseBeforeWithOnlyRejected：单步模式与冻结点组合必须 fail-loud，
+// 绝不静默忽略（v0.18）。
+func TestRunPauseBeforeWithOnlyRejected(t *testing.T) {
+	code, out := runCLI(t, "run", t.TempDir(), "--only", "execute", "--pause-before", "review")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "--pause-before 不适用于 --only 单步模式")
+}
+
 // ---- install-skills 分支：project/--copy/stale/skipped/error ----
 
 func TestInstallSkillsProjectCopyScope(t *testing.T) {
