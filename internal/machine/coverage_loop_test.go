@@ -29,7 +29,7 @@ func TestDefectInjectionSampledMissingConfigInboxButContinues(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	o := runOpts(fx, sd.set())
-	o.Config.DefectInjection.EveryNUnits = 1
+	o.Config.DefectInjection.EveryNUnits = new(1)
 	// Patch/TestCmd 留空。
 
 	summary, err := RunTask(o)
@@ -65,7 +65,7 @@ func TestDefectInjectionFakeTestsEscalates(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	o := runOpts(fx, sd.set())
-	o.Config.DefectInjection.EveryNUnits = 1
+	o.Config.DefectInjection.EveryNUnits = new(1)
 	o.Config.DefectInjection.Patch = writeDefectPatch(t, &fx)
 	o.Config.DefectInjection.TestCmd = "true" // 注入后仍成功 → fake
 
@@ -85,7 +85,7 @@ func TestDefectInjectionPassContinuesToComplete(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	o := runOpts(fx, sd.set())
-	o.Config.DefectInjection.EveryNUnits = 1
+	o.Config.DefectInjection.EveryNUnits = new(1)
 	o.Config.DefectInjection.Patch = writeDefectPatch(t, &fx)
 	o.Config.DefectInjection.TestCmd = "test ! -f defect-marker" // 注入后存在 → RED ✓
 

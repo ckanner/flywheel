@@ -154,7 +154,8 @@ func TestRunTaskBudgetHardStop(t *testing.T) {
 		},
 		"budget": {"enforce": "hard", "daily-token-limit": 50},
 		"watchdog": {"idle-timeout-ms": 5000, "wall-timeout-ms": 30000, "kill-grace-ms": 500},
-		"retry": {"base-delay-ms": 5, "max-delay-ms": 10, "jitter": 0}
+		"retry": {"base-delay-ms": 5, "max-delay-ms": 10, "jitter": 0},
+		"defect-injection": {"every-n-units": 1}
 	}`)
 
 	summary, err := RunTask(runOpts(fx, happyDrivers().set()))

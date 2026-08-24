@@ -8,8 +8,8 @@
 package watchdog
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -119,9 +119,73 @@ func killGroup(pid int, sig syscall.Signal) {
 	}
 }
 
+// cappedBuffer 带上限的缓冲：达限后丢弃后续并置 truncated 标志。
+type cappedBuffer struct {
+	mu        sync.Mutex
+	buf       bytes.Buffer
+	cap       int64
+	truncated bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if int64(b.buf.Len()) < b.cap {
+		room := b.cap - int64(b.buf.Len())
+		if int64(len(p)) <= room {
+			b.buf.Write(p)
+		} else {
+			b.buf.Write(p[:room])
+			b.truncated = true
+		}
+	} else {
+		b.truncated = true
+	}
+	return len(p), nil
+}
+
+func (b *cappedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *cappedBuffer) isTruncated() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.truncated
+}
+
+// streamWriter io.Writer 适配：把每段输出路由到 cappedBuffer、重置 idle 计时
+// 器并触发活动回调。由 exec 的内部复制 goroutine 调用（cmd.Stdout/Stderr），
+// Wait() 保证复制完成——Node 'close' 语义由标准库托管复制保证。
+type streamWriter struct {
+	mu           *sync.Mutex
+	buf          *cappedBuffer
+	stream       string
+	idleTimer    *time.Timer
+	idleTimeout  time.Duration
+	idleTimedOut *bool
+	onActivity   func(chunk, stream string)
+}
+
+func (w *streamWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buf.Write(p)
+	if w.idleTimer != nil && !*w.idleTimedOut {
+		w.idleTimer.Reset(w.idleTimeout) // 任何活动都证明流还活着
+	}
+	w.mu.Unlock()
+	if w.onActivity != nil {
+		w.onActivity(string(p), w.stream)
+	}
+	return len(p), nil
+}
+
 // Run 以双计时看门狗运行 command。阻塞到进程退出且 stdio 冲刷完毕
 // （Node 'close' 语义：'exit' 可能在缓冲输出未排干时触发，'close' 保证流已
-// 冲洗——尾部的 agent_settled/errorMessage 事件不会丢）。
+// 冲洗——尾部的 agent_settled/errorMessage 事件不会丢）。实现经 cmd.Stdout/
+// Stderr 托管复制：Wait() 返回即复制完成，无手动排干竞态（review #3）。
 func Run(command string, args []string, opts Opts) Result {
 	started := time.Now()
 	idleTimeout := msDur(opts.IdleTimeoutMs, DefaultIdleTimeoutMs)
@@ -136,19 +200,24 @@ func Run(command string, args []string, opts Opts) Result {
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 自成进程组 → 可整树 kill
 
-	// StdoutPipe/StderrPipe 在 Start 前调用且各一次，错误不可达（exec 内部
-	// 仅在重复设置或 Start 后调用时失败）——忽略返回的 error。
-	stdoutPipe, _ := cmd.StdoutPipe()
-	stderrPipe, _ := cmd.StderrPipe()
+	var mu sync.Mutex // 保护 idle/kill 状态位
+	idleTimedOut, wallTimedOut := false, false
+	killSent := false
+
+	stdoutBuf := &cappedBuffer{cap: MaxBuffer}
+	stderrBuf := &cappedBuffer{cap: MaxBuffer}
+	stdoutW := &streamWriter{mu: &mu, buf: stdoutBuf, stream: "stdout",
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, onActivity: opts.OnActivity}
+	stderrW := &streamWriter{mu: &mu, buf: stderrBuf, stream: "stderr",
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, onActivity: opts.OnActivity}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+
 	if err := cmd.Start(); err != nil {
 		res.SpawnError = err.Error()
 		res.DurationMS = time.Since(started).Milliseconds()
 		return res
 	}
-
-	var mu sync.Mutex // 保护 res.Stdout/Stderr/Truncated 与 idle 定时器状态
-	idleTimedOut, wallTimedOut := false, false
-	killSent := false
 
 	child := &activeChild{
 		pid:    cmd.Process.Pid,
@@ -185,83 +254,33 @@ func Run(command string, args []string, opts Opts) Result {
 		mu.Unlock()
 		beginKill()
 	})
+	stdoutW.idleTimer = idleTimer
+	stderrW.idleTimer = idleTimer
 
-	appendStream := func(stream, text string) {
-		mu.Lock()
-		defer mu.Unlock()
-		if stream == "stdout" {
-			if int64(len(res.Stdout)) < MaxBuffer {
-				res.Stdout += text
-			} else {
-				res.Truncated = true
-			}
-		} else {
-			if int64(len(res.Stderr)) < MaxBuffer {
-				res.Stderr += text
-			} else {
-				res.Truncated = true
-			}
-		}
-		if !idleTimedOut {
-			idleTimer.Reset(idleTimeout) // 任何活动都证明流还活着
-		}
-		if opts.OnActivity != nil {
-			go opts.OnActivity(text, stream)
-		}
-	}
+	// Wait 返回 = 进程退出 + exec 内部复制 goroutine 排干 —— Node 'close'。
+	_ = cmd.Wait()
 
-	drain := func(r io.Reader, stream string, wg *sync.WaitGroup) {
-		defer wg.Done()
-		buf := make([]byte, 64*1024)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				appendStream(stream, string(buf[:n]))
-			}
-			if err != nil {
-				return
-			}
-		}
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go drain(stdoutPipe, "stdout", &wg)
-	go drain(stderrPipe, "stderr", &wg)
-
-	waitDone := make(chan struct{})
-	go func() {
-		// 先等进程退出，再等管道排干 —— 合起来才是 Node 'close' 语义。
-		_ = cmd.Wait()
-		wg.Wait()
-		close(waitDone)
-	}()
-
-	<-waitDone // Node 'close'：进程退出 + stdio 排干
-	// close 后的最后清扫：组长死了，trap 了 SIGTERM 的孙子可能还在——绝不留孤儿。
 	mu.Lock()
 	sent := killSent
 	idleFlag, wallFlag := idleTimedOut, wallTimedOut
-	stdoutCopy, stderrCopy, truncCopy := res.Stdout, res.Stderr, res.Truncated
+	res.Stdout, res.Stderr = stdoutBuf.String(), stderrBuf.String()
+	truncFlag := stdoutBuf.isTruncated() || stderrBuf.isTruncated()
 	mu.Unlock()
-	unregister(child.pid)
-	idleTimer.Stop()
-	wallTimer.Stop()
-	// Node finish() 里的 exitResolve()：标记该子进程已退出（供
-	// KillActiveChildren 的 allSettled 等价等待）。
-	close(child.exited)
+	// close 后的最后清扫：组长死了，trap 了 SIGTERM 的孙子可能还在——绝不留孤儿。
 	if sent {
 		_ = syscall.Kill(-child.pid, syscall.SIGKILL) // 组已消失则 ESRCH 忽略
 	}
+	unregister(child.pid)
+	idleTimer.Stop()
+	wallTimer.Stop()
+	close(child.exited)
 
 	res.ExitCode = exitCodeOf(cmd)
 	res.Signal = signalOf(cmd)
 	res.TimedOut = idleFlag || wallFlag
 	res.IdleTimedOut = idleFlag
 	res.WallTimedOut = wallFlag
-	res.Stdout = stdoutCopy
-	res.Stderr = stderrCopy
-	res.Truncated = truncCopy
+	res.Truncated = truncFlag
 	res.DurationMS = time.Since(started).Milliseconds()
 	return res
 }

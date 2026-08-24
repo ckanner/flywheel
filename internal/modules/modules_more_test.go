@@ -3,7 +3,9 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +17,8 @@ import (
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/metrics"
+	"github.com/ckanner/flywheel/internal/skillsembed"
+	"github.com/ckanner/flywheel/internal/verify"
 )
 
 // ---- 纯函数直测 ----
@@ -773,4 +777,75 @@ func TestCopyDirBranchMatrix(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dstRO, 0o755) })
 	err = copyDir(srcFlat, dstRO)
 	assert.ErrorContains(t, err, "permission denied")
+}
+
+// TestDirFS skillsembed 内嵌 FS 子目录访问（正向 + 错误）。
+func TestDirFS(t *testing.T) {
+	sub, err := skillsembed.DirFS("flywheel-run")
+	require.NoError(t, err)
+	data, rerr := fs.ReadFile(sub, "SKILL.md")
+	require.NoError(t, rerr)
+	assert.Contains(t, string(data), "flywheel-run")
+
+	_, err = skillsembed.DirFS("no-such-skill")
+	assert.Error(t, err)
+}
+
+func TestAheadCount(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@t"}, {"config", "user.name", "t"},
+	} {
+		out, oerr := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoError(t, oerr, "%s", out)
+	}
+	writeFileT(t, filepath.Join(repo, "init.txt"), "i")
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "init"}} {
+		out, oerr := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoError(t, oerr, "%s", out)
+	}
+	baseOut := exec.Command("git", "-C", repo, "rev-parse", "HEAD")
+	baseBytes, err := baseOut.Output()
+	require.NoError(t, err)
+	base := strings.TrimSpace(string(baseBytes))
+
+	writeFileT(t, filepath.Join(repo, "x.txt"), "x")
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "second"}} {
+		out, oerr := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoError(t, oerr, "%s", out)
+	}
+
+	n, aerr := verify.AheadCount(repo, base, "HEAD")
+	require.NoError(t, aerr)
+	assert.Equal(t, 1, n)
+
+	_, aerr = verify.AheadCount(filepath.Join(repo, "gone"), base, "HEAD")
+	assert.Error(t, aerr)
+}
+
+// TestListApprovedCandidatesMultiBlock 回归：review #5 —— 旧正则用 lazy body
+// 消费 "\n## " 分隔符，偶数序号的 approved 候选被静默丢块。header-index 切分
+// 后所有块都必须被独立识别。
+func TestListApprovedCandidatesMultiBlock(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("# Triage inbox (flywheel intake)\n\n")
+	for i := 1; i <= 6; i++ {
+		fp := fmt.Sprintf("%012x", i)
+		fmt.Fprintf(&b, "## %s — candidate %d\n", fp, i)
+		fmt.Fprintf(&b, "- source: s (command)\n- url: —\n- summary: —\n")
+		if i%2 == 1 {
+			fmt.Fprintf(&b, "- triage: recommend — ok\n- approval: approved\n")
+		} else {
+			fmt.Fprintf(&b, "- triage: skip\n- approval: pending\n")
+		}
+		b.WriteString("\n")
+	}
+	writeFileT(t, filepath.Join(dir, "triage-inbox.md"), b.String())
+
+	got := ListApprovedCandidates(dir)
+	require.Len(t, got, 3, "奇数候选（1/3/5）应为 approved，其余 pending")
+	assert.Equal(t, "candidate 1", got[0].Title)
+	assert.Equal(t, "candidate 3", got[1].Title)
+	assert.Equal(t, "candidate 5", got[2].Title)
 }

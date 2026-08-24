@@ -30,7 +30,8 @@ session is spawned by the orchestrator as a separate harness session.
      > docs/<slug>/orchestrator.log 2>&1 &
    ```
 
-   未 `npm link` 时：`cd <目标仓库根> && nohup node <flywheel-repo>/bin/flywheel.js run docs/<slug> > docs/<slug>/orchestrator.log 2>&1 &`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不可用就问用户。建议优先 npm link）。
+   若 flywheel 不在 PATH：`cd <目标仓库根> && nohup flywheel run docs/<slug> > docs/<slug>/orchestrator.log 2>&1 &`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 3. **确认存活**：等 2 秒，检查进程仍在、`docs/<slug>/orchestrator.pid` 已写入、
    `state.json` 的 status 变为 running。拉起失败 → 读
    `docs/<slug>/orchestrator.log` 报告原因。注意：若任务此前已升级到 inbox，

@@ -18,7 +18,7 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, int64(5_000), d.Watchdog.KillGraceMs)
 	assert.Equal(t, 0.1, d.Retry.Jitter)
 	assert.Equal(t, 5, d.Retry.MaxTransportRetries)
-	assert.Equal(t, 5, d.DefectInjection.EveryNUnits)
+	assert.Equal(t, 5, *d.DefectInjection.EveryNUnits)
 	assert.True(t, *d.Worktree.Enabled, "worktree 默认开启（v0.16）")
 	assert.Equal(t, int64(86_400_000), d.Credentials.TimeoutMs)
 }
@@ -53,7 +53,7 @@ func TestValidate(t *testing.T) {
 	assert.Error(t, bad3.Validate())
 
 	bad4 := Default()
-	bad4.DefectInjection.EveryNUnits = 0
+	bad4.DefectInjection.EveryNUnits = new(0)
 	assert.Error(t, bad4.Validate())
 }
 

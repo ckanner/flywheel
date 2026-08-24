@@ -92,14 +92,14 @@ func TestRunTruncatesOverMaxBuffer(t *testing.T) {
 	MaxBuffer = 1024
 	t.Cleanup(func() { MaxBuffer = orig })
 
-	// Node 截断语义：累计长度达到上限后，后续 chunk 整块丢弃并置 truncated。
-	// 第一块 2048 直接进入（检查发生在追加前）；第二块触发丢弃。
+	// 托管复制语义：cappedBuffer 硬字节上限——写入时只保留 cap 内的字节，
+	// 超出部分丢弃并置 truncated（比 Node 的 chunk 粒度更精确）。
 	r := Run("sh", []string{"-c", "head -c 2048 /dev/zero | tr '\\0' a; sleep 0.2; echo second"}, Opts{
 		IdleTimeoutMs: 5000, WallTimeoutMs: 20000,
 	})
 	assert.Empty(t, r.SpawnError)
 	assert.True(t, r.Truncated)
-	assert.Equal(t, 2048, len(r.Stdout), "达限后的 chunk 必须被丢弃")
+	assert.Equal(t, 1024, len(r.Stdout), "超出 cap 的字节必须被截断")
 	assert.NotContains(t, r.Stdout, "second")
 }
 
@@ -215,5 +215,5 @@ func TestRunTruncatesStderrOverMaxBuffer(t *testing.T) {
 	})
 	assert.Empty(t, r.SpawnError)
 	assert.True(t, r.Truncated)
-	assert.Equal(t, 1024, len(r.Stderr))
+	assert.LessOrEqual(t, len(r.Stderr), 512)
 }

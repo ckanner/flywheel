@@ -80,7 +80,9 @@ type VerifyConfig struct {
 
 // DefectInjectionConfig 缺陷注入抽检（§4.3，常备无开关）。
 type DefectInjectionConfig struct {
-	EveryNUnits        int     `json:"every-n-units"`
+	// EveryNUnits 指针化：区分"未声明"（nil → 默认 5）与"显式 0"（非法，
+	// Validate 报错）——review 指出 Normalize 先行会吞掉显式零值。
+	EveryNUnits        *int    `json:"every-n-units"`
 	TestFileRatioBoost float64 `json:"test-file-ratio-boost"`
 	Patch              string  `json:"patch"`
 	TestCmd            string  `json:"test-cmd"`
@@ -142,7 +144,7 @@ func Default() Config {
 			Jitter:              0.1,
 			MaxTransportRetries: 5,
 		},
-		DefectInjection: DefectInjectionConfig{EveryNUnits: 5, TestFileRatioBoost: 0.5},
+		DefectInjection: DefectInjectionConfig{EveryNUnits: new(5), TestFileRatioBoost: 0.5},
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
@@ -181,8 +183,9 @@ func (c *Config) Normalize() {
 	if c.Retry.MaxTransportRetries == 0 {
 		c.Retry.MaxTransportRetries = d.Retry.MaxTransportRetries
 	}
-	if c.DefectInjection.EveryNUnits == 0 {
-		c.DefectInjection.EveryNUnits = d.DefectInjection.EveryNUnits
+	if c.DefectInjection.EveryNUnits == nil {
+		five := 5
+		c.DefectInjection.EveryNUnits = &five
 	}
 	if c.DefectInjection.TestFileRatioBoost == 0 {
 		c.DefectInjection.TestFileRatioBoost = d.DefectInjection.TestFileRatioBoost
@@ -214,7 +217,9 @@ func (c *Config) Validate() error {
 	if c.Budget.DailyTokenLimit != nil && *c.Budget.DailyTokenLimit <= 0 {
 		return errors.New("budget.daily-token-limit must be a positive integer or null")
 	}
-	if c.DefectInjection.EveryNUnits < 1 {
+	// EveryNUnits 为指针：nil = 未声明（Normalize 回填默认）；显式声明则必须
+	// >= 1——显式 0 不再被 Normalize 的默认值吞掉（review 修正）。
+	if c.DefectInjection.EveryNUnits != nil && *c.DefectInjection.EveryNUnits < 1 {
 		return errors.New("defect-injection.every-n-units must be an integer >= 1")
 	}
 	return nil
@@ -236,6 +241,9 @@ func Load(taskDir, cwd string) (*Config, error) {
 		return nil, fmt.Errorf("%s: invalid JSON: %w", file, err)
 	}
 	c.File = file
+	// Normalize（回填缺省）→ Validate。EveryNUnits 指针化后二者可兼得：
+	// nil = 未声明 → 回填默认；显式 0 非 nil → Validate 报错（review 修正：
+	// 显式零值不再被默认值吞掉）。
 	c.Normalize()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", file, err)

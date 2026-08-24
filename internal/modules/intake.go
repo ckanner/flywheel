@@ -234,6 +234,10 @@ func writeTriageVerdict(content, fp string, v *TriageVerdict) string {
 	})
 }
 
+// triageBlockHeadRe 候选块标题起点（与 garden GP 块同款 header-index 切分，
+// 规避 RE2 无 lookahead：Node 的 (?=\n## ) 边界在此不可直译）。
+var triageBlockHeadRe = regexp.MustCompile(`(?m)^## ([0-9a-f]{12}) — `)
+
 // ListApprovedCandidates 人标记为 approved 的候选（$flywheel-new 的输入；§4.5 人确认）。
 func ListApprovedCandidates(taskDir string) []struct{ Fingerprint, Title string } {
 	file := filepath.Join(taskDir, "triage-inbox.md")
@@ -243,11 +247,24 @@ func ListApprovedCandidates(taskDir string) []struct{ Fingerprint, Title string 
 	}
 	content := string(raw)
 	var approved []struct{ Fingerprint, Title string }
-	// 组对齐 Node：1=整块 2=fp 3=title 行 4=body（approval 检查在 body）。
-	blockRe := regexp.MustCompile(`(?s)(## ([0-9a-f]{12}) — ([^\n]+)\n(.*?))(?:\n## |\z)`)
-	for _, m := range blockRe.FindAllStringSubmatch(content, -1) {
-		if strings.Contains(m[4], "- approval: approved") {
-			approved = append(approved, struct{ Fingerprint, Title string }{m[2], strings.TrimSpace(m[3])})
+	locs := triageBlockHeadRe.FindAllStringSubmatchIndex(content, -1)
+	for i, loc := range locs {
+		end := len(content)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		block := content[loc[0]:end]
+		if strings.Contains(block, "- approval: approved") {
+			// 标题 = 块首行去掉 "## <fp> — " 前缀（fp 取自正则第 2 组）。
+			firstLineEnd := strings.IndexByte(block, '\n')
+			header := block
+			if firstLineEnd >= 0 {
+				header = block[:firstLineEnd]
+			}
+			fp := content[loc[2]:loc[3]]
+			title := strings.TrimSpace(strings.TrimPrefix(header, "## "))
+			title = strings.TrimSpace(strings.TrimPrefix(title, fp+" — "))
+			approved = append(approved, struct{ Fingerprint, Title string }{fp, title})
 		}
 	}
 	return approved

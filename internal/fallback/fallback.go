@@ -10,6 +10,7 @@ package fallback
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
@@ -82,15 +83,17 @@ func EnvKeyForChannel(cfg *config.Config, channel string) string {
 	return *c.EnvKey
 }
 
-// MissingChannelEnv 渠道声明了 env-key 但环境未设时返回该键名；已设或无 key
-// 需求返回 ""。调用方必须 fail-loud 而非裸 spawn（P1-12②：pi 会静默回退到
-// 全局 auth.json）。
+// MissingChannelEnv 渠道声明了 env-key 但环境未设或设为空串时返回该键名；
+// 已设非空值或无 key 需求返回 ""。空值与缺失同等对待（review 修正）：pi 对
+// 空 --api-key 会静默回退到全局 auth.json，个人凭证被计费——P1-12 的完整
+// 语义是"必须存在且非空"，调用方必须 fail-loud 而非裸 spawn。
 func MissingChannelEnv(cfg *config.Config, channel string, lookup func(string) (string, bool)) string {
 	envKey := EnvKeyForChannel(cfg, channel)
 	if envKey == "" {
 		return ""
 	}
-	if _, ok := lookup(envKey); !ok {
+	v, ok := lookup(envKey)
+	if !ok || strings.TrimSpace(v) == "" {
 		return envKey
 	}
 	return ""

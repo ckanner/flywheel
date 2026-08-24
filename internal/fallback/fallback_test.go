@@ -114,9 +114,20 @@ func TestEnvKeyAndMissing(t *testing.T) {
 	assert.Equal(t, "", EnvKeyForChannel(cfg, "unknown"))
 
 	assert.Equal(t, "OPENCODE_API_KEY", MissingChannelEnv(cfg, "opencode-go", lookup()))
-	assert.Equal(t, "", MissingChannelEnv(cfg, "opencode-go", lookup("OPENCODE_API_KEY")))
+	// lookup() 返回空值 → 新语义下等同缺失。
+	assert.Equal(t, "OPENCODE_API_KEY", MissingChannelEnv(cfg, "opencode-go", lookup("OPENCODE_API_KEY")))
+	// review 修正：空值与缺失同等对待（pi 对空 --api-key 静默吃 auth.json）。
 	assert.Equal(t, "", MissingChannelEnv(cfg, "kimi-subscription", lookup()))
 	assert.Equal(t, "", MissingChannelEnv(cfg, "unknown", lookup()))
+
+	// key 存在且非空 → 返回 ""（key 可用，不缺失）。
+	nonEmpty := func(k string) (string, bool) {
+		if k == "OPENCODE_API_KEY" {
+			return "sk-real-key", true
+		}
+		return "", false
+	}
+	assert.Equal(t, "", MissingChannelEnv(cfg, "opencode-go", nonEmpty))
 }
 
 func TestAuthFallbackAllowed(t *testing.T) {

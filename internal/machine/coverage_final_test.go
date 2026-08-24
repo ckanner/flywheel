@@ -400,7 +400,7 @@ func TestDefectInjectionTestFilePatternsFeedSampling(t *testing.T) {
 	fx := newFixture(t)
 	sd := happyDrivers()
 	o := runOpts(fx, sd.set())
-	o.Config.DefectInjection.EveryNUnits = 1
+	o.Config.DefectInjection.EveryNUnits = new(1)
 	o.Config.Verify.TestFilePatterns = []string{`\.txt$`} // mock 自报交付物必命中
 
 	summary, err := RunTask(o)
@@ -417,7 +417,7 @@ func TestDefectInjectionTestFilePatternsFeedSampling(t *testing.T) {
 func TestMaybeDefectInjectionSaveFailureAfterRun(t *testing.T) {
 	fx := newGitFixture(t)
 	ctx := unitTestContext(t, fx)
-	ctx.Config.DefectInjection.EveryNUnits = 1
+	ctx.Config.DefectInjection.EveryNUnits = new(1)
 	ctx.Config.DefectInjection.Patch = writeDefectPatch(t, &fx)
 	ctx.Config.DefectInjection.TestCmd = "true" // 注入后仍绿 → fake-tests
 	ctx.fatal = errors.New("disk on fire")
@@ -483,7 +483,7 @@ func TestResumeAtReviewDefectInjectionArms(t *testing.T) {
 		fx, sd := pauseAtReview(t)
 		ctx := unitTestContext(t, fx)
 		ctx.Drivers = sd.set()
-		ctx.Config.DefectInjection.EveryNUnits = 1
+		ctx.Config.DefectInjection.EveryNUnits = new(1)
 		ctx.Config.DefectInjection.Patch = writeDefectPatch(t, &fx)
 		ctx.Config.DefectInjection.TestCmd = "true"
 
@@ -498,7 +498,7 @@ func TestResumeAtReviewDefectInjectionArms(t *testing.T) {
 		fx, sd := pauseAtReview(t)
 		ctx := unitTestContext(t, fx)
 		ctx.Drivers = sd.set()
-		ctx.Config.DefectInjection.EveryNUnits = 1 // patch/test-cmd 留空
+		ctx.Config.DefectInjection.EveryNUnits = new(1) // patch/test-cmd 留空
 		ctx.fatal = errors.New("disk on fire")
 
 		_, err := ctx.processPacket(ctx.Packets["M01-T01"], processOpts{})
