@@ -54,7 +54,7 @@ func runRoot(args []string, stdout, stderr io.Writer) int {
 
 // logf Node 版 `[flywheel] ${msg}` 前缀日志。
 func logf(cmd *cobra.Command) func(string) {
-	return func(msg string) { fmt.Fprintf(cmd.OutOrStdout(), "[flywheel] %s\n", msg) }
+	return func(msg string) { fmt.Fprintf(cmd.ErrOrStderr(), "[flywheel] %s\n", msg) }
 }
 
 func newRootCmd() *cobra.Command {

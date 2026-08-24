@@ -129,6 +129,45 @@ func TestCallAgentFallbackChainThenSuccess(t *testing.T) {
 	assert.Equal(t, "opencode", r.Channel, "SERVER 触发渠道降级链")
 }
 
+// TestCallAgentFallbackDoesNotConsumeRetryQuota 降级 t-- 必须真实回退计数
+// ——range-over-int 里 t-- 只改迭代副本，降级会白扣 transport 名额
+// （review 第二轮 #4）。
+func TestCallAgentFallbackDoesNotConsumeRetryQuota(t *testing.T) {
+	taskDir := t.TempDir()
+	cfg := testConfigT(t, taskDir)
+	ch := cfg.Channels["opencode"]
+	ch.Models = map[string]string{"intake": "opencode/deepseek-v4-flash"}
+	cfg.Channels["opencode"] = ch
+	cfg.Retry.MaxTransportRetries = 1
+
+	stub := newStub(nil)
+	m := NewContext(CtxOpts{
+		TaskDir: taskDir, Config: cfg,
+		Drivers: &drivers.Drivers{Intake: &countingDriver{inner: stub, onCall: func(n int) drivers.Result {
+			if n == 1 {
+				return drivers.MockResult(func(x *drivers.Result) {
+					msg := "429 rate limit exceeded" // 触发降级
+					x.ErrorMessage = &msg
+					x.Settled = false
+				})
+			}
+			if n == 2 {
+				return drivers.MockResult(func(x *drivers.Result) {
+					code := 1
+					x.ExitCode = &code
+					msg := "500 internal server error" // 可重试，不降级
+					x.ErrorMessage = &msg
+					x.Settled = false
+				})
+			}
+			return drivers.MockResult(nil) // B 第二次成功
+		}}},
+		Sleep: func(int64) {},
+	})
+	r := CallAgent(m, CallOptions{Role: "intake", Binding: bindingFor(t, cfg, "intake"), Prompt: "p"})
+	assert.True(t, r.OK, "降级不消耗名额：B 的第二次尝试必须在预算内")
+}
+
 type countingDriver struct {
 	inner  drivers.Driver
 	onCall func(n int) drivers.Result

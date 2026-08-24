@@ -598,8 +598,16 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			streamCode = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg})
 		}
 		var verdict *prompts.Verdict
-		if streamCode == "" && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut {
-			verdict, _ = prompts.ParseReviewVerdict(res.Text)
+		// 出口契约同款三重门（§6）：进程终态正常 + 无信号 + stderr 无错误模式
+		// 才允许解析裁决——"超时/被 kill 被 trap 成 exit 0"不得读成绿灯。
+		// 裁决文本取 Text ?? Stdout（Node 语义：harness 可能把裁决写 stdout）。
+		text := res.Text
+		if text == "" {
+			text = res.Stdout
+		}
+		if streamCode == "" && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut &&
+			res.Signal == "" && errs.ClassifyError(errs.SpawnResult{ExitCode: 0, Stderr: res.Stderr}) == "" {
+			verdict, _ = prompts.ParseReviewVerdict(text)
 		}
 		code := ""
 		if verdict == nil {

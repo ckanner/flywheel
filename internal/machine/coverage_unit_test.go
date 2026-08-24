@@ -301,6 +301,18 @@ func TestRecordSpawnMetricsNoUsage(t *testing.T) {
 	assert.Nil(t, m["usage"]) // usage nil → 早退前的字段全是 nil
 }
 
+// TestRecordSpawnMetricsWiresTotalTokens driver 上报的 totalTokens 必须
+// 记账（预算口径用 provider 总数，缺省 fallback i+o 会低估含 reasoning 的
+// 上报）。
+func TestRecordSpawnMetricsWiresTotalTokens(t *testing.T) {
+	ctx, _ := spawnMetricsCtx(t)
+	res := drivers.MockResult(func(r *drivers.Result) {
+		r.Usage = &drivers.Usage{Input: 100, Output: 10, TotalTokens: 500}
+	})
+	ctx.recordSpawnMetrics(spawnMetricsArgs{role: "execute", result: &res})
+	assert.Equal(t, int64(500), ctx.State.Budget.Totals.Tokens)
+}
+
 func TestRecordSpawnMetricsProviderFallbackArms(t *testing.T) {
 	ctx, dir := spawnMetricsCtx(t)
 

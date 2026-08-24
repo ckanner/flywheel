@@ -227,9 +227,13 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	} else {
 		provider = "unknown"
 	}
+	tt := usage.TotalTokens
+	if tt == 0 {
+		tt = usage.Input + usage.Output // 上游未报 total（零值构造）→ Node 语义 i+o
+	}
 	state.RecordUsage(c.State, state.Usage{
 		Input: usage.Input, Output: usage.Output, Reasoning: usage.Reasoning,
-		CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
+		CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite, TotalTokens: &tt,
 	}, state.UsageOpts{Provider: provider, CostUSD: costUSD})
 	c.warnIfCacheCold(provider, a.channel)
 }

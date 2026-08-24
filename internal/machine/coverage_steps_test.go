@@ -353,6 +353,75 @@ func TestAgentVerdictStepFallsBackToNextChannel(t *testing.T) {
 	assert.True(t, found, "降级必须留审计痕迹")
 }
 
+// ---- 裁决解析门（§6 出口契约）：终态正常 + 无信号 + stderr 无错误才解析 ----
+
+// TestAgentVerdictStepSignalTrappedExitZeroNeverGreen 被 kill 后 trap 成
+// exit 0 的假绿灯：signal 在场 → 绝不解析裁决文本。
+func TestAgentVerdictStepSignalTrappedExitZeroNeverGreen(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.reviewFn = func(drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 0
+			r.ExitCode = &code
+			r.Signal = "SIGKILL"
+		})
+	}
+	ctx := verdictCtx(t, fx, sd)
+	out, err := ctx.agentVerdictStep(verdictArgs{
+		role: "review", binding: reviewBinding("opencode-go"), prompt: "P",
+		packetID: "M01-T01", ps: ctx.State.Packets["M01-T01"],
+	})
+	require.NoError(t, err)
+	assert.False(t, out.OK)
+	assert.Equal(t, errs.TRANSPORT, out.ErrorCode, "signal → TRANSPORT，文本再绿也不算")
+}
+
+// TestAgentVerdictStepStderrErrorBlocksVerdict stderr 带错误模式 →
+// 文本里的裁决不可信（出口契约"stderr 无错误"第三条腿）。
+func TestAgentVerdictStepStderrErrorBlocksVerdict(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.reviewFn = func(drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 0
+			r.ExitCode = &code
+			r.Stderr = "401 unauthorized"
+		})
+	}
+	ctx := verdictCtx(t, fx, sd)
+	out, err := ctx.agentVerdictStep(verdictArgs{
+		role: "review", binding: reviewBinding("opencode-go"), prompt: "P",
+		packetID: "M01-T01", ps: ctx.State.Packets["M01-T01"],
+	})
+	require.NoError(t, err)
+	assert.False(t, out.OK)
+	assert.Equal(t, errs.AUTH, out.ErrorCode)
+}
+
+// TestAgentVerdictStepParsesVerdictFromStdoutFallback Text 空 →
+// Stdout 兜底（Node: result.text ?? result.stdout）。
+func TestAgentVerdictStepParsesVerdictFromStdoutFallback(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.reviewFn = func(drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 0
+			r.ExitCode = &code
+			r.Text = ""
+			r.Stdout = "prose\n{\"verdict\":\"pass\",\"score\":0.9,\"reasons\":[\"ok\"]}"
+		})
+	}
+	ctx := verdictCtx(t, fx, sd)
+	out, err := ctx.agentVerdictStep(verdictArgs{
+		role: "review", binding: reviewBinding("opencode-go"), prompt: "P",
+		packetID: "M01-T01", ps: ctx.State.Packets["M01-T01"],
+	})
+	require.NoError(t, err)
+	require.True(t, out.OK)
+	assert.Equal(t, "pass", out.Verdict.Verdict)
+}
+
 func TestAgentVerdictStepChainEndsWithoutModelMapping(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()

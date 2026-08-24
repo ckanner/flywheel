@@ -210,7 +210,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 	}
 	lastCode := errs.TRANSPORT
 
-	for t := range maxTransport + 1 {
+	for t := 0; t <= maxTransport; t++ { // 经典 for：降级 t-- 必须真实回退计数
 		// P1-12②：key 渠道缺 env 时 fail-loud，绝不 keyless 裸 spawn 进 pi 的
 		// auth.json 陷阱。mock 驱动豁免（演练场景无真实凭证）。
 		if m.Config.Drivers[o.Role] != "mock" {

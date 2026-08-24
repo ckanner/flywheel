@@ -80,10 +80,10 @@ func TestExitErrorMessage(t *testing.T) {
 	assert.Equal(t, "exit 3", bare.Error())
 }
 
-func TestLogfPrefixesFlywheelOnCmdStream(t *testing.T) {
+func TestLogfPrefixesFlywheelOnStderr(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}
-	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
 	logf(cmd)("hello step")
 	assert.Equal(t, "[flywheel] hello step\n", buf.String())
 }
