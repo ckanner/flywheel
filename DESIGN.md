@@ -365,9 +365,10 @@ for milestone in spec.milestones:
 
 使用全流程（核心建成后）：
 
-1. **生成任务（在 harness 里，skill 形态）**：对 kimi code 或 pi 说 `/skill:flywheel-new "把 XX 需求做成 flywheel 任务"`；任务生成器调研仓库、生成 `docs/<slug>/`（spec.md + packets + state.json）并提交。kimi code 认 Project/User 级 skills；pi 可挂载 `~/.agents/skills`。
+1. **生成任务（在 harness 里，skill 形态）**：对 kimi code 或 pi 说 `/skill:flywheel-new "把 XX 需求做成 flywheel 任务"`；任务生成器调研仓库、生成 `docs/<slug>/`（spec.md + packets + state.json）并提交。kimi code 认 Project/User 级 skills（pi/Warp 共享 `~/.agents/skills`）。
    - 问答纪律：**意图类的它问你，事实类的它自己查证**。技术事实不许问人（自己读代码/跑命令验证，写进 spec 附证据）；意图歧义不许猜（停下来问清楚再生成）。草稿生成后停下，等人审。**冻结点 = 人审契约**：不要求源素材（目标仓库的设计文档等）预先定稿——你审过契约即冻结，此后范围变更只能走 Plan Loop 修订。
-2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界。契约质量决定产出质量，审契约比审代码便宜得多。
+   - **验收命令试跑（v0.18 硬规则）**：提交前逐条实际执行每条 L1 命令，「命令+退出码+输出摘要」记入 spec 附表 `## Acceptance dry-run evidence`；无法执行的标 `unverified: <原因>`。允许红（代码未实现），不允许没跑过。
+2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界、**试跑证据**。契约质量决定产出质量，审契约比审代码便宜得多。
 3. **启动（在 harness 里扣扳机）**：`/skill:flywheel-run docs/<slug>`——skill 让 agent 把编排器**以独立进程拉起**（launchd/nohup，不依赖当前会话存活）、确认存活、报告状态入口；之后关掉 harness 窗口不影响运行。CLI `flywheel run` 是底层接口与后路。`/skill:flywheel-status` / `/skill:flywheel-stop` 同理。
    - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。注意 `--pause-before` 与 `--only` 互斥（单步天然逐步执行，组合直接报错）；skill 侧经 `/skill:flywheel-run docs/<slug> [pause]` 的可选参数使用。
 4. **观察与干预（在哪都行）**：`flywheel status` 或让 harness 里的 agent 读 state.json/retro.md 讲进度；干预 = `flywheel stop` / 改 state.json / 写 inbox.md——全是文件操作。

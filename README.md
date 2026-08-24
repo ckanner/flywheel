@@ -6,7 +6,7 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.17）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
+权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.18，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
 
 ## 安装
 
@@ -49,13 +49,13 @@ flywheel install-skills --project /path/to/project
 
 | 调用 | 作用 |
 |---|---|
-| `/skill:flywheel-new` | 对话式任务生成器：调研仓库 → 问意图 → 生成契约 → 停下等人审 |
-| `/skill:flywheel-run` | 以独立进程拉起编排器（触发全部 loop） |
+| `/skill:flywheel-new` | 对话式任务生成器：调研仓库 → 问意图 → 生成契约 → 逐条试跑验收命令留证 → 停下等人审 |
+| `/skill:flywheel-run` | 以独立进程拉起编排器（触发全部 loop）；可选 `pause=review` 监督冻结点 |
 | `/skill:flywheel-plan` | 只触发 Plan Loop 单步 |
 | `/skill:flywheel-exec` | 只触发 Execute Loop（可指定 packet） |
 | `/skill:flywheel-review` | 只触发 Review Loop（可指定 unit） |
 | `/skill:flywheel-verify` | 只触发确定性验证闸门 L1/L2/L3（无模型） |
-| `/skill:flywheel-status` | 只读进度（state.json/指标/缓存命中率/inbox） |
+| `/skill:flywheel-status` | 只读进度（state.json/指标/缓存命中率/inbox；推进超时→停滞提示） |
 | `/skill:flywheel-stop` | 停止编排器进程，状态定格 |
 | `/skill:flywheel-intake` | 外挂：扫任务源 → triage-inbox → LLM 分诊建议（不冻结需求） |
 | `/skill:flywheel-garden` | 外挂：retro 失败模式 + 知识资产腐烂 → 提案（需人审） |
@@ -70,10 +70,14 @@ flywheel install-skills --project /path/to/project
 #    → 生成 docs/<slug>/{spec.md, task-packet-*.md, state.json, flywheel.config.json}
 #    → skill 会把契约 git add + commit，然后停下
 
-# 2. 人审契约（关键 checkpoint，不可省）：过一眼需求编号、验收命令、边界
+# 2. 人审契约（关键 checkpoint，不可省）：需求编号、验收命令、边界、试跑证据
+#    （生成器已逐条试跑 L1 命令并把退出码/输出记入 spec 附表——审它别跳过）
 
 # 3. 启动（在 harness 里扣扳机；编排器是独立进程，关窗不影响运行）
-/skill:flywheel-run docs/<slug>
+/skill:flywheel-run docs/<slug>            # 全自动
+/skill:flywheel-run docs/<slug> review     # 监督模式：Review 前冻结，等你看完再续
+
+#    单步玩法：--only execute / verify / review（与 pause-before 互斥）
 
 # 4. 观察与干预（在哪都行，全是文件操作）
 flywheel status docs/<slug>
@@ -136,11 +140,13 @@ orchestrator.pid / orchestrator.log   # 运行中的进程文件与日志
 
 ```bash
 make test            # go test ./... 全部包
-make coverage        # 覆盖率 100% 门禁（cmd 桩除外）
+make coverage        # 覆盖率门禁（cmd 桩除外，逐函数 100%）
 make quality-gate    # vet + fmt-check + coverage（CI 同款）
 ```
 
-单元测试覆盖率 100% 是硬门禁（用户确立的设计纪律：反向驱动松耦合与可注入性）。mock 驱动覆盖全部编排逻辑，可在无凭证环境完整运行；verify/watchdog 用真实 git 与真实子进程组测试。
+单元测试覆盖率 100% 是硬门禁（用户确立的设计纪律：反向驱动松耦合与可注入性）；
+v0.18 起按**逐函数**检查——任何函数 <100% 直接失败，不再只看总数。mock 驱动覆盖全部编排逻辑，
+可在无凭证环境完整运行；verify/watchdog 用真实 git 与真实子进程组测试。
 
 ## 文档入口
 
