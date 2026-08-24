@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use when the user says "/skill:flywheel-status docs/<slug>" or asks how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm)."

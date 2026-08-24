@@ -30,7 +30,17 @@ go build ./... && make quality-gate   # vet + fmt-check + 覆盖率 100% 门禁
 
 ## 审计修复已全部落地（v0.17，勿回退）
 
-P1 kill switch（RunTask 注册 SIGTERM → 杀子进程组 → quiescence → exit 143）；skills frontmatter YAML 合法化 + 真 YAML 门禁；P2 in-place base-ref 重锚、空转检测用 L1 权威 diff、先 commit 再 completed、resume 补缺陷注入；P3 日志走 stderr、install-skills actionText 含 stale 等。
+P1 kill switch（RunTask 注册 SIGTERM → 杀子进程组 → quiescence → exit 143）；skills frontmatter
+YAML 合法化 + 真 YAML 门禁；P2 in-place base-ref 重锚、空转检测用 L1 权威 diff、先 commit 再
+completed、resume 补缺陷注入；P3 日志走 stderr、install-skills actionText 含 stale 等。
+
+## v0.18（2026-08-24，PR #3 待合）
+
+全量评审修复：里程碑 Judge 双 judge 面板（config `judge-panel`，分歧→inbox）；plan 修订
+acceptance 指纹留痕；P2×3 与 C 级小修批量；SKILL.md 规范订正（arguments 字符串形态 +
+正文占位符，版本 bump 1.1.0；frontmatter 归属按 kimi/pi/Warp/agentskills.io 官方文档精确化）；
+Makefile 覆盖率门禁收紧为逐函数 100%。评审台账见 REVIEW-FIXPLAN.md。**尚未首跑**——mimir
+S4-0 仍是下一步。
 
 ## 本机环境事实
 
