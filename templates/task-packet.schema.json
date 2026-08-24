@@ -63,6 +63,8 @@
     "boundaries": {
       "type": "object",
       "additionalProperties": false,
+      "minProperties": 1,
+      "description": "防改做守卫。must-not-touch 或 max-files 至少声明一个——空 mapping 会静默关闭边界判定（审计 P2）。",
       "properties": {
         "must-not-touch": {
           "type": "array",

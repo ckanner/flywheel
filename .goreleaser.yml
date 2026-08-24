@@ -1,0 +1,59 @@
+# GoReleaser 发布配置（对齐 lark-cli 模式）：CGO 关闭、版本注入、三平台两架构、
+# tar.gz 归档 + checksums.txt，供 npm postinstall 下载校验。
+version: 2
+
+builds:
+  - id: flywheel
+    main: ./cmd/flywheel
+    binary: flywheel
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+        -X github.com/ckanner/flywheel/internal/build.Version={{ .Version }}
+        -X github.com/ckanner/flywheel/internal/build.Date={{ .Date }}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - flywheel
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY_PATH }}"
+        wait: true
+        timeout: 20m
+
+archives:
+  - id: flywheel
+    name_template: "flywheel-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: ckanner
+    name: flywheel

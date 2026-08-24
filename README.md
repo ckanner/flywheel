@@ -2,23 +2,21 @@
 
 Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 agent loop（规划/执行/评审/终验），接收已冻结的需求，自动完成软件任务的规划、实现、评审与分层验证，全程可无人值守，异常时升级给人。
 
-- 编排器 = 确定性 Node.js 代码（机械状态转移，设计铁律 1）
+- 编排器 = 确定性 Go 代码（机械状态转移，设计铁律 1）
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.15）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
+权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.17）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
 
 ## 安装
 
 ```bash
-# 依赖只有 yaml（其余全部 node: 内置模块），需要 Node.js >= 20
-npm ci
+# 开发：需要 Go >= 1.27（唯一构建依赖）
+make build          # 产出 ./flywheel 单二进制
+make install        # 装到 /usr/local/bin
 
-# 方式一：全局 link 出 flywheel 命令
-npm link
-
-# 方式二：不 link，直接用 node 调用
-node bin/flywheel.js --help
+# 发布形态：goreleaser 出 tar.gz + checksums，npm 包 @ckanner/flywheel
+# 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验
 ```
 
 真实驱动依赖本机已装的 [pi](https://github.com/earendil-works/pi)（Execute/Review/Judge）与 kimi code CLI（Plan/Garden）；渠道凭证走环境变量（`OPENCODE_API_KEY` / `KIMI_API_KEY`）。测试与演练（mock 驱动）不需要任何凭证。
@@ -41,7 +39,7 @@ flywheel install-skills --copy
 flywheel install-skills --project /path/to/project
 ```
 
-装完后在 kimi code 或 pi 里用 `/skill:<name>` 调用，例如 `/skill:flywheel-run`。安装时会在 skills 安装点写入锚文件 `flywheel-home.txt`，skill 用它定位本仓库根（软链/复制安装都有效）。
+装完后在 kimi code 或 pi 里用 `/skill:<name>` 调用，例如 `/skill:flywheel-run`。安装时会在 skills 安装点写入锚文件 `flywheel-home.txt`，skill 用它定位本仓库根。
 
 ## skills 一览（都只是按钮，不含 loop 逻辑）
 
@@ -57,6 +55,8 @@ flywheel install-skills --project /path/to/project
 | `/skill:flywheel-stop` | 停止编排器进程，状态定格 |
 | `/skill:flywheel-intake` | 外挂：扫任务源 → triage-inbox → LLM 分诊建议（不冻结需求） |
 | `/skill:flywheel-garden` | 外挂：retro 失败模式 + 知识资产腐烂 → 提案（需人审） |
+
+内置 skill 目录也可用 CLI 直接查看：`flywheel skills list` / `flywheel skills read <name>`（go:embed 内嵌，无需源码树）。
 
 ## 使用全流程（最小示例，详见 DESIGN.md §12）
 
@@ -83,20 +83,31 @@ flywheel stop docs/<slug>
 ## 目录结构
 
 ```
-bin/flywheel.js          # CLI 薄入口（run/status/stop/intake/garden/install-skills）
-orchestrator/
-  core/                  # 编排器引擎：machine（状态机）、state（CAS 账本）、contracts、
-                         # verify（L1/L2/L3 + git diff 判定）、watchdog（双计时看门狗）、
-                         # errors（错误分类/退避）、exit-contract、done-report、
-                         # circuit-breaker（熔断/空转）、defect-injection、metrics、
-                         # prompts、config、fallback（降级链）
-  modules/               # 外挂：intake（§4.5）、garden（§4.6）、module（共享调用上下文）、
-                         # install-skills
-  drivers/               # 可替换驱动：mock（测试）/ pi（真实 Execute/Review/Judge）/
-                         # kimi（真实 Plan/Garden，长驻会话）
-templates/               # 契约模板与 schema（task-packet / spec / state / config 示例）
-skills/                  # 10 个 SKILL.md（Agent Skills 标准，frontmatter: name/description/compatibility/whenToUse/arguments）
-tests/                   # node:test 全套（单元 + mock e2e + 真实冒烟 + 演练）
+cmd/flywheel/            # main() 单行桩（os.Exit(cli.Execute())）
+internal/
+  cli/                   # cobra 命令树：run/status/stop/intake/garden/install-skills/skills
+  machine/               # 状态机（DESIGN §6 刻意做薄）：runTask/runSingleStep/steps
+  contract/              # 契约解析 + JSON Schema 校验单一信源（templates/*.schema.json）
+  state/                 # state.json CAS 账本（tmp+rename 原子写）
+  donereport/            # done-report 解析与格式校验
+  exitcontract/          # 出口契约三正交量判定
+  verify/                # L1/L2/L3 闸门 + git diff 边界 + worktree 隔离 + 单元提交
+  watchdog/              # 双计时看门狗（流 idle + wall-clock；进程组 kill + quiescence）
+  errs/                  # 错误分类/退避/降级集（RE2 等价改写）
+  fallback/              # 渠道降级链（绑定表改写）
+  circuitbreaker/        # 预算熔断（off|soft|hard）+ DC4 空转检测
+  defectinjection/       # 缺陷注入抽检（DC3）
+  metrics/               # JSONL 指标（模型/token/成本/缓存命中/prompt 哈希）
+  prompts/               # 提示词构建（§8 缓存纪律：稳定前置/易变尾部）+ 裁决解析
+  drivers/               # mock（测试）/ pi / kimi（长驻会话）
+  config/                # 法定配置表加载与校验
+  childenv/              # 子进程环境白名单（凭证卫生 §9）
+  ledger/                # 账本区路径分类（边界判定的单一信源）
+  modules/               # 外挂：intake/garden/install-skills/module 共享上下文
+  skillsembed/           # go:embed skills 数据层（skills list/read + 规范门禁测试）
+templates/               # 契约模板与 schema（task-packet / spec / state 示例）
+skills/                  # 10 个 SKILL.md（Agent Skills 标准）+ embed.go
+scripts/                 # npm 分发安装器（lark-cli 模式）
 drills/                  # 实证演练记录（403 降级、缺陷注入）
 ```
 
@@ -114,16 +125,18 @@ inbox.md                        # 升级叫人的入口（正常应为空）
 triage-inbox.md                 # intake 候选（跑了 flywheel intake 才有）
 garden-proposals.md             # garden 提案（跑了 flywheel garden 才有）
 approvals/<packet-id>.json      # live 凭证任务的人工批准文件（需要时）
-orchestrator.pid / orchestrator.log   # 运行中的进程文件与 nohup 日志
+orchestrator.pid / orchestrator.log   # 运行中的进程文件与日志
 ```
 
 ## 测试
 
 ```bash
-npm test          # 全部：单元 + mock 端到端 + 真实 pi/kimi 冒烟（无凭证时自动跳过）
+make test            # go test ./... 全部包
+make coverage        # 覆盖率 100% 门禁（cmd 桩除外）
+make quality-gate    # vet + fmt-check + coverage（CI 同款）
 ```
 
-当前 206 个测试。真实冒烟需要本机 pi/kimi 与对应环境变量；mock 驱动覆盖全部编排逻辑，可在无凭证环境完整运行。另有 `npm run skill-format-check` 校验 skills frontmatter（进 CI）。
+单元测试覆盖率 100% 是硬门禁（用户确立的设计纪律：反向驱动松耦合与可注入性）。mock 驱动覆盖全部编排逻辑，可在无凭证环境完整运行；verify/watchdog 用真实 git 与真实子进程组测试。
 
 ## 文档入口
 

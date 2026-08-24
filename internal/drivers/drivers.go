@@ -1,0 +1,170 @@
+// Package drivers — driver 工厂（DESIGN.md §13 绑定表）：config.drivers 按
+// 角色选实现（mock 供测试/演练，pi 跑 Execute/Review/Judge，kimi 跑 Plan）。
+// 分发只看绑定表的 harness（可能已被降级链改写），绝不看角色。
+package drivers
+
+import (
+	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/watchdog"
+)
+
+// Usage 单次会话用量（pi 流聚合；kimi 不暴露 → nil）。
+type Usage struct {
+	Input       int64 `json:"input"`
+	Output      int64 `json:"output"`
+	Reasoning   int64 `json:"reasoning"`
+	CacheRead   int64 `json:"cacheRead"`
+	CacheWrite  int64 `json:"cacheWrite"`
+	TotalTokens int64 `json:"totalTokens"`
+}
+
+// Result driver 单次调用的完整结果：watchdog 可观察量 + harness 语义字段。
+type Result struct {
+	// watchdog 原始量。
+	ExitCode     *int   `json:"exitCode"`
+	Signal       string `json:"signal"`
+	TimedOut     bool   `json:"timedOut"`
+	IdleTimedOut bool   `json:"idleTimedOut"`
+	WallTimedOut bool   `json:"wallTimedOut"`
+	Stdout       string `json:"stdout"`
+	Stderr       string `json:"stderr"`
+	Truncated    bool   `json:"truncated"`
+	DurationMS   int64  `json:"durationMs"`
+	SpawnError   string `json:"spawnError,omitempty"`
+
+	// harness 语义量。
+	Harness        string   `json:"harness"` // pi | kimi | mock
+	Provider       string   `json:"provider,omitempty"`
+	Model          string   `json:"model,omitempty"`
+	Usage          *Usage   `json:"usage,omitempty"` // kimi: nil（流不暴露）
+	ReasoningChars *int64   `json:"reasoningChars,omitempty"`
+	CostUSD        *float64 `json:"costUsd,omitempty"`
+	Settled        bool     `json:"settled"`
+	Text           string   `json:"text,omitempty"`
+	ErrorMessage   *string  `json:"errorMessage,omitempty"`
+	SessionID      string   `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+}
+
+// CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
+// （可能被降级链改写过 harness/channel）。
+type CallArgs struct {
+	Prompt      string
+	MilestoneID string
+	PacketID    string
+	TaskDir     string
+	Cwd         string
+	Packets     []string // plan：既有 packet id 清单
+
+	// 真实 harness 专用。
+	Model     string // 空 → binding.Model 或驱动默认
+	Binding   config.LoopBinding
+	APIKey    string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
+	APIKeys   map[string]string // 注入子进程的键集
+	Watchdog  watchdog.Opts
+	OnEvent   func(line string) // stdout NDJSON 行回调
+	SessionID string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+}
+
+// Driver 六角色统一接口。mock 与 real 都实现。
+type Driver interface {
+	Name() string
+	Plan(a CallArgs) Result
+	Execute(a CallArgs) Result
+	Review(a CallArgs) Result
+	Judge(a CallArgs) Result
+	Intake(a CallArgs) Result
+	Garden(a CallArgs) Result
+}
+
+// Drivers 按角色装配的驱动集合（Node createDrivers 返回值等价）。
+type Drivers struct {
+	Plan    Driver
+	Execute Driver
+	Review  Driver
+	Judge   Driver
+	Intake  Driver
+	Garden  Driver
+}
+
+// InvokeHarness 通用 harness 分发（Node invokeHarness）：harness 取自绑定表，
+// 绝不由角色推断。kimi → RunKimi（长驻会话），其余一律 pi。
+func InvokeHarness(a CallArgs, fallbackModel string) Result {
+	harness := a.Binding.Harness
+	if harness == "" {
+		harness = "pi"
+	}
+	if harness == "kimi" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		if model == "" {
+			model = KimiDefaultModel
+		}
+		return RunKimi(KimiArgs{
+			Prompt:    a.Prompt,
+			SessionID: a.SessionID, // plan 长驻会话：machine 持有句柄并传入
+			Model:     model,
+			Cwd:       a.Cwd,
+			APIKeys:   a.APIKeys,
+			Watchdog:  a.Watchdog,
+		})
+	}
+	model := a.Model
+	if model == "" {
+		model = a.Binding.Model
+	}
+	thinking := a.Binding.Thinking
+	if thinking == "" {
+		thinking = "max"
+	}
+	return RunPi(PiArgs{
+		Prompt:   a.Prompt,
+		Model:    model,
+		Thinking: thinking,
+		Cwd:      a.Cwd,
+		APIKey:   a.APIKey,
+		APIKeys:  a.APIKeys,
+		Watchdog: a.Watchdog,
+		OnEvent:  a.OnEvent,
+	})
+}
+
+// realDriver 真实驱动：六角色全部走 invokeHarness 分发。
+type realDriver struct{ model string }
+
+func (realDriver) Name() string { return "real" }
+
+func (d realDriver) harness(a CallArgs, prompt string) Result {
+	a.Prompt = prompt
+	return InvokeHarness(a, d.model)
+}
+
+func (d realDriver) Plan(a CallArgs) Result    { return d.harness(a, a.Prompt) }
+func (d realDriver) Execute(a CallArgs) Result { return d.harness(a, a.Prompt) }
+func (d realDriver) Review(a CallArgs) Result  { return d.harness(a, a.Prompt) }
+func (d realDriver) Judge(a CallArgs) Result   { return d.harness(a, a.Prompt) }
+func (d realDriver) Intake(a CallArgs) Result  { return d.harness(a, a.Prompt) }
+func (d realDriver) Garden(a CallArgs) Result  { return d.harness(a, a.Prompt) }
+
+// CreateDrivers 按 config.drivers 装配六角色：`mock` 选 mock 实现，否则真实
+// 分发（Node createDrivers 等价）。
+func CreateDrivers(cfg *config.Config) *Drivers {
+	isMock := func(role string) bool { return cfg.Drivers[role] == "mock" }
+	mock := NewMockDriver(cfg.MockBehaviors)
+	var real Driver = realDriver{}
+	pick := func(role string) Driver {
+		if isMock(role) {
+			return mock
+		}
+		return real
+	}
+	return &Drivers{
+		Plan:    pick("plan"),
+		Execute: pick("execute"),
+		Review:  pick("review"),
+		Judge:   pick("judge"),
+		Intake:  pick("intake"),
+		Garden:  pick("garden"),
+	}
+}
