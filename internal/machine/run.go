@@ -2,6 +2,7 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -291,10 +292,18 @@ func commitOutcomeMap(o verify.CommitOutcome) map[string]any {
 
 // completeUnit 单元完成落盘。
 //
+// ErrMergeConflict 单元代码无法 ff-merge 进主 checkout——状态绝不说谎：
+// 调用方必须把单元路由到 inbox/人工处理，而不是标 completed。
+var ErrMergeConflict = errors.New("unit branch could not be merged into the main checkout")
+
 // P2 修复（审计）：先完成提交、再置 completed 并保存——Node 先写 completed
 // 再提交，崩溃窗口内 state.json 谎报“已完成”而代码从未落库。
-// bookkeeping 失败照旧上报不抛出（不能毁掉已验证的工作），但状态转移顺序
-// 不再颠倒。
+//
+// 合并门控（review 修正）：以“分支是否领先 base”为准（verify.AheadCount），
+// 而不是“本次 scoped 提交是否产生了新提交”——executor 自提交、或崩溃恢复
+// 重跑 completeUnit 时 scoped 提交为空但分支领先，旧条件会静默跳过合并。
+// ff-merge 失败时返回 ErrMergeConflict：worktree 原样保留、状态绝不标
+// completed（§5.2 state.json 不说谎），由调用方升级到人。
 func (c *Context) completeUnit(packet *contract.Packet) error {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
@@ -304,41 +313,53 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 		// v0.16 流程：worktree 内提交代码 → ff-merge 进主 checkout →
 		// 删 worktree+分支 → 主 checkout 的账本提交（限 docs/<slug>/）。
 		codeCommit := c.commitUnitChangesIn(ps.Worktree.Path, packet, nil, "", "")
-		mergeErr := "no code commit"
-		if codeCommit.SHA != "" {
-			if _, err := c.mergeUnitWorktree(ps.Worktree.Branch); err != nil {
-				mergeErr = err.Error()
-			} else {
-				mergeErr = "" // ff-merge 成功本身无需记录（HEAD 已前进）
-			}
+		// 合并门控（review 修正）：以“分支是否领先 base”为准（AheadCount），
+		// 而不是“本次 scoped 提交是否产生了新提交”——executor 自提交、或崩溃
+		// 恢复重跑 completeUnit 时 scoped 提交为空但分支领先，旧条件会静默跳过合并。
+		ahead, aerr := verify.AheadCount(c.Cwd, c.baseRefOf(ps), ps.Worktree.Branch)
+		if aerr != nil {
+			return fmt.Errorf("%w: ahead count failed: %v", ErrMergeConflict, aerr)
 		}
-		if mergeErr == "" {
+		if ahead > 0 {
+			if _, err := c.mergeUnitWorktree(ps.Worktree.Branch); err != nil {
+				// §5.2 state.json 不说谎：合并失败绝不标 completed——worktree
+				// 原样保留；先把失败事实落账（供人处理），再上抛升级。
+				commitRec := map[string]any{
+					"at":          c.nowISO(),
+					"merge-error": jsonNilable(err.Error()),
+				}
+				// 账本照常落库（审计链完整）：主 checkout 的契约/账本文件
+				// 仍提交——只是单元不标 completed、不写完成 retro 行。
+				if lc := c.commitUnitChangesIn(c.Cwd, packet, c.commitExcludes(), c.baseRefOf(ps), c.taskDirPrefix()); lc.SHA != "" {
+					commitRec["ledger-sha"] = jsonNilable(lc.SHA)
+					c.Log(fmt.Sprintf("%s: ledger committed despite merge failure (%s)", id, shortSHA(lc.SHA)))
+				}
+				ps.Commit = commitRec
+				at := c.nowISO()
+				ps.UpdatedAt = &at
+				c.save()
+				return fmt.Errorf("%w: %s", ErrMergeConflict, err.Error())
+			}
 			c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path)
 		} else {
-			c.Log(fmt.Sprintf("%s: merge --ff-only failed (%s) — worktree preserved at %s for human resolution",
-				id, mergeErr, ps.Worktree.Path))
+			c.Log(fmt.Sprintf("%s: branch not ahead of base — nothing to merge", id))
+			c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path)
 		}
 		ledgerCommit := c.commitUnitChangesIn(c.Cwd, packet, c.commitExcludes(), c.baseRefOf(ps), c.taskDirPrefix())
 		finalSHA := firstNonEmpty(codeCommit.SHA, ledgerCommit.SHA)
 		ps.Commit = map[string]any{
-			"sha":         finalSHA,
-			"message":     firstNonEmpty(codeCommit.Message, ledgerCommit.Message),
-			"at":          c.nowISO(),
-			"ledger-sha":  jsonNilable(ledgerCommit.SHA),
-			"merge-error": jsonNilable(mergeErr),
+			"sha":        finalSHA,
+			"message":    firstNonEmpty(codeCommit.Message, ledgerCommit.Message),
+			"at":         c.nowISO(),
+			"ledger-sha": jsonNilable(ledgerCommit.SHA),
 		}
 		if finalSHA == "" {
-			// firstNonEmpty(code, ledger) 为空 ⇒ 两者皆空——"code merged but
-			// ledger commit missing" 分支在数学上不可达（覆盖率审计 2026-08-22 删除）。
 			reason := firstNonEmpty(codeCommit.Error, codeCommit.Skipped, "unknown")
 			commitNote = fmt.Sprintf("commit skipped (%s)", reason)
 		} else {
 			n := shortSHA(finalSHA)
 			if ls := ledgerCommit.SHA; ls != "" {
 				n += " + ledger " + shortSHA(ls)
-			}
-			if mergeErr != "" {
-				n += fmt.Sprintf(" (merge error: %s)", mergeErr)
 			}
 			commitNote = "commit " + n
 		}
@@ -401,10 +422,14 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 		}
 		testRatio = float64(hits) / float64(len(changed))
 	}
-	if !defectinjection.ShouldSample(completedCount, di.EveryNUnits, di.TestFileRatioBoost, testRatio) {
+	// EveryNUnits 为指针（nil = 未声明 → 默认 5）。
+	everyN := 5
+	if di.EveryNUnits != nil {
+		everyN = *di.EveryNUnits
+	}
+	if !defectinjection.ShouldSample(completedCount, everyN, di.TestFileRatioBoost, testRatio) {
 		return nil, nil
 	}
-
 	inboxContinue := func(reason string, evidence map[string]any) (*defectinjection.Outcome, error) {
 		evidence["at"] = c.nowISO()
 		ps.Evidence.DefectInjection = evidence
@@ -688,6 +713,23 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 		}
 		if review.Pass {
 			if err := c.completeUnit(packet); err != nil {
+				if errors.Is(err, ErrMergeConflict) {
+					// 合并冲突：worktree 已保留，升级到人（与其他升级同款
+					// inbox 路由），任务状态不说谎。
+					ps.Status = "inbox"
+					at := c.nowISO()
+					ps.UpdatedAt = &at
+					entry := map[string]any{
+						"at":        c.nowISO(),
+						"packet-id": id,
+						"reason":    fmt.Sprintf("packet %s: merge conflict — worktree preserved for human resolution (%v).", id, err),
+					}
+					c.State.Inbox = append(c.State.Inbox, entry)
+					c.State.Status = "escalated"
+					c.appendInbox(entry)
+					c.save()
+					return "stop", nil
+				}
 				return "", err
 			}
 			return "ok", nil

@@ -552,7 +552,7 @@ func TestJudgeErrorCodeEscalatesWithSeeMetrics(t *testing.T) {
 
 // ---- 合并失败：保留 worktree 待人工处理 ----
 
-func TestMergeConflictPreservesWorktree(t *testing.T) {
+func TestMergeConflictRoutesToInboxWithoutCompleted(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	reviews := 0
@@ -569,16 +569,50 @@ func TestMergeConflictPreservesWorktree(t *testing.T) {
 
 	var logs []string
 	summary, err := RunTask(runOptsWithLog(fx, sd.set(), &logs))
-	require.NoError(t, err)
-	assert.Equal(t, "completed", summary.Status, "合并失败上报但不毁掉已验证工作")
-	assert.Contains(t, strings.Join(logs, "\n"), "merge --ff-only failed")
+	require.NoError(t, err, "合并冲突走 inbox 路由（与其他升级同款），不是进程错误")
+	assert.Equal(t, "escalated", summary.Status)
 
 	st := loadFixtureState(t, fx)
 	ps := st.Packets["M01-T01"]
+	assert.Equal(t, "inbox", ps.Status, "§5.2：合并失败绝不标 completed")
+	assert.Equal(t, "escalated", st.Status)
 	commit, _ := ps.Commit.(map[string]any)
+	require.NotNil(t, commit, "commit 记录必须落账")
 	require.NotNil(t, commit["merge-error"], "合并错误落账")
+	require.NotNil(t, commit["ledger-sha"], "账本照常落库：合并失败后 ledger 提交仍执行")
+	found := false
+	for _, e := range st.Inbox {
+		entry, _ := e.(map[string]any)
+		if r, _ := entry["reason"].(string); strings.Contains(r, "merge conflict") {
+			found = true
+		}
+	}
+	assert.True(t, found, "合并失败必须升级进 inbox")
 	_, wtPath := verify.WorktreeNames(fx.root, fx.slug, "M01-T01")
 	assert.DirExists(t, wtPath, "合并失败的 worktree 必须保留")
+}
+
+// TestCompleteUnitAheadCountFailure：base-ref 指向不存在的对象 →
+// rev-list 失败 → ErrMergeConflict（review #1 的 aerr 分支）。
+func TestCompleteUnitAheadCountFailure(t *testing.T) {
+	fx := newGitFixture(t)
+	id := "M01-T01"
+	head := strings.TrimSpace(gitCmd(t, fx.root, "rev-parse", "HEAD"))
+	branch, wtPath := verify.WorktreeNames(fx.root, fx.slug, id)
+	gitCmd(t, fx.root, "worktree", "add", "-f", "-b", branch, wtPath, head)
+	writeFile(t, filepath.Join(wtPath, "w.txt"), "w")
+	gitCmd(t, wtPath, "add", "-A")
+	gitCmd(t, wtPath, "commit", "-q", "-m", "unit work")
+
+	ctx := unitTestContext(t, fx)
+	ps := ctx.State.Packets[id]
+	bad := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	ps.BaseRef = &bad
+	ps.Worktree = &state.WorktreeInfo{Mode: "worktree", Path: wtPath, Branch: branch}
+
+	err := ctx.completeUnit(ctx.Packets[id])
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrMergeConflict)
 }
 
 // ---- completeUnit：零变更 → commit skipped ----
@@ -612,9 +646,11 @@ func TestCompleteUnitCommitSkippedWhenNothingChanged(t *testing.T) {
 	require.NoError(t, ctx.completeUnit(ctx.Packets[id]))
 	commit, _ := ps.Commit.(map[string]any)
 	assert.Equal(t, "", commit["sha"], "代码与账本均零变更 → 无提交")
-	assert.Equal(t, "no code commit", commit["merge-error"])
-	retro, err := os.ReadFile(filepath.Join(fx.taskDir, "retro.md"))
-	require.NoError(t, err)
+	// ahead==0（分支与 base 同点）：无合并发生 → 无 merge-error 记录
+	// （review 修正后的语义：merge-error 仅在真正尝试合并失败时落账）。
+	assert.Nil(t, commit["merge-error"])
+	retro, rerr := os.ReadFile(filepath.Join(fx.taskDir, "retro.md"))
+	require.NoError(t, rerr)
 	assert.Contains(t, string(retro), "commit skipped (no changes)")
 }
 

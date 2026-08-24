@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -248,10 +249,18 @@ func GetBaseRef(cwd string) (ref string, ok bool) {
 	return strings.TrimSpace(head), true
 }
 
-// GetChangedFiles 当前单元的变更文件：对 baseRef（缺省 HEAD）做 git diff。
-// 对单元 base ref 的 diff 同时覆盖 executor 自行提交与未提交改动；untracked
-// 文件显式列出（git diff 从不显示它们）。ok=false = 不可用的 git checkout，
-// 调用方把该检查记为 skipped。
+// AheadCount 分支 head 相对 base 领先的提交数（base..head）。编排器据此判断
+// "单元代码是否已落分支"——而不是"本次调用是否产生了新提交"：executor 自提交
+// 或崩溃恢复重跑 completeUnit 时，scoped 提交可能为空但分支仍然领先，合并门控
+// 必须以领先关系为准。
+func AheadCount(repoDir, base, head string) (int, error) {
+	out, err := gitOut(repoDir, "rev-list", "--count", base+".."+head)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
 func GetChangedFiles(cwd, baseRef string) (files []string, ok bool) {
 	base := baseRef
 	if base == "" {

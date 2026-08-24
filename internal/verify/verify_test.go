@@ -361,6 +361,22 @@ func TestCheckBoundaries(t *testing.T) {
 	assert.Equal(t, []string{"src/ok.go", "lib/main.py"}, r.ChangedFiles)
 }
 
+func TestAheadCount(t *testing.T) {
+	repo := initRepo(t)
+	base, ok := GetBaseRef(repo)
+	require.True(t, ok)
+	writeFile(t, filepath.Join(repo, "x.txt"), "x")
+	gitMust(t, repo, "add", "-A")
+	gitMust(t, repo, "commit", "-q", "-m", "second")
+
+	n, aerr := AheadCount(repo, base, "HEAD")
+	require.NoError(t, aerr)
+	assert.Equal(t, 1, n)
+
+	_, aerr = AheadCount(filepath.Join(repo, "gone"), base, "HEAD")
+	assert.Error(t, aerr)
+}
+
 func TestWorktreeNamesFallbackRepoName(t *testing.T) {
 	for _, cwd := range []string{"", ".", "/"} {
 		branch, path := WorktreeNames(cwd, "s", "M01-T01")
