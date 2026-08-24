@@ -1,7 +1,7 @@
 // Package skillsembed — `flywheel skills list/read` 的数据层（DESIGN.md §12）。
 // 仓库 skills/ 目录经 go:embed 编进二进制（skills.FS），本包在其上提供
-// List/Read 两个纯数据函数；frontmatter 解析复用 internal/contract.ParseFrontmatter，
-// 与契约层同一套 YAML 语义（P1-2 之后全部 SKILL.md 均为合法 YAML）。
+// List/Read/DirFS 三个纯数据函数；frontmatter 解析复用
+// internal/contract.ParseFrontmatter，与契约层同一套 YAML 语义。
 package skillsembed
 
 import (
@@ -69,6 +69,14 @@ func Read(name string) (string, error) {
 		return "", fmt.Errorf("unknown skill %q", name)
 	}
 	return string(raw), nil
+}
+
+// DirFS 返回指定 skill 目录的子文件系统（安装器物化内嵌快照用）。
+func DirFS(name string) (fs.FS, error) {
+	if _, err := Read(name); err != nil {
+		return nil, err
+	}
+	return fs.Sub(skills.FS, name)
 }
 
 // str frontmatter 标量取值：缺省/非字符串一律空串。

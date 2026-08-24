@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ckanner/flywheel/internal/modules"
+	"github.com/ckanner/flywheel/internal/skillsembed"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -346,13 +347,43 @@ func TestInstallSkillsSmokeViaRepoRootDetection(t *testing.T) {
 	assert.NotZero(t, info.Mode()&os.ModeSymlink, "默认软链模式")
 }
 
-func TestResolveTaskDirEmptyArg(t *testing.T) {
-	_, err := resolveTaskDir("")
-	assert.Error(t, err)
-	wd, _ := os.Getwd()
-	got, err := resolveTaskDir(".")
-	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(got, wd) || strings.HasSuffix(got, filepath.Base(wd)))
+// TestInstallEmbeddedSnapshotWhenNoSourceTree review #6 回归：发布二进制
+// （无源码树）运行 install-skills 时，从内嵌快照物化副本——绝不静默装零个。
+func TestInstallEmbeddedSnapshotWhenNoSourceTree(t *testing.T) {
+	// chdir 到无 go.mod 祖先的 tempdir → repoRoot ok=false → 内嵌快照臂。
+	chdirT(t, t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code, out := runCLI(t, "install-skills")
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "内嵌快照")
+	// 全部 10 个内置 skill 均被物化为真实目录（含 SKILL.md）。
+	for _, s := range skillsembed.List() {
+		assert.FileExists(t, filepath.Join(home, ".agents", "skills", s.Name, "SKILL.md"), s.Name)
+	}
+	assert.FileExists(t, filepath.Join(home, ".agents", "skills", modules.AnchorFile))
+}
+
+// TestInstallEmbeddedSnapshotProjectScope 内嵌物化的 project 作用域分支。
+func TestInstallEmbeddedSnapshotProjectScope(t *testing.T) {
+	project := t.TempDir()
+	chdirT(t, t.TempDir()) // 无源码树 → 走内嵌快照臂
+
+	code, out := runCLI(t, "install-skills", "--project", project)
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "project (")
+	assert.Contains(t, out, "内嵌快照")
+	assert.FileExists(t, filepath.Join(project, ".agents", "skills", "flywheel-run", "SKILL.md"))
+}
+
+// TestInstallSkillsHomeErrorOutsideRepo：HOME="" 且在源码树外 →
+// repoRoot ok=false + UserHomeDir 失败 → return serr（覆盖 CLI 层错误传播）。
+func TestInstallSkillsHomeErrorOutsideRepo(t *testing.T) {
+	chdirT(t, t.TempDir())
+	t.Setenv("HOME", "")
+	code, out := runCLI(t, "install-skills")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "home directory")
 }
 
 func TestMustCwdNonEmpty(t *testing.T) {

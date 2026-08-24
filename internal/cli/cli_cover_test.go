@@ -100,10 +100,13 @@ func TestPrintJSONTwoSpaceIndent(t *testing.T) {
 //
 // tempdir 之上一无 go.mod 祖先（darwin /var/folders/...）：第一候选（cwd）
 // 整段爬升触底 break，第二候选（exe 目录）同样触底，最终退回工作目录。
+// repoRoot 无 go.mod 祖先 → ok=false（调用方走内嵌快照物化，绝不假装
+// 工作目录是源码树——那正是 review #6 的静默零安装根因）。
 func TestRepoRootFallsBackToWdWhenNoGoModAncestor(t *testing.T) {
 	chdirT(t, t.TempDir())
-	wd := mustCwd()
-	assert.Equal(t, wd, repoRoot())
+	root, ok := repoRoot()
+	assert.False(t, ok, "无 go.mod 祖先必须返回 ok=false")
+	assert.Empty(t, root)
 }
 
 func writePidFile(t *testing.T, taskDir string, payload string) {

@@ -114,3 +114,15 @@ func (errFS) Open(string) (fs.File, error) { return nil, fmt.Errorf("boom") }
 func TestListFromErroringFS(t *testing.T) {
 	assert.Nil(t, ListFrom(errFS{}))
 }
+
+// TestDirFSEmbedded 内嵌 FS 子目录访问（正向 + 错误）。
+func TestDirFSEmbedded(t *testing.T) {
+	sub, derr := DirFS("flywheel-run")
+	require.NoError(t, derr)
+	data, rerr := fs.ReadFile(sub, "SKILL.md")
+	require.NoError(t, rerr)
+	assert.Contains(t, string(data), "flywheel-run")
+
+	_, derr = DirFS("no-such-skill")
+	assert.Error(t, derr)
+}
