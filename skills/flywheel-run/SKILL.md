@@ -5,10 +5,7 @@ metadata:
 description: Start the Flywheel orchestrator on a task (docs/<slug>) as an independent process — triggers ALL loops fully automatically. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start a flywheel task.
 whenToUse: 当用户已人审契约、要全自动启动某个 flywheel 任务（"启动/跑这个任务"）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
+arguments: slug
 ---
 
 # flywheel-run — 拉起编排器（触发全部 loop）
@@ -18,6 +15,8 @@ orchestrator as an **independent process**, confirm it is alive, report the
 status entry point. You do NOT do any loop work yourself — the real Plan
 session is spawned by the orchestrator as a separate harness session.
 
+> 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
+
 ## 步骤
 
 1. **参数校验**：确认 `docs/<slug>/` 存在且含 `spec.md`、`task-packet-*.md`、
@@ -26,7 +25,7 @@ session is spawned by the orchestrator as a separate harness session.
 2. **以独立进程拉起**（不依赖当前会话存活）：
 
    ```bash
-   cd <目标仓库根> && nohup flywheel run docs/<slug> \
+   cd <目标仓库根> && nohup flywheel run "$slug" \
      > docs/<slug>/orchestrator.log 2>&1 &
    ```
 

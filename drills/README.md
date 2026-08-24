@@ -1,12 +1,16 @@
 # Flywheel drills（实证演练记录）
 
-DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。每个演练都可重复执行，
-对应 `tests/` 下的真实测试（非 mock）。
+DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。Go 版（v0.17 迁移后）演练由
+`internal/` 下真实测试承载（真 git、真子进程，非 mock）。
 
-| 演练 | 门槛 | 记录 | 可重复入口 |
+| 演练 | 门槛 | 记录 | 可重复入口（Go 版，v0.18 迁移后） |
 |---|---|---|---|
-| 401/403 降级分类 | §10-4（可达部分） | [403-fallback.md](403-fallback.md) | `node --test tests/drill-fallback.test.js` |
-| 缺陷注入真实仓库 | §4.3 机制验证 | [defect-injection.md](defect-injection.md) | `node --test tests/drill-defect-injection.test.js` |
+| 401/403 降级分类 | §10-4（可达部分） | [403-fallback.md](403-fallback.md) | 分类规则：`go test ./internal/errs -run 'TestClassifyError|TestRetryableAndFallbackSets'`；降级链：`go test ./internal/machine -run TestExecuteStepChannelFallback`；真实探测为手动命令（见记录内原文，需本机 pi + 网络） |
+| 缺陷注入真实仓库 | §4.3 机制验证 | [defect-injection.md](defect-injection.md) | 注入周期（真 git）：`go test ./internal/defectinjection -run TestRunDefectInjection`；编排器集成：`go test ./internal/machine -run 'TestDefectInjection|TestResumeAtReviewDefectInjection'` |
+
+> 历史注记：上表的 Node 入口（`tests/drill-*.test.js`、`core/*.js`）已随 v0.17 Go 迁移删除；
+> 本页其余正文保留 2026-08-20 实测时的环境事实基线，其中提到的 `core/child-env.js`
+> 对应现 `internal/childenv`（GateEnv）、`core/ledger.js` 对应 `internal/ledger`。
 
 环境事实基线（2026-08-20 实测）：
 

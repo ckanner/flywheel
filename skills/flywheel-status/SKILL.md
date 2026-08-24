@@ -5,15 +5,14 @@ metadata:
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use when the user says "/skill:flywheel-status docs/<slug>" or asks how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm)."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
+arguments: slug
 ---
 
 # flywheel-status — 看进度（只读）
 
 Button only: read state + translate. Writes nothing.
+
+> 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 步骤
 
@@ -21,7 +20,7 @@ Button only: read state + translate. Writes nothing.
 2. **调用**（在目标仓库根执行）：
 
    ```bash
-   flywheel status docs/<slug>
+   flywheel status "$slug"
    ```
 
    若 flywheel 不在 PATH：`flywheel status docs/<slug>`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。

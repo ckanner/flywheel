@@ -5,10 +5,7 @@ metadata:
 description: Analyze retro.md failure patterns and knowledge-asset decay (AGENTS.md/skills), producing garden-proposals.md for human review — proposals only, never auto-applied. Use when the user says "/skill:flywheel-garden" or wants to distill loop learnings into skill proposals.
 whenToUse: 当用户想把 retro 里反复出现的失败模式提炼成 skill/验收规则提案、或清理 AGENTS.md/skills 腐烂内容时使用。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm) and kimi CLI (garden runs K3)."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
+arguments: slug
 ---
 
 # flywheel-garden — 知识资产维护提案（外挂模块）
@@ -17,6 +14,8 @@ Button only: validate + invoke CLI + translate. No loop logic
 here. Garden **只产提案，绝不自动应用**——改的是 loop 自己的知识资产，
 应用权在人。
 
+> 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
+
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 存在。`retro.md` 为空时提醒用户：提案原料
@@ -24,7 +23,7 @@ here. Garden **只产提案，绝不自动应用**——改的是 loop 自己的
 2. **调用**（在目标仓库根执行）：
 
    ```bash
-   flywheel garden docs/<slug>
+   flywheel garden "$slug"
    ```
 
    若 flywheel 不在 PATH：`flywheel garden docs/<slug>`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。

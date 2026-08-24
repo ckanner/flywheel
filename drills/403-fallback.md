@@ -8,7 +8,7 @@ DESIGN.md §6 要求"检测到 403/限流自动切渠道"。演练回答：OpenC
 
 ## 方法（可重复）
 
-真实探测：`tests/drill-fallback.test.js` 第一条（需本机 pi + 网络；
+真实探测（原 Node drill 首条，现为手动命令——需本机 pi + 网络；
 用**无效 key** 经 `--api-key` 强制注入，不依赖任何有效凭证）：
 
 ```sh
@@ -16,7 +16,8 @@ pi -p "Reply with exactly: ok" --model opencode-go/deepseek-v4-flash \
   --thinking max --no-session --mode json --api-key "sk-invalid-drill-000..."
 ```
 
-分类规则单测（离线）：同文件后两条，合成 401/403 文本对照。
+分类规则单测（离线，Go 版）：合成 401/403 文本对照 ——
+`go test ./internal/errs -run 'TestClassifyError|TestRetryableAndFallbackSets'`。
 
 ## 实测发现
 
@@ -40,15 +41,16 @@ pi -p "Reply with exactly: ok" --model opencode-go/deepseek-v4-flash \
 
 ## 规则落点
 
-- `orchestrator/errors.js`：`FALLBACK_CODES = [QUOTA, RATE_LIMIT]`（AUTH 移出）；
+- `internal/errs`（Go 版单一落点）：`FallbackCodes = {QUOTA, RATE_LIMIT}`（AUTH 移出）；
   模式表 401→AUTH、403/forbidden→QUOTA。
-- 机器层回归：`tests/machine.test.js`（403 切换下一渠道 / 401 只试主渠道后升级）。
+- 编排器层回归：`go test ./internal/machine -run 'TestExecuteStepChannelFallback|TestAgentVerdictStep'`
+  （403 切换下一渠道 / 401 只试主渠道后升级）。
 
 ## 残余风险
 
 - **真实 403 未能注入**：手头无超额/被封的 Go 账号，403 文本形态来自
   §7 描述与通用 HTTP 形态合成，未亲见 Go 的 403 报文。若实际报文不含
   "403/forbidden/quota" 字样（如 Zen 返回 402/429 变体），需按真实报文
-  再调模式表——分类规则集中在 errors.js 一处，改动成本低。
+  再调模式表——分类规则集中在 internal/errs 一处，改动成本低。
 - 降级链终点为 Zen 按量；Zen 自身限流时的处置（排队重试 vs 停机叫人）
   未演练。

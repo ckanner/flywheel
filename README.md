@@ -23,7 +23,7 @@ make install        # 装到 /usr/local/bin
 
 ## 安装 skills 到 kimi code / pi
 
-kimi code 与 pi 都实现 Agent Skills 标准，共享安装点 `~/.agents/skills/`：
+kimi code、pi、Warp 均实现 Agent Skills 标准并扫描共享安装点 `~/.agents/skills/`：
 
 ```bash
 # 默认：软链（仓库即唯一信源，改了即生效；幂等，重复运行报告"已安装，跳过"）
@@ -38,6 +38,10 @@ flywheel install-skills --copy
 # 安装到某个项目根的 .agents/skills/（项目级）
 flywheel install-skills --project /path/to/project
 ```
+
+> 调用形态按 harness 而异：kimi code 与 pi 为 `/skill:<name>`；Warp 为 `/<name>`；
+> Claude Code 经 Skill 工具加载。`whenToUse`/`arguments` 是 kimi code 定义的字段
+> （自动调用依据），不在 agentskills.io 标准内，其他 harness 会无害忽略。
 
 装完后在 kimi code 或 pi 里用 `/skill:<name>` 调用，例如 `/skill:flywheel-run`。安装时会在 skills 安装点写入锚文件 `flywheel-home.txt`，skill 用它定位本仓库根。
 

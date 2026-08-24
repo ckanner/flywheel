@@ -43,10 +43,14 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
   orchestrator.pid).
 - **Skills are buttons**: a SKILL.md contains validation + CLI invocation +
   translation, never loop logic. Frontmatter requires `name` matching the
-  directory, non-empty `description`, `metadata.version`, and — kimi code
-  extensions that auto-invocation depends on — non-empty `whenToUse` and
-  `arguments`. Enforced by internal/skillsembed tests (real YAML parsing,
-  CI-blocking), NOT by regex.
+  directory and non-empty `description` (the only two fields both the
+  agentskills.io spec and every harness mandate), plus `metadata.version`,
+  `whenToUse` and `arguments`. The latter three are NOT agentskills.io
+  standard: `whenToUse`/`arguments` are kimi-code-defined fields that drive
+  its auto-invocation (moonshotai.github.io/kimi-code → customization/skills);
+  other harnesses (pi / Warp / Claude Code) ignore them harmlessly.
+  Enforced by internal/skillsembed tests (real YAML parsing + standard
+  constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
   `status`/`stop`/`install-skills` print human-readable text; errors go to
   stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /

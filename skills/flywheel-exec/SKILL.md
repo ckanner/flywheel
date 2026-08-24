@@ -5,18 +5,15 @@ metadata:
 description: Trigger only the Execute Loop for a Flywheel task, optionally for one packet (single state transition). Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
-  - name: packet-id
-    description: 可选，指定执行单元（如 M02-T03）；缺省取当前里程碑下一个未完成 packet
-    required: false
+arguments: slug packet
+
 ---
 
 # flywheel-exec — 只触发 Execute Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+> 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 步骤
 
@@ -26,9 +23,9 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 
    ```bash
    # 指定 packet
-   flywheel run docs/<slug> --only execute --packet M02-T03
+   flywheel run "$slug" --only execute --packet "$packet"
    # 或不指定：取当前里程碑下一个未完成 packet
-   flywheel run docs/<slug> --only execute
+   flywheel run "$slug" --only execute
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only execute [--packet M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。

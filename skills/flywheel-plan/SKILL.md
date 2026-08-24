@@ -5,15 +5,14 @@ metadata:
 description: Trigger only the Plan Loop for a Flywheel task (single state transition). Use when the user says "/skill:flywheel-plan docs/<slug>" or wants to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
+arguments: slug
 ---
 
 # flywheel-plan — 只触发 Plan Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+> 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 步骤
 
@@ -21,7 +20,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 2. **调用**（在目标仓库根执行，前台一步即返回）：
 
    ```bash
-   flywheel run docs/<slug> --only plan
+   flywheel run "$slug" --only plan
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only plan`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。

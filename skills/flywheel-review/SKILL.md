@@ -5,18 +5,15 @@ metadata:
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
-  - name: unit-id
-    description: 可选，指定评审单元（如 M02-T03）；缺省取当前里程碑第一个未完成 packet（其 L1 未绿时 CLI 会报错，建议明确给 unit id）
-    required: false
+arguments: slug unit
+
 ---
 
 # flywheel-review — 只触发 Review Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+> 参数经 kimi 命名参数注入正文：`$slug`、`$unit`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 步骤
 
@@ -27,9 +24,9 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 
    ```bash
    # 重跑某单元评审
-   flywheel run docs/<slug> --only review --unit M02-T03
+   flywheel run "$slug" --only review --unit "$unit"
    # 或不指定：当前里程碑第一个未完成 packet（L1 未绿会报错——先 execute/verify）
-   flywheel run docs/<slug> --only review
+   flywheel run "$slug" --only review
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only review [--unit M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
