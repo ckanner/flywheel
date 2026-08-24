@@ -28,6 +28,13 @@
       "thinking": "max",
       "_note": "milestone final verification, fresh context (§7); K3 decided 2026-08-20 (§11.3 closed) — cross-vendor vs DeepSeek executors"
     },
+    "judge-panel": {
+      "harness": "pi",
+      "model": "opencode-go/deepseek-v4-pro",
+      "channel": "opencode-go",
+      "thinking": "max",
+      "_note": "v0.18 A3 dual-judge panel: second opinion on the milestone final verification — K3 primary (loops.judge) + V4 Pro cross-vendor secondary; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
+    },
     "intake": {
       "harness": "pi",
       "model": "opencode-go/deepseek-v4-flash",

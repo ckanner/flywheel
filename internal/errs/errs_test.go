@@ -144,9 +144,11 @@ func TestExtractRetryAfterMs(t *testing.T) {
 	assert.Equal(t, int64(5000), ExtractRetryAfterMs("x\nretry-after: 5\ny"))
 }
 
+func jptr(v float64) *float64 { return &v }
+
 func TestComputeBackoff(t *testing.T) {
 	// 无 jitter 语义（random 固定 0.5 时 jitter 完全抵消）时 exponential 精确可断言。
-	noJitter := BackoffOptions{Jitter: 0, Random: func() float64 { return 0.5 }}
+	noJitter := BackoffOptions{Jitter: jptr(0), Random: func() float64 { return 0.5 }}
 	assert.Equal(t, int64(500), ComputeBackoff(0, noJitter))
 	assert.Equal(t, int64(1000), ComputeBackoff(1, noJitter))
 	assert.Equal(t, int64(2000), ComputeBackoff(2, noJitter))
@@ -154,22 +156,22 @@ func TestComputeBackoff(t *testing.T) {
 	assert.Equal(t, int64(500), ComputeBackoff(0, BackoffOptions{Random: func() float64 { return 0.5 }}))
 
 	// jitter 边界：base ±10%。
-	jittered := BackoffOptions{Jitter: 0.1, Random: func() float64 { return 0 }}
+	jittered := BackoffOptions{Jitter: jptr(0.1), Random: func() float64 { return 0 }}
 	assert.Equal(t, int64(450), ComputeBackoff(0, jittered))
-	jitteredHi := BackoffOptions{Jitter: 0.1, Random: func() float64 { return 1 }}
+	jitteredHi := BackoffOptions{Jitter: jptr(0.1), Random: func() float64 { return 1 }}
 	assert.Equal(t, int64(550), ComputeBackoff(0, jitteredHi))
 
 	// Retry-After 尊重但封顶。
-	withRetry := BackoffOptions{BaseDelayMs: 500, MaxDelayMs: 10000, Jitter: 0.1, RetryAfterMs: 5000, Random: func() float64 { return 0.5 }}
+	withRetry := BackoffOptions{BaseDelayMs: 500, MaxDelayMs: 10000, Jitter: jptr(0.1), RetryAfterMs: 5000, Random: func() float64 { return 0.5 }}
 	assert.Equal(t, int64(5000), ComputeBackoff(0, withRetry))
-	capped := BackoffOptions{BaseDelayMs: 500, MaxDelayMs: 10000, Jitter: 0.1, RetryAfterMs: 86400000, Random: func() float64 { return 0.5 }}
+	capped := BackoffOptions{BaseDelayMs: 500, MaxDelayMs: 10000, Jitter: jptr(0.1), RetryAfterMs: 86400000, Random: func() float64 { return 0.5 }}
 	assert.Equal(t, int64(10000), ComputeBackoff(1, capped))
 
 	// 非法/越界参数按 Node 语义处理：负 base/max 回退默认，jitter 不 clamp。
-	assert.Equal(t, int64(1000), ComputeBackoff(1, BackoffOptions{BaseDelayMs: -1, MaxDelayMs: -1, Jitter: 2, Random: func() float64 { return 0.5 }}))
-	assert.Equal(t, int64(3000), ComputeBackoff(1, BackoffOptions{BaseDelayMs: -1, MaxDelayMs: -1, Jitter: 2, Random: func() float64 { return 1 }}))
+	assert.Equal(t, int64(1000), ComputeBackoff(1, BackoffOptions{BaseDelayMs: -1, MaxDelayMs: -1, Jitter: jptr(2), Random: func() float64 { return 0.5 }}))
+	assert.Equal(t, int64(3000), ComputeBackoff(1, BackoffOptions{BaseDelayMs: -1, MaxDelayMs: -1, Jitter: jptr(2), Random: func() float64 { return 1 }}))
 	// 负 Retry-After 归一为 0。
-	assert.Equal(t, int64(500), ComputeBackoff(0, BackoffOptions{Jitter: 0.1, RetryAfterMs: -5, Random: func() float64 { return 0.5 }}))
+	assert.Equal(t, int64(500), ComputeBackoff(0, BackoffOptions{Jitter: jptr(0.1), RetryAfterMs: -5, Random: func() float64 { return 0.5 }}))
 	// 未注入 Random 时走全局源（不崩溃、落在合法区间）。
 	got := ComputeBackoff(0, BackoffOptions{})
 	assert.GreaterOrEqual(t, got, int64(0))

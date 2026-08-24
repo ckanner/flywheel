@@ -4,12 +4,15 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
 )
@@ -50,6 +53,7 @@ func statusCmd() *cobra.Command {
 				progress = *st.LastProgressAt
 			}
 			fmt.Fprintf(out, "当前里程碑: %s  上次推进: %s  revision: %d\n", current, progress, st.Revision)
+			warnIfStalled(out, taskDir, st)
 			fmt.Fprintln(out)
 			for mid, ms := range st.Milestones {
 				closed := ""
@@ -146,4 +150,27 @@ func orchestratorAlive(taskDir string) (bool, int) {
 		return false, 0
 	}
 	return true, pf.PID
+}
+
+// warnIfStalled A5①（DESIGN §6 v0.18）：上次推进距今超过看门狗 wall-clock
+// 阈值 → 显式"疑似停滞/断链"提示。LastProgressAt 缺失/不可解析时静默
+// （无信息不妄言）；阈值取任务配置的 watchdog.wall-timeout-ms（缺省 1h）。
+func warnIfStalled(out io.Writer, taskDir string, st *state.State) {
+	if st.LastProgressAt == nil {
+		return
+	}
+	ts, err := time.Parse("2006-01-02T15:04:05.000Z", *st.LastProgressAt)
+	if err != nil {
+		return
+	}
+	wall := int64(3_600_000)
+	if wd, werr := os.Getwd(); werr == nil {
+		if cfg, cerr := config.Load(taskDir, wd); cerr == nil && cfg.Watchdog.WallTimeoutMs > 0 {
+			wall = cfg.Watchdog.WallTimeoutMs
+		}
+	}
+	if stalled := time.Since(ts); stalled > time.Duration(wall)*time.Millisecond {
+		fmt.Fprintf(out, "⚠ 上次推进距今 %s，超过看门狗 wall-clock 阈值——疑似停滞/断链；检查编排器进程或 orchestrator.log\n",
+			stalled.Round(time.Second))
+	}
 }

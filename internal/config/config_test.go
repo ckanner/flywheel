@@ -16,7 +16,7 @@ func TestDefaults(t *testing.T) {
 	assert.Nil(t, d.Budget.DailyTokenLimit)
 	assert.Equal(t, int64(300_000), d.Watchdog.IdleTimeoutMs)
 	assert.Equal(t, int64(5_000), d.Watchdog.KillGraceMs)
-	assert.Equal(t, 0.1, d.Retry.Jitter)
+	assert.Equal(t, 0.1, *d.Retry.Jitter)
 	assert.Equal(t, 5, d.Retry.MaxTransportRetries)
 	assert.Equal(t, 5, *d.DefectInjection.EveryNUnits)
 	assert.True(t, *d.Worktree.Enabled, "worktree 默认开启（v0.16）")
@@ -124,4 +124,20 @@ func TestLoadAndFind(t *testing.T) {
 	_, err = Load(badCfg, dir)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "budget.enforce")
+}
+
+func TestValidateJitterNegativeAndPanel(t *testing.T) {
+	c := Default()
+	j := -0.5
+	c.Retry.Jitter = &j
+	assert.ErrorContains(t, c.Validate(), "retry.jitter")
+
+	ok := Default()
+	ok.JudgePanel = &LoopBinding{Harness: "pi", Model: "m/x", Channel: "ch"}
+	assert.NoError(t, ok.Validate())
+
+	bad := Default()
+	bad.JudgePanel = &LoopBinding{Harness: "pi"} // 缺 model/channel
+	err := bad.Validate()
+	assert.ErrorContains(t, err, "judge-panel")
 }

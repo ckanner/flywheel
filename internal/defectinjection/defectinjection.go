@@ -170,14 +170,17 @@ func RunDefectInjection(a Args) Outcome {
 		return outcomeOf("uninjectable", fmt.Sprintf("patch unreadable: %v", err))
 	}
 
-	// P0-3：触碰账本区的补丁直接拒绝。
+	// P0-3：触碰账本区的补丁直接拒绝。匹配语义与 internal/ledger 的账本区
+	// 分类一致（v0.18 C3 修复：原精确相等可被目录内路径绕过——"reports/x"
+	// ≠ "reports/"）：条目以 "/" 结尾按前缀匹配，否则精确匹配。
 	created, modified := ParsePatchFiles(string(patchContent))
 	touched := append(append([]string{}, created...), modified...)
 	var forbidden []string
 	for _, f := range touched {
 		for _, p := range a.ForbidPaths {
-			if f == p {
+			if f == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(f, p)) {
 				forbidden = append(forbidden, f)
+				break
 			}
 		}
 	}

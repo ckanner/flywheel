@@ -59,10 +59,10 @@ type WatchdogConfig struct {
 
 // RetryConfig 传输层重试（§6）。
 type RetryConfig struct {
-	BaseDelayMs         float64 `json:"base-delay-ms"`
-	MaxDelayMs          float64 `json:"max-delay-ms"`
-	Jitter              float64 `json:"jitter"`
-	MaxTransportRetries int     `json:"max-transport-retries"`
+	BaseDelayMs         float64  `json:"base-delay-ms"`
+	MaxDelayMs          float64  `json:"max-delay-ms"`
+	Jitter              *float64 `json:"jitter"` // nil=默认 0.1；显式 0=无 jitter（C7）
+	MaxTransportRetries int      `json:"max-transport-retries"`
 }
 
 // CredentialsConfig live 凭证人工确认轮询（§9）。
@@ -122,6 +122,7 @@ type Config struct {
 	Verify          VerifyConfig            `json:"verify"`
 	DefectInjection DefectInjectionConfig   `json:"defect-injection"`
 	Worktree        WorktreeConfig          `json:"worktree"`
+	JudgePanel      *LoopBinding            `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
 	Intake          IntakeConfig            `json:"intake"`
 	Pricing         map[string]Price        `json:"pricing"`
 	MockBehaviors   map[string]any          `json:"mock-behaviors"`
@@ -141,7 +142,7 @@ func Default() Config {
 		Retry: RetryConfig{
 			BaseDelayMs:         500,
 			MaxDelayMs:          10_000,
-			Jitter:              0.1,
+			Jitter:              new(0.1),
 			MaxTransportRetries: 5,
 		},
 		DefectInjection: DefectInjectionConfig{EveryNUnits: new(5), TestFileRatioBoost: 0.5},
@@ -177,7 +178,7 @@ func (c *Config) Normalize() {
 	if c.Retry.MaxDelayMs == 0 {
 		c.Retry.MaxDelayMs = d.Retry.MaxDelayMs
 	}
-	if c.Retry.Jitter == 0 {
+	if c.Retry.Jitter == nil {
 		c.Retry.Jitter = d.Retry.Jitter
 	}
 	if c.Retry.MaxTransportRetries == 0 {
@@ -216,6 +217,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Budget.DailyTokenLimit != nil && *c.Budget.DailyTokenLimit <= 0 {
 		return errors.New("budget.daily-token-limit must be a positive integer or null")
+	}
+	if c.Retry.Jitter != nil && *c.Retry.Jitter < 0 {
+		return errors.New("retry.jitter must be >= 0")
+	}
+	// judge-panel（v0.18 A3）：启用即必须完整声明 model+channel——半配置在
+	// 终验时才爆不如加载期 fail-fast。
+	if c.JudgePanel != nil {
+		if c.JudgePanel.Model == "" || c.JudgePanel.Channel == "" || c.JudgePanel.Harness == "" {
+			return errors.New("judge-panel requires harness, model and channel")
+		}
 	}
 	// EveryNUnits 为指针：nil = 未声明（Normalize 回填默认）；显式声明则必须
 	// >= 1——显式 0 不再被 Normalize 的默认值吞掉（review 修正）。

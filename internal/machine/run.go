@@ -175,10 +175,14 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		} else {
 			// P0-2：planner 可能重写了契约文件——重载它们，否则下一轮跑在内存里的
 			// 陈旧 packet 上。planner 还可能新增 packet；为它们同步状态条目。
+			// A1（§4.1 已知风险）：重载前后 diff acceptance 指纹——planner 弱化
+			// 验收必须留痕可查。
+			old := c.PacketList
 			fresh, err := contract.LoadPackets(c.TaskDir, c.Spec)
 			if err != nil {
 				return "", err
 			}
+			c.recordAcceptanceChanges(old, fresh)
 			c.PacketList = fresh
 			c.Packets = map[string]*contract.Packet{}
 			for _, p := range fresh {
@@ -605,7 +609,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 				return "stop", nil
 			}
 			if !exec.Success {
-				outcome := c.failAttempt(packet, orTransport(exec.ErrorCode), nil, nil)
+				// C4（v0.18）：execute 失败路径的空转签名用编排器亲自 diff 的
+				// 权威变更集——此前退化为空集/executor 自报，谎报即可绕过 DC4。
+				outcome := c.failAttempt(packet, orTransport(exec.ErrorCode), nil, c.authoritativeChangedFiles(packet))
 				if outcome == "spin" {
 					esc, err := c.escalatePacket(packet)
 					if err != nil {
@@ -1007,10 +1013,12 @@ func (c *Context) run() (TaskSummary, error) {
 			return c.summary(), nil
 		}
 		// P1：planner 可能在这步常规运行中修订过契约文件——像升级路径一样
-		// 重载它们（P0-2 对称性）。
+		// 重载它们（P0-2 对称性）。A1：重载前后 diff acceptance 指纹留痕。
+		old := c.PacketList
 		if err := c.reloadPackets(); err != nil {
 			return c.summary(), err
 		}
+		c.recordAcceptanceChanges(old, c.PacketList)
 		// v0.16：仅契约提交（脏账本不卷入——这里做账本提交会移动 HEAD，
 		// 破坏暂停单元 worktree 的 ff-merge）。无变更 = 无提交 = HEAD 不动。
 		c.commitTaskDirChanges(fmt.Sprintf("docs(%s): plan update", c.State.Slug))

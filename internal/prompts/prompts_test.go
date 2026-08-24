@@ -214,22 +214,27 @@ func TestParseReviewVerdict(t *testing.T) {
 	assert.Equal(t, []string{"ok"}, v.Reasons)
 
 	// 围栏包裹 + 前置噪声，从尾向前扫描命中最后一行。
-	v, err = ParseReviewVerdict("```json\n{\"verdict\":\"verification-gap\",\"reasons\":[]}\n```\nnoise above")
+	v, err = ParseReviewVerdict("```json\n{\"verdict\":\"verification-gap\",\"score\":0.5,\"reasons\":[\"acceptance too weak\"]}\n```\nnoise above")
 	require.NoError(t, err)
 	assert.Equal(t, "verification-gap", v.Verdict)
-	assert.Nil(t, v.Score)
-	assert.Empty(t, v.Reasons)
+	assert.InDelta(t, 0.5, *v.Score, 1e-9)
+	assert.Equal(t, []string{"acceptance too weak"}, v.Reasons)
 
 	// 非法 verdict 行被跳过，继续向上找到合法行。
-	v, err = ParseReviewVerdict("{\"verdict\":\"pass\"}\n{\"verdict\":\"bogus\"}")
+	v, err = ParseReviewVerdict("{\"verdict\":\"bogus\",\"score\":1,\"reasons\":[\"x\"]}\n{\"verdict\":\"pass\",\"score\":0.9,\"reasons\":[\"cmd exit 0\"]}")
 	require.NoError(t, err)
 	assert.Equal(t, "pass", v.Verdict)
 
-	// 缺 reasons 键 → 补空数组（Node: Array.isArray ? : []）。
-	v, err = ParseReviewVerdict(`{"verdict":"return"}`)
+	// A3 出口契约强化：缺 score 或空 reasons = 无证据支撑 → 跳过该行继续扫，
+	// 全部不合法则报 no verdict JSON found。
+	_, err = ParseReviewVerdict(`{"verdict":"return"}`)
+	assert.EqualError(t, err, "no verdict JSON found in review output")
+	_, err = ParseReviewVerdict(`{"verdict":"pass","score":1,"reasons":[]}`)
+	assert.EqualError(t, err, "no verdict JSON found in review output")
+	// 无证据行之下还有合法行 → 命中合法行（自尾向前扫描语义保持）。
+	v, err = ParseReviewVerdict("{\"verdict\":\"pass\",\"score\":0.8,\"reasons\":[\"cmd pnpm test exit 0\"]}\n{\"verdict\":\"pass\",\"score\":1}")
 	require.NoError(t, err)
-	assert.NotNil(t, v.Reasons)
-	assert.Empty(t, v.Reasons)
+	assert.InDelta(t, 0.8, *v.Score, 1e-9)
 
 	// 空 / 无 JSON / 全非法。
 	_, err = ParseReviewVerdict("")
@@ -250,9 +255,14 @@ func TestBuildJudgePromptPartialCoverage(t *testing.T) {
 	assert.Contains(t, out, "-> NO COVERAGE")
 }
 
+func TestParseReviewVerdictSkipsInvalidVerdictValue(t *testing.T) {
+	_, err := ParseReviewVerdict(`{"verdict":"bogus","score":1,"reasons":["x"]}`)
+	assert.EqualError(t, err, "no verdict JSON found in review output")
+}
+
 func TestParseReviewVerdictSkipsBlankLines(t *testing.T) {
 	// 尾部空行 + 中间空行：空行 continue 分支。
-	v, err := ParseReviewVerdict("\n\n{\"verdict\":\"pass\"}\n\n")
+	v, err := ParseReviewVerdict("\n\n{\"verdict\":\"pass\",\"score\":1,\"reasons\":[\"e\"]}\n\n")
 	require.NoError(t, err)
 	assert.Equal(t, "pass", v.Verdict)
 }

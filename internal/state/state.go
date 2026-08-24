@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/ckanner/flywheel/internal/config"
@@ -70,6 +71,9 @@ type WorktreeInfo struct {
 	Mode   string `json:"mode"` // worktree | in-place
 	Reason string `json:"reason,omitempty"`
 }
+
+// osWriteFile 可替换注入点（写失败分支在真实环境不可稳定复现）。
+var osWriteFile = os.WriteFile
 
 // osRename 可替换注入点（POSIX 下同目录 rename 实际不失败，测试注入覆盖）。
 var osRename = os.Rename
@@ -216,9 +220,36 @@ func Load(taskDir string) (*State, error) {
 	return &st, nil
 }
 
-// Save 原子 CAS 写：重读磁盘 revision，拒覆盖基于陈旧状态做出的决策。
+// sysFlock 可替换注入点（Flock 失败分支真实环境不可稳定复现）。
+var sysFlock = func(fd uintptr) error { return syscall.Flock(int(fd), syscall.LOCK_EX) }
+
+// lockStateFile CAS 写期间的进程间互斥（C9，v0.18：闭 CAS 读-写 TOCTOU
+// 窗口——编排器与 intake/garden 模块的 pid 守卫之间存在毫秒级缝隙）。
+// 阻塞式 LOCK_EX：持锁方都是短临界区。可注入供测试覆盖错误分支。
+var lockStateFile = func(taskDir string) (func(), error) {
+	f, err := os.OpenFile(filepath.Join(taskDir, ".state.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := sysFlock(f.Fd()); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
+// Save 原子 CAS 写：锁内重读磁盘 revision，拒覆盖基于陈旧状态做出的决策。
 // expectedRevision 为 nil 时以 st.Revision 为期望值。返回 revision+1 的新状态。
 func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
+	release, err := lockStateFile(taskDir)
+	if err != nil {
+		return nil, errf("%s: lock failed: %v", taskDir, err)
+	}
+	defer release()
+
 	file := StateFile(taskDir)
 	if _, err := os.Stat(file); err == nil {
 		raw, rerr := osReadFile(file)
@@ -247,7 +278,7 @@ func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 	next.Revision = st.Revision + 1
 	data, _ := json.MarshalIndent(next, "", "  ")
 	tmp := fmt.Sprintf("%s.tmp-%d", file, os.Getpid())
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := osWriteFile(tmp, append(data, '\n'), 0o644); err != nil {
 		return nil, errf("%s: write failed: %v", tmp, err)
 	}
 	if err := osRename(tmp, file); err != nil {

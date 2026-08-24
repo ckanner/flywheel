@@ -396,3 +396,59 @@ func TestConfigLoadErrorSurfacesExitOne(t *testing.T) {
 	code, out := runCLI(t, "intake", taskDir)
 	assert.Equal(t, 1, code, out)
 }
+
+// TestStatusStallHint（A5①）：上次推进超过 wall-clock 阈值 → 停滞提示；
+// 新鲜时间戳 → 不提示。
+func TestStatusStallHint(t *testing.T) {
+	staleKey := `"last-progress-at": "2026-08-22T00:00:00.000Z"`
+
+	taskDir := t.TempDir()
+	stale := strings.Replace(cliStateFixture, staleKey,
+		`"last-progress-at": "2020-01-01T00:00:00.000Z"`, 1)
+	require.NotEqual(t, cliStateFixture, stale, "fixture 必须含 last-progress-at 键")
+	writeFileCli(t, filepath.Join(taskDir, "state.json"), stale)
+	_, out := runCLI(t, "status", taskDir)
+	assert.Contains(t, out, "疑似停滞/断链")
+
+	taskDir2 := t.TempDir()
+	fresh := strings.Replace(cliStateFixture, staleKey,
+		`"`+state.NowISO()+`"`, 1)
+	require.NotEqual(t, cliStateFixture, fresh)
+	writeFileCli(t, filepath.Join(taskDir2, "state.json"), fresh)
+	_, out = runCLI(t, "status", taskDir2)
+	assert.NotContains(t, out, "疑似停滞/断链")
+}
+
+func TestStatusStallHintArms(t *testing.T) {
+	staleKey := `"last-progress-at": "2026-08-22T00:00:00.000Z"`
+
+	// 键缺失 → 静默（nil 臂）。
+	taskDir := t.TempDir()
+	noKey := strings.Replace(cliStateFixture,
+		"\n  \"last-progress-at\": \"2026-08-22T00:00:00.000Z\",", "", 1)
+	require.NotEqual(t, cliStateFixture, noKey)
+	writeFileCli(t, filepath.Join(taskDir, "state.json"), noKey)
+	_, out := runCLI(t, "status", taskDir)
+	assert.NotContains(t, out, "疑似停滞")
+
+	// 键存在但不可解析 → 静默（parse-error 臂）。
+	taskDir2 := t.TempDir()
+	bad := strings.Replace(cliStateFixture, staleKey, `"last-progress-at": "not-a-time"`, 1)
+	writeFileCli(t, filepath.Join(taskDir2, "state.json"), bad)
+	_, out = runCLI(t, "status", taskDir2)
+	assert.NotContains(t, out, "疑似停滞")
+}
+
+func TestStatusStallHintUsesConfiguredWallTimeout(t *testing.T) {
+	staleKey := `"last-progress-at": "2026-08-22T00:00:00.000Z"`
+	taskDir := t.TempDir()
+	stale := strings.Replace(cliStateFixture, staleKey,
+		`"last-progress-at": "2020-01-01T00:00:00.000Z"`, 1)
+	writeFileCli(t, filepath.Join(taskDir, "state.json"), stale)
+	// 配置把 wall-clock 阈值压到极小 → 即便走配置命中臂也必然告警。
+	writeFileCli(t, filepath.Join(taskDir, "flywheel.config.json"),
+		`{"watchdog":{"wall-timeout-ms":1}}`)
+	code, out := runCLI(t, "status", taskDir)
+	require.Equal(t, 0, code)
+	assert.Contains(t, out, "疑似停滞/断链")
+}

@@ -75,6 +75,18 @@ func TestParseKeyViolations(t *testing.T) {
 	}, r.Errors)
 }
 
+// TestParseUnexpectedKeyRejected（C8 回归）：format 声明键之外的多余键拒绝。
+func TestParseUnexpectedKeyRejected(t *testing.T) {
+	format := map[string][]string{"requirements-covered": {}}
+	raw := mustJSON(t, map[string]any{
+		"requirements-covered": []string{"R-01"},
+		"smuggled":             []string{"x"}, // executor 私自夹带
+	})
+	r := Parse(raw, format)
+	assert.False(t, r.OK)
+	assert.Equal(t, []string{"unexpected-key: smuggled"}, r.Errors)
+}
+
 func TestParseEmptyFormatChecksNothing(t *testing.T) {
 	// 忠实 Node：format 为非 nil 空对象 → Object.keys = [] → 零键检查。
 	// （schema 已禁 done-report-format:{}，此处仅锁定代码语义。）

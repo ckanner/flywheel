@@ -176,6 +176,29 @@ func TestRunDefectInjectionUninjectablePaths(t *testing.T) {
 		assert.Contains(t, *o.Detail, "poison.txt")
 	})
 
+	t.Run("directory prefix entry catches files inside (C3 回归)", func(t *testing.T) {
+		dir := t.TempDir()
+		// 补丁触碰 docs/task/reports/x.done.json——账本目录条目 "reports/"
+		// 必须按前缀命中（原精确相等实现会放行）。
+		patch := filepath.Join(dir, "ledger.patch")
+		require.NoError(t, os.WriteFile(patch, []byte("--- /dev/null\n+++ b/docs/task/reports/x.done.json\n@@ -0,0 +1 @@\n+j\n"), 0o644))
+		spawned := false
+		o := RunDefectInjection(Args{
+			PatchFile: patch,
+			Cwd:       dir,
+			ForbidPaths: []string{
+				"docs/task/state.json",
+				"docs/task/reports/",
+			},
+			Run: func(string, []string, string, int64, []string) RunResult {
+				spawned = true
+				return RunResult{ExitCode: 0}
+			},
+		})
+		assert.Equal(t, "uninjectable", o.Outcome)
+		assert.False(t, spawned)
+	})
+
 	t.Run("git apply fails -> stale patch, baseline recorded green", func(t *testing.T) {
 		dir := t.TempDir()
 		o := RunDefectInjection(Args{

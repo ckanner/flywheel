@@ -139,9 +139,10 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		costUSD = a.result.CostUSD
 	} else if usage != nil {
 		costUSD = metrics.EstimateCostUSD(&metrics.Usage{
-			Input:     usage.Input,
-			Output:    usage.Output,
-			CacheRead: usage.CacheRead,
+			Input:      usage.Input,
+			Output:     usage.Output,
+			CacheRead:  usage.CacheRead,
+			CacheWrite: usage.CacheWrite, // v0.18 修复（C1）：漏传导致缓存写入按 0 计价
 		}, metrics.PriceForModel(c.Config.Pricing, a.model))
 	}
 	var cacheHitRate *float64

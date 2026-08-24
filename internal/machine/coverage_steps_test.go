@@ -529,9 +529,11 @@ func TestJudgeStepCoercesNonMapGate(t *testing.T) {
 	out, err := ctx.judgeStep(contract.Milestone{ID: "M-01"})
 	require.NoError(t, err)
 	assert.True(t, out.Pass)
-	// 注：ms 是值拷贝——字符串 gate 的替换不会写回 c.State，judge 结论落进
-	// 孤立 map（潜在缺陷：仅当 state.json 手工写成非对象 gate 时可达）。
-	assert.Equal(t, "not-a-map", ctx.State.Milestones["M-01"].Gate)
+	// C11（v0.18）：非对象 gate 替换为对象并写回 state——judge 结论绝不落进
+	// 孤立内存 map。
+	gate, ok := ctx.State.Milestones["M-01"].Gate.(map[string]any)
+	require.True(t, ok, "gate 必须被持久化为对象")
+	assert.Contains(t, gate, "judge")
 }
 
 func TestJudgeStepExtractsGateLevelsAndStopsOnBudget(t *testing.T) {

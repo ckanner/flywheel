@@ -154,7 +154,7 @@ func ExtractRetryAfterMs(text string) int64 {
 type BackoffOptions struct {
 	BaseDelayMs  float64
 	MaxDelayMs   float64
-	Jitter       float64
+	Jitter       *float64 // nil=默认 0.1；显式 0=无 jitter（C7：配置面必须可表达）
 	RetryAfterMs float64
 	Random       func() float64
 }
@@ -169,9 +169,9 @@ func ComputeBackoff(attempt int, opts BackoffOptions) int64 {
 	if maxDelay <= 0 {
 		maxDelay = 10_000
 	}
-	jitter := opts.Jitter
-	if jitter == 0 {
-		jitter = 0.1 // Node destructuring 默认；显式传 0 即"无 jitter"在 Node 里也不成立，保持一致
+	jitter := 0.1
+	if opts.Jitter != nil {
+		jitter = *opts.Jitter
 	}
 	randFn := opts.Random
 	if randFn == nil {

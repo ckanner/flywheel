@@ -770,12 +770,23 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 type judgeOutcome struct {
 	Pass      bool
 	Stopped   bool
+	Split     bool // v0.18 A3：面板分歧 → 升级 inbox 由人裁决
 	Verdict   *prompts.Verdict
 	ErrorCode errs.ErrorCode
 }
 
+// loopToBinding config.LoopBinding → fallback.Binding（judge-panel 复用
+// agentVerdictStep 的传输重试/降级骨架）。
+func loopToBinding(b config.LoopBinding) fallback.Binding {
+	return fallback.Binding{Harness: b.Harness, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
+}
+
 // judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由全新会话对照 spec 的需求
 // 矩阵复核整个里程碑。失败 → 升级 inbox。
+// v0.18（A3 双 judge 面板）：config `judge-panel` 配置第二意见绑定（K3 主判
+// + V4 Pro 异厂商复核）。语义：一致按共识；分歧 → split（Pass=false，inbox
+// 叫人）；复核通道自身失败 → fail-loud 升级，绝不静默降级为单 judge
+// （单 judge 偏差实证见 DESIGN §4.3/附录 A）。
 func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) {
 	ms := c.State.Milestones[milestone.ID]
 	packets := []*contract.Packet{}
@@ -798,30 +809,82 @@ func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) 
 	if ferr != nil {
 		return judgeOutcome{}, ferr
 	}
+
+	var r2 *verdictOutcome
+	if c.Config.JudgePanel != nil && r.OK && !r.Stopped {
+		res, ferr := c.agentVerdictStep(verdictArgs{role: "judge", binding: loopToBinding(*c.Config.JudgePanel), prompt: prompt})
+		if ferr != nil {
+			return judgeOutcome{}, ferr
+		}
+		r2 = &res
+	}
+
 	if ms.Gate == nil {
 		ms.Gate = map[string]any{"pass": true, "levels": map[string]any{}, "at": c.nowISO()}
 		c.State.Milestones[milestone.ID] = ms
 	}
-	if r.Stopped {
-		return judgeOutcome{Stopped: true}, nil
-	}
 	gmap, ok := ms.Gate.(map[string]any)
 	if !ok {
+		// C11（v0.18）：手工把 gate 写成非对象时，替换为对象并写回 state——
+		// 原实现只改内存拷贝，judge 结论落进孤立 map 不落盘。
 		gmap = map[string]any{}
 		ms.Gate = gmap
+		c.State.Milestones[milestone.ID] = ms
+	}
+	if r.Stopped {
+		return judgeOutcome{Stopped: true}, nil
 	}
 	if !r.OK {
 		gmap["judge"] = map[string]any{"verdict": "error", "error": string(r.ErrorCode), "at": c.nowISO()}
 		c.save()
 		return judgeOutcome{ErrorCode: r.ErrorCode}, nil
 	}
-	vb, _ := json.Marshal(r.Verdict)
-	judge := map[string]any{}
-	_ = json.Unmarshal(vb, &judge)
-	judge["at"] = c.nowISO()
+
+	verdictRec := func(vo verdictOutcome) map[string]any {
+		vb, _ := json.Marshal(vo.Verdict)
+		m := map[string]any{}
+		_ = json.Unmarshal(vb, &m)
+		m["at"] = c.nowISO()
+		return m
+	}
+
+	judge := verdictRec(r)
+	pass := r.Verdict.Verdict == "pass"
+	out := judgeOutcome{Pass: pass, Verdict: r.Verdict}
+	if r2 != nil {
+		switch {
+		case !r2.OK:
+			// 复核通道失败：fail-loud，与主判错误同路径升级。
+			judge["panel"] = map[string]any{"agreement": "secondary-error",
+				"error": string(r2.ErrorCode), "at": c.nowISO()}
+			gmap["judge"] = judge
+			c.save()
+			return judgeOutcome{ErrorCode: r2.ErrorCode}, nil
+		default:
+			secPass := r2.Verdict.Verdict == "pass"
+			split := secPass != pass
+			rec := map[string]any{
+				"agreement":     "agree",
+				"binding-model": c.Config.JudgePanel.Model,
+				"secondary":     verdictRec(*r2),
+				"at":            c.nowISO(),
+			}
+			if split {
+				rec["agreement"] = "split"
+				merged := append(append([]string{}, r.Verdict.Reasons...), r2.Verdict.Reasons...)
+				judge["verdict"] = "split"
+				judge["score"] = nil
+				judge["reasons"] = merged
+				out.Split = true
+				out.Pass = false
+				out.Verdict = &prompts.Verdict{Verdict: "split", Reasons: merged}
+			}
+			judge["panel"] = rec
+		}
+	}
 	gmap["judge"] = judge
 	c.save()
-	return judgeOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict}, nil
+	return out, nil
 }
 
 // ---- 里程碑闸门（§4.4）----
@@ -1000,6 +1063,11 @@ func (c *Context) planStep(milestone contract.Milestone) (planOutcome, error) {
 		}
 		result, code = attempt(sessionID, sessionID == "", channel, model, harness)
 		if code == "" {
+			// C5（v0.18）：调用成功却没拿到 session id——上游 resume_hint 格式漂移
+			// 或缺失，长驻会话将无声退化为每轮冷启动。必须留观测痕迹。
+			if result.SessionID == "" {
+				c.Log("plan: successful call returned no session id (resume_hint missing?) — resident session degraded")
+			}
 			break
 		}
 
