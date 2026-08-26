@@ -153,6 +153,31 @@ func TestWorktreeNames(t *testing.T) {
 	assert.Equal(t, "/.flywheel-worktrees/repo-mytask-M01-T01", path)
 }
 
+// TestForeignDirtyFilesRenameAndQuoted（C10 回归）：porcelain rename 拆新旧
+// 两路径；引号路径剥引号；任务目录前缀过滤仍生效。
+func TestForeignDirtyFilesRenameAndQuoted(t *testing.T) {
+	orig := gitOut
+	t.Cleanup(func() { gitOut = orig })
+	gitOut = func(string, ...string) (string, error) {
+		return strings.Join([]string{
+			"R  src/old.go -> src/new.go", // rename（账本区外）→ 新旧都算既有 WIP
+			` M "we ird\"name.go"`,
+			"?? docs/t/reports/x.json", // 账本区 → 过滤
+			"M  plain.go",
+			"",   // 尾空行
+			"??", // 短行忽略
+		}, "\n"), nil
+	}
+	paths, ok := ForeignDirtyFiles("/repo", "docs/t/")
+	assert.True(t, ok)
+	assert.Equal(t, []string{
+		"src/old.go",
+		"src/new.go",
+		`we ird"name.go`,
+		"plain.go",
+	}, paths)
+}
+
 func TestEnsureAndMergeAndRemoveWorktree(t *testing.T) {
 	repo := initRepo(t)
 	base, ok := GetBaseRef(repo)
@@ -249,6 +274,106 @@ func TestGetDiffTextExcludeAndTruncate(t *testing.T) {
 	require.True(t, ok)
 	assert.Less(t, len(text), DiffTextCap+200)
 	assert.Contains(t, text, fmt.Sprintf("\n... [diff truncated at %d chars]", DiffTextCap))
+}
+
+// TestGetDiffTextIncludesUntrackedContent（C2 回归）：git diff 不含 untracked，
+// 评审者必须仍能看到 executor 新建文件的全文（greenfield 单元主内容）；
+// exclude 同样作用于 untracked 段；二进制文件以占位标记出现。
+func TestGetDiffTextIncludesUntrackedContent(t *testing.T) {
+	repo := initRepo(t)
+	base, _ := GetBaseRef(repo)
+	writeFile(t, filepath.Join(repo, "new_src.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repo, "docs/t/private.json"), `{"secret":1}`)
+	writeFile(t, filepath.Join(repo, "blob.bin"), "ab\x00cd")
+
+	text, ok := GetDiffText(repo, base, []string{"docs/t/private.json"})
+	require.True(t, ok)
+	assert.Contains(t, text, "diff --git a/new_src.go b/new_src.go")
+	assert.Contains(t, text, "@@ -0,0 +1,3 @@")
+	assert.Contains(t, text, "+func main() {}")
+	assert.Contains(t, text, "[binary file]")
+	assert.NotContains(t, text, "private.json")
+}
+
+func TestAppendUntrackedSectionsArms(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("x", 9000) // head 截断臂（>8000）
+	noNL := "no trailing newline"    // 无尾换行臂
+	writeFile(t, filepath.Join(dir, "big.txt"), big)
+	writeFile(t, filepath.Join(dir, "empty.txt"), "")
+	writeFile(t, filepath.Join(dir, "nonl.txt"), noNL)
+
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"gone.txt", "big.txt", "empty.txt", "nonl.txt"})
+	out := b.String()
+
+	assert.Contains(t, out, "@@ -0,0 +0,0 @@")      // 空文件臂
+	assert.Contains(t, out, "+no trailing newline") // 无尾换行正文
+	assert.Contains(t, out, "\\ No newline at end of file")
+	assert.Contains(t, out, "+"+big+"\n\\ No newline at end of file",
+		">8000 字节文本全文输出；head 截断只作用于二进制探测窗口")
+
+	// 读取失败臂：listing 含不存在文件 → 跳过不 panic。
+	var b2 strings.Builder
+	appendUntrackedSections(&b2, dir, []string{"missing.bin"})
+	assert.Empty(t, b2.String())
+}
+
+// TestAppendUntrackedSectionsNonRegular（PR#3 复审）：非符号链接的非 regular
+// 条目（目录被手动传入）→ [non-regular file] 占位。
+func TestAppendUntrackedSectionsNonRegular(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o755))
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"", "subdir"})
+	assert.Contains(t, b.String(), "[non-regular file]")
+}
+
+// TestAppendUntrackedSectionsUnreadable（PR#3 复审）：Lstat 成功但 ReadFile
+// 失败（chmod 000）→ 竞态臂 continue。
+func TestAppendUntrackedSectionsUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "secret.txt")
+	writeFile(t, p, "s")
+	require.NoError(t, os.Chmod(p, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(p, 0o644) })
+
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"", "secret.txt"})
+	out := b.String()
+	assert.Contains(t, out, "diff --git a/secret.txt", "头部段照常渲染")
+	assert.NotContains(t, out, "+s", "内容读取失败臂 → 无正文行泄漏")
+}
+
+func TestAppendUntrackedSectionsSymlinkAndLarge(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Symlink("/dev/zero", filepath.Join(dir, "danger.link")))
+	hugePath := filepath.Join(dir, "huge.bin")
+	f, err := os.Create(hugePath)
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(int64(perFileContentCap)+1))
+	require.NoError(t, f.Close())
+
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"danger.link", "huge.bin"})
+	out := b.String()
+	assert.Contains(t, out, "[symlink -> /dev/zero]", "链接只渲染 target，绝不读内容")
+	assert.Contains(t, out, "[file too large:")
+	assert.NotContains(t, out, strings.Repeat("x", 10))
+}
+
+func TestGetDiffTextCJKFilenames(t *testing.T) {
+	repo := initRepo(t)
+	base, _ := GetBaseRef(repo)
+	writeFile(t, filepath.Join(repo, "中文 说明.md"), "# 中文内容\n")
+
+	text, ok := GetDiffText(repo, base, nil)
+	require.True(t, ok)
+	assert.Contains(t, text, "中文 说明.md", "-z 解析下非 ASCII 文件名不得丢失")
+	assert.Contains(t, text, "# 中文内容")
 }
 
 func TestCommitUnitChanges(t *testing.T) {

@@ -1,23 +1,20 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm). No harness CLI needed — verification is model-free."
-arguments:
-  - name: slug
-    description: 任务目录路径，如 docs/<slug>
-    required: true
-  - name: packet-id
-    description: 可选，只验该单元的 L1（如 M02-T03）；缺省跑全部未完成 packet 的 L1（跨所有里程碑）+ 当前里程碑 L2/L3 闸门
-    required: false
+arguments: slug packet
+
 ---
 
 # flywheel-verify — 只触发验证闸门
 
 Button only: validate + invoke CLI + translate. No loop logic
 here — and no model either: verification is the orchestrator running commands.
+
+> 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 步骤
 
@@ -26,9 +23,9 @@ here — and no model either: verification is the orchestrator running commands.
 
    ```bash
    # 只验某个 packet 的 L1
-   flywheel run docs/<slug> --only verify --packet M02-T03
+   flywheel run "$slug" --only verify --packet "$packet"
    # 或不指定：全部未完成 packet 的 L1 + 当前里程碑 L2/L3 闸门
-   flywheel run docs/<slug> --only verify
+   flywheel run "$slug" --only verify
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only verify [--packet M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。

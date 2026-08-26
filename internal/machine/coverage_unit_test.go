@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/errs"
@@ -338,6 +339,22 @@ func TestRecordSpawnMetricsCostEstimateArm(t *testing.T) {
 	m := lastMetricsLine(t, dir)
 	assert.Contains(t, m, "cost-usd")
 	assert.NotNil(t, m["cache-hit-rate"]) // Input>0 → 命中率入账
+}
+
+// TestRecordSpawnMetricsCostEstimateIncludesCacheWrite（C1 回归）：驱动不报
+// cost 时兜底估算必须把 CacheWrite 按未命中 input 价计入——漏传即系统性低估。
+func TestRecordSpawnMetricsCostEstimateIncludesCacheWrite(t *testing.T) {
+	ctx, dir := spawnMetricsCtx(t)
+	in := config.Price{Input: 2, Output: 6, CacheRead: 0.3}
+	ctx.Config.Pricing = map[string]config.Price{"est-model": in}
+	res := drivers.MockResult(func(r *drivers.Result) {
+		r.CostUSD = nil
+		r.Usage = &drivers.Usage{Input: 1000, Output: 100, CacheRead: 200, CacheWrite: 500}
+	})
+	ctx.recordSpawnMetrics(spawnMetricsArgs{role: "execute", model: "prov/est-model", result: &res})
+	m := lastMetricsLine(t, dir)
+	// 1000/1M*2 + 100/1M*6 + 200/1M*0.3 + 500/1M*2 = 0.002 + 0.0006 + 0.00006 + 0.001
+	assert.InDelta(t, 0.00366, m["cost-usd"], 1e-9)
 }
 
 func TestWarnIfCacheColdArms(t *testing.T) {

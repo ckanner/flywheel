@@ -1,9 +1,11 @@
-# Flywheel（飞轮）— Loop Engineering 系统设计（v0.17 讨论稿）
+# Flywheel（飞轮）— Loop Engineering 系统设计（v0.19 讨论稿）
 
 > 状态：核心已建（2026-08-22：**Go 版全量迁移完成**，`go test ./...` 全绿、覆盖率门禁 100%；Node 版实现随迁移删除，DESIGN 语义不变）。未实战。
 > Flywheel：编排器如飞轮——把间断、不稳定的 agent 运行，通过磁盘状态储能为连续平稳的推进。
 > 本文档是一套多 loop agent 编排系统的完整设计。目标读者：项目维护者本人。
 > 设计依据：Addy Osmani《Loop Engineering》、Anthropic/OpenAI/Cursor 官方案例、文档协议驱动 agent 循环的实战经验，以及 2026-08 对 kimi code / pi / oh-my-pi / oh-my-openagent / zcode 五个 harness 和 Kimi K3 / DeepSeek V4 系列模型的调研（来源见附录 A）。
+> - v0.18 — **全量评审修复落地**（2026-08-24，用户裁决"双 judge 做完整版、C7/C9 也修、全部修好出 PR"）：① **里程碑 Judge 升级双 judge 面板**（K3 主判 + V4 Pro 异厂商复核，config `judge-panel`；一致按共识、分歧 → inbox——单 judge 偏差实证见 §4.3/附录 A）；裁决出口契约强化（verdict 必带 score 且 reasons ≥1 条引用可复核证据，缺失按 unparseable 重试）。② Plan 修订 acceptance 指纹留痕（§4.1 已知风险段：planner 可弱化验收的自利风险补录 + 机械缓解）。③ P2×3：兜底成本估算补 CacheWrite 计价（铁律 9）；评审 diff 补 untracked 新文件内容（§4.3"真实 git diff"承诺闭环，greenfield 场景关键）；缺陷注入账本守卫改 ledger 单一信源匹配。④ C 级小修批量：execute 失败路径空转签名用权威 diff、kimi resume 捕获失败告警、pi 错误事件累积保留、jitter 显式 0 可达（`*float64` 指针化）、done-report 多余键拒绝、state.json CAS 加 flock 文件锁闭 TOCTOU、porcelain rename/引号路径解析、judge gate 类型守卫、status 停滞提示消费 LastProgressAt（§6 如实化）。⑤ SKILL.md 规范订正：arguments 改 kimi 支持的字符串数组并接线正文占位符；`/skill:` 调用形态归属订正（§13）；frontmatter 归属按 kimi/pi/Warp/agentskills.io 四方官方文档精确化（AGENTS.md 同步）；附录 A 补 Warp/agentskills.io/kimi·pi skills 文档四来源；flywheel-new 新增验收命令提交前试跑硬规则；skillsembed 门禁扩展 agentskills.io 标准约束。⑥ §4.1 规划职责两段式如实化、§4.4 L2/L3 失败处置回写、§8-4 KIMI_NOW resume 注记、§9 凭证卫生边界声明。评审全文见 REVIEW-FIXPLAN.md。
+> - v0.19 — **渠道收敛（用户裁决四条，2026-08-24）**：① Kimi 系模型（Plan/Garden/Judge 主判/frontend/hard 路由）全部只走 **kimi code 订阅**（OAuth，无 key 注入），kimi-coding API 渠道移除；② **全系统取消 fallback provider**——OpenCode Zen 与 kimi-coding 降级链删除，每角色单一渠道；超限语义对齐代码：RATE_LIMIT 同渠道退避重试、QUOTA 不重试直接升级 inbox（机制代码保留为 config 驱动，配置无链即惰性失效）；③ Judge 里程碑终验主判改走 **kimi code harness**（headless `-p` 每次天然全新会话，满足 fresh-context 要求）；④ 双面板复核维持 pi+V4 Pro 不变。附：kimi `-p` 非交互模式**默认即 auto 权限**（官方 flag 冲突规则禁止与 --prompt 组合显式 --auto）；`/swarm` 斜杠命令族在 `-p` 下不被解析（本机 kimi 0.38.0 三探针实证：伪造命令与 /swarm 行为一致），swarm 需 TUI 或上游提供 headless 接口后再评估。
 > - v0.17 — **全量 Go 迁移 + 审计修复落地**（2026-08-22，用户裁决"按计划一步步完整实现"）：编排器从 Node.js 单进程移植为 Go（Go 1.27；cobra/yaml.v3/jsonschema v6/testify），包结构 `internal/{errs,config,ledger,childenv,fallback,contract,state,donereport,exitcontract,metrics,circuitbreaker,prompts,verify,watchdog,drivers,machine,defectinjection,modules,skillsembed,cli}` 与 Node 模块一一对应；分发改 goreleaser 单二进制 + npm 安装器（lark-cli 模式）。契约校验从手写校验改为 **JSON Schema 库单一信源**（消灭 schema↔代码漂移；done-report-format 恰好 4 键、must-not-touch 字符串数组、boundaries minProperties:1、spec.title 必填——P2 深度校验缺口关闭）；RE2 无 lookbehind/惰性量词，statusCode/TIMEOUT/frontmatter 三处正则以等价改写+测试锁定语义。**审计修复**：P1 kill switch（RunTask 注册 SIGTERM → 杀子进程组 → quiescence → exit 143，Node 定义未注册）；P1 skills frontmatter YAML 非法（4 处 compatibility 加引号，skill-format-check 由纯正则假绿改为 skillsembed 真 YAML 解析测试强制 whenToUse/arguments/metadata.version）；P2 in-place 模式 planner 修订后 base-ref 重锚；P2 空转检测改用 L1 boundary 权威 git diff（不信 executor 自报）；P2 单元先 commit 成功再标 completed；P3 resume 补缺陷注入采样、stdout 日志与 JSON 分离、install-skills actionText 含 stale、verdict exit 检查查 signal/stderr。100% 单测覆盖率反向驱动可测性：machine 注入 sleep/now/env/log；drivers 以 fake pi/kimi 二进制 + PATH 前置做真实 exec 测试；verify/watchdog 用真实 git 与真实子进程组。
 > - v0.16 — **单元级 worktree 隔离**（2026-08-21，用户裁决，关闭 P1-1 WIP caveat）：执行单元在独立 git worktree 中运行（checkout 在仓库旁的 `<repo-parent>/.flywheel-worktrees/<repo>-<slug>-<packet-id>/`——放进 `<repo>/.git/` 会与 git 的 per-worktree 管理目录冲突；分支 `flywheel/<slug>/<packet-id>`，从单元 base-ref 创建）——executor 只见干净工作区，主 checkout 的用户 WIP 不可能被卷入或冲突。L1 与缺陷注入在 worktree 内跑；契约防篡改检查同时盯主 checkout 的 taskDir（executor 知道其绝对路径）。闸门全绿后：worktree 内提交代码 → 主 checkout `ff-merge` → 删除 worktree 与分支 → 编排器在主 checkout 只提交契约/账本文件（限定 `docs/<slug>/`）。done-report 仍由 executor 以绝对路径写回主 checkout 账本区。崩溃恢复复用既有 worktree（路径确定性）；非 git 仓库或 worktree 不可用回退原地执行（原串行模式，脏工作区告警仅在该模式生效）。config `worktree.enabled`（默认 true）。
 >   - 已知窄路径（2026-08-23 复审注记，记录不修）：interrupted 单元恢复重执行期间若 planner 常规修订落库，该单元 base-ref 不重锚——修订提交只触 `docs/<slug>/`（账本区），防篡改扫描按 ledger 排除规则忽略之，语义无害；若未来修订提交含账本区外文件，合并侧由 ff-only 失败进 inbox 兜底，绝不产生错误合并。
@@ -95,7 +97,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 职责 | 冻结需求 → `spec.md`（目标/非目标/里程碑）+ task packet 序列；**随 packet 编写/修订验收测试（executor 不写测试，§4.2）**；运行中负责：审计退回的裁决（修订计划、加强验收）、executor 升级"此路不通"的判定。**范围变更只能由本 loop 做出**（executor 发现需要改范围必须升级，不许自行调整） |
+| 职责 | 两段式（v0.18 如实化）：**初始规划在冻结前完成**——`/skill:flywheel-new` 生成 `spec.md` + task packet 序列并提交人审，冻结点 = 人审契约（§12）；**运行中本 loop 是修订器/加强器**——审计退回的裁决（修订 packet、加强验收）、executor 升级"此路不通"的判定。**范围变更只能由本 loop 做出**（executor 发现需要改范围必须升级，不许自行调整）；随修订**编写/修订验收测试**（executor 不写测试，§4.2） |
 | 模型 | Kimi K3（reasoning_effort=**max**，全系统统一最高档 thinking。注意：kimi code 订阅侧默认 high，必须显式配置 max；已知 #1911 报告 K3 max 在 CLI 层有挂起案例，接入验收清单第 3 项必须实测此路径） |
 | Harness | kimi code，**长驻会话**（`kimi --session` resume，保缓存保语境；不用每轮新会话） |
 | 渠道 | kimi code 订阅（Allegretto ¥199/月起，解锁 1M 上下文） |
@@ -104,6 +106,8 @@
 | 会话重建 | 长驻会话死亡（挂起/7 天过期/断链）时，编排器以 spec.md + state.json + retro.md 冷启动全新 Plan 会话——契约层是唯一记忆，会话本身不承载不可替代的状态 |
 
 需求原子化纪律（防漏做的源头）：spec.md 把需求拆成**编号的、可独立验证的原子项**（R-01…R-n）；每个 task packet 的 `requirements` 字段引用编号，验收命令必须映射到编号（Anthropic feature_list 模式：每项各自 `passes: true/false`，agent 只许改这个字段）。
+
+已知风险（v0.18 补录）：planner 在修订时**有权修改 acceptance 命令本身**，DC2 只约束 verification-gap 必须加强，没有机制阻止其他升级路径上的"减弱"（executor 连败 → return-to-planner → 验收被改弱 → L1 绿 → 单元通过）。现有防线：`PlanRevisions < 1`（只许一次修订，之后 inbox 叫人）。机械缓解（不阻止、留痕可查——范围裁决权归 Plan，铁律 1）：编排器在每次 plan 修订落库后 diff 各 packet 的 acceptance 指纹（L1/L2/L3 命令+expect 的哈希），变化即写 retro 行 + state 警告，人经 `status`/retro 可见。
 
 选型理由：K3 是强制 reasoning 模型，SWE Marathon / Program Bench 官方第一，定位即长程规划；kimi-code 的 plan mode、goal mode（complete/blocked/paused 状态机 + headless 退出码 0/3/6）、`kimi -p --output-format stream-json` 均为脚本驱动的一等接口。订阅限额（每 5h 约 300–1200 次请求、最高并发 30）对低频规划绰绰有余。
 
@@ -125,9 +129,9 @@
 | 项 | 内容 |
 |---|---|
 | Harness | pi，**每单元全新会话**，本机直接运行（v0.10 决策：现阶段不用容器沙箱，信任模型同日常 kimi code auto 模式；缓解措施见 §9；接入不可信输入前重新评估容器化） |
-| 渠道 | OpenCode Go 订阅（$10/月，Flash 额度 $60/月 ≈ 官方估算 15.8 万次典型请求/月）；OpenCode Zen 按量作降级兜底（v0.15：不需要 DeepSeek 直连） |
+| 渠道 | OpenCode Go 订阅（$10/月，Flash 额度 $60/月 ≈ 官方估算 15.8 万次典型请求/月）——v0.19 起唯一渠道，无降级兜底 |
 | 驱动方式 | **CLI 优先**：`pi -p "<prompt>" --model … --no-session` + 编排器侧超时 + 解析事件流（核心建设期足够，基准实测已跑通）。需要运行中干预（steer/abort）、状态查询（token/成本）、`agent_settled` 事件、host tools 回调时再升级 RPC/SDK |
-| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（首选，§11.6；V4 Pro 为该路由降级渠道） |
+| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（首选，§11.6；v0.19 起走 kimi code 订阅） |
 
 执行纪律（写进每个 packet 的工作指令）：
 
@@ -151,8 +155,8 @@
 | 职责 | 对执行单元的产出做 LLM 评审：代码质量、项目约定遵守、设计意图符合度、安全隐患、**测试断言质量**（覆盖率只证明"执行过"，不证明"断言有效"）。**单测测不出来的东西归它** |
 | 输入 | task packet + git diff + L1 测试结果（不含 executor transcript） |
 | 模型 | DeepSeek V4 Pro（reasoning_effort=**max**；0813 GA，Terminal-Bench 87.9 与 K3 同档） |
-| Harness | pi，每单元全新会话，rubric 打分（0.0–1.0 + pass/fail，单 judge） |
-| 渠道 | OpenCode Go 起步（Pro 额度仅 $15/月，注意）→ OpenCode Zen 按量兜底（v0.15：不需要 DeepSeek 直连） |
+| Harness | pi，每单元全新会话，rubric 打分（0.0–1.0 + pass/fail，单 judge；**里程碑终验为双 judge 面板，§4.4/§7**） |
+| 渠道 | OpenCode Go（Pro 额度仅 $15/月，注意）——v0.19 起唯一渠道，无降级兜底 |
 | 结论 | pass / 退回（附具体修改要求、失败证据、涉及位置、完成条件） |
 
 特殊职责：
@@ -161,7 +165,7 @@
 - **范围对照**（防改做）：git diff 对照 packet 的 `boundaries`，越界即退回。
 - **缺陷注入抽检**（防假测试）：**常备机制，无开关**（v0.15 裁决）。按抽检触发（默认每 5 个执行单元 1 次），在 Review 之前由**编排器用确定性脚本执行**（patch 注入 → 跑测试确认变红 → 按 patch 文件清单精确还原并校验工作区干净），结果喂给 Review，reviewer 只读结果做判断；**注入判 fail（测试不变红 = 假测试实锤）→ inbox 叫人**（验收体系失效不是重试能解决的）。`patch`/`test-cmd` 随任务契约配置（仓库相关，无通用默认），采样命中但缺配置 = 契约缺陷，进 inbox 提示人工配置。纯验证缺口不退回执行轮：**退回 Plan 加强验收后复验，永不以 gap 裁决完成单元**（v0.14 DC2/DC3）。工程化形态可演进为 Stryker 类变异测试。
 
-已知风险：与 executor 同厂商（DeepSeek 系自偏好）。缓解：确定性验证永远先行（L1 不过轮不到它说话）+ 全新上下文 + rubric 显式打分。
+已知风险：与 executor 同厂商（DeepSeek 系自偏好）。缓解：确定性验证永远先行（L1 不过轮不到它说话）+ 全新上下文 + rubric 显式打分。**单 judge 的系统性偏差有实证**（2025 研究：position bias / self-preference / verbosity bias，单 judge 与 ground truth 一致率约 87.6%，bias-aware 多模型面板可达 98.1%——Verdict-Bench/Jury、IJCNLP 2025 position bias 系统研究、EMNLP 2025 DBG）。据此 v0.18：① 裁决出口契约强化——verdict 必须带 score 且 reasons ≥1 条、每条引用可复核证据（命令+退出码或文件:行号），缺失按 unparseable 重试；② **里程碑 Judge 升级为双 judge 面板**（K3 主判 + V4 Pro 异厂商复核，config `judge-panel`，一致则按共识裁决，分歧 → inbox 叫人）；单元级 Review 维持单 judge（L1 先行 + 缺陷注入兜底已覆盖其大部分风险面）。
 
 ### 4.4 验证体系（不是 loop，是编排器内建的三层闸门）
 
@@ -177,6 +181,7 @@
 - **覆盖率闸门**：变更/新增代码 100%（行+分支）；存量代码用 ratchet（覆盖率只许升不许降）。注意 100% 是必要不充分条件——它度量"执行过"而非"断言有效"，断言质量由 Review Loop 与缺陷注入兜底（§4.3）。
 - **测试与边界完整性用 git diff 事后判定**（v0.10）：测试文件（新增或修改均算；executor 不写测试，§4.2）或 packet `must-not-touch` 路径出现在执行单元 diff 中 = 单元直接判失败。确定性检查，不需要容器挂载/权限钩子的事前拦截。
 - 依据：Anthropic 实证"curl 式浅层验证"是第三大失败模式，浏览器自动化端到端验证才解决；验证必须在执行者控制之外。
+- **L2/L3 失败的处置（v0.18 回写实现语义）**：里程碑闸门任一层红 → 任务升级 inbox 叫人，不重试、不回 Plan——闸门级失败多为环境/集成/契约问题，自动重试只是烧钱。这是有意选择的保守路径，不是遗漏。
 
 ### 4.5 Intake Loop（发现，可选，外挂模块）
 
@@ -255,13 +260,13 @@ for milestone in spec.milestones:
 
 关键行为：
 
-- **看门狗**：双计时——**流 idle 超时**（默认 300s，对每次输出活动计时、有活动即重置：长任务不误杀，#1911 类静默挂起 5 分钟内发现）+ 整体 wall-clock 超时兜底；进程级 kill 覆盖整个子进程组，kill 后必须 await 到真正退出（quiescence）再重试或标记失败，防孤儿进程写坏工作区（pi 无内置步数上限；oh-my-pi #8272 与 kimi code #1911 均有 headless 挂起案例——超时必须在编排器侧，看门狗是必需品不是保险）。`state.json` 的上次推进时间戳用于发现断链；Plan 长驻会话断链后按 §4.1 会话重建协议冷启动。
-- **错误分类与重试**：spawn 失败归一为稳定错误码（借鉴 DeepSeek 官方 deepseek-harness 的适配器契约）：`AUTH / QUOTA / RATE_LIMIT / SERVER / TRANSPORT / TIMEOUT / EMPTY_RESPONSE / INVALID_REQUEST / CONTEXT_WINDOW_EXCEEDED`。默认只重试 `EMPTY_RESPONSE / RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT`（指数退避 500ms→10s + 10% jitter，尊重 provider 的 Retry-After）；`AUTH / QUOTA / INVALID_REQUEST / CONTEXT_WINDOW_EXCEEDED` 不重试，直接走降级/升级路径。**空产出（exit 0 但无交付物）映射为可重试的 `EMPTY_RESPONSE`，不是静默成功**。每次重试的错误码、策略、计划延迟落进 state.json 可审计。
+- **看门狗**：双计时——**流 idle 超时**（默认 300s，对每次输出活动计时、有活动即重置：长任务不误杀，#1911 类静默挂起 5 分钟内发现）+ 整体 wall-clock 超时兜底；进程级 kill 覆盖整个子进程组，kill 后必须 await 到真正退出（quiescence）再重试或标记失败，防孤儿进程写坏工作区（pi 无内置步数上限；oh-my-pi #8272 与 kimi code #1911 均有 headless 挂起案例——超时必须在编排器侧，看门狗是必需品不是保险）。断链/停滞发现（v0.18 如实化）：cron 短进程模式下主通道是 pid 文件陈旧 + 进程不存在；`state.json` 的上次推进时间戳由 `flywheel status` 消费——距今超过 wall-clock 阈值即显式提示"疑似停滞/断链"；Plan 长驻会话断链后按 §4.1 会话重建协议冷启动。
+- **错误分类与重试**：spawn 失败归一为稳定错误码（借鉴 DeepSeek 官方 deepseek-harness 的适配器契约）：`AUTH / QUOTA / RATE_LIMIT / SERVER / TRANSPORT / TIMEOUT / EMPTY_RESPONSE / INVALID_REQUEST / CONTEXT_WINDOW_EXCEEDED`。默认只重试 `EMPTY_RESPONSE / RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT`（指数退避 500ms→10s + 10% jitter，尊重 provider 的 Retry-After）；`AUTH / QUOTA / INVALID_REQUEST / CONTEXT_WINDOW_EXCEEDED` 不重试，直接升级路径。**空产出（exit 0 但无交付物）映射为可重试的 `EMPTY_RESPONSE`，不是静默成功**。每次重试的错误码、策略、计划延迟落进 state.json 可审计。
 - **出口契约**：单元成功的判定三者独立——进程终态正常 + stderr 无错误 + 交付物（done-report / 变更）存在；`timedOut / signal / exitCode` 正交记录进 state.json，"超时被 trap 成 exit 0"不得读成绿灯。
 - **熔断（可配置）**：`budget.enforce: off | soft | hard`，默认 soft（警告并记录，不停机）；hard 档为日 token 预算硬顶。空转检测（同一 packet 连续失败且**错误码+失败命令相同、变更文件 Jaccard 相似度 ≥ 0.7**，v0.14 DC4）在任何档位下都触发升级——空转检测不是钱的问题，是 loop 健康的问题。token/成本记录在任何档位下都不关闭。
 - **并发**：串行期不设限；引入并行模块时用文件锁原子 claim 任务，不做速率限制。
-- **降级**：检测到 403/限流（OpenCode Go 超额、订阅侧触发公平使用条款）自动切 OpenCode Zen 按量（同 key、同 pi provider 族；Kimi 侧切 kimi-coding/k3）。降级配置属首批建设（§10）——订阅渠道的自动化条款灰区是真实风险，降级不是演练是常备。**v0.15 裁决：不需要 DeepSeek 直连 API 降级链**，OpenCode 体系内兜底即可。
-- **升级路径**：executor 连续卡壳 → Plan Loop 修订 packet → 仍失败 → inbox 叫人。V4 Flash 能力有上限（DeepSWE 54.4 vs Pro 62.7 vs K3 67.5），难任务经 `hard` 路由升级 K3 执行（§11.6 已决；V4 Pro 为该路由降级渠道）。
+- **降级（v0.19 移除）**：用户裁决取消全部 fallback provider——每角色单一订阅渠道，配置中无 `fallback` 链。超限语义（**用户裁决 A，2026-08-24**）：RATE_LIMIT 同渠道退避重试（尊重 Retry-After），耗尽升级 inbox；QUOTA 不重试直接升级（订阅超额恢复以小时计，退避无意义；备选的“QUOTA 也退避”已否决）；AUTH/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED 照旧直接升级。机制代码保留为 config 驱动——将来若要恢复备用 provider，加回渠道绑定即可，无需改代码。
+- **升级路径**：executor 连续卡壳 → Plan Loop 修订 packet → 仍失败 → inbox 叫人。V4 Flash 能力有上限（DeepSWE 54.4 vs Pro 62.7 vs K3 67.5），难任务经 `hard` 路由升级 K3 执行（§11.6 已决；v0.19 起走 kimi code 订阅）。
 - **可观测**：每次 spawn 记录模型、harness、prompt 哈希、token、成本、缓存命中率、耗时、退出码。用途：① 失败归因（跨 harness 没有现成方法学，全靠这张表）；② 成本可见（DeepSeek 8-17 涨价后重算经济性）；③ 缓存命中率作健康信号（突降 = 前缀被破坏）；④ 协议改进的证据源（原则：改进必须基于多次运行复盘证据）；⑤ 停滞检测。**指标是人不盯着 loop 也能监督它的方式。**
 
 ---
@@ -271,21 +276,23 @@ for milestone in spec.milestones:
 | Loop | 模型 | Harness | 渠道 | 频率 | 备注 |
 |---|---|---|---|---|---|
 | Plan | Kimi K3 (max) | kimi code 长驻 | kimi code 订阅 ¥199/月 | 低 | 订阅侧默认 high，需显式配 max；stream-json 无 usage，token 暂不可观测（v0.15 接受现状） |
-| Execute（default） | DeepSeek V4 Flash (max) | pi 新会话 | OpenCode Go $10/月 | 高 | Flash 额度 $60/月 ≈ 15.8 万次/月 |
+| Execute（default） | DeepSeek V4 Flash (max) | pi 新会话 | OpenCode Go $10/月（唯一渠道） | 高 | Flash 额度 $60/月 ≈ 15.8 万次/月 |
 | Execute（frontend） | Kimi K3 (max) | kimi code | kimi code 订阅 | 中 | 前端需求实现；K3 前端最强；路由见 §4.2 |
-| Review | DeepSeek V4 Pro (max) | pi 新会话 | Go 起步，Zen 按量兜底 | 中 | **Go 给 Pro 仅 $15/月** |
-| Judge（里程碑终验） | Kimi K3 (max) | pi（kimi-coding） | kimi 订阅/按量 | 低 | fresh context + rubric；与 executor 异厂商（§11.3 已决，2026-08-20） |
+| Execute（hard） | Kimi K3 (max) | kimi code | kimi code 订阅 | 低 | v0.19 起与 frontend 同渠道（kimi-coding API 移除） |
+| Review | DeepSeek V4 Pro (max) | pi 新会话 | OpenCode Go（唯一渠道） | 中 | **Go 给 Pro 仅 $15/月** |
+| Judge 终验·主判 | Kimi K3 (max) | **kimi code**（headless `-p` 每次全新会话 = 天然 fresh context） | kimi code 订阅 | 低 | v0.19 改 kimi harness；异厂商互证由双面板复核承接 |
+| Judge 双面板·复核 | DeepSeek V4 Pro (max) | pi 新会话 | OpenCode Go | 低 | 与主判异厂商；一致按共识、分歧 → inbox（v0.18 面板） |
 | Intake | V4 Flash (max) | pi | OpenCode Go | 定时 | 近乎零成本 |
+| Garden | Kimi K3 (max) | kimi code | kimi code 订阅 | 周级 | 知识资产维护提案 |
 
 > **统一 max 档**：全部模型的 reasoning_effort 固定为 max（DeepSeek 实际档位为 low/high/max，xhigh 会被映射回 high，必须显式传 max）。代价是输出 token 增加——Flash 便宜、Pro 中频、K3 低频，成本影响可接受；收益是每一环的推理质量拉满。注意 thinking 模式下 temperature/top_p 不生效（DeepSeek 官方行为）。
 
 渠道事实与风险：
 
-- **OpenCode Go**：$10/月（首月 $5），API key 制，OpenAI/Anthropic 双兼容端点，pi 内置 `opencode-go` provider（本地实测 v4-flash/v4-pro 均在目录）。额度：$12/5h、$30/周、$60/月；多数模型月额度 $60，但 K3/V4 Pro/Grok 4.5 等仅 $15。风险：① 通用 ToS 有"无人值守进程"模糊条款（社区实践未见执行）；② ~~订阅面可能不透传 reasoning_effort~~（**已实测关闭**，2026-08-18：透传确认，数据见附录 D；max 档 usage 缺 reasoning_tokens 细目的计量回退已记录）；③ 超额回退 Zen 按量价（Pro 约为直连 4 倍）。
-- **DeepSeek 直连**（v0.15 裁决：不作降级备份，信息留档）：2026-08-17 起峰谷定价。V4 Pro 峰值 $1.32/$3.96、谷值 $0.66/$1.98（北京时间 9-12、14-18 为峰）；缓存命中/未命中比从 1/120 缩至 1/30。若将来启用需在 pi 自配 custom provider + `DEEPSEEK_API_KEY`。
-- **Kimi 订阅**：K3 需 Moderato ¥99（256K）、1M 需 Allegretto ¥199；所有会员功能共享 token 额度池 + Kimi Code 专属 5h/周窗口。`kimi login` 为 device-code OAuth，`kimi -p` 官方支持 CI。条款灰区：用户服务协议有"自动化脚本"条款，与官方支持 CLI/CI 并存，字面风险存在，按量 API 兜底。
+- **OpenCode Go**：$10/月（首月 $5），API key 制，OpenAI/Anthropic 双兼容端点，pi 内置 `opencode-go` provider（本地实测 v4-flash/v4-pro 均在目录）。额度：$12/5h、$30/周、$60/月；多数模型月额度 $60，但 K3/V4 Pro/Grok 4.5 等仅 $15。风险：① 通用 ToS 有"无人值守进程"模糊条款（社区实践未见执行）；② ~~订阅面可能不透传 reasoning_effort~~（**已实测关闭**，2026-08-18：透传确认，数据见附录 D）；③ ~~超额回退 Zen 按量价~~（v0.19 取消降级链：RATE_LIMIT 退避重试，QUOTA 直接升级 inbox）。
+- **DeepSeek 直连**（信息留档，v0.15 起不采用；v0.19 连 Zen 兜底一并移除）：2026-08-17 起峰谷定价。V4 Pro 峰值 $1.32/$3.96、谷值 $0.66/$1.98（北京时间 9-12、14-18 为峰）；缓存命中/未命中比从 1/120 缩至 1/30。若将来启用需在 pi 自配 custom provider + `DEEPSEEK_API_KEY`。
+- **Kimi 订阅**：K3 需 Moderato ¥99（256K）、1M 需 Allegretto ¥199；所有会员功能共享 token 额度池 + Kimi Code 专属 5h/周窗口。`kimi login` 为 device-code OAuth，`kimi -p` 官方支持 CI。条款灰区：用户服务协议有"自动化脚本"条款——v0.19 起 kimi 侧无按量兜底，灰区风险以退避+升级消化，用户知情裁决。headless `-p` 默认 auto 权限（显式 `--auto` 与 `--prompt` 组合会被 CLI 拒绝）；`/swarm` 命令族仅 TUI 可用、`-p` 下不解析（kimi 0.38.0 三探针实证），swarm 并行能力待上游提供 headless 接口后再评估。
 - **成本量级预估**：串行 + 分级 + 确定性验收的组合下，单任务总价应在 Ralph 的 $297 案例量级，而非 Carlini 的 $20,000 量级。杠杆排序：模型分级（省 40–60%）> prompt 缓存 > 重活隔离进子会话。
-
 ---
 
 ## 8. 缓存工程
@@ -295,7 +302,7 @@ for milestone in spec.milestones:
 1. **稳定内容前置**：spec/契约文件放前缀稳定段（system prompt 之后、首条 user 消息之前的固定位），`cache-scope` 字段显式声明。
 2. **易变内容后置**：时间戳、轮次号、随机 ID、当日日期一律放最后一条消息（Kimi 团队公开建议同此）。
 3. **每模型独立缓存**：缓存 model-scoped，planner/executor/reviewer 互不可享（隔离规则天然满足）。
-4. **Plan Loop 长驻会话**：kimi code 的 system prompt 含 `KIMI_NOW` 会话级时间戳，跨会话前缀从开头就不同；长驻会话让规划语境和缓存同时保住。
+4. **Plan Loop 长驻会话**：kimi code 的 system prompt 含 `KIMI_NOW` 会话级时间戳，跨会话前缀从开头就不同；长驻会话让规划语境和缓存同时保住。注意（v0.18 补录）：KIMI_NOW 在每次 resume 时刷新（kimi #446，PR #498 修复）——resume 后 system 前缀变化，跨 resume 的前缀缓存收益从 system 段起失效，同会话多轮内不受影响。
 5. **DeepSeek 前缀单元语义**：新前缀前两次必 miss，第三次起命中；公共前缀要等系统检测落盘。执行单元虽是新会话，但只要 spec 前缀逐字节不变，服务端缓存仍跨会话命中。
 6. **compaction 是最大单点缓存杀手**：执行单元设计为单会话内可完成（小而独立），尽量避免触发 compaction；plan 长驻会话压缩时把摘要放尾部。
 7. **命中率进指标**：编排器逐 provider 记录 `prompt_cache_hit_tokens/miss_tokens`，命中率低于阈值报警（实测参照：同会话 ~98% 为正常，跨会话场景是各家差异点）。
@@ -305,9 +312,9 @@ for milestone in spec.milestones:
 ## 9. 安全与合规
 - **执行隔离（v0.16 落地 worktree，v0.10 决策无容器维持）**：Execute 在单元级 git worktree 中本机运行（§4.2）；无容器沙箱，信任模型同日常 kimi code auto 模式。缓解措施：worktree 隔离 + 每单元 git 提交（可回滚）+ git diff 事后判定测试/boundaries 完整性（§4.4）+ 进程组 kill 到 quiescence（§6）。**触发重评**：接入不可信输入（Intake 外部 issue、依赖引入陌生代码、涉网任务）前必须重新评估容器化。
 
-- **凭证卫生**：executor 环境只注入任务所需的最低价值 key——pi 通道为 `OPENCODE_API_KEY`，hard 路由为 `KIMI_API_KEY`（v0.14 DC6 补录）；frontend/Plan 走 kimi code 订阅 OAuth（用户本机已登录，无 key 注入）；`needs-live-credentials` 任务经人工批准后按名单注入。一律无 SSH agent、无 git 推送凭证；编排器持有其余全部凭证。
+- **凭证卫生**：executor 环境只注入任务所需的最低价值 key——pi 通道（Execute/Review/Intake/面板复核）为 `OPENCODE_API_KEY`；Kimi 系环节（Plan/Garden/Judge 主判/frontend/hard 路由）v0.19 起全部走 kimi code 订阅 OAuth（用户本机已登录，**无 key 注入**，原 kimi-coding 的 `KIMI_API_KEY` 随渠道移除）；`needs-live-credentials` 任务经人工批准后按名单注入。一律无 SSH agent、无 git 推送凭证；编排器持有其余全部凭证。**边界声明（v0.18）**：白名单环境含 `HOME`/`XDG_*`（CLI 与测试运行器必需），因此 executor 及其测试代码**技术上可达** `~/.pi/agent/auth.json`、`~/.kimi-code` 等本机 auth store——本机制是**防事故性继承**（任何 API key 都不进子进程环境），不是防恶意；防恶意属于容器化重评（§11.7）的触发范围，接入不可信输入前不得依赖本条。
 - **kill switch**：编排器单点可停；预算 hard 档是长时间无人值守时的最后一道闸。
-- **合规灰区台账**：OpenCode Go / Kimi 订阅的自动化条款风险记录在案，OpenCode Zen 按量降级配置常备（v0.15：DeepSeek 直连已裁决不采用）。
+- **合规灰区台账**：OpenCode Go / Kimi 订阅的自动化条款风险记录在案（v0.19 起无降级链兜底——灰区以同渠道退避+升级消化，用户知情裁决；DeepSeek 直连 v0.15 已裁决不采用）。
 
 ---
 
@@ -322,7 +329,6 @@ for milestone in spec.milestones:
 - 三个主 loop 的接入：Plan（kimi code + K3 max 长驻）、Execute（pi CLI + V4 Flash max，本机直跑）、Review（pi + V4 Pro max）
 - L1 验证（含覆盖率闸门）与 done-report 解析
 - skills 族：任务生成器、角色工作指令
-- OpenCode Zen 按量 / kimi-coding 降级配置（常备，非演练——见 §6 降级；v0.15：DeepSeek 直连已裁决不采用）
 - 首批任务：**目标仓库 mimir**（§11.2 已决），取其头部任务（S4-0 关闭 ADR / S0-00 spike 脚手架 / M1-1 CI 门禁）经 `/skill:flywheel-new` 生成契约——需求稳定、验收命令现成、无需 live 凭证、单单元可完成；选择理由是调试期变量控制，不是能力限制
 
 **实证门槛（与建设并行，结果会改写渠道/harness 配置，必须在硬编码前出结果）**：
@@ -345,7 +351,7 @@ for milestone in spec.milestones:
 
 1. Review 量大时 V4 Pro 直连 API 的月预算上限设多少？
 2. ~~首批验证任务用哪个真实仓库？~~（已决，2026-08-19：**mimir**（`~/Documents/projects/mimir`，多租户云原生 AI SRE 平台，greenfield）。方案文档任务已编号（S0-S4/M1-M5）、附录 D 验收已命令化，适配度高；首批取其头部任务 S4-0/S0-00/M1-1，live 凭证任务（S2/S3）待核心链路稳定后接）
-3. ~~Judge（里程碑终验）用 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——与 DeepSeek 系 executor 异厂商，自偏好风险最低；经 pi `kimi-coding/k3` 驱动）
+3. ~~Judge（里程碑终验）用 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——与 DeepSeek 系 executor 异厂商，自偏好风险最低；~~经 pi `kimi-coding/k3` 驱动~~ v0.19 起改 kimi code harness + 订阅，异厂商互证由双面板 V4 Pro 复核承接）
 4. 编排器进程形态：常驻 daemon 还是 cron 拉起的短进程？（倾向 cron 短进程 + state.json，重启零成本）
 5. ~~资产形态与位置~~（已决，v0.3 定形态；v0.6 定独立仓库）：Flywheel 是"系统"而非单个 skill。**编排器必须是确定性代码**（做成 skill 等于让 LLM 解释执行协议，退化回 agent 接力棒，违反铁律 1）；契约模板是静态资产；任务生成器（需求 → spec.md + packets）与角色工作指令做成 skills。**独立仓库 `~/Documents/projects/flywheel`**（2026-08-14 从 agent-skills 迁出）：orchestrator 代码、契约模板、skills 同仓演进，保证 skill 参数与编排器 CLI 原子同步；agent-skills 保持纯 skill 集合，将来分发时复制 released 版本即可。
 6. ~~`hard` 升级通道首选 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——升级目标是换异厂商的脑子打破相关性失败，且最难单元自动获得 V4 Pro 异厂商评审；决策原则：质量/效率/速度优先，成本不计入）
@@ -361,11 +367,12 @@ for milestone in spec.milestones:
 
 使用全流程（核心建成后）：
 
-1. **生成任务（在 harness 里，skill 形态）**：对 kimi code 或 pi 说 `/skill:flywheel-new "把 XX 需求做成 flywheel 任务"`；任务生成器调研仓库、生成 `docs/<slug>/`（spec.md + packets + state.json）并提交。kimi code 认 Project/User 级 skills；pi 可挂载 `~/.agents/skills`。
+1. **生成任务（在 harness 里，skill 形态）**：对 kimi code 或 pi 说 `/skill:flywheel-new "把 XX 需求做成 flywheel 任务"`；任务生成器调研仓库、生成 `docs/<slug>/`（spec.md + packets + state.json）并提交。kimi code 认 Project/User 级 skills（pi/Warp 共享 `~/.agents/skills`）。
    - 问答纪律：**意图类的它问你，事实类的它自己查证**。技术事实不许问人（自己读代码/跑命令验证，写进 spec 附证据）；意图歧义不许猜（停下来问清楚再生成）。草稿生成后停下，等人审。**冻结点 = 人审契约**：不要求源素材（目标仓库的设计文档等）预先定稿——你审过契约即冻结，此后范围变更只能走 Plan Loop 修订。
-2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界。契约质量决定产出质量，审契约比审代码便宜得多。
+   - **验收命令试跑（v0.18 硬规则）**：提交前逐条实际执行每条 L1 命令，「命令+退出码+输出摘要」记入 spec 附表 `## Acceptance dry-run evidence`；无法执行的标 `unverified: <原因>`。允许红（代码未实现），不允许没跑过。
+2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界、**试跑证据**。契约质量决定产出质量，审契约比审代码便宜得多。
 3. **启动（在 harness 里扣扳机）**：`/skill:flywheel-run docs/<slug>`——skill 让 agent 把编排器**以独立进程拉起**（launchd/nohup，不依赖当前会话存活）、确认存活、报告状态入口；之后关掉 harness 窗口不影响运行。CLI `flywheel run` 是底层接口与后路。`/skill:flywheel-status` / `/skill:flywheel-stop` 同理。
-   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。
+   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。注意 `--pause-before` 与 `--only` 互斥（单步天然逐步执行，组合直接报错）；skill 侧经 `/skill:flywheel-run docs/<slug> [pause]` 的可选参数使用。
 4. **观察与干预（在哪都行）**：`flywheel status` 或让 harness 里的 agent 读 state.json/retro.md 讲进度；干预 = `flywheel stop` / 改 state.json / 写 inbox.md——全是文件操作。
 5. **交付**：分支/PR 留给人最终确认合并（外层循环归人）。
 
@@ -375,12 +382,12 @@ for milestone in spec.milestones:
 
 ## 13. Skills 清单与触发矩阵
 
-一个 skill 触发全部，每个 loop 各有一个 skill 单独触发。**所有 skill 都只是"按钮"**：参数校验 + 调编排器命令 + 把结果翻译成人话。skill 内不含任何 loop 逻辑（否则违反铁律 1，变成模型解释执行协议）；改 loop 行为只改编排器与契约模板，不动 skills。**安装**：`flywheel install-skills` 把仓库 `skills/` 软链到 `~/.agents/skills/`（kimi code 与 pi 共享扫描点；软链保证 skill 与编排器原子同步，§11.5）；调用形式为 `/skill:flywheel-<name>`（Agent Skills 标准）。
+一个 skill 触发全部，每个 loop 各有一个 skill 单独触发。**所有 skill 都只是"按钮"**：参数校验 + 调编排器命令 + 把结果翻译成人话。skill 内不含任何 loop 逻辑（否则违反铁律 1，变成模型解释执行协议）；改 loop 行为只改编排器与契约模板，不动 skills。**安装**：`flywheel install-skills` 把仓库 `skills/` 软链到 `~/.agents/skills/`（kimi code、pi、Warp 三家 harness 的共享扫描点，各自官方文档佐证；软链保证 skill 与编排器原子同步，§11.5）。调用形态按 harness 而异（v0.18 订正）：kimi code 与 pi 为 `/skill:<name>`；Warp 为 `/<name>`；Claude Code 经 Skill 工具加载——`/skill:` 不是 Agent Skills 标准本身，标准只约定 SKILL.md 文件格式。
 
 | Skill | 触发什么 | 背后动作 |
 |---|---|---|
 | `/skill:flywheel-new "需求"` | 任务生成（对话式） | 调研仓库 → 问意图问题 → 生成 spec+packets+state → 停下等人审 |
-| `/skill:flywheel-run docs/<slug>` | **全部 loop（全自动）** | 以独立进程拉起编排器，确认存活，报告状态入口 |
+| `/skill:flywheel-run docs/<slug> [pause]` | **全部 loop（全自动）** | 以独立进程拉起编排器，确认存活，报告状态入口；`pause=review` 为监督冻结点 |
 | `/skill:flywheel-plan docs/<slug>` | 只触发 Plan Loop | `flywheel run --only plan` |
 | `/skill:flywheel-exec docs/<slug> [packet]` | 只触发 Execute Loop | `flywheel run --only execute [--packet M02-T03]` |
 | `/skill:flywheel-review docs/<slug> [unit]` | 只触发 Review Loop | `flywheel run --only review [--unit M02-T03]` |
@@ -398,11 +405,11 @@ for milestone in spec.milestones:
 | Loop | Harness | Model（全部 max 档） | 渠道 |
 |---|---|---|---|
 | Plan | kimi code（长驻会话） | Kimi K3 | kimi code 订阅 |
-| Execute（default） | pi（每单元新会话，本机直跑） | DeepSeek V4 Flash | OpenCode Go（Zen 按量兜底） |
+| Execute（default） | pi（每单元新会话，本机直跑） | DeepSeek V4 Flash | OpenCode Go（v0.19 起唯一渠道） |
 | Execute（frontend） | kimi code | Kimi K3 | kimi code 订阅 |
-| Execute（hard 升级） | pi | Kimi K3（§11.6 已决） | kimi-coding（订阅/按量兜底） |
-| Review | pi（每单元新会话） | DeepSeek V4 Pro | Go 起步，Zen 按量兜底 |
-| Judge（里程碑终验） | pi（fresh 会话） | Kimi K3（§11.3 已决） | kimi-coding（订阅/按量兜底） |
+| Execute（hard 升级） | kimi code | Kimi K3（§11.6 已决） | kimi code 订阅（v0.19 起唯一渠道） |
+| Review | pi（每单元新会话） | DeepSeek V4 Pro | OpenCode Go（v0.19 起唯一渠道） |
+| Judge（里程碑终验） | kimi code 主判（fresh `-p`）+ pi 复核面板 | K3 主判（§11.3 已决）+ V4 Pro 复核（v0.18 面板） | kimi 订阅 + opencode-go |
 | Verify | **无 harness，编排器直接跑命令** | 无模型 | — |
 | Intake（外挂） | pi | V4 Flash | OpenCode Go |
 | Garden（外挂） | kimi code | K3 | kimi code 订阅 |
@@ -423,6 +430,10 @@ for milestone in spec.milestones:
 - Geoffrey Huntley, [Ralph](https://ghuntley.com/ralph/)（每轮全新上下文 + 文件系统状态）
 - OpenAI, [Harness engineering](https://openai.com/index/harness-engineering/)（给 agent 地图而非说明书；doc-gardening）
 - OpenAI, [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/)（内层 agent loop 机制）
+- Agent Skills 官方规范：[agentskills.io/specification](https://agentskills.io/specification)（字段权威定论：必填仅 name+description；可选 license/compatibility/metadata/allowed-tools；`skills-ref validate` 校验器）
+- Warp, [Skills for agents](https://docs.warp.dev/agents/capabilities/skills/)（v0.18 补录，第三个 Agent Skills 实现：必填同上、参数走正文 `$ARGUMENTS`/`$N` 占位符；`.agents/skills/` 与 `~/.agents/skills/` 为推荐扫描点——佐证 Flywheel 共享安装点选型）
+- kimi code, [Agent Skills 官方文档](https://moonshotai.github.io/kimi-code/en/customization/skills)（目录型必填 name+description；whenToUse 驱动自动调用；arguments 支持字符串数组/空白串；`${KIMI_SKILL_DIR}` 变量）
+- pi, [Skills 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md)（全局扫 `~/.pi/agent/skills/` 与 `~/.agents/skills/`；按 Agent Skills 标准校验）
 
 **Harness 调研**
 
@@ -452,6 +463,9 @@ for milestone in spec.milestones:
 - [Reward hacking 泛化, arXiv:2406.10162](https://arxiv.org/abs/2406.10162)
 - [Chroma context rot 报告](https://research.trychroma.com/context-rot)
 - [Drew Breunig 上下文失效分类](https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html)
+- [LLM judge 偏差面板研究, Verdict-Bench/Jury](https://ijisae.org/index.php/IJISAE/article/view/8407)（单 judge 一致率 ~87.6% vs bias-aware 面板 98.1%；position/verbosity/self 三类偏差的量化与消解）
+- [Position bias 系统研究, IJCNLP 2025](https://aclanthology.org/2025.ijcnlp-long.18/)（15 judges × 22 任务 × 150k 实例）
+- [Self-preference DBG 度量, EMNLP 2025](https://aclanthology.org/2025.emnlp-main.86/)（自偏好与质量效应解耦）
 
 ---
 

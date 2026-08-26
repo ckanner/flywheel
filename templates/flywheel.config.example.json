@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config).",
+  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
   "drivers": {
     "plan": "kimi",
     "execute": "pi",
     "review": "pi",
-    "judge": "pi"
+    "judge": "kimi"
   },
   "loops": {
     "plan": {
@@ -22,11 +22,11 @@
       "thinking": "max"
     },
     "judge": {
-      "harness": "pi",
-      "model": "kimi-coding/k3",
-      "channel": "kimi-coding",
+      "harness": "kimi",
+      "model": "kimi-code/k3",
+      "channel": "kimi-subscription",
       "thinking": "max",
-      "_note": "milestone final verification, fresh context (§7); K3 decided 2026-08-20 (§11.3 closed) — cross-vendor vs DeepSeek executors"
+      "_note": "milestone final verification primary, FRESH context each call (headless -p spawns never resume); kimi -p enforces auto permission by default (explicit --auto conflicts with --prompt)"
     },
     "intake": {
       "harness": "pi",
@@ -57,49 +57,29 @@
       "thinking": "max"
     },
     "hard": {
-      "harness": "pi",
-      "model": "kimi-coding/k3",
-      "channel": "kimi-coding",
+      "harness": "kimi",
+      "model": "kimi-code/k3",
+      "channel": "kimi-subscription",
       "thinking": "max",
-      "_note": "escalation route; K3 decided 2026-08-20 (§11.6 closed) — cross-vendor vs Flash; V4 Pro remains as channel fallback"
+      "_note": "escalation route after repeated Flash failures; cross-vendor vs DeepSeek reviewers (§11.6)"
     }
+  },
+  "judge-panel": {
+    "harness": "pi",
+    "model": "opencode-go/deepseek-v4-pro",
+    "channel": "opencode-go",
+    "thinking": "max",
+    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is V4 Pro cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
   },
   "channels": {
     "opencode-go": {
       "env-key": "OPENCODE_API_KEY",
-      "fallback": "opencode",
       "cache-hit-rate-min": 0.3,
-      "_note": "$10/mo subscription, quota-limited; 403/over-quota -> Zen pay-as-you-go"
-    },
-    "opencode": {
-      "env-key": "OPENCODE_API_KEY",
-      "models": {
-        "default": "opencode/deepseek-v4-flash",
-        "hard": "opencode/deepseek-v4-pro",
-        "review": "opencode/deepseek-v4-pro",
-        "judge": "opencode/deepseek-v4-pro"
-      },
-      "fallback": null,
-      "cache-hit-rate-min": 0.3,
-      "_note": "OpenCode Zen pay-as-you-go (same key, same pi built-in provider directory, verified 2026-08-20); terminal channel of the DeepSeek chain — no direct-API fallback needed (user decision 2026-08-20)"
+      "_note": "$10/mo subscription, sole DeepSeek-side channel since v0.19 (no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox"
     },
     "kimi-subscription": {
       "env-key": null,
-      "fallback": "kimi-coding",
-      "_note": "kimi code CLI subscription login (device-code OAuth), no API key injected"
-    },
-    "kimi-coding": {
-      "env-key": "KIMI_API_KEY",
-      "harness": "pi",
-      "models": {
-        "plan": "kimi-coding/k3",
-        "frontend": "kimi-coding/k3",
-        "hard": "kimi-coding/k3",
-        "judge": "kimi-coding/k3"
-      },
-      "fallback": "opencode",
-      "cache-hit-rate-min": 0.3,
-      "_note": "pi built-in provider kimi-coding with k3 (1M context, verified 2026-08-20); fallback switches harness from kimi CLI to pi; hard route degrades to opencode V4 Pro (v0.13)"
+      "_note": "kimi code CLI subscription login (device-code OAuth), no API key injected; sole Kimi-side channel since v0.19 (Plan/Garden/Judge-primary/frontend/hard all ride it)"
     }
   },
   "budget": {
@@ -119,43 +99,32 @@
   },
   "credentials": {
     "poll-interval-ms": 30000,
-    "timeout-ms": 86400000,
-    "_note": "needs-live-credentials packets: human writes docs/<slug>/approvals/<packet-id>.json {\"approved-env\": [\"KEY\"]}; only listed keys are injected, per unit (§9)"
+    "timeout-ms": 86400000
   },
   "intake": {
-    "_note": "pluggable task sources (§4.5). github-issues needs the gh CLI; command sources cover CI failures / dependency upgrades / anything scriptable. Intake never freezes requirements — humans approve in triage-inbox.md, freezing goes through $flywheel-new.",
-    "sources": [
-      {
-        "name": "repo-issues",
-        "type": "github-issues",
-        "repo": "owner/repo",
-        "labels": ["flywheel-candidate"],
-        "limit": 50
-      },
-      {
-        "name": "ci-failures",
-        "type": "command",
-        "cmd": "echo '{\"title\": \"example: nightly CI red on main\", \"summary\": \"test X failed twice\", \"url\": null}'"
-      }
-    ]
+    "sources": []
   },
   "defect-injection": {
     "every-n-units": 5,
     "test-file-ratio-boost": 0.5,
-    "_note": "always on (user decision 2026-08-20 — no switch): a sampled unit needs defect-injection.patch + test-cmd configured for the task, otherwise the orchestrator writes inbox asking a human to add them (unit still completes)"
+    "patch": "",
+    "test-cmd": ""
   },
   "verify": {
     "command-timeout-ms": 300000,
-    "test-file-patterns": ["(^|/)(tests?|__tests__|spec)/", "\\.(test|spec)\\.[cm]?[jt]sx?$"]
+    "env-allowlist": [],
+    "test-file-patterns": [
+      "(^|/)(tests?|__tests__|spec)/",
+      "\\.(test|spec)\\.[cm]?[jt]sx?$"
+    ]
   },
   "worktree": {
-    "enabled": true,
-    "_note": "per-unit git worktree isolation (DESIGN.md §4.2 v0.16): the executor runs in a clean checkout next to the repo; unavailable (non-git repo / git worktree broken) or disabled falls back to in-place execution with a dirty-worktree warning"
+    "enabled": true
   },
+  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself.",
   "pricing": {
-    "_note": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself; DeepSeek direct uses peak/off-peak pricing (§7).",
-    "deepseek-v4-flash": {"input": 0.28, "output": 0.42, "cache-read": 0.028},
-    "deepseek-v4-pro": {"input": 1.32, "output": 3.96, "cache-read": 0.132},
-    "kimi-k3": {"input": 3.0, "output": 15.0, "cache-read": 0.30}
+    "deepseek-v4-flash": { "input": 0.28, "output": 0.42, "cache-read": 0.028 },
+    "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.132 },
+    "kimi-k3": { "input": 3.0, "output": 15.0, "cache-read": 0.3 }
   }
 }

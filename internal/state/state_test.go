@@ -84,7 +84,8 @@ func TestSaveFirstWrite(t *testing.T) {
 	assert.Contains(t, string(data), "\n  \"slug\"")
 	entries, rerr := os.ReadDir(dir)
 	require.NoError(t, rerr)
-	assert.Len(t, entries, 1)
+	// state.json + .state.lock（C9：CAS 锁文件常驻）。
+	assert.Len(t, entries, 2)
 
 	reloaded, lerr := Load(dir)
 	require.NoError(t, lerr)
@@ -141,7 +142,7 @@ func TestSaveUnreadableDuringCAS(t *testing.T) {
 	assert.Contains(t, err.Error(), "unreadable during CAS check")
 }
 
-func TestSaveWriteFailureReadOnlyDir(t *testing.T) {
+func TestSaveLockFailureReadOnlyDir(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
@@ -149,7 +150,17 @@ func TestSaveWriteFailureReadOnlyDir(t *testing.T) {
 	ro := filepath.Join(dir, "ro")
 	require.NoError(t, os.Mkdir(ro, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	// C9：锁文件创建失败（只读目录）→ Save 在 CAS 前即失败。
 	_, err := Save(ro, &State{Revision: 0, Packets: map[string]*PacketState{}}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lock failed")
+}
+
+func TestSaveWriteFailureInjected(t *testing.T) {
+	orig := osWriteFile
+	t.Cleanup(func() { osWriteFile = orig })
+	osWriteFile = func(string, []byte, os.FileMode) error { return errors.New("disk full") }
+	_, err := Save(t.TempDir(), &State{Revision: 0, Packets: map[string]*PacketState{}}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "write failed")
 }
@@ -348,4 +359,13 @@ func TestInitBadPacketIDPropagates(t *testing.T) {
 	spec := &contract.Spec{Milestones: []contract.Milestone{{ID: "M-01"}}}
 	_, err := Init("s", spec, []*contract.Packet{packet("bad", "default")}, nil)
 	require.Error(t, err)
+}
+
+func TestSaveLockFlockFailureInjected(t *testing.T) {
+	orig := sysFlock
+	t.Cleanup(func() { sysFlock = orig })
+	sysFlock = func(uintptr) error { return errors.New("flock boom") }
+	_, err := Save(t.TempDir(), &State{Revision: 0, Packets: map[string]*PacketState{}}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lock failed")
 }

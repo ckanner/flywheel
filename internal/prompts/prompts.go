@@ -173,6 +173,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"## Output",
 		"End your reply with a final line containing ONLY this JSON:",
 		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."]}`,
+		`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid.`,
 		`Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap.`,
 	)
 	return strings.Join(sections, "\n")
@@ -295,6 +296,7 @@ func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets
 		"## Output",
 		"End your reply with a final line containing ONLY this JSON:",
 		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."]}`,
+		`Every entry in reasons MUST cite verifiable evidence (command + exit code, or file:line). A verdict without evidence is invalid.`,
 	}, "\n")
 }
 
@@ -309,6 +311,9 @@ var validVerdicts = map[string]bool{"pass": true, "return": true, "verification-
 
 // ParseReviewVerdict 从回复中解析最后一行裁决 JSON。自尾向前扫描；剥掉
 // markdown 围栏；非法/不完整行跳过继续向前。找不到则报错。
+// v0.18（A3 出口契约强化）：score 必须存在且 reasons ≥1 条——无证据支撑的
+// 裁决按 unparseable 处理，走既有重试/升级路径（LLM judge 偏差实证的最低
+// 防线：结论必须挂可复核证据，见 DESIGN §4.3）。
 func ParseReviewVerdict(text string) (*Verdict, error) {
 	if text == "" {
 		return nil, fmt.Errorf("empty review output")
@@ -334,8 +339,11 @@ func ParseReviewVerdict(text string) (*Verdict, error) {
 		if !validVerdicts[v.Verdict] {
 			continue
 		}
-		if v.Reasons == nil {
-			v.Reasons = []string{}
+		if v.Score == nil || len(v.Reasons) == 0 {
+			continue // 无 score / 空理由 = 无证据支撑 → 视为不完整裁决
+		}
+		if *v.Score < 0 || *v.Score > 1 {
+			continue // 区间外 = 契约违约（0.0–1.0），按 unparseable 处理
 		}
 		return &v, nil
 	}

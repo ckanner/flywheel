@@ -57,7 +57,29 @@ func TestReadKnownAndUnknown(t *testing.T) {
 //   - frontmatter 合法 YAML（P1-2 回归）
 //   - name 与目录名一致、description 非空（官方 spec 必填）
 //   - metadata.version 非空（Agent Skills spec 的 metadata map）
-//   - whenToUse / arguments 非空（kimi code 扩展；自动调用的 load-bearing 字段）
+//   - whenToUse / arguments 非空（kimi code 定义的字段，自动调用的
+//     load-bearing 依据；非 agentskills.io 标准字段——见 AGENTS.md §Hard Contracts）
+//   - agentskills.io 标准约束（T7）：name ≤64 且仅小写字母数字连字符、
+//     不以连字符开头/结尾、无连续连字符；description ≤1024；
+//     compatibility ≤500；metadata 值全为字符串
+//
+// name 规则（agentskills.io）：1-64 字符；仅小写字母、数字、连字符；
+// 不以连字符开头/结尾；无连续连字符。
+func skillNameValid(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	if strings.Trim(name, "-") != name || strings.Contains(name, "--") {
+		return false
+	}
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func TestSkillSpecCompliance(t *testing.T) {
 	for _, s := range List() {
 		t.Run(s.Name, func(t *testing.T) {
@@ -79,14 +101,36 @@ func TestSkillSpecCompliance(t *testing.T) {
 			assert.NotEmpty(t, version, "metadata.version 必填")
 			assert.NotNil(t, args, "arguments 必填（kimi code 扩展）")
 
+			// agentskills.io 标准约束。
+			assert.LessOrEqual(t, len(name), 64, "name ≤64")
+			assert.LessOrEqual(t, len(desc), 1024, "description ≤1024")
+			for k, v := range meta {
+				assert.IsType(t, "", v, "metadata.%s 必须是字符串", k)
+			}
+			assert.True(t, skillNameValid(name), "name 字符集/连字符规则（agentskills.io）")
 			// compatibility 若存在必须已是字符串（曾因裸标量含 ": " 使整个
-			// frontmatter 解析失败——P1-2 根因）。
+			// frontmatter 解析失败——P1-2 根因），且 ≤500（agentskills.io）。
 			if comp, ok := fm["compatibility"]; ok {
 				compStr, isStr := comp.(string)
 				assert.True(t, isStr, "compatibility 必须是引号字符串")
 				if isStr {
 					assert.NotEmpty(t, strings.TrimSpace(compStr))
+					assert.LessOrEqual(t, len(compStr), 500, "compatibility ≤500")
 				}
+			}
+
+			// arguments 形态：kimi 官方支持字符串数组或空白分隔字符串——
+			// 对象形态无任何 harness 文档背书，禁止回潮（T3 回归）。
+			switch a := args.(type) {
+			case string:
+				assert.NotEmpty(t, strings.TrimSpace(a))
+			case []any:
+				assert.NotEmpty(t, a)
+				for _, el := range a {
+					assert.IsType(t, "", el, "arguments 数组元素必须是字符串")
+				}
+			default:
+				t.Fatalf("arguments 必须是字符串数组或空白分隔字符串，得到 %T", args)
 			}
 		})
 	}

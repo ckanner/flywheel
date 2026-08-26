@@ -262,7 +262,7 @@ func TestMockDriverAllRoles(t *testing.T) {
 	assert.Contains(t, pr.Text, `"action":"issue"`)
 
 	rr := d.Review(a)
-	assert.JSONEq(t, `{"verdict":"pass","score":1,"kind":"ok","reasons":[]}`, rr.Text)
+	assert.JSONEq(t, `{"verdict":"pass","score":1,"kind":"ok","reasons":["mock: L1 commands exit 0 (deterministic evidence)"]}`, rr.Text)
 
 	jr := d.Judge(a)
 	assert.Contains(t, jr.Text, `"verdict":"pass"`)
@@ -371,6 +371,18 @@ func TestMockDriverPlanReviewJudgeOverridesAndNilMilestone(t *testing.T) {
 	base := MockResult(func(r *Result) { r.Text = "custom" })
 	assert.Equal(t, "mock", base.Harness)
 	assert.Equal(t, "custom", base.Text)
+}
+
+// TestParsePiEventStreamAccumulatesErrors（C6 回归）：多轮错误事件全部保留，
+// 不被最后一条覆盖。
+func TestParsePiEventStreamAccumulatesErrors(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"401: bad key"}}`,
+		`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"429: slow down"}}`,
+	}, "\n")
+	parsed := ParsePiEventStream(stream)
+	assert.Contains(t, parsed.ErrorMessage, "401: bad key")
+	assert.Contains(t, parsed.ErrorMessage, "429: slow down")
 }
 
 func TestRunPiFallbacksAndStderrSkipAndError(t *testing.T) {

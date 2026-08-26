@@ -1,11 +1,13 @@
 // Package fallback — 渠道降级（DESIGN.md §6 降级）：限流/配额（403）切到
-// 下一配置渠道。常备链（用户裁决 2026-08-20，无 DeepSeek 直连兜底）：
+// 下一配置渠道。
+//
+//	（v0.19 起法定配置无降级链——每角色单一渠道；本包机制保留为 config
+//	 驱动，将来恢复备用 provider 时加回渠道绑定即可，无需改代码。）
+//
+// 历史链形态（v0.18 及以前，供理解测试 fixture）：
 //
 //	DeepSeek 系: opencode-go -> opencode (Zen 按量, 终端)
 //	Kimi 系:     kimi-subscription (kimi code CLI) -> kimi-coding (pi, KIMI_API_KEY)
-//
-// 选择逻辑是纯函数；实际重试由 machine 在下一渠道执行，渠道可携带 harness
-// 切换（kimi CLI -> pi）。
 package fallback
 
 import (

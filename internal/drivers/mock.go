@@ -125,7 +125,7 @@ func (d *MockDriver) Execute(a CallArgs) Result {
 
 func (d *MockDriver) Review(a CallArgs) Result {
 	base := mockResult(func(r *Result) {
-		r.Text = `{"verdict":"pass","score":1,"kind":"ok","reasons":[]}`
+		r.Text = `{"verdict":"pass","score":1,"kind":"ok","reasons":["mock: L1 commands exit 0 (deterministic evidence)"]}`
 	})
 	if fn := d.behavior("review", a.PacketID); fn != nil {
 		if override := fn(a); override != nil {
@@ -137,7 +137,7 @@ func (d *MockDriver) Review(a CallArgs) Result {
 
 func (d *MockDriver) Judge(a CallArgs) Result {
 	base := mockResult(func(r *Result) {
-		r.Text = `{"verdict":"pass","score":1,"kind":"ok","reasons":[]}`
+		r.Text = `{"verdict":"pass","score":1,"kind":"ok","reasons":["mock: coverage matrix complete, gate levels pass"]}`
 	})
 	if fn := d.behavior("judge", a.MilestoneID); fn != nil {
 		if override := fn(a); override != nil {

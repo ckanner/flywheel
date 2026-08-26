@@ -35,15 +35,15 @@
 | `baseline-red` | 注入前套件就红 | inbox（套件本身坏），单元继续 |
 | `restore-failed` | `-R` 失败，工作区可能残留缺陷 | inbox + 停 |
 
-`workspaceClean` 检查已删除：-R 后 touched 文件上 executor 的 diff 本来
-就该在，它不是"脏"。patch 触及账本路径（state.json/reports/ 等，常量在
-`core/ledger.js` 单一来源）直接拒绝注入。
+`workspaceClean` 检查已删除：-R 后 touched 文件上 executor 的 diff 本来就该在，
+它不是"脏"。patch 触及账本路径（state.json/reports/ 等，常量单一来源在
+`internal/ledger`，v0.18 起注入守卫复用同一匹配语义）直接拒绝注入。
 
 ## 附带发现（均已修复）
 
 - `NODE_TEST_CONTEXT` 会沿 env 继承：嵌套 `node --test` 在 child 模式下
-  失败也退出 0。编排器跑验收/测试命令前 scrub（`core/child-env.js` gateEnv，
-  且整体已升级为白名单环境——见 403-fallback.md 同期记录，P0-4）。
+  失败也退出 0。编排器跑验收/测试命令前 scrub（Go 版 `internal/childenv`
+  GateEnv，整体白名单环境——见 403-fallback.md 同期记录，P0-4）。
 - 演练仓库是 node 单文件项目；monorepo 下 `git apply` 路径前缀未演练。
 
 ## 残余风险

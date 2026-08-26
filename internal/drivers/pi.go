@@ -90,7 +90,12 @@ func ParsePiEventStream(stdout string) PiParsed {
 			p.Model = msg.Model
 		}
 		if msg.StopReason == "error" && msg.ErrorMessage != "" {
-			p.ErrorMessage = msg.ErrorMessage
+			// C6（v0.18）：累积而非覆盖——多轮错误事件都保留，失败归因不丢前因。
+			if p.ErrorMessage == "" {
+				p.ErrorMessage = msg.ErrorMessage
+			} else if !strings.Contains(p.ErrorMessage, msg.ErrorMessage) {
+				p.ErrorMessage += "; " + msg.ErrorMessage
+			}
 		}
 		if len(msg.Usage) > 0 && string(msg.Usage) != "null" {
 			var u struct {

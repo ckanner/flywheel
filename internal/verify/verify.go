@@ -8,6 +8,7 @@
 package verify
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -170,21 +171,38 @@ func identityArgs() []string {
 // 编排器领地、预期会变（契约+账本）；运行起点上其他任何脏文件都是既有 WIP，
 // 会被 scoped unit commit 卷入（P1-1 caveat——diff 是"自 base ref 以来的一切"，
 // 不是"executor 摸过的一切"）。ok=false 表示不是 git checkout。
+// C10（v0.18）：porcelain 的 rename 条目（`R  old -> new`）拆出新旧两路径；
+// 含特殊字符的引号路径剥引号并还原常见转义。
 func ForeignDirtyFiles(cwd, taskDirPrefix string) (paths []string, ok bool) {
 	stdout, err := gitOut(cwd, "status", "--porcelain")
 	if err != nil {
 		return nil, false
 	}
-	for _, line := range strings.Split(stdout, "\n") {
-		if len(line) < 3 {
-			continue
-		}
-		f := strings.TrimSpace(line[3:])
+	add := func(f string) {
 		if f != "" && !strings.HasPrefix(f, taskDirPrefix) {
 			paths = append(paths, f)
 		}
 	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if len(line) < 4 {
+			continue // XY + 空格 + 至少 1 字符路径
+		}
+		for _, seg := range strings.SplitN(line[3:], " -> ", 2) {
+			add(unescapePorcelain(strings.TrimSpace(seg)))
+		}
+	}
 	return paths, true
+}
+
+// unquotePorcelain 剥掉 git 对特殊路径的外层双引号并还原其转义
+// （C10：\" \\ \t \n 四种；其余 \x 序列罕见，保留原样不误伤）。
+func unescapePorcelain(p string) string {
+	if len(p) < 2 || p[0] != '"' || p[len(p)-1] != '"' {
+		return p
+	}
+	inner := p[1 : len(p)-1]
+	r := strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\t`, "\t", `\n`, "\n")
+	return r.Replace(inner)
 }
 
 // ---- per-unit worktree 隔离（§4.2 v0.16）----
@@ -270,16 +288,18 @@ func GetChangedFiles(cwd, baseRef string) (files []string, ok bool) {
 	if err != nil {
 		return nil, false
 	}
-	untrackedOut, err := gitOut(cwd, "ls-files", "--others", "--exclude-standard")
-	if err != nil {
+	untracked, ok := listUntracked(cwd, nil)
+	if !ok {
 		return nil, false
 	}
 	set := map[string]bool{}
-	for _, line := range strings.Split(diffOut+"\n"+untrackedOut, "\n") {
-		f := strings.TrimSpace(line)
-		if f != "" {
+	for _, line := range strings.Split(diffOut, "\n") {
+		if f := strings.TrimSpace(line); f != "" {
 			set[f] = true
 		}
+	}
+	for _, f := range untracked {
+		set[f] = true
 	}
 	for f := range set {
 		files = append(files, f)
@@ -288,9 +308,33 @@ func GetChangedFiles(cwd, baseRef string) (files []string, ok bool) {
 	return files, true
 }
 
+// listUntracked untracked 文件清单（-z NUL 分隔：文件名含空格/引号/非 ASCII
+// 时不会被 core.quotePath 的引号化破坏——PR#3 review must-fix 4）。
+// exclude 为 repo-relative pathspec（调用方拼好 :(exclude) 前缀）。
+func listUntracked(cwd string, exclude []string) ([]string, bool) {
+	args := []string{"ls-files", "--others", "--exclude-standard", "-z", "--", "."}
+	for _, p := range exclude {
+		args = append(args, ":(exclude)"+p)
+	}
+	out, err := gitOut(cwd, args...)
+	if err != nil {
+		return nil, false
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	sort.Strings(files)
+	return files, true
+}
+
 // GetDiffText 对 baseRef 的完整 unified diff 文本（§4.3 向评审者承诺的是
 // git diff，不是文件清单）。~100KB 截断加标记。exclude pathspec（repo-relative）
 // 把编排器账本文件从 diff 里剔除；契约文件（spec/packets）保留在内。
+// v0.18（C2）：git diff 天然不含 untracked 文件——逐个追加合成 new-file 段
+// （全文），否则 greenfield 单元（新建文件为主）评审者只看到文件名看不到内容。
 // ok=false = 不可用的 git checkout。
 func GetDiffText(cwd, baseRef string, exclude []string) (text string, ok bool) {
 	base := baseRef
@@ -305,10 +349,83 @@ func GetDiffText(cwd, baseRef string, exclude []string) (text string, ok bool) {
 	if err != nil {
 		return "", false
 	}
-	if len(out) > DiffTextCap {
-		return out[:DiffTextCap] + fmt.Sprintf("\n... [diff truncated at %d chars]", DiffTextCap), true
+	var b strings.Builder
+	b.WriteString(out)
+	if files, ok2 := listUntracked(cwd, exclude); ok2 {
+		appendUntrackedSections(&b, cwd, files)
 	}
-	return out, true
+	text = b.String()
+	if len(text) > DiffTextCap {
+		return text[:DiffTextCap] + fmt.Sprintf("\n... [diff truncated at %d chars]", DiffTextCap), true
+	}
+	return text, true
+}
+
+// perFileContentCap 单个 untracked 文件正文进入评审 diff 的上限（PR#3 review
+// must-fix 4：无上限时 GB 级文件会造成内存尖峰）。总量仍受 DiffTextCap 约束。
+const perFileContentCap = 256 << 10 // 256KB
+
+// appendUntrackedSections 把 untracked 文件清单逐个渲染为合成 new-file 段
+// （v0.18 C2，v0.19 加固）：
+//   - Lstat 先行：符号链接只渲染 target 路径、绝不读内容——防 /dev/zero 挂死
+//     与凭证文件外泄（executor 在 worktree 里 ln -s 的攻击面）；
+//   - 非 regular 文件占位；空文件零行段；
+//   - 二进制以占位标记代替内容；总量截断由调用方统一处理。
+func appendUntrackedSections(b *strings.Builder, cwd string, files []string) {
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		full := filepath.Join(cwd, filepath.FromSlash(f))
+		fi, err := os.Lstat(full) // Lstat：不跟随符号链接
+		if err != nil {
+			continue // 竞态：文件刚被删 → 跳过
+		}
+		fmt.Fprintf(b, "diff --git a/%s b/%s\nnew file mode %o\n--- /dev/null\n+++ b/%s\n",
+			f, f, fi.Mode().Perm(), f)
+		if !fi.Mode().IsRegular() {
+			if linkTarget, lerr := os.Readlink(full); lerr == nil {
+				fmt.Fprintf(b, "[symlink -> %s]\n", linkTarget)
+			} else {
+				b.WriteString("[non-regular file]\n")
+			}
+			continue
+		}
+		if fi.Size() == 0 {
+			b.WriteString("@@ -0,0 +0,0 @@\n")
+			continue
+		}
+		if fi.Size() > perFileContentCap {
+			fmt.Fprintf(b, "@@ -0,0 +1,1 @@\n+[file too large: %d bytes]\n", fi.Size())
+			continue
+		}
+		raw, rerr := os.ReadFile(full)
+		if rerr != nil {
+			continue
+		}
+		head := raw
+		if len(head) > 8000 {
+			head = head[:8000]
+		}
+		if bytes.IndexByte(head, 0) >= 0 {
+			b.WriteString("[binary file]\n")
+			continue
+		}
+		content := string(raw)
+		noNL := !strings.HasSuffix(content, "\n")
+		if noNL {
+			content += "\n"
+		}
+		fmt.Fprintf(b, "@@ -0,0 +1,%d @@\n", strings.Count(content, "\n"))
+		for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+			b.WriteByte('+')
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+		if noNL {
+			b.WriteString("\\ No newline at end of file\n")
+		}
+	}
 }
 
 // ---- 编排器侧提交（§4.2：提交权在编排器，永不在 executor）----

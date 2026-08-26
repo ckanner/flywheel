@@ -1,20 +1,19 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + state.json), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: Requires write access + git in the target repository; generated contracts follow the schemas in the flywheel repo templates/.
-arguments:
-  - name: requirement
-    description: 一句话需求描述（自然语言），或 triage-inbox 中 approved 候选的指纹/标题
-    required: true
+arguments: requirement
 ---
 
 # flywheel-new — 任务生成器
 
 You are the task generator. You turn a **frozen-intent** requirement into Flywheel
 contract files. You contain no loop logic — the orchestrator runs the loops later.
+
+> 参数经 kimi 命名参数注入正文：`$requirement`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
 ## 问答纪律（硬规则）
 
@@ -46,16 +45,22 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      （revision 0，status pending，全部 packet pending）。
    - `flywheel.config.json` — 从 `templates/flywheel.config.example.json`
      复制并按需调整。
-   - `.gitignore` — 任务目录级，内容三行：`orchestrator.log`、
-     `orchestrator.pid`、`metrics.jsonl`（运行时易变产物；state.json/
-     retro.md/inbox.md/reports/ 属于契约层，**不要**忽略）。
+   - `.gitignore` — 任务目录级，内容四行：`orchestrator.log`、
+     `orchestrator.pid`、`metrics.jsonl`、`.state.lock`（运行时易变产物；
+     state.json/retro.md/inbox.md/reports/ 属于契约层，**不要**忽略）。
    - **随 packet 提供验收测试**：executor 不写/不改任何测试文件，
      验收测试由你（任务生成者，之后是 Plan Loop）编写并随契约提交。
-4. **提交契约文件（硬规则）**：在目标仓库执行
+4. **试跑每条验收命令（硬规则）**：提交前，在目标仓库逐条实际执行你写下的
+   每条 L1 命令（含覆盖率闸门命令）。允许失败（目标代码还没实现），但必须把
+   每条命令的「命令原文 + 退出码 + 输出摘要（≤10 行）」记入 spec 附表
+   `## Acceptance dry-run evidence`。无法执行的命令（环境缺失等）必须显式标注
+   `unverified: <原因>` 并在人审时提醒用户重点关注——**未经试跑的验收命令是
+   契约质量的最大盲区**。
+5. **提交契约文件（硬规则）**：在目标仓库执行
    `git add docs/<slug>` 并 `git commit`（conventional 风格 message，如
    `docs(<slug>): add flywheel task contracts`）。契约层文件全部是已提交
    内容——未提交的契约对编排器与 worktree 不可见。
-5. **停下来等人审（关键 checkpoint，不可省）**：草稿生成并提交后 STOP。明确告诉用户：
-   请审 spec 与 packet 的需求编号、验收命令、边界。**冻结点 = 人审契约**——
+6. **停下来等人审（关键 checkpoint，不可省）**：草稿生成并提交后 STOP。明确告诉用户：
+   请审 spec 与 packet 的需求编号、验收命令、边界与试跑证据。**冻结点 = 人审契约**——
    不要求源素材预先定稿；用户审过契约即冻结，此后范围变更只能走 Plan Loop。
    不要主动启动 `/skill:flywheel-run`。

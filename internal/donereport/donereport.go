@@ -46,6 +46,21 @@ func Parse(raw []byte, format map[string][]string) Result {
 	}
 
 	var errs []string
+	// C8（v0.18）：多余键拒绝——done-report-format 是显式契约（铁律 6），
+	// executor 私自夹带键说明报告不受控。显式空格式（零键零检查，Node 语义）
+	// 不做该检查。
+	allowed := map[string]bool{}
+	for _, key := range keys {
+		allowed[key] = true
+	}
+	if len(allowed) > 0 {
+		for k := range report {
+			if !allowed[k] {
+				errs = append(errs, "unexpected-key: "+k)
+			}
+		}
+		sort.Strings(errs) // map 遍历无序 → 错误列表确定性
+	}
 	for _, key := range keys {
 		v, present := report[key]
 		if !present {
