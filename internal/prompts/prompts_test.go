@@ -236,6 +236,10 @@ func TestParseReviewVerdict(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.8, *v.Score, 1e-9)
 
+	// score 越界（>1）= 契约违约 → 跳过。
+	_, err = ParseReviewVerdict(`{"verdict":"pass","score":1.5,"reasons":["x"]}`)
+	assert.EqualError(t, err, "no verdict JSON found in review output")
+
 	// 空 / 无 JSON / 全非法。
 	_, err = ParseReviewVerdict("")
 	assert.EqualError(t, err, "empty review output")

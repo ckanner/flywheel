@@ -176,6 +176,23 @@ func TestRunDefectInjectionUninjectablePaths(t *testing.T) {
 		assert.Contains(t, *o.Detail, "poison.txt")
 	})
 
+	t.Run("ledger prefix single-source matches directory contents (v0.19)", func(t *testing.T) {
+		dir := t.TempDir()
+		patch := filepath.Join(dir, "p.patch")
+		require.NoError(t, os.WriteFile(patch, []byte("--- /dev/null\n+++ b/docs/task/reports/y.done.json\n@@ -0,0 +1 @@\n+j\n"), 0o644))
+		spawned := false
+		o := RunDefectInjection(Args{
+			PatchFile:        patch,
+			Cwd:              dir,
+			LedgerTaskPrefix: "docs/task/",
+			Run: func(string, []string, string, int64, []string) RunResult {
+				spawned = true
+				return RunResult{ExitCode: 0}
+			},
+		})
+		assert.Equal(t, "uninjectable", o.Outcome)
+		assert.False(t, spawned)
+	})
 	t.Run("directory prefix entry catches files inside (C3 回归)", func(t *testing.T) {
 		dir := t.TempDir()
 		// 补丁触碰 docs/task/reports/x.done.json——账本目录条目 "reports/"

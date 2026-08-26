@@ -2,6 +2,7 @@ package machine
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,4 +93,48 @@ func TestAuthoritativeChangedFilesDiffUnavailable(t *testing.T) {
 	ctx.Cwd = t.TempDir() // 非 git checkout → GetChangedFiles ok=false
 
 	assert.Nil(t, ctx.authoritativeChangedFiles(packet))
+}
+
+// TestRunSinglePlanRecordsAcceptanceTrail（PR#3 review must-fix 5）：
+// --only plan 手动路径与全自动路径同享 acceptance 指纹留痕——planner 在
+// 单步模式下弱化/改写验收同样必须进 retro + warnings，不留永久盲区。
+func TestRunSinglePlanRecordsAcceptanceTrail(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.planFn = func(drivers.CallArgs) drivers.Result {
+		// planner 改写 packet 验收（写盘模拟修订落库）：在原 L1 命令上追加子命令
+		path := filepath.Join(fx.taskDir, "task-packet-M01-T01.md")
+		orig, rerr := os.ReadFile(path)
+		require.NoError(t, rerr)
+		mod := strings.Replace(string(orig),
+			"test -f build/M01-T01.txt", "test -f build/M01-T01.txt && echo revised", 1)
+		require.NotEqual(t, string(orig), mod, "fixture 必须可被改写以产生指纹差异")
+		writeFile(t, path, mod)
+		return drivers.MockResult(nil)
+	}
+	ctx := verdictCtx(t, fx, sd)
+
+	_, err := ctx.runSingle("plan", "")
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, ctx.State.Budget.Warnings, "验收变更必须进 warnings")
+	retro, rerr := os.ReadFile(filepath.Join(fx.taskDir, "retro.md"))
+	require.NoError(t, rerr)
+	assert.Contains(t, string(retro), "acceptance changed")
+}
+
+// TestRunSinglePlanReloadErrorSurfaces（PR#3 复审）：plan 成功但重载契约失败
+// （planner 写出 schema 非法 packet）→ 错误必须上抛，绝不静默吞掉。
+func TestRunSinglePlanReloadErrorSurfaces(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.planFn = func(drivers.CallArgs) drivers.Result {
+		writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T99.md"),
+			"---\npacket-id: M01-T99\n---\nbody") // 缺 goal 等必填 → schema fail
+		return drivers.MockResult(nil)
+	}
+	ctx := verdictCtx(t, fx, sd)
+
+	_, err := ctx.runSingle("plan", "")
+	require.Error(t, err, "非法修订必须在重载时 fail-loud")
 }

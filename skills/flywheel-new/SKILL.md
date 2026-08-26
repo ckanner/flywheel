@@ -45,9 +45,9 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      （revision 0，status pending，全部 packet pending）。
    - `flywheel.config.json` — 从 `templates/flywheel.config.example.json`
      复制并按需调整。
-   - `.gitignore` — 任务目录级，内容三行：`orchestrator.log`、
-     `orchestrator.pid`、`metrics.jsonl`（运行时易变产物；state.json/
-     retro.md/inbox.md/reports/ 属于契约层，**不要**忽略）。
+   - `.gitignore` — 任务目录级，内容四行：`orchestrator.log`、
+     `orchestrator.pid`、`metrics.jsonl`、`.state.lock`（运行时易变产物；
+     state.json/retro.md/inbox.md/reports/ 属于契约层，**不要**忽略）。
    - **随 packet 提供验收测试**：executor 不写/不改任何测试文件，
      验收测试由你（任务生成者，之后是 Plan Loop）编写并随契约提交。
 4. **试跑每条验收命令（硬规则）**：提交前，在目标仓库逐条实际执行你写下的

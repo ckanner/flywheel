@@ -288,19 +288,43 @@ func GetChangedFiles(cwd, baseRef string) (files []string, ok bool) {
 	if err != nil {
 		return nil, false
 	}
-	untrackedOut, err := gitOut(cwd, "ls-files", "--others", "--exclude-standard")
-	if err != nil {
+	untracked, ok := listUntracked(cwd, nil)
+	if !ok {
 		return nil, false
 	}
 	set := map[string]bool{}
-	for _, line := range strings.Split(diffOut+"\n"+untrackedOut, "\n") {
-		f := strings.TrimSpace(line)
-		if f != "" {
+	for _, line := range strings.Split(diffOut, "\n") {
+		if f := strings.TrimSpace(line); f != "" {
 			set[f] = true
 		}
 	}
+	for _, f := range untracked {
+		set[f] = true
+	}
 	for f := range set {
 		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files, true
+}
+
+// listUntracked untracked 文件清单（-z NUL 分隔：文件名含空格/引号/非 ASCII
+// 时不会被 core.quotePath 的引号化破坏——PR#3 review must-fix 4）。
+// exclude 为 repo-relative pathspec（调用方拼好 :(exclude) 前缀）。
+func listUntracked(cwd string, exclude []string) ([]string, bool) {
+	args := []string{"ls-files", "--others", "--exclude-standard", "-z", "--", "."}
+	for _, p := range exclude {
+		args = append(args, ":(exclude)"+p)
+	}
+	out, err := gitOut(cwd, args...)
+	if err != nil {
+		return nil, false
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
 	}
 	sort.Strings(files)
 	return files, true
@@ -327,12 +351,8 @@ func GetDiffText(cwd, baseRef string, exclude []string) (text string, ok bool) {
 	}
 	var b strings.Builder
 	b.WriteString(out)
-	untrackedArgs := []string{"ls-files", "--others", "--exclude-standard", "--", "."}
-	for _, p := range exclude {
-		untrackedArgs = append(untrackedArgs, ":(exclude)"+p)
-	}
-	if listing, lerr := gitOut(cwd, untrackedArgs...); lerr == nil {
-		appendUntrackedSections(&b, cwd, listing)
+	if files, ok2 := listUntracked(cwd, exclude); ok2 {
+		appendUntrackedSections(&b, cwd, files)
 	}
 	text = b.String()
 	if len(text) > DiffTextCap {
@@ -341,30 +361,54 @@ func GetDiffText(cwd, baseRef string, exclude []string) (text string, ok bool) {
 	return text, true
 }
 
-// appendUntrackedSections 把 ls-files --others 输出中的每个文件渲染为合成
-// new-file unified diff 段。读取失败按竞态跳过（文件刚被删）；二进制文件以
-// 占位标记代替内容。总量截断由调用方统一处理，这里不设限。
-func appendUntrackedSections(b *strings.Builder, cwd, listing string) {
-	for _, f := range strings.Split(listing, "\n") {
-		f = strings.TrimSpace(f)
+// perFileContentCap 单个 untracked 文件正文进入评审 diff 的上限（PR#3 review
+// must-fix 4：无上限时 GB 级文件会造成内存尖峰）。总量仍受 DiffTextCap 约束。
+const perFileContentCap = 256 << 10 // 256KB
+
+// appendUntrackedSections 把 untracked 文件清单逐个渲染为合成 new-file 段
+// （v0.18 C2，v0.19 加固）：
+//   - Lstat 先行：符号链接只渲染 target 路径、绝不读内容——防 /dev/zero 挂死
+//     与凭证文件外泄（executor 在 worktree 里 ln -s 的攻击面）；
+//   - 非 regular 文件占位；空文件零行段；
+//   - 二进制以占位标记代替内容；总量截断由调用方统一处理。
+func appendUntrackedSections(b *strings.Builder, cwd string, files []string) {
+	for _, f := range files {
 		if f == "" {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(cwd, filepath.FromSlash(f)))
+		full := filepath.Join(cwd, filepath.FromSlash(f))
+		fi, err := os.Lstat(full) // Lstat：不跟随符号链接
 		if err != nil {
+			continue // 竞态：文件刚被删 → 跳过
+		}
+		fmt.Fprintf(b, "diff --git a/%s b/%s\nnew file mode %o\n--- /dev/null\n+++ b/%s\n",
+			f, f, fi.Mode().Perm(), f)
+		if !fi.Mode().IsRegular() {
+			if linkTarget, lerr := os.Readlink(full); lerr == nil {
+				fmt.Fprintf(b, "[symlink -> %s]\n", linkTarget)
+			} else {
+				b.WriteString("[non-regular file]\n")
+			}
 			continue
 		}
-		fmt.Fprintf(b, "diff --git a/%s b/%s\nnew file mode 100644\n--- /dev/null\n+++ b/%s\n", f, f, f)
+		if fi.Size() == 0 {
+			b.WriteString("@@ -0,0 +0,0 @@\n")
+			continue
+		}
+		if fi.Size() > perFileContentCap {
+			fmt.Fprintf(b, "@@ -0,0 +1,1 @@\n+[file too large: %d bytes]\n", fi.Size())
+			continue
+		}
+		raw, rerr := os.ReadFile(full)
+		if rerr != nil {
+			continue
+		}
 		head := raw
 		if len(head) > 8000 {
 			head = head[:8000]
 		}
 		if bytes.IndexByte(head, 0) >= 0 {
 			b.WriteString("[binary file]\n")
-			continue
-		}
-		if len(raw) == 0 {
-			b.WriteString("@@ -0,0 +0,0 @@\n")
 			continue
 		}
 		content := string(raw)

@@ -6,7 +6,7 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.18，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
+权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.19，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
 
 ## 安装
 

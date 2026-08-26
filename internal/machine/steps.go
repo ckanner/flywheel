@@ -483,7 +483,7 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 			}
 		}
 	}
-	boundary := verify.CheckBoundaries(executorFiles, packet.Boundaries, c.Config.Verify.TestFilePatterns)
+	boundary := verify.CheckBoundaries(executorFiles, packet.Boundaries, c.effectiveTestFilePatterns())
 	if len(contractViolations) > 0 {
 		// Executor 动了契约层本身（spec/packets/config）——直接判失败。
 		for _, v := range contractViolations {
@@ -512,6 +512,17 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 	// 错误返回恒为 nil（函数体无任何产生路径）——覆盖率审计 2026-08-23 删除
 	// 防御性 error 返回。
 	return l1Outcome{Pass: pass, Gate: gate, Boundary: boundary}
+}
+
+// effectiveTestFilePatterns 测试防篡改模式表（PR#3 review must-fix 2）：
+// 配置显式空数组与未声明同义——空表会静默关闭"executor 改测试判死"的
+// DC1=B 执行机制，配置比不配更危险，故在此单点回退内置默认。
+func (c *Context) effectiveTestFilePatterns() []string {
+	p := c.Config.Verify.TestFilePatterns
+	if len(p) == 0 {
+		return nil // CheckBoundaries 对 nil 回退 DefaultTestFilePatterns
+	}
+	return p
 }
 
 // ---- LLM 裁决循环（review / judge 共用）----
@@ -853,6 +864,10 @@ func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) 
 	out := judgeOutcome{Pass: pass, Verdict: r.Verdict}
 	if r2 != nil {
 		switch {
+		case r2.Stopped:
+			// 面板复核撞上预算硬停：原样透传 Stopped——吞成 secondary-error
+			// 会把 budget-stopped 谎报成 judge 失败升级（PR#3 review 中项）。
+			return judgeOutcome{Stopped: true}, nil
 		case !r2.OK:
 			// 复核通道失败：fail-loud，与主判错误同路径升级。
 			judge["panel"] = map[string]any{"agreement": "secondary-error",
@@ -871,7 +886,13 @@ func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) 
 			}
 			if split {
 				rec["agreement"] = "split"
-				merged := append(append([]string{}, r.Verdict.Reasons...), r2.Verdict.Reasons...)
+				merged := make([]string, 0, len(r.Verdict.Reasons)+len(r2.Verdict.Reasons))
+				for _, rr := range r.Verdict.Reasons {
+					merged = append(merged, "[primary] "+rr)
+				}
+				for _, rr := range r2.Verdict.Reasons {
+					merged = append(merged, "[secondary] "+rr)
+				}
 				judge["verdict"] = "split"
 				judge["score"] = nil
 				judge["reasons"] = merged

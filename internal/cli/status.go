@@ -97,7 +97,7 @@ func statusCmd() *cobra.Command {
 			}
 			fmt.Fprintf(out, "缓存命中率: %.1f%%  预算档: %s（日上限 %s）\n", b.Cache.HitRate*100, b.Enforce, limit)
 			if len(b.Warnings) > 0 {
-				fmt.Fprintf(out, "预算告警: %s\n", b.Warnings[len(b.Warnings)-1])
+				fmt.Fprintf(out, "预算告警: 共 %d 条，最近: %s\n", len(b.Warnings), b.Warnings[len(b.Warnings)-1])
 			}
 			if len(st.Inbox) > 0 {
 				fmt.Fprintln(out)

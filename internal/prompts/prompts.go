@@ -342,6 +342,9 @@ func ParseReviewVerdict(text string) (*Verdict, error) {
 		if v.Score == nil || len(v.Reasons) == 0 {
 			continue // 无 score / 空理由 = 无证据支撑 → 视为不完整裁决
 		}
+		if *v.Score < 0 || *v.Score > 1 {
+			continue // 区间外 = 契约违约（0.0–1.0），按 unparseable 处理
+		}
 		return &v, nil
 	}
 	return nil, fmt.Errorf("no verdict JSON found in review output")

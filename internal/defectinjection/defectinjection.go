@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/ledger"
 )
 
 // maxBuffer 单流累计上限（Node execFile maxBuffer = 4MB；超限按 spawn 错误
@@ -146,8 +147,12 @@ type Args struct {
 	Cwd          string // 工作区
 	TimeoutMs    int64  // 每条命令的超时上限；<=0 不限时（Node 缺省 300s 由 config 层给值）
 	EnvAllowlist []string
-	ForbidPaths  []string // 补丁不得触碰的 repo 相对路径（编排器账本区，P0-3）
-	Run          RunFunc  // nil → DefaultRun
+	ForbidPaths  []string // 兼容入口：repo 相对路径精确/前缀匹配（v0.18 C3）
+	// LedgerTaskPrefix（v0.19，单一信源）：给出 docs/<slug>/ 前缀时，账本判定
+	// 直接复用 internal/ledger.IsLedgerTaskPath——与边界判定/提交排除同一套
+	// 语义，杜绝两套匹配规则漂移。设置后 ForbidPaths 被忽略。
+	LedgerTaskPrefix string
+	Run              RunFunc // nil → DefaultRun
 }
 
 // RunDefectInjection 运行一个注入周期。绝不 panic——坏补丁或任何 spawn
@@ -169,18 +174,23 @@ func RunDefectInjection(a Args) Outcome {
 	if err != nil {
 		return outcomeOf("uninjectable", fmt.Sprintf("patch unreadable: %v", err))
 	}
-
-	// P0-3：触碰账本区的补丁直接拒绝。匹配语义与 internal/ledger 的账本区
-	// 分类一致（v0.18 C3 修复：原精确相等可被目录内路径绕过——"reports/x"
-	// ≠ "reports/"）：条目以 "/" 结尾按前缀匹配，否则精确匹配。
 	created, modified := ParsePatchFiles(string(patchContent))
 	touched := append(append([]string{}, created...), modified...)
 	var forbidden []string
-	for _, f := range touched {
-		for _, p := range a.ForbidPaths {
-			if f == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(f, p)) {
+	if a.LedgerTaskPrefix != "" {
+		// 单一信源路径：与边界判定/提交排除共用 internal/ledger 分类。
+		for _, f := range touched {
+			if ledger.IsLedgerTaskPath(strings.TrimPrefix(f, a.LedgerTaskPrefix)) {
 				forbidden = append(forbidden, f)
-				break
+			}
+		}
+	} else {
+		for _, f := range touched {
+			for _, p := range a.ForbidPaths {
+				if f == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(f, p)) {
+					forbidden = append(forbidden, f)
+					break
+				}
 			}
 		}
 	}

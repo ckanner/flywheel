@@ -12,6 +12,8 @@ DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。Go 版（v0
 > v0.19 渠道收敛后**全系统无降级链**（OpenCode Zen / kimi-coding 兜底移除）——本页与
 > 各记录中提及的降级链、provider 目录均为 2026-08-20 实测时的历史事实基线；
 > `core/child-env.js` 对应现 `internal/childenv`（GateEnv）、`core/ledger.js` 对应 `internal/ledger`。
+环境事实基线（2026-08-20 实测）：
+
 - pi 0.84.0 provider 目录：`kimi-coding`（k3 / k3-256k）、`opencode`（Zen 按量，
   deepseek-v4-flash/pro、kimi-k3）、`opencode-go`（订阅，同模型族）。
   **无 DeepSeek 直连内置 provider**——用户裁决（2026-08-20）不需要直连降级，

@@ -453,14 +453,13 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 				"detail":  "sampled but defect-injection.patch/test-cmd not configured for this task",
 			})
 	}
-
 	outcome := defectinjection.RunDefectInjection(defectinjection.Args{
-		PatchFile:    di.Patch,
-		TestCmd:      di.TestCmd,
-		Cwd:          c.unitCwd(packet),
-		TimeoutMs:    c.Config.Verify.CommandTimeoutMs,
-		EnvAllowlist: c.Config.Verify.EnvAllowlist,
-		ForbidPaths:  c.ledgerExcludes(),
+		PatchFile:        di.Patch,
+		TestCmd:          di.TestCmd,
+		Cwd:              c.unitCwd(packet),
+		TimeoutMs:        c.Config.Verify.CommandTimeoutMs,
+		EnvAllowlist:     c.Config.Verify.EnvAllowlist,
+		LedgerTaskPrefix: c.taskDirPrefix(), // v0.19：单一信源账本守卫
 	})
 	ev, _ := jsonToMap(outcome)
 	ev["at"] = c.nowISO()
@@ -1237,9 +1236,16 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		if m == nil {
 			return c.summary(), fmt.Errorf("no open milestone")
 		}
+		old := c.PacketList // must-fix 5：单步 plan 与全自动路径同享指纹留痕
 		r, err := c.planStep(*m)
 		if err != nil {
 			return c.summary(), err
+		}
+		if r.OK {
+			if err := c.reloadPackets(); err != nil {
+				return c.summary(), err
+			}
+			c.recordAcceptanceChanges(old, c.PacketList)
 		}
 		step = &StepSum{Name: "plan", OK: r.OK, Detail: optStr(string(r.ErrorCode))}
 	case "execute":

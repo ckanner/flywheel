@@ -6,6 +6,7 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"github.com/ckanner/flywheel/internal/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,6 +83,8 @@ func TestJudgePanelSplitEscalates(t *testing.T) {
 	assert.Equal(t, "split", panel["agreement"])
 	reasons := judge["reasons"].([]string)
 	require.Len(t, reasons, 2, "双方理由合并供人裁决")
+	assert.Contains(t, reasons[0], "[primary]", "理由必须带归属前缀（M5）")
+	assert.Contains(t, reasons[1], "[secondary]", "理由必须带归属前缀（M5）")
 	sec := panel["secondary"].(map[string]any)
 	assert.Equal(t, "return", sec["verdict"])
 }
@@ -132,4 +135,33 @@ func TestJudgeStepNonObjectGatePersisted(t *testing.T) {
 	persisted, ok := ctx.State.Milestones["M-01"].Gate.(map[string]any)
 	require.True(t, ok, "gate 必须以对象形态持久化")
 	require.Contains(t, persisted, "judge")
+}
+
+// TestJudgePanelSecondaryBudgetStops（M1）：复核撞上预算硬停 → Stopped 原样
+// 透传——吞成 secondary-error 会把 budget-stopped 谎报成 judge 失败升级。
+// 注入时机：预算在主判处理期内打爆，复核的循环顶才会命中 stop 检查。
+func TestJudgePanelSecondaryBudgetStops(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	var ctx *Context
+	calls := 0
+	sd.judgeFn = func(drivers.CallArgs) drivers.Result {
+		if calls == 0 {
+			// 预算在主判处理期内打爆：复核的循环顶 budgetGate 即 stop。
+			ctx.Config.Budget.Enforce = "hard"
+			lim := int64(1)
+			ctx.Config.Budget.DailyTokenLimit = &lim
+			state.RecordUsage(ctx.State, state.Usage{Input: 100, Output: 100},
+				state.UsageOpts{Provider: "p"})
+		}
+		calls++
+		return passVerdict()
+	}
+	ctx = verdictCtx(t, fx, sd)
+	ctx.Config.JudgePanel = panelBinding()
+
+	out, err := ctx.judgeStep(milestoneOf(t, ctx))
+	require.NoError(t, err)
+	assert.True(t, out.Stopped, "预算硬停必须透传 Stopped")
+	assert.False(t, out.Pass)
 }

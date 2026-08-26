@@ -304,7 +304,7 @@ func TestAppendUntrackedSectionsArms(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "nonl.txt"), noNL)
 
 	var b strings.Builder
-	appendUntrackedSections(&b, dir, "gone.txt\nbig.txt\nempty.txt\nnonl.txt\n")
+	appendUntrackedSections(&b, dir, []string{"gone.txt", "big.txt", "empty.txt", "nonl.txt"})
 	out := b.String()
 
 	assert.Contains(t, out, "@@ -0,0 +0,0 @@")      // 空文件臂
@@ -315,8 +315,65 @@ func TestAppendUntrackedSectionsArms(t *testing.T) {
 
 	// 读取失败臂：listing 含不存在文件 → 跳过不 panic。
 	var b2 strings.Builder
-	appendUntrackedSections(&b2, dir, "missing.bin")
+	appendUntrackedSections(&b2, dir, []string{"missing.bin"})
 	assert.Empty(t, b2.String())
+}
+
+// TestAppendUntrackedSectionsNonRegular（PR#3 复审）：非符号链接的非 regular
+// 条目（目录被手动传入）→ [non-regular file] 占位。
+func TestAppendUntrackedSectionsNonRegular(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o755))
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"", "subdir"})
+	assert.Contains(t, b.String(), "[non-regular file]")
+}
+
+// TestAppendUntrackedSectionsUnreadable（PR#3 复审）：Lstat 成功但 ReadFile
+// 失败（chmod 000）→ 竞态臂 continue。
+func TestAppendUntrackedSectionsUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "secret.txt")
+	writeFile(t, p, "s")
+	require.NoError(t, os.Chmod(p, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(p, 0o644) })
+
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"", "secret.txt"})
+	out := b.String()
+	assert.Contains(t, out, "diff --git a/secret.txt", "头部段照常渲染")
+	assert.NotContains(t, out, "+s", "内容读取失败臂 → 无正文行泄漏")
+}
+
+func TestAppendUntrackedSectionsSymlinkAndLarge(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Symlink("/dev/zero", filepath.Join(dir, "danger.link")))
+	hugePath := filepath.Join(dir, "huge.bin")
+	f, err := os.Create(hugePath)
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(int64(perFileContentCap)+1))
+	require.NoError(t, f.Close())
+
+	var b strings.Builder
+	appendUntrackedSections(&b, dir, []string{"danger.link", "huge.bin"})
+	out := b.String()
+	assert.Contains(t, out, "[symlink -> /dev/zero]", "链接只渲染 target，绝不读内容")
+	assert.Contains(t, out, "[file too large:")
+	assert.NotContains(t, out, strings.Repeat("x", 10))
+}
+
+func TestGetDiffTextCJKFilenames(t *testing.T) {
+	repo := initRepo(t)
+	base, _ := GetBaseRef(repo)
+	writeFile(t, filepath.Join(repo, "中文 说明.md"), "# 中文内容\n")
+
+	text, ok := GetDiffText(repo, base, nil)
+	require.True(t, ok)
+	assert.Contains(t, text, "中文 说明.md", "-z 解析下非 ASCII 文件名不得丢失")
+	assert.Contains(t, text, "# 中文内容")
 }
 
 func TestCommitUnitChanges(t *testing.T) {

@@ -9,6 +9,7 @@ import "strings"
 // garden-proposals.md 是 intake/garden 模块的产物（P3 修复：Node 版漏分类，
 // 导致它们可能落进单元 diff 判定）。
 var LedgerFiles = map[string]bool{
+	".state.lock":         true, // C9 flock 锁文件（v0.18）——绝不进单元 diff/提交
 	"state.json":          true,
 	"retro.md":            true,
 	"metrics.jsonl":       true,
@@ -29,6 +30,7 @@ var CommitVolatileFiles = map[string]bool{
 	"metrics.jsonl":    true,
 	"orchestrator.log": true,
 	"orchestrator.pid": true,
+	".state.lock":      true, // v0.18：flock 锁文件是运行时产物，不入库
 }
 
 // IsLedgerTaskPath 判断任务目录相对路径（如 "reports/x.json"）是否为账本。

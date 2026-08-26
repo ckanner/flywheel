@@ -8,7 +8,7 @@ import (
 
 func TestLedgerClassification(t *testing.T) {
 	ledger := []string{
-		"state.json", "retro.md", "metrics.jsonl", "inbox.md",
+		".state.lock", "state.json", "retro.md", "metrics.jsonl", "inbox.md",
 		"orchestrator.pid", "orchestrator.log",
 		"triage-inbox.md", "garden-proposals.md",
 	}
@@ -29,6 +29,7 @@ func TestVolatileSet(t *testing.T) {
 	assert.True(t, CommitVolatileFiles["orchestrator.log"])
 	assert.True(t, CommitVolatileFiles["orchestrator.pid"])
 	assert.False(t, CommitVolatileFiles["state.json"], "state 必须留在已提交契约层")
+	assert.True(t, CommitVolatileFiles[".state.lock"], "flock 锁文件不入库（v0.18）")
 	assert.False(t, CommitVolatileFiles["retro.md"])
 	assert.False(t, CommitVolatileFiles["reports/"])
 }

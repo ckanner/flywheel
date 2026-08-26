@@ -37,6 +37,9 @@ session is spawned by the orchestrator as a separate harness session.
 
    **二选一**：用户未给 `pause` → 用第一条；给了（值为 review）→ 用第二条。
    注意 `--pause-before` 不能与单步按钮（--only）组合——CLI 会直接报错拒绝。
+
+   若 flywheel 不在 PATH：`cd <目标仓库根> && nohup flywheel run "$slug" > docs/<slug>/orchestrator.log 2>&1 &`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 3. **确认存活**：等 2 秒，检查进程仍在、`docs/<slug>/orchestrator.pid` 已写入、
    `state.json` 的 status 变为 running。拉起失败 → 读
    `docs/<slug>/orchestrator.log` 报告原因。注意：若任务此前已升级到 inbox，

@@ -39,8 +39,8 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
   变更记录 first, then code, then tests.
 - **Ledger zone**: paths inside `docs/<slug>/` are classified by
   `internal/ledger`. Boundary judgement excludes ledger paths; unit commits
-  additionally exclude the volatile trio (metrics.jsonl / orchestrator.log /
-  orchestrator.pid).
+  additionally exclude the volatile set (metrics.jsonl / orchestrator.log /
+  orchestrator.pid / .state.lock).
 - **Skills are buttons**: a SKILL.md contains validation + CLI invocation +
   translation, never loop logic. Frontmatter requires `name` matching the
   directory and non-empty `description` (the only two fields both the

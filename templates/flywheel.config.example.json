@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries, then escalates to inbox.",
+  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
   "drivers": {
     "plan": "kimi",
     "execute": "pi",
@@ -15,13 +15,6 @@
       "thinking": "max",
       "resident-session": true
     },
-    "judge-panel": {
-      "harness": "pi",
-      "model": "opencode-go/deepseek-v4-pro",
-      "channel": "opencode-go",
-      "thinking": "max",
-      "_note": "v0.18 A3 dual-judge panel: second opinion on the milestone final verification — judge primary runs kimi code + K3 (this file's loops.judge), panel secondary is V4 Pro cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
-    },
     "review": {
       "harness": "pi",
       "model": "opencode-go/deepseek-v4-pro",
@@ -33,7 +26,7 @@
       "model": "kimi-code/k3",
       "channel": "kimi-subscription",
       "thinking": "max",
-      "_note": "milestone final verification primary, FRESH context each call (headless -p spawns never resume); kimi -p enforces auto permission by default (flag conflict rules reject explicit --auto with --prompt)"
+      "_note": "milestone final verification primary, FRESH context each call (headless -p spawns never resume); kimi -p enforces auto permission by default (explicit --auto conflicts with --prompt)"
     },
     "intake": {
       "harness": "pi",
@@ -71,11 +64,18 @@
       "_note": "escalation route after repeated Flash failures; cross-vendor vs DeepSeek reviewers (§11.6)"
     }
   },
+  "judge-panel": {
+    "harness": "pi",
+    "model": "opencode-go/deepseek-v4-pro",
+    "channel": "opencode-go",
+    "thinking": "max",
+    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is V4 Pro cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
+  },
   "channels": {
     "opencode-go": {
       "env-key": "OPENCODE_API_KEY",
       "cache-hit-rate-min": 0.3,
-      "_note": "$10/mo subscription, sole DeepSeek-side channel since v0.19 (no fallback provider): over-quota (403) degrades to same-channel backoff retries then inbox escalation"
+      "_note": "$10/mo subscription, sole DeepSeek-side channel since v0.19 (no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox"
     },
     "kimi-subscription": {
       "env-key": null,
@@ -113,14 +113,18 @@
   "verify": {
     "command-timeout-ms": 300000,
     "env-allowlist": [],
-    "test-file-patterns": []
+    "test-file-patterns": [
+      "(^|/)(tests?|__tests__|spec)/",
+      "\\.(test|spec)\\.[cm]?[jt]sx?$"
+    ]
   },
   "worktree": {
     "enabled": true
   },
+  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself.",
   "pricing": {
-    "kimi-k3": { "input": 3, "output": 15, "cache-read": 0.3 },
-    "deepseek-v4-flash": { "input": 0.42, "output": 1.68, "cache-read": 0.056 },
-    "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.099 }
+    "deepseek-v4-flash": { "input": 0.28, "output": 0.42, "cache-read": 0.028 },
+    "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.132 },
+    "kimi-k3": { "input": 3.0, "output": 15.0, "cache-read": 0.3 }
   }
 }
