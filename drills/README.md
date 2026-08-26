@@ -9,11 +9,9 @@ DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。Go 版（v0
 | 缺陷注入真实仓库 | §4.3 机制验证 | [defect-injection.md](defect-injection.md) | 注入周期（真 git）：`go test ./internal/defectinjection -run TestRunDefectInjection`；编排器集成：`go test ./internal/machine -run 'TestDefectInjection|TestResumeAtReviewDefectInjection'` |
 
 > 历史注记：上表的 Node 入口（`tests/drill-*.test.js`、`core/*.js`）已随 v0.17 Go 迁移删除；
-> 本页其余正文保留 2026-08-20 实测时的环境事实基线，其中提到的 `core/child-env.js`
-> 对应现 `internal/childenv`（GateEnv）、`core/ledger.js` 对应 `internal/ledger`。
-
-环境事实基线（2026-08-20 实测）：
-
+> v0.19 渠道收敛后**全系统无降级链**（OpenCode Zen / kimi-coding 兜底移除）——本页与
+> 各记录中提及的降级链、provider 目录均为 2026-08-20 实测时的历史事实基线；
+> `core/child-env.js` 对应现 `internal/childenv`（GateEnv）、`core/ledger.js` 对应 `internal/ledger`。
 - pi 0.84.0 provider 目录：`kimi-coding`（k3 / k3-256k）、`opencode`（Zen 按量，
   deepseek-v4-flash/pro、kimi-k3）、`opencode-go`（订阅，同模型族）。
   **无 DeepSeek 直连内置 provider**——用户裁决（2026-08-20）不需要直连降级，

@@ -21,7 +21,7 @@ go build ./... && make quality-gate   # vet + fmt-check + 覆盖率 100% 门禁
 ## 已定型的关键决策（细节全在 DESIGN.md）
 
 - **编排器是确定性 Go CLI**（cobra 命令树），不是 skill、不是 agent；skill 只是触发按钮。
-- **三个主 loop**：Plan = kimi code + Kimi K3（长驻会话）；Execute = pi + DeepSeek V4 Flash（每单元全新会话）；Review = pi + DeepSeek V4 Pro（全新会话）。Judge = pi(kimi-coding) + K3。
+- **三个主 loop**：Plan = kimi code + K3（长驻会话）；Execute = pi + V4 Flash（每单元全新会话）；Review = pi + V4 Pro（全新会话）。Judge 主判 = kimi code + K3（fresh `-p`），双面板复核 = pi + V4 Pro。
 - **全部模型 reasoning_effort=max**；会话级模型隔离；跨角色只传文本契约。
 - **单元级 worktree 隔离**（v0.16）：worktree 在仓库旁 `.flywheel-worktrees/`，ff-merge 回主 checkout，账本提交限定 docs/<slug>/；不可用回退原地执行。
 - **state.json 只由编排器写入**：CAS revision、tmp+rename 原子写；agent 只写 done-report。

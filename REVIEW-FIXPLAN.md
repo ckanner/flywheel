@@ -231,7 +231,7 @@ A5① status 停滞提示 → T3/T6 skill 修订 → C4/C5/C6/C8/C10/C11 小修�
 `flywheel skills list/read` 冒烟。
 
 ### Phase 3｜首跑准备（与 Phase 2 可并行推进）
-1. OpenCode Go ToS 决策记录（无人值守条款灰区签字画押，封号预案=Zen 按量价重算经济模型）。
+1. OpenCode Go ToS 决策记录（无人值守条款灰区签字画押；v0.19 起无降级链——封号即中断，需人工改 `flywheel.config.json` 渠道绑定后重跑）。
 2. 真实 403 报文实测预案：拿到超额账号当天按 drills/403-fallback.md 方法打一轮，
    模式表集中在 errs.go patterns 一处可即调。
 3. mimir 任务生成时执行 T6 新规（每条 L1 命令试跑留证）。

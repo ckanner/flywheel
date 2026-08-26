@@ -129,9 +129,9 @@
 | 项 | 内容 |
 |---|---|
 | Harness | pi，**每单元全新会话**，本机直接运行（v0.10 决策：现阶段不用容器沙箱，信任模型同日常 kimi code auto 模式；缓解措施见 §9；接入不可信输入前重新评估容器化） |
-| 渠道 | OpenCode Go 订阅（$10/月，Flash 额度 $60/月 ≈ 官方估算 15.8 万次典型请求/月）；OpenCode Zen 按量作降级兜底（v0.15：不需要 DeepSeek 直连） |
+| 渠道 | OpenCode Go 订阅（$10/月，Flash 额度 $60/月 ≈ 官方估算 15.8 万次典型请求/月）——v0.19 起唯一渠道，无降级兜底 |
 | 驱动方式 | **CLI 优先**：`pi -p "<prompt>" --model … --no-session` + 编排器侧超时 + 解析事件流（核心建设期足够，基准实测已跑通）。需要运行中干预（steer/abort）、状态查询（token/成本）、`agent_settled` 事件、host tools 回调时再升级 RPC/SDK |
-| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（首选，§11.6；V4 Pro 为该路由降级渠道） |
+| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（首选，§11.6；v0.19 起走 kimi code 订阅） |
 
 执行纪律（写进每个 packet 的工作指令）：
 
@@ -156,7 +156,7 @@
 | 输入 | task packet + git diff + L1 测试结果（不含 executor transcript） |
 | 模型 | DeepSeek V4 Pro（reasoning_effort=**max**；0813 GA，Terminal-Bench 87.9 与 K3 同档） |
 | Harness | pi，每单元全新会话，rubric 打分（0.0–1.0 + pass/fail，单 judge；**里程碑终验为双 judge 面板，§4.4/§7**） |
-| 渠道 | OpenCode Go 起步（Pro 额度仅 $15/月，注意）→ OpenCode Zen 按量兜底（v0.15：不需要 DeepSeek 直连） |
+| 渠道 | OpenCode Go（Pro 额度仅 $15/月，注意）——v0.19 起唯一渠道，无降级兜底 |
 | 结论 | pass / 退回（附具体修改要求、失败证据、涉及位置、完成条件） |
 
 特殊职责：
@@ -351,7 +351,7 @@ for milestone in spec.milestones:
 
 1. Review 量大时 V4 Pro 直连 API 的月预算上限设多少？
 2. ~~首批验证任务用哪个真实仓库？~~（已决，2026-08-19：**mimir**（`~/Documents/projects/mimir`，多租户云原生 AI SRE 平台，greenfield）。方案文档任务已编号（S0-S4/M1-M5）、附录 D 验收已命令化，适配度高；首批取其头部任务 S4-0/S0-00/M1-1，live 凭证任务（S2/S3）待核心链路稳定后接）
-3. ~~Judge（里程碑终验）用 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——与 DeepSeek 系 executor 异厂商，自偏好风险最低；经 pi `kimi-coding/k3` 驱动）
+3. ~~Judge（里程碑终验）用 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——与 DeepSeek 系 executor 异厂商，自偏好风险最低；~~经 pi `kimi-coding/k3` 驱动~~ v0.19 起改 kimi code harness + 订阅，异厂商互证由双面板 V4 Pro 复核承接）
 4. 编排器进程形态：常驻 daemon 还是 cron 拉起的短进程？（倾向 cron 短进程 + state.json，重启零成本）
 5. ~~资产形态与位置~~（已决，v0.3 定形态；v0.6 定独立仓库）：Flywheel 是"系统"而非单个 skill。**编排器必须是确定性代码**（做成 skill 等于让 LLM 解释执行协议，退化回 agent 接力棒，违反铁律 1）；契约模板是静态资产；任务生成器（需求 → spec.md + packets）与角色工作指令做成 skills。**独立仓库 `~/Documents/projects/flywheel`**（2026-08-14 从 agent-skills 迁出）：orchestrator 代码、契约模板、skills 同仓演进，保证 skill 参数与编排器 CLI 原子同步；agent-skills 保持纯 skill 集合，将来分发时复制 released 版本即可。
 6. ~~`hard` 升级通道首选 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——升级目标是换异厂商的脑子打破相关性失败，且最难单元自动获得 V4 Pro 异厂商评审；决策原则：质量/效率/速度优先，成本不计入）
