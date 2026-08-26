@@ -265,7 +265,7 @@ for milestone in spec.milestones:
 - **出口契约**：单元成功的判定三者独立——进程终态正常 + stderr 无错误 + 交付物（done-report / 变更）存在；`timedOut / signal / exitCode` 正交记录进 state.json，"超时被 trap 成 exit 0"不得读成绿灯。
 - **熔断（可配置）**：`budget.enforce: off | soft | hard`，默认 soft（警告并记录，不停机）；hard 档为日 token 预算硬顶。空转检测（同一 packet 连续失败且**错误码+失败命令相同、变更文件 Jaccard 相似度 ≥ 0.7**，v0.14 DC4）在任何档位下都触发升级——空转检测不是钱的问题，是 loop 健康的问题。token/成本记录在任何档位下都不关闭。
 - **并发**：串行期不设限；引入并行模块时用文件锁原子 claim 任务，不做速率限制。
-- **降级（v0.19 移除）**：用户裁决取消全部 fallback provider——每角色单一订阅渠道，配置中无 `fallback` 链。超限新语义：RATE_LIMIT 同渠道退避重试（尊重 Retry-After），耗尽升级 inbox；QUOTA 不重试直接升级（订阅超额恢复以小时计，退避无意义）；AUTH/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED 照旧直接升级。机制代码保留为 config 驱动——将来若要恢复备用 provider，加回渠道绑定即可，无需改代码。
+- **降级（v0.19 移除）**：用户裁决取消全部 fallback provider——每角色单一订阅渠道，配置中无 `fallback` 链。超限语义（**用户裁决 A，2026-08-24**）：RATE_LIMIT 同渠道退避重试（尊重 Retry-After），耗尽升级 inbox；QUOTA 不重试直接升级（订阅超额恢复以小时计，退避无意义；备选的“QUOTA 也退避”已否决）；AUTH/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED 照旧直接升级。机制代码保留为 config 驱动——将来若要恢复备用 provider，加回渠道绑定即可，无需改代码。
 - **升级路径**：executor 连续卡壳 → Plan Loop 修订 packet → 仍失败 → inbox 叫人。V4 Flash 能力有上限（DeepSWE 54.4 vs Pro 62.7 vs K3 67.5），难任务经 `hard` 路由升级 K3 执行（§11.6 已决；v0.19 起走 kimi code 订阅）。
 - **可观测**：每次 spawn 记录模型、harness、prompt 哈希、token、成本、缓存命中率、耗时、退出码。用途：① 失败归因（跨 harness 没有现成方法学，全靠这张表）；② 成本可见（DeepSeek 8-17 涨价后重算经济性）；③ 缓存命中率作健康信号（突降 = 前缀被破坏）；④ 协议改进的证据源（原则：改进必须基于多次运行复盘证据）；⑤ 停滞检测。**指标是人不盯着 loop 也能监督它的方式。**
 
