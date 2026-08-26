@@ -19,7 +19,7 @@ make install        # 装到 /usr/local/bin
 # 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验
 ```
 
-真实驱动依赖本机已装的 [pi](https://github.com/earendil-works/pi)（Execute/Review/Judge）与 kimi code CLI（Plan/Garden）；渠道凭证走环境变量（`OPENCODE_API_KEY` / `KIMI_API_KEY`）。测试与演练（mock 驱动）不需要任何凭证。
+真实驱动依赖本机已装的 [pi](https://github.com/earendil-works/pi)（Execute/Review/面板复核/Intake）与 kimi code CLI（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；渠道凭证仅需环境变量 `OPENCODE_API_KEY`（Kimi 侧走订阅登录，无 key）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox。测试与演练（mock 驱动）不需要任何凭证。
 
 ## 安装 skills 到 kimi code / pi
 

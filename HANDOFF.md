@@ -26,7 +26,7 @@ go build ./... && make quality-gate   # vet + fmt-check + 覆盖率 100% 门禁
 - **单元级 worktree 隔离**（v0.16）：worktree 在仓库旁 `.flywheel-worktrees/`，ff-merge 回主 checkout，账本提交限定 docs/<slug>/；不可用回退原地执行。
 - **state.json 只由编排器写入**：CAS revision、tmp+rename 原子写；agent 只写 done-report。
 - **无容器沙箱**：本机直跑；git diff 事后判定边界；executor 环境白名单注入低价值 key。
-- **渠道降级链**：opencode-go → opencode（QUOTA/RATE_LIMIT 触发；AUTH 不降级）；kimi 订阅 → kimi-coding。
+- **渠道（v0.19 收敛）**：无 fallback provider——Kimi 系全走 kimi code 订阅 OAuth，DeepSeek 系只走 OpenCode Go；QUOTA/RATE_LIMIT 同渠道退避重试→耗尽 inbox。Judge 主判 = kimi code + K3 fresh `-p`；双面板复核 = pi+V4 Pro。
 
 ## 审计修复已全部落地（v0.17，勿回退）
 
