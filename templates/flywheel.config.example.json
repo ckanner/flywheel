@@ -52,7 +52,7 @@
     },
     "default": {
       "harness": "pi",
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/glm-5.3-flash",
       "channel": "opencode-go",
       "thinking": "max"
     },
@@ -121,8 +121,9 @@
   "worktree": {
     "enabled": true
   },
-  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself.",
+  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself. glm-5.3-flash: placeholder zeros — no official token pricing published yet (AA $0.045/task is not equivalent); backfill from first real spawn's usage.cost.",
   "pricing": {
+    "glm-5.3-flash": { "input": 0, "output": 0, "cache-read": 0 },
     "deepseek-v4-flash": { "input": 0.28, "output": 0.42, "cache-read": 0.028 },
     "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.132 },
     "kimi-k3": { "input": 3.0, "output": 15.0, "cache-read": 0.3 }
