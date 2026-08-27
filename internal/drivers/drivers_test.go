@@ -293,6 +293,21 @@ func TestInvokeHarnessDispatchesOmp(t *testing.T) {
 	assert.Equal(t, "opencode-go/glm-5.3-flash", r.Model)
 }
 
+// TestInvokeHarnessDispatchesZcode harness=zcode 分发臂（与 omp 同批补充覆盖）。
+func TestInvokeHarnessDispatchesZcode(t *testing.T) {
+	stream := fakeZcodeOK
+	binDir, workDir := fakeBin(t, "zcode", stream)
+	setPath(t, binDir)
+
+	r := InvokeHarness(CallArgs{
+		Prompt:  "dispatch via zcode",
+		Binding: config.LoopBinding{Harness: "zcode", Model: "zai/glm-5.3-flash"},
+		Cwd:     workDir,
+		APIKeys: map[string]string{},
+	}, "")
+	assert.Equal(t, "zcode", r.Harness)
+}
+
 // InvokeHarness 必须把 machine 层持有的长驻会话句柄传进 kimi CLI（-r <id>）。
 func TestInvokeHarnessThreadsPlanSessionIDIntoKimi(t *testing.T) {
 	binDir, workDir := fakeBin(t, "kimi", `{"role":"meta","type":"session.resume_hint","session_id":"session_new"}`)

@@ -110,14 +110,28 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			Watchdog:  a.Watchdog,
 		})
 	}
-	if harness == "omp" {
+	if harness == "zcode" {
 		model := a.Model
 		if model == "" {
 			model = a.Binding.Model
 		}
+		return RunZcode(ZcodeArgs{
+			Prompt:    a.Prompt,
+			Model:     model,
+			Cwd:       a.Cwd,
+			SessionID: a.SessionID,
+			APIKeys:   a.APIKeys,
+			Watchdog:  a.Watchdog,
+		})
+	}
+	if harness == "omp" {
+		ompModel := a.Model
+		if ompModel == "" {
+			ompModel = a.Binding.Model
+		}
 		return RunOmp(OmpArgs{
 			Prompt:   a.Prompt,
-			Model:    model,
+			Model:    ompModel,
 			Cwd:      a.Cwd,
 			APIKey:   a.APIKey,
 			APIKeys:  a.APIKeys,
