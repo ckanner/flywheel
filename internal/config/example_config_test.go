@@ -25,7 +25,7 @@ func TestExampleConfigRoundTrip(t *testing.T) {
 
 	// 双 judge 面板：顶层键，启用且绑定完整（A3 头号特性的开关）。
 	require.NotNil(t, c.JudgePanel, "judge-panel 必须在顶层且存在")
-	assert.Equal(t, "pi", c.JudgePanel.Harness)
+	assert.Equal(t, "omp", c.JudgePanel.Harness)
 	assert.NotEmpty(t, c.JudgePanel.Model)
 	assert.Equal(t, "opencode-go", c.JudgePanel.Channel)
 

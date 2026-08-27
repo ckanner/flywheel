@@ -197,6 +197,102 @@ func TestRunKimiAgainstFakeBinary(t *testing.T) {
 	assert.False(t, r2.Settled)
 }
 
+// ---- omp driver（PR#3 review 后新增）----
+
+func TestParseOmpEventStreamAgentEnd(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"session","version":3,"id":"01a","cwd":"/tmp"}`,
+		`{"type":"message_end","message":{"role":"assistant","provider":"opencode-go","model":"glm-5.3-flash","usage":{"input":10,"output":2,"cacheRead":5,"reasoningTokens":7},"stopReason":"stop"}}`,
+	}, "\n")
+	p := ParseOmpEventStream(stream)
+	assert.Equal(t, "opencode-go", p.Provider)
+	assert.Equal(t, "glm-5.3-flash", p.Model)
+	assert.Equal(t, int64(10), p.Usage.Input)
+	assert.False(t, p.Settled, "omp 不产生 agent_settled——以 agent_end 为准")
+}
+
+func TestRunOmpAgainstFakeBinary(t *testing.T) {
+	stream := `{"type":"session","version":3,"id":"01a"}
+{"type":"message_end","message":{"role":"assistant","provider":"opencode-go","model":"glm-5.3-flash","content":[{"type":"text","text":"review done"},{"type":"thinking","thinking":"pondering"}],"stopReason":"stop"}}`
+	binDir, workDir := fakeBin(t, "omp", stream)
+	setPath(t, binDir)
+
+	var events []string
+	r := RunOmp(OmpArgs{
+		Prompt:   "review this",
+		Model:    "opencode-go/glm-5.3-flash",
+		Thinking: "max",
+		Cwd:      workDir,
+		APIKeys:  map[string]string{},
+		OnEvent: func(line string) {
+			events = append(events, line)
+		},
+	})
+	assert.Empty(t, r.SpawnError)
+	assert.Equal(t, "omp", r.Harness)
+	assert.Equal(t, "opencode-go", r.Provider)
+	assert.Equal(t, "glm-5.3-flash", r.Model)
+	assert.Equal(t, "review done", r.Text)
+	require.NotNil(t, r.ReasoningChars)
+	assert.Positive(t, *r.ReasoningChars)
+	assert.NotEmpty(t, events, "OnEvent 回调必须收到完整 NDJSON 行")
+
+	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
+	require.NoError(t, err)
+	argsText := string(raw)
+	assert.Contains(t, argsText, "--no-session")
+	assert.Contains(t, argsText, "--mode")
+	assert.Contains(t, argsText, "json")
+}
+
+// TestRunOmpAgainstFakeBinaryWithErrorAndKey 覆盖错误捕获臂、--api-key 注入臂
+// 与 stderr 活动臂（坏 key 在流内产生 stopReason:error + errorMessage，进程仍
+// exit 0——与 pi 同款陷阱）。
+func TestRunOmpAgainstFakeBinaryWithErrorAndKey(t *testing.T) {
+	// stderr 活动 → onActivity 的非 stdout 分支；流内 error → ErrorMessage；
+	// model 无 provider 前缀 → 回退拆分臂。
+	stream := `noise-on-stderr-skipped
+{"type":"message_end","message":{"role":"assistant","provider":"opencode-go","model":"glm-5.3-flash","stopReason":"error","errorMessage":"401: Invalid API key."}}`
+	binDir, workDir := fakeBin(t, "omp", stream)
+	scriptPath := filepath.Join(binDir, "omp")
+	raw, err := os.ReadFile(scriptPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(scriptPath, append(raw, []byte("echo stderr-noise >&2\n")...), 0o755))
+	setPath(t, binDir)
+
+	r := RunOmp(OmpArgs{
+		Prompt:  "x",
+		Model:   "opencode-go/glm-5.3-flash",
+		Cwd:     workDir,
+		APIKey:  "sk-injected-test-key",
+		APIKeys: map[string]string{},
+		OnEvent: func(string) {},
+	})
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "401")
+
+	raw2, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw2), "--api-key")
+}
+
+// TestInvokeHarnessDispatchesOmp harness=omp 分发臂（PR#3 review 覆盖缺口）。
+func TestInvokeHarnessDispatchesOmp(t *testing.T) {
+	stream := `{"type":"session","version":3,"id":"01a"}
+{"type":"agent_end","messages":[]}`
+	binDir, workDir := fakeBin(t, "omp", stream)
+	setPath(t, binDir)
+
+	r := InvokeHarness(CallArgs{
+		Prompt:  "dispatch via omp",
+		Binding: config.LoopBinding{Harness: "omp", Model: "opencode-go/glm-5.3-flash"},
+		Cwd:     workDir,
+		APIKeys: map[string]string{},
+	}, "")
+	assert.Equal(t, "omp", r.Harness)
+	assert.Equal(t, "opencode-go/glm-5.3-flash", r.Model)
+}
+
 // InvokeHarness 必须把 machine 层持有的长驻会话句柄传进 kimi CLI（-r <id>）。
 func TestInvokeHarnessThreadsPlanSessionIDIntoKimi(t *testing.T) {
 	binDir, workDir := fakeBin(t, "kimi", `{"role":"meta","type":"session.resume_hint","session_id":"session_new"}`)

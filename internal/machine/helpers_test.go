@@ -75,15 +75,15 @@ const fixtureConfigJSON = `{
   "drivers": {"plan": "mock", "execute": "mock", "review": "mock", "judge": "mock", "intake": "mock", "garden": "mock"},
   "loops": {
     "plan": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max" },
-    "review": { "harness": "pi", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max" },
-    "judge": { "harness": "pi", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" },
-    "intake": { "harness": "pi", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" },
+    "review": { "harness": "omp", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max" },
+    "judge": { "harness": "omp", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" },
+    "intake": { "harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" },
     "garden": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max" }
   },
   "routes": {
     "frontend": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max" },
-    "default": { "harness": "pi", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" },
-    "hard": { "harness": "pi", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" }
+    "default": { "harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" },
+    "hard": { "harness": "omp", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" }
   },
   "channels": {
     "opencode-go": { "env-key": "OPENCODE_API_KEY", "fallback": "opencode" },
@@ -94,7 +94,7 @@ const fixtureConfigJSON = `{
     "kimi-subscription": { "env-key": null, "fallback": "kimi-coding" },
     "kimi-coding": {
       "env-key": "KIMI_API_KEY",
-      "harness": "pi",
+      "harness": "omp",
       "models": { "plan": "kimi-coding/k3", "frontend": "kimi-coding/k3", "hard": "kimi-coding/k3", "judge": "kimi-coding/k3" },
       "fallback": "opencode"
     }

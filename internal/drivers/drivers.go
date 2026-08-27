@@ -110,6 +110,21 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			Watchdog:  a.Watchdog,
 		})
 	}
+	if harness == "omp" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		return RunOmp(OmpArgs{
+			Prompt:   a.Prompt,
+			Model:    model,
+			Cwd:      a.Cwd,
+			APIKey:   a.APIKey,
+			APIKeys:  a.APIKeys,
+			Watchdog: a.Watchdog,
+			OnEvent:  a.OnEvent,
+		})
+	}
 	model := a.Model
 	if model == "" {
 		model = a.Binding.Model

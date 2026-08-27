@@ -46,7 +46,18 @@ type PiParsed struct {
 // 标记，以及——关键的——流内错误。provider 调用失败时 pi 照样 exit 0
 // （2026-08-20 实证：坏 key 在流内给出 stopReason:"error" + "401: ..."），
 // 所以错误必须在这里读出来。stdout 上的非 JSON 噪声容忍，绝不致命。
+// ParsePiEventStream 解析 pi 的 NDJSON 事件流（omp 复用同一解析器，仅终止
+// 标记不同——见 parseAgentEventStream）。
 func ParsePiEventStream(stdout string) PiParsed {
+	return parseAgentEventStream(stdout, "agent_settled")
+}
+
+// parseAgentEventStream 共用 NDJSON 事件流解析器：聚合 usage、最终文本、settled
+// 标记，以及——关键的——流内错误。provider 调用失败时 harness 照样 exit 0
+// （2026-08-20 实证：坏 key 在流内给出 stopReason:"error" + "401: ..."），
+// 所以错误必须在这里读出来。stdout 上的非 JSON 噪声容忍，绝不致命。
+// settledMarker 区分 pi（agent_settled）与 omp（agent_end，PR#3 review 补充）。
+func parseAgentEventStream(stdout, settledMarker string) PiParsed {
 	var p PiParsed
 	usage := Usage{}
 	costUsd := 0.0
@@ -75,7 +86,7 @@ func ParsePiEventStream(stdout string) PiParsed {
 		if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
 			continue
 		}
-		if event.Type == "agent_settled" {
+		if event.Type == settledMarker {
 			p.Settled = true
 			continue
 		}

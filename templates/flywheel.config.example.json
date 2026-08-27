@@ -16,7 +16,7 @@
       "resident-session": true
     },
     "review": {
-      "harness": "pi",
+      "harness": "omp",
       "model": "opencode-go/deepseek-v4-pro",
       "channel": "opencode-go",
       "thinking": "max"
@@ -29,7 +29,7 @@
       "_note": "milestone final verification primary, FRESH context each call (headless -p spawns never resume); kimi -p enforces auto permission by default (explicit --auto conflicts with --prompt)"
     },
     "intake": {
-      "harness": "pi",
+      "harness": "omp",
       "model": "opencode-go/deepseek-v4-flash",
       "channel": "opencode-go",
       "thinking": "max",
@@ -51,7 +51,7 @@
       "thinking": "max"
     },
     "default": {
-      "harness": "pi",
+      "harness": "omp",
       "model": "opencode-go/glm-5.3-flash",
       "channel": "opencode-go",
       "thinking": "max"
@@ -65,7 +65,7 @@
     }
   },
   "judge-panel": {
-    "harness": "pi",
+      "harness": "omp",
     "model": "opencode-go/deepseek-v4-pro",
     "channel": "opencode-go",
     "thinking": "max",

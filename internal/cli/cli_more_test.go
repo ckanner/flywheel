@@ -50,13 +50,13 @@ func e2eConfigT(t *testing.T, taskDir string) {
 		},
 		"loops": map[string]any{
 			"plan":   map[string]string{"harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max"},
-			"review": map[string]string{"harness": "pi", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max"},
-			"judge":  map[string]string{"harness": "pi", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max"},
-			"intake": map[string]string{"harness": "pi", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max"},
+			"review": map[string]string{"harness": "omp", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max"},
+			"judge":  map[string]string{"harness": "omp", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max"},
+			"intake": map[string]string{"harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max"},
 			"garden": map[string]string{"harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max"},
 		},
 		"routes": map[string]any{
-			"default": map[string]string{"harness": "pi", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max"},
+			"default": map[string]string{"harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max"},
 		},
 		"channels": map[string]any{
 			"kimi-subscription": map[string]any{"env-key": nil, "fallback": "kimi-coding"},

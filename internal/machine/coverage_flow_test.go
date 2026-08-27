@@ -46,10 +46,10 @@ func diConfigJSON(patch, testCmd string) string {
   "drivers": {"plan": "mock", "execute": "mock", "review": "mock", "judge": "mock", "intake": "mock", "garden": "mock"},
   "loops": {
     "plan": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max" },
-    "review": { "harness": "pi", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max" },
-    "judge": { "harness": "pi", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" }
+    "review": { "harness": "omp", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max" },
+    "judge": { "harness": "omp", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" }
   },
-  "routes": { "default": { "harness": "pi", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" } },
+  "routes": { "default": { "harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" } },
   "channels": {
     "opencode-go": { "env-key": "OPENCODE_API_KEY", "fallback": "opencode" },
     "kimi-subscription": { "env-key": null, "fallback": "kimi-coding" },
