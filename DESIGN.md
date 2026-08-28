@@ -117,7 +117,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 模型 | 按 packet 的 `route` 字段路由（见下表）。默认：GLM-5.3-Flash（thinking=**max**，全系统统一最高档；Z.ai agentic 旗舰的 flash 档。编排器不依赖榜单背书——能力边界由 L1+Review 双闸实证兜底） |
+| 模型 | 按 packet 的 `route` 字段路由（见下表）。默认：GLM-5.3-Flash（thinking=**max**，全系统统一最高档；智谱 agentic 旗舰的 flash 档。编排器不依赖榜单背书——能力边界由 L1+Review 双闸实证兜底） |
 
 **执行路由表**（配置文件定义，非硬编码；每个会话仍只绑一个模型，铁律 7 不受影响）：
 
