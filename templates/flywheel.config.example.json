@@ -17,8 +17,8 @@
     },
     "review": {
       "harness": "omp",
-      "model": "opencode-go/deepseek-v4-pro",
-      "channel": "opencode-go",
+      "model": "zai/glm-5.3",
+      "channel": "zai-coding-plan",
       "thinking": "max"
     },
     "judge": {
@@ -30,8 +30,8 @@
     },
     "intake": {
       "harness": "omp",
-      "model": "opencode-go/deepseek-v4-flash",
-      "channel": "opencode-go",
+      "model": "zai/glm-5.3-flash",
+      "channel": "zai-coding-plan",
       "thinking": "max",
       "_note": "triage advice only, near-zero cost (§4.5, §13)"
     },
@@ -52,8 +52,8 @@
     },
     "default": {
       "harness": "omp",
-      "model": "opencode-go/glm-5.3-flash",
-      "channel": "opencode-go",
+      "model": "zai/glm-5.3-flash",
+      "channel": "zai-coding-plan",
       "thinking": "max"
     },
     "hard": {
@@ -61,21 +61,21 @@
       "model": "kimi-code/k3",
       "channel": "kimi-subscription",
       "thinking": "max",
-      "_note": "escalation route after repeated Flash failures; cross-vendor vs DeepSeek reviewers (§11.6)"
+      "_note": "escalation route after repeated GLM-5.3-flash failures; cross-vendor vs K3-family failure modes (§11.6)"
     }
   },
   "judge-panel": {
-      "harness": "omp",
-    "model": "opencode-go/deepseek-v4-pro",
-    "channel": "opencode-go",
+    "harness": "omp",
+    "model": "zai/glm-5.3",
+    "channel": "zai-coding-plan",
     "thinking": "max",
-    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is V4 Pro cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
+    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is GLM-5.3 cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
   },
   "channels": {
-    "opencode-go": {
-      "env-key": "OPENCODE_API_KEY",
+    "zai-coding-plan": {
+      "env-key": "ZAI_API_KEY",
       "cache-hit-rate-min": 0.3,
-      "_note": "$10/mo subscription, sole DeepSeek-side channel since v0.19 (no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox"
+      "_note": "智谱 GLM Coding Plan subscription, sole non-Kimi channel since v0.21 (OpenCode Go removed; no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox. Model family: glm-5.3 / glm-5.3-flash; auth via ZAI_API_KEY env (endpoint/provider wiring lives user-side in omp config)."
     },
     "kimi-subscription": {
       "env-key": null,
@@ -124,8 +124,7 @@
   "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself. glm-5.3-flash: placeholder zeros — no official token pricing published yet (AA $0.045/task is not equivalent); backfill from first real spawn's usage.cost.",
   "pricing": {
     "glm-5.3-flash": { "input": 0, "output": 0, "cache-read": 0 },
-    "deepseek-v4-flash": { "input": 0.28, "output": 0.42, "cache-read": 0.028 },
-    "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.132 },
+    "glm-5.3": { "input": 0, "output": 0, "cache-read": 0 },
     "kimi-k3": { "input": 3.0, "output": 15.0, "cache-read": 0.3 }
   }
 }
