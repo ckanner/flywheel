@@ -1,5 +1,9 @@
 # CI — Go 版 Flywheel（Node 版工作流已随迁移废弃）。
 # 门禁 = make quality-gate（vet + fmt-check + coverage 100%）。
+# 双 OS 矩阵（PR #4 review 起）：本地绿 ≠ CI 绿——PR #4 曾在作者 macOS 全绿、
+# Linux CI 红（darwin-only 断言 + 亚毫秒计时脆弱断言）；修复后测试已平台可移植，
+# 矩阵再补另一方向：darwin-only 事实（EvalSymlinks /tmp→/private/tmp、zcode
+# 桌面注册面）也进 CI，不再依赖开发机。
 # skills 规范校验内建于 Go 测试（internal/skillsembed 对全部 SKILL.md 做
 # 真 YAML 解析并强制 whenToUse/arguments/metadata.version——取代旧
 # skill-format-check.js 纯正则假绿）。
@@ -12,13 +16,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
       - name: Install git (worktree tests need a real git)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y git
       - name: Configure git for commit tests
         run: |
