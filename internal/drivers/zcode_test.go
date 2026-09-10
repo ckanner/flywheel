@@ -17,6 +17,15 @@ func disableDesktop(t *testing.T) {
 	t.Cleanup(func() { disableDesktopRegistration = prev })
 }
 
+// forceDarwin 平台闸注入缝：把注册路径的平台判定强制为 darwin——注册逻辑
+// 在 Linux CI 上也能真实执行与断言（否则 darwin-only 分支既测不到也拉不满
+// 覆盖率门禁）。真实 /tmp 符号链接语义仍按平台跳过（见 NormalizesSymlinks）。
+func forceDarwin(t *testing.T) {
+	prev := zcodeDesktopGOOS
+	zcodeDesktopGOOS = "darwin"
+	t.Cleanup(func() { zcodeDesktopGOOS = prev })
+}
+
 // stubOpener 换掉系统出口并记录调用路径；返回记录切片供断言。
 func stubOpener(t *testing.T) *[]string {
 	var got []string
@@ -79,6 +88,12 @@ func TestRunZcodeAgainstFakeBinary(t *testing.T) {
 	assert.Equal(t, "zai-coding-plan", r.Provider)
 	assert.Equal(t, "task complete", r.Text)
 	assert.Equal(t, "sess_test", r.SessionID)
+	// input 用上报值（500），不用 total−reasoning−cacheRead 派生（550）——
+	// 两种算法在探针 fixture 上不一致，上报值权威（PR #4 review 修复）。
+	require.NotNil(t, r.Usage)
+	assert.Equal(t, int64(500), r.Usage.Input)
+	assert.Equal(t, int64(80), r.Usage.Output)
+	assert.Equal(t, int64(600), r.Usage.TotalTokens)
 
 	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
 	require.NoError(t, err)
@@ -118,6 +133,7 @@ func TestRunZcodeResumesSession(t *testing.T) {
 func TestRunZcodeNonJSONOutputMarkedUnsettled(t *testing.T) {
 	binDir, workDir := fakeBin(t, "zcode", "Error: Turn execution failed")
 	setPath(t, binDir)
+	forceDarwin(t)
 	got := stubOpener(t)
 
 	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir, APIKeys: map[string]string{}})
@@ -156,6 +172,7 @@ func TestRunZcodeDefaultsAndStderrError(t *testing.T) {
 func TestRunZcodeRegistersWorkspace(t *testing.T) {
 	binDir, workDir := fakeBin(t, "zcode", fakeZcodeOK)
 	setPath(t, binDir)
+	forceDarwin(t)
 	got := stubOpener(t)
 
 	r := RunZcode(ZcodeArgs{Prompt: "x", Model: "zai/glm-5.3-flash", Cwd: workDir, APIKeys: map[string]string{}})
@@ -166,8 +183,30 @@ func TestRunZcodeRegistersWorkspace(t *testing.T) {
 	assert.Equal(t, []string{resolved, resolved}, *got, "spawn 前后各一次")
 }
 
+// TestRunZcodeUsageDerivesWhenInputUnreported inputTokens 缺报（0）时从
+// total 派生并 clamp ≥0——派生 fallback 与负值钳制两臂（PR #4 review 修复）。
+func TestRunZcodeUsageDerivesWhenInputUnreported(t *testing.T) {
+	disableDesktop(t) // 不触桌面：本测试只关心 usage 解析
+	derive := `{"sessionId":"s1","response":"r","usage":{"outputTokens":3,"totalTokens":10,"reasoningTokens":2,"cacheReadTokens":1,"cacheWriteTokens":1}}`
+	clamp := `{"sessionId":"s2","response":"r","usage":{"outputTokens":1,"totalTokens":2,"reasoningTokens":5}}`
+
+	binDir1, workDir1 := fakeBin(t, "zcode", derive)
+	setPath(t, binDir1)
+	r1 := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir1, APIKeys: map[string]string{}})
+	require.NotNil(t, r1.Usage)
+	assert.Equal(t, int64(6), r1.Usage.Input, "缺报时派生 total−reasoning−cacheRead−cacheWrite")
+	assert.Equal(t, int64(10), r1.Usage.TotalTokens)
+
+	binDir2, workDir2 := fakeBin(t, "zcode", clamp)
+	setPath(t, binDir2)
+	r2 := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir2, APIKeys: map[string]string{}})
+	require.NotNil(t, r2.Usage)
+	assert.Equal(t, int64(0), r2.Usage.Input, "派生为负时 clamp 0，绝不倒挂")
+}
+
 // TestRegisterZcodeWorkspaceNoopOnEmpty 空路径绝不触发 open。
 func TestRegisterZcodeWorkspaceNoopOnEmpty(t *testing.T) {
+	forceDarwin(t) // 平台闸开到 darwin，断言的才是 path=="" 分支本身
 	called := stubOpener(t)
 	RegisterZcodeWorkspace("")
 	assert.Empty(t, *called)
@@ -175,6 +214,7 @@ func TestRegisterZcodeWorkspaceNoopOnEmpty(t *testing.T) {
 
 // TestRegisterZcodeWorkspaceDisabledByTestGate 测试闸生效时不触碰系统出口。
 func TestRegisterZcodeWorkspaceDisabledByTestGate(t *testing.T) {
+	forceDarwin(t) // 同上：断言 disable 闸而非平台闸
 	called := stubOpener(t)
 	disableDesktop(t)
 	RegisterZcodeWorkspace("/some/path")
@@ -183,7 +223,8 @@ func TestRegisterZcodeWorkspaceDisabledByTestGate(t *testing.T) {
 
 // TestRegisterZcodeWorkspaceNormalizesSymlinks 索引按归一化路径做 key：
 // /tmp→/private/tmp 类符号链接必须在触达 opener 前解析（实测未归一化注册
-// 成功但会话导入失配）。非 macOS 跳过（GOOS 守卫差异由函数自身保证）。
+// 成功但会话导入失配）。非 macOS 跳过（/tmp 符号链接是 darwin 文件系统事实，
+// 与平台闸注入缝无关——注册逻辑本身已由 forceDarwin 测试覆盖）。
 func TestRegisterZcodeWorkspaceNormalizesSymlinks(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("EvalSymlinks 语义按 darwin 验证")
@@ -192,4 +233,26 @@ func TestRegisterZcodeWorkspaceNormalizesSymlinks(t *testing.T) {
 	RegisterZcodeWorkspace("/tmp")
 	require.NotEmpty(t, *got)
 	assert.Equal(t, "/private/tmp", (*got)[0], "必须解析为真实路径再触发")
+}
+
+// TestZcodeDesktopBinResolution env 覆盖权威、缺省走官方安装路径（双臂纯解析，
+// 不执行二进制）。
+func TestZcodeDesktopBinResolution(t *testing.T) {
+	assert.Equal(t, defaultZcodeDesktopBin, zcodeDesktopBin())
+	t.Setenv(ZcodeDesktopBinEnv, "/custom/zcode")
+	assert.Equal(t, "/custom/zcode", zcodeDesktopBin())
+}
+
+// TestDefaultOpenZcodeWorkspaceStartsBin 真出口仅以假二进制冒烟：Start 成功
+// 即返回 nil，回收由内部 goroutine Wait 承担（不 Wait 会留僵尸，PR #4 review）。
+func TestDefaultOpenZcodeWorkspaceStartsBin(t *testing.T) {
+	binDir := t.TempDir()
+	script := "#!/bin/sh\nexit 0\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "opener"), []byte(script), 0o755))
+	t.Setenv(ZcodeDesktopBinEnv, filepath.Join(binDir, "opener"))
+	require.NoError(t, defaultOpenZcodeWorkspace("/some/workspace"))
+
+	// 二进制不存在 → Start 报错原样返回（生产路径静默降级由调用方保证）。
+	t.Setenv(ZcodeDesktopBinEnv, filepath.Join(binDir, "missing"))
+	require.Error(t, defaultOpenZcodeWorkspace("/some/workspace"))
 }

@@ -3,6 +3,7 @@ package drivers
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -213,7 +214,8 @@ func TestParseOmpEventStreamAgentEnd(t *testing.T) {
 
 func TestRunOmpAgainstFakeBinary(t *testing.T) {
 	stream := `{"type":"session","version":3,"id":"01a"}
-{"type":"message_end","message":{"role":"assistant","provider":"opencode-go","model":"glm-5.3-flash","content":[{"type":"text","text":"review done"},{"type":"thinking","thinking":"pondering"}],"stopReason":"stop"}}`
+{"type":"message_end","message":{"role":"assistant","provider":"opencode-go","model":"glm-5.3-flash","content":[{"type":"text","text":"review done"},{"type":"thinking","thinking":"pondering"}],"stopReason":"stop"}}
+{"type":"agent_end","messages":[]}`
 	binDir, workDir := fakeBin(t, "omp", stream)
 	setPath(t, binDir)
 
@@ -233,6 +235,7 @@ func TestRunOmpAgainstFakeBinary(t *testing.T) {
 	assert.Equal(t, "opencode-go", r.Provider)
 	assert.Equal(t, "glm-5.3-flash", r.Model)
 	assert.Equal(t, "review done", r.Text)
+	assert.True(t, r.Settled, "agent_end 即 omp 的干净收尾标记（Settled 必须传到 Result）")
 	require.NotNil(t, r.ReasoningChars)
 	assert.Positive(t, *r.ReasoningChars)
 	assert.NotEmpty(t, events, "OnEvent 回调必须收到完整 NDJSON 行")
@@ -277,6 +280,9 @@ func TestRunOmpAgainstFakeBinaryWithErrorAndKey(t *testing.T) {
 }
 
 // TestInvokeHarnessDispatchesOmp harness=omp 分发臂（PR#3 review 覆盖缺口）。
+// 断言 --thinking max：binding 未声明 Thinking 时必须兜底 max——漏传会把
+// 空串发给 CLI，omp 不报错、静默按缺省档跑（§7 统一 max 档被架空，PR #4
+// review P1 的回归锁）。
 func TestInvokeHarnessDispatchesOmp(t *testing.T) {
 	stream := `{"type":"session","version":3,"id":"01a"}
 {"type":"agent_end","messages":[]}`
@@ -285,16 +291,27 @@ func TestInvokeHarnessDispatchesOmp(t *testing.T) {
 
 	r := InvokeHarness(CallArgs{
 		Prompt:  "dispatch via omp",
-		Binding: config.LoopBinding{Harness: "omp", Model: "opencode-go/glm-5.3-flash"},
+		Binding: config.LoopBinding{Harness: "omp", Model: "zhipu-coding-plan/glm-5.3-flash"},
 		Cwd:     workDir,
 		APIKeys: map[string]string{},
 	}, "")
 	assert.Equal(t, "omp", r.Harness)
-	assert.Equal(t, "opencode-go/glm-5.3-flash", r.Model)
+	assert.Equal(t, "zhipu-coding-plan/glm-5.3-flash", r.Model)
+
+	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
+	require.NoError(t, err)
+	args := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	i := slices.Index(args, "--thinking")
+	require.NotEqual(t, -1, i, "必须显式传 --thinking")
+	require.Less(t, i+1, len(args), "--thinking 后必须跟值")
+	assert.Equal(t, "max", args[i+1], "binding 无 Thinking → 兜底 max，绝不允许空串")
 }
 
 // TestInvokeHarnessDispatchesZcode harness=zcode 分发臂（与 omp 同批补充覆盖）。
+// disableDesktop：分发测试不关心注册副作用，绝不启动用户桌面（此前该测试在
+// macOS 开发机上会真实拉起 ZCode.app——测试卫生修复）。
 func TestInvokeHarnessDispatchesZcode(t *testing.T) {
+	disableDesktop(t)
 	stream := fakeZcodeOK
 	binDir, workDir := fakeBin(t, "zcode", stream)
 	setPath(t, binDir)

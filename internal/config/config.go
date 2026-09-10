@@ -129,10 +129,11 @@ type Config struct {
 	File            string                  `json:"-"`
 }
 
-// Default 返回 §13 法定默认值表（与 Node CONFIG_DEFAULTS 逐字一致）。
+// Default 返回 §13 法定默认值表（Go 迁移时与 Node CONFIG_DEFAULTS 逐字一致；
+// drivers 值后改 mock|real 二值——harness 选择归绑定表，此处只选驱动实现）。
 func Default() Config {
 	return Config{
-		Drivers: map[string]string{"plan": "kimi", "execute": "pi", "review": "pi"},
+		Drivers: map[string]string{"plan": "real", "execute": "real", "review": "real"},
 		Budget:  BudgetConfig{Enforce: "soft", DailyTokenLimit: nil},
 		Watchdog: WatchdogConfig{
 			IdleTimeoutMs: 300_000,

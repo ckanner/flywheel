@@ -129,9 +129,17 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		if ompModel == "" {
 			ompModel = a.Binding.Model
 		}
+		// 与 pi 分支同款：Thinking 取绑定值，空则 max——RunOmp 无条件拼
+		// --thinking，漏传会把空串发给 CLI（omp 不报错、静默按缺省档跑，
+		// 违反 §7 统一 max 档 + §10-2 fail-loud，PR #4 review P1）。
+		thinking := a.Binding.Thinking
+		if thinking == "" {
+			thinking = "max"
+		}
 		return RunOmp(OmpArgs{
 			Prompt:   a.Prompt,
 			Model:    ompModel,
+			Thinking: thinking,
 			Cwd:      a.Cwd,
 			APIKey:   a.APIKey,
 			APIKeys:  a.APIKeys,

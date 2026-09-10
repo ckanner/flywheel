@@ -79,20 +79,39 @@ func ParseZcodeJSON(stdout string) (ZcodeJSON, bool) {
 // 纪律：副作用经缝注入而非测试内 mock 进程）。
 var zcodeWorkspaceOpener = defaultOpenZcodeWorkspace
 
+// zcodeDesktopGOOS 平台闸注入缝：生产恒 runtime.GOOS，测试可强制 "darwin"
+// 让 Linux CI 覆盖注册路径（否则 darwin-only 分支在 Linux 上既测不到也
+// 拉不满覆盖率门禁——PR #4 review 修复）。
+var zcodeDesktopGOOS = runtime.GOOS
+
 // ZcodeDesktopBinEnv 桌面二进制覆盖环境变量名。默认 macOS 安装路径；Electron
 // 必须以真实第二进程启动——`open -a` 在 Desktop 已运行时不转发 argv（实测
 // 参数被丢弃），而直接 exec 会触发 Electron single-instance 的 second-instance
 // 事件把 --open-workspace 交给主窗口（ZCode 主进程 index.js 已确认该 handler）。
 const ZcodeDesktopBinEnv = "FLY_ZCODE_BIN"
 
-func defaultOpenZcodeWorkspace(path string) error {
-	bin := os.Getenv(ZcodeDesktopBinEnv)
-	if bin == "" {
-		bin = "/Applications/ZCode.app/Contents/MacOS/ZCode"
+// defaultZcodeDesktopBin 默认桌面二进制路径（const，注入缝走 env，见 zcodeDesktopBin）。
+const defaultZcodeDesktopBin = "/Applications/ZCode.app/Contents/MacOS/ZCode"
+
+// zcodeDesktopBin 解析桌面二进制路径：env 覆盖权威，缺省用官方安装位置。
+func zcodeDesktopBin() string {
+	if bin := os.Getenv(ZcodeDesktopBinEnv); bin != "" {
+		return bin
 	}
+	return defaultZcodeDesktopBin
+}
+
+func defaultOpenZcodeWorkspace(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, bin, "--open-workspace", path).Start()
+	cmd := exec.CommandContext(ctx, zcodeDesktopBin(), "--open-workspace", path)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// 注册是 fire-and-forget，但只 Start 不 Wait 会留僵尸进程（长跑随单元
+	// 数累积）——Wait 仅负责回收，超时 kill 由 CommandContext 承担。
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // disableDesktopRegistration 测试闸：Run 级测试不得激活用户桌面（隔离纪律）。
@@ -109,7 +128,7 @@ var disableDesktopRegistration = false
 // 超时都安全降级。（已知边缘：/tmp 符号链接路径可能因路径归一化不匹配
 // 不导入——生产 Cwd 是真实项目/worktree 路径，不受影响。）
 func RegisterZcodeWorkspace(path string) {
-	if disableDesktopRegistration || runtime.GOOS != "darwin" || path == "" {
+	if disableDesktopRegistration || zcodeDesktopGOOS != "darwin" || path == "" {
 		return
 	}
 	// 索引按归一化路径做 workspace_key（实测 /tmp 符号链接注册成功但导入
@@ -178,12 +197,23 @@ func RunZcode(a ZcodeArgs) Result {
 			reasoning := z.Usage.ReasoningTokens
 			cacheRead := z.Usage.CacheReadTokens
 			cacheWrite := z.Usage.CacheWriteTokens
+			// input 优先用上报值（2026-08-27 探针：inputTokens 恒在且与派生
+			// 值不一致——total 的构成语义未经第二组探针复核，派生仅作缺报
+			// fallback，负值 clamp 0 防 usage 倒挂）。
+			input := z.Usage.InputTokens
+			if input == 0 {
+				input = total - reasoning - cacheRead - cacheWrite
+				if input < 0 {
+					input = 0
+				}
+			}
 			out.Usage = &Usage{
-				Input:      total - reasoning - cacheRead - cacheWrite,
-				Output:     z.Usage.OutputTokens,
-				Reasoning:  reasoning,
-				CacheRead:  cacheRead,
-				CacheWrite: cacheWrite,
+				Input:       input,
+				Output:      z.Usage.OutputTokens,
+				Reasoning:   reasoning,
+				CacheRead:   cacheRead,
+				CacheWrite:  cacheWrite,
+				TotalTokens: total,
 			}
 		} else {
 			out.Settled = false

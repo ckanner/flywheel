@@ -2,8 +2,8 @@
 // 官方分叉，CLI 接口与 JSON 事件流结构与 pi 高度同源，行为差异有二：
 //
 //  1. 终止标记：pi 以 agent_settled 收尾；omp 以 agent_end 收尾且不产生
-//     agent_settled —— ParsePiEventStream 对 omp 输出同样适用，只是 Settled
-//     标志恒 false（调用方若需区分，以 ExitCode/agent_end 为准）。
+//     agent_settled —— ParseOmpEventStream 复用共用解析器并以 agent_end 作
+//     settled 标记，Result.Settled 语义与 pi 对齐。
 //  2. reasoningTokens / duration / ttft 字段在 message_end.usage 中额外暴露
 //     （pi 无此三字段）——usage 解析的指针化设计天然兼容。
 //
@@ -78,6 +78,7 @@ func RunOmp(a OmpArgs) Result {
 		Provider:       parsed.Provider,
 		Model:          parsed.Model,
 		Usage:          &parsed.Usage,
+		Settled:        parsed.Settled,
 		Text:           parsed.Text,
 		ReasoningChars: &parsed.ReasoningChars,
 		CostUSD:        parsed.CostUSD,

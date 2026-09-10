@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
+  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi/omp via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). drivers values are mock|real ONLY (harness selection lives in the loops/routes bindings below, never here). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
   "drivers": {
-    "plan": "kimi",
-    "execute": "pi",
-    "review": "pi",
-    "judge": "kimi"
+    "plan": "real",
+    "execute": "real",
+    "review": "real",
+    "judge": "real"
   },
   "loops": {
     "plan": {
@@ -82,6 +82,7 @@
       "_note": "kimi code CLI subscription login (device-code OAuth), no API key injected; sole Kimi-side channel since v0.19 (Plan/Garden/Judge-primary/frontend/hard all ride it)"
     }
   },
+  "_note_zcode_arm": "Optional zcode arm (DESIGN v0.20/v0.21④): NOT prewired — to enable, hand-write a channel entry above and point a loops/routes binding at harness \"zcode\"; model slugs live in zcode's own zai/ namespace (driver default zai/glm-5.3-flash), credentials stay user-side in ~/.zcode/cli/config.json. The driver's desktop visibility is macOS-only and silently degrades elsewhere.",
   "budget": {
     "enforce": "soft",
     "daily-token-limit": 2000000
