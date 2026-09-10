@@ -254,8 +254,13 @@ func Run(command string, args []string, opts Opts) Result {
 		mu.Unlock()
 		beginKill()
 	})
+	// 持锁赋值：Start() 后 exec 复制 goroutine 可能已在 Write() 里读
+	// idleTimer——裸写构成数据竞争（-race 实证，Go 迁移遗留）。赋值前的
+	// 早期输出看到 nil 跳过 Reset，与原语义一致（计时器刚以全量时长武装）。
+	mu.Lock()
 	stdoutW.idleTimer = idleTimer
 	stderrW.idleTimer = idleTimer
+	mu.Unlock()
 
 	// Wait 返回 = 进程退出 + exec 内部复制 goroutine 排干 —— Node 'close'。
 	_ = cmd.Wait()
