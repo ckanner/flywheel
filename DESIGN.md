@@ -4,7 +4,7 @@
 > Flywheel：编排器如飞轮——把间断、不稳定的 agent 运行，通过磁盘状态储能为连续平稳的推进。
 > 本文档是一套多 loop agent 编排系统的完整设计。目标读者：项目维护者本人。
 > 设计依据：Addy Osmani《Loop Engineering》、Anthropic/OpenAI/Cursor 官方案例、文档协议驱动 agent 循环的实战经验，以及 2026-08 对 kimi code / pi / oh-my-pi / oh-my-openagent / zcode 五个 harness 和 Kimi K3 / DeepSeek V4 / GLM-5.3 系列模型的调研（来源见附录 A）。
-> - v0.21 — **渠道迁移智谱 + GLM 换防（用户裁决，2026-08-27）**：① **OpenCode Go 渠道移除**，非 Kimi 系全部改走**智谱（国内 bigmodel）GLM Coding Plan**（channel `zhipu-coding-plan`，`env-key: null`——凭证留在用户侧 omp provider 配置，编排器**不注入 key**，与 kimi 订阅同款委托模式；无 fallback 语义不变——RATE_LIMIT 同渠道退避、QUOTA 升级 inbox）；② 模型换防：**V4 Flash → GLM-5.3-Flash**（Execute default 路由、Intake），**V4 Pro → GLM-5.3**（Review、Judge 复核面板），slug 前缀 `zhipu-coding-plan/` 与用户 omp provider 名一致；③ **harness 事实同步**：PR #4 已把 pi 系角色切到 **omp**（oh-my-pi，pi 官方分叉，CLI/事件流同构，usage 额外暴露 reasoningTokens/duration/ttft）——§7/§13 两张表此前的 pi 漂移本版一并修正；④ zcode harness 保持可选臂（独立配额池 + 桌面会话可见性，v0.20）；⑤ **双模型 live 冒烟通过**（2026-08-27，omp 走用户自有凭证，零 env 依赖）：`glm-5.3-flash` 12s / `glm-5.3` 26s 应答，usage 暴露 input/output/reasoningTokens/cacheRead（5.3 探针 cacheRead=3264，缓存生效），`thinking efforts=[low,high,max]` 原生支持全系统 max 档；⑥ 实证遗留：effort 透传的定量验证与缓存前缀语义（§8-5）待首跑——编排器以 L1+Review 闸门兜底，不依赖榜单背书。
+> - v0.21 — **渠道迁移智谱 + GLM 换防（用户裁决，2026-08-27）**：① **OpenCode Go 渠道移除**，非 Kimi 系全部改走**智谱（国内 bigmodel）GLM Coding Plan**（channel `zhipu-coding-plan`，`env-key: null`——凭证留在用户侧 omp provider 配置，编排器**不注入 key**，与 kimi 订阅同款委托模式；无 fallback 语义不变——RATE_LIMIT 同渠道退避、QUOTA 升级 inbox）；② 模型换防：**V4 Flash → GLM-5.3-Flash**（Execute default 路由、Intake），**V4 Pro → GLM-5.3**（Review、Judge 复核面板），slug 前缀 `zhipu-coding-plan/` 与用户 omp provider 名一致；③ **harness 事实同步**：PR #4 已把 pi 系角色切到 **omp**（oh-my-pi，pi 官方分叉，CLI/事件流同构，usage 额外暴露 reasoningTokens/duration/ttft）——§7/§13 两张表此前的 pi 漂移本版一并修正；④ zcode harness 保持可选臂（独立配额池 + 桌面会话可见性，v0.20；模板不预置绑定——启用需手写渠道并把 loops/routes 绑定指到 harness=zcode，模型 slug 走 zcode 自身 zai/ 命名空间；zcode CLI 无 thinking 参数，effort 由其运行时默认）；⑤ **双模型 live 冒烟通过**（2026-08-27，omp 走用户自有凭证，零 env 依赖）：`glm-5.3-flash` 12s / `glm-5.3` 26s 应答，usage 暴露 input/output/reasoningTokens/cacheRead（5.3 探针 cacheRead=3264，缓存生效），`thinking efforts=[low,high,max]` 原生支持全系统 max 档；⑥ 实证遗留：effort 透传的定量验证、缓存前缀语义（§8-5）与编辑格式 A/B 结论（附录 C，V4 Flash × pi 时代数据）对 GLM-5.3 × omp 的适用性均待首跑——编排器以 L1+Review 闸门兜底，不依赖榜单背书。
 > - v0.20 — **zcode 桌面可见性（用户裁决"桌面端完整看到会话过程"，2026-08-27）**：zcode headless CLI 会话与 ZCode Desktop 任务索引（`~/.zcode/v2/tasks-index.sqlite`）底层同源但**不实时互通**——本机九组实测确立最终语义：① GUI 按 workspace_key 分组，未注册路径的 workspace 连条目都不显示；② 桌面二进制（非 npm 包装器）解析 `--open-workspace <path>`，**每次处理都幂等注册该路径 + 导入 CLI 存储中归属它的会话**——暖态经 Electron single-instance second-instance 转发 argv 实测同样生效（`open -a` 热运行丢 argv 实测弃用；纯冷启动不带参不扫、`tasks-index.sqlite` 无同步水位表）；这是唯一导入触发器，且**对 key 归一化敏感**：`/tmp/x` 注册成功但永不导入，`/private/tmp/x` 立即导入——driver 用 `filepath.EvalSymlinks` 归一化后该边缘关闭（实测验证）。③ 因此 `RunZcode` **spawn 前后各触发一次**（默认二进制 `/Applications/ZCode.app/Contents/MacOS/ZCode`，env `FLY_ZCODE_BIN` 覆盖）：前触发注册工作区并导入该路径历史会话（覆盖 resume/重试——全新路径此时存储为空，仅注册不导入）；后触发在 watchdog 返回后把本会话（成功全文或失败部分对话）立即导入 GUI。语义边界如实化：执行**进行中**的会话不可见——导入是瞬时快照，桌面无实时流式；单元完成时刻可见性增量累积。降级矩阵：非 macOS / 未装 Desktop / 超时静默跳过，执行语义零改动；测试隔离 `disableDesktopRegistration` 闸 + opener 注入缝。
 > - v0.18 — **全量评审修复落地**（2026-08-24，用户裁决"双 judge 做完整版、C7/C9 也修、全部修好出 PR"）：① **里程碑 Judge 升级双 judge 面板**（K3 主判 + V4 Pro 异厂商复核，config `judge-panel`；一致按共识、分歧 → inbox——单 judge 偏差实证见 §4.3/附录 A）；裁决出口契约强化（verdict 必带 score 且 reasons ≥1 条引用可复核证据，缺失按 unparseable 重试）。② Plan 修订 acceptance 指纹留痕（§4.1 已知风险段：planner 可弱化验收的自利风险补录 + 机械缓解）。③ P2×3：兜底成本估算补 CacheWrite 计价（铁律 9）；评审 diff 补 untracked 新文件内容（§4.3"真实 git diff"承诺闭环，greenfield 场景关键）；缺陷注入账本守卫改 ledger 单一信源匹配。④ C 级小修批量：execute 失败路径空转签名用权威 diff、kimi resume 捕获失败告警、pi 错误事件累积保留、jitter 显式 0 可达（`*float64` 指针化）、done-report 多余键拒绝、state.json CAS 加 flock 文件锁闭 TOCTOU、porcelain rename/引号路径解析、judge gate 类型守卫、status 停滞提示消费 LastProgressAt（§6 如实化）。⑤ SKILL.md 规范订正：arguments 改 kimi 支持的字符串数组并接线正文占位符；`/skill:` 调用形态归属订正（§13）；frontmatter 归属按 kimi/pi/Warp/agentskills.io 四方官方文档精确化（AGENTS.md 同步）；附录 A 补 Warp/agentskills.io/kimi·pi skills 文档四来源；flywheel-new 新增验收命令提交前试跑硬规则；skillsembed 门禁扩展 agentskills.io 标准约束。⑥ §4.1 规划职责两段式如实化、§4.4 L2/L3 失败处置回写、§8-4 KIMI_NOW resume 注记、§9 凭证卫生边界声明。评审全文见 REVIEW-FIXPLAN.md。
 > - v0.19 — **渠道收敛（用户裁决四条，2026-08-24）**：① Kimi 系模型（Plan/Garden/Judge 主判/frontend/hard 路由）全部只走 **kimi code 订阅**（OAuth，无 key 注入），kimi-coding API 渠道移除；② **全系统取消 fallback provider**——OpenCode Zen 与 kimi-coding 降级链删除，每角色单一渠道；超限语义对齐代码：RATE_LIMIT 同渠道退避重试、QUOTA 不重试直接升级 inbox（机制代码保留为 config 驱动，配置无链即惰性失效）；③ Judge 里程碑终验主判改走 **kimi code harness**（headless `-p` 每次天然全新会话，满足 fresh-context 要求）；④ 双面板复核维持 pi+V4 Pro 不变。附：kimi `-p` 非交互模式**默认即 auto 权限**（官方 flag 冲突规则禁止与 --prompt 组合显式 --auto）；`/swarm` 斜杠命令族在 `-p` 下不被解析（本机 kimi 0.38.0 三探针实证：伪造命令与 /swarm 行为一致），swarm 需 TUI 或上游提供 headless 接口后再评估。
@@ -144,9 +144,9 @@
 - **回退**：非 git 仓库或 worktree 不可用（config `worktree.enabled: false`）→ 原地执行（原串行模式）：单一 checkout，单元结束时提交一次；该模式下启动前未提交 WIP 仍会被单元提交卷入，编排器在 fallback 时发脏工作区告警。
 - **契约层文件全部是已提交内容**（spec、packet、state）：并行期"先提交契约再 spawn"是硬规则；executor 的 worktree 从任务分支创建，编排器在闸门通过后合并。
 
-实测支撑：Composio 30 任务跨 harness 实测（SaaS 工作流任务，非编码基准），V4 Flash 在 pi 上通过率第一（66.7%）、单次成功成本最低（$0.028）；编码场景的独立证据见 Databricks 基准（同模型同 effort 下 harness 间成本差 2×、质量持平，简单 harness 如 pi 表现最佳，附录 A）。
+实测支撑（**V4 Flash × pi 时代的历史参照**，GLM-5.3 × omp 换防后不直接适用——现行能力边界按 §4.2 由 L1+Review 双闸实证兜底）：Composio 30 任务跨 harness 实测（SaaS 工作流任务，非编码基准），V4 Flash 在 pi 上通过率第一（66.7%）、单次成功成本最低（$0.028）；编码场景的独立证据见 Databricks 基准（同模型同 effort 下 harness 间成本差 2×、质量持平，简单 harness 如 pi 表现最佳，附录 A）。
 
-**编辑格式实测**：V4 Flash × pi 的 hashline vs 默认 edit A/B 已跑（附录 C），结论已纳入：**Execute Loop 默认使用 pi 原生编辑协议，不引入 hashline**。背景证据：can1357 基准中 DeepSeek 系是唯一锚点编辑反而更差的模型——"编辑格式 × 模型"有交互效应，不能默认。
+**编辑格式实测**：V4 Flash × pi 的 hashline vs 默认 edit A/B 已跑（附录 C），结论已纳入：**Execute Loop 默认使用 pi 原生编辑协议，不引入 hashline**。注意：该 A/B 是 V4 Flash × pi 时代数据，而"编辑格式 × 模型有交互效应，不能默认"——换防本身同样受此约束，GLM-5.3 × omp 的适用性列入 v0.21 ⑥ 实证遗留，首跑复核。背景证据：can1357 基准中 DeepSeek 系是唯一锚点编辑反而更差的模型。
 
 ### 4.3 Review Loop（评审）
 
@@ -284,7 +284,7 @@ for milestone in spec.milestones:
 | Intake | GLM-5.3-Flash (max) | omp | 智谱 GLM Coding Plan | 定时 | 近乎零成本 |
 | Garden | Kimi K3 (max) | kimi code | kimi code 订阅 | 周级 | 知识资产维护提案 |
 
-> **统一 max 档**：全部模型 thinking 固定最高档——omp/zcode 走 `--thinking max`，kimi code 走每调用 env `KIMI_MODEL_THINKING_EFFORT=max`（不碰用户全局配置）。代价是输出 token 增加——flash 低频档、5.3 中频、K3 低频，成本影响可接受；收益是每一环的推理质量拉满。"thinking 模式下 temperature/top_p 不生效"系 DeepSeek 时代实测行为，GLM 通道待首跑复核。
+> **统一 max 档**：全部模型 thinking 固定最高档——omp 走 `--thinking max`（driver 强制：binding 缺省即兜底 max，绝不发空值）；kimi code 走每调用 env `KIMI_MODEL_THINKING_EFFORT=max`（不碰用户全局配置）；zcode CLI（unofficial wrapper）**无 thinking 参数**，effort 由其运行时默认——可选臂如实化，首跑经 zcode 臂执行时需单独复核。代价是输出 token 增加——flash 低频档、5.3 中频、K3 低频，成本影响可接受；收益是每一环的推理质量拉满。"thinking 模式下 temperature/top_p 不生效"系 DeepSeek 时代实测行为，GLM 通道待首跑复核。
 
 渠道事实与风险：
 
@@ -348,7 +348,7 @@ for milestone in spec.milestones:
 
 ## 11. 开放问题（待定）
 
-1. Review 量大时 V4 Pro 直连 API 的月预算上限设多少？
+1. ~~Review 量大时 V4 Pro 直连 API 的月预算上限设多少？~~（v0.21 失效：Review 已换防 GLM-5.3 走智谱订阅，无直连按量计费；若未来恢复按量直连渠道再启用此问）
 2. ~~首批验证任务用哪个真实仓库？~~（已决，2026-08-19：**mimir**（`~/Documents/projects/mimir`，多租户云原生 AI SRE 平台，greenfield）。方案文档任务已编号（S0-S4/M1-M5）、附录 D 验收已命令化，适配度高；首批取其头部任务 S4-0/S0-00/M1-1，live 凭证任务（S2/S3）待核心链路稳定后接）
 3. ~~Judge（里程碑终验）用 K3 还是 V4 Pro？~~（已决，2026-08-20：**K3**——与 DeepSeek 系 executor 异厂商，自偏好风险最低；~~经 pi `kimi-coding/k3` 驱动~~ v0.19 起改 kimi code harness + 订阅，异厂商互证由双面板 V4 Pro 复核承接）
 4. 编排器进程形态：常驻 daemon 还是 cron 拉起的短进程？（倾向 cron 短进程 + state.json，重启零成本）

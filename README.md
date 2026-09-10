@@ -107,7 +107,7 @@ internal/
   defectinjection/       # 缺陷注入抽检（DC3）
   metrics/               # JSONL 指标（模型/token/成本/缓存命中/prompt 哈希）
   prompts/               # 提示词构建（§8 缓存纪律：稳定前置/易变尾部）+ 裁决解析
-  drivers/               # mock（测试）/ pi / kimi（长驻会话）
+  drivers/               # mock（测试）/ pi / omp / zcode / kimi（长驻会话）
   config/                # 法定配置表加载与校验
   childenv/              # 子进程环境白名单（凭证卫生 §9）
   ledger/                # 账本区路径分类（边界判定的单一信源）
