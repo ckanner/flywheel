@@ -1,9 +1,10 @@
-# Flywheel（飞轮）— Loop Engineering 系统设计（v0.21 讨论稿）
+# Flywheel（飞轮）— Loop Engineering 系统设计（v0.22 讨论稿）
 
-> 状态：核心已建（2026-08-22：**Go 版全量迁移完成**，`go test ./...` 全绿、覆盖率门禁 100%；Node 版实现随迁移删除，DESIGN 语义不变）。2026-08-27 起进入 GLM-5.3 渠道扩展实战准备（PR #4：omp/zcode 双新 harness，含本条桌面可见性）。
+> 状态：核心已建（2026-08-22：**Go 版全量迁移完成**，`go test ./...` 全绿、覆盖率门禁 100%；Node 版实现随迁移删除，DESIGN 语义不变）。2026-09-10 起进入三厂商 harness 定稿（v0.22：zcode app-server 转正 + Codex/GPT-6-Astra 引入）。
 > Flywheel：编排器如飞轮——把间断、不稳定的 agent 运行，通过磁盘状态储能为连续平稳的推进。
 > 本文档是一套多 loop agent 编排系统的完整设计。目标读者：项目维护者本人。
 > 设计依据：Addy Osmani《Loop Engineering》、Anthropic/OpenAI/Cursor 官方案例、文档协议驱动 agent 循环的实战经验，以及 2026-08 对 kimi code / pi / oh-my-pi / oh-my-openagent / zcode 五个 harness 和 Kimi K3 / DeepSeek V4 / GLM-5.3 系列模型的调研（来源见附录 A）。
+> - v0.22 — **三厂商 harness 定稿（用户裁决，2026-09-10）**：① **zcode 转正为主链路 Execute default + Intake 的 harness**——经其内置 **app-server 协议**驱动（"ZCode Protocol" stdio；2026-09-10 本机逆向实证：NDJSON 行信封 `{"id","method","params"}`，`session/create` **按会话**指定 `model{providerId,modelId}` + `thoughtLevel`、`session/send` 投递、`state.updated`/telemetry 流式事件——一次性 `--prompt` 入口"全局单模型 + stdout 静默"两大限制就此消解，idle 看门狗语义对流式事件恢复有效）；协议无公开文档，**握手与方法名随桌面自动更新可能漂移**（`--model` flag 失效即前车之鉴）——driver 做防御性握手（失败报清晰错误、绝不静默降级），版本探测进首跑验证清单；默认二进制用 app 内置 runtime `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`（与桌面同步更新，第三方 wrapper zcode-app-cli 弃用——vendor runtime 已滞后于 app）。② **Execute default 模型升 GLM-5.3（旗舰跑量）**——依据用户原则"质量/效率/速度优先，成本不计入"（§11.6 记录）：更强 agentic 能力 → 连败与 hard 升级更少；知情代价：订阅配额消耗加速（放量档系数高于旗舰档）、单元时延上升（实测首应答 26s vs flash 12s）。③ **Review + Judge 复核面板 → Codex + GPT-6-Astra**（chatgpt 订阅 OAuth，`codex exec --json` 流式 + `-m` 按次选模型 + usage/缓存明细全暴露；npm CLI ≥0.154 或 app 内置 0.153 二进制——0.151 及更早不支持 gpt-6-astra，实测 400）；跨厂商制衡升级：executor GLM（智谱）↔ reviewer GPT-6（OpenAI）异厂商，§4.3 同族自偏好已知风险消解；hard 路由维持 K3（若 hard 也用 GPT-6 则与 Review 同族，自偏好恰好落在最难单元）。④ **思考档定稿**：zcode `thoughtLevel=max`（GLM 档位 [low,high,max]，5.3 默认即 max，app-server state 实测）；Codex `model_reasoning_effort=max`（GPT-6-Astra 阶梯 low→medium→high→xhigh→max→ultra，默认 medium 故必须显式传；**ultra = max+自动任务委托**，与"单会话只做一件事"纪律冲突，裁决角色不用，留待 Execute 场景评估）；kimi max 不变。⑤ **桌面可见性双轨**：zcode 双触发 `--open-workspace` 注册（v0.20 机制，2026-09-10 复验有效）；Codex 会话原生进桌面统一线程库（`~/.codex/state_5.sqlite`，source=exec）+ 项目注册 `open -a ChatGPT <folder>`（app 声明 Folder 文档类型与 `codex://` scheme）——侧边栏对 exec 线程的即时呈现待 app 重启验证（遗留项）。⑥ **multimodal 路由预留**：GLM-5.3-Flash 为 zcode 目录中唯一多模态档（图像/PDF/视频输入、1M 上下文），routes 表新增 `multimodal` 路由（机制现成，packet 标 route 即走）；Intake 保持 flash 档（与 Execute 不同模型经同一 zcode app-server 驱动，按会话指定，无冲突）。⑦ **omp 退出主链路**（driver 保留为 B 通道：多模态过渡/协议漂移应急）；智谱国内 Coding Plan 随之退居 B 通道，主链路 GLM 配额转 Z.AI Coding Plan（独立订阅池，zcode 用户侧认证）。⑧ 实证遗留：app-server 协议稳定性跟踪、Codex exec 线程桌面呈现、ultra 档语义评估、三家缓存前缀语义首跑复核。
 > - v0.21 — **渠道迁移智谱 + GLM 换防（用户裁决，2026-08-27）**：① **OpenCode Go 渠道移除**，非 Kimi 系全部改走**智谱（国内 bigmodel）GLM Coding Plan**（channel `zhipu-coding-plan`，`env-key: null`——凭证留在用户侧 omp provider 配置，编排器**不注入 key**，与 kimi 订阅同款委托模式；无 fallback 语义不变——RATE_LIMIT 同渠道退避、QUOTA 升级 inbox）；② 模型换防：**V4 Flash → GLM-5.3-Flash**（Execute default 路由、Intake），**V4 Pro → GLM-5.3**（Review、Judge 复核面板），slug 前缀 `zhipu-coding-plan/` 与用户 omp provider 名一致；③ **harness 事实同步**：PR #4 已把 pi 系角色切到 **omp**（oh-my-pi，pi 官方分叉，CLI/事件流同构，usage 额外暴露 reasoningTokens/duration/ttft）——§7/§13 两张表此前的 pi 漂移本版一并修正；④ zcode harness 保持可选臂（独立配额池 + 桌面会话可见性，v0.20；模板不预置绑定——启用需手写渠道并把 loops/routes 绑定指到 harness=zcode，模型 slug 走 zcode 自身 zai/ 命名空间；zcode CLI 无 thinking 参数，effort 由其运行时默认）；⑤ **双模型 live 冒烟通过**（2026-08-27，omp 走用户自有凭证，零 env 依赖）：`glm-5.3-flash` 12s / `glm-5.3` 26s 应答，usage 暴露 input/output/reasoningTokens/cacheRead（5.3 探针 cacheRead=3264，缓存生效），`thinking efforts=[low,high,max]` 原生支持全系统 max 档；⑥ 实证遗留：effort 透传的定量验证、缓存前缀语义（§8-5）与编辑格式 A/B 结论（附录 C，V4 Flash × pi 时代数据）对 GLM-5.3 × omp 的适用性均待首跑——编排器以 L1+Review 闸门兜底，不依赖榜单背书。
 > - v0.20 — **zcode 桌面可见性（用户裁决"桌面端完整看到会话过程"，2026-08-27）**：zcode headless CLI 会话与 ZCode Desktop 任务索引（`~/.zcode/v2/tasks-index.sqlite`）底层同源但**不实时互通**——本机九组实测确立最终语义：① GUI 按 workspace_key 分组，未注册路径的 workspace 连条目都不显示；② 桌面二进制（非 npm 包装器）解析 `--open-workspace <path>`，**每次处理都幂等注册该路径 + 导入 CLI 存储中归属它的会话**——暖态经 Electron single-instance second-instance 转发 argv 实测同样生效（`open -a` 热运行丢 argv 实测弃用；纯冷启动不带参不扫、`tasks-index.sqlite` 无同步水位表）；这是唯一导入触发器，且**对 key 归一化敏感**：`/tmp/x` 注册成功但永不导入，`/private/tmp/x` 立即导入——driver 用 `filepath.EvalSymlinks` 归一化后该边缘关闭（实测验证）。③ 因此 `RunZcode` **spawn 前后各触发一次**（默认二进制 `/Applications/ZCode.app/Contents/MacOS/ZCode`，env `FLY_ZCODE_BIN` 覆盖）：前触发注册工作区并导入该路径历史会话（覆盖 resume/重试——全新路径此时存储为空，仅注册不导入）；后触发在 watchdog 返回后把本会话（成功全文或失败部分对话）立即导入 GUI。语义边界如实化：执行**进行中**的会话不可见——导入是瞬时快照，桌面无实时流式；单元完成时刻可见性增量累积。降级矩阵：非 macOS / 未装 Desktop / 超时静默跳过，执行语义零改动；测试隔离 `disableDesktopRegistration` 闸 + opener 注入缝。
 > - v0.18 — **全量评审修复落地**（2026-08-24，用户裁决"双 judge 做完整版、C7/C9 也修、全部修好出 PR"）：① **里程碑 Judge 升级双 judge 面板**（K3 主判 + V4 Pro 异厂商复核，config `judge-panel`；一致按共识、分歧 → inbox——单 judge 偏差实证见 §4.3/附录 A）；裁决出口契约强化（verdict 必带 score 且 reasons ≥1 条引用可复核证据，缺失按 unparseable 重试）。② Plan 修订 acceptance 指纹留痕（§4.1 已知风险段：planner 可弱化验收的自利风险补录 + 机械缓解）。③ P2×3：兜底成本估算补 CacheWrite 计价（铁律 9）；评审 diff 补 untracked 新文件内容（§4.3"真实 git diff"承诺闭环，greenfield 场景关键）；缺陷注入账本守卫改 ledger 单一信源匹配。④ C 级小修批量：execute 失败路径空转签名用权威 diff、kimi resume 捕获失败告警、pi 错误事件累积保留、jitter 显式 0 可达（`*float64` 指针化）、done-report 多余键拒绝、state.json CAS 加 flock 文件锁闭 TOCTOU、porcelain rename/引号路径解析、judge gate 类型守卫、status 停滞提示消费 LastProgressAt（§6 如实化）。⑤ SKILL.md 规范订正：arguments 改 kimi 支持的字符串数组并接线正文占位符；`/skill:` 调用形态归属订正（§13）；frontmatter 归属按 kimi/pi/Warp/agentskills.io 四方官方文档精确化（AGENTS.md 同步）；附录 A 补 Warp/agentskills.io/kimi·pi skills 文档四来源；flywheel-new 新增验收命令提交前试跑硬规则；skillsembed 门禁扩展 agentskills.io 标准约束。⑥ §4.1 规划职责两段式如实化、§4.4 L2/L3 失败处置回写、§8-4 KIMI_NOW resume 注记、§9 凭证卫生边界声明。评审全文见 REVIEW-FIXPLAN.md。
@@ -72,8 +73,8 @@
      ▼                     ▼                     ▼
 ┌───────────┐      ┌───────────────┐      ┌───────────────┐
 │ Plan Loop │      │ Execute Loop  │      │ Review Loop   │
-│ kimi code │      │ omp +         │      │ omp +         │
-│ + Kimi K3 │      │ GLM-5.3-flash │      │ GLM-5.3       │
+│ kimi code │      │ zcode +       │      │ Codex +       │
+│ + Kimi K3 │      │ GLM-5.3       │      │ GPT-6-Astra   │
 │ (max)     │      │ (max·新会话)  │      │ (max·新会话)  │
 │ 长驻会话   │      │ 每单元新会话   │      │ 每单元新会话   │
 └───────────┘      └───────────────┘      └───────────────┘
@@ -117,21 +118,22 @@
 
 | 项 | 内容 |
 |---|---|
-| 模型 | 按 packet 的 `route` 字段路由（见下表）。默认：GLM-5.3-Flash（thinking=**max**，全系统统一最高档；智谱 agentic 旗舰的 flash 档。编排器不依赖榜单背书——能力边界由 L1+Review 双闸实证兜底） |
+| 模型 | 按 packet 的 `route` 字段路由（见下表）。默认：GLM-5.3（thinking=**max**，全系统统一最高档；智谱 agentic 旗舰跑量——v0.22 依据"质量优先、成本不计入"原则由 flash 档升旗舰，知情代价：配额消耗加速、单元时延上升。编排器不依赖榜单背书——能力边界由 L1+Review 双闸实证兜底） |
 
 **执行路由表**（配置文件定义，非硬编码；每个会话仍只绑一个模型，铁律 7 不受影响）：
 
 | route | 执行者 | 说明 |
 |---|---|---|
-| `frontend` | kimi code + K3 (max) | 前端需求实现。K3 前端是其强项，限前端任务使用。附带收益：executor 为 K3 时 reviewer 是 GLM-5.3，评审与执行跨厂商，自偏好风险消解 |
-| `default` | omp + GLM-5.3-flash (max) | 默认执行通道，跑量 |
-| `hard` | K3 (max)（首选，§11.6 已决） | GLM-5.3-flash 连续卡壳后的升级通道。选 K3 而非 GLM-5.3：升级目标是换"不相关的脑子"打破家族性失败，且最难单元自动获得 GLM-5.3 的跨厂商评审 |
+| `frontend` | kimi code + K3 (max) | 前端需求实现。K3 前端是其强项，限前端任务使用。附带收益：executor 为 K3 时 reviewer 是 GPT-6-Astra，评审与执行跨厂商 |
+| `default` | zcode + GLM-5.3 (max) | 默认执行通道，旗舰跑量（v0.22 定稿） |
+| `multimodal` | zcode + GLM-5.3-Flash (max) | 带截图/设计稿/PDF/视频输入的任务。Flash 是 zcode 目录中唯一多模态档（图像/PDF/视频输入、1M 上下文），同一 app-server driver 按会话指定模型，与 default 并存无冲突 |
+| `hard` | K3 (max)（首选，§11.6 已决） | GLM-5.3 连续卡壳后的升级通道。选 K3 而非 GPT-6：GPT-6-Astra 已任 Review（若 hard 也用 GPT-6 则执行与评审同族，自偏好风险恰好落在最难单元）；K3 与执行器、评审器均异厂商 |
 
 | 项 | 内容 |
-| Harness | omp（oh-my-pi，pi 官方分叉，CLI/事件流同构；PR #4 起），**每单元全新会话**，本机直接运行（v0.10 决策：现阶段不用容器沙箱，信任模型同日常 kimi code auto 模式；缓解措施见 §9；接入不可信输入前重新评估容器化） |
-| 渠道 | 智谱（国内 bigmodel）GLM Coding Plan 订阅（凭证在 omp 用户侧 provider 配置，编排器**零 key 注入**；配额以订阅档为准）——v0.21 起唯一非 Kimi 渠道，无降级兜底 |
-| 驱动方式 | **CLI 优先**：`omp -p "<prompt>" --model … --no-session` + 编排器侧超时 + 解析事件流（以 `agent_end` 收尾）。需要运行中干预（steer/abort）、状态查询（token/成本）时再评估升级 RPC/SDK |
-| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（首选，§11.6；v0.19 起走 kimi code 订阅） |
+| Harness | zcode（app-server 协议驱动，v0.22 转正），**每单元全新会话**，本机直接运行（v0.10 决策：现阶段不用容器沙箱；缓解措施见 §9；接入不可信输入前重新评估容器化）。桌面可见性：spawn 前后双触发 `--open-workspace` 注册（v0.20 机制） |
+| 渠道 | Z.AI Coding Plan（凭证在 zcode 用户侧 config/OAuth，编排器**零 key 注入**；配额以订阅档为准；与智谱国内 Coding Plan 为独立订阅池——后者随 omp 退居 B 通道） |
+| 驱动方式 | **app-server 协议**：spawn `zcode app-server`（默认二进制为 app 内置 runtime，env `FLY_ZCODE_BIN` 覆盖）→ NDJSON 信封 `session/create`（model + thoughtLevel 按会话指定）→ 应答服务器反向偏好请求 → `session/send` 投递 → 消费 `state.updated`/telemetry 流式事件至会话 idle → 关闭。协议无公开文档：握手失败即报错（绝不静默降级），漂移检测进首跑清单 |
+| 升级路径 | 同一 packet 连续失败（见 §6 编排器）→ 回 Plan Loop 修订 → 仍失败 → inbox 叫人；难任务经 `hard` 路由升级 K3 执行（§11.6；kimi code 订阅） |
 
 执行纪律（写进每个 packet 的工作指令）：
 
@@ -154,9 +156,9 @@
 |---|---|
 | 职责 | 对执行单元的产出做 LLM 评审：代码质量、项目约定遵守、设计意图符合度、安全隐患、**测试断言质量**（覆盖率只证明"执行过"，不证明"断言有效"）。**单测测不出来的东西归它** |
 | 输入 | task packet + git diff + L1 测试结果（不含 executor transcript） |
-| 模型 | GLM-5.3（thinking=**max**；智谱旗舰档，与 K3 主判跨厂商互证） |
-| Harness | omp（每单元全新会话），rubric 打分（0.0–1.0 + pass/fail，单 judge；**里程碑终验为双 judge 面板，§4.4/§7**） |
-| 渠道 | 智谱 GLM Coding Plan（凭证留 omp 用户侧，无 key 注入）——v0.21 起唯一非 Kimi 渠道，无降级兜底 |
+| 模型 | GPT-6-Astra（thinking=**max**；OpenAI 旗舰，agentic 基准领跑者——BenchLM 综合分 #2/231、AutomationBench 69% 领先；判断密度最高的环节配最强模型。**跨厂商**：与 GLM 执行器异厂商，v0.21 时代"executor/reviewer 同族"的已知风险（§4.3 旧版记录）就此消解） |
+| Harness | Codex（`codex exec --json`，每单元全新会话），rubric 打分（0.0–1.0 + pass/fail，单 judge；**里程碑终验为双 judge 面板，§4.4/§7**）。桌面可见性：会话原生进 ChatGPT 桌面线程库 + spawn 前后 `open -a ChatGPT <folder>` 项目注册 |
+| 渠道 | chatgpt 订阅（OAuth 用户侧登录，编排器零 key 注入）——npm CLI 需 ≥0.154 或用 app 内置二进制（0.153+，与桌面同步），旧版对 gpt-6-astra 报 400 |
 | 结论 | pass / 退回（附具体修改要求、失败证据、涉及位置、完成条件） |
 
 特殊职责：
@@ -165,7 +167,7 @@
 - **范围对照**（防改做）：git diff 对照 packet 的 `boundaries`，越界即退回。
 - **缺陷注入抽检**（防假测试）：**常备机制，无开关**（v0.15 裁决）。按抽检触发（默认每 5 个执行单元 1 次），在 Review 之前由**编排器用确定性脚本执行**（patch 注入 → 跑测试确认变红 → 按 patch 文件清单精确还原并校验工作区干净），结果喂给 Review，reviewer 只读结果做判断；**注入判 fail（测试不变红 = 假测试实锤）→ inbox 叫人**（验收体系失效不是重试能解决的）。`patch`/`test-cmd` 随任务契约配置（仓库相关，无通用默认），采样命中但缺配置 = 契约缺陷，进 inbox 提示人工配置。纯验证缺口不退回执行轮：**退回 Plan 加强验收后复验，永不以 gap 裁决完成单元**（v0.14 DC2/DC3）。工程化形态可演进为 Stryker 类变异测试。
 
-已知风险：与 executor 同厂商同家族（GLM 自偏好——executor 是 GLM-5.3-flash、reviewer 是 GLM-5.3，同源不同档）。缓解：确定性验证永远先行（L1 不过轮不到它说话）+ 全新上下文 + rubric 显式打分。**单 judge 的系统性偏差有实证**（2025 研究：position bias / self-preference / verbosity bias，单 judge 与 ground truth 一致率约 87.6%，bias-aware 多模型面板可达 98.1%——Verdict-Bench/Jury、IJCNLP 2025 position bias 系统研究、EMNLP 2025 DBG）。据此 v0.18：① 裁决出口契约强化——verdict 必须带 score 且 reasons ≥1 条、每条引用可复核证据（命令+退出码或文件:行号），缺失按 unparseable 重试；② **里程碑 Judge 升级为双 judge 面板**（K3 主判 + GLM-5.3 复核，config `judge-panel`，一致则按共识裁决，分歧 → inbox 叫人）；单元级 Review 维持单 judge（L1 先行 + 缺陷注入兜底已覆盖其大部分风险面）。
+已知风险：v0.21 时代 executor（GLM-flash）与 reviewer（GLM-5.3）同厂商同家族的自偏好风险，**v0.22 随 reviewer 换防 GPT-6-Astra 消解**（default/multimodal 路由的执行器均为 GLM 系，frontend/hard 为 K3，与 OpenAI 评审全部异厂商）。缓解层级保留：确定性验证永远先行（L1 不过轮不到它说话）+ 全新上下文 + rubric 显式打分。**单 judge 的系统性偏差有实证**（2025 研究：position bias / self-preference / verbosity bias，单 judge 与 ground truth 一致率约 87.6%，bias-aware 多模型面板可达 98.1%——Verdict-Bench/Jury、IJCNLP 2025 position bias 系统研究、EMNLP 2025 DBG）。据此 v0.18：① 裁决出口契约强化——verdict 必须带 score 且 reasons ≥1 条、每条引用可复核证据（命令+退出码或文件:行号），缺失按 unparseable 重试；② **里程碑 Judge 升级为双 judge 面板**（K3 主判 + GPT-6-Astra 复核，config `judge-panel`，一致则按共识裁决，分歧 → inbox 叫人）；单元级 Review 维持单 judge（L1 先行 + 缺陷注入兜底已覆盖其大部分风险面）。
 
 ### 4.4 验证体系（不是 loop，是编排器内建的三层闸门）
 
@@ -184,7 +186,7 @@
 - **L2/L3 失败的处置（v0.18 回写实现语义）**：里程碑闸门任一层红 → 任务升级 inbox 叫人，不重试、不回 Plan——闸门级失败多为环境/集成/契约问题，自动重试只是烧钱。这是有意选择的保守路径，不是遗漏。
 
 ### 4.5 Intake Loop（发现，可选，外挂模块）
-定时扫 issue 跟踪器 / CI 失败 / 依赖升级 → 候选任务进 triage inbox → **人确认后才冻结成需求进入 Plan Loop**。模型：GLM-5.3-flash。这是判断类难题的人机分界线。
+定时扫 issue 跟踪器 / CI 失败 / 依赖升级 → 候选任务进 triage inbox → **人确认后才冻结成需求进入 Plan Loop**。模型：GLM-5.3-Flash（zcode app-server 驱动，与 Execute 同 harness 不同模型——按会话指定，无冲突）。这是判断类难题的人机分界线。
 
 ### 4.6 Garden Loop（记忆维护，可选，外挂模块）
 
@@ -213,7 +215,7 @@ packet-id: M02-T03
 contract-version: 1
 goal: <一句话：此单元要达成的可观察结果>
 requirements: [R-07, R-08]           # 映射 spec.md 的编号需求（防漏做）
-route: default                       # 执行路由：frontend | default | hard（见 §4.2 路由表）
+route: default                       # 执行路由：frontend | default | multimodal | hard（见 §4.2 路由表）
 needs-live-credentials: false        # true = 需 kubeconfig/密钥等 live 凭证：人工确认后按需注入（每单元一次）；默认 false（见 §9 凭证卫生）
 context-files: [src/auth/*.ts, docs/spec.md#M-02]
 cache-scope: [docs/spec.md]          # 进稳定前缀的文件（见 §8）
@@ -265,7 +267,7 @@ for milestone in spec.milestones:
 - **熔断（可配置）**：`budget.enforce: off | soft | hard`，默认 soft（警告并记录，不停机）；hard 档为日 token 预算硬顶。空转检测（同一 packet 连续失败且**错误码+失败命令相同、变更文件 Jaccard 相似度 ≥ 0.7**，v0.14 DC4）在任何档位下都触发升级——空转检测不是钱的问题，是 loop 健康的问题。token/成本记录在任何档位下都不关闭。
 - **并发**：串行期不设限；引入并行模块时用文件锁原子 claim 任务，不做速率限制。
 - **降级（v0.19 移除）**：用户裁决取消全部 fallback provider——每角色单一订阅渠道，配置中无 `fallback` 链。超限语义（**用户裁决 A，2026-08-24**）：RATE_LIMIT 同渠道退避重试（尊重 Retry-After），耗尽升级 inbox；QUOTA 不重试直接升级（订阅超额恢复以小时计，退避无意义；备选的“QUOTA 也退避”已否决）；AUTH/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED 照旧直接升级。机制代码保留为 config 驱动——将来若要恢复备用 provider，加回渠道绑定即可，无需改代码。
-- **升级路径**：executor 连续卡壳 → Plan Loop 修订 packet → 仍失败 → inbox 叫人。GLM-5.3-flash 能力上限待首跑实证（V4 Flash 时代参照：DeepSWE 54.4 vs Pro 62.7 vs K3 67.5，留档），难任务经 `hard` 路由升级 K3 执行（§11.6 已决；kimi code 订阅）。
+- **升级路径**：executor 连续卡壳 → Plan Loop 修订 packet → 仍失败 → inbox 叫人。GLM-5.3 旗舰跑量的能力上限待首跑实证（V4 Flash 时代参照：DeepSWE 54.4 vs Pro 62.7 vs K3 67.5，留档），难任务经 `hard` 路由升级 K3 执行（§11.6 已决；kimi code 订阅）。
 - **可观测**：每次 spawn 记录模型、harness、prompt 哈希、token、成本、缓存命中率、耗时、退出码。用途：① 失败归因（跨 harness 没有现成方法学，全靠这张表）；② 成本可见（DeepSeek 8-17 涨价后重算经济性）；③ 缓存命中率作健康信号（突降 = 前缀被破坏）；④ 协议改进的证据源（原则：改进必须基于多次运行复盘证据）；⑤ 停滞检测。**指标是人不盯着 loop 也能监督它的方式。**
 
 ---
@@ -275,20 +277,23 @@ for milestone in spec.milestones:
 | Loop | 模型 | Harness | 渠道 | 频率 | 备注 |
 |---|---|---|---|---|---|
 | Plan | Kimi K3 (max) | kimi code 长驻 | kimi code 订阅 ¥199/月 | 低 | 订阅侧默认 high，需显式配 max；stream-json 无 usage，token 暂不可观测（v0.15 接受现状） |
-| Execute（default） | GLM-5.3-Flash (max) | omp 新会话 | 智谱 GLM Coding Plan（唯一非 Kimi 渠道） | 高 | PR #4 由 pi+V4 Flash 换防；v0.21 渠道迁移智谱 |
+| Execute（default） | GLM-5.3 (max) | zcode app-server 新会话 | Z.AI Coding Plan | 高 | v0.22 旗舰跑量（质量优先原则）+ harness 转正 |
+| Execute（multimodal） | GLM-5.3-Flash (max) | zcode app-server 新会话 | Z.AI Coding Plan | 按需 | 唯一多模态档（图像/PDF/视频，1M 上下文） |
 | Execute（frontend） | Kimi K3 (max) | kimi code | kimi code 订阅 | 中 | 前端需求实现；K3 前端最强；路由见 §4.2 |
-| Execute（hard） | Kimi K3 (max) | kimi code | kimi code 订阅 | 低 | v0.19 起与 frontend 同渠道（kimi-coding API 移除） |
-| Review | GLM-5.3 (max) | omp 新会话 | 智谱 GLM Coding Plan（唯一非 Kimi 渠道） | 中 | v0.21 由 V4 Pro 换防；与 K3 主判/终验跨厂商 |
+| Execute（hard） | Kimi K3 (max) | kimi code | kimi code 订阅 | 低 | 维持 K3：GPT-6 已任 Review，hard 若同用则与评审同族 |
+| Review | GPT-6-Astra (max) | Codex 新会话 | chatgpt 订阅 | 中 | v0.22 由 GLM-5.3 换防；与全部执行器异厂商；ultra 档不用（自动委托与裁决纪律冲突） |
 | Judge 终验·主判 | Kimi K3 (max) | **kimi code**（headless `-p` 每次全新会话 = 天然 fresh context） | kimi code 订阅 | 低 | v0.19 改 kimi harness；异厂商互证由双面板复核承接 |
-| Judge 双面板·复核 | GLM-5.3 (max) | omp 新会话 | 智谱 GLM Coding Plan | 低 | 与主判异厂商；一致按共识、分歧 → inbox（v0.18 面板） |
-| Intake | GLM-5.3-Flash (max) | omp | 智谱 GLM Coding Plan | 定时 | 近乎零成本 |
+| Judge 双面板·复核 | GPT-6-Astra (max) | Codex 新会话 | chatgpt 订阅 | 低 | 与主判异厂商；一致按共识、分歧 → inbox（v0.18 面板；v0.22 复核由 GLM-5.3 换防） |
+| Intake | GLM-5.3-Flash (max) | zcode app-server | Z.AI Coding Plan | 定时 | 近乎零成本 |
 | Garden | Kimi K3 (max) | kimi code | kimi code 订阅 | 周级 | 知识资产维护提案 |
 
-> **统一 max 档**：全部模型 thinking 固定最高档——omp 走 `--thinking max`（driver 强制：binding 缺省即兜底 max，绝不发空值）；kimi code 走每调用 env `KIMI_MODEL_THINKING_EFFORT=max`（不碰用户全局配置）；zcode CLI（unofficial wrapper）**无 thinking 参数**，effort 由其运行时默认——可选臂如实化，首跑经 zcode 臂执行时需单独复核。代价是输出 token 增加——flash 低频档、5.3 中频、K3 低频，成本影响可接受；收益是每一环的推理质量拉满。"thinking 模式下 temperature/top_p 不生效"系 DeepSeek 时代实测行为，GLM 通道待首跑复核。
+> **统一 max 档**：全部模型 thinking 固定最高档，传法按 harness 定（v0.22 定稿）：zcode 走 `session/create` 的 `thoughtLevel="max"`（GLM 档位 [low,high,max]，5.3 默认即 max——app-server state 实测）；Codex 走 `-c model_reasoning_effort="max"`（GPT-6-Astra 阶梯 low→medium→high→xhigh→max→ultra，**默认 medium 故必须显式传**；ultra = max+自动任务委托，与"单会话只做一件事"纪律冲突，裁决角色不用，留待 Execute 场景评估）；kimi code 走每调用 env `KIMI_MODEL_THINKING_EFFORT=max`（不碰用户全局配置）；omp B 通道走 `--thinking max`。代价是输出 token 增加，成本影响可接受（用户原则：质量优先，成本不计入）；收益是每一环的推理质量拉满。"thinking 模式下 temperature/top_p 不生效"系 DeepSeek 时代实测行为，GLM/GPT 通道待首跑复核。
 
 渠道事实与风险：
 
-- **智谱（国内 bigmodel）GLM Coding Plan**（v0.21 起唯一非 Kimi 渠道）：订阅制（配额以订阅档为准，首跑后按 usage.cost 回填定价表）；**凭证委托用户侧**——omp provider `zhipu-coding-plan`（models.yml/auth）持有 key，编排器 `env-key: null` 不注入，fail-loud key 守卫对本渠道不适用（无 env 可查），凭证失效表现为首 spawn 流内 401/403 → 分类器 AUTH → 升级。模型 slug `zhipu-coding-plan/glm-5.3[-flash]`（与用户 provider 名一致；zcode driver 的 `zai/` 前缀属 zcode 自身命名空间，互不相干）。**live 冒烟已过**（2026-08-27 双模型应答，cacheRead/reasoningTokens 字段在），effort 透传定量与缓存前缀语义待首跑。风险：① 订阅自动化条款灰区同 kimi——同渠道退避+升级消化，用户知情裁决；② 配额细节以智谱官方文档为准，不预填未核实数字。
+- **Z.AI Coding Plan**（v0.22 起主链路 GLM 渠道，经 zcode）：订阅制、独立配额池（与智谱国内 Coding Plan 互不相干）；**凭证委托用户侧**——zcode 用户侧认证（provider `zai`，Anthropic 兼容端点 `api.z.ai/api/anthropic`，key 或 Z.AI OAuth），编排器零注入；模型 slug 走 zcode 自身命名空间（`zai/glm-5.3[-flash]`）。app-server 协议驱动已实测（2026-09-10：create/send/流式事件/按会话模型+思考档全通）。风险：① 协议无公开文档，随桌面自动更新可能漂移（`--model` flag 已实证失效过）——driver 防御性握手 + 首跑版本探测；② 旗舰档跑量配额消耗快（放量档系数更高）——RATE_LIMIT 退避 / QUOTA 升级 inbox 语义不变；③ 自动化条款灰区同 kimi，用户知情裁决。
+- **chatgpt 订阅**（v0.22 起 Review/复核面板渠道，经 Codex）：OAuth 用户侧登录（`codex login`），编排器零注入；`codex exec --json` 流式 + usage/缓存明细全暴露。**版本硬门槛**：gpt-6-astra 需 CLI ≥0.153（app 内置）或 ≥0.154（npm）——旧版 400"requires a newer version of Codex"。模型阶梯：gpt-6-astra（旗舰，272K）/ gpt-5.6-sol·terra（工作马）/ luna·reserve（快省）/ codex-spark（超快 128K）。风险：代理网络偶发 403（实测经 HKG 节点被拦，重试即过）；订阅配额以档位为准。
+- **智谱（国内 bigmodel）GLM Coding Plan**（v0.22 起退居 B 通道，经 omp）：凭证委托 omp 用户侧 provider（`zhipu-coding-plan`），`env-key: null` 不注入；多模态过渡与 zcode 协议漂移应急时启用；live 冒烟 2026-08-27 已过。
 - **DeepSeek 直连**（信息留档，v0.15 起不采用；v0.19 连 Zen 兜底一并移除）：2026-08-17 起峰谷定价。V4 Pro 峰值 $1.32/$3.96、谷值 $0.66/$1.98（北京时间 9-12、14-18 为峰）；缓存命中/未命中比从 1/120 缩至 1/30。若将来启用需在 pi 自配 custom provider + `DEEPSEEK_API_KEY`。
 - **Kimi 订阅**：K3 需 Moderato ¥99（256K）、1M 需 Allegretto ¥199；所有会员功能共享 token 额度池 + Kimi Code 专属 5h/周窗口。`kimi login` 为 device-code OAuth，`kimi -p` 官方支持 CI。条款灰区：用户服务协议有"自动化脚本"条款——v0.19 起 kimi 侧无按量兜底，灰区风险以退避+升级消化，用户知情裁决。headless `-p` 默认 auto 权限（显式 `--auto` 与 `--prompt` 组合会被 CLI 拒绝）；`/swarm` 命令族仅 TUI 可用、`-p` 下不解析（kimi 0.38.0 三探针实证），swarm 并行能力待上游提供 headless 接口后再评估。
 - **成本量级预估**：串行 + 分级 + 确定性验收的组合下，单任务总价应在 Ralph 的 $297 案例量级，而非 Carlini 的 $20,000 量级。杠杆排序：模型分级（省 40–60%）> prompt 缓存 > 重活隔离进子会话。
@@ -311,7 +316,7 @@ for milestone in spec.milestones:
 ## 9. 安全与合规
 - **执行隔离（v0.16 落地 worktree，v0.10 决策无容器维持）**：Execute 在单元级 git worktree 中本机运行（§4.2）；无容器沙箱，信任模型同日常 kimi code auto 模式。缓解措施：worktree 隔离 + 每单元 git 提交（可回滚）+ git diff 事后判定测试/boundaries 完整性（§4.4）+ 进程组 kill 到 quiescence（§6）。**触发重评**：接入不可信输入（Intake 外部 issue、依赖引入陌生代码、涉网任务）前必须重新评估容器化。
 
-- **凭证卫生**：executor 环境只注入任务所需的最低价值 key——omp 通道（Execute/Review/Intake/面板复核）v0.21 起**零 key 注入**（智谱凭证委托 omp 用户侧 provider 配置，`env-key: null`；原 pi 通道的 `OPENCODE_API_KEY` 随渠道移除）；Kimi 系环节（Plan/Garden/Judge 主判/frontend/hard 路由）v0.19 起全部走 kimi code 订阅 OAuth（用户本机已登录，**无 key 注入**，原 kimi-coding 的 `KIMI_API_KEY` 随渠道移除）；`needs-live-credentials` 任务经人工批准后按名单注入。一律无 SSH agent、无 git 推送凭证；编排器持有其余全部凭证。**边界声明（v0.18）**：白名单环境含 `HOME`/`XDG_*`（CLI 与测试运行器必需），因此 executor 及其测试代码**技术上可达** `~/.omp/`、`~/.pi/agent/auth.json`、`~/.kimi-code` 等本机 auth store——本机制是**防事故性继承**（任何 API key 都不进子进程环境），不是防恶意；防恶意属于容器化重评（§11.7）的触发范围，接入不可信输入前不得依赖本条。
+- **凭证卫生**：executor 环境只注入任务所需的最低价值 key——v0.22 起主链路三渠道全部**零 key 注入**：zcode 通道（Execute default/multimodal/Intake）凭证委托 Z.AI 用户侧认证（`~/.zcode/cli/config.json` 的 provider key 或 OAuth）；Codex 通道（Review/复核面板）走 chatgpt 订阅 OAuth（`codex login`，用户本机已登录）；Kimi 系环节（Plan/Garden/Judge 主判/frontend/hard 路由）走 kimi code 订阅 OAuth（v0.19 起）。omp B 通道同款委托（智谱凭证留用户侧 provider，`env-key: null`）。`needs-live-credentials` 任务经人工批准后按名单注入。一律无 SSH agent、无 git 推送凭证；编排器持有其余全部凭证。**边界声明（v0.18）**：白名单环境含 `HOME`/`XDG_*`（CLI 与测试运行器必需），因此 executor 及其测试代码**技术上可达** `~/.zcode/`、`~/.codex/auth.json`、`~/.kimi-code` 等本机 auth store——本机制是**防事故性继承**（任何 API key 都不进子进程环境），不是防恶意；防恶意属于容器化重评（§11.7）的触发范围，接入不可信输入前不得依赖本条。
 - **kill switch**：编排器单点可停；预算 hard 档是长时间无人值守时的最后一道闸。
 - **合规灰区台账**：智谱 GLM Coding Plan / Kimi 订阅的自动化条款风险记录在案（v0.19 起无降级链兜底——灰区以同渠道退避+升级消化，用户知情裁决；OpenCode Go v0.21 移除、DeepSeek 直连 v0.15 已裁决不采用）。
 
@@ -325,7 +330,7 @@ for milestone in spec.milestones:
 
 - 编排器（读状态 → spawn → 校验 → 推进；看门狗、指标、软熔断、降级）
 - 契约层模板（task packet / spec / state.json schema）
-- 三个主 loop 的接入：Plan（kimi code + K3 max 长驻）、Execute（omp + GLM-5.3-flash max，本机直跑；PR #4 由 pi+V4 Flash 换防）、Review（omp + GLM-5.3 max）
+- 三个主 loop 的接入：Plan（kimi code + K3 max 长驻）、Execute（zcode app-server + GLM-5.3 max，本机直跑）、Review（Codex + GPT-6-Astra max）
 - L1 验证（含覆盖率闸门）与 done-report 解析
 - skills 族：任务生成器、角色工作指令
 - 首批任务：**目标仓库 mimir**（§11.2 已决），取其头部任务（S4-0 关闭 ADR / S0-00 spike 脚手架 / M1-1 CI 门禁）经 `/skill:flywheel-new` 生成契约——需求稳定、验收命令现成、无需 live 凭证、单单元可完成；选择理由是调试期变量控制，不是能力限制
@@ -336,6 +341,8 @@ for milestone in spec.milestones:
 2. ~~OpenCode Go 是否透传 `reasoning_effort`（硬门槛）~~（**已实测通过**，2026-08-18，数据见附录 D）：max 档推理文本量为 low 档的 2.4–3.4 倍，透传确认；Execute/Review/Judge 保留 OpenCode Go 通道（显式传 max）。两个实施注意：① max 档下 Go 返回的 usage 缺 `reasoning_tokens` 细目（low 档有），编排器计量不得假设该字段恒在，缺失时以 completion tokens + 响应推理文本量回退；② pi 侧 L0 冒烟已通过（`--thinking max` 下 reasoning 内容真实到达，usage 暴露 `reasoning`/`cacheRead`/`cacheWrite` 分项，满足指标采集）。通道启用时仍按 fail-loud 原则：不支持 max 就报错，不 clamp、不静默降级。
 3. kimi code 长驻会话在 1M 上下文 + **max 档**下的稳定性（#1911 状态更新，2026-08 核证：仍开放、无 workaround；k2.6 亦复现，挂起疑在 CLI 请求层而非模型层；原始报告走 API key 通道——按量直连未必能绕开。实测结论直接影响 Plan Loop 可用性与 §4.1 会话重建协议的触发频率预期）。
 4. ~~DeepSeek 直连降级链路演练（403 注入测试）~~（403 演练已完成；v0.15 裁决直连不采用，链路移除）。
+5. **zcode app-server 协议稳定性跟踪（v0.22 新增，持续性门槛）**：协议无公开文档，随桌面自动更新可能漂移（`--model` flag 对当前 runtime 已实证失效）。driver 防御性握手（schema 校验失败即报清晰错误）；每次桌面大版本更新后跑协议探针（create/send/事件流三步）确认；漂移时 B 通道 omp 应急。
+6. **Codex 首跑验证清单（v0.22 新增）**：① CLI 版本 ≥0.154（npm）或用 app 内置二进制（gpt-6-astra 硬门槛）；② exec 线程在 ChatGPT 桌面侧边栏的呈现语义（注册已验证，即时呈现待 app 重启复核）；③ thoughtLevel/effort 透传定量复核；④ 缓存前缀语义（cached_input_tokens 已暴露，命中率进指标）。
 
 **外挂模块（架构已留槽位，核心跑起来后随时插入，无固定顺序）**：
 
@@ -404,14 +411,16 @@ for milestone in spec.milestones:
 | Loop | Harness | Model（全部 max 档） | 渠道 |
 |---|---|---|---|
 | Plan | kimi code（长驻会话） | Kimi K3 | kimi code 订阅 |
-| Execute（default） | omp（每单元新会话，本机直跑） | GLM-5.3-Flash | 智谱 GLM Coding Plan（v0.21 起唯一非 Kimi 渠道） |
+| Execute（default） | zcode app-server（每单元新会话，本机直跑） | GLM-5.3 | Z.AI Coding Plan |
+| Execute（multimodal） | zcode app-server（每单元新会话） | GLM-5.3-Flash（唯一多模态档） | Z.AI Coding Plan |
 | Execute（frontend） | kimi code | Kimi K3 | kimi code 订阅 |
-| Execute（hard 升级） | kimi code | Kimi K3（§11.6 已决） | kimi code 订阅（v0.19 起唯一渠道） |
-| Review | omp（每单元新会话） | GLM-5.3 | 智谱 GLM Coding Plan（v0.21 起唯一非 Kimi 渠道） |
-| Judge（里程碑终验） | kimi code 主判（fresh `-p`）+ omp 复核面板 | K3 主判（§11.3 已决）+ GLM-5.3 复核（v0.18 面板；v0.21 换防） | kimi 订阅 + zhipu-coding-plan |
+| Execute（hard 升级） | kimi code | Kimi K3（§11.6 已决） | kimi code 订阅 |
+| Review | Codex（`exec --json`，每单元新会话） | GPT-6-Astra | chatgpt 订阅 |
+| Judge（里程碑终验） | kimi code 主判（fresh `-p`）+ Codex 复核面板 | K3 主判（§11.3 已决）+ GPT-6-Astra 复核（v0.18 面板；v0.22 换防） | kimi 订阅 + chatgpt 订阅 |
 | Verify | **无 harness，编排器直接跑命令** | 无模型 | — |
-| Intake（外挂） | omp | GLM-5.3-Flash | 智谱 GLM Coding Plan |
+| Intake（外挂） | zcode app-server | GLM-5.3-Flash | Z.AI Coding Plan |
 | Garden（外挂） | kimi code | K3 | kimi code 订阅 |
+| B 通道（应急/过渡） | omp（driver 保留） | GLM-5.3[-flash] | 智谱国内 Coding Plan |
 
 ---
 

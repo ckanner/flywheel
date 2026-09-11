@@ -19,7 +19,7 @@ make install        # 装到 /usr/local/bin
 # 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验
 ```
 
-真实驱动依赖本机已装的 [omp](https://github.com/can1357/oh-my-pi)（oh-my-pi，Execute/Review/面板复核/Intake，智谱 provider 在其用户侧配置）与 kimi code CLI（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；两个渠道都是**订阅委托凭证，编排器零 key 注入**（v0.21 实测智谱 glm-5.3-flash / glm-5.3 双通）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox。测试与演练（mock 驱动）不需要任何凭证。
+真实驱动依赖本机三件（v0.22 三厂商定稿）：**zcode**（Execute default/multimodal/Intake——driver 默认跑 ZCode 桌面 app 内置官方 runtime 的 app-server 协议，Z.AI Coding Plan 凭证在 `~/.zcode/cli/config.json` 用户侧）、**Codex CLI ≥0.154**（Review/复核面板，chatgpt 订阅 OAuth 登录）、**kimi code CLI**（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；全部渠道**订阅委托凭证，编排器零 key 注入**（zcode 协议与 codex gpt-6-astra 均已 live 冒烟 2026-09-10）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox；omp+智谱国内计划保留为 B 通道（zcode 协议漂移应急）。测试与演练（mock 驱动）不需要任何凭证。
 
 ## 安装 skills 到 kimi code / pi
 
@@ -107,7 +107,7 @@ internal/
   defectinjection/       # 缺陷注入抽检（DC3）
   metrics/               # JSONL 指标（模型/token/成本/缓存命中/prompt 哈希）
   prompts/               # 提示词构建（§8 缓存纪律：稳定前置/易变尾部）+ 裁决解析
-  drivers/               # mock（测试）/ pi / omp / zcode / kimi（长驻会话）
+  drivers/               # mock（测试）/ pi / omp（B 通道）/ zcode（app-server）/ codex / kimi（长驻会话）
   config/                # 法定配置表加载与校验
   childenv/              # 子进程环境白名单（凭证卫生 §9）
   ledger/                # 账本区路径分类（边界判定的单一信源）
