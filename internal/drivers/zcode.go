@@ -1,28 +1,39 @@
-// Package drivers — zcode driver（PR #4 review 后新增）：ZCode headless CLI
-// 是 Z.ai 官方 GLM-5.3 harness 的命令行出口（unofficial wrapper zcode-app-cli
-// 封装官方 runtime 0.16.5），单 prompt 模式输出单个 JSON 对象：
+// Package drivers — zcode driver（DESIGN v0.22）：Z.ai 官方 GLM harness，经其
+// app-server 协议（"ZCode Protocol"）驱动 Execute default/multimodal 与 Intake。
 //
-//	{
-//	  "sessionId": "sess_...", "traceId": "...", "turnId": "...",
-//	  "response": "<final text>",
-//	  "usage": {"inputTokens":N,"outputTokens":N,"reasoningTokens":N,
-//	            "cacheReadTokens":N,"cacheWriteTokens":N,"totalTokens":N,...},
-//	  "projection": {"status":"idle","turnCount":1,"contextWindow":1000000}
-//	}
+// 协议形态（2026-09-10 本机逆向实证，无公开文档——握手与方法名随桌面自动更新
+// 可能漂移，driver 防御性处理：schema 校验失败即报错，绝不静默降级）：
 //
-// 认证：provider.options.apiKey（写 ~/.zcode/cli/config.json）或 Z.ai OAuth，
-// 均在用户侧配置完成——driver 不注入 key（与 kimi 同策略：凭证留用户侧）。
-// --mode 默认 yolo（官方 --prompt 缺省值）：无人值守必须跳过审批。
+//	信封：NDJSON 行分隔，请求 {"id":N,"method":...,"params":...}（无 jsonrpc 键）
+//	① session/create {workspace{workspacePath,workspaceKey}, model{providerId,
+//	   modelId}, thoughtLevel, mode:"yolo"} —— 模型与思考档按会话指定（一次性
+//	   CLI 入口的全局单模型限制就此消解）
+//	② 服务器反向请求 session/requestRuntimePreferences（携 sessionId）——应答
+//	   {"nativeSearchEnhancementsEnabled":false}；官方 MCP 鉴权反向请求可忽略
+//	③ session/send {sessionId, content} → {"accepted":true}
+//	④ 事件流：state.updated / computer-use/operation-event(kind=turn-completed) /
+//	   telemetry——流式活动天然满足看门狗 idle 语义（对比一次性模式全程静默）
+//	⑤ turn-completed 后 session/read → messages[]，取末条含 text part 的
+//	   assistant 消息为终态：text part 为最终文本，info.tokens 为 usage
+//	   （total/input/output/reasoning/cache.read/cache.write），reasoning part
+//	   文本量为推理深度
+//	⑥ 会话结束调用 finish()——与超时同一条 kill 路径（kill 开关契约不变）
+//
+// 认证：Z.AI Coding Plan（provider zai 的 key 或 OAuth，~/.zcode/cli/config.json
+// 用户侧配置），编排器零 key 注入。桌面可见性：双触发 --open-workspace 注册
+// （v0.20 机制，与协议驱动正交）。
 package drivers
 
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ckanner/flywheel/internal/childenv"
@@ -31,69 +42,61 @@ import (
 
 // ZcodeArgs RunZcode 入参。
 type ZcodeArgs struct {
-	Prompt    string
-	Model     string // provider 内 slug，如 "zai/glm-5.3-flash"
-	Cwd       string
-	SessionID string // sess_... 续会话；空 = 新会话
-	Mode      string // permission mode: build|edit|plan|yolo；空 = 官方默认 yolo
-	APIKeys   map[string]string
-	Watchdog  watchdog.Opts
+	Prompt       string
+	Model        string // "zai/glm-5.3[-flash]"；空 → ZcodeDefaultModel
+	ThoughtLevel string // 空 → "max"（GLM 档位 [low,high,max]，§7 统一档）
+	Cwd          string
+	APIKeys      map[string]string
+	Watchdog     watchdog.Opts
 }
 
-// ZcodeDefaultModel Coding Plan 下 GLM-5.3-Flash 的 provider 内 slug。
-const ZcodeDefaultModel = "zai/glm-5.3-flash"
+// ZcodeDefaultModel Execute default 路由的法定模型（§7 矩阵：旗舰跑量）。
+const ZcodeDefaultModel = "zai/glm-5.3"
 
-// ZcodeJSON zcode --json 单对象输出的字段映射。
-type ZcodeJSON struct {
-	SessionID string `json:"sessionId"`
-	TraceID   string `json:"traceId"`
-	TurnID    string `json:"turnId"`
-	Response  string `json:"response"`
-	Usage     struct {
-		InputTokens      int64 `json:"inputTokens"`
-		OutputTokens     int64 `json:"outputTokens"`
-		TotalTokens      int64 `json:"totalTokens"`
-		CacheReadTokens  int64 `json:"cacheReadTokens"`
-		CacheWriteTokens int64 `json:"cacheWriteTokens"`
-		ReasoningTokens  int64 `json:"reasoningTokens"`
-	} `json:"usage"`
-	EventCount int64 `json:"eventCount"`
-	Projection struct {
-		Status          string `json:"status"`
-		ContextWindow   int64  `json:"contextWindow"`
-		TotalTokenCount int64  `json:"totalTokenCount"`
-	} `json:"projection"`
-}
+// defaultZcodeRuntimePath app 内置官方 runtime（与桌面自动更新同步；第三方
+// wrapper zcode-app-cli 的 vendor 快照已实证滞后于 app，弃用）。
+const defaultZcodeRuntimePath = "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"
 
-// ParseZcodeJSON 解析 zcode --json 输出。非 JSON（TUI 泄漏/错误文本）返回零值，
-// 由调用方按 EMPTY_RESPONSE 处理——与 pi/kimi 解析器的容错纪律一致。
-func ParseZcodeJSON(stdout string) (ZcodeJSON, bool) {
-	var z ZcodeJSON
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &z); err != nil {
-		return ZcodeJSON{}, false
+// ZcodeDesktopBinEnv launcher 覆盖环境变量：设为任意可执行 zcode 入口（如
+// wrapper 的 bin）时直接以 `<bin> app-server` 启动；缺省用 node 跑 app 内置
+// runtime。另兼作桌面注册二进制的提示名（注册走 macOS open 语义，见
+// defaultOpenZcodeWorkspace）。
+const ZcodeDesktopBinEnv = "FLY_ZCODE_BIN"
+
+// zcodeRuntimeCommand app-server 子进程命令（测试注入缝：PATH 假二进制）。
+var zcodeRuntimeCommand = defaultZcodeRuntimeCommand
+
+func defaultZcodeRuntimeCommand() (string, []string) {
+	if bin := os.Getenv(ZcodeDesktopBinEnv); bin != "" {
+		return bin, []string{"app-server"}
 	}
-	return z, true
+	return "node", []string{defaultZcodeRuntimePath, "app-server"}
 }
+
+// splitZcodeModel "zai/glm-5.3" → ("zai", "glm-5.3")；无斜杠时 provider 缺省
+// zai（zcode 自身命名空间）。
+func splitZcodeModel(model string) (providerID, modelID string) {
+	providerID, modelID = "zai", model
+	if i := strings.IndexByte(model, '/'); i > 0 {
+		providerID, modelID = model[:i], model[i+1:]
+	}
+	return providerID, modelID
+}
+
+// ---- 桌面可见性（v0.20 机制，与协议驱动正交）----
 
 // zcodeWorkspaceOpener workspace 注册的系统出口（测试注入缝，AGENTS.md 覆盖
 // 纪律：副作用经缝注入而非测试内 mock 进程）。
 var zcodeWorkspaceOpener = defaultOpenZcodeWorkspace
 
 // zcodeDesktopGOOS 平台闸注入缝：生产恒 runtime.GOOS，测试可强制 "darwin"
-// 让 Linux CI 覆盖注册路径（否则 darwin-only 分支在 Linux 上既测不到也
-// 拉不满覆盖率门禁——PR #4 review 修复）。
+// 让 Linux CI 覆盖注册路径。
 var zcodeDesktopGOOS = runtime.GOOS
 
-// ZcodeDesktopBinEnv 桌面二进制覆盖环境变量名。默认 macOS 安装路径；Electron
-// 必须以真实第二进程启动——`open -a` 在 Desktop 已运行时不转发 argv（实测
-// 参数被丢弃），而直接 exec 会触发 Electron single-instance 的 second-instance
-// 事件把 --open-workspace 交给主窗口（ZCode 主进程 index.js 已确认该 handler）。
-const ZcodeDesktopBinEnv = "FLY_ZCODE_BIN"
-
-// defaultZcodeDesktopBin 默认桌面二进制路径（const，注入缝走 env，见 zcodeDesktopBin）。
+// defaultZcodeDesktopBin 桌面二进制默认路径（const；env 覆盖见 zcodeDesktopBin）。
 const defaultZcodeDesktopBin = "/Applications/ZCode.app/Contents/MacOS/ZCode"
 
-// zcodeDesktopBin 解析桌面二进制路径：env 覆盖权威，缺省用官方安装位置。
+// zcodeDesktopBin 解析桌面二进制路径：env 覆盖权威，缺省官方安装位置。
 func zcodeDesktopBin() string {
 	if bin := os.Getenv(ZcodeDesktopBinEnv); bin != "" {
 		return bin
@@ -108,8 +111,7 @@ func defaultOpenZcodeWorkspace(path string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	// 注册是 fire-and-forget，但只 Start 不 Wait 会留僵尸进程（长跑随单元
-	// 数累积）——Wait 仅负责回收，超时 kill 由 CommandContext 承担。
+	// fire-and-forget，但只 Start 不 Wait 会留僵尸——Wait 仅负责回收。
 	go func() { _ = cmd.Wait() }()
 	return nil
 }
@@ -117,110 +119,413 @@ func defaultOpenZcodeWorkspace(path string) error {
 // disableDesktopRegistration 测试闸：Run 级测试不得激活用户桌面（隔离纪律）。
 var disableDesktopRegistration = false
 
-// RegisterZcodeWorkspace 在 ZCode 桌面端注册一个 workspace 路径（macOS-only），
-// 并触发该路径 CLI 存储会话的索引导入。实测语义矩阵（2026-08-27）：
-//   - 仅注册时刻处理 --open-workspace 才扫 ~/.zcode/cli/agents/ 导入该路径
-//     会话进 tasks-index.sqlite；纯冷启动、暖状态静默均不导入；
-//   - 重复调用幂等（second-instance 只切换/激活，无窗口风暴），因此每次
-//     RunZcode 前触发 = 单元会话可见性随执行增量累积。
-//
-// 失败静默：可见性是 UX 增强，绝不阻塞执行链路；非 macOS/未装 Desktop/
-// 超时都安全降级。（已知边缘：/tmp 符号链接路径可能因路径归一化不匹配
-// 不导入——生产 Cwd 是真实项目/worktree 路径，不受影响。）
+// RegisterZcodeWorkspace 在 ZCode 桌面端注册 workspace 路径（macOS-only）并
+// 触发该路径 CLI 存储会话的索引导入。实测语义（v0.20 九组探针）：GUI 按
+// workspace_key 分组，未注册路径零显示；--open-workspace 每次处理都幂等注册
+// 并导入。失败静默：可见性是 UX 增强，绝不阻塞执行链路。
 func RegisterZcodeWorkspace(path string) {
 	if disableDesktopRegistration || zcodeDesktopGOOS != "darwin" || path == "" {
 		return
 	}
-	// 索引按归一化路径做 workspace_key（实测 /tmp 符号链接注册成功但导入
-	// 失配；EvalSymlinks 后同一路径立即导入）。解析失败退回原值。
+	// 索引按归一化路径做 workspace_key（/tmp 符号链接注册成功但导入失配，
+	// EvalSymlinks 后关闭该边缘——实测验证）。
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}
 	_ = zcodeWorkspaceOpener(path)
 }
 
-// RunZcode 驱动一次 zcode headless 会话。凭证在用户侧 config.json 配置完成
-// （OAuth 或 API Key），本函数不注入任何凭证。
-//
-// 桌面可见性双触发（实测语义见 DESIGN v0.20）：--open-workspace 的唯一导入
-// 效果是"该路径此刻已存在的会话"——首次执行的全新路径在 spawn 前触发时存储
-// 为空，什么都不导入。因此 spawn 前触发负责注册工作区并导入历史（resume/
-// 重试场景），watchdog 返回后再触发一次把本会话立即导入 GUI（失败尝试的
-// 部分对话同样入库，供排障）。执行进行中的会话仍不可见——导入是瞬时快照。
+// ---- 协议状态机 ----
+
+// zcodeProto app-server 会话状态机。事件从 watchdog 的 stdout 复制 goroutine
+// 进入（feedLine），首个请求从 InteractStdin goroutine 发出（attach）——全部
+// 状态经 mu 串行化；finish 幂等且绝不持 mu 调用（内部走 watchdog 清理路径）。
+type zcodeProto struct {
+	mu     sync.Mutex
+	out    io.Writer
+	finish func()
+
+	prompt   string
+	provider string
+	modelID  string
+	thought  string
+	wsPath   string
+	wsKey    string
+	nextID   int
+	kinds    map[int]string // 已发请求 id → create/send/read
+
+	sessionID string
+	created   bool
+	sent      bool
+	failed    string
+	done      bool
+
+	finalText   string
+	usage       *Usage
+	reasonChars int64
+}
+
+func newZcodeProto(prompt, model, thought, wsPath, wsKey string) *zcodeProto {
+	provider, modelID := splitZcodeModel(model)
+	if thought == "" {
+		thought = "max"
+	}
+	return &zcodeProto{
+		prompt: prompt, provider: provider, modelID: modelID, thought: thought,
+		wsPath: wsPath, wsKey: wsKey, nextID: 1, kinds: map[int]string{},
+	}
+}
+
+// attach InteractStdin 钩子：注入写端与 finish 后立即发出 session/create。
+func (z *zcodeProto) attach(w io.WriteCloser, finish func()) {
+	z.mu.Lock()
+	z.out, z.finish = w, finish
+	z.mu.Unlock()
+	z.requestCreate()
+}
+
+// requestCreate 持锁发送 session/create；失败即终结。
+// sendLocked 写一行 JSON 到子进程 stdin（需已持 mu）。载荷只含 JSON 安全的
+// 标量/映射，Marshal 不可能失败（覆盖率纪律：不写不可达防御分支）。
+func (z *zcodeProto) sendLocked(obj map[string]any) error {
+	if z.out == nil {
+		return nil // attach 前的事件回声（服务器主动通知先于钩子的理论竞态）
+	}
+	data, _ := json.Marshal(obj)
+	_, err := z.out.Write(append(data, '\n'))
+	return err
+}
+
+// requestCreate 持锁发送 session/create；失败即终结。
+func (z *zcodeProto) requestCreate() {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	id := z.nextID
+	z.nextID++
+	z.kinds[id] = "create"
+	err := z.sendLocked(map[string]any{"id": id, "method": "session/create", "params": map[string]any{
+		"workspace":    map[string]any{"workspacePath": z.wsPath, "workspaceKey": z.wsKey},
+		"model":        map[string]any{"providerId": z.provider, "modelId": z.modelID},
+		"thoughtLevel": z.thought,
+		// 无人值守必须跳过审批（一次性 --mode yolo 的协议对应物；对执行期
+		// 生效语义列入 §10-6 首跑验证）。
+		"mode": "yolo",
+	}})
+	if err != nil {
+		z.failLocked(err.Error())
+	}
+}
+
+// maybeSendPrompt create 应答与 sessionId 双备即投递（两事件到达顺序均兼容）。
+func (z *zcodeProto) maybeSendPrompt() {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.sent || !z.created || z.sessionID == "" || z.failed != "" {
+		return
+	}
+	z.sent = true
+	id := z.nextID
+	z.nextID++
+	z.kinds[id] = "send"
+	err := z.sendLocked(map[string]any{"id": id, "method": "session/send", "params": map[string]any{
+		"sessionId": z.sessionID, "content": z.prompt,
+	}})
+	if err != nil {
+		z.failLocked(err.Error())
+	}
+}
+
+// requestRead turn 完成后拉取终态（拉模式：文本/usage 不在推送事件里）。
+func (z *zcodeProto) requestRead() {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.done || z.failed != "" {
+		return
+	}
+	id := z.nextID
+	z.nextID++
+	z.kinds[id] = "read"
+	err := z.sendLocked(map[string]any{"id": id, "method": "session/read", "params": map[string]any{
+		"sessionId": z.sessionID,
+	}})
+	if err != nil {
+		z.failLocked(err.Error())
+	}
+}
+
+// failLocked 记录失败并终结会话（需已持 mu；finish 经 goroutine 调用防死锁）。
+func (z *zcodeProto) failLocked(msg string) {
+	if z.failed == "" {
+		z.failed = msg
+	}
+	if z.finish != nil {
+		go z.finish()
+	}
+}
+
+// feedLine 消费一行 stdout JSON（NDJSON）。非 JSON 行忽略（容错纪律同 pi/omp）。
+func (z *zcodeProto) feedLine(line string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return
+	}
+	var ev struct {
+		ID     any             `json:"id"` // 数字（我方请求）或字符串（服务器反向请求 "server-N"）
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"` // 服务器通知/反向请求的载荷
+		Result json.RawMessage `json:"result"` // 我方请求应答的载荷
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &ev); err != nil {
+		return
+	}
+	if ev.Error != nil && ev.Error.Message != "" {
+		z.mu.Lock()
+		z.failLocked("zcode protocol: " + ev.Error.Message)
+		z.mu.Unlock()
+		return
+	}
+	switch ev.Method {
+	case "session/requestRuntimePreferences":
+		var p struct {
+			SessionID string `json:"sessionId"`
+		}
+		_ = json.Unmarshal(ev.Params, &p)
+		z.mu.Lock()
+		if p.SessionID != "" && z.sessionID == "" {
+			z.sessionID = p.SessionID
+		}
+		err := z.sendLocked(map[string]any{"id": ev.ID, "result": map[string]any{
+			"nativeSearchEnhancementsEnabled": false,
+		}})
+		if err != nil {
+			z.failLocked(err.Error())
+		}
+		z.mu.Unlock()
+		z.maybeSendPrompt()
+	case "state.updated":
+		var p struct {
+			SessionID string `json:"sessionId"`
+		}
+		_ = json.Unmarshal(ev.Params, &p)
+		z.mu.Lock()
+		if p.SessionID != "" && z.sessionID == "" {
+			z.sessionID = p.SessionID
+		}
+		z.mu.Unlock()
+		z.maybeSendPrompt()
+	case "computer-use/operation-event":
+		var p struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(ev.Params, &p)
+		if p.Kind == "turn-completed" {
+			z.requestRead()
+		}
+	case "": // 我方请求的应答（id 数字；载荷在 result 字段）
+		z.handleResponse(ev.ID, ev.Result)
+	}
+}
+
+// handleResponse 按发请求时的 kind 分发应答（id 只认数字——我方请求的编号）。
+func (z *zcodeProto) handleResponse(idAny any, params json.RawMessage) {
+	id, ok := idAny.(float64)
+	if !ok {
+		return
+	}
+	z.mu.Lock()
+	kind := z.kinds[int(id)]
+	if kind == "create" {
+		z.created = true
+	}
+	z.mu.Unlock()
+	switch kind {
+	case "create":
+		z.maybeSendPrompt()
+	case "read":
+		z.consumeRead(params)
+	}
+}
+
+// consumeRead 解析 session/read 应答：末条含 text part 的 assistant 消息为
+// 终态；提取文本、usage、reasoning 字符量后终结会话。
+func (z *zcodeProto) consumeRead(raw json.RawMessage) {
+	var res struct {
+		Messages []struct {
+			Info struct {
+				Role   string `json:"role"`
+				Tokens *struct {
+					Total     int64 `json:"total"`
+					Input     int64 `json:"input"`
+					Output    int64 `json:"output"`
+					Reasoning int64 `json:"reasoning"`
+					Cache     struct {
+						Read  int64 `json:"read"`
+						Write int64 `json:"write"`
+					} `json:"cache"`
+				} `json:"tokens"`
+			} `json:"info"`
+			Parts []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		z.mu.Lock()
+		z.failLocked("zcode protocol: session/read unparseable: " + err.Error())
+		z.mu.Unlock()
+		return
+	}
+	var text string
+	var usage *Usage
+	var reasonChars int64
+	for i := len(res.Messages) - 1; i >= 0; i-- {
+		m := res.Messages[i]
+		if m.Info.Role != "assistant" {
+			continue
+		}
+		gotText := false
+		for _, part := range m.Parts {
+			switch part.Type {
+			case "text":
+				if part.Text != "" {
+					text, gotText = part.Text, true
+				}
+			case "reasoning":
+				reasonChars += int64(len(part.Text))
+			}
+		}
+		if gotText {
+			if t := m.Info.Tokens; t != nil {
+				usage = &Usage{
+					Input: t.Input, Output: t.Output, Reasoning: t.Reasoning,
+					CacheRead: t.Cache.Read, CacheWrite: t.Cache.Write,
+					TotalTokens: t.Total,
+				}
+			}
+			break
+		}
+	}
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if text == "" && z.failed == "" {
+		z.failed = "zcode protocol: no assistant text in session/read"
+	}
+	z.finalText, z.usage, z.reasonChars = text, usage, reasonChars
+	z.done = true
+	if z.finish != nil {
+		go z.finish()
+	}
+}
+
+// zcodeOutcome 协议终态快照（值拷贝出锁）。
+type zcodeOutcome struct {
+	sessionID   string
+	text        string
+	usage       *Usage
+	reasonChars int64
+	failed      string
+	done        bool
+}
+
+func (z *zcodeProto) snapshot() zcodeOutcome {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return zcodeOutcome{
+		sessionID: z.sessionID, text: z.finalText, usage: z.usage,
+		reasonChars: z.reasonChars, failed: z.failed, done: z.done,
+	}
+}
+
+// RunZcode 驱动一次 zcode app-server 会话（全新会话，干完即弃——§3 一次性
+// 语义）。桌面可见性双触发：spawn 前注册导入历史，spawn 后导入本会话。
 func RunZcode(a ZcodeArgs) Result {
 	RegisterZcodeWorkspace(a.Cwd)
-	args := []string{"--prompt", a.Prompt, "--json"}
+	wsKey := a.Cwd
+	if resolved, err := filepath.EvalSymlinks(a.Cwd); err == nil && resolved != "" {
+		wsKey = resolved // 协议 workspaceKey 与桌面索引同源：归一化真实路径
+	}
 	model := a.Model
 	if model == "" {
 		model = ZcodeDefaultModel
 	}
-	args = append(args, "--model", model)
-	if a.SessionID != "" {
-		args = append(args, "--resume", a.SessionID)
-	}
-	mode := a.Mode
-	if mode == "" {
-		mode = "yolo" // 官方 --prompt 缺省值，显式声明防上游变更
-	}
-	args = append(args, "--mode", mode)
+	proto := newZcodeProto(a.Prompt, model, a.ThoughtLevel, a.Cwd, wsKey)
 
-	result := watchdog.Run("zcode", args, watchdog.Opts{
+	var lineBuf string
+	onActivity := func(chunk, stream string) {
+		if stream != "stdout" {
+			return
+		}
+		lineBuf += chunk
+		for {
+			i := strings.IndexByte(lineBuf, '\n')
+			if i < 0 {
+				break
+			}
+			proto.feedLine(lineBuf[:i])
+			lineBuf = lineBuf[i+1:]
+		}
+	}
+
+	name, cmdArgs := zcodeRuntimeCommand()
+	result := watchdog.Run(name, cmdArgs, watchdog.Opts{
 		Cwd:           a.Cwd,
 		Env:           childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
 		WallTimeoutMs: a.Watchdog.WallTimeoutMs,
 		KillGraceMs:   a.Watchdog.KillGraceMs,
+		OnActivity:    onActivity,
+		InteractStdin: proto.attach,
 	})
-	// 后触发：本会话此刻已完整落盘（成功或失败），立即导入桌面索引。
 	RegisterZcodeWorkspace(a.Cwd)
 
+	oc := proto.snapshot()
 	out := Result{
-		ExitCode:   result.ExitCode,
-		Signal:     result.Signal,
-		TimedOut:   result.TimedOut,
-		Stdout:     result.Stdout,
-		Stderr:     result.Stderr,
-		Truncated:  result.Truncated,
-		DurationMS: result.DurationMS,
-		SpawnError: result.SpawnError,
-		Harness:    "zcode",
-		Provider:   "zai-coding-plan",
-		Model:      model,
+		ExitCode:     result.ExitCode,
+		Signal:       result.Signal,
+		TimedOut:     result.TimedOut,
+		IdleTimedOut: result.IdleTimedOut,
+		WallTimedOut: result.WallTimedOut,
+		Stdout:       result.Stdout,
+		Stderr:       result.Stderr,
+		Truncated:    result.Truncated,
+		DurationMS:   result.DurationMS,
+		SpawnError:   result.SpawnError,
+		Harness:      "zcode",
+		Provider:     "zai-coding-plan",
+		Model:        model,
+		SessionID:    oc.sessionID,
+		Text:         oc.text,
 	}
-	settled := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && result.SpawnError == ""
-	if settled {
-		if z, ok := ParseZcodeJSON(result.Stdout); ok {
-			out.Settled = true
-			out.Text = z.Response
-			out.SessionID = z.SessionID
-			total := z.Usage.TotalTokens
-			reasoning := z.Usage.ReasoningTokens
-			cacheRead := z.Usage.CacheReadTokens
-			cacheWrite := z.Usage.CacheWriteTokens
-			// input 优先用上报值（2026-08-27 探针：inputTokens 恒在且与派生
-			// 值不一致——total 的构成语义未经第二组探针复核，派生仅作缺报
-			// fallback，负值 clamp 0 防 usage 倒挂）。
-			input := z.Usage.InputTokens
-			if input == 0 {
-				input = total - reasoning - cacheRead - cacheWrite
-				if input < 0 {
-					input = 0
-				}
-			}
-			out.Usage = &Usage{
-				Input:       input,
-				Output:      z.Usage.OutputTokens,
-				Reasoning:   reasoning,
-				CacheRead:   cacheRead,
-				CacheWrite:  cacheWrite,
-				TotalTokens: total,
-			}
-		} else {
-			out.Settled = false
-			msg := strings.TrimSpace(result.Stdout)
-			out.ErrorMessage = &msg // 非 JSON 输出留给分类器定码
+	if oc.usage != nil {
+		u := *oc.usage
+		out.Usage = &u
+	}
+	if oc.reasonChars > 0 {
+		rc := oc.reasonChars
+		out.ReasoningChars = &rc
+	}
+	// Settled 由协议完成度决定（进程终态被 finish 的 SIGTERM 收割是正常路径，
+	// 不读作失败——与出口契约"正交记录"语义一致）。
+	out.Settled = oc.done && oc.failed == "" && oc.text != "" &&
+		!result.TimedOut && result.SpawnError == ""
+	if !out.Settled {
+		msg := oc.failed
+		if msg == "" && result.TimedOut {
+			msg = "zcode: session did not complete (idle/wall timeout)"
 		}
-	} else if msg := strings.TrimSpace(result.Stderr); msg != "" {
+		if msg == "" {
+			msg = strings.TrimSpace(result.Stderr)
+		}
+		if msg == "" && result.SpawnError != "" {
+			msg = result.SpawnError
+		}
+		if msg == "" {
+			msg = "zcode: session ended without completion"
+		}
 		out.ErrorMessage = &msg
 	}
 	return out
