@@ -6,7 +6,7 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[DESIGN.md](DESIGN.md)**（v0.19，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[HANDOFF.md](HANDOFF.md)。
+权威设计文档：**[docs/DESIGN.md](docs/DESIGN.md)**（v0.22，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[docs/HANDOFF.md](docs/HANDOFF.md)。
 
 ## 安装
 
@@ -62,7 +62,7 @@ flywheel install-skills --project /path/to/project
 
 内置 skill 目录也可用 CLI 直接查看：`flywheel skills list` / `flywheel skills read <name>`（go:embed 内嵌，无需源码树）。
 
-## 使用全流程（最小示例，详见 DESIGN.md §12）
+## 使用全流程（最小示例，详见 [docs/DESIGN.md](docs/DESIGN.md) §12）
 
 ```bash
 # 1. 在 harness（kimi code 或 pi）里生成任务契约
@@ -150,7 +150,7 @@ v0.18 起按**逐函数**检查——任何函数 <100% 直接失败，不再只
 
 ## 文档入口
 
-- [DESIGN.md](DESIGN.md) — 权威设计文档（§2 设计铁律是最高约束）
+- [docs/DESIGN.md](docs/DESIGN.md) — 权威设计文档（§2 设计铁律是最高约束）
 - [AGENTS.md](AGENTS.md) — 仓库工作宪法（构建/闸门/硬契约）
-- [HANDOFF.md](HANDOFF.md) — 新会话交接上下文
+- [docs/HANDOFF.md](docs/HANDOFF.md) — 新会话交接上下文
 - [drills/](drills/README.md) — 实证演练记录与环境事实基线

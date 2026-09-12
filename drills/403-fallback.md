@@ -2,7 +2,7 @@
 
 ## 目的
 
-DESIGN.md §6 要求"检测到 403/限流自动切渠道"。演练回答：OpenCode Go 的
+docs/DESIGN.md §6 要求"检测到 403/限流自动切渠道"。演练回答：OpenCode Go 的
 鉴权类失败经 pi 暴露成什么形态？编排器 `classifyError` 归为什么码？
 401 与 403 应不应走同一条路？
 

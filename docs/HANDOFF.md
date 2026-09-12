@@ -2,7 +2,7 @@
 
 > 给接续工作的 agent：你在 `~/Documents/projects/flywheel/`（git 主线 main）。
 > 仓库为 **Go 版全量实现**（2026-08-22 迁移完成）：cmd / internal / templates / skills / scripts。
-> **第一步先通读 `DESIGN.md`（v0.21，约 500 行）**，它是唯一权威设计文档。§2 的十条设计铁律是最高约束，任何实现决策不得与之冲突。
+> **第一步先通读 `docs/DESIGN.md`（v0.22，约 520 行）**，它是唯一权威设计文档。§2 的十条设计铁律是最高约束，任何实现决策不得与之冲突。
 
 ## 项目一句话
 
@@ -18,7 +18,7 @@ go build ./... && make quality-gate   # vet + fmt-check + 覆盖率 100% 门禁
 - **覆盖率 100% 是硬门禁**：反向驱动可测性（sleep/now/env/log 注入缝）；禁魔改单测绕过；不可达防御分支删代码+注释。
 - skills frontmatter 规范由 internal/skillsembed 测试强制（真 YAML 解析 + name/version/description/whenToUse/arguments），CI 阻断。
 
-## 已定型的关键决策（细节全在 DESIGN.md）
+## 已定型的关键决策（细节全在 docs/DESIGN.md）
 
 - **编排器是确定性 Go CLI**（cobra 命令树），不是 skill、不是 agent；skill 只是触发按钮。
 - **三个主 loop**：Plan = kimi code + K3（长驻会话）；Execute = zcode + GLM-5.3（每单元全新会话，app-server 协议驱动）；Review = Codex + GPT-6-Astra（全新会话）。Judge 主判 = kimi code + K3（fresh `-p`），双面板复核 = Codex + GPT-6-Astra。
@@ -45,7 +45,7 @@ S4-0 仍是下一步。
 ## 本机环境事实
 
 - macOS arm64；Go 工具链经 mise 管理（默认 go@1.27.0）。⚠️ shell PATH 硬编码了旧版 go 1.26 路径——新会话先 `go version` 核对，不对则 `eval "$(mise env)"`。
-- **zcode**（v0.22 主执行 harness）：driver 默认 `node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs app-server`（app 内置官方 runtime，随桌面自动更新；env `FLY_ZCODE_BIN` 可覆盖为任意 launcher）。Z.AI Coding Plan 已在 `~/.zcode/cli/config.json` 配好（provider zai）；app-server 协议 **live 冒烟 2026-09-10 通过**（create/send/事件流/session/read 全闭环，8.2s）。协议无公开文档——桌面大版本更新后跑协议探针（§10-5）。
+- **zcode**（v0.22 主执行 harness）：driver 默认 `node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs app-server`（app 内置官方 runtime，随桌面自动更新；env `FLY_ZCODE_SERVER_BIN` 可覆盖为任意 launcher（`FLY_ZCODE_BIN` 只管桌面注册二进制——v0.22 语义拆分））。Z.AI Coding Plan 已在 `~/.zcode/cli/config.json` 配好（provider zai）；app-server 协议 **live 冒烟 2026-09-10 通过**（create/send/事件流/session/read 全闭环，8.2s）。协议无公开文档——桌面大版本更新后跑协议探针（§10-5）。
 - **codex**（v0.22 Review/面板 harness）：npm CLI 已升 **0.154.0**（2026-09-10；gpt-6-astra 硬门槛 ≥0.154/内置≥0.153，live 验证通过）；chatgpt 订阅 OAuth 已登录（auth.json）。注意代理经 HKG 节点偶发 403，重试即过。
 - **kimi code**：订阅 OAuth 登录在；stream-json 无 usage 暴露：Plan 的 token 不可观测（接受现状，看门狗兜底）。
 - **omp（B 通道）**：已装、`zhipu-coding-plan` provider 配好（智谱国内计划）——zcode 协议漂移时的应急通道。

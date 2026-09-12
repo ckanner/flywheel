@@ -8,10 +8,15 @@ on disk, unattended, escalating to a human when stuck. This repo holds the
 orchestrator (`cmd/` + `internal/`), the contract templates (`templates/`),
 and the button skills (`skills/`).
 
-DESIGN.md is the authoritative design document. Its §2 十条设计铁律 are the
+docs/DESIGN.md is the authoritative design document. Its §2 十条设计铁律 are the
 highest constraint: any implementation decision that conflicts with them is
 wrong. The orchestrator is NOT an agent — keep every machine decision
 mechanically checkable.
+
+Note: this repo's own `docs/` holds project documentation (DESIGN /
+HANDOFF / review ledgers); the `docs/<slug>/` ledger zone defined in
+DESIGN is a TARGET-repo concept (internal/ledger) — same prefix,
+disjoint worlds.
 
 ## Build & Test
 
@@ -22,7 +27,7 @@ make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外
 make quality-gate         # vet + fmt-check + coverage —— CI 同款，唯一验收闸门
 ```
 
-`make quality-gate` 绿是交付的唯一标准。真实 pi/kimi 冒烟不在默认门禁内；
+`make quality-gate` 绿是交付的唯一标准。真实 zcode/codex/kimi 冒烟不在默认门禁内；
 mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
 
 ## Hard Contracts
@@ -35,7 +40,7 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
   a malformed acceptance must fail fast, never crash mid-run after a spawn.
 - **Error taxonomy**: `internal/errs` codes (AUTH/QUOTA/RATE_LIMIT/SERVER/
   TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED)
-  are a wire contract. Changes are design changes: update DESIGN.md §6 and the
+  are a wire contract. Changes are design changes: update docs/DESIGN.md §6 and the
   变更记录 first, then code, then tests.
 - **Ledger zone**: paths inside `docs/<slug>/` are classified by
   `internal/ledger`. Boundary judgement excludes ledger paths; unit commits
@@ -76,7 +81,7 @@ implementation trivia to chase the number.
 
 ## Language
 
-User-facing docs (DESIGN.md, HANDOFF.md, README, SKILL.md bodies) are Chinese.
+User-facing docs (docs/DESIGN.md, docs/HANDOFF.md, README, SKILL.md bodies) are Chinese.
 Code comments mix per existing convention: English for mechanics, Chinese for
 design-document references.
 
