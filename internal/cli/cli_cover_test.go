@@ -539,10 +539,10 @@ func TestInstallSkillsProjectCopyScope(t *testing.T) {
 	t.Setenv("HOME", home)
 	project := t.TempDir()
 
-	code, out := runCLI(t, "install-skills", "--project", project, "--copy")
+	code, out := runCLI(t, "install-skills", "--project", project)
 	require.Equal(t, 0, code, out)
 	assert.Contains(t, out, "安装范围: project ("+project+")")
-	assert.Contains(t, out, "方式: 复制（快照）")
+	assert.Contains(t, out, "方式: 复制（内嵌快照）")
 	assert.FileExists(t, filepath.Join(project, ".agents", "skills", "flywheel-run", "SKILL.md"))
 	assert.NoFileExists(t, filepath.Join(home, ".agents", "skills", "flywheel-run"), "项目级安装不动用户级")
 }
@@ -553,9 +553,11 @@ func TestInstallSkillsSkippedSecondRun(t *testing.T) {
 
 	code, _ := runCLI(t, "install-skills")
 	require.Equal(t, 0, code)
+	// 二次运行 = 升级刷新：带标记的快照目录删除重装（二进制升级语义）。
 	code, out := runCLI(t, "install-skills")
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "flywheel-run: 已安装，跳过（already installed） -> ")
+	assert.Contains(t, out, "flywheel-run: 已复制 -> ")
+	assert.FileExists(t, filepath.Join(home, ".agents", "skills", "flywheel-run", ".flywheel-snapshot"))
 }
 
 func TestInstallSkillsStaleSymlinkReported(t *testing.T) {
@@ -566,7 +568,20 @@ func TestInstallSkillsStaleSymlinkReported(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(home, "gone-target"),
 		filepath.Join(skillsDir, "flywheel-run")))
 
+	// 默认快照模式：失效链接被直接替换为快照目录。
 	code, out := runCLI(t, "install-skills")
+	require.Equal(t, 0, code, out)
+	assert.DirExists(t, filepath.Join(skillsDir, "flywheel-run"))
+
+	// --link 模式（源码树内）保留断链 stale 上报语义——独立 home，避免默认
+	// 模式的快照真目录被 P1-11 拒绝替换的跨模式干扰。
+	home2 := t.TempDir()
+	t.Setenv("HOME", home2)
+	skillsDir2 := filepath.Join(home2, ".agents", "skills")
+	require.NoError(t, os.MkdirAll(skillsDir2, 0o755))
+	require.NoError(t, os.Symlink(filepath.Join(home2, "gone-target"),
+		filepath.Join(skillsDir2, "flywheel-run")))
+	code, out = runCLI(t, "install-skills", "--link")
 	require.Equal(t, 0, code, out)
 	assert.Contains(t, out, "链接已失效（重跑加 --force 替换）")
 	assert.Contains(t, out, "re-run with --force")

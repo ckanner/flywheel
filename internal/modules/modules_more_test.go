@@ -81,11 +81,6 @@ func TestSkillFrontmatterOkVariants(t *testing.T) {
 	assert.False(t, skillFrontmatterOk(dir))
 }
 
-func TestCopyDirMissingSource(t *testing.T) {
-	err := copyDir(filepath.Join(t.TempDir(), "gone"), filepath.Join(t.TempDir(), "dst"))
-	assert.Error(t, err)
-}
-
 func TestInstallSkillsDefaultHomeUsesUserHome(t *testing.T) {
 	root := t.TempDir()
 	writeFileT(t, filepath.Join(root, "skills", "solo", "SKILL.md"),
@@ -690,15 +685,16 @@ func TestInstallSkillsHomeResolutionFailures(t *testing.T) {
 	_, err = InstallSkills(InstallSkillsOpts{Root: root, HomeDir: homeFile})
 	require.Error(t, err)
 
-	// 目标基目录只读且无锚文件 → 锚写入失败。
+	// 目标基目录只读 → 逐条 symlink 失败（锚文件已废弃，函数级不再先行报错）。
 	home := t.TempDir()
 	tb := filepath.Join(home, ".agents", "skills")
 	require.NoError(t, os.MkdirAll(tb, 0o755))
 	require.NoError(t, os.Chmod(tb, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(tb, 0o755) })
-	_, err = InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home})
-	require.Error(t, err)
-	assert.NoFileExists(t, filepath.Join(tb, AnchorFile))
+	sum, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home})
+	require.NoError(t, err)
+	require.Len(t, sum.Results, 1)
+	assert.Equal(t, "error", sum.Results[0].Action)
 }
 
 func TestInstallSkillsReportsBadFrontmatterAsError(t *testing.T) {
@@ -748,21 +744,6 @@ func TestInstallSkillsFileDestSkipAndForceReplace(t *testing.T) {
 	assert.Equal(t, filepath.Join(root, "skills", "alpha"), target)
 }
 
-func TestInstallSkillsCopyErrorPropagates(t *testing.T) {
-	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "beta")
-	writeFileT(t, filepath.Join(skillDir, "SKILL.md"),
-		"---\nname: beta\ndescription: d\n---\nbody")
-	writeFileT(t, filepath.Join(skillDir, "locked.txt"), "secret")
-	require.NoError(t, os.Chmod(filepath.Join(skillDir, "locked.txt"), 0o000))
-	t.Cleanup(func() { _ = os.Chmod(filepath.Join(skillDir, "locked.txt"), 0o644) })
-	sum, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: t.TempDir(), Copy: true})
-	require.NoError(t, err)
-	require.Len(t, sum.Results, 1)
-	assert.Equal(t, "error", sum.Results[0].Action)
-	assert.Contains(t, sum.Results[0].Reason, "permission denied")
-}
-
 func TestInstallSkillsSymlinkFailureReported(t *testing.T) {
 	root := t.TempDir()
 	writeFileT(t, filepath.Join(root, "skills", "alpha", "SKILL.md"),
@@ -770,8 +751,7 @@ func TestInstallSkillsSymlinkFailureReported(t *testing.T) {
 	home := t.TempDir()
 	tb := filepath.Join(home, ".agents", "skills")
 	require.NoError(t, os.MkdirAll(tb, 0o755))
-	// 锚文件已存在可写（覆盖不需要目录写权），目录本身只读 → symlink 必败。
-	writeFileT(t, filepath.Join(tb, AnchorFile), root+"\n")
+	// 目录本身只读 → symlink 必败。
 	require.NoError(t, os.Chmod(tb, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(tb, 0o755) })
 	sum, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home})
@@ -780,42 +760,6 @@ func TestInstallSkillsSymlinkFailureReported(t *testing.T) {
 	assert.Equal(t, "error", sum.Results[0].Action)
 	assert.Contains(t, sum.Results[0].Reason, "permission denied")
 	assert.NoFileExists(t, filepath.Join(tb, "alpha"), "失败的条目不留半成品")
-}
-
-func TestCopyDirBranchMatrix(t *testing.T) {
-	src := t.TempDir()
-	writeFileT(t, filepath.Join(src, "top.txt"), "top")
-	writeFileT(t, filepath.Join(src, "nested", "deep.txt"), "deep")
-
-	// dest 父路径是普通文件 → MkdirAll 失败。
-	blocker := filepath.Join(t.TempDir(), "blocker")
-	writeFileT(t, blocker, "file")
-	err := copyDir(src, filepath.Join(blocker, "sub"))
-	assert.ErrorContains(t, err, "not a directory")
-
-	// 嵌套目录成功复制（递归 + continue）。
-	dst := filepath.Join(t.TempDir(), "dst")
-	require.NoError(t, copyDir(src, dst))
-	data, rerr := os.ReadFile(filepath.Join(dst, "nested", "deep.txt"))
-	require.NoError(t, rerr)
-	assert.Equal(t, "deep", string(data))
-
-	// 子目录不可读 → 递归错误上抛。
-	src2 := t.TempDir()
-	writeFileT(t, filepath.Join(src2, "nested", "inner.txt"), "x")
-	require.NoError(t, os.Chmod(filepath.Join(src2, "nested"), 0o000))
-	t.Cleanup(func() { _ = os.Chmod(filepath.Join(src2, "nested"), 0o755) })
-	err = copyDir(src2, filepath.Join(t.TempDir(), "dst2"))
-	assert.ErrorContains(t, err, "permission denied")
-
-	// dest 已存在且只读 → 文件写入失败上抛（纯文件源，避免先撞递归 MkdirAll）。
-	srcFlat := t.TempDir()
-	writeFileT(t, filepath.Join(srcFlat, "only.txt"), "data")
-	dstRO := filepath.Join(t.TempDir(), "dstro")
-	require.NoError(t, os.Mkdir(dstRO, 0o555))
-	t.Cleanup(func() { _ = os.Chmod(dstRO, 0o755) })
-	err = copyDir(srcFlat, dstRO)
-	assert.ErrorContains(t, err, "permission denied")
 }
 
 // TestDirFS skillsembed 内嵌 FS 子目录访问（正向 + 错误）。

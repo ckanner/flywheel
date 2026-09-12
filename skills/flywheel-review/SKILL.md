@@ -1,7 +1,7 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
@@ -29,7 +29,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run "$slug" --only review
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only review [--unit M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only review [--unit M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
    （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 
 3. **翻译结果**：verdict（pass / return / verification-gap）、分数、理由；

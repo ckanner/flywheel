@@ -83,41 +83,47 @@ var installActionText = map[string]string{
 }
 
 func installSkillsCmd() *cobra.Command {
-	var force, copy bool
+	var force, link bool
 	var project string
 	cmd := &cobra.Command{
 		Use:   "install-skills",
-		Short: "把 skills/ 安装到 ~/.agents/skills（软链默认；--copy 快照；--project 项目级）",
+		Short: "安装 skills（内嵌快照复制到 ~/.agents/skills，安装用法人人一致；--link 开发机软链源码树）",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectAbs := ""
 			if project != "" {
 				projectAbs, _ = filepath.Abs(project)
 			}
-			root, haveSource := repoRoot()
-			if haveSource {
+			// 同步物化全局配置（首装语义；幂等，用户改过的不覆盖）。
+			if gp, created, gerr := config.MaterializeGlobal(); gerr == nil {
+				state := "已存在"
+				if created {
+					state = "本次新建（可直接编辑）"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "全局配置: %s — %s\n", gp, state)
+			}
+			if link {
+				// 开发机专用：软链到源码仓库 skills/（与 main 原子同步）。
+				root, haveSource := repoRoot()
+				if !haveSource {
+					return fmt.Errorf("--link 需要在 flywheel 源码树内运行（未找到 go.mod）")
+				}
 				sum, err := modules.InstallSkills(modules.InstallSkillsOpts{
-					Force: force, Copy: copy, Project: projectAbs, Root: root,
+					Force: force, Project: projectAbs, Root: root,
 				})
 				if err != nil {
 					return err
 				}
-				method := "软链（默认）"
-				if copy {
-					method = "复制（快照）"
-				}
-				return renderInstall(cmd, sum.TargetBase, sum.Scope, method, sum.Results)
+				return renderInstall(cmd, sum.TargetBase, sum.Scope, "软链（源码树，开发机专用）", sum.Results)
 			}
 			sum, serr := installEmbeddedSnapshot(projectAbs)
 			if serr != nil {
 				return serr
 			}
-			fmt.Fprintln(cmd.OutOrStdout(),
-				"未检测到 flywheel 源码树 —— 已从二进制内嵌快照复制安装（软链需要源码仓库）。")
 			return renderInstall(cmd, sum.TargetBase, sum.Scope, "复制（内嵌快照）", sum.Results)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "替换已有条目")
-	cmd.Flags().BoolVar(&copy, "copy", false, "复制而非软链（发布快照）")
+	cmd.Flags().BoolVar(&link, "link", false, "软链到源码仓库（开发机专用，需在源码树内）")
 	cmd.Flags().StringVar(&project, "project", "", "安装到 <path>/.agents/skills（项目级）")
 	return cmd
 }
@@ -161,24 +167,29 @@ func installEmbeddedSnapshot(projectAbs string) (modules.InstallSummary, error) 
 	} else if home, herr := os.UserHomeDir(); herr == nil {
 		targetBase = filepath.Join(home, ".agents", "skills")
 	} else {
-		return modules.InstallSummary{}, fmt.Errorf("cannot resolve home directory")
+		return modules.InstallSummary{}, fmt.Errorf("cannot resolve home directory: %w", herr)
 	}
 	if err := os.MkdirAll(targetBase, 0o755); err != nil {
 		return modules.InstallSummary{}, err
 	}
-	_ = os.WriteFile(filepath.Join(targetBase, modules.AnchorFile),
-		[]byte("(embedded snapshot — no source tree on this machine)\n"), 0o644)
+	// 清理历史版本的仓库锚文件（消费方已移除；存在即删，幂等）。
+	_ = os.Remove(filepath.Join(targetBase, modules.AnchorFile))
 
 	summary := modules.InstallSummary{TargetBase: targetBase, Scope: scope}
 	for _, s := range skillsembed.List() {
 		dest := filepath.Join(targetBase, s.Name)
 		if lst, lerr := os.Lstat(dest); lerr == nil && lst.IsDir() && lst.Mode()&os.ModeSymlink == 0 {
-			summary.Results = append(summary.Results, modules.SkillInstallResult{
-				Name: s.Name, Dest: dest, Action: "error",
-				Reason: "a real directory already exists here — refusing to remove it; handle it manually"})
-			continue
+			// 标记文件区分"本工具物化的快照目录"（升级刷新：删了重装）与用户
+			// 真目录（P1-11：绝不自动删除）。
+			if _, merr := os.Lstat(filepath.Join(dest, snapshotMarker)); merr != nil {
+				summary.Results = append(summary.Results, modules.SkillInstallResult{
+					Name: s.Name, Dest: dest, Action: "error",
+					Reason: "a real directory already exists here — refusing to remove it; handle it manually"})
+				continue
+			}
+			_ = os.RemoveAll(dest) // 我们自己的快照：升级刷新
 		} else if lerr == nil {
-			_ = os.RemoveAll(dest) // 覆盖旧快照/失效链接（幂等物化）
+			_ = os.RemoveAll(dest) // 覆盖旧链接/文件（幂等物化）
 		}
 		// List 校验过 name 合法 → 不可能失败（测试注入除外）。
 		sub, _ := skillFSFor(s.Name)
@@ -187,11 +198,16 @@ func installEmbeddedSnapshot(projectAbs string) (modules.InstallSummary, error) 
 				Name: s.Name, Dest: dest, Action: "error", Reason: werr.Error()})
 			continue
 		}
+		// 快照标记：下次安装据此识别"可刷新目录"。
+		_ = os.WriteFile(filepath.Join(dest, snapshotMarker), []byte("flywheel embedded snapshot\n"), 0o644)
 		summary.Results = append(summary.Results, modules.SkillInstallResult{
 			Name: s.Name, Dest: dest, Action: "copied"})
 	}
 	return summary, nil
 }
+
+// snapshotMarker 内嵌快照目录的归属标记（区分可刷新目录与用户真目录）。
+const snapshotMarker = ".flywheel-snapshot"
 
 // materializeFS 把 fs.FS 内 srcDir 下的全部文件落到 dest（保留相对路径）。
 func materializeFS(fsys fs.FS, srcDir, dest string) error {

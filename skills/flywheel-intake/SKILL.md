@@ -1,7 +1,7 @@
 ---
 name: flywheel-intake
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
 whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm) and pi >=0.84 (triage runs V4 Flash); github-issues sources also need the gh CLI."
@@ -30,7 +30,7 @@ here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求�
    flywheel intake "$slug" --source "$source"
    ```
 
-   若 flywheel 不在 PATH：`flywheel intake docs/<slug> [--source ci-failures]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   若 flywheel 不在 PATH：`flywheel intake docs/<slug> [--source ci-failures]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
    （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 
 3. **翻译结果**，用人话讲：

@@ -337,18 +337,39 @@ func TestSkillsListAndRead(t *testing.T) {
 func TestInstallSkillsSmokeViaRepoRootDetection(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// v0.22 分发定稿：默认一律内嵌快照物化（安装用法人人一致）。
 	code, out := runCLI(t, "install-skills")
 	require.Equal(t, 0, code, out)
 	assert.Contains(t, out, "安装范围: user")
-	assert.FileExists(t, filepath.Join(home, ".agents", "skills", modules.AnchorFile))
-	linkPath := filepath.Join(home, ".agents", "skills", "flywheel-run")
+	assert.Contains(t, out, "内嵌快照")
+	assert.Contains(t, out, "全局配置", "安装同步物化全局配置")
+	assert.NoFileExists(t, filepath.Join(home, ".agents", "skills", modules.AnchorFile),
+		"锚文件已废弃（仓库耦合移除）")
+	assert.DirExists(t, filepath.Join(home, ".agents", "skills", "flywheel-run"))
+
+	// --link 开发机专用：源码树内软链（独立 home——默认模式的真目录快照
+	// 会被 P1-11 拒绝替换，两种模式各验各的）。
+	home2 := t.TempDir()
+	t.Setenv("HOME", home2)
+	code2, out2 := runCLI(t, "install-skills", "--link")
+	require.Equal(t, 0, code2, out2)
+	linkPath := filepath.Join(home2, ".agents", "skills", "flywheel-run")
 	info, err := os.Lstat(linkPath)
 	require.NoError(t, err)
-	assert.NotZero(t, info.Mode()&os.ModeSymlink, "默认软链模式")
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "--link 软链模式")
 }
 
 // TestInstallEmbeddedSnapshotWhenNoSourceTree review #6 回归：发布二进制
 // （无源码树）运行 install-skills 时，从内嵌快照物化副本——绝不静默装零个。
+func TestInstallLinkRequiresSourceTree(t *testing.T) {
+	chdirT(t, t.TempDir()) // 无 go.mod 祖先
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code, out := runCLI(t, "install-skills", "--link")
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, out, "--link 需要在 flywheel 源码树内运行")
+}
+
 func TestInstallEmbeddedSnapshotWhenNoSourceTree(t *testing.T) {
 	// chdir 到无 go.mod 祖先的 tempdir → repoRoot ok=false → 内嵌快照臂。
 	chdirT(t, t.TempDir())
@@ -361,7 +382,8 @@ func TestInstallEmbeddedSnapshotWhenNoSourceTree(t *testing.T) {
 	for _, s := range skillsembed.List() {
 		assert.FileExists(t, filepath.Join(home, ".agents", "skills", s.Name, "SKILL.md"), s.Name)
 	}
-	assert.FileExists(t, filepath.Join(home, ".agents", "skills", modules.AnchorFile))
+	assert.NoFileExists(t, filepath.Join(home, ".agents", "skills", modules.AnchorFile),
+		"锚文件废弃（仓库耦合移除），遗留锚会被清理")
 }
 
 // TestInstallEmbeddedSnapshotProjectScope 内嵌物化的 project 作用域分支。
@@ -451,4 +473,36 @@ func TestStatusStallHintUsesConfiguredWallTimeout(t *testing.T) {
 	code, out := runCLI(t, "status", taskDir)
 	require.Equal(t, 0, code)
 	assert.Contains(t, out, "疑似停滞/断链")
+}
+
+// TestTemplateCmd flywheel template 四臂：--list / 正常输出 / 未知名 / 缺参。
+func TestTemplateCmd(t *testing.T) {
+	code, out := runCLI(t, "template", "--list")
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "spec.example.md")
+	assert.Contains(t, out, "flywheel.config.example.json")
+
+	code, out = runCLI(t, "template", "task-packet.example.md")
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "packet-id:", "模板原文完整打印")
+
+	code, out = runCLI(t, "template", "nope.md")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "未知模板")
+
+	code, out = runCLI(t, "template")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "用法")
+}
+
+// TestInstallLinkHomeResolutionError --link 模式下 HOME 解析失败 → 函数级
+// 错误直达 CLI（modules.InstallSkills 的 MkdirAll 前置失败臂）。
+func TestInstallLinkHomeResolutionError(t *testing.T) {
+	homeFile := t.TempDir()
+	blocker := filepath.Join(homeFile, "home-is-file")
+	require.NoError(t, os.WriteFile(blocker, []byte("not a dir"), 0o644))
+	t.Setenv("HOME", filepath.Join(homeFile, "home-is-file"))
+	code, out := runCLI(t, "install-skills", "--link")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "not a dir") // MkdirAll 报错原样透出
 }

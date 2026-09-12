@@ -76,6 +76,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(gardenCmd())
 	root.AddCommand(installSkillsCmd())
 	root.AddCommand(skillsCmd())
+	root.AddCommand(templateCmd())
 	return root
 }
 
