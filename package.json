@@ -1,13 +1,9 @@
 {
   "name": "@ckanner/flywheel",
   "version": "0.22.0",
-  "description": "Flywheel — Loop Engineering orchestrator (Go). Deterministic orchestrator driving Plan/Execute/Review agent loops from frozen on-disk contracts.",
+  "description": "Flywheel — Loop Engineering orchestrator (Go). Deterministic orchestrator driving Plan/Execute/Review agent loops from frozen on-disk contracts. Platform binaries ride optionalDependencies (@ckanner/flywheel-<os>-<arch>).",
   "bin": {
-    "flywheel": "scripts/run.js"
-  },
-  "scripts": {
-    "postinstall": "node scripts/install.js",
-    "release:check": "node scripts/release-preflight.js"
+    "flywheel": "bin/flywheel.js"
   },
   "os": [
     "darwin",
@@ -26,9 +22,13 @@
   },
   "license": "UNLICENSED",
   "files": [
-    "scripts/install.js",
-    "scripts/run.js",
-    "checksums.txt",
+    "bin/flywheel.js",
     "CHANGELOG.md"
-  ]
+  ],
+  "optionalDependencies": {
+    "@ckanner/flywheel-darwin-arm64": "0.22.0",
+    "@ckanner/flywheel-darwin-amd64": "0.22.0",
+    "@ckanner/flywheel-linux-arm64": "0.22.0",
+    "@ckanner/flywheel-linux-amd64": "0.22.0"
+  }
 }

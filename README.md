@@ -8,29 +8,17 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 
 权威设计文档：**[docs/design.md](docs/design.md)**（v0.22，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。
 
-## 安装
+## 安装（npm，平台二进制包模式）
 
 ```bash
-# 开发：需要 Go >= 1.27（唯一构建依赖）
-make build          # 产出 ./flywheel 单二进制
-make install        # 装到 /usr/local/bin
-
-# 发布形态：goreleaser 出 tar.gz + checksums，npm 包 @ckanner/flywheel
-# 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验（postinstall 自动执行）
+npm i -g @ckanner/flywheel     # 平台二进制经 optionalDependencies 自动就位，无 postinstall 下载
+flywheel install-skills        # skills 物化 + 全局配置 ~/.config/flywheel/flywheel.config.json 一次就位
 ```
 
-或直接从 [GitHub Releases](https://github.com/ckanner/flywheel/releases) 下载对应平台的 tar.gz。
-
-**首次安装后**：
-
-```bash
-flywheel install-skills   # skills 物化到 ~/.agents/skills + 全局配置物化到 ~/.config/flywheel/
-```
-
-安装完全自包含：契约 schema、skills 快照、§13 法定配置表全部内嵌二进制——**无需 clone 本仓库**。
-`--link`（软链源码仓库）仅开发机维护者使用，与分装安装用法不同，非必需。
-
-真实驱动依赖本机三件（v0.22 三厂商定稿）：**zcode**（Execute default/multimodal/Intake——driver 默认跑 ZCode 桌面 app 内置官方 runtime 的 app-server 协议，Z.AI Coding Plan 凭证在 `~/.zcode/cli/config.json` 用户侧）、**Codex CLI ≥0.154**（Review/复核面板，chatgpt 订阅 OAuth 登录）、**kimi code CLI**（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；全部渠道**订阅委托凭证，编排器零 key 注入**（zcode 协议与 codex gpt-6-astra 均已 live 冒烟 2026-09-10）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox；omp+智谱国内计划保留为 B 通道（zcode 协议漂移应急）。测试与演练（mock 驱动）不需要任何凭证。
+- 安装完全自包含：契约 schema、skills 快照、§13 法定配置表全部内嵌二进制，**无需 clone 本仓库**；维护者与分用户用法完全一致。
+- 支持平台：darwin/linux × amd64/arm64（`os`/`cpu` 字段自动选取，`--no-optional` 会导致平台包缺失）。
+- 非 npm 渠道：[GitHub Releases](https://github.com/ckanner/flywheel/releases) 下载平台 tar.gz（`shasum -a 256 -c checksums.txt` 校验）。
+- 开发机源码运行：`go install ./cmd/flywheel`；`flywheel install-skills --link` 可选软链源码树（仅维护者便利，非安装路径）。
 
 ## 本机环境事实（维护机，v0.22）
 

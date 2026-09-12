@@ -1,0 +1,14 @@
+{
+  "name": "@ckanner/flywheel-linux-arm64",
+  "version": "0.22.0",
+  "description": "Flywheel platform binary \u2014 linux-arm64 (auto-selected via optionalDependencies; do not install directly)",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "flywheel"
+  ]
+}
