@@ -31,7 +31,7 @@ here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求�
    ```
 
    若 flywheel 不在 PATH：`flywheel intake docs/<slug> [--source ci-failures]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 
 3. **翻译结果**，用人话讲：
    - 扫到多少候选、多少是新的、多少因指纹重复被跳过；

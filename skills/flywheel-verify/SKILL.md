@@ -29,7 +29,7 @@ here — and no model either: verification is the orchestrator running commands.
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only verify [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 
 3. **翻译结果**：每条命令的退出码与通过与否、git diff 边界判定
    （must-not-touch / 测试文件 / max-files）、里程碑闸门结论。任何红色都

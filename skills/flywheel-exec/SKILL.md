@@ -29,7 +29,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only execute [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 
 3. **翻译结果**：执行是否通过出口契约（进程终态/stderr/交付物三项独立判定）、
    done-report 是否合法、token 与成本增量、state 中该 packet 的新状态

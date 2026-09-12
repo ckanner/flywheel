@@ -24,7 +24,7 @@ Button only: read state + translate. Writes nothing.
    ```
 
    若 flywheel 不在 PATH：`flywheel status docs/<slug>`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 
 3. **翻译结果**，用人话讲：
    - 任务状态、编排器是否存活（pid）、当前里程碑、上次推进时间——

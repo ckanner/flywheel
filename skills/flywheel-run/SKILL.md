@@ -39,7 +39,7 @@ session is spawned by the orchestrator as a separate harness session.
    注意 `--pause-before` 不能与单步按钮（--only）组合——CLI 会直接报错拒绝。
 
    若 flywheel 不在 PATH：`cd <目标仓库根> && nohup flywheel run "$slug" > docs/<slug>/orchestrator.log 2>&1 &`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 3. **确认存活**：等 2 秒，检查进程仍在、`docs/<slug>/orchestrator.pid` 已写入、
    `state.json` 的 status 变为 running。拉起失败 → 读
    `docs/<slug>/orchestrator.log` 报告原因。注意：若任务此前已升级到 inbox，
