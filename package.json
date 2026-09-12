@@ -1,7 +1,7 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.2.0",
-  "description": "Flywheel — Loop Engineering orchestrator (Go). Deterministic orchestrator driving Plan/Execute/Review agent loops from frozen on-disk contracts (DESIGN.md).",
+  "version": "0.22.0",
+  "description": "Flywheel — Loop Engineering orchestrator (Go). Deterministic orchestrator driving Plan/Execute/Review agent loops from frozen on-disk contracts.",
   "bin": {
     "flywheel": "scripts/run.js"
   },

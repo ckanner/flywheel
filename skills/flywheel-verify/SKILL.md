@@ -1,7 +1,7 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm). No harness CLI needed — verification is model-free."
@@ -28,7 +28,7 @@ here — and no model either: verification is the orchestrator running commands.
    flywheel run "$slug" --only verify
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only verify [--packet M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only verify [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
    （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 
 3. **翻译结果**：每条命令的退出码与通过与否、git diff 边界判定

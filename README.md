@@ -16,8 +16,19 @@ make build          # 产出 ./flywheel 单二进制
 make install        # 装到 /usr/local/bin
 
 # 发布形态：goreleaser 出 tar.gz + checksums，npm 包 @ckanner/flywheel
-# 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验
+# 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验（postinstall 自动执行）
 ```
+
+或直接从 [GitHub Releases](https://github.com/ckanner/flywheel/releases) 下载对应平台的 tar.gz。
+
+**首次安装后**：
+
+```bash
+flywheel install-skills   # skills 物化到 ~/.agents/skills + 全局配置物化到 ~/.config/flywheel/
+```
+
+安装完全自包含：契约 schema、skills 快照、§13 法定配置表全部内嵌二进制——**无需 clone 本仓库**。
+`--link`（软链源码仓库）仅开发机维护者使用，与分装安装用法不同，非必需。
 
 真实驱动依赖本机三件（v0.22 三厂商定稿）：**zcode**（Execute default/multimodal/Intake——driver 默认跑 ZCode 桌面 app 内置官方 runtime 的 app-server 协议，Z.AI Coding Plan 凭证在 `~/.zcode/cli/config.json` 用户侧）、**Codex CLI ≥0.154**（Review/复核面板，chatgpt 订阅 OAuth 登录）、**kimi code CLI**（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；全部渠道**订阅委托凭证，编排器零 key 注入**（zcode 协议与 codex gpt-6-astra 均已 live 冒烟 2026-09-10）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox；omp+智谱国内计划保留为 B 通道（zcode 协议漂移应急）。测试与演练（mock 驱动）不需要任何凭证。
 

@@ -72,13 +72,13 @@ func skillFrontmatterOk(skillDir string) bool {
 // InstallSkillsOpts InstallSkills 入参。
 type InstallSkillsOpts struct {
 	Force   bool   // 替换已有条目
-	Copy    bool   // 复制而非符号链接（发布快照）
 	Project string // 非空 → 安装到 <project>/.agents/skills
 	HomeDir string // 用户级基目录（空 = os.UserHomeDir）
-	Root    string // 仓库根（必填；Node 版默认包自身根，Go 二进制无此概念）
+	Root    string // 仓库根（必填）——本函数只做软链安装（--link 开发机路径）；
+	// 分发安装（所有人一致的默认）走 CLI 侧内嵌快照物化。
 }
 
-// InstallSkills 幂等安装。真实目录绝不被自动删除，即使 Force（P1-11）。
+// InstallSkills 幂等软链安装。真实目录绝不被自动删除，即使 Force（P1-11）。
 func InstallSkills(o InstallSkillsOpts) (InstallSummary, error) {
 	skillsDir := filepath.Join(o.Root, "skills")
 	targetBase := filepath.Join(o.HomeDir, ".agents", "skills")
@@ -97,12 +97,6 @@ func InstallSkills(o InstallSkillsOpts) (InstallSummary, error) {
 	if err := os.MkdirAll(targetBase, 0o755); err != nil {
 		return InstallSummary{}, err
 	}
-	// 锚文件：skill 经 "${KIMI_SKILL_DIR}/../flywheel-home.txt" 定位仓库根，
-	// 与符号链接解析无关。
-	if err := os.WriteFile(filepath.Join(targetBase, AnchorFile), []byte(o.Root+"\n"), 0o644); err != nil {
-		return InstallSummary{}, err
-	}
-
 	summary := InstallSummary{TargetBase: targetBase, Scope: scope}
 	for _, name := range ListRepoSkills(o.Root) {
 		src := filepath.Join(skillsDir, name)
@@ -145,55 +139,13 @@ func InstallSkills(o InstallSkillsOpts) (InstallSummary, error) {
 				continue
 			}
 		}
-		if o.Copy {
-			if err := copyDir(src, dest); err != nil {
-				summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "error", Reason: err.Error()})
-				continue
-			}
-			summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "copied"})
-		} else {
-			if err := os.Symlink(src, dest); err != nil {
-				summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "error", Reason: err.Error()})
-				continue
-			}
-			summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "linked"})
-		}
-	}
-	return summary, nil
-}
-
-func copyDir(src, dest string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		return err
-	}
-	for _, e := range entries {
-		s := filepath.Join(src, e.Name())
-		d := filepath.Join(dest, e.Name())
-		if e.IsDir() {
-			if err := copyDir(s, d); err != nil {
-				return err
-			}
+		if err := os.Symlink(src, dest); err != nil {
+			summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "error", Reason: err.Error()})
 			continue
 		}
-		data, err := os.ReadFile(s)
-		if err != nil {
-			return err
-		}
-		// 权限位取自条目元数据；Info 竞态失败（条目刚消失——真删除早一步在
-		// ReadFile 处报错）按可执行缺省，绝不让整个安装因元数据竞态而失败。
-		mode := os.FileMode(0o755)
-		if info, ierr := e.Info(); ierr == nil && info.Mode().Perm()&0o100 == 0 {
-			mode = 0o644
-		}
-		if err := os.WriteFile(d, data, mode); err != nil {
-			return err
-		}
+		summary.Results = append(summary.Results, SkillInstallResult{Name: name, Dest: dest, Action: "linked"})
 	}
-	return nil
+	return summary, nil
 }
 
 // RenderActionText CLI 人话输出用（P3 修复：含 'stale' 动作）。

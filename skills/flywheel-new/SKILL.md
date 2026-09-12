@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + state.json), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: Requires write access + git in the target repository; generated contracts follow the schemas in the flywheel repo templates/.
@@ -32,7 +32,7 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
 2. **问意图**：只问意图类问题（范围、取舍、优先级、验收标准的主观部分）。
    一次问清，不要挤牙膏。
 3. **生成契约**：在目标仓库创建 `docs/<slug>/`：
-   - `spec.md` — 用 `flywheel 仓库/templates/spec.example.md` 的格式（flywheel 仓库根定位：`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt`，或 skill 直接来自仓库内时向上两级）：编号需求
+   - `spec.md` — 用 `flywheel template spec.example.md` 输出的内嵌模板格式（二进制自带，无需源码仓库）：编号需求
      R-01…R-n（每项可独立验证）+ 需求→里程碑映射 + 里程碑表。
    - `task-packet-<id>.md` — 每个执行单元一个，frontmatter 遵守
      `templates/task-packet.schema.json`：packet-id（M<NN>-T<NN>）、

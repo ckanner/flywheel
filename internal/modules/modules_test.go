@@ -443,10 +443,6 @@ func TestListRepoSkillsAndInstallSkills(t *testing.T) {
 	for _, r := range sum.Results {
 		assert.Equal(t, "linked", r.Action)
 	}
-	anchorRaw, aerr := os.ReadFile(filepath.Join(sum.TargetBase, AnchorFile))
-	require.NoError(t, aerr)
-	assert.Equal(t, root+"\n", string(anchorRaw))
-
 	// 二次安装：skipped。
 	sum2, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home})
 	require.NoError(t, err)
@@ -469,13 +465,36 @@ func TestListRepoSkillsAndInstallSkills(t *testing.T) {
 	}
 	assert.True(t, staleFound, "断链必须报 stale 而非 already installed")
 
-	// copy 模式 + force 替换文件条目。
-	sum4, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home, Copy: true, Force: true})
+	// force 替换文件条目（占位文件被真实软链替换）。
+	home2 := t.TempDir()
+	tb2 := filepath.Join(home2, ".agents", "skills")
+	require.NoError(t, os.MkdirAll(tb2, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tb2, "beta"), []byte("stale"), 0o644))
+	sum4, err := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home2, Force: true})
 	require.NoError(t, err)
+	linked := 0
 	for _, r := range sum4.Results {
-		assert.Equal(t, "copied", r.Action)
+		if r.Action == "linked" {
+			linked++
+		}
 	}
-	assert.FileExists(t, filepath.Join(sum4.TargetBase, "beta", "SKILL.md"))
+	assert.Equal(t, 2, linked)
+	if info, lerr := os.Lstat(filepath.Join(tb2, "beta")); lerr == nil {
+		assert.NotZero(t, info.Mode()&os.ModeSymlink, "文件条目被软链替换")
+	}
+
+	// Force 替换指向别处的旧软链（os.Remove 分支）。
+	require.NoError(t, os.Remove(filepath.Join(tb2, "alpha")))
+	require.NoError(t, os.Symlink("/nowhere", filepath.Join(tb2, "alpha")))
+	sumF, errF := InstallSkills(InstallSkillsOpts{Root: root, HomeDir: home2, Force: true})
+	require.NoError(t, errF)
+	relLinked := 0
+	for _, r := range sumF.Results {
+		if r.Action == "linked" {
+			relLinked++
+		}
+	}
+	assert.Equal(t, 2, relLinked)
 
 	// 真目录占位 → error 绝不自动删除（P1-11）。
 	realDir := filepath.Join(home, ".agents", "skills", "gamma")

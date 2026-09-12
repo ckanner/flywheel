@@ -1,11 +1,13 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaults(t *testing.T) {
@@ -61,11 +63,27 @@ func TestLoadAndFind(t *testing.T) {
 	dir := t.TempDir()
 	taskDir := filepath.Join(dir, "docs", "task")
 	assert.NoError(t, os.MkdirAll(taskDir, 0o755))
+	// 全局配置隔离到临时路径（四级链第三级；不写真 HOME）。
+	globalPath := filepath.Join(dir, "global", "flywheel.config.json")
+	t.Setenv(GlobalConfigEnv, globalPath)
 
-	// 缺失 → 错误。
-	_, err := Load(taskDir, dir)
-	assert.Error(t, err)
+	// 四级链：task/cwd/全局全缺 → 物化全局（首装语义）并从全局加载。
+	cfgG, err := Load(taskDir, dir)
+	assert.NoError(t, err)
+	assert.Equal(t, globalPath, cfgG.File, "全局物化后作为配置源")
+	assert.Equal(t, "zcode", cfgG.Routes["default"].Harness, "全局 = 内嵌 §13 法定表")
+	_, created, mErr := MaterializeGlobal()
+	assert.NoError(t, mErr)
+	assert.False(t, created, "已存在不覆盖")
 	assert.Equal(t, "", FindConfigFile(taskDir, dir))
+
+	// 用户改全局即改默认（物化后的文件是可编辑的真实文件）。
+	assert.NoError(t, os.WriteFile(globalPath,
+		[]byte(`{"version": 7, "budget": {"enforce": "hard"}}`), 0o644))
+	cfgU, err := Load(filepath.Join(dir, "fresh-task"), filepath.Join(dir, "fresh-proj"))
+	assert.NoError(t, err)
+	assert.Equal(t, 7, *cfgU.Version)
+	assert.Equal(t, "hard", cfgU.Budget.Enforce)
 
 	// 非法 JSON → 错误。
 	assert.NoError(t, os.WriteFile(filepath.Join(taskDir, "flywheel.config.json"), []byte("{oops"), 0o644))
@@ -112,10 +130,14 @@ func TestLoadAndFind(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, *cfg2.Version)
 
-	// taskDir 不存在：FindConfigFile 全 miss → not found 错误。
-	_, err = Load(filepath.Join(dir, "nope"), filepath.Join(dir, "nope2"))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	// 第四级兜底：全局路径不可写（指到普通文件之下）→ 内嵌法定表。
+	blocker := filepath.Join(dir, "blocker")
+	assert.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+	t.Setenv(GlobalConfigEnv, filepath.Join(blocker, "sub", "flywheel.config.json"))
+	cfgE, err := Load(filepath.Join(dir, "nope"), filepath.Join(dir, "nope2"))
+	assert.NoError(t, err)
+	assert.Equal(t, "(embedded legal table)", cfgE.File)
+	assert.Equal(t, "codex", cfgE.Loops["review"].Harness)
 
 	// JSON 合法但校验失败 → Load 报错。
 	badCfg := filepath.Join(dir, "badcfg")
@@ -140,4 +162,60 @@ func TestValidateJitterNegativeAndPanel(t *testing.T) {
 	bad.JudgePanel = &LoopBinding{Harness: "pi"} // 缺 model/channel
 	err := bad.Validate()
 	assert.ErrorContains(t, err, "judge-panel")
+}
+
+// TestGlobalConfigPathAndMaterializeArms env 覆盖、默认路径、物化错误臂。
+func TestGlobalConfigPathAndMaterializeArms(t *testing.T) {
+	p, err := GlobalConfigPath()
+	require.NoError(t, err)
+	assert.Contains(t, p, ".config/flywheel/flywheel.config.json", "默认 XDG 路径")
+
+	t.Setenv(GlobalConfigEnv, "/custom/cfg.json")
+	p2, err2 := GlobalConfigPath()
+	require.NoError(t, err2)
+	assert.Equal(t, "/custom/cfg.json", p2)
+
+	// HOME 解析失败 → GlobalConfigPath/MaterializeGlobal 报错。
+	t.Setenv(GlobalConfigEnv, "")
+	t.Setenv("HOME", "")
+	_, err3 := GlobalConfigPath()
+	assert.Error(t, err3)
+	_, _, err4 := MaterializeGlobal()
+	assert.Error(t, err4)
+
+	// 目录不可写（父路径是普通文件）→ 物化报错。
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	assert.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+	t.Setenv(GlobalConfigEnv, filepath.Join(blocker, "sub", "cfg.json"))
+	_, _, err5 := MaterializeGlobal()
+	assert.Error(t, err5)
+}
+
+// TestEmbeddedTableSeamArms 内嵌表读取失败缝：物化与 Load 兜底两臂。
+func TestEmbeddedTableSeamArms(t *testing.T) {
+	orig := embeddedTable
+	t.Cleanup(func() { embeddedTable = orig })
+	embeddedTable = func() ([]byte, error) { return nil, errors.New("embed boom") }
+
+	// 物化路径：新文件 + 表读取失败 → 报错。
+	t.Setenv(GlobalConfigEnv, filepath.Join(t.TempDir(), "cfg.json"))
+	_, _, err := MaterializeGlobal()
+	assert.ErrorContains(t, err, "embed boom")
+
+	// Load 兜底路径：全局不可写 + 表读取失败 → 报错。
+	blocker := filepath.Join(t.TempDir(), "blk")
+	assert.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+	t.Setenv(GlobalConfigEnv, filepath.Join(blocker, "s", "cfg.json"))
+	_, err = Load(t.TempDir(), t.TempDir())
+	assert.ErrorContains(t, err, "embed boom")
+}
+
+// TestMaterializeGlobalWriteFail 目录存在但只读 → 写入失败臂。
+func TestMaterializeGlobalWriteFail(t *testing.T) {
+	roDir := t.TempDir()
+	assert.NoError(t, os.Chmod(roDir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(roDir, 0o755) })
+	t.Setenv(GlobalConfigEnv, filepath.Join(roDir, "cfg.json"))
+	_, _, err := MaterializeGlobal()
+	assert.Error(t, err)
 }

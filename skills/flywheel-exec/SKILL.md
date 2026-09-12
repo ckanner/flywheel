@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 description: Trigger only the Execute Loop for a Flywheel task, optionally for one packet (single state transition). Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
@@ -28,7 +28,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run "$slug" --only execute
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only execute [--packet M02-T03]`（<flywheel-repo> 定位：install-skills 在 skills 安装点写了锚文件，`cat ${KIMI_SKILL_DIR}/../flywheel-home.txt` 即仓库根；锚文件不存在说明 skill 直接来自仓库内，${KIMI_SKILL_DIR} 向上两级即仓库根；都不适用就直接问用户要仓库路径）。
+   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only execute [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
    （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
 
 3. **翻译结果**：执行是否通过出口契约（进程终态/stderr/交付物三项独立判定）、

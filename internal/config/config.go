@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ckanner/flywheel/templates"
 	"os"
 	"path/filepath"
 )
@@ -237,33 +238,105 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// Load 读取 flywheel.config.json：先 task 目录，再工作目录（目标仓库根）。
-// 缺失抛 ConfigError。
-func Load(taskDir, cwd string) (*Config, error) {
-	file := FindConfigFile(taskDir, cwd)
-	if file == "" {
-		return nil, fmt.Errorf("flywheel.config.json not found (looked in %s and %s)", taskDir, cwd)
+// GlobalConfigEnv 全局配置路径覆盖环境变量（测试/多实例用）。
+const GlobalConfigEnv = "FLYWHEEL_CONFIG"
+
+// GlobalConfigPath 全局配置路径：env 覆盖 → ~/.config/flywheel/flywheel.config.json。
+func GlobalConfigPath() (string, error) {
+	if p := os.Getenv(GlobalConfigEnv); p != "" {
+		return p, nil
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "flywheel", "flywheel.config.json"), nil
+}
+
+// embeddedTable 注入缝（测试模拟内嵌读取失败）；生产恒 EmbeddedTable。
+var embeddedTable = EmbeddedTable
+
+// EmbeddedTable 内嵌的 §13 法定表原文（templates/flywheel.config.example.json
+// 经 go:embed 随二进制分发——二进制版本即法定表版本，安装/开发同一份）。
+func EmbeddedTable() ([]byte, error) {
+	return templates.FS.ReadFile("flywheel.config.example.json")
+}
+
+// MaterializeGlobal 把内嵌法定表物化为全局配置文件（已存在则原样保留——
+// 用户改过的不覆盖）；返回路径与是否本次新建。安装语义：用户拿到手的就是
+// 一个可直接编辑的真实文件。
+func MaterializeGlobal() (string, bool, error) {
+	path, err := GlobalConfigPath()
+	if err != nil {
+		return "", false, err
+	}
+	if _, serr := os.Stat(path); serr == nil {
+		return path, false, nil
+	}
+	raw, err := embeddedTable()
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", false, err
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		return "", false, err
+	}
+	return path, true, nil
+}
+
+// Load 读取配置，四级发现链（v0.22 分发定稿）：task 目录 → 工作目录（项目根）
+// → 全局（~/.config/flywheel/flywheel.config.json——缺失时从内嵌法定表物化，
+// 首次运行即安装出可编辑的全局配置）→ 内嵌法定表（最终兜底：HOME 不可写等
+// 边缘下工具仍可用）。项目级与全局的关系：越靠近任务越优先，用户改全局即
+// 改默认，项目放文件即覆盖默认。
+func Load(taskDir, cwd string) (*Config, error) {
+	if file := FindConfigFile(taskDir, cwd); file != "" {
+		return loadFile(file)
+	}
+	if path, gerr := GlobalConfigPath(); gerr == nil {
+		_, _, _ = MaterializeGlobal() // 幂等；失败退内嵌表，不因 HOME 不可写卡死
+		if _, serr := os.Stat(path); serr == nil {
+			return loadFile(path)
+		}
+	}
+	raw, err := embeddedTable()
+	if err != nil {
+		return nil, fmt.Errorf("embedded legal table: %w", err)
+	}
+	return parseConfig(raw, "(embedded legal table)")
+}
+
+func loadFile(file string) (*Config, error) {
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", file, err)
 	}
+	c, err := parseConfig(raw, file)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	return c, nil
+}
+
+func parseConfig(raw []byte, source string) (*Config, error) {
 	var c Config
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return nil, fmt.Errorf("%s: invalid JSON: %w", file, err)
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
-	c.File = file
+	c.File = source
 	// Normalize（回填缺省）→ Validate。EveryNUnits 指针化后二者可兼得：
 	// nil = 未声明 → 回填默认；显式 0 非 nil → Validate 报错（review 修正：
 	// 显式零值不再被默认值吞掉）。
 	c.Normalize()
 	if err := c.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", file, err)
+		return nil, err
 	}
 	return &c, nil
 }
 
-// FindConfigFile 返回首个存在的候选配置路径，无则返回 ""。
+// FindConfigFile 返回首个存在的候选配置路径（task 目录 → 项目根），无则返回 ""。
 func FindConfigFile(taskDir, cwd string) string {
 	for _, c := range []string{filepath.Join(taskDir, "flywheel.config.json"), filepath.Join(cwd, "flywheel.config.json")} {
 		if _, err := os.Stat(c); err == nil {
