@@ -434,7 +434,7 @@ func TestDefaultZcodeRuntimeCommand(t *testing.T) {
 	name, args := defaultZcodeRuntimeCommand()
 	assert.Equal(t, "node", name)
 	assert.Equal(t, []string{defaultZcodeRuntimePath, "app-server"}, args)
-	t.Setenv(ZcodeDesktopBinEnv, "/custom/zcode-launcher")
+	t.Setenv(ZcodeServerBinEnv, "/custom/zcode-launcher")
 	name2, args2 := defaultZcodeRuntimeCommand()
 	assert.Equal(t, "/custom/zcode-launcher", name2)
 	assert.Equal(t, []string{"app-server"}, args2)

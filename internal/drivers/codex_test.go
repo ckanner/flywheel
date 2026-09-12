@@ -102,6 +102,8 @@ func TestRunCodexAgainstFakeBinary(t *testing.T) {
 	assert.Contains(t, args, "gpt-6-astra")
 	assert.Contains(t, args, "model_reasoning_effort=max")
 	assert.Contains(t, args, "--skip-git-repo-check")
+	assert.Contains(t, args, "danger-full-access", "沙箱显式固定，不继承用户 config")
+	assert.Contains(t, args, "approval_policy=never", "审批策略显式固定（headless 不挂审批）")
 }
 
 // TestRunCodexDefaultsAndError 空 model/effort 兜底（gpt-6-astra + max）；流内

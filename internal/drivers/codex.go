@@ -8,8 +8,9 @@
 // error / turn.failed）——流式输出天然满足看门狗 idle 语义（对比 zcode 一次性
 // 模式的全程静默）。usage 明细在 turn.completed 上暴露：input/cached/cache_write/
 // output/reasoning 五桶（v0.22 探针实证）。订阅 OAuth 用户侧登录（codex login），
-// 编排器零 key 注入。版本硬门槛：gpt-6-astra 需 CLI ≥0.154（npm）或 app 内置
-// ≥0.153——旧版报 400 "requires a newer version of Codex"。
+// 编排器零 key 注入；沙箱与审批策略由 driver 显式固定（danger-full-access +
+// never），不读用户全局 config。版本硬门槛：gpt-6-astra 需 CLI ≥0.154（npm）
+// 或 app 内置 ≥0.153——旧版报 400 "requires a newer version of Codex"。
 //
 // 桌面可见性（v0.22）：exec 线程原生进 ChatGPT 桌面（com.openai.codex）的统一
 // 线程库（~/.codex/state_5.sqlite 的 threads 表，source=exec）；项目需注册——
@@ -171,7 +172,12 @@ func RunCodex(a CodexArgs) Result {
 		effort = "max" // GPT-6-Astra 默认 medium——driver 强制显式 max（§7 统一档）
 	}
 	args := []string{"exec", "--json", "--skip-git-repo-check",
-		"-m", model, "-c", "model_reasoning_effort=" + effort, "-C", a.Cwd, a.Prompt}
+		"-m", model, "-c", "model_reasoning_effort=" + effort,
+		// 沙箱/审批显式固定（v0.10 本机直跑信任模型）：不继承用户全局
+		// ~/.codex/config.toml——默认配置（只读沙箱+按请求审批）会让 headless
+		// exec 挂在审批等待上；编排器行为不得依赖用户环境状态（确定性纪律）。
+		"-s", "danger-full-access", "-c", "approval_policy=never",
+		"-C", a.Cwd, a.Prompt}
 
 	var onActivity func(chunk, stream string)
 	if a.OnEvent != nil {

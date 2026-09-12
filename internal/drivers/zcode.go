@@ -57,17 +57,20 @@ const ZcodeDefaultModel = "zai/glm-5.3"
 // wrapper zcode-app-cli 的 vendor 快照已实证滞后于 app，弃用）。
 const defaultZcodeRuntimePath = "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"
 
-// ZcodeDesktopBinEnv launcher 覆盖环境变量：设为任意可执行 zcode 入口（如
-// wrapper 的 bin）时直接以 `<bin> app-server` 启动；缺省用 node 跑 app 内置
-// runtime。另兼作桌面注册二进制的提示名（注册走 macOS open 语义，见
-// defaultOpenZcodeWorkspace）。
+// ZcodeServerBinEnv app-server launcher 覆盖环境变量：设为任意可执行 zcode
+// 入口（如 wrapper 的 bin）时直接以 `<bin> app-server` 启动；缺省用 node 跑
+// app 内置 runtime。与桌面注册二进制（ZcodeDesktopBinEnv）语义分离——同一
+// env 双用途会在指向 launcher 时让注册拿错误二进制调 --open-workspace。
+const ZcodeServerBinEnv = "FLY_ZCODE_SERVER_BIN"
+
+// ZcodeDesktopBinEnv 桌面注册二进制覆盖（v0.20 语义：默认 macOS 安装路径）。
 const ZcodeDesktopBinEnv = "FLY_ZCODE_BIN"
 
 // zcodeRuntimeCommand app-server 子进程命令（测试注入缝：PATH 假二进制）。
 var zcodeRuntimeCommand = defaultZcodeRuntimeCommand
 
 func defaultZcodeRuntimeCommand() (string, []string) {
-	if bin := os.Getenv(ZcodeDesktopBinEnv); bin != "" {
+	if bin := os.Getenv(ZcodeServerBinEnv); bin != "" {
 		return bin, []string{"app-server"}
 	}
 	return "node", []string{defaultZcodeRuntimePath, "app-server"}
