@@ -1,4 +1,4 @@
-// Package circuitbreaker — 预算熔断（DESIGN.md §6，铁律 9）：enforce 是开关
+// Package circuitbreaker — 预算熔断（docs/design.md §6，铁律 9）：enforce 是开关
 // —— off | soft | hard（默认 soft：警告并记录，从不停机）。token/成本记录在
 // 任何档位下都开启。空转检测与钱无关：同一 packet 以相同方式反复失败在任何
 // 档位下都升级——那意味着 loop 不健康。

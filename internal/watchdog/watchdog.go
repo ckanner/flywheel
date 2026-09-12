@@ -1,4 +1,4 @@
-// Package watchdog — 双计时看门狗（DESIGN.md §6）：流 idle 超时（任何输出活动
+// Package watchdog — 双计时看门狗（docs/design.md §6）：流 idle 超时（任何输出活动
 // 即重置——长任务不误杀，#1911 类静默挂起 5 分钟内发现）+ 整体 wall-clock 兜底。
 // kill 面向整个进程组，且必须等到真正退出（quiescence）才返回给调用者重试
 // ——不给孤儿进程写坏工作区的机会。

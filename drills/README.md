@@ -1,6 +1,6 @@
 # Flywheel drills（实证演练记录）
 
-docs/DESIGN.md §10 的实证门槛中可由编排器侧推进的部分。Go 版（v0.17 迁移后）演练由
+docs/design.md §10 的实证门槛中可由编排器侧推进的部分。Go 版（v0.17 迁移后）演练由
 `internal/` 下真实测试承载（真 git、真子进程，非 mock）。
 
 | 演练 | 门槛 | 记录 | 可重复入口（Go 版，v0.18 迁移后） |

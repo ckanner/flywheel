@@ -1,4 +1,4 @@
-// Package machine — 核心状态机（DESIGN.md §6，刻意做薄）：
+// Package machine — 核心状态机（docs/design.md §6，刻意做薄）：
 //
 //	for milestone in spec.milestones:
 //	  packet = plan_loop.issue(milestone)
@@ -15,7 +15,7 @@
 //
 // 与 Node 版的语义差异（均为有意为之，其余逐函数忠实移植）：
 //   - P2 修复：in-place 模式 planner 修订后 base-ref 同样重锚（Node 只在
-//     worktree 分支重锚，HANDOFF §4 审计项）。
+//     worktree 分支重锚，v0.17 审计项（docs/design.md 变更记录））。
 //   - P2 修复：空转检测的 changedFiles 优先取 L1 boundary 的权威 git diff，
 //     executor 自报只作最后兜底（Node 直接用自报值）。
 //   - P2 修复：单元提交先于 completed 标记落盘（Node 先写 completed 再提交，

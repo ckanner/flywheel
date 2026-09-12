@@ -1,4 +1,4 @@
-// Package errs — 错误分类与重试策略（DESIGN.md §6，源自 deepseek-harness）。
+// Package errs — 错误分类与重试策略（docs/design.md §6，源自 deepseek-harness）。
 // spawn 失败归一化为稳定错误码；只有固定子集可重试。数值状态码只在词边界匹配
 // （"500ms"、"1,500"、"429.5"、"port 4291" 不得误读为 HTTP 500/429 — P0-6）。
 //
@@ -18,7 +18,7 @@ import (
 // mathRand 全局随机源（Go 1.20+ 自动播种）；测试可注入替换。
 var mathRand = rand.Float64
 
-// ErrorCode 稳定错误码（DESIGN.md §6）。
+// ErrorCode 稳定错误码（docs/design.md §6）。
 type ErrorCode string
 
 const (

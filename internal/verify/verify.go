@@ -1,4 +1,4 @@
-// Package verify — L1 确定性验收（DESIGN.md §4.4）：编排器亲自跑契约内的
+// Package verify — L1 确定性验收（docs/design.md §4.4）：编排器亲自跑契约内的
 // 验收命令——它们是 ground-truth oracle：便宜、瞬时、无法被执行者辩驳。
 // coverage gate 只是 packet 里又一条 L1 命令，此处无任何特判。
 //

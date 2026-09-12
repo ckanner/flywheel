@@ -1,4 +1,4 @@
-// Package metrics — 可观测（DESIGN.md §6）：每次 spawn 追加一条 JSONL 记录
+// Package metrics — 可观测（docs/design.md §6）：每次 spawn 追加一条 JSONL 记录
 // ——model、harness、prompt 哈希、token、成本、缓存命中、耗时、退出码、错误码。
 // 这张表是人不盯 loop 也能监督它的方式。
 package metrics
@@ -80,7 +80,7 @@ type Usage struct {
 	CacheWrite int64
 }
 
-// EstimateCostUSD driver 不报成本时的兜底估算（DESIGN.md 附录 D：usage 明细
+// EstimateCostUSD driver 不报成本时的兜底估算（docs/design.md 附录 D：usage 明细
 // 可能缺字段，绝不假设存在）。price 为每百万 token 美元价。cache-write 按
 // 未命中 input 价计费（DeepSeek 语义）；pi 的 usage 桶互不相交（已在 pi
 // dist usage-totals.js 核实）。无法估算返回 nil。

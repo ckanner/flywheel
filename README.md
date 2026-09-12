@@ -6,7 +6,7 @@ Loop Engineering 系统：外部编排器进程（不是 agent）驱动多个 ag
 - 角色与知识 = Agent Skills（本仓库 `skills/`，只是"按钮"）
 - 契约 = `docs/<slug>/` 下的静态文件（spec.md + task-packet + state.json，全部进 git）
 
-权威设计文档：**[docs/DESIGN.md](docs/DESIGN.md)**（v0.22，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。会话交接上下文：[docs/HANDOFF.md](docs/HANDOFF.md)。
+权威设计文档：**[docs/design.md](docs/design.md)**（v0.22，变更记录在文件头）。仓库工作宪法：[AGENTS.md](AGENTS.md)。
 
 ## 安装
 
@@ -20,6 +20,14 @@ make install        # 装到 /usr/local/bin
 ```
 
 真实驱动依赖本机三件（v0.22 三厂商定稿）：**zcode**（Execute default/multimodal/Intake——driver 默认跑 ZCode 桌面 app 内置官方 runtime 的 app-server 协议，Z.AI Coding Plan 凭证在 `~/.zcode/cli/config.json` 用户侧）、**Codex CLI ≥0.154**（Review/复核面板，chatgpt 订阅 OAuth 登录）、**kimi code CLI**（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；全部渠道**订阅委托凭证，编排器零 key 注入**（zcode 协议与 codex gpt-6-astra 均已 live 冒烟 2026-09-10）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox；omp+智谱国内计划保留为 B 通道（zcode 协议漂移应急）。测试与演练（mock 驱动）不需要任何凭证。
+
+## 本机环境事实（维护机，v0.22）
+
+- macOS arm64；Go 工具链经 mise 管理（go@1.27.0）——shell PATH 可能残留旧版路径，新会话先 `go version` 核对。
+- **zcode**：driver 默认 `node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs app-server`（app 内置 runtime，随桌面自动更新；`FLY_ZCODE_SERVER_BIN` 覆盖 launcher，`FLY_ZCODE_BIN` 只管桌面注册二进制——v0.22 语义拆分）。Z.AI Coding Plan 凭证在 `~/.zcode/cli/config.json`（provider zai）；app-server 协议 live 冒烟 2026-09-10 通过（8.2s 全闭环）；协议无公开文档——桌面大版本更新后跑协议探针（design.md §10-5）。
+- **codex**：CLI 已升 0.154.0（gpt-6-astra 硬门槛 ≥0.154 npm / ≥0.153 app 内置）；chatgpt 订阅 OAuth 已登录。注意：代理经 HKG 节点偶发 403，重试即过。
+- **kimi code**：订阅 OAuth 登录在；stream-json 无 usage 暴露——Plan 的 token 不可观测（接受现状，看门狗兜底）。
+- **omp（B 通道）**：已装、`zhipu-coding-plan` provider 配好（智谱国内计划）——zcode 协议漂移时的应急通道。
 
 ## 安装 skills 到 kimi code / pi
 
@@ -62,7 +70,7 @@ flywheel install-skills --project /path/to/project
 
 内置 skill 目录也可用 CLI 直接查看：`flywheel skills list` / `flywheel skills read <name>`（go:embed 内嵌，无需源码树）。
 
-## 使用全流程（最小示例，详见 [docs/DESIGN.md](docs/DESIGN.md) §12）
+## 使用全流程（最小示例，详见 [docs/design.md](docs/design.md) §12）
 
 ```bash
 # 1. 在 harness（kimi code 或 pi）里生成任务契约
@@ -150,7 +158,6 @@ v0.18 起按**逐函数**检查——任何函数 <100% 直接失败，不再只
 
 ## 文档入口
 
-- [docs/DESIGN.md](docs/DESIGN.md) — 权威设计文档（§2 设计铁律是最高约束）
+- [docs/design.md](docs/design.md) — 权威设计文档（§2 设计铁律是最高约束）
 - [AGENTS.md](AGENTS.md) — 仓库工作宪法（构建/闸门/硬契约）
-- [docs/HANDOFF.md](docs/HANDOFF.md) — 新会话交接上下文
 - [drills/](drills/README.md) — 实证演练记录与环境事实基线

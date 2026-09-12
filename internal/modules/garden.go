@@ -1,4 +1,4 @@
-// Garden Loop（DESIGN.md §4.6）：对 loop 自身知识资产的低频维护——从 retro.md
+// Garden Loop（docs/design.md §4.6）：对 loop 自身知识资产的低频维护——从 retro.md
 // 蒸馏重复失败模式成 skill/验收提案，并标记腐化的 AGENTS.md/skills 内容。
 // Garden 只产出给人审的 PROPOSALS（garden-proposals.md），绝不自己改
 // AGENTS.md 或 skills（改的是知识资产，需人审）。

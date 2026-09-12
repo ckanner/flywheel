@@ -1,4 +1,4 @@
-// Package modules — 外挂模块（DESIGN.md §4.5/§4.6）：Intake Loop 与 Garden
+// Package modules — 外挂模块（docs/design.md §4.5/§4.6）：Intake Loop 与 Garden
 // Loop 的共享调用骨架（module.js 移植）。轻量版 run-task 上下文：同款 watchdog
 // 参数、凭证卫生、传输重试 + 渠道降级链、逐次 spawn 指标。预算用量在任务目录
 // 有 state.json 时记入（记录永不关闭，铁律 9）；任务尚不存在时仅追加

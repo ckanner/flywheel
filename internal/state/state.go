@@ -1,4 +1,4 @@
-// Package state — state.json 管理（DESIGN.md §5.2）：唯一信源，只由编排器写入
+// Package state — state.json 管理（docs/design.md §5.2）：唯一信源，只由编排器写入
 // ——被监督者永不写监督者的账本。每次写入对 revision 做 compare-and-set，
 // 原子落盘（tmp+rename）。重启后进行中的单元显式标记 interrupted 且保留产物
 // ——绝不静默重置为 pending。

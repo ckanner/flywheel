@@ -1,4 +1,4 @@
-// Package contract — 契约文件解析与加载期校验（DESIGN.md §5，铁律 6）。
+// Package contract — 契约文件解析与加载期校验（docs/design.md §5，铁律 6）。
 // spec.md / task-packet-<id>.md 的 YAML frontmatter 即机器可读契约。
 // 校验 = 前端解析 + JSON Schema（与 templates/*.schema.json 单一信源，
 // additionalProperties:false） + 跨字段规则（需求映射、重复 id）。
@@ -138,7 +138,7 @@ type Spec struct {
 }
 
 // Slug 任务 slug。Node 语义是 `spec.slug ?? basename(taskDir)`；但 Go 版
-// spec.schema.json 为 additionalProperties:false 且契约字段集（DESIGN.md §5.3）
+// spec.schema.json 为 additionalProperties:false 且契约字段集（docs/design.md §5.3）
 // 无 slug，Node 的自由 slug 字段在此被 schema 拒绝——故恒返回 taskDir 尾段。
 // 行为差异注释：Node 允许 spec frontmatter 携带自由 slug 字段，Go 收紧。
 func (s *Spec) Slug(taskDir string) string {

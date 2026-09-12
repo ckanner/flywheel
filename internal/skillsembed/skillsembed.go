@@ -1,4 +1,4 @@
-// Package skillsembed — `flywheel skills list/read` 的数据层（DESIGN.md §12）。
+// Package skillsembed — `flywheel skills list/read` 的数据层（docs/design.md §12）。
 // 仓库 skills/ 目录经 go:embed 编进二进制（skills.FS），本包在其上提供
 // List/Read/DirFS 三个纯数据函数；frontmatter 解析复用
 // internal/contract.ParseFrontmatter，与契约层同一套 YAML 语义。

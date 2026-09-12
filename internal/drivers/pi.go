@@ -1,4 +1,4 @@
-// pi driver（DESIGN.md §4.2/§4.3）：经 pi CLI 驱动 Execute/Review/Judge。
+// pi driver（docs/design.md §4.2/§4.3）：经 pi CLI 驱动 Execute/Review/Judge。
 //
 //	pi -p "<prompt>" --model <provider/model> --thinking max --no-session --mode json
 //

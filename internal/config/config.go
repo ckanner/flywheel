@@ -1,4 +1,4 @@
-// Package config — 配置加载（DESIGN.md §13）：Loop × Harness × Model 绑定表
+// Package config — 配置加载（docs/design.md §13）：Loop × Harness × Model 绑定表
 // 活在 flywheel.config.json，不在 skill 里，不硬编码。默认值表与 Node 版
 // CONFIG_DEFAULTS 逐字一致；字段缺省由 Normalize 回填。
 package config

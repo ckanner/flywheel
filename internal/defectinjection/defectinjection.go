@@ -1,4 +1,4 @@
-// Package defectinjection — 缺陷注入抽检（DESIGN.md §4.3）：防假测试。
+// Package defectinjection — 缺陷注入抽检（docs/design.md §4.3）：防假测试。
 // 编排器在 L1 与 Review 之间确定性运行：先确立 GREEN 基线，注入可逆补丁，
 // 跑测试期望变 RED，再 REVERSE-APPLY 还原。常开无开关（用户裁决 2026-08-20）。
 //

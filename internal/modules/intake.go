@@ -1,4 +1,4 @@
-// Intake Loop（DESIGN.md §4.5）：扫描任务源 → 指纹去重进 triage-inbox.md →
+// Intake Loop（docs/design.md §4.5）：扫描任务源 → 指纹去重进 triage-inbox.md →
 // LLM triage（pi + V4 Flash）逐条给建议。Intake 绝不冻结需求、绝不写契约：
 // 人确认候选，冻结仍走 $flywheel-new + 人审（§12）。本 loop 是判断类问题的
 // 人机边界。

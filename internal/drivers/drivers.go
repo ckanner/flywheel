@@ -1,4 +1,4 @@
-// Package drivers — driver 工厂（DESIGN.md §13 绑定表）：config.drivers 按
+// Package drivers — driver 工厂（docs/design.md §13 绑定表）：config.drivers 按
 // 角色选实现（mock 供测试/演练，pi 跑 Execute/Review/Judge，kimi 跑 Plan）。
 // 分发只看绑定表的 harness（可能已被降级链改写），绝不看角色。
 package drivers

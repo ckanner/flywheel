@@ -1,4 +1,4 @@
-// Package exitcontract — 出口契约（DESIGN.md §6）：单元成功由三项独立检查判定
+// Package exitcontract — 出口契约（docs/design.md §6）：单元成功由三项独立检查判定
 // ——进程终态正常、stderr 无错误模式、交付物存在且有效。timedOut / signal /
 // exitCode 正交记录；"超时被 trap 成 exit 0"不得读成绿灯。空产出（exit 0 但
 // 无可用交付物）映射为可重试的 EMPTY_RESPONSE，不是静默成功。

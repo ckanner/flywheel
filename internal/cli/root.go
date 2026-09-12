@@ -1,4 +1,4 @@
-// Package cli 组装 Flywheel 的命令树（DESIGN.md §12/§13）。所有子命令都是对
+// Package cli 组装 Flywheel 的命令树（docs/design.md §12/§13）。所有子命令都是对
 // 内部包的薄接线。输出契约（AGENTS.md 硬契约）：
 //   - run / intake / garden：JSON 摘要到 stdout
 //   - status / stop / install-skills / skills：人话文本到 stdout
@@ -60,7 +60,7 @@ func logf(cmd *cobra.Command) func(string) {
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "flywheel",
-		Short: "Flywheel — Loop Engineering 编排器（docs/DESIGN.md）",
+		Short: "Flywheel — Loop Engineering 编排器（docs/design.md）",
 		Long: `Flywheel（飞轮）: 外部确定性编排器驱动 Plan / Execute / Review agent loops，
 接收已冻结的契约（docs/<slug>/），自动完成规划、实现、评审与分层验证。
 

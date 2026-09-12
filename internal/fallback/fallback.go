@@ -1,4 +1,4 @@
-// Package fallback — 渠道降级（DESIGN.md §6 降级）：限流/配额（403）切到
+// Package fallback — 渠道降级（docs/design.md §6 降级）：限流/配额（403）切到
 // 下一配置渠道。
 //
 //	（v0.19 起法定配置无降级链——每角色单一渠道；本包机制保留为 config

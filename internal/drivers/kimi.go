@@ -1,4 +1,4 @@
-// kimi driver：kimi code CLI 驱动 Plan Loop（DESIGN.md §4.1：kimi code +
+// kimi driver：kimi code CLI 驱动 Plan Loop（docs/design.md §4.1：kimi code +
 // K3 max，长驻会话）。
 //
 // 对 kimi CLI 0.37.2 实证（2026-08-20）：

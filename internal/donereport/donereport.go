@@ -1,4 +1,4 @@
-// Package donereport — done-report 解析与格式校验（DESIGN.md §5.2、§6）。
+// Package donereport — done-report 解析与格式校验（docs/design.md §5.2、§6）。
 // agent 只报告事实（"做了什么、哪些命令过/没过"），永不宣布完成。
 // 格式坏的报告由调用方按可重试错误（EMPTY_RESPONSE）处理，绝不静默接受。
 package donereport
