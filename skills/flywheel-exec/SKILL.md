@@ -4,7 +4,7 @@ metadata:
   version: "1.2.0"
 description: Trigger only the Execute Loop for a Flywheel task, optionally for one packet (single state transition). Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
-compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
+compatibility: "Requires the flywheel CLI (npm) and the route harnesses: zcode (Z.AI Coding Plan login, Execute default/multimodal = GLM-5.3/-flash) and/or kimi CLI (frontend/hard = K3)."
 arguments: slug packet
 
 ---
