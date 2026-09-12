@@ -4,7 +4,7 @@ metadata:
   version: "1.2.0"
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
 whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
-compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm) and pi >=0.84 (triage runs V4 Flash); github-issues sources also need the gh CLI."
+compatibility: "Requires the flywheel CLI (npm) and zcode (Z.AI Coding Plan login, triage runs GLM-5.3-flash); github-issues sources also need the gh CLI."
 arguments: slug source
 
 ---

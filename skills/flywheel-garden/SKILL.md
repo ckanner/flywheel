@@ -4,7 +4,7 @@ metadata:
   version: "1.2.0"
 description: Analyze retro.md failure patterns and knowledge-asset decay (AGENTS.md/skills), producing garden-proposals.md for human review — proposals only, never auto-applied. Use when the user says "/skill:flywheel-garden" or wants to distill loop learnings into skill proposals.
 whenToUse: 当用户想把 retro 里反复出现的失败模式提炼成 skill/验收规则提案、或清理 AGENTS.md/skills 腐烂内容时使用。
-compatibility: "Requires the flywheel CLI (single static binary; make build + make install in the flywheel repo, or install via npm) and kimi CLI (garden runs K3)."
+compatibility: "Requires the flywheel CLI (npm) and the kimi CLI with subscription login (garden runs K3)."
 arguments: slug
 ---
 

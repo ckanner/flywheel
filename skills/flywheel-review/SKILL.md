@@ -4,7 +4,7 @@ metadata:
   version: "1.2.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
-compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
+compatibility: "Requires the flywheel CLI (npm) and codex CLI >=0.154 with ChatGPT subscription login (Review runs GPT-6-Astra)."
 arguments: slug unit
 
 ---

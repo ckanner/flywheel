@@ -4,7 +4,7 @@ metadata:
   version: "1.2.0"
 description: Trigger only the Plan Loop for a Flywheel task (single state transition). Use when the user says "/skill:flywheel-plan docs/<slug>" or wants to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
-compatibility: "Requires the flywheel CLI (single static binary from the GitHub release, or make build + make install in the flywheel repo) and the harness CLIs the loops use: pi >=0.84 and/or kimi CLI."
+compatibility: "Requires the flywheel CLI (npm) and the kimi CLI with subscription login (Plan runs Kimi K3, max thinking)."
 arguments: slug
 ---
 
