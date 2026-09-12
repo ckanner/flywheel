@@ -10,8 +10,8 @@ import (
 
 func TestDefaults(t *testing.T) {
 	d := Default()
-	assert.Equal(t, "kimi", d.Drivers["plan"])
-	assert.Equal(t, "pi", d.Drivers["execute"])
+	assert.Equal(t, "real", d.Drivers["plan"])
+	assert.Equal(t, "real", d.Drivers["execute"])
 	assert.Equal(t, "soft", d.Budget.Enforce)
 	assert.Nil(t, d.Budget.DailyTokenLimit)
 	assert.Equal(t, int64(300_000), d.Watchdog.IdleTimeoutMs)
@@ -99,8 +99,8 @@ func TestLoadAndFind(t *testing.T) {
 	// 缺省字段仍回填。
 	assert.Equal(t, int64(300_000), cfg.Watchdog.IdleTimeoutMs)
 	assert.Equal(t, 5, cfg.Retry.MaxTransportRetries)
-	assert.Equal(t, "kimi", cfg.Drivers["plan"])
-	assert.Equal(t, "pi", cfg.Drivers["execute"], "execute 默认 pi")
+	assert.Equal(t, "real", cfg.Drivers["plan"])
+	assert.Equal(t, "real", cfg.Drivers["execute"], "缺省 drivers 回填 real（mock|real 二值，harness 由绑定表决定）")
 	assert.Equal(t, 0.2, cfg.Pricing["deepseek-v4-flash"].Input)
 	assert.Equal(t, filepath.Join(taskDir, "flywheel.config.json"), cfg.File)
 

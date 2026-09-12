@@ -25,17 +25,18 @@ func TestExampleConfigRoundTrip(t *testing.T) {
 
 	// 双 judge 面板：顶层键，启用且绑定完整（A3 头号特性的开关）。
 	require.NotNil(t, c.JudgePanel, "judge-panel 必须在顶层且存在")
-	assert.Equal(t, "pi", c.JudgePanel.Harness)
-	assert.NotEmpty(t, c.JudgePanel.Model)
-	assert.Equal(t, "opencode-go", c.JudgePanel.Channel)
+	assert.Equal(t, "omp", c.JudgePanel.Harness)
+	assert.Equal(t, "zhipu-coding-plan/glm-5.3", c.JudgePanel.Model)
+	assert.Equal(t, "zhipu-coding-plan", c.JudgePanel.Channel)
 
-	// v0.19 渠道收敛：无 fallback provider；Kimi 系全订阅。
+	// v0.19 渠道收敛：无 fallback provider；Kimi 系全订阅（v0.21：非 Kimi 系全走智谱）。
 	for name, ch := range c.Channels {
 		assert.Empty(t, ch.Fallback, "渠道 %s 不得声明 fallback（v0.19）", name)
 	}
-	require.Contains(t, c.Channels, "opencode-go")
+	require.Contains(t, c.Channels, "zhipu-coding-plan")
 	require.Contains(t, c.Channels, "kimi-subscription")
 	assert.Nil(t, c.Channels["kimi-subscription"].EnvKey, "订阅 OAuth 无 key")
+	assert.Nil(t, c.Channels["zhipu-coding-plan"].EnvKey, "智谱凭证留 omp 用户侧（实测 2026-08-27），编排器不注入 key")
 
 	// Judge 主判走 kimi code harness + 订阅。
 	judge := c.Loops["judge"]

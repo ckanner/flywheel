@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
+  "_note": "Flywheel loop/route binding table (DESIGN.md §13 法定配置). Bindings live here, never in skills. All models run reasoning_effort/thinking=max (§7): pi/omp via --thinking max; kimi CLI via per-invocation env KIMI_MODEL_THINKING_EFFORT=max (never touches the user's global config). drivers values are mock|real ONLY (harness selection lives in the loops/routes bindings below, never here). v0.19: NO fallback providers — every role runs on exactly one subscription channel; QUOTA/RATE_LIMIT degrades to same-channel backoff retries (RATE_LIMIT) or direct inbox escalation (QUOTA).",
   "drivers": {
-    "plan": "kimi",
-    "execute": "pi",
-    "review": "pi",
-    "judge": "kimi"
+    "plan": "real",
+    "execute": "real",
+    "review": "real",
+    "judge": "real"
   },
   "loops": {
     "plan": {
@@ -16,9 +16,9 @@
       "resident-session": true
     },
     "review": {
-      "harness": "pi",
-      "model": "opencode-go/deepseek-v4-pro",
-      "channel": "opencode-go",
+      "harness": "omp",
+      "model": "zhipu-coding-plan/glm-5.3",
+      "channel": "zhipu-coding-plan",
       "thinking": "max"
     },
     "judge": {
@@ -29,9 +29,9 @@
       "_note": "milestone final verification primary, FRESH context each call (headless -p spawns never resume); kimi -p enforces auto permission by default (explicit --auto conflicts with --prompt)"
     },
     "intake": {
-      "harness": "pi",
-      "model": "opencode-go/deepseek-v4-flash",
-      "channel": "opencode-go",
+      "harness": "omp",
+      "model": "zhipu-coding-plan/glm-5.3-flash",
+      "channel": "zhipu-coding-plan",
       "thinking": "max",
       "_note": "triage advice only, near-zero cost (§4.5, §13)"
     },
@@ -51,9 +51,9 @@
       "thinking": "max"
     },
     "default": {
-      "harness": "pi",
-      "model": "opencode-go/deepseek-v4-flash",
-      "channel": "opencode-go",
+      "harness": "omp",
+      "model": "zhipu-coding-plan/glm-5.3-flash",
+      "channel": "zhipu-coding-plan",
       "thinking": "max"
     },
     "hard": {
@@ -61,27 +61,28 @@
       "model": "kimi-code/k3",
       "channel": "kimi-subscription",
       "thinking": "max",
-      "_note": "escalation route after repeated Flash failures; cross-vendor vs DeepSeek reviewers (§11.6)"
+      "_note": "escalation route after repeated GLM-5.3-flash failures; cross-vendor vs K3-family failure modes (§11.6)"
     }
   },
   "judge-panel": {
-    "harness": "pi",
-    "model": "opencode-go/deepseek-v4-pro",
-    "channel": "opencode-go",
+    "harness": "omp",
+    "model": "zhipu-coding-plan/glm-5.3",
+    "channel": "zhipu-coding-plan",
     "thinking": "max",
-    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is V4 Pro cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
+    "_note": "v0.18 A3 dual-judge panel (TOP-LEVEL key, sibling of loops): second opinion on the milestone final verification — judge primary runs kimi code + K3 (loops.judge), panel secondary is GLM-5.3 cross-vendor; agreement decides, split escalates to inbox (DESIGN §4.3). Delete this key to disable the panel."
   },
   "channels": {
-    "opencode-go": {
-      "env-key": "OPENCODE_API_KEY",
+    "zhipu-coding-plan": {
+      "env-key": null,
       "cache-hit-rate-min": 0.3,
-      "_note": "$10/mo subscription, sole DeepSeek-side channel since v0.19 (no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox"
+      "_note": "智谱（国内 bigmodel）GLM Coding Plan subscription, sole non-Kimi channel since v0.21 (OpenCode Go removed; no fallback provider): RATE_LIMIT degrades to same-channel backoff retries, QUOTA escalates to inbox. Credential lives user-side in the omp provider config (models.yml/auth) — orchestrator injects NO key, same delegation model as kimi-subscription OAuth. Model slugs: zhipu-coding-plan/glm-5.3[-flash]; live-verified 2026-08-27 (both models answer via user omp auth)."
     },
     "kimi-subscription": {
       "env-key": null,
       "_note": "kimi code CLI subscription login (device-code OAuth), no API key injected; sole Kimi-side channel since v0.19 (Plan/Garden/Judge-primary/frontend/hard all ride it)"
     }
   },
+  "_note_zcode_arm": "Optional zcode arm (DESIGN v0.20/v0.21④): NOT prewired — to enable, hand-write a channel entry above and point a loops/routes binding at harness \"zcode\"; model slugs live in zcode's own zai/ namespace (driver default zai/glm-5.3-flash), credentials stay user-side in ~/.zcode/cli/config.json. The driver's desktop visibility is macOS-only and silently degrades elsewhere.",
   "budget": {
     "enforce": "soft",
     "daily-token-limit": 2000000
@@ -121,10 +122,10 @@
   "worktree": {
     "enabled": true
   },
-  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself.",
+  "_note_pricing": "USD per 1M tokens, fallback when the driver reports no cost. pi reports usage.cost itself. glm-5.3-flash: placeholder zeros — no official token pricing published yet (AA $0.045/task is not equivalent); backfill from first real spawn's usage.cost.",
   "pricing": {
-    "deepseek-v4-flash": { "input": 0.28, "output": 0.42, "cache-read": 0.028 },
-    "deepseek-v4-pro": { "input": 1.32, "output": 3.96, "cache-read": 0.132 },
+    "glm-5.3-flash": { "input": 0, "output": 0, "cache-read": 0 },
+    "glm-5.3": { "input": 0, "output": 0, "cache-read": 0 },
     "kimi-k3": { "input": 3.0, "output": 15.0, "cache-read": 0.3 }
   }
 }

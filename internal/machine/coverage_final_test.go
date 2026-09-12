@@ -1092,7 +1092,7 @@ func TestAgentVerdictStepFallbackAppliesHarnessMapping(t *testing.T) {
 	defer sd.log.mu.Unlock()
 	last := sd.log.review[len(sd.log.review)-1]
 	assert.Equal(t, "kimi-coding", last.Binding.Channel)
-	assert.Equal(t, "pi", last.Binding.Harness, "降级映射必须应用渠道 harness")
+	assert.Equal(t, "omp", last.Binding.Harness, "降级映射必须应用渠道 harness（fixture v0.19：pi 系角色统一 omp）")
 }
 
 func TestPlanStepClassifyAndFatalArms(t *testing.T) {

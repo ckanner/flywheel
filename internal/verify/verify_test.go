@@ -56,7 +56,9 @@ func gitMust(t *testing.T, cwd string, args ...string) string {
 
 func TestRunGateCommandsAllPassAndScriptFallback(t *testing.T) {
 	r := RunGateCommands([]contract.GateEntry{
-		gateEntry("echo hello", "exit 0"),
+		// sleep 而非 echo：DurationMS 毫秒截断，快速 runner 上亚毫秒命令
+		// 会取整为 0（Linux CI 实证）——计时断言需要确定性非零时长。
+		gateEntry("sleep 0.05", "exit 0"),
 		scriptEntry("e2e.sh", "exit 0"), // 缺失脚本 → sh 失败
 	}, GateOpts{Cwd: t.TempDir(), TimeoutMS: 5000})
 	assert.False(t, r.Pass)

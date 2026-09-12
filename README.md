@@ -19,7 +19,7 @@ make install        # 装到 /usr/local/bin
 # 经 scripts/install.js 下载对应平台二进制并做 SHA-256 校验
 ```
 
-真实驱动依赖本机已装的 [pi](https://github.com/earendil-works/pi)（Execute/Review/面板复核/Intake）与 kimi code CLI（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；渠道凭证仅需环境变量 `OPENCODE_API_KEY`（Kimi 侧走订阅登录，无 key）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox。测试与演练（mock 驱动）不需要任何凭证。
+真实驱动依赖本机已装的 [omp](https://github.com/can1357/oh-my-pi)（oh-my-pi，Execute/Review/面板复核/Intake，智谱 provider 在其用户侧配置）与 kimi code CLI（Plan/Garden/Judge 主判/frontend/hard，订阅 OAuth 登录）；两个渠道都是**订阅委托凭证，编排器零 key 注入**（v0.21 实测智谱 glm-5.3-flash / glm-5.3 双通）。v0.19 起无 fallback provider：超额时同渠道退避重试，耗尽升级 inbox。测试与演练（mock 驱动）不需要任何凭证。
 
 ## 安装 skills 到 kimi code / pi
 
@@ -107,7 +107,7 @@ internal/
   defectinjection/       # 缺陷注入抽检（DC3）
   metrics/               # JSONL 指标（模型/token/成本/缓存命中/prompt 哈希）
   prompts/               # 提示词构建（§8 缓存纪律：稳定前置/易变尾部）+ 裁决解析
-  drivers/               # mock（测试）/ pi / kimi（长驻会话）
+  drivers/               # mock（测试）/ pi / omp / zcode / kimi（长驻会话）
   config/                # 法定配置表加载与校验
   childenv/              # 子进程环境白名单（凭证卫生 §9）
   ledger/                # 账本区路径分类（边界判定的单一信源）
