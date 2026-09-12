@@ -10,6 +10,7 @@ package watchdog
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -50,6 +51,12 @@ type Opts struct {
 	KillGraceMs   int64
 	// OnActivity 每收到一段输出即回调（chunk, "stdout"/"stderr"）。
 	OnActivity func(chunk string, stream string)
+	// InteractStdin 可选交互钩子（协议驱动用，如 zcode app-server）：Start 后
+	// 获得子进程 stdin 写入器与 finish 函数——driver 写请求帧、经 OnActivity
+	// 解析事件流，会话结束后调用 finish() 走与超时同一条清理路径（SIGTERM →
+	// grace → SIGKILL → quiescence；kill 开关契约不变）。finish 幂等，调用后
+	// 不得再写 stdin。钩子在独立 goroutine 运行，Run 返回前不等待其退出。
+	InteractStdin func(stdin io.WriteCloser, finish func())
 }
 
 // ---- 在飞子进程登记表（SIGTERM 全杀的依据）----
@@ -198,6 +205,12 @@ func Run(command string, args []string, opts Opts) Result {
 	cmd.Dir = opts.Cwd
 	cmd.Env = opts.Env
 	cmd.Stdin = nil
+	var stdinPipe io.WriteCloser
+	if opts.InteractStdin != nil {
+		// 协议驱动的双向通道；Start 前调用 StdinPipe 恒成功（exec 契约），
+		// 失败分支不存在（覆盖率纪律：不可达防御分支不写）。
+		stdinPipe, _ = cmd.StdinPipe()
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 自成进程组 → 可整树 kill
 
 	var mu sync.Mutex // 保护 idle/kill 状态位
@@ -261,6 +274,13 @@ func Run(command string, args []string, opts Opts) Result {
 	stdoutW.idleTimer = idleTimer
 	stderrW.idleTimer = idleTimer
 	mu.Unlock()
+
+	if opts.InteractStdin != nil {
+		// finish 与超时共用 beginKill 清理路径（kill 开关契约不变）；幂等。
+		var once sync.Once
+		finish := func() { once.Do(beginKill) }
+		go opts.InteractStdin(stdinPipe, finish)
+	}
 
 	// Wait 返回 = 进程退出 + exec 内部复制 goroutine 排干 —— Node 'close'。
 	_ = cmd.Wait()

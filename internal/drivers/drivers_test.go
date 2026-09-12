@@ -307,22 +307,41 @@ func TestInvokeHarnessDispatchesOmp(t *testing.T) {
 	assert.Equal(t, "max", args[i+1], "binding 无 Thinking → 兜底 max，绝不允许空串")
 }
 
-// TestInvokeHarnessDispatchesZcode harness=zcode 分发臂（与 omp 同批补充覆盖）。
-// disableDesktop：分发测试不关心注册副作用，绝不启动用户桌面（此前该测试在
-// macOS 开发机上会真实拉起 ZCode.app——测试卫生修复）。
+// TestInvokeHarnessDispatchesZcode harness=zcode 分发臂（v0.22：app-server
+// 协议驱动，经 fakeZcodeServer 闭环验证）。disableDesktop：分发测试不关心
+// 注册副作用，绝不启动用户桌面。
 func TestInvokeHarnessDispatchesZcode(t *testing.T) {
 	disableDesktop(t)
-	stream := fakeZcodeOK
-	binDir, workDir := fakeBin(t, "zcode", stream)
-	setPath(t, binDir)
+	fakeZcodeServer(t, "ok")
+	workDir := t.TempDir()
 
 	r := InvokeHarness(CallArgs{
 		Prompt:  "dispatch via zcode",
-		Binding: config.LoopBinding{Harness: "zcode", Model: "zai/glm-5.3-flash"},
+		Binding: config.LoopBinding{Harness: "zcode", Model: "zai/glm-5.3", Thinking: "max"},
 		Cwd:     workDir,
 		APIKeys: map[string]string{},
 	}, "")
 	assert.Equal(t, "zcode", r.Harness)
+	assert.Equal(t, "zai/glm-5.3", r.Model)
+	assert.True(t, r.Settled)
+	assert.Equal(t, "task complete", r.Text)
+}
+
+// TestInvokeHarnessDispatchesCodex harness=codex 分发臂。
+func TestInvokeHarnessDispatchesCodex(t *testing.T) {
+	binDir, workDir := fakeBin(t, "codex", codexNDJSON)
+	setPath(t, binDir)
+	disableCodexDesktop(t)
+
+	r := InvokeHarness(CallArgs{
+		Prompt:  "dispatch via codex",
+		Binding: config.LoopBinding{Harness: "codex", Model: "gpt-6-astra", Thinking: "max"},
+		Cwd:     workDir,
+		APIKeys: map[string]string{},
+	}, "")
+	assert.Equal(t, "codex", r.Harness)
+	assert.Equal(t, "gpt-6-astra", r.Model)
+	assert.True(t, r.Settled)
 }
 
 // InvokeHarness 必须把 machine 层持有的长驻会话句柄传进 kimi CLI（-r <id>）。

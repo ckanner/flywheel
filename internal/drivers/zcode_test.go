@@ -4,10 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 // disableDesktop 测试闸：Run 级测试不得激活用户桌面（隔离纪律）。
@@ -18,8 +23,7 @@ func disableDesktop(t *testing.T) {
 }
 
 // forceDarwin 平台闸注入缝：把注册路径的平台判定强制为 darwin——注册逻辑
-// 在 Linux CI 上也能真实执行与断言（否则 darwin-only 分支既测不到也拉不满
-// 覆盖率门禁）。真实 /tmp 符号链接语义仍按平台跳过（见 NormalizesSymlinks）。
+// 在 Linux CI 上也能真实执行与断言。真实 /tmp 符号链接语义仍按平台跳过。
 func forceDarwin(t *testing.T) {
 	prev := zcodeDesktopGOOS
 	zcodeDesktopGOOS = "darwin"
@@ -29,202 +33,256 @@ func forceDarwin(t *testing.T) {
 // stubOpener 换掉系统出口并记录调用路径；返回记录切片供断言。
 func stubOpener(t *testing.T) *[]string {
 	var got []string
+	var mu sync.Mutex
 	orig := zcodeWorkspaceOpener
-	zcodeWorkspaceOpener = func(p string) error { got = append(got, p); return nil }
+	zcodeWorkspaceOpener = func(p string) error { mu.Lock(); got = append(got, p); mu.Unlock(); return nil }
 	t.Cleanup(func() { zcodeWorkspaceOpener = orig })
 	return &got
 }
 
-// 成功样本：取自 2026-08-27 本机真实 zcode --json 探针（字段结构不变、数值缩写）。
-const fakeZcodeOK = `{
-  "sessionId": "sess_test",
-  "traceId": "trace_test",
-  "turnId": "turn_test",
-  "response": "task complete",
-  "usage": {
-    "source": "provider",
-    "modelRequestCount": 2,
-    "inputTokens": 500,
-    "outputTokens": 80,
-    "totalTokens": 600,
-    "cacheReadTokens": 20,
-    "cacheWriteTokens": 0,
-    "reasoningTokens": 30
-  },
-  "eventCount": 12,
-  "projection": {"status": "idle", "turnCount": 1, "contextWindow": 1000000}
-}`
-
-func TestParseZcodeJSONValid(t *testing.T) {
-	z, ok := ParseZcodeJSON(fakeZcodeOK)
-	require.True(t, ok)
-	assert.Equal(t, "sess_test", z.SessionID)
-	assert.Equal(t, "task complete", z.Response)
-	assert.Equal(t, int64(500), z.Usage.InputTokens)
-	assert.Equal(t, int64(30), z.Usage.ReasoningTokens)
+// zcodeOpenerCalls 线程安全读取 stubOpener 记录数。
+func zcodeOpenerCalls(got *[]string) int {
+	return len(*got)
 }
 
-func TestParseZcodeJSONInvalid(t *testing.T) {
-	for _, bad := range []string{"", "not json", "Error: something broke"} {
-		_, ok := ParseZcodeJSON(bad)
-		assert.False(t, ok, "%q 不应解析成功", bad)
+// fakeZcodeServer 写一个 python3 交互假服务器并接管 zcodeRuntimeCommand 缝。
+// variant 决定行为：ok = 完整协议闭环；error = create 后回协议错误；
+// silent = 只排空 stdin（idle 看门狗臂）。
+func fakeZcodeServer(t *testing.T, variant string) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "zcode-fake")
+
+	preamble := "import sys, json\n" +
+		"sys.stderr.write('stderr-noise\\n')\n" +
+		"def out(o):\n" +
+		"    sys.stdout.write(json.dumps(o) + \"\\n\")\n" +
+		"    sys.stdout.flush()\n"
+	okBody := `
+for line in sys.stdin:
+    try:
+        m = json.loads(line)
+    except Exception:
+        continue
+    if m.get("method") == "session/create":
+        out({"id": "server-1", "method": "session/requestRuntimePreferences",
+             "params": {"sessionId": "sess_test", "scope": "runtime-materialization"}})
+        out({"id": m["id"], "result": {"ok": True}})
+    elif m.get("method") == "session/send":
+        out({"id": m["id"], "result": {"accepted": True, "sessionId": "sess_test"}})
+        out({"method": "state.updated",
+             "params": {"patch": {"status": "running"}, "sessionId": "sess_test"}})
+        out({"method": "computer-use/operation-event",
+             "params": {"kind": "turn-completed", "sessionId": "sess_test", "turnId": "turn_test"}})
+    elif m.get("method") == "session/read":
+        out({"id": m["id"], "result": {"messages": [
+            {"info": {"role": "user"}, "parts": [{"type": "text", "text": "do the task"}]},
+            {"info": {"role": "assistant", "finish": "stop",
+                      "tokens": {"total": 600, "input": 500, "output": 80, "reasoning": 20,
+                                 "cache": {"read": 40, "write": 0}}},
+             "parts": [{"type": "reasoning", "text": "ponder"},
+                       {"type": "text", "text": "task complete"}]}]}})
+        sys.exit(0)
+`
+	errorBody := `
+for line in sys.stdin:
+    try:
+        m = json.loads(line)
+    except Exception:
+        continue
+    if m.get("method") == "session/create":
+        out({"id": m["id"], "error": {"code": -32602, "message": "boom schema drift"}})
+        sys.exit(1)
+`
+	silentBody := `
+import time
+for _ in sys.stdin:
+    pass
+time.sleep(60)
+`
+	var body string
+	switch variant {
+	case "ok":
+		body = okBody
+	case "error":
+		body = errorBody
+	case "silent":
+		body = silentBody
 	}
+	require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env python3\n"+preamble+body), 0o755))
+
+	orig := zcodeRuntimeCommand
+	zcodeRuntimeCommand = func() (string, []string) { return script, []string{"app-server"} }
+	t.Cleanup(func() { zcodeRuntimeCommand = orig })
+	return script
 }
 
-func TestRunZcodeAgainstFakeBinary(t *testing.T) {
-	binDir, workDir := fakeBin(t, "zcode", fakeZcodeOK)
-	setPath(t, binDir)
+func zcodeTestWatchdog() watchdog.Opts {
+	return watchdog.Opts{IdleTimeoutMs: 30_000, WallTimeoutMs: 60_000, KillGraceMs: 1_000}
+}
+
+func TestSplitZcodeModel(t *testing.T) {
+	p, m := splitZcodeModel("zai/glm-5.3")
+	assert.Equal(t, "zai", p)
+	assert.Equal(t, "glm-5.3", m)
+	p2, m2 := splitZcodeModel("glm-5.3-flash")
+	assert.Equal(t, "zai", p2, "无斜杠 → zcode 自身命名空间")
+	assert.Equal(t, "glm-5.3-flash", m2)
+}
+
+// TestRunZcodeProtocolHappyPath 协议闭环：prefs 反向请求应答、create/send/
+// turn-completed/read 四段、终态文本与 usage 提取、模型/思考档参数正确落到
+// create 请求（由假服务器的应答链隐式验证——错参数即状态机走不通）。
+func TestRunZcodeProtocolHappyPath(t *testing.T) {
+	fakeZcodeServer(t, "ok")
 	disableDesktop(t)
+	workDir := t.TempDir()
 
 	r := RunZcode(ZcodeArgs{
-		Prompt:  "do the task",
-		Model:   "zai/glm-5.3-flash",
-		Cwd:     workDir,
-		APIKeys: map[string]string{},
+		Prompt:   "do the task",
+		Model:    "zai/glm-5.3",
+		Cwd:      workDir,
+		APIKeys:  map[string]string{},
+		Watchdog: zcodeTestWatchdog(),
 	})
-	require.Empty(t, r.SpawnError)
-	assert.True(t, r.Settled)
+	assert.Empty(t, r.SpawnError)
+	assert.True(t, r.Settled, "协议闭环完成即 settled（进程 exit 形态不参与判定）")
 	assert.Equal(t, "zcode", r.Harness)
 	assert.Equal(t, "zai-coding-plan", r.Provider)
+	assert.Equal(t, "zai/glm-5.3", r.Model)
 	assert.Equal(t, "task complete", r.Text)
 	assert.Equal(t, "sess_test", r.SessionID)
-	// input 用上报值（500），不用 total−reasoning−cacheRead 派生（550）——
-	// 两种算法在探针 fixture 上不一致，上报值权威（PR #4 review 修复）。
 	require.NotNil(t, r.Usage)
 	assert.Equal(t, int64(500), r.Usage.Input)
 	assert.Equal(t, int64(80), r.Usage.Output)
+	assert.Equal(t, int64(20), r.Usage.Reasoning)
+	assert.Equal(t, int64(40), r.Usage.CacheRead)
 	assert.Equal(t, int64(600), r.Usage.TotalTokens)
-
-	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
-	require.NoError(t, err)
-	argsText := string(raw)
-	assert.Contains(t, argsText, "--prompt")
-	assert.Contains(t, argsText, "--json")
-	assert.Contains(t, argsText, "--model")
-	assert.Contains(t, argsText, "--mode")
+	require.NotNil(t, r.ReasoningChars)
+	assert.Equal(t, int64(len("ponder")), *r.ReasoningChars)
 }
 
-func TestRunZcodeResumesSession(t *testing.T) {
-	stream := `{"sessionId":"sess_resumed","response":"continued","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"projection":{"status":"idle"}}`
-	binDir, workDir := fakeBin(t, "zcode", stream)
-	setPath(t, binDir)
+// TestRunZcodeProtocolErrorArm 服务器返回协议错误（schema 漂移形态）→ failed
+// 记录 + finish 终结，绝不静默降级。
+func TestRunZcodeProtocolErrorArm(t *testing.T) {
+	fakeZcodeServer(t, "error")
 	disableDesktop(t)
+	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: t.TempDir(), APIKeys: map[string]string{},
+		Watchdog: zcodeTestWatchdog()})
+	assert.False(t, r.Settled)
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "boom schema drift")
+}
 
-	r := RunZcode(ZcodeArgs{
-		Prompt:    "continue",
-		Cwd:       workDir,
-		SessionID: "sess_prev",
-		APIKeys:   map[string]string{},
+// TestRunZcodeIdleTimeoutArm 静默服务器：无事件流活动 → idle 看门狗收割
+// （流式 idle 语义对协议驱动生效的回归锁）。
+func TestRunZcodeIdleTimeoutArm(t *testing.T) {
+	fakeZcodeServer(t, "silent")
+	disableDesktop(t)
+	start := time.Now()
+	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: t.TempDir(), APIKeys: map[string]string{},
+		Watchdog: watchdog.Opts{IdleTimeoutMs: 600, WallTimeoutMs: 30_000, KillGraceMs: 500}})
+	assert.False(t, r.Settled)
+	assert.True(t, r.TimedOut)
+	assert.Less(t, time.Since(start), 15*time.Second, "idle 600ms 必须近实时收割")
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "timeout")
+}
+
+// TestRunZcodeSpawnError 命令不存在 → SpawnError 直达 Result。
+func TestRunZcodeSpawnError(t *testing.T) {
+	disableDesktop(t)
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "no-such-zcode")
+	orig := zcodeRuntimeCommand
+	zcodeRuntimeCommand = func() (string, []string) { return missing, []string{"app-server"} }
+	t.Cleanup(func() { zcodeRuntimeCommand = orig })
+	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: dir, APIKeys: map[string]string{},
+		Watchdog: zcodeTestWatchdog()})
+	assert.NotEmpty(t, r.SpawnError)
+	assert.False(t, r.Settled)
+}
+
+// TestZcodeProtoOrderingVariants 状态机顺序鲁棒性：sessionId 先于 create 应答
+// 到达（state.updated 携带）时，create 应答到达即投递 prompt。
+func TestZcodeProtoOrderingVariants(t *testing.T) {
+	var writes []string
+	var mu sync.Mutex
+	p := newZcodeProto("go", "zai/glm-5.3", "", "/w", "/w")
+	p.mu.Lock()
+	p.out = writerFunc(func(b []byte) (int, error) {
+		mu.Lock()
+		writes = append(writes, string(b))
+		mu.Unlock()
+		return len(b), nil
 	})
-	require.Empty(t, r.SpawnError)
-	assert.True(t, r.Settled)
-	assert.Equal(t, "sess_resumed", r.SessionID)
+	finished := false
+	p.finish = func() { finished = true }
+	p.mu.Unlock()
 
-	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
-	require.NoError(t, err)
-	argsText := string(raw)
-	assert.Contains(t, argsText, "--resume")
-	assert.Contains(t, argsText, "sess_prev")
+	// attach 的等价序列：先发 create（writes[0]），再消费乱序到达的事件。
+	p.requestCreate()
+	p.feedLine(`{"method":"state.updated","params":{"sessionId":"sess_a"}}`)
+	p.feedLine(`{"id":"server-1","method":"session/requestRuntimePreferences","params":{"sessionId":"sess_a"}}`)
+	mu.Lock()
+	assert.Len(t, writes, 2, "create + prefs 应答；prompt 尚缺 create 应答不得投递")
+	mu.Unlock()
+	p.handleResponse(float64(1), []byte(`{}`)) // create 应答 → 立即投递 prompt
+	mu.Lock()
+	assert.Len(t, writes, 3, "create + prefs 应答 + send 投递")
+	assert.Contains(t, writes[2], `"method":"session/send"`)
+	assert.Contains(t, writes[2], `"content":"go"`)
+	mu.Unlock()
+	assert.False(t, finished)
 }
 
-// 非 JSON 输出（模型未回复/运行时错误文本）→ Settled=false + ErrorMessage
-// 留给分类器定码——绝不把错误文本当任务产出。失败尝试同样双触发：后触发把
-// 部分对话导入 GUI 供排障。
-func TestRunZcodeNonJSONOutputMarkedUnsettled(t *testing.T) {
-	binDir, workDir := fakeBin(t, "zcode", "Error: Turn execution failed")
-	setPath(t, binDir)
-	forceDarwin(t)
-	got := stubOpener(t)
-
-	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir, APIKeys: map[string]string{}})
-	assert.False(t, r.Settled)
-	require.NotNil(t, r.ErrorMessage)
-	assert.Contains(t, *r.ErrorMessage, "Turn execution failed")
-	assert.Len(t, *got, 2, "失败尝试前后仍各触发一次")
+// TestZcodeProtoReadWithoutText read 应答无 assistant 文本 → failed 记录但
+// done 置位（会话终结，错误留给分类器）。
+func TestZcodeProtoReadWithoutText(t *testing.T) {
+	p := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	p.mu.Lock()
+	p.out = writerFunc(func(b []byte) (int, error) { return len(b), nil })
+	p.finish = func() {}
+	p.mu.Unlock()
+	p.consumeRead([]byte(`{"messages":[{"info":{"role":"assistant"},"parts":[{"type":"reasoning","text":"hmm"}]}]}`))
+	oc := p.snapshot()
+	assert.True(t, oc.done)
+	assert.NotEmpty(t, oc.failed)
+	assert.Empty(t, oc.text)
 }
 
-// TestRunZcodeDefaultsAndStderrError 覆盖双臂：Model 空 → 默认 slug；
-// 非零退出且 stderr 非空 → ErrorMessage 取 stderr（stdout 错误文本退居后位）。
-func TestRunZcodeDefaultsAndStderrError(t *testing.T) {
-	stream := `Error: Turn execution failed`
-	binDir, workDir := fakeBin(t, "zcode", stream)
-	// 追加非零退出 + stderr 输出
-	scriptPath := filepath.Join(binDir, "zcode")
-	raw, err := os.ReadFile(scriptPath)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(scriptPath, append(raw, []byte("echo boom >&2\nexit 1\n")...), 0o755))
-	setPath(t, binDir)
-	disableDesktop(t)
-
-	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir, APIKeys: map[string]string{}})
-	assert.False(t, r.Settled)
-	require.NotNil(t, r.ErrorMessage)
-
-	raw2, rerr := os.ReadFile(filepath.Join(workDir, "args.txt"))
-	require.NoError(t, rerr)
-	assert.Contains(t, string(raw2), ZcodeDefaultModel) // Model 空 → 默认 slug
+// TestZcodeProtoDefaultModelAndThought newZcodeProto 的空值兜底（max 档）。
+func TestZcodeProtoDefaultModelAndThought(t *testing.T) {
+	p := newZcodeProto("p", "zai/glm-5.3-flash", "", "/w", "/w")
+	p.mu.Lock()
+	thought, model := p.thought, p.modelID
+	p.mu.Unlock()
+	assert.Equal(t, "max", thought)
+	assert.Equal(t, "glm-5.3-flash", model)
 }
 
-// TestRunZcodeRegistersWorkspace spawn 前后各触发一次 workspace 注册（AGENTS
-// 注入缝记录调用，不真跑二进制）。前触发注册+导入历史（resume/重试）；后触发
-// 把刚结束的会话立即导入桌面索引——首次执行的全新路径在前触发时存储为空，
-// 没有后触发则首会话永远不可见。
-func TestRunZcodeRegistersWorkspace(t *testing.T) {
-	binDir, workDir := fakeBin(t, "zcode", fakeZcodeOK)
-	setPath(t, binDir)
-	forceDarwin(t)
-	got := stubOpener(t)
+// writerFunc 测试用 io.Writer 适配。
+type writerFunc func([]byte) (int, error)
 
-	r := RunZcode(ZcodeArgs{Prompt: "x", Model: "zai/glm-5.3-flash", Cwd: workDir, APIKeys: map[string]string{}})
-	assert.True(t, r.Settled)
-	// opener 收到的是 EvalSymlinks 后的真实路径（索引按真实路径做 key）。
-	resolved, err := filepath.EvalSymlinks(workDir)
-	require.NoError(t, err)
-	assert.Equal(t, []string{resolved, resolved}, *got, "spawn 前后各一次")
-}
+func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
 
-// TestRunZcodeUsageDerivesWhenInputUnreported inputTokens 缺报（0）时从
-// total 派生并 clamp ≥0——派生 fallback 与负值钳制两臂（PR #4 review 修复）。
-func TestRunZcodeUsageDerivesWhenInputUnreported(t *testing.T) {
-	disableDesktop(t) // 不触桌面：本测试只关心 usage 解析
-	derive := `{"sessionId":"s1","response":"r","usage":{"outputTokens":3,"totalTokens":10,"reasoningTokens":2,"cacheReadTokens":1,"cacheWriteTokens":1}}`
-	clamp := `{"sessionId":"s2","response":"r","usage":{"outputTokens":1,"totalTokens":2,"reasoningTokens":5}}`
+// ---- 桌面注册（v0.20 机制回归）----
 
-	binDir1, workDir1 := fakeBin(t, "zcode", derive)
-	setPath(t, binDir1)
-	r1 := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir1, APIKeys: map[string]string{}})
-	require.NotNil(t, r1.Usage)
-	assert.Equal(t, int64(6), r1.Usage.Input, "缺报时派生 total−reasoning−cacheRead−cacheWrite")
-	assert.Equal(t, int64(10), r1.Usage.TotalTokens)
-
-	binDir2, workDir2 := fakeBin(t, "zcode", clamp)
-	setPath(t, binDir2)
-	r2 := RunZcode(ZcodeArgs{Prompt: "x", Cwd: workDir2, APIKeys: map[string]string{}})
-	require.NotNil(t, r2.Usage)
-	assert.Equal(t, int64(0), r2.Usage.Input, "派生为负时 clamp 0，绝不倒挂")
-}
-
-// TestRegisterZcodeWorkspaceNoopOnEmpty 空路径绝不触发 open。
 func TestRegisterZcodeWorkspaceNoopOnEmpty(t *testing.T) {
-	forceDarwin(t) // 平台闸开到 darwin，断言的才是 path=="" 分支本身
+	forceDarwin(t)
 	called := stubOpener(t)
 	RegisterZcodeWorkspace("")
 	assert.Empty(t, *called)
 }
 
-// TestRegisterZcodeWorkspaceDisabledByTestGate 测试闸生效时不触碰系统出口。
 func TestRegisterZcodeWorkspaceDisabledByTestGate(t *testing.T) {
-	forceDarwin(t) // 同上：断言 disable 闸而非平台闸
+	forceDarwin(t)
 	called := stubOpener(t)
 	disableDesktop(t)
 	RegisterZcodeWorkspace("/some/path")
 	assert.Empty(t, *called)
 }
 
-// TestRegisterZcodeWorkspaceNormalizesSymlinks 索引按归一化路径做 key：
-// /tmp→/private/tmp 类符号链接必须在触达 opener 前解析（实测未归一化注册
-// 成功但会话导入失配）。非 macOS 跳过（/tmp 符号链接是 darwin 文件系统事实，
-// 与平台闸注入缝无关——注册逻辑本身已由 forceDarwin 测试覆盖）。
 func TestRegisterZcodeWorkspaceNormalizesSymlinks(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("EvalSymlinks 语义按 darwin 验证")
@@ -235,16 +293,12 @@ func TestRegisterZcodeWorkspaceNormalizesSymlinks(t *testing.T) {
 	assert.Equal(t, "/private/tmp", (*got)[0], "必须解析为真实路径再触发")
 }
 
-// TestZcodeDesktopBinResolution env 覆盖权威、缺省走官方安装路径（双臂纯解析，
-// 不执行二进制）。
 func TestZcodeDesktopBinResolution(t *testing.T) {
 	assert.Equal(t, defaultZcodeDesktopBin, zcodeDesktopBin())
 	t.Setenv(ZcodeDesktopBinEnv, "/custom/zcode")
 	assert.Equal(t, "/custom/zcode", zcodeDesktopBin())
 }
 
-// TestDefaultOpenZcodeWorkspaceStartsBin 真出口仅以假二进制冒烟：Start 成功
-// 即返回 nil，回收由内部 goroutine Wait 承担（不 Wait 会留僵尸，PR #4 review）。
 func TestDefaultOpenZcodeWorkspaceStartsBin(t *testing.T) {
 	binDir := t.TempDir()
 	script := "#!/bin/sh\nexit 0\n"
@@ -252,7 +306,154 @@ func TestDefaultOpenZcodeWorkspaceStartsBin(t *testing.T) {
 	t.Setenv(ZcodeDesktopBinEnv, filepath.Join(binDir, "opener"))
 	require.NoError(t, defaultOpenZcodeWorkspace("/some/workspace"))
 
-	// 二进制不存在 → Start 报错原样返回（生产路径静默降级由调用方保证）。
 	t.Setenv(ZcodeDesktopBinEnv, filepath.Join(binDir, "missing"))
 	require.Error(t, defaultOpenZcodeWorkspace("/some/workspace"))
+}
+
+// TestRunZcodeRegistersWorkspace RPC 驱动保留双触发注册（spawn 前后各一次）。
+func TestRunZcodeRegistersWorkspace(t *testing.T) {
+	fakeZcodeServer(t, "ok")
+	forceDarwin(t)
+	got := stubOpener(t)
+	workDir := t.TempDir()
+
+	r := RunZcode(ZcodeArgs{Prompt: "x", Model: "zai/glm-5.3", Cwd: workDir,
+		APIKeys: map[string]string{}, Watchdog: zcodeTestWatchdog()})
+	assert.True(t, r.Settled)
+	resolved, err := filepath.EvalSymlinks(workDir)
+	require.NoError(t, err)
+	assert.Equal(t, []string{resolved, resolved}, *got, "spawn 前后各一次")
+	assert.True(t, strings.HasPrefix(resolved, "/"), "归一化路径")
+	assert.Equal(t, 2, zcodeOpenerCalls(got))
+}
+
+// TestZcodeProtoSendErrorArms 写端失败路径：create/send/read 三处 sendLocked
+// 错误都必须进 failLocked（防御性终结，绝不悬挂）。
+func TestZcodeProtoSendErrorArms(t *testing.T) {
+	mk := func() *zcodeProto {
+		p := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+		p.mu.Lock()
+		p.out = writerFunc(func([]byte) (int, error) { return 0, os.ErrClosed })
+		p.finish = func() {}
+		p.mu.Unlock()
+		return p
+	}
+	p := mk()
+	p.requestCreate() // create 写失败 → failLocked
+	oc := p.snapshot()
+	assert.NotEmpty(t, oc.failed)
+
+	p2 := mk()
+	p2.mu.Lock()
+	p2.created, p2.sessionID = true, "sess_x"
+	p2.mu.Unlock()
+	p2.maybeSendPrompt() // send 写失败 → failLocked
+	assert.NotEmpty(t, p2.snapshot().failed)
+
+	p3 := mk()
+	p3.mu.Lock()
+	p3.sessionID = "sess_x"
+	p3.mu.Unlock()
+	p3.requestRead() // read 写失败 → failLocked
+	assert.NotEmpty(t, p3.snapshot().failed)
+}
+
+// TestZcodeProtoEdgeLines feedLine 边缘：空 error 消息跳过、乱序 prefs 在
+// attach 前到达（out 为 nil 的零值安全臂）、非 JSON 行忽略。
+func TestZcodeProtoEdgeLines(t *testing.T) {
+	p := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	p.mu.Lock()
+	p.finish = func() {}
+	p.mu.Unlock()
+	p.feedLine("")                         // 空行：忽略
+	p.feedLine("   ")                      // 纯空白：忽略
+	p.feedLine(`{"error":{"message":""}}`) // 空错误消息：不终结
+	p.feedLine(`not-json`)                 // 非 JSON：忽略
+	p.feedLine(`{"id":"server-9","method":"session/requestRuntimePreferences","params":{"sessionId":"sess_e"}}`)
+	oc := p.snapshot()
+	assert.Equal(t, "sess_e", oc.sessionID)
+	assert.Empty(t, oc.failed, "out 为 nil 时 sendLocked 零值安全返回")
+
+	p3 := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	p3.mu.Lock()
+	p3.out = writerFunc(func([]byte) (int, error) { return 0, os.ErrClosed })
+	p3.finish = func() {}
+	p3.mu.Unlock()
+	p3.feedLine(`{"id":"server-2","method":"session/requestRuntimePreferences","params":{"sessionId":"sess_f"}}`)
+	assert.NotEmpty(t, p3.snapshot().failed, "prefs 应答写失败 → failLocked")
+
+	p2 := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	p2.mu.Lock()
+	p2.out = writerFunc(func([]byte) (int, error) { return len([]byte{}), nil })
+	p2.finish = func() {}
+	p2.mu.Unlock()
+	p2.consumeRead([]byte(`not-json`)) // read 应答不可解析 → failLocked
+	assert.NotEmpty(t, p2.snapshot().failed)
+}
+
+// TestZcodeConsumeReadSkipsNonAssistant 末条非 assistant（user 在后）→
+// continue 回溯到 assistant 提取。
+func TestZcodeConsumeReadSkipsNonAssistant(t *testing.T) {
+	p := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	p.mu.Lock()
+	p.out = writerFunc(func([]byte) (int, error) { return 0, nil })
+	p.finish = func() {}
+	p.mu.Unlock()
+	p.consumeRead([]byte(`{"messages":[
+		{"info":{"role":"assistant","tokens":{"total":9,"input":8,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}},
+		 "parts":[{"type":"text","text":"deep answer"}]},
+		{"info":{"role":"user"},"parts":[{"type":"text","text":"late user"}]}]}`))
+	oc := p.snapshot()
+	assert.Equal(t, "deep answer", oc.text)
+	require.NotNil(t, oc.usage)
+	assert.Equal(t, int64(9), oc.usage.TotalTokens)
+}
+
+// TestZcodeProtoRequestReadGuards requestRead 的 done/failed 短路臂。
+func TestZcodeProtoRequestReadGuards(t *testing.T) {
+	p := newZcodeProto("go", "zai/glm-5.3", "max", "/w", "/w")
+	var calls int
+	p.mu.Lock()
+	p.out = writerFunc(func([]byte) (int, error) { calls++; return 0, nil })
+	p.finish = func() {}
+	p.done = true
+	p.mu.Unlock()
+	p.requestRead() // done → 短路
+	assert.Equal(t, 0, calls)
+	p.mu.Lock()
+	p.done = false
+	p.failed = "x"
+	p.mu.Unlock()
+	p.requestRead() // failed → 短路
+	assert.Equal(t, 0, calls)
+}
+
+// TestDefaultZcodeRuntimeCommand 命令缝缺省形态：node + app 内置 runtime；
+// env 覆盖走自定义 launcher。
+func TestDefaultZcodeRuntimeCommand(t *testing.T) {
+	name, args := defaultZcodeRuntimeCommand()
+	assert.Equal(t, "node", name)
+	assert.Equal(t, []string{defaultZcodeRuntimePath, "app-server"}, args)
+	t.Setenv(ZcodeServerBinEnv, "/custom/zcode-launcher")
+	name2, args2 := defaultZcodeRuntimeCommand()
+	assert.Equal(t, "/custom/zcode-launcher", name2)
+	assert.Equal(t, []string{"app-server"}, args2)
+}
+
+// TestRunZcodeSilentQuickDeath 进程立即退出且无任何事件 → 通用兜底错误
+// （"session ended without completion" 臂）。
+func TestRunZcodeSilentQuickDeath(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\nexit 0\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "die"), []byte(script), 0o755))
+	orig := zcodeRuntimeCommand
+	zcodeRuntimeCommand = func() (string, []string) { return filepath.Join(dir, "die"), []string{"app-server"} }
+	t.Cleanup(func() { zcodeRuntimeCommand = orig })
+	disableDesktop(t)
+
+	r := RunZcode(ZcodeArgs{Prompt: "x", Cwd: t.TempDir(), APIKeys: map[string]string{},
+		Watchdog: zcodeTestWatchdog()})
+	assert.False(t, r.Settled)
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "without completion")
 }

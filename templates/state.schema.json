@@ -88,7 +88,7 @@
               "inbox"
             ]
           },
-          "route": { "type": "string", "enum": ["frontend", "default", "hard"] },
+          "route": { "type": "string", "enum": ["frontend", "default", "multimodal", "hard"] },
           "attempts": { "type": "integer", "minimum": 0, "description": "Execute spawns performed." },
           "failed-attempts": { "type": "integer", "minimum": 0, "description": "Attempts that failed. Escalation when failed-attempts >= packet escalation.max-retries." },
           "plan-revisions": { "type": "integer", "minimum": 0, "description": "Times the Plan Loop revised this packet after escalation. >1 consecutive failure rounds goes to inbox." },

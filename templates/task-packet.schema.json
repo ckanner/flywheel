@@ -42,7 +42,7 @@
     },
     "route": {
       "type": "string",
-      "enum": ["frontend", "default", "hard"],
+      "enum": ["frontend", "default", "multimodal", "hard"],
       "description": "Execution route, resolved via the route table in flywheel.config.json (DESIGN.md §4.2)."
     },
     "needs-live-credentials": {

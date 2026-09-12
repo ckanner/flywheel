@@ -1,6 +1,7 @@
 package watchdog
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -216,4 +217,43 @@ func TestRunTruncatesStderrOverMaxBuffer(t *testing.T) {
 	assert.Empty(t, r.SpawnError)
 	assert.True(t, r.Truncated)
 	assert.LessOrEqual(t, len(r.Stderr), 512)
+}
+
+// TestRunInteractStdinHook 协议驱动交互钩子：hook 写入 stdin、子进程回显为
+// stdout 活动（idle 重置），finish() 走与超时同一条 kill 路径——TimedOut
+// 必须为 false（driver 主动结束不是超时），进程被 SIGTERM 收割。
+func TestRunInteractStdinHook(t *testing.T) {
+	wrote := make(chan string, 1)
+	r := Run("sh", []string{"-c", "cat"}, Opts{
+		IdleTimeoutMs: 30_000, WallTimeoutMs: 60_000, KillGraceMs: 1_000,
+		InteractStdin: func(stdin io.WriteCloser, finish func()) {
+			_, _ = stdin.Write([]byte("ping\n"))
+			wrote <- "sent"
+			// 等 cat 把回显刷出来再结束（回显即 stdout 活动，证明 idle 计时被重置）。
+			time.Sleep(300 * time.Millisecond)
+			finish()
+			// finish 后 stdin 不再使用；关闭让潜在的对端写出尽快 EPIPE。
+			_ = stdin.Close()
+		},
+	})
+	assert.Equal(t, "sent", <-wrote)
+	assert.Empty(t, r.SpawnError)
+	assert.False(t, r.TimedOut, "driver 主动 finish 不是超时")
+	assert.Contains(t, r.Stdout, "ping", "stdin 写入经 cat 回显")
+	assert.NotEmpty(t, r.Signal, "进程经 finish 的 SIGTERM 路径收割")
+}
+
+// TestRunInteractStdinFinishIdempotent finish 幂等：多次调用不 panic、不重复
+// kill（once 语义）。
+func TestRunInteractStdinFinishIdempotent(t *testing.T) {
+	r := Run("sh", []string{"-c", "cat"}, Opts{
+		IdleTimeoutMs: 30_000, WallTimeoutMs: 60_000, KillGraceMs: 1_000,
+		InteractStdin: func(stdin io.WriteCloser, finish func()) {
+			finish()
+			finish() // 第二次必须是 no-op（sync.Once）
+			_ = stdin.Close()
+		},
+	})
+	assert.False(t, r.TimedOut)
+	assert.NotEmpty(t, r.Signal)
 }

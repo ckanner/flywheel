@@ -111,17 +111,33 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		})
 	}
 	if harness == "zcode" {
-		model := a.Model
-		if model == "" {
-			model = a.Binding.Model
+		// v0.22：app-server 协议驱动——模型/思考档按会话指定（zai/ 命名空间）。
+		zcodeModel := a.Model
+		if zcodeModel == "" {
+			zcodeModel = a.Binding.Model
 		}
 		return RunZcode(ZcodeArgs{
-			Prompt:    a.Prompt,
-			Model:     model,
-			Cwd:       a.Cwd,
-			SessionID: a.SessionID,
-			APIKeys:   a.APIKeys,
-			Watchdog:  a.Watchdog,
+			Prompt:       a.Prompt,
+			Model:        zcodeModel,
+			ThoughtLevel: a.Binding.Thinking, // 空 → RunZcode 兜底 max（§7 统一档）
+			Cwd:          a.Cwd,
+			APIKeys:      a.APIKeys,
+			Watchdog:     a.Watchdog,
+		})
+	}
+	if harness == "codex" {
+		codexModel := a.Model
+		if codexModel == "" {
+			codexModel = a.Binding.Model
+		}
+		return RunCodex(CodexArgs{
+			Prompt:          a.Prompt,
+			Model:           codexModel,
+			ReasoningEffort: a.Binding.Thinking, // 空 → RunCodex 兜底 max（GPT-6 默认仅 medium）
+			Cwd:             a.Cwd,
+			APIKeys:         a.APIKeys,
+			Watchdog:        a.Watchdog,
+			OnEvent:         a.OnEvent,
 		})
 	}
 	if harness == "omp" {
