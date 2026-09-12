@@ -6,3 +6,4 @@ node_modules/
 /dist/
 /bin/
 *.exe
+npm/platforms/*/flywheel
