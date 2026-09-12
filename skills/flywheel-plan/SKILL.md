@@ -24,7 +24,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    ```
 
    若 flywheel 不在 PATH：`flywheel run docs/<slug> --only plan`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （Go 版为单二进制：`make build && make install` 或经 npm 安装后 `flywheel` 即在 PATH。）
+   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
 
 3. **翻译结果**：把输出的 JSON 摘要讲成人话——当前里程碑、Plan Loop 确认/
    修订了哪些 packet、state.json 的新 revision。失败时原样报告错误信息并

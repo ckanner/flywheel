@@ -57,7 +57,7 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
   Enforced by internal/skillsembed tests (real YAML parsing + standard
   constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
-  `status`/`stop`/`install-skills` print human-readable text; errors go to
+  `status`/`stop`/`install-skills`/`template` print human-readable text; errors go to
   stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /
   budget-stopped / failed manual step.
 - **SIGTERM kill switch**: machine.RunTask registers SIGTERM → kills in-flight
