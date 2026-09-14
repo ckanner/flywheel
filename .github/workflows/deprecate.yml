@@ -1,0 +1,40 @@
+# npm 版本弃用（维护工具）：CI granular token 绕过 2FA/OTP——与 publish 同款
+# 认证路径。对 meta + 四个平台包的同一版本批量打弃用标记。
+name: deprecate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要弃用的版本号（如 0.22.0）"
+        required: true
+      message:
+        description: "弃用说明（安装时展示给用户）"
+        required: true
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Deprecate meta + platforms
+        run: |
+          for pkg in "@ckanner/flywheel" \
+                     "@ckanner/flywheel-darwin-arm64" \
+                     "@ckanner/flywheel-darwin-amd64" \
+                     "@ckanner/flywheel-linux-arm64" \
+                     "@ckanner/flywheel-linux-amd64"; do
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              npm deprecate "$pkg@$VERSION" "$MESSAGE"
+              echo "deprecated: $pkg@$VERSION"
+            else
+              echo "skip（该版本不存在）: $pkg@$VERSION"
+            fi
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          MESSAGE: ${{ inputs.message }}
