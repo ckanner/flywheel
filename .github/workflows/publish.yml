@@ -45,7 +45,6 @@ jobs:
       - name: Publish meta 包（后）
         run: npm publish --access public "./dist-npm/ckanner-flywheel-$VERSION.tgz"
         env:
-        env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
       - name: 发布后核验
