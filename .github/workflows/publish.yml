@@ -30,6 +30,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - name: Preflight（版本三方一致）
         run: node scripts/release-preflight.js
+      - name: 取版本号
+        id: meta
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
       - name: Build（交叉编译四平台 + 五包打包）
         run: bash scripts/build-npm.sh "$(node -p 'require("./package.json").version')" dist-npm
       - name: Publish 平台包（先）
@@ -40,12 +43,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish meta 包（后）
-        run: npm publish --access public ./dist-npm/ckanner-flywheel-$(node -p 'require("./package.json").version)').tgz
+        run: npm publish --access public "./dist-npm/ckanner-flywheel-$VERSION.tgz"
+        env:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
       - name: 发布后核验
         run: |
-          V=$(node -p 'require("./package.json").version')
+          V=${VERSION}
           sleep 15
           npm view "@ckanner/flywheel@$V" version
           npm view "@ckanner/flywheel-darwin-arm64@$V" version
