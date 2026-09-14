@@ -35,15 +35,26 @@ jobs:
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
       - name: Build（交叉编译四平台 + 五包打包）
         run: bash scripts/build-npm.sh "$(node -p 'require("./package.json").version')" dist-npm
-      - name: Publish 平台包（先）
+      - name: Publish 平台包（先，已发布的幂等跳过）
         run: |
-          for t in ./dist-npm/ckanner-flywheel-darwin-*.tgz ./dist-npm/ckanner-flywheel-linux-*.tgz; do
-            npm publish --access public "$t"
+          for p in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
+            pkg="@ckanner/flywheel-$p"
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              echo "skip（已发布）: $pkg@$VERSION"
+            else
+              npm publish --access public "./dist-npm/ckanner-flywheel-$p-$VERSION.tgz"
+            fi
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish meta 包（后）
-        run: npm publish --access public "./dist-npm/ckanner-flywheel-$VERSION.tgz"
+          VERSION: ${{ steps.meta.outputs.version }}
+      - name: Publish meta 包（后，已发布的幂等跳过）
+        run: |
+          if npm view "@ckanner/flywheel@$VERSION" version >/dev/null 2>&1; then
+            echo "skip（已发布）: @ckanner/flywheel@$VERSION"
+          else
+            npm publish --access public "./dist-npm/ckanner-flywheel-$VERSION.tgz"
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
