@@ -1,4 +1,4 @@
-7e2618147331d62a1147e8dbd234adeb81a410d12dbc1bf74270fbcf76851d52  flywheel-0.22.0-darwin-amd64.tar.gz
-c598b5bb5aefa46386dbc3be07da0924cda5a31c4c182c89aa8d33881ba23357  flywheel-0.22.0-darwin-arm64.tar.gz
-3a6d361a53ec056e4d8d7cd695ca20b4a4f2c1089c77637cf2f144f0ac9bf70e  flywheel-0.22.0-linux-amd64.tar.gz
-bd99ef6bb6d4a938be3116fa47a6050e9226a982a332942a8f37c39bf9adf27f  flywheel-0.22.0-linux-arm64.tar.gz
+2d6ee42d0a8e53d9f3c92d617f4787e07b67f58e435b225290e9d7a4c4c33f05  flywheel-0.22.0-darwin-amd64.tar.gz
+335e6e31be887a51af181e4317c3a49d76a0014eb3e53f2a5ce3c4b97bb13f56  flywheel-0.22.0-darwin-arm64.tar.gz
+28baf1e9b9371dc627afbfafcc2827eebc106f214cbf50fe330a17648e18c5e8  flywheel-0.22.0-linux-amd64.tar.gz
+9045f873aedaebb103e677d94f399a722f3d9565d73f468fd26a07574cd5e5c3  flywheel-0.22.0-linux-arm64.tar.gz
