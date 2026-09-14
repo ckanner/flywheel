@@ -1,0 +1,51 @@
+# npm 发布（v0.23 分发定稿）：workflow_dispatch 手动触发（未来 tag 推送也自动触发）。
+# 用 NPM_TOKEN secret（granular token，@ckanner scope 读写）认证——automation
+# token 绕过 2FA/OTP，CI 发布的标准形态。发布顺序：先 4 个平台包、后 meta 包
+# （optionalDependencies 引用平台包，反序存在解析窗口期）。preflight 先行：
+# tag = meta = 平台包版本三方一致才允许发布。
+name: publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # preflight 需要 git describe 取最新 tag
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Preflight（版本三方一致）
+        run: node scripts/release-preflight.js
+      - name: Build（交叉编译四平台 + 五包打包）
+        run: bash scripts/build-npm.sh "$(node -p 'require("./package.json").version')" dist-npm
+      - name: Publish 平台包（先）
+        run: |
+          for t in ./dist-npm/ckanner-flywheel-darwin-*.tgz ./dist-npm/ckanner-flywheel-linux-*.tgz; do
+            npm publish --access public "$t"
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish meta 包（后）
+        run: npm publish --access public ./dist-npm/ckanner-flywheel-$(node -p 'require("./package.json").version)').tgz
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: 发布后核验
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          sleep 15
+          npm view "@ckanner/flywheel@$V" version
+          npm view "@ckanner/flywheel-darwin-arm64@$V" version
