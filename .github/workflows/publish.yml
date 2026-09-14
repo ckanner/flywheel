@@ -61,6 +61,13 @@ jobs:
       - name: 发布后核验
         run: |
           V=${VERSION}
-          sleep 15
-          npm view "@ckanner/flywheel@$V" version
-          npm view "@ckanner/flywheel-darwin-arm64@$V" version
+          for i in 1 2 3 4 5; do
+            if npm view "@ckanner/flywheel@$V" version >/dev/null 2>&1 \
+               && npm view "@ckanner/flywheel-darwin-arm64@$V" version >/dev/null 2>&1; then
+              echo "ok: meta + 平台包均已可见（第 $i 次探测）"
+              npm view "@ckanner/flywheel@$V" version
+              exit 0
+            fi
+            echo "registry 尚未可见，15s 后重试（$i/5）…"; sleep 15
+          done
+          echo "发布后核验超时"; exit 1

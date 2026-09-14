@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.1 (2026-09-14)
+
+修复 0.22.0 meta 包缺 bin shim：`bin/flywheel.js` 此前被 .gitignore 的 `/bin/`（postinstall 下载目录时代的遗留规则）挡在 git 之外——CI checkout 无此文件，发布的 meta 包只有 3 个文件、`flywheel` 命令不存在。本版将 shim 入库并全量 bump 版本；旧 0.22.0 meta 请勿使用。
+
 ## 0.22.0 (2026-09-12)
 
 三厂商 harness 定稿 + 完全自包含分发（安装用法人人一致，无需源码仓库）。
