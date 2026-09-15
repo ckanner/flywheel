@@ -1,9 +1,10 @@
-# Flywheel（飞轮）— Loop Engineering 系统设计（v0.23 讨论稿）
+# Flywheel（飞轮）— Loop Engineering 系统设计（v0.24 讨论稿）
 
-> 状态：核心已建（2026-08-22：**Go 版全量迁移完成**，`go test ./...` 全绿、覆盖率门禁 100%；Node 版实现随迁移删除，DESIGN 语义不变）。2026-09-10 三厂商 harness 定稿（v0.22）；2026-09-12 分发形态与配置发现链定稿（v0.23，随 npm 0.22.0 落地）。
+> 状态：核心已建（2026-08-22：**Go 版全量迁移完成**，`go test ./...` 全绿、覆盖率门禁 100%；Node 版实现随迁移删除，DESIGN 语义不变）。2026-09-10 三厂商 harness 定稿（v0.22）；2026-09-12 分发形态定稿（v0.23）；2026-09-15 子 Loop 闭环化（v0.24，Osmani 原文对齐）。
 > Flywheel：编排器如飞轮——把间断、不稳定的 agent 运行，通过磁盘状态储能为连续平稳的推进。
 > 本文档是一套多 loop agent 编排系统的完整设计。目标读者：项目维护者本人。
 > 设计依据：Addy Osmani《Loop Engineering》、Anthropic/OpenAI/Cursor 官方案例、文档协议驱动 agent 循环的实战经验，以及 2026-08 对 kimi code / pi / oh-my-pi / oh-my-openagent / zcode 五个 harness 和 Kimi K3 / DeepSeek V4 / GLM-5.3 系列模型的调研（来源见附录 A）。
+> - v0.24 — **子 Loop 闭环化（用户裁决，2026-09-15，对齐 Osmani 原文的 loop 语义）**：loop 的本义是"递归目标——迭代直到完成"（*"a recursive goal where you define a purpose and the AI iterates until complete"*），终止 = 开局前写下的可验证 done-condition，而非轮数。据此给每个子 Loop 补齐**闭环四要素（目标/判定器/终止/界）**并让 `--only` 单环模式真正闭环（此前是"走一步状态转移"）：① **execute 子环**（`runExecuteLoop`）：done-condition = 冻结契约的 L1 验收命令 + boundaries 全绿（铁律 4：确定性 oracle，LLM 在其后）；每轮失败信号（错误码/失败命令/权威变更集）落账并喂给下一轮全新会话；界 = max-retries + 空转检测（DC4）+ 预算闸门；**子环从不自行升级**——升级（planner 修订/inbox）是大循环对 Bounded/Spun 出口的裁决（escalate 是设计出口而非失败）。② **plan 子环**（`planUntilValid`）：done-condition = load-time schema 校验通过的合法契约集；planner 写坏契约时**校验错误经提示词 Feedback 通道喂回长驻会话重试**（planner 是修订器，修自己的产物是本职）；界 = 反馈重试 2 次后 inbox 叫人（契约质量问题是结构性的，重试烧钱无意义——原行为是整个任务 fail-loud 崩掉，升级比崩溃好）。③ **review 子环**：done-condition = 合法裁决（带 score+证据的 verdict，出口契约校验）；退回也是合法裁决 → 环终止（执行与否是大循环的裁决）——已在 v0.18 裁决出口契约中实现，本版如实化命名。④ **verify**：幂等闸门，天然闭环。⑤ `--only` 语义改写：单环模式 = **运行该环至终态（达标或有界停止）**；单环不自动升级（人在驾驶座，Bounded/Spun 如实报告，人自行决定 `--only plan` 修订或重跑）。全自动路径行为不变（processPacket 改为组合两个子环 + 升级裁决，等价重构）。
 > - v0.23 — **分发形态与配置发现链定稿（用户裁决，2026-09-12，补记——代码先于本文档落地，随 npm 0.22.0 发布；过程违纪教训：变更记录应先行）**：① **分发 = 开发，人人一致**——任何人（含无源码仓库的分发用户）安装用法与维护者完全相同：`npm i -g @ckanner/flywheel`（**平台二进制包模式**，esbuild 先例：四平台交叉编译二进制各自成 npm 包，meta 包经 optionalDependencies 按 os/cpu 自动选取——无 postinstall、无网络下载、无 checksum 步骤，npm 自身包完整性承担校验；仓库可见性不再是分发依赖。原 lark-cli 式"从 GitHub release 下载"因私有仓库匿名 404 而退役，GH release tar.gz 保留为非 npm 直装渠道）。② **安装自包含**：契约 schema、10 个 skills 快照、§13 法定配置表、模板全部 go:embed 内嵌二进制；`flywheel install-skills` 默认从内嵌快照**复制物化**（`.flywheel-snapshot` 标记支持升级刷新；真目录拒绝自动删除的 P1-11 语义保留），`--link` 为开发机源码树软链的显式 opt-in；`flywheel template <name>` 打印内嵌模板（flywheel-new 经它取格式，不再读仓库路径）；仓库定位锚文件（flywheel-home.txt）退役并清理遗留。③ **配置四级发现链**（用户指定架构）：任务目录 `flywheel.config.json` → 项目根 → **全局 `~/.config/flywheel/flywheel.config.json`**（首装从内嵌法定表物化为可编辑的真实文件，用户改全局即改默认）→ 内嵌法定表兜底（HOME 不可写不卡死工具）；`FLYWHEEL_CONFIG` 覆盖缝。④ skills 正文与 compatibility 元数据全量去仓库化（npm 优先安装指引 + 各角色当前 harness 依赖），对外命令面收敛为 `flywheel` CLI + 目标仓库操作（git）+ intake 可选 gh。⑤ 发布工具链：`scripts/build-npm.sh`（交叉编译→注入→五包打包）、`release-preflight.js`（tag = meta = 四平台包版本一致性）。
 > - v0.22 — **三厂商 harness 定稿（用户裁决，2026-09-10）**：① **zcode 转正为主链路 Execute default + Intake 的 harness**——经其内置 **app-server 协议**驱动（"ZCode Protocol" stdio；2026-09-10 本机逆向实证：NDJSON 行信封 `{"id","method","params"}`，`session/create` **按会话**指定 `model{providerId,modelId}` + `thoughtLevel`、`session/send` 投递、`state.updated`/telemetry 流式事件——一次性 `--prompt` 入口"全局单模型 + stdout 静默"两大限制就此消解，idle 看门狗语义对流式事件恢复有效）；协议无公开文档，**握手与方法名随桌面自动更新可能漂移**（`--model` flag 失效即前车之鉴）——driver 做防御性握手（失败报清晰错误、绝不静默降级），版本探测进首跑验证清单；默认二进制用 app 内置 runtime `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`（与桌面同步更新，第三方 wrapper zcode-app-cli 弃用——vendor runtime 已滞后于 app）。② **Execute default 模型升 GLM-5.3（旗舰跑量）**——依据用户原则"质量/效率/速度优先，成本不计入"（§11.6 记录）：更强 agentic 能力 → 连败与 hard 升级更少；知情代价：订阅配额消耗加速（放量档系数高于旗舰档）、单元时延上升（实测首应答 26s vs flash 12s）。③ **Review + Judge 复核面板 → Codex + GPT-6-Astra**（chatgpt 订阅 OAuth，`codex exec --json` 流式 + `-m` 按次选模型 + usage/缓存明细全暴露；npm CLI ≥0.154 或 app 内置 0.153 二进制——0.151 及更早不支持 gpt-6-astra，实测 400）；跨厂商制衡升级：executor GLM（智谱）↔ reviewer GPT-6（OpenAI）异厂商，§4.3 同族自偏好已知风险消解；hard 路由维持 K3（若 hard 也用 GPT-6 则与 Review 同族，自偏好恰好落在最难单元）。④ **思考档定稿**：zcode `thoughtLevel=max`（GLM 档位 [low,high,max]，5.3 默认即 max，app-server state 实测）；Codex `model_reasoning_effort=max`（GPT-6-Astra 阶梯 low→medium→high→xhigh→max→ultra，默认 medium 故必须显式传；**ultra = max+自动任务委托**，与"单会话只做一件事"纪律冲突，裁决角色不用，留待 Execute 场景评估）；kimi max 不变。⑤ **桌面可见性双轨**：zcode 双触发 `--open-workspace` 注册（v0.20 机制，2026-09-10 复验有效）；Codex 会话原生进桌面统一线程库（`~/.codex/state_5.sqlite`，source=exec）+ 项目注册 `open -a ChatGPT <folder>`（app 声明 Folder 文档类型与 `codex://` scheme）——侧边栏对 exec 线程的即时呈现待 app 重启验证（遗留项）。⑥ **multimodal 路由预留**：GLM-5.3-Flash 为 zcode 目录中唯一多模态档（图像/PDF/视频输入、1M 上下文），routes 表新增 `multimodal` 路由（机制现成，packet 标 route 即走）；Intake 保持 flash 档（与 Execute 不同模型经同一 zcode app-server 驱动，按会话指定，无冲突）。⑦ **omp 退出主链路**（driver 保留为 B 通道：多模态过渡/协议漂移应急）；智谱国内 Coding Plan 随之退居 B 通道，主链路 GLM 配额转 Z.AI Coding Plan（独立订阅池，zcode 用户侧认证）。⑧ 实证遗留：app-server 协议稳定性跟踪、Codex exec 线程桌面呈现、ultra 档语义评估、三家缓存前缀语义首跑复核。
 > - v0.21 — **渠道迁移智谱 + GLM 换防（用户裁决，2026-08-27）**：① **OpenCode Go 渠道移除**，非 Kimi 系全部改走**智谱（国内 bigmodel）GLM Coding Plan**（channel `zhipu-coding-plan`，`env-key: null`——凭证留在用户侧 omp provider 配置，编排器**不注入 key**，与 kimi 订阅同款委托模式；无 fallback 语义不变——RATE_LIMIT 同渠道退避、QUOTA 升级 inbox）；② 模型换防：**V4 Flash → GLM-5.3-Flash**（Execute default 路由、Intake），**V4 Pro → GLM-5.3**（Review、Judge 复核面板），slug 前缀 `zhipu-coding-plan/` 与用户 omp provider 名一致；③ **harness 事实同步**：PR #4 已把 pi 系角色切到 **omp**（oh-my-pi，pi 官方分叉，CLI/事件流同构，usage 额外暴露 reasoningTokens/duration/ttft）——§7/§13 两张表此前的 pi 漂移本版一并修正；④ zcode harness 保持可选臂（独立配额池 + 桌面会话可见性，v0.20；模板不预置绑定——启用需手写渠道并把 loops/routes 绑定指到 harness=zcode，模型 slug 走 zcode 自身 zai/ 命名空间；zcode CLI 无 thinking 参数，effort 由其运行时默认）；⑤ **双模型 live 冒烟通过**（2026-08-27，omp 走用户自有凭证，零 env 依赖）：`glm-5.3-flash` 12s / `glm-5.3` 26s 应答，usage 暴露 input/output/reasoningTokens/cacheRead（5.3 探针 cacheRead=3264，缓存生效），`thinking efforts=[low,high,max]` 原生支持全系统 max 档；⑥ 实证遗留：effort 透传的定量验证、缓存前缀语义（§8-5）与编辑格式 A/B 结论（附录 C，V4 Flash × pi 时代数据）对 GLM-5.3 × omp 的适用性均待首跑——编排器以 L1+Review 闸门兜底，不依赖榜单背书。
@@ -96,6 +97,17 @@
 ---
 
 ## 4. Loop 清单
+
+**闭环解剖（v0.24，Osmani 对齐）**——每个 Loop = 一个独立闭环，四要素齐备；大循环组合子环，跨环出口是升级（设计出口，非失败）：
+
+| Loop | 目标（开局前冻结的 done-condition） | 判定器（oracle） | 终止 | 界 |
+|---|---|---|---|---|
+| Plan | schema 校验通过的合法契约集 | load-time JSON Schema 校验 | 契约集合法 / 界尽 inbox | 反馈重试 2 次 + 传输界 |
+| Execute | 单元 L1 验收命令 + boundaries 全绿 | **确定性命令**（铁律 4） | L1 绿 / Bounded / Spun → 大循环升级 | max-retries + 空转检测 + 预算 |
+| Review | 合法裁决（score + 证据的 verdict） | 裁决出口契约校验 | verdict 成立（pass 或退回均终止本环） | 传输界 + 解析重试界 |
+| Verify | 闸门绿 | 命令退出码 | 报告即终止 | 天然无环（幂等） |
+| **大循环**（编排器） | 单元完成（L1 绿 ∧ review pass）；里程碑关闭（judge + L2/L3）；任务 = 全里程碑 | 子环 oracle 的组合 | completeUnit / 里程碑关闭 / 任务完成 / inbox | 全部子环之界 + 预算总闸 |
+
 
 ### 4.1 Plan Loop（规划）
 
@@ -248,16 +260,18 @@ Go 单二进制（CLI 驱动，cobra；v0.17 起全量迁移，Node 实现已删
 
 ```
 for milestone in spec.milestones:
-    packet = plan_loop.issue(milestone)          # 低频 K3
-    for attempt in range(packet.escalation.max_retries):
-        result = execute_loop.run(packet)        # 新 pi 会话 + 看门狗超时
-        l1 = verify.run(packet.acceptance.L1)    # 编排器直接跑
-        verdict = review_loop.review(packet, result, l1) if l1.pass else fail(l1)
-        if verdict.pass and verify.milestone_gate(milestone):  # L2/L3
-            break
-        if verdict.kind == "验证缺口": 加强验收后复验  # 不退回执行
-    else:
-        escalate(result)                          # 回 Plan Loop 修订 / inbox 叫人
+    plan_until_valid(milestone)                   # plan 子环：到合法契约集（反馈重试 ≤2）
+    for packet in milestone.packets:
+        while True:                               # 单元大循环：组合子环 + 升级裁决
+            r = run_execute_loop(packet)          # execute 子环：转到 L1 全绿
+            if r.bounded or r.spun:               # 有界出口 → 大循环裁决升级
+                escalate(packet)                  # planner 修订（≤1 次）→ 子环重入；否则 inbox
+                continue
+            verdict = review_loop(packet)         # review 子环：到合法裁决
+            if verdict.pass: complete_unit(); break
+            if verdict.kind == "验证缺口": plan 修订验收后复验（不退回执行轮）
+            else: fail_attempt(); continue        # 退回 → execute 子环重入
+    judge_panel(milestone); milestone_gate(milestone)   # L2/L3 + 双 judge 终验
 ```
 
 关键行为：
@@ -379,7 +393,7 @@ for milestone in spec.milestones:
    - **验收命令试跑（v0.18 硬规则）**：提交前逐条实际执行每条 L1 命令，「命令+退出码+输出摘要」记入 spec 附表 `## Acceptance dry-run evidence`；无法执行的标 `unverified: <原因>`。允许红（代码未实现），不允许没跑过。
 2. **人审契约（关键 checkpoint，不可省）**：过一眼 spec 与 packet 的需求编号、验收命令、边界、**试跑证据**。契约质量决定产出质量，审契约比审代码便宜得多。
 3. **启动（在 harness 里扣扳机）**：`/skill:flywheel-run docs/<slug>`——skill 让 agent 把编排器**以独立进程拉起**（launchd/nohup，不依赖当前会话存活）、确认存活、报告状态入口；之后关掉 harness 窗口不影响运行。CLI `flywheel run` 是底层接口与后路。`/skill:flywheel-status` / `/skill:flywheel-stop` 同理。
-   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = 只走一步状态转移。注意 `--pause-before` 与 `--only` 互斥（单步天然逐步执行，组合直接报错）；skill 侧经 `/skill:flywheel-run docs/<slug> [pause]` 的可选参数使用。
+   - **单 loop 手动触发**（默认全自动，旁路常开）：`flywheel run docs/<slug> --only review --unit M02-T03`（只重跑某单元评审）、`--only execute --packet M02-T03`、`--pause-before review`（逐步监督）。编排器是状态机，手动触发 = **运行该 Loop 的完整闭环**（至其 done-condition 或有界停止，v0.24 语义：`--only execute` 转到 L1 全绿，`--only plan` 转到合法契约集，`--only review` 到合法裁决）；单环模式不做自动升级——Bounded/Spun 如实报告，人自行决定修订或重跑（人在驾驶座）。`--pause-before` 与 `--only` 互斥（单环不进入后续阶段，暂停点无意义）；skill 侧经 `/skill:flywheel-run docs/<slug> [pause]` 的可选参数使用。
 4. **观察与干预（在哪都行）**：`flywheel status` 或让 harness 里的 agent 读 state.json/retro.md 讲进度；干预 = `flywheel stop` / 改 state.json / 写 inbox.md——全是文件操作。
 5. **交付**：分支/PR 留给人最终确认合并（外层循环归人）。
 

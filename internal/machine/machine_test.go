@@ -222,9 +222,10 @@ func TestRunSingleStepOnlyExecuteAndVerify(t *testing.T) {
 	assert.Equal(t, "execute", summary.Step.Name)
 
 	st := loadFixtureState(t, fx)
-	assert.Equal(t, "executed", st.Packets["M01-T01"].Status)
+	// v0.24：--only execute = 子环闭环（execute+L1 到绿），不再是单步 executed。
+	assert.Equal(t, "l1-passed", st.Packets["M01-T01"].Status)
 
-	// verify 步：编排器亲自跑 L1。
+	// verify 步：编排器亲自跑 L1（幂等复跑）。
 	opts.Only = "verify"
 	summary, err = RunSingleStep(opts)
 	require.NoError(t, err)

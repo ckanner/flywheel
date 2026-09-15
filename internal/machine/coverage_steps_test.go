@@ -573,12 +573,12 @@ func TestPlanStepErrorsWithoutPacketsOrBinding(t *testing.T) {
 	fx := newGitFixture(t)
 	ctx := verdictCtx(t, fx, happyDrivers())
 
-	_, err := ctx.planStep(contract.Milestone{ID: "M-09"})
+	_, err := ctx.planStep(contract.Milestone{ID: "M-09"}, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "has no packets")
 
 	delete(ctx.Config.Loops, "plan")
-	_, err = ctx.planStep(contract.Milestone{ID: "M-01"})
+	_, err = ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no loop binding")
 }
@@ -593,7 +593,7 @@ func TestPlanStepColdStartTrimsRetroTail(t *testing.T) {
 
 	sd := happyDrivers()
 	ctx := verdictCtx(t, fx, sd)
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK)
 
@@ -616,7 +616,7 @@ func TestPlanStepResumesPinnedSessionAndCountsResumes(t *testing.T) {
 		"created-at": "2026-08-01T00:00:00.000Z", "resumes": float64(2),
 	}
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK)
 	session, _ := ctx.State.PlanSession.(map[string]any)
@@ -638,7 +638,7 @@ func TestPlanStepMismatchedStoredSessionColdStarts(t *testing.T) {
 		"session-id": "old", "channel": "other-channel", "model": "other-model", "resumes": float64(0),
 	}
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK)
 	assert.Contains(t, strings.Join(logs, "\n"), "mismatches current binding")
@@ -669,7 +669,7 @@ func TestPlanStepDeadSessionRestartsCold(t *testing.T) {
 		"session-id": "sess-dead", "channel": planLoopChannel, "model": "kimi-code/k3", "resumes": float64(0),
 	}
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK)
 	assert.Contains(t, strings.Join(logs, "\n"), "is dead")
@@ -692,7 +692,7 @@ func TestPlanStepTransportRetryExhaustion(t *testing.T) {
 	}
 	ctx := verdictCtx(t, fx, sd)
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.False(t, out.OK)
 	assert.Equal(t, errs.SERVER, out.ErrorCode)
@@ -714,7 +714,7 @@ func TestPlanStepFallsBackAcrossChannels(t *testing.T) {
 	ctx := verdictCtx(t, fx, sd)
 	ctx.Log = func(msg string) { logs = append(logs, msg) }
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK, "降级到 kimi-coding 后成功")
 	assert.Contains(t, strings.Join(logs, "\n"), "plan fallback: kimi-subscription -> kimi-coding")
@@ -735,7 +735,7 @@ func TestPlanStepFallsBackAcrossChannels(t *testing.T) {
 	var logs2 []string
 	ctx2.Log = func(msg string) { logs2 = append(logs2, msg) }
 	ctx2.Config.Loops["plan"] = config.LoopBinding{Harness: "pi", Model: "m", Channel: "opencode-go"}
-	out, err = ctx2.planStep(contract.Milestone{ID: "M-01"})
+	out, err = ctx2.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, errs.RATE_LIMIT, out.ErrorCode)
 	assert.Contains(t, strings.Join(logs2, "\n"), "plan fallback chain ends")
@@ -750,7 +750,7 @@ func TestPlanStepBudgetStopAndFailLoud(t *testing.T) {
 	ctx.Config.Budget.DailyTokenLimit = &limit
 	ctx.State.Budget.Daily[time.Now().UTC().Format("2006-01-02")] = state.DailyBucket{Tokens: 99}
 
-	out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.Stopped)
 	sd.log.mu.Lock()
@@ -766,7 +766,7 @@ func TestPlanStepBudgetStopAndFailLoud(t *testing.T) {
 		Drivers: happyDrivers().set(), Log: func(string) {}, Sleep: func(time.Duration) {},
 		Env: func(string) (string, bool) { return "", false }})
 	require.NoError(t, err)
-	out, err = ctx2.planStep(contract.Milestone{ID: "M-01"})
+	out, err = ctx2.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.False(t, out.OK)
 	assert.Equal(t, errs.AUTH, out.ErrorCode)

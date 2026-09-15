@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -333,4 +334,13 @@ func runOptsWithLog(fx fixture, drv *drivers.Drivers, sink *[]string) RunTaskOpt
 	o := runOpts(fx, drv)
 	o.Log = func(msg string) { *sink = append(*sink, msg) }
 	return o
+}
+
+// mustJSON 测试便捷：map → JSON 字节。
+func mustJSON(v any) []byte {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }

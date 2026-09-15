@@ -138,7 +138,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		if !found {
 			return "", fmt.Errorf("packet %s references unknown milestone %q", id, ps.Milestone)
 		}
-		plan, err := c.planStep(milestone) // Plan Loop 修订 packet（§4.1）
+		plan, err := c.planStep(milestone, "") // Plan Loop 修订 packet（§4.1）
 		if err != nil {
 			return "", err
 		}
@@ -425,6 +425,77 @@ func (c *Context) injectionStop(packet *contract.Packet, oi *defectinjection.Out
 	return c.err()
 }
 
+// execLoopOutcome execute 子环的四种出口（v0.24 闭环化）：子环从不自行升级——
+// 升级是大循环对出口的裁决（Osmani：闭环达标或有界停止，escalate 是设计出口）。
+type execLoopOutcome struct {
+	Green   bool // L1 全绿：子环达标（done-condition 由冻结契约的验收命令构成）
+	Stopped bool // budget/凭证等待/fatal：跨环停止信号
+	Bounded bool // FailedAttempts 耗尽：有界停止（调用方裁决：升级或报告）
+	Spun    bool // 空转检测命中：同签名连续失败（§6 DC4）
+}
+
+// runExecuteLoop execute 子环闭环（Osmani 对齐，v0.24）：转到单元 L1 验收
+// 全绿，或有界停止。done-condition = 冻结契约的 L1 命令 + boundaries（铁律 4：
+// 确定性 oracle，LLM 在其后）；每轮失败信号（错误码/失败命令/权威变更集）经
+// failAttempt 落账并喂给下一轮全新执行会话（铁律 3）；界 = packet 的
+// max-retries + 空转检测 + 预算闸门。凭证闸门在 executeStep 内（spawn 前）。
+func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, error) {
+	for {
+		if ferr := c.err(); ferr != nil {
+			return execLoopOutcome{Stopped: true}, ferr
+		}
+		if c.budgetGate() == "stop" {
+			return execLoopOutcome{Stopped: true}, nil
+		}
+		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
+		if c.State.Packets[packet.PacketID].FailedAttempts >= maxRetries {
+			return execLoopOutcome{Bounded: true}, nil
+		}
+
+		exec, err := c.executeStep(packet)
+		if err != nil {
+			return execLoopOutcome{Stopped: true}, err
+		}
+		if exec.Stopped {
+			return execLoopOutcome{Stopped: true}, nil
+		}
+		if !exec.Success {
+			// C4（v0.18）：execute 失败路径的空转签名用编排器亲自 diff 的
+			// 权威变更集——executor 自报不可信（DC4）。
+			if c.failAttempt(packet, orTransport(exec.ErrorCode), nil, c.authoritativeChangedFiles(packet)) == "spin" {
+				return execLoopOutcome{Spun: true}, nil
+			}
+			continue
+		}
+
+		l1 := c.l1Step(packet)
+		if !l1.Pass {
+			var failedCommands []string
+			for _, r := range l1.Gate.Results {
+				if !r.Pass {
+					failedCommands = append(failedCommands, r.Cmd)
+				}
+			}
+			for _, v := range l1.Boundary.Violations {
+				if v.Path != "" {
+					failedCommands = append(failedCommands, fmt.Sprintf("%s:%s", v.Type, v.Path))
+				} else {
+					failedCommands = append(failedCommands, fmt.Sprintf("%s:%d", v.Type, v.Count))
+				}
+			}
+			authChanged := l1.Boundary.ChangedFiles
+			if l1.Boundary.Skipped {
+				authChanged = nil
+			}
+			if c.failAttempt(packet, errL1Failed, failedCommands, authChanged) == "spin" {
+				return execLoopOutcome{Spun: true}, nil
+			}
+			continue
+		}
+		return execLoopOutcome{Green: true}, nil
+	}
+}
+
 // processPacket 单个 packet 的完整处理循环。
 // P3 修复：resume 直达 review 时补跑缺陷注入采样（Node 直接跳过）。
 func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (string, error) {
@@ -472,88 +543,41 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 
 	var pendingInjection *defectinjection.Outcome
 	for {
-		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
-		if ps.FailedAttempts >= maxRetries {
-			escalation, err := c.escalatePacket(packet)
+		// escalate 裁决统一出口：review 退回累积 FailedAttempts 后回到循环顶，
+		// 子环入口的界检查触发这里（与 Bounded/Spun 同一条升级路径）。
+		escalate := func() (string, error) {
+			esc, err := c.escalatePacket(packet)
 			if err != nil {
 				return "", err
 			}
-			if escalation == "inbox" {
-				return "stop", nil
+			if esc == "inbox" {
+				return "inbox", nil
 			}
 			if p, ok := c.Packets[id]; ok { // P0-2：按修订后的契约跑
 				packet = p
 			}
-			stage = "execute"
+			return esc, nil
 		}
-
 		if stage == "execute" {
-			exec, err := c.executeStep(packet)
+			// v0.24：execute 子环闭环（runExecuteLoop）——大循环对出口裁决。
+			r, err := c.runExecuteLoop(packet)
 			if err != nil {
 				return "", err
 			}
-			if exec.Stopped {
+			if r.Stopped {
 				return "stop", nil
 			}
-			if !exec.Success {
-				// C4（v0.18）：execute 失败路径的空转签名用编排器亲自 diff 的
-				// 权威变更集——此前退化为空集/executor 自报，谎报即可绕过 DC4。
-				outcome := c.failAttempt(packet, orTransport(exec.ErrorCode), nil, c.authoritativeChangedFiles(packet))
-				if outcome == "spin" {
-					esc, err := c.escalatePacket(packet)
-					if err != nil {
-						return "", err
-					}
-					if esc == "inbox" {
-						return "stop", nil
-					}
-					if p, ok := c.Packets[id]; ok {
-						packet = p
-					}
+			if r.Bounded || r.Spun {
+				esc, err := escalate()
+				if err != nil {
+					return "", err
 				}
-				continue
+				if esc == "inbox" {
+					return "stop", nil
+				}
+				continue // 修订后契约 → 子环重入
 			}
-
-			l1 := c.l1Step(packet)
-			if !l1.Pass {
-				var failedCommands []string
-				for _, r := range l1.Gate.Results {
-					if !r.Pass {
-						failedCommands = append(failedCommands, r.Cmd)
-					}
-				}
-				violations := make([]string, 0, len(l1.Boundary.Violations))
-				for _, v := range l1.Boundary.Violations {
-					if v.Path != "" {
-						violations = append(violations, fmt.Sprintf("%s:%s", v.Type, v.Path))
-					} else {
-						violations = append(violations, fmt.Sprintf("%s:%d", v.Type, v.Count))
-					}
-				}
-				failedCommands = append(failedCommands, violations...)
-				// 权威 changedFiles：本轮 L1 boundary 的 git diff
-				// （diff 不可用时保持 nil → 兜底链接管）。
-				authChanged := l1.Boundary.ChangedFiles
-				if l1.Boundary.Skipped {
-					authChanged = nil
-				}
-				outcome := c.failAttempt(packet, errL1Failed, failedCommands, authChanged)
-				if outcome == "spin" {
-					esc, err := c.escalatePacket(packet)
-					if err != nil {
-						return "", err
-					}
-					if esc == "inbox" {
-						return "stop", nil
-					}
-					if p, ok := c.Packets[id]; ok {
-						packet = p
-					}
-				}
-				continue
-			}
-
-			// 缺陷注入抽检在 L1 与 Review 之间（§4.3）；结论喂给评审者。
+			// r.Green：L1 全绿，缺陷注入抽检在 L1 与 Review 之间（§4.3）。
 			oi, err := c.maybeDefectInjection(packet)
 			if err != nil {
 				return "", err

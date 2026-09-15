@@ -270,3 +270,18 @@ func TestParseReviewVerdictSkipsBlankLines(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pass", v.Verdict)
 }
+
+// TestBuildPlanPromptFeedback v0.24 plan 子环的校验反馈通道：上一轮坏契约的
+// 错误必须出现在提示词（volatile 段），驱动 planner 修正自己的产物。
+func TestBuildPlanPromptFeedback(t *testing.T) {
+	a := PlanArgs{
+		Spec:      &contract.Spec{Title: "t", Goal: "g"},
+		State:     &state.State{Status: "running"},
+		Milestone: contract.Milestone{ID: "M-01", Title: "one"},
+		Feedback:  "packet M01-T03: frontmatter parse error at line 1",
+	}
+	out := BuildPlanPrompt(a)
+	assert.Contains(t, out, "Contract validation feedback")
+	assert.Contains(t, out, "frontmatter parse error")
+	assert.Contains(t, out, "REJECTED")
+}

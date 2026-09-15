@@ -312,7 +312,7 @@ func (c *Context) run() (TaskSummary, error) {
 		budgetStartCost := c.State.Budget.Totals.CostUSD
 		c.save()
 
-		plan, err := c.planStep(milestone)
+		plan, err := c.planUntilValid(milestone)
 		if err != nil {
 			return c.summary(), err
 		}
@@ -335,13 +335,8 @@ func (c *Context) run() (TaskSummary, error) {
 			}
 			return c.summary(), nil
 		}
-		// P1：planner 可能在这步常规运行中修订过契约文件——像升级路径一样
-		// 重载它们（P0-2 对称性）。A1：重载前后 diff acceptance 指纹留痕。
-		old := c.PacketList
-		if err := c.reloadPackets(); err != nil {
-			return c.summary(), err
-		}
-		c.recordAcceptanceChanges(old, c.PacketList)
+		// P1：planner 可能在这步常规运行中修订过契约文件——planUntilValid 内
+		// 已重载并做 acceptance 指纹留痕（P0-2/A1 对称性）。
 		// v0.16：仅契约提交（脏账本不卷入——这里做账本提交会移动 HEAD，
 		// 破坏暂停单元 worktree 的 ff-merge）。无变更 = 无提交 = HEAD 不动。
 		c.commitTaskDirChanges(fmt.Sprintf("docs(%s): plan update", c.State.Slug))
@@ -560,16 +555,10 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		if m == nil {
 			return c.summary(), fmt.Errorf("no open milestone")
 		}
-		old := c.PacketList // must-fix 5：单步 plan 与全自动路径同享指纹留痕
-		r, err := c.planStep(*m)
-		if err != nil {
-			return c.summary(), err
-		}
-		if r.OK {
-			if err := c.reloadPackets(); err != nil {
-				return c.summary(), err
-			}
-			c.recordAcceptanceChanges(old, c.PacketList)
+		// v0.24：--only plan = plan 子环闭环（到合法契约集或界尽 inbox）。
+		r, perr := c.planUntilValid(*m)
+		if perr != nil {
+			return c.summary(), perr
 		}
 		step = &StepSum{Name: "plan", OK: r.OK, Detail: optStr(string(r.ErrorCode))}
 	case "execute":
@@ -577,11 +566,25 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		if perr != nil {
 			return c.summary(), perr
 		}
-		r, err := c.executeStep(packet)
+		// v0.24：--only execute = execute 子环闭环——转到 L1 全绿或出口。
+		// 人驱动的单环模式不做自动升级（升级是跨环裁决，人就在驾驶座）：
+		// Bounded/Spun 如实报告，人自行决定 --only plan 修订或重跑。
+		r, err := c.runExecuteLoop(packet)
 		if err != nil {
 			return c.summary(), err
 		}
-		step = &StepSum{Name: "execute", OK: r.Success, Detail: optStr(string(r.ErrorCode))}
+		switch {
+		case r.Green:
+			step = &StepSum{Name: "execute", OK: true, Detail: optStr("L1 green (execute loop closed)")}
+		case r.Stopped:
+			step = &StepSum{Name: "execute", OK: false, Detail: optStr("stopped (budget/credentials)")}
+		case r.Bounded:
+			ps := c.State.Packets[packet.PacketID]
+			step = &StepSum{Name: "execute", OK: false,
+				Detail: optStr(fmt.Sprintf("bounded stop (%d/%d attempts) — rerun, or --only plan to revise", ps.FailedAttempts, packet.Escalation.MaxRetries))}
+		case r.Spun:
+			step = &StepSum{Name: "execute", OK: false, Detail: optStr("spin detected (identical failure signature) — human judgement needed")}
+		}
 	case "review":
 		packet, perr := pickPacket()
 		if perr != nil {
