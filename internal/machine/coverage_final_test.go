@@ -1108,7 +1108,7 @@ func TestPlanStepClassifyAndFatalArms(t *testing.T) {
 		}
 		ctx := verdictCtx(t, fx, sd)
 
-		out, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+		out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 		require.NoError(t, err)
 		assert.False(t, out.OK)
 		assert.Equal(t, errs.TRANSPORT, out.ErrorCode)
@@ -1118,7 +1118,7 @@ func TestPlanStepClassifyAndFatalArms(t *testing.T) {
 		fx := newGitFixture(t)
 		ctx := verdictCtx(t, fx, happyDrivers())
 		ctx.fatal = errors.New("disk on fire")
-		_, err := ctx.planStep(contract.Milestone{ID: "M-01"})
+		_, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "disk on fire")
 	})

@@ -181,7 +181,7 @@ func (c *Context) milestoneGateStep(milestone contract.Milestone) gateOutcome {
 //     （spec + state + retro 尾部）启动全新会话——契约层是唯一记忆；
 //   - provider 失败走配置的渠道降级链；
 //   - 所有渠道都失败则任务升级到 inbox（Plan 是定方向的，没了它继续跑没意义）。
-func (c *Context) planStep(milestone contract.Milestone) (planOutcome, error) {
+func (c *Context) planStep(milestone contract.Milestone, feedback string) (planOutcome, error) {
 	packets := []*contract.Packet{}
 	for _, p := range c.PacketList {
 		if m, err := contract.MilestoneOfPacket(p.PacketID); err == nil && m == milestone.ID {
@@ -221,6 +221,7 @@ func (c *Context) planStep(milestone contract.Milestone) (planOutcome, error) {
 			Packets:   packets,
 			ColdStart: coldStart,
 			RetroTail: tail,
+			Feedback:  feedback,
 		})
 		res := c.Drivers.Plan.Plan(drivers.CallArgs{
 			Prompt:      prompt,
@@ -388,3 +389,48 @@ func (c *Context) planStep(milestone contract.Milestone) (planOutcome, error) {
 	}
 	return planOutcome{OK: true, Packets: packets, Result: &result}, nil
 }
+
+// planUntilValid plan 子环闭环（Osmani 对齐，v0.24）：done-condition =
+// load-time 校验通过的合法契约集。planner 写出的文件不合法时，校验错误经
+// Feedback 喂回长驻会话重试（planner 是修订器，修自己的产物是本职）；界 =
+// planValidationRetries 次后 inbox 叫人（契约质量问题是结构性的，重试烧钱
+// 无意义）。传输级失败仍由 planStep 内部闭环处理。
+func (c *Context) planUntilValid(milestone contract.Milestone) (planOutcome, error) {
+	var feedback string
+	for round := 0; round <= planValidationRetries; round++ {
+		r, err := c.planStep(milestone, feedback)
+		if err != nil {
+			return r, err
+		}
+		if !r.OK || r.Stopped {
+			return r, nil // 传输/预算在 planStep 内已有界，原样上抛
+		}
+		old := c.PacketList
+		if err := c.reloadPackets(); err == nil {
+			c.recordAcceptanceChanges(old, c.PacketList)
+			if round > 0 {
+				c.Log(fmt.Sprintf("plan loop: contract set valid after %d feedback round(s)", round))
+			}
+			return r, nil // 达标：合法契约集
+		} else {
+			feedback = err.Error()
+			c.Log(fmt.Sprintf("plan loop round %d: contract validation failed — feeding errors back to planner", round+1))
+		}
+	}
+	// 界尽：inbox 叫人（与 plan 全渠道失败同款出口，§6）。
+	c.State.Status = "escalated"
+	entry := map[string]any{
+		"at":        c.nowISO(),
+		"packet-id": nil,
+		"milestone": milestone.ID,
+		"reason": fmt.Sprintf("planner produced invalid contracts %d times (validation errors fed back each round). Human needed.",
+			planValidationRetries+1),
+	}
+	c.State.Inbox = append(c.State.Inbox, entry)
+	c.appendInbox(entry)
+	c.save()
+	return planOutcome{Packets: c.PacketList}, nil
+}
+
+// planValidationRetries plan 子环的校验反馈重试上限（v0.24 定界）。
+const planValidationRetries = 2

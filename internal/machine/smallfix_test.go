@@ -47,7 +47,7 @@ func TestPlanStepLogsMissingSessionID(t *testing.T) {
 	ctx.Drivers = sd.set()
 
 	m := ctx.Spec.Milestones[0]
-	_, err := ctx.planStep(m)
+	_, err := ctx.planStep(m, "")
 	require.NoError(t, err)
 
 	found := false
@@ -123,18 +123,27 @@ func TestRunSinglePlanRecordsAcceptanceTrail(t *testing.T) {
 	assert.Contains(t, string(retro), "acceptance changed")
 }
 
-// TestRunSinglePlanReloadErrorSurfaces（PR#3 复审）：plan 成功但重载契约失败
-// （planner 写出 schema 非法 packet）→ 错误必须上抛，绝不静默吞掉。
-func TestRunSinglePlanReloadErrorSurfaces(t *testing.T) {
+// TestRunSinglePlanLoopClosed（v0.24 闭环化改写）：--only plan = plan 子环闭环。
+// 首轮坏契约 → 反馈重试 → 第二轮修正 → 闭环达标（合法契约集）。
+func TestRunSinglePlanLoopClosed(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
-	sd.planFn = func(drivers.CallArgs) drivers.Result {
-		writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T99.md"),
-			"---\npacket-id: M01-T99\n---\nbody") // 缺 goal 等必填 → schema fail
+	calls := 0
+	sd.planFn = func(a drivers.CallArgs) drivers.Result {
+		calls++
+		if calls == 1 {
+			writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T99.md"),
+				"---\npacket-id: M01-T99\n---\nbody") // 缺 goal 等必填 → schema fail
+		} else {
+			// 修正轮：把坏文件改回合法（沿用 fixture 的合法 T99 样例缺失时
+			// 直接删除该文件——回到原有的合法契约集）。
+			_ = os.Remove(filepath.Join(fx.taskDir, "task-packet-M01-T99.md"))
+		}
 		return drivers.MockResult(nil)
 	}
 	ctx := verdictCtx(t, fx, sd)
 
 	_, err := ctx.runSingle("plan", "")
-	require.Error(t, err, "非法修订必须在重载时 fail-loud")
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls, "坏一轮 + 反馈修正一轮 = 闭环达标")
 }

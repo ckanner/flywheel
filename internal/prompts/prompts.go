@@ -187,6 +187,7 @@ type PlanArgs struct {
 	Packets   []*contract.Packet
 	ColdStart bool
 	RetroTail string // 冷启动时附 retro 尾部；非冷启动忽略
+	Feedback  string // 上一轮契约校验错误（plan 子环闭环反馈；空 = 首轮）
 }
 
 // BuildPlanPrompt 规划提示词（低频 K3；冷启动 = 会话重建协议 §4.1：
@@ -217,6 +218,13 @@ func BuildPlanPrompt(a PlanArgs) string {
 		fmt.Sprintf("## Task: issue/confirm packets for milestone %s", a.Milestone.ID),
 		fmt.Sprintf("Existing packets: %s", joinNonEmpty(packetIDs, "none")),
 		"Confirm the packet sequence for this milestone, revise returned packets, or strengthen acceptance after a verification-gap. Scope changes are yours alone to make. Acceptance tests are YOURS to provide or strengthen — the executor never writes tests.",
+	}
+	if a.Feedback != "" {
+		lines = append(lines, "", "## Contract validation feedback (previous round REJECTED)",
+			"The contract files you wrote failed load-time validation. Fix them (same files, same milestone) so the whole set passes.",
+			"```",
+			a.Feedback,
+			"```")
 	}
 	if a.ColdStart {
 		lines = append(lines, "", "## Cold start note", "This is a fresh planning session rebuilt from the contract layer (previous resident session died). All authoritative context is above/in the contract files on disk.")

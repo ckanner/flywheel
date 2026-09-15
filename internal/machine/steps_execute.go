@@ -99,9 +99,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		if ferr := c.err(); ferr != nil {
 			return execOutcome{}, ferr
 		}
-		if c.budgetGate() == "stop" {
-			return execOutcome{Stopped: true}, nil
-		}
+		// 预算闸门由 runExecuteLoop 每轮统一把守（v0.24 单一所有者）。
 		// 宁可 fail-loud 也不要把无 key 的 spawn 送进 pi 的 auth.json 陷阱（P1-12②）。
 		if missingKey := c.missingKeyForRealDriver("execute", channel); missingKey != "" {
 			c.recordRetry(ps, "transport", string(errs.AUTH),

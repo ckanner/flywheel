@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/state"
@@ -414,7 +415,8 @@ func TestRunSingleStepErrorPaths(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, summary.Step.OK)
 		st := loadFixtureState(t, fx)
-		assert.Equal(t, "executed", st.Packets["M01-T01"].Status)
+		// v0.24 闭环语义：execute 环到 L1 绿（同上测试）。
+		assert.Equal(t, "l1-passed", st.Packets["M01-T01"].Status)
 	})
 
 	t.Run("未知 --only 步骤", func(t *testing.T) {
@@ -495,16 +497,26 @@ func TestRunSingleStepErrorPaths(t *testing.T) {
 
 // ---- planner 破坏契约 → reloadPackets 错误上抛 ----
 
-func TestReloadPacketsErrorSurfacesFromRun(t *testing.T) {
+// TestPlanLoopInvalidContractFeedsBackThenInbox（v0.24 闭环化改写）：planner
+// 持续写坏契约 → plan 子环反馈重试（界 = 2）→ 界尽 inbox 叫人（不是 fail-loud
+// error——契约质量问题是结构性的，闭环出口是升级给人）。
+func TestPlanLoopInvalidContractFeedsBackThenInbox(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
+	calls := 0
 	sd.planFn = func(drivers.CallArgs) drivers.Result {
+		calls++
 		writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T03.md"), "::: broken [frontmatter")
 		return drivers.MockResult(nil)
 	}
 
-	_, err := RunTask(runOpts(fx, sd.set()))
-	require.Error(t, err, "planner 运行中写坏契约 → run 以错误结束")
+	summary, err := RunTask(runOpts(fx, sd.set()))
+	require.NoError(t, err, "闭环出口是 inbox 升级，不是错误上抛")
+	assert.Equal(t, planValidationRetries+1, calls, "初次 + 2 轮反馈重试")
+	assert.Equal(t, "escalated", summary.Status)
+	inboxRaw, ierr := os.ReadFile(filepath.Join(fx.taskDir, "inbox.md"))
+	require.NoError(t, ierr)
+	assert.Contains(t, string(inboxRaw), "invalid contracts", "界尽必须 inbox 留痕")
 }
 
 // ---- 里程碑闸门失败 ----
@@ -755,4 +767,145 @@ func TestSummaryLineInterventionsAndHistory(t *testing.T) {
 	assert.Contains(t, text, "defects(review-failed)=1")
 	assert.Contains(t, text, "scope-changes=1")
 	assert.Contains(t, text, "reopens=1")
+}
+
+// TestExecuteLoopRetriesUntilGreen（v0.24）：execute 子环闭环——首轮 spawn 失败
+// （传输级）→ 反馈重试 → 第二轮成功 → L1 绿 → 环达标。旧单步语义会在首轮失败
+// 后直接返回。
+func TestExecuteLoopRetriesUntilGreen(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	calls := 0
+	md := drivers.NewMockDriver(nil) // 成功轮委托真 mock：交付物（artifact+done-report）齐全
+	sd.execFn = func(a drivers.CallArgs) drivers.Result {
+		calls++
+		if calls == 1 {
+			return drivers.MockResult(func(r *drivers.Result) {
+				code := 7
+				r.ExitCode, r.Settled = &code, false
+				msg := "transient boom"
+				r.ErrorMessage = &msg
+			})
+		}
+		return md.Execute(a)
+	}
+	opts := stepOpts(fx, sd.set())
+	opts.Only = "execute"
+	opts.PacketID = "M01-T01"
+	summary, err := RunSingleStep(opts)
+	require.NoError(t, err)
+	assert.True(t, summary.Step.OK, "环必须转到 L1 绿（第二轮成功）")
+	assert.Equal(t, 2, calls)
+	st := loadFixtureState(t, fx)
+	assert.Equal(t, "l1-passed", st.Packets["M01-T01"].Status)
+}
+
+// TestExecuteLoopBoundedStop（v0.24）：持续失败 → FailedAttempts 耗尽 → 有界
+// 停止（单环模式不自动升级，人裁决）。Step.OK=false + Detail 报告界。
+func TestExecuteLoopBoundedStop(t *testing.T) { // 实际命中空转界（DC4 先于 max-retries）
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	sd.execFn = func(drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 7
+			r.ExitCode, r.Settled = &code, false
+			msg := "always fails"
+			r.ErrorMessage = &msg
+		})
+	}
+	opts := stepOpts(fx, sd.set())
+	opts.Only = "execute"
+	opts.PacketID = "M01-T01"
+	summary, err := RunSingleStep(opts)
+	require.NoError(t, err)
+	assert.False(t, summary.Step.OK)
+	require.NotNil(t, summary.Step.Detail)
+	// 同签名连续失败先触发空转检测（DC4），先于 max-retries 界——同为有界出口。
+	assert.Contains(t, *summary.Step.Detail, "spin detected")
+	st := loadFixtureState(t, fx)
+	assert.Equal(t, 2, st.Packets["M01-T01"].FailedAttempts, "DC4 空转在第 3 次同签名失败时触发")
+	assert.NotEqual(t, "escalated", st.Status, "单环模式不自动升级（人在驾驶座）")
+}
+
+// TestExecuteLoopBoundedVaryingSignatures（v0.24）：失败签名各不相同（空转
+// 检测不触发）→ max-retries 界先耗尽 → Bounded 出口（区别于 Spun 出口）。
+func TestExecuteLoopBoundedVaryingSignatures(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	// 每轮一个互不相同的不可重试错误码（按 state.json 的 FailedAttempts 选）：
+	// 非重试码让 executeStep 内部传输环单发即停，轮级码互异 → 空转签名不同。
+	msgs := []string{"401 unauthorized", "403 quota forbidden", "400 invalid malformed request"}
+	sd.execFn = func(a drivers.CallArgs) drivers.Result {
+		msg := msgs[0]
+		if raw, rerr := os.ReadFile(filepath.Join(a.TaskDir, "state.json")); rerr == nil {
+			var st struct {
+				Packets map[string]struct {
+					FailedAttempts int `json:"failed-attempts"`
+				} `json:"packets"`
+			}
+			if json.Unmarshal(raw, &st) == nil {
+				if ps, ok := st.Packets[a.PacketID]; ok && ps.FailedAttempts < len(msgs) {
+					msg = msgs[ps.FailedAttempts]
+				}
+			}
+		}
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 7
+			r.ExitCode, r.Settled = &code, false
+			r.ErrorMessage = &msg
+		})
+	}
+	opts := stepOpts(fx, sd.set())
+	opts.Only = "execute"
+	opts.PacketID = "M01-T01"
+	summary, err := RunSingleStep(opts)
+	require.NoError(t, err)
+	assert.False(t, summary.Step.OK)
+	require.NotNil(t, summary.Step.Detail)
+	assert.Contains(t, *summary.Step.Detail, "bounded stop", "不同签名失败走 max-retries 界（非空转）")
+	st := loadFixtureState(t, fx)
+	assert.Equal(t, 3, st.Packets["M01-T01"].FailedAttempts)
+}
+
+// TestExecuteLoopBudgetStop（v0.24）：预算硬闸 → 子环 Stopped 出口。
+func TestExecuteLoopBudgetStop(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	opts := stepOpts(fx, sd.set())
+	var limit int64 = 1
+	opts.Config.Budget.Enforce = "hard"
+	opts.Config.Budget.DailyTokenLimit = &limit
+	// 预置超限：mock driver 零 usage，靠既有账目触发硬闸。
+	sp := filepath.Join(fx.taskDir, "state.json")
+	raw, rerr := os.ReadFile(sp)
+	require.NoError(t, rerr)
+	var st map[string]any
+	require.NoError(t, json.Unmarshal(raw, &st))
+	bud := st["budget"].(map[string]any)
+	// CheckBudget 看当日桶（budget.daily[<day>].tokens），不是 totals。
+	daily, _ := bud["daily"].(map[string]any)
+	if daily == nil {
+		daily = map[string]any{}
+		bud["daily"] = daily
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	daily[day] = map[string]any{"tokens": float64(999), "cost-usd": float64(0)}
+	require.NoError(t, os.WriteFile(sp, mustJSON(st), 0o644))
+	opts.Only = "execute"
+	opts.PacketID = "M01-T01"
+	summary, err := RunSingleStep(opts)
+	require.NoError(t, err)
+	assert.False(t, summary.Step.OK)
+	require.NotNil(t, summary.Step.Detail)
+	assert.Contains(t, *summary.Step.Detail, "stopped")
+}
+
+// TestRunExecuteLoopFatalError（v0.24）：ctx.fatal → 子环 Stopped + 错误上抛。
+func TestRunExecuteLoopFatalError(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := happyDrivers()
+	ctx := verdictCtx(t, fx, sd)
+	ctx.fatal = fmt.Errorf("disk gone")
+	_, err := ctx.runExecuteLoop(ctx.Packets["M01-T01"])
+	require.ErrorContains(t, err, "disk gone")
 }
