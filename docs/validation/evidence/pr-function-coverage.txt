@@ -188,7 +188,8 @@ github.com/ckanner/flywheel/internal/machine/context.go:467:			AssertNoRunningOr
 github.com/ckanner/flywheel/internal/machine/context.go:493:			WarnIfForeignDirty		100.0%
 github.com/ckanner/flywheel/internal/machine/context.go:508:			unitCwd				100.0%
 github.com/ckanner/flywheel/internal/machine/context.go:520:			ProjectRoot			100.0%
-github.com/ckanner/flywheel/internal/machine/context.go:531:			CreateContext			100.0%
+github.com/ckanner/flywheel/internal/machine/context.go:533:			canonicalDirectory		100.0%
+github.com/ckanner/flywheel/internal/machine/context.go:542:			CreateContext			100.0%
 github.com/ckanner/flywheel/internal/machine/contract_revision.go:26:		reconcileContractRevisions	100.0%
 github.com/ckanner/flywheel/internal/machine/contract_revision.go:96:		isPlannerContract		100.0%
 github.com/ckanner/flywheel/internal/machine/contract_revision.go:108:		planScopeIdentity		100.0%

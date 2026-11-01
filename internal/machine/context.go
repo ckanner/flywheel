@@ -527,8 +527,24 @@ func ProjectRoot(cwd string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// canonicalDirectory gives workspace and task paths the same physical namespace.
+// In particular Git resolves macOS /var to /private/var, while callers may retain
+// the alias. Mixing them would turn an in-repository ledger prefix into ../ paths.
+func canonicalDirectory(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
 // CreateContext 加载状态机需要的一切并返回运行上下文。
 func CreateContext(opts Opts) (*Context, error) {
+	taskDir, err := canonicalDirectory(opts.TaskDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve task directory: %w", err)
+	}
+	opts.TaskDir = taskDir
 	spec, err := contract.LoadSpec(opts.TaskDir)
 	if err != nil {
 		return nil, err
@@ -560,9 +576,12 @@ func CreateContext(opts Opts) (*Context, error) {
 	_ = state.EnsurePacketStates(st, packetList)
 	cwd := opts.Cwd
 	if cwd == "" {
-		cwd, _ = os.Getwd()
+		cwd = "."
 	}
-	cwd = ProjectRoot(cwd)
+	cwd, err = canonicalDirectory(ProjectRoot(cwd))
+	if err != nil {
+		return nil, fmt.Errorf("resolve working directory: %w", err)
+	}
 	logf := opts.Log
 	if logf == nil {
 		logf = func(string) {}

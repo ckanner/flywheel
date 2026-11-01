@@ -24,7 +24,12 @@ func kimiScript(t *testing.T, body string) string {
 }
 
 func TestKimiPrintCommandContract(t *testing.T) {
-	cwd := t.TempDir()
+	// Exercise the same logical/physical path distinction as macOS /var versus
+	// /private/var on every platform, without changing the requested directory.
+	cwd := filepath.Join(t.TempDir(), "workspace alias")
+	require.NoError(t, os.Symlink(t.TempDir(), cwd))
+	physicalCwd, err := filepath.EvalSymlinks(cwd)
+	require.NoError(t, err)
 	command := kimiScript(t, `printf '%s\0' "$@" > args.bin
 pwd > cwd.txt
 env > env.txt
@@ -58,7 +63,7 @@ printf '%s' '`+kimiComplete+`'
 	assert.Equal(t, []string{"--session", "session-one", "-m", "kimi-code/k3.1-pro", "-p", "plan\nwith literal $(text)", "--output-format", "stream-json"}, strings.Split(strings.TrimSuffix(string(rawArgs), "\x00"), "\x00"))
 	actualCwd, err := os.ReadFile(filepath.Join(cwd, "cwd.txt"))
 	require.NoError(t, err)
-	assert.Equal(t, cwd, strings.TrimSpace(string(actualCwd)))
+	assert.Equal(t, physicalCwd, strings.TrimSpace(string(actualCwd)))
 	env, err := os.ReadFile(filepath.Join(cwd, "env.txt"))
 	require.NoError(t, err)
 	assert.Contains(t, string(env), "KIMI_MODEL_THINKING_EFFORT=low\n")
