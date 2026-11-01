@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -35,6 +36,7 @@ type Ctx struct {
 
 	// EnvLookup 渠道 env 读取（Node 直读 process.env；注入缝供测试）。
 	EnvLookup childenv.LookupEnv
+	fatalErr  error // failed metrics persistence stops later calls in this module run
 }
 
 // CtxOpts NewContext 命名参数（Node 解构默认值等价）。
@@ -110,7 +112,7 @@ func APIKeysFor(cfg *config.Config, channel string, lookup childenv.LookupEnv) m
 // 永不关闭——任务目录有 state.json 就写入；但编排器运行中（pid 文件存在）绝不写：
 // 模块 mid-run 写 state 会抬 revision，砸掉 run 下一次 CAS 保存（P0-10，
 // 用户实测）。metrics.jsonl 不受影响（追加式）。
-func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result drivers.Result, code errs.ErrorCode) {
+func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result drivers.Result, code errs.ErrorCode) error {
 	var estUsage *metrics.Usage // 成本估算输入（cacheWrite 参与计费）
 	if result.Usage != nil {
 		estUsage = &metrics.Usage{
@@ -146,15 +148,19 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		"cost-usd":        costUSD,
 		"duration-ms":     result.DurationMS,
 		"exit-code":       result.ExitCode,
+		"settled":         result.Settled,
+		"cancelled":       result.Cancelled,
+		"timed-out":       result.TimedOut,
+		"truncated":       result.Truncated,
+		"cleanup-error":   nilIfEmpty(result.CleanupError),
 		"error-code":      nilIfEmpty(string(code)),
 		"attempt":         nil,
 	}
-	_ = metrics.Append(m.MetricsFile, entry)
+	if err := metrics.Append(m.MetricsFile, entry); err != nil {
+		return err
+	}
 
 	usage := result.Usage
-	if usage == nil {
-		return
-	}
 	orchestratorRunning := exists(filepath.Join(m.TaskDir, "orchestrator.pid"))
 	switch {
 	case !state.Exists(m.TaskDir):
@@ -164,21 +170,42 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 	default:
 		st, err := state.Load(m.TaskDir)
 		if err == nil {
-			total := usage.TotalTokens
-			state.RecordUsage(st, state.Usage{
-				Input:       usage.Input,
-				Output:      usage.Output,
-				Reasoning:   usage.Reasoning,
-				CacheRead:   usage.CacheRead,
-				CacheWrite:  usage.CacheWrite,
-				TotalTokens: &total,
-			}, state.UsageOpts{Provider: firstNonEmpty(result.Provider, channel, "unknown"), CostUSD: costUSD})
+			day := time.Now().UTC().Format("2006-01-02")
+			if st.Budget.Daily == nil {
+				st.Budget.Daily = map[string]state.DailyBucket{}
+			}
+			bucket := st.Budget.Daily[day]
+			if usage == nil {
+				st.Budget.UnknownUsageCalls++
+				bucket.UnknownUsageCalls++
+				warning := "Some harness calls did not report usage; token/cost totals are measured lower bounds, not a complete bill."
+				if !slices.Contains(st.Budget.Warnings, warning) {
+					st.Budget.Warnings = append(st.Budget.Warnings, warning)
+				}
+			}
+			if costUSD == nil {
+				st.Budget.UnknownCostCalls++
+				bucket.UnknownCostCalls++
+			}
+			st.Budget.Daily[day] = bucket
+			if usage != nil {
+				total := usage.TotalTokens
+				state.RecordUsage(st, state.Usage{
+					Input:       usage.Input,
+					Output:      usage.Output,
+					Reasoning:   usage.Reasoning,
+					CacheRead:   usage.CacheRead,
+					CacheWrite:  usage.CacheWrite,
+					TotalTokens: &total,
+				}, state.UsageOpts{Provider: firstNonEmpty(result.Provider, channel, "unknown"), CostUSD: costUSD, Day: day})
+			}
 			_, err = state.Save(m.TaskDir, st, nil) // nil → 以 st.Revision 为期望值（Node expectedRevision: state.revision）
 		}
 		if err != nil {
 			m.Log("budget recording skipped: " + err.Error())
 		}
 	}
+	return nil
 }
 
 // CallResult callAgent 结论。
@@ -201,6 +228,9 @@ type CallOptions struct {
 // CallAgent 标准 transport-retry + channel-fallback 链（§6）的一次 agent 调用。
 // 成功返回助手文本；失败经完整重试链后返回稳定错误码。
 func CallAgent(m *Ctx, o CallOptions) CallResult {
+	if m.fatalErr != nil {
+		return CallResult{ErrorCode: errs.TRANSPORT, Channel: o.Binding.Channel, Model: o.Binding.Model}
+	}
 	channel := o.Binding.Channel
 	current := o.Binding
 	visited := map[string]bool{}
@@ -220,49 +250,56 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 			}
 		}
 		visited[channel] = true
+		permission := ""
+		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex") {
+			permission = "read-only" // these agents return advice; Go writes the proposals
+		}
 		result := dispatchRole(m.Drivers, o.Role, drivers.CallArgs{
-			Prompt:    o.Prompt,
-			TaskDir:   m.TaskDir,
-			Cwd:       m.Cwd,
-			Model:     current.Model,
-			Binding:   config.LoopBinding{Harness: current.Harness, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
-			APIKey:    ChannelAPIKey(m.Config, channel, m.EnvLookup),
-			APIKeys:   APIKeysFor(m.Config, channel, m.EnvLookup),
-			Watchdog:  ModuleWatchdogOpts(m.Config),
-			SessionID: o.SessionID,
+			Prompt:         o.Prompt,
+			TaskDir:        m.TaskDir,
+			Cwd:            m.Cwd,
+			Model:          current.Model,
+			Binding:        config.LoopBinding{Harness: current.Harness, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
+			APIKey:         ChannelAPIKey(m.Config, channel, m.EnvLookup),
+			APIKeys:        APIKeysFor(m.Config, channel, m.EnvLookup),
+			Watchdog:       ModuleWatchdogOpts(m.Config),
+			SessionID:      o.SessionID,
+			PermissionMode: permission,
 		})
 
-		// Node 三元链（module.js:121-125）：errorMessage → 按其分类；
-		// 干净退出（0/无超时/无 spawnError）→ 无错误；其余 → 分类，空则兜底
-		// TRANSPORT。空产出（exit 0 无交付物）由各模块自己的 schema 判定，
-		// 不在此处。
+		// Physical cancellation/timeout/cleanup dominates text classification.
+		// A protocol terminal marker is required even if the CLI exits zero.
 		var code errs.ErrorCode
 		switch {
-		case result.ErrorMessage != nil:
+		case result.Cancelled:
+			code = errs.TRANSPORT
+		case result.TimedOut:
+			code = errs.TIMEOUT
+		case result.SpawnError != "" || result.CleanupError != "" || result.Truncated || result.Signal != "":
+			code = errs.TRANSPORT
+		case result.ErrorMessage != nil && *result.ErrorMessage != "":
 			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: *result.ErrorMessage})
-		case result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && result.SpawnError == "":
-			code = ""
+		case result.ExitCode == nil || (!result.Settled && *result.ExitCode == 0):
+			code = errs.TRANSPORT
+		case *result.ExitCode == 0:
+			code = errs.ClassifyError(errs.SpawnResult{Stderr: result.Stderr})
 		default:
-			exit := 0
-			if result.ExitCode != nil {
-				exit = *result.ExitCode
-			}
-			var spawnErr error
-			if result.SpawnError != "" {
-				spawnErr = errors.New(result.SpawnError)
-			}
 			code = errs.ClassifyError(errs.SpawnResult{
-				ExitCode: exit, Signal: result.Signal, TimedOut: result.TimedOut,
-				Stderr: result.Stderr, Stdout: result.Stdout, SpawnError: spawnErr,
+				ExitCode: *result.ExitCode, Stderr: result.Stderr, Stdout: result.Stdout,
 			})
-			if code == "" {
-				code = errs.TRANSPORT
-			}
 		}
 		if code != "" {
 			lastCode = code
 		}
-		recordModuleMetrics(m, o.Role, current.Model, channel, o.Prompt, result, code)
+		if err := recordModuleMetrics(m, o.Role, current.Model, channel, o.Prompt, result, code); err != nil {
+			m.fatalErr = err
+			m.Log("metrics recording failed; further model calls stopped: " + err.Error())
+			return CallResult{ErrorCode: errs.TRANSPORT, Channel: channel, Model: current.Model}
+		}
+		if result.Cancelled {
+			m.fatalErr = errors.New("module agent call cancelled")
+			return CallResult{ErrorCode: code, Channel: channel, Model: current.Model}
+		}
 
 		if code == "" {
 			text := result.Text

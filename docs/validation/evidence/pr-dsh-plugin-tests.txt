@@ -1,0 +1,48 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 check
+> npm run build && npm test
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 build
+> node scripts/build.mjs
+
+Built host plugin, rc.5 client module, and native SDK worker.
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 test
+> node --test test/*.test.js
+
+✔ control invokes only the Go JSON CLI using literal argv, including paths with shell syntax (75.309958ms)
+✔ slash command and model tool use the same validated engine control boundary (143.636424ms)
+✔ policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement (2.558496ms)
+✔ browser module registers the actual rc.5 dock and calls existing command Remote (4.806536ms)
+✔ start normalizes cwd and rejects resume, extra write roots, implicit permission, and empty route (14.978398ms)
+✔ only unique committed model calls count; cache is included in aggregate input, reasoning is a subset (1.854776ms)
+✔ missing or malformed usage remains unknown, not free or partial cost (0.447495ms)
+✔ an idle or max-token interval is not successful completion (0.741548ms)
+✔ permission acknowledgement must match actual cwd, policy, approval and full confinement (11.9208ms)
+✔ full worker handshake, durable result, usage and SDK shutdown agree with the Go contract (90.710687ms)
+✔ wrong-policy: fail before submitting a paid prompt (67.230554ms)
+✔ wrong-cwd: fail before submitting a paid prompt (55.150724ms)
+✔ missing-policy: fail before submitting a paid prompt (65.600417ms)
+✔ malformed: fail before submitting a paid prompt (52.237007ms)
+✔ empty: session/wait alone never establishes success (49.338369ms)
+✔ missing-terminal: session/wait alone never establishes success (54.913217ms)
+✔ max-tokens: session/wait alone never establishes success (57.705085ms)
+✔ corrupt-tail: session/wait alone never establishes success (60.52473ms)
+✔ unknown provider usage survives a successful call as null (63.997315ms)
+✔ full lifecycle deadline includes a stalled initialize; no model prompt is sent (163.828757ms)
+✔ external cancellation settles a stalled turn through SDK shutdown (138.003277ms)
+✔ forced SDK shutdown cannot claim successful settlement of native managed ranges (701.524408ms)
+✔ doctor exercises runtime and permission handshake but never prompts a model (49.63821ms)
+✔ overlay pins real native confinement and disables model-owned delegation and auxiliary model calls (0.406833ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1812.808918

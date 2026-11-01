@@ -105,6 +105,10 @@ func TestRunTaskSkipsClosedMilestones(t *testing.T) {
 	ms := st.Milestones["M-01"]
 	ms.Status = "closed"
 	st.Milestones["M-01"] = ms
+	st.ContractFingerprints = unitTestContext(t, fx).State.ContractFingerprints
+	for _, ps := range st.Packets {
+		ps.Status = "completed"
+	}
 	saveStateObj(t, fx, st)
 
 	sd := happyDrivers()
@@ -394,9 +398,7 @@ func TestL1GateFailWithSkippedBoundary(t *testing.T) {
 // ---- 缺陷注入：test-file-patterns 喂采样 ----
 
 func TestDefectInjectionTestFilePatternsFeedSampling(t *testing.T) {
-	// 非 git fixture：L1 边界 skipped（放行），maybeDefectInjection 落到
-	// executor 自报 changed-files 兜底——模式循环与命中臂在此被真实执行而
-	// 不破坏 L1（git 场景下命中模式的文件会构成 test-file 违规）。
+	// 非 Git 的采样可以取得诊断，但最终交付不能在无法持久提交时标完成。
 	fx := newFixture(t)
 	sd := happyDrivers()
 	o := runOpts(fx, sd.set())
@@ -405,7 +407,7 @@ func TestDefectInjectionTestFilePatternsFeedSampling(t *testing.T) {
 
 	summary, err := RunTask(o)
 	require.NoError(t, err)
-	assert.Equal(t, "completed", summary.Status)
+	assert.Equal(t, "escalated", summary.Status)
 	st := loadFixtureState(t, fx)
 	diMap, ok := st.Packets["M01-T01"].Evidence.DefectInjection.(map[string]any)
 	require.True(t, ok)
@@ -513,6 +515,7 @@ func TestReviewStepDirectArms(t *testing.T) {
 	t.Run("绑定缺失上抛", func(t *testing.T) {
 		fx := newGitFixture(t)
 		ctx := verdictCtx(t, fx, happyDrivers())
+		seedVerification(t, ctx, "M01-T01")
 		delete(ctx.Config.Loops, "review")
 		_, err := ctx.reviewStep(ctx.Packets["M01-T01"], nil)
 		require.Error(t, err)
@@ -522,6 +525,7 @@ func TestReviewStepDirectArms(t *testing.T) {
 	t.Run("fatal 短路", func(t *testing.T) {
 		fx := newGitFixture(t)
 		ctx := verdictCtx(t, fx, happyDrivers())
+		seedVerification(t, ctx, "M01-T01")
 		ctx.fatal = errors.New("disk on fire")
 		_, err := ctx.reviewStep(ctx.Packets["M01-T01"], nil)
 		require.Error(t, err)
@@ -531,6 +535,7 @@ func TestReviewStepDirectArms(t *testing.T) {
 	t.Run("budget 停机", func(t *testing.T) {
 		fx := newGitFixture(t)
 		ctx := verdictCtx(t, fx, happyDrivers())
+		seedVerification(t, ctx, "M01-T01")
 		limit := int64(10)
 		ctx.Config.Budget.Enforce = "hard"
 		ctx.Config.Budget.DailyTokenLimit = &limit
@@ -554,6 +559,7 @@ func TestReviewStepDirectArms(t *testing.T) {
 			})
 		}
 		ctx := verdictCtx(t, fx, sd)
+		seedVerification(t, ctx, "M01-T01")
 		out, err := ctx.reviewStep(ctx.Packets["M01-T01"], nil)
 		require.NoError(t, err)
 		assert.False(t, out.Pass)

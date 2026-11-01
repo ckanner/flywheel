@@ -96,7 +96,8 @@ func TestRunGateCommandsTimeout(t *testing.T) {
 		GateOpts{Cwd: t.TempDir(), TimeoutMS: 100})
 	require.Len(t, r.Results, 1)
 	assert.False(t, r.Results[0].Pass)
-	assert.Equal(t, 1, r.Results[0].ExitCode, "Node 语义：timeout 的 err.code 非数字 → 1")
+	assert.Equal(t, -1, r.Results[0].ExitCode, "信号终止没有正常退出码")
+	assert.True(t, r.Results[0].TimedOut)
 }
 
 func TestRunGateCommandsEnvWhitelist(t *testing.T) {
@@ -211,7 +212,10 @@ func TestEnsureAndMergeAndRemoveWorktree(t *testing.T) {
 	_, merr = MergeUnitWorktree(repo, wi.Branch)
 	assert.Error(t, merr)
 
-	RemoveUnitWorktree(repo, wi.Branch, wi.Path)
+	assert.Error(t, RemoveUnitWorktree(repo, wi.Branch, wi.Path), "未合并的成果不能清理")
+	assert.DirExists(t, wi.Path)
+	gitMust(t, repo, "merge", "--no-edit", wi.Branch)
+	require.NoError(t, RemoveUnitWorktree(repo, wi.Branch, wi.Path))
 	_, err := gitOut(wi.Path, "rev-parse", "--git-dir")
 	assert.Error(t, err, "worktree 应已删除")
 }
@@ -466,7 +470,7 @@ func TestCheckBoundaries(t *testing.T) {
 	}
 	assert.Equal(t, 3, mnt)
 
-	r = CheckBoundaries([]string{"tests/auth_test.go", "a.go", "b.go", "c.ts.test.js"}, bounds, nil)
+	r = CheckBoundaries([]string{"tests/auth_test.go", "a.go", "b.go", "c.ts.test.js"}, bounds, DefaultTestFilePatterns)
 	assert.False(t, r.Pass)
 	testHits := 0
 	var maxV BoundaryViolation
@@ -561,7 +565,7 @@ func TestCommitUnitChangesGitFailuresInjected(t *testing.T) {
 		return origOut(cwd, args...)
 	}
 	out := CommitUnitChanges(repo, pkt, nil, base, "")
-	assert.Equal(t, "changed-file scan failed", out.Skipped)
+	assert.Equal(t, "changed-file scan failed", out.Error)
 	gitOut = origOut
 
 	gitRun = func(cwd string, args ...string) error {
@@ -611,7 +615,7 @@ func TestCommitTaskDirChangesExcludesAndFailuresInjected(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(repo, prefix, "b.md"), "b")
 	out = CommitTaskDirChanges(repo, prefix, "m", nil, nil)
-	assert.Equal(t, "changed-file scan failed", out.Skipped)
+	assert.Equal(t, "changed-file scan failed", out.Error)
 	gitOut = origOut
 
 	// add 失败（identity -c 前缀：子命令不在 args[0]，按子命令查找）。

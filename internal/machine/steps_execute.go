@@ -3,7 +3,9 @@
 package machine
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +22,10 @@ import (
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
 )
+
+var writeCollectedReport = os.WriteFile
+var removeCollectedReport = os.Remove
+var openReportFile = func(r *os.Root, rel string) (io.ReadCloser, error) { return r.Open(rel) }
 
 // executeStep 成功时 packet 状态变为 executed 并记录 executor 证据。
 func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
@@ -51,8 +57,18 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		}
 	}
 
+	if ps.Status == "completed" && ps.Worktree == nil {
+		ps.BaseRef = nil // 手动重新执行已交付单元，从当前主分支开始新的候选。
+		ps.ContractSyncPending = false
+	}
+	ms := c.State.Milestones[ps.Milestone]
+	ms.Status, ms.Gate, ms.ClosedAt = "in-progress", nil, nil
+	c.State.Milestones[ps.Milestone] = ms
+	c.State.Status = "running"
+	c.State.CurrentMilestone = strPtrAlways(ps.Milestone)
 	ps.Status = "executing"
 	ps.Attempts++
+	invalidateEvidence(ps)
 	// 边界判定锚（§4.2/§4.4）：只在第一次尝试采样——重试保留原 base ref，
 	// executor 无法靠提交自己的早期尝试逃过判定（审计修复 #5）。
 	if ps.BaseRef == nil {
@@ -80,6 +96,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	c.save()
 
 	uCwd := c.unitCwd(packet)
+	// Executor 只能写自己的工作区。报告先写 worktree 内账本目录，进程退出
+	// 且格式校验通过后由编排器收进主任务目录；无需开放主 checkout 写权限。
+	executionTaskDir := filepath.Join(uCwd, c.taskDirPrefix())
 	binding, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
 	if err != nil {
 		return execOutcome{}, err
@@ -93,6 +112,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	// 出口契约必须裁决“这一次”的交付物——上次尝试遗留的陈旧 done-report 会把
 	// 无产出的重试读成假成功。
 	reportRel := filepath.ToSlash(filepath.Join("reports", id+".done.json"))
+	reportBaseline, _ := verify.GetBaseRef(uCwd)
 	_ = os.Remove(filepath.Join(c.TaskDir, reportRel))
 
 	for t := 0; t <= maxTransport; t++ {
@@ -107,18 +127,22 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			c.save()
 			return execOutcome{ErrorCode: errs.AUTH}, nil
 		}
-		prompt := prompts.BuildExecutePrompt(packet, c.Spec, c.TaskDir, uCwd, ps.Attempts)
+		_ = os.Remove(filepath.Join(executionTaskDir, reportRel))
+		prompt := prompts.BuildExecutePrompt(packet, c.Spec, executionTaskDir, uCwd, ps.Attempts, prompts.ExecuteOptions{
+			Feedback: ps.LastFeedback, ProtectedTestPatterns: c.Config.Verify.ProtectedTestPatterns,
+		})
 		visited[channel] = true
 		apiKeys := c.apiKeysFor(channel)
 		for k, v := range credentialEnv {
 			apiKeys[k] = v
 		}
 		res := c.Drivers.Execute.Execute(drivers.CallArgs{
-			Prompt:   prompt,
-			PacketID: id,
-			TaskDir:  c.TaskDir,
-			Cwd:      uCwd,
-			Model:    currentModel,
+			Prompt:         prompt,
+			PacketID:       id,
+			TaskDir:        executionTaskDir,
+			Cwd:            uCwd,
+			PermissionMode: "workspace-write",
+			Model:          currentModel,
 			Binding: config.LoopBinding{
 				Harness: currentHarness, Model: currentModel,
 				Channel: channel, Thinking: binding.Thinking,
@@ -129,8 +153,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		})
 
 		// 交付物 = done-report，存在且 schema 合法。
-		reportAbs := filepath.Join(c.TaskDir, reportRel)
-		raw, readErr := os.ReadFile(reportAbs)
+		raw, readErr := readUnitReport(uCwd, filepath.Join(c.taskDirPrefix(), reportRel))
 		reportExists := readErr == nil
 		rep := donereport.Result{Errors: []string{"missing"}}
 		if reportExists {
@@ -142,7 +165,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			streamMsg = *res.ErrorMessage
 		}
 		var contractRes exitcontract.Result
-		if streamMsg != "" {
+		if streamMsg != "" && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" {
 			streamCode := errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg})
 			contractRes = exitcontract.Result{
 				OK: false, ErrorCode: string(streamCode),
@@ -159,6 +182,8 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		}
 
 		ps.Exit = &state.ExitInfo{
+			Settled: res.Settled, Cancelled: res.Cancelled,
+			Truncated: res.Truncated, CleanupError: res.CleanupError,
 			ExitCode:     res.ExitCode,
 			Signal:       strPtr(res.Signal),
 			TimedOut:     res.TimedOut,
@@ -180,10 +205,31 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		})
 
 		if contractRes.OK {
+			if err := os.MkdirAll(filepath.Join(c.TaskDir, "reports"), 0o755); err != nil {
+				return execOutcome{}, err
+			}
+			if err := writeCollectedReport(filepath.Join(c.TaskDir, reportRel), raw, 0o644); err != nil {
+				return execOutcome{}, err
+			}
+			if executionTaskDir != c.TaskDir {
+				// 重开已交付packet时，HEAD可能已有旧报告。恢复调用前的该
+				// tracked路径（含模式）；只删除本来untracked的本次报告。
+				restored, err := verify.RestoreReservedReport(uCwd, reportBaseline, filepath.Join(c.taskDirPrefix(), reportRel))
+				if err != nil {
+					return execOutcome{}, err
+				}
+				if !restored {
+					if err := removeCollectedReport(filepath.Join(executionTaskDir, reportRel)); err != nil {
+						return execOutcome{}, err
+					}
+				}
+			}
 			ps.Status = "executed"
+			ps.LastFeedback = nil
 			ps.Interrupted = false
 			ps.Evidence.Executor = map[string]any{
 				"done-report":          reportRel,
+				"report-sha256":        fmt.Sprintf("%x", sha256.Sum256(raw)),
 				"requirements-covered": rep.Report["requirements-covered"],
 				"changed-files":        rep.Report["changed-files"],
 				"failures":             rep.Report["failures"],
@@ -201,6 +247,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 
 		// Evaluate 不变量：!OK ⇒ Reasons 至少一条——空串兜底为死代码（同上删除）。
 		reasons := strings.Join(contractRes.Reasons, "; ")
+		ps.LastFeedback = map[string]any{"error-code": code, "details": contractRes.Reasons, "at": c.nowISO()}
 		c.Log(fmt.Sprintf("execute %s attempt %d transport %d: %s (%s)", id, ps.Attempts, t, code, reasons))
 
 		// 渠道降级：限流/配额（403）→ 下一配置渠道；AUTH 仅当订阅渠道有带 key 的
@@ -248,6 +295,37 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	return execOutcome{ErrorCode: lastCode}, nil
 }
 
+// readUnitReport 使用 os.Root 的穿越保护；不跟随指向工作区之外的链接，
+// 不读 FIFO/设备，报告体量有界。报告是执行者提供的不可信数据。
+func readUnitReport(cwd, rel string) ([]byte, error) {
+	r, err := os.OpenRoot(cwd)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	info, err := r.Lstat(rel)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("done-report must be a regular file")
+	}
+	f, err := openReportFile(r, rel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	const limit = 1 << 20
+	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > limit {
+		return nil, fmt.Errorf("done-report exceeds 1 MiB")
+	}
+	return raw, nil
+}
+
 // l1Step 编排器直接跑验收命令，再以 git diff 判定测试/边界完整性。
 // 覆盖率闸门只是 packet 里的一条 L1 命令，此处无特判。worktree 模式下闸门与
 // diff 在单元 worktree 内跑；主 checkout 另做契约防篡改扫描（executor 知道
@@ -258,9 +336,16 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 	timeoutMs := c.Config.Verify.CommandTimeoutMs
 	envAllowlist := c.Config.Verify.EnvAllowlist
 	uCwd := c.unitCwd(packet)
-	gate := verify.RunGateCommands(packet.Acceptance.L1, verify.GateOpts{
-		Cwd: uCwd, TimeoutMS: timeoutMs, EnvAllowlist: envAllowlist,
-	})
+	// 验收会执行仓库代码；命令或并发编辑若改变候选，旧测试结果不能为
+	// 改后的内容背书。账本和 ignored 构建产物仍遵守统一快照排除规则。
+	beforeIdentity, beforeErr := c.verificationIdentity(packet)
+	gate := verify.GateReport{}
+	if beforeErr == nil {
+		gate = verify.RunGateCommands(packet.Acceptance.L1, verify.GateOpts{
+			Context: c.RunContext,
+			Cwd:     uCwd, TimeoutMS: timeoutMs, EnvAllowlist: envAllowlist,
+		})
+	}
 	changed, _ := verify.GetChangedFiles(uCwd, c.baseRefOf(ps))
 	executorFiles, contractViolations := c.partitionChangedFiles(changed)
 	if ps.Worktree != nil && ps.Worktree.Mode == "worktree" {
@@ -281,11 +366,26 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 		boundary.Pass = false
 	}
 	pass := gate.Pass && boundary.Pass
+	identity, identityErr := c.verificationIdentity(packet)
+	if beforeErr != nil {
+		identityErr = fmt.Errorf("before acceptance: %w", beforeErr)
+	} else if identityErr != nil {
+		identityErr = fmt.Errorf("after acceptance: %w", identityErr)
+	} else if beforeIdentity != identity {
+		identityErr = fmt.Errorf("candidate or verification inputs changed during acceptance; rerun verification on the resulting candidate")
+	}
+	if identityErr != nil {
+		pass = false
+		c.Log(fmt.Sprintf("%s: candidate snapshot failed: %v", id, identityErr))
+	}
 	ps.Evidence.L1 = map[string]any{
-		"pass":     pass,
-		"commands": gate.Results,
-		"boundary": boundary,
-		"at":       c.nowISO(),
+		"pass":            pass,
+		"identity":        identity,
+		"identity-before": beforeIdentity,
+		"identity-error":  jsonNilable(errorText(identityErr)),
+		"commands":        gate.Results,
+		"boundary":        boundary,
+		"at":              c.nowISO(),
 	}
 	if pass {
 		ps.Status = "l1-passed"
@@ -303,13 +403,15 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 	return l1Outcome{Pass: pass, Gate: gate, Boundary: boundary}
 }
 
-// effectiveTestFilePatterns 测试防篡改模式表（PR#3 review must-fix 2）：
-// 配置显式空数组与未声明同义——空表会静默关闭"executor 改测试判死"的
-// DC1=B 执行机制，配置比不配更危险，故在此单点回退内置默认。
-func (c *Context) effectiveTestFilePatterns() []string {
-	p := c.Config.Verify.TestFilePatterns
-	if len(p) == 0 {
-		return nil // CheckBoundaries 对 nil 回退 DefaultTestFilePatterns
+func errorText(err error) string {
+	if err != nil {
+		return err.Error()
 	}
-	return p
+	return ""
+}
+
+// effectiveTestFilePatterns 只保护显式冻结的验收文件。普通单测/回归测试
+// 可随实现修改；test-file-patterns 仅用于缺陷抽样识别。
+func (c *Context) effectiveTestFilePatterns() []string {
+	return c.Config.Verify.ProtectedTestPatterns
 }

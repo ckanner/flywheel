@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,7 +47,8 @@ func runCmd() *cobra.Command {
 			if only != "" && pauseBefore != "" {
 				return fmt.Errorf("--pause-before 不适用于 --only 单步模式（单步天然逐步执行）；去掉 --only 即为冻结点全自动")
 			}
-			cfg, err := config.Load(taskDir, mustCwd())
+			cwd := machine.ProjectRoot(mustCwd())
+			cfg, err := config.Load(taskDir, cwd)
 			if err != nil {
 				return err
 			}
@@ -56,8 +58,9 @@ func runCmd() *cobra.Command {
 			if only != "" {
 				summary, err = machine.RunSingleStep(machine.RunSingleStepOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: mustCwd(), Config: cfg, Drivers: drv,
-						Log: logf(cmd),
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv,
+						Context: cmd.Context(),
+						Log:     logf(cmd),
 					},
 					Only:     only,
 					PacketID: packetID,
@@ -65,13 +68,17 @@ func runCmd() *cobra.Command {
 			} else {
 				summary, err = machine.RunTask(machine.RunTaskOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: mustCwd(), Config: cfg, Drivers: drv,
-						Log: logf(cmd),
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv,
+						Context: cmd.Context(),
+						Log:     logf(cmd),
 					},
 					PauseBefore: pauseBefore,
 				})
 			}
 			printJSON(cmd, summary)
+			if errors.Is(err, machine.ErrInterrupted) {
+				return &exitError{code: 143}
+			}
 			// 升级 / 熔断 / 失败步骤 → 退出码 3（摘要已打印）。
 			if summary.Status == "escalated" || summary.Status == "budget-stopped" {
 				return &exitError{code: 3}

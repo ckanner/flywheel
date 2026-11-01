@@ -1,11 +1,14 @@
 package machine
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,6 +101,12 @@ func commitOutcomeMap(o verify.CommitOutcome) map[string]any {
 // 调用方必须把单元路由到 inbox/人工处理，而不是标 completed。
 var ErrMergeConflict = errors.New("unit branch could not be merged into the main checkout")
 
+// ErrCommitFailed 表示交付物或账本未成功持久化；绝不能据此标记完成或删除工作区。
+var ErrCommitFailed = errors.New("unit changes could not be committed")
+
+// ErrInterrupted 取消已传到所有执行步骤，清理/缺陷恢复完成；CLI 对应退出143。
+var ErrInterrupted = errors.New("orchestrator interrupted")
+
 // ---- 缺陷注入抽检（§4.3）----
 
 func derefStringPtr(s *string) string {
@@ -157,26 +166,50 @@ func (c *Context) currentMilestone() *contract.Milestone {
 	return nil
 }
 
-func (c *Context) writePid() {
-	_ = os.MkdirAll(c.TaskDir, 0o755)
-	payload, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "startedAt": c.nowISO()})
-	_ = os.WriteFile(PidFile(c.TaskDir), payload, 0o644)
+var writePIDData = os.WriteFile
+var createPIDTemp = os.CreateTemp
+
+func (c *Context) writePid() error {
+	runtimeDir := filepath.Join(c.TaskDir, ".control")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		return err
+	}
+	c.controlToken = rand.Text()
+	payload, _ := json.Marshal(RunControl{PID: os.Getpid(), StartedAt: c.nowISO(), ControlToken: c.controlToken})
+	tmp, err := createPIDTemp(runtimeDir, "orchestrator-pid-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_ = tmp.Close()
+	defer os.Remove(name)
+	if err := writePIDData(name, payload, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(name, PidFile(c.TaskDir))
 }
 
 func clearPid(taskDir string) {
 	_ = os.Remove(PidFile(taskDir)) // best effort
+	_ = os.Remove(StopRequestFile(taskDir))
 }
 
 // registerSigterm P1 修复：注册 SIGTERM（Node 定义了 onSigterm 却从未
 // process.once 注册，kill switch 失效）。收到信号 → 杀光在飞子进程组并等到
 // quiescence → 以退出码 143 结束——绝不让孤儿进程继续写工作区。
-func registerSigterm(log func(string)) chan os.Signal {
+func registerSigterm(log func(string), cancelRun ...context.CancelFunc) chan os.Signal {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM)
 	go func() {
 		if _, ok := <-ch; ok {
 			log("SIGTERM received — killing in-flight children, then exiting")
-			watchdog.KillActiveChildren(watchdog.DefaultKillGraceMs)
+			for _, cancel := range cancelRun {
+				cancel()
+			}
+			watchdog.KillActiveChildren(time.Duration(watchdog.DefaultKillGraceMs) * time.Millisecond)
+			if len(cancelRun) > 0 {
+				return // 让运行栈完成缺陷恢复等清理后正常返回，再由 CLI 退出143。
+			}
 			os.Exit(143)
 		}
 	}()
@@ -214,9 +247,9 @@ func strPtrAlways(s string) *string { return &s }
 
 func (c *Context) summary() TaskSummary {
 	done := 0
-	total := len(c.State.Packets)
-	for _, p := range c.State.Packets {
-		if p.Status == "completed" {
+	total := len(c.PacketList)
+	for _, p := range c.PacketList {
+		if c.State.Packets[p.PacketID].Status == "completed" {
 			done++
 		}
 	}
@@ -242,6 +275,7 @@ type RunOpts struct {
 	Sleep   func(time.Duration)
 	Now     func() time.Time
 	Env     childenvLookup
+	Context context.Context
 }
 
 // RunTaskOpts RunTask 入参。
@@ -253,23 +287,40 @@ type RunTaskOpts struct {
 // RunTask 全自动运行：里程碑 → packet → attempts（execute → L1 → review）
 // → 里程碑闸门。返回摘要；state.json 携带真相。
 func RunTask(opts RunTaskOpts) (TaskSummary, error) {
+	release, err := AcquireRunLease(opts.TaskDir)
+	if err != nil {
+		return TaskSummary{}, err
+	}
+	defer release()
+	clearPid(opts.TaskDir) // the lease proves any previous PID/request is stale
+	parent := opts.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	runContext, cancel := context.WithCancel(parent)
+	defer cancel()
 	ctx, err := CreateContext(Opts{
 		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
+		Context: runContext,
 	})
 	if err != nil {
 		return TaskSummary{}, err
 	}
 	ctx.pauseBefore = opts.PauseBefore
-	if err := AssertNoRunningOrchestrator(ctx.TaskDir); err != nil { // P1：每任务单实例
+	if err := ctx.writePid(); err != nil {
 		return ctx.summary(), err
 	}
-	ctx.writePid()
-	sigCh := registerSigterm(ctx.Log)
+	sigCh := registerSigterm(ctx.Log, cancel)
 	defer unregisterSigterm(sigCh)
 	defer clearPid(ctx.TaskDir)
+	stopControl := watchStopRequests(runContext, ctx.TaskDir, ctx.controlToken, cancel)
+	defer stopControl()
 
 	summary, err := ctx.run()
+	if runContext.Err() != nil {
+		return summary, ErrInterrupted
+	}
 	if err != nil {
 		return summary, err
 	}
@@ -277,16 +328,23 @@ func RunTask(opts RunTaskOpts) (TaskSummary, error) {
 }
 
 func (c *Context) reloadPackets() error {
-	fresh, err := contract.LoadPackets(c.TaskDir, c.Spec)
+	spec, err := contract.LoadSpec(c.TaskDir)
 	if err != nil {
 		return err
 	}
+	fresh, err := contract.LoadPackets(c.TaskDir, spec)
+	if err != nil {
+		return err
+	}
+	c.Spec = spec
 	c.PacketList = fresh
 	c.Packets = map[string]*contract.Packet{}
 	for _, p := range fresh {
 		c.Packets[p.PacketID] = p
 	}
-	return state.EnsurePacketStates(c.State, fresh)
+	// LoadPackets validated the packet IDs; EnsurePacketStates cannot fail here.
+	_ = state.EnsurePacketStates(c.State, fresh)
+	return c.reconcileContractRevisions()
 }
 
 func (c *Context) run() (TaskSummary, error) {
@@ -298,12 +356,24 @@ func (c *Context) run() (TaskSummary, error) {
 	c.State.Status = "running" // paused/stopped 任务 resume 时翻回 running（#6）
 	c.save()
 
-	for mi := range c.Spec.Milestones {
-		milestone := c.Spec.Milestones[mi]
-		ms := c.State.Milestones[milestone.ID]
-		if ms.Status == "closed" {
-			continue
+	visits := map[string]int{}
+	for {
+		next := c.currentMilestone()
+		if next == nil {
+			break
 		}
+		milestone := *next
+		visits[milestone.ID]++
+		if visits[milestone.ID] > maxMilestoneVisits {
+			c.State.Status = "escalated"
+			entry := map[string]any{"at": c.nowISO(), "milestone": milestone.ID,
+				"reason": fmt.Sprintf("milestone %s repeatedly reopened by contract revisions; stopped after %d visits in one run", milestone.ID, maxMilestoneVisits)}
+			c.State.Inbox = append(c.State.Inbox, entry)
+			c.appendInbox(entry)
+			c.save()
+			return c.summary(), c.err()
+		}
+		ms := c.State.Milestones[milestone.ID]
 
 		c.State.CurrentMilestone = strPtrAlways(milestone.ID)
 		ms.Status = "in-progress"
@@ -339,7 +409,14 @@ func (c *Context) run() (TaskSummary, error) {
 		// 已重载并做 acceptance 指纹留痕（P0-2/A1 对称性）。
 		// v0.16：仅契约提交（脏账本不卷入——这里做账本提交会移动 HEAD，
 		// 破坏暂停单元 worktree 的 ff-merge）。无变更 = 无提交 = HEAD 不动。
-		c.commitTaskDirChanges(fmt.Sprintf("docs(%s): plan update", c.State.Slug))
+		if err := c.persistPlanContracts(fmt.Sprintf("docs(%s): plan update", c.State.Slug)); err != nil {
+			return c.summary(), err
+		}
+		current, present := c.milestoneByID(milestone.ID)
+		if !present {
+			return c.summary(), fmt.Errorf("active milestone %s was removed by Plan; contracts preserved for human review", milestone.ID)
+		}
+		milestone = current
 		c.save()
 
 		for {
@@ -426,6 +503,14 @@ func (c *Context) run() (TaskSummary, error) {
 		c.save()
 	}
 
+	if !c.contractsComplete() {
+		return c.summary(), fmt.Errorf("current contracts contain unfinished units; refusing completed status")
+	}
+	if _, err := verify.PersistedHead(c.Cwd, c.ledgerExcludes()); err != nil {
+		c.State.Status = "escalated"
+		c.save()
+		return c.summary(), fmt.Errorf("%w: final task tree is not persisted: %v", ErrCommitFailed, err)
+	}
 	c.State.Status = "completed"
 	c.State.CurrentMilestone = nil
 	c.touchProgress()
@@ -500,22 +585,39 @@ type RunSingleStepOpts struct {
 // RunSingleStep 手工单步模式（§12）：--only 恰好执行一次状态转移。
 // 步骤结果落在摘要（step 字段），失败步骤由 CLI 以非零码退出（#9）。
 func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
+	release, err := AcquireRunLease(opts.TaskDir)
+	if err != nil {
+		return TaskSummary{}, err
+	}
+	defer release()
+	clearPid(opts.TaskDir)
+	parent := opts.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	runContext, cancel := context.WithCancel(parent)
+	defer cancel()
 	ctx, err := CreateContext(Opts{
 		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
+		Context: runContext,
 	})
 	if err != nil {
 		return TaskSummary{}, err
 	}
-	if err := AssertNoRunningOrchestrator(ctx.TaskDir); err != nil {
+	if err := ctx.writePid(); err != nil {
 		return ctx.summary(), err
 	}
-	ctx.writePid()
-	sigCh := registerSigterm(ctx.Log)
+	sigCh := registerSigterm(ctx.Log, cancel)
 	defer unregisterSigterm(sigCh)
 	defer clearPid(ctx.TaskDir)
+	stopControl := watchStopRequests(runContext, ctx.TaskDir, ctx.controlToken, cancel)
+	defer stopControl()
 
 	summary, err := ctx.runSingle(opts.Only, opts.PacketID)
+	if runContext.Err() != nil {
+		return summary, ErrInterrupted
+	}
 	if err != nil {
 		return summary, err
 	}
@@ -559,6 +661,12 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		r, perr := c.planUntilValid(*m)
 		if perr != nil {
 			return c.summary(), perr
+		}
+		if r.OK {
+			if err := c.persistPlanContracts(fmt.Sprintf("docs(%s): manual plan update", c.State.Slug)); err != nil {
+				return c.summary(), err
+			}
+			c.save()
 		}
 		step = &StepSum{Name: "plan", OK: r.OK, Detail: optStr(string(r.ErrorCode))}
 	case "execute":

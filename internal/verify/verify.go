@@ -2,14 +2,15 @@
 // 验收命令——它们是 ground-truth oracle：便宜、瞬时、无法被执行者辩驳。
 // coverage gate 只是 packet 里又一条 L1 命令，此处无任何特判。
 //
-// 测试/边界完整性由 git diff 事后判定（v0.10）：单元 diff 里出现测试文件
-// 或 must-not-touch 路径即判失败。另含 per-unit worktree 隔离与编排器侧
+// 测试/边界完整性由 git diff 事后判定：单元与回归测试可修改，冻结的验收
+// 由 must-not-touch 或显式保护模式约束。另含 per-unit worktree 隔离与编排器侧
 // 单元提交（§4.2 v0.16）。
 package verify
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,14 +19,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/state"
+	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
-// DefaultTestFilePatterns 测试文件识别模式（executor 永不写测试，DC1）。
+// DefaultTestFilePatterns 测试文件识别模式（缺陷抽样等用途）；不隐式禁止修改。
 var DefaultTestFilePatterns = []string{
 	`(^|/)(tests?|__tests__|spec)/`,
 	`\.(test|spec)\.[cm]?[jt]sx?$`,
@@ -64,15 +65,22 @@ func envSlice(m map[string]string) []string {
 
 // GateResult 单条验收命令的结果。
 type GateResult struct {
-	Cmd        string `json:"cmd"`
-	Expect     string `json:"expect"`
-	ExitCode   int    `json:"exitCode"`
-	Pass       bool   `json:"pass"`
-	DurationMS int64  `json:"durationMs"`
-	Output     string `json:"output,omitempty"`
+	Cmd          string `json:"cmd"`
+	Expect       string `json:"expect"`
+	ExitCode     int    `json:"exitCode"`
+	Pass         bool   `json:"pass"`
+	DurationMS   int64  `json:"durationMs"`
+	Output       string `json:"output,omitempty"`
+	TimedOut     bool   `json:"timedOut"`
+	Cancelled    bool   `json:"cancelled"`
+	Truncated    bool   `json:"truncated"`
+	Signal       string `json:"signal,omitempty"`
+	SpawnError   string `json:"spawnError,omitempty"`
+	CleanupError string `json:"cleanupError,omitempty"`
 }
 
-// GateReport 一个 gate 层的完整结果（全部命令都跑，不早停——报告必须完整）。
+// GateReport 一个 gate 层的完整结果。普通失败继续收集结果；取消后的命令
+// 记录 cancelled 而不再启动，避免 stop 与下一条命令的 spawn 竞态。
 type GateReport struct {
 	Pass    bool         `json:"pass"`
 	Results []GateResult `json:"results"`
@@ -80,9 +88,11 @@ type GateReport struct {
 
 // GateOpts RunGateCommands 选项。Env 为 nil 时用进程环境（经白名单过滤）。
 type GateOpts struct {
+	Context      context.Context
 	Cwd          string
 	Env          map[string]string
 	TimeoutMS    int64
+	KillGraceMS  int64
 	EnvAllowlist []string
 }
 
@@ -90,6 +100,12 @@ type GateOpts struct {
 // 它们执行 executor 写的代码，不得看见编排器的密钥；config verify.env-allowlist
 // 是唯一显式出口。
 func RunGateCommands(commands []contract.GateEntry, opts GateOpts) GateReport {
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var report GateReport
 	for _, entry := range commands {
 		expected, perr := contract.ParseExpect(entry.Expect)
@@ -103,38 +119,52 @@ func RunGateCommands(commands []contract.GateEntry, opts GateOpts) GateReport {
 			continue
 		}
 		command := entry.Command()
-		started := time.Now()
-		exitCode := 0
-		output := ""
-
-		timeout := time.Duration(opts.TimeoutMS) * time.Millisecond
-		if timeout <= 0 {
-			timeout = 300_000 * time.Millisecond // Node 默认 300s
+		timeoutMS := opts.TimeoutMS
+		if timeoutMS <= 0 {
+			timeoutMS = 300_000
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-		cmd.Dir = opts.Cwd
-		cmd.Env = envSlice(childenv.GateEnv(envLookup(opts.Env), opts.EnvAllowlist))
-		out, rerr := cmd.CombinedOutput()
-		cancel()
-		if rerr != nil {
-			if ee, ok := rerr.(*exec.ExitError); ok && ee.ExitCode() >= 0 {
-				exitCode = ee.ExitCode()
-			} else {
-				exitCode = 1 // Node: typeof err.code === 'number' ? code : 1
+		res := watchdog.Run("/bin/sh", []string{"-c", command}, watchdog.Opts{
+			Context: ctx, Cwd: opts.Cwd,
+			Env:           envSlice(childenv.GateEnv(envLookup(opts.Env), opts.EnvAllowlist)),
+			IdleTimeoutMs: timeoutMS, WallTimeoutMs: timeoutMS, KillGraceMs: opts.KillGraceMS,
+		})
+		if res.Cancelled {
+			cancel() // SIGTERM kill switch 取消也阻止后续命令启动。
+		}
+		exitCode := -1 // 无正常退出码；绝不能把超时/信号/启动失败伪装成 expect exit 1。
+		if res.ExitCode != nil {
+			exitCode = *res.ExitCode
+		}
+		interrupted := res.TimedOut || res.Cancelled || res.Truncated || res.Signal != "" || res.SpawnError != "" || res.CleanupError != ""
+		output := ""
+		if exitCode != 0 || interrupted {
+			output = res.Stdout + res.Stderr
+			if res.SpawnError != "" {
+				output += res.SpawnError
 			}
-			if len(out) > 2000 {
-				out = out[:2000]
+			if res.CleanupError != "" {
+				output += res.CleanupError
 			}
-			output = string(out)
+			if res.Truncated {
+				output += "\ncommand output truncated"
+			}
+			if len(output) > 2000 {
+				output = output[:2000]
+			}
 		}
 		report.Results = append(report.Results, GateResult{
-			Cmd:        command,
-			Expect:     entry.Expect,
-			ExitCode:   exitCode,
-			Pass:       exitCode == expected,
-			DurationMS: time.Since(started).Milliseconds(),
-			Output:     output,
+			Cmd:          command,
+			Expect:       entry.Expect,
+			ExitCode:     exitCode,
+			Pass:         !interrupted && res.ExitCode != nil && exitCode == expected,
+			DurationMS:   res.DurationMS,
+			Output:       output,
+			TimedOut:     res.TimedOut,
+			Cancelled:    res.Cancelled,
+			Truncated:    res.Truncated,
+			Signal:       res.Signal,
+			SpawnError:   res.SpawnError,
+			CleanupError: res.CleanupError,
 		})
 	}
 	report.Pass = true
@@ -241,16 +271,66 @@ func EnsureUnitWorktree(cwd, slug, packetID, baseRef string) state.WorktreeInfo 
 func MergeUnitWorktree(cwd, branch string) (string, error) {
 	out, err := gitOut(cwd, "merge", "--ff-only", branch)
 	if err != nil {
-		return "", fmt.Errorf("%s%s", out, err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			out += string(exitErr.Stderr)
+		}
+		return "", fmt.Errorf("fast-forward merge %s: %s: %w", branch, strings.TrimSpace(out), err)
 	}
 	return strings.TrimSpace(out), nil
 }
 
-// RemoveUnitWorktree 删除单元 worktree 与分支（best effort——清理失败绝不能
-// 毁掉单元裁决）。
-func RemoveUnitWorktree(cwd, branch, path string) {
-	_, _ = gitOut(cwd, "worktree", "remove", "--force", path)
-	_, _ = gitOut(cwd, "branch", "-D", branch)
+// RemoveUnitWorktree 清理已合并且干净的单元 worktree 与分支。拒绝 force，
+// 任何错误都保留尚未清理的资源并返回；已清理的资源可幂等重试。
+func RemoveUnitWorktree(cwd, branch, path string) error {
+	refs, err := gitOut(cwd, "for-each-ref", "--format=%(refname)", "refs/heads/"+branch)
+	if err != nil {
+		return fmt.Errorf("inspect unit branch: %w", err)
+	}
+	branchExists := false
+	for _, ref := range strings.Fields(refs) {
+		if ref == "refs/heads/"+branch {
+			branchExists = true
+		}
+	}
+	worktrees, err := gitOut(cwd, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return fmt.Errorf("inspect unit worktree: %w", err)
+	}
+	canonicalPath := path
+	if parent, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		canonicalPath = filepath.Join(parent, filepath.Base(path))
+	}
+	registered := false
+	for _, record := range strings.Split(worktrees, "\x00\x00") {
+		if strings.HasPrefix(record, "worktree "+canonicalPath+"\x00") {
+			registered = true
+			if !strings.Contains(record+"\x00", "\x00branch refs/heads/"+branch+"\x00") {
+				return fmt.Errorf("refusing to remove worktree %s: no longer bound to unit branch %s", path, branch)
+			}
+		}
+	}
+	if registered && !branchExists {
+		return fmt.Errorf("refusing to remove worktree %s: unit branch %s is missing", path, branch)
+	}
+	if branchExists {
+		if _, err := gitOut(cwd, "merge-base", "--is-ancestor", branch, "HEAD"); err != nil {
+			return fmt.Errorf("unit branch %s is not confirmed merged: %w", branch, err)
+		}
+	}
+	if registered {
+		if _, err := gitOut(cwd, "worktree", "remove", path); err != nil {
+			return fmt.Errorf("remove unit worktree %s: %w", path, err)
+		}
+	} else if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		return fmt.Errorf("refusing to clean unregistered worktree path %s", path)
+	}
+	if branchExists {
+		if _, err := gitOut(cwd, "branch", "-d", branch); err != nil {
+			return fmt.Errorf("delete unit branch %s: %w", branch, err)
+		}
+	}
+	return nil
 }
 
 // GetBaseRef 当前单元的 base ref：git checkout 用 HEAD（零提交仓库用空树）；
@@ -265,6 +345,43 @@ func GetBaseRef(cwd string) (ref string, ok bool) {
 		return EmptyTree, true
 	}
 	return strings.TrimSpace(head), true
+}
+
+// PersistedHead 确认真实 commit 的 tree 与当前候选一致；提交成功和工作区身份
+// 不变各自都不足够：pre-commit 可以只篡改临时 index 而不改工作区。
+// 账本由调用方显式排除。任何扫描错误或未入库源码都不能用于 completed。
+func PersistedHead(cwd string, exclude []string) (string, error) {
+	head, err := gitOut(cwd, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("read persisted HEAD commit: %w", err)
+	}
+	pathspec := []string{"--", "."}
+	for _, path := range exclude {
+		pathspec = append(pathspec, ":(exclude,literal)"+path)
+	}
+	if err := checkGitSemantics(cwd, pathspec); err != nil {
+		return "", err
+	}
+	// User Git settings may hide executable-bit or symlink-type differences.
+	// Override them only for this read-only comparison: the persisted tree must
+	// match the actual candidate tested, without rewriting repository settings.
+	args := append([]string{"-c", "core.filemode=true", "-c", "core.symlinks=true", "diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", "--name-only", "-z", "HEAD"}, pathspec...)
+	changed, err := gitOut(cwd, args...)
+	if err != nil {
+		return "", fmt.Errorf("compare persisted HEAD with candidate: %w", err)
+	}
+	if changed != "" {
+		return "", fmt.Errorf("persisted HEAD differs from verified candidate: %q", strings.Split(strings.TrimSuffix(changed, "\x00"), "\x00"))
+	}
+	args = append([]string{"ls-files", "--others", "--exclude-standard", "-z"}, pathspec...)
+	untracked, err := gitOut(cwd, args...)
+	if err != nil {
+		return "", fmt.Errorf("inspect uncommitted candidate files: %w", err)
+	}
+	if untracked != "" {
+		return "", fmt.Errorf("candidate files were not persisted: %q", strings.Split(strings.TrimSuffix(untracked, "\x00"), "\x00"))
+	}
+	return strings.TrimSpace(head), nil
 }
 
 // AheadCount 分支 head 相对 base 领先的提交数（base..head）。编排器据此判断
@@ -371,6 +488,10 @@ const perFileContentCap = 256 << 10 // 256KB
 //     与凭证文件外泄（executor 在 worktree 里 ln -s 的攻击面）；
 //   - 非 regular 文件占位；空文件零行段；
 //   - 二进制以占位标记代替内容；总量截断由调用方统一处理。
+//
+// readDiffFile 允许确定性验证 Lstat 后文件被删除/变得不可读的竞态。
+var readDiffFile = os.ReadFile
+
 func appendUntrackedSections(b *strings.Builder, cwd string, files []string) {
 	for _, f := range files {
 		if f == "" {
@@ -399,7 +520,7 @@ func appendUntrackedSections(b *strings.Builder, cwd string, files []string) {
 			fmt.Fprintf(b, "@@ -0,0 +1,1 @@\n+[file too large: %d bytes]\n", fi.Size())
 			continue
 		}
-		raw, rerr := os.ReadFile(full)
+		raw, rerr := readDiffFile(full)
 		if rerr != nil {
 			continue
 		}
@@ -439,9 +560,10 @@ type CommitOutcome struct {
 	At      string `json:"at"`
 }
 
-// CommitUnitChanges 单元粒度提交：范围 = 自记录 base ref 以来的单元变更，
-// 减去 excludePaths（易变运行时文件）；restrictToPrefix 再收窄到单目录
-// （worktree 模式下主 checkout 的账本提交：仅 docs/<slug>/）。永不 git add -A。
+// CommitUnitChanges 单元粒度提交：只提交当前 HEAD 尚未持久化的工作区变更，
+// 减去 excludePaths（易变运行时文件）；restrictToPrefix 再收窄到单目录。
+// baseRef 保留调用兼容；它用于上层的单元边界/合并判断，不用于重复提交
+// executor 已自提交的文件。--only 保留其它路径的 staged 状态，永不 add -A。
 func CommitUnitChanges(cwd string, packet *contract.Packet, excludePaths []string, baseRef, restrictToPrefix string) CommitOutcome {
 	id := packet.PacketID
 	milestone, mErr := contract.MilestoneOfPacket(id)
@@ -455,27 +577,19 @@ func CommitUnitChanges(cwd string, packet *contract.Packet, excludePaths []strin
 		out.Error = mErr.Error()
 		return out
 	}
-	base := baseRef
-	if base == "" {
-		var ok bool
-		base, ok = GetBaseRef(cwd)
-		if !ok {
-			out.Skipped = "not a git checkout"
-			return out
-		}
+	base, ok := GetBaseRef(cwd)
+	if !ok {
+		out.Skipped = "not a git checkout"
+		return out
 	}
 	changed, ok := GetChangedFiles(cwd, base)
 	if !ok {
-		out.Skipped = "changed-file scan failed"
+		out.Error = "changed-file scan failed"
 		return out
-	}
-	exclude := map[string]bool{}
-	for _, p := range excludePaths {
-		exclude[p] = true
 	}
 	var addList []string
 	for _, f := range changed {
-		if exclude[f] {
+		if excludedCommitPath(f, excludePaths) {
 			continue
 		}
 		if restrictToPrefix != "" && !strings.HasPrefix(f, restrictToPrefix) {
@@ -487,16 +601,22 @@ func CommitUnitChanges(cwd string, packet *contract.Packet, excludePaths []strin
 		out.Skipped = "no changes"
 		return out
 	}
-	addArgs := append(identityArgs(), "add", "--")
+	// intent-to-add 让 --only 识别新文件，同时不重写已有文件的 partial staging。
+	addArgs := append(identityArgs(), "add", "--intent-to-add", "--")
 	if err := gitRun(cwd, append(addArgs, addList...)...); err != nil {
 		out.Error = err.Error()
 		return out
 	}
-	if err := gitRun(cwd, append(identityArgs(), "commit", "-m", message)...); err != nil {
+	commitArgs := append(identityArgs(), "commit", "--only", "-m", message, "--")
+	if err := gitRun(cwd, append(commitArgs, addList...)...); err != nil {
 		out.Error = err.Error()
 		return out
 	}
-	sha, _ := gitOut(cwd, "rev-parse", "HEAD")
+	sha, err := gitOut(cwd, "rev-parse", "HEAD")
+	if err != nil {
+		out.Error = fmt.Sprintf("read committed HEAD: %v", err)
+		return out
+	}
 	out.SHA = strings.TrimSpace(sha)
 	return out
 }
@@ -515,16 +635,12 @@ func CommitTaskDirChanges(cwd, prefix, message string, excludePaths []string, on
 	}
 	changed, ok := GetChangedFiles(cwd, base)
 	if !ok {
-		out.Skipped = "changed-file scan failed"
+		out.Error = "changed-file scan failed"
 		return out
-	}
-	exclude := map[string]bool{}
-	for _, p := range excludePaths {
-		exclude[p] = true
 	}
 	var addList []string
 	for _, f := range changed {
-		if !strings.HasPrefix(f, prefix) || exclude[f] {
+		if !strings.HasPrefix(f, prefix) || excludedCommitPath(f, excludePaths) {
 			continue
 		}
 		if onlyFiles != nil {
@@ -539,18 +655,34 @@ func CommitTaskDirChanges(cwd, prefix, message string, excludePaths []string, on
 		out.Skipped = "no changes"
 		return out
 	}
-	addArgs := append(identityArgs(), "add", "--")
+	addArgs := append(identityArgs(), "add", "--intent-to-add", "--")
 	if err := gitRun(cwd, append(addArgs, addList...)...); err != nil {
 		out.Error = err.Error()
 		return out
 	}
-	if err := gitRun(cwd, append(identityArgs(), "commit", "-m", message)...); err != nil {
+	commitArgs := append(identityArgs(), "commit", "--only", "-m", message, "--")
+	if err := gitRun(cwd, append(commitArgs, addList...)...); err != nil {
 		out.Error = err.Error()
 		return out
 	}
-	sha, _ := gitOut(cwd, "rev-parse", "HEAD")
+	sha, err := gitOut(cwd, "rev-parse", "HEAD")
+	if err != nil {
+		out.Error = fmt.Sprintf("read committed HEAD: %v", err)
+		return out
+	}
 	out.SHA = strings.TrimSpace(sha)
 	return out
+}
+
+// excludedCommitPath 以 / 结尾的条目保护整个目录，其余条目精确匹配文件。
+// worktree 账本副本（reports/ 等）由主 checkout 收集，不能随实现分支提交。
+func excludedCommitPath(path string, excludes []string) bool {
+	for _, entry := range excludes {
+		if path == entry || strings.HasSuffix(entry, "/") && strings.HasPrefix(path, entry) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- 边界判定（纯函数）----
@@ -572,13 +704,13 @@ type BoundaryReport struct {
 	ChangedFiles []string            `json:"changedFiles"`
 }
 
-// globToRegExp JS 版等价：转义 [.+^${}()|[\]\\]，* → .*（? 保持原义）。
+// globToRegExp 只有 * 为通配符，其余正则元字符按路径字面量处理。
 func globToRegExp(glob string) *regexp.Regexp {
 	var b strings.Builder
 	b.WriteString("^")
 	for _, r := range glob {
 		switch r {
-		case '.', '+', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\':
+		case '.', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\':
 			b.WriteByte('\\')
 			b.WriteRune(r)
 		case '*':
@@ -590,9 +722,19 @@ func globToRegExp(glob string) *regexp.Regexp {
 	return regexp.MustCompile(b.String())
 }
 
-// CheckBoundaries 对变更文件列表做纯边界检查。changedFiles 为 nil（diff
+// CheckBoundaries 对变更文件列表做纯边界检查。protectedTestPatterns 只保护
+// 显式指定的验收 oracle；nil/空不限制普通测试。changedFiles 为 nil（diff
 // 不可用）时 skipped=true 且放行——skip 记录进证据，不冒充通过理由。
-func CheckBoundaries(changedFiles []string, boundaries contract.Boundaries, testFilePatterns []string) BoundaryReport {
+func CheckBoundaries(changedFiles []string, boundaries contract.Boundaries, protectedTestPatterns []string) BoundaryReport {
+	testRes := make([]*regexp.Regexp, 0, len(protectedTestPatterns))
+	for _, p := range protectedTestPatterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return BoundaryReport{Pass: false, Reason: "invalid protected test pattern: " + err.Error(),
+				Violations: []BoundaryViolation{{Type: "invalid-protection-pattern", Path: p}}, ChangedFiles: changedFiles}
+		}
+		testRes = append(testRes, re)
+	}
 	if changedFiles == nil {
 		return BoundaryReport{Pass: true, Skipped: true,
 			Reason:       "git diff unavailable (not a git checkout)",
@@ -617,14 +759,6 @@ func CheckBoundaries(changedFiles []string, boundaries contract.Boundaries, test
 			matchers = append(matchers, matcher{exact: entry, prefix: prefix})
 		}
 	}
-	if testFilePatterns == nil {
-		testFilePatterns = DefaultTestFilePatterns
-	}
-	testRes := make([]*regexp.Regexp, 0, len(testFilePatterns))
-	for _, p := range testFilePatterns {
-		testRes = append(testRes, regexp.MustCompile(p))
-	}
-
 	violations := []BoundaryViolation{}
 	for _, file := range changedFiles {
 		for _, m := range matchers {

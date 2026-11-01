@@ -655,7 +655,8 @@ func TestRunGardenWriteFileFailure(t *testing.T) {
 	taskDir := t.TempDir()
 	cfg := testConfigT(t, taskDir)
 	writeFileT(t, filepath.Join(taskDir, "retro.md"), "- nothing\n")
-	require.NoError(t, os.Chmod(taskDir, 0o555)) // 任务目录只读 → 提案写入失败
+	writeFileT(t, filepath.Join(taskDir, "metrics.jsonl"), "") // metrics stays appendable; isolate proposal-write failure
+	require.NoError(t, os.Chmod(taskDir, 0o555))               // 任务目录只读 → 提案写入失败
 	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
 	_, err := RunGarden(CtxOpts{TaskDir: taskDir, Cwd: taskDir, Config: cfg,
 		Drivers: &drivers.Drivers{Garden: newStub(nil)}})

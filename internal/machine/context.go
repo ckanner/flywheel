@@ -30,8 +30,10 @@
 package machine
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -62,10 +64,12 @@ type Context struct {
 	State      *state.State
 	Fresh      bool // 本次运行新建了 state.json（$flywheel-new 之后首跑）
 
-	Log       func(string)
-	Sleep     func(time.Duration) // Node ctx.sleep(ms)；Go 直接收 Duration
-	Now       func() time.Time
-	EnvLookup childenv.LookupEnv
+	Log          func(string)
+	Sleep        func(time.Duration) // Node ctx.sleep(ms)；Go 直接收 Duration
+	Now          func() time.Time
+	EnvLookup    childenv.LookupEnv
+	RunContext   context.Context
+	controlToken string
 
 	metricsFile string
 	pauseBefore string
@@ -83,6 +87,7 @@ type Opts struct {
 	Sleep   func(time.Duration)
 	Now     func() time.Time
 	Env     childenv.LookupEnv
+	Context context.Context
 }
 
 // nowISO 注入时钟的 ISO 序列化（Node toISOString：UTC 毫秒精度）。
@@ -91,7 +96,15 @@ func (c *Context) nowISO() string {
 }
 
 // err 返回首个致命保存错误（若有）。调用方在各循环边界检查。
-func (c *Context) err() error { return c.fatal }
+func (c *Context) err() error {
+	if c.fatal != nil {
+		return c.fatal
+	}
+	if c.RunContext != nil {
+		return c.RunContext.Err()
+	}
+	return nil
+}
 
 // save CAS 保存工作状态；一切状态变更都从这里走。失败记入 fatal（见包注释）。
 func (c *Context) save() {
@@ -199,7 +212,15 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	if a.attempt != nil {
 		attempt = *a.attempt
 	}
-	_ = metrics.Append(c.metricsFile, map[string]any{
+	var resultState any
+	if a.result != nil {
+		resultState = map[string]any{
+			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
+			"truncated": a.result.Truncated, "signal": a.result.Signal,
+			"cleanup-error": a.result.CleanupError, "session-id": a.result.SessionID,
+		}
+	}
+	if err := metrics.Append(c.metricsFile, map[string]any{
 		"role":            a.role,
 		"packet-id":       packetID,
 		"milestone":       milestone,
@@ -215,9 +236,27 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"exit-code":       exitCode,
 		"error-code":      errorCode,
 		"attempt":         attempt,
-	})
+		"result":          resultState,
+	}); err != nil && c.fatal == nil {
+		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
+	}
+	day := c.Now().UTC().Format("2006-01-02")
+	bucket := c.State.Budget.Daily[day]
+	if usage == nil {
+		c.State.Budget.UnknownUsageCalls++
+		bucket.UnknownUsageCalls++
+	}
+	if costUSD == nil {
+		c.State.Budget.UnknownCostCalls++
+		bucket.UnknownCostCalls++
+	}
+	c.State.Budget.Daily[day] = bucket
 
 	if usage == nil {
+		warning := "Some harness calls did not report usage; token/cost totals are measured lower bounds, not a complete bill."
+		if !containsString(c.State.Budget.Warnings, warning) {
+			c.State.Budget.Warnings = append(c.State.Budget.Warnings, warning)
+		}
 		return
 	}
 	provider := ""
@@ -235,7 +274,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	state.RecordUsage(c.State, state.Usage{
 		Input: usage.Input, Output: usage.Output, Reasoning: usage.Reasoning,
 		CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite, TotalTokens: &tt,
-	}, state.UsageOpts{Provider: provider, CostUSD: costUSD})
+	}, state.UsageOpts{Provider: provider, CostUSD: costUSD, Day: day})
 	c.warnIfCacheCold(provider, a.channel)
 }
 
@@ -311,6 +350,9 @@ func (c *Context) taskDirPrefix() string {
 		// Node relative() 失败抛异常；此处 TaskDir 恒在 Cwd 之下，防御分支
 		// 仅在病态输入（跨盘符等）触达——退化为绝对路径前缀。
 		return c.TaskDir + "/"
+	}
+	if rel == "." {
+		return ""
 	}
 	return rel + "/"
 }
@@ -473,8 +515,40 @@ func (c *Context) unitCwd(packet *contract.Packet) string {
 	return c.Cwd
 }
 
+// ProjectRoot resolves the execution root before both configuration discovery
+// and context creation. Non-Git rehearsal directories keep their original cwd.
+func ProjectRoot(cwd string) string {
+	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--show-toplevel")
+	cmd.Env = childenv.EnvSlice(childenv.GateEnv(childenv.OSLookupEnv, nil))
+	out, err := cmd.Output()
+	if err != nil {
+		return cwd // 非 Git 目录可检查/规划，最终交付仍要求持久 Git tree。
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// absoluteDirectoryPath keeps getcwd failures injectable: a removed working
+// directory does not make filepath.Abs fail consistently across operating systems.
+var absoluteDirectoryPath = filepath.Abs
+
+// canonicalDirectory gives workspace and task paths the same physical namespace.
+// In particular Git resolves macOS /var to /private/var, while callers may retain
+// the alias. Mixing them would turn an in-repository ledger prefix into ../ paths.
+func canonicalDirectory(path string) (string, error) {
+	abs, err := absoluteDirectoryPath(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
 // CreateContext 加载状态机需要的一切并返回运行上下文。
 func CreateContext(opts Opts) (*Context, error) {
+	taskDir, err := canonicalDirectory(opts.TaskDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve task directory: %w", err)
+	}
+	opts.TaskDir = taskDir
 	spec, err := contract.LoadSpec(opts.TaskDir)
 	if err != nil {
 		return nil, err
@@ -506,7 +580,11 @@ func CreateContext(opts Opts) (*Context, error) {
 	_ = state.EnsurePacketStates(st, packetList)
 	cwd := opts.Cwd
 	if cwd == "" {
-		cwd, _ = os.Getwd()
+		cwd = "."
+	}
+	cwd, err = canonicalDirectory(ProjectRoot(cwd))
+	if err != nil {
+		return nil, fmt.Errorf("resolve working directory: %w", err)
 	}
 	logf := opts.Log
 	if logf == nil {
@@ -514,7 +592,18 @@ func CreateContext(opts Opts) (*Context, error) {
 	}
 	sleepf := opts.Sleep
 	if sleepf == nil {
-		sleepf = time.Sleep
+		if opts.Context == nil {
+			sleepf = time.Sleep
+		} else {
+			sleepf = func(d time.Duration) {
+				timer := time.NewTimer(d)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+				case <-opts.Context.Done():
+				}
+			}
+		}
 	}
 	nowf := opts.Now
 	if nowf == nil {
@@ -528,7 +617,7 @@ func CreateContext(opts Opts) (*Context, error) {
 	if drv == nil {
 		drv = drivers.CreateDrivers(opts.Config)
 	}
-	return &Context{
+	ctx := &Context{
 		TaskDir:     opts.TaskDir,
 		Cwd:         cwd,
 		Config:      opts.Config,
@@ -544,5 +633,10 @@ func CreateContext(opts Opts) (*Context, error) {
 		EnvLookup:   env,
 		metricsFile: filepath.Join(opts.TaskDir, "metrics.jsonl"),
 		revision:    st.Revision,
-	}, nil
+		RunContext:  opts.Context,
+	}
+	if err := ctx.reconcileContractRevisions(); err != nil {
+		return nil, err
+	}
+	return ctx, nil
 }

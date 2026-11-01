@@ -178,11 +178,11 @@ func TestRunTaskGapRecheckFailureReturnsToExecute(t *testing.T) {
 	st := loadFixtureState(t, fx)
 	ps := st.Packets["M01-T01"]
 	assert.Equal(t, "completed", ps.Status)
-	assert.Equal(t, 1, ps.FailedAttempts, "复验失败记一次 L1_FAILED")
+	assert.Equal(t, 1, ps.FailedAttempts, "评审改动候选，旧裁决失效")
 	l1FailedSeen := false
 	for _, rh := range ps.RetryHistory {
 		entry, _ := rh.(map[string]any)
-		if entry != nil && entry["error-code"] == "L1_FAILED" {
+		if entry != nil && entry["error-code"] == "INVALID_REQUEST" {
 			l1FailedSeen = true
 		}
 	}
@@ -239,19 +239,20 @@ func mustReadCommittedSpec(t *testing.T, fx fixture) string {
 
 // ---- 非 git 仓库：全程 in-place ----
 
-func TestRunTaskNonGitRunsInPlaceAndCompletes(t *testing.T) {
+func TestRunTaskNonGitPreservesWorkWithoutClaimingCompletion(t *testing.T) {
 	fx := newFixture(t) // 不 init git
 
 	summary, err := RunTask(runOpts(fx, happyDrivers().set()))
 	require.NoError(t, err)
-	assert.Equal(t, "completed", summary.Status)
+	assert.Equal(t, "escalated", summary.Status)
 
 	st := loadFixtureState(t, fx)
 	ps := st.Packets["M01-T01"]
-	assert.Equal(t, "completed", ps.Status)
+	assert.Equal(t, "inbox", ps.Status)
 	require.NotNil(t, ps.Commit)
 	commit, _ := ps.Commit.(map[string]any)
-	require.NotNil(t, commit["skipped"], "非 git checkout 提交被跳过并记录")
+	require.NotEmpty(t, commit["error"], "没有持久 Git tree 不能把跳过提交视为交付成功")
+	require.FileExists(t, filepath.Join(fx.root, "build", "M01-T01.txt"))
 
 	l1, ok := ps.Evidence.L1.(map[string]any)
 	require.True(t, ok)
@@ -296,8 +297,11 @@ func TestRunSingleStepRecreatesStaleWorktree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "completed", summary.Status)
 	st := loadFixtureState(t, fx)
-	require.NotNil(t, st.Packets["M01-T01"].Worktree, "完成单元保留 worktree 引用")
-	wtPath := st.Packets["M01-T01"].Worktree.Path
+	require.Nil(t, st.Packets["M01-T01"].Worktree, "成功清理后不留悬空引用")
+	branch, wtPath := verify.WorktreeNames(fx.root, fx.slug, "M01-T01")
+	st.Packets["M01-T01"].Worktree = &state.WorktreeInfo{Mode: "worktree", Branch: branch, Path: wtPath}
+	_, err = state.Save(fx.taskDir, st, nil)
+	require.NoError(t, err)
 	assert.NoDirExists(t, wtPath, "目录已删 → 引用陈旧")
 
 	// 手工 --only execute：发现陈旧引用 → 重置并按需重建。
@@ -394,16 +398,19 @@ func TestRunEntriesRejectRunningOrchestrator(t *testing.T) {
 	fx := newGitFixture(t)
 	pidFile := PidFile(fx.taskDir)
 	require.NoError(t, os.WriteFile(pidFile, []byte(fmt.Sprintf(`{"pid":%d}`, os.Getpid())), 0o644))
+	release, err := AcquireRunLease(fx.taskDir)
+	require.NoError(t, err)
+	defer release()
 
 	summary, err := RunTask(runOpts(fx, happyDrivers().set()))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "another orchestrator is running this task")
-	assert.Equal(t, "minitask", summary.Slug)
+	assert.Contains(t, err.Error(), "another orchestrator holds the task lease")
+	assert.Empty(t, summary.Slug, "lease rejection precedes context/state loading")
 
 	sSummary, err := RunSingleStep(stepOpts(fx, happyDrivers().set()))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "another orchestrator")
-	assert.Equal(t, "minitask", sSummary.Slug)
+	assert.Empty(t, sSummary.Slug)
 }
 
 func TestRunSingleStepErrorPaths(t *testing.T) {
@@ -454,6 +461,7 @@ func TestRunSingleStepErrorPaths(t *testing.T) {
 		ms := st.Milestones["M-01"]
 		ms.Status = "closed"
 		st.Milestones["M-01"] = ms
+		st.ContractFingerprints = unitTestContext(t, fx).State.ContractFingerprints
 		saveStateObj(t, fx, st)
 
 		opts := stepOpts(fx, happyDrivers().set())
@@ -474,6 +482,7 @@ func TestRunSingleStepErrorPaths(t *testing.T) {
 		for id := range st.Packets {
 			st.Packets[id].Status = "completed"
 		}
+		st.ContractFingerprints = unitTestContext(t, fx).State.ContractFingerprints
 		saveStateObj(t, fx, st)
 
 		opts := stepOpts(fx, happyDrivers().set())
@@ -595,7 +604,7 @@ func TestMergeConflictRoutesToInboxWithoutCompleted(t *testing.T) {
 	found := false
 	for _, e := range st.Inbox {
 		entry, _ := e.(map[string]any)
-		if r, _ := entry["reason"].(string); strings.Contains(r, "merge conflict") {
+		if r, _ := entry["reason"].(string); strings.Contains(r, "commit/merge failed") {
 			found = true
 		}
 	}
@@ -622,6 +631,7 @@ func TestCompleteUnitAheadCountFailure(t *testing.T) {
 	ps.BaseRef = &bad
 	ps.Worktree = &state.WorktreeInfo{Mode: "worktree", Path: wtPath, Branch: branch}
 
+	seedVerification(t, ctx, id)
 	err := ctx.completeUnit(ctx.Packets[id])
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrMergeConflict)
@@ -655,15 +665,16 @@ func TestCompleteUnitCommitSkippedWhenNothingChanged(t *testing.T) {
 	ps.BaseRef = &head
 	ps.Worktree = &state.WorktreeInfo{Mode: "worktree", Path: wtPath, Branch: branch}
 
+	seedVerification(t, ctx, id)
 	require.NoError(t, ctx.completeUnit(ctx.Packets[id]))
 	commit, _ := ps.Commit.(map[string]any)
-	assert.Equal(t, "", commit["sha"], "代码与账本均零变更 → 无提交")
+	assert.Equal(t, head, commit["sha"], "零变更仍记录已验证的持久化 HEAD")
 	// ahead==0（分支与 base 同点）：无合并发生 → 无 merge-error 记录
 	// （review 修正后的语义：merge-error 仅在真正尝试合并失败时落账）。
 	assert.Nil(t, commit["merge-error"])
 	retro, rerr := os.ReadFile(filepath.Join(fx.taskDir, "retro.md"))
 	require.NoError(t, rerr)
-	assert.Contains(t, string(retro), "commit skipped (no changes)")
+	assert.Contains(t, string(retro), "commit "+shortSHA(head))
 }
 
 // ---- 缺陷注入 ----
@@ -699,7 +710,7 @@ func TestDefectInjectionUninjectableAndBaselineRed(t *testing.T) {
 
 	t.Run("基线即红", func(t *testing.T) {
 		fx := newGitFixture(t, "notes.txt")
-		patch := filepath.Join(fx.root, "defect.patch")
+		patch := filepath.Join(t.TempDir(), "defect.patch")
 		writeFile(t, patch, makeDefectPatch(t, fx))
 		patchConfigFile(t, fx, diConfigJSON(patch, "exit 1"))
 
@@ -714,7 +725,7 @@ func TestDefectInjectionUninjectableAndBaselineRed(t *testing.T) {
 
 func TestDefectInjectionFakeTestsStopsUnit(t *testing.T) {
 	fx := newGitFixture(t, "notes.txt")
-	patch := filepath.Join(fx.root, "defect.patch")
+	patch := filepath.Join(t.TempDir(), "defect.patch")
 	writeFile(t, patch, makeDefectPatch(t, fx))
 	patchConfigFile(t, fx, diConfigJSON(patch, "true"))
 
@@ -837,7 +848,7 @@ func TestExecuteLoopBoundedVaryingSignatures(t *testing.T) {
 	msgs := []string{"401 unauthorized", "403 quota forbidden", "400 invalid malformed request"}
 	sd.execFn = func(a drivers.CallArgs) drivers.Result {
 		msg := msgs[0]
-		if raw, rerr := os.ReadFile(filepath.Join(a.TaskDir, "state.json")); rerr == nil {
+		if raw, rerr := os.ReadFile(filepath.Join(fx.taskDir, "state.json")); rerr == nil {
 			var st struct {
 				Packets map[string]struct {
 					FailedAttempts int `json:"failed-attempts"`

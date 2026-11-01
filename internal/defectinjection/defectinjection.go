@@ -9,6 +9,7 @@
 //	uninjectable   补丁不可读 / 触账本路径 / 无法 apply（陈旧补丁 -> inbox 请人刷新，
 //	               不指控假测试，单元继续）
 //	baseline-red   注入前套件已红（坏套件 -> inbox，单元继续）
+//	inconclusive   命令取消/超时/输出不完整，不能证明测试能检出缺陷
 //	restore-failed 反向 apply 失败（工作区可能仍带缺陷 -> inbox + stop）
 //
 // 还原用 `git apply -R`（P0-1，用户核实）：只移除注入的 hunk，保留执行者
@@ -18,64 +19,95 @@
 package defectinjection
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/ledger"
+	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 // maxBuffer 单流累计上限（Node execFile maxBuffer = 4MB；超限按 spawn 错误
 // 处理）。包级变量供测试注入小上限覆盖溢出分支（真实 4MB 分支不可稳定复现）。
 var maxBuffer = int64(4 * 1024 * 1024)
 
+// MaxRestoreTimeoutMs 补偿操作单独限时：取消运行后最多再用10秒执行本地
+// reverse-apply，随后 watchdog 的 TERM/KILL 宽限仍适用。
+const MaxRestoreTimeoutMs int64 = 10_000
+
 // RunResult 一次命令运行的可观察结果。
 type RunResult struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
+	ExitCode     int
+	Stdout       string
+	Stderr       string
+	TimedOut     bool
+	Cancelled    bool
+	Signal       string
+	SpawnError   string
+	CleanupError string
+	Truncated    bool
 }
 
 // RunFunc 可注入的命令执行器（逻辑测试无需真实 git 仓库）。
 type RunFunc func(cmd string, args []string, cwd string, timeoutMs int64, envAllowlist []string) RunResult
 
-// DefaultRun 真实执行：白名单环境（P0-4）+ 超时 + 双流截断缓冲。
-// Node execFile 的超时/maxBuffer 超限都走 catch 分支映射为 exitCode=1
-// （typeof err.code === 'number' 为假）——此处等价：非正常退出（信号/超时/
-// 启动失败）一律 exitCode=1。
+// DefaultRun 保留旧调用接口；生产抽检通过 managedRun 传入运行 context。
+// 信号、取消、超时等独立记录，不能冒充正常非零退出证明测试变红。
 func DefaultRun(cmdName string, args []string, cwd string, timeoutMs int64, envAllowlist []string) RunResult {
-	ctx := context.Background()
-	var cancel context.CancelFunc
-	if timeoutMs > 0 {
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-		defer cancel()
+	return managedRun(context.Background(), cmdName, args, cwd, timeoutMs, 0, envAllowlist)
+}
+
+func managedRun(ctx context.Context, cmdName string, args []string, cwd string, timeoutMs, killGraceMs int64, envAllowlist []string) RunResult {
+	if timeoutMs <= 0 {
+		timeoutMs = 300_000
 	}
-	cmd := exec.CommandContext(ctx, cmdName, args...)
-	cmd.Dir = cwd
-	cmd.Env = childenv.EnvSlice(childenv.GateEnv(childenv.OSLookupEnv, envAllowlist))
-	stdout := &limitedBuffer{limit: maxBuffer}
-	stderr := &limitedBuffer{limit: maxBuffer}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	err := cmd.Run()
-	if err == nil && !stdout.overflow && !stderr.overflow {
-		return RunResult{ExitCode: 0, Stdout: stdout.String(), Stderr: stderr.String()}
+	r := watchdog.Run(cmdName, args, watchdog.Opts{
+		Context: ctx, Cwd: cwd,
+		Env:           childenv.EnvSlice(childenv.GateEnv(childenv.OSLookupEnv, envAllowlist)),
+		IdleTimeoutMs: timeoutMs, WallTimeoutMs: timeoutMs, KillGraceMs: killGraceMs,
+	})
+	out := RunResult{
+		ExitCode: -1, Stdout: r.Stdout, Stderr: r.Stderr, TimedOut: r.TimedOut,
+		Cancelled: r.Cancelled, Signal: r.Signal, SpawnError: r.SpawnError,
+		CleanupError: r.CleanupError, Truncated: r.Truncated,
 	}
-	// Node：maxBuffer 超限会杀子进程并以错误收场，catch 分支里
-	// typeof err.code === 'number' 不成立 → exitCode 恒 1。
-	code := 1
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
-		code = exitErr.ExitCode()
+	if r.ExitCode != nil {
+		out.ExitCode = *r.ExitCode
 	}
-	return RunResult{ExitCode: code, Stdout: stdout.String(), Stderr: stderr.String()}
+	if int64(len(out.Stdout)) > maxBuffer {
+		out.Stdout = out.Stdout[:maxBuffer]
+		out.Truncated = true
+	}
+	if int64(len(out.Stderr)) > maxBuffer {
+		out.Stderr = out.Stderr[:maxBuffer]
+		out.Truncated = true
+	}
+	return out
+}
+
+func (r RunResult) incompleteReason() string {
+	switch {
+	case r.Cancelled:
+		return "command cancelled"
+	case r.TimedOut:
+		return "command timed out"
+	case r.SpawnError != "":
+		return r.SpawnError
+	case r.CleanupError != "":
+		return r.CleanupError
+	case r.Signal != "":
+		return "command terminated by signal: " + r.Signal
+	case r.Truncated:
+		return "command output truncated"
+	case r.ExitCode < 0:
+		return "command did not report a normal exit"
+	default:
+		return ""
+	}
 }
 
 // ParsePatchFiles 解析 unified diff 触碰的文件路径（仅供账本路径守卫；
@@ -142,10 +174,12 @@ type Outcome struct {
 
 // Args RunDefectInjection 入参。
 type Args struct {
+	Context      context.Context
 	PatchFile    string // 可逆补丁路径
 	TestCmd      string // 注入后应变红的测试命令（经 sh -c）
 	Cwd          string // 工作区
-	TimeoutMs    int64  // 每条命令的超时上限；<=0 不限时（Node 缺省 300s 由 config 层给值）
+	TimeoutMs    int64  // 每条命令的超时上限；<=0 默认 300s
+	KillGraceMs  int64
 	EnvAllowlist []string
 	ForbidPaths  []string // 兼容入口：repo 相对路径精确/前缀匹配（v0.18 C3）
 	// LedgerTaskPrefix（v0.19，单一信源）：给出 docs/<slug>/ 前缀时，账本判定
@@ -158,9 +192,18 @@ type Args struct {
 // RunDefectInjection 运行一个注入周期。绝不 panic——坏补丁或任何 spawn
 // 失败都映射为一种 outcome，而不是编排器崩溃（P0-2）。
 func RunDefectInjection(a Args) Outcome {
-	run := a.Run
-	if run == nil {
-		run = DefaultRun
+	ctx := a.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	run := func(ctx context.Context, command string, args []string) RunResult {
+		if ctx.Err() != nil {
+			return RunResult{ExitCode: -1, Cancelled: true}
+		}
+		if a.Run != nil {
+			return a.Run(command, args, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
+		}
+		return managedRun(ctx, command, args, a.Cwd, a.TimeoutMs, a.KillGraceMs, a.EnvAllowlist)
 	}
 	outcomeOf := func(name, detail string) Outcome {
 		return Outcome{Outcome: name, Detail: new(detail)}
@@ -199,24 +242,48 @@ func RunDefectInjection(a Args) Outcome {
 	}
 
 	// 先跑基线（P0-2 case 3）：套件本来就是红的时"注入后变红"证明不了任何事。
-	baseline := run("/bin/sh", []string{"-c", a.TestCmd}, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
+	baseline := run(ctx, "/bin/sh", []string{"-c", a.TestCmd})
+	if reason := baseline.incompleteReason(); reason != "" {
+		return outcomeOf("inconclusive", "baseline incomplete: "+reason)
+	}
 	if baseline.ExitCode != 0 {
 		return outcomeOf("baseline-red", "test suite red before injection (baseline broken)")
 	}
 
-	apply := run("git", []string{"apply", patchAbs}, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
+	// 取消不会传播给补偿操作：测试停止后仍必须有界地反向还原已注入的hunk。
+	restorePatch := func() RunResult {
+		timeoutMs := a.TimeoutMs
+		if timeoutMs <= 0 || timeoutMs > MaxRestoreTimeoutMs {
+			timeoutMs = MaxRestoreTimeoutMs
+		}
+		restoreCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+		return run(restoreCtx, "git", []string{"apply", "-R", patchAbs})
+	}
+	apply := run(ctx, "git", []string{"apply", patchAbs})
+	if reason := apply.incompleteReason(); reason != "" {
+		restored := restorePatch()
+		o := Outcome{BaselineGreen: new(true), Outcome: "restore-failed",
+			Detail: new("injection interrupted; workspace restoration unconfirmed: " + reason)}
+		if restored.incompleteReason() == "" && restored.ExitCode == 0 {
+			o.Injected, o.Restored, o.Outcome = true, true, "inconclusive"
+			o.Detail = new("injection interrupted and reversed: " + reason)
+		}
+		return o
+	}
 	if apply.ExitCode != 0 {
 		o := outcomeOf("uninjectable", fmt.Sprintf("git apply failed: %s", strings.TrimSpace(apply.Stderr)))
 		o.BaselineGreen = new(true)
 		return o
 	}
 
-	tests := run("/bin/sh", []string{"-c", a.TestCmd}, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
-	testsWentRed := tests.ExitCode != 0
+	tests := run(ctx, "/bin/sh", []string{"-c", a.TestCmd})
+	incomplete := tests.incompleteReason()
+	testsWentRed := incomplete == "" && tests.ExitCode != 0
 
 	// 反向 apply 还原（P0-1）。
-	restore := run("git", []string{"apply", "-R", patchAbs}, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
-	if restore.ExitCode != 0 {
+	restore := restorePatch()
+	if restore.ExitCode != 0 || restore.incompleteReason() != "" {
 		o := Outcome{
 			Injected:      true,
 			BaselineGreen: new(true),
@@ -225,8 +292,12 @@ func RunDefectInjection(a Args) Outcome {
 			Pass:          false,
 			Outcome:       "restore-failed",
 		}
-		o.Detail = new(fmt.Sprintf("git apply -R failed: %s", strings.TrimSpace(restore.Stderr)))
+		o.Detail = new(fmt.Sprintf("git apply -R failed: %s", strings.TrimSpace(restore.Stderr+" "+restore.incompleteReason())))
 		return o
+	}
+	if incomplete != "" {
+		return Outcome{Injected: true, BaselineGreen: new(true), Restored: true,
+			Outcome: "inconclusive", Detail: new("injected test run incomplete: " + incomplete)}
 	}
 
 	if !testsWentRed {
@@ -250,25 +321,3 @@ func RunDefectInjection(a Args) Outcome {
 		Outcome:       "pass",
 	}
 }
-
-// limitedBuffer 截断式缓冲：超过 limit 后丢弃后续字节并记 overflow
-// （写入不报错，让进程跑完；溢出按 Node maxBuffer 语义映射 exitCode=1）。
-type limitedBuffer struct {
-	buf      bytes.Buffer
-	limit    int64
-	overflow bool
-}
-
-func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if int64(b.buf.Len())+int64(len(p)) > b.limit {
-		if room := int(b.limit) - b.buf.Len(); room > 0 {
-			b.buf.Write(p[:room])
-		}
-		b.overflow = true
-		return len(p), nil
-	}
-	b.buf.Write(p)
-	return len(p), nil
-}
-
-func (b *limitedBuffer) String() string { return b.buf.String() }

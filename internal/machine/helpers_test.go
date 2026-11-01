@@ -75,7 +75,7 @@ const fixtureConfigJSON = `{
   "version": 1,
   "drivers": {"plan": "mock", "execute": "mock", "review": "mock", "judge": "mock", "intake": "mock", "garden": "mock"},
   "loops": {
-    "plan": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max" },
+    "plan": { "harness": "kimi", "model": "kimi-code/k3", "channel": "kimi-subscription", "thinking": "max", "resident-session": true },
     "review": { "harness": "omp", "model": "opencode-go/deepseek-v4-pro", "channel": "opencode-go", "thinking": "max" },
     "judge": { "harness": "omp", "model": "kimi-coding/k3", "channel": "kimi-coding", "thinking": "max" },
     "intake": { "harness": "omp", "model": "opencode-go/deepseek-v4-flash", "channel": "opencode-go", "thinking": "max" },
@@ -183,7 +183,10 @@ func mustConfig(t *testing.T, fx fixture) *config.Config {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	root := t.TempDir()
+	// Most tests compare physical paths passed to Git/child processes. Alias
+	// handling itself is exercised explicitly in path_identity_test.go.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	fx := fixture{root: root, taskDir: filepath.Join(root, "docs", "minitask"), slug: "minitask"}
 	writeFile(t, filepath.Join(fx.taskDir, "spec.md"), fixtureSpec)
 	writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T01.md"), fixturePacket("M01-T01", "R-01"))

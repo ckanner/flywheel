@@ -32,6 +32,9 @@ func (c *Context) awaitCredentialsApproval(packet *contract.Packet) credsApprova
 	announced := ps.Status == "awaiting-credentials"
 
 	for {
+		if c.err() != nil {
+			return credsApproval{}
+		}
 		if fileExists(approvalFile) {
 			raw, err := os.ReadFile(approvalFile)
 			var parsed struct {
@@ -148,7 +151,8 @@ func (c *Context) milestoneGateStep(milestone contract.Milestone) gateOutcome {
 	timeoutMs := c.Config.Verify.CommandTimeoutMs
 	envAllowlist := c.Config.Verify.EnvAllowlist
 	levels := map[string]any{}
-	pass := true
+	beforeIdentity, beforeErr := c.candidateFingerprint(c.Cwd)
+	pass := beforeErr == nil
 	for _, level := range []string{"L2", "L3"} {
 		var commands []contract.GateEntry
 		for _, p := range packets {
@@ -158,16 +162,36 @@ func (c *Context) milestoneGateStep(milestone contract.Milestone) gateOutcome {
 			levels[level] = map[string]any{"pass": true, "results": []any{}, "skipped": true}
 			continue
 		}
+		if beforeErr != nil {
+			levels[level] = map[string]any{"pass": false, "results": []any{}, "skipped": true, "identity-error": beforeErr.Error()}
+			continue
+		}
 		gate := verify.RunGateCommands(commands, verify.GateOpts{
-			Cwd: c.Cwd, TimeoutMS: timeoutMs, EnvAllowlist: envAllowlist,
+			Context: c.RunContext,
+			Cwd:     c.Cwd, TimeoutMS: timeoutMs, EnvAllowlist: envAllowlist,
 		})
 		levels[level] = gate
 		if !gate.Pass {
 			pass = false
 		}
 	}
+	identity, identityErr := c.candidateFingerprint(c.Cwd)
+	if beforeErr != nil {
+		identityErr = fmt.Errorf("before milestone acceptance: %w", beforeErr)
+	} else if identityErr != nil {
+		identityErr = fmt.Errorf("after milestone acceptance: %w", identityErr)
+	} else if identity != beforeIdentity {
+		identityErr = fmt.Errorf("candidate changed during milestone acceptance; rerun verification on the resulting candidate")
+	}
+	if identityErr != nil {
+		pass = false
+	}
 	ms := c.State.Milestones[milestone.ID]
-	ms.Gate = map[string]any{"pass": pass, "levels": levels, "at": c.nowISO()}
+	ms.Gate = map[string]any{
+		"pass": pass, "levels": levels, "at": c.nowISO(),
+		"identity": identity, "identity-before": beforeIdentity,
+		"identity-error": jsonNilable(errorText(identityErr)),
+	}
 	c.State.Milestones[milestone.ID] = ms
 	c.save()
 	// 同 l1Step：无错误产生路径，删除防御性 error 返回（2026-08-23）。
@@ -224,12 +248,13 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			Feedback:  feedback,
 		})
 		res := c.Drivers.Plan.Plan(drivers.CallArgs{
-			Prompt:      prompt,
-			MilestoneID: milestone.ID,
-			TaskDir:     c.TaskDir,
-			Cwd:         c.Cwd,
-			SessionID:   sessionID,
-			Model:       model,
+			Prompt:         prompt,
+			MilestoneID:    milestone.ID,
+			TaskDir:        c.TaskDir,
+			Cwd:            c.Cwd,
+			PermissionMode: "workspace-write",
+			SessionID:      sessionID,
+			Model:          model,
 			Binding: config.LoopBinding{
 				Harness: harness, Model: model, Channel: channel, Thinking: binding.Thinking,
 			},
@@ -246,9 +271,9 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			msg = *res.ErrorMessage
 		}
 		var code errs.ErrorCode
-		if msg != "" {
+		if msg != "" && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" {
 			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: msg})
-		} else if res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && res.SpawnError == "" {
+		} else if res.Settled && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && !res.Cancelled && !res.Truncated && res.Signal == "" && res.CleanupError == "" && res.SpawnError == "" {
 			code = ""
 		} else {
 			code = errs.ClassifyError(toSpawnResult(res))
@@ -258,6 +283,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 
 	channel := binding.Channel
 	model, harness := binding.Model, binding.Harness
+	resident := c.Config.Loops["plan"].ResidentSession && harness == "kimi"
 	// 铁律 7：只有长驻会话诞生于与当前绑定相同的 model+channel 时才 resume；
 	// 否则一律冷启动（#15）。
 	var stored map[string]any
@@ -265,10 +291,11 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		stored = m
 	}
 	sessionID := ""
-	if stored != nil {
+	if resident && stored != nil {
 		sc, _ := stored["channel"].(string)
 		sm, _ := stored["model"].(string)
-		if sc == channel && sm == model {
+		if sc == channel && sm == model && stored["harness"] == harness &&
+			stored["cwd"] == c.Cwd && stored["thinking"] == binding.Thinking {
 			sessionID, _ = stored["session-id"].(string)
 		}
 	}
@@ -298,7 +325,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		if code == "" {
 			// C5（v0.18）：调用成功却没拿到 session id——上游 resume_hint 格式漂移
 			// 或缺失，长驻会话将无声退化为每轮冷启动。必须留观测痕迹。
-			if result.SessionID == "" {
+			if resident && result.SessionID == "" {
 				c.Log("plan: successful call returned no session id (resume_hint missing?) — resident session degraded")
 			}
 			break
@@ -325,6 +352,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 				if mapped.Harness != "" {
 					harness = mapped.Harness
 				}
+				resident = c.Config.Loops["plan"].ResidentSession && harness == "kimi"
 				sessionID = "" // 新渠道开新会话
 				continue
 			}
@@ -354,7 +382,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 	}
 
 	// 捕获/刷新长驻会话句柄（model+channel 钉死，铁律 7）。
-	if result.SessionID != "" {
+	if resident && result.SessionID != "" {
 		var prev map[string]any
 		if m, ok := c.State.PlanSession.(map[string]any); ok {
 			prev = m
@@ -381,10 +409,16 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			"session-id": result.SessionID,
 			"channel":    channel,
 			"model":      model,
+			"harness":    harness,
+			"cwd":        c.Cwd,
+			"thinking":   binding.Thinking,
 			"created-at": createdAt,
 			"updated-at": c.nowISO(),
 			"resumes":    resumes,
 		}
+		c.save()
+	} else if !resident && c.State.PlanSession != nil {
+		c.State.PlanSession = nil
 		c.save()
 	}
 	return planOutcome{OK: true, Packets: packets, Result: &result}, nil
@@ -395,12 +429,26 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 // Feedback 喂回长驻会话重试（planner 是修订器，修自己的产物是本职）；界 =
 // planValidationRetries 次后 inbox 叫人（契约质量问题是结构性的，重试烧钱
 // 无意义）。传输级失败仍由 planStep 内部闭环处理。
-func (c *Context) planUntilValid(milestone contract.Milestone) (planOutcome, error) {
+func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback ...string) (planOutcome, error) {
 	var feedback string
+	if len(initialFeedback) > 0 {
+		feedback = initialFeedback[0]
+	}
 	for round := 0; round <= planValidationRetries; round++ {
+		before, err := c.planScopeIdentity()
+		if err != nil {
+			return planOutcome{}, err
+		}
 		r, err := c.planStep(milestone, feedback)
 		if err != nil {
 			return r, err
+		}
+		after, err := c.planScopeIdentity()
+		if err != nil {
+			return r, err
+		}
+		if before != after {
+			return r, fmt.Errorf("Plan changed implementation, external acceptance, or configuration outside spec/packet contracts; changes preserved, automatic commit refused")
 		}
 		if !r.OK || r.Stopped {
 			return r, nil // 传输/预算在 planStep 内已有界，原样上抛
@@ -434,3 +482,62 @@ func (c *Context) planUntilValid(milestone contract.Milestone) (planOutcome, err
 
 // planValidationRetries plan 子环的校验反馈重试上限（v0.24 定界）。
 const planValidationRetries = 2
+
+var inspectPlanDirtyFiles = verify.GetChangedFiles
+
+// persistPlanContracts 保留正在进行的实现，只把已校验的契约修订快进到其
+// worktree。冲突/提交失败都保留文件与分支；不 reset，不 force remove。
+func (c *Context) persistPlanContracts(message string) error {
+	before, err := c.candidateFingerprint(c.Cwd)
+	if err != nil {
+		return fmt.Errorf("%w: cannot snapshot plan checkpoint: %v", ErrCommitFailed, err)
+	}
+	previousHead, _ := verify.GetBaseRef(c.Cwd)
+	committed := c.commitTaskDirChanges(message)
+	if committed.Error != "" {
+		return fmt.Errorf("%w: plan contracts: %s", ErrCommitFailed, committed.Error)
+	}
+	after, err := c.candidateFingerprint(c.Cwd)
+	if err != nil || before != after {
+		return fmt.Errorf("%w: plan commit changed the loaded candidate or contracts; reload and revalidate before proceeding (%v)", ErrCommitFailed, err)
+	}
+	head, ok := verify.GetBaseRef(c.Cwd)
+	if !ok {
+		return nil
+	}
+	// Hooks run during commit. They may change only the index, leaving the
+	// working-tree fingerprint unchanged; reject unexpected committed paths and
+	// any contract content that differs from the exact HEAD sent to worktrees.
+	if err := c.checkPlanReanchor(previousHead, head); err != nil {
+		return fmt.Errorf("%w: plan checkpoint contains unexpected changes: %v", ErrMergeConflict, err)
+	}
+	changed, inspected := inspectPlanDirtyFiles(c.Cwd, head)
+	if !inspected {
+		return fmt.Errorf("%w: cannot verify persisted plan contracts", ErrCommitFailed)
+	}
+	for _, rel := range changed {
+		if c.isPlannerContract(rel) || rel == c.taskDirPrefix()+"flywheel.config.json" {
+			return fmt.Errorf("%w: plan contract %s differs from committed checkpoint; worktree preserved", ErrCommitFailed, rel)
+		}
+	}
+	for id, ps := range c.State.Packets {
+		if ps.Status == "completed" || ps.BaseRef == nil || !ps.ContractSyncPending {
+			continue
+		}
+		if err := c.checkPlanReanchor(*ps.BaseRef, head); err != nil {
+			return fmt.Errorf("%w: packet %s: %v", ErrMergeConflict, id, err)
+		}
+		if ps.Worktree != nil && ps.Worktree.Mode == "worktree" {
+			if _, err := verify.MergeUnitWorktree(ps.Worktree.Path, head); err != nil {
+				ps.Commit = map[string]any{"plan-sync-error": err.Error(), "at": c.nowISO()}
+				c.save()
+				return fmt.Errorf("%w: packet %s plan revision; worktree preserved: %v", ErrMergeConflict, id, err)
+			}
+		}
+		sha := head
+		ps.BaseRef = &sha
+		ps.ContractSyncPending = false
+		invalidateEvidence(ps)
+	}
+	return nil
+}

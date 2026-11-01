@@ -55,6 +55,7 @@ func RunOmp(a OmpArgs) Result {
 	}
 
 	result := watchdog.Run("omp", args, watchdog.Opts{
+		Context:       a.Watchdog.Context,
 		Cwd:           a.Cwd,
 		Env:           childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
@@ -63,26 +64,10 @@ func RunOmp(a OmpArgs) Result {
 		OnActivity:    onActivity,
 	})
 	parsed := ParseOmpEventStream(result.Stdout)
-	out := Result{
-		ExitCode:       result.ExitCode,
-		Signal:         result.Signal,
-		TimedOut:       result.TimedOut,
-		IdleTimedOut:   result.IdleTimedOut,
-		WallTimedOut:   result.WallTimedOut,
-		Stdout:         result.Stdout,
-		Stderr:         result.Stderr,
-		Truncated:      result.Truncated,
-		DurationMS:     result.DurationMS,
-		SpawnError:     result.SpawnError,
-		Harness:        "omp",
-		Provider:       parsed.Provider,
-		Model:          parsed.Model,
-		Usage:          &parsed.Usage,
-		Settled:        parsed.Settled,
-		Text:           parsed.Text,
-		ReasoningChars: &parsed.ReasoningChars,
-		CostUSD:        parsed.CostUSD,
-	}
+	out := fromWatchdog(result, "omp", parsed.Provider, parsed.Model)
+	out.Usage, out.Text, out.ReasoningChars, out.CostUSD = &parsed.Usage, parsed.Text, &parsed.ReasoningChars, parsed.CostUSD
+	out.Settled = parsed.Settled && !result.Cancelled && !result.TimedOut && !result.Truncated &&
+		result.CleanupError == "" && parsed.ErrorMessage == "" && result.ExitCode != nil && *result.ExitCode == 0
 	if out.Provider == "" {
 		if i := strings.IndexByte(a.Model, '/'); i > 0 {
 			out.Provider = a.Model[:i]

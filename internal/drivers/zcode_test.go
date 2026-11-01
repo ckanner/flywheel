@@ -440,11 +440,11 @@ func TestDefaultZcodeRuntimeCommand(t *testing.T) {
 	assert.Equal(t, []string{"app-server"}, args2)
 }
 
-// TestRunZcodeSilentQuickDeath 进程立即退出且无任何事件 → 通用兜底错误
-// （"session ended without completion" 臂）。
+// TestRunZcodeSilentQuickDeath 请求已写入后进程退出且无任何事件 → 通用兜底错误。
+// 先读请求消除 write/exit 竞态；写失败另有独立测试。
 func TestRunZcodeSilentQuickDeath(t *testing.T) {
 	dir := t.TempDir()
-	script := "#!/bin/sh\nexit 0\n"
+	script := "#!/bin/sh\nIFS= read -r request\nexit 0\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "die"), []byte(script), 0o755))
 	orig := zcodeRuntimeCommand
 	zcodeRuntimeCommand = func() (string, []string) { return filepath.Join(dir, "die"), []string{"app-server"} }

@@ -19,6 +19,9 @@ import (
 // 记录到 args.txt，把环境写到 env.txt，再输出给定 stdout 内容。
 func fakeBin(t *testing.T, name, stdout string) (binDir, workDir string) {
 	t.Helper()
+	if name == "kimi" {
+		t.Setenv(KimiCommandEnv, "") // host desktop overrides must never bypass the fake CLI
+	}
 	binDir = t.TempDir()
 	workDir = t.TempDir()
 	argsPath := filepath.Join(workDir, "args.txt")
@@ -145,7 +148,7 @@ func TestParseKimiStreamJson(t *testing.T) {
 	p3 := ParseKimiStreamJson(`{"role":"error","error":"raw error"}`)
 	assert.Equal(t, "raw error", p3.ErrorMessage)
 
-	p4 := ParseKimiStreamJson(`{"usage":{"input":9,"output":1}}`)
+	p4 := ParseKimiStreamJson(`{"usage":{"input":9,"output":1,"totalTokens":10}}`)
 	require.NotNil(t, p4.Usage)
 	assert.Equal(t, int64(9), p4.Usage.Input)
 }
@@ -175,7 +178,7 @@ func TestRunKimiAgainstFakeBinary(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
 	require.NoError(t, err)
 	argsText := string(raw)
-	assert.Contains(t, argsText, "-r")
+	assert.Contains(t, argsText, "--session")
 	assert.Contains(t, argsText, "session_old")
 	assert.Contains(t, argsText, "-m")
 	assert.Contains(t, argsText, "kimi-code/k3")
@@ -183,7 +186,7 @@ func TestRunKimiAgainstFakeBinary(t *testing.T) {
 
 	envRaw, err := os.ReadFile(filepath.Join(workDir, "env.txt"))
 	require.NoError(t, err)
-	assert.Contains(t, string(envRaw), "KIMI_MODEL_THINKING_EFFORT=max")
+	assert.Contains(t, string(envRaw), "KIMI_MODEL_THINKING_EFFORT=high")
 
 	// 非零退出且 stderr 有内容 → errorMessage 取 stderr。
 	failBin, failDir := fakeBin(t, "kimi", "")
@@ -344,7 +347,7 @@ func TestInvokeHarnessDispatchesCodex(t *testing.T) {
 	assert.True(t, r.Settled)
 }
 
-// InvokeHarness 必须把 machine 层持有的长驻会话句柄传进 kimi CLI（-r <id>）。
+// InvokeHarness 必须把 machine 层持有的长驻会话句柄传进 kimi CLI（--session <id>）。
 func TestInvokeHarnessThreadsPlanSessionIDIntoKimi(t *testing.T) {
 	binDir, workDir := fakeBin(t, "kimi", `{"role":"meta","type":"session.resume_hint","session_id":"session_new"}`)
 	setPath(t, binDir)

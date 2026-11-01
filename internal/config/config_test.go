@@ -71,7 +71,7 @@ func TestLoadAndFind(t *testing.T) {
 	cfgG, err := Load(taskDir, dir)
 	assert.NoError(t, err)
 	assert.Equal(t, globalPath, cfgG.File, "全局物化后作为配置源")
-	assert.Equal(t, "zcode", cfgG.Routes["default"].Harness, "全局 = 内嵌 §13 法定表")
+	assert.Equal(t, "dsh", cfgG.Routes["default"].Harness, "全局 = 内嵌 §13 法定表")
 	_, created, mErr := MaterializeGlobal()
 	assert.NoError(t, mErr)
 	assert.False(t, created, "已存在不覆盖")
@@ -137,7 +137,7 @@ func TestLoadAndFind(t *testing.T) {
 	cfgE, err := Load(filepath.Join(dir, "nope"), filepath.Join(dir, "nope2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "(embedded legal table)", cfgE.File)
-	assert.Equal(t, "codex", cfgE.Loops["review"].Harness)
+	assert.Equal(t, "dsh", cfgE.Loops["review"].Harness)
 
 	// JSON 合法但校验失败 → Load 报错。
 	badCfg := filepath.Join(dir, "badcfg")

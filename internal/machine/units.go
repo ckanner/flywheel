@@ -4,6 +4,8 @@
 package machine
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,8 +29,8 @@ func (c *Context) mergeUnitWorktree(branch string) (string, error) {
 	return verify.MergeUnitWorktree(c.Cwd, branch)
 }
 
-func (c *Context) removeUnitWorktree(branch, path string) {
-	verify.RemoveUnitWorktree(c.Cwd, branch, path)
+func (c *Context) removeUnitWorktree(branch, path string) error {
+	return verify.RemoveUnitWorktree(c.Cwd, branch, path)
 }
 
 // commitTaskDirChanges 契约层提交（planner 修订之后）。
@@ -51,6 +53,17 @@ func (c *Context) failAttempt(packet *contract.Packet, errorCode errs.ErrorCode,
 	ps := c.State.Packets[id]
 	ps.FailedAttempts++
 	c.recordRetry(ps, "attempt", string(errorCode), "requeue")
+	var details any
+	if previous, ok := ps.LastFeedback.(map[string]any); ok {
+		details = previous["details"]
+	}
+	// 下一次全新执行会话必须拿到真实失败原因；旧证据只作为反馈，不再算绿灯。
+	ps.LastFeedback = map[string]any{
+		"details":    details,
+		"error-code": string(errorCode), "failed-commands": failedCommands,
+		"l1": ps.Evidence.L1, "review": ps.Evidence.Review,
+		"exit": ps.Exit, "at": c.nowISO(),
+	}
 
 	if failedCommands == nil {
 		failedCommands = []string{}
@@ -138,7 +151,8 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		if !found {
 			return "", fmt.Errorf("packet %s references unknown milestone %q", id, ps.Milestone)
 		}
-		plan, err := c.planStep(milestone, "") // Plan Loop 修订 packet（§4.1）
+		feedback, _ := json.Marshal(ps.LastFeedback)
+		plan, err := c.planUntilValid(milestone, "Returned packet "+id+": "+string(feedback))
 		if err != nil {
 			return "", err
 		}
@@ -149,35 +163,12 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 			// 陈旧 packet 上。planner 还可能新增 packet；为它们同步状态条目。
 			// A1（§4.1 已知风险）：重载前后 diff acceptance 指纹——planner 弱化
 			// 验收必须留痕可查。
-			old := c.PacketList
-			fresh, err := contract.LoadPackets(c.TaskDir, c.Spec)
-			if err != nil {
+			// 校验与持久化后，将合法修订快进到现存工作区。绝不删除失败产物；
+			// executor 自提交导致无法快进时保留现场并返回可恢复错误。
+			if err := c.persistPlanContracts(fmt.Sprintf("docs(%s): plan revision %d", c.State.Slug, ps.PlanRevisions+1)); err != nil {
 				return "", err
 			}
-			c.recordAcceptanceChanges(old, fresh)
-			c.PacketList = fresh
-			c.Packets = map[string]*contract.Packet{}
-			for _, p := range fresh {
-				c.Packets[p.PacketID] = p
-			}
-			// 同 CreateContext：EnsurePacketStates 的唯一错误路径是 id 派生，
-			// schema 已锚定 packet-id——不可能失败（覆盖率审计 2026-08-23 删除）。
-			_ = state.EnsurePacketStates(c.State, fresh)
-			// v0.16：修订是合法契约变更——在主 checkout 提交它（契约层保持已提交），
-			// 然后从修订提交重建单元 worktree：executor 面对修订后契约在干净 checkout
-			// 里重做，防篡改扫描看到的是修订检查点而非 executor 违规。
-			revisionCommit := c.commitTaskDirChanges(fmt.Sprintf("docs(%s): plan revision %d", c.State.Slug, ps.PlanRevisions+1))
-			// P2 修复（审计）：base-ref 重锚对 in-place 模式同样生效——Node 只在
-			// worktree 分支重锚；原地执行的单元会继续对着陈旧 base 判定边界，把
-			// 合法修订读成 executor 违规。
-			if revisionCommit.SHA != "" {
-				if ps.Worktree != nil && ps.Worktree.Mode == "worktree" {
-					c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path) // 丢弃陈旧 checkout + 分支
-					ps.Worktree = nil
-				}
-				sha := revisionCommit.SHA
-				ps.BaseRef = &sha // 锚定到修订检查点
-			}
+			invalidateEvidence(ps)
 			ps.PlanRevisions++
 			ps.FailedAttempts = 0
 			ps.LastFailureSignature = nil
@@ -225,19 +216,53 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 // ff-merge 失败时返回 ErrMergeConflict：worktree 原样保留、状态绝不标
 // completed（§5.2 state.json 不说谎），由调用方升级到人。
 func (c *Context) completeUnit(packet *contract.Packet) error {
+	if err := c.err(); err != nil {
+		return err
+	}
 	id := packet.PacketID
 	ps := c.State.Packets[id]
+	review, _ := ps.Evidence.Review.(map[string]any)
+	if !c.currentL1Evidence(packet) || review["verdict"] != "pass" || evidenceIdentity(ps.Evidence.Review) != evidenceIdentity(ps.Evidence.L1) {
+		return fmt.Errorf("%w: candidate changed or verification evidence is stale", ErrCommitFailed)
+	}
+	failPersistence := func(stage, message string) error {
+		rec, ok := ps.Commit.(map[string]any)
+		if !ok {
+			rec = map[string]any{}
+		}
+		rec["stage"], rec["error"], rec["at"] = stage, message, c.nowISO()
+		ps.Commit = rec
+		c.save()
+		return fmt.Errorf("%w: %s: %s", ErrCommitFailed, stage, message)
+	}
+	verifiedCandidate, err := c.candidateFingerprint(c.unitCwd(packet))
+	if err != nil {
+		return failPersistence("candidate", err.Error())
+	}
 
 	var commitNote string
 	if ps.Worktree != nil && ps.Worktree.Mode == "worktree" {
-		// v0.16 流程：worktree 内提交代码 → ff-merge 进主 checkout →
-		// 删 worktree+分支 → 主 checkout 的账本提交（限 docs/<slug>/）。
-		codeCommit := c.commitUnitChangesIn(ps.Worktree.Path, packet, nil, "", "")
+		// 先验证分支持久 tree，再合并、提交主账本并验证主 tree，最后才清理。
+		codeCommit := c.commitUnitChangesIn(ps.Worktree.Path, packet, c.ledgerExcludes(), "", "")
+		ps.Commit = commitOutcomeMap(codeCommit)
+		if codeCommit.Error != "" {
+			return failPersistence("code-commit", codeCommit.Error)
+		}
+		codeHead, err := verify.PersistedHead(ps.Worktree.Path, c.ledgerExcludes())
+		if err != nil {
+			return failPersistence("code-tree", err.Error())
+		}
+		ps.Commit.(map[string]any)["sha"] = codeHead
+		if !c.currentL1Evidence(packet) {
+			return failPersistence("code-evidence", "commit hook changed the verified candidate")
+		}
 		// 合并门控（review 修正）：以“分支是否领先 base”为准（AheadCount），
 		// 而不是“本次 scoped 提交是否产生了新提交”——executor 自提交、或崩溃
 		// 恢复重跑 completeUnit 时 scoped 提交为空但分支领先，旧条件会静默跳过合并。
 		ahead, aerr := verify.AheadCount(c.Cwd, c.baseRefOf(ps), ps.Worktree.Branch)
 		if aerr != nil {
+			ps.Commit.(map[string]any)["merge-error"] = aerr.Error()
+			c.save()
 			return fmt.Errorf("%w: ahead count failed: %v", ErrMergeConflict, aerr)
 		}
 		if ahead > 0 {
@@ -246,6 +271,7 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 				// 原样保留；先把失败事实落账（供人处理），再上抛升级。
 				commitRec := map[string]any{
 					"at":          c.nowISO(),
+					"sha":         codeHead,
 					"merge-error": jsonNilable(err.Error()),
 				}
 				// 账本照常落库（审计链完整）：主 checkout 的契约/账本文件
@@ -260,38 +286,62 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 				c.save()
 				return fmt.Errorf("%w: %s", ErrMergeConflict, err.Error())
 			}
-			c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path)
 		} else {
 			c.Log(fmt.Sprintf("%s: branch not ahead of base — nothing to merge", id))
-			c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path)
 		}
 		ledgerCommit := c.commitUnitChangesIn(c.Cwd, packet, c.commitExcludes(), c.baseRefOf(ps), c.taskDirPrefix())
-		finalSHA := firstNonEmpty(codeCommit.SHA, ledgerCommit.SHA)
+		ps.Commit = map[string]any{"sha": codeHead, "ledger-sha": jsonNilable(ledgerCommit.SHA), "at": c.nowISO()}
+		if ledgerCommit.Error != "" {
+			ps.Commit.(map[string]any)["ledger-error"] = ledgerCommit.Error
+			return failPersistence("ledger-commit", ledgerCommit.Error)
+		}
+		finalSHA, err := verify.PersistedHead(c.Cwd, c.ledgerExcludes())
+		if err != nil {
+			return failPersistence("main-tree", err.Error())
+		}
+		mainCandidate, err := c.candidateFingerprint(c.Cwd)
+		if err != nil {
+			return failPersistence("main-candidate", err.Error())
+		}
+		if mainCandidate != verifiedCandidate {
+			return failPersistence("main-candidate", "merged checkout differs from the verified candidate")
+		}
+		if !c.currentL1Evidence(packet) {
+			return failPersistence("final-evidence", "candidate, contract, or report changed during persistence")
+		}
 		ps.Commit = map[string]any{
 			"sha":        finalSHA,
 			"message":    firstNonEmpty(codeCommit.Message, ledgerCommit.Message),
 			"at":         c.nowISO(),
 			"ledger-sha": jsonNilable(ledgerCommit.SHA),
 		}
-		if finalSHA == "" {
-			reason := firstNonEmpty(codeCommit.Error, codeCommit.Skipped, "unknown")
-			commitNote = fmt.Sprintf("commit skipped (%s)", reason)
+		if cleanupErr := c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path); cleanupErr != nil {
+			ps.Commit.(map[string]any)["cleanup-error"] = cleanupErr.Error()
+			c.Log(fmt.Sprintf("%s: committed; worktree cleanup deferred: %v", id, cleanupErr))
 		} else {
-			n := shortSHA(finalSHA)
-			if ls := ledgerCommit.SHA; ls != "" {
-				n += " + ledger " + shortSHA(ls)
-			}
-			commitNote = "commit " + n
+			ps.Worktree = nil
 		}
+		n := shortSHA(finalSHA)
+		if ls := ledgerCommit.SHA; ls != "" {
+			n += " + ledger " + shortSHA(ls)
+		}
+		commitNote = "commit " + n
 	} else {
-		// In-place 回退（非 git 或 worktree 不可用）：一次 scoped 提交。
+		// In-place 仍要求真实 Git commit；非 Git 演练不能声称交付持久化。
 		outcome := c.commitUnitChangesIn(c.Cwd, packet, c.commitExcludes(), c.baseRefOf(ps), "")
 		ps.Commit = commitOutcomeMap(outcome)
-		if outcome.SHA != "" {
-			commitNote = fmt.Sprintf("commit %s", shortSHA(outcome.SHA))
-		} else {
-			commitNote = fmt.Sprintf("commit skipped (%s)", firstNonEmpty(outcome.Skipped, outcome.Error, "unknown"))
+		if outcome.Error != "" {
+			return failPersistence("code-commit", outcome.Error)
 		}
+		finalSHA, err := verify.PersistedHead(c.Cwd, c.ledgerExcludes())
+		if err != nil {
+			return failPersistence("code-tree", err.Error())
+		}
+		if !c.currentL1Evidence(packet) {
+			return failPersistence("code-evidence", "commit hook changed the verified candidate")
+		}
+		ps.Commit.(map[string]any)["sha"] = finalSHA
+		commitNote = fmt.Sprintf("commit %s", shortSHA(finalSHA))
 	}
 	ps.Status = "completed"
 	at := c.nowISO()
@@ -368,6 +418,7 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 			})
 	}
 	outcome := defectinjection.RunDefectInjection(defectinjection.Args{
+		Context:          c.RunContext,
 		PatchFile:        di.Patch,
 		TestCmd:          di.TestCmd,
 		Cwd:              c.unitCwd(packet),
@@ -383,7 +434,7 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 		return nil, ferr
 	}
 
-	if outcome.Outcome == "pass" || outcome.Outcome == "fake-tests" || outcome.Outcome == "restore-failed" {
+	if outcome.Outcome == "pass" || outcome.Outcome == "fake-tests" || outcome.Outcome == "restore-failed" || outcome.Outcome == "inconclusive" {
 		return &outcome, nil
 	}
 	// uninjectable / baseline-red：inbox 叫人，绝不指控假测试（P0-2）。
@@ -400,7 +451,11 @@ func (c *Context) doneReportValid(packet *contract.Packet) bool {
 	if err != nil {
 		return false
 	}
-	return donereport.Parse(raw, packet.DoneReportFormat).OK
+	if !donereport.Parse(raw, packet.DoneReportFormat).OK {
+		return false
+	}
+	ex, ok := c.State.Packets[packet.PacketID].Evidence.Executor.(map[string]any)
+	return ok && ex["report-sha256"] == fmt.Sprintf("%x", sha256.Sum256(raw))
 }
 
 // injectionStop fake-tests / restore-failed 的收尾：inbox + 停（v0.14 DC3）。
@@ -415,6 +470,9 @@ func (c *Context) injectionStop(packet *contract.Packet, oi *defectinjection.Out
 	if oi.Outcome != "fake-tests" {
 		reason = fmt.Sprintf(
 			"defect injection for %s: restore via git apply -R FAILED — the workspace may still hold the injected defect. Human needed.", id)
+	}
+	if oi.Outcome == "inconclusive" {
+		reason = fmt.Sprintf("defect injection for %s was interrupted or incomplete; tests were not proven to detect the defect. Human needed.", id)
 	}
 	entry := map[string]any{"at": c.nowISO(), "packet-id": id, "reason": reason}
 	c.State.Inbox = append(c.State.Inbox, entry)
@@ -503,7 +561,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 	ps := c.State.Packets[id]
 
 	// P2：已升级到 inbox 的 packet 重跑时绝不重新 spawn 或重复追加 inbox 条目
-	// ——人通过编辑 state.json 重新武装（§12）。凭证流程例外：人的修复就是
+	// ——修订任务契约后由引擎重新武装。凭证流程例外：人的修复就是
 	// 审批文件，它出现在超时升级之后即重新武装该单元。
 	if ps.Status == "inbox" {
 		approvalFile := filepath.Join(c.TaskDir, "approvals", id+".json")
@@ -514,7 +572,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			ps.UpdatedAt = &at
 			c.save()
 		} else {
-			c.Log(fmt.Sprintf("%s: already escalated to inbox — waiting for human (edit state.json to re-arm)", id))
+			c.Log(fmt.Sprintf("%s: already escalated to inbox — waiting for human (revise the task contract, then rerun; do not edit state.json)", id))
 			// 任务仍是升级态；重跑绝不能把它翻回 running。
 			c.State.Status = "escalated"
 			c.save()
@@ -535,7 +593,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 	// L1 绿且 done-report 完好——直接从 REVIEW 继续，不重执行、不抹报告（#6）。
 	stage := "execute"
 	resumeAtReview := false
-	if ps.Status == "l1-passed" && l1PassTrue(ps) && c.doneReportValid(packet) {
+	if ps.Status == "l1-passed" && c.doneReportValid(packet) && c.currentL1Evidence(packet) {
 		c.Log(fmt.Sprintf("%s: resuming at review (L1 green + done-report intact)", id))
 		stage = "review"
 		resumeAtReview = true
@@ -582,7 +640,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			if err != nil {
 				return "", err
 			}
-			if oi != nil && (oi.Outcome == "fake-tests" || oi.Outcome == "restore-failed") {
+			if oi != nil && (oi.Outcome == "fake-tests" || oi.Outcome == "restore-failed" || oi.Outcome == "inconclusive") {
 				// injectionStop 的保存失败记入 ctx.fatal；RunTask/runSingle 出口的
 				// err() 检查必然上抛同一错误。两次相邻 save() 之间没有任何可注入
 				// 故障的钩子，逐点传播不可测且行为等价（覆盖率审计 2026-08-23 删除
@@ -611,7 +669,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			if err != nil {
 				return "", err
 			}
-			if oi != nil && (oi.Outcome == "fake-tests" || oi.Outcome == "restore-failed") {
+			if oi != nil && (oi.Outcome == "fake-tests" || oi.Outcome == "restore-failed" || oi.Outcome == "inconclusive") {
 				// 同上：出口 err() 检查必然上抛 injectionStop 的保存失败
 				// （覆盖率审计 2026-08-23 删除冗余中间检查）。
 				_ = c.injectionStop(packet, oi)
@@ -630,7 +688,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 		}
 		if review.Pass {
 			if err := c.completeUnit(packet); err != nil {
-				if errors.Is(err, ErrMergeConflict) {
+				if errors.Is(err, ErrMergeConflict) || errors.Is(err, ErrCommitFailed) {
 					// 合并冲突：worktree 已保留，升级到人（与其他升级同款
 					// inbox 路由），任务状态不说谎。
 					ps.Status = "inbox"
@@ -639,7 +697,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 					entry := map[string]any{
 						"at":        c.nowISO(),
 						"packet-id": id,
-						"reason":    fmt.Sprintf("packet %s: merge conflict — worktree preserved for human resolution (%v).", id, err),
+						"reason":    fmt.Sprintf("packet %s: commit/merge failed — worktree preserved for human resolution (%v).", id, err),
 					}
 					c.State.Inbox = append(c.State.Inbox, entry)
 					c.State.Status = "escalated"

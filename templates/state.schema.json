@@ -9,25 +9,19 @@
   "properties": {
     "schema-version": { "type": "integer", "minimum": 1 },
     "slug": { "type": "string", "minLength": 1 },
-    "revision": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "CAS counter, incremented on every orchestrator write. A stale writer loses."
-    },
-    "status": {
-      "type": "string",
-      "enum": ["pending", "running", "paused", "stopped", "completed", "escalated", "budget-stopped"]
-    },
-    "current-milestone": {
-      "type": ["string", "null"],
-      "pattern": "^M-\\d{2,}$"
-    },
+    "revision": { "type": "integer", "minimum": 0, "description": "CAS counter, incremented on every orchestrator write. A stale writer loses." },
+    "status": { "type": "string", "enum": ["pending", "running", "paused", "stopped", "completed", "escalated", "budget-stopped"] },
+    "current-milestone": { "type": ["string", "null"], "pattern": "^M-\\d{2,}$" },
     "plan-session": {
       "type": ["object", "null"],
-      "description": "Resident Plan session handle (§4.1): captured from the kimi CLI stream on first plan call, reused via `kimi -r <id>`; rebuilt cold from the contract layer on session death.",
+      "description": "Resident Kimi CLI session handle. An explicit --session ID resumes only with matching harness, channel, model, cwd and thinking; otherwise rebuild from task contracts.",
       "properties": {
         "session-id": { "type": "string" },
         "channel": { "type": "string" },
+        "model": { "type": "string" },
+        "harness": { "type": "string" },
+        "cwd": { "type": "string" },
+        "thinking": { "type": "string" },
         "created-at": { "type": "string" },
         "updated-at": { "type": "string" },
         "resumes": { "type": "integer", "minimum": 0 }
@@ -74,32 +68,34 @@
           "milestone": { "type": "string", "pattern": "^M-\\d{2,}$" },
           "status": {
             "type": "string",
-            "enum": [
-              "pending",
-              "awaiting-credentials",
-              "executing",
-              "executed",
-              "l1-passed",
-              "l1-failed",
-              "review-failed",
-              "completed",
-              "interrupted",
-              "escalated",
-              "inbox"
-            ]
+            "enum": ["pending", "awaiting-credentials", "executing", "executed", "l1-passed", "l1-failed", "review-failed", "completed", "interrupted", "escalated", "inbox"]
           },
           "route": { "type": "string", "enum": ["frontend", "default", "multimodal", "hard"] },
           "attempts": { "type": "integer", "minimum": 0, "description": "Execute spawns performed." },
           "failed-attempts": { "type": "integer", "minimum": 0, "description": "Attempts that failed. Escalation when failed-attempts >= packet escalation.max-retries." },
-          "plan-revisions": { "type": "integer", "minimum": 0, "description": "Times the Plan Loop revised this packet after escalation. >1 consecutive failure rounds goes to inbox." },
-          "interrupted": { "type": "boolean", "description": "Set when the orchestrator restarts and finds this unit mid-flight; artifacts are preserved, never silently reset to pending." },
+          "plan-revisions": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Times the Plan Loop revised this packet after escalation. >1 consecutive failure rounds goes to inbox."
+          },
+          "interrupted": {
+            "type": "boolean",
+            "description": "Set when the orchestrator restarts and finds this unit mid-flight; artifacts are preserved, never silently reset to pending."
+          },
           "needs-live-credentials": { "type": "boolean" },
-          "artifacts": { "type": "array", "items": { "type": "string" } },
+          "artifacts": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
           "exit": {
             "type": ["object", "null"],
             "description": "Exit contract, orthogonally recorded (DESIGN.md §6): a timeout trapped into exit 0 must not read as green.",
             "properties": {
               "exitCode": { "type": ["integer", "null"] },
+              "settled": { "type": "boolean" },
+              "cancelled": { "type": "boolean" },
+              "truncated": { "type": "boolean" },
+              "cleanupError": { "type": "string" },
               "signal": { "type": ["string", "null"] },
               "timedOut": { "type": "boolean" },
               "idleTimedOut": { "type": "boolean" },
@@ -142,6 +138,7 @@
                 "type": ["object", "null"],
                 "properties": {
                   "done-report": { "type": "string" },
+                  "report-sha256": { "type": "string" },
                   "requirements-covered": { "type": "array" },
                   "changed-files": { "type": "array" },
                   "failures": { "type": "array" },
@@ -152,6 +149,8 @@
                 "type": ["object", "null"],
                 "properties": {
                   "pass": { "type": "boolean" },
+                  "identity": { "type": "string" },
+                  "identity-error": { "type": ["string", "null"] },
                   "commands": { "type": "array" },
                   "boundary": { "type": ["object", "null"] },
                   "at": { "type": "string" }
@@ -161,6 +160,7 @@
                 "type": ["object", "null"],
                 "properties": {
                   "verdict": { "type": "string", "enum": ["pass", "return", "verification-gap"] },
+                  "identity": { "type": "string" },
                   "score": { "type": ["number", "null"] },
                   "reasons": { "type": "array" },
                   "at": { "type": "string" }
@@ -170,16 +170,38 @@
                 "type": ["object", "null"],
                 "description": "Live-credentials approval evidence (§9): which env keys a human approved for injection, which were actually present/injected, and when.",
                 "properties": {
-                  "approved-env": { "type": "array", "items": { "type": "string" } },
-                  "injected-env": { "type": "array", "items": { "type": "string" } },
-                  "missing-env": { "type": "array", "items": { "type": "string" } },
+                  "approved-env": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "injected-env": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "missing-env": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
                   "source": { "type": "string" },
                   "at": { "type": "string" }
                 }
               },
-              "defect-injection": {
-                "type": ["object", "null"],
-                "description": "Spot-check result (DESIGN.md §4.3), when sampled."
+              "defect-injection": { "type": ["object", "null"], "description": "Spot-check result (DESIGN.md §4.3), when sampled." }
+            }
+          },
+          "last-feedback": {
+            "type": ["object", "null"],
+            "description": "Previous attempt failure details, supplied to a fresh executor; never counts as current verification evidence."
+          },
+          "evidence-history": {
+            "type": "array",
+            "description": "Invalidated evidence snapshots for audit only; never reused as current proof.",
+            "items": {
+              "type": "object",
+              "required": ["at", "evidence"],
+              "properties": {
+                "at": { "type": "string" },
+                "evidence": { "type": "object" }
               }
             }
           },
@@ -203,7 +225,8 @@
               }
             }
           },
-          "updated-at": { "type": ["string", "null"] }
+          "updated-at": { "type": ["string", "null"] },
+          "contract-sync-pending": { "type": "boolean", "description": "契约修订尚未同步到保留的工作区，恢复时必须完成同步。" }
         }
       }
     },
@@ -213,6 +236,8 @@
       "required": ["enforce", "daily-token-limit", "daily", "totals", "cache"],
       "properties": {
         "enforce": { "type": "string", "enum": ["off", "soft", "hard"] },
+        "unknown-usage-calls": { "type": "integer", "minimum": 0 },
+        "unknown-cost-calls": { "type": "integer", "minimum": 0 },
         "daily-token-limit": { "type": ["integer", "null"] },
         "daily": {
           "type": "object",
@@ -221,6 +246,8 @@
             "type": "object",
             "properties": {
               "tokens": { "type": "integer", "minimum": 0 },
+              "unknown-usage-calls": { "type": "integer", "minimum": 0 },
+              "unknown-cost-calls": { "type": "integer", "minimum": 0 },
               "cost-usd": { "type": "number", "minimum": 0 }
             }
           }
@@ -245,13 +272,13 @@
             "by-provider": { "type": "object" }
           }
         },
-        "warnings": { "type": "array", "items": { "type": "string" } }
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
-    "last-progress-at": {
-      "type": ["string", "null"],
-      "description": "Timestamp of last validated progress; used for stall/link-death detection (DESIGN.md §6)."
-    },
+    "last-progress-at": { "type": ["string", "null"], "description": "Timestamp of last validated progress; used for stall/link-death detection (DESIGN.md §6)." },
     "inbox": {
       "type": "array",
       "description": "Escalations addressed to a human.",
@@ -264,6 +291,11 @@
           "reason": { "type": "string" }
         }
       }
+    },
+    "contract-fingerprints": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "当前已加载契约的持久指纹；契约变更使旧完成状态与证据失效。"
     }
   }
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/ckanner/flywheel/templates"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // LoopBinding 非 execute 角色的绑定（loops 表）。
@@ -74,9 +75,10 @@ type CredentialsConfig struct {
 
 // VerifyConfig 闸门命令参数（§4.4）。
 type VerifyConfig struct {
-	CommandTimeoutMs int64    `json:"command-timeout-ms"`
-	EnvAllowlist     []string `json:"env-allowlist"`
-	TestFilePatterns []string `json:"test-file-patterns"`
+	CommandTimeoutMs      int64    `json:"command-timeout-ms"`
+	EnvAllowlist          []string `json:"env-allowlist"`
+	TestFilePatterns      []string `json:"test-file-patterns"`
+	ProtectedTestPatterns []string `json:"protected-test-patterns"`
 }
 
 // DefectInjectionConfig 缺陷注入抽检（§4.3，常备无开关）。
@@ -234,6 +236,42 @@ func (c *Config) Validate() error {
 	// >= 1——显式 0 不再被 Normalize 的默认值吞掉（review 修正）。
 	if c.DefectInjection.EveryNUnits != nil && *c.DefectInjection.EveryNUnits < 1 {
 		return errors.New("defect-injection.every-n-units must be an integer >= 1")
+	}
+	for name, patterns := range map[string][]string{
+		"test-file-patterns":      c.Verify.TestFilePatterns,
+		"protected-test-patterns": c.Verify.ProtectedTestPatterns,
+	} {
+		for _, pattern := range patterns {
+			if _, err := regexp.Compile(pattern); err != nil {
+				return fmt.Errorf("verify.%s: %w", name, err)
+			}
+		}
+	}
+	validateHarness := func(harness string) error {
+		switch harness {
+		case "", "pi", "omp", "kimi", "codex", "zcode", "dsh":
+			return nil
+		default:
+			return fmt.Errorf("unsupported harness %q", harness)
+		}
+	}
+	for name, b := range c.Loops {
+		if err := validateHarness(b.Harness); err != nil {
+			return fmt.Errorf("loops.%s: %w", name, err)
+		}
+	}
+	for name, b := range c.Routes {
+		if err := validateHarness(b.Harness); err != nil {
+			return fmt.Errorf("routes.%s: %w", name, err)
+		}
+	}
+	for name, b := range c.Channels {
+		if err := validateHarness(b.Harness); err != nil {
+			return fmt.Errorf("channels.%s: %w", name, err)
+		}
+	}
+	if c.JudgePanel != nil {
+		return validateHarness(c.JudgePanel.Harness)
 	}
 	return nil
 }

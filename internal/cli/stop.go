@@ -2,7 +2,7 @@
 package cli
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -14,11 +14,9 @@ import (
 	"github.com/ckanner/flywheel/internal/state"
 )
 
-func jsonUnmarshalStrict(raw []byte, v any) error { return json.Unmarshal(raw, v) }
-
-// stop 进程确认轮询参数（生产行为：50 × 100ms = 5s；测试注入缩小等待）。
+// 45s 包括在飞进程组退出及独立 DI restore；超时不强杀 engine，也不写假 stopped。
 var (
-	stopPollAttempts = 50
+	stopPollAttempts = 450
 	stopPollInterval = 100 * time.Millisecond
 )
 
@@ -33,47 +31,9 @@ func stopCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			stoppedPid := 0
-			confirmedDead := false
-			pidPath := machine.PidFile(taskDir)
-			if raw, err := os.ReadFile(pidPath); err == nil {
-				var pf struct {
-					PID int `json:"pid"`
-				}
-				if jsonErr := jsonUnmarshalStrict(raw, &pf); jsonErr == nil && pf.PID > 0 {
-					stoppedPid = pf.PID
-					if sigErr := syscall.Kill(stoppedPid, syscall.SIGTERM); sigErr != nil {
-						confirmedDead = true // 发信号前就已死
-					} else {
-						for range stopPollAttempts {
-							if signalZero(stoppedPid) != nil {
-								confirmedDead = true
-								break
-							}
-							time.Sleep(stopPollInterval)
-						}
-					}
-				} else {
-					confirmedDead = true // pid 文件不可读 = 陈旧
-				}
-				if !confirmedDead {
-					// 绝不声称一个无法确认的停止（#7）。
-					fmt.Fprintf(out, "SIGTERM 已发送给 pid %d，但 5s 内未确认退出。state.json 保持原样；请检查进程后重试，或手动 kill。\n", stoppedPid)
-					return &exitError{code: 1}
-				}
-				_ = os.Remove(pidPath)
-			}
-			if state.Exists(taskDir) {
-				st, err := state.Load(taskDir)
-				if err != nil {
-					return err
-				}
-				if st.Status != "completed" {
-					st.Status = "stopped"
-					if _, err := state.Save(taskDir, st, nil); err != nil {
-						return err
-					}
-				}
+			stoppedPid, err := stopTask(taskDir)
+			if err != nil {
+				return err
 			}
 			if stoppedPid > 0 {
 				fmt.Fprintf(out, "已停止编排器进程 (pid %d)，状态定格。\n", stoppedPid)
@@ -83,4 +43,61 @@ func stopCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// stopTask never signals a PID read from disk. A task-scoped nonce request asks
+// the lease owner to cancel itself, then lease acquisition confirms cleanup.
+func stopTask(taskDir string) (int, error) {
+	pid := 0
+	lastToken := ""
+	for attempt := 0; ; attempt++ {
+		release, err := machine.AcquireRunLease(taskDir)
+		if err == nil {
+			defer release()
+			return pid, freezeStoppedTask(taskDir)
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			return pid, fmt.Errorf("无法确认运行锁；state.json 保持原样: %w", err)
+		}
+		control, err := machine.ReadRunControl(taskDir)
+		if err != nil && (!errors.Is(err, os.ErrNotExist) || lastToken == "") {
+			return pid, fmt.Errorf("无法安全请求停止；state.json 保持原样: %w", err)
+		}
+		// The owner removes its PID before releasing the lease. Once a request
+		// was sent, that expected cleanup window must still wait for the lease.
+		if err == nil && control.ControlToken != lastToken {
+			pid = control.PID // display only, never a signalling target
+			if err := machine.WriteStopRequest(taskDir, control.ControlToken); err != nil {
+				return pid, err
+			}
+			lastToken = control.ControlToken
+		}
+		if attempt >= stopPollAttempts {
+			return pid, fmt.Errorf("停止请求已发送给当前任务运行，但 %s 内未确认清理完成。state.json 保持原样；请等待后重试", time.Duration(stopPollAttempts)*stopPollInterval)
+		}
+		time.Sleep(stopPollInterval)
+	}
+}
+
+// freezeStoppedTask is called only while holding the lifetime lease.
+func freezeStoppedTask(taskDir string) error {
+	for _, path := range []string{machine.PidFile(taskDir), machine.StopRequestFile(taskDir)} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if state.Exists(taskDir) {
+		st, err := state.Load(taskDir)
+		if err != nil {
+			return err
+		}
+		if st.Status != "completed" {
+			expected := st.Revision
+			st.Status = "stopped"
+			if _, err := state.Save(taskDir, st, &expected); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

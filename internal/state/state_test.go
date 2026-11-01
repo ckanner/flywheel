@@ -60,6 +60,13 @@ func TestLoadErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing integer revision")
 }
 
+func TestStateLockOpenFailureIsReported(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ".state.lock"), 0o700))
+	_, err := lockStateFile(dir)
+	require.Error(t, err)
+}
+
 func TestLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	raw := `{"schema-version":1,"slug":"t","revision":3,"status":"running","packets":{},"inbox":[]}`

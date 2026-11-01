@@ -1,20 +1,20 @@
-// kimi driver：kimi code CLI 驱动 Plan Loop（docs/design.md §4.1：kimi code +
-// K3 max，长驻会话）。
+// kimi driver：直接运行 Kimi Code CLI；不使用 ACP（docs/design.md 2026-11-01 裁决）。
 //
-// 对 kimi CLI 0.37.2 实证（2026-08-20）：
-//   - `kimi -p "<prompt>" --output-format stream-json` 打印 NDJSON：
-//     {"role":"meta","type":"system.version"} / {"role":"assistant","content":...}
-//     / {"role":"meta","type":"session.resume_hint","session_id":"session_..."}。
-//     无 usage/token 事件 → usage 记为 null。
-//   - 长驻会话：首次调用从 resume hint 捕获 session_id；后续 `kimi -r session_<id>` 续。
-//   - 会话死亡（挂起/过期）：`kimi -r <死id>` exit 1 + stderr
-//     "Session ... not found" → machine 从契约层冷启动新会话（§4.1 重建协议）。
-//   - reasoning_effort=max 每次调用经环境变量 KIMI_MODEL_THINKING_EFFORT=max
-//     传入（官方支持，仅 kimi provider），绝不碰用户全局配置 ~/.kimi-code。
+// Kimi Code 2.4.1 的 print 契约：
+//   - `kimi -p "<prompt>" --output-format stream-json` 自带非交互 auto 模式，
+//     不能叠加 --auto / --yolo / --plan；这也不构成只读沙箱。
+//   - 新会话的 session.resume_hint 只在成功收尾路径输出；没有预分配 id。
+//     后续用 --session <id> 在原 cwd 续接。CLI 检查 cwd，不匹配时原样报错，
+//     driver 不偷偷改 cwd 或重建会话；冷启动由 machine 按契约决定。
+//   - 续接恢复的是历史，不是已退出进程；timeout / cancel 仍由 watchdog 管理。
+//   - 当前 print writer 不输出 token usage；未知保持 nil，不能记成免费。
+//   - thinking 每次由 KIMI_MODEL_THINKING_EFFORT 显式注入，默认 high，
+//     不修改用户配置。模型别名由 binding 提供，保留旧默认以兼容已有配置。
 package drivers
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
@@ -24,13 +24,18 @@ import (
 // KimiDefaultModel Plan Loop 默认模型。
 const KimiDefaultModel = "kimi-code/k3"
 
+const KimiCommandEnv = "FLYWHEEL_KIMI_BIN"
+
 type KimiArgs struct {
 	Prompt    string
 	SessionID string // 长驻会话 resume 句柄；空 = 新会话
 	Model     string
+	Thinking  string // 空 = high；Kimi provider 的逐次环境覆盖
+	Command   string // 空 = PATH 中的 kimi；也可传含空格的完整可执行文件路径
 	Cwd       string
 	APIKeys   map[string]string
 	Watchdog  watchdog.Opts
+	OnEvent   func(line string) // stdout JSONL 行回调，包含无换行的最后一行
 }
 
 // KimiParsed kimi stream-json 的聚合结果。
@@ -41,7 +46,10 @@ type KimiParsed struct {
 	Usage        *Usage
 }
 
-// ParseKimiStreamJson 解析 kimi stream-json：会话 id、assistant 文本、错误、usage。
+// ParseKimiStreamJson 解析完整的 kimi stream-json。与其他 driver 一致，忽略
+// 非 JSON 噪声及未知事件；turn.step.retrying 是暂态，不能误判成终态错误。
+// assistant 的工具调用/空 content 不抹掉最后一段正文。usage 若未来出现，
+// 只接收规范化字段的最新有效快照，不推测 delta/cumulative 语义或补算缺项。
 func ParseKimiStreamJson(stdout string) KimiParsed {
 	var p KimiParsed
 	for _, line := range strings.Split(stdout, "\n") {
@@ -54,63 +62,95 @@ func ParseKimiStreamJson(stdout string) KimiParsed {
 			Type      string          `json:"type"`
 			SessionID string          `json:"session_id"`
 			Content   json.RawMessage `json:"content"`
-			Message   string          `json:"message"`
-			Error     string          `json:"error"`
+			Message   json.RawMessage `json:"message"`
+			Error     json.RawMessage `json:"error"`
 			Usage     json.RawMessage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
 			continue
 		}
+		// Usage can accompany an assistant event; parse it before role dispatch.
+		if usage := parseKimiUsage(event.Usage); usage != nil {
+			p.Usage = usage
+		}
 		if event.Role == "meta" && event.Type == "session.resume_hint" && event.SessionID != "" {
 			p.SessionID = event.SessionID
-			continue
 		}
 		if event.Role == "assistant" {
 			var s string
 			if err := json.Unmarshal(event.Content, &s); err == nil {
-				p.Text = s
+				if s != "" {
+					p.Text = s
+				}
 			} else {
 				var parts []struct {
+					Type string `json:"type"`
 					Text string `json:"text"`
 				}
 				if err := json.Unmarshal(event.Content, &parts); err == nil {
 					var b strings.Builder
 					for _, part := range parts {
-						b.WriteString(part.Text)
+						if part.Type == "" || part.Type == "text" {
+							b.WriteString(part.Text)
+						}
 					}
-					p.Text = b.String()
+					if b.Len() > 0 {
+						p.Text = b.String()
+					}
 				}
 			}
-			continue
 		}
 		if event.Type == "error" || event.Role == "error" {
-			switch {
-			case event.Message != "":
-				p.ErrorMessage = event.Message
-			case event.Error != "":
-				p.ErrorMessage = event.Error
-			default:
-				p.ErrorMessage = trimmed
-			}
-			continue
-		}
-		if len(event.Usage) > 0 && string(event.Usage) != "null" {
-			var u Usage
-			if err := json.Unmarshal(event.Usage, &u); err == nil {
-				copied := u // not emitted by 0.37.2; captured if it ever appears
-				p.Usage = &copied
+			message := jsonErrorMessage(event.Message, event.Error, trimmed)
+			if p.ErrorMessage == "" {
+				p.ErrorMessage = message
+			} else if !strings.Contains(p.ErrorMessage, message) {
+				p.ErrorMessage += "; " + message
 			}
 		}
 	}
 	return p
 }
 
-// RunKimi 驱动一次 kimi code 调用（Plan Loop）。KIMI_MODEL_THINKING_EFFORT=max
-// 按次注入，绝不写用户全局配置（§7）。
+// parseKimiUsage 不把 {}、未知形状、null 或坏计数误读成确定的零用量。
+func parseKimiUsage(raw json.RawMessage) *Usage {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil
+	}
+	// A partial counter is not complete call usage. In particular a missing
+	// total must not silently become a known zero for the budget gate.
+	for _, name := range []string{"input", "output", "totalTokens"} {
+		if value, exists := fields[name]; !exists || string(value) == "null" {
+			return nil
+		}
+	}
+	var usage Usage
+	for _, field := range []struct {
+		name  string
+		value *int64
+	}{
+		{"input", &usage.Input}, {"output", &usage.Output},
+		{"reasoning", &usage.Reasoning}, {"cacheRead", &usage.CacheRead},
+		{"cacheWrite", &usage.CacheWrite}, {"totalTokens", &usage.TotalTokens},
+	} {
+		value, exists := fields[field.name]
+		if !exists || string(value) == "null" {
+			continue
+		}
+		if err := json.Unmarshal(value, field.value); err != nil || *field.value < 0 {
+			return nil
+		}
+	}
+	return &usage
+}
+
+// RunKimi 驱动一次 print 调用。只有退出成功且收到收尾 hint 才确认完成；
+// 失败调用的 hint 不作为可恢复句柄暴露。任务验收仍由 engine 的 oracle 决定。
 func RunKimi(a KimiArgs) Result {
 	args := []string{}
 	if a.SessionID != "" {
-		args = append(args, "-r", a.SessionID)
+		args = append(args, "--session", a.SessionID)
 	}
 	model := a.Model
 	if model == "" {
@@ -118,44 +158,63 @@ func RunKimi(a KimiArgs) Result {
 	}
 	args = append(args, "-m", model, "-p", a.Prompt, "--output-format", "stream-json")
 
-	env := childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys))
-	env = append(env, "KIMI_MODEL_THINKING_EFFORT=max")
+	effort := a.Thinking
+	if effort == "" {
+		effort = "high"
+	}
+	env := childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)
+	env["KIMI_MODEL_THINKING_EFFORT"] = effort
+	command := a.Command
+	if command == "" {
+		command = os.Getenv(KimiCommandEnv)
+	}
+	if command == "" {
+		command = "kimi"
+	}
+	var onActivity func(chunk, stream string)
+	events := jsonLines{onLine: a.OnEvent, limit: watchdog.MaxBuffer}
+	if a.OnEvent != nil {
+		onActivity = events.feed
+	}
 
-	result := watchdog.Run("kimi", args, watchdog.Opts{
+	result := watchdog.Run(command, args, watchdog.Opts{
+		Context:       a.Watchdog.Context,
 		Cwd:           a.Cwd,
-		Env:           env,
+		Env:           childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
 		WallTimeoutMs: a.Watchdog.WallTimeoutMs,
 		KillGraceMs:   a.Watchdog.KillGraceMs,
+		OnActivity:    onActivity,
 	})
+	// watchdog.Wait has drained both streams; no callback can race this tail.
+	if a.OnEvent != nil {
+		events.flush()
+	}
 	parsed := ParseKimiStreamJson(result.Stdout)
 
-	settled := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut
-	out := Result{
-		ExitCode:     result.ExitCode,
-		Signal:       result.Signal,
-		TimedOut:     result.TimedOut,
-		IdleTimedOut: result.IdleTimedOut,
-		WallTimedOut: result.WallTimedOut,
-		Stdout:       result.Stdout,
-		Stderr:       result.Stderr,
-		Truncated:    result.Truncated,
-		DurationMS:   result.DurationMS,
-		SpawnError:   result.SpawnError,
-		Harness:      "kimi",
-		Provider:     "kimi",
-		Model:        model,
-		Settled:      settled,
-		Text:         parsed.Text,
-		SessionID:    parsed.SessionID,
+	message := parsed.ErrorMessage
+	if result.TimedOut {
+		message = "Kimi command timed out"
 	}
-	if parsed.ErrorMessage != "" {
-		out.ErrorMessage = &parsed.ErrorMessage
-	} else if result.ExitCode != nil && *result.ExitCode != 0 {
-		msg := strings.TrimSpace(result.Stderr)
-		if msg != "" {
-			out.ErrorMessage = &msg
+	if message == "" {
+		switch {
+		case result.Truncated:
+			message = "Kimi output was truncated; completion is unknown"
+		case result.ExitCode != nil && *result.ExitCode != 0:
+			message = strings.TrimSpace(result.Stderr)
+		case result.ExitCode != nil && *result.ExitCode == 0 && parsed.SessionID == "":
+			message = "Kimi stream ended without session.resume_hint; completion is unknown"
 		}
+	}
+	settled := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && !result.Cancelled &&
+		result.Signal == "" && result.CleanupError == "" && !result.Truncated && message == "" && parsed.SessionID != ""
+	out := fromWatchdog(result, "kimi", "kimi", model)
+	out.Usage, out.Settled, out.Text = parsed.Usage, settled, parsed.Text
+	if settled {
+		out.SessionID = parsed.SessionID
+	}
+	if message != "" {
+		out.ErrorMessage = &message
 	}
 	return out
 }

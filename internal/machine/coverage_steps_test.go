@@ -613,6 +613,7 @@ func TestPlanStepResumesPinnedSessionAndCountsResumes(t *testing.T) {
 	ctx := verdictCtx(t, fx, sd)
 	ctx.State.PlanSession = map[string]any{
 		"session-id": "sess-1", "channel": planLoopChannel, "model": "kimi-code/k3",
+		"harness": "kimi", "cwd": fx.root, "thinking": "max",
 		"created-at": "2026-08-01T00:00:00.000Z", "resumes": float64(2),
 	}
 
@@ -667,6 +668,7 @@ func TestPlanStepDeadSessionRestartsCold(t *testing.T) {
 	ctx.Log = func(msg string) { logs = append(logs, msg) }
 	ctx.State.PlanSession = map[string]any{
 		"session-id": "sess-dead", "channel": planLoopChannel, "model": "kimi-code/k3", "resumes": float64(0),
+		"harness": "kimi", "cwd": fx.root, "thinking": "max",
 	}
 
 	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
@@ -813,7 +815,7 @@ func TestEscalatePacketDirectArms(t *testing.T) {
 		assert.Equal(t, "inbox", ctx.State.Packets["M01-T01"].Status)
 	})
 
-	t.Run("重载契约失败上抛", func(t *testing.T) {
+	t.Run("非法修订经反馈后有界升级", func(t *testing.T) {
 		fx := newGitFixture(t)
 		sd := happyDrivers()
 		sd.planFn = func(drivers.CallArgs) drivers.Result {
@@ -821,8 +823,10 @@ func TestEscalatePacketDirectArms(t *testing.T) {
 			return drivers.MockResult(nil)
 		}
 		ctx := verdictCtx(t, fx, sd)
-		_, err := ctx.escalatePacket(primeEscalation(t, ctx))
-		require.Error(t, err)
+		out, err := ctx.escalatePacket(primeEscalation(t, ctx))
+		require.NoError(t, err)
+		assert.Equal(t, "inbox", out)
+		assert.Len(t, sd.log.plan, planValidationRetries+1)
 	})
 
 	t.Run("plan 绑定缺失上抛", func(t *testing.T) {

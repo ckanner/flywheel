@@ -1,54 +1,70 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.2.0"
-description: Start the Flywheel orchestrator on a task (docs/<slug>) as an independent process — triggers ALL loops fully automatically. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start a flywheel task.
-whenToUse: 当用户已人审契约、要全自动启动某个 flywheel 任务（"启动/跑这个任务"）时使用。
-compatibility: "Requires the flywheel CLI (npm i -g @ckanner/flywheel — platform binary included, no repo checkout)."
+  version: "1.3.1"
+description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
+whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
+compatibility: "Requires the Flywheel CLI with the control command and the harnesses selected by the task configuration."
 arguments: slug pause
 ---
 
-# flywheel-run — 拉起编排器（触发全部 loop）
+# flywheel-run — 启动或恢复编排器
 
-This skill is only a button: validate params, launch the
-orchestrator as an **independent process**, confirm it is alive, report the
-status entry point. You do NOT do any loop work yourself — the real Plan
-session is spawned by the orchestrator as a separate harness session.
+只校验参数、调用 Go CLI、翻译结果。所有规划、执行、重试、验收和状态转移由引擎负责。
 
-> 参数经 kimi 命名参数注入正文：`$slug`、`$pause`（其他 harness 忽略 arguments
-> 字段，实参随调用文本原样传入，语义相同）。`pause` 可选：传 `review` 即为
-> "全自动但评审前冻结"监督模式。
+> 参数经 kimi 命名参数注入正文：`$slug`、`$pause`；其他 harness 按调用文本提取。
+> `slug` 是实际任务目录路径，例如 `docs/my-task` 或绝对路径，不再追加 `docs/`。
+> `pause` 可选，当前只接受 `review`。
 
 ## 步骤
 
-1. **参数校验**：确认 `docs/<slug>/` 存在且含 `spec.md`、`task-packet-*.md`、
-   `state.json`、`flywheel.config.json`。缺任何一样 → 停下，提示用户先走
-   `/skill:flywheel-new` 或检查路径。确认用户已**人审契约**（冻结点）。
-2. **以独立进程拉起**（不依赖当前会话存活）：
+1. **校验**：任务目录含 `spec.md` 和 `task-packet-*.md`，用户已审阅契约。
+   配置可来自任务、项目、全局或内嵌表；不强制任务目录另存配置。
+   `state.json` 可以不存在，由引擎初始化；不得手工创建或修改它。
+   将任务目录和 Git 仓库根解析为绝对路径：
 
    ```bash
-   # 基础：全自动
-   cd <目标仓库根> && nohup flywheel run "$slug" \
-     > docs/<slug>/orchestrator.log 2>&1 &
-   # 监督模式：用户给了 pause 参数（当前仅支持 review）时追加冻结点
-   cd <目标仓库根> && nohup flywheel run "$slug" --pause-before "$pause" \
-     > docs/<slug>/orchestrator.log 2>&1 &
+   task_dir="$(cd "$slug" && pwd -P)"
+   repo_dir="$(git -C "$task_dir" rev-parse --show-toplevel)"
    ```
 
-   **二选一**：用户未给 `pause` → 用第一条；给了（值为 review）→ 用第二条。
-   注意 `--pause-before` 不能与单步按钮（--only）组合——CLI 会直接报错拒绝。
+   任一命令失败就停止启动并报告路径问题。若 `flywheel` 不在 PATH，使用
+   已配置的绝对路径；所用版本必须支持 `flywheel control --help`。
 
-   若 flywheel 不在 PATH：`cd <目标仓库根> && nohup flywheel run "$slug" > docs/<slug>/orchestrator.log 2>&1 &`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
-3. **确认存活**：等 2 秒，检查进程仍在、`docs/<slug>/orchestrator.pid` 已写入、
-   `state.json` 的 status 变为 running。拉起失败 → 读
-   `docs/<slug>/orchestrator.log` 报告原因。注意：若任务此前已升级到 inbox，
-   run 会立即停在 `escalated`（不重复打扰人）——先让用户处理 inbox 再拉起。
-4. **翻译结果**，告诉用户：编排器已在后台运行（pid）、如何看进度
-   （`/skill:flywheel-status docs/<slug>`）、如何停（`/skill:flywheel-stop docs/<slug>`）、
-   日志位置。提醒：关掉本会话窗口不影响运行。
+2. **按所选模式调用一次**：
 
-## 注意
+   默认后台模式使用 Go 自己的启动与就绪协议：
 
-- 编排器是外面的 runner，不住在本会话里；你只负责"拉起并确认"。
-- 手动单步触发是别的按钮：`/skill:flywheel-plan / -exec / -review / -verify`。
+   ```bash
+   flywheel control start --task-dir "$task_dir" --cwd "$repo_dir"
+   ```
+
+   用户明确选择 `pause=review` 时，在仓库根以前台方式运行并保留该进程：
+
+   ```bash
+   cd "$repo_dir"
+   flywheel run "$task_dir" --pause-before review
+   ```
+
+   该模式运行到评审前暂停才返回。`control start` 当前不接受 pause 参数，
+   不得假装桌面启动实现了这个冻结点；`--pause-before` 也不能和 `--only` 组合。
+
+3. **读取真实状态**：默认后台启动返回 protocol 1 JSON。`ok` 是控制操作结果，
+   `running` 是引擎运行状态，任务结果看 `state.status`；不能把 `ok: true`
+   当成任务已完成。任务也可能很快结束，或停在 escalated / budget-stopped。
+   就绪超时不代表子进程未启动，先查询状态并读 `orchestrator.log`，不要重复拉起：
+
+   ```bash
+   flywheel control status --task-dir "$task_dir" --cwd "$repo_dir"
+   ```
+
+4. **翻译结果**：说明当前状态、工作单元、日志路径与后续入口。
+   后台模式可通过 `flywheel-status` 或桌面面板观察，通过 `flywheel-stop`
+   停止；关闭当前会话不等于停止后台引擎。监督模式已经暂停时明确说明尚未评审
+   或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
+
+## 单环入口
+
+需要人工逐步控制时使用 `flywheel-plan`、`flywheel-exec`、`flywheel-review`、
+`flywheel-verify`。它们的返回条件以引擎子环为准；尤其 Execute 会执行 L1，
+不是只有一次模型调用。

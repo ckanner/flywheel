@@ -34,11 +34,21 @@ func toSpawnResult(r drivers.Result) errs.SpawnResult {
 	if r.SpawnError != "" {
 		sr.SpawnError = errors.New(r.SpawnError)
 	}
+	if r.CleanupError != "" {
+		sr.SpawnError = errors.New(r.CleanupError)
+	}
+	if r.Cancelled {
+		sr.Signal = "cancelled"
+	}
+	if sr.SpawnError == nil && (r.ExitCode == nil || !r.Settled || r.Truncated) {
+		sr.SpawnError = errors.New("harness did not reach a confirmed terminal result")
+	}
 	return sr
 }
 
 func (c *Context) wdog() watchdog.Opts {
 	return watchdog.Opts{
+		Context:       c.RunContext,
 		IdleTimeoutMs: c.Config.Watchdog.IdleTimeoutMs,
 		WallTimeoutMs: c.Config.Watchdog.WallTimeoutMs,
 		KillGraceMs:   c.Config.Watchdog.KillGraceMs,
@@ -111,6 +121,7 @@ type l1Outcome struct {
 
 type verdictArgs struct {
 	role      string // "review" | "judge"
+	cwd       string // review 必须读取候选 worktree；judge 使用主 checkout
 	binding   fallback.Binding
 	prompt    string
 	packetID  string

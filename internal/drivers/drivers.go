@@ -4,6 +4,8 @@
 package drivers
 
 import (
+	"fmt"
+
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
@@ -24,6 +26,7 @@ type Result struct {
 	ExitCode     *int   `json:"exitCode"`
 	Signal       string `json:"signal"`
 	TimedOut     bool   `json:"timedOut"`
+	Cancelled    bool   `json:"cancelled"`
 	IdleTimedOut bool   `json:"idleTimedOut"`
 	WallTimedOut bool   `json:"wallTimedOut"`
 	Stdout       string `json:"stdout"`
@@ -31,6 +34,7 @@ type Result struct {
 	Truncated    bool   `json:"truncated"`
 	DurationMS   int64  `json:"durationMs"`
 	SpawnError   string `json:"spawnError,omitempty"`
+	CleanupError string `json:"cleanupError,omitempty"`
 
 	// harness 语义量。
 	Harness        string   `json:"harness"` // pi | kimi | mock
@@ -56,13 +60,14 @@ type CallArgs struct {
 	Packets     []string // plan：既有 packet id 清单
 
 	// 真实 harness 专用。
-	Model     string // 空 → binding.Model 或驱动默认
-	Binding   config.LoopBinding
-	APIKey    string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
-	APIKeys   map[string]string // 注入子进程的键集
-	Watchdog  watchdog.Opts
-	OnEvent   func(line string) // stdout NDJSON 行回调
-	SessionID string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+	Model          string // 空 → binding.Model 或驱动默认
+	Binding        config.LoopBinding
+	APIKey         string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
+	APIKeys        map[string]string // 注入子进程的键集
+	Watchdog       watchdog.Opts
+	OnEvent        func(line string) // stdout NDJSON 行回调
+	SessionID      string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+	PermissionMode string            // read-only | workspace-write；由编排角色显式指定
 }
 
 // Driver 六角色统一接口。mock 与 real 都实现。
@@ -87,11 +92,35 @@ type Drivers struct {
 }
 
 // InvokeHarness 通用 harness 分发（Node invokeHarness）：harness 取自绑定表，
-// 绝不由角色推断。kimi → RunKimi（长驻会话），其余一律 pi。
+// 绝不由角色推断。空 harness 兼容旧 pi 配置，未知名称必须报错，不能换后端。
 func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	harness := a.Binding.Harness
 	if harness == "" {
 		harness = "pi"
+	}
+	switch harness {
+	case "kimi", "zcode", "codex", "omp", "pi", "dsh":
+	default:
+		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("unknown harness %q", harness))
+	}
+	if a.PermissionMode != "" && a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" {
+		return invalidHarnessResult(harness, a.Model, "unsupported permission mode "+a.PermissionMode)
+	}
+	// Legacy adapters have no verified read-only sandbox mapping. workspace-write
+	// remains their historical host-isolation contract, not an OS sandbox promise.
+	if a.PermissionMode == "read-only" && harness != "codex" && harness != "dsh" {
+		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("harness %q cannot enforce read-only permissions", harness))
+	}
+	if harness == "dsh" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		return RunDSH(DSHArgs{
+			Prompt: a.Prompt, Provider: a.Binding.Channel, Model: model, Thinking: a.Binding.Thinking,
+			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
+			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
+		})
 	}
 	if harness == "kimi" {
 		model := a.Model
@@ -108,6 +137,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			Cwd:       a.Cwd,
 			APIKeys:   a.APIKeys,
 			Watchdog:  a.Watchdog,
+			Thinking:  a.Binding.Thinking,
+			OnEvent:   a.OnEvent,
 		})
 	}
 	if harness == "zcode" {
@@ -133,7 +164,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		return RunCodex(CodexArgs{
 			Prompt:          a.Prompt,
 			Model:           codexModel,
-			ReasoningEffort: a.Binding.Thinking, // 空 → RunCodex 兜底 max（GPT-6 默认仅 medium）
+			ReasoningEffort: a.Binding.Thinking,
+			PermissionMode:  a.PermissionMode,
 			Cwd:             a.Cwd,
 			APIKeys:         a.APIKeys,
 			Watchdog:        a.Watchdog,
@@ -181,6 +213,24 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		Watchdog: a.Watchdog,
 		OnEvent:  a.OnEvent,
 	})
+}
+
+// invalidHarnessResult 用稳定错误词汇返回配置错误，保证错误分类器不会重试。
+func invalidHarnessResult(harness, model, detail string) Result {
+	message := "invalid request: " + detail
+	code := 1
+	return Result{Harness: harness, Model: model, ExitCode: &code, ErrorMessage: &message}
+}
+
+// fromWatchdog 统一保留物理终态，避免某个后端漏传取消/清理失败而推进工作流。
+func fromWatchdog(r watchdog.Result, harness, provider, model string) Result {
+	return Result{
+		ExitCode: r.ExitCode, Signal: r.Signal, TimedOut: r.TimedOut, Cancelled: r.Cancelled,
+		IdleTimedOut: r.IdleTimedOut, WallTimedOut: r.WallTimedOut,
+		Stdout: r.Stdout, Stderr: r.Stderr, Truncated: r.Truncated, DurationMS: r.DurationMS,
+		SpawnError: r.SpawnError, CleanupError: r.CleanupError,
+		Harness: harness, Provider: provider, Model: model,
+	}
 }
 
 // realDriver 真实驱动：六角色全部走 invokeHarness 分发。

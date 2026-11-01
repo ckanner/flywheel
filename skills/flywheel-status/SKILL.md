@@ -1,10 +1,10 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.2.0"
+  version: "1.3.1"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use when the user says "/skill:flywheel-status docs/<slug>" or asks how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
-compatibility: "Requires the flywheel CLI (npm)."
+compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
 arguments: slug
 ---
 
@@ -14,24 +14,29 @@ Button only: read state + translate. Writes nothing.
 
 > 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
+`slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
+
 ## 步骤
 
-1. **校验**：`docs/<slug>/state.json` 存在（不存在 = 任务未生成或未启动）。
+1. **校验**：`docs/<slug>/state.json` 存在；不存在时说明引擎尚未初始化状态，不能仅据此断言契约未生成。
+   可用 `flywheel control status --task-dir <绝对任务路径> --cwd <绝对仓库路径>`
+   获取只读快照；`state: null` 也不代表需要手工创建 state.json。
 2. **调用**（在目标仓库根执行）：
 
    ```bash
    flywheel status "$slug"
    ```
 
-   若 flywheel 不在 PATH：`flywheel status docs/<slug>`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
+   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
 
 3. **翻译结果**，用人话讲：
    - 任务状态、编排器是否存活（pid）、当前里程碑、上次推进时间——
      推进时间久未更新 = 可能停滞/断链，提醒用户。
    - 每个 packet：状态、尝试/失败次数、三级证据（executor 自报 < L1 确定性
      通过 < Review  verdict——证据等级不同，讲进度时区分）。
-   - token/成本累计、缓存命中率（突降 = 前缀被破坏，提醒）、预算档与告警。
+   - token/成本累计、未知用量／未知成本调用数、缓存命中率、预算档与告警。
+     已知总数只是下限，未知不等于 0。缓存率变动只能提示排查，不能无证据
+     断言前缀损坏；不同 provider 未必提供可比的 cache usage。
    - inbox 有待处理条目时**必须显著提醒**：这需要人。
    - 用户要更多细节时，可读 `docs/<slug>/retro.md`、`metrics.jsonl`、
      `orchestrator.log` 再讲。

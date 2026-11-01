@@ -1,10 +1,10 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.2.0"
+  version: "1.3.1"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
-compatibility: "Requires the flywheel CLI (npm). No model, no harness — gates are deterministic commands run by the orchestrator."
+compatibility: "Requires the Flywheel CLI. No model call; verification commands run under the engine watchdog."
 arguments: slug packet
 
 ---
@@ -15,6 +15,8 @@ Button only: validate + invoke CLI + translate. No loop logic
 here — and no model either: verification is the orchestrator running commands.
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
+
+`slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
 
 ## 步骤
 
@@ -28,11 +30,10 @@ here — and no model either: verification is the orchestrator running commands.
    flywheel run "$slug" --only verify
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only verify [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
+   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
 
 3. **翻译结果**：每条命令的退出码与通过与否、git diff 边界判定
-   （must-not-touch / 测试文件 / max-files）、里程碑闸门结论。任何红色都
+   （must-not-touch / protected-test-patterns / max-files）、里程碑闸门结论。任何红色都
    原样报告命令与输出摘要——命令是 ground truth，不替它找理由。
 
 ## 注意

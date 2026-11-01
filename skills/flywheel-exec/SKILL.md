@@ -1,10 +1,10 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.2.0"
-description: Trigger only the Execute Loop for a Flywheel task, optionally for one packet (single state transition). Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
+  version: "1.3.1"
+description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
-compatibility: "Requires the flywheel CLI (npm) and the route harnesses: zcode (Z.AI Coding Plan login, Execute default/multimodal = GLM-5.3/-flash) and/or kimi CLI (frontend/hard = K3)."
+compatibility: "Requires the Flywheel CLI and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, Codex CLI for hard tasks."
 arguments: slug packet
 
 ---
@@ -14,6 +14,8 @@ arguments: slug packet
 Button only: validate + invoke CLI + translate. No loop logic here.
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
+
+`slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
 
 ## 步骤
 
@@ -28,10 +30,11 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run "$slug" --only execute
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only execute [--packet M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
+   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
 
-3. **翻译结果**：执行是否通过出口契约（进程终态/stderr/交付物三项独立判定）、
-   done-report 是否合法、token 与成本增量、state 中该 packet 的新状态
-   （executed / 失败与错误码）。提醒：execute 之后还有 L1 与 review，
-   单元不算完成——完成由编排器与评审判定，不由执行者宣布。
+3. **翻译结果**：该子环内的执行尝试、done-report、L1 验收与失败反馈；
+   成功会报告 `L1 green (execute loop closed)`，不是只生成代码就返回。
+   失败区分预算／凭证停止、尝试次数用尽、相同失败空转和实际错误。
+   token／成本缺失要说明未知，不能记成免费。提醒：还需要独立 Review
+   和引擎持久化交付；该命令不会自动运行 Review 或把单元标为 completed。
+   达到失败出口后由用户选择修订 Plan 或重试，不在 skill 中另建重试循环。
