@@ -8,7 +8,7 @@
 
 | 部分 | 行为 |
 |---|---|
-| 桌面面板 | 会话输入框底部的 **Flywheel** 按钮，输入任务目录，启动、刷新状态、停止；显示引擎返回的工作单元、路由和完整状态 |
+| 桌面面板 | 会话输入框底部的 **Flywheel** 按钮；配置查看、环境检查、SDK 无推理探测、启动／刷新／停止；显示全部工作单元、逐项诊断与未知计量 |
 | `/flywheel` | 人工 slash command，通过已有 DSH commands Remote 调用 Go CLI；不会将控制指令交给模型执行 |
 | `flywheel_control` | 模型工具，复用同一个校验与 CLI 控制路径；后台 start 很快返回，stop 等待引擎确认 |
 | `flywheel-dsh-worker` | 独立 Node 进程，通过官方 `dsh --profile sdk` stdio JSON-RPC 执行一个原生模型会话 |
@@ -18,7 +18,7 @@
 
 ## 构建与测试
 
-需要 Node.js 22 或更高。构建本身不下载 DSH、React 或第三方打包器；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。
+需要 Node.js 22 或更高。生产构建不打包 DSH、React 或第三方运行时；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 会安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于实际 DOM 交互测试，它们不进入发布包。
 
 ```sh
 cd plugins/dsh
@@ -27,7 +27,7 @@ npm run check
 npm pack
 ```
 
-产物为 `dist/` 和 `ckanner-dsh-plugin-flywheel-0.1.0.tgz`。包名为 `@ckanner/dsh-plugin-flywheel`，许可沿用仓库的 `UNLICENSED`，本轮没有发布到 npm。`npm run check` 运行真实 Node 子进程协议桩，无模型和账号调用。仓库的 Go 闸门仍需单独运行 `make quality-gate`。
+产物为 `dist/` 和 `ckanner-dsh-plugin-flywheel-0.1.0.tgz`。包名为 `@ckanner/dsh-plugin-flywheel`，许可沿用仓库的 `UNLICENSED`，本轮没有发布到 npm。`npm run check` 运行真实 Node 子进程协议桩和 React DOM 行为测试，无模型和账号调用。仓库的 Go 闸门仍需单独运行 `make quality-gate`。
 
 ## 安装到自己的 Mac
 
@@ -79,7 +79,17 @@ reasoningEffort = off | low | high | max
 
 ## 无模型请求的 doctor
 
-先在已有且可访问的目标目录生成一条 probe 请求：
+日常使用 Go 命令或面板；Go 会解析实际配置，避免手工输入与任务绑定不一致：
+
+```sh
+flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
+flywheel doctor --cwd /repo --task-dir /repo/docs/my-task --json
+flywheel doctor --cwd /repo --task-dir /repo/docs/my-task --probe --json
+```
+
+`--task-dir` 可省略：无任务时检查全部绑定，有任务时只检查必要阶段与实际 packet 路由。无 packet 为规划前状态，使用 default 路由并提示规划后复查。`--probe` 才初始化 DSH SDK；普通检查只读取配置、版本和所声明环境变量是否存在。它们不写 Flywheel 状态、全局配置或 worktree，不运行验收，不调用模型。阻断项返回退出码 1 并保留报告；认证／额度／真实模型能力始终未验证。
+
+只调试单个 worker 时，仍可在已有且可访问的目标目录生成一条 probe 请求：
 
 ```sh
 node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1,requestId:"local-doctor",cwd:process.cwd(),provider:"deepseek-official",model:"deepseek-flash",reasoningEffort:"high",permissionMode:"read-only",prompt:"This text is not sent in doctor mode",timeoutMs:20000}))' \
@@ -98,6 +108,8 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
 flywheel control start --task-dir /repo/docs/my-task --cwd /repo
 flywheel control stop --task-dir /repo/docs/my-task --cwd /repo
+flywheel control config --cwd /repo
+flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 ```
 
 等价的人工命令：
@@ -106,7 +118,11 @@ flywheel control stop --task-dir /repo/docs/my-task --cwd /repo
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
 ```
 
-模型工具 `flywheel_control` 接受相同三个字段。输入统一校验，使用 argv 调用，不拼接 shell 命令。面板只在点击时读取状态，不自动轮询，也不重新决定模型路由。关闭面板、卸载插件或退出桌面，不等于停止任务；重新打开后按“刷新状态”恢复观察，需停止时点“停止”。
+模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话目录；start/status/stop 必须指定任务。输入统一校验，使用 argv 调用，不拼接 shell 命令。面板只在点击时读取状态，不自动轮询，也不重新决定模型路由。
+
+“查看模型配置”展示配置来源、展开后的阶段绑定及 provider／channel；“检查环境”不启动 SDK，“SDK 无推理检查”显式启用 probe。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
+
+状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。未知 usage／cost 明确保留，原始 JSON 默认折叠。改任务／仓库路径会清空旧视图并忽略旧请求的迟到结果。关闭面板、卸载插件或退出桌面，不等于停止任务；重新打开后按“刷新状态”恢复观察，需停止时点“停止”。
 
 ## 权限、上下文与报告归档
 
@@ -122,7 +138,7 @@ worker 只支持 `read-only` 与 `workspace-write`。Mac 上由 DSH 的 Seatbelt
 
 官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
 
-当前已验证：离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；浏览器模块 slot/Remote 合约；官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化/关闭；当前 Linux 无可用沙箱时在 prompt 前 fail closed。
+当前已验证：离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块经 ModuleLoader／宿主 React／真实 DOM／Remote 的交互；Go 与 Node 的配置、诊断和失败契约。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化/关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。
 
 尚未在用户 Mac 实测：桌面安装和 UI 渲染、Seatbelt 探针、实际 Flash/GPT 推理、授权可见性及断电恢复。Linux 上的 CLI 加载成功不代替这些验证。不会将协议桩写成付费模型成功的证据。
 

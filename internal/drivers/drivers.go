@@ -103,6 +103,9 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	default:
 		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("unknown harness %q", harness))
 	}
+	if harness != "dsh" && a.Binding.Provider != "" {
+		return invalidHarnessResult(harness, a.Model, "provider selection is supported only by the DSH harness")
+	}
 	if a.PermissionMode != "" && a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" {
 		return invalidHarnessResult(harness, a.Model, "unsupported permission mode "+a.PermissionMode)
 	}
@@ -116,8 +119,12 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		if model == "" {
 			model = a.Binding.Model
 		}
+		provider := a.Binding.Provider
+		if provider == "" {
+			provider = a.Binding.Channel // direct callers retain legacy DSH bindings
+		}
 		return RunDSH(DSHArgs{
-			Prompt: a.Prompt, Provider: a.Binding.Channel, Model: model, Thinking: a.Binding.Thinking,
+			Prompt: a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
 		})

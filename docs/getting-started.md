@@ -38,6 +38,7 @@ git log -1 --oneline
 go build -o ./bin/flywheel ./cmd/flywheel
 ./bin/flywheel version
 ./bin/flywheel control --help
+./bin/flywheel doctor --help
 cd plugins/dsh
 npm ci --ignore-scripts
 npm run check
@@ -120,7 +121,21 @@ flywheel template flywheel.config.example.json
 flywheel template flywheel.config.example.json > flywheel.config.json
 ```
 
-`loops` 配置 Plan／Review／Judge 等阶段，`routes` 配置 Execute 的 default／frontend／hard，`channels` 描述账号渠道；`drivers` 只选择 `real` 或 `mock`。默认模型表见 [项目 README](../README.md#3-当前默认路由)。DSH 的 `channel` 必须是 SDK 实际 provider ID，模型和 effort 必须与该 provider 目录一致。Flash 的 effort 是 `off/low/high/max`，没有 `medium`。
+`loops` 配置 Plan／Review／Judge 等阶段，`routes` 配置 Execute 的 default／frontend／hard，`channels` 描述账号渠道；`drivers` 只选择 `real` 或 `mock`。默认模型表见 [项目 README](../README.md#3-当前默认路由)。DSH 的 `provider` 必须是 SDK 实际注册的 ID；`channel` 可使用自己的渠道名称。旧配置不写 provider 时继续使用 channel 作为 provider ID。Flash 的 effort 是 `off/low/high/max`，没有 `medium`。
+
+需要集中修改模型时，查看另一份完整示例：
+
+```sh
+flywheel template flywheel.profiles.example.json
+```
+
+它把模型定义放进 `profiles`，如 `loops.review: {"profile":"gpt-review"}`；阶段可显式覆盖 model／thinking／channel 等字段。两个配置示例选一个作为起点，不要让任务文件只写部分 profiles、再期待与项目文件自动合并。profile 不是 DSH profile；渠道别名也不会自动切换账号。完整字段、覆盖规则和迁移示例见[配置指南](configuration.md)。
+
+编辑后先查看实际解析结果，确认没有被更高优先级文件遮住：
+
+```sh
+flywheel config inspect --cwd /absolute/path/to/target-repo --json
+```
 
 验收命令使用受限环境，而不是继承模型进程的全部变量。若项目需要自定义 `GOCACHE`、`GOPATH` 等工具配置，在 `verify.env-allowlist` 中列出所需变量名，并确保它们在引擎启动环境中有值；只记录变量名，不把密钥内容写入配置。
 
@@ -143,13 +158,23 @@ flywheel skills read flywheel-run
 在实际目标仓库中，使用和桌面启动脚本一致的环境执行：
 
 ```sh
-node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1,requestId:"local-doctor",cwd:process.cwd(),provider:"deepseek-official",model:"deepseek-flash",reasoningEffort:"high",permissionMode:"read-only",prompt:"Not sent in doctor mode",timeoutMs:20000}))' \
-  | flywheel-dsh-worker --doctor
+flywheel doctor --cwd "$PWD" --json
+flywheel doctor --cwd "$PWD" --probe --json
 ```
 
-成功应返回 `ready`，随后返回 `status:ok` 的 `result`，usage 和 cost 为 `null`。doctor 会初始化 SDK、创建会话并测试沙箱，**不发送推理 prompt**；provider 初始化可能联网查询模型目录。
+第一条只查有效配置、本地命令版本、目录及已声明环境变量；不会检查凭证文件、发送模型 prompt 或运行 packet 验收。第二条对选中的 DSH 绑定做 SDK 初始化、cwd／沙箱握手及正常关闭；provider 初始化可能联网查询目录，但**没有推理请求**。两者都不创建 Flywheel 状态、运行锁、worktree 或全局配置。
 
-再把 provider/model 改为自己 SDK profile 实际注册的 ChatGPT 路由，检查评审通道。doctor 不能证明远端订阅额度或实际模型推理可用。若 cwd、权限、provider 或沙箱检查失败，先修正相应配置，不把权限改成 full access 绕过。
+结果按 pass／fail／warn／unknown／skipped 展示；有 fail 时退出码 1，JSON 仍完整可读。即使 `ok:true`，unknown 的账号授权、订阅额度与实际推理仍未验证。Kimi/Codex 在这里只检查命令，不会自动登录或试调用。DSH 同一账号、模型、effort、目录和权限只探测一次，总预算 40 秒另加清理窗口；超时后明确失败。
+
+未指定任务时检查全部配置绑定，可能包括首个任务用不到的 Codex hard 路由。准备好任务后可把范围缩小为所需的 Plan／Execute route／Review／Judge（以及显式启用的 judge-panel）：
+
+```sh
+flywheel doctor --cwd "$PWD" --task-dir docs/add --probe --json
+```
+
+尚无 packet 时按规划前状态预检默认执行路由，规划后应再检查。坏契约会报告阻断项，不能用探测通过代替 schema 校验。若 cwd、权限、provider 或沙箱检查失败，先修正相应配置，不把权限改成 full access 绕过。桌面面板也提供“查看配置／检查环境／SDK 无推理探测”，使用同一个 CLI 后端；GUI 与终端环境不同的问题应在面板内复验。
+
+这允许在准备契约时提前排查安装，但正式启动仍需至少一个已审阅的合法 packet。完成下一节的小任务准备后，再运行带 `--task-dir` 的检查。
 
 ## 6. 准备首个小任务
 
@@ -203,7 +228,7 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 flywheel control status --task-dir "$PWD/docs/add" --cwd "$PWD"
 ```
 
-`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。启动 readiness 超时后先刷新状态和看日志，不重复启动。也可以在 DSH 输入区的 Flywheel 面板填入同样两个绝对路径，点击“启动／刷新状态／停止”。
+`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。启动 readiness 超时后先刷新状态和看日志，不重复启动。也可以在 DSH 输入区的 Flywheel 面板填入同样两个绝对路径，先查看配置和检查环境，再点击“启动／刷新状态／停止”。面板区分未初始化、已完成、暂停、停止和升级；修改路径会清除旧视图，但不会停止旧任务。
 
 需要人工在 Review 前检查结果时，使用前台监督模式；它与后台 start 二选一：
 
@@ -244,6 +269,9 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 | doctor 拒绝权限或沙箱 | 实际 DSH 版本与 Seatbelt／fs fence；不要改 full access 绕过 |
 | 命令在终端通过、引擎内失败 | 检查验收输出、PATH、工具缓存权限和 `verify.env-allowlist`；不要把模型全部凭证注入验收 |
 | 改了模型却没有生效 | 任务／项目／全局的完整文件优先级，随后重启任务引擎 |
+| profile 不存在或字段拼错 | 对照配置模板检查当前优先级文件；profiles 只在该完整配置内查找，不跨文件合并，诊断不回显可能含凭据的原始字段值 |
+| 改 channel 后账号没切换 | channel 是计量/配置别名；实际账号仍由 SDK profile/provider 的授权决定 |
+| doctor 有 unknown 或 skipped | unknown 不等于通过，skipped 可能是非任务路由、mock 或没有请求 SDK probe |
 | 费用显示未知 | 渠道未提供 cost／usage；unknown 不是免费，hard token budget 可能停止 |
 | 启动超时但日志继续增长 | 先用 control status 观察就绪状态，不重复启动第二个引擎 |
 | L1 在 exit 0 后仍拒绝 | 检查候选漂移、输出截断、超时／取消或进程收尾错误 |

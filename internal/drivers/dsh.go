@@ -20,6 +20,7 @@ const DSHWorkerEnv = "FLYWHEEL_DSH_WORKER"
 // DSHArgs binds one fresh SDK worker to one provider/model and permission scope.
 type DSHArgs struct {
 	Prompt         string
+	Doctor         bool // local SDK route/policy/shutdown probe; never submits a model prompt
 	Provider       string
 	Model          string
 	Thinking       string
@@ -30,6 +31,14 @@ type DSHArgs struct {
 	APIKeys        map[string]string
 	Watchdog       watchdog.Opts
 	OnEvent        func(line string)
+}
+
+// DSHCommand is the configured worker executable, shared with CLI diagnostics.
+func DSHCommand() string {
+	if command := os.Getenv(DSHWorkerEnv); command != "" {
+		return command
+	}
+	return "flywheel-dsh-worker"
 }
 
 type dshStart struct {
@@ -205,12 +214,16 @@ func RunDSH(a DSHArgs) Result {
 	request := dshStart{Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
 		Provider: a.Provider, Model: a.Model, ReasoningEffort: effort,
 		PermissionMode: permission, Prompt: a.Prompt, TimeoutMS: a.Watchdog.WallTimeoutMs}
+	var argv []string
+	if a.Doctor {
+		argv = []string{"--doctor"}
+		// Protocol v1 requires a nonempty admission prompt. The doctor worker
+		// consumes this fixed marker locally and skips session/prompt entirely.
+		request.Prompt = "Flywheel SDK readiness probe; no model prompt is authorized."
+	}
 	command := a.Command
 	if command == "" {
-		command = os.Getenv(DSHWorkerEnv)
-	}
-	if command == "" {
-		command = "flywheel-dsh-worker"
+		command = DSHCommand()
 	}
 	env := childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)
 	for _, key := range []string{"FLYWHEEL_DSH_BIN", "FLYWHEEL_DSH_PROFILE", "DSH_HOME"} {
@@ -224,7 +237,7 @@ func RunDSH(a DSHArgs) Result {
 		onActivity = events.feed
 	}
 	written := make(chan error, 1)
-	result := watchdog.Run(command, nil, watchdog.Opts{
+	result := watchdog.Run(command, argv, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
 		KillGraceMs: a.Watchdog.KillGraceMs, OnActivity: onActivity,

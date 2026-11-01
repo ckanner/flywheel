@@ -177,7 +177,7 @@ func warnIfStalled(out io.Writer, taskDir string, st *state.State) {
 	}
 	wall := int64(3_600_000)
 	if wd, werr := os.Getwd(); werr == nil {
-		if cfg, cerr := config.Load(taskDir, machine.ProjectRoot(wd)); cerr == nil && cfg.Watchdog.WallTimeoutMs > 0 {
+		if cfg, cerr := config.LoadReadOnly(taskDir, machine.ProjectRoot(wd)); cerr == nil && cfg.Watchdog.WallTimeoutMs > 0 {
 			wall = cfg.Watchdog.WallTimeoutMs
 		}
 	}

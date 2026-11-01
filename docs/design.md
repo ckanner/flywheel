@@ -1,6 +1,6 @@
-# Flywheel 系统设计 v0.25
+# Flywheel 系统设计 v0.26
 
-2026-11-01 实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。具体工作和验证结果见 [实施计划](plans/2026-11-01-dsh-integration.md)。
+2026-11-01 实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，本轮配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)。
 
 ## 1. 目标与范围
 
@@ -8,7 +8,7 @@ Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 c
 
 本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DeepSeek API。DeepSeek 只使用 Flash。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以由完整 Codex CLI harness 执行；这两个后端的工具、权限和会话语义不同。
 
-本轮不做大规模并行调度、自动寻找最优模型、具名 profiles，也不修改用户在另一 session 加固的 `ckanner/dsh-subagent-codex-pro`。本仓库的 Codex CLI driver 仍是可独立使用的完整 harness 通路，不能声称已经消费外部 Codex Pro adapter。
+本轮补齐具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检。大规模并行调度和自动模型选型仍需真实任务数据支持。用户在另一 session 维护的 `ckanner/dsh-subagent-codex-pro` 保持独立；其公开接口与本引擎的权限、结果和进程所有权契约尚不一致，Codex CLI 继续提供完整 harness 通路。
 
 ## 2. 设计不变量
 
@@ -167,7 +167,7 @@ Codex Pro adapter 的启动超时、权限、模型回执、usage 等加固是�
 
 优先通过明确小任务、缓存稳定前缀、低频规划、故障反馈复用、独立短评审降低重试与上下文膨胀。默认不使用所有模型串行互相复核，也不强制 max/ultra。
 
-每次调用记录角色、模型、harness、渠道、prompt hash、时长、物理终态、会话 ID、usage 和可知成本。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露 usage，按未知处理。
+每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露 usage，按未知处理。
 
 `unknown-usage-calls` 和 `unknown-cost-calls` 与已知总数并存。hard token budget 遇当日未知 usage 停止，因为限额无法证明；soft 默认可继续并明确告警。配置为 off 只关闭熔断，不关闭计量。价格只接受 driver 真实值或用户显式提供的定价，不内置会过期的推测账单。
 
@@ -189,7 +189,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 ## 11. 后续增强
 
-具名 profiles 可在现有 loops/routes/channels 上增加引用层；provider、model、harness、账号渠道要保持独立含义。该项不阻塞当前方案。自动难度路由、多 agent 并行、任务团队、附件协议、系统级强隔离可在现有指标和真实任务集支持下逐项加入，不一次叠加。
+自动难度路由、多 agent 并行、任务团队、附件协议、系统级强隔离可在现有指标和真实任务集支持下逐项加入。具名 profiles 已纳入本轮实现，保持加载期展开，不增加第二套调度器或自动付费后备路径。
 
 ## 12. CLI 与控制面
 
@@ -201,14 +201,29 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 flywheel control start --task-dir /repo/docs/task --cwd /repo
 flywheel control status --task-dir /repo/docs/task --cwd /repo
 flywheel control stop --task-dir /repo/docs/task --cwd /repo
+flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
+flywheel doctor --cwd /repo --task-dir /repo/docs/task --json
+flywheel doctor --cwd /repo --task-dir /repo/docs/task --probe --json
+flywheel control config --cwd /repo
+flywheel control doctor --cwd /repo --task-dir /repo/docs/task --probe
 ```
 
-控制接口 stdout 始终是单个 JSON：protocol、ok、running、pid、taskDir、state、可选 error。stderr 只诊断。start 派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
+控制接口 stdout 始终是单个 JSON：protocol、ok、running、pid、taskDir、state、可选 error。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。start 派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
+
+配置查看与本地 doctor 不物化全局配置、不写任务状态、不建 worktree、不执行验收命令。doctor 默认仅检查配置、契约和本地命令；显式 probe 才启动 DSH SDK 的无推理握手与权限检查，不发送 session/prompt。检查总预算 40 秒，另留进程清理窗口；相同 cwd/provider/channel/model/effort/权限的探测只做一次，不同账号渠道与读写权限不能合并。提供任务时，只将 Plan、Review、Judge、启用的第二意见及当前 packet 路由视为必需；无 packet 时检查 default 路由。未使用绑定显示 skipped。
+
+doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok=false；合法失败报告仍交给桌面逐项展示。adapter 接受配置、完整沙箱和正常关闭可以验证；账号授权、额度、账号实际模型目录和真实推理能力保持 unknown。环境凭证只检查声明的变量名是否存在，报告不输出凭证值。SDK 探测可能产生 SDK 自己的本地会话／缓存，不能宣称整个文件系统零写入。
+
+诊断 CLI 捕获 SIGTERM/SIGINT 为 context 取消，等待已有进程收尾。看门狗的 TERM 升级、stdio 排空和进程组确认各有 5 秒窗口，保守可叠加 15 秒；桌面正常控制超时为 60 秒。host 主动取消诊断时留 20 秒清理才强杀 Go，避免沿用普通控制命令的 500ms 宽限截断 SDK 清理。取消、超时、清理失败均不能报告为通过。
 
 ## 13. 配置和分发
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。
 
-新内嵌表见 [flywheel.config.example.json](../templates/flywheel.config.example.json)。现有用户要采用新方案，先比较并显式迁移全局/项目配置。默认包版本没有在这次本地实现中发布；必须使用本分支构建出的 Go 二进制及 [DSH 插件](../plugins/dsh/README.md)，不能假设 npm 上旧版本已经包含 control/DSH driver。
+可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
+
+provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后备渠道。实际 provider 按 binding.provider → channels[channel].provider → 旧 DSH channel 名解析；两个显式 provider 不一致时拒绝加载。非 DSH harness 不能声明一个会被静默忽略的 provider。降级到另一个 channel 时重新解析其 provider，不能沿用旧账号的适配器。原始 profile 名只作配置来源，不进入 Kimi 恢复身份；实际绑定改变按原有会话条件冷启动。模型绑定改变影响后续调用，不单凭未使用 profile 的改动使历史代码验收失效。
+
+默认内嵌表见 [flywheel.config.example.json](../templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](../templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](configuration.md)。现有用户要采用新方案，先比较并显式迁移全局/项目配置。默认包版本没有在这次源码实现中发布；必须使用当前源码构建出的 Go 二进制及 [DSH 插件](../plugins/dsh/README.md)，不能假设 npm 上旧版本已经包含 control/DSH driver。
 
 首次安装与小任务演练见 [入门教程](getting-started.md)。主入口、SDK profile、worker 协议和本机验收步骤见 [插件说明](../plugins/dsh/README.md) 与 [协议](../plugins/dsh/PROTOCOL.md)。历史研究引用保留在 [旧设计附录](design-history-v0.24.md)，其模型/价格/订阅额度只属于当时记录。

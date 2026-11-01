@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.3.1"
+  version: "1.4.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: "Requires the Flywheel CLI with embedded contract templates, write access, and Git in the target repository."
@@ -46,6 +46,9 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      `flywheel template flywheel.config.example.json` 导出完整模板并调整。
      否则使用已确认的项目或全局配置。四级发现按首个完整文件选择，
      不逐字段合并；任务文件会遮住项目和全局配置。
+     需要复用模型定义时可查看 `flywheel template flywheel.profiles.example.json`。
+     profile 只引用本文件内定义；DSH provider 是实际 adapter，channel 是配置渠道，
+     别名不会自动切账号。用 `flywheel config inspect` 确认展开后的实际绑定。
    - `.gitignore` — 任务目录级，逐行忽略 `orchestrator.log`、
      `orchestrator.pid`、`metrics.jsonl`、`.state.lock`、`.run.lock`、
      `.stop-request`、`.control/`（运行时易变产物；
@@ -60,6 +63,8 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
    `## Acceptance dry-run evidence`。无法执行的命令（环境缺失等）必须显式标注
    `unverified: <原因>` 并在人审时提醒用户重点关注——**未经试跑的验收命令是
    契约质量的最大盲区**。
+   `flywheel doctor --cwd <仓库绝对路径> --task-dir <任务绝对路径> --json`
+   可补充只读安装／契约预检；它不执行验收命令，也不能替代上述 dry-run evidence。
 5. **保存契约文件**：遵守目标仓库 Git 授权规则；已有提交授权时在目标仓库执行
    `git add docs/<slug>` 并 `git commit`（conventional 风格 message，如
    `docs(<slug>): add flywheel task contracts`）。契约层文件全部是已提交

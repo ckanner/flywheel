@@ -86,3 +86,24 @@ SIGTERM/SIGINT 请求取消。worker 先发送 SDK `shutdown`，再按有界窗�
 v1 每次调用使用全新 session。Go 重试时重新提交冻结任务输入，已有 worktree 与外部验收证据由 Go 决定是否保留；不会恢复旧 Session 后悄悄更换模型或权限。桌面关闭、窗口隐藏、插件卸载均不会主动停止已经由引擎后台启动的任务；显式 `control stop` 才请求引擎停止并等待清理。
 
 `flywheel-dsh-worker --doctor` 接收同一请求格式，只执行初始化与权限握手，然后关闭 SDK，绝不发送模型 prompt。它不能证明凭证、远端推理或终端 UI 已通过真实使用验证。
+
+Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 admission schema，它会用固定的探针说明替代调用者文本，worker 不将其交给 `session/prompt`。doctor 仍必须具备匹配的 ready、可靠 result、正常 SDK shutdown 与物理退出，不能因为没有推理而放松清理或权限检查。
+
+## 桌面控制响应（独立于 worker JSONL）
+
+桌面控制层调用 Go 的 `control` 命令，只接收一个 JSON 文档，不把它与上述 worker 流混用。原 `start/status/stop` 字段不变，新增两种 action：
+
+| action | 输入与输出 |
+|---|---|
+| `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
+| `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
+
+共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `error`。省略任务时 `taskDir:""`；配置／诊断不查询或修改任务状态，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。
+
+`configuration` 含 source、scope、cwd、taskDir、bindings。每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+
+`diagnostic` 含 kind=`doctor`、ok、cwd、taskDir、probeRequested、inferenceTested=`false`、可选 configuration，以及 checks 数组。check 为 id/status/summary，可附 code/remedy；status 只允许 pass/fail/warn/unknown/skipped。配置本身无效时允许没有 configuration，仍返回完整失败检查项。
+
+合法检查失败同时满足 exit 1、envelope.ok=false、diagnostic.ok=false；控制层保留并展示报告。其他非零退出、超时、信号、坏 JSON、错误 protocol 或任务身份仍是传输错误。普通 config/doctor 不接受 shell 参数拼接，`--probe` 不能用于其他 action。Go 检查预算 40 秒，TERM 升级、stdio 排空、进程组确认各有 5 秒宽限，保守另留 15 秒；桌面默认控制窗口 60 秒。
+
+config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。

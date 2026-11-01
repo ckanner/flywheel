@@ -1,0 +1,59 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 check
+> npm test
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 test
+> npm run build && node --test test/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.1.0 build
+> node scripts/build.mjs
+
+Built host plugin, rc.5 client module, and native SDK worker.
+✔ built panel is idle until a click and can inspect effective models without a task (93.665825ms)
+✔ task lifecycle labels do not confuse completed or pending work with a stopped engine (43.100426ms)
+✔ all packets remain accessible, text is escaped, and missing costs remain unknown (33.715966ms)
+✔ local and SDK doctor buttons display structured failures, remedies, and unverified account facts (34.979822ms)
+✔ switching paths clears old results and late requests cannot overwrite the new selection or busy state (26.769676ms)
+✔ late failures are ignored after a path change and active errors can recover (22.22474ms)
+✔ control invokes only the Go JSON CLI using literal argv, including paths with shell syntax (59.339635ms)
+✔ configuration and doctor need no task directory, and probe is an explicit doctor-only boolean (163.587718ms)
+✔ doctor returns a valid failed report but rejects process, protocol, and identity failures (748.489047ms)
+✔ hung controls are bounded and cancellation is never a diagnostic success (208.330794ms)
+✔ diagnostic cancellation and timeout keep the Go owner alive until delayed group cleanup finishes (14103.393032ms)
+✔ an unresponsive diagnostic owner is eventually force-stopped after its cleanup window (21011.31273ms)
+✔ slash command and model tool use the same validated engine control boundary (161.330133ms)
+✔ policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement (0.587777ms)
+✔ browser module registers the actual rc.5 dock and calls existing command Remote (3.226926ms)
+✔ start normalizes cwd and rejects resume, extra write roots, implicit permission, and empty route (12.616733ms)
+✔ only unique committed model calls count; cache is included in aggregate input, reasoning is a subset (1.756238ms)
+✔ missing or malformed usage remains unknown, not free or partial cost (0.34509ms)
+✔ an idle or max-token interval is not successful completion (0.881018ms)
+✔ permission acknowledgement must match actual cwd, policy, approval and full confinement (0.452261ms)
+✔ full worker handshake, durable result, usage and SDK shutdown agree with the Go contract (66.133153ms)
+✔ wrong-policy: fail before submitting a paid prompt (56.044522ms)
+✔ wrong-cwd: fail before submitting a paid prompt (65.452562ms)
+✔ missing-policy: fail before submitting a paid prompt (66.159989ms)
+✔ malformed: fail before submitting a paid prompt (51.644659ms)
+✔ empty: session/wait alone never establishes success (52.144261ms)
+✔ missing-terminal: session/wait alone never establishes success (55.522165ms)
+✔ max-tokens: session/wait alone never establishes success (64.249117ms)
+✔ corrupt-tail: session/wait alone never establishes success (67.279707ms)
+✔ unknown provider usage survives a successful call as null (76.708729ms)
+✔ full lifecycle deadline includes a stalled initialize; no model prompt is sent (174.578253ms)
+✔ external cancellation settles a stalled turn through SDK shutdown (126.461004ms)
+✔ forced SDK shutdown cannot claim successful settlement of native managed ranges (693.379856ms)
+✔ doctor exercises runtime and permission handshake but never prompts a model (44.565318ms)
+✔ overlay pins real native confinement and disables model-owned delegation and auxiliary model calls (0.257098ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 35
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36540.592514

@@ -140,6 +140,7 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		"milestone":       nil,
 		"model":           nilIfEmpty(model),
 		"harness":         nilIfEmpty(result.Harness),
+		"provider":        nilIfEmpty(result.Provider),
 		"channel":         nilIfEmpty(channel),
 		"prompt-hash":     promptHash,
 		"usage":           result.Usage,
@@ -233,6 +234,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 	}
 	channel := o.Binding.Channel
 	current := o.Binding
+	current.Provider = fallback.ResolveProvider(m.Config, current.Harness, current.Provider, channel)
 	visited := map[string]bool{}
 	maxTransport := m.Config.Retry.MaxTransportRetries
 	if maxTransport <= 0 {
@@ -259,7 +261,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 			TaskDir:        m.TaskDir,
 			Cwd:            m.Cwd,
 			Model:          current.Model,
-			Binding:        config.LoopBinding{Harness: current.Harness, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
+			Binding:        config.LoopBinding{Harness: current.Harness, Provider: current.Provider, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
 			APIKey:         ChannelAPIKey(m.Config, channel, m.EnvLookup),
 			APIKeys:        APIKeysFor(m.Config, channel, m.EnvLookup),
 			Watchdog:       ModuleWatchdogOpts(m.Config),
@@ -319,9 +321,9 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 				channel = next
 				harness := mapped.Harness
 				if harness == "" {
-					harness = o.Binding.Harness
+					harness = current.Harness
 				}
-				current = fallback.Binding{Harness: harness, Model: mapped.Model, Channel: next, Thinking: o.Binding.Thinking}
+				current = fallback.Binding{Harness: harness, Provider: fallback.ResolveProvider(m.Config, harness, "", next), Model: mapped.Model, Channel: next, Thinking: o.Binding.Thinking}
 				t-- // 降级不消耗 transport 重试名额
 				continue
 			}

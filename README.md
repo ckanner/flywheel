@@ -2,7 +2,7 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-本分支的 **v0.25 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板和工具，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前 **v0.26 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **本实现与 npm 发行版本分开管理。请使用包含 DSH 集成的源码构建 Go 二进制和插件；PR 合并不代表已发布 npm 包，旧发行版可能没有 `control`、DSH worker 和新的完成门禁。** 旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 
@@ -90,17 +90,20 @@ exec /absolute/path/to/flywheel/bin/flywheel "$@"
 在实际目标仓库目录、使用与引擎 worker 相同的环境变量执行：
 
 ```sh
-node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1,requestId:"local-doctor",cwd:process.cwd(),provider:"deepseek-official",model:"deepseek-flash",reasoningEffort:"high",permissionMode:"read-only",prompt:"Not sent in doctor mode",timeoutMs:20000}))' \
-  | flywheel-dsh-worker --doctor
+flywheel config inspect --cwd "$PWD" --json
+flywheel doctor --cwd "$PWD" --json
+flywheel doctor --cwd "$PWD" --probe --json
 ```
 
-doctor 启动本地 SDK、校验模型配置、创建会话并运行沙箱中的无副作用探针，**不发送推理 prompt**；provider 初始化可能查询模型目录。成功应有 `ready` 与 `status:ok` 的 `result`，usage/cost 为 `null`。它不能证明远端凭证、订阅额度或真实模型响应可用。缺少完整沙箱、cwd 不符或权限无法实施时会在模型请求前拒绝；不要用 full access 绕过。
+`config inspect` 只读展开有效配置；`doctor` 检查目录、配置、所需命令与声明的环境变量。加 `--task-dir docs/my-task` 会校验 Spec/packet，并把工具检查缩小到任务所需阶段与路由；不指定任务时检查全部配置绑定。没有 packet 时按规划前状态检查默认路由，不会擅自生成契约。
+
+`--probe` 进一步启动本地 DSH SDK、创建会话、核对 cwd／权限并关闭，**不发送推理 prompt、不运行验收命令**；provider 初始化可能查询模型目录。输出保留 pass/fail/warn/unknown/skipped，阻断项使退出码为 1；没有阻断项也不能证明账号授权、订阅额度或真实模型推理可用。相同账号／模型／目录／effort／权限的 SDK 检查去重，检查预算 40 秒，进程各收尾阶段有 5 秒宽限，保守预留另 15 秒清理。不会物化全局配置、写任务状态或创建 worktree。
 
 完整安装、权限、生命周期说明见 [DSH 插件 README](plugins/dsh/README.md)，线协议见 [PROTOCOL.md](plugins/dsh/PROTOCOL.md)。
 
 ## 3. 当前默认路由
 
-配置模板是 [templates/flywheel.config.example.json](templates/flywheel.config.example.json)。`harness` 指执行后端；DSH 的 `channel` 必须是 SDK 实际注册的 provider ID；`model` 与 `thinking` 逐调用传入。
+默认内联模板是 [templates/flywheel.config.example.json](templates/flywheel.config.example.json)，可复用配置见 [profiles 示例](templates/flywheel.profiles.example.json) 与[配置指南](docs/configuration.md)。`harness` 指执行后端，`provider` 是 DSH SDK 实际注册的 LLM adapter ID，`channel` 是本配置的账号／计量渠道名；`model` 与 `thinking` 逐调用传入。旧配置未写 provider 时继续把 DSH channel 解释为 provider ID。
 
 | 阶段或执行路由 | Harness | Provider／渠道 | 模型 | Thinking |
 |---|---|---|---|---|
@@ -127,15 +130,17 @@ usage 或美元成本未上报时保留 unknown，不能把订阅调用记成免
 
 ```sh
 flywheel template flywheel.config.example.json
+flywheel template flywheel.profiles.example.json
+flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 ```
 
-`drivers` 选择 `real/mock`，不是模型或 provider 名称。模型在 `loops` 和 `routes` 配置。修改运行配置后重启引擎；Plan 不允许悄悄改模型、权限或其他运行配置。
+`drivers` 选择 `real/mock`，不是模型或 provider 名称。模型在 `loops` 和 `routes` 配置，可直接写字段，也可引用 `profiles` 后按需覆盖。未知 profile、拼错字段、模型字段的 null 和 provider 冲突会拒绝加载；允许 `_note` 注释，原有 `env-key:null`、`judge-panel:null` 仍合法。渠道别名不会自动切换 DSH 账号，授权仍由选定 SDK profile/provider 管理。修改运行配置后重启引擎；Plan 不允许悄悄改模型、权限或其他运行配置。
 
 ## 4. 创建、运行和观察任务
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。模板可通过 `flywheel template` 查看；可选的 `flywheel-new` skill 用于辅助生成，最终仍由人确认契约。不要把 DSH 面板当成需求生成器。
 
-桌面面板位于会话输入区底部的 **Flywheel** 按钮。输入绝对任务路径和仓库路径后，可以启动、刷新和停止。也可使用人工命令：
+桌面面板位于会话输入区底部的 **Flywheel** 按钮。输入仓库路径后可查看配置、检查环境或执行 SDK 无推理探测；启动、刷新和停止还需绝对任务路径。面板展示实际阶段绑定、检查项、完整 packet 列表与未知用量，原始 JSON 可按需展开。也可使用人工命令：
 
 ```text
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
@@ -147,11 +152,13 @@ flywheel template flywheel.config.example.json
 flywheel control start --task-dir /repo/docs/my-task --cwd /repo
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
 flywheel control stop --task-dir /repo/docs/my-task --cwd /repo
+flywheel control config --cwd /repo
+flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 ```
 
 `start` 派生独立后台引擎，日志进入任务目录的 `orchestrator.log`；关闭面板或桌面不等于停止任务。`status` 只读。`stop` 向本次运行提交带随机 token 的停止请求，等待本次引擎退出受管调用栈、释放任务 lease 后才保存停止状态；不按文件里的 PID 盲目发送信号。引擎只管理本次拥有的进程组；已观测的 `CleanupError` 仍保留在证据和指标中、阻止交付，需要按错误记录处理，`stopped` 不代表任意逃逸进程已清理。停止等待最长 45 秒，桌面入口预留 60 秒。
 
-控制接口始终返回一个 protocol 1 JSON；`ok` 表示控制操作成功，任务是否完成应看 `state.status`。若启动就绪超时，后台引擎可能仍在加载：先刷新状态和查看日志，不要另起重复任务。
+控制接口始终返回一个 protocol 1 JSON；`ok` 表示控制操作成功，任务是否完成应看 `state.status`。`config` 返回 `configuration`，`doctor` 返回 `diagnostic`；诊断有阻断项时保留完整报告并返回退出码 1，不能当成空白传输错误。若启动就绪超时，后台引擎可能仍在加载：先刷新状态和查看日志，不要另起重复任务。
 
 原有前台／单步 CLI 仍可使用；这些命令应在目标仓库根目录运行：
 
@@ -204,7 +211,7 @@ npm run check
 
 Go 的交付门禁是 vet、格式检查与**逐函数 100% statement coverage**；statement coverage 不等于分支覆盖或真实模型质量。测试使用真实 Git、hook、index、worktree、子进程与协议桩，默认不需要账号或模型调用。
 
-本轮已做的 DSH 检查包括离线 worker 生命周期、事件与 usage 折叠、控制入口一致性、Go → Node → SDK 协议桩，以及官方 npm rc.5 的真实 Host 注册和 SDK 初始化／关闭。当前 Linux 环境没有可用的完整原生沙箱，doctor 在 prompt 前正确拒绝；这项结果证明拒绝路径，不能冒充 Mac Seatbelt 成功。
+DSH 检查包括离线 worker 生命周期、事件与 usage 折叠、控制入口一致性、真实 React DOM 交互、Go → Node → SDK 协议桩，以及前轮官方 npm rc.5 的真实 Host 注册和 SDK 初始化／关闭。React DOM 测试不代替 Mac 桌面验证。当前 Linux 环境没有可用的完整原生沙箱，SDK probe 在 prompt 前正确拒绝；这项结果证明拒绝路径，不能冒充 Mac Seatbelt 成功。
 
 **尚需在用户 Mac 验证**：桌面安装与 UI 渲染、Seatbelt 探针、GUI 环境中的 CLI／凭证可见性、真实 Flash/GPT/Kimi/Codex 响应，以及真实机器重启后的恢复。当前不支持 DSH worker resume、附件传输、外部 Codex Pro adapter 消费或自动多 agent Teams 调度。
 
@@ -213,8 +220,10 @@ Go 的交付门禁是 vet、格式检查与**逐函数 100% statement coverage**
 | 路径 | 内容 |
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
-| [docs/design.md](docs/design.md) | v0.25 权威设计、不变量、闭环与边界 |
+| [docs/design.md](docs/design.md) | v0.26 权威设计、不变量、闭环与边界 |
+| [docs/configuration.md](docs/configuration.md) | profiles、阶段覆盖、provider／channel 与预检语义 |
 | [docs/plans/2026-11-01-dsh-integration.md](docs/plans/2026-11-01-dsh-integration.md) | 本轮实施和验收记录 |
+| [docs/plans/2026-11-01-model-profiles-preflight.md](docs/plans/2026-11-01-model-profiles-preflight.md) | 配置、预检与面板后续实施计划 |
 | [plugins/dsh/README.md](plugins/dsh/README.md) | DSH 安装、独立 SDK profile 与本机检查 |
 | [plugins/dsh/PROTOCOL.md](plugins/dsh/PROTOCOL.md) | worker v1 请求、事件、终态和 usage 契约 |
 | [templates/](templates/) | 契约、配置模板与 JSON Schema |

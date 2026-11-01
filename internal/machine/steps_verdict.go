@@ -23,6 +23,7 @@ import (
 func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 	channel := a.binding.Channel
 	currentModel, currentHarness := a.binding.Model, a.binding.Harness
+	currentProvider := fallback.ResolveProvider(c.Config, currentHarness, a.binding.Provider, channel)
 	visited := map[string]bool{}
 	maxTransport := c.Config.Retry.MaxTransportRetries
 	lastCode := errs.TRANSPORT
@@ -35,7 +36,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			Prompt:         a.prompt,
 			Model:          currentModel,
 			Binding: config.LoopBinding{
-				Harness: currentHarness, Model: currentModel,
+				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
 				Channel: channel, Thinking: a.binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
@@ -139,6 +140,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 				if mapped.Harness != "" {
 					currentHarness = mapped.Harness
 				}
+				currentProvider = fallback.ResolveProvider(c.Config, currentHarness, "", channel)
 				t--
 				if a.ps != nil {
 					c.save()
@@ -261,7 +263,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 // loopToBinding config.LoopBinding → fallback.Binding（judge-panel 复用
 // agentVerdictStep 的传输重试/降级骨架）。
 func loopToBinding(b config.LoopBinding) fallback.Binding {
-	return fallback.Binding{Harness: b.Harness, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
+	return fallback.Binding{Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
 }
 
 // judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由全新会话对照 spec 的需求

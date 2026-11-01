@@ -60,7 +60,8 @@ CI 在 Linux/macOS 运行这些离线门禁，并在 Linux 检查核心包 race�
   Enforced by internal/skillsembed tests (real YAML parsing + standard
   constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
-  `control start|status|stop` prints one protocol-versioned JSON response;
+  `control start|status|stop|config|doctor` prints one protocol-versioned JSON response;
+  `config inspect` and `doctor` print human text, or a single JSON document with `--json`;
   `status`/`stop`/`install-skills`/`template` print human-readable text; errors go to
   stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /
   budget-stopped / failed manual step.
