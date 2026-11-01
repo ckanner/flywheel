@@ -527,11 +527,15 @@ func ProjectRoot(cwd string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// absoluteDirectoryPath keeps getcwd failures injectable: a removed working
+// directory does not make filepath.Abs fail consistently across operating systems.
+var absoluteDirectoryPath = filepath.Abs
+
 // canonicalDirectory gives workspace and task paths the same physical namespace.
 // In particular Git resolves macOS /var to /private/var, while callers may retain
 // the alias. Mixing them would turn an in-repository ledger prefix into ../ paths.
 func canonicalDirectory(path string) (string, error) {
-	abs, err := filepath.Abs(path)
+	abs, err := absoluteDirectoryPath(path)
 	if err != nil {
 		return "", err
 	}

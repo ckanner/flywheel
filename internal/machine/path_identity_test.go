@@ -96,6 +96,40 @@ func TestContextRejectsUnresolvableDirectories(t *testing.T) {
 	require.ErrorContains(t, err, "resolve working directory")
 }
 
+func TestContextStopsWhenAbsoluteDirectoryResolutionFails(t *testing.T) {
+	for _, directory := range []string{"task", "working"} {
+		t.Run(directory, func(t *testing.T) {
+			fx := newFixture(t)
+			t.Chdir(fx.root)
+			cfg := mustConfig(t, fx)
+			statePath := filepath.Join(fx.taskDir, "state.json")
+			before, err := os.ReadFile(statePath)
+			require.NoError(t, err)
+			taskDir := filepath.Join("docs", fx.slug)
+			failedPath := taskDir
+			if directory == "working" {
+				failedPath = "."
+			}
+			cause := &os.PathError{Op: "getwd", Err: os.ErrNotExist}
+			original := absoluteDirectoryPath
+			t.Cleanup(func() { absoluteDirectoryPath = original })
+			absoluteDirectoryPath = func(path string) (string, error) {
+				if path == failedPath {
+					return "", cause
+				}
+				return original(path)
+			}
+			ctx, err := CreateContext(Opts{TaskDir: taskDir, Config: cfg})
+			require.ErrorIs(t, err, cause, "path resolution must preserve the original getwd failure")
+			assert.ErrorContains(t, err, "resolve "+directory+" directory")
+			assert.Nil(t, ctx, "an unresolved workspace must not produce an executable context")
+			after, err := os.ReadFile(statePath)
+			require.NoError(t, err)
+			assert.Equal(t, before, after, "path resolution failure must not advance task state")
+		})
+	}
+}
+
 func TestCanonicalDirectoryRejectsRelativePathAfterWorkingDirectoryRemoval(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
