@@ -56,6 +56,16 @@ func TestReadCacheScope(t *testing.T) {
 	}, sections)
 }
 
+func TestExecuteFeedbackPreservesStableContract(t *testing.T) {
+	p := testPacket()
+	initial := BuildExecutePrompt(p, testSpec(), "/task", "", 1)
+	retry := BuildExecutePrompt(p, testSpec(), "/task", "", 2, map[string]any{"error-code": "L1_FAILED", "output": "assertion: got 2 want 3"})
+	assert.Equal(t, strings.Split(initial, "## Runtime")[0], strings.Split(retry, "## Runtime")[0])
+	assert.Contains(t, retry, "assertion: got 2 want 3")
+	assert.Contains(t, retry, "unit/regression tests")
+	assert.Contains(t, retry, "protected-test-patterns")
+}
+
 func TestReadCacheScopeTruncatesAtCap(t *testing.T) {
 	dir := t.TempDir()
 	big := strings.Repeat("x", CacheScopeCap+100)

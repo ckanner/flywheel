@@ -285,14 +285,16 @@ func TestDefaultRunCapturesOutputAndExitCode(t *testing.T) {
 	assert.Equal(t, "err\n", r.Stderr)
 }
 
-func TestDefaultRunTimeoutMapsToExitOne(t *testing.T) {
+func TestDefaultRunTimeoutHasNoNormalExit(t *testing.T) {
 	r := DefaultRun("/bin/sh", []string{"-c", "sleep 5"}, ".", 80, nil)
-	assert.Equal(t, 1, r.ExitCode) // Node: typeof err.code === 'number' 不成立 → 1
+	assert.Equal(t, -1, r.ExitCode)
+	assert.True(t, r.TimedOut)
 }
 
-func TestDefaultRunSpawnErrorMapsToExitOne(t *testing.T) {
+func TestDefaultRunSpawnErrorHasNoNormalExit(t *testing.T) {
 	r := DefaultRun("/definitely/not/a/binary", nil, ".", 1000, nil)
-	assert.Equal(t, 1, r.ExitCode)
+	assert.Equal(t, -1, r.ExitCode)
+	assert.NotEmpty(t, r.SpawnError)
 }
 
 func TestDefaultRunEnvAllowlist(t *testing.T) {
@@ -305,23 +307,9 @@ func TestDefaultRunMaxBufferOverflow(t *testing.T) {
 	old := maxBuffer
 	maxBuffer = 8
 	defer func() { maxBuffer = old }()
-	r := DefaultRun("/bin/sh", []string{"-c", "printf 'aaaaaaaaaaaaaaaa'"}, ".", 5000, nil)
-	assert.Equal(t, 1, r.ExitCode) // 溢出按 Node maxBuffer 语义映射 exitCode=1
+	r := DefaultRun("/bin/sh", []string{"-c", "printf 'aaaaaaaaaaaaaaaa'; printf 'bbbbbbbbbbbbbbbb' >&2"}, ".", 5000, nil)
+	assert.Equal(t, 0, r.ExitCode, "保留真实退出码，截断另外记录")
+	assert.True(t, r.Truncated)
 	assert.Equal(t, "aaaaaaaa", r.Stdout)
-}
-
-func TestLimitedBuffer(t *testing.T) {
-	b := &limitedBuffer{limit: 4}
-	n, err := b.Write([]byte("ab"))
-	assert.NoError(t, err)
-	assert.Equal(t, 2, n)
-	n, err = b.Write([]byte("cdefghij"))
-	assert.NoError(t, err)
-	assert.Equal(t, 8, n) // 字节数照报，内容截断
-	assert.True(t, b.overflow)
-	assert.Equal(t, "abcd", b.String())
-	// 恰好到上限不算溢出。
-	b2 := &limitedBuffer{limit: 2}
-	_, _ = b2.Write([]byte("ab"))
-	assert.False(t, b2.overflow)
+	assert.Equal(t, "bbbbbbbb", r.Stderr)
 }

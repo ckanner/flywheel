@@ -11,6 +11,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/modules"
 	"github.com/ckanner/flywheel/internal/skillsembed"
 )
@@ -26,12 +27,13 @@ func intakeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg, err := config.Load(taskDir, mustCwd())
+			cwd := machine.ProjectRoot(mustCwd())
+			cfg, err := config.Load(taskDir, cwd)
 			if err != nil {
 				return err
 			}
 			sum, err := modules.RunIntake(modules.CtxOpts{
-				TaskDir: taskDir, Cwd: mustCwd(), Config: cfg,
+				TaskDir: taskDir, Cwd: cwd, Config: cfg,
 				Drivers: drivers.CreateDrivers(cfg),
 				Log:     logf(cmd),
 			}, source, nil)
@@ -56,12 +58,13 @@ func gardenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg, err := config.Load(taskDir, mustCwd())
+			cwd := machine.ProjectRoot(mustCwd())
+			cfg, err := config.Load(taskDir, cwd)
 			if err != nil {
 				return err
 			}
 			sum, err := modules.RunGarden(modules.CtxOpts{
-				TaskDir: taskDir, Cwd: mustCwd(), Config: cfg,
+				TaskDir: taskDir, Cwd: cwd, Config: cfg,
 				Drivers: drivers.CreateDrivers(cfg),
 				Log:     logf(cmd),
 			})
@@ -122,7 +125,7 @@ func installSkillsCmd() *cobra.Command {
 			return renderInstall(cmd, sum.TargetBase, sum.Scope, "复制（内嵌快照）", sum.Results)
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "替换已有条目")
+	cmd.Flags().BoolVar(&force, "force", false, "仅 --link：替换已有链接或文件，不删除真实目录")
 	cmd.Flags().BoolVar(&link, "link", false, "软链到源码仓库（开发机专用，需在源码树内）")
 	cmd.Flags().StringVar(&project, "project", "", "安装到 <path>/.agents/skills（项目级）")
 	return cmd
@@ -144,7 +147,7 @@ func renderInstall(cmd *cobra.Command, targetBase, scope, method string, results
 		fmt.Fprintf(out, "  %s: %s%s -> %s\n", r.Name, actionText, reason, r.Dest)
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "验证方式: 在 kimi code 或 pi 中调用 /skill:<name>，例如 /skill:flywheel-run。")
+	fmt.Fprintln(out, "验证方式: flywheel skills list / flywheel skills read <name>；在宿主中确认已加载 .agents/skills，并按宿主支持的语法调用。")
 	if errCount > 0 {
 		return &exitError{code: 1}
 	}

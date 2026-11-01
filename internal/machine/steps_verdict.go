@@ -29,10 +29,11 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 
 	call := func() drivers.Result {
 		args := drivers.CallArgs{
-			TaskDir: c.TaskDir,
-			Cwd:     c.Cwd,
-			Prompt:  a.prompt,
-			Model:   currentModel,
+			TaskDir:        c.TaskDir,
+			Cwd:            firstNonEmpty(a.cwd, c.Cwd),
+			PermissionMode: "read-only",
+			Prompt:         a.prompt,
+			Model:          currentModel,
 			Binding: config.LoopBinding{
 				Harness: currentHarness, Model: currentModel,
 				Channel: channel, Thinking: a.binding.Thinking,
@@ -90,13 +91,15 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		if text == "" {
 			text = res.Stdout
 		}
-		if streamCode == "" && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut &&
+		if streamCode == "" && res.Settled && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && !res.Cancelled && !res.Truncated && res.CleanupError == "" &&
 			res.Signal == "" && errs.ClassifyError(errs.SpawnResult{ExitCode: 0, Stderr: res.Stderr}) == "" {
 			verdict, _ = prompts.ParseReviewVerdict(text)
 		}
 		code := ""
 		if verdict == nil {
-			if streamCode != "" {
+			if res.TimedOut || res.Cancelled || res.CleanupError != "" || res.SpawnError != "" {
+				code = string(errs.ClassifyError(toSpawnResult(res)))
+			} else if streamCode != "" {
 				code = string(streamCode)
 			} else if cls := errs.ClassifyError(toSpawnResult(res)); cls != "" {
 				code = string(cls)
@@ -173,6 +176,10 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (reviewOutcome, error) {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
+	if !c.currentL1Evidence(packet) {
+		return reviewOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
+	}
+	identity := evidenceIdentity(ps.Evidence.L1)
 
 	uCwd := c.unitCwd(packet)
 	changed, _ := verify.GetChangedFiles(uCwd, c.baseRefOf(ps))
@@ -214,7 +221,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	}
 	attemptNo := ps.Attempts
 	r, ferr := c.agentVerdictStep(verdictArgs{
-		role: "review", binding: binding, prompt: prompt,
+		role: "review", binding: binding, prompt: prompt, cwd: uCwd,
 		packetID: id, attemptNo: &attemptNo, ps: ps,
 	})
 	if ferr != nil {
@@ -226,11 +233,21 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	if !r.OK {
 		return reviewOutcome{ErrorCode: r.ErrorCode}, nil
 	}
+	if !c.currentL1Evidence(packet) {
+		// 即使后端违反只读约束或用户同时编辑，旧裁决也不能放行新代码。
+		ps.Evidence.Review = map[string]any{
+			"verdict": "return", "reasons": []string{"candidate or contract changed during review; rerun verification"},
+			"at": c.nowISO(), "identity": identity,
+		}
+		c.save()
+		return reviewOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
+	}
 
 	vb, _ := json.Marshal(r.Verdict)
 	m := map[string]any{}
 	_ = json.Unmarshal(vb, &m)
 	m["at"] = c.nowISO()
+	m["identity"] = identity
 	ps.Evidence.Review = m
 	at := c.nowISO()
 	ps.UpdatedAt = &at
@@ -249,12 +266,47 @@ func loopToBinding(b config.LoopBinding) fallback.Binding {
 
 // judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由全新会话对照 spec 的需求
 // 矩阵复核整个里程碑。失败 → 升级 inbox。
-// v0.18（A3 双 judge 面板）：config `judge-panel` 配置第二意见绑定（K3 主判
-// + V4 Pro 异厂商复核）。语义：一致按共识；分歧 → split（Pass=false，inbox
-// 叫人）；复核通道自身失败 → fail-loud 升级，绝不静默降级为单 judge
-// （单 judge 偏差实证见 DESIGN §4.3/附录 A）。
-func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) {
+// 可选 judge-panel 增加第二意见，默认不启用。语义：一致按共识；
+// 分歧 → split（Pass=false，inbox 叫人）；复核通道失败也升级，
+// 不能静默降为单 judge。两次调用都不得改变绑定的主候选。
+func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err error) {
 	ms := c.State.Milestones[milestone.ID]
+	gateIdentity := evidenceIdentity(ms.Gate)
+	// run 总是先执行 milestoneGateStep。无身份仅保留内部独立 judge 的
+	// 兼容调用；正式闭环必须绑定主 checkout 上刚通过的 L2/L3 候选。
+	checkIdentity := func(phase string) bool {
+		if gateIdentity == "" {
+			return true
+		}
+		identity, snapshotErr := c.candidateFingerprint(c.Cwd)
+		gmap := ms.Gate.(map[string]any) // 非空 evidenceIdentity 只来自这个对象形状。
+		if snapshotErr == nil && identity == gateIdentity && gmap["pass"] == true {
+			return true
+		}
+		message := phase + ": milestone candidate changed or its gate is not passing"
+		if snapshotErr != nil {
+			message = fmt.Sprintf("%s: candidate snapshot failed: %v", phase, snapshotErr)
+		}
+		gmap["identity-error"] = message
+		gmap["pass"] = false
+		gmap["judge"] = map[string]any{
+			"verdict": "error", "error": string(errs.INVALID_REQUEST), "at": c.nowISO(),
+			"identity": gateIdentity, "identity-error": message, "rejected-judge": gmap["judge"],
+		}
+		c.State.Milestones[milestone.ID] = ms
+		c.save()
+		return false
+	}
+	if !checkIdentity("before judge") {
+		return judgeOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
+	}
+	defer func() {
+		if !checkIdentity("after judge") {
+			out.Pass = false
+			out.Verdict = nil
+			out.ErrorCode = errs.INVALID_REQUEST
+		}
+	}()
 	packets := []*contract.Packet{}
 	for _, p := range c.PacketList {
 		if m, err := contract.MilestoneOfPacket(p.PacketID); err == nil && m == milestone.ID {
@@ -301,7 +353,7 @@ func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) 
 		return judgeOutcome{Stopped: true}, nil
 	}
 	if !r.OK {
-		gmap["judge"] = map[string]any{"verdict": "error", "error": string(r.ErrorCode), "at": c.nowISO()}
+		gmap["judge"] = map[string]any{"verdict": "error", "error": string(r.ErrorCode), "identity": gateIdentity, "at": c.nowISO()}
 		c.save()
 		return judgeOutcome{ErrorCode: r.ErrorCode}, nil
 	}
@@ -311,12 +363,13 @@ func (c *Context) judgeStep(milestone contract.Milestone) (judgeOutcome, error) 
 		m := map[string]any{}
 		_ = json.Unmarshal(vb, &m)
 		m["at"] = c.nowISO()
+		m["identity"] = gateIdentity
 		return m
 	}
 
 	judge := verdictRec(r)
 	pass := r.Verdict.Verdict == "pass"
-	out := judgeOutcome{Pass: pass, Verdict: r.Verdict}
+	out = judgeOutcome{Pass: pass, Verdict: r.Verdict}
 	if r2 != nil {
 		switch {
 		case r2.Stopped:

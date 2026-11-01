@@ -55,6 +55,9 @@ func CheckBudget(st *state.State, cfg *config.Config, now time.Time) BudgetVerdi
 	var used int64
 	if bucket, ok := st.Budget.Daily[day]; ok {
 		used = bucket.Tokens
+		if enforce == "hard" && bucket.UnknownUsageCalls > 0 {
+			return BudgetVerdict{Action: ActionStop, Reason: "daily token budget cannot be verified: harness usage is unknown (" + day + ")", Enforce: enforce}
+		}
 	}
 	if used < *limit {
 		return BudgetVerdict{Action: ActionOK, Enforce: enforce}

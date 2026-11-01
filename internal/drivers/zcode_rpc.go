@@ -419,6 +419,7 @@ func RunZcode(a ZcodeArgs) Result {
 
 	name, cmdArgs := zcodeRuntimeCommand()
 	result := watchdog.Run(name, cmdArgs, watchdog.Opts{
+		Context:       a.Watchdog.Context,
 		Cwd:           a.Cwd,
 		Env:           childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
@@ -430,23 +431,8 @@ func RunZcode(a ZcodeArgs) Result {
 	RegisterZcodeWorkspace(a.Cwd)
 
 	oc := proto.snapshot()
-	out := Result{
-		ExitCode:     result.ExitCode,
-		Signal:       result.Signal,
-		TimedOut:     result.TimedOut,
-		IdleTimedOut: result.IdleTimedOut,
-		WallTimedOut: result.WallTimedOut,
-		Stdout:       result.Stdout,
-		Stderr:       result.Stderr,
-		Truncated:    result.Truncated,
-		DurationMS:   result.DurationMS,
-		SpawnError:   result.SpawnError,
-		Harness:      "zcode",
-		Provider:     "zai-coding-plan",
-		Model:        model,
-		SessionID:    oc.sessionID,
-		Text:         oc.text,
-	}
+	out := fromWatchdog(result, "zcode", "zai-coding-plan", model)
+	out.SessionID, out.Text = oc.sessionID, oc.text
 	if oc.usage != nil {
 		u := *oc.usage
 		out.Usage = &u
@@ -458,7 +444,7 @@ func RunZcode(a ZcodeArgs) Result {
 	// Settled 由协议完成度决定（进程终态被 finish 的 SIGTERM 收割是正常路径，
 	// 不读作失败——与出口契约"正交记录"语义一致）。
 	out.Settled = oc.done && oc.failed == "" && oc.text != "" &&
-		!result.TimedOut && result.SpawnError == ""
+		!result.TimedOut && !result.Cancelled && !result.Truncated && result.CleanupError == "" && result.SpawnError == ""
 	if !out.Settled {
 		msg := oc.failed
 		if msg == "" && result.TimedOut {

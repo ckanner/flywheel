@@ -1,0 +1,6 @@
+ok  	github.com/ckanner/flywheel/internal/machine	44.895s
+ok  	github.com/ckanner/flywheel/internal/verify	6.486s
+ok  	github.com/ckanner/flywheel/internal/watchdog	5.978s
+ok  	github.com/ckanner/flywheel/internal/drivers	10.863s
+ok  	github.com/ckanner/flywheel/internal/cli	9.047s
+ok  	github.com/ckanner/flywheel/internal/modules	27.013s

@@ -8,7 +8,7 @@ needs-live-credentials: false
 context-files: [src/auth/*.ts, docs/spec.md#M-01]
 cache-scope: [docs/spec.md]
 boundaries:
-  must-not-touch: [src/payments/, tests/]
+  must-not-touch: [src/payments/, acceptance/auth/, e2e/auth-flow.ts]
   max-files: 6
 acceptance:
   L1:
@@ -37,12 +37,15 @@ done-report-format:
 You are the executor for exactly one task packet. You only do this one thing.
 
 1. Read the contract above and every file in `context-files` before writing code.
-2. **Implement only — never write or modify tests**. Acceptance
-   tests are provided with this packet by the Plan Loop, or already exist in
-   the repo. Creating or modifying ANY test file fails this unit: the
-   orchestrator checks the git diff after you finish.
-3. Code that is hard to test is a design defect: STOP and escalate so the Plan
-   Loop can adjust the design — never "fix" it by touching tests yourself.
+2. Implement the code together with ordinary unit and regression tests. Keep
+   the 100% coverage gate and meaningful assertions; never weaken or bypass
+   assertions or lower the coverage threshold to make a failing check green.
+3. Frozen acceptance oracles are explicitly protected by
+   `boundaries.must-not-touch` and `verify.protected-test-patterns` in the
+   task configuration. Do not modify these files. If an oracle is wrong or
+   the scope must change, return concrete evidence and a proposed revision
+   to the Plan Loop. Revisions outside the task directory require an explicit
+   human task; the planner cannot edit those files automatically.
 4. Run the acceptance commands yourself. Report what passed and what failed.
 5. You NEVER declare the task "done". Completion is judged by the orchestrator
    (acceptance commands) and the Review Loop, not by you.

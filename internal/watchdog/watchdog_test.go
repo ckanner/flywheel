@@ -1,6 +1,8 @@
 package watchdog
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -166,7 +168,9 @@ func TestKillActiveChildren(t *testing.T) {
 	wg.Wait()
 	assert.Less(t, time.Since(killed).Milliseconds(), int64(10000))
 	for _, r := range results {
-		assert.True(t, !r.TimedOut || r.TimedOut) // 已退出即达目的；无孤儿断言见下方注册表
+		assert.True(t, r.Cancelled)
+		assert.False(t, r.TimedOut)
+		assert.True(t, r.ExitCode != nil || r.Signal != "", "取消必须等待进程终态")
 	}
 	regMu.Lock()
 	n := len(registry)
@@ -194,7 +198,141 @@ func TestKillActiveChildrenEscalatesToSIGKILL(t *testing.T) {
 	r := <-done
 	elapsed := time.Since(start)
 	assert.Less(t, elapsed.Milliseconds(), int64(15000), "SIGKILL 升级必须生效")
-	assert.NotNil(t, r.ExitCode != nil || r.Signal != "")
+	assert.True(t, r.Cancelled)
+	assert.NotEmpty(t, r.Signal)
+}
+
+func TestRunCancelledContextNeverStarts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	marker := t.TempDir() + "/unexpected"
+	r := Run("sh", []string{"-c", fmt.Sprintf("touch %q", marker)}, Opts{Context: ctx})
+	assert.True(t, r.Cancelled)
+	assert.Nil(t, r.ExitCode)
+	assert.NoFileExists(t, marker)
+}
+
+func TestRunContextCancellationCannotBecomeSuccessfulExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := Run("sh", []string{"-c", `trap 'exit 0' TERM; echo ready; while :; do :; done`}, Opts{
+		Context: ctx, IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 100,
+		OnActivity: func(chunk, _ string) {
+			if strings.Contains(chunk, "ready") {
+				cancel()
+			}
+		},
+	})
+	require.NotNil(t, r.ExitCode)
+	assert.Equal(t, 0, *r.ExitCode, "TERM trap 正常退出也必须保留取消原因")
+	assert.True(t, r.Cancelled)
+	assert.False(t, r.TimedOut)
+}
+
+func TestRunNormalExitCleansOwnedBackgroundWriters(t *testing.T) {
+	marker := t.TempDir() + "/writes"
+	script := fmt.Sprintf(`(trap '' TERM; while :; do printf x >> %q; sleep 0.01; done) >/dev/null 2>&1 &
+while [ ! -s %q ]; do sleep 0.01; done
+exit 0`, marker, marker)
+	r := Run("sh", []string{"-c", script}, Opts{IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 100})
+	require.NotNil(t, r.ExitCode)
+	assert.Equal(t, 0, *r.ExitCode)
+	assert.Empty(t, r.CleanupError)
+	assert.False(t, r.Cancelled)
+	before, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.NotEmpty(t, before)
+	time.Sleep(150 * time.Millisecond)
+	after, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "正常会话结束后孙进程不得继续写工作区")
+}
+
+func TestRunLeaderExitWithInheritedPipesIsBoundedAndFails(t *testing.T) {
+	started := time.Now()
+	r := Run("sh", []string{"-c", `sleep 30 & exit 0`}, Opts{
+		IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 80,
+	})
+	assert.Less(t, time.Since(started), 3*time.Second)
+	assert.NotEmpty(t, r.CleanupError, "管道被后代占用而截断排空，不得冒充完整结果")
+	assert.True(t, r.Truncated)
+	assert.False(t, r.TimedOut)
+}
+
+func TestRunReportsUnconfirmedCleanup(t *testing.T) {
+	original := groupSignal
+	t.Cleanup(func() { groupSignal = original })
+	for _, fault := range []string{"kill", "inspect", "still-alive"} {
+		t.Run(fault, func(t *testing.T) {
+			groupSignal = func(pid int, sig syscall.Signal) error {
+				if fault == "kill" && sig == syscall.SIGKILL || fault == "inspect" && sig == 0 {
+					return syscall.EPERM
+				}
+				if fault == "still-alive" && sig == 0 {
+					return nil
+				}
+				return original(pid, sig)
+			}
+			r := Run("true", nil, Opts{KillGraceMs: 20})
+			require.NotNil(t, r.ExitCode)
+			assert.Equal(t, 0, *r.ExitCode)
+			assert.NotEmpty(t, r.CleanupError, "正常退出码不能掩盖无法确认清理的故障")
+		})
+	}
+}
+
+func TestKillActiveChildrenDoesNotKillLaterCalls(t *testing.T) {
+	t.Cleanup(func() { KillActiveChildren(time.Millisecond) })
+	ready, term := make(chan struct{}, 1), make(chan struct{}, 1)
+	firstDone := make(chan Result, 1)
+	go func() {
+		firstDone <- Run("sh", []string{"-c", `trap 'echo term' TERM; echo ready; while :; do :; done`}, Opts{
+			IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000,
+			OnActivity: func(chunk, _ string) {
+				if strings.Contains(chunk, "ready") {
+					ready <- struct{}{}
+				}
+				if strings.Contains(chunk, "term") {
+					term <- struct{}{}
+				}
+			},
+		})
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-ready:
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 5*time.Millisecond)
+	killed := make(chan struct{})
+	go func() { KillActiveChildren(300 * time.Millisecond); close(killed) }()
+	require.Eventually(t, func() bool {
+		select {
+		case <-term:
+			return true
+		default:
+			return false
+		}
+	}, 3*time.Second, 5*time.Millisecond) // SIGTERM 已发送；后续调用不在取消快照中。
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	laterDone := make(chan Result, 1)
+	go func() {
+		laterDone <- Run("sh", []string{"-c", `echo later; sleep 30`}, Opts{
+			Context: ctx, IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 100,
+		})
+	}()
+	<-killed
+	assert.True(t, (<-firstDone).Cancelled)
+	select {
+	case r := <-laterDone:
+		t.Fatalf("unrelated later call was killed: %+v", r)
+	case <-time.After(80 * time.Millisecond):
+	}
+	cancel()
+	assert.True(t, (<-laterDone).Cancelled)
 }
 
 func TestKillGroupFallbackToSingleKill(t *testing.T) {

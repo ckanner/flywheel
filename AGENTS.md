@@ -8,7 +8,7 @@ on disk, unattended, escalating to a human when stuck. This repo holds the
 orchestrator (`cmd/` + `internal/`), the contract templates (`templates/`),
 and the button skills (`skills/`).
 
-docs/design.md is the authoritative design document. Session bootstrap: read it first — its changelog header records the current phase, its §10 records what is pending (evidence gates / next steps). Its §2 十条设计铁律 are the
+docs/design.md is the authoritative design document. Session bootstrap: read it first — its introduction records the implementation phase, and its validation and future-work sections record pending checks and follow-ups. Its §2 design invariants are the
 highest constraint: any implementation decision that conflicts with them is
 wrong. The orchestrator is NOT an agent — keep every machine decision
 mechanically checkable.
@@ -24,11 +24,14 @@ disjoint worlds.
 go build ./...            # 需要 Go >= 1.27（唯一构建依赖）
 make test                 # go test ./... 全部包
 make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外）
-make quality-gate         # vet + fmt-check + coverage —— CI 同款，唯一验收闸门
+make quality-gate         # vet + fmt-check + coverage —— Go 完整门禁
+npm --prefix plugins/dsh run check  # DSH 插件构建与离线行为测试
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1
 ```
 
-`make quality-gate` 绿是交付的唯一标准。真实 zcode/codex/kimi 冒烟不在默认门禁内；
-mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
+Go 改动必须通过 `make quality-gate`；DSH 插件还须通过 Node 与跨进程桥接检查。
+CI 在 Linux/macOS 运行这些离线门禁，并在 Linux 检查核心包 race。真实模型、
+桌面 UI 和账号冒烟不在默认门禁内；无凭证环境可以运行全部离线检查。
 
 ## Hard Contracts
 
@@ -45,7 +48,7 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
 - **Ledger zone**: paths inside `docs/<slug>/` are classified by
   `internal/ledger`. Boundary judgement excludes ledger paths; unit commits
   additionally exclude the volatile set (metrics.jsonl / orchestrator.log /
-  orchestrator.pid / .state.lock).
+  orchestrator.pid / .state.lock / .run.lock / .stop-request / .control/).
 - **Skills are buttons**: a SKILL.md contains validation + CLI invocation +
   translation, never loop logic. Frontmatter requires `name` matching the
   directory and non-empty `description` (the only two fields both the
@@ -57,6 +60,7 @@ mock 驱动覆盖全部编排逻辑，无凭证环境可完整运行。
   Enforced by internal/skillsembed tests (real YAML parsing + standard
   constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
+  `control start|status|stop` prints one protocol-versioned JSON response;
   `status`/`stop`/`install-skills`/`template` print human-readable text; errors go to
   stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /
   budget-stopped / failed manual step.

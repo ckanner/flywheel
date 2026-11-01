@@ -46,6 +46,10 @@ func NowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z"
 // ps.exit 的五个键，state.schema.json 同样声明了它们）。
 // "超时被 trap 成 exit 0"不得读成绿灯。
 type ExitInfo struct {
+	Settled      bool    `json:"settled"`
+	Cancelled    bool    `json:"cancelled"`
+	Truncated    bool    `json:"truncated"`
+	CleanupError string  `json:"cleanupError,omitempty"`
 	ExitCode     *int    `json:"exitCode"`
 	Signal       *string `json:"signal"`
 	TimedOut     bool    `json:"timedOut"`
@@ -94,6 +98,7 @@ type PacketState struct {
 	Artifacts            []string  `json:"artifacts"`
 	Exit                 *ExitInfo `json:"exit"`
 	BaseRef              *string   `json:"base-ref"`
+	ContractSyncPending  bool      `json:"contract-sync-pending,omitempty"`
 	// Commit 编排器单元提交记录：对象 {sha,message,at,ledger-sha?,merge-error?}
 	// 或 {sha,message,at} / {skipped|error,...}（in-place 分支直接落 CommitOutcome
 	// 形状）。state.schema.json 声明为对象——machine 层写入，此处仅保证 JSON 往返。
@@ -101,6 +106,8 @@ type PacketState struct {
 	Worktree             *WorktreeInfo `json:"worktree"`
 	Evidence             Evidence      `json:"evidence"`
 	LastFailureSignature *string       `json:"last-failure-signature"`
+	LastFeedback         any           `json:"last-feedback,omitempty"`
+	EvidenceHistory      []any         `json:"evidence-history,omitempty"`
 	RetryHistory         []any         `json:"retry-history"`
 	UpdatedAt            *string       `json:"updated-at"`
 }
@@ -126,8 +133,10 @@ type BudgetTotals struct {
 
 // DailyBucket 单日用量。
 type DailyBucket struct {
-	Tokens  int64   `json:"tokens"`
-	CostUSD float64 `json:"cost-usd"`
+	Tokens            int64   `json:"tokens"`
+	CostUSD           float64 `json:"cost-usd"`
+	UnknownUsageCalls int64   `json:"unknown-usage-calls,omitempty"`
+	UnknownCostCalls  int64   `json:"unknown-cost-calls,omitempty"`
 }
 
 // ProviderCache 单 provider 缓存统计（铁律 10：逐 provider 命中率）。
@@ -146,27 +155,30 @@ type CacheStats struct {
 
 // Budget 预算熔断 + 用量记账（铁律 9：记录永不关闭）。
 type Budget struct {
-	Enforce         string                 `json:"enforce"` // off | soft | hard
-	DailyTokenLimit *int64                 `json:"daily-token-limit"`
-	Daily           map[string]DailyBucket `json:"daily"`
-	Totals          BudgetTotals           `json:"totals"`
-	Cache           CacheStats             `json:"cache"`
-	Warnings        []string               `json:"warnings"`
+	Enforce           string                 `json:"enforce"` // off | soft | hard
+	DailyTokenLimit   *int64                 `json:"daily-token-limit"`
+	Daily             map[string]DailyBucket `json:"daily"`
+	Totals            BudgetTotals           `json:"totals"`
+	Cache             CacheStats             `json:"cache"`
+	Warnings          []string               `json:"warnings"`
+	UnknownUsageCalls int64                  `json:"unknown-usage-calls,omitempty"`
+	UnknownCostCalls  int64                  `json:"unknown-cost-calls,omitempty"`
 }
 
 // State state.json 根对象。
 type State struct {
-	SchemaVersion    int                       `json:"schema-version"`
-	Slug             string                    `json:"slug"`
-	Revision         int64                     `json:"revision"`
-	Status           string                    `json:"status"`
-	CurrentMilestone *string                   `json:"current-milestone"`
-	PlanSession      any                       `json:"plan-session"`
-	Milestones       map[string]MilestoneState `json:"milestones"`
-	Packets          map[string]*PacketState   `json:"packets"`
-	Budget           Budget                    `json:"budget"`
-	LastProgressAt   *string                   `json:"last-progress-at"`
-	Inbox            []any                     `json:"inbox"`
+	SchemaVersion        int                       `json:"schema-version"`
+	Slug                 string                    `json:"slug"`
+	Revision             int64                     `json:"revision"`
+	Status               string                    `json:"status"`
+	CurrentMilestone     *string                   `json:"current-milestone"`
+	PlanSession          any                       `json:"plan-session"`
+	ContractFingerprints map[string]string         `json:"contract-fingerprints,omitempty"`
+	Milestones           map[string]MilestoneState `json:"milestones"`
+	Packets              map[string]*PacketState   `json:"packets"`
+	Budget               Budget                    `json:"budget"`
+	LastProgressAt       *string                   `json:"last-progress-at"`
+	Inbox                []any                     `json:"inbox"`
 }
 
 // Usage 单次会话用量（driver 上报；totalTokens 缺省 = input+output）。

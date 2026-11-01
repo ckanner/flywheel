@@ -1,0 +1,6 @@
+- insert:
+    - id: flywheel
+      name: '@ckanner/dsh-plugin-flywheel'
+      config:
+        flywheelBinary: flywheel
+        controlTimeoutMs: 60000

@@ -1,0 +1,4 @@
+=== RUN   TestDSHNodeWorkerOfflineBridge
+--- PASS: TestDSHNodeWorkerOfflineBridge (0.10s)
+PASS
+ok  	github.com/ckanner/flywheel/internal/drivers	0.105s

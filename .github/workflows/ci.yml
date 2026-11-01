@@ -1,5 +1,5 @@
-# CI — Go 版 Flywheel（Node 版工作流已随迁移废弃）。
-# 门禁 = make quality-gate（vet + fmt-check + coverage 100%）。
+# CI — Go 引擎 + DSH Node worker / 桌面插件。
+# 保留 make quality-gate（vet + fmt-check + coverage 100%），并验证插件及跨进程契约。
 # 双 OS 矩阵（PR #4 review 起）：本地绿 ≠ CI 绿——PR #4 曾在作者 macOS 全绿、
 # Linux CI 红（darwin-only 断言 + 亚毫秒计时脆弱断言）；修复后测试已平台可移植，
 # 矩阵再补另一方向：darwin-only 事实（EvalSymlinks /tmp→/private/tmp、zcode
@@ -14,8 +14,16 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +34,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Install git (worktree tests need a real git)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y git
@@ -34,3 +45,31 @@ jobs:
           git config --global user.email "ci@flywheel.local"
           git config --global user.name "flywheel-ci"
       - run: make quality-gate
+      - name: Build and test the DSH plugin (offline)
+        working-directory: plugins/dsh
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+      - name: Verify the Go to Node to SDK protocol boundary (offline)
+        env:
+          FLYWHEEL_TEST_NODE_BRIDGE: "1"
+        run: go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1 -v
+      - name: Check concurrent lifecycle and state code
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules -count=1
+      - name: Build and exercise the native CLI
+        run: |
+          make build
+          ./flywheel version
+          ./flywheel control --help
+          mkdir -p dist/ci
+          tar -czf dist/ci/flywheel-native.tar.gz flywheel
+      - name: Pack the DSH plugin without publishing
+        working-directory: plugins/dsh
+        run: npm pack --pack-destination ../../dist/ci
+      - name: Save checked development packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: flywheel-${{ runner.os }}-${{ runner.arch }}
+          path: dist/ci/
+          if-no-files-found: error

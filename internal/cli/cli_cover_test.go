@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -39,6 +40,8 @@ func executeHelperMain(mode string) int {
 		os.Args = []string{"flywheel", "version"}
 	case "error":
 		os.Args = []string{"flywheel", "status", filepath.Join(os.TempDir(), "definitely-missing-task")}
+	case "control-child":
+		return controlChildHelperMain()
 	default:
 		panic("unknown helper mode: " + mode)
 	}
@@ -127,6 +130,9 @@ func deadReapedPid(t *testing.T) int {
 
 func TestStatusAliveOrchestratorSuffix(t *testing.T) {
 	taskDir := t.TempDir()
+	release, err := machine.AcquireRunLease(taskDir)
+	require.NoError(t, err)
+	defer release()
 	writeFileCli(t, filepath.Join(taskDir, "state.json"), cliStateFixture)
 	writePidFile(t, taskDir, mustJSONT(t, map[string]int{"pid": os.Getpid()}))
 
@@ -145,6 +151,9 @@ func TestStatusPidFileVariantsRenderWithoutSuffix(t *testing.T) {
 	for name, payload := range cases {
 		t.Run(name, func(t *testing.T) {
 			taskDir := t.TempDir()
+			release, err := machine.AcquireRunLease(taskDir)
+			require.NoError(t, err)
+			defer release()
 			writeFileCli(t, filepath.Join(taskDir, "state.json"), cliStateFixture)
 			if payload != "" {
 				writePidFile(t, taskDir, payload)
@@ -237,39 +246,14 @@ func stopPollFast(t *testing.T) {
 	t.Cleanup(func() { stopPollAttempts, stopPollInterval = oldAttempts, oldInterval })
 }
 
-// orphanedSleep 启动一个脱离测试进程的 sleep（sh 退出后被 launchd 收养，
-// 绝不变成本测试的僵尸——僵尸会让 kill(pid,0) 恒成功）。返回其 pid。
-func orphanedSleep(t *testing.T, seconds string) int {
-	t.Helper()
-	out, err := exec.Command("/bin/sh", "-c",
-		"sleep "+seconds+" </dev/null >/dev/null 2>&1 & echo $!").Output()
-	require.NoError(t, err, string(out))
-	pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	require.NoError(t, err)
-	return pid
-}
-
-func killForSure(t *testing.T, pid int) {
-	t.Helper()
-	_ = syscall.Kill(pid, syscall.SIGKILL)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if signalZero(pid) != nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Logf("pid %d 未在 2s 内消失（收养方延迟），继续", pid)
-}
-
-func TestStopKillsLiveOrchestrator(t *testing.T) {
+func TestStopWaitsForControlledOrchestrator(t *testing.T) {
+	controlFixture(t, "hold")
 	stopPollFast(t)
-	pid := orphanedSleep(t, "30")
-	t.Cleanup(func() { killForSure(t, pid) })
-
 	taskDir := t.TempDir()
-	writeFileCli(t, filepath.Join(taskDir, "state.json"), cliStateFixture)
-	writePidFile(t, taskDir, mustJSONT(t, map[string]int{"pid": pid}))
+	code, started := runControlTest(t, "start", taskDir, t.TempDir())
+	require.Zero(t, code, "%+v", started)
+	pid := started.PID
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 
 	code, out := runCLI(t, "stop", taskDir)
 	require.Equal(t, 0, code, out)
@@ -281,25 +265,18 @@ func TestStopKillsLiveOrchestrator(t *testing.T) {
 	assert.Equal(t, "stopped", st.Status)
 }
 
-func TestStopReportsUnconfirmedKill(t *testing.T) {
+func TestStopReportsUnconfirmedCleanup(t *testing.T) {
+	controlFixture(t, "ignore-stop")
 	stopPollFast(t)
-	// trap "" TERM：忽略 SIGTERM 的假编排器；它是本测试的直接子进程且始终
-	// 存活（轮询期间不会变僵尸），结束后由 Cleanup 强杀并收割。
-	cmd := exec.Command("/bin/sh", "-c", `trap "" TERM; sleep 30`)
-	require.NoError(t, cmd.Start())
-	pid := cmd.Process.Pid
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
-
 	taskDir := t.TempDir()
-	writeFileCli(t, filepath.Join(taskDir, "state.json"), cliStateFixture)
-	writePidFile(t, taskDir, mustJSONT(t, map[string]int{"pid": pid}))
+	code, started := runControlTest(t, "start", taskDir, t.TempDir())
+	require.Zero(t, code, "%+v", started)
+	t.Cleanup(func() { _ = syscall.Kill(started.PID, syscall.SIGKILL) })
 
 	code, out := runCLI(t, "stop", taskDir)
 	require.Equal(t, 1, code, out)
-	assert.Contains(t, out, "SIGTERM 已发送给 pid "+strconv.Itoa(pid)+"，但 5s 内未确认退出")
+	assert.Contains(t, out, "停止请求已发送给当前任务运行")
+	assert.Contains(t, out, "未确认清理完成")
 	assert.Contains(t, out, "state.json 保持原样")
 	assert.FileExists(t, filepath.Join(taskDir, "orchestrator.pid"), "未确认停止绝不删 pid 文件")
 
@@ -308,7 +285,7 @@ func TestStopReportsUnconfirmedKill(t *testing.T) {
 	assert.Equal(t, "running", st.Status, "未确认停止绝不改写 state.json")
 }
 
-func TestStopAlreadyDeadPidStillReportsStoppedWithPid(t *testing.T) {
+func TestStopAlreadyDeadPidClearsStaleSidecar(t *testing.T) {
 	stopPollFast(t)
 	pid := deadReapedPid(t)
 
@@ -318,7 +295,7 @@ func TestStopAlreadyDeadPidStillReportsStoppedWithPid(t *testing.T) {
 
 	code, out := runCLI(t, "stop", taskDir)
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "已停止编排器进程 (pid "+strconv.Itoa(pid)+")")
+	assert.Contains(t, out, "编排器未在运行")
 	assert.NoFileExists(t, filepath.Join(taskDir, "orchestrator.pid"))
 }
 
@@ -627,6 +604,7 @@ func TestStopMissingTaskDirExitsOne(t *testing.T) {
 func TestStopStateSaveFailureSurfacesError(t *testing.T) {
 	taskDir := t.TempDir()
 	writeFileCli(t, filepath.Join(taskDir, "state.json"), cliStateFixture)
+	writeFileCli(t, filepath.Join(taskDir, ".run.lock"), "")
 	// 目录转只读：state.Save 落盘失败 → 错误原样上抛 exit 1。
 	require.NoError(t, os.Chmod(taskDir, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o700) })

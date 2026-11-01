@@ -8,8 +8,8 @@
 // error / turn.failed）——流式输出天然满足看门狗 idle 语义（对比 zcode 一次性
 // 模式的全程静默）。usage 明细在 turn.completed 上暴露：input/cached/cache_write/
 // output/reasoning 五桶（v0.22 探针实证）。订阅 OAuth 用户侧登录（codex login），
-// 编排器零 key 注入；沙箱与审批策略由 driver 显式固定（danger-full-access +
-// never），不读用户全局 config。版本硬门槛：gpt-6-astra 需 CLI ≥0.154（npm）
+// 编排器零 key 注入；沙箱按角色选择 read-only 或 workspace-write，审批
+// never，不默认 danger-full-access。版本硬门槛：gpt-6-astra 需 CLI ≥0.154（npm）
 // 或 app 内置 ≥0.153——旧版报 400 "requires a newer version of Codex"。
 //
 // 桌面可见性（v0.22）：exec 线程原生进 ChatGPT 桌面（com.openai.codex）的统一
@@ -22,6 +22,7 @@ package drivers
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -36,7 +37,8 @@ import (
 type CodexArgs struct {
 	Prompt          string
 	Model           string // 订阅内 slug，如 "gpt-6-astra"；空 → CodexDefaultModel
-	ReasoningEffort string // 统一 max 档（§7）；空 → "max"（GPT-6-Astra 默认仅 medium，必须显式）
+	ReasoningEffort string // 逐任务思考档；空 → high
+	PermissionMode  string // read-only（默认）或 workspace-write；审批始终 never
 	Cwd             string
 	APIKeys         map[string]string
 	Watchdog        watchdog.Opts
@@ -53,6 +55,7 @@ type CodexParsed struct {
 	Usage        Usage
 	ErrorMessage string
 	HasUsage     bool
+	Completed    bool // the last started turn has a successful turn.completed marker
 }
 
 // ParseCodexEventStream 解析 codex exec --json 的 NDJSON 事件流。容错纪律与
@@ -65,22 +68,20 @@ func ParseCodexEventStream(stdout string) CodexParsed {
 			continue
 		}
 		var ev struct {
-			Type    string `json:"type"`
-			Thread  string `json:"thread_id"`
-			Message string `json:"message"` // error 事件：顶层 message
-			Error   *struct {
-				Message string `json:"message"` // turn.failed：嵌套 error.message
-			} `json:"error"`
-			Item *struct {
+			Type    string          `json:"type"`
+			Thread  string          `json:"thread_id"`
+			Message json.RawMessage `json:"message"`
+			Error   json.RawMessage `json:"error"`
+			Item    *struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"item"`
 			Usage *struct {
-				InputTokens        int64 `json:"input_tokens"`
-				CachedInputTokens  int64 `json:"cached_input_tokens"`
-				CacheWriteInput    int64 `json:"cache_write_input_tokens"`
-				OutputTokens       int64 `json:"output_tokens"`
-				ReasoningOutputTok int64 `json:"reasoning_output_tokens"`
+				InputTokens        *int64 `json:"input_tokens"`
+				CachedInputTokens  int64  `json:"cached_input_tokens"`
+				CacheWriteInput    int64  `json:"cache_write_input_tokens"`
+				OutputTokens       *int64 `json:"output_tokens"`
+				ReasoningOutputTok int64  `json:"reasoning_output_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(trimmed), &ev); err != nil {
@@ -89,34 +90,36 @@ func ParseCodexEventStream(stdout string) CodexParsed {
 		switch ev.Type {
 		case "thread.started":
 			p.SessionID = ev.Thread
+		case "turn.started":
+			p.Completed = false
+			p.Text, p.HasUsage = "", false
 		case "item.completed":
 			if ev.Item != nil && ev.Item.Type == "agent_message" && ev.Item.Text != "" {
 				p.Text = ev.Item.Text
 			}
 		case "turn.completed":
-			if u := ev.Usage; u != nil {
+			p.Completed = true
+			p.HasUsage = false
+			if u := ev.Usage; u != nil && u.InputTokens != nil && u.OutputTokens != nil &&
+				*u.InputTokens >= 0 && *u.OutputTokens >= 0 && *u.InputTokens <= math.MaxInt64-*u.OutputTokens &&
+				u.CachedInputTokens >= 0 && u.CacheWriteInput >= 0 && u.ReasoningOutputTok >= 0 {
 				p.HasUsage = true
 				p.Usage = Usage{
-					Input:      u.InputTokens,
-					Output:     u.OutputTokens,
+					Input:      *u.InputTokens,
+					Output:     *u.OutputTokens,
 					Reasoning:  u.ReasoningOutputTok,
 					CacheRead:  u.CachedInputTokens,
 					CacheWrite: u.CacheWriteInput,
-					// codex 不报 total；三桶求和（metrics 零值另有 input+output 回退）。
-					TotalTokens: u.InputTokens + u.OutputTokens + u.ReasoningOutputTok,
+					// reasoning 是 output 子集，cached input 是 input 子集；不重复相加。
+					TotalTokens: *u.InputTokens + *u.OutputTokens,
 				}
 			}
 		case "error", "turn.failed":
-			msg := ev.Message
-			if msg == "" && ev.Error != nil {
-				msg = ev.Error.Message
-			}
-			if msg != "" {
-				if p.ErrorMessage == "" {
-					p.ErrorMessage = msg
-				} else if !strings.Contains(p.ErrorMessage, msg) {
-					p.ErrorMessage += "; " + msg
-				}
+			msg := jsonErrorMessage(ev.Message, ev.Error, trimmed)
+			if p.ErrorMessage == "" {
+				p.ErrorMessage = msg
+			} else if !strings.Contains(p.ErrorMessage, msg) {
+				p.ErrorMessage += "; " + msg
 			}
 		}
 	}
@@ -162,40 +165,35 @@ func RegisterCodexProject(path string) {
 // RunCodex 驱动一次 codex exec 会话。凭证在用户侧（codex login OAuth），本函数
 // 不注入任何凭证。spawn 前后双触发项目注册（语义见文件头注释）。
 func RunCodex(a CodexArgs) Result {
-	RegisterCodexProject(a.Cwd)
 	model := a.Model
 	if model == "" {
 		model = CodexDefaultModel
 	}
 	effort := a.ReasoningEffort
 	if effort == "" {
-		effort = "max" // GPT-6-Astra 默认 medium——driver 强制显式 max（§7 统一档）
+		effort = "high"
 	}
+	permission := a.PermissionMode
+	if permission == "" {
+		permission = "read-only"
+	}
+	if permission != "read-only" && permission != "workspace-write" {
+		return invalidHarnessResult("codex", model, "unsupported permission mode "+permission)
+	}
+	RegisterCodexProject(a.Cwd)
 	args := []string{"exec", "--json", "--skip-git-repo-check",
 		"-m", model, "-c", "model_reasoning_effort=" + effort,
-		// 沙箱/审批显式固定（v0.10 本机直跑信任模型）：不继承用户全局
-		// ~/.codex/config.toml——默认配置（只读沙箱+按请求审批）会让 headless
-		// exec 挂在审批等待上；编排器行为不得依赖用户环境状态（确定性纪律）。
-		"-s", "danger-full-access", "-c", "approval_policy=never",
-		"-C", a.Cwd, a.Prompt}
+		"-s", permission, "-c", "approval_policy=never", "-C", a.Cwd}
+	args = append(args, "--", a.Prompt)
 
 	var onActivity func(chunk, stream string)
+	events := jsonLines{onLine: a.OnEvent, limit: watchdog.MaxBuffer}
 	if a.OnEvent != nil {
-		buf := ""
-		onActivity = func(chunk, stream string) {
-			if stream != "stdout" {
-				return
-			}
-			buf += chunk
-			lines := strings.Split(buf, "\n")
-			for i := 0; i < len(lines)-1; i++ {
-				a.OnEvent(lines[i])
-			}
-			buf = lines[len(lines)-1]
-		}
+		onActivity = events.feed
 	}
 
 	result := watchdog.Run("codex", args, watchdog.Opts{
+		Context:       a.Watchdog.Context,
 		Cwd:           a.Cwd,
 		Env:           childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
@@ -203,32 +201,21 @@ func RunCodex(a CodexArgs) Result {
 		KillGraceMs:   a.Watchdog.KillGraceMs,
 		OnActivity:    onActivity,
 	})
+	if a.OnEvent != nil {
+		events.flush()
+	}
 	RegisterCodexProject(a.Cwd)
 
 	parsed := ParseCodexEventStream(result.Stdout)
-	out := Result{
-		ExitCode:     result.ExitCode,
-		Signal:       result.Signal,
-		TimedOut:     result.TimedOut,
-		IdleTimedOut: result.IdleTimedOut,
-		WallTimedOut: result.WallTimedOut,
-		Stdout:       result.Stdout,
-		Stderr:       result.Stderr,
-		Truncated:    result.Truncated,
-		DurationMS:   result.DurationMS,
-		SpawnError:   result.SpawnError,
-		Harness:      "codex",
-		Provider:     "chatgpt-subscription",
-		Model:        model,
-		SessionID:    parsed.SessionID,
-		Text:         parsed.Text,
-	}
+	out := fromWatchdog(result, "codex", "chatgpt-subscription", model)
+	out.SessionID, out.Text = parsed.SessionID, parsed.Text
 	if parsed.HasUsage {
 		u := parsed.Usage
 		out.Usage = &u
 	}
-	ok := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && result.SpawnError == ""
-	out.Settled = ok && parsed.ErrorMessage == "" && parsed.Text != ""
+	ok := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && !result.Cancelled &&
+		!result.Truncated && result.Signal == "" && result.CleanupError == "" && result.SpawnError == ""
+	out.Settled = ok && parsed.Completed && parsed.ErrorMessage == "" && parsed.Text != ""
 	if !out.Settled {
 		msg := parsed.ErrorMessage
 		if msg == "" {
@@ -237,8 +224,15 @@ func RunCodex(a CodexArgs) Result {
 		if msg == "" && result.SpawnError != "" {
 			msg = result.SpawnError
 		}
+		if msg == "" && result.Truncated {
+			msg = "codex: event stream was truncated"
+		}
 		if msg == "" && ok {
-			msg = "codex: no agent_message in event stream"
+			if !parsed.Completed {
+				msg = "codex: event stream ended without turn.completed"
+			} else {
+				msg = "codex: no agent_message in event stream"
+			}
 		}
 		if msg != "" {
 			out.ErrorMessage = &msg

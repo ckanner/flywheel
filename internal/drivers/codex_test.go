@@ -1,16 +1,60 @@
 package drivers
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
+
+func TestCodexPermissionScopeAndInvalidScope(t *testing.T) {
+	disableCodexDesktop(t)
+	bin, cwd := fakeBin(t, "codex", codexNDJSON)
+	setPath(t, bin)
+	r := InvokeHarness(CallArgs{Prompt: "implement this", Cwd: cwd,
+		Binding:        config.LoopBinding{Harness: "codex", Model: "gpt-6-astra", Thinking: "high"},
+		PermissionMode: "workspace-write",
+	}, "")
+	require.True(t, r.Settled)
+	args, err := os.ReadFile(filepath.Join(cwd, "args.txt"))
+	require.NoError(t, err)
+	assert.Contains(t, string(args), "workspace-write")
+	assert.NotContains(t, string(args), "danger-full-access")
+	assert.Contains(t, string(args), "approval_policy=never")
+
+	invalid := RunCodex(CodexArgs{Prompt: "p", PermissionMode: "danger-full-access"})
+	assert.False(t, invalid.Settled)
+	require.NotNil(t, invalid.ErrorMessage)
+	assert.Contains(t, *invalid.ErrorMessage, "unsupported permission mode")
+	assert.Empty(t, invalid.Stdout)
+}
+
+func TestEveryHarnessPropagatesCancelledContext(t *testing.T) {
+	disableCodexDesktop(t)
+	disableDesktop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, harness := range []string{"kimi", "pi", "omp", "codex", "zcode", "dsh"} {
+		t.Run(harness, func(t *testing.T) {
+			r := InvokeHarness(CallArgs{Prompt: "must not start", Cwd: t.TempDir(),
+				Binding:  config.LoopBinding{Harness: harness, Model: "test-model", Channel: "test-provider"},
+				Watchdog: watchdog.Opts{Context: ctx},
+			}, "")
+			assert.True(t, r.Cancelled)
+			assert.False(t, r.Settled)
+			assert.Empty(t, r.SpawnError, "already cancelled calls must not start a process")
+			assert.Empty(t, r.Stdout)
+		})
+	}
+}
 
 // codexNDJSON 一条完整 happy-path 事件流（结构取自 2026-09-10 gpt-6-astra 探针）。
 const codexNDJSON = `{"type":"thread.started","thread_id":"01a08be8-c191"}
@@ -29,14 +73,69 @@ func TestParseCodexEventStream(t *testing.T) {
 	assert.Equal(t, int64(3), p.Usage.CacheWrite)
 	assert.Equal(t, int64(5), p.Usage.Output)
 	assert.Equal(t, int64(7), p.Usage.Reasoning)
-	assert.Equal(t, int64(20358+5+7), p.Usage.TotalTokens)
+	assert.Equal(t, int64(20358+5), p.Usage.TotalTokens)
 	assert.Empty(t, p.ErrorMessage)
+	assert.True(t, p.Completed)
 
 	errStream := `{"type":"error","message":"403 Forbidden via proxy"}
 {"type":"turn.failed","error":{"message":"stream dead"}}`
 	p2 := ParseCodexEventStream(errStream)
 	assert.Contains(t, p2.ErrorMessage, "403 Forbidden")
 	assert.Contains(t, p2.ErrorMessage, "stream dead", "多错误累积不覆盖")
+}
+
+func TestCodexRequiresCompletedTurnAndFlushesFinalEvent(t *testing.T) {
+	disableCodexDesktop(t)
+	for name, stream := range map[string]string{
+		"text without completion":       `{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}`,
+		"next turn not completed":       codexNDJSON + "{\"type\":\"turn.started\"}\n",
+		"next turn has no answer":       codexNDJSON + "{\"type\":\"turn.started\"}\n{\"type\":\"turn.completed\"}\n",
+		"bare failure after completion": codexNDJSON + "{\"type\":\"turn.failed\"}\n",
+		"structured error":              codexNDJSON + "{\"type\":\"error\",\"message\":{\"message\":\"rate limit\"}}\n",
+		"malformed completion":          "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"partial\"}}\n{\"type\":\"turn.completed\",\"usage\":\"broken\"}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bin, cwd := fakeBin(t, "codex", stream)
+			setPath(t, bin)
+			r := RunCodex(CodexArgs{Prompt: "p", Cwd: cwd})
+			assert.False(t, r.Settled)
+			require.NotNil(t, r.ErrorMessage)
+		})
+	}
+	bin, cwd := fakeBin(t, "codex", "")
+	setPath(t, bin)
+	terminal := `{"type":"turn.completed"}`
+	script := "#!/bin/sh\nprintf '%s\\n' " + shQuote(`{"type":"item.completed","item":{"type":"agent_message","text":"done"}}`) + "\nprintf '%s' " + shQuote(terminal) + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755))
+	var events []string
+	r := RunCodex(CodexArgs{Prompt: "p", Cwd: cwd, OnEvent: func(line string) { events = append(events, line) }})
+	assert.True(t, r.Settled)
+	assert.Equal(t, terminal, events[len(events)-1])
+	assert.Nil(t, r.Usage, "a completed turn without token fields has unknown usage")
+
+	oldLimit := watchdog.MaxBuffer
+	watchdog.MaxBuffer = int64(len(codexNDJSON) + 1)
+	t.Cleanup(func() { watchdog.MaxBuffer = oldLimit })
+	bin, cwd = fakeBin(t, "codex", codexNDJSON+strings.Repeat("x", 1024))
+	setPath(t, bin)
+	r = RunCodex(CodexArgs{Prompt: "p", Cwd: cwd})
+	assert.True(t, r.Truncated)
+	assert.False(t, r.Settled, "a retained turn.completed cannot hide a later lost error")
+	require.NotNil(t, r.ErrorMessage)
+	assert.Contains(t, *r.ErrorMessage, "truncated")
+}
+
+func TestCodexPartialUsageStaysUnknown(t *testing.T) {
+	for _, usage := range []string{`{}`, `null`, `{"input_tokens":1}`, `{"input_tokens":null,"output_tokens":2}`, `{"input_tokens":1,"output_tokens":-1}`, `{"input_tokens":9223372036854775807,"output_tokens":1}`, `{"input_tokens":1,"output_tokens":2,"cached_input_tokens":-1}`} {
+		t.Run(usage, func(t *testing.T) {
+			p := ParseCodexEventStream(codexNDJSON + "{\"type\":\"turn.started\"}\n{\"type\":\"turn.completed\",\"usage\":" + usage + "}\n")
+			assert.True(t, p.Completed)
+			assert.False(t, p.HasUsage, "incomplete usage cannot erase unknown-call accounting by becoming zero")
+		})
+	}
+	p := ParseCodexEventStream(`{"type":"turn.completed","usage":{"input_tokens":0,"output_tokens":0}}`)
+	assert.True(t, p.HasUsage)
+	assert.Zero(t, p.Usage.TotalTokens)
 }
 
 // disableCodexDesktop / forceCodexDarwin / stubCodexOpener 测试缝三件套（同
@@ -102,11 +201,12 @@ func TestRunCodexAgainstFakeBinary(t *testing.T) {
 	assert.Contains(t, args, "gpt-6-astra")
 	assert.Contains(t, args, "model_reasoning_effort=max")
 	assert.Contains(t, args, "--skip-git-repo-check")
-	assert.Contains(t, args, "danger-full-access", "沙箱显式固定，不继承用户 config")
+	assert.Contains(t, args, "read-only", "评审默认只读，不继承用户 config")
+	assert.NotContains(t, args, "danger-full-access")
 	assert.Contains(t, args, "approval_policy=never", "审批策略显式固定（headless 不挂审批）")
 }
 
-// TestRunCodexDefaultsAndError 空 model/effort 兜底（gpt-6-astra + max）；流内
+// TestRunCodexDefaultsAndError 空 model/effort 兜底（gpt-6-astra + high）；流内
 // error → Settled=false + ErrorMessage。
 func TestRunCodexDefaultsAndError(t *testing.T) {
 	stream := `{"type":"thread.started","thread_id":"t1"}
@@ -125,7 +225,7 @@ func TestRunCodexDefaultsAndError(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(workDir, "args.txt"))
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), CodexDefaultModel, "空 model → 法定默认")
-	assert.Contains(t, string(raw), "model_reasoning_effort=max", "空 effort → 统一 max 档")
+	assert.Contains(t, string(raw), "model_reasoning_effort=high", "空 effort → high")
 }
 
 // TestRunCodexNoMessageArm exit 0 但流内无 agent_message → EMPTY 语义错误信息。

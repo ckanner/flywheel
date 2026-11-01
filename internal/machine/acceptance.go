@@ -78,6 +78,27 @@ func diffAcceptance(old, fresh []*contract.Packet) []string {
 
 // recordAcceptanceChanges 把 acceptance 变化落 retro 与 state 警告（不阻塞）。
 func (c *Context) recordAcceptanceChanges(old, fresh []*contract.Packet) {
+	oldContracts := map[string]string{}
+	for _, p := range old {
+		raw, _ := json.Marshal(p)
+		oldContracts[p.PacketID] = string(raw) + p.Body
+	}
+	for _, p := range fresh {
+		raw, _ := json.Marshal(p)
+		previous, existed := oldContracts[p.PacketID]
+		if existed && previous == string(raw)+p.Body {
+			continue
+		}
+		if ps := c.State.Packets[p.PacketID]; ps != nil {
+			invalidateEvidence(ps)
+			ps.Status = "pending"
+			ms := c.State.Milestones[ps.Milestone]
+			ms.Gate = nil
+			ms.ClosedAt = nil
+			ms.Status = "pending"
+			c.State.Milestones[ps.Milestone] = ms
+		}
+	}
 	for _, line := range diffAcceptance(old, fresh) {
 		c.appendRetro(fmt.Sprintf("- %s plan revision: %s", c.nowISO(), line))
 		c.Log("acceptance changed (§4.1 known-risk watch): " + line)

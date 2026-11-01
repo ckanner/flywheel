@@ -28,7 +28,7 @@ func TestRunTaskHappyPathEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	st := loadFixtureState(t, fx)
-	assert.Equal(t, "completed", st.Status)
+	assert.Equal(t, "completed", st.Status, "inbox: %#v", st.Inbox)
 	assert.Nil(t, st.CurrentMilestone)
 	assert.Equal(t, "closed", st.Milestones["M-01"].Status)
 	require.NotNil(t, st.Milestones["M-01"].ClosedAt)

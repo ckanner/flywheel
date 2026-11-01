@@ -9,9 +9,12 @@ package watchdog
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -35,15 +38,18 @@ type Result struct {
 	TimedOut     bool   `json:"timedOut"`
 	IdleTimedOut bool   `json:"idleTimedOut"`
 	WallTimedOut bool   `json:"wallTimedOut"`
+	Cancelled    bool   `json:"cancelled"`
 	Stdout       string `json:"stdout"`
 	Stderr       string `json:"stderr"`
 	Truncated    bool   `json:"truncated"`
 	DurationMS   int64  `json:"durationMs"`
 	SpawnError   string `json:"spawnError,omitempty"`
+	CleanupError string `json:"cleanupError,omitempty"`
 }
 
 // Opts Run 选项；零值字段取默认。
 type Opts struct {
+	Context       context.Context // nil = Background；取消与超时同样清理整个进程组
 	Cwd           string
 	Env           []string
 	IdleTimeoutMs int64
@@ -101,14 +107,9 @@ func KillActiveChildren(grace time.Duration) {
 		c.kill(syscall.SIGTERM)
 	}
 	timer := time.AfterFunc(grace, func() {
-		// 对 trap 了 SIGTERM 的进程的最后手段；registry 已空时循环零次。
-		regMu.Lock()
-		live := make([]*activeChild, 0, len(registry))
-		for _, c := range registry {
-			live = append(live, c)
-		}
-		regMu.Unlock()
-		for _, c := range live {
+		// 只升级本次取消的进程；grace 期间启动的其它调用不属于此次取消。
+		// child.kill 在进程已收尾后为 no-op，避免向复用的 pid 发信号。
+		for _, c := range children {
 			c.kill(syscall.SIGKILL)
 		}
 	})
@@ -123,6 +124,30 @@ func KillActiveChildren(grace time.Duration) {
 func killGroup(pid int, sig syscall.Signal) {
 	if err := syscall.Kill(-pid, sig); err != nil {
 		_ = syscall.Kill(pid, sig) // already dead → ESRCH ignored
+	}
+}
+
+// groupSignal 是清理失败的注入缝；生产使用真实进程组信号，调用者仍持有
+// registry 条目直到清理结束。失败必须显式报告，不能将未知存活状态当成功。
+var groupSignal = syscall.Kill
+
+func cleanProcessGroup(pid int, grace time.Duration) error {
+	if err := groupSignal(-pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		return fmt.Errorf("kill remaining process group: %w", err)
+	}
+	deadline := time.Now().Add(grace)
+	for {
+		err := groupSignal(-pid, 0)
+		if err == syscall.ESRCH {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspect remaining process group: %w", err)
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("process group %d did not become quiescent within cleanup grace", pid)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -173,7 +198,21 @@ type streamWriter struct {
 	idleTimer    *time.Timer
 	idleTimeout  time.Duration
 	idleTimedOut *bool
+	readError    *error
 	onActivity   func(chunk, stream string)
+}
+
+// ReadFrom 保留管道排空错误。exec.Cmd.Wait 对非零退出优先返回 ExitError，
+// 会掩盖随后发生的 ErrWaitDelay；因此在复制端记录错误，不能把“exit 1 +
+// 孙进程占住管道直到截断”当作完整且符合 expect exit 1 的验收。
+func (w *streamWriter) ReadFrom(r io.Reader) (int64, error) {
+	n, err := io.Copy(struct{ io.Writer }{w}, r)
+	if err != nil {
+		w.mu.Lock()
+		*w.readError = err
+		w.mu.Unlock()
+	}
+	return n, err
 }
 
 func (w *streamWriter) Write(p []byte) (int, error) {
@@ -195,6 +234,13 @@ func (w *streamWriter) Write(p []byte) (int, error) {
 // Stderr 托管复制：Wait() 返回即复制完成，无手动排干竞态（review #3）。
 func Run(command string, args []string, opts Opts) Result {
 	started := time.Now()
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return Result{Cancelled: true}
+	}
 	idleTimeout := msDur(opts.IdleTimeoutMs, DefaultIdleTimeoutMs)
 	wallTimeout := msDur(opts.WallTimeoutMs, DefaultWallTimeoutMs)
 	killGrace := msDur(opts.KillGraceMs, DefaultKillGraceMs)
@@ -212,17 +258,21 @@ func Run(command string, args []string, opts Opts) Result {
 		stdinPipe, _ = cmd.StdinPipe()
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 自成进程组 → 可整树 kill
+	// 组长已退出而后代仍持有 stdio 时，不能无限等 exec 的复制 goroutine。
+	// 超过宽限即关闭管道，随后清扫进程组；明确失败，不冒充完整输出。
+	cmd.WaitDelay = killGrace
 
 	var mu sync.Mutex // 保护 idle/kill 状态位
+	var outputReadError error
 	idleTimedOut, wallTimedOut := false, false
-	killSent := false
+	cancelled, finished := false, false
 
 	stdoutBuf := &cappedBuffer{cap: MaxBuffer}
 	stderrBuf := &cappedBuffer{cap: MaxBuffer}
 	stdoutW := &streamWriter{mu: &mu, buf: stdoutBuf, stream: "stdout",
-		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, onActivity: opts.OnActivity}
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
 	stderrW := &streamWriter{mu: &mu, buf: stderrBuf, stream: "stderr",
-		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, onActivity: opts.OnActivity}
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 
@@ -236,34 +286,47 @@ func Run(command string, args []string, opts Opts) Result {
 		pid:    cmd.Process.Pid,
 		exited: make(chan struct{}),
 	}
-	child.kill = func(sig syscall.Signal) {
+	sendSignal := func(sig syscall.Signal) {
 		mu.Lock()
-		killSent = true
+		if !finished {
+			killGroup(child.pid, sig)
+		}
 		mu.Unlock()
-		killGroup(child.pid, sig)
+	}
+	markCancelled := func() {
+		mu.Lock()
+		if !finished {
+			cancelled = true
+		}
+		mu.Unlock()
+	}
+	child.kill = func(sig syscall.Signal) {
+		markCancelled()
+		sendSignal(sig)
 	}
 	register(child)
 
+	var stopOnce sync.Once
 	beginKill := func() {
-		child.kill(syscall.SIGTERM)
-		time.AfterFunc(killGrace, func() {
-			select {
-			case <-child.exited:
-			default:
-				child.kill(syscall.SIGKILL)
-			}
+		stopOnce.Do(func() {
+			sendSignal(syscall.SIGTERM)
+			time.AfterFunc(killGrace, func() { sendSignal(syscall.SIGKILL) })
 		})
 	}
 
 	idleTimer := time.AfterFunc(idleTimeout, func() {
 		mu.Lock()
-		idleTimedOut = true
+		if !finished {
+			idleTimedOut = true
+		}
 		mu.Unlock()
 		beginKill()
 	})
 	wallTimer := time.AfterFunc(wallTimeout, func() {
 		mu.Lock()
-		wallTimedOut = true
+		if !finished {
+			wallTimedOut = true
+		}
 		mu.Unlock()
 		beginKill()
 	})
@@ -274,6 +337,14 @@ func Run(command string, args []string, opts Opts) Result {
 	stdoutW.idleTimer = idleTimer
 	stderrW.idleTimer = idleTimer
 	mu.Unlock()
+	go func() {
+		select {
+		case <-ctx.Done():
+			markCancelled()
+			beginKill()
+		case <-child.exited:
+		}
+	}()
 
 	if opts.InteractStdin != nil {
 		// finish 与超时共用 beginKill 清理路径（kill 开关契约不变）；幂等。
@@ -283,17 +354,23 @@ func Run(command string, args []string, opts Opts) Result {
 	}
 
 	// Wait 返回 = 进程退出 + exec 内部复制 goroutine 排干 —— Node 'close'。
-	_ = cmd.Wait()
+	if err := cmd.Wait(); errors.Is(err, exec.ErrWaitDelay) {
+		res.CleanupError = "child output did not close within cleanup grace"
+	}
 
 	mu.Lock()
-	sent := killSent
+	finished = true
 	idleFlag, wallFlag := idleTimedOut, wallTimedOut
+	res.Cancelled = cancelled
+	if outputReadError != nil {
+		res.CleanupError = "child output did not close within cleanup grace: " + outputReadError.Error()
+	}
 	res.Stdout, res.Stderr = stdoutBuf.String(), stderrBuf.String()
 	truncFlag := stdoutBuf.isTruncated() || stderrBuf.isTruncated()
 	mu.Unlock()
-	// close 后的最后清扫：组长死了，trap 了 SIGTERM 的孙子可能还在——绝不留孤儿。
-	if sent {
-		_ = syscall.Kill(-child.pid, syscall.SIGKILL) // 组已消失则 ESRCH 忽略
+	// 无论组长正常退出还是被取消，都不能遗留本次调用拥有的后台写入者。
+	if err := cleanProcessGroup(child.pid, killGrace); err != nil {
+		res.CleanupError = strings.TrimPrefix(res.CleanupError+"; "+err.Error(), "; ")
 	}
 	unregister(child.pid)
 	idleTimer.Stop()
@@ -305,7 +382,7 @@ func Run(command string, args []string, opts Opts) Result {
 	res.TimedOut = idleFlag || wallFlag
 	res.IdleTimedOut = idleFlag
 	res.WallTimedOut = wallFlag
-	res.Truncated = truncFlag
+	res.Truncated = truncFlag || res.CleanupError != ""
 	res.DurationMS = time.Since(started).Milliseconds()
 	return res
 }

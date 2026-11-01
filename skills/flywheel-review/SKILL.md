@@ -1,10 +1,10 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.2.0"
+  version: "1.3.1"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
-compatibility: "Requires the flywheel CLI (npm) and codex CLI >=0.154 with ChatGPT subscription login (Review runs GPT-6-Astra)."
+compatibility: "Requires the Flywheel CLI and the configured read-only Review harness; default DSH with the ChatGPT provider plugin."
 arguments: slug unit
 
 ---
@@ -15,10 +15,12 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$unit`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
+`slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
+
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 契约文件齐全；目标单元的 **L1 已通过**
-   （`state.json` 中该 packet 的 `evidence.l1.pass === true`）——评审只在确定性
+   （引擎会同时核对 `evidence.l1.pass` 和当前候选/契约/配置身份）——评审只在确定性
    验收全绿之后开口。若给了 unit id，确认 packet 存在。
 2. **调用**（在目标仓库根执行）：
 
@@ -29,9 +31,10 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run "$slug" --only review
    ```
 
-   若 flywheel 不在 PATH：`flywheel run docs/<slug> --only review [--unit M02-T03]`（flywheel 应已在 PATH 上——npm 全局安装或开发机 go install；不在则先安装，不要绕道源码仓库）。
-   （单二进制：`npm i -g @ckanner/flywheel` 后 `flywheel` 即在 PATH；不在则先安装，不要从源码仓库构建。）
+   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
 
 3. **翻译结果**：verdict（pass / return / verification-gap）、分数、理由；
    return 时转述具体修改要求、失败证据、涉及位置、完成条件；
-   verification-gap 时说明编排器会加强验收后复验而不是退回执行。
+   verification-gap 时说明该单步只返回裁决，不会自动跨环修订；由用户运行
+   Plan 修订允许范围内的契约，再 verify，或恢复完整 run 由引擎处理闭环。
+   目录外冻结 oracle 的修改仍需明确任务；不得为了通过直接修改它。

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+DSH 桌面集成与可靠交付闭环。此节记录源码变更，不代表已发布 npm 包或 Mac 公证安装包。安装与迁移见 [入门教程](docs/getting-started.md)。
+
+- **DSH 入口与 worker**：新增 `control start/status/stop`、桌面面板、人工命令与模型工具。Go 继续独占状态；worker 校验 provider/model/cwd/effort、权限、可靠终态及 SDK 关闭。
+- **模型路由**：默认 DeepSeek Flash 实现，Kimi CLI 规划／前端／整理，DSH ChatGPT provider 评审／终验，独立 Codex CLI 处理困难任务。Kimi 不使用 ACP；外部 Codex Pro adapter 保留独立交接任务。
+- **可靠性**：验证证据绑定候选和契约；契约修订跨重启失效旧证据；L1、Review、里程碑 gate 与 Judge 前后检查身份；提交及合并后确认持久化结果，失败保留 worktree。
+- **发布前复核**：修复从子目录漏读项目配置；持久化检查独立核对执行位与链接类型；验收输出截断不能因退出码符合预期而通过。CI 增加 Linux／macOS 插件与跨进程检查，构建产物只作为 Actions artifact 分发。
+- **生命周期与计量**：按运行 token 停止、运行 lease 防重入、超时／取消／清理失败严格区分；未知 usage/cost 不再当成零。
+- **测试与文档**：普通单测／回归可随实现修改，冻结验收显式保护；保留逐函数 100% Go statement coverage；更新全部内嵌 skills 的控制接口、单环语义与配置说明，补充完整 Mac 安装和首个任务教程。
+- **兼容边界**：旧配置不自动迁移；任务／项目／全局配置选择首个完整文件，不深度合并。Mac 桌面渲染、Seatbelt 和真实账号调用仍需用户环境验收；离线通过不等于实机通过。
+
 ## 0.22.1 (2026-09-14)
 
 修复 0.22.0 meta 包缺 bin shim：`bin/flywheel.js` 此前被 .gitignore 的 `/bin/`（postinstall 下载目录时代的遗留规则）挡在 git 之外——CI checkout 无此文件，发布的 meta 包只有 3 个文件、`flywheel` 命令不存在。本版将 shim 入库并全量 bump 版本；旧 0.22.0 meta 请勿使用。
@@ -13,4 +25,4 @@
 - **配置四级发现链**：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（首装自动物化，可直接编辑）→ 内嵌法定表兜底。
 - watchdog 交互钩子（协议驱动）、multimodal 执行路由、`FLYWHEEL_CONFIG` 覆盖。
 
-更早历史见 docs/design.md 变更记录。
+更早历史见 [历史设计](docs/design-history-v0.24.md) 的变更记录。

@@ -54,7 +54,7 @@ func TestDefectInjectionSampledMissingConfigInboxButContinues(t *testing.T) {
 
 func writeDefectPatch(t *testing.T, fx *fixture) string {
 	t.Helper()
-	patchFile := filepath.Join(fx.root, "defect.patch")
+	patchFile := filepath.Join(t.TempDir(), "defect.patch")
 	writeFile(t, patchFile, defectMarkerPatch)
 	return patchFile
 }
@@ -208,17 +208,16 @@ func TestL1FailureRetryLoopWithAuthoritativeDiff(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	execCalls := 0
-	flagFile := filepath.Join(fx.root, "l1-flag")
 	packetText := strings.Replace(
 		fixturePacket("M01-T01", "R-01"),
 		`    - {cmd: "test -f build/M01-T01.txt", expect: "exit 0"}`,
 		"    - {cmd: \"test -f build/M01-T01.txt\", expect: \"exit 0\"}\n"+
-			"    - {cmd: \"test -f "+filepath.Join(fx.root, "l1-flag")+"\", expect: \"exit 0\"}", 1)
+			"    - {cmd: \"test -f build/l1-flag\", expect: \"exit 0\"}", 1)
 	writeFile(t, filepath.Join(fx.taskDir, "task-packet-M01-T01.md"), packetText)
 	sd.execFn = func(a drivers.CallArgs) drivers.Result {
 		execCalls++
 		if execCalls >= 2 {
-			writeFile(t, flagFile, "go")
+			writeFile(t, filepath.Join(a.Cwd, "build", "l1-flag"), "go")
 		}
 		return sd.mock.Execute(a)
 	}

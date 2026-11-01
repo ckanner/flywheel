@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,11 @@ import (
 	"github.com/ckanner/flywheel/internal/state"
 )
 
-func signalZero(pid int) error { return syscall.Kill(pid, 0) }
+// Status only probes PID existence with signal 0. Stop never signals a PID read
+// from disk; it uses the run lease and token-controlled file request instead.
+var processSignal = syscall.Kill
+
+func signalZero(pid int) error { return processSignal(pid, 0) }
 
 func statusCmd() *cobra.Command {
 	return &cobra.Command{
@@ -91,6 +96,9 @@ func statusCmd() *cobra.Command {
 			b := st.Budget
 			fmt.Fprintf(out, "token 累计: %d（in %d / out %d / reasoning %d）  成本: $%v\n",
 				b.Totals.Tokens, b.Totals.Input, b.Totals.Output, b.Totals.Reasoning, b.Totals.CostUSD)
+			if b.UnknownUsageCalls > 0 || b.UnknownCostCalls > 0 {
+				fmt.Fprintf(out, "已知量下限：%d 次调用未报告 usage，%d 次调用成本未知；订阅额度不能按 $0 解释。\n", b.UnknownUsageCalls, b.UnknownCostCalls)
+			}
 			limit := "未设"
 			if b.DailyTokenLimit != nil {
 				limit = fmt.Sprint(*b.DailyTokenLimit)
@@ -134,8 +142,12 @@ func evidenceVerdict(ev any) string {
 	return verdict
 }
 
-// orchestratorAlive pid 文件存在且进程存活。
+// orchestratorAlive requires a held lifetime lease as well as a displayable PID.
 func orchestratorAlive(taskDir string) (bool, int) {
+	held, err := machine.RunLeaseHeld(taskDir)
+	if err != nil || !held {
+		return false, 0
+	}
 	raw, err := os.ReadFile(machine.PidFile(taskDir))
 	if err != nil {
 		return false, 0
@@ -146,7 +158,7 @@ func orchestratorAlive(taskDir string) (bool, int) {
 	if json.Unmarshal(raw, &pf) != nil || pf.PID <= 0 {
 		return false, 0
 	}
-	if err := signalZero(pf.PID); err != nil {
+	if err := signalZero(pf.PID); err != nil && !errors.Is(err, syscall.EPERM) {
 		return false, 0
 	}
 	return true, pf.PID
@@ -165,7 +177,7 @@ func warnIfStalled(out io.Writer, taskDir string, st *state.State) {
 	}
 	wall := int64(3_600_000)
 	if wd, werr := os.Getwd(); werr == nil {
-		if cfg, cerr := config.Load(taskDir, wd); cerr == nil && cfg.Watchdog.WallTimeoutMs > 0 {
+		if cfg, cerr := config.Load(taskDir, machine.ProjectRoot(wd)); cerr == nil && cfg.Watchdog.WallTimeoutMs > 0 {
 			wall = cfg.Watchdog.WallTimeoutMs
 		}
 	}

@@ -27,6 +27,21 @@ func TestTodayKey(t *testing.T) {
 	assert.Equal(t, "2026-08-22", TodayKey(tz))
 }
 
+func TestHardBudgetCannotTreatMissingUsageAsZero(t *testing.T) {
+	st := stWithDay(1)
+	st.Budget.Daily[TodayKey(now)] = state.DailyBucket{Tokens: 1, UnknownUsageCalls: 1}
+	cfg := config.Default()
+	limit := int64(10000)
+	cfg.Budget.DailyTokenLimit = &limit
+	cfg.Budget.Enforce = "hard"
+	v := CheckBudget(st, &cfg, now)
+	assert.Equal(t, ActionStop, v.Action)
+	assert.Contains(t, v.Reason, "unknown")
+	cfg.Budget.Enforce = "soft"
+	assert.Equal(t, ActionOK, CheckBudget(st, &cfg, now).Action)
+	assert.Equal(t, ActionOK, CheckBudget(st, &cfg, now.Add(24*time.Hour)).Action)
+}
+
 func TestCheckBudgetOffAndNoLimit(t *testing.T) {
 	cfg := config.Default()
 	cfg.Budget.Enforce = "off"
