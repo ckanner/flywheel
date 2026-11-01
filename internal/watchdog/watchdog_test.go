@@ -234,7 +234,7 @@ func TestRunNormalExitCleansOwnedBackgroundWriters(t *testing.T) {
 	script := fmt.Sprintf(`(trap '' TERM; while :; do printf x >> %q; sleep 0.01; done) >/dev/null 2>&1 &
 while [ ! -s %q ]; do sleep 0.01; done
 exit 0`, marker, marker)
-	r := Run("sh", []string{"-c", script}, Opts{IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 100})
+	r := Run("sh", []string{"-c", script}, Opts{IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 1_000})
 	require.NotNil(t, r.ExitCode)
 	assert.Equal(t, 0, *r.ExitCode)
 	assert.Empty(t, r.CleanupError)
@@ -277,6 +277,66 @@ func TestRunReportsUnconfirmedCleanup(t *testing.T) {
 			require.NotNil(t, r.ExitCode)
 			assert.Equal(t, 0, *r.ExitCode)
 			assert.NotEmpty(t, r.CleanupError, "正常退出码不能掩盖无法确认清理的故障")
+			assert.True(t, r.Truncated, "无法确认清理的结果不得用于验收")
+		})
+	}
+}
+
+func TestCleanProcessGroupRequiresConfirmedExit(t *testing.T) {
+	original := groupSignal
+	t.Cleanup(func() { groupSignal = original })
+	for _, tc := range []struct {
+		name       string
+		killError  error
+		probes     []error
+		grace      time.Duration
+		wantError  error
+		wantProbes int
+	}{
+		{
+			name: "transient permission", probes: []error{syscall.EPERM, syscall.ESRCH},
+			grace: time.Second, wantProbes: 2,
+		},
+		{
+			name: "dying group", probes: []error{nil, syscall.EPERM, nil, syscall.EPERM, syscall.ESRCH},
+			grace: time.Second, wantProbes: 5,
+		},
+		{
+			name: "persistent permission", probes: []error{syscall.EPERM},
+			grace: 20 * time.Millisecond, wantError: syscall.EPERM, wantProbes: -1,
+		},
+		{
+			name: "other inspection error", probes: []error{syscall.EINVAL, syscall.ESRCH},
+			grace: time.Second, wantError: syscall.EINVAL, wantProbes: 1,
+		},
+		{
+			name: "kill permission", killError: syscall.EPERM,
+			grace: time.Second, wantError: syscall.EPERM, wantProbes: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			probes := 0
+			groupSignal = func(_ int, sig syscall.Signal) error {
+				if sig == syscall.SIGKILL {
+					return tc.killError
+				}
+				require.NotEmpty(t, tc.probes, "kill 失败后不得继续探测或放行")
+				probe := tc.probes[min(probes, len(tc.probes)-1)]
+				probes++
+				return probe
+			}
+			started := time.Now()
+			err := cleanProcessGroup(12345, tc.grace)
+			if tc.wantError != nil {
+				require.ErrorIs(t, err, tc.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+			if tc.wantProbes >= 0 {
+				assert.Equal(t, tc.wantProbes, probes, "只有 ESRCH 能证明清理成功；其他错误必须立即失败")
+			} else {
+				assert.Less(t, time.Since(started), time.Second, "永久 EPERM 必须在清理期限内失败")
+			}
 		})
 	}
 }

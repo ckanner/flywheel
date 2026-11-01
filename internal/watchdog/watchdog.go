@@ -141,10 +141,15 @@ func cleanProcessGroup(pid int, grace time.Duration) error {
 		if err == syscall.ESRCH {
 			return nil
 		}
-		if err != nil {
+		// Darwin's group probe excludes zombies, so a killed group awaiting
+		// reaping can return EPERM. Retry within the original grace without
+		// treating permission errors as proof of quiescence: only ESRCH is.
+		// https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_sig.c#L1675-L1721
+		expired := !time.Now().Before(deadline)
+		if err != nil && (err != syscall.EPERM || expired) {
 			return fmt.Errorf("inspect remaining process group: %w", err)
 		}
-		if !time.Now().Before(deadline) {
+		if expired {
 			return fmt.Errorf("process group %d did not become quiescent within cleanup grace", pid)
 		}
 		time.Sleep(5 * time.Millisecond)
