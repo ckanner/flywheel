@@ -233,7 +233,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		return strings.Join(lines, "\n")
 	}
 
-	attempt := func(sessionID string, coldStart bool, channel, model, harness string) (drivers.Result, errs.ErrorCode) {
+	attempt := func(sessionID string, coldStart bool, channel, model, harness, provider string) (drivers.Result, errs.ErrorCode) {
 		tail := ""
 		if coldStart {
 			tail = retroTail()
@@ -256,7 +256,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			SessionID:      sessionID,
 			Model:          model,
 			Binding: config.LoopBinding{
-				Harness: harness, Model: model, Channel: channel, Thinking: binding.Thinking,
+				Harness: harness, Provider: provider, Model: model, Channel: channel, Thinking: binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  c.apiKeysFor(channel),
@@ -283,6 +283,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 
 	channel := binding.Channel
 	model, harness := binding.Model, binding.Harness
+	provider := fallback.ResolveProvider(c.Config, harness, binding.Provider, channel)
 	resident := c.Config.Loops["plan"].ResidentSession && harness == "kimi"
 	// 铁律 7：只有长驻会话诞生于与当前绑定相同的 model+channel 时才 resume；
 	// 否则一律冷启动（#15）。
@@ -321,7 +322,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			c.Log(fmt.Sprintf("plan: fail-loud — channel %s requires env %s (not set)", channel, missingKey))
 			return planOutcome{ErrorCode: errs.AUTH, Packets: packets}, nil
 		}
-		result, code = attempt(sessionID, sessionID == "", channel, model, harness)
+		result, code = attempt(sessionID, sessionID == "", channel, model, harness, provider)
 		if code == "" {
 			// C5（v0.18）：调用成功却没拿到 session id——上游 resume_hint 格式漂移
 			// 或缺失，长驻会话将无声退化为每轮冷启动。必须留观测痕迹。
@@ -352,6 +353,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 				if mapped.Harness != "" {
 					harness = mapped.Harness
 				}
+				provider = fallback.ResolveProvider(c.Config, harness, "", channel)
 				resident = c.Config.Loops["plan"].ResidentSession && harness == "kimi"
 				sessionID = "" // 新渠道开新会话
 				continue

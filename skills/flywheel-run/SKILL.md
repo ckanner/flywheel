@@ -1,10 +1,10 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.3.1"
+  version: "1.4.0"
 description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
 whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
-compatibility: "Requires the Flywheel CLI with the control command and the harnesses selected by the task configuration."
+compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
 arguments: slug pause
 ---
 
@@ -30,6 +30,17 @@ arguments: slug pause
 
    任一命令失败就停止启动并报告路径问题。若 `flywheel` 不在 PATH，使用
    已配置的绝对路径；所用版本必须支持 `flywheel control --help`。
+
+   首次启动、升级或修改模型配置后，查看有效绑定并做只读本地预检：
+
+   ```bash
+   flywheel config inspect --cwd "$repo_dir" --task-dir "$task_dir" --json
+   flywheel doctor --cwd "$repo_dir" --task-dir "$task_dir" --json
+   ```
+
+   阻断项先处理；不要在 skill 内静默换 profile、provider 或付费渠道。
+   用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
+   `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
 2. **按所选模式调用一次**：
 

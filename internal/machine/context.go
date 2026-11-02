@@ -180,6 +180,10 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	if a.result != nil && a.result.Harness != "" {
 		harness = a.result.Harness
 	}
+	var effectiveProvider any
+	if a.result != nil && a.result.Provider != "" {
+		effectiveProvider = a.result.Provider
+	}
 	var channel any
 	if a.channel != "" {
 		channel = a.channel
@@ -226,6 +230,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"milestone":       milestone,
 		"model":           model,
 		"harness":         harness,
+		"provider":        effectiveProvider,
 		"channel":         channel,
 		"prompt-hash":     promptHash,
 		"usage":           usageVal,

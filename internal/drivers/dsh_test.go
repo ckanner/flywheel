@@ -141,7 +141,7 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	ready, result := dshFixtureFrames(request)
 	cwd, _ := os.Getwd()
 	ready["cwd"] = cwd
-	if request.Prompt == "record input" {
+	if request.Prompt == "record input" || scenario == "doctor" {
 		data, _ := json.Marshal(map[string]any{"request": request, "env": os.Environ()})
 		_ = os.WriteFile("worker-input.json", data, 0o600)
 	}
@@ -153,7 +153,7 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	if scenario == "hang" {
 		time.Sleep(5 * time.Second)
 	}
-	if scenario == "unknown-usage" {
+	if scenario == "unknown-usage" || scenario == "doctor" {
 		result["usage"] = nil
 	} else {
 		result["usage"] = map[string]any{"input_tokens": 10, "output_tokens": 5, "reasoning_tokens": 3, "cache_read_tokens": 8, "cache_write_tokens": 0, "total_tokens": 15}
@@ -302,8 +302,9 @@ func TestDSHWorkerTransportAndCancellation(t *testing.T) {
 func TestInvokeHarnessDSHDispatchAndPermissionFailures(t *testing.T) {
 	command := dshWorkerScript(t)
 	t.Setenv(DSHWorkerEnv, command)
-	r := InvokeHarness(CallArgs{Prompt: "p", Model: "deepseek-v4-flash", Binding: config.LoopBinding{Harness: "dsh", Channel: "deepseek"}, APIKeys: map[string]string{"FLYWHEEL_TEST_DSH_SCENARIO": "ok"}, Cwd: t.TempDir()}, "")
+	r := InvokeHarness(CallArgs{Prompt: "p", Model: "deepseek-v4-flash", Binding: config.LoopBinding{Harness: "dsh", Provider: "deepseek-official", Channel: "team-deepseek-account"}, APIKeys: map[string]string{"FLYWHEEL_TEST_DSH_SCENARIO": "ok"}, Cwd: t.TempDir()}, "")
 	assert.True(t, r.Settled, "%+v", r)
+	assert.Equal(t, "deepseek-official", r.Provider, "channel is an account label, not the adapter sent to DSH")
 	t.Setenv(DSHWorkerEnv, "")
 	bin := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "flywheel-dsh-worker"), []byte("#!/bin/sh\nexec "+shQuote(command)+"\n"), 0o755))
@@ -317,11 +318,68 @@ func TestInvokeHarnessDSHDispatchAndPermissionFailures(t *testing.T) {
 		{Binding: config.LoopBinding{Harness: "ds-h"}},
 		{Binding: config.LoopBinding{Harness: "kimi"}, PermissionMode: "read-only"},
 		{Binding: config.LoopBinding{Harness: "pi"}, PermissionMode: "invalid"},
+		{Binding: config.LoopBinding{Harness: "codex", Provider: "chatgpt"}},
 	} {
 		r := InvokeHarness(a, "")
 		assert.False(t, r.Settled)
 		require.NotNil(t, r.ErrorMessage)
 		assert.Contains(t, *r.ErrorMessage, "invalid request")
 		assert.Empty(t, r.Stdout, "unsupported scope must fail before any CLI is spawned")
+	}
+}
+
+func TestDSHDoctorSelectsWorkerAndDiscardsCallerPrompt(t *testing.T) {
+	a := dshRunArgs(t, "doctor")
+	argsFile := filepath.Join(t.TempDir(), "arguments")
+	command := kimiScript(t, "printf '%s\\n' \"$@\" > "+shQuote(argsFile)+"\nexec "+shQuote(a.Command)+"\n")
+	t.Setenv(DSHWorkerEnv, command)
+	assert.Equal(t, command, DSHCommand())
+	a.Command = ""
+	a.Doctor = true
+	a.Prompt = "this application task must not be sent by doctor"
+	r := RunDSH(a)
+	require.True(t, r.Settled, "%+v", r)
+	assert.Nil(t, r.Usage)
+	assert.Nil(t, r.CostUSD)
+	args, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Equal(t, "--doctor\n", string(args))
+	raw, err := os.ReadFile(filepath.Join(a.Cwd, "worker-input.json"))
+	require.NoError(t, err)
+	var captured struct {
+		Request dshStart `json:"request"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &captured))
+	assert.NotEqual(t, a.Prompt, captured.Request.Prompt)
+	assert.Contains(t, captured.Request.Prompt, "no model prompt")
+	t.Setenv(DSHWorkerEnv, "")
+	assert.Equal(t, "flywheel-dsh-worker", DSHCommand())
+}
+
+func TestDSHDoctorRetainsPhysicalAndProtocolGates(t *testing.T) {
+	for _, scenario := range []string{"wrong-settings", "exit-error", "cancelled", "hang", "truncated"} {
+		t.Run(scenario, func(t *testing.T) {
+			a := dshRunArgs(t, scenario)
+			a.Doctor = true
+			if scenario == "hang" {
+				a.Watchdog.WallTimeoutMs = 100
+			}
+			if scenario == "truncated" {
+				old := watchdog.MaxBuffer
+				watchdog.MaxBuffer = 20
+				t.Cleanup(func() { watchdog.MaxBuffer = old })
+			}
+			r := RunDSH(a)
+			assert.False(t, r.Settled, "doctor must not relax the worker terminal contract")
+			if scenario == "cancelled" {
+				assert.True(t, r.Cancelled)
+			}
+			if scenario == "hang" {
+				assert.True(t, r.TimedOut)
+			}
+			if scenario == "truncated" {
+				assert.True(t, r.Truncated)
+			}
+		})
 	}
 }

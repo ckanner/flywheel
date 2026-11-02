@@ -12,19 +12,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/spf13/cobra"
 )
 
 type controlResponse struct {
-	Protocol int          `json:"protocol"`
-	OK       bool         `json:"ok"`
-	Running  bool         `json:"running"`
-	PID      int          `json:"pid"`
-	TaskDir  string       `json:"taskDir"`
-	State    *state.State `json:"state"`
-	Error    string       `json:"error,omitempty"`
+	Protocol      int                       `json:"protocol"`
+	OK            bool                      `json:"ok"`
+	Running       bool                      `json:"running"`
+	PID           int                       `json:"pid"`
+	TaskDir       string                    `json:"taskDir"`
+	State         *state.State              `json:"state"`
+	Error         string                    `json:"error,omitempty"`
+	Configuration *diagnostic.Configuration `json:"configuration,omitempty"`
+	Diagnostic    *diagnostic.Report        `json:"diagnostic,omitempty"`
 }
 
 var (
@@ -38,20 +41,27 @@ var (
 // failures are normalized by runRoot too; legacy commands keep their output.
 func controlCmd() *cobra.Command {
 	var taskDir, cwd string
+	var probe bool
 	cmd := &cobra.Command{
-		Use:   "control <start|status|stop>",
+		Use:   "control <start|status|stop|config|doctor>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reply := controlResponse{Protocol: 1, TaskDir: taskDir}
-			resolvedTask, err := controlDirectory(taskDir)
-			var resolvedCwd string
+			action := args[0]
+			var resolvedTask, resolvedCwd string
+			var err error
+			if cmd.Flags().Changed("probe") && action != "doctor" {
+				err = fmt.Errorf("--probe is only valid for control doctor")
+			} else if taskDir != "" || (action != "config" && action != "doctor") {
+				resolvedTask, err = controlDirectory(taskDir)
+			}
 			if err == nil {
 				reply.TaskDir = resolvedTask
 				resolvedCwd, err = controlDirectory(cwd)
 			}
 			if err == nil {
-				switch args[0] {
+				switch action {
 				case "start":
 					reply, err = startControlledTask(resolvedTask, resolvedCwd)
 				case "status":
@@ -61,8 +71,20 @@ func controlCmd() *cobra.Command {
 					var snapshotErr error
 					reply, snapshotErr = controlSnapshot(resolvedTask)
 					err = errors.Join(stopErr, snapshotErr)
+				case "config":
+					ctx, cancel := diagnosticContext(cmd)
+					defer cancel()
+					reply.Configuration, err = diagnostic.InspectContext(ctx, resolvedCwd, resolvedTask)
+				case "doctor":
+					ctx, cancel := diagnosticContext(cmd)
+					defer cancel()
+					report := diagnostic.Doctor(ctx, resolvedCwd, resolvedTask, probe)
+					reply.Diagnostic = &report
+					if !report.OK {
+						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
+					}
 				default:
-					err = fmt.Errorf("control action must be start, status, or stop")
+					err = fmt.Errorf("control action must be start, status, stop, config, or doctor")
 				}
 			}
 			reply.OK = err == nil
@@ -76,8 +98,9 @@ func controlCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&taskDir, "task-dir", "", "任务目录的绝对路径")
+	cmd.Flags().StringVar(&taskDir, "task-dir", "", "任务目录的绝对路径（config/doctor 可省略）")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "仓库目录的绝对路径")
+	cmd.Flags().BoolVar(&probe, "probe", false, "仅 doctor：探测 DSH SDK 配置与权限，不发送推理请求")
 	return cmd
 }
 

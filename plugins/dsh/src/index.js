@@ -28,8 +28,8 @@ export function apply(ctx, config = {}) {
   ctx.on('dispose', () => { for (const controller of active) controller.abort(); });
   ctx.commands.register({
     name: 'flywheel',
-    description: '通过 Go 引擎启动、查看或停止 Flywheel 任务。',
-    input: { hint: '{"action":"status","taskDir":"/absolute/docs/task"}' },
+    description: '通过 Go 引擎控制 Flywheel 任务、查看实际模型配置或执行无推理环境检查。',
+    input: { hint: '{"action":"doctor"} 或 {"action":"status","taskDir":"/absolute/docs/task"}' },
     async handler({ rawInput, agent, signal }) {
       try {
         const value = await control(JSON.parse(rawInput), agent, signal);
@@ -45,22 +45,26 @@ export function apply(ctx, config = {}) {
     name: 'flywheel_control',
     description: 'Control an existing Flywheel task via its deterministic Go engine. ' +
       'Use status to inspect progress, start to launch in the background, stop to await cancellation. ' +
+      'Use config to inspect effective model bindings or doctor for a local preflight; these may omit taskDir. ' +
+      'Only doctor accepts probe=true to check the SDK without sending an inference prompt. ' +
+      'A successful doctor does not prove account authorization, quota, or model inference. ' +
       'This tool never writes state.json. Do not use it to create a recursive Flywheel run.',
     parameters: {
       type: 'object', additionalProperties: false,
       properties: {
-        action: { type: 'string', enum: ['start', 'status', 'stop'] },
-        taskDir: { type: 'string', description: 'Absolute existing task ledger directory' },
+        action: { type: 'string', enum: ['start', 'status', 'stop', 'config', 'doctor'] },
+        taskDir: { type: 'string', description: 'Absolute existing task ledger directory; required for start/status/stop' },
         cwd: { type: 'string', description: 'Absolute target repository directory; defaults to this DSH session' },
+        probe: { type: 'boolean', description: 'Doctor only: explicitly enable SDK checks without inference; defaults to false' },
       },
-      required: ['action', 'taskDir'],
+      required: ['action'],
     },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
     },
     timeoutMs: config.controlTimeoutMs ?? 60000,
-    isConcurrencySafe: args => args.action === 'status',
+    isConcurrencySafe: args => ['status', 'config', 'doctor'].includes(args.action),
     async execute(args, execution) {
       return JSON.stringify(await control(args, execution.agent, execution.signal));
     },

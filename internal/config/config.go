@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"syscall"
 )
 
 // LoopBinding 非 execute 角色的绑定（loops 表）。
@@ -18,6 +21,7 @@ type LoopBinding struct {
 	Harness         string `json:"harness"`
 	Model           string `json:"model"`
 	Channel         string `json:"channel"`
+	Provider        string `json:"provider,omitempty"`
 	Thinking        string `json:"thinking"`
 	ResidentSession bool   `json:"resident-session"`
 }
@@ -27,6 +31,7 @@ type RouteBinding struct {
 	Harness  string `json:"harness"`
 	Model    string `json:"model"`
 	Channel  string `json:"channel"`
+	Provider string `json:"provider,omitempty"`
 	Thinking string `json:"thinking"`
 }
 
@@ -35,8 +40,18 @@ type Channel struct {
 	EnvKey          *string           `json:"env-key"`
 	Fallback        string            `json:"fallback"`
 	Harness         string            `json:"harness"`
+	Provider        string            `json:"provider,omitempty"`
 	Models          map[string]string `json:"models"`
 	CacheHitRateMin *float64          `json:"cache-hit-rate-min"`
+}
+
+// ModelProfile is a reusable model binding. Session policy belongs to its loop.
+type ModelProfile struct {
+	Harness  string `json:"harness"`
+	Model    string `json:"model"`
+	Channel  string `json:"channel"`
+	Provider string `json:"provider,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
 }
 
 // Price 每百万 token 的美元价（pricing 表）。
@@ -118,6 +133,8 @@ type Config struct {
 	Loops           map[string]LoopBinding  `json:"loops"`
 	Routes          map[string]RouteBinding `json:"routes"`
 	Channels        map[string]Channel      `json:"channels"`
+	Profiles        map[string]ModelProfile `json:"profiles,omitempty"`
+	ProfileRefs     map[string]string       `json:"-"`
 	Budget          BudgetConfig            `json:"budget"`
 	Watchdog        WatchdogConfig          `json:"watchdog"`
 	Retry           RetryConfig             `json:"retry"`
@@ -259,9 +276,15 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
+			return fmt.Errorf("loops.%s: %w", name, err)
+		}
 	}
 	for name, b := range c.Routes {
 		if err := validateHarness(b.Harness); err != nil {
+			return fmt.Errorf("routes.%s: %w", name, err)
+		}
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
 		}
 	}
@@ -269,8 +292,25 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("channels.%s: %w", name, err)
 		}
+		if b.Provider != "" && (b.Harness != "dsh" || strings.TrimSpace(b.Provider) == "") {
+			return fmt.Errorf("channels.%s.provider requires harness dsh and a non-blank provider", name)
+		}
+	}
+	for name, b := range c.Profiles {
+		if strings.TrimSpace(b.Harness) == "" || strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "" {
+			return fmt.Errorf("profiles.%s requires harness, model and channel", name)
+		}
+		if err := validateHarness(b.Harness); err != nil {
+			return fmt.Errorf("profiles.%s: %w", name, err)
+		}
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
+			return fmt.Errorf("profiles.%s: %w", name, err)
+		}
 	}
 	if c.JudgePanel != nil {
+		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {
+			return fmt.Errorf("judge-panel: %w", err)
+		}
 		return validateHarness(c.JudgePanel.Harness)
 	}
 	return nil
@@ -308,7 +348,7 @@ func MaterializeGlobal() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if _, serr := os.Stat(path); serr == nil {
+	if _, serr := os.Lstat(path); serr == nil {
 		return path, false, nil
 	}
 	raw, err := embeddedTable()
@@ -330,12 +370,24 @@ func MaterializeGlobal() (string, bool, error) {
 // 边缘下工具仍可用）。项目级与全局的关系：越靠近任务越优先，用户改全局即
 // 改默认，项目放文件即覆盖默认。
 func Load(taskDir, cwd string) (*Config, error) {
+	return load(taskDir, cwd, true)
+}
+
+// LoadReadOnly follows the same discovery and validation rules without creating
+// a global configuration file. Inspecting configuration never installs anything.
+func LoadReadOnly(taskDir, cwd string) (*Config, error) {
+	return load(taskDir, cwd, false)
+}
+
+func load(taskDir, cwd string, materialize bool) (*Config, error) {
 	if file := FindConfigFile(taskDir, cwd); file != "" {
 		return loadFile(file)
 	}
 	if path, gerr := GlobalConfigPath(); gerr == nil {
-		_, _, _ = MaterializeGlobal() // 幂等；失败退内嵌表，不因 HOME 不可写卡死
-		if _, serr := os.Stat(path); serr == nil {
+		if materialize {
+			_, _, _ = MaterializeGlobal() // 幂等；失败退内嵌表，不因 HOME 不可写卡死
+		}
+		if _, serr := os.Lstat(path); serr == nil || (!os.IsNotExist(serr) && !errors.Is(serr, syscall.ENOTDIR)) {
 			return loadFile(path)
 		}
 	}
@@ -359,11 +411,18 @@ func loadFile(file string) (*Config, error) {
 }
 
 func parseConfig(raw []byte, source string) (*Config, error) {
+	expanded, refs, err := expandProfiles(raw)
+	if err != nil {
+		return nil, err
+	}
 	var c Config
-	if err := json.Unmarshal(raw, &c); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(expanded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&c); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	c.File = source
+	c.ProfileRefs = refs
 	// Normalize（回填缺省）→ Validate。EveryNUnits 指针化后二者可兼得：
 	// nil = 未声明 → 回填默认；显式 0 非 nil → Validate 报错（review 修正：
 	// 显式零值不再被默认值吞掉）。
@@ -376,8 +435,12 @@ func parseConfig(raw []byte, source string) (*Config, error) {
 
 // FindConfigFile 返回首个存在的候选配置路径（task 目录 → 项目根），无则返回 ""。
 func FindConfigFile(taskDir, cwd string) string {
-	for _, c := range []string{filepath.Join(taskDir, "flywheel.config.json"), filepath.Join(cwd, "flywheel.config.json")} {
-		if _, err := os.Stat(c); err == nil {
+	for _, dir := range []string{taskDir, cwd} {
+		if dir == "" {
+			continue
+		}
+		c := filepath.Join(dir, "flywheel.config.json")
+		if _, err := os.Lstat(c); err == nil || (!os.IsNotExist(err) && !errors.Is(err, syscall.ENOTDIR)) {
 			return c
 		}
 	}

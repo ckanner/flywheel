@@ -105,6 +105,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	}
 	channel := binding.Channel
 	currentModel, currentHarness := binding.Model, binding.Harness
+	currentProvider := fallback.ResolveProvider(c.Config, currentHarness, binding.Provider, channel)
 	visited := map[string]bool{}
 	maxTransport := c.Config.Retry.MaxTransportRetries
 	lastCode := errs.TRANSPORT
@@ -144,7 +145,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			PermissionMode: "workspace-write",
 			Model:          currentModel,
 			Binding: config.LoopBinding{
-				Harness: currentHarness, Model: currentModel,
+				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
 				Channel: channel, Thinking: binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
@@ -266,6 +267,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 				if mapped.Harness != "" {
 					currentHarness = mapped.Harness
 				}
+				currentProvider = fallback.ResolveProvider(c.Config, currentHarness, "", channel)
 				t-- // 降级不消耗传输重试
 				c.save()
 				continue

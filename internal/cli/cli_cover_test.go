@@ -42,6 +42,8 @@ func executeHelperMain(mode string) int {
 		os.Args = []string{"flywheel", "status", filepath.Join(os.TempDir(), "definitely-missing-task")}
 	case "control-child":
 		return controlChildHelperMain()
+	case "diagnostic":
+		return Execute()
 	default:
 		panic("unknown helper mode: " + mode)
 	}
@@ -363,7 +365,7 @@ func TestIntakeFailedTriageExitsThree(t *testing.T) {
 			"sources": []any{map[string]any{"name": "cmdsrc", "type": "command", "cmd": intakeSourceCmd()}},
 		}
 		drv := cfg["drivers"].(map[string]any)
-		drv["intake"] = "pi" // 真实驱动 + 渠道 env-key 未设 → fail-loud AUTH，绝不 spawn
+		drv["intake"] = "real" // 真实驱动 + 渠道 env-key 未设 → fail-loud AUTH，绝不 spawn
 		cfg["channels"] = map[string]any{
 			"opencode-go": map[string]any{"env-key": missingKeyEnv}, // 无 fallback：链即刻终止
 		}
@@ -420,7 +422,7 @@ func TestGardenAgentFailureExitsThree(t *testing.T) {
 	require.NoError(t, os.Unsetenv(missingKeyEnv))
 	taskDir := newModuleSandbox(t, func(cfg map[string]any) {
 		drv := cfg["drivers"].(map[string]any)
-		drv["garden"] = "pi" // fail-loud AUTH：渠道 env-key 未设，绝不 spawn
+		drv["garden"] = "real" // fail-loud AUTH：渠道 env-key 未设，绝不 spawn
 		loops := cfg["loops"].(map[string]any)
 		loops["garden"] = map[string]string{
 			"harness": "pi", "model": "opencode-go/deepseek-v4-flash",
@@ -464,7 +466,7 @@ func TestRunPlanFailLoudEscalatesExitsThree(t *testing.T) {
 	var cfg map[string]any
 	require.NoError(t, json.Unmarshal([]byte(mustReadFile(path)), &cfg))
 	drv := cfg["drivers"].(map[string]any)
-	drv["plan"] = "pi"
+	drv["plan"] = "real"
 	cfg["channels"] = map[string]any{
 		"kimi-subscription": map[string]any{"env-key": missingKeyEnv}, // 去掉 fallback
 	}

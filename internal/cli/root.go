@@ -43,8 +43,8 @@ func runRoot(args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		var ee *exitError
-		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && args[0] == "control")) {
-			return ee.code // JSON 已输出；3/143 是任务终态，不重复打印文本错误
+		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && (args[0] == "control" || args[0] == "doctor"))) {
+			return ee.code // 摘要/诊断已输出；不重复打印文本错误
 		}
 		if len(args) > 0 && args[0] == "control" {
 			writeControlJSON(stdout, controlResponse{Protocol: 1, TaskDir: controlTaskArg(args), Error: err.Error()})
@@ -77,6 +77,8 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(statusCmd())
 	root.AddCommand(stopCmd())
 	root.AddCommand(controlCmd())
+	root.AddCommand(configCmd())
+	root.AddCommand(doctorCmd())
 	root.AddCommand(intakeCmd())
 	root.AddCommand(gardenCmd())
 	root.AddCommand(installSkillsCmd())

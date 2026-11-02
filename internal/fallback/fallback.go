@@ -21,6 +21,7 @@ import (
 // Binding 一次调用的 harness+model+channel+thinking 解析结果。
 type Binding struct {
 	Harness  string
+	Provider string // DSH LLM adapter identity, distinct from the billing/account channel
 	Model    string
 	Channel  string
 	Thinking string
@@ -33,13 +34,29 @@ func ResolveBinding(cfg *config.Config, role, route string) (Binding, error) {
 		if !ok {
 			return Binding{}, fmt.Errorf("no route binding for %q in config", route)
 		}
-		return Binding{Harness: b.Harness, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
+		return Binding{Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
 	}
 	b, ok := cfg.Loops[role]
 	if !ok {
 		return Binding{}, fmt.Errorf("no loop binding for %q in config", role)
 	}
-	return Binding{Harness: b.Harness, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
+	return Binding{Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
+}
+
+// ResolveProvider separates a DSH adapter from its account channel. A fallback
+// must pass the new channel and no previous binding override. Other harnesses
+// own their provider namespaces and do not accept this DSH-only field.
+func ResolveProvider(cfg *config.Config, harness, provider, channel string) string {
+	if harness != "dsh" {
+		return ""
+	}
+	if provider != "" {
+		return provider
+	}
+	if configured := cfg.Channels[channel].Provider; configured != "" {
+		return configured
+	}
+	return channel // legacy DSH configurations used the provider as channel name
 }
 
 // NextChannel 配置的下一降级渠道，链尾返回 ""。

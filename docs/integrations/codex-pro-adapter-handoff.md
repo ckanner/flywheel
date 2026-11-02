@@ -1,191 +1,190 @@
-# Codex Pro adapter 加固：交给另一 session 的上下文
+# Codex Pro adapter 0.7.0：固定版本审计与下一 session 交接
 
-核对日期：2026-11-01。**本文是独立仓库的后续实施任务，不是“adapter 已修复／已接入 Flywheel”的完成报告。** 本 session 只读检查了该 adapter，并在 Flywheel 仓库保存这份交接文档。
+核对日期：2026-11-01。审计对象为 [`ckanner/dsh-subagent-codex-pro@21fd7acccf1f5989b14fecdc1957559eea6914f8`](https://github.com/ckanner/dsh-subagent-codex-pro/commit/21fd7acccf1f5989b14fecdc1957559eea6914f8)，[package version `0.7.0`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/package.json)。**启动 deadline、resume 参数传递和内部运行收据已有实质进展；公开结果、权限、用量完整性和跨宿主进程所有权仍有接入阻断。Flywheel 尚未消费这个 external adapter。**
 
-## 1. 用户目标与明确范围
+本文替换旧版本审计。不要继续按“启动 RPC 不受内部 deadline 控制”“resume 只传 threadId”“完全没有 usage 实现”这些旧结论安排工作。本轮只读检查外仓、运行离线探针、更新 Flywheel 内的交接文档；没有修改、发布或安装外仓代码，没有调用真实模型。
 
-用户常用 DSH 的 Mac 桌面，希望组合 Kimi 订阅、ChatGPT 订阅与 DeepSeek Flash API，兼顾质量、成本、速度和可控性。Flywheel 继续由 Go 管理契约、状态、验证、worktree、重试、预算、提交及停止；模型不接管这些决定。
+## 1. 用户目标、现有通路与所有权
 
-用户将 `ckanner/dsh-subagent-codex-pro` 的加固安排在**另一个 session、另一个仓库**。本任务仅加固这个 adapter 已有的 Codex app-server 委派通路及其测试、文档，不重写所有 DSH 插件，不修改 `dsh-plugin-chatgpt`、LCU、Kimi，不发布或安装到用户机器，不自动调用收费模型。
+用户使用 DSH Mac 桌面，组合 Kimi 订阅、ChatGPT 订阅与 DeepSeek Flash API。Kimi 保持原生 CLI；DeepSeek 默认只用 Flash。Codex Pro 的加固由用户安排在另一个 session、另一个仓库，不能通过本轮偷偷修改外仓来宣称接入完成。
 
-DSH 宿主基线是已审阅接口的 Mac `0.2.1-rc.5`。不把 alpha 的 Teams/OAR/Forge 能力当成这次实现的前提。Codex app-server 是由 adapter 配置的 `command` 或 PATH 中的用户 CLI 启动；**实际 Codex CLI 版本必须单独核对**，不能从 DSH 桌面版本推导。
-
-### 当前 Flywheel 已实现什么
-
-| 通路 | 本轮状态 | 所有权与适用场景 |
+| 通路 | 当前含义 | 本文与它的关系 |
 |---|---|---|
-| `harness: codex` | 已有独立 `codex exec --json` driver，默认 `hard` 路由采用 `gpt-6.1-sol / high` | Go 直接管理进程、deadline、工作目录与验收；适用于 Flywheel 的有界工作单元 |
-| `harness: dsh` | 独立 DSH SDK worker 调用已注册的原生 LLM provider | Flash／GPT 原生工具循环；每次新 SDK session，不依赖桌面活父 agent |
-| `dsh-subagent-codex-pro` | 本轮**未消费、未修复、未集成** | DSH 交互会话中的 Codex 委派、持久 thread、后台 job；需先完成本文加固 |
+| Flywheel `harness: codex` | Go 直接管理 `codex exec --json`，已有完整 harness 通路 | 继续可用，不需要等 external adapter 完成 |
+| Flywheel `harness: dsh` | 独立 SDK worker 调用注册的原生 LLM provider，每次新 session | 当前用于 Flash／GPT 原生 agent，不把 external subagent 当成 LLM provider |
+| `dsh-subagent-codex-pro` | DSH external subagent provider 与 `subagent_codex` 工具，底层运行 Codex app-server | 先完成公开契约，再单独增加消费者 |
 
-`codex-pro`／`subagent_codex` 是 subagent provider／工具，不是 Flywheel DSH worker 的原生 LLM provider。把配置的 `channel` 改成它的名字不会完成接线。未来接入必须另做明确的消费者与能力握手；当前不改变默认 `hard` 路由。
+Flywheel 的 `provider` 表示 DSH LLM adapter，`channel` 表示本配置的账号／凭证／计费渠道。`codex-pro` 是 external subagent provider；仅把 `provider` 或 `channel` 改成该名字不能接通它。相关入口：[driver 接口](../../internal/drivers/drivers.go)、[独立 Codex driver](../../internal/drivers/codex.go)、[原生 DSH driver](../../internal/drivers/dsh.go)、[worker 协议](../../plugins/dsh/PROTOCOL.md)。
 
-相关 Flywheel 入口：[driver 接口](../../internal/drivers/drivers.go)、[Codex CLI driver](../../internal/drivers/codex.go)、[DSH driver](../../internal/drivers/dsh.go)、[原生 worker 协议](../../plugins/dsh/PROTOCOL.md)、[默认配置](../../templates/flywheel.config.example.json)。
+**Go 继续拥有契约、状态、运行 lease、deadline、重试、预算、worktree、验证、提交、合并和停止。** Adapter 只执行一次有边界的委派并返回可验证结果；不写 Flywheel 的 `state.json`，不自行重试整个工作单元，不批准自己的实现通过验收，也不替 Go 提交或合并。
 
-## 2. 审计基线与证据等级
+## 2. 固定基线与证据等级
 
-本次重新读取 GitHub `main`，仍为 **`fc6a417888335507e24a67d4dd5653f4894cab3e`，package version `0.6.4`**。源码固定入口：[该提交](https://github.com/ckanner/dsh-subagent-codex-pro/commit/fc6a417888335507e24a67d4dd5653f4894cab3e)。
+固定提交的 [CI run](https://github.com/ckanner/dsh-subagent-codex-pro/actions/runs/41312145457) 与 [release run](https://github.com/ckanner/dsh-subagent-codex-pro/actions/runs/41312145445) 已在本轮审计中核对为成功。[CI workflow](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/.github/workflows/ci.yml) 的测试矩阵是 Ubuntu、Node 22／24，执行 typecheck 与离线测试；它不证明用户 Mac 桌面行为。
 
-本地只读快照位置为 `/workspace/scratch/fac5a5a9409b/dsh-plugin-review/dsh-subagent-codex-pro`。它是提取的源码目录，**没有 `.git`**；另一 session 应使用真实 checkout，先记录 `git status`、HEAD、package version、Node 版本、`codex --version`，避免覆盖用户已有修改或把本快照当成可直接提交的仓库。
+证据分为三层：
 
-证据区分：
+- **本轮源码复核与离线复现：**下文四条探针使用脚本化协议响应和本地 fake app-server，没有网络、账号或模型推理。清理探针实际传递终止信号，只对进程组存活检查注入 `EPERM`；它证明失败结算问题，不声称当时留有真实孤儿进程。
+- **上游自己的验证记录：**固定版 [README](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/README.md) 与 [changelog](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/CHANGELOG.md) 记录 Codex 0.165.0 app-server live 用例 4/4 通过，另有 `codex exec` live 用例通过；也明确 DSH desktop 端到端尚未运行。本轮没有独立复跑这些 live 用例。
+- **尚无本轮证据：**用户 Mac、实际桌面／SDK profile、真实账号授权、订阅额度、远端模型输出、沙箱中的真实工具执行、宿主强杀后的清理。不能把源码、Ubuntu CI 或 fake-process 结果改写为这些项目已通过。
 
-- **前轮已用协议桩复现，本轮源码复核：**启动阶段 deadline 无法解除等待。前轮设置 50 ms，约 358 ms 时仍 pending 且子进程存活；100 ms 时约 353 ms 仍如此。测试另有 2 秒外层保护，外部 `AbortController.abort()` 后才进入 settlement／cleanup。没有真实模型调用。原临时桩已删除，需在 adapter 仓库补成可保留的回归测试；这些观测时间不是建议的 CI 超时阈值。
-- **本轮静态确认：**resume 参数与回执校验不足、默认权限过宽、usage 未贯通、两入口结果不一致、persistent 文本 marker 与 JSON 结果冲突、leader 退出不能单独证明后代清理。
-- **未在本 session 实测：**用户 Mac 的真实 app-server／DSH 生命周期、具体账号和模型、远端 usage、订阅限额、实际沙箱和退出后的子进程。上游 commit／README 自述的 live 结果属于上游记录，不当作本 session 的验证。
+本轮复现材料如下；临时路径不是安装依赖，另一 session 不可假定它们仍存在：
 
-## 3. 关键文件与当前行为
-
-以下链接固定在 adapter 的审计提交，避免另一 session 读到更新后混淆问题是否已修。
-
-| 文件 | 实际职责／需要关注的部位 |
+| 材料 | 本轮路径 |
 |---|---|
-| [src/run.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/run.ts) | `startCodexRun`、`spawnAppServer`、`requestCancel`、deadline、`teardown`、`delegateOnce`；启动等待与运行取消信号不同 |
-| [src/wire.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/wire.ts) | initialize、thread start/resume、turn start/completed、事件关联、审批处理、最终文本选择；尚未处理 token usage 通知 |
-| [src/jsonrpc.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/jsonrpc.ts) | pending RPC、signal／timeout／dispose；传输层已有取消机制，需要生命周期层真正传入同一控制信号 |
-| [src/index.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/index.ts) | `CodexExecProvider.start`、自定义工具 `runCall`、session thread 复用、background jobs、`structuredOf`、`withThreadMarker`、默认权限 |
-| [src/tool.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/tool.ts) | `subagent_codex` 的输入 schema、前台／后台分支、model/effort/timeout/cwd/schema/images/thread 控制 |
-| [src/jobs.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/jobs.ts) | job settlement；当前主要留下 status、文本 result 或 detail，不是完整运行收据 |
-| [src/dsh-types.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/fc6a417888335507e24a67d4dd5653f4894cab3e/src/dsh-types.ts) | 本地镜像的宿主结构类型；扩展结果前须核对真实 rc.5 契约，不能只改这个文件就宣称宿主支持 |
-| [tests/](https://github.com/ckanner/dsh-subagent-codex-pro/tree/fc6a417888335507e24a67d4dd5653f4894cab3e/tests) | 已有 wire、JSON-RPC、thread choice、spawn failure、tool 与 live 测试；必须增加跨真实子进程的生命周期回归 |
+| 固定源码只读副本 | `/tmp/flywheel-codex-pro-audit-21fd7ac` |
+| 审计记录 | `/tmp/flywheel-codex-pro-v070-audit.md` |
+| 离线探针 | `/tmp/flywheel-codex-adapter-audit-probe.mjs` |
+| 探针输出 | `/tmp/flywheel-codex-adapter-audit-probe.log` |
 
-`src/codex-exec.ts` 是另一个 CLI helper／测试入口；adapter 的主要生产委派已走 app-server。只修改该 helper 的 argv，不能修复 `startCodexRun` 的问题。
+下一 session 应在真实 checkout 记录 `git status`、HEAD、package version、Node 版本和 `codex --version`，保留用户已有修改。源码副本只能用于核对，不能当成具备完整 Git 历史的工作仓库。
 
-## 4. 必须完成的加固
+## 3. 0.7.0 已有进展：保留并增加回归
 
-### P0：让 deadline 覆盖完整生命周期
+| 已有进展 | 固定源码依据 | 后续工作重点 |
+|---|---|---|
+| initialize、thread/start、thread/resume、thread/name/set 与 turn 使用同一内部取消信号／deadline；自动 resume 重试沿用原绝对期限 | [run.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L379-L510)、[lifecycle 测试](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/tests/lifecycle.spec.ts) | 保留真实子进程回归，不重新引入启动等待只受外部 abort 控制的问题 |
+| resume 发送明确 cwd、model 和权限 overrides；effort 在 turn/start 传入 | [wire.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/wire.ts#L560-L656) | 补“有效字段缺失时拒绝”，不是再次只加请求字段 |
+| 内部 `CodexRunOutcome` 已包含 usage、requested/effective configuration、cleanup、structured/schemaError | [run.ts outcome](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L126-L156) | 形成稳定公开出口，补齐物理终态及关联字段 |
+| usage 使用累计快照与基线求 delta，rate limits 单独记录 | [usage.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/usage.ts) | 修复完整性状态与异常、turn 关联、早到事件的关系 |
+| POSIX 自成进程组、teardown 幂等、TERM／KILL 后检查存活；`delegateOnce` 拒绝未确认清理 | [进程管理](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L260-L356)、[delegateOnce](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L780-L810) | 对齐公开入口失败语义，并接通外层 Go 与独立 PGID 的所有权 |
+| schema 验证、结构化结果和展示文本已有独立处理 | [structured.ts](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/structured.ts)、[测试](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/tests/structured.spec.ts) | 保留 persistent marker 不污染机器 JSON 的回归 |
 
-当前 timer 调用 `requestCancel()`，取消的是内部 `runAbort.signal`；但 initialize、thread/start、thread/resume、thread/name/set 等启动等待使用外部 `signal`。因此 deadline 触发后，启动 RPC 仍可能无限等待。尚无 turn ID 时，`turn/interrupt` 也不能帮助结束握手。只有 published run 才存在的 handle／dispose，不能补救 publication 之前的卡住。
+“内部收据中有字段”与“公开消费者能取得该字段”必须分开验收。
 
-需要一个覆盖本次调用的取消／deadline 所有者：外部取消、内部 deadline、进程失败都应使当前阶段的 RPC 退出，继而执行同一套幂等 teardown。区分 timeout、用户取消、启动失败和模型失败，不能把启动超时笼统写成“request aborted”。显式 `timeout=0` 如继续支持，应保留为用户主动关闭运行 deadline 的选择；清理窗口仍须有界。
+## 4. 仍阻止直接接入的六个缺口
 
-运行 deadline 到期后，在**明确的有界清理预算**内结算；不要声称 timeout 恰好到毫秒时所有进程已退出。初始化、建／续 thread、命名、turn start、执行、等待终态和关闭，都要有可中断路径。终态完成后清除 timer、abort listener、pending RPC 与进程监听器，不再接受迟到事件把失败改成成功。
+### A. 有效配置缺字段只记录未匹配，仍允许继续
 
-### P0：证明 cwd、模型和权限实际生效
+[`appliedConfiguration`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/wire.ts#L383-L428) 遇到缺失字段会返回 `matched: false`，但不加入 `mismatches`；start/resume 仅在 `mismatches.length > 0` 时抛错。因此“字段存在但不同”会拒绝，“根本没证明字段生效”仍可进入后续 turn。
 
-当前新 thread 会发送 model、reasoningEffort、cwd 和权限参数，但主要只检查 thread id 与 ephemeral 属性。resume 只发送 `{threadId}`，只验证返回 thread id；显式 `thread_id` 与新的 cwd 同时出现时，spawn 的目录并不证明 thread 的工作目录改变。
+离线探针让 thread/start 只返回 thread id 与 ephemeral，省略全部有效配置，得到：
 
-同时，`turn/start` 当前仍传 `effort`，所以“resume 时 model 与 reasoning_effort 都完全忽略”的 README 说法也不精确。必须区分 thread 配置、per-turn effort 和本次请求的有效配置。
+```json
+{"accepted":true,"configuration":{"requested":{"cwd":"/tmp","model":"gpt-audit","approvalPolicy":"never","sandbox":"read-only"},"effective":{},"matched":false}}
+```
 
-本次核对的 OpenAI 官方源码已存在 resume／turn 的覆盖字段及回执：
+必需的 cwd、model、approval policy、sandbox 回执缺失、类型错误、不支持或冲突，都应在发送用户任务前失败。requested、effective、缺失字段和失败阶段分别保留；不能把 requested 复制成 effective，或把“请求没有被拒绝”当作权限已实施。
 
-- [ThreadResumeParams](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts) 包含 model、cwd、approvalPolicy、sandbox 等。
-- [TurnStartParams](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/TurnStartParams.ts) 包含 cwd、model、effort、approvalPolicy、sandboxPolicy、outputSchema。
-- [ThreadStartResponse](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/ThreadStartResponse.ts) 与 [ThreadResumeResponse](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeResponse.ts) 提供有效 model、cwd、approvalPolicy、sandbox、reasoningEffort。
+Effort 是 per-turn 字段，不能拿 thread 的历史 reasoningEffort 冒充本次 turn 的证据。按实际 CLI 版本明确哪些事实由服务端回执证明、哪些只能证明参数已传入；消费者所需证据能力不可提供时明确报不支持。显式 thread 无效时继续保持不静默换新。
 
-这是固定源码提交的协议证据，**不表示用户已安装的 CLI 自动具有相同能力**。实现前按实际 CLI 对应 schema 核对：支持时明确传参并校验回执；不支持、回执缺失或与请求冲突时明确拒绝。不能把字段被服务端接受当作已生效，也不能静默换目录、模型或权限。显式指定旧 thread 失败时，不得悄悄改成新 thread；自动记住的 session thread 的冷启动策略应有明确、有限、可观察的范围。
+### B. 默认 full access，且缺少 workspace-write + never 模式
 
-当前默认权限是 `dangerously-bypass-approvals-and-sandbox`；`never` 只发送 approvalPolicy，不显式给出 read-only sandbox。**禁止批准不等于只读，cwd 也不是权限边界。** 为 future Flywheel 消费提供明确的 read-only／workspace-write 策略及回执校验；full access 只能是明确选择，不能作权限失败的回退。兼容既有配置时写清迁移，不能悄悄改变其语义。DSH provider 的输入能力与自定义工具的字段不同，不能捏造宿主会传一个不存在的 permission 参数。
+[`index.ts`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/index.ts#L320-L326) 的默认值仍为 `dangerously-bypass-approvals-and-sandbox`；[bundle](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/cordis.patch.yml) 没有覆盖。离线默认 `apply` 探针也读取到这个模式。
 
-### P0：补齐 usage，正确区分累计与最近请求
+[`THREAD_PERMISSION_PARAMS`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/wire.ts#L38-L56) 的 `read-only` 有 `never + read-only`；`never` 只设置审批策略、不设置 sandbox；`approve-for-me` 则为 `on-request + auto_review + workspace-write`。后两者都不等于 Flywheel 要求的 `never + workspace-write`。
 
-当前 wire 没有消费 `thread/tokenUsage/updated`，`CodexRunOutcome`、provider result、工具和 job 也没有完整 usage 贯通。这里首先要修数据契约，再考虑显示或成本估算。
+新增可显式选择、可核对回执的 `workspace-write + never`。Full access 只能明确选择，不能作权限能力不足或无人审批时的回退。默认值变更须说明兼容迁移；不能悄悄把一种权限解释成另一种。cwd 是工作目录，不是权限边界。
 
-官方 [ThreadTokenUsageUpdatedNotification](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/ThreadTokenUsageUpdatedNotification.ts) 包含 threadId、turnId 与 tokenUsage；[ThreadTokenUsage](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/ThreadTokenUsage.ts) 含 `total` 和 `last`。更关键的是官方 [TokenUsageInfo 实现](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/protocol/src/protocol.rs)：追加一次用量时将它加入累计 total，并用它替换 last。
+### C. 公开 provider 在 cleanup 未确认时仍可返回 completed
 
-因此：
+[`finish`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L518-L570) 对 `cleanup.confirmed: false` 追加 diagnostic，但不必改变 stopReason。工具侧 `delegateOnce` 会拒绝；公开 [`CodexExecProvider.start`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/index.ts#L433-L459) 仍可透传 completed，`dispose()` 也丢弃清理收据。
 
-- **`last` 不是整次 delegation／整个用户 turn 的保证值。** 同一 turn 可能经过多次模型响应和工具循环，只取最终 last 会漏计。
-- **每条 total 通知不能相加。** 这些是累积快照，会把先前请求重复计算。
-- 新 thread 只有在确认历史基线为零时，才可把最终有效累计值当成本次用量。resume 必须取得同一 thread、当前 turn 之前的可靠基线，再用最终累计值减基线；不能拿当前 turn 的第一条中途通知冒充起点。
-- 例：恢复前 total=1000，本轮通知为 1100、1150、1150。可证明的本轮用量是 150，不是 3400，也不是最近请求的 50。若无法证明 1000 这个基线，返回 unknown；不能把 1150 算成本轮，也不能靠猜测补零。
-- 按 thread／turn 过滤并处理重复、乱序、计数回退或重置；保留原始 usage 来源和有效范围。不同 thread 的事件不能污染本次记录。
-- cached input 是 input 的细分，reasoning output 是 output 的细分；不要在总量里重复加。cache-write 只在实际版本报告时保留。优先使用供应商的有效 total，不能把上下文大小、估计值或额度数字伪装成结算账单。
-- 没有 usage、基线未知、字段无效、事件范围不完整时保留 unknown/null。美元成本也保持 unknown，除非存在真实 cost 或明确的适用定价；订阅调用不能自动写成 0 美元。
+本轮清理探针实际发送终止信号，仅把负 PID 的 signal 0 检查设为 `EPERM`，公开 provider 返回：
 
-六个字段的来源形状见 [TokenUsageBreakdown](https://github.com/openai/codex/blob/67f0994b532b8740f14b5b738af7b7b2a915b1d6/codex-rs/app-server-protocol/schema/typescript/v2/TokenUsageBreakdown.ts)。如果采用 per-response 明细计量，也必须按实际协议可用的唯一标识去重，证明覆盖本次完整调用；不能从文本长度估 token。
+```json
+{"output":[{"type":"text","text":"AUDIT_OK"}],"stopReason":"completed","diagnostic":"process cleanup could not be confirmed: the owned process group was still alive after SIGKILL"}
+```
 
-### P0：终态、关闭与进程所有权分开记录
+所有公开入口都应把“无法确认收尾”作为不能交付成功的独立事实。宿主 enum 没有 timeout 时可映射合法的 aborted／error，但公共收据仍保留 timeout、cancel、cleanup 的各自原因。正常文本、turn/completed、leader exit、job completed 不能相互替代。
 
-目前 `CodexRunOutcome` 主要携带 output、stopReason、diagnostic、threadId、images。它不能直接表示实际 exit code／signal、是否超时、是否取消、流是否截断、是否完成清理，以及请求值与实际生效值。
+### D. 完整 receipt 没有稳定公开出口
 
-建立共享的内部运行收据，至少保存请求／运行关联 ID、threadId／turnId、请求和有效配置、起止时间、语义 stopReason、物理退出、timeout/cancel、cleanup 状态、usage 及其范围、错误阶段与原因。正常文本、turn/completed、子进程退出、DSH job completed 是不同证据，不得互相替代。失败或取消也保留已观察的 thread、产物与已知 usage。
+公开结果主要是 output、stopReason、可选 structured／diagnostic；内部 usage、configuration、cleanup 没有贯穿。[`SubagentResultLike`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/dsh-types.ts#L54-L74) 也反映了限制。[package exports](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/package.json) 只有根入口与 package.json，`src/run.ts` 不属于公开子路径。
 
-现有 teardown 主要向 app-server leader 发 SIGTERM，再 SIGKILL；`waitForExit` 的有界等待返回本身不证明所有后代已退出。应明确本次拥有的进程范围和平台策略，走 interrupt／关闭协议，再有界终止并确认。覆盖正常完成也残留持有 stdio 的子进程情形；清理失败必须可观察并阻止成功。只清理本次拥有的进程组，不能按名称扫描杀死其他 Codex／用户任务，也不能保证主动逃离进程组的任意进程。
+需要版本化、机器可读、按单次运行关联的公共 receipt：可以是正式导出的 machine API、受控 RPC，或明确约定的单次收据出口。宿主结果结构受限时另设稳定出口；只改本地镜像类型、解析人类日志或 deep import 内部文件都不构成完整接入。
 
-宿主关闭、父 agent dispose、job cancel 与外部 AbortSignal 都应进入同一生命周期。不要把“后台 job”解释为脱离 DSH 宿主仍能可靠存活；需要脱离桌面的任务应由独立 Go／CLI 所有者启动。
+### E. 独立 PGID 不受当前 Go 进程组兜底覆盖
 
-### P1：两入口一致，结构化结果不被显示文本破坏
+[`spawnAppServer`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/run.ts#L260-L278) 在 POSIX 使用 `detached: true`。正常 SDK drain 可以调用 dispose，但 Flywheel 杀死自己拥有的 Node／DSH 继承进程组时，不能据此证明独立 Codex 组也已退出。
 
-保留 `CodexExecProvider.start` 与 `subagent_codex` 工具两个入口，但让它们消费同一内部运行收据和结果归一化逻辑。宿主目前的 stopReason 没有 timeout 时可按原契约映射 aborted，同时用结构化诊断保留 timeout 事实；不能擅自扩展宿主 enum。
+这里的缺口是两个所有者的边界没有接通。机器入口必须明确谁创建、登记、取消、等待回收，以及宿主突退后谁仍负责清理。保留独立组需要可证明的外层监督与注册协议；采用继承模式也不能让 adapter 误杀祖先组。单纯返回 PID，或先 detached 再事后登记，不能自动消除启动窗口和 PID 复用问题。
 
-当前 provider 的 `structuredOf` 只是尽力 `JSON.parse`，失败时丢掉 structured；自定义工具在 persistent 模式下还会把 thread marker 追加到正文，因此原本合法的 JSON 结果不再是完整 JSON。修复时将 **raw final text／parsed structured result／thread metadata／人类展示文本**分开。请求 schema 时，JSON 无效、根类型或约束不符应明确失败；不要把 `JSON.parse` 成功当作完整 schema 校验。使用清楚声明的 schema 支持范围，未支持的形状拒绝，不“尽力成功”。
+只清理本次实际拥有的范围，不能按名称扫杀其他 Codex。任意主动逃离管理范围的进程不在普通进程组保证内，不能把“信号已发送”写成“全系统无残留”。
 
-thread id 通过宿主实际支持的结构、单独 metadata 或可读取运行收据暴露；文本 marker 可保留给人看，但不可污染机器消费的 JSON。background job 也应可取得相同的终态、thread 和 usage 信息。若宿主字段受限，设计一个明确的兼容出口并测试，不仅修改本地 `dsh-types.ts` 就声称生效。
+### F. 坏 usage 通知仍可能被标成 complete
 
-## 5. 与 Flywheel 的未来映射约束
+[`usage.ts`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/src/usage.ts) 已有累计 delta。但 `observe`／`observeInvalid` 发现坏通知时主要设置 reason；`report` 的 complete／partial 条件没有完整纳入这些异常。
 
-这部分是**后续消费者的验收条件**，本次不在 Flywheel 自动增加 driver。
+探针先提交合法的 100-token 快照，再提交负数／缺字段的快照，仍取得 `status: "complete"`、`run.totalTokens: 100`，同时 reason 写着 malformed token-usage notification。这个组合不足以证明本次完整用量。
 
-| Flywheel 字段／要求 | adapter 应能证明或保留的事实 |
+完整性状态必须与坏通知、计数回退、基线来源、thread／turn 关联一致。保留已知量时说明它是部分量；无法可靠归属时使用 unknown，不补零。补测 turn/start 响应前到达的 usage、resume replay、其他 turn 和取消后的迟到事件；不能因一项已复现就假设其他时序正确。
+
+累计规则继续保留：可靠 baseline=1000，随后 1100、1150、1150，本次可归属值为 150；不能相加 total，也不能把最后请求的 last 当整个 turn。cached input 与 reasoning output 已含在对应大类中，不能重复加。rate limits、上下文窗口、美元 cost 各有独立含义；没有真实 cost 或适用定价时保持 unknown，订阅不自动等于 0 美元。
+
+## 5. 公共 machine receipt 的最低契约
+
+以下是后续验收要求，**不是 0.7.0 已公开提供的字段清单**。实际协议不能证明的数据保持 null／unknown，并说明原因。
+
+| 类别 | 必须可取得的事实 |
 |---|---|
-| `CallArgs.Cwd` | 实际 thread／turn cwd 与规范化请求一致；resume 冲突不能忽略 |
-| `Model`、`Binding.Model/Thinking` | 请求模型、effort 与实际生效配置；不静默沿用历史配置 |
-| `PermissionMode` | read-only／workspace-write 的真实策略，审批 never；不可用就失败 |
-| `Watchdog`、`OnEvent` | 可取消的完整生命周期和有界事件流；Go 仍可施加外层 deadline |
-| `SessionID` | 明确的 thread／resume 句柄，不从自由文本猜；Flywheel Execute/Review 当前默认新会话 |
-| `Result.ExitCode/Signal/TimedOut/Cancelled/Truncated/SpawnError/CleanupError` | 分别保留，不能用一个 completed 标记抹去失败原因 |
-| `Result.Settled` | 只有可靠成功终态且关闭／清理条件成立才能用于成功判定；取消即使 exit 0 也不能成功 |
-| `Result.Usage` | 当前调用范围的已知用量；未知是 nil，不是全零 |
-| `Result.CostUSD` | 真实可知值；没有来源时 nil |
-| `Result.Text/ErrorMessage/SessionID` | 最终正文、明确错误、可追踪 thread；结构化数据另有不污染正文的出口 |
+| 版本与关联 | receipt/protocol version、调用方 request ID、run ID、thread ID、turn ID；区分重试、迟到结果及另一委派 |
+| 请求与有效配置 | requested／effective 分开，cwd、model、per-turn effort、approval policy、sandbox；缺失、冲突、匹配状态和证据来源 |
+| 时间与错误阶段 | 起止时间、当前阶段、timeout、caller cancellation、spawn／protocol／model／schema failure |
+| 物理终态 | 实际 exit code／signal、输出完整或截断；未知值不能由 exit 0 代替 |
+| 所有权与清理 | 受管范围及所有者、取消／dispose 是否完成、cleanup confirmed 与原因；不能只有 leader 退出 |
+| 用量 | complete／partial／unknown、本次 run usage、thread total、baseline、事件范围、异常原因；rate limits 分开 |
+| 内容与产物 | 原始最终文本、通过 schema 验证的 structured、thread metadata、展示文本、产物／图片分别保留 |
+| 成本 | 可知 cost 及来源；无来源为 null，不从认证或订阅推导价格 |
 
-Flywheel 的错误分类仍是 `AUTH/QUOTA/RATE_LIMIT/SERVER/TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED`。取消另外体现在 `Cancelled`，不要凭本 adapter 的内部 stopReason 擅自增改这套线契约。保持 adapter 内部原始错误和阶段，以便未来稳定映射。
+公开 provider、工具前台、后台 job、取消与失败路径应能取得同一套事实。通过公开入口测试，不只检查内部 `CodexRunOutcome`。收据需要可靠关联和有界生命周期；不能让 job 混用文件、无限积累全局记录或解析用户日志当数据协议。
 
-Flywheel 不信任模型宣称完成：即使 adapter 返回可靠成功，还必须由 Go 验证 done-report、运行 L1／评审／里程碑 gate、确认同一候选与持久化 Git tree。adapter 不写 Flywheel state、不自建工作单元重试循环、不自动提交或合并 Go 管理的交付。
+Flywheel 分别保留 `ExitCode/Signal/TimedOut/Cancelled/Truncated/SpawnError/CleanupError/Usage/CostUSD`。可靠终态与收尾成立后仍须由 Go 验证 done-report、L1、独立评审、里程碑 gate，以及同一候选的持久化 Git tree。错误分类保持 `AUTH/QUOTA/RATE_LIMIT/SERVER/TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED`；取消另行记录，不由 adapter 任意改变 wire contract。
 
-**认证、额度与账单必须分开。** ChatGPT 订阅／Codex OAuth 登录成功，不等于有通用 API 额度，也不等于无限调用或零边际成本。独立 API credit、订阅限额和当前路由的计费来源必须分别确认。本文不要求复制 token、伪装客户端来换取不同授权，也不把 originator 的桌面显示标签当成授权或计费证明。
+## 6. DSH rc.5 接入边界与后续消费者
 
-## 6. 最低真实验收矩阵
+本轮只读检查了 Mac `0.2.1-rc.5` 分发包的接口，并参照固定版 [SDK protocol](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/protocol/README.md) 与 [SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/README.md) 文档：
 
-优先用本地 fake app-server 与真实 Node 子进程，所有默认测试不需要账号、不触发模型。每个卡住场景都设独立外层 watchdog，避免测试 runner 自己永久挂住。
+- 现有 stdio SDK RPC 有 initialize、session prompt/resume/wait、工作目录 get/set、shutdown，没有 external subagent/start RPC。
+- initialize 解析 LLM call configuration；`codex-pro` 的 subagent provider 身份不等于 LLM adapter 注册。
+- SDK 的 `subagent.finished` 转发限制为 local agent，不能靠该通知取得 external Codex 的结果。
+- Host `subagents.startActivation({provider, request, parent, signal, delivery: 'caller'})` 可启动 external provider，但要求精确的 live parent agent；受管 drain 能覆盖 external 生命周期，不自动补足丢失的 receipt。
+
+后续应选择明确公开的 machine 入口，或增加受控 Host plugin RPC，再实现独立 external-subagent driver／worker。Host 路线必须实际管理所需 parent 生命周期，不能虚构 parent ID。无需让额外父模型先推理一次再选择工具，也不依赖 Teams／OAR／Forge。
+
+Go 传入 request ID、cwd、模型、effort、权限和 deadline，取得完整 receipt。Flywheel Execute／Review 每次使用新 thread／leaf；adapter 可保留交互用户的 persistent thread 功能，但不能自动带入该新会话契约。权限、receipt、所有权、无推理 doctor 与跨进程生命周期回归全部通过后，才可声明消费者可用。当前独立 Codex CLI 和原生 DSH 通路继续保留。
+
+## 7. 验收矩阵：默认离线，真实设备单列
+
+使用脚本化 fake app-server 和真实 Node 子进程；每个挂起测试有独立外层 watchdog，避免 runner 永久等待。保留 `npm run typecheck`、`npm run build`、`npm test` 门禁，不通过删除失败分支或扩大 timeout 冒充修复。
 
 | 场景 | 必须断言 |
 |---|---|
-| 可执行文件缺失／spawn error | 一次调用失败、无未处理 rejection、不拖垮 DSH host |
-| initialize 不响应 | 内部 deadline 能解除 startup 等待；在清理预算内 settle，子进程确已处理 |
-| thread/start、thread/resume、thread/name/set 分别不响应 | 与 initialize 同样受控；记录具体阶段，不能只等外部 abort |
-| turn/start／turn/completed 不响应 | timeout 与用户 cancel 可区分；迟到 completed 不能覆盖失败 |
-| 启动前／启动中／执行中取消 | 所有 pending 被释放，teardown 幂等；未发布 handle 也能清理 |
-| TERM 被忽略、后代持有 stdio、正常 leader 退出但后代仍活 | 有界升级与本次进程范围清理；失败记录 cleanup 未确认，不伪装成功 |
-| 模型／cwd／sandbox 回执与请求不符 | prompt 前拒绝；不静默采用历史值或扩大权限 |
-| resume 到 A，却请求 B；切换 model／effort／权限 | 版本支持则真正应用并验证，否则明确失败；检查 thread 实际执行目录，不只看 spawn cwd |
-| 显式 thread 无效、自动记忆 thread 无效、并发复用 | 显式指定不静默冷启动；自动恢复有界且可见；同一 thread 不被错误并发写入 |
-| 一次 turn 内多次模型请求 | 本次 usage 包含全部有效请求；最终 last 不冒充完整 delegation |
-| 重复／乱序／错误 thread/turn usage | 不双算、不串单；计数回退、缺字段、基线缺失保持 unknown |
-| 已有历史 thread 的累计用量 | 例如 1000→1100→1150→1150，本次正确为 150；无法证明 baseline 时不得伪造 150 |
-| partial/final/commentary、终态缺失、流提前关闭或截断 | 只有符合协议的最终内容与终态能成功；不能选上一轮的旧 final answer |
-| schema 合法／不合法；persistent／ephemeral | 机器结果可直接解析并满足约束；thread marker 不污染 JSON |
-| 原生 provider／自定义工具；前台／background job | 相同配置与终态语义；usage/thread/error 不因入口改变而丢失 |
-| image 参数与产物回归 | 保留已有支持；缺失文件／不支持能力明确失败，不以文字占位冒充图片已传递 |
-| 无 usage／无 cost／认证或额度失败 | unknown 与 0 区分；AUTH、QUOTA、RATE_LIMIT 不混为正常空回答 |
+| initialize／start／resume／name／turn 各阶段不响应 | 同一内部 deadline 持续有效；未发布 handle 也有界清理，阶段和原因明确 |
+| 启动前／执行中取消、timeout=0、自动 resume 冷启动 | 取消与超时区分；关闭运行 deadline 不关闭清理预算；重试不获得新总时限 |
+| cwd/model/approval/sandbox 缺失、错类型、冲突 | 用户任务发送前失败；公共收据保留 requested、effective 与缺口 |
+| read-only、workspace-write+never、显式 full access | 不支持即失败，不静默扩权；参数和实际工具权限分别验证 |
+| 显式 thread 无效、恢复时变更目录／模型／权限／effort | 不把 spawn cwd 当 thread cwd；显式 thread 不换新；per-turn effort 不与历史配置混淆 |
+| 已有正常文本，但 cleanup 未确认 | provider、tool、job 都不能交付 completed；dispose 结果可追踪 |
+| 忽略 TERM、leader 先退、后代占用 stdio | 有界升级与回收，只处理本次范围；未知存活状态保持失败 |
+| Go／Node／DSH 父进程在 startup、turn、teardown 被强杀 | 证明独立 Codex 范围的外层所有权已接通，不只测正常 dispose |
+| 公开包入口／正式 machine 导出／Host RPC | 取得完整 receipt，不 deep import／解析日志；版本不支持明确失败 |
+| 多次模型请求、重复累计快照、历史 baseline | 求可靠 run delta，不相加 total／只取 last；无基线不伪造完整量 |
+| 有效 usage 后坏通知、回退、其他 thread／turn、早到事件 | 不串单、不双算；complete/partial/unknown 符合证据 |
+| schema、persistent marker、图片及部分产物 | structured 真正验证，marker 不污染 JSON；失败保留产物，不以占位文本冒充图片 |
+| 失败、取消、截断、未知 usage／cost | 统一公开终态；未知不是零，认证／额度失败不成为空回答成功 |
+| macOS fake-process CI | 覆盖组清理、目录别名与宿主取消；Ubuntu Node 22／24 不能替代 |
 
-运行现有 `npm run typecheck`、`npm run build`、`npm test`，并加入上述行为测试。不要只断言 argv 字符串、只 mock promise 成功，或通过扩大 timeout／删除防御分支让测试变绿。已有 live 测试保持显式 opt-in，需用户另行授权后才运行。
+真实设备仍须单列：用户 Mac 的实际 DSH／Codex 版本、provider／工具注册、SDK 与桌面 profile 授权、真实 read-only／workspace sandbox、模型和 effort、persistent thread、远端 usage／额度、图片及宿主退出后的进程状态。上游 Codex 0.165 live 记录可以参考，不能标为本 session 或用户机器已验。认证、ChatGPT 订阅、Codex 额度、独立 API credit 分别确认，不复制 token 或靠显示标签推断授权。
 
-## 7. 可直接粘贴到另一个 session 的任务
+## 8. 可直接粘贴到另一个 session 的任务
 
 ```text
-请在 ckanner/dsh-subagent-codex-pro 独立仓库完成一次有界加固，不修改 Flywheel、dsh-plugin-chatgpt、LCU 或 Kimi，不自动安装到我的 Mac、不发布、不 commit/push、不运行付费模型。
+请继续加固 ckanner/dsh-subagent-codex-pro 独立仓库。固定审计基线为 21fd7acccf1f5989b14fecdc1957559eea6914f8、package v0.7.0（2026-11-01）。先读真实 checkout 的 AGENTS.md、git status/HEAD、package、Node 与 codex --version，保留已有修改；HEAD 已更新时逐项复核，不重做已修部分。
 
-背景：我使用 DSH 最新 Mac 桌面；本次已核对的接口基线是 0.2.1-rc.5。Flywheel v0.25 由 Go 拥有编排、状态、验证、worktree 和提交；当前 hard 路由走独立 Codex CLI，还没有消费本 adapter。你要先修 adapter 自己，而不是假装集成已完成。
+背景：我用 DSH Mac 桌面，已核对宿主基线为 0.2.1-rc.5。Flywheel 由 Go 拥有状态、lease、deadline、重试、预算、worktree、验证及提交；现有 GPT 通路是独立 codex exec 和 DSH 原生 LLM worker，尚未接入本 external adapter。这次先修 adapter 的公开契约，不修改 Flywheel、ChatGPT 插件或 Kimi，不自动部署到我的 Mac 或调用收费模型。提交、PR、发布按本会话已有授权执行。
 
-审计基线：2026-11-01 远端 main 为 fc6a417888335507e24a67d4dd5653f4894cab3e，package v0.6.4。先看真实 checkout 的 AGENTS.md、git status/HEAD、Node 与 codex --version；保留我已有修改。读 src/run.ts、wire.ts、jsonrpc.ts、index.ts、tool.ts、jobs.ts、dsh-types.ts 和现有 tests。不要只改 codex-exec.ts，因为生产委派主要走 app-server。
+保留 0.7.0 进展：startup 与 turn 共用内部 deadline/abort；resume 已传 cwd/model/权限，effort 在 turn/start；内部 outcome 有 usage/configuration/cleanup；POSIX owned-group 清理与 delegateOnce cleanup 拒绝；schema 和展示分离。不要继续按旧版“startup 不可终止／完全无 usage／resume 只传 threadId”来修。
 
-优先修复：
-1. deadline 必须覆盖 initialize、thread start/resume/name、turn、关闭。现在内部 timeout abort 的是 runAbort，启动却等待外部 signal，启动会挂住。用真实 fake app-server 子进程复现并补回归，不只改超时数字。timeout/cancel/进程错误分开保留，publication 前也能幂等清理。
-2. 每次新建／续接都确认有效 cwd/model/effort/权限。现有 resume 只发送 threadId；never 也不等于 read-only，默认仍是 full access。按实际 CLI 的官方 schema 实施覆盖并检查回执，不支持就明确失败；显式 thread 不得静默换成新 thread。
-3. 补 thread/tokenUsage/updated 与终态运行收据。total 是累计快照，不能逐条相加；last 只代表最近请求，不能当整个 delegation。恢复 thread 要有本次 turn 前的可靠 baseline；不可靠就 unknown。缓存和 reasoning 不重复加；无 cost 不是 0。
-4. 原生 provider、自定义 subagent_codex 工具、前台、后台 job 共用结果归一化。保留 thread/turn、有效配置、usage、真实退出、timeout/cancel、cleanupError 和错误阶段。
-5. raw text、parsed structured、thread metadata、展示文本分开；persistent thread marker 不得破坏 output_schema 的 JSON。坏 JSON／坏 schema 不能静默只返回文本成功。
-6. interrupt + 有界 TERM/KILL + 等待退出，处理启动失败、后代持有 stdio、宿主 dispose 和迟到事件。只清理本次拥有的进程范围，不能扫杀其他 Codex；无法证明清理时明确失败。
+优先完成：
+1. wire.appliedConfiguration 缺有效字段时只有 matched=false，start/resume 仍继续。必需 cwd/model/approval/sandbox 缺失、错类型、不支持、不匹配都须在发任务前失败；保留 requested/effective/缺口。effort 按真实 per-turn 协议处理，不伪造回执。
+2. 默认仍 full access；never 无 sandbox，approve-for-me 不是 never。提供明确 workspace-write+never 与read-only，full access 须显式选择，写清兼容迁移和实际工具权限验收。
+3. public CodexExecProvider 在 cleanup.confirmed=false 时仍可返回 completed，虽然 delegateOnce 会拒绝。统一 provider、tool、前台、job、dispose 终态，未知清理不能交付成功。
+4. 提供公开、版本化、按request/run关联的 machine receipt。内部 outcome 有部分字段，但公开结果丢 usage/config/cleanup；补实际 exit/signal、turn ID、起止时间、截断、关联和错误阶段。package 目前只 exports 根与 package.json，不能要求消费者 deep import run.ts 或解析日志。
+5. app-server detached:true 自成PGID，Flywheel杀Node/DSH父组覆盖不到。明确对外所有权/监督协议，覆盖宿主突退、启动窗口和PID复用；不能只返回PID就声称受控，也不能扫杀别的Codex。
+6. TokenUsageTracker 在有效快照后收到malformed通知仍可能complete。让complete/partial/unknown与异常、baseline、thread/turn、早到事件一致。累计值只求可靠delta，不相加；last不是整轮；未知usage/cost不补零。
 
-默认测试全部离线：分别卡住每个启动/运行阶段，覆盖外部取消、回执不匹配、resume 目录/权限变更、多请求 usage、历史累计基线、重复/乱序事件、structured/persistent 组合、两入口与 background job 一致性、真实子进程退出。沿用现有 typecheck/build/test 门禁，不删除防御逻辑来刷绿。
+默认验证全部离线：真实fake app-server子进程，分别挂住startup/turn，覆盖取消、缺配置回执、workspace-write+never、cleanup未确认的public provider结果、parent强杀、公开receipt、多次/重复/坏usage、resume基线、早到turn事件、schema与persistent展示、tool/provider/job一致性。保留typecheck/build/test门禁，增加macOS fake-process覆盖。真实Mac桌面和账号模型验证单列，不把上游README live记录当本会话已验。
 
-请先读完整交接文档 docs/integrations/codex-pro-adapter-handoff.md（位于 Flywheel 仓库；如该文件不可见，可让我提供），然后实施。完成后交付修改清单、证据、兼容迁移说明，以及尚未 live 验证的项目。不要把认证成功、ChatGPT 订阅、Codex 可用额度和独立 API credit 混成一个东西。此轮也不要改 Flywheel 默认路由或声称它已接上这个 adapter。
+完整上下文见 Flywheel 的 docs/integrations/codex-pro-adapter-handoff.md；看不到时请让我提供。完成后交付实际改动、公共接口、回归证据、兼容迁移和未验证项。Adapter内部修好不等于Flywheel已经接入：rc.5 stdio SDK无external-subagent/start RPC，后续仍需独立消费者与受控Host/machine入口，Go的状态与交付所有权不变。
 ```
-
-## 8. 仍未验证的 live 项目
-
-当前文档与源码复核没有运行真实模型。下一 session 即使离线测试通过，也仍须明确标记：用户 Mac 的 DSH 安装／provider 与工具注册、实际 CLI 版本的 schema 与回执、真实只读／workspace 沙箱、不同模型和 effort、持久 thread 续接、远端 usage／限额、真实账号授权来源、后台 job 在宿主关闭时的行为、真实图片输入和产物，以及宿主退出后的进程清理。
-
-这些检查需要实际机器与对应调用授权。上游 README 的历史实测、源码存在字段、fake app-server 通过，均不能替代它们；本文不声称任何一项已经在用户账号上验证。

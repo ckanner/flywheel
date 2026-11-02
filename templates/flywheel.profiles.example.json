@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "_note": "可选的具名模型配置示例；原 inline 配置继续支持。profile 在加载时展开，阶段字段按是否显式出现覆盖。只选择第一个完整配置文件，不跨任务/项目/全局合并 profiles。",
+  "profiles": {
+    "flash": {
+      "harness": "dsh",
+      "model": "deepseek-flash",
+      "channel": "deepseek-sdk",
+      "provider": "deepseek-official",
+      "thinking": "high"
+    },
+    "kimi": {
+      "harness": "kimi",
+      "model": "kimi-code/k3.1-pro",
+      "channel": "kimi-subscription",
+      "thinking": "high"
+    },
+    "gpt-review": {
+      "harness": "dsh",
+      "model": "gpt-6.1-sol",
+      "channel": "chatgpt-sdk",
+      "provider": "chatgpt",
+      "thinking": "high"
+    },
+    "gpt-judge": {
+      "harness": "dsh",
+      "model": "gpt-6-astra",
+      "channel": "chatgpt-sdk",
+      "provider": "chatgpt",
+      "thinking": "high"
+    },
+    "codex": {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "channel": "chatgpt-subscription",
+      "thinking": "high"
+    }
+  },
+  "loops": {
+    "plan": { "profile": "kimi", "resident-session": true },
+    "review": { "profile": "gpt-review" },
+    "judge": { "profile": "gpt-judge" },
+    "intake": { "profile": "flash", "thinking": "low" },
+    "garden": { "profile": "kimi", "resident-session": false }
+  },
+  "routes": {
+    "default": { "profile": "flash" },
+    "frontend": { "profile": "kimi" },
+    "hard": { "profile": "codex" }
+  },
+  "channels": {
+    "deepseek-sdk": {
+      "harness": "dsh",
+      "provider": "deepseek-official",
+      "env-key": null,
+      "_note": "channel 是本配置的渠道名，provider 是选定 DSH SDK 实际注册的 ID；凭证仍由该 SDK provider 配置管理，别名不自动切换账号。"
+    },
+    "chatgpt-sdk": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "env-key": null,
+      "_note": "SDK profile 需安装并授权 ChatGPT provider；桌面端已登录不等于 SDK 已登录。"
+    },
+    "kimi-subscription": { "env-key": null },
+    "chatgpt-subscription": { "env-key": null }
+  },
+  "judge-panel": null,
+  "budget": { "enforce": "soft", "daily-token-limit": 2000000 },
+  "retry": { "jitter": 0.1 },
+  "worktree": { "enabled": true },
+  "pricing": {},
+  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；执行和评审始终使用新会话。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。"
+}

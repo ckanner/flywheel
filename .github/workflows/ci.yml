@@ -56,13 +56,15 @@ jobs:
         run: go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1 -v
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
-        run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules -count=1
+        run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
       - name: Build and exercise the native CLI
         run: |
           make build
           ./flywheel version
           ./flywheel control --help
+          ./flywheel doctor --help
           mkdir -p dist/ci
+          ./flywheel config inspect --cwd "$PWD" --json > dist/ci/config-inspect.json
           tar -czf dist/ci/flywheel-native.tar.gz flywheel
       - name: Pack the DSH plugin without publishing
         working-directory: plugins/dsh

@@ -82,6 +82,25 @@ func TestResolveBinding(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestDSHProviderResolutionKeepsAccountChannelSeparate(t *testing.T) {
+	cfg := testConfig()
+	cfg.Channels["team-account"] = config.Channel{Harness: "dsh", Provider: "deepseek-official"}
+	assert.Equal(t, "chatgpt", ResolveProvider(cfg, "dsh", "chatgpt", "team-account"), "an explicit binding selects the adapter")
+	assert.Equal(t, "deepseek-official", ResolveProvider(cfg, "dsh", "", "team-account"))
+	assert.Equal(t, "legacy-provider", ResolveProvider(cfg, "dsh", "", "legacy-provider"))
+	assert.Empty(t, ResolveProvider(cfg, "codex", "", "team-account"), "a different harness never inherits a DSH adapter")
+	cfg.Routes["dsh-route"] = config.RouteBinding{Harness: "dsh", Channel: "team-account", Model: "deepseek-flash"}
+	cfg.Loops["review"] = config.LoopBinding{Harness: "dsh", Provider: "chatgpt", Channel: "subscription-account", Model: "gpt-test"}
+	route, err := ResolveBinding(cfg, "execute", "dsh-route")
+	assert.NoError(t, err)
+	assert.Equal(t, "team-account", route.Channel)
+	assert.Equal(t, "deepseek-official", route.Provider)
+	loop, err := ResolveBinding(cfg, "review", "")
+	assert.NoError(t, err)
+	assert.Equal(t, "subscription-account", loop.Channel)
+	assert.Equal(t, "chatgpt", loop.Provider)
+}
+
 func TestNextChannel(t *testing.T) {
 	cfg := testConfig()
 	assert.Equal(t, "opencode", NextChannel(cfg, "opencode-go"))
