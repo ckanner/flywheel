@@ -372,7 +372,12 @@ async function install(options, { environment = process.env, cwd = process.cwd()
     }
     for (const [name, handler] of handlers) process.removeListener(name, handler);
   }
-  if (cancelledBy) report.cancelledBy = cancelledBy;
+  if (cancelledBy) {
+    report.cancelledBy = cancelledBy;
+    report.ok = false;
+    const cancellation = `installation cancelled by ${cancelledBy}`;
+    report.error = report.error ? `${report.error}; ${cancellation}` : cancellation;
+  }
   return report;
 }
 

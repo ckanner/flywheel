@@ -14,6 +14,7 @@ const platform = `${process.platform}-${process.arch === "x64" ? "amd64" : proce
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function alive(pid) {
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, "process checks require a complete positive PID");
   try { process.kill(pid, 0); return true; } catch (error) {
     if (error.code === "ESRCH") return false;
     throw error;
@@ -26,6 +27,24 @@ async function waitFor(check, message) {
     assert.ok(Date.now() < deadline, message);
     await delay(15);
   }
+}
+
+async function waitForPid(filename, message) {
+  let pid;
+  await waitFor(async () => {
+    let content;
+    try { content = await fs.readFile(filename, "utf8"); }
+    catch (error) { if (error.code === "ENOENT") return false; throw error; }
+    if (!/^[1-9]\d*$/.test(content) || !Number.isSafeInteger(Number(content))) return false;
+    pid = Number(content);
+    return true;
+  }, message);
+  return pid;
+}
+
+function publishPidSource(filename) {
+  return `fs.writeFileSync(${JSON.stringify(filename + ".tmp")}, String(process.pid));
+    fs.renameSync(${JSON.stringify(filename + ".tmp")}, ${JSON.stringify(filename)});`;
 }
 
 async function temporary(t, beforeRemove) {
@@ -254,6 +273,39 @@ test("step timeout rejects a CLI that traps termination as exit zero", { timeout
   assert.ok((await f.records()).some(entry => entry.kind === "doctor-cleanup"));
 });
 
+test("cancellation during final unlock cannot return a successful report or hide cleanup errors", { timeout: 15000 }, async t => {
+  for (const failUnlock of [false, true]) {
+    const f = await installation(t);
+    const preload = path.join(f.directory, "cancel-at-final-unlock.cjs");
+    await fs.writeFile(preload, `
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const unlink = fs.unlink;
+fs.unlink = async function(filename) {
+  if (path.basename(filename) === "npm-install.lock") {
+    await new Promise(resolve => {
+      const pending = setInterval(() => {}, 1000);
+      process.once("SIGTERM", () => { clearInterval(pending); resolve(); });
+      process.kill(process.pid, "SIGTERM");
+    });
+    if (process.env.TEST_UNLOCK_FAILURE === "1") throw new Error("fixture final unlock failed");
+  }
+  return unlink.call(this, filename);
+};
+`);
+    const report = resultDocument(await f.launch([...f.args, "--no-dsh"], {
+      NODE_OPTIONS: `--require=${JSON.stringify(preload)}`,
+      TEST_UNLOCK_FAILURE: failUnlock ? "1" : "0",
+    }).exit, 143);
+    assert.equal(report.ok, false);
+    assert.equal(report.cancelledBy, "SIGTERM");
+    assert.match(report.error, /installation cancelled by SIGTERM/);
+    assert.ok(report.steps.every(step => ["ok", "skipped"].includes(step.status)), "the signal must arrive after all setup steps finish");
+    if (failUnlock) assert.match(report.error, /fixture final unlock failed/);
+    else await assert.rejects(fs.access(path.join(f.home, ".config", "flywheel", "npm-install.lock")), { code: "ENOENT" });
+  }
+});
+
 test("managed launcher updates preserve user edits and invalid installation records", { timeout: 10000 }, async t => {
   const directory = await temporary(t);
   const opts = { directory, prefix: path.join(directory, "prefix"), cli: path.join(directory, "cli.js"),
@@ -288,9 +340,12 @@ test("setup preserves a modified launcher and exposes the failed step in its JSO
 test("capture cancels a whole installation process group after its leader exits", { timeout: 10000 }, async t => {
   const directory = await temporary(t);
   const pidFile = path.join(directory, "worker.pid");
+  // A reader can observe file creation before PID bytes are written. Empty is
+  // not readiness: Number("") is 0, and kill(0, 0) probes our own process group.
+  await fs.writeFile(pidFile, "");
   const parent = path.join(directory, "leader.cjs");
   const workerSource = `const fs = require('node:fs'); process.on('SIGTERM', () => {});
-    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+    ${publishPidSource(pidFile)} setInterval(() => {}, 1000);`;
   await fs.writeFile(parent, `const { spawn } = require('node:child_process');
     spawn(process.execPath, ['-e', ${JSON.stringify(workerSource)}], { stdio: 'ignore' });
     process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);`);
@@ -299,12 +354,12 @@ test("capture cancels a whole installation process group after its leader exits"
   const controller = new AbortController();
   const resultPromise = capture(process.execPath, [parent], { signal: controller.signal, timeoutMs: 5000,
     cleanupGraceMs: 50, cleanupTimeoutMs: 1000 });
-  await waitFor(async () => { try { worker = Number(await fs.readFile(pidFile, "utf8")); return true; } catch { return false; } }, "worker never started");
+  worker = await waitForPid(pidFile, "worker never started");
   controller.abort();
   const result = await resultPromise;
   assert.notEqual(result.code, 0);
   assert.equal(result.cancelled, true);
-  assert.equal(alive(worker), false, "leader close must not cancel escalation while a child is still alive");
+  assert.equal(alive(worker), false, `leader close must not cancel escalation while PID ${worker} is still alive; ${result.error}`);
 });
 
 test("normal exit zero cannot hide a surviving installation subprocess", { timeout: 10000 }, async t => {
@@ -312,14 +367,14 @@ test("normal exit zero cannot hide a surviving installation subprocess", { timeo
   const pidFile = path.join(directory, "worker.pid");
   const parent = path.join(directory, "leader.cjs");
   const workerSource = `const fs = require('node:fs'); process.on('SIGTERM', () => {});
-    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.stdout.write('ready'); setInterval(() => {}, 1000);`;
+    ${publishPidSource(pidFile)} process.stdout.write('ready'); setInterval(() => {}, 1000);`;
   await fs.writeFile(parent, `const { spawn } = require('node:child_process');
     const worker = spawn(process.execPath, ['-e', ${JSON.stringify(workerSource)}], { stdio: ['ignore', 'pipe', 'ignore'] });
     worker.stdout.once('data', () => process.exit(0));`);
   let worker;
   t.after(() => { if (worker && alive(worker)) process.kill(worker, "SIGKILL"); });
   const pending = capture(process.execPath, [parent], { timeoutMs: 5000, cleanupGraceMs: 50, cleanupTimeoutMs: 1000 });
-  await waitFor(async () => { try { worker = Number(await fs.readFile(pidFile, "utf8")); return true; } catch { return false; } }, "worker never started");
+  worker = await waitForPid(pidFile, "worker never started");
   const result = await pending;
   assert.notEqual(result.code, 0);
   assert.ok(result.error);
@@ -331,7 +386,7 @@ test("inherited output handles outside the owned group produce a bounded failure
   const pidFile = path.join(directory, "escaped.pid");
   const parent = path.join(directory, "leader.cjs");
   const workerSource = `const fs = require('node:fs');
-    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+    ${publishPidSource(pidFile)} setInterval(() => {}, 1000);`;
   await fs.writeFile(parent, `const { spawn } = require('node:child_process');
     const worker = spawn(process.execPath, ['-e', ${JSON.stringify(workerSource)}], { detached: true, stdio: 'inherit' });
     worker.unref();`);
@@ -342,7 +397,7 @@ test("inherited output handles outside the owned group produce a bounded failure
   });
   const started = Date.now();
   const pending = capture(process.execPath, [parent], { timeoutMs: 500, cleanupGraceMs: 50, cleanupTimeoutMs: 200 });
-  await waitFor(async () => { try { worker = Number(await fs.readFile(pidFile, "utf8")); return true; } catch { return false; } }, "escaped fixture never started");
+  worker = await waitForPid(pidFile, "escaped fixture never started");
   const result = await pending;
   assert.notEqual(result.code, 0);
   assert.ok(result.error);

@@ -13,7 +13,7 @@
 | `make quality-gate` | PASS：vet、gofmt、全部 Go 测试 | [输出](evidence/npm-quality-gate.txt) |
 | 逐函数 Go 覆盖率 | **419 个函数全部 100%；6,219 个 statement，未覆盖 0** | [逐函数输出](evidence/npm-function-coverage.txt) |
 | 七个核心包 `go test -race` | PASS：machine、verify、watchdog、drivers、cli、modules、diagnostic | [输出](evidence/npm-race.txt) |
-| `npm test` | **51/51**：runtime、installer、release | [输出](evidence/npm-contract-tests.txt) |
+| `npm test` | **52/52**：runtime、installer、release | [输出](evidence/npm-contract-tests.txt) |
 | 六包构建 | PASS：四个平台原生包、DSH 插件和入口包，实际包内 manifest 与 SHA-512 校验 | [输出](evidence/npm-build.txt) |
 | `npm run test:install` | **6/6**：同一批实际候选包从隔离 npm registry 安装后执行 | [输出](evidence/npm-install-tests.txt) |
 | DSH 插件 `npm run check` | **38/38**，含 React DOM、控制协议与进程生命周期 | [输出](evidence/npm-dsh-plugin-tests.txt) |
@@ -47,6 +47,9 @@
 4. 首次配置检查与写入之间可能覆盖新出现的用户文件；完整写入同目录 0600 临时文件，再用 no-replace hard link 发布，已有文件或悬空链接完整保留。
 5. `npm view` 成功但缺少 integrity 不能证明版本不存在；只有结构化 E404 能进入首次发布路径，空／null integrity 拒绝，缺少 latest tag 单独处理。
 6. npm 的 `130/143` 等异常退出码不能因 registry 已接受字节而当作成功；取消后停止发行，不继续后续包。
+7. 安装完成、异步释放锁期间收到 SIGTERM 时，最终报告不能仍为 `ok:true`；统一将取消设为失败，同时保留已有清理错误。真实 installer 子进程的 unlock 窗口回归覆盖正常释放与释放失败。
+
+最终全套 npm 回归也暴露了测试 fixture 的 PID 文件创建窗口：空文件被 `Number("")` 读成 0，`kill(0, 0)` 查询测试自己的进程组，从而误报 worker 存活。受控实验确认该场景真实 worker 已清理。现统一等待完整正整数 PID、原子发布 fixture PID，并预置空文件覆盖窗口；保留真实 PID 退出断言，不通过放宽存活要求消除失败。修复后完整 `npm test` 52/52 通过。
 
 README、完整安装教程、首任务使用方法、插件 README／PROTOCOL、设计、AGENTS、CHANGELOG 和全部 10 个 skills 已同步。文档经过内部链接、shell 语法和 JSON 示例校验；skills 仍只负责输入校验、CLI 调用和结果解释。
 
