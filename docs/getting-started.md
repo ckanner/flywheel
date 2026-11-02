@@ -1,8 +1,8 @@
 # Mac 安装与首个 Flywheel 任务
 
-本文适用于 **Flywheel 0.27.2 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
+本文适用于 **Flywheel 0.27.3 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
 
-安装前用 `npm view @ckanner/flywheel version` 核对实际版本；旧 0.22.1 没有本教程使用的 `install`、DSH 控制入口和 worker。0.27.0 与 0.27.1 未发行到 npm，详情见[发行记录与失败恢复](releasing.md#3-失败恢复)。
+安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。
 
 ## 目录
 
@@ -276,7 +276,7 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 npx -y @ckanner/flywheel@latest install
 ```
 
-自定义 prefix、项目 skills 或 DSH 入口时保留原参数。想固定某个已发布版本，可把 `@latest` 换成该精确版本，例如在 registry 确认 0.27.2 已发布后使用 `@0.27.2`；安装器始终为 CLI、平台包、worker 和桌面插件选择本次安装器的同一版本。已安装包的配置修复可用 `flywheel setup --no-global`，它不会将 CLI 升级到别的版本。
+自定义 prefix、项目 skills 或 DSH 入口时保留原参数。想固定某个已发布版本，可把 `@latest` 换成该精确版本，例如在 registry 确认 0.27.3 已发布后使用 `@0.27.3`；安装器始终为 CLI、平台包、worker 和桌面插件选择本次安装器的同一版本。已安装包的配置修复可用 `flywheel setup --no-global`，它不会将 CLI 升级到别的版本。
 
 安装后对照新模板审阅需要迁移的配置，按宿主提示重新载入，运行 doctor，再用小任务验证。已有配置不会自动覆盖；特别检查任务级文件是否遮住了刚修改的项目或全局设置。安装不是跨 npm、DSH 与全部 skills 的单个事务：失败时报告已完成步骤，不擅自回退包管理器或删除用户文件。修正原因后重跑会重新核对版本与内容。
 

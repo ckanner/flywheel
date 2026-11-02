@@ -50,6 +50,12 @@ function readValue(args, runNpm = defaultRunNpm, { allowMissingValue = false } =
   }
   let value;
   try { value = JSON.parse(raw); } catch (_) { throw new Error(`Invalid JSON from npm view ${args.join(" ")}`); }
+  // npm 12 wraps a selected scalar in an array. Never pick one value out of an
+  // ambiguous response, and keep an empty result subject to the missing-value policy.
+  if (Array.isArray(value)) {
+    if (value.length > 1) throw new Error(`Unexpected response from npm view ${args.join(" ")}`);
+    value = value.length === 0 ? null : value[0];
+  }
   if (value !== null && typeof value !== "string") throw new Error(`Unexpected response from npm view ${args.join(" ")}`);
   if (value === null && !allowMissingValue) throw new Error(`Missing registry value from npm view ${args.join(" ")}`);
   return value;

@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel-linux-amd64",
-  "version": "0.27.2",
+  "version": "0.27.3",
   "description": "Flywheel platform binary — linux-amd64 (auto-selected via optionalDependencies; do not install directly)",
   "os": [
     "linux"

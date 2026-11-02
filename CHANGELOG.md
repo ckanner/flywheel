@@ -1,8 +1,17 @@
 # Changelog
 
+## 0.27.3
+
+当前统一 npm 发行目标。本节记录修复内容，不代表本版门禁、registry 发布、latest 提升或用户 Mac 实机验收已完成。0.27.0／0.27.1 未上传 npm 包；0.27.2 的发行在验证阶段主动取消，未上传包，旧 tag 均保留不移动。
+
+- 兼容 npm 12 `view --json` 的单元素数组结果，同时保留 npm 11 标量结果；多结果、错误结构与缺失 integrity 仍拒绝，只有结构化 E404 可表示版本不存在。
+- 增加真实 npm CLI 对隔离本地 registry 的 `view` 协议回归，覆盖 latest、integrity、缺失字段及 E404／E403；不调用发布接口或真实账号。
+- CI、六包候选构建、双平台验证与 publish 统一固定 Node 24.22.1／npm 12.2.1，并记录实际工具版本，避免测试与发布使用不同 npm 协议；原有权限、候选身份和全部门禁保留。
+- 六个包、精确同版依赖、插件锁文件、构建入口和当前安装教程统一到 0.27.3。
+
 ## 0.27.2
 
-当前统一的修正版发行目标。0.27.0 与 0.27.1 的发行尝试均未上传任何 npm 包，原 tag 保留不移动；0.27.2 仍须通过完整门禁、registry 安装验证和 latest 提升后，才算完成 npm 发行。本节不代表用户 Mac 桌面或真实账号已验收。
+[PR #19 CI](https://github.com/ckanner/flywheel/actions/runs/41388914605) 与 [main CI](https://github.com/ckanner/flywheel/actions/runs/41389529756) 均通过。随后预核真实 npm 12 的 `view --json` 发现单值结果变为数组，[0.27.2 发行 run](https://github.com/ckanner/flywheel/actions/runs/41389716920)在 preflight／build 成功后的 verify 阶段主动取消；未执行 npm 上传，不是 CI 失败。原 tag 保留不移动，后续修正版使用 0.27.3。
 
 - 控制面测试夹具通过原子替换发布完整状态 JSON，消除模拟引擎直接覆写文件时被并发读取到半写内容的竞态；控制接口和生产状态文件契约不变。
 - 发行构建兼容 npm 11 的单元素数组及 npm 12 按完整包名索引的单包对象 `pack --json` 输出，继续严格核对对象键、包名、版本、文件名及候选 integrity。

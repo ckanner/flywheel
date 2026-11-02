@@ -2,9 +2,9 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前 **v0.27.2 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前 **v0.27.3 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
-**本教程适用于 0.27.2 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 核对实际版本；旧 0.22.1 没有本教程使用的 `install`、DSH 控制入口和 worker。0.27.0 与 0.27.1 未发行到 npm，详情见[发行记录与失败恢复](docs/releasing.md#3-失败恢复)。
+**本教程适用于 0.27.3 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
 测试结果与实机边界见[验证记录](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 

@@ -32,7 +32,12 @@ jobs:
           go-version: "1.27"
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "24.22.1"
+      - name: Install pinned npm 12.2.1 and report the release toolchain
+        run: |
+          npm install --global npm@12.2.1 --ignore-scripts
+          node --version
+          npm --version
       - name: Build one six-package npm candidate
         run: npm run build:npm
       - uses: actions/upload-artifact@v4
@@ -56,7 +61,12 @@ jobs:
           go-version: "1.27"
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "24.22.1"
+      - name: Install pinned npm 12.2.1 and report the release toolchain
+        run: |
+          npm install --global npm@12.2.1 --ignore-scripts
+          node --version
+          npm --version
       - uses: actions/download-artifact@v4
         with:
           name: npm-candidate

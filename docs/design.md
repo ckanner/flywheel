@@ -236,7 +236,9 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-当前统一 npm 发行目标为 **0.27.2**。[0.27.0 发行](https://github.com/ckanner/flywheel/actions/runs/41385226607)在上传前因私有仓库读取认证失败而停止；[0.27.1 发行](https://github.com/ckanner/flywheel/actions/runs/41387321980)的 macOS 验证通过，但 Ubuntu 验证因控制面测试夹具的状态文件写入竞态失败，publish job 未执行。两次均未上传 npm 包，原 tag 保留不移动。测试夹具的模拟状态更新同样使用完整文件的原子替换，遵守生产状态发布契约；0.27.2 的发行和用户 Mac 实机验收仍需各自的完成证据。
+当前统一 npm 发行目标为 **0.27.3**。[0.27.0 发行](https://github.com/ckanner/flywheel/actions/runs/41385226607)在上传前因私有仓库读取认证失败而停止；[0.27.1 发行](https://github.com/ckanner/flywheel/actions/runs/41387321980)因 Ubuntu 控制面测试夹具的状态文件写入竞态失败，publish job 未执行。夹具已改用完整文件的原子替换；0.27.2 的 [PR #19 CI](https://github.com/ckanner/flywheel/actions/runs/41388914605) 与 [main CI](https://github.com/ckanner/flywheel/actions/runs/41389529756) 均通过。随后预核真实 npm 12 的 `view --json` 发现单值输出变为单元素数组，[0.27.2 发行](https://github.com/ckanner/flywheel/actions/runs/41389716920)在 preflight／build 成功后的 verify 阶段主动取消，未执行上传；这是预防性取消，不是 CI 失败。三个旧版本均未上传 npm 包，原 tag 保留不移动；0.27.3 发行与用户 Mac 实机验收仍需各自的完成证据。
+
+CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 
 GitHub Actions 的 publish job 使用固定 Node/npm 发行工具链，支持 OIDC trusted publishing 及已有 `NPM_TOKEN` 后备。无 token 时显式使用空 user npmrc，避免 setup-node 的认证占位配置；不在日志或 GitHub 环境文件中写入凭证。六个包各自的 npm trusted publisher 都必须对应 `ckanner/flywheel` 的 `publish.yml`，并分别允许直接 publish 与 dist-tag；GitHub 登录或 `id-token: write` 本身不授予 npm 包写权限。维护者配置和失败恢复见 [发行指南](releasing.md)。
 
