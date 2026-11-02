@@ -1,9 +1,10 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.22.1",
-  "description": "Flywheel — Loop Engineering orchestrator (Go). Deterministic orchestrator driving Plan/Execute/Review agent loops from frozen on-disk contracts. Platform binaries ride optionalDependencies (@ckanner/flywheel-<os>-<arch>).",
+  "version": "0.27.0",
+  "description": "Flywheel: deterministic coding-agent loops, DSH controls, and one-command agent installation.",
   "bin": {
-    "flywheel": "bin/flywheel.js"
+    "flywheel": "bin/flywheel.js",
+    "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js"
   },
   "os": [
     "darwin",
@@ -14,7 +15,7 @@
     "arm64"
   ],
   "engines": {
-    "node": ">=16"
+    "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",
@@ -22,16 +23,28 @@
   },
   "license": "UNLICENSED",
   "files": [
-    "bin/flywheel.js",
-    "CHANGELOG.md"
+    "bin",
+    "npm/*.js",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/getting-started.md",
+    "docs/configuration.md",
+    "docs/examples/create-first-task.sh"
   ],
   "optionalDependencies": {
-    "@ckanner/flywheel-darwin-arm64": "0.22.1",
-    "@ckanner/flywheel-darwin-amd64": "0.22.1",
-    "@ckanner/flywheel-linux-arm64": "0.22.1",
-    "@ckanner/flywheel-linux-amd64": "0.22.1"
+    "@ckanner/flywheel-darwin-arm64": "0.27.0",
+    "@ckanner/flywheel-darwin-amd64": "0.27.0",
+    "@ckanner/flywheel-linux-arm64": "0.27.0",
+    "@ckanner/flywheel-linux-amd64": "0.27.0"
   },
   "scripts": {
-    "release:check": "node scripts/release-preflight.js"
+    "release:check": "node scripts/release-preflight.js",
+    "test": "node --test npm/test/*.test.js",
+    "test:install": "node --test npm/test/install.integration.js",
+    "test:registry": "node npm/test/registry-smoke.js",
+    "build:npm": "bash scripts/build-npm.sh 0.27.0 dist-npm"
+  },
+  "dependencies": {
+    "@ckanner/dsh-plugin-flywheel": "0.27.0"
   }
 }

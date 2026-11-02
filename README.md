@@ -2,45 +2,39 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前 **v0.26 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前 **v0.27 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
-**本实现与 npm 发行版本分开管理。请使用包含 DSH 集成的源码构建 Go 二进制和插件；PR 合并不代表已发布 npm 包，旧发行版可能没有 `control`、DSH worker 和新的完成门禁。** 旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
+**本教程适用于 0.27.0 及以后的发行版。** 旧 npm 0.22.1 不包含新的 `install`、DSH 控制入口和 worker，PR 合并也不等于 npm 已发布；可用 `npm view @ckanner/flywheel version` 核对实际发行。测试结果与实机边界见[验证记录](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 
 首次使用请按 [Mac 安装与首个任务教程](docs/getting-started.md) 完成安装、配置、无推理检查和小任务验收。本文保留各接口与设计边界的速查。
 
-## 1. 从源码构建
+## 1. 一条命令安装
 
-需要 Go 1.27 或更高、Node.js 22 或更高，以及 Git。生产任务必须位于 Git 仓库；非 Git 目录可以用于部分步骤演练，但不能标记为 `completed`。
-
-在包含本轮改动的 Flywheel 源码目录运行：
+已有 **Node.js 22 或更高、npm 和 DSH Mac 桌面及其 `dsh` 命令**后，在终端运行：
 
 ```sh
-go version
-node --version
-mkdir -p bin
-go build -o ./bin/flywheel ./cmd/flywheel
-./bin/flywheel control --help
-
-cd plugins/dsh
-npm ci --ignore-scripts
-npm run check
-npm pack
+npx -y @ckanner/flywheel@latest install
 ```
 
-Go 产物是 `bin/flywheel`；插件产物是 `plugins/dsh/ckanner-dsh-plugin-flywheel-0.1.0.tgz`。插件构建不需要额外打包器，不运行模型。后续示例中的 `flywheel` 指这个新二进制：可以加入自己的 PATH，也可以始终使用绝对路径。
+Agent 可在同一命令后加 `--json`，读取一个结构化结果。安装器把本次解析到的**精确版本**的 CLI、对应平台 Go 二进制和 DSH worker 装到 npm 全局目录，安装 10 个内嵌 skills，再将同版本 DSH 插件注册到桌面 profile 并核对版本。无需下载压缩包、克隆源码或自行编译 Go。
 
-## 2. 安装 DSH 入口与独立 worker
+安装完成会显示每个步骤和本地预检结果。`ok:true` 表示软件安装成功；`ready:false` 表示当前配置仍有运行阻断项，例如缺少 Kimi／Codex CLI，二者可以同时出现。安装器不替换现有 DSH，也不安装或代登录 Kimi／Codex，不代配 DeepSeek API 凭证。运行真实任务前需完成所选渠道的准备。
+
+默认使用 npm 的全局 prefix 和用户级 skills 目录。没有全局目录写权限时，可显式选择用户目录：
+
+```sh
+npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
+```
+
+自定义 prefix 后，如需在终端直接输入 `flywheel`，将该 prefix 的 `bin` 加入自己的 shell PATH。`--project`、`--dsh-bin`、`--profile`、`--no-dsh`、`--no-global` 和超时参数见[完整教程](docs/getting-started.md#2-一条命令安装)。
+
+普通 `npm install --global @ckanner/flywheel` 只安装包文件，不通过 postinstall 修改用户的 skills、配置或 DSH profile。已经用它安装的用户可显式运行 `flywheel setup --no-global` 完成配置；`install` 与 `setup` 共用安装流程，默认都会确保本版全局包已安装。
+
+## 2. DSH 入口与独立 worker
 
 本实现针对已核对接口的 **DSH Mac 桌面 0.2.1-rc.5**。先核对 About、`dsh --version` 和命令实际来源。它不要求 alpha、OAR、Forge、Teams 或一直存活的桌面父智能体。
 
-在自己的 Mac 上安装本地构建包：
-
-```sh
-npm install --global /absolute/path/ckanner-dsh-plugin-flywheel-0.1.0.tgz
-dsh plugin --profile desktop add /absolute/path/ckanner-dsh-plugin-flywheel-0.1.0.tgz
-```
-
-第一条安装 `flywheel-dsh-worker`；第二条必须使用**桌面安装的 `dsh` 命令**，将控制插件加入桌面 profile。普通 npm CLI 不能管理保留的 `desktop` profile。也可以使用桌面的 Plugins 页面安装本地包，然后按宿主提示重新载入。不要猜测 `.app` 内部可执行文件路径。
+上一节的安装器使用**桌面安装的 `dsh` 命令**执行正式插件管理接口：`dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次版本>`，然后通过 `plugin list` 核对版本。普通 npm DSH CLI 不能管理保留的 `desktop` profile；命令不在 PATH 时用 `--dsh-bin` 指定已核对的桌面命令入口。安装后按宿主提示重新载入。不要猜测 `.app` 内部可执行文件路径。
 
 原生 worker 使用独立的 SDK profile。桌面装有某个 provider，不代表 SDK profile 已经加载或授权。DeepSeek 使用实际 provider `deepseek-official`；GPT 原生路由要求在 SDK profile 中配置对应的 ChatGPT adapter，例如本轮核对的版本：
 
@@ -48,13 +42,13 @@ dsh plugin --profile desktop add /absolute/path/ckanner-dsh-plugin-flywheel-0.1.
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会自动迁移桌面凭证，也不证明账号可以调用默认表里的所有模型。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider；本轮没有连接或修改用户另行加固的 Codex Pro adapter。
+这是已核对的 adapter 版本示例；采用其他版本前按其文档检查兼容性。按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会自动迁移桌面凭证，也不证明账号可以调用默认表里的所有模型。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider；Flywheel 的 `hard` 路由使用独立 Codex CLI。
 
 ### worker 入口配置
 
 | 环境变量 | 默认值与作用 |
 |---|---|
-| `FLYWHEEL_DSH_WORKER` | PATH 中的 `flywheel-dsh-worker`；可设为本包已构建的 `dist/worker.js` 绝对路径 |
+| `FLYWHEEL_DSH_WORKER` | npm 启动器自动解析同版本依赖中的 worker 绝对路径；显式环境变量优先。直接运行 Go 二进制时默认从 PATH 查找 `flywheel-dsh-worker` |
 | `FLYWHEEL_DSH_BIN` | PATH 中的 `dsh`；建议固定为已核对的官方命令入口 |
 | `FLYWHEEL_DSH_PROFILE` | `sdk`；必须是 SDK profile，不能是 `desktop` |
 | `DSH_HOME` | 交给 DSH 的自定义配置根；不设置时沿用 DSH 自己的默认行为 |
@@ -62,28 +56,9 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 
 Codex CLI 通过 PATH 中的 `codex` 启动。所有选定 CLI、Node 与账户配置必须对**启动 Go 引擎的进程环境**可见。
 
-终端里的 `export` 不会改变已经运行的桌面程序环境。如果 GUI 的 PATH 不完整，可以把桌面插件的 `flywheelBinary` 指向自己的启动脚本，例如：
+安装器自动生成 `~/.config/flywheel/npm-launcher` 和 `installation.json`：记录绝对 Node／CLI 路径、已核对的 DSH 入口及安装时可见的工具 PATH。桌面插件未显式配置 `flywheelBinary` 时，读取这份安装记录，校验 launcher 是普通可执行文件且 SHA-256 匹配后使用。**无需手写 GUI 启动脚本或修改 profile 配置。**
 
-```sh
-#!/bin/sh
-export PATH="/absolute/path/to/your-cli-bin:$PATH"
-export FLYWHEEL_DSH_WORKER="/absolute/path/to/flywheel/plugins/dsh/dist/worker.js"
-export FLYWHEEL_DSH_BIN="/absolute/path/to/dsh"
-export FLYWHEEL_DSH_PROFILE="sdk"
-export FLYWHEEL_KIMI_BIN="/absolute/path/to/kimi"
-exec /absolute/path/to/flywheel/bin/flywheel "$@"
-```
-
-将脚本设为可执行，在桌面 profile 的 `cordis.patch.yml` 中覆盖配置：
-
-```yaml
-- id: flywheel
-  config:
-    flywheelBinary: /absolute/path/to/your-flywheel-launcher
-    controlTimeoutMs: 60000
-```
-
-也可直接指定新 Go 二进制的绝对路径。这里配置的是 DSH 启动入口，不是 Flywheel 的 `state.json`。
+用户原有的显式 `flywheelBinary` 优先，安装器不会替用户覆盖它。安装记录不存在时保留 PATH 查找兼容行为；记录或 launcher 已损坏／被修改时明确失败，不悄悄使用另一份引擎。升级 Node、移动全局 prefix 或新增 CLI 后，可在工具均可见的终端运行 `flywheel setup --no-global` 更新安装记录；先保存自己对 launcher 的修改，冲突不会被覆盖。终端里的 `export` 本身不会改变已运行的桌面进程，仍需在面板内复验。
 
 ### 不调用模型的检查
 
@@ -173,7 +148,7 @@ flywheel stop docs/my-task
 
 `--only` 与 `--pause-before` 不能同时使用。前台 `run` 的退出码为 0 成功、1 用法／运行错误、3 升级／预算／单步失败、143 中断；控制命令的操作失败返回 1。
 
-### 可选 skills
+### 已安装的 skills
 
 ```sh
 flywheel install-skills
@@ -182,7 +157,9 @@ flywheel skills list
 flywheel skills read flywheel-new
 ```
 
-默认把内嵌快照安装到 `~/.agents/skills`，`--project` 改为项目的 `.agents/skills`。重跑会刷新带 `.flywheel-snapshot` 标记的自有目录，并替换旧链接／文件；没有该标记的真实目录会拒绝覆盖，需要先审阅并自行备份处理。`--force` 只用于源码 `--link` 模式，不会让默认模式删除用户目录。手工改过的自有快照也会被刷新，升级前先保存自定义内容。
+一条命令安装已包含全部 10 个 skills。默认把 Go 内嵌快照安装到 `~/.agents/skills`，`--project` 改为项目的 `.agents/skills`；上述命令可用于补装、检查或显式安装项目范围的副本。
+
+每个快照保存带文件内容 hash 的 `.flywheel-snapshot` 清单。重跑先校验当前树：未改过的自有快照可更新，相同内容跳过；用户修改、新增／删除文件、链接或未标记目录都保留并报告冲突。更新按每个 skill 暂存、rename 替换，失败时回滚，不会因为存在一个标记就覆盖用户内容。旧纯文本标记仅在整棵目录与当前内嵌内容一致时迁移。冲突恢复见[升级教程](docs/getting-started.md#8-升级排错与卸载)；`--force` 只用于源码 `--link` 模式，不能绕过默认快照保护。
 
 安装同时会在全局配置不存在时生成默认配置，已有配置保留。源码开发者才使用 `--link`。skills 只是 CLI 操作按钮，宿主的发现规则和调用语法按其配置使用，不能承担重试或状态机逻辑；安装成功不等于所有宿主已经发现它们。可用按钮涵盖 new、run、plan、exec、review、verify、status、stop、intake、garden。
 
@@ -204,26 +181,44 @@ Plan 只能直接修改任务目录内的 Spec 和 packet。它若修改外部�
 make test
 make coverage
 make quality-gate
-
-cd plugins/dsh
-npm run check
+npm --prefix plugins/dsh ci --ignore-scripts
+npm --prefix plugins/dsh run check
+npm test
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
 
 Go 的交付门禁是 vet、格式检查与**逐函数 100% statement coverage**；statement coverage 不等于分支覆盖或真实模型质量。测试使用真实 Git、hook、index、worktree、子进程与协议桩，默认不需要账号或模型调用。
 
-DSH 检查包括离线 worker 生命周期、事件与 usage 折叠、控制入口一致性、真实 React DOM 交互、Go → Node → SDK 协议桩，以及前轮官方 npm rc.5 的真实 Host 注册和 SDK 初始化／关闭。React DOM 测试不代替 Mac 桌面验证。当前 Linux 环境没有可用的完整原生沙箱，SDK probe 在 prompt 前正确拒绝；这项结果证明拒绝路径，不能冒充 Mac Seatbelt 成功。
+DSH 检查包括离线 worker 生命周期、事件与 usage 折叠、控制入口一致性、真实 React DOM 交互、Go → Node → SDK 协议桩，以及前轮官方 npm rc.5 的真实 Host 注册和 SDK 初始化／关闭。npm 检查覆盖安装与取消、同版包解析、GUI 安装记录及发行门禁；`test:install` 使用构建出的六个真实 npm 包和隔离环境验证安装，DSH 命令由协议桩替代，不使用用户 profile 或模型账号。
+
+React DOM 与安装协议桩不代替 Mac 桌面验证。当前 Linux 环境没有可用的完整原生沙箱，SDK probe 在 prompt 前正确拒绝；这项结果证明拒绝路径，不能冒充 Mac Seatbelt 成功。
 
 **尚需在用户 Mac 验证**：桌面安装与 UI 渲染、Seatbelt 探针、GUI 环境中的 CLI／凭证可见性、真实 Flash/GPT/Kimi/Codex 响应，以及真实机器重启后的恢复。当前不支持 DSH worker resume、附件传输、外部 Codex Pro adapter 消费或自动多 agent Teams 调度。
+
+## 7. 开发与备用构建
+
+普通用户使用上面的 npm 安装流程。开发者需要 Go 1.27 或更高、Node.js 22 或更高及 Git，在仓库根构建：
+
+```sh
+go build -o ./bin/flywheel ./cmd/flywheel
+npm --prefix plugins/dsh ci --ignore-scripts
+npm --prefix plugins/dsh run check
+npm run build:npm
+```
+
+`build:npm` 先构建 worker，再在隔离目录打包 meta、四个平台包和 DSH 插件，输出到 `dist-npm/`。六个包版本必须一致；本地 tarball 和 Actions artifact 用于开发、验证或备用分发，不是日常用户的安装入口，也不等于已签名的 Mac 安装程序。源码构建及开发模式 skills 说明见[教程末节](docs/getting-started.md#9-开发与备用构建)。
 
 ## 文档与代码入口
 
 | 路径 | 内容 |
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
-| [docs/design.md](docs/design.md) | v0.26 权威设计、不变量、闭环与边界 |
+| [docs/design.md](docs/design.md) | 权威设计、不变量、闭环与边界 |
 | [docs/configuration.md](docs/configuration.md) | profiles、阶段覆盖、provider／channel 与预检语义 |
 | [docs/plans/2026-11-01-dsh-integration.md](docs/plans/2026-11-01-dsh-integration.md) | 本轮实施和验收记录 |
 | [docs/plans/2026-11-01-model-profiles-preflight.md](docs/plans/2026-11-01-model-profiles-preflight.md) | 配置、预检与面板后续实施计划 |
+| [docs/plans/2026-11-01-npm-installation.md](docs/plans/2026-11-01-npm-installation.md) | npm 安装、GUI 入口与发行验证计划 |
 | [plugins/dsh/README.md](plugins/dsh/README.md) | DSH 安装、独立 SDK profile 与本机检查 |
 | [plugins/dsh/PROTOCOL.md](plugins/dsh/PROTOCOL.md) | worker v1 请求、事件、终态和 usage 契约 |
 | [templates/](templates/) | 契约、配置模板与 JSON Schema |

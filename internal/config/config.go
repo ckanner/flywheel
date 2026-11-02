@@ -358,10 +358,8 @@ func MaterializeGlobal() (string, bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", false, err
 	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		return "", false, err
-	}
-	return path, true, nil
+	created, err := materializeGlobalFile(path, raw)
+	return path, created, err
 }
 
 // Load 读取配置，四级发现链（v0.22 分发定稿）：task 目录 → 工作目录（项目根）

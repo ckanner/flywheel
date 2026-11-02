@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 await mkdir(join(root, 'dist'), { recursive: true });
-for (const name of ['index.js', 'control.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js']) {
+for (const name of ['index.js', 'control.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js']) {
   await copyFile(join(root, 'src', name), join(root, 'dist', name));
 }
 // The rc.5 web loader consumes this factory format, rather than ES module imports.

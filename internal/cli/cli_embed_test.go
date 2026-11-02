@@ -103,9 +103,8 @@ func TestInstallEmbeddedSnapshotMkdirAllError(t *testing.T) {
 	assert.Contains(t, serr.Error(), "not a directory")
 }
 
-// TestInstallEmbeddedSnapshotReplacesStaleFile dest 是普通文件/失效链接 →
-// RemoveAll 清掉后重新物化（幂等覆盖分支）。
-func TestInstallEmbeddedSnapshotReplacesStaleFile(t *testing.T) {
+// Unmanaged files are user data, even when a previous installer called them stale.
+func TestInstallEmbeddedSnapshotPreservesExistingFile(t *testing.T) {
 	project := t.TempDir()
 	stale := filepath.Join(project, ".agents", "skills", "flywheel-run")
 	writeFileCli(t, stale, "stale snapshot")
@@ -114,10 +113,13 @@ func TestInstallEmbeddedSnapshotReplacesStaleFile(t *testing.T) {
 	require.NoError(t, serr)
 	for _, r := range sum.Results {
 		if r.Name == "flywheel-run" {
-			assert.Equal(t, "copied", r.Action, r.Reason)
+			assert.Equal(t, "error", r.Action, r.Reason)
+			assert.Contains(t, r.Reason, "refusing to replace")
 		}
 	}
-	assert.FileExists(t, filepath.Join(stale, "SKILL.md"))
+	raw, err := os.ReadFile(stale)
+	require.NoError(t, err)
+	assert.Equal(t, "stale snapshot", string(raw))
 }
 
 func TestMaterializeFSRealFiles(t *testing.T) {

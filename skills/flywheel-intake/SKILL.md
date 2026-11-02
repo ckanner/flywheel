@@ -1,7 +1,7 @@
 ---
 name: flywheel-intake
 metadata:
-  version: "1.3.1"
+  version: "1.5.0"
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
 whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
 compatibility: "Requires the Flywheel CLI and configured Intake harness; default DSH DeepSeek Flash. GitHub issue sources also need gh."
@@ -32,7 +32,7 @@ here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求�
    flywheel intake "$slug" --source "$source"
    ```
 
-   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
+   若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**，用人话讲：
    - 扫到多少候选、多少是新的、多少因指纹重复被跳过；

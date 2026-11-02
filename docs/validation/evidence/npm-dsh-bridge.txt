@@ -1,0 +1,18 @@
+=== RUN   TestDSHNodeWorkerOfflineBridge
+=== RUN   TestDSHNodeWorkerOfflineBridge/explicit_provider_differs_from_account_channel
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/ok
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/missing-policy
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/wrong-policy
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/wrong-cwd
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/malformed
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/forced-shutdown
+--- PASS: TestDSHNodeWorkerOfflineBridge (1.49s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/explicit_provider_differs_from_account_channel (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/ok (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/missing-policy (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/wrong-policy (0.09s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/wrong-cwd (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/malformed (0.09s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/forced-shutdown (0.81s)
+PASS
+ok  	github.com/ckanner/flywheel/internal/drivers	1.501s

@@ -4,6 +4,8 @@
 
 本文替换旧版本审计。不要继续按“启动 RPC 不受内部 deadline 控制”“resume 只传 threadId”“完全没有 usage 实现”这些旧结论安排工作。本轮只读检查外仓、运行离线探针、更新 Flywheel 内的交接文档；没有修改、发布或安装外仓代码，没有调用真实模型。
 
+追加复核：2026-11-02 01:57:41 UTC，GitHub main、独立 Git 拉取及 npm latest 仍为上述 SHA／0.7.0；重新执行 typecheck 与测试得到 106 pass、6 skip、0 fail，跳过项不算 live 通过。新探针及证据边界见 [npm 安装轮验证记录](../validation/2026-11-01-npm-installation.md#5-codex-pro-最新复核)。如果后续提交已更新，应先核对新的 SHA 再逐项验收，不按旧版问题列表直接判断新版。
+
 ## 1. 用户目标、现有通路与所有权
 
 用户使用 DSH Mac 桌面，组合 Kimi 订阅、ChatGPT 订阅与 DeepSeek Flash API。Kimi 保持原生 CLI；DeepSeek 默认只用 Flash。Codex Pro 的加固由用户安排在另一个 session、另一个仓库，不能通过本轮偷偷修改外仓来宣称接入完成。

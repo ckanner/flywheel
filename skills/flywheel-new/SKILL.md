@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: "Requires the Flywheel CLI with embedded contract templates, write access, and Git in the target repository."
@@ -24,6 +24,11 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
 - 技术事实不许问人；意图歧义不许猜。
 
 ## 流程
+
+先确认 `flywheel template --help` 可用。PATH 中没有命令时，使用已安装的
+`~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径；首次安装使用
+`npx -y @ckanner/flywheel@latest install --json`，检查 `ok` 与逐步结果。
+`ready:false` 表示模型依赖或配置尚待处理，不阻止先编写契约，也不表示账号已授权。
 
 1. **调研仓库**：读相关代码/文档，确认需求对应的真实位置与约束；把关键事实
    （含你验证过的命令与输出）记下来。若任务来自 Intake：可读

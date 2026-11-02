@@ -1,4 +1,5 @@
 import { runControl } from './control.js';
+import { resolveFlywheelBinary } from './installation.js';
 
 export const inject = ['commands', 'tools'];
 
@@ -6,6 +7,7 @@ export function apply(ctx, config = {}) {
   // Loading the desktop package accidentally into the SDK profile must not
   // give a worker a tool that launches another orchestrator.
   if (process.env.FLYWHEEL_DSH_NATIVE_WORKER === '1') return;
+  const binary = resolveFlywheelBinary(config);
   const active = new Set();
   const control = async (input, agent, signal) => {
     const controller = new AbortController();
@@ -15,7 +17,7 @@ export function apply(ctx, config = {}) {
     active.add(controller);
     try {
       return await runControl(input, {
-        binary: config.flywheelBinary ?? 'flywheel',
+        binary,
         defaultCwd: agent?.session?.header?.cwd,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,

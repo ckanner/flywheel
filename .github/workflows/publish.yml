@@ -1,73 +1,179 @@
-# npm 发布（v0.23 分发定稿）：workflow_dispatch 手动触发（未来 tag 推送也自动触发）。
-# 用 NPM_TOKEN secret（granular token，@ckanner scope 读写）认证——automation
-# token 绕过 2FA/OTP，CI 发布的标准形态。发布顺序：先 4 个平台包、后 meta 包
-# （optionalDependencies 引用平台包，反序存在解析窗口期）。preflight 先行：
-# tag = meta = 平台包版本三方一致才允许发布。
+# Build once, verify the packed candidate on both operating systems, then publish.
+# Exact versions become available before latest moves; failed retries verify the
+# existing bytes instead of treating an arbitrary npm error as "not published".
 name: publish
 
 on:
-  workflow_dispatch:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact existing release tag (vX.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 concurrency:
   group: npm-publish
   cancel-in-progress: false
 
 jobs:
-  publish:
+  preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      tag: ${{ steps.source.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # preflight 需要 git describe 取最新 tag
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Verify six versions and exact clean release tag
+        id: source
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          node scripts/release-preflight.js --tag "$RELEASE_TAG" --json > "$RUNNER_TEMP/flywheel-release.json"
+          node - "$RUNNER_TEMP/flywheel-release.json" <<'NODE'
+          const fs = require('node:fs');
+          const release = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `version=${release.version}\nsource_sha=${release.source_sha}\ntag=${release.tag}\n`);
+          NODE
+
+  build:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
+      - name: Build the six-package candidate once
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: |
+          bash scripts/build-npm.sh "$VERSION" dist-npm
+          node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-candidate-${{ github.run_id }}
+          path: dist-npm/
+          if-no-files-found: error
+
+  verify:
+    needs: [preflight, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Configure Git for isolated tests
+        run: |
+          git config --global user.email "ci@flywheel.local"
+          git config --global user.name "flywheel-ci"
+      - name: Go quality gate
+        run: make quality-gate
+      - name: Build and test the DSH plugin
+        run: |
+          npm --prefix plugins/dsh ci --ignore-scripts
+          npm --prefix plugins/dsh run check
+      - name: Verify the Go to Node to SDK boundary
+        env:
+          FLYWHEEL_TEST_NODE_BRIDGE: "1"
+        run: go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1
+      - name: Check concurrent lifecycle and state code
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
+      - name: Verify npm runtime, installer and release policy
+        run: npm test
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-candidate-${{ github.run_id }}
+          path: dist-npm
+      - name: Verify candidate identity
+        env:
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
+      - name: Install and exercise the actual npm candidate
+        env:
+          FLYWHEEL_NPM_PACKAGES_DIR: ${{ github.workspace }}/dist-npm
+        run: npm run test:install
+
+  publish:
+    needs: [preflight, build, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
-      - name: Preflight（版本三方一致）
-        run: node scripts/release-preflight.js
-      - name: 取版本号
-        id: meta
-        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
-      - name: Build（交叉编译四平台 + 五包打包）
-        run: bash scripts/build-npm.sh "$(node -p 'require("./package.json").version')" dist-npm
-      - name: Publish 平台包（先，已发布的幂等跳过）
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-candidate-${{ github.run_id }}
+          path: dist-npm
+      - name: Confirm the remote tag still identifies the verified source
+        env:
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: |
-          for p in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
-            pkg="@ckanner/flywheel-$p"
-            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
-              echo "skip（已发布）: $pkg@$VERSION"
-            else
-              npm publish --access public "./dist-npm/ckanner-flywheel-$p-$VERSION.tgz"
-            fi
-          done
+          git fetch --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          node scripts/release-preflight.js --tag "$RELEASE_TAG"
+          node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
+      - name: Publish exact dependencies, plugin and meta without moving latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ steps.meta.outputs.version }}
-      - name: Publish meta 包（后，已发布的幂等跳过）
-        run: |
-          if npm view "@ckanner/flywheel@$VERSION" version >/dev/null 2>&1; then
-            echo "skip（已发布）: @ckanner/flywheel@$VERSION"
-          else
-            npm publish --access public "./dist-npm/ckanner-flywheel-$VERSION.tgz"
-          fi
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: node scripts/release-publish.js publish --directory dist-npm --source-sha "$SOURCE_SHA"
+      - name: Install the exact published version from the public registry
+        env:
+          FLYWHEEL_NPM_VERSION: ${{ needs.preflight.outputs.version }}
+        run: npm run test:registry
+      - name: Promote verified packages, meta last
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ steps.meta.outputs.version }}
-      - name: 发布后核验
-        run: |
-          V=${VERSION}
-          for i in 1 2 3 4 5; do
-            if npm view "@ckanner/flywheel@$V" version >/dev/null 2>&1 \
-               && npm view "@ckanner/flywheel-darwin-arm64@$V" version >/dev/null 2>&1; then
-              echo "ok: meta + 平台包均已可见（第 $i 次探测）"
-              npm view "@ckanner/flywheel@$V" version
-              exit 0
-            fi
-            echo "registry 尚未可见，15s 后重试（$i/5）…"; sleep 15
-          done
-          echo "发布后核验超时"; exit 1
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: node scripts/release-publish.js promote --directory dist-npm --source-sha "$SOURCE_SHA"
+      - name: Verify all six registry versions and latest tags
+        env:
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: node scripts/release-publish.js verify-latest --directory dist-npm --source-sha "$SOURCE_SHA"

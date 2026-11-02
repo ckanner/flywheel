@@ -2,7 +2,7 @@
 
 目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包只提供桌面操作入口和原生 SDK 执行通道。无需 alpha、OAR、Forge 或一直活着的父智能体。
 
-完整的从源码安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)。
+完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)。本安装流程适用于 Flywheel 0.27.0 及以后；旧 0.22.1 没有本轮 DSH 集成，源码合并不代表 npm 已发布，可用 `npm view @ckanner/flywheel version` 核对实际发行。
 
 ## 提供什么
 
@@ -16,35 +16,29 @@
 
 插件没有自己的任务数据库，不直接读写 `state.json`。桌面退出不会让后台 Go 任务失去父智能体；Go 拥有 worker 生命周期。原生 SDK 入口只接收已注册的 LLM adapter provider；`subagent_codex_pro`、Kimi ACP、Teams 都不是此接口的 provider。独立 Codex / Kimi CLI 使用 Go 的对应 driver。
 
-## 构建与测试
+## 一条命令安装到自己的 Mac
 
-需要 Node.js 22 或更高。生产构建不打包 DSH、React 或第三方运行时；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 会安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于实际 DOM 交互测试，它们不进入发布包。
-
-```sh
-cd plugins/dsh
-npm ci --ignore-scripts
-npm run check
-npm pack
-```
-
-产物为 `dist/` 和 `ckanner-dsh-plugin-flywheel-0.1.0.tgz`。包名为 `@ckanner/dsh-plugin-flywheel`，许可沿用仓库的 `UNLICENSED`，本轮没有发布到 npm。`npm run check` 运行真实 Node 子进程协议桩和 React DOM 行为测试，无模型和账号调用。仓库的 Go 闸门仍需单独运行 `make quality-gate`。
-
-## 安装到自己的 Mac
-
-下列步骤需要在实际 Mac 上执行；本实现没有替用户安装或更新桌面程序。
-
-先确认桌面 About、桌面安装的 `dsh --version` 与实际运行入口。桌面附带的 `dsh` 命令能管理 `desktop` profile；单独从 npm 安装的 CLI 不能管理这个保留 profile。不要用猜测的 `.app/Contents/...` 内部路径。
-
-安装 worker bin，并把同一个构建包交给桌面 profile：
+已有 Node.js 22 或更高、npm 和 DSH Mac 桌面后，先确认 About、桌面安装的 `dsh --version` 与实际运行入口，再运行：
 
 ```sh
-npm install --global /absolute/path/ckanner-dsh-plugin-flywheel-0.1.0.tgz
-dsh plugin --profile desktop add /absolute/path/ckanner-dsh-plugin-flywheel-0.1.0.tgz
+npx -y @ckanner/flywheel@latest install
 ```
 
-后一条使用**桌面安装的 dsh 命令**。也可以通过桌面的 Plugins 页面选择本地包。包内 `cordis.patch.yml` 会启用 host 插件，`dsh.client` 声明 browser 模块。启用后根据宿主提示重启或重新载入；不声称所有 profile 都支持热更新。
+Agent 可以加 `--json` 获取单个结构化结果。该命令全局安装本次精确版本的 CLI、平台 Go 二进制与 worker，安装 10 个内嵌 skills，生成 GUI 启动器，并用现有桌面命令执行 `dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次版本>`，再通过 `plugin list` 验证版本。无需另行安装 worker 或下载压缩包。安装器不替用户安装／更新 DSH，不代登录模型渠道。
 
-Flywheel 可执行文件必须是本仓库构建、具有 `control` 命令的新版本。GUI 环境找不到 PATH 里的 `flywheel` 时，在桌面 profile 的 `cordis.patch.yml` 追加覆盖项，指定**绝对路径**：
+桌面附带的 `dsh` 命令能管理 `desktop` profile；单独从 npm 安装的 DSH CLI 不能管理这个保留 profile。命令不在 PATH 时加 `--dsh-bin /absolute/path/to/dsh`；不要猜测 `.app/Contents/...` 内部路径。包内 `cordis.patch.yml` 启用 host 插件，`dsh.client` 声明 browser 模块。完成后根据宿主提示重启或重新载入，不假定所有 profile 都支持热更新。
+
+`ok:true` 表示软件安装成功。安装后的本地 doctor 仍有阻断项时返回 `ready:false` 和具体检查项，例如 Kimi／Codex 未安装；这不会将已经完成的软件安装伪报为失败，也不证明账号已就绪。安装过程不发送模型 prompt。参数、部分失败恢复与 JSON 语义见[入门教程](../../docs/getting-started.md#2-一条命令安装)和[协议说明](PROTOCOL.md#npm-安装报告与桌面入口)。
+
+普通 `npm install --global @ckanner/flywheel` 只安装包文件；随后可显式执行 `flywheel setup --no-global` 配置用户目录和 DSH。没有隐式修改用户配置的 postinstall。单独安装 `@ckanner/dsh-plugin-flywheel` 只得到插件／worker，不是整个 Flywheel 的完整安装。
+
+### 自动解析 GUI 入口
+
+安装器生成 `~/.config/flywheel/npm-launcher` 及 `installation.json`，记录绝对 Node／CLI 路径、同版 worker、prefix 和 launcher 的 SHA-256。launcher 使用已核对的 DSH 入口与安装时的工具 PATH。默认配置无需手写脚本或修改 profile；桌面插件验证安装记录、普通可执行 launcher 与 hash 后使用。
+
+解析顺序是：用户显式 `flywheelBinary` → 有效安装记录 → 仅当记录不存在时从 PATH 查找 `flywheel`。已有记录损坏、launcher 缺失或内容变更时明确失败，不会自动退回另一份引擎。用户自定义配置优先，安装器不会覆盖它。升级 Node、变更安装位置或补齐 CLI 后，可在工具均可见的终端运行 `flywheel setup --no-global`，保留自定义 prefix／DSH 入口参数，再在桌面面板复验。
+
+源码开发者或有意使用自定义入口的用户，才需要在桌面 profile 的 `cordis.patch.yml` 显式覆盖，例如：
 
 ```yaml
 - id: flywheel
@@ -53,11 +47,11 @@ Flywheel 可执行文件必须是本仓库构建、具有 `control` 命令的新
     controlTimeoutMs: 60000
 ```
 
-这是 DSH 的 profile 配置，不是 Flywheel 的任务状态。`controlTimeoutMs` 保持 60 秒可覆盖引擎 stop 的清理与恢复窗口。
+这是 DSH 的 profile 配置，不是 Flywheel 的任务状态。使用独立 Go 二进制时应自行保证 worker 与模型 CLI 可见；该高级配置会优先于自动安装记录。`controlTimeoutMs` 保持 60 秒可覆盖引擎 stop 的清理与恢复窗口。
 
 ## 准备原生 SDK profile
 
-引擎默认调用 PATH 中的 `flywheel-dsh-worker`。也可显式配置 `FLYWHEEL_DSH_WORKER=/absolute/path/to/dist/worker.js`。worker 默认调用 PATH 中的 `dsh`，建议通过 `FLYWHEEL_DSH_BIN` 固定已经核验的官方入口。`FLYWHEEL_DSH_PROFILE` 默认 `sdk`；可用另一个明确基于 SDK 的独立 profile，但不能是 `desktop`。
+npm CLI 启动器自动解析同版本依赖中的 worker 绝对路径，并在用户未设置时注入 `FLYWHEEL_DSH_WORKER`。直接运行 Go 二进制时默认从 PATH 查找 `flywheel-dsh-worker`；也可显式设置 `FLYWHEEL_DSH_WORKER=/absolute/path/to/dist/worker.js`。自动 launcher 已记录安装时的桌面 `dsh` 入口，用户显式 `FLYWHEEL_DSH_BIN` 优先。`FLYWHEEL_DSH_PROFILE` 默认 `sdk`；可用另一个明确基于 SDK 的独立 profile，但不能是 `desktop`。
 
 桌面有 adapter 不表示 SDK profile 也加载了它。SDK 的 DeepSeek 官方路由可自动挂载，其余 provider 必须在 **SDK profile** 中预先安装并完成该 provider 的授权配置。例如需原生 ChatGPT 路由时，先按该插件的文档检查并安装到对应 profile：
 
@@ -138,11 +132,30 @@ worker 只支持 `read-only` 与 `workspace-write`。Mac 上由 DSH 的 Seatbelt
 
 官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
 
-当前已验证：离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块经 ModuleLoader／宿主 React／真实 DOM／Remote 的交互；Go 与 Node 的配置、诊断和失败契约。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化/关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。
+测试覆盖离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块经 ModuleLoader／宿主 React／真实 DOM／Remote 的交互；Go 与 Node 的配置、诊断和失败契约；安装记录校验、用户配置优先及损坏入口拒绝。根目录的 npm 安装测试使用实际六包 tarball、隔离目录和 DSH 协议桩，验证完整安装流程。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化／关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。具体运行结果见[验证记录](../../docs/validation/2026-11-01-results.md)。
 
 尚未在用户 Mac 实测：桌面安装和 UI 渲染、Seatbelt 探针、实际 Flash/GPT 推理、授权可见性及断电恢复。Linux 上的 CLI 加载成功不代替这些验证。不会将协议桩写成付费模型成功的证据。
 
 完整输入、事件、usage 与关闭语义见 [PROTOCOL.md](PROTOCOL.md)。
+
+## 升级、卸载与开发构建
+
+升级前停止活动任务、保存配置与自定义内容，再运行同一个 `npx -y @ckanner/flywheel@latest install`，保留原来的 prefix／profile 等参数。skills 使用内容 hash 验证所有权，用户修改会报告冲突并保留；launcher 也不能被静默覆盖。按[冲突恢复步骤](../../docs/getting-started.md#8-升级排错与卸载)处理后重跑，不删除任务账本或修改 hash 绕过校验。
+
+卸载先停止活动任务，在 DSH 的所用 profile 移除该插件并重新载入，再执行 `npm uninstall --global @ckanner/flywheel`，自定义 prefix 时加同一参数。npm 卸载不自动删除用户配置、skills、任务文件或安装记录，也不删除模型工具及凭证。
+
+开发构建需要 Node.js 22 或更高；Go 引擎还需要 Go 1.27 或更高。生产插件不打包 DSH、React 或第三方运行时；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于真实 DOM 测试，它们不进入发布包。在仓库根运行：
+
+```sh
+npm --prefix plugins/dsh ci --ignore-scripts
+npm --prefix plugins/dsh run check
+make quality-gate
+npm test
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
+```
+
+`build:npm` 在隔离源码副本中构建 worker 和四个平台 Go 二进制，输出六个同版本 npm 包与候选校验记录，包含 `ckanner-dsh-plugin-flywheel-0.27.0.tgz`。所有包的许可沿用仓库 `UNLICENSED`。tarball／Actions artifact 用于开发或备用验证；正式发布必须使用已经过门禁与真实 npm 安装测试的同一候选，不能在测试后重新编译再发布。上述测试不调用真实模型，也不使用用户账号或桌面 profile。
 
 ## 实现依据
 
