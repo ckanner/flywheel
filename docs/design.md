@@ -236,6 +236,8 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
+当前统一 npm 发行目标为 **0.27.2**。[0.27.0 发行](https://github.com/ckanner/flywheel/actions/runs/41385226607)在上传前因私有仓库读取认证失败而停止；[0.27.1 发行](https://github.com/ckanner/flywheel/actions/runs/41387321980)的 macOS 验证通过，但 Ubuntu 验证因控制面测试夹具的状态文件写入竞态失败，publish job 未执行。两次均未上传 npm 包，原 tag 保留不移动。测试夹具的模拟状态更新同样使用完整文件的原子替换，遵守生产状态发布契约；0.27.2 的发行和用户 Mac 实机验收仍需各自的完成证据。
+
 GitHub Actions 的 publish job 使用固定 Node/npm 发行工具链，支持 OIDC trusted publishing 及已有 `NPM_TOKEN` 后备。无 token 时显式使用空 user npmrc，避免 setup-node 的认证占位配置；不在日志或 GitHub 环境文件中写入凭证。六个包各自的 npm trusted publisher 都必须对应 `ckanner/flywheel` 的 `publish.yml`，并分别允许直接 publish 与 dist-tag；GitHub 登录或 `id-token: write` 本身不授予 npm 包写权限。维护者配置和失败恢复见 [发行指南](releasing.md)。
 
 私有仓库的发行同样经过完整门禁。发布 job 在准备 npm 后，由官方 checkout 使用短暂的只读 GitHub 认证重新取得完整 refs，固定到已验证 source，再下载候选并检查精确 tag；后续不执行无凭证的远端 fetch。仓库可见性由 GitHub 事件显式传给 publisher，未知值拒绝发布。public 要求 npm provenance，private 显式关闭 npm 不支持的证明生成；这只记录 registry 的能力边界，不改变仓库可见性，也不取消本项目的 source／artifact integrity 校验。
