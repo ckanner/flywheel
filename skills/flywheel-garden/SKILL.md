@@ -1,7 +1,7 @@
 ---
 name: flywheel-garden
 metadata:
-  version: "1.3.1"
+  version: "1.5.0"
 description: Analyze retro.md failure patterns and knowledge-asset decay (AGENTS.md/skills), producing garden-proposals.md for human review — proposals only, never auto-applied. Use when the user says "/skill:flywheel-garden" or wants to distill loop learnings into skill proposals.
 whenToUse: 当用户想把 retro 里反复出现的失败模式提炼成 skill/验收规则提案、或清理 AGENTS.md/skills 腐烂内容时使用。
 compatibility: "Requires the Flywheel CLI and configured Garden harness; default Kimi CLI with subscription login."
@@ -28,7 +28,7 @@ here. Garden **只产提案，绝不自动应用**——改的是 loop 自己的
    flywheel garden "$slug"
    ```
 
-   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
+   若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**，用人话讲：
    - retro 中反复出现（≥2 次）的失败模式有哪些、各几次；

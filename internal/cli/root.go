@@ -1,7 +1,7 @@
 // Package cli 组装 Flywheel 的命令树（docs/design.md §12/§13）。所有子命令都是对
 // 内部包的薄接线。输出契约（AGENTS.md 硬契约）：
 //   - run / intake / garden：JSON 摘要到 stdout
-//   - status / stop / install-skills / skills：人话文本到 stdout
+//   - status / stop / skills：人话文本到 stdout；install-skills 支持 --json 摘要
 //   - 错误一律走 stderr
 //   - 退出码：0 ok / 1 用法·运行时 / 3 升级·熔断·失败步骤
 package cli
@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ckanner/flywheel/internal/build"
+	"github.com/ckanner/flywheel/internal/modules"
 )
 
 // Execute 进程入口：真实参数与标准流。
@@ -43,11 +44,15 @@ func runRoot(args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		var ee *exitError
-		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && (args[0] == "control" || args[0] == "doctor"))) {
+		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && (args[0] == "control" || args[0] == "doctor" || args[0] == "install-skills"))) {
 			return ee.code // 摘要/诊断已输出；不重复打印文本错误
 		}
 		if len(args) > 0 && args[0] == "control" {
 			writeControlJSON(stdout, controlResponse{Protocol: 1, TaskDir: controlTaskArg(args), Error: err.Error()})
+			return 1
+		}
+		if len(args) > 0 && args[0] == "install-skills" && installJSONRequested(args[1:]) {
+			printJSON(root, skillInstallReport(modules.InstallSummary{}, "embedded", installConfigResult{Action: "not-run"}, err))
 			return 1
 		}
 		fmt.Fprintf(stderr, "[flywheel] 错误: %v\n", err)

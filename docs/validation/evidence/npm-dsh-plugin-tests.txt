@@ -1,0 +1,62 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.27.0 check
+> npm test
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.27.0 test
+> npm run build && node --test test/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.27.0 build
+> node scripts/build.mjs
+
+Built host plugin, rc.5 client module, and native SDK worker.
+✔ built panel is idle until a click and can inspect effective models without a task (100.745138ms)
+✔ task lifecycle labels do not confuse completed or pending work with a stopped engine (40.581332ms)
+✔ all packets remain accessible, text is escaped, and missing costs remain unknown (30.286383ms)
+✔ local and SDK doctor buttons display structured failures, remedies, and unverified account facts (26.201154ms)
+✔ switching paths clears old results and late requests cannot overwrite the new selection or busy state (16.695573ms)
+✔ late failures are ignored after a path change and active errors can recover (21.178756ms)
+✔ control invokes only the Go JSON CLI using literal argv, including paths with shell syntax (83.160524ms)
+✔ configuration and doctor need no task directory, and probe is an explicit doctor-only boolean (175.86549ms)
+✔ doctor returns a valid failed report but rejects process, protocol, and identity failures (719.26044ms)
+✔ hung controls are bounded and cancellation is never a diagnostic success (221.93384ms)
+✔ diagnostic cancellation and timeout keep the Go owner alive until delayed group cleanup finishes (14095.262672ms)
+✔ an unresponsive diagnostic owner is eventually force-stopped after its cleanup window (21023.545317ms)
+✔ slash command and model tool use the same validated engine control boundary (195.811876ms)
+✔ policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement (1.206911ms)
+✔ browser module registers the actual rc.5 dock and calls existing command Remote (5.700725ms)
+✔ desktop resolves a verified npm launcher without a shell PATH (4.096862ms)
+✔ invalid or stale records do not silently select another executable (4.464606ms)
+✔ receipt and launcher links or non-executable files are rejected (1.490308ms)
+✔ start normalizes cwd and rejects resume, extra write roots, implicit permission, and empty route (13.896438ms)
+✔ only unique committed model calls count; cache is included in aggregate input, reasoning is a subset (2.029552ms)
+✔ missing or malformed usage remains unknown, not free or partial cost (0.420625ms)
+✔ an idle or max-token interval is not successful completion (0.738464ms)
+✔ permission acknowledgement must match actual cwd, policy, approval and full confinement (0.462538ms)
+✔ full worker handshake, durable result, usage and SDK shutdown agree with the Go contract (80.022565ms)
+✔ wrong-policy: fail before submitting a paid prompt (60.174075ms)
+✔ wrong-cwd: fail before submitting a paid prompt (63.923909ms)
+✔ missing-policy: fail before submitting a paid prompt (55.931864ms)
+✔ malformed: fail before submitting a paid prompt (65.415624ms)
+✔ empty: session/wait alone never establishes success (49.218054ms)
+✔ missing-terminal: session/wait alone never establishes success (48.258225ms)
+✔ max-tokens: session/wait alone never establishes success (49.11533ms)
+✔ corrupt-tail: session/wait alone never establishes success (54.747777ms)
+✔ unknown provider usage survives a successful call as null (59.798163ms)
+✔ full lifecycle deadline includes a stalled initialize; no model prompt is sent (163.069722ms)
+✔ external cancellation settles a stalled turn through SDK shutdown (133.673357ms)
+✔ forced SDK shutdown cannot claim successful settlement of native managed ranges (701.724175ms)
+✔ doctor exercises runtime and permission handshake but never prompts a model (52.781087ms)
+✔ overlay pins real native confinement and disables model-owned delegation and auxiliary model calls (0.256293ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36620.878001

@@ -1,0 +1,20 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @ckanner/flywheel@0.27.0 test:install
+> node --test npm/test/install.integration.js
+
+▶ the six packaged npm candidates install and run from a clean agent environment
+  ✔ same-version setup is repeatable and preserves configuration (356.177079ms)
+  ✔ installed npm shim forwards cancellation through the real Go watchdog (73.33046ms)
+  ✔ DSH registration failure is reported and a retry repairs that step (592.122975ms)
+  ✔ explicit CLI-only installation keeps DSH skipped (241.197185ms)
+  ✔ user-edited skill content is preserved and prevents false installation success (149.623054ms)
+✔ the six packaged npm candidates install and run from a clean agent environment (3142.978659ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3205.839754

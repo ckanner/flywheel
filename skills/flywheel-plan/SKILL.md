@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.3.1"
+  version: "1.5.0"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use when the user says "/skill:flywheel-plan docs/<slug>" or wants to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -25,7 +25,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    flywheel run "$slug" --only plan
    ```
 
-   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
+   若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**：把输出的 JSON 摘要讲成人话——当前里程碑、Plan Loop 确认/
    修订了哪些 packet、state.json 的新 revision。失败时原样报告错误信息并

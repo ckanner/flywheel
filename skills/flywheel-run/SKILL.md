@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
 whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -29,7 +29,10 @@ arguments: slug pause
    ```
 
    任一命令失败就停止启动并报告路径问题。若 `flywheel` 不在 PATH，使用
-   已配置的绝对路径；所用版本必须支持 `flywheel control --help`。
+   已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。
+   首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对 `ok`
+   和逐步结果；`ready:false` 表示尚有模型依赖或配置问题。安装不证明账号已授权。
+   所用版本必须支持 `flywheel control --help`。
 
    首次启动、升级或修改模型配置后，查看有效绑定并做只读本地预检：
 

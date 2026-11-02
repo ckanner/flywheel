@@ -1,16 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.27.0
 
-DSH 桌面集成与可靠交付闭环。此节记录源码变更，不代表已发布 npm 包或 Mac 公证安装包。安装与迁移见 [入门教程](docs/getting-started.md)。
+DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录对应版本的源码变更，不单独证明 npm 已发布或用户 Mac 已验收；用 `npm view @ckanner/flywheel version` 核对实际发行。旧 0.22.1 不包含本节新增安装和 DSH 接口。安装与迁移见 [入门教程](docs/getting-started.md)。
+
+- **npm 一条命令安装**：新增 `npx -y @ckanner/flywheel@latest install` 与 `flywheel setup`，全局安装精确同版 CLI、平台二进制、worker、10 个内嵌 skills，再通过已有桌面 DSH 的正式接口注册并核验插件。支持 prefix／project／DSH 命令／profile、显式跳过、超时和 JSON 输出；普通 npm 包安装不通过 postinstall 修改用户目录。
+- **软件安装与运行准备分开报告**：本地 doctor 有效失败保留完整检查项，允许 `ok:true, ready:false`；账号状态保持 unknown，不自动安装／登录其他 harness，不发送模型 prompt。取消、超时、损坏协议和版本漂移阻止安装成功，报告已完成步骤。
+- **Mac GUI 自动入口**：生成使用绝对 Node／CLI 路径的 launcher 和带 SHA-256 的安装记录，桌面插件自动发现并验证；用户显式 `flywheelBinary` 优先。损坏或改动的入口明确失败，不静默使用其他版本，无需手写 GUI 启动脚本。
+- **skills 更新保护**：快照清单校验内容、类型和模式，用户修改、新增／删除文件及未归属目录保留并报告冲突；逐 skill 暂存、rename 和失败回滚。旧纯文本标记仅在完整内容匹配时迁移。新增 `install-skills --json` 的完整逐项结果。
+- **npm 启动器生命周期**：异步启动真实 Go 进程，传递取消信号并等待清理完成；核对原生包／worker 的精确版本，兼容依赖提升，避免启动旧二进制或留下 wrapper 的子进程。
+- **六包发行门禁**：meta、四个平台包和 DSH 插件统一版本。先构建 worker，在隔离副本构建并打包一次，再于 Linux／macOS 验证同一候选的真实 npm 安装。发布要求 HEAD 精确 tag 与干净来源；已存在版本核对 integrity，只有明确 404 视为不存在；全部包与精确版本安装验证通过后才更新 latest，且不倒退标签。
 
 - **配置与模型 profiles**：新增可复用 `profiles`、阶段引用与显式覆盖；DSH `provider` 和账号 `channel` 分离，所有角色和渠道降级均传递实际 provider；指标分别保留两者。严格拒绝未知字段、无效引用和 provider 冲突，兼容旧内联绑定与合法显式零值。
 - **只读预检**：新增 `config inspect`、`doctor` 和相应 control actions；检查有效配置、工具和任务所需路由。可选 SDK probe 验证配置、目录、沙箱与关闭，零推理，整体验证有界；账号、额度与实际模型能力明确标为未验证。
 - **桌面可观察性**：面板展示配置、逐项诊断、完整 packet 状态与未知计量；区分完成、暂停、停止和升级，路径切换后忽略迟到的旧响应；增加宿主 React 18 对应的真实 DOM 交互回归。
 - **DSH 入口与 worker**：新增 `control start/status/stop`、桌面面板、人工命令与模型工具。Go 继续独占状态；worker 校验 provider/model/cwd/effort、权限、可靠终态及 SDK 关闭。
-- **模型路由**：默认 DeepSeek Flash 实现，Kimi CLI 规划／前端／整理，DSH ChatGPT provider 评审／终验，独立 Codex CLI 处理困难任务。Kimi 不使用 ACP；外部 Codex Pro adapter 保留独立交接任务。
+- **模型路由**：默认 DeepSeek Flash 实现，Kimi CLI 规划／前端／整理，DSH ChatGPT provider 评审／终验，独立 Codex CLI 处理困难任务。Kimi 不使用 ACP；外部 Codex Pro adapter 与原生 LLM provider 分开，当前路由不隐式消费外部 subagent 工具。
 - **可靠性**：验证证据绑定候选和契约；契约修订跨重启失效旧证据；L1、Review、里程碑 gate 与 Judge 前后检查身份；提交及合并后确认持久化结果，失败保留 worktree。
-- **发布前复核**：修复从子目录漏读项目配置；持久化检查独立核对执行位与链接类型；验收输出截断不能因退出码符合预期而通过。CI 增加 Linux／macOS 插件与跨进程检查，构建产物只作为 Actions artifact 分发。
+- **发布前复核**：修复从子目录漏读项目配置；持久化检查独立核对执行位与链接类型；验收输出截断不能因退出码符合预期而通过。CI 增加 Linux／macOS 插件、跨进程和 npm 安装检查；Actions artifact 用于传递和审查候选，正式用户从 npm 安装。
 - **Mac CI 修复**：任务目录和 Git 执行根统一使用物理路径，避免 `/var`／`/private/var` 别名造成账本、报告和恢复判断失真；补充真实符号链接启动／恢复回归，并消除 Kimi 路径断言与 Zcode fixture 的写入／退出竞态。进程组清理探测的暂态 `EPERM` 在原宽限内重试，仍须确认 `ESRCH`；持续权限错误继续阻止交付。
 - **生命周期与计量**：按运行 token 停止、运行 lease 防重入、超时／取消／清理失败严格区分；未知 usage/cost 不再当成零。
 - **测试与文档**：普通单测／回归可随实现修改，冻结验收显式保护；保留逐函数 100% Go statement coverage；更新全部内嵌 skills 的控制接口、单环语义与配置说明，补充完整 Mac 安装和首个任务教程。

@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -86,49 +87,139 @@ var installActionText = map[string]string{
 }
 
 func installSkillsCmd() *cobra.Command {
-	var force, link bool
+	var force, link, asJSON bool
 	var project string
 	cmd := &cobra.Command{
 		Use:   "install-skills",
 		Short: "安装 skills（内嵌快照复制到 ~/.agents/skills，安装用法人人一致；--link 开发机软链源码树）",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectAbs := ""
 			if project != "" {
 				projectAbs, _ = filepath.Abs(project)
 			}
-			// 同步物化全局配置（首装语义；幂等，用户改过的不覆盖）。
-			if gp, created, gerr := config.MaterializeGlobal(); gerr == nil {
-				state := "已存在"
-				if created {
-					state = "本次新建（可直接编辑）"
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "全局配置: %s — %s\n", gp, state)
+			gp, created, configErr := config.MaterializeGlobal()
+			configResult := installConfigResult{Path: gp, Action: "existing"}
+			if created {
+				configResult.Action = "created"
 			}
+			if configErr != nil {
+				configResult.Action, configResult.Error = "error", configErr.Error()
+			}
+			var sum modules.InstallSummary
+			var installErr error
+			method := "embedded"
 			if link {
-				// 开发机专用：软链到源码仓库 skills/（与 main 原子同步）。
+				method = "link"
 				root, haveSource := repoRoot()
 				if !haveSource {
-					return fmt.Errorf("--link 需要在 flywheel 源码树内运行（未找到 go.mod）")
+					installErr = fmt.Errorf("--link 需要在 flywheel 源码树内运行（未找到 go.mod）")
+				} else {
+					sum, installErr = modules.InstallSkills(modules.InstallSkillsOpts{
+						Force: force, Project: projectAbs, Root: root,
+					})
 				}
-				sum, err := modules.InstallSkills(modules.InstallSkillsOpts{
-					Force: force, Project: projectAbs, Root: root,
-				})
-				if err != nil {
-					return err
-				}
-				return renderInstall(cmd, sum.TargetBase, sum.Scope, "软链（源码树，开发机专用）", sum.Results)
+			} else {
+				sum, installErr = installEmbeddedSnapshot(projectAbs)
 			}
-			sum, serr := installEmbeddedSnapshot(projectAbs)
-			if serr != nil {
-				return serr
-			}
-			return renderInstall(cmd, sum.TargetBase, sum.Scope, "复制（内嵌快照）", sum.Results)
+			return renderSkillInstall(cmd, sum, method, configResult, errors.Join(installErr, configErr), asJSON)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "仅 --link：替换已有链接或文件，不删除真实目录")
 	cmd.Flags().BoolVar(&link, "link", false, "软链到源码仓库（开发机专用，需在源码树内）")
 	cmd.Flags().StringVar(&project, "project", "", "安装到 <path>/.agents/skills（项目级）")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "输出一份包含全部内嵌 skills 安装结果的 JSON")
 	return cmd
+}
+
+type installConfigResult struct {
+	Path   string `json:"path"`
+	Action string `json:"action"`
+	Error  string `json:"error,omitempty"`
+}
+
+type skillInstallResponse struct {
+	Protocol int  `json:"protocol"`
+	OK       bool `json:"ok"`
+	modules.InstallSummary
+	Method string              `json:"method"`
+	Config installConfigResult `json:"config"`
+	Error  string              `json:"error,omitempty"`
+}
+
+func installJSONRequested(args []string) bool {
+	requested := false
+	for _, arg := range args {
+		switch arg {
+		case "--":
+			return requested
+		case "--json", "--json=true":
+			requested = true
+		case "--json=false":
+			requested = false
+		}
+	}
+	return requested
+}
+
+// Every embedded skill gets a result, including before installation can start.
+// This prevents an empty/partial list from being mistaken for a successful setup.
+func skillInstallReport(sum modules.InstallSummary, method string, cfg installConfigResult, installErr error) skillInstallResponse {
+	reply := skillInstallResponse{Protocol: 1, OK: installErr == nil, Method: method, Config: cfg, InstallSummary: sum}
+	if installErr != nil {
+		reply.Error = installErr.Error()
+	}
+	seen := make(map[string]bool)
+	for _, result := range reply.Results {
+		seen[result.Name] = true
+		if result.Action == "error" {
+			reply.OK = false
+		}
+	}
+	for _, skill := range skillsembed.List() {
+		if seen[skill.Name] {
+			continue
+		}
+		reason := reply.Error
+		if reason == "" {
+			reason = "installer did not report this embedded skill; use the matching Flywheel source or snapshot installation"
+		}
+		dest := ""
+		if reply.TargetBase != "" {
+			dest = filepath.Join(reply.TargetBase, skill.Name)
+		}
+		reply.Results = append(reply.Results, modules.SkillInstallResult{Name: skill.Name, Dest: dest, Action: "error", Reason: reason})
+		reply.OK = false
+	}
+	return reply
+}
+
+func renderSkillInstall(cmd *cobra.Command, sum modules.InstallSummary, method string, cfg installConfigResult, installErr error, asJSON bool) error {
+	reply := skillInstallReport(sum, method, cfg, installErr)
+	if asJSON {
+		printJSON(cmd, reply)
+	} else {
+		state := "已存在"
+		if cfg.Action == "created" {
+			state = "本次新建（可直接编辑）"
+		}
+		if cfg.Action == "error" {
+			state = "失败"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "全局配置: %s — %s\n", cfg.Path, state)
+		if reply.Error != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[flywheel] 错误: %s\n", reply.Error)
+		}
+		label := "复制（内嵌快照）"
+		if method == "link" {
+			label = "软链（源码树，开发机专用）"
+		}
+		_ = renderInstall(cmd, reply.TargetBase, reply.Scope, label, reply.Results)
+	}
+	if !reply.OK {
+		return &exitError{code: 1}
+	}
+	return nil
 }
 
 func renderInstall(cmd *cobra.Command, targetBase, scope, method string, results []modules.SkillInstallResult) error {
@@ -153,64 +244,6 @@ func renderInstall(cmd *cobra.Command, targetBase, scope, method string, results
 	}
 	return nil
 }
-
-// installEmbeddedSnapshot 无源码树时的回退：把 go:embed 的 skills 快照复制到
-// 目标安装点（方案C）。锚文件注明来源为内嵌快照——skill 无法经它回到源码树，
-// 但仍可定位同目录内的兄弟 skill。已存在的真目录绝不自动删除（P1-11）。
-
-// skillFSFor 返回 skill 的内嵌子树；包级变量仅为测试注入错误 FS。
-var skillFSFor = skillsembed.DirFS
-
-func installEmbeddedSnapshot(projectAbs string) (modules.InstallSummary, error) {
-	targetBase := ""
-	scope := "user (embedded snapshot)"
-	if projectAbs != "" {
-		targetBase = filepath.Join(projectAbs, ".agents", "skills")
-		scope = fmt.Sprintf("project (%s)", projectAbs)
-	} else if home, herr := os.UserHomeDir(); herr == nil {
-		targetBase = filepath.Join(home, ".agents", "skills")
-	} else {
-		return modules.InstallSummary{}, fmt.Errorf("cannot resolve home directory: %w", herr)
-	}
-	if err := os.MkdirAll(targetBase, 0o755); err != nil {
-		return modules.InstallSummary{}, err
-	}
-	// 清理历史版本的仓库锚文件（消费方已移除；存在即删，幂等）。
-	_ = os.Remove(filepath.Join(targetBase, modules.AnchorFile))
-
-	summary := modules.InstallSummary{TargetBase: targetBase, Scope: scope}
-	for _, s := range skillsembed.List() {
-		dest := filepath.Join(targetBase, s.Name)
-		if lst, lerr := os.Lstat(dest); lerr == nil && lst.IsDir() && lst.Mode()&os.ModeSymlink == 0 {
-			// 标记文件区分"本工具物化的快照目录"（升级刷新：删了重装）与用户
-			// 真目录（P1-11：绝不自动删除）。
-			if _, merr := os.Lstat(filepath.Join(dest, snapshotMarker)); merr != nil {
-				summary.Results = append(summary.Results, modules.SkillInstallResult{
-					Name: s.Name, Dest: dest, Action: "error",
-					Reason: "a real directory already exists here — refusing to remove it; handle it manually"})
-				continue
-			}
-			_ = os.RemoveAll(dest) // 我们自己的快照：升级刷新
-		} else if lerr == nil {
-			_ = os.RemoveAll(dest) // 覆盖旧链接/文件（幂等物化）
-		}
-		// List 校验过 name 合法 → 不可能失败（测试注入除外）。
-		sub, _ := skillFSFor(s.Name)
-		if werr := materializeFS(sub, ".", dest); werr != nil {
-			summary.Results = append(summary.Results, modules.SkillInstallResult{
-				Name: s.Name, Dest: dest, Action: "error", Reason: werr.Error()})
-			continue
-		}
-		// 快照标记：下次安装据此识别"可刷新目录"。
-		_ = os.WriteFile(filepath.Join(dest, snapshotMarker), []byte("flywheel embedded snapshot\n"), 0o644)
-		summary.Results = append(summary.Results, modules.SkillInstallResult{
-			Name: s.Name, Dest: dest, Action: "copied"})
-	}
-	return summary, nil
-}
-
-// snapshotMarker 内嵌快照目录的归属标记（区分可刷新目录与用户真目录）。
-const snapshotMarker = ".flywheel-snapshot"
 
 // materializeFS 把 fs.FS 内 srcDir 下的全部文件落到 dest（保留相对路径）。
 func materializeFS(fsys fs.FS, srcDir, dest string) error {

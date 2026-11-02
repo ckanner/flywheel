@@ -22,7 +22,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  npm-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build one six-package npm candidate
+        run: npm run build:npm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-candidate
+          path: dist-npm/
+          if-no-files-found: error
+
   test:
+    needs: npm-candidate
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -37,6 +57,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-candidate
+          path: dist-npm
       - name: Install git (worktree tests need a real git)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y git
@@ -54,6 +78,12 @@ jobs:
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
         run: go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1 -v
+      - name: Verify npm runtime, installer and release contracts
+        run: npm test
+      - name: Install and exercise the actual npm candidate
+        env:
+          FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
+        run: npm run test:install
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1

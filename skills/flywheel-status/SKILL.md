@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use when the user says "/skill:flywheel-status docs/<slug>" or asks how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
@@ -27,7 +27,7 @@ Button only: read state + translate. Writes nothing.
    flywheel status "$slug"
    ```
 
-   若 `flywheel` 不在 PATH，使用已配置的绝对二进制路径；未安装时按项目 README 安装所需版本。DSH 功能须使用包含该实现的构建；版本与安装步骤见项目 README，不能假定旧 npm 发布包已支持。
+   若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**，用人话讲：
    - 任务状态、编排器是否存活（pid）、当前里程碑、上次推进时间——

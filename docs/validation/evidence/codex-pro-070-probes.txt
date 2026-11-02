@@ -1,0 +1,4 @@
+{"probe":"missing-effective-configuration","accepted":true,"configuration":{"requested":{"cwd":"/tmp","model":"audit-model","approvalPolicy":"never","sandbox":"read-only"},"effective":{},"matched":false}}
+{"probe":"malformed-usage-after-valid-snapshot","report":{"status":"complete","run":{"totalTokens":100,"inputTokens":90,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":10,"reasoningOutputTokens":0},"threadTotal":{"totalTokens":100,"inputTokens":90,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":10,"reasoningOutputTokens":0},"observations":1,"replayedBaseline":false,"reason":"Codex reported a malformed token-usage notification"}}
+{"probe":"public-default-permission","permissionMode":"dangerously-bypass-approvals-and-sandbox"}
+{"probe":"public-run-export","code":"ERR_PACKAGE_PATH_NOT_EXPORTED"}

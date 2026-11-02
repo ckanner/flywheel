@@ -532,10 +532,10 @@ func TestInstallSkillsSkippedSecondRun(t *testing.T) {
 
 	code, _ := runCLI(t, "install-skills")
 	require.Equal(t, 0, code)
-	// 二次运行 = 升级刷新：带标记的快照目录删除重装（二进制升级语义）。
+	// Unchanged, verified snapshots remain in place on an idempotent reinstall.
 	code, out := runCLI(t, "install-skills")
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "flywheel-run: 已复制 -> ")
+	assert.Contains(t, out, "flywheel-run: 已安装，跳过 -> ")
 	assert.FileExists(t, filepath.Join(home, ".agents", "skills", "flywheel-run", ".flywheel-snapshot"))
 }
 
@@ -547,10 +547,12 @@ func TestInstallSkillsStaleSymlinkReported(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(home, "gone-target"),
 		filepath.Join(skillsDir, "flywheel-run")))
 
-	// 默认快照模式：失效链接被直接替换为快照目录。
+	// Snapshot installation cannot prove ownership of an old link; preserve it.
 	code, out := runCLI(t, "install-skills")
-	require.Equal(t, 0, code, out)
-	assert.DirExists(t, filepath.Join(skillsDir, "flywheel-run"))
+	require.Equal(t, 1, code, out)
+	target, err := os.Readlink(filepath.Join(skillsDir, "flywheel-run"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(home, "gone-target"), target)
 
 	// --link 模式（源码树内）保留断链 stale 上报语义——独立 home，避免默认
 	// 模式的快照真目录被 P1-11 拒绝替换的跨模式干扰。
