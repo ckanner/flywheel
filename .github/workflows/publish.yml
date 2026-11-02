@@ -145,8 +145,28 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          # npm 12.2.1 supports both publish and dist-tag with OIDC and needs
+          # Node >=24.15.0 on the 24.x line. Pin the publication toolchain.
+          node-version: "24.22.1"
           registry-url: "https://registry.npmjs.org"
+      - name: Install npm with trusted-publisher dist-tag support
+        run: |
+          npm install --global npm@12.2.1 --ignore-scripts
+          node --version
+          npm --version
+      - name: Select npm authentication configuration
+        env:
+          # Read the secret directly, not setup-node's placeholder token.
+          FLYWHEEL_PUBLISH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$FLYWHEEL_PUBLISH_TOKEN" ]; then
+            echo "npm authentication: OIDC with repository token fallback available."
+          else
+            config="$RUNNER_TEMP/flywheel-trusted-publishing.npmrc"
+            : > "$config"
+            printf 'NPM_CONFIG_USERCONFIG=%s\n' "$config" >> "$GITHUB_ENV"
+            echo "npm authentication: OIDC trusted publishing, no stored token."
+          fi
       - uses: actions/download-artifact@v4
         with:
           name: npm-candidate-${{ github.run_id }}

@@ -11,6 +11,7 @@ DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录�
 - **skills 更新保护**：快照清单校验内容、类型和模式，用户修改、新增／删除文件及未归属目录保留并报告冲突；逐 skill 暂存、rename 和失败回滚。旧纯文本标记仅在完整内容匹配时迁移。新增 `install-skills --json` 的完整逐项结果。
 - **npm 启动器生命周期**：异步启动真实 Go 进程，传递取消信号并等待清理完成；核对原生包／worker 的精确版本，兼容依赖提升，避免启动旧二进制或留下 wrapper 的子进程。
 - **六包发行门禁**：meta、四个平台包和 DSH 插件统一版本。先构建 worker，在隔离副本构建并打包一次，再于 Linux／macOS 验证同一候选的真实 npm 安装。发布要求 HEAD 精确 tag 与干净来源；已存在版本核对 integrity，只有明确 404 视为不存在；全部包与精确版本安装验证通过后才更新 latest，且不倒退标签。
+- **GitHub 可信发布**：参考现有 DSH 插件的 Actions 流程，固定发布工具链为 Node 24.22.1／npm 12.2.1，支持 OIDC 的 publish 与 dist-tag；无 token 时使用独立空 npmrc，有 token 时保留后备认证。补充六包逐项授权、精确 tag 触发及原候选重试的维护者指南。
 
 - **配置与模型 profiles**：新增可复用 `profiles`、阶段引用与显式覆盖；DSH `provider` 和账号 `channel` 分离，所有角色和渠道降级均传递实际 provider；指标分别保留两者。严格拒绝未知字段、无效引用和 provider 冲突，兼容旧内联绑定与合法显式零值。
 - **只读预检**：新增 `config inspect`、`doctor` 和相应 control actions；检查有效配置、工具和任务所需路由。可选 SDK probe 验证配置、目录、沙箱与关闭，零推理，整体验证有界；账号、额度与实际模型能力明确标为未验证。
