@@ -70,3 +70,36 @@ README、完整安装教程、首任务使用方法、插件 README／PROTOCOL�
 ## 6. 尚需实际设备／账号证据
 
 用户 Mac 的 DSH 桌面插件加载与渲染、GUI PATH、Seatbelt、既有订阅授权、真实 Flash／GPT／Kimi／Codex 响应以及真实任务停止／恢复，仍需在对应环境验收。macOS CI 和本地 fixture 不替代这些结果。本轮没有模型质量、价格或吞吐量测量，不声称新的性能排名或成本节省比例。
+
+## 7. PR #15 合并后的启动登记竞态修复
+
+记录日期：2026-11-02 UTC。本节是后续修复的独立记录，上面第 1 节的测试数量与输出仍属于 PR #15 的安装实现，不重新归因于本次改动。
+
+### 触发证据
+
+[PR #15](https://github.com/ckanner/flywheel/pull/15) 的 [CI 41376341709](https://github.com/ckanner/flywheel/actions/runs/41376341709) 在 Ubuntu／macOS 全部通过，随后合并到 `4985f1bfddf5d99bd87aab9ff5c5e28bf5f0db4a`，tree 为 `aa0330c1d5f23f653c6dc4bec60cd5a4134d84d6`。
+
+该合并提交的 [CI 41376926465](https://github.com/ckanner/flywheel/actions/runs/41376926465) 中，macOS 全部通过；Ubuntu 的 Go quality gate、插件、跨进程桥接、npm 单测和真实 npm 安装均通过，但 [race 步骤](https://github.com/ckanner/flywheel/actions/runs/41376926465/job/125059462912) 的 `TestGateKillSwitchStopsDescendantsAndRemainingCommands` 在 **3.01 秒**报告 `cancelled gate did not reach quiescence`。之后的原生构建与 artifact 步骤被跳过，不能把这次 postmerge CI 写成全绿。
+
+### 根因与最小修复
+
+原 `watchdog.Run` 在 `cmd.Start()` 返回后才把 child 加入 registry。真实子进程可以更早开始执行、安装 TERM trap 并输出 ready；此时 `KillActiveChildren` 若先取得快照，就可能漏掉这个已经运行、尚未登记的子进程。
+
+新增回归用真实 shell 和可替换的 Start 调用，在“子进程已经运行、Start 包装函数尚未返回”的边界设置屏障，再执行一次 kill snapshot。旧顺序在受控复现中确定性失败，输出与 3.01 秒超时见[修复前日志](evidence/watchdog-startup-before.txt)。这不是通过延长等待或反复重跑消除的失败。
+
+修复由 `startRegistered` 使用同一个 `regMu` 临界区完成真实 Start、PID 设置和 registry 发布；kill 回调在进入临界区前准备好，成功与失败均通过 `defer` 释放锁。快照因此只能在启动前取得，或等待这次启动与登记完成。`KillActiveChildren` 仍在释放 registry 锁后发送信号和等待；之后新启动的调用不归属于旧快照。
+
+正常 machine SIGTERM 路径会先取消 run context，已有额外兜底。本次修复补足的是独立 `KillActiveChildren` 对已启动进程的快照契约，不代表用户每次正常停止都必然遗留进程。
+
+生产改动仅在 `internal/watchdog/watchdog.go`，新增 `internal/watchdog/startup_test.go` 验证真实启动窗口及 Start 失败后的解锁。原 `internal/verify/reliability_test.go`、原 3 秒等待期限和生命周期断言完全未改；独立 review 还检查了锁序、kill 回调发布以及测试屏障的清理顺序。
+
+### 本次修复验证
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| 旧顺序的确定性复现 | FAIL：kill snapshot 漏掉已运行但尚未登记的子进程，3.01 秒触发等待失败 | [修复前](evidence/watchdog-startup-before.txt) |
+| 定向 race 回归 | PASS：启动窗口、Start 失败解锁、later-call 所有权与原 CI 失败用例 | [修复后](evidence/watchdog-startup-after.txt) |
+| 最终 `make quality-gate` | PASS：vet、gofmt、完整 Go 测试及既定逐函数 **100% statement coverage** | [完整门禁](evidence/watchdog-startup-quality-gate.txt) |
+| 最终七包 `go test -race` | PASS：machine、verify、watchdog、drivers、cli、modules、diagnostic | [race 输出](evidence/watchdog-startup-race.txt) |
+
+最终两项验证使用与前述本地门禁相同的 Go 工具链和 DAC 限制方式。此处仅记录本地修复验证；本修复 PR 的远端 CI、合并和后续 npm 发布必须另看实际 GitHub／registry 结果。没有新模型调用或用户 Mac 验收。

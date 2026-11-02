@@ -1,0 +1,2 @@
+ok  	github.com/ckanner/flywheel/internal/watchdog	1.563s
+ok  	github.com/ckanner/flywheel/internal/verify	1.303s

@@ -4,6 +4,7 @@
 
 DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录对应版本的源码变更，不单独证明 npm 已发布或用户 Mac 已验收；用 `npm view @ckanner/flywheel version` 核对实际发行。旧 0.22.1 不包含本节新增安装和 DSH 接口。安装与迁移见 [入门教程](docs/getting-started.md)。
 
+- **启动期间的停止快照**：修复真实子进程已经运行、`Cmd.Start` 尚未返回登记时，`KillActiveChildren` 可能取得空快照的竞态；启动与登记由同一把快照锁保护，失败路径也释放锁。新增真实进程的确定性回归，原验收停止测试及 3 秒期限保持不变。正常 machine SIGTERM 路径已有 context 取消兜底，本修复补足独立 kill snapshot 的已启动进程契约。
 - **npm 一条命令安装**：新增 `npx -y @ckanner/flywheel@latest install` 与 `flywheel setup`，全局安装精确同版 CLI、平台二进制、worker、10 个内嵌 skills，再通过已有桌面 DSH 的正式接口注册并核验插件。支持 prefix／project／DSH 命令／profile、显式跳过、超时和 JSON 输出；普通 npm 包安装不通过 postinstall 修改用户目录。
 - **软件安装与运行准备分开报告**：本地 doctor 有效失败保留完整检查项，允许 `ok:true, ready:false`；账号状态保持 unknown，不自动安装／登录其他 harness，不发送模型 prompt。取消、超时、损坏协议和版本漂移阻止安装成功，报告已完成步骤。
 - **Mac GUI 自动入口**：生成使用绝对 Node／CLI 路径的 launcher 和带 SHA-256 的安装记录，桌面插件自动发现并验证；用户显式 `flywheelBinary` 优先。损坏或改动的入口明确失败，不静默使用其他版本，无需手写 GUI 启动脚本。

@@ -76,12 +76,24 @@ type activeChild struct {
 var (
 	regMu    sync.Mutex
 	registry = map[int]*activeChild{}
+	// Real Start remains replaceable so tests can hold the parent after a
+	// subprocess begins executing but before its registry entry is published.
+	startCommand = (*exec.Cmd).Start
 )
 
-func register(c *activeChild) {
+// A subprocess may execute before Cmd.Start returns. Hold the snapshot lock
+// across startup and publication so KillActiveChildren cannot miss an already
+// running child. Start does not wait for the output-copy callbacks, and the
+// child kill callback is prepared before entering this critical section.
+func startRegistered(cmd *exec.Cmd, child *activeChild) error {
 	regMu.Lock()
-	registry[c.pid] = c
-	regMu.Unlock()
+	defer regMu.Unlock()
+	if err := startCommand(cmd); err != nil {
+		return err
+	}
+	child.pid = cmd.Process.Pid
+	registry[child.pid] = child
+	return nil
 }
 
 func unregister(pid int) {
@@ -281,14 +293,7 @@ func Run(command string, args []string, opts Opts) Result {
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 
-	if err := cmd.Start(); err != nil {
-		res.SpawnError = err.Error()
-		res.DurationMS = time.Since(started).Milliseconds()
-		return res
-	}
-
 	child := &activeChild{
-		pid:    cmd.Process.Pid,
 		exited: make(chan struct{}),
 	}
 	sendSignal := func(sig syscall.Signal) {
@@ -309,7 +314,11 @@ func Run(command string, args []string, opts Opts) Result {
 		markCancelled()
 		sendSignal(sig)
 	}
-	register(child)
+	if err := startRegistered(cmd, child); err != nil {
+		res.SpawnError = err.Error()
+		res.DurationMS = time.Since(started).Milliseconds()
+		return res
+	}
 
 	var stopOnce sync.Once
 	beginKill := func() {
