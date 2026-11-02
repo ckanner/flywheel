@@ -99,23 +99,34 @@ const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolv
 const defaultNow = () => performance.now();
 const VISIBILITY_TIMEOUT_MS = 180000;
 
-async function waitForPackage(entry, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow } = {}) {
+async function waitForRegistry(check, timeoutMessage, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow } = {}) {
   const deadline = now() + VISIBILITY_TIMEOUT_MS;
+  const query = (args) => {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw new Error(timeoutMessage);
+    // Recompute for each query: a condition may read both latest and integrity.
+    // npm's own fetch retries must not extend this shared deadline.
+    return runNpm(args, { timeout: Math.min(30000, remaining), killSignal: "SIGKILL" });
+  };
   let delay = 2000;
   for (;;) {
-    const remaining = Math.floor(deadline - now());
-    if (remaining <= 0) break;
-    // Only metadata queries use the shortened, hard timeout. Include query
-    // time in the deadline; npm's own fetch retries must not extend the window.
-    const actual = remoteIntegrity(entry, (args) => runNpm(args, { timeout: Math.min(30000, remaining), killSignal: "SIGKILL" }));
-    checkIntegrity(entry, actual);
+    if (Math.floor(deadline - now()) <= 0) break;
+    const ready = check(query);
     const afterQuery = now();
     if (afterQuery >= deadline) break;
-    if (actual !== null) return;
+    if (ready) return;
     await wait(Math.min(delay, deadline - afterQuery));
     delay = Math.min(delay * 2, 15000);
   }
-  throw new Error(`Registry version is not visible within ${VISIBILITY_TIMEOUT_MS / 1000}s after publication: ${entry.name}@${entry.version}`);
+  throw new Error(timeoutMessage);
+}
+
+function waitForPackage(entry, options = {}) {
+  return waitForRegistry((query) => {
+    const actual = remoteIntegrity(entry, query);
+    checkIntegrity(entry, actual);
+    return actual !== null;
+  }, `Registry version is not visible within ${VISIBILITY_TIMEOUT_MS / 1000}s after publication: ${entry.name}@${entry.version}`, options);
 }
 
 async function verifyRemote(candidate, options = {}) {
@@ -177,13 +188,18 @@ async function promote(candidate, { runNpm = defaultRunNpm, wait = defaultWait, 
     if (result.error || result.signal || result.status !== 0) throw failure(`npm dist-tag ${entry.name}`, result);
     log(`Promoted ${entry.name}@${entry.version} to latest`);
   }
-  verifyLatest(candidate, { runNpm });
+  await verifyLatest(candidate, { runNpm, wait, now });
 }
 
-function verifyLatest(candidate, { runNpm = defaultRunNpm } = {}) {
+async function verifyLatest(candidate, options = {}) {
   for (const entry of orderedPackages(candidate)) {
-    checkIntegrity(entry, remoteIntegrity(entry, runNpm), true);
-    if (readValue([entry.name, "dist-tags.latest"], runNpm, { allowMissingValue: true }) !== candidate.version) throw new Error(`latest does not identify the verified version: ${entry.name}`);
+    await waitForRegistry((query) => {
+      // Reject a newer/invalid tag even if the target metadata is still missing.
+      const latest = checkLatest(entry, query);
+      const actual = remoteIntegrity(entry, query);
+      checkIntegrity(entry, actual);
+      return latest === entry.version && actual !== null;
+    }, `latest does not identify the verified version within ${VISIBILITY_TIMEOUT_MS / 1000}s: ${entry.name}@${entry.version}`, options);
   }
 }
 
@@ -208,7 +224,7 @@ async function main(argv) {
   const candidate = verifyCandidate(directory, { sourceSHA: options["source-sha"], allowDirty: options.allowDirty });
   if (options.operation === "publish") await publish(candidate, directory, { repositoryVisibility: options["repository-visibility"] });
   else if (options.operation === "promote") await promote(candidate);
-  else if (options.operation === "verify-latest") verifyLatest(candidate);
+  else if (options.operation === "verify-latest") await verifyLatest(candidate);
   console.log(`${options.operation}: verified ${candidate.version}, source ${candidate.source.commit}`);
 }
 

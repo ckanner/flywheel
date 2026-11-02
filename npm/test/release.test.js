@@ -373,7 +373,7 @@ test("npm 12 scalar arrays preserve exact-version verification and latest promot
   await publish(candidate, directory, remote.options);
   assert.ok([...remote.latest.values()].every((value) => value === "0.22.1"));
   await promote(candidate, remote.options);
-  verifyLatest(candidate, remote.options);
+  await verifyLatest(candidate, remote.options);
   assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
     candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
 });
@@ -611,9 +611,139 @@ test("latest promotion requires all six versions and promotes the entry package 
   const remote = registry(candidate, { populated: true });
   await promote(candidate, remote.options);
   assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]), candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
-  verifyLatest(candidate, remote.options);
+  await verifyLatest(candidate, remote.options);
   remote.calls.length = 0; await promote(candidate, remote.options);
   assert.equal(remote.calls.filter((args) => args[0] === "dist-tag").length, 0);
+});
+
+test("promotion waits for old latest responses to converge without repeating dist-tag mutations", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const remote = registry(candidate, { populated: true });
+  remote.override = (args) => args[0] === "view" && args[2] === "dist-tags.latest" &&
+    remote.latest.get(args[1]) === VERSION && remote.elapsed < 90000 ? ok("0.22.1") : undefined;
+  await promote(candidate, remote.options);
+  assert.ok(remote.elapsed >= 90000 && remote.elapsed < 180000);
+  assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
+    candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
+  assert.equal(remote.calls.some((args) => args[0] === "publish"), false);
+  assert.ok([...remote.latest.values()].every((value) => value === VERSION));
+});
+
+test("latest verification tolerates a missing tag or temporarily absent target metadata", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const first = candidate.packages[0];
+  for (const [field, response] of [["dist-tags.latest", ok(null)], ["dist-tags.latest", missing()], ["dist.integrity", missing()]]) {
+    const remote = registry(candidate, { populated: true });
+    for (const entry of candidate.packages) remote.latest.set(entry.name, VERSION);
+    remote.override = (args) => args[0] === "view" && args[2] === field &&
+      [first.name, `${first.name}@${VERSION}`].includes(args[1]) && remote.elapsed < 5000 ? response : undefined;
+    await verifyLatest(candidate, remote.options);
+    assert.ok(remote.elapsed >= 5000 && remote.elapsed < 180000);
+    assert.ok(remote.calls.every((args) => args[0] === "view"));
+  }
+});
+
+test("latest verification immediately rejects a newer tag even while target metadata is missing", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const first = candidate.packages[0];
+  const remote = registry(candidate, { populated: true });
+  remote.versions.delete(first.name);
+  let reads = 0;
+  remote.override = (args) => args[0] === "view" && args[1] === first.name && args[2] === "dist-tags.latest"
+    ? ok(++reads === 1 ? "0.22.1" : "0.28.0") : undefined;
+  await assert.rejects(verifyLatest(candidate, remote.options), /backwards/);
+  assert.equal(reads, 2);
+  assert.equal(remote.elapsed, 2000);
+  assert.ok(remote.calls.every((args) => args[0] === "view" && [first.name, `${first.name}@${VERSION}`].includes(args[1])));
+});
+
+test("latest verification never retries invalid tags, integrity conflicts or query failures", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const first = candidate.packages[0];
+  for (const [field, response, error] of [
+    ["dist-tags.latest", ok("0.27.0-beta.1"), /invalid stable npm version/],
+    ["dist-tags.latest", ok(""), /invalid stable npm version/],
+    ["dist-tags.latest", { status: 1, stdout: "", stderr: "E403 access denied" }, /E403/],
+    ["dist-tags.latest", { status: 1, stdout: "", stderr: "ECONNRESET" }, /ECONNRESET/],
+    ["dist-tags.latest", { ...missing(), signal: "SIGTERM" }, /SIGTERM/],
+    ["dist-tags.latest", { ...missing(), status: 143 }, /exit 143/],
+    ["dist.integrity", { ...missing(), error: new Error("ETIMEDOUT") }, /ETIMEDOUT/],
+    ["dist.integrity", { status: 0, stdout: "{", stderr: "" }, /Invalid JSON/],
+    ["dist.integrity", ok(null), /Missing registry value/],
+    ["dist.integrity", ok(`sha512-${Buffer.alloc(64, 1).toString("base64")}`), /integrity differs/],
+  ]) {
+    const remote = registry(candidate, { populated: true });
+    // A stale tag does not excuse malformed or mismatched target integrity.
+    remote.override = (args) => args[0] === "view" && args[2] === field &&
+      [first.name, `${first.name}@${VERSION}`].includes(args[1]) ? response : undefined;
+    await assert.rejects(verifyLatest(candidate, remote.options), error);
+    assert.equal(remote.elapsed, 0);
+    assert.ok(remote.calls.length <= 2);
+    assert.ok(remote.calls.every((args) => args[0] === "view"));
+  }
+});
+
+test("latest and integrity queries share one deadline and stop before starting a query past it", async (t) => {
+  const { candidate } = candidateFixture(t);
+  let elapsed = 0;
+  const queries = [];
+  await assert.rejects(verifyLatest(candidate, {
+    now: () => elapsed,
+    runNpm: (args, options) => {
+      queries.push({ at: elapsed, field: args[2], ...options });
+      assert.ok(elapsed < 180000, "do not start the second view after the first consumes the budget");
+      assert.ok(Number.isInteger(options.timeout) && options.timeout > 0);
+      assert.ok(options.timeout <= Math.min(30000, 180000 - elapsed));
+      elapsed += Math.min(24000, options.timeout);
+      return args[2] === "dist-tags.latest" ? ok("0.22.1") : ok(candidate.packages[0].integrity);
+    },
+    wait: async (milliseconds) => {
+      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 180000 - elapsed));
+      elapsed += milliseconds;
+    },
+  }), /latest does not identify the verified version within 180s/);
+  assert.equal(elapsed, 180000);
+  assert.ok(queries.some((query) => query.field === "dist.integrity"));
+  assert.ok(queries.at(-1).timeout < 30000);
+  assert.ok(queries.every((query) => query.killSignal === "SIGKILL"));
+});
+
+test("a latest visibility timeout resumes the same candidate without repeating completed mutations", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const remote = registry(candidate, { populated: true });
+  const delayed = candidate.packages[2];
+  remote.latest.set(PLUGIN, VERSION);
+  remote.override = (args) => args[0] === "view" && args[1] === delayed.name && args[2] === "dist-tags.latest"
+    ? ok("0.22.1") : undefined;
+  await assert.rejects(promote(candidate, remote.options), /latest does not identify the verified version within 180s/);
+  assert.equal(remote.elapsed, 180000);
+  assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
+    candidate.packages.filter((entry) => entry.name !== PLUGIN).map((entry) => `${entry.name}@${VERSION}`));
+  assert.ok([...remote.latest.values()].every((value) => value === VERSION), "mutations succeeded before delayed verification failed");
+
+  remote.override = null;
+  remote.calls.length = 0;
+  await promote(candidate, remote.options);
+  assert.ok(remote.calls.every((args) => args[0] === "view"));
+  for (const entry of candidate.packages) assert.equal(remote.versions.get(entry.name), entry.integrity);
+});
+
+test("the verify-latest CLI awaits asynchronous verification before reporting success", async (t) => {
+  const { directory } = candidateFixture(t);
+  const commands = temporary(t);
+  fs.writeFileSync(path.join(commands, "npm"), `#!/usr/bin/env node
+console.log(JSON.stringify({ error: { code: "E403", summary: "access denied" } }));
+process.exitCode = 1;
+`, { mode: 0o755 });
+  const script = path.resolve(__dirname, "../../scripts/release-publish.js");
+  await assert.rejects(promisify(execFile)(process.execPath,
+    [script, "verify-latest", "--directory", directory, "--source-sha", SHA],
+    { env: { ...process.env, PATH: `${commands}${path.delimiter}${process.env.PATH}` }, timeout: 15000 }), (error) => {
+    assert.equal(error.code, 1);
+    assert.equal(error.stdout, "", "a rejected verification must never print the final verified summary");
+    assert.match(error.stderr, /release:publish: npm view.*E403/);
+    return true;
+  });
 });
 
 test("a concurrent newer entry tag cannot be rolled back during promotion", async (t) => {
@@ -627,10 +757,10 @@ test("a concurrent newer entry tag cannot be rolled back during promotion", asyn
   assert.equal(remote.calls.some((args) => args[0] === "dist-tag" && args[2] === `${META}@${VERSION}`), false);
 });
 
-test("latest verification checks all versions and rejects unknown version ordering", (t) => {
+test("latest verification checks all versions and rejects unknown version ordering", async (t) => {
   const { candidate } = candidateFixture(t);
   const remote = registry(candidate, { populated: true });
-  assert.throws(() => verifyLatest(candidate, remote.options), /latest/);
+  await assert.rejects(verifyLatest(candidate, remote.options), /latest/);
   assert.equal(compareVersions("0.27.0", "0.27.0"), 0);
   assert.equal(compareVersions("0.27.0", "0.9.99"), 1);
   assert.equal(compareVersions("1.0.0", "2.0.0"), -1);
