@@ -1,0 +1,6 @@
+--- FAIL: TestKillActiveChildrenIncludesProcessStillReturningFromStart (3.01s)
+    startup_test.go:70: kill switch returned while an already running subprocess was not yet registered
+    startup_test.go:83: a subprocess active before the kill switch snapshot was left running
+FAIL
+FAIL	github.com/ckanner/flywheel/internal/watchdog	3.043s
+FAIL

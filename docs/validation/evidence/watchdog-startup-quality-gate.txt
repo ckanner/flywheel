@@ -1,0 +1,29 @@
+go vet ./...
+test -z "$(gofmt -l . | grep -v '^$')" || (echo "gofmt needed:"; gofmt -l .; exit 1)
+go test github.com/ckanner/flywheel/internal/build github.com/ckanner/flywheel/internal/childenv github.com/ckanner/flywheel/internal/circuitbreaker github.com/ckanner/flywheel/internal/cli github.com/ckanner/flywheel/internal/config github.com/ckanner/flywheel/internal/contract github.com/ckanner/flywheel/internal/defectinjection github.com/ckanner/flywheel/internal/diagnostic github.com/ckanner/flywheel/internal/donereport github.com/ckanner/flywheel/internal/drivers github.com/ckanner/flywheel/internal/errs github.com/ckanner/flywheel/internal/exitcontract github.com/ckanner/flywheel/internal/fallback github.com/ckanner/flywheel/internal/ledger github.com/ckanner/flywheel/internal/machine github.com/ckanner/flywheel/internal/metrics github.com/ckanner/flywheel/internal/modules github.com/ckanner/flywheel/internal/prompts github.com/ckanner/flywheel/internal/skillsembed github.com/ckanner/flywheel/internal/state github.com/ckanner/flywheel/internal/verify github.com/ckanner/flywheel/internal/watchdog github.com/ckanner/flywheel/skills github.com/ckanner/flywheel/templates -count=1 -coverprofile=cover.out
+?   	github.com/ckanner/flywheel/internal/build	[no test files]
+ok  	github.com/ckanner/flywheel/internal/childenv	0.006s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/circuitbreaker	0.024s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/cli	6.334s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/config	0.026s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/contract	0.078s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/defectinjection	1.934s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/diagnostic	1.206s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/donereport	0.018s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/drivers	1.647s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/errs	0.015s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/exitcontract	0.011s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/fallback	0.016s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/ledger	0.030s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/machine	34.789s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/metrics	0.009s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/modules	25.349s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/prompts	0.018s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/skillsembed	0.028s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/state	0.053s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/verify	3.365s	coverage: 100.0% of statements
+ok  	github.com/ckanner/flywheel/internal/watchdog	7.665s	coverage: 100.0% of statements
+?   	github.com/ckanner/flywheel/skills	[no test files]
+?   	github.com/ckanner/flywheel/templates	[no test files]
+total:										(statements)			100.0%
+OK: coverage 100% (every function)
