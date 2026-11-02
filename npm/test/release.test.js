@@ -81,7 +81,7 @@ function registry(candidate, { populated = false } = {}) {
   const versions = new Map(populated ? candidate.packages.map((entry) => [entry.name, entry.integrity]) : []);
   const latest = new Map(candidate.packages.map((entry) => [entry.name, "0.22.1"]));
   const calls = [];
-  const state = { versions, latest, calls, override: null };
+  const state = { versions, latest, calls, override: null, elapsed: 0 };
   state.runNpm = (args) => {
     calls.push(args);
     const overridden = state.override?.(args);
@@ -104,7 +104,8 @@ function registry(candidate, { populated = false } = {}) {
     }
     throw new Error(`Unexpected npm call: ${args.join(" ")}`);
   };
-  state.options = { runNpm: state.runNpm, wait: async () => {}, log: () => {}, repositoryVisibility: "public" };
+  state.options = { runNpm: state.runNpm, now: () => state.elapsed,
+    wait: async (milliseconds) => { state.elapsed += milliseconds; }, log: () => {}, repositoryVisibility: "public" };
   return state;
 }
 
@@ -456,11 +457,140 @@ test("publication cancellation is a failure even if registry accepted the bytes"
   }
 });
 
-test("registry visibility waits are bounded", async (t) => {
+test("registry visibility accepts a matching package that appears after the former ten-second window", async (t) => {
   const { candidate } = candidateFixture(t);
-  let reads = 0; const waits = [];
-  await assert.rejects(waitForPackage(candidate.packages[0], { runNpm: () => { reads++; return missing(); }, wait: async (ms) => waits.push(ms) }), /not visible/);
-  assert.equal(reads, 6); assert.deepEqual(waits, [2000, 2000, 2000, 2000, 2000]);
+  const entry = candidate.packages[0];
+  let elapsed = 0; let reads = 0;
+  const waits = [];
+  await waitForPackage(entry, {
+    now: () => elapsed,
+    runNpm: () => { reads++; elapsed += 300; return elapsed >= 90000 ? ok(entry.integrity) : missing(); },
+    wait: async (milliseconds) => { waits.push(milliseconds); elapsed += milliseconds; },
+  });
+  assert.ok(elapsed >= 90000 && elapsed < 180000);
+  assert.ok(reads > 6, "a successful upload must survive more than the former six reads");
+  assert.ok(waits.every((milliseconds) => milliseconds > 0 && milliseconds <= 15000));
+});
+
+test("registry visibility has one deadline including query time and never starts an unbounded query", async (t) => {
+  const { candidate } = candidateFixture(t);
+  let elapsed = 0; let queryTime = 0; let waitTime = 0;
+  const queries = [];
+  await assert.rejects(waitForPackage(candidate.packages[0], {
+    now: () => elapsed,
+    runNpm: (args, options) => {
+      queries.push({ at: elapsed, ...options });
+      assert.equal(args[0], "view");
+      assert.ok(Number.isInteger(options.timeout) && options.timeout > 0);
+      assert.ok(options.timeout <= Math.min(30000, 180000 - elapsed));
+      const duration = Math.min(24000, options.timeout);
+      queryTime += duration; elapsed += duration;
+      return missing();
+    },
+    wait: async (milliseconds) => {
+      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 180000 - elapsed));
+      waitTime += milliseconds; elapsed += milliseconds;
+    },
+  }), /not visible within 180s/);
+  assert.equal(elapsed, 180000);
+  assert.equal(queryTime + waitTime, 180000);
+  assert.ok(queryTime > 0 && waitTime > 0);
+  assert.ok(queries.at(-1).timeout < 30000, "the last query is limited by the remaining budget");
+  assert.ok(queries.every((query) => query.at < 180000 && query.killSignal === "SIGKILL"));
+});
+
+test("registry visibility cannot succeed or start another query after the deadline", async (t) => {
+  const { candidate } = candidateFixture(t);
+  const entry = candidate.packages[0];
+  for (const overrun of ["query", "wait"]) {
+    let elapsed = 0; let reads = 0;
+    await assert.rejects(waitForPackage(entry, {
+      now: () => elapsed,
+      runNpm: () => {
+        reads++;
+        if (overrun === "query") { elapsed = 180001; return ok(entry.integrity); }
+        return missing();
+      },
+      wait: async () => { elapsed = 180001; },
+    }), /not visible within 180s/);
+    assert.equal(reads, 1, overrun);
+  }
+});
+
+test("registry visibility retries only structured E404 and stops immediately on other errors", async (t) => {
+  const { candidate } = candidateFixture(t);
+  for (const [result, error] of [
+    [{ status: 1, stdout: JSON.stringify({ error: { code: "E403" } }), stderr: "access denied" }, /access denied/],
+    [{ status: 1, stdout: "", stderr: "ECONNRESET" }, /ECONNRESET/],
+    [{ ...missing(), signal: "SIGTERM" }, /SIGTERM/],
+    [{ ...missing(), error: new Error("ETIMEDOUT") }, /ETIMEDOUT/],
+    [{ status: 130, stdout: "", stderr: "" }, /exit 130/],
+    [{ status: 143, stdout: "", stderr: "" }, /exit 143/],
+    [{ status: null, stdout: "", stderr: "" }, /exit null/],
+    [{ status: 0, stdout: "{", stderr: "" }, /Invalid JSON/],
+    [ok(null), /Missing registry value/],
+    [ok(`sha512-${Buffer.alloc(64, 1).toString("base64")}`), /integrity differs/],
+  ]) {
+    let elapsed = 0; let reads = 0; let waits = 0;
+    await assert.rejects(waitForPackage(candidate.packages[0], {
+      now: () => elapsed,
+      runNpm: () => ++reads === 1 ? missing() : result,
+      wait: async (milliseconds) => { waits++; elapsed += milliseconds; },
+    }), error);
+    assert.equal(reads, 2);
+    assert.equal(waits, 1);
+  }
+});
+
+test("registry query timeout terminates the real npm process even when it ignores SIGTERM", async (t) => {
+  const root = temporary(t);
+  const pidFile = path.join(root, "npm.pid");
+  const termFile = path.join(root, "received-term");
+  const expiredFile = path.join(root, "query-survived");
+  fs.writeFileSync(path.join(root, "npm"), `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+process.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(termFile)}, "ignored"));
+setTimeout(() => { fs.writeFileSync(${JSON.stringify(expiredFile)}, "survived"); process.exit(91); }, 3000);
+`, { mode: 0o755 });
+  const script = path.resolve(__dirname, "../../scripts/release-publish.js");
+  const source = `const { waitForPackage } = require(${JSON.stringify(script)});
+let ticks = 0;
+waitForPackage({ name: "@fixture/query", version: "1.0.0" }, {
+  now: () => ticks++ === 0 ? 0 : 179000,
+}).then(() => { process.exitCode = 1; }, (error) => console.log(JSON.stringify({ error: error.message })));
+`;
+  const { stdout } = await promisify(execFile)(process.execPath, ["-e", source], {
+    env: { ...process.env, PATH: `${root}${path.delimiter}${process.env.PATH}` }, timeout: 6000,
+  });
+  assert.match(JSON.parse(stdout).error, /ETIMEDOUT/);
+  assert.equal(fs.existsSync(termFile), false, "the query must not rely on cooperative SIGTERM cleanup");
+  assert.equal(fs.existsSync(expiredFile), false, "the query must be terminated before its own exit timer");
+  const pid = Number(fs.readFileSync(pidFile, "utf8"));
+  assert.ok(Number.isInteger(pid) && pid > 0);
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+});
+
+test("a visibility timeout keeps the same candidate reusable without republishing accepted bytes", async (t) => {
+  const { directory, candidate } = candidateFixture(t);
+  const candidateBytes = fs.readFileSync(path.join(directory, "candidate.json"));
+  const remote = registry(candidate);
+  const first = candidate.packages[0];
+  remote.override = (args) => args[0] === "view" && args[1] === `${first.name}@${first.version}` ? missing() : undefined;
+  await assert.rejects(publish(candidate, directory, remote.options), /not visible within 180s/);
+  assert.equal(remote.elapsed, 180000);
+  assert.deepEqual(remote.calls.filter((args) => args[0] === "publish").map((args) => path.basename(args[1])), [first.filename]);
+  assert.equal(remote.versions.get(first.name), first.integrity, "upload succeeded even though the view endpoint lagged");
+  assert.ok([...remote.latest.values()].every((value) => value === "0.22.1"));
+
+  remote.override = null;
+  remote.calls.length = 0;
+  await publish(candidate, directory, remote.options);
+  assert.deepEqual(remote.calls.filter((args) => args[0] === "publish").map((args) => args[1]),
+    candidate.packages.slice(1).map((entry) => path.join(directory, entry.filename)));
+  assert.equal(remote.calls.some((args) => args[0] === "dist-tag"), false);
+  assert.deepEqual(fs.readFileSync(path.join(directory, "candidate.json")), candidateBytes);
+  for (const entry of candidate.packages) assert.equal(remote.versions.get(entry.name), fileIntegrity(path.join(directory, entry.filename)));
 });
 
 test("a local candidate changed after registry preflight is not published", async (t) => {

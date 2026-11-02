@@ -41,6 +41,8 @@ preflight 要求 clean HEAD、精确 tag 和六包版本相同。build 从该 co
 
 registry 查询解析器兼容 `view --json` 的字符串和单元素数组，多结果或其他错误结构拒绝。缺失 latest 可表示尚未设置该标签；缺失 integrity 不能表示版本不存在，只有失败响应中的结构化 E404 才有此含义，认证、网络及取消错误仍失败。协议测试用隔离本地 registry 调用真实 npm CLI，覆盖有效字段、缺失字段、E404 和 E403；在与发布相同的 npm 工具链执行，避免只用手写返回值验证输出格式。
 
+上传成功与精确版本可查询之间可能存在延迟，不能仅凭 `npm publish` 返回 0 就继续提升 `latest`。每个包的可见性验证使用单调时钟，最多等待 **180 秒**，查询耗时也计入预算；只有结构化 E404 会按 2 秒起步、最多 15 秒的退避间隔重试。这个可见性等待窗口内，每次只读查询的超时不超过 30 秒及剩余预算，超时会终止该查询。认证、网络、取消、异常响应及 integrity 不一致均立即失败，不进入可见性重试。超过期限仍未可见也失败，保留原候选供恢复。
+
 发行顺序为四个平台包 → DSH 插件 → meta，先发布到 `candidate-X-Y-Z`，不立即移动 `latest`。全部精确版本与 integrity 验证通过后，从公开 registry 运行实际安装冒烟；再按相同顺序将 `latest` 提升到此版本，最后复核六包。npm 没有六包 dist-tag 原子事务；入口包最后更新降低不完整依赖对新安装的影响。
 
 CI 的安装测试使用隔离用户目录和 DSH 注册协议桩。它验证包获取、CLI、worker、skills、配置和安装契约，不代表用户 Mac 桌面、真实账号或付费模型调用已通过。
@@ -51,7 +53,7 @@ CI 的安装测试使用隔离用户目录和 DSH 注册协议桩。它验证包
 - **0.27.1 的发行记录：**[第二次发行 run](https://github.com/ckanner/flywheel/actions/runs/41387321980) 的 macOS 验证通过，但 Ubuntu 验证因控制面测试夹具直接覆写状态文件产生半写 JSON 而失败；publish job 跳过，六包均未上传。夹具原子发布和 npm 12 打包协议修复进入 0.27.2，0.27.1 tag 保留不移动。
 - **0.27.2 的发行记录：**[PR #19 CI](https://github.com/ckanner/flywheel/actions/runs/41388914605) 与 [main CI](https://github.com/ckanner/flywheel/actions/runs/41389529756) 均通过。随后预核真实 npm 12 的 `view --json` 发现单值结果变为单元素数组，[第三次发行 run](https://github.com/ckanner/flywheel/actions/runs/41389716920)在 preflight／build 成功后的 verify 阶段主动取消；两个 verify job 与 publish 均取消，没有 npm 上传。这是预防性取消，不是 CI 失败。查询协议修复和一致工具链使用新的统一版本 **0.27.3**，原 tag 不移动；不要重新触发旧 tag 来代替修正版，0.27.3 是否可安装仍以成功的发行工作流和 registry 校验为准。
 - **认证失败：**检查日志显示的可用路径、npm 包 owner、对应 repository／workflow 及 publish／dist-tag 两项授权。首次新包不能仅补已有包的 trust。不要打印、复制到 issue 或提交发布凭证。
-- **部分包已发布：**保留同一 run 的 candidate artifact，在修复外部授权后使用 **Re-run failed jobs**。已有版本必须与原 artifact 的 integrity 一致；不重新构建另一批字节冒充同版本。
+- **部分包已发布或可见性等待超时：**保留同一 run 的 candidate artifact。在精确版本已可查询或外部故障修复后使用 **Re-run failed jobs**；脚本先核对已公开版本的 integrity，与原 artifact 一致才跳过该包，继续剩余包。不要重新运行构建来生成另一批同版本字节，也不要把查询暂未可见直接判断为上传失败或 staged publishing。
 - **安装或提升失败：**此时部分精确版本可能已公开，但 `latest` 尚未全部移动。修复原因后重试原候选；脚本会复核已完成步骤，拒绝覆盖不同 integrity 或回退更新的 latest。
 - **需要改源码：**已公开版本不可重用。先检查哪些包已存在，再安排新的统一版本；不要移动已有 tag 或强行忽略 integrity 检查。原 artifact 丢失也不能凭重新构建推定字节相同。
 

@@ -5,6 +5,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { performance } = require("node:perf_hooks");
 const { PACKAGES, VERSION } = require("./release-preflight.js");
 const { verifyCandidate, fileIntegrity } = require("./release-candidate.js");
 
@@ -28,8 +29,8 @@ function isNotFound(result) {
   return false;
 }
 
-function defaultRunNpm(args) {
-  return spawnSync("npm", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+function defaultRunNpm(args, { timeout = 180000, killSignal = "SIGTERM" } = {}) {
+  return spawnSync("npm", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, killSignal, maxBuffer: 4 * 1024 * 1024 });
 }
 
 function failure(operation, result) {
@@ -95,15 +96,26 @@ function assertLocalBytes(directory, entry) {
 }
 
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const defaultNow = () => performance.now();
+const VISIBILITY_TIMEOUT_MS = 180000;
 
-async function waitForPackage(entry, { runNpm = defaultRunNpm, wait = defaultWait } = {}) {
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const actual = remoteIntegrity(entry, runNpm);
+async function waitForPackage(entry, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow } = {}) {
+  const deadline = now() + VISIBILITY_TIMEOUT_MS;
+  let delay = 2000;
+  for (;;) {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) break;
+    // Only metadata queries use the shortened, hard timeout. Include query
+    // time in the deadline; npm's own fetch retries must not extend the window.
+    const actual = remoteIntegrity(entry, (args) => runNpm(args, { timeout: Math.min(30000, remaining), killSignal: "SIGKILL" }));
     checkIntegrity(entry, actual);
+    const afterQuery = now();
+    if (afterQuery >= deadline) break;
     if (actual !== null) return;
-    if (attempt < 5) await wait(2000);
+    await wait(Math.min(delay, deadline - afterQuery));
+    delay = Math.min(delay * 2, 15000);
   }
-  throw new Error(`Registry version is not visible after publication: ${entry.name}@${entry.version}`);
+  throw new Error(`Registry version is not visible within ${VISIBILITY_TIMEOUT_MS / 1000}s after publication: ${entry.name}@${entry.version}`);
 }
 
 async function verifyRemote(candidate, options = {}) {
@@ -116,7 +128,7 @@ function provenanceFlag(visibility) {
   throw new Error("Publishing requires explicit repository visibility: public or private");
 }
 
-async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = defaultWait, log = console.log, repositoryVisibility } = {}) {
+async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow, log = console.log, repositoryVisibility } = {}) {
   const provenance = provenanceFlag(repositoryVisibility);
   log(`Repository visibility: ${repositoryVisibility}; npm provenance: ${repositoryVisibility === "public" ? "required" : "unsupported for private repositories, explicitly disabled"}`);
   const entries = orderedPackages(candidate);
@@ -146,15 +158,15 @@ async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = de
       if (actual === null) throw failure(`npm publish ${entry.name}`, result);
       checkIntegrity(entry, actual, true);
     }
-    await waitForPackage(entry, { runNpm, wait });
+    await waitForPackage(entry, { runNpm, wait, now });
     log(`Published and verified ${entry.name}@${entry.version} under ${tag}`);
   }
-  await verifyRemote(candidate, { runNpm, wait });
+  await verifyRemote(candidate, { runNpm, wait, now });
   log("All six exact versions are verified; latest is unchanged. Run registry installation tests before promotion.");
 }
 
-async function promote(candidate, { runNpm = defaultRunNpm, wait = defaultWait, log = console.log } = {}) {
-  await verifyRemote(candidate, { runNpm, wait });
+async function promote(candidate, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow, log = console.log } = {}) {
+  await verifyRemote(candidate, { runNpm, wait, now });
   const entries = orderedPackages(candidate);
   for (const entry of entries) checkLatest(entry, runNpm);
   // Dependencies first, public entry last. npm has no multi-package dist-tag
