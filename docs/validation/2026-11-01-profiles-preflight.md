@@ -54,6 +54,8 @@ CLI 新增真实子进程信号测试：config inspect、doctor、control config
 4. 旧 status 读取可能创建全局配置，现使用 LoadReadOnly。
 5. 严格配置解析保留旧 `invalid JSON` 错误前缀；原测试中把 harness 名写进 drivers 的 fixture 改为明确 real，仍验证缺环境变量时 fail-loud AUTH。
 
+[PR #14 的首轮 CI](https://github.com/ckanner/flywheel/actions/runs/41369336819) 在 Ubuntu 完整通过；macOS 暴露了新 CLI fixture 的路径假设：测试期望 `/var/...`，而控制协议正确返回解析后的 `/private/var/...`。后续修复只将 fixture 的期望路径规范化，并新增 `TestDiagnosticCLIUsesPhysicalTaskIdentity`：通过真实仓库符号链接调用 config／doctor，检查响应中的 taskDir、cwd 和嵌套诊断身份一致且不创建 state。生产路径语义、失败断言和覆盖率门禁保持不变。修复后的定向回归和完整 `make quality-gate` 再次通过，独立只读复审未发现阻断问题。最终双平台结果以 PR 最新提交的 Checks 为准。
+
 README、设计、Mac 教程、配置指南、插件 README／PROTOCOL 和 new/run/status 三项 skills 已同步。skills 仍是校验、CLI 调用和结果解释，不实现第二套调度、重试或状态写入。
 
 外部 Codex Pro 交接文档重新固定到 `21fd7ac...`／0.7.0，区分已经修复的启动 deadline、内部 usage／receipt，以及仍阻断公开消费的有效配置、权限、完整收据和进程所有权问题。该外仓只读审计，没有在 Flywheel 内通过非公开 import 或嵌套父模型冒充接入；独立 Codex CLI 路径继续可用。

@@ -21,7 +21,10 @@ import (
 func diagnosticCLIFixture(t *testing.T) (string, string) {
 	t.Helper()
 	t.Setenv("FLYWHEEL_CONFIG", filepath.Join(t.TempDir(), "not-created", "flywheel.config.json"))
-	taskDir := newCLISandbox(t)
+	// CLI responses identify physical directories, including macOS temporary
+	// paths where /var and /private/var name the same task.
+	taskDir, err := filepath.EvalSymlinks(newCLISandbox(t))
+	require.NoError(t, err)
 	root := filepath.Dir(filepath.Dir(taskDir))
 	raw, err := os.ReadFile(filepath.Join(taskDir, "flywheel.config.json"))
 	require.NoError(t, err)
@@ -33,6 +36,28 @@ func diagnosticCLIFixture(t *testing.T) (string, string) {
 	cfg["loops"].(map[string]any)["plan"] = map[string]any{"profile": "flash", "resident-session": false}
 	writeFileCli(t, filepath.Join(taskDir, "flywheel.config.json"), mustJSONT(t, cfg))
 	return root, taskDir
+}
+
+func TestDiagnosticCLIUsesPhysicalTaskIdentity(t *testing.T) {
+	root, taskDir := diagnosticCLIFixture(t)
+	alias := filepath.Join(t.TempDir(), "repo alias")
+	require.NoError(t, os.Symlink(root, alias))
+	aliasTask := filepath.Join(alias, "docs", "clitask")
+	for _, action := range []string{"config", "doctor"} {
+		code, reply := runControlTest(t, action, aliasTask, alias)
+		require.Zero(t, code, "%+v", reply)
+		assert.Equal(t, taskDir, reply.TaskDir)
+		view := reply.Configuration
+		if action == "doctor" {
+			require.NotNil(t, reply.Diagnostic)
+			assert.Equal(t, taskDir, reply.Diagnostic.TaskDir)
+			view = reply.Diagnostic.Configuration
+		}
+		require.NotNil(t, view)
+		assert.Equal(t, root, view.Cwd)
+		assert.Equal(t, taskDir, view.TaskDir)
+	}
+	assert.NoFileExists(t, filepath.Join(taskDir, "state.json"))
 }
 
 func TestConfigInspectCommandResolvesProfilesAndDoesNotWrite(t *testing.T) {
