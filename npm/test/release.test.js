@@ -10,7 +10,7 @@ const { execFileSync, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { PACKAGES, META, PLUGIN, validatePackages, preflight, parseArgs: parsePreflight } = require("../../scripts/release-preflight.js");
 const { filenameFor, fileIntegrity, verifyCandidate } = require("../../scripts/release-candidate.js");
-const { snapshot } = require("../../scripts/release-build.js");
+const { parsePackOutput, snapshot } = require("../../scripts/release-build.js");
 const { compareVersions, isNotFound, readValue, publish, promote, verifyLatest, waitForPackage, parseArgs } = require("../../scripts/release-publish.js");
 
 const VERSION = "0.27.0";
@@ -153,6 +153,56 @@ test("source snapshots preserve modes and symlinks without copying ignored files
   fs.writeFileSync(path.join(root, "executable"), "changed");
   assert.notEqual(snapshot(root), first);
   assert.equal(fs.readFileSync(path.join(destination, "executable"), "utf8"), "#!/bin/sh\n");
+});
+
+test("npm pack accepts the npm 11 array and npm 12 name-keyed single-package protocols", () => {
+  const packed = { name: META, version: VERSION, filename: filenameFor(META, VERSION) };
+  for (const result of [[packed], { [META]: packed }]) {
+    assert.deepEqual(parsePackOutput(JSON.stringify(result), META, VERSION), packed);
+  }
+});
+
+test("npm pack rejects malformed output, ambiguous package sets and wrong map keys", () => {
+  const packed = { name: META, version: VERSION, filename: filenameFor(META, VERSION) };
+  for (const result of [null, true, 1, "package.tgz", [], {}, packed, [null], [packed, packed],
+    { wrong: packed }, { [META]: packed, extra: packed }, { [META]: null }, { [META]: [packed] }]) {
+    assert.throws(() => parsePackOutput(JSON.stringify(result), META, VERSION), /Unexpected npm pack output/);
+  }
+  for (const raw of ["", "not JSON", JSON.stringify([packed]) + "\n{}"]) {
+    assert.throws(() => parsePackOutput(raw, META, VERSION), /invalid JSON/);
+  }
+});
+
+test("npm pack requires the exact name, version and basename in either protocol", () => {
+  const filename = filenameFor(META, VERSION);
+  for (const change of [{ name: PLUGIN }, { name: undefined }, { version: "0.1.0" }, { version: undefined },
+    { filename: undefined }, { filename: `../${filename}` }, { filename: `./${filename}` },
+    { filename: `/tmp/${filename}` }, { filename: `${filename}.extra` }]) {
+    const packed = { name: META, version: VERSION, filename, ...change };
+    for (const result of [[packed], { [META]: packed }]) {
+      assert.throws(() => parsePackOutput(JSON.stringify(result), META, VERSION), /Unexpected npm pack output/);
+    }
+  }
+});
+
+test("real offline npm pack output identifies the artifact whose bytes are verified", (t) => {
+  const root = temporary(t);
+  const source = path.join(root, "source"), destination = path.join(root, "packages");
+  fs.mkdirSync(source); fs.mkdirSync(destination);
+  const name = "@flywheel-release-test/pack";
+  fs.writeFileSync(path.join(source, "package.json"), JSON.stringify({ name, version: VERSION, files: ["content.txt"] }));
+  fs.writeFileSync(path.join(source, "content.txt"), "local npm pack protocol fixture\n");
+  const config = path.join(root, "npmrc"), globalConfig = path.join(root, "global-npmrc");
+  fs.writeFileSync(config, ""); fs.writeFileSync(globalConfig, "");
+  const raw = execFileSync("npm", ["pack", "--ignore-scripts", "--offline", "--json", "--pack-destination", destination,
+    "--userconfig", config, "--globalconfig", globalConfig, "--cache", path.join(root, "cache")], {
+    cwd: source, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000,
+  });
+  const packed = parsePackOutput(raw, name, VERSION);
+  const file = path.join(destination, packed.filename);
+  assert.deepEqual(fs.readdirSync(destination), [filenameFor(name, VERSION)]);
+  assert.equal(packed.size, fs.statSync(file).size);
+  assert.equal(packed.integrity, fileIntegrity(file));
 });
 
 test("candidate verifies actual tar manifests, exact source and clean source policy", (t) => {

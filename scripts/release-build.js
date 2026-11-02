@@ -14,6 +14,22 @@ function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
+function parsePackOutput(raw, name, version) {
+  let result;
+  try { result = JSON.parse(raw); }
+  catch { throw new Error(`Unexpected npm pack output for ${name}: invalid JSON`); }
+  let packed;
+  // npm 11 returns an array; npm 12 keys each result by package name.
+  if (Array.isArray(result) && result.length === 1) packed = result[0];
+  else if (result && typeof result === "object" && !Array.isArray(result) &&
+      Object.keys(result).length === 1 && Object.hasOwn(result, name)) packed = result[name];
+  if (!packed || typeof packed !== "object" || Array.isArray(packed) ||
+      packed.name !== name || packed.version !== version || packed.filename !== filenameFor(name, version)) {
+    throw new Error(`Unexpected npm pack output for ${name}`);
+  }
+  return packed;
+}
+
 // Capture actual source, including new development files but excluding ignored
 // build products. CI release candidates must additionally have a clean HEAD.
 function snapshot(root, destination) {
@@ -65,11 +81,10 @@ function build(root, version, output) {
     }
     const entries = [];
     for (const entry of PACKAGES) {
-      const result = JSON.parse(execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", packages], {
+      const result = execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", packages], {
         cwd: path.join(source, entry.directory), encoding: "utf8", stdio: ["ignore", "pipe", "inherit"],
-      }));
-      const filename = filenameFor(entry.name, version);
-      if (result.length !== 1 || result[0].filename !== filename) throw new Error(`Unexpected npm pack output for ${entry.name}`);
+      });
+      const { filename } = parsePackOutput(result, entry.name, version);
       const file = path.join(packages, filename);
       entries.push({ name: entry.name, version, filename, bytes: fs.statSync(file).size, integrity: fileIntegrity(file) });
     }
@@ -102,4 +117,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { snapshot, build };
+module.exports = { parsePackOutput, snapshot, build };

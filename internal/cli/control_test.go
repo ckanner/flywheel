@@ -21,6 +21,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Match the engine's atomic publication: polling must see either no file or
+// the complete fixture bytes, including intentionally malformed JSON. Keeping
+// the bytes unchanged also preserves the fixture's initial revision.
+func writeControlFixtureFile(path string, data []byte) {
+	tmp := fmt.Sprintf("%s.fixture-%d", path, os.Getpid())
+	defer os.Remove(tmp)
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		panic(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		panic(err)
+	}
+}
+
 // A real subprocess of this test binary implements lifecycle cases. It never
 // contacts a model. The real-run scenario exercises the actual mock engine too.
 func controlChildHelperMain() int {
@@ -32,7 +46,7 @@ func controlChildHelperMain() int {
 	if scenario == "real-run" {
 		return Execute()
 	}
-	_ = os.WriteFile(filepath.Join(taskDir, "fixture.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
+	writeControlFixtureFile(filepath.Join(taskDir, "fixture.pid"), []byte(strconv.Itoa(os.Getpid())))
 	fmt.Println("fixture stdout")
 	fmt.Fprintln(os.Stderr, "fixture stderr")
 	switch scenario {
@@ -42,7 +56,7 @@ func controlChildHelperMain() int {
 	case "start-fail":
 		return 2
 	case "bad-state":
-		_ = os.WriteFile(filepath.Join(taskDir, "state.json"), []byte("{broken"), 0o600)
+		writeControlFixtureFile(filepath.Join(taskDir, "state.json"), []byte("{broken"))
 		return 0
 	case "bad-pid":
 		release, err := machine.AcquireRunLease(taskDir)
@@ -50,12 +64,12 @@ func controlChildHelperMain() int {
 			return 2
 		}
 		defer release()
-		_ = os.WriteFile(machine.PidFile(taskDir), []byte("{broken"), 0o600)
+		writeControlFixtureFile(machine.PidFile(taskDir), []byte("{broken"))
 		time.Sleep(150 * time.Millisecond)
 		return 0
 	case "completed", "escalated":
 		status := scenario
-		_ = os.WriteFile(filepath.Join(taskDir, "state.json"), []byte(strings.Replace(cliStateFixture, `"status": "running"`, `"status": "`+status+`"`, 1)), 0o600)
+		writeControlFixtureFile(filepath.Join(taskDir, "state.json"), []byte(strings.Replace(cliStateFixture, `"status": "running"`, `"status": "`+status+`"`, 1)))
 		if scenario == "escalated" {
 			return 3
 		}
@@ -69,10 +83,10 @@ func controlChildHelperMain() int {
 	term := make(chan os.Signal, 1)
 	signal.Notify(term, syscall.SIGTERM)
 	defer signal.Stop(term)
-	_ = os.WriteFile(filepath.Join(taskDir, "state.json"), []byte(cliStateFixture), 0o600)
+	writeControlFixtureFile(filepath.Join(taskDir, "state.json"), []byte(cliStateFixture))
 	token := "fixture-" + strconv.Itoa(os.Getpid())
 	payload, _ := json.Marshal(machine.RunControl{PID: os.Getpid(), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ControlToken: token})
-	_ = os.WriteFile(machine.PidFile(taskDir), payload, 0o600)
+	writeControlFixtureFile(machine.PidFile(taskDir), payload)
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
 waitForRequest:
@@ -93,7 +107,7 @@ waitForRequest:
 	}
 	// Hold both PID and lease through simulated managed-child cleanup.
 	time.Sleep(100 * time.Millisecond)
-	_ = os.WriteFile(filepath.Join(taskDir, "cleanup-complete"), []byte("yes"), 0o600)
+	writeControlFixtureFile(filepath.Join(taskDir, "cleanup-complete"), []byte("yes"))
 	_ = os.Remove(machine.PidFile(taskDir))
 	_ = os.Remove(machine.StopRequestFile(taskDir))
 	return 143
