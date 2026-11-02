@@ -343,3 +343,5 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 Actions artifact 和本地 tarball 是构建／审查产物，不代表 npm 已发布，也不是已签名、公证的 Mac 安装程序。备用分发时必须保留同版本依赖，并选择正确平台；单独拿一个 meta tarball 不能证明所有可选平台依赖已在离线缓存。普通 npm 安装完成且依赖齐全后，CLI 与内嵌 skills 不需要下载源码；首次包获取、DSH 插件注册和实际模型调用各自仍有网络需求。
 
 开发者可使用 `flywheel install-skills --link` 链接源码中的 skills；这是明确的开发模式，不是发布安装流程。源码、独立 Go 二进制或自定义 worker 的接入见[插件文档](../plugins/dsh/README.md)，不得将本机协议桩通过写成用户 Mac 或真实账号通过。
+
+维护者发布到 npm 的认证配置、六包顺序和失败恢复见[发行指南](releasing.md)。普通安装者不需要 npm 发布权限，也不需要配置 GitHub OIDC。
