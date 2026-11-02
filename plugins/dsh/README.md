@@ -2,7 +2,7 @@
 
 目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包只提供桌面操作入口和原生 SDK 执行通道。无需 alpha、OAR、Forge 或一直活着的父智能体。
 
-完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.27.2 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 核对实际版本；旧 0.22.1 没有本教程使用的 `install`、DSH 控制入口和 worker。0.27.0 与 0.27.1 未发行到 npm，详情见[发行记录与失败恢复](../../docs/releasing.md#3-失败恢复)。
+完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.27.3 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。
 
 ## 提供什么
 
@@ -155,7 +155,7 @@ npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
 
-`build:npm` 在隔离源码副本中构建 worker 和四个平台 Go 二进制，输出六个同版本 npm 包与候选校验记录，包含 `ckanner-dsh-plugin-flywheel-0.27.2.tgz`。所有包的许可沿用仓库 `UNLICENSED`。tarball／Actions artifact 用于开发或备用验证；正式发布必须使用已经过门禁与真实 npm 安装测试的同一候选，不能在测试后重新编译再发布。上述测试不调用真实模型，也不使用用户账号或桌面 profile。
+`build:npm` 在隔离源码副本中构建 worker 和四个平台 Go 二进制，输出六个同版本 npm 包与候选校验记录，包含 `ckanner-dsh-plugin-flywheel-0.27.3.tgz`。所有包的许可沿用仓库 `UNLICENSED`。tarball／Actions artifact 用于开发或备用验证；正式发布必须使用已经过门禁与真实 npm 安装测试的同一候选，不能在测试后重新编译再发布。上述测试不调用真实模型，也不使用用户账号或桌面 profile。
 
 ## 实现依据
 

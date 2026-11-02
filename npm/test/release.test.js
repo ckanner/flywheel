@@ -261,41 +261,88 @@ test("npm absence is only structured E404; authentication, network and cancellat
   assert.throws(() => readValue([META], () => ok({ error: { code: "E404" } })), /Unexpected response/);
 });
 
+test("npm view accepts legacy scalars and npm 12 single-scalar arrays", () => {
+  for (const value of [VERSION, `sha512-${Buffer.alloc(64).toString("base64")}`]) {
+    for (const response of [value, [value]]) assert.equal(readValue([META], () => ok(response)), value);
+  }
+});
+
+test("npm view rejects ambiguous arrays, nesting and non-scalar fields", () => {
+  for (const value of [[VERSION, VERSION], [[VERSION]], [true], [1], [{}], true, 1, {}]) {
+    for (const allowMissingValue of [false, true]) {
+      assert.throws(() => readValue([META], () => ok(value), { allowMissingValue }), /Unexpected response/);
+    }
+  }
+});
+
+test("npm view missing values are allowed only for explicitly optional fields", () => {
+  for (const value of [undefined, null, [], [null]]) {
+    assert.throws(() => readValue([META], () => ok(value)), /Missing registry value/);
+    assert.equal(readValue([META], () => ok(value), { allowMissingValue: true }), null);
+  }
+});
+
 test("a successful empty integrity response never permits publication, while a missing latest tag is allowed", async (t) => {
   const { directory, candidate } = candidateFixture(t);
-  for (const value of [undefined, null, ""]) {
+  for (const value of [undefined, null, "", [], [null], [""]]) {
     const remote = registry(candidate);
     remote.override = (args) => args[0] === "view" && args[2] === "dist.integrity" ? ok(value) : undefined;
     await assert.rejects(publish(candidate, directory, remote.options), /Missing registry value|Invalid registry integrity/);
     assert.equal(remote.calls.filter((args) => args[0] !== "view").length, 0);
   }
-  const remote = registry(candidate);
-  remote.override = (args) => args[0] === "view" && args[2] === "dist-tags.latest" ? ok() : undefined;
-  await publish(candidate, directory, remote.options);
-  assert.equal(remote.calls.filter((args) => args[0] === "publish").length, 6);
+  for (const value of [undefined, null, [], [null]]) {
+    const remote = registry(candidate);
+    remote.override = (args) => args[0] === "view" && args[2] === "dist-tags.latest" ? ok(value) : undefined;
+    await publish(candidate, directory, remote.options);
+    assert.equal(remote.calls.filter((args) => args[0] === "publish").length, 6);
+  }
 });
 
-test("real npm view distinguishes an absent package from a forbidden registry", async (t) => {
+test("real npm view preserves scalar, missing-field and registry-error semantics", async (t) => {
   const root = temporary(t);
   const config = path.join(root, "npmrc"); fs.writeFileSync(config, "");
   const globalConfig = path.join(root, "global-npmrc"); fs.writeFileSync(globalConfig, "");
+  const integrity = `sha512-${Buffer.alloc(64).toString("base64")}`;
+  const requests = [];
   const server = http.createServer((req, res) => {
-    const forbidden = req.url.includes("forbidden");
-    res.writeHead(forbidden ? 403 : 404, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: forbidden ? "forbidden" : "not found" }));
+    requests.push(req.method);
+    const name = decodeURIComponent(req.url.slice(1));
+    const forbidden = name.endsWith("/forbidden"), missing = name.endsWith("/missing-package");
+    if (forbidden || missing) {
+      res.writeHead(forbidden ? 403 : 404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: forbidden ? "forbidden" : "not found" }));
+      return;
+    }
+    const tags = name.endsWith("/missing-latest") ? { "candidate-0-27-0": VERSION } : { latest: VERSION };
+    const dist = name.endsWith("/missing-integrity") ? {} : { integrity };
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ name, "dist-tags": tags, versions: { [VERSION]: { name, version: VERSION, dist } } }));
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   t.after(() => new Promise((resolve) => server.close(resolve)));
-  for (const [name, absent] of [["missing", true], ["forbidden", false]]) {
+  for (const [name, field, expected, error, absent] of [
+    ["complete", "dist-tags.latest", VERSION],
+    ["complete", "dist.integrity", integrity],
+    ["missing-latest", "dist-tags.latest", null],
+    ["missing-integrity", "dist.integrity", undefined, /Missing registry value/],
+    ["missing-package", "dist.integrity", null, undefined, true],
+    ["forbidden", "dist.integrity", undefined, /npm view/],
+  ]) {
+    const spec = `@flywheel-release-test/${name}${field === "dist.integrity" ? `@${VERSION}` : ""}`;
     let result;
     try {
-      const output = await promisify(execFile)("npm", ["view", `@flywheel-release-test/${name}@0.27.0`, "dist.integrity", "--json",
+      const output = await promisify(execFile)("npm", ["view", spec, field, "--json", "--prefer-online",
         "--registry", `http://127.0.0.1:${server.address().port}`, "--userconfig", config, "--globalconfig", globalConfig,
         "--cache", path.join(root, "cache"), "--fetch-retries", "0"], { cwd: root, timeout: 15000 });
       result = { status: 0, ...output };
     } catch (error) { result = { status: error.code, stdout: error.stdout, stderr: error.stderr, signal: error.signal }; }
-    assert.equal(isNotFound(result), absent, JSON.stringify(result));
+    assert.equal(isNotFound(result), absent === true, JSON.stringify(result));
+    const read = () => readValue([spec, field], () => result, { allowMissingValue: field === "dist-tags.latest" });
+    if (error) assert.throws(read, error);
+    else assert.equal(read(), expected);
   }
+  assert.ok(requests.length >= 6);
+  assert.ok(requests.every((method) => method === "GET"), "registry protocol tests are read-only");
 });
 
 test("publishing uses exact dependencies first and never advances latest; retries verify existing bytes", async (t) => {
@@ -312,6 +359,22 @@ test("publishing uses exact dependencies first and never advances latest; retrie
   remote.calls.length = 0;
   await publish(candidate, directory, remote.options);
   assert.equal(remote.calls.filter((args) => args[0] !== "view").length, 0);
+});
+
+test("npm 12 scalar arrays preserve exact-version verification and latest promotion", async (t) => {
+  const { directory, candidate } = candidateFixture(t);
+  const remote = registry(candidate);
+  const runNpm = remote.runNpm;
+  remote.options.runNpm = (args) => {
+    const result = runNpm(args);
+    return args[0] === "view" && result.status === 0 ? ok([JSON.parse(result.stdout)]) : result;
+  };
+  await publish(candidate, directory, remote.options);
+  assert.ok([...remote.latest.values()].every((value) => value === "0.22.1"));
+  await promote(candidate, remote.options);
+  verifyLatest(candidate, remote.options);
+  assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
+    candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
 });
 
 test("a conflicting existing version or newer latest blocks every publish before mutation", async (t) => {
