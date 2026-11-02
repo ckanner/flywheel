@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/dsh-plugin-flywheel",
-  "version": "0.27.0",
+  "version": "0.27.1",
   "description": "Flywheel engine controls and an owned native DSH SDK worker",
   "type": "module",
   "license": "UNLICENSED",

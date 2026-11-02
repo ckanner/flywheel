@@ -104,7 +104,7 @@ function registry(candidate, { populated = false } = {}) {
     }
     throw new Error(`Unexpected npm call: ${args.join(" ")}`);
   };
-  state.options = { runNpm: state.runNpm, wait: async () => {}, log: () => {} };
+  state.options = { runNpm: state.runNpm, wait: async () => {}, log: () => {}, repositoryVisibility: "public" };
   return state;
 }
 
@@ -275,6 +275,36 @@ test("a conflicting existing version or newer latest blocks every publish before
   }
 });
 
+test("private repository publication disables automatic provenance without changing candidate bytes or latest", async (t) => {
+  const { directory, candidate } = candidateFixture(t);
+  const remote = registry(candidate);
+  remote.override = (args) => {
+    if (args[0] === "publish" && !args.includes("--provenance=false")) {
+      return { status: 1, stdout: "", stderr: "provenance requires a public source repository" };
+    }
+  };
+  await publish(candidate, directory, { ...remote.options, repositoryVisibility: "private" });
+  const writes = remote.calls.filter((args) => args[0] === "publish");
+  assert.equal(writes.length, PACKAGES.length);
+  for (const entry of candidate.packages) assert.equal(remote.versions.get(entry.name), entry.integrity);
+  assert.ok([...remote.latest.values()].every((value) => value === "0.22.1"));
+  // The explicit command-line flag must override even an enabled npm default.
+  const flags = writes[0].filter((arg) => arg.startsWith("--provenance"));
+  const actual = execFileSync("npm", ["config", "get", "provenance", ...flags], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NPM_CONFIG_PROVENANCE: "true" },
+  }).trim();
+  assert.equal(actual, "false");
+});
+
+test("unknown repository visibility fails before any registry request", async (t) => {
+  const { directory, candidate } = candidateFixture(t);
+  for (const visibility of [undefined, "", "unknown", "PRIVATE", true]) {
+    const remote = registry(candidate);
+    await assert.rejects(publish(candidate, directory, { ...remote.options, repositoryVisibility: visibility }), /explicit repository visibility/);
+    assert.equal(remote.calls.length, 0);
+  }
+});
+
 test("an uncertain publish response succeeds only when registry bytes match", async (t) => {
   const { directory, candidate } = candidateFixture(t);
   const remote = registry(candidate);
@@ -369,5 +399,10 @@ test("release commands reject incomplete or unsafe options", () => {
   assert.throws(() => parsePreflight(["--tag"]));
   assert.throws(() => parsePreflight(["--force"]));
   assert.equal(parseArgs(["verify-candidate", "--directory", "some dir", "--source-sha", SHA, "--allow-dirty"]).allowDirty, true);
+  const publishArgs = ["publish", "--directory", "some dir", "--source-sha", SHA];
+  for (const visibility of ["public", "private"]) assert.equal(parseArgs([...publishArgs, "--repository-visibility", visibility])["repository-visibility"], visibility);
+  assert.throws(() => parseArgs(publishArgs), /explicit repository visibility/);
+  assert.throws(() => parseArgs([...publishArgs, "--repository-visibility", "unknown"]), /explicit repository visibility/);
+  assert.throws(() => parseArgs(["promote", "--directory", "some dir", "--source-sha", SHA, "--repository-visibility", "private"]));
   for (const args of [[], ["publish"], ["publish", "--directory", "some dir", "--source-sha", SHA, "--allow-dirty"], ["promote", "--directory", "--source-sha", SHA]]) assert.throws(() => parseArgs(args));
 });

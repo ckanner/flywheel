@@ -104,7 +104,15 @@ async function verifyRemote(candidate, options = {}) {
   for (const entry of orderedPackages(candidate)) await waitForPackage(entry, options);
 }
 
-async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = defaultWait, log = console.log } = {}) {
+function provenanceFlag(visibility) {
+  if (visibility === "public") return "--provenance";
+  if (visibility === "private") return "--provenance=false";
+  throw new Error("Publishing requires explicit repository visibility: public or private");
+}
+
+async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = defaultWait, log = console.log, repositoryVisibility } = {}) {
+  const provenance = provenanceFlag(repositoryVisibility);
+  log(`Repository visibility: ${repositoryVisibility}; npm provenance: ${repositoryVisibility === "public" ? "required" : "unsupported for private repositories, explicitly disabled"}`);
   const entries = orderedPackages(candidate);
   // Validate every existing version and channel before the first mutation.
   const existing = new Map();
@@ -123,7 +131,7 @@ async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = de
     }
     checkLatest(entry, runNpm);
     const file = assertLocalBytes(directory, entry);
-    const result = runNpm(["publish", file, "--access", "public", "--ignore-scripts", "--provenance", "--tag", tag]);
+    const result = runNpm(["publish", file, "--access", "public", "--ignore-scripts", provenance, "--tag", tag]);
     if (abnormalExit(result)) throw failure(`npm publish ${entry.name}`, result);
     if (result.status !== 0) {
       // A network failure may happen after npm accepted the package. Only its
@@ -167,10 +175,12 @@ function parseArgs(argv) {
   const options = { operation };
   for (let i = 0; i < args.length; i++) {
     if (["--directory", "--source-sha"].includes(args[i]) && args[i + 1] && !args[i + 1].startsWith("--")) options[args[i].slice(2)] = args[++i];
+    else if (args[i] === "--repository-visibility" && operation === "publish" && args[i + 1]) options["repository-visibility"] = args[++i];
     else if (args[i] === "--allow-dirty" && operation === "verify-candidate") options.allowDirty = true;
     else throw new Error(`Unknown or incomplete argument: ${args[i]}`);
   }
   if (!options.directory || !/^[0-9a-f]{40}$/.test(options["source-sha"] ?? "")) throw new Error("--directory and exact --source-sha are required");
+  if (operation === "publish") provenanceFlag(options["repository-visibility"]);
   return options;
 }
 
@@ -178,7 +188,7 @@ async function main(argv) {
   const options = parseArgs(argv);
   const directory = path.resolve(options.directory);
   const candidate = verifyCandidate(directory, { sourceSHA: options["source-sha"], allowDirty: options.allowDirty });
-  if (options.operation === "publish") await publish(candidate, directory);
+  if (options.operation === "publish") await publish(candidate, directory, { repositoryVisibility: options["repository-visibility"] });
   else if (options.operation === "promote") await promote(candidate);
   else if (options.operation === "verify-latest") verifyLatest(candidate);
   console.log(`${options.operation}: verified ${candidate.version}, source ${candidate.source.commit}`);

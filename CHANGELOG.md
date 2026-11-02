@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.27.1
+
+修复私有 GitHub 仓库的 npm 发行路径。`v0.27.0` 的首个 publish run 在上传前因裸 `git fetch` 缺少认证而停止，未发布任何 0.27.0 npm 包；该 tag 保留为源码和验证记录，不移动。0.27.1 是统一的修正版发行目标，是否可安装仍以 registry 及发行工作流为准。
+
+- 发布 job 在工具链准备后，通过官方 checkout 的短暂只读认证刷新 source 与完整 refs，随后下载候选并检查精确 tag；不再执行凭证已清理后的远端 fetch。
+- 发布命令要求显式仓库可见性。public 保留 provenance；private 使用 `--provenance=false`，符合 npm 不支持私有源码仓库证明的限制，未知值在 registry 请求前失败。仓库可见性、六包 integrity、完整门禁和 latest 提升顺序不变。
+- 增加私有仓库发布协议回归，实测显式参数覆盖 npm 环境默认值；六包、锁文件、构建入口和当前用户教程同步到 0.27.1。
+
 ## 0.27.0
 
 DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录对应版本的源码变更，不单独证明 npm 已发布或用户 Mac 已验收；用 `npm view @ckanner/flywheel version` 核对实际发行。旧 0.22.1 不包含本节新增安装和 DSH 接口。安装与迁移见 [入门教程](docs/getting-started.md)。
