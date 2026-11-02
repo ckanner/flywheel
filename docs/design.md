@@ -238,4 +238,6 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 GitHub Actions 的 publish job 使用固定 Node/npm 发行工具链，支持 OIDC trusted publishing 及已有 `NPM_TOKEN` 后备。无 token 时显式使用空 user npmrc，避免 setup-node 的认证占位配置；不在日志或 GitHub 环境文件中写入凭证。六个包各自的 npm trusted publisher 都必须对应 `ckanner/flywheel` 的 `publish.yml`，并分别允许直接 publish 与 dist-tag；GitHub 登录或 `id-token: write` 本身不授予 npm 包写权限。维护者配置和失败恢复见 [发行指南](releasing.md)。
 
+私有仓库的发行同样经过完整门禁。发布 job 在准备 npm 后，由官方 checkout 使用短暂的只读 GitHub 认证重新取得完整 refs，固定到已验证 source，再下载候选并检查精确 tag；后续不执行无凭证的远端 fetch。仓库可见性由 GitHub 事件显式传给 publisher，未知值拒绝发布。public 要求 npm provenance，private 显式关闭 npm 不支持的证明生成；这只记录 registry 的能力边界，不改变仓库可见性，也不取消本项目的 source／artifact integrity 校验。
+
 首次安装与小任务演练见 [入门教程](getting-started.md)。主入口、SDK profile、worker 协议和本机验收步骤见 [插件说明](../plugins/dsh/README.md) 与 [协议](../plugins/dsh/PROTOCOL.md)。历史研究引用保留在 [旧设计附录](design-history-v0.24.md)，其模型/价格/订阅额度只属于当时记录。

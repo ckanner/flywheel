@@ -138,11 +138,6 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.preflight.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           # npm 12.2.1 supports both publish and dist-tag with OIDC and needs
@@ -167,6 +162,15 @@ jobs:
             printf 'NPM_CONFIG_USERCONFIG=%s\n' "$config" >> "$GITHUB_ENV"
             echo "npm authentication: OIDC trusted publishing, no stored token."
           fi
+      - name: Refresh source and release refs with GitHub authentication
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 obtains all current remote refs using checkout's
+          # short-lived authentication, including for a private repository.
+          # Pin HEAD independently so a moved/deleted tag fails preflight.
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: npm-candidate-${{ github.run_id }}
@@ -176,14 +180,20 @@ jobs:
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: |
-          git fetch --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
           node scripts/release-preflight.js --tag "$RELEASE_TAG"
           node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
       - name: Publish exact dependencies, plugin and meta without moving latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
-        run: node scripts/release-publish.js publish --directory dist-npm --source-sha "$SOURCE_SHA"
+          REPOSITORY_PRIVATE: ${{ toJSON(github.event.repository.private) }}
+        run: |
+          case "$REPOSITORY_PRIVATE" in
+            true) visibility=private ;;
+            false) visibility=public ;;
+            *) echo "Missing or invalid GitHub repository private flag" >&2; exit 1 ;;
+          esac
+          node scripts/release-publish.js publish --directory dist-npm --source-sha "$SOURCE_SHA" --repository-visibility "$visibility"
       - name: Install the exact published version from the public registry
         env:
           FLYWHEEL_NPM_VERSION: ${{ needs.preflight.outputs.version }}
