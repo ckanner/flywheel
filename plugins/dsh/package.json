@@ -1,11 +1,11 @@
 {
   "name": "@ckanner/dsh-plugin-flywheel",
-  "version": "0.27.3",
-  "description": "Flywheel engine controls and an owned native DSH SDK worker",
+  "version": "0.28.0",
+  "description": "Flywheel engine controls with owned DSH SDK and Codex Pro machine workers",
   "type": "module",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.18.0",
     "dsh": "0.2.1-rc.5"
   },
   "exports": {
@@ -13,10 +13,12 @@
     "./client": "./dist/client.js",
     "./worker-policy": "./dist/policy.js",
     "./worker": "./dist/worker.js",
+    "./codex-pro-worker": "./dist/codex-pro-worker.js",
     "./package.json": "./package.json"
   },
   "bin": {
-    "flywheel-dsh-worker": "./dist/worker.js"
+    "flywheel-dsh-worker": "./dist/worker.js",
+    "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js"
   },
   "files": [
     "dist",
@@ -58,6 +60,9 @@
     "test": "npm run build && node --test test/*.test.js",
     "check": "npm test",
     "prepack": "npm run build"
+  },
+  "dependencies": {
+    "dsh-subagent-codex-pro": "0.8.0"
   },
   "devDependencies": {
     "jsdom": "26.1.0",

@@ -106,7 +106,7 @@ async function installation(t) {
   const packageMeta = { ...meta, optionalDependencies: { [`@ckanner/flywheel-${platform}`]: meta.version } };
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify(packageMeta));
   await fs.copyFile(path.join(repository, "npm", "install.js"), path.join(root, "npm", "install.js"));
-  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js"]) {
+  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js"]) {
     await fs.copyFile(path.join(repository, "bin", name), path.join(root, "bin", name));
   }
   const native = path.join(root, "node_modules", "@ckanner", `flywheel-${platform}`);
@@ -115,8 +115,13 @@ async function installation(t) {
   await fs.writeFile(path.join(native, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version: meta.version }));
   await fs.writeFile(path.join(native, "flywheel"), nativeBody, { mode: 0o755 });
   await fs.writeFile(path.join(plugin, "package.json"), JSON.stringify({ name: "@ckanner/dsh-plugin-flywheel", version: meta.version,
-    exports: { "./worker": "./dist/worker.js", "./package.json": "./package.json" } }));
+    exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./package.json": "./package.json" } }));
   await fs.writeFile(path.join(plugin, "dist", "worker.js"), "// No model worker runs during installation.\n");
+  await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.js"), `
+    if (process.argv[2] !== '--doctor') throw new Error('installation must never run a model');
+    console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
+      version: process.env.TEST_ADAPTER_VERSION || '0.8.0', machineProtocol: 1, available: true, inferenceTested: false }));
+  `);
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
   await fs.writeFile(dsh, `#!/usr/bin/env node
 const fs = require("node:fs"); const args = process.argv.slice(2);
@@ -132,6 +137,7 @@ else if (args.includes("list")) console.log(JSON.stringify([{ dependencies: {
   const environment = { ...process.env, HOME: home, PATH: path.dirname(process.execPath), npm_execpath: npm,
     TEST_INSTALL_LOG: log, FLYWHEEL_DSH_BIN: dsh };
   delete environment.FLYWHEEL_DSH_WORKER;
+  delete environment.FLYWHEEL_CODEX_PRO_WORKER;
   const cli = path.join(root, "bin", "flywheel.js");
   function launch(args = [], extraEnvironment = {}) {
     const child = spawn(process.execPath, [cli, "install", ...args], { cwd: directory,
@@ -173,14 +179,28 @@ test("invalid installer arguments return one JSON error without creating install
   await assert.rejects(fs.access(path.join(f.home, ".config")), { code: "ENOENT" });
 });
 
+test('unsupported Node reports the required floor before changing installation state', async t => {
+  const f = await installation(t);
+  const preload = path.join(f.directory, 'unsupported-node.cjs');
+  await fs.writeFile(preload, `Object.defineProperty(process.versions, 'node', { value: '22.17.9' });\n`);
+  const report = resultDocument(await f.launch(f.args, { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` }).exit, 1);
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.length, 0);
+  assert.match(report.error, /Node\.js 22\.18\.0/);
+  await assert.rejects(fs.access(path.join(f.home, '.config')), { code: 'ENOENT' });
+});
+
 test("installer executes special paths literally and repeat setup keeps a stable desktop launcher", { timeout: 15000 }, async t => {
   const f = await installation(t);
   const first = resultDocument(await f.launch(f.args).exit, 0);
   assert.equal(first.ok, true);
   assert.equal(first.ready, true);
   assert.equal(first.authentication, "unknown");
+  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1, inferenceTested: false });
   const record = await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json"));
   assert.equal(record.launcher.path, first.paths.launcher);
+  assert.equal(record.codexProWorker, first.paths.codexProWorker);
+  assert.deepEqual(record.adapter, first.adapter);
   assert.equal(digest(await fs.readFile(record.launcher.path)), record.launcher.sha256);
   assert.equal((await fs.stat(record.launcher.path)).mode & 0o777, 0o755);
   assert.equal((await fs.stat(path.join(f.home, ".config", "flywheel", "installation.json"))).mode & 0o777, 0o600);
@@ -242,6 +262,15 @@ test("DSH reporting a different installed version cannot complete setup", { time
   const report = resultDocument(await f.launch(f.args, { TEST_DSH_LIST_VERSION: "0.0.1" }).exit, 1);
   assert.equal(report.ok, false);
   assert.match(report.error, /exact installed plugin version/);
+});
+
+test('setup rejects an adapter whose installed public API reports another version', async t => {
+  const f = await installation(t);
+  const report = resultDocument(await f.launch(f.args, { TEST_ADAPTER_VERSION: '0.7.0' }).exit, 1);
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.at(-1).name, 'global-cli');
+  assert.match(report.error, /exact public machine API/);
+  assert.ok(!(await f.records()).some(entry => entry.kind === 'dsh'));
 });
 
 test("a skills conflict remains visible and prevents later desktop changes", { timeout: 10000 }, async t => {

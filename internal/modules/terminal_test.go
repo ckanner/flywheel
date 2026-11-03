@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +60,7 @@ func (d *scopedModuleDriver) Intake(a drivers.CallArgs) drivers.Result {
 }
 
 func TestAdviceModulesUseReadOnlyOnCapableHarnesses(t *testing.T) {
-	for _, harness := range []string{"dsh", "codex", "kimi"} {
+	for _, harness := range []string{"dsh", "codex", "codex-pro", "kimi"} {
 		t.Run(harness, func(t *testing.T) {
 			taskDir := t.TempDir()
 			cfg := testConfigT(t, taskDir)
@@ -100,6 +101,29 @@ func TestModuleUnknownUsageRemainsObservableInState(t *testing.T) {
 	}
 	assert.Equal(t, int64(2), unknownUsage)
 	assert.Equal(t, int64(2), unknownCost)
+}
+
+func TestModulePreservesCodexProReceiptAndUnknownBudget(t *testing.T) {
+	taskDir := t.TempDir()
+	writeFileT(t, filepath.Join(taskDir, "state.json"), `{"revision":0,"budget":{"daily":null}}`)
+	cfg := testConfigT(t, taskDir)
+	m := NewContext(CtxOpts{TaskDir: taskDir, Config: cfg})
+	receipt := json.RawMessage(`{"protocol":1,"requestId":"advice","costUSD":null,"costStatus":"unknown","outcome":{"usage":{"status":"partial","run":{"inputTokens":42}},"cleanup":{"confirmed":true}}}`)
+	r := drivers.Result{Harness: "codex-pro", CodexProReceipt: receipt}
+	require.NoError(t, recordModuleMetrics(m, "garden", "model", "subscription", "prompt", r, ""))
+	entries := readMetricsLinesT(t, m.MetricsFile)
+	require.Len(t, entries, 1)
+	encoded, err := json.Marshal(entries[0]["codex-pro-receipt"])
+	require.NoError(t, err)
+	assert.JSONEq(t, string(receipt), string(encoded))
+	assert.Nil(t, entries[0]["provider"])
+	assert.Nil(t, entries[0]["usage"])
+	assert.Nil(t, entries[0]["cost-usd"])
+	st, err := state.Load(taskDir)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), st.Budget.UnknownUsageCalls)
+	assert.Equal(t, int64(1), st.Budget.UnknownCostCalls)
+	assert.Zero(t, st.Budget.Totals.Tokens)
 }
 
 func TestModuleMetricWriteFailureStopsFurtherCalls(t *testing.T) {

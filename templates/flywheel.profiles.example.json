@@ -29,8 +29,8 @@
       "provider": "chatgpt",
       "thinking": "high"
     },
-    "codex": {
-      "harness": "codex",
+    "codex-pro": {
+      "harness": "codex-pro",
       "model": "gpt-6.1-sol",
       "channel": "chatgpt-subscription",
       "thinking": "high"
@@ -46,7 +46,7 @@
   "routes": {
     "default": { "profile": "flash" },
     "frontend": { "profile": "kimi" },
-    "hard": { "profile": "codex" }
+    "hard": { "profile": "codex-pro" }
   },
   "channels": {
     "deepseek-sdk": {

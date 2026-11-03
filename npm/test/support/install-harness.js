@@ -6,6 +6,36 @@ const os = require('node:os');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
+const { capture } = require('../../install.js');
+
+/** Serve the actual published dependency, verified against the source lock. */
+async function runtimeDependency() {
+  const lock = JSON.parse(await fs.readFile(path.resolve(__dirname, '../../../plugins/dsh/package-lock.json'), 'utf8'));
+  const entry = lock.packages?.['node_modules/dsh-subagent-codex-pro'];
+  if (entry?.version !== '0.8.0' || !entry.integrity?.startsWith('sha512-') ||
+      entry.resolved !== 'https://registry.npmjs.org/dsh-subagent-codex-pro/-/dsh-subagent-codex-pro-0.8.0.tgz') {
+    throw new Error('the installation fixture requires the exact locked Codex Pro release');
+  }
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel published dependency '));
+  try {
+    let filename = process.env.FLYWHEEL_CODEX_PRO_TARBALL;
+    if (!filename) {
+      const [npm, args] = npmInvocation();
+      const result = await capture(npm, [...args, 'pack', entry.resolved, '--ignore-scripts', '--json', '--pack-destination', temporary,
+        '--fetch-timeout=30000', '--fetch-retries=0'], { environment: process.env, cwd: temporary, timeoutMs: 60000 });
+      if (result.code !== 0 || result.signal || result.error) throw new Error('could not fetch the locked published Codex Pro tarball: ' + (result.error || result.stderr));
+      filename = path.join(temporary, 'dsh-subagent-codex-pro-0.8.0.tgz');
+    }
+    const data = await fs.readFile(filename);
+    if (`sha512-${crypto.createHash('sha512').update(data).digest('base64')}` !== entry.integrity) throw new Error('published Codex Pro tarball integrity mismatch');
+    const manifest = JSON.parse(execFileSync('tar', ['-xOf', filename, 'package/package.json'], { encoding: 'utf8' }));
+    if (manifest.name !== 'dsh-subagent-codex-pro' || manifest.version !== entry.version || Object.keys(manifest.dependencies || {}).length !== 0) {
+      throw new Error('published Codex Pro dependency identity or dependency graph changed');
+    }
+    return { manifest, entry: { name: manifest.name, version: entry.version, integrity: entry.integrity,
+      filename: 'dsh-subagent-codex-pro-0.8.0.tgz' }, data };
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+}
 
 async function registry(directory) {
   const candidate = JSON.parse(await fs.readFile(path.join(directory, 'candidate.json'), 'utf8'));
@@ -19,6 +49,12 @@ async function registry(directory) {
     packages.set(manifest.name, { manifest, entry, data });
     tarballs.set('/tarballs/' + entry.filename, data);
   }
+  const dependency = await runtimeDependency();
+  if (packages.get('@ckanner/dsh-plugin-flywheel')?.manifest.dependencies?.[dependency.manifest.name] !== dependency.manifest.version) {
+    throw new Error('the candidate plugin does not pin the verified runtime dependency');
+  }
+  packages.set(dependency.manifest.name, dependency);
+  tarballs.set('/tarballs/' + dependency.entry.filename, dependency.data);
   const requests = [];
   let url;
   const server = http.createServer((request, response) => {
@@ -55,8 +91,10 @@ async function environment(registryURL, version) {
     npm_config_registry: registryURL, npm_config_cache: path.join(root, 'npm cache'), npm_config_userconfig: npmrc,
     npm_config_prefix: prefix, npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
     FLYWHEEL_DSH_FIXTURE_LOG: path.join(root, 'dsh-calls.jsonl'), FLYWHEEL_DSH_FIXTURE_VERSION: version };
-  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|NODE_OPTIONS)$/.test(name)) delete env[name];
+  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|CODEX_HOME|NODE_OPTIONS)$/.test(name)) delete env[name];
   env.FLYWHEEL_KIMI_BIN = path.join(root, 'intentionally missing kimi');
+  env.FLYWHEEL_CODEX_BIN = path.join(root, 'intentionally missing codex');
+  env.CODEX_HOME = path.join(home, 'isolated codex');
   const dsh = path.join(fixtures, 'desktop dsh');
   await fs.writeFile(dsh, `#!${process.execPath}\n` + String.raw`
 const fs = require('node:fs');

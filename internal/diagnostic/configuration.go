@@ -143,7 +143,7 @@ func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.
 			permission = "read-only"
 		} else if role == "intake" || role == "garden" {
 			permission = ""
-			if harness == "dsh" || harness == "codex" {
+			if harness == "dsh" || harness == "codex" || harness == "codex-pro" {
 				permission = "read-only"
 			}
 		}

@@ -1,10 +1,10 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
-compatibility: "Requires the Flywheel CLI and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, Codex CLI for hard tasks."
+compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
 arguments: slug packet
 
 ---
@@ -21,6 +21,10 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 
 1. **校验**：`docs/<slug>/` 契约文件齐全。若给了 packet id（如 M02-T03），
    确认对应 `task-packet-*.md` 存在。
+   首次运行或升级后用 `flywheel config inspect --cwd <仓库绝对路径> --task-dir <任务绝对路径> --json`
+   查看有效路由。0.28.0 的 hard 默认是 `codex-pro`，直接使用已安装插件的 machine API；
+   旧配置不自动迁移。不要在 skill 中改用 `codex exec` 或启动父模型再次委派，
+   也不要把 `subagent_codex_pro` 写成 DSH provider。
 2. **调用**（在目标仓库根执行）：
 
    ```bash

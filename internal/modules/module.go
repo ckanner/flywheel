@@ -135,27 +135,28 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		promptHash = metrics.PromptHash(prompt)
 	}
 	entry := map[string]any{
-		"role":            role,
-		"packet-id":       nil,
-		"milestone":       nil,
-		"model":           nilIfEmpty(model),
-		"harness":         nilIfEmpty(result.Harness),
-		"provider":        nilIfEmpty(result.Provider),
-		"channel":         nilIfEmpty(channel),
-		"prompt-hash":     promptHash,
-		"usage":           result.Usage,
-		"cache-hit-rate":  cacheHitRate,
-		"reasoning-chars": result.ReasoningChars,
-		"cost-usd":        costUSD,
-		"duration-ms":     result.DurationMS,
-		"exit-code":       result.ExitCode,
-		"settled":         result.Settled,
-		"cancelled":       result.Cancelled,
-		"timed-out":       result.TimedOut,
-		"truncated":       result.Truncated,
-		"cleanup-error":   nilIfEmpty(result.CleanupError),
-		"error-code":      nilIfEmpty(string(code)),
-		"attempt":         nil,
+		"role":              role,
+		"packet-id":         nil,
+		"milestone":         nil,
+		"model":             nilIfEmpty(model),
+		"harness":           nilIfEmpty(result.Harness),
+		"provider":          nilIfEmpty(result.Provider),
+		"channel":           nilIfEmpty(channel),
+		"prompt-hash":       promptHash,
+		"usage":             result.Usage,
+		"cache-hit-rate":    cacheHitRate,
+		"reasoning-chars":   result.ReasoningChars,
+		"cost-usd":          costUSD,
+		"duration-ms":       result.DurationMS,
+		"exit-code":         result.ExitCode,
+		"settled":           result.Settled,
+		"cancelled":         result.Cancelled,
+		"timed-out":         result.TimedOut,
+		"truncated":         result.Truncated,
+		"cleanup-error":     nilIfEmpty(result.CleanupError),
+		"error-code":        nilIfEmpty(string(code)),
+		"attempt":           nil,
+		"codex-pro-receipt": result.CodexProReceipt,
 	}
 	if err := metrics.Append(m.MetricsFile, entry); err != nil {
 		return err
@@ -253,7 +254,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		}
 		visited[channel] = true
 		permission := ""
-		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex") {
+		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex" || current.Harness == "codex-pro") {
 			permission = "read-only" // these agents return advice; Go writes the proposals
 		}
 		result := dispatchRole(m.Drivers, o.Role, drivers.CallArgs{

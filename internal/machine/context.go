@@ -217,7 +217,9 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		attempt = *a.attempt
 	}
 	var resultState any
+	var codexProReceipt any
 	if a.result != nil {
+		codexProReceipt = a.result.CodexProReceipt
 		resultState = map[string]any{
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
 			"truncated": a.result.Truncated, "signal": a.result.Signal,
@@ -225,23 +227,24 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		}
 	}
 	if err := metrics.Append(c.metricsFile, map[string]any{
-		"role":            a.role,
-		"packet-id":       packetID,
-		"milestone":       milestone,
-		"model":           model,
-		"harness":         harness,
-		"provider":        effectiveProvider,
-		"channel":         channel,
-		"prompt-hash":     promptHash,
-		"usage":           usageVal,
-		"cache-hit-rate":  cacheHitRate,
-		"reasoning-chars": reasoningCharsOf(a.result),
-		"cost-usd":        costVal,
-		"duration-ms":     durationMS,
-		"exit-code":       exitCode,
-		"error-code":      errorCode,
-		"attempt":         attempt,
-		"result":          resultState,
+		"role":              a.role,
+		"packet-id":         packetID,
+		"milestone":         milestone,
+		"model":             model,
+		"harness":           harness,
+		"provider":          effectiveProvider,
+		"channel":           channel,
+		"prompt-hash":       promptHash,
+		"usage":             usageVal,
+		"cache-hit-rate":    cacheHitRate,
+		"reasoning-chars":   reasoningCharsOf(a.result),
+		"cost-usd":          costVal,
+		"duration-ms":       durationMS,
+		"exit-code":         exitCode,
+		"error-code":        errorCode,
+		"attempt":           attempt,
+		"result":            resultState,
+		"codex-pro-receipt": codexProReceipt,
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
 	}

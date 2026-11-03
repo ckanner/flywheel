@@ -92,6 +92,14 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
+func TestExplicitEmptyResponseUsesTheExistingRetryableCode(t *testing.T) {
+	assert.Equal(t, EMPTY_RESPONSE, ClassifyError(SpawnResult{ExitCode: 1, Stderr: "empty response: Codex Pro returned no text"}))
+	assert.True(t, IsRetryable(EMPTY_RESPONSE))
+	assert.False(t, ShouldFallback(EMPTY_RESPONSE))
+	assert.Equal(t, INVALID_REQUEST, ClassifyError(SpawnResult{ExitCode: 1, Stderr: "invalid request: empty response is not an accepted model ID"}))
+	assert.Equal(t, TRANSPORT, ClassifyError(SpawnResult{ExitCode: 1, Stderr: "invalid result shape"}))
+}
+
 // P0-6 边界：数字状态码只在词边界匹配，数字内部形式绝不误读。
 func TestStatusCodeBoundary(t *testing.T) {
 	notErrors := []string{

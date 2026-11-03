@@ -125,6 +125,11 @@ func TestProfilesRejectInvalidDefinitionsReferencesAndFields(t *testing.T) {
 		{"null resident", ref(`{"profile":"fast","resident-session":null}`), "resident-session"},
 		{"string resident", ref(`{"profile":"fast","resident-session":"false"}`), "resident-session"},
 		{"route session", `{"routes":{"default":{"resident-session":false}}}`, "resident-session"},
+		{"codex-pro resident", `{"loops":{"plan":{"harness":"codex-pro","resident-session":true}}}`, "codex-pro requires a fresh session"},
+		{"codex-pro panel resident", `{"judge-panel":{"harness":"codex-pro","model":"m","channel":"c","resident-session":true}}`, "codex-pro requires a fresh session"},
+		{"codex-pro provider", `{"routes":{"hard":{"harness":"codex-pro","model":"m","channel":"c","provider":"chatgpt"}}}`, "provider is only supported by harness dsh"},
+		{"codex-pro loop no model", `{"loops":{"plan":{"harness":"codex-pro","channel":"c"}}}`, "codex-pro requires explicit model and channel"},
+		{"codex-pro route no channel", `{"routes":{"hard":{"harness":"codex-pro","model":"m"}}}`, "codex-pro requires explicit model and channel"},
 		{"bad panel", `{"judge-panel":{"profile":"missing"}}`, "judge-panel.profile"},
 		{"empty panel", `{"judge-panel":{}}`, "judge-panel requires"},
 		{"section type", `{"budget":[]}`, "budget"},
@@ -218,6 +223,8 @@ func TestProfilesExampleUsesRealLoadingContract(t *testing.T) {
 	assert.NotEqual(t, cfg.Routes["default"].Channel, cfg.Routes["default"].Provider)
 	assert.Equal(t, "low", cfg.Loops["intake"].Thinking)
 	assert.Equal(t, "high", cfg.Routes["default"].Thinking)
+	assert.Equal(t, "codex-pro", cfg.ProfileRefs["routes.hard"])
+	assert.Equal(t, "codex-pro", cfg.Routes["hard"].Harness)
 	assert.True(t, cfg.Loops["plan"].ResidentSession)
 	assert.Nil(t, cfg.JudgePanel)
 }

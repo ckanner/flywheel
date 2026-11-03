@@ -197,6 +197,7 @@ func TestKillActiveChildrenEscalatesToSIGKILL(t *testing.T) {
 	KillActiveChildren(time.Second)
 	r := <-done
 	elapsed := time.Since(start)
+	assert.GreaterOrEqual(t, elapsed, 900*time.Millisecond, "调用方更长的清理宽限也必须保留")
 	assert.Less(t, elapsed.Milliseconds(), int64(15000), "SIGKILL 升级必须生效")
 	assert.True(t, r.Cancelled)
 	assert.NotEmpty(t, r.Signal)
@@ -347,7 +348,7 @@ func TestKillActiveChildrenDoesNotKillLaterCalls(t *testing.T) {
 	firstDone := make(chan Result, 1)
 	go func() {
 		firstDone <- Run("sh", []string{"-c", `trap 'echo term' TERM; echo ready; while :; do :; done`}, Opts{
-			IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000,
+			IdleTimeoutMs: 30_000, WallTimeoutMs: 30_000, KillGraceMs: 300,
 			OnActivity: func(chunk, _ string) {
 				if strings.Contains(chunk, "ready") {
 					ready <- struct{}{}

@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
 whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -42,7 +42,10 @@ arguments: slug pause
    ```
 
    阻断项先处理；不要在 skill 内静默换 profile、provider 或付费渠道。
+   hard 的新默认 `codex-pro` 由引擎直接调用插件公开 API；不在 skill 中另发
+   `codex exec` 或父 agent 委派。旧配置保留原后端，要迁移先让用户审阅实际配置差异。
    用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
+   Codex Pro 只做本地包／命令检查；其完整策略事后检查警告不能翻译成运行前隔离保证。
    `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
 2. **按所选模式调用一次**：

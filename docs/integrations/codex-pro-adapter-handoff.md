@@ -1,5 +1,7 @@
 # Codex Pro adapter 0.7.0：固定版本审计与下一 session 交接
 
+> **历史审计，已由 0.8.0 接入替代。** 2026-11-03 已核验 [v0.8.0](https://github.com/ckanner/dsh-subagent-codex-pro/releases/tag/v0.8.0) 发布包及公开 machine API；Flywheel 0.28.0 默认 hard 路由改为 `codex-pro`。当前实现、迁移、完整策略事后检查限制见 [配置指南](../configuration.md#codex-pro-默认与旧配置迁移) 与 [本轮计划](../plans/2026-11-03-codex-pro-default.md)。下文保留 0.7.0 的当时证据，不能据此断言新版仍存在同样阻断。
+
 核对日期：2026-11-01。审计对象为 [`ckanner/dsh-subagent-codex-pro@21fd7acccf1f5989b14fecdc1957559eea6914f8`](https://github.com/ckanner/dsh-subagent-codex-pro/commit/21fd7acccf1f5989b14fecdc1957559eea6914f8)，[package version `0.7.0`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/package.json)。**启动 deadline、resume 参数传递和内部运行收据已有实质进展；公开结果、权限、用量完整性和跨宿主进程所有权仍有接入阻断。Flywheel 尚未消费这个 external adapter。**
 
 本文替换旧版本审计。不要继续按“启动 RPC 不受内部 deadline 控制”“resume 只传 threadId”“完全没有 usage 实现”这些旧结论安排工作。本轮只读检查外仓、运行离线探针、更新 Flywheel 内的交接文档；没有修改、发布或安装外仓代码，没有调用真实模型。

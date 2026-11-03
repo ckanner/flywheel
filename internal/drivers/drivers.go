@@ -4,6 +4,7 @@
 package drivers
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/ckanner/flywheel/internal/config"
@@ -47,6 +48,9 @@ type Result struct {
 	Text           string   `json:"text,omitempty"`
 	ErrorMessage   *string  `json:"errorMessage,omitempty"`
 	SessionID      string   `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+	// Preserve the exact public machine receipt, including partial usage and
+	// physical cleanup facts, independently of the normalized success fields.
+	CodexProReceipt json.RawMessage `json:"codexProReceipt,omitempty"`
 }
 
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
@@ -99,7 +103,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		harness = "pi"
 	}
 	switch harness {
-	case "kimi", "zcode", "codex", "omp", "pi", "dsh":
+	case "kimi", "zcode", "codex", "codex-pro", "omp", "pi", "dsh":
 	default:
 		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("unknown harness %q", harness))
 	}
@@ -111,7 +115,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	}
 	// Legacy adapters have no verified read-only sandbox mapping. workspace-write
 	// remains their historical host-isolation contract, not an OS sandbox promise.
-	if a.PermissionMode == "read-only" && harness != "codex" && harness != "dsh" {
+	if a.PermissionMode == "read-only" && harness != "codex" && harness != "codex-pro" && harness != "dsh" {
 		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("harness %q cannot enforce read-only permissions", harness))
 	}
 	if harness == "dsh" {
@@ -177,6 +181,17 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			APIKeys:         a.APIKeys,
 			Watchdog:        a.Watchdog,
 			OnEvent:         a.OnEvent,
+		})
+	}
+	if harness == "codex-pro" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		return RunCodexPro(CodexProArgs{
+			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
+			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
+			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
 		})
 	}
 	if harness == "omp" {

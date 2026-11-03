@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: "Requires the Flywheel CLI with embedded contract templates, write access, and Git in the target repository."
@@ -30,6 +30,10 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
 `npx -y @ckanner/flywheel@latest install --json`，检查 `ok` 与逐步结果。
 `ready:false` 表示模型依赖或配置尚待处理，不阻止先编写契约，也不表示账号已授权。
 
+准备契约使用当前 DSH 会话模型，`loops.plan` 只决定引擎运行后的规划／修订，
+不会替本 skill 切换模型。复杂需求可建议用户在已授权目录中选择 `gpt-6-astra`、
+`high`，简单明确的任务可沿用 Flash；不要因此自动发起另一个付费模型调用。
+
 1. **调研仓库**：读相关代码/文档，确认需求对应的真实位置与约束；把关键事实
    （含你验证过的命令与输出）记下来。若任务来自 Intake：可读
    `docs/<slug>/triage-inbox.md`，**只从标记为 approved 的候选生成契约**
@@ -54,6 +58,8 @@ contract files. You contain no loop logic — the orchestrator runs the loops la
      需要复用模型定义时可查看 `flywheel template flywheel.profiles.example.json`。
      profile 只引用本文件内定义；DSH provider 是实际 adapter，channel 是配置渠道，
      别名不会自动切账号。用 `flywheel config inspect` 确认展开后的实际绑定。
+     新模板的 hard 路由使用 `codex-pro` 插件 machine API；保留用户已有显式配置，
+     不把外部 subagent 工具名当 provider，也不在 skill 中直接调用旧 CLI 代替引擎。
    - `.gitignore` — 任务目录级，逐行忽略 `orchestrator.log`、
      `orchestrator.pid`、`metrics.jsonl`、`.state.lock`、`.run.lock`、
      `.stop-request`、`.control/`（运行时易变产物；
