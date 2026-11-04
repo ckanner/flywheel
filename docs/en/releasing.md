@@ -27,6 +27,12 @@ HEAD. `candidate.json` records the source commit, tree, snapshot SHA-256 and
 every tarball's SHA-512 integrity. Verify, test and publish those same bytes.
 Development candidates with `source.dirty: true` cannot be published.
 
+For the native Conversation View source, the isolated build installs the
+plugin's locked development and optional dependencies with `npm ci` and
+disabled lifecycle scripts before compiling its CSS Modules. It does not
+reuse a developer's `node_modules` or `dist` directory. These build
+dependencies are not runtime dependencies of the installed plugin.
+
 Upload under `candidate-X-Y-Z` first. After all exact versions match their
 recorded integrity and registry installation succeeds, promote `latest` in
 the order above, with the user-facing meta package last. npm has no atomic

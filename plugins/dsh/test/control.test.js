@@ -1,13 +1,15 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import vm from 'node:vm';
 import { runControl, validateControl } from '../src/control.js';
 import { apply } from '../src/index.js';
 import { apply as applyPolicy } from '../src/policy.js';
+import { act, closeClientHarness, mountPanel } from './support/client-harness.js';
+
+after(closeClientHarness);
 
 const binary = fileURLToPath(new URL('./fixtures/fake-control.js', import.meta.url));
 await chmod(binary, 0o755);
@@ -220,30 +222,33 @@ test('policy uses the shipped shell probe and pins effective session facts, reje
   await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /confined/);
 });
 
-test('browser module registers the actual rc.5 dock and calls existing command Remote', async () => {
-  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8');
-  const exported = {};
-  vm.runInNewContext(source, { exports: exported, require: name => {
-    assert.equal(name, 'react');
-    return { createElement: () => null };
-  } });
-  let definition;
+test('the native rc.5 view reaches the registered slash command through the session-scoped Remote', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-view-remote-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const registrations = {};
+  apply({
+    on: (name, callback) => { registrations[name] = callback; },
+    commands: { register: definition => { registrations.command = definition; } },
+    tools: { register: definition => { registrations.tool = definition; } },
+  }, { flywheelBinary: binary });
+  t.after(() => registrations.dispose());
+  const agent = { session: { header: { cwd } } };
+  let completion;
   let invocation;
-  exported.apply({
-    slots: {
-      inject: (name, activate) => { assert.equal(name, 'conversation.composer.dock'); activate(); },
-      register: value => { definition = value; },
-    },
-    remote: { commands: { execute: async (...args) => {
-      invocation = args;
-      return { ok: true, value: { result: { kind: 'success', text: '{"protocol":1,"running":false}' } } };
-    } } },
+  const ui = await mountPanel(t, (request, sessionId, command) => {
+    invocation = { sessionId, command };
+    completion = registrations.command.handler({
+      rawInput: command.slice('/flywheel'.length), agent, signal: new AbortController().signal,
+    }).then(result => ({ ok: true, value: { result } }));
+    return completion;
   });
-  assert.equal(definition.id, 'flywheel');
-  const face = definition.inject('desktop-session');
-  const response = await face.execute({ action: 'status', taskDir: '/workspace/docs/task' });
-  assert.equal(response.protocol, 1);
-  assert.equal(invocation[0], 'desktop-session');
-  assert.equal(invocation[1], '/flywheel {"action":"status","taskDir":"/workspace/docs/task"}');
-  assert.equal(invocation[2].length, 0);
+  assert.equal(ui.definition.name, 'conversation.view');
+  await ui.type(0, cwd);
+  await ui.click('刷新状态');
+  await act(async () => { await completion; });
+  assert.deepEqual(invocation, { sessionId: 'desktop-session',
+    command: `/flywheel ${JSON.stringify({ action: 'status', taskDir: cwd })}` });
+  assert.match(ui.container.querySelector('[aria-label="任务状态"]').textContent, /example/);
+  assert.equal(ui.container.querySelector('[role="alert"]'), null);
+  assert.deepEqual(ui.requests.map(request => request.action), ['status']);
 });

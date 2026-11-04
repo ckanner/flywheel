@@ -78,6 +78,12 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 
 Packet delivery is a **local Git operation**. After evidence matches the current candidate, the engine commits the packet and fast-forwards it into the branch checked out at `cwd`. With the recommended layout, that is the task integration branch. Flywheel does not itself push, create GitHub PRs, wait for remote CI, merge remote PRs, or publish releases. Those operations belong to the authorized host or user. See [Workflow](docs/en/workflow.md) for commands, directory ownership, and merge timing.
 
+### Desktop task controls
+
+The current source adds a native **Flywheel** conversation view alongside Chat and Trajectory, preserving DSH's composer, model selector, and right sidebar. Published `0.28.0` still uses the old composer popup; the native view requires a build containing this fix. Select a prepared task directory and its repository to inspect progress, intervention, effective models, and diagnostics, or explicitly start, refresh, or stop it.
+
+The view retains session-scoped drafts while the host retains the session binding and shows snapshots with their refresh time. It does not discover tasks or poll automatically. An unconfirmed start/stop outcome requires a successful refresh of the same task before further mutations; closing or switching the view does not stop the independent engine. DSH's trajectory keeps its parent-session records, without automatically merging independent worker history. Desktop capabilities and SDK worker policy have separate scopes; see the [plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#use-the-desktop-controls).
+
 ## Verification and operating boundaries
 
 L1 validates a packet; L2/L3 validate integration and user paths at milestone scope. Review examines the actual candidate and acceptance evidence independently of the executor transcript. Candidate or contract changes invalidate prior evidence. Completion requires verified Git delivery and persisted state; an agent's claim that it finished is insufficient.

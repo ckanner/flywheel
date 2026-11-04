@@ -13,11 +13,15 @@ the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releas
 compatibility baseline is **DSH Mac 0.2.1-rc.5**, not a claim that every DSH build
 or provider adapter is compatible.
 
+The conversation-view sections describe the UI fix in the current source.
+**Published 0.28.0 still uses the composer popup.** Install a later build that
+includes this fix; merging source does not update an installed plugin.
+
 ## Components
 
 | Component | Responsibility |
 |---|---|
-| Flywheel panel | Inspect configuration, run local checks, and start, observe, or stop a task |
+| Flywheel conversation view | A native view alongside Chat and Trajectory for task progress, intervention, configuration, checks, and explicit start/refresh/stop |
 | `/flywheel` command | Invoke the Go control interface from an explicit desktop command |
 | `flywheel_control` tool | Expose the same control operations to the host model |
 | `flywheel-dsh-worker` | Run one native model session through an independent DSH SDK profile |
@@ -26,6 +30,11 @@ or provider adapter is compatible.
 The plugin has no separate task database and does not write `state.json`.
 Kimi CLI, Codex Pro, and the explicit legacy Codex CLI path have separate Go
 drivers. A DSH LLM provider and an external agent tool are different interfaces.
+
+The view answers which stage is running, what needs attention, which models are
+configured, and how to stop or recover the task. Requirement discussion, contract
+preparation, and ordinary conversation stay in DSH's chat and skills. Flywheel
+does not replace the host's composer, model selector, trajectory, or right sidebar.
 
 ## Install the complete application
 
@@ -151,10 +160,12 @@ actual inference result. Keep `warn`, `unknown`, and `skipped` distinct from
 
 ## Use the desktop controls
 
-Open the **Flywheel** panel below the DSH session input. Select the absolute
-task worktree path as the repository directory and the task directory inside
-that same worktree. Prepare and review the contracts first; the panel does not
-turn an empty directory into a complete task plan.
+Open a DSH session and choose **Flywheel** in the native view bar alongside
+Chat and Trajectory. If the entry is not directly visible, check that bar's
+More menu. Select the absolute task worktree path as the repository directory
+and the task directory inside that same worktree. A blank repository field
+uses the current session's starting directory. Prepare and review the contracts
+first; the view does not turn an empty directory into a complete task plan.
 
 The panel, `/flywheel`, and `flywheel_control` share these Go operations:
 
@@ -171,6 +182,79 @@ engine; closing the panel or desktop is not a stop request. Refresh status to
 observe it, and use `stop` to request shutdown. `ok: true` describes a successful
 control operation; task completion is recorded in `state.status`.
 
+Opening the view starts no task or probe. It reads on explicit actions, without
+automatic polling or task discovery. To observe a task started through another
+entry point, select its task directory and refresh. Effective configuration comes
+from the engine's selected file; installing the plugin or changing DSH's chat
+model does not migrate that configuration.
+
+### View, request, and task lifetimes
+
+Task and repository drafts and fetched snapshots are retained separately for
+each DSH session across Chat/Trajectory/Flywheel view switches while the host
+retains that session binding. They are not a task database or durable storage
+across binding release, plugin reload, or desktop restart. Only one control
+request is pending per session. Start/stop locks the directory fields while
+waiting. A read-only request allows path edits, but stays pending until its reply
+settles and rejects late results for the previous selection. Hiding a view does
+not make a pending operation complete.
+
+Task state is the last successful snapshot with its refresh time, not a live
+monitor. Failed reads retain valid prior content and show the failure. A lost,
+timed-out, or disconnected start/stop response means the outcome is **unconfirmed**;
+it does not prove that nothing started or that a task stopped. Refresh the same
+task first and inspect its log when needed before deciding how to recover.
+Until a successful status refresh reconciles that task, the view keeps the
+uncertainty visible and disables further starts and stops. It never automatically
+retries a start or stop.
+
+A missing directory or a control process that cannot be created is recoverable
+after correcting the input or environment only when the host supplies structured
+evidence that the request was not dispatched. An ordinary error, connection loss,
+or error-message text cannot establish that fact or dismiss an unconfirmed outcome.
+The `/flywheel` command's error `text` uses the JSON discriminator
+`type:"flywheel-control-error"`; its fields and compatibility behavior are defined
+in the [command failure protocol](PROTOCOL.md#dsh-命令失败与是否派发) (Chinese).
+
+Switching views, closing the session page, removing the plugin, or exiting DSH
+does not stop the independent Go task. Request an explicit stop and await engine
+confirmation. DSH's trajectory retains its own parent-session command and tool
+events. Complete SDK, Kimi, and Codex Pro worker histories are not automatically
+merged into that trajectory or presented as native DSH background tasks.
+
+### Host UI contract
+
+The client uses `ctx.slots.inject()` and a distinct `id: flywheel` in the
+`conversation.view` list. The host owns session scope and view navigation. Chat,
+Trajectory, the composer, and the right sidebar keep their existing entries;
+Flywheel neither shadows them nor draws a separate floating sidebar or composer
+popup. Long paths, model details, and errors wrap or scroll inside the view.
+
+As an external plain-JS plugin, the browser module imports only shared React at
+runtime. It does not import `ui-primitives`, `client-store`, or another Harness
+Client package. The plugin owns its buttons, inputs, viewing-state store handle,
+and observable; the host manages registered session instances and binds their
+read hooks. Locale comes through the injected service. Controls follow the
+checked host markup and interactions, consume semantic color aliases, inherit
+the host font, and mount compiled CSS Modules through the React view.
+
+The baseline is the exact source snapshot `b830ec950faba0a46dda564be3e2d854afed94f1`,
+which declares version `0.2.1-rc.5`: [external plugin practices](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md),
+[UI guidance](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md),
+[layout](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md),
+[conversation slots](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts),
+and [slot lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md).
+The view sits within Conversation's existing header and content geometry; it
+does not change global window-chrome clearance. Source-contract inspection does
+not establish a live Mac desktop pass.
+
+Offline UI checks execute the built plugin's own controls, store handle, and
+observable with React and jsdom. Component fixtures adapt slot bindings and
+Remote; a separate check uses the published rc.5 renderer, slots, and Cordis to
+exercise registration, session generations, declaration collapse/restoration,
+and disposal. These checks do not establish real browser geometry or Mac
+window behavior.
+
 Use one task integration worktree for preparation, planning, milestone
 verification, and the eventual PR. The engine manages packet worktrees for
 execution, L1, and review. A successful packet is merged into the branch of the
@@ -180,12 +264,32 @@ GitHub PRs, merge remote PRs, or publish packages. See the
 
 ## Permissions and lifecycle boundaries
 
+Desktop integration and worker policy have different scopes. The worker's
+temporary overlay applies only to its independent **SDK process**; it does not
+edit the desktop profile or remove the desktop's plugins, skills, tools, or UI.
+Conversely, desktop installation and sign-in do not prove that the SDK profile
+loads and authorizes the same capabilities. Verify each selected harness through
+its own configuration and supported authorization flow.
+
 The DSH worker requests `read-only` or `workspace-write`, fixes approvals to
 `never`, and verifies the effective SDK policy before sending the task prompt.
-On the checked Mac host, the DSH sandbox uses its Seatbelt runner and filesystem
+In the checked Mac source, the DSH sandbox uses its Seatbelt runner and filesystem
 fence. Workspace writes include DSH's permitted temporary area; this is not a
 network-isolation guarantee. Missing or incomplete enforcement is a failure,
 not a reason to switch to unrestricted access.
+
+The SDK overlay disables worker-owned delegation, workflow/goal drivers, model
+titles, and automatic model compaction so the Go owner can bound work and
+account for model calls. It also currently disables the whole `tool-web` package,
+including both `web_search` and `web_fetch`. This is a conservative policy,
+not a claim that every DSH web operation requires a model: the official
+[web tool](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)
+configures search and fetch independently, while the
+[DeepSeek search backend](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/web-search-deepseek/README.md)
+does use an auxiliary model request. This UI fix keeps worker policy unchanged.
+Restoring retrieval or [automatic compaction](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/compaction/compaction-basic/README.md)
+requires a separate check of accounting, budgets, cancellation, and directory
+ownership; the view's location does not establish those guarantees.
 
 Codex Pro uses fresh ephemeral calls and checks the model, directory, approval
 policy, and sandbox mode before execution. In version 0.8.0, the full

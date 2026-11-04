@@ -160,6 +160,33 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 
 config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
 
+### DSH 命令失败与是否派发
+
+`/flywheel` 的 DSH command 结果仍使用 `kind:"success"` 或 `kind:"error"`。成功结果的 `text` 是上述 Go control JSON，包括具有合法诊断报告的 doctor 失败。新的 host 将所有 command 失败包装为以下独立 JSON，放在 `kind:"error"` 的 `text` 中；这不是 Go stdout envelope，也不改变 worker JSONL 或模型工具的异常接口：
+
+```json
+{"protocol":1,"type":"flywheel-control-error","action":"start","dispatch":"not-dispatched","message":"taskDir must be an existing directory"}
+```
+
+| 字段 | 语义 |
+|---|---|
+| `protocol`、`type` | 固定为 `1` 和 `flywheel-control-error`，用于区分命令失败与引擎结果 |
+| `action` | 可读取的请求 action 字符串；解析失败或没有字符串 action 时为 `null`；界面必须与自己的在途请求匹配 |
+| `dispatch` | `not-dispatched` 表示宿主证明本次请求没有启动 Go 控制进程；否则为 `unknown` |
+| `message` | 给用户诊断的错误文本，本身不证明进程是否启动，也不能作为另一个 envelope 递归解析 |
+
+只有参数／目录等派发前校验失败、派发前取消，以及进程创建失败且没有成功启动的证据，才能返回 `not-dispatched`。进入控制进程后出现的非零退出、超时、取消、坏 JSON 或任务身份不符都不能取得这项证明，即使错误文本包含相同 JSON。host 对普通错误同样增加外层 envelope，只把原始错误放入 `message`，避免进程返回的文字冒充宿主确认。
+
+界面只有在版本、类型、action、dispatch 和 message 都符合契约时才使用宿主证明。未知协议、旧 host 的纯文本错误、DSH 传输失败或丢失响应均保持 `unknown`。启动／停止的 `unknown` 结果必须先成功查询原任务状态，再决定后续变更；不得自动重试。已确认未派发的拒绝会显示原因，用户可以修正输入或环境后重新提交。一次未派发的状态查询也不能解除更早启动／停止留下的未确认结果。
+
+host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校验引擎返回的任务身份。界面不能把用户输入的符号链接、`..`、尾部斜杠或 Mac `/var` 与 `/private/var` 的文本差异当作引擎身份错误；响应接纳依赖 host 的路径校验和当前请求关联。
+
+### 浏览器查看状态的边界
+
+浏览器端遵循[外部 plain-JS 插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)，不运行时导入 Harness Client 包。插件自有的 store handle 只通过公开的 `spec`／`create()` 结构交给槽位注册；每个实例提供 `actions`、`getSnapshot()`、`subscribe()` 和 `clearPersisted()`，由宿主负责会话作用域、实例缓存与 hooks 绑定。当前没有持久化配置，`clearPersisted()` 不删除任何任务文件。
+
+异步控制层另有插件自有 observable，快照在未变化时保持同一身份，经 `inject.hooks` 交给宿主绑定；React 组件不自行订阅，不读取 ctx 或原始服务对象。路径草稿与控制快照只是查看缓存，不成为任务账本，也不写入新的 DSH 会话事件。模型可见的命令和工具结果仍由宿主原有记录机制处理。此查看契约不改变 Go control 协议、worker JSONL 或后台任务的停止语义。
+
 ## npm 安装报告与桌面入口
 
 以下是 Node 安装器的独立契约，不与 worker JSONL、Go control envelope 或任务 `state.json` 混用。入口为 `npx -y @ckanner/flywheel@latest install` 或已安装包的 `flywheel setup`；二者共用参数与行为。普通 npm 包安装没有修改用户目录的 postinstall，只有显式 install／setup 执行 skills、安装记录和 DSH profile 配置。

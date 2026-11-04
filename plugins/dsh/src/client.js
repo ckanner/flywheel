@@ -1,201 +1,728 @@
-// The build wraps this file in rc.5's browser ModuleLoader factory.
+// The build wraps this file in DSH's lazy browser ModuleLoader factory.
+// React is the only runtime module dependency. External plain-JS plugins must
+// not import Harness Client packages (DSH practices, b830ec950faba0a46dda564be3e2d854afed94f1).
 const React = require('react');
 const h = React.createElement;
+const NS = 'flywheel-ui';
+// build.mjs supplies scoped CSS; React owns its style element inside this view.
+const css = __FLYWHEEL_CSS_CLASSES__;
+const stylesheet = __FLYWHEEL_CSS_TEXT__;
+// Host controlTimeoutMs is bounded at 120 s, with up to 20 s diagnostic cleanup.
+// A browser timeout reports uncertainty; it cannot cancel a detached Go task.
+const CONTROL_WAIT_MS = 150000;
+
+// Own the two controls we use. Markup and native-prop/ref forwarding follow
+// DSH b830ec950faba0a46dda564be3e2d854afed94f1:
+// packages/client/ui-primitives/src/{Button,Input}.tsx. Scoped styles below copy
+// their compact geometry; only public alias colors are shared with the host.
+// The copied portions retain their MIT notice in THIRD_PARTY_NOTICES.md.
+const Button = React.forwardRef(function FlywheelButton({
+  variant = 'outline', size = 'sm', className, children, ...rest
+}, ref) {
+  return h('button', { type: 'button', ...rest, ref,
+    className: [css.button, variant === 'primary' ? css.buttonPrimary : css.buttonOutline,
+      size === 'sm' ? css.buttonSmall : '', className].filter(Boolean).join(' '),
+  }, children);
+});
+const Input = React.forwardRef(function FlywheelInput({ className, ...rest }, ref) {
+  return h('span', { className: [css.inputShell, className].filter(Boolean).join(' '),
+    'data-disabled': rest.disabled ? 'true' : undefined,
+  }, h('input', { ...rest, ref, className: css.textInput }));
+});
+
+// The ongoing glyph and reduced-motion behavior are copied from the same
+// pinned host's ui-primitives StateDot; this plugin owns the SVG and CSS.
+function Spinner() {
+  const synchronize = element => {
+    if (!element) return;
+    for (const animation of element.getAnimations?.({ subtree: true }) ?? []) animation.startTime = 0;
+  };
+  return h('svg', { className: css.spinner, width: 20, height: 20,
+    viewBox: '0 0 24 24', 'aria-hidden': true, ref: synchronize,
+    onAnimationStart: event => synchronize(event.currentTarget) },
+  h('g', { className: css.spinnerMotion },
+    h('circle', { className: css.spinnerTrack, cx: 12, cy: 12, r: 9.5 }),
+    h('circle', { className: css.spinnerArc, cx: 12, cy: 12, r: 9.5 })));
+}
+
+// A small immutable snapshot source for this plugin's flat write sets. This is
+// not a generic deep-draft engine: all updates replace root fields, and nested
+// engine reports are retained as read-only values. Only the host subscribes.
+function createSnapshot(initial) {
+  let snapshot = Object.freeze({ ...initial });
+  const listeners = new Set();
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: listener => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    update: mutate => {
+      const next = { ...snapshot };
+      mutate(next);
+      if (Object.keys(next).every(key => Object.is(next[key], snapshot[key]))) return;
+      snapshot = Object.freeze(next);
+      for (const listener of [...listeners]) listener();
+    },
+  };
+}
+
+// Public structural StoreHandle / StoreInstance contract, verified at pinned
+// packages/client/store/src/contract.ts. The renderer creates and caches each
+// instance by session binding, then provides useStore/actions to the component.
+// We do not import its engine, subscribe from React, or persist live state.
+function createViewStore() {
+  const spec = {
+    init: () => ({ taskDir: '', cwd: '', advancedOpen: false }),
+    actions: {
+      setSelection: (draft, next) => { draft.taskDir = next.taskDir; draft.cwd = next.cwd; },
+      setAdvancedOpen: (draft, open) => { draft.advancedOpen = open; },
+    },
+  };
+  return {
+    spec,
+    create: () => {
+      const source = createSnapshot(spec.init());
+      const actions = Object.fromEntries(Object.entries(spec.actions).map(([name, action]) =>
+        [name, (...args) => source.update(draft => action(draft, ...args))]));
+      return { actions, getSnapshot: source.getSnapshot, subscribe: source.subscribe,
+        clearPersisted: () => {},
+      };
+    },
+  };
+}
+
+const zh = {
+  view: 'Flywheel',
+  title: '任务控制',
+  description: '查看 Flywheel 任务的进度与验收结果，在需要时启动、恢复或停止任务',
+  lifecycle: '任务在后台独立运行。切换视图或会话不会停止任务；需要停止时请使用这里的“停止”',
+  selection: '选择任务',
+  taskDir: '任务目录',
+  taskHint: '填写已准备好契约的绝对路径；只查看配置或检查环境时可留空',
+  cwd: '仓库目录',
+  cwdHint: '留空使用当前 DSH 会话目录，也可指定任务 worktree 的绝对路径',
+  pathInvalid: '请输入以 / 开头的绝对路径',
+  pathControl: '路径不能包含换行或空字符',
+  taskRequired: '填写任务目录后可刷新、启动或停止任务',
+  status: '刷新状态',
+  start: '启动',
+  stop: '停止',
+  config: '查看模型配置',
+  doctor: '检查环境',
+  probe: 'SDK 无推理检查',
+  busy: '正在等待“{action}”确认…',
+  busyOther: '正在等待上一个目录的“{action}”结束；其结果不会覆盖当前选择',
+  mutationLock: '启动或停止确认前，暂时不能切换任务目录',
+  unknownOutcome: '“{action}”结果未确认',
+  unknownHelp: '请求可能已经送达引擎。先刷新这个任务的状态，再决定下一步操作',
+  reconcile: '刷新待确认任务',
+  errorTitle: '“{action}”未完成',
+  errorHelp: '检查连接和目录后，重新执行这项只读检查',
+  notDispatchedTitle: '“{action}”未发送到引擎',
+  notDispatchedHelp: '检查错误详情，修正目录或引擎配置后重试',
+  errorDetails: '错误详情',
+  feedback: '操作反馈',
+  statusHeading: '任务状态',
+  emptyHeading: '还没有任务状态',
+  emptyBody: '在“对话”中准备并审阅任务契约，然后填写任务目录并刷新状态。已有的后台任务也可在这里继续查看',
+  emptySelected: '点击“刷新状态”查看这个任务；打开本页不会自动启动任务',
+  lastChecked: '上次确认：{time}',
+  stale: '本次状态未确认，下方保留上次结果',
+  stateUnconfirmed: '状态待确认',
+  previousState: '上次确认状态：{status}',
+  task: '任务',
+  running: '运行中',
+  uninitialized: '尚未初始化',
+  engineMissing: '引擎未运行，状态待核对',
+  unknownState: '未知状态（{status}）',
+  unknown: '未知',
+  unreported: '未报告',
+  pending: '待开始',
+  paused: '已暂停',
+  stopped: '已停止',
+  completed: '已完成',
+  escalated: '需要人工处理',
+  budgetStopped: '预算已停止',
+  milestone: '当前里程碑：{name}',
+  packets: '工作单元',
+  packetsCount: '工作单元（共 {count} 个）',
+  packet: '工作单元',
+  state: '状态',
+  route: '路由',
+  packetPending: '待执行',
+  awaitingCredentials: '等待凭证',
+  executing: '执行中',
+  executed: '待验收',
+  l1Passed: '验收已通过',
+  l1Failed: '验收未通过',
+  reviewFailed: '评审退回',
+  interrupted: '已中断',
+  inbox: '等待处理',
+  inboxCount: '待人工处理记录：{count} 条',
+  budget: '用量与成本',
+  cost: '已报告成本合计：$' + '{amount}',
+  costUnknown: '成本：未知',
+  costPartial: '已知成本合计：$' + '{amount}；另有 {count} 次调用成本未知，合计不完整',
+  costMissing: '成本：未知（{count} 次调用未报告结算成本）',
+  tokens: '已报告 Token：{tokens}',
+  tokensMissing: '；{count} 次调用用量未知，合计不完整',
+  tokenLimit: '每日 Token 限额：{limit} · 预算策略：{policy}',
+  budgetWarning: '预算提示：{message}',
+  advanced: '模型配置与环境检查',
+  advancedHelp: '查看当前任务实际使用的绑定，或在启动前检查本地环境',
+  configuration: '实际模型配置',
+  source: '配置来源：{source}',
+  embedded: '内嵌模板',
+  scope: '检查范围：{scope}',
+  outOfScope: '未用于本次检查',
+  model: '模型',
+  profile: 'Profile',
+  harness: 'Harness',
+  provider: 'Provider',
+  channel: '渠道',
+  thinking: '推理',
+  permission: '阶段权限要求',
+  session: '会话恢复',
+  enabled: '启用',
+  disabled: '关闭',
+  notConfigured: '未配置',
+  nativeProvider: '由原生运行时管理',
+  default: '默认',
+  undeclared: '未声明',
+  planRole: '规划',
+  executeRole: '执行',
+  reviewRole: '评审',
+  judgeRole: '终验',
+  intakeRole: '需求收集',
+  gardenRole: '知识维护',
+  panelRole: '第二意见',
+  diagnostic: '环境检查结果',
+  doctorPassed: '检查结束：未发现阻断项',
+  doctorFailed: '检查结束：存在阻断项',
+  localOnly: '本次只检查本地环境，未启动 SDK 探测',
+  probeRequested: '已请求 SDK 无推理检查',
+  inferenceBoundary: '未发送推理请求；账号授权、额度和真实模型能力未通过本次检查验证',
+  pass: '通过',
+  fail: '失败',
+  warn: '注意',
+  unverified: '未验证',
+  skipped: '跳过',
+  errorCode: '错误码：{code}',
+  remedy: '处理建议：{remedy}',
+  raw: '引擎原始结果（JSON）',
+};
+const en = {
+  view: 'Flywheel',
+  title: 'Task controls',
+  description: 'Inspect Flywheel progress and verification results, then start, resume or stop a task when needed',
+  lifecycle: 'Tasks run independently in the background. Switching views or sessions does not stop a task; use Stop here when needed.',
+  selection: 'Select a task',
+  taskDir: 'Task directory',
+  taskHint: 'Absolute path to a prepared task contract; optional for configuration and environment checks',
+  cwd: 'Repository directory',
+  cwdHint: 'Leave blank to use this DSH session directory, or enter the absolute task worktree path',
+  pathInvalid: 'Enter an absolute path beginning with /',
+  pathControl: 'Paths cannot contain line breaks or null characters',
+  taskRequired: 'Enter a task directory to refresh, start or stop a task',
+  status: 'Refresh status',
+  start: 'Start',
+  stop: 'Stop',
+  config: 'Inspect model configuration',
+  doctor: 'Check environment',
+  probe: 'SDK check without inference',
+  busy: 'Waiting for “{action}” confirmation…',
+  busyOther: 'Waiting for “{action}” for the previous directory; its result will not replace the current selection',
+  mutationLock: 'Task directories are locked until start or stop is confirmed',
+  unknownOutcome: '“{action}” outcome is unconfirmed',
+  unknownHelp: 'The request may have reached the engine. Refresh this task before choosing the next action.',
+  reconcile: 'Refresh unconfirmed task',
+  errorTitle: '“{action}” did not complete',
+  errorHelp: 'Check the connection and directories, then retry this read-only check.',
+  notDispatchedTitle: '“{action}” was not dispatched to the engine',
+  notDispatchedHelp: 'Check the error details, correct the directories or engine configuration, then retry.',
+  errorDetails: 'Error details',
+  feedback: 'Operation feedback',
+  statusHeading: 'Task status',
+  emptyHeading: 'No task status yet',
+  emptyBody: 'Prepare and review a task contract in Chat, then enter its directory and refresh. Existing background tasks can also be inspected here.',
+  emptySelected: 'Refresh status to inspect this task. Opening this view does not start it.',
+  lastChecked: 'Last confirmed: {time}',
+  stale: 'Current status is unconfirmed; the previous result is retained below',
+  stateUnconfirmed: 'Status unconfirmed',
+  previousState: 'Previously confirmed state: {status}',
+  task: 'Task',
+  running: 'Running',
+  uninitialized: 'Not initialized',
+  engineMissing: 'Engine is not running; state needs verification',
+  unknownState: 'Unknown state ({status})',
+  unknown: 'Unknown',
+  unreported: 'Not reported',
+  pending: 'Pending',
+  paused: 'Paused',
+  stopped: 'Stopped',
+  completed: 'Completed',
+  escalated: 'Needs human attention',
+  budgetStopped: 'Stopped by budget',
+  milestone: 'Current milestone: {name}',
+  packets: 'Work packets',
+  packetsCount: 'Work packets ({count})',
+  packet: 'Work packet',
+  state: 'State',
+  route: 'Route',
+  packetPending: 'Pending',
+  awaitingCredentials: 'Waiting for credentials',
+  executing: 'Executing',
+  executed: 'Awaiting verification',
+  l1Passed: 'Verification passed',
+  l1Failed: 'Verification failed',
+  reviewFailed: 'Changes requested',
+  interrupted: 'Interrupted',
+  inbox: 'Waiting for attention',
+  inboxCount: 'Human attention records: {count}',
+  budget: 'Usage and cost',
+  cost: 'Reported cost total: $' + '{amount}',
+  costUnknown: 'Cost: unknown',
+  costPartial: 'Known cost: $' + '{amount}; {count} other calls have unknown cost, so this total is incomplete',
+  costMissing: 'Cost: unknown ({count} calls did not report billed cost)',
+  tokens: 'Reported tokens: {tokens}',
+  tokensMissing: '; usage is unknown for {count} calls, so this total is incomplete',
+  tokenLimit: 'Daily token limit: {limit} · Budget policy: {policy}',
+  budgetWarning: 'Budget notice: {message}',
+  advanced: 'Model configuration and environment',
+  advancedHelp: 'Inspect the bindings used by this task or check the local environment before starting',
+  configuration: 'Effective model configuration',
+  source: 'Configuration source: {source}',
+  embedded: 'Embedded template',
+  scope: 'Check scope: {scope}',
+  outOfScope: 'Not used for this check',
+  model: 'Model',
+  profile: 'Profile',
+  harness: 'Harness',
+  provider: 'Provider',
+  channel: 'Channel',
+  thinking: 'Reasoning',
+  permission: 'Required permission',
+  session: 'Session resume',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
+  notConfigured: 'Not configured',
+  nativeProvider: 'Managed by the native runtime',
+  default: 'Default',
+  undeclared: 'Not declared',
+  planRole: 'Plan',
+  executeRole: 'Execute',
+  reviewRole: 'Review',
+  judgeRole: 'Judge',
+  intakeRole: 'Intake',
+  gardenRole: 'Knowledge maintenance',
+  panelRole: 'Second opinion',
+  diagnostic: 'Environment check results',
+  doctorPassed: 'Check complete: no blockers found',
+  doctorFailed: 'Check complete: blockers found',
+  localOnly: 'Only the local environment was checked; no SDK probe ran',
+  probeRequested: 'An SDK check without inference was requested',
+  inferenceBoundary: 'No inference request was sent. Account authorization, quota and actual model capability remain unverified.',
+  pass: 'Passed',
+  fail: 'Failed',
+  warn: 'Notice',
+  unverified: 'Unverified',
+  skipped: 'Skipped',
+  errorCode: 'Error code: {code}',
+  remedy: 'Next step: {remedy}',
+  raw: 'Raw engine response (JSON)',
+};
 
 const taskLabels = {
-  pending: '待开始', paused: '已暂停', stopped: '已停止', completed: '已完成',
-  escalated: '需要人工处理', 'budget-stopped': '预算已停止',
+  pending: 'pending', paused: 'paused', stopped: 'stopped', completed: 'completed',
+  escalated: 'escalated', 'budget-stopped': 'budgetStopped',
 };
 const packetLabels = {
-  pending: '待执行', 'awaiting-credentials': '等待凭证', executing: '执行中', executed: '待验收',
-  'l1-passed': '验收已通过', 'l1-failed': '验收未通过', 'review-failed': '评审退回',
-  completed: '已完成', interrupted: '已中断', escalated: '需要人工处理', inbox: '等待处理',
+  pending: 'packetPending', 'awaiting-credentials': 'awaitingCredentials',
+  executing: 'executing', executed: 'executed', 'l1-passed': 'l1Passed',
+  'l1-failed': 'l1Failed', 'review-failed': 'reviewFailed', completed: 'completed',
+  interrupted: 'interrupted', escalated: 'escalated', inbox: 'inbox',
 };
-const checkLabels = { pass: '通过', fail: '失败', warn: '注意', unknown: '未验证', skipped: '跳过' };
-const roleLabels = { plan: '规划', execute: '执行', review: '评审', judge: '终验',
-  intake: '需求收集', garden: '知识维护', 'judge-panel': '第二意见' };
-const buttonStyle = { border: '1px solid #8888', padding: '4px 10px', borderRadius: 5 };
-const tableStyle = { width: '100%', textAlign: 'left', fontSize: 11, borderCollapse: 'collapse' };
-const cellStyle = { padding: '5px 8px 5px 0', verticalAlign: 'top', overflowWrap: 'anywhere' };
-const rawStyle = { fontSize: 11, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 240, overflow: 'auto' };
+const roleLabels = { plan: 'planRole', execute: 'executeRole', review: 'reviewRole', judge: 'judgeRole',
+  intake: 'intakeRole', garden: 'gardenRole', 'judge-panel': 'panelRole' };
+const checkLabels = { pass: 'pass', fail: 'fail', warn: 'warn', unknown: 'unverified', skipped: 'skipped' };
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
+const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
+const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
+const mutates = action => action === 'start' || action === 'stop';
+const actionKey = value => value.probe ? 'probe' : value.action;
+class NotDispatchedControlReply extends Error {}
 
-function taskLabel(value) {
-  if (value.running) return '运行中';
-  if (!value.state) return '尚未初始化';
-  if (value.state.status === 'running') return '引擎未运行，状态待核对';
-  return taskLabels[value.state.status] ?? `未知状态（${value.state.status ?? '未报告'}）`;
+function pathProblem(value) {
+  if (/[\0\r\n]/.test(value)) return 'pathControl';
+  if (value.trim() && !value.trim().startsWith('/')) return 'pathInvalid';
+  return null;
 }
 
-function Configuration({ value }) {
+function taskLabel(value, t) {
+  if (value.running) return t('running');
+  if (!value.state) return t('uninitialized');
+  if (value.state.status === 'running') return t('engineMissing');
+  const key = taskLabels[value.state.status];
+  return key ? t(key) : t('unknownState', { status: textValue(value.state.status, t('unreported')) });
+}
+
+function readReply(reply, request) {
+  if (!reply?.ok) throw new Error(reply?.error?.message ?? 'DSH command transport failed');
+  const result = reply.value?.result;
+  if (result?.kind !== 'success') {
+    let failure;
+    // This is a versioned command envelope, not a heuristic over error prose.
+    // Older hosts and malformed/ambiguous replies keep the conservative outcome.
+    if (result?.kind === 'error' && typeof result.text === 'string') {
+      try { failure = JSON.parse(result.text); } catch { /* legacy unstructured error */ }
+    }
+    const typed = record(failure) && failure.protocol === 1 &&
+      failure.type === 'flywheel-control-error' && failure.action === request.action &&
+      ['not-dispatched', 'unknown'].includes(failure.dispatch) && typeof failure.message === 'string';
+    const message = typed ? failure.message : result?.text ?? 'Flywheel command unavailable';
+    if (typed && failure.dispatch === 'not-dispatched') throw new NotDispatchedControlReply(message);
+    throw new Error(message);
+  }
+  const value = JSON.parse(result.text);
+  // runControl has already matched the engine's task identity against the
+  // host's realpath-normalized request. A browser cannot compare that identity
+  // lexically with a user path (/var, symlinks, trailing slash or "..").
+  if (!record(value) || value.protocol !== 1 || typeof value.ok !== 'boolean' ||
+      typeof value.taskDir !== 'string' ||
+      (request.taskDir ? !value.taskDir.startsWith('/') : value.taskDir !== '')) {
+    throw new Error('Flywheel control protocol or task identity mismatch');
+  }
+  if (!value.ok && !(request.action === 'doctor' && value.diagnostic?.ok === false)) {
+    throw new Error(typeof value.error === 'string' ? value.error : 'Flywheel control failed');
+  }
+  const state = value.state;
+  const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
+    report.bindings.every(record);
+  if (['status', 'start', 'stop'].includes(request.action) &&
+      (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
+       (state?.packets != null && !record(state.packets)) ||
+       (state?.inbox != null && !Array.isArray(state.inbox)) ||
+       (state?.budget != null && (!record(state.budget) ||
+        (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
+    throw new Error('Flywheel control returned malformed task status');
+  }
+  if (request.action === 'config' && !configurationValid(value.configuration)) {
+    throw new Error('Flywheel control returned malformed model configuration');
+  }
+  if (request.action === 'doctor' && (!record(value.diagnostic) ||
+      value.diagnostic.ok !== value.ok || !Array.isArray(value.diagnostic.checks) ||
+      !value.diagnostic.checks.every(record) ||
+      (value.diagnostic.configuration !== undefined && !configurationValid(value.diagnostic.configuration)))) {
+    throw new Error('Flywheel control returned malformed environment report');
+  }
+  return value;
+}
+
+function initialControl() {
+  return { pending: null, status: null, checkedAt: null, stale: false, configuration: null,
+    diagnostic: null, raw: null, error: null, uncertainty: null };
+}
+
+// Transport state belongs to this apply-owned controller, not a component or
+// the draft store. Its observable reaches React only through slot injection.
+function createControl(execute, pendingOperations, isDisposed) {
+  const source = createSnapshot(initialControl());
+  let selected = null;
+  let epoch = 0;
+  let active = null;
+  const select = selection => {
+    const normalized = selectionOf(selection);
+    const key = selectionKey(normalized);
+    if (selected === key) return;
+    selected = key;
+    epoch += 1;
+    source.update(draft => {
+      Object.assign(draft, initialControl(), { pending: draft.pending, uncertainty: draft.uncertainty });
+    });
+  };
+  const run = async (action, selection, probe = false) => {
+    if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
+    if (!['status', 'start', 'stop', 'config', 'doctor'].includes(action)) return;
+    if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
+    const target = selectionOf(selection);
+    if (['status', 'start', 'stop'].includes(action) && !target.taskDir) return;
+    select(selection);
+    const requestEpoch = epoch;
+    const requestKey = selected;
+    const request = { action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
+      ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}) };
+    const operation = { action, probe, ...target, key: requestKey };
+    active = operation;
+    source.update(draft => { draft.pending = operation; draft.error = null; });
+    let timer;
+    let disposeWait;
+    try {
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Flywheel control confirmation timed out')), CONTROL_WAIT_MS);
+        disposeWait = () => reject(new Error('Flywheel UI was unloaded before confirmation'));
+        pendingOperations.add(disposeWait);
+      });
+      const value = await Promise.race([execute(request), deadline]);
+      if (isDisposed() || requestEpoch !== epoch) return;
+      source.update(draft => {
+        if (['status', 'start', 'stop'].includes(action)) {
+          draft.status = value;
+          draft.checkedAt = Date.now();
+          draft.stale = false;
+          if (draft.uncertainty?.key === requestKey) draft.uncertainty = null;
+        }
+        if (['config', 'doctor'].includes(action)) {
+          draft.configuration = value.configuration ?? value.diagnostic?.configuration ?? null;
+          draft.diagnostic = value.diagnostic ?? null;
+        }
+        draft.raw = value;
+      });
+    } catch (error) {
+      if (isDisposed() || requestEpoch !== epoch) return;
+      source.update(draft => {
+        const detail = error instanceof Error ? error.message : String(error);
+        const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
+        draft.error = { action, probe, detail, dispatch };
+        if (action === 'status' || (mutates(action) && dispatch === 'unknown')) draft.stale = true;
+        if (mutates(action) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
+      });
+    } finally {
+      clearTimeout(timer);
+      pendingOperations.delete(disposeWait);
+      active = null;
+      if (!isDisposed()) source.update(draft => { draft.pending = null; });
+    }
+  };
+  return { source, select, run, isMutating: () => active !== null && mutates(active.action) };
+}
+
+function Configuration({ value, t }) {
   if (!value) return null;
-  return h('section', { 'aria-label': '实际模型配置' },
-    h('h4', { style: { marginBottom: 6 } }, '实际模型配置'),
-    h('p', { style: { overflowWrap: 'anywhere' } }, `来源：${value.source || '内嵌模板'} · 范围：${value.scope}`),
-    h('div', { style: { overflowX: 'auto' } }, h('table', { style: tableStyle },
-      h('thead', null, h('tr', null, ...['阶段 / 路由', '模型 / Profile', 'Harness / Provider / 渠道', '推理 / 阶段权限要求 / 会话']
-        .map(title => h('th', { key: title, scope: 'col', style: cellStyle }, title)))),
-      h('tbody', null, ...value.bindings.map(binding => h('tr', { key: binding.id },
-        h('td', { style: cellStyle }, h('strong', null, roleLabels[binding.role] ?? binding.role),
-          h('div', null, binding.route || binding.id),
-          binding.inScope === false && h('div', null, '未用于本次检查')),
-        h('td', { style: cellStyle }, h('code', null, binding.model || '未配置'),
-          binding.profile && h('div', null, `Profile：${binding.profile}`)),
-        h('td', { style: cellStyle }, h('div', null, binding.harness),
-          h('div', null, `Provider：${binding.provider || (binding.harness === 'dsh' ? '未配置' : '由原生 CLI 管理')}`),
-          h('div', null, `渠道：${binding.channel || '未配置'}`)),
-        h('td', { style: cellStyle }, h('div', null, `推理：${binding.thinking || '默认'}`),
-          h('div', null, `阶段权限要求：${binding.permissionMode || '未声明'}`),
-          h('div', null, binding.residentSession ? '会话恢复：启用' : '会话恢复：关闭'))))))));
+  const field = (name, value, code = false) => h(React.Fragment, { key: name },
+    h('dt', null, t(name)), h('dd', null, code ? h('code', null, value) : value));
+  return h('section', { className: css.section, 'aria-label': t('configuration') },
+    h('h3', { className: css.heading }, t('configuration')),
+    h('p', { className: css.meta }, t('source', { source: textValue(value.source, '') || t('embedded') })),
+    h('p', { className: css.meta }, t('scope', { scope: textValue(value.scope) })),
+    h('div', { className: css.bindings }, ...(value.bindings ?? []).map((binding, index) =>
+      h('article', { className: css.binding, key: textValue(binding?.id, String(index)) },
+        h('div', { className: css.bindingHeader },
+          h('h4', { className: css.bindingTitle }, roleLabels[binding?.role] ? t(roleLabels[binding.role]) : textValue(binding?.role)),
+          h('code', { className: css.meta }, textValue(binding?.route || binding?.id))),
+        binding?.inScope === false && h('p', { className: css.meta }, t('outOfScope')),
+        h('dl', { className: css.properties },
+          field('model', textValue(binding?.model, '') || t('notConfigured'), true),
+          binding?.profile && field('profile', textValue(binding.profile)),
+          field('harness', textValue(binding?.harness), true),
+          field('provider', textValue(binding?.provider, '') || (binding?.harness === 'dsh' ? t('notConfigured') : t('nativeProvider'))),
+          field('channel', textValue(binding?.channel, '') || t('notConfigured')),
+          field('thinking', textValue(binding?.thinking, '') || t('default')),
+          field('permission', textValue(binding?.permissionMode, '') || t('undeclared')),
+          field('session', t(binding?.residentSession ? 'enabled' : 'disabled')))))));
 }
 
-function Diagnostic({ value }) {
+function Diagnostic({ value, t }) {
   if (!value) return null;
-  return h('section', { 'aria-label': '环境检查结果' },
-    h('h4', { style: { marginBottom: 6 } }, value.ok ? '检查结束：未发现阻断项' : '检查结束：存在阻断项'),
-    h('p', null, value.probeRequested ? '已请求 SDK 无推理检查。' : '本次只检查本地环境，未启动 SDK 探测。'),
-    h('p', null, '未发送推理请求；账号授权、额度和真实模型能力未通过本次检查验证。'),
-    h('ul', { style: { paddingLeft: 20 } }, ...value.checks.map((check, index) =>
-      h('li', { key: `${check.id}:${index}`, style: { marginBottom: 9, overflowWrap: 'anywhere' } },
-        h('strong', null, `${checkLabels[check.status]} · ${check.id}`),
-        h('div', null, check.summary),
-        check.code && h('div', null, `错误码：${check.code}`),
-        check.remedy && h('div', null, `处理建议：${check.remedy}`)))));
+  return h('section', { className: css.section, 'aria-label': t('diagnostic') },
+    h('h3', { className: css.heading }, t(value.ok ? 'doctorPassed' : 'doctorFailed')),
+    h('p', { className: css.meta }, t(value.probeRequested ? 'probeRequested' : 'localOnly')),
+    h('p', { className: css.meta }, t('inferenceBoundary')),
+    h('ul', { className: css.checks }, ...(value.checks ?? []).map((check, index) =>
+      h('li', { className: css.check, key: textValue(check?.id, '') + ':' + index },
+        h('span', { className: css.checkState, 'data-state': textValue(check?.status, 'unknown') },
+          t(checkLabels[check?.status] ?? 'unverified')),
+        h('div', { className: css.checkBody },
+          h('h4', { className: css.bindingTitle }, textValue(check?.id)),
+          h('p', null, textValue(check?.summary)),
+          check?.code && h('p', { className: css.meta }, t('errorCode', { code: textValue(check.code) })),
+          check?.remedy && h('p', null, t('remedy', { remedy: textValue(check.remedy) })))))));
 }
 
-function Budget({ value }) {
+function Budget({ value, t }) {
   if (!value) return null;
   const cost = value.totals?.['cost-usd'];
   const unknownCost = value['unknown-cost-calls'] ?? 0;
   const unknownUsage = value['unknown-usage-calls'] ?? 0;
-  let costText = Number.isFinite(cost) ? `已报告成本合计：$${cost.toFixed(4)}` : '成本：未知';
+  let costText = Number.isFinite(cost) ? t('cost', { amount: cost.toFixed(4) }) : t('costUnknown');
   if (unknownCost > 0) {
     costText = Number.isFinite(cost) && cost > 0 ?
-      `已知成本合计：$${cost.toFixed(4)}；另有 ${unknownCost} 次调用成本未知，合计不完整` :
-      `成本：未知（${unknownCost} 次调用未报告结算成本）`;
+      t('costPartial', { amount: cost.toFixed(4), count: unknownCost }) : t('costMissing', { count: unknownCost });
   }
-  return h('section', { 'aria-label': '用量与成本' },
+  return h('section', { className: css.budget, 'aria-label': t('budget') },
     h('p', null, costText),
-    h('p', null, `已报告 Token：${value.totals?.tokens ?? '未知'}` +
-      (unknownUsage > 0 ? `；${unknownUsage} 次调用用量未知，合计不完整` : '')),
-    value['daily-token-limit'] != null && h('p', null,
-      `每日 Token 限额：${value['daily-token-limit']} · 预算策略：${value.enforce}`),
-    ...(value.warnings ?? []).map((warning, index) => h('p', { key: index }, `预算提示：${warning}`)));
+    h('p', null, t('tokens', { tokens: value.totals?.tokens ?? t('unknown') }) +
+      (unknownUsage > 0 ? t('tokensMissing', { count: unknownUsage }) : '')),
+    value['daily-token-limit'] != null && h('p', { className: css.meta },
+      t('tokenLimit', { limit: value['daily-token-limit'], policy: textValue(value.enforce) })),
+    ...(value.warnings ?? []).map((warning, index) => h('p', { key: index },
+      t('budgetWarning', { message: textValue(warning) }))));
 }
 
-function Panel({ execute }) {
-  const [open, setOpen] = React.useState(false);
-  const [taskDir, setTaskDir] = React.useState('');
-  const [cwd, setCwd] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-  const [status, setStatus] = React.useState(null);
-  const [configuration, setConfiguration] = React.useState(null);
-  const [diagnostic, setDiagnostic] = React.useState(null);
-  const [raw, setRaw] = React.useState(null);
-  const [error, setError] = React.useState('');
-  const requestVersion = React.useRef(0);
-  const panelId = React.useId();
-  React.useEffect(() => () => { requestVersion.current += 1; }, []);
-  const changePath = (setPath, value) => {
-    // Editing a path changes the view's identity, even while a request is in
-    // flight. It never implies stopping an independently running Go task.
-    requestVersion.current += 1;
-    setPath(value);
-    setBusy(false);
-    setStatus(null);
-    setConfiguration(null);
-    setDiagnostic(null);
-    setRaw(null);
-    setError('');
-  };
-  const packets = Object.entries(status?.state?.packets ?? {});
-  const run = async (action, probe = false) => {
-    const version = ++requestVersion.current;
-    setBusy(true);
-    setError('');
-    try {
-      const request = { action, ...(taskDir.trim() ? { taskDir: taskDir.trim() } : {}),
-        ...(cwd.trim() ? { cwd: cwd.trim() } : {}), ...(probe ? { probe: true } : {}) };
-      const value = await execute(request);
-      if (version !== requestVersion.current) return;
-      if (['start', 'status', 'stop'].includes(action)) setStatus(value);
-      if (['config', 'doctor'].includes(action)) {
-        setConfiguration(value.configuration ?? value.diagnostic?.configuration ?? null);
-        setDiagnostic(value.diagnostic ?? null);
-      }
-      setRaw(value);
-    } catch (error) {
-      if (version === requestVersion.current) setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (version === requestVersion.current) setBusy(false);
-    }
-  };
-  const button = (action, label, needsTask, probe = false) => h('button', {
-    key: label, type: 'button', disabled: busy || (needsTask && !taskDir.trim()),
-    onClick: () => run(action, probe), style: buttonStyle,
-  }, label);
-  return h('div', { style: { position: 'relative', fontSize: 12 } },
-    h('button', { type: 'button', onClick: () => setOpen(!open), 'aria-expanded': open, 'aria-controls': panelId,
-      style: { border: '1px solid currentColor', borderRadius: 6, padding: '2px 8px' } },
-    `Flywheel${status ? ` · ${taskLabel(status)}` : ''}`),
-    open && h('section', { id: panelId, 'aria-label': 'Flywheel 任务控制', style: {
-      position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, width: 'min(720px, 88vw)',
-      maxHeight: '70vh', overflow: 'auto', padding: 14, border: '1px solid #8888', borderRadius: 10,
-      background: 'var(--color-background, Canvas)', color: 'var(--color-foreground, CanvasText)',
-      boxShadow: '0 8px 32px #0003', zIndex: 40,
-    } },
-    h('strong', null, 'Flywheel · Go 引擎'),
-    h('p', { style: { margin: '8px 0' } }, '任务独立于桌面会话运行。切换下方路径只切换查看对象；停止任务请使用“停止”。'),
-    h('label', { style: { display: 'block' } }, '任务目录（绝对路径，配置与环境检查可留空）',
-      h('input', { value: taskDir, onChange: e => changePath(setTaskDir, e.target.value),
-        placeholder: '/path/to/repo/docs/task',
-        style: { width: '100%', boxSizing: 'border-box', padding: 6, border: '1px solid #8888', borderRadius: 4, margin: '4px 0 8px' } })),
-    h('label', { style: { display: 'block' } }, '仓库目录（留空使用当前 DSH 会话目录）',
-      h('input', { value: cwd, onChange: e => changePath(setCwd, e.target.value), placeholder: '/path/to/repo',
-        style: { width: '100%', boxSizing: 'border-box', padding: 6, border: '1px solid #8888', borderRadius: 4, margin: '4px 0 8px' } })),
-    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 } },
-      button('status', '刷新状态', true), button('start', '启动', true), button('stop', '停止', true)),
-    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 } },
-      button('config', '查看模型配置', false), button('doctor', '检查环境', false),
-      button('doctor', 'SDK 无推理检查', false, true)),
-    busy && h('p', { role: 'status' }, '正在等待引擎确认…'),
-    error && h('p', { role: 'alert', style: { color: '#d34b4b', whiteSpace: 'pre-wrap' } }, error),
-    status && h('section', { 'aria-label': '任务状态' },
-      h('h4', { style: { marginBottom: 6 } }, '任务状态（上次刷新）'),
-      h('p', null, `${status.state?.slug ?? '任务'} · ${taskLabel(status)}` + (status.running && status.pid > 0 ? ` · PID ${status.pid}` : '')),
-      status.state?.['current-milestone'] && h('p', null, `当前里程碑：${status.state['current-milestone']}`),
-      packets.length > 0 && h('div', { style: { maxHeight: 260, overflow: 'auto' } },
-        h('table', { 'aria-label': '工作单元', style: tableStyle },
-          h('caption', { style: { textAlign: 'left' } }, `工作单元（共 ${packets.length} 个）`),
-          h('thead', null, h('tr', null, ...['工作单元', '状态', '路由'].map(title => h('th', { key: title, scope: 'col', style: cellStyle }, title)))),
-          h('tbody', null, ...packets.map(([id, packet]) => h('tr', { key: id },
-            h('td', { style: cellStyle }, id),
-            h('td', { style: cellStyle }, packetLabels[packet?.status] ?? packet?.status ?? '未知'),
-            h('td', { style: cellStyle }, packet?.route ?? '—')))))),
-      h(Budget, { value: status.state?.budget }),
-      status.state?.inbox?.length > 0 && h('details', null,
-        h('summary', null, `待人工处理记录：${status.state.inbox.length} 条`),
-        h('pre', { style: rawStyle }, JSON.stringify(status.state.inbox, null, 2)))),
-    h(Diagnostic, { value: diagnostic }),
-    h(Configuration, { value: configuration }),
-    raw && h('details', null, h('summary', null, '引擎原始结果（JSON）'),
-      h('pre', { style: rawStyle }, JSON.stringify(raw, null, 2))),
-    ));
+function TaskStatus({ control, selection, t }) {
+  const { status, checkedAt, stale } = control;
+  if (!status) return h('section', { className: css.empty, 'aria-label': t('statusHeading') },
+    h('h3', { className: css.heading }, t('emptyHeading')),
+    h('p', { className: css.meta }, t(selection.taskDir.trim() ? 'emptySelected' : 'emptyBody')));
+  const packets = Object.entries(status.state?.packets ?? {});
+  return h('section', { className: css.section, 'aria-label': t('statusHeading') },
+    h('div', { className: css.sectionHeader },
+      h('h3', { className: css.heading }, textValue(status.state?.slug, t('task'))),
+      h('span', { className: css.badge }, stale ? t('stateUnconfirmed') : taskLabel(status, t))),
+    h('p', { className: css.meta },
+      t('lastChecked', { time: new Date(checkedAt).toLocaleString() }) +
+      (status.running && status.pid > 0 ? ' · PID ' + status.pid : '')),
+    stale && h('p', { className: css.warningText },
+      t('stale') + ' · ' + t('previousState', { status: taskLabel(status, t) })),
+    status.state?.['current-milestone'] && h('p', null,
+      t('milestone', { name: textValue(status.state['current-milestone']) })),
+    packets.length > 0 && h('table', { className: css.packets, 'aria-label': t('packets') },
+      h('caption', null, t('packetsCount', { count: packets.length })),
+      h('thead', null, h('tr', null, ...['packet', 'state', 'route'].map(key => h('th', { key, scope: 'col' }, t(key))))),
+      h('tbody', null, ...packets.map(([id, packet]) => h('tr', { key: id },
+        h('td', null, id),
+        h('td', null, packetLabels[packet?.status] ? t(packetLabels[packet.status]) : textValue(packet?.status, t('unknown'))),
+        h('td', null, textValue(packet?.route)))))),
+    h(Budget, { value: status.state?.budget, t }),
+    status.state?.inbox?.length > 0 && h('details', { className: css.details },
+      h('summary', null, t('inboxCount', { count: status.state.inbox.length })),
+      h('pre', { className: css.raw }, JSON.stringify(status.state.inbox, null, 2))));
 }
 
-exports.inject = ['slots', 'remote', 'remote.commands'];
+function Feedback({ control, selection, reconcile, t }) {
+  const busy = control.pending !== null;
+  const error = control.error &&
+    (!mutates(control.error.action) || control.error.dispatch === 'not-dispatched') ? control.error : null;
+  const mode = control.uncertainty ? 'uncertain' : error ? 'error' : busy ? 'loading' : 'idle';
+  const otherSelection = busy && control.pending.key !== selectionKey(selectionOf(selection));
+  const locked = busy && mutates(control.pending.action);
+  const pendingLabel = busy ? t(otherSelection ? 'busyOther' : 'busy', {
+    action: t(actionKey(control.pending)),
+  }) : '';
+  return h('div', { className: css.feedback, 'data-state': mode,
+    role: 'region', 'aria-label': t('feedback'), tabIndex: mode === 'uncertain' || mode === 'error' ? 0 : undefined },
+    busy && h('div', { className: control.uncertainty ? css.loadingCompact : css.loading,
+      role: 'status', 'aria-label': pendingLabel },
+      h(Spinner),
+      !control.uncertainty && (locked || otherSelection) && h('p', null, pendingLabel),
+      locked && h('p', { className: css.meta }, t('mutationLock'))),
+      control.uncertainty && h('section', { className: css.notice, role: 'alert' },
+        h('h3', { className: css.heading }, t('unknownOutcome', { action: t(control.uncertainty.action) })),
+        h('p', null, t('unknownHelp')),
+        h('code', { className: css.path }, control.uncertainty.taskDir),
+        h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: reconcile }, t('reconcile')),
+        h('details', { className: css.details },
+          h('summary', null, t('errorDetails')),
+          h('pre', { className: css.raw }, control.uncertainty.detail))),
+      error && h('section', { className: css.error, role: 'alert' },
+        h('h3', { className: css.heading }, t(error.dispatch === 'not-dispatched' ? 'notDispatchedTitle' : 'errorTitle',
+          { action: t(actionKey(error)) })),
+        h('p', null, t(error.dispatch === 'not-dispatched' ? 'notDispatchedHelp' : 'errorHelp')),
+        h('details', { className: css.details },
+          h('summary', null, t('errorDetails')),
+          h('pre', { className: css.raw }, error.detail))),
+      mode === 'idle' && h('div', { className: css.idleFeedback },
+        h('p', null, t('lifecycle')),
+        !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
+}
+
+function TaskView({ useStore, actions, useControl, changeSelection, run, reconcile, t }) {
+  const selection = useStore(value => value);
+  const control = useControl(value => value);
+  const formId = React.useId();
+  const busy = control.pending !== null;
+  const locked = busy && mutates(control.pending.action);
+  const invalidTask = pathProblem(selection.taskDir);
+  const invalidCwd = pathProblem(selection.cwd);
+  const button = (action, labelKey, needsTask, probe = false, variant = 'outline') => h(Button, {
+    key: labelKey, variant, size: 'sm',
+    disabled: busy || !!invalidTask || !!invalidCwd || (needsTask && !selection.taskDir.trim()) ||
+      (mutates(action) && control.uncertainty !== null),
+    onClick: () => run(action, selection, probe),
+  }, t(labelKey));
+  const field = (name, hint, placeholder, problem) => h('div', { className: css.field },
+    h('label', { htmlFor: formId + '-' + name, className: css.fieldLabel }, t(name)),
+    h(Input, { id: formId + '-' + name, className: css.input,
+      value: selection[name], disabled: locked, placeholder, spellCheck: false,
+      'aria-invalid': !!problem, 'aria-describedby': formId + '-' + name + '-help',
+      onChange: event => changeSelection({ taskDir: selection.taskDir, cwd: selection.cwd, [name]: event.target.value }) }),
+    h('p', { id: formId + '-' + name + '-help', className: problem ? css.errorText : css.meta }, t(problem ?? hint)));
+  return h('section', { className: css.page, 'aria-label': 'Flywheel ' + t('title') },
+    h('style', { 'data-plugin': '@ckanner/dsh-plugin-flywheel',
+      'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css',
+    }, stylesheet),
+    h('header', { className: css.header },
+      h('h2', { className: css.title }, t('title')),
+      h('p', { className: css.meta }, t('description'))),
+    h('section', { className: css.selection, 'aria-label': t('selection') },
+      h('div', { className: css.fields },
+        field('taskDir', 'taskHint', '/path/to/repo/docs/task', invalidTask),
+        field('cwd', 'cwdHint', '/path/to/repo', invalidCwd)),
+      h('div', { className: css.actions },
+        button('status', 'status', true, false, 'primary'),
+        button('start', 'start', true), button('stop', 'stop', true))),
+    h(Feedback, { control, selection, reconcile, t }),
+    h(TaskStatus, { control, selection, t }),
+    h('details', { className: css.advanced, open: selection.advancedOpen,
+      onToggle: event => actions.setAdvancedOpen(event.currentTarget.open) },
+      h('summary', { className: css.heading }, t('advanced')),
+      h('div', { className: css.advancedBody },
+        h('p', { className: css.meta }, t('advancedHelp')),
+        h('div', { className: css.actions },
+          button('config', 'config', false), button('doctor', 'doctor', false),
+          button('doctor', 'probe', false, true)),
+        h(Diagnostic, { value: control.diagnostic, t }),
+        h(Configuration, { value: control.configuration, t }))),
+    control.raw && h('details', { className: css.details },
+      h('summary', null, t('raw')),
+      h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
+}
+
+exports.inject = ['slots', 'remote', 'remote.commands', 'locale'];
 exports.apply = function apply(ctx) {
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock', id: 'flywheel', order: 50,
-    inject: sessionId => ({
-      execute: async request => {
-        const reply = await ctx.remote.commands.execute(sessionId, `/flywheel ${JSON.stringify(request)}`, []);
-        if (!reply?.ok) throw new Error(reply?.error?.message ?? 'DSH command transport failed');
-        const result = reply.value?.result;
-        if (result?.kind !== 'success') throw new Error(result?.text ?? 'Flywheel command unavailable');
-        const value = JSON.parse(result.text);
-        if (value?.protocol !== 1) throw new Error('Flywheel control protocol mismatch');
-        return value;
-      },
-    }),
-  }, Panel));
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'flywheel: locales');
+  const t = ctx.locale.bind(NS);
+  // Drafts are slot-owned view state. No busy/status value is persisted or
+  // restored as a live fact after a new Session binding or a plugin reload.
+  const viewStore = createViewStore();
+  const controls = new WeakMap();
+  const pendingOperations = new Set();
+  let disposed = false;
+  ctx.on('dispose', () => {
+    disposed = true;
+    for (const release of pendingOperations) release();
+    pendingOperations.clear();
+  });
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view', id: 'flywheel', order: 20, label: () => t('view'),
+    locale: NS, store: viewStore,
+    inject: (sessionId, actions) => {
+      // Bound actions identify one retained Session binding. A recycled
+      // session id with a fresh binding must not adopt an old async result.
+      let control = controls.get(actions);
+      if (!control) {
+        control = createControl(async request => readReply(
+          await ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), []), request),
+        pendingOperations, () => disposed);
+        controls.set(actions, control);
+      }
+      return {
+        hooks: { control: control.source },
+        changeSelection: next => {
+          if (disposed || control.isMutating()) return;
+          actions.setSelection(next);
+          control.select(next);
+        },
+        run: control.run,
+        reconcile: () => {
+          const outcome = control.source.getSnapshot().uncertainty;
+          if (!outcome || control.source.getSnapshot().pending) return;
+          const next = { taskDir: outcome.taskDir, cwd: outcome.cwd };
+          actions.setSelection(next);
+          return control.run('status', next);
+        },
+      };
+    },
+  }, TaskView));
 };

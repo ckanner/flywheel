@@ -237,6 +237,30 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 诊断 CLI 捕获 SIGTERM/SIGINT 为 context 取消，等待已有进程收尾。看门狗的 TERM 升级、stdio 排空和进程组确认各有 5 秒窗口，保守可叠加 15 秒；桌面正常控制超时为 60 秒。host 主动取消诊断时留 20 秒清理才强杀 Go，避免沿用普通控制命令的 500ms 宽限截断 SDK 清理。取消、超时、清理失败均不能报告为通过。
 
+### 12.1 DSH 会话视图与异常状态
+
+桌面控制面通过 `ctx.slots.inject()` 注册 `conversation.view` 列表中的独立 `flywheel` 条目，由 DSH 在“对话／轨迹”旁提供原生视图导航。它用于查看工作单元、人工处理项、有效模型配置和环境诊断，以及显式启动、刷新、停止已有任务。移除旧的 composer dock 大弹层，不替换对话／轨迹的条目，不接管输入框、模型选择器或右侧栏，不另建浮动侧栏。主界面优先呈现任务控制与结果，模型配置和环境检查按需展开；长路径、模型字段和错误在内容区换行或局部滚动。
+
+外部 plain-JS 客户端只运行时导入共享 React，不导入 `ui-primitives`、`client-store` 或其他 Harness Client 包。按钮和输入框由插件自己实现，参照已核对的宿主结构、尺寸和交互，颜色只依赖 `--dsw-alias-*`，字体继承宿主。CSS Modules 在构建时编译，样式由 React 视图拥有；不从业务代码操作全局 DOM，也不新建 iframe、侧栏或窗口级遮罩。视图位于 Conversation 已有标题栏之下，不重复叠加全局页面的 macOS 顶部留白。
+
+插件提供符合公开结构契约的查看状态 store handle，注册后由宿主管理会话绑定、实例缓存和读取 hooks。它只保存路径草稿和诊断区展开状态；请求状态和显示快照由插件 apply 层的控制器及其自有 observable 管理，通过槽位注入供界面读取。控制器以宿主会话绑定的 actions 身份隔离，Go 仍然独占业务状态。组件不自行订阅外部数据，不取得 Cordis ctx，也不回写会话事件。宿主保留该会话绑定期间，切换顶部视图不丢失选择，不把一个会话的结果交给另一个会话。绑定释放、插件重载或桌面重启不承诺保留这些查看数据，任务账本不受影响。打开视图不自动启动、恢复或探测，不扫描任务，也不自动轮询；用户选择实际任务目录并手动刷新。
+
+同一会话只允许一个未完成的控制请求。启动／停止等待期间锁定路径；只读请求允许编辑路径，但直到已有请求结束前不并发提交下一次请求，旧身份的迟到响应不能覆盖新选择。切换视图不取消后台任务，也不把请求的视觉卸载当作引擎操作完成。展示引擎结果时记录刷新时间：保留的有效快照仍是旧快照，不能冒充实时运行状态。
+
+读取失败保留有效内容并给出失败与恢复操作。只有宿主以结构化结果明确证明 Go 控制进程尚未启动的拒绝，才允许作为已知未执行的失败处理，修正目录或环境后可重新提交；不解析错误文本来猜测是否执行。启动／停止的响应超时、断连或失效属于结果未确认，保留针对该任务的提示并禁止继续变更，直至成功刷新状态后重新判断。不能自动重试变更、乐观标记 stopped，或推断超时意味着没有启动。诊断阻断项继续展示结构化报告，未验证的账号、额度与模型能力不能显示为通过。
+
+加载和错误共用表单预留的反馈区，避免操作结果挤动任务内容；使用一个居中的加载指示，长路径和展开详情可在区内滚动并通过键盘访问。后续只读查询等待期间仍保留原任务的结果未确认提示和目标，刷新按钮暂时禁用。说明、字段标签与诊断状态文字使用经过亮暗默认色板核对的主要／次要文本色，成功／警告色用于边线等辅助提示。
+
+原生轨迹由 DSH 管理，保留父会话已有命令／工具记录。独立 SDK、Kimi 和 Codex Pro worker 的完整历史不会自动合并到该轨迹，也不向原生团队或后台任务列表登记虚构任务。后续若接入轨迹关联，必须采用宿主公开的身份、事件和生命周期契约。
+
+兼容性依据固定在声明版本为 `0.2.1-rc.5` 的源码 `b830ec950faba0a46dda564be3e2d854afed94f1`：[外部插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)、[UI 规范](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md)与[布局说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md)。具体注册与作用域同时核对[会话插槽源码](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts)和[生命周期说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md)。`dsh.client.inject` 元数据不能代替运行时 service inject 或槽位声明屏障。390 CSS px、长内容、亮暗主题、焦点、加载、失败和会话切换须检验；组件夹具与源码核对不等于真实 Mac 桌面验收。已发行 `0.28.0` 仍是旧弹层，新的视图需要包含本改动的构建。
+
+### 12.2 桌面内置能力与 worker 策略
+
+原生 UI 接入和独立 worker 是不同边界。SDK worker 的临时 `--patch` 仅用于该子进程，不修改桌面 profile，也不卸载桌面的插件、skills、工具或 UI。桌面已加载插件、已登录账号、已选模型，不代表 SDK profile 或其他 harness 已配置相同能力；控制面显示引擎实际配置，不静默继承或迁移桌面设置。
+
+现有 worker 策略固定目录、权限和审批，限制自主委派及 workflow／goal 驱动，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。此次 UI 修复不改变 worker 策略；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
+
 ## 13. 配置和分发
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。

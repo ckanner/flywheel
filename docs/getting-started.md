@@ -4,6 +4,8 @@
 
 本文适用于 **Flywheel 0.28.0 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
 
+下文的顶部 **Flywheel 会话视图**描述当前源码中的 UI 修复。已发布 `0.28.0` 仍使用底部弹层；需要安装包含修复的后续构建，源码合并或重新载入同一个旧版本不会带来新布局。CLI 和任务目录接口保持一致。
+
 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。
 
 ## 目录
@@ -93,7 +95,9 @@ flywheel setup --no-global
 
 ## 3. 桌面入口和 SDK 配置
 
-安装器已经调用正式接口 `dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次精确版本>`，随后通过 `list` 核对版本。无需再分别安装 worker 或手动选择压缩包。该命令必须来自桌面安装；独立 npm DSH CLI 不能管理保留的 `desktop` profile。按照宿主提示重新载入，在会话输入区底部查找 **Flywheel** 按钮。
+安装器已经调用正式接口 `dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次精确版本>`，随后通过 `list` 核对版本。无需再分别安装 worker 或手动选择压缩包。该命令必须来自桌面安装；独立 npm DSH CLI 不能管理保留的 `desktop` profile。按照宿主提示重新载入，在顶部“对话／轨迹”所在的原生视图栏选择 **Flywheel**；未直接显示时检查该栏的更多入口。
+
+这个视图用于控制和观察已经准备好的任务：看进度、人工处理项、实际模型和环境，显式启动、刷新或停止。它保留 DSH 的原生对话、轨迹、输入区、模型选择器和右侧栏；需求讨论与契约准备仍在原来的对话和 skills 中进行。视图不会自动发现别处启动的任务，需要选择相同的任务目录。
 
 ### 原生 SDK profile
 
@@ -104,6 +108,8 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
 随后按该 provider 的文档在对应 profile 完成授权，并保持一致的 `DSH_HOME`。不需要把凭证复制到任务契约或 Git。此处不把 `subagent_codex_pro` 当成原生 LLM provider。困难任务通过 `codex-pro` worker 直接使用已安装插件的公开 machine API，不需要 DSH 父模型再发一次工具调用。底层 Codex app-server 仍需本机 Codex 与登录；包依赖安装不代替它们。
+
+SDK worker 的临时权限与工具策略只用于其子进程，不改写桌面 profile 或移除桌面已有能力。它限制自主委派、辅助模型压缩等工作，当前还禁用整个 web 工具；移到原生会话视图不会让 worker 自动继承桌面插件或轨迹。能力范围及后续检索接入边界见[插件说明](../plugins/dsh/README.md#权限上下文与报告归档)。
 
 ### Mac GUI 的自动入口
 
@@ -243,7 +249,13 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 flywheel control status --task-dir "$PWD/docs/add" --cwd "$PWD"
 ```
 
-`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。启动 readiness 超时后先刷新状态和看日志，不重复启动。也可以在 DSH 输入区的 Flywheel 面板填入同样两个绝对路径，先查看配置和检查环境，再点击“启动／刷新状态／停止”。面板区分未初始化、已完成、暂停、停止和升级；修改路径会清除旧视图，但不会停止旧任务。
+`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。也可以在顶部 **Flywheel** 视图填入同样两个绝对路径，按需展开“模型配置与环境检查”，再点击“启动／刷新状态／停止”。视图区分未初始化、运行、已完成、暂停、停止和升级，标明最近刷新时间；它不会自动轮询。
+
+宿主保留会话绑定期间，路径草稿与快照会按会话保留，切换“对话／轨迹／Flywheel”不丢失；重新载入插件或桌面后可能需要重新选择路径。修改路径清除旧结果并忽略迟到响应，不会停止旧任务。每个会话只等待一个控制请求；启动或停止等待期间锁定目录输入。
+
+启动或停止超时、断连后，后台任务的结果可能尚未确认。保留原任务目录，先“刷新状态”和查看日志；界面在成功核对该任务前禁止继续启动／停止，也不会自动重试。已有快照只是上次结果，不能凭页面关闭、切换会话或停止按钮失去等待状态推断引擎已经结束。原生轨迹保留父会话自己的记录，worker 完整历史不自动合并到其中。
+
+如果宿主明确报告请求在启动控制进程前已被拒绝，例如目录不存在，则修正目录或环境后可以重新提交；这与响应丢失后的结果未确认不同。界面只接受宿主的结构化确认，不通过错误文字推断任务没有执行。
 
 需要人工在 Review 前检查结果时，使用前台监督模式；它与后台 start 二选一：
 
@@ -299,6 +311,8 @@ launcher 被手工修改时，先备份修改。希望采用自动入口，可�
 | 现象 | 先检查什么 |
 |---|---|
 | 没有 `install` 或 `control` 命令 | `npm view @ckanner/flywheel version` 与 `flywheel version`；是否仍是旧 0.22.1，PATH 或显式 `flywheelBinary` 是否指向旧版本 |
+| 仍看到底部大弹层 | 已发布的 `0.28.0` 是旧布局；核对是否安装了包含会话视图修复的构建，再按宿主提示重新载入 |
+| 顶部未直接显示 Flywheel | 检查视图栏更多入口、插件启用状态和实际版本；`/flywheel` 与 CLI 仍可用于诊断 |
 | 安装 `ok:true`，但 `ready:false` | 安装已完成；按 `diagnostic.checks` 补齐当前配置需要的 CLI、目录或环境变量，再运行 doctor |
 | npm 全局目录权限错误 | 使用自己可写的 `--prefix`，并把对应 `bin` 加入 shell PATH |
 | desktop profile 被拒绝 | `--dsh-bin` 是否指向桌面安装的命令，而非单独 npm 安装的 DSH CLI |
@@ -312,7 +326,7 @@ launcher 被手工修改时，先备份修改。希望采用自动入口，可�
 | 改 channel 后账号没切换 | channel 是计量/配置别名；实际账号仍由 SDK profile/provider 的授权决定 |
 | doctor 有 unknown 或 skipped | unknown 不等于通过，skipped 可能是非任务路由、mock 或没有请求 SDK probe |
 | 费用显示未知 | 渠道未提供 cost／usage；unknown 不是免费，hard token budget 可能停止 |
-| 启动超时但日志继续增长 | 先用 control status 观察就绪状态，不重复启动第二个引擎 |
+| 启动／停止结果未确认 | 刷新同一任务并查看日志；超时或断连不证明任务未启动或已停止，不能自动重试变更 |
 | L1 在 exit 0 后仍拒绝 | 检查候选漂移、输出截断、超时／取消或进程收尾错误 |
 | 提交／合并／持久化检查失败 | 检查保留 worktree、hook 和 Git 差异，修复原因后恢复，不强制清理 |
 | skills 安装拒绝已有目录 | 查看具体冲突；可能是用户修改、未标记目录、损坏清单或旧标记。按上面的备份恢复流程处理，`--force` 不绕过默认保护 |
