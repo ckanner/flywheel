@@ -7,15 +7,15 @@ provides its DSH SDK and Codex Pro workers. The engine owns task state, budgets,
 verification, Git delivery, and process lifecycles. The desktop is a control and
 observation interface; it does not need a parent model session to keep a task alive.
 
-This guide describes the **Flywheel 0.28.0** interfaces. Source availability does
+This guide describes the **Flywheel 0.28.1** interfaces. Source availability does
 not mean that npm `latest` already contains them. Check the registry version and
 the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The desktop
 compatibility baseline is **DSH Mac 0.2.1-rc.5**, not a claim that every DSH build
 or provider adapter is compatible.
 
-The conversation-view sections describe the UI fix in the current source.
-**Published 0.28.0 still uses the composer popup.** Install a later build that
-includes this fix; merging source does not update an installed plugin.
+**Flywheel 0.28.1 introduces the native conversation view.** Version `0.28.0`
+uses the composer popup. Upgrade the CLI and desktop plugin to the same new
+version; merging source does not update an installed plugin.
 
 ## Components
 

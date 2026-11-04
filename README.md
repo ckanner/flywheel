@@ -4,7 +4,7 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前 **v0.28.0 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前 **v0.28.1 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
@@ -128,7 +128,7 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。模板可通过 `flywheel template` 查看；可选的 `flywheel-new` skill 用于辅助生成，最终仍由人确认契约。不要把 DSH 面板当成需求生成器。
 
-当前源码把桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。已发布的 `0.28.0` 仍是旧底部弹层，新布局需要包含此修复的构建。输入仓库路径后可查看配置、检查环境或执行 SDK 无推理探测；启动、刷新和停止还需绝对任务路径。视图展示最近刷新的任务结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
+从 `0.28.1` 开始，桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。输入仓库路径后可查看配置、检查环境或执行 SDK 无推理探测；启动、刷新和停止还需绝对任务路径。视图展示最近刷新的任务结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
 
 ```text
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}

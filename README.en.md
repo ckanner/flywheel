@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 Flywheel turns reviewed software requirements into bounded coding tasks with explicit acceptance criteria. A deterministic Go engine runs Plan, Execute, Review, and verification loops. Models propose plans, implement changes, and review candidates; the engine owns state, retries, budgets, workspaces, verification, local Git delivery, and stopping.
 
-This documentation describes the **0.28.0 implementation**. The desktop integration targets the interfaces checked against **DSH Mac 0.2.1-rc.5**. Source changes and GitHub releases do not establish npm availability: check the registry before installing a version. Offline test results also do not establish that a user's Mac, desktop permissions, account, or selected model works.
+This documentation describes the **0.28.1 implementation**. The desktop integration targets the interfaces checked against **DSH Mac 0.2.1-rc.5**. Source changes and GitHub releases do not establish npm availability: check the registry before installing a version. Offline test results also do not establish that a user's Mac, desktop permissions, account, or selected model works.
 
 ## Install
 
@@ -80,7 +80,7 @@ Packet delivery is a **local Git operation**. After evidence matches the current
 
 ### Desktop task controls
 
-The current source adds a native **Flywheel** conversation view alongside Chat and Trajectory, preserving DSH's composer, model selector, and right sidebar. Published `0.28.0` still uses the old composer popup; the native view requires a build containing this fix. Select a prepared task directory and its repository to inspect progress, intervention, effective models, and diagnostics, or explicitly start, refresh, or stop it.
+From `0.28.1`, the native **Flywheel** conversation view appears alongside Chat and Trajectory, preserving DSH's composer, model selector, and right sidebar. Version `0.28.0` uses the old composer popup; upgrade the CLI and desktop plugin to the same new version. Select a prepared task directory and its repository to inspect progress, intervention, effective models, and diagnostics, or explicitly start, refresh, or stop it.
 
 The view retains session-scoped drafts while the host retains the session binding and shows snapshots with their refresh time. It does not discover tasks or poll automatically. An unconfirmed start/stop outcome requires a successful refresh of the same task before further mutations; closing or switching the view does not stop the independent engine. DSH's trajectory keeps its parent-session records, without automatically merging independent worker history. Desktop capabilities and SDK worker policy have separate scopes; see the [plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#use-the-desktop-controls).
 

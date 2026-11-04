@@ -2,11 +2,11 @@
 
 [English README](../../README.en.md) · [中文](../getting-started.md) · [Workflow](workflow.md) · [Configuration](configuration.md)
 
-This guide covers the **0.28.0 implementation**: npm installation, the DSH desktop and workers, configuration, preflight, a small task, and recovery. The checked desktop interface baseline is **DSH Mac 0.2.1-rc.5**. Real desktop UI, macOS permissions, authentication, and model inference still need testing on the intended machine.
+This guide covers **Flywheel 0.28.1**: npm installation, the DSH desktop and workers, configuration, preflight, a small task, and recovery. The checked desktop interface baseline is **DSH Mac 0.2.1-rc.5**. Real desktop UI, macOS permissions, authentication, and model inference still need testing on the intended machine.
 
 Before installing, check `npm view @ckanner/flywheel version`. Continue with these instructions once the registry has the version you intend to use. A merged source change or GitHub Release does not establish npm publication, and an older installed release may not include these interfaces.
 
-The top-level **Flywheel conversation view** below describes the UI fix in the current source. Published `0.28.0` still uses the composer popup; install a later build containing the fix. Merging source or reloading the same old version does not change that layout. CLI and task-directory interfaces remain the same.
+The top-level **Flywheel conversation view** below is available from `0.28.1`. Version `0.28.0` uses the composer popup; upgrade the CLI and desktop plugin to the same new version. Merging source or reloading the old version does not change that layout. CLI and task-directory interfaces remain the same.
 
 ## 1. Prepare the environment
 

@@ -6,6 +6,8 @@ This guide is for maintainers. Users install from npm using the
 [getting started guide](getting-started.md). A merged PR, a GitHub Release or
 a successful local build does not establish that npm installation is ready.
 
+The native-view patch release target is **0.28.1**. Its [preparation record](../validation/2026-11-04-release-0.28.1.md) separates local source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.1 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
+
 ## Release contract
 
 One release contains six packages at the same exact version, in this order:

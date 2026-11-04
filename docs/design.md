@@ -253,7 +253,7 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 原生轨迹由 DSH 管理，保留父会话已有命令／工具记录。独立 SDK、Kimi 和 Codex Pro worker 的完整历史不会自动合并到该轨迹，也不向原生团队或后台任务列表登记虚构任务。后续若接入轨迹关联，必须采用宿主公开的身份、事件和生命周期契约。
 
-兼容性依据固定在声明版本为 `0.2.1-rc.5` 的源码 `b830ec950faba0a46dda564be3e2d854afed94f1`：[外部插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)、[UI 规范](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md)与[布局说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md)。具体注册与作用域同时核对[会话插槽源码](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts)和[生命周期说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md)。`dsh.client.inject` 元数据不能代替运行时 service inject 或槽位声明屏障。390 CSS px、长内容、亮暗主题、焦点、加载、失败和会话切换须检验；组件夹具与源码核对不等于真实 Mac 桌面验收。已发行 `0.28.0` 仍是旧弹层，新的视图需要包含本改动的构建。
+兼容性依据固定在声明版本为 `0.2.1-rc.5` 的源码 `b830ec950faba0a46dda564be3e2d854afed94f1`：[外部插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)、[UI 规范](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md)与[布局说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md)。具体注册与作用域同时核对[会话插槽源码](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts)和[生命周期说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md)。`dsh.client.inject` 元数据不能代替运行时 service inject 或槽位声明屏障。390 CSS px、长内容、亮暗主题、焦点、加载、失败和会话切换须检验；组件夹具与源码核对不等于真实 Mac 桌面验收。`0.28.0` 仍是旧弹层，原生会话视图从 `0.28.1` 开始提供；CLI 与桌面插件须同版升级。
 
 ### 12.2 桌面内置能力与 worker 策略
 
@@ -281,7 +281,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-本轮统一 npm 发行目标为 **0.28.0**，以已发布的 0.27.3 为基线。六个 Flywheel 包保持同版，DSH 插件另外精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；本轮源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+本轮 UI 修复的统一 npm 发行目标为 **0.28.1**，以已发布的 0.28.0 为基线。六个 Flywheel 包保持同版，DSH 插件另外精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；本轮源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 
