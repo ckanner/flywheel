@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 新增仓库内 `release:local` 交互发布入口。维护者可从已固定的 release tag 在本机构建六包，再依次完成候选安装测试、远端 tag／源码／完整性复核、候选上传、registry 安装及 `latest` 提升，无需下载外部候选归档或人工复制发布适配器。新入口位于维护工具 checkout，支持独立的已打 tag 源码 worktree；保留既有标签与 CI 流程，失败时复用原候选。
+
 ## 0.28.0
 
 Codex Pro 默认接入。安装和迁移见 [配置指南](docs/configuration.md#codex-pro-默认与旧配置迁移)；源码、测试、CI 和 registry 发布证据分别记录，不用离线通过代替用户 Mac 实测。

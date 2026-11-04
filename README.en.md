@@ -122,6 +122,8 @@ npm test
 
 These commands cover local code and protocol behavior. Real desktop UI, macOS permissions, account access, and model inference require separate, recorded testing in the intended environment.
 
+Maintainers can build the six packages from a tagged source checkout and use the repository's `npm run release:local` command for interactive publication. No prebuilt archive is required. The command runs candidate and registry installation checks before promoting `latest`; see [local publication from source](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md#local-build-and-publication-from-source) for the exact worktree and authentication steps.
+
 ## License status
 
 The package currently declares **`UNLICENSED`**. An open-source license has not been selected; these English documents do not change the repository's visibility or licensing status.

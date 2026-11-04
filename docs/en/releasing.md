@@ -110,21 +110,85 @@ node scripts/release-publish.js promote --directory dist-npm --source-sha "$FLYW
 node scripts/release-publish.js verify-latest --directory dist-npm --source-sha "$FLYWHEEL_RELEASE_SHA"
 ```
 
-The standard runner captures npm output and does not provide an interactive
-terminal to npm. A browser/2FA session may therefore require a manual TTY
-runner. Reuse `publish`, `promote`, `verifyRemote` and `verifyLatest` from
-`scripts/release-publish.js`, injecting `runNpm` with inherited terminal I/O
-**only for `npm publish` and `npm dist-tag` writes**. Keep `npm view` output
-captured for strict JSON parsing, and preserve timeouts, kill signals and
-buffer limits. The wrapper must first run `preflight`, bind the candidate to
-the current commit/tree/snapshot, and require a terminal for writes. This
-changes authentication interaction while retaining the existing six-package
-checks. A pending browser approval is not a successful publish.
+The standard CI runner continues to capture npm output. For a browser/2FA
+session, use the repository's `npm run release:local` command below. It reuses
+the existing release functions and inherits terminal I/O **only for `npm
+publish` and `npm dist-tag` writes**. Registry queries retain strict JSON
+parsing, timeouts, kill signals and buffer limits. A pending browser approval
+is not a successful publish.
 
 The registry smoke test installs the exact version from npm, runs the native
 CLI and embedded skills, and exercises DSH registration through a protocol
 fixture. It does not call a model or prove the user's live desktop is ready.
 Refresh and compare the remote tag again before publication and promotion.
+
+## Local build and publication from source
+
+A prebuilt archive is optional. A maintainer can clone the repository, build
+the six packages on their Mac/Linux machine and publish them from a normal
+terminal. Use Git, Go 1.27 (1.27.3 was validated for this release), Node
+24.22.1 and npm 12.2.1, with authorized GitHub read access and npm publishing
+access. Run and record the source quality gates above; the local publisher
+provides candidate and registry installation gates, not Go quality/race
+validation or source review.
+
+The existing `v0.28.0` tag remains fixed at
+`c865d2c130aa009f2348a883c01d0ac29da59624`. The newer interactive tooling lives
+on `main`, so keep a current checkout for the tooling and a detached worktree
+for the exact release source. Both come from Git; no downloaded candidate is
+required and no existing tag is moved. From the current `main` checkout, run
+these commands individually and stop at any failure:
+
+```sh
+export npm_config_registry=https://registry.npmjs.org/
+git fetch origin --tags
+git worktree add --detach ../flywheel-v0.28.0 c865d2c130aa009f2348a883c01d0ac29da59624
+node ../flywheel-v0.28.0/scripts/release-preflight.js --version 0.28.0 --tag v0.28.0 --json
+npm --prefix ../flywheel-v0.28.0 run build:npm
+npm login --auth-type=web --scope=@ckanner --registry=https://registry.npmjs.org/
+npm whoami --registry=https://registry.npmjs.org/
+npm run release:local -- --source-directory ../flywheel-v0.28.0 --repository-visibility private
+```
+
+The candidate is written to `../flywheel-v0.28.0/dist-npm/`. No root
+`npm install` is needed before building: the build script compiles the worker
+and all four Go binaries. `--source-directory` defaults to the tooling
+repository; `--directory` selects another candidate directory. Explicit
+relative paths are resolved from the invocation directory. The source
+checkout must be clean and its version, local/remote tag, HEAD, tree,
+snapshot and candidate integrity must all agree.
+
+`release:local` performs the following sequence:
+
+1. Verify the complete source/candidate identity and query the source
+   repository's `origin` with `git ls-remote` for a fresh tag check.
+2. Run the real candidate installation test on this machine, then recheck
+   the source, candidate and remote tag.
+3. Publish platform packages, plugin and meta under `candidate-X-Y-Z`,
+   retaining existing integrity and newer-`latest` checks.
+4. Install the exact version from the official npm registry. Failure stops
+   before promotion.
+5. Recheck the source, candidate and remote tag, promote all six `latest`
+   tags and verify completion.
+
+Use a real terminal and complete npm's normal browser/2FA prompts. Do not
+pipe the publisher through `tee`. The command does not log in, create or move
+tags, change repository visibility, or alter npm security settings. `private`
+matches the current repository; public-source releases must use `public`
+and satisfy provenance requirements.
+
+After an interruption, keep the source worktree and its original `dist-npm/`,
+resolve the failure and rerun only the final command. Existing versions are
+skipped only when their integrity matches. Do not rebuild over a candidate
+that may already be uploaded. A newly built candidate that conflicts with an
+existing version must stop: recover the original candidate or arrange a new
+uniform version.
+
+Installation tests use isolated user directories and a DSH protocol fixture,
+with no model requests. On a Mac they exercise the native Darwin CLI/worker
+for the current architecture; they do not prove the live desktop or account
+works. Record the source SHA, candidate manifest, actual platform and test
+results in the GitHub Release before marking publication complete.
 
 ## Recovery and completion
 
