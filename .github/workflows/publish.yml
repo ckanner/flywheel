@@ -118,10 +118,10 @@ jobs:
         run: |
           npm --prefix plugins/dsh ci --ignore-scripts
           npm --prefix plugins/dsh run check
-      - name: Verify the Go to Node to SDK boundary
+      - name: Verify the Go to Node to SDK and Codex Pro boundaries
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1
+        run: go test ./internal/drivers -run '^Test(DSH|CodexPro)NodeWorkerOfflineBridge$' -count=1
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1

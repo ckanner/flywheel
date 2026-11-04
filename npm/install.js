@@ -20,7 +20,7 @@ const HELP = `Flywheel npm installation
   flywheel setup [options]
 
 Install this exact version of the CLI, worker, embedded skills and DSH plugin.
-No model inference or account login is performed. Node >=22 and the existing
+No model inference or account login is performed. Node >=22.18.0 and the existing
 DSH desktop command are prerequisites. Kimi/Codex availability is reported by
 the local preflight; this installer does not replace another harness.
 
@@ -89,7 +89,7 @@ function npmCommand(environment = process.env) {
   const script = environment.npm_execpath;
   if (script && path.isAbsolute(script) && fs.existsSync(script)) return [process.execPath, [script]];
   const binary = findExecutable("npm", environment);
-  if (!binary) throw new Error("npm is required; install Node.js 22 or newer, then rerun this command");
+  if (!binary) throw new Error("npm is required; install Node.js 22.18.0 or newer, then rerun this command");
   return [binary, []];
 }
 
@@ -227,7 +227,7 @@ function launcherContent({ cli, prefix, dshBin, environment = process.env }) {
   return lines.join("\n");
 }
 
-async function writeLauncher({ directory, previous, cli, prefix, worker, dshBin, environment }) {
+async function writeLauncher({ directory, previous, cli, prefix, worker, codexProWorker, adapter, dshBin, environment }) {
   await fsp.mkdir(directory, { recursive: true });
   const launcher = path.join(directory, "npm-launcher");
   const content = launcherContent({ cli, prefix, dshBin, environment });
@@ -240,7 +240,7 @@ async function writeLauncher({ directory, previous, cli, prefix, worker, dshBin,
     }
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   await atomicWrite(launcher, content, 0o755);
-  const receipt = { protocol: 1, owner: OWNER, version: meta.version, prefix, cli, worker,
+  const receipt = { protocol: 1, owner: OWNER, version: meta.version, prefix, cli, worker, codexProWorker, adapter,
     node: process.execPath, launcher: { path: launcher, sha256: digest(content) } };
   await atomicWrite(path.join(directory, "installation.json"), JSON.stringify(receipt, null, 2) + "\n", 0o600);
   return receipt;
@@ -290,7 +290,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
   };
   try {
     if (!['darwin', 'linux'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch)) throw new Error("unsupported installation platform");
-    if (Number(process.versions.node.split(".")[0]) < 22) throw new Error("Node.js 22 or newer is required");
+    require('../bin/runtime.js').assertSupportedNode();
     const home = environment.HOME;
     if (!home || !path.isAbsolute(home)) throw new Error("HOME must identify the user's absolute home directory");
     const directory = path.join(home, ".config", "flywheel");
@@ -314,7 +314,16 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       if (installed.name !== OWNER || installed.version !== meta.version) throw new Error("installed package does not match this installer version");
       const installedRequire = createRequire(path.join(installedRoot, "package.json"));
       const runtime = installedRequire("./bin/runtime.js");
-      report.paths = { cli: path.join(installedRoot, "bin", "flywheel.js"), native: runtime.loadNativePath(), worker: runtime.loadWorkerPath() };
+      report.paths = { cli: path.join(installedRoot, "bin", "flywheel.js"), native: runtime.loadNativePath(), worker: runtime.loadWorkerPath(),
+        codexProWorker: runtime.loadCodexProWorkerPath() };
+      const probe = await run(process.execPath, [report.paths.codexProWorker, '--doctor']);
+      requireSuccess(probe, 'installed Codex Pro dependency');
+      const adapter = parseDocument(probe, 'installed Codex Pro dependency');
+      if (adapter.protocol !== 1 || adapter.type !== 'doctor' || adapter.package !== 'dsh-subagent-codex-pro' ||
+          adapter.version !== '0.8.0' || adapter.machineProtocol !== 1 || adapter.available !== true || adapter.inferenceTested !== false) {
+        throw new Error('installed Codex Pro dependency did not verify the exact public machine API');
+      }
+      report.adapter = { package: adapter.package, version: adapter.version, protocol: adapter.machineProtocol, inferenceTested: false };
       const version = requireSuccess(await run(process.execPath, [report.paths.cli, "version"]), "installed CLI version");
       if (!version.split(/\s+/).includes(meta.version)) throw new Error("native binary version does not match the npm package");
       item.version = version;
@@ -333,7 +342,8 @@ async function install(options, { environment = process.env, cwd = process.cwd()
     const requestedDsh = options.dshBin ?? environment.FLYWHEEL_DSH_BIN ?? "dsh";
     const dshBin = findExecutable(requestedDsh, environment);
     await step("desktop-launcher", async item => {
-      const receipt = await writeLauncher({ directory, previous, cli: report.paths.cli, prefix, worker: report.paths.worker, dshBin, environment });
+      const receipt = await writeLauncher({ directory, previous, cli: report.paths.cli, prefix, worker: report.paths.worker,
+        codexProWorker: report.paths.codexProWorker, adapter: report.adapter, dshBin, environment });
       report.paths.launcher = receipt.launcher.path;
       item.path = receipt.launcher.path;
     });

@@ -1,7 +1,7 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the Flywheel CLI. No model call; verification commands run under the engine watchdog."
@@ -18,16 +18,33 @@ here — and no model either: verification is the orchestrator running commands.
 
 `slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
 
+## 固定任务工作区
+
+验收命令会实际执行代码，先逐条解析任务路径；任一步失败即停止：
+
+```bash
+task_dir="$(cd "$slug" && pwd -P)"
+repo_dir="$(git -C "$task_dir" rev-parse --show-toplevel)"
+repo_dir="$(cd "$repo_dir" && pwd -P)"
+task_branch="$(git -C "$repo_dir" branch --show-current)"
+git -C "$repo_dir" worktree list --porcelain
+```
+
+复用本任务原有的集成 worktree／分支，不根据原终端 CWD 另选 checkout。
+已有明确选择与授权不重复询问；未明确选择的 `main`／`master`、已知默认分支或
+detached HEAD 先核对，不直接执行验收。新任务工作区由 `flywheel-new` 准备；
+已有 state／候选成果不迁移、不重置，packet worktree 由引擎管理。
+
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 契约文件齐全。
-2. **调用**（在目标仓库根执行）：
+2. **调用**（从任务集成 worktree 调用，按是否指定 packet 选择一条）：
 
    ```bash
    # 只验某个 packet 的 L1
-   flywheel run "$slug" --only verify --packet "$packet"
+   cd "$repo_dir" && flywheel run "$task_dir" --only verify --packet "$packet"
    # 或不指定：全部未完成 packet 的 L1 + 当前里程碑 L2/L3 闸门
-   flywheel run "$slug" --only verify
+   cd "$repo_dir" && flywheel run "$task_dir" --only verify
    ```
 
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
@@ -40,3 +57,10 @@ here — and no model either: verification is the orchestrator running commands.
 
 - 不带 packet 的 verify 覆盖**所有里程碑**里未完成 packet 的 L1，不只当前
   里程碑；L2/L3 闸门仍只跑当前里程碑。
+- L1 在引擎选定的 packet 候选工作区运行；L2/L3 在 `repo_dir` 运行。本命令
+  不创建 packet worktree；若没有可用 worktree 会使用任务集成 checkout，
+  严格隔离任务应先核实候选位置，不能把 verify 当作隔离创建步骤。
+- 本单步只验收并记录证据，不运行 Review／Judge，不完成 packet 本地合并，
+  也不推送、创建或合并 PR；这些操作分别由完整引擎流程和获授权宿主承担。
+- 超时／清理未确认必须如实报告；确认相关验收子进程已结束后再从原路径重跑，
+  不用 sleep 代替确认，不手写 state 或自动删除工作区。

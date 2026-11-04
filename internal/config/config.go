@@ -266,7 +266,7 @@ func (c *Config) Validate() error {
 	}
 	validateHarness := func(harness string) error {
 		switch harness {
-		case "", "pi", "omp", "kimi", "codex", "zcode", "dsh":
+		case "", "pi", "omp", "kimi", "codex", "codex-pro", "zcode", "dsh":
 			return nil
 		default:
 			return fmt.Errorf("unsupported harness %q", harness)
@@ -276,6 +276,12 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
+		if b.Harness == "codex-pro" && b.ResidentSession {
+			return fmt.Errorf("loops.%s: codex-pro requires a fresh session; resident-session is unsupported", name)
+		}
+		if b.Harness == "codex-pro" && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+			return fmt.Errorf("loops.%s: codex-pro requires explicit model and channel", name)
+		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
@@ -283,6 +289,9 @@ func (c *Config) Validate() error {
 	for name, b := range c.Routes {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
+		}
+		if b.Harness == "codex-pro" && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+			return fmt.Errorf("routes.%s: codex-pro requires explicit model and channel", name)
 		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
@@ -308,6 +317,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.JudgePanel != nil {
+		if c.JudgePanel.Harness == "codex-pro" && c.JudgePanel.ResidentSession {
+			return errors.New("judge-panel: codex-pro requires a fresh session; resident-session is unsupported")
+		}
 		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {
 			return fmt.Errorf("judge-panel: %w", err)
 		}

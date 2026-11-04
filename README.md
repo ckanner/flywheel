@@ -2,23 +2,23 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前 **v0.27.3 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务可走独立 Codex CLI。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前 **v0.28.0 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
-**本教程适用于 0.27.3 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
+**本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
-测试结果与实机边界见[验证记录](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
+本轮插件接入测试与实机边界见[验证记录](docs/validation/2026-11-03-codex-pro-default.md)，既有 npm 发行证据见[安装验证](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 
 首次使用请按 [Mac 安装与首个任务教程](docs/getting-started.md) 完成安装、配置、无推理检查和小任务验收。本文保留各接口与设计边界的速查。
 
 ## 1. 一条命令安装
 
-已有 **Node.js 22 或更高、npm 和 DSH Mac 桌面及其 `dsh` 命令**后，在终端运行：
+已有 **Node.js 22.18.0 或更高、npm 和 DSH Mac 桌面及其 `dsh` 命令**后，在终端运行：
 
 ```sh
 npx -y @ckanner/flywheel@latest install
 ```
 
-Agent 可在同一命令后加 `--json`，读取一个结构化结果。安装器把本次解析到的**精确版本**的 CLI、对应平台 Go 二进制和 DSH worker 装到 npm 全局目录，安装 10 个内嵌 skills，再将同版本 DSH 插件注册到桌面 profile 并核对版本。无需下载压缩包、克隆源码或自行编译 Go。
+Agent 可在同一命令后加 `--json`，读取一个结构化结果。安装器把本次解析到的**精确版本**的 CLI、对应平台 Go 二进制、DSH worker 和 Codex Pro worker（含精确版本的插件依赖）装到 npm 全局目录，安装 10 个内嵌 skills，再将同版本 DSH 插件注册到桌面 profile 并核对版本。无需下载压缩包、克隆源码或自行编译 Go。
 
 安装完成会显示每个步骤和本地预检结果。`ok:true` 表示软件安装成功；`ready:false` 表示当前配置仍有运行阻断项，例如缺少 Kimi／Codex CLI，二者可以同时出现。安装器不替换现有 DSH，也不安装或代登录 Kimi／Codex，不代配 DeepSeek API 凭证。运行真实任务前需完成所选渠道的准备。
 
@@ -44,7 +44,7 @@ npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-这是已核对的 adapter 版本示例；采用其他版本前按其文档检查兼容性。按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会自动迁移桌面凭证，也不证明账号可以调用默认表里的所有模型。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider；Flywheel 的 `hard` 路由使用独立 Codex CLI。
+这是已核对的 adapter 版本示例；采用其他版本前按其文档检查兼容性。按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会自动迁移桌面凭证，也不证明账号可以调用默认表里的所有模型。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider。Flywheel 的 `hard` 路由通过独立 worker 直接导入 `dsh-subagent-codex-pro@0.8.0` 的公开 `./machine` 入口，复用插件运行时；它不创建 DSH 父模型再次委派。插件内部仍运行 Codex app-server，并使用用户已有的 Codex 登录。
 
 ### worker 入口配置
 
@@ -55,8 +55,11 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 | `FLYWHEEL_DSH_PROFILE` | `sdk`；必须是 SDK profile，不能是 `desktop` |
 | `DSH_HOME` | 交给 DSH 的自定义配置根；不设置时沿用 DSH 自己的默认行为 |
 | `FLYWHEEL_KIMI_BIN` | PATH 中的 `kimi`；可指定 Kimi CLI 的绝对路径 |
+| `FLYWHEEL_CODEX_PRO_WORKER` | npm 启动器解析同版本包的 Codex Pro worker；独立 Go 二进制默认查找 `flywheel-codex-pro-worker` |
+| `FLYWHEEL_CODEX_BIN` | 插件内部使用的 Codex 可执行路径；默认 `codex` |
+| `CODEX_HOME` | 可选的 Codex 配置／登录目录，交给插件使用；不复制账号凭证 |
 
-Codex CLI 通过 PATH 中的 `codex` 启动。所有选定 CLI、Node 与账户配置必须对**启动 Go 引擎的进程环境**可见。
+旧 `harness: "codex"` 仍是显式兼容路径，使用 PATH 中的 `codex exec`；新默认不会自动退回它。所有选定 CLI、Node 与账户配置必须对**启动 Go 引擎的进程环境**可见。
 
 安装器自动生成 `~/.config/flywheel/npm-launcher` 和 `installation.json`：记录绝对 Node／CLI 路径、已核对的 DSH 入口及安装时可见的工具 PATH。桌面插件未显式配置 `flywheelBinary` 时，读取这份安装记录，校验 launcher 是普通可执行文件且 SHA-256 匹配后使用。**无需手写 GUI 启动脚本或修改 profile 配置。**
 
@@ -87,7 +90,7 @@ flywheel doctor --cwd "$PWD" --probe --json
 | Plan | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high`，匹配身份后可恢复会话 |
 | Execute `default` | DSH SDK | `deepseek-official` | `deepseek-flash` | `high` |
 | Execute `frontend` | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
-| Execute `hard` | Codex CLI | `chatgpt-subscription` | `gpt-6.1-sol` | `high` |
+| Execute `hard` | Codex Pro machine API | `chatgpt-subscription` | `gpt-6.1-sol` | `high` |
 | Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high`，只读 |
 | Judge | DSH SDK | `chatgpt` | `gpt-6-astra` | `high`，里程碑终验 |
 | Intake | DSH SDK | `deepseek-official` | `deepseek-flash` | `low` |
@@ -95,13 +98,15 @@ flywheel doctor --cwd "$PWD" --probe --json
 
 这些是可编辑的初始绑定，并非模型排名或性能承诺。DeepSeek 只用 Flash；当前 Mac rc.5 的合法 effort 为 `off/low/high/max`，没有 `medium`。双 judge 默认关闭，也不默认跨渠道付费降级。`multimodal` 暂无默认绑定：当前 bridge 只有文本契约，模型名称或目录里的 vision 标记不能证明附件已正确传递。
 
-Kimi 使用原生 CLI print/stream-json，不使用 ACP；恢复的是会话历史，不是常驻后台进程。该模式不提供本适配器可宣称的 OS 级只读／工作区沙箱，worktree 只是代码隔离。DSH/Codex 使用明确的 workspace-write 或 read-only 与禁止扩权策略。具体账号的可用模型、额度和使用授权需要由所选服务确认。
+Kimi 使用原生 CLI print/stream-json，不使用 ACP；恢复的是会话历史，不是常驻后台进程。该模式不提供本适配器可宣称的 OS 级只读／工作区沙箱，worktree 只是代码隔离。DSH/Codex 使用明确的 workspace-write 或 read-only 与 never 审批策略。Codex Pro 在运行前核对模型、目录和沙箱模式，Flywheel 在结果返回后检查完整策略；工作区写入允许 Codex 标准临时目录，额外工作区外 roots 或启用网络的策略不能通过交付资格检查。这是事后校验，不能阻止自定义 Codex 配置已允许的访问；要求运行前完整策略阻止的环境需等待上游公开 guard。具体账号的可用模型、额度和使用授权需要由所选服务确认。
 
 usage 或美元成本未上报时保留 unknown，不能把订阅调用记成免费。默认 soft token budget 会报告未知量；hard budget 无法证明未知用量未超额时停止。汇总数字是已知量下限。
 
 ### 迁移已有配置
 
 配置按**第一个存在的完整文件**选择，不逐字段合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json` → 二进制内嵌模板；`FLYWHEEL_CONFIG` 可指定全局配置路径。已有文件不会因升级自动改写。
+
+从 0.27.x 升级要采用插件路径时，在实际生效配置中将 `routes.hard.harness` 从 `codex` 改为 `codex-pro`；具名 profile 则修改对应定义。保留 `model`、`thinking` 和 `channel`，不要把 `subagent_codex_pro` 填入 provider。安装依赖不自动迁移已有配置，也不会默默替换旧后端。
 
 可用新二进制查看模板，再审阅并迁移自己的配置：
 
@@ -114,6 +119,10 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 `drivers` 选择 `real/mock`，不是模型或 provider 名称。模型在 `loops` 和 `routes` 配置，可直接写字段，也可引用 `profiles` 后按需覆盖。未知 profile、拼错字段、模型字段的 null 和 provider 冲突会拒绝加载；允许 `_note` 注释，原有 `env-key:null`、`judge-panel:null` 仍合法。渠道别名不会自动切换 DSH 账号，授权仍由选定 SDK profile/provider 管理。修改运行配置后重启引擎；Plan 不允许悄悄改模型、权限或其他运行配置。
 
 ## 4. 创建、运行和观察任务
+
+业务仓库建议先建立任务集成分支与独立 worktree；准备契约、Draft PR 和人工合并的完整流程见[从需求准备到 PR 合并](docs/workflow.md)。引擎的单元合并目标是启动 checkout 当前所在分支，GitHub PR 操作由使用者或获授权的宿主执行。
+
+准备阶段由当前 DSH 对话模型生成需求契约，`loops.plan` 只控制引擎启动后的规划／修订。复杂需求建议先用已授权的 `gpt-6-astra`、`high` 生成可审阅草稿；简单明确的任务可沿用 Flash，避免每个 packet 都重复调用昂贵规划模型。
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。模板可通过 `flywheel template` 查看；可选的 `flywheel-new` skill 用于辅助生成，最终仍由人确认契约。不要把 DSH 面板当成需求生成器。
 
@@ -196,11 +205,11 @@ DSH 检查包括离线 worker 生命周期、事件与 usage 折叠、控制入�
 
 React DOM 与安装协议桩不代替 Mac 桌面验证。当前 Linux 环境没有可用的完整原生沙箱，SDK probe 在 prompt 前正确拒绝；这项结果证明拒绝路径，不能冒充 Mac Seatbelt 成功。
 
-**尚需在用户 Mac 验证**：桌面安装与 UI 渲染、Seatbelt 探针、GUI 环境中的 CLI／凭证可见性、真实 Flash/GPT/Kimi/Codex 响应，以及真实机器重启后的恢复。当前不支持 DSH worker resume、附件传输、外部 Codex Pro adapter 消费或自动多 agent Teams 调度。
+**尚需在用户 Mac 验证**：桌面安装与 UI 渲染、Seatbelt 探针、GUI 环境中的 CLI／凭证可见性、真实 Flash/GPT/Kimi/Codex 响应，以及真实机器重启后的恢复。当前不支持 DSH worker resume、附件传输或自动多 agent Teams 调度。Codex Pro 已通过公开 API 接入，完整策略的事后检查边界见配置指南。
 
 ## 7. 开发与备用构建
 
-普通用户使用上面的 npm 安装流程。开发者需要 Go 1.27 或更高、Node.js 22 或更高及 Git，在仓库根构建：
+普通用户使用上面的 npm 安装流程。开发者需要 Go 1.27 或更高、Node.js 22.18.0 或更高及 Git，在仓库根构建：
 
 ```sh
 go build -o ./bin/flywheel ./cmd/flywheel
@@ -218,6 +227,7 @@ npm run build:npm
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
 | [docs/design.md](docs/design.md) | 权威设计、不变量、闭环与边界 |
 | [docs/configuration.md](docs/configuration.md) | profiles、阶段覆盖、provider／channel 与预检语义 |
+| [docs/plans/2026-11-03-codex-pro-default.md](docs/plans/2026-11-03-codex-pro-default.md) | 默认插件接入与验收计划 |
 | [docs/plans/2026-11-01-dsh-integration.md](docs/plans/2026-11-01-dsh-integration.md) | 本轮实施和验收记录 |
 | [docs/plans/2026-11-01-model-profiles-preflight.md](docs/plans/2026-11-01-model-profiles-preflight.md) | 配置、预检与面板后续实施计划 |
 | [docs/plans/2026-11-01-npm-installation.md](docs/plans/2026-11-01-npm-installation.md) | npm 安装、GUI 入口与发行验证计划 |

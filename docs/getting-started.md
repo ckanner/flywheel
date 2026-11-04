@@ -1,6 +1,6 @@
 # Mac 安装与首个 Flywheel 任务
 
-本文适用于 **Flywheel 0.27.3 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
+本文适用于 **Flywheel 0.28.0 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
 
 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。
 
@@ -16,15 +16,17 @@
 8. [升级、排错与卸载](#8-升级排错与卸载)
 9. [开发与备用构建](#9-开发与备用构建)
 
+已有业务仓库另见[从需求准备到 PR 合并](workflow.md)：模型选择、任务 worktree、Draft PR 与合并时机。
+
 ## 1. 准备运行环境
 
 | 依赖 | 用途与检查 |
 |---|---|
 | Git，已配置提交身份 | Flywheel 使用 worktree 和本地提交交付；执行 `git --version` |
-| Node.js 22 或更高，npm | 安装 Flywheel 并运行 CLI 启动器／DSH worker；执行 `node --version`、`npm --version` |
+| Node.js 22.18.0 或更高，npm | 安装 Flywheel 并运行 CLI 启动器／DSH worker；执行 `node --version`、`npm --version` |
 | DSH Mac 桌面及其安装的 `dsh` 命令 | 在 About 核对具体版本；执行 `command -v dsh`、`dsh --version` |
 | 已登录的 Kimi CLI | 默认 Plan、frontend、Garden 使用它；执行 `kimi --version`、`kimi --help` |
-| 已登录的 Codex CLI | `hard` 执行路由使用它；执行 `codex --version` |
+| 已登录的 Codex 程序 | Codex Pro 插件在 `hard` 路由中启动其 app-server；执行 `codex --version` |
 | SDK profile 的 DeepSeek 和 ChatGPT provider | 默认实现／评审使用；配置与授权见下一节 |
 | Go 1.27 或更高 | 仅本文的 Go 示例和源码构建需要；npm 安装 Flywheel 不需要 Go 工具链 |
 
@@ -46,7 +48,7 @@ npx -y @ckanner/flywheel@latest install --json
 
 两条命令选择一种即可。安装器按顺序完成：
 
-1. 把本次安装器的精确版本装到 npm 全局目录，解析适合本机的 Go 平台包和同版本 DSH worker，核对 CLI 版本。
+1. 把本次安装器的精确版本装到 npm 全局目录，解析适合本机的 Go 平台包、同版本 DSH／Codex Pro workers 及精确插件依赖 `dsh-subagent-codex-pro@0.8.0`，核对 CLI 版本。
 2. 从 Go 二进制安装全部 10 个 skills；全局配置不存在时生成默认配置，已有配置保留。
 3. 写入 GUI 启动器和安装记录，使用绝对 Node／CLI 路径。
 4. 通过现有桌面 `dsh` 注册精确版本的 Flywheel 插件，并通过 `plugin list` 验证安装结果。
@@ -99,7 +101,7 @@ worker 默认使用独立的 `sdk` profile。桌面已安装 provider，不代�
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-随后按该 provider 的文档在对应 profile 完成授权，并保持一致的 `DSH_HOME`。不需要把凭证复制到任务契约或 Git。此处不把 `subagent_codex_pro` 当成原生 LLM provider；困难任务继续走独立 Codex CLI。
+随后按该 provider 的文档在对应 profile 完成授权，并保持一致的 `DSH_HOME`。不需要把凭证复制到任务契约或 Git。此处不把 `subagent_codex_pro` 当成原生 LLM provider。困难任务通过 `codex-pro` worker 直接使用已安装插件的公开 machine API，不需要 DSH 父模型再发一次工具调用。底层 Codex app-server 仍需本机 Codex 与登录；包依赖安装不代替它们。
 
 ### Mac GUI 的自动入口
 
@@ -170,7 +172,7 @@ flywheel doctor --cwd "$PWD" --probe --json
 
 第一条只查有效配置、本地命令版本、目录及已声明环境变量；不会检查凭证文件、发送模型 prompt 或运行 packet 验收。第二条对选中的 DSH 绑定做 SDK 初始化、cwd／沙箱握手及正常关闭；provider 初始化可能联网查询目录，但**没有推理请求**。两者都不创建 Flywheel 状态、运行锁、worktree 或全局配置。
 
-结果按 pass／fail／warn／unknown／skipped 展示；有 fail 时退出码 1，JSON 仍完整可读。即使 `ok:true`，unknown 的账号授权、订阅额度与实际推理仍未验证。Kimi/Codex 在这里只检查命令，不会自动登录或试调用。DSH 同一账号、模型、effort、目录和权限只探测一次，总预算 40 秒另加清理窗口；超时后明确失败。
+结果按 pass／fail／warn／unknown／skipped 展示；有 fail 时退出码 1，JSON 仍完整可读。即使 `ok:true`，unknown 的账号授权、订阅额度与实际推理仍未验证。Kimi/Codex 在这里只检查命令；Codex Pro 额外实际导入精确版本的公开 API，不会自动登录或试调用。Codex Pro 的完整沙箱策略只能事后审查，所以对应 sandbox 项会显示 warn，模型／配置／认证保持 unknown；`--probe` 也不会为它发送推理。DSH 同一账号、模型、effort、目录和权限只探测一次，总预算 40 秒另加清理窗口；超时后明确失败。
 
 未指定任务时检查全部配置绑定，可能包括首个任务用不到的 Codex hard 路由。准备好任务后可把范围缩小为所需的 Plan／Execute route／Review／Judge（以及显式启用的 judge-panel）：
 
@@ -183,6 +185,8 @@ flywheel doctor --cwd "$PWD" --task-dir docs/add --probe --json
 这允许在准备契约时提前排查安装，但正式启动仍需至少一个已审阅的合法 packet。完成下一节的小任务准备后，再运行带 `--task-dir` 的检查。
 
 ## 6. 准备首个小任务
+
+已有业务仓库应先建立任务集成分支和独立 worktree，再生成契约；启动时的 `cwd` 指向该 worktree。完整步骤见[从需求准备到 PR 合并](workflow.md)，下面的小仓库示例用于首次运行验收。
 
 首次建议使用单独的小仓库，便于分清安装问题和业务代码问题。npm 包附带的准备脚本会创建一个 Go 加法函数任务：初始实现故意错误，执行者需修复实现并补普通单测；独立 acceptance 测试不可修改。本示例需要 Go 1.27 或更高。
 
@@ -226,7 +230,7 @@ git commit -m "docs: prepare first flywheel task"
 
 Git 提交身份必须已经按自己的设置配置。此时不应创建 `state.json`，它由引擎初始化。coverage 输出已被忽略，所以验收运行不会把生成物误判为候选代码漂移。
 
-对于已有业务仓库，可以通过 `flywheel-new` 生成并审阅契约，或者用 `flywheel template --list` 查看模板后手工准备。示例 auth 模板不是通用可运行任务，其中路径和验收命令必须改为真实项目的命令。不要照抄后直接启动。
+对于已有业务仓库，`flywheel-new` 使用当前 DSH 会话的模型生成契约；复杂需求建议选已授权的 `gpt-6-astra`、`high`，简单明确任务可沿用 Flash。它不会自动读取 `loops.plan` 来换模型，后者控制引擎运行后的 Kimi 规划／修订。可以通过 `flywheel-new` 生成并审阅契约，或者用 `flywheel template --list` 查看模板后手工准备。示例 auth 模板不是通用可运行任务，其中路径和验收命令必须改为真实项目的命令。不要照抄后直接启动。
 
 ## 7. 启动、观察、停止与恢复
 
@@ -276,7 +280,9 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 npx -y @ckanner/flywheel@latest install
 ```
 
-自定义 prefix、项目 skills 或 DSH 入口时保留原参数。想固定某个已发布版本，可把 `@latest` 换成该精确版本，例如在 registry 确认 0.27.3 已发布后使用 `@0.27.3`；安装器始终为 CLI、平台包、worker 和桌面插件选择本次安装器的同一版本。已安装包的配置修复可用 `flywheel setup --no-global`，它不会将 CLI 升级到别的版本。
+自定义 prefix、项目 skills 或 DSH 入口时保留原参数。想固定某个已发布版本，可把 `@latest` 换成该精确版本，例如在 registry 确认 0.28.0 已发布后使用 `@0.28.0`；安装器始终为 CLI、平台包、worker 和桌面插件选择本次安装器的同一版本。已安装包的配置修复可用 `flywheel setup --no-global`，它不会将 CLI 升级到别的版本。
+
+从 0.27.x 升级到本版后，要使用新的默认插件路径，应在有效配置的 `routes.hard`（或其 profile）设置 `"harness": "codex-pro"`，保留所选 model／thinking／channel。先用 `config inspect` 找到实际配置来源；不要把 external subagent 的工具名写成 DSH provider。
 
 安装后对照新模板审阅需要迁移的配置，按宿主提示重新载入，运行 doctor，再用小任务验证。已有配置不会自动覆盖；特别检查任务级文件是否遮住了刚修改的项目或全局设置。安装不是跨 npm、DSH 与全部 skills 的单个事务：失败时报告已完成步骤，不擅自回退包管理器或删除用户文件。修正原因后重跑会重新核对版本与内容。
 
@@ -323,7 +329,7 @@ npm uninstall --global @ckanner/flywheel
 
 ## 9. 开发与备用构建
 
-以下用于贡献代码、检查未发布分支或离线备份；普通用户使用 npm 安装。需要 Git、Go 1.27 或更高、Node.js 22 或更高：
+以下用于贡献代码、检查未发布分支或离线备份；普通用户使用 npm 安装。需要 Git、Go 1.27 或更高、Node.js 22.18.0 或更高：
 
 ```sh
 git clone https://github.com/ckanner/flywheel.git

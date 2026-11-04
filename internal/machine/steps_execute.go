@@ -204,6 +204,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			channel: channel, prompt: prompt, result: &res,
 			errorCode: errs.ErrorCode(code), attempt: &attemptNo,
 		})
+		if err := c.stopForUnconfirmedCleanup("execute", id, res); err != nil {
+			return execOutcome{}, err
+		}
 
 		if contractRes.OK {
 			if err := os.MkdirAll(filepath.Join(c.TaskDir, "reports"), 0o755); err != nil {

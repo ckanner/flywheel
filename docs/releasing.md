@@ -6,7 +6,7 @@
 
 GitHub Actions 使用 `.github/workflows/publish.yml`，只有 publish job 获得 `id-token: write`；GitHub `contents` 仍为只读。GitHub 登录允许触发有权限的仓库操作，**不会自动授予 npm 包写权限**。
 
-CI、六包候选构建、双平台验证和 publish 统一固定 Node **24.22.1**、npm **12.2.1**；各 npm job 在运行门禁前安装该版本并输出实际 Node/npm 版本。preflight 只使用同版 Node，不额外安装 npm。npm 12.2.1 同时支持 OIDC 的 `npm publish` 和 `npm dist-tag`，不能只检查普通 publish 的最低版本。用户安装仍只要求 Node 22 或更高，不要求 npm 12。
+CI、六包候选构建、双平台验证和 publish 统一固定 Node **24.22.1**、npm **12.2.1**；各 npm job 在运行门禁前安装该版本并输出实际 Node/npm 版本。preflight 只使用同版 Node，不额外安装 npm。npm 12.2.1 同时支持 OIDC 的 `npm publish` 和 `npm dist-tag`，不能只检查普通 publish 的最低版本。用户安装要求 Node 22.18.0 或更高，不要求 npm 12。
 
 私有 GitHub 仓库也可发行公开 npm 包，但 npm **不支持私有源码仓库的 provenance**。workflow 从 GitHub 事件传入明确的仓库可见性：public 要求生成证明，private 显式传 `--provenance=false`，缺失或未知值拒绝发布。OIDC 身份认证与 provenance 是不同能力；本项目的源码、候选 SHA-512 与双平台安装门禁始终保留。不要为发包修改仓库可见性，也不要把缺失证明写成已生成。
 

@@ -1,6 +1,6 @@
-# Go ↔ DSH worker 协议 v1
+# Go ↔ DSH / Codex Pro worker 协议 v1
 
-此文件是 `internal/drivers/dsh.go` 与本目录 worker 的互操作契约。Go 负责状态机、验收、费用上限及最终进程组清扫；worker 负责一个独立的官方 DSH SDK 进程。两者之间只有本地 stdio，不开放 HTTP 端口。
+此文件记录两种独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。两者之间只有本地 stdio，不开放 HTTP 端口。
 
 ## 启动与输入
 
@@ -89,6 +89,58 @@ v1 每次调用使用全新 session。Go 重试时重新提交冻结任务输入
 
 Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 admission schema，它会用固定的探针说明替代调用者文本，worker 不将其交给 `session/prompt`。doctor 仍必须具备匹配的 ready、可靠 result、正常 SDK shutdown 与物理退出，不能因为没有推理而放松清理或权限检查。
 
+## Codex Pro worker协议
+
+公开入口为 `@ckanner/dsh-plugin-flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同版本依赖，不依靠碰巧可用的全局旧 worker。worker 实际导入已发布的 `dsh-subagent-codex-pro@0.8.0` 的 `./machine` API，严格检查包名、版本和机器协议 1。Node 最低 22.18.0，仅支持 macOS／Linux。
+
+### 请求与父进程连接
+
+```json
+{"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000}
+```
+
+只接受这些字段；不接受 provider、resume、threadId、额外写目录、任意 CLI 参数或危险权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 仅 read-only／workspace-write。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort，固定 threadMode=ephemeral、command=`FLYWHEEL_CODEX_BIN` 或 `codex`，不恢复旧线程。
+
+**这里与 DSH worker 的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或第二条非空输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
+
+### 进度与完整结果
+
+零或多个进度帧：
+
+```json
+{"protocol":1,"type":"progress","requestId":"call-123","text":"插件报告的活动"}
+```
+
+最后恰好一个 result，字段结构如下，`receipt` 为插件实际完整对象：
+
+```json
+{"protocol":1,"type":"result","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.8.0","protocol":1},"receipt":null,"error":{"code":"INVALID_REQUEST","message":"启动请求未通过校验"}}
+```
+
+启动前不能获得 machine receipt 时为 null。运行已开始则即使失败也保留完整 receipt；`error` 非 null、重复／丢失 result、尾部垃圾、请求身份或 adapter 版本不符都不能成功。本通道没有 DSH `ready` 帧，不能据此虚构运行前完整沙箱握手或实际 effort 回显。
+
+Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/thread/turn 身份、模型、cwd、approval=never、实际沙箱模式、完整 sandboxPolicy、stopReason、cleanup 与执行事实。workspaceWrite 的显式 writableRoots 必须处于工作区内，networkAccess 必须明确 false；Codex 标准临时目录标记保留，不宣称只能写 cwd。插件 0.8.0 只在 turn 前检查模式等基本配置；完整策略是返回后的交付资格检查，**不能阻止自定义 Codex 配置已经允许的访问**。
+
+effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
+
+### 取消与进程终态
+
+worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理结果，再分别退出 130／143／129；父连接断开为失败。Go 为 Codex Pro worker 保留至少 10 秒终止宽限，全局 kill switch 不提前缩短该子进程的宽限。插件 guardian 拥有 app-server 进程组；worker 意外死亡由插件自己的连接与 guardian 负责终止其拥有的进程。Go 未收到完整回执时不能把内部清理记为已确认，主动脱离拥有进程组的外部程序不属于此保证。
+
+已启动 worker 后缺少可信 `cleanup.confirmed` 会记录 `CleanupError`，即使外层进程已退出。引擎和建议模块保存诊断后停止本次运行，不执行传输重试、渠道降级、Plan 冷启动或下一任务。完整回执中确认清理的普通服务错误仍使用原重试策略。恢复前先确认该次调用遗留的进程已停止；等待固定秒数不构成清理确认。
+
+正常完成后 app-server 仍可能需要 TERM/KILL 收尾。只有 completed、cleanup.confirmed、无取消／超时／截断／失败事实且外层 worker 正常退出时，才允许 receipt 中正常 terminationRequested 导致的信号或未知 Codex exit code。不能将 supervisor exit code 冒充模型进程的物理退出码，也不能把文本答案当终态证明。
+
+### 无推理诊断
+
+`flywheel-codex-pro-worker --doctor` 不读取 stdin，不调用 runMachine，不启动 app-server，仅导入并核验公开接口。成功返回单个 JSON：
+
+```json
+{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.8.0","machineProtocol":1,"available":true,"inferenceTested":false}
+```
+
+Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、模型、完整策略或真实推理能力，`--probe` 也不会对 Codex Pro 发模型任务。
+
 ## 桌面控制响应（独立于 worker JSONL）
 
 桌面控制层调用 Go 的 `control` 命令，只接收一个 JSON 文档，不把它与上述 worker 流混用。原 `start/status/stop` 字段不变，新增两种 action：
@@ -124,7 +176,8 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 | `steps` | 顺序记录 `global-cli`、`skills`、`desktop-launcher`、`dsh-plugin`、`preflight`；失败时只含已开始的步骤 |
 | `ready` | 本地 doctor 是否无阻断项；诊断未完成时为 `false` |
 | `authentication` | 固定 `unknown`，没有自动登录或真实模型请求 |
-| `prefix`、`paths` | 得到后才记录；paths 包含 CLI、原生二进制、worker 与生成的 launcher 的绝对路径 |
+| `prefix`、`paths` | 得到后才记录；paths 包含 CLI、原生二进制、DSH worker、codexProWorker 与生成的 launcher 的绝对路径 |
+| `adapter` | 实际导入通过后记录 Codex Pro 包名、精确 0.8.0、protocol 1 与 inferenceTested=false；不代表账号已就绪 |
 | `skills` | 安装成功时的数量及准确目录；每项结果保存在 skills 步骤的 `summary` |
 | `diagnostic` | 合法的完整本地 doctor 报告，包括失败检查项；不执行 `--probe` |
 | `error`、`cancelledBy` | 失败原因、可选取消信号；不是成功结果的一部分 |
@@ -139,7 +192,7 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 
 ### GUI 安装记录
 
-安装器生成 `~/.config/flywheel/installation.json`（0600）与 `npm-launcher`（0755）。记录包含 `protocol:1`、`owner:"@ckanner/flywheel"`、`version`、`prefix`、`cli`、`worker`、`node` 和 `launcher:{path,sha256}`。它只描述软件入口，不保存账号凭证，不构成第二份任务状态。
+安装器生成 `~/.config/flywheel/installation.json`（0600）与 `npm-launcher`（0755）。记录包含 `protocol:1`、`owner:"@ckanner/flywheel"`、`version`、`prefix`、`cli`、`worker`、`codexProWorker`、`adapter`、`node` 和 `launcher:{path,sha256}`。它只描述软件入口，不保存账号凭证，不构成第二份任务状态。旧记录仍按原字段读取，升级 setup 生成新字段；用户修改的 launcher 继续受保护。
 
 launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具 PATH 目录，并在用户没有显式设置 `FLYWHEEL_DSH_BIN` 时使用已核对的桌面命令。npm CLI 启动器解析版本一致的原生包和 worker，缺失或版本不匹配时拒绝继续，不隐式下载另一份二进制。临时 npx 缓存与 `node_modules/.bin` 不被记录成持久工具 PATH。
 

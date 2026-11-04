@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.28.0
+
+Codex Pro 默认接入。安装和迁移见 [配置指南](docs/configuration.md#codex-pro-默认与旧配置迁移)；源码、测试、CI 和 registry 发布证据分别记录，不用离线通过代替用户 Mac 实测。
+
+- 新增 `codex-pro` Go driver 与独立 Node worker，直接使用 `dsh-subagent-codex-pro@0.8.0` 的公开 machine API。默认 hard 路由使用此插件；DSH Flash 默认执行、Kimi CLI 规划／前端、DSH 原生 GPT 评审保持原角色。旧 `codex` CLI 仅作为用户显式配置的兼容入口。
+- 完整传递模型、effort、目录、权限、取消与 deadline。每次使用 ephemeral 新会话；结果必须同时满足外层 worker 和插件终态／清理要求，正常 app-server 主动终止不冒充调用方取消。
+- 指标保存完整 `codex-pro-receipt`；usage 只有 complete 才进入已知预算，partial/unknown 与美元未知成本保持可见。effort accepted 不伪造为已证实实际强度，不用账号 channel 冒充实际 provider。
+- npm 自动安装精确插件依赖并解析同版本 worker，保持 hoisted dependency、GUI 启动入口、用户配置与 skills 保护；统一六包版本 0.28.0，Node 最低 22.18.0。
+- 本地 doctor 验证插件公开 API、精确版本、Node 和 Codex 命令，不调用模型。配置错误、缺依赖与版本不符明确失败，不自动改走旧 CLI。
+- worker 意外退出或清理回执缺失时明确记录清理未知；所有模型循环保存升级诊断、保留工作区并停止本次运行，禁止自动重试／降级与 Plan 冷启动，避免 guardian 清理期间出现重叠执行。正常错误且清理已确认时仍可重试。
+- 明确 0.8.0 权限边界：插件在运行前验证模型／cwd／权限模式，完整 sandboxPolicy 由 Flywheel 在运行后核对；事后拒绝交付不能阻止自定义 Codex 配置已允许的访问。需运行前完整策略 guard 的环境仍待上游能力。
+- 更新设计、安装／迁移教程、协议和相关技能按钮，增加协议、计量、生命周期、真实 npm 安装与跨进程回归。
+- 补齐 10 个内置 skills 的任务 worktree、分支与绝对路径约定，区分任务集成目录和 packet 候选目录；恢复复用原任务，状态查询／停止保持可用，PR 合并仍由获授权宿主处理。
+
 ## 0.27.3
 
 当前统一 npm 发行目标。本节记录修复内容，不代表本版门禁、registry 发布、latest 提升或用户 Mac 实机验收已完成。0.27.0／0.27.1 未上传 npm 包；0.27.2 的发行在验证阶段主动取消，未上传包，旧 tag 均保留不移动。

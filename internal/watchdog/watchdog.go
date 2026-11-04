@@ -68,9 +68,10 @@ type Opts struct {
 // ---- 在飞子进程登记表（SIGTERM 全杀的依据）----
 
 type activeChild struct {
-	pid    int
-	kill   func(sig syscall.Signal)
-	exited chan struct{}
+	pid       int
+	kill      func(sig syscall.Signal)
+	killGrace time.Duration
+	exited    chan struct{}
 }
 
 var (
@@ -103,8 +104,8 @@ func unregister(pid int) {
 }
 
 // KillActiveChildren 杀光所有在飞子进程组并等待真退出（quiescence）。
-// 编排器的 SIGTERM handler 在自行退出前调用。先全组 SIGTERM，grace 后对仍
-// 未退出者升级 SIGKILL，最后等到全部退出。
+// 编排器的 SIGTERM handler 在自行退出前调用。先全组 SIGTERM，再按每个
+// 子进程自己的清理宽限与调用方宽限的较大值升级，不能截断 adapter 收尾。
 func KillActiveChildren(grace time.Duration) {
 	regMu.Lock()
 	children := make([]*activeChild, 0, len(registry))
@@ -118,17 +119,20 @@ func KillActiveChildren(grace time.Duration) {
 	for _, c := range children {
 		c.kill(syscall.SIGTERM)
 	}
-	timer := time.AfterFunc(grace, func() {
-		// 只升级本次取消的进程；grace 期间启动的其它调用不属于此次取消。
+	timers := make([]*time.Timer, 0, len(children))
+	for _, c := range children {
+		// 只升级本次取消的进程；宽限期间启动的新调用不在快照中。
 		// child.kill 在进程已收尾后为 no-op，避免向复用的 pid 发信号。
-		for _, c := range children {
+		timers = append(timers, time.AfterFunc(max(grace, c.killGrace), func() {
 			c.kill(syscall.SIGKILL)
-		}
-	})
+		}))
+	}
 	for _, c := range children {
 		<-c.exited // Promise.allSettled 等价
 	}
-	timer.Stop()
+	for _, timer := range timers {
+		timer.Stop()
+	}
 }
 
 // killGroup 向负 pid 发信号（child 是组长，负 pid = 整个组）；组已消失则退回
@@ -294,7 +298,8 @@ func Run(command string, args []string, opts Opts) Result {
 	cmd.Stderr = stderrW
 
 	child := &activeChild{
-		exited: make(chan struct{}),
+		killGrace: killGrace,
+		exited:    make(chan struct{}),
 	}
 	sendSignal := func(sig syscall.Signal) {
 		mu.Lock()

@@ -34,6 +34,10 @@ function manifests() {
   }
   values[META].optionalDependencies = Object.fromEntries(PACKAGES.filter((entry) => entry.platform).map((entry) => [entry.name, VERSION]));
   values[META].dependencies = { [PLUGIN]: VERSION };
+  values[META].bin = { 'flywheel-codex-pro-worker': 'bin/flywheel-codex-pro-worker.js' };
+  values[PLUGIN].dependencies = { 'dsh-subagent-codex-pro': '0.8.0' };
+  values[PLUGIN].exports = { './codex-pro-worker': './dist/codex-pro-worker.js' };
+  values[PLUGIN].bin = { 'flywheel-codex-pro-worker': './dist/codex-pro-worker.js' };
   return values;
 }
 
@@ -114,6 +118,9 @@ test("all six package versions, exact dependencies and platform selectors must a
   for (const mutate of [
     (values) => { values[PLUGIN].version = "0.1.0"; },
     (values) => { values[META].dependencies[PLUGIN] = "^0.27.0"; },
+    (values) => { values[PLUGIN].dependencies['dsh-subagent-codex-pro'] = '^0.8.0'; },
+    (values) => { delete values[PLUGIN].exports['./codex-pro-worker']; },
+    (values) => { delete values[META].bin['flywheel-codex-pro-worker']; },
     (values) => { values[META].optionalDependencies[PACKAGES[0].name] = "latest"; },
     (values) => { values[PACKAGES[0].name].cpu = ["x64"]; },
     (values) => { delete values[PLUGIN].repository; },

@@ -39,6 +39,14 @@ function validatePackages(manifests, requestedVersion) {
     }
   }
   if (meta.dependencies?.[PLUGIN] !== version) throw new Error(`Meta dependency ${PLUGIN} must be exactly ${version}`);
+  if (manifests[PLUGIN].dependencies?.['dsh-subagent-codex-pro'] !== '0.8.0') {
+    throw new Error('The plugin dependency dsh-subagent-codex-pro must be exactly 0.8.0');
+  }
+  if (manifests[PLUGIN].exports?.['./codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
+      manifests[PLUGIN].bin?.['flywheel-codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
+      meta.bin?.['flywheel-codex-pro-worker'] !== 'bin/flywheel-codex-pro-worker.js') {
+    throw new Error('The release must expose the installed Codex Pro worker');
+  }
   return version;
 }
 

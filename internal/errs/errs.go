@@ -88,6 +88,7 @@ var patterns = []struct {
 	{TIMEOUT, regexp.MustCompile(`(?i)\btimed?\s?out\b|\bdeadline exceeded\b`)},
 	{TRANSPORT, regexp.MustCompile(`(?i)econnrefused|econnreset|enotfound|eai_again|socket hang up|network error|fetch failed|connection refused|dns`)},
 	{INVALID_REQUEST, regexp.MustCompile(`(?i)` + statusCode("400") + `|invalid request|bad request|malformed`)},
+	{EMPTY_RESPONSE, regexp.MustCompile(`(?i)\bempty response\b`)},
 }
 
 // timeoutNegated 检查匹配位置之前是否有 "not " / "n't "（原 lookbehind 语义，

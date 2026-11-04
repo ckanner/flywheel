@@ -38,7 +38,7 @@ func TestExampleConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, "kimi", c.Loops["plan"].Harness)
 	assert.Equal(t, "high", c.Loops["plan"].Thinking)
 	assert.True(t, c.Loops["plan"].ResidentSession)
-	assert.Equal(t, "codex", c.Routes["hard"].Harness)
+	assert.Equal(t, "codex-pro", c.Routes["hard"].Harness)
 	assert.NotContains(t, c.Routes, "multimodal", "附件能力未验证，不虚构多模态通路")
 	assert.NotEmpty(t, c.Verify.TestFilePatterns, "测试识别仍用于抽样")
 	assert.Empty(t, c.Verify.ProtectedTestPatterns, "普通测试允许修改；oracle显式保护")

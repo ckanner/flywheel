@@ -142,3 +142,24 @@ func TestMetricsDoesNotInventAnEffectiveProvider(t *testing.T) {
 	assert.Contains(t, entry, "provider")
 	assert.Nil(t, entry["provider"], "an account label does not attest which model adapter ran")
 }
+
+func TestCodexProReceiptSurvivesMetricsWithoutConvertingPartialUsageToKnown(t *testing.T) {
+	c, dir := spawnMetricsCtx(t)
+	receipt := json.RawMessage(`{"protocol":1,"requestId":"owned-call","costUSD":null,"costStatus":"unknown","outcome":{"usage":{"status":"partial","run":{"inputTokens":42}},"turnConfiguration":{"requestedEffort":"high","accepted":true,"effectiveEffort":null}}}`)
+	r := drivers.MockResult(func(r *drivers.Result) {
+		r.Harness, r.Provider = "codex-pro", ""
+		r.CodexProReceipt = receipt
+		r.Usage, r.CostUSD = nil, nil
+	})
+	c.recordSpawnMetrics(spawnMetricsArgs{role: "execute", channel: "chatgpt-subscription", result: &r})
+	entry := lastMetricsLine(t, dir)
+	encoded, err := json.Marshal(entry["codex-pro-receipt"])
+	require.NoError(t, err)
+	assert.JSONEq(t, string(receipt), string(encoded))
+	assert.Nil(t, entry["usage"])
+	assert.Nil(t, entry["cost-usd"])
+	assert.Nil(t, entry["provider"])
+	assert.Equal(t, int64(1), c.State.Budget.UnknownUsageCalls)
+	assert.Equal(t, int64(1), c.State.Budget.UnknownCostCalls)
+	assert.Zero(t, c.State.Budget.Totals.Tokens)
+}

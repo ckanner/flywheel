@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.5.0"
+  version: "1.7.0"
 description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
 whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -26,9 +26,20 @@ arguments: slug pause
    ```bash
    task_dir="$(cd "$slug" && pwd -P)"
    repo_dir="$(git -C "$task_dir" rev-parse --show-toplevel)"
+   repo_dir="$(cd "$repo_dir" && pwd -P)"
+   task_branch="$(git -C "$repo_dir" branch --show-current)"
+   git -C "$repo_dir" worktree list --porcelain
+   git -C "$repo_dir" status --short
    ```
 
-   任一命令失败就停止启动并报告路径问题。若 `flywheel` 不在 PATH，使用
+   逐条执行，任一命令失败就停止启动并报告路径问题。`repo_dir` 应是准备时选定的
+   任务集成 worktree；`task_dir` 必须来自这个 worktree，不能混用原 checkout 的账本。
+   核对实际分支与既有任务选择。没有明确特殊授权时，不在 `main`／`master`、
+   已知默认分支或空分支名（detached HEAD）直接开跑；新任务先按 `flywheel-new`
+   创建或选用任务工作区。已选择工作区或明确授权的运行位置不重复询问。
+   已有状态的任务使用原路径恢复，不切分支、复制／重置 state 或替换 packet worktree。
+
+   若 `flywheel` 不在 PATH，使用
    已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。
    首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对 `ok`
    和逐步结果；`ready:false` 表示尚有模型依赖或配置问题。安装不证明账号已授权。
@@ -42,7 +53,10 @@ arguments: slug pause
    ```
 
    阻断项先处理；不要在 skill 内静默换 profile、provider 或付费渠道。
+   hard 的新默认 `codex-pro` 由引擎直接调用插件公开 API；不在 skill 中另发
+   `codex exec` 或父 agent 委派。旧配置保留原后端，要迁移先让用户审阅实际配置差异。
    用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
+   Codex Pro 只做本地包／命令检查；其完整策略事后检查警告不能翻译成运行前隔离保证。
    `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
 2. **按所选模式调用一次**：
@@ -56,8 +70,7 @@ arguments: slug pause
    用户明确选择 `pause=review` 时，在仓库根以前台方式运行并保留该进程：
 
    ```bash
-   cd "$repo_dir"
-   flywheel run "$task_dir" --pause-before review
+   cd "$repo_dir" && flywheel run "$task_dir" --pause-before review
    ```
 
    该模式运行到评审前暂停才返回。`control start` 当前不接受 pause 参数，
@@ -76,6 +89,27 @@ arguments: slug pause
    后台模式可通过 `flywheel-status` 或桌面面板观察，通过 `flywheel-stop`
    停止；关闭当前会话不等于停止后台引擎。监督模式已经暂停时明确说明尚未评审
    或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
+
+## 工作区与恢复
+
+`flywheel-run` 同时是恢复入口：继续使用原 `task_dir`、`repo_dir` 和任务分支，
+由引擎恢复 packet 状态并重新核验证据，不重新生成任务或为同一 packet 另建目录。
+若上次记录了 `cleanup-unconfirmed`／`process cleanup is unconfirmed`，先确认
+本次拥有的 worker／guardian／app-server 已结束再恢复；外层退出或等待几秒不算证明。
+
+| 阶段 | 实际工作目录 |
+|---|---|
+| Plan | `repo_dir`，只允许修订任务内契约 |
+| Execute、L1、Review | 引擎管理的 packet 候选 worktree；Review 请求 read-only |
+| 里程碑 L2/L3、Judge | 合入后的 `repo_dir`；Judge 请求 read-only |
+
+packet worktree 由引擎创建／复用，无需 skill 手动切入。默认创建失败仍可能回退
+`in-place`；出现 `worktree unavailable` 或配置明确关闭 worktree 时，应如实说明
+实际模式，严格隔离要求下停止并处理。保留原成果和状态，不把重启当成隔离已恢复。
+单元合格后本地 `ff-only` 合回 `repo_dir` 当前分支，因此启动目录不能随意选择。
+
+GitHub PR 在外层管理：按已有授权推送任务分支／建立 Draft PR，完整终验及当前
+head 的检查与审阅满足仓库要求后再合并；引擎不自动执行这些远端操作。
 
 ## 单环入口
 

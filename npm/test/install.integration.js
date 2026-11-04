@@ -27,6 +27,9 @@ test('the six packaged npm candidates install and run from a clean agent environ
   const cli = path.join(root, 'bin', 'flywheel.js');
   const worker = path.join(context.prefix, 'bin', 'flywheel-dsh-worker');
   await fs.access(worker, 1);
+  const codexProWorker = path.join(context.prefix, 'bin', 'flywheel-codex-pro-worker');
+  await fs.access(codexProWorker, 1);
+  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
@@ -52,6 +55,51 @@ test('the six packaged npm candidates install and run from a clean agent environ
   const installationModule = path.join(path.dirname(workerPath), 'installation.js');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
+
+  await t.test('installed worker imports the real pinned plugin and executes an offline app-server', async () => {
+    const doctor = await run(codexProWorker, ['--doctor'], context.env, context.project);
+    assert.equal(doctor.code, 0, doctor.stderr + doctor.stdout);
+    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.8.0',
+      machineProtocol: 1, available: true, inferenceTested: false });
+    const fixture = path.join(context.fixtures, 'offline-codex.mjs');
+    await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-codex-pro.js'), fixture);
+    await fs.chmod(fixture, 0o755);
+    const log = path.join(context.root, 'installed-codex-rpc.jsonl');
+    const child = spawn(codexProWorker, [], { cwd: context.project,
+      env: { ...context.env, FLYWHEEL_CODEX_BIN: fixture, TEST_CODEX_PRO_LOG: log }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', value => { stdout += value; }); child.stderr.on('data', value => { stderr += value; });
+    child.stdin.on('error', () => {});
+    const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
+    const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
+    child.stdin.write(JSON.stringify({ protocol: 1, type: 'start', requestId: 'actual-npm-install', cwd: await fs.realpath(context.project),
+      model: 'fixture-model', reasoningEffort: 'high', permissionMode: 'workspace-write', prompt: 'Offline installed package validation.', timeoutMs: 5000 }) + '\n');
+    let exit;
+    try { exit = await done; } finally { clearTimeout(timeout); }
+    assert.equal(exit.code, 0, stderr + stdout);
+    assert.equal(exit.signal, null);
+    const frames = stdout.trim().split('\n').map(line => JSON.parse(line));
+    const result = frames.at(-1);
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1 });
+    assert.equal(result.receipt.ok, true);
+    assert.equal(result.receipt.outcome.cleanup.confirmed, true);
+    for (const pid of [result.receipt.outcome.execution.pid, result.receipt.outcome.execution.supervisorPid]) {
+      assert.ok(Number.isSafeInteger(pid) && pid > 0);
+      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+    }
+    assert.throws(() => process.kill(-result.receipt.outcome.execution.supervisorPid, 0), { code: 'ESRCH' });
+    assert.equal(result.receipt.outcome.turnConfiguration.effectiveEffort, null);
+    assert.equal(result.receipt.outcome.turnConfiguration.accepted, true);
+    assert.equal(result.receipt.outcome.usage.status, 'complete');
+    assert.equal(result.receipt.costStatus, 'unknown');
+    assert.equal(result.receipt.costUSD, null);
+    const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(calls[0].argv, ['app-server', '--stdio']);
+    assert.equal(calls.find(call => call.method === 'turn/start').params.effort, 'high');
+    assert.ok(server.requests.includes('/dsh-subagent-codex-pro'));
+    assert.ok(server.requests.includes('/tarballs/dsh-subagent-codex-pro-0.8.0.tgz'));
+  });
 
   await t.test('same-version setup is repeatable and preserves configuration', async () => {
     const second = await run(process.execPath, [cli, 'setup', '--no-global', '--prefix', context.prefix, '--dsh-bin', context.dsh, '--json'], context.env, context.project);

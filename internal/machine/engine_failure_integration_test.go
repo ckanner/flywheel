@@ -61,7 +61,12 @@ func TestReviewRejectsIncompleteHarnessAndStaleEvidence(t *testing.T) {
 			c.Drivers = sd.set()
 			seedVerification(t, c, "M01-T01")
 			out, err := c.reviewStep(c.Packets["M01-T01"], nil)
-			require.NoError(t, err)
+			if failure == "cleanup" {
+				require.ErrorContains(t, err, "cleanup is unconfirmed")
+				assert.Equal(t, "escalated", loadFixtureState(t, fx).Status)
+			} else {
+				require.NoError(t, err)
+			}
 			assert.False(t, out.Pass)
 			if failure == "timeout" {
 				assert.Equal(t, errs.TIMEOUT, out.ErrorCode)

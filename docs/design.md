@@ -1,14 +1,14 @@
-# Flywheel 系统设计 v0.27
+# Flywheel 系统设计 v0.28
 
-2026-11-01 实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)。
+2026-11-03 实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)，Codex Pro 默认接入见 [本轮计划](plans/2026-11-03-codex-pro-default.md)。
 
 ## 1. 目标与范围
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
 
-本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DeepSeek API。DeepSeek 只使用 Flash。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以由完整 Codex CLI harness 执行；这两个后端的工具、权限和会话语义不同。
+本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DeepSeek API。DeepSeek 只使用 Flash。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以通过 Codex Pro 插件的 machine API 使用完整 Codex harness；这两个后端的工具、权限和会话语义不同。
 
-本轮补齐具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检。大规模并行调度和自动模型选型仍需真实任务数据支持。用户在另一 session 维护的 `ckanner/dsh-subagent-codex-pro` 保持独立；其公开接口与本引擎的权限、结果和进程所有权契约尚不一致，Codex CLI 继续提供完整 harness 通路。
+具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。本轮新增 `codex-pro` harness，直接消费已发布的 `dsh-subagent-codex-pro@0.8.0` 公开 machine API，并将默认 hard 路由切换到它。原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。大规模并行调度和自动模型选型仍需真实任务数据支持。
 
 ## 2. 设计不变量
 
@@ -32,7 +32,8 @@ flowchart TD
   G --> V["确定性验收与提交"]
   G --> D["DSH SDK worker"]
   G --> K["Kimi CLI"]
-  G --> X["Codex CLI"]
+  G --> X["Codex Pro worker"]
+  X --> A["插件 machine API / Codex app-server"]
   D --> P["DeepSeek / ChatGPT provider"]
 ```
 
@@ -41,6 +42,8 @@ DSH 插件是控制面，提供面板、人工命令和模型工具。它只使�
 引擎将任务目录与执行根统一为绝对物理路径，再计算账本、契约和报告的相对位置。macOS 的 `/var`／`/private/var` 或用户自建符号链接不能改变同一任务的身份；路径无法解析时停止，不能把错误的 `../` 前缀传入 Git 排除规则。
 
 DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；无法证明正常关闭就不能报告成功。不依赖 Teams、OAR、Forge，也不把 external subagent 名称当成原生 LLM provider。
+
+Codex Pro worker 是另一种受管进程，直接导入 `dsh-subagent-codex-pro/machine`，不创建 DSH 父模型来再次委派。插件内部启动 Codex app-server，保留其完整 harness 与用户已有 Codex 登录。Go 管理 worker 生命周期；插件拥有 app-server、guardian 和内部取消／清理。正常完成必须同时满足外层 worker 的物理终态及插件完整回执。worker 异常退出不能被解释成插件子进程已清理；取消和未知清理结果均阻止成功。
 
 ## 4. 执行闭环
 
@@ -118,6 +121,8 @@ L1 与 Review 的 `identity` 绑定：
 
 `state.json` 仅由 `internal/state` 写入：schema 校验、进程间锁、revision CAS、临时文件与原子 rename。任务生命周期另持 `.run.lock`；lease 是并发运行与停止完成的判断依据。运行信息文件原子更新，包含用于关联本次运行的随机 control token；PID 只作展示，不作为停止授权。日志、pid、锁、停止请求及临时控制文件不进入提交。
 
+Intake／Garden 的预算与清理升级记录若需更新已有主任务状态，必须先取得同一运行 lease，并在持锁期间确认没有主引擎 PID，再执行 Load／CAS Save；不得只靠 PID 文件尚未出现就抢写。主引擎持锁时只保留模块自己的 metrics／inbox 证据，不修改其 state revision。
+
 主要单元状态仍为 pending、executing、executed、l1-passed、l1-failed、review-failed、completed、interrupted、inbox。中断后的产物保留，重启不凭旧报告自动认定完成。新增可选 `last-feedback`、`evidence-history`、`contract-fingerprints`、契约同步状态及 usage/cost 未知计数，旧配置与状态可加载，但旧完成记录不自动取得新证据的可信度。
 
 每个现行 packet 的契约 fingerprint 包含权威 Spec 全文、packet 全文和验证配置，并随状态保存。重启或 Plan 修订后重新比较；不匹配的单元和所属里程碑重新打开，失效证据归档，完成任务也可回到 pending。旧 completed 没有 fingerprint 时保守地重新打开。Spec 或共享验证策略改变可能影响多个单元；后续正常实现代码变化则不会单独改变这个契约 fingerprint。
@@ -136,9 +141,15 @@ Git 完成顺序：验证身份仍有效 → 在 worktree 只提交实现路径 
 
 稳定 provider 错误码保持：AUTH、QUOTA、RATE_LIMIT、SERVER、TRANSPORT、TIMEOUT、EMPTY_RESPONSE、INVALID_REQUEST、CONTEXT_WINDOW_EXCEEDED。L1_FAILED、REVIEW_RETURNED、SPIN 属于编排层失败分类。
 
+Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既有码；空答案使用明确的 `empty response` 诊断并归入 EMPTY_RESPONSE，不增加另一套重试或付费降级策略。
+
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
 
+清理是否已确认另于 provider 错误码判断。已启动的 Codex Pro worker 丢失可信清理回执时，外层 worker 的退出不证明独立 guardian／app-server 进程组已经静止；driver 必须记录 `CleanupError`。所有模型阶段在记录回执和计量后遇到该字段即保存升级记录、保留工作区并停止本次运行，禁止传输重试、渠道降级、Plan 冷启动和下一任务。正常服务错误若已有可信清理确认仍适用原重试策略。恢复前须确认遗留进程已停止；固定等待一段时间不能冒充清理证明。
+
 SIGTERM 先取消运行上下文，再终止本任务登记的进程组。运行栈完成缺陷恢复等清理后返回 interrupted，CLI 退出 143。进程组清理只作用于本次拥有的子进程，不扫描并杀死之后创建的其他任务。显式脱离进程组的外部进程不属于普通 POSIX 进程组保证；DSH worker 必须完成 SDK shutdown／退出确认，SDK 负责排空自身托管命令，外层仍由 Go 看门狗兜底。
+
+全局 kill switch 对每个已登记子进程保留其调用声明的清理宽限，不能用默认 5 秒提前截断 Codex Pro 至少 10 秒的收尾。只升级本次停止快照内的进程，各子进程仍有有限时限并等待退出；后来启动的无关调用不属于该快照。
 
 SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的 `EPERM` 在原有清理宽限内重试，以容纳 macOS 的退出／回收窗口；到期仍无法确认、其他探测错误，以及初次 SIGKILL 的权限失败均保留清理错误，不能推进成功。
 
@@ -153,7 +164,7 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 | Plan | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high，允许匹配身份后恢复 |
 | Execute default | DSH SDK | deepseek-official | deepseek-flash | high |
 | Execute frontend | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high |
-| Execute hard | Codex CLI | chatgpt-subscription | gpt-6.1-sol | high |
+| Execute hard | Codex Pro machine API | chatgpt-subscription | gpt-6.1-sol | high |
 | Review | DSH SDK | chatgpt | gpt-6.1-sol | high，只读 |
 | Judge | DSH SDK | chatgpt | gpt-6-astra | high，只在里程碑终验 |
 | Intake | DSH SDK | deepseek-official | deepseek-flash | low |
@@ -161,7 +172,17 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 
 这些是可编辑的初始绑定，不是模型能力排名或性能保证。使用前核对实际账号/model catalog；不支持时停止并修配置。DSH Mac rc.5 的 Flash effort 是 off/low/high/max，没有 medium。`multimodal` 暂不预绑定：文本请求与 provider 目录不能证明附件已被传递。完整图像/文件输入契约需另验收。
 
-Codex Pro adapter 的启动超时、权限、模型回执、usage 等加固是另一个 session 的任务。它完成后可新增消费者，不改变 Flywheel 的状态/证据/提交所有权；当前 DSH native worker 不假装支持该 external adapter。
+### 7.1 Codex Pro 接入契约
+
+`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或 resident session。每次调用创建新会话，权限由调用角色确定，不能从桌面全访问设置隐式继承。
+
+worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；只接受 `workspace-write` 或 `read-only`，审批策略为 `never`。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
+
+权限检查分两个时点：插件在 `turn/start` 前检查模型、cwd、approval 与沙箱模式；Flywheel 在完整结果返回后检查完整 sandboxPolicy，决定该结果能否进入后续验收。插件 0.8.0 没有提供运行前完整策略 guard；Codex 用户／项目配置可能扩展 writable roots 或 networkAccess。事后拒绝不能阻止已经发生的访问，doctor 必须提示此边界。要求运行前拒绝任何额外权限的环境，需上游增加公开 pre-turn guard 后再使用；不得通过私有 API 或复制凭证建立另一套运行时。
+
+终态审计保留插件原始回执，包括请求／接受／实际配置、thread/turn、usage 完整性、错误、物理进程退出及清理确认。插件为正常收尾主动终止 app-server，可在完整回执证明正常完成与清理后接受其 terminationRequested 事实；用户取消、超时、截断、启动失败和清理失败不适用此例外。无完整回执或外层进程异常时绝不能凭文本答案推进完成。
+
+仅完整且可归属本次调用的 usage 进入可知预算；partial/unknown 明确保留在回执，不能当成完整零用量。订阅调用没有真实美元价格时 cost 保持 unknown。默认安装解析 npm 依赖中的 worker，不悄悄改用 PATH 上的旧 `codex exec`。Codex 可执行程序与账号登录仍是运行前提；安装插件依赖不等同于代办授权。
 
 ## 8. 用量、成本与效率
 
@@ -212,7 +233,7 @@ flywheel control doctor --cwd /repo --task-dir /repo/docs/task --probe
 
 配置查看与本地 doctor 不物化全局配置、不写任务状态、不建 worktree、不执行验收命令。doctor 默认仅检查配置、契约和本地命令；显式 probe 才启动 DSH SDK 的无推理握手与权限检查，不发送 session/prompt。检查总预算 40 秒，另留进程清理窗口；相同 cwd/provider/channel/model/effort/权限的探测只做一次，不同账号渠道与读写权限不能合并。提供任务时，只将 Plan、Review、Judge、启用的第二意见及当前 packet 路由视为必需；无 packet 时检查 default 路由。未使用绑定显示 skipped。
 
-doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok=false；合法失败报告仍交给桌面逐项展示。adapter 接受配置、完整沙箱和正常关闭可以验证；账号授权、额度、账号实际模型目录和真实推理能力保持 unknown。环境凭证只检查声明的变量名是否存在，报告不输出凭证值。SDK 探测可能产生 SDK 自己的本地会话／缓存，不能宣称整个文件系统零写入。
+doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok=false；合法失败报告仍交给桌面逐项展示。DSH adapter 接受配置、完整沙箱和正常关闭可以通过 SDK 探测验证。Codex Pro 本地检查验证 Node、插件公开入口与版本、Codex 可执行程序；不得为探测而调用 `runMachine` 发送模型任务，实际模型和权限回执保持 unknown，交由正式调用验证。账号授权、额度、账号实际模型目录和真实推理能力保持 unknown。环境凭证只检查声明的变量名是否存在，报告不输出凭证值。SDK 探测可能产生 SDK 自己的本地会话／缓存，不能宣称整个文件系统零写入。
 
 诊断 CLI 捕获 SIGTERM/SIGINT 为 context 取消，等待已有进程收尾。看门狗的 TERM 升级、stdio 排空和进程组确认各有 5 秒窗口，保守可叠加 15 秒；桌面正常控制超时为 60 秒。host 主动取消诊断时留 20 秒清理才强杀 Go，避免沿用普通控制命令的 500ms 宽限截断 SDK 清理。取消、超时、清理失败均不能报告为通过。
 
@@ -236,7 +257,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-当前统一 npm 发行目标为 **0.27.3**。[0.27.0 发行](https://github.com/ckanner/flywheel/actions/runs/41385226607)在上传前因私有仓库读取认证失败而停止；[0.27.1 发行](https://github.com/ckanner/flywheel/actions/runs/41387321980)因 Ubuntu 控制面测试夹具的状态文件写入竞态失败，publish job 未执行。夹具已改用完整文件的原子替换；0.27.2 的 [PR #19 CI](https://github.com/ckanner/flywheel/actions/runs/41388914605) 与 [main CI](https://github.com/ckanner/flywheel/actions/runs/41389529756) 均通过。随后预核真实 npm 12 的 `view --json` 发现单值输出变为单元素数组，[0.27.2 发行](https://github.com/ckanner/flywheel/actions/runs/41389716920)在 preflight／build 成功后的 verify 阶段主动取消，未执行上传；这是预防性取消，不是 CI 失败。三个旧版本均未上传 npm 包，原 tag 保留不移动；0.27.3 发行与用户 Mac 实机验收仍需各自的完成证据。
+本轮统一 npm 发行目标为 **0.28.0**，以已发布的 0.27.3 为基线。六个 Flywheel 包保持同版，DSH 插件另外精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；本轮源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

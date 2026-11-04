@@ -1,10 +1,11 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.27.3",
+  "version": "0.28.0",
   "description": "Flywheel: deterministic coding-agent loops, DSH controls, and one-command agent installation.",
   "bin": {
     "flywheel": "bin/flywheel.js",
-    "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js"
+    "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js",
+    "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js"
   },
   "os": [
     "darwin",
@@ -15,7 +16,7 @@
     "arm64"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.18.0"
   },
   "repository": {
     "type": "git",
@@ -29,22 +30,23 @@
     "CHANGELOG.md",
     "docs/getting-started.md",
     "docs/configuration.md",
+    "docs/workflow.md",
     "docs/examples/create-first-task.sh"
   ],
   "optionalDependencies": {
-    "@ckanner/flywheel-darwin-arm64": "0.27.3",
-    "@ckanner/flywheel-darwin-amd64": "0.27.3",
-    "@ckanner/flywheel-linux-arm64": "0.27.3",
-    "@ckanner/flywheel-linux-amd64": "0.27.3"
+    "@ckanner/flywheel-darwin-arm64": "0.28.0",
+    "@ckanner/flywheel-darwin-amd64": "0.28.0",
+    "@ckanner/flywheel-linux-arm64": "0.28.0",
+    "@ckanner/flywheel-linux-amd64": "0.28.0"
   },
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
     "test": "node --test npm/test/*.test.js",
     "test:install": "node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.27.3 dist-npm"
+    "build:npm": "bash scripts/build-npm.sh 0.28.0 dist-npm"
   },
   "dependencies": {
-    "@ckanner/dsh-plugin-flywheel": "0.27.3"
+    "@ckanner/dsh-plugin-flywheel": "0.28.0"
   }
 }

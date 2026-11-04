@@ -2,6 +2,7 @@ package diagnostic
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -111,7 +112,7 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			r.add(b.ID, "skipped", "使用 mock driver；未检查真实模型通道", "", "")
 			continue
 		}
-		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" {
+		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
 			r.add(b.ID+".permission", "fail", "所选 harness 无法实施本阶段要求的只读权限", "INVALID_REQUEST", "为评审选择支持 read-only 的 DSH 或 Codex 路径")
 			continue
 		}
@@ -133,6 +134,8 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			} else {
 				r.add(b.ID+".sdk", "skipped", "未运行 SDK 探测；必须显式请求且本地配置、契约和工作目录检查通过", "", "修复本地问题后使用 --probe；探测不会发送推理请求")
 			}
+		} else if b.Harness == "codex-pro" {
+			r.codexPro(ctx, *b, commands)
 		} else {
 			r.harnessCommand(ctx, *b, commands)
 			if b.Harness != "codex" {
@@ -249,9 +252,11 @@ func (r *Report) command(ctx context.Context, id, binary string, cache map[strin
 			return false
 		}
 		if id == "node" {
-			major, _ := strconv.Atoi(strings.SplitN(versionText, ".", 2)[0]) // regexp admits at most six decimal digits
-			if major < 22 {
-				r.add("binary.node", "fail", "Node.js 版本低于 worker 要求的 22", "INVALID_REQUEST", "安装 Node.js 22 或更新版本，并更新桌面启动环境的 PATH")
+			parts := strings.Split(strings.SplitN(versionText, "-", 2)[0], ".")
+			major, _ := strconv.Atoi(parts[0]) // regexp admits bounded decimal components
+			minor, _ := strconv.Atoi(parts[1])
+			if major < 22 || (major == 22 && minor < 18) {
+				r.add("binary.node", "fail", "Node.js 版本低于 worker 要求的 22.18.0", "INVALID_REQUEST", "安装 Node.js 22.18.0 或更新版本，并更新桌面启动环境的 PATH")
 				return false
 			}
 		}
@@ -262,6 +267,43 @@ func (r *Report) command(ctx context.Context, id, binary string, cache map[strin
 	cache[key] = true
 	r.add("binary."+id, "pass", "本地命令可用："+path+versionSummary, "", "")
 	return true
+}
+
+// Codex Pro's public machine API has no inference-free same-turn configuration
+// probe. Only import/version availability is checked here; the real invocation
+// must validate its own receipt, including the complete post-run policy.
+func (r *Report) codexPro(ctx context.Context, b Binding, cache map[string]bool) {
+	worker := drivers.CodexProCommand()
+	ready := r.command(ctx, "codex-pro-worker", worker, cache, false)
+	ready = r.command(ctx, "node", "node", cache, true) && ready
+	r.command(ctx, "codex", drivers.CodexProBinary(), cache, true)
+	if ready && ctx.Err() == nil {
+		key := "codex-pro-import:" + worker
+		if _, checked := cache[key]; !checked {
+			result := runCommand(worker, []string{"--doctor"}, commandOptions(ctx, r.Cwd))
+			var probe struct {
+				Protocol        int    `json:"protocol"`
+				Type            string `json:"type"`
+				Package         string `json:"package"`
+				Version         string `json:"version"`
+				MachineProtocol int    `json:"machineProtocol"`
+				Available       bool   `json:"available"`
+				InferenceTested *bool  `json:"inferenceTested"`
+			}
+			ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil &&
+				probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "dsh-subagent-codex-pro" &&
+				probe.Version == drivers.CodexProPackageVersion && probe.MachineProtocol == 1 &&
+				probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested
+			cache[key] = ok
+			if ok {
+				r.add("codex-pro.api", "pass", "已导入 dsh-subagent-codex-pro/machine "+drivers.CodexProPackageVersion+"（协议 1，未推理）", "", "")
+			} else {
+				r.add("codex-pro.api", "fail", "Codex Pro 公开入口、精确版本或无推理检查未通过", "INVALID_REQUEST", "重新安装当前 Flywheel npm 包并检查 worker 入口；不会自动改走旧 Codex CLI")
+			}
+		}
+	}
+	r.add(b.ID+".sandbox", "warn", "插件运行前核对沙箱模式；完整策略仅在结果返回后核对，Codex 配置仍可能扩展目录或网络权限", "", "核对本机 Codex 配置；需要运行前完整策略限制的环境须等待上游公开 guard，不要将事后拒绝视为访问防护")
+	r.add(b.ID+".configuration", "unknown", "实际模型、完整权限和 effort 接受回执由正式调用验证；本次未启动 Codex 模型回合", "", "")
 }
 
 // Match the real driver's entry point, including the legacy ZCode app runtime.

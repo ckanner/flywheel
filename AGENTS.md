@@ -21,13 +21,13 @@ disjoint worlds.
 ## Build & Test
 
 ```bash
-go build ./...            # Go 引擎需要 Go >= 1.27；npm／DSH 部分另需 Node >= 22
+go build ./...            # Go 引擎需要 Go >= 1.27；npm／DSH 部分另需 Node >= 22.18.0
 make test                 # go test ./... 全部包
 make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外）
 make quality-gate         # vet + fmt-check + coverage —— Go 完整门禁
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check  # DSH 插件构建与离线行为测试
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^TestDSHNodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro)NodeWorkerOfflineBridge$' -count=1
 npm test                 # npm 启动器、安装器、发行门禁的单元与协议测试
 npm run build:npm        # 隔离构建六个同版本包，只生成候选，不发布
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install

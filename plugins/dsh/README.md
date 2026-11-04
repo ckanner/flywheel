@@ -1,8 +1,8 @@
 # Flywheel 的 DSH 桌面入口与原生 worker
 
-目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包只提供桌面操作入口和原生 SDK 执行通道。无需 alpha、OAR、Forge 或一直活着的父智能体。
+目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包提供桌面操作入口、原生 SDK 执行通道和 Codex Pro machine API worker。无需 alpha、OAR、Forge 或一直活着的父智能体。
 
-完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.27.3 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。
+完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.28.0 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。
 
 ## 提供什么
 
@@ -12,13 +12,14 @@
 | `/flywheel` | 人工 slash command，通过已有 DSH commands Remote 调用 Go CLI；不会将控制指令交给模型执行 |
 | `flywheel_control` | 模型工具，复用同一个校验与 CLI 控制路径；后台 start 很快返回，stop 等待引擎确认 |
 | `flywheel-dsh-worker` | 独立 Node 进程，通过官方 `dsh --profile sdk` stdio JSON-RPC 执行一个原生模型会话 |
-| worker policy | 发请求前验证 cwd、实际权限和完整沙箱，自动拒绝需要批准的扩权 |
+| DSH worker policy | 发请求前验证 cwd、实际权限和完整沙箱，自动拒绝需要批准的扩权 |
+| `flywheel-codex-pro-worker` | 直接导入 `dsh-subagent-codex-pro@0.8.0` 的公开 `./machine` 入口，传递任务与取消并返回完整插件回执 |
 
-插件没有自己的任务数据库，不直接读写 `state.json`。桌面退出不会让后台 Go 任务失去父智能体；Go 拥有 worker 生命周期。原生 SDK 入口只接收已注册的 LLM adapter provider；`subagent_codex_pro`、Kimi ACP、Teams 都不是此接口的 provider。独立 Codex / Kimi CLI 使用 Go 的对应 driver。
+插件没有自己的任务数据库，不直接读写 `state.json`。桌面退出不会让后台 Go 任务失去父智能体；Go 拥有 worker 生命周期。原生 SDK 入口只接收已注册的 LLM adapter provider；`subagent_codex_pro`、Kimi ACP、Teams 都不是此接口的 provider。Kimi CLI、Codex Pro machine API 和旧显式 Codex CLI 使用各自 Go driver；Codex Pro 复用同一插件 runner，不经过 DSH 父模型或工具名转发。
 
 ## 一条命令安装到自己的 Mac
 
-已有 Node.js 22 或更高、npm 和 DSH Mac 桌面后，先确认 About、桌面安装的 `dsh --version` 与实际运行入口，再运行：
+已有 Node.js 22.18.0 或更高、npm 和 DSH Mac 桌面后，先确认 About、桌面安装的 `dsh --version` 与实际运行入口，再运行：
 
 ```sh
 npx -y @ckanner/flywheel@latest install
@@ -70,6 +71,24 @@ reasoningEffort = off | low | high | max
 ```
 
 `high` 是默认平衡档，**没有 `medium`**。其他 provider 使用自身的合法 effort。SDK README 的历史示例可能仍写 `deepseek-v4-flash`；以所用发行包与 adapter 的实际 catalog 为准。本桥接不替换模型 slug、不跨 provider 降级。
+
+## Codex Pro 插件执行通道
+
+默认 `hard` 路由使用 `harness: "codex-pro"`。本包精确依赖 `dsh-subagent-codex-pro@0.8.0`，独立 worker 直接导入公开的 `dsh-subagent-codex-pro/machine`，将模型、effort、工作目录和权限传给插件。DSH 控制面、Go 状态机、插件 runner 各自保持原职责；不需要桌面父模型二次委派，也不会自动回退旧 `codex exec`。
+
+npm 启动器自动解析并注入 `FLYWHEEL_CODEX_PRO_WORKER`。独立 Go 二进制默认从 PATH 查找 `flywheel-codex-pro-worker`，源码开发可显式设为构建后的 `dist/codex-pro-worker.js`。`FLYWHEEL_CODEX_BIN` 可指定底层 Codex 可执行程序，默认 `codex`；`CODEX_HOME` 沿用用户选择的配置／登录目录。Go 会将这些运行必需项交给插件，不把凭证复制到配置、契约或 Git。
+
+新调用固定使用 ephemeral 会话和 `read-only`／`workspace-write`，approval 为 never。插件运行前核对模型、cwd 和权限模式；完整 sandboxPolicy 由 Flywheel 在返回后审查，允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
+
+完整 machine receipt 写入指标，保留 accepted effort、未知 effectiveEffort、usage 完整性与进程终态。插件正常收尾可能主动 TERM/KILL app-server，其物理 exit code 可以为空；Flywheel 只有在完整终态证明任务完成、清理已确认且外层 worker 干净退出时才能继续。取消、超时、截断、启动或清理失败均阻止成功。Go 为此 worker 预留至少 10 秒终止宽限，避免截断插件内部清理。
+
+仅检查包入口、不调用模型可运行：
+
+```sh
+flywheel-codex-pro-worker --doctor
+```
+
+成功输出单行协议 1 JSON，精确版本 0.8.0，`available:true`、`inferenceTested:false`。它不启动 Codex app-server，不读取登录凭证，不证明账号或实际沙箱可用。日常仍应使用下面的 Go doctor，以核对完整配置来源与所需阶段。
 
 ## 无模型请求的 doctor
 
@@ -144,7 +163,7 @@ worker 只支持 `read-only` 与 `workspace-write`。Mac 上由 DSH 的 Seatbelt
 
 卸载先停止活动任务，在 DSH 的所用 profile 移除该插件并重新载入，再执行 `npm uninstall --global @ckanner/flywheel`，自定义 prefix 时加同一参数。npm 卸载不自动删除用户配置、skills、任务文件或安装记录，也不删除模型工具及凭证。
 
-开发构建需要 Node.js 22 或更高；Go 引擎还需要 Go 1.27 或更高。生产插件不打包 DSH、React 或第三方运行时；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于真实 DOM 测试，它们不进入发布包。在仓库根运行：
+开发构建需要 Node.js 22.18.0 或更高；Go 引擎还需要 Go 1.27 或更高。生产插件精确依赖 `dsh-subagent-codex-pro@0.8.0`；不打包 DSH、React 或 Codex 可执行程序；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于真实 DOM 测试，它们不进入发布包。在仓库根运行：
 
 ```sh
 npm --prefix plugins/dsh ci --ignore-scripts
@@ -155,7 +174,7 @@ npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
 
-`build:npm` 在隔离源码副本中构建 worker 和四个平台 Go 二进制，输出六个同版本 npm 包与候选校验记录，包含 `ckanner-dsh-plugin-flywheel-0.27.3.tgz`。所有包的许可沿用仓库 `UNLICENSED`。tarball／Actions artifact 用于开发或备用验证；正式发布必须使用已经过门禁与真实 npm 安装测试的同一候选，不能在测试后重新编译再发布。上述测试不调用真实模型，也不使用用户账号或桌面 profile。
+`build:npm` 在隔离源码副本中构建 worker 和四个平台 Go 二进制，输出六个同版本 npm 包与候选校验记录，包含 `ckanner-dsh-plugin-flywheel-0.28.0.tgz`。所有包的许可沿用仓库 `UNLICENSED`。tarball／Actions artifact 用于开发或备用验证；正式发布必须使用已经过门禁与真实 npm 安装测试的同一候选，不能在测试后重新编译再发布。上述测试不调用真实模型，也不使用用户账号或桌面 profile。
 
 ## 实现依据
 

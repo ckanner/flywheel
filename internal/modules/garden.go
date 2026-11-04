@@ -259,7 +259,7 @@ func RunGarden(o CtxOpts) (GardenSummary, error) {
 	}
 	r := CallAgent(m, CallOptions{Role: "garden", Binding: binding, Prompt: prompt})
 	if !r.OK {
-		return GardenSummary{OK: false, Errors: []string{fmt.Sprintf("garden agent call failed: %s", r.ErrorCode)}}, nil
+		return GardenSummary{OK: false, Errors: []string{fmt.Sprintf("garden agent call failed: %s", r.ErrorCode)}}, m.fatalErr
 	}
 
 	file := filepath.Join(o.TaskDir, "garden-proposals.md")

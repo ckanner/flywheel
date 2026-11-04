@@ -1,10 +1,10 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.5.0"
+  version: "1.7.0"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
-compatibility: "Requires the Flywheel CLI and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, Codex CLI for hard tasks."
+compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
 arguments: slug packet
 
 ---
@@ -17,17 +17,38 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 
 `slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
 
+## 固定任务工作区
+
+逐条解析，任一步失败就停止；不凭原终端或 DSH 会话目录启动：
+
+```bash
+task_dir="$(cd "$slug" && pwd -P)"
+repo_dir="$(git -C "$task_dir" rev-parse --show-toplevel)"
+repo_dir="$(cd "$repo_dir" && pwd -P)"
+task_branch="$(git -C "$repo_dir" branch --show-current)"
+git -C "$repo_dir" worktree list --porcelain
+```
+
+默认复用准备时选定的任务集成 worktree／分支，核对路径和实际分支；已有选择与
+授权不重复询问。未明确选择的 `main`／`master`、已知默认分支或 detached HEAD
+不能直接开跑。新任务先按 `flywheel-new` 准备工作区；已有状态使用原路径，
+不切分支、复制／重置 state 或替换已有 packet worktree。
+
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 契约文件齐全。若给了 packet id（如 M02-T03），
    确认对应 `task-packet-*.md` 存在。
-2. **调用**（在目标仓库根执行）：
+   首次运行或升级后用 `flywheel config inspect --cwd "$repo_dir" --task-dir "$task_dir" --json`
+   查看有效路由。0.28.0 的 hard 默认是 `codex-pro`，直接使用已安装插件的 machine API；
+   旧配置不自动迁移。不要在 skill 中改用 `codex exec` 或启动父模型再次委派，
+   也不要把 `subagent_codex_pro` 写成 DSH provider。
+2. **调用**（按是否指定 packet 选择一条，不进入 packet 目录另启动引擎）：
 
    ```bash
    # 指定 packet
-   flywheel run "$slug" --only execute --packet "$packet"
+   cd "$repo_dir" && flywheel run "$task_dir" --only execute --packet "$packet"
    # 或不指定：取当前里程碑下一个未完成 packet
-   flywheel run "$slug" --only execute
+   cd "$repo_dir" && flywheel run "$task_dir" --only execute
    ```
 
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
@@ -38,3 +59,14 @@ Button only: validate + invoke CLI + translate. No loop logic here.
    token／成本缺失要说明未知，不能记成免费。提醒：还需要独立 Review
    和引擎持久化交付；该命令不会自动运行 Review 或把单元标为 completed。
    达到失败出口后由用户选择修订 Plan 或重试，不在 skill 中另建重试循环。
+
+Execute 与 L1 的实际 CWD 由引擎选为该 packet 的候选 worktree；重试复用成果，
+模型会话另起。done-report 先写候选 worktree，再由引擎校验、归档。不要手工创建、
+删除或重置 packet 分支，也不要把另一个 checkout 的账本传给当前 `repo_dir`。
+默认创建失败可能记录 `worktree unavailable` 并回退 `in-place`；显式关闭 worktree
+也会原地执行。严格隔离任务遇到这些模式应停止并处理，重启不证明隔离已恢复。
+
+`cleanup-unconfirmed`／`process cleanup is unconfirmed` 需要先确认相关子进程
+已结束，再从原任务路径恢复；保留成果和审计，不用固定等待代替确认。
+完整运行通过 Review 等门禁后，引擎才本地 `ff-only` 合回任务分支；PR 的推送、
+创建和最终合并由外层按已有授权处理，本单环不自动执行这些远端操作。

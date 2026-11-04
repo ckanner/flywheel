@@ -36,7 +36,7 @@ type Ctx struct {
 
 	// EnvLookup 渠道 env 读取（Node 直读 process.env；注入缝供测试）。
 	EnvLookup childenv.LookupEnv
-	fatalErr  error // failed metrics persistence stops later calls in this module run
+	fatalErr  error // persistence/cancellation/unknown cleanup stops later model calls
 }
 
 // CtxOpts NewContext 命名参数（Node 解构默认值等价）。
@@ -109,7 +109,7 @@ func APIKeysFor(cfg *config.Config, channel string, lookup childenv.LookupEnv) m
 }
 
 // recordModuleMetrics 一次 agent 调用的指标落盘 + 预算记账。Token/cost 记录
-// 永不关闭——任务目录有 state.json 就写入；但编排器运行中（pid 文件存在）绝不写：
+// 永不关闭——任务目录有 state.json 就写入；但编排器持有 run lease 或 PID 时绝不写：
 // 模块 mid-run 写 state 会抬 revision，砸掉 run 下一次 CAS 保存（P0-10，
 // 用户实测）。metrics.jsonl 不受影响（追加式）。
 func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result drivers.Result, code errs.ErrorCode) error {
@@ -135,76 +135,69 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		promptHash = metrics.PromptHash(prompt)
 	}
 	entry := map[string]any{
-		"role":            role,
-		"packet-id":       nil,
-		"milestone":       nil,
-		"model":           nilIfEmpty(model),
-		"harness":         nilIfEmpty(result.Harness),
-		"provider":        nilIfEmpty(result.Provider),
-		"channel":         nilIfEmpty(channel),
-		"prompt-hash":     promptHash,
-		"usage":           result.Usage,
-		"cache-hit-rate":  cacheHitRate,
-		"reasoning-chars": result.ReasoningChars,
-		"cost-usd":        costUSD,
-		"duration-ms":     result.DurationMS,
-		"exit-code":       result.ExitCode,
-		"settled":         result.Settled,
-		"cancelled":       result.Cancelled,
-		"timed-out":       result.TimedOut,
-		"truncated":       result.Truncated,
-		"cleanup-error":   nilIfEmpty(result.CleanupError),
-		"error-code":      nilIfEmpty(string(code)),
-		"attempt":         nil,
+		"role":              role,
+		"packet-id":         nil,
+		"milestone":         nil,
+		"model":             nilIfEmpty(model),
+		"harness":           nilIfEmpty(result.Harness),
+		"provider":          nilIfEmpty(result.Provider),
+		"channel":           nilIfEmpty(channel),
+		"prompt-hash":       promptHash,
+		"usage":             result.Usage,
+		"cache-hit-rate":    cacheHitRate,
+		"reasoning-chars":   result.ReasoningChars,
+		"cost-usd":          costUSD,
+		"duration-ms":       result.DurationMS,
+		"exit-code":         result.ExitCode,
+		"settled":           result.Settled,
+		"cancelled":         result.Cancelled,
+		"timed-out":         result.TimedOut,
+		"truncated":         result.Truncated,
+		"cleanup-error":     nilIfEmpty(result.CleanupError),
+		"error-code":        nilIfEmpty(string(code)),
+		"attempt":           nil,
+		"codex-pro-receipt": result.CodexProReceipt,
 	}
 	if err := metrics.Append(m.MetricsFile, entry); err != nil {
 		return err
 	}
 
 	usage := result.Usage
-	orchestratorRunning := exists(filepath.Join(m.TaskDir, "orchestrator.pid"))
-	switch {
-	case !state.Exists(m.TaskDir):
-		// 任务尚未建立：只有 metrics.jsonl（调用方多为 intake/garden 外挂）。
-	case orchestratorRunning:
+	saved, err := updateIdleTaskState(m.TaskDir, func(st *state.State) {
+		day := time.Now().UTC().Format("2006-01-02")
+		if st.Budget.Daily == nil {
+			st.Budget.Daily = map[string]state.DailyBucket{}
+		}
+		bucket := st.Budget.Daily[day]
+		if usage == nil {
+			st.Budget.UnknownUsageCalls++
+			bucket.UnknownUsageCalls++
+			warning := "Some harness calls did not report usage; token/cost totals are measured lower bounds, not a complete bill."
+			if !slices.Contains(st.Budget.Warnings, warning) {
+				st.Budget.Warnings = append(st.Budget.Warnings, warning)
+			}
+		}
+		if costUSD == nil {
+			st.Budget.UnknownCostCalls++
+			bucket.UnknownCostCalls++
+		}
+		st.Budget.Daily[day] = bucket
+		if usage != nil {
+			total := usage.TotalTokens
+			state.RecordUsage(st, state.Usage{
+				Input:       usage.Input,
+				Output:      usage.Output,
+				Reasoning:   usage.Reasoning,
+				CacheRead:   usage.CacheRead,
+				CacheWrite:  usage.CacheWrite,
+				TotalTokens: &total,
+			}, state.UsageOpts{Provider: firstNonEmpty(result.Provider, channel, "unknown"), CostUSD: costUSD, Day: day})
+		}
+	})
+	if err != nil {
+		m.Log("budget recording skipped: " + err.Error())
+	} else if !saved && state.Exists(m.TaskDir) {
 		m.Log("orchestrator is running — state.json budget write skipped (metrics.jsonl still recorded)")
-	default:
-		st, err := state.Load(m.TaskDir)
-		if err == nil {
-			day := time.Now().UTC().Format("2006-01-02")
-			if st.Budget.Daily == nil {
-				st.Budget.Daily = map[string]state.DailyBucket{}
-			}
-			bucket := st.Budget.Daily[day]
-			if usage == nil {
-				st.Budget.UnknownUsageCalls++
-				bucket.UnknownUsageCalls++
-				warning := "Some harness calls did not report usage; token/cost totals are measured lower bounds, not a complete bill."
-				if !slices.Contains(st.Budget.Warnings, warning) {
-					st.Budget.Warnings = append(st.Budget.Warnings, warning)
-				}
-			}
-			if costUSD == nil {
-				st.Budget.UnknownCostCalls++
-				bucket.UnknownCostCalls++
-			}
-			st.Budget.Daily[day] = bucket
-			if usage != nil {
-				total := usage.TotalTokens
-				state.RecordUsage(st, state.Usage{
-					Input:       usage.Input,
-					Output:      usage.Output,
-					Reasoning:   usage.Reasoning,
-					CacheRead:   usage.CacheRead,
-					CacheWrite:  usage.CacheWrite,
-					TotalTokens: &total,
-				}, state.UsageOpts{Provider: firstNonEmpty(result.Provider, channel, "unknown"), CostUSD: costUSD, Day: day})
-			}
-			_, err = state.Save(m.TaskDir, st, nil) // nil → 以 st.Revision 为期望值（Node expectedRevision: state.revision）
-		}
-		if err != nil {
-			m.Log("budget recording skipped: " + err.Error())
-		}
 	}
 	return nil
 }
@@ -253,7 +246,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		}
 		visited[channel] = true
 		permission := ""
-		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex") {
+		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex" || current.Harness == "codex-pro") {
 			permission = "read-only" // these agents return advice; Go writes the proposals
 		}
 		result := dispatchRole(m.Drivers, o.Role, drivers.CallArgs{
@@ -296,6 +289,11 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		if err := recordModuleMetrics(m, o.Role, current.Model, channel, o.Prompt, result, code); err != nil {
 			m.fatalErr = err
 			m.Log("metrics recording failed; further model calls stopped: " + err.Error())
+		}
+		if m.stopForUnconfirmedCleanup(o.Role, result) {
+			return CallResult{ErrorCode: code, Channel: channel, Model: current.Model}
+		}
+		if m.fatalErr != nil {
 			return CallResult{ErrorCode: errs.TRANSPORT, Channel: channel, Model: current.Model}
 		}
 		if result.Cancelled {

@@ -47,6 +47,19 @@ function loadWorkerPath() {
     "the matching @ckanner/dsh-plugin-flywheel worker is missing; reinstall @ckanner/flywheel");
 }
 
+function loadCodexProWorkerPath() {
+  const name = "@ckanner/dsh-plugin-flywheel";
+  return packageEntry(name, "codex-pro-worker", ownPackage.dependencies?.[name],
+    "the matching @ckanner/dsh-plugin-flywheel Codex Pro worker is missing; reinstall @ckanner/flywheel");
+}
+
+function assertSupportedNode(version = process.versions.node) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:$|-)/.exec(version);
+  if (!match || Number(match[1]) < 22 || (Number(match[1]) === 22 && Number(match[2]) < 18)) {
+    throw new Error("Node.js 22.18.0 or newer is required");
+  }
+}
+
 function signalExitCode(signal) {
   return constants.signals[signal] ? 128 + constants.signals[signal] : 1;
 }
@@ -84,4 +97,4 @@ function runChild(command, args, { env = process.env, cwd, label = "flywheel" } 
   });
 }
 
-module.exports = { loadNativePath, loadWorkerPath, runChild };
+module.exports = { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, assertSupportedNode, runChild };
