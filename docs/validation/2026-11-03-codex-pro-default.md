@@ -59,11 +59,29 @@ sha512-hbWPMkjWPsY8DDhcUIzBBCNR3TZexeOSSv9yP1zzIiyP2NvHfedfNkHz2ubreUyyonst+/539
 
 独立代码复核实际重现并关闭了清理未知误重试、模块状态所有权两个阻断项；额外核查了错误 run／thread／ownership、终态尾部损坏、已有 fatal 时的持久化，以及普通服务错误的正常 retry／fallback。当前没有剩余本地复核阻断项；这不是 GitHub 上的人类 approval。
 
-### PR 与远端 CI
+### 首轮 PR 与远端 CI
 
-交付 PR 为 [Flywheel #23](https://github.com/ckanner/flywheel/pull/23)，保持 Draft、未合并、未发布。最终 head 与后续检查状态以 PR 的 Checks 为准。
+首轮交付 PR 为 [Flywheel #23](https://github.com/ckanner/flywheel/pull/23)，当时保持 Draft、未合并、未发布。最终 head 与后续检查、合并状态以 PR 为准。
 
-首次 [PR CI run 41818659925](https://github.com/ckanner/flywheel/actions/runs/41818659925) 在 `npm-candidate` 启动前失败，没有 runner 或测试 step，依赖它的 test job 跳过。GitHub 页面明确提示账户近期付款失败或 Actions 支出上限需提高，应检查 Billing & plans；这不是代码测试失败，也不能算远端 CI 已通过。账户恢复后须对最终 head 重新运行 Linux／macOS CI，确认要求均满足后再考虑合并。没有修改账户付款、支出上限或仓库可见性。
+首次 [PR CI run 41818659925](https://github.com/ckanner/flywheel/actions/runs/41818659925) 在 `npm-candidate` 启动前失败，没有 runner 或测试 step，依赖它的 test job 跳过。GitHub 页面明确提示账户近期付款失败或 Actions 支出上限需提高，应检查 Billing & plans；这不是代码测试失败，也不能算远端 CI 已通过。后续 `4dfb489` 的 [CI run 41821215839](https://github.com/ckanner/flywheel/actions/runs/41821215839) 同样未进入 runner。账户恢复后仍须对最终源码运行 Linux／macOS CI；后续合并授权与追加验证见下节。没有修改账户付款、支出上限或仓库可见性。
+
+### 2026-11-04 追加：worktree skills 与合并授权
+
+用户进一步要求完善并合并 PR，同时确认各 Loop 和 skills 的 worktree 规范。复核发现工作流文档已有说明，但技能入口尚未覆盖。因此补齐全部 10 个内置 skills：准备时建立或复用任务集成 worktree；启动、恢复和单环执行从任务路径解析同一物理仓库根与分支；packet 候选目录仍交给引擎管理。Status／Stop 只使用原任务路径，不受开发分支检查阻碍。入口遵循既有工作区选择与授权，不重复询问，也不迁移或重置已有 state。
+
+此次只修改 skills 和文档，没有改变引擎的 worktree 回退行为或增加全局强制隔离开关。`flywheel-new`／`run`／`exec` 递增为 1.7.0，其余七个 skills 为 1.6.0。各 Loop 的目录、确定性 verify 与模型 Judge 的区别、CLI／GUI 不自动执行 skill 正文的边界，均写入 [工作流](../workflow.md#51-skills-入口与各-loop-的工作目录)。
+
+| 追加检查 | 结果 |
+|---|---|
+| `go test ./internal/skillsembed ./internal/cli -count=1` | 两包全量通过，覆盖真实 YAML、内嵌读取、控制接口及安装快照 |
+| `npm test` | 再次 78/78，0 fail，0 skip |
+| `npm run build:npm` | 重新构建六包候选；源码快照 SHA-256 为 `b9a962ea17d7cbb43c9d5cb08bc2393e20d3d6b6bfd1acb89f8918a1c03063de`，仍为本地未发行候选 |
+| 候选二进制 `skills read` | 逐一读取 10 个内置 skills，正文与仓库当前源文件一致 |
+| `FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install` | 再次 7/7，0 fail，0 skip；消费本次重新构建的同一批 tarball |
+| 独立入口验证 | 使用含空格的隔离 Git 路径，原终端在 main、任务在另一 worktree 的 `task/add`；按 skill 正确选择任务根与绝对 task 路径，预检前后工作区不变，未启动引擎或调用模型 |
+| 文档核对 | 核对每个 Loop 的真实 CWD、verify 不调用 Judge、Kimi 权限边界及 `in-place` 限制；`git diff --check` 通过 |
+
+用户已明确授权普通 PR 合并。合并前读取 main 显示未配置分支保护和 required checks，PR 无冲突、无待处理 review；本轮合并将使用正常 PR 流程，不修改仓库规则，不把账户阻断写成 CI green。合并结果和 main CI 另在 PR 中记录。此次授权与本地检查不能代替正式发行所需的双平台门禁；未创建发行 tag、未发布 0.28.0。本次从官方 registry 查询时，meta 包 `latest` 仍为 0.27.3。
 
 ## 5. 保留的能力边界
 

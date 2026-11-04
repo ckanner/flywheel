@@ -133,6 +133,34 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 拥有的 worker、guardian 和 app-server 是否已退出，再按恢复流程继续；不能仅
 因外层 worker 已退出或已等待几秒，就假定内部进程不会再修改工作区。
 
+### 5.1 Skills 入口与各 Loop 的工作目录
+
+内置 skills 将任务 worktree 约定作为准备、启动、恢复和单环入口的检查步骤。
+`flywheel-new` 在生成契约前创建或复用任务 worktree；`flywheel-run` 以及单环
+skills 从实际任务目录解析同一 worktree 根，再调用 CLI。默认不从 `main`、
+`master` 或 detached HEAD 启动开发；已有明确工作区选择与授权不重复询问。
+恢复复用原任务路径及引擎保存的 packet 状态，不为恢复另建一份任务或复制 state。
+
+| 阶段／入口 | 实际工作目录 | 谁负责选择或创建 |
+|---|---|---|
+| `flywheel-new` 准备契约 | 任务集成 worktree | 宿主 Agent 按 skill 创建或复用 |
+| Plan | 任务集成 worktree，修订任务契约 | 引擎使用启动时的根目录 |
+| Execute、L1、Review | 当前 packet 候选工作区；正常模式为 packet worktree | 引擎创建、记录并复用 packet worktree |
+| L2/L3、Judge | 任务集成 worktree | 引擎验证已集成的需求与里程碑 |
+| Intake、Garden | 所选任务所属 worktree | 入口解析目录，Go 写建议结果；DSH／Codex 后端请求只读，默认 Kimi 无 OS 级只读保证 |
+| Status、Stop | 对应原任务路径与根目录 | 直接查询或停止，不要求为此新建 worktree、切分支或提交 |
+
+因此，每个 Loop 不会各自新建一份 worktree。任务 worktree 贯穿整个需求，
+packet worktree 贯穿该单元的执行、验收与评审；完成交付才由引擎处理本地合并
+与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
+`flywheel-verify` 只运行确定性验收：指定 packet 时只检查该单元 L1；未指定时
+检查未完成单元 L1 与当前里程碑 L2/L3。它不调用 Review／Judge，也不创建 worktree。
+
+Skill 的启动检查由宿主 Agent 遵守，CLI／GUI 直接调用不会自动执行这些 skill
+正文，也不会自动创建外层任务分支。直接使用控制接口时仍须显式选择正确的
+`cwd`／`taskDir`；引擎现有的 `in-place` 回退边界见第 2 节。只读查询和停止
+不受开发分支检查阻碍，便于处理异常任务。
+
 ## 6. 完整终验后再合并 PR
 
 确认 `state.status` 为 `completed`，需求覆盖、验收报告、独立评审及本地提交
