@@ -6,11 +6,13 @@
 
 完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.28.0 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。
 
+本文的会话视图描述当前源码中的 UI 修复。**已发布的 0.28.0 仍使用输入区底部弹层**；需要安装包含此修复的后续构建，源码合并不会自动更新已安装的插件。
+
 ## 提供什么
 
 | 部分 | 行为 |
 |---|---|
-| 桌面面板 | 会话输入框底部的 **Flywheel** 按钮；配置查看、环境检查、SDK 无推理探测、启动／刷新／停止；显示全部工作单元、逐项诊断与未知计量 |
+| 桌面会话视图 | 与“对话／轨迹”并列的 **Flywheel** 视图；查看任务进度和待处理事项、检查模型配置与环境、启动／刷新／停止已有任务 |
 | `/flywheel` | 人工 slash command，通过已有 DSH commands Remote 调用 Go CLI；不会将控制指令交给模型执行 |
 | `flywheel_control` | 模型工具，复用同一个校验与 CLI 控制路径；后台 start 很快返回，stop 等待引擎确认 |
 | `flywheel-dsh-worker` | 独立 Node 进程，通过官方 `dsh --profile sdk` stdio JSON-RPC 执行一个原生模型会话 |
@@ -18,6 +20,8 @@
 | `flywheel-codex-pro-worker` | 直接导入 `dsh-subagent-codex-pro@0.8.0` 的公开 `./machine` 入口，传递任务与取消并返回完整插件回执 |
 
 插件没有自己的任务数据库，不直接读写 `state.json`。桌面退出不会让后台 Go 任务失去父智能体；Go 拥有 worker 生命周期。原生 SDK 入口只接收已注册的 LLM adapter provider；`subagent_codex_pro`、Kimi ACP、Teams 都不是此接口的 provider。Kimi CLI、Codex Pro machine API 和旧显式 Codex CLI 使用各自 Go driver；Codex Pro 复用同一插件 runner，不经过 DSH 父模型或工具名转发。
+
+这个视图用于回答“任务运行到了哪一步、哪里需要处理、使用哪些模型，以及如何停止或恢复”。需求讨论、编写契约和一般对话继续使用 DSH 的对话与 skills；Flywheel 不提供另一套聊天界面，也不接管 DSH 的模型选择器、输入框、轨迹或右侧栏。
 
 ## 一条命令安装到自己的 Mac
 
@@ -117,7 +121,7 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 
 ## 桌面使用
 
-打开一个 DSH 会话，点击输入区底部的 **Flywheel**，填写已准备并审阅契约的任务目录，例如 `/repo/docs/my-task`。仓库目录默认取当前 DSH 会话的起始目录，也可填明确的绝对路径。按钮只执行以下 Go JSON 控制接口：
+打开一个 DSH 会话，在顶部“对话／轨迹”所在的视图栏选择 **Flywheel**。入口由 DSH 的原生视图栏管理；若未直接显示，检查该栏的更多视图入口。填写已准备并审阅契约的任务目录，例如 `/repo/docs/my-task`。仓库目录默认取当前 DSH 会话的起始目录，也可填明确的绝对路径；生产任务应显式选择任务集成 worktree 及其内部的任务目录。按钮只执行以下 Go JSON 控制接口：
 
 ```sh
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
@@ -133,11 +137,29 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
 ```
 
-模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话目录；start/status/stop 必须指定任务。输入统一校验，使用 argv 调用，不拼接 shell 命令。面板只在点击时读取状态，不自动轮询，也不重新决定模型路由。
+模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话目录；start/status/stop 必须指定任务。输入统一校验，使用 argv 调用，不拼接 shell 命令。打开视图不会启动任务或探测；视图只在点击时读取状态，不自动轮询，也不自动发现其他入口启动的任务。查看已有任务时，选择同一任务目录再刷新。
 
 “查看模型配置”展示配置来源、展开后的阶段绑定及 provider／channel；“检查环境”不启动 SDK，“SDK 无推理检查”显式启用 probe。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
 
-状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。未知 usage／cost 明确保留，原始 JSON 默认折叠。改任务／仓库路径会清空旧视图并忽略旧请求的迟到结果。关闭面板、卸载插件或退出桌面，不等于停止任务；重新打开后按“刷新状态”恢复观察，需停止时点“停止”。
+状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。未知 usage／cost 明确保留，原始 JSON 默认折叠。配置显示引擎实际选择的文件及阶段绑定；已有用户配置不会因安装或切换 DSH 对话模型而自动迁移。
+
+### 视图、请求与任务的生命周期
+
+任务／仓库路径草稿和已取得的快照按 DSH 会话分别保留，在宿主仍保留该会话绑定时，切换“对话／轨迹／Flywheel”后可以继续使用；这不是任务数据库，也不保证在会话绑定释放、插件重载或桌面重启后继续保留。每个会话同一时刻只等待一个控制请求。启动／停止等待期间锁定目录输入；只读请求等待期间可以编辑路径，但仍等待已有请求返回，并忽略旧选择的迟到响应。切换视图不会把等待中的请求当成已经完成。
+
+任务状态是最近一次成功读取的快照，带有刷新时间，不能当作实时监控。读取失败时保留已有有效内容并显示失败；启动或停止的响应丢失、超时或断连表示**结果未确认**，不能推断任务没有启动或已经停止。结果未确认时，界面保留提示并禁止继续启动／停止，直到“刷新状态”成功核对该任务；必要时查看任务日志，再决定恢复。界面不会自动重试启动或停止。
+
+目录不存在或控制进程无法创建等情况，只有宿主结构化确认请求尚未执行，界面才允许修正输入或环境后再次提交。普通错误、断连或错误文字本身不构成这项确认，不能据此解除结果未确认状态。`/flywheel` 的失败 `text` 使用 `type:"flywheel-control-error"` 的 JSON 包装，字段和兼容行为见[命令失败协议](PROTOCOL.md#dsh-命令失败与是否派发)。
+
+切换视图、关闭会话页面、卸载插件或退出桌面，都不等于向后台 Go 任务发出停止请求。需要停止时显式点击“停止”并等待引擎确认；重新打开后刷新同一任务。DSH 的原生轨迹继续展示父会话已有的命令与工具记录；独立 SDK、Kimi、Codex Pro worker 的完整执行历史不会自动合并到父会话轨迹，也不会被伪装成 DSH 原生后台任务。
+
+### 宿主 UI 接入
+
+客户端通过 `ctx.slots.inject()` 和独立 `id: flywheel` 注册到 `conversation.view` 列表，使用宿主的会话作用域和视图切换。保留“对话／轨迹”原有条目、输入区和右侧栏；不注册覆盖它们的同名条目，不另外绘制悬浮侧栏或底部大弹层。长路径、模型信息和错误在视图内容区换行或局部滚动，不通过遮挡宿主控件来增加空间。
+
+作为外部 plain-JS 插件，浏览器模块只运行时导入共享 React，不导入 `ui-primitives`、`client-store` 或其他 Harness Client 包。插件自有按钮、输入框、查看状态 store handle 和 observable；宿主根据注册契约管理会话实例并提供读取 hooks，locale 通过注入服务取得。控件参照宿主结构和交互，颜色使用语义别名，字体继承宿主，编译后的 CSS Modules 样式随 React 视图挂载和卸载。这样匹配宿主界面，也避免绑定不稳定的 Client 模块值接口。
+
+依据固定为声明版本 `0.2.1-rc.5` 的源码快照 `b830ec950faba0a46dda564be3e2d854afed94f1`：[外部插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)、[UI 规范](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md)、[布局说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md)，以及[会话插槽契约](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts)和[插槽生命周期](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md)。视图使用 Conversation 已有标题栏和内容区，遵循其窗口边距，不修改全局窗口留白。源码契约核对不代替目标 Mac 桌面的实机验证。
 
 ## 权限、上下文与报告归档
 
@@ -147,13 +169,17 @@ worker 只支持 `read-only` 与 `workspace-write`。Mac 上由 DSH 的 Seatbelt
 
 执行报告先写到 worktree 内的任务报告路径，由 Go 校验后归档到主任务目录。不得为报告写入而把整个任务目录或用户目录设成 full access。
 
-默认覆盖会关闭 DSH 自主委派、workflow、goal 驱动、模型生成标题、web search 工具及自动模型压缩，避免在一个 Go 工作单元之外再启动辅助模型调用。需要压缩/继续执行时由 Go 显式决定下一次任务；超出上下文或输出 token 限制不会伪装成成功。SDK profile 应只装所需的可信 provider /工具，第三方 Host 插件本身是进程内代码，不能由本包替它提供任意代码隔离。
+默认覆盖会关闭 DSH 自主委派、workflow、goal 驱动、模型生成标题及自动模型压缩，避免在一个 Go 工作单元之外再启动辅助模型调用。需要压缩/继续执行时由 Go 显式决定下一次任务；超出上下文或输出 token 限制不会伪装成成功。SDK profile 应只装所需的可信 provider /工具，第三方 Host 插件本身是进程内代码，不能由本包替它提供任意代码隔离。
+
+这份临时覆盖只用于每次独立启动的 **SDK worker 进程**，不修改桌面 profile，不卸载或隐藏桌面已有的插件、skills、对话工具及 UI。反过来，桌面已安装插件或已登录账号，也不证明 SDK profile 已加载并授权相同能力；应按对应 harness 的配置和正式授权流程核对。
+
+当前覆盖禁用整个 `tool-web`，因此 SDK worker 的 `web_search` 和 `web_fetch` 都不可用。这是一项保守的运行策略，不是 DSH 所有网页操作必然调用模型：官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)支持分别配置搜索与抓取，[DeepSeek 搜索后端](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/web-search-deepseek/README.md)才明确包含辅助模型调用。此次 UI 修复不变更 worker 策略；恢复检索或[自动压缩](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/compaction/compaction-basic/README.md)等能力，需要另行验证调用计量、预算、取消和工作目录边界。
 
 ## 生命周期与可验证范围
 
 官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
 
-测试覆盖离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块经 ModuleLoader／宿主 React／真实 DOM／Remote 的交互；Go 与 Node 的配置、诊断和失败契约；安装记录校验、用户配置优先及损坏入口拒绝。根目录的 npm 安装测试使用实际六包 tarball、隔离目录和 DSH 协议桩，验证完整安装流程。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化／关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。具体运行结果见[验证记录](../../docs/validation/2026-11-01-results.md)。
+测试覆盖离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块在 React 与 jsdom 中运行插件自有控件、store handle 和 observable。组件夹具适配槽位桥接和 Remote，另用已发布的 rc.5 renderer、slots 与 Cordis 检验真实注册、会话绑定、声明收起／恢复及卸载；这两类测试都不验证真实宿主几何布局。还覆盖 Go 与 Node 的配置、诊断和失败契约，以及安装记录校验、用户配置优先和损坏入口拒绝。根目录的 npm 安装测试使用实际六包 tarball、隔离目录和 DSH 协议桩，验证完整安装流程。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化／关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。前轮运行结果见[验证记录](../../docs/validation/2026-11-01-results.md)。
 
 尚未在用户 Mac 实测：桌面安装和 UI 渲染、Seatbelt 探针、实际 Flash/GPT 推理、授权可见性及断电恢复。Linux 上的 CLI 加载成功不代替这些验证。不会将协议桩写成付费模型成功的证据。
 

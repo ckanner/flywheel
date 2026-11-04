@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "version": "0.28.0",
+  "source": {
+    "commit": "3cb79b9b7cffaacb799ecd804a0d7cdd885635e1",
+    "tree": "61650a7d6aac1be933183c2e7c87519fc181c82b",
+    "dirty": true,
+    "snapshot_sha256": "68b339ff7b5f8c7eb748de339432891cda57983b291c29cbb3eba9704a60f75b"
+  },
+  "packages": [
+    {
+      "name": "@ckanner/flywheel-darwin-arm64",
+      "version": "0.28.0",
+      "filename": "ckanner-flywheel-darwin-arm64-0.28.0.tgz",
+      "bytes": 2413825,
+      "integrity": "sha512-62sbFkb98zWoc+464NArI5Ac/ko778mMUSY5StBC+6hdc18H2AKFRXIBo3BzW/yVUQu2JAASzauS7UUjIg1cmA=="
+    },
+    {
+      "name": "@ckanner/flywheel-darwin-amd64",
+      "version": "0.28.0",
+      "filename": "ckanner-flywheel-darwin-amd64-0.28.0.tgz",
+      "bytes": 2614162,
+      "integrity": "sha512-CPZ4flHfwaTzRdFq61kFPYnrkDpKE4TV68TjnayIlwP/dgY2tczZzyOLJ1Fj8KFtPlNFTGUAvI9D9PWCVYgqbw=="
+    },
+    {
+      "name": "@ckanner/flywheel-linux-arm64",
+      "version": "0.28.0",
+      "filename": "ckanner-flywheel-linux-arm64-0.28.0.tgz",
+      "bytes": 2344452,
+      "integrity": "sha512-J8JHmJNGzFJUT+q1OVg0zMQAAaQ8//RBvyOrFwxpgZG7l3uvJX42k07Jm1dIbSV9q/ZNraLipKafWG7O/RedVA=="
+    },
+    {
+      "name": "@ckanner/flywheel-linux-amd64",
+      "version": "0.28.0",
+      "filename": "ckanner-flywheel-linux-amd64-0.28.0.tgz",
+      "bytes": 2592907,
+      "integrity": "sha512-InvTdKCHRALn2ZNvJ1QTXqrJk0Ngp1HvL9KeXiGCM9IRSM9GDK2wOZxDPvz7qWPu+8uNyIITCmRrOECMzWzV7g=="
+    },
+    {
+      "name": "@ckanner/dsh-plugin-flywheel",
+      "version": "0.28.0",
+      "filename": "ckanner-dsh-plugin-flywheel-0.28.0.tgz",
+      "bytes": 60385,
+      "integrity": "sha512-EOTFMw8KyYX/jbm7ECNCHDwAiif7TW1Rs94PHL5C1F3ux/G+Ixlml1qlIrjiAYaI3Go/lyOZjwo7/zTnni8t4Q=="
+    },
+    {
+      "name": "@ckanner/flywheel",
+      "version": "0.28.0",
+      "filename": "ckanner-flywheel-0.28.0.tgz",
+      "bytes": 72015,
+      "integrity": "sha512-/YaXDZB0q/2zGicl6/nfftXipO5hF7AjvnNfvbya7wvwWQAq3gk1kTJJW3C0paQmGhWVv/YmyyqnhkjRBaInWA=="
+    }
+  ]
+}

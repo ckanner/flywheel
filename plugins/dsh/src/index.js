@@ -1,4 +1,4 @@
-import { runControl } from './control.js';
+import { ControlNotDispatchedError, runControl } from './control.js';
 import { resolveFlywheelBinary } from './installation.js';
 
 export const inject = ['commands', 'tools'];
@@ -33,11 +33,25 @@ export function apply(ctx, config = {}) {
     description: '通过 Go 引擎控制 Flywheel 任务、查看实际模型配置或执行无推理环境检查。',
     input: { hint: '{"action":"doctor"} 或 {"action":"status","taskDir":"/absolute/docs/task"}' },
     async handler({ rawInput, agent, signal }) {
+      let input;
       try {
-        const value = await control(JSON.parse(rawInput), agent, signal);
+        try {
+          input = JSON.parse(rawInput);
+        } catch (error) {
+          throw new ControlNotDispatchedError(error);
+        }
+        const value = await control(input, agent, signal);
         return { kind: 'success', text: JSON.stringify(value, null, 2) };
       } catch (error) {
-        return { kind: 'error', text: error.message };
+        // CommandResult preserves only kind/text. Wrap every failure, including
+        // unknown outcomes, so a child error's text cannot impersonate host proof.
+        return { kind: 'error', text: JSON.stringify({
+          protocol: 1,
+          type: 'flywheel-control-error',
+          action: typeof input?.action === 'string' ? input.action : null,
+          dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
+          message: error instanceof Error ? error.message : String(error),
+        }, null, 2) };
       }
     },
   });

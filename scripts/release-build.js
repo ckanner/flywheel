@@ -66,8 +66,13 @@ function build(root, version, output) {
     fs.mkdirSync(source);
     fs.mkdirSync(packages);
     before.snapshot_sha256 = snapshot(root, source);
-    // The source copy has no dependency on an existing dist/ or node_modules/.
-    execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: path.join(source, "plugins/dsh"), stdio: "inherit" });
+    // Install the locked build toolchain inside the snapshot. CSS Modules need
+    // Lightning CSS; neither the caller's dist/ nor node_modules/ is a source.
+    const pluginDirectory = path.join(source, "plugins/dsh");
+    execFileSync("npm", ["ci", "--include=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"], {
+      cwd: pluginDirectory, stdio: "inherit",
+    });
+    execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: pluginDirectory, stdio: "inherit" });
     const date = git(root, "show", "-s", "--format=%cs", "HEAD").trim();
     for (const platform of PLATFORMS) {
       const [goos, goarch] = platform.split("-");

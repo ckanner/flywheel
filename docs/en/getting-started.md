@@ -6,6 +6,8 @@ This guide covers the **0.28.0 implementation**: npm installation, the DSH deskt
 
 Before installing, check `npm view @ckanner/flywheel version`. Continue with these instructions once the registry has the version you intend to use. A merged source change or GitHub Release does not establish npm publication, and an older installed release may not include these interfaces.
 
+The top-level **Flywheel conversation view** below describes the UI fix in the current source. Published `0.28.0` still uses the composer popup; install a later build containing the fix. Merging source or reloading the same old version does not change that layout. CLI and task-directory interfaces remain the same.
+
 ## 1. Prepare the environment
 
 | Requirement | Why it is needed |
@@ -73,7 +75,9 @@ The installer uses the official desktop plugin interface with exact version sele
 dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<installed-version>
 ```
 
-This is the command shape used internally, not a placeholder to paste literally. An independent npm DSH CLI cannot manage the reserved `desktop` profile. Reload according to the host's instructions; the Flywheel button appears in the desktop input area.
+This is the command shape used internally, not a placeholder to paste literally. An independent npm DSH CLI cannot manage the reserved `desktop` profile. Reload according to the host's instructions and select **Flywheel** in the native view bar alongside Chat and Trajectory. Check that bar's More menu if the entry is not directly visible.
+
+This view controls and observes an already prepared task: progress, intervention, effective models, environment checks, and explicit start/refresh/stop. DSH keeps its chat, trajectory, composer, model selector, and right sidebar. Discuss requirements and prepare contracts through the original chat and skills. The view does not discover tasks started elsewhere; select the same task directory to observe one.
 
 The worker defaults to a separate **`sdk` profile**. A desktop provider installation or login does not prove that the SDK profile has the same configuration or authorization. DeepSeek uses `deepseek-official`; native GPT routing uses the ChatGPT adapter. The checked adapter baseline can be installed with:
 
@@ -82,6 +86,8 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
 That is a checked compatibility version, not a claim about the latest adapter. Follow its authorization documentation for the chosen profile and keep `DSH_HOME` consistent. Do not copy tokens into task files or Git.
+
+The SDK worker's temporary permission and tool policy applies only to its child process. It does not edit the desktop profile or remove desktop capabilities. Worker-owned delegation, auxiliary model compaction, and currently the entire web tool are disabled. A native view does not make the worker inherit desktop plugins or merge its history. See the [plugin's lifecycle boundaries](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#permissions-and-lifecycle-boundaries) for the capability limits and separate work needed to restore retrieval safely.
 
 The hard route uses the installed `dsh-subagent-codex-pro@0.8.0` dependency's public machine API directly. It does not use `subagent_codex_pro` as a native LLM provider or require a parent model to delegate. Its underlying Codex app-server still needs the local Codex command and login.
 
@@ -189,7 +195,13 @@ flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/add"
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
-The desktop panel accepts the same two absolute paths. A control response's `ok` means the operation succeeded; task completion is determined by `state.status`. After a startup readiness timeout, query status and read logs before attempting another start.
+The top **Flywheel** view accepts the same two absolute paths. Expand its model-configuration and environment-check section when needed, then use the explicit start, refresh, or stop action. A control response's `ok` means the operation succeeded; task completion is determined by `state.status`. The view displays the last refresh time and does not poll automatically.
+
+Draft paths and fetched snapshots are retained separately for each session across view switches while the host retains that session binding; a plugin reload or desktop restart may require selecting the paths again. Path edits discard old results and reject late replies without stopping the old task. Only one control request is pending per session, and a start or stop locks directory inputs while waiting.
+
+After a start/stop timeout or disconnect, the background task's outcome may be unconfirmed. Keep the same task directory, refresh status, and inspect logs before deciding how to recover. The view disables further starts/stops until that task is successfully reconciled and never retries mutations automatically. A prior snapshot, closing a page, or switching sessions cannot prove the engine stopped. The native trajectory retains its parent-session records; full worker histories are not merged into it.
+
+If the host explicitly confirms rejection before the control process started, such as a missing directory, correct the path or environment and submit again. This requires structured host evidence; error-message text alone cannot establish that a lost request was never executed.
 
 For a foreground run that pauses before Review, use this instead of background start:
 
@@ -226,12 +238,15 @@ Existing hard-route configuration remains unchanged after upgrade. To adopt the 
 | Symptom | First check |
 |---|---|
 | Missing `install` or `control` command | Published version, `flywheel version`, PATH, and any explicit desktop `flywheelBinary` |
+| The large composer popup is still present | Published `0.28.0` has the old layout; verify a build containing the conversation-view fix is installed, then reload as directed by DSH |
+| Flywheel is not directly visible in the top bar | Check More, plugin enablement, and the actual installed version; `/flywheel` and CLI remain diagnostic entry points |
 | Install succeeds but `ready:false` | Resolve the specific `diagnostic.checks` blockers |
 | Terminal works but the desktop does not | Managed launcher, explicit override, GUI PATH/profile/environment; rerun setup and check the panel |
 | A configuration edit has no effect | `config inspect` source and higher-priority task/project files; restart the engine |
 | Skill or launcher conflict | Preserve customizations, compare the specific files, and resolve the reported conflict without altering ownership hashes |
 | Worktree creation falls back in-place | Stop if isolation is required; inspect persisted mode and preserve work before recovery |
 | Cleanup is unconfirmed | Inspect task-owned processes and receipts before retrying; elapsed time alone is not proof |
+| Start/stop outcome is unconfirmed | Refresh the same task and inspect logs; timeout/disconnection proves neither no start nor a completed stop, and mutations are not retried automatically |
 
 Installation is not one atomic transaction across npm, DSH, and all skills. Correct the reported cause and retry; preserve completed steps and user files. Do not delete whole configuration directories or modify integrity manifests to bypass conflicts.
 

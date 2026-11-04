@@ -1,0 +1,550 @@
+/* In-flow Conversation View. The DSH shell owns scrolling and the composer. */
+.page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 32px) 32px;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.page p,
+.page h2,
+.page h3,
+.page h4 {
+  margin: 0;
+}
+
+.page code,
+.raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: inherit;
+}
+
+.header {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+.title {
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 500;
+}
+
+.heading {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.meta {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.selection {
+  display: grid;
+  gap: 10px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin-bottom: 2px;
+}
+
+.field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-weight: 500;
+}
+
+/* Plugin-owned compact Button/Input and ongoing StateDot, adapted from DSH
+ * b830ec950faba0a46dda564be3e2d854afed94f1 ui-primitives source. The upstream
+ * MIT notice is retained in THIRD_PARTY_NOTICES.md. Geometry stays local; only
+ * --dsw-alias-* colors are a shared styling dependency for this external UI. */
+.button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.buttonSmall {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.buttonPrimary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.buttonOutline {
+  border: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+@media (hover: hover) {
+  .buttonPrimary:hover:not(:disabled) {
+    background: var(--dsw-alias-button-primary-hover);
+  }
+
+  .buttonOutline:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.inputShell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.inputShell:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.inputShell[data-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.textInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.textInput::placeholder {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.textInput:disabled {
+  cursor: not-allowed;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.input input {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Follow DSH's coarse-pointer input floor without widening fine-pointer forms. */
+@media (pointer: coarse) {
+  .input input {
+    font-size: 16px;
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions > button {
+  max-width: 100%;
+  min-height: 28px;
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.feedback {
+  box-sizing: border-box;
+  height: 176px;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 12px;
+  overflow: auto;
+  scroll-padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+/* The form keeps one deliberate feedback seat, including on narrow windows.
+ * Operation outcomes do not move the task results beneath it. Long paths and
+ * expanded details remain available through this area's own native scrolling. */
+@media (max-width: 600px) {
+  .feedback {
+    height: 224px;
+  }
+}
+
+.feedback[data-state='uncertain'] {
+  border-color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.feedback[data-state='error'] {
+  border-color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.feedback:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.idleFeedback {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 100%;
+  text-align: center;
+}
+
+.loadingCompact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 8px;
+}
+
+.spinner {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.spinnerMotion {
+  transform-origin: center;
+  animation: flywheel-spin 1.5s linear infinite;
+}
+
+.spinnerTrack,
+.spinnerArc {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.spinnerTrack {
+  opacity: 0.25;
+}
+
+.spinnerArc {
+  stroke-dasharray: 12 150;
+  animation: flywheel-dash 1.5s ease-in-out infinite;
+}
+
+@keyframes flywheel-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes flywheel-dash {
+  0%, 100% { stroke-dasharray: 12 150; stroke-dashoffset: 0; }
+  50% { stroke-dasharray: 24 150; stroke-dashoffset: -6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinnerMotion,
+  .spinnerArc {
+    animation: none;
+  }
+
+  .spinnerArc {
+    stroke-dasharray: 18 150;
+    stroke-dashoffset: -3;
+  }
+}
+
+.notice,
+.error {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notice + .error {
+  margin-top: 16px;
+}
+
+.error > h3 {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.errorText {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.warningText {
+  padding-left: 8px;
+  border-left: 1px solid var(--dsw-alias-state-warn-primary);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.path {
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+}
+
+.section,
+.empty {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 24px;
+}
+
+.empty {
+  padding: 20px 0;
+}
+
+.sectionHeader,
+.bindingHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+  min-width: 0;
+}
+
+.sectionHeader > *,
+.bindingHeader > * {
+  min-width: 0;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.packets {
+  width: 100%;
+  margin-top: 8px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.packets caption {
+  padding-bottom: 8px;
+  text-align: left;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.packets th {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.packets th,
+.packets td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+  vertical-align: top;
+}
+
+.packets th:first-child {
+  width: 42%;
+}
+
+.packets th:last-child,
+.packets td:last-child {
+  padding-right: 0;
+}
+
+.budget {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.advanced {
+  margin: 28px 0 20px;
+  padding-top: 20px;
+  border-top: 0.5px solid var(--dsw-alias-border-l4);
+}
+
+.advanced > summary,
+.details > summary {
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.advanced > summary:focus-visible,
+.details > summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.advancedBody {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 12px;
+}
+
+.bindings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.binding {
+  min-width: 0;
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: 12px;
+  background: var(--dsw-alias-settings-card-fill);
+}
+
+.bindingTitle {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.7fr) minmax(0, 1.3fr);
+  gap: 6px 12px;
+  margin: 12px 0 0;
+}
+
+.properties dt {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.properties dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.checks {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 4em minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.checkBody {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.checkState {
+  padding-left: 6px;
+  border-left: 0.5px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.checkState[data-state='pass'] {
+  border-left-width: 1px;
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.checkState[data-state='fail'] {
+  border-left-width: 1px;
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.checkState[data-state='warn'] {
+  border-left-width: 1px;
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+
+.details {
+  min-width: 0;
+  width: 100%;
+}
+
+.details > summary {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.raw {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

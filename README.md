@@ -128,7 +128,7 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。模板可通过 `flywheel template` 查看；可选的 `flywheel-new` skill 用于辅助生成，最终仍由人确认契约。不要把 DSH 面板当成需求生成器。
 
-桌面面板位于会话输入区底部的 **Flywheel** 按钮。输入仓库路径后可查看配置、检查环境或执行 SDK 无推理探测；启动、刷新和停止还需绝对任务路径。面板展示实际阶段绑定、检查项、完整 packet 列表与未知用量，原始 JSON 可按需展开。也可使用人工命令：
+当前源码把桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。已发布的 `0.28.0` 仍是旧底部弹层，新布局需要包含此修复的构建。输入仓库路径后可查看配置、检查环境或执行 SDK 无推理探测；启动、刷新和停止还需绝对任务路径。视图展示最近刷新的任务结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
 
 ```text
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
@@ -147,6 +147,8 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 `start` 派生独立后台引擎，日志进入任务目录的 `orchestrator.log`；关闭面板或桌面不等于停止任务。`status` 只读。`stop` 向本次运行提交带随机 token 的停止请求，等待本次引擎退出受管调用栈、释放任务 lease 后才保存停止状态；不按文件里的 PID 盲目发送信号。引擎只管理本次拥有的进程组；已观测的 `CleanupError` 仍保留在证据和指标中、阻止交付，需要按错误记录处理，`stopped` 不代表任意逃逸进程已清理。停止等待最长 45 秒，桌面入口预留 60 秒。
 
 控制接口始终返回一个 protocol 1 JSON；`ok` 表示控制操作成功，任务是否完成应看 `state.status`。`config` 返回 `configuration`，`doctor` 返回 `diagnostic`；诊断有阻断项时保留完整报告并返回退出码 1，不能当成空白传输错误。若启动就绪超时，后台引擎可能仍在加载：先刷新状态和查看日志，不要另起重复任务。
+
+视图草稿按 DSH 会话保留，展示的是带刷新时间的快照；不自动发现任务或轮询。启动／停止结果未确认时，先刷新同一任务再恢复操作。原生轨迹保留父会话已有记录，独立 worker 历史不会自动合并。桌面原生能力与 SDK worker 的临时策略属于不同范围，详见[桌面视图与运行边界](plugins/dsh/README.md)。
 
 原有前台／单步 CLI 仍可使用；这些命令应在目标仓库根目录运行：
 

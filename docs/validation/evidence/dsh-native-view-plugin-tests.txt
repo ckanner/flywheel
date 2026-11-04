@@ -1,0 +1,99 @@
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm notice run @ckanner/dsh-plugin-flywheel@0.28.0 check
+npm notice run npm test
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm warn Unknown env config "global-ignore-file". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.28.0 test
+> npm run build && node --test test/*.test.js
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm warn Unknown env config "global-ignore-file". This will stop working in the next major version of npm.
+
+> @ckanner/dsh-plugin-flywheel@0.28.0 build
+> node scripts/build.mjs
+
+Built host plugin, native Conversation View, DSH SDK and Codex Pro workers.
+✔ the published rc.5 renderer owns the external plugin lifecycle without Harness Client module imports (244.983029ms)
+✔ native Flywheel view is additive, idle on opening, and ships its scoped stylesheet (102.367725ms)
+✔ effective models can be inspected without a task and every binding remains readable (72.39449ms)
+✔ task lifecycle labels distinguish pending, completed, stopped and unconfirmed engine state (95.435766ms)
+✔ all packets and attention records remain accessible, text is escaped, and unknown cost stays unknown (40.341641ms)
+✔ local and SDK checks retain structured failures, remedies and the inference boundary (26.292289ms)
+✔ editing a read target invalidates its late result without permitting overlapping operations (22.826559ms)
+✔ late query failures are ignored after editing, and active protocol or transport errors can recover (59.985855ms)
+✔ failed status refresh retains the previous data with a visible unconfirmed marker (24.49956ms)
+✔ start is single-flight with a frozen target, including hide and reopen before confirmation (25.270418ms)
+✔ an unknown mutation stays blocked across path changes until the same task is successfully reconciled (56.054738ms)
+✔ proven host preflight rejections can be corrected without an impossible status reconciliation (613.041842ms)
+✔ post-dispatch failures and forged engine messages remain uncertain until the original task is observed (1779.486392ms)
+✔ a browser deadline reports unknown outcome and a late original success cannot silently clear it (11.777799ms)
+✔ session drafts and results stay separate, and a replacement binding cannot adopt an old reply (47.224003ms)
+✔ plugin disposal stops local publication without sending a task cancellation (13.252227ms)
+✔ malformed protocol results are visible and never become successful task observations (53.098576ms)
+✔ malformed configuration and diagnostic reports stay recoverable instead of breaking rendering (32.391258ms)
+✔ the UI accepts realpath identities already validated by the host for every control action (530.205111ms)
+✔ labelled fields validate paths without a request, retain focus, and follow the host locale (25.230711ms)
+✔ public installed machine API carries exact settings and a complete unchanged receipt (428.597379ms)
+✔ doctor imports the exact dependency without starting any Codex process (155.600959ms)
+✔ wrong-model retains startup evidence and prevents the model turn (380.703227ms)
+✔ wrong-cwd retains startup evidence and prevents the model turn (380.35398ms)
+✔ wrong-approval retains startup evidence and prevents the model turn (432.346207ms)
+✔ wrong-sandbox retains startup evidence and prevents the model turn (529.562338ms)
+✔ unknown-usage stays unknown or partial in the raw successful receipt (368.720104ms)
+✔ partial-usage stays unknown or partial in the raw successful receipt (281.569393ms)
+✔ full policy is preserved, without claiming a pre-turn consumer policy guard (282.358073ms)
+✔ SIGTERM awaits adapter cleanup and returns its actual cancellation receipt (319.44673ms)
+✔ SIGINT awaits adapter cleanup and returns its actual cancellation receipt (380.990145ms)
+✔ stdin EOF after admission cancels the owned run and preserves its cleanup receipt (315.815861ms)
+✔ a stubborn app-server is killed within the adapter cleanup budget (3314.019183ms)
+✔ a broken stdout waits for the app-server and guardian to disappear (436.021205ms)
+✔ progress budget failure preserves the raw cancellation receipt instead of dropping frames silently (456.892882ms)
+✔ worker SIGKILL makes the installed guardian clean ordinary descendants without a forged receipt (3410.109444ms)
+✔ an additional request cancels instead of silently starting or ignoring another task (446.103064ms)
+✔ startup timeout includes initialize and cannot submit a late prompt (293.093792ms)
+✔ output truncation is a failed attempt with a complete cleanup receipt (1392.921449ms)
+✔ invalid requests and arguments fail before launching any app-server (1001.267677ms)
+✔ parent disconnection before input does not wait for the admission timeout (80.20769ms)
+✔ public request validation always fixes fresh sessions and bounded output (10.130004ms)
+✔ missing and mismatched installed dependencies fail locally without fallback (353.05207ms)
+✔ control invokes only the Go JSON CLI using literal argv, including paths with shell syntax (121.622879ms)
+✔ configuration and doctor need no task directory, and probe is an explicit doctor-only boolean (327.803784ms)
+✔ doctor returns a valid failed report but rejects process, protocol, and identity failures (1593.304648ms)
+✔ hung controls are bounded and cancellation is never a diagnostic success (216.106167ms)
+✔ diagnostic cancellation and timeout keep the Go owner alive until delayed group cleanup finishes (14125.537492ms)
+✔ an unresponsive diagnostic owner is eventually force-stopped after its cleanup window (21012.603737ms)
+✔ slash command and model tool use the same validated engine control boundary (269.598382ms)
+✔ policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement (1.402048ms)
+✔ the native rc.5 view reaches the registered slash command through the session-scoped Remote (147.351241ms)
+✔ desktop resolves a verified npm launcher without a shell PATH (4.617531ms)
+✔ invalid or stale records do not silently select another executable (6.333246ms)
+✔ receipt and launcher links or non-executable files are rejected (2.143567ms)
+✔ start normalizes cwd and rejects resume, extra write roots, implicit permission, and empty route (11.412148ms)
+✔ only unique committed model calls count; cache is included in aggregate input, reasoning is a subset (1.642546ms)
+✔ missing or malformed usage remains unknown, not free or partial cost (0.46012ms)
+✔ an idle or max-token interval is not successful completion (0.901612ms)
+✔ permission acknowledgement must match actual cwd, policy, approval and full confinement (0.445548ms)
+✔ full worker handshake, durable result, usage and SDK shutdown agree with the Go contract (84.055279ms)
+✔ wrong-policy: fail before submitting a paid prompt (82.84379ms)
+✔ wrong-cwd: fail before submitting a paid prompt (70.212891ms)
+✔ missing-policy: fail before submitting a paid prompt (68.865147ms)
+✔ malformed: fail before submitting a paid prompt (84.287453ms)
+✔ empty: session/wait alone never establishes success (70.740186ms)
+✔ missing-terminal: session/wait alone never establishes success (57.715552ms)
+✔ max-tokens: session/wait alone never establishes success (80.253463ms)
+✔ corrupt-tail: session/wait alone never establishes success (73.493232ms)
+✔ unknown provider usage survives a successful call as null (59.662332ms)
+✔ full lifecycle deadline includes a stalled initialize; no model prompt is sent (164.927026ms)
+✔ external cancellation settles a stalled turn through SDK shutdown (142.501039ms)
+✔ forced SDK shutdown cannot claim successful settlement of native managed ranges (723.969245ms)
+✔ doctor exercises runtime and permission handshake but never prompts a model (64.198778ms)
+✔ overlay pins real native confinement and disables model-owned delegation and auxiliary model calls (0.519808ms)
+ℹ tests 75
+ℹ suites 0
+ℹ pass 75
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38464.598741

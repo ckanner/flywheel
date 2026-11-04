@@ -1,0 +1,27 @@
+{
+  "providers": [
+    {
+      "id": "Service",
+      "platform": "host"
+    },
+    {
+      "id": "Event",
+      "platform": "host"
+    },
+    {
+      "id": "Config",
+      "platform": "host"
+    },
+    {
+      "id": "Tool",
+      "platform": "host"
+    }
+  ],
+  "services": 98,
+  "events": 76,
+  "queriedServices": [
+    "commands",
+    "tools"
+  ],
+  "client": "no connected target desktop"
+}

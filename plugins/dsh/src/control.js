@@ -4,6 +4,15 @@ import { directory, nonempty, record } from './protocol.js';
 const actions = ['start', 'status', 'stop', 'config', 'doctor'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
 
+// This marker is issued only where the host can prove that no control process
+// started. An engine/transport error after spawn must never acquire it.
+export class ControlNotDispatchedError extends Error {
+  constructor(cause) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'ControlNotDispatchedError';
+  }
+}
+
 export async function validateControl(input, defaultCwd) {
   if (!record(input) || !actions.includes(input.action)) {
     throw new Error('action must be start, status, stop, config, or doctor');
@@ -46,13 +55,18 @@ function validDiagnostic(value, request) {
 
 /** Only the engine executable can mutate engine state. No shell interpolation. */
 export async function runControl(input, { binary = 'flywheel', defaultCwd, signal, timeoutMs = 60000 } = {}) {
-  nonempty(binary, 'flywheelBinary', 4096);
-  if (binary.startsWith('-')) throw new Error('flywheelBinary must name an executable');
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120000) {
-    throw new Error('controlTimeoutMs must be between 100 and 120000');
+  let request;
+  try {
+    nonempty(binary, 'flywheelBinary', 4096);
+    if (binary.startsWith('-')) throw new Error('flywheelBinary must name an executable');
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120000) {
+      throw new Error('controlTimeoutMs must be between 100 and 120000');
+    }
+    request = await validateControl(input, defaultCwd);
+    if (signal?.aborted) throw new Error('Flywheel control request cancelled');
+  } catch (error) {
+    throw new ControlNotDispatchedError(error);
   }
-  const request = await validateControl(input, defaultCwd);
-  if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   // Diagnostic commands own watchdog child groups. Its TERM grace, pipe
   // WaitDelay, and quiescence confirmation may each take 5s; keep the Go owner
   // alive long enough to finish all three instead of orphaning its workers.
@@ -61,9 +75,17 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, signa
   if (request.taskDir) args.push('--task-dir', request.taskDir);
   if (request.probe) args.push('--probe');
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      cwd: request.cwd, detached: false, stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    let child;
+    try {
+      child = spawn(binary, args, {
+        cwd: request.cwd, detached: false, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(new ControlNotDispatchedError(error));
+      return;
+    }
+    let spawned = false;
+    child.once('spawn', () => { spawned = true; });
     let stdout = '';
     let stderr = '';
     let failure;
@@ -88,7 +110,11 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, signa
       if (Buffer.byteLength(stdout) > 1024 * 1024) stop(new Error('Flywheel control response exceeds 1 MiB'));
     });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-8192); });
-    child.on('error', error => { failure = error; });
+    child.on('error', error => {
+      // Node emits spawn before other events after successful process creation.
+      // Require both the missing spawn event and missing PID for positive proof.
+      failure = !spawned && child.pid === undefined ? new ControlNotDispatchedError(error) : error;
+    });
     child.on('close', (code, childSignal) => {
       clearTimeout(timer);
       clearTimeout(killTimer);
