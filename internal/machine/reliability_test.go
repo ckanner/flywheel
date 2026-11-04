@@ -271,7 +271,13 @@ func TestResidentDisabledClearsSessionAndPhysicalFailuresAreNotPlanSuccess(t *te
 		}
 		ctx.Drivers = sd.set()
 		r, err = ctx.planStep(ctx.Spec.Milestones[0], "")
-		require.NoError(t, err)
+		if fail == "cleanup" {
+			require.ErrorContains(t, err, "cleanup is unconfirmed")
+			assert.Len(t, sd.log.plan, 1)
+			assert.Equal(t, "escalated", loadFixtureState(t, fx).Status)
+		} else {
+			require.NoError(t, err)
+		}
 		assert.False(t, r.OK)
 	}
 }

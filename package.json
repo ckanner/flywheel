@@ -30,6 +30,7 @@
     "CHANGELOG.md",
     "docs/getting-started.md",
     "docs/configuration.md",
+    "docs/workflow.md",
     "docs/examples/create-first-task.sh"
   ],
   "optionalDependencies": {

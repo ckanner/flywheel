@@ -21,7 +21,9 @@ async function runtimeDependency() {
     let filename = process.env.FLYWHEEL_CODEX_PRO_TARBALL;
     if (!filename) {
       const [npm, args] = npmInvocation();
-      const result = await capture(npm, [...args, 'pack', entry.resolved, '--ignore-scripts', '--json', '--pack-destination', temporary,
+      // npm 12 disables direct remote tarball specs by default. Use the exact
+      // registry identity, then verify the downloaded bytes against the lock.
+      const result = await capture(npm, [...args, 'pack', `dsh-subagent-codex-pro@${entry.version}`, '--registry=https://registry.npmjs.org/', '--ignore-scripts', '--json', '--pack-destination', temporary,
         '--fetch-timeout=30000', '--fetch-retries=0'], { environment: process.env, cwd: temporary, timeoutMs: 60000 });
       if (result.code !== 0 || result.signal || result.error) throw new Error('could not fetch the locked published Codex Pro tarball: ' + (result.error || result.stderr));
       filename = path.join(temporary, 'dsh-subagent-codex-pro-0.8.0.tgz');

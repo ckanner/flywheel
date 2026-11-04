@@ -404,6 +404,9 @@ func RunIntake(o CtxOpts, sourceName string, execFn ExecFunc) (IntakeSummary, er
 		if err := os.WriteFile(inboxFile, []byte(content), 0o644); err != nil {
 			return IntakeSummary{}, err
 		}
+		if m.fatalErr != nil {
+			break
+		}
 	}
 
 	return IntakeSummary{
@@ -412,6 +415,6 @@ func RunIntake(o CtxOpts, sourceName string, execFn ExecFunc) (IntakeSummary, er
 		Duplicates: duplicates,
 		Triaged:    triaged,
 		InboxFile:  inboxFile,
-		OK:         true,
-	}, nil
+		OK:         m.fatalErr == nil,
+	}, m.fatalErr
 }

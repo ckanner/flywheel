@@ -74,7 +74,7 @@ type Context struct {
 	metricsFile string
 	pauseBefore string
 	revision    int64
-	fatal       error // 首次保存失败（CAS 冲突 / I/O）；循环边界检查后终止
+	fatal       error // 保存失败或无法确认子进程清理；停止后续模型调用
 }
 
 // Opts CreateContext 入参（对应 Node createContext 参数对象）。
@@ -95,7 +95,7 @@ func (c *Context) nowISO() string {
 	return c.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
 
-// err 返回首个致命保存错误（若有）。调用方在各循环边界检查。
+// err 返回阻止继续运行的错误（若有）。调用方在各循环边界检查。
 func (c *Context) err() error {
 	if c.fatal != nil {
 		return c.fatal

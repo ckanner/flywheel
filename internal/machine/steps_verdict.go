@@ -116,6 +116,9 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			channel: channel, prompt: a.prompt, result: &res,
 			errorCode: errs.ErrorCode(code), attempt: a.attemptNo,
 		})
+		if err := c.stopForUnconfirmedCleanup(a.role, a.packetID, res); err != nil {
+			return verdictOutcome{}, err
+		}
 
 		if verdict != nil {
 			return verdictOutcome{OK: true, Verdict: verdict}, nil

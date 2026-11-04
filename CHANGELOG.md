@@ -9,6 +9,7 @@ Codex Pro 默认接入。安装和迁移见 [配置指南](docs/configuration.md
 - 指标保存完整 `codex-pro-receipt`；usage 只有 complete 才进入已知预算，partial/unknown 与美元未知成本保持可见。effort accepted 不伪造为已证实实际强度，不用账号 channel 冒充实际 provider。
 - npm 自动安装精确插件依赖并解析同版本 worker，保持 hoisted dependency、GUI 启动入口、用户配置与 skills 保护；统一六包版本 0.28.0，Node 最低 22.18.0。
 - 本地 doctor 验证插件公开 API、精确版本、Node 和 Codex 命令，不调用模型。配置错误、缺依赖与版本不符明确失败，不自动改走旧 CLI。
+- worker 意外退出或清理回执缺失时明确记录清理未知；所有模型循环保存升级诊断、保留工作区并停止本次运行，禁止自动重试／降级与 Plan 冷启动，避免 guardian 清理期间出现重叠执行。正常错误且清理已确认时仍可重试。
 - 明确 0.8.0 权限边界：插件在运行前验证模型／cwd／权限模式，完整 sandboxPolicy 由 Flywheel 在运行后核对；事后拒绝交付不能阻止自定义 Codex 配置已允许的访问。需运行前完整策略 guard 的环境仍待上游能力。
 - 更新设计、安装／迁移教程、协议和相关技能按钮，增加协议、计量、生命周期、真实 npm 安装与跨进程回归。
 

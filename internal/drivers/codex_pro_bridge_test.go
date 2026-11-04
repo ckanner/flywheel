@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -123,6 +124,59 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 		assert.False(t, r.Settled)
 		require.NotEmpty(t, r.CodexProReceipt)
 		assertCodexProProcessesStopped(t, readCodexProLog(t, log))
+	})
+	t.Run("worker SIGKILL leaves cleanup unknown until independent confirmation", func(t *testing.T) {
+		log := filepath.Join(t.TempDir(), "worker-death.jsonl")
+		pidFile := filepath.Join(t.TempDir(), "worker.pid")
+		wrapper := kimiScript(t, "echo $$ > "+shQuote(pidFile)+"\nexec "+shQuote(worker)+"\n")
+		killed := make(chan error, 1)
+		var once sync.Once
+		r := RunCodexPro(CodexProArgs{Command: wrapper, Cwd: t.TempDir(), Prompt: "offline worker lifetime verification",
+			Model: "gpt-test", PermissionMode: "workspace-write",
+			APIKeys:  map[string]string{"TEST_CODEX_PRO_SCENARIO": "stubborn", "TEST_CODEX_PRO_LOG": log},
+			Watchdog: watchdog.Opts{IdleTimeoutMs: 10000, WallTimeoutMs: 20000},
+			OnEvent: func(line string) {
+				if strings.Contains(line, `"type":"progress"`) {
+					once.Do(func() {
+						raw, err := os.ReadFile(pidFile)
+						if err != nil {
+							killed <- err
+							return
+						}
+						pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+						if err != nil {
+							killed <- err
+							return
+						}
+						killed <- syscall.Kill(pid, syscall.SIGKILL)
+					})
+				}
+			},
+		})
+		select {
+		case err := <-killed:
+			require.NoError(t, err)
+		default:
+			t.Fatal("worker did not reach the running-turn kill point")
+		}
+		entries := readCodexProLog(t, log)
+		for _, entry := range entries {
+			if entry["event"] == "spawn" {
+				supervisorPID := int(entry["supervisorPid"].(float64))
+				t.Cleanup(func() {
+					if !codexProProcessInactive(supervisorPID) {
+						_ = syscall.Kill(-supervisorPID, syscall.SIGKILL)
+					}
+				})
+			}
+		}
+		assert.False(t, r.Settled)
+		assert.False(t, r.Cancelled, "unexpected death is distinct from caller cancellation")
+		assert.NotEmpty(t, r.Signal)
+		assert.Empty(t, r.CodexProReceipt)
+		assert.Contains(t, r.CleanupError, "no trustworthy cleanup receipt",
+			"worker exit alone must not permit a retry while the separate guardian is cleaning")
+		assertCodexProProcessesStopped(t, entries)
 	})
 	t.Run("Go SIGKILL closes lifetime pipe and stops owned descendants", func(t *testing.T) {
 		log := filepath.Join(t.TempDir(), "parent-death.jsonl")

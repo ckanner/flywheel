@@ -323,6 +323,9 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			return planOutcome{ErrorCode: errs.AUTH, Packets: packets}, nil
 		}
 		result, code = attempt(sessionID, sessionID == "", channel, model, harness, provider)
+		if err := c.stopForUnconfirmedCleanup("plan", "", result); err != nil {
+			return planOutcome{}, err
+		}
 		if code == "" {
 			// C5（v0.18）：调用成功却没拿到 session id——上游 resume_hint 格式漂移
 			// 或缺失，长驻会话将无声退化为每轮冷启动。必须留观测痕迹。

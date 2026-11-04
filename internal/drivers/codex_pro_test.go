@@ -209,6 +209,62 @@ func TestCodexProStreamRejectsFramingAndWorkerErrors(t *testing.T) {
 	}
 }
 
+func TestCodexProCleanupEvidenceIsIndependentFromModelSuccess(t *testing.T) {
+	request := codexProRequest(t)
+	for _, tc := range []struct {
+		name      string
+		change    func(map[string]any)
+		confirmed bool
+	}{
+		{"completed", func(map[string]any) {}, true},
+		{"service error after cleanup", func(r map[string]any) {
+			r["ok"] = false
+			proObject(r, "outcome")["stopReason"] = "error"
+			proObject(r, "outcome")["diagnostic"] = "503 service unavailable"
+		}, true},
+		{"failed initialization after cleanup", func(r map[string]any) {
+			execution := proObject(r, "outcome", "execution")
+			execution["threadId"], execution["turnId"] = nil, nil
+			execution["pid"], execution["supervisorPid"] = nil, nil
+			execution["signal"], execution["supervisorExitCode"] = nil, nil
+			execution["terminationRequested"] = false
+			r["ok"], r["outcome"] = false, nil
+			r["failure"] = map[string]any{"category": "transport", "stage": "initialize", "diagnostic": "server closed",
+				"cleanup": map[string]any{"confirmed": true}, "execution": execution, "usage": nil}
+		}, true},
+		{"execution omitted", func(r map[string]any) { delete(proObject(r, "outcome"), "execution") }, false},
+		{"foreign execution", func(r map[string]any) { proObject(r, "outcome", "execution")["runId"] = "other-run" }, false},
+		{"foreign thread", func(r map[string]any) { proObject(r, "outcome", "execution")["threadId"] = "other-thread" }, false},
+		{"unowned execution", func(r map[string]any) { proObject(r, "outcome", "execution")["ownership"] = "unowned" }, false},
+		{"cleanup omitted", func(r map[string]any) { delete(proObject(r, "outcome"), "cleanup") }, false},
+		{"cleanup unconfirmed", func(r map[string]any) { proObject(r, "outcome", "cleanup")["confirmed"] = false }, false},
+		{"foreign receipt", func(r map[string]any) { r["requestId"] = "another-run" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			receipt := codexProFixture(request)
+			tc.change(receipt)
+			parsed := parseCodexProStream(dshJSONL(codexProFrame(request, receipt)), request)
+			assert.Equal(t, tc.confirmed, parsed.CleanupConfirmed)
+		})
+	}
+	frame := codexProFrame(request, codexProFixture(request))
+	for _, tail := range []string{"{bad}\n", dshJSONL(frame)} {
+		parsed := parseCodexProStream(dshJSONL(frame)+tail, request)
+		assert.False(t, parsed.CleanupConfirmed, "a damaged or duplicate terminal stream cannot attest quiescence")
+	}
+	proObject(frame, "adapter")["version"] = "0.7.0"
+	assert.False(t, parseCodexProStream(dshJSONL(frame), request).CleanupConfirmed)
+	failure := codexProFixture(request)
+	failure["ok"] = false
+	proObject(failure, "outcome")["stopReason"] = "error"
+	proObject(failure, "outcome")["diagnostic"] = "503 service unavailable"
+	frame = codexProFrame(request, failure)
+	for _, tail := range []string{"{bad}\n", dshJSONL(frame)} {
+		assert.False(t, parseCodexProStream(dshJSONL(frame)+tail, request).CleanupConfirmed,
+			"failed results must also validate the entire stream before permitting retries")
+	}
+}
+
 func TestCodexProFullPolicyAdmission(t *testing.T) {
 	request := codexProRequest(t)
 	inside := filepath.Join(request.Cwd, "inside")
@@ -437,6 +493,11 @@ func TestRunCodexProFailuresAndFactory(t *testing.T) {
 				assert.False(t, r.Settled)
 				require.NotNil(t, r.ErrorMessage)
 			}
+			if scenario == "empty" || scenario == "cleanup-error" {
+				assert.NotEmpty(t, r.CleanupError, "missing cleanup proof must prevent another model call")
+			} else {
+				assert.Empty(t, r.CleanupError, "a known failure with cleanup proof remains eligible for normal error handling")
+			}
 		})
 	}
 	a := codexProRunArgs(t, "ok")
@@ -470,6 +531,13 @@ func TestRunCodexProFailuresAndFactory(t *testing.T) {
 	r := RunCodexPro(a)
 	assert.NotEmpty(t, r.SpawnError)
 	assert.False(t, r.Settled)
+	assert.Empty(t, r.CleanupError, "an unstarted worker cannot own an app-server")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.Watchdog.Context = ctx
+	r = RunCodexPro(a)
+	assert.True(t, r.Cancelled)
+	assert.Empty(t, r.CleanupError, "pre-start cancellation does not create a cleanup obligation")
 }
 
 func TestRunCodexProPhysicalCancellationAndTimeout(t *testing.T) {

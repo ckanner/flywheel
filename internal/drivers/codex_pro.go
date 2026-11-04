@@ -66,16 +66,17 @@ type codexProStart struct {
 }
 
 type codexProParsed struct {
-	Receipt      json.RawMessage
-	SessionID    string
-	Text         string
-	Usage        *Usage
-	Settled      bool
-	Cancelled    bool
-	TimedOut     bool
-	Truncated    bool
-	CleanupError string
-	Error        string
+	Receipt          json.RawMessage
+	SessionID        string
+	Text             string
+	Usage            *Usage
+	Settled          bool
+	CleanupConfirmed bool
+	Cancelled        bool
+	TimedOut         bool
+	Truncated        bool
+	CleanupError     string
+	Error            string
 }
 
 type codexProFailureFacts struct {
@@ -233,10 +234,12 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker emitted malformed JSONL"
 			break
 		}
 		if frame.Protocol != 1 || frame.RequestID != request.RequestID || terminal {
+			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker protocol/request mismatch or frame after terminal result"
 			break
 		}
@@ -249,18 +252,23 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			terminal = true
 			parsed = parseCodexProReceipt(frame.Receipt, request)
 			if !codexProHasFields(json.RawMessage(line), "receipt", "error") {
+				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro worker omitted a terminal receipt/error field"
 			}
 			if frame.Adapter.Package != "dsh-subagent-codex-pro" || frame.Adapter.Version != CodexProPackageVersion || frame.Adapter.Protocol != 1 {
+				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro adapter package/version/protocol mismatch"
 			}
 			if frame.Error != nil {
 				parsed.Error = codexProFailureMessage(frame.Error.Code, frame.Error.Message, "", nil)
 			}
 		default:
+			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker emitted an unknown frame"
 		}
-		if parsed.Error != "" {
+		// A failed model result is still a terminal frame. Scan the remaining
+		// stream so garbage or a second result cannot retain its cleanup proof.
+		if parsed.Error != "" && !terminal {
 			break
 		}
 	}
@@ -313,6 +321,11 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 		parsed.Cancelled = execution.Cancelled != nil && *execution.Cancelled
 		parsed.Truncated = execution.Truncated != nil && *execution.Truncated
 	}
+	executionMatches := execution != nil && execution.RunID == receipt.RunID && execution.Ownership == "supervised-group" &&
+		(receipt.Outcome == nil || execution.ThreadID == receipt.Outcome.ThreadID)
+	// Failed service calls may still attest cleanup and remain safe to retry.
+	// Absence of a trustworthy receipt is different from a settled model error.
+	parsed.CleanupConfirmed = cleanup != nil && cleanup.Confirmed && executionMatches
 	if cleanup != nil && !cleanup.Confirmed {
 		parsed.CleanupError = "Codex Pro process cleanup unconfirmed: " + cleanup.Detail
 	}
@@ -580,6 +593,12 @@ func RunCodexPro(a CodexProArgs) Result {
 	if parsed.CleanupError != "" {
 		out.CleanupError = strings.TrimPrefix(out.CleanupError+"; "+parsed.CleanupError, "; ")
 	}
+	if (result.ExitCode != nil || result.Signal != "") && !parsed.CleanupConfirmed && out.CleanupError == "" {
+		// The plugin guardian owns a separate process group. Reaping the worker
+		// cannot prove that group is quiescent, even when its eventual cleanup
+		// is bounded. The orchestrator must stop instead of starting a retry.
+		out.CleanupError = "Codex Pro process cleanup unconfirmed: no trustworthy cleanup receipt; confirm owned processes have stopped before resuming"
+	}
 	out.Settled = parsed.Settled && parsed.Error == "" && !out.Cancelled && !out.TimedOut && !out.Truncated && out.Signal == "" &&
 		out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
 	if !out.Settled && !out.Cancelled {
@@ -590,7 +609,7 @@ func RunCodexPro(a CodexProArgs) Result {
 		case out.SpawnError != "":
 			message = out.SpawnError
 		case out.CleanupError != "":
-			message = out.CleanupError
+			message = strings.TrimPrefix(message+"; "+out.CleanupError, "; ")
 		case out.Truncated:
 			message = "Codex Pro worker output was truncated"
 		case message == "":

@@ -120,6 +120,8 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 ## 4. 创建、运行和观察任务
 
+业务仓库建议先建立任务集成分支与独立 worktree；准备契约、Draft PR 和人工合并的完整流程见[从需求准备到 PR 合并](docs/workflow.md)。引擎的单元合并目标是启动 checkout 当前所在分支，GitHub PR 操作由使用者或获授权的宿主执行。
+
 准备阶段由当前 DSH 对话模型生成需求契约，`loops.plan` 只控制引擎启动后的规划／修订。复杂需求建议先用已授权的 `gpt-6-astra`、`high` 生成可审阅草稿；简单明确的任务可沿用 Flash，避免每个 packet 都重复调用昂贵规划模型。
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。模板可通过 `flywheel template` 查看；可选的 `flywheel-new` skill 用于辅助生成，最终仍由人确认契约。不要把 DSH 面板当成需求生成器。
