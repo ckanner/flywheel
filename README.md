@@ -222,6 +222,8 @@ npm run build:npm
 
 `build:npm` 先构建 worker，再在隔离目录打包 meta、四个平台包和 DSH 插件，输出到 `dist-npm/`。六个包版本必须一致；本地 tarball 和 Actions artifact 用于开发、验证或备用分发，不是日常用户的安装入口，也不等于已签名的 Mac 安装程序。源码构建及开发模式 skills 说明见[教程末节](docs/getting-started.md#9-开发与备用构建)。
 
+维护者可以直接拉取源码，在本机构建后运行仓库内的 `npm run release:local` 完成交互发布，无需下载预构建归档。工具会运行候选和 registry 安装测试，再按六包依赖顺序提升 `latest`；已存在 release tag 的具体步骤见[从源码本地发布](https://github.com/ckanner/flywheel/blob/main/docs/releasing.md#5-从源码本地构建并发布)。
+
 ## 文档与代码入口
 
 英文用户文档包括 [入门](docs/en/getting-started.md)、[配置](docs/en/configuration.md)、[工作流](docs/en/workflow.md) 和 [DSH 插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md)。贡献者从 [Contributing](https://github.com/ckanner/flywheel/blob/main/docs/contributing.md) 开始，发行维护者见 [Releasing](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md)。

@@ -82,6 +82,39 @@ FLYWHEEL_NPM_VERSION=X.Y.Z npm run test:registry
 
 手动流程先设置 `export npm_config_registry=https://registry.npmjs.org/`，替代 CI setup-node 的 registry 配置；确认没有包 scope 指向其他 registry，不能继承安装测试的隔离 registry 或私有镜像用于发行写入。
 
-当前标准发行 runner 捕获 npm 输出，不把 TTY 传给 npm。需要交互认证时，可使用仓库外人工 runner：继续调用现有 `publish`／`promote`／`verifyRemote`／`verifyLatest`，仅给 `npm publish` 与 `npm dist-tag` 写操作继承 TTY，查询继续捕获输出并使用严格 JSON 解析。保留原 timeout、killSignal、输出上限和所有六包预检；runner 自身先执行 preflight 并核对完整来源，写操作要求 TTY。不得把这层交互适配变成绕过候选、完整性或防降级检查的逐包裸上传。
+标准 CI runner 保持捕获 npm 输出。需要浏览器／2FA 交互时，使用仓库内 `npm run release:local`，见下一节。它继续调用现有发行函数，仅给 `npm publish` 与 `npm dist-tag` 写操作继承 TTY，查询继续捕获输出并使用严格 JSON 解析；保留原 timeout、killSignal、输出上限和所有六包预检。
 
 先上传 `candidate-X-Y-Z`，全部精确版本 integrity 匹配后运行 `FLYWHEEL_NPM_VERSION=X.Y.Z npm run test:registry`；通过后才按平台包 → 插件 → meta 提升 latest，并执行 `verify-latest`。发布和提升前分别刷新远端 tag。部分成功时复用原候选恢复，认证或浏览器审批未完成不能记录为已发布。保存的发行记录必须区分“代码已合并”“候选已构建”“npm 已上传”“latest 已提升”和未完成的实机检查。
+
+## 5. 从源码本地构建并发布
+
+预构建归档是复用已测试产物的一种交付方式，不是本地发行的前置条件。维护者可以在自己的 Mac/Linux 上拉取源码、构建并发布。需要 Git、Go 1.27（本次验证使用 1.27.3）、Node 24.22.1、npm 12.2.1，以及正常的 GitHub 读取和 npm 发布权限。完整源码质量门禁仍按上一节执行并记录；本地发布命令负责候选安装及 registry 安装门禁，不替代 Go quality/race 或源码评审。
+
+本次 `v0.28.0` 已固定在 `c865d2c130aa009f2348a883c01d0ac29da59624`。后补的交互发布工具保存在最新 `main`，因此使用两个 Git 工作目录：最新 checkout 提供维护工具，独立 worktree 保留准确的发行源码。它们都来自 Git；不移动既有 tag，不把新维护工具误打入旧版本。下面命令从最新 `main` 的仓库根目录执行，任一步失败即停止：
+
+```sh
+export npm_config_registry=https://registry.npmjs.org/
+git fetch origin --tags
+git worktree add --detach ../flywheel-v0.28.0 c865d2c130aa009f2348a883c01d0ac29da59624
+node ../flywheel-v0.28.0/scripts/release-preflight.js --version 0.28.0 --tag v0.28.0 --json
+npm --prefix ../flywheel-v0.28.0 run build:npm
+npm login --auth-type=web --scope=@ckanner --registry=https://registry.npmjs.org/
+npm whoami --registry=https://registry.npmjs.org/
+npm run release:local -- --source-directory ../flywheel-v0.28.0 --repository-visibility private
+```
+
+候选输出在 `../flywheel-v0.28.0/dist-npm/`。无需在源码根目录先执行 `npm install`；构建脚本自行构建 worker 和四个平台的 Go 二进制。`--source-directory` 默认是工具所在仓库；`--directory` 可指定另一处候选目录，显式相对路径均相对于调用目录解析。不论工具与源码是否同一 checkout，源码必须干净、版本相同，且本地／远端 release tag、HEAD、tree、snapshot 和候选完整性全部吻合。
+
+`release:local` 自动按以下顺序运行：
+
+1. 核对完整来源与候选，通过源仓库 `origin` 的 `git ls-remote` 新鲜核对远端 tag。
+2. 在本机运行候选 `test:install`；再次检查源码、候选和 tag 未变化。
+3. 按平台包 → DSH 插件 → meta 上传到 `candidate-X-Y-Z`，沿用既有版本 integrity 和防倒退检查。
+4. 从官方 npm registry 实际安装精确版本；失败时不提升 `latest`。
+5. 再次核对来源、候选和远端 tag，再提升并复核六包 `latest`，最后打印完成结果。
+
+请使用真实终端，按 npm 正常浏览器／2FA 提示完成认证，不把发布输出通过管道传给 `tee`。这条命令不会登录账号、创建／移动 tag、改变仓库可见性或修改 npm 安全设置。`private` 对应当前仓库可见性；公开源码的发布仍须使用 `public` 并满足 provenance 要求。
+
+若中途中断，保留源 worktree 和同一 `dist-npm/`，解决失败原因后重跑最后一条命令即可。已有版本只有 integrity 完全一致才会跳过；不要重新运行构建去覆盖可能已上传的同版包。若本地刚构建的候选与已经发布的同版本内容冲突，停止并使用原候选，或按新的统一版本安排发行。
+
+测试在隔离用户目录中安装并使用 DSH 协议桩，不调用模型。Mac 上运行会验证本机架构的 Darwin CLI/worker；真实 DSH 桌面、账号和模型推理仍须单独验收。完成后将源 SHA、候选清单、实际平台与测试结果记录到 GitHub Release，再更新发行状态。

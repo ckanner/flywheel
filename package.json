@@ -45,6 +45,7 @@
   },
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
+    "release:local": "node scripts/release-local.js",
     "test": "node --test npm/test/*.test.js",
     "test:install": "node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
