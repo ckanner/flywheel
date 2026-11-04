@@ -1,6 +1,8 @@
 # 从需求准备到 PR 合并
 
-本文描述 **Flywheel 0.28.0 未发布候选**的推荐工作流。新默认 `hard` 路由使用
+[English](en/workflow.md) · 简体中文
+
+本文描述 **Flywheel 0.28.0**的推荐工作流。新默认 `hard` 路由使用
 Codex Pro 插件 machine API；源码存在不代表 npm `latest` 已更新，安装状态见
 [发行指南](releasing.md)。下列命令是操作示例，不会因阅读本文自动执行。
 

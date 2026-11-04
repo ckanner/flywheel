@@ -1,7 +1,7 @@
 {
   "name": "@ckanner/flywheel",
   "version": "0.28.0",
-  "description": "Flywheel: deterministic coding-agent loops, DSH controls, and one-command agent installation.",
+  "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",
     "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js",
@@ -27,10 +27,14 @@
     "bin",
     "npm/*.js",
     "README.md",
+    "README.en.md",
     "CHANGELOG.md",
     "docs/getting-started.md",
     "docs/configuration.md",
     "docs/workflow.md",
+    "docs/en/getting-started.md",
+    "docs/en/configuration.md",
+    "docs/en/workflow.md",
     "docs/examples/create-first-task.sh"
   ],
   "optionalDependencies": {

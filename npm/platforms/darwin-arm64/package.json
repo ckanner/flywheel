@@ -15,5 +15,6 @@
     "type": "git",
     "url": "git+https://github.com/ckanner/flywheel.git",
     "directory": "npm/platforms/darwin-arm64"
-  }
+  },
+  "license": "UNLICENSED"
 }
