@@ -1,5 +1,7 @@
 # Mac 安装与首个 Flywheel 任务
 
+[English](en/getting-started.md) · 简体中文
+
 本文适用于 **Flywheel 0.28.0 及以后的完整 npm 发行版**，覆盖 npm 一条命令安装 CLI、worker、DSH 插件与 skills，到配置、启动、观察、停止和恢复一个小任务。DSH 接口目标是已核对的 **Mac 桌面 0.2.1-rc.5**。真实桌面、Seatbelt 和账号调用仍需在自己的 Mac 验收，CI 不能代替这些检查。
 
 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。

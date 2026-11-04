@@ -1,5 +1,7 @@
 # Flywheel 的 DSH 桌面入口与原生 worker
 
+[English](README.en.md) · 简体中文
+
 目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包提供桌面操作入口、原生 SDK 执行通道和 Codex Pro machine API worker。无需 alpha、OAR、Forge 或一直活着的父智能体。
 
 完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.28.0 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。

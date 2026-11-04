@@ -1,5 +1,7 @@
 # Flywheel（飞轮）
 
+[English](README.en.md) · 简体中文
+
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
 当前 **v0.28.0 实施版**以 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
@@ -222,6 +224,8 @@ npm run build:npm
 
 ## 文档与代码入口
 
+英文用户文档包括 [入门](docs/en/getting-started.md)、[配置](docs/en/configuration.md)、[工作流](docs/en/workflow.md) 和 [DSH 插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md)。贡献者从 [Contributing](https://github.com/ckanner/flywheel/blob/main/docs/contributing.md) 开始，发行维护者见 [Releasing](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md)。
+
 | 路径 | 内容 |
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
@@ -238,3 +242,7 @@ npm run build:npm
 | [internal/drivers/](internal/drivers/) | DSH／Kimi／Codex 与保留的兼容 driver |
 | [internal/verify/](internal/verify/) | 确定性验收、边界、Git 持久化与工作区 |
 | [docs/design-history-v0.24.md](docs/design-history-v0.24.md) | 历史设计与当时的研究、环境记录 |
+
+## 许可证
+
+当前源码与 Flywheel npm 包标记为 `UNLICENSED`，尚未授予开源许可证。英文文档和公开 npm 分发不改变这一状态；正式开源时需由维护者选择许可证，并同步源码声明与全部包的 metadata。第三方依赖遵循各自许可证。

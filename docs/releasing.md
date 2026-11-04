@@ -1,5 +1,7 @@
 # npm 发行指南
 
+[English](en/releasing.md) · 简体中文
+
 本页面向维护者。普通用户从 npm 安装，见[入门教程](getting-started.md)；不需要下载 Actions artifact 或手工解压 tgz。
 
 ## 1. 发布身份
@@ -60,10 +62,26 @@ CI 的安装测试使用隔离用户目录和 DSH 注册协议桩。它验证包
 - **安装或提升失败：**此时部分精确版本可能已公开，但 `latest` 尚未全部移动。修复原因后重试原候选；脚本会复核已完成步骤，拒绝覆盖不同 integrity 或回退更新的 latest。
 - **需要改源码：**已公开版本不可重用。先检查哪些包已存在，再安排新的统一版本；不要移动已有 tag 或强行忽略 integrity 检查。原 artifact 丢失也不能凭重新构建推定字节相同。
 
-发行完成以 publish workflow 成功以及六包 registry 校验为依据。可分别检查 `npm view <包名>@X.Y.Z dist.integrity` 和 `npm view <包名> dist-tags.latest`。需要从干净测试目录重复公开安装冒烟时，在对应源码运行：
+发行完成以 publish workflow 成功，或维护者明确授权且如实记录的手动发行门禁，加上六包 registry 校验和实际安装通过为依据。可分别检查 `npm view <包名>@X.Y.Z dist.integrity` 和 `npm view <包名> dist-tags.latest`。需要从干净测试目录重复公开安装冒烟时，在对应源码运行：
 
 ```sh
 FLYWHEEL_NPM_VERSION=X.Y.Z npm run test:registry
 ```
 
 用户入口仍是 `npx -y @ckanner/flywheel@latest install`。GitHub Release 页面存在、源码合并或本地 `npm pack` 成功，都不能单独证明这条命令已经能安装新版本。
+
+## 4. CI 无法启动时的授权手动发行
+
+维护者可以明确授权以手动运行替代不可用的 Actions 编排。本次 0.28.0 的主分支 [CI](https://github.com/ckanner/flywheel/actions/runs/41825311905) 因账号付款／支出限制没有启动 job；这不是测试失败，也不能记录为 CI 通过。手动发行须保留授权、精确源码、工具链、真实测试结果和未执行检查的说明，不修改正常 workflow 或伪造绿色状态。
+
+先合入本次全部实现与文档，再在最终 clean HEAD 创建精确 `vX.Y.Z` tag。通过已认证 Git 或 GitHub API 新鲜核对远端 tag；本地缓存不能代替远端事实。按英文 [manual runbook](en/releasing.md#authorized-manual-release-when-actions-cannot-run) 运行与 CI 相同的 Go quality/race、插件、跨进程、npm 和真实六包安装门禁。只在 Linux 执行时，记录 Linux 结果；macOS 交叉编译不代表 macOS runtime、桌面、账号和付费模型已验证。
+
+发行仍须先运行 `release-preflight.js`，再以相同 source SHA 检查 `candidate.json`。`release-publish.js` 本身不检查 Git tag；手动运行不能遗漏外层 preflight。不要使用此前带 `source.dirty: true` 的开发候选。构建一次后保留原六个 tgz 和 candidate，上传前同时绑定当前 commit、tree、snapshot 与包的 SHA-512；源码变化须在尚未上传时重新准备。
+
+手动环境使用 npm 正常登录或已授权的发布凭证；GitHub 登录不替代 npm 权限，Actions OIDC 也不能在本地仿冒。普通浏览器登录命令为 `npm login --auth-type=web --registry=https://registry.npmjs.org/`。会话若要求发布或 dist-tag 的浏览器／2FA 确认，应在真实 TTY 完成；不关闭 2FA、不修改包安全设置。
+
+手动流程先设置 `export npm_config_registry=https://registry.npmjs.org/`，替代 CI setup-node 的 registry 配置；确认没有包 scope 指向其他 registry，不能继承安装测试的隔离 registry 或私有镜像用于发行写入。
+
+当前标准发行 runner 捕获 npm 输出，不把 TTY 传给 npm。需要交互认证时，可使用仓库外人工 runner：继续调用现有 `publish`／`promote`／`verifyRemote`／`verifyLatest`，仅给 `npm publish` 与 `npm dist-tag` 写操作继承 TTY，查询继续捕获输出并使用严格 JSON 解析。保留原 timeout、killSignal、输出上限和所有六包预检；runner 自身先执行 preflight 并核对完整来源，写操作要求 TTY。不得把这层交互适配变成绕过候选、完整性或防降级检查的逐包裸上传。
+
+先上传 `candidate-X-Y-Z`，全部精确版本 integrity 匹配后运行 `FLYWHEEL_NPM_VERSION=X.Y.Z npm run test:registry`；通过后才按平台包 → 插件 → meta 提升 latest，并执行 `verify-latest`。发布和提升前分别刷新远端 tag。部分成功时复用原候选恢复，认证或浏览器审批未完成不能记录为已发布。保存的发行记录必须区分“代码已合并”“候选已构建”“npm 已上传”“latest 已提升”和未完成的实机检查。

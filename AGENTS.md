@@ -120,7 +120,11 @@ implementation trivia to chase the number.
 
 ## Language
 
-User-facing docs (docs/design.md, README, SKILL.md bodies) are Chinese.
+Keep the Chinese README, design documents and SKILL.md bodies. Maintain the
+English README (`README.en.md`), essential user guides (`docs/en/`) and DSH
+plugin README alongside their Chinese counterparts. Changes to installation,
+configuration, workflow or runtime boundaries must update both languages;
+historical design and validation records do not need duplicate translations.
 Code comments mix per existing convention: English for mechanics, Chinese for
 design-document references.
 
