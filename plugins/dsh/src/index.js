@@ -1,7 +1,7 @@
 import { ControlNotDispatchedError, runControl } from './control.js';
 import { resolveFlywheelBinary } from './installation.js';
 
-export const inject = ['commands', 'tools'];
+export const inject = ['commands', 'tools', 'workingDirectory'];
 
 export function apply(ctx, config = {}) {
   // Loading the desktop package accidentally into the SDK profile must not
@@ -16,9 +16,20 @@ export function apply(ctx, config = {}) {
     if (signal?.aborted) cancel();
     active.add(controller);
     try {
+      let defaultCwd;
+      try {
+        // The immutable session header records its original project. Read the
+        // public current-directory projection without ensure() recovery effects.
+        if (input?.cwd == null && agent?.session) {
+          defaultCwd = ctx.workingDirectory.get(agent.session);
+        }
+      } catch (error) {
+        // No control process has been launched if resolving the default fails.
+        throw new ControlNotDispatchedError(error);
+      }
       return await runControl(input, {
         binary,
-        defaultCwd: agent?.session?.header?.cwd,
+        defaultCwd,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
@@ -70,7 +81,7 @@ export function apply(ctx, config = {}) {
       properties: {
         action: { type: 'string', enum: ['start', 'status', 'stop', 'config', 'doctor'] },
         taskDir: { type: 'string', description: 'Absolute existing task ledger directory; required for start/status/stop' },
-        cwd: { type: 'string', description: 'Absolute target repository directory; defaults to this DSH session' },
+        cwd: { type: 'string', description: 'Absolute target repository directory; defaults to the current working directory of this DSH session' },
         probe: { type: 'boolean', description: 'Doctor only: explicitly enable SDK checks without inference; defaults to false' },
       },
       required: ['action'],

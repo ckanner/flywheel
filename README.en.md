@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 Flywheel turns reviewed software requirements into bounded coding tasks with explicit acceptance criteria. A deterministic Go engine runs Plan, Execute, Review, and verification loops. Models propose plans, implement changes, and review candidates; the engine owns state, retries, budgets, workspaces, verification, local Git delivery, and stopping.
 
-This documentation describes the **0.28.2 implementation**. The desktop integration targets the interfaces checked against **DSH Mac 0.2.1-rc.5**. Source changes and GitHub releases do not establish npm availability: check the registry before installing a version. Offline test results also do not establish that a user's Mac, desktop permissions, account, or selected model works.
+This source builds on published **0.28.2**. The account-default, account-error, and current-session-directory corrections described here await the next npm release; merging source does not update an installed 0.28.2 package. The desktop integration targets interfaces checked against **DSH Mac 0.2.1-rc.5**. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
 
 ## Install
 
@@ -24,7 +24,7 @@ npx -y @ckanner/flywheel@latest install
 
 Add `--json` for a structured installation result. The installer selects one exact version for the CLI, platform binary, workers, and DSH plugin; installs the ten bundled skills; preserves existing configuration and modified skills; and records a managed desktop launcher. Binary packages cover macOS and Linux on arm64 and amd64.
 
-`ok:true` means installation succeeded. `ready:false` means local diagnostics still found a blocker; these values can occur together. The installer does not install or log in to Kimi/Codex, configure API credentials, or prove model access. Plain `npm install --global @ckanner/flywheel` only installs package files; run `flywheel setup --no-global` afterward to perform explicit user setup.
+`ok:true` means installation succeeded. `ready:false` means local diagnostics still found a blocker; these values can occur together. The installer does not install or log in to Kimi/Codex or prove model access. Current source defaults reuse the signed-in DeepSeek account in DSH; API-key credentials are needed only for an explicitly selected API provider. Plain `npm install --global @ckanner/flywheel` only installs package files; run `flywheel setup --no-global` afterward to perform explicit user setup.
 
 Follow [Getting started](docs/en/getting-started.md) for prerequisites, desktop versus SDK setup, a runnable first task, and recovery. Use `--prefix "$HOME/.local"` if you need a user-owned npm prefix.
 
@@ -35,17 +35,21 @@ These bindings are editable starting points, not a model ranking or a performanc
 | Stage or route | Harness | Provider or channel | Model | Requested thinking |
 |---|---|---|---|---|
 | Plan | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
-| Execute: `default` | DSH SDK | `deepseek-official` | `deepseek-flash` | `high` |
+| Execute: `default` | DSH SDK | `deepseek-account` | `deepseek-flash` | `high` |
 | Execute: `frontend` | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 | Execute: `hard` | Codex Pro machine API | `chatgpt-subscription` | `gpt-6.1-sol` | `high` |
 | Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high` |
 | Judge | DSH SDK | `chatgpt` | `gpt-6-astra` | `high` |
-| Intake, optional | DSH SDK | `deepseek-official` | `deepseek-flash` | `low` |
+| Intake, optional | DSH SDK | `deepseek-account` | `deepseek-flash` | `low` |
 | Garden, optional | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 
 Initial requirement preparation is separate: `flywheel-new` runs in the host's current conversation and uses its selected model. Changing `loops.plan` does not change that conversation. The [workflow guide](docs/en/workflow.md) explains preparation model choices and the later engine loops.
 
 The default configuration has no automatic paid fallback across channels and no second judge. Flash's checked DSH effort values are `off`, `low`, `high`, and `max`; there is no `medium` in that adapter baseline. There is no default multimodal route: the current bridge has a text contract, so a model's vision capability alone does not establish attachment support.
+
+Seven high bindings and Intake low are an engineering baseline, without a project high/xhigh/max comparison. GPT supports xhigh/max; Kimi K3.1 Pro natively supports low/high/max. Hard execution and high-impact Judge are useful first xhigh evaluation candidates. See [Reasoning effort](docs/en/model-policy.md) for evidence and limits.
+
+The standard SDK already includes the DeepSeek account provider and account service. Under the same `DSH_HOME`, it shares the standard desktop account credential store without copying tokens or adding an API key. Desktop default-model selection does not control an independent SDK session, so Flywheel explicitly requests `deepseek-account` and `deepseek-flash`. Published 0.28.2 still selects the API provider; use a version containing this fix and [explicit migration](docs/en/configuration.md#apply-the-subscription-preset-to-existing-configuration) to adopt the account default. Custom API-key configuration remains supported.
 
 ## Codex Pro uses the actual plugin runtime
 
@@ -58,6 +62,8 @@ Existing configuration is preserved during upgrades. To adopt the new route, ins
 ## From a requirement to a pull request
 
 Use one task integration branch and worktree for a deliverable. Create it **before** preparing contracts with `flywheel-new`; keep the task directory inside that same worktree. The host or user creates this outer worktree. Flywheel then manages the inner packet workspaces.
+
+In DSH's composer, `/flywheel-new` invokes preparation and `/flywheel-run` invokes the run Skill after review. Kimi CLI uses `/skill:flywheel-new` and `/skill:flywheel-run`. The host loads these Skills and the assistant follows their CLI workflow. No panel fields need filling first.
 
 A normal workflow is:
 
@@ -80,7 +86,7 @@ Packet delivery is a **local Git operation**. After evidence matches the current
 
 ### Desktop task controls
 
-From `0.28.1`, the native **Flywheel** conversation view appears alongside Chat and Trajectory, preserving DSH's composer, model selector, and right sidebar. Version `0.28.0` uses the old composer popup; upgrade the CLI and desktop plugin to the same new version. Select a prepared task directory and its repository to inspect progress, intervention, effective models, and diagnostics, or explicitly start, refresh, or stop it.
+From `0.28.1`, the native **Flywheel** conversation view appears alongside Chat and Trajectory, preserving DSH's composer, model selector, and right sidebar. Version `0.28.0` uses the old composer popup; upgrade the CLI and desktop plugin together. **Task files directory** selects the prepared `docs/<slug>/`; **Project directory** is its project/integration worktree and may stay blank. Current source reads DSH's `workingDirectory.get(session)`, following session directory changes. Published 0.28.2 still uses the original header directory: explicitly fill the project path after switching worktrees. Configuration and diagnostics can omit the task; start, refresh, and stop require an existing task directory.
 
 The view retains session-scoped drafts while the host retains the session binding and shows snapshots with their refresh time. It does not discover tasks or poll automatically. An unconfirmed start/stop outcome requires a successful refresh of the same task before further mutations; closing or switching the view does not stop the independent engine. DSH's trajectory keeps its parent-session records, without automatically merging independent worker history. Desktop capabilities and SDK worker policy have separate scopes; see the [plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#use-the-desktop-controls).
 
@@ -106,6 +112,7 @@ The engine alone writes `state.json`, atomically with revision checks. Do not ed
 | [Getting started](docs/en/getting-started.md) | Install, configure, diagnose, run a small task, stop, and recover |
 | [Workflow](docs/en/workflow.md) | Preparation models, task and packet worktrees, Draft PRs, completion, and merge policy |
 | [Configuration](docs/en/configuration.md) | File precedence, profiles, providers, channels, Codex Pro, and diagnostics |
+| [Reasoning effort](docs/en/model-policy.md) | Supported levels, high baseline, evaluation candidates, and account-provider choice |
 | [Chinese documentation](README.md) | Default language and additional implementation detail |
 | [System design](https://github.com/ckanner/flywheel/blob/main/docs/design.md) (Chinese) | Authoritative design and invariants |
 | [DSH plugin](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md) / [protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md) (protocol in Chinese) | Desktop control surface, workers, permissions, and lifecycle |

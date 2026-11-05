@@ -5,8 +5,8 @@
     "flash": {
       "harness": "dsh",
       "model": "deepseek-flash",
-      "channel": "deepseek-sdk",
-      "provider": "deepseek-official",
+      "channel": "deepseek-account-sdk",
+      "provider": "deepseek-account",
       "thinking": "high"
     },
     "kimi": {
@@ -49,11 +49,11 @@
     "hard": { "profile": "codex-pro" }
   },
   "channels": {
-    "deepseek-sdk": {
+    "deepseek-account-sdk": {
       "harness": "dsh",
-      "provider": "deepseek-official",
+      "provider": "deepseek-account",
       "env-key": null,
-      "_note": "channel 是本配置的渠道名，provider 是选定 DSH SDK 实际注册的 ID；凭证仍由该 SDK provider 配置管理，别名不自动切换账号。"
+      "_note": "channel 是本配置的渠道别名，provider=deepseek-account 使用 DSH 已登录的 DeepSeek 账号。标准桌面与 SDK 在同一 DSH_HOME 下默认共用账号授权；别名不选择另一账号，也不改用 deepseek-official API key。"
     },
     "chatgpt-sdk": {
       "harness": "dsh",

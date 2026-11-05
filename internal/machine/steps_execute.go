@@ -166,8 +166,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			streamMsg = *res.ErrorMessage
 		}
 		var contractRes exitcontract.Result
-		if streamMsg != "" && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" {
-			streamCode := errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg})
+		if (streamMsg != "" || res.ErrorCode != "") && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" &&
+			(res.ErrorCode == "" || (res.ExitCode != nil && *res.ExitCode == 1 && !res.Truncated && res.Signal == "")) {
+			streamCode := errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg, ErrorCode: res.ErrorCode})
 			contractRes = exitcontract.Result{
 				OK: false, ErrorCode: string(streamCode),
 				Reasons: []string{fmt.Sprintf("stream error: %s", streamMsg)},

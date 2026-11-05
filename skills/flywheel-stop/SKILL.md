@@ -2,7 +2,7 @@
 name: flywheel-stop
 metadata:
   version: "1.6.0"
-description: Stop the Flywheel orchestrator for a task and freeze its state. Use when the user says "/skill:flywheel-stop docs/<slug>" or wants to halt a running flywheel task.
+description: Stop the Flywheel orchestrator for a task and freeze its state. Use for "/flywheel-stop docs/<slug>" in DSH, "/skill:flywheel-stop docs/<slug>" in Kimi, or a request to halt a running flywheel task.
 whenToUse: 当用户要停止正在运行的编排器（干预、预算控制、异常处理）时使用。
 compatibility: "Requires the Flywheel CLI; stops the matching task through its managed control protocol."
 arguments: slug
@@ -11,6 +11,8 @@ arguments: slug
 # flywheel-stop — 停止编排器
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+DSH 在对话中使用 `/flywheel-stop <任务资料目录>`；Kimi 使用 `/skill:flywheel-stop <任务资料目录>`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
@@ -35,7 +37,7 @@ Button only: validate + invoke CLI + translate. No loop logic here.
 3. **翻译结果**：编排器进程是否被停掉（pid）、state.json 定格的状态与
    revision、当前里程碑进度。不得手写 state.json 或向 pid 文件中的进程直接发信号。
    超时无法确认停止时必须如实报告。`stopped` 只说明引擎生命周期结束；
-   若记录了清理错误，不得声称所有子进程均已清理；`/skill:flywheel-run docs/<slug>`
+   若记录了清理错误，不得声称所有子进程均已清理；`flywheel-run` skill
    可在问题处理后重新拉起继续。
 
 停止不等于删除 packet worktree 或丢弃任务分支。保留现场，不复制／重置 state，

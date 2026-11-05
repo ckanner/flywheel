@@ -10,6 +10,8 @@ The top-level **Flywheel conversation view** below is available from `0.28.1`. V
 
 Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; preview `flywheel config migrate --preset subscriptions`, review the model bindings and full-access policy, then explicitly apply it with `--apply` and a backup.
 
+**The current source fixes are not yet published:** the `deepseek-account` default and the session-current-directory default below apply to builds containing these fixes. Published `0.28.2` still defaults to `deepseek-official` and reads the original session project when the directory is omitted. With that release, inspect the actual configuration and explicitly enter the correct worktree path. Merging source does not update an installed package.
+
 ## 1. Prepare the environment
 
 | Requirement | Why it is needed |
@@ -24,7 +26,7 @@ Subscription preset migration and `permissions.mode` are available from **0.28.2
 
 Check command locations and versions with `git --version`, `node --version`, `npm --version`, `command -v dsh`, `dsh --version`, `kimi --version`, and `codex --version`. Check the desktop version in About as well. Use the respective tools' documented installation and login flows.
 
-Kimi subscription, ChatGPT subscription, and DeepSeek API access are separate channels. Flywheel does not log in, copy credentials, or replace the desktop application. A task using only the default execution route can skip the hard route at runtime, but it still needs its configured Plan, Execute, Review, and Judge backends.
+The defaults reuse the Kimi subscription, ChatGPT subscription, and existing signed-in, funded DeepSeek account. DeepSeek API access is an explicitly configured alternative. Flywheel does not log in, copy credentials, or replace the desktop application. A task using only the default execution route can skip the hard route at runtime, but it still needs its configured Plan, Execute, Review, and Judge backends.
 
 ## 2. Install
 
@@ -81,7 +83,9 @@ This is the command shape used internally, not a placeholder to paste literally.
 
 This view controls and observes an already prepared task: progress, intervention, effective models, environment checks, and explicit start/refresh/stop. DSH keeps its chat, trajectory, composer, model selector, and right sidebar. Discuss requirements and prepare contracts through the original chat and skills. The view does not discover tasks started elsewhere; select the same task directory to observe one.
 
-The worker defaults to a separate **`sdk` profile**. A desktop provider installation or login does not prove that the SDK profile has the same configuration or authorization. DeepSeek uses `deepseek-official`; native GPT routing uses the ChatGPT adapter. The checked adapter baseline can be installed with:
+The worker defaults to a separate **`sdk` profile**. The standard SDK layers on `base`, which already includes DeepSeek's account and API adapters. Current source explicitly selects `provider: "deepseek-account"` and `model: "deepseek-flash"` to reuse the signed-in, funded account. `deepseek-official` is only for an explicitly chosen API-key configuration; there is no automatic paid-channel fallback.
+
+With the same `DSH_HOME`, the standard desktop and SDK can share the existing login in the default `<DSH_HOME>/.credentials.yaml`, independently of the profile. No token copying or switch to the `desktop` profile is needed. Check custom home, profile, or credential-store choices separately. The SDK does not inherit the desktop's selected conversation model; Flywheel uses its own effective bindings, visible through `config inspect` or the view's model-configuration action. Native GPT routing needs the ChatGPT adapter in the SDK profile. The checked adapter baseline can be installed with:
 
 ```sh
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
@@ -123,6 +127,8 @@ flywheel install-skills --project /absolute/path/to/repo --json
 
 Follow the host's skill-discovery rules. Copying files does not prove the host loaded them. Installer-owned unchanged snapshots can update; modified files, unowned directories, and invalid manifests are preserved and reported as conflicts.
 
+In DSH Chat, use `/flywheel-new`, `/flywheel-run`, and `/flywheel-status`, or select them from the `/` menu. Kimi instead uses `/skill:flywheel-new` and corresponding prefixed names. Preparation, start, and status can all happen in the conversation: **no initial Flywheel-view form is required.** The view is an alternative way to open an already prepared task. See the [copyable workflow](workflow.md#3-prepare-and-review-the-contracts).
+
 ## 5. Run preflight without inference
 
 From the target repository:
@@ -146,11 +152,15 @@ flywheel doctor --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --probe --json
 
 A task without packets can be inspected during preparation, but a real start still needs at least one reviewed legal packet. Fix schema, directory, provider, or permission failures at their source.
 
+The view's optional configuration and troubleshooting section offers “Inspect model configuration,” “Check installation and configuration,” and “Check DSH integration.” Use these for setup, configuration changes, or troubleshooting; they are not buttons that must be pressed for every task. Neither diagnostic performs model inference.
+
 ## 6. Prepare a task
 
 ### Existing repository
 
 Create or deliberately reuse a task integration branch and independent worktree **before** running `flywheel-new`. Prepare contracts and launch the engine from that same root, using a task path inside it. The [workflow guide](workflow.md) gives the branch commands, model recommendations, draft-PR timing, and exact working directory for each loop.
+
+The normal DSH entry is `/flywheel-new` followed by the actual requirement. The assistant creates or reuses the task worktree, prepares `docs/<slug>/spec.md` and task packets, and reports two actual absolute paths: the **project directory** is the code worktree; the **task files directory** is its `docs/<slug>` holding this task's contracts and later state/reports. You do not need to invent an empty directory or fill in the UI first. Review the contracts, then reuse the supplied task path.
 
 Use the bundled templates to prepare a real Spec and packets with actual acceptance commands, protected oracles, and recorded dry-run results. Commit the reviewed contracts before starting so packet worktrees can read them from Git. Do not create `state.json` manually.
 
@@ -199,7 +209,9 @@ flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/add"
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
-The top **Flywheel** view accepts the same two absolute paths. Expand its model-configuration and environment-check section when needed, then use the explicit start, refresh, or stop action. A control response's `ok` means the operation succeeded; task completion is determined by `state.status`. The view displays the last refresh time and does not poll automatically.
+In DSH Chat, the equivalent entries are `/flywheel-run <absolute-task-path>` and `/flywheel-status <same-path>`, with `/flywheel-stop <same-path>` when stopping is needed. Replace the placeholders with the real path returned during preparation. These skills resolve the project root without requiring an initial view selection.
+
+To use the top **Flywheel** view instead, enter that same `task_dir` in “Task files directory.” Leave “Project directory” blank only when the DSH session's current working directory is already the task's `repo_dir`; otherwise enter the project path supplied by the assistant. A shell `cd` alone does not change the DSH session directory, and skill calls do not automatically select the view's task. Expand configuration and troubleshooting when needed, then use start, refresh, or stop. A control response's `ok` means the operation succeeded; task completion is determined by `state.status`. The view displays the last refresh time and does not poll automatically.
 
 Draft paths and fetched snapshots are retained separately for each session across view switches while the host retains that session binding; a plugin reload or desktop restart may require selecting the paths again. Path edits discard old results and reject late replies without stopping the old task. Only one control request is pending per session, and a start or stop locks directory inputs while waiting.
 

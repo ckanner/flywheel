@@ -122,14 +122,14 @@ func TestMigrateLegacySubscriptionsPreservesUserPolicyAndHasNoReachableZAI(t *te
 		if role != "intake" {
 			assert.Equal(t, "high", binding.Thinking)
 		}
-		assert.Contains(t, []string{"kimi-subscription", "chatgpt", "deepseek-official"}, binding.Channel)
+		assert.Contains(t, []string{"kimi-subscription", "chatgpt", "deepseek-account"}, binding.Channel)
 		assert.Empty(t, loaded.Channels[binding.Channel].Fallback)
 		assert.Empty(t, loaded.Channels[binding.Channel].Models)
 		assert.Nil(t, loaded.Channels[binding.Channel].EnvKey)
 	}
 	for _, binding := range loaded.Routes {
 		assert.Equal(t, "high", binding.Thinking)
-		assert.Contains(t, []string{"kimi-subscription", "chatgpt-subscription", "deepseek-official"}, binding.Channel)
+		assert.Contains(t, []string{"kimi-subscription", "chatgpt-subscription", "deepseek-account"}, binding.Channel)
 		assert.Empty(t, loaded.Channels[binding.Channel].Fallback)
 	}
 	var original, migrated map[string]json.RawMessage
@@ -158,6 +158,83 @@ func TestMigrateLegacySubscriptionsPreservesUserPolicyAndHasNoReachableZAI(t *te
 	entriesAfter, err := os.ReadDir(filepath.Dir(path))
 	require.NoError(t, err)
 	assert.Equal(t, entries, entriesAfter)
+}
+
+func TestMigrateV0282APIConfigUsesAccountOnlyAfterExplicitApply(t *testing.T) {
+	// Frozen release template from ee65ed812b76eee77e4a001aed506008b618a058.
+	// Loading/upgrading must keep the user's existing API route; adoption of the
+	// corrected subscription preset is a previewable, explicit migration.
+	original, err := os.ReadFile(filepath.Join("testdata", "subscriptions-v0.28.2.json"))
+	require.NoError(t, err)
+	options, path := migrationFixture(t, string(original))
+	before, err := LoadReadOnly("", options.Cwd)
+	require.NoError(t, err)
+	assert.Equal(t, "deepseek-official", before.Loops["intake"].Channel)
+	assert.Equal(t, "deepseek-official", before.Routes["default"].Channel)
+	_, created, err := MaterializeGlobal()
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.Equal(t, original, configBytesT(t, path))
+
+	preview, err := Migrate(options)
+	require.NoError(t, err)
+	assert.True(t, preview.Changed)
+	assert.False(t, preview.Applied)
+	assert.Empty(t, preview.Backup)
+	assert.Equal(t, original, configBytesT(t, path))
+	for _, field := range []string{"loops.intake.channel", "loops.intake.provider", "routes.default.channel", "routes.default.provider", "channels.deepseek-account.provider"} {
+		assert.Contains(t, preview.Changes, MigrationChange{Path: field, Action: "set"})
+	}
+	assert.Equal(t, "deepseek-official", preview.Original.Routes["default"].Channel)
+	assert.Equal(t, "deepseek-account", preview.Candidate.Routes["default"].Provider)
+	assert.Equal(t, "deepseek-account", preview.Candidate.Loops["intake"].Provider)
+
+	options.Apply, options.ExpectSHA256 = true, preview.SHA256
+	applied, err := Migrate(options)
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	assert.Equal(t, original, configBytesT(t, applied.Backup))
+	after, err := LoadReadOnly("", options.Cwd)
+	require.NoError(t, err)
+	assert.Equal(t, "deepseek-account", after.Loops["intake"].Channel)
+	assert.Equal(t, "deepseek-account", after.Loops["intake"].Provider)
+	assert.Equal(t, "low", after.Loops["intake"].Thinking)
+	assert.Equal(t, "deepseek-account", after.Routes["default"].Channel)
+	assert.Equal(t, "deepseek-account", after.Routes["default"].Provider)
+	assert.Equal(t, "high", after.Routes["default"].Thinking)
+	assert.Equal(t, "deepseek-flash", after.Routes["default"].Model)
+	account := after.Channels["deepseek-account"]
+	assert.Equal(t, "dsh", account.Harness)
+	assert.Equal(t, "deepseek-account", account.Provider)
+	assert.Nil(t, account.EnvKey)
+	assert.Empty(t, account.Fallback, "account failure must never switch to API billing")
+	assert.Empty(t, account.Models)
+	// Existing API channels remain available for an explicit future choice, but
+	// no active binding or fallback in the new preset can reach them.
+	assert.Equal(t, before.Channels["deepseek-official"], after.Channels["deepseek-official"])
+	for role, binding := range after.Loops {
+		assert.NotEqual(t, "deepseek-official", binding.Channel)
+		assert.Empty(t, after.Channels[binding.Channel].Fallback)
+		if role != "intake" {
+			assert.Equal(t, before.Loops[role], binding)
+		}
+	}
+	for route, binding := range after.Routes {
+		assert.NotEqual(t, "deepseek-official", binding.Channel)
+		assert.Empty(t, after.Channels[binding.Channel].Fallback)
+		if route != "default" {
+			assert.Equal(t, before.Routes[route], binding)
+		}
+	}
+	assert.Equal(t, before.Permissions, after.Permissions)
+	assert.Equal(t, before.Budget, after.Budget)
+	assert.Equal(t, before.Verify, after.Verify)
+	assert.Equal(t, before.Worktree, after.Worktree)
+	options.ExpectSHA256 = ""
+	repeated, err := Migrate(options)
+	require.NoError(t, err)
+	assert.False(t, repeated.Changed)
+	assert.Empty(t, repeated.Backup)
 }
 
 func TestMigrationDiscoverySelectsOneCompleteFileAndCreatesOnlyGlobalWhenEmbedded(t *testing.T) {

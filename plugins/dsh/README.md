@@ -10,6 +10,8 @@
 
 订阅预设迁移命令和 `permissions.mode` 从 **0.28.2** 开始提供。升级保留已有配置；只有用户明确应用迁移时才备份并更新模型与权限。
 
+**当前源码与发行包的区别：**已发布 0.28.2 仍使用 DeepSeek API 默认，省略项目目录时读取会话最初目录。本轮 `deepseek-account` 默认、账号错误处理和当前工作目录修复尚待下一次 npm 发行；重装同一 0.28.2 不会得到这些变化。
+
 ## 提供什么
 
 | 部分 | 行为 |
@@ -62,23 +64,23 @@ Agent 可以加 `--json` 获取单个结构化结果。该命令全局安装本�
 
 npm CLI 启动器自动解析同版本依赖中的 worker 绝对路径，并在用户未设置时注入 `FLYWHEEL_DSH_WORKER`。直接运行 Go 二进制时默认从 PATH 查找 `flywheel-dsh-worker`；也可显式设置 `FLYWHEEL_DSH_WORKER=/absolute/path/to/dist/worker.js`。自动 launcher 已记录安装时的桌面 `dsh` 入口，用户显式 `FLYWHEEL_DSH_BIN` 优先。`FLYWHEEL_DSH_PROFILE` 默认 `sdk`；可用另一个明确基于 SDK 的独立 profile，但不能是 `desktop`。
 
-桌面有 adapter 不表示 SDK profile 也加载了它。SDK 的 DeepSeek 官方路由可自动挂载，其余 provider 必须在 **SDK profile** 中预先安装并完成该 provider 的授权配置。例如需原生 ChatGPT 路由时，先按该插件的文档检查并安装到对应 profile：
+标准 SDK profile 叠加 base，已经包含 DeepSeek 账号服务、账号 adapter 和 API-key adapter。标准桌面与 SDK 在同一 `DSH_HOME` 下默认共用账号授权存储，账号路径不要求复制 token 或额外 API key。自定义 home、凭证存储和 SDK 插件集需核对配置。第三方 provider 则要在 **SDK profile** 中加载并按各自流程授权，例如原生 ChatGPT 路由：
 
 ```sh
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-这条命令是配置示例，不会迁移桌面凭证，也不保证一个第三方插件版本自动适配所有宿主。保持用户选择的 `DSH_HOME` 与授权来源一致，按 provider 的正常登录流程配置；不要复制或打印 token。`initialize` 将严格检查请求的 provider、model、effort，未注册的 provider 会失败。
+这条命令是配置示例，不会复制凭证，也不保证一个第三方插件版本自动适配所有宿主。保持用户选择的 `DSH_HOME` 与授权来源一致，按 provider 的正常登录流程配置；不要复制或打印 token。`initialize` 检查请求的 provider、model、effort，未注册的 provider 会失败。DSH 桌面的账号默认模型选择不自动传给 SDK；Flywheel 必须明确请求所选 provider 与模型。
 
-实际 Mac rc.5 的 DeepSeek 原生路由是：
+当前源码默认选择的 Mac rc.5 DeepSeek 账号路由是：
 
 ```text
-provider = deepseek-official
+provider = deepseek-account
 model = deepseek-flash
 reasoningEffort = off | low | high | max
 ```
 
-`high` 是默认平衡档，**没有 `medium`**。其他 provider 使用自身的合法 effort。SDK README 的历史示例可能仍写 `deepseek-v4-flash`；以所用发行包与 adapter 的实际 catalog 为准。本桥接不替换模型 slug、不跨 provider 降级。
+本项目核对的 DSH rc.5 adapter 只接受 `off/low/high/max`，默认 high，**不接受 `medium` 或 `xhigh`**；这不同于 DeepSeek 通用 API 的兼容别名。`deepseek-official` 是另一个 API-key provider，只在用户明确选择 API 接入时配置，不复用账号 token。默认预设没有 API 后备，因此未登录、登录失效或额度不足不会自动转用 API；用户显式配置的后备链按原规则执行。其他 provider 使用各自合法 effort，GPT 支持 xhigh/max，Kimi K3.1 Pro 原生支持 low/high/max；理由与评估边界见[推理等级说明](https://github.com/ckanner/flywheel/blob/main/docs/model-policy.md)。SDK README 的历史示例可能仍写 `deepseek-v4-flash`；以所用发行包与 adapter 的实际 catalog 为准。本桥接不替换模型 slug、不跨 provider 降级。
 
 ## Codex Pro 插件执行通道
 
@@ -113,7 +115,7 @@ flywheel doctor --cwd /repo --task-dir /repo/docs/my-task --probe --json
 只调试单个 worker 时，仍可在已有且可访问的目标目录生成一条 probe 请求：
 
 ```sh
-node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1,requestId:"local-doctor",cwd:process.cwd(),provider:"deepseek-official",model:"deepseek-flash",reasoningEffort:"high",permissionMode:"read-only",prompt:"This text is not sent in doctor mode",timeoutMs:20000}))' \
+node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1,requestId:"local-doctor",cwd:process.cwd(),provider:"deepseek-account",model:"deepseek-flash",reasoningEffort:"high",permissionMode:"read-only",prompt:"This text is not sent in doctor mode",timeoutMs:20000}))' \
   | flywheel-dsh-worker --doctor
 ```
 
@@ -123,7 +125,16 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 
 ## 桌面使用
 
-打开一个 DSH 会话，在顶部“对话／轨迹”所在的视图栏选择 **Flywheel**。入口由 DSH 的原生视图栏管理；若未直接显示，检查该栏的更多视图入口。先在“对话”中让助手按 `flywheel-new` 准备任务说明与验收清单，审阅后由助手给出实际路径。“任务资料目录”就是这些文件所在的目录，例如 `/Users/me/project/docs/fix-login`，不是插件安装目录。“项目目录（可选）”默认取当前 DSH 会话目录，可留空；任务在另一份 worktree 时填对应的项目路径，例如 `/Users/me/project`。只看配置或做检查时，任务资料目录也可留空。按钮只执行以下 Go JSON 控制接口：
+正常入口是在 DSH 对话输入框调用 `/flywheel-new`，让助手准备任务说明与验收清单并给出实际路径；审阅后通过 `/flywheel-run` 开始工作。无需先填写面板。初始准备使用当前对话选择的模型，引擎启动后才使用 Flywheel 配置中的各阶段模型；两者不自动同步。
+
+要查看或直接控制已有任务，再在顶部“对话／轨迹”所在的视图栏选择 **Flywheel**；未直接显示时检查该栏的更多视图入口。
+
+| 字段 | 用途 | 是否需要填写 |
+|---|---|---|
+| 任务资料目录 | Spec、packet、验收说明和任务记录所在的 `docs/<slug>/`，例如 `/Users/me/project/docs/fix-login` | 面板启动／刷新／停止需指定；配置与诊断可以留空。由准备 Skill 给出，无需自行编写这些文件才能使用入口 |
+| 项目目录（可选） | 对应源码项目／任务集成 worktree，例如 `/Users/me/project` | 当前源码默认读取会话实际工作目录；只在选择另一项目或 worktree 时覆盖 |
+
+当前源码调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。已发布 0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。面板不自动绑定 Skill 创建的任务；查看它时粘贴 Skill 返回的任务目录，再刷新。两个字段都是项目路径，不是插件安装目录。按钮只执行以下 Go JSON 控制接口：
 
 ```sh
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
@@ -139,7 +150,7 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
 ```
 
-模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话目录；start/status/stop 必须指定任务。输入统一校验，使用 argv 调用，不拼接 shell 命令。打开视图不会启动任务或探测；视图只在点击时读取状态，不自动轮询，也不自动发现其他入口启动的任务。查看已有任务时，选择同一任务目录再刷新。
+模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话当前工作目录；start/status/stop 必须指定任务。`/flywheel {…}` 是直接人工控制命令，与 `/flywheel-new` 等 Skill 入口不同。输入统一校验，使用 argv 调用，不拼接 shell 命令。打开视图不会启动任务或探测；视图只在点击时读取状态，不自动轮询，也不自动发现其他入口启动的任务。
 
 “查看模型配置”展示实际配置来源、展开后的阶段绑定及 provider／channel／权限。“检查安装与配置”仅做本地预检，不启动 SDK；“检查 DSH 接入”额外临时启动 SDK、核对配置／目录／权限后退出。首次安装、升级或排障时按需使用，平时不必每次点击；两项都不向模型发送消息，也不验证账号、额度和实际回答能力。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
 
@@ -166,6 +177,8 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 ## 权限、上下文与报告归档
 
 每个调用使用新的 SDK Session；provider/model/effort 在该进程中固定。v1 不支持 resume、图像/附件输入或 SDK 原生 output schema。文本与报告文件由 Go 的冻结合同和 JSON Schema 验收，不能把 SDK idle 当成验收完成。
+
+SDK 接受模型与 effort 配置不代表远端服务证明了实际推理强度。`ready.reasoningEffort` 是初始化成功后的请求回显；只有实际任务评估才能判断更高 effort 是否改善交付。账号未登录和 token 失效精确归 AUTH，退出账号导致的已知取消事件同样归 AUTH；账号额度不足归 QUOTA。保留原始原因并提示恢复同一账号；默认预设不提供 API Key 后备。
 
 worker 支持 `read-only`、`workspace-write` 和显式 `danger-full-access`。新订阅预设通过 `permissions.mode:full-access` 为全部阶段选择完全权限，approval 固定为 `never`；Kimi print 使用原生 auto，不逐步请求用户点击允许。已有文件缺省仍保留 role-based，需通过[配置迁移](../../docs/configuration.md#将旧配置切换到已有的三种资源)显式采用新方案。受限模式由 Mac 上 DSH 的 Seatbelt bash runner 和 native fs fence 执行，workspace-write 范围是**实际工作目录加 DSH 规定的系统临时区**。full-access 如实记录无 OS 沙箱限制；宿主静态拒绝、账号与操作系统权限不被绕过。
 

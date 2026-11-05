@@ -2,7 +2,7 @@
 name: flywheel-verify
 metadata:
   version: "1.6.0"
-description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use when the user says "/skill:flywheel-verify docs/<slug> [packet]" or wants to re-run acceptance checks.
+description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use for "/flywheel-verify docs/<slug> [packet]" in DSH, "/skill:flywheel-verify docs/<slug> [packet]" in Kimi, or a request to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the Flywheel CLI. No model call; verification commands run under the engine watchdog."
 arguments: slug packet
@@ -13,6 +13,8 @@ arguments: slug packet
 
 Button only: validate + invoke CLI + translate. No loop logic
 here — and no model either: verification is the orchestrator running commands.
+
+DSH 在对话中使用 `/flywheel-verify <任务资料目录> [packet]`；Kimi 使用 `/skill:flywheel-verify <任务资料目录> [packet]`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 

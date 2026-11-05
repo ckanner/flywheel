@@ -271,9 +271,10 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			msg = *res.ErrorMessage
 		}
 		var code errs.ErrorCode
-		if msg != "" && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" {
-			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: msg})
-		} else if res.Settled && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && !res.Cancelled && !res.Truncated && res.Signal == "" && res.CleanupError == "" && res.SpawnError == "" {
+		if (msg != "" || res.ErrorCode != "") && !res.TimedOut && !res.Cancelled && res.SpawnError == "" && res.CleanupError == "" &&
+			(res.ErrorCode == "" || (res.ExitCode != nil && *res.ExitCode == 1 && !res.Truncated && res.Signal == "")) {
+			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: msg, ErrorCode: res.ErrorCode})
+		} else if res.ErrorCode == "" && res.Settled && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && !res.Cancelled && !res.Truncated && res.Signal == "" && res.CleanupError == "" && res.SpawnError == "" {
 			code = ""
 		} else {
 			code = errs.ClassifyError(toSpawnResult(res))

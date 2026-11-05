@@ -2,7 +2,7 @@
 name: flywheel-garden
 metadata:
   version: "1.6.0"
-description: Analyze retro.md failure patterns and knowledge-asset decay (AGENTS.md/skills), producing garden-proposals.md for human review — proposals only, never auto-applied. Use when the user says "/skill:flywheel-garden" or wants to distill loop learnings into skill proposals.
+description: Analyze retro.md failure patterns and knowledge-asset decay (AGENTS.md/skills), producing garden-proposals.md for human review — proposals only, never auto-applied. Use for "/flywheel-garden" in DSH, "/skill:flywheel-garden" in Kimi, or a request to distill loop learnings into skill proposals.
 whenToUse: 当用户想把 retro 里反复出现的失败模式提炼成 skill/验收规则提案、或清理 AGENTS.md/skills 腐烂内容时使用。
 compatibility: "Requires the Flywheel CLI and configured Garden harness; default Kimi CLI with subscription login."
 arguments: slug
@@ -13,6 +13,8 @@ arguments: slug
 Button only: validate + invoke CLI + translate. No loop logic
 here. Garden **只产提案，绝不自动应用**——改的是 loop 自己的知识资产，
 应用权在人。
+
+DSH 在对话中使用 `/flywheel-garden <任务资料目录>`；Kimi 使用 `/skill:flywheel-garden <任务资料目录>`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
@@ -54,7 +56,7 @@ git -C "$repo_dir" worktree list --porcelain
    - 提案校验未过（缺证据引用）时明确指出：原始输出仍在文件里，但证据不足
      的提案不该应用；
    - 提醒：审完提案后，由用户或获授权宿主在选定任务分支实施 AGENTS.md/skills/契约模板的修改；改完可考虑
-     把高频教训沉淀进 `/skill:flywheel-new` 的生成习惯。
+     把高频教训沉淀进 `flywheel-new` 的生成习惯。
 
 模型与知识资产读取的 CWD 是 `repo_dir`，提案由 Go 写入 `task_dir`。这不是
 Execute 或 Review，不运行 packet 验收／本地 `ff-only` 合并，不自动推送或合并 PR。

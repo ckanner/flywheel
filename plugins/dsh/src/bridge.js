@@ -75,7 +75,10 @@ export class Runtime {
     });
     this.child.on('close', (code, signal) => {
       this.closed = true;
-      if (this.buffer.length) this.fail(new BridgeError('TRANSPORT', 'DSH stdout ended in an incomplete frame'));
+      if (this.buffer.length) {
+        this.protocolFailure ??= new BridgeError('TRANSPORT', 'DSH stdout ended in an incomplete frame');
+        this.fail(this.protocolFailure);
+      }
       this.fail(new BridgeError('TRANSPORT', `DSH transport closed (exit=${code}, signal=${signal ?? 'none'})`));
       this.resolveExit(this.exit ?? { code, signal });
     });
@@ -265,7 +268,14 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
           settled = false;
           failure ??= { code: 'TRANSPORT', message: 'DSH runtime did not prove graceful shutdown of its managed processes' };
         }
-        if (runtime.protocolFailure) failure ??= normalizedError(runtime.protocolFailure);
+        if (runtime.protocolFailure) {
+          // A provider result cannot attest a damaged SDK stream. Keep its
+          // diagnosis as context, while protocol and cleanup facts stay independent.
+          const protocolFailure = normalizedError(runtime.protocolFailure);
+          failure = failure && failure.message !== protocolFailure.message
+            ? { ...protocolFailure, message: `${protocolFailure.message}; preceding failure: ${failure.message}` }
+            : protocolFailure;
+        }
       } catch (error) {
         settled = false;
         failure = normalizedError(error);

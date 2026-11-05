@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -58,6 +59,9 @@ func IsRetryable(code ErrorCode) bool { return RetryableCodes[code] }
 // ShouldFallback 判断错误码是否触发渠道降级。
 func ShouldFallback(code ErrorCode) bool { return FallbackCodes[code] }
 
+// IsKnownCode checks the closed wire vocabulary before a driver trusts a code.
+func IsKnownCode(code ErrorCode) bool { return slices.Contains(AllCodes, code) }
+
 // SpawnResult 一次 spawn 的可观察结果，用于错误分类。
 type SpawnResult struct {
 	ExitCode   int
@@ -66,6 +70,7 @@ type SpawnResult struct {
 	Stderr     string
 	Stdout     string
 	SpawnError error
+	ErrorCode  ErrorCode // validated structured harness failure; never parsed from message text
 }
 
 // statusCode 构造词边界状态码匹配：`(^|[^0-9A-Za-z.,])429([^0-9A-Za-z.,]|$)`。
@@ -104,13 +109,20 @@ func timeoutNegated(haystack string, start int) bool {
 }
 
 // ClassifyError 将 spawn 结果归一化为稳定错误码；无错误特征时返回 ""。
-// 优先级：timedOut > spawnError > 文本模式 > signal > 非零退出码(TRANSPORT)。
+// 优先级：timedOut > spawnError > 结构化码（正常 exit 1 且无 signal）> 文本模式 > signal > 非零退出码。
+// 无结构化码时保留旧文本 driver 的优先级；非法非空码是协议失败，不能靠文案补救。
 func ClassifyError(r SpawnResult) ErrorCode {
 	if r.TimedOut {
 		return TIMEOUT
 	}
 	if r.SpawnError != nil {
 		return TRANSPORT
+	}
+	if r.ErrorCode != "" {
+		if !IsKnownCode(r.ErrorCode) || r.Signal != "" || r.ExitCode != 1 {
+			return TRANSPORT
+		}
+		return r.ErrorCode
 	}
 	haystack := r.Stderr + "\n" + r.Stdout
 	for _, p := range patterns {

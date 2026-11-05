@@ -31,9 +31,11 @@
     "CHANGELOG.md",
     "docs/getting-started.md",
     "docs/configuration.md",
+    "docs/model-policy.md",
     "docs/workflow.md",
     "docs/en/getting-started.md",
     "docs/en/configuration.md",
+    "docs/en/model-policy.md",
     "docs/en/workflow.md",
     "docs/examples/create-first-task.sh"
   ],

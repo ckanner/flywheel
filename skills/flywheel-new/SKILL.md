@@ -2,7 +2,7 @@
 name: flywheel-new
 metadata:
   version: "1.7.0"
-description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use when the user says "把 XX 需求做成 flywheel 任务" or wants to create a new flywheel task.
+description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use for "/flywheel-new" in DSH, "/skill:flywheel-new" in Kimi, or a request to create a new flywheel task.
 whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
 compatibility: "Requires the Flywheel CLI with embedded contract templates, write access, and Git in the target repository."
 arguments: requirement
@@ -12,6 +12,10 @@ arguments: requirement
 
 You are the task generator. You turn a **frozen-intent** requirement into Flywheel
 contract files. You contain no loop logic — the orchestrator runs the loops later.
+
+DSH 在对话中使用 `/flywheel-new <需求>`，也可从输入框的 `/` 菜单选择；
+Kimi 使用 `/skill:flywheel-new <需求>`。正常准备无需先填写 Flywheel 视图：
+任务资料目录由本 skill 在核实的任务 worktree 中创建，完成后报告其真实绝对路径。
 
 > 参数经 kimi 命名参数注入正文：`$requirement`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
@@ -63,6 +67,8 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 先建立任务工作区。已有明确选择与 Git 授权继续沿用；仅目标或归属无法判断时才问。
 以下调研、验收试跑和契约保存都在 `repo_dir` 中完成，`task_dir` 必须是其内部的
 `docs/<slug>`。在结果中报告这两个绝对路径及实际分支，供后续启动／恢复复用。
+仅在 shell 中 `cd` 或使用 `git -C` 不代表已改变 DSH 会话的当前工作目录；
+后续 skill 继续使用所报告的绝对任务路径，不依赖视图自动关联本次任务。
 
 ### 生成与冻结
 
@@ -118,6 +124,11 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
    请审 spec 与 packet 的需求编号、验收命令、边界与试跑证据。**冻结点 = 人审契约**——
    不要求源素材预先定稿；用户审过契约即冻结，此后范围变更只能走 Plan Loop。
    已批准的同一契约沿用已有审批，不重复索取；本 skill 不自行启动运行。
+
+获批后在 DSH 对话使用 `/flywheel-run <上述 task_dir>`，查看进度用
+`/flywheel-status <同一路径>`。若用户另选 Flywheel 视图，把 `task_dir` 填入
+“任务资料目录”；只有 DSH 当前工作目录就是 `repo_dir` 时，“项目目录”才可留空。
+视图的目录选择不会随 skill 调用自动更新。
 
 ## 交接边界
 

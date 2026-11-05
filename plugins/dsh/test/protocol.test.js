@@ -68,6 +68,69 @@ test('an idle or max-token interval is not successful completion', () => {
   assert.throws(() => fold.finish('p'), error => error.code === 'EMPTY_RESPONSE');
 });
 
+function failedFold(reason) {
+  const fold = new SessionFold('session');
+  fold.accept({ sessionId: 'session', event: { seq: 0, type: 'agent/inbox/spliced',
+    data: { inserted: [{ id: 'prompt' }] } } });
+  fold.accept({ sessionId: 'session', event: { seq: 1, type: 'turn/end',
+    data: { turn: 0, reason } } });
+  return fold;
+}
+
+test('native account failures retain their diagnostic and supply precise recovery guidance', () => {
+  for (const [nativeCode, code, guidance] of [
+    ['ACCOUNT_SIGN_IN_REQUIRED', 'AUTH', /Sign in to DeepSeek in DSH.*SDK runtime.*endpoint permits account authentication/],
+    ['ACCOUNT_TOKEN_INVALID', 'AUTH', /Sign in again in DSH.*renewed login/],
+    ['ACCOUNT_QUOTA', 'QUOTA', /Check the DeepSeek account balance and usage/],
+  ]) {
+    // Classification must use the durable code even when the message says nothing about auth/quota.
+    const message = 'Native provider detail: request rejected.';
+    const fold = failedFold({ kind: 'error', error: { code: nativeCode, message } });
+    assert.throws(() => fold.finish('prompt'), error => {
+      assert.equal(error.code, code);
+      assert.ok(error.message.includes(`${nativeCode}: ${message}`));
+      assert.match(error.message, guidance);
+      return true;
+    });
+  }
+});
+
+test('only the native account sign-out cancellation hook becomes an authentication failure', () => {
+  const fold = failedFold({ kind: 'aborted', reason: { kind: 'hook', reason: 'deepseek-account/signed-out' } });
+  assert.throws(() => fold.finish('prompt'), error => {
+    assert.equal(error.code, 'AUTH');
+    assert.match(error.message, /deepseek-account\/signed-out/);
+    assert.match(error.message, /Sign in again in DSH.*SDK runtime/);
+    return true;
+  });
+  for (const reason of [
+    { kind: 'aborted', reason: { kind: 'hook', reason: 'other-plugin/signed-out' } },
+    { kind: 'aborted', reason: { kind: 'user', reason: 'deepseek-account/signed-out' } },
+    { kind: 'blocked', reason: { kind: 'hook', reason: 'deepseek-account/signed-out' } },
+  ]) {
+    assert.throws(() => failedFold(reason).finish('prompt'), error => {
+      assert.equal(error.code, 'SERVER');
+      assert.equal(error.message, `DSH turn ended as ${reason.kind}`);
+      return true;
+    });
+  }
+});
+
+test('account-like text and unknown account codes do not override structured error classification', () => {
+  for (const [nativeCode, code] of [
+    ['ACCOUNT_UNKNOWN', 'SERVER'], ['ACCOUNT_TOKEN_INVALID_EXTRA', 'SERVER'],
+    ['account_token_invalid', 'SERVER'], ['TRANSPORT', 'TRANSPORT'],
+    ['MISSING_CREDENTIAL', 'AUTH'], ['INVALID_CREDENTIAL', 'AUTH'], ['QUOTA', 'QUOTA'],
+  ]) {
+    const message = 'ACCOUNT_TOKEN_INVALID / ACCOUNT_QUOTA / deepseek-account/signed-out';
+    assert.throws(() => failedFold({ kind: 'error', error: { code: nativeCode, message } }).finish('prompt'), error => {
+      assert.equal(error.code, code);
+      assert.equal(error.message, message);
+      return true;
+    });
+  }
+});
+
 test('permission acknowledgement must match actual cwd, policy, approval and full confinement', () => {
   const fold = new SessionFold('s');
   const req = request('/tmp/workspace');

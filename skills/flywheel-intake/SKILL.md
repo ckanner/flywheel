@@ -2,7 +2,7 @@
 name: flywheel-intake
 metadata:
   version: "1.6.0"
-description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use when the user says "/skill:flywheel-intake" or wants to discover new flywheel task candidates.
+description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use for "/flywheel-intake" in DSH, "/skill:flywheel-intake" in Kimi, or a request to discover new flywheel task candidates.
 whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
 compatibility: "Requires the Flywheel CLI and configured Intake harness; default DSH DeepSeek Flash. GitHub issue sources also need gh."
 arguments: slug source
@@ -13,7 +13,9 @@ arguments: slug source
 
 Button only: validate + invoke CLI + translate. No loop logic
 here — and **no freezing**: Intake 只产候选与分诊建议，冻结需求永远走
-`/skill:flywheel-new` + 人审。
+`flywheel-new` + 人审。
+
+DSH 在对话中使用 `/flywheel-intake <任务资料目录> [source]`；Kimi 使用 `/skill:flywheel-intake <任务资料目录> [source]`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$source`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
@@ -57,7 +59,7 @@ git -C "$repo_dir" worktree list --porcelain
    - 每条新候选的分诊建议：建议接 / 建议不接 / 需人判断 + 一句话理由；
    - 明确告诉用户：**候选不是任务**。要接的候选，到
      `docs/<slug>/triage-inbox.md` 把该条的 `- approval:` 改成 `approved`，
-     然后用 `/skill:flywheel-new` 从 approved 候选生成契约（仍需人审冻结）。
+     然后用 `flywheel-new` 从 approved 候选生成契约（仍需人审冻结）。
 
 本模块的 CWD 是 `repo_dir`，不会启动 Execute／L1／Review 或本地 packet 合并，
 也不自动创建／合并 PR。核对 `permissions.mode`：`role-based`（已有文件缺省）下

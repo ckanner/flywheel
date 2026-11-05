@@ -19,7 +19,7 @@ Flywheel 将通过验收的 packet 合入任务分支；整个需求通过终验
 |---|---|---|
 | 跨模块设计、协议与生命周期、复杂边界和验收设计 | `chatgpt` / `gpt-6-astra` | `high` |
 | 范围清楚、已有代码与模式可参考的普通功能 | `chatgpt` / `gpt-6.1-sol` | `high` |
-| 很明确的小修复、文档或重复模式的补充 | `deepseek-official` / `deepseek-flash` | `high` |
+| 很明确的小修复、文档或重复模式的补充 | `deepseek-account` / `deepseek-flash` | `high` |
 
 这是工程起点，不是本项目完成的模型 benchmark。准备错误可能影响多个 packet，
 所以复杂需求值得在冻结契约前多检查一次；不必为每个小单元重复进行完整架构规划。
@@ -29,6 +29,9 @@ Flywheel 将通过验收的 packet 合入任务分支；整个需求通过终验
 
 开始前在 DSH 当前账号的模型目录核对 provider、精确模型 ID 和可选 effort。
 目录与实际请求支持也可能有差异，不能把配置示例当成账号可用性证明。
+这里的 DeepSeek 选择复用已登录、已充值的 DSH 账号；`deepseek-official` API
+是另行显式配置的可选渠道，默认预设没有通往它的后备链。用户自定义后备策略仍需显式配置。`high` 是尚未经本项目 A/B
+验证的工程基线；不要自动把所有阶段提高到 `xhigh` 或 `max`。
 `Codex Pro` 是插件名，不会自动选择 Pro 模型或最高思考档。
 默认的运行期 Plan 仍为 Kimi CLI `kimi-code/k3.1-pro / high`，详见
 [默认配置](../templates/flywheel.config.example.json)；Kimi 别名也须在本机可用。
@@ -72,10 +75,20 @@ worktree，但创建失败时会记录原因并回退 `in-place`；它没有“�
 flywheel skills read flywheel-new
 ```
 
-可向当前 DSH Agent 提出：
+在 DSH 对话输入框发送（也可从 `/` 菜单选择技能）：
 
-> 按 flywheel-new 为本需求建立 docs/my-feature。先查真实代码，写清需求、
-> packet、路由、修改边界和可执行验收；试跑 L1 并记录结果，完成后供我审阅。
+```text
+/flywheel-new 为本需求建立 docs/my-feature。先查真实代码，写清需求、packet、路由、修改边界和可执行验收；试跑 L1 并记录结果，完成后供我审阅。
+```
+
+**无需先填写 Flywheel 视图。** 助手按 skill 创建或复用任务 worktree，生成
+`docs/my-feature/spec.md` 和 task packets，并报告项目根 `repo_dir` 与任务资料
+目录 `task_dir` 的真实绝对路径。前者是代码与工作区，后者保存本任务的契约、
+状态和报告；一个项目可以包含多个任务资料目录，不能把项目根直接当成任务目录。
+
+DSH 的正式技能语法是 `/flywheel-new`，不是 `/skill:flywheel-new`；后者是
+Kimi 的语法。依据见 [DSH 技能入口](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-skill/README.md)
+和 [Kimi slash commands](https://moonshotai.github.io/kimi-code/en/reference/slash-commands.html)。
 
 审阅至少覆盖：需求与 packet 的对应、L1/L2/L3 命令、失败出口、冻结验收路径，
 以及模型和权限配置。100% 覆盖率如为任务要求，应有实际可执行的门禁命令。
@@ -112,7 +125,17 @@ gh pr create --draft --base main --head task/my-feature
 
 ## 5. 从同一个任务 worktree 启动
 
-当前目录必须仍是 `repo-my-feature`，任务目录也应位于这个 worktree 中：
+契约审阅并保存后，可继续在 DSH 对话逐条发送以下技能调用，将示例路径替换为
+准备阶段报告的真实 `task_dir`。启动后再查询，需要停止时调用最后一项：
+
+```text
+/flywheel-run /absolute/path/to/repo-my-feature/docs/my-feature
+/flywheel-status /absolute/path/to/repo-my-feature/docs/my-feature
+/flywheel-stop /absolute/path/to/repo-my-feature/docs/my-feature
+```
+
+这些技能从实际任务目录解析项目根并调用 CLI，无需先打开或填写视图。
+如果直接使用终端，当前目录必须仍是 `repo-my-feature`，任务目录也在这个 worktree 中：
 
 ```sh
 flywheel config inspect --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --json
@@ -122,8 +145,12 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 ```
 
 预检不发送模型推理，不能证明账号额度或真实模型调用已经通过。启动会实际调用
-所选模型。在 DSH 面板操作时，也填写任务 worktree 的绝对路径及其内部任务路径，
-不要把原 checkout 的 `docs/my-feature` 与新 worktree 的 `cwd` 混用。
+所选模型。另选 DSH 的 Flywheel 视图时，把准备阶段给出的 `task_dir` 填入
+“任务资料目录”；“项目目录”可留空，前提是 DSH 当前工作目录已经是同一个
+`repo_dir`。当前源码通过公开 `workingDirectory.get(session)` 读取它；显式路径
+优先，不从任务名或历史对话猜路径。仅在 shell 中 `cd` 不会改变 DSH 的会话目录，
+未切换会话工作目录时应填入真实 `repo_dir`。不要混用原 checkout 的账本和新 worktree。
+技能调用不会自动选择视图中的任务，视图也不自动发现或启动任务。
 
 每个 packet 的实现、L1 与独立 Review 通过后，引擎提交并快进合入任务分支。
 所有 packet 完成后仍需里程碑 L2/L3 与 Judge；单元合并不代表整个需求已通过。
@@ -167,7 +194,8 @@ packet worktree 贯穿该单元的执行、验收与评审；完成交付才由�
 
 Skill 的启动检查由宿主 Agent 遵守，CLI／GUI 直接调用不会自动执行这些 skill
 正文，也不会自动创建外层任务分支。直接使用控制接口时仍须显式选择正确的
-`cwd`／`taskDir`；引擎现有的 `in-place` 回退边界见第 2 节。只读查询和停止
+`taskDir` 与正确的 `cwd`（或经核实的当前会话目录默认值）；引擎现有的
+`in-place` 回退边界见第 2 节。只读查询和停止
 不受开发分支检查阻碍，便于处理异常任务。
 
 ## 6. 完整终验后再合并 PR

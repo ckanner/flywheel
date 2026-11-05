@@ -10,6 +10,8 @@
 
 订阅预设迁移命令与 `permissions.mode` 从 **0.28.2** 开始提供。升级不会自动替换已有配置；先预览 `flywheel config migrate --preset subscriptions`，确认模型和完全权限后再以 `--apply` 应用并备份。
 
+**本轮源码修复尚未发布**：下文的 `deepseek-account` 默认及“项目目录留空读取会话当前工作目录”对应包含本轮修复的构建。已发布 `0.28.2` 仍默认 `deepseek-official`，留空目录取会话最初打开的项目；使用它时应显式核对实际配置并填写正确 worktree 路径。合并源码不会更新已安装包。
+
 ## 目录
 
 1. [准备运行环境](#1-准备运行环境)
@@ -36,7 +38,7 @@
 | SDK profile 的 DeepSeek 和 ChatGPT provider | 默认实现／评审使用；配置与授权见下一节 |
 | Go 1.27 或更高 | 仅本文的 Go 示例和源码构建需要；npm 安装 Flywheel 不需要 Go 工具链 |
 
-安装器的前提是已有 Node／npm 和桌面 DSH；模型渠道可在安装后补齐。CLI 的登录和安装使用各自正式流程。Kimi 订阅、ChatGPT 订阅和 DeepSeek API 是三条独立渠道；安装 Flywheel 不会替这些工具登录、复制凭证或替换桌面程序。只运行默认小任务时不会使用 `hard` 路由，但所选 Plan、Execute、Review、Judge 均需要可用。
+安装器的前提是已有 Node／npm 和桌面 DSH；模型渠道可在安装后补齐。CLI 的登录和安装使用各自正式流程。默认复用 Kimi 订阅、ChatGPT 订阅和已登录、已充值的 DeepSeek 账号；DeepSeek API 是需要显式配置的可选渠道。安装 Flywheel 不会替这些工具登录、复制凭证或替换桌面程序。只运行默认小任务时不会使用 `hard` 路由，但所选 Plan、Execute、Review、Judge 均需要可用。
 
 ## 2. 一条命令安装
 
@@ -103,7 +105,9 @@ flywheel setup --no-global
 
 ### 原生 SDK profile
 
-worker 默认使用独立的 `sdk` profile。桌面已安装 provider，不代表 SDK profile 也已加载或授权。DeepSeek 使用 `deepseek-official` provider；GPT 原生路径需在 SDK profile 中配置 ChatGPT adapter，例如本轮核对的版本：
+worker 默认使用独立的 `sdk` profile。标准 SDK 叠加 `base`，已包含 DeepSeek 的账号和 API adapter。当前源码为 Flash 明确选择 `provider: "deepseek-account"`、`model: "deepseek-flash"`，复用已登录、已充值的账号；`deepseek-official` 仅用于显式选择 API key 的配置，没有自动切换付费渠道的后备路径。
+
+标准桌面和 SDK 使用同一个 `DSH_HOME` 时，可共享默认 `<DSH_HOME>/.credentials.yaml` 中的既有账号登录，不必复制 token 或把 worker 切到 `desktop` profile。自定义 home、profile 或凭证存储仍需核对。桌面当前选中的模型不会传给 SDK；Flywheel 使用自己的实际模型绑定，查看 `config inspect` 或视图的“查看模型配置”。GPT 原生路径需在 SDK profile 中配置 ChatGPT adapter，例如本轮核对的版本：
 
 ```sh
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
@@ -169,6 +173,8 @@ flywheel skills read flywheel-run
 
 安装输出会给出 `.agents/skills` 的准确位置。按宿主支持的发现规则启用目录，不能从文件已复制推断 DSH／Kimi 已自动发现。也可直接使用 Go CLI。
 
+DSH 在对话输入框用 `/flywheel-new`、`/flywheel-run`、`/flywheel-status`，也可从 `/` 菜单选择；Kimi 对应使用 `/skill:flywheel-new` 等语法。技能名相同，调用前缀随宿主不同。正常准备、启动和查状态可以全部在对话里完成，**不必先填写 Flywheel 视图**；视图用于另外打开已经准备好的任务。可复制的完整流程见[工作流](workflow.md#3-在任务-worktree-中准备并审阅契约)。
+
 快照的 `.flywheel-snapshot` 清单记录文件内容 hash、类型与模式。重跑会跳过相同内容，更新未被修改的自有快照；用户修改、新增／删除文件、链接、未标记目录或损坏清单会保留并报告冲突。每个 skill 独立采用暂存、rename 和失败回滚，不会覆盖手工修改。旧纯文本标记只有在整个目录与当前内嵌内容相同时才能安全迁移。`--force` 只用于 `--link` 开发模式，不能绕过默认保护。安装会在全局配置缺失时创建它，但不会改写已有配置。
 
 ## 5. 运行无推理检查
@@ -192,13 +198,15 @@ flywheel doctor --cwd "$PWD" --probe --json
 flywheel doctor --cwd "$PWD" --task-dir docs/add --probe --json
 ```
 
-尚无 packet 时按规划前状态预检默认执行路由，规划后应再检查。坏契约会报告阻断项，不能用探测通过代替 schema 校验。若 cwd、权限、provider 或沙箱检查失败，先修正相应配置，不把权限改成 full access 绕过。桌面面板也提供“查看配置／检查环境／SDK 无推理探测”，使用同一个 CLI 后端；GUI 与终端环境不同的问题应在面板内复验。
+尚无 packet 时按规划前状态预检默认执行路由，规划后应再检查。坏契约会报告阻断项，不能用探测通过代替 schema 校验。若 cwd、权限、provider 或沙箱检查失败，先修正相应配置，不把权限改成 full access 绕过。桌面视图的“配置与排查（按需）”提供“查看模型配置／检查安装与配置／检查 DSH 接入”，使用同一个 CLI 后端；安装、改配置或排错时按需使用，不是每次任务都必须手点的步骤。GUI 与终端环境不同的问题应在视图内复验。
 
 这允许在准备契约时提前排查安装，但正式启动仍需至少一个已审阅的合法 packet。完成下一节的小任务准备后，再运行带 `--task-dir` 的检查。
 
 ## 6. 准备首个小任务
 
 已有业务仓库应先建立任务集成分支和独立 worktree，再生成契约；启动时的 `cwd` 指向该 worktree。完整步骤见[从需求准备到 PR 合并](workflow.md)，下面的小仓库示例用于首次运行验收。
+
+正常在 DSH 对话中发送 `/flywheel-new` 加上实际需求，助手按 skill 创建或复用任务 worktree，准备 `docs/<slug>/spec.md` 与 task packets，然后给出两个真实绝对路径：**项目目录**是代码所在 worktree，**任务资料目录**是其中保存本任务契约和后续状态／报告的 `docs/<slug>`。无需自己预先创建空目录或填写 UI；先审阅契约，再用这份真实路径启动。
 
 首次建议使用单独的小仓库，便于分清安装问题和业务代码问题。npm 包附带的准备脚本会创建一个 Go 加法函数任务：初始实现故意错误，执行者需修复实现并补普通单测；独立 acceptance 测试不可修改。本示例需要 Go 1.27 或更高。
 
@@ -253,7 +261,9 @@ flywheel control start --task-dir "$PWD/docs/add" --cwd "$PWD"
 flywheel control status --task-dir "$PWD/docs/add" --cwd "$PWD"
 ```
 
-`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。也可以在顶部 **Flywheel** 视图填入同样两个绝对路径，按需展开“模型配置与环境检查”，再点击“启动／刷新状态／停止”。视图区分未初始化、运行、已完成、暂停、停止和升级，标明最近刷新时间；它不会自动轮询。
+在 DSH 对话中也可使用 `/flywheel-run <任务资料绝对路径>`、`/flywheel-status <同一路径>`，需要停止时用 `/flywheel-stop <同一路径>`。把占位内容替换成准备阶段给出的真实路径；这些技能会解析正确的项目根，不依赖先填写视图。
+
+`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。另选顶部 **Flywheel** 视图时，在“任务资料目录”填写同一个 `task_dir`。“项目目录”可留空，前提是 DSH 会话的当前工作目录已经是该任务的 `repo_dir`；任务在其他 worktree 时填写助手给出的项目路径。仅在 shell 中 `cd` 不会改变 DSH 的会话目录，技能也不会自动选择视图中的任务。按需展开“配置与排查（按需）”，再点击“启动／刷新状态／停止”。视图区分未初始化、运行、已完成、暂停、停止和升级，标明最近刷新时间；它不会自动轮询。
 
 宿主保留会话绑定期间，路径草稿与快照会按会话保留，切换“对话／轨迹／Flywheel”不丢失；重新载入插件或桌面后可能需要重新选择路径。修改路径清除旧结果并忽略迟到响应，不会停止旧任务。每个会话只等待一个控制请求；启动或停止等待期间锁定目录输入。
 

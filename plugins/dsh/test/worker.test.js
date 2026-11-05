@@ -79,6 +79,105 @@ for (const scenario of ['empty', 'missing-terminal', 'max-tokens', 'corrupt-tail
   });
 }
 
+for (const [scenario, code, evidence, guidance] of [
+  ['account-sign-in-required', 'AUTH', 'ACCOUNT_SIGN_IN_REQUIRED', /Sign in to DeepSeek in DSH/],
+  ['account-token-invalid', 'AUTH', 'ACCOUNT_TOKEN_INVALID', /Sign in again in DSH/],
+  ['account-signed-out', 'AUTH', 'deepseek-account/signed-out', /Sign in again in DSH/],
+  ['account-quota', 'QUOTA', 'ACCOUNT_QUOTA', /Check the DeepSeek account balance and usage/],
+]) {
+  test(`${scenario}: durable SDK failure reaches the worker without rerouting or retrying`, async t => {
+    const { request, options, frames, methods } = await setup(t, scenario);
+    const result = await runWorker({ ...request, provider: 'deepseek-account' }, options);
+    assert.equal(result.status, 'error');
+    assert.equal(result.settled, true);
+    assert.equal(result.error.code, code);
+    assert.ok(result.error.message.includes(evidence));
+    assert.match(result.error.message, guidance);
+    assert.equal(result.usage, null);
+    assert.equal(result.costUsd, null);
+    assert.equal(result.text, '');
+    assert.equal(frames[0].provider, 'deepseek-account');
+    assert.equal(frames.at(-1).error.code, code);
+    assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
+  });
+}
+
+test('account-like JSON-RPC text without a durable native code remains a transport error', async t => {
+  const { request, options, methods } = await setup(t, 'account-code-in-rpc-message');
+  const result = await runWorker({ ...request, provider: 'deepseek-account' }, options);
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'TRANSPORT');
+  assert.equal(result.error.message, 'initialize: ACCOUNT_TOKEN_INVALID: native detail without a durable error code');
+  assert.deepEqual(await methods(), ['initialize', 'shutdown']);
+});
+
+for (const tail of ['corrupt', 'incomplete']) {
+  for (const scenario of ['shutdown', 'account-token-invalid', 'account-quota']) {
+    test(`${scenario}: ${tail} SDK shutdown tail overrides the model outcome`, async t => {
+      const { request, options, frames, methods } = await setup(t, `${scenario}-${tail}-tail`);
+      const result = await runWorker({ ...request, provider: 'deepseek-account' }, options);
+      assert.equal(result.status, 'error');
+      assert.equal(result.settled, true, 'graceful cleanup remains independent of protocol validity');
+      assert.equal(result.error.code, 'TRANSPORT');
+      assert.match(result.error.message, tail === 'corrupt' ? /invalid DSH frame/ : /incomplete frame/);
+      if (scenario !== 'shutdown') {
+        assert.match(result.error.message, /preceding failure: ACCOUNT_(?:TOKEN_INVALID|QUOTA)/);
+      }
+      assert.equal(frames.at(-1).error.code, 'TRANSPORT');
+      assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
+    });
+  }
+
+  test(`${tail} SDK shutdown tail does not erase unconfirmed cleanup`, async t => {
+    const { request, options } = await setup(t, `account-quota-${tail}-tail-unclean-exit`);
+    const result = await runWorker({ ...request, provider: 'deepseek-account' }, options);
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'TRANSPORT');
+    assert.equal(result.settled, false);
+    assert.match(result.error.message, /preceding failure: ACCOUNT_QUOTA/);
+  });
+
+  test(`${tail} SDK shutdown tail cannot replace explicit worker cancellation`, async t => {
+    const { request, options, methods } = await setup(t, `account-token-invalid-${tail}-tail`);
+    const controller = new AbortController();
+    const original = options.emit;
+    options.emit = frame => {
+      original(frame);
+      if (frame.event?.type === 'turn/end') controller.abort();
+    };
+    const result = await runWorker({ ...request, provider: 'deepseek-account' }, { ...options, signal: controller.signal });
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.settled, true);
+    assert.equal(result.error.code, 'TRANSPORT');
+    assert.match(result.error.message, /preceding failure: worker cancelled/);
+    assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'shutdown']);
+  });
+}
+
+test('explicit worker cancellation remains cancelled when an account failure arrives', async t => {
+  for (const scenario of ['account-token-invalid', 'account-signed-out']) {
+    const { request, options, methods } = await setup(t, scenario);
+    const controller = new AbortController();
+    const original = options.emit;
+    let terminal;
+    options.emit = frame => {
+      original(frame);
+      if (frame.event?.type === 'turn/end') {
+        terminal = frame.event.data.reason;
+        controller.abort();
+      }
+    };
+    const result = await runWorker({ ...request, provider: 'deepseek-account' }, { ...options, signal: controller.signal });
+    assert.ok(terminal);
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.settled, true);
+    assert.equal(result.error.message, 'worker cancelled');
+    const requests = await methods();
+    assert.equal(requests.filter(method => method === 'session/prompt').length, 1);
+    assert.equal(requests.at(-1), 'shutdown');
+  }
+});
+
 test('unknown provider usage survives a successful call as null', async t => {
   const { request, options } = await setup(t, 'unknown-usage');
   const result = await runWorker(request, options);

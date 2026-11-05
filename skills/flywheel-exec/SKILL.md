@@ -2,7 +2,7 @@
 name: flywheel-exec
 metadata:
   version: "1.7.0"
-description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use when the user says "/skill:flywheel-exec docs/<slug> [packet]" or wants to run just one execution unit.
+description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
 arguments: slug packet
@@ -12,6 +12,8 @@ arguments: slug packet
 # flywheel-exec — 只触发 Execute Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+DSH 在对话中使用 `/flywheel-exec <任务资料目录> [packet]`；Kimi 使用 `/skill:flywheel-exec <任务资料目录> [packet]`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$packet`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 

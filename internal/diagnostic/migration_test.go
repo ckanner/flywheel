@@ -29,6 +29,11 @@ func TestMigrationUsesInspectionDiscoveryAndShowsEffectiveBindings(t *testing.T)
 	for _, binding := range preview.Configuration.Bindings {
 		assert.NotEqual(t, "zcode", binding.Harness)
 		assert.Equal(t, "danger-full-access", binding.PermissionMode)
+		if binding.ID == "loops.intake" || binding.ID == "routes.default" {
+			assert.Equal(t, "deepseek-account", binding.Provider)
+			assert.Equal(t, "deepseek-account", binding.Channel)
+			assert.Equal(t, "deepseek-flash", binding.Model)
+		}
 	}
 	options.Apply, options.ExpectSHA256 = true, preview.SHA256
 	applied, err := MigrateContext(context.Background(), options)
