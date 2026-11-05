@@ -4,7 +4,7 @@
 
 本页面向维护者。普通用户从 npm 安装，见[入门教程](getting-started.md)；不需要下载 Actions artifact 或手工解压 tgz。
 
-当前 UI 修复的统一发行目标为 **0.28.1**。源码准备和本机门禁见 [0.28.1 记录](validation/2026-11-04-release-0.28.1.md)；该记录不代替 npm 上传、latest 提升或桌面验收。0.28.1 已包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
+当前订阅模型与配置迁移修复的统一发行目标为 **0.28.2**，本机复核见 [0.28.2 记录](validation/2026-11-04-release-0.28.2.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.2 已包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
 
 ## 1. 发布身份
 

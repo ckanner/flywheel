@@ -64,9 +64,9 @@ func migrationFixture(t *testing.T, raw string) (MigrationOptions, string) {
 
 func migrationHooks(t *testing.T) {
 	t.Helper()
-	create, rename, link, remove, read, embedded := createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, embeddedTable
+	create, rename, link, remove, read, abs, embedded := createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, embeddedTable
 	t.Cleanup(func() {
-		createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, embeddedTable = create, rename, link, remove, read, embedded
+		createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, embeddedTable = create, rename, link, remove, read, abs, embedded
 	})
 }
 
@@ -465,17 +465,20 @@ func TestMigrationDestinationErrorsAndEarlyConcurrentEdits(t *testing.T) {
 		_, err := Migrate(options)
 		assert.ErrorContains(t, err, "resolve global migration destination")
 	})
-	t.Run("relative global path with removed process directory", func(t *testing.T) {
-		options, _ := migrationFixture(t, "")
-		cwd, err := os.Getwd()
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, os.Chdir(cwd)) })
-		removed := t.TempDir()
-		require.NoError(t, os.Chdir(removed))
-		require.NoError(t, os.Remove(removed))
+	t.Run("relative global path with unavailable process directory", func(t *testing.T) {
+		migrationHooks(t)
+		options, path := migrationFixture(t, "")
 		t.Setenv(GlobalConfigEnv, "relative.json")
-		_, err = Migrate(options)
-		assert.Error(t, err)
+		// Removing cwd does not reliably make Getwd fail on macOS. Exercise
+		// the same path-resolution failure without depending on OS semantics.
+		absMigrationPath = func(string) (string, error) { return "", errors.New("working directory unavailable") }
+		report, err := Migrate(options)
+		assert.ErrorContains(t, err, "working directory unavailable")
+		assert.False(t, report.Applied)
+		assert.Empty(t, report.Backup)
+		entries, readErr := os.ReadDir(filepath.Dir(path))
+		require.NoError(t, readErr)
+		assert.Empty(t, entries, "path resolution failure must not create configuration or backup files")
 	})
 	for _, mode := range []string{"read failure", "early content edit", "parent replaced"} {
 		t.Run(mode, func(t *testing.T) {

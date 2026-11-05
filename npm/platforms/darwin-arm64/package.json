@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel-darwin-arm64",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "description": "Flywheel platform binary — darwin-arm64 (auto-selected via optionalDependencies; do not install directly)",
   "os": [
     "darwin"

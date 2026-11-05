@@ -8,6 +8,8 @@
 
 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。
 
+订阅预设迁移命令与 `permissions.mode` 从 **0.28.2** 开始提供。升级不会自动替换已有配置；先预览 `flywheel config migrate --preset subscriptions`，确认模型和完全权限后再以 `--apply` 应用并备份。
+
 ## 目录
 
 1. [准备运行环境](#1-准备运行环境)

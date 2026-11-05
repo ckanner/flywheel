@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.28.2
+
+- 修复 macOS 迁移故障测试的平台假设：使用路径解析 I/O 注入缝稳定验证无法解析相对全局路径时的无写入行为；生产路径解析仍使用 `filepath.Abs`，不跳过测试或放宽 100% 覆盖率门禁。
+
 - 新增显式 `config migrate --preset subscriptions`：预览并备份更新实际生效的旧模型配置，保留非模型设置，清理旧 Z.AI 后备路径，采用 ChatGPT／Kimi Code K3.1 Pro／DeepSeek Flash 与约定的 thinking；安装报告明确升级会保留旧配置。Kimi 缺省模型同步为 K3.1 Pro。
 - 新模板与显式迁移使用 `permissions.mode: full-access`，通过 DSH／Codex Pro 公开接口落实所有阶段完全权限和无需逐步确认；旧文件缺省保留 role-based。编排、预检、恢复身份与实际权限回执一致，保留冻结验收、候选身份和进程清理门禁。
 - 将 UI 路径和排障文案改为“任务资料目录”“项目目录（可选）”“检查安装与配置”“检查 DSH 接入”，说明任务由对话助手准备、项目目录可沿用会话、检查不发送模型消息，配置表展示可理解的权限名称。

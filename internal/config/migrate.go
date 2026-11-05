@@ -65,6 +65,7 @@ var (
 	linkMigrationFile   = os.Link
 	removeMigrationFile = os.Remove
 	readMigrationFile   = os.ReadFile
+	absMigrationPath    = filepath.Abs
 )
 
 func migrationHash(raw []byte) string {
@@ -149,7 +150,7 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 	}
 	// Abs is infallible for an absolute path; otherwise it can fail when cwd was
 	// removed. A relative FLYWHEEL_CONFIG retains the loader's process-cwd meaning.
-	target, err := filepath.Abs(source)
+	target, err := absMigrationPath(source)
 	if err != nil {
 		return report, err
 	}
