@@ -328,7 +328,9 @@ test("setup cancellation waits for a trapping CLI and cannot publish success", {
 
 test("step timeout rejects a CLI that traps termination as exit zero", { timeout: 15000 }, async t => {
   const f = await installation(t);
-  const report = resultDocument(await f.launch([...f.args, "--no-dsh", "--timeout-ms", "1000"], { TEST_DOCTOR_HANG: "1" }).exit, 1);
+  // Admit the Node-based version/adapter fixtures before timing out the hanging
+  // doctor. This checks timeout/cleanup semantics, not sub-second process startup.
+  const report = resultDocument(await f.launch([...f.args, "--no-dsh", "--timeout-ms", "3000"], { TEST_DOCTOR_HANG: "1" }).exit, 1);
   assert.equal(report.ok, false);
   assert.equal(report.steps.at(-1).name, "preflight");
   assert.match(report.error, /timed out/);

@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { assertFlashAccountProfile } = require('./support/installed-profiles.js');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
@@ -35,7 +36,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
-  assert.equal(JSON.parse(template.stdout).profiles.flash.provider, 'deepseek-account');
+  assertFlashAccountProfile(JSON.parse(template.stdout));
   const config = await run(report.paths.launcher, ['config', 'inspect', '--cwd', context.project, '--json'], context.env, context.project);
   assert.equal(config.code, 0, config.stderr);
   const bindings = JSON.parse(config.stdout).bindings;

@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { assertFlashAccountProfile } = require('./support/installed-profiles.js');
 const { environment, firstInstall, installedRoot, run } = require('./support/install-harness.js');
 
 (async () => {
@@ -21,7 +22,7 @@ const { environment, firstInstall, installedRoot, run } = require('./support/ins
     const cli = path.join(root, 'bin', 'flywheel.js');
     const smoke = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
     assert.equal(smoke.code, 0, smoke.stderr);
-    assert.equal(JSON.parse(smoke.stdout).profiles.flash.provider, 'deepseek-official');
+    assertFlashAccountProfile(JSON.parse(smoke.stdout));
     assert.equal(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version, version);
     console.log(JSON.stringify({ ok: true, version, registry: process.env.FLYWHEEL_NPM_REGISTRY || 'https://registry.npmjs.org',
       skills: 10, actualNpmInstall: true, actualNativeCLI: true, desktopRegistration: 'CLI contract fixture',
