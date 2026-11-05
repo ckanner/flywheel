@@ -20,6 +20,8 @@ test('the six packaged npm candidates install and run from a clean agent environ
   assert.equal(report.ok, true);
   assert.equal(report.authentication, 'unknown');
   assert.equal(report.skills.count, 10);
+  assert.equal(report.configuration.action, 'created');
+  assert.equal(report.configuration.automaticMigration, false);
   assert.equal(report.steps.find(step => step.name === 'dsh-plugin').status, 'ok');
   assert.equal(report.steps.find(step => step.name === 'dsh-plugin').reloadRequired, true);
   assert.equal(report.ready, false, 'missing local harness/account prerequisites must remain visible');
@@ -108,6 +110,10 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.equal(result.skills.count, 10);
     assert.equal(result.paths.launcher, report.paths.launcher);
     assert.deepEqual(await fs.readFile(globalConfig), before);
+    assert.equal(result.configuration.preserved, true);
+    assert.equal(result.configuration.path, globalConfig);
+    assert.match(result.configuration.message, /升级不会替换旧模型/);
+    assert.deepEqual(result.configuration.migration.args.slice(0, 4), ['config', 'migrate', '--preset', 'subscriptions']);
     assert.equal(await fs.readFile(path.join(context.home, '.agents', 'skills', 'flywheel-run', 'SKILL.md'), 'utf8').then(v => v.includes('flywheel run')), true);
   });
 

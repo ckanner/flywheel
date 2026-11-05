@@ -120,7 +120,7 @@ test('the published rc.5 renderer owns the external plugin lifecycle without Har
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)),
     new Set(['flywheel', 'chat', 'trajectory']));
   await act(async () => { unmount = ctx.uiRenderer.mount(container); });
-  assert.match(container.textContent, /任务控制/);
+  assert.match(container.textContent, /Flywheel 任务/);
   assert.equal(requests.length, 0);
   const styleSelector = 'style[data-plugin="@ckanner/dsh-plugin-flywheel"]';
   assert.ok(container.querySelector('[data-slot="conversation.view"]').contains(container.querySelector(styleSelector)));

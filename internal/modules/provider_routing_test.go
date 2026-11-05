@@ -50,32 +50,41 @@ func (d *moduleProviderDriver) Intake(a drivers.CallArgs) drivers.Result { retur
 func (d *moduleProviderDriver) Garden(a drivers.CallArgs) drivers.Result { return d.call(a) }
 
 func TestAdviceModulesRecomputeProvidersAcrossAccountFallback(t *testing.T) {
-	for _, role := range []string{"intake", "garden"} {
-		t.Run(role, func(t *testing.T) {
-			taskDir := t.TempDir()
-			cfg := testConfigT(t, taskDir)
-			cfg.Channels["primary-account"] = config.Channel{Harness: "dsh", Fallback: "backup-account"}
-			cfg.Channels["backup-account"] = config.Channel{Harness: "dsh", Provider: "backup-adapter", Fallback: "codex-account", Models: map[string]string{role: "backup-model"}}
-			cfg.Channels["codex-account"] = config.Channel{Harness: "codex", Models: map[string]string{role: "codex-model"}}
-			driver := &moduleProviderDriver{}
-			m := NewContext(CtxOpts{TaskDir: taskDir, Config: cfg, Drivers: &drivers.Drivers{Intake: driver, Garden: driver}, Sleep: func(int64) {}})
-			result := CallAgent(m, CallOptions{Role: role, Prompt: "advice only", Binding: fallback.Binding{Harness: "dsh", Provider: "explicit-adapter", Channel: "primary-account", Model: "primary-model", Thinking: "high"}})
-			require.True(t, result.OK, "%+v", result)
-			assert.Equal(t, "codex-account", result.Channel)
-			require.Len(t, driver.calls, 3)
-			entries := readMetricsLinesT(t, m.MetricsFile)
-			require.Len(t, entries, 3)
-			for i, expected := range []struct{ channel, provider, reported string }{
-				{"primary-account", "explicit-adapter", "explicit-adapter"},
-				{"backup-account", "backup-adapter", "backup-adapter"},
-				{"codex-account", "", "openai"},
-			} {
-				assert.Equal(t, expected.channel, driver.calls[i].Binding.Channel)
-				assert.Equal(t, expected.provider, driver.calls[i].Binding.Provider)
-				assert.Equal(t, "read-only", driver.calls[i].PermissionMode)
-				assert.Empty(t, driver.calls[i].SessionID)
-				assert.Equal(t, expected.channel, entries[i]["channel"])
-				assert.Equal(t, expected.reported, entries[i]["provider"])
+	for _, permissions := range []string{"role-based", "full-access"} {
+		t.Run(permissions, func(t *testing.T) {
+			for _, role := range []string{"intake", "garden"} {
+				t.Run(role, func(t *testing.T) {
+					taskDir := t.TempDir()
+					cfg := testConfigT(t, taskDir)
+					cfg.Permissions.Mode = permissions
+					cfg.Channels["primary-account"] = config.Channel{Harness: "dsh", Fallback: "backup-account"}
+					cfg.Channels["backup-account"] = config.Channel{Harness: "dsh", Provider: "backup-adapter", Fallback: "codex-account", Models: map[string]string{role: "backup-model"}}
+					cfg.Channels["codex-account"] = config.Channel{Harness: "codex", Models: map[string]string{role: "codex-model"}}
+					driver := &moduleProviderDriver{}
+					m := NewContext(CtxOpts{TaskDir: taskDir, Config: cfg, Drivers: &drivers.Drivers{Intake: driver, Garden: driver}, Sleep: func(int64) {}})
+					result := CallAgent(m, CallOptions{Role: role, Prompt: "advice only", Binding: fallback.Binding{Harness: "dsh", Provider: "explicit-adapter", Channel: "primary-account", Model: "primary-model", Thinking: "high"}})
+					require.True(t, result.OK, "%+v", result)
+					assert.Equal(t, "codex-account", result.Channel)
+					require.Len(t, driver.calls, 3)
+					entries := readMetricsLinesT(t, m.MetricsFile)
+					require.Len(t, entries, 3)
+					for i, expected := range []struct{ channel, provider, reported string }{
+						{"primary-account", "explicit-adapter", "explicit-adapter"},
+						{"backup-account", "backup-adapter", "backup-adapter"},
+						{"codex-account", "", "openai"},
+					} {
+						assert.Equal(t, expected.channel, driver.calls[i].Binding.Channel)
+						assert.Equal(t, expected.provider, driver.calls[i].Binding.Provider)
+						permission := "read-only"
+						if permissions == "full-access" {
+							permission = "danger-full-access"
+						}
+						assert.Equal(t, permission, driver.calls[i].PermissionMode)
+						assert.Empty(t, driver.calls[i].SessionID)
+						assert.Equal(t, expected.channel, entries[i]["channel"])
+						assert.Equal(t, expected.reported, entries[i]["provider"])
+					}
+				})
 			}
 		})
 	}

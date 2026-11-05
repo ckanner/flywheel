@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 新增显式 `config migrate --preset subscriptions`：预览并备份更新实际生效的旧模型配置，保留非模型设置，清理旧 Z.AI 后备路径，采用 ChatGPT／Kimi Code K3.1 Pro／DeepSeek Flash 与约定的 thinking；安装报告明确升级会保留旧配置。Kimi 缺省模型同步为 K3.1 Pro。
+- 新模板与显式迁移使用 `permissions.mode: full-access`，通过 DSH／Codex Pro 公开接口落实所有阶段完全权限和无需逐步确认；旧文件缺省保留 role-based。编排、预检、恢复身份与实际权限回执一致，保留冻结验收、候选身份和进程清理门禁。
+- 将 UI 路径和排障文案改为“任务资料目录”“项目目录（可选）”“检查安装与配置”“检查 DSH 接入”，说明任务由对话助手准备、项目目录可沿用会话、检查不发送模型消息，配置表展示可理解的权限名称。
+
 ## 0.28.1
 
 - 将 DSH 桌面控制界面迁入顶部原生 `conversation.view` 的 Flywheel 标签，移除遮挡对话和输入框的底部大浮层。按外部 plain-JS 插件规范只加载 React，控件、样式和快照由插件持有，通过公开 StoreHandle 与槽位接入宿主会话生命周期；使用宿主 locale 与语义颜色。配置按可换行卡片展示，桌面对话、轨迹、输入框和原生侧栏继续由 DSH 管理。

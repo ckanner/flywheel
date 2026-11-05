@@ -36,6 +36,22 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 	assert.Equal(t, Usage{Input: 120, Output: 8, Reasoning: 3, CacheRead: 20, TotalTokens: 128}, *r.Usage)
 	assert.Nil(t, r.CostUSD)
 
+	t.Run("full access execution and no-inference probe", func(t *testing.T) {
+		for _, doctor := range []bool{false, true} {
+			log := filepath.Join(t.TempDir(), "full-access.jsonl")
+			r := RunDSH(DSHArgs{Command: worker, Doctor: doctor, Cwd: t.TempDir(), Prompt: "offline full-access task",
+				Provider: "deepseek-official", Model: "deepseek-flash", Thinking: "high", PermissionMode: "danger-full-access",
+				APIKeys:  map[string]string{"TEST_DSH_LOG": log},
+				Watchdog: watchdog.Opts{IdleTimeoutMs: 3000, WallTimeoutMs: 10000, KillGraceMs: 100}})
+			require.True(t, r.Settled, "%+v", r)
+			prompted := false
+			for _, request := range readDSHSDKRequests(t, log) {
+				prompted = prompted || request.Method == "session/prompt"
+			}
+			assert.Equal(t, !doctor, prompted)
+		}
+	})
+
 	t.Run("explicit provider differs from account channel", func(t *testing.T) {
 		t.Setenv(DSHWorkerEnv, worker)
 		log := filepath.Join(t.TempDir(), "sdk.jsonl")

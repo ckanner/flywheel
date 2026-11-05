@@ -4,20 +4,22 @@ export const inject = ['sandboxPolicy', 'approval', 'shell'];
 
 export async function apply(ctx, config) {
   const { permissionMode, cwd } = config;
-  if (!['read-only', 'workspace-write'].includes(permissionMode) || typeof cwd !== 'string' ||
+  const fullAccess = permissionMode === 'danger-full-access';
+  if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode) || typeof cwd !== 'string' ||
       ctx.shell.sandboxMode === undefined) {
-    throw new Error('Flywheel requires a confined DSH shell and explicit workspace policy');
+    throw new Error('Flywheel requires a sandbox-capable DSH shell and explicit permission policy');
   }
-  // This local no-op proves that the actual runner starts and reports full
-  // enforcement. Merely selecting a policy value is not readiness evidence.
+  // Probe the official runner. Restricted modes must prove full enforcement;
+  // full access must truthfully report that no confinement was applied.
   const probe = await ctx.shell.execute(ctx.shell.resolve({
     command: ':', workdir: cwd, timeoutMs: 5000,
     sandboxPolicy: { mode: permissionMode, workspaceRoot: cwd },
   }));
   const result = await probe.result();
   if (result.exitCode !== 0 || result.timedOut || result.aborted ||
-      result.sandbox?.mode !== permissionMode || result.sandbox?.enforcement !== 'full') {
-    throw new Error('Flywheel sandbox readiness probe did not prove full enforcement');
+      result.sandbox?.mode !== permissionMode ||
+      (fullAccess ? result.sandbox.denied !== false || result.sandbox.enforcement !== undefined : result.sandbox.enforcement !== 'full')) {
+    throw new Error(fullAccess ? 'Flywheel readiness probe did not confirm explicit full access' : 'Flywheel sandbox readiness probe did not prove full enforcement');
   }
   ctx.on('session/created', session => {
     // A fresh SDK session has no inherited permission facts. Pin both canonical
@@ -30,8 +32,8 @@ export async function apply(ctx, config) {
       cwd: policy.workspaceRoot,
       permissionMode: policy.mode,
       approvalPolicy: ctx.approval.effectivePolicy(session),
-      confinedShell: ctx.shell.sandboxMode !== undefined,
-      enforcement: result.sandbox.enforcement,
+      confinedShell: !fullAccess,
+      ...(fullAccess ? {} : { enforcement: result.sandbox.enforcement }),
     });
   });
 }

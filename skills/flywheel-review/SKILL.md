@@ -4,7 +4,7 @@ metadata:
   version: "1.6.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
-compatibility: "Requires the Flywheel CLI and the configured read-only Review harness; default DSH with the ChatGPT provider plugin."
+compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
 arguments: slug unit
 
 ---
@@ -56,8 +56,11 @@ git -C "$repo_dir" worktree list --porcelain
    Plan 修订允许范围内的契约，再 verify，或恢复完整 run 由引擎处理闭环。
    目录外冻结 oracle 的修改仍需明确任务；不得为了通过直接修改它。
 
-Review 的实际 CWD 是引擎选定的 packet 候选工作区，请求 read-only；不要在
-skill 中切进 packet 再启动，也不要直接编辑候选。若此前执行使用 `in-place`，
+Review 的实际 CWD 是引擎选定的 packet 候选工作区。核对 `permissions.mode`：
+`role-based`（已有文件缺省）请求 `read-only`，`full-access` 通过所选后端正式接口
+请求完全权限；Kimi print 为原生 auto，不提供 OS 级只读保证。两种模式都只做评审，
+候选或契约在评审期间变化时，裁决不能通过身份检查。不要在 skill 中切进 packet 再启动，
+也不要直接编辑候选。若此前执行使用 `in-place`，
 或已完成单元的 worktree 已清理，引擎可能使用任务集成 checkout，不能声称总有
 独立目录。Review pass 只记录裁决，本单步不提交／合并 packet，也不合并 GitHub PR。
 完整运行的本地 `ff-only` 交付与外层获授权的 PR 合并分别处理。

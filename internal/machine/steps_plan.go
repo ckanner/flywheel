@@ -252,7 +252,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			MilestoneID:    milestone.ID,
 			TaskDir:        c.TaskDir,
 			Cwd:            c.Cwd,
-			PermissionMode: "workspace-write",
+			PermissionMode: c.Config.PermissionMode("plan", harness),
 			SessionID:      sessionID,
 			Model:          model,
 			Binding: config.LoopBinding{
@@ -285,8 +285,9 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 	model, harness := binding.Model, binding.Harness
 	provider := fallback.ResolveProvider(c.Config, harness, binding.Provider, channel)
 	resident := c.Config.Loops["plan"].ResidentSession && harness == "kimi"
-	// 铁律 7：只有长驻会话诞生于与当前绑定相同的 model+channel 时才 resume；
-	// 否则一律冷启动（#15）。
+	permission := c.Config.PermissionMode("plan", harness)
+	// Resume only an explicitly matching model, channel, harness, directory,
+	// effort and permission policy. Older incomplete identities cold-start once.
 	var stored map[string]any
 	if m, ok := c.State.PlanSession.(map[string]any); ok {
 		stored = m
@@ -296,7 +297,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		sc, _ := stored["channel"].(string)
 		sm, _ := stored["model"].(string)
 		if sc == channel && sm == model && stored["harness"] == harness &&
-			stored["cwd"] == c.Cwd && stored["thinking"] == binding.Thinking {
+			stored["cwd"] == c.Cwd && stored["thinking"] == binding.Thinking && stored["permission-mode"] == permission {
 			sessionID, _ = stored["session-id"].(string)
 		}
 	}
@@ -411,15 +412,16 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			resumes++
 		}
 		c.State.PlanSession = map[string]any{
-			"session-id": result.SessionID,
-			"channel":    channel,
-			"model":      model,
-			"harness":    harness,
-			"cwd":        c.Cwd,
-			"thinking":   binding.Thinking,
-			"created-at": createdAt,
-			"updated-at": c.nowISO(),
-			"resumes":    resumes,
+			"session-id":      result.SessionID,
+			"channel":         channel,
+			"model":           model,
+			"harness":         harness,
+			"cwd":             c.Cwd,
+			"thinking":        binding.Thinking,
+			"permission-mode": c.Config.PermissionMode("plan", harness),
+			"created-at":      createdAt,
+			"updated-at":      c.nowISO(),
+			"resumes":         resumes,
 		}
 		c.save()
 	} else if !resident && c.State.PlanSession != nil {

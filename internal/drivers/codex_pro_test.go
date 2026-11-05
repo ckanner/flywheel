@@ -29,14 +29,19 @@ func codexProRequest(t *testing.T) codexProStart {
 }
 
 func codexProFixture(r codexProStart) map[string]any {
+	machinePermission := r.PermissionMode
 	policy := map[string]any{"type": "workspaceWrite", "writableRoots": []string{r.Cwd}, "networkAccess": false,
 		"excludeTmpdirEnvVar": false, "excludeSlashTmp": false}
 	if r.PermissionMode == "read-only" {
 		policy = map[string]any{"type": "readOnly", "networkAccess": false}
 	}
+	if r.PermissionMode == "danger-full-access" {
+		machinePermission = "dangerously-bypass-approvals-and-sandbox"
+		policy = map[string]any{"type": "dangerFullAccess"}
+	}
 	return map[string]any{
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "run-one", "ok": true,
-		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort, "permissionMode": r.PermissionMode, "threadId": nil},
+		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort, "permissionMode": machinePermission, "threadId": nil},
 		"costUSD":   nil, "costStatus": "unknown", "failure": nil,
 		"outcome": map[string]any{
 			"output": []any{map[string]any{"type": "text", "text": "verified response"}}, "stopReason": "completed", "threadId": "thread-one",
@@ -278,6 +283,11 @@ func TestCodexProFullPolicyAdmission(t *testing.T) {
 		valid            bool
 	}{
 		{"readonly", "read-only", map[string]any{"type": "readOnly", "networkAccess": false}, true},
+		{"full access", "danger-full-access", map[string]any{"type": "dangerFullAccess"}, true},
+		{"full access constrained", "danger-full-access", map[string]any{"type": "readOnly", "networkAccess": false}, false},
+		{"full access extra policy", "danger-full-access", map[string]any{"type": "dangerFullAccess", "networkAccess": false}, false},
+		{"full access null policy", "danger-full-access", map[string]any{"type": "dangerFullAccess", "networkAccess": nil}, false},
+		{"full access unknown field", "danger-full-access", map[string]any{"type": "dangerFullAccess", "future": true}, false},
 		{"wrong readonly type", "read-only", map[string]any{"type": "workspaceWrite", "networkAccess": false}, false},
 		{"readonly writable roots", "read-only", map[string]any{"type": "readOnly", "networkAccess": false, "writableRoots": []string{}}, false},
 		{"network missing", "workspace-write", map[string]any{"type": "workspaceWrite"}, false},
@@ -516,7 +526,7 @@ func TestRunCodexProFailuresAndFactory(t *testing.T) {
 		func(a *CodexProArgs) { a.Model = "" },
 		func(a *CodexProArgs) { a.Prompt = " " },
 		func(a *CodexProArgs) { a.SessionID = "old" },
-		func(a *CodexProArgs) { a.PermissionMode = "danger-full-access" },
+		func(a *CodexProArgs) { a.PermissionMode = "full-access" },
 		func(a *CodexProArgs) { a.Cwd = filepath.Join(t.TempDir(), "missing") },
 	} {
 		bad := a

@@ -2,7 +2,7 @@
 
 [English README](../../README.en.md) · [中文](../workflow.md) · [Getting started](getting-started.md)
 
-This guide describes the **0.28.0 implementation** and a recommended operating workflow. It does not assert that a particular npm version has been published. Check the registry when installing. The engine's local delivery and the host's GitHub operations are separate responsibilities.
+This guide describes the **current source implementation** and a recommended operating workflow. It does not assert that a particular npm version has been published. Check the registry when installing. The engine's local delivery and the host's GitHub operations are separate responsibilities.
 
 ## 1. Choose a model for preparation
 
@@ -109,8 +109,10 @@ Preflight does not infer with a model or execute acceptance commands. Its unknow
 | Plan | Task integration worktree | Engine uses the startup root to revise the task contracts |
 | Execute, L1, Review | Current packet candidate workspace, normally its packet worktree | Engine creates, records, and reuses that workspace |
 | L2/L3, Judge | Task integration worktree | Engine checks the integrated milestone |
-| Intake, Garden | Selected task's worktree | Host selects the root; Go writes proposals. DSH/Codex request read-only; default Kimi has no OS-level read-only guarantee |
+| Intake, Garden | Selected task's worktree | Host selects the root; Go writes proposals |
 | Status, Stop | Original task directory and execution root | Query or stop the existing task without requiring a new worktree, branch switch, or commit |
+
+Model-call permissions follow `permissions.mode`. Under `role-based`, the default for existing files that omit this setting, Plan/Execute request `workspace-write`; Review/Judge and DSH/Codex (including Codex Pro) Intake/Garden request `read-only`. Under `full-access`, every stage requests full access through the selected backend's public interface. Kimi print retains native auto behavior and provides no claimed OS-level read-only or workspace confinement. Stage duties remain unchanged: reviewers evaluate candidates, auxiliary modules produce advice, and candidate identity checks still run before and after review. See [Configuration](configuration.md) for configuration and migration details.
 
 Every loop does not create its own worktree. The outer task worktree spans the deliverable; a packet workspace spans its execution, acceptance, review, and delivery. Plan commits valid contract revisions in the integration worktree and attempts to fast-forward existing packet worktrees to that checkpoint while preserving implementation work. Conflicts stop for resolution.
 

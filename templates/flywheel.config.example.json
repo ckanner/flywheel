@@ -127,5 +127,9 @@
   "pricing": {},
   "_note_hard": "hard 直接使用 dsh-subagent-codex-pro/machine 公开 API；插件内部运行 Codex app-server。没有 DSH 父模型二次委派，也不自动回退 codex exec。",
   "_note_multimodal": "暂不预绑定 multimodal：当前请求以文本为主，ChatGPT 插件附件能力不能由模型名推断。先验证具体 CLI/工具能读取资产，再显式添加 routes.multimodal；缺绑定直接报错。",
-  "_note_judge_panel": "默认关闭双 judge。需要第二意见时在顶层显式添加 judge-panel，避免每个里程碑固定增加高成本调用。"
+  "_note_judge_panel": "默认关闭双 judge。需要第二意见时在顶层显式添加 judge-panel，避免每个里程碑固定增加高成本调用。",
+  "permissions": {
+    "mode": "full-access",
+    "_note": "明确授权全部阶段完全权限与非交互运行；DSH/Codex approval=never，Kimi print=auto。角色职责、契约边界和验收身份仍由Go校验。已有配置未声明时保持role-based，采用本预设需显式迁移。"
+  }
 }

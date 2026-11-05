@@ -69,5 +69,9 @@
   "retry": { "jitter": 0.1 },
   "worktree": { "enabled": true },
   "pricing": {},
-  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；执行和评审始终使用新会话。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。"
+  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；执行和评审始终使用新会话。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。",
+  "permissions": {
+    "mode": "full-access",
+    "_note": "全部阶段完全权限、无需逐步审批；旧文件缺省保持 role-based，采用此预设需显式迁移。"
+  }
 }

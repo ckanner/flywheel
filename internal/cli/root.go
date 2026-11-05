@@ -44,7 +44,7 @@ func runRoot(args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		var ee *exitError
-		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && (args[0] == "control" || args[0] == "doctor" || args[0] == "install-skills"))) {
+		if errors.As(err, &ee) && (ee.code == 3 || ee.code == 143 || (len(args) > 0 && (args[0] == "control" || args[0] == "doctor" || args[0] == "install-skills")) || (len(args) > 1 && args[0] == "config" && args[1] == "migrate")) {
 			return ee.code // 摘要/诊断已输出；不重复打印文本错误
 		}
 		if len(args) > 0 && args[0] == "control" {

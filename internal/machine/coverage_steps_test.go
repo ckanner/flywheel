@@ -613,7 +613,7 @@ func TestPlanStepResumesPinnedSessionAndCountsResumes(t *testing.T) {
 	ctx := verdictCtx(t, fx, sd)
 	ctx.State.PlanSession = map[string]any{
 		"session-id": "sess-1", "channel": planLoopChannel, "model": "kimi-code/k3",
-		"harness": "kimi", "cwd": fx.root, "thinking": "max",
+		"harness": "kimi", "cwd": fx.root, "thinking": "max", "permission-mode": "workspace-write",
 		"created-at": "2026-08-01T00:00:00.000Z", "resumes": float64(2),
 	}
 
@@ -668,7 +668,7 @@ func TestPlanStepDeadSessionRestartsCold(t *testing.T) {
 	ctx.Log = func(msg string) { logs = append(logs, msg) }
 	ctx.State.PlanSession = map[string]any{
 		"session-id": "sess-dead", "channel": planLoopChannel, "model": "kimi-code/k3", "resumes": float64(0),
-		"harness": "kimi", "cwd": fx.root, "thinking": "max",
+		"harness": "kimi", "cwd": fx.root, "thinking": "max", "permission-mode": "workspace-write",
 	}
 
 	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")

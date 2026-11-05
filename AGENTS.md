@@ -67,7 +67,7 @@ npm 发行修改须运行根目录 `npm test`，并构建一次六包候选，�
   constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
   `control start|status|stop|config|doctor` prints one protocol-versioned JSON response;
-  `config inspect` and `doctor` print human text, or a single JSON document with `--json`;
+  `config inspect|migrate` and `doctor` print human text, or a single JSON document with `--json`;
   `install-skills` prints human text or one complete protocol-versioned summary with `--json`;
   npm `install`/`setup --json` returns a distinct installation report, retaining partial failures;
   `status`/`stop`/`template` print human-readable text; errors go to

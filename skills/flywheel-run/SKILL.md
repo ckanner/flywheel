@@ -100,8 +100,13 @@ arguments: slug pause
 | 阶段 | 实际工作目录 |
 |---|---|
 | Plan | `repo_dir`，只允许修订任务内契约 |
-| Execute、L1、Review | 引擎管理的 packet 候选 worktree；Review 请求 read-only |
-| 里程碑 L2/L3、Judge | 合入后的 `repo_dir`；Judge 请求 read-only |
+| Execute、L1、Review | 引擎管理的 packet 候选 worktree |
+| 里程碑 L2/L3、Judge | 合入后的 `repo_dir` |
+
+核对实际配置的 `permissions.mode`：`role-based`（已有文件缺省）下 Plan／Execute
+请求 `workspace-write`，Review／Judge 请求 `read-only`；`full-access` 下全部模型
+阶段通过所选后端正式接口请求完全权限。Kimi print 保持原生 auto，不宣称 OS
+只读或工作区沙箱。完全权限不改变评审职责；候选或契约在评审期间变化时，裁决不能通过身份检查。
 
 packet worktree 由引擎创建／复用，无需 skill 手动切入。默认创建失败仍可能回退
 `in-place`；出现 `worktree unavailable` 或配置明确关闭 worktree 时，应如实说明

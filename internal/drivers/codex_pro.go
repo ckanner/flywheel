@@ -286,7 +286,7 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 		receipt.RequestID != request.RequestID || receipt.RunID == "" || receipt.OK == nil ||
 		(receipt.Outcome == nil) == (receipt.Failure == nil) ||
 		receipt.Requested.Cwd != request.Cwd || receipt.Requested.Model != request.Model ||
-		receipt.Requested.Effort != request.ReasoningEffort || receipt.Requested.PermissionMode != request.PermissionMode ||
+		receipt.Requested.Effort != request.ReasoningEffort || receipt.Requested.PermissionMode != codexProMachinePermission(request.PermissionMode) ||
 		string(receipt.Requested.ThreadID) != "null" || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
 		parsed.Error = "invalid request: Codex Pro receipt identity, requested settings, or cost contract mismatch"
 		return parsed
@@ -408,9 +408,19 @@ func codexProSameDirectory(actual, requested string) bool {
 	return err == nil && physical == requested
 }
 
+// The public machine API names its full-access preset differently from the
+// canonical DSH/Codex sandbox mode used in Flywheel requests and configuration.
+func codexProMachinePermission(permission string) string {
+	if permission == "danger-full-access" {
+		return "dangerously-bypass-approvals-and-sandbox"
+	}
+	return permission
+}
+
 // This is a post-run admission check, not a pre-turn sandbox guard: v0.8.0
-// exposes the complete policy only in the final receipt. Standard Codex temp
-// directories are permitted; extra writable roots must remain inside cwd.
+// exposes the complete policy only in the final receipt. In workspace-write,
+// standard temp directories are permitted and extra writable roots must remain
+// inside cwd. Explicit full access has its own unconfined policy shape.
 func validateCodexProPolicy(raw json.RawMessage, request codexProStart) error {
 	var policy struct {
 		Type                string    `json:"type"`
@@ -421,7 +431,18 @@ func validateCodexProPolicy(raw json.RawMessage, request codexProStart) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&policy); err != nil || policy.NetworkAccess == nil || *policy.NetworkAccess {
+	if err := decoder.Decode(&policy); err != nil {
+		return fmt.Errorf("Codex Pro full sandbox policy is malformed")
+	}
+	if request.PermissionMode == "danger-full-access" {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields) // the strict object decode above already succeeded
+		if policy.Type != "dangerFullAccess" || len(fields) != 1 {
+			return fmt.Errorf("Codex Pro full-access policy has a contradictory shape")
+		}
+		return nil
+	}
+	if policy.NetworkAccess == nil || *policy.NetworkAccess {
 		return fmt.Errorf("Codex Pro full sandbox policy has missing or enabled network access")
 	}
 	if request.PermissionMode == "read-only" {
@@ -526,8 +547,8 @@ func RunCodexPro(a CodexProArgs) Result {
 		permission = "read-only"
 	}
 	if strings.TrimSpace(a.Model) == "" || strings.TrimSpace(a.Prompt) == "" || a.SessionID != "" ||
-		(permission != "read-only" && permission != "workspace-write") {
-		return invalidHarnessResult("codex-pro", a.Model, "Codex Pro requires model, prompt, bounded permissions, and a fresh session")
+		(permission != "read-only" && permission != "workspace-write" && permission != "danger-full-access") {
+		return invalidHarnessResult("codex-pro", a.Model, "Codex Pro requires model, prompt, explicit supported permissions, and a fresh session")
 	}
 	cwd, err := filepath.Abs(a.Cwd)
 	if err == nil {

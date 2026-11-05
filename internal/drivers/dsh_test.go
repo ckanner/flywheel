@@ -253,7 +253,7 @@ func TestRunDSHWorkerDefaultsAndFailures(t *testing.T) {
 		"missing provider":       func(a *DSHArgs) { a.Provider = "" },
 		"missing model":          func(a *DSHArgs) { a.Model = "" },
 		"unsupported resume":     func(a *DSHArgs) { a.SessionID = "old" },
-		"unsupported permission": func(a *DSHArgs) { a.PermissionMode = "danger-full-access" },
+		"unsupported permission": func(a *DSHArgs) { a.PermissionMode = "full-access" },
 		"missing cwd":            func(a *DSHArgs) { a.Cwd = filepath.Join(t.TempDir(), "missing") },
 		"missing worker":         func(a *DSHArgs) { a.Command = filepath.Join(t.TempDir(), "missing") },
 	} {
@@ -318,6 +318,9 @@ func TestInvokeHarnessDSHDispatchAndPermissionFailures(t *testing.T) {
 		{Binding: config.LoopBinding{Harness: "ds-h"}},
 		{Binding: config.LoopBinding{Harness: "kimi"}, PermissionMode: "read-only"},
 		{Binding: config.LoopBinding{Harness: "pi"}, PermissionMode: "invalid"},
+		{Binding: config.LoopBinding{Harness: "pi"}, PermissionMode: "danger-full-access"},
+		{Binding: config.LoopBinding{Harness: "omp"}, PermissionMode: "danger-full-access"},
+		{Binding: config.LoopBinding{Harness: "zcode"}, PermissionMode: "danger-full-access"},
 		{Binding: config.LoopBinding{Harness: "codex", Provider: "chatgpt"}},
 	} {
 		r := InvokeHarness(a, "")

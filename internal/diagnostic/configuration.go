@@ -106,6 +106,12 @@ func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.
 		// contain a misplaced credential; never echo its contents to diagnostics.
 		return nil, nil, errors.New("effective configuration is invalid or unreadable; check JSON fields, profile references and harness/provider bindings in the selected task/project/global file")
 	}
+	return configurationView(cfg, resolvedCwd, taskDir), cfg, nil
+}
+
+// configurationView is shared by read-only inspection and an explicit migration
+// preview so both show the exact model defaults, providers and permission policy.
+func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configuration {
 	scope := "global"
 	switch {
 	case cfg.File == "(embedded legal table)":
@@ -138,15 +144,7 @@ func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.
 				thinking = "max"
 			}
 		}
-		permission := "workspace-write"
-		if role == "review" || role == "judge" || role == "judge-panel" {
-			permission = "read-only"
-		} else if role == "intake" || role == "garden" {
-			permission = ""
-			if harness == "dsh" || harness == "codex" || harness == "codex-pro" {
-				permission = "read-only"
-			}
-		}
+		permission := cfg.PermissionMode(role, harness)
 		view.Bindings = append(view.Bindings, Binding{
 			ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[id], Harness: harness,
 			Provider: fallback.ResolveProvider(cfg, harness, b.Provider, b.Channel), Channel: b.Channel,
@@ -166,7 +164,7 @@ func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.
 		add("judge-panel", "judge-panel", "", *cfg.JudgePanel)
 	}
 	sort.Slice(view.Bindings, func(i, j int) bool { return strings.Compare(view.Bindings[i].ID, view.Bindings[j].ID) < 0 })
-	return view, cfg, nil
+	return view
 }
 
 // projectRoot shares execution's Git-root discovery without an unbounded

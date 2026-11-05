@@ -19,18 +19,19 @@ func TestCodexPermissionScopeAndInvalidScope(t *testing.T) {
 	disableCodexDesktop(t)
 	bin, cwd := fakeBin(t, "codex", codexNDJSON)
 	setPath(t, bin)
-	r := InvokeHarness(CallArgs{Prompt: "implement this", Cwd: cwd,
-		Binding:        config.LoopBinding{Harness: "codex", Model: "gpt-6-astra", Thinking: "high"},
-		PermissionMode: "workspace-write",
-	}, "")
-	require.True(t, r.Settled)
-	args, err := os.ReadFile(filepath.Join(cwd, "args.txt"))
-	require.NoError(t, err)
-	assert.Contains(t, string(args), "workspace-write")
-	assert.NotContains(t, string(args), "danger-full-access")
-	assert.Contains(t, string(args), "approval_policy=never")
+	for _, permission := range []string{"workspace-write", "danger-full-access"} {
+		r := InvokeHarness(CallArgs{Prompt: "implement this", Cwd: cwd,
+			Binding:        config.LoopBinding{Harness: "codex", Model: "gpt-6-astra", Thinking: "high"},
+			PermissionMode: permission,
+		}, "")
+		require.True(t, r.Settled)
+		args, err := os.ReadFile(filepath.Join(cwd, "args.txt"))
+		require.NoError(t, err)
+		assert.Contains(t, string(args), "-s\n"+permission+"\n")
+		assert.Contains(t, string(args), "approval_policy=never")
+	}
 
-	invalid := RunCodex(CodexArgs{Prompt: "p", PermissionMode: "danger-full-access"})
+	invalid := RunCodex(CodexArgs{Prompt: "p", PermissionMode: "full-access"})
 	assert.False(t, invalid.Settled)
 	require.NotNil(t, invalid.ErrorMessage)
 	assert.Contains(t, *invalid.ErrorMessage, "unsupported permission mode")

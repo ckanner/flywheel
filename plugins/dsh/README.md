@@ -84,7 +84,7 @@ reasoningEffort = off | low | high | max
 
 npm 启动器自动解析并注入 `FLYWHEEL_CODEX_PRO_WORKER`。独立 Go 二进制默认从 PATH 查找 `flywheel-codex-pro-worker`，源码开发可显式设为构建后的 `dist/codex-pro-worker.js`。`FLYWHEEL_CODEX_BIN` 可指定底层 Codex 可执行程序，默认 `codex`；`CODEX_HOME` 沿用用户选择的配置／登录目录。Go 会将这些运行必需项交给插件，不把凭证复制到配置、契约或 Git。
 
-新调用固定使用 ephemeral 会话和 `read-only`／`workspace-write`，approval 为 never。插件运行前核对模型、cwd 和权限模式；完整 sandboxPolicy 由 Flywheel 在返回后审查，允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
+新调用使用 ephemeral 会话，权限由 `permissions.mode` 决定，approval 为 never。role-based 选择 `read-only`／`workspace-write`；full-access 请求 `danger-full-access`。插件运行前核对模型、cwd 和权限模式，完整 sandboxPolicy 由 Flywheel 在返回后审查。受限模式允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用；完全权限则核对 `dangerFullAccess` 策略，不声称 OS 隔离。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
 
 完整 machine receipt 写入指标，保留 accepted effort、未知 effectiveEffort、usage 完整性与进程终态。插件正常收尾可能主动 TERM/KILL app-server，其物理 exit code 可以为空；Flywheel 只有在完整终态证明任务完成、清理已确认且外层 worker 干净退出时才能继续。取消、超时、截断、启动或清理失败均阻止成功。Go 为此 worker 预留至少 10 秒终止宽限，避免截断插件内部清理。
 
@@ -121,7 +121,7 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 
 ## 桌面使用
 
-打开一个 DSH 会话，在顶部“对话／轨迹”所在的视图栏选择 **Flywheel**。入口由 DSH 的原生视图栏管理；若未直接显示，检查该栏的更多视图入口。填写已准备并审阅契约的任务目录，例如 `/repo/docs/my-task`。仓库目录默认取当前 DSH 会话的起始目录，也可填明确的绝对路径；生产任务应显式选择任务集成 worktree 及其内部的任务目录。按钮只执行以下 Go JSON 控制接口：
+打开一个 DSH 会话，在顶部“对话／轨迹”所在的视图栏选择 **Flywheel**。入口由 DSH 的原生视图栏管理；若未直接显示，检查该栏的更多视图入口。先在“对话”中让助手按 `flywheel-new` 准备任务说明与验收清单，审阅后由助手给出实际路径。“任务资料目录”就是这些文件所在的目录，例如 `/Users/me/project/docs/fix-login`，不是插件安装目录。“项目目录（可选）”默认取当前 DSH 会话目录，可留空；任务在另一份 worktree 时填对应的项目路径，例如 `/Users/me/project`。只看配置或做检查时，任务资料目录也可留空。按钮只执行以下 Go JSON 控制接口：
 
 ```sh
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
@@ -139,7 +139,7 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 
 模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话目录；start/status/stop 必须指定任务。输入统一校验，使用 argv 调用，不拼接 shell 命令。打开视图不会启动任务或探测；视图只在点击时读取状态，不自动轮询，也不自动发现其他入口启动的任务。查看已有任务时，选择同一任务目录再刷新。
 
-“查看模型配置”展示配置来源、展开后的阶段绑定及 provider／channel；“检查环境”不启动 SDK，“SDK 无推理检查”显式启用 probe。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
+“查看模型配置”展示实际配置来源、展开后的阶段绑定及 provider／channel／权限。“检查安装与配置”仅做本地预检，不启动 SDK；“检查 DSH 接入”额外临时启动 SDK、核对配置／目录／权限后退出。首次安装、升级或排障时按需使用，平时不必每次点击；两项都不向模型发送消息，也不验证账号、额度和实际回答能力。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
 
 状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。未知 usage／cost 明确保留，原始 JSON 默认折叠。配置显示引擎实际选择的文件及阶段绑定；已有用户配置不会因安装或切换 DSH 对话模型而自动迁移。
 
@@ -165,9 +165,9 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 
 每个调用使用新的 SDK Session；provider/model/effort 在该进程中固定。v1 不支持 resume、图像/附件输入或 SDK 原生 output schema。文本与报告文件由 Go 的冻结合同和 JSON Schema 验收，不能把 SDK idle 当成验收完成。
 
-worker 只支持 `read-only` 与 `workspace-write`。Mac 上由 DSH 的 Seatbelt bash runner 和 native fs fence 执行权限。workspace-write 的写入范围是**实际工作目录加 DSH 规定的系统临时区**，并非额外目录列表，也不是网络隔离。策略插件将 approval 固定为 `never`，即拒绝提权。
+worker 支持 `read-only`、`workspace-write` 和显式 `danger-full-access`。新订阅预设通过 `permissions.mode:full-access` 为全部阶段选择完全权限，approval 固定为 `never`；Kimi print 使用原生 auto，不逐步请求用户点击允许。已有文件缺省仍保留 role-based，需通过[配置迁移](../../docs/configuration.md#将旧配置切换到已有的三种资源)显式采用新方案。受限模式由 Mac 上 DSH 的 Seatbelt bash runner 和 native fs fence 执行，workspace-write 范围是**实际工作目录加 DSH 规定的系统临时区**。full-access 如实记录无 OS 沙箱限制；宿主静态拒绝、账号与操作系统权限不被绕过。
 
-执行报告先写到 worktree 内的任务报告路径，由 Go 校验后归档到主任务目录。不得为报告写入而把整个任务目录或用户目录设成 full access。
+执行报告仍先写到 worktree 内的任务报告路径，由 Go 校验后归档到主任务目录。权限模式来自明确配置，不能因为报告写入失败而暗中扩大它；任务边界、冻结验收和候选身份检查保持有效。
 
 默认覆盖会关闭 DSH 自主委派、workflow、goal 驱动、模型生成标题及自动模型压缩，避免在一个 Go 工作单元之外再启动辅助模型调用。需要压缩/继续执行时由 Go 显式决定下一次任务；超出上下文或输出 token 限制不会伪装成成功。SDK profile 应只装所需的可信 provider /工具，第三方 Host 插件本身是进程内代码，不能由本包替它提供任意代码隔离。
 

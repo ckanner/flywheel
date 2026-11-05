@@ -142,7 +142,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			PacketID:       id,
 			TaskDir:        executionTaskDir,
 			Cwd:            uCwd,
-			PermissionMode: "workspace-write",
+			PermissionMode: c.Config.PermissionMode("execute", currentHarness),
 			Model:          currentModel,
 			Binding: config.LoopBinding{
 				Harness: currentHarness, Provider: currentProvider, Model: currentModel,

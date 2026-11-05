@@ -52,7 +52,8 @@ func TestRunStopsEveryRoleWhenCleanupIsUnknown(t *testing.T) {
 				b := opts.Config.Loops["plan"]
 				st := loadFixtureState(t, fx)
 				st.PlanSession = map[string]any{"session-id": "resident-plan", "harness": b.Harness,
-					"model": b.Model, "channel": b.Channel, "cwd": fx.root, "thinking": b.Thinking}
+					"model": b.Model, "channel": b.Channel, "cwd": fx.root, "thinking": b.Thinking,
+					"permission-mode": opts.Config.PermissionMode("plan", b.Harness)}
 				_, err := state.Save(fx.taskDir, st, nil)
 				require.NoError(t, err)
 			}

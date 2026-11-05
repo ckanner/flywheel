@@ -93,14 +93,14 @@ flywheel doctor --cwd "$PWD" --probe --json
 | Execute `default` | DSH SDK | `deepseek-official` | `deepseek-flash` | `high` |
 | Execute `frontend` | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 | Execute `hard` | Codex Pro machine API | `chatgpt-subscription` | `gpt-6.1-sol` | `high` |
-| Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high`，只读 |
+| Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high` |
 | Judge | DSH SDK | `chatgpt` | `gpt-6-astra` | `high`，里程碑终验 |
 | Intake | DSH SDK | `deepseek-official` | `deepseek-flash` | `low` |
 | Garden | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 
 这些是可编辑的初始绑定，并非模型排名或性能承诺。DeepSeek 只用 Flash；当前 Mac rc.5 的合法 effort 为 `off/low/high/max`，没有 `medium`。双 judge 默认关闭，也不默认跨渠道付费降级。`multimodal` 暂无默认绑定：当前 bridge 只有文本契约，模型名称或目录里的 vision 标记不能证明附件已正确传递。
 
-Kimi 使用原生 CLI print/stream-json，不使用 ACP；恢复的是会话历史，不是常驻后台进程。该模式不提供本适配器可宣称的 OS 级只读／工作区沙箱，worktree 只是代码隔离。DSH/Codex 使用明确的 workspace-write 或 read-only 与 never 审批策略。Codex Pro 在运行前核对模型、目录和沙箱模式，Flywheel 在结果返回后检查完整策略；工作区写入允许 Codex 标准临时目录，额外工作区外 roots 或启用网络的策略不能通过交付资格检查。这是事后校验，不能阻止自定义 Codex 配置已允许的访问；要求运行前完整策略阻止的环境需等待上游公开 guard。具体账号的可用模型、额度和使用授权需要由所选服务确认。
+Kimi 使用原生 CLI print/stream-json，不使用 ACP；恢复的是会话历史，不是常驻后台进程。该模式不提供本适配器可宣称的 OS 级只读／工作区沙箱，worktree 只是代码隔离。新模板及显式 subscriptions 迁移使用 `permissions.mode:full-access`，DSH/Codex 全阶段 danger-full-access＋never，Kimi print 为 auto；已有文件未声明时保持 role-based 的 workspace-write／read-only。Codex Pro 在运行前核对模型、目录和沙箱模式，Flywheel 在结果返回后检查完整策略；在受限模式，工作区写入允许 Codex 标准临时目录，额外工作区外 roots 或启用网络的策略不能通过交付资格检查；明确 full-access 则核对完全权限回执，不声称 OS 隔离。这是事后校验，不能阻止自定义 Codex 配置已允许的访问；要求运行前完整策略阻止的环境需等待上游公开 guard。具体账号的可用模型、额度和使用授权需要由所选服务确认。
 
 usage 或美元成本未上报时保留 unknown，不能把订阅调用记成免费。默认 soft token budget 会报告未知量；hard budget 无法证明未知用量未超额时停止。汇总数字是已知量下限。
 

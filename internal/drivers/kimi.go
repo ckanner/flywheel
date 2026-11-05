@@ -9,7 +9,7 @@
 //   - 续接恢复的是历史，不是已退出进程；timeout / cancel 仍由 watchdog 管理。
 //   - 当前 print writer 不输出 token usage；未知保持 nil，不能记成免费。
 //   - thinking 每次由 KIMI_MODEL_THINKING_EFFORT 显式注入，默认 high，
-//     不修改用户配置。模型别名由 binding 提供，保留旧默认以兼容已有配置。
+//     不修改用户配置。显式模型别名由 binding 提供，省略时使用当前订阅默认。
 package drivers
 
 import (
@@ -22,7 +22,7 @@ import (
 )
 
 // KimiDefaultModel Plan Loop 默认模型。
-const KimiDefaultModel = "kimi-code/k3"
+const KimiDefaultModel = "kimi-code/k3.1-pro"
 
 const KimiCommandEnv = "FLYWHEEL_KIMI_BIN"
 

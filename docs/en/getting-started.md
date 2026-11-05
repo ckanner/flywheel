@@ -99,6 +99,8 @@ After moving Node or the npm prefix, or installing previously missing tools, run
 
 ## 4. Select configuration and skills
 
+If the view still shows Z.AI/GLM or Kimi K3, inspect its configuration source: upgrades preserve that file. A version containing this change can back up and migrate it with `flywheel config migrate --preset subscriptions --cwd /repo --apply --json`; omit `--apply` to preview, and add `--task-dir` for task overrides. This selects ChatGPT/Kimi Code/DeepSeek Flash, the agreed efforts, and full access for every stage. See [migration and permissions](configuration.md#apply-the-subscription-preset-to-existing-configuration). Published 0.28.1 does not contain this command.
+
 Configuration precedence is task directory, project root, global file, then embedded defaults. The first complete file wins; files do not merge. Existing configuration is preserved during upgrades. Inspect the actual source:
 
 ```sh

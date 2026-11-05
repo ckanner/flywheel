@@ -111,6 +111,12 @@ type WorktreeConfig struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// PermissionsConfig selects the host policy independently from stage duties.
+// Existing files retain role-based behavior unless they explicitly opt in.
+type PermissionsConfig struct {
+	Mode string `json:"mode"`
+}
+
 // Source intake 任务源（§4.5）：github-issues | command。
 type Source struct {
 	Name   string   `json:"name"`
@@ -142,6 +148,7 @@ type Config struct {
 	Verify          VerifyConfig            `json:"verify"`
 	DefectInjection DefectInjectionConfig   `json:"defect-injection"`
 	Worktree        WorktreeConfig          `json:"worktree"`
+	Permissions     PermissionsConfig       `json:"permissions"`
 	JudgePanel      *LoopBinding            `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
 	Intake          IntakeConfig            `json:"intake"`
 	Pricing         map[string]Price        `json:"pricing"`
@@ -169,6 +176,7 @@ func Default() Config {
 		DefectInjection: DefectInjectionConfig{EveryNUnits: new(5), TestFileRatioBoost: 0.5},
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
+		Permissions:     PermissionsConfig{Mode: "role-based"},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
 }
@@ -178,6 +186,9 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
+	if c.Permissions.Mode == "" {
+		c.Permissions = d.Permissions
+	}
 	if c.Drivers == nil {
 		c.Drivers = d.Drivers
 	}
@@ -228,6 +239,9 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
+	if c.Permissions.Mode != "role-based" && c.Permissions.Mode != "full-access" {
+		return errors.New("permissions.mode must be role-based|full-access")
+	}
 	if c.Version != nil && (*c.Version < 1) {
 		return errors.New("version must be a positive integer")
 	}

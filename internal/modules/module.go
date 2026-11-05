@@ -245,10 +245,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 			}
 		}
 		visited[channel] = true
-		permission := ""
-		if (o.Role == "intake" || o.Role == "garden") && (current.Harness == "dsh" || current.Harness == "codex" || current.Harness == "codex-pro") {
-			permission = "read-only" // these agents return advice; Go writes the proposals
-		}
+		permission := m.Config.PermissionMode(o.Role, current.Harness)
 		result := dispatchRole(m.Drivers, o.Role, drivers.CallArgs{
 			Prompt:         o.Prompt,
 			TaskDir:        m.TaskDir,
