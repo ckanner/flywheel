@@ -116,6 +116,10 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			r.add(b.ID+".permission", "fail", "所选 harness 无法实施本阶段要求的只读权限", "INVALID_REQUEST", "为评审选择支持 read-only 的 DSH 或 Codex 路径")
 			continue
 		}
+		if b.PermissionMode == "danger-full-access" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" && b.Harness != "kimi" {
+			r.add(b.ID+".permission", "fail", "所选 harness 没有经过验证的完全权限映射", "INVALID_REQUEST", "选择支持完全权限的 DSH、Codex 或 Kimi 路径；不会静默降低或忽略权限要求")
+			continue
+		}
 		ready := r.credentials(cfg, *b)
 		if b.Harness == "dsh" {
 			ready = r.command(ctx, "dsh-worker", drivers.DSHCommand(), commands, false) && ready
@@ -302,7 +306,11 @@ func (r *Report) codexPro(ctx context.Context, b Binding, cache map[string]bool)
 			}
 		}
 	}
-	r.add(b.ID+".sandbox", "warn", "插件运行前核对沙箱模式；完整策略仅在结果返回后核对，Codex 配置仍可能扩展目录或网络权限", "", "核对本机 Codex 配置；需要运行前完整策略限制的环境须等待上游公开 guard，不要将事后拒绝视为访问防护")
+	if b.PermissionMode == "danger-full-access" {
+		r.add(b.ID+".sandbox", "warn", "配置要求完全权限与 never；正式调用将核对 danger-full-access 模式，不提供 OS 工作区限制", "", "外部强制规则和原生拒绝仍然有效；本次无推理检查不证明实际完整权限已获准")
+	} else {
+		r.add(b.ID+".sandbox", "warn", "插件运行前核对沙箱模式；完整策略仅在结果返回后核对，Codex 配置仍可能扩展目录或网络权限", "", "核对本机 Codex 配置；需要运行前完整策略限制的环境须等待上游公开 guard，不要将事后拒绝视为访问防护")
+	}
 	r.add(b.ID+".configuration", "unknown", "实际模型、完整权限和 effort 接受回执由正式调用验证；本次未启动 Codex 模型回合", "", "")
 }
 
@@ -349,7 +357,7 @@ func (r *Report) probe(ctx context.Context, cfg *config.Config, b Binding, cache
 	if result.Settled && result.ExitCode != nil && *result.ExitCode == 0 && !result.Cancelled && !result.TimedOut &&
 		!result.Truncated && result.Signal == "" && result.SpawnError == "" && result.CleanupError == "" && result.ErrorMessage == nil &&
 		result.Usage == nil && result.CostUSD == nil {
-		r.add(b.ID+".sdk", "pass", "adapter 接受配置；目录、"+b.PermissionMode+" 沙箱与 SDK 正常关闭已确认", "", "")
+		r.add(b.ID+".sdk", "pass", "adapter 接受配置；目录、"+b.PermissionMode+" 权限策略与 SDK 正常关闭已确认", "", "")
 	} else {
 		code := errs.INVALID_REQUEST
 		switch {
@@ -360,6 +368,6 @@ func (r *Report) probe(ctx context.Context, cfg *config.Config, b Binding, cache
 		case result.ErrorMessage != nil:
 			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: *result.ErrorMessage})
 		}
-		r.add(b.ID+".sdk", "fail", "SDK 配置、完整权限或进程收尾未得到确认", string(code), "核对 SDK profile、provider/model/effort、DSH 版本和本机沙箱；不要通过 full access 绕过")
+		r.add(b.ID+".sdk", "fail", "SDK 配置、请求的权限策略或进程收尾未得到确认", string(code), "核对 SDK profile、provider/model/effort、permissions.mode、DSH 版本与宿主强制规则；不会替换审批实现或绕过强制拒绝")
 	}
 }

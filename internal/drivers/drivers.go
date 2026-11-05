@@ -71,7 +71,7 @@ type CallArgs struct {
 	Watchdog       watchdog.Opts
 	OnEvent        func(line string) // stdout NDJSON 行回调
 	SessionID      string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
-	PermissionMode string            // read-only | workspace-write；由编排角色显式指定
+	PermissionMode string            // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
 }
 
 // Driver 六角色统一接口。mock 与 real 都实现。
@@ -110,8 +110,11 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	if harness != "dsh" && a.Binding.Provider != "" {
 		return invalidHarnessResult(harness, a.Model, "provider selection is supported only by the DSH harness")
 	}
-	if a.PermissionMode != "" && a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" {
+	if a.PermissionMode != "" && a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" && a.PermissionMode != "danger-full-access" {
 		return invalidHarnessResult(harness, a.Model, "unsupported permission mode "+a.PermissionMode)
+	}
+	if a.PermissionMode == "danger-full-access" && harness != "codex" && harness != "codex-pro" && harness != "dsh" && harness != "kimi" {
+		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("harness %q has no verified full-access permission mapping", harness))
 	}
 	// Legacy adapters have no verified read-only sandbox mapping. workspace-write
 	// remains their historical host-isolation contract, not an OS sandbox promise.

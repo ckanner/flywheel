@@ -18,7 +18,7 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 | `maxTokens` | 正整数，每次原生模型请求的输出上限，传入 SDK initialize |
 | `timeoutMs` | 1–86,400,000，默认 1,800,000；涵盖权限准备、初始化、运行和关闭 |
 
-`permissionMode` 仅允许 `read-only`、`workspace-write`。未知字段一律拒绝。v1 不接受 `sessionId` / resume、附件、任意额外 CLI 参数和额外写目录；不进行隐式冷启动替代恢复。
+`permissionMode` 允许 `read-only`、`workspace-write` 和显式 `danger-full-access`。未知字段一律拒绝。v1 不接受 `sessionId` / resume、附件、任意额外 CLI 参数和额外写目录；不进行隐式冷启动替代恢复。
 
 ## 运行参数
 
@@ -46,12 +46,12 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 发出 ready 前必须依次满足：
 
 1. 官方 SDK `initialize` 返回 `deepseek-harness-sdk-runtime`，adapter 接受指定 provider/model/effort。
-2. worker 策略插件经真实 `ctx.shell` 执行本地无副作用的 `:` 探针；退出码为 0 且报告 `sandbox.enforcement:full`。不可用或部分实施的沙箱拒绝通过。
+2. worker 策略插件经真实 `ctx.shell` 执行本地无副作用的 `:` 探针；退出码为 0、模式匹配且未被拒绝。受限模式还须报告 `sandbox.enforcement:full`，不可用或部分实施的沙箱拒绝通过；明确完全权限时记录 `confinedShell:false` 并省略 enforcement，不伪造 OS 强制。
 3. `session/working-directory/get` 创建全新的 Session，返回实际 cwd。
 4. Session 的 `sandbox/mode`、`approval/policy` 被固定，`ctx.sandboxPolicy.resolve()` 与 `ctx.approval.effectivePolicy()` 的实际读值形成 `flywheel/policy` 事件。
-5. worker 比对 policy 事件的 cwd、mode、`never` 和 full confinement。
+5. worker 比对 policy 事件的 cwd、mode、`never` 及对应权限证据：受限模式为完整强制，完全权限为明确无 OS 限制。
 
-任一项缺失，不发送 `session/prompt`。`never` 在 rc.5 的含义是自动拒绝需要批准的提权操作；它不会授予无限权限。
+任一项缺失，不发送 `session/prompt`。`never` 控制交互审批，不单独扩大访问范围；必须同时显式选择 `danger-full-access` 才请求完全权限。既有静态拒绝或外部权限不足仍按真实失败处理。
 
 ### event：可审计的原始持久事件
 
@@ -99,7 +99,7 @@ Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 ad
 {"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000}
 ```
 
-只接受这些字段；不接受 provider、resume、threadId、额外写目录、任意 CLI 参数或危险权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 仅 read-only／workspace-write。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort，固定 threadMode=ephemeral、command=`FLYWHEEL_CODEX_BIN` 或 `codex`，不恢复旧线程。
+只接受这些字段；不接受 provider、resume、threadId、额外写目录、任意 CLI 参数或未知权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 为 read-only／workspace-write／danger-full-access；最后一项在 Node adapter 边界映射为 machine API 的 `dangerously-bypass-approvals-and-sandbox`，Go 同时核对映射后的 requested 字段和 canonical 生效模式。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort，固定 threadMode=ephemeral、command=`FLYWHEEL_CODEX_BIN` 或 `codex`，不恢复旧线程。
 
 **这里与 DSH worker 的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或第二条非空输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
 
@@ -119,7 +119,7 @@ Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 ad
 
 启动前不能获得 machine receipt 时为 null。运行已开始则即使失败也保留完整 receipt；`error` 非 null、重复／丢失 result、尾部垃圾、请求身份或 adapter 版本不符都不能成功。本通道没有 DSH `ready` 帧，不能据此虚构运行前完整沙箱握手或实际 effort 回显。
 
-Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/thread/turn 身份、模型、cwd、approval=never、实际沙箱模式、完整 sandboxPolicy、stopReason、cleanup 与执行事实。workspaceWrite 的显式 writableRoots 必须处于工作区内，networkAccess 必须明确 false；Codex 标准临时目录标记保留，不宣称只能写 cwd。插件 0.8.0 只在 turn 前检查模式等基本配置；完整策略是返回后的交付资格检查，**不能阻止自定义 Codex 配置已经允许的访问**。
+Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/thread/turn 身份、模型、cwd、approval=never、实际沙箱模式、完整 sandboxPolicy、stopReason、cleanup 与执行事实。受限模式的 workspaceWrite 显式 writableRoots 必须处于工作区内，networkAccess 必须明确 false；显式完全权限要求 `sandbox:danger-full-access` 与精确的 `{type:"dangerFullAccess"}` policy，不要求不存在的受限模式字段；Codex 标准临时目录标记保留，不宣称只能写 cwd。插件 0.8.0 只在 turn 前检查模式等基本配置；完整策略是返回后的交付资格检查，**不能阻止自定义 Codex 配置已经允许的访问**。
 
 effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
 

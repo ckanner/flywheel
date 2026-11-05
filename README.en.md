@@ -38,8 +38,8 @@ These bindings are editable starting points, not a model ranking or a performanc
 | Execute: `default` | DSH SDK | `deepseek-official` | `deepseek-flash` | `high` |
 | Execute: `frontend` | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 | Execute: `hard` | Codex Pro machine API | `chatgpt-subscription` | `gpt-6.1-sol` | `high` |
-| Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high`, read-only |
-| Judge | DSH SDK | `chatgpt` | `gpt-6-astra` | `high`, read-only |
+| Review | DSH SDK | `chatgpt` | `gpt-6.1-sol` | `high` |
+| Judge | DSH SDK | `chatgpt` | `gpt-6-astra` | `high` |
 | Intake, optional | DSH SDK | `deepseek-official` | `deepseek-flash` | `low` |
 | Garden, optional | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 
@@ -91,7 +91,7 @@ L1 validates a packet; L2/L3 validate integration and user paths at milestone sc
 Keep these boundaries in mind:
 
 - **Worktrees isolate Git work, not process permissions.** Packet worktree creation can currently fall back to in-place execution. There is no engine option requiring isolation in every case. Skills check the recommended task location; direct CLI/GUI use does not execute those skill checks.
-- **Permissions depend on the harness.** DSH and Codex paths request explicit permissions. Kimi's current CLI integration does not provide an OS-level read-only or workspace sandbox guarantee.
+- **Permissions are explicit.** New templates and the subscription migration select `permissions.mode:full-access` for every stage, using DSH/Codex full access with approval never and native Kimi print auto. Existing configurations without this field retain role-based permissions. Kimi does not provide an OS confinement guarantee; task and acceptance identity checks remain enforced.
 - **Codex Pro's complete policy check is after the run.** The plugin checks model, directory, approval, and sandbox mode before a turn. Flywheel validates the full returned policy afterward, allowing the workspace and standard Codex temporary directories. Additional external write roots, enabled network access, or unconfirmed policy prevent acceptance. This check cannot prevent access already allowed by custom Codex configuration.
 - **Cleanup needs evidence.** A worker exiting does not prove that the plugin's separate app-server or guardian processes stopped. An unconfirmed cleanup result escalates and stops the run; inspect and resolve it before resuming.
 - **Unknown usage remains unknown.** Missing usage or monetary cost is not zero. Soft budgets report uncertainty; hard budgets stop when unknown usage makes the limit unverifiable.

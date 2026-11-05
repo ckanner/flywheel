@@ -49,8 +49,8 @@ export async function validateStart(value) {
   const provider = nonempty(value.provider, 'provider');
   const model = nonempty(value.model, 'model');
   const prompt = nonempty(value.prompt, 'prompt', MAX_FRAME_BYTES);
-  if (!['read-only', 'workspace-write'].includes(value.permissionMode)) {
-    throw new BridgeError('INVALID_REQUEST', 'permissionMode must be read-only or workspace-write');
+  if (!['read-only', 'workspace-write', 'danger-full-access'].includes(value.permissionMode)) {
+    throw new BridgeError('INVALID_REQUEST', 'permissionMode must be read-only, workspace-write or danger-full-access');
   }
   if (value.reasoningEffort !== undefined) nonempty(value.reasoningEffort, 'reasoningEffort', 64);
   if (value.maxTokens !== undefined && (!Number.isSafeInteger(value.maxTokens) || value.maxTokens < 1)) {
@@ -151,10 +151,12 @@ export class SessionFold {
 
   verifiedPolicy(request) {
     const policy = this.policy;
+    const fullAccess = request.permissionMode === 'danger-full-access';
     if (!policy || policy.protocol !== PROTOCOL || policy.permissionMode !== request.permissionMode ||
         policy.cwd !== request.cwd || policy.approvalPolicy !== 'never' ||
-        policy.confinedShell !== true || policy.enforcement !== 'full') {
-      throw new BridgeError('INVALID_REQUEST', 'DSH did not attest the requested cwd and confined permission policy; prompt withheld');
+        policy.confinedShell !== !fullAccess ||
+        (fullAccess ? policy.enforcement !== undefined : policy.enforcement !== 'full')) {
+      throw new BridgeError('INVALID_REQUEST', 'DSH did not attest the requested cwd and permission policy; prompt withheld');
     }
   }
 

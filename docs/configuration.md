@@ -18,6 +18,38 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 
 展示值包含 Flywheel 已确定的 driver 默认：DSH／Codex／Kimi 的空 thinking 为 high，pi／omp／zcode 为 max；Kimi／Codex／Zcode 的空 model 使用各自 driver 常量。pi／omp 未指定模型时仍留空，表示 Flywheel 不能从配置确定它。`residentSession` 只有 Plan＋Kimi＋明确启用时为 true，不把其他阶段忽略的请求显示为已生效。
 
+### 将旧配置切换到已有的三种资源
+
+本轮源码新增的 `subscriptions` 预设只使用 ChatGPT 订阅、Kimi Code 订阅和 DeepSeek 付费 API（仅 Flash）。普通安装／升级仍保留已有配置；所以旧文件里的 Z.AI／GLM、Kimi K3 和旧 thinking 不会因升级 UI 自动消失。此迁移命令和 `permissions.mode` 需要包含本轮修复的 CLI 与同版本 worker，已发布的 0.28.1 不包含它们。
+
+在实际项目目录运行以下命令；若任务目录有单独配置，再加 `--task-dir /repo/docs/my-task`：
+
+```sh
+flywheel config migrate --preset subscriptions --cwd /repo --json
+flywheel config migrate --preset subscriptions --cwd /repo --apply --json
+flywheel config inspect --cwd /repo --json
+```
+
+第一条只预览。`--apply` 明确应用到当前实际命中的任务／项目／全局文件，并先备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。可以用 `--expect-sha256` 绑定之前预览的摘要；文件已经变化时拒绝陈旧应用。预算、worktree、验证、重试、价格和用户说明等非模型设置保留，Plan 明确设置的 `resident-session:false` 也保留。配置损坏、额外自定义路由／阶段或不支持的文件身份会明确阻断，不猜测替代。
+
+迁移写入完整的阶段模型、thinking 和渠道，去掉被替换绑定的旧 profile 引用，清除所选渠道的旧 fallback／模型映射，使旧付费渠道不再自动可达；未引用的自定义 profiles／channels 仍保留。默认关闭第二意见，并明确报告旧多模态路由被停用。默认分配仍是 Kimi K3.1 Pro high 负责 Plan／frontend／Garden，DeepSeek Flash high 负责普通执行、low 负责 Intake，GPT-6.1 Sol high 负责 hard／Review，GPT-6 Astra high 负责 Judge。hard 通过 Codex Pro 插件，Review／Judge 通过 DSH ChatGPT provider。Kimi 缺省模型同时更新为 `kimi-code/k3.1-pro`；显式写入的自选模型不会被仅修改 driver 缺省值覆盖。
+
+迁移不登录账号，也不发模型请求。当前运行中的任务继续使用启动时已加载的配置；新配置在下一次启动生效。检查迁移后的 source／scope／bindings，再按需要停止和恢复任务。
+
+迁移期间不要同时编辑目标文件。迁移锁协调 Flywheel 迁移进程；写入前再次检查文件，再原子替换完整文件，不提供对任意外部编辑器的原子 CAS。报告以 `configurationStatus` 区分拟议配置 `proposed`、重读确认的实际配置 `effective` 和写入后尚未确认的 `unconfirmed`；备份／写入失败不能把新模型显示成已生效。
+
+### 完全权限与无需逐步确认
+
+```json
+{"permissions":{"mode":"full-access"}}
+```
+
+新安装模板和显式 `subscriptions` 迁移都写入这一设置。全部阶段使用完全权限：DSH／Codex 请求 `danger-full-access` 与 `approval=never`，Codex Pro 通过其公开 machine API 映射，Kimi print 沿用原生 auto。它表示这些 worker 可以访问当前操作系统用户本来能够访问的文件和命令，并不从 DSH 对话框的权限下拉菜单继承。
+
+旧文件没有 `permissions` 时保持 `role-based`：Plan／Execute 为项目内写入，Review／Judge 为只读。两种策略都不等待交互审批；只读／项目限制下的 `never` 可能直接拒绝动作，不能把它等同于完全权限。`permissions.mode` 的拼写、类型和枚举都会在启动前校验。
+
+完全权限不会关闭 Flywheel 的任务边界、冻结验收、验证和候选身份检查。评审职责仍是评价已有候选，修改候选或验收条件不能取得有效通过。需要受限权限时显式使用 `role-based`；工作区隔离本身不是 OS 沙箱。
+
 ## 2. 四个概念各负责什么
 
 | 字段 | 含义 | 示例 |
@@ -54,7 +86,7 @@ DSH 的实际 provider 按 `binding.provider` → `channels[channel].provider` �
 
 `FLYWHEEL_CODEX_PRO_WORKER` 可显式指定 worker；通常由 npm 启动器解析同版本依赖。`FLYWHEEL_CODEX_BIN` 指定插件内部的 Codex 程序，默认 PATH 中的 `codex`；`CODEX_HOME` 可选择既有配置与登录目录。自定义环境需对启动引擎的进程可见，安装器不会复制凭证。
 
-插件在运行前确认模型、cwd、approval 和沙箱模式；Flywheel 在完整结果返回后检查实际策略及进程终态。workspace-write 允许工作区及 Codex 标准临时目录；额外的工作区外 writable roots、网络启用或不能确认的策略不能进入成功验收。**该完整策略检查发生在运行后，不能阻止自定义 Codex 配置已允许的访问。** 要求完整策略在任务前被拒绝的环境，应等待上游公开 pre-turn guard；doctor 会持续提示这一边界。
+插件在运行前确认模型、cwd、approval 和沙箱模式；Flywheel 在完整结果返回后检查实际策略及进程终态。在 role-based 的 workspace-write 模式，允许工作区及 Codex 标准临时目录；额外的工作区外 writable roots、网络启用或不能确认的策略不能进入成功验收。显式 full-access 则核对 `danger-full-access`／`dangerFullAccess` 完全权限回执，不将其误报为受限沙箱。**该完整策略检查发生在运行后，不能阻止自定义 Codex 配置已允许的访问。** 要求完整策略在任务前被拒绝的环境，应等待上游公开 pre-turn guard；doctor 会持续提示这一边界。
 
 指标的 `codex-pro-receipt` 保存完整 machine receipt，包含请求、实际配置、thread/turn、进程、清理、usage 和失败事实。effort 的 `accepted: true` 不等于服务器证明了实际推理强度，`effectiveEffort` 保留 null。仅 `usage.status: "complete"` 的本次增量进入已知预算；partial/unknown 原样留在回执并计入未知调用。插件不提供实际美元成本，原始 cost 保持 unknown；Flywheel 只有在用户显式配置 pricing 且 usage 完整时才能另行估算，估算不等于订阅账单。
 
@@ -118,7 +150,7 @@ flywheel template flywheel.profiles.example.json
 | profile 再引用另一个 profile | 不支持继承链；加载失败 |
 | `_note`、`_note_*` | 允许配置对象中的说明文字，不进入执行绑定 |
 
-`resident-session` 是阶段策略，不能放进 profile。当前只有 Kimi 的 Plan 可恢复历史，且必须匹配实际 harness/model/channel/cwd/thinking；profile 名改了而实际值没变，不影响身份。其他执行、评审和 SDK 调用仍是新会话。
+`resident-session` 是阶段策略，不能放进 profile。当前只有 Kimi 的 Plan 可恢复历史，且必须匹配实际 harness/model/channel/cwd/thinking/permissionMode；profile 名改了而实际值没变，不影响身份。其他执行、评审和 SDK 调用仍是新会话。
 
 旧内联绑定保留原有缺省行为，不强制迁移。`env-key: null`、`retry.jitter: 0`、`worktree.enabled: false` 等已有合法零值继续支持。显式切换 harness 或 channel 时，要一起核对继承的 provider；必要时用 `provider: ""` 清除显式值，再按新 channel 解析，不能保留另一个 adapter 的 ID。
 

@@ -2,7 +2,7 @@
 
 [English README](../../README.en.md) · [中文](../configuration.md) · [Workflow](workflow.md)
 
-Flywheel loads one complete configuration, expands its model profiles, and resolves each stage's binding before starting. Model selection is explicit configuration. Restart the engine after changing it. This guide describes the 0.28.0 implementation; existing user configuration is not automatically migrated during installation.
+Flywheel loads one complete configuration, expands its model profiles, and resolves each stage's binding before starting. Model selection is explicit configuration. Restart the engine after changing it. This guide follows the current source; existing user configuration is not automatically migrated during installation. The migration and permission-policy additions below are marked separately from the published 0.28.1 release.
 
 ## Configuration precedence
 
@@ -22,6 +22,38 @@ flywheel config inspect --cwd /absolute/path/to/repo --task-dir /absolute/path/t
 ```
 
 The result includes `source`, `scope`, resolved physical paths, and stage `bindings`. Without `--task-dir`, discovery starts at the selected project and lower levels. Inspection does not create global configuration or task state, read account tokens, or invoke a model.
+
+## Apply the subscription preset to existing configuration
+
+The new source-level `subscriptions` preset uses only ChatGPT subscriptions, Kimi Code subscriptions, and paid DeepSeek API access with Flash. Normal installation and upgrades preserve an existing configuration, so an old Z.AI/GLM route or Kimi K3 binding remains effective until explicitly migrated. This command and `permissions.mode` require a CLI and matching workers that include this change; published 0.28.1 does not include them.
+
+From the actual project, preview and apply the selected configuration. Add `--task-dir /repo/docs/my-task` when the task has its own configuration:
+
+```sh
+flywheel config migrate --preset subscriptions --cwd /repo --json
+flywheel config migrate --preset subscriptions --cwd /repo --apply --json
+flywheel config inspect --cwd /repo --json
+```
+
+The first command only previews. `--apply` backs up the original bytes and updates the effective task/project/global file; with no file, it creates global configuration. Optional `--expect-sha256` binds application to a preview. Changed source files, invalid input, unsupported file identities, and extra custom routes/stages are rejected. Budgets, verification, worktrees, retries, pricing, notes, and an explicit Plan `resident-session:false` are preserved.
+
+The preset replaces the model bindings, removes their old profile references, and clears fallback/model mappings on the selected channels so that the old paid routes are no longer automatically reachable. Unreferenced custom profiles and channels remain intact. It disables the optional second opinion and explicitly reports removal of the old unverified multimodal route. Kimi K3.1 Pro/high handles Plan, frontend execution, and Garden; DeepSeek Flash/high handles ordinary execution and Flash/low handles Intake; GPT-6.1 Sol/high handles hard execution and Review; GPT-6 Astra/high handles Judge. Hard execution uses Codex Pro; Review/Judge use the DSH ChatGPT provider. Kimi's omitted-model default is also `kimi-code/k3.1-pro`, without overriding an explicitly selected model.
+
+Do not edit the target file while migrating. The lock coordinates Flywheel migration processes; the source is checked again before a complete file is atomically replaced. This is not an atomic compare-and-set against arbitrary external editors. Reports distinguish proposed configuration (`configurationStatus: proposed`), re-read effective configuration (`effective`), and an unconfirmed post-write result (`unconfirmed`). A failed backup or write must not present the proposed models as already effective.
+
+Migration does not sign in or invoke models. Running tasks retain their startup configuration; the next engine start uses the migrated file. Review the resulting source, scope, and bindings before stopping/resuming an existing task as needed.
+
+## Full access without per-action approval
+
+```json
+{"permissions":{"mode":"full-access"}}
+```
+
+New installation templates and the explicit subscription migration select this mode for every stage. DSH/Codex request `danger-full-access` and `approval=never`; Codex Pro maps through its public machine API; Kimi print retains native auto behavior. This grants worker access within the current operating-system user's permissions. It is independent of the desktop conversation's permission dropdown.
+
+Existing files without this setting retain `role-based`: Plan/Execute request workspace-write, and Review/Judge request read-only. Neither policy waits for interactive approval. In restricted modes, `never` can reject an action; it does not itself grant full access. Invalid policy names and types fail before execution.
+
+Full access preserves task boundaries, frozen acceptance, verification, and candidate identity checks. A reviewer still cannot change the candidate or acceptance criteria and obtain a valid verdict. Select `role-based` explicitly when confinement is intended; a worktree is not an OS sandbox.
 
 ## Fields and identities
 
@@ -100,7 +132,7 @@ Do not create a task file containing only a few profiles and expect it to inheri
 | A profile references another profile | Unsupported; configuration error |
 | `_note` or `_note_*` | Permitted explanatory metadata, excluded from execution bindings |
 
-`resident-session` belongs on a stage, not in a profile. Currently only Kimi Plan can resume, and only when harness, model, channel, working directory, and thinking match. This restores session history, not a permanently running process. Execution and review calls start fresh sessions.
+`resident-session` belongs on a stage, not in a profile. Currently only Kimi Plan can resume, and only when harness, model, channel, working directory, thinking, and permission mode match. This restores session history, not a permanently running process. Execution and review calls start fresh sessions.
 
 Legal existing zero values, including `env-key: null`, `retry.jitter: 0`, and `worktree.enabled: false`, remain meaningful. When changing a harness or channel, also inspect any inherited provider. Use `provider: ""` when necessary to clear an explicit value before resolving the newly selected DSH channel.
 
@@ -146,7 +178,7 @@ These settings must be visible to the process starting the engine. The installer
 
 ### Permissions, receipts, and cleanup
 
-The plugin checks the requested model, working directory, approval policy, and sandbox mode before a turn. Flywheel examines the complete returned policy afterward. Workspace-write permits the workspace and standard Codex temporary directories; extra external write roots, enabled network, or unconfirmed policy make the result ineligible for successful delivery.
+The plugin checks the requested model, working directory, approval policy, and sandbox mode before a turn. Flywheel examines the complete returned policy afterward. In role-based mode, workspace-write permits the workspace and standard Codex temporary directories; extra external write roots, enabled network, or unconfirmed policy make the result ineligible for successful delivery. Explicit full access verifies the matching `danger-full-access` sandbox and `dangerFullAccess` policy without claiming confinement.
 
 **The complete policy check happens after execution. It cannot prevent access already allowed by custom Codex configuration.** An environment requiring a full policy rejection before any turn needs an upstream public pre-turn guard. Kimi's current CLI integration also provides no OS-level sandbox guarantee; a configured permission requirement should not be read as proof of its enforcement.
 

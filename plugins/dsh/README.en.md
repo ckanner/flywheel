@@ -162,10 +162,14 @@ actual inference result. Keep `warn`, `unknown`, and `skipped` distinct from
 
 Open a DSH session and choose **Flywheel** in the native view bar alongside
 Chat and Trajectory. If the entry is not directly visible, check that bar's
-More menu. Select the absolute task worktree path as the repository directory
-and the task directory inside that same worktree. A blank repository field
-uses the current session's starting directory. Prepare and review the contracts
-first; the view does not turn an empty directory into a complete task plan.
+More menu. Ask the chat assistant to prepare and review the task using
+`flywheel-new`; it reports the actual paths. **Task files directory** contains
+the task description and acceptance files, for example
+`/Users/me/project/docs/fix-login`. **Project directory (optional)** can stay
+blank to use the current DSH session directory; specify the matching project
+worktree when the task lives elsewhere. Configuration and diagnostic actions
+can also leave the task directory blank. These are project paths, not plugin
+installation paths.
 
 The panel, `/flywheel`, and `flywheel_control` share these Go operations:
 
@@ -187,6 +191,13 @@ automatic polling or task discovery. To observe a task started through another
 entry point, select its task directory and refresh. Effective configuration comes
 from the engine's selected file; installing the plugin or changing DSH's chat
 model does not migrate that configuration.
+
+**Check installation and configuration** performs local checks without starting
+the SDK. **Check DSH connection** additionally starts a temporary SDK process,
+checks its configuration, directory and permissions, and closes it. Use these
+when installing, upgrading or troubleshooting; they are not required before
+every task. Neither sends an inference prompt or proves account access, quota
+or actual model response capability.
 
 ### View, request, and task lifetimes
 
@@ -271,12 +282,15 @@ Conversely, desktop installation and sign-in do not prove that the SDK profile
 loads and authorizes the same capabilities. Verify each selected harness through
 its own configuration and supported authorization flow.
 
-The DSH worker requests `read-only` or `workspace-write`, fixes approvals to
-`never`, and verifies the effective SDK policy before sending the task prompt.
-In the checked Mac source, the DSH sandbox uses its Seatbelt runner and filesystem
-fence. Workspace writes include DSH's permitted temporary area; this is not a
-network-isolation guarantee. Missing or incomplete enforcement is a failure,
-not a reason to switch to unrestricted access.
+The DSH worker supports `read-only`, `workspace-write`, and explicit
+`danger-full-access`, with approvals fixed to `never`. New subscription presets
+select `permissions.mode:full-access` for every stage; Kimi print retains native
+auto behavior. Existing files without this setting retain role-based access
+until explicitly migrated. The actual SDK policy is checked before prompting.
+Restricted modes use the checked Mac Seatbelt runner and filesystem fence;
+workspace writes include DSH's permitted temporary area. Explicit full access
+is recorded without claiming OS confinement. Host static denials, account
+restrictions, and operating-system permissions remain in effect.
 
 The SDK overlay disables worker-owned delegation, workflow/goal drivers, model
 titles, and automatic model compaction so the Go owner can bound work and
@@ -286,14 +300,15 @@ not a claim that every DSH web operation requires a model: the official
 [web tool](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)
 configures search and fetch independently, while the
 [DeepSeek search backend](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/web-search-deepseek/README.md)
-does use an auxiliary model request. This UI fix keeps worker policy unchanged.
+does use an auxiliary model request. Full access changes the host access policy;
+these tool and auxiliary-model restrictions still apply.
 Restoring retrieval or [automatic compaction](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/compaction/compaction-basic/README.md)
 requires a separate check of accounting, budgets, cancellation, and directory
 ownership; the view's location does not establish those guarantees.
 
 Codex Pro uses fresh ephemeral calls and checks the model, directory, approval
 policy, and sandbox mode before execution. In version 0.8.0, the full
-`sandboxPolicy` reaches Flywheel only in the returned receipt. Flywheel rejects
+`sandboxPolicy` reaches Flywheel only in the returned receipt. In restricted modes, Flywheel rejects
 delivery when that policy permits unexpected writable roots or network access,
 but **this check happens after execution and cannot undo access already
 permitted by custom Codex configuration**. It is not a complete pre-execution

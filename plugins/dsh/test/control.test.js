@@ -219,7 +219,49 @@ test('policy uses the shipped shell probe and pins effective session facts, reje
   ctx.shell.execute = async () => ({ result: async () => ({ exitCode: 0, sandbox: { mode: 'read-only', enforcement: 'partial' } }) });
   await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /full enforcement/);
   ctx.shell.sandboxMode = undefined;
-  await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /confined/);
+  await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /sandbox-capable/);
+});
+
+test('full-access shell readiness records the absence of confinement and rejects fabricated enforcement', async () => {
+  let callback;
+  let seenSpec;
+  let registrations = 0;
+  let result = { exitCode: 0, sandbox: { mode: 'danger-full-access', denied: false } };
+  const events = [];
+  const ctx = {
+    on: (name, fn) => { assert.equal(name, 'session/created'); registrations += 1; callback = fn; },
+    shell: {
+      sandboxMode: 'danger-full-access',
+      resolve: spec => { seenSpec = spec; return spec; },
+      execute: async () => ({ result: async () => result }),
+    },
+    sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: '/workspace' }) },
+    approval: { effectivePolicy: () => 'never' },
+  };
+  const config = { cwd: '/workspace', permissionMode: 'danger-full-access' };
+  await applyPolicy(ctx, config);
+  assert.equal(seenSpec.command, ':');
+  assert.deepEqual(seenSpec.sandboxPolicy, { mode: 'danger-full-access', workspaceRoot: '/workspace' });
+  callback({ append: (type, data) => events.push({ type, data }) });
+  assert.deepEqual(events, [
+    { type: 'sandbox/mode', data: { mode: 'danger-full-access' } },
+    { type: 'approval/policy', data: { policy: 'never' } },
+    { type: 'flywheel/policy', data: { protocol: 1, cwd: '/workspace', permissionMode: 'danger-full-access',
+      approvalPolicy: 'never', confinedShell: false } },
+  ]);
+  for (const sandbox of [
+    { mode: 'danger-full-access', denied: true },
+    { mode: 'danger-full-access' },
+    { mode: 'danger-full-access', denied: false, enforcement: 'full' },
+    { mode: 'danger-full-access', denied: false, enforcement: 'partial' },
+    { mode: 'workspace-write', denied: false, enforcement: 'full' },
+  ]) {
+    result = { exitCode: 0, sandbox };
+    await assert.rejects(applyPolicy(ctx, config), /explicit full access/);
+  }
+  result = { exitCode: 1, sandbox: { mode: 'danger-full-access', denied: false } };
+  await assert.rejects(applyPolicy(ctx, config), /explicit full access/);
+  assert.equal(registrations, 1, 'a failed readiness probe cannot register session policy evidence');
 });
 
 test('the native rc.5 view reaches the registered slash command through the session-scoped Remote', async t => {

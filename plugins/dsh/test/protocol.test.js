@@ -15,7 +15,11 @@ test('start normalizes cwd and rejects resume, extra write roots, implicit permi
   const link = join(cwd, 'alias');
   await symlink(cwd, link);
   assert.equal((await validateStart(request(link))).cwd, await realpath(cwd));
-  for (const extra of [{ sessionId: 'old' }, { writableRoots: ['/'] }, { permissionMode: 'danger-full-access' },
+  for (const permissionMode of ['read-only', 'workspace-write', 'danger-full-access']) {
+    assert.equal((await validateStart({ ...request(cwd), permissionMode })).permissionMode, permissionMode);
+  }
+  for (const extra of [{ sessionId: 'old' }, { writableRoots: ['/'] }, { permissionMode: undefined },
+    { permissionMode: 'dangerously-bypass-approvals-and-sandbox' }, { permissionMode: 'full' },
     { provider: '' }, { model: '' }, { reasoningEffort: '' }, { timeoutMs: 0 }, { maxTokens: -1 }, { cwd: '.' }]) {
     await assert.rejects(validateStart({ ...request(cwd), ...extra }));
   }
@@ -75,4 +79,20 @@ test('permission acknowledgement must match actual cwd, policy, approval and ful
   }
   fold.policy = valid;
   assert.doesNotThrow(() => fold.verifiedPolicy(req));
+});
+
+test('full access acknowledgement is explicit and never claims confinement', () => {
+  const fold = new SessionFold('s');
+  const req = { ...request('/tmp/workspace'), permissionMode: 'danger-full-access' };
+  const valid = { protocol: 1, cwd: req.cwd, permissionMode: req.permissionMode,
+    approvalPolicy: 'never', confinedShell: false };
+  for (const extra of [{ cwd: '/' }, { permissionMode: 'workspace-write' }, { approvalPolicy: 'ask' },
+    { confinedShell: true }, { confinedShell: undefined }, { enforcement: 'full' }, { enforcement: 'partial' }]) {
+    fold.policy = { ...valid, ...extra };
+    assert.throws(() => fold.verifiedPolicy(req));
+  }
+  fold.policy = valid;
+  assert.doesNotThrow(() => fold.verifiedPolicy(req));
+  assert.throws(() => fold.verifiedPolicy({ ...req, permissionMode: 'read-only' }),
+    'a full-access report must never satisfy a constrained request');
 });

@@ -60,7 +60,10 @@ git -C "$repo_dir" worktree list --porcelain
      然后用 `/skill:flywheel-new` 从 approved 候选生成契约（仍需人审冻结）。
 
 本模块的 CWD 是 `repo_dir`，不会启动 Execute／L1／Review 或本地 packet 合并，
-也不自动创建／合并 PR。DSH／Codex 后端请求 read-only；其他后端的实际权限以其
-能力为准，不能把“建议模块”或 worktree 当成安全沙箱。PR 操作留给获授权的外层流程。
+也不自动创建／合并 PR。核对 `permissions.mode`：`role-based`（已有文件缺省）下
+DSH／Codex（含 Codex Pro）请求 `read-only`；`full-access` 通过所选后端正式接口
+请求完全权限。Intake 仍只产候选与建议，不能因权限扩大自动实施。Kimi print 为原生
+auto，不提供 OS 级只读保证；不能把“建议模块”或 worktree 当成安全沙箱。
+PR 操作留给获授权的外层流程。
 清理未确认会停止本轮后续候选；保留 inbox／metrics，确认相关子进程结束后再用
 原路径处理后续任务，不在 skill 中重试、手写 state 或删除工作区。

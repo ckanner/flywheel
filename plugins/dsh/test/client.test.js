@@ -59,9 +59,9 @@ test('native Flywheel view is additive, idle on opening, and ships its scoped st
   assert.equal(ui.definition.label(), 'Flywheel');
   assert.equal(ui.requests.length, 0, 'opening a view does not start a probe or task');
   assert.match(statusRegion(ui).textContent, /还没有任务状态/);
-  assert.equal(detail(ui, '模型配置与环境检查').open, false);
+  assert.equal(detail(ui, '配置与排查（按需）').open, false);
   for (const name of ['刷新状态', '启动', '停止']) assert.equal(ui.button(name).disabled, true);
-  for (const name of ['查看模型配置', '检查环境', 'SDK 无推理检查']) assert.equal(ui.button(name).disabled, false);
+  for (const name of ['查看模型配置', '检查安装与配置', '检查 DSH 接入']) assert.equal(ui.button(name).disabled, false);
   const styles = [...ui.document.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]')];
   assert.equal(styles.length, 1, 'the view renders exactly one plugin-owned stylesheet');
   assert.ok(ui.container.contains(styles[0]), 'React owns the stylesheet inside the slot component');
@@ -79,15 +79,22 @@ test('native Flywheel view is additive, idle on opening, and ships its scoped st
 });
 
 test('effective models can be inspected without a task and every binding remains readable', async t => {
-  const ui = await mountPanel(t, request => commandReply(envelope(request, { configuration: configuration() })));
+  const configured = configuration();
+  for (const permissionMode of ['read-only', 'danger-full-access', 'future-access', 'constructor']) {
+    configured.bindings.push({ ...configured.bindings[0], id: 'permissions.' + permissionMode, permissionMode });
+  }
+  const ui = await mountPanel(t, request => commandReply(envelope(request, { configuration: configured })));
   await ui.click('查看模型配置');
   assert.deepEqual(ui.requests, [{ action: 'config' }]);
   const report = ui.container.querySelector('[aria-label="实际模型配置"]');
   assert.match(report.textContent, /\/repo\/flywheel\.config\.json/);
-  for (const value of ['deepseek-flash', 'deepseek-official', 'deepseek-account', 'workspace-write',
+  for (const value of ['deepseek-flash', 'deepseek-official', 'deepseek-account', '项目内写入',
+    '只读', '完全权限（无需逐步确认）', 'future-access', 'constructor',
     'Profile', 'fast', 'kimi-code/k3.1-pro', '会话恢复', '启用', '未用于本次检查',
     '由原生运行时管理', '规划', '执行', 'high']) assert.ok(report.textContent.includes(value), value);
   const raw = detail(ui, '引擎原始结果（JSON）');
+  assert.deepEqual(JSON.parse(raw.querySelector('pre').textContent).configuration, configured,
+    'readable permission labels do not rewrite the engine configuration or unknown future values');
   assert.equal(raw.open, false, 'raw JSON is folded by default');
   await act(async () => raw.querySelector('summary').click());
   assert.equal(raw.open, true);
@@ -176,20 +183,20 @@ test('local and SDK checks retain structured failures, remedies and the inferenc
       { id: 'route.unused', status: 'skipped', summary: 'This route is unused.' },
     ],
   } })));
-  await ui.click('检查环境');
+  await ui.click('检查安装与配置');
   assert.deepEqual(ui.requests[0], { action: 'doctor' });
   let report = ui.container.querySelector('[aria-label="环境检查结果"]');
   assert.match(report.textContent, /检查结束：存在阻断项/);
-  assert.match(report.textContent, /未启动 SDK 探测/);
+  assert.match(report.textContent, /未启动 DSH 接入检查/);
   for (const label of ['通过', 'config', '失败', 'binary.kimi', '未验证', 'account', '注意', 'sandbox', '跳过', 'route.unused',
     '错误码：INVALID_REQUEST', '处理建议：Configure an absolute executable path.']) assert.ok(report.textContent.includes(label), label);
   assert.equal(ui.container.querySelector('[role="alert"]'), null, 'a usable diagnostic failure is not a transport failure');
-  await ui.click('SDK 无推理检查');
+  await ui.click('检查 DSH 接入');
   assert.deepEqual(ui.requests[1], { action: 'doctor', probe: true });
   report = ui.container.querySelector('[aria-label="环境检查结果"]');
-  assert.match(report.textContent, /已请求 SDK 无推理检查/);
-  assert.match(report.textContent, /未发送推理请求/);
-  assert.match(report.textContent, /账号授权、额度和真实模型能力未通过本次检查验证/);
+  assert.match(report.textContent, /已请求 DSH 接入检查（不调用模型）/);
+  assert.match(report.textContent, /没有向模型发送消息/);
+  assert.match(report.textContent, /账号授权、可用额度和实际回答能力仍未验证/);
 });
 
 test('editing a read target invalidates its late result without permitting overlapping operations', async t => {
@@ -511,9 +518,9 @@ test('malformed configuration and diagnostic reports stay recoverable instead of
   const failures = [
     { action: 'config', name: '查看模型配置', value: { configuration: { bindings: {} } } },
     { action: 'config', name: '查看模型配置', value: { configuration: { bindings: [null] } } },
-    { action: 'doctor', name: '检查环境', value: { diagnostic: { ok: true, checks: [null] } } },
-    { action: 'doctor', name: '检查环境', value: { diagnostic: { ok: false, checks: [] } } },
-    { action: 'doctor', name: '检查环境', value: { diagnostic: { ok: true, checks: [], configuration: [] } } },
+    { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: true, checks: [null] } } },
+    { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: false, checks: [] } } },
+    { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: true, checks: [], configuration: [] } } },
   ];
   let index = 0;
   const ui = await mountPanel(t, request => {
@@ -537,7 +544,7 @@ test('malformed configuration and diagnostic reports stay recoverable instead of
   await ui.click('查看模型配置');
   assert.equal(alerts(ui), '');
   assert.ok(ui.container.querySelector('[aria-label="实际模型配置"]'));
-  await ui.click('检查环境');
+  await ui.click('检查安装与配置');
   assert.equal(alerts(ui), '');
   assert.match(ui.container.querySelector('[aria-label="环境检查结果"]').textContent, /Authorization remains unverified/);
 });
@@ -566,7 +573,7 @@ test('the UI accepts realpath identities already validated by the host for every
   await ui.type(0, inputTask);
   for (const [name, action] of [
     ['刷新状态', 'status'], ['启动', 'start'], ['停止', 'stop'], ['查看模型配置', 'config'],
-    ['检查环境', 'doctor'], ['SDK 无推理检查', 'doctor'],
+    ['检查安装与配置', 'doctor'], ['检查 DSH 接入', 'doctor'],
   ]) {
     await ui.click(name);
     await act(async () => { await completion; });
@@ -591,7 +598,7 @@ test('labelled fields validate paths without a request, retain focus, and follow
   }
   await ui.type(0, 'relative/task');
   assert.equal(ui.container.querySelector('input').getAttribute('aria-invalid'), 'true');
-  assert.match(ui.container.textContent, /请输入以 \/ 开头的绝对路径/);
+  assert.match(ui.container.textContent, /请填写以 \/ 开头的完整路径/);
   assert.equal(ui.button('启动').disabled, true);
   await ui.click('查看模型配置');
   assert.equal(ui.requests.length, 0);
@@ -602,7 +609,7 @@ test('labelled fields validate paths without a request, retain focus, and follow
   await ui.setLocale('en');
   assert.equal(ui.document.activeElement, input, 'locale refresh does not remount focused fields');
   assert.equal(input.value, '/repo/docs/task');
-  assert.match(ui.container.textContent, /Task controls/);
+  assert.match(ui.container.textContent, /Flywheel tasks/);
   assert.equal(ui.button('Refresh status').disabled, false);
   assert.equal(ui.requests.length, 0, 'locale changes cannot trigger a command');
   await ui.click('Inspect model configuration');

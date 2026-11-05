@@ -39,14 +39,16 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (scenario !== 'initialize-hang') reply(request.id, { userAgent: 'offline-fixture' });
   } else if (request.method === 'thread/start') {
     const { cwd, model, sandbox, approvalPolicy, ephemeral } = request.params;
-    const policy = sandbox === 'read-only'
+    const policy = sandbox === 'danger-full-access' ? { type: 'dangerFullAccess' } : sandbox === 'read-only'
       ? { type: 'readOnly', networkAccess: false }
       : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
     if (scenario === 'broad-policy') policy.writableRoots = ['/'];
     reply(request.id, { thread: { id: threadId, ephemeral }, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
       model: scenario === 'wrong-model' ? 'unexpected-model' : model,
       approvalPolicy: scenario === 'wrong-approval' ? 'on-request' : approvalPolicy,
-      sandbox: scenario === 'wrong-sandbox' ? { type: 'dangerFullAccess' } : policy });
+      sandbox: scenario === 'wrong-sandbox'
+        ? (sandbox === 'danger-full-access' ? { type: 'workspaceWrite', writableRoots: [cwd] } : { type: 'dangerFullAccess' })
+        : policy });
   } else if (request.method === 'turn/start') {
     reply(request.id, { turn: { id: turnId } });
     notify('turn/started', { threadId, turn: { id: turnId } });

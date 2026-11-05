@@ -32,7 +32,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		args := drivers.CallArgs{
 			TaskDir:        c.TaskDir,
 			Cwd:            firstNonEmpty(a.cwd, c.Cwd),
-			PermissionMode: "read-only",
+			PermissionMode: c.Config.PermissionMode(a.role, currentHarness),
 			Prompt:         a.prompt,
 			Model:          currentModel,
 			Binding: config.LoopBinding{

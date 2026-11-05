@@ -2,7 +2,7 @@
 
 [English](en/workflow.md) · 简体中文
 
-本文描述 **Flywheel 0.28.0**的推荐工作流。新默认 `hard` 路由使用
+本文描述 **Flywheel 当前源码**的推荐工作流。默认 `hard` 路由使用
 Codex Pro 插件 machine API；源码存在不代表 npm `latest` 已更新，安装状态见
 [发行指南](releasing.md)。下列命令是操作示例，不会因阅读本文自动执行。
 
@@ -149,10 +149,17 @@ skills 从实际任务目录解析同一 worktree 根，再调用 CLI。默认�
 | Plan | 任务集成 worktree，修订任务契约 | 引擎使用启动时的根目录 |
 | Execute、L1、Review | 当前 packet 候选工作区；正常模式为 packet worktree | 引擎创建、记录并复用 packet worktree |
 | L2/L3、Judge | 任务集成 worktree | 引擎验证已集成的需求与里程碑 |
-| Intake、Garden | 所选任务所属 worktree | 入口解析目录，Go 写建议结果；DSH／Codex 后端请求只读，默认 Kimi 无 OS 级只读保证 |
+| Intake、Garden | 所选任务所属 worktree | 入口解析目录，Go 写建议结果 |
 | Status、Stop | 对应原任务路径与根目录 | 直接查询或停止，不要求为此新建 worktree、切分支或提交 |
 
-因此，每个 Loop 不会各自新建一份 worktree。任务 worktree 贯穿整个需求，
+模型调用的权限由 `permissions.mode` 决定：`role-based`（已有文件缺省）下，
+Plan／Execute 请求 `workspace-write`，Review／Judge 以及 DSH／Codex（含 Codex Pro）
+的 Intake／Garden 请求 `read-only`；`full-access` 下全部阶段通过所选后端正式接口
+请求完全权限。Kimi print 保持原生 auto，不提供可宣称的 OS 级只读或工作区沙箱。
+权限不改变阶段职责：评审只评价候选，辅助模块只产建议；评审前后的候选身份检查
+仍然执行。完整配置和迁移说明见[配置指南](configuration.md)。
+
+各 Loop 不会各自新建一份 worktree。任务 worktree 贯穿整个需求，
 packet worktree 贯穿该单元的执行、验收与评审；完成交付才由引擎处理本地合并
 与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
 `flywheel-verify` 只运行确定性验收：指定 packet 时只检查该单元 L1；未指定时

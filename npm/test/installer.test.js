@@ -67,9 +67,16 @@ else if (args[0] === "install-skills") {
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(path.join(dest, "SKILL.md"), "fixture skill");
   }
-  const ok = process.env.TEST_SKILL_CONFLICT !== "1";
-  console.log(JSON.stringify({ protocol: 1, ok, targetBase: base,
-    results: [{ name: "flywheel-run", dest, action: ok ? "copied" : "conflict" }] }));
+  const configFailure = process.env.TEST_CONFIG_FAILURE === '1';
+  const ok = process.env.TEST_SKILL_CONFLICT !== "1" && !configFailure;
+  const configPath = process.env.FLYWHEEL_CONFIG || path.join(process.env.HOME, '.config', 'flywheel', 'flywheel.config.json');
+  const existing = fs.existsSync(configPath);
+  if (!existing && !configFailure) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ version: 1, _note: 'user-owned fixture configuration' }));
+  }
+  console.log(JSON.stringify({ protocol: 1, ok, targetBase: base, config: { path: configPath, action: configFailure ? 'error' : existing ? 'existing' : 'created', error: configFailure ? 'config write denied' : undefined },
+    results: [{ name: "flywheel-run", dest, action: process.env.TEST_SKILL_CONFLICT === "1" ? "conflict" : "copied" }] }));
   process.exitCode = ok ? 0 : 1;
 } else if (args[0] === "doctor") {
   if (process.env.TEST_DOCTOR_HANG === "1") {
@@ -196,6 +203,8 @@ test("installer executes special paths literally and repeat setup keeps a stable
   assert.equal(first.ok, true);
   assert.equal(first.ready, true);
   assert.equal(first.authentication, "unknown");
+  assert.equal(first.configuration.action, 'created');
+  assert.equal(first.configuration.automaticMigration, false);
   assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1, inferenceTested: false });
   const record = await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json"));
   assert.equal(record.launcher.path, first.paths.launcher);
@@ -210,9 +219,13 @@ test("installer executes special paths literally and repeat setup keeps a stable
   assert.equal(echo.code, 0, echo.stderr);
   assert.deepEqual(JSON.parse(echo.stdout), { args: ["echo", "literal ' $(touch ARG_INJECTION)"], dsh: f.dsh, cwd: f.directory });
   const second = resultDocument(await f.launch(f.args).exit, 0);
+  assert.equal(second.configuration.preserved, true);
+  assert.match(second.configuration.message, /升级不会替换旧模型、渠道或思考等级/);
+  assert.deepEqual(second.configuration.migration, { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscriptions', '--cwd', f.directory] });
   assert.equal(second.paths.launcher, first.paths.launcher);
   assert.deepEqual(await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json")), record);
   const records = await f.records();
+  assert.equal(records.some(entry => entry.kind === 'native' && entry.args[0] === 'config'), false, 'setup must not implicitly migrate model selections');
   const add = records.find(entry => entry.kind === "dsh" && entry.args.includes("add"));
   assert.ok(add.args.includes(`@ckanner/dsh-plugin-flywheel@${meta.version}`));
   assert.ok(add.args.includes("--save-exact"));
@@ -243,6 +256,26 @@ test("human setup output retains diagnostic remedies and does not announce an un
   assert.match(result.stdout, /Kimi CLI is not installed/);
   assert.match(result.stdout, /install the CLI and rerun doctor/);
   assert.doesNotMatch(result.stdout, /重载插件/);
+  assert.match(result.stdout, /迁移预览:/);
+  assert.match(result.stdout, /subscriptions/);
+});
+
+test('configuration initialization errors never claim that defaults were created or migrated', async t => {
+  const f = await installation(t);
+  const filename = path.join(f.home, '.config', 'flywheel', 'flywheel.config.json');
+  const original = '{"_note":"user configuration","routes":{"default":{"harness":"zcode","model":"zai/glm-5.3"}}}\n';
+  await fs.mkdir(path.dirname(filename), { recursive: true });
+  await fs.writeFile(filename, original);
+  const failed = resultDocument(await f.launch(f.args, { TEST_CONFIG_FAILURE: '1' }).exit, 1);
+  assert.equal(failed.configuration.action, 'error');
+  assert.equal(failed.configuration.automaticMigration, false);
+  assert.match(failed.configuration.message, /初始化失败/);
+  assert.doesNotMatch(failed.configuration.message, /新建全局默认配置/);
+  assert.equal(await fs.readFile(filename, 'utf8'), original);
+  const human = await f.launch(f.args.filter(value => value !== '--json'), { TEST_CONFIG_FAILURE: '1' }).exit;
+  assert.equal(human.code, 1);
+  assert.match(human.stdout, /配置初始化失败/);
+  assert.doesNotMatch(human.stdout, /新建全局默认配置/);
 });
 
 test("missing DSH reports partial installation and recovers on a later explicit command", { timeout: 15000 }, async t => {

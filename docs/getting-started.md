@@ -121,6 +121,8 @@ SDK worker 的临时权限与工具策略只用于其子进程，不改写桌面
 
 ## 4. 配置模型与 skills
 
+如果界面仍显示旧 Z.AI／GLM 或 Kimi K3，先看“配置来源”：升级会保留那份文件。包含本轮修复的新版本可用 `flywheel config migrate --preset subscriptions --cwd /repo --apply --json` 备份并迁移实际生效配置；需预览时去掉 `--apply`。任务有独立配置时加 `--task-dir`。该预设使用 ChatGPT／Kimi Code／DeepSeek Flash、约定的 thinking 和所有阶段完全权限；[迁移与权限说明](configuration.md#将旧配置切换到已有的三种资源)。已发布 0.28.1 尚无此命令。
+
 配置优先级是：**任务目录 → 项目根 → 全局 → 二进制内嵌模板**，选择第一个完整文件，不逐字段合并。默认全局路径是 `~/.config/flywheel/flywheel.config.json`；`FLYWHEEL_CONFIG` 只替换全局路径，不能越过已有任务／项目文件。
 
 查看当前二进制的配置：

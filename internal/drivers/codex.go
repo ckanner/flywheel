@@ -38,7 +38,7 @@ type CodexArgs struct {
 	Prompt          string
 	Model           string // 订阅内 slug，如 "gpt-6-astra"；空 → CodexDefaultModel
 	ReasoningEffort string // 逐任务思考档；空 → high
-	PermissionMode  string // read-only（默认）或 workspace-write；审批始终 never
+	PermissionMode  string // read-only（默认）、workspace-write 或 danger-full-access；审批始终 never
 	Cwd             string
 	APIKeys         map[string]string
 	Watchdog        watchdog.Opts
@@ -177,7 +177,7 @@ func RunCodex(a CodexArgs) Result {
 	if permission == "" {
 		permission = "read-only"
 	}
-	if permission != "read-only" && permission != "workspace-write" {
+	if permission != "read-only" && permission != "workspace-write" && permission != "danger-full-access" {
 		return invalidHarnessResult("codex", model, "unsupported permission mode "+permission)
 	}
 	RegisterCodexProject(a.Cwd)

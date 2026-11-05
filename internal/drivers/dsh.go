@@ -197,7 +197,7 @@ func RunDSH(a DSHArgs) Result {
 		permission = "read-only"
 	}
 	if strings.TrimSpace(a.Provider) == "" || strings.TrimSpace(a.Model) == "" || a.SessionID != "" ||
-		(permission != "read-only" && permission != "workspace-write") {
+		(permission != "read-only" && permission != "workspace-write" && permission != "danger-full-access") {
 		return invalidHarnessResult("dsh", a.Model, "DSH requires provider, model, supported permissions, and a fresh session")
 	}
 	cwd, err := filepath.Abs(a.Cwd)

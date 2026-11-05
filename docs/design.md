@@ -67,7 +67,7 @@ Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.
 
 规划检查点提交前后核对候选内容，并检查新 HEAD 的路径范围与已提交契约。Git hook 修改已加载契约、仅修改 index、或混入实现变更时拒绝继续同步；保留工作区，要求重新加载并验证。
 
-Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinking 全部匹配时恢复。其他后端和旧版本缺身份的会话冷启动。恢复失败有一次冷启动路径，再受传输重试和预算约束；会话不是状态真相。
+Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinking/permission-mode 全部匹配时恢复。其他后端冷启动；旧版本缺少权限身份的会话也先冷启动一次，保存完整身份后才可恢复。恢复失败有一次冷启动路径，再受传输重试和预算约束；会话不是状态真相。
 
 ### 4.2 Execute
 
@@ -75,13 +75,13 @@ Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinkin
 
 执行者可修改实现、单元测试和回归测试，不得削弱断言或改动受保护验收、Spec、packet、配置。不能通过更改覆盖率阈值来完成任务。提示词的稳定部分包含实际 `must-not-touch` 路径和 `protected-test-patterns`，而不只提规则名称。发现范围或 oracle 错误应向 Plan 返回证据；超出 Plan 可写范围的修订继续交人处理。
 
-执行者在 **worktree 内的任务 reports 目录**写 done-report。引擎确认进程已结束，使用限制在工作区的读取路径验证普通文件、体量及 JSON schema，再收集到主任务目录。因此 DSH/Codex 的 workspace-write 不需要获得主 checkout 的额外写权限。
+执行者在 **worktree 内的任务 reports 目录**写 done-report。引擎确认进程已结束，使用限制在工作区的读取路径验证普通文件、体量及 JSON schema，再收集到主任务目录。因此在 role-based 模式下，DSH/Codex 的 workspace-write 不需要获得主 checkout 的额外写权限。
 
 每次实际调用都删除该调用的旧报告入口，避免传输重试沿用上一次留下的有效 JSON。只有合法新报告才计入当前 executor 证据。
 
 ### 4.3 Review
 
-评审在实际候选 worktree 中运行，输入仅为契约、权威 diff、L1 结果和缺陷注入结果，不读 executor transcript。DSH/Codex 使用显式 read-only；没有可靠只读映射的旧 harness 遇显式 read-only 要求时拒绝运行。
+评审在实际候选 worktree 中运行，输入仅为契约、权威 diff、L1 结果和缺陷注入结果，不读 executor transcript。宿主权限由 `permissions.mode` 决定：role-based 请求 read-only，full-access 请求完全权限；后端不能实施所选权限时拒绝运行。两种模式下评审都只负责判断，不得修改候选代码或验收依据。
 
 评审前后都检查候选身份。即使模型返回 pass，只要候选、契约、验证配置或本 packet 报告发生变化，该裁决就不能推进完成。评审提示要求检查断言质量、覆盖矩阵、范围和设计；100% 覆盖率本身不是充分证据。
 
@@ -93,7 +93,7 @@ L1 是单元级 build/lint/typecheck/unit tests/coverage；L2/L3 在里程碑级
 
 Gate 通过条件是 **期望退出码匹配且未超时、未取消、未被信号终止、输出未截断、无 spawn/清理错误**。超时被 trap 成 exit 0，或杀死命令后恰好得到 expect exit 1，都失败。L1 额外要求验收命令执行前后的完整身份相同：命令本身或并发编辑改变了候选／契约／验证输入，即使 exit 0 也必须失败并重验。执行前无法读取身份时不启动验收命令；执行后读取失败同样不能产生可复用绿灯。
 
-里程碑 L2/L3 同样记录主 checkout 在命令前后的候选身份，变化或读取失败判整个 gate 失败。正式运行中的 Judge 绑定刚通过的 gate 身份，在模型调用前后复核，仍使用主 checkout 与 read-only 权限；主判或可选第二意见改变了候选都不能关闭里程碑。被拒绝的模型裁决保留作审计，不能继续显示为有效 pass。
+里程碑 L2/L3 同样记录主 checkout 在命令前后的候选身份，变化或读取失败判整个 gate 失败。正式运行中的 Judge 绑定刚通过的 gate 身份，在模型调用前后复核，仍使用主 checkout，权限由显式 permissions.mode 决定；评审职责仍为只读，主判或可选第二意见改变了候选都不能关闭里程碑。被拒绝的模型裁决保留作审计，不能继续显示为有效 pass。
 
 L1 与 Review 的 `identity` 绑定：
 
@@ -165,7 +165,7 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 | Execute default | DSH SDK | deepseek-official | deepseek-flash | high |
 | Execute frontend | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high |
 | Execute hard | Codex Pro machine API | chatgpt-subscription | gpt-6.1-sol | high |
-| Review | DSH SDK | chatgpt | gpt-6.1-sol | high，只读 |
+| Review | DSH SDK | chatgpt | gpt-6.1-sol | high |
 | Judge | DSH SDK | chatgpt | gpt-6-astra | high，只在里程碑终验 |
 | Intake | DSH SDK | deepseek-official | deepseek-flash | low |
 | Garden | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high |
@@ -174,9 +174,9 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 
 ### 7.1 Codex Pro 接入契约
 
-`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或 resident session。每次调用创建新会话，权限由调用角色确定，不能从桌面全访问设置隐式继承。
+`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或 resident session。每次调用创建新会话，权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
 
-worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；只接受 `workspace-write` 或 `read-only`，审批策略为 `never`。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
+worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
 
 权限检查分两个时点：插件在 `turn/start` 前检查模型、cwd、approval 与沙箱模式；Flywheel 在完整结果返回后检查完整 sandboxPolicy，决定该结果能否进入后续验收。插件 0.8.0 没有提供运行前完整策略 guard；Codex 用户／项目配置可能扩展 writable roots 或 networkAccess。事后拒绝不能阻止已经发生的访问，doctor 必须提示此边界。要求运行前拒绝任何额外权限的环境，需上游增加公开 pre-turn guard 后再使用；不得通过私有 API 或复制凭证建立另一套运行时。
 
@@ -194,9 +194,11 @@ worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1
 
 ## 9. 权限与宿主能力
 
-DSH/Codex 执行用 workspace-write，评审用 read-only，交互审批策略 never。DSH worker 检查实际工作目录、模型、effort、权限回执并在发推理请求前验证沙箱；不支持时失败，不静默改成 full access。
+新增显式 `permissions.mode`：`full-access` 为当前订阅方案的授权模式，所有阶段请求 `danger-full-access`，DSH/Codex 交互审批为 `never`，Kimi print 模式保持原生 auto；不逐步要求用户点击允许。`role-based` 保留旧行为：Plan/Execute 为 workspace-write，Review/Judge 为 read-only，辅助模块按 harness 能力解析。为避免升级暗中扩大既有授权，旧文件缺省仍为 role-based；新安装模板及显式 subscriptions 迁移写入 full-access。编排、配置展示与 doctor 共用同一个权限解析器，Plan 会话恢复身份包含该值。
 
-Kimi print 模式强制 auto，当前 CLI 无本适配器可宣称的 OS 级 workspace 沙箱。它保留原生 harness 能力，也保留这个权限边界；不能把 worktree 当成安全沙箱。legacy pi/omp/zcode 不在新默认路径；明确 read-only 需求无法实施时 fail closed。
+DSH worker 检查实际工作目录、模型、effort、审批与权限回执，继续使用官方 sandbox/approval/fs/bash 实现。受限模式必须证明实际完整强制；完全权限必须确认公开的 danger-full-access 模式且未被拒绝，如实标明无 OS 沙箱限制，不能伪造 enforcement:full。外部运行时或系统权限仍以真实回执为准，不替换审批服务、不伪造成功、不静默降级。评审、规划和执行的职责与路径边界继续由契约和执行前后候选身份检查约束；完全权限不是允许评审修改验收或让未经验证的修改进入交付。
+
+Kimi print 模式强制 auto，当前 CLI 无本适配器可宣称的 OS 级 workspace 沙箱。它保留原生 harness 能力及静态拒绝规则，不能把 worktree 当成安全沙箱。legacy pi/omp/zcode 不在新默认路径；不能映射明确的 read-only 或 full-access 要求时 fail closed。
 
 SDK profile 与桌面 profile 是不同运行配置。桌面装有 ChatGPT provider 不代表 SDK 已加载或已授权。worker 只使用用户指定的官方 DSH 可执行入口，不猜 `.app` 内部路径，不复制凭证。
 
@@ -259,7 +261,7 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 原生 UI 接入和独立 worker 是不同边界。SDK worker 的临时 `--patch` 仅用于该子进程，不修改桌面 profile，也不卸载桌面的插件、skills、工具或 UI。桌面已加载插件、已登录账号、已选模型，不代表 SDK profile 或其他 harness 已配置相同能力；控制面显示引擎实际配置，不静默继承或迁移桌面设置。
 
-现有 worker 策略固定目录、权限和审批，限制自主委派及 workflow／goal 驱动，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。此次 UI 修复不改变 worker 策略；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
+现有 worker 策略固定每次调用的目录、权限和审批，限制自主委派及 workflow／goal 驱动，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。本轮完全权限改变宿主访问策略，仍保留这些工具与辅助模型调用限制；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
 
 ## 13. 配置和分发
 
@@ -269,7 +271,7 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后备渠道。实际 provider 按 binding.provider → channels[channel].provider → 旧 DSH channel 名解析；两个显式 provider 不一致时拒绝加载。非 DSH harness 不能声明一个会被静默忽略的 provider。降级到另一个 channel 时重新解析其 provider，不能沿用旧账号的适配器。原始 profile 名只作配置来源，不进入 Kimi 恢复身份；实际绑定改变按原有会话条件冷启动。模型绑定改变影响后续调用，不单凭未使用 profile 的改动使历史代码验收失效。
 
-默认内嵌表见 [flywheel.config.example.json](../templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](../templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](configuration.md)。现有用户要采用新方案，先比较并显式迁移全局/项目配置。
+默认内嵌表见 [flywheel.config.example.json](../templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](../templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的任务不热加载新配置，下次启动才使用新方案。
 
 ### 13.1 npm 安装与发行
 

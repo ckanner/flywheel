@@ -34,6 +34,30 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, os.Chmod(fixture, 0o755))
 	t.Setenv(CodexProBinaryEnv, fixture)
 
+	t.Run("full-access public machine mapping", func(t *testing.T) {
+		log := filepath.Join(t.TempDir(), "full-access.jsonl")
+		r := RunCodexPro(CodexProArgs{Command: worker, Cwd: t.TempDir(), Prompt: "offline full-access verification",
+			Model: "gpt-test", ReasoningEffort: "high", PermissionMode: "danger-full-access",
+			APIKeys: map[string]string{"TEST_CODEX_PRO_LOG": log}, Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}})
+		require.True(t, r.Settled, "%+v", r)
+		var receipt codexProReceipt
+		require.NoError(t, json.Unmarshal(r.CodexProReceipt, &receipt))
+		assert.Equal(t, "dangerously-bypass-approvals-and-sandbox", receipt.Requested.PermissionMode)
+		require.NotNil(t, receipt.Outcome)
+		assert.Equal(t, "danger-full-access", receipt.Outcome.Configuration.Effective.Sandbox)
+		assert.JSONEq(t, `{"type":"dangerFullAccess"}`, string(receipt.Outcome.Configuration.Effective.SandboxPolicy))
+		entries := readCodexProLog(t, log)
+		assert.True(t, codexProLogHasMethod(entries, "turn/start"))
+		for _, entry := range entries {
+			if entry["method"] == "thread/start" {
+				params := entry["params"].(map[string]any)
+				assert.Equal(t, "danger-full-access", params["sandbox"])
+				assert.Equal(t, "never", params["approvalPolicy"])
+			}
+		}
+		assertCodexProProcessesStopped(t, entries)
+	})
+
 	for _, scenario := range []string{"ok", "unknown-usage", "partial-usage", "wrong-model", "wrong-cwd", "wrong-approval", "wrong-sandbox", "broad-policy", "malformed", "output-limit"} {
 		t.Run(scenario, func(t *testing.T) {
 			log := filepath.Join(t.TempDir(), "app-server.jsonl")

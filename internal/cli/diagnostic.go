@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/spf13/cobra"
 )
@@ -42,8 +43,73 @@ func configCmd() *cobra.Command {
 	inspect.Flags().StringVar(&cwd, "cwd", ".", "工作目录；配置从其 Git 根目录发现")
 	inspect.Flags().StringVar(&taskDir, "task-dir", "", "可选任务目录；相对路径按 --cwd 解析")
 	inspect.Flags().BoolVar(&asJSON, "json", false, "输出有效配置摘要 JSON（不包含凭据值）")
-	cmd.AddCommand(inspect)
+	cmd.AddCommand(inspect, configMigrateCmd())
 	return cmd
+}
+
+func configMigrateCmd() *cobra.Command {
+	options := config.MigrationOptions{}
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use: "migrate", Short: "预览或显式应用订阅模型预设，备份并保留其他配置", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, cancel := diagnosticContext(cmd)
+			defer cancel()
+			report, _ := diagnostic.MigrateContext(ctx, options)
+			if asJSON {
+				printJSON(cmd, report)
+			} else {
+				printMigration(cmd, report)
+			}
+			if !report.OK {
+				return &exitError{code: 1}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&options.Preset, "preset", "", "迁移预设：subscriptions（ChatGPT、Kimi Code、DeepSeek Flash）")
+	cmd.Flags().StringVar(&options.Cwd, "cwd", ".", "工作目录；沿用 config inspect 的 Git 根目录发现规则")
+	cmd.Flags().StringVar(&options.TaskDir, "task-dir", "", "可选任务目录；相对路径按 --cwd 解析")
+	cmd.Flags().BoolVar(&options.Apply, "apply", false, "明确应用；默认仅预览，已有文件先备份")
+	cmd.Flags().StringVar(&options.ExpectSHA256, "expect-sha256", "", "可选：要求源文件与预览时的 SHA-256 一致")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "输出来源、逐项变化、备份路径和实际模型绑定")
+	return cmd
+}
+
+func printMigration(cmd *cobra.Command, report *diagnostic.MigrationReport) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "配置迁移: %s\n来源: %s (%s)\n目标: %s\n源 SHA-256: %s\n", report.Preset, report.Source, report.Scope, report.Target, report.SHA256)
+	for _, change := range report.Changes {
+		fmt.Fprintf(out, "  %s %s\n", change.Action, change.Path)
+	}
+	for _, blocker := range report.Blockers {
+		fmt.Fprintf(out, "  阻断: %s\n", blocker)
+	}
+	if report.Error != "" {
+		fmt.Fprintf(out, "迁移失败: %s\n", report.Error)
+	}
+	if report.Backup != "" {
+		fmt.Fprintf(out, "原始文件备份: %s\n", report.Backup)
+	}
+	switch {
+	case report.Applied:
+		fmt.Fprintln(out, "配置已应用；下次引擎启动时生效。")
+	case report.OK && !report.Changed:
+		fmt.Fprintln(out, "配置已符合预设，无需修改或创建备份。")
+	case report.OK:
+		fmt.Fprintln(out, "仅预览，尚未写入；添加 --apply 明确应用，可用 --expect-sha256 绑定此预览。")
+	}
+	for _, note := range report.Notes {
+		fmt.Fprintln(out, note)
+	}
+	if report.Configuration != nil {
+		if report.ConfigurationStatus == "proposed" {
+			fmt.Fprintln(out, "拟议配置（尚未应用）:")
+		} else {
+			fmt.Fprintln(out, "重新读取的实际配置（供下次引擎启动使用）:")
+		}
+		printConfiguration(cmd, report.Configuration)
+	}
 }
 
 func printConfiguration(cmd *cobra.Command, view *diagnostic.Configuration) {

@@ -28,10 +28,14 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (scenario === 'malformed') { process.stdout.write('not JSON\n'); continue; }
     reply(id, { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } });
   } else if (method === 'session/working-directory/get') {
+    const fullAccess = policy.mode === 'danger-full-access';
     if (scenario !== 'missing-policy') event(params.sessionId, 'flywheel/policy', {
       protocol: 1, cwd: policy.workspaceRoot,
-      permissionMode: scenario === 'wrong-policy' ? 'danger-full-access' : policy.mode,
-      approvalPolicy: 'never', confinedShell: true, enforcement: 'full',
+      permissionMode: scenario === 'wrong-policy' ? (fullAccess ? 'workspace-write' : 'danger-full-access') : policy.mode,
+      approvalPolicy: scenario === 'wrong-approval' ? 'ask' : 'never', confinedShell: !fullAccess,
+      ...(fullAccess ? {} : { enforcement: 'full' }),
+      ...(scenario === 'forged-confinement' ? { confinedShell: true, enforcement: 'full' } : {}),
+      ...(scenario === 'unexpected-enforcement' ? { enforcement: 'partial' } : {}),
     });
     reply(id, { cwd: scenario === 'wrong-cwd' ? '/' : initialized.cwd });
   } else if (method === 'session/prompt') {

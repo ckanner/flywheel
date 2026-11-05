@@ -38,7 +38,7 @@ export function machineRequest(value, api, env) {
   const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs']);
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || value.protocol !== 1 ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.requestId !== 'string' || value.requestId.length > 256 ||
-      !['read-only', 'workspace-write'].includes(value.permissionMode)) {
+      !['read-only', 'workspace-write', 'danger-full-access'].includes(value.permissionMode)) {
     throw new WorkerError('INVALID_REQUEST', 'Expected one protocol=1 start request with an explicit supported permission mode');
   }
   if (value.timeoutMs !== undefined && (!Number.isSafeInteger(value.timeoutMs) || value.timeoutMs < 1 || value.timeoutMs > 2147483647)) {
@@ -46,7 +46,9 @@ export function machineRequest(value, api, env) {
   }
   try {
     return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, model: value.model,
-      effort: value.reasoningEffort, permissionMode: value.permissionMode, prompt: value.prompt,
+      effort: value.reasoningEffort,
+      permissionMode: value.permissionMode === 'danger-full-access' ? 'dangerously-bypass-approvals-and-sandbox' : value.permissionMode,
+      prompt: value.prompt,
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
       command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: 'ephemeral', maxOutputBytes: LIMITS.machineOutputBytes });
   } catch (error) {

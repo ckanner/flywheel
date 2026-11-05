@@ -108,6 +108,34 @@ test('public installed machine API carries exact settings and a complete unchang
   assert.equal(records.find(record => record.method === 'turn/start').params.effort, 'high');
 });
 
+test('canonical full access maps to the public machine mode and keeps its actual policy receipt', { timeout: 10000 }, async t => {
+  const f = await setup(t);
+  const frame = resultFrame(await f.launch({ input: { ...f.request, permissionMode: 'danger-full-access' } }).done);
+  assert.equal(frame.error, null);
+  assert.equal(frame.receipt.ok, true);
+  assert.equal(frame.receipt.requested.permissionMode, 'dangerously-bypass-approvals-and-sandbox');
+  const effective = frame.receipt.outcome.configuration.effective;
+  assert.equal(effective.sandbox, 'danger-full-access');
+  assert.equal(effective.approvalPolicy, 'never');
+  assert.deepEqual(effective.sandboxPolicy, { type: 'dangerFullAccess' });
+  assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
+  absentGroup(frame.receipt.outcome.execution);
+  const records = await f.records();
+  assert.deepEqual(records.find(record => record.method === 'thread/start').params,
+    { cwd: f.cwd, ephemeral: true, model: 'fixture-model', approvalPolicy: 'never', sandbox: 'danger-full-access' });
+  assert.equal(records.find(record => record.method === 'turn/start').params.effort, 'high');
+});
+
+test('a full-access request cannot silently accept a constrained app-server policy', async t => {
+  const f = await setup(t, 'wrong-sandbox');
+  const frame = resultFrame(await f.launch({ input: { ...f.request, permissionMode: 'danger-full-access' } }).done, 1);
+  assert.equal(frame.receipt.requested.permissionMode, 'dangerously-bypass-approvals-and-sandbox');
+  assert.equal(frame.receipt.ok, false);
+  assert.equal(frame.receipt.failure.configuration.matched, false);
+  assert.equal(frame.receipt.failure.cleanup.confirmed, true);
+  assert.ok(!(await f.records()).some(record => record.method === 'turn/start'));
+});
+
 test('doctor imports the exact dependency without starting any Codex process', async t => {
   const f = await setup(t);
   const result = await f.launch({ args: ['--doctor'], input: null }).done;

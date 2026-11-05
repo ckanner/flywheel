@@ -40,6 +40,28 @@ test('full worker handshake, durable result, usage and SDK shutdown agree with t
   assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
 });
 
+test('an explicit full-access request reaches the SDK with truthful policy and normal shutdown', async t => {
+  const { request, options, frames, methods } = await setup(t);
+  const result = await runWorker({ ...request, permissionMode: 'danger-full-access' }, options);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.settled, true);
+  assert.equal(frames[0].permissionMode, 'danger-full-access');
+  const acknowledgement = frames.find(frame => frame.event?.type === 'flywheel/policy').event.data;
+  assert.deepEqual(acknowledgement, { protocol: 1, cwd: await realpath(request.cwd),
+    permissionMode: 'danger-full-access', approvalPolicy: 'never', confinedShell: false });
+  assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
+});
+
+for (const scenario of ['wrong-policy', 'wrong-cwd', 'wrong-approval', 'missing-policy', 'forged-confinement', 'unexpected-enforcement']) {
+  test(`full access ${scenario}: no prompt before a matching explicit policy`, async t => {
+    const { request, options, methods } = await setup(t, scenario);
+    const result = await runWorker({ ...request, permissionMode: 'danger-full-access' }, options);
+    assert.equal(result.status, 'error');
+    assert.ok(!(await methods()).includes('session/prompt'));
+    assert.ok((await methods()).includes('shutdown'));
+  });
+}
+
 for (const scenario of ['wrong-policy', 'wrong-cwd', 'missing-policy', 'malformed']) {
   test(`${scenario}: fail before submitting a paid prompt`, async t => {
     const { request, options, methods } = await setup(t, scenario);
@@ -94,11 +116,13 @@ test('forced SDK shutdown cannot claim successful settlement of native managed r
 });
 
 test('doctor exercises runtime and permission handshake but never prompts a model', async t => {
-  const { request, options, methods } = await setup(t);
-  const result = await runWorker(request, { ...options, doctor: true });
-  assert.equal(result.status, 'ok');
-  assert.equal(result.usage, null);
-  assert.ok(!(await methods()).includes('session/prompt'));
+  for (const permissionMode of ['workspace-write', 'danger-full-access']) {
+    const { request, options, methods } = await setup(t);
+    const result = await runWorker({ ...request, permissionMode }, { ...options, doctor: true });
+    assert.equal(result.status, 'ok');
+    assert.equal(result.usage, null);
+    assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'shutdown']);
+  }
 });
 
 test('overlay pins real native confinement and disables model-owned delegation and auxiliary model calls', () => {
@@ -110,4 +134,16 @@ test('overlay pins real native confinement and disables model-owned delegation a
   assert.equal(row('tool-subagent').disabled, true);
   assert.equal(row('compaction-basic').disabled, true);
   assert.equal(row('sdk-jsonrpc-server').config.maxTokensAsSuccess, false);
+});
+
+test('full access changes the explicit permission policy while retaining engine ownership', () => {
+  const patch = makeOverlay({ permissionMode: 'danger-full-access', cwd: '/workspace' }, '/plugin/policy.js');
+  const row = id => patch.find(item => item.id === id);
+  assert.deepEqual(row('sandbox-policy').config, { mode: 'danger-full-access', workspaceRoot: '/workspace' });
+  assert.equal(row('approval').config.policy, 'never');
+  assert.equal(row('permission').disabled, true);
+  assert.equal(row('tool-subagent').disabled, true);
+  assert.equal(row('compaction-basic').disabled, true);
+  assert.deepEqual(patch.find(item => item.insert).insert[0].config,
+    { permissionMode: 'danger-full-access', cwd: '/workspace' });
 });

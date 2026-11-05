@@ -335,6 +335,21 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       const summary = parseDocument(result, "skills installation");
       item.summary = summary;
       if (summary.protocol !== 1 || !Array.isArray(summary.results) || summary.results.length === 0) throw new Error("invalid skills installation result");
+      if (!['created', 'existing', 'error'].includes(summary.config?.action) || typeof summary.config?.path !== 'string') {
+        throw new Error('skills installation did not report whether the model configuration was created or preserved');
+      }
+      report.configuration = {
+        path: summary.config.path,
+        action: summary.config.action,
+        preserved: summary.config.action === 'existing',
+        automaticMigration: false,
+        message: summary.config.action === 'existing'
+          ? '已有配置原样保留；升级不会替换旧模型、渠道或思考等级。'
+          : summary.config.action === 'created'
+            ? '新建全局默认配置；已有任务或项目配置仍优先。'
+            : '配置初始化失败；已有文件未被迁移。',
+        migration: { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscriptions', '--cwd', options.project || cwd] },
+      };
       requireSuccess(result, "skills installation");
       if (summary.ok !== true || summary.results.some(skill => ["error", "stale", "conflict"].includes(skill.action))) throw new Error("some skills were preserved due to conflicts; inspect the results and retry");
       report.skills = { count: summary.results.length, directory: summary.targetBase };
@@ -365,6 +380,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       if (result.error || result.signal || ![0, 1].includes(result.code) || typeof diagnostic.ok !== "boolean" || !Array.isArray(diagnostic.checks)
         || diagnostic.ok !== (result.code === 0)) throw new Error("installed CLI returned an invalid preflight result");
       report.diagnostic = diagnostic;
+      if (diagnostic.configuration?.source) report.configuration.effectiveSource = diagnostic.configuration.source;
       report.ready = diagnostic.ok;
       if (!diagnostic.ok) { item.status = "warning"; item.reason = "components installed; resolve the reported harness/configuration prerequisites before running a task"; }
     });
@@ -407,6 +423,11 @@ async function main(args) {
     for (const item of report.steps) console.log(`  ${item.status.padEnd(7)} ${item.name}${item.error ? ": " + item.error : ""}`);
     if (report.paths?.launcher) console.log(`桌面启动入口: ${report.paths.launcher}`);
     if (report.skills) console.log(`Skills: ${report.skills.count} 个 → ${report.skills.directory}`);
+    if (report.configuration) {
+      console.log(`模型配置: ${report.configuration.path} — ${report.configuration.message}`);
+      const migration = report.configuration.migration;
+      console.log(`迁移预览: ${[migration.command, ...migration.args].map(shellQuote).join(' ')}（默认不写入；添加 --apply 明确应用并备份）`);
+    }
     if (report.ok && report.steps.some(step => step.name === 'dsh-plugin' && step.status === 'ok')) console.log("请按 DSH 提示重载插件。");
     if (report.ok) console.log("账号授权与真实模型任务尚未验证；先查看 doctor 的检查项。");
     if (report.diagnostic?.checks) for (const check of report.diagnostic.checks.filter(value => value.status === "fail")) {
