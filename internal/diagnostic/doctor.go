@@ -355,7 +355,7 @@ func (r *Report) probe(ctx context.Context, cfg *config.Config, b Binding, cache
 	result := probeDSH(drivers.DSHArgs{Doctor: true, Provider: b.Provider, Model: b.Model, Thinking: effort,
 		PermissionMode: b.PermissionMode, Cwd: r.Cwd, APIKeys: keys, Watchdog: commandOptions(ctx, r.Cwd)})
 	if result.Settled && result.ExitCode != nil && *result.ExitCode == 0 && !result.Cancelled && !result.TimedOut &&
-		!result.Truncated && result.Signal == "" && result.SpawnError == "" && result.CleanupError == "" && result.ErrorMessage == nil &&
+		!result.Truncated && result.Signal == "" && result.SpawnError == "" && result.CleanupError == "" && result.ErrorMessage == nil && result.ErrorCode == "" &&
 		result.Usage == nil && result.CostUSD == nil {
 		r.add(b.ID+".sdk", "pass", "adapter 接受配置；目录、"+b.PermissionMode+" 权限策略与 SDK 正常关闭已确认", "", "")
 	} else {
@@ -363,8 +363,11 @@ func (r *Report) probe(ctx context.Context, cfg *config.Config, b Binding, cache
 		switch {
 		case result.TimedOut:
 			code = errs.TIMEOUT
-		case result.Cancelled || result.Truncated || result.Signal != "" || result.SpawnError != "" || result.CleanupError != "":
+		case result.Cancelled || result.Truncated || result.Signal != "" || result.SpawnError != "" || result.CleanupError != "" ||
+			(result.ErrorCode != "" && (result.ExitCode == nil || *result.ExitCode != 1)):
 			code = errs.TRANSPORT
+		case result.ErrorCode != "":
+			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, ErrorCode: result.ErrorCode})
 		case result.ErrorMessage != nil:
 			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: *result.ErrorMessage})
 		}

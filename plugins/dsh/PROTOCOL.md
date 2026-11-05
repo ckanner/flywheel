@@ -7,7 +7,7 @@
 Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行并关闭 stdin。关闭 stdin 表示请求已完整发送，不表示取消任务。单条输入及 SDK 帧上限均为 8 MiB。stdout 只输出 JSONL，诊断走 stderr。
 
 ```json
-{"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","provider":"deepseek-official","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000,"maxTokens":32768}
+{"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","provider":"deepseek-account","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000,"maxTokens":32768}
 ```
 
 必填字段：`type`、`protocol`、`requestId`、`cwd`、`provider`、`model`、`permissionMode`、`prompt`。`cwd` 必须是存在的绝对目录，worker 规范化为真实路径；Go 在比较前同样规范化。可选字段：
@@ -19,6 +19,8 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 | `timeoutMs` | 1–86,400,000，默认 1,800,000；涵盖权限准备、初始化、运行和关闭 |
 
 `permissionMode` 允许 `read-only`、`workspace-write` 和显式 `danger-full-access`。未知字段一律拒绝。v1 不接受 `sessionId` / resume、附件、任意额外 CLI 参数和额外写目录；不进行隐式冷启动替代恢复。
+
+`provider` 明确选择认证路径：`deepseek-account` 使用 DSH 账号服务，`deepseek-official` 使用 API Key；不省略 provider 来猜桌面默认，worker 不在账号失败时自行换用 API。默认预设没有后备渠道，Go 仍可按用户显式配置的后备链执行原有策略。标准 SDK 与桌面在相同 DSH home 下默认共用账号授权存储，无需复制凭证。
 
 ## 运行参数
 
@@ -37,10 +39,10 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 
 每帧均含 `protocol:1`、原 `requestId`。顺序是 `ready` → 零或多个 `event` → 恰好一个 `result`；启动失败允许直接 `result`。创建 Session 时的权限事件会缓冲至 ready 之后。
 
-### ready：真实能力握手已通过
+### ready：SDK 配置与权限握手已通过
 
 ```json
-{"protocol":1,"requestId":"call-123","type":"ready","sessionId":"flywheel-uuid","cwd":"/absolute/worktree","provider":"deepseek-official","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"workspace-write","approvalPolicy":"never"}
+{"protocol":1,"requestId":"call-123","type":"ready","sessionId":"flywheel-uuid","cwd":"/absolute/worktree","provider":"deepseek-account","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"workspace-write","approvalPolicy":"never"}
 ```
 
 发出 ready 前必须依次满足：
@@ -52,6 +54,8 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 5. worker 比对 policy 事件的 cwd、mode、`never` 及对应权限证据：受限模式为完整强制，完全权限为明确无 OS 限制。
 
 任一项缺失，不发送 `session/prompt`。`never` 控制交互审批，不单独扩大访问范围；必须同时显式选择 `danger-full-access` 才请求完全权限。既有静态拒绝或外部权限不足仍按真实失败处理。
+
+`initialize` 返回 serverInfo，并通过 SDK 配置校验。ready 中的 provider/model/reasoningEffort 是配置被接受后的 worker 请求回显；尤其 reasoningEffort 不是模型服务独立返回的实际强度证明，也不证明账号额度或回答质量。
 
 ### event：可审计的原始持久事件
 
@@ -70,6 +74,10 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 成功必须同时具有：对应 messageId 的持久 inbox receipt、`session/wait` 返回、根 `turn/end.reason.kind:completed`、非空已提交 assistant text、SDK shutdown 确认及退出码 0。idle、超出输出 token 上限、半截文本或仅成功退出都不足以证明成功。
 
 `status` 是 `ok`、`error` 或 `cancelled`。失败提供 `error:{code,message}`；code 仅使用 Go 已有分类。`settled` 只描述 SDK 关闭证据；Go watchdog 对整个拥有的进程组做最终判定。强制终止 SDK 或未获得正常 shutdown 确认时，不能返回成功，也不能声称其原生托管进程已全部清理。
+
+DeepSeek 账号的 `ACCOUNT_SIGN_IN_REQUIRED`／`ACCOUNT_TOKEN_INVALID` 精确映射到 AUTH，`ACCOUNT_QUOTA` 映射到 QUOTA。`turn/end` 的 aborted 只在其 reason 为 `{kind:"hook",reason:"deepseek-account/signed-out"}` 时同归 AUTH。保留原始诊断与恢复同一账号的提示；未知 ACCOUNT 前缀、其他 hook 和普通 JSON-RPC 传输失败沿用原分类。worker 自身取消继续优先输出 cancelled，不把取消冒充认证失败。
+
+Go 在验证协议身份、终态、已知 code 及 error 对应物理退出码 1 后独立保留结构化错误码，编排与 doctor 不从原始消息重新猜测该码。矛盾的退出码、进程超时、spawn/signal、截断、取消和未确认清理优先处理；这些事实不因收到 AUTH/QUOTA 而消失。合法 error 帧的 settled:false 记录 SDK 清理未确认并阻止自动重试；worker 启动前拒绝且 settled:true 不等于清理未知。未知码或坏协议仍属于传输／协议失败，不能借错误正文冒充可信 code。Node 也要把 SDK 关闭期间的坏帧及 EOF 未换行残帧记为 protocolFailure，并覆盖先前账户错误；外部取消继续保留 cancelled 状态。
 
 使用量来自**每条唯一 `assistant/message` 的已提交 per-call usage**，跨该次 worker 调用累加：
 
@@ -175,7 +183,7 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 | `dispatch` | `not-dispatched` 表示宿主证明本次请求没有启动 Go 控制进程；否则为 `unknown` |
 | `message` | 给用户诊断的错误文本，本身不证明进程是否启动，也不能作为另一个 envelope 递归解析 |
 
-只有参数／目录等派发前校验失败、派发前取消，以及进程创建失败且没有成功启动的证据，才能返回 `not-dispatched`。进入控制进程后出现的非零退出、超时、取消、坏 JSON 或任务身份不符都不能取得这项证明，即使错误文本包含相同 JSON。host 对普通错误同样增加外层 envelope，只把原始错误放入 `message`，避免进程返回的文字冒充宿主确认。
+只有参数／目录等派发前校验失败、派发前取消，以及进程创建失败且没有成功启动的证据，才能返回 `not-dispatched`。省略 cwd 时，host 读取 `workingDirectory.get(agent.session)` 的当前目录；getter 失败、缺会话或缺目录属于派发前失败，不回退 header.cwd。显式 cwd 不读取会话目录。进入控制进程后出现的非零退出、超时、取消、坏 JSON 或任务身份不符都不能取得这项证明，即使错误文本包含相同 JSON。host 对普通错误同样增加外层 envelope，只把原始错误放入 `message`，避免进程返回的文字冒充宿主确认。
 
 界面只有在版本、类型、action、dispatch 和 message 都符合契约时才使用宿主证明。未知协议、旧 host 的纯文本错误、DSH 传输失败或丢失响应均保持 `unknown`。启动／停止的 `unknown` 结果必须先成功查询原任务状态，再决定后续变更；不得自动重试。已确认未派发的拒绝会显示原因，用户可以修正输入或环境后重新提交。一次未派发的状态查询也不能解除更早启动／停止留下的未确认结果。
 

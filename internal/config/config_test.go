@@ -72,6 +72,8 @@ func TestLoadAndFind(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, globalPath, cfgG.File, "全局物化后作为配置源")
 	assert.Equal(t, "dsh", cfgG.Routes["default"].Harness, "全局 = 内嵌 §13 法定表")
+	assert.Equal(t, "deepseek-account", cfgG.Routes["default"].Provider)
+	assert.Equal(t, "deepseek-account", cfgG.Loops["intake"].Provider)
 	_, created, mErr := MaterializeGlobal()
 	assert.NoError(t, mErr)
 	assert.False(t, created, "已存在不覆盖")

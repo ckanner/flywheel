@@ -27,7 +27,7 @@ func strPtr(s string) *string {
 
 // toSpawnResult driver 结果 → 错误分类输入（Node 直接传 result 对象等价）。
 func toSpawnResult(r drivers.Result) errs.SpawnResult {
-	sr := errs.SpawnResult{Signal: r.Signal, TimedOut: r.TimedOut, Stderr: r.Stderr, Stdout: r.Stdout}
+	sr := errs.SpawnResult{Signal: r.Signal, TimedOut: r.TimedOut, Stderr: r.Stderr, Stdout: r.Stdout, ErrorCode: r.ErrorCode}
 	if r.ExitCode != nil {
 		sr.ExitCode = *r.ExitCode
 	}
@@ -40,7 +40,8 @@ func toSpawnResult(r drivers.Result) errs.SpawnResult {
 	if r.Cancelled {
 		sr.Signal = "cancelled"
 	}
-	if sr.SpawnError == nil && (r.ExitCode == nil || !r.Settled || r.Truncated) {
+	if sr.SpawnError == nil && (r.ExitCode == nil || r.Truncated || (!r.Settled && r.ErrorCode == "") ||
+		(r.ErrorCode != "" && *r.ExitCode != 1)) {
 		sr.SpawnError = errors.New("harness did not reach a confirmed terminal result")
 	}
 	return sr

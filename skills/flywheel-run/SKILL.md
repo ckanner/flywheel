@@ -2,7 +2,7 @@
 name: flywheel-run
 metadata:
   version: "1.7.0"
-description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use when the user says "/skill:flywheel-run docs/<slug>" or wants to start or resume a flywheel task.
+description: Start an approved Flywheel task through the Go control interface, or run it in the foreground with a pause before review. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to start or resume a flywheel task.
 whenToUse: 当用户已人审契约、要启动或恢复某个 flywheel 任务时使用；可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
 arguments: slug pause
@@ -11,6 +11,10 @@ arguments: slug pause
 # flywheel-run — 启动或恢复编排器
 
 只校验参数、调用 Go CLI、翻译结果。所有规划、执行、重试、验收和状态转移由引擎负责。
+
+DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
+`/skill:flywheel-run <任务资料目录>`。直接复用准备阶段给出的真实任务路径，
+无需先填写或打开 Flywheel 视图。
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$pause`；其他 harness 按调用文本提取。
 > `slug` 是实际任务目录路径，例如 `docs/my-task` 或绝对路径，不再追加 `docs/`。
@@ -89,6 +93,8 @@ arguments: slug pause
    后台模式可通过 `flywheel-status` 或桌面面板观察，通过 `flywheel-stop`
    停止；关闭当前会话不等于停止后台引擎。监督模式已经暂停时明确说明尚未评审
    或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
+   若使用 DSH 视图，须自行选择同一个 `task_dir`；当前 skill 不把路径写入视图。
+   “项目目录”只有在 DSH 当前工作目录就是 `repo_dir` 时可留空，否则填该真实路径。
 
 ## 工作区与恢复
 

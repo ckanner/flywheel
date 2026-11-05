@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -38,16 +39,17 @@ type Result struct {
 	CleanupError string `json:"cleanupError,omitempty"`
 
 	// harness 语义量。
-	Harness        string   `json:"harness"` // pi | kimi | mock
-	Provider       string   `json:"provider,omitempty"`
-	Model          string   `json:"model,omitempty"`
-	Usage          *Usage   `json:"usage,omitempty"` // kimi: nil（流不暴露）
-	ReasoningChars *int64   `json:"reasoningChars,omitempty"`
-	CostUSD        *float64 `json:"costUsd,omitempty"`
-	Settled        bool     `json:"settled"`
-	Text           string   `json:"text,omitempty"`
-	ErrorMessage   *string  `json:"errorMessage,omitempty"`
-	SessionID      string   `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+	Harness        string         `json:"harness"` // pi | kimi | mock
+	Provider       string         `json:"provider,omitempty"`
+	Model          string         `json:"model,omitempty"`
+	Usage          *Usage         `json:"usage,omitempty"` // kimi: nil（流不暴露）
+	ReasoningChars *int64         `json:"reasoningChars,omitempty"`
+	CostUSD        *float64       `json:"costUsd,omitempty"`
+	Settled        bool           `json:"settled"`
+	Text           string         `json:"text,omitempty"`
+	ErrorMessage   *string        `json:"errorMessage,omitempty"`
+	ErrorCode      errs.ErrorCode `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
+	SessionID      string         `json:"sessionId,omitempty"` // kimi 长驻会话句柄
 	// Preserve the exact public machine receipt, including partial usage and
 	// physical cleanup facts, independently of the normalized success fields.
 	CodexProReceipt json.RawMessage `json:"codexProReceipt,omitempty"`

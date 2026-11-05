@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,6 +151,9 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	}
 	fmt.Print(dshJSONL(ready))
 	fmt.Fprintln(os.Stderr, "worker diagnostic")
+	if scenario == "exit-error-auth-text" {
+		fmt.Fprintln(os.Stderr, "401 unauthorized appears in a process diagnostic")
+	}
 	if scenario == "hang" {
 		time.Sleep(5 * time.Second)
 	}
@@ -162,9 +166,32 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	if scenario == "cancelled" {
 		result["status"] = "cancelled"
 	}
+	if strings.HasPrefix(scenario, "structured-") || strings.HasPrefix(scenario, "error-") {
+		code := "AUTH"
+		if scenario == "structured-quota" {
+			code = "QUOTA"
+		}
+		result["status"] = "error"
+		result["settled"] = scenario != "error-unconfirmed-cleanup"
+		result["error"] = map[string]string{"code": code, "message": "请重新检查账号状态"}
+		fmt.Print(dshJSONL(result))
+		if scenario == "error-before-timeout" {
+			time.Sleep(5 * time.Second)
+		}
+		if scenario == "error-exit-zero" {
+			os.Exit(0)
+		}
+		if scenario == "error-exit-other" {
+			os.Exit(42)
+		}
+		os.Exit(1)
+	}
 	fmt.Print(strings.TrimSpace(dshJSONL(result)))
 	if scenario == "exit-error" {
 		os.Exit(7)
+	}
+	if scenario == "exit-error-auth-text" {
+		os.Exit(42)
 	}
 	if scenario == "orphan-stdio" {
 		child := exec.Command("/bin/sh", "-c", "sleep 5")
@@ -275,6 +302,7 @@ func TestDSHWorkerTransportAndCancellation(t *testing.T) {
 		assert.False(t, r.Settled)
 		require.NotNil(t, r.ErrorMessage)
 		assert.Contains(t, *r.ErrorMessage, "request write failed")
+		assert.Equal(t, errs.TRANSPORT, r.ErrorCode)
 	})
 	t.Run("truncated transcript", func(t *testing.T) {
 		old := watchdog.MaxBuffer
@@ -285,6 +313,7 @@ func TestDSHWorkerTransportAndCancellation(t *testing.T) {
 		assert.False(t, r.Settled)
 		require.NotNil(t, r.ErrorMessage)
 		assert.Contains(t, *r.ErrorMessage, "truncated")
+		assert.Equal(t, errs.TRANSPORT, r.ErrorCode)
 	})
 	t.Run("context cancellation", func(t *testing.T) {
 		a := dshRunArgs(t, "hang")

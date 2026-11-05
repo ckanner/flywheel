@@ -20,7 +20,9 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 
 ### 将旧配置切换到已有的三种资源
 
-本轮源码新增的 `subscriptions` 预设只使用 ChatGPT 订阅、Kimi Code 订阅和 DeepSeek 付费 API（仅 Flash）。普通安装／升级仍保留已有配置；所以旧文件里的 Z.AI／GLM、Kimi K3 和旧 thinking 不会因升级 UI 自动消失。此迁移命令和 `permissions.mode` 需要包含本轮修复的 CLI 与同版本 worker，已发布的 0.28.1 不包含它们。
+当前源码的 `subscriptions` 预设只使用 ChatGPT 订阅、Kimi Code 订阅和 DSH 已登录并充值的 DeepSeek 账号（仅 Flash，`provider:deepseek-account`）。普通安装／升级仍保留已有配置；所以旧文件里的 Z.AI／GLM、Kimi K3、API provider 和旧 thinking 不会因升级 UI 自动消失。
+
+**发行边界：**迁移命令与 `permissions.mode` 已在 0.28.2 发行，但该版内嵌预设仍选择 `deepseek-official` API Key。这里的账号默认修复属于 0.28.2 之后的源码，尚需下一次 npm 发行。先通过 `flywheel template flywheel.config.example.json` 核对所用二进制包含 `deepseek-account`，再用下面的迁移命令；在旧 0.28.2 上重跑迁移不会得到账号默认。
 
 在实际项目目录运行以下命令；若任务目录有单独配置，再加 `--task-dir /repo/docs/my-task`：
 
@@ -32,7 +34,7 @@ flywheel config inspect --cwd /repo --json
 
 第一条只预览。`--apply` 明确应用到当前实际命中的任务／项目／全局文件，并先备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。可以用 `--expect-sha256` 绑定之前预览的摘要；文件已经变化时拒绝陈旧应用。预算、worktree、验证、重试、价格和用户说明等非模型设置保留，Plan 明确设置的 `resident-session:false` 也保留。配置损坏、额外自定义路由／阶段或不支持的文件身份会明确阻断，不猜测替代。
 
-迁移写入完整的阶段模型、thinking 和渠道，去掉被替换绑定的旧 profile 引用，清除所选渠道的旧 fallback／模型映射，使旧付费渠道不再自动可达；未引用的自定义 profiles／channels 仍保留。默认关闭第二意见，并明确报告旧多模态路由被停用。默认分配仍是 Kimi K3.1 Pro high 负责 Plan／frontend／Garden，DeepSeek Flash high 负责普通执行、low 负责 Intake，GPT-6.1 Sol high 负责 hard／Review，GPT-6 Astra high 负责 Judge。hard 通过 Codex Pro 插件，Review／Judge 通过 DSH ChatGPT provider。Kimi 缺省模型同时更新为 `kimi-code/k3.1-pro`；显式写入的自选模型不会被仅修改 driver 缺省值覆盖。
+迁移写入完整的阶段模型、thinking 和渠道，去掉被替换绑定的旧 profile 引用，清除所选渠道的旧 fallback／模型映射，使旧付费渠道不再自动可达；未引用的自定义 profiles／channels 仍保留。包括 0.28.2 留下的 API channel，也可以作为未引用配置保留，但不会成为账号路由的自动后备。默认关闭第二意见，并明确报告旧多模态路由被停用。默认分配仍是 Kimi K3.1 Pro high 负责 Plan／frontend／Garden，DeepSeek Flash high 负责普通执行、low 负责 Intake，GPT-6.1 Sol high 负责 hard／Review，GPT-6 Astra high 负责 Judge。hard 通过 Codex Pro 插件，Review／Judge 通过 DSH ChatGPT provider。Kimi 缺省模型为 `kimi-code/k3.1-pro`；显式写入的自选模型不会被仅修改 driver 缺省值覆盖。档位依据与尚未完成的对照评估见[推理等级与账号选择](model-policy.md)。
 
 迁移不登录账号，也不发模型请求。当前运行中的任务继续使用启动时已加载的配置；新配置在下一次启动生效。检查迁移后的 source／scope／bindings，再按需要停止和恢复任务。
 
@@ -55,13 +57,26 @@ flywheel config inspect --cwd /repo --json
 | 字段 | 含义 | 示例 |
 |---|---|---|
 | `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`；`codex` 为显式旧 CLI 路径 |
-| `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-official`、`chatgpt` |
-| `channel` | 配置中的凭证／后备／计量渠道名称 | `deepseek-sdk`、`chatgpt-sdk`、`kimi-subscription` |
+| `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-account`、`chatgpt` |
+| `channel` | 配置中的凭证／后备／计量渠道名称 | `deepseek-account-sdk`、`chatgpt-sdk`、`kimi-subscription` |
 | `profile` | 当前 Flywheel 配置内的一组模型字段引用 | `flash`、`gpt-review`、`kimi` |
 
 Flywheel 的 model profile 与 DSH 的 `sdk`／`desktop` profile 是两件事。前者复用模型定义，后者决定宿主实际加载的插件和授权配置。channel 别名本身不会切换 DSH 账号；给同一个 provider 起两个 channel 名称不等于拥有两份独立订阅或额度。
 
 DSH 的实际 provider 按 `binding.provider` → `channels[channel].provider` → 旧 `channel` 名解析。前两者都明确配置而不相等时拒绝加载。兼容旧内联配置的最后一项只适用于 DSH；Codex Pro／旧 Codex CLI 和 Kimi 使用自己的登录状态，不接受一个会被静默忽略的 provider。
+
+### DeepSeek 账号与 API Key 是两个 provider
+
+| 方式 | Provider | 凭证来源 | 选择方式 |
+|---|---|---|---|
+| DSH 已登录、已充值的 DeepSeek 账号 | `deepseek-account` | DSH 的 `deepseekAccount` 服务 | 当前源码默认；不要求 `DEEPSEEK_API_KEY` |
+| DeepSeek API Key | `deepseek-official` | DSH credentials／启动环境中的 API key，默认引用 `DEEPSEEK_API_KEY` | 仅在用户明确选择 API 路径时配置 |
+
+标准 SDK profile 叠加的 [base](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/bundle/base/cordis.patch.yml) 包含账号服务和这两种 adapter。标准桌面与 SDK 使用同一 `DSH_HOME` 时，默认共享该 home 下的[账号授权存储](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/credentials/credentials-local/src/index.ts)；profile 隔离插件配置，不要求把 token 复制到 `sdk` 或改用 `desktop` profile。自定义 home、凭证存储或 SDK 插件集时，须核对它们指向同一授权来源。这里不读取或展示凭证值。
+
+DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择账号目录里的第一个模型。该桌面默认不决定独立 SDK 会话的 provider/model，且“第一个模型”不保证是 Flash。Flywheel 因此明确传入 `deepseek-account`／`deepseek-flash`；账号未登录、授权失效或额度不足时保留失败。默认预设没有 API Key 后备；用户显式配置的后备链仍按既有规则处理。已核对的[官方账号 adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-account/src/index.ts)、[API adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-api-key/src/index.ts)及[默认选择逻辑](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/api/session-controller/src/index.ts)是这一边界的依据。
+
+需要继续用 API Key 的自定义配置仍受支持：在完整配置的相关绑定及其 channel 中一致选择 `deepseek-official`，按 DSH API provider 的正常方式配置凭证。不要仅改 channel 名却保留冲突的显式 provider；也不必为账号路径额外添加 API key。
 
 ### Codex Pro 默认与旧配置迁移
 
@@ -106,8 +121,8 @@ flywheel template flywheel.profiles.example.json
   "profiles": {
     "flash": {
       "harness": "dsh",
-      "provider": "deepseek-official",
-      "channel": "deepseek-sdk",
+      "provider": "deepseek-account",
+      "channel": "deepseek-account-sdk",
       "model": "deepseek-flash",
       "thinking": "high"
     },
@@ -128,7 +143,7 @@ flywheel template flywheel.profiles.example.json
     "default": { "profile": "flash" }
   },
   "channels": {
-    "deepseek-sdk": { "harness": "dsh", "provider": "deepseek-official", "env-key": null },
+    "deepseek-account-sdk": { "harness": "dsh", "provider": "deepseek-account", "env-key": null },
     "chatgpt-sdk": { "harness": "dsh", "provider": "chatgpt", "env-key": null }
   }
 }
@@ -173,6 +188,8 @@ flywheel doctor --cwd /repo --task-dir /repo/docs/task --probe --json
 预检可提前运行，正式 `run`／`control start` 仍需至少一个已准备并审阅的合法 packet；没有 packet 的 warn 不表示引擎已经能从空任务开始。绑定中的 permissionMode 表示阶段要求，实际实施能力还取决于 harness，尤其 Kimi CLI 不能据此宣称拥有 OS 沙箱。
 
 本地检查确认命令可用、版本响应可靠，以及声明的环境变量存在且非空，不显示变量值。`--probe` 才启动 DSH worker 验证 adapter 接受配置、cwd、完整沙箱、approval policy 和 SDK 正常关闭。相同 provider、channel、model、effort、cwd 和权限的探测去重；不同账号别名或读写权限不能相互代替。整体验证预算 40 秒，另留进程清理窗口。
+
+DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
 
 Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.8.0／协议 1、Node >=22.18.0 以及 Codex 命令版本；同一 worker 只查一次。`--probe` 不为此路径发送任务，实际模型、effort 与完整权限保持 unknown；它不会把成功导入插件当成账号、沙箱或推理能力已经验证。
 

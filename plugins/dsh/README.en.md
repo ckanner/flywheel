@@ -19,6 +19,8 @@ version; merging source does not update an installed plugin.
 
 Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; only an explicit migration backs it up and updates model bindings and permissions.
 
+**Source versus release:** published 0.28.2 still defaults to DeepSeek API-key access and the session's original directory. The account-default, account-error, and current-directory corrections in this source await the next npm release; reinstalling 0.28.2 does not include them.
+
 ## Components
 
 | Component | Responsibility |
@@ -89,16 +91,22 @@ workers, not the complete Flywheel application.
 
 ## Prepare the SDK profile and selected models
 
-The native DSH worker uses `sdk` by default. A provider installed or authorized
-in the desktop profile is not automatically present in the SDK profile.
-`FLYWHEEL_DSH_PROFILE` can select another SDK profile, but cannot select
-`desktop`. Keep `DSH_HOME` consistent with the configuration you intend to use.
+The native worker uses `sdk` by default. Its standard base already includes the
+DeepSeek account service and both account/API-key adapters. With the same
+`DSH_HOME`, standard desktop and SDK profiles share the account credential store;
+the account route needs no additional API key or token copy. Check custom homes,
+credential stores, and plugin sets separately. `FLYWHEEL_DSH_PROFILE` can select
+another SDK profile, but cannot select the reserved `desktop` profile.
 
-The native DeepSeek provider is `deepseek-official`, with `deepseek-flash` in
-the default configuration. At the checked rc.5 baseline its effort values are
-`off`, `low`, `high`, and `max`; there is no `medium`. Other providers have their
-own accepted values. For native GPT routes, install and authorize the selected
-ChatGPT adapter in the SDK profile. One checked compatibility example is:
+Current source explicitly selects `deepseek-account` and `deepseek-flash`.
+`deepseek-official` is the separate API-key provider and remains an explicit
+alternative. Desktop default-model selection does not control an independent
+SDK session. The default preset has no cross-provider fallback for authentication or quota failures; explicit user-defined fallback chains keep their existing policy.
+At the checked rc.5 baseline Flash accepts `off`, `low`, `high`, and `max`,
+defaulting to high; it accepts neither medium nor xhigh. Other providers have
+their own values; see [Reasoning effort](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md).
+For native GPT routes, install and authorize the selected ChatGPT adapter in
+the SDK profile. One checked compatibility example is:
 
 ```sh
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
@@ -162,16 +170,28 @@ actual inference result. Keep `warn`, `unknown`, and `skipped` distinct from
 
 ## Use the desktop controls
 
-Open a DSH session and choose **Flywheel** in the native view bar alongside
-Chat and Trajectory. If the entry is not directly visible, check that bar's
-More menu. Ask the chat assistant to prepare and review the task using
-`flywheel-new`; it reports the actual paths. **Task files directory** contains
-the task description and acceptance files, for example
-`/Users/me/project/docs/fix-login`. **Project directory (optional)** can stay
-blank to use the current DSH session directory; specify the matching project
-worktree when the task lives elsewhere. Configuration and diagnostic actions
-can also leave the task directory blank. These are project paths, not plugin
-installation paths.
+The normal entry is `/flywheel-new` in DSH's composer. The assistant prepares
+the description and acceptance files and reports their paths. Review them,
+then use `/flywheel-run`; no panel fields need filling first. Preparation uses
+the current conversation model. After startup, the engine uses Flywheel's
+per-stage model configuration, independently of the chat selection.
+
+To inspect or control an existing task, choose **Flywheel** beside Chat and
+Trajectory, or in that view bar's More menu when necessary.
+
+| Field | Purpose | When to fill it |
+|---|---|---|
+| Task files directory | Prepared Spec, packets, acceptance description, and task records in `docs/<slug>/`, e.g. `/Users/me/project/docs/fix-login` | Required for panel start/refresh/stop; optional for configuration and diagnostics. Use the path reported by the preparation Skill. |
+| Project directory (optional) | Source project or task integration worktree, e.g. `/Users/me/project` | Current source defaults to the session's effective working directory; override for another project/worktree. |
+
+Current source reads the host's `workingDirectory.get(session)`, following
+directory changes. An explicit project path wins. Getter failures stop before
+dispatch without falling back to the original `header.cwd`. Published 0.28.2
+still uses the original directory, so explicitly fill the project path after
+switching worktrees. The panel does not automatically bind tasks created by a
+Skill: paste its reported task directory and refresh. These are project paths,
+not plugin installation paths. The direct `/flywheel {…}` command is distinct
+from the `/flywheel-*` Skill entries.
 
 The panel, `/flywheel`, and `flywheel_control` share these Go operations:
 
@@ -333,6 +353,10 @@ escaped process has been cleaned up.
 
 Complete receipts preserve configuration, usage, and termination evidence.
 Accepted effort is not proof of the server's effective reasoning effort.
+DSH's `ready.reasoningEffort` echoes the request after successful initialization.
+Known account sign-in/token errors and the exact account-signed-out hook map to
+AUTH; account quota errors remain QUOTA. Original diagnostics and account
+recovery guidance are preserved. The default preset has no API-key fallback.
 Unreported usage and dollar cost remain unknown; subscriptions are not recorded
 as free calls. The current DSH bridge does not support session resume or image
 and attachment inputs. Its protocol and implementation details are documented

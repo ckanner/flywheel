@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 将 DeepSeek Flash 默认与显式 subscriptions 预设改为 DSH 已登录的 `deepseek-account`，复用同一 DSH home 的账号授权；保留用户明确配置的 `deepseek-official` API Key。已有配置不随升级改写，新增从已发布 0.28.2 API 预设预览、备份并迁移到账号的回归。
+- 将 DSH 账号未登录、token 失效及精确的账号退出取消事件归入既有 AUTH，账号额度不足保持 QUOTA，保留原始诊断并说明恢复方式；结构化码贯穿 Go 消费端，进程失败与清理未知优先，不把认证错误当成可重试服务器故障。默认预设没有 API 后备，保留用户显式配置的后备策略。
+- 桌面控制入口省略项目目录时读取 DSH `workingDirectory.get(session)` 的当前目录，跟随会话切换 worktree；显式目录优先，读取失败在 Go 派发前返回可确认错误，不回退到过时的 `session.header.cwd`。
+- 修正 DSH `/flywheel-*` 与 Kimi `/skill:flywheel-*` 的宿主语法区别，说明 Skill 主流程无需预填面板，以及任务资料目录和项目目录的作用。记录各模型实际支持的推理等级、high 基线依据和未做项目 A/B 的边界；不自动调整档位。
+
+这些修复尚不在已发布的 0.28.2 npm 包中，需后续发行与明确配置迁移。
+
 ## 0.28.2
 
 - 修复 macOS 迁移故障测试的平台假设：使用路径解析 I/O 注入缝稳定验证无法解析相对全局路径时的无写入行为；生产路径解析仍使用 `filepath.Abs`，不跳过测试或放宽 100% 覆盖率门禁。

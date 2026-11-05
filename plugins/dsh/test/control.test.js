@@ -4,8 +4,8 @@ import { chmod, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runControl, validateControl } from '../src/control.js';
-import { apply } from '../src/index.js';
+import { ControlNotDispatchedError, runControl, validateControl } from '../src/control.js';
+import { apply, inject } from '../src/index.js';
 import { apply as applyPolicy } from '../src/policy.js';
 import { act, closeClientHarness, mountPanel } from './support/client-harness.js';
 
@@ -164,20 +164,28 @@ test('an unresponsive diagnostic owner is eventually force-stopped after its cle
 test('slash command and model tool use the same validated engine control boundary', async t => {
   const cwd = await mkdtemp(join(tmpdir(), 'flywheel-host-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
+  const agent = { session: { header: { cwd: join(cwd, 'original-project') } } };
+  let directoryReads = 0;
   const registrations = {};
   const ctx = {
     on: (name, fn) => { registrations[name] = fn; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    workingDirectory: { get: session => {
+      assert.equal(session, agent.session);
+      directoryReads += 1;
+      return cwd;
+    } },
   };
+  assert.ok(inject.includes('workingDirectory'), 'Cordis must supply the public directory owner');
   apply(ctx, { flywheelBinary: binary });
-  const agent = { session: { header: { cwd } } };
   const request = { action: 'start', taskDir: cwd };
   const fromCommand = await registrations.command.handler({ rawInput: JSON.stringify(request), agent });
   const fromTool = await registrations.tool.execute(request, { agent });
   assert.equal(fromCommand.kind, 'success');
   assert.deepEqual(JSON.parse(fromCommand.text), JSON.parse(fromTool));
   assert.equal(JSON.parse(fromTool).running, true);
+  assert.equal(directoryReads, 2, 'both entries resolve the live directory, not the immutable header');
   assert.equal(registrations.tool.timeoutMs, 60000);
   assert.deepEqual(registrations.tool.parameters.required, ['action']);
   assert.equal(registrations.tool.parameters.properties.probe.type, 'boolean');
@@ -193,6 +201,91 @@ test('slash command and model tool use the same validated engine control boundar
   assert.equal((await registrations.command.handler({ rawInput: 'not-json', agent })).kind, 'error');
   await assert.rejects(registrations.tool.execute({ ...request, action: 'shell' }, { agent }));
   registrations.dispose();
+});
+
+test('host directory defaults follow the current session and an explicit cwd bypasses the getter', async t => {
+  const original = await mkdtemp(join(tmpdir(), 'flywheel-original-'));
+  const current = await mkdtemp(join(tmpdir(), 'flywheel-current-'));
+  t.after(() => Promise.all([original, current].map(path => rm(path, { recursive: true, force: true }))));
+  const session = { header: { cwd: original } };
+  let effective = current;
+  let reads = 0;
+  let getterFailure;
+  const registrations = {};
+  apply({
+    on: (name, callback) => { registrations[name] = callback; },
+    commands: { register: definition => { registrations.command = definition; } },
+    tools: { register: definition => { registrations.tool = definition; } },
+    workingDirectory: { get: actualSession => {
+      assert.equal(actualSession, session);
+      reads += 1;
+      if (getterFailure) throw getterFailure;
+      return effective;
+    } },
+  }, { flywheelBinary: binary });
+  t.after(() => registrations.dispose());
+  const command = input => registrations.command.handler({ rawInput: JSON.stringify(input), agent: { session } });
+  const first = await command({ action: 'config' });
+  assert.equal(first.kind, 'success');
+  assert.equal(JSON.parse(first.text).configuration.source, join(await realpath(current), 'flywheel.config.json'));
+  effective = original;
+  const moved = JSON.parse(await registrations.tool.execute({ action: 'doctor' }, { agent: { session } }));
+  assert.equal(moved.diagnostic.cwd, await realpath(original), 'the getter is read for each operation');
+  assert.equal(reads, 2);
+
+  getterFailure = new Error('session projection unavailable');
+  const explicit = await command({ action: 'config', cwd: current });
+  assert.equal(explicit.kind, 'success');
+  assert.equal(JSON.parse(explicit.text).configuration.source, join(await realpath(current), 'flywheel.config.json'));
+  const tool = JSON.parse(await registrations.tool.execute({ action: 'doctor', cwd: original }, {}));
+  assert.equal(tool.diagnostic.cwd, await realpath(original), 'explicit paths also work without an agent');
+  assert.equal(reads, 2, 'an explicit cwd never consults the session default');
+});
+
+test('unavailable session directories fail before dispatch without falling back to the original header', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-missing-current-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const log = join(cwd, 'dispatch.jsonl');
+  withEnv(t, 'TEST_CONTROL_LOG', log);
+  const session = { header: { cwd } };
+  const request = { action: 'start', taskDir: cwd };
+  let getterFailure = new Error('session projection unavailable');
+  let reads = 0;
+  const registrations = {};
+  apply({
+    on: (name, callback) => { registrations[name] = callback; },
+    commands: { register: definition => { registrations.command = definition; } },
+    tools: { register: definition => { registrations.tool = definition; } },
+    workingDirectory: { get: () => {
+      reads += 1;
+      if (getterFailure) throw getterFailure;
+      return undefined;
+    } },
+  }, { flywheelBinary: binary });
+  t.after(() => registrations.dispose());
+  const command = (input, agent) => registrations.command.handler({ rawInput: JSON.stringify(input), agent });
+  const rejected = await command(request, { session });
+  assert.equal(rejected.kind, 'error');
+  assert.deepEqual(JSON.parse(rejected.text), { protocol: 1, type: 'flywheel-control-error',
+    action: 'start', dispatch: 'not-dispatched', message: getterFailure.message });
+  await assert.rejects(registrations.tool.execute(request, { agent: { session } }), error =>
+    error instanceof ControlNotDispatchedError && error.cause === getterFailure);
+  getterFailure = null;
+  for (const agent of [{ session }, {}, undefined]) {
+    const failed = await command(request, agent);
+    assert.equal(failed.kind, 'error');
+    const proof = JSON.parse(failed.text);
+    assert.equal(proof.dispatch, 'not-dispatched');
+    assert.match(proof.message, /cwd/);
+  }
+  const beforeEmpty = reads;
+  const empty = await command({ ...request, cwd: '' }, { session });
+  assert.equal(JSON.parse(empty.text).dispatch, 'not-dispatched');
+  assert.equal(reads, beforeEmpty, 'a supplied invalid path is not replaced by a session default');
+  await assert.rejects(readFile(log), { code: 'ENOENT' }, 'no invalid request launched a control process');
+  const repaired = await command({ ...request, cwd }, { session });
+  assert.equal(repaired.kind, 'success', 'correcting an explicit path can recover without a stale-header fallback');
+  assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1);
 });
 
 test('policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement', async () => {
@@ -272,6 +365,7 @@ test('the native rc.5 view reaches the registered slash command through the sess
     on: (name, callback) => { registrations[name] = callback; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    workingDirectory: { get: () => cwd },
   }, { flywheelBinary: binary });
   t.after(() => registrations.dispose());
   const agent = { session: { header: { cwd } } };

@@ -4,6 +4,15 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const scenario = process.env.TEST_DSH_SCENARIO ?? 'ok';
+const failureScenario = scenario.replace(/-(?:corrupt|incomplete)-tail(?:-unclean-exit)?$/, '');
+const accountFailure = {
+  'account-sign-in-required': { code: 'ACCOUNT_SIGN_IN_REQUIRED', message: 'Account route requires sign-in or an eligible request destination.' },
+  'account-token-invalid': { code: 'ACCOUNT_TOKEN_INVALID', message: 'Native provider rejected the request.' },
+  'account-quota': { code: 'ACCOUNT_QUOTA', message: 'Native provider quota is exhausted.' },
+}[failureScenario];
+const corruptShutdownTail = scenario !== 'corrupt-tail' && scenario.includes('-corrupt-tail');
+const incompleteShutdownTail = scenario.includes('-incomplete-tail');
+const uncleanShutdownExit = scenario.endsWith('-unclean-exit');
 const patchPath = process.argv[process.argv.indexOf('--patch') + 1];
 const patch = JSON.parse(readFileSync(patchPath, 'utf8'));
 const policy = patch.find(row => row.id === 'sandbox-policy').config;
@@ -26,6 +35,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     initialized = params;
     if (scenario === 'initialize-hang') continue;
     if (scenario === 'malformed') { process.stdout.write('not JSON\n'); continue; }
+    if (scenario === 'account-code-in-rpc-message') {
+      send({ id, error: { code: -32603, message: 'ACCOUNT_TOKEN_INVALID: native detail without a durable error code' } });
+      continue;
+    }
     reply(id, { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } });
   } else if (method === 'session/working-directory/get') {
     const fullAccess = policy.mode === 'danger-full-access';
@@ -40,7 +53,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     reply(id, { cwd: scenario === 'wrong-cwd' ? '/' : initialized.cwd });
   } else if (method === 'session/prompt') {
     event(params.sessionId, 'agent/inbox/spliced', { inserted: [{ id: 'message-1' }] });
-    if (scenario !== 'empty') {
+    if (scenario !== 'empty' && !accountFailure && scenario !== 'account-signed-out') {
       const value = event(params.sessionId, 'assistant/message', {
         message: { id: 'assistant-1', content: [{ type: 'text', text: 'fixture complete' }] },
         ...(scenario === 'unknown-usage' ? {} : { usage: {
@@ -50,7 +63,10 @@ for await (const line of createInterface({ input: process.stdin })) {
       if (scenario === 'duplicate') send(value);
     }
     if (scenario !== 'missing-terminal') event(params.sessionId, 'turn/end', {
-      turn: 0, reason: { kind: scenario === 'max-tokens' ? 'max-tokens' : 'completed' },
+      turn: 0, reason: accountFailure ? { kind: 'error', error: accountFailure }
+        : scenario === 'account-signed-out'
+          ? { kind: 'aborted', reason: { kind: 'hook', reason: 'deepseek-account/signed-out' } }
+          : { kind: scenario === 'max-tokens' ? 'max-tokens' : 'completed' },
     });
     reply(id, { messageId: 'message-1' });
   } else if (method === 'session/wait') {
@@ -59,6 +75,12 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (method === 'shutdown') {
     if (scenario === 'forced-shutdown') continue;
     reply(id, {});
+    if (corruptShutdownTail || incompleteShutdownTail) {
+      // Flush the injected tail before exit so the pipe, not scheduling, decides
+      // whether the worker observes a malformed line or an incomplete EOF frame.
+      await new Promise(resolve => process.stdout.write(corruptShutdownTail ? 'corrupted-tail\n' : '{"jsonrpc":', resolve));
+      process.exit(uncleanShutdownExit ? 1 : 0);
+    }
     process.exit(0);
   } else {
     send({ id, error: { code: -32601, message: 'unknown method' } });

@@ -6,7 +6,7 @@
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
 
-本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DeepSeek API。DeepSeek 只使用 Flash。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以通过 Codex Pro 插件的 machine API 使用完整 Codex harness；这两个后端的工具、权限和会话语义不同。
+本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DSH 已登录并充值的 DeepSeek 账号。DeepSeek 只使用 Flash，默认 provider 为 `deepseek-account`；`deepseek-official` API Key 仍是显式可选配置，不自动回退。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以通过 Codex Pro 插件的 machine API 使用完整 Codex harness；这两个后端的工具、权限和会话语义不同。
 
 具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。本轮新增 `codex-pro` harness，直接消费已发布的 `dsh-subagent-codex-pro@0.8.0` 公开 machine API，并将默认 hard 路由切换到它。原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。大规模并行调度和自动模型选型仍需真实任务数据支持。
 
@@ -141,6 +141,10 @@ Git 完成顺序：验证身份仍有效 → 在 worktree 只提交实现路径 
 
 稳定 provider 错误码保持：AUTH、QUOTA、RATE_LIMIT、SERVER、TRANSPORT、TIMEOUT、EMPTY_RESPONSE、INVALID_REQUEST、CONTEXT_WINDOW_EXCEEDED。L1_FAILED、REVIEW_RETURNED、SPIN 属于编排层失败分类。
 
+DSH 的 `ACCOUNT_SIGN_IN_REQUIRED`、`ACCOUNT_TOKEN_INVALID` 精确映射为 AUTH；账号退出引发的 `turn/end` 仅在 `kind:aborted` 且 hook reason 精确为 `deepseek-account/signed-out` 时也归 AUTH。`ACCOUNT_QUOTA` 保持 QUOTA。保留原始诊断并提示恢复同一账号的登录／额度，不误归 SERVER 后重试。默认账号配置不提供 API Key 后备；用户明确配置的后备链仍按既有策略处理。未知 ACCOUNT 前缀、其他 aborted/hook、通用 JSON-RPC 传输失败保持原有分类；调用方取消仍优先保留 cancelled 语义。依据为 rc.5 的账号 adapter 与账号退出任务取消契约，不增加新的 wire 错误类别。
+
+DSH 结构化 result.error.code 经协议身份、终态与既有码表校验，并确认 error 对应物理退出码 1 后，以独立 ErrorCode 字段穿过 driver、编排、辅助模块和诊断，不再把 AUTH 拼进文本后依赖英文关键词重猜。矛盾的退出码、超时、spawn、signal、截断、取消或未确认清理等进程事实不能被 provider 码掩盖；无结构化码的旧 driver 保留既有文本分类优先级。DSH error 帧的 settled:false 明示 SDK 清理尚未确认，保留 CleanupError 并停止自动重试，而不是推断进程仍在运行；正常启动前失败的 settled:true 不作此判断。SDK 的坏尾帧和 EOF 未换行残帧也必须覆盖先前的 provider 错误；不能在 SDK 协议已损坏后包装出可信的 AUTH/QUOTA 供后备决策。外部取消仍保持 cancelled。
+
 Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既有码；空答案使用明确的 `empty response` 诊断并归入 EMPTY_RESPONSE，不增加另一套重试或付费降级策略。
 
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
@@ -162,15 +166,19 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 | 阶段 | Harness | Provider/渠道 | 模型 | Thinking |
 |---|---|---|---|---|
 | Plan | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high，允许匹配身份后恢复 |
-| Execute default | DSH SDK | deepseek-official | deepseek-flash | high |
+| Execute default | DSH SDK | deepseek-account | deepseek-flash | high |
 | Execute frontend | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high |
 | Execute hard | Codex Pro machine API | chatgpt-subscription | gpt-6.1-sol | high |
 | Review | DSH SDK | chatgpt | gpt-6.1-sol | high |
 | Judge | DSH SDK | chatgpt | gpt-6-astra | high，只在里程碑终验 |
-| Intake | DSH SDK | deepseek-official | deepseek-flash | low |
+| Intake | DSH SDK | deepseek-account | deepseek-flash | low |
 | Garden | Kimi CLI | kimi-subscription | kimi-code/k3.1-pro | high |
 
 这些是可编辑的初始绑定，不是模型能力排名或性能保证。使用前核对实际账号/model catalog；不支持时停止并修配置。DSH Mac rc.5 的 Flash effort 是 off/low/high/max，没有 medium。`multimodal` 暂不预绑定：文本请求与 provider 目录不能证明附件已被传递。完整图像/文件输入契约需另验收。
+
+七个 high 与 Intake low 是尚未完成本项目 A/B 的工程基线。GPT Sol/Astra 支持 xhigh/max，Kimi K3.1 Pro 原生是 low/high/max；不因为拼写相似假设不同 provider 的档位等价。hard 与高影响 Judge 可作为优先比较 xhigh 的候选，本轮不自动提高档位或新增失败后升级策略。官方能力、链路证据与建议分别记录在[推理等级说明](model-policy.md)。
+
+标准 SDK 叠加 base，已含 DeepSeek account provider 与账号服务；默认凭证存储位于共享的 DSH home，与 desktop/sdk profile 配置目录独立。同一 DSH_HOME 下可以使用已保存的账号授权，不要求复制 token。桌面登录后的默认模型选择不自动决定 SDK initialize，Flywheel 明确发送 deepseek-account/deepseek-flash；不同 home、凭证 store 或自定义 SDK 插件集仍需核对。已有配置和 0.28.2 API 绑定不随升级暗中改写，采用新账号预设需显式迁移。
 
 ### 7.1 Codex Pro 接入契约
 
@@ -196,7 +204,7 @@ worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1
 
 新增显式 `permissions.mode`：`full-access` 为当前订阅方案的授权模式，所有阶段请求 `danger-full-access`，DSH/Codex 交互审批为 `never`，Kimi print 模式保持原生 auto；不逐步要求用户点击允许。`role-based` 保留旧行为：Plan/Execute 为 workspace-write，Review/Judge 为 read-only，辅助模块按 harness 能力解析。为避免升级暗中扩大既有授权，旧文件缺省仍为 role-based；新安装模板及显式 subscriptions 迁移写入 full-access。编排、配置展示与 doctor 共用同一个权限解析器，Plan 会话恢复身份包含该值。
 
-DSH worker 检查实际工作目录、模型、effort、审批与权限回执，继续使用官方 sandbox/approval/fs/bash 实现。受限模式必须证明实际完整强制；完全权限必须确认公开的 danger-full-access 模式且未被拒绝，如实标明无 OS 沙箱限制，不能伪造 enforcement:full。外部运行时或系统权限仍以真实回执为准，不替换审批服务、不伪造成功、不静默降级。评审、规划和执行的职责与路径边界继续由契约和执行前后候选身份检查约束；完全权限不是允许评审修改验收或让未经验证的修改进入交付。
+DSH worker 检查实际工作目录、SDK 接受的模型／effort 配置、审批与权限回执，继续使用官方 sandbox/approval/fs/bash 实现。ready 的 reasoningEffort 是成功 initialize 后的请求回显，不是模型服务独立证明的实际强度。受限模式必须证明实际完整强制；完全权限必须确认公开的 danger-full-access 模式且未被拒绝，如实标明无 OS 沙箱限制，不能伪造 enforcement:full。外部运行时或系统权限仍以真实回执为准，不替换审批服务、不伪造成功、不静默降级。评审、规划和执行的职责与路径边界继续由契约和执行前后候选身份检查约束；完全权限不是允许评审修改验收或让未经验证的修改进入交付。
 
 Kimi print 模式强制 auto，当前 CLI 无本适配器可宣称的 OS 级 workspace 沙箱。它保留原生 harness 能力及静态拒绝规则，不能把 worktree 当成安全沙箱。legacy pi/omp/zcode 不在新默认路径；不能映射明确的 read-only 或 full-access 要求时 fail closed。
 
@@ -283,7 +291,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-本轮订阅模型迁移与显式权限的统一 npm 发行目标为 **0.28.2**，以已发布的 0.28.1 为基线。六个 Flywheel 包保持同版，DSH 插件另外精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；本轮源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+订阅模型迁移与显式权限已随六个同版本 npm 包 **0.28.2** 发行；该发行内嵌的 DeepSeek 默认仍是 API Key。本轮账号默认、账号错误分类、会话当前目录与 Skill 文档修复属于后续源码，待下一次 npm 发行，不重写已经发布的 0.28.2 包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

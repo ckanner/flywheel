@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,34 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 	require.NotNil(t, r.Usage)
 	assert.Equal(t, Usage{Input: 120, Output: 8, Reasoning: 3, CacheRead: 20, TotalTokens: 128}, *r.Usage)
 	assert.Nil(t, r.CostUSD)
+
+	for scenario, want := range map[string]errs.ErrorCode{
+		"account-sign-in-required": errs.AUTH, "account-token-invalid": errs.AUTH,
+		"account-signed-out": errs.AUTH, "account-quota": errs.QUOTA,
+		"account-code-in-rpc-message": errs.TRANSPORT,
+		"account-quota-corrupt-tail":  errs.TRANSPORT, "account-quota-incomplete-tail": errs.TRANSPORT,
+		"account-token-invalid-corrupt-tail": errs.TRANSPORT, "account-token-invalid-incomplete-tail": errs.TRANSPORT,
+		"shutdown-corrupt-tail": errs.TRANSPORT, "shutdown-incomplete-tail": errs.TRANSPORT,
+		"account-token-invalid-corrupt-tail-unclean-exit": errs.TRANSPORT,
+		"account-quota-incomplete-tail-unclean-exit":      errs.TRANSPORT,
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			result := RunDSH(DSHArgs{Command: worker, Cwd: t.TempDir(), Prompt: "offline account error receipt",
+				Provider: "deepseek-account", Model: "deepseek-flash", Thinking: "high", PermissionMode: "read-only",
+				APIKeys:  map[string]string{"TEST_DSH_SCENARIO": scenario},
+				Watchdog: watchdog.Opts{IdleTimeoutMs: 3000, WallTimeoutMs: 10000, KillGraceMs: 100}})
+			assert.False(t, result.Settled)
+			assert.False(t, result.Cancelled)
+			if strings.HasSuffix(scenario, "-unclean-exit") {
+				assert.Contains(t, result.CleanupError, "did not confirm SDK process cleanup")
+			} else {
+				assert.Empty(t, result.CleanupError)
+			}
+			require.NotNil(t, result.ErrorMessage)
+			assert.Equal(t, want, result.ErrorCode, *result.ErrorMessage)
+			assert.Equal(t, want, errs.ClassifyError(errs.SpawnResult{ExitCode: 1, ErrorCode: result.ErrorCode, Stderr: *result.ErrorMessage}))
+		})
+	}
 
 	t.Run("full access execution and no-inference probe", func(t *testing.T) {
 		for _, doctor := range []bool{false, true} {

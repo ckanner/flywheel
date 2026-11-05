@@ -37,6 +37,7 @@ function hostCommand(t, config, cwd) {
     on: (event, callback) => { assert.equal(event, 'dispose'); dispose = callback; },
     commands: { register: definition => { command = definition; } },
     tools: { register: () => {} },
+    workingDirectory: { get: () => cwd },
   }, config);
   t.after(() => dispose());
   const transport = { results: [], completion: null, execute(request) {

@@ -2,7 +2,7 @@
 name: flywheel-status
 metadata:
   version: "1.6.0"
-description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use when the user says "/skill:flywheel-status docs/<slug>" or asks how a flywheel task is doing.
+description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use for "/flywheel-status docs/<slug>" in DSH, "/skill:flywheel-status docs/<slug>" in Kimi, or a question about how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
 arguments: slug
@@ -11,6 +11,9 @@ arguments: slug
 # flywheel-status — 看进度（只读）
 
 Button only: read state + translate. Writes nothing.
+
+DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/skill:flywheel-status <任务资料目录>`。
+可直接在对话中查询，无需先填写 Flywheel 视图；查询也不会自动改变视图所选任务。
 
 > 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 

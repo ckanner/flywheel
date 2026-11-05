@@ -35,10 +35,23 @@ test('the six packaged npm candidates install and run from a clean agent environ
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
-  assert.equal(JSON.parse(template.stdout).profiles.flash.provider, 'deepseek-official');
+  assert.equal(JSON.parse(template.stdout).profiles.flash.provider, 'deepseek-account');
   const config = await run(report.paths.launcher, ['config', 'inspect', '--cwd', context.project, '--json'], context.env, context.project);
   assert.equal(config.code, 0, config.stderr);
-  assert.equal(JSON.parse(config.stdout).bindings.length, 8);
+  const bindings = JSON.parse(config.stdout).bindings;
+  assert.equal(bindings.length, 8);
+  for (const [id, thinking] of [['loops.intake', 'low'], ['routes.default', 'high']]) {
+    const binding = bindings.find(value => value.id === id);
+    assert.ok(binding, `installed configuration must include ${id}`);
+    assert.equal(binding.provider, 'deepseek-account');
+    assert.equal(binding.channel, 'deepseek-account');
+    assert.equal(binding.model, 'deepseek-flash');
+    assert.equal(binding.thinking, thinking);
+    assert.equal(binding.permissionMode, 'danger-full-access');
+  }
+  for (const document of ['docs/model-policy.md', 'docs/en/model-policy.md']) {
+    await fs.access(path.join(root, document));
+  }
   const demo = path.join(context.root, 'packaged tutorial demo');
   const example = await run('bash', [path.join(root, 'docs', 'examples', 'create-first-task.sh'), demo],
     { ...context.env, FLYWHEEL_BIN: report.paths.launcher }, context.project);

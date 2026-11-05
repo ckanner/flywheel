@@ -267,8 +267,11 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 			code = errs.TRANSPORT
 		case result.TimedOut:
 			code = errs.TIMEOUT
-		case result.SpawnError != "" || result.CleanupError != "" || result.Truncated || result.Signal != "":
+		case result.SpawnError != "" || result.CleanupError != "" || result.Truncated || result.Signal != "" ||
+			(result.ErrorCode != "" && (result.ExitCode == nil || *result.ExitCode != 1)):
 			code = errs.TRANSPORT
+		case result.ErrorCode != "":
+			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, ErrorCode: result.ErrorCode})
 		case result.ErrorMessage != nil && *result.ErrorMessage != "":
 			code = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: *result.ErrorMessage})
 		case result.ExitCode == nil || (!result.Settled && *result.ExitCode == 0):

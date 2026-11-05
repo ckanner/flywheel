@@ -2,7 +2,7 @@
 name: flywheel-review
 metadata:
   version: "1.6.0"
-description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use when the user says "/skill:flywheel-review docs/<slug> [unit]" or wants to re-run just the review of a unit.
+description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use for "/flywheel-review docs/<slug> [unit]" in DSH, "/skill:flywheel-review docs/<slug> [unit]" in Kimi, or a request to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
 arguments: slug unit
@@ -12,6 +12,8 @@ arguments: slug unit
 # flywheel-review — 只触发 Review Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+DSH 在对话中使用 `/flywheel-review <任务资料目录> [unit]`；Kimi 使用 `/skill:flywheel-review <任务资料目录> [unit]`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`、`$unit`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 

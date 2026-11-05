@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_note": "DSH 桌面方案：Go 引擎拥有状态、验证和提交；模型只负责有界任务。新安装采用此表，已有配置不自动覆盖。harness=dsh 的 channel 必须是 SDK profile 实际 provider ID。没有自动付费降级，不强制每阶段使用所有模型。",
+  "_note": "DSH 桌面方案：Go 引擎拥有状态、验证和提交；模型只负责有界任务。新安装采用此表，已有配置不自动覆盖。harness=dsh 的 provider 是 SDK 实际注册的 ID；channel 是本配置的渠道名，未指定 provider 时才按 channel 解析。没有自动付费降级，不强制每阶段使用所有模型。",
   "drivers": {
     "plan": "real",
     "execute": "real",
@@ -32,7 +32,8 @@
     "intake": {
       "harness": "dsh",
       "model": "deepseek-flash",
-      "channel": "deepseek-official",
+      "channel": "deepseek-account",
+      "provider": "deepseek-account",
       "thinking": "low"
     },
     "garden": {
@@ -46,7 +47,8 @@
     "default": {
       "harness": "dsh",
       "model": "deepseek-flash",
-      "channel": "deepseek-official",
+      "channel": "deepseek-account",
+      "provider": "deepseek-account",
       "thinking": "high"
     },
     "frontend": {
@@ -63,9 +65,11 @@
     }
   },
   "channels": {
-    "deepseek-official": {
+    "deepseek-account": {
+      "harness": "dsh",
+      "provider": "deepseek-account",
       "env-key": null,
-      "_note": "DSH 原生 DeepSeek API provider；密钥在选定 SDK profile 配置，桌面与 SDK profile 需分别验证。只使用 deepseek-flash。"
+      "_note": "使用 DSH 已登录并充值的 DeepSeek 账号，只选择 deepseek-flash。标准桌面与 SDK 在同一 DSH_HOME 下默认共用账号授权；定制 SDK profile 仍须加载账号 provider。无需 DEEPSEEK_API_KEY，不自动回退到 deepseek-official API key 渠道；账号与额度仍需验证。"
     },
     "chatgpt": {
       "env-key": null,

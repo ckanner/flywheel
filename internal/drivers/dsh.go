@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -55,21 +56,24 @@ type dshStart struct {
 }
 
 type dshParsed struct {
-	SessionID string
-	Text      string
-	Usage     *Usage
-	CostUSD   *float64
-	Settled   bool
-	Cancelled bool
-	Error     string
+	SessionID    string
+	Text         string
+	Usage        *Usage
+	CostUSD      *float64
+	Settled      bool
+	Cancelled    bool
+	Error        string
+	ErrorCode    errs.ErrorCode
+	CleanupError string
 }
 
-// parseDSHStream validates the worker's attested effective settings and terminal
-// state. Unknown frames or a missing receipt cannot be treated as a successful
-// call. Raw durable DSH events remain in stdout for audit, not as completion.
+// parseDSHStream validates accepted SDK configuration, attested permission and
+// directory receipts, and terminal state. Unknown frames or a missing receipt
+// cannot be treated as success. Raw durable DSH events remain in stdout for audit.
 func parseDSHStream(stdout string, request dshStart) dshParsed {
 	var parsed dshParsed
 	ready, terminal := false, false
+	providerError := ""
 	for _, line := range strings.Split(stdout, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -93,8 +97,8 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			CostUSD         *float64        `json:"costUsd"`
 			Event           json.RawMessage `json:"event"`
 			Error           *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
+				Code    errs.ErrorCode `json:"code"`
+				Message string         `json:"message"`
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(line), &frame); err != nil {
@@ -121,9 +125,21 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			}
 		case "result":
 			terminal = true
+			if !frame.Settled {
+				// This is absence of a cleanup guarantee, not evidence that a
+				// particular SDK child is still alive. Do not overlap another call.
+				parsed.CleanupError = "DSH worker did not confirm SDK process cleanup"
+			}
 			// Startup failures may precede ready. Success always requires the receipt.
 			if frame.Status == "error" && frame.Error != nil {
-				parsed.Error = frame.Error.Code + ": " + frame.Error.Message
+				if !errs.IsKnownCode(frame.Error.Code) || (ready && frame.SessionID != parsed.SessionID) {
+					parsed.Error = "DSH worker returned an invalid structured error receipt"
+					break
+				}
+				parsed.ErrorCode = frame.Error.Code
+				providerError = string(frame.Error.Code) + ": " + frame.Error.Message
+				// Keep checking the stream: a later frame cannot leave a trusted
+				// provider code behind after violating terminal ordering.
 				break
 			}
 			if frame.Status == "cancelled" {
@@ -155,6 +171,11 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 	}
 	if parsed.Error == "" && !terminal {
 		parsed.Error = "DSH worker ended without a terminal result"
+	}
+	if parsed.Error != "" {
+		parsed.ErrorCode = errs.TRANSPORT
+	} else if providerError != "" {
+		parsed.Error = providerError
 	}
 	parsed.Settled = parsed.Settled && parsed.Error == "" && !parsed.Cancelled
 	return parsed
@@ -258,15 +279,30 @@ func RunDSH(a DSHArgs) Result {
 	case err := <-written:
 		if err != nil {
 			parsed.Error = "DSH worker request write failed: " + err.Error()
+			parsed.ErrorCode = errs.TRANSPORT
 		}
 	default: // no stdin writer when spawn fails or cancellation precedes Start
 	}
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
+	out.ErrorCode = parsed.ErrorCode
+	if out.CleanupError == "" {
+		out.CleanupError = parsed.CleanupError
+	}
 	out.SessionID, out.Text, out.Usage, out.CostUSD = parsed.SessionID, parsed.Text, parsed.Usage, parsed.CostUSD
 	out.Cancelled = out.Cancelled || parsed.Cancelled
+	if out.ErrorCode != "" && out.ExitCode != nil && *out.ExitCode != 1 && !out.TimedOut && !out.Cancelled &&
+		out.Signal == "" && out.SpawnError == "" && out.CleanupError == "" && !out.Truncated {
+		parsed.Error = fmt.Sprintf("DSH worker exit code %d did not match the expected failure exit 1: %s", *out.ExitCode, parsed.Error)
+		out.ErrorCode = errs.TRANSPORT
+	}
 	out.Settled = parsed.Settled && parsed.Error == "" && !out.Cancelled && !out.TimedOut && !out.Truncated &&
-		out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
+		out.Signal == "" && out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
 	if !out.Settled && !out.Cancelled {
+		if out.ErrorCode == "" {
+			// A successful protocol receipt cannot sanitize a failing process.
+			// Keep logs as diagnostics instead of reclassifying their prose.
+			out.ErrorCode = errs.TRANSPORT
+		}
 		message := parsed.Error
 		switch {
 		case out.TimedOut:

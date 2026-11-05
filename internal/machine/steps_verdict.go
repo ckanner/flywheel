@@ -81,8 +81,8 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			streamMsg = *res.ErrorMessage
 		}
 		var streamCode errs.ErrorCode
-		if streamMsg != "" {
-			streamCode = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg})
+		if streamMsg != "" || res.ErrorCode != "" {
+			streamCode = errs.ClassifyError(errs.SpawnResult{ExitCode: 1, Stderr: streamMsg, ErrorCode: res.ErrorCode})
 		}
 		var verdict *prompts.Verdict
 		// 出口契约同款三重门（§6）：进程终态正常 + 无信号 + stderr 无错误模式
@@ -98,7 +98,8 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		}
 		code := ""
 		if verdict == nil {
-			if res.TimedOut || res.Cancelled || res.CleanupError != "" || res.SpawnError != "" {
+			if res.TimedOut || res.Cancelled || res.CleanupError != "" || res.SpawnError != "" ||
+				(res.ErrorCode != "" && (res.ExitCode == nil || *res.ExitCode != 1 || res.Truncated || res.Signal != "")) {
 				code = string(errs.ClassifyError(toSpawnResult(res)))
 			} else if streamCode != "" {
 				code = string(streamCode)

@@ -2,7 +2,7 @@
 name: flywheel-plan
 metadata:
   version: "1.6.0"
-description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use when the user says "/skill:flywheel-plan docs/<slug>" or wants to re-run just the planning step.
+description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
 arguments: slug
@@ -11,6 +11,8 @@ arguments: slug
 # flywheel-plan — 只触发 Plan Loop
 
 Button only: validate + invoke CLI + translate. No loop logic here.
+
+DSH 在对话中使用 `/flywheel-plan <任务资料目录>`；Kimi 使用 `/skill:flywheel-plan <任务资料目录>`。
 
 > 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 

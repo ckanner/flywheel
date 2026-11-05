@@ -56,6 +56,7 @@ func TestConfigMigrateCLICompletesPreviewApplyInspectAndIdempotentUpgrade(t *tes
 	assert.Contains(t, human, "拟议配置（尚未应用）")
 	assert.Contains(t, human, "loops.plan.model")
 	assert.Contains(t, human, "deepseek-flash")
+	assert.Contains(t, human, "deepseek-account")
 	assert.Contains(t, human, "下次引擎启动")
 	applyArgs := append(append([]string{}, args...), "--apply", "--expect-sha256", strings.ToUpper(preview.SHA256))
 	code, applied := runMigrationCLI(t, applyArgs...)
@@ -72,6 +73,11 @@ func TestConfigMigrateCLICompletesPreviewApplyInspectAndIdempotentUpgrade(t *tes
 	for _, binding := range actual.Bindings {
 		assert.Equal(t, "danger-full-access", binding.PermissionMode)
 		assert.NotEqual(t, "zcode", binding.Harness)
+		if binding.ID == "loops.intake" || binding.ID == "routes.default" {
+			assert.Equal(t, "deepseek-account", binding.Provider)
+			assert.Equal(t, "deepseek-account", binding.Channel)
+			assert.Equal(t, "deepseek-flash", binding.Model)
+		}
 		if binding.ID == "loops.plan" {
 			assert.Equal(t, "kimi-code/k3.1-pro", binding.Model)
 			assert.Equal(t, "high", binding.Thinking)

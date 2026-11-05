@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "_note": "DSH 桌面方案：Go 引擎拥有状态、验证和提交；模型只负责有界任务。新安装采用此表，已有配置不自动覆盖。harness=dsh 的 channel 必须是 SDK profile 实际 provider ID。没有自动付费降级，不强制每阶段使用所有模型。",
+  "drivers": {
+    "plan": "real",
+    "execute": "real",
+    "review": "real",
+    "judge": "real",
+    "intake": "real",
+    "garden": "real"
+  },
+  "loops": {
+    "plan": {
+      "harness": "kimi",
+      "model": "kimi-code/k3.1-pro",
+      "channel": "kimi-subscription",
+      "thinking": "high",
+      "resident-session": true
+    },
+    "review": {
+      "harness": "dsh",
+      "model": "gpt-6.1-sol",
+      "channel": "chatgpt",
+      "thinking": "high"
+    },
+    "judge": {
+      "harness": "dsh",
+      "model": "gpt-6-astra",
+      "channel": "chatgpt",
+      "thinking": "high"
+    },
+    "intake": {
+      "harness": "dsh",
+      "model": "deepseek-flash",
+      "channel": "deepseek-official",
+      "thinking": "low"
+    },
+    "garden": {
+      "harness": "kimi",
+      "model": "kimi-code/k3.1-pro",
+      "channel": "kimi-subscription",
+      "thinking": "high"
+    }
+  },
+  "routes": {
+    "default": {
+      "harness": "dsh",
+      "model": "deepseek-flash",
+      "channel": "deepseek-official",
+      "thinking": "high"
+    },
+    "frontend": {
+      "harness": "kimi",
+      "model": "kimi-code/k3.1-pro",
+      "channel": "kimi-subscription",
+      "thinking": "high"
+    },
+    "hard": {
+      "harness": "codex-pro",
+      "model": "gpt-6.1-sol",
+      "channel": "chatgpt-subscription",
+      "thinking": "high"
+    }
+  },
+  "channels": {
+    "deepseek-official": {
+      "env-key": null,
+      "_note": "DSH 原生 DeepSeek API provider；密钥在选定 SDK profile 配置，桌面与 SDK profile 需分别验证。只使用 deepseek-flash。"
+    },
+    "chatgpt": {
+      "env-key": null,
+      "_note": "SDK profile 需安装并授权 ckanner/dsh-plugin-chatgpt，provider 默认 chatgpt。此处使用 DSH 原生 agent 工具循环。"
+    },
+    "chatgpt-subscription": {
+      "env-key": null,
+      "_note": "Codex Pro 插件 machine API 复用用户侧 Codex 登录。插件由 npm 精确安装；订阅额度不是无限调用，usage 与美元成本分开记录。"
+    },
+    "kimi-subscription": {
+      "env-key": null,
+      "_note": "Kimi CLI 用户侧订阅登录，不使用 ACP。按账号目录核对 kimi-code/k3.1-pro；不支持即报错。print 模式为 auto 权限，不宣称 OS 级 workspace 沙箱。"
+    }
+  },
+  "budget": {
+    "enforce": "soft",
+    "daily-token-limit": 2000000
+  },
+  "watchdog": {
+    "idle-timeout-ms": 300000,
+    "wall-timeout-ms": 3600000,
+    "kill-grace-ms": 5000
+  },
+  "retry": {
+    "base-delay-ms": 500,
+    "max-delay-ms": 10000,
+    "jitter": 0.1,
+    "max-transport-retries": 5
+  },
+  "credentials": {
+    "poll-interval-ms": 30000,
+    "timeout-ms": 86400000
+  },
+  "intake": {
+    "sources": []
+  },
+  "defect-injection": {
+    "every-n-units": 5,
+    "test-file-ratio-boost": 0.5,
+    "patch": "",
+    "test-cmd": ""
+  },
+  "verify": {
+    "command-timeout-ms": 300000,
+    "env-allowlist": [],
+    "test-file-patterns": [
+      "(^|/)(tests?|__tests__|spec)/",
+      "\\.(test|spec)\\.[cm]?[jt]sx?$",
+      "_test\\.go$",
+      "(^|/)test_[^/]+\\.py$"
+    ],
+    "protected-test-patterns": [],
+    "_note": "test-file-patterns 仅用于抽样识别；普通单测可随实现修改。冻结验收必须由 packet.boundaries.must-not-touch 或 protected-test-patterns 显式保护。100% 覆盖率仍由验收命令执行。"
+  },
+  "worktree": {
+    "enabled": true
+  },
+  "_note_pricing": "不把订阅成本填成 0，不硬编码会变化的 API 价格。无报告 cost 且无显式价格时记 unknown；Kimi CLI 不公开 usage。汇总为已知量下限，hard token budget 遇未知用量停止。profiles/自动选型/分阶段预算为后续增强。",
+  "pricing": {},
+  "_note_hard": "hard 直接使用 dsh-subagent-codex-pro/machine 公开 API；插件内部运行 Codex app-server。没有 DSH 父模型二次委派，也不自动回退 codex exec。",
+  "_note_multimodal": "暂不预绑定 multimodal：当前请求以文本为主，ChatGPT 插件附件能力不能由模型名推断。先验证具体 CLI/工具能读取资产，再显式添加 routes.multimodal；缺绑定直接报错。",
+  "_note_judge_panel": "默认关闭双 judge。需要第二意见时在顶层显式添加 judge-panel，避免每个里程碑固定增加高成本调用。",
+  "permissions": {
+    "mode": "full-access",
+    "_note": "明确授权全部阶段完全权限与非交互运行；DSH/Codex approval=never，Kimi print=auto。角色职责、契约边界和验收身份仍由Go校验。已有配置未声明时保持role-based，采用本预设需显式迁移。"
+  }
+}

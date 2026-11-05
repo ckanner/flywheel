@@ -72,10 +72,23 @@ export function normalizedError(error) {
 
 export function modelErrorCode(code) {
   if (ERROR_CODES.has(code)) return code;
-  if (code === 'MISSING_CREDENTIAL' || code === 'INVALID_CREDENTIAL') return 'AUTH';
+  if (code === 'MISSING_CREDENTIAL' || code === 'INVALID_CREDENTIAL' ||
+      code === 'ACCOUNT_SIGN_IN_REQUIRED' || code === 'ACCOUNT_TOKEN_INVALID') return 'AUTH';
   if (code === 'ACCOUNT_QUOTA') return 'QUOTA';
   if (code === 'NO_ADAPTER' || code === 'UNSUPPORTED_REASONING_EFFORT') return 'INVALID_REQUEST';
   return 'SERVER';
+}
+
+const ACCOUNT_RECOVERY = new Map([
+  ['ACCOUNT_SIGN_IN_REQUIRED', 'Sign in to DeepSeek in DSH, then ensure the SDK runtime can access that account and the configured endpoint permits account authentication before retrying.'],
+  ['ACCOUNT_TOKEN_INVALID', 'The DeepSeek account login was rejected. Sign in again in DSH and ensure the SDK runtime can access the renewed login before retrying.'],
+  ['ACCOUNT_QUOTA', 'Check the DeepSeek account balance and usage; retry when account quota is available.'],
+]);
+
+function modelErrorMessage(detail, fallback) {
+  const message = detail?.message ?? fallback;
+  const recovery = ACCOUNT_RECOVERY.get(detail?.code);
+  return recovery === undefined ? message : `${detail.code}: ${message}\n${recovery}`;
 }
 
 /** Fold committed per-call records; streamed usage snapshots are never summed. */
@@ -164,9 +177,16 @@ export class SessionFold {
     if (!this.receipts.has(messageId)) throw new BridgeError('TRANSPORT', 'missing durable prompt receipt');
     if (!this.terminal) throw new BridgeError('TRANSPORT', 'idle without committed turn/end');
     if (this.terminal.kind !== 'completed') {
+      // DSH's account-tasks hook cancels the active account turn after sign-out,
+      // including when rejecting an expired token. Do not infer this from text
+      // or treat other cancellation hooks as authentication failures.
+      if (this.terminal.kind === 'aborted' && this.terminal.reason?.kind === 'hook' &&
+          this.terminal.reason.reason === 'deepseek-account/signed-out') {
+        throw new BridgeError('AUTH', 'DeepSeek account signed out (deepseek-account/signed-out). Sign in again in DSH and ensure the SDK runtime can access that account before retrying.');
+      }
       const detail = this.terminal.error;
       throw new BridgeError(modelErrorCode(detail?.code),
-        detail?.message ?? `DSH turn ended as ${this.terminal.kind}`);
+        modelErrorMessage(detail, `DSH turn ended as ${this.terminal.kind}`));
     }
     if (!this.assistantCount || this.text.trim() === '') {
       throw new BridgeError('EMPTY_RESPONSE', 'DSH completed without assistant text');

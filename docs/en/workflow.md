@@ -14,9 +14,11 @@ For accounts that expose the named models, these are practical starting points:
 |---|---|---|
 | Ambiguous requirements, architecture, protocol, or process lifecycle changes | `chatgpt/gpt-6-astra`, `high` | Spend more reasoning on constraints, failure cases, and testable acceptance before execution |
 | A clear repository feature with known boundaries | `chatgpt/gpt-6.1-sol`, `high` | A practical default for making a concrete implementation plan |
-| A small, explicit fix or documentation update | `deepseek-official/deepseek-flash`, `high` | Keep preparation proportional to a narrow task |
+| A small, explicit fix or documentation update | `deepseek-account/deepseek-flash`, `high` | Keep preparation proportional to a narrow task |
 
 These are engineering recommendations, not benchmark results or evidence that one setting is universally best. Confirm the exact model ID and supported effort in the selected account and adapter. The checked DSH Flash adapter accepts `off/low/high/max`, not `medium`. A catalog entry or accepted configuration does not prove that real inference has succeeded.
+
+DeepSeek uses the existing signed-in, funded DSH account. `deepseek-official` API access is an explicit alternative; the default preset has no fallback to it. User-defined fallback policies remain explicitly configured. `high` remains an engineering baseline without project A/B evidence; do not automatically raise every stage to `xhigh` or `max`.
 
 Use the preparation model to identify risks and improve the contract. Increasing effort cannot repair missing requirements, an invalid test oracle, or an incorrectly chosen working directory. Later execution routes and the independent Review/Judge stages remain explicit configuration; see [Configuration](configuration.md).
 
@@ -34,7 +36,7 @@ git branch --show-current
 
 Inspect the initial status before proceeding. These commands create a new task branch without moving the original checkout's `main`. Do not use forced branch replacement to resolve a naming collision. If a task branch/worktree already exists, inspect its state and reuse it deliberately.
 
-Keep the task at `docs/my-feature` **inside this worktree**. Run preparation and later CLI commands from this root; enter these same absolute paths in the desktop panel. Do not pair the original checkout's task directory with the new worktree's `cwd`, or change the task worktree's branch during a run.
+Keep the task at `docs/my-feature` **inside this worktree**. Run preparation and later CLI commands from this root. If using the desktop view, choose this task directory; leave its optional project directory blank only when the DSH session's current directory is already this worktree. Do not pair the original checkout's task directory with the new worktree's `cwd`, or change the task worktree's branch during a run.
 
 The engine's integration checkout is the supplied `cwd`, not a hardcoded `main` branch. Its packet branches normally use `flywheel/<slug>/<packet-id>` and start from that checkout's HEAD. Successful packet delivery fast-forwards into the branch currently checked out there. This is why choosing a task branch before starting matters.
 
@@ -52,6 +54,16 @@ In the task worktree, ask the host to run `flywheel-new`, or inspect the bundled
 flywheel template --list
 flywheel skills read flywheel-new
 ```
+
+In DSH's conversation input, select the skill from the `/` menu or send:
+
+```text
+/flywheel-new Prepare docs/my-feature for this requirement. Research the actual code, define packets, routes, boundaries and executable acceptance checks, run L1 to record the baseline, then present the contracts for review.
+```
+
+**No initial Flywheel-view form is required.** The assistant creates or reuses the task worktree, prepares `spec.md` and task packets, and reports two absolute paths: `repo_dir` for the project worktree and `task_dir` for its `docs/my-feature` task files. A project can contain several task directories; its root alone does not identify a Flywheel task.
+
+DSH uses `/flywheel-new`. Kimi uses `/skill:flywheel-new`; the prefixes are host-specific. See the pinned [DSH skill entry contract](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-skill/README.md) and [Kimi slash-command reference](https://moonshotai.github.io/kimi-code/en/reference/slash-commands.html).
 
 A runnable task needs a reviewed `spec.md` and at least one legal `task-packet-*.md`, using the bundled schemas. The preparation should establish:
 
@@ -90,7 +102,15 @@ Keep the PR in draft while implementation and acceptance are still changing. Ope
 
 ## 5. Run from the same task worktree
 
-With the current directory still at the task worktree root:
+After reviewing and saving the contracts, send these skill invocations separately in DSH Chat, substituting the actual `task_dir` returned during preparation. Query after starting; use the last entry when stopping is needed:
+
+```text
+/flywheel-run /absolute/path/to/repo-my-feature/docs/my-feature
+/flywheel-status /absolute/path/to/repo-my-feature/docs/my-feature
+/flywheel-stop /absolute/path/to/repo-my-feature/docs/my-feature
+```
+
+The skills resolve the project root from that existing task directory and invoke the CLI. They do not require opening or filling in the view. For direct terminal use, keep the current directory at the same task worktree root:
 
 ```sh
 flywheel config inspect --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --json
@@ -100,6 +120,8 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 ```
 
 Preflight does not infer with a model or execute acceptance commands. Its unknown and warning results still need interpretation. Starting the real task invokes the configured models. A control response's `ok` describes the operation; final task completion is in `state.status`.
+
+To inspect the task in the Flywheel view, enter the supplied `task_dir`. Its optional project directory can stay blank only when the DSH session's current working directory is the same `repo_dir`. Current source reads it through public `workingDirectory.get(session)`; an explicit path takes precedence. A shell `cd` alone does not change the DSH session directory, so enter `repo_dir` if the session still points elsewhere. Skill calls do not automatically select the view's task, and the view does not infer, discover, or start a task automatically.
 
 ### Working directory by stage
 
