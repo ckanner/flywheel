@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/dsh-plugin-flywheel",
-  "version": "0.28.2",
+  "version": "0.28.3",
   "description": "Flywheel engine controls with owned DSH SDK and Codex Pro machine workers",
   "type": "module",
   "license": "UNLICENSED",

@@ -22,7 +22,7 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 
 当前源码的 `subscriptions` 预设只使用 ChatGPT 订阅、Kimi Code 订阅和 DSH 已登录并充值的 DeepSeek 账号（仅 Flash，`provider:deepseek-account`）。普通安装／升级仍保留已有配置；所以旧文件里的 Z.AI／GLM、Kimi K3、API provider 和旧 thinking 不会因升级 UI 自动消失。
 
-**发行边界：**迁移命令与 `permissions.mode` 已在 0.28.2 发行，但该版内嵌预设仍选择 `deepseek-official` API Key。这里的账号默认修复属于 0.28.2 之后的源码，尚需下一次 npm 发行。先通过 `flywheel template flywheel.config.example.json` 核对所用二进制包含 `deepseek-account`，再用下面的迁移命令；在旧 0.28.2 上重跑迁移不会得到账号默认。
+**发行边界：**迁移命令与 `permissions.mode` 已在 0.28.2 发行，但该版内嵌预设仍选择 `deepseek-official` API Key。账号默认修复从 0.28.3 开始提供。安装前核对 registry 版本。先通过 `flywheel template flywheel.config.example.json` 核对所用二进制包含 `deepseek-account`，再用下面的迁移命令；在旧 0.28.2 上重跑迁移不会得到账号默认。
 
 在实际项目目录运行以下命令；若任务目录有单独配置，再加 `--task-dir /repo/docs/my-task`：
 

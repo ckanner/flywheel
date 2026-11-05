@@ -27,7 +27,7 @@ The result includes `source`, `scope`, resolved physical paths, and stage `bindi
 
 The current source-level `subscriptions` preset uses ChatGPT subscriptions, Kimi Code subscriptions, and the signed-in, funded DeepSeek account in DSH, with Flash and `provider:deepseek-account`. Normal installation and upgrades preserve existing configuration, including old Z.AI/GLM routes, Kimi K3 bindings, API providers, and effort choices.
 
-**Release boundary:** migration and `permissions.mode` shipped in 0.28.2, but that published preset still selects the `deepseek-official` API-key route. The account-default correction is post-0.28.2 source awaiting the next npm release. First check that `flywheel template flywheel.config.example.json` from your binary contains `deepseek-account`; rerunning migration with the published 0.28.2 binary does not select the new account default.
+**Release boundary:** migration and `permissions.mode` shipped in 0.28.2, but that published preset still selects the `deepseek-official` API-key route. The account-default correction is available from 0.28.3. Check the registry version before installing. First check that `flywheel template flywheel.config.example.json` from your binary contains `deepseek-account`; rerunning migration with the published 0.28.2 binary does not select the new account default.
 
 From the actual project, preview and apply the selected configuration. Add `--task-dir /repo/docs/my-task` when the task has its own configuration:
 

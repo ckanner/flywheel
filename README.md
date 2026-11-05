@@ -4,7 +4,7 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前源码以已发布的 **v0.28.2** 为基础，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。本文的 DeepSeek 账号默认、账号错误分类与会话当前目录修复尚待下一次 npm 发行；已安装 0.28.2 不会因源码合并自动得到这些修复。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前源码的统一发行目标为 **v0.28.3**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
@@ -100,7 +100,7 @@ flywheel doctor --cwd "$PWD" --probe --json
 
 这些是可编辑的初始绑定，并非模型排名或性能承诺。DeepSeek 只用 Flash；当前 Mac rc.5 的合法 effort 为 `off/low/high/max`，没有 `medium`。双 judge 默认关闭，也不默认跨渠道付费降级。`multimodal` 暂无默认绑定：当前 bridge 只有文本契约，模型名称或目录里的 vision 标记不能证明附件已正确传递。
 
-七个 high 与 Intake low 是工程基线，尚未做本项目的 high／xhigh／max 对照评估。GPT 支持 xhigh/max，Kimi K3.1 Pro 原生支持 low/high/max；hard 与高影响 Judge 可优先比较 xhigh，不把所有后端的档位名当作同一尺度。官方依据、适配器限制和建议见[推理等级说明](docs/model-policy.md)。已发布的 0.28.2 默认仍使用 DeepSeek API；采用上表账号默认须使用包含修复的版本并[显式迁移配置](docs/configuration.md#将旧配置切换到已有的三种资源)。
+七个 high 与 Intake low 是工程基线，尚未做本项目的 high／xhigh／max 对照评估。GPT 支持 xhigh/max，Kimi K3.1 Pro 原生支持 low/high/max；hard 与高影响 Judge 可优先比较 xhigh，不把所有后端的档位名当作同一尺度。官方依据、适配器限制和建议见[推理等级说明](docs/model-policy.md)。0.28.2 默认仍使用 DeepSeek API；采用上表账号默认须升级至 0.28.3 或以后版本，并[显式迁移配置](docs/configuration.md#将旧配置切换到已有的三种资源)。
 
 Kimi 使用原生 CLI print/stream-json，不使用 ACP；恢复的是会话历史，不是常驻后台进程。该模式不提供本适配器可宣称的 OS 级只读／工作区沙箱，worktree 只是代码隔离。新模板及显式 subscriptions 迁移使用 `permissions.mode:full-access`，DSH/Codex 全阶段 danger-full-access＋never，Kimi print 为 auto；已有文件未声明时保持 role-based 的 workspace-write／read-only。Codex Pro 在运行前核对模型、目录和沙箱模式，Flywheel 在结果返回后检查完整策略；在受限模式，工作区写入允许 Codex 标准临时目录，额外工作区外 roots 或启用网络的策略不能通过交付资格检查；明确 full-access 则核对完全权限回执，不声称 OS 隔离。这是事后校验，不能阻止自定义 Codex 配置已允许的访问；要求运行前完整策略阻止的环境需等待上游公开 guard。具体账号的可用模型、额度和使用授权需要由所选服务确认。
 
@@ -130,7 +130,7 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。DSH 输入框用 `/flywheel-new` 调用准备 Skill，审阅后用 `/flywheel-run`；Kimi CLI 的对应语法是 `/skill:flywheel-new`、`/skill:flywheel-run`。两者都是宿主加载 Skill 后让助手按流程调用 CLI，不是另一个引擎。完整步骤见[工作流](docs/workflow.md)，无需先填面板。
 
-从 `0.28.1` 开始，桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。“任务资料目录”选择已准备的 `docs/<slug>/`；“项目目录”是任务所在项目／集成 worktree，可留空。当前源码通过 DSH `workingDirectory.get(session)` 读取会话实际目录，跟随目录切换；已发布 0.28.2 仍取最初的 header 目录，切换 worktree 后需显式填写项目路径。查看配置或检查接入可不填任务目录；启动、刷新和停止必须选择已有任务。视图展示最近刷新的结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
+从 `0.28.1` 开始，桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。“任务资料目录”选择已准备的 `docs/<slug>/`；“项目目录”是任务所在项目／集成 worktree，可留空。从 0.28.3 开始通过 DSH `workingDirectory.get(session)` 读取会话实际目录，跟随目录切换；0.28.2 仍取最初的 header 目录，切换 worktree 后需显式填写项目路径。查看配置或检查接入可不填任务目录；启动、刷新和停止必须选择已有任务。视图展示最近刷新的结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
 
 ```text
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}

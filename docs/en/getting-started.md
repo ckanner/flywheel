@@ -2,7 +2,7 @@
 
 [English README](../../README.en.md) · [中文](../getting-started.md) · [Workflow](workflow.md) · [Configuration](configuration.md)
 
-This guide covers **Flywheel 0.28.2**: npm installation, the DSH desktop and workers, configuration, preflight, a small task, and recovery. The checked desktop interface baseline is **DSH Mac 0.2.1-rc.5**. Real desktop UI, macOS permissions, authentication, and model inference still need testing on the intended machine.
+This guide covers **Flywheel 0.28.3**: npm installation, the DSH desktop and workers, configuration, preflight, a small task, and recovery. The checked desktop interface baseline is **DSH Mac 0.2.1-rc.5**. Real desktop UI, macOS permissions, authentication, and model inference still need testing on the intended machine.
 
 Before installing, check `npm view @ckanner/flywheel version`. Continue with these instructions once the registry has the version you intend to use. A merged source change or GitHub Release does not establish npm publication, and an older installed release may not include these interfaces.
 
@@ -10,7 +10,7 @@ The top-level **Flywheel conversation view** below is available from `0.28.1`. V
 
 Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; preview `flywheel config migrate --preset subscriptions`, review the model bindings and full-access policy, then explicitly apply it with `--apply` and a backup.
 
-**The current source fixes are not yet published:** the `deepseek-account` default and the session-current-directory default below apply to builds containing these fixes. Published `0.28.2` still defaults to `deepseek-official` and reads the original session project when the directory is omitted. With that release, inspect the actual configuration and explicitly enter the correct worktree path. Merging source does not update an installed package.
+**Fixes in 0.28.3:** the `deepseek-account` default and the current session directory when the project path is omitted. Version 0.28.2 still uses `deepseek-official` and the original directory. Check the registry version before installing. Upgrades preserve configuration; adopting the account preset requires explicit migration.
 
 ## 1. Prepare the environment
 

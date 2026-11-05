@@ -56,15 +56,16 @@ type dshStart struct {
 }
 
 type dshParsed struct {
-	SessionID    string
-	Text         string
-	Usage        *Usage
-	CostUSD      *float64
-	Settled      bool
-	Cancelled    bool
-	Error        string
-	ErrorCode    errs.ErrorCode
-	CleanupError string
+	SessionID        string
+	Text             string
+	Usage            *Usage
+	CostUSD          *float64
+	Settled          bool
+	Cancelled        bool
+	Error            string
+	ErrorCode        errs.ErrorCode
+	CleanupError     string
+	CleanupConfirmed bool
 }
 
 // parseDSHStream validates accepted SDK configuration, attested permission and
@@ -72,7 +73,7 @@ type dshParsed struct {
 // cannot be treated as success. Raw durable DSH events remain in stdout for audit.
 func parseDSHStream(stdout string, request dshStart) dshParsed {
 	var parsed dshParsed
-	ready, terminal := false, false
+	ready, terminal, cleanupConfirmed := false, false, false
 	providerError := ""
 	for _, line := range strings.Split(stdout, "\n") {
 		line = strings.TrimSpace(line)
@@ -125,14 +126,19 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			}
 		case "result":
 			terminal = true
+			cleanupConfirmed = frame.Settled
 			if !frame.Settled {
 				// This is absence of a cleanup guarantee, not evidence that a
 				// particular SDK child is still alive. Do not overlap another call.
 				parsed.CleanupError = "DSH worker did not confirm SDK process cleanup"
 			}
+			if ready && frame.SessionID != parsed.SessionID {
+				parsed.Error = "DSH worker returned a terminal result for another session"
+				break
+			}
 			// Startup failures may precede ready. Success always requires the receipt.
 			if frame.Status == "error" && frame.Error != nil {
-				if !errs.IsKnownCode(frame.Error.Code) || (ready && frame.SessionID != parsed.SessionID) {
+				if !errs.IsKnownCode(frame.Error.Code) {
 					parsed.Error = "DSH worker returned an invalid structured error receipt"
 					break
 				}
@@ -172,6 +178,9 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 	if parsed.Error == "" && !terminal {
 		parsed.Error = "DSH worker ended without a terminal result"
 	}
+	// Cleanup is an independent fact, including ordinary provider failures.
+	// A malformed stream cannot attest a trustworthy shutdown receipt.
+	parsed.CleanupConfirmed = terminal && cleanupConfirmed && parsed.Error == ""
 	if parsed.Error != "" {
 		parsed.ErrorCode = errs.TRANSPORT
 	} else if providerError != "" {
@@ -288,6 +297,11 @@ func RunDSH(a DSHArgs) Result {
 	if out.CleanupError == "" {
 		out.CleanupError = parsed.CleanupError
 	}
+	if (result.ExitCode != nil || result.Signal != "") && !parsed.CleanupConfirmed && out.CleanupError == "" {
+		// Reaping the outer worker does not attest the SDK shutdown contract.
+		// Preserve unknown cleanup so the engine stops instead of overlapping calls.
+		out.CleanupError = "DSH worker did not confirm SDK process cleanup: no trustworthy terminal receipt"
+	}
 	out.SessionID, out.Text, out.Usage, out.CostUSD = parsed.SessionID, parsed.Text, parsed.Usage, parsed.CostUSD
 	out.Cancelled = out.Cancelled || parsed.Cancelled
 	if out.ErrorCode != "" && out.ExitCode != nil && *out.ExitCode != 1 && !out.TimedOut && !out.Cancelled &&
@@ -309,10 +323,10 @@ func RunDSH(a DSHArgs) Result {
 			message = "DSH worker timed out"
 		case out.SpawnError != "":
 			message = out.SpawnError
-		case out.CleanupError != "":
-			message = out.CleanupError
 		case out.Truncated:
 			message = "DSH worker output was truncated"
+		case out.CleanupError != "":
+			message = strings.TrimPrefix(message+"; "+out.CleanupError, "; ")
 		case message == "":
 			message = "DSH worker exited without successful process completion: " + strings.TrimSpace(out.Stderr)
 		}

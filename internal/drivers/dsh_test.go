@@ -157,6 +157,13 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	if scenario == "hang" {
 		time.Sleep(5 * time.Second)
 	}
+	if scenario == "missing-terminal" {
+		os.Exit(1)
+	}
+	if scenario == "malformed-terminal" {
+		fmt.Print("{broken-json}\n")
+		os.Exit(1)
+	}
 	if scenario == "unknown-usage" || scenario == "doctor" {
 		result["usage"] = nil
 	} else {
@@ -175,6 +182,9 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		result["settled"] = scenario != "error-unconfirmed-cleanup"
 		result["error"] = map[string]string{"code": code, "message": "请重新检查账号状态"}
 		fmt.Print(dshJSONL(result))
+		if scenario == "error-malformed-tail" {
+			fmt.Print("{broken-json}\n")
+		}
 		if scenario == "error-before-timeout" {
 			time.Sleep(5 * time.Second)
 		}

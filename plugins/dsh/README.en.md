@@ -7,7 +7,7 @@ provides its DSH SDK and Codex Pro workers. The engine owns task state, budgets,
 verification, Git delivery, and process lifecycles. The desktop is a control and
 observation interface; it does not need a parent model session to keep a task alive.
 
-This guide describes the **Flywheel 0.28.2** interfaces. Source availability does
+This guide describes the **Flywheel 0.28.3** interfaces. Source availability does
 not mean that npm `latest` already contains them. Check the registry version and
 the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The desktop
 compatibility baseline is **DSH Mac 0.2.1-rc.5**, not a claim that every DSH build
@@ -19,7 +19,7 @@ version; merging source does not update an installed plugin.
 
 Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; only an explicit migration backs it up and updates model bindings and permissions.
 
-**Source versus release:** published 0.28.2 still defaults to DeepSeek API-key access and the session's original directory. The account-default, account-error, and current-directory corrections in this source await the next npm release; reinstalling 0.28.2 does not include them.
+**Changes in 0.28.3:** account defaults, account-error handling, and the current session directory. Version 0.28.2 still uses API-key defaults and the original directory. Reinstalling that version does not include these fixes. Upgrades preserve configuration; adopting the account preset requires explicit migration.
 
 ## Components
 
@@ -184,9 +184,9 @@ Trajectory, or in that view bar's More menu when necessary.
 | Task files directory | Prepared Spec, packets, acceptance description, and task records in `docs/<slug>/`, e.g. `/Users/me/project/docs/fix-login` | Required for panel start/refresh/stop; optional for configuration and diagnostics. Use the path reported by the preparation Skill. |
 | Project directory (optional) | Source project or task integration worktree, e.g. `/Users/me/project` | Current source defaults to the session's effective working directory; override for another project/worktree. |
 
-Current source reads the host's `workingDirectory.get(session)`, following
+From 0.28.3, Flywheel reads the host's `workingDirectory.get(session)`, following
 directory changes. An explicit project path wins. Getter failures stop before
-dispatch without falling back to the original `header.cwd`. Published 0.28.2
+dispatch without falling back to the original `header.cwd`. Version 0.28.2
 still uses the original directory, so explicitly fill the project path after
 switching worktrees. The panel does not automatically bind tasks created by a
 Skill: paste its reported task directory and refresh. These are project paths,
@@ -361,6 +361,8 @@ Unreported usage and dollar cost remain unknown; subscriptions are not recorded
 as free calls. The current DSH bridge does not support session resume or image
 and attachment inputs. Its protocol and implementation details are documented
 in [PROTOCOL.md](PROTOCOL.md) (Chinese).
+
+From 0.28.3, a started DSH worker without a trustworthy terminal receipt, including a missing result or malformed stream, records unconfirmed SDK cleanup and ends the run without automatic retry or fallback. Reaping the outer worker does not replace an SDK shutdown receipt. Before resuming, confirm that the SDK-managed processes from that call have stopped.
 
 ## Upgrade and maintain the desktop entry
 

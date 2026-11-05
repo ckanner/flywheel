@@ -10,7 +10,7 @@
 
 订阅预设迁移命令和 `permissions.mode` 从 **0.28.2** 开始提供。升级保留已有配置；只有用户明确应用迁移时才备份并更新模型与权限。
 
-**当前源码与发行包的区别：**已发布 0.28.2 仍使用 DeepSeek API 默认，省略项目目录时读取会话最初目录。本轮 `deepseek-account` 默认、账号错误处理和当前工作目录修复尚待下一次 npm 发行；重装同一 0.28.2 不会得到这些变化。
+**0.28.3 的变化：**新增 `deepseek-account` 默认、账号错误处理与会话当前工作目录修复。0.28.2 仍使用 API 默认和会话最初目录，重装同版不会获得修复；升级保留已有配置，采用账号预设需要显式迁移。
 
 ## 提供什么
 
@@ -134,7 +134,7 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 | 任务资料目录 | Spec、packet、验收说明和任务记录所在的 `docs/<slug>/`，例如 `/Users/me/project/docs/fix-login` | 面板启动／刷新／停止需指定；配置与诊断可以留空。由准备 Skill 给出，无需自行编写这些文件才能使用入口 |
 | 项目目录（可选） | 对应源码项目／任务集成 worktree，例如 `/Users/me/project` | 当前源码默认读取会话实际工作目录；只在选择另一项目或 worktree 时覆盖 |
 
-当前源码调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。已发布 0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。面板不自动绑定 Skill 创建的任务；查看它时粘贴 Skill 返回的任务目录，再刷新。两个字段都是项目路径，不是插件安装目录。按钮只执行以下 Go JSON 控制接口：
+从 0.28.3 开始调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。面板不自动绑定 Skill 创建的任务；查看它时粘贴 Skill 返回的任务目录，再刷新。两个字段都是项目路径，不是插件安装目录。按钮只执行以下 Go JSON 控制接口：
 
 ```sh
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
@@ -192,7 +192,7 @@ worker 支持 `read-only`、`workspace-write` 和显式 `danger-full-access`。�
 
 ## 生命周期与可验证范围
 
-官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
+官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。worker 已启动但终态回执缺失或协议损坏时会记录清理未确认并停止本次运行，不自动重试或降级；恢复前先确认该次调用的 SDK 托管进程已停止。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
 
 测试覆盖离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块在 React 与 jsdom 中运行插件自有控件、store handle 和 observable。组件夹具适配槽位桥接和 Remote，另用已发布的 rc.5 renderer、slots 与 Cordis 检验真实注册、会话绑定、声明收起／恢复及卸载；这两类测试都不验证真实宿主几何布局。还覆盖 Go 与 Node 的配置、诊断和失败契约，以及安装记录校验、用户配置优先和损坏入口拒绝。根目录的 npm 安装测试使用实际六包 tarball、隔离目录和 DSH 协议桩，验证完整安装流程。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化／关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。前轮运行结果见[验证记录](../../docs/validation/2026-11-01-results.md)。
 

@@ -10,7 +10,7 @@
 
 订阅预设迁移命令与 `permissions.mode` 从 **0.28.2** 开始提供。升级不会自动替换已有配置；先预览 `flywheel config migrate --preset subscriptions`，确认模型和完全权限后再以 `--apply` 应用并备份。
 
-**本轮源码修复尚未发布**：下文的 `deepseek-account` 默认及“项目目录留空读取会话当前工作目录”对应包含本轮修复的构建。已发布 `0.28.2` 仍默认 `deepseek-official`，留空目录取会话最初打开的项目；使用它时应显式核对实际配置并填写正确 worktree 路径。合并源码不会更新已安装包。
+**0.28.3 修复**：下文的 `deepseek-account` 默认和留空目录读取会话当前工作目录从 0.28.3 开始提供。0.28.2 仍使用 `deepseek-official` 与最初目录。安装前核对 registry 版本；升级保留已有配置，采用账号预设需要显式迁移。
 
 ## 目录
 

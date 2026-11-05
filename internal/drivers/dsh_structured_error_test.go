@@ -24,18 +24,20 @@ func TestDSHStructuredErrorsRequireACompleteMatchingProtocolReceipt(t *testing.T
 		assert.Equal(t, code, startup.ErrorCode)
 		assert.False(t, startup.Settled)
 		assert.Empty(t, startup.CleanupError)
+		assert.True(t, startup.CleanupConfirmed)
 		frame["sessionId"] = ready["sessionId"]
 		afterReady := parseDSHStream(dshJSONL(ready, frame), request)
 		assert.Equal(t, code, afterReady.ErrorCode)
 		assert.Equal(t, string(code)+": 请检查账号状态；quota 一词仅为恢复说明", afterReady.Error)
 		assert.False(t, afterReady.Settled)
+		assert.True(t, afterReady.CleanupConfirmed)
 	}
 	for _, code := range []errs.ErrorCode{"", "auth", "ACCOUNT_SIGN_IN_REQUIRED", "FUTURE_CODE"} {
 		parsed := parseDSHStream(dshJSONL(dshErrorFrame(request, code)), request)
 		assert.Equal(t, errs.TRANSPORT, parsed.ErrorCode)
 		assert.NotContains(t, parsed.Error, "quota", "invalid protocol codes must not re-enter message classification")
 	}
-	for _, scenario := range []string{"wrong session", "wrong request", "wrong protocol", "trailing frame", "malformed tail"} {
+	for _, scenario := range []string{"wrong session", "cancelled wrong session", "wrong request", "wrong protocol", "trailing frame", "malformed tail"} {
 		t.Run(scenario, func(t *testing.T) {
 			frame := dshErrorFrame(request, errs.AUTH)
 			frame["sessionId"] = ready["sessionId"]
@@ -43,6 +45,10 @@ func TestDSHStructuredErrorsRequireACompleteMatchingProtocolReceipt(t *testing.T
 			switch scenario {
 			case "wrong session":
 				frame["sessionId"] = "another-session"
+			case "cancelled wrong session":
+				frame["status"] = "cancelled"
+				frame["sessionId"] = "another-session"
+				delete(frame, "error")
 			case "wrong request":
 				frame["requestId"] = "another-request"
 			case "wrong protocol":
@@ -56,6 +62,7 @@ func TestDSHStructuredErrorsRequireACompleteMatchingProtocolReceipt(t *testing.T
 			assert.Equal(t, errs.TRANSPORT, parsed.ErrorCode)
 			assert.False(t, parsed.Settled)
 			assert.NotContains(t, parsed.Error, "quota")
+			assert.False(t, parsed.CleanupConfirmed)
 		})
 	}
 	frame := dshErrorFrame(request, errs.AUTH)
@@ -71,7 +78,9 @@ func TestRunDSHPreservesStructuredErrorsAndUnconfirmedCleanup(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			args := dshRunArgs(t, scenario)
 			if scenario == "error-before-timeout" {
-				args.Watchdog.WallTimeoutMs = 100
+				// Leave admission time for the real Go fixture process before
+				// testing an already received error followed by a physical timeout.
+				args.Watchdog.WallTimeoutMs = 2000
 			}
 			result := RunDSH(args)
 			assert.False(t, result.Settled)
@@ -86,7 +95,8 @@ func TestRunDSHPreservesStructuredErrorsAndUnconfirmedCleanup(t *testing.T) {
 			switch scenario {
 			case "error-unconfirmed-cleanup":
 				assert.Contains(t, result.CleanupError, "did not confirm SDK process cleanup")
-				assert.Equal(t, result.CleanupError, *result.ErrorMessage)
+				assert.Contains(t, *result.ErrorMessage, result.CleanupError)
+				assert.Contains(t, *result.ErrorMessage, "请重新检查账号状态")
 			case "error-before-timeout":
 				assert.True(t, result.TimedOut)
 				assert.Contains(t, *result.ErrorMessage, "timed out")
@@ -112,4 +122,32 @@ func TestDSHSuccessReceiptCannotOverrideUnexpectedPhysicalExit(t *testing.T) {
 	assert.Equal(t, errs.TRANSPORT, result.ErrorCode)
 	assert.Equal(t, errs.TRANSPORT, errs.ClassifyError(errs.SpawnResult{ExitCode: *result.ExitCode,
 		ErrorCode: result.ErrorCode, Stderr: *result.ErrorMessage}))
+}
+
+// A reaped worker without an SDK shutdown receipt must not authorize an engine
+// retry. Exercise actual pipes and exit 1, the retryable transport-error shape.
+func TestRunDSHMissingCleanupReceiptStopsRetryEligibility(t *testing.T) {
+	for _, scenario := range []string{"missing-terminal", "malformed-terminal", "wrong-settings", "error-malformed-tail"} {
+		t.Run(scenario, func(t *testing.T) {
+			result := RunDSH(dshRunArgs(t, scenario))
+			assert.False(t, result.Settled)
+			assert.Equal(t, errs.TRANSPORT, result.ErrorCode)
+			assert.Contains(t, result.CleanupError, "did not confirm SDK process cleanup")
+			require.NotNil(t, result.ErrorMessage)
+			assert.Contains(t, *result.ErrorMessage, result.CleanupError)
+			switch scenario {
+			case "missing-terminal":
+				assert.Contains(t, *result.ErrorMessage, "ended without a terminal result")
+			case "malformed-terminal", "error-malformed-tail":
+				assert.Contains(t, *result.ErrorMessage, "malformed JSONL")
+			case "wrong-settings":
+				assert.Contains(t, *result.ErrorMessage, "effective settings mismatch")
+			}
+		})
+	}
+	args := dshRunArgs(t, "ok")
+	args.Command = "/nonexistent-flywheel-dsh-worker"
+	result := RunDSH(args)
+	assert.NotEmpty(t, result.SpawnError)
+	assert.Empty(t, result.CleanupError, "a worker that never started owns no SDK cleanup")
 }
