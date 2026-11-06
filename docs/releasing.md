@@ -4,7 +4,7 @@
 
 本页面向维护者。普通用户从 npm 安装，见[入门教程](getting-started.md)；不需要下载 Actions artifact 或手工解压 tgz。
 
-当前 DSH 0.2.2-rc.1 兼容修复的统一发行目标为 **0.28.4**，复核见 [0.28.4 记录](validation/2026-11-05-dsh-0.2.2-compatibility.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.4 包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
+当前会话视图排序调整的统一发行目标为 **0.28.5**，复核见 [0.28.5 记录](validation/2026-11-05-view-order.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.5 包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
 
 ## 1. 发布身份
 

@@ -4,7 +4,7 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前源码的统一发行目标为 **v0.28.4**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前源码的统一发行目标为 **v0.28.5**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
@@ -130,7 +130,7 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。DSH 输入框用 `/flywheel-new` 调用准备 Skill，审阅后用 `/flywheel-run`；Kimi CLI 的对应语法是 `/skill:flywheel-new`、`/skill:flywheel-run`。两者都是宿主加载 Skill 后让助手按流程调用 CLI，不是另一个引擎。完整步骤见[工作流](docs/workflow.md)，无需先填面板。
 
-从 `0.28.1` 开始，桌面控制面接入顶部“对话／轨迹”旁的原生 **Flywheel** 会话视图，保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。“任务资料目录”选择已准备的 `docs/<slug>/`；“项目目录”是任务所在项目／集成 worktree，可留空。从 0.28.3 开始通过 DSH `workingDirectory.get(session)` 读取会话实际目录，跟随目录切换；0.28.2 仍取最初的 header 目录，切换 worktree 后需显式填写项目路径。查看配置或检查接入可不填任务目录；启动、刷新和停止必须选择已有任务。视图展示最近刷新的结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
+从 `0.28.1` 开始，桌面控制面接入顶部原生 **Flywheel** 会话视图（从 0.28.5 起排在内置“统计”之后），保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。“任务资料目录”选择已准备的 `docs/<slug>/`；“项目目录”是任务所在项目／集成 worktree，可留空。从 0.28.3 开始通过 DSH `workingDirectory.get(session)` 读取会话实际目录，跟随目录切换；0.28.2 仍取最初的 header 目录，切换 worktree 后需显式填写项目路径。查看配置或检查接入可不填任务目录；启动、刷新和停止必须选择已有任务。视图展示最近刷新的结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
 
 ```text
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}

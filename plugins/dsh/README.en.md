@@ -7,7 +7,7 @@ provides its DSH SDK and Codex Pro workers. The engine owns task state, budgets,
 verification, Git delivery, and process lifecycles. The desktop is a control and
 observation interface; it does not need a parent model session to keep a task alive.
 
-This guide describes the **Flywheel 0.28.4** interfaces. Source availability does
+This guide describes the **Flywheel 0.28.5** interfaces. Source availability does
 not mean that npm `latest` already contains them. Check the registry version and
 the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The checked desktop runtimes are **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1**. The 0.28.4 engine range declares only those two versions. DSH 0.2.2 itself requires Node 24.9 or later; use its desktop-supplied CLI. Other builds and provider adapters need their own checks.
 
@@ -169,6 +169,9 @@ actual inference result. Keep `warn`, `unknown`, and `skipped` distinct from
 `pass`. A blocking diagnostic returns exit code 1 with the report intact.
 
 ## Use the desktop controls
+
+From 0.28.5, the external Flywheel view follows the built-in Chat, Trajectory and Statistics views. The host remains responsible for rendering and overflow navigation.
+
 
 The normal entry is `/flywheel-new` in DSH's composer. The assistant prepares
 the description and acceptance files and reports their paths. Review them,

@@ -6,7 +6,7 @@ This guide is for maintainers. Users install from npm using the
 [getting started guide](getting-started.md). A merged PR, a GitHub Release or
 a successful local build does not establish that npm installation is ready.
 
-The DSH 0.2.2-rc.1 compatibility release target is **0.28.4**. Its [local review record](../validation/2026-11-05-dsh-0.2.2-compatibility.md) separates source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.4 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
+The conversation-view ordering release target is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.5 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
 
 ## Release contract
 

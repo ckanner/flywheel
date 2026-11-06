@@ -717,7 +717,8 @@ exports.apply = function apply(ctx) {
     pendingOperations.clear();
   });
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view', id: 'flywheel', order: 20, label: () => t('view'),
+    // External views follow the built-in Chat, Trajectory and Statistics views.
+    name: 'conversation.view', id: 'flywheel', order: 1000, label: () => t('view'),
     locale: NS, store: viewStore,
     inject: (sessionId, actions) => {
       // Bound actions identify one retained Session binding. A recycled
