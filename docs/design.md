@@ -281,6 +281,8 @@ provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后
 
 默认内嵌表见 [flywheel.config.example.json](../templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](../templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的任务不热加载新配置，下次启动才使用新方案。
 
+DSH 插件的兼容声明只覆盖已核对的 `0.2.1-rc.5` 与 `0.2.2-rc.1`，不对未知预发布版本放行。权限事件只在公开 `agent/created` 阶段写入：Session 已完成只读创建公告，Agent 尚未释放首个模型请求。SDK 权限回执在写入显式 `approval/policy` 后，通过公开 `approval.overrideOf(session)` 读取实际覆盖值；不调用私有 `effectivePolicy`。候选必须通过两版真实发布的 renderer 生命周期检查，并在目标宿主验证无推理 SDK 收尾。
+
 ### 13.1 npm 安装与发行
 
 正式分发恢复 npm 优先：`npx -y @ckanner/flywheel@latest install` 显式协调同版本全局 CLI、worker、DSH 桌面插件与内嵌 skills。普通 `npm install` 不通过 postinstall 修改用户配置；安装器不要求源码 checkout 或本机 Go 编译器。四个平台包仍由 optionalDependencies 选择，插件是精确版本依赖，全部六包版本一致。安装不会替换用户的 DSH 桌面或代办模型账号登录。

@@ -1,5 +1,5 @@
 // Loaded only in the independently owned SDK process, never in the desktop host.
-// Public rc.5 Cordis services; the worker verifies this acknowledgement before prompt().
+// Public rc.5/rc.1 Cordis services; the worker verifies this acknowledgement before prompt().
 export const inject = ['sandboxPolicy', 'approval', 'shell'];
 
 export async function apply(ctx, config) {
@@ -21,7 +21,10 @@ export async function apply(ctx, config) {
       (fullAccess ? result.sandbox.denied !== false || result.sandbox.enforcement !== undefined : result.sandbox.enforcement !== 'full')) {
     throw new Error(fullAccess ? 'Flywheel readiness probe did not confirm explicit full access' : 'Flywheel sandbox readiness probe did not prove full enforcement');
   }
-  ctx.on('session/created', session => {
+  // Session creation is read-only in rc.1. Agent creation is awaited after
+  // that announcement and before the factory admits any model work in both hosts.
+  ctx.on('agent/created', ({ agent }) => {
+    const session = agent.session;
     // A fresh SDK session has no inherited permission facts. Pin both canonical
     // knobs, rather than relying on saved UI preferences or a prompt instruction.
     session.append('sandbox/mode', { mode: permissionMode });
@@ -31,7 +34,8 @@ export async function apply(ctx, config) {
       protocol: 1,
       cwd: policy.workspaceRoot,
       permissionMode: policy.mode,
-      approvalPolicy: ctx.approval.effectivePolicy(session),
+      // Read the explicit logged override through the public API.
+      approvalPolicy: ctx.approval.overrideOf(session),
       confinedShell: !fullAccess,
       ...(fullAccess ? {} : { enforcement: result.sandbox.enforcement }),
     });

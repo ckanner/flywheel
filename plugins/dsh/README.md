@@ -2,7 +2,7 @@
 
 [English](README.en.md) · 简体中文
 
-目标是 **DSH Mac 桌面 0.2.1-rc.5** 的已存在接口。Go 继续管理状态机、任务、worktree、验收和成本上限；本包提供桌面操作入口、原生 SDK 执行通道和 Codex Pro machine API worker。无需 alpha、OAR、Forge 或一直活着的父智能体。
+目标是 **DSH Mac 桌面 0.2.1-rc.5 与 0.2.2-rc.1** 的公开接口，0.28.4 的版本声明只允许这两个已核对版本。Go 继续管理状态机、任务、worktree、验收和成本上限；本包提供桌面操作入口、原生 SDK 执行通道和 Codex Pro machine API worker。无需 alpha、OAR、Forge 或一直活着的父智能体。
 
 完整的 npm 安装、SDK 配置到首个任务流程见 [Mac 入门教程](../../docs/getting-started.md)，适用于 Flywheel **0.28.0 及以后的完整 npm 发行版**。安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](../../docs/releasing.md#3-失败恢复)。
 
@@ -11,6 +11,8 @@
 订阅预设迁移命令和 `permissions.mode` 从 **0.28.2** 开始提供。升级保留已有配置；只有用户明确应用迁移时才备份并更新模型与权限。
 
 **0.28.3 的变化：**新增 `deepseek-account` 默认、账号错误处理与会话当前工作目录修复。0.28.2 仍使用 API 默认和会话最初目录，重装同版不会获得修复；升级保留已有配置，采用账号预设需要显式迁移。
+
+0.28.4 同步 Cordis 4.0／4.1 和 host peer 声明，并用锁定依赖测试新旧两版发布的 renderer。配置、已有 DeepSeek 账号与权限保持原样。SDK 在公开 agent/created 阶段写入权限事件，通过公开 `approval.overrideOf(session)` 核对 never 覆盖值；Session 创建公告期间保持只读。
 
 ## 提供什么
 
@@ -221,7 +223,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 
 ## 实现依据
 
-宿主代码按公开 tag `dsh-v0.2.1-rc.5` 固定；另对实际 Mac rc.5 的编译模块核对了同名 API。关键一手来源：
+宿主基线按公开 tag `dsh-v0.2.1-rc.5`（`b830ec9`）和 `dsh-v0.2.2-rc.1`（`66491b0`）固定。新旧真实发布的 renderer 均运行同一插件构建的生命周期测试；SDK 权限回执使用两版公开的 `approval.overrideOf(session)`。目标 Mac 实测结果见发行验证记录。关键一手来源：
 
 - [SDK server 方法、生命周期与限制](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/README.md)
 - [SDK TypeScript 客户端、usage 事件和关闭语义](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/client/README.md)

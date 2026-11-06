@@ -4,7 +4,7 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
-当前源码的统一发行目标为 **v0.28.3**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前源码的统一发行目标为 **v0.28.4**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
@@ -36,7 +36,7 @@ npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
 
 ## 2. DSH 入口与独立 worker
 
-本实现针对已核对接口的 **DSH Mac 桌面 0.2.1-rc.5**。先核对 About、`dsh --version` 和命令实际来源。它不要求 alpha、OAR、Forge、Teams 或一直存活的桌面父智能体。
+本实现覆盖已核对接口的 **DSH Mac 桌面 0.2.1-rc.5 与 0.2.2-rc.1**；0.28.4 的声明只允许这两个版本。先核对 About、`dsh --version` 和命令实际来源。它不要求 alpha、OAR、Forge、Teams 或一直存活的桌面父智能体。
 
 上一节的安装器使用**桌面安装的 `dsh` 命令**执行正式插件管理接口：`dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次版本>`，然后通过 `plugin list` 核对版本。普通 npm DSH CLI 不能管理保留的 `desktop` profile；命令不在 PATH 时用 `--dsh-bin` 指定已核对的桌面命令入口。安装后按宿主提示重新载入。不要猜测 `.app` 内部可执行文件路径。
 

@@ -7,11 +7,9 @@ provides its DSH SDK and Codex Pro workers. The engine owns task state, budgets,
 verification, Git delivery, and process lifecycles. The desktop is a control and
 observation interface; it does not need a parent model session to keep a task alive.
 
-This guide describes the **Flywheel 0.28.3** interfaces. Source availability does
+This guide describes the **Flywheel 0.28.4** interfaces. Source availability does
 not mean that npm `latest` already contains them. Check the registry version and
-the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The desktop
-compatibility baseline is **DSH Mac 0.2.1-rc.5**, not a claim that every DSH build
-or provider adapter is compatible.
+the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The checked desktop runtimes are **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1**. The 0.28.4 engine range declares only those two versions. DSH 0.2.2 itself requires Node 24.9 or later; use its desktop-supplied CLI. Other builds and provider adapters need their own checks.
 
 **Flywheel 0.28.1 introduces the native conversation view.** Version `0.28.0`
 uses the composer popup. Upgrade the CLI and desktop plugin to the same new
@@ -20,6 +18,8 @@ version; merging source does not update an installed plugin.
 Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; only an explicit migration backs it up and updates model bindings and permissions.
 
 **Changes in 0.28.3:** account defaults, account-error handling, and the current session directory. Version 0.28.2 still uses API-key defaults and the original directory. Reinstalling that version does not include these fixes. Upgrades preserve configuration; adopting the account preset requires explicit migration.
+
+Version 0.28.4 aligns Cordis 4.0/4.1 and host peer declarations, testing the same built plugin against both published renderers with locked dependencies. Configuration, account selection and permissions are preserved. The SDK writes permission events during the public agent/created phase, after the read-only Session creation announcement and before model work; it reads the explicit never override through public `approval.overrideOf(session)`.
 
 ## Components
 

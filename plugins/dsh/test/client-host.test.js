@@ -2,6 +2,9 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { act, clientDocument, closeClientHarness, deferred, loadClient } from './support/client-harness.js';
 
 after(closeClientHarness);
@@ -12,9 +15,11 @@ const React = await import('react');
 const ReactDOM = await import('react-dom');
 const ReactDOMClient = await import('react-dom/client');
 const JSX = await import('react/jsx-runtime');
-const Cordis = await import('@deepseek-ai/cordis');
-const Slots = await import('@deepseek-ai/dsh-client-ui-slots');
-const source = await readFile(new URL(import.meta.resolve('@deepseek-ai/dsh-client-ui-renderer/client')), 'utf8');
+const hostRequire = createRequire(process.env.FLYWHEEL_TEST_DSH_HOST_DIR
+  ? resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, 'package.json') : new URL('../package.json', import.meta.url));
+const Cordis = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/cordis')));
+const Slots = await import(pathToFileURL(hostRequire.resolve('@deepseek-ai/dsh-client-ui-slots')));
+const source = await readFile(hostRequire.resolve('@deepseek-ai/dsh-client-ui-renderer/client'), 'utf8');
 
 function publishedRenderer() {
   const shared = { react: React, 'react-dom': ReactDOM, 'react-dom/client': ReactDOMClient,
@@ -41,7 +46,7 @@ function hostSource(initial) {
   }, set: next => { value = next; for (const listener of [...listeners]) listener(); } };
 }
 
-test('the published rc.5 renderer owns the external plugin lifecycle without Harness Client module imports', async t => {
+test('the published DSH renderer owns the external plugin lifecycle without Harness Client module imports', async t => {
   const container = clientDocument.createElement('div');
   clientDocument.body.appendChild(container);
   const headBefore = clientDocument.head.innerHTML;

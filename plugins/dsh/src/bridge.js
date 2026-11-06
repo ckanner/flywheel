@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError, record, SessionFold, validateStart } from './protocol.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url))) {
-  // Each patch replaces an entire config row. Pin the known rc.5 enforcement
+  // Each patch replaces an entire config row. Pin the checked rc.5/rc.1 enforcement
   // implementations, not the user's mutable permission dropdown defaults.
   const disable = ['permission', 'tool-plugin-manager', 'tool-working-directory',
     'tool-subagent', 'tool-subagent-fork', 'tool-subagent-control', 'tool-subagent-list-agents',

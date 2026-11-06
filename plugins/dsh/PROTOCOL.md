@@ -238,3 +238,7 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 3. 仅当安装记录不存在时，兼容旧配置，从 PATH 查找 `flywheel`。
 
 损坏记录、符号链接、缺失或被修改的 launcher 都明确失败，不静默退回 PATH。SHA-256 核对的是 launcher 内容，不是账号状态或所有外部 CLI 的真实性。已有用户修改会在 setup 时保留并报告冲突；修复方法见[升级教程](../../docs/getting-started.md#8-升级排错与卸载)。普通 npm 卸载不会擅自删除安装记录、配置、skills 或任务数据。
+
+## DSH 宿主兼容性（0.28.4）
+
+包声明只接受 `0.2.1-rc.5` 与 `0.2.2-rc.1`。新 SDK 会按策略文件所属包的 engines.dsh 校验其准入，旧包被禁用时缺少 flywheel/policy 回执，Go 必须拒绝派发模型 prompt。权限插件在公开 agent/created 阶段（创建公告结束后、首个模型请求之前）写入显式 approval/policy，不在 session/created 只读公告中追加事件，再只读公开 approval.overrideOf(session)，不访问私有 effectivePolicy；未知／缺失回执仍不放行。

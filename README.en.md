@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 Flywheel turns reviewed software requirements into bounded coding tasks with explicit acceptance criteria. A deterministic Go engine runs Plan, Execute, Review, and verification loops. Models propose plans, implement changes, and review candidates; the engine owns state, retries, budgets, workspaces, verification, local Git delivery, and stopping.
 
-This source targets **0.28.3**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration targets interfaces checked against **DSH Mac 0.2.1-rc.5**. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
+This source targets **0.28.4**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration covers the checked **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1** interfaces. Version 0.28.4 declares only these two runtime versions. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
 
 ## Install
 
