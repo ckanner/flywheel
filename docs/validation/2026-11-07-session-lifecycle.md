@@ -68,6 +68,7 @@ FIFO 和非法身份。该有界槽不代替后端历史的保留策略。本版
 | DSH 损坏／截断结果流保留不可信用量 | 无效 stream、关联身份和截断清除 usage／cost；完整相关回执的用量与不安全的外层退出分别记录 |
 | DSH 成功回执加异常 exit 仍保持可恢复 | 使用协议结果与物理退出分别校验，异常组合阻断重放 |
 | 取消、CAS 或缺失候选证明使已发生调用漏账 | 在恢复入口独立处理可信回执的可归属计量；保持未知执行阻断和原始 guard 校验；本地未派发取消不虚增未知用量 |
+| 非法回执哈希被写回状态后破坏 schema | 读取时拒绝非规范的非空 candidate／guard 哈希；缺失证明与损坏证明分开，9 个非法形状子用例先红后绿 |
 
 主要回归在 [sessions_test.go](../../internal/machine/sessions_test.go)、
 [session_workflow_test.go](../../internal/machine/session_workflow_test.go)、
@@ -76,20 +77,47 @@ FIFO 和非法身份。该有界槽不代替后端历史的保留策略。本版
 [session_audit_test.go](../../internal/machine/session_audit_test.go)。状态、schema、配置、
 诊断、CLI、各后端和 Node worker 另有各自的行为与故障测试。
 
-## 验证状态
+## 最终本地验证
 
 执行环境：Linux amd64，Go **1.27.0**，Node **24.22.1**，npm **12.2.1**。
 
 | 检查 | 本轮结果 |
 |---|---|
-| Go 定向行为与故障测试 | 已通过；最终审查修复后的整仓门禁待下列记录更新 |
-| `make quality-gate` | 最终门禁进行中；不会把中间轮次的覆盖率当成完成 |
-| CI 相同的七个核心包 `go test -race` | 最终候选待执行 |
+| Go 定向行为与故障测试 | 全部通过；独立 guard、协议、账务和 CAS 审查均未发现剩余确认阻断项 |
+| `make quality-gate` | 通过；vet、gofmt、所有被测包与每个被测函数均为 100% statement coverage；cmd 单行入口按现有门禁排除 |
+| CI 相同的七个核心包 `go test -race` | 全部通过：machine、verify、watchdog、drivers、cli、modules、diagnostic；machine 86.850 秒 |
 | DSH `npm run check` | 145 个主套件测试及 8 个隔离旧宿主测试通过 |
 | Go → Node → DSH／Codex Pro | 合并桥接命令通过，含公开 SDK 的真实持久化续接 |
 | 根目录 `npm test` | 126／126 通过 |
-| 六包构建与同一候选真实安装 | 等待最终源码冻结后执行 |
-| 文档、差异与远端 tree | 提交时核对本地暂存 tree 与 GitHub 返回 tree 一致；最终链接与差异检查待补全 |
+| 六包构建与同一候选真实安装 | 构建 6 个同版本包成功；安装测试 7／7 通过、0 skipped，21.026 秒 |
+| 原生 CLI | `make build`、version、control／doctor help、JSON config inspect 均通过；内嵌默认策略为 scoped／1 |
+| 文档、差异与远端 tree | 20 份改动 Markdown 的 151 个本地链接、32 个锚点及围栏通过；`git diff --check` 通过；远端 tree 与本地已检查暂存 tree 一致 |
+
+最终代码验证与六包构建固定在提交
+`2ca8afc50bb858459d9b66755ccd3e1457914c92`，tree 为
+`faa53b698ff186fa248c8ebb42d7f42118609092`，构建时 `dirty:false`。
+本文件的后续提交仅补全验收记录，不更改已测运行时代码、测试、技能或发行文件。
+
+六包源码快照 SHA-256：
+`4bd35144a14574fe69b4f79261393c91a762045cf93b0d8f21b39f67dd841fea`。
+`candidate.json` SHA-256：
+`47d3a1a9e4d97971067df78821d5e1466a8b43ea488c04d14ed7d3c2611d0f71`。
+候选清单记录六个 tarball 的尺寸和 SHA-512 integrity；真实安装使用这些同一份字节。
+包包含 meta launcher、DSH plugin、Darwin／Linux × arm64／amd64 四个原生二进制。
+跨平台构建成功不等于四个平台都已运行：实际安装和可执行检查是在 Linux amd64 完成。
+
+版本仍为 0.28.5；这些包用于开发验收，不是新发行，正式发行必须选择新版本并执行发行门禁。
+完整命令使用固定工具链，包括：
+
+```bash
+make quality-gate
+go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
+npm --prefix plugins/dsh run check
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro)NodeWorkerOfflineBridge$' -count=1 -v
+npm test
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
+```
 
 ## 远端与未验证项
 
@@ -97,7 +125,10 @@ FIFO 和非法身份。该有界槽不代替后端历史的保留策略。本版
 [GitHub Actions run 42388417156](https://github.com/ckanner/flywheel/actions/runs/42388417156)
 在约三秒内失败：npm-candidate 没有 runner 名称、steps 为空，后续 test skipped；
 日志读取为 404 BlobNotFound。不能据此声称代码测试失败的具体原因，也不能声称远端
-Linux／macOS CI 已通过。最终 PR 的 CI 状态另行核对。
+Linux／macOS CI 已通过。最终代码提交 `2ca8afc` 的
+[run 42389676602](https://github.com/ckanner/flywheel/actions/runs/42389676602) 也在两秒左右
+出现同样的无 runner、无步骤失败，后续 test skipped。本地门禁与远端 CI 状态分别记录；
+没有将已完成的本地 Linux 验证冒充远端或 Mac 通过。
 
 没有运行真实 ChatGPT／Kimi／DeepSeek 账号推理、Mac 桌面／Seatbelt 验收或成对缓存效果
 实验；不报告虚构的节省比例。没有发布 npm、提升 latest、修改用户已有安装或登录账号。
