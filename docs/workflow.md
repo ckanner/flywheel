@@ -10,9 +10,44 @@ Codex Pro 插件 machine API；源码存在不代表 npm `latest` 已更新，�
 Flywheel 将通过验收的 packet 合入任务分支；整个需求通过终验和远端检查后，
 再由人或已获授权的宿主 Agent 合并 PR 到 `main`。
 
+## 0. 常规入口：描述目标并启动
+
+包含自适应工作流的同版本 CLI／DSH 插件提供统一入口：
+
+```text
+/flywheel-task 修复已定位的问题，补齐回归测试并完成验证。mode=auto
+```
+
+宿主使用当前对话研究代码、复用或建立任务 worktree，准备 Spec、packet、验收与
+工作流事实，保存契约后调用 `flywheel_launch`。Go 校验资格并启动，DSH 将这个
+具体任务关联到当前会话的 Flywheel 视图；通常无需复制路径或反复确认已授权范围。
+`flywheel control launch --help` 可确认新接口是否存在；旧发行中的基础命令不代表
+已经具备此入口。
+
+| 选择 | 引擎选择与闭环 |
+|---|---|
+| Auto（默认） | 根据已研究并记录的事实选择 Quick；资格不足或存在风险则 Full |
+| Quick | 一个里程碑、一个 packet，执行、全部必需验证、独立最终 Review、Git 交付 |
+| Full | Plan、逐 packet 执行与评审、集成 L2/L3、Judge |
+
+Quick 不按文件数量判断风险。范围与实现模式必须明确、全部需求有验收映射、
+独立最终评审可以完整判断，缺失 L2/L3 要有不适用理由。鉴权、支付、迁移、并发、
+权限或未决设计等使用 Full；显式 Quick 也不能绕过资格。最终 Review 发现验收
+缺口或新风险时，Go 保存升级并继续 Full，保留预算、工作区和历史。
+
+正常首次成功的 Quick 只有 Execute 与最终 Review 两次阶段 Agent 调用，宿主
+准备、模型内部轮次和重试另计。必需测试、覆盖率、适用 L2/L3 与缺陷注入仍保留，
+而且都必须验证最终 Review 读取的同一候选。Plan／Judge 记录为“不适用”及原因，
+不能显示假通过。
+
+只想先看方案时用 `/flywheel-new <需求>`；已准备或要恢复任务时用
+`/flywheel-run <真实任务目录>`。用户已有的工作区、实施与交付授权继续沿用，
+明确提出“先给我看方案”时才停在审阅。下面逐节展开准备、启动与交付的检查点，
+不要求自动入口逐项等待用户点击。
+
 ## 1. 选择准备阶段的模型
 
-`flywheel-new` 使用当前 DSH 对话的模型。`loops.plan` 只控制引擎启动后的规划
+`flywheel-task` 与 `flywheel-new` 使用当前 DSH 对话的模型。`loops.plan` 只控制引擎启动后的规划
 和修订，不会替准备阶段切换模型。建议按需求的不确定性选择：
 
 | 准备任务 | DSH Provider / 模型 | 思考等级 |
@@ -95,6 +130,11 @@ Kimi 的语法。依据见 [DSH 技能入口](https://github.com/deepseek-ai/dee
 不要填未经运行的验收结果；环境缺失应标记 unverified。不要手工创建或修改
 `state.json`，它由引擎管理。完整要求见 [flywheel-new](../skills/flywheel-new/SKILL.md)。
 
+自动准备启动使用 `flywheel-task`，其契约在 Spec 的 `workflow` 中记录 mode、
+版本、代码依据、风险与资格判断，字段见[工作流配置](configuration.md#工作流策略与恢复)。
+只有模型写了“low risk”不能取得 Quick；Go 校验结构与声明，执行和最终评审再
+检查实际候选。没有 workflow 字段的旧契约保留 Full。
+
 按已有 Git 授权保存审阅后的契约，仅选择本任务文件：
 
 ```sh
@@ -144,16 +184,23 @@ flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 ```
 
-预检不发送模型推理，不能证明账号额度或真实模型调用已经通过。启动会实际调用
-所选模型。另选 DSH 的 Flywheel 视图时，把准备阶段给出的 `task_dir` 填入
-“任务资料目录”；“项目目录”可留空，前提是 DSH 当前工作目录已经是同一个
-`repo_dir`。当前源码通过公开 `workingDirectory.get(session)` 读取它；显式路径
-优先，不从任务名或历史对话猜路径。仅在 shell 中 `cd` 不会改变 DSH 的会话目录，
-未切换会话工作目录时应填入真实 `repo_dir`。不要混用原 checkout 的账本和新 worktree。
-技能调用不会自动选择视图中的任务，视图也不自动发现或启动任务。
+新统一入口可将 start 换成 `control launch ... --mode auto`；它消费已经准备的
+契约，默认请求 Auto。`start`／前台 `run` 可带 `--mode auto|quick|full`，省略时
+保留契约或持久化策略。旧状态不会因新增 --mode 而静默跳过原来的 Full 阶段，
+恢复也不会重新分类或从 Full 降为 Quick。
 
-每个 packet 的实现、L1 与独立 Review 通过后，引擎提交并快进合入任务分支。
-所有 packet 完成后仍需里程碑 L2/L3 与 Judge；单元合并不代表整个需求已通过。
+预检不发送模型推理，不能证明账号额度或真实模型调用已经通过。启动会实际调用
+所选模型。DSH `flywheel_launch` 与 `flywheel_control` start 将明确的 `taskDir`
+和 `cwd` 关联到发起会话的 Flywheel 视图；单纯 shell 调 CLI 不会创建桌面会话关联。
+终端启动或另开已有任务时，仍可手动填“任务资料目录”和“项目目录”。后者仅在
+会话当前目录已经是同一 `repo_dir` 时可留空。插件通过公开
+`workingDirectory.get(session)` 读取目录；不扫描或猜测。仅在 shell 中 `cd`
+不会改变 DSH 的会话目录，不要混用原 checkout 的账本和新 worktree。
+
+Full 的每个 packet 经实现、L1 与独立 Review 通过后，引擎提交并快进合入任务分支，
+全部 packet 完成后仍需集成 L2/L3 与 Judge。Quick 在实际 packet 候选中先执行
+所有适用 L2/L3，再作覆盖全部需求的一次最终 Review，然后持久化同一候选。
+两种流程都必须核对 `state.status` 与交付证据；单元合并不等于整个需求完成。
 合并冲突或验证失败时保留产物并处理记录，不强制清理。停止与恢复见
 [入门教程](getting-started.md#7-启动观察停止与恢复)。
 
@@ -165,17 +212,18 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 ### 5.1 Skills 入口与各 Loop 的工作目录
 
 内置 skills 将任务 worktree 约定作为准备、启动、恢复和单环入口的检查步骤。
-`flywheel-new` 在生成契约前创建或复用任务 worktree；`flywheel-run` 以及单环
+`flywheel-task`／`flywheel-new` 在生成契约前创建或复用任务 worktree；`flywheel-run` 以及单环
 skills 从实际任务目录解析同一 worktree 根，再调用 CLI。默认不从 `main`、
 `master` 或 detached HEAD 启动开发；已有明确工作区选择与授权不重复询问。
 恢复复用原任务路径及引擎保存的 packet 状态，不为恢复另建一份任务或复制 state。
 
 | 阶段／入口 | 实际工作目录 | 谁负责选择或创建 |
 |---|---|---|
-| `flywheel-new` 准备契约 | 任务集成 worktree | 宿主 Agent 按 skill 创建或复用 |
-| Plan | 任务集成 worktree，修订任务契约 | 引擎使用启动时的根目录 |
+| `flywheel-task`／`flywheel-new` 准备契约 | 任务集成 worktree | 宿主 Agent 按 skill 创建或复用 |
+| Full Plan／升级后修订 | 任务集成 worktree，修订任务契约 | 引擎使用启动时的根目录 |
 | Execute、L1、Review | 当前 packet 候选工作区；正常模式为 packet worktree | 引擎创建、记录并复用 packet worktree |
-| L2/L3、Judge | 任务集成 worktree | 引擎验证已集成的需求与里程碑 |
+| Quick 适用 L2/L3 | 同一 packet 候选工作区，先于最终 Review | 引擎不能使用尚未集成修改的旧 checkout |
+| Full L2/L3、Judge | 任务集成 worktree | 引擎验证已集成的需求与里程碑 |
 | Intake、Garden | 所选任务所属 worktree | 入口解析目录，Go 写建议结果 |
 | Status、Stop | 对应原任务路径与根目录 | 直接查询或停止，不要求为此新建 worktree、切分支或提交 |
 
@@ -189,8 +237,17 @@ Plan／Execute 请求 `workspace-write`，Review／Judge 以及 DSH／Codex（�
 各 Loop 不会各自新建一份 worktree。任务 worktree 贯穿整个需求，
 packet worktree 贯穿该单元的执行、验收与评审；完成交付才由引擎处理本地合并
 与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
-`flywheel-verify` 只运行确定性验收：指定 packet 时只检查该单元 L1；未指定时
-检查未完成单元 L1 与当前里程碑 L2/L3。它不调用 Review／Judge，也不创建 worktree。
+
+Go 调度 packet，首版仍是串行执行，不依赖一个持续存活的父模型会话监督。
+每次 Execute／Review 使用新会话；重试保留磁盘产物，不复用执行者上下文。
+Plan 仅在配置允许、后端支持且身份匹配时恢复历史。团队通信、依赖图并行调度
+不在本期能力范围。
+`flywheel-verify` 只运行确定性验收：Full 保留指定 packet 的 L1／当前里程碑
+L2/L3 语义；Quick 还会在实际候选上收齐适用 L2/L3。它不调用 Review／Judge，
+不创建 worktree，也不交付任务。Quick 的 `--only review` 是最终 Review；若发现
+验收缺口或资格失效，Go 当即保存单向 Full 升级，下一次完整 run 才进入 Full。
+`--only plan` 则要求 Full，确需规划时显式 `--mode full` 由引擎升级。
+`--only execute` 始终只是 Execute／L1 子环，不等于完整 Quick。
 
 Skill 的启动检查由宿主 Agent 遵守，CLI／GUI 直接调用不会自动执行这些 skill
 正文，也不会自动创建外层任务分支。直接使用控制接口时仍须显式选择正确的

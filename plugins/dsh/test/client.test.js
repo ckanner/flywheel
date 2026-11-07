@@ -24,6 +24,9 @@ const statusReply = (request, slug = 'example', status = 'pending') => commandRe
   state: { slug, status, packets: {} },
 }));
 const statusRegion = ui => ui.container.querySelector('[aria-label="任务状态"]');
+const association = (sequence, taskDir, outcome = 'confirmed', extra = {}) => ({
+  sequence, operationId: 'tool:launch-' + sequence, action: 'launch', taskDir, cwd: '/repo', outcome, message: '', ...extra,
+});
 const alerts = ui => [...ui.container.querySelectorAll('[role="alert"]')].map(node => node.textContent).join('\n');
 const detail = (ui, name) => {
   const summary = [...ui.container.querySelectorAll('summary')].find(node => node.textContent === name);
@@ -37,6 +40,7 @@ function hostCommand(t, config, cwd) {
     on: (event, callback) => { assert.equal(event, 'dispose'); dispose = callback; },
     commands: { register: definition => { command = definition; } },
     tools: { register: () => {} },
+    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
     workingDirectory: { get: () => cwd },
   }, config);
   t.after(() => dispose());
@@ -77,6 +81,125 @@ test('native Flywheel view is additive, idle on opening, and ships its scoped st
   await ui.setVisible(true);
   assert.equal(ui.container.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]').length, 1);
   assert.equal(ui.requests.length, 0, 'tab reopening does not dispatch a command');
+});
+
+test('a logged host launch binds exact task paths, refreshes once, and restores through a new session binding', async t => {
+  const ui = await mountPanel(t, request => statusReply(request, 'AUTO_BOUND'));
+  await ui.setAssociation(association(10, '/worktree/docs/task', 'confirmed', { cwd: '/worktree' }));
+  assert.deepEqual(ui.requests, [{ action: 'status', taskDir: '/worktree/docs/task', cwd: '/worktree' }]);
+  assert.equal(ui.container.querySelectorAll('input')[0].value, '/worktree/docs/task');
+  assert.equal(ui.container.querySelectorAll('input')[1].value, '/worktree');
+  assert.match(statusRegion(ui).textContent, /AUTO_BOUND/);
+  await ui.setAssociation(association(11, '/worktree/docs/task', 'confirmed', { cwd: '/worktree', action: 'status', operationId: 'command:refresh' }));
+  assert.equal(ui.requests.length, 1, 'the status result projection does not cause an automatic polling loop');
+  await ui.setVisible(false);
+  await ui.setVisible(true);
+  assert.equal(ui.requests.length, 1, 'tab remount reuses already confirmed control state');
+  await ui.switchSession('other');
+  assert.equal(ui.container.querySelector('input').value, '', 'unrelated conversations do not inherit a task');
+  await ui.switchSession('desktop-session', 1);
+  assert.equal(ui.container.querySelector('input').value, '/worktree/docs/task');
+  assert.equal(ui.requests.length, 2, 'a new binding recovers identity and makes a fresh read rather than trusting logged running state');
+  assert.ok(ui.requests.every(request => request.action === 'status'), 'opening a recovered association never repeats launch');
+});
+
+test('unknown host launches retain the original task across edits and require a successful read before another launch', async t => {
+  let fail = true;
+  const ui = await mountPanel(t, request => {
+    if (fail) throw new Error('disconnected');
+    return statusReply(request);
+  }, { association: association(2, '/repo/original', 'pending') });
+  assert.equal(ui.requests.length, 0, 'a pending log intent is shown without racing the active host launch');
+  assert.equal(ui.container.querySelector('input').value, '/repo/original');
+  assert.equal(ui.button('启动准备好的任务').disabled, true);
+  assert.match(alerts(ui), /启动准备好的任务.*结果未确认/);
+  await ui.type(0, '/repo/another');
+  await ui.click('刷新待确认任务');
+  assert.equal(ui.requests[0].taskDir, '/repo/original');
+  assert.equal(ui.container.querySelector('input').value, '/repo/original');
+  assert.equal(ui.button('启动').disabled, true);
+  await ui.setAssociation(association(2, '/repo/original', 'unknown', { message: 'The launch response was lost' }));
+  assert.match(alerts(ui), /The launch response was lost/);
+  fail = false;
+  await ui.click('刷新待确认任务');
+  assert.equal(ui.button('启动').disabled, false);
+  assert.equal(ui.button('启动准备好的任务').disabled, false);
+  assert.equal(ui.container.querySelector('[role="alert"]'), null);
+});
+
+test('association updates do not overwrite a manual target with a late completion, but a new launch adopts its own target', async t => {
+  const ui = await mountPanel(t, request => statusReply(request, request.taskDir));
+  await ui.setAssociation(association(5, '/repo/first', 'pending'));
+  await ui.type(0, '/repo/manual');
+  await ui.setAssociation(association(5, '/repo/first', 'confirmed'));
+  assert.equal(ui.container.querySelector('input').value, '/repo/manual');
+  assert.equal(ui.requests.length, 0, 'late completion cannot query or replace a manually chosen task');
+  await ui.setAssociation(association(7, '/repo/new'));
+  assert.equal(ui.container.querySelector('input').value, '/repo/new');
+  assert.deepEqual(ui.requests, [{ action: 'status', taskDir: '/repo/new', cwd: '/repo' }]);
+  await ui.setAssociation(association(5, '/repo/first', 'confirmed'));
+  assert.equal(ui.container.querySelector('input').value, '/repo/new', 'an older projection cannot replace a newer operation');
+});
+
+test('a confirmed host mutation refreshes a previously observed task instead of retaining its stale state', async t => {
+  let status = 'pending';
+  const ui = await mountPanel(t, request => statusReply(request, 'same-task', status));
+  await ui.setAssociation(association(1, '/repo/same'));
+  assert.match(statusRegion(ui).textContent, /待开始/);
+  await ui.setAssociation(association(4, '/repo/same', 'pending', { action: 'start' }));
+  assert.equal(ui.requests.length, 1);
+  status = 'completed';
+  await ui.setAssociation(association(4, '/repo/same', 'confirmed', { action: 'start' }));
+  assert.equal(ui.requests.length, 2, 'confirmed start of the same task reads current state once');
+  assert.match(statusRegion(ui).textContent, /已完成/);
+  assert.doesNotMatch(statusRegion(ui).textContent, /本次状态未确认/);
+  await ui.setAssociation(association(5, '/repo/same', 'confirmed', { action: 'status', operationId: 'command:status' }));
+  assert.equal(ui.requests.length, 2, 'the resulting status projection does not trigger another read');
+});
+
+test('manual launch sends Auto or explicit modes while Start preserves saved workflow semantics', async t => {
+  const ui = await mountPanel(t, request => statusReply(request));
+  await ui.type(0, '/repo/prepared');
+  await ui.click('启动准备好的任务');
+  assert.deepEqual(ui.requests[0], { action: 'launch', taskDir: '/repo/prepared', mode: 'auto' });
+  const select = ui.container.querySelector('select');
+  await act(async () => {
+    select.value = 'full';
+    select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true }));
+  });
+  await ui.click('启动准备好的任务');
+  assert.equal(ui.requests[1].mode, 'full');
+  await ui.click('启动');
+  assert.deepEqual(ui.requests[2], { action: 'start', taskDir: '/repo/prepared' }, 'Start omits a new mode request');
+});
+
+test('workflow view explains requested/effective modes, inapplicable stages, legacy Full and one-way upgrades', async t => {
+  let workflow = { version: 1, requested: 'auto', effective: 'quick', reason: 'One bounded packet',
+    stages: { plan: { applicable: false, reason: 'Contract already frozen' }, judge: { applicable: false, reason: 'Task-final Review remains mandatory' } }, upgrades: [] };
+  const ui = await mountPanel(t, request => commandReply(envelope(request, {
+    state: { slug: 'flow', status: 'pending', packets: {}, ...(workflow ? { workflow } : {}) },
+  })), { locale: 'en' });
+  await ui.type(0, '/repo/task');
+  await ui.click('Refresh status');
+  const text = () => ui.container.querySelector('[aria-label="Workflow"]').textContent;
+  assert.match(text(), /Requested: Auto/);
+  assert.match(text(), /Effective: Quick/);
+  assert.match(text(), /One bounded packet/);
+  assert.match(text(), /Plan · Not applicable/);
+  assert.match(text(), /Judge · Not applicable/);
+  assert.match(text(), /independent task-level Review/);
+  assert.doesNotMatch(text(), /Plan · Passed|Judge · Passed/);
+  workflow = { ...workflow, effective: 'full', reason: 'Review found a wider boundary',
+    stages: { plan: { applicable: true, reason: 'Upgraded' }, judge: { applicable: true, reason: 'Upgraded' } },
+    upgrades: [{ from: 'quick', to: 'full', reason: 'Review found a wider boundary', at: '2026-11-07T01:00:00Z' }] };
+  await ui.click('Refresh status');
+  assert.match(text(), /Requested: Auto/);
+  assert.match(text(), /Effective: Full/);
+  assert.match(text(), /Quick → Full: Review found a wider boundary/);
+  workflow = null;
+  await ui.click('Refresh status');
+  assert.match(text(), /original Full workflow applies/);
+  assert.match(text(), /Requested: Full/);
 });
 
 test('effective models can be inspected without a task and every binding remains readable', async t => {

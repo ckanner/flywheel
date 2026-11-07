@@ -4,9 +4,31 @@
 
 This guide describes the **current source implementation** and a recommended operating workflow. It does not assert that a particular npm version has been published. Check the registry when installing. The engine's local delivery and the host's GitHub operations are separate responsibilities.
 
+## 0. Normal entry: describe a goal and launch
+
+With a matching CLI/plugin release containing the adaptive workflow, use:
+
+```text
+/flywheel-task Fix the identified bug, add regression coverage, and complete verification. mode=auto
+```
+
+The current host conversation researches the code, creates or reuses the task integration worktree, prepares contracts and workflow facts, and calls `flywheel_launch`. Go validates eligibility and starts the engine; DSH associates that exact task with the initiating session's Flywheel view. There is normally no need to copy paths or repeat an authorization already given. Check `flywheel control launch --help` before relying on this new entry; older installation commands do not prove its availability.
+
+| Choice | Selection and loop |
+|---|---|
+| Auto, the new entry's default | Select Quick from supported contract facts; use Full when facts are insufficient or risks remain |
+| Quick | One milestone and packet: Execute, all required checks, one independent final Review, Git delivery |
+| Full | Plan, packet execution/review, integrated L2/L3, Judge |
+
+Quick requires clear scope, a known implementation pattern, complete verification mappings, and a final reviewer able to assess the whole task. Missing L2/L3 needs an explicit inapplicability reason. File count does not establish safety: authentication, permissions, payments, migrations, concurrency, and unresolved design use Full. An explicit Quick request still has to qualify. A verification gap or new risk causes a persisted upgrade to Full while preserving task identity, work, budget, and history.
+
+The first-success Quick path has two stage-agent calls, Execute and final Review. Host preparation, internal model/tool turns, and retries are separate. Required coverage, integration/user-path tests, and applicable defect sampling still run against the final candidate; Plan/Judge are recorded as not applicable with reasons, never as fabricated passes.
+
+Use `/flywheel-new` when the user only wants a proposal and `/flywheel-run <actual task path>` to start or resume an existing task. Preserve prior implementation and delivery authorization; honor an explicit request to review a proposal first. The sections below explain the individual checkpoints, not mandatory approval stops for the unified entry.
+
 ## 1. Choose a model for preparation
 
-Preparation turns a requirement into a Spec, task packets, acceptance commands, boundaries, and recorded dry-run evidence. `flywheel-new` uses the model selected in the host's current conversation. It does not switch that model based on `loops.plan`; that binding controls planning and revisions after the Go engine starts.
+Preparation turns a requirement into a Spec, task packets, acceptance commands, boundaries, and recorded dry-run evidence. `flywheel-task` and `flywheel-new` use the host's current conversation model. They do not switch it based on `loops.plan`; that binding controls planning and revisions after the Go engine starts.
 
 For accounts that expose the named models, these are practical starting points:
 
@@ -73,6 +95,8 @@ A runnable task needs a reviewed `spec.md` and at least one legal `task-packet-*
 - Frozen acceptance tests or other oracles, separately protected from implementation tests.
 - Actual dry-run results, with failure output and exit codes where applicable.
 
+The unified entry also records `workflow` in the Spec: version, requested mode, qualification facts, code evidence, risks, and reasons for inapplicable checks. See [Workflow policy and recovery](configuration.md#workflow-policy-and-recovery). A model's low-risk label alone is insufficient. Old contracts without this field remain Full.
+
 Run the stated commands before recording their results. An intentionally failing baseline can be valid evidence; a guessed passing result cannot. Ordinary implementation and regression tests can be added by the executor. Frozen acceptance and configuration must not be rewritten to make an implementation pass.
 
 Review the files, then commit the substantive initial contracts so packet worktrees can obtain them from Git. The following assumes the index has been checked for unrelated staged work:
@@ -121,16 +145,19 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 
 Preflight does not infer with a model or execute acceptance commands. Its unknown and warning results still need interpretation. Starting the real task invokes the configured models. A control response's `ok` describes the operation; final task completion is in `state.status`.
 
-To inspect the task in the Flywheel view, enter the supplied `task_dir`. Its optional project directory can stay blank only when the DSH session's current working directory is the same `repo_dir`. Current source reads it through public `workingDirectory.get(session)`; an explicit path takes precedence. A shell `cd` alone does not change the DSH session directory, so enter `repo_dir` if the session still points elsewhere. Skill calls do not automatically select the view's task, and the view does not infer, discover, or start a task automatically.
+For the new unified entry, use `control launch ... --mode auto` in place of `start`. It consumes prepared contracts and defaults to Auto. `start` and foreground `run` accept optional `--mode auto|quick|full`; omission retains the contract or persisted choice. Existing legacy state remains Full. Restarting or requesting Auto does not reclassify or downgrade an established Full task.
+
+DSH's `flywheel_launch` and `flywheel_control` start associate the supplied `taskDir` and `cwd` with the initiating session. Calling the CLI from a shell alone does not establish a desktop association. For terminal-started tasks or manual opening, enter the actual task directory and project root. The project field may be blank only if the DSH session directory already matches; it is read through public `workingDirectory.get(session)`. A shell `cd` alone does not change that directory. The plugin does not scan or guess tasks.
 
 ### Working directory by stage
 
 | Stage or entry | Working directory | Responsibility |
 |---|---|---|
-| `flywheel-new` preparation | Task integration worktree | Host creates or reuses it according to the skill |
-| Plan | Task integration worktree | Engine uses the startup root to revise the task contracts |
+| `flywheel-task` / `flywheel-new` preparation | Task integration worktree | Host creates or reuses it according to the skill |
+| Full Plan / revision after upgrade | Task integration worktree | Engine uses the startup root to revise the task contracts |
 | Execute, L1, Review | Current packet candidate workspace, normally its packet worktree | Engine creates, records, and reuses that workspace |
-| L2/L3, Judge | Task integration worktree | Engine checks the integrated milestone |
+| Quick's applicable L2/L3 | The same packet candidate, before final Review | The engine must not validate a stale integration checkout |
+| Full L2/L3, Judge | Task integration worktree | Engine checks the integrated milestone |
 | Intake, Garden | Selected task's worktree | Host selects the root; Go writes proposals |
 | Status, Stop | Original task directory and execution root | Query or stop the existing task without requiring a new worktree, branch switch, or commit |
 
@@ -138,13 +165,15 @@ Model-call permissions follow `permissions.mode`. Under `role-based`, the defaul
 
 Every loop does not create its own worktree. The outer task worktree spans the deliverable; a packet workspace spans its execution, acceptance, review, and delivery. Plan commits valid contract revisions in the integration worktree and attempts to fast-forward existing packet worktrees to that checkpoint while preserving implementation work. Conflicts stop for resolution.
 
-`flywheel-verify` runs deterministic acceptance only. With `--packet`, it runs that packet's L1. Without a packet, it checks unfinished packets' L1 and the current milestone's L2/L3. It does **not** call Review or Judge, create worktrees, or perform local delivery. It uses the available candidate workspace and may use the integration checkout when no packet worktree is available.
+Go schedules packets serially in this initial implementation; it does not need a persistent parent model session to supervise them. Each Execute and Review invocation starts a fresh session. Retries retain files, not the executor's context. Plan may resume history only when explicitly configured, supported by its backend, and matched to the same identity. Parallel DAG scheduling and team communication are outside this implementation.
+
+`flywheel-verify` runs deterministic acceptance only. Full retains the existing packet L1 / milestone L2/L3 behavior; Quick also collects applicable L2/L3 in the actual candidate workspace. It does **not** call Review or Judge, create worktrees, or perform local delivery. `--only execute` remains a partial Execute/L1 loop. A Quick task's `--only review` performs final Review without delivery; a verification gap, upgrade verdict, or lost Quick eligibility immediately saves the one-way Full checkpoint. The next complete run enters Full. `--only plan` requires Full, so explicitly request `--mode full` when a Quick task needs planning. Resume the complete run to let Go handle the remaining stages and delivery.
 
 The bundled skills check task location before preparation, run, resume, and manual loop actions. By default, development starts outside `main`, `master`, a known default branch, or detached HEAD unless the user has explicitly chosen and authorized that location. Direct CLI and GUI actions do not read or execute `SKILL.md`, create the outer task branch, or inherit those host checks. Read-only status and stopping must remain available even when development-entry checks would fail.
 
 ## 6. Understand local completion before merging the PR
 
-A packet is delivered only after L1 and independent Review match its current candidate, and Git delivery is confirmed. The engine commits implementation changes, performs `git merge --ff-only` into the integration checkout, persists delivery state, and cleans up only when safe. Failed commits or merges preserve the workspace. Milestone completion additionally requires L2/L3 and Judge.
+A packet is delivered only after required checks and independent Review match its current candidate, and Git delivery is confirmed. The engine commits implementation changes, performs `git merge --ff-only` into the integration checkout, persists delivery state, and cleans up only when safe. Failed commits or merges preserve the workspace. Full additionally runs integrated L2/L3 and Judge. Quick runs applicable L2/L3 before a final Review that covers every requirement, acceptance sufficiency, and continued eligibility; it then persists that same candidate.
 
 After the complete task passes, inspect the integrated changes and push them:
 

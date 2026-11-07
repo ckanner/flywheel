@@ -4,9 +4,11 @@
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。
 
+当前源码支持 **Auto／Quick／Full**：描述目标后由 `flywheel-task` 准备并启动；合格小任务走 Execute、必要验证、一次独立最终 Review 和持久化交付，复杂任务保留完整流程。旧任务继续按 Full 恢复。模式选择不改变已有模型、权限和交付授权。
+
 当前源码的统一发行目标为 **v0.28.5**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
-**本教程适用于 0.28.0 及以后的完整 npm 发行版。** 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
+**基础安装命令适用于 0.28.0 及以后的完整 npm 发行版；Auto／Quick／Full 与 `flywheel-task` 需要包含本轮变更的同版本 CLI／插件。** 用 `flywheel control launch --help` 检查新增入口是否存在，并在安装前用 `npm view @ckanner/flywheel version` 核对 registry；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
 本轮插件接入测试与实机边界见[验证记录](docs/validation/2026-11-03-codex-pro-default.md)，既有 npm 发行证据见[安装验证](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 
@@ -20,7 +22,7 @@ Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，
 npx -y @ckanner/flywheel@latest install
 ```
 
-Agent 可在同一命令后加 `--json`，读取一个结构化结果。安装器把本次解析到的**精确版本**的 CLI、对应平台 Go 二进制、DSH worker 和 Codex Pro worker（含精确版本的插件依赖）装到 npm 全局目录，安装 10 个内嵌 skills，再将同版本 DSH 插件注册到桌面 profile 并核对版本。无需下载压缩包、克隆源码或自行编译 Go。
+Agent 可在同一命令后加 `--json`，读取一个结构化结果。安装器把本次解析到的**精确版本**的 CLI、对应平台 Go 二进制、DSH worker 和 Codex Pro worker（含精确版本的插件依赖）装到 npm 全局目录，安装该版本的内嵌 skills（当前源码为 11 个），再将同版本 DSH 插件注册到桌面 profile 并核对版本。无需下载压缩包、克隆源码或自行编译 Go。
 
 安装完成会显示每个步骤和本地预检结果。`ok:true` 表示软件安装成功；`ready:false` 表示当前配置仍有运行阻断项，例如缺少 Kimi／Codex CLI，二者可以同时出现。安装器不替换现有 DSH，也不安装或代登录 Kimi／Codex。当前源码的 DeepSeek 默认复用 DSH 已登录账号；用户明确选择 API Key 时仍自行配置该凭证。运行真实任务前需完成所选渠道的准备。
 
@@ -124,11 +126,27 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 
 ## 4. 创建、运行和观察任务
 
+在 DSH 对话中描述需求即可准备并启动，通常无需手工填写目录：
+
+```text
+/flywheel-task 修复已定位的列表空状态问题，补齐回归测试并完成交付。mode=auto
+```
+
+| 选择 | 何时使用 | 实际行为 |
+|---|---|---|
+| Auto | 让引擎根据已研究的契约事实选择 | 资格充分时 Quick，否则 Full |
+| Quick | 一个里程碑、一个 packet、范围明确且验证充分 | 全部必需验证后作一次独立最终 Review；新风险或验收缺口升级 Full |
+| Full | 多工作单元、设计未定、影响较大或明确要求完整流程 | Plan → Execute／Review → 集成验证／Judge |
+
+Quick 不省略仓库门禁、适用 L2/L3、缺陷注入或 Git 持久化检查。正常成功路径有两次
+阶段 Agent 调用（Execute、最终 Review），不含宿主准备、内部工具轮次与重试。
+旧任务缺少新字段仍为 Full；恢复沿用持久化策略，Full 不因重启自动降为 Quick。
+
 业务仓库建议先建立任务集成分支与独立 worktree；准备契约、Draft PR 和人工合并的完整流程见[从需求准备到 PR 合并](docs/workflow.md)。引擎的单元合并目标是启动 checkout 当前所在分支，GitHub PR 操作由使用者或获授权的宿主执行。
 
 准备阶段由当前 DSH 对话模型生成需求契约，`loops.plan` 只控制引擎启动后的规划／修订。复杂需求建议先用已授权的 `gpt-6-astra`、`high` 生成可审阅草稿；简单明确的任务可沿用 Flash，避免每个 packet 都重复调用昂贵规划模型。
 
-先在目标 Git 仓库准备并审阅 `docs/<slug>/` 中的 Spec、packet 与配置：需求编号、L1/L2/L3 命令、禁止修改的验收路径和失败出口都应明确。DSH 输入框用 `/flywheel-new` 调用准备 Skill，审阅后用 `/flywheel-run`；Kimi CLI 的对应语法是 `/skill:flywheel-new`、`/skill:flywheel-run`。两者都是宿主加载 Skill 后让助手按流程调用 CLI，不是另一个引擎。完整步骤见[工作流](docs/workflow.md)，无需先填面板。
+`flywheel-task` 使用当前对话研究代码，在任务 worktree 准备 `docs/<slug>/` 的 Spec、packet、验收与工作流事实，再调用 Go `control launch`。DSH 通过 `flywheel_launch` 把该具体任务关联到当前会话的视图。只想先看方案时用 `/flywheel-new`；启动或恢复已有任务用 `/flywheel-run`。Kimi 对应使用 `/skill:flywheel-task`、`/skill:flywheel-new` 和 `/skill:flywheel-run`。宿主准备与 Go 调度的分工、授权和目录规则见[工作流](docs/workflow.md)。
 
 从 `0.28.1` 开始，桌面控制面接入顶部原生 **Flywheel** 会话视图（从 0.28.5 起排在内置“统计”之后），保留 DSH 输入区、模型选择器和右侧栏。`0.28.0` 仍是旧底部弹层，需把 CLI 与桌面插件同版升级。“任务资料目录”选择已准备的 `docs/<slug>/`；“项目目录”是任务所在项目／集成 worktree，可留空。从 0.28.3 开始通过 DSH `workingDirectory.get(session)` 读取会话实际目录，跟随目录切换；0.28.2 仍取最初的 header 目录，切换 worktree 后需显式填写项目路径。查看配置或检查接入可不填任务目录；启动、刷新和停止必须选择已有任务。视图展示最近刷新的结果、完整 packet 列表与未知用量，模型配置和诊断按需查看，原始 JSON 默认折叠。也可使用人工命令：
 
@@ -136,9 +154,10 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/my-task --json
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
 ```
 
-面板、人工命令和 `flywheel_control` 模型工具复用同一组 Go 接口：
+面板、人工命令、`flywheel_control` 与 `flywheel_launch` 模型工具复用同一组 Go 接口：
 
 ```sh
+flywheel control launch --task-dir /repo/docs/my-task --cwd /repo --mode auto
 flywheel control start --task-dir /repo/docs/my-task --cwd /repo
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
 flywheel control stop --task-dir /repo/docs/my-task --cwd /repo
@@ -146,16 +165,19 @@ flywheel control config --cwd /repo
 flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 ```
 
-`start` 派生独立后台引擎，日志进入任务目录的 `orchestrator.log`；关闭面板或桌面不等于停止任务。`status` 只读。`stop` 向本次运行提交带随机 token 的停止请求，等待本次引擎退出受管调用栈、释放任务 lease 后才保存停止状态；不按文件里的 PID 盲目发送信号。引擎只管理本次拥有的进程组；已观测的 `CleanupError` 仍保留在证据和指标中、阻止交付，需要按错误记录处理，`stopped` 不代表任意逃逸进程已清理。停止等待最长 45 秒，桌面入口预留 60 秒。
+`launch` 对准备好的契约默认请求 Auto；`start`／前台 `run` 未提供 `--mode` 时沿用契约与持久化策略，旧任务保持 Full。三者可显式请求 `auto|quick|full`，资格和升级仍由 Go 决定。CLI 消费契约，不自行调用模型生成任务或创建外层任务分支。
+
+`launch`／`start` 派生独立后台引擎，日志进入任务目录的 `orchestrator.log`；关闭面板或桌面不等于停止任务。`status` 只读。`stop` 向本次运行提交带随机 token 的停止请求，等待本次引擎退出受管调用栈、释放任务 lease 后才保存停止状态；不按文件里的 PID 盲目发送信号。引擎只管理本次拥有的进程组；已观测的 `CleanupError` 仍保留在证据和指标中、阻止交付，需要按错误记录处理，`stopped` 不代表任意逃逸进程已清理。停止等待最长 45 秒，桌面入口预留 60 秒。
 
 控制接口始终返回一个 protocol 1 JSON；`ok` 表示控制操作成功，任务是否完成应看 `state.status`。`config` 返回 `configuration`，`doctor` 返回 `diagnostic`；诊断有阻断项时保留完整报告并返回退出码 1，不能当成空白传输错误。若启动就绪超时，后台引擎可能仍在加载：先刷新状态和查看日志，不要另起重复任务。
 
-视图草稿按 DSH 会话保留，展示的是带刷新时间的快照；不自动发现任务或轮询。启动／停止结果未确认时，先刷新同一任务再恢复操作。原生轨迹保留父会话已有记录，独立 worker 历史不会自动合并。桌面原生能力与 SDK worker 的临时策略属于不同范围，详见[桌面视图与运行边界](plugins/dsh/README.md)。
+DSH 工具的 launch／start 将明确的任务路径关联到发起会话；视图展示请求模式、生效策略、原因、阶段适用性与升级记录。它不扫描目录猜任务，也不轮询终端另行启动的任务；手动打开仍可用。启动／停止结果未确认时，先刷新原任务再恢复操作，迟到响应不能覆盖另一个会话或新绑定。原生轨迹保留父会话已有记录，独立 worker 历史不会自动合并。关联的恢复范围见[桌面视图与运行边界](plugins/dsh/README.md)。
 
 原有前台／单步 CLI 仍可使用；这些命令应在目标仓库根目录运行：
 
 ```sh
 flywheel run docs/my-task
+flywheel run docs/my-task --mode full
 flywheel run docs/my-task --pause-before review
 flywheel run docs/my-task --only execute --packet M01-T01
 flywheel run docs/my-task --only verify --packet M01-T01
@@ -163,7 +185,7 @@ flywheel status docs/my-task
 flywheel stop docs/my-task
 ```
 
-`--only` 与 `--pause-before` 不能同时使用。前台 `run` 的退出码为 0 成功、1 用法／运行错误、3 升级／预算／单步失败、143 中断；控制命令的操作失败返回 1。
+`--only` 与 `--pause-before` 不能同时使用，`--only execute` 不等于 Quick 或完整交付。前台 `run` 的退出码为 0 成功、1 用法／运行错误、3 升级／预算／单步失败、143 中断；控制命令的操作失败返回 1。
 
 ### 已安装的 skills
 
@@ -171,20 +193,20 @@ flywheel stop docs/my-task
 flywheel install-skills
 flywheel install-skills --project /path/to/project
 flywheel skills list
-flywheel skills read flywheel-new
+flywheel skills read flywheel-task
 ```
 
-一条命令安装已包含全部 10 个 skills。默认把 Go 内嵌快照安装到 `~/.agents/skills`，`--project` 改为项目的 `.agents/skills`；上述命令可用于补装、检查或显式安装项目范围的副本。
+一条命令安装包含所选版本的全部 skills，当前源码为 11 个。默认把 Go 内嵌快照安装到 `~/.agents/skills`，`--project` 改为项目的 `.agents/skills`；上述命令可用于补装、检查或显式安装项目范围的副本。
 
 每个快照保存带文件内容 hash 的 `.flywheel-snapshot` 清单。重跑先校验当前树：未改过的自有快照可更新，相同内容跳过；用户修改、新增／删除文件、链接或未标记目录都保留并报告冲突。更新按每个 skill 暂存、rename 替换，失败时回滚，不会因为存在一个标记就覆盖用户内容。旧纯文本标记仅在整棵目录与当前内嵌内容一致时迁移。冲突恢复见[升级教程](docs/getting-started.md#8-升级排错与卸载)；`--force` 只用于源码 `--link` 模式，不能绕过默认快照保护。
 
-安装同时会在全局配置不存在时生成默认配置，已有配置保留。源码开发者才使用 `--link`。skills 只是 CLI 操作按钮，宿主的发现规则和调用语法按其配置使用，不能承担重试或状态机逻辑；安装成功不等于所有宿主已经发现它们。可用按钮涵盖 new、run、plan、exec、review、verify、status、stop、intake、garden。
+安装同时会在全局配置不存在时生成默认配置，已有配置保留。源码开发者才使用 `--link`。skills 是宿主准备／CLI 操作入口，宿主的发现规则和调用语法按其配置使用，不能承担重试或状态机逻辑；安装成功不等于所有宿主已经发现它们。可用入口涵盖 task、new、run、plan、exec、review、verify、status、stop、intake、garden。
 
 ## 5. 什么才算完成
 
 执行者可以一起修改实现、单测和回归测试；冻结验收通过 packet 的 `boundaries.must-not-touch` 或配置的 `protected-test-patterns` 显式保护。100% 覆盖率仍是本项目的门禁，断言是否有效由验收和独立评审共同检查。
 
-L1 在命令前后检查候选身份。验收过程中代码或契约变了，即使命令 exit 0 也不能继续交付。Review 同样必须针对当前候选；最终 L2/L3 与 Judge 还会核对主 checkout 的前后身份。正常完成需要代码实际提交、合并到本地目标 checkout，并确认提交后的 Git tree 与已验证候选一致；commit hook 修改 index 或文件也不能绕过这一步。任务最终完成前再次检查持久化状态，重启不会把上次验收留下的未提交副作用当成交付。
+L1 在命令前后检查候选身份。验收过程中代码或契约变了，即使命令 exit 0 也不能继续交付。Quick 在实际候选上先收齐适用 L2/L3，再作覆盖所有需求的独立最终 Review；Full 仍在集成 checkout 运行里程碑 L2/L3 与 Judge。工作流策略也进入证据身份，模式变化不能复用旧绿灯。正常完成需要代码实际提交、合并到本地目标 checkout，并确认提交后的 Git tree 与已验证候选一致；commit hook 修改 index 或文件也不能绕过这一步。任务最终完成前再次检查持久化状态，重启不会把上次验收留下的未提交副作用当成交付。
 
 Plan 只能直接修改任务目录内的 Spec 和 packet。它若修改外部验收、实现或运行配置，引擎保留现场并停止，不自动提交或丢弃。修订后的契约 fingerprint 会跨重启保存：旧 completed 单元的契约或验证策略改变时重新打开，早先已关闭的里程碑也会被重新调度。同一 run 对一个里程碑最多访问 3 次，再反复重开就升级给人。最终要求所有当前契约单元完成、里程碑关闭。
 

@@ -128,6 +128,7 @@ type verdictArgs struct {
 	packetID  string
 	attemptNo *int
 	ps        *state.PacketState // 可空——里程碑级 judge 时重试只进 metrics
+	finalSpec *contract.Spec     // Quick's stronger task-final verdict schema
 }
 
 type verdictOutcome struct {

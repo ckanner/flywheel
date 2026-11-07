@@ -49,6 +49,20 @@ func statusCmd() *cobra.Command {
 				suffix = fmt.Sprintf("（编排器运行中, pid %d）", pid)
 			}
 			fmt.Fprintf(out, "任务: %s  状态: %s%s\n", st.Slug, st.Status, suffix)
+			if st.Workflow != nil {
+				fmt.Fprintf(out, "流程: %s → %s（策略 v%d）\n原因: %s\n", st.Workflow.Requested, st.Workflow.Effective, st.Workflow.Version, st.Workflow.Reason)
+				for _, stage := range []string{"plan", "judge"} {
+					applicability := st.Workflow.Stages[stage]
+					if !applicability.Applicable {
+						fmt.Fprintf(out, "%s 不适用: %s\n", stage, applicability.Reason)
+					}
+				}
+				for _, upgrade := range st.Workflow.Upgrades {
+					fmt.Fprintf(out, "流程升级 %s → %s: %s（%s）\n", upgrade.From, upgrade.To, upgrade.Reason, upgrade.At)
+				}
+			} else {
+				fmt.Fprintln(out, "流程: full（旧任务保持完整流程）")
+			}
 			current := "—"
 			if st.CurrentMilestone != nil {
 				current = *st.CurrentMilestone

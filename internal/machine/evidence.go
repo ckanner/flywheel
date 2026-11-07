@@ -148,7 +148,8 @@ func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) 
 		ContractFiles []string
 		DoneReport    string
 		Checks        any
-	}{1, candidate, packet, c.Spec, contractContent, doneReport, c.Config.Verify})
+		Workflow      any `json:"Workflow,omitempty"`
+	}{1, candidate, packet, c.Spec, contractContent, doneReport, c.Config.Verify, c.workflowEvidencePolicy()})
 	h := sha256.Sum256(raw)
 	return hex.EncodeToString(h[:]), nil
 }
@@ -172,7 +173,7 @@ func (c *Context) currentL1Evidence(packet *contract.Packet) bool {
 }
 
 func invalidateEvidence(ps *state.PacketState) {
-	if ps.Evidence.Executor != nil || ps.Evidence.L1 != nil || ps.Evidence.Review != nil || ps.Evidence.DefectInjection != nil {
+	if ps.Evidence.Executor != nil || ps.Evidence.L1 != nil || ps.Evidence.Review != nil || ps.Evidence.DefectInjection != nil || ps.Evidence.FinalGate != nil {
 		ps.EvidenceHistory = append(ps.EvidenceHistory, map[string]any{
 			"at":       state.NowISO(),
 			"evidence": ps.Evidence,
@@ -182,4 +183,5 @@ func invalidateEvidence(ps *state.PacketState) {
 	ps.Evidence.L1 = nil
 	ps.Evidence.Review = nil
 	ps.Evidence.DefectInjection = nil
+	ps.Evidence.FinalGate = nil
 }

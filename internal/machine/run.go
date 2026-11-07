@@ -269,6 +269,7 @@ func (c *Context) summary() TaskSummary {
 type RunOpts struct {
 	TaskDir string
 	Cwd     string
+	Mode    string
 	Config  *config.Config
 	Drivers *drivers.Drivers
 	Log     func(string)
@@ -300,7 +301,7 @@ func RunTask(opts RunTaskOpts) (TaskSummary, error) {
 	runContext, cancel := context.WithCancel(parent)
 	defer cancel()
 	ctx, err := CreateContext(Opts{
-		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config,
+		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config, Mode: opts.Mode,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
 		Context: runContext,
 	})
@@ -355,6 +356,12 @@ func (c *Context) run() (TaskSummary, error) {
 	}
 	c.State.Status = "running" // paused/stopped 任务 resume 时翻回 running（#6）
 	c.save()
+	if c.quick() {
+		upgraded, err := c.runQuick()
+		if err != nil || !upgraded {
+			return c.summary(), err
+		}
+	}
 
 	visits := map[string]int{}
 	for {
@@ -503,19 +510,24 @@ func (c *Context) run() (TaskSummary, error) {
 		c.save()
 	}
 
+	err := c.finishTask()
+	return c.summary(), err
+}
+
+func (c *Context) finishTask() error {
 	if !c.contractsComplete() {
-		return c.summary(), fmt.Errorf("current contracts contain unfinished units; refusing completed status")
+		return fmt.Errorf("current contracts contain unfinished units; refusing completed status")
 	}
 	if _, err := verify.PersistedHead(c.Cwd, c.ledgerExcludes()); err != nil {
 		c.State.Status = "escalated"
 		c.save()
-		return c.summary(), fmt.Errorf("%w: final task tree is not persisted: %v", ErrCommitFailed, err)
+		return fmt.Errorf("%w: final task tree is not persisted: %v", ErrCommitFailed, err)
 	}
 	c.State.Status = "completed"
 	c.State.CurrentMilestone = nil
 	c.touchProgress()
 	c.save()
-	return c.summary(), c.err()
+	return c.err()
 }
 
 // milestoneSummaryLine retro.md 的里程碑摘要（§5.3 字段）：只记可核对事实。
@@ -598,7 +610,7 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 	runContext, cancel := context.WithCancel(parent)
 	defer cancel()
 	ctx, err := CreateContext(Opts{
-		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config,
+		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config, Mode: opts.Mode,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
 		Context: runContext,
 	})
@@ -630,6 +642,17 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		c.Log(fmt.Sprintf("recovered interrupted units: %s", strings.Join(interrupted, ", ")))
 	}
 	c.save()
+	if c.quick() {
+		selection, err := contract.SelectWorkflow(c.Spec, c.PacketList, "quick")
+		if err != nil {
+			return c.summary(), err
+		}
+		if selection.Effective != "quick" {
+			if err := c.upgradeWorkflow(selection.Reason, selection.Evidence); err != nil {
+				return c.summary(), err
+			}
+		}
+	}
 
 	pickPacket := func() (*contract.Packet, error) {
 		if packetID != "" {
@@ -653,6 +676,9 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 	var step *StepSum
 	switch only {
 	case "plan":
+		if c.quick() {
+			return c.summary(), fmt.Errorf("Quick has no runtime Plan; request --mode full to upgrade before manual planning")
+		}
 		m := c.currentMilestone()
 		if m == nil {
 			return c.summary(), fmt.Errorf("no open milestone")
@@ -675,8 +701,8 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 			return c.summary(), perr
 		}
 		// v0.24：--only execute = execute 子环闭环——转到 L1 全绿或出口。
-		// 人驱动的单环模式不做自动升级（升级是跨环裁决，人就在驾驶座）：
-		// Bounded/Spun 如实报告，人自行决定 --only plan 修订或重跑。
+		// 人驱动的单环模式如实报告 Bounded/Spun；但结构化 Quick 风险
+		// 必须持久化单向升级，不能因单步或重启而丢掉已发现的事实。
 		r, err := c.runExecuteLoop(packet)
 		if err != nil {
 			return c.summary(), err
@@ -692,6 +718,8 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 				Detail: optStr(fmt.Sprintf("bounded stop (%d/%d attempts) — rerun, or --only plan to revise", ps.FailedAttempts, packet.Escalation.MaxRetries))}
 		case r.Spun:
 			step = &StepSum{Name: "execute", OK: false, Detail: optStr("spin detected (identical failure signature) — human judgement needed")}
+		case r.Upgraded:
+			step = &StepSum{Name: "execute", OK: false, Detail: optStr("workflow upgraded to Full; resume the full run")}
 		}
 	case "review":
 		packet, perr := pickPacket()
@@ -707,6 +735,11 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		if err != nil {
 			return c.summary(), err
 		}
+		if c.quick() && r.Verdict != nil && (r.Verdict.Verdict == "verification-gap" || r.Verdict.Verdict == "upgrade" || !*r.Verdict.QuickEligible) {
+			if err := c.upgradeWorkflow("Manual final Review requires Full", r.Verdict.Reasons); err != nil {
+				return c.summary(), err
+			}
+		}
 		step = &StepSum{Name: "review", OK: r.Pass, Verdict: r.Verdict, Detail: optStr(string(r.ErrorCode))}
 	case "verify":
 		if packetID != "" {
@@ -715,7 +748,11 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 				return c.summary(), perr
 			}
 			r := c.l1Step(packet)
-			step = &StepSum{Name: "verify", OK: r.Pass}
+			ok := r.Pass
+			if c.quick() && ok {
+				ok = c.quickGateStep(packet)
+			}
+			step = &StepSum{Name: "verify", OK: ok}
 		} else {
 			ok := true
 			for _, p := range c.PacketList {
@@ -726,7 +763,9 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 					}
 				}
 			}
-			if m := c.currentMilestone(); m != nil {
+			if c.quick() {
+				ok = c.quickGateStep(c.PacketList[0]) && ok
+			} else if m := c.currentMilestone(); m != nil {
 				g := c.milestoneGateStep(*m)
 				if !g.Pass {
 					ok = false

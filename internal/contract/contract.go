@@ -131,6 +131,7 @@ type Spec struct {
 	NonGoals     []string      `json:"non-goals"`
 	Milestones   []Milestone   `json:"milestones"`
 	Requirements []Requirement `json:"requirements"`
+	Workflow     *Workflow     `json:"workflow,omitempty"`
 
 	// 派生集合（交叉校验缓存）。
 	ReqIDs       map[string]bool
@@ -456,4 +457,14 @@ func ValidateStateValue(value any) error {
 		return err
 	}
 	return validateAgainst(sch, value, "state.json")
+}
+
+// ValidateWorkflowStateValue validates the versioned extension on load without
+// changing the historical loader's treatment of unrelated legacy state fields.
+func ValidateWorkflowStateValue(value any) error {
+	sch, err := StateSchema()
+	if err != nil {
+		return err
+	}
+	return validateAgainst(sch.Properties["workflow"], value, "state.json workflow")
 }

@@ -522,6 +522,9 @@ func TestCompileSchemasErrorPropagation(t *testing.T) {
 	err = ValidateStateValue(map[string]any{"revision": 0})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
+	err = ValidateWorkflowStateValue(map[string]any{"version": 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
 
 	// 编译失败同样从两个解析入口传播。
 	_, err = ParsePacket([]byte(validPacket), "p.md")

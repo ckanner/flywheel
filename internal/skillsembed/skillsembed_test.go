@@ -27,7 +27,7 @@ func TestListCoversAllRepoSkills(t *testing.T) {
 	for _, want := range []string{
 		"flywheel-exec", "flywheel-garden", "flywheel-intake", "flywheel-new",
 		"flywheel-plan", "flywheel-review", "flywheel-run", "flywheel-status",
-		"flywheel-stop", "flywheel-verify",
+		"flywheel-stop", "flywheel-task", "flywheel-verify",
 	} {
 		assert.True(t, names[want], "缺少 %s", want)
 	}

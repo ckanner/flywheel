@@ -11,8 +11,9 @@ const configuration = { source: `${cwd}/flywheel.config.json`, scope: 'project',
   provider: 'deepseek-official', channel: 'deepseek-main', model: 'deepseek-flash', thinking: 'high',
   residentSession: false, permissionMode: 'workspace-write', inScope: true,
 }] };
-const response = { protocol: 1, ok: true, running: args[1] === 'start', pid: 42, taskDir,
-  state: { slug: 'example', status: args[1] === 'start' ? 'running' : 'pending', model: 'deepseek-flash', packets: {} } };
+const running = ['start', 'launch'].includes(args[1]);
+const response = { protocol: 1, ok: true, running, pid: 42, taskDir, cwd,
+  state: { slug: 'example', status: running ? 'running' : 'pending', model: 'deepseek-flash', packets: {} } };
 if (args[1] === 'config') response.configuration = configuration;
 if (args[1] === 'doctor') {
   response.diagnostic = { kind: 'doctor', ok: true, cwd, taskDir, probeRequested: args.includes('--probe'),
@@ -28,6 +29,7 @@ if (['doctor-fail', 'unexpected-exit', 'fail-exit-zero'].includes(mode)) {
   process.exitCode = mode === 'unexpected-exit' ? 2 : mode === 'fail-exit-zero' ? 0 : 1;
 }
 if (mode === 'wrong-task') response.taskDir += '/wrong';
+if (mode === 'wrong-cwd') response.cwd += '/wrong';
 if (mode === 'wrong-protocol') response.protocol = 2;
 if (mode === 'wrong-diagnostic-task') response.diagnostic.taskDir += '/wrong';
 if (mode === 'wrong-probe') response.diagnostic.probeRequested = !response.diagnostic.probeRequested;

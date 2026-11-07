@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -61,6 +61,10 @@ git -C "$repo_dir" worktree list --porcelain
    token／成本缺失要说明未知，不能记成免费。提醒：还需要独立 Review
    和引擎持久化交付；该命令不会自动运行 Review 或把单元标为 completed。
    达到失败出口后由用户选择修订 Plan 或重试，不在 skill 中另建重试循环。
+
+`--only execute` 不是 Quick。Quick 的完整运行还必须在同一候选上收齐适用的
+L2/L3，完成独立最终 Review 与 Git 持久化；继续闭环使用 `flywheel-run`，
+新需求的自动准备启动使用 `flywheel-task`。
 
 Execute 与 L1 的实际 CWD 由引擎选为该 packet 的候选 worktree；重试复用成果，
 模型会话另起。done-report 先写候选 worktree，再由引擎校验、归档。不要手工创建、

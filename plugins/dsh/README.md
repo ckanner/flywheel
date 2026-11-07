@@ -127,7 +127,9 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 
 ## 桌面使用
 
-正常入口是在 DSH 对话输入框调用 `/flywheel-new`，让助手准备任务说明与验收清单并给出实际路径；审阅后通过 `/flywheel-run` 开始工作。无需先填写面板。初始准备使用当前对话选择的模型，引擎启动后才使用 Flywheel 配置中的各阶段模型；两者不自动同步。
+正常入口是在 DSH 对话输入框调用 `/flywheel-task <目标>`，默认 Auto。助手在真实任务 worktree 准备契约、代码依据与验收，再调用 `flywheel_launch` 启动并把具体任务关联到当前会话视图；无需先填写目录。只要方案时用 `/flywheel-new`，启动或恢复已有任务用 `/flywheel-run`。已有范围与交付授权沿用，明确要求先审阅时保留该停止点。初始准备使用当前对话模型，运行阶段使用 Flywheel 配置，不因流程模式自动换模型、渠道、thinking 或权限。
+
+Auto／Quick／Full 与统一入口需要包含本轮变更的同版本 CLI／插件。用 `flywheel control launch --help` 核对入口；旧 npm 包不会随源码合并更新。
 
 要查看或直接控制已有任务，再在顶部视图栏在内置“统计”之后选择 **Flywheel**（从 0.28.5 起）；未直接显示时检查该栏的更多视图入口。
 
@@ -136,9 +138,10 @@ node --input-type=module -e 'console.log(JSON.stringify({type:"start",protocol:1
 | 任务资料目录 | Spec、packet、验收说明和任务记录所在的 `docs/<slug>/`，例如 `/Users/me/project/docs/fix-login` | 面板启动／刷新／停止需指定；配置与诊断可以留空。由准备 Skill 给出，无需自行编写这些文件才能使用入口 |
 | 项目目录（可选） | 对应源码项目／任务集成 worktree，例如 `/Users/me/project` | 当前源码默认读取会话实际工作目录；只在选择另一项目或 worktree 时覆盖 |
 
-从 0.28.3 开始调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。面板不自动绑定 Skill 创建的任务；查看它时粘贴 Skill 返回的任务目录，再刷新。两个字段都是项目路径，不是插件安装目录。按钮只执行以下 Go JSON 控制接口：
+从 0.28.3 开始调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。本轮 DSH 工具 launch／start 会自动关联具体任务；只准备文件或在终端启动不会创建会话关联，仍可手动填写并刷新。两个字段都是项目路径，不是插件安装目录。控制面复用以下 Go JSON 接口：
 
 ```sh
+flywheel control launch --task-dir /repo/docs/my-task --cwd /repo --mode auto
 flywheel control status --task-dir /repo/docs/my-task --cwd /repo
 flywheel control start --task-dir /repo/docs/my-task --cwd /repo
 flywheel control stop --task-dir /repo/docs/my-task --cwd /repo
@@ -152,15 +155,21 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 /flywheel {"action":"status","taskDir":"/repo/docs/my-task","cwd":"/repo"}
 ```
 
-模型工具 `flywheel_control` 接受 `action`、`taskDir`、`cwd`，以及仅用于 doctor 的可选 `probe` 布尔值。config/doctor 可省 taskDir，cwd 可沿用会话当前工作目录；start/status/stop 必须指定任务。`/flywheel {…}` 是直接人工控制命令，与 `/flywheel-new` 等 Skill 入口不同。输入统一校验，使用 argv 调用，不拼接 shell 命令。打开视图不会启动任务或探测；视图只在点击时读取状态，不自动轮询，也不自动发现其他入口启动的任务。
+`flywheel_launch` 接受 `taskDir`、可选 `cwd` 与 `mode`（auto／quick／full，默认 auto），用于宿主准备后的统一启动。`flywheel_control` 接受 `action`、`taskDir`、`cwd`；只有 launch／start 可附 `mode`，只有 doctor 可附 `probe`。config/doctor 可省 taskDir；cwd 可沿用会话当前目录，跨 worktree 时应显式传入。launch／start／status／stop 必须指定任务。`/flywheel {"action":"launch","taskDir":"/repo/docs/my-task","cwd":"/repo","mode":"auto"}` 是同一能力的人工 JSON 命令，与 `/flywheel-task` 等 Skill 入口不同。
+
+如果会话没有在 `header.cwd` 或目录切换事件中记录项目目录，launch／start／stop 必须显式提供绝对 `cwd`，否则宿主会在启动 Go 前返回 `not-dispatched`；只读 status 仍可沿用宿主当前目录。
+
+输入统一校验，通过 argv 调用 Go，不拼接 shell。launch 默认 Auto；start 不带 mode 时沿用契约或持久化策略，旧任务保持 Full。打开视图不会启动任务或探测；确认任务关联后自动查询一次当前状态，之后按需刷新，不自动轮询或扫描其他任务。CLI 只消费已准备契约，研究需求与创建外层任务 worktree 是宿主准备阶段的职责。
 
 “查看模型配置”展示实际配置来源、展开后的阶段绑定及 provider／channel／权限。“检查安装与配置”仅做本地预检，不启动 SDK；“检查 DSH 接入”额外临时启动 SDK、核对配置／目录／权限后退出。首次安装、升级或排障时按需使用，平时不必每次点击；两项都不向模型发送消息，也不验证账号、额度和实际回答能力。doctor 的合法退出码 1 会显示逐项诊断，超时、坏协议或不匹配的任务身份仍视为控制错误。`ok:true` 不代表账号、额度和真实推理通过。
 
-状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。未知 usage／cost 明确保留，原始 JSON 默认折叠。配置显示引擎实际选择的文件及阶段绑定；已有用户配置不会因安装或切换 DSH 对话模型而自动迁移。
+状态区区分未初始化、运行、已完成、暂停、停止、升级和预算停止；全部 packet 可见，不会只展示前几个。工作流区展示 requested／effective、原因、Plan／Judge 适用性及升级历史；Quick 的不适用阶段不显示假通过。未知 usage／cost 明确保留，原始 JSON 默认折叠。配置显示引擎实际选择的文件及阶段绑定；已有用户配置不会因安装或切换 DSH 对话模型而自动迁移。
 
 ### 视图、请求与任务的生命周期
 
-任务／仓库路径草稿和已取得的快照按 DSH 会话分别保留，在宿主仍保留该会话绑定时，切换“对话／轨迹／Flywheel”后可以继续使用；这不是任务数据库，也不保证在会话绑定释放、插件重载或桌面重启后继续保留。每个会话同一时刻只等待一个控制请求。启动／停止等待期间锁定目录输入；只读请求等待期间可以编辑路径，但仍等待已有请求返回，并忽略旧选择的迟到响应。切换视图不会把等待中的请求当成已经完成。
+插件通过公开 `sessionProjections` 从该会话已有的 command、tool 与 PTC 调用／结果记录折叠任务关联，客户端通过 `useProjection('flywheelTask')` 读取。会话记录仍在时，重新加载该会话可重建具体关联；分叉会话不继承父会话的关联。它不写虚构 worker 事件，也不把日志投影当作引擎状态：关联恢复后仍查询 Go 取得当前事实。
+
+手动路径草稿与已读快照是会话查看缓存，不保证跨插件重载持久化。每个会话同一时刻只等待一个控制请求。启动／停止等待期间锁定目录输入；只读请求期间可编辑路径，但旧选择的迟到响应不会覆盖新选择。未确认的启动关联保留原任务与目录，成功核对原任务前不能重复变更。切换视图不会把等待中的请求当成已经完成。
 
 任务状态是最近一次成功读取的快照，带有刷新时间，不能当作实时监控。读取失败时保留已有有效内容并显示失败；启动或停止的响应丢失、超时或断连表示**结果未确认**，不能推断任务没有启动或已经停止。结果未确认时，界面保留提示并禁止继续启动／停止，直到“刷新状态”成功核对该任务；必要时查看任务日志，再决定恢复。界面不会自动重试启动或停止。
 

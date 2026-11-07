@@ -73,10 +73,11 @@ function createSnapshot(initial) {
 // We do not import its engine, subscribe from React, or persist live state.
 function createViewStore() {
   const spec = {
-    init: () => ({ taskDir: '', cwd: '', advancedOpen: false }),
+    init: () => ({ taskDir: '', cwd: '', mode: 'auto', advancedOpen: false }),
     actions: {
       setSelection: (draft, next) => { draft.taskDir = next.taskDir; draft.cwd = next.cwd; },
       setAdvancedOpen: (draft, open) => { draft.advancedOpen = open; },
+      setMode: (draft, mode) => { draft.mode = mode; },
     },
   };
   return {
@@ -107,6 +108,20 @@ const zh = {
   taskRequired: '填写任务资料目录后，可刷新状态、启动或停止任务',
   status: '刷新状态',
   start: '启动',
+  launch: '启动准备好的任务',
+  launchMode: '新任务流程',
+  launchHelp: 'Auto 由引擎判断 Quick 或 Full；继续已有任务使用“启动”，沿用已保存的流程',
+  workflow: '执行流程',
+  requestedMode: '请求：{mode}',
+  effectiveMode: '生效：{mode}',
+  workflowReason: '选择原因：{reason}',
+  legacyFull: '这个任务未保存自适应流程信息，按原有 Full 流程运行',
+  applicable: '适用',
+  notApplicable: '不适用',
+  upgrades: '流程升级记录',
+  upgrade: '{from} → {to}：{reason}',
+  finalReview: 'Quick 仍须通过验收、最终检查与独立的任务级 Review；Plan / Judge 不适用不代表通过',
+  associationUnconfirmed: '会话记录中存在任务请求；引擎结果尚未确认',
   stop: '停止',
   config: '查看模型配置',
   doctor: '检查安装与配置',
@@ -127,7 +142,7 @@ const zh = {
   feedback: '操作反馈',
   statusHeading: '任务状态',
   emptyHeading: '还没有任务状态',
-  emptyBody: '在“对话”输入 /flywheel-new 和需求即可准备任务，无需先填写本页。审阅后可用 /flywheel-run 和 /flywheel-status 加任务路径操作；如需在本页查看，再填写助手给出的任务资料目录。已有任务使用原目录',
+  emptyBody: '在“对话”输入 /flywheel-task 和需求。助手准备并启动任务后，会自动关联到本会话，无需复制路径。/flywheel-new 仍可只准备任务；也可填写已有任务目录后操作',
   emptySelected: '点击“刷新状态”查看这个任务；打开本页不会自动启动任务',
   lastChecked: '上次确认：{time}',
   stale: '本次状态未确认，下方保留上次结果',
@@ -233,6 +248,20 @@ const en = {
   taskRequired: 'Enter the task files directory to refresh status, start or stop the task',
   status: 'Refresh status',
   start: 'Start',
+  launch: 'Launch prepared task',
+  launchMode: 'New task workflow',
+  launchHelp: 'Auto lets the engine choose Quick or Full. Use Start to continue an existing task with its saved workflow.',
+  workflow: 'Workflow',
+  requestedMode: 'Requested: {mode}',
+  effectiveMode: 'Effective: {mode}',
+  workflowReason: 'Selection reason: {reason}',
+  legacyFull: 'This task has no saved adaptive workflow; the original Full workflow applies.',
+  applicable: 'Applicable',
+  notApplicable: 'Not applicable',
+  upgrades: 'Workflow upgrades',
+  upgrade: '{from} → {to}: {reason}',
+  finalReview: 'Quick still requires verification, final checks and an independent task-level Review. Not-applicable Plan / Judge stages do not mean passed.',
+  associationUnconfirmed: 'The conversation records a task request; its engine outcome is still unconfirmed.',
   stop: 'Stop',
   config: 'Inspect model configuration',
   doctor: 'Check installation and configuration',
@@ -253,7 +282,7 @@ const en = {
   feedback: 'Operation feedback',
   statusHeading: 'Task status',
   emptyHeading: 'No task status yet',
-  emptyBody: 'In Chat, enter /flywheel-new and your requirement without filling in this view. After review, use /flywheel-run and /flywheel-status with the task path. To inspect it here, enter the task files directory the assistant provides. For an existing task, use its original directory.',
+  emptyBody: 'In Chat, enter /flywheel-task and your requirement. After the assistant prepares and launches the task, this conversation links to its exact directory automatically. /flywheel-new still prepares only. You can also enter an existing task directory here.',
   emptySelected: 'Refresh status to inspect this task. Opening this view does not start it.',
   lastChecked: 'Last confirmed: {time}',
   stale: 'Current status is unconfirmed; the previous result is retained below',
@@ -367,7 +396,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => action === 'start' || action === 'stop';
+const mutates = action => ['launch', 'start', 'stop'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -417,7 +446,7 @@ function readReply(reply, request) {
   const state = value.state;
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record);
-  if (['status', 'start', 'stop'].includes(request.action) &&
+  if (['status', 'launch', 'start', 'stop'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && !record(state.packets)) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
@@ -449,6 +478,9 @@ function createControl(execute, pendingOperations, isDisposed) {
   let selected = null;
   let epoch = 0;
   let active = null;
+  let lastAssociation = null;
+  let associatedKey = null;
+  let deferredAssociation = null;
   const select = selection => {
     const normalized = selectionOf(selection);
     const key = selectionKey(normalized);
@@ -461,15 +493,16 @@ function createControl(execute, pendingOperations, isDisposed) {
   };
   const run = async (action, selection, probe = false) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'start', 'stop', 'config', 'doctor'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'config', 'doctor'].includes(action)) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
-    if (['status', 'start', 'stop'].includes(action) && !target.taskDir) return;
+    if (['status', 'launch', 'start', 'stop'].includes(action) && !target.taskDir) return;
     select(selection);
     const requestEpoch = epoch;
     const requestKey = selected;
     const request = { action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
-      ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}) };
+      ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
+      ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}) };
     const operation = { action, probe, ...target, key: requestKey };
     active = operation;
     source.update(draft => { draft.pending = operation; draft.error = null; });
@@ -484,7 +517,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
-        if (['status', 'start', 'stop'].includes(action)) {
+        if (['status', 'launch', 'start', 'stop'].includes(action)) {
           draft.status = value;
           draft.checkedAt = Date.now();
           draft.stale = false;
@@ -510,9 +543,48 @@ function createControl(execute, pendingOperations, isDisposed) {
       pendingOperations.delete(disposeWait);
       active = null;
       if (!isDisposed()) source.update(draft => { draft.pending = null; });
+      if (deferredAssociation) {
+        const next = deferredAssociation;
+        deferredAssociation = null;
+        associate(...next);
+      }
     }
   };
-  return { source, select, run, isMutating: () => active !== null && mutates(active.action) };
+  const associate = (value, setSelection) => {
+    if (isDisposed() || !record(value) || !Number.isSafeInteger(value.sequence) ||
+        typeof value.operationId !== 'string' || !['pending', 'confirmed', 'unknown'].includes(value.outcome) ||
+        typeof value.taskDir !== 'string' || !value.taskDir.startsWith('/') || pathProblem(value.taskDir) ||
+        typeof value.cwd !== 'string' || !value.cwd.startsWith('/') || pathProblem(value.cwd)) return;
+    if (lastAssociation && (value.sequence < lastAssociation.sequence ||
+        (value.operationId === lastAssociation.operationId && value.outcome === lastAssociation.outcome &&
+         value.taskDir === lastAssociation.taskDir && value.cwd === lastAssociation.cwd))) return;
+    if (active) { deferredAssociation = [value, setSelection]; return; }
+    const next = { taskDir: value.taskDir, cwd: value.cwd };
+    const sameOperation = lastAssociation?.operationId === value.operationId;
+    const shouldSelect = !lastAssociation || (!sameOperation && mutates(value.action)) ||
+      (sameOperation && selected === associatedKey);
+    lastAssociation = value;
+    if (shouldSelect) {
+      setSelection(next);
+      select(next);
+      associatedKey = selectionKey(next);
+    }
+    source.update(draft => {
+      if (value.outcome !== 'confirmed' && mutates(value.action)) {
+        draft.uncertainty = { ...next, action: value.action, operationId: value.operationId,
+          key: selectionKey(next), detail: value.message || '' };
+        draft.stale = true;
+      } else if (draft.uncertainty && (draft.uncertainty.operationId === value.operationId ||
+          draft.uncertainty.key === selectionKey(next))) {
+        draft.uncertainty = null;
+      }
+    });
+    // Logs recover identity, never a live running state. A confirmed association
+    // gets one fresh read; pending/unknown mutations require explicit reconcile.
+    if (shouldSelect && value.outcome === 'confirmed' &&
+        (mutates(value.action) || !source.getSnapshot().status)) void run('status', next);
+  };
+  return { source, select, run, associate, isMutating: () => active !== null && mutates(active.action) };
 }
 
 function Configuration({ value, t }) {
@@ -579,6 +651,32 @@ function Budget({ value, t }) {
       t('budgetWarning', { message: textValue(warning) }))));
 }
 
+function Workflow({ state, t }) {
+  if (!state) return null;
+  const workflow = state.workflow;
+  const modes = { auto: 'Auto', quick: 'Quick', full: 'Full' };
+  const mode = value => Object.hasOwn(modes, value) ? modes[value] : t('unknown');
+  const legacy = workflow == null;
+  return h('section', { className: css.workflow, 'aria-label': t('workflow') },
+    h('h4', { className: css.bindingTitle }, t('workflow')),
+    h('div', { className: css.actions },
+      h('span', { className: css.badge }, t('requestedMode', { mode: mode(legacy ? 'full' : workflow.requested) })),
+      h('span', { className: css.badge }, t('effectiveMode', { mode: mode(legacy ? 'full' : workflow.effective) }))),
+    h('p', null, legacy ? t('legacyFull') : t('workflowReason', { reason: textValue(workflow.reason, t('unreported')) })),
+    ...['plan', 'judge'].map(stage => {
+      const value = workflow?.stages?.[stage];
+      return h('p', { key: stage, className: css.meta }, t(roleLabels[stage]) + ' · ' +
+        (legacy || value?.applicable === true ? t('applicable') : value?.applicable === false ? t('notApplicable') : t('unreported')) +
+        (typeof value?.reason === 'string' && value.reason ? ' · ' + value.reason : ''));
+    }),
+    workflow?.effective === 'quick' && h('p', { className: css.meta }, t('finalReview')),
+    Array.isArray(workflow?.upgrades) && workflow.upgrades.length > 0 && h('div', null,
+      h('h4', { className: css.bindingTitle }, t('upgrades')),
+      h('ul', null, ...workflow.upgrades.map((upgrade, index) => h('li', { key: index },
+        t('upgrade', { from: mode(upgrade?.from), to: mode(upgrade?.to), reason: textValue(upgrade?.reason) }),
+        typeof upgrade?.at === 'string' && h('span', { className: css.meta }, ' · ' + upgrade.at))))));
+}
+
 function TaskStatus({ control, selection, t }) {
   const { status, checkedAt, stale } = control;
   if (!status) return h('section', { className: css.empty, 'aria-label': t('statusHeading') },
@@ -594,6 +692,7 @@ function TaskStatus({ control, selection, t }) {
       (status.running && status.pid > 0 ? ' · PID ' + status.pid : '')),
     stale && h('p', { className: css.warningText },
       t('stale') + ' · ' + t('previousState', { status: taskLabel(status, t) })),
+    h(Workflow, { state: status.state, t }),
     status.state?.['current-milestone'] && h('p', null,
       t('milestone', { name: textValue(status.state['current-milestone']) })),
     packets.length > 0 && h('table', { className: css.packets, 'aria-label': t('packets') },
@@ -633,7 +732,7 @@ function Feedback({ control, selection, reconcile, t }) {
         h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: reconcile }, t('reconcile')),
         h('details', { className: css.details },
           h('summary', null, t('errorDetails')),
-          h('pre', { className: css.raw }, control.uncertainty.detail))),
+          h('pre', { className: css.raw }, control.uncertainty.detail || t('associationUnconfirmed')))),
       error && h('section', { className: css.error, role: 'alert' },
         h('h3', { className: css.heading }, t(error.dispatch === 'not-dispatched' ? 'notDispatchedTitle' : 'errorTitle',
           { action: t(actionKey(error)) })),
@@ -646,9 +745,11 @@ function Feedback({ control, selection, reconcile, t }) {
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
 }
 
-function TaskView({ useStore, actions, useControl, changeSelection, run, reconcile, t }) {
+function TaskView({ useStore, useProjection, actions, useControl, changeSelection, associate, run, reconcile, t }) {
   const selection = useStore(value => value);
   const control = useControl(value => value);
+  const association = useProjection('flywheelTask');
+  React.useEffect(() => { associate(association); }, [association, associate]);
   const formId = React.useId();
   const busy = control.pending !== null;
   const locked = busy && mutates(control.pending.action);
@@ -681,7 +782,14 @@ function TaskView({ useStore, actions, useControl, changeSelection, run, reconci
         field('cwd', 'cwdHint', '/Users/me/project', invalidCwd)),
       h('div', { className: css.actions },
         button('status', 'status', true, false, 'primary'),
-        button('start', 'start', true), button('stop', 'stop', true))),
+        button('start', 'start', true), button('stop', 'stop', true)),
+      h('div', { className: css.actions },
+        h('label', { htmlFor: formId + '-mode' }, t('launchMode')),
+        h('select', { id: formId + '-mode', value: selection.mode, disabled: locked, className: css.modeSelect,
+          'aria-describedby': formId + '-launch-help', onChange: event => actions.setMode(event.target.value) },
+        ...['auto', 'quick', 'full'].map(mode => h('option', { key: mode, value: mode }, { auto: 'Auto', quick: 'Quick', full: 'Full' }[mode]))),
+        button('launch', 'launch', true)),
+      h('p', { id: formId + '-launch-help', className: css.meta }, t('launchHelp'))),
     h(Feedback, { control, selection, reconcile, t }),
     h(TaskStatus, { control, selection, t }),
     h('details', { className: css.advanced, open: selection.advancedOpen,
@@ -738,6 +846,7 @@ exports.apply = function apply(ctx) {
           control.select(next);
         },
         run: control.run,
+        associate: value => control.associate(value, actions.setSelection),
         reconcile: () => {
           const outcome = control.source.getSnapshot().uncertainty;
           if (!outcome || control.source.getSnapshot().pending) return;

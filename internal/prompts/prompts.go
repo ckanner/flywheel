@@ -93,6 +93,10 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 	if packet.Boundaries.MaxFiles != nil {
 		maxFiles = fmt.Sprintf("%d", *packet.Boundaries.MaxFiles)
 	}
+	reportKeys := "requirements-covered, changed-files, commands-run, failures"
+	if _, declared := packet.DoneReportFormat["workflow-risks"]; declared {
+		reportKeys += ", workflow-risks"
+	}
 	stable = append(stable,
 		"",
 		"## Task packet (contract)",
@@ -112,10 +116,14 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"5. NEVER declare the task done. Completion is judged externally by acceptance commands and review.",
 		"6. If reality contradicts the design or the work needs a scope change: STOP and say so. Do not expand or shrink scope on your own.",
 		"7. Do not touch must-not-touch paths; the git diff is checked after you finish.",
-		fmt.Sprintf("8. Finally write your done-report to %s/reports/%s.done.json (absolute path) with EXACTLY these array keys: requirements-covered, changed-files, commands-run, failures. Facts only.", taskDir, packet.PacketID),
+		fmt.Sprintf("8. Finally write your done-report to %s/reports/%s.done.json (absolute path) with EXACTLY these array keys: %s. Facts only.", taskDir, packet.PacketID, reportKeys),
 		"",
 		"## Acceptance commands (L1, run by the orchestrator after you exit)",
 	)
+	if _, declared := packet.DoneReportFormat["workflow-risks"]; declared {
+		stable = append(stable,
+			"The workflow-risks string array uses [] when none; report concrete new design, authentication, permission, payment, migration, concurrency, transaction or scope risks there. The engine upgrades Quick to Full on these signals. Do not encode policy decisions in prose or change the task state.")
+	}
 	for _, c := range packet.Acceptance.Level("L1") {
 		stable = append(stable, fmt.Sprintf("- %s  (expect %s)", c.Command(), c.Expect))
 	}
@@ -142,6 +150,9 @@ type ReviewArgs struct {
 	DiffSummary     string
 	DiffText        string
 	DefectInjection any
+	FinalSpec       *contract.Spec
+	FinalGate       any
+	Workflow        any
 }
 
 // BuildReviewPrompt 评审提示词（信息节食：契约 + diff + L1 结果，无 executor 自述）。
@@ -197,6 +208,25 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid.`,
 		`Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap.`,
 	)
+	if a.FinalSpec != nil {
+		// The final review deliberately extends the unit contract, not a second
+		// model call. Remove the generic output section before stating its schema.
+		sections = sections[:len(sections)-6]
+		spec, _ := json.MarshalIndent(a.FinalSpec, "", "  ")
+		gate, _ := json.MarshalIndent(a.FinalGate, "", "  ")
+		policy, _ := json.MarshalIndent(a.Workflow, "", "  ")
+		sections = append(sections,
+			"", "## Independent task FINAL Review (Quick)",
+			"This fresh review also fulfills final task acceptance: inspect the entire Spec, all numbered requirements, code, assertions, boundaries, and every required check. Do not rely on executor claims or a transcript.",
+			"## Complete Spec and success criteria", string(spec),
+			"## Selected workflow and qualification evidence", string(policy),
+			"## Candidate-bound integration/user-path gates", string(gate),
+			"If authentication, permissions, payments, migration, concurrency, transactions, unresolved design, dependent units, or wider refactoring is discovered, return upgrade with concrete evidence. Missing acceptance is verification-gap; implementation defects are return.",
+			"## Output", "End with exactly one JSON object on the last line:",
+			`{"verdict":"pass"|"return"|"verification-gap"|"upgrade","score":0.0-1.0,"reasons":["command + exit code or file:line"],"quick-eligible":true|false,"requirements":[{"id":"R-01","pass":true|false,"evidence":["specific verification and result"]}]}`,
+			"List every Spec requirement exactly once. Pass requires every requirement passing with nonempty evidence, all required checks green, and quick-eligible=true. Upgrade requires quick-eligible=false. Plan and Judge being not applicable are never passing evidence.",
+		)
+	}
 	return strings.Join(sections, "\n")
 }
 
@@ -240,6 +270,10 @@ func BuildPlanPrompt(a PlanArgs) string {
 		fmt.Sprintf("Existing packets: %s", joinNonEmpty(packetIDs, "none")),
 		"Confirm the packet sequence for this milestone, revise returned packets, or strengthen acceptance contracts after a verification-gap. Keep the approved requirement scope. Declare protected acceptance files in boundaries.must-not-touch. The executor may implement ordinary unit/regression tests; never weaken acceptance merely to pass.",
 		"You may directly edit only spec.md and task-packet-*.md inside the task directory. Do not modify flywheel.config.json: model, permission, and other runtime configuration changes require the user to edit the configuration and restart. Do not modify implementation files or acceptance oracles outside that directory, including files listed in boundaries.must-not-touch. If an external frozen oracle needs revision, propose the exact change and its evidence, then stop for an explicit human task; this run cannot apply or synchronize that revision automatically.",
+	}
+	if a.State.Workflow != nil {
+		workflow, _ := json.Marshal(a.State.Workflow)
+		lines = append(lines, "Persisted workflow (authoritative; never downgrade or rewrite state): "+string(workflow))
 	}
 	if a.Feedback != "" {
 		lines = append(lines, "", "## Contract validation feedback (previous round REJECTED)",
@@ -332,9 +366,17 @@ func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets
 
 // Verdict 评审/Judge 的结构化裁决（输出契约的最后一行 JSON）。
 type Verdict struct {
-	Verdict string   `json:"verdict"` // pass | return | verification-gap
-	Score   *float64 `json:"score"`
-	Reasons []string `json:"reasons"`
+	Verdict       string               `json:"verdict"` // pass | return | verification-gap
+	Score         *float64             `json:"score"`
+	Reasons       []string             `json:"reasons"`
+	QuickEligible *bool                `json:"quick-eligible,omitempty"`
+	Requirements  []RequirementVerdict `json:"requirements,omitempty"`
+}
+
+type RequirementVerdict struct {
+	ID       string   `json:"id"`
+	Pass     *bool    `json:"pass"`
+	Evidence []string `json:"evidence"`
 }
 
 var validVerdicts = map[string]bool{"pass": true, "return": true, "verification-gap": true}

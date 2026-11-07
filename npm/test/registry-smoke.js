@@ -16,7 +16,7 @@ const { environment, firstInstall, installedRoot, run } = require('./support/ins
     const report = JSON.parse(result.stdout);
     assert.equal(report.version, version);
     assert.equal(report.ok, true);
-    assert.equal(report.skills.count, 10);
+    assert.equal(report.skills.count, 11);
     assert.equal(report.steps.find(step => step.name === 'dsh-plugin').status, 'ok');
     const root = await installedRoot(context);
     const cli = path.join(root, 'bin', 'flywheel.js');
@@ -25,7 +25,7 @@ const { environment, firstInstall, installedRoot, run } = require('./support/ins
     assertFlashAccountProfile(JSON.parse(smoke.stdout));
     assert.equal(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version, version);
     console.log(JSON.stringify({ ok: true, version, registry: process.env.FLYWHEEL_NPM_REGISTRY || 'https://registry.npmjs.org',
-      skills: 10, actualNpmInstall: true, actualNativeCLI: true, desktopRegistration: 'CLI contract fixture',
+      skills: 11, actualNpmInstall: true, actualNativeCLI: true, desktopRegistration: 'CLI contract fixture',
       liveDesktopVerified: false, inferenceRequests: 0 }));
   } finally { await context.clean(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

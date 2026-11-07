@@ -66,6 +66,7 @@ type Evidence struct {
 	Review          any `json:"review"`
 	DefectInjection any `json:"defect-injection,omitempty"`
 	Credentials     any `json:"credentials,omitempty"`
+	FinalGate       any `json:"final-gate,omitempty"`
 }
 
 // WorktreeInfo 单元 worktree 信息（verify.ensureUnitWorktree 写入）。
@@ -179,6 +180,25 @@ type State struct {
 	Budget               Budget                    `json:"budget"`
 	LastProgressAt       *string                   `json:"last-progress-at"`
 	Inbox                []any                     `json:"inbox"`
+	Workflow             *WorkflowState            `json:"workflow,omitempty"`
+}
+
+// WorkflowState persists the selected policy before any model call. An upgrade
+// is a recoverable checkpoint; budgets, packet workspaces and history stay owned
+// by the same task.
+type WorkflowState struct {
+	contract.WorkflowSelection
+	SelectedAt string            `json:"selected-at"`
+	Upgrades   []WorkflowUpgrade `json:"upgrades"`
+}
+
+type WorkflowUpgrade struct {
+	At                   string            `json:"at"`
+	From                 string            `json:"from"`
+	To                   string            `json:"to"`
+	Reason               string            `json:"reason"`
+	Evidence             []string          `json:"evidence"`
+	ContractFingerprints map[string]string `json:"contract-fingerprints"`
 }
 
 // Usage 单次会话用量（driver 上报；totalTokens 缺省 = input+output）。
@@ -217,13 +237,21 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
-		Revision any `json:"revision"`
+		Revision any             `json:"revision"`
+		Workflow json.RawMessage `json:"workflow"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
 	}
 	if r, ok := probe.Revision.(float64); !ok || r != math.Trunc(r) {
 		return nil, errf("%s: missing integer revision", file)
+	}
+	if len(probe.Workflow) > 0 {
+		var workflow any
+		_ = json.Unmarshal(probe.Workflow, &workflow) // the complete JSON parsed above
+		if err := contract.ValidateWorkflowStateValue(workflow); err != nil {
+			return nil, err
+		}
 	}
 	var st State
 	if err := json.Unmarshal(raw, &st); err != nil {

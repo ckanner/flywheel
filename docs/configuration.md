@@ -52,6 +52,61 @@ flywheel config inspect --cwd /repo --json
 
 完全权限不会关闭 Flywheel 的任务边界、冻结验收、验证和候选身份检查。评审职责仍是评价已有候选，修改候选或验收条件不能取得有效通过。需要受限权限时显式使用 `role-based`；工作区隔离本身不是 OS 沙箱。
 
+### 工作流策略与恢复
+
+工作流决定运行哪些阶段；模型 profiles、loops、routes 和 `permissions.mode` 仍决定
+各阶段使用什么后端与权限。**工作流写在 Spec 的 YAML frontmatter，不写进
+`flywheel.config.json`。** 统一 `flywheel-task` 入口默认 Auto，准备阶段保存真实的
+代码依据、资格事实与风险，再交 Go 校验。下面仅示意字段，内容须替换为当前任务事实：
+
+```yaml
+workflow:
+  version: 1
+  mode: auto
+  reason: "缺陷已定位，沿用现有实现模式及回归验收"
+  scope-clear: true
+  implementation-known: true
+  verification-complete: true
+  review-sufficient: true
+  evidence:
+    - "已检查实际实现、调用方与可复现该缺陷的回归测试"
+  risks: []
+  not-applicable:
+    L2: "没有跨模块协议变化，调用边界由 L1 回归覆盖"
+    L3: "没有独立 UI 或外部服务路径，行为由本地函数契约验证"
+```
+
+`version` 与 `mode` 必填，其他字段缺省不会产生 Quick 资格。Quick 要求一个里程碑、
+一个 packet、四项事实标志均为 true、非空 reason/evidence、无 risks、每条 Spec
+需求被 packet 引用且有非空 verification、至少一条 L1，以及缺失 L2/L3 的不适用理由。
+Go 根据可核验结构与声明选择，不能把一个模型的“低风险”标签当成语义证明；
+新风险仍可在执行或最终评审时升级。存在风险或资格不足时采用 Full。
+
+```sh
+flywheel control launch --task-dir /repo/docs/task --cwd /repo --mode auto
+flywheel control start --task-dir /repo/docs/task --cwd /repo --mode full
+flywheel run /repo/docs/task --mode full
+flywheel control status --task-dir /repo/docs/task --cwd /repo
+```
+
+`launch` 默认请求 Auto；`start`／`run` 省略 `--mode` 时沿用契约或状态的选择。
+只读 status、stop 不接受模式切换。旧契约或旧状态没有工作流字段时保留 Full。
+已保存的策略在恢复时继续使用，Auto 不重新分类，Full 不降回 Quick；Quick 发现
+新风险、验收缺口或显式选择 Full 时，由引擎先保存升级检查点，再继续完整流程。
+未知工作流版本明确报错。不要手改 state 或重新建任务来重置预算与证据。
+
+`state.workflow` 保存 requested、effective、reason、evidence、risks、版本、选择时间、
+`stages.plan/judge` 适用性及 upgrades。Plan／Judge 不适用不表示验收通过。
+工作流与完成要求进入证据身份，旧 Quick 最终 Review 不能充当升级后 Full 的 Judge。
+新任务可在 packet 的 `done-report-format` 声明 `workflow-risks: []`，让执行者报告
+具体新风险；模型和 skill 不直接修改模式或状态。
+
+Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户、后备渠道或
+全访问设置。全部必需验证仍运行，适用 L2/L3 必须在实际候选中、最终 Review 前完成。
+完整最终 Review 逐项核对需求，正常首次成功只调用 Execute 与最终 Review 两个阶段。
+字段信源为 [Spec schema](../templates/spec.schema.json) 与
+[state schema](../templates/state.schema.json)，运行流程见[工作流指南](workflow.md)。
+
 ## 2. 四个概念各负责什么
 
 | 字段 | 含义 | 示例 |
@@ -183,9 +238,16 @@ flywheel doctor --cwd /repo --task-dir /repo/docs/task --json
 flywheel doctor --cwd /repo --task-dir /repo/docs/task --probe --json
 ```
 
-没有任务时检查全部配置绑定。有任务时校验 Spec/packet，仅把 Plan、Review、Judge、已启用的第二意见和实际 packet 路由列为必需；其他绑定显示 skipped。任务尚未生成 packet 时检查默认执行路由并提示规划后复查。mock driver 跳过真实工具检查，不冒充模型已验证。
+没有任务时检查全部配置绑定。有任务时校验 Spec/packet，并使用与引擎相同的策略解析器：
+新任务按 Spec 判断，已有任务按持久化选择，旧状态保留 Full。Full 要求 Plan、Review、
+Judge、已启用的第二意见和实际 packet 路由；合格 Quick 只要求 Review 与实际执行路由，
+Plan／Judge／第二意见显示 skipped。工作流状态损坏会阻止 SDK 探测，不重分类或改状态。
+任务尚未生成 packet 时检查默认执行路由并提示规划后复查。mock driver 跳过真实工具检查，不冒充模型已验证。
 
-预检可提前运行，正式 `run`／`control start` 仍需至少一个已准备并审阅的合法 packet；没有 packet 的 warn 不表示引擎已经能从空任务开始。绑定中的 permissionMode 表示阶段要求，实际实施能力还取决于 harness，尤其 Kimi CLI 不能据此宣称拥有 OS 沙箱。
+doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态；启动时另传模式后，
+仍以 Go 实际选定并保存的策略为准。配置查看列出所有绑定，不表示每条绑定都必然被调用。
+
+预检可提前运行，正式 `run`／`control launch|start` 仍需至少一个已准备、范围获授权的合法 packet；没有 packet 的 warn 不表示引擎已经能从空任务开始。绑定中的 permissionMode 表示阶段要求，实际实施能力还取决于 harness，尤其 Kimi CLI 不能据此宣称拥有 OS 沙箱。
 
 本地检查确认命令可用、版本响应可靠，以及声明的环境变量存在且非空，不显示变量值。`--probe` 才启动 DSH worker 验证 adapter 接受配置、cwd、完整沙箱、approval policy 和 SDK 正常关闭。相同 provider、channel、model、effort、cwd 和权限的探测去重；不同账号别名或读写权限不能相互代替。整体验证预算 40 秒，另留进程清理窗口。
 

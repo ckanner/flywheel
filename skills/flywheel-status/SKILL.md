@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use for "/flywheel-status docs/<slug>" in DSH, "/skill:flywheel-status docs/<slug>" in Kimi, or a question about how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
@@ -36,6 +36,9 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**，用人话讲：
+   - 请求模式、生效 Quick／Full、选择理由与升级历史。需要机器完整记录时用
+     `control status` 读取 `state.workflow`；旧状态无字段按 Full 解释。
+     Plan／Judge 不适用时说明原因，不把它们显示为通过。状态查询不重分类或切换模式。
    - 任务状态、编排器是否存活（pid）、当前里程碑、上次推进时间——
      推进时间久未更新 = 可能停滞/断链，提醒用户。
      `running:false` 只表示引擎未运行；分别说明 completed、paused、stopped、

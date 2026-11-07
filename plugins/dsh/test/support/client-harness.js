@@ -85,7 +85,7 @@ export function deadlineClock() {
   };
 }
 
-export async function mountPanel(t, respond, { timers, locale = 'zh' } = {}) {
+export async function mountPanel(t, respond, { timers, locale = 'zh', association } = {}) {
   const client = loadClient(timers);
   const definitions = new Map();
   const effects = [];
@@ -152,6 +152,17 @@ export async function mountPanel(t, respond, { timers, locale = 'zh' } = {}) {
   assert.equal(typeof definition.store?.spec?.init, 'function');
   assert.equal(typeof definition.store?.spec?.actions, 'object');
   const bindings = new Map();
+  const projections = new Map();
+  const projectionSource = sessionId => {
+    if (!projections.has(sessionId)) {
+      let value = sessionId === 'desktop-session' ? association : undefined;
+      const listeners = new Set();
+      projections.set(sessionId, { getSnapshot: () => value,
+        subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+        set: next => { value = next; for (const listener of [...listeners]) listener(); } });
+    }
+    return projections.get(sessionId);
+  };
   let currentSession = 'desktop-session';
   let generation = 0;
   let visible = true;
@@ -167,6 +178,10 @@ export async function mountPanel(t, respond, { timers, locale = 'zh' } = {}) {
         ...face, sessionId, actions: instance.actions,
         useStore: snapshotHook(instance),
         useSession: snapshotHook(sessionSource),
+        useProjection: (key, selector = value => value) => {
+          assert.equal(key, 'flywheelTask');
+          return snapshotHook(projectionSource(sessionId))(selector);
+        },
         t: translate(definition.locale),
       };
       for (const [name, value] of Object.entries(hooks)) {
@@ -236,7 +251,10 @@ export async function mountPanel(t, respond, { timers, locale = 'zh' } = {}) {
     activeLocale = value;
     await act(async () => render());
   };
+  const setAssociation = async (value, sessionId = currentSession) => {
+    await act(async () => projectionSource(sessionId).set(value));
+  };
   return { container, root, definition, requests, sessions, button, click, type,
-    switchSession, setVisible, setLocale, unload, bindings, document: dom.window.document,
+    switchSession, setVisible, setLocale, setAssociation, unload, bindings, document: dom.window.document,
     translate: translate(definition.locale) };
 }

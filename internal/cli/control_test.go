@@ -38,7 +38,7 @@ func writeControlFixtureFile(path string, data []byte) {
 // A real subprocess of this test binary implements lifecycle cases. It never
 // contacts a model. The real-run scenario exercises the actual mock engine too.
 func controlChildHelperMain() int {
-	if len(os.Args) != 3 || os.Args[1] != "run" {
+	if len(os.Args) < 3 || os.Args[1] != "run" {
 		return 2
 	}
 	taskDir := os.Args[2]
@@ -46,6 +46,8 @@ func controlChildHelperMain() int {
 	if scenario == "real-run" {
 		return Execute()
 	}
+	argv, _ := json.Marshal(os.Args[1:])
+	writeControlFixtureFile(filepath.Join(taskDir, "fixture-args.json"), argv)
 	writeControlFixtureFile(filepath.Join(taskDir, "fixture.pid"), []byte(strconv.Itoa(os.Getpid())))
 	fmt.Println("fixture stdout")
 	fmt.Fprintln(os.Stderr, "fixture stderr")

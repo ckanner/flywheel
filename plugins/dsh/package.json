@@ -45,6 +45,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5 || ~4.1.0",
     "@deepseek-ai/dsh-commands": "0.2.1-rc.5 || 0.2.2-rc.1",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.5 || 0.2.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.5 || 0.2.2-rc.1"
   },
   "peerDependenciesMeta": {
@@ -52,6 +53,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-commands": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
       "optional": true
     },
     "@deepseek-ai/dsh-tools": {
@@ -65,12 +69,17 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "dsh-subagent-codex-pro": "0.8.0"
+    "dsh-subagent-codex-pro": "0.8.0",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-executor-ptc": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
     "jsdom": "26.1.0",
     "lightningcss": "1.33.0",
     "react": "18.3.1",

@@ -8,6 +8,10 @@
 
 安装前用 `npm view @ckanner/flywheel version` 确认 registry 的 latest 已更新到所需版本；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](releasing.md#3-失败恢复)。
 
+**自适应工作流是本轮源码新增能力。** `/flywheel-task`、`control launch` 与 Auto／Quick／Full
+需要包含这些变更的同版本 CLI／插件；先核对 `flywheel control launch --help`，
+不要把旧发行包的基础安装成功当成新功能已生效。
+
 订阅预设迁移命令与 `permissions.mode` 从 **0.28.2** 开始提供。升级不会自动替换已有配置；先预览 `flywheel config migrate --preset subscriptions`，确认模型和完全权限后再以 `--apply` 应用并备份。
 
 **0.28.5 排序**：Flywheel 自定义会话视图排在内置“统计”之后，视图的打开与溢出菜单仍由 DSH 管理。
@@ -40,7 +44,7 @@
 | SDK profile 的 DeepSeek 和 ChatGPT provider | 默认实现／评审使用；配置与授权见下一节 |
 | Go 1.27 或更高 | 仅本文的 Go 示例和源码构建需要；npm 安装 Flywheel 不需要 Go 工具链 |
 
-安装器的前提是已有 Node／npm 和桌面 DSH；模型渠道可在安装后补齐。CLI 的登录和安装使用各自正式流程。默认复用 Kimi 订阅、ChatGPT 订阅和已登录、已充值的 DeepSeek 账号；DeepSeek API 是需要显式配置的可选渠道。安装 Flywheel 不会替这些工具登录、复制凭证或替换桌面程序。只运行默认小任务时不会使用 `hard` 路由，但所选 Plan、Execute、Review、Judge 均需要可用。
+安装器的前提是已有 Node／npm 和桌面 DSH；模型渠道可在安装后补齐。CLI 的登录和安装使用各自正式流程。默认复用 Kimi 订阅、ChatGPT 订阅和已登录、已充值的 DeepSeek 账号；DeepSeek API 是需要显式配置的可选渠道。安装 Flywheel 不会替这些工具登录、复制凭证或替换桌面程序。Full 需要所选 Plan、Execute、Review、Judge；合格 Quick 的正常路径只调用实际 Execute 路由与最终 Review，发生升级后才需要 Full 阶段。
 
 ## 2. 一条命令安装
 
@@ -59,7 +63,7 @@ npx -y @ckanner/flywheel@latest install --json
 两条命令选择一种即可。安装器按顺序完成：
 
 1. 把本次安装器的精确版本装到 npm 全局目录，解析适合本机的 Go 平台包、同版本 DSH／Codex Pro workers 及精确插件依赖 `dsh-subagent-codex-pro@0.8.0`，核对 CLI 版本。
-2. 从 Go 二进制安装全部 10 个 skills；全局配置不存在时生成默认配置，已有配置保留。
+2. 从 Go 二进制安装该版本的全部 skills（当前源码为 11 个）；全局配置不存在时生成默认配置，已有配置保留。
 3. 写入 GUI 启动器和安装记录，使用绝对 Node／CLI 路径。
 4. 通过现有桌面 `dsh` 注册精确版本的 Flywheel 插件，并通过 `plugin list` 验证安装结果。
 5. 执行不带 `--probe` 的本地 `doctor`，汇总工具、配置及目录检查结果。
@@ -103,7 +107,7 @@ flywheel setup --no-global
 
 安装器已经调用正式接口 `dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<本次精确版本>`，随后通过 `list` 核对版本。无需再分别安装 worker 或手动选择压缩包。该命令必须来自桌面安装；独立 npm DSH CLI 不能管理保留的 `desktop` profile。按照宿主提示重新载入，在顶部“对话／轨迹”所在的原生视图栏选择 **Flywheel**；未直接显示时检查该栏的更多入口。
 
-这个视图用于控制和观察已经准备好的任务：看进度、人工处理项、实际模型和环境，显式启动、刷新或停止。它保留 DSH 的原生对话、轨迹、输入区、模型选择器和右侧栏；需求讨论与契约准备仍在原来的对话和 skills 中进行。视图不会自动发现别处启动的任务，需要选择相同的任务目录。
+这个视图用于控制和观察已经准备好的任务：看进度、策略、人工处理项、实际模型和环境，显式启动、刷新或停止。它保留 DSH 的原生对话、轨迹、输入区、模型选择器和右侧栏；需求讨论与契约准备仍在对话和 skills 中进行。新入口通过 DSH 工具 launch／start 关联具体任务；视图不扫描目录，终端另行启动的任务仍可手动打开。
 
 ### 原生 SDK profile
 
@@ -165,17 +169,20 @@ flywheel config inspect --cwd /absolute/path/to/target-repo --json
 
 ### 查看或补装 skills
 
-一条命令安装已经包含全部 10 个 skills，默认在 `~/.agents/skills`；使用它们仍是可选的，桌面面板和 CLI 可以独立工作。需要另外安装到目标项目时运行：
+一条命令安装包含所选版本的全部 skills（当前源码为 11 个），默认在 `~/.agents/skills`；使用它们仍是可选的，桌面面板和 CLI 可以独立工作。需要另外安装到目标项目时运行：
 
 ```sh
 flywheel install-skills --project /absolute/path/to/target-repo --json
 flywheel skills list
-flywheel skills read flywheel-run
+flywheel skills read flywheel-task
 ```
 
 安装输出会给出 `.agents/skills` 的准确位置。按宿主支持的发现规则启用目录，不能从文件已复制推断 DSH／Kimi 已自动发现。也可直接使用 Go CLI。
 
-DSH 在对话输入框用 `/flywheel-new`、`/flywheel-run`、`/flywheel-status`，也可从 `/` 菜单选择；Kimi 对应使用 `/skill:flywheel-new` 等语法。技能名相同，调用前缀随宿主不同。正常准备、启动和查状态可以全部在对话里完成，**不必先填写 Flywheel 视图**；视图用于另外打开已经准备好的任务。可复制的完整流程见[工作流](workflow.md#3-在任务-worktree-中准备并审阅契约)。
+DSH 用 `/flywheel-task <目标>` 准备并启动，`/flywheel-new` 只准备方案，`/flywheel-run`
+启动或恢复已有任务，`/flywheel-status` 查进度；也可从 `/` 菜单选择。Kimi 对应使用
+`/skill:flywheel-task` 等语法。准备、启动和观察可以全部在对话完成，**不必先填写
+Flywheel 视图**；DSH 启动工具会关联真实任务。完整流程见[工作流](workflow.md)。
 
 快照的 `.flywheel-snapshot` 清单记录文件内容 hash、类型与模式。重跑会跳过相同内容，更新未被修改的自有快照；用户修改、新增／删除文件、链接、未标记目录或损坏清单会保留并报告冲突。每个 skill 独立采用暂存、rename 和失败回滚，不会覆盖手工修改。旧纯文本标记只有在整个目录与当前内嵌内容相同时才能安全迁移。`--force` 只用于 `--link` 开发模式，不能绕过默认保护。安装会在全局配置缺失时创建它，但不会改写已有配置。
 
@@ -194,7 +201,10 @@ flywheel doctor --cwd "$PWD" --probe --json
 
 结果按 pass／fail／warn／unknown／skipped 展示；有 fail 时退出码 1，JSON 仍完整可读。即使 `ok:true`，unknown 的账号授权、订阅额度与实际推理仍未验证。Kimi/Codex 在这里只检查命令；Codex Pro 额外实际导入精确版本的公开 API，不会自动登录或试调用。Codex Pro 的完整沙箱策略只能事后审查，所以对应 sandbox 项会显示 warn，模型／配置／认证保持 unknown；`--probe` 也不会为它发送推理。DSH 同一账号、模型、effort、目录和权限只探测一次，总预算 40 秒另加清理窗口；超时后明确失败。
 
-未指定任务时检查全部配置绑定，可能包括首个任务用不到的 Codex hard 路由。准备好任务后可把范围缩小为所需的 Plan／Execute route／Review／Judge（以及显式启用的 judge-panel）：
+未指定任务时检查全部配置绑定，可能包括首个任务用不到的 Codex hard 路由。
+准备好任务后按 Spec／持久化策略缩小范围：Full 包含 Plan／实际 Execute route／
+Review／Judge 与启用的第二意见，合格 Quick 跳过 Plan／Judge／第二意见。
+它不重新分类已保存的任务，也不接收启动时另传的 `--mode` 覆盖：
 
 ```sh
 flywheel doctor --cwd "$PWD" --task-dir docs/add --probe --json
@@ -202,21 +212,28 @@ flywheel doctor --cwd "$PWD" --task-dir docs/add --probe --json
 
 尚无 packet 时按规划前状态预检默认执行路由，规划后应再检查。坏契约会报告阻断项，不能用探测通过代替 schema 校验。若 cwd、权限、provider 或沙箱检查失败，先修正相应配置，不把权限改成 full access 绕过。桌面视图的“配置与排查（按需）”提供“查看模型配置／检查安装与配置／检查 DSH 接入”，使用同一个 CLI 后端；安装、改配置或排错时按需使用，不是每次任务都必须手点的步骤。GUI 与终端环境不同的问题应在视图内复验。
 
-这允许在准备契约时提前排查安装，但正式启动仍需至少一个已审阅的合法 packet。完成下一节的小任务准备后，再运行带 `--task-dir` 的检查。
+这允许在准备契约时提前排查安装，但正式启动仍需至少一个合法 packet 和明确授权的需求。完成下一节的小任务准备后，再运行带 `--task-dir` 的检查。
 
 ## 6. 准备首个小任务
 
 已有业务仓库应先建立任务集成分支和独立 worktree，再生成契约；启动时的 `cwd` 指向该 worktree。完整步骤见[从需求准备到 PR 合并](workflow.md)，下面的小仓库示例用于首次运行验收。
 
-正常在 DSH 对话中发送 `/flywheel-new` 加上实际需求，助手按 skill 创建或复用任务 worktree，准备 `docs/<slug>/spec.md` 与 task packets，然后给出两个真实绝对路径：**项目目录**是代码所在 worktree，**任务资料目录**是其中保存本任务契约和后续状态／报告的 `docs/<slug>`。无需自己预先创建空目录或填写 UI；先审阅契约，再用这份真实路径启动。
+正常在 DSH 对话发送 `/flywheel-task <实际需求>`，可加 `mode=quick` 或 `mode=full`，
+默认 Auto。助手研究代码、创建或复用 worktree，准备 `docs/<slug>/spec.md` 与 packets，
+保存工作流事实，再启动并关联到视图。**项目目录**是代码 worktree，**任务资料目录**
+是其中保存契约和状态／报告的 `docs/<slug>`；工具会传递真实绝对路径，无需自行猜目录。
+只想先审阅方案时使用 `/flywheel-new`，之后沿用原路径与授权启动。
 
-首次建议使用单独的小仓库，便于分清安装问题和业务代码问题。npm 包附带的准备脚本会创建一个 Go 加法函数任务：初始实现故意错误，执行者需修复实现并补普通单测；独立 acceptance 测试不可修改。本示例需要 Go 1.27 或更高。
+首次也可使用独立小仓库区分安装与业务问题。npm 包附带的准备脚本创建 Go 加法函数任务：
+初始实现故意错误，执行者修复并补普通单测，独立 acceptance 不可修改。该兼容示例
+没有 workflow 字段，继续走 Full；要体验 Auto／Quick，优先使用上面的统一入口准备
+真实资格事实，不能只换启动参数伪造事实。本示例需要 Go 1.27 或更高。
 
 ```sh
 FLYWHEEL_PACKAGE="$(npm root --global)/@ckanner/flywheel"
 bash "$FLYWHEEL_PACKAGE/docs/examples/create-first-task.sh" "$HOME/flywheel-demo"
 cd "$HOME/flywheel-demo"
-git init
+git init -b main
 ```
 
 如果安装时使用了自定义 prefix，用 `npm root --global --prefix "$HOME/.local"` 等实际 prefix 定位包目录；不需要克隆源码。
@@ -248,11 +265,18 @@ go test -coverprofile=coverage.out . &&
 ```sh
 git add go.mod sum.go acceptance .gitignore flywheel.config.json docs/add
 git commit -m "docs: prepare first flywheel task"
+git worktree add -b task/add ../flywheel-demo-add
+cd ../flywheel-demo-add
 ```
 
-Git 提交身份必须已经按自己的设置配置。此时不应创建 `state.json`，它由引擎初始化。coverage 输出已被忽略，所以验收运行不会把生成物误判为候选代码漂移。
+Git 提交身份必须已经按自己的设置配置，工作区新目录不可被占用。后续在 `task/add`
+工作区运行，packet 合回该任务分支。此时不应创建 `state.json`，它由引擎初始化。
+coverage 输出已被忽略，所以验收运行不会把生成物误判为候选代码漂移。
 
-对于已有业务仓库，`flywheel-new` 使用当前 DSH 会话的模型生成契约；复杂需求建议选已授权的 `gpt-6-astra`、`high`，简单明确任务可沿用 Flash。它不会自动读取 `loops.plan` 来换模型，后者控制引擎运行后的 Kimi 规划／修订。可以通过 `flywheel-new` 生成并审阅契约，或者用 `flywheel template --list` 查看模板后手工准备。示例 auth 模板不是通用可运行任务，其中路径和验收命令必须改为真实项目的命令。不要照抄后直接启动。
+业务仓库的 `flywheel-task`／`flywheel-new` 都使用当前 DSH 会话模型生成契约，
+不读取 `loops.plan` 来换模型，后者只控制引擎规划／修订。也可查看
+`flywheel template --list` 后手工准备。示例 auth 模板涉及鉴权，不能因为 packet
+很小就标 Quick；路径与验收命令必须改为项目事实，不要照抄后直接启动。
 
 ## 7. 启动、观察、停止与恢复
 
@@ -265,9 +289,15 @@ flywheel control status --task-dir "$PWD/docs/add" --cwd "$PWD"
 
 在 DSH 对话中也可使用 `/flywheel-run <任务资料绝对路径>`、`/flywheel-status <同一路径>`，需要停止时用 `/flywheel-stop <同一路径>`。把占位内容替换成准备阶段给出的真实路径；这些技能会解析正确的项目根，不依赖先填写视图。
 
-`ok: true` 只表示控制操作成功；`running` 表示引擎运行状态，最终任务结果看 `state.status`。另选顶部 **Flywheel** 视图时，在“任务资料目录”填写同一个 `task_dir`。“项目目录”可留空，前提是 DSH 会话的当前工作目录已经是该任务的 `repo_dir`；任务在其他 worktree 时填写助手给出的项目路径。仅在 shell 中 `cd` 不会改变 DSH 的会话目录，技能也不会自动选择视图中的任务。按需展开“配置与排查（按需）”，再点击“启动／刷新状态／停止”。视图区分未初始化、运行、已完成、暂停、停止和升级，标明最近刷新时间；它不会自动轮询。
+`ok: true` 只表示控制操作成功；`running` 表示引擎是否在运行，完成看 `state.status`。
+DSH 工具 launch／start 会关联当前会话视图，确认关联后查询一次最新状态；终端
+启动或手动打开时，仍填写同一个 `task_dir` 与实际 `repo_dir`。项目目录仅在会话
+当前目录相同时可留空，shell `cd` 不改变会话目录。视图展示请求／生效模式、理由、
+阶段适用性、任务状态与刷新时间；不适用的 Plan／Judge 不算通过，也不会自动轮询。
 
-宿主保留会话绑定期间，路径草稿与快照会按会话保留，切换“对话／轨迹／Flywheel”不丢失；重新载入插件或桌面后可能需要重新选择路径。修改路径清除旧结果并忽略迟到响应，不会停止旧任务。每个会话只等待一个控制请求；启动或停止等待期间锁定目录输入。
+会话的工具／命令记录仍在时，重载可通过公开投影重建明确的任务关联；fork 不继承
+父会话关联。手动路径草稿与旧快照只是查看缓存，重载后可能需重选或刷新。修改路径
+忽略旧响应，不会停止旧任务。每个会话只等待一个控制请求，启动或停止期间锁定目录。
 
 启动或停止超时、断连后，后台任务的结果可能尚未确认。保留原任务目录，先“刷新状态”和查看日志；界面在成功核对该任务前禁止继续启动／停止，也不会自动重试。已有快照只是上次结果，不能凭页面关闭、切换会话或停止按钮失去等待状态推断引擎已经结束。原生轨迹保留父会话自己的记录，worker 完整历史不自动合并到其中。
 
@@ -279,7 +309,7 @@ flywheel control status --task-dir "$PWD/docs/add" --cwd "$PWD"
 flywheel run docs/add --pause-before review
 ```
 
-`control start` 当前不接受 `--pause-before`。`--only execute` 会运行 Execute 子环及 L1，直至通过或遇到失败出口；它不是一次模型调用。`--only review` 只返回评审裁决，不会自动跨到 Plan 修订。单环命令详见各内嵌 skill。
+`control launch` 和 `control start` 不接受 `--pause-before`，暂停模式不能与 `--only` 并用。`--only execute` 会运行 Execute 子环及 L1，直至通过或遇到失败出口；它既不是 Quick，也不是一次模型调用。Quick 的 `--only review` 使用最终 Review 协议，需要升级时立即保存单向 Full checkpoint，但不自动跨到 Plan 或执行本地交付；`--only verify` 在指定 packet 时仍包含候选上适用的 L2/L3。Quick 要单步运行 Plan，需明确 `--mode full` 升级。单环命令详见各内嵌 skill。
 
 观察人话摘要和日志：
 

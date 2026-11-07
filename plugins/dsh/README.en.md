@@ -53,7 +53,7 @@ npx -y @ckanner/flywheel@latest install
 ```
 
 The explicit installer installs the resolved Flywheel version, the matching Go
-platform binary and workers, and ten embedded skills. It creates a desktop
+platform binary and workers, and that version's embedded skills (eleven in current source). It creates a desktop
 launcher, registers the same plugin version with the desktop profile, and checks
 the installed versions. It uses the desktop's plugin management interface:
 
@@ -173,11 +173,18 @@ actual inference result. Keep `warn`, `unknown`, and `skipped` distinct from
 From 0.28.5, the external Flywheel view follows the built-in Chat, Trajectory and Statistics views. The host remains responsible for rendering and overflow navigation.
 
 
-The normal entry is `/flywheel-new` in DSH's composer. The assistant prepares
-the description and acceptance files and reports their paths. Review them,
-then use `/flywheel-run`; no panel fields need filling first. Preparation uses
-the current conversation model. After startup, the engine uses Flywheel's
-per-stage model configuration, independently of the chat selection.
+The normal entry is `/flywheel-task <goal>` in DSH's composer, defaulting to Auto.
+The assistant prepares contracts, researched facts, and checks in the actual task
+worktree, then calls `flywheel_launch` to start and associate that concrete task
+with the current session's view. No directory fields need filling first. Use
+`/flywheel-new` for a proposal without starting and `/flywheel-run` for an existing
+task. Preserve prior authorization and any explicit request to review a proposal
+first. Preparation uses the current conversation model; runtime stages use their
+configured bindings. Workflow mode does not switch models, effort, channels, or permissions.
+
+The unified entry and Auto/Quick/Full require a matching CLI/plugin release containing
+these changes. Check `flywheel control launch --help`; source merges do not update
+an already installed npm package.
 
 To inspect or control an existing task, choose **Flywheel** beside Chat and
 Trajectory, or in that view bar's More menu when necessary.
@@ -191,14 +198,15 @@ From 0.28.3, Flywheel reads the host's `workingDirectory.get(session)`, followin
 directory changes. An explicit project path wins. Getter failures stop before
 dispatch without falling back to the original `header.cwd`. Version 0.28.2
 still uses the original directory, so explicitly fill the project path after
-switching worktrees. The panel does not automatically bind tasks created by a
-Skill: paste its reported task directory and refresh. These are project paths,
-not plugin installation paths. The direct `/flywheel {…}` command is distinct
-from the `/flywheel-*` Skill entries.
+switching worktrees. DSH tool launch/start now associates the exact task. Preparing
+files alone or starting in a terminal does not create a desktop session association;
+manual opening and refresh remain available. These are project paths, not plugin
+installation paths. The direct `/flywheel {…}` command is distinct from skill entries.
 
-The panel, `/flywheel`, and `flywheel_control` share these Go operations:
+The panel, `/flywheel`, `flywheel_control`, and `flywheel_launch` share these Go operations:
 
 ```sh
+flywheel control launch --cwd "$PWD" --task-dir "$PWD/docs/my-task" --mode auto
 flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/my-task"
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-task"
 flywheel control stop --cwd "$PWD" --task-dir "$PWD/docs/my-task"
@@ -206,14 +214,26 @@ flywheel control config --cwd "$PWD"
 flywheel control doctor --cwd "$PWD" --task-dir "$PWD/docs/my-task" --probe
 ```
 
-Starting a real task calls the selected models. `start` launches a background
+`flywheel_launch` accepts `taskDir`, optional `cwd`, and optional `mode` (`auto|quick|full`,
+default `auto`). `flywheel_control` also accepts action `launch`; only launch/start
+accept mode, and only doctor accepts probe. The manual equivalent is
+`/flywheel {"action":"launch","taskDir":"/repo/docs/my-task","cwd":"/repo","mode":"auto"}`.
+If neither the session header nor a directory-change event records the project directory, launch/start/stop require an explicit absolute `cwd` and otherwise return `not-dispatched` before starting Go; read-only status can still use the host's current-directory getter.
+Input is validated and passed as argv, not a shell string.
+Launch consumes prepared contracts and defaults to Auto; start without mode retains
+the contract/persisted choice, with legacy tasks staying Full. The host prepares
+requirements and the outer task worktree; the CLI does not generate them from a goal.
+
+Starting a real task calls the selected models. Launch/start create a background
 engine; closing the panel or desktop is not a stop request. Refresh status to
 observe it, and use `stop` to request shutdown. `ok: true` describes a successful
 control operation; task completion is recorded in `state.status`.
 
-Opening the view starts no task or probe. It reads on explicit actions, without
-automatic polling or task discovery. To observe a task started through another
-entry point, select its task directory and refresh. Effective configuration comes
+Opening the view starts no task or probe. A confirmed association triggers one
+fresh status query; subsequent refresh is explicit, without polling or directory scanning.
+The view displays requested/effective policies, reasons, Plan/Judge applicability,
+and upgrade history. Not-applicable stages are not shown as passing checks.
+To observe a task started in a terminal, select its task directory and refresh. Configuration comes
 from the engine's selected file; installing the plugin or changing DSH's chat
 model does not migrate that configuration.
 
@@ -226,14 +246,19 @@ or actual model response capability.
 
 ### View, request, and task lifetimes
 
-Task and repository drafts and fetched snapshots are retained separately for
-each DSH session across Chat/Trajectory/Flywheel view switches while the host
-retains that session binding. They are not a task database or durable storage
-across binding release, plugin reload, or desktop restart. Only one control
-request is pending per session. Start/stop locks the directory fields while
-waiting. A read-only request allows path edits, but stays pending until its reply
-settles and rejects late results for the previous selection. Hiding a view does
-not make a pending operation complete.
+The public `sessionProjections` service folds the session's existing command,
+tool, and PTC call/result records; the client reads `useProjection('flywheelTask')`.
+The exact association can be reconstructed when that session is reloaded while
+its records remain available. A fork does not inherit the parent's association.
+This adds no fictional worker events or second engine state machine; restored
+associations still query Go for current facts.
+
+Manual path drafts and fetched snapshots remain session view caches, without a
+durability guarantee across plugin reload. Only one control request is pending
+per session. Start/stop locks directory fields. Read-only requests allow edits,
+but reject late replies for an old selection. A pending or unconfirmed launch
+retains its original paths and blocks repeat mutations until status of that task
+succeeds. Hiding a view does not complete a pending operation.
 
 Task state is the last successful snapshot with its refresh time, not a live
 monitor. Failed reads retain valid prior content and show the failure. A lost,

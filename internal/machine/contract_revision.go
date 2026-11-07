@@ -35,9 +35,10 @@ func (c *Context) reconcileContractRevisions() error {
 			return err
 		}
 		raw, _ := json.Marshal(struct {
-			Spec, Packet string
-			Verify       any
-		}{string(spec), string(packet), c.Config.Verify})
+			Spec, Packet    string
+			Verify          any
+			DefectInjection any `json:"DefectInjection,omitempty"`
+		}{string(spec), string(packet), c.Config.Verify, c.workflowDefectPolicy()})
 		h := sha256.Sum256(raw)
 		fresh[p.PacketID] = hex.EncodeToString(h[:])
 	}

@@ -94,7 +94,11 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		}
 		if streamCode == "" && res.Settled && res.ExitCode != nil && *res.ExitCode == 0 && !res.TimedOut && !res.Cancelled && !res.Truncated && res.CleanupError == "" &&
 			res.Signal == "" && errs.ClassifyError(errs.SpawnResult{ExitCode: 0, Stderr: res.Stderr}) == "" {
-			verdict, _ = prompts.ParseReviewVerdict(text)
+			if a.finalSpec != nil {
+				verdict, _ = prompts.ParseFinalReviewVerdict(text, a.finalSpec)
+			} else {
+				verdict, _ = prompts.ParseReviewVerdict(text)
+			}
 		}
 		code := ""
 		if verdict == nil {
@@ -179,16 +183,36 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 
 // reviewStep 只在 L1 绿了之后运行（铁律 4）。评审者看到 packet + diff + L1
 // 结果——绝看不到 executor transcript。
+var reviewChangedFiles = verify.GetChangedFiles
+var reviewDiffText = verify.GetDiffText
+
 func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (reviewOutcome, error) {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	if !c.currentL1Evidence(packet) {
 		return reviewOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
 	}
+	final := c.quick()
+	if final {
+		stopped, err := c.quickReviewInjection(packet)
+		if stopped {
+			return reviewOutcome{Stopped: true}, err
+		}
+		defectInjection = ps.Evidence.DefectInjection
+	}
+	if final && !c.quickGateStep(packet) {
+		return reviewOutcome{ErrorCode: errL1Failed}, c.err()
+	}
+	if err := c.err(); err != nil {
+		return reviewOutcome{}, err
+	}
 	identity := evidenceIdentity(ps.Evidence.L1)
 
 	uCwd := c.unitCwd(packet)
-	changed, _ := verify.GetChangedFiles(uCwd, c.baseRefOf(ps))
+	changed, changedOK := reviewChangedFiles(uCwd, c.baseRefOf(ps))
+	if final && !changedOK {
+		return reviewOutcome{}, fmt.Errorf("final review requires an authoritative changed-file inventory")
+	}
 	executorFiles, _ := c.partitionChangedFiles(changed)
 	var diffSummary string
 	if executorFiles != nil {
@@ -212,14 +236,21 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 		diffSummary = "changed files (executor-reported):\n" + strings.Join(lines, "\n")
 	}
 	// §4.3 向评审者承诺的是真实 git diff，不是文件清单（#11）。
-	diffText, _ := verify.GetDiffText(uCwd, c.baseRefOf(ps), c.ledgerExcludes())
-	prompt := prompts.BuildReviewPrompt(prompts.ReviewArgs{
+	diffText, diffOK := reviewDiffText(uCwd, c.baseRefOf(ps), c.ledgerExcludes())
+	if final && !diffOK {
+		return reviewOutcome{}, fmt.Errorf("final review requires an authoritative diff")
+	}
+	promptArgs := prompts.ReviewArgs{
 		Packet:          packet,
 		L1Evidence:      ps.Evidence.L1,
 		DiffSummary:     diffSummary,
 		DiffText:        diffText,
 		DefectInjection: defectInjection,
-	})
+	}
+	if final {
+		promptArgs.FinalSpec, promptArgs.FinalGate, promptArgs.Workflow = c.Spec, ps.Evidence.FinalGate, c.State.Workflow
+	}
+	prompt := prompts.BuildReviewPrompt(promptArgs)
 
 	binding, err := fallback.ResolveBinding(c.Config, "review", "")
 	if err != nil {
@@ -229,6 +260,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	r, ferr := c.agentVerdictStep(verdictArgs{
 		role: "review", binding: binding, prompt: prompt, cwd: uCwd,
 		packetID: id, attemptNo: &attemptNo, ps: ps,
+		finalSpec: promptArgs.FinalSpec,
 	})
 	if ferr != nil {
 		return reviewOutcome{}, ferr
@@ -239,7 +271,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	if !r.OK {
 		return reviewOutcome{ErrorCode: r.ErrorCode}, nil
 	}
-	if !c.currentL1Evidence(packet) {
+	if !c.currentL1Evidence(packet) || (final && !c.currentFinalGate(packet)) {
 		// 即使后端违反只读约束或用户同时编辑，旧裁决也不能放行新代码。
 		ps.Evidence.Review = map[string]any{
 			"verdict": "return", "reasons": []string{"candidate or contract changed during review; rerun verification"},
@@ -254,6 +286,9 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	_ = json.Unmarshal(vb, &m)
 	m["at"] = c.nowISO()
 	m["identity"] = identity
+	if final {
+		m["scope"] = "task-final"
+	}
 	ps.Evidence.Review = m
 	at := c.nowISO()
 	ps.UpdatedAt = &at
