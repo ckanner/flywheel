@@ -255,7 +255,8 @@ func TestSessionDurableReceiptReplaysCASWithoutDispatchOrDoubleAccounting(t *tes
 	require.Equal(t, 1, calls)
 	require.Equal(t, "reconcile", c.sessionRecord("execute", a.PacketID).Action)
 	c.recordSpawnMetrics(spawnMetricsArgs{role: "execute", packetID: a.PacketID, result: &r})
-	// Crash after append, before state CAS: reload and account the same receipt.
+	// Reload after recovery's accounting checkpoint; a stage caller cannot
+	// account the same durable receipt again.
 	c = unitTestContext(t, fx)
 	enableSessionPolicy(c)
 	r, err = c.invokeScoped("execute", a.PacketID, sessionArgs(c), func(drivers.CallArgs) drivers.Result { t.Fatal("must replay receipt"); return drivers.Result{} })

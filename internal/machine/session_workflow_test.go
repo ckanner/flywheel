@@ -251,3 +251,54 @@ func TestSessionCheckpointSlotIsBoundedPerScope(t *testing.T) {
 	_, _, err = state.ReadSessionReceipt(fx.taskDir, "execute/M01-T01", c.sessionRecord("execute", a.PacketID).Last.ID, "")
 	require.NoError(t, err)
 }
+
+func TestSessionRunStopsBeforeExecuteWhenPlanCheckpointCASFails(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := newScripted(nil)
+	original := inspectPlanDirtyFiles
+	t.Cleanup(func() { inspectPlanDirtyFiles = original })
+	inspected := false
+	inspectPlanDirtyFiles = func(cwd, base string) ([]string, bool) {
+		files, ok := original(cwd, base)
+		if !inspected {
+			inspected = true
+			st := loadFixtureState(t, fx)
+			_, err := state.Save(fx.taskDir, st, nil)
+			require.NoError(t, err)
+		}
+		return files, ok
+	}
+	_, err := RunTask(sessionRunOpts(fx, sessionDriverSet(sd)))
+	var conflict *state.CasConflictError
+	require.ErrorAs(t, err, &conflict)
+	require.True(t, inspected)
+	require.Len(t, sd.log.plan, 1)
+	require.Empty(t, sd.log.exec)
+	require.Empty(t, sd.log.judge)
+}
+
+func TestSessionRunCannotReplayJudgeAfterPassingGateIsRevoked(t *testing.T) {
+	fx := newGitFixture(t)
+	sd := newScripted(nil)
+	sd.judgeFn = func(a drivers.CallArgs) drivers.Result {
+		st := loadFixtureState(t, fx)
+		_, err := state.Save(fx.taskDir, st, nil)
+		require.NoError(t, err)
+		return sd.mock.Judge(a)
+	}
+	opts := sessionRunOpts(fx, sessionDriverSet(sd))
+	_, err := RunTask(opts)
+	var conflict *state.CasConflictError
+	require.ErrorAs(t, err, &conflict)
+	st := loadFixtureState(t, fx)
+	gate := st.Milestones["M-01"].Gate.(map[string]any)
+	gate["pass"] = false
+	_, err = state.Save(fx.taskDir, st, nil)
+	require.NoError(t, err)
+	_, err = RunTask(opts)
+	require.ErrorContains(t, err, "original passing milestone gate")
+	require.Len(t, sd.log.judge, 1)
+	require.Len(t, sd.log.plan, 1)
+	require.Len(t, sd.log.exec, 2)
+	require.Equal(t, "escalated", loadFixtureState(t, fx).Status)
+}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/ckanner/flywheel/internal/contract"
@@ -218,6 +219,13 @@ func ReadSessionReceipt(taskDir, key, invocationID, digest string) (*SessionRece
 	if receipt.Version != 1 || receipt.Key != key || receipt.InvocationID != invocationID || receipt.Task != taskDir ||
 		receipt.InvocationID == "" || receipt.Cwd == "" || receipt.Binding == "" || len(result) == 0 || result[0] != '{' || !json.Valid(raw) {
 		return nil, "", fmt.Errorf("session receipt identity mismatch")
+	}
+	for _, proof := range []string{receipt.CandidateAfter, receipt.GuardBefore, receipt.GuardAfter} {
+		// An absent post-call proof is a recoverable accounting fact, but a
+		// malformed value must never poison the schema-validated state ledger.
+		if proof != "" && (len(proof) != sha256.Size*2 || strings.Trim(proof, "0123456789abcdef") != "") {
+			return nil, "", fmt.Errorf("invalid session receipt checkpoint")
+		}
 	}
 	return &receipt, actual, nil
 }

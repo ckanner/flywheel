@@ -216,6 +216,18 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		os.Exit(1)
 	}
 	fmt.Print(strings.TrimSpace(dshJSONL(result)))
+	if scenario == "success-malformed-tail" {
+		fmt.Print("\n{broken-json}\n")
+	}
+	if scenario == "success-extra-frame" {
+		fmt.Print("\n" + dshJSONL(ready))
+	}
+	if scenario == "success-stderr-overflow" {
+		fmt.Fprint(os.Stderr, strings.Repeat("diagnostic overflow\n", 2048))
+	}
+	if scenario == "success-exit-one" {
+		os.Exit(1)
+	}
 	if scenario == "exit-error" {
 		os.Exit(7)
 	}

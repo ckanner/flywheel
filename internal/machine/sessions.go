@@ -73,8 +73,17 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 		goal = append(goal, p.Goal, p.Requirements, p.Boundaries, p.Body)
 		contractInput = append(contractInput, p, p.Body)
 	} else {
+		for _, milestone := range c.Spec.Milestones {
+			if milestone.ID == scope {
+				goal = append(goal, [2]string{milestone.ID, milestone.Title})
+				break
+			}
+		}
 		for _, p := range c.PacketList {
 			if milestone, _ := contract.MilestoneOfPacket(p.PacketID); milestone == scope {
+				// Plan/Judge history belongs to this milestone's declared packet
+				// goals, not merely its ID. Acceptance-only revisions stay compatible.
+				goal = append(goal, []any{p.PacketID, p.Goal, p.Requirements, p.Boundaries, p.Body})
 				contractInput = append(contractInput, p, p.Body)
 			}
 		}
@@ -227,16 +236,39 @@ func (c *Context) readSessionResult(key string, r *state.SessionRecord) (*state.
 	if err := json.Unmarshal(receipt.Result, &result); err != nil {
 		return nil, result, "", err
 	}
+	s := result.Session
+	if s == nil || s.RequestID != r.Last.ID || s.Protocol == "" ||
+		(s.Dispatch != "dispatched" && s.Dispatch != "not-dispatched" && s.Dispatch != "unknown") ||
+		(s.Outcome != "completed" && s.Outcome != "failed" && s.Outcome != "cancelled" && s.Outcome != "unknown") ||
+		(s.UsageStatus != "complete" && s.UsageStatus != "partial" && s.UsageStatus != "unknown") {
+		return nil, result, "", fmt.Errorf("receipt invocation identity or facts are invalid")
+	}
+	if u := result.Usage; (u != nil && (u.Input < 0 || u.Output < 0 || u.Reasoning < 0 || u.CacheRead < 0 || u.CacheWrite < 0 || u.TotalTokens < 0)) || (result.CostUSD != nil && *result.CostUSD < 0) {
+		return nil, result, "", fmt.Errorf("receipt usage or cost is invalid")
+	}
+	if r.Role != "execute" && (r.Last.GuardBefore == "" || receipt.GuardBefore != r.Last.GuardBefore) {
+		return nil, result, "", fmt.Errorf("original role guard checkpoint is missing or mismatched")
+	}
 	if !safeSessionOutcome(result, r.Last.ID) {
-		return nil, result, "", fmt.Errorf("dispatch, outcome or cleanup remains unknown")
+		// The bound receipt can attest usage without granting permission to
+		// replay effects. Return that evidence so recovery accounts it first.
+		return receipt, result, digest, fmt.Errorf("dispatch, outcome or cleanup remains unknown")
 	}
 	if r.Role != "execute" {
-		if r.Last.GuardBefore == "" || receipt.GuardBefore != r.Last.GuardBefore || receipt.GuardAfter == "" {
-			return nil, result, "", fmt.Errorf("original role guard checkpoint is missing or mismatched")
+		if receipt.GuardAfter == "" {
+			return receipt, result, digest, fmt.Errorf("terminal role guard checkpoint is missing")
 		}
 		rejectChangedSessionGuard(r.Role, receipt.GuardBefore, receipt.GuardAfter, &result)
 	}
 	return receipt, result, digest, nil
+}
+
+func (c *Context) accountSessionReceipt(r *state.SessionRecord, result drivers.Result) {
+	packetID := ""
+	if r.Role == "execute" || r.Role == "review" {
+		packetID = strings.TrimPrefix(r.Scope, "final:")
+	}
+	c.recordSpawnMetrics(spawnMetricsArgs{role: r.Role, packetID: packetID, model: result.Model, result: &result, attempt: &r.Last.Attempt})
 }
 
 // Always reconcile under the task lease, including after a mode/backend change.
@@ -249,19 +281,34 @@ func (c *Context) reconcileSessionReceipts() error {
 		return nil
 	}
 	for key, r := range c.State.Sessions.Records {
-		if r.Last.Status != "intent" && r.Last.Status != "blocked" {
+		if r.Last.Status != "intent" && r.Last.Status != "blocked" && (r.Last.Status != "received" || r.Last.Accounted) {
 			continue
 		}
+		recovered := r.Last.Status != "received"
 		receipt, result, digest, err := c.readSessionResult(key, r)
 		if err != nil {
+			if receipt != nil {
+				applySessionFacts(r, result, digest, receipt.CandidateAfter)
+				r.Last.GuardAfter = receipt.GuardAfter
+				// A missing post-call proof still forbids application even when
+				// the process itself has an otherwise safe terminal result.
+				r.Last.Status, r.ResumeCandidate = "blocked", false
+				c.accountSessionReceipt(r, result)
+			}
 			return c.sessionBlock(key, err.Error())
 		}
 		applySessionFacts(r, result, digest, receipt.CandidateAfter)
 		r.Last.GuardAfter = receipt.GuardAfter
+		// Attribution does not depend on today's candidate, binding or guards.
+		// Account the original bound receipt before any replay prerequisite can
+		// block it, keeping the role result unconsumed for normal application.
+		c.accountSessionReceipt(r, result)
 		if r.Last.Status != "received" {
 			return c.sessionBlock(key, "terminal candidate checkpoint is missing")
 		}
-		r.Action, r.Reason = "reconcile", "durable terminal receipt recovered; apply without dispatch"
+		if recovered {
+			r.Action, r.Reason = "reconcile", "durable terminal receipt recovered; apply without dispatch"
+		}
 		c.save()
 		if c.fatal != nil {
 			return c.fatal
@@ -331,10 +378,12 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		c.State.Sessions = &state.SessionLedger{Version: 1, Records: map[string]*state.SessionRecord{}}
 	}
 	action, reason, generation, thread := "create", "first invocation in this role scope", 1, ""
+	protocol := "flywheel/admission-v1"
 	if r != nil {
 		generation = r.Generation
 		if persistent && r.Task == c.TaskDir && r.Cwd == cwd && r.Binding == binding && r.Goal == goal && r.ResumeCandidate {
 			action, reason, thread = "resume", "same role, goal and effective binding after confirmed terminal receipt", r.ThreadID
+			protocol = r.Protocol
 		} else {
 			action, reason, generation = "rebuild", "history unavailable or scope, goal, directory or binding changed", generation+1
 		}
@@ -364,12 +413,25 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	}
 	c.State.Sessions.Records[key] = r
 	c.save()
-	if err := c.err(); err != nil {
-		return drivers.Result{}, err
+	if c.fatal != nil {
+		return drivers.Result{}, c.fatal
 	}
 	args.SessionID, args.PersistentSession, args.RequestID = thread, persistent, r.Last.ID
 	c.Log(fmt.Sprintf("session %s: %s (%s)", key, action, reason))
-	result := call(args)
+	var result drivers.Result
+	cancelledBeforeDispatch := c.err() != nil
+	if cancelledBeforeDispatch {
+		// Go has not called the adapter, so this exact invocation has no
+		// backend effects or charges. Save that positive local fact instead
+		// of leaving an ambiguous intent or inventing a physical exit code.
+		r.Reason = "cancelled locally before adapter dispatch; no backend call or charge"
+		result = drivers.Result{Harness: args.Binding.Harness, Model: args.Model, Cancelled: true,
+			Usage: &drivers.Usage{}, CostUSD: new(float64),
+			Session: &drivers.SessionOutcome{Protocol: protocol, RequestID: args.RequestID,
+				Dispatch: "not-dispatched", Outcome: "cancelled", CleanupConfirmed: true, UsageStatus: "complete"}}
+	} else {
+		result = call(args)
+	}
 	if result.Session != nil {
 		unsent := safeSessionOutcome(result, r.Last.ID) && result.Session.Dispatch == "not-dispatched" && result.Session.Outcome != "completed"
 		invalid := thread != "" && ((result.Session.SessionID != "" && result.Session.SessionID != thread) || (!unsent && (result.Session.SessionID != thread || !result.Session.ResumeAccepted)))
@@ -411,12 +473,23 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	}
 	c.sessionReports[key] = report
 	c.save()
-	if err := c.err(); err != nil {
-		return drivers.Result{}, err
+	if c.fatal != nil {
+		return drivers.Result{}, c.fatal
 	}
 	if snapshotErr != nil || guardErr != nil || r.Last.Status == "blocked" {
 		c.recordSpawnMetrics(spawnMetricsArgs{role: role, packetID: args.PacketID, model: args.Model, channel: args.Binding.Channel, prompt: args.Prompt, result: &result})
 		return result, c.sessionBlock(key, "dispatch, outcome, cleanup or terminal candidate is unconfirmed")
+	}
+	if c.err() != nil {
+		// Cancellation prevents stage application, not durable accounting of
+		// the invocation that already returned. Keep normal results received
+		// for later replay; a local no-dispatch admission has no stage output.
+		c.recordSpawnMetrics(spawnMetricsArgs{role: role, packetID: args.PacketID, model: args.Model, channel: args.Binding.Channel, prompt: args.Prompt, result: &result})
+		if cancelledBeforeDispatch {
+			c.consumeSession(role, scope)
+		}
+		c.save()
+		return result, c.err()
 	}
 	return result, nil
 }

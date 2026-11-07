@@ -4,6 +4,8 @@
 
 2026-11-07 会话策略实施稿：按任务、范围和角色隔离，按运行事实续用或重建。具体方案见[会话生命周期提案](plans/2026-11-07-session-lifecycle.md)。本轮范围为 P1/P2：可信正常终态后的角色历史续用，以及已保存调用回执的恢复。调用安全记录与历史复用分别控制；支持的主任务适配器在 fresh/scoped 下均记录调用意图，结果未知时均阻止继续执行。P3 的实时调用恢复、只读查询及持久化确认仍需要上游公开协议；P4 的真实账号、质量、缓存与性能实验尚未完成，不能由离线测试推断。
 
+具体行为、故障注入、独立 review 修复及验收边界见[会话实现验收记录](validation/2026-11-07-session-lifecycle.md)。
+
 ## 1. 目标与范围
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
@@ -178,11 +180,23 @@ Plan resident 行为不冒充跨里程碑的通用会话。其他适配器、moc
 可消费相同结果，不重新派发或重复计费。无可信终态／清理证明时保持 blocked，不扫描
 历史、不按错误正文猜测安全冷启动，也不声称已具备实时或任意崩溃恢复能力。
 
+单槽只限制 Flywheel 自己的恢复回执，不限制后端的原生历史。后端按自身规则保留
+thread／Session 内容；Flywheel 重建角色历史或关闭 worker 时不自动删除旧历史。
+运行绑定记录的是实际 home／profile／命令／worker 路径等非秘密引用及凭据变量名，
+不是账号主体或文件内容的证明。同一路径下的配置、账号授权或可执行文件被原位替换，
+本实现不会仅凭路径身份识别全部变化，也不读取凭据值来核对账号。配置接受与有效权限
+仍按各适配器本次能够提供的回执判断。
+
 Plan、Review、Judge 的原始保护证据作为 `guard-before`／`guard-after` 同时持久化
 在调用记录和回执中。恢复不能重新采样“调用前”身份，不能以新的 L1、L2/L3 或缺陷
 抽检替换待消费回执的原证据。Review／Judge 的 pending 回执还要求精确原契约；Plan
 获准修订契约时由完整调用后候选和原始非契约保护证据约束。已经消费的历史可以接收
 兼容的验收修订，但下一次调用必须携带当前输入并重新验证。
+
+同目标兼容集合由策略版本 1 机械限定：Spec 的目标、非目标、需求身份，以及 packet
+的目标、正文、边界和需求映射保持一致。里程碑角色还绑定里程碑标题与所属 packet
+身份及这些目标字段；改变它们会重建相应角色历史。验收命令、gate 和契约版本修订
+不单独销毁已消费的同目标历史，但不能绕过当前候选的重新验证。
 
 Spec 可选 `workflow` 对象的版本为 1，字段为 `version`、`mode`、`reason`、`scope-clear`、`implementation-known`、`verification-complete`、`review-sufficient`、`evidence`、`risks` 与 `not-applicable`。其中只有 version、mode 必填；其余字段不足以证明 §4.0 的资格时走 Full。`not-applicable.L2/L3` 为相应检查缺省时的具体理由；只有短标记或空白不算证据。完整示例见[工作流策略与恢复](configuration.md#工作流策略与恢复)。策略属于任务契约，不在模型配置文件中。
 
@@ -194,7 +208,7 @@ Intake／Garden 的预算与清理升级记录若需更新已有主任务状态�
 
 主要单元状态仍为 pending、executing、executed、l1-passed、l1-failed、review-failed、completed、interrupted、inbox。中断后的产物保留，重启不凭旧报告自动认定完成。新增可选 `last-feedback`、`evidence-history`、`contract-fingerprints`、契约同步状态及 usage/cost 未知计数，旧配置与状态可加载，但旧完成记录不自动取得新证据的可信度。
 
-会话方案将分别记录角色上下文、单次调用和候选证据身份；这些新记录尚未进入当前 schema。Codex Pro 正常回执后的续用与中途崩溃核对分期实现：现有 machine 接口不提供可等待持久化确认的早期生命周期事件，thread ID 本身也不是派发幂等或清理证明。
+P1/P2 的角色历史、单次调用和候选／保护证据身份已进入当前可选 sessions schema，并支持正常终态续用和已保存可信回执的崩溃恢复。P3 的在途查询、只读核对及可等待持久化确认的早期生命周期协议仍未具备；thread ID 本身不是派发幂等、持久化或清理证明。
 
 每个现行 packet 的契约 fingerprint 包含权威 Spec 全文、packet 全文和验证配置，并随状态保存。重启或 Plan 修订后重新比较；不匹配的单元和所属里程碑重新打开，失效证据归档，完成任务也可回到 pending。旧 completed 没有 fingerprint 时保守地重新打开。Spec 或共享验证策略改变可能影响多个单元；后续正常实现代码变化则不会单独改变这个契约 fingerprint。
 

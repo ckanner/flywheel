@@ -461,6 +461,8 @@ func TestSessionFaultUncorrelatedOrForeignHandlesBlockBeforeAccounting(t *testin
 		t.Run(scenario, func(t *testing.T) {
 			_, c, a, first := faultRecordedSession(t, "execute", "M01-T01")
 			applySessionResult(t, c, "execute", "M01-T01", first)
+			beforeTokens, beforeUnknown := c.State.Budget.Totals.Tokens, c.State.Budget.UnknownUsageCalls
+			beforeUnknownCost := c.State.Budget.UnknownCostCalls
 			role, scope := "execute", "M01-T01"
 			if scenario == "another-role-history" {
 				role = "review"
@@ -490,6 +492,9 @@ func TestSessionFaultUncorrelatedOrForeignHandlesBlockBeforeAccounting(t *testin
 			assert.Nil(t, result.Usage, "unattributable usage cannot be charged as this invocation")
 			assert.Nil(t, result.CostUSD)
 			assert.Equal(t, "blocked", c.sessionRecord(role, scope).Last.Status)
+			assert.Equal(t, beforeTokens, c.State.Budget.Totals.Tokens)
+			assert.Equal(t, beforeUnknown+1, c.State.Budget.UnknownUsageCalls)
+			assert.Equal(t, beforeUnknownCost+1, c.State.Budget.UnknownCostCalls)
 		})
 	}
 }
@@ -513,4 +518,79 @@ func TestSessionFaultLegacyPlanResumeStillTracksFreshModeInvocation(t *testing.T
 	assert.Empty(t, record.ThreadID)
 	assert.False(t, record.ResumeCandidate)
 	applySessionResult(t, c, "plan", "M-01", r)
+}
+
+func TestSessionFaultPublicEntryPointsReconcileBeforeAnyStage(t *testing.T) {
+	for _, entry := range []string{"run", "single", "execute"} {
+		t.Run(entry, func(t *testing.T) {
+			fx, c := sessionFixture(t)
+			_, err := c.invokeScoped("execute", "M01-T01", sessionArgs(c), func(a drivers.CallArgs) drivers.Result {
+				r := sessionResult(a, drivers.Result{})
+				r.Session.Outcome, r.Session.Dispatch, r.Session.ResumeCandidate = "unknown", "unknown", false
+				return r
+			})
+			require.Error(t, err)
+			sd := newScripted(nil)
+			restarted, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: c.Config, Drivers: sd.set()})
+			require.NoError(t, err)
+			switch entry {
+			case "run":
+				_, err = restarted.run()
+			case "single":
+				_, err = restarted.runSingle("execute", "M01-T01")
+			case "execute":
+				_, err = restarted.executeStep(restarted.PacketList[0])
+			}
+			require.ErrorContains(t, err, "resume and fresh replay are blocked")
+			assert.Empty(t, sd.log.plan)
+			assert.Empty(t, sd.log.exec)
+			assert.Empty(t, sd.log.review)
+			assert.Empty(t, sd.log.judge)
+		})
+	}
+}
+
+func TestSessionFaultPlanAdmissionFailureBecomesFatalBeforeCallingModel(t *testing.T) {
+	_, c := sessionFixture(t)
+	previous := snapshotOpen
+	t.Cleanup(func() { snapshotOpen = previous })
+	snapshotOpen = func(string) (io.ReadCloser, error) { return nil, os.ErrPermission }
+	sd := newScripted(nil)
+	c.Drivers = sd.set()
+	_, err := c.planStep(c.Spec.Milestones[0], "")
+	require.ErrorIs(t, err, os.ErrPermission)
+	assert.ErrorIs(t, c.fatal, os.ErrPermission)
+	assert.Empty(t, sd.log.plan)
+}
+
+func TestSessionFaultLegacyPlanUncertaintySurvivesModeChanges(t *testing.T) {
+	fx, c := sessionFixture(t)
+	c.Config.Sessions.Mode = "fresh"
+	binding := c.Config.Loops["plan"]
+	binding.Harness, binding.ResidentSession = "kimi", true
+	c.Config.Loops["plan"] = binding
+	c.State.PlanSession = map[string]any{"session-id": "legacy-plan-history", "channel": binding.Channel,
+		"model": binding.Model, "harness": "kimi", "cwd": c.Cwd, "thinking": binding.Thinking,
+		"permission-mode": c.Config.PermissionMode("plan", "kimi")}
+	c.save()
+	require.NoError(t, c.err())
+	sd := newScripted(nil)
+	sd.planFn = func(a drivers.CallArgs) drivers.Result {
+		assert.Equal(t, "legacy-plan-history", a.SessionID)
+		r := sessionResult(a, drivers.Result{ExitCode: new(1)})
+		r.Session.Dispatch, r.Session.Outcome, r.Session.ResumeCandidate = "unknown", "unknown", false
+		return r
+	}
+	c.Drivers = sd.set()
+	_, err := c.planStep(c.Spec.Milestones[0], "")
+	require.ErrorContains(t, err, "legacy resumed Plan outcome is unknown")
+	require.Len(t, sd.log.plan, 1)
+	assert.Equal(t, true, loadFixtureState(t, fx).PlanSession.(map[string]any)["outcome-unknown"])
+	restarted, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: c.Config, Drivers: c.Drivers})
+	require.NoError(t, err)
+	restarted.Config.Sessions.Mode = "scoped"
+	_, err = restarted.runSingle("execute", "M01-T01")
+	require.ErrorContains(t, err, "previous resident Plan result remains unknown")
+	assert.Len(t, sd.log.plan, 1)
+	assert.Empty(t, sd.log.exec)
 }

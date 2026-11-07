@@ -393,6 +393,33 @@ func TestSessionReceiptRejectsWrongIdentityDigestAndMalformedEnvelope(t *testing
 	}
 }
 
+func TestSessionReceiptCheckpointFieldsRequireCanonicalHashesOrAbsence(t *testing.T) {
+	for _, field := range []string{"candidate", "guard-before", "guard-after"} {
+		for _, proof := range []string{"", "short", strings.Repeat("g", 64), strings.Repeat("A", 64), strings.Repeat("e", 64)} {
+			t.Run(field+"/"+proof, func(t *testing.T) {
+				dir, key := t.TempDir(), "execute/M01-T01"
+				receipt := sessionTestReceipt(dir, key)
+				switch field {
+				case "candidate":
+					receipt.CandidateAfter = proof
+				case "guard-before":
+					receipt.GuardBefore = proof
+				case "guard-after":
+					receipt.GuardAfter = proof
+				}
+				_, err := WriteSessionReceipt(dir, key, receipt)
+				require.NoError(t, err)
+				_, _, err = ReadSessionReceipt(dir, key, receipt.InvocationID, "")
+				if proof == "" || proof == strings.Repeat("e", 64) {
+					require.NoError(t, err, "absent post-call proof must remain distinguishable from malformed evidence")
+				} else {
+					require.Error(t, err, "invalid checkpoints must not be copied into schema-validated state during recovery")
+				}
+			})
+		}
+	}
+}
+
 func TestSessionReceiptReadFailuresAndGrowthAreBounded(t *testing.T) {
 	for _, failure := range []string{"missing", "stat", "oversized", "read", "growth"} {
 		t.Run(failure, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,4 +215,48 @@ func TestRunDSHFreshCallsExposeCorrelatedFactsWithoutChangingV1History(t *testin
 	assert.Equal(t, "not-dispatched", r.Session.Dispatch)
 	assert.Equal(t, "failed", r.Session.Outcome)
 	assert.True(t, r.Session.CleanupConfirmed)
+}
+
+func TestRunDSHRejectedTranscriptCannotChargeItsValidLookingPrefix(t *testing.T) {
+	for _, persistent := range []bool{false, true} {
+		for _, scenario := range []string{"success-malformed-tail", "success-extra-frame", "success-stderr-overflow"} {
+			t.Run(scenario+map[bool]string{false: "/fresh", true: "/scoped"}[persistent], func(t *testing.T) {
+				a := dshRunArgs(t, scenario)
+				a.PersistentSession, a.RequestID = persistent, "current-charge"
+				if scenario == "success-stderr-overflow" {
+					previous := watchdog.MaxBuffer
+					watchdog.MaxBuffer = 4096
+					t.Cleanup(func() { watchdog.MaxBuffer = previous })
+				}
+				r := RunDSH(a)
+				assert.False(t, r.Settled)
+				require.NotNil(t, r.Session)
+				assert.Equal(t, "unknown", r.Session.Outcome)
+				assert.Equal(t, "unknown", r.Session.UsageStatus)
+				assert.False(t, r.Session.ResumeCandidate)
+				assert.Nil(t, r.Usage)
+				assert.Nil(t, r.CostUSD)
+				if scenario == "success-stderr-overflow" {
+					assert.True(t, r.Truncated)
+					assert.Contains(t, r.Stdout, `"status":"ok"`, "stdout contains an apparently complete success receipt")
+				}
+			})
+		}
+	}
+}
+
+func TestRunDSHUnexpectedPhysicalExitBlocksReplayButRetainsAttributableUsage(t *testing.T) {
+	for _, persistent := range []bool{false, true} {
+		a := dshRunArgs(t, "success-exit-one")
+		a.PersistentSession, a.RequestID = persistent, "completed-receipt-failed-exit"
+		r := RunDSH(a)
+		assert.False(t, r.Settled)
+		require.NotNil(t, r.Session)
+		assert.Equal(t, "unknown", r.Session.Outcome)
+		assert.False(t, r.Session.ResumeCandidate, "the wrong exit cannot retain a completed lifecycle")
+		require.NotNil(t, r.Usage, "intact matching usage remains measured even when replay is unsafe")
+		assert.EqualValues(t, 15, r.Usage.TotalTokens)
+		assert.Equal(t, "complete", r.Session.UsageStatus)
+		require.NotNil(t, r.CostUSD)
+	}
 }

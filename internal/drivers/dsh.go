@@ -237,6 +237,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 	if parsed.Error != "" {
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
+		parsed.Usage, parsed.CostUSD = nil, nil
 	} else if providerError != "" {
 		parsed.Error = providerError
 	}
@@ -352,6 +353,7 @@ func RunDSH(a DSHArgs) Result {
 			parsed.Error = "DSH worker request write failed: " + err.Error()
 			parsed.ErrorCode = errs.TRANSPORT
 			parsed.Session = nil
+			parsed.Usage, parsed.CostUSD = nil, nil
 		}
 	default: // no stdin writer when spawn fails or cancellation precedes Start
 	}
@@ -366,6 +368,11 @@ func RunDSH(a DSHArgs) Result {
 		out.CleanupError = "DSH worker did not confirm SDK process cleanup: no trustworthy terminal receipt"
 	}
 	out.SessionID, out.Text, out.Usage, out.CostUSD = parsed.SessionID, parsed.Text, parsed.Usage, parsed.CostUSD
+	if out.Truncated {
+		// A complete-looking prefix cannot attest the omitted tail, even when
+		// only stderr exceeded the capture bound. Its charge is unconfirmed.
+		out.Usage, out.CostUSD = nil, nil
+	}
 	out.Cancelled = out.Cancelled || parsed.Cancelled
 	if out.ErrorCode != "" && out.ExitCode != nil && *out.ExitCode != 1 && !out.TimedOut && !out.Cancelled &&
 		out.Signal == "" && out.SpawnError == "" && out.CleanupError == "" && !out.Truncated {
@@ -401,7 +408,7 @@ func RunDSH(a DSHArgs) Result {
 		// Timeout, cancellation or a damaged outer stream cannot be normalized
 		// into a safe replay decision by a successful inner turn.
 		if out.Session == nil || out.TimedOut || out.Cancelled || out.Truncated || out.Signal != "" || out.CleanupError != "" ||
-			out.ExitCode == nil || (out.Settled && *out.ExitCode != 0) || (!out.Settled && *out.ExitCode != 1) {
+			out.ExitCode == nil || (parsed.Settled && *out.ExitCode != 0) || (!parsed.Settled && *out.ExitCode != 1) {
 			out.Session = &SessionOutcome{Protocol: DSHSessionProtocol, RequestID: a.RequestID, SessionID: a.SessionID,
 				Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 			if out.SpawnError != "" {
@@ -417,12 +424,14 @@ func RunDSH(a DSHArgs) Result {
 			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "", UsageStatus: "unknown"}
 		if out.Settled {
 			out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
-			if out.Usage != nil {
-				out.Session.UsageStatus = "complete"
-			}
 		} else if out.SpawnError != "" {
 			out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
 		}
+	}
+	// An intact correlated native receipt can still measure usage when outer
+	// process cleanup/exit is unsafe. Accounting certainty is separate from replay.
+	if out.Session != nil && out.Usage != nil {
+		out.Session.UsageStatus = "complete"
 	}
 	return out
 }
