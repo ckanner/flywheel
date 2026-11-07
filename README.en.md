@@ -129,6 +129,7 @@ The engine alone writes `state.json`, atomically with revision checks. Do not ed
 |---|---|
 | [Getting started](docs/en/getting-started.md) | Install, configure, diagnose, run a small task, stop, and recover |
 | [Workflow](docs/en/workflow.md) | Preparation models, task and packet worktrees, Draft PRs, completion, and merge policy |
+| [Session lifecycle proposal](docs/en/plans/2026-11-07-session-lifecycle.md) | Scoped continuation and rebuilding, repairs and independent re-review, machine API and recovery boundaries; not yet implemented |
 | [Configuration](docs/en/configuration.md) | File precedence, profiles, providers, channels, Codex Pro, and diagnostics |
 | [Reasoning effort](docs/en/model-policy.md) | Supported levels, high baseline, evaluation candidates, and account-provider choice |
 | [Chinese documentation](README.md) | Default language and additional implementation detail |

@@ -258,6 +258,7 @@ npm run build:npm
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
 | [docs/design.md](docs/design.md) | 权威设计、不变量、闭环与边界 |
+| [会话生命周期方案](docs/plans/2026-11-07-session-lifecycle.md) | 按任务与角色续用／重建、返修与独立复审、machine 与恢复边界；待实施 |
 | [docs/configuration.md](docs/configuration.md) | profiles、阶段覆盖、provider／channel 与预检语义 |
 | [docs/plans/2026-11-03-codex-pro-default.md](docs/plans/2026-11-03-codex-pro-default.md) | 默认插件接入与验收计划 |
 | [docs/plans/2026-11-01-dsh-integration.md](docs/plans/2026-11-01-dsh-integration.md) | 本轮实施和验收记录 |

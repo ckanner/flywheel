@@ -183,7 +183,7 @@ Do not create a task file containing only a few profiles and expect it to inheri
 | A profile references another profile | Unsupported; configuration error |
 | `_note` or `_note_*` | Permitted explanatory metadata, excluded from execution bindings |
 
-`resident-session` belongs on a stage, not in a profile. Currently only Kimi Plan can resume, and only when harness, model, channel, working directory, thinking, and permission mode match. This restores session history, not a permanently running process. Execution and review calls start fresh sessions.
+`resident-session` belongs on a stage, not in a profile. Currently only Kimi Plan can resume, and only when harness, model, channel, working directory, thinking, and permission mode match. This restores session history, not a permanently running process. Execution and review calls start fresh sessions. These are current capability limits, not a permanent requirement that every invocation discard its context.
 
 Legal existing zero values, including `env-key: null`, `retry.jitter: 0`, and `worktree.enabled: false`, remain meaningful. When changing a harness or channel, also inspect any inherited provider. Use `provider: ""` when necessary to clear an explicit value before resolving the newly selected DSH channel.
 
@@ -211,6 +211,8 @@ The external tool name `subagent_codex_pro` is not a DSH provider. This route do
 To migrate an existing configuration, use `config inspect` to locate the effective file. Change the hard route's inline harness or referenced profile from `codex` to `codex-pro`, retain the intended model/channel/thinking, inspect the result, and restart. Keeping `harness: "codex"` explicitly retains the older `codex exec` behavior.
 
 `codex-pro` requires nonempty model and channel values. It does not inherit the old Codex driver's implicit model. Omitted thinking defaults to `high`; `resident-session: true` is rejected. Each execute/review call uses a new ephemeral session.
+
+These are current Flywheel restrictions, not requirements of the machine API. The upstream plugin supports persistent history and an explicit thread ID, but Flywheel has not connected them. The [session lifecycle proposal](plans/2026-11-07-session-lifecycle.md) describes scoped continuation, independent re-review, and interruption reconciliation. It adds no usable configuration fields; setting `resident-session:true` does not enable the proposal.
 
 ### Worker environment
 
