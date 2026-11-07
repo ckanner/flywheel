@@ -66,7 +66,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		if !c.sessionReplay(sessionRole, sessionScope) && c.budgetGate() == "stop" {
 			return verdictOutcome{Stopped: true}, nil
 		}
-		if missingKey := c.missingKeyForRealDriver(a.role, channel); missingKey != "" {
+		if missingKey := c.missingKeyForRealDriver(a.role, channel); !c.sessionReplay(sessionRole, sessionScope) && missingKey != "" {
 			record("transport", string(errs.AUTH),
 				fmt.Sprintf("fail-loud: channel %s requires env %s (not set)", channel, missingKey))
 			if a.ps != nil {

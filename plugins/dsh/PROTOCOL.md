@@ -1,4 +1,4 @@
-# Go ↔ DSH / Codex Pro worker 协议 v1
+# Go ↔ DSH / Codex Pro worker 协议 v1/v2
 
 此文件记录两种独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。两者之间只有本地 stdio，不开放 HTTP 端口。
 
@@ -20,6 +20,17 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 
 `permissionMode` 允许 `read-only`、`workspace-write` 和显式 `danger-full-access`。未知字段一律拒绝。v1 不接受 `sessionId` / resume、附件、任意额外 CLI 参数和额外写目录；不进行隐式冷启动替代恢复。
 
+scoped 调用显式使用 v2：原字段保持不变，增加必填 `persistent:true` 和可选的非空
+`sessionId`。省略 sessionId 创建新的持久会话；提供时只能恢复该精确 ID。
+
+```json
+{"type":"start","protocol":2,"requestId":"call-124","cwd":"/absolute/worktree","provider":"deepseek-account","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"根据当前契约和失败证据返修","timeoutMs":1800000,"persistent":true,"sessionId":"flywheel-uuid"}
+```
+
+v2 拒绝缺失或 false 的 persistent；v1 不接受这些 v2 字段。版本选择由 Go 的调用策略
+决定，不从用户提示词或后端错误正文猜测。SDK 初始化后、目录检查和 prompt 前通过
+公开 `session/resume` 恢复；missing、busy 或通用恢复错误均不自动冷启动替代。
+
 `provider` 明确选择认证路径：`deepseek-account` 使用 DSH 账号服务，`deepseek-official` 使用 API Key；不省略 provider 来猜桌面默认，worker 不在账号失败时自行换用 API。默认预设没有后备渠道，Go 仍可按用户显式配置的后备链执行原有策略。标准 SDK 与桌面在相同 DSH home 下默认共用账号授权存储，无需复制凭证。
 
 ## 运行参数
@@ -33,11 +44,13 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 
 worker 不搜索 `.app` 内部目录、不下载或更新 CLI、不复制桌面授权文件，也不读取或修改 Flywheel 的 `state.json`。Go 的凭证环境白名单仍是外层边界。
 
-worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。覆盖文件在临时目录内、权限为 `0600`，结束后移除。DSH 子进程继承 Go 建立的 worker 进程组，禁止再为 SDK 创建 detached 组。
+worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。覆盖文件在临时目录内、权限为 `0600`，结束后移除。DSH 子进程继承 Go 建立的 worker 进程组，禁止再为 SDK 创建 detached 组。覆盖禁用自主 goal／workflow／delegation、辅助模型调用及 `schedule`／`tool-schedule`；不修改用户 profile 或提醒存储。
 
 ## 输出帧
 
-每帧均含 `protocol:1`、原 `requestId`。顺序是 `ready` → 零或多个 `event` → 恰好一个 `result`；启动失败允许直接 `result`。创建 Session 时的权限事件会缓冲至 ready 之后。
+每帧均回显请求的 `protocol`（1 或 2）及原 `requestId`。顺序是 `ready` → 零或多个
+`event` → 恰好一个 `result`；启动失败允许直接 `result`。v1 创建 Session 时的权限
+事件缓冲至 ready 之后；v2 admission 前的恢复事件不转发为本轮活动。
 
 ### ready：SDK 配置与权限握手已通过
 
@@ -49,13 +62,16 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 
 1. 官方 SDK `initialize` 返回 `deepseek-harness-sdk-runtime`，adapter 接受指定 provider/model/effort。
 2. worker 策略插件经真实 `ctx.shell` 执行本地无副作用的 `:` 探针；退出码为 0、模式匹配且未被拒绝。受限模式还须报告 `sandbox.enforcement:full`，不可用或部分实施的沙箱拒绝通过；明确完全权限时记录 `confinedShell:false` 并省略 enforcement，不伪造 OS 强制。
-3. `session/working-directory/get` 创建全新的 Session，返回实际 cwd。
-4. Session 的 `sandbox/mode`、`approval/policy` 被固定，`ctx.sandboxPolicy.resolve()` 与 `ctx.approval.effectivePolicy()` 的实际读值形成 `flywheel/policy` 事件。
-5. worker 比对 policy 事件的 cwd、mode、`never` 及对应权限证据：受限模式为完整强制，完全权限为明确无 OS 限制。
+3. v2 指定历史时先调用公开 `session/resume`；随后 `session/working-directory/get` 返回所选 Session 的实际 cwd。无历史请求则创建新 Session。
+4. 在公开 `agent/created` 阶段固定原生 `sandbox/mode`、`approval/policy`；通过公开 `sandboxPolicy.resolve()` 与 `approval.overrideOf(session)` 读取实际策略，等待写入本次私有权限回执。不得调用私有 effectivePolicy，也不向持久历史追加自定义 `flywheel/policy` 事件。
+5. worker 限定大小读取普通非链接的回执文件，核对 nonce、requestId、sessionId、完整 cwd／mode／never 和权限证据。目录／文件权限为 0700／0600；非阻塞读取拒绝 FIFO，回执在本次运行后移除。
 
 任一项缺失，不发送 `session/prompt`。`never` 控制交互审批，不单独扩大访问范围；必须同时显式选择 `danger-full-access` 才请求完全权限。既有静态拒绝或外部权限不足仍按真实失败处理。
 
 `initialize` 返回 serverInfo，并通过 SDK 配置校验。ready 中的 provider/model/reasoningEffort 是配置被接受后的 worker 请求回显；尤其 reasoningEffort 不是模型服务独立返回的实际强度证明，也不证明账号额度或回答质量。
+
+v2 的 ready 另含 `persistent:true`、`resumed:boolean`；恢复时 sessionId 必须与请求
+精确匹配，不能返回一个新 ID 冒充恢复成功。serverInfo 不足以确认 SDK npm 包版本。
 
 ### event：可审计的原始持久事件
 
@@ -64,6 +80,9 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 ```
 
 只转发该根 Session 的持久事件，按 `seq` 去重。SDK streaming usage 不作重复累加。意外出现根 Session 的子智能体启动时，立即失败并关闭 SDK；编排与委派由 Go 管理。
+
+恢复过程中重放的旧事件不进入当前 output／usage fold，也不触发 Go 的 OnEvent。
+worker 在 admission 后、发送本次 prompt 前重置 fold，只计当前调用新增的输出与用量。
 
 ### result：关闭后的唯一结果
 
@@ -74,6 +93,20 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 成功必须同时具有：对应 messageId 的持久 inbox receipt、`session/wait` 返回、根 `turn/end.reason.kind:completed`、非空已提交 assistant text、SDK shutdown 确认及退出码 0。idle、超出输出 token 上限、半截文本或仅成功退出都不足以证明成功。
 
 `status` 是 `ok`、`error` 或 `cancelled`。失败提供 `error:{code,message}`；code 仅使用 Go 已有分类。`settled` 只描述 SDK 关闭证据；Go watchdog 对整个拥有的进程组做最终判定。强制终止 SDK 或未获得正常 shutdown 确认时，不能返回成功，也不能声称其原生托管进程已全部清理。
+
+v2 result 增加 `lifecycle`，不替代物理终态或原有字段。例如正常恢复后的结果包含：
+
+```json
+{"protocol":"dsh-sdk/session-resume/worker-v2","requestId":"call-124","sessionId":"flywheel-uuid","dispatch":"dispatched","outcome":"completed","cleanupConfirmed":true,"resumeCandidate":true,"resumeAccepted":true,"turnId":"1","usageStatus":"complete"}
+```
+
+dispatch 为 not-dispatched／dispatched／unknown，outcome 为
+completed／failed／cancelled／unknown；cleanup 独立判断。DSH 不暴露独立 runId。
+未知原生 turn kind、无效 resume/wait 响应和无法确认的失败保持 unknown，不能靠
+settled 或错误文本补出可信 outcome。恢复失败即使确认本轮未派发，也不证明旧结果。
+v1 wire 不增加 lifecycle；Go 在收到完整、身份匹配、物理成功的普通 v1 调用时生成
+`dsh-sdk/worker-v1` 标准化事实并回显引擎 requestId，resumeCandidate 恒 false；
+任意通用失败保持 unknown。
 
 DeepSeek 账号的 `ACCOUNT_SIGN_IN_REQUIRED`／`ACCOUNT_TOKEN_INVALID` 精确映射到 AUTH，`ACCOUNT_QUOTA` 映射到 QUOTA。`turn/end` 的 aborted 只在其 reason 为 `{kind:"hook",reason:"deepseek-account/signed-out"}` 时同归 AUTH。保留原始诊断与恢复同一账号的提示；未知 ACCOUNT 前缀、其他 hook 和普通 JSON-RPC 传输失败沿用原分类。worker 自身取消继续优先输出 cancelled，不把取消冒充认证失败。
 
@@ -107,7 +140,17 @@ Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 ad
 {"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000}
 ```
 
-只接受这些字段；不接受 provider、resume、threadId、额外写目录、任意 CLI 参数或未知权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 为 read-only／workspace-write／danger-full-access；最后一项在 Node adapter 边界映射为 machine API 的 `dangerously-bypass-approvals-and-sandbox`，Go 同时核对映射后的 requested 字段和 canonical 生效模式。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort，固定 threadMode=ephemeral、command=`FLYWHEEL_CODEX_BIN` 或 `codex`，不恢复旧线程。
+v1 只接受这些字段；不接受 provider、resume、threadMode、threadId、额外写目录、任意 CLI 参数或未知权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 为 read-only／workspace-write／danger-full-access；最后一项在 Node adapter 边界映射为 machine API 的 `dangerously-bypass-approvals-and-sandbox`，Go 同时核对映射后的 requested 字段和 canonical 生效模式。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort。v1 固定 ephemeral，command 为 `FLYWHEEL_CODEX_BIN` 或 `codex`。
+
+scoped 显式使用外层 v2，增加必填 `threadMode:"persistent"` 和可选的精确 threadId：
+
+```json
+{"type":"start","protocol":2,"requestId":"call-125","cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"按当前契约返修","timeoutMs":1800000,"threadMode":"persistent","threadId":"existing-thread"}
+```
+
+v2 拒绝 ephemeral、缺失模式和空／非法句柄；所有 progress/result 回显外层版本。
+嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.8.0。
+不通过 v2 发明上游尚未提供的 read-only recovery、实时查询或持久化确认。
 
 **这里与 DSH worker 的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或第二条非空输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
 
@@ -131,6 +174,14 @@ Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/threa
 
 effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
 
+Go 由可信 receipt 生成 `codex-pro/0.8.0/worker-v1` 或 `worker-v2` 的 SessionOutcome。
+只有正常 completed、cleanup 已确认且 persistent 的结果才具备 resumeCandidate；
+这是适配器证据支持的尝试资格，不是 rollout 已持久化的证明。显式恢复必须接受同一
+thread，requested／outcome／execution 的 thread 身份和 thread/start、thread/resume
+来源均须一致。缺失／坏 receipt、流错误或 worker 异常保持 unknown。只有可信的
+request／initialize／新 thread-start 等派发前阶段可证明 not-dispatched；thread-resume
+拒绝仍未知，不从 busy／no-rollout 文本猜测安全冷启动。
+
 ### 取消与进程终态
 
 worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理结果，再分别退出 130／143／129；父连接断开为失败。Go 为 Codex Pro worker 保留至少 10 秒终止宽限，全局 kill switch 不提前缩短该子进程的宽限。插件 guardian 拥有 app-server 进程组；worker 意外死亡由插件自己的连接与 guardian 负责终止其拥有的进程。Go 未收到完整回执时不能把内部清理记为已确认，主动脱离拥有进程组的外部程序不属于此保证。
@@ -149,6 +200,27 @@ worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理�
 
 Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、模型、完整策略或真实推理能力，`--probe` 也不会对 Codex Pro 发模型任务。
 
+## Go 角色账本与回执恢复
+
+`Result.Session` 是 Go 的标准化调用事实，不是给所有旧 wire 格式新增字段。
+Codex Pro、DSH、Kimi 的主任务 Plan／Execute／Review／Judge 在 fresh/scoped 下都由
+Go 保存 intent，再执行一次调用并写入限定大小的原子回执。`last.persistent` 独立控制
+角色历史复用；fresh 的原始会话 ID 可保留作审计，但不成为通用 scoped 句柄。既有
+Kimi Plan resident 选择保留，Intake／Garden、其他适配器及 mock 保持原路径。
+
+Kimi 的标准化协议名为 `kimi-print/v1`。被引擎跟踪的调用严格检查完整 JSONL 与最终
+resume_hint，恢复 ID 必须匹配；没有远端 runId／turnId 或可归属 usage，保持 unknown
+用量。CLI 正常成功只支持正常续接资格，不构成任意中断后的持久化或清理证明。
+
+待消费结果须绑定原任务、物理 cwd、运行绑定、候选和原始角色保护证据。
+`guard-before`／`guard-after` 持久化，Review／Judge 还绑定原契约及原验证证据；
+重启后不得重新采样“调用前”状态或重跑验收来使旧裁决有效。Plan 获准的契约修订仍
+由完整调用后候选与非契约保护检查约束。回执消费与计量通过状态 CAS 一起推进；
+消费已完成结果不重复派发或计费，预算继续约束新的调用。
+
+未知 dispatch／outcome／cleanup 会阻止继续执行，包括变更模式或适配器后。
+本轮实现正常终态续接与已保存回执恢复，不扫描后端历史，也不提供实时恢复 API。
+
 ## 桌面控制响应（独立于 worker JSONL）
 
 桌面控制层调用 Go 的 `control` 命令，只接收一个 JSON 文档，不把它与上述 worker 流混用。原 `start/status/stop` 继续支持，下列入口复用同一协议：
@@ -164,7 +236,12 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
-`configuration` 含 source、scope、cwd、taskDir、bindings。每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+`configuration` 含 source、scope、cwd、taskDir、sessions、bindings。sessions 是 mode／policy-version 的配置；每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+
+有会话记录的状态快照另含紧凑 `sessions` 数组：role、scope、generation、action、reason、
+resumeCandidate，以及 last 的 status、persistent、dispatch、outcome、cleanupConfirmed、
+usageStatus、accounted。投影只读取已校验的 state，不打开后端历史或原始回执；旧的
+完整 state 字段继续保留。状态查询不会核销回执、修改计量或解除未知调用的阻断。
 
 `diagnostic` 含 kind=`doctor`、ok、cwd、taskDir、probeRequested、inferenceTested=`false`、可选 configuration，以及 checks 数组。check 为 id/status/summary，可附 code/remedy；status 只允许 pass/fail/warn/unknown/skipped。配置本身无效时允许没有 configuration，仍返回完整失败检查项。
 
@@ -265,4 +342,8 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 
 ## DSH 宿主兼容性（0.28.4）
 
-包声明只接受 `0.2.1-rc.5` 与 `0.2.2-rc.1`。新 SDK 会按策略文件所属包的 engines.dsh 校验其准入，旧包被禁用时缺少 flywheel/policy 回执，Go 必须拒绝派发模型 prompt。权限插件在公开 agent/created 阶段（创建公告结束后、首个模型请求之前）写入显式 approval/policy，不在 session/created 只读公告中追加事件，再只读公开 approval.overrideOf(session)，不访问私有 effectivePolicy；未知／缺失回执仍不放行。
+包声明只接受 `0.2.1-rc.5` 与 `0.2.2-rc.1`。新 SDK 会按策略文件所属包的 engines.dsh 校验其准入；策略插件未加载就没有本次私有权限回执，worker 必须拒绝派发模型 prompt。权限插件在公开 agent/created 阶段（创建公告结束后、首个模型请求之前）写入显式 approval/policy，不在 session/created 只读公告中追加事件，再只读公开 approval.overrideOf(session)，不访问私有 effectivePolicy。证明通过本次 nonce/request/session 关联的私有文件返回，不追加自定义持久事件；未知／缺失回执仍不放行。
+
+持久化 create／新进程 resume 的公开 SDK 验证针对 `0.2.2-rc.1` SDK、JSONL persistence
+与 AgentLoop。`0.2.1-rc.5` 的 Host／UI／插件兼容测试不代表历史恢复已验证。无真实
+账号、模型或 Mac 实机的测试不能证明这些环境通过，也不构成性能／缓存收益实验。

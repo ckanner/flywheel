@@ -308,6 +308,8 @@ Codex Pro checks actually import the public API and verify exact version 0.8.0/p
 | `unknown` | Not verified, such as entitlement, quota, or real inference |
 | `skipped` | Not required, mock mode, duplicate probe, or an unmet prerequisite |
 
+`sessions.policy` confirms only the configured mode and version. Each applicable real binding's `.session` check reports selection, reason, and adapter support, while history recovery remains unknown. Doctor does not restore user histories, send a test turn, or treat a successful worker import as proof of durability.
+
 No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache/session files; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
 
 Repository references: [inline defaults](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json), [complete profiles](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json), [design](https://github.com/ckanner/flywheel/blob/main/docs/design.md), and [worker protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md).

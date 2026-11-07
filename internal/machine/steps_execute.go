@@ -133,7 +133,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			return execOutcome{Stopped: true}, nil
 		}
 		// 宁可 fail-loud 也不要把无 key 的 spawn 送进 pi 的 auth.json 陷阱（P1-12②）。
-		if missingKey := c.missingKeyForRealDriver("execute", channel); missingKey != "" {
+		if missingKey := c.missingKeyForRealDriver("execute", channel); !c.sessionReplay("execute", id) && missingKey != "" {
 			c.recordRetry(ps, "transport", string(errs.AUTH),
 				fmt.Sprintf("fail-loud: channel %s requires env %s (not set)", channel, missingKey))
 			c.save()
@@ -246,7 +246,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 					return execOutcome{}, err
 				}
 				if !restored {
-					if err := removeCollectedReport(filepath.Join(executionTaskDir, reportRel)); err != nil {
+					if err := removeCollectedReport(filepath.Join(executionTaskDir, reportRel)); err != nil && !(replay && os.IsNotExist(err)) {
 						return execOutcome{}, err
 					}
 				}

@@ -86,11 +86,14 @@ Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.
 
 规划检查点提交前后核对候选内容，并检查新 HEAD 的路径范围与已提交契约。Git hook 修改已加载契约、仅修改 index、或混入实现变更时拒绝继续同步；保留工作区，要求重新加载并验证。
 
-当前实现中，Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinking/permission-mode 全部匹配时恢复。其他后端冷启动；旧版本缺少权限身份的会话也先冷启动一次，保存完整身份后才可恢复。恢复失败有一次冷启动路径，再受传输重试和预算约束；会话不是状态真相。其他角色的连续性与更细的兼容策略仍待会话方案实施。
+scoped 下 Plan 按任务／里程碑保存自己的历史，显式 `resident-session:false` 继续关闭
+Plan 复用；省略该字段不等于关闭。fresh 保留既有 Kimi Plan resident 选项，但不把它
+记录为通用作用域可复用句柄。实际绑定、工作目录、权限和运行配置不匹配时不续用旧
+历史；未知调用先阻断，不能以冷启动覆盖。会话不是状态真相。
 
 ### 4.2 Execute
 
-默认每 packet 一个 worktree。边界检查锚定执行前的 base-ref，executor 自己提交不能把变更从边界 diff 中抹去。当前实现的重试重用工作区中的成果，但仍新建模型会话；这是现有调用路径的限制，不再是架构不变量。会话方案拟让同 packet、同角色的普通返修在资格满足时延续上下文。失败命令、输出、边界违规、评审原因以及进程错误进入 `last-feedback`，放在提示词的易变尾部。
+默认每 packet 一个 worktree。边界检查锚定执行前的 base-ref，executor 自己提交不能把变更从边界 diff 中抹去。重试重用工作区中的成果；scoped 下同 packet、同角色的普通返修在正常终态和身份资格满足时延续 Executor 历史，fresh 不启用通用历史复用。失败命令、输出、边界违规、评审原因以及进程错误进入 `last-feedback`，放在提示词的易变尾部。
 
 执行者可修改实现、单元测试和回归测试，不得削弱断言或改动受保护验收、Spec、packet、配置。不能通过更改覆盖率阈值来完成任务。提示词的稳定部分包含实际 `must-not-touch` 路径和 `protected-test-patterns`，而不只提规则名称。发现范围或 oracle 错误应向 Plan 返回证据；超出 Plan 可写范围的修订继续交人处理。
 
@@ -102,7 +105,9 @@ Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.
 
 评审在实际候选 worktree 中运行，输入为契约、权威 diff、确定性验收和缺陷注入结果；Quick 最终 Review 还接收适用 L2/L3 与全部需求的完成要求，不读 executor transcript。宿主权限由 `permissions.mode` 决定：role-based 请求 read-only，full-access 请求完全权限；后端不能实施所选权限时拒绝运行。两种模式下评审都只负责判断，不得修改候选代码或验收依据。
 
-当前每次 Review 仍新建会话。独立性的要求是与 Executor 隔离；按拟议策略，同范围复审可延续 Reviewer 自己的上下文，但必须重新检查完整当前候选和适用需求，不能只关闭上轮 findings 或沿用旧 pass。
+Review 始终与 Executor 历史隔离。scoped 下同范围复审可延续 Reviewer 自己的上下文，
+但必须重新检查完整当前候选和适用需求，不能只关闭上轮 findings 或沿用旧 pass。
+Quick 最终 Review 与 Full 单元 Review 的职责不同，不能互用旧会话或裁决。
 
 评审前后都检查候选身份。即使模型返回 pass，只要候选、契约、验证配置或本 packet 报告发生变化，该裁决就不能推进完成。评审提示要求检查断言质量、覆盖矩阵、范围和设计；100% 覆盖率本身不是充分证据。
 
@@ -141,7 +146,7 @@ L1 与 Review 的 `identity` 绑定：
 
 ### 4.7 Quick 最终评审与升级
 
-Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用与 Executor 隔离的上下文（当前实现每次新建会话），既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。拟议的同范围复审续用不增加首次成功路径的固定模型阶段。
+Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用与 Executor 隔离的上下文，既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。同范围复审续用不增加首次成功路径的固定模型阶段。
 
 最终 Review 的结构化 verdict 为 `pass|return|verification-gap|upgrade`，另含 `quick-eligible` 和 `requirements:[{id,pass,evidence}]`。全部 Spec 需求必须各列一次，evidence 非空；pass 要求全部需求通过且 Quick 资格仍成立，upgrade 表示资格不再成立。实现缺陷进入已有有界执行重试。新增 packet 可在 `done-report-format` 中声明 `workflow-risks: []`，执行者通过字符串数组报告新风险，由 Go 在最终评审前处理。
 
@@ -154,6 +159,30 @@ Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。�
 ## 5. 状态、持久化和恢复
 
 `state.json` 仅由 `internal/state` 写入：schema 校验、进程间锁、revision CAS、临时文件与原子 rename。任务生命周期另持 `.run.lock`；lease 是并发运行与停止完成的判断依据。运行信息文件原子更新，包含用于关联本次运行的随机 control token；PID 只作展示，不作为停止授权。日志、pid、锁、停止请求及临时控制文件不进入提交。
+
+`state.sessions` 是可选、版本为 1 的角色账本。旧状态缺字段可继续读取，未知版本或
+损坏结构明确失败。记录按 Plan／里程碑、Execute／packet、Review／评审职责、
+Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd、绑定／目标／契约身份、
+generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
+intent／received／consumed／blocked、派发／结果／清理和用量事实。
+
+调用安全记录与历史复用分别控制。Codex Pro、DSH、Kimi 的主任务调用在 fresh/scoped
+下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
+的可信结果才保存可复用句柄。fresh 的原始后端会话标识仍可保留在回执中，既有 Kimi
+Plan resident 行为不冒充跨里程碑的通用会话。其他适配器、mock 与 Intake／Garden
+保留原路径。模式或后端变化不能绕过已保存的未知调用。
+
+每个作用域有一个 `.sessions` 原子回执槽，使用私有目录／文件、限定大小与禁止符号
+链接的读取；回执不进入 Git，历史审计事实进入 metrics。只有已保存且身份匹配的调用
+意图才能接纳回执。可信回执先落盘，再由 revision CAS 保存阶段结果与计量；崩溃后
+可消费相同结果，不重新派发或重复计费。无可信终态／清理证明时保持 blocked，不扫描
+历史、不按错误正文猜测安全冷启动，也不声称已具备实时或任意崩溃恢复能力。
+
+Plan、Review、Judge 的原始保护证据作为 `guard-before`／`guard-after` 同时持久化
+在调用记录和回执中。恢复不能重新采样“调用前”身份，不能以新的 L1、L2/L3 或缺陷
+抽检替换待消费回执的原证据。Review／Judge 的 pending 回执还要求精确原契约；Plan
+获准修订契约时由完整调用后候选和原始非契约保护证据约束。已经消费的历史可以接收
+兼容的验收修订，但下一次调用必须携带当前输入并重新验证。
 
 Spec 可选 `workflow` 对象的版本为 1，字段为 `version`、`mode`、`reason`、`scope-clear`、`implementation-known`、`verification-complete`、`review-sufficient`、`evidence`、`risks` 与 `not-applicable`。其中只有 version、mode 必填；其余字段不足以证明 §4.0 的资格时走 Full。`not-applicable.L2/L3` 为相应检查缺省时的具体理由；只有短标记或空白不算证据。完整示例见[工作流策略与恢复](configuration.md#工作流策略与恢复)。策略属于任务契约，不在模型配置文件中。
 
@@ -191,7 +220,7 @@ Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既�
 
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
 
-清理是否已确认另于 provider 错误码判断。已启动的 Codex Pro worker 丢失可信清理回执时，外层 worker 的退出不证明独立 guardian／app-server 进程组已经静止；driver 必须记录 `CleanupError`。所有模型阶段在记录回执和计量后遇到该字段即保存升级记录、保留工作区并停止本次运行，禁止传输重试、渠道降级、Plan 冷启动和下一任务。正常服务错误若已有可信清理确认仍适用原重试策略。恢复前须确认遗留进程已停止；固定等待一段时间不能冒充清理证明。
+清理是否已确认另于 provider 错误码判断。已启动的 Codex Pro worker 丢失可信清理回执时，外层 worker 的退出不证明独立 guardian／app-server 进程组已经静止；driver 必须记录 `CleanupError`。所有模型阶段在记录回执和计量后遇到该字段即保存升级记录、保留工作区并停止本次运行，禁止传输重试、渠道降级、Plan 冷启动和下一任务。支持的主任务适配器还独立判断 dispatch/outcome：清理已确认也不能使未知派发或未知结果变为可重试。只有可信调用事实允许时才执行既有错误重试策略。恢复前确认遗留进程已停止只解决清理事实；没有可信结果回执仍阻断，固定等待也不能冒充证明。
 
 SIGTERM 先取消运行上下文，再终止本任务登记的进程组。运行栈完成缺陷恢复等清理后返回 interrupted，CLI 退出 143。进程组清理只作用于本次拥有的子进程，不扫描并杀死之后创建的其他任务。显式脱离进程组的外部进程不属于普通 POSIX 进程组保证；DSH worker 必须完成 SDK shutdown／退出确认，SDK 负责排空自身托管命令，外层仍由 Go 看门狗兜底。
 
@@ -224,7 +253,7 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 
 ### 7.1 Codex Pro 接入契约
 
-`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或 resident session。每次调用创建新会话，权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
+`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。fresh 使用外层 worker v1 与 ephemeral 历史；scoped 使用外层 v2、persistent 模式及可选的精确 threadId。内部仍是插件 0.8.0 的 machine API／原始 receipt 协议 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
 
 worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
 
@@ -241,6 +270,12 @@ worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1
 每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露 usage，按未知处理。
 
 `unknown-usage-calls` 和 `unknown-cost-calls` 与已知总数并存。hard token budget 遇当日未知 usage 停止，因为限额无法证明；soft 默认可继续并明确告警。配置为 off 只关闭熔断，不关闭计量。价格只接受 driver 真实值或用户显式提供的定价，不内置会过期的推测账单。
+
+计量只接纳与当前调用身份一致、可归属的增量。Codex Pro 不把 threadTotal 当作本轮
+增量，DSH 恢复后清空旧输出和 usage fold，受跟踪的 Kimi print 调用保持 usage
+unknown。身份错配的结果可以保留原始回执作审计，但其 usage/cost 不能进入已知总数。
+预算限制新的派发；消费已完成的可信回执不额外发请求或计费，不应因预算已满丢掉该
+结果。回执消费后需要的新阶段或重试仍受预算门禁控制。
 
 ## 9. 权限与宿主能力
 
@@ -260,13 +295,19 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 本环境没有用户 Mac/订阅会话。离线通过不能标为 Mac live 通过；桌面渲染、Seatbelt、本机 CLI 版本与真实账号响应按插件 README 的清单另验。
 
-本轮实际运行的门禁、结果及未验范围见 [2026-11-07 自适应工作流验收记录](validation/2026-11-07-adaptive-workflow.md)。
+自适应工作流阶段已经运行的门禁、结果及未验范围见
+[2026-11-07 自适应工作流验收记录](validation/2026-11-07-adaptive-workflow.md)。
+它不替代本轮会话生命周期实现的重新验证；当前运行的结果须另行记录，不能沿用旧环境的通过声明。
 
 ## 11. 后续增强
 
 2026-11-06 [自适应工作流方案](plans/2026-11-06-adaptive-workflow.md)的第一阶段在本实现中落地：宿主统一准备启动、保守选择 Quick／Full、两阶段 Quick 与单向升级、DSH 具体任务关联。方案正文保留原始背景和分期计划；现行字段与接口以本设计、schema 和使用指南为准。
 
-2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)替换“一律新会话”的设计规则，运行时尚待实施。先接通 Codex Pro 已确认终态后的正常续用，再覆盖默认 DSH／Kimi 路径，并与插件公开协议配合完成中断核对；保持 machine API、Go 状态所有权、独立评审和现有交付门禁。
+2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)的 P1/P2 在本轮接通：
+Codex Pro、DSH、Kimi 的正常终态续用、角色账本、调用安全记录及可靠回执恢复。
+P3 仍需要上游插件公开实时调用查询、只读恢复和持久化确认；不能用外层 worker v2
+假装这些能力已存在。P4 的真实账号、质量、缓存与性能基准未完成；离线协议及恢复
+测试不能替代这些实验。保持 machine API、Go 状态所有权、独立评审和现有交付门禁。
 
 多 agent 并行、任务团队、附件协议、系统级强隔离，以及基于真实任务指标的进一步自动路由，仍需后续独立实施和验收。具名 profiles 保持加载期展开，不增加第二套调度器或自动付费后备路径。当前阶段采用顺序的独立执行／评审会话；没有宣布原生 Teams 或并行调度可用。
 
@@ -290,7 +331,7 @@ flywheel control config --cwd /repo
 flywheel control doctor --cwd /repo --task-dir /repo/docs/task --probe
 ```
 
-控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
+控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。有角色记录时增加紧凑 sessions 投影，显示角色／作用域、代次、动作／原因和最新调用的状态、派发、结果、清理、persistent 与 usageStatus，不读取原始回执或会话正文。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
 
 配置查看与本地 doctor 不物化全局配置、不写任务状态、不建 worktree、不执行验收命令。doctor 默认仅检查配置、契约和本地命令；显式 probe 才启动 DSH SDK 的无推理握手与权限检查，不发送 session/prompt。检查总预算 40 秒，另留进程清理窗口；相同 cwd/provider/channel/model/effort/权限的探测只做一次，不同账号渠道与读写权限不能合并。
 
@@ -324,13 +365,19 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 原生 UI 接入和独立 worker 是不同边界。SDK worker 的临时 `--patch` 仅用于该子进程，不修改桌面 profile，也不卸载桌面的插件、skills、工具或 UI。桌面已加载插件、已登录账号、已选模型，不代表 SDK profile 或其他 harness 已配置相同能力；控制面显示引擎实际配置，不静默继承或迁移桌面设置。
 
-现有 worker 策略固定每次调用的目录、权限和审批，限制自主委派及 workflow／goal 驱动，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。本轮完全权限改变宿主访问策略，仍保留这些工具与辅助模型调用限制；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
+现有 worker 策略固定每次调用的目录、权限和审批，限制自主委派及 workflow／goal 驱动，禁用 `schedule`／`tool-schedule` 的自主提醒输入，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。临时覆盖不修改用户提醒存储。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。本轮完全权限改变宿主访问策略，仍保留这些工具与辅助模型调用限制；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
 
 ## 13. 配置和分发
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。
 
 可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
+
+顶层 `sessions` 的字段信源为 `templates/session-policy.schema.json`：mode 为
+fresh／scoped，policy-version 固定为 1。旧文件省略时保持 fresh；两份新模板显式
+scoped，模型迁移保留旧文件的会话策略或其省略。显式不完整、null、未来版本和未知
+字段在调用前失败。配置查看与 Doctor 只报告模式、适配器支持和原因，
+historyRecoveryTested 始终 false，不为验证历史而发模型请求。
 
 provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后备渠道。实际 provider 按 binding.provider → channels[channel].provider → 旧 DSH channel 名解析；两个显式 provider 不一致时拒绝加载。非 DSH harness 不能声明一个会被静默忽略的 provider。降级到另一个 channel 时重新解析其 provider，不能沿用旧账号的适配器。原始 profile 名只作配置来源，不进入 Kimi 恢复身份；实际绑定改变按原有会话条件冷启动。模型绑定改变影响后续调用，不单凭未使用 profile 的改动使历史代码验收失效。
 

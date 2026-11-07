@@ -79,8 +79,30 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 			}
 		}
 	}
+	// A saved terminal result needs its declared credential references, never a
+	// currently available credential value. Keep those names when a secret is
+	// removed between dispatch and result application, without changing child env.
+	identityArgs := a
+	identityArgs.APIKeys = map[string]string{}
+	for name := range a.APIKeys {
+		identityArgs.APIKeys[name] = ""
+	}
+	if key := c.Config.Channels[a.Binding.Channel].EnvKey; key != nil {
+		identityArgs.APIKeys[*key] = ""
+	}
+	if packet := c.Packets[a.PacketID]; packet != nil && packet.NeedsLiveCredentials {
+		if credentials, ok := c.State.Packets[a.PacketID].Evidence.Credentials.(map[string]any); ok {
+			if injected, ok := credentials["injected-env"].([]any); ok {
+				for _, value := range injected {
+					if name, ok := value.(string); ok {
+						identityArgs.APIKeys[name] = ""
+					}
+				}
+			}
+		}
+	}
 	binding := sessionHash([]any{config.SessionPolicyVersion, a.Binding, a.Model, a.PermissionMode,
-		c.Config.Channels[a.Binding.Channel].EnvKey, sessionRuntimeIdentity(a)})
+		c.Config.Channels[a.Binding.Channel].EnvKey, sessionRuntimeIdentity(identityArgs)})
 	return binding, sessionHash(goal), sessionHash(contractInput)
 }
 
@@ -182,6 +204,11 @@ func applySessionFacts(record *state.SessionRecord, result drivers.Result, diges
 	if safeSessionOutcome(result, record.Last.ID) && candidate != "" {
 		record.Last.Status = "received"
 		record.ResumeCandidate = record.Last.Persistent && s.ResumeCandidate && s.SessionID != ""
+		// A proven startup/admission failure did not touch the previously
+		// confirmed history. Keep that checkpoint for the existing bounded retry.
+		if record.Last.Persistent && record.Last.RequestedThread != "" && (s.SessionID == "" || s.SessionID == record.Last.RequestedThread) && s.Dispatch == "not-dispatched" && s.Outcome != "completed" {
+			record.ThreadID, record.ResumeCandidate = record.Last.RequestedThread, true
+		}
 	}
 }
 
@@ -344,7 +371,8 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	c.Log(fmt.Sprintf("session %s: %s (%s)", key, action, reason))
 	result := call(args)
 	if result.Session != nil {
-		invalid := thread != "" && (result.Session.SessionID != thread || !result.Session.ResumeAccepted)
+		unsent := safeSessionOutcome(result, r.Last.ID) && result.Session.Dispatch == "not-dispatched" && result.Session.Outcome != "completed"
+		invalid := thread != "" && ((result.Session.SessionID != "" && result.Session.SessionID != thread) || (!unsent && (result.Session.SessionID != thread || !result.Session.ResumeAccepted)))
 		for otherKey, other := range c.State.Sessions.Records {
 			if otherKey != key && result.Session.SessionID != "" && other.ThreadID == result.Session.SessionID && other.Protocol == result.Session.Protocol {
 				invalid = true

@@ -328,7 +328,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			return planOutcome{Stopped: true, Packets: packets}, nil
 		}
 		// 宁可 fail-loud 也不要无 key spawn（P1-12②）。
-		if missingKey := c.missingKeyForRealDriver("plan", channel); missingKey != "" {
+		if missingKey := c.missingKeyForRealDriver("plan", channel); !c.sessionReplay("plan", milestone.ID) && missingKey != "" {
 			c.Log(fmt.Sprintf("plan: fail-loud — channel %s requires env %s (not set)", channel, missingKey))
 			return planOutcome{ErrorCode: errs.AUTH, Packets: packets}, nil
 		}

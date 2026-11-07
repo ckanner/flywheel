@@ -90,7 +90,7 @@ reasoningEffort = off | low | high | max
 
 npm 启动器自动解析并注入 `FLYWHEEL_CODEX_PRO_WORKER`。独立 Go 二进制默认从 PATH 查找 `flywheel-codex-pro-worker`，源码开发可显式设为构建后的 `dist/codex-pro-worker.js`。`FLYWHEEL_CODEX_BIN` 可指定底层 Codex 可执行程序，默认 `codex`；`CODEX_HOME` 沿用用户选择的配置／登录目录。Go 会将这些运行必需项交给插件，不把凭证复制到配置、契约或 Git。
 
-新调用使用 ephemeral 会话，权限由 `permissions.mode` 决定，approval 为 never。role-based 选择 `read-only`／`workspace-write`；full-access 请求 `danger-full-access`。插件运行前核对模型、cwd 和权限模式，完整 sandboxPolicy 由 Flywheel 在返回后审查。受限模式允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用；完全权限则核对 `dangerFullAccess` 策略，不声称 OS 隔离。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
+fresh 调用使用 ephemeral 历史与外层 worker v1；scoped 使用外层 v2、persistent 模式和可选的精确 threadId。内部仍消费插件 0.8.0 的 machine API／原始 receipt 协议 1。权限由 `permissions.mode` 决定，approval 为 never。role-based 选择 `read-only`／`workspace-write`；full-access 请求 `danger-full-access`。插件运行前核对模型、cwd 和权限模式，完整 sandboxPolicy 由 Flywheel 在返回后审查。受限模式允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用；完全权限则核对 `dangerFullAccess` 策略，不声称 OS 隔离。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
 
 完整 machine receipt 写入指标，保留 accepted effort、未知 effectiveEffort、usage 完整性与进程终态。插件正常收尾可能主动 TERM/KILL app-server，其物理 exit code 可以为空；Flywheel 只有在完整终态证明任务完成、清理已确认且外层 worker 干净退出时才能继续。取消、超时、截断、启动或清理失败均阻止成功。Go 为此 worker 预留至少 10 秒终止宽限，避免截断插件内部清理。
 
@@ -101,6 +101,24 @@ flywheel-codex-pro-worker --doctor
 ```
 
 成功输出单行协议 1 JSON，精确版本 0.8.0，`available:true`、`inferenceTested:false`。它不启动 Codex app-server，不读取登录凭证，不证明账号或实际沙箱可用。日常仍应使用下面的 Go doctor，以核对完整配置来源与所需阶段。
+
+## 角色历史与调用安全记录
+
+`sessions.mode=scoped` 为同任务／角色／作用域保留可续接历史。Executor 返修可以延续
+原执行历史，Reviewer 只延续自己的历史并重新检查完整当前候选；Judge 与第二意见
+互相隔离。新模板显式 scoped，旧配置缺省 fresh，Plan 显式 `resident-session:false`
+继续关闭该角色复用。完整配置见[会话策略](../../docs/configuration.md#会话策略历史复用与调用安全)。
+
+Go 在 fresh/scoped 下均记录支持的 Codex Pro、DSH、Kimi 主任务调用；fresh 不启用
+通用角色历史复用，保留既有 Kimi Plan resident 行为。其他适配器、mock 及
+Intake／Garden 保留原路径。派发、结果或清理未知时阻止继续运行，不通过新建会话、
+切换模式或扫描历史绕过。`status`／`control status` 可只读查看角色、作用域、动作／
+原因和最新调用事实；恢复候选不代表历史已持久化。
+
+DSH v2 使用公开 `session/resume` 恢复精确 sessionId，每次仍创建独立 SDK 进程。
+恢复后的旧事件不进入本轮输出／用量或活动回调，当前调用重新进行目录和权限检查。
+正常终态后的续接与已保存回执恢复属于 P1/P2；没有声明实时调用查询、任意崩溃或
+跨机器恢复可用（P3），真实质量、缓存与性能实验（P4）仍未完成。
 
 ## 无模型请求的 doctor
 
@@ -187,7 +205,7 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 
 ## 权限、上下文与报告归档
 
-每个调用使用新的 SDK Session；provider/model/effort 在该进程中固定。v1 不支持 resume、图像/附件输入或 SDK 原生 output schema。文本与报告文件由 Go 的冻结合同和 JSON Schema 验收，不能把 SDK idle 当成验收完成。
+每个调用使用独立 SDK 进程，provider/model/effort 在该进程中固定。v1 创建新的 Session；v2 通过公开 session/resume 恢复 Go 指定的历史，缺失／忙碌／通用恢复失败不会自动替换成新会话。图像／附件输入和 SDK 原生 output schema 仍不支持。文本与报告文件由 Go 的冻结合同和 JSON Schema 验收，不能把 SDK idle 当成验收完成。
 
 SDK 接受模型与 effort 配置不代表远端服务证明了实际推理强度。`ready.reasoningEffort` 是初始化成功后的请求回显；只有实际任务评估才能判断更高 effort 是否改善交付。账号未登录和 token 失效精确归 AUTH，退出账号导致的已知取消事件同样归 AUTH；账号额度不足归 QUOTA。保留原始原因并提示恢复同一账号；默认预设不提供 API Key 后备。
 
@@ -195,7 +213,7 @@ worker 支持 `read-only`、`workspace-write` 和显式 `danger-full-access`。�
 
 执行报告仍先写到 worktree 内的任务报告路径，由 Go 校验后归档到主任务目录。权限模式来自明确配置，不能因为报告写入失败而暗中扩大它；任务边界、冻结验收和候选身份检查保持有效。
 
-默认覆盖会关闭 DSH 自主委派、workflow、goal 驱动、模型生成标题及自动模型压缩，避免在一个 Go 工作单元之外再启动辅助模型调用。需要压缩/继续执行时由 Go 显式决定下一次任务；超出上下文或输出 token 限制不会伪装成成功。SDK profile 应只装所需的可信 provider /工具，第三方 Host 插件本身是进程内代码，不能由本包替它提供任意代码隔离。
+默认覆盖会关闭 DSH 自主委派、workflow、goal 驱动、模型生成标题及自动模型压缩，并禁用 `schedule`／`tool-schedule`，避免辅助调用或到期提醒自行向 Go 所拥有的会话追加输入。该临时覆盖不修改用户提醒存储。需要压缩／继续执行时由 Go 显式决定下一次任务；超出上下文或输出 token 限制不会伪装成成功。SDK profile 应只装所需的可信 provider／工具，第三方 Host 插件本身是进程内代码，不能由本包替它提供任意代码隔离。
 
 这份临时覆盖只用于每次独立启动的 **SDK worker 进程**，不修改桌面 profile，不卸载或隐藏桌面已有的插件、skills、对话工具及 UI。反过来，桌面已安装插件或已登录账号，也不证明 SDK profile 已加载并授权相同能力；应按对应 harness 的配置和正式授权流程核对。
 
@@ -205,9 +223,19 @@ worker 支持 `read-only`、`workspace-write` 和显式 `danger-full-access`。�
 
 官方 rc.5 SDK 没有 per-turn cancel，所以使用每调用一个 SDK 进程。worker 请求 `shutdown` 并等待退出；SDK 自己排空其托管命令。Go 继续负责外层 deadline、取消及它拥有的进程组清扫。正常 SDK 关闭未被证明时结果失败，不能进入成功验收。worker 已启动但终态回执缺失或协议损坏时会记录清理未确认并停止本次运行，不自动重试或降级；恢复前先确认该次调用的 SDK 托管进程已停止。Go 默认 5 秒 kill grace 应保留，以给 worker 清理窗口；不要配置短于桥接清理预算的值。
 
+子进程已退出不证明调用结果已知。Go 的角色账本还要求可信 dispatch/outcome 及原始
+候选／契约／保护证据；重新验证或重启不能把越界修改后的旧裁决变为通过。权限证明
+使用每次调用独立的私有 nonce 回执文件，仅持久化官方 sandbox/mode 与 approval/policy
+事件；不向后端历史追加自定义 flywheel/policy 事件，以保持公开 SDK 的历史解析兼容。
+
 测试覆盖离线 worker 全生命周期与事件折叠；桌面 command/tool 入口一致；构建后的浏览器模块在 React 与 jsdom 中运行插件自有控件、store handle 和 observable。组件夹具适配槽位桥接和 Remote，另用已发布的 rc.5 renderer、slots 与 Cordis 检验真实注册、会话绑定、声明收起／恢复及卸载；这两类测试都不验证真实宿主几何布局。还覆盖 Go 与 Node 的配置、诊断和失败契约，以及安装记录校验、用户配置优先和损坏入口拒绝。根目录的 npm 安装测试使用实际六包 tarball、隔离目录和 DSH 协议桩，验证完整安装流程。前轮还核对官方 npm rc.5 的真实 Host commands/tools 注册、SDK 初始化／关闭，以及当前 Linux 无可用沙箱时在 prompt 前 fail closed。前轮运行结果见[验证记录](../../docs/validation/2026-11-01-results.md)。
 
 尚未在用户 Mac 实测：桌面安装和 UI 渲染、Seatbelt 探针、实际 Flash/GPT 推理、授权可见性及断电恢复。Linux 上的 CLI 加载成功不代替这些验证。不会将协议桩写成付费模型成功的证据。
+
+本轮持久化 create → 关闭 → 新进程 resume 的离线验证使用公开
+`0.2.2-rc.1` SDK、JSONL persistence 和 AgentLoop，检查恢复旧上下文且只输出／计量
+新调用。`0.2.1-rc.5` 的宿主／UI／插件兼容测试不代表该版本的持久化恢复已验证。
+SDK serverInfo 的版本不作为 npm 包版本证明；真实账号、Mac 与性能实验仍单独验收。
 
 完整输入、事件、usage 与关闭语义见 [PROTOCOL.md](PROTOCOL.md)。
 
