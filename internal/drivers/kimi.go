@@ -27,23 +27,26 @@ const KimiDefaultModel = "kimi-code/k3.1-pro"
 const KimiCommandEnv = "FLYWHEEL_KIMI_BIN"
 
 type KimiArgs struct {
-	Prompt    string
-	SessionID string // 长驻会话 resume 句柄；空 = 新会话
-	Model     string
-	Thinking  string // 空 = high；Kimi provider 的逐次环境覆盖
-	Command   string // 空 = PATH 中的 kimi；也可传含空格的完整可执行文件路径
-	Cwd       string
-	APIKeys   map[string]string
-	Watchdog  watchdog.Opts
-	OnEvent   func(line string) // stdout JSONL 行回调，包含无换行的最后一行
+	Prompt            string
+	SessionID         string // 长驻会话 resume 句柄；空 = 新会话
+	PersistentSession bool   // scoped lifecycle policy; CLI history is already persistent
+	RequestID         string // engine invocation identity, never a backend idempotency key
+	Model             string
+	Thinking          string // 空 = high；Kimi provider 的逐次环境覆盖
+	Command           string // 空 = PATH 中的 kimi；也可传含空格的完整可执行文件路径
+	Cwd               string
+	APIKeys           map[string]string
+	Watchdog          watchdog.Opts
+	OnEvent           func(line string) // stdout JSONL 行回调，包含无换行的最后一行
 }
 
 // KimiParsed kimi stream-json 的聚合结果。
 type KimiParsed struct {
-	SessionID    string
-	Text         string
-	ErrorMessage string
-	Usage        *Usage
+	SessionID     string
+	Text          string
+	ErrorMessage  string
+	Usage         *Usage
+	ProtocolError string // engine-tracked calls require an intact stream through the final hint
 }
 
 // ParseKimiStreamJson 解析完整的 kimi stream-json。与其他 driver 一致，忽略
@@ -57,6 +60,9 @@ func ParseKimiStreamJson(stdout string) KimiParsed {
 		if trimmed == "" {
 			continue
 		}
+		if p.SessionID != "" {
+			p.ProtocolError = "Kimi emitted another event after session.resume_hint"
+		}
 		var event struct {
 			Role      string          `json:"role"`
 			Type      string          `json:"type"`
@@ -67,6 +73,7 @@ func ParseKimiStreamJson(stdout string) KimiParsed {
 			Usage     json.RawMessage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
+			p.ProtocolError = "Kimi emitted malformed stream-json"
 			continue
 		}
 		// Usage can accompany an assistant event; parse it before role dispatch.
@@ -148,6 +155,13 @@ func parseKimiUsage(raw json.RawMessage) *Usage {
 // RunKimi 驱动一次 print 调用。只有退出成功且收到收尾 hint 才确认完成；
 // 失败调用的 hint 不作为可恢复句柄暴露。任务验收仍由 engine 的 oracle 决定。
 func RunKimi(a KimiArgs) Result {
+	tracked := a.PersistentSession || a.RequestID != ""
+	if tracked && (strings.TrimSpace(a.RequestID) == "" || strings.ContainsAny(a.RequestID+a.SessionID, "\x00\r\n")) {
+		out := invalidHarnessResult("kimi", a.Model, "tracked Kimi calls require a request identity and valid opaque session handle")
+		out.Session = &SessionOutcome{Protocol: "kimi-print/v1", RequestID: a.RequestID,
+			Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "unknown"}
+		return out
+	}
 	args := []string{}
 	if a.SessionID != "" {
 		args = append(args, "--session", a.SessionID)
@@ -206,6 +220,12 @@ func RunKimi(a KimiArgs) Result {
 			message = "Kimi stream ended without session.resume_hint; completion is unknown"
 		}
 	}
+	if message == "" && a.SessionID != "" && parsed.SessionID != "" && parsed.SessionID != a.SessionID {
+		message = "Kimi returned session.resume_hint for another session"
+	}
+	if message == "" && tracked && parsed.ProtocolError != "" {
+		message = parsed.ProtocolError
+	}
 	settled := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && !result.Cancelled &&
 		result.Signal == "" && result.CleanupError == "" && !result.Truncated && message == "" && parsed.SessionID != ""
 	out := fromWatchdog(result, "kimi", "kimi", model)
@@ -215,6 +235,25 @@ func RunKimi(a KimiArgs) Result {
 	}
 	if message != "" {
 		out.ErrorMessage = &message
+	}
+	if tracked {
+		// The checked print protocol has no attributable token delta. A future
+		// usage-shaped object is not proof of per-call rather than thread totals.
+		out.Usage = nil
+	}
+	// Legacy resident Plan also consumes these facts; a failed resume cannot
+	// silently cold-start a second call merely because scoped mode is disabled.
+	out.Session = &SessionOutcome{Protocol: "kimi-print/v1", RequestID: a.RequestID,
+		SessionID: a.SessionID, Dispatch: "unknown", Outcome: "unknown",
+		CleanupConfirmed: out.CleanupError == "" && (out.ExitCode != nil || out.SpawnError != "" || out.Signal != ""),
+		UsageStatus:      "unknown"}
+	if out.SpawnError != "" {
+		out.Session.Dispatch, out.Session.Outcome = "not-dispatched", "failed"
+	} else if settled && parsed.ProtocolError == "" {
+		out.Session.SessionID = parsed.SessionID
+		out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
+		out.Session.ResumeCandidate = true
+		out.Session.ResumeAccepted = a.SessionID != ""
 	}
 	return out
 }

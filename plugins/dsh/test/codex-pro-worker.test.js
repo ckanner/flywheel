@@ -321,6 +321,97 @@ test('public request validation always fixes fresh sessions and bounded output',
   assert.equal(request.command, fixture);
 });
 
+test('worker v2 opts into the public persistent thread contract and v1 stays fresh', async t => {
+  const f = await setup(t);
+  const adapter = await loadAdapter();
+  const start = { ...f.request, protocol: 2, threadMode: 'persistent' };
+  const parsed = machineRequest(start, adapter, f.env);
+  assert.equal(parsed.protocol, 1, 'the installed public machine API remains protocol 1');
+  assert.equal(parsed.threadMode, 'persistent');
+  assert.equal(parsed.threadId, undefined);
+  assert.equal(machineRequest({ ...start, threadId: 'exact-opaque-thread' }, adapter, f.env).threadId, 'exact-opaque-thread');
+  for (const input of [{ ...f.request, threadMode: 'persistent' }, { ...f.request, threadId: 'foreign-thread' },
+    { ...start, threadMode: 'ephemeral' }, { ...start, threadMode: undefined },
+    { ...start, threadId: '' }, { ...start, threadId: '  ' }, { ...start, threadId: 'nul\0thread' }]) {
+    assert.throws(() => machineRequest(input, adapter, f.env));
+    const frame = resultFrame(await f.launch({ input }).done, 1);
+    assert.equal(frame.protocol, input.protocol);
+    assert.equal(frame.receipt, null);
+    assert.equal(frame.error.code, 'INVALID_REQUEST');
+  }
+  assert.deepEqual(await f.records(), []);
+});
+
+test('persistent history crosses worker processes while accounting only each run delta', { timeout: 15000 }, async t => {
+  const f = await setup(t);
+  const environment = { ...f.env, TEST_CODEX_PRO_HISTORY: join(f.cwd, 'history.json') };
+  const input = { ...f.request, protocol: 2, threadMode: 'persistent', requestId: 'owned-attempt-one' };
+  const first = resultFrame(await f.launch({ input, environment }).done);
+  assert.equal(first.protocol, 2);
+  assert.equal(first.receipt.protocol, 1);
+  assert.equal(first.receipt.requested.threadId, null);
+  assert.equal(first.receipt.outcome.configuration.source, 'thread/start');
+  assert.equal(first.receipt.outcome.usage.run.totalTokens, 108);
+  const threadId = first.receipt.outcome.threadId;
+  const second = resultFrame(await f.launch({ environment,
+    input: { ...input, requestId: 'owned-attempt-two', threadId, prompt: 'Continue the same scoped task.' } }).done);
+  assert.equal(second.protocol, 2);
+  assert.equal(second.receipt.requestId, 'owned-attempt-two');
+  assert.equal(second.receipt.requested.threadId, threadId);
+  assert.equal(second.receipt.outcome.threadId, threadId);
+  assert.equal(second.receipt.outcome.execution.threadId, threadId);
+  assert.equal(second.receipt.outcome.configuration.source, 'thread/resume');
+  assert.notEqual(second.receipt.runId, first.receipt.runId);
+  assert.notEqual(second.receipt.outcome.execution.turnId, first.receipt.outcome.execution.turnId);
+  assert.equal(second.receipt.outcome.usage.status, 'complete');
+  assert.equal(second.receipt.outcome.usage.replayedBaseline, true);
+  assert.equal(second.receipt.outcome.usage.run.totalTokens, 108);
+  assert.equal(second.receipt.outcome.usage.threadTotal.totalTokens, 216);
+  assert.equal(second.receipt.costUSD, null);
+  absentGroup(first.receipt.outcome.execution);
+  absentGroup(second.receipt.outcome.execution);
+  const records = await f.records();
+  assert.equal(records.filter(record => record.method === 'thread/start').length, 1);
+  assert.equal(records.find(record => record.method === 'thread/start').params.ephemeral, false);
+  assert.equal(records.filter(record => record.method === 'thread/resume').length, 1);
+  assert.equal(records.find(record => record.method === 'thread/resume').params.threadId, threadId);
+  assert.equal(records.filter(record => record.method === 'turn/start').length, 2);
+});
+
+test('a resumed thread without replayed accounting baseline remains partial', { timeout: 10000 }, async t => {
+  const f = await setup(t);
+  const environment = { ...f.env, TEST_CODEX_PRO_HISTORY: join(f.cwd, 'history.json') };
+  const input = { ...f.request, protocol: 2, threadMode: 'persistent' };
+  const first = resultFrame(await f.launch({ input, environment }).done);
+  const second = resultFrame(await f.launch({ input: { ...input, requestId: 'attempt-2', threadId: first.receipt.outcome.threadId },
+    environment: { ...environment, TEST_CODEX_PRO_SCENARIO: 'resume-no-baseline' } }).done);
+  assert.equal(second.receipt.ok, true);
+  assert.equal(second.receipt.outcome.usage.status, 'partial');
+  assert.equal(second.receipt.outcome.usage.run, undefined);
+  assert.equal(second.receipt.outcome.usage.threadTotal.totalTokens, 216);
+  assert.equal(second.receipt.costUSD, null);
+  absentGroup(second.receipt.outcome.execution);
+});
+
+test('resume refusal or wrong thread identity does not silently create a replacement turn', { timeout: 15000 }, async t => {
+  const f = await setup(t);
+  const environment = { ...f.env, TEST_CODEX_PRO_HISTORY: join(f.cwd, 'history.json') };
+  const input = { ...f.request, protocol: 2, threadMode: 'persistent' };
+  const first = resultFrame(await f.launch({ input, environment }).done);
+  for (const scenario of ['resume-busy', 'resume-no-rollout', 'wrong-resume-thread']) {
+    const frame = resultFrame(await f.launch({ input: { ...input, requestId: scenario, threadId: first.receipt.outcome.threadId },
+      environment: { ...environment, TEST_CODEX_PRO_SCENARIO: scenario } }).done, 1);
+    assert.equal(frame.protocol, 2);
+    assert.equal(frame.receipt.ok, false);
+    assert.equal(frame.receipt.failure.cleanup.confirmed, true);
+    absentGroup(frame.receipt.failure.execution);
+  }
+  const records = await f.records();
+  assert.equal(records.filter(record => record.method === 'thread/start').length, 1);
+  assert.equal(records.filter(record => record.method === 'thread/resume').length, 3);
+  assert.equal(records.filter(record => record.method === 'turn/start').length, 1);
+});
+
 test('missing and mismatched installed dependencies fail locally without fallback', async t => {
   const f = await setup(t);
   const packageRoot = join(f.cwd, 'isolated-worker');

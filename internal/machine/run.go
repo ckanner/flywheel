@@ -349,6 +349,9 @@ func (c *Context) reloadPackets() error {
 }
 
 func (c *Context) run() (TaskSummary, error) {
+	if err := c.reconcileSessionReceipts(); err != nil {
+		return c.summary(), err
+	}
 	// 崩溃恢复：绝不静默重置在飞单元（§5.2）。
 	interrupted := c.markInterruptedUnits()
 	if len(interrupted) > 0 {
@@ -389,7 +392,11 @@ func (c *Context) run() (TaskSummary, error) {
 		budgetStartCost := c.State.Budget.Totals.CostUSD
 		c.save()
 
-		plan, err := c.planUntilValid(milestone)
+		plan := planOutcome{OK: true, Packets: c.PacketList}
+		var err error
+		if !c.pendingSessionMilestone(milestone.ID) {
+			plan, err = c.planUntilValid(milestone)
+		}
 		if err != nil {
 			return c.summary(), err
 		}
@@ -443,7 +450,10 @@ func (c *Context) run() (TaskSummary, error) {
 			}
 		}
 
-		gate := c.milestoneGateStep(milestone)
+		gate, err := c.sessionMilestoneGate(milestone)
+		if err != nil {
+			return c.summary(), err
+		}
 		if !gate.Pass {
 			c.State.Status = "escalated"
 			entry := map[string]any{
@@ -461,7 +471,7 @@ func (c *Context) run() (TaskSummary, error) {
 			return c.summary(), nil
 		}
 
-		// Judge（§7 里程碑终验）：关闭前的全新上下文终验。
+		// Judge（§7 里程碑终验）：关闭前由独立裁决角色终验。
 		judge, err := c.judgeStep(milestone)
 		if err != nil {
 			return c.summary(), err
@@ -637,6 +647,9 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 }
 
 func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
+	if err := c.reconcileSessionReceipts(); err != nil {
+		return c.summary(), err
+	}
 	interrupted := c.markInterruptedUnits()
 	if len(interrupted) > 0 {
 		c.Log(fmt.Sprintf("recovered interrupted units: %s", strings.Join(interrupted, ", ")))

@@ -14,7 +14,7 @@ Flywheel 在启动时加载一份完整配置，再把模型 profile 展开成�
 flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 ```
 
-输出 `source`、`scope`、物理 `cwd/taskDir` 和按阶段排列的 `bindings`。`scope` 为 task／project／global／embedded。它只解析配置，不物化全局文件，不读取账号 token，不启动模型，也不创建任务状态。省略任务时只从项目及更低层发现配置，不会误读运行命令所在的另一个目录。
+输出 `source`、`scope`、物理 `cwd/taskDir`、`sessions` 策略和按阶段排列的 `bindings`。每个绑定的 `session` 包含所选模式、适配器支持情况、原因以及恒为 false 的 `historyRecoveryTested`。`scope` 为 task／project／global／embedded。它只解析配置，不物化全局文件，不读取账号 token，不启动模型，也不创建任务状态。省略任务时只从项目及更低层发现配置，不会误读运行命令所在的另一个目录。
 
 展示值包含 Flywheel 已确定的 driver 默认：DSH／Codex／Kimi 的空 thinking 为 high，pi／omp／zcode 为 max；Kimi／Codex／Zcode 的空 model 使用各自 driver 常量。pi／omp 未指定模型时仍留空，表示 Flywheel 不能从配置确定它。`residentSession` 只有 Plan＋Kimi＋明确启用时为 true，不把其他阶段忽略的请求显示为已生效。
 
@@ -32,7 +32,7 @@ flywheel config migrate --preset subscriptions --cwd /repo --apply --json
 flywheel config inspect --cwd /repo --json
 ```
 
-第一条只预览。`--apply` 明确应用到当前实际命中的任务／项目／全局文件，并先备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。可以用 `--expect-sha256` 绑定之前预览的摘要；文件已经变化时拒绝陈旧应用。预算、worktree、验证、重试、价格和用户说明等非模型设置保留，Plan 明确设置的 `resident-session:false` 也保留。配置损坏、额外自定义路由／阶段或不支持的文件身份会明确阻断，不猜测替代。
+第一条只预览。`--apply` 明确应用到当前实际命中的任务／项目／全局文件，并先备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。可以用 `--expect-sha256` 绑定之前预览的摘要；文件已经变化时拒绝陈旧应用。预算、worktree、验证、重试、价格和用户说明等非模型设置保留，Plan 明确设置的 `resident-session:false` 以及现有 `sessions` 策略或其缺省状态也保留；模型迁移不会让旧文件自动启用 scoped。配置损坏、额外自定义路由／阶段或不支持的文件身份会明确阻断，不猜测替代。
 
 迁移写入完整的阶段模型、thinking 和渠道，去掉被替换绑定的旧 profile 引用，清除所选渠道的旧 fallback／模型映射，使旧付费渠道不再自动可达；未引用的自定义 profiles／channels 仍保留。包括 0.28.2 留下的 API channel，也可以作为未引用配置保留，但不会成为账号路由的自动后备。默认关闭第二意见，并明确报告旧多模态路由被停用。默认分配仍是 Kimi K3.1 Pro high 负责 Plan／frontend／Garden，DeepSeek Flash high 负责普通执行、low 负责 Intake，GPT-6.1 Sol high 负责 hard／Review，GPT-6 Astra high 负责 Judge。hard 通过 Codex Pro 插件，Review／Judge 通过 DSH ChatGPT provider。Kimi 缺省模型为 `kimi-code/k3.1-pro`；显式写入的自选模型不会被仅修改 driver 缺省值覆盖。档位依据与尚未完成的对照评估见[推理等级与账号选择](model-policy.md)。
 
@@ -51,6 +51,64 @@ flywheel config inspect --cwd /repo --json
 旧文件没有 `permissions` 时保持 `role-based`：Plan／Execute 为项目内写入，Review／Judge 为只读。两种策略都不等待交互审批；只读／项目限制下的 `never` 可能直接拒绝动作，不能把它等同于完全权限。`permissions.mode` 的拼写、类型和枚举都会在启动前校验。
 
 完全权限不会关闭 Flywheel 的任务边界、冻结验收、验证和候选身份检查。评审职责仍是评价已有候选，修改候选或验收条件不能取得有效通过。需要受限权限时显式使用 `role-based`；工作区隔离本身不是 OS 沙箱。
+
+### 会话策略、历史复用与调用安全
+
+```json
+{"sessions":{"mode":"scoped","policy-version":1}}
+```
+
+新安装的两份配置模板显式选择 `scoped`。已有配置没有 `sessions` 时归一为
+`fresh`／版本 1，升级不会改写原文件。显式声明时两个字段均必填；未知模式、未来版本、
+null、错拼字段和不完整对象在模型启动前拒绝。字段信源为
+[会话策略 schema](../templates/session-policy.schema.json)。
+
+`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、DSH 和 Kimi 的主任务
+Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图，再保存可信终态回执。
+`fresh` 不复用通用的角色历史，保持后端原有的新调用方式，并保留既有 Kimi Plan
+`resident-session` 行为；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
+其他适配器及 mock 仍使用原有调用路径；Intake／Garden 不在本轮角色会话策略内。
+
+| 角色 | 历史作用域与责任 |
+|---|---|
+| Plan | 同任务、同里程碑；只修订获准的任务契约 |
+| Execute | 同任务、同 packet；普通返修可以延续执行者历史 |
+| Review | 同任务、同 packet 和评审职责；与执行者隔离，复审仍检查完整当前候选 |
+| Judge／第二意见 | 同任务、同里程碑，各自独立；不能共享主判和第二意见历史 |
+
+Quick 最终 Review 与 Full 单元 Review 的完成要求不同，不能互用旧历史或裁决。
+Quick 的正常首次成功路径仍只有 Execute 和最终 Review 两次阶段调用。Go 负责所有
+会话选择、恢复、重建和计量；技能、模型与桌面控制面不扫描后端历史来猜测会话。
+
+Plan 显式 `resident-session:false` 在 scoped 下仍关闭该角色的历史复用；省略该字段
+不等于明确关闭。`resident-session:true` 是既有 Kimi Plan 选项，不是跨 harness 开关，
+Codex Pro 仍拒绝它；为 Codex Pro 选择 scoped 应使用 `sessions`。
+
+复用身份包含实际任务／工作目录、角色／作用域、harness、provider、channel、model、
+thinking、权限及后端运行配置引用。home/profile、worker 和命令引用取实际子进程所用
+配置，注入凭据只记录名称集合，不保存值。profile 改名而实际绑定不变不使历史失效；
+后端、账号渠道、模型、权限或工作目录变化则重新建立合适的历史。Spec 目标、非目标、
+需求身份及 packet 的目标、正文、边界或需求映射发生变化也不复用旧任务语义。
+兼容的验收修订可以保留已消费的历史，但每次重新提交当前契约和证据。
+
+已完成但尚未消费的回执采用更严格的规则：Review／Judge 必须匹配原契约、候选与验证
+证据，不能用重新验证的记录替换原证据。Plan 获准修改契约时，仍绑定完整调用后候选及
+持久化的原始前后保护证据。评审或规划越界改动不能在重启后变成有效结果。
+
+`state.sessions` 保存每个作用域的代次、动作／原因和最新调用事实；每个作用域只保留
+一个原子替换的 `.sessions` 回执槽，原始回执不进入 Git。恢复先核对已保存的调用意图、
+回执摘要和身份，再消费同一结果，不重复发模型请求或重复计费。预算限制新的派发，
+不会把消费已有可信回执算作新调用。历史审计事实通过指标保留。
+
+派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
+重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
+只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
+本轮只实现正常终态续接和已保存回执恢复（P1/P2）；实时恢复与只读核对（P3）仍待
+上游公开协议，真实质量、缓存和性能实验（P4）尚未完成。
+
+`status` 及 `control status` 展示角色、作用域、代次、动作／原因、最新调用状态、
+派发／结果／清理、是否复用历史与用量状态。紧凑投影不读取回执内容或历史正文，也不
+修改账本；无会话记录的旧任务不被推断为已具备恢复资格。
 
 ### 工作流策略与恢复
 
@@ -152,9 +210,13 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 
 完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件依赖 `dsh-subagent-codex-pro@0.8.0` 由 npm 安装；worker 直接导入其公开 `dsh-subagent-codex-pro/machine` API，内部仍使用 Codex app-server 和用户已有登录。它不是 DSH LLM provider，也不需要父模型调用 `subagent_codex_pro`。缺少插件或回执不符会失败，不自动回退 `codex exec`。
 
-已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。执行／评审每次创建 ephemeral 新会话，thinking 省略时为 high。
+已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。
 
-以上是当前 Flywheel 的限制，不是 machine API 必须使用 ephemeral 历史的要求。上游已支持 persistent/threadId，但 Flywheel 尚未接通；按范围续用、独立复审与中断核对见[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)。该方案未增加可用配置项，不能仅设置 `resident-session:true` 启用。
+fresh 使用外层 worker 协议 1 与 ephemeral 历史；scoped 使用外层协议 2、
+`threadMode:persistent` 和可选的精确 `threadId`。两者内部仍消费插件 0.8.0 的
+machine API／原始 receipt 协议 1，不能把外层 v2 解释成上游协议升级。恢复必须匹配
+原 thread；busy、缺失历史或通用恢复失败不能靠错误正文猜测为安全冷启动。
+能力边界见[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)。
 
 `FLYWHEEL_CODEX_PRO_WORKER` 可显式指定 worker；通常由 npm 启动器解析同版本依赖。`FLYWHEEL_CODEX_BIN` 指定插件内部的 Codex 程序，默认 PATH 中的 `codex`；`CODEX_HOME` 可选择既有配置与登录目录。自定义环境需对启动引擎的进程可见，安装器不会复制凭证。
 
@@ -215,14 +277,16 @@ flywheel template flywheel.profiles.example.json
 | 阶段省略某字段 | 继承所引用 profile 的字段 |
 | 阶段显式写 `model`／`channel`／`thinking` 等 | 只覆盖该阶段，不修改共享 profile 或其他阶段 |
 | `thinking: ""` | 使用对应 harness 的现有默认 effort，不重新继承 profile |
-| `resident-session: false` | 明确关闭该阶段的恢复请求；不会丢失为缺省值 |
+| Plan `resident-session: false` | 明确关闭 Plan 历史复用；加载、profile 展开和配置导出均保留其显式存在 |
 | `judge-panel: null` | 关闭第二意见，保持默认行为 |
 | profile 定义缺 `harness/model/channel`，或这些字段为空／null／纯空白 | 加载失败 |
 | profile 不存在、未知字段、错拼阶段名、不支持的 harness | 加载失败，不静默回落 |
 | profile 再引用另一个 profile | 不支持继承链；加载失败 |
 | `_note`、`_note_*` | 允许配置对象中的说明文字，不进入执行绑定 |
 
-`resident-session` 是阶段策略，不能放进 profile。当前只有 Kimi 的 Plan 可恢复历史，且必须匹配实际 harness/model/channel/cwd/thinking/permissionMode；profile 名改了而实际值没变，不影响身份。其他执行、评审和 SDK 调用仍是新会话。这描述当前能力，不将每次 fresh 作为未来会话策略的硬规则。
+`resident-session` 是既有阶段选项，不能放进 profile。它继续控制旧 Kimi Plan 行为，
+其显式 false 在 scoped 下也保持 Plan 退出；其他角色的历史复用由顶层 `sessions`
+控制。恢复的是历史，不是要求一个模型进程永久存活。
 
 旧内联绑定保留原有缺省行为，不强制迁移。`env-key: null`、`retry.jitter: 0`、`worktree.enabled: false` 等已有合法零值继续支持。显式切换 harness 或 channel 时，要一起核对继承的 provider；必要时用 `provider: ""` 清除显式值，再按新 channel 解析，不能保留另一个 adapter 的 ID。
 
@@ -256,6 +320,10 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
 
 Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.8.0／协议 1、Node >=22.18.0 以及 Codex 命令版本；同一 worker 只查一次。`--probe` 不为此路径发送任务，实际模型、effort 与完整权限保持 unknown；它不会把成功导入插件当成账号、沙箱或推理能力已经验证。
+
+`sessions.policy` 检查只确认配置模式及版本；每个适用真实绑定的 `.session` 检查
+显示所选模式、原因和适配器支持，历史恢复仍为 unknown。Doctor 不尝试恢复用户
+历史，不发送测试 turn，也不把 worker 包导入成功当作持久化确认。
 
 | 状态 | 解释 |
 |---|---|

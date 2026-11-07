@@ -71,10 +71,11 @@ type Context struct {
 	RunContext   context.Context
 	controlToken string
 
-	metricsFile string
-	pauseBefore string
-	revision    int64
-	fatal       error // 保存失败或无法确认子进程清理；停止后续模型调用
+	sessionReports map[string][]byte
+	metricsFile    string
+	pauseBefore    string
+	revision       int64
+	fatal          error // 保存失败或无法确认子进程清理；停止后续模型调用
 }
 
 // Opts CreateContext 入参（对应 Node createContext 参数对象）。
@@ -144,6 +145,19 @@ func (c *Context) touchProgress() {
 // recordSpawnMetrics 每次 spawn 追加一条 metrics.jsonl 记录并把用量记账进
 // state（任何档位下都不关闭，铁律 9）。
 func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
+	invocationID, receiptDigest := "", ""
+	if a.result != nil && a.result.Session != nil && c.State.Sessions != nil {
+		for _, record := range c.State.Sessions.Records {
+			if record.Last.ID == a.result.Session.RequestID {
+				if record.Last.Accounted {
+					return
+				}
+				record.Last.Accounted = true
+				invocationID, receiptDigest = record.Last.ID, record.Last.ReceiptDigest
+				break
+			}
+		}
+	}
 	var usage *drivers.Usage
 	if a.result != nil {
 		usage = a.result.Usage
@@ -227,7 +241,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 			"cleanup-error": a.result.CleanupError, "session-id": a.result.SessionID,
 		}
 	}
-	if err := metrics.Append(c.metricsFile, map[string]any{
+	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{
 		"role":              a.role,
 		"packet-id":         packetID,
 		"milestone":         milestone,
@@ -246,6 +260,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"attempt":           attempt,
 		"result":            resultState,
 		"codex-pro-receipt": codexProReceipt,
+		"session":           sessionMetrics(c.State.Sessions, invocationID),
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
 	}

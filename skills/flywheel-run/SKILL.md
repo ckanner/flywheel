@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.8.0"
+  version: "1.9.0"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -114,8 +114,10 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
 
 `flywheel-run` 同时是恢复入口：继续使用原 `task_dir`、`repo_dir` 和任务分支，
 由引擎恢复 packet 状态并重新核验证据，不重新生成任务或为同一 packet 另建目录。
-若上次记录了 `cleanup-unconfirmed`／`process cleanup is unconfirmed`，先确认
-本次拥有的 worker／guardian／app-server 已结束再恢复；外层退出或等待几秒不算证明。
+若上次记录了清理、派发或结果未知，先查看原任务的调用记录与日志并保留现场。
+确认 worker／guardian／app-server 已结束只解决清理问题，不证明调用结果已知；
+Go 仍须核对可信终态回执。不要切换 fresh、换任务目录、删除回执或重置 state 来绕过阻断。
+外层退出或等待几秒不算证明，skill 不自行选择会话 ID 或实现恢复循环。
 
 | 阶段 | 实际工作目录 |
 |---|---|
@@ -126,7 +128,10 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
 
 Quick 的最终 Review 同时检查全部需求、验收充分性和 Quick 资格。验收缺口或
 新风险可升级到 Full；策略变更保留预算、工作区与历史，并使不匹配的证据失效。
-Go 串行调度 packet；每次 Execute／Review 都是新会话，重试复用磁盘成果。
+Go 串行调度 packet，并按 `sessions.mode` 决定同角色历史是否可复用；普通返修可
+延续 Executor，复审可延续 Reviewer 自己的上下文，二者始终隔离。复审仍检查完整
+当前候选与全部适用要求。支持的主任务适配器在 fresh/scoped 下均记录调用安全事实，
+会话选择和回执消费由 Go 完成，skill 不接管。重试保留磁盘成果。
 当前宿主对话无需保持模型运行，也没有后台 Teams／并行 DAG 的隐式保证。
 
 核对实际配置的 `permissions.mode`：`role-based`（已有文件缺省）下 Plan／Execute

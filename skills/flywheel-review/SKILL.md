@@ -1,7 +1,7 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use for "/flywheel-review docs/<slug> [unit]" in DSH, "/skill:flywheel-review docs/<slug> [unit]" in Kimi, or a request to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
@@ -67,7 +67,10 @@ Quick 的本步骤是独立最终 Review：结构化 `requirements` 必须把全
 不在 skill 中自行重试、改策略或跨环规划；恢复完整 `flywheel-run` 后由 Go
 处理返修、Full 阶段和 Git 交付，不能通过重跑评审将已升级任务改回 Quick。
 
-Review 的实际 CWD 是引擎选定的 packet 候选工作区。核对 `permissions.mode`：
+Review 的实际 CWD 是引擎选定的 packet 候选工作区。scoped 模式可以复用同范围
+Reviewer 自己的上下文，不继承 Executor 历史；每次仍完整检查当前候选、契约与适用
+需求，不能仅关闭上轮 findings 或沿用旧 pass。会话选择和回执恢复由 Go 负责。
+核对 `permissions.mode`：
 `role-based`（已有文件缺省）请求 `read-only`，`full-access` 通过所选后端正式接口
 请求完全权限；Kimi print 为原生 auto，不提供 OS 级只读保证。两种模式都只做评审，
 候选或契约在评审期间变化时，裁决不能通过身份检查。不要在 skill 中切进 packet 再启动，
@@ -76,5 +79,6 @@ Review 的实际 CWD 是引擎选定的 packet 候选工作区。核对 `permiss
 独立目录。Review pass 只记录裁决，本单步不提交／合并 packet，也不合并 GitHub PR。
 完整运行的本地 `ff-only` 交付与外层获授权的 PR 合并分别处理。
 
-清理未确认时保留现场并停止；确认相关子进程已结束后，使用原路径重新评审或
-通过 `flywheel-run` 恢复，不在 skill 中自动重试或改 state。
+清理、派发或结果未知时保留现场并停止；子进程退出不证明裁决已知。通过原任务
+路径让 Go 核对可信回执，不切 fresh、另建任务、自动重试或修改 state 来绕过阻断。
+评审期间发生的候选修改不能在重启或重新验证后被解释成有效 pass。

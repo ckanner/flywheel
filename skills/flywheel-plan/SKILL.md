@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -59,8 +59,12 @@ Plan 的模型 CWD 是 `repo_dir`，可修订任务内 Spec／packet，不直接
 不得手工 reset、重建 packet 工作区或修改 `state.json`。这一步不执行实现／Review，
 不创建或合并远端 PR；任务分支的 PR 操作由外层按已有授权执行。
 
-出现清理未确认时停止，不在 skill 中重试；确认所报告的子进程已结束后，仍从
-原任务路径执行单环或使用 `flywheel-run` 恢复。默认 packet worktree 创建有
+Plan 历史由 Go 按任务／里程碑和 `sessions.mode` 管理；显式设置的
+`resident-session:false` 继续关闭 Plan 历史复用，不在 skill 中改写它。
+fresh 保留既有 Kimi Plan resident 行为，但不将它声明为通用角色会话。
+出现清理、派发或结果未知时停止，不在 skill 中重试；确认子进程退出不能代替
+可信结果回执。从原任务路径交由 Go 核对，不切模式或重置 state 绕过阻断。
+默认 packet worktree 创建有
 `in-place` 回退，不应把 Plan 成功解读成后续执行必然有隔离。
 
 ## 注意

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/session-policy.schema.json",
+  "title": "Flywheel session policy",
+  "type": "object",
+  "required": ["mode", "policy-version"],
+  "properties": {
+    "mode": { "type": "string", "enum": ["fresh", "scoped"] },
+    "policy-version": { "type": "integer", "const": 1 }
+  },
+  "patternProperties": { "^_note(?:_|$)": {} },
+  "additionalProperties": false
+}

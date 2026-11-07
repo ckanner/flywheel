@@ -21,7 +21,7 @@ An unreadable higher-priority file, invalid JSON, or broken symlink is an error,
 flywheel config inspect --cwd /absolute/path/to/repo --task-dir /absolute/path/to/repo/docs/my-feature --json
 ```
 
-The result includes `source`, `scope`, resolved physical paths, and stage `bindings`. Without `--task-dir`, discovery starts at the selected project and lower levels. Inspection does not create global configuration or task state, read account tokens, or invoke a model.
+The result includes `source`, `scope`, resolved physical paths, `sessions`, and stage `bindings`. Each binding's `session` reports selected mode, adapter support, a reason, and `historyRecoveryTested:false`. Without `--task-dir`, discovery starts at the selected project and lower levels. Inspection does not create global configuration or task state, read account tokens, or invoke a model.
 
 ## Apply the subscription preset to existing configuration
 
@@ -37,7 +37,7 @@ flywheel config migrate --preset subscriptions --cwd /repo --apply --json
 flywheel config inspect --cwd /repo --json
 ```
 
-The first command only previews. `--apply` backs up the original bytes and updates the effective task/project/global file; with no file, it creates global configuration. Optional `--expect-sha256` binds application to a preview. Changed source files, invalid input, unsupported file identities, and extra custom routes/stages are rejected. Budgets, verification, worktrees, retries, pricing, notes, and an explicit Plan `resident-session:false` are preserved.
+The first command only previews. `--apply` backs up the original bytes and updates the effective task/project/global file; with no file, it creates global configuration. Optional `--expect-sha256` binds application to a preview. Changed source files, invalid input, unsupported file identities, and extra custom routes/stages are rejected. Budgets, verification, worktrees, retries, pricing, notes, an explicit Plan `resident-session:false`, and the existing `sessions` policy or its omission are preserved. Model migration does not opt an existing file into scoped history.
 
 The preset replaces the model bindings, removes their old profile references, and clears fallback/model mappings on the selected channels so that old paid routes are no longer automatically reachable. Unreferenced custom profiles and channels remain intact, including the old 0.28.2 API channel; it is not an automatic fallback for the account route. The preset disables the optional second opinion and reports removal of the old unverified multimodal route. Kimi K3.1 Pro/high handles Plan, frontend execution, and Garden; DeepSeek Flash/high handles ordinary execution and Flash/low handles Intake; GPT-6.1 Sol/high handles hard execution and Review; GPT-6 Astra/high handles Judge. Hard execution uses Codex Pro; Review/Judge use the DSH ChatGPT provider. Kimi's omitted-model default is `kimi-code/k3.1-pro`, without overriding an explicitly selected model. See [Reasoning effort and account selection](model-policy.md) for the rationale and the project comparison that remains unperformed.
 
@@ -56,6 +56,37 @@ New installation templates and the explicit subscription migration select this m
 Existing files without this setting retain `role-based`: Plan/Execute request workspace-write, and Review/Judge request read-only. Neither policy waits for interactive approval. In restricted modes, `never` can reject an action; it does not itself grant full access. Invalid policy names and types fail before execution.
 
 Full access preserves task boundaries, frozen acceptance, verification, and candidate identity checks. A reviewer still cannot change the candidate or acceptance criteria and obtain a valid verdict. Select `role-based` explicitly when confinement is intended; a worktree is not an OS sandbox.
+
+## Session policy, history reuse, and invocation safety
+
+```json
+{"sessions":{"mode":"scoped","policy-version":1}}
+```
+
+Both new-installation templates explicitly select `scoped`. An existing file without `sessions` normalizes to `fresh`, policy version 1; upgrades do not rewrite it. An explicit policy must contain both fields. Unknown modes, future versions, nulls, typos, and incomplete objects fail before a model starts. The [session policy schema](../../templates/session-policy.schema.json) is the field contract.
+
+`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this first-phase role session policy.
+
+| Role | History scope and responsibility |
+|---|---|
+| Plan | Same task and milestone; only permitted task-contract revisions |
+| Execute | Same task and packet; ordinary repairs may continue executor history |
+| Review | Same task, packet, and review responsibility; isolated from the executor and still inspecting the complete current candidate |
+| Judge / second opinion | Same task and milestone, with separate histories for primary and panel judgments |
+
+Quick final Review and Full packet Review have different completion requirements and cannot exchange old histories or verdicts. Quick's first-success path still has two stage-agent calls, Execute and final Review. Go owns all session selection, continuation, rebuilding, and accounting. Skills, models, and desktop controls do not scan backend history to guess a session.
+
+An explicit Plan `resident-session:false` still disables that role's history reuse under scoped mode; omission is different from an explicit opt-out. `resident-session:true` remains the legacy Kimi Plan option, not a cross-harness switch. Codex Pro still rejects it; select scoped Codex Pro history through `sessions`.
+
+Reuse identity includes the actual task and working directories, role and scope, harness, provider, channel, model, thinking, permissions, and backend runtime references. Backend home/profile, worker, and command references reflect the child configuration actually used; only the names of injected credentials are included, never their values. Renaming a profile without changing its resolved binding does not invalidate history. A changed backend, account channel, model, permission, or working directory selects a new history. Changes to the Spec goal, non-goals, requirement identity, or packet goal, body, boundaries, and requirement mapping also invalidate the previous task semantics. Compatible acceptance revisions can retain already-consumed history, with the current contract and evidence supplied again.
+
+Completed but unconsumed receipts have stricter rules: Review and Judge must match the original contract, candidate, and verification evidence. Running verification again cannot replace that evidence. Plan may update its permitted contract files, but replay remains bound to the complete post-call candidate and durable original before/after guards. A forbidden reviewer or planner mutation cannot become an accepted result after restart.
+
+`state.sessions` records each scope's generation, action/reason, and latest invocation facts. One atomically replaced `.sessions` receipt slot per scope bounds recovery storage; raw receipts are excluded from Git. Recovery verifies the saved intent, receipt digest, and identity before consuming the same result, without another model request or duplicate billing. Budgets constrain new dispatches; consuming an already completed trusted receipt is not a new call. Metrics retain earlier audit facts.
+
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove history durability or recovery after an arbitrary crash. This implementation covers normal-terminal continuation and saved-receipt recovery (P1/P2). Live recovery and read-only reconciliation (P3) still need upstream public contracts; real quality, cache, and performance experiments (P4) remain unperformed.
+
+`status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
 ## Workflow policy and recovery
 
@@ -176,14 +207,14 @@ Do not create a task file containing only a few profiles and expect it to inheri
 | Stage omits a profile field | Inherit that field from the referenced profile |
 | Stage explicitly supplies `model`, `thinking`, `channel`, etc. | Override only that stage |
 | `thinking: ""` | Use the harness's default effort instead of re-inheriting the profile |
-| `resident-session: false` | Explicitly disable the stage's resume request |
+| Plan `resident-session: false` | Explicitly disable Plan history reuse; loading, profile expansion, and effective config export preserve its presence |
 | `judge-panel: null` | Disable the optional second opinion |
 | Missing/empty profile `harness`, `model`, or `channel` | Configuration error |
 | Unknown profile, field, stage name, or harness | Configuration error |
 | A profile references another profile | Unsupported; configuration error |
 | `_note` or `_note_*` | Permitted explanatory metadata, excluded from execution bindings |
 
-`resident-session` belongs on a stage, not in a profile. Currently only Kimi Plan can resume, and only when harness, model, channel, working directory, thinking, and permission mode match. This restores session history, not a permanently running process. Execution and review calls start fresh sessions. These are current capability limits, not a permanent requirement that every invocation discard its context.
+`resident-session` is a legacy stage option, not a profile field. It continues to control the existing Kimi Plan behavior, and an explicit false also opts Plan out of scoped history. Other roles use the top-level `sessions` policy. Restoring history does not require a permanently running model process.
 
 Legal existing zero values, including `env-key: null`, `retry.jitter: 0`, and `worktree.enabled: false`, remain meaningful. When changing a harness or channel, also inspect any inherited provider. Use `provider: ""` when necessary to clear an explicit value before resolving the newly selected DSH channel.
 
@@ -210,9 +241,9 @@ The external tool name `subagent_codex_pro` is not a DSH provider. This route do
 
 To migrate an existing configuration, use `config inspect` to locate the effective file. Change the hard route's inline harness or referenced profile from `codex` to `codex-pro`, retain the intended model/channel/thinking, inspect the result, and restart. Keeping `harness: "codex"` explicitly retains the older `codex exec` behavior.
 
-`codex-pro` requires nonempty model and channel values. It does not inherit the old Codex driver's implicit model. Omitted thinking defaults to `high`; `resident-session: true` is rejected. Each execute/review call uses a new ephemeral session.
+`codex-pro` requires nonempty model and channel values. It does not inherit the old Codex driver's implicit model. Omitted thinking defaults to `high`; `resident-session: true` is rejected.
 
-These are current Flywheel restrictions, not requirements of the machine API. The upstream plugin supports persistent history and an explicit thread ID, but Flywheel has not connected them. The [session lifecycle proposal](plans/2026-11-07-session-lifecycle.md) describes scoped continuation, independent re-review, and interruption reconciliation. It adds no usable configuration fields; setting `resident-session:true` does not enable the proposal.
+Fresh mode uses outer worker protocol 1 and ephemeral history. Scoped mode uses outer protocol 2, `threadMode:persistent`, and an optional exact `threadId`. Both still consume the plugin 0.8.0 machine API and raw receipt protocol 1; outer v2 is not an upstream protocol upgrade. Resume must accept the same thread. Busy, missing-history, and generic resume failures cannot be classified as safe cold-start opportunities from error text. See the [session lifecycle proposal](plans/2026-11-07-session-lifecycle.md) for the remaining recovery boundaries.
 
 ### Worker environment
 

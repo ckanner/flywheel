@@ -507,14 +507,14 @@ type execLoopOutcome struct {
 // runExecuteLoop execute 子环闭环（Osmani 对齐，v0.24）：转到单元 L1 验收
 // 全绿，或有界停止。done-condition = 冻结契约的 L1 命令 + boundaries（铁律 4：
 // 确定性 oracle，LLM 在其后）；每轮失败信号（错误码/失败命令/权威变更集）经
-// failAttempt 落账并喂给下一轮全新执行会话（铁律 3）；界 = packet 的
+// failAttempt 落账并喂给下一轮执行调用（历史由会话策略管理）；界 = packet 的
 // max-retries + 空转检测 + 预算闸门。凭证闸门在 executeStep 内（spawn 前）。
 func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, error) {
 	for {
 		if ferr := c.err(); ferr != nil {
 			return execLoopOutcome{Stopped: true}, ferr
 		}
-		if c.budgetGate() == "stop" {
+		if !c.sessionReplay("execute", packet.PacketID) && c.budgetGate() == "stop" {
 			return execLoopOutcome{Stopped: true}, nil
 		}
 		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
@@ -573,7 +573,7 @@ func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, erro
 // Quick gathers injection with all other final checks in reviewStep, including
 // manual review. Full keeps the original per-unit injection/pause semantics.
 func (c *Context) unitReviewInjection(packet *contract.Packet) (*defectinjection.Outcome, error) {
-	if c.quick() {
+	if c.quick() || c.sessionReplay("review", packet.PacketID) {
 		return nil, nil
 	}
 	return c.maybeDefectInjection(packet)

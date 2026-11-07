@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // An offline app-server peer; no model, network or account is contacted.
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawn } from 'node:child_process';
 
@@ -11,7 +11,11 @@ if (process.argv.length !== 4 || process.argv[2] !== 'app-server' || process.arg
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 const reply = (id, result) => send({ jsonrpc: '2.0', id, result });
-const threadId = 'fixture-thread', turnId = 'fixture-turn';
+const threadId = 'fixture-thread', turnId = `fixture-turn-${process.pid}`;
+const historyPath = process.env.TEST_CODEX_PRO_HISTORY;
+let history = historyPath && existsSync(historyPath) ? JSON.parse(readFileSync(historyPath, 'utf8')) : null;
+let persistent = false;
+const saveHistory = () => { if (persistent && historyPath) writeFileSync(historyPath, JSON.stringify(history)); };
 let stopping = false;
 // Keep the process alive even when its protocol input closes, so this case
 // really requires escalation rather than falling out of the Node event loop.
@@ -37,13 +41,26 @@ createInterface({ input: process.stdin }).on('line', line => {
   log(request);
   if (request.method === 'initialize') {
     if (scenario !== 'initialize-hang') reply(request.id, { userAgent: 'offline-fixture' });
-  } else if (request.method === 'thread/start') {
+  } else if (request.method === 'thread/start' || request.method === 'thread/resume') {
     const { cwd, model, sandbox, approvalPolicy, ephemeral } = request.params;
+    const resumed = request.method === 'thread/resume';
+    if (resumed && (scenario === 'resume-busy' || scenario === 'resume-no-rollout' || !history || history.threadId !== request.params.threadId)) {
+      send({ jsonrpc: '2.0', id: request.id, error: { code: -32001,
+        message: scenario === 'resume-busy' ? 'thread is busy' : 'no rollout exists for this thread' } });
+      return;
+    }
+    persistent = resumed || ephemeral === false;
+    if (!resumed) history = { threadId, total: null, turnId: null };
+    if (resumed && history.total && scenario !== 'resume-no-baseline') {
+      notify('thread/tokenUsage/updated', { threadId, turnId: history.turnId,
+        tokenUsage: { total: history.total, last: history.total } });
+    }
+    saveHistory();
     const policy = sandbox === 'danger-full-access' ? { type: 'dangerFullAccess' } : sandbox === 'read-only'
       ? { type: 'readOnly', networkAccess: false }
       : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
     if (scenario === 'broad-policy') policy.writableRoots = ['/'];
-    reply(request.id, { thread: { id: threadId, ephemeral }, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
+    reply(request.id, { thread: { id: scenario === 'wrong-resume-thread' ? 'another-thread' : threadId, ephemeral: !persistent }, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
       model: scenario === 'wrong-model' ? 'unexpected-model' : model,
       approvalPolicy: scenario === 'wrong-approval' ? 'on-request' : approvalPolicy,
       sandbox: scenario === 'wrong-sandbox'
@@ -67,8 +84,11 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (scenario === 'output-limit') { process.stdout.write('x'.repeat(1100000)); return; }
     if (scenario === 'malformed') { process.stdout.write('{bad-json\n'); return; }
     if (scenario !== 'unknown-usage') {
-      const total = { totalTokens: 108, inputTokens: 100, cachedInputTokens: 25, outputTokens: 8, reasoningOutputTokens: 3 };
-      notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total, last: total } });
+      const delta = { totalTokens: 108, inputTokens: 100, cachedInputTokens: 25, outputTokens: 8, reasoningOutputTokens: 3 };
+      const total = Object.fromEntries(Object.entries(delta).map(([key, value]) => [key, value + (history?.total?.[key] ?? 0)]));
+      notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total, last: delta } });
+      history = { threadId, turnId, total };
+      saveHistory();
       if (scenario === 'partial-usage') notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: { ...total, outputTokens: 'invalid' } } });
     }
     notify('account/rateLimits/updated', { rateLimits: { fixture: { usedPercent: 12 } } });

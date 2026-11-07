@@ -18,26 +18,28 @@ import (
 
 // Binding is a resolved stage, not a promise that an account can serve its model.
 type Binding struct {
-	ID              string `json:"id"`
-	Role            string `json:"role"`
-	Route           string `json:"route"`
-	Profile         string `json:"profile"`
-	Harness         string `json:"harness"`
-	Provider        string `json:"provider"`
-	Channel         string `json:"channel"`
-	Model           string `json:"model"`
-	Thinking        string `json:"thinking"`
-	ResidentSession bool   `json:"residentSession"`
-	PermissionMode  string `json:"permissionMode"`
-	InScope         bool   `json:"inScope"`
+	ID              string        `json:"id"`
+	Role            string        `json:"role"`
+	Route           string        `json:"route"`
+	Profile         string        `json:"profile"`
+	Harness         string        `json:"harness"`
+	Provider        string        `json:"provider"`
+	Channel         string        `json:"channel"`
+	Model           string        `json:"model"`
+	Thinking        string        `json:"thinking"`
+	ResidentSession bool          `json:"residentSession"`
+	PermissionMode  string        `json:"permissionMode"`
+	InScope         bool          `json:"inScope"`
+	Session         SessionPolicy `json:"session"`
 }
 
 type Configuration struct {
-	Source   string    `json:"source"`
-	Scope    string    `json:"scope"`
-	Cwd      string    `json:"cwd"`
-	TaskDir  string    `json:"taskDir"`
-	Bindings []Binding `json:"bindings"`
+	Source   string                `json:"source"`
+	Scope    string                `json:"scope"`
+	Cwd      string                `json:"cwd"`
+	TaskDir  string                `json:"taskDir"`
+	Bindings []Binding             `json:"bindings"`
+	Sessions config.SessionsConfig `json:"sessions"`
 }
 
 var (
@@ -121,7 +123,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}}
+	view := &Configuration{Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		harness := b.Harness
 		if harness == "" {
@@ -150,6 +152,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 			Provider: fallback.ResolveProvider(cfg, harness, b.Provider, b.Channel), Channel: b.Channel,
 			Model: model, Thinking: thinking, ResidentSession: b.ResidentSession && role == "plan" && harness == "kimi",
 			PermissionMode: permission, InScope: true,
+			Session: sessionPolicy(cfg, role, harness, b),
 		})
 	}
 	for role, b := range cfg.Loops {

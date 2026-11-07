@@ -201,8 +201,7 @@ func (c *Context) milestoneGateStep(milestone contract.Milestone) gateOutcome {
 // planStep 经长驻 kimi code 会话为里程碑签发/确认 packet 序列。会话纪律：
 //   - 首调建会话，从流中捕获 id 存进 state.json（plan-session）；后续用
 //     `kimi -r <id>` 续；
-//   - 会话死亡（resume 失败/看门狗击杀挂起）触发冷启动协议：从契约层
-//     （spec + state + retro 尾部）启动全新会话——契约层是唯一记忆；
+//   - 仅已确认终态和清理的调用可重试；resume 失败或超时不是允许重放的证据；
 //   - provider 失败走配置的渠道降级链；
 //   - 所有渠道都失败则任务升级到 inbox（Plan 是定方向的，没了它继续跑没意义）。
 func (c *Context) planStep(milestone contract.Milestone, feedback string) (planOutcome, error) {
@@ -247,7 +246,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			RetroTail: tail,
 			Feedback:  feedback,
 		})
-		res := c.Drivers.Plan.Plan(drivers.CallArgs{
+		res, sessionErr := c.invokeScoped("plan", milestone.ID, drivers.CallArgs{
 			Prompt:         prompt,
 			MilestoneID:    milestone.ID,
 			TaskDir:        c.TaskDir,
@@ -261,7 +260,13 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  c.apiKeysFor(channel),
 			Watchdog: c.wdog(),
-		})
+		}, c.Drivers.Plan.Plan)
+		if sessionErr != nil {
+			if c.fatal == nil {
+				c.fatal = sessionErr
+			}
+			return res, errs.TRANSPORT
+		}
 		c.recordSpawnMetrics(spawnMetricsArgs{
 			role: "plan", model: model, channel: channel,
 			prompt: prompt, result: &res,
@@ -278,6 +283,9 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			code = ""
 		} else {
 			code = errs.ClassifyError(toSpawnResult(res))
+		}
+		if c.sessionGuardViolated("plan", milestone.ID) {
+			code = errs.INVALID_REQUEST
 		}
 		return res, code
 	}
@@ -316,7 +324,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		if ferr := c.err(); ferr != nil {
 			return planOutcome{}, ferr
 		}
-		if c.budgetGate() == "stop" {
+		if !c.sessionReplay("plan", milestone.ID) && c.budgetGate() == "stop" {
 			return planOutcome{Stopped: true, Packets: packets}, nil
 		}
 		// 宁可 fail-loud 也不要无 key spawn（P1-12②）。
@@ -325,7 +333,20 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			return planOutcome{ErrorCode: errs.AUTH, Packets: packets}, nil
 		}
 		result, code = attempt(sessionID, sessionID == "", channel, model, harness, provider)
+		// Preserve legacy resume uncertainty before cleanup/cancellation can
+		// return. Switching task role or mode must not erase this blocker.
+		if sessionID != "" && !c.scopedSessions("plan", harness) && code != "" &&
+			(result.Session == nil || !safeSessionOutcome(result, result.Session.RequestID)) {
+			previous := c.State.PlanSession.(map[string]any)
+			previous["outcome-unknown"] = true
+			if result.CleanupError == "" {
+				result.CleanupError = "legacy resumed Plan outcome is unknown; confirm the prior invocation before replay"
+			}
+		}
 		if err := c.stopForUnconfirmedCleanup("plan", "", result); err != nil {
+			return planOutcome{}, err
+		}
+		if err := c.err(); err != nil {
 			return planOutcome{}, err
 		}
 		if code == "" {
@@ -337,12 +358,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			break
 		}
 
-		// 会话死亡 → 冷启动协议（§4.1）：全新会话，契约记忆。
-		if sessionID != "" {
-			c.Log(fmt.Sprintf("plan session %s is dead (%s) — cold restart with a fresh session", sessionID, code))
-			sessionID = ""
-			continue
-		}
+		c.consumeSession("plan", milestone.ID)
 		// 渠道降级：配额/限流，外加有带 key 兜底在等的订阅渠道 AUTH（P0-7）。
 		if errs.ShouldFallback(code) || fallback.AuthFallbackAllowed(c.Config, channel, code) {
 			next := fallback.NextChannel(c.Config, channel)
@@ -384,11 +400,13 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 	}
 
 	if code != "" {
+		c.save()
 		c.Log(fmt.Sprintf("plan step failed on every channel (last: %s)", code))
 		return planOutcome{ErrorCode: code, Packets: packets}, nil
 	}
 
-	// 捕获/刷新长驻会话句柄（model+channel 钉死，铁律 7）。
+	c.consumeSession("plan", milestone.ID)
+	// Preserve the legacy resident option; scoped ownership lives in Sessions.
 	if resident && result.SessionID != "" {
 		var prev map[string]any
 		if m, ok := c.State.PlanSession.(map[string]any); ok {
@@ -429,6 +447,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 		c.State.PlanSession = nil
 		c.save()
 	}
+	c.save()
 	return planOutcome{OK: true, Packets: packets, Result: &result}, nil
 }
 
@@ -456,6 +475,8 @@ func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback .
 			return r, err
 		}
 		if before != after {
+			c.retireSession("plan", milestone.ID, "planner changed files outside its contract scope")
+			c.save()
 			return r, fmt.Errorf("Plan changed implementation, external acceptance, or configuration outside spec/packet contracts; changes preserved, automatic commit refused")
 		}
 		if !r.OK || r.Stopped {

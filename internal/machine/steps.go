@@ -121,14 +121,16 @@ type l1Outcome struct {
 // ---- LLM 裁决循环（review / judge 共用）----
 
 type verdictArgs struct {
-	role      string // "review" | "judge"
-	cwd       string // review 必须读取候选 worktree；judge 使用主 checkout
-	binding   fallback.Binding
-	prompt    string
-	packetID  string
-	attemptNo *int
-	ps        *state.PacketState // 可空——里程碑级 judge 时重试只进 metrics
-	finalSpec *contract.Spec     // Quick's stronger task-final verdict schema
+	sessionRole  string
+	sessionScope string
+	role         string // "review" | "judge"
+	cwd          string // review 必须读取候选 worktree；judge 使用主 checkout
+	binding      fallback.Binding
+	prompt       string
+	packetID     string
+	attemptNo    *int
+	ps           *state.PacketState // 可空——里程碑级 judge 时重试只进 metrics
+	finalSpec    *contract.Spec     // Quick's stronger task-final verdict schema
 }
 
 type verdictOutcome struct {

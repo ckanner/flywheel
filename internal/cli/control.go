@@ -27,6 +27,7 @@ type controlResponse struct {
 	TaskDir       string                    `json:"taskDir"`
 	Cwd           string                    `json:"cwd,omitempty"`
 	State         *state.State              `json:"state"`
+	Sessions      []sessionSummary          `json:"sessions,omitempty"`
 	Error         string                    `json:"error,omitempty"`
 	Configuration *diagnostic.Configuration `json:"configuration,omitempty"`
 	Diagnostic    *diagnostic.Report        `json:"diagnostic,omitempty"`
@@ -173,6 +174,7 @@ func controlSnapshot(taskDir string) (controlResponse, error) {
 	}
 	if state.Exists(taskDir) {
 		reply.State, err = state.Load(taskDir)
+		reply.Sessions = sessionSummaries(reply.State)
 		return reply, err
 	}
 	return reply, nil

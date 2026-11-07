@@ -29,8 +29,12 @@ var openReportFile = func(r *os.Root, rel string) (io.ReadCloser, error) { retur
 
 // executeStep 成功时 packet 状态变为 executed 并记录 executor 证据。
 func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
+	if err := c.reconcileSessionReceipts(); err != nil {
+		return execOutcome{}, err
+	}
 	id := packet.PacketID
 	ps := c.State.Packets[id]
+	replay := c.sessionReplay("execute", id)
 
 	// live 凭证闸门：任何 spawn 前先等人批准（§9）。
 	credentialEnv := map[string]string{}
@@ -67,7 +71,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	c.State.Status = "running"
 	c.State.CurrentMilestone = strPtrAlways(ps.Milestone)
 	ps.Status = "executing"
-	ps.Attempts++
+	if !replay {
+		ps.Attempts++
+	}
 	invalidateEvidence(ps)
 	// 边界判定锚（§4.2/§4.4）：只在第一次尝试采样——重试保留原 base ref，
 	// executor 无法靠提交自己的早期尝试逃过判定（审计修复 #5）。
@@ -114,13 +120,18 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	// 无产出的重试读成假成功。
 	reportRel := filepath.ToSlash(filepath.Join("reports", id+".done.json"))
 	reportBaseline, _ := verify.GetBaseRef(uCwd)
-	_ = os.Remove(filepath.Join(c.TaskDir, reportRel))
+	if !replay {
+		_ = os.Remove(filepath.Join(c.TaskDir, reportRel))
+	}
 
 	for t := 0; t <= maxTransport; t++ {
 		if ferr := c.err(); ferr != nil {
 			return execOutcome{}, ferr
 		}
-		// 预算闸门由 runExecuteLoop 每轮统一把守（v0.24 单一所有者）。
+		// Each transport retry is billable; applying a received result is not.
+		if !c.sessionReplay("execute", id) && c.budgetGate() == "stop" {
+			return execOutcome{Stopped: true}, nil
+		}
 		// 宁可 fail-loud 也不要把无 key 的 spawn 送进 pi 的 auth.json 陷阱（P1-12②）。
 		if missingKey := c.missingKeyForRealDriver("execute", channel); missingKey != "" {
 			c.recordRetry(ps, "transport", string(errs.AUTH),
@@ -128,7 +139,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			c.save()
 			return execOutcome{ErrorCode: errs.AUTH}, nil
 		}
-		_ = os.Remove(filepath.Join(executionTaskDir, reportRel))
+		if !c.sessionReplay("execute", id) {
+			_ = os.Remove(filepath.Join(executionTaskDir, reportRel))
+		}
 		prompt := prompts.BuildExecutePrompt(packet, c.Spec, executionTaskDir, uCwd, ps.Attempts, prompts.ExecuteOptions{
 			Feedback: ps.LastFeedback, ProtectedTestPatterns: c.Config.Verify.ProtectedTestPatterns,
 		})
@@ -137,7 +150,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		for k, v := range credentialEnv {
 			apiKeys[k] = v
 		}
-		res := c.Drivers.Execute.Execute(drivers.CallArgs{
+		res, sessionErr := c.invokeScoped("execute", id, drivers.CallArgs{
 			Prompt:         prompt,
 			PacketID:       id,
 			TaskDir:        executionTaskDir,
@@ -151,10 +164,19 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  apiKeys,
 			Watchdog: c.wdog(),
-		})
+		}, c.Drivers.Execute.Execute)
+		if sessionErr != nil {
+			return execOutcome{}, sessionErr
+		}
 
 		// 交付物 = done-report，存在且 schema 合法。
 		raw, readErr := readUnitReport(uCwd, filepath.Join(c.taskDirPrefix(), reportRel))
+		if recorded, ok := c.sessionReports[sessionKey("execute", id)]; ok {
+			raw = recorded
+			if len(recorded) > 0 {
+				readErr = nil
+			}
+		}
 		reportExists := readErr == nil
 		rep := donereport.Result{Errors: []string{"missing"}}
 		if reportExists {
@@ -249,6 +271,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			at := c.nowISO()
 			ps.UpdatedAt = &at
 			c.touchProgress()
+			c.consumeSession("execute", id)
 			c.save()
 			return execOutcome{Success: true}, nil
 		}
@@ -256,6 +279,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		// Evaluate 不变量：!OK ⇒ Reasons 至少一条——空串兜底为死代码（同上删除）。
 		reasons := strings.Join(contractRes.Reasons, "; ")
 		ps.LastFeedback = map[string]any{"error-code": code, "details": contractRes.Reasons, "at": c.nowISO()}
+		c.consumeSession("execute", id)
 		c.Log(fmt.Sprintf("execute %s attempt %d transport %d: %s (%s)", id, ps.Attempts, t, code, reasons))
 
 		// 渠道降级：限流/配额（403）→ 下一配置渠道；AUTH 仅当订阅渠道有带 key 的

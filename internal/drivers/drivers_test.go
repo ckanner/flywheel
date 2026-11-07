@@ -154,8 +154,8 @@ func TestParseKimiStreamJson(t *testing.T) {
 }
 
 func TestRunKimiAgainstFakeBinary(t *testing.T) {
-	stream := `{"role":"meta","type":"session.resume_hint","session_id":"session_new"}
-{"role":"assistant","content":"the plan text"}
+	stream := `{"role":"assistant","content":"the plan text"}
+{"role":"meta","type":"session.resume_hint","session_id":"session_old"}
 `
 	binDir, workDir := fakeBin(t, "kimi", stream)
 	setPath(t, binDir)
@@ -170,7 +170,7 @@ func TestRunKimiAgainstFakeBinary(t *testing.T) {
 	assert.Empty(t, r.SpawnError)
 	assert.Equal(t, "kimi", r.Harness)
 	assert.Equal(t, "kimi", r.Provider)
-	assert.Equal(t, "session_new", r.SessionID, "resume hint 捕获新会话 id")
+	assert.Equal(t, "session_old", r.SessionID, "resume hint 必须确认所请求的同一会话")
 	assert.Equal(t, "the plan text", r.Text)
 	assert.True(t, r.Settled)
 	assert.Nil(t, r.Usage, "kimi 流不暴露 usage")
