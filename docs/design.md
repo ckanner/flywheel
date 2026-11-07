@@ -10,6 +10,8 @@ Claude Code Pro 增量接入：新增可选 `claude-code-pro` harness，消费�
 `dsh-subagent-claude-code-pro@0.3.2` 的公开 machine v1。它沿用上述角色会话与回执
 规则，不改变现有默认阶段，也不增加 P3 的任意中断恢复承诺。插件源码候选、Flywheel
 源码和 npm 发行是独立交付；0.3.1 没有机器接口，不能因安装了桌面工具就假定可用。
+实现、独立审查、上游四格 CI、实际 npm 安装与已测候选身份见
+[Claude Code Pro 验收记录](validation/2026-11-07-claude-code-pro.md)。
 
 ## 1. 目标与范围
 

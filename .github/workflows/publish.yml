@@ -19,7 +19,7 @@ permissions:
 # Companion source is not yet an npm release. Verify the same reviewed bytes
 # as PR CI without adding the optional adapter to the six published packages.
 env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: f732bff37d130bcecfb8e37d2bf456717c3b21e7
+  CLAUDE_CODE_PRO_SOURCE_SHA: 28483f8aafc15463c6d365100b64c04480cb56b5
 
 concurrency:
   group: npm-publish

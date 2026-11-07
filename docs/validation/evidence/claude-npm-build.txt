@@ -1,0 +1,15 @@
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm notice run @ckanner/flywheel@0.28.5 build:npm
+npm notice run bash scripts/build-npm.sh 0.28.5 dist-npm
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+added 188 packages in 5s
+Built host plugin, native Conversation View, DSH SDK, Codex Pro and Claude Code Pro workers.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "http-proxy". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
+Built 6 verified npm packages for 0.28.5 at /workspace/scratch/352ebc0c2cb3/flywheel/dist-npm
