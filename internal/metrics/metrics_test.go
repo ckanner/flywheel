@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,6 +90,62 @@ func TestEstimateCostUSD(t *testing.T) {
 	zero := EstimateCostUSD(&Usage{}, price)
 	require.NotNil(t, zero)
 	assert.InDelta(t, 0, *zero, 1e-9)
+}
+
+func TestInputIncludesCacheUsesTheAdapterAccountingContract(t *testing.T) {
+	for _, harness := range []string{"dsh", "codex-pro", "claude-code-pro"} {
+		assert.True(t, InputIncludesCache(harness), harness)
+	}
+	for _, harness := range []string{"", "pi", "omp", "kimi", "codex", "zcode", "mock", "future-adapter"} {
+		assert.False(t, InputIncludesCache(harness), harness)
+	}
+}
+
+func TestEstimateCostUSDChargesInclusiveCacheBucketsOnce(t *testing.T) {
+	price := &config.Price{Input: 1, Output: 4, CacheRead: 0.1}
+	for _, tc := range []struct {
+		name  string
+		usage Usage
+		want  float64
+	}{
+		{"mixed input", Usage{Input: 3_250_000, Output: 500_000, CacheRead: 2_000_000, CacheWrite: 250_000}, 3.45},
+		{"all reads", Usage{Input: 1_000_000, CacheRead: 1_000_000}, 0.1},
+		{"all writes", Usage{Input: 1_000_000, CacheWrite: 1_000_000}, 1},
+		{"no cache", Usage{Input: 1_000_000, Output: 500_000}, 3},
+		{"known zero", Usage{}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.usage.InputIncludesCache = true
+			before := tc.usage
+			cost := EstimateCostUSD(&tc.usage, price)
+			require.NotNil(t, cost)
+			assert.InDelta(t, tc.want, *cost, 1e-9)
+			assert.Equal(t, before, tc.usage, "pricing must not change token totals or cache metrics")
+		})
+	}
+	// Claude's raw 100 uncached + 900 cached input is normalized to Input=1000.
+	// The 900 cached tokens must not additionally incur the normal input price.
+	claude := &Usage{Input: 1000, Output: 10, CacheRead: 900, InputIncludesCache: true}
+	cost := EstimateCostUSD(claude, &config.Price{Input: 1, Output: 1, CacheRead: 0.1})
+	require.NotNil(t, cost)
+	assert.InDelta(t, 0.0002, *cost, 1e-10)
+}
+
+func TestEstimateCostUSDRejectsContradictoryCounters(t *testing.T) {
+	price := &config.Price{Input: 1, Output: 4, CacheRead: 0.1}
+	for _, usage := range []Usage{
+		{Input: -1}, {Output: -1}, {CacheRead: -1}, {CacheWrite: -1},
+		{Input: 100, CacheRead: 101, InputIncludesCache: true},
+		{Input: 100, CacheWrite: 101, InputIncludesCache: true},
+		{Input: 100, CacheRead: 80, CacheWrite: 30, InputIncludesCache: true},
+		{Input: math.MaxInt64, CacheRead: math.MaxInt64, CacheWrite: 1, InputIncludesCache: true},
+	} {
+		assert.Nil(t, EstimateCostUSD(&usage, price), "%+v", usage)
+	}
+	// The same counts are valid for the legacy disjoint pi representation.
+	cost := EstimateCostUSD(&Usage{Input: 100, CacheRead: 80, CacheWrite: 30}, price)
+	require.NotNil(t, cost)
+	assert.InDelta(t, 0.000138, *cost, 1e-10)
 }
 
 func TestAppendMkdirFailure(t *testing.T) {

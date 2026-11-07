@@ -57,3 +57,7 @@ Current source selects `deepseek-account` for Flash in defaults and the subscrip
 Desktop login can initialize an account-model default, but independent SDK calls still need explicit provider/model values. Flywheel requests `deepseek-account` and `deepseek-flash`, preserving both the selected access method and the Flash-only choice. Authentication or quota failures are reported. The default preset has no cross-channel fallback; explicit user-defined fallback chains retain their existing policy.
 
 **Release and migration are separate:** 0.28.3 changes the embedded default to account access; 0.28.2 still embeds the API default. Upgrades preserve user configuration, so adoption requires 0.28.3 or later followed by explicit migration. See [Configuration](configuration.md#deepseek-account-and-api-key-providers) for credential-sharing conditions and the preview/apply workflow. No user credentials or running tasks were modified by this source change.
+
+## Optional Claude Code Pro
+
+Claude remains unassigned in the default model policy. The optional `claude-code-pro` harness accepts an explicit native model and low/medium/high/xhigh/max request; an installed CLI or account can reject a choice. No new model ranking or effort benchmark is implied. See [the adapter guide](claude-code-pro.md) for the companion 0.3.2 public API, full-access boundary, and usage semantics.

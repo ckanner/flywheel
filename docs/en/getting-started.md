@@ -16,6 +16,8 @@ Subscription preset migration and `permissions.mode` are available from **0.28.2
 
 **Fixes in 0.28.3:** the `deepseek-account` default and the current session directory when the project path is omitted. Version 0.28.2 still uses `deepseek-official` and the original directory. Check the registry version before installing. Upgrades preserve configuration; adopting the account preset requires explicit migration.
 
+**Optional Claude backend:** the default installation does not require Claude. Selecting `claude-code-pro` requires the companion 0.3.2 plugin in the worker's dependency tree and an installed/authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md) for configuration and source-candidate boundaries.
+
 ## 1. Prepare the environment
 
 | Requirement | Why it is needed |

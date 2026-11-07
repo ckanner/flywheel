@@ -200,10 +200,49 @@ worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理�
 
 Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、模型、完整策略或真实推理能力，`--probe` 也不会对 Codex Pro 发模型任务。
 
+## Claude Code Pro worker
+
+`flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
+信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
+`dsh-subagent-claude-code-pro@0.3.2`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`parseMachineRequest`、`MachineInputError`、`runMachine`。缺 peer 不影响未选择 Claude
+的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
+
+start 字段与 Codex 外层 v1/v2 一致：type、protocol、requestId、cwd、model、
+reasoningEffort、permissionMode、prompt、timeoutMs；v2 额外允许
+`threadMode:persistent` 和可选 threadId。v1 映射原生 sessionMode=ephemeral，v2
+映射 persistent／显式 sessionId。只接受 danger-full-access，映射 bypassPermissions；
+原生审批模式不等价于 OS read-only/workspace-write。命令来自
+FLYWHEEL_CLAUDE_BIN，权限、session、命令和输出上限不能通过额外 start 字段覆盖。
+
+terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
+adapter 是精确 package/version/protocol；receipt 原样保存 Claude machine v1 的
+requested、execution、cleanup、session、configuration、output、usage、
+reportedCostUSD、costUSD、costStatus、failure。CLI 没有远端 turnId 时保持缺失，
+不借本地 runId 伪造远端证据。模型完整 ID、可观察 cwd／权限及会话必须匹配；请求
+effort 不冒充已观察的实际 effort。只有成功终态、物理 exit 0、清理确认和外层正常
+退出能产生可继续的结果。
+
+插件先建立独立 guardian 的 IPC lifeline，再派发原生 CLI。worker 被强杀或连接
+丢失时 guardian 清理 native group；正常 API 返回等待 guardian 退出。公开回执
+仍记录 native PID／PGID；没有收到完整回执的 Go 调用保持 unknown，不从后台清理
+推断任务结果或恢复资格。
+
+**预派发证明：**只在尚未进入 `runMachine` 的 catch 中，null receipt 的错误
+envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 必须
+同时校验 adapter、请求 ID、协议、null receipt 和错误；成功结果、进入 machine
+后的 throw 或坏帧不能使用该证明。它表示本次没有调用后端，可记录已知零消耗。
+进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
+
+`--doctor` 仅核验精确 peer 与导出，返回
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.3.2",machineProtocol:1,available:true,inferenceTested:false}`。
+不启动 Claude，不测试账号。完整用户入口见[中文](../../docs/claude-code-pro.md)／
+[English](../../docs/en/claude-code-pro.md)。
+
 ## Go 角色账本与回执恢复
 
 `Result.Session` 是 Go 的标准化调用事实，不是给所有旧 wire 格式新增字段。
-Codex Pro、DSH、Kimi 的主任务 Plan／Execute／Review／Judge 在 fresh/scoped 下都由
+Codex Pro、Claude Code Pro、DSH、Kimi 的主任务 Plan／Execute／Review／Judge 在 fresh/scoped 下都由
 Go 保存 intent，再执行一次调用并写入限定大小的原子回执。`last.persistent` 独立控制
 角色历史复用；fresh 的原始会话 ID 可保留作审计，但不成为通用 scoped 句柄。既有
 Kimi Plan resident 选择保留，Intake／Garden、其他适配器及 mock 保持原路径。

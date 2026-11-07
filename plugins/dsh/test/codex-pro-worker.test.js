@@ -417,7 +417,7 @@ test('missing and mismatched installed dependencies fail locally without fallbac
   const packageRoot = join(f.cwd, 'isolated-worker');
   await mkdir(packageRoot);
   await writeFile(join(packageRoot, 'package.json'), '{"type":"module"}');
-  for (const file of ['codex-pro-worker.js', 'codex-pro-bridge.js']) await copyFile(new URL('../src/' + file, import.meta.url), join(packageRoot, file));
+  for (const file of ['codex-pro-worker.js', 'codex-pro-bridge.js', 'machine-worker.js']) await copyFile(new URL('../src/' + file, import.meta.url), join(packageRoot, file));
   const options = { binary: join(packageRoot, 'codex-pro-worker.js'), args: ['--doctor'], input: null };
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_UNAVAILABLE');
   const failedRun = resultFrame(await f.launch({ ...options, args: [], input: f.request }).done, 1);

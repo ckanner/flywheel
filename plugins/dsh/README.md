@@ -14,6 +14,8 @@
 
 0.28.4 同步 Cordis 4.0／4.1 和 host peer 声明，并用锁定依赖测试新旧两版发布的 renderer。配置、已有 DeepSeek 账号与权限保持原样。SDK 在公开 agent/created 阶段写入权限事件，通过公开 `approval.overrideOf(session)` 核对 never 覆盖值；Session 创建公告期间保持只读。
 
+本包同时提供可选 Claude Code Pro worker，直接消费配套插件 0.3.2 的公开 machine API。它不通过父模型二次委派，未绑定时无需安装 Claude peer；配置与发行前提见 [接入指南](../../docs/claude-code-pro.md)。默认 loop 不变。
+
 ## 提供什么
 
 | 部分 | 行为 |
@@ -109,7 +111,7 @@ flywheel-codex-pro-worker --doctor
 互相隔离。新模板显式 scoped，旧配置缺省 fresh，Plan 显式 `resident-session:false`
 继续关闭该角色复用。完整配置见[会话策略](../../docs/configuration.md#会话策略历史复用与调用安全)。
 
-Go 在 fresh/scoped 下均记录支持的 Codex Pro、DSH、Kimi 主任务调用；fresh 不启用
+Go 在 fresh/scoped 下均记录支持的 Codex Pro、Claude Code Pro、DSH、Kimi 主任务调用；fresh 不启用
 通用角色历史复用，保留既有 Kimi Plan resident 行为。其他适配器、mock 及
 Intake／Garden 保留原路径。派发、结果或清理未知时阻止继续运行，不通过新建会话、
 切换模式或扫描历史绕过。`status`／`control status` 可只读查看角色、作用域、动作／
@@ -193,7 +195,7 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 
 目录不存在或控制进程无法创建等情况，只有宿主结构化确认请求尚未执行，界面才允许修正输入或环境后再次提交。普通错误、断连或错误文字本身不构成这项确认，不能据此解除结果未确认状态。`/flywheel` 的失败 `text` 使用 `type:"flywheel-control-error"` 的 JSON 包装，字段和兼容行为见[命令失败协议](PROTOCOL.md#dsh-命令失败与是否派发)。
 
-切换视图、关闭会话页面、卸载插件或退出桌面，都不等于向后台 Go 任务发出停止请求。需要停止时显式点击“停止”并等待引擎确认；重新打开后刷新同一任务。DSH 的原生轨迹继续展示父会话已有的命令与工具记录；独立 SDK、Kimi、Codex Pro worker 的完整执行历史不会自动合并到父会话轨迹，也不会被伪装成 DSH 原生后台任务。
+切换视图、关闭会话页面、卸载插件或退出桌面，都不等于向后台 Go 任务发出停止请求。需要停止时显式点击“停止”并等待引擎确认；重新打开后刷新同一任务。DSH 的原生轨迹继续展示父会话已有的命令与工具记录；独立 SDK、Kimi、Codex Pro、Claude Code Pro worker 的完整执行历史不会自动合并到父会话轨迹，也不会被伪装成 DSH 原生后台任务。
 
 ### 宿主 UI 接入
 

@@ -18,6 +18,8 @@
 
 **0.28.3 修复**：下文的 `deepseek-account` 默认和留空目录读取会话当前工作目录从 0.28.3 开始提供。0.28.2 仍使用 `deepseek-official` 与最初目录。安装前核对 registry 版本；升级保留已有配置，采用账号预设需要显式迁移。
 
+**可选 Claude 后端：**默认安装不要求 Claude。选择 `claude-code-pro` 时需额外安装 worker 能解析的配套 0.3.2 插件，并准备本机 Claude CLI／登录。具体版本、配置与源码候选边界见 [Claude Code Pro 指南](claude-code-pro.md)。
+
 ## 目录
 
 1. [准备运行环境](#1-准备运行环境)

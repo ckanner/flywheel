@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# Companion source is not yet an npm release. Verify the same reviewed bytes
+# as PR CI without adding the optional adapter to the six published packages.
+env:
+  CLAUDE_CODE_PRO_SOURCE_SHA: f732bff37d130bcecfb8e37d2bf456717c3b21e7
+
 concurrency:
   group: npm-publish
   cancel-in-progress: false
@@ -78,10 +83,27 @@ jobs:
         run: |
           bash scripts/build-npm.sh "$VERSION" dist-npm
           node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
+      - name: Pack the reviewed optional Claude machine API
+        run: |
+          claude_source="$RUNNER_TEMP/flywheel-claude-code-pro"
+          git init "$claude_source"
+          git -C "$claude_source" remote add origin https://github.com/ckanner/dsh-subagent-claude-code-pro.git
+          git -C "$claude_source" fetch --depth=1 origin "$CLAUDE_CODE_PRO_SOURCE_SHA"
+          git -C "$claude_source" checkout --detach FETCH_HEAD
+          test "$(git -C "$claude_source" rev-parse HEAD)" = "$CLAUDE_CODE_PRO_SOURCE_SHA"
+          mkdir -p "$GITHUB_WORKSPACE/dist-claude"
+          cd "$claude_source"
+          npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
+          printf '%s  %s\n' d55b3a52d7b0d350556f65da572194bfe3db89550f4b7ea4cbdbab7997fbf125 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate-${{ github.run_id }}
           path: dist-npm/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-pro-candidate-${{ github.run_id }}
+          path: dist-claude/
           if-no-files-found: error
 
   verify:
@@ -114,14 +136,29 @@ jobs:
           git config --global user.name "flywheel-ci"
       - name: Go quality gate
         run: make quality-gate
+      - uses: actions/download-artifact@v4
+        with:
+          name: claude-code-pro-candidate-${{ github.run_id }}
+          path: dist-claude
       - name: Build and test the DSH plugin
+        working-directory: plugins/dsh
         run: |
-          npm --prefix plugins/dsh ci --ignore-scripts
-          npm --prefix plugins/dsh run check
-      - name: Verify the Go to Node to SDK and Codex Pro boundaries
+          npm ci --ignore-scripts
+          # npm 12 does not materialize an optional peer with --no-save alone.
+          # Install the actual tarball as a temporary dev requirement, then
+          # restore source manifests before building or testing the plugin.
+          claude_peer_backup="$(mktemp -d "$RUNNER_TEMP/flywheel-claude-peer.XXXXXX")"
+          cp package.json "$claude_peer_backup/package.json"
+          cp package-lock.json "$claude_peer_backup/package-lock.json"
+          trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz
+          cp "$claude_peer_backup/package.json" package.json
+          cp "$claude_peer_backup/package-lock.json" package-lock.json
+          npm run check
+      - name: Verify Go to Node to SDK, Codex Pro and Claude protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/drivers -run '^Test(DSH|CodexPro)NodeWorkerOfflineBridge$' -count=1
+        run: go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1 -v
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
@@ -138,6 +175,7 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: ${{ github.workspace }}/dist-npm
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz
         run: npm run test:install
 
   publish:

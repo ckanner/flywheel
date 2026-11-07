@@ -167,10 +167,11 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		costUSD = a.result.CostUSD
 	} else if usage != nil {
 		costUSD = metrics.EstimateCostUSD(&metrics.Usage{
-			Input:      usage.Input,
-			Output:     usage.Output,
-			CacheRead:  usage.CacheRead,
-			CacheWrite: usage.CacheWrite, // v0.18 修复（C1）：漏传导致缓存写入按 0 计价
+			Input:              usage.Input,
+			Output:             usage.Output,
+			CacheRead:          usage.CacheRead,
+			CacheWrite:         usage.CacheWrite, // v0.18 修复（C1）：漏传导致缓存写入按 0 计价
+			InputIncludesCache: metrics.InputIncludesCache(a.result.Harness),
 		}, metrics.PriceForModel(c.Config.Pricing, a.model))
 	}
 	var cacheHitRate *float64
@@ -233,8 +234,10 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	}
 	var resultState any
 	var codexProReceipt any
+	var claudeCodeProReceipt any
 	if a.result != nil {
 		codexProReceipt = a.result.CodexProReceipt
+		claudeCodeProReceipt = a.result.ClaudeCodeProReceipt
 		resultState = map[string]any{
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
 			"truncated": a.result.Truncated, "signal": a.result.Signal,
@@ -242,25 +245,26 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		}
 	}
 	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{
-		"role":              a.role,
-		"packet-id":         packetID,
-		"milestone":         milestone,
-		"model":             model,
-		"harness":           harness,
-		"provider":          effectiveProvider,
-		"channel":           channel,
-		"prompt-hash":       promptHash,
-		"usage":             usageVal,
-		"cache-hit-rate":    cacheHitRate,
-		"reasoning-chars":   reasoningCharsOf(a.result),
-		"cost-usd":          costVal,
-		"duration-ms":       durationMS,
-		"exit-code":         exitCode,
-		"error-code":        errorCode,
-		"attempt":           attempt,
-		"result":            resultState,
-		"codex-pro-receipt": codexProReceipt,
-		"session":           sessionMetrics(c.State.Sessions, invocationID),
+		"role":                    a.role,
+		"packet-id":               packetID,
+		"milestone":               milestone,
+		"model":                   model,
+		"harness":                 harness,
+		"provider":                effectiveProvider,
+		"channel":                 channel,
+		"prompt-hash":             promptHash,
+		"usage":                   usageVal,
+		"cache-hit-rate":          cacheHitRate,
+		"reasoning-chars":         reasoningCharsOf(a.result),
+		"cost-usd":                costVal,
+		"duration-ms":             durationMS,
+		"exit-code":               exitCode,
+		"error-code":              errorCode,
+		"attempt":                 attempt,
+		"result":                  resultState,
+		"codex-pro-receipt":       codexProReceipt,
+		"claude-code-pro-receipt": claudeCodeProReceipt,
+		"session":                 sessionMetrics(c.State.Sessions, invocationID),
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
 	}

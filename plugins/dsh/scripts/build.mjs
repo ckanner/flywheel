@@ -5,7 +5,7 @@ import { transform } from 'lightningcss';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 await mkdir(join(root, 'dist'), { recursive: true });
-for (const name of ['index.js', 'control.js', 'task-association.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js']) {
+for (const name of ['index.js', 'control.js', 'task-association.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js']) {
   await copyFile(join(root, 'src', name), join(root, 'dist', name));
 }
 // Compile plugin-owned CSS Modules. The rendered component owns its style tag;
@@ -27,4 +27,5 @@ await writeFile(join(root, 'dist/client.js'),
   client + '\nreturn module.exports;\n}});\n');
 await chmod(join(root, 'dist/worker.js'), 0o755);
 await chmod(join(root, 'dist/codex-pro-worker.js'), 0o755);
-console.log('Built host plugin, native Conversation View, DSH SDK and Codex Pro workers.');
+await chmod(join(root, 'dist/claude-code-pro-worker.js'), 0o755);
+console.log('Built host plugin, native Conversation View, DSH SDK, Codex Pro and Claude Code Pro workers.');

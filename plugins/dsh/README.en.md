@@ -21,6 +21,8 @@ Subscription preset migration and `permissions.mode` are available from **0.28.2
 
 Version 0.28.4 aligns Cordis 4.0/4.1 and host peer declarations, testing the same built plugin against both published renderers with locked dependencies. Configuration, account selection and permissions are preserved. The SDK writes permission events during the public agent/created phase, after the read-only Session creation announcement and before model work; it reads the explicit never override through public `approval.overrideOf(session)`.
 
+The package also ships an optional Claude Code Pro worker that calls the companion 0.3.2 public machine API without a second parent-model delegation. Unselected configurations do not require the optional peer. See [integration and release prerequisites](../../docs/en/claude-code-pro.md); default loops remain unchanged.
+
 ## Components
 
 | Component | Responsibility |
@@ -327,7 +329,7 @@ GitHub PRs, merge remote PRs, or publish packages. See the
 
 `sessions.mode=scoped` permits continuation for the same task, role, and scope. Ordinary repairs can continue Executor history, while a Reviewer only continues its own history and checks the complete current candidate again. Primary Judge and second opinion remain separate. New templates explicitly select scoped mode; old configurations default to fresh, and an explicit Plan `resident-session:false` still opts that role out. See [Session policy](../../docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
 
-Go journals supported main-task Codex Pro, DSH, and Kimi calls in both fresh and scoped modes. Fresh disables general role history reuse while preserving the existing Kimi Plan resident behavior. Other adapters, mock, and Intake/Garden retain their existing paths. Unknown dispatch, outcome, or cleanup blocks further execution; creating a new session, switching modes, or scanning history cannot bypass it. `status` and `control status` expose compact role, scope, action/reason, and latest invocation facts without reading conversation history. A resume candidate is not proof of durable backend history.
+Go journals supported main-task Codex Pro, Claude Code Pro, DSH, and Kimi calls in both fresh and scoped modes. Fresh disables general role history reuse while preserving the existing Kimi Plan resident behavior. Other adapters, mock, and Intake/Garden retain their existing paths. Unknown dispatch, outcome, or cleanup blocks further execution; creating a new session, switching modes, or scanning history cannot bypass it. `status` and `control status` expose compact role, scope, action/reason, and latest invocation facts without reading conversation history. A resume candidate is not proof of durable backend history.
 
 DSH v2 uses public `session/resume` with the exact requested session ID and a new SDK process for each call. Restored events do not enter the current output, usage, or activity callback; directory and permission checks run again. Normal-terminal continuation and saved-receipt recovery are P1/P2 capabilities. Live queries, arbitrary-crash and cross-machine recovery are not promised (P3), and real quality, cache, and performance experiments remain unperformed (P4).
 

@@ -1,7 +1,7 @@
 {
   "name": "@ckanner/dsh-plugin-flywheel",
   "version": "0.28.5",
-  "description": "Flywheel engine controls with owned DSH SDK and Codex Pro machine workers",
+  "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "UNLICENSED",
   "engines": {
@@ -14,11 +14,13 @@
     "./worker-policy": "./dist/policy.js",
     "./worker": "./dist/worker.js",
     "./codex-pro-worker": "./dist/codex-pro-worker.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js"
   },
   "bin": {
     "flywheel-dsh-worker": "./dist/worker.js",
-    "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js"
+    "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js",
+    "flywheel-claude-code-pro-worker": "./dist/claude-code-pro-worker.js"
   },
   "files": [
     "dist",
@@ -46,7 +48,8 @@
     "@deepseek-ai/cordis": "~4.0.5 || ~4.1.0",
     "@deepseek-ai/dsh-commands": "0.2.1-rc.5 || 0.2.2-rc.1",
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.5 || 0.2.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.5 || 0.2.2-rc.1"
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5 || 0.2.2-rc.1",
+    "dsh-subagent-claude-code-pro": "0.3.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -59,6 +62,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "dsh-subagent-claude-code-pro": {
       "optional": true
     }
   },

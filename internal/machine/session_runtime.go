@@ -14,6 +14,8 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	switch a.Binding.Harness {
 	case "codex-pro":
 		keys = append(keys, "CODEX_HOME", drivers.CodexProBinaryEnv, drivers.CodexProWorkerEnv)
+	case "claude-code-pro":
+		keys = append(keys, "CLAUDE_CONFIG_DIR", drivers.ClaudeCodeProBinaryEnv, drivers.ClaudeCodeProWorkerEnv)
 	case "dsh":
 		keys = append(keys, "DSH_HOME", "FLYWHEEL_DSH_PROFILE", "FLYWHEEL_DSH_BIN", drivers.DSHWorkerEnv)
 	case "kimi":

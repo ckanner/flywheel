@@ -8,7 +8,7 @@ Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，
 
 会话策略支持 **fresh／scoped**：新模板显式 scoped，旧配置缺省 fresh。scoped 可在可信
 正常终态后延续同任务、同角色、同作用域的历史；独立复审仍检查完整当前候选。
-Codex Pro、DSH、Kimi 的主任务调用在两种模式下都保存安全记录，未知派发、结果或清理
+Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在两种模式下都保存安全记录，未知派发、结果或清理
 会阻止继续执行，不能靠换模式绕过。P1/P2 的正常续接与已保存回执恢复已接通；
 P3 实时恢复和 P4 真实实验仍未完成，详见[会话配置](docs/configuration.md#会话策略历史复用与调用安全)。
 
@@ -19,6 +19,8 @@ P3 实时恢复和 P4 真实实验仍未完成，详见[会话配置](docs/confi
 本轮插件接入测试与实机边界见[验证记录](docs/validation/2026-11-03-codex-pro-default.md)，既有 npm 发行证据见[安装验证](docs/validation/2026-11-01-npm-installation.md)。旧版本的选型、维护机环境与演练记录保存在[历史设计](docs/design-history-v0.24.md)，不代表当前默认值或用户机器状态。
 
 首次使用请按 [Mac 安装与首个任务教程](docs/getting-started.md) 完成安装、配置、无推理检查和小任务验收。本文保留各接口与设计边界的速查。
+
+当前源码另支持可选的 [Claude Code Pro 后端](docs/claude-code-pro.md)：模型与 thinking 可配置，按角色续用已确认会话，尚未分配任何默认 loop。它需要配套插件 0.3.2 的公开 machine API 与显式 full-access；0.3.1 桌面工具不等于已满足此接口。
 
 ## 1. 一条命令安装
 

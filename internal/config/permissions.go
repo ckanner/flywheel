@@ -15,7 +15,7 @@ func (c *Config) PermissionMode(role, harness string) string {
 	case "review", "judge", "judge-panel":
 		return "read-only"
 	case "intake", "garden":
-		if harness == "dsh" || harness == "codex" || harness == "codex-pro" {
+		if harness == "dsh" || harness == "codex" || harness == "codex-pro" || harness == "claude-code-pro" {
 			return "read-only"
 		}
 		return ""

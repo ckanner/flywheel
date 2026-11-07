@@ -6,6 +6,11 @@
 
 具体行为、故障注入、独立 review 修复及验收边界见[会话实现验收记录](validation/2026-11-07-session-lifecycle.md)。
 
+Claude Code Pro 增量接入：新增可选 `claude-code-pro` harness，消费插件
+`dsh-subagent-claude-code-pro@0.3.2` 的公开 machine v1。它沿用上述角色会话与回执
+规则，不改变现有默认阶段，也不增加 P3 的任意中断恢复承诺。插件源码候选、Flywheel
+源码和 npm 发行是独立交付；0.3.1 没有机器接口，不能因安装了桌面工具就假定可用。
+
 ## 1. 目标与范围
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
@@ -34,10 +39,13 @@ flowchart TD
   U["DSH 桌面 / CLI"] --> G["Go 引擎"]
   G --> C["契约、状态、worktree"]
   G --> V["确定性验收与提交"]
-  G --> D["DSH SDK worker"]
-  G --> K["Kimi CLI"]
-  G --> X["Codex Pro worker"]
+  G --> R["按角色解析后端配置"]
+  R --> D["DSH SDK worker"]
+  R --> K["Kimi CLI"]
+  R --> X["Codex Pro worker"]
+  R --> H["Claude Code Pro worker"]
   X --> A["插件 machine API / Codex app-server"]
+  H --> Q["插件 machine API / Claude Code CLI"]
   D --> P["DeepSeek / ChatGPT provider"]
 ```
 
@@ -50,6 +58,11 @@ DSH 插件是控制面，提供面板、人工命令和模型工具。它只使�
 DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；无法证明正常关闭就不能报告成功。不依赖 Teams、OAR、Forge，也不把 external subagent 名称当成原生 LLM provider。
 
 Codex Pro worker 是另一种受管进程，直接导入 `dsh-subagent-codex-pro/machine`，不创建 DSH 父模型来再次委派。插件内部启动 Codex app-server，保留其完整 harness 与用户已有 Codex 登录。Go 管理 worker 生命周期；插件拥有 app-server、guardian 和内部取消／清理。正常完成必须同时满足外层 worker 的物理终态及插件完整回执。worker 异常退出不能被解释成插件子进程已清理；取消和未知清理结果均阻止成功。
+
+Claude Code Pro worker 同样直接调用公开 machine API。插件先建立独立 guardian 的
+IPC lifeline，再由 guardian 派发 Claude CLI 并拥有其进程组；worker 消失时仍能
+收束原生工作。正常结果等待 native 与 guardian 退出。清理与任务结果独立：外层被
+强杀导致回执丢失时，不能因为 guardian 清理了进程就推断任务成功或安全重放。
 
 ## 4. 执行闭环
 
@@ -146,6 +159,10 @@ L1 与 Review 的 `identity` 绑定：
 
 二者是外挂建议模块，不拥有主任务状态机。Intake 发现候选任务，Garden 提出知识资产改进；建议经人确认后进入正式契约。模块使用相同的进程终态、用量未知和预算纪律，不因“只是文本建议”接受未收尾的成功。
 
+有结构化 Session 事实的适配器若返回未知派发或未知结果，辅助模块在保存可归属计量后
+也停止重试／渠道回退。进程清理已确认不能代替业务结果已知；本地确定尚未启动的拒绝
+记录 not-dispatched 与零实际消耗，不能误记为已执行的未知任务。
+
 ### 4.7 Quick 最终评审与升级
 
 Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用与 Executor 隔离的上下文，既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。同范围复审续用不增加首次成功路径的固定模型阶段。
@@ -168,7 +185,7 @@ Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd�
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
 intent／received／consumed／blocked、派发／结果／清理和用量事实。
 
-调用安全记录与历史复用分别控制。Codex Pro、DSH、Kimi 的主任务调用在 fresh/scoped
+调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
 下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
 的可信结果才保存可复用句柄。fresh 的原始后端会话标识仍可保留在回执中，既有 Kimi
 Plan resident 行为不冒充跨里程碑的通用会话。其他适配器、mock 与 Intake／Garden
@@ -277,6 +294,38 @@ worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1
 
 仅完整且可归属本次调用的 usage 进入可知预算；partial/unknown 明确保留在回执，不能当成完整零用量。订阅调用没有真实美元价格时 cost 保持 unknown。默认安装解析 npm 依赖中的 worker，不悄悄改用 PATH 上的旧 `codex exec`。Codex 可执行程序与账号登录仍是运行前提；安装插件依赖不等同于代办授权。
 
+### 7.2 Claude Code Pro 可选接入
+
+`harness:"claude-code-pro"` 选择完整 Claude Code 工具循环，`channel` 指账号渠道，
+`model` 必填并原样传给 CLI；它不是 DSH SDK 注册的 provider。具名模板仅添加未绑定
+的 `claude-sonnet` profile，由用户以后选择 `loops.*` 或 Execute `routes.*`。
+`thinking` 缺省 high，支持插件允许的 low/medium/high/xhigh/max；CLI、模型与账号仍
+可能拒绝某档位，不能把传参成功宣称为实际推理强度已验证。
+
+Flywheel 分发 worker，把插件 0.3.2 声明为精确的 optional peer。未选择它时不用安装
+该 peer；选中时 `doctor` 与 worker 核验包名／版本／公开导出，并检查本地 `claude`
+命令。桌面安装目录不一定是 worker 的 Node 解析树；必须安装在该 worker 能解析的
+同一依赖树或全局 prefix。依赖缺失、接口不符和无效请求在 machine 调用前证明未派发；
+一旦进入 machine 调用，异常不能借同一个标记伪装成安全重放。
+
+首版只映射明确的 `full-access` 为原生 `bypassPermissions`。Claude 的 plan、
+acceptEdits 等是原生工具审批策略，不等价于 OS read-only/workspace-write 沙箱，
+所以 role-based 在调用前拒绝。完整原始回执保留 CLI init 所观察的 cwd、模型、权限
+模式、会话和版本；完整模型 ID 要求一致，sonnet/opus/haiku 别名按同 family 核对。
+这是运行后接纳检查，不声称在首个工具动作前拦截自定义 CLI 配置。
+
+fresh 外层 v1 映射 `sessionMode:ephemeral`，scoped 外层 v2 的 threadId 映射显式
+sessionId resume；新建与恢复不能同时请求。主任务仍由 Go 按角色保存句柄，评审不
+共享执行者历史。内部 machine v1 与终态回执独立版本化；保留 runId、进程组、独立
+dispatch/outcome/cleanup、原始 usage 和错误。CLI 无真实 turnId 时不构造远端 turnId。
+缺失／损坏终态、异常退出和未知清理均不能成为续用检查点，且不能自动 fresh 重放。
+
+CLI 的 input_tokens 不含缓存量，已知完整计数按 input+cache-read+cache-create+output
+累计；缺失的缓存字段保持 unknown/partial，不补零。`total_cost_usd` 仅保留为
+reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unknown。
+用户显式配置价格时，成本估算先从包含缓存的总输入中扣除 cache-read/cache-create，
+再对互不相交的桶各计一次；相同口径适用于 DSH 与 Codex Pro。原始 token 账本不改写。
+
 ## 8. 用量、成本与效率
 
 优先通过明确小任务、缓存稳定前缀、低频规划、故障反馈复用、独立短评审降低重试与上下文膨胀。默认不使用所有模型串行互相复核，也不强制 max/ultra。
@@ -318,7 +367,8 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 2026-11-06 [自适应工作流方案](plans/2026-11-06-adaptive-workflow.md)的第一阶段在本实现中落地：宿主统一准备启动、保守选择 Quick／Full、两阶段 Quick 与单向升级、DSH 具体任务关联。方案正文保留原始背景和分期计划；现行字段与接口以本设计、schema 和使用指南为准。
 
 2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)的 P1/P2 在本轮接通：
-Codex Pro、DSH、Kimi 的正常终态续用、角色账本、调用安全记录及可靠回执恢复。
+Codex Pro、DSH、Kimi 的正常终态续用、角色账本、调用安全记录及可靠回执恢复；
+新增 Claude Code Pro 沿用同一策略和门禁。
 P3 仍需要上游插件公开实时调用查询、只读恢复和持久化确认；不能用外层 worker v2
 假装这些能力已存在。P4 的真实账号、质量、缓存与性能基准未完成；离线协议及恢复
 测试不能替代这些实验。保持 machine API、Go 状态所有权、独立评审和现有交付门禁。

@@ -26,13 +26,36 @@ func (m *Ctx) stopForUnconfirmedCleanup(role string, result drivers.Result) bool
 	return true
 }
 
+// Process cleanup and the model outcome are separate facts. A terminated CLI
+// may already have changed the workspace without returning a complete result.
+// Advice modules must not replay that work or select another channel blindly.
+func (m *Ctx) stopForUnknownInvocation(role string, result drivers.Result) bool {
+	s := result.Session
+	if s == nil || ((s.Dispatch == "not-dispatched" || s.Dispatch == "dispatched") &&
+		(s.Outcome == "completed" || s.Outcome == "failed" || s.Outcome == "cancelled") && s.CleanupConfirmed) {
+		return false
+	}
+	failure := fmt.Errorf("%s invocation outcome is unconfirmed; automatic execution stopped, reconcile the recorded invocation before replay", role)
+	entry := map[string]any{"at": state.NowISO(), "packet-id": nil, "role": role,
+		"reason": failure.Error(), "invocation": s}
+	inboxErr := appendModuleCleanupInbox(m.TaskDir, entry)
+	stateErr := saveModuleCleanupEscalation(m.TaskDir, entry)
+	m.fatalErr = errors.Join(m.fatalErr, failure, inboxErr, stateErr)
+	m.Log(m.fatalErr.Error())
+	return true
+}
+
 func appendModuleCleanupInbox(taskDir string, entry map[string]any) error {
 	f, err := os.OpenFile(filepath.Join(taskDir, "inbox.md"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "\n## %s — %s cleanup\n\n%s\n", entry["at"], entry["role"], entry["reason"])
+	kind := "cleanup"
+	if _, cleanup := entry["cleanup-error"]; !cleanup {
+		kind = "invocation"
+	}
+	_, err = fmt.Fprintf(f, "\n## %s — %s %s\n\n%s\n", entry["at"], entry["role"], kind, entry["reason"])
 	return err
 }
 

@@ -63,7 +63,7 @@ flywheel config inspect --cwd /repo --json
 null、错拼字段和不完整对象在模型启动前拒绝。字段信源为
 [会话策略 schema](../templates/session-policy.schema.json)。
 
-`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、DSH 和 Kimi 的主任务
+`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、Claude Code Pro、DSH 和 Kimi 的主任务
 Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图，再保存可信终态回执。
 `fresh` 不复用通用的角色历史，保持后端原有的新调用方式，并保留既有 Kimi Plan
 `resident-session` 行为；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
@@ -173,11 +173,15 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 字段信源为 [Spec schema](../templates/spec.schema.json) 与
 [state schema](../templates/state.schema.json)，运行流程见[工作流指南](workflow.md)。
 
+### 可选 Claude Code Pro
+
+新增 `harness:claude-code-pro` 与未绑定的 `claude-sonnet` profile，可用于任意已配置 loop 或 Execute route。模型、thinking、optional peer 安装、full-access-only 权限及正常续接边界见 [Claude Code Pro 指南](claude-code-pro.md)。`provider` 仍只用于 DSH 原生 adapter；默认阶段分配不变。
+
 ## 2. 四个概念各负责什么
 
 | 字段 | 含义 | 示例 |
 |---|---|---|
-| `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`；`codex` 为显式旧 CLI 路径 |
+| `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`、`claude-code-pro`；`codex` 为显式旧 CLI 路径 |
 | `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-account`、`chatgpt` |
 | `channel` | 配置中的凭证／后备／计量渠道名称 | `deepseek-account-sdk`、`chatgpt-sdk`、`kimi-subscription` |
 | `profile` | 当前 Flywheel 配置内的一组模型字段引用 | `flash`、`gpt-review`、`kimi` |

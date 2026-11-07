@@ -68,6 +68,11 @@ function manifests() {
   values[PLUGIN].dependencies = { "dsh-subagent-codex-pro": "0.8.0" };
   values[PLUGIN].exports = { "./codex-pro-worker": "./dist/codex-pro-worker.js" };
   values[PLUGIN].bin = { "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js" };
+  values[META].bin['flywheel-claude-code-pro-worker'] = 'bin/flywheel-claude-code-pro-worker.js';
+  values[PLUGIN].exports['./claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
+  values[PLUGIN].bin['flywheel-claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
+  values[PLUGIN].peerDependencies = { 'dsh-subagent-claude-code-pro': '0.3.2' };
+  values[PLUGIN].peerDependenciesMeta = { 'dsh-subagent-claude-code-pro': { optional: true } };
   return values;
 }
 

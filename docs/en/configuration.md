@@ -65,7 +65,7 @@ Full access preserves task boundaries, frozen acceptance, verification, and cand
 
 Both new-installation templates explicitly select `scoped`. An existing file without `sessions` normalizes to `fresh`, policy version 1; upgrades do not rewrite it. An explicit policy must contain both fields. Unknown modes, future versions, nulls, typos, and incomplete objects fail before a model starts. The [session policy schema](../../templates/session-policy.schema.json) is the field contract.
 
-`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this first-phase role session policy.
+`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, Claude Code Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this first-phase role session policy.
 
 | Role | History scope and responsibility |
 |---|---|
@@ -128,11 +128,15 @@ flywheel control status --task-dir /repo/docs/task --cwd /repo
 
 Quick reuses existing Execute and Review bindings without changing effort, accounts, fallbacks, or full-access settings. All required checks remain, and applicable L2/L3 run in the actual candidate before final Review. The reviewer checks every requirement; the first-success path uses two stage-agent calls, Execute and final Review. See the [Spec schema](../../templates/spec.schema.json), [state schema](../../templates/state.schema.json), and [workflow guide](workflow.md).
 
+## Optional Claude Code Pro
+
+The `claude-code-pro` harness and unreferenced `claude-sonnet` profile can be selected for any configured loop or Execute route. See the [Claude Code Pro guide](claude-code-pro.md) for model/effort choices, optional-peer installation, full-access-only permissions, and terminal-backed continuation. The provider field remains specific to DSH native adapters; default stage allocation is unchanged.
+
 ## Fields and identities
 
 | Field | Meaning | Example |
 |---|---|---|
-| `harness` | Process and tool-loop backend | `dsh`, `kimi`, `codex-pro`; `codex` is the explicit older CLI path |
+| `harness` | Process and tool-loop backend | `dsh`, `kimi`, `codex-pro`, `claude-code-pro`; `codex` is the explicit older CLI path |
 | `provider` | Registered DSH SDK LLM adapter ID; applies to DSH bindings | `deepseek-account`, `chatgpt` |
 | `channel` | A configuration label used for credentials, fallback, and accounting | `deepseek-account-sdk`, `chatgpt-sdk`, `kimi-subscription` |
 | `model` | Exact model identifier passed to the selected backend | `deepseek-flash`, `kimi-code/k3.1-pro`, `gpt-6.1-sol` |

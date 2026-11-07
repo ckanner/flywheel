@@ -5,7 +5,8 @@
   "bin": {
     "flywheel": "bin/flywheel.js",
     "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js",
-    "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js"
+    "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js",
+    "flywheel-claude-code-pro-worker": "bin/flywheel-claude-code-pro-worker.js"
   },
   "os": [
     "darwin",
@@ -37,7 +38,9 @@
     "docs/en/configuration.md",
     "docs/en/model-policy.md",
     "docs/en/workflow.md",
-    "docs/examples/create-first-task.sh"
+    "docs/examples/create-first-task.sh",
+    "docs/claude-code-pro.md",
+    "docs/en/claude-code-pro.md"
   ],
   "optionalDependencies": {
     "@ckanner/flywheel-darwin-arm64": "0.28.5",

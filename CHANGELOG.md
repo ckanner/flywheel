@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 新增可选 `claude-code-pro` harness：通过 `dsh-subagent-claude-code-pro@0.3.2` 公开 machine v1 运行本地 Claude Code CLI，明确模型／thinking、full-access、fresh／同角色 scoped 续接和原始调用回执。添加可选 profile、worker、无推理 doctor、安装路径和双语指南，暂不改变任何默认 loop／route。0.3.2 是配套源码版本，本条不表示它或 Flywheel 已发布 npm。
+- 修正已跟踪调用的派发前拒绝／取消：确认未启动就保存已知未派发与零消耗，配置修复后可继续；未知结果仍阻断。Intake／Garden 对有结构化事实的未知派发或结果也停止重试，进程清理不被误当作业务完成。
+- 校准显式 pricing 估算：Claude／Codex Pro／DSH 的总输入包含缓存量，估价前拆成不相交桶，避免缓存 token 被按普通输入重复计价；legacy pi 的原分桶语义不变，缺失／矛盾数据继续 unknown。
 - 实现 Auto／Quick／Full：宿主先研究并准备契约，Go 校验资格并持久化策略。Quick 保留 Execute、全部必需验证、独立最终 Review 与同一候选的 Git 交付；合格时 Plan／Judge 记为不适用。旧任务继续 Full，发现风险或验证缺口只允许向 Full 升级，保留预算、工作区和审计历史。
 - 新增 `flywheel-task` 统一准备启动 skill、`flywheel_launch` 模型工具及 `control launch --mode auto|quick|full`。通过 DSH 公开会话投影关联确切任务，覆盖会话重放、fork 隔离与未确认操作；视图显示请求模式、生效策略、阶段适用性和升级原因。
 - 补齐 11 个内嵌 skills 的安装校验、双语工作流／配置／入门指南，以及引擎、控制接口和真实 DSH 发布包的离线回归。模型、账号与权限配置继续沿用现有选择。

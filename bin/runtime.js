@@ -53,6 +53,12 @@ function loadCodexProWorkerPath() {
     "the matching @ckanner/dsh-plugin-flywheel Codex Pro worker is missing; reinstall @ckanner/flywheel");
 }
 
+function loadClaudeCodeProWorkerPath() {
+  const name = "@ckanner/dsh-plugin-flywheel";
+  return packageEntry(name, "claude-code-pro-worker", ownPackage.dependencies?.[name],
+    "the matching @ckanner/dsh-plugin-flywheel Claude Code Pro worker is missing; reinstall @ckanner/flywheel");
+}
+
 function assertSupportedNode(version = process.versions.node) {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:$|-)/.exec(version);
   if (!match || Number(match[1]) < 22 || (Number(match[1]) === 22 && Number(match[2]) < 18)) {
@@ -97,4 +103,4 @@ function runChild(command, args, { env = process.env, cwd, label = "flywheel" } 
   });
 }
 
-module.exports = { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, assertSupportedNode, runChild };
+module.exports = { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, assertSupportedNode, runChild };

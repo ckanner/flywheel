@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.9.0"
+  version: "1.9.1"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -63,6 +63,9 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
    `codex exec` 或父 agent 委派。旧配置保留原后端，要迁移先让用户审阅实际配置差异。
    用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
    Codex Pro 只做本地包／命令检查；其完整策略事后检查警告不能翻译成运行前隔离保证。
+   可选 `claude-code-pro` 同样由独立 worker 调用公开 machine API；先核对配套
+   0.3.2 插件与 CLI。首版只支持明确 full-access，不把原生审批模式当作 OS 沙箱。
+   不主动改变 loop 绑定，也不在 skill 内扫描或选择 Claude session。
    `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
 2. **按所选运行方式调用一次**：

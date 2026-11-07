@@ -20,7 +20,7 @@ type SessionsConfig struct {
 // SupportsScopedSessions describes implemented adapter contracts, not evidence
 // that a particular installed backend can restore a saved history.
 func SupportsScopedSessions(harness string) bool {
-	return harness == "codex-pro" || harness == "dsh" || harness == "kimi"
+	return harness == "codex-pro" || harness == "claude-code-pro" || harness == "dsh" || harness == "kimi"
 }
 
 // MarshalJSON preserves omission versus explicit false in effective config

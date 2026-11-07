@@ -47,6 +47,16 @@ function validatePackages(manifests, requestedVersion) {
       meta.bin?.['flywheel-codex-pro-worker'] !== 'bin/flywheel-codex-pro-worker.js') {
     throw new Error('The release must expose the installed Codex Pro worker');
   }
+  if (manifests[PLUGIN].peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.3.2' ||
+      manifests[PLUGIN].peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true ||
+      manifests[PLUGIN].dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
+    throw new Error('Claude Code Pro must remain an optional peer pinned to machine-compatible 0.3.2');
+  }
+  if (manifests[PLUGIN].exports?.['./claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
+      manifests[PLUGIN].bin?.['flywheel-claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
+      meta.bin?.['flywheel-claude-code-pro-worker'] !== 'bin/flywheel-claude-code-pro-worker.js') {
+    throw new Error('The release must expose the installed Claude Code Pro worker');
+  }
   return version;
 }
 

@@ -319,7 +319,7 @@ func TestCodexProFullPolicyAdmission(t *testing.T) {
 	}
 	alias := filepath.Join(t.TempDir(), "workspace-alias")
 	require.NoError(t, os.Symlink(request.Cwd, alias))
-	assert.True(t, codexProSameDirectory(alias, request.Cwd))
+	assert.True(t, samePhysicalDirectory(alias, request.Cwd))
 }
 
 func TestCodexProUsageAndFailureContracts(t *testing.T) {

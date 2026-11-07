@@ -411,8 +411,9 @@ func RunDSH(a DSHArgs) Result {
 			out.ExitCode == nil || (parsed.Settled && *out.ExitCode != 0) || (!parsed.Settled && *out.ExitCode != 1) {
 			out.Session = &SessionOutcome{Protocol: DSHSessionProtocol, RequestID: a.RequestID, SessionID: a.SessionID,
 				Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
-			if out.SpawnError != "" {
+			if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {
 				out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
+				out.Usage, out.CostUSD = &Usage{}, new(float64)
 			}
 		}
 	} else if !a.Doctor {
@@ -424,8 +425,9 @@ func RunDSH(a DSHArgs) Result {
 			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "", UsageStatus: "unknown"}
 		if out.Settled {
 			out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
-		} else if out.SpawnError != "" {
+		} else if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {
 			out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
+			out.Usage, out.CostUSD = &Usage{}, new(float64)
 		}
 	}
 	// An intact correlated native receipt can still measure usage when outer

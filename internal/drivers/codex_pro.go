@@ -118,25 +118,12 @@ func (e *codexProExecution) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return err
 	}
-	if !codexProHasFields(raw, "runId", "startedAt", "finishedAt", "durationMs", "threadId", "turnId", "pid", "supervisorPid",
+	if !receiptHasFields(raw, "runId", "startedAt", "finishedAt", "durationMs", "threadId", "turnId", "pid", "supervisorPid",
 		"exitCode", "signal", "supervisorExitCode", "supervisorSignal", "terminationRequested", "timedOut", "cancelled", "truncated", "spawnError", "failure", "ownership") {
 		return fmt.Errorf("Codex Pro execution omitted a physical fact")
 	}
 	*e = codexProExecution(value)
 	return nil
-}
-
-func codexProHasFields(raw json.RawMessage, names ...string) bool {
-	var fields map[string]json.RawMessage
-	// Both callers already decoded this same value into a struct; its only
-	// possible shapes are an object or null, which also decode into this map.
-	_ = json.Unmarshal(raw, &fields)
-	for _, name := range names {
-		if _, ok := fields[name]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 type codexProCleanup struct {
@@ -263,7 +250,7 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 		case "result":
 			terminal = true
 			parsed = parseCodexProReceipt(frame.Receipt, request)
-			if !codexProHasFields(json.RawMessage(line), "receipt", "error") {
+			if !receiptHasFields(json.RawMessage(line), "receipt", "error") {
 				trustedStream = false
 				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro worker omitted a terminal receipt/error field"
@@ -306,25 +293,15 @@ func codexProUnknownSession(request codexProStart) *SessionOutcome {
 		RequestID: request.RequestID, Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 }
 
-// Opaque IDs are compared as JSON strings, without interpreting their spelling.
-// Null, missing, empty and another thread are not interchangeable.
-func codexProRequestedThread(raw json.RawMessage, expected string) bool {
-	if expected == "" {
-		return string(raw) == "null"
-	}
-	var id string
-	return json.Unmarshal(raw, &id) == nil && id == expected
-}
-
 func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProParsed {
 	parsed := codexProParsed{Receipt: raw, Session: codexProUnknownSession(request)}
 	var receipt codexProReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil || !codexProHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
+	if err := json.Unmarshal(raw, &receipt); err != nil || !receiptHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
 		receipt.RequestID != request.RequestID || receipt.RunID == "" || receipt.OK == nil ||
 		(receipt.Outcome == nil) == (receipt.Failure == nil) ||
 		receipt.Requested.Cwd != request.Cwd || receipt.Requested.Model != request.Model ||
 		receipt.Requested.Effort != request.ReasoningEffort || receipt.Requested.PermissionMode != codexProMachinePermission(request.PermissionMode) ||
-		!codexProRequestedThread(receipt.Requested.ThreadID, request.ThreadID) || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
+		!requestedSessionMatches(receipt.Requested.ThreadID, request.ThreadID) || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
 		parsed.Error = "invalid request: Codex Pro receipt identity, requested settings, or cost contract mismatch"
 		return parsed
 	}
@@ -457,7 +434,7 @@ func validateCodexProConfiguration(o *codexProOutcome, request codexProStart) er
 	}
 	for _, settings := range []codexProSettings{c.Requested, c.Effective} {
 		if settings.Model != request.Model || settings.ApprovalPolicy != "never" || settings.Sandbox != request.PermissionMode ||
-			!codexProSameDirectory(settings.Cwd, request.Cwd) {
+			!samePhysicalDirectory(settings.Cwd, request.Cwd) {
 			return fmt.Errorf("Codex Pro model/cwd/permission receipt differs from request")
 		}
 	}
@@ -466,14 +443,6 @@ func validateCodexProConfiguration(o *codexProOutcome, request codexProStart) er
 		return fmt.Errorf("Codex Pro effort acceptance evidence is missing or contradictory")
 	}
 	return validateCodexProPolicy(c.Effective.SandboxPolicy, request)
-}
-
-func codexProSameDirectory(actual, requested string) bool {
-	if !filepath.IsAbs(actual) {
-		return false
-	}
-	physical, err := filepath.EvalSymlinks(actual)
-	return err == nil && physical == requested
 }
 
 // The public machine API names its full-access preset differently from the

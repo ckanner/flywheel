@@ -99,10 +99,12 @@ async function environment(registryURL, version) {
     npm_config_registry: registryURL, npm_config_cache: path.join(root, 'npm cache'), npm_config_userconfig: npmrc,
     npm_config_prefix: prefix, npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
     FLYWHEEL_DSH_FIXTURE_LOG: path.join(root, 'dsh-calls.jsonl'), FLYWHEEL_DSH_FIXTURE_VERSION: version };
-  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|CODEX_HOME|NODE_OPTIONS)$/.test(name)) delete env[name];
+  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
   env.FLYWHEEL_KIMI_BIN = path.join(root, 'intentionally missing kimi');
   env.FLYWHEEL_CODEX_BIN = path.join(root, 'intentionally missing codex');
+  env.FLYWHEEL_CLAUDE_BIN = path.join(root, 'intentionally missing claude');
   env.CODEX_HOME = path.join(home, 'isolated codex');
+  env.CLAUDE_CONFIG_DIR = path.join(home, 'isolated claude');
   const dsh = path.join(fixtures, 'desktop dsh');
   await fs.writeFile(dsh, `#!${process.execPath}\n` + String.raw`
 const fs = require('node:fs');
