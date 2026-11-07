@@ -130,7 +130,8 @@
         "requirements-covered": { "type": "array", "items": { "type": "string" } },
         "changed-files": { "type": "array", "items": { "type": "string" } },
         "commands-run": { "type": "array", "items": { "type": "string" } },
-        "failures": { "type": "array", "items": { "type": "string" } }
+        "failures": { "type": "array", "items": { "type": "string" } },
+        "workflow-risks": { "type": "array", "items": { "type": "string" }, "description": "Optional structured executor risk signal; nonempty risks upgrade Quick to Full before review." }
       },
       "description": "Required shape of the executor's done-report (reports/<packet-id>.done.json)."
     }

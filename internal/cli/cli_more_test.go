@@ -378,7 +378,7 @@ func TestInstallEmbeddedSnapshotWhenNoSourceTree(t *testing.T) {
 	code, out := runCLI(t, "install-skills")
 	require.Equal(t, 0, code, out)
 	assert.Contains(t, out, "内嵌快照")
-	// 全部 10 个内置 skill 均被物化为真实目录（含 SKILL.md）。
+	// 全部 11 个内置 skill 均被物化为真实目录（含 SKILL.md）。
 	for _, s := range skillsembed.List() {
 		assert.FileExists(t, filepath.Join(home, ".agents", "skills", s.Name, "SKILL.md"), s.Name)
 	}

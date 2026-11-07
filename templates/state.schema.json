@@ -7,6 +7,57 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
+    "workflow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requested", "effective", "reason", "evidence", "risks", "stages", "selected-at", "upgrades"],
+      "properties": {
+        "version": { "const": 1 },
+        "requested": { "enum": ["auto", "quick", "full"] },
+        "effective": { "enum": ["quick", "full"] },
+        "reason": { "type": "string", "pattern": "\\S" },
+        "evidence": { "type": "array", "items": { "type": "string", "pattern": "\\S" } },
+        "risks": { "type": "array", "items": { "type": "string", "pattern": "\\S" } },
+        "selected-at": { "type": "string", "minLength": 1 },
+        "stages": {
+          "type": "object", "additionalProperties": false, "required": ["plan", "judge"],
+          "properties": {
+            "plan": { "$ref": "#/$defs/workflow-stage" },
+            "judge": { "$ref": "#/$defs/workflow-stage" }
+          }
+        },
+        "upgrades": {
+          "type": "array", "maxItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["at", "from", "to", "reason", "evidence", "contract-fingerprints"],
+            "properties": {
+              "at": { "type": "string", "minLength": 1 },
+              "from": { "const": "quick" }, "to": { "const": "full" },
+              "reason": { "type": "string", "pattern": "\\S" },
+              "evidence": { "type": "array", "items": { "type": "string" } },
+              "contract-fingerprints": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "effective": { "const": "quick" } } },
+          "then": { "properties": {
+            "requested": { "enum": ["auto", "quick"] },
+            "evidence": { "minItems": 1 }, "risks": { "maxItems": 0 }, "upgrades": { "maxItems": 0 },
+            "stages": { "properties": {
+              "plan": { "properties": { "applicable": { "const": false } } },
+              "judge": { "properties": { "applicable": { "const": false } } }
+            } }
+          } },
+          "else": { "properties": { "stages": { "properties": {
+            "plan": { "properties": { "applicable": { "const": true } } },
+            "judge": { "properties": { "applicable": { "const": true } } }
+          } } } }
+        }
+      ]
+    },
     "schema-version": { "type": "integer", "minimum": 1 },
     "slug": { "type": "string", "minLength": 1 },
     "revision": { "type": "integer", "minimum": 0, "description": "CAS counter, incremented on every orchestrator write. A stale writer loses." },
@@ -159,7 +210,7 @@
               "review": {
                 "type": ["object", "null"],
                 "properties": {
-                  "verdict": { "type": "string", "enum": ["pass", "return", "verification-gap"] },
+                  "verdict": { "type": "string", "enum": ["pass", "return", "verification-gap", "upgrade"] },
                   "identity": { "type": "string" },
                   "score": { "type": ["number", "null"] },
                   "reasons": { "type": "array" },
@@ -186,7 +237,8 @@
                   "at": { "type": "string" }
                 }
               },
-              "defect-injection": { "type": ["object", "null"], "description": "Spot-check result (DESIGN.md §4.3), when sampled." }
+              "defect-injection": { "type": ["object", "null"], "description": "Spot-check result (DESIGN.md §4.3), when sampled." },
+              "final-gate": { "type": ["object", "null"], "description": "Quick L2/L3 proof bound to the packet candidate and workflow identity before final Review." }
             }
           },
           "last-feedback": {
@@ -296,6 +348,16 @@
       "type": "object",
       "additionalProperties": { "type": "string" },
       "description": "当前已加载契约的持久指纹；契约变更使旧完成状态与证据失效。"
+    }
+  },
+  "$defs": {
+    "workflow-stage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["applicable", "reason"],
+      "properties": {
+        "applicable": { "type": "boolean" },
+        "reason": { "type": "string", "pattern": "\\S" }
+      }
     }
   }
 }

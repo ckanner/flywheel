@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
@@ -24,6 +25,7 @@ type controlResponse struct {
 	Running       bool                      `json:"running"`
 	PID           int                       `json:"pid"`
 	TaskDir       string                    `json:"taskDir"`
+	Cwd           string                    `json:"cwd,omitempty"`
 	State         *state.State              `json:"state"`
 	Error         string                    `json:"error,omitempty"`
 	Configuration *diagnostic.Configuration `json:"configuration,omitempty"`
@@ -40,10 +42,10 @@ var (
 // control is an argv-only, single-JSON boundary for the DSH plugin. Parse/flag
 // failures are normalized by runRoot too; legacy commands keep their output.
 func controlCmd() *cobra.Command {
-	var taskDir, cwd string
+	var taskDir, cwd, mode string
 	var probe bool
 	cmd := &cobra.Command{
-		Use:   "control <start|status|stop|config|doctor>",
+		Use:   "control <launch|start|status|stop|config|doctor>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -51,7 +53,11 @@ func controlCmd() *cobra.Command {
 			action := args[0]
 			var resolvedTask, resolvedCwd string
 			var err error
-			if cmd.Flags().Changed("probe") && action != "doctor" {
+			if cmd.Flags().Changed("mode") && action != "launch" && action != "start" {
+				err = fmt.Errorf("--mode is only valid for control launch or start")
+			} else if cmd.Flags().Changed("mode") && !contract.ValidWorkflowMode(mode) {
+				err = fmt.Errorf("--mode only supports auto, quick, or full")
+			} else if cmd.Flags().Changed("probe") && action != "doctor" {
 				err = fmt.Errorf("--probe is only valid for control doctor")
 			} else if taskDir != "" || (action != "config" && action != "doctor") {
 				resolvedTask, err = controlDirectory(taskDir)
@@ -62,8 +68,12 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
-				case "start":
-					reply, err = startControlledTask(resolvedTask, resolvedCwd)
+				case "launch", "start":
+					requested := mode
+					if action == "launch" && requested == "" {
+						requested = "auto"
+					}
+					reply, err = startControlledTask(resolvedTask, resolvedCwd, requested)
 				case "status":
 					reply, err = controlSnapshot(resolvedTask)
 				case "stop":
@@ -84,8 +94,11 @@ func controlCmd() *cobra.Command {
 						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
 					}
 				default:
-					err = fmt.Errorf("control action must be start, status, stop, config, or doctor")
+					err = fmt.Errorf("control action must be launch, start, status, stop, config, or doctor")
 				}
+			}
+			if resolvedCwd != "" {
+				reply.Cwd = resolvedCwd
 			}
 			reply.OK = err == nil
 			if err != nil {
@@ -101,6 +114,7 @@ func controlCmd() *cobra.Command {
 	cmd.Flags().StringVar(&taskDir, "task-dir", "", "任务目录的绝对路径（config/doctor 可省略）")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "仓库目录的绝对路径")
 	cmd.Flags().BoolVar(&probe, "probe", false, "仅 doctor：探测 DSH SDK 配置与权限，不发送推理请求")
+	cmd.Flags().StringVar(&mode, "mode", "", "仅 launch/start：auto|quick|full；launch 默认 auto，恢复沿用已保存策略")
 	return cmd
 }
 
@@ -164,10 +178,25 @@ func controlSnapshot(taskDir string) (controlResponse, error) {
 	return reply, nil
 }
 
-func startControlledTask(taskDir, cwd string) (controlResponse, error) {
+func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse, error) {
 	reply, err := controlSnapshot(taskDir)
-	if err != nil || reply.Running {
+	if err != nil {
 		return reply, err
+	}
+	if reply.Running {
+		if len(modes) > 0 && modes[0] != "" && modes[0] != "auto" {
+			if reply.State == nil {
+				return reply, fmt.Errorf("task is already starting; refresh status before requesting a workflow change")
+			}
+			requested, effective := "full", "full"
+			if reply.State.Workflow != nil {
+				requested, effective = reply.State.Workflow.Requested, reply.State.Workflow.Effective
+			}
+			if modes[0] != requested && modes[0] != effective {
+				return reply, fmt.Errorf("task is already running with %s workflow; stop it before requesting a workflow change", effective)
+			}
+		}
+		return reply, nil
 	}
 	executable, err := controlExecutable()
 	if err != nil {
@@ -178,7 +207,11 @@ func startControlledTask(taskDir, cwd string) (controlResponse, error) {
 		return reply, err
 	}
 	defer log.Close()
-	child := exec.Command(executable, "run", taskDir)
+	args := []string{"run", taskDir}
+	if len(modes) > 0 && modes[0] != "" {
+		args = append(args, "--mode", modes[0])
+	}
+	child := exec.Command(executable, args...)
 	child.Dir = cwd
 	child.Stdin = nil
 	child.Stdout, child.Stderr = log, log

@@ -4,7 +4,11 @@ English | [简体中文](README.md)
 
 Flywheel turns reviewed software requirements into bounded coding tasks with explicit acceptance criteria. A deterministic Go engine runs Plan, Execute, Review, and verification loops. Models propose plans, implement changes, and review candidates; the engine owns state, retries, budgets, workspaces, verification, local Git delivery, and stopping.
 
+Current source supports **Auto, Quick, and Full** workflows. `flywheel-task` prepares and launches an authorized goal. A qualified small task uses Execute, all required checks, one independent final Review, and persisted Git delivery; larger or uncertain tasks retain the full loop. Existing tasks remain Full. Workflow selection does not change model bindings, permissions, or delivery authorization.
+
 This source targets **0.28.5**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration covers the checked **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1** interfaces. Version 0.28.4 declares only these two runtime versions. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
+
+The adaptive workflow and `flywheel-task` require a matching CLI/plugin release containing these changes. Check `flywheel control launch --help`; the older installation commands alone do not establish that this new interface is available.
 
 ## Install
 
@@ -22,7 +26,7 @@ Once the version you intend to use is available:
 npx -y @ckanner/flywheel@latest install
 ```
 
-Add `--json` for a structured installation result. The installer selects one exact version for the CLI, platform binary, workers, and DSH plugin; installs the ten bundled skills; preserves existing configuration and modified skills; and records a managed desktop launcher. Binary packages cover macOS and Linux on arm64 and amd64.
+Add `--json` for a structured installation result. The installer selects one exact version for the CLI, platform binary, workers, and DSH plugin; installs that version's bundled skills (eleven in current source); preserves existing configuration and modified skills; and records a managed desktop launcher. Binary packages cover macOS and Linux on arm64 and amd64.
 
 `ok:true` means installation succeeded. `ready:false` means local diagnostics still found a blocker; these values can occur together. The installer does not install or log in to Kimi/Codex or prove model access. Current source defaults reuse the signed-in DeepSeek account in DSH; API-key credentials are needed only for an explicitly selected API provider. Plain `npm install --global @ckanner/flywheel` only installs package files; run `flywheel setup --no-global` afterward to perform explicit user setup.
 
@@ -43,7 +47,7 @@ These bindings are editable starting points, not a model ranking or a performanc
 | Intake, optional | DSH SDK | `deepseek-account` | `deepseek-flash` | `low` |
 | Garden, optional | Kimi CLI | `kimi-subscription` | `kimi-code/k3.1-pro` | `high` |
 
-Initial requirement preparation is separate: `flywheel-new` runs in the host's current conversation and uses its selected model. Changing `loops.plan` does not change that conversation. The [workflow guide](docs/en/workflow.md) explains preparation model choices and the later engine loops.
+Initial requirement preparation is separate: `flywheel-task` and the preparation-only `flywheel-new` use the host's current conversation model. Changing `loops.plan` does not change that conversation. Quick reuses the configured Execute route and Review binding; it does not change effort or add a paid fallback. The [workflow guide](docs/en/workflow.md) explains preparation and the later engine loops.
 
 The default configuration has no automatic paid fallback across channels and no second judge. Flash's checked DSH effort values are `off`, `low`, `high`, and `max`; there is no `medium` in that adapter baseline. There is no default multimodal route: the current bridge has a text contract, so a model's vision capability alone does not establish attachment support.
 
@@ -61,16 +65,28 @@ Existing configuration is preserved during upgrades. To adopt the new route, ins
 
 ## From a requirement to a pull request
 
-Use one task integration branch and worktree for a deliverable. Create it **before** preparing contracts with `flywheel-new`; keep the task directory inside that same worktree. The host or user creates this outer worktree. Flywheel then manages the inner packet workspaces.
+Describe an authorized goal in DSH without filling directory fields first:
 
-In DSH's composer, `/flywheel-new` invokes preparation and `/flywheel-run` invokes the run Skill after review. Kimi CLI uses `/skill:flywheel-new` and `/skill:flywheel-run`. The host loads these Skills and the assistant follows their CLI workflow. No panel fields need filling first.
+```text
+/flywheel-task Fix the identified empty-list behavior, add regression coverage, and deliver the verified change. mode=auto
+```
+
+| Choice | Use | Engine behavior |
+|---|---|---|
+| Auto | Let the engine select from researched contract facts | Quick when eligibility is established; otherwise Full |
+| Quick | One milestone and packet, known implementation, complete checks | Execute, required checks, independent final Review, Git delivery; upgrade on a gap or new risk |
+| Full | Multiple units, unresolved design, significant impact, or explicit choice | Plan, packet Execute/Review, integrated L2/L3, Judge |
+
+Quick retains repository gates, applicable L2/L3, defect sampling, and persistence checks. Its first-success path has two stage-agent calls, excluding host preparation, internal tool turns, and retries. A legacy task remains Full; restarting does not reclassify or downgrade an existing Full task.
+
+Use one task integration branch and worktree for a deliverable. The host creates or deliberately reuses it before preparing contracts and keeps the task directory inside it. Flywheel manages the inner packet workspaces. `/flywheel-task` prepares and launches, `/flywheel-new` prepares a proposal without starting, and `/flywheel-run` starts or resumes an existing task. Kimi uses the `/skill:` prefix for the same skill names. Existing authorizations remain valid; an explicit request to review a proposal first remains a stopping point.
 
 A normal workflow is:
 
-1. Prepare and review the Spec, task packets, frozen acceptance tests, and actual dry-run evidence in the task worktree.
+1. Prepare the Spec, task packets, workflow facts, frozen acceptance tests, and actual dry-run evidence in the task worktree; honor any requested proposal review.
 2. Commit the substantive contract files. Push the task branch and open a task-level Draft PR through the host or GitHub CLI.
-3. Start Flywheel with the task worktree as `cwd` and its own task directory as `taskDir`.
-4. Let the engine run bounded execution, L1 acceptance, and independent review for each packet; then run milestone L2/L3 and Judge.
+3. Launch with the task worktree as `cwd`, its own task directory as `taskDir`, and the requested mode. DSH's `flywheel_launch` associates this concrete task with the initiating session's view.
+4. Let the Go engine select and run Quick or Full, including all applicable checks and independent review against the same candidate.
 5. Push the completed result, verify the current PR head, review it, and merge under the repository's chosen policy.
 
 For example, from an already prepared task worktree:
@@ -78,9 +94,11 @@ For example, from an already prepared task worktree:
 ```sh
 flywheel config inspect --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --json
 flywheel doctor --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --probe --json
-flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
+flywheel control launch --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --mode auto
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 ```
+
+`control launch` defaults to Auto and consumes prepared contracts; it does not invent requirements or create the outer task branch. `control start` and foreground `run` preserve the contract/persisted selection when `--mode` is omitted. Their optional mode is `auto|quick|full`; Go still enforces eligibility and one-way upgrade rules. `--only execute` is a partial loop, not Quick or complete delivery.
 
 Packet delivery is a **local Git operation**. After evidence matches the current candidate, the engine commits the packet and fast-forwards it into the branch checked out at `cwd`. With the recommended layout, that is the task integration branch. Flywheel does not itself push, create GitHub PRs, wait for remote CI, merge remote PRs, or publish releases. Those operations belong to the authorized host or user. See [Workflow](docs/en/workflow.md) for commands, directory ownership, and merge timing.
 
@@ -88,11 +106,11 @@ Packet delivery is a **local Git operation**. After evidence matches the current
 
 From `0.28.1`, the native **Flywheel** conversation view appears alongside the built-in views (after Statistics from 0.28.5), preserving DSH's composer, model selector, and right sidebar. Version `0.28.0` uses the old composer popup; upgrade the CLI and desktop plugin together. **Task files directory** selects the prepared `docs/<slug>/`; **Project directory** is its project/integration worktree and may stay blank. From 0.28.3, Flywheel reads DSH's `workingDirectory.get(session)`, following session directory changes. Version 0.28.2 still uses the original header directory: explicitly fill the project path after switching worktrees. Configuration and diagnostics can omit the task; start, refresh, and stop require an existing task directory.
 
-The view retains session-scoped drafts while the host retains the session binding and shows snapshots with their refresh time. It does not discover tasks or poll automatically. An unconfirmed start/stop outcome requires a successful refresh of the same task before further mutations; closing or switching the view does not stop the independent engine. DSH's trajectory keeps its parent-session records, without automatically merging independent worker history. Desktop capabilities and SDK worker policy have separate scopes; see the [plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#use-the-desktop-controls).
+DSH tool launch/start associates the exact task with the initiating session. The view shows requested and effective modes, reasons, stage applicability, and upgrades. It does not scan directories to guess tasks or poll tasks started separately in a terminal; manual opening remains supported. An unconfirmed start/stop outcome requires a successful refresh of the original task before further mutations; late responses cannot overwrite a different session or newer binding. Closing the view does not stop the independent engine. DSH's trajectory keeps its parent-session records, without automatically merging worker history. See the [plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#use-the-desktop-controls) for association lifetime and runtime boundaries.
 
 ## Verification and operating boundaries
 
-L1 validates a packet; L2/L3 validate integration and user paths at milestone scope. Review examines the actual candidate and acceptance evidence independently of the executor transcript. Candidate or contract changes invalidate prior evidence. Completion requires verified Git delivery and persisted state; an agent's claim that it finished is insufficient.
+L1 validates a packet; L2/L3 validate integration and user paths. Quick runs applicable L2/L3 in the actual packet candidate before its final Review, which covers every requirement and acceptance sufficiency. Full keeps the integrated milestone gates and Judge. Review is independent of the executor transcript. Candidate, contract, verification configuration, and effective workflow policy changes invalidate incompatible evidence. Completion requires verified Git delivery and persisted state; an agent's claim that it finished is insufficient.
 
 Keep these boundaries in mind:
 

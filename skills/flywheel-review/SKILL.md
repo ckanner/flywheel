@@ -1,7 +1,7 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use for "/flywheel-review docs/<slug> [unit]" in DSH, "/skill:flywheel-review docs/<slug> [unit]" in Kimi, or a request to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
@@ -40,7 +40,8 @@ git -C "$repo_dir" worktree list --porcelain
 
 1. **校验**：`docs/<slug>/` 契约文件齐全；目标单元的 **L1 已通过**
    （引擎会同时核对 `evidence.l1.pass` 和当前候选/契约/配置身份）——评审只在确定性
-   验收全绿之后开口。若给了 unit id，确认 packet 存在。
+   验收全绿之后开口。Quick 还必须取得同一候选的适用 L2/L3；不能使用旧集成
+   checkout 的结果。若给了 unit id，确认 packet 存在。
 2. **调用**（从任务集成 worktree 调用，按是否指定单元选择一条）：
 
    ```bash
@@ -52,11 +53,19 @@ git -C "$repo_dir" worktree list --porcelain
 
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
-3. **翻译结果**：verdict（pass / return / verification-gap）、分数、理由；
+3. **翻译结果**：verdict（pass / return / verification-gap，Quick 另可为 upgrade）、分数、理由；
    return 时转述具体修改要求、失败证据、涉及位置、完成条件；
-   verification-gap 时说明该单步只返回裁决，不会自动跨环修订；由用户运行
-   Plan 修订允许范围内的契约，再 verify，或恢复完整 run 由引擎处理闭环。
+   verification-gap 时说明该单步不自动跨环修订；Quick 的 upgrade、
+   verification-gap 或 `quick-eligible:false` 会由 Go 立即保存单向 Full 升级，
+   下一次完整 run 才进入 Full。也可按明确范围单步 Plan 后 verify。
    目录外冻结 oracle 的修改仍需明确任务；不得为了通过直接修改它。
+
+Quick 的本步骤是独立最终 Review：结构化 `requirements` 必须把全部 Spec 需求
+各列一次，每项含 `id`、`pass`、非空 `evidence`；`quick-eligible` 表示资格是否仍成立。
+仅通过代码风格评审不能交付。pass 还需全部需求成立且资格成立；upgrade 报告不再
+适合 Quick 的事实。单环返回实际裁决并由 Go 保存必要的升级 checkpoint，
+不在 skill 中自行重试、改策略或跨环规划；恢复完整 `flywheel-run` 后由 Go
+处理返修、Full 阶段和 Git 交付，不能通过重跑评审将已升级任务改回 Quick。
 
 Review 的实际 CWD 是引擎选定的 packet 候选工作区。核对 `permissions.mode`：
 `role-based`（已有文件缺省）请求 `read-only`，`full-access` 通过所选后端正式接口

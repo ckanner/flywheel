@@ -9,33 +9,34 @@ const { spawn, execFileSync } = require('node:child_process');
 const { capture } = require('../../install.js');
 
 /** Serve the actual published dependency, verified against the source lock. */
-async function runtimeDependency() {
+async function runtimeDependency(name, version, suppliedTarball) {
   const lock = JSON.parse(await fs.readFile(path.resolve(__dirname, '../../../plugins/dsh/package-lock.json'), 'utf8'));
-  const entry = lock.packages?.['node_modules/dsh-subagent-codex-pro'];
-  if (entry?.version !== '0.8.0' || !entry.integrity?.startsWith('sha512-') ||
-      entry.resolved !== 'https://registry.npmjs.org/dsh-subagent-codex-pro/-/dsh-subagent-codex-pro-0.8.0.tgz') {
-    throw new Error('the installation fixture requires the exact locked Codex Pro release');
+  const entry = lock.packages?.['node_modules/' + name];
+  const tarballName = `${name}-${version}.tgz`;
+  if (entry?.version !== version || !entry.integrity?.startsWith('sha512-') ||
+      entry.resolved !== `https://registry.npmjs.org/${name}/-/${tarballName}`) {
+    throw new Error(`the installation fixture requires the exact locked ${name} release`);
   }
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel published dependency '));
   try {
-    let filename = process.env.FLYWHEEL_CODEX_PRO_TARBALL;
+    let filename = suppliedTarball;
     if (!filename) {
       const [npm, args] = npmInvocation();
       // npm 12 disables direct remote tarball specs by default. Use the exact
       // registry identity, then verify the downloaded bytes against the lock.
-      const result = await capture(npm, [...args, 'pack', `dsh-subagent-codex-pro@${entry.version}`, '--registry=https://registry.npmjs.org/', '--ignore-scripts', '--json', '--pack-destination', temporary,
+      const result = await capture(npm, [...args, 'pack', `${name}@${entry.version}`, '--registry=https://registry.npmjs.org/', '--ignore-scripts', '--json', '--pack-destination', temporary,
         '--fetch-timeout=30000', '--fetch-retries=0'], { environment: process.env, cwd: temporary, timeoutMs: 60000 });
-      if (result.code !== 0 || result.signal || result.error) throw new Error('could not fetch the locked published Codex Pro tarball: ' + (result.error || result.stderr));
-      filename = path.join(temporary, 'dsh-subagent-codex-pro-0.8.0.tgz');
+      if (result.code !== 0 || result.signal || result.error) throw new Error(`could not fetch the locked published ${name} tarball: ` + (result.error || result.stderr));
+      filename = path.join(temporary, tarballName);
     }
     const data = await fs.readFile(filename);
-    if (`sha512-${crypto.createHash('sha512').update(data).digest('base64')}` !== entry.integrity) throw new Error('published Codex Pro tarball integrity mismatch');
+    if (`sha512-${crypto.createHash('sha512').update(data).digest('base64')}` !== entry.integrity) throw new Error(`published ${name} tarball integrity mismatch`);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', filename, 'package/package.json'], { encoding: 'utf8' }));
-    if (manifest.name !== 'dsh-subagent-codex-pro' || manifest.version !== entry.version || Object.keys(manifest.dependencies || {}).length !== 0) {
-      throw new Error('published Codex Pro dependency identity or dependency graph changed');
+    if (manifest.name !== name || manifest.version !== entry.version || Object.keys(manifest.dependencies || {}).length !== 0) {
+      throw new Error(`published ${name} dependency identity or dependency graph changed`);
     }
     return { manifest, entry: { name: manifest.name, version: entry.version, integrity: entry.integrity,
-      filename: 'dsh-subagent-codex-pro-0.8.0.tgz' }, data };
+      filename: tarballName }, data };
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 }
 
@@ -51,12 +52,17 @@ async function registry(directory) {
     packages.set(manifest.name, { manifest, entry, data });
     tarballs.set('/tarballs/' + entry.filename, data);
   }
-  const dependency = await runtimeDependency();
-  if (packages.get('@ckanner/dsh-plugin-flywheel')?.manifest.dependencies?.[dependency.manifest.name] !== dependency.manifest.version) {
-    throw new Error('the candidate plugin does not pin the verified runtime dependency');
+  for (const [name, version, tarball] of [
+    ['dsh-subagent-codex-pro', '0.8.0', process.env.FLYWHEEL_CODEX_PRO_TARBALL],
+    ['zod', '4.3.6', process.env.FLYWHEEL_ZOD_TARBALL],
+  ]) {
+    const dependency = await runtimeDependency(name, version, tarball);
+    if (packages.get('@ckanner/dsh-plugin-flywheel')?.manifest.dependencies?.[dependency.manifest.name] !== dependency.manifest.version) {
+      throw new Error('the candidate plugin does not pin the verified runtime dependency: ' + name);
+    }
+    packages.set(dependency.manifest.name, dependency);
+    tarballs.set('/tarballs/' + dependency.entry.filename, dependency.data);
   }
-  packages.set(dependency.manifest.name, dependency);
-  tarballs.set('/tarballs/' + dependency.entry.filename, dependency.data);
   const requests = [];
   let url;
   const server = http.createServer((request, response) => {

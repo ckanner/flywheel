@@ -1,17 +1,23 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.7.0"
-description: Generate a Flywheel task from a requirement — conversational intake that researches the repo, asks intent questions, generates docs/<slug>/ (spec.md + task packets + configuration), then STOPS for human review. Use for "/flywheel-new" in DSH, "/skill:flywheel-new" in Kimi, or a request to create a new flywheel task.
-whenToUse: 当用户想把一个需求冻结成 flywheel 任务契约（"把 XX 做成 flywheel 任务"）时使用；也可从 triage-inbox 的 approved 候选生成。
+  version: "1.8.0"
+description: >-
+  Prepare a reviewable Flywheel task proposal without starting the engine:
+  research the repository, resolve intent questions, and generate docs/<slug>/
+  with Spec, packets and acceptance evidence. Use for "/flywheel-new" in DSH,
+  "/skill:flywheel-new" in Kimi, or a request to see a task plan first.
+  Use flywheel-task when the user authorizes automatic preparation and execution.
+whenToUse: 用户要求先生成并审阅 Flywheel 方案、不立即运行时使用；也可从 triage-inbox 的 approved 候选生成。要求直接实施时使用 flywheel-task。
 compatibility: "Requires the Flywheel CLI with embedded contract templates, write access, and Git in the target repository."
 arguments: requirement
 ---
 
 # flywheel-new — 任务生成器
 
-You are the task generator. You turn a **frozen-intent** requirement into Flywheel
-contract files. You contain no loop logic — the orchestrator runs the loops later.
+把已明确的需求变成可审阅契约，完成准备后交付；本入口不启动引擎。用户已要求
+准备并实施时使用 `flywheel-task`，不要因为沿用本技能而额外插入重复审批。
+技能不包含运行循环，之后的状态转换仍由 Go 引擎负责。
 
 DSH 在对话中使用 `/flywheel-new <需求>`，也可从输入框的 `/` 菜单选择；
 Kimi 使用 `/skill:flywheel-new <需求>`。正常准备无需先填写 Flywheel 视图：
@@ -68,7 +74,8 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 以下调研、验收试跑和契约保存都在 `repo_dir` 中完成，`task_dir` 必须是其内部的
 `docs/<slug>`。在结果中报告这两个绝对路径及实际分支，供后续启动／恢复复用。
 仅在 shell 中 `cd` 或使用 `git -C` 不代表已改变 DSH 会话的当前工作目录；
-后续 skill 继续使用所报告的绝对任务路径，不依赖视图自动关联本次任务。
+后续入口继续使用所报告的绝对任务路径。仅准备文件不改变视图；DSH 的
+`flywheel_launch` 或 `flywheel_control` start 调用才把具体任务关联到当前会话。
 
 ### 生成与冻结
 
@@ -80,7 +87,10 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
    一次问清，不要挤牙膏。
 3. **生成契约**：在所选任务 worktree 的 `repo_dir` 内创建 `docs/<slug>/`：
    - `spec.md` — 用 `flywheel template spec.example.md` 输出的内嵌模板格式（二进制自带，无需源码仓库）：编号需求
-     R-01…R-n（每项可独立验证）+ 需求→里程碑映射 + 里程碑表。
+     R-01…R-n（每项可独立验证）+ 需求→里程碑映射 + 里程碑表。显式选 Full 时
+     保留完整流程；不含新 workflow 字段的契约也按 Full 解释。需要 Auto／Quick 时
+     遵守 `flywheel template spec.schema.json` 的 workflow v1 字段，保存真实代码
+     依据、资格判断、风险和缺失 L2/L3 的不适用理由，由 Go 校验后决定生效策略。
    - `task-packet-<id>.md` — 每个执行单元一个，frontmatter 遵守
      `flywheel template task-packet.schema.json` 输出的 schema：packet-id（M<NN>-T<NN>）、
      contract-version、goal、requirements（引用 R 编号）、route
@@ -126,16 +136,18 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
    已批准的同一契约沿用已有审批，不重复索取；本 skill 不自行启动运行。
 
 获批后在 DSH 对话使用 `/flywheel-run <上述 task_dir>`，查看进度用
-`/flywheel-status <同一路径>`。若用户另选 Flywheel 视图，把 `task_dir` 填入
-“任务资料目录”；只有 DSH 当前工作目录就是 `repo_dir` 时，“项目目录”才可留空。
-视图的目录选择不会随 skill 调用自动更新。
+`/flywheel-status <同一路径>`。使用 DSH `flywheel_control` start 启动时会关联
+同一任务到当前会话视图；通过终端 CLI 启动的任务仍可手动打开。手动打开时
+“任务资料目录”填 `task_dir`，“项目目录”填 `repo_dir`，仅会话目录已经相同时可留空。
 
 ## 交接边界
 
 引擎负责 packet worktree 的创建／复用、Execute 与 L1、独立 Review，合格单元
 本地 `ff-only` 合回 `repo_dir` 当前所在的任务分支；不需要为每个 Loop 再手工建
-worktree。Plan 在任务集成 worktree 修订契约，里程碑 L2/L3 与 Judge 在合入后的
-任务集成 worktree 验证。worktree 只隔离 Git 工作目录，不是 OS 安全沙箱。
+worktree。Full 的 Plan 在任务集成 worktree 修订契约，里程碑 L2/L3 与 Judge
+在合入后的任务集成 worktree 验证。Quick 在候选 worktree 收齐 L1 与适用 L2/L3，
+再作一次独立最终 Review；合格契约下运行期 Plan／独立 Judge 不适用。
+worktree 只隔离 Git 工作目录，不是 OS 安全沙箱。
 
 当前默认尝试 packet worktree；创建失败可能记录 `worktree unavailable` 并回退
 `in-place`，不是强制隔离保证。严格隔离任务遇到该情况应停止并处理，不能手改

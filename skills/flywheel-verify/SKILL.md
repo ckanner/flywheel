@@ -1,7 +1,7 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use for "/flywheel-verify docs/<slug> [packet]" in DSH, "/skill:flywheel-verify docs/<slug> [packet]" in Kimi, or a request to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the Flywheel CLI. No model call; verification commands run under the engine watchdog."
@@ -43,9 +43,9 @@ detached HEAD 先核对，不直接执行验收。新任务工作区由 `flywhee
 2. **调用**（从任务集成 worktree 调用，按是否指定 packet 选择一条）：
 
    ```bash
-   # 只验某个 packet 的 L1
+   # 指定 packet；Full 验 L1，Quick 同时收集候选上的适用 L2/L3
    cd "$repo_dir" && flywheel run "$task_dir" --only verify --packet "$packet"
-   # 或不指定：全部未完成 packet 的 L1 + 当前里程碑 L2/L3 闸门
+   # 或不指定：未完成 packet 的 L1 + 当前策略要求的 L2/L3
    cd "$repo_dir" && flywheel run "$task_dir" --only verify
    ```
 
@@ -57,9 +57,11 @@ detached HEAD 先核对，不直接执行验收。新任务工作区由 `flywhee
 
 ## 注意
 
-- 不带 packet 的 verify 覆盖**所有里程碑**里未完成 packet 的 L1，不只当前
-  里程碑；L2/L3 闸门仍只跑当前里程碑。
-- L1 在引擎选定的 packet 候选工作区运行；L2/L3 在 `repo_dir` 运行。本命令
+- Full 不带 packet 的 verify 覆盖**所有里程碑**里未完成 packet 的 L1，不只当前
+  里程碑；L2/L3 闸门仍只跑当前里程碑。Quick 收齐唯一 packet 的适用 L2/L3，
+  不把选中 packet 当成跳过这些检查的理由。
+- L1 在引擎选定的 packet 候选工作区运行；Full 的里程碑 L2/L3 在 `repo_dir`，
+  Quick 的 L2/L3 在实际候选工作区，且证据绑定最终 Review 将读取的候选。本命令
   不创建 packet worktree；若没有可用 worktree 会使用任务集成 checkout，
   严格隔离任务应先核实候选位置，不能把 verify 当作隔离创建步骤。
 - 本单步只验收并记录证据，不运行 Review／Judge，不完成 packet 本地合并，

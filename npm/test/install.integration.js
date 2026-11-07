@@ -20,7 +20,10 @@ test('the six packaged npm candidates install and run from a clean agent environ
   const report = JSON.parse(first.stdout);
   assert.equal(report.ok, true);
   assert.equal(report.authentication, 'unknown');
-  assert.equal(report.skills.count, 10);
+  assert.equal(report.skills.count, 11);
+  const taskSkill = path.join(context.home, '.agents', 'skills', 'flywheel-task');
+  assert.match(await fs.readFile(path.join(taskSkill, 'SKILL.md'), 'utf8'), /flywheel_launch/);
+  assert.match(await fs.readFile(path.join(taskSkill, 'references', 'contract.md'), 'utf8'), /scope-clear/);
   assert.equal(report.configuration.action, 'created');
   assert.equal(report.configuration.automaticMigration, false);
   assert.equal(report.steps.find(step => step.name === 'dsh-plugin').status, 'ok');
@@ -68,6 +71,11 @@ test('the six packaged npm candidates install and run from a clean agent environ
 
   const installedRequire = require('node:module').createRequire(path.join(root, 'package.json'));
   const workerPath = installedRequire.resolve('@ckanner/dsh-plugin-flywheel/worker');
+  const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/dsh-plugin-flywheel')));
+  assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
+  assert.equal(typeof installedHost.apply, 'function');
+  assert.ok(server.requests.includes('/zod'));
+  assert.ok(server.requests.includes('/tarballs/zod-4.3.6.tgz'));
   const installationModule = path.join(path.dirname(workerPath), 'installation.js');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
@@ -121,7 +129,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
     const second = await run(process.execPath, [cli, 'setup', '--no-global', '--prefix', context.prefix, '--dsh-bin', context.dsh, '--json'], context.env, context.project);
     assert.equal(second.code, 0, second.stderr + second.stdout);
     const result = JSON.parse(second.stdout);
-    assert.equal(result.skills.count, 10);
+    assert.equal(result.skills.count, 11);
     assert.equal(result.paths.launcher, report.paths.launcher);
     assert.deepEqual(await fs.readFile(globalConfig), before);
     assert.equal(result.configuration.preserved, true);
@@ -183,7 +191,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
     const failure = JSON.parse(result.stdout);
     assert.equal(failure.ok, false);
     assert.equal(failure.steps.at(-1).name, 'skills');
-    assert.equal(failure.steps.at(-1).summary.results.length, 10);
+    assert.equal(failure.steps.at(-1).summary.results.length, 11);
     assert.deepEqual(await fs.readFile(skill), userVersion);
   });
   const calls = (await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG, 'utf8')).trim().split('\n').map(JSON.parse);

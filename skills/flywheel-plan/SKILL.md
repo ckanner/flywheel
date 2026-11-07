@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -43,6 +43,10 @@ git -C "$repo_dir" worktree list --porcelain
    ```bash
    cd "$repo_dir" && flywheel run "$task_dir" --only plan
    ```
+
+   该入口要求 Full。原任务是 Quick 且用户明确要求改走规划时，追加
+   `--mode full`，让 Go 持久化升级后运行；不要手改 Spec 或 state 来跳过策略检查。
+   仅想完成现有 Quick 时使用 `flywheel-run`，合格任务不需要再调用本步骤。
 
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 

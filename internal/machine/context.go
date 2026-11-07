@@ -81,6 +81,7 @@ type Context struct {
 type Opts struct {
 	TaskDir string
 	Cwd     string // 空 = 进程工作目录
+	Mode    string // optional request; persisted policy owns resume
 	Config  *config.Config
 	Drivers *drivers.Drivers
 	Log     func(string)
@@ -642,6 +643,9 @@ func CreateContext(opts Opts) (*Context, error) {
 		metricsFile: filepath.Join(opts.TaskDir, "metrics.jsonl"),
 		revision:    st.Revision,
 		RunContext:  opts.Context,
+	}
+	if err := ctx.initializeWorkflow(opts.Mode); err != nil {
+		return nil, err
 	}
 	if err := ctx.reconcileContractRevisions(); err != nil {
 		return nil, err

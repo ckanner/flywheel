@@ -240,6 +240,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 				"failures":             rep.Report["failures"],
 				"at":                   c.nowISO(),
 			}
+			if risks, ok := rep.Report["workflow-risks"]; ok {
+				ps.Evidence.Executor.(map[string]any)["workflow-risks"] = risks
+			}
 			if !containsString(ps.Artifacts, reportRel) {
 				ps.Artifacts = append(ps.Artifacts, reportRel)
 			}

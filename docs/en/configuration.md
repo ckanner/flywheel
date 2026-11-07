@@ -57,6 +57,42 @@ Existing files without this setting retain `role-based`: Plan/Execute request wo
 
 Full access preserves task boundaries, frozen acceptance, verification, and candidate identity checks. A reviewer still cannot change the candidate or acceptance criteria and obtain a valid verdict. Select `role-based` explicitly when confinement is intended; a worktree is not an OS sandbox.
 
+## Workflow policy and recovery
+
+Workflow policy chooses stages. Model profiles, loops, routes, and `permissions.mode` independently choose each stage's backend and permissions. **Put workflow in the Spec's YAML frontmatter, not in `flywheel.config.json`.** The unified `flywheel-task` entry defaults to Auto and records researched facts before Go validates them. This example shows the fields; replace the content with evidence from the actual task:
+
+```yaml
+workflow:
+  version: 1
+  mode: auto
+  reason: "The failure is located and follows an existing implementation and regression pattern"
+  scope-clear: true
+  implementation-known: true
+  verification-complete: true
+  review-sufficient: true
+  evidence:
+    - "Inspected the implementation, callers, and a regression test reproducing this failure"
+  risks: []
+  not-applicable:
+    L2: "No cross-module protocol changes; L1 covers the calling boundary"
+    L3: "No separate UI or external-service path; the local function contract directly verifies behavior"
+```
+
+Only `version` and `mode` are required fields; missing assessment data does not qualify a task for Quick. Quick needs one milestone and packet, all four fact flags true, nonempty reason/evidence, no risks, every Spec requirement referenced by the packet with a nonempty verification description, at least one L1 command, and reasons for absent L2/L3. Go validates structure and declarations; a model's low-risk label is not proof of semantic safety. Insufficient evidence or declared risks selects Full, and execution/review can still discover new risks.
+
+```sh
+flywheel control launch --task-dir /repo/docs/task --cwd /repo --mode auto
+flywheel control start --task-dir /repo/docs/task --cwd /repo --mode full
+flywheel run /repo/docs/task --mode full
+flywheel control status --task-dir /repo/docs/task --cwd /repo
+```
+
+`launch` defaults to Auto. `start` and `run` preserve the contract or persisted choice when `--mode` is omitted. Status/stop do not switch modes. Legacy contracts and existing state without workflow remain Full. Recovery retains the selected policy: Auto does not reclassify, and Full never downgrades to Quick. A new risk, verification gap, or explicit Full request upgrades Quick through a persisted checkpoint before the full loop continues. Unknown workflow versions fail explicitly. Never edit state or create a replacement task to reset budget or evidence.
+
+`state.workflow` stores requested/effective policy, reason, evidence, risks, version, selection time, Plan/Judge applicability, and upgrades. A stage marked not applicable is not a passing check. Effective policy and completion requirements participate in evidence identity, so a Quick final Review cannot stand in for Full's Judge after upgrade. New packets can declare `workflow-risks: []` in `done-report-format`; the executor reports facts through that string array rather than editing policy or state.
+
+Quick reuses existing Execute and Review bindings without changing effort, accounts, fallbacks, or full-access settings. All required checks remain, and applicable L2/L3 run in the actual candidate before final Review. The reviewer checks every requirement; the first-success path uses two stage-agent calls, Execute and final Review. See the [Spec schema](../../templates/spec.schema.json), [state schema](../../templates/state.schema.json), and [workflow guide](workflow.md).
+
 ## Fields and identities
 
 | Field | Meaning | Example |
@@ -221,7 +257,9 @@ flywheel doctor --cwd /absolute/path/to/repo --task-dir /absolute/path/to/repo/d
 flywheel doctor --cwd /absolute/path/to/repo --task-dir /absolute/path/to/repo/docs/my-feature --probe --json
 ```
 
-Without a task, doctor checks all configured bindings. With a task, it validates the Spec/packets and requires Plan, Review, Judge, enabled second opinions, and routes used by the packets; other bindings can be skipped. With no packets yet, it checks the default execution route and reports that preparation must finish. A real run still needs at least one reviewed legal packet.
+Without a task, doctor checks all configured bindings. With a task, it validates the Spec/packets and uses the engine's policy resolver: fresh tasks follow the Spec, existing tasks retain their saved policy, and legacy state remains Full. Full requires Plan, Review, Judge, enabled second opinions, and the used execution routes. Qualified Quick requires Review and the actual routes, marking Plan/Judge/second opinion skipped. Malformed workflow state blocks SDK probes without mutating or reclassifying the task. With no packets yet, it checks the default route and reports incomplete preparation. A real run still needs at least one valid packet for an authorized scope.
+
+Doctor does not accept the runtime `--mode` override; it reports the Spec/saved state. An explicit launch override is resolved and persisted by the engine when starting. Configuration inspection lists bindings without claiming every configured stage will be called.
 
 Local checks cover commands, versions, directories, configuration, and declared nonempty environment variables, without showing their values. `--probe` additionally initializes DSH SDK sessions, verifies accepted configuration, working directory, permissions, and normal shutdown. Identical probes are deduplicated only when their relevant identity and permissions match. The probe budget is 40 seconds plus bounded process cleanup time.
 

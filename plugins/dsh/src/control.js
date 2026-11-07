@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { directory, nonempty, record } from './protocol.js';
 
-const actions = ['start', 'status', 'stop', 'config', 'doctor'];
+const actions = ['launch', 'start', 'status', 'stop', 'config', 'doctor'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
 
 // This marker is issued only where the host can prove that no control process
@@ -15,13 +15,16 @@ export class ControlNotDispatchedError extends Error {
 
 export async function validateControl(input, defaultCwd) {
   if (!record(input) || !actions.includes(input.action)) {
-    throw new Error('action must be start, status, stop, config, or doctor');
+    throw new Error('action must be launch, start, status, stop, config, or doctor');
   }
-  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe'].includes(key))) {
+  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe', 'mode'].includes(key))) {
     throw new Error('unknown Flywheel control argument');
   }
   if ('probe' in input && (input.action !== 'doctor' || typeof input.probe !== 'boolean')) {
     throw new Error('probe must be a boolean and is only supported by doctor');
+  }
+  if ('mode' in input && (!['launch', 'start'].includes(input.action) || !['auto', 'quick', 'full'].includes(input.mode))) {
+    throw new Error('mode must be auto, quick, or full and is only supported by launch/start');
   }
   const needsTask = !['config', 'doctor'].includes(input.action);
   return {
@@ -29,6 +32,7 @@ export async function validateControl(input, defaultCwd) {
     taskDir: needsTask || 'taskDir' in input ? await directory(input.taskDir, 'taskDir') : '',
     cwd: await directory(input.cwd ?? defaultCwd, 'cwd'),
     ...(input.action === 'doctor' ? { probe: input.probe ?? false } : {}),
+    ...(input.action === 'launch' || 'mode' in input ? { mode: input.mode ?? 'auto' } : {}),
   };
 }
 
@@ -74,6 +78,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, signa
   const args = ['control', request.action, '--cwd', request.cwd];
   if (request.taskDir) args.push('--task-dir', request.taskDir);
   if (request.probe) args.push('--probe');
+  if (request.mode) args.push('--mode', request.mode);
   return new Promise((resolve, reject) => {
     let child;
     try {
@@ -125,8 +130,9 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, signa
         return reject(new Error(`Flywheel returned invalid JSON (exit ${code}): ${stderr.trim()}`));
       }
       if (!record(response) || response.protocol !== 1 || response.taskDir !== request.taskDir ||
+          (response.cwd !== undefined && response.cwd !== request.cwd) ||
           typeof response.ok !== 'boolean') {
-        return reject(new Error('Flywheel control response has incompatible protocol or taskDir'));
+        return reject(new Error('Flywheel control response has incompatible protocol, taskDir, or cwd'));
       }
       if ((response.configuration !== undefined && !validConfiguration(response.configuration)) ||
           (response.diagnostic !== undefined && !validDiagnostic(response.diagnostic, request))) {

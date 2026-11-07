@@ -63,7 +63,7 @@ func snapshotJSONT(t *testing.T, args ...string) (int, skillInstallResponse) {
 	require.NoError(t, decoder.Decode(&reply))
 	assert.ErrorIs(t, decoder.Decode(&struct{}{}), io.EOF, "exactly one JSON document")
 	assert.Equal(t, 1, reply.Protocol)
-	require.Len(t, reply.Results, 10)
+	require.Len(t, reply.Results, 11)
 	return code, reply
 }
 
@@ -358,7 +358,7 @@ func TestSnapshotInstallLockPreventsConcurrentUpdatesAndReleases(t *testing.T) {
 	require.NoError(t, lock.Close())
 	sum, err := installEmbeddedSnapshot(project)
 	require.NoError(t, err)
-	require.Len(t, sum.Results, 10)
+	require.Len(t, sum.Results, 11)
 	for _, result := range sum.Results {
 		assert.Equal(t, "copied", result.Action, result.Reason)
 	}
@@ -471,7 +471,7 @@ func TestInstallSkillsEmptySourceIsNotReportedAsSuccess(t *testing.T) {
 	code, reply := snapshotJSONT(t, "--link", "--project", project)
 	assert.Equal(t, 1, code)
 	assert.False(t, reply.OK)
-	require.Len(t, reply.Results, 10)
+	require.Len(t, reply.Results, 11)
 	for _, result := range reply.Results {
 		assert.Equal(t, "error", result.Action)
 		assert.Contains(t, result.Reason, "did not report")
@@ -495,7 +495,7 @@ func TestInstallJSONFlagSemantics(t *testing.T) {
 			var reply skillInstallResponse
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &reply))
 			assert.False(t, reply.OK)
-			assert.Len(t, reply.Results, 10)
+			assert.Len(t, reply.Results, 11)
 			assert.Empty(t, stderr.String())
 		} else {
 			assert.Empty(t, stdout.String())

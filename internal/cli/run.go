@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/machine"
 )
@@ -26,12 +27,15 @@ func contains(list []string, v string) bool {
 }
 
 func runCmd() *cobra.Command {
-	var only, packet, unit, pauseBefore string
+	var only, packet, unit, pauseBefore, mode string
 	cmd := &cobra.Command{
 		Use:   "run <docs/slug>",
 		Short: "以当前进程执行全自动循环（--only 只走一步状态转移）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("mode") && !contract.ValidWorkflowMode(mode) {
+				return fmt.Errorf("--mode only supports auto, quick, or full")
+			}
 			taskDir, err := resolveTaskDir(args[0])
 			if err != nil {
 				return err
@@ -58,7 +62,7 @@ func runCmd() *cobra.Command {
 			if only != "" {
 				summary, err = machine.RunSingleStep(machine.RunSingleStepOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv,
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode,
 						Context: cmd.Context(),
 						Log:     logf(cmd),
 					},
@@ -68,7 +72,7 @@ func runCmd() *cobra.Command {
 			} else {
 				summary, err = machine.RunTask(machine.RunTaskOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv,
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode,
 						Context: cmd.Context(),
 						Log:     logf(cmd),
 					},
@@ -93,6 +97,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&packet, "packet", "", "指定 packet id（与 --unit 同义）")
 	cmd.Flags().StringVar(&unit, "unit", "", "指定单元 id（--packet 的别名）")
 	cmd.Flags().StringVar(&pauseBefore, "pause-before", "", "在该步骤前暂停: review")
+	cmd.Flags().StringVar(&mode, "mode", "", "请求流程: auto|quick|full；省略时沿用契约或已保存策略，旧任务保持 full")
 	return cmd
 }
 

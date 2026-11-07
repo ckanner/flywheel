@@ -96,7 +96,13 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   const sessionPlugin = { name: 'fixture-session', apply() {} };
   const sessionA = await ctx.plugin(sessionPlugin);
   const sessionB = await ctx.plugin(sessionPlugin);
-  const binding = (key, fiber) => ({ key, ctx: fiber.ctx, hooks: {}, keyedHooks: {}, props: {} });
+  const projectionA = hostSource(undefined);
+  const projectionB = hostSource(undefined);
+  const binding = (key, fiber) => ({ key, ctx: fiber.ctx, hooks: {},
+    keyedHooks: { projection: name => {
+      assert.equal(name, 'flywheelTask');
+      return key === 'session-a' ? projectionA : projectionB;
+    } }, props: {} });
   const bindingA = binding('session-a', sessionA);
   const bindingB = binding('session-b', sessionB);
   const current = hostSource(bindingA);
@@ -182,13 +188,21 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   await act(async () => { owner = await ctx.plugin(ownerPlugin); });
   assert.equal(ctx.slots.entries('conversation.view').filter(entry => entry.options.id === 'flywheel').length, 1);
   assert.equal(input(0).value, '', 'a collapsed owner releases its plugin store instances before reassembly');
+  await act(async () => projectionB.set({ operationId: 'tool:published-launch', sequence: 10,
+    action: 'launch', taskDir: '/repo/auto-bound', cwd: '/repo', outcome: 'confirmed', message: '' }));
+  assert.equal(input(0).value, '/repo/auto-bound', 'the published useProjection hook delivers the exact host task association');
+  assert.equal(input(1).value, '/repo');
+  assert.match(container.textContent, /SESSION_B_RESULT/);
+  await act(async () => shell.set({ visible: false }));
+  await act(async () => shell.set({ visible: true }));
+  assert.equal(requests.length, 3, 'restoring the same tab does not repeat a launch or status read');
   await act(async () => { await plugin.dispose(); });
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)), new Set(['chat', 'trajectory']));
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => shell.set({ visible: false }));
   assert.match(container.textContent, /Native conversation/);
-  assert.deepEqual(requests.map(request => request.action), ['status', 'status']);
-  assert.deepEqual(sessions, ['session-a', 'session-b']);
+  assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status']);
+  assert.deepEqual(sessions, ['session-a', 'session-b', 'session-b']);
   assert.deepEqual(crashes, [], 'the real renderer reported no crashed or abdicated plugin entry');
   assert.equal(clientDocument.head.innerHTML, headBefore);
   assert.equal(clientDocument.body.childElementCount, bodyChildrenBefore);

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- 实现 Auto／Quick／Full：宿主先研究并准备契约，Go 校验资格并持久化策略。Quick 保留 Execute、全部必需验证、独立最终 Review 与同一候选的 Git 交付；合格时 Plan／Judge 记为不适用。旧任务继续 Full，发现风险或验证缺口只允许向 Full 升级，保留预算、工作区和审计历史。
+- 新增 `flywheel-task` 统一准备启动 skill、`flywheel_launch` 模型工具及 `control launch --mode auto|quick|full`。通过 DSH 公开会话投影关联确切任务，覆盖会话重放、fork 隔离与未确认操作；视图显示请求模式、生效策略、阶段适用性和升级原因。
+- 补齐 11 个内嵌 skills 的安装校验、双语工作流／配置／入门指南，以及引擎、控制接口和真实 DSH 发布包的离线回归。模型、账号与权限配置继续沿用现有选择。
+
+本节记录尚未发布的源码功能；不改变 0.28.5 已有发布身份，不代表 npm latest 或用户桌面已经更新。
+
 ## 0.28.5
 
 - 将 Flywheel 自定义会话视图排到内置“对话／轨迹／统计”之后，保持内置视图顺序；不修改宿主 DOM，不改变任务、模型和权限行为。六包统一 0.28.5。

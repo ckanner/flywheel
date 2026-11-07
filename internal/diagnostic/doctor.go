@@ -18,6 +18,7 @@ import (
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/fallback"
+	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -166,6 +167,7 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 		required["judge-panel"] = true
 	}
 	spec, err := contract.LoadSpec(r.TaskDir)
+	var packets []*contract.Packet
 	if err == nil {
 		entries, readErr := readDirectory(r.TaskDir)
 		err = readErr
@@ -176,8 +178,7 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 			}
 		}
 		if err == nil && hasPackets {
-			packets, packetErr := contract.LoadPackets(r.TaskDir, spec)
-			err = packetErr
+			packets, err = contract.LoadPackets(r.TaskDir, spec)
 			for _, packet := range packets {
 				required["routes."+packet.Route] = true
 			}
@@ -190,6 +191,24 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 		r.add("contracts", "fail", "任务契约无法加载或未通过 schema 校验", "INVALID_REQUEST", "检查 spec.md 与 task-packet 文件；预检不会运行其中的命令")
 	} else {
 		r.add("contracts", "pass", "任务契约结构已验证", "", "")
+		var st *state.State
+		if state.Exists(r.TaskDir) {
+			st, err = state.Load(r.TaskDir)
+		}
+		var selection contract.WorkflowSelection
+		if err == nil {
+			selection, err = state.ResolveWorkflow(st, spec, packets, "")
+		}
+		if err != nil {
+			r.add("workflow", "fail", "无法确认任务已保存的流程策略", "INVALID_REQUEST", "检查任务状态和策略版本；不会重新分类或覆盖已有状态")
+		} else {
+			r.add("workflow", "pass", "流程 "+selection.Requested+" → "+selection.Effective+": "+selection.Reason, "", "")
+			if selection.Effective == "quick" {
+				delete(required, "loops.plan")
+				delete(required, "loops.judge")
+				delete(required, "judge-panel")
+			}
+		}
 	}
 	present := map[string]bool{}
 	for _, b := range r.Configuration.Bindings {

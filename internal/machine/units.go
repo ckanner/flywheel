@@ -64,6 +64,9 @@ func (c *Context) failAttempt(packet *contract.Packet, errorCode errs.ErrorCode,
 		"l1": ps.Evidence.L1, "review": ps.Evidence.Review,
 		"exit": ps.Exit, "at": c.nowISO(),
 	}
+	if ps.Evidence.FinalGate != nil {
+		ps.LastFeedback.(map[string]any)["final-gate"] = ps.Evidence.FinalGate
+	}
 
 	if failedCommands == nil {
 		failedCommands = []string{}
@@ -144,6 +147,11 @@ func executorSelfChangedFiles(ps *state.PacketState) []string {
 func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
+	if c.quick() {
+		feedback, _ := json.Marshal(ps.LastFeedback)
+		err := c.upgradeWorkflow("Quick repair or verification requires Full planning", []string{string(feedback)})
+		return "workflow-upgraded", err
+	}
 	onFail := packet.Escalation.OnFail
 
 	if onFail == "return-to-planner" && ps.PlanRevisions < 1 {
@@ -222,6 +230,9 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	review, _ := ps.Evidence.Review.(map[string]any)
+	if c.quick() && (!c.currentFinalGate(packet) || !c.validFinalReview(packet)) {
+		return fmt.Errorf("%w: Quick final verification or task review is stale", ErrCommitFailed)
+	}
 	if !c.currentL1Evidence(packet) || review["verdict"] != "pass" || evidenceIdentity(ps.Evidence.Review) != evidenceIdentity(ps.Evidence.L1) {
 		return fmt.Errorf("%w: candidate changed or verification evidence is stale", ErrCommitFailed)
 	}
@@ -483,13 +494,14 @@ func (c *Context) injectionStop(packet *contract.Packet, oi *defectinjection.Out
 	return c.err()
 }
 
-// execLoopOutcome execute 子环的四种出口（v0.24 闭环化）：子环从不自行升级——
-// 升级是大循环对出口的裁决（Osmani：闭环达标或有界停止，escalate 是设计出口）。
+// execLoopOutcome keeps execution bounded. Structured Quick risk discovery
+// checkpoints a one-way upgrade; ordinary failures remain caller decisions.
 type execLoopOutcome struct {
-	Green   bool // L1 全绿：子环达标（done-condition 由冻结契约的验收命令构成）
-	Stopped bool // budget/凭证等待/fatal：跨环停止信号
-	Bounded bool // FailedAttempts 耗尽：有界停止（调用方裁决：升级或报告）
-	Spun    bool // 空转检测命中：同签名连续失败（§6 DC4）
+	Green    bool // L1 全绿：子环达标（done-condition 由冻结契约的验收命令构成）
+	Stopped  bool // budget/凭证等待/fatal：跨环停止信号
+	Bounded  bool // FailedAttempts 耗尽：有界停止（调用方裁决：升级或报告）
+	Spun     bool // 空转检测命中：同签名连续失败（§6 DC4）
+	Upgraded bool // structured executor risks switched the same task to Full
 }
 
 // runExecuteLoop execute 子环闭环（Osmani 对齐，v0.24）：转到单元 L1 验收
@@ -525,6 +537,10 @@ func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, erro
 			}
 			continue
 		}
+		if risks := c.executorWorkflowRisks(packet); c.quick() && len(risks) > 0 {
+			err := c.upgradeWorkflow("Executor discovered risks requiring Full", risks)
+			return execLoopOutcome{Upgraded: true}, err
+		}
 
 		l1 := c.l1Step(packet)
 		if !l1.Pass {
@@ -552,6 +568,15 @@ func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, erro
 		}
 		return execLoopOutcome{Green: true}, nil
 	}
+}
+
+// Quick gathers injection with all other final checks in reviewStep, including
+// manual review. Full keeps the original per-unit injection/pause semantics.
+func (c *Context) unitReviewInjection(packet *contract.Packet) (*defectinjection.Outcome, error) {
+	if c.quick() {
+		return nil, nil
+	}
+	return c.maybeDefectInjection(packet)
 }
 
 // processPacket 单个 packet 的完整处理循环。
@@ -625,6 +650,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			if r.Stopped {
 				return "stop", nil
 			}
+			if r.Upgraded {
+				return "upgrade", nil
+			}
 			if r.Bounded || r.Spun {
 				esc, err := escalate()
 				if err != nil {
@@ -633,10 +661,13 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 				if esc == "inbox" {
 					return "stop", nil
 				}
+				if esc == "workflow-upgraded" {
+					return "upgrade", nil
+				}
 				continue // 修订后契约 → 子环重入
 			}
 			// r.Green：L1 全绿，缺陷注入抽检在 L1 与 Review 之间（§4.3）。
-			oi, err := c.maybeDefectInjection(packet)
+			oi, err := c.unitReviewInjection(packet)
 			if err != nil {
 				return "", err
 			}
@@ -665,7 +696,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 		if resumeAtReview {
 			// P3 修复：resume 到 review 的路径此前完全跳过缺陷注入采样；
 			// 补一次（采样决策与正常路径同一函数）。
-			oi, err := c.maybeDefectInjection(packet)
+			oi, err := c.unitReviewInjection(packet)
 			if err != nil {
 				return "", err
 			}
@@ -711,6 +742,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 		}
 
 		verdict := review.Verdict
+		if c.quick() && verdict != nil && (verdict.Verdict == "upgrade" || !*verdict.QuickEligible) {
+			return "upgrade", c.upgradeWorkflow("Final Review requires Full", verdict.Reasons)
+		}
 		if verdict != nil && verdict.Verdict == "verification-gap" {
 			// v0.14 DC2：验证缺口退回 Plan 加强验收（消耗修订预算），然后复验
 			// ——单元绝不在缺口上被判完成。
@@ -721,6 +755,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			}
 			if esc == "inbox" {
 				return "stop", nil
+			}
+			if esc == "workflow-upgraded" {
+				return "upgrade", nil
 			}
 			if p, ok := c.Packets[id]; ok { // 修订后的契约（P0-2）
 				packet = p
@@ -755,6 +792,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			}
 			if esc == "inbox" {
 				return "stop", nil
+			}
+			if esc == "workflow-upgraded" {
+				return "upgrade", nil
 			}
 			if p, ok := c.Packets[id]; ok {
 				packet = p

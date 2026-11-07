@@ -1,0 +1,129 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { taskAssociationProjection as definition, taskProjectionKey } from '../src/task-association.js';
+
+function log(cwd = '/repo', inheritedEventCount = 0) {
+  let state = definition.init({ cwd }, inheritedEventCount);
+  const events = [];
+  return { get state() { return state; }, get view() { return definition.wire.view(state); }, events,
+    append(type, data) {
+      const event = { type, data, seq: events.length, time: 1000 + events.length };
+      events.push(event);
+      state = definition.apply(state, event);
+      assert.deepEqual(definition.stateSchema.parse(JSON.parse(JSON.stringify(state))), state);
+      assert.deepEqual(definition.wire.viewSchema.parse(definition.wire.view(state)), definition.wire.view(state));
+    },
+  };
+}
+const result = (taskDir, cwd = '/repo') => ({ protocol: 1, ok: true, running: true, taskDir, cwd, state: null });
+const content = value => [{ type: 'text', text: JSON.stringify(value) }];
+const tool = (l, callId, args, name = 'flywheel_launch') => l.append('tool/call', { callId, name, arguments: JSON.stringify(args) });
+const done = (l, callId, value, isError = false) => l.append('tool/result', {
+  message: { toolCallId: callId, content: content(value), isError },
+});
+const command = (l, commandId, args) => l.append('command/run', { commandId, name: 'flywheel', args: JSON.stringify(args) });
+const commandDone = (l, commandId, value, kind = 'success') => l.append('command/done', { commandId, kind, text: JSON.stringify(value) });
+
+test('exact launch association folds public tool events and current-directory evidence, without inferring paths', () => {
+  const l = log('/original');
+  assert.equal(taskProjectionKey, 'flywheelTask');
+  l.append('working-directory/change', { cwd: '/worktree' });
+  tool(l, 'launch-1', { taskDir: '/worktree/docs/fix', mode: 'auto' });
+  assert.deepEqual(l.view, { operationId: 'tool:launch-1', sequence: 1, action: 'launch',
+    taskDir: '/worktree/docs/fix', cwd: '/worktree', outcome: 'pending', message: '' });
+  done(l, 'launch-1', result('/physical/task', '/physical/project'));
+  assert.equal(l.view.taskDir, '/physical/task');
+  assert.equal(l.view.cwd, '/physical/project');
+  assert.equal(l.view.outcome, 'confirmed');
+  const stableState = l.state;
+  const stableView = l.view;
+  l.append('assistant/message', { message: { content: content(result('/fake/task')) } });
+  assert.equal(l.state, stableState, 'unrelated events preserve the projection state reference');
+  assert.equal(l.view, stableView, 'unrelated events cannot generate view work or forge association');
+  assert.equal(log().view, null, 'other conversations start without this association');
+});
+
+test('an unknown or missing mutation response keeps its original task until that task is observed', () => {
+  const l = log();
+  command(l, 'first', { action: 'launch', taskDir: '/repo/docs/first' });
+  command(l, 'second', { action: 'start', taskDir: '/repo/docs/second' });
+  commandDone(l, 'second', { protocol: 1, type: 'flywheel-control-error', action: 'start',
+    dispatch: 'not-dispatched', message: 'An earlier mutation needs reconciliation' }, 'error');
+  assert.equal(l.view.operationId, 'command:first', 'a blocked later request cannot erase the original request');
+  commandDone(l, 'first', { protocol: 1, type: 'flywheel-control-error', action: 'launch',
+    dispatch: 'unknown', message: 'transport interrupted' }, 'error');
+  assert.equal(l.view.outcome, 'unknown');
+  command(l, 'wrong-status', { action: 'status', taskDir: '/repo/docs/second' });
+  commandDone(l, 'wrong-status', result('/repo/docs/second'));
+  assert.equal(l.view.outcome, 'unknown', 'a different task cannot reconcile the original mutation');
+  command(l, 'status', { action: 'status', taskDir: '/repo/docs/first' });
+  commandDone(l, 'status', result('/physical/first', '/physical/repo'));
+  assert.equal(l.view.outcome, 'confirmed');
+  assert.equal(l.view.taskDir, '/physical/first', 'a confirmed status adopts the host-validated realpath');
+  tool(l, 'next', { taskDir: '/repo/docs/second', cwd: '/repo', mode: 'quick' });
+  assert.equal(l.view.taskDir, '/repo/docs/second');
+  assert.equal(l.view.outcome, 'pending', 'a new launch may bind after reconciliation');
+  commandDone(l, 'first', result('/repo/docs/first'));
+  assert.equal(l.view.operationId, 'tool:next', 'late or duplicate completion cannot replace the newer association');
+});
+
+test('a missing command result is recoverable by status and only structured non-dispatch proof releases a failure', () => {
+  const l = log();
+  tool(l, 'missing', { taskDir: '/repo/task' });
+  command(l, 'status', { action: 'status', taskDir: '/repo/task' });
+  commandDone(l, 'status', result('/repo/task'));
+  assert.equal(l.view.outcome, 'confirmed', 'replay preserves a missing result and a later explicit read reconciles it');
+  tool(l, 'failed', { taskDir: '/repo/task' });
+  done(l, 'failed', 'Error: not-dispatched', true);
+  assert.equal(l.view.outcome, 'unknown', 'error prose cannot fabricate dispatch proof');
+  command(l, 'status2', { action: 'status', taskDir: '/repo/task' });
+  commandDone(l, 'status2', result('/repo/task'));
+  tool(l, 'preflight', { taskDir: '/repo/task' });
+  done(l, 'preflight', { protocol: 1, type: 'flywheel-control-error', action: 'launch', dispatch: 'not-dispatched', message: 'missing binary' }, true);
+  assert.equal(l.view.outcome, 'confirmed');
+  assert.equal(l.view.message, 'missing binary');
+});
+
+test('nested PTC dispatches use the public durable start/result vocabulary', () => {
+  const l = log();
+  const dispatch = { rootCallId: 'root', parentCallId: 'parent', subCallId: 'parent:ptc:1',
+    name: 'flywheel_launch', arguments: { taskDir: '/repo/docs/nested', mode: 'full' } };
+  l.append('tool/ptc-dispatch-start', dispatch);
+  assert.equal(l.view.outcome, 'pending');
+  l.append('tool/ptc-dispatch', { ...dispatch, content: content(result('/repo/docs/nested')), isError: false });
+  assert.equal(l.view.outcome, 'confirmed');
+  assert.equal(l.view.operationId, 'tool:parent:ptc:1');
+});
+
+test('invalid arguments, unrelated tool results and earlier reads cannot change the current task', () => {
+  const l = log();
+  for (const args of [{ taskDir: 'relative' }, { taskDir: '/repo/task\n' }, { taskDir: '/repo/task', shell: true },
+    { taskDir: '/repo/task', mode: 'fast' }, { taskDir: '/repo/task', cwd: '' }]) tool(l, 'bad', args);
+  done(l, 'bad', result('/repo/task'));
+  assert.equal(l.view, null);
+  tool(l, 'other', { taskDir: '/repo/task' }, 'shell');
+  done(l, 'other', result('/repo/task'));
+  assert.equal(l.view, null);
+  command(l, 'old-read', { action: 'status', taskDir: '/repo/old' });
+  tool(l, 'launch', { taskDir: '/repo/new' });
+  done(l, 'launch', result('/repo/new'));
+  commandDone(l, 'old-read', result('/repo/old'));
+  assert.equal(l.view.taskDir, '/repo/new');
+});
+
+test('cold replay restores identity while a fork ignores inherited controls and retains directory changes', () => {
+  const original = log();
+  original.append('working-directory/change', { cwd: '/worktree' });
+  tool(original, 'parent-launch', { taskDir: '/worktree/docs/task' });
+  done(original, 'parent-launch', result('/worktree/docs/task', '/worktree'));
+  let replay = definition.init({ cwd: '/repo' }, 0);
+  for (const event of original.events) replay = definition.apply(replay, event);
+  assert.deepEqual(replay, original.state, 'a reload derives the same association from existing events');
+  let fork = definition.init({ cwd: '/repo' }, original.events.length);
+  for (const event of original.events) fork = definition.apply(fork, event);
+  assert.equal(fork.view, null, 'inherited parent controls never grant the fork a task association');
+  assert.equal(fork.cwd, '/worktree');
+  fork = definition.apply(fork, { seq: original.events.length, type: 'tool/call',
+    data: { callId: 'child', name: 'flywheel_launch', arguments: JSON.stringify({ taskDir: '/worktree/docs/child' }) } });
+  assert.equal(fork.view.taskDir, '/worktree/docs/child');
+});

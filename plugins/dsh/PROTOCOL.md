@@ -151,14 +151,18 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 
 ## 桌面控制响应（独立于 worker JSONL）
 
-桌面控制层调用 Go 的 `control` 命令，只接收一个 JSON 文档，不把它与上述 worker 流混用。原 `start/status/stop` 字段不变，新增两种 action：
+桌面控制层调用 Go 的 `control` 命令，只接收一个 JSON 文档，不把它与上述 worker 流混用。原 `start/status/stop` 继续支持，下列入口复用同一协议：
 
 | action | 输入与输出 |
 |---|---|
+| `launch` | 必需 taskDir／cwd；可选 `--mode`（auto、quick、full），缺省 auto；校验已准备契约并启动 |
+| `start` | 必需 taskDir／cwd；可选 `--mode`，省略时保留契约或持久化策略；旧任务仍 Full |
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
 | `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
 
-共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `error`。省略任务时 `taskDir:""`；配置／诊断不查询或修改任务状态，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。
+共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `cwd`、`error`。成功解析目录后 `cwd` 是请求目录的规范化物理路径，供宿主关联校验；旧回复未带该字段仍按原任务身份机制处理。省略任务时 `taskDir:""`；配置／诊断不启动或修改任务，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。doctor 可只读已有工作流状态以判断必需阶段。
+
+工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
 `configuration` 含 source、scope、cwd、taskDir、bindings。每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
 
@@ -166,7 +170,27 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 
 合法检查失败同时满足 exit 1、envelope.ok=false、diagnostic.ok=false；控制层保留并展示报告。其他非零退出、超时、信号、坏 JSON、错误 protocol 或任务身份仍是传输错误。普通 config/doctor 不接受 shell 参数拼接，`--probe` 不能用于其他 action。Go 检查预算 40 秒，TERM 升级、stdio 排空、进程组确认各有 5 秒宽限，保守另留 15 秒；桌面默认控制窗口 60 秒。
 
-config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
+config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。launch/start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
+
+### DSH 启动工具与任务关联
+
+`flywheel_launch({taskDir,cwd?,mode?})` 使用 action=launch，mode 缺省 auto。
+`flywheel_control({action,taskDir?,cwd?,mode?,probe?})` 与人工 `/flywheel` JSON 命令
+使用同一校验与控制层；mode 仅限 launch/start，probe 仅限 doctor。
+省略 cwd 时采用当前会话公开 workingDirectory 服务，跨 worktree 时显式传入。
+若 `header.cwd` 和 `working-directory/change` 均未记录当前目录，launch/start/stop 必须显式传入绝对 cwd；宿主在派发 Go 前返回 `not-dispatched`，即使 getter 有外部默认目录也不据此猜测关联，status 仍可使用 getter。
+CLI 只消费已准备契约，宿主的 `flywheel-task` skill 负责研究与生成契约。
+
+`sessionProjections` 的 `flywheelTask` 投影从宿主已有的 command/tool/PTC
+调用与结果记录解析具体任务。客户端只通过公开 `useProjection('flywheelTask')`
+读取，按会话隔离，不扫描任务目录，不自行写入新的会话事件或 state。
+会话重载可从保留记录重建关联；fork 不继承父会话关联。投影记录是控制交接信息，
+恢复后仍查询 Go 取得最新状态，不把历史 running 值当成实时事实。
+
+launch/start 的在途或未知结果保留原 taskDir/cwd 并阻止重复变更，直到 status
+成功核对原任务。确认新关联时可自动查询一次状态，不自动启动或周期轮询。
+旧会话、旧绑定的迟到回复不覆盖当前选择。手动路径草稿与控制快照仍是查看缓存，
+不能替代可重放的明确任务关联。
 
 ### DSH 命令失败与是否派发
 

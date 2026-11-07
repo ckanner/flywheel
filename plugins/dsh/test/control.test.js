@@ -63,6 +63,30 @@ test('configuration and doctor need no task directory, and probe is an explicit 
   ]) await assert.rejects(validateControl(input, cwd));
 });
 
+test('launch selects Auto by default, explicit modes reach the Go CLI, and legacy Start adds no mode', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-launch-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const physical = await realpath(cwd);
+  const log = join(cwd, 'argv.jsonl');
+  withEnv(t, 'TEST_CONTROL_LOG', log);
+  for (const mode of [undefined, 'quick', 'full']) {
+    const value = await runControl({ action: 'launch', taskDir: cwd, ...(mode ? { mode } : {}) }, { binary, defaultCwd: cwd });
+    assert.equal(value.running, true);
+  }
+  await runControl({ action: 'start', taskDir: cwd }, { binary, defaultCwd: cwd });
+  await runControl({ action: 'start', taskDir: cwd, mode: 'auto' }, { binary, defaultCwd: cwd });
+  const base = action => ['control', action, '--cwd', physical, '--task-dir', physical];
+  assert.deepEqual((await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)), [
+    [...base('launch'), '--mode', 'auto'], [...base('launch'), '--mode', 'quick'],
+    [...base('launch'), '--mode', 'full'], base('start'), [...base('start'), '--mode', 'auto'],
+  ]);
+  for (const input of [
+    { action: 'launch', taskDir: cwd, mode: 'fast' }, { action: 'launch', taskDir: cwd, mode: null },
+    { action: 'launch', taskDir: cwd, probe: false }, { action: 'status', taskDir: cwd, mode: 'auto' },
+    { action: 'stop', taskDir: cwd, mode: 'full' }, { action: 'doctor', mode: 'quick' }, { action: 'launch' },
+  ]) await assert.rejects(runControl(input, { binary, defaultCwd: cwd }), ControlNotDispatchedError);
+});
+
 test('doctor returns a valid failed report but rejects process, protocol, and identity failures', async t => {
   const cwd = await mkdtemp(join(tmpdir(), 'flywheel-report-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -73,7 +97,7 @@ test('doctor returns a valid failed report but rejects process, protocol, and id
   assert.equal(value.diagnostic.ok, false);
   assert.equal(value.diagnostic.checks[1].status, 'fail');
   assert.match(value.diagnostic.checks[1].remedy, /executable/);
-  for (const mode of ['unexpected-exit', 'fail-exit-zero', 'wrong-task', 'wrong-protocol',
+  for (const mode of ['unexpected-exit', 'fail-exit-zero', 'wrong-task', 'wrong-cwd', 'wrong-protocol',
     'wrong-diagnostic-task', 'wrong-probe', 'claims-inference', 'bad-check', 'disagree',
     'missing-report', 'invalid-json']) {
     process.env.TEST_CONTROL_MODE = mode;
@@ -171,6 +195,7 @@ test('slash command and model tool use the same validated engine control boundar
     on: (name, fn) => { registrations[name] = fn; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
     workingDirectory: { get: session => {
       assert.equal(session, agent.session);
       directoryReads += 1;
@@ -216,6 +241,7 @@ test('host directory defaults follow the current session and an explicit cwd byp
     on: (name, callback) => { registrations[name] = callback; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
     workingDirectory: { get: actualSession => {
       assert.equal(actualSession, session);
       reads += 1;
@@ -256,6 +282,7 @@ test('unavailable session directories fail before dispatch without falling back 
     on: (name, callback) => { registrations[name] = callback; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
     workingDirectory: { get: () => {
       reads += 1;
       if (getterFailure) throw getterFailure;
@@ -367,6 +394,7 @@ test('the native rc.5 view reaches the registered slash command through the sess
     on: (name, callback) => { registrations[name] = callback; },
     commands: { register: definition => { registrations.command = definition; } },
     tools: { register: definition => { registrations.tool = definition; } },
+    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
     workingDirectory: { get: () => cwd },
   }, { flywheelBinary: binary });
   t.after(() => registrations.dispose());

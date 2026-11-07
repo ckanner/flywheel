@@ -7,6 +7,29 @@
   "additionalProperties": false,
   "required": ["spec-version", "title", "goal", "milestones", "requirements"],
   "properties": {
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "mode"],
+      "properties": {
+        "version": { "const": 1 },
+        "mode": { "enum": ["auto", "quick", "full"] },
+        "reason": { "type": "string", "pattern": "\\S" },
+        "scope-clear": { "type": "boolean" },
+        "implementation-known": { "type": "boolean" },
+        "verification-complete": { "type": "boolean" },
+        "review-sufficient": { "type": "boolean" },
+        "evidence": { "type": "array", "items": { "type": "string", "pattern": "\\S" } },
+        "risks": { "type": "array", "items": { "type": "string", "pattern": "\\S" } },
+        "not-applicable": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "L2": { "type": "string", "pattern": "\\S" },
+            "L3": { "type": "string", "pattern": "\\S" }
+          }
+        }
+      }
+    },
     "spec-version": { "type": "integer", "minimum": 1 },
     "title": { "type": "string", "minLength": 1 },
     "goal": { "type": "string", "minLength": 1 },
