@@ -5331,5 +5331,100 @@
       "actualPublicLifecycleBridgeTests": 6,
       "skillsEmbed": "passed after final skill edits"
     }
+  },
+  "npmCandidate": {
+    "format_version": 1,
+    "version": "0.28.5",
+    "source": {
+      "commit": "9796db37a2b86922cf11a87f33191315a7ca32eb",
+      "tree": "460bfbfd05418f79a6d1c1d4644733f56e826e5d",
+      "dirty": false,
+      "snapshot_sha256": "b0c5c6293e0e69921a8ff7a081d6077e04772665b4684031dcbd10b3ddf6776b"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel-darwin-arm64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-darwin-arm64-0.28.5.tgz",
+        "bytes": 2598566,
+        "integrity": "sha512-gxHFw1VcFDSRjfxpNExmivdn5EscQ5AKXhaBdamoApeuTlFtcjBG2ZcTlVipg4ReXRycNx2YGs0cUV0F54UCUg=="
+      },
+      {
+        "name": "@ckanner/flywheel-darwin-amd64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-darwin-amd64-0.28.5.tgz",
+        "bytes": 2806849,
+        "integrity": "sha512-N1ki1YdTEyfen+Mot002DRocB7FFwhhWB+3GbPCoiAEGBCALcmymJsBHj3ek1b4YyCs9nvZmIOezZKxMWftcZg=="
+      },
+      {
+        "name": "@ckanner/flywheel-linux-arm64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-linux-arm64-0.28.5.tgz",
+        "bytes": 2523868,
+        "integrity": "sha512-i2e85coiLG3P8G1MQyqdMu069JsWBu6PrK/XdmJSiukb6KP4vPYWmJ3uaCOkl5YiaqPvnvXe8SbwLk7NK5hyLA=="
+      },
+      {
+        "name": "@ckanner/flywheel-linux-amd64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-linux-amd64-0.28.5.tgz",
+        "bytes": 2782315,
+        "integrity": "sha512-2FPIvNQ/r2drgRnJ+GrsagGrr9W2tCbRCTSOHCK0yTJYGad1hFJF+HZDPLIDMZha5pO4bHvVLU8Q1hADaxTeSg=="
+      },
+      {
+        "name": "@ckanner/dsh-plugin-flywheel",
+        "version": "0.28.5",
+        "filename": "ckanner-dsh-plugin-flywheel-0.28.5.tgz",
+        "bytes": 259884,
+        "integrity": "sha512-FwSCQt5iFhmueWX3K8tzSyA3wWHKIpOhNEJNFibQJeJ15MHKLjXu4TTZAMBuiBWXk/ZEYpBCxHoTaICpHiC+aA=="
+      },
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-0.28.5.tgz",
+        "bytes": 135402,
+        "integrity": "sha512-JLfg69ek3RcXFEcD1AAaIVtFPgt3IOjFw1SnAyooLaJaTKEL5VwSLJWT22wJ6fhkDaccqcsJfTV1Z5n+y+W03g=="
+      }
+    ]
+  },
+  "npmInstall": {
+    "tests": 9,
+    "pass": 9,
+    "fail": 0,
+    "skipped": 0,
+    "logSHA256": "80f9cb0df5e3cd03a2d79c29e573e215addef969c80094bb8a86d80f73dbae69",
+    "bundle": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.9.0",
+      "fileCount": 79,
+      "allFileContentHashesMatchFrozenUpstream": true,
+      "modeChanges": {
+        "lib/machine-cli.js": {
+          "source": "0o644",
+          "installed": "0o755"
+        }
+      },
+      "modeChangeReason": "npm installs the declared bin entry with executable permissions; its content is unchanged."
+    },
+    "boundaries": "Actual Linux amd64 npm installation. Mac native lifecycle and UI are not established by cross compilation."
+  },
+  "flywheelRemoteCI": {
+    "commit": "9796db37a2b86922cf11a87f33191315a7ca32eb",
+    "run": 42434356573,
+    "url": "https://github.com/ckanner/flywheel/actions/runs/42434356573",
+    "conclusion": "failure",
+    "candidateJob": {
+      "id": 128589908966,
+      "runnerID": 0,
+      "runnerName": "",
+      "steps": 0,
+      "startedAt": "2026-11-08T01:27:52Z",
+      "completedAt": "2026-11-08T01:27:55Z"
+    },
+    "testJob": {
+      "id": 128589917953,
+      "conclusion": "skipped",
+      "steps": 0
+    },
+    "annotationAccess": "Current connector rejects check-run endpoint; exact startup cause unavailable. No code/test step ran."
   }
 }
