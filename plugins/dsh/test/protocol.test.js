@@ -25,6 +25,35 @@ test('start normalizes cwd and rejects resume, extra write roots, implicit permi
   }
 });
 
+test('scoped protocol makes history mode and exact resume identity explicit', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-session-protocol-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const scoped = { ...request(cwd), protocol: 2, persistent: true };
+  assert.equal((await validateStart(scoped)).persistent, true);
+  assert.equal((await validateStart({ ...scoped, sessionId: 'scope-owned-history' })).sessionId, 'scope-owned-history');
+  for (const extra of [{ persistent: undefined }, { persistent: false }, { sessionId: '' },
+    { sessionId: null }, { protocol: 3 }, { sessionId: 'bad\0handle' }]) {
+    await assert.rejects(validateStart({ ...scoped, ...extra }));
+  }
+});
+
+test('restoration records cannot be charged or reused as the next invocation result', () => {
+  const { fold } = completedFold({ inputTokens: 10000, outputTokens: 10000 });
+  fold.beginCall();
+  assert.throws(() => fold.finish('prompt'), /receipt/);
+  fold.accept({ sessionId: 'session', event: { seq: 3, type: 'agent/inbox/spliced', data: { inserted: [{ id: 'new-prompt' }] } } });
+  fold.accept({ sessionId: 'session', event: { seq: 4, type: 'assistant/message', data: {
+    message: { content: [{ type: 'text', text: 'new answer' }] }, usage: { inputTokens: 3, outputTokens: 2 },
+  } } });
+  fold.accept({ sessionId: 'session', event: { seq: 5, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } });
+  assert.equal(fold.finish('new-prompt').text, 'new answer');
+  assert.equal(fold.finish('new-prompt').usage.total_tokens, 5);
+  assert.equal(fold.turnId, '1');
+  const strict = new SessionFold('s', { strict: true });
+  assert.throws(() => strict.accept({ sessionId: 's', event: { seq: 0, type: 'turn/end', data: { reason: { kind: 'completed' } } } }), /malformed DSH turn/);
+  assert.throws(() => strict.accept({ sessionId: 's', event: { seq: 1, type: 'turn/end', data: { turn: 1, reason: { kind: 'future-unknown-terminal' } } } }), /malformed DSH turn/);
+});
+
 function completedFold(usage) {
   const fold = new SessionFold('session');
   const event = (seq, type, data) => fold.accept({ sessionId: 'session', event: { seq, type, data } });

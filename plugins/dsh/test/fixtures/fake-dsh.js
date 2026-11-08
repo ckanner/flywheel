@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Protocol fixture only. This file never imports a model SDK or reads a key.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const scenario = process.env.TEST_DSH_SCENARIO ?? 'ok';
@@ -16,6 +16,7 @@ const uncleanShutdownExit = scenario.endsWith('-unclean-exit');
 const patchPath = process.argv[process.argv.indexOf('--patch') + 1];
 const patch = JSON.parse(readFileSync(patchPath, 'utf8'));
 const policy = patch.find(row => row.id === 'sandbox-policy').config;
+const admission = patch.find(row => row.insert).insert[0].config;
 const log = row => { if (process.env.TEST_DSH_LOG) appendFileSync(process.env.TEST_DSH_LOG, JSON.stringify(row) + '\n'); };
 const send = value => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n');
 const reply = (id, result) => send({ id, result });
@@ -40,16 +41,30 @@ for await (const line of createInterface({ input: process.stdin })) {
       continue;
     }
     reply(id, { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } });
+  } else if (method === 'session/resume') {
+    if (scenario === 'resume-missing' || scenario === 'resume-busy') {
+      send({ id, error: { code: -32603, message: scenario === 'resume-busy' ? 'SDK session is already open or opening' : 'Session history is missing' } });
+      continue;
+    }
+    if (scenario === 'resume-hang') continue;
+    // Old records are a deliberately adversarial replay; the real public SDK
+    // does not notify them. They must not supply this invocation's usage/text.
+    if (scenario === 'resume-replay') {
+      event(params.sessionId, 'assistant/message', { message: { content: [{ type: 'text', text: 'old answer' }] },
+        usage: { inputTokens: 99999, outputTokens: 99999 } });
+      event(params.sessionId, 'turn/end', { turn: 0, reason: { kind: 'completed' } });
+    }
+    reply(id, scenario === 'resume-invalid-result' ? { sessionId: 'replacement' } : {});
   } else if (method === 'session/working-directory/get') {
     const fullAccess = policy.mode === 'danger-full-access';
-    if (scenario !== 'missing-policy') event(params.sessionId, 'flywheel/policy', {
-      protocol: 1, cwd: policy.workspaceRoot,
+    if (scenario !== 'missing-policy') writeFileSync(admission.receiptPath, JSON.stringify({
+      protocol: 1, cwd: policy.workspaceRoot, requestId: admission.requestId, sessionId: params.sessionId, nonce: admission.nonce,
       permissionMode: scenario === 'wrong-policy' ? (fullAccess ? 'workspace-write' : 'danger-full-access') : policy.mode,
       approvalPolicy: scenario === 'wrong-approval' ? 'ask' : 'never', confinedShell: !fullAccess,
       ...(fullAccess ? {} : { enforcement: 'full' }),
       ...(scenario === 'forged-confinement' ? { confinedShell: true, enforcement: 'full' } : {}),
       ...(scenario === 'unexpected-enforcement' ? { enforcement: 'partial' } : {}),
-    });
+    }), { mode: 0o600, flag: 'wx' });
     reply(id, { cwd: scenario === 'wrong-cwd' ? '/' : initialized.cwd });
   } else if (method === 'session/prompt') {
     event(params.sessionId, 'agent/inbox/spliced', { inserted: [{ id: 'message-1' }] });
@@ -63,14 +78,14 @@ for await (const line of createInterface({ input: process.stdin })) {
       if (scenario === 'duplicate') send(value);
     }
     if (scenario !== 'missing-terminal') event(params.sessionId, 'turn/end', {
-      turn: 0, reason: accountFailure ? { kind: 'error', error: accountFailure }
+      turn: scenario === 'invalid-turn' ? 'not-a-turn' : 1, reason: accountFailure ? { kind: 'error', error: accountFailure }
         : scenario === 'account-signed-out'
           ? { kind: 'aborted', reason: { kind: 'hook', reason: 'deepseek-account/signed-out' } }
-          : { kind: scenario === 'max-tokens' ? 'max-tokens' : 'completed' },
+          : { kind: scenario === 'unknown-turn' ? 'future-unknown-terminal' : scenario === 'max-tokens' ? 'max-tokens' : 'completed' },
     });
     reply(id, { messageId: 'message-1' });
   } else if (method === 'session/wait') {
-    if (scenario !== 'wait-hang') reply(id, {});
+    if (scenario !== 'wait-hang') reply(id, scenario === 'invalid-wait' ? null : {});
     if (scenario === 'corrupt-tail') process.stdout.write('corrupted-tail\n');
   } else if (method === 'shutdown') {
     if (scenario === 'forced-shutdown') continue;

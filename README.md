@@ -6,6 +6,12 @@ Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，
 
 当前源码支持 **Auto／Quick／Full**：描述目标后由 `flywheel-task` 准备并启动；合格小任务走 Execute、必要验证、一次独立最终 Review 和持久化交付，复杂任务保留完整流程。旧任务继续按 Full 恢复。模式选择不改变已有模型、权限和交付授权。
 
+会话策略支持 **fresh／scoped**：新模板显式 scoped，旧配置缺省 fresh。scoped 可在可信
+正常终态后延续同任务、同角色、同作用域的历史；独立复审仍检查完整当前候选。
+Codex Pro、DSH、Kimi 的主任务调用在两种模式下都保存安全记录，未知派发、结果或清理
+会阻止继续执行，不能靠换模式绕过。P1/P2 的正常续接与已保存回执恢复已接通；
+P3 实时恢复和 P4 真实实验仍未完成，详见[会话配置](docs/configuration.md#会话策略历史复用与调用安全)。
+
 当前源码的统一发行目标为 **v0.28.5**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **基础安装命令适用于 0.28.0 及以后的完整 npm 发行版；Auto／Quick／Full 与 `flywheel-task` 需要包含本轮变更的同版本 CLI／插件。** 用 `flywheel control launch --help` 检查新增入口是否存在，并在安装前用 `npm view @ckanner/flywheel version` 核对 registry；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
@@ -258,7 +264,7 @@ npm run build:npm
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Mac 安装、首个任务、配置迁移与排错 |
 | [docs/design.md](docs/design.md) | 权威设计、不变量、闭环与边界 |
-| [会话生命周期方案](docs/plans/2026-11-07-session-lifecycle.md) | 按任务与角色续用／重建、返修与独立复审、machine 与恢复边界；待实施 |
+| [会话生命周期方案](docs/plans/2026-11-07-session-lifecycle.md) | P1/P2 正常终态续接与回执恢复；P3 公开实时恢复 API、P4 真实实验仍待完成 |
 | [docs/configuration.md](docs/configuration.md) | profiles、阶段覆盖、provider／channel 与预检语义 |
 | [docs/plans/2026-11-03-codex-pro-default.md](docs/plans/2026-11-03-codex-pro-default.md) | 默认插件接入与验收计划 |
 | [docs/plans/2026-11-01-dsh-integration.md](docs/plans/2026-11-01-dsh-integration.md) | 本轮实施和验收记录 |

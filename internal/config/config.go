@@ -24,6 +24,8 @@ type LoopBinding struct {
 	Provider        string `json:"provider,omitempty"`
 	Thinking        string `json:"thinking"`
 	ResidentSession bool   `json:"resident-session"`
+	// Presence preserves an explicit Plan opt-out through profile expansion.
+	ResidentSessionSet bool `json:"-"`
 }
 
 // RouteBinding execute 角色按 packet.route 的绑定（routes 表）。
@@ -149,6 +151,7 @@ type Config struct {
 	DefectInjection DefectInjectionConfig   `json:"defect-injection"`
 	Worktree        WorktreeConfig          `json:"worktree"`
 	Permissions     PermissionsConfig       `json:"permissions"`
+	Sessions        SessionsConfig          `json:"sessions"`
 	JudgePanel      *LoopBinding            `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
 	Intake          IntakeConfig            `json:"intake"`
 	Pricing         map[string]Price        `json:"pricing"`
@@ -177,6 +180,7 @@ func Default() Config {
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Permissions:     PermissionsConfig{Mode: "role-based"},
+		Sessions:        SessionsConfig{Mode: "fresh", PolicyVersion: SessionPolicyVersion},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
 }
@@ -186,6 +190,9 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
+	if c.Sessions == (SessionsConfig{}) {
+		c.Sessions = d.Sessions
+	}
 	if c.Permissions.Mode == "" {
 		c.Permissions = d.Permissions
 	}
@@ -239,6 +246,9 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
+	if err := validateSessionPolicy(map[string]any{"mode": c.Sessions.Mode, "policy-version": c.Sessions.PolicyVersion}); err != nil {
+		return err
+	}
 	if c.Permissions.Mode != "role-based" && c.Permissions.Mode != "full-access" {
 		return errors.New("permissions.mode must be role-based|full-access")
 	}
@@ -291,7 +301,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
 		if b.Harness == "codex-pro" && b.ResidentSession {
-			return fmt.Errorf("loops.%s: codex-pro requires a fresh session; resident-session is unsupported", name)
+			return fmt.Errorf("loops.%s: resident-session is unsupported for codex-pro; use sessions.mode for scoped history", name)
 		}
 		if b.Harness == "codex-pro" && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
 			return fmt.Errorf("loops.%s: codex-pro requires explicit model and channel", name)
@@ -332,7 +342,7 @@ func (c *Config) Validate() error {
 	}
 	if c.JudgePanel != nil {
 		if c.JudgePanel.Harness == "codex-pro" && c.JudgePanel.ResidentSession {
-			return errors.New("judge-panel: codex-pro requires a fresh session; resident-session is unsupported")
+			return errors.New("judge-panel: resident-session is unsupported for codex-pro; use sessions.mode for scoped history")
 		}
 		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {
 			return fmt.Errorf("judge-panel: %w", err)
@@ -447,6 +457,7 @@ func parseConfig(raw []byte, source string) (*Config, error) {
 	}
 	c.File = source
 	c.ProfileRefs = refs
+	markResidentSessionPresence(expanded, &c)
 	// Normalize（回填缺省）→ Validate。EveryNUnits 指针化后二者可兼得：
 	// nil = 未声明 → 回填默认；显式 0 非 nil → Validate 报错（review 修正：
 	// 显式零值不再被默认值吞掉）。

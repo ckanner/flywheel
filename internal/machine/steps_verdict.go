@@ -27,8 +27,10 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 	visited := map[string]bool{}
 	maxTransport := c.Config.Retry.MaxTransportRetries
 	lastCode := errs.TRANSPORT
+	sessionRole := firstNonEmpty(a.sessionRole, a.role)
+	sessionScope := firstNonEmpty(a.sessionScope, a.packetID)
 
-	call := func() drivers.Result {
+	call := func() (drivers.Result, error) {
 		args := drivers.CallArgs{
 			TaskDir:        c.TaskDir,
 			Cwd:            firstNonEmpty(a.cwd, c.Cwd),
@@ -45,9 +47,9 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		}
 		switch a.role {
 		case "review":
-			return c.Drivers.Review.Review(args)
+			return c.invokeScoped(sessionRole, sessionScope, args, c.Drivers.Review.Review)
 		default: // judge（当前仅此两角色走裁决循环）
-			return c.Drivers.Judge.Judge(args)
+			return c.invokeScoped(sessionRole, sessionScope, args, c.Drivers.Judge.Judge)
 		}
 	}
 
@@ -61,10 +63,10 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		if ferr := c.err(); ferr != nil {
 			return verdictOutcome{}, ferr
 		}
-		if c.budgetGate() == "stop" {
+		if !c.sessionReplay(sessionRole, sessionScope) && c.budgetGate() == "stop" {
 			return verdictOutcome{Stopped: true}, nil
 		}
-		if missingKey := c.missingKeyForRealDriver(a.role, channel); missingKey != "" {
+		if missingKey := c.missingKeyForRealDriver(a.role, channel); !c.sessionReplay(sessionRole, sessionScope) && missingKey != "" {
 			record("transport", string(errs.AUTH),
 				fmt.Sprintf("fail-loud: channel %s requires env %s (not set)", channel, missingKey))
 			if a.ps != nil {
@@ -74,7 +76,10 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			return verdictOutcome{ErrorCode: errs.AUTH}, nil
 		}
 		visited[channel] = true
-		res := call()
+		res, sessionErr := call()
+		if sessionErr != nil {
+			return verdictOutcome{}, sessionErr
+		}
 
 		streamMsg := ""
 		if res.ErrorMessage != nil {
@@ -113,6 +118,9 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 				code = string(errs.EMPTY_RESPONSE)
 			}
 		}
+		if c.sessionGuardViolated(sessionRole, sessionScope) {
+			code, verdict = string(errs.INVALID_REQUEST), nil
+		}
 		if code != "" {
 			lastCode = errs.ErrorCode(code)
 		}
@@ -128,6 +136,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		if verdict != nil {
 			return verdictOutcome{OK: true, Verdict: verdict}, nil
 		}
+		c.consumeSession(sessionRole, sessionScope)
 
 		who := a.role
 		if a.packetID != "" {
@@ -193,15 +202,26 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 		return reviewOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
 	}
 	final := c.quick()
+	scope := id
 	if final {
+		scope = "final:" + id
+	}
+	replay := c.sessionReplay("review", scope)
+	if replay {
+		defectInjection = ps.Evidence.DefectInjection
+	}
+	if final && !replay {
 		stopped, err := c.quickReviewInjection(packet)
 		if stopped {
 			return reviewOutcome{Stopped: true}, err
 		}
 		defectInjection = ps.Evidence.DefectInjection
 	}
-	if final && !c.quickGateStep(packet) {
+	if final && !replay && !c.quickGateStep(packet) {
 		return reviewOutcome{ErrorCode: errL1Failed}, c.err()
+	}
+	if final && replay && !c.currentFinalGate(packet) {
+		return reviewOutcome{}, c.sessionBlock(sessionKey("review", scope), "recorded final Review no longer has its original passing gate")
 	}
 	if err := c.err(); err != nil {
 		return reviewOutcome{}, err
@@ -260,7 +280,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	r, ferr := c.agentVerdictStep(verdictArgs{
 		role: "review", binding: binding, prompt: prompt, cwd: uCwd,
 		packetID: id, attemptNo: &attemptNo, ps: ps,
-		finalSpec: promptArgs.FinalSpec,
+		finalSpec: promptArgs.FinalSpec, sessionScope: scope,
 	})
 	if ferr != nil {
 		return reviewOutcome{}, ferr
@@ -272,6 +292,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 		return reviewOutcome{ErrorCode: r.ErrorCode}, nil
 	}
 	if !c.currentL1Evidence(packet) || (final && !c.currentFinalGate(packet)) {
+		c.retireSession("review", scope, "reviewer changed the verified candidate or evidence")
 		// 即使后端违反只读约束或用户同时编辑，旧裁决也不能放行新代码。
 		ps.Evidence.Review = map[string]any{
 			"verdict": "return", "reasons": []string{"candidate or contract changed during review; rerun verification"},
@@ -290,6 +311,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 		m["scope"] = "task-final"
 	}
 	ps.Evidence.Review = m
+	c.consumeSession("review", scope)
 	at := c.nowISO()
 	ps.UpdatedAt = &at
 	if r.Verdict.Verdict == "pass" {
@@ -305,7 +327,7 @@ func loopToBinding(b config.LoopBinding) fallback.Binding {
 	return fallback.Binding{Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
 }
 
-// judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由全新会话对照 spec 的需求
+// judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由独立裁决角色对照 spec 的需求
 // 矩阵复核整个里程碑。失败 → 升级 inbox。
 // 可选 judge-panel 增加第二意见，默认不启用。语义：一致按共识；
 // 分歧 → split（Pass=false，inbox 叫人）；复核通道失败也升级，
@@ -335,6 +357,8 @@ func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err
 			"identity": gateIdentity, "identity-error": message, "rejected-judge": gmap["judge"],
 		}
 		c.State.Milestones[milestone.ID] = ms
+		c.retireSession("judge", milestone.ID, message)
+		c.retireSession("judge-panel", milestone.ID, message)
 		c.save()
 		return false
 	}
@@ -364,14 +388,14 @@ func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err
 	if err != nil {
 		return judgeOutcome{}, err
 	}
-	r, ferr := c.agentVerdictStep(verdictArgs{role: "judge", binding: binding, prompt: prompt})
+	r, ferr := c.agentVerdictStep(verdictArgs{role: "judge", binding: binding, prompt: prompt, sessionScope: milestone.ID})
 	if ferr != nil {
 		return judgeOutcome{}, ferr
 	}
 
 	var r2 *verdictOutcome
 	if c.Config.JudgePanel != nil && r.OK && !r.Stopped {
-		res, ferr := c.agentVerdictStep(verdictArgs{role: "judge", binding: loopToBinding(*c.Config.JudgePanel), prompt: prompt})
+		res, ferr := c.agentVerdictStep(verdictArgs{role: "judge", sessionRole: "judge-panel", binding: loopToBinding(*c.Config.JudgePanel), prompt: prompt, sessionScope: milestone.ID})
 		if ferr != nil {
 			return judgeOutcome{}, ferr
 		}
@@ -422,6 +446,8 @@ func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err
 			judge["panel"] = map[string]any{"agreement": "secondary-error",
 				"error": string(r2.ErrorCode), "at": c.nowISO()}
 			gmap["judge"] = judge
+			c.consumeSession("judge", milestone.ID)
+			c.consumeSession("judge-panel", milestone.ID)
 			c.save()
 			return judgeOutcome{ErrorCode: r2.ErrorCode}, nil
 		default:
@@ -453,6 +479,8 @@ func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err
 		}
 	}
 	gmap["judge"] = judge
+	c.consumeSession("judge", milestone.ID)
+	c.consumeSession("judge-panel", milestone.ID)
 	c.save()
 	return out, nil
 }

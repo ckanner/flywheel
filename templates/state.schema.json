@@ -7,6 +7,71 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
+    "sessions": {
+      "type": "object", "additionalProperties": false, "required": ["version", "records"],
+      "properties": {
+        "version": { "const": 1 },
+        "records": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false,
+            "required": ["task", "role", "scope", "cwd", "binding", "goal", "contract", "generation", "resume-candidate", "action", "reason", "last"],
+            "properties": {
+              "task": { "type": "string", "minLength": 1 },
+              "role": { "enum": ["plan", "execute", "review", "judge", "judge-panel"] },
+              "scope": { "type": "string", "minLength": 1 },
+              "cwd": { "type": "string", "minLength": 1 },
+              "binding": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "goal": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "contract": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "generation": { "type": "integer", "minimum": 1 },
+              "thread-id": { "type": "string", "minLength": 1 },
+              "protocol": { "type": "string", "minLength": 1 },
+              "resume-candidate": { "type": "boolean" },
+              "action": { "enum": ["create", "resume", "rebuild", "wait", "reconcile"] },
+              "reason": { "type": "string", "minLength": 1 },
+              "last": {
+                "type": "object", "additionalProperties": false,
+                "required": ["id", "status", "started-at", "attempt", "candidate-before", "accounted", "dispatch", "outcome", "cleanup-confirmed", "usage-status"],
+                "properties": {
+                  "id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
+                  "status": { "enum": ["intent", "received", "consumed", "blocked"] },
+                  "started-at": { "type": "string", "minLength": 1 },
+                  "attempt": { "type": "integer", "minimum": 0 },
+                  "requested-thread": { "type": "string", "minLength": 1 },
+                  "persistent": { "type": "boolean" },
+                  "candidate-before": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "candidate-after": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "guard-before": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "guard-after": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "receipt-digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "accounted": { "type": "boolean" },
+                  "dispatch": { "enum": ["not-dispatched", "dispatched", "unknown"] },
+                  "outcome": { "enum": ["completed", "failed", "cancelled", "unknown"] },
+                  "cleanup-confirmed": { "type": "boolean" },
+                  "usage-status": { "enum": ["complete", "partial", "unknown"] }
+                },
+                "allOf": [{
+                  "if": { "properties": { "status": { "enum": ["received", "consumed"] } } },
+                  "then": {
+                    "required": ["candidate-after", "receipt-digest"],
+                    "properties": {
+                      "cleanup-confirmed": { "const": true },
+                      "dispatch": { "enum": ["not-dispatched", "dispatched"] },
+                      "outcome": { "enum": ["completed", "failed", "cancelled"] }
+                    }
+                  }
+                }]
+              }
+            },
+            "allOf": [{
+              "if": { "properties": { "resume-candidate": { "const": true } } },
+              "then": { "required": ["thread-id", "protocol"] }
+            }]
+          }
+        }
+      }
+    },
     "workflow": {
       "type": "object", "additionalProperties": false,
       "required": ["version", "requested", "effective", "reason", "evidence", "risks", "stages", "selected-at", "upgrades"],

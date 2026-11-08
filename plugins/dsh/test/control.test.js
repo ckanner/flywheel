@@ -315,11 +315,18 @@ test('unavailable session directories fail before dispatch without falling back 
   assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1);
 });
 
-test('policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement', async () => {
+async function policyConfig(t, permissionMode) {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-policy-')));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return { cwd: '/workspace', permissionMode, receiptPath: join(directory, 'policy.json'),
+    requestId: 'invocation-one', sessionId: 'scoped-session', nonce: 'private-admission-nonce' };
+}
+
+test('policy uses the shipped shell probe and pins effective session facts, rejecting partial enforcement', async t => {
   let callback;
   let seenSpec;
   const events = [];
-  const session = { append: (type, data) => events.push({ type, data }) };
+  const session = { id: 'scoped-session', append: (type, data) => events.push({ type, data }) };
   const ctx = {
     on: (name, fn) => { assert.equal(name, 'agent/created'); callback = fn; },
     shell: {
@@ -331,19 +338,26 @@ test('policy uses the shipped shell probe and pins effective session facts, reje
     approval: { overrideOf: () => events.findLast(event => event.type === 'approval/policy')?.data.policy,
       get effectivePolicy() { throw new Error('private approval API must not be used'); } },
   };
-  await applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' });
+  const config = await policyConfig(t, 'read-only');
+  await applyPolicy(ctx, config);
   assert.equal(seenSpec.command, ':');
   assert.equal(seenSpec.sandboxPolicy.mode, 'read-only');
-  callback({ agent: { session } });
-  assert.deepEqual(events.map(event => event.type), ['sandbox/mode', 'approval/policy', 'flywheel/policy']);
-  assert.equal(events[2].data.enforcement, 'full');
+  await callback({ agent: { session } });
+  assert.deepEqual(events.map(event => event.type), ['sandbox/mode', 'approval/policy']);
+  const receipt = JSON.parse(await readFile(config.receiptPath, 'utf8'));
+  assert.equal(receipt.enforcement, 'full');
+  assert.equal(receipt.requestId, config.requestId);
+  assert.equal(receipt.sessionId, config.sessionId);
+  assert.equal(receipt.nonce, config.nonce);
+  await assert.rejects(callback({ agent: { session } }), { code: 'EEXIST' }, 'policy receipt publication is exclusive');
+  await assert.rejects(callback({ agent: { session: { ...session, id: 'unrelated' } } }), /unrelated SDK session/);
   ctx.shell.execute = async () => ({ result: async () => ({ exitCode: 0, sandbox: { mode: 'read-only', enforcement: 'partial' } }) });
-  await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /full enforcement/);
+  await assert.rejects(applyPolicy(ctx, config), /full enforcement/);
   ctx.shell.sandboxMode = undefined;
-  await assert.rejects(applyPolicy(ctx, { cwd: '/workspace', permissionMode: 'read-only' }), /sandbox-capable/);
+  await assert.rejects(applyPolicy(ctx, config), /sandbox-capable/);
 });
 
-test('full-access shell readiness records the absence of confinement and rejects fabricated enforcement', async () => {
+test('full-access shell readiness records the absence of confinement and rejects fabricated enforcement', async t => {
   let callback;
   let seenSpec;
   let registrations = 0;
@@ -360,17 +374,19 @@ test('full-access shell readiness records the absence of confinement and rejects
     approval: { overrideOf: () => events.findLast(event => event.type === 'approval/policy')?.data.policy,
       get effectivePolicy() { throw new Error('private approval API must not be used'); } },
   };
-  const config = { cwd: '/workspace', permissionMode: 'danger-full-access' };
+  const config = await policyConfig(t, 'danger-full-access');
   await applyPolicy(ctx, config);
   assert.equal(seenSpec.command, ':');
   assert.deepEqual(seenSpec.sandboxPolicy, { mode: 'danger-full-access', workspaceRoot: '/workspace' });
-  callback({ agent: { session: { append: (type, data) => events.push({ type, data }) } } });
+  await callback({ agent: { session: { id: config.sessionId, append: (type, data) => events.push({ type, data }) } } });
   assert.deepEqual(events, [
     { type: 'sandbox/mode', data: { mode: 'danger-full-access' } },
     { type: 'approval/policy', data: { policy: 'never' } },
-    { type: 'flywheel/policy', data: { protocol: 1, cwd: '/workspace', permissionMode: 'danger-full-access',
-      approvalPolicy: 'never', confinedShell: false } },
   ]);
+  assert.deepEqual(JSON.parse(await readFile(config.receiptPath, 'utf8')), {
+    protocol: 1, cwd: '/workspace', permissionMode: 'danger-full-access', approvalPolicy: 'never', confinedShell: false,
+    requestId: config.requestId, sessionId: config.sessionId, nonce: config.nonce,
+  });
   for (const sandbox of [
     { mode: 'danger-full-access', denied: true },
     { mode: 'danger-full-access' },

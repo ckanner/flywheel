@@ -1,18 +1,19 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, MAX_FRAME_BYTES, normalizedError, record, SessionFold, validateStart } from './protocol.js';
+import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
 
-export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url))) {
+export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}) {
   // Each patch replaces an entire config row. Pin the checked rc.5/rc.1 enforcement
   // implementations, not the user's mutable permission dropdown defaults.
   const disable = ['permission', 'tool-plugin-manager', 'tool-working-directory',
     'tool-subagent', 'tool-subagent-fork', 'tool-subagent-control', 'tool-subagent-list-agents',
     'subagent-spawn-in-process', 'subagent-fork-in-process', 'tool-workflow',
-    'tool-goal', 'goal-round-driver', 'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
+    'tool-goal', 'goal-round-driver', 'schedule', 'tool-schedule',
+    'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
   return [
     ...disable.map(id => ({ id, disabled: true })),
     { id: 'sandbox', name: '@deepseek-ai/dsh-sandbox-local', disabled: false, config: {} },
@@ -24,7 +25,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { id: 'approval', name: '@deepseek-ai/dsh-user-approval', disabled: false, config: { policy: 'never' } },
     { id: 'sdk-jsonrpc-server', config: { maxTokensAsSuccess: false } },
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
-      config: { permissionMode: request.permissionMode, cwd: request.cwd } }] },
+      config: { permissionMode: request.permissionMode, cwd: request.cwd, ...admission } }] },
   ];
 }
 
@@ -178,6 +179,11 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let cancelled = false;
   let settled = true;
   let readySent = false;
+  let resumeAccepted = false;
+  let resumeUnconfirmed = false;
+  let dispatch = 'not-dispatched';
+  let promptId = '';
+  let waited = false;
   const beforeReady = [];
   let deadline;
   const started = Date.now();
@@ -189,13 +195,14 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   const abort = () => runtime?.fail(controller.signal.reason);
   controller.signal.addEventListener('abort', abort);
   signal?.addEventListener('abort', cancel, { once: true });
-  const frame = value => emit({ protocol: 1, requestId: request?.requestId ?? input?.requestId ?? 'invalid-request', ...value });
+  const frame = value => emit({ protocol: request?.protocol ?? (input?.protocol === 2 ? 2 : 1), requestId: request?.requestId ?? input?.requestId ?? 'invalid-request', ...value });
   try {
     const budget = Number.isSafeInteger(input?.timeoutMs) && input.timeoutMs > 0 && input.timeoutMs <= 86400000
       ? input.timeoutMs : 30 * 60 * 1000;
     deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'DSH worker lifecycle deadline exceeded')), budget);
     if (signal?.aborted) cancel();
     request = await abortable(validateStart(input), controller.signal);
+    if (doctor && request.protocol === 2) throw new BridgeError('INVALID_REQUEST', 'doctor does not create or resume persistent histories');
     controller.signal.throwIfAborted();
     const bin = env.FLYWHEEL_DSH_BIN || 'dsh';
     if (bin.includes('\0') || bin.startsWith('-')) throw new BridgeError('INVALID_REQUEST', 'invalid FLYWHEEL_DSH_BIN');
@@ -203,12 +210,13 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile) || profile === 'desktop') {
       throw new BridgeError('INVALID_REQUEST', 'FLYWHEEL_DSH_PROFILE must name an SDK profile, not desktop');
     }
-    temp = await mkdtemp(join(tmpdir(), 'flywheel-dsh-'));
+    temp = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-dsh-')));
     const patch = join(temp, 'worker.patch.json');
-    await writeFile(patch, JSON.stringify(makeOverlay(request)), { mode: 0o600 });
+    sessionId = request.sessionId ?? `flywheel-${randomUUID()}`;
+    const admission = { receiptPath: join(temp, 'policy.json'), requestId: request.requestId, sessionId, nonce: randomUUID() };
+    await writeFile(patch, JSON.stringify(makeOverlay(request, undefined, admission)), { mode: 0o600 });
     controller.signal.throwIfAborted();
-    sessionId = `flywheel-${randomUUID()}`;
-    fold = new SessionFold(sessionId);
+    fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
     runtime = new Runtime(bin, ['--profile', profile, '--patch', patch], {
       cwd: request.cwd,
       env: { ...env, DSH_PERMISSION_MODE: request.permissionMode,
@@ -236,26 +244,56 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     if (initialized?.serverInfo?.name !== 'deepseek-harness-sdk-runtime') {
       throw new BridgeError('TRANSPORT', 'unexpected SDK runtime identity');
     }
+    if (request.sessionId !== undefined) {
+      // Public SDK resume restores exactly this identity, without a new input
+      // and without a replacement on failure. A generic RPC error cannot tell
+      // missing history from another live owner; never silently cold-start it.
+      resumeUnconfirmed = true;
+      const restored = await runtime.request('session/resume', { sessionId });
+      if (!record(restored) || Object.keys(restored).length !== 0) {
+        throw new BridgeError('TRANSPORT', 'SDK resume did not confirm restoration');
+      }
+      resumeAccepted = true;
+      resumeUnconfirmed = false;
+    }
     // This creates the fresh Session and its permission facts without an LLM turn.
     const working = await runtime.request('session/working-directory/get', { sessionId });
     if (working?.cwd !== request.cwd) throw new BridgeError('INVALID_REQUEST', 'DSH effective cwd differs from the requested workspace');
+    fold.policy = await abortable(readPolicyReceipt(admission.receiptPath,
+      { requestId: admission.requestId, sessionId, nonce: admission.nonce }), controller.signal);
     fold.verifiedPolicy(request);
     frame({ type: 'ready', sessionId, cwd: request.cwd, provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
-      permissionMode: request.permissionMode, approvalPolicy: 'never' });
+      permissionMode: request.permissionMode, approvalPolicy: 'never',
+      policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,
+        approvalPolicy: fold.policy.approvalPolicy, confinedShell: fold.policy.confinedShell,
+        ...(fold.policy.enforcement === undefined ? {} : { enforcement: fold.policy.enforcement }) },
+      ...(request.protocol === 2 ? { persistent: true, resumed: resumeAccepted } : {}) });
     readySent = true;
-    for (const eventFrame of beforeReady) frame(eventFrame);
+    // v2 publishes only this invocation's events. Restoration/configuration
+    // records are reflected in the checked ready receipt, never as new output.
+    if (request.protocol === 1) for (const eventFrame of beforeReady) frame(eventFrame);
     beforeReady.length = 0;
     if (doctor) {
       outcome = { text: 'SDK route, cwd and permission handshake verified; no model prompt sent.', usage: null };
     } else {
+      // The next prompt is the only invocation owned by this worker. Reset any
+      // restoration facts before dispatch; historical usage must never be added.
+      fold.beginCall();
+      dispatch = 'unknown';
       const receipt = await runtime.request('session/prompt', {
         sessionId, contentBlocks: [{ type: 'text', text: request.prompt }],
       });
       if (typeof receipt?.messageId !== 'string' || receipt.messageId === '') {
         throw new BridgeError('TRANSPORT', 'SDK prompt returned no messageId');
       }
-      await runtime.request('session/wait', { sessionId });
+      promptId = receipt.messageId;
+      dispatch = 'dispatched';
+      const completed = await runtime.request('session/wait', { sessionId });
+      if (!record(completed) || Object.keys(completed).length !== 0) {
+        throw new BridgeError('TRANSPORT', 'SDK wait did not confirm a quiescent session');
+      }
+      waited = true;
       outcome = fold.finish(receipt.messageId);
     }
   } catch (error) {
@@ -299,6 +337,24 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     usage: outcome?.usage ?? null, costUsd: null,
     ...(failure ? { error: failure } : {}),
   };
+  if (input?.protocol === 2) {
+    // Cleanup, result certainty and output validity are independent. A complete
+    // native turn with empty/model-invalid output can still be repaired in its
+    // own context. Disconnects, damaged frames and ambiguous restore failures
+    // never become a confirmed failure merely because the process has exited.
+    const terminalKnown = waited && fold?.receipts.has(promptId) && fold?.terminal && !runtime?.protocolFailure;
+    const terminal = terminalKnown ? fold.terminal.kind === 'completed' ? 'completed'
+      : fold.terminal.kind === 'aborted' ? 'cancelled' : 'failed'
+      : dispatch === 'not-dispatched' && !resumeUnconfirmed ? 'failed' : 'unknown';
+    result.lifecycle = {
+      protocol: SESSION_PROTOCOL, requestId: request?.requestId ?? input.requestId,
+      sessionId: sessionId ?? '', dispatch, outcome: terminal,
+      cleanupConfirmed: settled,
+      resumeCandidate: Boolean(terminal === 'completed' && settled && readySent && !cancelled && !controller.signal.aborted),
+      resumeAccepted, turnId: terminalKnown ? fold.turnId : '',
+      usageStatus: result.usage === null ? 'unknown' : 'complete',
+    };
+  }
   frame(result);
   return result;
 }

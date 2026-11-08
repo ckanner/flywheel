@@ -1,0 +1,110 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+
+	"github.com/ckanner/flywheel/templates"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+)
+
+// SessionPolicyVersion is independent from both workflow and worker protocols.
+const SessionPolicyVersion = 1
+
+type SessionsConfig struct {
+	Mode          string `json:"mode"`
+	PolicyVersion int    `json:"policy-version"`
+}
+
+// SupportsScopedSessions describes implemented adapter contracts, not evidence
+// that a particular installed backend can restore a saved history.
+func SupportsScopedSessions(harness string) bool {
+	return harness == "codex-pro" || harness == "dsh" || harness == "kimi"
+}
+
+// MarshalJSON preserves omission versus explicit false in effective config
+// snapshots. A legacy programmatic true remains an explicit opt-in on disk.
+func (b LoopBinding) MarshalJSON() ([]byte, error) {
+	type binding LoopBinding
+	var resident *bool
+	if b.ResidentSessionSet || b.ResidentSession {
+		resident = &b.ResidentSession
+	}
+	return json.Marshal(struct {
+		binding
+		ResidentSession *bool `json:"resident-session,omitempty"`
+	}{binding(b), resident})
+}
+
+func markResidentSessionPresence(raw []byte, cfg *Config) {
+	var presence struct {
+		Loops      map[string]map[string]json.RawMessage `json:"loops"`
+		JudgePanel map[string]json.RawMessage            `json:"judge-panel"`
+	}
+	// expandProfiles and typed decoding have already checked these shapes.
+	_ = json.Unmarshal(raw, &presence)
+	for role, fields := range presence.Loops {
+		binding := cfg.Loops[role]
+		_, binding.ResidentSessionSet = fields["resident-session"]
+		cfg.Loops[role] = binding
+	}
+	if cfg.JudgePanel != nil {
+		_, cfg.JudgePanel.ResidentSessionSet = presence.JudgePanel["resident-session"]
+	}
+}
+
+const sessionPolicySchemaID = "https://flywheel.local/schemas/session-policy.schema.json"
+
+func compileSessionPolicySchema(load func(string) ([]byte, error)) (*jsonschema.Schema, error) {
+	raw, err := load("session-policy.schema.json")
+	if err != nil {
+		return nil, fmt.Errorf("embedded session policy schema: %w", err)
+	}
+	var document any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, fmt.Errorf("embedded session policy schema: invalid JSON: %w", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	// Only one resource is registered, so AddResource cannot encounter a
+	// duplicate URL (the same invariant as internal/contract.compileAll).
+	_ = compiler.AddResource(sessionPolicySchemaID, document)
+	return compiler.Compile(sessionPolicySchemaID)
+}
+
+var sessionPolicySchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
+	return compileSessionPolicySchema(templates.FS.ReadFile)
+})
+
+func validateSessionPolicy(value any) error {
+	schema, err := sessionPolicySchema()
+	if err != nil {
+		return fmt.Errorf("sessions schema: %w", err)
+	}
+	if err := schema.Validate(value); err != nil {
+		return fmt.Errorf("sessions: %w", err)
+	}
+	return nil
+}
+
+func prepareSessions(root map[string]json.RawMessage) error {
+	raw, present := root["sessions"]
+	if !present {
+		return nil
+	}
+	object, err := configObject(raw, "sessions")
+	if err != nil {
+		return err
+	}
+	// Decode validated JSON into the value types consumed by jsonschema. Notes
+	// follow the same supported annotation rule as other configuration sections.
+	raw = configJSON(object)
+	var value any
+	_ = json.Unmarshal(raw, &value)
+	if err := validateSessionPolicy(value); err != nil {
+		return err
+	}
+	root["sessions"] = raw
+	return nil
+}

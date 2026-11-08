@@ -323,6 +323,14 @@ checkout from which the engine was started. The engine does not push, open
 GitHub PRs, merge remote PRs, or publish packages. See the
 [worktree and PR workflow](https://github.com/ckanner/flywheel/blob/main/docs/en/workflow.md).
 
+## Role history and invocation safety records
+
+`sessions.mode=scoped` permits continuation for the same task, role, and scope. Ordinary repairs can continue Executor history, while a Reviewer only continues its own history and checks the complete current candidate again. Primary Judge and second opinion remain separate. New templates explicitly select scoped mode; old configurations default to fresh, and an explicit Plan `resident-session:false` still opts that role out. See [Session policy](../../docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
+
+Go journals supported main-task Codex Pro, DSH, and Kimi calls in both fresh and scoped modes. Fresh disables general role history reuse while preserving the existing Kimi Plan resident behavior. Other adapters, mock, and Intake/Garden retain their existing paths. Unknown dispatch, outcome, or cleanup blocks further execution; creating a new session, switching modes, or scanning history cannot bypass it. `status` and `control status` expose compact role, scope, action/reason, and latest invocation facts without reading conversation history. A resume candidate is not proof of durable backend history.
+
+DSH v2 uses public `session/resume` with the exact requested session ID and a new SDK process for each call. Restored events do not enter the current output, usage, or activity callback; directory and permission checks run again. Normal-terminal continuation and saved-receipt recovery are P1/P2 capabilities. Live queries, arbitrary-crash and cross-machine recovery are not promised (P3), and real quality, cache, and performance experiments remain unperformed (P4).
+
 ## Permissions and lifecycle boundaries
 
 Desktop integration and worker policy have different scopes. The worker's
@@ -343,8 +351,9 @@ is recorded without claiming OS confinement. Host static denials, account
 restrictions, and operating-system permissions remain in effect.
 
 The SDK overlay disables worker-owned delegation, workflow/goal drivers, model
-titles, and automatic model compaction so the Go owner can bound work and
-account for model calls. It also currently disables the whole `tool-web` package,
+titles, automatic model compaction, and `schedule` / `tool-schedule` so auxiliary
+calls or due reminders cannot independently append input to a Go-owned session.
+It does not change user reminder storage. It also disables the whole `tool-web` package,
 including both `web_search` and `web_fetch`. This is a conservative policy,
 not a claim that every DSH web operation requires a model: the official
 [web tool](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)
@@ -356,8 +365,10 @@ Restoring retrieval or [automatic compaction](https://github.com/deepseek-ai/dee
 requires a separate check of accounting, budgets, cancellation, and directory
 ownership; the view's location does not establish those guarantees.
 
-Codex Pro uses fresh ephemeral calls and checks the model, directory, approval
-policy, and sandbox mode before execution. In version 0.8.0, the full
+Codex Pro uses outer worker v1 with ephemeral history for fresh calls, or outer
+v2 with persistent history and an optional exact thread ID for scoped calls.
+Both retain the public plugin 0.8.0 machine API and raw receipt protocol 1.
+It checks the model, directory, approval policy, and sandbox mode before execution. The full
 `sandboxPolicy` reaches Flywheel only in the returned receipt. In restricted modes, Flywheel rejects
 delivery when that policy permits unexpected writable roots or network access,
 but **this check happens after execution and cannot undo access already
@@ -386,11 +397,16 @@ Known account sign-in/token errors and the exact account-signed-out hook map to
 AUTH; account quota errors remain QUOTA. Original diagnostics and account
 recovery guidance are preserved. The default preset has no API-key fallback.
 Unreported usage and dollar cost remain unknown; subscriptions are not recorded
-as free calls. The current DSH bridge does not support session resume or image
-and attachment inputs. Its protocol and implementation details are documented
+as free calls. DSH v1 creates a fresh session; v2 supports public session resume.
+Missing, busy, or generic restore failures do not silently create a replacement.
+Image and attachment inputs remain unsupported. Protocol details are documented
 in [PROTOCOL.md](PROTOCOL.md) (Chinese).
 
-From 0.28.3, a started DSH worker without a trustworthy terminal receipt, including a missing result or malformed stream, records unconfirmed SDK cleanup and ends the run without automatic retry or fallback. Reaping the outer worker does not replace an SDK shutdown receipt. Before resuming, confirm that the SDK-managed processes from that call have stopped.
+From 0.28.3, a started DSH worker without a trustworthy terminal receipt, including a missing result or malformed stream, records unconfirmed SDK cleanup and ends the run without automatic retry or fallback. Reaping the outer worker does not replace an SDK shutdown receipt. Process exit also does not establish a known model outcome. The Go ledger requires trusted dispatch/outcome facts and the original candidate, contract, and role guards; rerunning verification cannot rehabilitate a verdict after a forbidden mutation.
+
+Permission proof uses a private per-invocation nonce receipt. Backend history contains only native `sandbox/mode` and `approval/policy` events, with no custom `flywheel/policy` event that public SDK history parsing would reject.
+
+The offline persisted create → shutdown → new-process resume test uses public SDK, JSONL persistence, and AgentLoop packages at `0.2.2-rc.1`. It checks restored context and current-call output/usage only. The `0.2.1-rc.5` host/UI/plugin compatibility tests do not establish persisted-history restoration for that version. Runtime serverInfo is not treated as proof of the npm package version. Real-account inference, physical macOS validation, and performance experiments remain separate and unperformed here.
 
 ## Upgrade and maintain the desktop entry
 

@@ -204,10 +204,10 @@ Full 的每个 packet 经实现、L1 与独立 Review 通过后，引擎提交�
 合并冲突或验证失败时保留产物并处理记录，不强制清理。停止与恢复见
 [入门教程](getting-started.md#7-启动观察停止与恢复)。
 
-若报告 `cleanup-unconfirmed` 或 `process cleanup is unconfirmed`，引擎会将本次
-运行升级为 `escalated` 并停止自动执行，保留工作区和审计记录。先核对本次调用
-拥有的 worker、guardian 和 app-server 是否已退出，再按恢复流程继续；不能仅
-因外层 worker 已退出或已等待几秒，就假定内部进程不会再修改工作区。
+若派发、结果或清理未知，引擎停止自动执行并保留工作区和调用记录。先核对本次调用
+拥有的 worker、guardian 和 app-server；外层退出或等待几秒不证明内部进程已停止，
+子进程退出也不证明模型结果已知。Go 仅消费匹配原始身份与证据的可信终态回执，不能
+通过切 fresh、换目录、换后端或重置 state 绕过未知调用。没有可核对回执的中断仍阻断。
 
 ### 5.1 Skills 入口与各 Loop 的工作目录
 
@@ -238,15 +238,22 @@ Plan／Execute 请求 `workspace-write`，Review／Judge 以及 DSH／Codex（�
 packet worktree 贯穿该单元的执行、验收与评审；完成交付才由引擎处理本地合并
 与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
 
-Go 调度 packet，首版仍是串行执行，不依赖一个持续存活的父模型会话监督。
-**当前实现**每次 Execute／Review 使用新会话；重试保留磁盘产物，不复用执行者上下文。
-Plan 仅在配置允许、后端支持且身份匹配时恢复历史。团队通信、依赖图并行调度
-不在本期能力范围。
+Go 串行调度 packet，不依赖一个持续存活的父模型会话监督。`sessions.mode=scoped`
+允许同 packet 的 Executor 返修续用，以及独立 Reviewer 在同范围复审时续用自己的
+历史；每次复审仍完整检查当前候选、契约和适用需求，不能只关闭上轮 findings。
+Plan 按同任务／里程碑续用，Judge 与第二意见各自隔离；显式 Plan
+`resident-session:false` 继续生效。团队通信和依赖图并行调度不在本期范围。
 
-[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)已提出替换一律新会话的规则：
-同 packet 的 Executor 返修优先续用，独立 Reviewer 的同范围复审也可续用自己的历史；
-每次仍验证当前候选，未知结果或清理阻断自动重放。该方案尚未实现，不能通过现有配置
-启用这些能力，也不改变 Quick 首次成功的两次阶段调用。
+新配置模板显式启用 scoped，旧文件未声明时保留 fresh。fresh 不启用通用的角色历史
+复用，保留旧 Kimi Plan resident 选项；两种模式都为 Codex Pro／DSH／Kimi 主任务
+调用保存安全记录。其他适配器、mock 及 Intake／Garden 保留原路径。历史复用不减少
+任何验证要求，也不增加 Quick 首次成功的两次固定阶段调用。具体契约见
+[会话配置](configuration.md#会话策略历史复用与调用安全)。
+
+恢复保存的回执时沿用原调用的候选、契约和保护证据；不得重新执行抽检或验收来替换
+待消费回执所绑定的证据。Go 对已完成结果的消费不重发模型请求或重复计费；预算限制
+新的派发。进程内历史续接与持久化恢复是不同能力：本轮实现 P1/P2 正常终态续接与
+已保存回执恢复，P3 仍需上游公开实时核对／恢复 API，P4 真实实验尚未完成。
 
 `flywheel-verify` 只运行确定性验收：Full 保留指定 packet 的 L1／当前里程碑
 L2/L3 语义；Quick 还会在实际候选上收齐适用 L2/L3。它不调用 Review／Judge，

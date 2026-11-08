@@ -1,5 +1,10 @@
 {
   "version": 1,
+  "sessions": {
+    "mode": "scoped",
+    "policy-version": 1,
+    "_note": "会话策略独立于模型 profile；只复用同角色、同作用域且正常终态已确认的历史。旧文件缺省 fresh，显式 Plan resident-session:false 继续生效。"
+  },
   "_note": "可选的具名模型配置示例；原 inline 配置继续支持。profile 在加载时展开，阶段字段按是否显式出现覆盖。只选择第一个完整配置文件，不跨任务/项目/全局合并 profiles。",
   "profiles": {
     "flash": {
@@ -69,7 +74,7 @@
   "retry": { "jitter": 0.1 },
   "worktree": { "enabled": true },
   "pricing": {},
-  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；执行和评审始终使用新会话。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。",
+  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；sessions 控制同角色历史复用，执行者与评审者始终隔离。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。",
   "permissions": {
     "mode": "full-access",
     "_note": "全部阶段完全权限、无需逐步审批；旧文件缺省保持 role-based，采用此预设需显式迁移。"

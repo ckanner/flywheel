@@ -4,9 +4,11 @@
 package metrics
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -44,6 +46,53 @@ func Append(file string, entry map[string]any) error {
 	defer f.Close()
 	_, err = f.Write(append(line, '\n'))
 	return err
+}
+
+// AppendOnce deduplicates recovery telemetry by invocation and receipt digest.
+// The task run lease serializes callers. A torn log is reported rather than
+// silently appending a second ambiguous usage record; state remains authoritative.
+func AppendOnce(file, invocationID, receiptDigest string, entry map[string]any) error {
+	if invocationID == "" {
+		return Append(file, entry)
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		return fmt.Errorf("cannot reconcile metrics: unterminated final record")
+	}
+	found := false
+	for _, line := range bytes.Split(raw, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var previous map[string]any
+		if err := json.Unmarshal(line, &previous); err != nil {
+			return fmt.Errorf("cannot reconcile metrics: %w", err)
+		}
+		if previous == nil {
+			return fmt.Errorf("cannot reconcile metrics: record must be an object")
+		}
+		if previous["invocation-id"] == invocationID {
+			if previous["receipt-sha256"] != receiptDigest {
+				return fmt.Errorf("metrics receipt identity mismatch")
+			}
+			if found {
+				return fmt.Errorf("cannot reconcile metrics: duplicate invocation %s", invocationID)
+			}
+			found = true
+		}
+	}
+	if found {
+		return nil
+	}
+	record := make(map[string]any, len(entry)+2)
+	for key, value := range entry {
+		record[key] = value
+	}
+	record["invocation-id"], record["receipt-sha256"] = invocationID, receiptDigest
+	return Append(file, record)
 }
 
 // PriceForModel 模型定价查找（P1-13）：先全 id，再最后一段短 id，

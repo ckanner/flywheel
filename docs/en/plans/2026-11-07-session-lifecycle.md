@@ -1,9 +1,14 @@
 # Session lifecycles based on task, role, and runtime evidence
 
-2026-11-07. Status: **Design proposal for review. This PR changes documentation only;
-it does not implement runtime support.** It replaces the design rule that every
-Execute or Review invocation must start a fresh session. The current source still
-uses the existing invocation behavior; editing this document does not enable resume.
+2026-11-07. Original design proposal (PR #30 changed documentation only), replacing
+the rule that every Execute or Review invocation must start a fresh session.
+This document retains the original baseline analysis and full phased plan.
+**Implementation note:** the current implementation covers P1/P2 normal-terminal
+continuation and saved-receipt recovery. The [current design](../../design.md) and
+[configuration guide](../configuration.md#session-policy-history-reuse-and-invocation-safety)
+define the effective contract and invocation safety boundaries. P3 still needs upstream
+public live-recovery APIs; P4 real-account, quality, cache, and performance experiments
+remain unperformed.
 中文：[按任务、角色与运行事实管理会话](../../plans/2026-11-07-session-lifecycle.md).
 
 ## 1. Decision

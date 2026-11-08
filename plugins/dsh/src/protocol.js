@@ -1,7 +1,9 @@
-import { realpath, stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { constants } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute } from 'node:path';
 
 export const PROTOCOL = 1;
+export const SESSION_PROTOCOL = 'dsh-sdk/session-resume/worker-v2';
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const ERROR_CODES = new Set([
   'AUTH', 'QUOTA', 'RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT',
@@ -37,11 +39,17 @@ export async function directory(value, label) {
 }
 
 export async function validateStart(value) {
-  if (!record(value) || value.type !== 'start' || value.protocol !== PROTOCOL) {
-    throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 start request');
+  if (!record(value) || value.type !== 'start' || ![PROTOCOL, 2].includes(value.protocol)) {
+    throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 or 2 start request');
   }
   const allowed = new Set(['type', 'protocol', 'requestId', 'cwd', 'provider', 'model',
     'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs']);
+  if (value.protocol === 2) {
+    allowed.add('sessionId');
+    allowed.add('persistent');
+    if (value.persistent !== true) throw new BridgeError('INVALID_REQUEST', 'protocol 2 requires explicit persistent history');
+    if (value.sessionId !== undefined) nonempty(value.sessionId, 'sessionId', 512);
+  }
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new BridgeError('INVALID_REQUEST', `unsupported start field: ${key}`);
   }
@@ -61,6 +69,34 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'timeoutMs must be between 1 and 86400000');
   }
   return { ...value, requestId, provider, model, prompt, timeoutMs, cwd: await directory(value.cwd, 'cwd') };
+}
+
+export async function readPolicyReceipt(path, identity) {
+  if (!isAbsolute(path) || await realpath(dirname(path)) !== dirname(path)) {
+    throw new BridgeError('INVALID_REQUEST', 'policy receipt directory is not physical');
+  }
+  const parent = await stat(dirname(path));
+  if (!parent.isDirectory() || (parent.mode & 0o077) !== 0) {
+    throw new BridgeError('INVALID_REQUEST', 'policy receipt directory is not private');
+  }
+  // A malicious/incorrect SDK must not stall the worker by substituting a FIFO.
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.size > 65536 || (info.mode & 0o077) !== 0) {
+      throw new BridgeError('INVALID_REQUEST', 'policy receipt is not a bounded private regular file');
+    }
+    const buffer = Buffer.alloc(65537);
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+    if (bytesRead !== info.size) throw new BridgeError('INVALID_REQUEST', 'policy receipt changed while being read');
+    const receipt = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
+    if (!record(receipt) || Object.entries(identity).some(([key, value]) => receipt[key] !== value)) {
+      throw new BridgeError('INVALID_REQUEST', 'policy receipt identity mismatch; prompt withheld');
+    }
+    return receipt;
+  } finally {
+    await file.close();
+  }
 }
 
 export function normalizedError(error) {
@@ -93,17 +129,25 @@ function modelErrorMessage(detail, fallback) {
 
 /** Fold committed per-call records; streamed usage snapshots are never summed. */
 export class SessionFold {
-  constructor(sessionId) {
+  constructor(sessionId, { strict = false } = {}) {
     this.sessionId = sessionId;
+    this.strict = strict;
     this.seen = new Set();
-    this.receipts = new Set();
     this.policy = null;
+    this.beginCall();
+  }
+
+  // Resume may append model selection/policy facts, but those are not a paid
+  // invocation. Never inherit previous assistant output, terminal or usage.
+  beginCall() {
+    this.receipts = new Set();
     this.text = '';
     this.assistantCount = 0;
     this.usageComplete = true;
     this.usage = { input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
       cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0 };
     this.terminal = null;
+    this.turnId = '';
   }
 
   accept(params) {
@@ -116,7 +160,6 @@ export class SessionFold {
     if (this.seen.has(event.seq)) return false;
     this.seen.add(event.seq);
     const data = event.data;
-    if (event.type === 'flywheel/policy') this.policy = data;
     if (event.type === 'agent/inbox/spliced' && Array.isArray(data.inserted)) {
       for (const message of data.inserted) if (typeof message?.id === 'string') this.receipts.add(message.id);
     }
@@ -131,10 +174,13 @@ export class SessionFold {
       this.addUsage(data.usage);
     }
     if (event.type === 'turn/end') {
-      if (!record(data.reason) || typeof data.reason.kind !== 'string') {
+      if (!record(data.reason) || typeof data.reason.kind !== 'string' ||
+          (this.strict && (!Number.isSafeInteger(data.turn) || data.turn < 0 ||
+            !['completed', 'aborted', 'blocked', 'error', 'max-tokens'].includes(data.reason.kind)))) {
         throw new BridgeError('TRANSPORT', 'malformed DSH turn terminal');
       }
       this.terminal = data.reason;
+      this.turnId = Number.isSafeInteger(data.turn) ? String(data.turn) : '';
     }
     return true;
   }

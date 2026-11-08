@@ -46,7 +46,7 @@ test('an explicit full-access request reaches the SDK with truthful policy and n
   assert.equal(result.status, 'ok');
   assert.equal(result.settled, true);
   assert.equal(frames[0].permissionMode, 'danger-full-access');
-  const acknowledgement = frames.find(frame => frame.event?.type === 'flywheel/policy').event.data;
+  const acknowledgement = frames[0].policy;
   assert.deepEqual(acknowledgement, { protocol: 1, cwd: await realpath(request.cwd),
     permissionMode: 'danger-full-access', approvalPolicy: 'never', confinedShell: false });
   assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
@@ -185,6 +185,70 @@ test('unknown provider usage survives a successful call as null', async t => {
   assert.equal(result.usage, null);
 });
 
+test('scoped SDK sessions continue the exact history with one new prompt and a new usage delta', async t => {
+  const { request, options, frames, methods } = await setup(t, 'resume-replay');
+  const first = await runWorker({ ...request, protocol: 2, persistent: true }, options);
+  assert.equal(first.status, 'ok');
+  assert.equal(first.lifecycle.dispatch, 'dispatched');
+  assert.equal(first.lifecycle.outcome, 'completed');
+  assert.equal(first.lifecycle.resumeCandidate, true);
+  assert.equal(first.lifecycle.resumeAccepted, false);
+  assert.equal(first.lifecycle.cleanupConfirmed, true);
+  assert.equal(first.lifecycle.turnId, '1');
+  const second = await runWorker({ ...request, protocol: 2, persistent: true,
+    requestId: 'request-2', sessionId: first.sessionId, prompt: 'Repair using the new frozen evidence.' }, options);
+  assert.equal(second.status, 'ok');
+  assert.equal(second.sessionId, first.sessionId);
+  assert.equal(second.lifecycle.requestId, 'request-2');
+  assert.equal(second.lifecycle.resumeAccepted, true);
+  assert.equal(second.lifecycle.resumeCandidate, true);
+  assert.equal(second.text, 'fixture complete');
+  assert.equal(second.usage.total_tokens, 128, 'restored assistant calls are not added to this invocation');
+  assert.equal(second.lifecycle.usageStatus, 'complete');
+  assert.ok(frames.every(frame => frame.protocol === 2));
+  assert.equal(frames.filter(frame => frame.event?.type === 'assistant/message').length, 2,
+    'historical assistant output is never forwarded as a new invocation event');
+  assert.ok(!JSON.stringify(frames).includes('old answer'));
+  assert.deepEqual(await methods(), [
+    'initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown',
+    'initialize', 'session/resume', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown',
+  ]);
+});
+
+for (const scenario of ['resume-missing', 'resume-busy', 'resume-invalid-result']) {
+  test(`${scenario}: exact history rejection never falls back to a fresh session`, async t => {
+    const { request, options, methods } = await setup(t, scenario);
+    const result = await runWorker({ ...request, protocol: 2, persistent: true, sessionId: 'owned-session' }, options);
+    assert.equal(result.status, 'error');
+    assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+    assert.equal(result.lifecycle.outcome, 'unknown', 'the public generic RPC error cannot distinguish missing history from an occupied owner');
+    assert.equal(result.lifecycle.resumeCandidate, false);
+    assert.equal(result.lifecycle.resumeAccepted, false);
+    assert.equal(result.lifecycle.cleanupConfirmed, true);
+    assert.deepEqual(await methods(), ['initialize', 'session/resume', 'shutdown']);
+  });
+}
+
+test('scoped result certainty stays separate from output validity, usage and cleanup', async t => {
+  for (const [scenario, outcome, candidate] of [
+    ['empty', 'completed', true], ['account-quota', 'failed', false],
+    ['missing-terminal', 'unknown', false], ['invalid-turn', 'unknown', false],
+    ['unknown-turn', 'unknown', false], ['invalid-wait', 'unknown', false],
+    ['corrupt-tail', 'unknown', false], ['unknown-usage', 'completed', true],
+  ]) {
+    const { request, options } = await setup(t, scenario);
+    const result = await runWorker({ ...request, protocol: 2, persistent: true }, options);
+    assert.equal(result.lifecycle.outcome, outcome, scenario);
+    assert.equal(result.lifecycle.resumeCandidate, candidate, scenario);
+    if (scenario === 'empty' || scenario === 'unknown-usage') assert.equal(result.lifecycle.usageStatus, 'unknown');
+  }
+  const { request, options, methods } = await setup(t);
+  const doctor = await runWorker({ ...request, protocol: 2, persistent: true }, { ...options, doctor: true });
+  assert.equal(doctor.status, 'error');
+  assert.equal(doctor.lifecycle.dispatch, 'not-dispatched');
+  await assert.rejects(methods(), { code: 'ENOENT' });
+});
+
 test('full lifecycle deadline includes a stalled initialize; no model prompt is sent', async t => {
   const { request, options, methods } = await setup(t, 'initialize-hang');
   const started = Date.now();
@@ -231,6 +295,8 @@ test('overlay pins real native confinement and disables model-owned delegation a
   assert.equal(row('approval').config.policy, 'never');
   assert.equal(row('permission').disabled, true);
   assert.equal(row('tool-subagent').disabled, true);
+  assert.equal(row('schedule').disabled, true, 'the public SDK composition must not deliver a reminder into this invocation');
+  assert.equal(row('tool-schedule').disabled, true);
   assert.equal(row('compaction-basic').disabled, true);
   assert.equal(row('sdk-jsonrpc-server').config.maxTokensAsSuccess, false);
 });
@@ -242,6 +308,8 @@ test('full access changes the explicit permission policy while retaining engine 
   assert.equal(row('approval').config.policy, 'never');
   assert.equal(row('permission').disabled, true);
   assert.equal(row('tool-subagent').disabled, true);
+  assert.equal(row('schedule').disabled, true);
+  assert.equal(row('tool-schedule').disabled, true);
   assert.equal(row('compaction-basic').disabled, true);
   assert.deepEqual(patch.find(item => item.insert).insert[0].config,
     { permissionMode: 'danger-full-access', cwd: '/workspace' });

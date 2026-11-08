@@ -181,6 +181,7 @@ type State struct {
 	LastProgressAt       *string                   `json:"last-progress-at"`
 	Inbox                []any                     `json:"inbox"`
 	Workflow             *WorkflowState            `json:"workflow,omitempty"`
+	Sessions             *SessionLedger            `json:"sessions,omitempty"`
 }
 
 // WorkflowState persists the selected policy before any model call. An upgrade
@@ -239,6 +240,7 @@ func Load(taskDir string) (*State, error) {
 	var probe struct {
 		Revision any             `json:"revision"`
 		Workflow json.RawMessage `json:"workflow"`
+		Sessions json.RawMessage `json:"sessions"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
@@ -250,6 +252,11 @@ func Load(taskDir string) (*State, error) {
 		var workflow any
 		_ = json.Unmarshal(probe.Workflow, &workflow) // the complete JSON parsed above
 		if err := contract.ValidateWorkflowStateValue(workflow); err != nil {
+			return nil, err
+		}
+	}
+	if len(probe.Sessions) > 0 {
+		if err := validateSessions(probe.Sessions); err != nil {
 			return nil, err
 		}
 	}

@@ -37,6 +37,54 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 	assert.Equal(t, Usage{Input: 120, Output: 8, Reasoning: 3, CacheRead: 20, TotalTokens: 128}, *r.Usage)
 	assert.Nil(t, r.CostUSD)
 
+	t.Run("scoped persisted public SDK history", func(t *testing.T) {
+		fixture, err := filepath.Abs("../../plugins/dsh/test/fixtures/persisted-sdk.js")
+		require.NoError(t, err)
+		require.NoError(t, os.Chmod(fixture, 0o755))
+		t.Setenv("FLYWHEEL_DSH_BIN", fixture)
+		root := t.TempDir()
+		calls := filepath.Join(root, "model-calls.jsonl")
+		a := DSHArgs{Command: worker, Cwd: t.TempDir(), Prompt: "FIRST_CONTRACT_MARKER",
+			Provider: "offline-fixture", Model: "test-model", Thinking: "high", PermissionMode: "danger-full-access",
+			PersistentSession: true, RequestID: "first-invocation",
+			APIKeys:  map[string]string{"TEST_DSH_HISTORY": filepath.Join(root, "history"), "TEST_DSH_LLM_CALLS": calls},
+			Watchdog: watchdog.Opts{IdleTimeoutMs: 3000, WallTimeoutMs: 10000, KillGraceMs: 100}}
+		first := RunDSH(a)
+		require.True(t, first.Settled, "%+v", first)
+		require.NotNil(t, first.Session)
+		assert.True(t, first.Session.ResumeCandidate)
+		assert.False(t, first.Session.ResumeAccepted)
+		require.NotEmpty(t, first.Session.SessionID)
+		a.SessionID, a.RequestID, a.Prompt = first.Session.SessionID, "second-invocation", "CURRENT_FAILURE_MARKER"
+		second := RunDSH(a)
+		require.True(t, second.Settled, "%+v", second)
+		require.NotNil(t, second.Session)
+		assert.Equal(t, first.Session.SessionID, second.Session.SessionID)
+		assert.True(t, second.Session.ResumeAccepted)
+		assert.True(t, second.Session.CleanupConfirmed)
+		assert.True(t, second.Session.ResumeCandidate)
+		assert.NotEqual(t, first.Session.TurnID, second.Session.TurnID)
+		require.NotNil(t, second.Usage)
+		assert.Equal(t, int64(12), second.Usage.TotalTokens)
+		raw, err := os.ReadFile(calls)
+		require.NoError(t, err)
+		entries := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		require.Len(t, entries, 2)
+		assert.Contains(t, entries[1], "FIRST_CONTRACT_MARKER")
+		assert.Contains(t, entries[1], "published SDK fixture complete")
+		assert.Contains(t, entries[1], "CURRENT_FAILURE_MARKER")
+		a.SessionID, a.RequestID = "absent-history", "third-invocation"
+		missing := RunDSH(a)
+		assert.False(t, missing.Settled)
+		require.NotNil(t, missing.Session)
+		assert.Equal(t, "not-dispatched", missing.Session.Dispatch)
+		assert.Equal(t, "unknown", missing.Session.Outcome)
+		assert.False(t, missing.Session.ResumeCandidate)
+		after, err := os.ReadFile(calls)
+		require.NoError(t, err)
+		assert.Equal(t, string(raw), string(after), "a failed restore must not create or prompt a replacement session")
+	})
+
 	for scenario, want := range map[string]errs.ErrorCode{
 		"account-sign-in-required": errs.AUTH, "account-token-invalid": errs.AUTH,
 		"account-signed-out": errs.AUTH, "account-quota": errs.QUOTA,

@@ -468,3 +468,13 @@ func ValidateWorkflowStateValue(value any) error {
 	}
 	return validateAgainst(sch.Properties["workflow"], value, "state.json workflow")
 }
+
+// ValidateSessionStateValue rejects unknown policy versions and malformed
+// lifecycle checkpoints before any backend invocation can be considered.
+func ValidateSessionStateValue(value any) error {
+	sch, err := StateSchema()
+	if err != nil {
+		return err
+	}
+	return validateAgainst(sch.Properties["sessions"], value, "state.json sessions")
+}

@@ -647,22 +647,24 @@ func TestPlanStepMismatchedStoredSessionColdStarts(t *testing.T) {
 	assert.Equal(t, "sess-new", session["session-id"])
 }
 
-func TestPlanStepDeadSessionRestartsCold(t *testing.T) {
+func TestPlanStepConfirmedUnsentResumeRetriesSameHistory(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	var logs []string
 	calls := 0
-	sd.planFn = func(drivers.CallArgs) drivers.Result {
+	sd.planFn = func(a drivers.CallArgs) drivers.Result {
 		calls++
+		require.Equal(t, "sess-dead", a.SessionID)
 		if calls == 1 {
 			return drivers.MockResult(func(r *drivers.Result) {
 				code := 1
 				r.ExitCode = &code
 				msg := "provider 500 exploded"
 				r.ErrorMessage = &msg
+				r.Session = &drivers.SessionOutcome{RequestID: a.RequestID, Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true}
 			})
 		}
-		return drivers.MockResult(func(r *drivers.Result) { r.SessionID = "sess-2" })
+		return drivers.MockResult(func(r *drivers.Result) { r.SessionID = "sess-dead" })
 	}
 	ctx := verdictCtx(t, fx, sd)
 	ctx.Log = func(msg string) { logs = append(logs, msg) }
@@ -674,10 +676,10 @@ func TestPlanStepDeadSessionRestartsCold(t *testing.T) {
 	out, err := ctx.planStep(contract.Milestone{ID: "M-01"}, "")
 	require.NoError(t, err)
 	assert.True(t, out.OK)
-	assert.Contains(t, strings.Join(logs, "\n"), "is dead")
+	assert.NotContains(t, strings.Join(logs, "\n"), "is dead")
 	session, _ := ctx.State.PlanSession.(map[string]any)
-	assert.Equal(t, "sess-2", session["session-id"])
-	assert.Equal(t, 0, session["resumes"])
+	assert.Equal(t, "sess-dead", session["session-id"])
+	assert.Equal(t, 1, session["resumes"])
 	assert.Equal(t, 2, calls)
 }
 

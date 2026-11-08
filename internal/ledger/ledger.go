@@ -23,7 +23,7 @@ var LedgerFiles = map[string]bool{
 }
 
 // LedgerDirs 账本目录（带尾部斜杠，供前缀匹配）。
-var LedgerDirs = []string{"reports/", "approvals/", ".control/"}
+var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/"}
 
 // CommitVolatileFiles 纯运行时产物：不进单元提交（活日志绝不能进 git 历史；
 // metrics 是追加式遥测）。账本区其余（state/retro/inbox/reports/approvals）
@@ -36,6 +36,7 @@ var CommitVolatileFiles = map[string]bool{
 	".run.lock":        true,
 	".stop-request":    true,
 	".control/":        true,
+	".sessions/":       true,
 }
 
 // IsLedgerTaskPath 判断任务目录相对路径（如 "reports/x.json"）是否为账本。

@@ -34,6 +34,91 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, os.Chmod(fixture, 0o755))
 	t.Setenv(CodexProBinaryEnv, fixture)
 
+	t.Run("scoped history crosses processes with independent invocation and run delta", func(t *testing.T) {
+		cwd := t.TempDir()
+		log := filepath.Join(cwd, "scoped.jsonl")
+		a := CodexProArgs{Command: worker, Cwd: cwd, Prompt: "offline scoped first attempt",
+			Model: "gpt-test", ReasoningEffort: "high", PermissionMode: "workspace-write",
+			PersistentSession: true, RequestID: "owned-attempt-one",
+			APIKeys:  map[string]string{"TEST_CODEX_PRO_LOG": log, "TEST_CODEX_PRO_HISTORY": filepath.Join(cwd, "history.json")},
+			Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}}
+		first := RunCodexPro(a)
+		require.True(t, first.Settled, "%+v", first)
+		require.NotNil(t, first.Session)
+		assert.True(t, first.Session.ResumeCandidate)
+		assert.False(t, first.Session.ResumeAccepted)
+		assert.Equal(t, "completed", first.Session.Outcome)
+		assert.Equal(t, a.RequestID, first.Session.RequestID)
+		a.SessionID, a.RequestID, a.Prompt = first.SessionID, "owned-attempt-two", "continue the same scoped task"
+		second := RunCodexPro(a)
+		require.True(t, second.Settled, "%+v", second)
+		require.NotNil(t, second.Session)
+		assert.True(t, second.Session.ResumeCandidate)
+		assert.True(t, second.Session.ResumeAccepted)
+		assert.True(t, second.Session.CleanupConfirmed)
+		assert.Equal(t, "dispatched", second.Session.Dispatch)
+		assert.Equal(t, first.SessionID, second.SessionID)
+		assert.NotEqual(t, first.Session.RunID, second.Session.RunID)
+		assert.NotEqual(t, first.Session.TurnID, second.Session.TurnID)
+		assert.Equal(t, "complete", second.Session.UsageStatus)
+		require.NotNil(t, second.Usage)
+		assert.Equal(t, int64(108), second.Usage.TotalTokens)
+		assert.Nil(t, second.CostUSD)
+		var receipt codexProReceipt
+		require.NoError(t, json.Unmarshal(second.CodexProReceipt, &receipt))
+		require.NotNil(t, receipt.Outcome)
+		assert.Equal(t, "thread/resume", receipt.Outcome.Configuration.Source)
+		var usage struct {
+			ThreadTotal struct {
+				TotalTokens int64 `json:"totalTokens"`
+			} `json:"threadTotal"`
+		}
+		require.NoError(t, json.Unmarshal(receipt.Outcome.Usage, &usage))
+		assert.Equal(t, int64(216), usage.ThreadTotal.TotalTokens)
+		entries := readCodexProLog(t, log)
+		starts, resumes, turns := 0, 0, 0
+		for _, entry := range entries {
+			switch entry["method"] {
+			case "thread/start":
+				starts++
+				assert.Equal(t, false, entry["params"].(map[string]any)["ephemeral"])
+			case "thread/resume":
+				resumes++
+				assert.Equal(t, first.SessionID, entry["params"].(map[string]any)["threadId"])
+			case "turn/start":
+				turns++
+			}
+		}
+		assert.Equal(t, 1, starts)
+		assert.Equal(t, 1, resumes)
+		assert.Equal(t, 2, turns)
+		assertCodexProProcessesStopped(t, entries)
+		a.RequestID = "owned-attempt-three"
+		a.APIKeys["TEST_CODEX_PRO_SCENARIO"] = "resume-no-baseline"
+		partial := RunCodexPro(a)
+		require.True(t, partial.Settled, "%+v", partial)
+		assert.Equal(t, "partial", partial.Session.UsageStatus)
+		assert.Nil(t, partial.Usage)
+		assert.True(t, partial.Session.ResumeCandidate)
+		a.RequestID = "owned-attempt-four"
+		a.APIKeys["TEST_CODEX_PRO_SCENARIO"] = "resume-busy"
+		busy := RunCodexPro(a)
+		assert.False(t, busy.Settled)
+		assert.Equal(t, "unknown", busy.Session.Outcome)
+		assert.Equal(t, "unknown", busy.Session.Dispatch)
+		assert.False(t, busy.Session.ResumeCandidate)
+		assert.True(t, busy.Session.CleanupConfirmed)
+		entries = readCodexProLog(t, log)
+		turns = 0
+		for _, entry := range entries {
+			if entry["method"] == "turn/start" {
+				turns++
+			}
+		}
+		assert.Equal(t, 3, turns, "resume refusal cannot silently dispatch a fresh turn")
+		assertCodexProProcessesStopped(t, entries)
+	})
+
 	t.Run("full-access public machine mapping", func(t *testing.T) {
 		log := filepath.Join(t.TempDir(), "full-access.jsonl")
 		r := RunCodexPro(CodexProArgs{Command: worker, Cwd: t.TempDir(), Prompt: "offline full-access verification",
@@ -104,9 +189,18 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	t.Run("read-only", func(t *testing.T) {
 		log := filepath.Join(t.TempDir(), "readonly.jsonl")
 		r := RunCodexPro(CodexProArgs{Command: worker, Cwd: t.TempDir(), Prompt: "offline readonly verification",
-			Model: "gpt-test", ReasoningEffort: "high", PermissionMode: "read-only",
+			Model: "gpt-test", ReasoningEffort: "high", PermissionMode: "read-only", RequestID: "call-freshEngine123",
 			APIKeys: map[string]string{"TEST_CODEX_PRO_LOG": log}, Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}})
 		require.True(t, r.Settled, "%+v", r)
+		require.NotNil(t, r.Session)
+		assert.Equal(t, "codex-pro/0.8.0/worker-v1", r.Session.Protocol)
+		assert.Equal(t, "call-freshEngine123", r.Session.RequestID)
+		assert.Equal(t, "completed", r.Session.Outcome)
+		assert.False(t, r.Session.ResumeCandidate)
+		var receipt codexProReceipt
+		require.NoError(t, json.Unmarshal(r.CodexProReceipt, &receipt))
+		assert.Equal(t, "call-freshEngine123", receipt.RequestID)
+		assert.JSONEq(t, "null", string(receipt.Requested.ThreadID))
 		entries := readCodexProLog(t, log)
 		for _, entry := range entries {
 			if entry["method"] == "thread/start" {

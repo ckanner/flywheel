@@ -161,6 +161,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 	p := a.Packet
 	sections := []string{
 		"You are the reviewer for one executed unit of the Flywheel system. Judge only what commands cannot.",
+		"Your review context is independent from the executor. On every review, inspect the complete current candidate and requirements, including new regressions; reopen or close your earlier findings using current evidence. A previous pass is never current evidence.",
 		"",
 		"## Task packet (contract)",
 		"packet-id: " + p.PacketID,
@@ -217,7 +218,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		policy, _ := json.MarshalIndent(a.Workflow, "", "  ")
 		sections = append(sections,
 			"", "## Independent task FINAL Review (Quick)",
-			"This fresh review also fulfills final task acceptance: inspect the entire Spec, all numbered requirements, code, assertions, boundaries, and every required check. Do not rely on executor claims or a transcript.",
+			"This independent review also fulfills final task acceptance: inspect the entire Spec, all numbered requirements, code, assertions, boundaries, and every required check. Do not rely on executor claims or a transcript.",
 			"## Complete Spec and success criteria", string(spec),
 			"## Selected workflow and qualification evidence", string(policy),
 			"## Candidate-bound integration/user-path gates", string(gate),
@@ -283,7 +284,7 @@ func BuildPlanPrompt(a PlanArgs) string {
 			"```")
 	}
 	if a.ColdStart {
-		lines = append(lines, "", "## Cold start note", "This is a fresh planning session rebuilt from the contract layer (previous resident session died). All authoritative context is above/in the contract files on disk.")
+		lines = append(lines, "", "## Cold start note", "Use the current contract layer as the authority for this planning call. Prior conversation history does not override the contract files on disk.")
 		if a.RetroTail != "" {
 			lines = append(lines, "", "## retro.md (tail)", a.RetroTail)
 		}

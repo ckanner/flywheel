@@ -35,11 +35,15 @@ export async function loadAdapter() {
 
 /** Reject unsupported fields and permissions before any process or prompt starts. */
 export function machineRequest(value, api, env) {
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs']);
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || value.protocol !== 1 ||
+  const persistent = value?.protocol === 2;
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs',
+    ...(persistent ? ['threadMode', 'threadId'] : [])]);
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || ![1, 2].includes(value.protocol) ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.requestId !== 'string' || value.requestId.length > 256 ||
+      (persistent && (value.threadMode !== 'persistent' || (value.threadId !== undefined &&
+        (typeof value.threadId !== 'string' || !value.threadId.trim() || value.threadId.includes('\0'))))) ||
       !['read-only', 'workspace-write', 'danger-full-access'].includes(value.permissionMode)) {
-    throw new WorkerError('INVALID_REQUEST', 'Expected one protocol=1 start request with an explicit supported permission mode');
+    throw new WorkerError('INVALID_REQUEST', 'Expected one versioned start request with explicit supported permissions; protocol 2 requires persistent history');
   }
   if (value.timeoutMs !== undefined && (!Number.isSafeInteger(value.timeoutMs) || value.timeoutMs < 1 || value.timeoutMs > 2147483647)) {
     throw new WorkerError('INVALID_REQUEST', 'timeoutMs must be a positive safe integer no greater than 2147483647');
@@ -50,7 +54,8 @@ export function machineRequest(value, api, env) {
       permissionMode: value.permissionMode === 'danger-full-access' ? 'dangerously-bypass-approvals-and-sandbox' : value.permissionMode,
       prompt: value.prompt,
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
-      command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: 'ephemeral', maxOutputBytes: LIMITS.machineOutputBytes });
+      command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: persistent ? 'persistent' : 'ephemeral',
+      ...(persistent && value.threadId !== undefined ? { threadId: value.threadId } : {}), maxOutputBytes: LIMITS.machineOutputBytes });
   } catch (error) {
     throw new WorkerError('INVALID_REQUEST', error instanceof api.MachineInputError ? error.message : 'Invalid Codex Pro machine request');
   }

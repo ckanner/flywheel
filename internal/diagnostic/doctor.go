@@ -75,6 +75,7 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 	}
 	r.Cwd, r.TaskDir, r.Configuration = view.Cwd, view.TaskDir, view
 	r.add("configuration", "pass", "已解析配置："+view.Source, "", "")
+	r.add("sessions.policy", "pass", fmt.Sprintf("会话策略 %s（策略 v%d）；仅解析配置，未验证历史恢复", cfg.Sessions.Mode, cfg.Sessions.PolicyVersion), "", "")
 	required := r.taskScope(cfg)
 	for i := range view.Bindings {
 		view.Bindings[i].InScope = required == nil || required[view.Bindings[i].ID]
@@ -113,6 +114,7 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			r.add(b.ID, "skipped", "使用 mock driver；未检查真实模型通道", "", "")
 			continue
 		}
+		r.add(b.ID+".session", "unknown", fmt.Sprintf("会话选择 %s：%s；适配器支持=%t，历史恢复未验证", b.Session.Mode, b.Session.Reason, b.Session.Supported), "", "配置与无推理探测不证明历史已保存或可以恢复；运行时仍须检查调用回执")
 		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
 			r.add(b.ID+".permission", "fail", "所选 harness 无法实施本阶段要求的只读权限", "INVALID_REQUEST", "为评审选择支持 read-only 的 DSH 或 Codex 路径")
 			continue

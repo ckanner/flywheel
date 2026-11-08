@@ -1,7 +1,7 @@
 ---
 name: flywheel-stop
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Stop the Flywheel orchestrator for a task and freeze its state. Use for "/flywheel-stop docs/<slug>" in DSH, "/skill:flywheel-stop docs/<slug>" in Kimi, or a request to halt a running flywheel task.
 whenToUse: 当用户要停止正在运行的编排器（干预、预算控制、异常处理）时使用。
 compatibility: "Requires the Flywheel CLI; stops the matching task through its managed control protocol."
@@ -25,7 +25,7 @@ DSH 在对话中使用 `/flywheel-stop <任务资料目录>`；Kimi 使用 `/ski
    或切换 checkout。当前终端位于 `main`、detached HEAD 或仓库外都不妨碍停止
    原 `task_dir` 对应的运行，不重复索取停止授权（运行中的单元会被打断；
    进行中的单元会被标记 interrupted、产物保留，不会静默丢失——下次 run
-   会续跑）。
+   会先核对调用事实与证据，再决定是否能续跑）。
 2. **调用**（使用绝对任务路径，不依赖当前工作目录）：
 
    ```bash
@@ -44,3 +44,5 @@ DSH 在对话中使用 `/flywheel-stop <任务资料目录>`；Kimi 使用 `/ski
 不借停止操作清理用户文件。恢复继续使用同一 `task_dir` 和任务集成 worktree；
 `flywheel-run` 负责核对其分支与路径。清理未确认时先核实本次拥有的相关子进程
 已结束；尤其不能只凭外层 worker 退出或固定等待几秒就启动下一轮。
+子进程已结束也不证明已派发调用的结果已知；有未知调用时由 Go 核对可信终态回执，
+保持阻断，不切换 fresh、另建任务或删除记录来绕过。

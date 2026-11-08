@@ -22,6 +22,22 @@ type Usage struct {
 	TotalTokens int64 `json:"totalTokens"`
 }
 
+// SessionOutcome separates attributable invocation facts from history reuse.
+// A candidate handle is not a promise that the backend can restore its history.
+type SessionOutcome struct {
+	Protocol         string `json:"protocol"`
+	RequestID        string `json:"requestId"`
+	SessionID        string `json:"sessionId,omitempty"`
+	RunID            string `json:"runId,omitempty"`
+	TurnID           string `json:"turnId,omitempty"`
+	Dispatch         string `json:"dispatch"`
+	Outcome          string `json:"outcome"`
+	CleanupConfirmed bool   `json:"cleanupConfirmed"`
+	ResumeCandidate  bool   `json:"resumeCandidate"`
+	ResumeAccepted   bool   `json:"resumeAccepted"`
+	UsageStatus      string `json:"usageStatus"`
+}
+
 // Result driver 单次调用的完整结果：watchdog 可观察量 + harness 语义字段。
 type Result struct {
 	// watchdog 原始量。
@@ -39,17 +55,18 @@ type Result struct {
 	CleanupError string `json:"cleanupError,omitempty"`
 
 	// harness 语义量。
-	Harness        string         `json:"harness"` // pi | kimi | mock
-	Provider       string         `json:"provider,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	Usage          *Usage         `json:"usage,omitempty"` // kimi: nil（流不暴露）
-	ReasoningChars *int64         `json:"reasoningChars,omitempty"`
-	CostUSD        *float64       `json:"costUsd,omitempty"`
-	Settled        bool           `json:"settled"`
-	Text           string         `json:"text,omitempty"`
-	ErrorMessage   *string        `json:"errorMessage,omitempty"`
-	ErrorCode      errs.ErrorCode `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
-	SessionID      string         `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+	Harness        string          `json:"harness"` // pi | kimi | mock
+	Provider       string          `json:"provider,omitempty"`
+	Model          string          `json:"model,omitempty"`
+	Usage          *Usage          `json:"usage,omitempty"` // kimi: nil（流不暴露）
+	ReasoningChars *int64          `json:"reasoningChars,omitempty"`
+	CostUSD        *float64        `json:"costUsd,omitempty"`
+	Settled        bool            `json:"settled"`
+	Text           string          `json:"text,omitempty"`
+	ErrorMessage   *string         `json:"errorMessage,omitempty"`
+	ErrorCode      errs.ErrorCode  `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
+	SessionID      string          `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+	Session        *SessionOutcome `json:"session,omitempty"`
 	// Preserve the exact public machine receipt, including partial usage and
 	// physical cleanup facts, independently of the normalized success fields.
 	CodexProReceipt json.RawMessage `json:"codexProReceipt,omitempty"`
@@ -66,14 +83,16 @@ type CallArgs struct {
 	Packets     []string // plan：既有 packet id 清单
 
 	// 真实 harness 专用。
-	Model          string // 空 → binding.Model 或驱动默认
-	Binding        config.LoopBinding
-	APIKey         string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
-	APIKeys        map[string]string // 注入子进程的键集
-	Watchdog       watchdog.Opts
-	OnEvent        func(line string) // stdout NDJSON 行回调
-	SessionID      string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
-	PermissionMode string            // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
+	Model             string // 空 → binding.Model 或驱动默认
+	Binding           config.LoopBinding
+	APIKey            string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
+	APIKeys           map[string]string // 注入子进程的键集
+	Watchdog          watchdog.Opts
+	OnEvent           func(line string) // stdout NDJSON 行回调
+	SessionID         string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+	PersistentSession bool              // request role-scoped retained history
+	RequestID         string            // engine invocation correlation, not backend idempotency
+	PermissionMode    string            // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
 }
 
 // Driver 六角色统一接口。mock 与 real 都实现。
@@ -135,6 +154,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		return RunDSH(DSHArgs{
 			Prompt: a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
+			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
 		})
 	}
@@ -147,14 +167,15 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = KimiDefaultModel
 		}
 		return RunKimi(KimiArgs{
-			Prompt:    a.Prompt,
-			SessionID: a.SessionID, // plan 长驻会话：machine 持有句柄并传入
-			Model:     model,
-			Cwd:       a.Cwd,
-			APIKeys:   a.APIKeys,
-			Watchdog:  a.Watchdog,
-			Thinking:  a.Binding.Thinking,
-			OnEvent:   a.OnEvent,
+			Prompt:            a.Prompt,
+			SessionID:         a.SessionID, // plan 长驻会话：machine 持有句柄并传入
+			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
+			Model:    model,
+			Cwd:      a.Cwd,
+			APIKeys:  a.APIKeys,
+			Watchdog: a.Watchdog,
+			Thinking: a.Binding.Thinking,
+			OnEvent:  a.OnEvent,
 		})
 	}
 	if harness == "zcode" {
@@ -196,6 +217,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		return RunCodexPro(CodexProArgs{
 			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
+			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
 		})
 	}

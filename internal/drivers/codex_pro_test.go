@@ -29,6 +29,11 @@ func codexProRequest(t *testing.T) codexProStart {
 }
 
 func codexProFixture(r codexProStart) map[string]any {
+	var requestedThread any
+	threadID, source := "thread-one", "thread/start"
+	if r.ThreadID != "" {
+		requestedThread, threadID, source = r.ThreadID, r.ThreadID, "thread/resume"
+	}
 	machinePermission := r.PermissionMode
 	policy := map[string]any{"type": "workspaceWrite", "writableRoots": []string{r.Cwd}, "networkAccess": false,
 		"excludeTmpdirEnvVar": false, "excludeSlashTmp": false}
@@ -41,12 +46,12 @@ func codexProFixture(r codexProStart) map[string]any {
 	}
 	return map[string]any{
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "run-one", "ok": true,
-		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort, "permissionMode": machinePermission, "threadId": nil},
+		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort, "permissionMode": machinePermission, "threadId": requestedThread},
 		"costUSD":   nil, "costStatus": "unknown", "failure": nil,
 		"outcome": map[string]any{
-			"output": []any{map[string]any{"type": "text", "text": "verified response"}}, "stopReason": "completed", "threadId": "thread-one",
+			"output": []any{map[string]any{"type": "text", "text": "verified response"}}, "stopReason": "completed", "threadId": threadID,
 			"configuration": map[string]any{
-				"source": "thread/start", "matched": true, "missing": []string{}, "mismatches": []string{},
+				"source": source, "matched": true, "missing": []string{}, "mismatches": []string{},
 				"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "approvalPolicy": "never", "sandbox": r.PermissionMode},
 				"effective": map[string]any{"cwd": r.Cwd, "model": r.Model, "approvalPolicy": "never", "sandbox": r.PermissionMode, "sandboxPolicy": policy},
 			},
@@ -55,7 +60,7 @@ func codexProFixture(r codexProStart) map[string]any {
 			"usage":             map[string]any{"status": "complete", "run": map[string]any{"totalTokens": 18, "inputTokens": 10, "cachedInputTokens": 6, "cacheWriteInputTokens": 2, "outputTokens": 8, "reasoningOutputTokens": 3}, "observations": 2, "replayedBaseline": false},
 			"rateLimits":        map[string]any{"observations": 0},
 			"execution": map[string]any{
-				"runId": "run-one", "threadId": "thread-one", "turnId": "turn-one", "ownership": "supervised-group",
+				"runId": "run-one", "threadId": threadID, "turnId": "turn-one", "ownership": "supervised-group",
 				"pid": 123, "supervisorPid": 122, "exitCode": nil, "signal": "SIGTERM", "supervisorExitCode": 0, "supervisorSignal": nil,
 				"terminationRequested": true, "timedOut": false, "cancelled": false, "truncated": false, "spawnError": nil, "failure": nil,
 				"startedAt": "2026-11-03T00:00:00.000Z", "finishedAt": "2026-11-03T00:00:01.000Z", "durationMs": 1000,
@@ -65,7 +70,7 @@ func codexProFixture(r codexProStart) map[string]any {
 }
 
 func codexProFrame(r codexProStart, receipt map[string]any) map[string]any {
-	return map[string]any{"protocol": 1, "type": "result", "requestId": r.RequestID,
+	return map[string]any{"protocol": r.Protocol, "type": "result", "requestId": r.RequestID,
 		"adapter": map[string]any{"package": "dsh-subagent-codex-pro", "version": CodexProPackageVersion, "protocol": 1}, "receipt": receipt, "error": nil}
 }
 
@@ -384,7 +389,7 @@ func TestCodexProWorkerProcessFixture(t *testing.T) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if request.Type != "start" || request.Protocol != 1 || request.RequestID == "" {
+	if request.Type != "start" || (request.Protocol != 1 && request.Protocol != 2) || request.RequestID == "" {
 		os.Exit(2)
 	}
 	if scenario == "record" {
@@ -403,7 +408,7 @@ func TestCodexProWorkerProcessFixture(t *testing.T) {
 	if scenario == "cancel-receipt" {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, syscall.SIGTERM)
-		fmt.Print(dshJSONL(map[string]any{"type": "progress", "protocol": 1, "requestId": request.RequestID, "text": "ready"}))
+		fmt.Print(dshJSONL(map[string]any{"type": "progress", "protocol": request.Protocol, "requestId": request.RequestID, "text": "ready"}))
 		<-signals
 		receipt["ok"] = false
 		proObject(receipt, "outcome")["stopReason"] = "aborted"
@@ -432,6 +437,9 @@ func TestCodexProWorkerProcessFixture(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr, "worker diagnostic")
 	fmt.Print(strings.TrimSpace(dshJSONL(codexProFrame(request, receipt))))
+	if scenario == "outer-truncated" {
+		fmt.Print("\n" + strings.Repeat(" ", 32*1024))
+	}
 	if scenario == "exit-error" {
 		os.Exit(7)
 	}

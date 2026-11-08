@@ -12,7 +12,7 @@ var modelFields = []string{"harness", "model", "channel", "provider", "thinking"
 var loopRoles = []string{"plan", "review", "judge", "intake", "garden"}
 var configFields = []string{
 	"version", "drivers", "loops", "routes", "channels", "profiles", "budget", "watchdog",
-	"retry", "credentials", "verify", "defect-injection", "worktree", "permissions", "judge-panel", "intake", "pricing", "mock-behaviors",
+	"retry", "credentials", "verify", "defect-injection", "worktree", "permissions", "sessions", "judge-panel", "intake", "pricing", "mock-behaviors",
 }
 var channelFields = []string{"env-key", "fallback", "harness", "provider", "models", "cache-hit-rate-min"}
 
@@ -207,6 +207,9 @@ func expandProfiles(raw []byte) ([]byte, map[string]string, error) {
 
 // Preserve supported notes without weakening strict typed decoding of fields.
 func prepareConfigSections(root map[string]json.RawMessage) error {
+	if err := prepareSessions(root); err != nil {
+		return err
+	}
 	if err := preparePermissions(root); err != nil {
 		return err
 	}

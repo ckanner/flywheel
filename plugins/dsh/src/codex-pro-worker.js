@@ -3,7 +3,7 @@
 import { ADAPTER, LIMITS, WorkerError, loadAdapter, machineRequest, doctorResult } from './codex-pro-bridge.js';
 
 const controller = new AbortController();
-let cancelledBy, inputFailure, outputFailure, requestId = 'invalid-request', finished = false;
+let cancelledBy, inputFailure, outputFailure, requestId = 'invalid-request', protocol = 1, finished = false;
 const cancel = signal => { cancelledBy ??= signal; controller.abort(); };
 const handlers = new Map(['SIGTERM', 'SIGINT', 'SIGHUP'].map(signal => [signal, () => cancel(signal)]));
 for (const [signal, handler] of handlers) process.on(signal, handler);
@@ -77,6 +77,7 @@ try {
   } else {
     lifeline = input();
     const value = await lifeline.promise;
+    protocol = value?.protocol === 2 ? 2 : 1;
     if (typeof value?.requestId === 'string' && value.requestId.trim() !== '' && value.requestId.length <= 256) requestId = value.requestId;
     const api = await loadAdapter();
     if (controller.signal.aborted) throw inputFailure || new WorkerError('CANCELLED', 'Codex Pro worker was cancelled before the run');
@@ -85,7 +86,7 @@ try {
     let progressBytes = 0;
     const receipt = await api.runMachine(request, { signal: controller.signal, env: process.env, onProgress(text) {
       if (controller.signal.aborted) return;
-      const frame = { protocol: 1, type: 'progress', requestId, text };
+      const frame = { protocol, type: 'progress', requestId, text };
       progressBytes += Buffer.byteLength(JSON.stringify(frame) + '\n');
       if (progressBytes > LIMITS.progressBytes) {
         outputFailure ??= new WorkerError('OUTPUT_LIMIT', 'Codex Pro progress exceeded the 1 MiB stream limit');
@@ -98,7 +99,7 @@ try {
     // An output-limit error still allows a bounded terminal receipt. A broken
     // stdout cannot, but the run has already settled and cleanup was awaited.
     if (outputFailure?.code === 'OUTPUT_LIMIT') outputFailure = undefined;
-    write({ protocol: 1, type: 'result', requestId, adapter: ADAPTER, receipt,
+    write({ protocol, type: 'result', requestId, adapter: ADAPTER, receipt,
       error: error ? { code: error.code, message: error.message } : null });
     process.exitCode = receipt.ok && !error && !controller.signal.aborted ? 0 : 1;
   }
@@ -106,7 +107,7 @@ try {
   finished = true;
   lifeline?.stop();
   const known = error instanceof WorkerError ? error : new WorkerError('WORKER_ERROR', 'Codex Pro worker failed before a complete receipt was available');
-  write({ protocol: 1, type: 'result', requestId, adapter: ADAPTER, receipt: null,
+  write({ protocol, type: 'result', requestId, adapter: ADAPTER, receipt: null,
     error: { code: known.code, message: known.message } });
   process.exitCode = 1;
 } finally {

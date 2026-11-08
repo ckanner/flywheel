@@ -39,18 +39,21 @@ func CodexProBinary() string {
 	return "codex"
 }
 
-// CodexProArgs admits one fresh, explicitly configured public machine run.
+// CodexProArgs admits one explicitly configured public machine run. Scoped
+// calls request persistent history; SessionID resumes only that exact thread.
 type CodexProArgs struct {
-	Prompt          string
-	Model           string
-	ReasoningEffort string
-	PermissionMode  string
-	SessionID       string
-	Cwd             string
-	Command         string
-	APIKeys         map[string]string
-	Watchdog        watchdog.Opts
-	OnEvent         func(line string)
+	Prompt            string
+	Model             string
+	ReasoningEffort   string
+	PermissionMode    string
+	SessionID         string
+	PersistentSession bool
+	RequestID         string
+	Cwd               string
+	Command           string
+	APIKeys           map[string]string
+	Watchdog          watchdog.Opts
+	OnEvent           func(line string)
 }
 
 type codexProStart struct {
@@ -63,6 +66,8 @@ type codexProStart struct {
 	PermissionMode  string `json:"permissionMode"`
 	Prompt          string `json:"prompt"`
 	TimeoutMS       int64  `json:"timeoutMs"`
+	ThreadMode      string `json:"threadMode,omitempty"`
+	ThreadID        string `json:"threadId,omitempty"`
 }
 
 type codexProParsed struct {
@@ -77,6 +82,7 @@ type codexProParsed struct {
 	Truncated        bool
 	CleanupError     string
 	Error            string
+	Session          *SessionOutcome
 }
 
 type codexProFailureFacts struct {
@@ -181,12 +187,14 @@ type codexProOutcome struct {
 }
 
 type codexProFailure struct {
-	Stage      string             `json:"stage"`
-	Category   string             `json:"category"`
-	Diagnostic string             `json:"diagnostic"`
-	Usage      json.RawMessage    `json:"usage"`
-	Cleanup    *codexProCleanup   `json:"cleanup"`
-	Execution  *codexProExecution `json:"execution"`
+	Stage             string                     `json:"stage"`
+	Category          string                     `json:"category"`
+	Diagnostic        string                     `json:"diagnostic"`
+	Usage             json.RawMessage            `json:"usage"`
+	Cleanup           *codexProCleanup           `json:"cleanup"`
+	Execution         *codexProExecution         `json:"execution"`
+	Configuration     *codexProConfiguration     `json:"configuration"`
+	TurnConfiguration *codexProTurnConfiguration `json:"turnConfiguration"`
 }
 
 type codexProReceipt struct {
@@ -211,8 +219,9 @@ type codexProReceipt struct {
 // parseCodexProStream keeps the original receipt even when admission fails.
 // Progress is activity, never evidence of completion or configuration acceptance.
 func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
-	var parsed codexProParsed
+	parsed := codexProParsed{Session: codexProUnknownSession(request)}
 	terminal := false
+	trustedStream := true
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -234,11 +243,13 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			trustedStream = false
 			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker emitted malformed JSONL"
 			break
 		}
-		if frame.Protocol != 1 || frame.RequestID != request.RequestID || terminal {
+		if frame.Protocol != request.Protocol || frame.RequestID != request.RequestID || terminal {
+			trustedStream = false
 			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker protocol/request mismatch or frame after terminal result"
 			break
@@ -246,23 +257,29 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 		switch frame.Type {
 		case "progress":
 			if frame.Text == nil {
+				trustedStream = false
 				parsed.Error = "invalid request: Codex Pro progress is missing text"
 			}
 		case "result":
 			terminal = true
 			parsed = parseCodexProReceipt(frame.Receipt, request)
 			if !codexProHasFields(json.RawMessage(line), "receipt", "error") {
+				trustedStream = false
 				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro worker omitted a terminal receipt/error field"
 			}
 			if frame.Adapter.Package != "dsh-subagent-codex-pro" || frame.Adapter.Version != CodexProPackageVersion || frame.Adapter.Protocol != 1 {
+				trustedStream = false
 				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro adapter package/version/protocol mismatch"
 			}
 			if frame.Error != nil {
+				// An outer protocol failure cannot grant a continuation checkpoint.
+				trustedStream = false
 				parsed.Error = codexProFailureMessage(frame.Error.Code, frame.Error.Message, "", nil)
 			}
 		default:
+			trustedStream = false
 			parsed.CleanupConfirmed = false
 			parsed.Error = "invalid request: Codex Pro worker emitted an unknown frame"
 		}
@@ -275,19 +292,39 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 	if parsed.Error == "" && !terminal {
 		parsed.Error = "Codex Pro worker ended without a terminal receipt"
 	}
+	if !trustedStream {
+		parsed.Session = codexProUnknownSession(request)
+		parsed.Usage = nil // retain raw evidence, but do not bill an untrusted stream
+	}
+	parsed.Session.CleanupConfirmed = parsed.CleanupConfirmed
 	parsed.Settled = parsed.Settled && parsed.Error == ""
 	return parsed
 }
 
+func codexProUnknownSession(request codexProStart) *SessionOutcome {
+	return &SessionOutcome{Protocol: fmt.Sprintf("codex-pro/%s/worker-v%d", CodexProPackageVersion, request.Protocol),
+		RequestID: request.RequestID, Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
+}
+
+// Opaque IDs are compared as JSON strings, without interpreting their spelling.
+// Null, missing, empty and another thread are not interchangeable.
+func codexProRequestedThread(raw json.RawMessage, expected string) bool {
+	if expected == "" {
+		return string(raw) == "null"
+	}
+	var id string
+	return json.Unmarshal(raw, &id) == nil && id == expected
+}
+
 func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProParsed {
-	parsed := codexProParsed{Receipt: raw}
+	parsed := codexProParsed{Receipt: raw, Session: codexProUnknownSession(request)}
 	var receipt codexProReceipt
 	if err := json.Unmarshal(raw, &receipt); err != nil || !codexProHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
 		receipt.RequestID != request.RequestID || receipt.RunID == "" || receipt.OK == nil ||
 		(receipt.Outcome == nil) == (receipt.Failure == nil) ||
 		receipt.Requested.Cwd != request.Cwd || receipt.Requested.Model != request.Model ||
 		receipt.Requested.Effort != request.ReasoningEffort || receipt.Requested.PermissionMode != codexProMachinePermission(request.PermissionMode) ||
-		string(receipt.Requested.ThreadID) != "null" || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
+		!codexProRequestedThread(receipt.Requested.ThreadID, request.ThreadID) || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
 		parsed.Error = "invalid request: Codex Pro receipt identity, requested settings, or cost contract mismatch"
 		return parsed
 	}
@@ -322,27 +359,48 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 		parsed.Truncated = execution.Truncated != nil && *execution.Truncated
 	}
 	executionMatches := execution != nil && execution.RunID == receipt.RunID && execution.Ownership == "supervised-group" &&
-		(receipt.Outcome == nil || execution.ThreadID == receipt.Outcome.ThreadID)
-	// Failed service calls may still attest cleanup and remain safe to retry.
-	// Absence of a trustworthy receipt is different from a settled model error.
+		(receipt.Outcome == nil || execution.ThreadID == receipt.Outcome.ThreadID) &&
+		(request.ThreadID == "" || execution.ThreadID == request.ThreadID || (receipt.Outcome == nil && execution.ThreadID == ""))
+	// Failed calls may attest cleanup. This alone never proves a terminal model
+	// outcome or permits a scoped or fresh replay.
 	parsed.CleanupConfirmed = cleanup != nil && cleanup.Confirmed && executionMatches
 	if cleanup != nil && !cleanup.Confirmed {
 		parsed.CleanupError = "Codex Pro process cleanup unconfirmed: " + cleanup.Detail
 	}
 	if len(usage) != 0 && string(usage) != "null" {
-		var err error
-		parsed.Usage, err = parseCodexProUsage(usage)
+		observed, err := parseCodexProUsage(usage)
 		if err != nil {
 			parsed.Error = err.Error()
 			return parsed
 		}
+		if executionMatches && strings.TrimSpace(execution.RunID) != "" && strings.TrimSpace(execution.ThreadID) != "" &&
+			strings.TrimSpace(execution.TurnID) != "" && !strings.ContainsRune(execution.RunID+execution.ThreadID+execution.TurnID, 0) {
+			// Completeness alone does not attribute counters to this invocation.
+			parsed.Usage = observed
+			var report struct {
+				Status string `json:"status"`
+			}
+			_ = json.Unmarshal(usage, &report) // parseCodexProUsage validated this object/status.
+			parsed.Session.UsageStatus = report.Status
+		}
+	}
+	if executionMatches {
+		parsed.Session.RunID, parsed.Session.TurnID, parsed.Session.SessionID = receipt.RunID, execution.TurnID, execution.ThreadID
 	}
 	if !*receipt.OK {
+		// Only typed pre-turn stages from the pinned API prove non-dispatch.
+		// A resume rejection may mean a busy thread; its prose is not evidence
+		// that a fresh writer may safely repeat this prompt.
+		if f := receipt.Failure; f != nil && parsed.CleanupConfirmed && execution.TurnID == "" &&
+			f.TurnConfiguration == nil && execution.Failure != nil && execution.Failure.Stage == f.Stage &&
+			(f.Stage == "request" || f.Stage == "initialize" || (f.Stage == "thread-start" && request.ThreadID == "")) {
+			parsed.Session.Dispatch, parsed.Session.Outcome = "not-dispatched", "failed"
+		}
 		parsed.Error = codexProFailureMessage(category, diagnostic, stopReason, execution)
 		return parsed
 	}
 	if receipt.Outcome == nil || receipt.Failure != nil || cleanup == nil || !cleanup.Confirmed ||
-		stopReason != "completed" || !codexProExecutionValid(execution, receipt.RunID, parsed.SessionID) {
+		!executionMatches || stopReason != "completed" || !codexProExecutionValid(execution, receipt.RunID, parsed.SessionID) {
 		parsed.Error = "Codex Pro receipt does not prove successful completion and process cleanup"
 		return parsed
 	}
@@ -350,6 +408,11 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 		parsed.Error = "invalid request: " + err.Error()
 		return parsed
 	}
+	// Terminal execution is independent from an empty/malformed model answer.
+	// The 0.8.0 receipt does not attest rollout durability: this is a candidate.
+	parsed.Session.Dispatch, parsed.Session.Outcome = "dispatched", "completed"
+	parsed.Session.ResumeCandidate = request.ThreadMode == "persistent"
+	parsed.Session.ResumeAccepted = request.ThreadID != ""
 	if strings.TrimSpace(parsed.Text) == "" {
 		parsed.Error = "Codex Pro returned an empty response"
 		return parsed
@@ -361,7 +424,8 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 // App-server teardown deliberately sends TERM/KILL after a completed turn.
 // That is independent from the caller cancellation and timeout facts.
 func codexProExecutionValid(e *codexProExecution, runID, threadID string) bool {
-	return e != nil && e.RunID == runID && threadID != "" && e.ThreadID == threadID && e.TurnID != "" &&
+	return e != nil && e.RunID == runID && strings.TrimSpace(threadID) != "" && !strings.ContainsRune(threadID, 0) &&
+		e.ThreadID == threadID && strings.TrimSpace(e.TurnID) != "" && !strings.ContainsRune(e.TurnID, 0) &&
 		e.Ownership == "supervised-group" && e.PID != nil && *e.PID > 0 && e.SupervisorPID != nil && *e.SupervisorPID > 0 &&
 		e.TimedOut != nil && !*e.TimedOut && e.Cancelled != nil && !*e.Cancelled && e.Truncated != nil && !*e.Truncated &&
 		e.TerminationRequested != nil && e.Failure == nil && string(e.SpawnError) == "null" &&
@@ -384,8 +448,12 @@ func codexProExitValid(code *int, signal *string, terminationRequested bool) boo
 
 func validateCodexProConfiguration(o *codexProOutcome, request codexProStart) error {
 	c := o.Configuration
-	if c == nil || c.Source != "thread/start" || !c.Matched || c.Missing == nil || len(*c.Missing) != 0 || c.Mismatches == nil || len(*c.Mismatches) != 0 {
-		return fmt.Errorf("Codex Pro did not attest a fresh matching configuration")
+	source := "thread/start"
+	if request.ThreadID != "" {
+		source = "thread/resume"
+	}
+	if c == nil || c.Source != source || !c.Matched || c.Missing == nil || len(*c.Missing) != 0 || c.Mismatches == nil || len(*c.Mismatches) != 0 {
+		return fmt.Errorf("Codex Pro did not attest the requested start/resume configuration")
 	}
 	for _, settings := range []codexProSettings{c.Requested, c.Effective} {
 		if settings.Model != request.Model || settings.ApprovalPolicy != "never" || settings.Sandbox != request.PermissionMode ||
@@ -542,20 +610,35 @@ func codexProFailureMessage(category, diagnostic, stopReason string, execution *
 // connection. Parent death closes the pipe and makes the worker abort/await the
 // plugin, while the plugin's own guardian handles worker death independently.
 func RunCodexPro(a CodexProArgs) Result {
+	request := codexProStart{Type: "start", Protocol: 1, RequestID: a.RequestID}
+	if request.RequestID == "" {
+		request.RequestID = rand.Text()
+	}
+	if a.PersistentSession {
+		request.Protocol, request.ThreadMode, request.ThreadID = 2, "persistent", a.SessionID
+	}
+	reject := func(detail string) Result {
+		out := invalidHarnessResult("codex-pro", a.Model, detail)
+		out.Session = codexProUnknownSession(request)
+		out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
+		return out
+	}
 	permission := a.PermissionMode
 	if permission == "" {
 		permission = "read-only"
 	}
-	if strings.TrimSpace(a.Model) == "" || strings.TrimSpace(a.Prompt) == "" || a.SessionID != "" ||
+	if strings.TrimSpace(a.Model) == "" || strings.TrimSpace(a.Prompt) == "" ||
+		(a.SessionID != "" && (!a.PersistentSession || strings.TrimSpace(a.SessionID) == "" || strings.ContainsRune(a.SessionID, 0))) ||
+		strings.TrimSpace(request.RequestID) == "" || len(request.RequestID) > 256 || strings.ContainsRune(request.RequestID, 0) ||
 		(permission != "read-only" && permission != "workspace-write" && permission != "danger-full-access") {
-		return invalidHarnessResult("codex-pro", a.Model, "Codex Pro requires model, prompt, explicit supported permissions, and a fresh session")
+		return reject("Codex Pro requires model, prompt, valid invocation identity and supported permissions; resume requires scoped persistent history")
 	}
 	cwd, err := filepath.Abs(a.Cwd)
 	if err == nil {
 		cwd, err = filepath.EvalSymlinks(cwd)
 	}
 	if err != nil {
-		return invalidHarnessResult("codex-pro", a.Model, "Codex Pro cwd cannot be resolved: "+err.Error())
+		return reject("Codex Pro cwd cannot be resolved: " + err.Error())
 	}
 	effort := a.ReasoningEffort
 	if effort == "" {
@@ -565,8 +648,8 @@ func RunCodexPro(a CodexProArgs) Result {
 	if wallMS <= 0 {
 		wallMS = watchdog.DefaultWallTimeoutMs
 	}
-	request := codexProStart{Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
-		Model: a.Model, ReasoningEffort: effort, PermissionMode: permission, Prompt: a.Prompt, TimeoutMS: wallMS}
+	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
+	request.PermissionMode, request.Prompt, request.TimeoutMS = permission, a.Prompt, wallMS
 	command := a.Command
 	if command == "" {
 		command = CodexProCommand()
@@ -603,11 +686,18 @@ func RunCodexPro(a CodexProArgs) Result {
 	case err := <-written:
 		if err != nil {
 			parsed.Error = "Codex Pro worker request write failed: " + err.Error()
+			parsed.Session = codexProUnknownSession(request)
+			parsed.Usage = nil
 		}
 	default: // Spawn failure or pre-start cancellation has no stdin callback.
 	}
 	out := fromWatchdog(result, "codex-pro", "", a.Model)
+	out.Session = parsed.Session
 	out.CodexProReceipt, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.SessionID, parsed.Text, parsed.Usage
+	if result.Truncated {
+		// A complete-looking prefix cannot attest what the capture dropped.
+		out.Usage, out.Session.UsageStatus = nil, "unknown"
+	}
 	out.Cancelled = out.Cancelled || parsed.Cancelled
 	out.TimedOut = out.TimedOut || parsed.TimedOut
 	out.Truncated = out.Truncated || parsed.Truncated
@@ -622,6 +712,17 @@ func RunCodexPro(a CodexProArgs) Result {
 	}
 	out.Settled = parsed.Settled && parsed.Error == "" && !out.Cancelled && !out.TimedOut && !out.Truncated && out.Signal == "" &&
 		out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
+	if result.SpawnError != "" || (result.Cancelled && result.ExitCode == nil && result.Signal == "") {
+		// Watchdog returned before the worker existed: positive proof that no
+		// backend side effect occurred, unlike the absence of a receipt.
+		out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
+	} else {
+		out.Session.CleanupConfirmed = parsed.CleanupConfirmed && out.CleanupError == ""
+		if result.TimedOut || result.Cancelled || result.Truncated || result.Signal != "" || result.CleanupError != "" ||
+			result.ExitCode == nil || (*result.ExitCode != 0 && out.Session.Outcome == "completed") {
+			out.Session.Outcome, out.Session.ResumeCandidate = "unknown", false
+		}
+	}
 	if !out.Settled && !out.Cancelled {
 		message := parsed.Error
 		switch {

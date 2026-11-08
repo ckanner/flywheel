@@ -19,14 +19,24 @@ import (
 )
 
 func dshFixtureFrames(r dshStart) (map[string]any, map[string]any) {
+	sessionID := r.SessionID
+	if sessionID == "" {
+		sessionID = "sdk-session-one"
+	}
 	ready := map[string]any{
-		"type": "ready", "protocol": 1, "requestId": r.RequestID, "sessionId": "sdk-session-one",
+		"type": "ready", "protocol": r.Protocol, "requestId": r.RequestID, "sessionId": sessionID,
 		"cwd": r.Cwd, "provider": r.Provider, "model": r.Model, "reasoningEffort": r.ReasoningEffort,
 		"permissionMode": r.PermissionMode, "approvalPolicy": "never",
 	}
 	result := map[string]any{
-		"type": "result", "protocol": 1, "requestId": r.RequestID, "sessionId": "sdk-session-one",
+		"type": "result", "protocol": r.Protocol, "requestId": r.RequestID, "sessionId": sessionID,
 		"status": "ok", "settled": true, "text": "verified response", "usage": nil, "costUsd": nil,
+	}
+	if r.Protocol == 2 {
+		ready["persistent"], ready["resumed"] = true, r.SessionID != ""
+		result["lifecycle"] = map[string]any{"protocol": DSHSessionProtocol, "requestId": r.RequestID,
+			"sessionId": sessionID, "dispatch": "dispatched", "outcome": "completed", "cleanupConfirmed": true,
+			"resumeCandidate": true, "resumeAccepted": r.SessionID != "", "turnId": "1", "usageStatus": "unknown"}
 	}
 	return ready, result
 }
@@ -136,7 +146,7 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if request.Type != "start" || request.Protocol != 1 || request.RequestID == "" {
+	if request.Type != "start" || (request.Protocol != 1 && request.Protocol != 2) || request.RequestID == "" {
 		os.Exit(2)
 	}
 	ready, result := dshFixtureFrames(request)
@@ -169,6 +179,15 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	} else {
 		result["usage"] = map[string]any{"input_tokens": 10, "output_tokens": 5, "reasoning_tokens": 3, "cache_read_tokens": 8, "cache_write_tokens": 0, "total_tokens": 15}
 		result["costUsd"] = 0.00005
+		if request.Protocol == 2 {
+			result["lifecycle"].(map[string]any)["usageStatus"] = "complete"
+		}
+	}
+	if scenario == "scoped-empty" {
+		result["status"], result["text"] = "error", ""
+		result["error"] = map[string]string{"code": "EMPTY_RESPONSE", "message": "complete native turn without text"}
+		fmt.Print(dshJSONL(result))
+		os.Exit(1)
 	}
 	if scenario == "cancelled" {
 		result["status"] = "cancelled"
@@ -197,6 +216,18 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		os.Exit(1)
 	}
 	fmt.Print(strings.TrimSpace(dshJSONL(result)))
+	if scenario == "success-malformed-tail" {
+		fmt.Print("\n{broken-json}\n")
+	}
+	if scenario == "success-extra-frame" {
+		fmt.Print("\n" + dshJSONL(ready))
+	}
+	if scenario == "success-stderr-overflow" {
+		fmt.Fprint(os.Stderr, strings.Repeat("diagnostic overflow\n", 2048))
+	}
+	if scenario == "success-exit-one" {
+		os.Exit(1)
+	}
 	if scenario == "exit-error" {
 		os.Exit(7)
 	}

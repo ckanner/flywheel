@@ -63,6 +63,7 @@ func statusCmd() *cobra.Command {
 			} else {
 				fmt.Fprintln(out, "流程: full（旧任务保持完整流程）")
 			}
+			printSessionSummaries(out, st)
 			current := "—"
 			if st.CurrentMilestone != nil {
 				current = *st.CurrentMilestone
