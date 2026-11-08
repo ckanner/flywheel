@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -26,7 +26,7 @@ function env(t, key, value) {
 }
 
 async function fixture(t, config = {}) {
-  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-projected-host-'));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-projected-host-')));
   const first = join(cwd, 'first');
   const second = join(cwd, 'second');
   await Promise.all([mkdir(first), mkdir(second)]);
