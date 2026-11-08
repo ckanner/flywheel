@@ -9,16 +9,24 @@ type SessionPolicy struct {
 	Supported             bool   `json:"supported"`
 	Reason                string `json:"reason"`
 	HistoryRecoveryTested bool   `json:"historyRecoveryTested"`
+	// Static pinned public API capabilities, separate from account/history
+	// evidence. Claude cannot attest initialized configuration before prompt
+	// dispatch, so its durable admission is not called thread-ready.
+	DurableJournal            bool `json:"durableJournal"`
+	ReadOnlyRecovery          bool `json:"readOnlyRecovery"`
+	ThreadReadyBeforeDispatch bool `json:"threadReadyBeforeDispatch"`
 }
 
 func sessionPolicy(cfg *config.Config, role, harness string, binding config.LoopBinding) SessionPolicy {
-	policy := SessionPolicy{Mode: "fresh", Supported: config.SupportsScopedSessions(harness), Reason: "fresh-policy"}
+	policy := SessionPolicy{Mode: "fresh", Supported: config.SupportsScopedSessions(harness), Reason: "fresh-policy",
+		DurableJournal: harness == "codex-pro" || harness == "claude-code-pro", ReadOnlyRecovery: harness == "codex-pro" || harness == "claude-code-pro",
+		ThreadReadyBeforeDispatch: harness == "codex-pro"}
 	if role == "intake" || role == "garden" {
 		policy.Reason = "advisory-role-outside-scoped-policy"
 		return policy
 	}
-	if cfg.Sessions.Mode == "fresh" {
-		if role == "plan" && harness == "kimi" && binding.ResidentSession {
+	if cfg.Sessions.ModeForRole(role) == "fresh" {
+		if role == "plan" && harness == "kimi" && binding.ResidentSession && cfg.Sessions.Roles["plan"] != "fresh" {
 			policy.Mode, policy.Reason = "legacy-plan", "explicit-kimi-plan-history"
 		}
 		return policy

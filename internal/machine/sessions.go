@@ -53,7 +53,7 @@ func (c *Context) trackedSessions(role, harness string) bool {
 }
 
 func (c *Context) scopedSessions(role, harness string) bool {
-	if c.Config.Sessions.Mode != "scoped" || !c.trackedSessions(role, harness) {
+	if sessionQualityMode(role, c.Config.Sessions) != "scoped" || !c.trackedSessions(role, harness) {
 		return false
 	}
 	p := c.Config.Loops["plan"]
@@ -219,6 +219,7 @@ func applySessionFacts(record *state.SessionRecord, result drivers.Result, diges
 			record.ThreadID, record.ResumeCandidate = record.Last.RequestedThread, true
 		}
 	}
+	observeSessionQuality(record, result)
 }
 
 var persistSessionReceipt = state.WriteSessionReceipt
@@ -264,6 +265,12 @@ func (c *Context) readSessionResult(key string, r *state.SessionRecord) (*state.
 }
 
 func (c *Context) accountSessionReceipt(r *state.SessionRecord, result drivers.Result) {
+	if result.Recovered && r.Last.Accounted && r.Last.Accounting != nil {
+		if err := c.reconcileSessionAccounting(r, result); err != nil && c.fatal == nil {
+			c.fatal = err
+		}
+		return
+	}
 	packetID := ""
 	if r.Role == "execute" || r.Role == "review" {
 		packetID = strings.TrimPrefix(r.Scope, "final:")
@@ -286,6 +293,13 @@ func (c *Context) reconcileSessionReceipts() error {
 		}
 		recovered := r.Last.Status != "received"
 		receipt, result, digest, err := c.readSessionResult(key, r)
+		if err != nil && r.Last.Recovery != nil {
+			if recoveryErr := c.recoverSessionReceipt(key, r); recoveryErr == nil {
+				receipt, result, digest, err = c.readSessionResult(key, r)
+			} else if receipt == nil {
+				err = recoveryErr
+			}
+		}
 		if err != nil {
 			if receipt != nil {
 				applySessionFacts(r, result, digest, receipt.CandidateAfter)
@@ -388,7 +402,12 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			action, reason, generation = "rebuild", "history unavailable or scope, goal, directory or binding changed", generation+1
 		}
 	}
-	if !persistent && role == "plan" && args.SessionID != "" {
+	if action == "resume" {
+		if qualityReason := sessionQualityReason(role, r, c.Config.Sessions.Quality); qualityReason != "" {
+			action, reason, generation, thread = "rebuild", qualityReason, generation+1, ""
+		}
+	}
+	if !persistent && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
 		action, reason, thread = "resume", "explicit legacy resident Plan binding matched", args.SessionID
 	}
 	candidate, err := c.candidateFingerprint(cwd)
@@ -403,8 +422,13 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if ps := c.State.Packets[scope]; ps != nil {
 		attempt = ps.Attempts
 	}
+	previous := r
+	if action == "rebuild" {
+		args.Prompt = sessionRebuildHandoff(previous, reason) + args.Prompt
+	}
 	r = &state.SessionRecord{Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
+		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
 			Persistent: persistent, RequestedThread: thread, CandidateBefore: candidate, GuardBefore: guardBefore,
 			Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}}
@@ -412,6 +436,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		r.ThreadID = ""
 	}
 	c.State.Sessions.Records[key] = r
+	if err := c.prepareSessionLifecycle(r, &args); err != nil {
+		return drivers.Result{}, err
+	}
 	c.save()
 	if c.fatal != nil {
 		return drivers.Result{}, c.fatal

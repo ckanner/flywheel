@@ -7,8 +7,8 @@ Flywheel 现在可通过 `harness: "claude-code-pro"` 调用
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-**源码与发行边界：**此接入要求插件 **0.3.2 / machine protocol 1**；0.3.1 只有
-DSH 工具入口，不满足机器回执契约。0.3.2 是本次配套源码版本，不能据此推断 npm 已
+**源码与发行边界：**此接入要求插件 **0.4.0 / machine protocol 1**；0.3.1 只有
+DSH 工具入口，0.3.2 只有旧 machine 契约，均不满足新 lifecycle/recovery 接口。0.4.0 是本次配套源码版本，不能据此推断 npm 已
 发布。Flywheel 当前源码版本仍为 0.28.5，新增代码也不等于旧同版本安装已更新。
 合并、发布及用户安装各有独立状态。现有默认 loop／route 没有切换到 Claude。
 
@@ -19,7 +19,7 @@ DSH 工具入口，不满足机器回执契约。0.3.2 是本次配套源码版�
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.3.2`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.4.0`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 正式发布后，将该精确版本装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
@@ -103,12 +103,15 @@ Intake／Garden 可选此后端，但继续执行独立建议调用，不拥有�
 确定发生在 machine 调用前的依赖缺失／参数拒绝被记录为未派发与零消耗；修好环境后
 可继续。已经进入调用却没有可信结果时，即使进程已清理，仍须停止而不能自动重放。
 
-插件在派发 Claude 前建立独立 guardian 与 worker 的 IPC lifeline。worker 被强制
-终止或连接丢失后，guardian 负责停止并清理原生进程组，再退出。正常调用也等待
-guardian 退出；这只补齐物理清理，丢失的调用回执仍然是 unknown。
+插件在派发 Claude 前建立独立 supervisor、durable journal 和 native guardian。
+Go 保存并确认 intent/possible 检查点后才允许提交 prompt。worker 被强制终止时，
+supervisor 取消未确认步骤并收束原生进程，将完整终态落盘；正常调用也等待 guardian
+退出。公开 `recoverMachine` 只读取这次调用，不启动 CLI 或重发 prompt。
 
-这里只实现终态确认后的续接和 Flywheel 已保存回执的恢复。没有 early durable ack、
-实时查询或任意崩溃点恢复承诺；也没有真实账号质量、缓存率或性能收益结论。
+Claude 的 init 只能在 prompt 后观察，不提供预派发 thread-ready 或真实 turn-accepted；
+终态仍须检查实际模型、目录与权限。supervisor 自身丢失、journal 损坏或缺少原候选
+检查点时仍可阻断，不能承诺任意崩溃都继续交付。详见[恢复与质量](session-recovery.md)。
+真实账号质量、缓存率和性能收益须另行评估，离线成功不证明这些结果。
 
 ## 4. 用量与成本
 

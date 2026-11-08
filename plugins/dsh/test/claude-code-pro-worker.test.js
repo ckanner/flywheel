@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.3.2 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.4.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -120,7 +120,7 @@ test('missing, stale and incompatible optional peers prove non-dispatch without 
   await writeFile(join(peer, 'package.json'), JSON.stringify({ ...manifest, version: ADAPTER.version }));
   await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=999;');
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_MISMATCH');
-  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
+  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
   const unknown = resultFrame(await f.launch(options).done, 1);
   assert.equal(unknown.admission, undefined);
   assert.equal(unknown.error.code, 'WORKER_ERROR');

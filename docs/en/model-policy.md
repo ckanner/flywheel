@@ -14,7 +14,7 @@ High provides an initial comparison baseline without starting every loop at maxi
 
 | Current path | Checked capability | Flywheel request |
 |---|---|---|
-| GPT-6.1 Sol / Codex Pro 0.8.0 | Model supports `low/medium/high/xhigh/max`; machine API forwards effort | hard: high |
+| GPT-6.1 Sol / Codex Pro 0.9.0 | Model supports `low/medium/high/xhigh/max`; machine API forwards effort | hard: high |
 | Sol and Astra / DSH ChatGPT provider | Models and checked provider catalog support `low/medium/high/xhigh/max`; serialized as `reasoning.effort` | Review and Judge: high |
 | Kimi K3.1 Pro / Kimi CLI | Native `low/high/max`, default high; thinking cannot be disabled | Plan, frontend, Garden: high |
 | DeepSeek Flash / DSH rc.5 | DSH accepts `off/low/high/max`, default high | ordinary execution: high; Intake: low |
@@ -48,7 +48,7 @@ For an actual comparison, hold the model, backend, context, task, and acceptance
 
 Source and offline protocol tests establish field transmission and error behavior. SDK configuration acceptance or a successful machine-API request establishes acceptance at that interface. Independent effective-effort evidence and improved delivery quality require server evidence or actual task measurements.
 
-DSH `initialize` validates configuration but returns only serverInfo. Flywheel's `ready.reasoningEffort` echoes the request after initialization; it is not independent model-server attestation. Codex Pro separates `requestedEffort`, `accepted`, and unknown `effectiveEffort:null`. See the [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts) and [Codex Pro 0.8.0 protocol](https://github.com/ckanner/dsh-subagent-codex-pro/blob/04ecdb677735d84f3a0f5dba01a9d9b28c324c0e/docs/machine.md). A no-inference doctor cannot establish account balance, real inference, or higher-effort benefits.
+DSH `initialize` validates configuration but returns only serverInfo. Flywheel's `ready.reasoningEffort` echoes the request after initialization; it is not independent model-server attestation. Codex Pro separates `requestedEffort`, `accepted`, and unknown `effectiveEffort:null`. See the [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts) and [Codex Pro 0.9.0 protocol](https://github.com/ckanner/dsh-subagent-codex-pro/blob/37da3d75de32b809c4fb1a631ccc15191f3d87f9/docs/machine.md). A no-inference doctor cannot establish account balance, real inference, or higher-effort benefits.
 
 ## The funded DeepSeek account is the intended default
 
@@ -60,4 +60,4 @@ Desktop login can initialize an account-model default, but independent SDK calls
 
 ## Optional Claude Code Pro
 
-Claude remains unassigned in the default model policy. The optional `claude-code-pro` harness accepts an explicit native model and low/medium/high/xhigh/max request; an installed CLI or account can reject a choice. No new model ranking or effort benchmark is implied. See [the adapter guide](claude-code-pro.md) for the companion 0.3.2 public API, full-access boundary, and usage semantics.
+Claude remains unassigned in the default model policy. The optional `claude-code-pro` harness accepts an explicit native model and low/medium/high/xhigh/max request; an installed CLI or account can reject a choice. No new model ranking or effort benchmark is implied. See [the adapter guide](claude-code-pro.md) for the companion 0.4.0 public API, full-access boundary, and usage semantics.

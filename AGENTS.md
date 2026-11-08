@@ -29,6 +29,8 @@ npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check  # DSH 插件构建与离线行为测试
 FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1
 npm test                 # npm 启动器、安装器、发行门禁的单元与协议测试
+make build
+FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions # 36 条真实引擎 / public adapter 离线配对场景
 npm run build:npm        # 隔离构建六个同版本包，只生成候选，不发布
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
@@ -38,9 +40,12 @@ npm 发行修改须运行根目录 `npm test`，并构建一次六包候选，�
 安装测试。CI 在 Linux/macOS 验证同一个候选，并在 Linux 检查核心包 race。
 安装测试使用隔离 registry／用户目录和 DSH 协议桩；不改真实 profile。
 真实模型、桌面 UI 和账号冒烟不在默认门禁内；无凭证环境可以运行全部离线检查。
-Claude Code Pro 是 optional peer；验证该后端时先在 `plugins/dsh` 安装精确 0.3.2
+Claude Code Pro 是 optional peer；验证该后端时先在 `plugins/dsh` 安装精确 0.4.0
 公开接口（未发布时使用已审查源码的真实 npm tarball）。默认未安装的跳过不算该后端
 通过；记录实测 tarball 身份，不能改版本冒充兼容或虚构 registry 发行。
+Codex Pro 0.9.0 未发布源码候选以 vendor 中真实 npm 包及实际 integrity 锁定，
+通过 bundledDependencies 随插件分发；不可替换成未验证 registry integrity。
+P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓存或性能结论。
 
 ## Hard Contracts
 

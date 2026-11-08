@@ -20,7 +20,7 @@ permissions:
 # Companion source is not yet an npm release. Build the reviewed immutable
 # commit once, then test the same dependency bytes on both operating systems.
 env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: 28483f8aafc15463c6d365100b64c04480cb56b5
+  CLAUDE_CODE_PRO_SOURCE_SHA: ec0b99176b67512f3ca1838ec2a349dcb0189214
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -56,7 +56,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist-claude"
           cd "$claude_source"
           npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' d55b3a52d7b0d350556f65da572194bfe3db89550f4b7ea4cbdbab7997fbf125 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz" | sha256sum --check
+          printf '%s  %s\n' 125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate
@@ -116,10 +116,13 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
+          # Missing optional peer must fail this backend gate, never count as a skip.
+          node dist/codex-pro-worker.js --doctor
+          node dist/claude-code-pro-worker.js --doctor
       - name: Verify Go to Node to SDK, Codex Pro and Claude protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
@@ -129,7 +132,7 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.3.2.tgz
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
         run: npm run test:install
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
@@ -143,6 +146,18 @@ jobs:
           mkdir -p dist/ci
           ./flywheel config inspect --cwd "$PWD" --json > dist/ci/config-inspect.json
           tar -czf dist/ci/flywheel-native.tar.gz flywheel
+      - name: Verify all paired session scenarios through the real engine and public adapter (offline)
+        env:
+          FLYWHEEL_EVAL_BINARY: ${{ github.workspace }}/flywheel
+          FLYWHEEL_EVAL_OUTPUT: ${{ runner.temp }}/flywheel-session-evaluation
+        run: npm run test:sessions
+      - name: Save paired session evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-evaluation-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/flywheel-session-evaluation/results/report.json
+          if-no-files-found: warn
       - name: Pack the DSH plugin without publishing
         working-directory: plugins/dsh
         run: npm pack --pack-destination ../../dist/ci

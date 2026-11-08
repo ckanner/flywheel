@@ -33,7 +33,7 @@ func claudeCodeProFixture(r claudeCodeProStart) map[string]any {
 		observedModel = "claude-" + r.Model + "-test"
 	}
 	var requestedSession any
-	if r.Protocol == 2 {
+	if r.ThreadMode == "persistent" {
 		mode = "persistent"
 	}
 	if r.ThreadID != "" {
@@ -43,7 +43,7 @@ func claudeCodeProFixture(r claudeCodeProStart) map[string]any {
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "22222222-2222-4222-8222-222222222222", "ok": true,
 		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort,
 			"permissionMode": "bypassPermissions", "sessionMode": mode, "sessionId": requestedSession, "settingSources": []string{"user", "project", "local"}},
-		"execution": map[string]any{"pid": 123, "processGroupId": 123, "ownership": "process-group", "dispatch": "dispatched",
+		"execution": map[string]any{"pid": 123, "processGroupId": 123, "ownership": "process-group", "dispatch": "dispatched", "turnDispatch": "accepted",
 			"outcome": "completed", "terminalReceived": true, "exitCode": 0, "signal": nil,
 			"cancelled": false, "timedOut": false, "truncated": false},
 		"cleanup": map[string]any{"confirmed": true, "method": "process-group"},
@@ -89,7 +89,7 @@ func TestClaudeCodeProReceiptSeparatesNativePermissionHistoryAndCost(t *testing.
 			assert.Equal(t, "complete", p.Session.UsageStatus)
 			assert.Equal(t, scope != "fresh", p.Session.ResumeCandidate)
 			assert.Equal(t, scope == "resume", p.Session.ResumeAccepted)
-			assert.Equal(t, fmt.Sprintf("claude-code-pro/0.3.2/worker-v%d", r.Protocol), p.Session.Protocol)
+			assert.Equal(t, fmt.Sprintf("claude-code-pro/0.4.0/worker-v%d", r.Protocol), p.Session.Protocol)
 			assert.Empty(t, p.Session.TurnID, "the CLI has no public turn identifier; never fabricate one")
 			var raw map[string]any
 			require.NoError(t, json.Unmarshal(p.Receipt, &raw))

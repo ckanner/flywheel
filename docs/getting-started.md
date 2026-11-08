@@ -18,7 +18,9 @@
 
 **0.28.3 修复**：下文的 `deepseek-account` 默认和留空目录读取会话当前工作目录从 0.28.3 开始提供。0.28.2 仍使用 `deepseek-official` 与最初目录。安装前核对 registry 版本；升级保留已有配置，采用账号预设需要显式迁移。
 
-**可选 Claude 后端：**默认安装不要求 Claude。选择 `claude-code-pro` 时需额外安装 worker 能解析的配套 0.3.2 插件，并准备本机 Claude CLI／登录。具体版本、配置与源码候选边界见 [Claude Code Pro 指南](claude-code-pro.md)。
+**可选 Claude 后端：**默认安装不要求 Claude。选择 `claude-code-pro` 时需额外安装 worker 能解析的配套 0.4.0 插件，并准备本机 Claude CLI／登录。具体版本、配置与源码候选边界见 [Claude Code Pro 指南](claude-code-pro.md)。
+
+Codex Pro 0.9.0 的已审查真实源码包随本次 Flywheel 插件 bundle，开发候选安装不依赖一个尚未发布的 registry 版本；[来源与摘要](../plugins/dsh/vendor/README.md)。P3/P4 的行为与实测边界见[恢复指南](session-recovery.md)和[对照评估](session-evaluation.md)。
 
 ## 目录
 
@@ -64,7 +66,7 @@ npx -y @ckanner/flywheel@latest install --json
 
 两条命令选择一种即可。安装器按顺序完成：
 
-1. 把本次安装器的精确版本装到 npm 全局目录，解析适合本机的 Go 平台包、同版本 DSH／Codex Pro workers 及精确插件依赖 `dsh-subagent-codex-pro@0.8.0`，核对 CLI 版本。
+1. 把本次安装器的精确版本装到 npm 全局目录，解析适合本机的 Go 平台包、同版本 DSH／Codex Pro workers 及精确插件依赖 `dsh-subagent-codex-pro@0.9.0`，核对 CLI 版本。
 2. 从 Go 二进制安装该版本的全部 skills（当前源码为 11 个）；全局配置不存在时生成默认配置，已有配置保留。
 3. 写入 GUI 启动器和安装记录，使用绝对 Node／CLI 路径。
 4. 通过现有桌面 `dsh` 注册精确版本的 Flywheel 插件，并通过 `plugin list` 验证安装结果。

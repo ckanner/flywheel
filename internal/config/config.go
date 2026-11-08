@@ -190,7 +190,7 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
-	if c.Sessions == (SessionsConfig{}) {
+	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) {
 		c.Sessions = d.Sessions
 	}
 	if c.Permissions.Mode == "" {
@@ -246,7 +246,7 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
-	if err := validateSessionPolicy(map[string]any{"mode": c.Sessions.Mode, "policy-version": c.Sessions.PolicyVersion}); err != nil {
+	if err := c.Sessions.validate(); err != nil {
 		return err
 	}
 	if c.Permissions.Mode != "role-based" && c.Permissions.Mode != "full-access" {

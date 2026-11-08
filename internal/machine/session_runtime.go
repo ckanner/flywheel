@@ -11,11 +11,14 @@ import (
 // Hash actual non-secret runtime/storage references, never credential values.
 func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	keys := append([]string{}, childenv.ChildEnvKeys...)
+	adapter := ""
 	switch a.Binding.Harness {
 	case "codex-pro":
 		keys = append(keys, "CODEX_HOME", drivers.CodexProBinaryEnv, drivers.CodexProWorkerEnv)
+		adapter = drivers.CodexProPackageVersion + "/lifecycle-v1"
 	case "claude-code-pro":
 		keys = append(keys, "CLAUDE_CONFIG_DIR", drivers.ClaudeCodeProBinaryEnv, drivers.ClaudeCodeProWorkerEnv)
+		adapter = drivers.ClaudeCodeProPackageVersion + "/lifecycle-v1"
 	case "dsh":
 		keys = append(keys, "DSH_HOME", "FLYWHEEL_DSH_PROFILE", "FLYWHEEL_DSH_BIN", drivers.DSHWorkerEnv)
 	case "kimi":
@@ -32,5 +35,9 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 		credentials = append(credentials, name)
 	}
 	sort.Strings(credentials)
-	return sessionHash([]any{references, credentials})
+	identity := []any{references, credentials}
+	if adapter != "" {
+		identity = append(identity, adapter)
+	}
+	return sessionHash(identity)
 }

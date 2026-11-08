@@ -1,7 +1,7 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.1.1"
+  version: "1.1.2"
 description: Prepare and launch an authorized Flywheel coding task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."

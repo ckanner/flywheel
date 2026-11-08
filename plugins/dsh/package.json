@@ -28,7 +28,9 @@
     "README.md",
     "README.en.md",
     "PROTOCOL.md",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "vendor/README.md",
+    "vendor/codex-pro.json"
   ],
   "dsh": {
     "bundle": {
@@ -49,7 +51,7 @@
     "@deepseek-ai/dsh-commands": "0.2.1-rc.5 || 0.2.2-rc.1",
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.5 || 0.2.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.5 || 0.2.2-rc.1",
-    "dsh-subagent-claude-code-pro": "0.3.2"
+    "dsh-subagent-claude-code-pro": "0.4.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -75,7 +77,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "dsh-subagent-codex-pro": "0.8.0",
+    "dsh-subagent-codex-pro": "0.9.0",
     "zod": "4.3.6"
   },
   "devDependencies": {
@@ -99,5 +101,8 @@
     "type": "git",
     "url": "git+https://github.com/ckanner/flywheel.git",
     "directory": "plugins/dsh"
-  }
+  },
+  "bundledDependencies": [
+    "dsh-subagent-codex-pro"
+  ]
 }

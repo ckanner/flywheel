@@ -16,7 +16,9 @@ Subscription preset migration and `permissions.mode` are available from **0.28.2
 
 **Fixes in 0.28.3:** the `deepseek-account` default and the current session directory when the project path is omitted. Version 0.28.2 still uses `deepseek-official` and the original directory. Check the registry version before installing. Upgrades preserve configuration; adopting the account preset requires explicit migration.
 
-**Optional Claude backend:** the default installation does not require Claude. Selecting `claude-code-pro` requires the companion 0.3.2 plugin in the worker's dependency tree and an installed/authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md) for configuration and source-candidate boundaries.
+**Optional Claude backend:** the default installation does not require Claude. Selecting `claude-code-pro` requires the companion 0.4.0 plugin in the worker's dependency tree and an installed/authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md) for configuration and source-candidate boundaries.
+
+The reviewed Codex Pro 0.9.0 source package is bundled with this Flywheel candidate; installation does not assume an unpublished registry version exists. See [provenance](../../plugins/dsh/vendor/README.md), [recovery](session-recovery.md), and [paired evaluation](session-evaluation.md).
 
 ## 1. Prepare the environment
 
@@ -101,7 +103,7 @@ That is a checked compatibility version, not a claim about the latest adapter. F
 
 The SDK worker's temporary permission and tool policy applies only to its child process. It does not edit the desktop profile or remove desktop capabilities. Worker-owned delegation, auxiliary model compaction, and currently the entire web tool are disabled. A native view does not make the worker inherit desktop plugins or merge its history. See the [plugin's lifecycle boundaries](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#permissions-and-lifecycle-boundaries) for the capability limits and separate work needed to restore retrieval safely.
 
-The hard route uses the installed `dsh-subagent-codex-pro@0.8.0` dependency's public machine API directly. It does not use `subagent_codex_pro` as a native LLM provider or require a parent model to delegate. Its underlying Codex app-server still needs the local Codex command and login.
+The hard route uses the installed `dsh-subagent-codex-pro@0.9.0` dependency's public machine API directly. It does not use `subagent_codex_pro` as a native LLM provider or require a parent model to delegate. Its underlying Codex app-server still needs the local Codex command and login.
 
 ### Desktop launcher
 

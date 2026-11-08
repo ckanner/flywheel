@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-- 新增可选 `claude-code-pro` harness：通过 `dsh-subagent-claude-code-pro@0.3.2` 公开 machine v1 运行本地 Claude Code CLI，明确模型／thinking、full-access、fresh／同角色 scoped 续接和原始调用回执。添加可选 profile、worker、无推理 doctor、安装路径和双语指南，暂不改变任何默认 loop／route。0.3.2 是配套源码版本，本条不表示它或 Flywheel 已发布 npm。
+- 完成会话 P3 源码：Codex Pro 0.9.0／Claude Code Pro 0.4.0 公开 lifecycle v1、独立 durable journal 与只读 recovery，经 worker v3 接入 Go。派发检查点先 fsync 再 ACK；恢复终态仍绑定原候选和角色 guard，未知不盲目重放。
+- 完成 P4 策略与实验工具：可按角色覆盖 fresh/scoped，按确认轮数、Execute 候选停滞和实测单次输入做有界重建；默认阈值关闭。固定源码与独立 oracle 比较三种策略，覆盖六场景并重复配对；离线 native fixture 不被当作真实模型质量或节省证据。
+- 恢复可归属的迟到 usage 时写独立 correction，保留原调用／provider／日期，不重复计数或复活已过期日桶；metrics 与状态成功前同步文件与目录，持久化失败可安全重试。
+- Codex 0.9.0 以已审查、真实 npm tarball 随 DSH 插件 bundle，保留源码与摘要，安装不依赖未发布 registry 版本。Claude 0.4.0 保持精确 optional peer；默认模型、loop 和账号渠道不变。
+
+- 新增可选 `claude-code-pro` harness：通过 `dsh-subagent-claude-code-pro@0.4.0` 公开 machine v1 运行本地 Claude Code CLI，明确模型／thinking、full-access、fresh／同角色 scoped 续接和原始调用回执。添加可选 profile、worker、无推理 doctor、安装路径和双语指南，暂不改变任何默认 loop／route。0.4.0 是配套源码版本，本条不表示它或 Flywheel 已发布 npm。
 - 修正已跟踪调用的派发前拒绝／取消：确认未启动就保存已知未派发与零消耗，配置修复后可继续；未知结果仍阻断。Intake／Garden 对有结构化事实的未知派发或结果也停止重试，进程清理不被误当作业务完成。
 - 校准显式 pricing 估算：Claude／Codex Pro／DSH 的总输入包含缓存量，估价前拆成不相交桶，避免缓存 token 被按普通输入重复计价；legacy pi 的原分桶语义不变，缺失／矛盾数据继续 unknown。
 - 实现 Auto／Quick／Full：宿主先研究并准备契约，Go 校验资格并持久化策略。Quick 保留 Execute、全部必需验证、独立最终 Review 与同一候选的 Git 交付；合格时 Plan／Judge 记为不适用。旧任务继续 Full，发现风险或验证缺口只允许向 Full 升级，保留预算、工作区和审计历史。

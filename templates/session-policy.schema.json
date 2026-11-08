@@ -6,7 +6,31 @@
   "required": ["mode", "policy-version"],
   "properties": {
     "mode": { "type": "string", "enum": ["fresh", "scoped"] },
-    "policy-version": { "type": "integer", "const": 1 }
+    "policy-version": { "type": "integer", "const": 1 },
+    "roles": {
+      "type": "object",
+      "properties": {
+        "plan": { "$ref": "#/$defs/mode" },
+        "execute": { "$ref": "#/$defs/mode" },
+        "review": { "$ref": "#/$defs/mode" },
+        "judge": { "$ref": "#/$defs/mode" },
+        "judge-panel": { "$ref": "#/$defs/mode" }
+      },
+      "additionalProperties": false
+    },
+    "quality": {
+      "type": "object",
+      "description": "Explicit measured-workload rebuild limits. Zero disables a limit. No native compression or context capacity is inferred.",
+      "properties": {
+        "max-confirmed-turns": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "max-unproductive-turns": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "max-run-input-tokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "mode": { "type": "string", "enum": ["fresh", "scoped"] }
   },
   "patternProperties": { "^_note(?:_|$)": {} },
   "additionalProperties": false

@@ -67,6 +67,7 @@ type Result struct {
 	ErrorCode      errs.ErrorCode  `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
 	SessionID      string          `json:"sessionId,omitempty"` // kimi 长驻会话句柄
 	Session        *SessionOutcome `json:"session,omitempty"`
+	Recovered      bool            `json:"recovered,omitempty"` // public read-only terminal recovery, not a new model call
 	// Preserve the exact public machine receipt, including partial usage and
 	// physical cleanup facts, independently of the normalized success fields.
 	CodexProReceipt      json.RawMessage `json:"codexProReceipt,omitempty"`
@@ -89,11 +90,13 @@ type CallArgs struct {
 	APIKey            string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
 	APIKeys           map[string]string // 注入子进程的键集
 	Watchdog          watchdog.Opts
-	OnEvent           func(line string) // stdout NDJSON 行回调
-	SessionID         string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
-	PersistentSession bool              // request role-scoped retained history
-	RequestID         string            // engine invocation correlation, not backend idempotency
-	PermissionMode    string            // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
+	OnEvent           func(line string)            // stdout NDJSON 行回调
+	SessionID         string                       // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+	PersistentSession bool                         // request role-scoped retained history
+	RequestID         string                       // engine invocation correlation, not backend idempotency
+	RecoveryDirectory string                       // private, exclusive evidence directory for this invocation
+	OnLifecycle       func(MachineLifecycle) error // nil return permits the next durable ACK
+	PermissionMode    string                       // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
 }
 
 // Driver 六角色统一接口。mock 与 real 都实现。
@@ -223,6 +226,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
+			RecoveryDirectory: a.RecoveryDirectory, OnLifecycle: a.OnLifecycle,
 		})
 	}
 	if harness == "claude-code-pro" {
@@ -235,6 +239,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
+			RecoveryDirectory: a.RecoveryDirectory, OnLifecycle: a.OnLifecycle,
 		})
 	}
 	if harness == "omp" {
@@ -309,6 +314,9 @@ func rejectedHarnessCall(a CallArgs, harness, detail string) Result {
 		worker := 1
 		if a.PersistentSession {
 			worker = 2
+		}
+		if a.RecoveryDirectory != "" {
+			worker = 3
 		}
 		protocol = fmt.Sprintf("%s/%s/worker-v%d", harness, version, worker)
 	}

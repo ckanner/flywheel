@@ -21,7 +21,7 @@ func TestAdviceModulesStopForAnUnknownInvocationAfterKnownCleanup(t *testing.T) 
 				taskDir := t.TempDir()
 				cfg := testConfigT(t, taskDir)
 				writeFileT(t, filepath.Join(taskDir, "state.json"), `{"revision":0,"status":"pending","packets":{},"inbox":[],"budget":{"daily":{},"cache":{"by-provider":{}}}}`)
-				s := &drivers.SessionOutcome{RequestID: "uncertain-advice", Protocol: "claude-code-pro/0.3.2/worker-v1", Dispatch: "dispatched", Outcome: "completed", CleanupConfirmed: true, UsageStatus: "complete"}
+				s := &drivers.SessionOutcome{RequestID: "uncertain-advice", Protocol: "claude-code-pro/0.4.0/worker-v1", Dispatch: "dispatched", Outcome: "completed", CleanupConfirmed: true, UsageStatus: "complete"}
 				switch missing {
 				case "dispatch":
 					s.Dispatch = "unknown"

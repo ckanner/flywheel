@@ -1,0 +1,81 @@
+# Interrupted calls and context quality
+
+This guide describes the P3/P4 source implementation. P1/P2 role-history continuation and saved-receipt consumption remain available. The new public contracts require **Codex Pro 0.9.0** or **Claude Code Pro 0.4.0**. Source readiness, npm publication, account access, and measured task outcomes are separate evidence.
+
+## Ownership
+
+| Layer | Responsibilities |
+|---|---|
+| Go engine | Task state, role/scope isolation, intent, candidate and contract guards, budgets, accounting, receipt consumption, delivery |
+| Flywheel worker v3 | Typed lifecycle frames, Go durable acknowledgements, cancellation; no task decisions |
+| Public machine API | Independent supervisor, private durable journal, native guardian, complete raw receipts, read-only `recoverMachine` |
+| Native Codex / Claude | Model/tool execution, native history, observed configuration and usage |
+
+The outer worker protocol is 3. The plugin request/receipt protocol remains 1, with lifecycle version 1. DSH and Kimi retain their existing normal-history and Go saved-receipt paths; the new plugin capabilities do not imply identical P3 support for those backends.
+
+## Durable acknowledgement before dispatch
+
+Go prepares the task's `.sessions/` parent and saves intent before an invocation. The upstream API exclusively creates the invocation's recovery subdirectory, named from a digest of the invocation ID. Recovery never scans global native history.
+
+Typed events include `thread-ready`, `dispatch-intent`, `dispatch-possible`, `turn-accepted`, `terminal`, and `cleanup-confirmed`. Events must reflect actual backend observations:
+
+- **Codex** reports its actual thread/configuration before `turn/start`. Go checks the complete permission policy, cwd, model, and identity before acknowledging. A failed acknowledgement prevents the next turn boundary.
+- **Claude** exposes native init only after prompt submission. It supports pre-dispatch intent/possible acknowledgements, but does not invent a pre-prompt thread-ready or native turn-accepted event. Its observed configuration remains a terminal admission check.
+
+Go correlates each event, atomically saves and `fsync`s its checkpoint and state, then sends the matching ACK. Missing, early, duplicate, mismatched, or expired ACKs cannot release execution. `persistent:true` describes requested history preservation; it does not prove that an empty thread has a resumable rollout.
+
+An independent supervisor owns the native guardian. Worker loss cancels unacknowledged steps and initiates native cleanup. The complete terminal receipt is durable before the terminal notification. A lost notification or final ACK does not rewrite a completed receipt as unexecuted.
+
+## Read-only recovery
+
+Restarting the same task lets Go use the original adapter version, request/run IDs, directory, and binding to call public `recoverMachine`. It reads exactly one invocation journal: no CLI startup, `thread/resume`, other-history search, or prompt resubmission.
+
+| Result | Interpretation |
+|---|---|
+| `terminal` | A complete original receipt is available; validate identity, outcome, cleanup, accounting, and original candidate evidence |
+| `pending` | No durable terminal receipt is available; this is not proof of a live process, and execution stays blocked |
+| `unknown`, corruption, or mismatch | The outcome is unproven; preserve evidence and block replay, including after switching modes or backends |
+
+Queries may be repeated. Cross-machine recovery requires the original data and environment and is not promised. Killing the supervisor itself can leave pending evidence. This is not an exactly-once execution guarantee.
+
+### A successful receipt also needs original candidate evidence
+
+At `cleanup-confirmed`, before acknowledging, Go captures the post-call candidate digest, original role guards, and Execute report. A recovered success may advance the task only with that original proof. A new workspace snapshot or rerun verification after restart cannot substitute for it.
+
+A durable receipt without the Go candidate checkpoint may reconcile trustworthy usage while leaving business execution blocked. A proven pre-dispatch rejection may be treated as unexecuted only with confirmed cleanup and an unchanged original candidate and guard. Review/Judge contract and candidate checks remain mandatory.
+
+## Accounting and budgets
+
+Consumed invocations do not create another model request or call count. If an unknown invocation later yields trusted usage, Go appends an auditable correction tied to the same call, provider, original day, and lifetime totals. Recovery does not recreate an expired daily bucket.
+
+State uses CAS. Receipts, state, and metrics must be durable before success. A metrics append followed by failed state CAS does not create a duplicate row on retry; an existing row must still pass file and directory synchronization. Readable bytes alone do not prove durability.
+
+Unknown is not zero. Rebuilds, role overrides, new workers, and Quick-to-Full transitions never reset budgets, attempts, or unknown-call blocking. Budgets constrain new dispatches, while a completed result with complete evidence can still be consumed.
+
+## Bounded context rebuilds
+
+`sessions.roles` can override fresh/scoped independently for Plan, Execute, Review, and Judge. Other roles inherit the global mode. See [session configuration](configuration.md#session-policy-history-reuse-and-invocation-safety).
+
+Optional `sessions.quality` supports:
+
+| Field | Measured fact |
+|---|---|
+| `max-confirmed-turns` | Confirmed, deduplicated calls in the current role history |
+| `max-unproductive-turns` | Consecutive Execute calls leaving the candidate digest unchanged |
+| `max-run-input-tokens` | The last complete, attributable input token count, not an inferred context-window size |
+
+All thresholds default to disabled. They may rebuild only after the previous call has safely ended, been accounted, and been consumed. Unknown or pending results take precedence.
+
+A rebuild records its reason and generation and hands over current contracts, workspace, valid reports, verification, and structured feedback. It never imports another role's private transcript or issues an unmetered model-compression call. A returning Reviewer must still inspect the entire current candidate.
+
+## Paired P4 evaluation
+
+The repository tools pin source and use an independent frozen oracle to compare fresh, Execute-only scoped, and role-scoped policies. The corpus covers first-pass success, L1 repair, Review return, long context, stop/resume, and configuration changes, with repeated trials and rotated strategy order. Reports retain quality, omissions, regressions, repair rounds, repeated findings, elapsed time, known/unknown tokens and cache use, rebuild reasons, and recovery failures. Actual state evidence determines whether a scenario occurred.
+
+The offline native fixture exercises the real Go engine, worker v3, and public plugin API. It validates the evaluator and safety behavior, not model quality, cache rates, or savings. Real paired results require an available native CLI, account, permissions, and model. Defaults remain unchanged until that evidence exists. See the [configuration guide](configuration.md) and the help for `scripts/prepare-session-evaluation.js` and `scripts/evaluate-sessions.js`.
+
+## Retention and operation
+
+Recovery journals have private permissions, exclusive creation, identity/digest checks, and atomic persistence. Existing directories never authorize redispatch. They are task audit data and may contain model output and diagnostics; keep their access and backups with the task. Do not copy credentials or delete uncertain evidence during upgrades.
+
+There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit resolution of an unknown result. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.

@@ -35,6 +35,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 	t.Setenv(ClaudeCodeProBinaryEnv, fixture)
 	t.Setenv("ANTHROPIC_API_KEY", "ambient-key-must-not-leak")
 	t.Setenv("DSH_SECRET", "other-backend-secret-must-not-leak")
+	testMachineLifecycleNodeBridge(t, "claude-code-pro")
 	args := func(t *testing.T, scenario string) ClaudeCodeProArgs {
 		t.Helper()
 		cwd := t.TempDir()
@@ -51,7 +52,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		r := RunClaudeCodePro(a)
 		require.True(t, r.Settled, "%+v", r)
 		assert.Equal(t, "echo:"+a.Prompt, r.Text)
-		assert.Equal(t, "claude-code-pro/0.3.2/worker-v1", r.Session.Protocol)
+		assert.Equal(t, "claude-code-pro/0.4.0/worker-v1", r.Session.Protocol)
 		assert.Equal(t, "completed", r.Session.Outcome)
 		assert.Equal(t, "dispatched", r.Session.Dispatch)
 		assert.True(t, r.Session.CleanupConfirmed)
@@ -89,7 +90,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		a.SessionID, a.RequestID, a.Prompt = first.SessionID, "owned-second", "current repair constraints"
 		second := RunClaudeCodePro(a)
 		require.True(t, second.Settled, "%+v", second)
-		assert.Equal(t, "claude-code-pro/0.3.2/worker-v2", second.Session.Protocol)
+		assert.Equal(t, "claude-code-pro/0.4.0/worker-v2", second.Session.Protocol)
 		assert.Equal(t, first.SessionID, second.SessionID)
 		assert.True(t, second.Session.ResumeAccepted)
 		assert.True(t, second.Session.ResumeCandidate)

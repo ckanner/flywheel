@@ -37,26 +37,76 @@ type SessionRecord struct {
 	ResumeCandidate bool               `json:"resume-candidate"`
 	Action          string             `json:"action"`
 	Reason          string             `json:"reason"`
+	Quality         *SessionQuality    `json:"quality,omitempty"`
 	Last            *SessionInvocation `json:"last"`
 }
 
+// Quality counters describe confirmed work in one role's current generation.
+// They never grant permission to replay an unknown or unconsumed invocation.
+type SessionQuality struct {
+	ConfirmedTurns    int    `json:"confirmed-turns"`
+	UnproductiveTurns int    `json:"unproductive-turns"`
+	LastInputTokens   *int64 `json:"last-input-tokens,omitempty"`
+	LastUsageStatus   string `json:"last-usage-status"`
+	LastInvocationID  string `json:"last-invocation-id,omitempty"`
+	Rebuilds          int    `json:"rebuilds"`
+	RebuildReason     string `json:"rebuild-reason,omitempty"`
+}
+
+// Recovery retains non-secret original settings. The public read-only API uses
+// these settings to validate a saved receipt; current credentials are not needed.
+type SessionRecovery struct {
+	Version          int    `json:"version"`
+	Harness          string `json:"harness"`
+	AdapterVersion   string `json:"adapter-version"`
+	Directory        string `json:"directory"`
+	Model            string `json:"model"`
+	Effort           string `json:"effort"`
+	PermissionMode   string `json:"permission-mode"`
+	RunID            string `json:"run-id,omitempty"`
+	Sequence         int    `json:"sequence"`
+	Event            string `json:"event,omitempty"`
+	CheckpointDigest string `json:"checkpoint-digest,omitempty"`
+}
+
+// Keep the exact accounted increment so later read-only evidence can fill an
+// unknown counter once without rebilling an already-known native run.
+type SessionAccounting struct {
+	Day           string        `json:"day"`
+	Provider      string        `json:"provider"`
+	ReceiptDigest string        `json:"receipt-digest"`
+	Usage         *SessionUsage `json:"usage"`
+	CostUSD       *float64      `json:"cost-usd"`
+}
+
+type SessionUsage struct {
+	Input       int64 `json:"input"`
+	Output      int64 `json:"output"`
+	Reasoning   int64 `json:"reasoning"`
+	CacheRead   int64 `json:"cache-read"`
+	CacheWrite  int64 `json:"cache-write"`
+	TotalTokens int64 `json:"total-tokens"`
+}
+
 type SessionInvocation struct {
-	ID               string `json:"id"`
-	Status           string `json:"status"` // intent | received | consumed | blocked
-	StartedAt        string `json:"started-at"`
-	Attempt          int    `json:"attempt"`
-	RequestedThread  string `json:"requested-thread,omitempty"`
-	Persistent       bool   `json:"persistent,omitempty"`
-	CandidateBefore  string `json:"candidate-before"`
-	CandidateAfter   string `json:"candidate-after,omitempty"`
-	GuardBefore      string `json:"guard-before,omitempty"`
-	GuardAfter       string `json:"guard-after,omitempty"`
-	ReceiptDigest    string `json:"receipt-digest,omitempty"`
-	Accounted        bool   `json:"accounted"`
-	Dispatch         string `json:"dispatch"`
-	Outcome          string `json:"outcome"`
-	CleanupConfirmed bool   `json:"cleanup-confirmed"`
-	UsageStatus      string `json:"usage-status"`
+	ID               string             `json:"id"`
+	Status           string             `json:"status"` // intent | received | consumed | blocked
+	StartedAt        string             `json:"started-at"`
+	Attempt          int                `json:"attempt"`
+	RequestedThread  string             `json:"requested-thread,omitempty"`
+	Persistent       bool               `json:"persistent,omitempty"`
+	CandidateBefore  string             `json:"candidate-before"`
+	CandidateAfter   string             `json:"candidate-after,omitempty"`
+	GuardBefore      string             `json:"guard-before,omitempty"`
+	GuardAfter       string             `json:"guard-after,omitempty"`
+	ReceiptDigest    string             `json:"receipt-digest,omitempty"`
+	Accounted        bool               `json:"accounted"`
+	Dispatch         string             `json:"dispatch"`
+	Outcome          string             `json:"outcome"`
+	CleanupConfirmed bool               `json:"cleanup-confirmed"`
+	UsageStatus      string             `json:"usage-status"`
+	Recovery         *SessionRecovery   `json:"recovery,omitempty"`
+	Accounting       *SessionAccounting `json:"accounting,omitempty"`
 }
 
 // SessionReceipt stores the exact normalized result (including the raw public
@@ -78,6 +128,23 @@ type SessionReceipt struct {
 
 func sessionReceiptPath(taskDir, key string) string {
 	return filepath.Join(taskDir, ".sessions", fmt.Sprintf("%x.json", sha256.Sum256([]byte(key))))
+}
+
+// A backend owns exactly one directory for one invocation. Derivation from the
+// engine ID prevents state or a model-controlled opaque run ID choosing a path.
+func SessionRecoveryDirectory(taskDir, invocationID string) string {
+	return filepath.Join(taskDir, ".sessions", fmt.Sprintf("recovery-%x", sha256.Sum256([]byte(invocationID))))
+}
+
+func PrepareSessionRecovery(taskDir, invocationID string) (string, error) {
+	dir, err := sessionReceiptDirectory(taskDir, true)
+	if err != nil {
+		return "", err
+	}
+	dir.Close()
+	// The adapter creates this leaf exclusively. Go must not precreate it or
+	// reuse another invocation's journal, even for a known-not-dispatched call.
+	return SessionRecoveryDirectory(taskDir, invocationID), nil
 }
 
 const maxSessionReceiptSize = 32 << 20
@@ -247,6 +314,13 @@ func validateSessions(raw json.RawMessage) error {
 		}
 		if record.Last.Status == "consumed" && !record.Last.Accounted || record.Last.Status == "intent" && record.Last.Accounted {
 			return fmt.Errorf("session %s accounting contradicts invocation status", key)
+		}
+		if recovery := record.Last.Recovery; recovery != nil {
+			if !filepath.IsAbs(record.Task) || recovery.Directory != SessionRecoveryDirectory(record.Task, record.Last.ID) ||
+				(recovery.Sequence == 0 && (recovery.RunID != "" || recovery.Event != "" || recovery.CheckpointDigest != "")) ||
+				(recovery.Sequence > 0 && (strings.TrimSpace(recovery.RunID) == "" || recovery.Event == "" || recovery.CheckpointDigest == "")) {
+				return fmt.Errorf("session %s recovery directory or checkpoint identity is invalid", key)
+			}
 		}
 		if record.ThreadID != "" {
 			identity := [2]string{record.Protocol, record.ThreadID}

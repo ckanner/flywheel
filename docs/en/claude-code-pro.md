@@ -8,7 +8,7 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-**Source and release boundary:** the integration requires plugin **0.3.2,
+**Source and release boundary:** the integration requires plugin **0.4.0,
 machine protocol 1**. Version 0.3.1 only exposes the DSH tool interface and lacks
 the required machine receipt. The companion source version does not establish
 an npm publication. Flywheel source remains version 0.28.5; the new source does
@@ -22,7 +22,7 @@ Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.3.2` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.4.0` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
@@ -124,15 +124,9 @@ machine invocation are not-dispatched with known zero consumption, so fixing the
 environment can permit a later attempt. After invocation, a missing trustworthy
 outcome must stop replay even if cleanup is confirmed.
 
-Before dispatching Claude, the plugin establishes an independent guardian and
-an IPC lifeline to the worker. Worker death or disconnect makes the guardian
-stop and clean the native process group before exiting. Normal calls also await
-guardian exit. This provides physical cleanup; a lost receipt remains unknown.
+Before dispatching Claude, an independent supervisor owns a durable journal and native guardian. Go persists and acknowledges intent/possible checkpoints before prompt submission. Worker loss cancels unacknowledged steps and initiates native cleanup; complete terminal receipts are durable before notification. Public `recoverMachine` reads only that invocation and never starts the CLI or resubmits a prompt.
 
-This delivers normal terminal-backed continuation and recovery of receipts already
-saved by Flywheel. It does not provide early durable acknowledgments, read-only
-live recovery, or arbitrary crash recovery. No live quality, cache, or performance
-improvement is inferred from offline tests.
+Claude init arrives after the prompt. There is no fabricated pre-dispatch thread-ready or native turn-accepted event; actual model, cwd, and permission checks still apply at terminal admission. Supervisor loss, corruption, or missing original candidate proof can leave execution blocked. See [recovery and context quality](session-recovery.md). Real-account quality, cache, and performance require separate paired evidence.
 
 ## 4. Usage and subscription cost
 

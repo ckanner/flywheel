@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,7 +21,7 @@ import (
 const (
 	ClaudeCodeProWorkerEnv      = "FLYWHEEL_CLAUDE_CODE_PRO_WORKER"
 	ClaudeCodeProBinaryEnv      = "FLYWHEEL_CLAUDE_BIN"
-	ClaudeCodeProPackageVersion = "0.3.2"
+	ClaudeCodeProPackageVersion = "0.4.0"
 	claudeCodeProCleanupMS      = int64(10_000)
 	claudeCodeProRequestBytes   = 1 << 20 // worker LIMITS.requestBytes, including the JSONL newline
 )
@@ -66,20 +65,23 @@ type ClaudeCodeProArgs struct {
 	APIKeys           map[string]string
 	Watchdog          watchdog.Opts
 	OnEvent           func(line string)
+	RecoveryDirectory string
+	OnLifecycle       func(MachineLifecycle) error
 }
 
 type claudeCodeProStart struct {
-	Type            string `json:"type"`
-	Protocol        int    `json:"protocol"`
-	RequestID       string `json:"requestId"`
-	Cwd             string `json:"cwd"`
-	Model           string `json:"model"`
-	ReasoningEffort string `json:"reasoningEffort"`
-	PermissionMode  string `json:"permissionMode"`
-	Prompt          string `json:"prompt"`
-	TimeoutMS       int64  `json:"timeoutMs"`
-	ThreadMode      string `json:"threadMode,omitempty"`
-	ThreadID        string `json:"threadId,omitempty"`
+	Type              string `json:"type"`
+	Protocol          int    `json:"protocol"`
+	RequestID         string `json:"requestId"`
+	Cwd               string `json:"cwd"`
+	Model             string `json:"model"`
+	ReasoningEffort   string `json:"reasoningEffort"`
+	PermissionMode    string `json:"permissionMode"`
+	Prompt            string `json:"prompt"`
+	TimeoutMS         int64  `json:"timeoutMs"`
+	ThreadMode        string `json:"threadMode,omitempty"`
+	ThreadID          string `json:"threadId,omitempty"`
+	RecoveryDirectory string `json:"recoveryDirectory,omitempty"`
 }
 
 type claudeCodeProParsed struct {
@@ -101,6 +103,7 @@ type claudeCodeProExecution struct {
 	ProcessGroupID   *int    `json:"processGroupId"`
 	Ownership        string  `json:"ownership"`
 	Dispatch         string  `json:"dispatch"`
+	TurnDispatch     string  `json:"turnDispatch"`
 	Outcome          string  `json:"outcome"`
 	TerminalReceived *bool   `json:"terminalReceived"`
 	ExitCode         *int    `json:"exitCode"`
@@ -184,6 +187,7 @@ func claudeCodeProUnknownSession(request claudeCodeProStart) *SessionOutcome {
 // envelope is correlated twice: by the worker and by the plugin receipt.
 func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeCodeProParsed {
 	parsed := claudeCodeProParsed{Session: claudeCodeProUnknownSession(request)}
+	lifecycle := machineLifecycleFlow{harness: "claude-code-pro", request: codexProStart(request)}
 	terminal, trusted := false, true
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -216,6 +220,11 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 			break
 		}
 		switch frame.Type {
+		case "lifecycle":
+			if _, err := lifecycle.frame([]byte(line)); err != nil || request.Protocol != 3 {
+				trusted = false
+				parsed.Error = "invalid request: Claude Code Pro lifecycle evidence is invalid"
+			}
 		case "progress":
 			if frame.Text == nil {
 				trusted = false
@@ -242,6 +251,10 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 			} else if frame.Error != nil {
 				trusted = false
 				parsed.Error = "Claude Code Pro worker failed without a trusted invocation result: " + frame.Error.Message
+			}
+			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
+				trusted = false
+				parsed.Error = "invalid request: Claude Code Pro result omitted durable lifecycle evidence"
 			}
 		default:
 			trusted = false
@@ -278,7 +291,7 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 	parsed := claudeCodeProParsed{Receipt: raw, Session: claudeCodeProUnknownSession(request)}
 	var receipt claudeCodeProReceipt
 	mode := "ephemeral"
-	if request.Protocol == 2 {
+	if request.ThreadMode == "persistent" {
 		mode = "persistent"
 	}
 	if err := json.Unmarshal(raw, &receipt); err != nil || !receiptHasFields(raw, "failure", "reportedCostUSD") ||
@@ -317,6 +330,12 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 	if sessionID != nil {
 		parsed.Session.SessionID = *sessionID
 	}
+	if request.Protocol == 3 && (e.TurnDispatch != "not-dispatched" && e.TurnDispatch != "possible" && e.TurnDispatch != "accepted" ||
+		(*receipt.OK && e.TurnDispatch != "accepted")) {
+		parsed.Error = "invalid request: Claude Code Pro durable receipt omitted its typed turn-dispatch fact"
+		parsed.Session = claudeCodeProUnknownSession(request)
+		return parsed
+	}
 	if e.Dispatch == "not-dispatched" {
 		if *receipt.OK || receipt.Failure == nil || e.Outcome != "not-started" || *e.TerminalReceived ||
 			e.PID != nil || e.ProcessGroupID != nil || e.Ownership != "none" || e.ExitCode != nil || e.Signal != nil ||
@@ -328,6 +347,12 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 		parsed.CleanupConfirmed, parsed.Usage = true, &Usage{}
 		parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "not-dispatched", "failed", "complete"
 		parsed.Session.SessionID = request.ThreadID
+		if request.Protocol == 3 && e.TurnDispatch != "not-dispatched" {
+			// A lost dispatch acknowledgement deliberately remains possible even
+			// when no native PID was observed. Absence is not a turn receipt.
+			parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "unknown", "unknown", "unknown"
+			parsed.Usage = nil
+		}
 	} else {
 		if e.Dispatch != "dispatched" || e.PID == nil || *e.PID <= 0 || e.ProcessGroupID == nil || *e.ProcessGroupID != *e.PID ||
 			e.Ownership != "process-group" || c.Method != "process-group" ||
@@ -441,9 +466,19 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	if a.PersistentSession {
 		request.Protocol, request.ThreadMode, request.ThreadID = 2, "persistent", a.SessionID
 	}
+
+	if a.RecoveryDirectory != "" || a.OnLifecycle != nil {
+		request.Protocol, request.RecoveryDirectory = 3, a.RecoveryDirectory
+		if request.ThreadMode == "" {
+			request.ThreadMode = "ephemeral"
+		}
+	}
 	reject := func(detail string) Result {
 		return rejectedHarnessCall(CallArgs{Model: a.Model, RequestID: request.RequestID, SessionID: a.SessionID,
 			PersistentSession: a.PersistentSession}, "claude-code-pro", detail)
+	}
+	if request.Protocol == 3 && (a.OnLifecycle == nil || !filepath.IsAbs(a.RecoveryDirectory) || strings.ContainsRune(a.RecoveryDirectory, 0)) {
+		return reject("durable lifecycle requires an absolute recovery directory and acknowledgement callback")
 	}
 	if strings.TrimSpace(a.Model) == "" || strings.TrimSpace(a.Prompt) == "" || a.PermissionMode != "danger-full-access" ||
 		(a.SessionID != "" && (!a.PersistentSession || strings.TrimSpace(a.SessionID) == "" || strings.ContainsRune(a.SessionID, 0))) ||
@@ -496,35 +531,15 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 			env[key] = value
 		}
 	}
-	var onActivity func(chunk, stream string)
-	events := jsonLines{onLine: a.OnEvent, limit: watchdog.MaxBuffer}
-	if a.OnEvent != nil {
-		onActivity = events.feed
-	}
-	written := make(chan error, 1)
-	result := watchdog.Run(command, nil, watchdog.Opts{
+	result, interactionErr := runMachineWorker(command, "claude-code-pro", codexProStart(request), payload, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: wallMS,
-		KillGraceMs: max(a.Watchdog.KillGraceMs, claudeCodeProCleanupMS), OnActivity: onActivity,
-		InteractStdin: func(stdin io.WriteCloser, finish func()) {
-			_, err := stdin.Write(payload)
-			written <- err
-			if err != nil {
-				finish()
-			}
-		},
-	})
-	if a.OnEvent != nil {
-		events.flush()
-	}
+		KillGraceMs: max(a.Watchdog.KillGraceMs, claudeCodeProCleanupMS),
+	}, a.OnLifecycle, a.OnEvent)
 	parsed := parseClaudeCodeProStream(result.Stdout, request)
-	select {
-	case err := <-written:
-		if err != nil {
-			parsed.Error = "Claude Code Pro worker request write failed: " + err.Error()
-			parsed.Session, parsed.Usage, parsed.CleanupConfirmed = claudeCodeProUnknownSession(request), nil, false
-		}
-	default: // watchdog proved a spawn failure or cancellation before starting.
+	if interactionErr != nil {
+		parsed.Error = "Claude Code Pro worker transport failed: " + interactionErr.Error()
+		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = claudeCodeProUnknownSession(request), nil, false
 	}
 	out := fromWatchdog(result, "claude-code-pro", "", a.Model)
 	out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage

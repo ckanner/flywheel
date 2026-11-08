@@ -52,8 +52,17 @@ async function registry(directory) {
     packages.set(manifest.name, { manifest, entry, data });
     tarballs.set('/tarballs/' + entry.filename, data);
   }
+  const plugin = packages.get('@ckanner/dsh-plugin-flywheel');
+  if (plugin?.manifest.dependencies?.['dsh-subagent-codex-pro'] !== '0.9.0' ||
+      JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro'])) {
+    throw new Error('the candidate must contain its exact reviewed Codex Pro source dependency');
+  }
+  const bundled = JSON.parse(execFileSync('tar', ['-xOf', path.join(directory, plugin.entry.filename),
+    'package/node_modules/dsh-subagent-codex-pro/package.json'], { encoding: 'utf8' }));
+  if (bundled.name !== 'dsh-subagent-codex-pro' || bundled.version !== '0.9.0' || Object.keys(bundled.dependencies || {}).length) {
+    throw new Error('the bundled public Codex Pro identity or runtime dependency graph changed');
+  }
   for (const [name, version, tarball] of [
-    ['dsh-subagent-codex-pro', '0.8.0', process.env.FLYWHEEL_CODEX_PRO_TARBALL],
     ['zod', '4.3.6', process.env.FLYWHEEL_ZOD_TARBALL],
   ]) {
     const dependency = await runtimeDependency(name, version, tarball);

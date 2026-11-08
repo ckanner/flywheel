@@ -2,3 +2,5 @@ dist/
 node_modules/
 *.tgz
 coverage/
+# Reviewed public API source candidate, bundled until its registry release.
+!vendor/dsh-subagent-codex-pro-0.9.0.tgz

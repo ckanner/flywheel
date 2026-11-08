@@ -9,8 +9,10 @@ Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，
 会话策略支持 **fresh／scoped**：新模板显式 scoped，旧配置缺省 fresh。scoped 可在可信
 正常终态后延续同任务、同角色、同作用域的历史；独立复审仍检查完整当前候选。
 Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在两种模式下都保存安全记录，未知派发、结果或清理
-会阻止继续执行，不能靠换模式绕过。P1/P2 的正常续接与已保存回执恢复已接通；
-P3 实时恢复和 P4 真实实验仍未完成，详见[会话配置](docs/configuration.md#会话策略历史复用与调用安全)。
+会阻止继续执行，不能靠换模式绕过。P3 已接通 Codex／Claude 公开 typed lifecycle、
+持久化 ACK 与只读回执恢复；P4 提供按角色策略、有界质量重建和三组对照评估工具。
+真实账号的质量、缓存与性能结果仍待完成，不能由离线实验推断。详见
+[会话配置](docs/configuration.md#会话策略历史复用与调用安全)及[中断恢复与上下文质量](docs/session-recovery.md)。
 
 当前源码的统一发行目标为 **v0.28.5**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
@@ -20,7 +22,7 @@ P3 实时恢复和 P4 真实实验仍未完成，详见[会话配置](docs/confi
 
 首次使用请按 [Mac 安装与首个任务教程](docs/getting-started.md) 完成安装、配置、无推理检查和小任务验收。本文保留各接口与设计边界的速查。
 
-当前源码另支持可选的 [Claude Code Pro 后端](docs/claude-code-pro.md)：模型与 thinking 可配置，按角色续用已确认会话，尚未分配任何默认 loop。它需要配套插件 0.3.2 的公开 machine API 与显式 full-access；0.3.1 桌面工具不等于已满足此接口。
+当前源码另支持可选的 [Claude Code Pro 后端](docs/claude-code-pro.md)：模型与 thinking 可配置，按角色续用已确认会话，尚未分配任何默认 loop。它需要配套插件 0.4.0 的公开 machine API 与显式 full-access；0.3.1 桌面工具不等于已满足此接口。
 
 ## 1. 一条命令安装
 
@@ -56,7 +58,7 @@ npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-这是已核对的 adapter 版本示例；采用其他版本前按其文档检查兼容性。按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会复制凭证，也不证明账号可以调用默认表里的所有模型。DSH 桌面能在登录后选择账号默认模型，但该选择不控制独立 SDK 会话；Flywheel 显式请求 `deepseek-account`／`deepseek-flash`，详见[账号与 API 的区别](docs/configuration.md#deepseek-账号与-api-key-是两个-provider)。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider。Flywheel 的 `hard` 路由通过独立 worker 直接导入 `dsh-subagent-codex-pro@0.8.0` 的公开 `./machine` 入口，复用插件运行时；它不创建 DSH 父模型再次委派。插件内部仍运行 Codex app-server，并使用用户已有的 Codex 登录。
+这是已核对的 adapter 版本示例；采用其他版本前按其文档检查兼容性。按 provider 自身的正常流程完成授权，保持所选 `DSH_HOME` 与配置来源一致。安装 adapter 不会复制凭证，也不证明账号可以调用默认表里的所有模型。DSH 桌面能在登录后选择账号默认模型，但该选择不控制独立 SDK 会话；Flywheel 显式请求 `deepseek-account`／`deepseek-flash`，详见[账号与 API 的区别](docs/configuration.md#deepseek-账号与-api-key-是两个-provider)。`subagent_codex_pro` 是外部 agent 工具，不是这个 SDK 入口的 LLM provider。Flywheel 的 `hard` 路由通过独立 worker 直接导入 `dsh-subagent-codex-pro@0.9.0` 的公开 `./machine` 入口，复用插件运行时；该精确源码候选随插件 bundle，来源与摘要见 [vendor 记录](plugins/dsh/vendor/README.md)。它不创建 DSH 父模型再次委派。插件内部仍运行 Codex app-server，并使用用户已有的 Codex 登录。
 
 ### worker 入口配置
 

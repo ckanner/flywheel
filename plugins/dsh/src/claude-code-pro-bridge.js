@@ -1,7 +1,8 @@
 // Claude Code is an independent harness, not a DSH native model provider.
 import { createRequire } from 'node:module';
+import { isAbsolute } from 'node:path';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.3.2', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.4.0', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -18,14 +19,17 @@ export async function loadAdapter() {
   }
   let manifest, api;
   try { manifest = require('dsh-subagent-claude-code-pro/package.json'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.3.2 alongside @ckanner/dsh-plugin-flywheel; the optional adapter is not installed'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.4.0 alongside @ckanner/dsh-plugin-flywheel; the optional adapter is not installed'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
-    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.3.2 machine contract');
+    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.4.0 machine contract');
   }
   try { api = await import('dsh-subagent-claude-code-pro/machine'); }
   catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'The pinned Claude Code Pro public machine API could not be imported'); }
   if (api.MACHINE_PROTOCOL_VERSION !== ADAPTER.protocol || typeof api.parseMachineRequest !== 'function' ||
-      typeof api.runMachine !== 'function' || typeof api.MachineInputError !== 'function') {
+      typeof api.runMachine !== 'function' || typeof api.MachineInputError !== 'function' ||
+      api.MACHINE_LIFECYCLE_VERSION !== 1 || typeof api.recoverMachine !== 'function' ||
+      api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
+      api.MACHINE_LIFECYCLE_CAPABILITIES?.threadReadyBeforeDispatch !== false) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro does not expose the pinned public machine API');
   }
   return api;
@@ -33,13 +37,17 @@ export async function loadAdapter() {
 
 /** Native approval policies cannot substitute for a requested OS sandbox. */
 export function machineRequest(value, api, env) {
-  const persistent = value?.protocol === 2;
+  const lifecycle = value?.protocol === 3;
+  const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
   const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs',
-    ...(persistent ? ['threadMode', 'threadId'] : [])]);
+    ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' ||
-      ![1, 2].includes(value.protocol) || Object.keys(value).some(key => !keys.has(key)) ||
+      ![1, 2, 3].includes(value.protocol) || Object.keys(value).some(key => !keys.has(key)) ||
       typeof value.requestId !== 'string' || !value.requestId.trim() || value.requestId.length > 256 || value.requestId.includes('\0') ||
       typeof value.model !== 'string' || !value.model.trim() ||
+      (lifecycle && (!['ephemeral', 'persistent'].includes(value.threadMode) ||
+        typeof value.recoveryDirectory !== 'string' || !isAbsolute(value.recoveryDirectory) ||
+        value.recoveryDirectory.length > 4096 || value.recoveryDirectory.includes('\0') || (!persistent && value.threadId !== undefined))) ||
       (persistent && (value.threadMode !== 'persistent' || (value.threadId !== undefined &&
         (typeof value.threadId !== 'string' || !value.threadId.trim() || value.threadId.includes('\0'))))) ||
       value.permissionMode !== 'danger-full-access') {

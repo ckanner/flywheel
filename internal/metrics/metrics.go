@@ -17,6 +17,24 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 )
 
+// Keep the I/O boundary injectable: an unflushed audit record must never let
+// the caller commit its accounting CAS, even when Write already returned bytes.
+var writeMetricsLine = (*os.File).Write
+var syncMetricsHandle = (*os.File).Sync
+var openMetricsSync = os.Open
+
+func flushMetrics(file *os.File) error {
+	if err := syncMetricsHandle(file); err != nil {
+		return err
+	}
+	directory, err := openMetricsSync(filepath.Dir(file.Name()))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return syncMetricsHandle(directory)
+}
+
 // PromptHash 提示词哈希（sha256 前 12 hex）——失败归因与缓存对账用。
 func PromptHash(prompt string) string {
 	sum := sha256.Sum256([]byte(prompt))
@@ -44,8 +62,10 @@ func Append(file string, entry map[string]any) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(append(line, '\n'))
-	return err
+	if _, err = writeMetricsLine(f, append(line, '\n')); err != nil {
+		return err
+	}
+	return flushMetrics(f)
 }
 
 // AppendOnce deduplicates recovery telemetry by invocation and receipt digest.
@@ -85,7 +105,14 @@ func AppendOnce(file, invocationID, receiptDigest string, entry map[string]any) 
 		}
 	}
 	if found {
-		return nil
+		// A previous append may have failed during fsync after leaving readable
+		// bytes. Reconfirm durability without appending another invocation.
+		f, err := openMetricsSync(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return flushMetrics(f)
 	}
 	record := make(map[string]any, len(entry)+2)
 	for key, value := range entry {
