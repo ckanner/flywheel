@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.29.0
 
 - 完成会话 P3 源码：Codex Pro 0.9.0／Claude Code Pro 0.4.0 公开 lifecycle v1、独立 durable journal 与只读 recovery，经 worker v3 接入 Go。派发检查点先 fsync 再 ACK；恢复终态仍绑定原候选和角色 guard，未知不盲目重放。
 - 完成 P4 策略与实验工具：可按角色覆盖 fresh/scoped，按确认轮数、Execute 候选停滞和实测单次输入做有界重建；默认阈值关闭。固定源码与独立 oracle 比较三种策略，覆盖六场景并重复配对；离线 native fixture 不被当作真实模型质量或节省证据。
@@ -14,7 +14,8 @@
 - 新增 `flywheel-task` 统一准备启动 skill、`flywheel_launch` 模型工具及 `control launch --mode auto|quick|full`。通过 DSH 公开会话投影关联确切任务，覆盖会话重放、fork 隔离与未确认操作；视图显示请求模式、生效策略、阶段适用性和升级原因。
 - 补齐 11 个内嵌 skills 的安装校验、双语工作流／配置／入门指南，以及引擎、控制接口和真实 DSH 发布包的离线回归。模型、账号与权限配置继续沿用现有选择。
 
-本节记录尚未发布的源码功能；不改变 0.28.5 已有发布身份，不代表 npm latest 或用户桌面已经更新。
+- 按任务、范围和角色复用 Codex Pro、DSH 和 Kimi 会话。对已保存的终态回执进行对账，避免重复调用和计量。旧任务配置保持原有默认行为。
+- 修复 macOS 上临时目录别名导致的配对评估误拒，并校正 CLI、DSH 和 worker 测试夹具。
 
 ## 0.28.5
 

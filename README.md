@@ -14,7 +14,7 @@ Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在两种模式下都
 真实账号的质量、缓存与性能结果仍待完成，不能由离线实验推断。详见
 [会话配置](docs/configuration.md#会话策略历史复用与调用安全)及[中断恢复与上下文质量](docs/session-recovery.md)。
 
-当前源码的统一发行目标为 **v0.28.5**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
+当前源码的统一发行目标为 **v0.29.0**，使用 DSH Mac 桌面为入口：Kimi CLI 规划，DSH 原生 DeepSeek Flash 执行，DSH 原生 GPT 评审，较难的执行任务默认走 Codex Pro 插件的公开 machine API。0.28.3 包含 DeepSeek 账号默认、账号错误分类与会话当前目录修复；安装前核对 npm registry，源码合并不会更新已安装的包。DSH 插件提供控制面板、配置查看和安装预检；具名 model profiles 可复用于不同阶段，Go 仍是唯一状态所有者。设计依据见 [docs/design.md](docs/design.md)，仓库约束见 [AGENTS.md](AGENTS.md)。
 
 **基础安装命令适用于 0.28.0 及以后的完整 npm 发行版；Auto／Quick／Full 与 `flywheel-task` 需要包含本轮变更的同版本 CLI／插件。** 用 `flywheel control launch --help` 检查新增入口是否存在，并在安装前用 `npm view @ckanner/flywheel version` 核对 registry；源码合并或 GitHub Release 不代表 npm 已发行。旧 0.22.1 没有本教程使用的安装与 DSH 接口，当前发行状态见[发行记录](docs/releasing.md#3-失败恢复)。
 
