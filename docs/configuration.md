@@ -154,6 +154,8 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 
 已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。执行／评审每次创建 ephemeral 新会话，thinking 省略时为 high。
 
+以上是当前 Flywheel 的限制，不是 machine API 必须使用 ephemeral 历史的要求。上游已支持 persistent/threadId，但 Flywheel 尚未接通；按范围续用、独立复审与中断核对见[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)。该方案未增加可用配置项，不能仅设置 `resident-session:true` 启用。
+
 `FLYWHEEL_CODEX_PRO_WORKER` 可显式指定 worker；通常由 npm 启动器解析同版本依赖。`FLYWHEEL_CODEX_BIN` 指定插件内部的 Codex 程序，默认 PATH 中的 `codex`；`CODEX_HOME` 可选择既有配置与登录目录。自定义环境需对启动引擎的进程可见，安装器不会复制凭证。
 
 插件在运行前确认模型、cwd、approval 和沙箱模式；Flywheel 在完整结果返回后检查实际策略及进程终态。在 role-based 的 workspace-write 模式，允许工作区及 Codex 标准临时目录；额外的工作区外 writable roots、网络启用或不能确认的策略不能进入成功验收。显式 full-access 则核对 `danger-full-access`／`dangerFullAccess` 完全权限回执，不将其误报为受限沙箱。**该完整策略检查发生在运行后，不能阻止自定义 Codex 配置已允许的访问。** 要求完整策略在任务前被拒绝的环境，应等待上游公开 pre-turn guard；doctor 会持续提示这一边界。
@@ -220,7 +222,7 @@ flywheel template flywheel.profiles.example.json
 | profile 再引用另一个 profile | 不支持继承链；加载失败 |
 | `_note`、`_note_*` | 允许配置对象中的说明文字，不进入执行绑定 |
 
-`resident-session` 是阶段策略，不能放进 profile。当前只有 Kimi 的 Plan 可恢复历史，且必须匹配实际 harness/model/channel/cwd/thinking/permissionMode；profile 名改了而实际值没变，不影响身份。其他执行、评审和 SDK 调用仍是新会话。
+`resident-session` 是阶段策略，不能放进 profile。当前只有 Kimi 的 Plan 可恢复历史，且必须匹配实际 harness/model/channel/cwd/thinking/permissionMode；profile 名改了而实际值没变，不影响身份。其他执行、评审和 SDK 调用仍是新会话。这描述当前能力，不将每次 fresh 作为未来会话策略的硬规则。
 
 旧内联绑定保留原有缺省行为，不强制迁移。`env-key: null`、`retry.jitter: 0`、`worktree.enabled: false` 等已有合法零值继续支持。显式切换 harness 或 channel 时，要一起核对继承的 provider；必要时用 `provider: ""` 清除显式值，再按新 channel 解析，不能保留另一个 adapter 的 ID。
 

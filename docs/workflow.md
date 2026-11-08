@@ -239,9 +239,15 @@ packet worktree 贯穿该单元的执行、验收与评审；完成交付才由�
 与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
 
 Go 调度 packet，首版仍是串行执行，不依赖一个持续存活的父模型会话监督。
-每次 Execute／Review 使用新会话；重试保留磁盘产物，不复用执行者上下文。
+**当前实现**每次 Execute／Review 使用新会话；重试保留磁盘产物，不复用执行者上下文。
 Plan 仅在配置允许、后端支持且身份匹配时恢复历史。团队通信、依赖图并行调度
 不在本期能力范围。
+
+[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)已提出替换一律新会话的规则：
+同 packet 的 Executor 返修优先续用，独立 Reviewer 的同范围复审也可续用自己的历史；
+每次仍验证当前候选，未知结果或清理阻断自动重放。该方案尚未实现，不能通过现有配置
+启用这些能力，也不改变 Quick 首次成功的两次阶段调用。
+
 `flywheel-verify` 只运行确定性验收：Full 保留指定 packet 的 L1／当前里程碑
 L2/L3 语义；Quick 还会在实际候选上收齐适用 L2/L3。它不调用 Review／Judge，
 不创建 worktree，也不交付任务。Quick 的 `--only review` 是最终 Review；若发现

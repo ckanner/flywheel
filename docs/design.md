@@ -2,6 +2,8 @@
 
 2026-11-06 自适应工作流实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准；源码实现不表示 npm 已发布或用户安装已更新。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)，Codex Pro 默认接入见 [接入计划](plans/2026-11-03-codex-pro-default.md)，Auto／Quick／Full 的原始决策见 [自适应工作流提案](plans/2026-11-06-adaptive-workflow.md)。
 
+2026-11-07 会话策略设计修订：§2 不再要求每次调用全新会话，改为按任务、范围和角色隔离，按运行事实续用或重建。具体方案见[会话生命周期提案](plans/2026-11-07-session-lifecycle.md)。**此修订仅为设计方案，尚未改变运行时**；下文标注的当前实现及配置限制继续有效。
+
 ## 1. 目标与范围
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
@@ -14,7 +16,7 @@ Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 c
 
 1. **Go 是确定性编排器**。状态转移、重试、预算、工作区、验证、提交由代码执行；模型只负责边界上的规划、实现、评审和建议。
 2. **契约是长期记忆**。Spec、packet、运行状态和复盘比任何模型会话更权威。
-3. **一个执行/评审调用使用一个新会话**。Plan 只在明确启用且后端支持时恢复；当前仅 Kimi。
+3. **会话按任务、范围和角色隔离，按运行事实续用或重建**。普通返修可延续原角色上下文；独立评审不得继承执行者上下文。会话连续性不能替代契约、候选证据、预算和终态／清理检查，结果未知时也不能靠新建会话绕过阻断。目标策略与现有能力的差异见[会话方案](plans/2026-11-07-session-lifecycle.md)。
 4. **确定性验证先于 LLM 评审**。L1 红灯不允许凭评审通过；Quick 的适用 L2/L3 也必须先在实际候选上通过。verification-gap 必须修订验收后复验。
 5. **完成要有同一候选的证据与持久化交付**。只有当前候选通过 L1、独立评审，并确认实际 Git 提交/合并仍是该候选后才 completed；非 Git 演练不能标记完成。
 6. **失败不丢产物**。提交、合并、恢复失败时保留工作区。自动清理必须确认分支已合并、工作区干净；不能 force 删除成果。
@@ -84,11 +86,11 @@ Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.
 
 规划检查点提交前后核对候选内容，并检查新 HEAD 的路径范围与已提交契约。Git hook 修改已加载契约、仅修改 index、或混入实现变更时拒绝继续同步；保留工作区，要求重新加载并验证。
 
-Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinking/permission-mode 全部匹配时恢复。其他后端冷启动；旧版本缺少权限身份的会话也先冷启动一次，保存完整身份后才可恢复。恢复失败有一次冷启动路径，再受传输重试和预算约束；会话不是状态真相。
+当前实现中，Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinking/permission-mode 全部匹配时恢复。其他后端冷启动；旧版本缺少权限身份的会话也先冷启动一次，保存完整身份后才可恢复。恢复失败有一次冷启动路径，再受传输重试和预算约束；会话不是状态真相。其他角色的连续性与更细的兼容策略仍待会话方案实施。
 
 ### 4.2 Execute
 
-默认每 packet 一个 worktree。边界检查锚定执行前的 base-ref，executor 自己提交不能把变更从边界 diff 中抹去。重试重用工作区中的成果，但新建模型会话。失败命令、输出、边界违规、评审原因以及进程错误进入 `last-feedback`，放在提示词的易变尾部。
+默认每 packet 一个 worktree。边界检查锚定执行前的 base-ref，executor 自己提交不能把变更从边界 diff 中抹去。当前实现的重试重用工作区中的成果，但仍新建模型会话；这是现有调用路径的限制，不再是架构不变量。会话方案拟让同 packet、同角色的普通返修在资格满足时延续上下文。失败命令、输出、边界违规、评审原因以及进程错误进入 `last-feedback`，放在提示词的易变尾部。
 
 执行者可修改实现、单元测试和回归测试，不得削弱断言或改动受保护验收、Spec、packet、配置。不能通过更改覆盖率阈值来完成任务。提示词的稳定部分包含实际 `must-not-touch` 路径和 `protected-test-patterns`，而不只提规则名称。发现范围或 oracle 错误应向 Plan 返回证据；超出 Plan 可写范围的修订继续交人处理。
 
@@ -99,6 +101,8 @@ Kimi 会话仅在 `resident-session: true` 且 harness/model/channel/cwd/thinkin
 ### 4.3 Review
 
 评审在实际候选 worktree 中运行，输入为契约、权威 diff、确定性验收和缺陷注入结果；Quick 最终 Review 还接收适用 L2/L3 与全部需求的完成要求，不读 executor transcript。宿主权限由 `permissions.mode` 决定：role-based 请求 read-only，full-access 请求完全权限；后端不能实施所选权限时拒绝运行。两种模式下评审都只负责判断，不得修改候选代码或验收依据。
+
+当前每次 Review 仍新建会话。独立性的要求是与 Executor 隔离；按拟议策略，同范围复审可延续 Reviewer 自己的上下文，但必须重新检查完整当前候选和适用需求，不能只关闭上轮 findings 或沿用旧 pass。
 
 评审前后都检查候选身份。即使模型返回 pass，只要候选、契约、验证配置或本 packet 报告发生变化，该裁决就不能推进完成。评审提示要求检查断言质量、覆盖矩阵、范围和设计；100% 覆盖率本身不是充分证据。
 
@@ -137,7 +141,7 @@ L1 与 Review 的 `identity` 绑定：
 
 ### 4.7 Quick 最终评审与升级
 
-Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用新的独立会话，既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。
+Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用与 Executor 隔离的上下文（当前实现每次新建会话），既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。拟议的同范围复审续用不增加首次成功路径的固定模型阶段。
 
 最终 Review 的结构化 verdict 为 `pass|return|verification-gap|upgrade`，另含 `quick-eligible` 和 `requirements:[{id,pass,evidence}]`。全部 Spec 需求必须各列一次，evidence 非空；pass 要求全部需求通过且 Quick 资格仍成立，upgrade 表示资格不再成立。实现缺陷进入已有有界执行重试。新增 packet 可在 `done-report-format` 中声明 `workflow-risks: []`，执行者通过字符串数组报告新风险，由 Go 在最终评审前处理。
 
@@ -160,6 +164,8 @@ Spec 可选 `workflow` 对象的版本为 1，字段为 `version`、`mode`、`re
 Intake／Garden 的预算与清理升级记录若需更新已有主任务状态，必须先取得同一运行 lease，并在持锁期间确认没有主引擎 PID，再执行 Load／CAS Save；不得只靠 PID 文件尚未出现就抢写。主引擎持锁时只保留模块自己的 metrics／inbox 证据，不修改其 state revision。
 
 主要单元状态仍为 pending、executing、executed、l1-passed、l1-failed、review-failed、completed、interrupted、inbox。中断后的产物保留，重启不凭旧报告自动认定完成。新增可选 `last-feedback`、`evidence-history`、`contract-fingerprints`、契约同步状态及 usage/cost 未知计数，旧配置与状态可加载，但旧完成记录不自动取得新证据的可信度。
+
+会话方案将分别记录角色上下文、单次调用和候选证据身份；这些新记录尚未进入当前 schema。Codex Pro 正常回执后的续用与中途崩溃核对分期实现：现有 machine 接口不提供可等待持久化确认的早期生命周期事件，thread ID 本身也不是派发幂等或清理证明。
 
 每个现行 packet 的契约 fingerprint 包含权威 Spec 全文、packet 全文和验证配置，并随状态保存。重启或 Plan 修订后重新比较；不匹配的单元和所属里程碑重新打开，失效证据归档，完成任务也可回到 pending。旧 completed 没有 fingerprint 时保守地重新打开。Spec 或共享验证策略改变可能影响多个单元；后续正常实现代码变化则不会单独改变这个契约 fingerprint。
 
@@ -259,6 +265,8 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 ## 11. 后续增强
 
 2026-11-06 [自适应工作流方案](plans/2026-11-06-adaptive-workflow.md)的第一阶段在本实现中落地：宿主统一准备启动、保守选择 Quick／Full、两阶段 Quick 与单向升级、DSH 具体任务关联。方案正文保留原始背景和分期计划；现行字段与接口以本设计、schema 和使用指南为准。
+
+2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)替换“一律新会话”的设计规则，运行时尚待实施。先接通 Codex Pro 已确认终态后的正常续用，再覆盖默认 DSH／Kimi 路径，并与插件公开协议配合完成中断核对；保持 machine API、Go 状态所有权、独立评审和现有交付门禁。
 
 多 agent 并行、任务团队、附件协议、系统级强隔离，以及基于真实任务指标的进一步自动路由，仍需后续独立实施和验收。具名 profiles 保持加载期展开，不增加第二套调度器或自动付费后备路径。当前阶段采用顺序的独立执行／评审会话；没有宣布原生 Teams 或并行调度可用。
 
