@@ -325,8 +325,9 @@ async function evaluate(manifest, options) {
   const tree = git(source, ["rev-parse", `${commit}^{tree}`]);
   const base = JSON.parse(git(source, ["show", `${commit}:${manifest.config}`]));
   if (manifest.execution === "live" && Object.values(base.drivers || {}).includes("mock")) fail("live experiments cannot contain mock driver bindings");
-  const out = path.resolve(options.output);
-  await fs.mkdir(out, { mode: 0o700 }); // An existing destination is never overwritten.
+  const requestedOutput = path.resolve(options.output);
+  await fs.mkdir(requestedOutput, { mode: 0o700 }); // An existing destination is never overwritten.
+  const out = await fs.realpath(requestedOutput);
   const report = { version: 1, execution: manifest.execution, source: { repository: source, commit, tree },
     startedAt: new Date().toISOString(), engine: options.flywheel, engineSHA256: digest(await fs.readFile(options.flywheel)),
     manifestSHA256: digest(JSON.stringify(canonical(manifest))), configurationSHA256: digest(JSON.stringify(canonical(base))),

@@ -583,7 +583,7 @@ func TestRunClaudeCodeProPhysicalFailuresAndNonDispatch(t *testing.T) {
 	assert.Empty(t, r.ClaudeCodeProReceipt)
 	a = claudeCodeProRunArgs(t, "success")
 	a.Command = kimiScript(t, "exec 0<&-\nsleep 5\n")
-	a.Prompt = strings.Repeat("large request", 1<<13)
+	a.Prompt = strings.Repeat("x", 512*1024)
 	r = RunClaudeCodePro(a)
 	require.NotNil(t, r.ErrorMessage)
 	assert.Contains(t, *r.ErrorMessage, "request write failed")

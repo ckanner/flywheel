@@ -124,7 +124,11 @@ test("recovery audit corrections replace measured facts without inventing model 
 
 test("session evaluation executes two paired repetitions of all six scenarios in separate real Git clones", async t => {
   const f=await fixture(t,["first-pass","l1-repair","review-return","long-context","stop-resume","configuration-change"]);
-  const output=path.join(f.dir,"report");
+  const physicalParent = path.join(f.dir, "physical-output");
+  const outputAlias = path.join(f.dir, "output-alias");
+  await fs.mkdir(physicalParent);
+  await fs.symlink(physicalParent, outputAlias);
+  const output = path.join(outputAlias, "report");
   const report=await evaluate(f.manifest,{flywheel:f.executable,output});
   if(!report.complete){f.retain();t.diagnostic(JSON.stringify({output,stopReason:report.stopReason,last:report.trials.at(-1)}));}
   assert.equal(report.complete,true,report.stopReason);assert.equal(report.execution,"offline-fixture");assert.equal(report.trials.length,36);
