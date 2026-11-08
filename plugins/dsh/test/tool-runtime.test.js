@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,7 +18,7 @@ const modern = typeof Tools.ToolsService === 'function';
 const binary = fileURLToPath(new URL('./fixtures/fake-control.js', import.meta.url));
 
 async function runtimeFixture(t, mode, flywheelBinary = binary) {
-  const cwd = await mkdtemp(join(tmpdir(), 'flywheel-runtime-'));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-runtime-')));
   const ctx = new Context();
   t.after(async () => { await ctx.fiber.dispose(); await rm(cwd, { recursive: true, force: true }); });
   await ctx.plugin(SessionStore);

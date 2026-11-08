@@ -68,7 +68,9 @@ func TestControlLaunchPassesValidatedModeWithoutShell(t *testing.T) {
 			require.NoError(t, err)
 			var actual []string
 			require.NoError(t, json.Unmarshal(raw, &actual))
-			want := []string{"run", taskDir}
+			physicalTask, err := filepath.EvalSymlinks(taskDir)
+			require.NoError(t, err)
+			want := []string{"run", physicalTask}
 			if tc.want != "" {
 				want = append(want, "--mode", tc.want)
 			}
