@@ -95,10 +95,12 @@ func TestKimiScopedKnownAdmissionAndUncertainCancellation(t *testing.T) {
 
 	// Once the CLI has started, cancellation without a terminal hint is an
 	// uncertain invocation even if the local process group is fully drained.
+	// Replace the shell with sleep so the test does not depend on when the
+	// OS reaps a second process after the shell exits.
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	r = RunKimi(KimiArgs{Command: kimiScript(t, `printf '%s\n' '{"role":"assistant","content":"started"}'
-sleep 10
+exec sleep 10
 `), Cwd: t.TempDir(), Prompt: "p", PersistentSession: true, RequestID: "started",
 		Watchdog: watchdog.Opts{Context: ctx, KillGraceMs: 20}, OnEvent: func(string) { cancel() }})
 	assert.True(t, r.Cancelled)

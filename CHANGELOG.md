@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.29.0
+## 0.29.1
 
 - 完成会话 P3 源码：Codex Pro 0.9.0／Claude Code Pro 0.4.0 公开 lifecycle v1、独立 durable journal 与只读 recovery，经 worker v3 接入 Go。派发检查点先 fsync 再 ACK；恢复终态仍绑定原候选和角色 guard，未知不盲目重放。
 - 完成 P4 策略与实验工具：可按角色覆盖 fresh/scoped，按确认轮数、Execute 候选停滞和实测单次输入做有界重建；默认阈值关闭。固定源码与独立 oracle 比较三种策略，覆盖六场景并重复配对；离线 native fixture 不被当作真实模型质量或节省证据。
@@ -15,7 +15,7 @@
 - 补齐 11 个内嵌 skills 的安装校验、双语工作流／配置／入门指南，以及引擎、控制接口和真实 DSH 发布包的离线回归。模型、账号与权限配置继续沿用现有选择。
 
 - 按任务、范围和角色复用 Codex Pro、DSH 和 Kimi 会话。对已保存的终态回执进行对账，避免重复调用和计量。旧任务配置保持原有默认行为。
-- 修复 macOS 上临时目录别名导致的配对评估误拒，并校正 CLI、DSH 和 worker 测试夹具。
+- 修复 macOS 上临时目录别名导致的配对评估误拒，并校正 CLI、DSH 和 worker 测试夹具。Kimi 取消测试使用单进程夹具，避免子进程回收时序干扰断言。
 
 ## 0.28.5
 

@@ -8,7 +8,7 @@ a successful local build does not establish that npm installation is ready.
 
 The conversation-view ordering release target is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.5 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
 
-The unified release target for adaptive workflows and session phases P1–P4 is **0.29.0**. The actual Codex Pro 0.9.0 tarball is locked and bundled; installation does not query an unpublished registry version. [Provenance and license](../../plugins/dsh/vendor/README.md) identify those bytes. Claude 0.4.0 remains an optional peer; CI packs a fixed upstream source commit, checks its tarball hash, and installs it before the backend gates.
+The unified release target for adaptive workflows and session phases P1–P4 is **0.29.1**. The actual Codex Pro 0.9.0 tarball is locked and bundled; installation does not query an unpublished registry version. [Provenance and license](../../plugins/dsh/vendor/README.md) identify those bytes. Claude 0.4.0 remains an optional peer; CI packs a fixed upstream source commit, checks its tarball hash, and installs it before the backend gates.
 
 `npm run test:sessions` exercises the real Go engine and public adapter through an offline native fixture on both CI operating systems. It does not establish live account access, model quality, cache benefits, or performance gains.
 
