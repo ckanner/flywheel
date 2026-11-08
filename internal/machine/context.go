@@ -146,6 +146,7 @@ func (c *Context) touchProgress() {
 // state（任何档位下都不关闭，铁律 9）。
 func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	invocationID, receiptDigest := "", ""
+	var sessionRecord *state.SessionRecord
 	if a.result != nil && a.result.Session != nil && c.State.Sessions != nil {
 		for _, record := range c.State.Sessions.Records {
 			if record.Last.ID == a.result.Session.RequestID {
@@ -153,10 +154,18 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 					return
 				}
 				record.Last.Accounted = true
+				sessionRecord = record
 				invocationID, receiptDigest = record.Last.ID, record.Last.ReceiptDigest
 				break
 			}
 		}
+	}
+	day := c.Now().UTC().Format("2006-01-02")
+	provider := "unknown"
+	if a.result != nil && a.result.Provider != "" {
+		provider = a.result.Provider
+	} else if a.channel != "" {
+		provider = a.channel
 	}
 	var usage *drivers.Usage
 	if a.result != nil {
@@ -167,11 +176,16 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		costUSD = a.result.CostUSD
 	} else if usage != nil {
 		costUSD = metrics.EstimateCostUSD(&metrics.Usage{
-			Input:      usage.Input,
-			Output:     usage.Output,
-			CacheRead:  usage.CacheRead,
-			CacheWrite: usage.CacheWrite, // v0.18 修复（C1）：漏传导致缓存写入按 0 计价
+			Input:              usage.Input,
+			Output:             usage.Output,
+			CacheRead:          usage.CacheRead,
+			CacheWrite:         usage.CacheWrite, // v0.18 修复（C1）：漏传导致缓存写入按 0 计价
+			InputIncludesCache: metrics.InputIncludesCache(a.result.Harness),
 		}, metrics.PriceForModel(c.Config.Pricing, a.model))
+	}
+	if sessionRecord != nil && sessionRecord.Last.Recovery != nil {
+		sessionRecord.Last.Accounting = &state.SessionAccounting{Day: day, Provider: provider,
+			ReceiptDigest: receiptDigest, Usage: sessionAccountedUsage(usage), CostUSD: costUSD}
 	}
 	var cacheHitRate *float64
 	if usage != nil && usage.Input > 0 {
@@ -216,7 +230,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		costVal = *costUSD
 	}
 	var durationMS any
-	if a.result != nil {
+	if a.result != nil && !a.result.Recovered {
 		durationMS = a.result.DurationMS
 	}
 	var exitCode any
@@ -233,38 +247,41 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	}
 	var resultState any
 	var codexProReceipt any
+	var claudeCodeProReceipt any
 	if a.result != nil {
 		codexProReceipt = a.result.CodexProReceipt
+		claudeCodeProReceipt = a.result.ClaudeCodeProReceipt
 		resultState = map[string]any{
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
 			"truncated": a.result.Truncated, "signal": a.result.Signal,
 			"cleanup-error": a.result.CleanupError, "session-id": a.result.SessionID,
+			"recovered": a.result.Recovered,
 		}
 	}
 	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{
-		"role":              a.role,
-		"packet-id":         packetID,
-		"milestone":         milestone,
-		"model":             model,
-		"harness":           harness,
-		"provider":          effectiveProvider,
-		"channel":           channel,
-		"prompt-hash":       promptHash,
-		"usage":             usageVal,
-		"cache-hit-rate":    cacheHitRate,
-		"reasoning-chars":   reasoningCharsOf(a.result),
-		"cost-usd":          costVal,
-		"duration-ms":       durationMS,
-		"exit-code":         exitCode,
-		"error-code":        errorCode,
-		"attempt":           attempt,
-		"result":            resultState,
-		"codex-pro-receipt": codexProReceipt,
-		"session":           sessionMetrics(c.State.Sessions, invocationID),
+		"role":                    a.role,
+		"packet-id":               packetID,
+		"milestone":               milestone,
+		"model":                   model,
+		"harness":                 harness,
+		"provider":                effectiveProvider,
+		"channel":                 channel,
+		"prompt-hash":             promptHash,
+		"usage":                   usageVal,
+		"cache-hit-rate":          cacheHitRate,
+		"reasoning-chars":         reasoningCharsOf(a.result),
+		"cost-usd":                costVal,
+		"duration-ms":             durationMS,
+		"exit-code":               exitCode,
+		"error-code":              errorCode,
+		"attempt":                 attempt,
+		"result":                  resultState,
+		"codex-pro-receipt":       codexProReceipt,
+		"claude-code-pro-receipt": claudeCodeProReceipt,
+		"session":                 sessionMetrics(c.State.Sessions, invocationID),
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
 	}
-	day := c.Now().UTC().Format("2006-01-02")
 	bucket := c.State.Budget.Daily[day]
 	if usage == nil {
 		c.State.Budget.UnknownUsageCalls++
@@ -282,14 +299,6 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 			c.State.Budget.Warnings = append(c.State.Budget.Warnings, warning)
 		}
 		return
-	}
-	provider := ""
-	if a.result != nil && a.result.Provider != "" {
-		provider = a.result.Provider
-	} else if a.channel != "" {
-		provider = a.channel
-	} else {
-		provider = "unknown"
 	}
 	tt := usage.TotalTokens
 	if tt == 0 {

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 ckanner. SPDX-License-Identifier: UNLICENSED
 "use strict";
 
-const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
+const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
 
 async function main() {
   const args = process.argv.slice(2);
@@ -20,6 +20,9 @@ async function main() {
   }
   if (env.FLYWHEEL_CODEX_PRO_WORKER === undefined) {
     env.FLYWHEEL_CODEX_PRO_WORKER = loadCodexProWorkerPath();
+  }
+  if (env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER === undefined) {
+    env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER = loadClaudeCodeProWorkerPath();
   }
   return runChild(loadNativePath(), args, { env });
 }

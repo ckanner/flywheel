@@ -190,7 +190,7 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
-	if c.Sessions == (SessionsConfig{}) {
+	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) {
 		c.Sessions = d.Sessions
 	}
 	if c.Permissions.Mode == "" {
@@ -246,7 +246,7 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
-	if err := validateSessionPolicy(map[string]any{"mode": c.Sessions.Mode, "policy-version": c.Sessions.PolicyVersion}); err != nil {
+	if err := c.Sessions.validate(); err != nil {
 		return err
 	}
 	if c.Permissions.Mode != "role-based" && c.Permissions.Mode != "full-access" {
@@ -290,7 +290,7 @@ func (c *Config) Validate() error {
 	}
 	validateHarness := func(harness string) error {
 		switch harness {
-		case "", "pi", "omp", "kimi", "codex", "codex-pro", "zcode", "dsh":
+		case "", "pi", "omp", "kimi", "codex", "codex-pro", "claude-code-pro", "zcode", "dsh":
 			return nil
 		default:
 			return fmt.Errorf("unsupported harness %q", harness)
@@ -300,11 +300,11 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
-		if b.Harness == "codex-pro" && b.ResidentSession {
-			return fmt.Errorf("loops.%s: resident-session is unsupported for codex-pro; use sessions.mode for scoped history", name)
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && b.ResidentSession {
+			return fmt.Errorf("loops.%s: resident-session is unsupported for %s; use sessions.mode for scoped history", name, b.Harness)
 		}
-		if b.Harness == "codex-pro" && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
-			return fmt.Errorf("loops.%s: codex-pro requires explicit model and channel", name)
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+			return fmt.Errorf("loops.%s: %s requires explicit model and channel", name, b.Harness)
 		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
@@ -314,8 +314,8 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
 		}
-		if b.Harness == "codex-pro" && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
-			return fmt.Errorf("routes.%s: codex-pro requires explicit model and channel", name)
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+			return fmt.Errorf("routes.%s: %s requires explicit model and channel", name, b.Harness)
 		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
@@ -327,6 +327,9 @@ func (c *Config) Validate() error {
 		}
 		if b.Provider != "" && (b.Harness != "dsh" || strings.TrimSpace(b.Provider) == "") {
 			return fmt.Errorf("channels.%s.provider requires harness dsh and a non-blank provider", name)
+		}
+		if b.Harness == "claude-code-pro" && b.EnvKey != nil && !ClaudeCodeProCredentialAllowed(*b.EnvKey) {
+			return fmt.Errorf("channels.%s: claude-code-pro env-key is not supported by its public machine API", name)
 		}
 	}
 	for name, b := range c.Profiles {
@@ -341,8 +344,8 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.JudgePanel != nil {
-		if c.JudgePanel.Harness == "codex-pro" && c.JudgePanel.ResidentSession {
-			return errors.New("judge-panel: resident-session is unsupported for codex-pro; use sessions.mode for scoped history")
+		if (c.JudgePanel.Harness == "codex-pro" || c.JudgePanel.Harness == "claude-code-pro") && c.JudgePanel.ResidentSession {
+			return fmt.Errorf("judge-panel: resident-session is unsupported for %s; use sessions.mode for scoped history", c.JudgePanel.Harness)
 		}
 		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {
 			return fmt.Errorf("judge-panel: %w", err)

@@ -60,7 +60,7 @@ func codexProFixture(r codexProStart) map[string]any {
 			"usage":             map[string]any{"status": "complete", "run": map[string]any{"totalTokens": 18, "inputTokens": 10, "cachedInputTokens": 6, "cacheWriteInputTokens": 2, "outputTokens": 8, "reasoningOutputTokens": 3}, "observations": 2, "replayedBaseline": false},
 			"rateLimits":        map[string]any{"observations": 0},
 			"execution": map[string]any{
-				"runId": "run-one", "threadId": threadID, "turnId": "turn-one", "ownership": "supervised-group",
+				"runId": "run-one", "threadId": threadID, "turnId": "turn-one", "ownership": "supervised-group", "dispatch": "accepted",
 				"pid": 123, "supervisorPid": 122, "exitCode": nil, "signal": "SIGTERM", "supervisorExitCode": 0, "supervisorSignal": nil,
 				"terminationRequested": true, "timedOut": false, "cancelled": false, "truncated": false, "spawnError": nil, "failure": nil,
 				"startedAt": "2026-11-03T00:00:00.000Z", "finishedAt": "2026-11-03T00:00:01.000Z", "durationMs": 1000,
@@ -319,7 +319,7 @@ func TestCodexProFullPolicyAdmission(t *testing.T) {
 	}
 	alias := filepath.Join(t.TempDir(), "workspace-alias")
 	require.NoError(t, os.Symlink(request.Cwd, alias))
-	assert.True(t, codexProSameDirectory(alias, request.Cwd))
+	assert.True(t, samePhysicalDirectory(alias, request.Cwd))
 }
 
 func TestCodexProUsageAndFailureContracts(t *testing.T) {
@@ -585,7 +585,7 @@ func TestRunCodexProPhysicalCancellationAndTimeout(t *testing.T) {
 	})
 	t.Run("stdin write failure", func(t *testing.T) {
 		a := codexProRunArgs(t, "closed-stdin")
-		a.Prompt = strings.Repeat("x", 1024*1024)
+		a.Prompt = strings.Repeat("x", 512*1024)
 		r := RunCodexPro(a)
 		assert.False(t, r.Settled)
 		require.NotNil(t, r.ErrorMessage)

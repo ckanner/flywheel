@@ -5,7 +5,8 @@
   "bin": {
     "flywheel": "bin/flywheel.js",
     "flywheel-dsh-worker": "bin/flywheel-dsh-worker.js",
-    "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js"
+    "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js",
+    "flywheel-claude-code-pro-worker": "bin/flywheel-claude-code-pro-worker.js"
   },
   "os": [
     "darwin",
@@ -37,7 +38,13 @@
     "docs/en/configuration.md",
     "docs/en/model-policy.md",
     "docs/en/workflow.md",
-    "docs/examples/create-first-task.sh"
+    "docs/examples/create-first-task.sh",
+    "docs/claude-code-pro.md",
+    "docs/en/claude-code-pro.md",
+    "docs/session-recovery.md",
+    "docs/en/session-recovery.md",
+    "docs/session-evaluation.md",
+    "docs/en/session-evaluation.md"
   ],
   "optionalDependencies": {
     "@ckanner/flywheel-darwin-arm64": "0.28.5",
@@ -51,7 +58,8 @@
     "test": "node --test npm/test/*.test.js",
     "test:install": "node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.28.5 dist-npm"
+    "build:npm": "bash scripts/build-npm.sh 0.28.5 dist-npm",
+    "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {
     "@ckanner/dsh-plugin-flywheel": "0.28.5"

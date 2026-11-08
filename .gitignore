@@ -7,3 +7,4 @@ node_modules/
 *.exe
 npm/platforms/*/flywheel
 /dist-npm/
+/dist-claude/

@@ -285,6 +285,9 @@ func prepareConfigSections(root map[string]json.RawMessage) error {
 
 func (c *Config) validateBindingProvider(harness, channel, provider string) error {
 	channelProvider := c.Channels[channel].Provider
+	if key := c.Channels[channel].EnvKey; harness == "claude-code-pro" && key != nil && !ClaudeCodeProCredentialAllowed(*key) {
+		return fmt.Errorf("claude-code-pro channel env-key is not supported by its public machine API")
+	}
 	if (provider != "" || channelProvider != "") && harness != "dsh" {
 		return fmt.Errorf("provider is only supported by harness dsh")
 	}

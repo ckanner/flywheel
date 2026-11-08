@@ -67,9 +67,11 @@ type Result struct {
 	ErrorCode      errs.ErrorCode  `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
 	SessionID      string          `json:"sessionId,omitempty"` // kimi 长驻会话句柄
 	Session        *SessionOutcome `json:"session,omitempty"`
+	Recovered      bool            `json:"recovered,omitempty"` // public read-only terminal recovery, not a new model call
 	// Preserve the exact public machine receipt, including partial usage and
 	// physical cleanup facts, independently of the normalized success fields.
-	CodexProReceipt json.RawMessage `json:"codexProReceipt,omitempty"`
+	CodexProReceipt      json.RawMessage `json:"codexProReceipt,omitempty"`
+	ClaudeCodeProReceipt json.RawMessage `json:"claudeCodeProReceipt,omitempty"`
 }
 
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
@@ -88,11 +90,13 @@ type CallArgs struct {
 	APIKey            string            // 渠道 env-key（仅此来源，绝不含 live 凭证）
 	APIKeys           map[string]string // 注入子进程的键集
 	Watchdog          watchdog.Opts
-	OnEvent           func(line string) // stdout NDJSON 行回调
-	SessionID         string            // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
-	PersistentSession bool              // request role-scoped retained history
-	RequestID         string            // engine invocation correlation, not backend idempotency
-	PermissionMode    string            // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
+	OnEvent           func(line string)            // stdout NDJSON 行回调
+	SessionID         string                       // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
+	PersistentSession bool                         // request role-scoped retained history
+	RequestID         string                       // engine invocation correlation, not backend idempotency
+	RecoveryDirectory string                       // private, exclusive evidence directory for this invocation
+	OnLifecycle       func(MachineLifecycle) error // nil return permits the next durable ACK
+	PermissionMode    string                       // read-only | workspace-write | danger-full-access；由运行配置与角色显式指定
 }
 
 // Driver 六角色统一接口。mock 与 real 都实现。
@@ -124,23 +128,26 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		harness = "pi"
 	}
 	switch harness {
-	case "kimi", "zcode", "codex", "codex-pro", "omp", "pi", "dsh":
+	case "kimi", "zcode", "codex", "codex-pro", "claude-code-pro", "omp", "pi", "dsh":
 	default:
-		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("unknown harness %q", harness))
+		return rejectedHarnessCall(a, harness, fmt.Sprintf("unknown harness %q", harness))
 	}
 	if harness != "dsh" && a.Binding.Provider != "" {
-		return invalidHarnessResult(harness, a.Model, "provider selection is supported only by the DSH harness")
+		return rejectedHarnessCall(a, harness, "provider selection is supported only by the DSH harness")
 	}
 	if a.PermissionMode != "" && a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" && a.PermissionMode != "danger-full-access" {
-		return invalidHarnessResult(harness, a.Model, "unsupported permission mode "+a.PermissionMode)
+		return rejectedHarnessCall(a, harness, "unsupported permission mode "+a.PermissionMode)
 	}
-	if a.PermissionMode == "danger-full-access" && harness != "codex" && harness != "codex-pro" && harness != "dsh" && harness != "kimi" {
-		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("harness %q has no verified full-access permission mapping", harness))
+	if harness == "claude-code-pro" && a.PermissionMode != "danger-full-access" {
+		return rejectedHarnessCall(a, harness, "claude-code-pro requires explicit full-access; native approval modes do not enforce a read-only or workspace sandbox")
+	}
+	if a.PermissionMode == "danger-full-access" && harness != "codex" && harness != "codex-pro" && harness != "claude-code-pro" && harness != "dsh" && harness != "kimi" {
+		return rejectedHarnessCall(a, harness, fmt.Sprintf("harness %q has no verified full-access permission mapping", harness))
 	}
 	// Legacy adapters have no verified read-only sandbox mapping. workspace-write
 	// remains their historical host-isolation contract, not an OS sandbox promise.
 	if a.PermissionMode == "read-only" && harness != "codex" && harness != "codex-pro" && harness != "dsh" {
-		return invalidHarnessResult(harness, a.Model, fmt.Sprintf("harness %q cannot enforce read-only permissions", harness))
+		return rejectedHarnessCall(a, harness, fmt.Sprintf("harness %q cannot enforce read-only permissions", harness))
 	}
 	if harness == "dsh" {
 		model := a.Model
@@ -219,6 +226,20 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
+			RecoveryDirectory: a.RecoveryDirectory, OnLifecycle: a.OnLifecycle,
+		})
+	}
+	if harness == "claude-code-pro" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		return RunClaudeCodePro(ClaudeCodeProArgs{
+			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
+			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
+			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
+			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
+			RecoveryDirectory: a.RecoveryDirectory, OnLifecycle: a.OnLifecycle,
 		})
 	}
 	if harness == "omp" {
@@ -269,6 +290,40 @@ func invalidHarnessResult(harness, model, detail string) Result {
 	message := "invalid request: " + detail
 	code := 1
 	return Result{Harness: harness, Model: model, ExitCode: &code, ErrorMessage: &message}
+}
+
+// These failures occur before choosing or starting an adapter. Preserve that
+// positive non-dispatch proof for tracked calls; otherwise a valid admission
+// rejection would become an unknown invocation that permanently blocks repair.
+func rejectedHarnessCall(a CallArgs, harness, detail string) Result {
+	out := invalidHarnessResult(harness, a.Model, detail)
+	if a.RequestID == "" || !config.SupportsScopedSessions(harness) {
+		return out
+	}
+	protocol := "kimi-print/v1"
+	if harness == "dsh" {
+		protocol = DSHFreshSessionProtocol
+		if a.PersistentSession {
+			protocol = DSHSessionProtocol
+		}
+	} else if harness == "codex-pro" || harness == "claude-code-pro" {
+		version := CodexProPackageVersion
+		if harness == "claude-code-pro" {
+			version = ClaudeCodeProPackageVersion
+		}
+		worker := 1
+		if a.PersistentSession {
+			worker = 2
+		}
+		if a.RecoveryDirectory != "" {
+			worker = 3
+		}
+		protocol = fmt.Sprintf("%s/%s/worker-v%d", harness, version, worker)
+	}
+	out.Session = &SessionOutcome{Protocol: protocol, RequestID: a.RequestID, SessionID: a.SessionID,
+		Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "complete"}
+	out.Usage, out.CostUSD = &Usage{}, new(float64)
+	return out
 }
 
 // fromWatchdog 统一保留物理终态，避免某个后端漏传取消/清理失败而推进工作流。

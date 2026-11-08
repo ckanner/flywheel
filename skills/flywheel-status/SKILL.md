@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.8.0"
+  version: "1.8.1"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use for "/flywheel-status docs/<slug>" in DSH, "/skill:flywheel-status docs/<slug>" in Kimi, or a question about how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
@@ -51,7 +51,10 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
    - 有会话记录时说明角色、作用域、代次、动作／原因及最新调用的状态、派发、
      结果、清理和用量事实。`resume-candidate` 只是恢复尝试资格，不证明历史已保存
      或恢复成功；`cleanup=true` 也不等于结果已知。旧任务无记录不编造会话状态。
-     查询不读取历史正文、不核销回执，也不改 state。
+     查询不读取历史正文、不核销回执，也不改 state。P3 pending 不证明进程存活；
+     找到回执不等于原候选证据齐全。P4 重建原因只表示所记录的可观察阈值，不能
+     推断上下文容量或质量收益。读取 metrics 时将同调用 correction 作为用量对账，
+     不当成额外一次模型调用。
    - inbox 有待处理条目时**必须显著提醒**：这需要人。
    - 有 packet worktree 记录时说明实际路径／模式；`in-place` 不是独立工作区。
      清理、派发或结果未知时明确阻断；不能只凭引擎或子进程已停就建议立即重试，

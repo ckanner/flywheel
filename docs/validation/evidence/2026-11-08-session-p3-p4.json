@@ -1,0 +1,5430 @@
+{
+  "version": 1,
+  "boundary": "Offline usage is synthesized by the native protocol fixture. The live admission produced no completed inference or paired quality result. Neither dataset establishes model cost, cache benefits or performance savings.",
+  "toolchain": {
+    "go": "1.27.0",
+    "node": "24.22.1",
+    "npm": "12.2.1",
+    "os": "linux",
+    "architecture": "amd64"
+  },
+  "upstreams": {
+    "codex": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.9.0",
+      "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
+      "sourceCommit": "37da3d75de32b809c4fb1a631ccc15191f3d87f9",
+      "sourceTree": "00df1042b0010dc37ce8ab6048f75a434325962c",
+      "tarball": "dsh-subagent-codex-pro-0.9.0.tgz",
+      "sha256": "4a86380fdde0d7f2673c4b1f2d5c8682cf61d6a4b83deb65eab8fe76f6032198",
+      "integrity": "sha512-NtguC96kZVgKOMHv7kSiFVEZ4thjorHS1ZrNFQwbBLEBU2jOSWkFGlXk+BILPuxALUKkJJ4E1DSbA2+JG3gM0Q==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    },
+    "claude": {
+      "version": "0.4.0",
+      "sourceCommit": "ec0b99176b67512f3ca1838ec2a349dcb0189214",
+      "sourceTree": "13c6a3f7e3f332eee98f4e5cde77ba8806c608c1",
+      "sha256": "125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581"
+    }
+  },
+  "offline": {
+    "execution": "offline-fixture",
+    "complete": true,
+    "stopReason": null,
+    "startedAt": "2026-11-08T01:06:32.403Z",
+    "finishedAt": "2026-11-08T01:07:50.436Z",
+    "engineSHA256": "b1361dbe5bb84bf3f5b80e4ffba7c54770a178cd791c9e1c38c88bf37cdb69e8",
+    "manifestSHA256": "0b838722673782453166da9b632252062ada3d9c7544ef2df1e9015d672208b4",
+    "configurationSHA256": "b7088283a931b4bafdf476786c2519c31b8b81949c7b67bc1b4adaa597d0a56b",
+    "reportSHA256": "c4eb6d5c5855731fb3d9c6c93e2237e9586e8a125b30c00c1211af5e6bb9d8dd",
+    "corpus": {
+      "commit": "4b86f5e4bf548b4e71af9134d9bced60d07609d0",
+      "tree": "e69bf877d80396f902c7a6ee69a584b4aa051cf3"
+    },
+    "calls": 96,
+    "scenarioCoverage": {
+      "first-pass": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "l1-repair": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "review-return": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "long-context": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "stop-resume": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "configuration-change": {
+        "planned": true,
+        "observed": 6,
+        "unobserved": 0,
+        "unknown": 0
+      }
+    },
+    "trials": [
+      {
+        "id": "first-pass-1-fresh",
+        "case": "first-pass",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1466
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2332,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2412,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1466,
+          "maxRunInput": 1749,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "first-pass-1-executor-scoped",
+        "case": "first-pass",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1566
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2340,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2420,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1566,
+          "maxRunInput": 1752,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "first-pass-1-role-scoped",
+        "case": "first-pass",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1456
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2337,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2417,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1456,
+          "maxRunInput": 1751,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-1-executor-scoped",
+        "case": "l1-repair",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 679
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 252
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 132
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1418
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2921,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3041,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2229,
+          "maxRunInput": 1749,
+          "actions": {
+            "create": 2,
+            "resume": 1
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-1-role-scoped",
+        "case": "l1-repair",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 690
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 85
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 156
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1376
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2916,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3036,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2222,
+          "maxRunInput": 1748,
+          "actions": {
+            "create": 2,
+            "resume": 1
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-1-fresh",
+        "case": "l1-repair",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 617
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 101
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 143
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1411
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3039,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3159,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2171,
+          "maxRunInput": 1747,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-1-role-scoped",
+        "case": "review-return",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 663
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 102
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 158
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 2015
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5267,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5427,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2836,
+          "maxRunInput": 1758,
+          "actions": {
+            "create": 2,
+            "resume": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 2,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-1-fresh",
+        "case": "review-return",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 620
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 88
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 174
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1877
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5517,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5677,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2671,
+          "maxRunInput": 1887,
+          "actions": {
+            "create": 2,
+            "rebuild": 2
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            },
+            {
+              "role": "review",
+              "scope": "final:M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-1-executor-scoped",
+        "case": "review-return",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 604
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 95
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 146
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1879
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5405,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5565,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2629,
+          "maxRunInput": 1890,
+          "actions": {
+            "create": 2,
+            "resume": 1,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "review",
+              "scope": "final:M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-1-fresh",
+        "case": "long-context",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1418
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14884,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14964,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1418,
+          "maxRunInput": 13130,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-1-executor-scoped",
+        "case": "long-context",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1609
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14892,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14972,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1609,
+          "maxRunInput": 13135,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-1-role-scoped",
+        "case": "long-context",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1414
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14889,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14969,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1414,
+          "maxRunInput": 13133,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-1-executor-scoped",
+        "case": "stop-resume",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 609
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 804
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2343,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2423,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1413,
+          "maxRunInput": 1754,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-1-role-scoped",
+        "case": "stop-resume",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 694
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 818
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2340,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2420,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1512,
+          "maxRunInput": 1753,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-1-fresh",
+        "case": "stop-resume",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 663
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1040
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2336,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2416,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1703,
+          "maxRunInput": 1752,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-1-role-scoped",
+        "case": "configuration-change",
+        "repetition": 1,
+        "variant": "role-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 607
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 610
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 830
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3107,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3227,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2047,
+          "maxRunInput": 1776,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-1-fresh",
+        "case": "configuration-change",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 603
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 610
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 851
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3099,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3219,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2064,
+          "maxRunInput": 1774,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-1-executor-scoped",
+        "case": "configuration-change",
+        "repetition": 1,
+        "variant": "executor-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 621
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 594
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 774
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3112,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3232,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1989,
+          "maxRunInput": 1777,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "first-pass-2-executor-scoped",
+        "case": "first-pass",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1378
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2340,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2420,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1378,
+          "maxRunInput": 1752,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "first-pass-2-role-scoped",
+        "case": "first-pass",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1377
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2337,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2417,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1377,
+          "maxRunInput": 1751,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "first-pass-2-fresh",
+        "case": "first-pass",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1365
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2332,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2412,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1365,
+          "maxRunInput": 1749,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-2-role-scoped",
+        "case": "l1-repair",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 582
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 81
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 140
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1336
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2916,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3036,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2058,
+          "maxRunInput": 1748,
+          "actions": {
+            "create": 2,
+            "resume": 1
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-2-fresh",
+        "case": "l1-repair",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 610
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 89
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 125
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1300
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3039,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3159,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2035,
+          "maxRunInput": 1747,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "l1-repair-2-executor-scoped",
+        "case": "l1-repair",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 598
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-l1.cjs",
+            "reason": "Controlled external regression after a completed first implementation; real L1 must reject it",
+            "scriptSHA256": "837a8a0cb7f3e278ca36acc66e1f4c0bf355216037aa63034f5f1246531d9b44",
+            "durationMs": 98
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 143
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1429
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2921,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3041,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2170,
+          "maxRunInput": 1749,
+          "actions": {
+            "create": 2,
+            "resume": 1
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "l1-repair",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-2-fresh",
+        "case": "review-return",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 627
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 89
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 162
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1980
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5517,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5677,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2769,
+          "maxRunInput": 1887,
+          "actions": {
+            "create": 2,
+            "rebuild": 2
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            },
+            {
+              "role": "review",
+              "scope": "final:M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-2-executor-scoped",
+        "case": "review-return",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 713
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 100
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 167
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 2043
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5405,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5565,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2923,
+          "maxRunInput": 1890,
+          "actions": {
+            "create": 2,
+            "resume": 1,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "review",
+              "scope": "final:M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 1,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "review-return-2-role-scoped",
+        "case": "review-return",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 584
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "inject",
+            "script": "eval/inject-review.cjs",
+            "reason": "Controlled caller-array mutation regression that preserves all output checks; real independent Review must detect it",
+            "scriptSHA256": "de634cdf2e8b7f1edf1d539c6e3f6d250c32009894bdd4ce0bf9e1024b775baa",
+            "durationMs": 98
+          },
+          {
+            "kind": "run",
+            "only": "verify",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 157
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1927
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 4,
+          "callsByRole": {
+            "execute": 2,
+            "review": 2
+          },
+          "usage": {
+            "input": {
+              "known": 5267,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 160,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 4,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 5427,
+              "observedCalls": 4,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 4
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2668,
+          "maxRunInput": 1758,
+          "actions": {
+            "create": 2,
+            "resume": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 2,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "review-return",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-2-executor-scoped",
+        "case": "long-context",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1378
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14892,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14972,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1378,
+          "maxRunInput": 13135,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-2-role-scoped",
+        "case": "long-context",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1389
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14889,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14969,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1389,
+          "maxRunInput": 13133,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "long-context-2-fresh",
+        "case": "long-context",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "executor-scoped",
+          "role-scoped",
+          "fresh"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 1454
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 14884,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 14964,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1454,
+          "maxRunInput": 13130,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "long-context",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-2-role-scoped",
+        "case": "stop-resume",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 656
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 845
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2340,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2420,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1501,
+          "maxRunInput": 1753,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-2-fresh",
+        "case": "stop-resume",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 622
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 784
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2336,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2416,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1406,
+          "maxRunInput": 1752,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "stop-resume-2-executor-scoped",
+        "case": "stop-resume",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "role-scoped",
+          "fresh",
+          "executor-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "pauseBeforeReview": true,
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 606
+            },
+            "stateStatus": "paused"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 779
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 2,
+          "callsByRole": {
+            "execute": 1,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 2343,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 80,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 2,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 2423,
+              "observedCalls": 2,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 2
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1385,
+          "maxRunInput": 1754,
+          "actions": {
+            "create": 2
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "stop-resume",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-2-fresh",
+        "case": "configuration-change",
+        "repetition": 2,
+        "variant": "fresh",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 540
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 603
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 790
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3099,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3219,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 1933,
+          "maxRunInput": 1774,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-2-executor-scoped",
+        "case": "configuration-change",
+        "repetition": 2,
+        "variant": "executor-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 690
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 605
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 764
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3112,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3232,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2059,
+          "maxRunInput": 1777,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      },
+      {
+        "id": "configuration-change-2-role-scoped",
+        "case": "configuration-change",
+        "repetition": 2,
+        "variant": "role-scoped",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 576
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "configure",
+            "section": "routes",
+            "name": "default",
+            "thinking": "medium",
+            "before": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "high"
+            },
+            "after": {
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "channel": "offline-subscription",
+              "thinking": "medium"
+            }
+          },
+          {
+            "kind": "run",
+            "only": "execute",
+            "packet": "M01-T01",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 615
+            },
+            "stateStatus": "running"
+          },
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 0,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 878
+            },
+            "stateStatus": "completed"
+          }
+        ],
+        "summary": {
+          "status": "completed",
+          "calls": 3,
+          "callsByRole": {
+            "execute": 2,
+            "review": 1
+          },
+          "usage": {
+            "input": {
+              "known": 3107,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 120,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 3,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 3227,
+              "observedCalls": 3,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 0,
+            "missingCalls": 3
+          },
+          "observedBindings": [
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "execute"
+            },
+            {
+              "channel": "offline-subscription",
+              "harness": "codex-pro",
+              "model": "fixture-model",
+              "provider": null,
+              "role": "review"
+            }
+          ],
+          "repairRounds": 1,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 2069,
+          "maxRunInput": 1776,
+          "actions": {
+            "create": 2,
+            "rebuild": 1
+          },
+          "rebuildReasons": [
+            {
+              "role": "execute",
+              "scope": "M01-T01",
+              "reason": "history unavailable or scope, goal, directory or binding changed",
+              "generation": 2
+            }
+          ],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 0,
+            "unresolved": 0,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "version": 1,
+            "pass": true,
+            "omissions": [],
+            "regressions": [],
+            "evidence": [
+              "frozen independent oracle executed 66 examples and checked caller input preservation"
+            ],
+            "omissionsCount": 0,
+            "regressionsCount": 0,
+            "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2"
+          },
+          "scenario": {
+            "requested": "configuration-change",
+            "observed": true
+          }
+        }
+      }
+    ]
+  },
+  "liveAdmission": {
+    "execution": "live",
+    "complete": false,
+    "stopReason": "execution or cleanup is unresolved; experiment stopped without replay",
+    "startedAt": "2026-11-08T01:10:20.137Z",
+    "finishedAt": "2026-11-08T01:10:53.795Z",
+    "engineSHA256": "b1361dbe5bb84bf3f5b80e4ffba7c54770a178cd791c9e1c38c88bf37cdb69e8",
+    "manifestSHA256": "0e8e260da549c9a0eeae90550e36e20912eb964df329f2aa72b5be1bf22bfe4f",
+    "configurationSHA256": "851c3a26bf2de512dd72d57ff072d3544401b10e3ecfd90fbe7d668456af82d7",
+    "reportSHA256": "ac625a8adb4009af600c72347a14189e90545b4785738bf206183f358dc2ffb9",
+    "corpus": {
+      "commit": "9d8c0c48cc4439fc132325f53684dd2d02c233ed",
+      "tree": "22fa9b28517a800af61745a939a91a8dd9d9fa5a"
+    },
+    "calls": 1,
+    "scenarioCoverage": {
+      "first-pass": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 1,
+        "unknown": 0
+      },
+      "l1-repair": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "review-return": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "long-context": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "stop-resume": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 0,
+        "unknown": 0
+      },
+      "configuration-change": {
+        "planned": true,
+        "observed": 0,
+        "unobserved": 0,
+        "unknown": 0
+      }
+    },
+    "trials": [
+      {
+        "id": "first-pass-1-fresh",
+        "case": "first-pass",
+        "repetition": 1,
+        "variant": "fresh",
+        "order": [
+          "fresh",
+          "executor-scoped",
+          "role-scoped"
+        ],
+        "oracleSHA256": "6b17edec6c10c4f81758f4e9eab81364e0b35a1d8110c42ccdb49c215521c8e2",
+        "steps": [
+          {
+            "kind": "run",
+            "process": {
+              "exitCode": 3,
+              "signal": null,
+              "stopReason": null,
+              "forcedKill": false,
+              "durationMs": 33349
+            },
+            "stateStatus": "escalated"
+          }
+        ],
+        "summary": {
+          "status": "escalated",
+          "calls": 1,
+          "callsByRole": {
+            "execute": 1
+          },
+          "usage": {
+            "input": {
+              "known": 0,
+              "observedCalls": 1,
+              "missingCalls": 0
+            },
+            "output": {
+              "known": 0,
+              "observedCalls": 1,
+              "missingCalls": 0
+            },
+            "cacheRead": {
+              "known": 0,
+              "observedCalls": 1,
+              "missingCalls": 0
+            },
+            "cacheWrite": {
+              "known": 0,
+              "observedCalls": 1,
+              "missingCalls": 0
+            },
+            "totalTokens": {
+              "known": 0,
+              "observedCalls": 1,
+              "missingCalls": 0
+            }
+          },
+          "cost": {
+            "knownUSD": 0,
+            "observedCalls": 1,
+            "missingCalls": 0
+          },
+          "observedBindings": [
+            {
+              "channel": "chatgpt-subscription",
+              "harness": "codex-pro",
+              "model": "gpt-6.1-sol",
+              "provider": null,
+              "role": "execute"
+            }
+          ],
+          "repairRounds": 0,
+          "repeatedFindings": {
+            "value": 0,
+            "method": "exact normalized repeated return reasons; not semantic equivalence"
+          },
+          "elapsedMs": 33349,
+          "maxRunInput": 0,
+          "actions": {
+            "create": 1
+          },
+          "rebuildReasons": [],
+          "recovery": {
+            "resumes": 0,
+            "failedOrUnknownResumes": 0,
+            "unknownOutcomes": 1,
+            "unresolved": 1,
+            "reconciliations": 0
+          },
+          "duplicateMetricRows": 0,
+          "quality": {
+            "pass": null,
+            "omissions": null,
+            "regressions": null
+          },
+          "scenario": {
+            "requested": "first-pass",
+            "observed": false
+          }
+        }
+      }
+    ],
+    "terminalFacts": {
+      "stage": "thread-start",
+      "category": "aborted",
+      "dispatch": "not-dispatched",
+      "outcome": "unknown",
+      "cleanupConfirmed": true,
+      "status": "blocked",
+      "quality": {
+        "pass": null,
+        "omissions": null,
+        "regressions": null
+      },
+      "configuredModel": "gpt-6.1-sol",
+      "configuredEffort": "high",
+      "permissionMode": "workspace-write",
+      "nativeCLI": "codex 0.167.0",
+      "accountStatus": "ChatGPT login reported by native CLI; not proof of inference entitlement",
+      "notes": "The configured wall limit cancelled thread/start without a completed model turn. The trustworthy not-dispatched fact permits zero normalized usage, which is not a model cost measurement. The engine retained blocked/unknown and stopped without replay."
+    }
+  },
+  "verification": {
+    "goQualityGate": {
+      "file": "p3-quality-gate-final.log",
+      "sha256": "31c0eadae41122904fbf72b7266a2171a31c39ee51536de654dd85a4a8fd1063"
+    },
+    "goCoverage": {
+      "file": "p3-final-coverage.out",
+      "sha256": "0766f8b4cb2583b20125d2a894f98324e831c653609bda578177fa12cd8eb02e"
+    },
+    "goRace": {
+      "file": "p3-race-final.log",
+      "sha256": "d2d5c1a6a2cd92345ea554d972c4631bd3bb2f49522b5011971702975915e62e"
+    },
+    "realNodeBridges": {
+      "file": "p3-bridge-final.log",
+      "sha256": "c71789b910314425228cbb234d10ebc51d05710f0717a4520b914b0181bacbeb"
+    },
+    "pluginCheck": {
+      "file": "p3p4-plugin-check-final.log",
+      "sha256": "29e3fdb70ed9c733195d798cb95a5d8d244f6d71cf16b5c2cfb2d9d368eed5a7"
+    },
+    "npmTests": {
+      "file": "p3p4-npm-tests-after-eval-stop-fix.log",
+      "sha256": "f5c54f83bd696cd7fdec9eb5e4c6ed21901defc96917a11409899ea64842a10e"
+    },
+    "results": {
+      "goQualityGate": "passed; every measured function 100% statement coverage",
+      "goRacePackages": 7,
+      "realNodeBridgeBackends": [
+        "dsh",
+        "codex-pro",
+        "claude-code-pro"
+      ],
+      "durableLifecycleBridgeCases": 8,
+      "pluginMainTests": 194,
+      "pluginLegacyHostTests": 8,
+      "pluginSkips": 0,
+      "npmTests": 141,
+      "npmSkips": 0,
+      "protocolTransportTests": 20,
+      "actualPublicLifecycleBridgeTests": 6,
+      "skillsEmbed": "passed after final skill edits"
+    }
+  },
+  "npmCandidate": {
+    "format_version": 1,
+    "version": "0.28.5",
+    "source": {
+      "commit": "9796db37a2b86922cf11a87f33191315a7ca32eb",
+      "tree": "460bfbfd05418f79a6d1c1d4644733f56e826e5d",
+      "dirty": false,
+      "snapshot_sha256": "b0c5c6293e0e69921a8ff7a081d6077e04772665b4684031dcbd10b3ddf6776b"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel-darwin-arm64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-darwin-arm64-0.28.5.tgz",
+        "bytes": 2598566,
+        "integrity": "sha512-gxHFw1VcFDSRjfxpNExmivdn5EscQ5AKXhaBdamoApeuTlFtcjBG2ZcTlVipg4ReXRycNx2YGs0cUV0F54UCUg=="
+      },
+      {
+        "name": "@ckanner/flywheel-darwin-amd64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-darwin-amd64-0.28.5.tgz",
+        "bytes": 2806849,
+        "integrity": "sha512-N1ki1YdTEyfen+Mot002DRocB7FFwhhWB+3GbPCoiAEGBCALcmymJsBHj3ek1b4YyCs9nvZmIOezZKxMWftcZg=="
+      },
+      {
+        "name": "@ckanner/flywheel-linux-arm64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-linux-arm64-0.28.5.tgz",
+        "bytes": 2523868,
+        "integrity": "sha512-i2e85coiLG3P8G1MQyqdMu069JsWBu6PrK/XdmJSiukb6KP4vPYWmJ3uaCOkl5YiaqPvnvXe8SbwLk7NK5hyLA=="
+      },
+      {
+        "name": "@ckanner/flywheel-linux-amd64",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-linux-amd64-0.28.5.tgz",
+        "bytes": 2782315,
+        "integrity": "sha512-2FPIvNQ/r2drgRnJ+GrsagGrr9W2tCbRCTSOHCK0yTJYGad1hFJF+HZDPLIDMZha5pO4bHvVLU8Q1hADaxTeSg=="
+      },
+      {
+        "name": "@ckanner/dsh-plugin-flywheel",
+        "version": "0.28.5",
+        "filename": "ckanner-dsh-plugin-flywheel-0.28.5.tgz",
+        "bytes": 259884,
+        "integrity": "sha512-FwSCQt5iFhmueWX3K8tzSyA3wWHKIpOhNEJNFibQJeJ15MHKLjXu4TTZAMBuiBWXk/ZEYpBCxHoTaICpHiC+aA=="
+      },
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.28.5",
+        "filename": "ckanner-flywheel-0.28.5.tgz",
+        "bytes": 135402,
+        "integrity": "sha512-JLfg69ek3RcXFEcD1AAaIVtFPgt3IOjFw1SnAyooLaJaTKEL5VwSLJWT22wJ6fhkDaccqcsJfTV1Z5n+y+W03g=="
+      }
+    ]
+  },
+  "npmInstall": {
+    "tests": 9,
+    "pass": 9,
+    "fail": 0,
+    "skipped": 0,
+    "logSHA256": "80f9cb0df5e3cd03a2d79c29e573e215addef969c80094bb8a86d80f73dbae69",
+    "bundle": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.9.0",
+      "fileCount": 79,
+      "allFileContentHashesMatchFrozenUpstream": true,
+      "modeChanges": {
+        "lib/machine-cli.js": {
+          "source": "0o644",
+          "installed": "0o755"
+        }
+      },
+      "modeChangeReason": "npm installs the declared bin entry with executable permissions; its content is unchanged."
+    },
+    "boundaries": "Actual Linux amd64 npm installation. Mac native lifecycle and UI are not established by cross compilation."
+  },
+  "flywheelRemoteCI": {
+    "commit": "9796db37a2b86922cf11a87f33191315a7ca32eb",
+    "run": 42434356573,
+    "url": "https://github.com/ckanner/flywheel/actions/runs/42434356573",
+    "conclusion": "failure",
+    "candidateJob": {
+      "id": 128589908966,
+      "runnerID": 0,
+      "runnerName": "",
+      "steps": 0,
+      "startedAt": "2026-11-08T01:27:52Z",
+      "completedAt": "2026-11-08T01:27:55Z"
+    },
+    "testJob": {
+      "id": 128589917953,
+      "conclusion": "skipped",
+      "steps": 0
+    },
+    "annotationAccess": "Current connector rejects check-run endpoint; exact startup cause unavailable. No code/test step ran."
+  }
+}

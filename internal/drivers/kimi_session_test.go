@@ -84,8 +84,29 @@ func TestKimiScopedKnownAdmissionAndUncertainCancellation(t *testing.T) {
 	r := RunKimi(KimiArgs{Command: "/must-not-spawn", PersistentSession: true, RequestID: "r",
 		Watchdog: watchdog.Opts{Context: ctx}})
 	assert.True(t, r.Cancelled)
-	assert.Equal(t, "unknown", r.Session.Outcome)
+	assert.Equal(t, "not-dispatched", r.Session.Dispatch)
+	assert.Equal(t, "failed", r.Session.Outcome)
+	assert.True(t, r.Session.CleanupConfirmed)
+	require.NotNil(t, r.Usage)
+	assert.Zero(t, r.Usage.TotalTokens)
+	require.NotNil(t, r.CostUSD)
+	assert.Zero(t, *r.CostUSD)
 	assert.False(t, r.Session.ResumeCandidate)
+
+	// Once the CLI has started, cancellation without a terminal hint is an
+	// uncertain invocation even if the local process group is fully drained.
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	r = RunKimi(KimiArgs{Command: kimiScript(t, `printf '%s\n' '{"role":"assistant","content":"started"}'
+sleep 10
+`), Cwd: t.TempDir(), Prompt: "p", PersistentSession: true, RequestID: "started",
+		Watchdog: watchdog.Opts{Context: ctx, KillGraceMs: 20}, OnEvent: func(string) { cancel() }})
+	assert.True(t, r.Cancelled)
+	assert.Equal(t, "unknown", r.Session.Outcome)
+	assert.True(t, r.Session.CleanupConfirmed)
+	assert.False(t, r.Session.ResumeCandidate)
+	assert.Nil(t, r.Usage)
+	assert.Nil(t, r.CostUSD)
 }
 
 func TestKimiTrackedFreshCallsUseStrictStreamAndUnknownUsage(t *testing.T) {

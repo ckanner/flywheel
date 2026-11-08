@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "version": "0.28.5",
+  "source": {
+    "commit": "2e2c20bfbfe68981259bcbbd32eb3f2941d9d5a1",
+    "tree": "f71e267e3a774867fd0b2d6fdac92982ba2f46a9",
+    "dirty": false,
+    "snapshot_sha256": "57a9c5afdfc129bc9a88abe79a15a47c3e4a3163c3c0af5ee849a1efc63b03cd"
+  },
+  "packages": [
+    {
+      "name": "@ckanner/flywheel-darwin-arm64",
+      "version": "0.28.5",
+      "filename": "ckanner-flywheel-darwin-arm64-0.28.5.tgz",
+      "bytes": 2556179,
+      "integrity": "sha512-hJ2h0km0HLe4BCTy7DHwLOXZklCyQJTJLB66PktL4E/qOnCM8Usd3FtUI4NUUFIGF4OGdzMaYMaS2B2rPMa/nA=="
+    },
+    {
+      "name": "@ckanner/flywheel-darwin-amd64",
+      "version": "0.28.5",
+      "filename": "ckanner-flywheel-darwin-amd64-0.28.5.tgz",
+      "bytes": 2761482,
+      "integrity": "sha512-QUqxd7fQIN85fI/EdmG5CC/QZVEOaztbl268z+/+4eFwLDqZ17+O+P77g4K8yjoIZ8vjJiggP79Fi7jPh3uRdA=="
+    },
+    {
+      "name": "@ckanner/flywheel-linux-arm64",
+      "version": "0.28.5",
+      "filename": "ckanner-flywheel-linux-arm64-0.28.5.tgz",
+      "bytes": 2481754,
+      "integrity": "sha512-CkIX838t/YNZIOpL4DWXuBhdland85yWXy3creacEoabwH52hWKR6a8E+olcHL0PA5fBiIa+GJagJBhW1pn5mA=="
+    },
+    {
+      "name": "@ckanner/flywheel-linux-amd64",
+      "version": "0.28.5",
+      "filename": "ckanner-flywheel-linux-amd64-0.28.5.tgz",
+      "bytes": 2738484,
+      "integrity": "sha512-uR7UWDK2EzFGx1Q4jl/OvbJksvZgk70P3l4UTKDZXMm544uRRF2V5DawEhj3R8yulwOfHwAolXqciuPD1Vstzg=="
+    },
+    {
+      "name": "@ckanner/dsh-plugin-flywheel",
+      "version": "0.28.5",
+      "filename": "ckanner-dsh-plugin-flywheel-0.28.5.tgz",
+      "bytes": 86879,
+      "integrity": "sha512-v5QRk3Y63uLyNmDBhdaS+p4tonlofdGka+oRcn5XEgh9zKrUcYnKDiRgvxxMs06TQBTcwsAnnY6VRVB63Z5Odw=="
+    },
+    {
+      "name": "@ckanner/flywheel",
+      "version": "0.28.5",
+      "filename": "ckanner-flywheel-0.28.5.tgz",
+      "bytes": 115788,
+      "integrity": "sha512-9wwOML43ebh8eZTdN7uPAqfoFqaq4RzzVrFfv+ujl3r97Oc3GKkyQafDbnlkhG7cFc1ZmM5BHV3/RDaC/pgmLQ=="
+    }
+  ]
+}

@@ -14,7 +14,7 @@
 
 | 当前调用路径 | 已核对的能力 | Flywheel 当前请求 |
 |---|---|---|
-| GPT-6.1 Sol／Codex Pro 0.8.0 | 模型支持 `low/medium/high/xhigh/max`；machine API 原样传递 effort | hard 为 high |
+| GPT-6.1 Sol／Codex Pro 0.9.0 | 模型支持 `low/medium/high/xhigh/max`；machine API 原样传递 effort | hard 为 high |
 | GPT-6.1 Sol、GPT-6 Astra／DSH ChatGPT provider | 模型及已核对的 provider 表均列 `low/medium/high/xhigh/max`；请求写入 `reasoning.effort` | Review、Judge 为 high |
 | Kimi K3.1 Pro／Kimi CLI | 模型原生 `low/high/max`，默认 high，不能关闭 thinking | Plan、frontend、Garden 为 high |
 | DeepSeek Flash／DSH rc.5 | DSH 接受 `off/low/high/max`，默认 high | 普通执行 high，Intake low |
@@ -50,7 +50,7 @@ hard 承担难实现，Judge 在 L2/L3 后独立核对整个里程碑；它们�
 - SDK 接受配置或 machine API 接受请求，只证明对应接口接纳，不是效果评测。
 - 服务端实际采用的强度和质量收益，需要独立回执或实际任务测量；当前证据不能补造这些事实。
 
-DSH `initialize` 调用配置校验，但回复只含 serverInfo。Flywheel 的 `ready.reasoningEffort` 是初始化成功后的请求回显，不是模型服务独立返回的 effort 证明。Codex Pro 回执明确区分 `requestedEffort`、`accepted` 和未知的 `effectiveEffort:null`。依据见 [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)及 [Codex Pro 0.8.0 协议](https://github.com/ckanner/dsh-subagent-codex-pro/blob/04ecdb677735d84f3a0f5dba01a9d9b28c324c0e/docs/machine.md)。无推理 doctor 也不能证明账号余额、真实调用或更高档位的收益。
+DSH `initialize` 调用配置校验，但回复只含 serverInfo。Flywheel 的 `ready.reasoningEffort` 是初始化成功后的请求回显，不是模型服务独立返回的 effort 证明。Codex Pro 回执明确区分 `requestedEffort`、`accepted` 和未知的 `effectiveEffort:null`。依据见 [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)及 [Codex Pro 0.9.0 协议](https://github.com/ckanner/dsh-subagent-codex-pro/blob/37da3d75de32b809c4fb1a631ccc15191f3d87f9/docs/machine.md)。无推理 doctor 也不能证明账号余额、真实调用或更高档位的收益。
 
 ## 5. DeepSeek 默认应使用已充值账号
 
@@ -59,3 +59,7 @@ DSH `initialize` 调用配置校验，但回复只含 serverInfo。Flywheel 的 
 桌面能在登录后初始化账号默认模型，但独立 SDK 调用仍需明确 provider/model。Flywheel 固定请求 `deepseek-account`／`deepseek-flash`，既采用指定账号通路，也保持“只用 Flash”的选择。认证失败或额度不足会报告；默认预设没有跨渠道后备。用户显式配置的后备链仍按原有规则执行，本轮不新增后备路径。
 
 **发布与迁移要分开：**0.28.3 将内嵌默认改为账号，0.28.2 仍内嵌 API 默认。安装升级保留已有用户配置，采用新账号预设需升级至 0.28.3 或以后版本，再预览并显式应用迁移。完整账号/API 区别、共享登录条件和迁移步骤见[配置指南](configuration.md#deepseek-账号与-api-key-是两个-provider)。本轮没有修改用户机器上的凭证或正在运行的任务。
+
+## 可选 Claude Code Pro
+
+默认模型策略尚未给 Claude 分配场景。可选 `claude-code-pro` harness 接收明确的原生模型与 low/medium/high/xhigh/max 请求，具体 CLI／账号可能拒绝某项选择；此接入不新增模型排名或 effort 实测结论。配套 0.4.0 公开接口、full-access 边界及用量口径见[接入指南](claude-code-pro.md)。

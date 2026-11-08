@@ -17,6 +17,24 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 )
 
+// Keep the I/O boundary injectable: an unflushed audit record must never let
+// the caller commit its accounting CAS, even when Write already returned bytes.
+var writeMetricsLine = (*os.File).Write
+var syncMetricsHandle = (*os.File).Sync
+var openMetricsSync = os.Open
+
+func flushMetrics(file *os.File) error {
+	if err := syncMetricsHandle(file); err != nil {
+		return err
+	}
+	directory, err := openMetricsSync(filepath.Dir(file.Name()))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return syncMetricsHandle(directory)
+}
+
 // PromptHash 提示词哈希（sha256 前 12 hex）——失败归因与缓存对账用。
 func PromptHash(prompt string) string {
 	sum := sha256.Sum256([]byte(prompt))
@@ -44,8 +62,10 @@ func Append(file string, entry map[string]any) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(append(line, '\n'))
-	return err
+	if _, err = writeMetricsLine(f, append(line, '\n')); err != nil {
+		return err
+	}
+	return flushMetrics(f)
 }
 
 // AppendOnce deduplicates recovery telemetry by invocation and receipt digest.
@@ -85,7 +105,14 @@ func AppendOnce(file, invocationID, receiptDigest string, entry map[string]any) 
 		}
 	}
 	if found {
-		return nil
+		// A previous append may have failed during fsync after leaving readable
+		// bytes. Reconfirm durability without appending another invocation.
+		f, err := openMetricsSync(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return flushMetrics(f)
 	}
 	record := make(map[string]any, len(entry)+2)
 	for key, value := range entry {
@@ -123,22 +150,48 @@ func PriceForModel(pricing map[string]config.Price, model string) *config.Price 
 
 // Usage 成本估算输入（driver 未报字段的缺省语义见 EstimateCostUSD）。
 type Usage struct {
-	Input      int64
-	Output     int64
-	CacheRead  int64
-	CacheWrite int64
+	Input              int64
+	Output             int64
+	CacheRead          int64
+	CacheWrite         int64
+	InputIncludesCache bool // false preserves the legacy pi disjoint input bucket
+}
+
+// InputIncludesCache identifies adapters whose normalized Input already counts
+// cache reads and writes. Pricing must first recover the uncached input bucket;
+// token totals and cache-hit metrics retain the original inclusive counters.
+func InputIncludesCache(harness string) bool {
+	switch harness {
+	case "dsh", "codex-pro", "claude-code-pro":
+		return true
+	default:
+		return false
+	}
 }
 
 // EstimateCostUSD driver 不报成本时的兜底估算（docs/design.md 附录 D：usage 明细
 // 可能缺字段，绝不假设存在）。price 为每百万 token 美元价。cache-write 按
 // 未命中 input 价计费（DeepSeek 语义）；pi 的 usage 桶互不相交（已在 pi
-// dist usage-totals.js 核实）。无法估算返回 nil。
+// dist usage-totals.js 核实）。包含缓存的 Input 必须先拆成互不相交的计价桶，
+// 缓存子集矛盾或无法估算时返回 nil，不能双计或得到负成本。
 func EstimateCostUSD(usage *Usage, price *config.Price) *float64 {
 	if usage == nil || price == nil {
 		return nil
 	}
+	if usage.Input < 0 || usage.Output < 0 || usage.CacheRead < 0 || usage.CacheWrite < 0 {
+		return nil
+	}
+	uncachedInput := usage.Input
+	if usage.InputIncludesCache {
+		// Subtract in stages so even invalid int64 counters cannot overflow
+		// while checking whether the two disjoint cache buckets fit in Input.
+		if usage.CacheRead > uncachedInput || usage.CacheWrite > uncachedInput-usage.CacheRead {
+			return nil
+		}
+		uncachedInput -= usage.CacheRead + usage.CacheWrite
+	}
 	const perM = 1_000_000
-	input := float64(usage.Input) / perM * price.Input
+	input := float64(uncachedInput) / perM * price.Input
 	output := float64(usage.Output) / perM * price.Output
 	cacheRead := float64(usage.CacheRead) / perM * price.CacheRead
 	cacheWrite := float64(usage.CacheWrite) / perM * price.Input // 未命中 input 价

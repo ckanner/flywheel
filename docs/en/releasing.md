@@ -8,6 +8,10 @@ a successful local build does not establish that npm installation is ready.
 
 The conversation-view ordering release target is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.5 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
 
+P3/P4 are later unreleased source changes, not replacements for the existing 0.28.5 publication. Assign a new unified six-package version before releasing them. The actual Codex Pro 0.9.0 tarball is locked and bundled; installation does not query an unpublished registry version. [Provenance and license](../../plugins/dsh/vendor/README.md) identify those bytes. Claude 0.4.0 remains an optional peer; CI packs a fixed upstream source commit, checks its tarball hash, and installs it before the backend gates.
+
+`npm run test:sessions` exercises the real Go engine and public adapter through an offline native fixture on both CI operating systems. It does not establish live account access, model quality, cache benefits, or performance gains.
+
 ## Release contract
 
 One release contains six packages at the same exact version, in this order:
@@ -20,7 +24,7 @@ One release contains six packages at the same exact version, in this order:
 6. `@ckanner/flywheel`
 
 The meta package pins the plugin and platform dependencies. The plugin pins
-`dsh-subagent-codex-pro@0.8.0`. Release tooling uses Node **24.22.1**, npm
+`dsh-subagent-codex-pro@0.9.0` as a reviewed bundled source candidate. Release tooling uses Node **24.22.1**, npm
 **12.2.1** and Go **1.27**. These are maintainer toolchain requirements; users
 need Node 22.18.0 or later and do not need Go to install from npm.
 

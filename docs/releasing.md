@@ -6,6 +6,10 @@
 
 当前会话视图排序调整的统一发行目标为 **0.28.5**，复核见 [0.28.5 记录](validation/2026-11-05-view-order.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.5 包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
 
+会话 P3/P4 是后续未发布源码，不能覆盖上述已有 0.28.5 发行。正式发行前须为六包选择新的统一版本。当前候选 bundle 已审查的 Codex Pro 0.9.0 公共 npm 包，lock 指向真实 vendor tarball 和实际 integrity；安装门禁确认不会向 registry 请求尚未发布的 Codex 版本。来源与许可证见 [vendor 记录](../plugins/dsh/vendor/README.md)。Claude 0.4.0 保持 optional peer，CI 从固定源码 SHA 构建并检查相同 tarball hash，再运行显式后端门禁；默认用户不选择它就无需安装。
+
+P4 的 `npm run test:sessions` 使用真实 Go 与公开 adapter、离线 native fixture；CI 在两种 OS 执行全部配对场景。该门禁不提供真实模型效果或账号就绪证明。
+
 ## 1. 发布身份
 
 GitHub Actions 使用 `.github/workflows/publish.yml`，只有 publish job 获得 `id-token: write`；GitHub `contents` 仍为只读。GitHub 登录允许触发有权限的仓库操作，**不会自动授予 npm 包写权限**。

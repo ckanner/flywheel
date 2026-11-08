@@ -115,11 +115,15 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			continue
 		}
 		r.add(b.ID+".session", "unknown", fmt.Sprintf("会话选择 %s：%s；适配器支持=%t，历史恢复未验证", b.Session.Mode, b.Session.Reason, b.Session.Supported), "", "配置与无推理探测不证明历史已保存或可以恢复；运行时仍须检查调用回执")
+		if b.Harness == "claude-code-pro" && b.PermissionMode != "danger-full-access" {
+			r.add(b.ID+".permission", "fail", "Claude Code Pro 仅支持显式 full-access；原生审批模式不等于 OS 只读或工作区沙箱", "INVALID_REQUEST", "需要受限权限时选择 DSH 或 Codex；选择 Claude 时须明确配置 permissions.mode=full-access")
+			continue
+		}
 		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
 			r.add(b.ID+".permission", "fail", "所选 harness 无法实施本阶段要求的只读权限", "INVALID_REQUEST", "为评审选择支持 read-only 的 DSH 或 Codex 路径")
 			continue
 		}
-		if b.PermissionMode == "danger-full-access" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" && b.Harness != "kimi" {
+		if b.PermissionMode == "danger-full-access" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" && b.Harness != "claude-code-pro" && b.Harness != "kimi" {
 			r.add(b.ID+".permission", "fail", "所选 harness 没有经过验证的完全权限映射", "INVALID_REQUEST", "选择支持完全权限的 DSH、Codex 或 Kimi 路径；不会静默降低或忽略权限要求")
 			continue
 		}
@@ -143,6 +147,8 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			}
 		} else if b.Harness == "codex-pro" {
 			r.codexPro(ctx, *b, commands)
+		} else if b.Harness == "claude-code-pro" {
+			r.claudeCodePro(ctx, *b, commands)
 		} else {
 			r.harnessCommand(ctx, *b, commands)
 			if b.Harness != "codex" {
@@ -333,6 +339,42 @@ func (r *Report) codexPro(ctx context.Context, b Binding, cache map[string]bool)
 		r.add(b.ID+".sandbox", "warn", "插件运行前核对沙箱模式；完整策略仅在结果返回后核对，Codex 配置仍可能扩展目录或网络权限", "", "核对本机 Codex 配置；需要运行前完整策略限制的环境须等待上游公开 guard，不要将事后拒绝视为访问防护")
 	}
 	r.add(b.ID+".configuration", "unknown", "实际模型、完整权限和 effort 接受回执由正式调用验证；本次未启动 Codex 模型回合", "", "")
+}
+
+// An import check proves availability of the exact public interface, never
+// model/account access or that native full access is accepted by this runtime.
+func (r *Report) claudeCodePro(ctx context.Context, b Binding, cache map[string]bool) {
+	worker := drivers.ClaudeCodeProCommand()
+	ready := r.command(ctx, "claude-code-pro-worker", worker, cache, false)
+	ready = r.command(ctx, "node", "node", cache, true) && ready
+	r.command(ctx, "claude", drivers.ClaudeCodeProBinary(), cache, true)
+	if ready && ctx.Err() == nil {
+		key := "claude-code-pro-import:" + worker
+		if _, checked := cache[key]; !checked {
+			result := runCommand(worker, []string{"--doctor"}, commandOptions(ctx, r.Cwd))
+			var probe struct {
+				Protocol        int    `json:"protocol"`
+				Type            string `json:"type"`
+				Package         string `json:"package"`
+				Version         string `json:"version"`
+				MachineProtocol int    `json:"machineProtocol"`
+				Available       bool   `json:"available"`
+				InferenceTested *bool  `json:"inferenceTested"`
+			}
+			ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil &&
+				probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "dsh-subagent-claude-code-pro" &&
+				probe.Version == drivers.ClaudeCodeProPackageVersion && probe.MachineProtocol == 1 &&
+				probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested
+			cache[key] = ok
+			if ok {
+				r.add("claude-code-pro.api", "pass", "已导入 dsh-subagent-claude-code-pro/machine "+drivers.ClaudeCodeProPackageVersion+"（协议 1，未推理）", "", "")
+			} else {
+				r.add("claude-code-pro.api", "fail", "Claude Code Pro 可选依赖、精确版本或公开 machine 入口未通过检查", "INVALID_REQUEST", "显式安装与本版本匹配的 Claude Code Pro 依赖；不会改走其他 CLI、模型或付费渠道")
+			}
+		}
+	}
+	r.add(b.ID+".sandbox", "warn", "Claude 原生 bypassPermissions 不提供 OS 工作区沙箱；实际调用检查初始化权限回执", "", "仅对可信项目使用显式 full-access；外部策略与原生拒绝仍生效")
+	r.add(b.ID+".configuration", "unknown", "请求的模型和 effort 将原样传入 CLI；模型别名的实际解析、权限与账号需正式调用验证", "", "")
 }
 
 // Match the real driver's entry point, including the legacy ZCode app runtime.

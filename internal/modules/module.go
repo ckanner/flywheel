@@ -116,10 +116,11 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 	var estUsage *metrics.Usage // 成本估算输入（cacheWrite 参与计费）
 	if result.Usage != nil {
 		estUsage = &metrics.Usage{
-			Input:      result.Usage.Input,
-			Output:     result.Usage.Output,
-			CacheRead:  result.Usage.CacheRead,
-			CacheWrite: result.Usage.CacheWrite,
+			Input:              result.Usage.Input,
+			Output:             result.Usage.Output,
+			CacheRead:          result.Usage.CacheRead,
+			CacheWrite:         result.Usage.CacheWrite,
+			InputIncludesCache: metrics.InputIncludesCache(result.Harness),
 		}
 	}
 	costUSD := result.CostUSD
@@ -135,28 +136,30 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		promptHash = metrics.PromptHash(prompt)
 	}
 	entry := map[string]any{
-		"role":              role,
-		"packet-id":         nil,
-		"milestone":         nil,
-		"model":             nilIfEmpty(model),
-		"harness":           nilIfEmpty(result.Harness),
-		"provider":          nilIfEmpty(result.Provider),
-		"channel":           nilIfEmpty(channel),
-		"prompt-hash":       promptHash,
-		"usage":             result.Usage,
-		"cache-hit-rate":    cacheHitRate,
-		"reasoning-chars":   result.ReasoningChars,
-		"cost-usd":          costUSD,
-		"duration-ms":       result.DurationMS,
-		"exit-code":         result.ExitCode,
-		"settled":           result.Settled,
-		"cancelled":         result.Cancelled,
-		"timed-out":         result.TimedOut,
-		"truncated":         result.Truncated,
-		"cleanup-error":     nilIfEmpty(result.CleanupError),
-		"error-code":        nilIfEmpty(string(code)),
-		"attempt":           nil,
-		"codex-pro-receipt": result.CodexProReceipt,
+		"role":                    role,
+		"packet-id":               nil,
+		"milestone":               nil,
+		"model":                   nilIfEmpty(model),
+		"harness":                 nilIfEmpty(result.Harness),
+		"provider":                nilIfEmpty(result.Provider),
+		"channel":                 nilIfEmpty(channel),
+		"prompt-hash":             promptHash,
+		"usage":                   result.Usage,
+		"cache-hit-rate":          cacheHitRate,
+		"reasoning-chars":         result.ReasoningChars,
+		"cost-usd":                costUSD,
+		"duration-ms":             result.DurationMS,
+		"exit-code":               result.ExitCode,
+		"settled":                 result.Settled,
+		"cancelled":               result.Cancelled,
+		"timed-out":               result.TimedOut,
+		"truncated":               result.Truncated,
+		"cleanup-error":           nilIfEmpty(result.CleanupError),
+		"error-code":              nilIfEmpty(string(code)),
+		"attempt":                 nil,
+		"codex-pro-receipt":       result.CodexProReceipt,
+		"claude-code-pro-receipt": result.ClaudeCodeProReceipt,
+		"invocation":              result.Session,
 	}
 	if err := metrics.Append(m.MetricsFile, entry); err != nil {
 		return err
@@ -292,6 +295,9 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		}
 		if m.stopForUnconfirmedCleanup(o.Role, result) {
 			return CallResult{ErrorCode: code, Channel: channel, Model: current.Model}
+		}
+		if m.stopForUnknownInvocation(o.Role, result) {
+			return CallResult{ErrorCode: errs.TRANSPORT, Channel: channel, Model: current.Model}
 		}
 		if m.fatalErr != nil {
 			return CallResult{ErrorCode: errs.TRANSPORT, Channel: channel, Model: current.Model}

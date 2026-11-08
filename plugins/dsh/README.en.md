@@ -21,6 +21,8 @@ Subscription preset migration and `permissions.mode` are available from **0.28.2
 
 Version 0.28.4 aligns Cordis 4.0/4.1 and host peer declarations, testing the same built plugin against both published renderers with locked dependencies. Configuration, account selection and permissions are preserved. The SDK writes permission events during the public agent/created phase, after the read-only Session creation announcement and before model work; it reads the explicit never override through public `approval.overrideOf(session)`.
 
+The package also ships an optional Claude Code Pro worker that calls the companion 0.4.0 public machine API without a second parent-model delegation. Unselected configurations do not require the optional peer. See [integration and release prerequisites](../../docs/en/claude-code-pro.md); default loops remain unchanged.
+
 ## Components
 
 | Component | Responsibility |
@@ -29,7 +31,7 @@ Version 0.28.4 aligns Cordis 4.0/4.1 and host peer declarations, testing the sam
 | `/flywheel` command | Invoke the Go control interface from an explicit desktop command |
 | `flywheel_control` tool | Expose the same control operations to the host model |
 | `flywheel-dsh-worker` | Run one native model session through an independent DSH SDK profile |
-| `flywheel-codex-pro-worker` | Call the public machine API of the pinned `dsh-subagent-codex-pro@0.8.0` package |
+| `flywheel-codex-pro-worker` | Call the public machine API of the pinned `dsh-subagent-codex-pro@0.9.0` package |
 
 The plugin has no separate task database and does not write `state.json`.
 Kimi CLI, Codex Pro, and the explicit legacy Codex CLI path have separate Go
@@ -327,9 +329,9 @@ GitHub PRs, merge remote PRs, or publish packages. See the
 
 `sessions.mode=scoped` permits continuation for the same task, role, and scope. Ordinary repairs can continue Executor history, while a Reviewer only continues its own history and checks the complete current candidate again. Primary Judge and second opinion remain separate. New templates explicitly select scoped mode; old configurations default to fresh, and an explicit Plan `resident-session:false` still opts that role out. See [Session policy](../../docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
 
-Go journals supported main-task Codex Pro, DSH, and Kimi calls in both fresh and scoped modes. Fresh disables general role history reuse while preserving the existing Kimi Plan resident behavior. Other adapters, mock, and Intake/Garden retain their existing paths. Unknown dispatch, outcome, or cleanup blocks further execution; creating a new session, switching modes, or scanning history cannot bypass it. `status` and `control status` expose compact role, scope, action/reason, and latest invocation facts without reading conversation history. A resume candidate is not proof of durable backend history.
+Go journals supported main-task Codex Pro, Claude Code Pro, DSH, and Kimi calls in both fresh and scoped modes. Fresh disables general role history reuse while preserving the existing Kimi Plan resident behavior. Other adapters, mock, and Intake/Garden retain their existing paths. Unknown dispatch, outcome, or cleanup blocks further execution; creating a new session, switching modes, or scanning history cannot bypass it. `status` and `control status` expose compact role, scope, action/reason, and latest invocation facts without reading conversation history. A resume candidate is not proof of durable backend history.
 
-DSH v2 uses public `session/resume` with the exact requested session ID and a new SDK process for each call. Restored events do not enter the current output, usage, or activity callback; directory and permission checks run again. Normal-terminal continuation and saved-receipt recovery are P1/P2 capabilities. Live queries, arbitrary-crash and cross-machine recovery are not promised (P3), and real quality, cache, and performance experiments remain unperformed (P4).
+DSH v2 uses public `session/resume` with the exact requested session ID and a new SDK process for each call. Restored events do not enter the current output, usage, or activity callback; directory and permission checks run again. P3 adds durable Go ACKs, independent supervisor journals, and exact read-only receipt recovery for Codex/Claude. DSH/Kimi retain their own existing capabilities. P4 adds role overrides, bounded quality rebuilds, and paired evaluation tools; real quality, cache, and performance require live evidence. See [recovery](../../docs/en/session-recovery.md).
 
 ## Permissions and lifecycle boundaries
 
@@ -365,16 +367,9 @@ Restoring retrieval or [automatic compaction](https://github.com/deepseek-ai/dee
 requires a separate check of accounting, budgets, cancellation, and directory
 ownership; the view's location does not establish those guarantees.
 
-Codex Pro uses outer worker v1 with ephemeral history for fresh calls, or outer
-v2 with persistent history and an optional exact thread ID for scoped calls.
-Both retain the public plugin 0.8.0 machine API and raw receipt protocol 1.
-It checks the model, directory, approval policy, and sandbox mode before execution. The full
-`sandboxPolicy` reaches Flywheel only in the returned receipt. In restricted modes, Flywheel rejects
-delivery when that policy permits unexpected writable roots or network access,
-but **this check happens after execution and cannot undo access already
-permitted by custom Codex configuration**. It is not a complete pre-execution
-policy guard. Kimi CLI print mode likewise does not provide an OS sandbox that
-this adapter can promise.
+Main-task Codex calls use worker v3 for both ephemeral and persistent history, retaining public machine protocol 1 and lifecycle version 1. Legacy v1/v2 callers remain supported. Go checks the complete actual sandboxPolicy at pre-dispatch thread-ready before ACK, then checks the terminal receipt again. Restricted modes reject unexpected writable roots and network access; full access explicitly records dangerFullAccess without claiming OS confinement. Legacy and advisory calls without lifecycle retain terminal policy checks. Kimi print mode likewise provides no OS sandbox this adapter can promise.
+
+The reviewed Codex 0.9.0 source candidate is bundled as a real public npm package, with [provenance and hashes](vendor/README.md). Claude 0.4.0 remains an optional peer. Neither change installs native CLIs or copies credentials.
 
 A worktree separates Git working files and index state; it is not a security
 sandbox. The current engine can fall back to `in-place` if packet worktree

@@ -36,3 +36,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Bundled Codex Pro public package
+
+This distribution bundles `dsh-subagent-codex-pro@0.9.0`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the packed plugin. Source identity and tarball integrity are recorded in `vendor/README.md` and `vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.

@@ -113,7 +113,7 @@ async function installation(t) {
   const packageMeta = { ...meta, optionalDependencies: { [`@ckanner/flywheel-${platform}`]: meta.version } };
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify(packageMeta));
   await fs.copyFile(path.join(repository, "npm", "install.js"), path.join(root, "npm", "install.js"));
-  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js"]) {
+  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js"]) {
     await fs.copyFile(path.join(repository, "bin", name), path.join(root, "bin", name));
   }
   const native = path.join(root, "node_modules", "@ckanner", `flywheel-${platform}`);
@@ -122,13 +122,14 @@ async function installation(t) {
   await fs.writeFile(path.join(native, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version: meta.version }));
   await fs.writeFile(path.join(native, "flywheel"), nativeBody, { mode: 0o755 });
   await fs.writeFile(path.join(plugin, "package.json"), JSON.stringify({ name: "@ckanner/dsh-plugin-flywheel", version: meta.version,
-    exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./package.json": "./package.json" } }));
+    exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js", "./package.json": "./package.json" } }));
   await fs.writeFile(path.join(plugin, "dist", "worker.js"), "// No model worker runs during installation.\n");
   await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.js"), `
     if (process.argv[2] !== '--doctor') throw new Error('installation must never run a model');
     console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
-      version: process.env.TEST_ADAPTER_VERSION || '0.8.0', machineProtocol: 1, available: true, inferenceTested: false }));
+      version: process.env.TEST_ADAPTER_VERSION || '0.9.0', machineProtocol: 1, available: true, inferenceTested: false }));
   `);
+  await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.js"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
   await fs.writeFile(dsh, `#!/usr/bin/env node
 const fs = require("node:fs"); const args = process.argv.slice(2);
@@ -145,6 +146,7 @@ else if (args.includes("list")) console.log(JSON.stringify([{ dependencies: {
     TEST_INSTALL_LOG: log, FLYWHEEL_DSH_BIN: dsh };
   delete environment.FLYWHEEL_DSH_WORKER;
   delete environment.FLYWHEEL_CODEX_PRO_WORKER;
+  delete environment.FLYWHEEL_CLAUDE_CODE_PRO_WORKER;
   const cli = path.join(root, "bin", "flywheel.js");
   function launch(args = [], extraEnvironment = {}) {
     const child = spawn(process.execPath, [cli, "install", ...args], { cwd: directory,
@@ -205,10 +207,11 @@ test("installer executes special paths literally and repeat setup keeps a stable
   assert.equal(first.authentication, "unknown");
   assert.equal(first.configuration.action, 'created');
   assert.equal(first.configuration.automaticMigration, false);
-  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1, inferenceTested: false });
+  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1, inferenceTested: false });
   const record = await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json"));
   assert.equal(record.launcher.path, first.paths.launcher);
   assert.equal(record.codexProWorker, first.paths.codexProWorker);
+  assert.equal(record.claudeCodeProWorker, first.paths.claudeCodeProWorker);
   assert.deepEqual(record.adapter, first.adapter);
   assert.equal(digest(await fs.readFile(record.launcher.path)), record.launcher.sha256);
   assert.equal((await fs.stat(record.launcher.path)).mode & 0o777, 0o755);

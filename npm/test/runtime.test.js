@@ -12,7 +12,7 @@ const platform = `${process.platform}-${process.arch === "x64" ? "amd64" : proce
 const version = "1.2.3";
 const workerManifest = {
   name: "@ckanner/dsh-plugin-flywheel", version, type: "module",
-  exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./package.json": "./package.json" },
+  exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js", "./package.json": "./package.json" },
 };
 const nativePreamble = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -23,7 +23,7 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", chunk => { input += chunk; });
 process.stdin.on("end", () => {
   console.log(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(),
-    marker: process.env.TEST_MARKER, worker: process.env.FLYWHEEL_DSH_WORKER, codexProWorker: process.env.FLYWHEEL_CODEX_PRO_WORKER, input }));
+    marker: process.env.TEST_MARKER, worker: process.env.FLYWHEEL_DSH_WORKER, codexProWorker: process.env.FLYWHEEL_CODEX_PRO_WORKER, claudeCodeProWorker: process.env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER, input }));
   console.error("native stderr");
   process.exitCode = Number(process.env.TEST_NATIVE_EXIT || 0);
 });
@@ -62,7 +62,7 @@ async function fixture(t, { native = echoNative, worker = echoWorker } = {}) {
     dependencies: { "@ckanner/dsh-plugin-flywheel": version },
     optionalDependencies: { [`@ckanner/flywheel-${platform}`]: version },
   }));
-  for (const name of ["flywheel.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "runtime.js"]) {
+  for (const name of ["flywheel.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js", "runtime.js"]) {
     await copyFile(join(source, "bin", name), join(root, "bin", name));
   }
   const nativeDir = join(root, "node_modules", "@ckanner", `flywheel-${platform}`);
@@ -72,11 +72,13 @@ async function fixture(t, { native = echoNative, worker = echoWorker } = {}) {
   const nativePath = join(nativeDir, "flywheel");
   const workerPath = join(workerDir, "dist", "worker.js");
   const codexProWorkerPath = join(workerDir, "dist", "codex-pro-worker.js");
+  const claudeCodeProWorkerPath = join(workerDir, "dist", "claude-code-pro-worker.js");
   await writeFile(join(nativeDir, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version }));
   await writeFile(nativePath, nativePreamble + native, { mode: 0o755 });
   await writeFile(join(workerDir, "package.json"), JSON.stringify(workerManifest));
   await writeFile(workerPath, worker);
   await writeFile(codexProWorkerPath, worker);
+  await writeFile(claudeCodeProWorkerPath, worker);
 
   t.after(async () => {
     for (const run of runs) {
@@ -101,6 +103,7 @@ async function fixture(t, { native = echoNative, worker = echoWorker } = {}) {
     // The test must not accidentally inherit a user's existing worker override.
     if (!Object.hasOwn(env, "FLYWHEEL_DSH_WORKER")) delete childEnv.FLYWHEEL_DSH_WORKER;
     if (!Object.hasOwn(env, "FLYWHEEL_CODEX_PRO_WORKER")) delete childEnv.FLYWHEEL_CODEX_PRO_WORKER;
+    if (!Object.hasOwn(env, "FLYWHEEL_CLAUDE_CODE_PRO_WORKER")) delete childEnv.FLYWHEEL_CLAUDE_CODE_PRO_WORKER;
     const child = spawn(process.execPath, [join(root, "bin", executable), ...args], {
       cwd: root, env: childEnv, stdio: ["pipe", "pipe", "pipe"],
     });
@@ -121,7 +124,7 @@ async function fixture(t, { native = echoNative, worker = echoWorker } = {}) {
     runs.push(run);
     return run;
   }
-  return { root, container, nativePath, nativeDir, workerPath, codexProWorkerPath, workerDir, launch };
+  return { root, container, nativePath, nativeDir, workerPath, codexProWorkerPath, claudeCodeProWorkerPath, workerDir, launch };
 }
 
 test("npm CLI preserves literal argv, stdin, cwd, environment, stderr and native exit status", async t => {
@@ -130,7 +133,7 @@ test("npm CLI preserves literal argv, stdin, cwd, environment, stderr and native
   const result = await f.launch(args, { env: { TEST_MARKER: "kept", TEST_NATIVE_EXIT: "7" }, input: "one\ntwo\n" }).exit;
   assert.equal(result.code, 7);
   assert.equal(result.signal, null);
-  assert.deepEqual(JSON.parse(result.stdout), { argv: args, cwd: f.root, marker: "kept", worker: f.workerPath, codexProWorker: f.codexProWorkerPath, input: "one\ntwo\n" });
+  assert.deepEqual(JSON.parse(result.stdout), { argv: args, cwd: f.root, marker: "kept", worker: f.workerPath, codexProWorker: f.codexProWorkerPath, claudeCodeProWorker: f.claudeCodeProWorkerPath, input: "one\ntwo\n" });
   assert.equal(result.stderr, "native stderr\n");
 });
 
@@ -138,10 +141,11 @@ test("an explicit worker override is preserved, even when the bundled worker is 
   const f = await fixture(t);
   await rm(f.workerDir, { recursive: true });
   for (const override of ["/custom worker", ""]) {
-    const result = await f.launch(["version"], { env: { FLYWHEEL_DSH_WORKER: override, FLYWHEEL_CODEX_PRO_WORKER: override } }).exit;
+    const result = await f.launch(["version"], { env: { FLYWHEEL_DSH_WORKER: override, FLYWHEEL_CODEX_PRO_WORKER: override, FLYWHEEL_CLAUDE_CODE_PRO_WORKER: override } }).exit;
     assert.equal(result.code, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).worker, override);
     assert.equal(JSON.parse(result.stdout).codexProWorker, override);
+    assert.equal(JSON.parse(result.stdout).claudeCodeProWorker, override);
   }
 });
 
@@ -158,6 +162,9 @@ test("missing platform or worker packages fail visibly instead of selecting anot
   const codexPro = await f.launch([], { executable: "flywheel-codex-pro-worker.js" }).exit;
   assert.equal(codexPro.code, 1);
   assert.match(codexPro.stderr, /matching .* Codex Pro worker is missing/);
+  const claude = await f.launch([], { executable: "flywheel-claude-code-pro-worker.js" }).exit;
+  assert.equal(claude.code, 1);
+  assert.match(claude.stderr, /matching .* Claude Code Pro worker is missing/);
 });
 
 test("a non-executable native binary reports a launch failure", async t => {
@@ -175,7 +182,7 @@ test("resolved native and worker versions must match the meta package's exact pi
   assert.equal(wrongWorker.code, 1);
   assert.match(wrongWorker.stderr, /version mismatch for @ckanner\/dsh-plugin-flywheel: expected 1\.2\.3, found 1\.2\.2/);
   // Explicit user-managed workers do not pretend to be verified package peers.
-  const override = await f.launch(["version"], { env: { FLYWHEEL_DSH_WORKER: "/custom/worker", FLYWHEEL_CODEX_PRO_WORKER: "/custom/pro-worker" } }).exit;
+  const override = await f.launch(["version"], { env: { FLYWHEEL_DSH_WORKER: "/custom/worker", FLYWHEEL_CODEX_PRO_WORKER: "/custom/pro-worker", FLYWHEEL_CLAUDE_CODE_PRO_WORKER: "/custom/claude-worker" } }).exit;
   assert.equal(override.code, 0, override.stderr);
   await writeFile(join(f.workerDir, "package.json"), JSON.stringify(workerManifest));
   await writeFile(join(f.nativeDir, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version: "1.2.2" }));
@@ -198,11 +205,13 @@ test("a stale parent dependency is rejected while a correctly hoisted package is
   assert.equal(correctParent.code, 0, correctParent.stderr);
   assert.equal(JSON.parse(correctParent.stdout).worker, join(parentPackage, "dist", "worker.js"));
   assert.equal(JSON.parse(correctParent.stdout).codexProWorker, join(parentPackage, "dist", "codex-pro-worker.js"));
+  assert.equal(JSON.parse(correctParent.stdout).claudeCodeProWorker, join(parentPackage, "dist", "claude-code-pro-worker.js"));
   // A local matching dependency wins over an unrelated old parent installation.
   await mkdir(join(f.workerDir, "dist"), { recursive: true });
   await writeFile(join(f.workerDir, "package.json"), JSON.stringify(workerManifest));
   await writeFile(f.workerPath, echoWorker);
   await writeFile(f.codexProWorkerPath, echoWorker);
+  await writeFile(f.claudeCodeProWorkerPath, echoWorker);
   await writeFile(join(parentPackage, "package.json"), JSON.stringify({ ...workerManifest, version: "1.2.2" }));
   const correctLocal = await f.launch(["version"]).exit;
   assert.equal(correctLocal.code, 0, correctLocal.stderr);
@@ -226,7 +235,7 @@ test("install and setup dispatch to the bundled installer with untouched argumen
   assert.match(failed.stderr, /setup fixture failure/);
 });
 
-for (const executable of ['flywheel-dsh-worker.js', 'flywheel-codex-pro-worker.js']) {
+for (const executable of ['flywheel-dsh-worker.js', 'flywheel-codex-pro-worker.js', 'flywheel-claude-code-pro-worker.js']) {
   test(`${executable} uses its current Node executable and the package's public worker export`, async t => {
     const f = await fixture(t);
     const result = await f.launch(["--literal", "$(argument)"], { executable, input: '{"protocol":1}\n' }).exit;

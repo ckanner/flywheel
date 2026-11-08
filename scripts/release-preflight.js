@@ -39,13 +39,26 @@ function validatePackages(manifests, requestedVersion) {
     }
   }
   if (meta.dependencies?.[PLUGIN] !== version) throw new Error(`Meta dependency ${PLUGIN} must be exactly ${version}`);
-  if (manifests[PLUGIN].dependencies?.['dsh-subagent-codex-pro'] !== '0.8.0') {
-    throw new Error('The plugin dependency dsh-subagent-codex-pro must be exactly 0.8.0');
+  if (manifests[PLUGIN].dependencies?.['dsh-subagent-codex-pro'] !== '0.9.0') {
+    throw new Error('The plugin dependency dsh-subagent-codex-pro must be exactly 0.9.0');
+  }
+  if (JSON.stringify(manifests[PLUGIN].bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro'])) {
+    throw new Error('The reviewed Codex Pro source candidate must be bundled; installation must not depend on an unpublished registry version');
   }
   if (manifests[PLUGIN].exports?.['./codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
       manifests[PLUGIN].bin?.['flywheel-codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
       meta.bin?.['flywheel-codex-pro-worker'] !== 'bin/flywheel-codex-pro-worker.js') {
     throw new Error('The release must expose the installed Codex Pro worker');
+  }
+  if (manifests[PLUGIN].peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.4.0' ||
+      manifests[PLUGIN].peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true ||
+      manifests[PLUGIN].dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
+    throw new Error('Claude Code Pro must remain an optional peer pinned to machine-compatible 0.4.0');
+  }
+  if (manifests[PLUGIN].exports?.['./claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
+      manifests[PLUGIN].bin?.['flywheel-claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
+      meta.bin?.['flywheel-claude-code-pro-worker'] !== 'bin/flywheel-claude-code-pro-worker.js') {
+    throw new Error('The release must expose the installed Claude Code Pro worker');
   }
   return version;
 }

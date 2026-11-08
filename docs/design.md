@@ -2,9 +2,16 @@
 
 2026-11-06 自适应工作流实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准；源码实现不表示 npm 已发布或用户安装已更新。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)，Codex Pro 默认接入见 [接入计划](plans/2026-11-03-codex-pro-default.md)，Auto／Quick／Full 的原始决策见 [自适应工作流提案](plans/2026-11-06-adaptive-workflow.md)。
 
-2026-11-07 会话策略实施稿：按任务、范围和角色隔离，按运行事实续用或重建。具体方案见[会话生命周期提案](plans/2026-11-07-session-lifecycle.md)。本轮范围为 P1/P2：可信正常终态后的角色历史续用，以及已保存调用回执的恢复。调用安全记录与历史复用分别控制；支持的主任务适配器在 fresh/scoped 下均记录调用意图，结果未知时均阻止继续执行。P3 的实时调用恢复、只读查询及持久化确认仍需要上游公开协议；P4 的真实账号、质量、缓存与性能实验尚未完成，不能由离线测试推断。
+2026-11-07 会话策略实施稿：按任务、范围和角色隔离，按运行事实续用或重建。具体方案见[会话生命周期提案](plans/2026-11-07-session-lifecycle.md)。P1/P2 保留正常角色续用与 Go 已保存回执恢复；P3 新增 Codex Pro 0.9.0、Claude Code Pro 0.4.0 的公开 typed lifecycle、持久化 ACK、独立 supervisor journal 与精确只读恢复。P4 新增角色覆盖、有界质量重建、固定源码／oracle 的三组对照评估。调用安全与历史复用分别控制，fresh/scoped 都不绕过 unknown。运行语义见[中断恢复与上下文质量](session-recovery.md)。真实账号的质量、缓存与性能结果尚未取得，不能从离线验证推断收益。
 
-具体行为、故障注入、独立 review 修复及验收边界见[会话实现验收记录](validation/2026-11-07-session-lifecycle.md)。
+具体行为、故障注入、独立 review 修复及验收边界见[会话实现验收记录](validation/2026-11-07-session-lifecycle.md)。 P3/P4 的本次结果见[新增验收记录](validation/2026-11-08-session-p3-p4.md)，其中明确区分完整离线验证与被环境阻断的真实实验。
+
+Claude Code Pro 增量接入：新增可选 `claude-code-pro` harness，消费插件
+`dsh-subagent-claude-code-pro@0.4.0` 的公开 machine v1。它沿用上述角色会话与回执
+规则，不改变现有默认阶段。0.4.0 增加公开 lifecycle/recovery；Claude init 发生在 prompt 之后，不能伪造预派发 thread-ready。插件源码候选、Flywheel
+源码和 npm 发行是独立交付；旧插件不能因桌面工具存在就被当作新接口可用。
+实现、独立审查、上游四格 CI、实际 npm 安装与已测候选身份见
+[Claude Code Pro 验收记录](validation/2026-11-07-claude-code-pro.md)。
 
 ## 1. 目标与范围
 
@@ -12,7 +19,7 @@ Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 c
 
 本轮以用户现用的 DSH Mac 桌面为入口，复用 Kimi、ChatGPT 订阅和 DSH 已登录并充值的 DeepSeek 账号。DeepSeek 只使用 Flash，默认 provider 为 `deepseek-account`；`deepseek-official` API Key 仍是显式可选配置，不自动回退。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以通过 Codex Pro 插件的 machine API 使用完整 Codex harness；这两个后端的工具、权限和会话语义不同。
 
-具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.8.0` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。本轮增加统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联，减少已明确小任务的重复规划与终验。大规模并行调度和自动模型选型不在本轮范围。
+具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.9.0` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。本轮增加统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联，减少已明确小任务的重复规划与终验。大规模并行调度和自动模型选型不在本轮范围。
 
 ## 2. 设计不变量
 
@@ -34,10 +41,13 @@ flowchart TD
   U["DSH 桌面 / CLI"] --> G["Go 引擎"]
   G --> C["契约、状态、worktree"]
   G --> V["确定性验收与提交"]
-  G --> D["DSH SDK worker"]
-  G --> K["Kimi CLI"]
-  G --> X["Codex Pro worker"]
+  G --> R["按角色解析后端配置"]
+  R --> D["DSH SDK worker"]
+  R --> K["Kimi CLI"]
+  R --> X["Codex Pro worker"]
+  R --> H["Claude Code Pro worker"]
   X --> A["插件 machine API / Codex app-server"]
+  H --> Q["插件 machine API / Claude Code CLI"]
   D --> P["DeepSeek / ChatGPT provider"]
 ```
 
@@ -50,6 +60,11 @@ DSH 插件是控制面，提供面板、人工命令和模型工具。它只使�
 DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；无法证明正常关闭就不能报告成功。不依赖 Teams、OAR、Forge，也不把 external subagent 名称当成原生 LLM provider。
 
 Codex Pro worker 是另一种受管进程，直接导入 `dsh-subagent-codex-pro/machine`，不创建 DSH 父模型来再次委派。插件内部启动 Codex app-server，保留其完整 harness 与用户已有 Codex 登录。Go 管理 worker 生命周期；插件拥有 app-server、guardian 和内部取消／清理。正常完成必须同时满足外层 worker 的物理终态及插件完整回执。worker 异常退出不能被解释成插件子进程已清理；取消和未知清理结果均阻止成功。
+
+Claude Code Pro worker 同样直接调用公开 machine API。插件先建立独立 guardian 的
+IPC lifeline，再由 guardian 派发 Claude CLI 并拥有其进程组；worker 消失时仍能
+收束原生工作。正常结果等待 native 与 guardian 退出。清理与任务结果独立：外层被
+强杀导致回执丢失时，不能因为 guardian 清理了进程就推断任务成功或安全重放。
 
 ## 4. 执行闭环
 
@@ -146,6 +161,10 @@ L1 与 Review 的 `identity` 绑定：
 
 二者是外挂建议模块，不拥有主任务状态机。Intake 发现候选任务，Garden 提出知识资产改进；建议经人确认后进入正式契约。模块使用相同的进程终态、用量未知和预算纪律，不因“只是文本建议”接受未收尾的成功。
 
+有结构化 Session 事实的适配器若返回未知派发或未知结果，辅助模块在保存可归属计量后
+也停止重试／渠道回退。进程清理已确认不能代替业务结果已知；本地确定尚未启动的拒绝
+记录 not-dispatched 与零实际消耗，不能误记为已执行的未知任务。
+
 ### 4.7 Quick 最终评审与升级
 
 Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。最终 Review 使用与 Executor 隔离的上下文，既评代码质量，也逐项核对 Spec 需求、验收充分性与 Quick 资格；它承担单任务的最终验收职责，不能用执行者自审或只有风格意见的普通评审替代。同范围复审续用不增加首次成功路径的固定模型阶段。
@@ -168,7 +187,7 @@ Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd�
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
 intent／received／consumed／blocked、派发／结果／清理和用量事实。
 
-调用安全记录与历史复用分别控制。Codex Pro、DSH、Kimi 的主任务调用在 fresh/scoped
+调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
 下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
 的可信结果才保存可复用句柄。fresh 的原始后端会话标识仍可保留在回执中，既有 Kimi
 Plan resident 行为不冒充跨里程碑的通用会话。其他适配器、mock 与 Intake／Garden
@@ -208,7 +227,9 @@ Intake／Garden 的预算与清理升级记录若需更新已有主任务状态�
 
 主要单元状态仍为 pending、executing、executed、l1-passed、l1-failed、review-failed、completed、interrupted、inbox。中断后的产物保留，重启不凭旧报告自动认定完成。新增可选 `last-feedback`、`evidence-history`、`contract-fingerprints`、契约同步状态及 usage/cost 未知计数，旧配置与状态可加载，但旧完成记录不自动取得新证据的可信度。
 
-P1/P2 的角色历史、单次调用和候选／保护证据身份已进入当前可选 sessions schema，并支持正常终态续用和已保存可信回执的崩溃恢复。P3 的在途查询、只读核对及可等待持久化确认的早期生命周期协议仍未具备；thread ID 本身不是派发幂等、持久化或清理证明。
+角色历史、单次调用、候选／保护证据、P3 lifecycle checkpoint 与 P4 quality 观测进入可选 sessions schema。Go 在 ACK 前对 intent、检查点和状态做原子持久化及 fsync；上游独立 supervisor 先保存完整终态再通知。恢复仅查询原调用 journal；terminal 仍须完整身份、清理和原候选证据，pending 不证明进程存活。thread ID 本身不是派发幂等、持久化或清理证明。
+
+同一调用的 unknown→known usage 以可审计 correction 对账，不重复增加调用数，保留原 provider／日期；已过期日桶不复活。metrics 文件与父目录同步后才返回成功。角色质量阈值默认关闭，只在安全终态已消费后影响下一次 create/resume/rebuild；保留原因、预算和工作区，详见[恢复指南](session-recovery.md)。
 
 每个现行 packet 的契约 fingerprint 包含权威 Spec 全文、packet 全文和验证配置，并随状态保存。重启或 Plan 修订后重新比较；不匹配的单元和所属里程碑重新打开，失效证据归档，完成任务也可回到 pending。旧 completed 没有 fingerprint 时保守地重新打开。Spec 或共享验证策略改变可能影响多个单元；后续正常实现代码变化则不会单独改变这个契约 fingerprint。
 
@@ -267,15 +288,47 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 
 ### 7.1 Codex Pro 接入契约
 
-`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。fresh 使用外层 worker v1 与 ephemeral 历史；scoped 使用外层 v2、persistent 模式及可选的精确 threadId。内部仍是插件 0.8.0 的 machine API／原始 receipt 协议 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
+`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。主任务 fresh/scoped 均使用外层 worker v3，分别显式选择 ephemeral/persistent；低层兼容 v1/v2。内部仍为插件 0.9.0 的 machine request/receipt protocol 1，另有 lifecycle version 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
 
-worker 精确依赖插件 `0.8.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
+worker 精确依赖插件 `0.9.0` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
 
-权限检查分两个时点：插件在 `turn/start` 前检查模型、cwd、approval 与沙箱模式；Flywheel 在完整结果返回后检查完整 sandboxPolicy，决定该结果能否进入后续验收。插件 0.8.0 没有提供运行前完整策略 guard；Codex 用户／项目配置可能扩展 writable roots 或 networkAccess。事后拒绝不能阻止已经发生的访问，doctor 必须提示此边界。要求运行前拒绝任何额外权限的环境，需上游增加公开 pre-turn guard 后再使用；不得通过私有 API 或复制凭证建立另一套运行时。
+权限检查分两个时点：插件检查实际配置，主任务 v3 的 thread-ready 再把完整 sandboxPolicy 送交 Go，在 ACK 前完成完整检查，阻止不符合策略的 turn/start。终态还须重新核对。受限模式不得有工作区外额外 writable roots 或 networkAccess；完全权限明确记录 dangerFullAccess，不宣称 OS 隔离。旧 v1/v2 以及未请求 lifecycle 的辅助调用仍只有终态完整策略检查，不能外推为预执行 guard。doctor 报告静态接口能力，不证明具体账号、历史或实际沙箱可用。
 
 终态审计保留插件原始回执，包括请求／接受／实际配置、thread/turn、usage 完整性、错误、物理进程退出及清理确认。插件为正常收尾主动终止 app-server，可在完整回执证明正常完成与清理后接受其 terminationRequested 事实；用户取消、超时、截断、启动失败和清理失败不适用此例外。无完整回执或外层进程异常时绝不能凭文本答案推进完成。
 
 仅完整且可归属本次调用的 usage 进入可知预算；partial/unknown 明确保留在回执，不能当成完整零用量。订阅调用没有真实美元价格时 cost 保持 unknown。默认安装解析 npm 依赖中的 worker，不悄悄改用 PATH 上的旧 `codex exec`。Codex 可执行程序与账号登录仍是运行前提；安装插件依赖不等同于代办授权。
+
+### 7.2 Claude Code Pro 可选接入
+
+`harness:"claude-code-pro"` 选择完整 Claude Code 工具循环，`channel` 指账号渠道，
+`model` 必填并原样传给 CLI；它不是 DSH SDK 注册的 provider。具名模板仅添加未绑定
+的 `claude-sonnet` profile，由用户以后选择 `loops.*` 或 Execute `routes.*`。
+`thinking` 缺省 high，支持插件允许的 low/medium/high/xhigh/max；CLI、模型与账号仍
+可能拒绝某档位，不能把传参成功宣称为实际推理强度已验证。
+
+Flywheel 分发 worker，把插件 0.4.0 声明为精确的 optional peer。未选择它时不用安装
+该 peer；选中时 `doctor` 与 worker 核验包名／版本／公开导出，并检查本地 `claude`
+命令。桌面安装目录不一定是 worker 的 Node 解析树；必须安装在该 worker 能解析的
+同一依赖树或全局 prefix。依赖缺失、接口不符和无效请求在 machine 调用前证明未派发；
+一旦进入 machine 调用，异常不能借同一个标记伪装成安全重放。
+
+首版只映射明确的 `full-access` 为原生 `bypassPermissions`。Claude 的 plan、
+acceptEdits 等是原生工具审批策略，不等价于 OS read-only/workspace-write 沙箱，
+所以 role-based 在调用前拒绝。完整原始回执保留 CLI init 所观察的 cwd、模型、权限
+模式、会话和版本；完整模型 ID 要求一致，sonnet/opus/haiku 别名按同 family 核对。
+这是运行后接纳检查，不声称在首个工具动作前拦截自定义 CLI 配置。
+
+主任务 fresh/scoped 外层 v3 分别映射 `sessionMode:ephemeral/persistent`，threadId 映射显式
+sessionId resume；新建与恢复不能同时请求。旧 v1/v2 低层入口保留。主任务仍由 Go 按角色保存句柄，评审不
+共享执行者历史。内部 machine v1 与终态回执独立版本化；保留 runId、进程组、独立
+dispatch/outcome/cleanup、原始 usage 和错误。CLI 无真实 turnId 时不构造远端 turnId。
+缺失／损坏终态、异常退出和未知清理均不能成为续用检查点，且不能自动 fresh 重放。
+
+CLI 的 input_tokens 不含缓存量，已知完整计数按 input+cache-read+cache-create+output
+累计；缺失的缓存字段保持 unknown/partial，不补零。`total_cost_usd` 仅保留为
+reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unknown。
+用户显式配置价格时，成本估算先从包含缓存的总输入中扣除 cache-read/cache-create，
+再对互不相交的桶各计一次；相同口径适用于 DSH 与 Codex Pro。原始 token 账本不改写。
 
 ## 8. 用量、成本与效率
 
@@ -317,11 +370,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 2026-11-06 [自适应工作流方案](plans/2026-11-06-adaptive-workflow.md)的第一阶段在本实现中落地：宿主统一准备启动、保守选择 Quick／Full、两阶段 Quick 与单向升级、DSH 具体任务关联。方案正文保留原始背景和分期计划；现行字段与接口以本设计、schema 和使用指南为准。
 
-2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)的 P1/P2 在本轮接通：
-Codex Pro、DSH、Kimi 的正常终态续用、角色账本、调用安全记录及可靠回执恢复。
-P3 仍需要上游插件公开实时调用查询、只读恢复和持久化确认；不能用外层 worker v2
-假装这些能力已存在。P4 的真实账号、质量、缓存与性能基准未完成；离线协议及恢复
-测试不能替代这些实验。保持 machine API、Go 状态所有权、独立评审和现有交付门禁。
+2026-11-07 [会话生命周期方案](plans/2026-11-07-session-lifecycle.md)的 P1–P4 源码路径已接通：角色历史、可信回执、Codex／Claude 的持久化 ACK 与只读恢复、有界质量重建及三策略固定任务评估。上下文压缩采用从权威材料重建，不添加未计量的模型压缩循环。P4 真实账号质量、缓存与性能对照仍需可用运行环境；默认阈值保持关闭，不预设节省比例。DSH／Kimi 未提供与这两个插件相同的 P3 journal API，能力报告与 unknown 阻断保持真实。独立评审、Go 状态所有权和现有交付门禁不变。
 
 多 agent 并行、任务团队、附件协议、系统级强隔离，以及基于真实任务指标的进一步自动路由，仍需后续独立实施和验收。具名 profiles 保持加载期展开，不增加第二套调度器或自动付费后备路径。当前阶段采用顺序的独立执行／评审会话；没有宣布原生 Teams 或并行调度可用。
 
@@ -409,7 +458,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-订阅模型迁移与显式权限已随六个同版本 npm 包 **0.28.2** 发行；该发行内嵌的 DeepSeek 默认仍是 API Key。账号默认、账号错误分类、会话当前目录、缺失清理回执保护与 Skill 文档修复的统一发行目标为 0.28.3；实际上传、安装和 latest 结果见发行记录，不重写已经发布的 0.28.2 包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.8.0`。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+订阅模型迁移与显式权限已随六个同版本 npm 包 **0.28.2** 发行；该发行内嵌的 DeepSeek 默认仍是 API Key。账号默认、账号错误分类、会话当前目录、缺失清理回执保护与 Skill 文档修复的统一发行目标为 0.28.3；实际上传、安装和 latest 结果见发行记录，不重写已经发布的 0.28.2 包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.9.0`；该未发布源码候选以真实 npm tarball 锁定并 bundle 到插件，来源、许可证和摘要见 `plugins/dsh/vendor/`。Claude 0.4.0 维持可选 peer。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

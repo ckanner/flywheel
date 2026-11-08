@@ -30,6 +30,19 @@
               "resume-candidate": { "type": "boolean" },
               "action": { "enum": ["create", "resume", "rebuild", "wait", "reconcile"] },
               "reason": { "type": "string", "minLength": 1 },
+              "quality": {
+                "type": "object", "additionalProperties": false,
+                "required": ["confirmed-turns", "unproductive-turns", "last-usage-status", "rebuilds"],
+                "properties": {
+                  "confirmed-turns": { "type": "integer", "minimum": 0 },
+                  "unproductive-turns": { "type": "integer", "minimum": 0 },
+                  "last-input-tokens": { "type": "integer", "minimum": 0 },
+                  "last-usage-status": { "enum": ["complete", "partial", "unknown"] },
+                  "last-invocation-id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
+                  "rebuilds": { "type": "integer", "minimum": 0 },
+                  "rebuild-reason": { "type": "string", "minLength": 1 }
+                }
+              },
               "last": {
                 "type": "object", "additionalProperties": false,
                 "required": ["id", "status", "started-at", "attempt", "candidate-before", "accounted", "dispatch", "outcome", "cleanup-confirmed", "usage-status"],
@@ -49,7 +62,46 @@
                   "dispatch": { "enum": ["not-dispatched", "dispatched", "unknown"] },
                   "outcome": { "enum": ["completed", "failed", "cancelled", "unknown"] },
                   "cleanup-confirmed": { "type": "boolean" },
-                  "usage-status": { "enum": ["complete", "partial", "unknown"] }
+                  "usage-status": { "enum": ["complete", "partial", "unknown"] },
+                  "accounting": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["day", "provider", "receipt-digest", "usage", "cost-usd"],
+                    "properties": {
+                      "day": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+                      "provider": { "type": "string", "minLength": 1 },
+                      "receipt-digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                      "cost-usd": { "type": ["number", "null"], "minimum": 0 },
+                      "usage": {
+                        "type": ["object", "null"], "additionalProperties": false,
+                        "required": ["input", "output", "reasoning", "cache-read", "cache-write", "total-tokens"],
+                        "properties": {
+                          "input": { "type": "integer", "minimum": 0 },
+                          "output": { "type": "integer", "minimum": 0 },
+                          "reasoning": { "type": "integer", "minimum": 0 },
+                          "cache-read": { "type": "integer", "minimum": 0 },
+                          "cache-write": { "type": "integer", "minimum": 0 },
+                          "total-tokens": { "type": "integer", "minimum": 0 }
+                        }
+                      }
+                    }
+                  },
+                  "recovery": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["version", "harness", "adapter-version", "directory", "model", "effort", "permission-mode", "sequence"],
+                    "properties": {
+                      "version": { "const": 1 },
+                      "harness": { "enum": ["codex-pro", "claude-code-pro"] },
+                      "adapter-version": { "type": "string", "minLength": 1 },
+                      "directory": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "effort": { "type": "string", "minLength": 1 },
+                      "permission-mode": { "enum": ["read-only", "workspace-write", "danger-full-access"] },
+                      "run-id": { "type": "string", "minLength": 1 },
+                      "sequence": { "type": "integer", "minimum": 0, "maximum": 64 },
+                      "event": { "enum": ["thread-ready", "dispatch-intent", "dispatch-possible", "turn-accepted", "terminal", "cleanup-confirmed"] },
+                      "checkpoint-digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                    }
+                  }
                 },
                 "allOf": [{
                   "if": { "properties": { "status": { "enum": ["received", "consumed"] } } },

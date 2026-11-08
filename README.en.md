@@ -6,11 +6,13 @@ Flywheel turns reviewed software requirements into bounded coding tasks with exp
 
 Current source supports **Auto, Quick, and Full** workflows. `flywheel-task` prepares and launches an authorized goal. A qualified small task uses Execute, all required checks, one independent final Review, and persisted Git delivery; larger or uncertain tasks retain the full loop. Existing tasks remain Full. Workflow selection does not change model bindings, permissions, or delivery authorization.
 
-Session policy supports **fresh/scoped**: new templates explicitly choose scoped, while old configurations default to fresh. Scoped mode can continue compatible history for the same task, role, and scope after a trusted normal terminal outcome; independent re-review still checks the complete current candidate. Both modes journal main-task Codex Pro, DSH, and Kimi calls. Unknown dispatch, outcome, or cleanup blocks execution and cannot be bypassed by switching modes. Normal continuation and saved-receipt recovery (P1/P2) are implemented; live recovery (P3) and real experiments (P4) remain incomplete. See [Session policy](docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
+Session policy supports **fresh/scoped**: new templates explicitly choose scoped, while old configurations default to fresh. Scoped mode can continue compatible history for the same task, role, and scope after a trusted normal terminal outcome; independent re-review still checks the complete current candidate. Both modes journal main-task Codex Pro, Claude Code Pro, DSH, and Kimi calls. Unknown dispatch, outcome, or cleanup blocks execution and cannot be bypassed by switching modes. P3 adds public typed lifecycle events, durable acknowledgements, and read-only Codex/Claude receipt recovery. P4 adds role overrides, bounded quality rebuilds, and paired evaluation tools. Real-account quality, cache, and performance results remain unverified; offline tests cannot establish them. See [Interrupted calls and context quality](docs/en/session-recovery.md). See [Session policy](docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
 
 This source targets **0.28.5**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration covers the checked **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1** interfaces. Version 0.28.4 declares only these two runtime versions. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
 
 The adaptive workflow and `flywheel-task` require a matching CLI/plugin release containing these changes. Check `flywheel control launch --help`; the older installation commands alone do not establish that this new interface is available.
+
+Current source also supports an optional [Claude Code Pro backend](docs/en/claude-code-pro.md), with explicit models/efforts and scoped role history. No default stage selects it. It requires the companion 0.4.0 machine API and explicit full access; the 0.3.1 desktop tool is not a compatible substitute.
 
 ## Install
 
@@ -59,7 +61,7 @@ The standard SDK already includes the DeepSeek account provider and account serv
 
 ## Codex Pro uses the actual plugin runtime
 
-The hard route uses `harness: "codex-pro"`. Its worker directly imports the public `dsh-subagent-codex-pro/machine` API from the exact dependency **`dsh-subagent-codex-pro@0.8.0`**, using protocol 1. The plugin runs Codex app-server with the user's existing Codex installation and login. No parent DSH model is required to delegate the task again.
+The hard route uses `harness: "codex-pro"`. Its worker directly imports the public `dsh-subagent-codex-pro/machine` API from the exact dependency **`dsh-subagent-codex-pro@0.9.0`**, using machine protocol 1 and lifecycle version 1. The reviewed source candidate is bundled with Flywheel; [provenance and hashes](plugins/dsh/vendor/README.md) identify its exact bytes. The plugin runs Codex app-server with the user's existing Codex installation and login. No parent DSH model is required to delegate the task again.
 
 `subagent_codex_pro` is an external tool name, not a DSH LLM provider. Native DSH GPT calls use the `chatgpt` provider and have a different execution backend. The older `harness: "codex"` driver remains an explicit compatibility choice; the new route does not silently fall back to `codex exec`.
 
@@ -131,7 +133,7 @@ The engine alone writes `state.json`, atomically with revision checks. Do not ed
 |---|---|
 | [Getting started](docs/en/getting-started.md) | Install, configure, diagnose, run a small task, stop, and recover |
 | [Workflow](docs/en/workflow.md) | Preparation models, task and packet worktrees, Draft PRs, completion, and merge policy |
-| [Session lifecycle proposal](docs/en/plans/2026-11-07-session-lifecycle.md) | P1/P2 normal-terminal continuation and saved-receipt recovery; P3 public live recovery APIs and P4 real experiments remain pending |
+| [Session lifecycle proposal](docs/en/plans/2026-11-07-session-lifecycle.md) | Original P1–P4 proposal; implemented recovery and quality policy are documented in the current guides |
 | [Configuration](docs/en/configuration.md) | File precedence, profiles, providers, channels, Codex Pro, and diagnostics |
 | [Reasoning effort](docs/en/model-policy.md) | Supported levels, high baseline, evaluation candidates, and account-provider choice |
 | [Chinese documentation](README.md) | Default language and additional implementation detail |

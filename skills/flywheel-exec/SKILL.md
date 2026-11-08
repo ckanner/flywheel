@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.9.0"
+  version: "1.9.2"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -44,6 +44,9 @@ git -C "$repo_dir" worktree list --porcelain
    查看有效路由。0.28.0 的 hard 默认是 `codex-pro`，直接使用已安装插件的 machine API；
    旧配置不自动迁移。不要在 skill 中改用 `codex exec` 或启动父模型再次委派，
    也不要把 `subagent_codex_pro` 写成 DSH provider。
+   显式选择 `claude-code-pro` 时核对 doctor 的配套 0.4.0 machine API 与 full-access
+   前提；它也是独立 harness，不能在 skill 中改用 `subagent_claude_code` 再委派。
+   未决定使用场景时保留原 routes，不因为存在可选 profile 自动切换模型。
 2. **调用**（按是否指定 packet 选择一条，不进入 packet 目录另启动引擎）：
 
    ```bash
@@ -76,6 +79,8 @@ fresh 不启用通用历史复用，两种模式均保留支持适配器的调�
 
 清理、派发或结果未知时保留成果和审计并报告阻断。确认子进程结束不证明调用结果
 已知；从原任务路径交由 Go 核对回执，不切 fresh、换目录或重置 state 来绕过。
-不用固定等待代替确认。
+不用固定等待代替确认。P3 的只读原调用恢复和 P4 的有界重建均由 Go 负责；
+只有原候选证据完整的回执能推进执行，质量阈值不能解除未知调用阻断。不要删除
+`.sessions`、直接重发 prompt 或在 skill 中自行压缩历史。
 完整运行通过 Review 等门禁后，引擎才本地 `ff-only` 合回任务分支；PR 的推送、
 创建和最终合并由外层按已有授权处理，本单环不自动执行这些远端操作。

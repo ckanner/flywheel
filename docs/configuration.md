@@ -63,7 +63,7 @@ flywheel config inspect --cwd /repo --json
 null、错拼字段和不完整对象在模型启动前拒绝。字段信源为
 [会话策略 schema](../templates/session-policy.schema.json)。
 
-`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、DSH 和 Kimi 的主任务
+`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、Claude Code Pro、DSH 和 Kimi 的主任务
 Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图，再保存可信终态回执。
 `fresh` 不复用通用的角色历史，保持后端原有的新调用方式，并保留既有 Kimi Plan
 `resident-session` 行为；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
@@ -111,12 +111,56 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-本轮只实现正常终态续接和已保存回执恢复（P1/P2）；实时恢复与只读核对（P3）仍待
-上游公开协议，真实质量、缓存和性能实验（P4）尚未完成。
+Codex Pro 0.9.0 与 Claude Code Pro 0.4.0 的主任务调用使用外层 worker v3，
+接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
+recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 原生 init
+发生在 prompt 已派发之后，不能提供同等的派发前配置证明。两个后端都保留未知窗口，
+不会从 PID 消失或报告存在推断任务完成。详见[中断核对](session-recovery.md)。
 
 `status` 及 `control status` 展示角色、作用域、代次、动作／原因、最新调用状态、
 派发／结果／清理、是否复用历史与用量状态。紧凑投影不读取回执内容或历史正文，也不
 修改账本；无会话记录的旧任务不被推断为已具备恢复资格。
+
+### 按角色选择与上下文质量
+
+`sessions.roles` 可对 `plan`、`execute`、`review`、`judge`、`judge-panel` 分别
+选择 `fresh` 或 `scoped`；省略的角色继承 `mode`。显式 `roles.plan:"fresh"`
+也关闭旧 Kimi Plan 的历史捷径；显式 `resident-session:false` 继续阻止 Plan 复用。
+Intake／Garden 不接受角色覆盖。示例只改变历史策略，不改变模型与渠道：
+
+```json
+{
+  "sessions": {
+    "mode": "scoped",
+    "policy-version": 1,
+    "roles": {"review": "fresh"},
+    "quality": {
+      "max-confirmed-turns": 0,
+      "max-unproductive-turns": 0,
+      "max-run-input-tokens": 0
+    }
+  }
+}
+```
+
+质量阈值均默认为 `0`（关闭），不会凭未测得的收益改变旧行为。设为正整数后：
+
+| 字段 | 机械可核对的重建依据 |
+|---|---|
+| `max-confirmed-turns` | 当前角色历史代次内已确认派发并安全结束的调用次数达到上限 |
+| `max-unproductive-turns` | Execute 连续调用前后的权威候选 fingerprint 未变达到上限；这只证明候选没变，不替代语义质量判断 |
+| `max-run-input-tokens` | 最近一次 complete 用量回执的单次 run input 达到上限；它是工作量观测，不是原生 context window 的测量 |
+
+只有上一次结果已消费、已入账、派发／终态／清理均确认且历史原本可续用，质量策略
+才允许重建。未派发失败不增加已确认 turn 数；回执重放按 invocation ID 去重。
+partial／unknown 用量不补零，也不能单凭缺失用量触发输入阈值。原预算、失败次数、
+停滞限制、工作区成果和独立验收继续保留。重建只交接本角色的代次／调用引用、原因
+与当前权威材料，不复制另一角色的私有历史，不新增模型压缩调用。
+
+`state.sessions.records[*].quality` 与对应指标记录已确认 turn 数、候选未变化次数、
+最近输入观测及完整度、代次重建次数和原因。阈值范围由同一 schema 限制；无依据的
+未来字段或不合法值在启动前失败。如何对真实任务进行三策略配对评估、选择阈值以及
+保留未确认结果，见[会话效果评估](session-evaluation.md)。
 
 ### 工作流策略与恢复
 
@@ -173,11 +217,15 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 字段信源为 [Spec schema](../templates/spec.schema.json) 与
 [state schema](../templates/state.schema.json)，运行流程见[工作流指南](workflow.md)。
 
+### 可选 Claude Code Pro
+
+新增 `harness:claude-code-pro` 与未绑定的 `claude-sonnet` profile，可用于任意已配置 loop 或 Execute route。模型、thinking、optional peer 安装、full-access-only 权限及正常续接边界见 [Claude Code Pro 指南](claude-code-pro.md)。`provider` 仍只用于 DSH 原生 adapter；默认阶段分配不变。
+
 ## 2. 四个概念各负责什么
 
 | 字段 | 含义 | 示例 |
 |---|---|---|
-| `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`；`codex` 为显式旧 CLI 路径 |
+| `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`、`claude-code-pro`；`codex` 为显式旧 CLI 路径 |
 | `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-account`、`chatgpt` |
 | `channel` | 配置中的凭证／后备／计量渠道名称 | `deepseek-account-sdk`、`chatgpt-sdk`、`kimi-subscription` |
 | `profile` | 当前 Flywheel 配置内的一组模型字段引用 | `flash`、`gpt-review`、`kimi` |
@@ -216,19 +264,30 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 }
 ```
 
-完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件依赖 `dsh-subagent-codex-pro@0.8.0` 由 npm 安装；worker 直接导入其公开 `dsh-subagent-codex-pro/machine` API，内部仍使用 Codex app-server 和用户已有登录。它不是 DSH LLM provider，也不需要父模型调用 `subagent_codex_pro`。缺少插件或回执不符会失败，不自动回退 `codex exec`。
+完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件精确消费
+`dsh-subagent-codex-pro@0.9.0` 的公开 `dsh-subagent-codex-pro/machine` API。
+当前候选将已审查源码生成的真实公开包一并打入插件，不能据此推断 0.9.0 已在 registry
+发行。内部仍使用 Codex app-server 和用户已有登录，不需要父模型二次委派；缺包、
+版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.4.0` optional peer，
+未选择该后端时无需安装。
 
 已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。
 
-fresh 使用外层 worker 协议 1 与 ephemeral 历史；scoped 使用外层协议 2、
-`threadMode:persistent` 和可选的精确 `threadId`。两者内部仍消费插件 0.8.0 的
-machine API／原始 receipt 协议 1，不能把外层 v2 解释成上游协议升级。恢复必须匹配
-原 thread；busy、缺失历史或通用恢复失败不能靠错误正文猜测为安全冷启动。
-能力边界见[会话生命周期方案](plans/2026-11-07-session-lifecycle.md)。
+主任务在 fresh 与 scoped 两种模式下均使用外层 worker 协议 3：前者选 ephemeral，
+后者选 persistent 并在续用时提供精确 thread ID；派发前需完成对应生命周期检查点
+与 Go 持久化 ACK。公开 machine 请求／终态回执仍为协议 1，typed lifecycle 另有
+版本化契约，不能混为一个版本。旧外层 v1/v2 入口继续服务低层兼容调用；没有自动获得
+主任务的持久化恢复保证。任何 resume 必须匹配原 thread，busy 或失败文本不能证明
+安全冷启动。具体事件与只读恢复条件见[中断核对](session-recovery.md)。
 
 `FLYWHEEL_CODEX_PRO_WORKER` 可显式指定 worker；通常由 npm 启动器解析同版本依赖。`FLYWHEEL_CODEX_BIN` 指定插件内部的 Codex 程序，默认 PATH 中的 `codex`；`CODEX_HOME` 可选择既有配置与登录目录。自定义环境需对启动引擎的进程可见，安装器不会复制凭证。
 
-插件在运行前确认模型、cwd、approval 和沙箱模式；Flywheel 在完整结果返回后检查实际策略及进程终态。在 role-based 的 workspace-write 模式，允许工作区及 Codex 标准临时目录；额外的工作区外 writable roots、网络启用或不能确认的策略不能进入成功验收。显式 full-access 则核对 `danger-full-access`／`dangerFullAccess` 完全权限回执，不将其误报为受限沙箱。**该完整策略检查发生在运行后，不能阻止自定义 Codex 配置已允许的访问。** 要求完整策略在任务前被拒绝的环境，应等待上游公开 pre-turn guard；doctor 会持续提示这一边界。
+Codex 主任务先通过公开 `thread-ready` 核对实际模型、cwd、approval 和完整沙箱策略，
+Go 保存检查点并 ACK 后才允许新 turn。role-based 的 workspace-write 允许工作区与
+Codex 标准临时目录；额外 writable roots、网络启用或无法确认的策略在派发前拒绝。
+full-access 核对 `danger-full-access`／`dangerFullAccess`，不将其称为受限沙箱。
+终态仍重新验证配置和清理事实。低层 v1/v2 兼容调用没有 Go 的派发前 ACK；外部管理
+策略与原生拒绝在所有模式下仍然生效。
 
 指标的 `codex-pro-receipt` 保存完整 machine receipt，包含请求、实际配置、thread/turn、进程、清理、usage 和失败事实。effort 的 `accepted: true` 不等于服务器证明了实际推理强度，`effectiveEffort` 保留 null。仅 `usage.status: "complete"` 的本次增量进入已知预算；partial/unknown 原样留在回执并计入未知调用。插件不提供实际美元成本，原始 cost 保持 unknown；Flywheel 只有在用户显式配置 pricing 且 usage 完整时才能另行估算，估算不等于订阅账单。
 
@@ -327,7 +386,11 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
 
-Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.8.0／协议 1、Node >=22.18.0 以及 Codex 命令版本；同一 worker 只查一次。`--probe` 不为此路径发送任务，实际模型、effort 与完整权限保持 unknown；它不会把成功导入插件当成账号、沙箱或推理能力已经验证。
+Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.9.0／协议 1、typed
+lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 worker 只查一次。
+绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
+适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。
+`--probe` 不发送模型任务，不把导入成功解释为账号、权限或某段历史恢复已经验证。
 
 `sessions.policy` 检查只确认配置模式及版本；每个适用真实绑定的 `.session` 检查
 显示所选模式、原因和适配器支持，历史恢复仍为 unknown。Doctor 不尝试恢复用户

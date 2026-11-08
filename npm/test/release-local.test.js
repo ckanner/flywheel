@@ -65,9 +65,15 @@ function manifests() {
   values[META].optionalDependencies = Object.fromEntries(PACKAGES.filter((entry) => entry.platform).map((entry) => [entry.name, VERSION]));
   values[META].dependencies = { [PLUGIN]: VERSION };
   values[META].bin = { "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js" };
-  values[PLUGIN].dependencies = { "dsh-subagent-codex-pro": "0.8.0" };
+  values[PLUGIN].dependencies = { "dsh-subagent-codex-pro": "0.9.0" };
+  values[PLUGIN].bundledDependencies = ['dsh-subagent-codex-pro'];
   values[PLUGIN].exports = { "./codex-pro-worker": "./dist/codex-pro-worker.js" };
   values[PLUGIN].bin = { "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js" };
+  values[META].bin['flywheel-claude-code-pro-worker'] = 'bin/flywheel-claude-code-pro-worker.js';
+  values[PLUGIN].exports['./claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
+  values[PLUGIN].bin['flywheel-claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
+  values[PLUGIN].peerDependencies = { 'dsh-subagent-claude-code-pro': '0.4.0' };
+  values[PLUGIN].peerDependenciesMeta = { 'dsh-subagent-claude-code-pro': { optional: true } };
   return values;
 }
 

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { assertFlashAccountProfile } = require('./support/installed-profiles.js');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
 const { registry, environment, run, firstInstall, installedRoot, waitFile } = require('./support/install-harness.js');
@@ -35,7 +35,9 @@ test('the six packaged npm candidates install and run from a clean agent environ
   await fs.access(worker, 1);
   const codexProWorker = path.join(context.prefix, 'bin', 'flywheel-codex-pro-worker');
   await fs.access(codexProWorker, 1);
-  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1, inferenceTested: false });
+  const claudeCodeProWorker = path.join(context.prefix, 'bin', 'flywheel-claude-code-pro-worker');
+  await fs.access(claudeCodeProWorker, 1);
+  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
@@ -53,7 +55,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.equal(binding.thinking, thinking);
     assert.equal(binding.permissionMode, 'danger-full-access');
   }
-  for (const document of ['docs/model-policy.md', 'docs/en/model-policy.md']) {
+  for (const document of ['docs/model-policy.md', 'docs/en/model-policy.md', 'docs/claude-code-pro.md', 'docs/en/claude-code-pro.md']) {
     await fs.access(path.join(root, document));
   }
   const demo = path.join(context.root, 'packaged tutorial demo');
@@ -71,6 +73,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
 
   const installedRequire = require('node:module').createRequire(path.join(root, 'package.json'));
   const workerPath = installedRequire.resolve('@ckanner/dsh-plugin-flywheel/worker');
+  assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/dsh-plugin-flywheel/claude-code-pro-worker'));
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/dsh-plugin-flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
   assert.equal(typeof installedHost.apply, 'function');
@@ -80,10 +83,20 @@ test('the six packaged npm candidates install and run from a clean agent environ
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
 
+  await t.test('default installation succeeds with an absent optional Claude adapter', async () => {
+    const doctor = await run(claudeCodeProWorker, ['--doctor'], context.env, context.project);
+    assert.equal(doctor.code, 1, doctor.stdout + doctor.stderr);
+    const result = JSON.parse(doctor.stdout);
+    assert.equal(result.receipt, null);
+    assert.equal(result.error.code, 'ADAPTER_UNAVAILABLE');
+    assert.deepEqual(result.admission, { dispatched: false, cleanupConfirmed: true });
+    assert.deepEqual(await fs.readFile(globalConfig), before);
+  });
+
   await t.test('installed worker imports the real pinned plugin and executes an offline app-server', async () => {
     const doctor = await run(codexProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stderr + doctor.stdout);
-    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.8.0',
+    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.9.0',
       machineProtocol: 1, available: true, inferenceTested: false });
     const fixture = path.join(context.fixtures, 'offline-codex.mjs');
     await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-codex-pro.js'), fixture);
@@ -105,7 +118,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.equal(exit.signal, null);
     const frames = stdout.trim().split('\n').map(line => JSON.parse(line));
     const result = frames.at(-1);
-    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.8.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.outcome.cleanup.confirmed, true);
     for (const pid of [result.receipt.outcome.execution.pid, result.receipt.outcome.execution.supervisorPid]) {
@@ -121,8 +134,62 @@ test('the six packaged npm candidates install and run from a clean agent environ
     const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(calls[0].argv, ['app-server', '--stdio']);
     assert.equal(calls.find(call => call.method === 'turn/start').params.effort, 'high');
-    assert.ok(server.requests.includes('/dsh-subagent-codex-pro'));
-    assert.ok(server.requests.includes('/tarballs/dsh-subagent-codex-pro-0.8.0.tgz'));
+      assert.ok(!server.requests.some(value => value.includes('dsh-subagent-codex-pro')),
+      'the reviewed bundled source must install without fetching an unpublished registry release');
+  });
+
+  await t.test('the optional source tarball runs through the installed Claude worker', {
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.4.0 source candidate',
+  }, async () => {
+    const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
+    const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
+    assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
+    assert.equal(manifest.version, '0.4.0');
+    assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
+    assert.deepEqual(manifest.dependencies || {}, {}, 'the offline candidate must remain dependency-free');
+    const [npm, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];
+    const installation = await run(npm, [...args, 'install', '--global', '--prefix', context.prefix,
+      '--ignore-scripts', '--no-audit', '--no-fund', tarball], context.env, context.project);
+    assert.equal(installation.code, 0, installation.stdout + installation.stderr);
+    const doctor = await run(claudeCodeProWorker, ['--doctor'], context.env, context.project);
+    assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
+    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: manifest.name,
+      version: manifest.version, machineProtocol: 1, available: true, inferenceTested: false });
+    const fixture = path.join(context.fixtures, 'offline-claude.mjs');
+    await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-claude-code-pro.js'), fixture);
+    await fs.chmod(fixture, 0o755);
+    const child = spawn(claudeCodeProWorker, [], { cwd: context.project,
+      env: { ...context.env, FLYWHEEL_CLAUDE_BIN: fixture }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', value => { stdout += value; }); child.stderr.on('data', value => { stderr += value; });
+    child.stdin.on('error', () => {});
+    const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
+    const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
+    child.stdin.write(JSON.stringify({ protocol: 2, type: 'start', requestId: 'actual-claude-install', cwd: await fs.realpath(context.project),
+      model: 'fixture-model', reasoningEffort: 'high', permissionMode: 'danger-full-access', threadMode: 'persistent',
+      prompt: 'Offline installed Claude package validation.', timeoutMs: 5000 }) + '\n');
+    let exit;
+    try { exit = await done; } finally { clearTimeout(timeout); }
+    assert.equal(exit.code, 0, stderr + stdout);
+    assert.equal(exit.signal, null);
+    const frames = stdout.trim().split('\n').map(line => JSON.parse(line));
+    const result = frames.at(-1);
+    assert.deepEqual(result.adapter, { package: manifest.name, version: manifest.version, protocol: 1 });
+    assert.equal(result.receipt.ok, true);
+    assert.equal(result.receipt.configuration.observed.cwd, await fs.realpath(context.project));
+    assert.equal(result.receipt.requested.model, 'fixture-model');
+    assert.equal(result.receipt.requested.effort, 'high');
+    assert.equal(result.receipt.session.resumable, true);
+    assert.equal(result.receipt.cleanup.confirmed, true);
+    assert.equal(result.receipt.usage.totalTokens, 22);
+    assert.equal(result.receipt.costUSD, null);
+    assert.equal(result.receipt.reportedCostUSD, 0.12);
+    assert.throws(() => process.kill(-result.receipt.execution.processGroupId, 0), { code: 'ESRCH' });
+    const calls = (await fs.readFile(path.join(context.project, 'claude-fixture.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].argv.includes('--dangerously-skip-permissions'));
+    assert.deepEqual(await fs.readFile(globalConfig), before, 'opting into an adapter must not select or rewrite any loop');
   });
 
   await t.test('same-version setup is repeatable and preserves configuration', async () => {

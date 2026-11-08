@@ -247,8 +247,9 @@ func RunKimi(a KimiArgs) Result {
 		SessionID: a.SessionID, Dispatch: "unknown", Outcome: "unknown",
 		CleanupConfirmed: out.CleanupError == "" && (out.ExitCode != nil || out.SpawnError != "" || out.Signal != ""),
 		UsageStatus:      "unknown"}
-	if out.SpawnError != "" {
-		out.Session.Dispatch, out.Session.Outcome = "not-dispatched", "failed"
+	if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {
+		out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed, out.Session.UsageStatus = "not-dispatched", "failed", true, "complete"
+		out.Usage, out.CostUSD = &Usage{}, new(float64)
 	} else if settled && parsed.ProtocolError == "" {
 		out.Session.SessionID = parsed.SessionID
 		out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"

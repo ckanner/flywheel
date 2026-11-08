@@ -13,14 +13,40 @@ import (
 const SessionPolicyVersion = 1
 
 type SessionsConfig struct {
-	Mode          string `json:"mode"`
-	PolicyVersion int    `json:"policy-version"`
+	Mode          string               `json:"mode"`
+	PolicyVersion int                  `json:"policy-version"`
+	Roles         map[string]string    `json:"roles,omitempty"`
+	Quality       SessionQualityPolicy `json:"quality,omitzero"`
+}
+
+// Quality limits are disabled at zero. They bound verified workload observations,
+// not native context capacity; Go never invokes an unmetered model compressor.
+type SessionQualityPolicy struct {
+	MaxConfirmedTurns    int   `json:"max-confirmed-turns,omitempty"`
+	MaxUnproductiveTurns int   `json:"max-unproductive-turns,omitempty"`
+	MaxRunInputTokens    int64 `json:"max-run-input-tokens,omitempty"`
+}
+
+func (s SessionsConfig) ModeForRole(role string) string {
+	if mode, found := s.Roles[role]; found {
+		return mode
+	}
+	return s.Mode
+}
+
+func (s SessionsConfig) validate() error {
+	// Round-trip the same concrete policy that inspect, snapshots and config
+	// files expose. Validating only mode/version would silently ignore invalid
+	// role overrides or quality limits constructed by in-process callers.
+	var value any
+	_ = json.Unmarshal(configJSON(s), &value)
+	return validateSessionPolicy(value)
 }
 
 // SupportsScopedSessions describes implemented adapter contracts, not evidence
 // that a particular installed backend can restore a saved history.
 func SupportsScopedSessions(harness string) bool {
-	return harness == "codex-pro" || harness == "dsh" || harness == "kimi"
+	return harness == "codex-pro" || harness == "claude-code-pro" || harness == "dsh" || harness == "kimi"
 }
 
 // MarshalJSON preserves omission versus explicit false in effective config

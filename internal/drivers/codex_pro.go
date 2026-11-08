@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +18,7 @@ import (
 const (
 	CodexProWorkerEnv      = "FLYWHEEL_CODEX_PRO_WORKER"
 	CodexProBinaryEnv      = "FLYWHEEL_CODEX_BIN"
-	CodexProPackageVersion = "0.8.0"
+	CodexProPackageVersion = "0.9.0"
 	codexProCleanupMS      = int64(10_000)
 )
 
@@ -54,20 +53,23 @@ type CodexProArgs struct {
 	APIKeys           map[string]string
 	Watchdog          watchdog.Opts
 	OnEvent           func(line string)
+	RecoveryDirectory string
+	OnLifecycle       func(MachineLifecycle) error
 }
 
 type codexProStart struct {
-	Type            string `json:"type"`
-	Protocol        int    `json:"protocol"`
-	RequestID       string `json:"requestId"`
-	Cwd             string `json:"cwd"`
-	Model           string `json:"model"`
-	ReasoningEffort string `json:"reasoningEffort"`
-	PermissionMode  string `json:"permissionMode"`
-	Prompt          string `json:"prompt"`
-	TimeoutMS       int64  `json:"timeoutMs"`
-	ThreadMode      string `json:"threadMode,omitempty"`
-	ThreadID        string `json:"threadId,omitempty"`
+	Type              string `json:"type"`
+	Protocol          int    `json:"protocol"`
+	RequestID         string `json:"requestId"`
+	Cwd               string `json:"cwd"`
+	Model             string `json:"model"`
+	ReasoningEffort   string `json:"reasoningEffort"`
+	PermissionMode    string `json:"permissionMode"`
+	Prompt            string `json:"prompt"`
+	TimeoutMS         int64  `json:"timeoutMs"`
+	ThreadMode        string `json:"threadMode,omitempty"`
+	ThreadID          string `json:"threadId,omitempty"`
+	RecoveryDirectory string `json:"recoveryDirectory,omitempty"`
 }
 
 type codexProParsed struct {
@@ -96,6 +98,7 @@ type codexProExecution struct {
 	ThreadID             string                `json:"threadId"`
 	TurnID               string                `json:"turnId"`
 	Ownership            string                `json:"ownership"`
+	Dispatch             string                `json:"dispatch"`
 	PID                  *int                  `json:"pid"`
 	SupervisorPID        *int                  `json:"supervisorPid"`
 	ExitCode             *int                  `json:"exitCode"`
@@ -118,25 +121,12 @@ func (e *codexProExecution) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return err
 	}
-	if !codexProHasFields(raw, "runId", "startedAt", "finishedAt", "durationMs", "threadId", "turnId", "pid", "supervisorPid",
+	if !receiptHasFields(raw, "runId", "startedAt", "finishedAt", "durationMs", "threadId", "turnId", "pid", "supervisorPid",
 		"exitCode", "signal", "supervisorExitCode", "supervisorSignal", "terminationRequested", "timedOut", "cancelled", "truncated", "spawnError", "failure", "ownership") {
 		return fmt.Errorf("Codex Pro execution omitted a physical fact")
 	}
 	*e = codexProExecution(value)
 	return nil
-}
-
-func codexProHasFields(raw json.RawMessage, names ...string) bool {
-	var fields map[string]json.RawMessage
-	// Both callers already decoded this same value into a struct; its only
-	// possible shapes are an object or null, which also decode into this map.
-	_ = json.Unmarshal(raw, &fields)
-	for _, name := range names {
-		if _, ok := fields[name]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 type codexProCleanup struct {
@@ -220,6 +210,7 @@ type codexProReceipt struct {
 // Progress is activity, never evidence of completion or configuration acceptance.
 func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 	parsed := codexProParsed{Session: codexProUnknownSession(request)}
+	lifecycle := machineLifecycleFlow{harness: "codex-pro", request: request}
 	terminal := false
 	trustedStream := true
 	for _, line := range strings.Split(stdout, "\n") {
@@ -255,6 +246,11 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			break
 		}
 		switch frame.Type {
+		case "lifecycle":
+			if _, err := lifecycle.frame([]byte(line)); err != nil || request.Protocol != 3 {
+				trustedStream = false
+				parsed.Error = "invalid request: Codex Pro lifecycle evidence is invalid"
+			}
 		case "progress":
 			if frame.Text == nil {
 				trustedStream = false
@@ -263,7 +259,7 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 		case "result":
 			terminal = true
 			parsed = parseCodexProReceipt(frame.Receipt, request)
-			if !codexProHasFields(json.RawMessage(line), "receipt", "error") {
+			if !receiptHasFields(json.RawMessage(line), "receipt", "error") {
 				trustedStream = false
 				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro worker omitted a terminal receipt/error field"
@@ -277,6 +273,10 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 				// An outer protocol failure cannot grant a continuation checkpoint.
 				trustedStream = false
 				parsed.Error = codexProFailureMessage(frame.Error.Code, frame.Error.Message, "", nil)
+			}
+			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
+				trustedStream = false
+				parsed.Error = "invalid request: Codex Pro result omitted durable lifecycle evidence"
 			}
 		default:
 			trustedStream = false
@@ -306,25 +306,15 @@ func codexProUnknownSession(request codexProStart) *SessionOutcome {
 		RequestID: request.RequestID, Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 }
 
-// Opaque IDs are compared as JSON strings, without interpreting their spelling.
-// Null, missing, empty and another thread are not interchangeable.
-func codexProRequestedThread(raw json.RawMessage, expected string) bool {
-	if expected == "" {
-		return string(raw) == "null"
-	}
-	var id string
-	return json.Unmarshal(raw, &id) == nil && id == expected
-}
-
 func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProParsed {
 	parsed := codexProParsed{Receipt: raw, Session: codexProUnknownSession(request)}
 	var receipt codexProReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil || !codexProHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
+	if err := json.Unmarshal(raw, &receipt); err != nil || !receiptHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
 		receipt.RequestID != request.RequestID || receipt.RunID == "" || receipt.OK == nil ||
 		(receipt.Outcome == nil) == (receipt.Failure == nil) ||
 		receipt.Requested.Cwd != request.Cwd || receipt.Requested.Model != request.Model ||
 		receipt.Requested.Effort != request.ReasoningEffort || receipt.Requested.PermissionMode != codexProMachinePermission(request.PermissionMode) ||
-		!codexProRequestedThread(receipt.Requested.ThreadID, request.ThreadID) || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
+		!requestedSessionMatches(receipt.Requested.ThreadID, request.ThreadID) || string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" {
 		parsed.Error = "invalid request: Codex Pro receipt identity, requested settings, or cost contract mismatch"
 		return parsed
 	}
@@ -387,6 +377,12 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 	if executionMatches {
 		parsed.Session.RunID, parsed.Session.TurnID, parsed.Session.SessionID = receipt.RunID, execution.TurnID, execution.ThreadID
 	}
+	if request.Protocol == 3 && (execution == nil || (execution.Dispatch != "not-dispatched" && execution.Dispatch != "possible" && execution.Dispatch != "accepted") ||
+		(*receipt.OK && execution.Dispatch != "accepted")) {
+		parsed.Error = "invalid request: Codex Pro durable receipt omitted its typed dispatch fact"
+		parsed.Session, parsed.Usage = codexProUnknownSession(request), nil
+		return parsed
+	}
 	if !*receipt.OK {
 		// Only typed pre-turn stages from the pinned API prove non-dispatch.
 		// A resume rejection may mean a busy thread; its prose is not evidence
@@ -395,6 +391,10 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 			f.TurnConfiguration == nil && execution.Failure != nil && execution.Failure.Stage == f.Stage &&
 			(f.Stage == "request" || f.Stage == "initialize" || (f.Stage == "thread-start" && request.ThreadID == "")) {
 			parsed.Session.Dispatch, parsed.Session.Outcome = "not-dispatched", "failed"
+		}
+		if request.Protocol == 3 && parsed.CleanupConfirmed && execution.Dispatch == "not-dispatched" && execution.TurnID == "" {
+			parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "not-dispatched", "failed", "complete"
+			parsed.Usage = &Usage{}
 		}
 		parsed.Error = codexProFailureMessage(category, diagnostic, stopReason, execution)
 		return parsed
@@ -409,7 +409,7 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProPa
 		return parsed
 	}
 	// Terminal execution is independent from an empty/malformed model answer.
-	// The 0.8.0 receipt does not attest rollout durability: this is a candidate.
+	// A retained history handle remains a candidate until an explicit resume accepts it.
 	parsed.Session.Dispatch, parsed.Session.Outcome = "dispatched", "completed"
 	parsed.Session.ResumeCandidate = request.ThreadMode == "persistent"
 	parsed.Session.ResumeAccepted = request.ThreadID != ""
@@ -447,7 +447,19 @@ func codexProExitValid(code *int, signal *string, terminationRequested bool) boo
 }
 
 func validateCodexProConfiguration(o *codexProOutcome, request codexProStart) error {
-	c := o.Configuration
+	if err := validateCodexProReadyConfiguration(o.Configuration, request); err != nil {
+		return err
+	}
+	t := o.TurnConfiguration
+	if t == nil || !t.Accepted || t.RequestedEffort != request.ReasoningEffort || t.Evidence != "turn/start-request" || string(t.EffectiveEffort) != "null" {
+		return fmt.Errorf("Codex Pro effort acceptance evidence is missing or contradictory")
+	}
+	return nil
+}
+
+// The lifecycle ready checkpoint runs this check before acknowledging a turn.
+// The terminal receipt independently checks the actual accepted turn settings.
+func validateCodexProReadyConfiguration(c *codexProConfiguration, request codexProStart) error {
 	source := "thread/start"
 	if request.ThreadID != "" {
 		source = "thread/resume"
@@ -457,23 +469,11 @@ func validateCodexProConfiguration(o *codexProOutcome, request codexProStart) er
 	}
 	for _, settings := range []codexProSettings{c.Requested, c.Effective} {
 		if settings.Model != request.Model || settings.ApprovalPolicy != "never" || settings.Sandbox != request.PermissionMode ||
-			!codexProSameDirectory(settings.Cwd, request.Cwd) {
+			!samePhysicalDirectory(settings.Cwd, request.Cwd) {
 			return fmt.Errorf("Codex Pro model/cwd/permission receipt differs from request")
 		}
 	}
-	t := o.TurnConfiguration
-	if t == nil || !t.Accepted || t.RequestedEffort != request.ReasoningEffort || t.Evidence != "turn/start-request" || string(t.EffectiveEffort) != "null" {
-		return fmt.Errorf("Codex Pro effort acceptance evidence is missing or contradictory")
-	}
 	return validateCodexProPolicy(c.Effective.SandboxPolicy, request)
-}
-
-func codexProSameDirectory(actual, requested string) bool {
-	if !filepath.IsAbs(actual) {
-		return false
-	}
-	physical, err := filepath.EvalSymlinks(actual)
-	return err == nil && physical == requested
 }
 
 // The public machine API names its full-access preset differently from the
@@ -485,8 +485,8 @@ func codexProMachinePermission(permission string) string {
 	return permission
 }
 
-// This is a post-run admission check, not a pre-turn sandbox guard: v0.8.0
-// exposes the complete policy only in the final receipt. In workspace-write,
+// The same complete policy is checked in thread-ready before durable ACK and
+// independently in the final receipt. In workspace-write,
 // standard temp directories are permitted and extra writable roots must remain
 // inside cwd. Explicit full access has its own unconfined policy shape.
 func validateCodexProPolicy(raw json.RawMessage, request codexProStart) error {
@@ -617,11 +617,21 @@ func RunCodexPro(a CodexProArgs) Result {
 	if a.PersistentSession {
 		request.Protocol, request.ThreadMode, request.ThreadID = 2, "persistent", a.SessionID
 	}
+
+	if a.RecoveryDirectory != "" || a.OnLifecycle != nil {
+		request.Protocol, request.RecoveryDirectory = 3, a.RecoveryDirectory
+		if request.ThreadMode == "" {
+			request.ThreadMode = "ephemeral"
+		}
+	}
 	reject := func(detail string) Result {
 		out := invalidHarnessResult("codex-pro", a.Model, detail)
 		out.Session = codexProUnknownSession(request)
 		out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
 		return out
+	}
+	if request.Protocol == 3 && (a.OnLifecycle == nil || !filepath.IsAbs(a.RecoveryDirectory) || strings.ContainsRune(a.RecoveryDirectory, 0)) {
+		return reject("durable lifecycle requires an absolute recovery directory and acknowledgement callback")
 	}
 	permission := a.PermissionMode
 	if permission == "" {
@@ -650,6 +660,11 @@ func RunCodexPro(a CodexProArgs) Result {
 	}
 	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
 	request.PermissionMode, request.Prompt, request.TimeoutMS = permission, a.Prompt, wallMS
+	payload, _ := json.Marshal(request) // the request has only JSON-safe strings and integers
+	payload = append(payload, '\n')
+	if len(payload) > claudeCodeProRequestBytes {
+		return reject("Codex Pro start request exceeds the worker's 1 MiB JSONL limit")
+	}
 	command := a.Command
 	if command == "" {
 		command = CodexProCommand()
@@ -660,36 +675,15 @@ func RunCodexPro(a CodexProArgs) Result {
 			env[key] = value
 		}
 	}
-	var onActivity func(chunk, stream string)
-	events := jsonLines{onLine: a.OnEvent, limit: watchdog.MaxBuffer}
-	if a.OnEvent != nil {
-		onActivity = events.feed
-	}
-	written := make(chan error, 1)
-	result := watchdog.Run(command, nil, watchdog.Opts{
+	result, interactionErr := runMachineWorker(command, "codex-pro", codexProStart(request), payload, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: wallMS,
-		KillGraceMs: max(a.Watchdog.KillGraceMs, codexProCleanupMS), OnActivity: onActivity,
-		InteractStdin: func(stdin io.WriteCloser, finish func()) {
-			err := json.NewEncoder(stdin).Encode(request)
-			written <- err
-			if err != nil {
-				finish()
-			}
-		},
-	})
-	if a.OnEvent != nil {
-		events.flush()
-	}
+		KillGraceMs: max(a.Watchdog.KillGraceMs, codexProCleanupMS),
+	}, a.OnLifecycle, a.OnEvent)
 	parsed := parseCodexProStream(result.Stdout, request)
-	select {
-	case err := <-written:
-		if err != nil {
-			parsed.Error = "Codex Pro worker request write failed: " + err.Error()
-			parsed.Session = codexProUnknownSession(request)
-			parsed.Usage = nil
-		}
-	default: // Spawn failure or pre-start cancellation has no stdin callback.
+	if interactionErr != nil {
+		parsed.Error = "Codex Pro worker transport failed: " + interactionErr.Error()
+		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = codexProUnknownSession(request), nil, false
 	}
 	out := fromWatchdog(result, "codex-pro", "", a.Model)
 	out.Session = parsed.Session
@@ -738,6 +732,9 @@ func RunCodexPro(a CodexProArgs) Result {
 			message = "Codex Pro worker exited without successful process completion: " + strings.TrimSpace(out.Stderr)
 		}
 		out.ErrorMessage = &message
+	}
+	if out.Session.Dispatch == "not-dispatched" && out.Session.CleanupConfirmed {
+		out.Usage, out.CostUSD, out.Session.UsageStatus = &Usage{}, new(float64), "complete"
 	}
 	return out
 }

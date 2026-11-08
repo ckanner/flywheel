@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This opt-in bridge uses the built worker and the real, installed 0.8.0 public
+// This opt-in bridge uses the built worker and the real, installed 0.9.0 public
 // machine API/guardian. Only the app-server peer is fake; no model is contacted.
 func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {
@@ -33,6 +33,7 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.Chmod(fixture, 0o755))
 	t.Setenv(CodexProBinaryEnv, fixture)
+	testMachineLifecycleNodeBridge(t, "codex-pro")
 
 	t.Run("scoped history crosses processes with independent invocation and run delta", func(t *testing.T) {
 		cwd := t.TempDir()
@@ -154,7 +155,15 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 			require.Equal(t, valid, r.Settled, "%+v", r)
 			require.NotEmpty(t, r.CodexProReceipt, "the real machine receipt survives both success and failure")
 			assert.Empty(t, r.Provider)
-			assert.Nil(t, r.CostUSD)
+			if strings.HasPrefix(scenario, "wrong-") {
+				assert.Equal(t, "not-dispatched", r.Session.Dispatch)
+				require.NotNil(t, r.Usage)
+				assert.Equal(t, Usage{}, *r.Usage)
+				require.NotNil(t, r.CostUSD)
+				assert.Zero(t, *r.CostUSD, "a proven pre-turn configuration rejection has no model charge")
+			} else {
+				assert.Nil(t, r.CostUSD, "a dispatched or unproven call has no known subscription cost")
+			}
 			var receipt codexProReceipt
 			require.NoError(t, json.Unmarshal(r.CodexProReceipt, &receipt))
 			if valid {
@@ -180,7 +189,7 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 			}
 			if scenario == "broad-policy" {
 				require.NotNil(t, receipt.OK)
-				assert.True(t, *receipt.OK, "public v0.8 checks mode before turn; Flywheel rejects broad roots after it")
+				assert.True(t, *receipt.OK, "legacy protocol 1 has no durable callback; protocol 3 checks full roots before ACK")
 				assert.Contains(t, *r.ErrorMessage, "writable root escapes")
 			}
 			assertCodexProProcessesStopped(t, entries)
@@ -193,7 +202,7 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 			APIKeys: map[string]string{"TEST_CODEX_PRO_LOG": log}, Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}})
 		require.True(t, r.Settled, "%+v", r)
 		require.NotNil(t, r.Session)
-		assert.Equal(t, "codex-pro/0.8.0/worker-v1", r.Session.Protocol)
+		assert.Equal(t, "codex-pro/0.9.0/worker-v1", r.Session.Protocol)
 		assert.Equal(t, "call-freshEngine123", r.Session.RequestID)
 		assert.Equal(t, "completed", r.Session.Outcome)
 		assert.False(t, r.Session.ResumeCandidate)

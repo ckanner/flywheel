@@ -1,0 +1,16 @@
+{
+  "package": "dsh-subagent-codex-pro",
+  "version": "0.9.0",
+  "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
+  "sourceCommit": "37da3d75de32b809c4fb1a631ccc15191f3d87f9",
+  "sourceTree": "00df1042b0010dc37ce8ab6048f75a434325962c",
+  "tarball": "dsh-subagent-codex-pro-0.9.0.tgz",
+  "sha256": "4a86380fdde0d7f2673c4b1f2d5c8682cf61d6a4b83deb65eab8fe76f6032198",
+  "integrity": "sha512-NtguC96kZVgKOMHv7kSiFVEZ4thjorHS1ZrNFQwbBLEBU2jOSWkFGlXk+BILPuxALUKkJJ4E1DSbA2+JG3gM0Q==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "toolchain": {
+    "node": "24.22.1",
+    "npm": "12.2.1"
+  }
+}

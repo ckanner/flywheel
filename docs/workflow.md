@@ -245,15 +245,17 @@ Plan 按同任务／里程碑续用，Judge 与第二意见各自隔离；显式
 `resident-session:false` 继续生效。团队通信和依赖图并行调度不在本期范围。
 
 新配置模板显式启用 scoped，旧文件未声明时保留 fresh。fresh 不启用通用的角色历史
-复用，保留旧 Kimi Plan resident 选项；两种模式都为 Codex Pro／DSH／Kimi 主任务
+复用，保留旧 Kimi Plan resident 选项；两种模式都为 Codex Pro／Claude Code Pro／DSH／Kimi 主任务
 调用保存安全记录。其他适配器、mock 及 Intake／Garden 保留原路径。历史复用不减少
 任何验证要求，也不增加 Quick 首次成功的两次固定阶段调用。具体契约见
 [会话配置](configuration.md#会话策略历史复用与调用安全)。
 
 恢复保存的回执时沿用原调用的候选、契约和保护证据；不得重新执行抽检或验收来替换
 待消费回执所绑定的证据。Go 对已完成结果的消费不重发模型请求或重复计费；预算限制
-新的派发。进程内历史续接与持久化恢复是不同能力：本轮实现 P1/P2 正常终态续接与
-已保存回执恢复，P3 仍需上游公开实时核对／恢复 API，P4 真实实验尚未完成。
+新的派发。Codex／Claude 的 P3 通过公开 typed lifecycle、Go 持久化 ACK 与原调用
+journal 只读核对恢复；成功回执还必须绑定原调用结束时保存的候选与角色证据。
+P4 提供按角色的 fresh/scoped、有界质量重建及三组对照评估；阈值默认关闭，真实模型
+效果另验，详见[中断恢复与上下文质量](session-recovery.md)和[对照评估](session-evaluation.md)。
 
 `flywheel-verify` 只运行确定性验收：Full 保留指定 packet 的 L1／当前里程碑
 L2/L3 语义；Quick 还会在实际候选上收齐适用 L2/L3。它不调用 Review／Judge，

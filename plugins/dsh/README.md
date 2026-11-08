@@ -14,6 +14,8 @@
 
 0.28.4 同步 Cordis 4.0／4.1 和 host peer 声明，并用锁定依赖测试新旧两版发布的 renderer。配置、已有 DeepSeek 账号与权限保持原样。SDK 在公开 agent/created 阶段写入权限事件，通过公开 `approval.overrideOf(session)` 核对 never 覆盖值；Session 创建公告期间保持只读。
 
+本包同时提供可选 Claude Code Pro worker，直接消费配套插件 0.4.0 的公开 machine API。它不通过父模型二次委派，未绑定时无需安装 Claude peer；配置与发行前提见 [接入指南](../../docs/claude-code-pro.md)。默认 loop 不变。
+
 ## 提供什么
 
 | 部分 | 行为 |
@@ -23,7 +25,7 @@
 | `flywheel_control` | 模型工具，复用同一个校验与 CLI 控制路径；后台 start 很快返回，stop 等待引擎确认 |
 | `flywheel-dsh-worker` | 独立 Node 进程，通过官方 `dsh --profile sdk` stdio JSON-RPC 执行一个原生模型会话 |
 | DSH worker policy | 发请求前验证 cwd、实际权限和完整沙箱，自动拒绝需要批准的扩权 |
-| `flywheel-codex-pro-worker` | 直接导入 `dsh-subagent-codex-pro@0.8.0` 的公开 `./machine` 入口，传递任务与取消并返回完整插件回执 |
+| `flywheel-codex-pro-worker` | 直接导入 `dsh-subagent-codex-pro@0.9.0` 的公开 `./machine` 入口，传递任务与取消并返回完整插件回执 |
 
 插件没有自己的任务数据库，不直接读写 `state.json`。桌面退出不会让后台 Go 任务失去父智能体；Go 拥有 worker 生命周期。原生 SDK 入口只接收已注册的 LLM adapter provider；`subagent_codex_pro`、Kimi ACP、Teams 都不是此接口的 provider。Kimi CLI、Codex Pro machine API 和旧显式 Codex CLI 使用各自 Go driver；Codex Pro 复用同一插件 runner，不经过 DSH 父模型或工具名转发。
 
@@ -86,11 +88,11 @@ reasoningEffort = off | low | high | max
 
 ## Codex Pro 插件执行通道
 
-默认 `hard` 路由使用 `harness: "codex-pro"`。本包精确依赖 `dsh-subagent-codex-pro@0.8.0`，独立 worker 直接导入公开的 `dsh-subagent-codex-pro/machine`，将模型、effort、工作目录和权限传给插件。DSH 控制面、Go 状态机、插件 runner 各自保持原职责；不需要桌面父模型二次委派，也不会自动回退旧 `codex exec`。
+默认 `hard` 路由使用 `harness: "codex-pro"`。本包精确依赖并 bundle 已审查的 `dsh-subagent-codex-pro@0.9.0` 源码候选（[来源与摘要](vendor/README.md)），独立 worker 直接导入公开的 `dsh-subagent-codex-pro/machine`，将模型、effort、工作目录和权限传给插件。DSH 控制面、Go 状态机、插件 runner 各自保持原职责；不需要桌面父模型二次委派，也不会自动回退旧 `codex exec`。
 
 npm 启动器自动解析并注入 `FLYWHEEL_CODEX_PRO_WORKER`。独立 Go 二进制默认从 PATH 查找 `flywheel-codex-pro-worker`，源码开发可显式设为构建后的 `dist/codex-pro-worker.js`。`FLYWHEEL_CODEX_BIN` 可指定底层 Codex 可执行程序，默认 `codex`；`CODEX_HOME` 沿用用户选择的配置／登录目录。Go 会将这些运行必需项交给插件，不把凭证复制到配置、契约或 Git。
 
-fresh 调用使用 ephemeral 历史与外层 worker v1；scoped 使用外层 v2、persistent 模式和可选的精确 threadId。内部仍消费插件 0.8.0 的 machine API／原始 receipt 协议 1。权限由 `permissions.mode` 决定，approval 为 never。role-based 选择 `read-only`／`workspace-write`；full-access 请求 `danger-full-access`。插件运行前核对模型、cwd 和权限模式，完整 sandboxPolicy 由 Flywheel 在返回后审查。受限模式允许 Codex 标准临时目录、拒绝工作区外额外 roots 与网络启用；完全权限则核对 `dangerFullAccess` 策略，不声称 OS 隔离。0.8.0 尚无公开的运行前完整策略 guard，事后拒绝交付不能阻止先前的访问；可信 Codex 配置仍是本机运行前提。
+主任务 fresh/scoped 均使用外层 worker v3，分别选择 ephemeral/persistent；内部为插件 0.9.0 machine protocol 1 与 lifecycle version 1。v1/v2 低层兼容入口保留。Go 在 Codex 预派发 thread-ready 的 ACK 前检查完整实际 sandboxPolicy，终态再次核对。受限模式允许标准临时目录，拒绝工作区外额外 roots 与 networkAccess；full-access 则核对 dangerFullAccess，不声称 OS 隔离。未请求 lifecycle 的辅助调用和旧协议仍只有终态完整策略检查。
 
 完整 machine receipt 写入指标，保留 accepted effort、未知 effectiveEffort、usage 完整性与进程终态。插件正常收尾可能主动 TERM/KILL app-server，其物理 exit code 可以为空；Flywheel 只有在完整终态证明任务完成、清理已确认且外层 worker 干净退出时才能继续。取消、超时、截断、启动或清理失败均阻止成功。Go 为此 worker 预留至少 10 秒终止宽限，避免截断插件内部清理。
 
@@ -100,7 +102,7 @@ fresh 调用使用 ephemeral 历史与外层 worker v1；scoped 使用外层 v2�
 flywheel-codex-pro-worker --doctor
 ```
 
-成功输出单行协议 1 JSON，精确版本 0.8.0，`available:true`、`inferenceTested:false`。它不启动 Codex app-server，不读取登录凭证，不证明账号或实际沙箱可用。日常仍应使用下面的 Go doctor，以核对完整配置来源与所需阶段。
+成功输出单行协议 1 JSON，精确版本 0.9.0，`available:true`、`inferenceTested:false`。它不启动 Codex app-server，不读取登录凭证，不证明账号或实际沙箱可用。日常仍应使用下面的 Go doctor，以核对完整配置来源与所需阶段。
 
 ## 角色历史与调用安全记录
 
@@ -109,7 +111,7 @@ flywheel-codex-pro-worker --doctor
 互相隔离。新模板显式 scoped，旧配置缺省 fresh，Plan 显式 `resident-session:false`
 继续关闭该角色复用。完整配置见[会话策略](../../docs/configuration.md#会话策略历史复用与调用安全)。
 
-Go 在 fresh/scoped 下均记录支持的 Codex Pro、DSH、Kimi 主任务调用；fresh 不启用
+Go 在 fresh/scoped 下均记录支持的 Codex Pro、Claude Code Pro、DSH、Kimi 主任务调用；fresh 不启用
 通用角色历史复用，保留既有 Kimi Plan resident 行为。其他适配器、mock 及
 Intake／Garden 保留原路径。派发、结果或清理未知时阻止继续运行，不通过新建会话、
 切换模式或扫描历史绕过。`status`／`control status` 可只读查看角色、作用域、动作／
@@ -117,8 +119,9 @@ Intake／Garden 保留原路径。派发、结果或清理未知时阻止继续�
 
 DSH v2 使用公开 `session/resume` 恢复精确 sessionId，每次仍创建独立 SDK 进程。
 恢复后的旧事件不进入本轮输出／用量或活动回调，当前调用重新进行目录和权限检查。
-正常终态后的续接与已保存回执恢复属于 P1/P2；没有声明实时调用查询、任意崩溃或
-跨机器恢复可用（P3），真实质量、缓存与性能实验（P4）仍未完成。
+Codex／Claude 的 P3 增加 Go 持久化 ACK、独立 supervisor journal 与只读原调用恢复；
+DSH／Kimi 维持其已有能力，不宣称同样的 P3 接口。P4 提供角色覆盖、有界质量重建与
+三组对照工具；真实质量、缓存与性能仍须实测。详见[恢复指南](../../docs/session-recovery.md)。
 
 ## 无模型请求的 doctor
 
@@ -193,7 +196,7 @@ flywheel control doctor --task-dir /repo/docs/my-task --cwd /repo --probe
 
 目录不存在或控制进程无法创建等情况，只有宿主结构化确认请求尚未执行，界面才允许修正输入或环境后再次提交。普通错误、断连或错误文字本身不构成这项确认，不能据此解除结果未确认状态。`/flywheel` 的失败 `text` 使用 `type:"flywheel-control-error"` 的 JSON 包装，字段和兼容行为见[命令失败协议](PROTOCOL.md#dsh-命令失败与是否派发)。
 
-切换视图、关闭会话页面、卸载插件或退出桌面，都不等于向后台 Go 任务发出停止请求。需要停止时显式点击“停止”并等待引擎确认；重新打开后刷新同一任务。DSH 的原生轨迹继续展示父会话已有的命令与工具记录；独立 SDK、Kimi、Codex Pro worker 的完整执行历史不会自动合并到父会话轨迹，也不会被伪装成 DSH 原生后台任务。
+切换视图、关闭会话页面、卸载插件或退出桌面，都不等于向后台 Go 任务发出停止请求。需要停止时显式点击“停止”并等待引擎确认；重新打开后刷新同一任务。DSH 的原生轨迹继续展示父会话已有的命令与工具记录；独立 SDK、Kimi、Codex Pro、Claude Code Pro worker 的完整执行历史不会自动合并到父会话轨迹，也不会被伪装成 DSH 原生后台任务。
 
 ### 宿主 UI 接入
 
@@ -245,7 +248,7 @@ SDK serverInfo 的版本不作为 npm 包版本证明；真实账号、Mac 与�
 
 卸载先停止活动任务，在 DSH 的所用 profile 移除该插件并重新载入，再执行 `npm uninstall --global @ckanner/flywheel`，自定义 prefix 时加同一参数。npm 卸载不自动删除用户配置、skills、任务文件或安装记录，也不删除模型工具及凭证。
 
-开发构建需要 Node.js 22.18.0 或更高；Go 引擎还需要 Go 1.27 或更高。生产插件精确依赖 `dsh-subagent-codex-pro@0.8.0`；不打包 DSH、React 或 Codex 可执行程序；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于真实 DOM 测试，它们不进入发布包。在仓库根运行：
+开发构建需要 Node.js 22.18.0 或更高；Go 引擎还需要 Go 1.27 或更高。生产插件精确依赖并 bundle `dsh-subagent-codex-pro@0.9.0` 的真实 npm 包；不打包 DSH、React 或 Codex 可执行程序；可选 peer 元数据约束桌面接口版本。React 在浏览器端从 DSH 的 ModuleLoader 获取。`npm ci` 安装锁定的 React 18、ReactDOM 与 jsdom **开发依赖**，用于真实 DOM 测试，它们不进入发布包。在仓库根运行：
 
 ```sh
 npm --prefix plugins/dsh ci --ignore-scripts

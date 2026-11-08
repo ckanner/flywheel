@@ -290,6 +290,17 @@ var lockStateFile = func(taskDir string) (func(), error) {
 
 // Save 原子 CAS 写：锁内重读磁盘 revision，拒覆盖基于陈旧状态做出的决策。
 // expectedRevision 为 nil 时以 st.Revision 为期望值。返回 revision+1 的新状态。
+var syncStateFile = (*os.File).Sync
+
+func syncStatePath(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return syncStateFile(f)
+}
+
 func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 	release, err := lockStateFile(taskDir)
 	if err != nil {
@@ -328,8 +339,14 @@ func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 	if err := osWriteFile(tmp, append(data, '\n'), 0o644); err != nil {
 		return nil, errf("%s: write failed: %v", tmp, err)
 	}
+	if err := syncStatePath(tmp); err != nil {
+		return nil, errf("%s: fsync failed: %v", tmp, err)
+	}
 	if err := osRename(tmp, file); err != nil {
 		return nil, errf("%s: rename failed: %v", tmp, err)
+	}
+	if err := syncStatePath(taskDir); err != nil {
+		return nil, errf("%s: directory fsync failed: %v", taskDir, err)
 	}
 	return &next, nil
 }

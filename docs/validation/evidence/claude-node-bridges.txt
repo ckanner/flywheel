@@ -1,0 +1,118 @@
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/fresh_calls_keep_native_permission_and_cost_semantics
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/scoped_history_resumes_through_a_new_process_with_per-call_usage
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/unknown-usage
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/partial-usage
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/wrong-model
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/wrong-cwd
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/wrong-permission
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/wrong-session
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/missing-result
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/duplicate-result
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/malformed-after-terminal
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/abnormal-exit
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/missing_native_binary_proves_no_dispatch_and_preserves_requested_history
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/cancel_drains_the_real_native_process
+=== RUN   TestClaudeCodeProNodeWorkerOfflineBridge/timeout_drains_the_real_native_process
+--- PASS: TestClaudeCodeProNodeWorkerOfflineBridge (4.95s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/fresh_calls_keep_native_permission_and_cost_semantics (0.25s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/scoped_history_resumes_through_a_new_process_with_per-call_usage (0.73s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/unknown-usage (0.21s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/partial-usage (0.22s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/wrong-model (0.19s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/wrong-cwd (0.20s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/wrong-permission (0.20s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/wrong-session (0.22s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/missing-result (0.22s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/duplicate-result (0.18s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/malformed-after-terminal (0.21s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/abnormal-exit (0.17s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/missing_native_binary_proves_no_dispatch_and_preserves_requested_history (0.22s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/cancel_drains_the_real_native_process (0.19s)
+    --- PASS: TestClaudeCodeProNodeWorkerOfflineBridge/timeout_drains_the_real_native_process (1.54s)
+=== RUN   TestCodexProNodeWorkerOfflineBridge
+=== RUN   TestCodexProNodeWorkerOfflineBridge/scoped_history_crosses_processes_with_independent_invocation_and_run_delta
+=== RUN   TestCodexProNodeWorkerOfflineBridge/full-access_public_machine_mapping
+=== RUN   TestCodexProNodeWorkerOfflineBridge/ok
+=== RUN   TestCodexProNodeWorkerOfflineBridge/unknown-usage
+=== RUN   TestCodexProNodeWorkerOfflineBridge/partial-usage
+=== RUN   TestCodexProNodeWorkerOfflineBridge/wrong-model
+=== RUN   TestCodexProNodeWorkerOfflineBridge/wrong-cwd
+=== RUN   TestCodexProNodeWorkerOfflineBridge/wrong-approval
+=== RUN   TestCodexProNodeWorkerOfflineBridge/wrong-sandbox
+=== RUN   TestCodexProNodeWorkerOfflineBridge/broad-policy
+=== RUN   TestCodexProNodeWorkerOfflineBridge/malformed
+=== RUN   TestCodexProNodeWorkerOfflineBridge/output-limit
+=== RUN   TestCodexProNodeWorkerOfflineBridge/read-only
+=== RUN   TestCodexProNodeWorkerOfflineBridge/timeout/initialize-hang
+=== RUN   TestCodexProNodeWorkerOfflineBridge/timeout/hang
+=== RUN   TestCodexProNodeWorkerOfflineBridge/caller_cancellation_awaits_real_guardian
+=== RUN   TestCodexProNodeWorkerOfflineBridge/worker_SIGKILL_leaves_cleanup_unknown_until_independent_confirmation
+=== RUN   TestCodexProNodeWorkerOfflineBridge/Go_SIGKILL_closes_lifetime_pipe_and_stops_owned_descendants
+--- PASS: TestCodexProNodeWorkerOfflineBridge (14.93s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/scoped_history_crosses_processes_with_independent_invocation_and_run_delta (0.82s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/full-access_public_machine_mapping (0.22s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/ok (0.23s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/unknown-usage (0.19s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/partial-usage (0.19s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/wrong-model (0.18s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/wrong-cwd (0.18s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/wrong-approval (0.19s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/wrong-sandbox (0.19s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/broad-policy (0.20s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/malformed (5.20s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/output-limit (1.20s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/read-only (0.18s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/timeout/initialize-hang (1.07s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/timeout/hang (1.08s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/caller_cancellation_awaits_real_guardian (0.19s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/worker_SIGKILL_leaves_cleanup_unknown_until_independent_confirmation (3.15s)
+    --- PASS: TestCodexProNodeWorkerOfflineBridge/Go_SIGKILL_closes_lifetime_pipe_and_stops_owned_descendants (0.28s)
+=== RUN   TestDSHNodeWorkerOfflineBridge
+=== RUN   TestDSHNodeWorkerOfflineBridge/scoped_persisted_public_SDK_history
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-sign-in-required
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-signed-out
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-code-in-rpc-message
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-quota-incomplete-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-token-invalid-incomplete-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/shutdown-incomplete-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-token-invalid-corrupt-tail-unclean-exit
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-token-invalid
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-quota
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-quota-corrupt-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-token-invalid-corrupt-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/shutdown-corrupt-tail
+=== RUN   TestDSHNodeWorkerOfflineBridge/account-quota-incomplete-tail-unclean-exit
+=== RUN   TestDSHNodeWorkerOfflineBridge/full_access_execution_and_no-inference_probe
+=== RUN   TestDSHNodeWorkerOfflineBridge/explicit_provider_differs_from_account_channel
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/ok
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/missing-policy
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/wrong-policy
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/wrong-cwd
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/malformed
+=== RUN   TestDSHNodeWorkerOfflineBridge/doctor/forced-shutdown
+--- PASS: TestDSHNodeWorkerOfflineBridge (4.84s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/scoped_persisted_public_SDK_history (1.79s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-sign-in-required (0.09s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-signed-out (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-code-in-rpc-message (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-quota-incomplete-tail (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-token-invalid-incomplete-tail (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/shutdown-incomplete-tail (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-token-invalid-corrupt-tail-unclean-exit (0.09s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-token-invalid (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-quota (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-quota-corrupt-tail (0.09s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-token-invalid-corrupt-tail (0.12s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/shutdown-corrupt-tail (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/account-quota-incomplete-tail-unclean-exit (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/full_access_execution_and_no-inference_probe (0.20s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/explicit_provider_differs_from_account_channel (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/ok (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/missing-policy (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/wrong-policy (0.11s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/wrong-cwd (0.10s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/malformed (0.12s)
+    --- PASS: TestDSHNodeWorkerOfflineBridge/doctor/forced-shutdown (0.76s)
+PASS
+ok  	github.com/ckanner/flywheel/internal/drivers	24.734s
