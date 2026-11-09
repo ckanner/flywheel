@@ -9,7 +9,7 @@ Flywheel 现在可通过 `harness: "claude-code-pro"` 调用
 
 **源码与发行边界：**此接入要求插件 **0.4.0 / machine protocol 1**；0.3.1 只有
 DSH 工具入口，0.3.2 只有旧 machine 契约，均不满足新 lifecycle/recovery 接口。0.4.0 是本次配套源码版本，不能据此推断 npm 已
-发布。Flywheel 当前源码版本仍为 0.28.5，新增代码也不等于旧同版本安装已更新。
+发布。Flywheel 0.30.0 已发布；Claude 0.4.0 仍按下面的可选依赖流程准备。
 合并、发布及用户安装各有独立状态。现有默认 loop／route 没有切换到 Claude。
 
 ## 1. 准备依赖

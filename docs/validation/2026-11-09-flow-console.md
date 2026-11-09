@@ -1,6 +1,6 @@
 # 流程控制台实现与验收
 
-日期：2026-11-09。源码基线为 `1087b686fa308284b6b68f238129f6779e0ba113`（0.29.1），本轮准备 0.30.0 六包。本文记录源码验证，不表示 npm 已发布或真实桌面已更新。
+日期：2026-11-09。源码基线为 `1087b686fa308284b6b68f238129f6779e0ba113`（0.29.1）。0.30.0 六包已发布并完成 latest 复核；正式源码为 `c24cb0e62042dfe3378bc9c06b0e6951159a7b25`。源码检查、npm 发行、本机安装与桌面交互分别记录，桌面交互的最后检查仍待用户解锁 Mac。
 
 ## 已实现范围
 
@@ -50,6 +50,19 @@
 开发候选快照 `4d18b03eed0f2f5d304851df6cc7d3241594a81106f52a3863801658f133f1f6` 的同一组六包分别通过 macOS Node 24.22.1、Linux ARM64 Node 24.22.1 容器及用户 macOS Node 26.12.1 安装门禁，每次 10 项通过、零跳过。可选 Claude 使用真实 0.4.0 tarball，SHA-256 为 `125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581`。开发候选带 dirty 标志，不用于上传。
 
 2026-11-09 用户已批准本轮提交、推送 main、创建并推送 `v0.30.0`、正式发布及桌面安装。正式候选需在提交后从干净精确 tag 重新构建一次，核对同组六包安装后才发布；本记录不预先声称这些后续步骤成功。
+
+## 正式发行与本机安装回执
+
+- `main` 与 `v0.30.0` 已推送。annotated tag 对象为 `c013931cf4fe6b690421745f9603fa3ddf016f94`，提交为 `c24cb0e62042dfe3378bc9c06b0e6951159a7b25`，tree 为 `0c33f6a3b4c5bea6be9cd440c6a02380e23053e0`。
+- 正式候选从干净精确 tag 构建一次，快照为 `f943be278fe65d55014c5096acaf214635f6430c665a5e42264e25aaf3ee50dc`。同组六包在 macOS Node 24、Linux ARM64 Node 24 和用户 macOS Node 26 各通过 10 项安装检查、零跳过；发布重试一直复用这些 tarball。
+- Linux 工作流要求的 machine／verify／watchdog／drivers／cli／modules／diagnostic 七包 race 检查通过。首次 root 容器使权限拒绝夹具失效，并缺少 gh 与 init；保留该失败，改用普通用户、gh 和 init 后通过，未修改源码或用例时限。
+- [main CI](https://github.com/ckanner/flywheel/actions/runs/42601424905) 和 [publish](https://github.com/ckanner/flywheel/actions/runs/42601517516) 因账号付款／支出限制未启动 job。使用用户授权的手动发行，不将 Actions 记为通过。
+- 六包按平台 → 插件 → 入口发布到 `candidate-0-30-0`，逐包核对完整性，随后官方 registry 安装通过（真实 npm、native CLI、11 个 skills、零推理请求）。六包 latest 更新与完整性最终复核通过，记录为 `/tmp/flywheel-console-0300-final-registry-fresh.log`；精确来源和远端 tag 又作了核对。
+- 认证期间发生过超时及 npm 服务端拒绝旧 authId；仅重开对应官方认证，不重建包。最终只读 npm 查询也出现过超时，失败记录保留；使用独立查询缓存和更短的单次 fetch 等待后，同一 `verify-latest` 门禁通过，没有放宽完整性或版本判断。
+- 本机 CLI 与 DSH desktop profile 插件均确认 0.30.0，安装报告 `ok:true, ready:true`。源码目录内的首次 npx 调用命中旧全局入口，版本核对发现后改为精确全局安装和明确路径 setup，未将旧报告当作升级成功。
+- 用户要求的全局配置完整覆盖已通过 revision 检查、备份和原子写入完成，归一化值与 0.30.0 内嵌默认值完全一致。当前为 scoped／policy-version 1、full-access、serial／max-parallel 2。配置 SHA-256 为 `aff154c7f9d61afe3192f4f9b54bc32d50c7b84120d19756e350ca3fda8d6835`；旧配置另存备份。
+- 无推理 doctor 通过，四项 DSH SDK 探测通过。可选 Claude 0.4.0 使用上文记录的真实源码包安装到同一全局 prefix，worker doctor 确认接口可用；不宣称它已公开发布或真实模型已验证。
+- 桌面重载前确认当前显示的两个后台任务均已结束。已准备专用的完整离线测试会话，使用已发布的原生 AgentLoop／SDK 和本地固定响应适配器，真实模型请求为 0。最终画布、节点按钮及原生配置面板检查因 Mac 锁屏暂停，不能记为通过；浏览器隔离画布验证已完成。
 
 ## 原始失败与处置
 

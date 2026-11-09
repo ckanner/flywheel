@@ -346,6 +346,10 @@ npx -y @ckanner/flywheel@latest install
 
 自定义 prefix、项目 skills 或 DSH 入口时保留原参数。想固定某个已发布版本，可把 `@latest` 换成该精确版本，例如在 registry 确认 0.28.0 已发布后使用 `@0.28.0`；安装器始终为 CLI、平台包、worker 和桌面插件选择本次安装器的同一版本。已安装包的配置修复可用 `flywheel setup --no-global`，它不会将 CLI 升级到别的版本。
 
+维护者在 Flywheel 自身源码目录中运行 `npx` 时，npm 可能把同名本地 package 视为已满足，再命中 PATH 中的旧全局入口。若安装报告的版本不是请求版本，请在源码目录之外重试，或执行 `npm install --global --ignore-scripts --include=optional @ckanner/flywheel@0.30.0` 后，用该 prefix 下的 `flywheel setup --no-global` 完成设置；自定义 prefix 时两步均保留它。最终核对 `flywheel version`、安装报告版本及 DSH profile 中的插件版本。桌面已在运行时，还须按宿主要求重载，磁盘安装成功不表示旧模块已经卸载。
+
+从 0.30.0 起，若明确决定完整采用安装包内的预设，可在 **全局 / 项目配置** 中选择作用域、读取配置，点击 **载入本版本默认值**，审阅后 **保存配置**。这会备份并替换所选作用域的配置；上层任务／项目文件仍按配置优先级生效。
+
 从 0.27.x 升级到本版后，要使用新的默认插件路径，应在有效配置的 `routes.hard`（或其 profile）设置 `"harness": "codex-pro"`，保留所选 model／thinking／channel。先用 `config inspect` 找到实际配置来源；不要把 external subagent 的工具名写成 DSH provider。
 
 安装后对照新模板审阅需要迁移的配置，按宿主提示重新载入，运行 doctor，再用小任务验证。已有配置不会自动覆盖；特别检查任务级文件是否遮住了刚修改的项目或全局设置。安装不是跨 npm、DSH 与全部 skills 的单个事务：失败时报告已完成步骤，不擅自回退包管理器或删除用户文件。修正原因后重跑会重新核对版本与内容。

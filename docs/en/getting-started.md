@@ -261,6 +261,10 @@ For the first real run, record whether the task reached `completed`, all require
 
 Stop active tasks and confirm their state, preserve configuration/customizations, then rerun the installation command with the original prefix/project/DSH options. To pin 0.28.0, first confirm that exact version exists in the registry and replace `@latest` with `@0.28.0`. `flywheel setup --no-global` repairs setup for the installed version without selecting a different CLI release.
 
+Inside Flywheel's own source checkout, npm may consider the matching local package satisfied and then resolve an older global executable from PATH. If the installation report shows a different version, retry outside the checkout, or run `npm install --global --ignore-scripts --include=optional @ckanner/flywheel@0.30.0` followed by `flywheel setup --no-global` from that exact prefix. Preserve a custom prefix in both steps. Check the CLI version, installation report, and desktop-profile plugin version. Reload the running desktop as directed by the host so it loads the newly installed modules.
+
+From 0.30.0, adopting the complete packaged preset is explicit: choose the global or project scope in the configuration editor, read it, load this version's defaults, review, and save. Saving backs up and replaces the selected configuration. Higher-priority task/project files still take precedence.
+
 Existing hard-route configuration remains unchanged after upgrade. To adopt the new plugin route, change the effective hard binding or profile to `harness: "codex-pro"`, preserve model/channel/thinking, inspect it, and restart. Do not use `subagent_codex_pro` as a provider.
 
 | Symptom | First check |

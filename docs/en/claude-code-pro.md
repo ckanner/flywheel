@@ -11,8 +11,8 @@ budgets, and delivery.
 **Source and release boundary:** the integration requires plugin **0.4.0,
 machine protocol 1**. Version 0.3.1 only exposes the DSH tool interface and lacks
 the required machine receipt. The companion source version does not establish
-an npm publication. Flywheel source remains version 0.28.5; the new source does
-not update an already installed artifact. No default stage or route selects Claude.
+an npm publication. Flywheel 0.30.0 is released; prepare Claude 0.4.0 through
+the optional-dependency procedure below. No default stage or route selects Claude.
 
 ## 1. Prepare the optional dependency
 

@@ -1,4 +1,4 @@
-# Flywheel 系统设计 v0.30（源码候选）
+# Flywheel 系统设计 v0.30
 
 2026-11-06 自适应工作流实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准；源码实现不表示 npm 已发布或用户安装已更新。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)，Codex Pro 默认接入见 [接入计划](plans/2026-11-03-codex-pro-default.md)，Auto／Quick／Full 的原始决策见 [自适应工作流提案](plans/2026-11-06-adaptive-workflow.md)。
 
