@@ -12,14 +12,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/machine"
+	"github.com/ckanner/flywheel/internal/metrics"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/spf13/cobra"
 )
 
 type controlResponse struct {
+	Projection    string                    `json:"projection,omitempty"`
+	Node          *machine.NodeDetail       `json:"node,omitempty"`
+	Delivery      *machine.DeliverySnapshot `json:"delivery,omitempty"`
+	History       *machine.SessionHistory   `json:"history,omitempty"`
+	Metrics       *metrics.Report           `json:"metrics,omitempty"`
+	Runs          []machine.RunRecord       `json:"runs"`
 	Protocol      int                       `json:"protocol"`
 	OK            bool                      `json:"ok"`
 	Running       bool                      `json:"running"`
@@ -31,6 +39,28 @@ type controlResponse struct {
 	Error         string                    `json:"error,omitempty"`
 	Configuration *diagnostic.Configuration `json:"configuration,omitempty"`
 	Diagnostic    *diagnostic.Report        `json:"diagnostic,omitempty"`
+	Editor        *config.EditorDocument    `json:"editor,omitempty"`
+}
+
+func controlEditor(cmd *cobra.Command, cwd, action string) (*config.EditorDocument, error) {
+	var request config.EditorRequest
+	raw, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), (1<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 1<<20 {
+		return nil, fmt.Errorf("configuration request exceeds 1 MiB")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || !json.Valid(raw) {
+		return nil, fmt.Errorf("invalid configuration editor request")
+	}
+	root := machine.ProjectRoot(cwd)
+	if action == "config-edit" {
+		return config.ReadEditor(root, request.Scope)
+	}
+	return config.SaveEditor(root, request)
 }
 
 var (
@@ -43,10 +73,11 @@ var (
 // control is an argv-only, single-JSON boundary for the DSH plugin. Parse/flag
 // failures are normalized by runRoot too; legacy commands keep their output.
 func controlCmd() *cobra.Command {
-	var taskDir, cwd, mode string
-	var probe bool
+	var taskDir, cwd, mode, only, packet, retryReason, sessionKey, runID string
+	var revision int64
+	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <launch|start|status|stop|config|doctor>",
+		Use:   "control <launch|start|step|status|stop|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,13 +85,23 @@ func controlCmd() *cobra.Command {
 			action := args[0]
 			var resolvedTask, resolvedCwd string
 			var err error
-			if cmd.Flags().Changed("mode") && action != "launch" && action != "start" {
+			if cmd.Flags().Changed("run-id") && action != "metrics" {
+				err = fmt.Errorf("--run-id requires metrics")
+			} else if cmd.Flags().Changed("session-key") && action != "history" {
+				err = fmt.Errorf("--session-key requires history")
+			} else if cmd.Flags().Changed("retry-reason") && (action != "step" || only != "execute" || strings.TrimSpace(retryReason) == "" || len(retryReason) > 1000) {
+				err = fmt.Errorf("retry reason requires Execute and 1–1000 bytes of explanation")
+			} else if action == "step" && (!contains(onlySteps, only) || revision < 1) {
+				err = fmt.Errorf("step requires --only plan|execute|review|verify|integrate|final and a positive --expect-revision")
+			} else if action != "step" && (cmd.Flags().Changed("only") || (cmd.Flags().Changed("packet") && action != "node") || cmd.Flags().Changed("expect-revision")) {
+				err = fmt.Errorf("--only, --packet and --expect-revision require control step")
+			} else if cmd.Flags().Changed("mode") && action != "launch" && action != "start" {
 				err = fmt.Errorf("--mode is only valid for control launch or start")
 			} else if cmd.Flags().Changed("mode") && !contract.ValidWorkflowMode(mode) {
 				err = fmt.Errorf("--mode only supports auto, quick, or full")
 			} else if cmd.Flags().Changed("probe") && action != "doctor" {
 				err = fmt.Errorf("--probe is only valid for control doctor")
-			} else if taskDir != "" || (action != "config" && action != "doctor") {
+			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs") {
 				resolvedTask, err = controlDirectory(taskDir)
 			}
 			if err == nil {
@@ -69,12 +110,78 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
+				case "delivery", "deliver":
+					var request machine.DeliveryRequest
+					raw, readErr := io.ReadAll(io.LimitReader(cmd.InOrStdin(), 131073))
+					if readErr != nil {
+						err = readErr
+						break
+					}
+					decoder := json.NewDecoder(strings.NewReader(string(raw)))
+					decoder.DisallowUnknownFields()
+					if len(raw) > 131072 || !json.Valid(raw) {
+						err = fmt.Errorf("invalid delivery request")
+						break
+					}
+					if err = decoder.Decode(&request); err != nil {
+						break
+					}
+					ctx, cancel := diagnosticContext(cmd)
+					defer cancel()
+					if action == "delivery" && request.Action != "inspect" || action == "deliver" && request.Action == "inspect" {
+						err = fmt.Errorf("delivery is read-only; use deliver for a confirmed write")
+						break
+					}
+					if request.Action == "inspect" {
+						reply.Delivery, err = machine.InspectDelivery(ctx, resolvedCwd, request.HeadBranch)
+					} else {
+						cfg, configErr := config.Load(resolvedTask, resolvedCwd)
+						if configErr != nil {
+							err = configErr
+							break
+						}
+						reply.Delivery, err = machine.Deliver(machine.RunOpts{TaskDir: resolvedTask, Cwd: resolvedCwd, Config: cfg, Context: ctx, Log: logf(cmd)}, request)
+						delivery := reply.Delivery
+						snapshot, snapshotErr := controlSnapshot(resolvedTask)
+						reply = snapshot
+						reply.Delivery = delivery
+						err = errors.Join(err, snapshotErr)
+					}
+				case "session":
+					reply, err = startSessionControl(cmd, resolvedTask, resolvedCwd)
+				case "history":
+					reply.History, err = machine.ReadSessionHistory(resolvedTask, sessionKey)
+				case "metrics":
+					reply.Metrics, err = metrics.ReadReport(filepath.Join(resolvedTask, "metrics.jsonl"), runID)
+				case "runs":
+					directory, indexErr := machine.RunIndexDirectory()
+					if indexErr != nil {
+						err = indexErr
+					} else {
+						reply.Runs, err = machine.ListRuns(directory)
+					}
+				case "step":
+					extra := []string{"--only", only, "--expect-revision", fmt.Sprint(revision)}
+					if packet != "" {
+						extra = append(extra, "--packet", packet)
+					}
+					if retryReason != "" {
+						extra = append(extra, "--retry-reason", retryReason)
+					}
+					reply, err = startControlledRun(resolvedTask, resolvedCwd, "", extra)
+				case "config-edit", "config-save":
+					reply.Editor, err = controlEditor(cmd, resolvedCwd, action)
 				case "launch", "start":
 					requested := mode
 					if action == "launch" && requested == "" {
 						requested = "auto"
 					}
 					reply, err = startControlledTask(resolvedTask, resolvedCwd, requested)
+				case "node":
+					reply, err = controlSnapshot(resolvedTask)
+					if err == nil {
+						reply.Node, err = machine.ReadNode(reply.State, packet)
+					}
 				case "status":
 					reply, err = controlSnapshot(resolvedTask)
 				case "stop":
@@ -95,11 +202,17 @@ func controlCmd() *cobra.Command {
 						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
 					}
 				default:
-					err = fmt.Errorf("control action must be launch, start, status, stop, config, or doctor")
+					err = fmt.Errorf("control action must be launch, start, step, status, stop, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
 				}
 			}
 			if resolvedCwd != "" {
 				reply.Cwd = resolvedCwd
+			}
+			if compact && reply.State != nil {
+				var projectionErr error
+				reply.State, projectionErr = machine.ConsoleProjection(reply.State)
+				err = errors.Join(err, projectionErr)
+				reply.Projection = "console-excerpt"
 			}
 			reply.OK = err == nil
 			if err != nil {
@@ -112,10 +225,17 @@ func controlCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&compact, "compact", false, "有界只读画布投影；完整诊断可用 node 或省略此选项读取")
+	cmd.Flags().StringVar(&runID, "run-id", "", "仅 metrics：按准确的引擎 run ID 筛选")
+	cmd.Flags().StringVar(&sessionKey, "session-key", "", "仅 history：准确的角色／作用域键")
 	cmd.Flags().StringVar(&taskDir, "task-dir", "", "任务目录的绝对路径（config/doctor 可省略）")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "仓库目录的绝对路径")
 	cmd.Flags().BoolVar(&probe, "probe", false, "仅 doctor：探测 DSH SDK 配置与权限，不发送推理请求")
 	cmd.Flags().StringVar(&mode, "mode", "", "仅 launch/start：auto|quick|full；launch 默认 auto，恢复沿用已保存策略")
+	cmd.Flags().StringVar(&only, "only", "", "仅 step：运行 plan|execute|review|verify|integrate|final")
+	cmd.Flags().StringVar(&packet, "packet", "", "仅 step：packet id")
+	cmd.Flags().Int64Var(&revision, "expect-revision", 0, "仅 step：已查看的状态 revision")
+	cmd.Flags().StringVar(&retryReason, "retry-reason", "", "仅 step execute：人工继续一次的原因")
 	return cmd
 }
 
@@ -181,12 +301,23 @@ func controlSnapshot(taskDir string) (controlResponse, error) {
 }
 
 func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse, error) {
+	mode := ""
+	if len(modes) > 0 {
+		mode = modes[0]
+	}
+	return startControlledRun(taskDir, cwd, mode, nil)
+}
+
+func startControlledRun(taskDir, cwd, mode string, extra []string) (controlResponse, error) {
 	reply, err := controlSnapshot(taskDir)
 	if err != nil {
 		return reply, err
 	}
 	if reply.Running {
-		if len(modes) > 0 && modes[0] != "" && modes[0] != "auto" {
+		if len(extra) > 0 {
+			return reply, fmt.Errorf("task is already running; wait for its terminal result before starting a stage")
+		}
+		if mode != "" && mode != "auto" {
 			if reply.State == nil {
 				return reply, fmt.Errorf("task is already starting; refresh status before requesting a workflow change")
 			}
@@ -194,7 +325,7 @@ func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse,
 			if reply.State.Workflow != nil {
 				requested, effective = reply.State.Workflow.Requested, reply.State.Workflow.Effective
 			}
-			if modes[0] != requested && modes[0] != effective {
+			if mode != requested && mode != effective {
 				return reply, fmt.Errorf("task is already running with %s workflow; stop it before requesting a workflow change", effective)
 			}
 		}
@@ -210,9 +341,10 @@ func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse,
 	}
 	defer log.Close()
 	args := []string{"run", taskDir}
-	if len(modes) > 0 && modes[0] != "" {
-		args = append(args, "--mode", modes[0])
+	if mode != "" {
+		args = append(args, "--mode", mode)
 	}
+	args = append(args, extra...)
 	child := exec.Command(executable, args...)
 	child.Dir = cwd
 	child.Stdin = nil
@@ -234,9 +366,9 @@ func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse,
 			if snapshotErr != nil {
 				return reply, snapshotErr
 			}
-			if exitErr != nil && !reply.Running {
+			if exitErr != nil && (!reply.Running || len(extra) > 0) {
 				var semanticExit *exec.ExitError
-				if errors.As(exitErr, &semanticExit) && (semanticExit.ExitCode() == 3 || semanticExit.ExitCode() == 143) && reply.State != nil {
+				if errors.As(exitErr, &semanticExit) && (semanticExit.ExitCode() == 3 || semanticExit.ExitCode() == 143) && reply.State != nil && (len(extra) == 0 || !reply.Running || reply.PID == child.Process.Pid) {
 					return reply, nil // a started task may finish escalated or interrupted
 				}
 				return reply, fmt.Errorf("orchestrator exited before readiness: %w; inspect orchestrator.log", exitErr)
@@ -248,6 +380,9 @@ func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse,
 				return reply, err
 			}
 			if reply.Running && reply.PID > 0 {
+				if len(extra) > 0 && reply.PID != child.Process.Pid {
+					continue // Another window owns the run; await this child's admission result.
+				}
 				return reply, nil
 			}
 		case <-timer.C:

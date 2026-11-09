@@ -267,16 +267,17 @@ func (c *Context) summary() TaskSummary {
 
 // RunOpts RunTask / RunSingleStep 共享的装配入参。
 type RunOpts struct {
-	TaskDir string
-	Cwd     string
-	Mode    string
-	Config  *config.Config
-	Drivers *drivers.Drivers
-	Log     func(string)
-	Sleep   func(time.Duration)
-	Now     func() time.Time
-	Env     childenvLookup
-	Context context.Context
+	IndexDir string
+	TaskDir  string
+	Cwd      string
+	Mode     string
+	Config   *config.Config
+	Drivers  *drivers.Drivers
+	Log      func(string)
+	Sleep    func(time.Duration)
+	Now      func() time.Time
+	Env      childenvLookup
+	Context  context.Context
 }
 
 // RunTaskOpts RunTask 入参。
@@ -287,7 +288,7 @@ type RunTaskOpts struct {
 
 // RunTask 全自动运行：里程碑 → packet → attempts（execute → L1 → review）
 // → 里程碑闸门。返回摘要；state.json 携带真相。
-func RunTask(opts RunTaskOpts) (TaskSummary, error) {
+func RunTask(opts RunTaskOpts) (result TaskSummary, runErr error) {
 	release, err := AcquireRunLease(opts.TaskDir)
 	if err != nil {
 		return TaskSummary{}, err
@@ -300,6 +301,7 @@ func RunTask(opts RunTaskOpts) (TaskSummary, error) {
 	}
 	runContext, cancel := context.WithCancel(parent)
 	defer cancel()
+	defer func() { runErr = normalizeRunCancellation(runContext, runErr) }()
 	ctx, err := CreateContext(Opts{
 		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config, Mode: opts.Mode,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
@@ -312,6 +314,12 @@ func RunTask(opts RunTaskOpts) (TaskSummary, error) {
 	if err := ctx.writePid(); err != nil {
 		return ctx.summary(), err
 	}
+	finishRecord, err := ctx.beginRunRecord(opts.IndexDir, "workflow")
+	if err != nil {
+		clearPid(ctx.TaskDir)
+		return ctx.summary(), err
+	}
+	defer finishRecord(&runErr)
 	sigCh := registerSigterm(ctx.Log, cancel)
 	defer unregisterSigterm(sigCh)
 	defer clearPid(ctx.TaskDir)
@@ -349,6 +357,9 @@ func (c *Context) reloadPackets() error {
 }
 
 func (c *Context) run() (TaskSummary, error) {
+	if c.State.Handoff != nil {
+		return c.summary(), fmt.Errorf("task is under human session control; validate and return it first")
+	}
 	if err := c.reconcileSessionReceipts(); err != nil {
 		return c.summary(), err
 	}
@@ -414,10 +425,7 @@ func (c *Context) run() (TaskSummary, error) {
 			c.State.Inbox = append(c.State.Inbox, entry)
 			c.appendInbox(entry)
 			c.save()
-			if ferr := c.err(); ferr != nil {
-				return c.summary(), ferr
-			}
-			return c.summary(), nil
+			return c.summary(), c.err()
 		}
 		// P1：planner 可能在这步常规运行中修订过契约文件——planUntilValid 内
 		// 已重载并做 acceptance 指纹留痕（P0-2/A1 对称性）。
@@ -440,6 +448,20 @@ func (c *Context) run() (TaskSummary, error) {
 			packet := c.nextActionablePacket(milestone.ID)
 			if packet == nil {
 				break
+			}
+			if batch := c.parallelBatch(milestone.ID); len(batch) > 1 {
+				if err := c.runParallelExecute(batch); err != nil {
+					return c.summary(), err
+				}
+				stopped, err := c.recoverParallelFailures(batch, c.pauseBefore)
+				if err != nil || stopped {
+					return c.summary(), err
+				}
+				// Recovery may replace the contract set; select again at the loop top.
+				continue
+			}
+			if err := c.prepareParallelIntegration(packet); err != nil {
+				return c.summary(), err
 			}
 			outcome, err := c.processPacket(packet, processOpts{PauseBefore: c.pauseBefore})
 			if err != nil {
@@ -599,19 +621,45 @@ func (c *Context) milestoneSummaryLine(milestone contract.Milestone, startTokens
 
 // RunSingleStepOpts 手工单步模式入参。
 type RunSingleStepOpts struct {
+	Session *SessionCommand
 	RunOpts
-	Only     string // plan | execute | review | verify
-	PacketID string
+	Only             string // plan | execute | review | verify
+	PacketID         string
+	ExpectedRevision *int64
+	RetryReason      string
 }
 
 // RunSingleStep 手工单步模式（§12）：--only 恰好执行一次状态转移。
 // 步骤结果落在摘要（step 字段），失败步骤由 CLI 以非零码退出（#9）。
-func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
+func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
+	if opts.Only == "session" {
+		if opts.Session == nil || opts.ExpectedRevision == nil || opts.Session.Revision != *opts.ExpectedRevision {
+			return TaskSummary{}, fmt.Errorf("session command requires matching revision-bound input")
+		}
+		if err := opts.Session.Validate(); err != nil {
+			return TaskSummary{}, err
+		}
+	} else if opts.Session != nil {
+		return TaskSummary{}, fmt.Errorf("session payload requires session stage")
+	}
+
+	if opts.RetryReason != "" && (opts.ExpectedRevision == nil || opts.Only != "execute" || strings.TrimSpace(opts.RetryReason) == "" || len(opts.RetryReason) > 1000) {
+		return TaskSummary{}, fmt.Errorf("manual continuation requires revision-bound Execute and a bounded reason")
+	}
 	release, err := AcquireRunLease(opts.TaskDir)
 	if err != nil {
 		return TaskSummary{}, err
 	}
 	defer release()
+	if opts.ExpectedRevision != nil {
+		st, err := state.Load(opts.TaskDir)
+		if err != nil {
+			return TaskSummary{}, err
+		}
+		if st.Revision != *opts.ExpectedRevision {
+			return TaskSummary{}, fmt.Errorf("task revision changed; refresh before running a stage")
+		}
+	}
 	clearPid(opts.TaskDir)
 	parent := opts.Context
 	if parent == nil {
@@ -619,6 +667,7 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 	}
 	runContext, cancel := context.WithCancel(parent)
 	defer cancel()
+	defer func() { runErr = normalizeRunCancellation(runContext, runErr) }()
 	ctx, err := CreateContext(Opts{
 		TaskDir: opts.TaskDir, Cwd: opts.Cwd, Config: opts.Config, Mode: opts.Mode,
 		Drivers: opts.Drivers, Log: opts.Log, Sleep: opts.Sleep, Now: opts.Now, Env: opts.Env,
@@ -627,7 +676,33 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 	if err != nil {
 		return TaskSummary{}, err
 	}
+	ctx.State.Control = &state.ControlResult{Kind: opts.Only, Packet: opts.PacketID, Status: "running", Message: "", StartedAt: ctx.nowISO()}
+	if opts.Session != nil {
+		ctx.State.Control.Kind += "." + opts.Session.Action
+		ctx.State.Control.Packet = opts.Session.Key
+	}
+	ctx.save()
+	var finishRecord func(*error)
+	defer func() {
+		runErr = normalizeRunCancellation(runContext, runErr)
+		ctx.finishControl(result, &runErr)
+		if finishRecord != nil {
+			finishRecord(&runErr)
+		}
+	}()
+	if err := ctx.err(); err != nil {
+		return ctx.summary(), err
+	}
 	if err := ctx.writePid(); err != nil {
+		return ctx.summary(), err
+	}
+	kind := opts.Only
+	if opts.Session != nil {
+		kind += "." + opts.Session.Action
+	}
+	finishRecord, err = ctx.beginRunRecord(opts.IndexDir, kind)
+	if err != nil {
+		clearPid(ctx.TaskDir)
 		return ctx.summary(), err
 	}
 	sigCh := registerSigterm(ctx.Log, cancel)
@@ -636,7 +711,21 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 	stopControl := watchStopRequests(runContext, ctx.TaskDir, ctx.controlToken, cancel)
 	defer stopControl()
 
+	ctx.consoleRetryReason = opts.RetryReason
+	ctx.sessionCommand = opts.Session
+	if opts.ExpectedRevision != nil && opts.Only != "session" {
+		if err := ctx.admitConsoleStep(opts.Only, opts.PacketID); err != nil {
+			return ctx.summary(), err
+		}
+	}
 	summary, err := ctx.runSingle(opts.Only, opts.PacketID)
+	if opts.ExpectedRevision != nil && err == nil && ctx.err() == nil && ctx.State.Status == "running" {
+		step := summary.Step
+		ctx.State.Status = "paused"
+		ctx.save()
+		summary = ctx.summary()
+		summary.Step = step
+	}
 	if runContext.Err() != nil {
 		return summary, ErrInterrupted
 	}
@@ -647,8 +736,17 @@ func RunSingleStep(opts RunSingleStepOpts) (TaskSummary, error) {
 }
 
 func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
+	if only != "session" && c.State.Handoff != nil {
+		return c.summary(), fmt.Errorf("task is under human session control")
+	}
 	if err := c.reconcileSessionReceipts(); err != nil {
 		return c.summary(), err
+	}
+	if only == "session" {
+		if c.sessionCommand == nil {
+			return c.summary(), fmt.Errorf("missing session command")
+		}
+		return c.runSessionCommand(*c.sessionCommand)
 	}
 	interrupted := c.markInterruptedUnits()
 	if len(interrupted) > 0 {
@@ -716,7 +814,7 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 		// v0.24：--only execute = execute 子环闭环——转到 L1 全绿或出口。
 		// 人驱动的单环模式如实报告 Bounded/Spun；但结构化 Quick 风险
 		// 必须持久化单向升级，不能因单步或重启而丢掉已发现的事实。
-		r, err := c.runExecuteLoop(packet)
+		r, err := c.runExecuteLoop(packet, c.consoleRetryReason)
 		if err != nil {
 			return c.summary(), err
 		}
@@ -754,6 +852,29 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 			}
 		}
 		step = &StepSum{Name: "review", OK: r.Pass, Verdict: r.Verdict, Detail: optStr(string(r.ErrorCode))}
+	case "integrate":
+		packet, err := pickPacket()
+		if err != nil {
+			return c.summary(), err
+		}
+		if err := c.prepareParallelIntegration(packet); err != nil {
+			return c.summary(), err
+		}
+		if err := c.completeUnit(packet); err != nil {
+			return c.summary(), err
+		}
+		if c.quick() {
+			if _, err := c.runQuick(); err != nil {
+				return c.summary(), err
+			}
+		}
+		step = &StepSum{Name: "integrate", OK: true}
+	case "final":
+		ok, err := c.runFinalStage()
+		if err != nil {
+			return c.summary(), err
+		}
+		step = &StepSum{Name: "final", OK: ok}
 	case "verify":
 		if packetID != "" {
 			packet, perr := pickPacket()
@@ -799,4 +920,11 @@ func optStr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func normalizeRunCancellation(ctx context.Context, err error) error {
+	if ctx.Err() != nil && !errors.Is(err, ErrInterrupted) {
+		return errors.Join(ErrInterrupted, err)
+	}
+	return err
 }

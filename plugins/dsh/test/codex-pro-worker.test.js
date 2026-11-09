@@ -251,7 +251,12 @@ test('worker SIGKILL makes the installed guardian clean ordinary descendants wit
   const until = Date.now() + 8000;
   for (;;) {
     try { process.kill(-records[0].supervisorPid, 0); }
-    catch (error) { if (error.code === 'ESRCH') break; throw error; }
+    catch (error) {
+      if (error.code === 'ESRCH') break;
+      // A transient EPERM while Darwin reaps the group is still unconfirmed.
+      // The same deadline applies, and success still requires ESRCH.
+      if (error.code !== 'EPERM') throw error;
+    }
     assert.ok(Date.now() < until, 'guardian process group remained after caller death');
     await delay(25);
   }

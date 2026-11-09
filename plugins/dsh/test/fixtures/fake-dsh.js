@@ -89,6 +89,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (scenario === 'corrupt-tail') process.stdout.write('corrupted-tail\n');
   } else if (method === 'shutdown') {
     if (scenario === 'forced-shutdown') continue;
+    if (scenario === 'slow-shutdown') await new Promise(resolve => setTimeout(resolve, 700));
     reply(id, {});
     if (corruptShutdownTail || incompleteShutdownTail) {
       // Flush the injected tail before exit so the pipe, not scheduling, decides

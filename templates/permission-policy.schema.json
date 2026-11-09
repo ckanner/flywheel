@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flywheel host permissions",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mode": {"enum": ["role-based", "full-access"]},
+    "bindings": {
+      "type": "object",
+      "propertyNames": {"pattern": "^(loops\\.(plan|review|judge|intake|garden)|judge-panel|routes\\.[a-zA-Z0-9_-]+)$"},
+      "additionalProperties": {"enum": ["read-only", "workspace-write", "danger-full-access"]}
+    }
+  },
+  "patternProperties": {"^_note(_[a-zA-Z0-9_-]+)?$": {}}
+}

@@ -244,7 +244,10 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 
 func dshWorkerScript(t *testing.T) string {
 	t.Helper()
-	return kimiScript(t, "exec "+shQuote(os.Args[0])+" -test.run '^TestDSHWorkerProcessFixture$'\n")
+	// Race instrumentation otherwise sleeps for one second after this fixture
+	// has emitted its terminal receipt. That teardown delay is unrelated to the
+	// worker protocol and can consume the physical-exit deadline under load.
+	return kimiScript(t, "GORACE=atexit_sleep_ms=0 exec "+shQuote(os.Args[0])+" -test.run '^TestDSHWorkerProcessFixture$'\n")
 }
 
 func dshRunArgs(t *testing.T, scenario string) DSHArgs {

@@ -62,6 +62,11 @@ func (c *Context) persistSessionLifecycle(r *state.SessionRecord, event drivers.
 		return fmt.Errorf("lifecycle checkpoint does not belong to the current invocation")
 	}
 	if event.ThreadID != nil {
+		if c.parallel != nil {
+			if err := c.parallel.reserveThread(recovery.Harness, *event.ThreadID); err != nil {
+				return err
+			}
+		}
 		for _, other := range c.State.Sessions.Records {
 			if other != r && other.ThreadID == *event.ThreadID && strings.HasPrefix(other.Protocol, recovery.Harness+"/") {
 				return fmt.Errorf("lifecycle checkpoint belongs to another role's history")

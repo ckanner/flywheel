@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.30.0 — 流程控制台
+
+- DSH 横向画布：规划／拆分、调度、任务、集成、终验、PR、Merge；节点运行、重跑与完整证据。
+- 全局／项目配置编辑、逐阶段权限、Provider／模型／thinking 映射及角色历史策略。
+- CLI 运行登记、多任务关联、运行归属与按 invocation 对账的成本／时延／验收统计。
+- 受管 Provider session 交互、核对回执、验证交回与保持暂停退出；会话账本 v2 防止旧引擎忽略接管。
+- 显式依赖／写入范围下的并行 Execute/L1、集中 CAS 与预算、串行 Review／合成候选复验。
+- 明确授权的 PR 推送／创建和精确 HEAD 合并；保留未知或排队中的远端结果。
+
+源码门禁与同候选双平台安装已通过；npm 可用性以六包 registry 完整性、公开安装及 latest 复核为准。
+
 ## 0.29.1
 
 - 完成会话 P3 源码：Codex Pro 0.9.0／Claude Code Pro 0.4.0 公开 lifecycle v1、独立 durable journal 与只读 recovery，经 worker v3 接入 Go。派发检查点先 fsync 再 ACK；恢复终态仍绑定原候选和角色 guard，未知不盲目重放。

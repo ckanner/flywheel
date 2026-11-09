@@ -83,7 +83,11 @@ func markResidentSessionPresence(raw []byte, cfg *Config) {
 const sessionPolicySchemaID = "https://flywheel.local/schemas/session-policy.schema.json"
 
 func compileSessionPolicySchema(load func(string) ([]byte, error)) (*jsonschema.Schema, error) {
-	raw, err := load("session-policy.schema.json")
+	return compilePolicySchema("session-policy.schema.json", load)
+}
+
+func compilePolicySchema(name string, load func(string) ([]byte, error)) (*jsonschema.Schema, error) {
+	raw, err := load(name)
 	if err != nil {
 		return nil, fmt.Errorf("embedded session policy schema: %w", err)
 	}

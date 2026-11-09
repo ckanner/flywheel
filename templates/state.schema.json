@@ -7,16 +7,37 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
+    "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
+    "control":{"type":"object","additionalProperties":false,"required":["kind","status","message","started-at"],"properties":{"kind":{"type":"string","minLength":1},"packet":{"type":"string"},"status":{"enum":["running","passed","failed","cancelled"]},"message":{"type":"string","maxLength":2000},"started-at":{"type":"string"},"finished-at":{"type":"string"}}},
+    "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
+    "delivery":{"type":"object","additionalProperties":false,"required":["action","repo","head","branch","status","at"],"properties":{"base":{"type":"string","minLength":1},"action":{"enum":["create","merge"]},"repo":{"type":"string","minLength":1},"head":{"type":"string","minLength":1},"branch":{"type":"string","minLength":1},"status":{"enum":["pending","confirmed","unknown"]},"at":{"type":"string"},"url":{"type":"string"},"number":{"type":"integer","minimum":1},"merge-sha":{"type":"string"},"error":{"type":"string"}}},
+    "scheduler": {"$ref":"scheduler-policy.schema.json","required":["mode","max-parallel"]},
+    "handoff": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "thread", "cwd", "packet", "candidate", "started-at", "reason"],
+      "properties": {
+        "pending": {"type": "boolean"},
+        "previous-invocation": {"type": "string", "pattern": "^call-[A-Za-z0-9]+$"},
+        "key": {"type": "string", "minLength": 1},
+        "thread": {"type": "string", "minLength": 1},
+        "cwd": {"type": "string", "minLength": 1},
+        "packet": {"type": "string", "pattern": "^M[0-9]+-T[0-9]+$"},
+        "candidate": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "started-at": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
     "sessions": {
       "type": "object", "additionalProperties": false, "required": ["version", "records"],
       "properties": {
-        "version": { "const": 1 },
+        "version": { "enum": [1, 2] },
         "records": {
           "type": "object",
           "additionalProperties": {
             "type": "object", "additionalProperties": false,
             "required": ["task", "role", "scope", "cwd", "binding", "goal", "contract", "generation", "resume-candidate", "action", "reason", "last"],
             "properties": {
+              "configuration": {"$ref":"#/$defs/session-configuration"},
               "task": { "type": "string", "minLength": 1 },
               "role": { "enum": ["plan", "execute", "review", "judge", "judge-panel"] },
               "scope": { "type": "string", "minLength": 1 },
@@ -48,6 +69,7 @@
                 "required": ["id", "status", "started-at", "attempt", "candidate-before", "accounted", "dispatch", "outcome", "cleanup-confirmed", "usage-status"],
                 "properties": {
                   "id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
+                  "engine-run-id": {"type":"string","minLength":1},
                   "status": { "enum": ["intent", "received", "consumed", "blocked"] },
                   "started-at": { "type": "string", "minLength": 1 },
                   "attempt": { "type": "integer", "minimum": 0 },
@@ -202,6 +224,7 @@
         "additionalProperties": false,
         "required": ["status"],
         "properties": {
+          "plan":{"type":"object","additionalProperties":false,"required":["status","started-at","contracts"],"properties":{"status":{"enum":["running","passed","failed","paused","stale"]},"started-at":{"type":"string"},"finished-at":{"type":"string"},"contracts":{"type":"string"},"error":{"type":"string"}}},
           "status": { "type": "string", "enum": ["pending", "in-progress", "closed"] },
           "gate": {
             "type": ["object", "null"],
@@ -233,6 +256,8 @@
         "additionalProperties": false,
         "required": ["milestone", "status", "route", "attempts", "failed-attempts", "plan-revisions", "interrupted", "retry-history", "evidence"],
         "properties": {
+          "schedule": {"$ref":"task-packet.schema.json#/properties/schedule"},
+          "parallel": {"type": "boolean"},
           "milestone": { "type": "string", "pattern": "^M-\\d{2,}$" },
           "status": {
             "type": "string",
@@ -468,6 +493,7 @@
     }
   },
   "$defs": {
+    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,
       "required": ["applicable", "reason"],

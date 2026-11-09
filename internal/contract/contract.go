@@ -89,7 +89,13 @@ type Escalation struct {
 }
 
 // Packet 一个 task packet 的完整契约。
+type PacketSchedule struct {
+	After  []string `json:"after"`
+	Writes []string `json:"writes"`
+}
+
 type Packet struct {
+	Schedule             *PacketSchedule     `json:"schedule,omitempty"`
 	PacketID             string              `json:"packet-id"`
 	ContractVersion      int                 `json:"contract-version"`
 	Goal                 string              `json:"goal"`
@@ -214,9 +220,10 @@ func compileAll(load func(string) ([]byte, error)) (*jsonschema.Schema, *jsonsch
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	for name, id := range map[string]string{
-		"task-packet.schema.json": packetSchemaID,
-		"spec.schema.json":        specSchemaID,
-		"state.schema.json":       stateSchemaID,
+		"task-packet.schema.json":      packetSchemaID,
+		"spec.schema.json":             specSchemaID,
+		"state.schema.json":            stateSchemaID,
+		"scheduler-policy.schema.json": "https://flywheel.local/schemas/scheduler-policy.schema.json",
 	} {
 		data, err := load(name)
 		if err != nil {
@@ -227,7 +234,7 @@ func compileAll(load func(string) ([]byte, error)) (*jsonschema.Schema, *jsonsch
 			return nil, nil, nil, fmt.Errorf("embedded schema %s: invalid JSON: %w", name, err)
 		}
 		// AddResource 失败仅发生在同 URL 重复注册（jsonschema/v6 实测）；
-		// 三个 id 恒互异，此错误不可能发生。
+		// 这些 id 恒互异，此错误不可能发生。
 		_ = compiler.AddResource(id, doc)
 	}
 	packetSchema, err := compiler.Compile(packetSchemaID)
@@ -439,6 +446,9 @@ func LoadPackets(taskDir string, spec *Spec) ([]*Packet, error) {
 			}
 		}
 	}
+	if err := ValidateSchedules(packets); err != nil {
+		return nil, err
+	}
 	return packets, nil
 }
 
@@ -477,4 +487,17 @@ func ValidateSessionStateValue(value any) error {
 		return err
 	}
 	return validateAgainst(sch.Properties["sessions"], value, "state.json sessions")
+}
+
+// ValidateConsoleStateValue validates versioned control extensions without
+// imposing newly required fields on unrelated legacy state sections.
+func ValidateConsoleStateValue(name string, value any) error {
+	if name != "handoff" && name != "delivery" && name != "scheduler" && name != "run" && name != "control" && name != "project" {
+		return fmt.Errorf("unknown console state extension")
+	}
+	schema, err := StateSchema()
+	if err != nil {
+		return err
+	}
+	return validateAgainst(schema.Properties[name], value, "state.json "+name)
 }

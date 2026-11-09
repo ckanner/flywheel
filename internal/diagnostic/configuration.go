@@ -34,12 +34,13 @@ type Binding struct {
 }
 
 type Configuration struct {
-	Source   string                `json:"source"`
-	Scope    string                `json:"scope"`
-	Cwd      string                `json:"cwd"`
-	TaskDir  string                `json:"taskDir"`
-	Bindings []Binding             `json:"bindings"`
-	Sessions config.SessionsConfig `json:"sessions"`
+	Scheduler config.SchedulerConfig `json:"scheduler"`
+	Source    string                 `json:"source"`
+	Scope     string                 `json:"scope"`
+	Cwd       string                 `json:"cwd"`
+	TaskDir   string                 `json:"taskDir"`
+	Bindings  []Binding              `json:"bindings"`
+	Sessions  config.SessionsConfig  `json:"sessions"`
 }
 
 var (
@@ -123,7 +124,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
+	view := &Configuration{Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		harness := b.Harness
 		if harness == "" {
@@ -146,7 +147,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 				thinking = "max"
 			}
 		}
-		permission := cfg.PermissionMode(role, harness)
+		permission := cfg.PermissionMode(role, harness, id)
 		view.Bindings = append(view.Bindings, Binding{
 			ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[id], Harness: harness,
 			Provider: fallback.ResolveProvider(cfg, harness, b.Provider, b.Channel), Channel: b.Channel,

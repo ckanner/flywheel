@@ -282,7 +282,12 @@ test('SIGKILL of the worker closes its guardian lifeline and stops native work',
   const deadline = Date.now() + 8000;
   for (;;) {
     try { process.kill(-pid, 0); }
-    catch (error) { assert.equal(error.code, 'ESRCH'); break; }
+    catch (error) {
+      if (error.code === 'ESRCH') break;
+      // Darwin can temporarily report EPERM while a killed group is being
+      // reaped. Keep waiting under the same deadline; only ESRCH proves exit.
+      assert.equal(error.code, 'EPERM');
+    }
     assert.ok(Date.now() < deadline, 'native Claude process group survived loss of its worker');
     await delay(20);
   }

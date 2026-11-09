@@ -152,7 +152,7 @@ Quick 不省略仓库门禁、适用 L2/L3、缺陷注入或 Git 持久化检查
 阶段 Agent 调用（Execute、最终 Review），不含宿主准备、内部工具轮次与重试。
 旧任务缺少新字段仍为 Full；恢复沿用持久化策略，Full 不因重启自动降为 Quick。
 
-业务仓库建议先建立任务集成分支与独立 worktree；准备契约、Draft PR 和人工合并的完整流程见[从需求准备到 PR 合并](docs/workflow.md)。引擎的单元合并目标是启动 checkout 当前所在分支，GitHub PR 操作由使用者或获授权的宿主执行。
+业务仓库建议先建立任务集成分支与独立 worktree；准备契约、Draft PR 和人工合并的完整流程见[从需求准备到 PR 合并](docs/workflow.md)。引擎的单元合并目标是启动 checkout 当前所在分支，GitHub PR 操作由使用者或获授权的宿主执行，也可使用[流程控制台](docs/flow-console.md)的明确授权入口。
 
 准备阶段由当前 DSH 对话模型生成需求契约，`loops.plan` 只控制引擎启动后的规划／修订。复杂需求建议先用已授权的 `gpt-6-astra`、`high` 生成可审阅草稿；简单明确的任务可沿用 Flash，避免每个 packet 都重复调用昂贵规划模型。
 
@@ -285,3 +285,7 @@ npm run build:npm
 ## 许可证
 
 当前源码与 Flywheel npm 包标记为 `UNLICENSED`，尚未授予开源许可证。英文文档和公开 npm 分发不改变这一状态；正式开源时需由维护者选择许可证，并同步源码声明与全部包的 metadata。第三方依赖遵循各自许可证。
+
+### 流程控制台（当前源码）
+
+DSH 会话视图提供从左到右的任务画布、节点运行／重跑、按阶段配置、受管 Session 交互、声明式并行与串行集成、运行指标和 PR／Merge 回执。完整操作与当前能力边界见[控制台指南](docs/flow-console.md)。源码状态不等于 npm 已发布或本机已升级。

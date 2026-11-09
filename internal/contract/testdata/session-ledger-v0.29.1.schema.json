@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Frozen v0.29.1 session ledger schema from 1087b686fa308284b6b68f238129f6779e0ba113; downgrade-fence regression fixture, not the current contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "records"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "records": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task",
+          "role",
+          "scope",
+          "cwd",
+          "binding",
+          "goal",
+          "contract",
+          "generation",
+          "resume-candidate",
+          "action",
+          "reason",
+          "last"
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "enum": [
+              "plan",
+              "execute",
+              "review",
+              "judge",
+              "judge-panel"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "binding": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "goal": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "contract": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "thread-id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "protocol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resume-candidate": {
+            "type": "boolean"
+          },
+          "action": {
+            "enum": [
+              "create",
+              "resume",
+              "rebuild",
+              "wait",
+              "reconcile"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quality": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "confirmed-turns",
+              "unproductive-turns",
+              "last-usage-status",
+              "rebuilds"
+            ],
+            "properties": {
+              "confirmed-turns": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unproductive-turns": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "last-input-tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "last-usage-status": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "last-invocation-id": {
+                "type": "string",
+                "pattern": "^call-[A-Za-z0-9]+$"
+              },
+              "rebuilds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rebuild-reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "last": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "status",
+              "started-at",
+              "attempt",
+              "candidate-before",
+              "accounted",
+              "dispatch",
+              "outcome",
+              "cleanup-confirmed",
+              "usage-status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^call-[A-Za-z0-9]+$"
+              },
+              "status": {
+                "enum": [
+                  "intent",
+                  "received",
+                  "consumed",
+                  "blocked"
+                ]
+              },
+              "started-at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "requested-thread": {
+                "type": "string",
+                "minLength": 1
+              },
+              "persistent": {
+                "type": "boolean"
+              },
+              "candidate-before": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "candidate-after": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "guard-before": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "guard-after": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "receipt-digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "accounted": {
+                "type": "boolean"
+              },
+              "dispatch": {
+                "enum": [
+                  "not-dispatched",
+                  "dispatched",
+                  "unknown"
+                ]
+              },
+              "outcome": {
+                "enum": [
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "unknown"
+                ]
+              },
+              "cleanup-confirmed": {
+                "type": "boolean"
+              },
+              "usage-status": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "accounting": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "day",
+                  "provider",
+                  "receipt-digest",
+                  "usage",
+                  "cost-usd"
+                ],
+                "properties": {
+                  "day": {
+                    "type": "string",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "receipt-digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "cost-usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "usage": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "required": [
+                      "input",
+                      "output",
+                      "reasoning",
+                      "cache-read",
+                      "cache-write",
+                      "total-tokens"
+                    ],
+                    "properties": {
+                      "input": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "output": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reasoning": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "cache-read": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "cache-write": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total-tokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                }
+              },
+              "recovery": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "harness",
+                  "adapter-version",
+                  "directory",
+                  "model",
+                  "effort",
+                  "permission-mode",
+                  "sequence"
+                ],
+                "properties": {
+                  "version": {
+                    "const": 1
+                  },
+                  "harness": {
+                    "enum": [
+                      "codex-pro",
+                      "claude-code-pro"
+                    ]
+                  },
+                  "adapter-version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "directory": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "permission-mode": {
+                    "enum": [
+                      "read-only",
+                      "workspace-write",
+                      "danger-full-access"
+                    ]
+                  },
+                  "run-id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 64
+                  },
+                  "event": {
+                    "enum": [
+                      "thread-ready",
+                      "dispatch-intent",
+                      "dispatch-possible",
+                      "turn-accepted",
+                      "terminal",
+                      "cleanup-confirmed"
+                    ]
+                  },
+                  "checkpoint-digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "received",
+                        "consumed"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "candidate-after",
+                    "receipt-digest"
+                  ],
+                  "properties": {
+                    "cleanup-confirmed": {
+                      "const": true
+                    },
+                    "dispatch": {
+                      "enum": [
+                        "not-dispatched",
+                        "dispatched"
+                      ]
+                    },
+                    "outcome": {
+                      "enum": [
+                        "completed",
+                        "failed",
+                        "cancelled"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "resume-candidate": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "thread-id",
+                "protocol"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

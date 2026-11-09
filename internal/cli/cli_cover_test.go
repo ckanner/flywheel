@@ -31,7 +31,14 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv("FLYWHEEL_CLI_EXEC_HELPER"); mode != "" {
 		os.Exit(executeHelperMain(mode))
 	}
-	os.Exit(m.Run())
+	directory, err := os.MkdirTemp("", "flywheel-cli-test-runs-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("FLYWHEEL_RUNS_DIR", directory)
+	code := m.Run()
+	_ = os.RemoveAll(directory)
+	os.Exit(code)
 }
 
 func executeHelperMain(mode string) int {

@@ -567,11 +567,15 @@ test("registry query timeout terminates the real npm process even when it ignore
   const pidFile = path.join(root, "npm.pid");
   const termFile = path.join(root, "received-term");
   const expiredFile = path.join(root, "query-survived");
-  fs.writeFileSync(path.join(root, "npm"), `#!/usr/bin/env node
-const fs = require("node:fs");
-fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-process.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(termFile)}, "ignored"));
-setTimeout(() => { fs.writeFileSync(${JSON.stringify(expiredFile)}, "survived"); process.exit(91); }, 3000);
+  // The query has a one-second deadline. Use a native single-process fixture
+  // so Node's cold startup under concurrent builds cannot consume that deadline
+  // before the readiness marker and signal handler have been installed.
+  fs.writeFileSync(path.join(root, "npm"), `#!/bin/bash
+trap 'printf ignored > "$FLYWHEEL_QUERY_TERM"' TERM
+printf '%s' "$$" > "$FLYWHEEL_QUERY_PID"
+until (( SECONDS >= 3 )); do :; done
+printf survived > "$FLYWHEEL_QUERY_EXPIRED"
+exit 91
 `, { mode: 0o755 });
   const script = path.resolve(__dirname, "../../scripts/release-publish.js");
   const source = `const { waitForPackage } = require(${JSON.stringify(script)});
@@ -581,7 +585,8 @@ waitForPackage({ name: "@fixture/query", version: "1.0.0" }, {
 }).then(() => { process.exitCode = 1; }, (error) => console.log(JSON.stringify({ error: error.message })));
 `;
   const { stdout } = await promisify(execFile)(process.execPath, ["-e", source], {
-    env: { ...process.env, PATH: `${root}${path.delimiter}${process.env.PATH}` }, timeout: 6000,
+    env: { ...process.env, PATH: `${root}${path.delimiter}${process.env.PATH}`,
+      FLYWHEEL_QUERY_PID: pidFile, FLYWHEEL_QUERY_TERM: termFile, FLYWHEEL_QUERY_EXPIRED: expiredFile }, timeout: 6000,
   });
   assert.match(JSON.parse(stdout).error, /ETIMEDOUT/);
   assert.equal(fs.existsSync(termFile), false, "the query must not rely on cooperative SIGTERM cleanup");

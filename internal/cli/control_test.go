@@ -87,6 +87,12 @@ func controlChildHelperMain() int {
 	defer signal.Stop(term)
 	writeControlFixtureFile(filepath.Join(taskDir, "state.json"), []byte(cliStateFixture))
 	token := "fixture-" + strconv.Itoa(os.Getpid())
+	if scenario == "other-owner" {
+		payload, _ := json.Marshal(machine.RunControl{PID: os.Getpid() + 1000000, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ControlToken: token})
+		writeControlFixtureFile(machine.PidFile(taskDir), payload)
+		time.Sleep(50 * time.Millisecond)
+		return 2
+	}
 	payload, _ := json.Marshal(machine.RunControl{PID: os.Getpid(), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ControlToken: token})
 	writeControlFixtureFile(machine.PidFile(taskDir), payload)
 	tick := time.NewTicker(5 * time.Millisecond)
@@ -129,6 +135,7 @@ func runControlTest(t *testing.T, action, taskDir, cwd string, extra ...string) 
 }
 
 func controlFixture(t *testing.T, scenario string) {
+	t.Setenv("FLYWHEEL_RUNS_DIR", t.TempDir())
 	t.Helper()
 	t.Setenv("FLYWHEEL_CLI_EXEC_HELPER", "control-child")
 	t.Setenv("FLYWHEEL_CONTROL_SCENARIO", scenario)

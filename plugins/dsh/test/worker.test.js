@@ -278,6 +278,13 @@ test('forced SDK shutdown cannot claim successful settlement of native managed r
   assert.equal(result.settled, false);
 });
 
+test('normal SDK history flush can finish before bounded shutdown escalation', async t => {
+  const { request, options } = await setup(t, 'slow-shutdown');
+  const result = await runWorker(request, options);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.settled, true);
+});
+
 test('doctor exercises runtime and permission handshake but never prompts a model', async t => {
   for (const permissionMode of ['workspace-write', 'danger-full-access']) {
     const { request, options, methods } = await setup(t);

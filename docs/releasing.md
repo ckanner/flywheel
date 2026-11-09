@@ -4,7 +4,9 @@
 
 本页面向维护者。普通用户从 npm 安装，见[入门教程](getting-started.md)；不需要下载 Actions artifact 或手工解压 tgz。
 
-当前会话视图排序调整的统一发行目标为 **0.28.5**，复核见 [0.28.5 记录](validation/2026-11-05-view-order.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.5 包含交互发行工具，可从其自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
+当前流程控制台的统一发行目标为 **0.30.0**，源码验证见 [控制台记录](validation/2026-11-09-flow-console.md)。同一个正式候选必须从干净的 `v0.30.0` 构建、通过 macOS／Linux 安装，再上传 npm；开发候选不能直接发布。会话存储升级为 v2 后，旧引擎会拒绝继续，新引擎仍可读取旧 v1。
+
+历史会话视图排序版本 **0.28.5** 的复核见 [0.28.5 记录](validation/2026-11-05-view-order.md)。该记录不代替 npm 上传、latest 提升或桌面验收。0.28.5 起包含交互发行工具，可从自身的干净精确 tag 构建并运行 `npm run release:local -- --repository-visibility private`，无需沿用下文 0.28.0 的双 checkout 示例。
 
 自适应工作流和会话 P1–P4 的统一发行目标为 **0.29.1**。当前候选 bundle 已审查的 Codex Pro 0.9.0 公共 npm 包，lock 指向真实 vendor tarball 和实际 integrity；安装门禁确认不会向 registry 请求尚未发布的 Codex 版本。来源与许可证见 [vendor 记录](../plugins/dsh/vendor/README.md)。Claude 0.4.0 保持 optional peer，CI 从固定源码 SHA 构建并检查相同 tarball hash，再运行显式后端门禁；默认用户不选择它就无需安装。
 

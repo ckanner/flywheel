@@ -73,7 +73,7 @@ func TestSessionStateRejectsMalformedOrContradictoryCheckpoints(t *testing.T) {
 		name   string
 		change func(*SessionLedger)
 	}{
-		{"unknown version", func(s *SessionLedger) { s.Version = 2 }},
+		{"unknown version", func(s *SessionLedger) { s.Version = 3 }},
 		{"nil records", func(s *SessionLedger) { s.Records = nil }},
 		{"nil record", func(s *SessionLedger) { s.Records["execute/M01-T01"] = nil }},
 		{"nil invocation", func(s *SessionLedger) { s.Records["execute/M01-T01"].Last = nil }},
@@ -462,4 +462,17 @@ func TestSessionReceiptReadFailuresAndGrowthAreBounded(t *testing.T) {
 			assert.Empty(t, digest)
 		})
 	}
+}
+
+func TestLoadRejectsInvalidConsoleExtensionsBeforeAnyControlMutation(t *testing.T) {
+	for _, name := range []string{"handoff", "delivery", "scheduler", "run", "control", "project"} {
+		dir := t.TempDir()
+		writeRaw(t, StateFile(dir), `{"revision":1,"`+name+`":{}}`)
+		_, err := Load(dir)
+		require.Error(t, err, name)
+	}
+	dir := t.TempDir()
+	writeRaw(t, StateFile(dir), `{"revision":1,"project":{"cwd":"/repo"},"scheduler":{"mode":"serial","max-parallel":2}}`)
+	_, err := Load(dir)
+	require.NoError(t, err)
 }

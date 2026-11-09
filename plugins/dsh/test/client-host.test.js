@@ -131,7 +131,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)),
     new Set(['flywheel', 'chat', 'trajectory']));
   await act(async () => { unmount = ctx.uiRenderer.mount(container); });
-  assert.match(container.textContent, /Flywheel 任务/);
+  assert.match(container.textContent, /Flywheel 流程控制台/);
   assert.equal(requests.length, 0);
   const styleSelector = 'style[data-plugin="@ckanner/dsh-plugin-flywheel"]';
   assert.ok(container.querySelector('[data-slot="conversation.view"]').contains(container.querySelector(styleSelector)));

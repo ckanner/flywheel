@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.8.0"
+  version: "1.8.1"
 description: >-
   Prepare a reviewable Flywheel task proposal without starting the engine:
   research the repository, resolve intent questions, and generate docs/<slug>/
@@ -76,6 +76,9 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 仅在 shell 中 `cd` 或使用 `git -C` 不代表已改变 DSH 会话的当前工作目录；
 后续入口继续使用所报告的绝对任务路径。仅准备文件不改变视图；DSH 的
 `flywheel_launch` 或 `flywheel_control` start 调用才把具体任务关联到当前会话。
+
+需要独立任务并行时，按当前 `task-packet.schema.json` 的 `schedule` 声明实际依赖
+与写入范围；字段不受当前二进制支持时先升级，不能让 skill 自己实现调度。
 
 ### 生成与冻结
 

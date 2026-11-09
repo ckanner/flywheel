@@ -88,18 +88,20 @@ var osReadFile = os.ReadFile
 
 // PacketState 单个 packet 的执行状态。
 type PacketState struct {
-	Milestone            string    `json:"milestone"`
-	Status               string    `json:"status"`
-	Route                string    `json:"route"`
-	Attempts             int       `json:"attempts"`
-	FailedAttempts       int       `json:"failed-attempts"`
-	PlanRevisions        int       `json:"plan-revisions"`
-	Interrupted          bool      `json:"interrupted"`
-	NeedsLiveCredentials bool      `json:"needs-live-credentials"`
-	Artifacts            []string  `json:"artifacts"`
-	Exit                 *ExitInfo `json:"exit"`
-	BaseRef              *string   `json:"base-ref"`
-	ContractSyncPending  bool      `json:"contract-sync-pending,omitempty"`
+	Schedule             *contract.PacketSchedule `json:"schedule,omitempty"`
+	Parallel             bool                     `json:"parallel,omitempty"`
+	Milestone            string                   `json:"milestone"`
+	Status               string                   `json:"status"`
+	Route                string                   `json:"route"`
+	Attempts             int                      `json:"attempts"`
+	FailedAttempts       int                      `json:"failed-attempts"`
+	PlanRevisions        int                      `json:"plan-revisions"`
+	Interrupted          bool                     `json:"interrupted"`
+	NeedsLiveCredentials bool                     `json:"needs-live-credentials"`
+	Artifacts            []string                 `json:"artifacts"`
+	Exit                 *ExitInfo                `json:"exit"`
+	BaseRef              *string                  `json:"base-ref"`
+	ContractSyncPending  bool                     `json:"contract-sync-pending,omitempty"`
 	// Commit 编排器单元提交记录：对象 {sha,message,at,ledger-sha?,merge-error?}
 	// 或 {sha,message,at} / {skipped|error,...}（in-place 分支直接落 CommitOutcome
 	// 形状）。state.schema.json 声明为对象——machine 层写入，此处仅保证 JSON 往返。
@@ -114,8 +116,17 @@ type PacketState struct {
 }
 
 // MilestoneState 里程碑推进状态。
+type PlanProgress struct {
+	Status     string `json:"status"`
+	StartedAt  string `json:"started-at"`
+	FinishedAt string `json:"finished-at,omitempty"`
+	Contracts  string `json:"contracts"`
+	Error      string `json:"error,omitempty"`
+}
+
 type MilestoneState struct {
-	Status string `json:"status"`
+	Plan   *PlanProgress `json:"plan,omitempty"`
+	Status string        `json:"status"`
 	// Gate 门禁结论对象 {pass,levels,at,judge?}（§4.4/§7；schema 声明对象）。
 	Gate     any     `json:"gate"`
 	ClosedAt *string `json:"closed-at"`
@@ -167,7 +178,65 @@ type Budget struct {
 }
 
 // State state.json 根对象。
+type Handoff struct {
+	Pending            bool   `json:"pending"`
+	PreviousInvocation string `json:"previous-invocation,omitempty"`
+	Key                string `json:"key"`
+	Thread             string `json:"thread"`
+	Cwd                string `json:"cwd"`
+	Packet             string `json:"packet"`
+	Candidate          string `json:"candidate"`
+	StartedAt          string `json:"started-at"`
+	Reason             string `json:"reason"`
+}
+
+type Delivery struct {
+	Base     string `json:"base"`
+	Action   string `json:"action"`
+	Repo     string `json:"repo"`
+	Head     string `json:"head"`
+	Branch   string `json:"branch"`
+	Status   string `json:"status"`
+	At       string `json:"at"`
+	URL      string `json:"url,omitempty"`
+	Number   int    `json:"number,omitempty"`
+	MergeSHA string `json:"merge-sha,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type RunIdentity struct {
+	Bindings   map[string]SessionConfiguration `json:"bindings,omitempty"`
+	Drivers    map[string]string               `json:"drivers,omitempty"`
+	ID         string                          `json:"id"`
+	Kind       string                          `json:"kind"`
+	Head       string                          `json:"head,omitempty"`
+	Branch     string                          `json:"branch,omitempty"`
+	Conditions string                          `json:"conditions"`
+	StartedAt  string                          `json:"startedAt"`
+}
+
+type ControlResult struct {
+	Kind       string `json:"kind"`
+	Packet     string `json:"packet,omitempty"`
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+	StartedAt  string `json:"started-at"`
+	FinishedAt string `json:"finished-at,omitempty"`
+}
+
+type ProjectIdentity struct {
+	Cwd  string `json:"cwd"`
+	Repo string `json:"repo,omitempty"`
+	URL  string `json:"url,omitempty"`
+}
+
 type State struct {
+	Project              *ProjectIdentity          `json:"project,omitempty"`
+	Control              *ControlResult            `json:"control,omitempty"`
+	Run                  *RunIdentity              `json:"run,omitempty"`
+	Delivery             *Delivery                 `json:"delivery,omitempty"`
+	Scheduler            *config.SchedulerConfig   `json:"scheduler,omitempty"`
+	Handoff              *Handoff                  `json:"handoff,omitempty"`
 	SchemaVersion        int                       `json:"schema-version"`
 	Slug                 string                    `json:"slug"`
 	Revision             int64                     `json:"revision"`
@@ -238,9 +307,15 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
-		Revision any             `json:"revision"`
-		Workflow json.RawMessage `json:"workflow"`
-		Sessions json.RawMessage `json:"sessions"`
+		Revision  any             `json:"revision"`
+		Workflow  json.RawMessage `json:"workflow"`
+		Sessions  json.RawMessage `json:"sessions"`
+		Handoff   json.RawMessage `json:"handoff"`
+		Delivery  json.RawMessage `json:"delivery"`
+		Scheduler json.RawMessage `json:"scheduler"`
+		Run       json.RawMessage `json:"run"`
+		Control   json.RawMessage `json:"control"`
+		Project   json.RawMessage `json:"project"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
@@ -258,6 +333,15 @@ func Load(taskDir string) (*State, error) {
 	if len(probe.Sessions) > 0 {
 		if err := validateSessions(probe.Sessions); err != nil {
 			return nil, err
+		}
+	}
+	for name, raw := range map[string]json.RawMessage{"handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project} {
+		if len(raw) > 0 {
+			var value any
+			_ = json.Unmarshal(raw, &value)
+			if err := contract.ValidateConsoleStateValue(name, value); err != nil {
+				return nil, err
+			}
 		}
 	}
 	var st State

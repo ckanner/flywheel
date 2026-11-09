@@ -1,7 +1,7 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.1.2"
+  version: "1.2.0"
 description: Prepare and launch an authorized Flywheel coding task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
@@ -93,13 +93,13 @@ CLI 本身消费已准备的契约，不会用一句目标自动生成需求或�
 - Quick 正常路径为 Execute、全部必需验证、一次独立最终 Review、Git 持久化；
   Plan／Judge 显示“不适用”及原因，不显示假通过。Full 保留完整阶段。
   引擎升级 Full 时转述具体原因；已有授权继续沿用，新需求取舍才交用户决定。
-- Go 负责串行调度及会话选择。scoped 可延续同角色、同作用域的正常终态历史，
+- Go 按冻结依赖和写入范围决定串行／并行调度及会话选择。scoped 可延续同角色、同作用域的正常终态历史，
   Execute／Review 始终隔离，复审仍检查完整当前候选；fresh 不启用通用历史复用。
   支持的主任务适配器在两种模式下均记录调用安全事实，未知调用不能靠换模式绕过。
   重试保留工作区成果；
   不需要一个长期父模型会话监督后台任务。关闭视图或准备对话不等于停止任务。
 - 状态为 completed 后，核对同一候选的需求证据、测试、独立评审与实际 Git 交付，
-  再按已有授权完成外层 push、PR、检查、合并或发布。引擎没有自动 GitHub 交付服务。
+  再按已有授权完成外层 push、PR、检查、合并或发布。控制台提供按明确仓库与 HEAD 授权的推送／PR／合并入口；引擎不会自动推断远端交付授权。
   原有仓库门禁仍适用；源码合并、npm 发布、Mac 上更新与真实账号验收分别说明。
 
 后台观察用 `flywheel-status`，停止用 `flywheel-stop`，恢复用 `flywheel-run`。

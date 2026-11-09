@@ -51,9 +51,9 @@ test('configuration and doctor need no task directory, and probe is an explicit 
   const probe = await runControl({ action: 'doctor', taskDir: cwd, probe: true }, { binary, defaultCwd: cwd });
   assert.equal(probe.diagnostic.probeRequested, true);
   assert.deepEqual((await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)), [
-    ['control', 'config', '--cwd', physical],
-    ['control', 'doctor', '--cwd', physical],
-    ['control', 'doctor', '--cwd', physical, '--task-dir', physical, '--probe'],
+    ['control', 'config', '--cwd', physical, '--compact'],
+    ['control', 'doctor', '--cwd', physical, '--compact'],
+    ['control', 'doctor', '--cwd', physical, '--compact', '--task-dir', physical, '--probe'],
   ]);
   for (const input of [
     { action: 'start' }, { action: 'status' }, { action: 'stop' },
@@ -75,7 +75,7 @@ test('launch selects Auto by default, explicit modes reach the Go CLI, and legac
   }
   await runControl({ action: 'start', taskDir: cwd }, { binary, defaultCwd: cwd });
   await runControl({ action: 'start', taskDir: cwd, mode: 'auto' }, { binary, defaultCwd: cwd });
-  const base = action => ['control', action, '--cwd', physical, '--task-dir', physical];
+  const base = action => ['control', action, '--cwd', physical, '--compact', '--task-dir', physical];
   assert.deepEqual((await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)), [
     [...base('launch'), '--mode', 'auto'], [...base('launch'), '--mode', 'quick'],
     [...base('launch'), '--mode', 'full'], base('start'), [...base('start'), '--mode', 'auto'],

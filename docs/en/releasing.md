@@ -6,7 +6,9 @@ This guide is for maintainers. Users install from npm using the
 [getting started guide](getting-started.md). A merged PR, a GitHub Release or
 a successful local build does not establish that npm installation is ready.
 
-The conversation-view ordering release target is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Version 0.28.5 includes the interactive release tool: build its own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for this new release.
+The current workflow-console release target is **0.30.0**. The [console validation record](../validation/2026-11-09-flow-console.md) covers source checks. Build one formal candidate from clean `v0.30.0`, verify those same tarballs on macOS and Linux, then publish; a development candidate is not publishable. Once session storage becomes v2, old engines refuse to continue; the new engine can still read v1.
+
+The historical conversation-view ordering release is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Releases from 0.28.5 include the interactive release tool: build their own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for new releases.
 
 The unified release target for adaptive workflows and session phases P1–P4 is **0.29.1**. The actual Codex Pro 0.9.0 tarball is locked and bundled; installation does not query an unpublished registry version. [Provenance and license](../../plugins/dsh/vendor/README.md) identify those bytes. Claude 0.4.0 remains an optional peer; CI packs a fixed upstream source commit, checks its tarball hash, and installs it before the backend gates.
 

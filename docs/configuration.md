@@ -407,3 +407,29 @@ lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 wor
 任何 probe 都不发送 `session/prompt`、不运行 L1/L2/L3、不写 Flywheel 状态或创建工作树；SDK 初始化可能访问 provider 目录并产生自己的会话／缓存文件。只读指 Flywheel 配置与任务状态，不表示整个宿主文件系统绝对无写入。
 
 桌面面板、`/flywheel` 和 `flywheel_control` 共用 `control config|doctor`，可省略 taskDir；只有 doctor 支持 `probe:true`。诊断阻断与传输失败分开显示。桌面使用的 PATH／profile／环境可能与终端不同，安装后应在面板里再检查一次。
+
+### 在流程控制台编辑配置
+
+DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，再编辑模型绑定、角色会话策略、预算、超时、重试或全局权限。保存前显示字段差异。目标文件被其他编辑器修改时拒绝覆盖，保存结果未确认时先重新读取核对。新项目文件以当前版本默认模板创建完整配置，项目文件优先于全局，任务文件优先于项目。
+
+高级调用通过 stdin 传入 JSON。读取示例使用 `flywheel control config-edit --cwd /absolute/repo`，输入为 `{"scope":"project"}`。保存使用 `control config-save`，输入包含 scope、读取返回的 revision，以及仅包含改动章节的 values。reset=true 从内嵌默认完整模板开始替换。配置保存创建备份并原子发布，下一次引擎启动时加载。
+
+### 控制台权限与调度
+
+`permissions.bindings` 在全局 `permissions.mode` 上按 `loops.<role>`、`routes.<route>`、`judge-panel` 覆盖实际宿主权限，值为 `read-only`、`workspace-write` 或 `danger-full-access`。语法以 `permission-policy.schema.json` 为准；后端仍须证明支持该权限，不会把 Claude 原生审批模式伪装成只读沙箱。
+
+`scheduler` 的字段以 `scheduler-policy.schema.json` 为准。默认 serial；parallel 只并发满足冻结 `schedule.after/writes` 的独立单元，`max-parallel` 控制任务并发，`providers` 按实际账号渠道限流。hard 预算在确认计费前只允许一个模型调用。声明缺失或写入冲突不会被解释为独立。
+
+例如把 Review 固定为只读，并允许两个已声明独立的任务并行：
+
+```json
+{
+  "permissions": {
+    "mode": "full-access",
+    "bindings": {"loops.review":"read-only","routes.hard":"workspace-write"}
+  },
+  "scheduler": {"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}
+}
+```
+
+这是字段片段，不是可直接替代完整配置的文件。控制台按实际文件读取完整草稿并校验后保存。CLI 运行索引、受管 Session 交互、指标完整性和 PR／Merge 权限边界见[流程控制台](flow-console.md)。

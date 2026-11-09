@@ -15,7 +15,7 @@ import (
 	"github.com/ckanner/flywheel/internal/machine"
 )
 
-var onlySteps = []string{"plan", "execute", "review", "verify"}
+var onlySteps = []string{"plan", "execute", "review", "verify", "integrate", "final"}
 
 func contains(list []string, v string) bool {
 	for _, x := range list {
@@ -27,12 +27,23 @@ func contains(list []string, v string) bool {
 }
 
 func runCmd() *cobra.Command {
-	var only, packet, unit, pauseBefore, mode string
+	var only, packet, unit, pauseBefore, mode, retryReason, sessionRequest, sessionDigest string
+	var revision int64
 	cmd := &cobra.Command{
 		Use:   "run <docs/slug>",
 		Short: "以当前进程执行全自动循环（--only 只走一步状态转移）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var expectedRevision *int64
+			if retryReason != "" && (only != "execute" || !cmd.Flags().Changed("expect-revision") || len(retryReason) > 1000) {
+				return fmt.Errorf("--retry-reason requires revision-bound Execute and at most 1000 bytes")
+			}
+			if cmd.Flags().Changed("expect-revision") {
+				if only == "" || revision < 1 {
+					return fmt.Errorf("--expect-revision requires --only and a positive revision")
+				}
+				expectedRevision = &revision
+			}
 			if cmd.Flags().Changed("mode") && !contract.ValidWorkflowMode(mode) {
 				return fmt.Errorf("--mode only supports auto, quick, or full")
 			}
@@ -40,7 +51,7 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if only != "" && !contains(onlySteps, only) {
+			if only != "" && only != "session" && !contains(onlySteps, only) {
 				return fmt.Errorf("--only 只支持: %s", strings.Join(onlySteps, "|"))
 			}
 			if pauseBefore != "" && pauseBefore != "review" {
@@ -51,8 +62,24 @@ func runCmd() *cobra.Command {
 			if only != "" && pauseBefore != "" {
 				return fmt.Errorf("--pause-before 不适用于 --only 单步模式（单步天然逐步执行）；去掉 --only 即为冻结点全自动")
 			}
+			var session *machine.SessionCommand
+			if only == "session" {
+				session, err = loadSessionInput(taskDir, sessionRequest, sessionDigest)
+				if err != nil {
+					return err
+				}
+				if expectedRevision == nil || session.Revision != *expectedRevision {
+					return fmt.Errorf("session payload revision does not match admission")
+				}
+			} else if sessionRequest != "" || sessionDigest != "" {
+				return fmt.Errorf("--session-request requires --only session")
+			}
 			cwd := machine.ProjectRoot(mustCwd())
 			cfg, err := config.Load(taskDir, cwd)
+			if err != nil {
+				return err
+			}
+			indexDir, err := machine.RunIndexDirectory()
 			if err != nil {
 				return err
 			}
@@ -62,17 +89,20 @@ func runCmd() *cobra.Command {
 			if only != "" {
 				summary, err = machine.RunSingleStep(machine.RunSingleStepOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode,
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode, IndexDir: indexDir,
 						Context: cmd.Context(),
 						Log:     logf(cmd),
 					},
-					Only:     only,
-					PacketID: packetID,
+					Only:             only,
+					PacketID:         packetID,
+					ExpectedRevision: expectedRevision,
+					RetryReason:      retryReason,
+					Session:          session,
 				})
 			} else {
 				summary, err = machine.RunTask(machine.RunTaskOpts{
 					RunOpts: machine.RunOpts{
-						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode,
+						TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drv, Mode: mode, IndexDir: indexDir,
 						Context: cmd.Context(),
 						Log:     logf(cmd),
 					},
@@ -93,11 +123,15 @@ func runCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&only, "only", "", "只走一步: plan|execute|review|verify")
+	cmd.Flags().StringVar(&sessionDigest, "session-request-digest", "", "受管会话请求内容摘要")
+	cmd.Flags().StringVar(&sessionRequest, "session-request", "", "受管会话请求文件（由 control session 创建）")
+	cmd.Flags().StringVar(&only, "only", "", "只走一步: plan|execute|review|verify|integrate|final")
 	cmd.Flags().StringVar(&packet, "packet", "", "指定 packet id（与 --unit 同义）")
 	cmd.Flags().StringVar(&unit, "unit", "", "指定单元 id（--packet 的别名）")
 	cmd.Flags().StringVar(&pauseBefore, "pause-before", "", "在该步骤前暂停: review")
 	cmd.Flags().StringVar(&mode, "mode", "", "请求流程: auto|quick|full；省略时沿用契约或已保存策略，旧任务保持 full")
+	cmd.Flags().Int64Var(&revision, "expect-revision", 0, "受管单阶段操作：要求状态 revision 匹配")
+	cmd.Flags().StringVar(&retryReason, "retry-reason", "", "受管 Execute：记录人工原因并仅追加一次执行/L1尝试")
 	return cmd
 }
 

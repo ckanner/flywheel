@@ -214,7 +214,7 @@ test('effective models can be inspected without a task and every binding remains
   assert.match(report.textContent, /\/repo\/flywheel\.config\.json/);
   for (const value of ['deepseek-flash', 'deepseek-official', 'deepseek-account', '项目内写入',
     '只读', '完全权限（无需逐步确认）', 'future-access', 'constructor',
-    'Profile', 'fast', 'kimi-code/k3.1-pro', '会话恢复', '启用', '未用于本次检查',
+    'Profile', 'fast', 'kimi-code/k3.1-pro', '会话策略', '已启用', '未用于本次检查',
     '由原生运行时管理', '规划', '执行', 'high']) assert.ok(report.textContent.includes(value), value);
   const raw = detail(ui, '引擎原始结果（JSON）');
   assert.deepEqual(JSON.parse(raw.querySelector('pre').textContent).configuration, configured,
@@ -733,7 +733,7 @@ test('labelled fields validate paths without a request, retain focus, and follow
   await ui.setLocale('en');
   assert.equal(ui.document.activeElement, input, 'locale refresh does not remount focused fields');
   assert.equal(input.value, '/repo/docs/task');
-  assert.match(ui.container.textContent, /Flywheel tasks/);
+  assert.match(ui.container.textContent, /Flywheel workflow console/);
   assert.equal(ui.button('Refresh status').disabled, false);
   assert.equal(ui.requests.length, 0, 'locale changes cannot trigger a command');
   await ui.click('Inspect model configuration');

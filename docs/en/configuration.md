@@ -352,3 +352,29 @@ Codex Pro checks actually import the public API and verify exact version 0.9.0/p
 No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache/session files; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
 
 Repository references: [inline defaults](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json), [complete profiles](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json), [design](https://github.com/ckanner/flywheel/blob/main/docs/design.md), and [worker protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md).
+
+### Editing configuration in the workflow console
+
+The Global / project configuration view first reads an explicit scope and file revision. Edit model bindings, role history policies, budget, timeouts, retries or the global permission policy, then review section changes before saving. Concurrent edits reject replacement; reread an unconfirmed save before proceeding. New project files use the current version's complete default template. Task files override project files, which override global configuration.
+
+Advanced callers send JSON on stdin to `flywheel control config-edit --cwd /absolute/repo`, with `{"scope":"project"}`. Save through `control config-save` using scope, the returned revision and values containing changed sections only. With reset=true, replacement starts from the full embedded default template. Saving creates a backup and publishes atomically; the next engine start loads the file.
+
+### Console permissions and scheduling
+
+`permissions.bindings` overrides the global mode by `loops.<role>`, `routes.<route>` or `judge-panel`, using read-only, workspace-write or danger-full-access. Read `permission-policy.schema.json` for the contract. Adapters must still prove the requested capability; native Claude approval modes are not advertised as an OS read-only sandbox.
+
+`scheduler` is defined by `scheduler-policy.schema.json`. Serial is the default. Parallel only dispatches independent units declared by frozen schedule.after/writes; max-parallel limits units and providers limits actual account channels. Hard budgets admit one model call until its accounting is durable. Missing declarations and overlapping write scopes are not independence.
+
+For example:
+
+```json
+{
+  "permissions": {
+    "mode": "full-access",
+    "bindings": {"loops.review":"read-only","routes.hard":"workspace-write"}
+  },
+  "scheduler": {"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}
+}
+```
+
+This is a field excerpt, not a complete configuration replacement. The console reads and validates the complete selected file. See the [console guide](flow-console.md) for run indexing, controlled session interaction, observation completeness and remote-delivery authority.

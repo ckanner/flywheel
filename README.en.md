@@ -104,7 +104,7 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 
 `control launch` defaults to Auto and consumes prepared contracts; it does not invent requirements or create the outer task branch. `control start` and foreground `run` preserve the contract/persisted selection when `--mode` is omitted. Their optional mode is `auto|quick|full`; Go still enforces eligibility and one-way upgrade rules. `--only execute` is a partial loop, not Quick or complete delivery.
 
-Packet delivery is a **local Git operation**. After evidence matches the current candidate, the engine commits the packet and fast-forwards it into the branch checked out at `cwd`. With the recommended layout, that is the task integration branch. Flywheel does not itself push, create GitHub PRs, wait for remote CI, merge remote PRs, or publish releases. Those operations belong to the authorized host or user. See [Workflow](docs/en/workflow.md) for commands, directory ownership, and merge timing.
+Packet delivery is a **local Git operation**. After evidence matches the current candidate, the engine commits the packet and fast-forwards it into the branch checked out at `cwd`. With the recommended layout, that is the task integration branch. Ordinary run does not publish remotely. Explicit console/CLI delivery controls can push a verified commit, create a PR and merge its exact head after authorization; release publication remains a separate operation. See [Workflow](docs/en/workflow.md) for commands, directory ownership, and merge timing.
 
 ### Desktop task controls
 
@@ -163,3 +163,7 @@ Maintainers can build the six packages from a tagged source checkout and use the
 ## License status
 
 The package currently declares **`UNLICENSED`**. An open-source license has not been selected; these English documents do not change the repository's visibility or licensing status.
+
+### Workflow console (current source)
+
+The DSH view adds a horizontal task canvas, stage run/retry, per-stage configuration, controlled Provider-session interaction, declared parallel execution with serial integration, observed run metrics and PR/Merge receipts. See the [console guide](docs/en/flow-console.md). Source implementation does not imply npm publication or a local upgrade.

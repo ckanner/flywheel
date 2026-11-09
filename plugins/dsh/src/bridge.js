@@ -147,7 +147,10 @@ export class Runtime {
     let forced = false;
     if (!this.exit && !this.child.stdin.destroyed) {
       this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 'flywheel-shutdown', method: 'shutdown', params: {} }) + '\n');
-      await bounded(this.exited, 400);
+      // SDK shutdown includes persistent history flush and plugin disposal.
+      // Keep this bounded below Go's default 5s cancellation grace, while
+      // allowing a normal fsync to complete under concurrent local workloads.
+      await bounded(this.exited, 2000);
     }
     if (!this.exit) {
       forced = true;

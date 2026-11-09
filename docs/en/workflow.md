@@ -210,3 +210,7 @@ For a delivery conflict, preserve the packet worktree, inspect Git state, resolv
 The engine owns local state, bounded loops, verification, and Git delivery. The authorized host/user owns task-branch setup, GitHub pushes and PRs, remote CI policy, PR merge, and publication. Repository visibility and licensing are separate decisions.
 
 Implementation references: [engine](https://github.com/ckanner/flywheel/blob/main/internal/machine/run.go), [Git/worktree operations](https://github.com/ckanner/flywheel/blob/main/internal/verify/verify.go), [design](https://github.com/ckanner/flywheel/blob/main/docs/design.md), and [bundled skills](https://github.com/ckanner/flywheel/tree/main/skills). Additional documentation: [Git worktree](https://git-scm.com/docs/git-worktree) and [GitHub auto-merge](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/automatically-merging-a-pull-request).
+
+## Interactive console delivery
+
+The [workflow console](flow-console.md) adds stage controls, handoff, declared parallelism and explicitly authorized PR/Merge operations. Local completion does not authorize remote writes. An earlier Draft PR is reconciled after push; publication validates the actual merge commit separately.

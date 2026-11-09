@@ -24,6 +24,8 @@ var readContractRevision = os.ReadFile
 const maxMilestoneVisits = 3
 
 func (c *Context) reconcileContractRevisions() error {
+	scheduler := c.Config.Scheduler
+	c.State.Scheduler = &scheduler
 	spec, err := readContractRevision(filepath.Join(c.TaskDir, "spec.md"))
 	if err != nil {
 		return err
@@ -50,8 +52,17 @@ func (c *Context) reconcileContractRevisions() error {
 	previousSet, _ := json.Marshal(c.State.ContractFingerprints)
 	freshSet, _ := json.Marshal(fresh)
 	setChanged := len(c.State.ContractFingerprints) > 0 && string(previousSet) != string(freshSet)
+	if setChanged {
+		for id, ms := range c.State.Milestones {
+			if ms.Plan != nil {
+				ms.Plan.Status = "stale"
+				c.State.Milestones[id] = ms
+			}
+		}
+	}
 	for _, p := range c.PacketList {
 		ps := c.State.Packets[p.PacketID]
+		ps.Schedule = p.Schedule
 		if setChanged && ps.Status != "completed" && ps.BaseRef != nil {
 			// Every paused candidate contains the whole contract directory. A
 			// revision of a different packet must reach this worktree too; otherwise

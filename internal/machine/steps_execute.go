@@ -155,7 +155,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			PacketID:       id,
 			TaskDir:        executionTaskDir,
 			Cwd:            uCwd,
-			PermissionMode: c.Config.PermissionMode("execute", currentHarness),
+			PermissionMode: c.Config.PermissionMode("execute", currentHarness, "routes."+packet.Route),
 			Model:          currentModel,
 			Binding: config.LoopBinding{
 				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
@@ -391,6 +391,14 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 		}
 	}
 	boundary := verify.CheckBoundaries(executorFiles, packet.Boundaries, c.effectiveTestFilePatterns())
+	if packet.Schedule != nil {
+		for _, file := range executorFiles {
+			if !contract.InWriteScope(file, packet.Schedule.Writes) {
+				boundary.Pass = false
+				boundary.Violations = append(boundary.Violations, verify.BoundaryViolation{Type: "schedule-write-scope", Path: file})
+			}
+		}
+	}
 	if len(contractViolations) > 0 {
 		// Executor 动了契约层本身（spec/packets/config）——直接判失败。
 		for _, v := range contractViolations {

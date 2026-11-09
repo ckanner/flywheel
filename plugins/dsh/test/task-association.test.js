@@ -127,3 +127,15 @@ test('cold replay restores identity while a fork ignores inherited controls and 
     data: { callId: 'child', name: 'flywheel_launch', arguments: JSON.stringify({ taskDir: '/worktree/docs/child' }) } });
   assert.equal(fork.view.taskDir, '/worktree/docs/child');
 });
+
+test('one session keeps multiple confirmed task identities without letting history erase uncertainty', () => {
+ const l = log();
+ tool(l,'one',{taskDir:'/repo/docs/one'});done(l,'one',result('/repo/docs/one'));
+ tool(l,'two',{taskDir:'/repo/docs/two'});done(l,'two',result('/repo/docs/two'));
+ assert.deepEqual(l.view.tasks.map(task => task.taskDir),['/repo/docs/two','/repo/docs/one']);
+ tool(l,'three',{taskDir:'/repo/docs/three'});
+ command(l,'read-one',{action:'status',taskDir:'/repo/docs/one'});commandDone(l,'read-one',result('/repo/docs/one'));
+ assert.equal(l.view.operationId,'tool:three');assert.equal(l.view.outcome,'pending');assert.equal(l.view.tasks.length,2);
+ done(l,'three',result('/repo/docs/three'));
+ assert.equal(l.view.tasks.length,3);
+});

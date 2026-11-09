@@ -33,6 +33,9 @@ func mustJSONT(t *testing.T, v any) string {
 // runCLI 注入参数与缓冲流执行命令树，返回退出码与合并输出。
 func runCLI(t *testing.T, args ...string) (int, string) {
 	t.Helper()
+	if os.Getenv("FLYWHEEL_RUNS_DIR") == "" {
+		t.Setenv("FLYWHEEL_RUNS_DIR", t.TempDir())
+	}
 	var stdout, stderr bytes.Buffer
 	code := runRoot(args, &stdout, &stderr)
 	return code, stdout.String() + stderr.String()

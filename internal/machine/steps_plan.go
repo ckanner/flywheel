@@ -4,6 +4,7 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/prompts"
+	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
 )
 
@@ -456,7 +458,34 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 // Feedback 喂回长驻会话重试（planner 是修订器，修自己的产物是本职）；界 =
 // planValidationRetries 次后 inbox 叫人（契约质量问题是结构性的，重试烧钱
 // 无意义）。传输级失败仍由 planStep 内部闭环处理。
-func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback ...string) (planOutcome, error) {
+func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback ...string) (result planOutcome, planErr error) {
+	progress := &state.PlanProgress{Status: "running", StartedAt: c.nowISO(), Contracts: sessionHash(c.State.ContractFingerprints)}
+	ms := c.State.Milestones[milestone.ID]
+	ms.Plan = progress
+	c.State.Milestones[milestone.ID] = ms
+	defer func() {
+		progress.Status, progress.FinishedAt = "failed", c.nowISO()
+		if planErr != nil {
+			progress.Error = planErr.Error()
+		} else if result.Stopped {
+			progress.Status = "paused"
+		} else if result.OK {
+			progress.Status = "passed"
+			progress.Contracts = sessionHash(c.State.ContractFingerprints)
+		} else {
+			progress.Error = string(result.ErrorCode)
+		}
+		ms := c.State.Milestones[milestone.ID]
+		ms.Plan = progress
+		c.State.Milestones[milestone.ID] = ms
+		c.save()
+		planErr = errors.Join(planErr, c.err())
+	}()
+	c.save()
+	if err := c.err(); err != nil {
+		return planOutcome{}, err
+	}
+
 	var feedback string
 	if len(initialFeedback) > 0 {
 		feedback = initialFeedback[0]

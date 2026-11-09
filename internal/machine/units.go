@@ -246,6 +246,12 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 		c.save()
 		return fmt.Errorf("%w: %s: %s", ErrCommitFailed, stage, message)
 	}
+	// A crash can follow successful cleanup but precede the final state CAS.
+	// The checks above already proved the canonical checkout is that exact
+	// accepted candidate; finish its ledger without recreating a deleted worker.
+	if ps.Worktree != nil && ps.Worktree.Mode == "worktree" && !fileExists(ps.Worktree.Path) {
+		ps.Worktree = nil
+	}
 	verifiedCandidate, err := c.candidateFingerprint(c.unitCwd(packet))
 	if err != nil {
 		return failPersistence("candidate", err.Error())
@@ -355,6 +361,7 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 		commitNote = fmt.Sprintf("commit %s", shortSHA(finalSHA))
 	}
 	ps.Status = "completed"
+	ps.Parallel = false
 	at := c.nowISO()
 	ps.UpdatedAt = &at
 	c.touchProgress()
@@ -457,6 +464,11 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 
 // doneReportValid 仍有效的 done-report 是否在盘上（pause/resume 与中断恢复）。
 func (c *Context) doneReportValid(packet *contract.Packet) bool {
+	if evidence, ok := c.State.Packets[packet.PacketID].Evidence.Executor.(map[string]any); ok && evidence["source"] == "human-takeover" {
+		identity, err := c.verificationIdentity(packet)
+		return err == nil && evidence["identity"] == identity
+	}
+
 	reportAbs := filepath.Join(c.TaskDir, "reports", packet.PacketID+".done.json")
 	raw, err := os.ReadFile(reportAbs)
 	if err != nil {
@@ -509,7 +521,12 @@ type execLoopOutcome struct {
 // 确定性 oracle，LLM 在其后）；每轮失败信号（错误码/失败命令/权威变更集）经
 // failAttempt 落账并喂给下一轮执行调用（历史由会话策略管理）；界 = packet 的
 // max-retries + 空转检测 + 预算闸门。凭证闸门在 executeStep 内（spawn 前）。
-func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, error) {
+func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string) (execLoopOutcome, error) {
+	reason := ""
+	if len(manualReason) > 0 {
+		reason = manualReason[0]
+	}
+	manualUsed := false
 	for {
 		if ferr := c.err(); ferr != nil {
 			return execLoopOutcome{Stopped: true}, ferr
@@ -518,8 +535,17 @@ func (c *Context) runExecuteLoop(packet *contract.Packet) (execLoopOutcome, erro
 			return execLoopOutcome{Stopped: true}, nil
 		}
 		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
-		if c.State.Packets[packet.PacketID].FailedAttempts >= maxRetries {
+		if manualUsed || (reason == "" && c.State.Packets[packet.PacketID].FailedAttempts >= maxRetries) {
 			return execLoopOutcome{Bounded: true}, nil
+		}
+		if reason != "" {
+			ps := c.State.Packets[packet.PacketID]
+			ps.RetryHistory = append(ps.RetryHistory, map[string]any{"policy": "human-continue-once", "reason": reason, "at": c.nowISO(), "prior-failed-attempts": ps.FailedAttempts})
+			c.save()
+			if err := c.err(); err != nil {
+				return execLoopOutcome{Stopped: true}, err
+			}
+			manualUsed = true
 		}
 
 		exec, err := c.executeStep(packet)

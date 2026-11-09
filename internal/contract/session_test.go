@@ -1,7 +1,9 @@
 package contract
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -35,7 +37,7 @@ func TestSessionSchemaRejectsMalformedExtensionBeforeDispatch(t *testing.T) {
 		name string
 		edit func(map[string]any, map[string]any, map[string]any)
 	}{
-		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 2 }},
+		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 3 }},
 		{"missing version", func(v, _, _ map[string]any) { delete(v, "version") }},
 		{"null records", func(v, _, _ map[string]any) { v["records"] = nil }},
 		{"unknown ledger field", func(v, _, _ map[string]any) { v["trust-me"] = true }},
@@ -103,4 +105,46 @@ func TestSessionSchemaCompileFailurePropagates(t *testing.T) {
 	}
 	schemaOnce = sync.Once{}
 	require.ErrorIs(t, ValidateSessionStateValue(sessionSchemaValue()), want)
+}
+
+func TestConsoleLedgerVersionFencesAnOlderEngineBeforeDispatch(t *testing.T) {
+	raw, err := os.ReadFile("testdata/session-ledger-v0.29.1.schema.json")
+	require.NoError(t, err)
+	var document any
+	require.NoError(t, json.Unmarshal(raw, &document))
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	require.NoError(t, compiler.AddResource("https://flywheel.local/old-ledger.json", document))
+	old, err := compiler.Compile("https://flywheel.local/old-ledger.json")
+	require.NoError(t, err)
+	ledger := sessionSchemaValue()
+	require.NoError(t, old.Validate(ledger))
+	require.NoError(t, ValidateSessionStateValue(ledger))
+	ledger["version"] = 2
+	require.Error(t, old.Validate(ledger), "v0.29.1 must not bypass the persisted human ownership marker")
+	require.NoError(t, ValidateSessionStateValue(ledger))
+}
+
+func TestConsoleStateExtensionsValidateAtTheReaderBoundary(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	values := map[string]any{
+		"handoff":   map[string]any{"key": "execute/M01-T01", "thread": "thread", "cwd": "/repo", "packet": "M01-T01", "candidate": hash, "started-at": "now", "reason": "manual"},
+		"delivery":  map[string]any{"action": "create", "repo": "github.com/a/b", "head": "head", "branch": "feature", "base": "main", "status": "pending", "at": "now"},
+		"scheduler": map[string]any{"mode": "parallel", "max-parallel": 2},
+		"run":       map[string]any{"id": "run", "kind": "execute", "conditions": hash, "startedAt": "now"},
+		"control":   map[string]any{"kind": "execute", "status": "running", "message": "", "started-at": "now"},
+		"project":   map[string]any{"cwd": "/repo"},
+	}
+	for name, value := range values {
+		require.NoError(t, ValidateConsoleStateValue(name, value))
+		require.Error(t, ValidateConsoleStateValue(name, nil))
+	}
+	require.Error(t, ValidateConsoleStateValue("unknown", nil))
+	old := compileAllFn
+	t.Cleanup(func() { compileAllFn = old; schemaOnce = sync.Once{} })
+	compileAllFn = func(func(string) ([]byte, error)) (*jsonschema.Schema, *jsonschema.Schema, *jsonschema.Schema, error) {
+		return nil, nil, nil, errors.New("schema unavailable")
+	}
+	schemaOnce = sync.Once{}
+	require.ErrorContains(t, ValidateConsoleStateValue("handoff", values["handoff"]), "unavailable")
 }

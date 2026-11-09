@@ -430,3 +430,37 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 持久化 create／新进程 resume 的公开 SDK 验证针对 `0.2.2-rc.1` SDK、JSONL persistence
 与 AgentLoop。`0.2.1-rc.5` 的 Host／UI／插件兼容测试不代表历史恢复已验证。无真实
 账号、模型或 Mac 实机的测试不能证明这些环境通过，也不构成性能／缓存收益实验。
+
+## Console extensions
+
+Protocol 1 adds command-only `config-edit`, `config-save` and `step`. Existing model tools retain their original action schema.
+
+- Config actions accept `editor` in the host command, serialized to Go stdin as at most 1 MiB JSON. Its fields are `scope` (global/project), `revision`, `values`, and `reset`. Go disallows unknown request fields. Config-edit returns target, scope, source, revision, editable values, and embedded defaults in `editor`. Config-save requires the revision and returns the reread document with applied=true. An error after publication remains an error and requires rereading. Config documents contain credential environment-variable names only.
+- Step accepts only=plan/execute/review/verify, a positive state revision and an optional packet ID. Host translation uses literal argv: `control step --only ... --expect-revision ... --packet ...`. The detached engine receives `run --only` and checks the revision inside its task lease. Completed or out-of-order packet execution is rejected. Responses use the ordinary control state envelope; acknowledgement does not imply stage success.
+- Task projections recognize step command intents/results, preserving unconfirmed mutation ownership across reload. Configuration writes use file revision checking and a separate UI unconfirmed-save state.
+
+Step optionally accepts `retryReason` for Execute only, translated to `--retry-reason`. It must contain 1–1000 UTF-8 bytes. The engine requires a revision-bound request, persists a human-continue-once audit entry before dispatch and permits one business attempt without resetting failed-attempts.
+
+## 控制台增量接口
+
+控制层协议仍为 1。所有动作均由 Go 读取／写入账本，UI 不写 state.json。
+
+| action | 额外输入 | 结果 |
+|---|---|---|
+| runs | cwd | 最近 100 条登记，运行状态另查 status |
+| metrics | task-dir，可选 run-id | 对账后的分组与有界调用明细；未知／部分数据不置零 |
+| node | task-dir、packet | 当前 packet 完整证据及相同 revision 的状态 |
+| history | task-dir、session-key | 摘要绑定的最近回复，不等同完整后端历史 |
+| session | stdin JSON：action、key、revision；claim 的 reason 或 send 的 prompt | 受管 claim/send/reconcile/return/release；后台结果写入 control 回执 |
+| delivery | stdin JSON：action=inspect，可选 headBranch | 仓库、当前 HEAD、PR 与检查状态 |
+| deliver | stdin JSON：create/merge、revision、expectedHead、expectedRepo、confirmed=true、base 等 | 明确授权的远端动作与回执 |
+
+step 新增 integrate 和 final。阶段请求仍绑定 expect-revision；单节点操作不等同继续整个流程。
+
+插件使用 `--compact` 获取画布摘要，响应标记 `projection:console-excerpt`。身份、revision、计数和裁决不变；诊断明细被明确标记省略，node 按需返回完整单元。原始账本不被裁剪。
+
+session 请求经 `.control/session-request-*` 私有文件和内容摘要传给子进程，prompt 不进入 argv。人工接管期间普通 run/step 拒绝继续。结果未知或未消费时必须先核对原调用；release 只恢复暂停状态，不宣称验收通过。
+
+会话账本存储 v2 是旧引擎拒绝接管状态的兼容性栅栏。session policy-version 1、DSH worker v2、Pro worker v3 与 lifecycle/recovery 版本保持各自独立。
+
+远端写入绑定仓库、源 HEAD 和 base，检查项目记录与实际 fetch/push 目标。推送禁用隐式 tags、mirror 和 submodule 推送；合并不使用 admin 绕过。已创建／合并的结果先核对，已接收但未完成的合并请求保持 pending。GitHub CLI 的 [匹配 HEAD 语义](https://cli.github.com/manual/gh_pr_merge)与 [mergeStateStatus](https://docs.github.com/en/graphql/reference/pulls#mergestatestatus)为外部接口依据。

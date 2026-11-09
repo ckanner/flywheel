@@ -19,6 +19,13 @@
     "done-report-format"
   ],
   "properties": {
+    "schedule": {
+      "type": "object", "additionalProperties": false, "required": ["after", "writes"],
+      "properties": {
+        "after": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^M[0-9]+-T[0-9]+$"}},
+        "writes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
     "packet-id": {
       "type": "string",
       "pattern": "^M\\d{2,}-T\\d{2,}$",

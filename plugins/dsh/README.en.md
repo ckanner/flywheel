@@ -321,8 +321,7 @@ window behavior.
 Use one task integration worktree for preparation, planning, milestone
 verification, and the eventual PR. The engine manages packet worktrees for
 execution, L1, and review. A successful packet is merged into the branch of the
-checkout from which the engine was started. The engine does not push, open
-GitHub PRs, merge remote PRs, or publish packages. See the
+checkout from which the engine was started. Ordinary run does not push or publish. Explicit console/CLI delivery operations can create and merge PRs after candidate and authorization checks. See the
 [worktree and PR workflow](https://github.com/ckanner/flywheel/blob/main/docs/en/workflow.md).
 
 ## Role history and invocation safety records
@@ -429,3 +428,11 @@ For source changes and offline verification, read the
 [contribution guide](https://github.com/ckanner/flywheel/blob/main/docs/contributing.md). The repository currently uses
 `UNLICENSED`; an npm release or a future public repository does not by itself
 establish an open-source license.
+
+## Horizontal workflow console
+
+The new view provides an expandable horizontal canvas, stage run/retry, isolated session handoff, serial or declared parallel execution, global/project configuration, run comparison, and explicitly authorized PR/Merge operations at a reviewed HEAD. Ordinary run does not acquire remote-delivery permission.
+
+See the [workflow console guide](../../docs/en/flow-console.md) for commands, configuration and acceptance boundaries. The engine reads old state; new invocation/handoff records use ledger v2 so an old engine cannot ignore human ownership. Real account readiness remains a separate check.
+
+Graceful SDK shutdown allows two seconds for history flushing and plugin disposal before bounded TERM/KILL cleanup. Success requires both acknowledgement and physical exit.

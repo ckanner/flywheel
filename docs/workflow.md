@@ -238,7 +238,7 @@ Plan／Execute 请求 `workspace-write`，Review／Judge 以及 DSH／Codex（�
 packet worktree 贯穿该单元的执行、验收与评审；完成交付才由引擎处理本地合并
 与清理。恢复入口仍是 `flywheel-run`，没有另一个独立的 resume skill。
 
-Go 串行调度 packet，不依赖一个持续存活的父模型会话监督。`sessions.mode=scoped`
+Go 按已配置策略和冻结依赖调度 packet，不依赖一个持续存活的父模型会话监督。`sessions.mode=scoped`
 允许同 packet 的 Executor 返修续用，以及独立 Reviewer 在同范围复审时续用自己的
 历史；每次复审仍完整检查当前候选、契约和适用需求，不能只关闭上轮 findings。
 Plan 按同任务／里程碑续用，Judge 与第二意见各自隔离；显式 Plan
@@ -304,3 +304,7 @@ required checks、审阅要求和授权，再按仓库策略启用；Agent 的 p
 [Astra 模型与 effort](https://developers.openai.com/api/docs/models/gpt-6-astra)、
 [Kimi 模型配置](https://www.kimi.com/code/docs/en/kimi-code/models)、
 [Flywheel 设计](design.md)。
+
+## 控制台交互交付
+
+新的[流程控制台](flow-console.md)提供阶段操作、接管、声明式并行与明确授权的 PR／Merge 入口。普通 run 的本地完成不自动授权远端写入；已有 Draft PR 会在推送后重新核对，Merge 后的发布另按真实 merge commit 验收。

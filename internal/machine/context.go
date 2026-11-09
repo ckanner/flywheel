@@ -54,15 +54,19 @@ import (
 // Context 一次运行的完整上下文。Sleep/Now/Log/EnvLookup 全部可注入
 // （测试注入假时钟与假 sleep；零值语义 = 真实环境）。
 type Context struct {
-	TaskDir    string
-	Cwd        string
-	Config     *config.Config
-	Drivers    *drivers.Drivers
-	Spec       *contract.Spec
-	Packets    map[string]*contract.Packet // packet-id → packet
-	PacketList []*contract.Packet          // 保持契约文件顺序（plan/judge 用）
-	State      *state.State
-	Fresh      bool // 本次运行新建了 state.json（$flywheel-new 之后首跑）
+	parallel           *parallelLane
+	sessionCommand     *SessionCommand
+	runID              string
+	consoleRetryReason string
+	TaskDir            string
+	Cwd                string
+	Config             *config.Config
+	Drivers            *drivers.Drivers
+	Spec               *contract.Spec
+	Packets            map[string]*contract.Packet // packet-id → packet
+	PacketList         []*contract.Packet          // 保持契约文件顺序（plan/judge 用）
+	State              *state.State
+	Fresh              bool // 本次运行新建了 state.json（$flywheel-new 之后首跑）
 
 	Log          func(string)
 	Sleep        func(time.Duration) // Node ctx.sleep(ms)；Go 直接收 Duration
@@ -113,6 +117,10 @@ func (c *Context) save() {
 	if c.fatal != nil {
 		return
 	}
+	if c.parallel != nil {
+		c.parallel.save(c)
+		return
+	}
 	st, err := state.Save(c.TaskDir, c.State, &c.revision)
 	if err != nil {
 		c.fatal = err
@@ -145,6 +153,10 @@ func (c *Context) touchProgress() {
 // recordSpawnMetrics 每次 spawn 追加一条 metrics.jsonl 记录并把用量记账进
 // state（任何档位下都不关闭，铁律 9）。
 func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
+	if c.parallel != nil {
+		c.parallel.metrics(c, a)
+		return
+	}
 	invocationID, receiptDigest := "", ""
 	var sessionRecord *state.SessionRecord
 	if a.result != nil && a.result.Session != nil && c.State.Sessions != nil {
@@ -159,6 +171,10 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 				break
 			}
 		}
+	}
+	metricRunID := c.runID
+	if sessionRecord != nil {
+		metricRunID = sessionRecord.Last.EngineRunID
 	}
 	day := c.Now().UTC().Format("2006-01-02")
 	provider := "unknown"
@@ -259,6 +275,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		}
 	}
 	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{
+		"run-id":                  metricRunID,
 		"role":                    a.role,
 		"packet-id":               packetID,
 		"milestone":               milestone,
@@ -470,6 +487,9 @@ func (c *Context) missingKeyForRealDriver(role, channel string) string {
 // budgetGate 每次 spawn 前的预算闸门。返回 'ok' | 'stop'。
 // token/成本记录本身在任何 enforce 档位下都不关闭。
 func (c *Context) budgetGate() string {
+	if c.parallel != nil {
+		return c.parallel.budget(c)
+	}
 	verdict := circuitbreaker.CheckBudget(c.State, c.Config, c.Now())
 	switch verdict.Action {
 	case circuitbreaker.ActionStop:

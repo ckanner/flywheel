@@ -77,12 +77,13 @@ type Result struct {
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
 // （可能被降级链改写过 harness/channel）。
 type CallArgs struct {
-	Prompt      string
-	MilestoneID string
-	PacketID    string
-	TaskDir     string
-	Cwd         string
-	Packets     []string // plan：既有 packet id 清单
+	ExpectedSessionID string // managed human takeover must never silently create a different history
+	Prompt            string
+	MilestoneID       string
+	PacketID          string
+	TaskDir           string
+	Cwd               string
+	Packets           []string // plan：既有 packet id 清单
 
 	// 真实 harness 专用。
 	Model             string // 空 → binding.Model 或驱动默认

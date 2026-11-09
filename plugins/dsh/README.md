@@ -272,3 +272,11 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 - [commands 服务](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/interaction/commands/README.md) 与 [tools 服务](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/core/tools/README.md)
 - [沙箱的单 workspaceRoot、临时区与完整性语义](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sandbox/sandbox/README.md)
 - [ChatGPT adapter 本轮参考版本](https://github.com/ckanner/dsh-plugin-chatgpt/tree/388868f91bcdc05795fb94d21b868ded6d7219c9)
+
+## 横向流程控制台
+
+新版会话视图使用横向、可展开的流程画布，支持阶段运行／重跑、任务分支、独立 Session 接管、串行或声明式并行、全局／项目配置、运行对比及按明确 HEAD 授权的 PR／Merge 操作。普通 run 不自动取得远端交付权限。
+
+具体操作、边界、配置示例与 CLI 交互见[流程控制台指南](../../docs/flow-console.md)。旧状态可读；新版调用／接管使用 v2 会话账本，使旧引擎拒绝忽略接管标记。各 Provider 的真实账号状态仍需按正常流程验证。
+
+SDK 正常关闭允许 2 秒进行历史落盘和插件释放，随后仍使用有界 TERM/KILL 收尾。只有关闭回执与进程退出共同确认后才视为正常结束。

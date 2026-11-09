@@ -333,7 +333,20 @@ func (c *Context) reconcileSessionReceipts() error {
 
 // Received results remain replayable until their stage and accounting are saved
 // together. requestId correlates evidence; it is not a backend idempotency key.
-func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (drivers.Result, error) {
+func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (out drivers.Result, callErr error) {
+	if c.parallel != nil {
+		release, err := c.parallel.enter(c, args.Binding.Channel)
+		if err != nil {
+			return drivers.Result{}, err
+		}
+		c.parallel.release = release
+		defer func() {
+			if callErr != nil {
+				c.parallel.finishTurn()
+			}
+		}()
+	}
+
 	if err := c.err(); err != nil {
 		return drivers.Result{}, err
 	}
@@ -389,8 +402,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		return result, nil
 	}
 	if c.State.Sessions == nil {
-		c.State.Sessions = &state.SessionLedger{Version: 1, Records: map[string]*state.SessionRecord{}}
+		c.State.Sessions = &state.SessionLedger{Version: 2, Records: map[string]*state.SessionRecord{}}
 	}
+	c.State.Sessions.Version = 2
 	action, reason, generation, thread := "create", "first invocation in this role scope", 1, ""
 	protocol := "flywheel/admission-v1"
 	if r != nil {
@@ -410,6 +424,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if !persistent && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
 		action, reason, thread = "resume", "explicit legacy resident Plan binding matched", args.SessionID
 	}
+	if args.ExpectedSessionID != "" && (thread != args.ExpectedSessionID || action != "resume") {
+		return drivers.Result{}, fmt.Errorf("exact session resume refused: %s", reason)
+	}
 	candidate, err := c.candidateFingerprint(cwd)
 	if err != nil {
 		return drivers.Result{}, err
@@ -426,10 +443,16 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if action == "rebuild" {
 		args.Prompt = sessionRebuildHandoff(previous, reason) + args.Prompt
 	}
-	r = &state.SessionRecord{Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, Binding: binding, Goal: goal, Contract: contractIdentity,
+	historyMode := "fresh"
+	if persistent {
+		historyMode = "scoped"
+	} else if action == "resume" && role == "plan" {
+		historyMode = "legacy-plan"
+	}
+	r = &state.SessionRecord{Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
-		Last: &state.SessionInvocation{ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
+		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
 			Persistent: persistent, RequestedThread: thread, CandidateBefore: candidate, GuardBefore: guardBefore,
 			Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}}
 	if !persistent {

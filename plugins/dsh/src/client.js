@@ -204,7 +204,8 @@ const zh = {
   permissionFull: '完全权限（无需逐步确认）',
   permissionWorkspace: '项目内写入',
   permissionReadOnly: '只读',
-  session: '会话恢复',
+  session: '会话策略',
+  step: '运行此阶段', 'config-edit': '读取配置', 'config-save': '保存配置',
   enabled: '启用',
   disabled: '关闭',
   notConfigured: '未配置',
@@ -344,7 +345,8 @@ const en = {
   permissionFull: 'Full access (no step-by-step approval)',
   permissionWorkspace: 'Write within the project',
   permissionReadOnly: 'Read only',
-  session: 'Session resume',
+  session: 'Session policy',
+  step: 'Run stage', 'config-edit': 'Read configuration', 'config-save': 'Save configuration',
   enabled: 'Enabled',
   disabled: 'Disabled',
   notConfigured: 'Not configured',
@@ -396,7 +398,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => ['launch', 'start', 'stop'].includes(action);
+const mutates = action => ['launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -446,7 +448,7 @@ function readReply(reply, request) {
   const state = value.state;
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record);
-  if (['status', 'launch', 'start', 'stop'].includes(request.action) &&
+  if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && !record(state.packets)) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
@@ -454,6 +456,14 @@ function readReply(reply, request) {
         (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
     throw new Error('Flywheel control returned malformed task status');
   }
+  if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
+    throw new Error('Flywheel configuration editor returned a malformed report');
+  }
+  if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
+  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !record(value.node.packet))) throw new Error('Malformed node detail');
+  if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
+  if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(record))) throw new Error('Malformed run index');
+  if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups))) throw new Error('Malformed run metrics');
   if (request.action === 'config' && !configurationValid(value.configuration)) {
     throw new Error('Flywheel control returned malformed model configuration');
   }
@@ -468,7 +478,7 @@ function readReply(reply, request) {
 
 function initialControl() {
   return { pending: null, status: null, checkedAt: null, stale: false, configuration: null,
-    diagnostic: null, raw: null, error: null, uncertainty: null };
+    node: null, delivery: null, deliveryStale: false, runs: null, metrics: null, history: null, diagnostic: null, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
 }
 
 // Transport state belongs to this apply-owned controller, not a component or
@@ -488,21 +498,29 @@ function createControl(execute, pendingOperations, isDisposed) {
     selected = key;
     epoch += 1;
     source.update(draft => {
-      Object.assign(draft, initialControl(), { pending: draft.pending, uncertainty: draft.uncertainty });
+      Object.assign(draft, initialControl(), { pending: draft.pending, uncertainty: draft.uncertainty, runs: draft.runs });
     });
   };
-  const run = async (action, selection, probe = false) => {
+  const run = async (action, selection, probe = false, extra = {}) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'config', 'doctor'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'].includes(action)) return;
+    if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
-    if (['status', 'launch', 'start', 'stop'].includes(action) && !target.taskDir) return;
+    if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node'].includes(action) && !target.taskDir) return;
     select(selection);
     const requestEpoch = epoch;
     const requestKey = selected;
     const request = { action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
       ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
-      ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}) };
+      ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}),
+      ...(['config-edit', 'config-save'].includes(action) ? { editor: extra.editor } : {}),
+      ...(['delivery','deliver'].includes(action) ? { delivery: extra.delivery } : {}),
+      ...(action === 'node' ? { packet: extra.packet } : {}),
+      ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
+      ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
+      ...(action === 'session' ? { session: extra.session } : {}),
+      ...(action === 'step' ? { only: extra.only, packet: extra.packet, revision: extra.revision, ...(extra.retryReason ? { retryReason: extra.retryReason } : {}) } : {}) };
     const operation = { action, probe, ...target, key: requestKey };
     active = operation;
     source.update(draft => { draft.pending = operation; draft.error = null; });
@@ -517,26 +535,35 @@ function createControl(execute, pendingOperations, isDisposed) {
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
-        if (['status', 'launch', 'start', 'stop'].includes(action)) {
+        if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node'].includes(action)) {
           draft.status = value;
           draft.checkedAt = Date.now();
           draft.stale = false;
-          if (draft.uncertainty?.key === requestKey) draft.uncertainty = null;
+          if (action !== 'node' && draft.uncertainty?.key === requestKey) draft.uncertainty = null;
         }
         if (['config', 'doctor'].includes(action)) {
           draft.configuration = value.configuration ?? value.diagnostic?.configuration ?? null;
           draft.diagnostic = value.diagnostic ?? null;
         }
+        if (['config-edit', 'config-save'].includes(action)) { draft.editor = value.editor; draft.configUncertainty = false; }
+        if (['delivery','deliver'].includes(action)) { draft.delivery = value.delivery; draft.deliveryStale = false; }
+        if (action === 'node') draft.node = value.node;
+        if (action === 'history') draft.history = value.history;
+        if (action === 'runs') draft.runs = value.runs;
+        if (action === 'metrics') draft.metrics = value.metrics;
         draft.raw = value;
       });
+      return value;
     } catch (error) {
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
         const detail = error instanceof Error ? error.message : String(error);
         const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
         draft.error = { action, probe, detail, dispatch };
+        if (['delivery','deliver'].includes(action)) draft.deliveryStale = true;
         if (action === 'status' || (mutates(action) && dispatch === 'unknown')) draft.stale = true;
-        if (mutates(action) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
+        if (action === 'config-save' && dispatch === 'unknown') draft.configUncertainty = true;
+        else if (mutates(action) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
       });
     } finally {
       clearTimeout(timer);
@@ -611,7 +638,7 @@ function Configuration({ value, t }) {
           field('thinking', textValue(binding?.thinking, '') || t('default')),
           field('permission', Object.hasOwn(permissionLabels, binding?.permissionMode) ?
             t(permissionLabels[binding.permissionMode]) : textValue(binding?.permissionMode, '') || t('undeclared')),
-          field('session', t(binding?.residentSession ? 'enabled' : 'disabled')))))));
+          field('session', sessionModeLabel(binding, t)))))));
 }
 
 function Diagnostic({ value, t }) {
@@ -692,16 +719,16 @@ function TaskStatus({ control, selection, t }) {
       (status.running && status.pid > 0 ? ' · PID ' + status.pid : '')),
     stale && h('p', { className: css.warningText },
       t('stale') + ' · ' + t('previousState', { status: taskLabel(status, t) })),
-    h(Workflow, { state: status.state, t }),
+    h('details', { className: css.details }, h('summary', null, t('workflow')), h(Workflow, { state: status.state, t })),
     status.state?.['current-milestone'] && h('p', null,
       t('milestone', { name: textValue(status.state['current-milestone']) })),
-    packets.length > 0 && h('table', { className: css.packets, 'aria-label': t('packets') },
+    packets.length > 0 && h('details', { className: css.details }, h('summary', null, t('packetsCount', { count: packets.length })), h('table', { className: css.packets, 'aria-label': t('packets') },
       h('caption', null, t('packetsCount', { count: packets.length })),
       h('thead', null, h('tr', null, ...['packet', 'state', 'route'].map(key => h('th', { key, scope: 'col' }, t(key))))),
       h('tbody', null, ...packets.map(([id, packet]) => h('tr', { key: id },
         h('td', null, id),
         h('td', null, packetLabels[packet?.status] ? t(packetLabels[packet.status]) : textValue(packet?.status, t('unknown'))),
-        h('td', null, textValue(packet?.route)))))),
+        h('td', null, textValue(packet?.route))))))),
     h(Budget, { value: status.state?.budget, t }),
     status.state?.inbox?.length > 0 && h('details', { className: css.details },
       h('summary', null, t('inboxCount', { count: status.state.inbox.length })),
@@ -740,15 +767,29 @@ function Feedback({ control, selection, reconcile, t }) {
         h('details', { className: css.details },
           h('summary', null, t('errorDetails')),
           h('pre', { className: css.raw }, error.detail))),
-      mode === 'idle' && h('div', { className: css.idleFeedback },
+      mode === 'idle' && !control.status?.state && h('div', { className: css.idleFeedback },
         h('p', null, t('lifecycle')),
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
 }
 
-function TaskView({ useStore, useProjection, actions, useControl, changeSelection, associate, run, reconcile, t }) {
+function TaskView({ hostSessionID, useStore, useProjection, actions, useControl, changeSelection, associate, run, reconcile, t }) {
   const selection = useStore(value => value);
   const control = useControl(value => value);
   const association = useProjection('flywheelTask');
+  const [page, setPage] = React.useState('canvas');
+  const [pathsOpen, setPathsOpen] = React.useState(!selection.taskDir);
+  React.useEffect(() => {
+    if (page !== 'canvas' || !control.status?.running || !selection.taskDir) return;
+    let live = true;
+    let timer;
+    const refresh = async () => {
+      let result;
+      if (!document.hidden) result = await run('status', selection);
+      if (live) timer = setTimeout(refresh, result ? 2000 : 10000);
+    };
+    timer = setTimeout(refresh, 2000);
+    return () => { live = false; clearTimeout(timer); };
+  }, [page, control.status?.running, selection.taskDir, selection.cwd, run]);
   React.useEffect(() => { associate(association); }, [association, associate]);
   const formId = React.useId();
   const busy = control.pending !== null;
@@ -759,7 +800,7 @@ function TaskView({ useStore, useProjection, actions, useControl, changeSelectio
     key: labelKey, variant, size: 'sm',
     'aria-describedby': ['doctor', 'probe'].includes(labelKey) ? formId + '-' + labelKey + '-help' : undefined,
     disabled: busy || !!invalidTask || !!invalidCwd || (needsTask && !selection.taskDir.trim()) ||
-      (mutates(action) && control.uncertainty !== null),
+      (mutates(action) && control.uncertainty !== null) || (['launch', 'start'].includes(action) && !!control.status?.state?.handoff),
     onClick: () => run(action, selection, probe),
   }, t(labelKey));
   const field = (name, hint, placeholder, problem) => h('div', { className: css.field },
@@ -774,24 +815,42 @@ function TaskView({ useStore, useProjection, actions, useControl, changeSelectio
       'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css',
     }, stylesheet),
     h('header', { className: css.header },
-      h('h2', { className: css.title }, t('title')),
-      h('p', { className: css.meta }, t('description'))),
+      h('h2', { className: css.title }, t('consoleTitle')),
+      h('p', { className: css.meta }, t('consoleHelp')),
+      h('p', { className: css.meta }, 'DSH session · ' + textValue(hostSessionID)),
+      control.status?.state?.project?.url && h('a', { href: control.status.state.project.url, target: '_blank', rel: 'noopener noreferrer' }, control.status.state.project.repo),
+      h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'GitHub · ckanner/flywheel')),
+    h('nav', { className: css.consoleTabs, 'aria-label': t('view') }, ...[['canvas', 'consoleCanvas'], ['config', 'consoleConfig'], ['runs', 'consoleRuns']].map(([key, label]) =>
+      h(Button, { key, size: 'sm', 'aria-pressed': page === key, onClick: () => setPage(key) }, t(label)))),
     h('section', { className: css.selection, 'aria-label': t('selection') },
-      h('div', { className: css.fields },
+      association?.tasks?.length > 1 && h('div', { className: css.actions, 'aria-label': t('consoleAssociated') }, ...association.tasks.map(task => h(Button, { key: JSON.stringify([task.taskDir,task.cwd]), disabled: busy || control.uncertainty !== null, 'aria-pressed': selection.taskDir === task.taskDir, onClick: () => { const next = { taskDir: task.taskDir, cwd: task.cwd }; changeSelection(next); void run('status', next); } }, task.taskDir.split('/').at(-1)))),
+      h('details', { className: css.taskLocation, open: pathsOpen, onToggle: event => setPathsOpen(event.currentTarget.open) },
+        h('summary', null, t('selection')),
+        h('div', { className: css.fields },
         field('taskDir', 'taskHint', '/Users/me/project/docs/fix-login', invalidTask),
-        field('cwd', 'cwdHint', '/Users/me/project', invalidCwd)),
-      h('div', { className: css.actions },
+        field('cwd', 'cwdHint', '/Users/me/project', invalidCwd))),
+      selection.taskDir && h('p', { className: css.path }, selection.taskDir),
+      h('div', { className: css.actions, hidden: page !== 'canvas' },
         button('status', 'status', true, false, 'primary'),
         button('start', 'start', true), button('stop', 'stop', true)),
+      h('details', { className: css.launchOptions, hidden: page !== 'canvas', open: !control.status?.state }, h('summary', null, t('consoleLaunchOptions')),
       h('div', { className: css.actions },
         h('label', { htmlFor: formId + '-mode' }, t('launchMode')),
         h('select', { id: formId + '-mode', value: selection.mode, disabled: locked, className: css.modeSelect,
           'aria-describedby': formId + '-launch-help', onChange: event => actions.setMode(event.target.value) },
-        ...['auto', 'quick', 'full'].map(mode => h('option', { key: mode, value: mode }, { auto: 'Auto', quick: 'Quick', full: 'Full' }[mode]))),
+        ...['auto', 'quick', 'full'].map(mode => h('option', { key: mode, value: mode }, { auto: 'Auto', quick: 'ultraWork / Quick', full: 'Full' }[mode]))),
         button('launch', 'launch', true)),
-      h('p', { id: formId + '-launch-help', className: css.meta }, t('launchHelp'))),
-    h(Feedback, { control, selection, reconcile, t }),
-    h(TaskStatus, { control, selection, t }),
+      h('p', { id: formId + '-launch-help', className: css.meta }, t('launchHelp')))),
+    (page === 'canvas' || control.pending || control.error || control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
+    control.status?.state?.control && h('section', { className: css.notice, role: control.status.state.control.status === 'failed' ? 'alert' : 'status' },
+      h('strong', null, t('consoleLastOperation') + ' · ' + control.status.state.control.kind + ' · ' + t('consoleOperation_' + control.status.state.control.status)),
+      control.status.state.control.message && h('p', null, control.status.state.control.message)),
+    h('div', { hidden: page !== 'canvas' },
+      control.status?.state && h('div', { className: css.consoleToolbar }, h('h3', { className: css.heading }, control.status.state.slug), h('span', { className: css.meta }, taskLabel(control.status, t))),
+      h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
+      h('details', { className: css.legacySummary, open: !control.status?.state }, h('summary', null, t('consoleTaskSummary')), h(TaskStatus, { control, selection, t }))),
+    h('div', { hidden: page !== 'config' }, h(ConfigEditor, { key: selectionKey(selectionOf(selection)), control, selection, run, t })),
+    h('div', { hidden: page !== 'runs' }, h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t })),
     h('details', { className: css.advanced, open: selection.advancedOpen,
       onToggle: event => actions.setAdvancedOpen(event.currentTarget.open) },
       h('summary', { className: css.heading }, t('advanced')),
@@ -839,6 +898,7 @@ exports.apply = function apply(ctx) {
         controls.set(actions, control);
       }
       return {
+        hostSessionID: sessionId,
         hooks: { control: control.source },
         changeSelection: next => {
           if (disposed || control.isMutating()) return;

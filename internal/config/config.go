@@ -116,7 +116,8 @@ type WorktreeConfig struct {
 // PermissionsConfig selects the host policy independently from stage duties.
 // Existing files retain role-based behavior unless they explicitly opt in.
 type PermissionsConfig struct {
-	Mode string `json:"mode"`
+	Mode     string            `json:"mode"`
+	Bindings map[string]string `json:"bindings,omitempty"`
 }
 
 // Source intake 任务源（§4.5）：github-issues | command。
@@ -135,7 +136,14 @@ type IntakeConfig struct {
 }
 
 // Config 完整配置（缺省值已归一）。
+type SchedulerConfig struct {
+	Mode        string         `json:"mode"`
+	MaxParallel int            `json:"max-parallel"`
+	Providers   map[string]int `json:"providers,omitempty"`
+}
+
 type Config struct {
+	Scheduler       SchedulerConfig         `json:"scheduler"`
 	Version         *int                    `json:"version"`
 	Drivers         map[string]string       `json:"drivers"`
 	Loops           map[string]LoopBinding  `json:"loops"`
@@ -180,6 +188,7 @@ func Default() Config {
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Permissions:     PermissionsConfig{Mode: "role-based"},
+		Scheduler:       SchedulerConfig{Mode: "serial", MaxParallel: 2},
 		Sessions:        SessionsConfig{Mode: "fresh", PolicyVersion: SessionPolicyVersion},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
@@ -190,11 +199,17 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
+	if c.Scheduler.Mode == "" {
+		c.Scheduler.Mode = "serial"
+	}
+	if c.Scheduler.MaxParallel == 0 {
+		c.Scheduler.MaxParallel = 2
+	}
 	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) {
 		c.Sessions = d.Sessions
 	}
 	if c.Permissions.Mode == "" {
-		c.Permissions = d.Permissions
+		c.Permissions.Mode = d.Permissions.Mode
 	}
 	if c.Drivers == nil {
 		c.Drivers = d.Drivers
@@ -246,11 +261,25 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
+	if c.Scheduler.Mode != "serial" && c.Scheduler.Mode != "parallel" || c.Scheduler.MaxParallel < 1 || c.Scheduler.MaxParallel > 8 {
+		return errors.New("scheduler requires serial|parallel and max-parallel between 1 and 8")
+	}
+	if c.Scheduler.Mode == "parallel" && c.Worktree.Enabled != nil && !*c.Worktree.Enabled {
+		return errors.New("parallel scheduling requires worktrees")
+	}
+	for channel, limit := range c.Scheduler.Providers {
+		if channel == "" || limit < 1 || limit > 8 {
+			return errors.New("scheduler provider limits must be between 1 and 8")
+		}
+	}
+
 	if err := c.Sessions.validate(); err != nil {
 		return err
 	}
-	if c.Permissions.Mode != "role-based" && c.Permissions.Mode != "full-access" {
-		return errors.New("permissions.mode must be role-based|full-access")
+	var permissions any
+	_ = json.Unmarshal(configJSON(c.Permissions), &permissions)
+	if err := validatePermissions(permissions); err != nil {
+		return err
 	}
 	if c.Version != nil && (*c.Version < 1) {
 		return errors.New("version must be a positive integer")

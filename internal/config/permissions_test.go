@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,4 +47,24 @@ func TestPermissionPolicyRejectsAmbiguousConfiguration(t *testing.T) {
 	cfg := Default()
 	cfg.Permissions.Mode = "unknown"
 	require.ErrorContains(t, cfg.Validate(), "permissions.mode")
+}
+
+func TestPermissionBindingsOverrideWithoutChangingOtherStages(t *testing.T) {
+	cfg, err := parseConfig([]byte(`{"permissions":{"bindings":{"loops.review":"read-only","routes.hard":"workspace-write","judge-panel":"read-only"},"mode":"full-access"}}`), "test")
+	require.NoError(t, err)
+	require.Equal(t, "read-only", cfg.PermissionMode("review", "dsh"))
+	require.Equal(t, "read-only", cfg.PermissionMode("judge-panel", "dsh"))
+	require.Equal(t, "workspace-write", cfg.PermissionMode("execute", "codex-pro", "routes.hard"))
+	require.Equal(t, "danger-full-access", cfg.PermissionMode("execute", "dsh", "routes.default"))
+	cfg.Permissions.Mode = ""
+	cfg.Normalize()
+	require.Equal(t, "workspace-write", cfg.PermissionMode("execute", "codex-pro", "routes.hard"))
+	for _, raw := range []string{`{"bindings":{"execute":"read-only"}}`, `{"bindings":{"loops.plan":"full-access"}}`, `{"bindings":null}`} {
+		_, err := parseConfig([]byte(`{"permissions":`+raw+`}`), "test")
+		require.Error(t, err)
+	}
+	old := permissionSchema
+	permissionSchema = func() (*jsonschema.Schema, error) { return nil, errors.New("schema unavailable") }
+	t.Cleanup(func() { permissionSchema = old })
+	require.ErrorContains(t, validatePermissions(nil), "schema unavailable")
 }

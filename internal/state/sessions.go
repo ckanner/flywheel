@@ -23,22 +23,33 @@ type SessionLedger struct {
 	Records map[string]*SessionRecord `json:"records"`
 }
 
+type SessionConfiguration struct {
+	Harness     string `json:"harness"`
+	Model       string `json:"model"`
+	Provider    string `json:"provider"`
+	Channel     string `json:"channel"`
+	Thinking    string `json:"thinking"`
+	Permission  string `json:"permission"`
+	SessionMode string `json:"sessionMode"`
+}
+
 type SessionRecord struct {
-	Task            string             `json:"task"`
-	Role            string             `json:"role"`
-	Scope           string             `json:"scope"`
-	Cwd             string             `json:"cwd"`
-	Binding         string             `json:"binding"`
-	Goal            string             `json:"goal"`
-	Contract        string             `json:"contract"`
-	Generation      int                `json:"generation"`
-	ThreadID        string             `json:"thread-id,omitempty"`
-	Protocol        string             `json:"protocol,omitempty"`
-	ResumeCandidate bool               `json:"resume-candidate"`
-	Action          string             `json:"action"`
-	Reason          string             `json:"reason"`
-	Quality         *SessionQuality    `json:"quality,omitempty"`
-	Last            *SessionInvocation `json:"last"`
+	Configuration   *SessionConfiguration `json:"configuration,omitempty"`
+	Task            string                `json:"task"`
+	Role            string                `json:"role"`
+	Scope           string                `json:"scope"`
+	Cwd             string                `json:"cwd"`
+	Binding         string                `json:"binding"`
+	Goal            string                `json:"goal"`
+	Contract        string                `json:"contract"`
+	Generation      int                   `json:"generation"`
+	ThreadID        string                `json:"thread-id,omitempty"`
+	Protocol        string                `json:"protocol,omitempty"`
+	ResumeCandidate bool                  `json:"resume-candidate"`
+	Action          string                `json:"action"`
+	Reason          string                `json:"reason"`
+	Quality         *SessionQuality       `json:"quality,omitempty"`
+	Last            *SessionInvocation    `json:"last"`
 }
 
 // Quality counters describe confirmed work in one role's current generation.
@@ -89,6 +100,7 @@ type SessionUsage struct {
 }
 
 type SessionInvocation struct {
+	EngineRunID      string             `json:"engine-run-id,omitempty"`
 	ID               string             `json:"id"`
 	Status           string             `json:"status"` // intent | received | consumed | blocked
 	StartedAt        string             `json:"started-at"`

@@ -4,8 +4,8 @@ import { z } from 'zod';
 // plugins must not invent Session.append event types or write engine state.
 export const taskProjectionKey = 'flywheelTask';
 const modes = ['auto', 'quick', 'full'];
-const taskActions = ['launch', 'start', 'status', 'stop'];
-export const mutatesTask = action => ['launch', 'start', 'stop'].includes(action);
+const taskActions = ['launch', 'start', 'status', 'stop', 'step', 'session', 'deliver'];
+export const mutatesTask = action => ['launch', 'start', 'stop', 'step', 'session', 'deliver'].includes(action);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const path = value => typeof value === 'string' && value.startsWith('/') && !/[\0\r\n]/.test(value);
 const parse = value => { try { return JSON.parse(value); } catch { return null; } };
@@ -14,20 +14,24 @@ const operationSchema = z.object({
   operationId: z.string(), sequence: z.number().int().nonnegative(),
   action: z.enum(taskActions), taskDir: z.string(), cwd: z.string(),
 });
-const viewSchema = operationSchema.extend({
+const taskViewSchema = operationSchema.extend({
   outcome: z.enum(['pending', 'confirmed', 'unknown']), message: z.string(),
-}).nullable();
+});
+const viewSchema = taskViewSchema.extend({ tasks: z.array(taskViewSchema).optional() }).nullable();
 const stateSchema = z.object({
   cwd: z.string(), inheritedEventCount: z.number().int().nonnegative(),
-  calls: z.record(z.string(), operationSchema), view: viewSchema,
+  calls: z.record(z.string(), operationSchema), view: viewSchema, tasks: z.record(z.string(), taskViewSchema),
 });
 
 function request(input, cwd, operationId, sequence, launchOnly = false) {
   if (!record(input)) return null;
   const value = launchOnly ? { ...input, action: 'launch' } : input;
   if (!taskActions.includes(value.action) || !path(value.taskDir) || !path(value.cwd ?? cwd) ||
-      Object.keys(input).some(key => !(launchOnly ? ['taskDir', 'cwd', 'mode'] : ['action', 'taskDir', 'cwd', 'mode']).includes(key)) ||
+      Object.keys(input).some(key => !(launchOnly ? ['taskDir', 'cwd', 'mode'] : ['action', 'taskDir', 'cwd', 'mode', 'only', 'packet', 'revision', 'retryReason', 'session', 'delivery']).includes(key)) ||
       ('mode' in value && (!['start', 'launch'].includes(value.action) || !modes.includes(value.mode)))) return null;
+  if (value.action === 'step' && (!['plan', 'execute', 'review', 'verify', 'integrate', 'final'].includes(value.only) || !Number.isSafeInteger(value.revision) || value.revision < 1)) return null;
+  if (value.action === 'session' && (!record(value.session) || !['claim','send','return','reconcile','release'].includes(value.session.action) || !Number.isSafeInteger(value.session.revision) || value.session.revision < 1 || typeof value.session.key !== 'string')) return null;
+  if (value.action === 'deliver' && (!record(value.delivery) || value.delivery.confirmed !== true || !['create','merge'].includes(value.delivery.action))) return null;
   return { operationId, sequence, action: value.action, taskDir: value.taskDir, cwd: value.cwd ?? cwd };
 }
 
@@ -39,7 +43,7 @@ function begin(state, input, id, event, launchOnly = false) {
   // when a model calls a new tool before the earlier response reaches its view.
   const binds = mutatesTask(operation.action) && !unresolved;
   return { ...state, calls: { ...state.calls, [id]: operation },
-    view: binds ? { ...operation, outcome: 'pending', message: '' } : state.view };
+    view: binds ? { ...operation, outcome: 'pending', message: '', ...(Object.keys(state.tasks).length ? { tasks: Object.values(state.tasks) } : {}) } : state.view };
 }
 
 function settle(state, id, value, failed, error) {
@@ -48,10 +52,16 @@ function settle(state, id, value, failed, error) {
   const calls = { ...state.calls };
   delete calls[id];
   let view = state.view;
+  let tasks = state.tasks;
   const owns = view?.operationId === id;
   const successful = !failed && record(value) && value.protocol === 1 && value.ok === true &&
     path(value.taskDir) && (value.cwd === undefined || path(value.cwd)) && typeof value.running === 'boolean';
   if (successful) {
+    const task = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
+    const key = JSON.stringify([task.taskDir, task.cwd]);
+    if (!tasks[key] || tasks[key].sequence < operation.sequence) {
+      tasks = Object.fromEntries(Object.entries({ ...tasks, [key]: task }).sort((a,b) => b[1].sequence - a[1].sequence).slice(0,100));
+    }
     // Compare the logged request, not lexical input against a realpath result.
     // A later successful status explicitly reconciles the original target.
     const reconciles = operation.action === 'status' && view && sameTask(operation, view) && operation.sequence > view.sequence;
@@ -67,7 +77,8 @@ function settle(state, id, value, failed, error) {
     view = { ...view, outcome: notDispatched ? 'confirmed' : 'unknown',
       message: typed && typeof value.message === 'string' ? value.message : '' };
   }
-  return { ...state, calls, view };
+  if (view && tasks !== state.tasks) view = { ...view, tasks: Object.values(tasks) };
+  return { ...state, calls, view, tasks };
 }
 
 function contentValue(content) {
@@ -78,11 +89,11 @@ function contentValue(content) {
 
 export const taskAssociationProjection = {
   key: taskProjectionKey,
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema,
   init: (header, inheritedEventCount) => ({
     cwd: typeof header.cwd === 'string' ? header.cwd : '', inheritedEventCount,
-    calls: {}, view: null,
+    calls: {}, view: null, tasks: {},
   }),
   apply(state, event) {
     if (event.type === 'working-directory/change') return { ...state, cwd: event.data.cwd };

@@ -192,6 +192,21 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.deepEqual(await fs.readFile(globalConfig), before, 'opting into an adapter must not select or rewrite any loop');
   });
 
+  await t.test('installed console edits an explicit project config with revision checking', async () => {
+    const invoke = (action, editor) => JSON.parse(execFileSync(process.execPath,
+      [cli, 'control', action, '--cwd', context.project], {
+        env: context.env, cwd: context.project, input: JSON.stringify(editor), encoding: 'utf8', timeout: 10000,
+      }));
+    const read = invoke('config-edit', { scope: 'project' });
+    assert.equal(read.ok, true);
+    const saved = invoke('config-save', { scope: 'project', revision: read.editor.revision,
+      values: { sessions: { mode: 'fresh', 'policy-version': 1 } } });
+    assert.equal(saved.editor.applied, true);
+    assert.equal(saved.editor.values.sessions.mode, 'fresh');
+    assert.throws(() => invoke('config-save', { scope: 'project', revision: read.editor.revision, values: {} }));
+    await fs.unlink(saved.editor.target);
+  });
+
   await t.test('same-version setup is repeatable and preserves configuration', async () => {
     const second = await run(process.execPath, [cli, 'setup', '--no-global', '--prefix', context.prefix, '--dsh-bin', context.dsh, '--json'], context.env, context.project);
     assert.equal(second.code, 0, second.stderr + second.stdout);

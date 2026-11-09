@@ -4,6 +4,10 @@ contract-version: 1
 goal: Implement the auth token parser so that `parseToken` returns claims for valid JWTs and null otherwise.
 requirements: [R-01, R-02]
 route: default
+# 可选：研究真实依赖后，按当前 schema 声明独立执行范围；未知时省略、串行执行。
+# schedule:
+#   after: []
+#   writes: [src/auth/, tests/auth/]
 needs-live-credentials: false
 context-files: [src/auth/*.ts, docs/spec.md#M-01]
 cache-scope: [docs/spec.md]
