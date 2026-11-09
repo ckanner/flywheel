@@ -374,7 +374,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 测试必须检查公共行为与失败路径：真实 Git hook/merge/index/worktree、真实子进程/取消、协议错帧、身份失效、报告收集、权限失败。I/O 注入缝用于不可稳定制造的故障，不通过删除防御分支或镜像实现来凑覆盖率。插件另跑 Node 测试、真实官方 SDK 的无推理 doctor、Go→Node→SDK fixture。
 
-本环境没有用户 Mac/订阅会话。离线通过不能标为 Mac live 通过；桌面渲染、Seatbelt、本机 CLI 版本与真实账号响应按插件 README 的清单另验。
+0.30.0 已在用户 Mac 安装并重载 DSH 0.2.2-rc.1，原生画布、受管节点操作、配置读取及无推理 SDK 探测通过，见[控制台验收记录](validation/2026-11-09-flow-console.md)。离线夹具、桌面操作和真实模型响应仍是不同证据；本轮未验证真实模型质量、计费或受限 Seatbelt 模式，不沿用历史环境的通过声明。
 
 自适应工作流阶段已经运行的门禁、结果及未验范围见
 [2026-11-07 自适应工作流验收记录](validation/2026-11-07-adaptive-workflow.md)。

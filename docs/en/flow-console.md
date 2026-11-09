@@ -4,7 +4,7 @@ This guide describes the current source. Source, development candidates, local i
 
 ## Configuration
 
-The Flywheel conversation view remains after Statistics. Its pages are Workflow canvas, Global/project configuration, and Runs and comparison. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
+In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its pages are Workflow canvas, Global/project configuration, and Runs and comparison. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
 Read a draft, edit the resource/Harness, model, effort, permissions and history policy, then inspect the target and diff. Version defaults replace the complete configuration. Go checks the content revision, backs up the original and publishes atomically. A running engine retains its snapshot; subsequent starts load the new settings.
 
