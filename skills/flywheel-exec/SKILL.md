@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.9.2"
+  version: "1.9.3"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -84,3 +84,17 @@ fresh 不启用通用历史复用，两种模式均保留支持适配器的调�
 `.sessions`、直接重发 prompt 或在 skill 中自行压缩历史。
 完整运行通过 Review 等门禁后，引擎才本地 `ff-only` 合回任务分支；PR 的推送、
 创建和最终合并由外层按已有授权处理，本单环不自动执行这些远端操作。
+
+## DSH 画布关联
+
+从 DSH 终端运行时，引擎使用宿主的会话标识登记运行；不要手写、复制或伪造这个标识。
+首次运行、阶段结束或结果待核对时，再通过 `flywheel_control` 查询一次原任务：
+
+```json
+{"action":"status","taskDir":"<已核实的 task_dir 绝对路径>","cwd":"<已核实的 repo_dir 绝对路径>"}
+```
+
+这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
+回执和关联结果。没有该工具时，明确给出原任务路径，
+用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

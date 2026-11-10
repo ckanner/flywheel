@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.8.0"
+  version: "1.8.1"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -71,3 +71,17 @@ fresh 保留既有 Kimi Plan resident 行为，但不将它声明为通用角色
 
 - 全部里程碑都已关闭时 CLI 会报错 `no open milestone`——此时没有可规划的
   内容，直接告诉用户即可，不需要任何动作。
+
+## DSH 画布关联
+
+从 DSH 终端运行时，引擎使用宿主的会话标识登记运行；不要手写、复制或伪造这个标识。
+首次运行、阶段结束或结果待核对时，再通过 `flywheel_control` 查询一次原任务：
+
+```json
+{"action":"status","taskDir":"<已核实的 task_dir 绝对路径>","cwd":"<已核实的 repo_dir 绝对路径>"}
+```
+
+这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
+回执和关联结果。没有该工具时，明确给出原任务路径，
+用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

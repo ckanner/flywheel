@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "mode": "shadow",
+  "cases": [
+    {
+      "id": "view-order",
+      "source": {
+        "kind": "historical",
+        "reference": "git:f6272907a5e9fdc891bec0394a593636a5bb8214"
+      },
+      "task": "把 Flywheel 自定义会话视图移到统计之后",
+      "evidence": [
+        "只修改公开 conversation.view 注册的 order 为 1000，保留内置标签和 Provider 行为；现有宿主挂载测试断言顺序。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "quick",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    },
+    {
+      "id": "install-guide",
+      "source": {
+        "kind": "historical",
+        "reference": "git:161a37ebec45a156344c3b8805e23b341ceea215"
+      },
+      "task": "补充已经验证的安装升级操作说明",
+      "evidence": [
+        "只改中英文指南，说明源码目录 npx 命中旧全局入口的现象、精确 prefix 的安装命令及版本核对；现有安装回执是文字依据，不改变安装器代码。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "quick",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    },
+    {
+      "id": "desktop-guide",
+      "source": {
+        "kind": "historical",
+        "reference": "git:5d682291e39c46c4e5e7c275f3d195ffce7e5d6c"
+      },
+      "task": "纠正控制台在空白会话首页不可见的说明",
+      "evidence": [
+        "只改中英文指南和验收记录：已有会话显示 Flywheel，空白新会话页还不显示；根据已取得桌面验证回执校对文案。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "quick",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    },
+    {
+      "id": "role-sessions",
+      "source": {
+        "kind": "historical",
+        "reference": "git:93cb6b81dbe2242e620905d34b0c33560da6cc96"
+      },
+      "task": "实现按任务、角色、作用域隔离的会话复用与持久化回执核对",
+      "evidence": [
+        "涉及引擎状态格式、多个 Provider 的 session 绑定、未知派发与结果恢复、调用预算去重。需要状态机测试、驱动桥接及故障恢复验证。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "full",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    },
+    {
+      "id": "lifecycle-recovery",
+      "source": {
+        "kind": "historical",
+        "reference": "git:26008e3e56f038f7b4729c6494b4b926d287f171"
+      },
+      "task": "实现公开会话 lifecycle、持久 ACK、supervisor journal 和质量重建",
+      "evidence": [
+        "涉及跨进程取消、未知结果只读恢复、token/cost 记账、Claude 与 Codex 后端协议兼容。需要分层集成测试与对照实验，不能只改一个孤立显示字段。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "full",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    },
+    {
+      "id": "workflow-console",
+      "source": {
+        "kind": "historical",
+        "reference": "git:c24cb0e62042dfe3378bc9c06b0e6951159a7b25"
+      },
+      "task": "实现交互式流程控制台、按节点运行和会话人工接管",
+      "evidence": [
+        "新增状态 revision 绑定控制、配置备份及原子保存、权限覆盖、并行工作区调度、远端 PR 交付。涉及权限、并发、持久化状态和多个模块；需要端到端离线与桌面验证。"
+      ],
+      "baseline": {
+        "mode": "unknown",
+        "reason": "完成工作项的回溯摘要；没有当时运行选择的证据，不冒充真实 Auto 基线。"
+      },
+      "hard-blockers": [],
+      "label": {
+        "mode": "full",
+        "status": "provisional",
+        "reason": "依据已合并源码范围的临时标签，尚未由独立人工确认；不能据此报告生产误放率。",
+        "author": "retrospective-source-review"
+      }
+    }
+  ]
+}

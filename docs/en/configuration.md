@@ -378,3 +378,7 @@ For example:
 ```
 
 This is a field excerpt, not a complete configuration replacement. The console reads and validates the complete selected file. See the [console guide](flow-console.md) for run indexing, controlled session interaction, observation completeness and remote-delivery authority.
+
+## Optional JEV shadow evaluation
+
+`jev-shadow.enabled` defaults to false, including older configurations that omit it. The global/project editor exposes the switch. Enabling only observes new tasks; failures never block workflows or change Quick/Full. See the [JEV guide](jev-shadow.md) for endpoint, version pin, key variable and timeout. This feature requires the 0.30.1 CLI/plugin.

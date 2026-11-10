@@ -1,5 +1,9 @@
 # Flywheel 系统设计 v0.30
 
+2026-11-10 任务发现与单阶段呈现修复：画布默认显示任务选择，彻底移除两个路径输入框；任务位置由会话／运行记录取得，有真实值时才显示只读信息。运行索引记录 DSH 公开 `DSH_SESSION_ID`（仅发现线索，不作授权），终端／插件启动均可归属当前会话；只读发现不扫描项目目录，不启动任务。仅当前会话唯一候选可自动选择，多个或历史无归属任务需选择，选择后向 Go 读取真实状态；保留未确认操作的阻断。单阶段运行按已有 run.kind 与 control 回执突出本次阶段及结果，不把 Review pass 改写成整体 completed；完整流程可显式展开。Skill 加载和引擎实际启动分别报告。详见 [修复方案](plans/2026-11-10-task-discovery.md)和[验收记录](validation/2026-11-10-task-discovery.md)。
+
+2026-11-10 JEV 影子评估实施：新增独立 `shadow prepare|run|report` 命令，读取任务契约和已有策略，准备可审阅的有界摘要，再显式调用 MeRouter 原生 System One。`jev-shadow.enabled` 默认关闭；关闭时零请求、零影子记录，也不需要密钥。显式开启后，仅新任务首次普通 run 在既有策略落盘后最多观察一次；恢复、单步不重复调用。网络、密钥、记录故障只告警，不阻断任务；取消仍停止整个运行。硬预算任务跳过这项独立实验用量，其他任务的影子用量单独记录，不混入执行预算。它不写任务 state，不改变 Quick/Full、模型路由或权限。原始概率、版本、输入摘要、实际基线与建议分开记录；失败或证据不足记为 abstain，不能写成安全通过。方案见 [JEV 影子评估](plans/2026-11-10-jev-shadow.md)。0.30.1 源码包含此能力，0.30.0 安装不自动获得或启用它。
+
 2026-11-06 自适应工作流实施稿。当前行为以本文、契约 schema、模板及经过验证的实现为准；源码实现不表示 npm 已发布或用户安装已更新。v0.24 及更早的选型、实验数据和取舍保存在 [历史设计](design-history-v0.24.md)，不再作为当前默认配置。基础集成见 [原实施计划](plans/2026-11-01-dsh-integration.md)，配置与预检见 [后续计划](plans/2026-11-01-model-profiles-preflight.md)，npm 安装闭环见 [安装计划](plans/2026-11-01-npm-installation.md)，Codex Pro 默认接入见 [接入计划](plans/2026-11-03-codex-pro-default.md)，Auto／Quick／Full 的原始决策见 [自适应工作流提案](plans/2026-11-06-adaptive-workflow.md)。
 
 2026-11-07 会话策略实施稿：按任务、范围和角色隔离，按运行事实续用或重建。具体方案见[会话生命周期提案](plans/2026-11-07-session-lifecycle.md)。P1/P2 保留正常角色续用与 Go 已保存回执恢复；P3 新增 Codex Pro 0.9.0、Claude Code Pro 0.4.0 的公开 typed lifecycle、持久化 ACK、独立 supervisor journal 与精确只读恢复。P4 新增角色覆盖、有界质量重建、固定源码／oracle 的三组对照评估。调用安全与历史复用分别控制，fresh/scoped 都不绕过 unknown。运行语义见[中断恢复与上下文质量](session-recovery.md)。真实账号的质量、缓存与性能结果尚未取得，不能从离线验证推断收益。
@@ -394,6 +398,8 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 `control launch` 默认 mode=auto；`control start` 和 `run` 也接受可选 `--mode auto|quick|full`，省略时沿用 Spec 或持久化策略。status、stop、step、config、doctor 不接受模式切换。`--only` 运行指定子环至合法终态或有界停止；`--only execute` 仍为部分 Execute/L1，不是 Quick。Quick 的单步 Review 使用最终评审协议，单步 Verify 包含候选 L2/L3；单步 Plan 需显式升级 Full。`--pause-before review` 保留已验证候选用于下次恢复，不能与 `--only` 并用。
 
+独立 `shadow prepare|run|report` 输出单份 JSON；prepare/report 只读，run 显式执行有界影子调用。退出码 0=报告成功、1=输入或运行错误、3=含失败／未知／未运行项、143=取消。自动开关不禁止显式实验；两者均不能修改实际任务策略。详见 [JEV 指南](jev-shadow.md)。
+
 新接口：
 
 ```sh
@@ -447,6 +453,8 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 ## 13. 配置和分发
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。
+
+顶层 `jev-shadow` 以 `templates/jev-policy.schema.json` 为字段信源。enabled 默认 false，旧配置同样关闭；其他字段仅定义可选观察的 endpoint、model、expected-model、key-env 和 timeout-ms（最大 5000）。不探测密钥或网络来决定主任务是否可运行，关闭时无观察副作用；配置格式错误仍按正常加载纪律报错。
 
 可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
 

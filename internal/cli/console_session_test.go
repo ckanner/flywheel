@@ -374,3 +374,22 @@ func TestInteractiveReleaseLeavesTheTaskPaused(t *testing.T) {
 	require.Nil(t, st.Handoff)
 	require.Equal(t, "paused", st.Status)
 }
+
+func TestTerminalSingleStageRegistersItsHostConversation(t *testing.T) {
+	task := newCLISandbox(t)
+	chdirT(t, task)
+	t.Setenv("FLYWHEEL_RUNS_DIR", t.TempDir())
+	t.Setenv("DSH_SESSION_ID", "desktop-terminal-session")
+	code, out := runCLI(t, "run", task, "--only", "verify", "--packet", "M01-T01")
+	require.Zero(t, code, out)
+	root := filepath.Dir(filepath.Dir(task))
+	code, reply := runControlTest(t, "runs", "", root)
+	require.Zero(t, code)
+	require.Len(t, reply.Runs, 1)
+	require.Equal(t, "desktop-terminal-session", reply.Runs[0].HostSessionID)
+	require.Equal(t, "verify", reply.Runs[0].Kind)
+	require.NotEmpty(t, reply.Runs[0].FinishedAt)
+	physical, err := filepath.EvalSymlinks(task)
+	require.NoError(t, err)
+	require.Equal(t, physical, reply.Runs[0].TaskDir)
+}

@@ -62,6 +62,7 @@ export function apply(ctx, config = {}) {
       return await runControl(input, {
         binary,
         defaultCwd,
+        hostSessionID: session?.id,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });

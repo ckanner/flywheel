@@ -191,19 +191,9 @@ an already installed npm package.
 To inspect or control an existing task, choose **Flywheel** beside Chat and
 Trajectory, or in that view bar's More menu when necessary.
 
-| Field | Purpose | When to fill it |
-|---|---|---|
-| Task files directory | Prepared Spec, packets, acceptance description, and task records in `docs/<slug>/`, e.g. `/Users/me/project/docs/fix-login` | Required for panel start/refresh/stop; optional for configuration and diagnostics. Use the path reported by the preparation Skill. |
-| Project directory (optional) | Source project or task integration worktree, e.g. `/Users/me/project` | Current source defaults to the session's effective working directory; override for another project/worktree. |
+Users do not enter task or project paths. One current-conversation task opens automatically; choose among multiple or older tasks. The assistant/engine supplies the location, shown read-only only when known. Prepared tasks can be associated by flywheel_control status. DSH terminal runs record their host session ID without disk scans or shell-command guessing.
 
-From 0.28.3, Flywheel reads the host's `workingDirectory.get(session)`, following
-directory changes. An explicit project path wins. Getter failures stop before
-dispatch without falling back to the original `header.cwd`. Version 0.28.2
-still uses the original directory, so explicitly fill the project path after
-switching worktrees. DSH tool launch/start now associates the exact task. Preparing
-files alone or starting in a terminal does not create a desktop session association;
-manual opening and refresh remain available. These are project paths, not plugin
-installation paths. The direct `/flywheel {…}` command is distinct from skill entries.
+Command cwd still defaults to workingDirectory.get(session); an explicit assistant-supplied workspace wins, and getter failure stops before dispatch. The paths below are command arguments for the assistant, not mandatory UI configuration fields.
 
 The panel, `/flywheel`, `flywheel_control`, and `flywheel_launch` share these Go operations:
 
@@ -232,10 +222,10 @@ observe it, and use `stop` to request shutdown. `ok: true` describes a successfu
 control operation; task completion is recorded in `state.status`.
 
 Opening the view starts no task or probe. A confirmed association triggers one
-fresh status query; subsequent refresh is explicit, without polling or directory scanning.
+fresh status query. Visible canvases refresh running state and registered task discovery without scanning directories.
 The view displays requested/effective policies, reasons, Plan/Judge applicability,
 and upgrade history. Not-applicable stages are not shown as passing checks.
-To observe a task started in a terminal, select its task directory and refresh. Configuration comes
+Terminal tasks are discovered by host session ID or selected from recent tasks. Configuration comes
 from the engine's selected file; installing the plugin or changing DSH's chat
 model does not migrate that configuration.
 
@@ -436,3 +426,7 @@ The new view provides an expandable horizontal canvas, stage run/retry, isolated
 See the [workflow console guide](../../docs/en/flow-console.md) for commands, configuration and acceptance boundaries. The engine reads old state; new invocation/handoff records use ledger v2 so an old engine cannot ignore human ownership. Real account readiness remains a separate check.
 
 Graceful SDK shutdown allows two seconds for history flushing and plugin disposal before bounded TERM/KILL cleanup. Success requires both acknowledgement and physical exit.
+
+The source configuration editor includes default-off JEV shadow evaluation. It records advice without changing actual workflows; this requires version 0.30.1. See the [JEV guide](../../docs/en/jev-shadow.md).
+
+Version 0.30.1 defaults to task selection, discovers DSH terminal runs by conversation identity and keeps legacy runs selectable. Editable path fields are removed; known locations appear as read-only information; stage-focused Review shows its own outcome. See the [console guide](../../docs/en/flow-console.md).

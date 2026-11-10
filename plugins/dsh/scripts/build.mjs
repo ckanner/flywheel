@@ -18,7 +18,7 @@ const stylesheet = transform({
 const classMap = Object.fromEntries(Object.keys(stylesheet.exports).sort()
   .map(name => [name, stylesheet.exports[name].name]));
 // The web loader consumes a lazy factory, not an ES module or a global React.
-const client = ((await readFile(join(root, 'src/client.js'), 'utf8')) + '\n' + (await readFile(join(root, 'src/client-console.js'), 'utf8')))
+const client = ((await readFile(join(root, 'src/client.js'), 'utf8')) + '\n' + (await readFile(join(root, 'src/client-console.js'), 'utf8')) + '\n' + (await readFile(join(root, 'src/client-tasks.js'), 'utf8')))
   .replace('__FLYWHEEL_CSS_CLASSES__', JSON.stringify(classMap))
   .replace('__FLYWHEEL_CSS_TEXT__', JSON.stringify(stylesheet.code.toString()));
 await writeFile(join(root, 'dist/client.js'),

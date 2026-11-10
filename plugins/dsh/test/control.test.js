@@ -425,7 +425,7 @@ test('the native rc.5 view reaches the registered slash command through the sess
     return completion;
   });
   assert.equal(ui.definition.name, 'conversation.view');
-  await ui.type(0, cwd);
+  await ui.selectPath(0, cwd);
   await ui.click('刷新状态');
   await act(async () => { await completion; });
   assert.deepEqual(invocation, { sessionId: 'desktop-session',
@@ -433,4 +433,15 @@ test('the native rc.5 view reaches the registered slash command through the sess
   assert.match(ui.container.querySelector('[aria-label="任务状态"]').textContent, /example/);
   assert.equal(ui.container.querySelector('[role="alert"]'), null);
   assert.deepEqual(ui.requests.map(request => request.action), ['status']);
+});
+
+test('the control process receives only its explicit host session identity', async t => {
+ const cwd = await mkdtemp(join(tmpdir(), 'flywheel-host-session-'));
+ t.after(() => rm(cwd, { recursive: true, force: true }));
+ withEnv(t, 'TEST_CONTROL_MODE', 'host-session');
+ withEnv(t, 'DSH_SESSION_ID', 'ambient-other-conversation');
+ const request = { action: 'status', taskDir: cwd, cwd };
+ assert.equal((await runControl(request, { binary })).hostSessionId, null);
+ assert.equal((await runControl(request, { binary, hostSessionID: 'current-conversation' })).hostSessionId, 'current-conversation');
+ for (const hostSessionID of ['bad\nvalue', '../other', 'x'.repeat(201)]) assert.equal((await runControl(request, { binary, hostSessionID })).hostSessionId, null);
 });

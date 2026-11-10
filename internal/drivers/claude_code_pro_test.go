@@ -581,10 +581,16 @@ func TestRunClaudeCodeProPhysicalFailuresAndNonDispatch(t *testing.T) {
 	assert.Equal(t, "not-dispatched", r.Session.Dispatch)
 	assert.True(t, r.Session.CleanupConfirmed)
 	assert.Empty(t, r.ClaudeCodeProReceipt)
-	a = claudeCodeProRunArgs(t, "success")
-	a.Command = kimiScript(t, "exec 0<&-\nsleep 5\n")
+}
+
+func TestClaudeCodeProClosedStdinFailsBeforeDeadline(t *testing.T) {
+	a := claudeCodeProRunArgs(t, "success")
+	// Keep one process: a shell waiting for a separate sleep can retain output
+	// pipes during TERM cleanup until the 3s watchdog fires, masking EPIPE.
+	a.Command = kimiScript(t, "exec 0<&-\nexec sleep 5\n")
 	a.Prompt = strings.Repeat("x", 512*1024)
-	r = RunClaudeCodePro(a)
+	r := RunClaudeCodePro(a)
+	assert.False(t, r.TimedOut)
 	require.NotNil(t, r.ErrorMessage)
 	assert.Contains(t, *r.ErrorMessage, "request write failed")
 	assert.Equal(t, "unknown", r.Session.Outcome)

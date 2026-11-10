@@ -76,8 +76,9 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   ctx.provide('locale', locale);
   ctx.slots.installLocale(locale);
 
-  const pending = deferred();
-  const requests = [];
+  const pending = deferred(), replacementPending = deferred();
+  let requestsFromA = 0;
+  const requests = [], discoveries = [];
   const sessions = [];
   const reply = (request, slug) => ({ ok: true, value: { result: { kind: 'success', text: JSON.stringify({
     protocol: 1, ok: true, taskDir: request.taskDir, running: false, state: { slug, status: 'pending', packets: {} },
@@ -86,9 +87,13 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
     assert.equal(attachments.length, 0);
     assert.ok(command.startsWith('/flywheel '));
     const request = JSON.parse(command.slice('/flywheel '.length));
+    if (request.action === 'runs') {
+      discoveries.push({ sessionId, request });
+      return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, taskDir: '', cwd: '/repo', running: false, state: null, runs: [] }) } } };
+    }
     requests.push(request);
     sessions.push(sessionId);
-    return sessionId === 'session-a' ? pending.promise : reply(request, 'SESSION_B_RESULT');
+    return sessionId === 'session-a' ? (++requestsFromA === 1 ? pending.promise : replacementPending.promise) : reply(request, 'SESSION_B_RESULT');
   } } };
   ctx.provide('remote', remote);
   ctx.provide('remote.commands', remote.commands);
@@ -133,53 +138,53 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   await act(async () => { unmount = ctx.uiRenderer.mount(container); });
   assert.match(container.textContent, /Flywheel 流程控制台/);
   assert.equal(requests.length, 0);
+  assert.equal(discoveries.length, 1);
   const styleSelector = 'style[data-plugin="@ckanner/dsh-plugin-flywheel"]';
   assert.ok(container.querySelector('[data-slot="conversation.view"]').contains(container.querySelector(styleSelector)));
   assert.equal(clientDocument.head.innerHTML, headBefore);
 
-  const input = index => container.querySelectorAll('input')[index];
-  const type = async (index, value) => act(async () => {
-    const field = input(index);
-    Object.getOwnPropertyDescriptor(clientDocument.defaultView.HTMLInputElement.prototype, 'value').set.call(field, value);
-    field.dispatchEvent(new clientDocument.defaultView.Event('input', { bubbles: true }));
-  });
+  const location = () => container.querySelector('[data-task-path]')?.getAttribute('data-task-path') ?? '';
+  const associate = async (source, taskDir, sequence = 1) => act(async () => source.set({
+    operationId: 'fixture:associate-' + sequence, sequence, action: 'status', taskDir, cwd: '/repo', outcome: 'confirmed', message: '',
+  }));
   const button = label => {
     const value = [...container.querySelectorAll('button')].find(node => node.textContent === label);
     assert.ok(value, `${label} is rendered by the plugin-owned control`);
     return value;
   };
-  await type(0, '/repo/task-a');
+  await associate(projectionA, '/repo/task-a');
   await act(async () => button('刷新状态').click());
   assert.equal(button('刷新状态').disabled, true);
   await act(async () => shell.set({ visible: false }));
   assert.match(container.textContent, /Native conversation/);
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => shell.set({ visible: true }));
-  assert.equal(input(0).value, '/repo/task-a');
+  assert.equal(location(), '/repo/task-a');
   assert.equal(button('刷新状态').disabled, true, 'tab remount reuses the registry-owned pending controller');
   assert.equal(container.querySelectorAll(styleSelector).length, 1);
 
   await act(async () => current.set(bindingB));
-  assert.equal(input(0).value, '');
-  await type(0, '/repo/task-b');
-  await act(async () => button('刷新状态').click());
+  assert.equal(location(), '');
+  await associate(projectionB, '/repo/task-b');
   assert.match(container.textContent, /SESSION_B_RESULT/);
   await act(async () => current.set(bindingA));
-  assert.equal(input(0).value, '/repo/task-a');
+  assert.equal(location(), '/repo/task-a');
   assert.equal(button('刷新状态').disabled, true);
 
   const replacementA = await ctx.plugin(sessionPlugin);
   await act(async () => current.set(binding('session-a', replacementA)));
-  assert.equal(input(0).value, '', 'a new binding Context gets a new plugin StoreHandle instance');
-  await type(0, '/repo/task-a-replacement');
+  assert.equal(location(), '/repo/task-a', 'a new binding recovers the durable association and starts its own fresh read');
+  assert.equal(requests.length, 3);
   await act(async () => pending.resolve(reply(requests[0], 'RETIRED_GENERATION_RESULT')));
   assert.doesNotMatch(container.textContent, /RETIRED_GENERATION_RESULT/);
+  await act(async () => replacementPending.resolve(reply(requests[2], 'CURRENT_GENERATION_RESULT')));
+  assert.match(container.textContent, /CURRENT_GENERATION_RESULT/);
   await act(async () => { await sessionA.dispose(); });
   await act(async () => shell.set({ visible: false }));
   await act(async () => shell.set({ visible: true }));
-  assert.equal(input(0).value, '/repo/task-a-replacement', 'late disposal of the old Context cannot release the new generation');
+  assert.equal(location(), '/repo/task-a', 'late disposal of the old Context cannot release the new generation');
   await act(async () => current.set(bindingB));
-  assert.equal(input(0).value, '/repo/task-b');
+  assert.equal(location(), '/repo/task-b');
   assert.match(container.textContent, /SESSION_B_RESULT/);
 
   await act(async () => { await owner.dispose(); });
@@ -187,22 +192,22 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => { owner = await ctx.plugin(ownerPlugin); });
   assert.equal(ctx.slots.entries('conversation.view').filter(entry => entry.options.id === 'flywheel').length, 1);
-  assert.equal(input(0).value, '', 'a collapsed owner releases its plugin store instances before reassembly');
+  assert.equal(location(), '/repo/task-b', 'reassembly recovers its logged association through a fresh read');
   await act(async () => projectionB.set({ operationId: 'tool:published-launch', sequence: 10,
     action: 'launch', taskDir: '/repo/auto-bound', cwd: '/repo', outcome: 'confirmed', message: '' }));
-  assert.equal(input(0).value, '/repo/auto-bound', 'the published useProjection hook delivers the exact host task association');
-  assert.equal(input(1).value, '/repo');
+  assert.equal(location(), '/repo/auto-bound', 'the published useProjection hook delivers the exact host task association');
+  assert.equal(container.querySelector('[data-workspace-path]')?.getAttribute('data-workspace-path'), '/repo');
   assert.match(container.textContent, /SESSION_B_RESULT/);
   await act(async () => shell.set({ visible: false }));
   await act(async () => shell.set({ visible: true }));
-  assert.equal(requests.length, 3, 'restoring the same tab does not repeat a launch or status read');
+  assert.equal(requests.length, 5, 'restoring the same tab does not repeat a launch or status read');
   await act(async () => { await plugin.dispose(); });
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)), new Set(['chat', 'trajectory']));
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => shell.set({ visible: false }));
   assert.match(container.textContent, /Native conversation/);
-  assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status']);
-  assert.deepEqual(sessions, ['session-a', 'session-b', 'session-b']);
+  assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status', 'status', 'status']);
+  assert.deepEqual(sessions, ['session-a', 'session-b', 'session-a', 'session-b', 'session-b']);
   assert.deepEqual(crashes, [], 'the real renderer reported no crashed or abdicated plugin entry');
   assert.equal(clientDocument.head.innerHTML, headBefore);
   assert.equal(clientDocument.body.childElementCount, bodyChildrenBefore);

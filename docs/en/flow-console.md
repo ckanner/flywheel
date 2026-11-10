@@ -2,6 +2,22 @@
 
 This guide describes the current source. Source, development candidates, local installation and npm publication are separate acceptance boundaries. Keep the CLI, platform packages and DSH plugin at one version.
 
+## Find a task without entering paths
+
+The canvas starts with task selection. One registered task belonging to the current DSH conversation opens automatically; multiple tasks require a choice. Terminal runs also record DSH's host session ID. This is discovery metadata, never authorization. The UI reads Go state after finding an index entry; the index is not proof of liveness or completion.
+
+Older records without a host ID remain selectable under Recent tasks on this computer. Selection performs a read-only status query and associates the task with the conversation. Refreshing the list does not start, retry or replace a manually selected task. Read failures retain the existing canvas; unresolved operations still require reconciliation against their original task.
+
+There are no editable task/project path fields. The assistant and engine supply the location; known workspace, task-record location and branch values appear as read-only information, while missing values are omitted. The task folder contains the specification, acceptance checks and progress; the workspace is the actual execution project/worktree. A prepared task can be associated by the assistant using read-only status and then selected from the list.
+
+Loading a skill does not start the engine. flywheel-task prepares and calls flywheel_launch; a research/proposal-only response must explicitly say the engine was not started. Single-stage skills query flywheel_control status afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
+
+## This stage versus the full workflow
+
+When run.kind and control.kind identify the same single-stage operation, This run shows its recorded outcome. A review-only run defaults to **L1 → Review**, including the recorded verdict and score, while stating that overall delivery is not complete. Switch to Full workflow for the larger graph.
+
+Continue workflow is behind an explicit disclosure. A passed stage does not start subsequent stages or mark the task completed. Failed, cancelled and unknown operations cannot inherit an older green verdict. Run ID, HEAD and digests are collapsed under Run details and file locations.
+
 ## Configuration
 
 In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its pages are Workflow canvas, Global/project configuration, and Runs and comparison. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
@@ -84,3 +100,5 @@ Push uses the approved commit and named task branch, without force, implicit tag
 Merge rechecks the PR, head, base and checks, using `--match-head-commit`. It never uses admin bypass or enables auto-merge on its own. Merge-queue acceptance and actual MERGED state remain distinct; see the [GitHub CLI contract](https://cli.github.com/manual/gh_pr_merge).
 
 Retries reconcile existing PR/merge results before mutations. Missing receipts remain unknown. Remote state is separate from local engine completion. Publication must bind the actual merge commit and artifacts for its own validation; Merge does not automatically publish npm packages or deploy.
+
+The configuration panel also exposes default-off **JEV shadow evaluation (optional)**. See the [JEV guide](jev-shadow.md) for the switch, transmitted data and nonblocking failures. This requires the 0.30.1 CLI/plugin.

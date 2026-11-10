@@ -1,0 +1,174 @@
+{
+  "source-base": "5d682291e39c46c4e5e7c275f3d195ffce7e5d6c",
+  "source-status": "uncommitted development changes",
+  "dataset-sha256": "4497748e1cfb52a3505245fe71bb2fcfab917928c7f3a695e781b34fba01f982",
+  "question-digest": "3461ea0ca14c34232fc3d0e41209f0ba32d280940f16838da1025a25327bcf60",
+  "policy-digest": "114f27f73e94e2e11119b18da42500878c1f9e2adcd3c15d2da0552ca8f171a2",
+  "actual-models": [
+    "jev-1.14.0"
+  ],
+  "new-calls": 6,
+  "summary": {
+    "cases": 6,
+    "completed": 6,
+    "unknown": 0,
+    "not-run": 0,
+    "errors": 0,
+    "skipped": 0,
+    "quick-candidates": 0,
+    "full-candidates": 3,
+    "abstentions": 3,
+    "compared-with-baseline": 0,
+    "baseline-disagreements": 0,
+    "known-input-tokens": 7234,
+    "known-output-tokens": 900,
+    "unknown-input-calls": 0,
+    "unknown-output-calls": 0,
+    "p50-ms": 498,
+    "p95-ms": 1072,
+    "labels": {
+      "historical/provisional": {
+        "cases": 6,
+        "evaluated": 6,
+        "decided": 3,
+        "expected-quick": 3,
+        "expected-full": 3,
+        "quick-candidates": 0,
+        "agreed": 3,
+        "false-quick": 0,
+        "missed-quick": 3,
+        "false-quick-per-labelled-full": null,
+        "labelled-quick-coverage": null
+      }
+    },
+    "production-calibrated": false
+  },
+  "cases": [
+    {
+      "id": "view-order",
+      "source": {
+        "kind": "historical",
+        "reference": "git:f6272907a5e9fdc891bec0394a593636a5bb8214"
+      },
+      "status": "ok",
+      "advice": "abstain",
+      "reason": "named_checks",
+      "duration-ms": 1072,
+      "probabilities": {
+        "access_change": 0.03,
+        "bounded_objective": 0.98,
+        "concurrency_change": 0.07,
+        "durable_data_change": 0.03,
+        "known_edit": 0.98,
+        "named_checks": 0.6,
+        "public_contract_change": 0.29,
+        "unresolved_design": 0.07
+      }
+    },
+    {
+      "id": "install-guide",
+      "source": {
+        "kind": "historical",
+        "reference": "git:161a37ebec45a156344c3b8805e23b341ceea215"
+      },
+      "status": "ok",
+      "advice": "abstain",
+      "reason": "named_checks",
+      "duration-ms": 511,
+      "probabilities": {
+        "access_change": 0.01,
+        "bounded_objective": 0.98,
+        "concurrency_change": 0.01,
+        "durable_data_change": 0.01,
+        "known_edit": 0.93,
+        "named_checks": 0.56,
+        "public_contract_change": 0.02,
+        "unresolved_design": 0.05
+      }
+    },
+    {
+      "id": "desktop-guide",
+      "source": {
+        "kind": "historical",
+        "reference": "git:5d682291e39c46c4e5e7c275f3d195ffce7e5d6c"
+      },
+      "status": "ok",
+      "advice": "abstain",
+      "reason": "known_edit",
+      "duration-ms": 357,
+      "probabilities": {
+        "access_change": 0.01,
+        "bounded_objective": 0.96,
+        "concurrency_change": 0.01,
+        "durable_data_change": 0.01,
+        "known_edit": 0.61,
+        "named_checks": 0.65,
+        "public_contract_change": 0.03,
+        "unresolved_design": 0.09
+      }
+    },
+    {
+      "id": "role-sessions",
+      "source": {
+        "kind": "historical",
+        "reference": "git:93cb6b81dbe2242e620905d34b0c33560da6cc96"
+      },
+      "status": "ok",
+      "advice": "full",
+      "reason": "access_change",
+      "duration-ms": 446,
+      "probabilities": {
+        "access_change": 0.8,
+        "bounded_objective": 0.92,
+        "concurrency_change": 0.79,
+        "durable_data_change": 0.57,
+        "known_edit": 0.13,
+        "named_checks": 0.8,
+        "public_contract_change": 0.36,
+        "unresolved_design": 0.62
+      }
+    },
+    {
+      "id": "lifecycle-recovery",
+      "source": {
+        "kind": "historical",
+        "reference": "git:26008e3e56f038f7b4729c6494b4b926d287f171"
+      },
+      "status": "ok",
+      "advice": "full",
+      "reason": "durable_data_change",
+      "duration-ms": 506,
+      "probabilities": {
+        "access_change": 0.13,
+        "bounded_objective": 0.91,
+        "concurrency_change": 0.89,
+        "durable_data_change": 0.87,
+        "known_edit": 0.13,
+        "named_checks": 0.36,
+        "public_contract_change": 0.7,
+        "unresolved_design": 0.75
+      }
+    },
+    {
+      "id": "workflow-console",
+      "source": {
+        "kind": "historical",
+        "reference": "git:c24cb0e62042dfe3378bc9c06b0e6951159a7b25"
+      },
+      "status": "ok",
+      "advice": "full",
+      "reason": "concurrency_change",
+      "duration-ms": 490,
+      "probabilities": {
+        "access_change": 0.77,
+        "bounded_objective": 0.96,
+        "concurrency_change": 0.91,
+        "durable_data_change": 0.34,
+        "known_edit": 0.26,
+        "named_checks": 0.35,
+        "public_contract_change": 0.37,
+        "unresolved_design": 0.66
+      }
+    }
+  ]
+}

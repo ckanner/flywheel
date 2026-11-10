@@ -1,8 +1,8 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.2.0"
-description: Prepare and launch an authorized Flywheel coding task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
+  version: "1.2.1"
+description: Prepare and launch an authorized Flywheel implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
 arguments: requirement mode
@@ -19,6 +19,11 @@ DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标
 可在请求中明确 `mode=quick` 或 `mode=full`；没有指定时使用 `auto`。
 
 ## 1. 确认目标与已有任务
+
+用户明确调用本入口时，HTML、文档或代码任务都可准备可验收契约，不因“只是文档”
+静默省略流程。若用户要求仅调研、只看方案或暂不运行，遵守范围，并明确说明
+“已加载技能／已完成准备，尚未启动引擎”。加载正文不等于执行成功。
+
 
 - 沿用用户已经授权的需求、工作区、权限和交付范围。明确要求先看方案、暂不运行时，
   改用 `flywheel-new` 准备后交付审阅；不要用本入口越过该停止点。
@@ -72,7 +77,7 @@ DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标
 ```
 
 把该对象传给 **`flywheel_launch`**。插件将具体任务关联到当前会话的 Flywheel 视图；
-用户无需复制目录。没有 DSH 工具的宿主使用 CLI：
+用户无需复制目录。DSH 已提供该工具时不要绕过它改走 Bash。没有 DSH 工具的宿主使用 CLI：
 
 ```bash
 flywheel control launch --task-dir "$task_dir" --cwd "$repo_dir" --mode "$mode"
@@ -84,6 +89,11 @@ CLI 本身消费已准备的契约，不会用一句目标自动生成需求或�
 这些工作由本 skill 的宿主准备阶段完成。
 
 ## 4. 解释回执与继续交付
+
+启动后通过 `flywheel_control` 的 `status` 核对原 task_dir／repo_dir，确认画布关联。
+若仅运行过 `--only review`／`verify` 等单阶段，明确报告该阶段和回执；不能把它当成
+本入口已经完成全流程。启动或关联失败要给出具体回执，不用“任务已经创建”替代。
+
 
 - 读取协议中的 `ok`、`running`、`state.status` 和工作流记录。`ok:true` 只表示
   控制请求成功；说明请求模式、生效策略及原因，不能把启动成功说成任务完成。

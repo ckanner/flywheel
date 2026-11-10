@@ -8,7 +8,7 @@ Current source supports **Auto, Quick, and Full** workflows. `flywheel-task` pre
 
 Session policy supports **fresh/scoped**: new templates explicitly choose scoped, while old configurations default to fresh. Scoped mode can continue compatible history for the same task, role, and scope after a trusted normal terminal outcome; independent re-review still checks the complete current candidate. Both modes journal main-task Codex Pro, Claude Code Pro, DSH, and Kimi calls. Unknown dispatch, outcome, or cleanup blocks execution and cannot be bypassed by switching modes. P3 adds public typed lifecycle events, durable acknowledgements, and read-only Codex/Claude receipt recovery. P4 adds role overrides, bounded quality rebuilds, and paired evaluation tools. Real-account quality, cache, and performance results remain unverified; offline tests cannot establish them. See [Interrupted calls and context quality](docs/en/session-recovery.md). See [Session policy](docs/en/configuration.md#session-policy-history-reuse-and-invocation-safety).
 
-This source targets **0.29.1**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration covers the checked **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1** interfaces. Version 0.28.4 declares only these two runtime versions. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
+This source targets **0.30.1**, including account defaults, account-error handling, and the current session directory. Check the npm registry before installing; merging source does not update an installed package. The desktop integration covers the checked **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1** interfaces. Version 0.28.4 declares only these two runtime versions. Check the registry before installing a version. Offline tests do not establish a live user Mac, account, or model pass.
 
 The adaptive workflow and `flywheel-task` require a matching CLI/plugin release containing these changes. Check `flywheel control launch --help`; the older installation commands alone do not establish that this new interface is available.
 
@@ -167,3 +167,5 @@ The package currently declares **`UNLICENSED`**. An open-source license has not 
 ### Workflow console (current source)
 
 The DSH view adds a horizontal task canvas, stage run/retry, per-stage configuration, controlled Provider-session interaction, declared parallel execution with serial integration, observed run metrics and PR/Merge receipts. See the [console guide](docs/en/flow-console.md). Source implementation does not imply npm publication or a local upgrade.
+
+Optional, default-off JEV shadow evaluation is included in the 0.30.1 source; see the [guide](docs/en/jev-shadow.md). Advice cannot change workflows, and observer failures do not block tasks.

@@ -530,3 +530,27 @@ func TestRepeatedContractReopeningStopsAtMilestoneVisitLimit(t *testing.T) {
 	assert.Contains(t, last["reason"], "repeatedly reopened by contract revisions")
 	assert.Equal(t, "pending", st.Packets["M01-T01"].Status)
 }
+
+func TestPlanStartupCASConflictNeverDispatches(t *testing.T) {
+	fx := newFixture(t)
+	c := unitTestContext(t, fx)
+	sd := happyDrivers()
+	c.Drivers = sd.set()
+	// A competing durable revision arrives after the context snapshot, before
+	// Plan can publish its running checkpoint. No provider may see the task.
+	latest, err := state.Load(fx.taskDir)
+	require.NoError(t, err)
+	latest, err = state.Save(fx.taskDir, latest, nil)
+	require.NoError(t, err)
+	before, err := os.ReadFile(state.StateFile(fx.taskDir))
+	require.NoError(t, err)
+	result, err := c.planUntilValid(c.Spec.Milestones[0])
+	require.Error(t, err)
+	require.False(t, result.OK)
+	require.Empty(t, sd.log.plan)
+	after, err := os.ReadFile(state.StateFile(fx.taskDir))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	require.Equal(t, "failed", c.State.Milestones[c.Spec.Milestones[0].ID].Plan.Status)
+	require.Equal(t, latest.Revision, c.revision+1)
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -28,27 +29,28 @@ type RunQuality struct {
 	FirstAttemptCompletions int `json:"firstAttemptCompletions"`
 }
 type RunRecord struct {
-	Quality      RunQuality                     `json:"quality"`
-	Head         string                         `json:"head,omitempty"`
-	Branch       string                         `json:"branch,omitempty"`
-	ElapsedMs    *int64                         `json:"elapsedMs,omitempty"`
-	Kind         string                         `json:"kind"`
-	Version      int                            `json:"version"`
-	ID           string                         `json:"id"`
-	TaskDir      string                         `json:"taskDir"`
-	Cwd          string                         `json:"cwd"`
-	StartedAt    string                         `json:"startedAt"`
-	FinishedAt   string                         `json:"finishedAt,omitempty"`
-	Conditions   string                         `json:"conditions"`
-	ConfigHash   string                         `json:"configHash"`
-	ContractHash string                         `json:"contractHash"`
-	Workflow     string                         `json:"workflow"`
-	Bindings     map[string]config.LoopBinding  `json:"bindings"`
-	Routes       map[string]config.RouteBinding `json:"routes"`
-	Sessions     config.SessionsConfig          `json:"sessions"`
-	Permissions  config.PermissionsConfig       `json:"permissions"`
-	Summary      TaskSummary                    `json:"summary"`
-	Error        string                         `json:"error,omitempty"`
+	HostSessionID string                         `json:"hostSessionId,omitempty"`
+	Quality       RunQuality                     `json:"quality"`
+	Head          string                         `json:"head,omitempty"`
+	Branch        string                         `json:"branch,omitempty"`
+	ElapsedMs     *int64                         `json:"elapsedMs,omitempty"`
+	Kind          string                         `json:"kind"`
+	Version       int                            `json:"version"`
+	ID            string                         `json:"id"`
+	TaskDir       string                         `json:"taskDir"`
+	Cwd           string                         `json:"cwd"`
+	StartedAt     string                         `json:"startedAt"`
+	FinishedAt    string                         `json:"finishedAt,omitempty"`
+	Conditions    string                         `json:"conditions"`
+	ConfigHash    string                         `json:"configHash"`
+	ContractHash  string                         `json:"contractHash"`
+	Workflow      string                         `json:"workflow"`
+	Bindings      map[string]config.LoopBinding  `json:"bindings"`
+	Routes        map[string]config.RouteBinding `json:"routes"`
+	Sessions      config.SessionsConfig          `json:"sessions"`
+	Permissions   config.PermissionsConfig       `json:"permissions"`
+	Summary       TaskSummary                    `json:"summary"`
+	Error         string                         `json:"error,omitempty"`
 }
 
 func RunIndexDirectory() (string, error) {
@@ -137,6 +139,8 @@ func ListRuns(directory string) ([]RunRecord, error) {
 	return records[:min(len(records), 100)], nil
 }
 
+var hostSessionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
+
 func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error), error) {
 	if directory == "" {
 		return func(*error) {}, nil
@@ -148,7 +152,11 @@ func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error
 		baseline[id] = *packet
 	}
 
-	record := &RunRecord{Version: 1, ID: c.runID, TaskDir: c.TaskDir, Cwd: c.Cwd, StartedAt: c.nowISO(),
+	hostSession, _ := c.EnvLookup("DSH_SESSION_ID")
+	if !hostSessionPattern.MatchString(hostSession) {
+		hostSession = ""
+	}
+	record := &RunRecord{HostSessionID: hostSession, Version: 1, ID: c.runID, TaskDir: c.TaskDir, Cwd: c.Cwd, StartedAt: c.nowISO(),
 		ConfigHash: sessionHash(c.Config), ContractHash: sessionHash(c.State.ContractFingerprints),
 		Bindings: c.Config.Loops, Routes: c.Config.Routes, Sessions: c.Config.Sessions, Permissions: c.Config.Permissions,
 		Workflow: c.State.Workflow.Effective, Summary: c.summary()}

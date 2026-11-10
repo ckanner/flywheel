@@ -1,7 +1,7 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.8.0"
+  version: "1.8.1"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use for "/flywheel-review docs/<slug> [unit]" in DSH, "/skill:flywheel-review docs/<slug> [unit]" in Kimi, or a request to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
@@ -82,3 +82,17 @@ Reviewer 自己的上下文，不继承 Executor 历史；每次仍完整检查�
 清理、派发或结果未知时保留现场并停止；子进程退出不证明裁决已知。通过原任务
 路径让 Go 核对可信回执，不切 fresh、另建任务、自动重试或修改 state 来绕过阻断。
 评审期间发生的候选修改不能在重启或重新验证后被解释成有效 pass。
+
+## DSH 画布关联
+
+从 DSH 终端运行时，引擎使用宿主的会话标识登记运行；不要手写、复制或伪造这个标识。
+首次运行、阶段结束或结果待核对时，再通过 `flywheel_control` 查询一次原任务：
+
+```json
+{"action":"status","taskDir":"<已核实的 task_dir 绝对路径>","cwd":"<已核实的 repo_dir 绝对路径>"}
+```
+
+这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
+回执和关联结果。没有该工具时，明确给出原任务路径，
+用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

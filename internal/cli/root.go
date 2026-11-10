@@ -80,6 +80,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(versionCmd())
 	root.AddCommand(runCmd())
 	root.AddCommand(sessionCmd())
+	root.AddCommand(shadowCmd())
 	root.AddCommand(statusCmd())
 	root.AddCommand(stopCmd())
 	root.AddCommand(controlCmd())

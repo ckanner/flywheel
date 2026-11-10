@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.30.0",
+  "version": "0.30.1",
   "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",
@@ -49,10 +49,10 @@
     "docs/en/session-evaluation.md"
   ],
   "optionalDependencies": {
-    "@ckanner/flywheel-darwin-arm64": "0.30.0",
-    "@ckanner/flywheel-darwin-amd64": "0.30.0",
-    "@ckanner/flywheel-linux-arm64": "0.30.0",
-    "@ckanner/flywheel-linux-amd64": "0.30.0"
+    "@ckanner/flywheel-darwin-arm64": "0.30.1",
+    "@ckanner/flywheel-darwin-amd64": "0.30.1",
+    "@ckanner/flywheel-linux-arm64": "0.30.1",
+    "@ckanner/flywheel-linux-amd64": "0.30.1"
   },
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
@@ -60,10 +60,10 @@
     "test": "node --test npm/test/*.test.js",
     "test:install": "node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.30.0 dist-npm",
+    "build:npm": "bash scripts/build-npm.sh 0.30.1 dist-npm",
     "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {
-    "@ckanner/dsh-plugin-flywheel": "0.30.0"
+    "@ckanner/dsh-plugin-flywheel": "0.30.1"
   }
 }

@@ -308,3 +308,5 @@ required checks、审阅要求和授权，再按仓库策略启用；Agent 的 p
 ## 控制台交互交付
 
 新的[流程控制台](flow-console.md)提供阶段操作、接管、声明式并行与明确授权的 PR／Merge 入口。普通 run 的本地完成不自动授权远端写入；已有 Draft PR 会在推送后重新核对，Merge 后的发布另按真实 merge commit 验收。
+
+默认关闭的 [JEV 影子评估](jev-shadow.md) 可独立观察新任务，故障不阻断执行。其建议不参与本节的 Quick／Full 判定；开启也不能降级已有 Full。此项需要 0.30.1 CLI／插件。

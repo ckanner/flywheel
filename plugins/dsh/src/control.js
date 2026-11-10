@@ -87,7 +87,7 @@ function validDiagnostic(value, request) {
 }
 
 /** Only the engine executable can mutate engine state. No shell interpolation. */
-export async function runControl(input, { binary = 'flywheel', defaultCwd, signal, timeoutMs = 60000 } = {}) {
+export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, signal, timeoutMs = 60000 } = {}) {
   let request;
   try {
     nonempty(binary, 'flywheelBinary', 4096);
@@ -113,11 +113,14 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, signa
   if (request.runId) args.push('--run-id', request.runId);
   if (request.sessionKey) args.push('--session-key', request.sessionKey);
   if (request.retryReason) args.push('--retry-reason', request.retryReason);
+  const env = { ...process.env };
+  delete env.DSH_SESSION_ID;
+  if (typeof hostSessionID === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(hostSessionID)) env.DSH_SESSION_ID = hostSessionID;
   return new Promise((resolve, reject) => {
     let child;
     try {
       child = spawn(binary, args, {
-        cwd: request.cwd, detached: false, stdio: [request.editor || request.session || request.delivery ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
       reject(new ControlNotDispatchedError(error));

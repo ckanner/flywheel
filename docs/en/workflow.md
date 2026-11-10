@@ -214,3 +214,5 @@ Implementation references: [engine](https://github.com/ckanner/flywheel/blob/mai
 ## Interactive console delivery
 
 The [workflow console](flow-console.md) adds stage controls, handoff, declared parallelism and explicitly authorized PR/Merge operations. Local completion does not authorize remote writes. An earlier Draft PR is reconciled after push; publication validates the actual merge commit separately.
+
+Default-off [JEV shadow evaluation](jev-shadow.md) can independently observe new tasks without blocking execution on failure. Advice does not participate in Quick/Full selection or downgrade existing Full tasks. This feature requires the 0.30.1 CLI/plugin.

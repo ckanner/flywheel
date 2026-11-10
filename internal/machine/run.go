@@ -370,6 +370,10 @@ func (c *Context) run() (TaskSummary, error) {
 	}
 	c.State.Status = "running" // paused/stopped 任务 resume 时翻回 running（#6）
 	c.save()
+	if err := c.err(); err != nil {
+		return c.summary(), err
+	}
+	c.observeShadow()
 	if c.quick() {
 		upgraded, err := c.runQuick()
 		if err != nil || !upgraded {

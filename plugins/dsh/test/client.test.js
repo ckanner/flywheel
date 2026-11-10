@@ -57,15 +57,17 @@ function hostCommand(t, config, cwd) {
   return transport;
 }
 
-test('native Flywheel view is additive, idle on opening, and ships its scoped stylesheet', async t => {
+test('native Flywheel view discovers tasks read-only and ships its scoped stylesheet', async t => {
   const ui = await mountPanel(t, request => statusReply(request));
   assert.equal(ui.definition.name, 'conversation.view');
   assert.equal(ui.definition.id, 'flywheel');
   assert.equal(ui.definition.label(), 'Flywheel');
   assert.equal(ui.requests.length, 0, 'opening a view does not start a probe or task');
-  assert.match(statusRegion(ui).textContent, /还没有任务状态/);
+  assert.match(ui.container.textContent, /还没有关联任务/);
+  assert.deepEqual(ui.discoveryRequests, [{ action: 'runs' }]);
   assert.equal(detail(ui, '配置与排查（按需）').open, false);
-  for (const name of ['刷新状态', '启动', '停止']) assert.equal(ui.button(name).disabled, true);
+  for (const name of ['刷新状态', '启动']) assert.equal(ui.button(name).disabled, true);
+  assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === '停止'), false);
   for (const name of ['查看模型配置', '检查安装与配置', '检查 DSH 接入']) assert.equal(ui.button(name).disabled, false);
   const styles = [...ui.document.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]')];
   assert.equal(styles.length, 1, 'the view renders exactly one plugin-owned stylesheet');
@@ -87,8 +89,8 @@ test('a logged host launch binds exact task paths, refreshes once, and restores 
   const ui = await mountPanel(t, request => statusReply(request, 'AUTO_BOUND'));
   await ui.setAssociation(association(10, '/worktree/docs/task', 'confirmed', { cwd: '/worktree' }));
   assert.deepEqual(ui.requests, [{ action: 'status', taskDir: '/worktree/docs/task', cwd: '/worktree' }]);
-  assert.equal(ui.container.querySelectorAll('input')[0].value, '/worktree/docs/task');
-  assert.equal(ui.container.querySelectorAll('input')[1].value, '/worktree');
+  assert.equal(ui.selection().taskDir, '/worktree/docs/task');
+  assert.equal(ui.selection().cwd, '/worktree');
   assert.match(statusRegion(ui).textContent, /AUTO_BOUND/);
   await ui.setAssociation(association(11, '/worktree/docs/task', 'confirmed', { cwd: '/worktree', action: 'status', operationId: 'command:refresh' }));
   assert.equal(ui.requests.length, 1, 'the status result projection does not cause an automatic polling loop');
@@ -96,9 +98,9 @@ test('a logged host launch binds exact task paths, refreshes once, and restores 
   await ui.setVisible(true);
   assert.equal(ui.requests.length, 1, 'tab remount reuses already confirmed control state');
   await ui.switchSession('other');
-  assert.equal(ui.container.querySelector('input').value, '', 'unrelated conversations do not inherit a task');
+  assert.equal(ui.selection().taskDir, '', 'unrelated conversations do not inherit a task');
   await ui.switchSession('desktop-session', 1);
-  assert.equal(ui.container.querySelector('input').value, '/worktree/docs/task');
+  assert.equal(ui.selection().taskDir, '/worktree/docs/task');
   assert.equal(ui.requests.length, 2, 'a new binding recovers identity and makes a fresh read rather than trusting logged running state');
   assert.ok(ui.requests.every(request => request.action === 'status'), 'opening a recovered association never repeats launch');
 });
@@ -110,13 +112,13 @@ test('unknown host launches retain the original task across edits and require a 
     return statusReply(request);
   }, { association: association(2, '/repo/original', 'pending') });
   assert.equal(ui.requests.length, 0, 'a pending log intent is shown without racing the active host launch');
-  assert.equal(ui.container.querySelector('input').value, '/repo/original');
+  assert.equal(ui.selection().taskDir, '/repo/original');
   assert.equal(ui.button('启动准备好的任务').disabled, true);
   assert.match(alerts(ui), /启动准备好的任务.*结果未确认/);
-  await ui.type(0, '/repo/another');
+  await ui.selectPath(0, '/repo/another');
   await ui.click('刷新待确认任务');
   assert.equal(ui.requests[0].taskDir, '/repo/original');
-  assert.equal(ui.container.querySelector('input').value, '/repo/original');
+  assert.equal(ui.selection().taskDir, '/repo/original');
   assert.equal(ui.button('启动').disabled, true);
   await ui.setAssociation(association(2, '/repo/original', 'unknown', { message: 'The launch response was lost' }));
   assert.match(alerts(ui), /The launch response was lost/);
@@ -130,15 +132,15 @@ test('unknown host launches retain the original task across edits and require a 
 test('association updates do not overwrite a manual target with a late completion, but a new launch adopts its own target', async t => {
   const ui = await mountPanel(t, request => statusReply(request, request.taskDir));
   await ui.setAssociation(association(5, '/repo/first', 'pending'));
-  await ui.type(0, '/repo/manual');
+  await ui.selectPath(0, '/repo/manual');
   await ui.setAssociation(association(5, '/repo/first', 'confirmed'));
-  assert.equal(ui.container.querySelector('input').value, '/repo/manual');
+  assert.equal(ui.selection().taskDir, '/repo/manual');
   assert.equal(ui.requests.length, 0, 'late completion cannot query or replace a manually chosen task');
   await ui.setAssociation(association(7, '/repo/new'));
-  assert.equal(ui.container.querySelector('input').value, '/repo/new');
+  assert.equal(ui.selection().taskDir, '/repo/new');
   assert.deepEqual(ui.requests, [{ action: 'status', taskDir: '/repo/new', cwd: '/repo' }]);
   await ui.setAssociation(association(5, '/repo/first', 'confirmed'));
-  assert.equal(ui.container.querySelector('input').value, '/repo/new', 'an older projection cannot replace a newer operation');
+  assert.equal(ui.selection().taskDir, '/repo/new', 'an older projection cannot replace a newer operation');
 });
 
 test('a confirmed host mutation refreshes a previously observed task instead of retaining its stale state', async t => {
@@ -159,7 +161,7 @@ test('a confirmed host mutation refreshes a previously observed task instead of 
 
 test('manual launch sends Auto or explicit modes while Start preserves saved workflow semantics', async t => {
   const ui = await mountPanel(t, request => statusReply(request));
-  await ui.type(0, '/repo/prepared');
+  await ui.selectPath(0, '/repo/prepared');
   await ui.click('启动准备好的任务');
   assert.deepEqual(ui.requests[0], { action: 'launch', taskDir: '/repo/prepared', mode: 'auto' });
   const select = ui.container.querySelector('select');
@@ -179,7 +181,7 @@ test('workflow view explains requested/effective modes, inapplicable stages, leg
   const ui = await mountPanel(t, request => commandReply(envelope(request, {
     state: { slug: 'flow', status: 'pending', packets: {}, ...(workflow ? { workflow } : {}) },
   })), { locale: 'en' });
-  await ui.type(0, '/repo/task');
+  await ui.selectPath(0, '/repo/task');
   await ui.click('Refresh status');
   const text = () => ui.container.querySelector('[aria-label="Workflow"]').textContent;
   assert.match(text(), /Requested: Auto/);
@@ -222,7 +224,7 @@ test('effective models can be inspected without a task and every binding remains
   assert.equal(raw.open, false, 'raw JSON is folded by default');
   await act(async () => raw.querySelector('summary').click());
   assert.equal(raw.open, true);
-  await ui.type(1, '/other-repo');
+  await ui.selectPath(1, '/other-repo');
   assert.equal(ui.container.querySelector('[aria-label="实际模型配置"]'), null);
   assert.equal([...ui.container.querySelectorAll('summary')].some(node => node.textContent === '引擎原始结果（JSON）'), false);
   await ui.click('查看模型配置');
@@ -233,7 +235,7 @@ test('task lifecycle labels distinguish pending, completed, stopped and unconfir
   let stateStatus = 'pending', running = false, stateExists = true;
   const ui = await mountPanel(t, request => commandReply(envelope(request, { running, pid: running ? 42 : 0,
     state: stateExists ? { slug: 'example', status: stateStatus, packets: {} } : null })));
-  await ui.type(0, '  /repo/docs/task  ');
+  await ui.selectPath(0, '  /repo/docs/task  ');
   for (const [status, label] of [
     ['pending', '待开始'], ['completed', '已完成'], ['stopped', '已停止'], ['paused', '已暂停'],
     ['escalated', '需要人工处理'], ['budget-stopped', '预算已停止'], ['running', '引擎未运行，状态待核对'],
@@ -269,7 +271,7 @@ test('all packets and attention records remain accessible, text is escaped, and 
       'unknown-usage-calls': unknownUsage, totals: { tokens: 42, 'cost-usd': cost },
       warnings: ['Unknown usage is excluded from the known total.'] },
   } })));
-  await ui.type(0, '/repo/docs/task');
+  await ui.selectPath(0, '/repo/docs/task');
   await ui.click('刷新状态');
   const state = statusRegion(ui);
   assert.equal(state.querySelectorAll('tbody tr').length, 24);
@@ -326,10 +328,10 @@ test('local and SDK checks retain structured failures, remedies and the inferenc
 test('editing a read target invalidates its late result without permitting overlapping operations', async t => {
   const oldRequest = deferred(), newRequest = deferred();
   const ui = await mountPanel(t, request => request.taskDir.endsWith('/old') ? oldRequest.promise : newRequest.promise);
-  await ui.type(0, '/repo/docs/old');
+  await ui.selectPath(0, '/repo/docs/old');
   await ui.click('刷新状态');
   assert.ok(ui.container.querySelector('[role="status"]'));
-  await ui.type(0, '/repo/docs/new');
+  await ui.selectPath(0, '/repo/docs/new');
   assert.match(ui.container.querySelector('[role="status"]').textContent, /上一个目录/);
   assert.equal(ui.button('刷新状态').disabled, true, 'the previous operation still owns the transport wait');
   await ui.click('刷新状态');
@@ -341,7 +343,7 @@ test('editing a read target invalidates its late result without permitting overl
   assert.equal(ui.requests.length, 2);
   await act(async () => newRequest.resolve(statusReply({ taskDir: '/repo/docs/new' }, 'NEW_RESULT')));
   assert.match(statusRegion(ui).textContent, /NEW_RESULT/);
-  await ui.type(1, '/another-repo');
+  await ui.selectPath(1, '/another-repo');
   assert.doesNotMatch(statusRegion(ui).textContent, /NEW_RESULT/);
   assert.match(statusRegion(ui).textContent, /还没有任务状态/);
 });
@@ -357,7 +359,7 @@ test('late query failures are ignored after editing, and active protocol or tran
     return commandReply(envelope(request, { configuration: configuration() }));
   });
   await ui.click('查看模型配置');
-  await ui.type(1, '/repo');
+  await ui.selectPath(1, '/repo');
   await act(async () => delayed.reject(new Error('OLD_FAILURE')));
   assert.equal(alerts(ui), '');
   await ui.click('查看模型配置');
@@ -374,7 +376,7 @@ test('late query failures are ignored after editing, and active protocol or tran
 test('failed status refresh retains the previous data with a visible unconfirmed marker', async t => {
   let fail = false;
   const ui = await mountPanel(t, request => fail ? Promise.reject(new Error('Connection unavailable')) : statusReply(request, 'KNOWN_RESULT'));
-  await ui.type(0, '/repo/docs/task');
+  await ui.selectPath(0, '/repo/docs/task');
   await ui.click('刷新状态');
   assert.match(statusRegion(ui).textContent, /KNOWN_RESULT/);
   fail = true;
@@ -393,16 +395,18 @@ test('failed status refresh retains the previous data with a visible unconfirmed
 test('start is single-flight with a frozen target, including hide and reopen before confirmation', async t => {
   const pending = deferred();
   const ui = await mountPanel(t, () => pending.promise);
-  await ui.type(0, '/repo/docs/original');
-  await ui.type(1, '/repo/task-worktree');
+  await ui.selectPath(0, '/repo/docs/original');
+  await ui.selectPath(1, '/repo/task-worktree');
   const start = ui.button('启动');
   await act(async () => { start.click(); start.click(); });
   assert.deepEqual(ui.requests, [{ action: 'start', taskDir: '/repo/docs/original', cwd: '/repo/task-worktree' }]);
-  for (const input of ui.container.querySelectorAll('input')) assert.equal(input.disabled, true);
+  assert.equal(ui.button('切换任务').disabled, true);
+  await ui.selectPath(0, '/repo/attempted-change');
+  assert.equal(ui.selection().taskDir, '/repo/docs/original', 'a pending mutation freezes task selection');
   for (const name of ['启动', '停止', '刷新状态']) assert.equal(ui.button(name).disabled, true);
   await ui.setVisible(false);
   await ui.setVisible(true);
-  assert.equal(ui.container.querySelector('input').value, '/repo/docs/original');
+  assert.equal(ui.selection().taskDir, '/repo/docs/original');
   assert.equal(ui.button('启动').disabled, true);
   await ui.click('停止');
   assert.equal(ui.requests.length, 1, 'UI reopening cannot dispatch another mutation');
@@ -411,7 +415,7 @@ test('start is single-flight with a frozen target, including hide and reopen bef
   }))));
   assert.match(statusRegion(ui).textContent, /CONFIRMED_START/);
   assert.match(statusRegion(ui).textContent, /运行中/);
-  for (const input of ui.container.querySelectorAll('input')) assert.equal(input.disabled, false);
+  assert.equal(ui.button('切换任务').disabled, false);
   assert.equal(ui.requests.filter(request => request.action === 'stop').length, 0);
 });
 
@@ -424,14 +428,14 @@ test('an unknown mutation stays blocked across path changes until the same task 
     if (request.taskDir === '/repo/docs/original' && ++originalChecks === 1) throw new Error('Still disconnected');
     return statusReply(request, request.taskDir);
   });
-  await ui.type(0, '/repo/docs/original');
-  await ui.type(1, '/repo/original-worktree');
+  await ui.selectPath(0, '/repo/docs/original');
+  await ui.selectPath(1, '/repo/original-worktree');
   await ui.click('启动');
   assert.match(alerts(ui), /结果未确认/);
   assert.match(alerts(ui), /请求可能已经送达引擎/);
   for (const name of ['启动', '停止']) assert.equal(ui.button(name).disabled, true);
-  await ui.type(0, '/repo/docs/other');
-  await ui.type(1, '/repo/other-worktree');
+  await ui.selectPath(0, '/repo/docs/other');
+  await ui.selectPath(1, '/repo/other-worktree');
   await ui.click('刷新状态');
   assert.match(statusRegion(ui).textContent, /\/repo\/docs\/other/);
   assert.match(alerts(ui), /\/repo\/docs\/original/);
@@ -449,8 +453,8 @@ test('an unknown mutation stays blocked across path changes until the same task 
   assert.equal(ui.button('启动').disabled, true);
   await ui.click('刷新待确认任务');
   assert.deepEqual(ui.requests.at(-1), { action: 'status', taskDir: '/repo/docs/original', cwd: '/repo/original-worktree' });
-  assert.equal(ui.container.querySelectorAll('input')[0].value, '/repo/docs/original');
-  assert.equal(ui.container.querySelectorAll('input')[1].value, '/repo/original-worktree');
+  assert.equal(ui.selection().taskDir, '/repo/docs/original');
+  assert.equal(ui.selection().cwd, '/repo/original-worktree');
   assert.match(alerts(ui), /结果未确认/);
   assert.equal(ui.button('启动').disabled, true, 'a failed reconciliation cannot unlock mutations');
   await ui.click('刷新待确认任务');
@@ -468,19 +472,19 @@ test('proven host preflight rejections can be corrected without an impossible st
   const missingBinary = join(cwd, 'engine-not-installed');
   const cases = [
     { name: 'nonexistent task', task: join(cwd, 'missing-task'), cwd, binary,
-      repair: ui => ui.type(0, cwd) },
+      repair: ui => ui.selectPath(0, cwd) },
     { name: 'nonexistent explicit cwd', task: cwd, cwd, explicitCwd: join(cwd, 'missing-repo'), binary,
-      repair: ui => ui.type(1, cwd) },
+      repair: ui => ui.selectPath(1, cwd) },
     { name: 'missing session cwd', task: cwd, binary,
-      repair: ui => ui.type(1, cwd) },
+      repair: ui => ui.selectPath(1, cwd) },
     { name: 'missing engine executable', task: cwd, cwd, binary: missingBinary,
       repair: () => symlink(binary, missingBinary) },
   ];
   for (const fixture of cases) {
     const transport = hostCommand(t, { flywheelBinary: fixture.binary }, fixture.cwd);
     const ui = await mountPanel(t, transport.execute);
-    await ui.type(0, fixture.task);
-    if (fixture.explicitCwd) await ui.type(1, fixture.explicitCwd);
+    await ui.selectPath(0, fixture.task);
+    if (fixture.explicitCwd) await ui.selectPath(1, fixture.explicitCwd);
     await ui.click('启动');
     await act(async () => { await transport.completion; });
     const rejected = transport.results.at(-1);
@@ -528,7 +532,7 @@ else {
 `, { mode: 0o755 });
     const transport = hostCommand(t, { flywheelBinary: binary, controlTimeoutMs: 1000 }, cwd);
     const ui = await mountPanel(t, transport.execute);
-    await ui.type(0, cwd);
+    await ui.selectPath(0, cwd);
     await ui.click('启动');
     await act(async () => { await transport.completion; });
     const rejected = transport.results.at(-1);
@@ -553,46 +557,46 @@ else {
 test('a browser deadline reports unknown outcome and a late original success cannot silently clear it', async t => {
   const pending = deferred();
   const clock = deadlineClock();
-  const ui = await mountPanel(t, request => request.action === 'stop' ? pending.promise : statusReply(request, 'RECONCILED'), { timers: clock });
-  await ui.type(0, '/repo/docs/task');
+  const ui = await mountPanel(t, request => request.action === 'stop' ? pending.promise : commandReply(envelope(request, { running: true, state: { slug: 'RECONCILED', status: 'running', packets: {} } })), { timers: clock });
+  await ui.selectPath(0, '/repo/docs/task');
+  await ui.click('刷新状态');
   await ui.click('停止');
-  assert.equal(clock.pending.size, 1);
-  assert.ok([...clock.pending.values()][0].delay > 140000, 'UI wait allows the maximum host timeout and cleanup');
+  assert.equal([...clock.pending.values()].filter(timer => timer.delay > 140000).length, 1, 'one mutation deadline, separate from passive refresh timers');
   await clock.expire();
   assert.match(alerts(ui), /“停止”结果未确认/);
   assert.equal(ui.button('停止').disabled, true);
-  await act(async () => pending.resolve(statusReply(ui.requests[0], 'LATE_STOP', 'stopped')));
+  await act(async () => pending.resolve(statusReply(ui.requests[1], 'LATE_STOP', 'stopped')));
   assert.doesNotMatch(statusRegion(ui).textContent, /LATE_STOP/);
   assert.match(alerts(ui), /结果未确认/);
   await ui.click('刷新待确认任务');
   assert.match(statusRegion(ui).textContent, /RECONCILED/);
   assert.equal(alerts(ui), '');
-  assert.deepEqual(ui.requests.map(request => request.action), ['stop', 'status']);
-  assert.equal(clock.pending.size, 0);
+  assert.deepEqual(ui.requests.map(request => request.action), ['status', 'stop', 'status']);
+  assert.equal([...clock.pending.values()].filter(timer => timer.delay > 140000).length, 0);
 });
 
 test('session drafts and results stay separate, and a replacement binding cannot adopt an old reply', async t => {
   const pending = deferred();
   const ui = await mountPanel(t, (request, sessionId) => sessionId === 'desktop-session' ? pending.promise : statusReply(request, 'SESSION_B'));
-  await ui.type(0, '/repo/docs/session-a');
-  await ui.type(1, '/repo/a');
+  await ui.selectPath(0, '/repo/docs/session-a');
+  await ui.selectPath(1, '/repo/a');
   await ui.click('刷新状态');
   await ui.switchSession('other-session');
-  assert.equal(ui.container.querySelector('input').value, '');
+  assert.equal(ui.selection().taskDir, '');
   assert.equal(ui.requests.length, 1);
-  await ui.type(0, '/repo/docs/session-b');
+  await ui.selectPath(0, '/repo/docs/session-b');
   await ui.click('刷新状态');
   assert.match(statusRegion(ui).textContent, /SESSION_B/);
   await ui.switchSession('desktop-session');
-  assert.equal(ui.container.querySelector('input').value, '/repo/docs/session-a');
-  assert.equal(ui.container.querySelectorAll('input')[1].value, '/repo/a');
+  assert.equal(ui.selection().taskDir, '/repo/docs/session-a');
+  assert.equal(ui.selection().cwd, '/repo/a');
   assert.equal(ui.button('刷新状态').disabled, true);
   await ui.switchSession('desktop-session', 1);
-  assert.equal(ui.container.querySelector('input').value, '', 'a fresh binding has a fresh view store');
+  assert.equal(ui.selection().taskDir, '', 'a fresh binding has a fresh view store');
   await act(async () => pending.resolve(statusReply(ui.requests[0], 'OLD_BINDING_RESULT')));
-  assert.doesNotMatch(statusRegion(ui).textContent, /OLD_BINDING_RESULT/);
+  assert.doesNotMatch(ui.container.textContent, /OLD_BINDING_RESULT/);
   await ui.switchSession('other-session');
-  assert.equal(ui.container.querySelector('input').value, '/repo/docs/session-b');
+  assert.equal(ui.selection().taskDir, '/repo/docs/session-b');
   assert.match(statusRegion(ui).textContent, /SESSION_B/);
   assert.deepEqual(ui.sessions, ['desktop-session', 'other-session']);
   assert.equal(ui.requests.some(request => ['start', 'stop'].includes(request.action)), false);
@@ -602,7 +606,7 @@ test('plugin disposal stops local publication without sending a task cancellatio
   const pending = deferred();
   const clock = deadlineClock();
   const ui = await mountPanel(t, () => pending.promise, { timers: clock });
-  await ui.type(0, '/repo/docs/task');
+  await ui.selectPath(0, '/repo/docs/task');
   await ui.click('启动');
   await ui.unload();
   assert.equal(ui.container.childElementCount, 0);
@@ -626,7 +630,7 @@ test('malformed protocol results are visible and never become successful task ob
   ];
   let index = 0;
   const ui = await mountPanel(t, request => index < failures.length ? failures[index++](request) : statusReply(request, 'VALID_RESULT'));
-  await ui.type(0, '/repo/docs/task');
+  await ui.selectPath(0, '/repo/docs/task');
   for (let i = 0; i < failures.length; i += 1) {
     await ui.click('刷新状态');
     assert.match(alerts(ui), /“刷新状态”未完成/);
@@ -694,7 +698,7 @@ test('the UI accepts realpath identities already validated by the host for every
     });
     return completion;
   });
-  await ui.type(0, inputTask);
+  await ui.selectPath(0, inputTask);
   for (const [name, action] of [
     ['刷新状态', 'status'], ['启动', 'start'], ['停止', 'stop'], ['查看模型配置', 'config'],
     ['检查安装与配置', 'doctor'], ['检查 DSH 接入', 'doctor'],
@@ -706,41 +710,33 @@ test('the UI accepts realpath identities already validated by the host for every
     assert.equal(observations.at(-1).taskDir, canonicalTask, 'runControl validates the canonical engine identity');
     assert.equal(alerts(ui), '', `${action} must not become an unknown outcome after a successful host validation`);
     assert.equal(ui.button('启动').disabled, false);
-    assert.equal(ui.button('停止').disabled, false);
+    const stop = [...ui.container.querySelectorAll('button')].find(button => button.textContent === '停止');
+    if (observations.at(-1).running) assert.equal(stop.disabled, false);
+    else assert.equal(stop, undefined, 'idle tasks do not expose an irrelevant Stop action');
   }
   assert.equal(ui.requests.length, 6, 'there is no retry or repair mutation');
   assert.ok(ui.container.querySelector('[aria-label="实际模型配置"]'));
   assert.ok(ui.container.querySelector('[aria-label="环境检查结果"]'));
 });
 
-test('labelled fields validate paths without a request, retain focus, and follow the host locale', async t => {
+test('locations are read-only and unknown locations are not shown; locale changes cannot execute a task', async t => {
   const ui = await mountPanel(t, request => commandReply(envelope(request, { configuration: configuration() })));
-  for (const input of ui.container.querySelectorAll('input')) {
-    const label = [...ui.container.querySelectorAll('label')].find(node => node.htmlFor === input.id);
-    assert.ok(label?.textContent, 'each input has a native associated label');
-    assert.ok(ui.document.getElementById(input.getAttribute('aria-describedby')), 'field help remains associated');
-  }
-  await ui.type(0, 'relative/task');
-  assert.equal(ui.container.querySelector('input').getAttribute('aria-invalid'), 'true');
-  assert.match(ui.container.textContent, /请填写以 \/ 开头的完整路径/);
+  assert.equal(ui.container.querySelectorAll('input').length, 0);
+  await ui.selectPath(0, 'relative/task');
   assert.equal(ui.button('启动').disabled, true);
   await ui.click('查看模型配置');
-  assert.equal(ui.requests.length, 0);
-  await ui.type(0, '/repo/docs/task');
-  const input = ui.container.querySelector('input');
-  input.focus();
-  assert.equal(ui.document.activeElement, input);
+  assert.equal(ui.requests.length, 0, 'malformed persisted selections cannot dispatch controls');
+  await ui.selectPath(0, '/repo/docs/task');
   await ui.setLocale('en');
-  assert.equal(ui.document.activeElement, input, 'locale refresh does not remount focused fields');
-  assert.equal(input.value, '/repo/docs/task');
+  assert.equal(ui.selection().taskDir, '/repo/docs/task');
   assert.match(ui.container.textContent, /Flywheel workflow console/);
+  assert.equal(ui.container.querySelectorAll('input').length, 0);
   assert.equal(ui.button('Refresh status').disabled, false);
-  assert.equal(ui.requests.length, 0, 'locale changes cannot trigger a command');
+  assert.equal(ui.requests.length, 0, 'locale changes cannot trigger a task command');
   await ui.click('Inspect model configuration');
   assert.ok(ui.container.querySelector('[aria-label="Effective model configuration"]'));
-  assert.match(ui.container.textContent, /deepseek-flash/);
   await ui.setLocale('zh');
-  assert.equal(input.value, '/repo/docs/task');
+  assert.equal(ui.selection().taskDir, '/repo/docs/task');
   assert.ok(ui.container.querySelector('[aria-label="实际模型配置"]'));
   for (const button of ui.container.querySelectorAll('button')) assert.equal(button.type, 'button');
 });

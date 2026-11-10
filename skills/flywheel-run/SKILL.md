@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.9.2"
+  version: "1.9.3"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -162,3 +162,17 @@ head 的检查与审阅满足仓库要求后再合并；引擎不自动执行这
 
 这些单环入口不是 Quick 的替代品。要完成快速闭环，应恢复同一任务的完整 `run`，
 由引擎统一处理必需验收、最终 Review、持久化与升级，不能拼接子环结果声称完成。
+
+## DSH 画布关联
+
+从 DSH 终端运行时，引擎使用宿主的会话标识登记运行；不要手写、复制或伪造这个标识。
+首次运行、阶段结束或结果待核对时，再通过 `flywheel_control` 查询一次原任务：
+
+```json
+{"action":"status","taskDir":"<已核实的 task_dir 绝对路径>","cwd":"<已核实的 repo_dir 绝对路径>"}
+```
+
+这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
+回执和关联结果。没有该工具时，明确给出原任务路径，
+用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

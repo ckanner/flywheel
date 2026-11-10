@@ -11,7 +11,7 @@ import (
 var modelFields = []string{"harness", "model", "channel", "provider", "thinking"}
 var loopRoles = []string{"plan", "review", "judge", "intake", "garden"}
 var configFields = []string{
-	"version", "drivers", "loops", "routes", "channels", "profiles", "budget", "watchdog",
+	"jev-shadow", "version", "drivers", "loops", "routes", "channels", "profiles", "budget", "watchdog",
 	"retry", "credentials", "verify", "defect-injection", "worktree", "scheduler", "permissions", "sessions", "judge-panel", "intake", "pricing", "mock-behaviors",
 }
 var channelFields = []string{"env-key", "fallback", "harness", "provider", "models", "cache-hit-rate-min"}
@@ -208,6 +208,9 @@ func expandProfiles(raw []byte) ([]byte, map[string]string, error) {
 // Preserve supported notes without weakening strict typed decoding of fields.
 func prepareConfigSections(root map[string]json.RawMessage) error {
 	if err := prepareSessions(root); err != nil {
+		return err
+	}
+	if err := prepareJEV(root); err != nil {
 		return err
 	}
 	if err := prepareScheduler(root); err != nil {

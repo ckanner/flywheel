@@ -1,5 +1,7 @@
 # Releasing Flywheel
 
+**0.30.1** is being prepared with task discovery, stage-focused canvases and default-off JEV shadow evaluation. After authorized commits, build and verify the formal candidate from its clean exact tag; development candidates cannot be published. Registry integrity and installation receipts determine actual publication status.
+
 English · [简体中文](../releasing.md)
 
 This guide is for maintainers. Users install from npm using the

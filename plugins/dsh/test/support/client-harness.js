@@ -85,13 +85,15 @@ export function deadlineClock() {
   };
 }
 
-export async function mountPanel(t, respond, { timers, locale = 'zh', association } = {}) {
+export async function mountPanel(t, respond, { timers, locale = 'zh', association, catalog } = {}) {
   const client = loadClient(timers);
   const definitions = new Map();
   const effects = [];
   const dictionaries = new Map();
-  const requests = [];
-  const sessions = [];
+  // The new passive catalog has its own read lane. Existing task protocol
+  // fixtures stay scoped to their commands; discovery scenarios exercise both.
+  const requests = [], discoveryRequests = [], allRequests = [];
+  const sessions = [], discoverySessions = [];
   let activeLocale = locale;
   let disposed = false;
   const translate = namespace => (key, params) => {
@@ -141,6 +143,12 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
       assert.equal(attachments.length, 0);
       assert.ok(command.startsWith('/flywheel '));
       const request = JSON.parse(command.slice('/flywheel '.length));
+      allRequests.push(request);
+      if (request.action === 'runs') {
+        discoveryRequests.push(request); discoverySessions.push(sessionId);
+        if (catalog) return catalog(request, sessionId);
+        return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir: '', cwd: '/repo', state: null, runs: [] }) } } };
+      }
       requests.push(request);
       sessions.push(sessionId);
       return respond(request, sessionId, command);
@@ -229,15 +237,13 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
     reveal(target);
     target.click();
   }); };
-  const type = async (index, value) => {
-    const input = container.querySelectorAll('input')[index];
-    assert.ok(input, `input ${index} exists`);
-    await act(async () => {
-      reveal(input);
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, value);
-      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    });
-  };
+  // Seed the public selection binding for controller/protocol scenarios.
+  // DOM task picking is exercised separately in task-discovery.test.js.
+  const selection = () => getBinding(currentSession, generation).instance.getSnapshot();
+  const selectPath = async (index, value) => act(async () => {
+    const binding = getBinding(currentSession, generation);
+    binding.props.changeSelection({ taskDir: selection().taskDir, cwd: selection().cwd, [index === 0 ? 'taskDir' : 'cwd']: value });
+  });
   const switchSession = async (sessionId, version = 0) => {
     currentSession = sessionId;
     generation = version;
@@ -254,7 +260,7 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
   const setAssociation = async (value, sessionId = currentSession) => {
     await act(async () => projectionSource(sessionId).set(value));
   };
-  return { container, root, definition, requests, sessions, button, click, type,
+  return { container, root, definition, requests, discoveryRequests, allRequests, sessions, discoverySessions, button, click, selectPath, selection,
     switchSession, setVisible, setLocale, setAssociation, unload, bindings, document: dom.window.document,
     translate: translate(definition.locale) };
 }

@@ -14,6 +14,7 @@ const configuration = { source: `${cwd}/flywheel.config.json`, scope: 'project',
 const running = ['start', 'launch'].includes(args[1]);
 const response = { protocol: 1, ok: true, running, pid: 42, taskDir, cwd,
   state: { slug: 'example', status: running ? 'running' : 'pending', model: 'deepseek-flash', packets: {} } };
+if (mode === 'host-session') response.hostSessionId = process.env.DSH_SESSION_ID ?? null;
 if (args[1] === 'config') response.configuration = configuration;
 if (args[1] === 'doctor') {
   response.diagnostic = { kind: 'doctor', ok: true, cwd, taskDir, probeRequested: args.includes('--probe'),

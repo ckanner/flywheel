@@ -216,3 +216,11 @@ test('tool finalization preserves positive pre-dispatch proof without treating e
   });
   assert.equal(JSON.parse(cancelled[0].text).dispatch, 'not-dispatched');
 });
+
+test('a native host control uses the actual Session id for engine discovery', async t => {
+ env(t, 'TEST_CONTROL_MODE', 'host-session');
+ env(t, 'DSH_SESSION_ID', 'ambient-parent-session');
+ const f = await fixture(t);
+ const result = await f.runCommand({ action: 'status', taskDir: f.first });
+ assert.equal(JSON.parse(result.text).hostSessionId, 'desktop-session');
+});

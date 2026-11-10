@@ -53,25 +53,7 @@
   gap: 10px;
 }
 
-.fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
-  margin-bottom: 2px;
-}
-
-.field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-}
-
-.fieldLabel {
-  font-weight: 500;
-}
-
-/* Plugin-owned compact Button/Input and ongoing StateDot, adapted from DSH
+/* Plugin-owned compact Button and ongoing StateDot, adapted from DSH
  * b830ec950faba0a46dda564be3e2d854afed94f1 ui-primitives source. The upstream
  * MIT notice is retained in THIRD_PARTY_NOTICES.md. Geometry stays local; only
  * --dsw-alias-* colors are a shared styling dependency for this external UI. */
@@ -128,64 +110,6 @@
 
   .buttonOutline:hover:not(:disabled) {
     background: var(--dsw-alias-interactive-bg-hover);
-  }
-}
-
-.inputShell {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 8px;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.inputShell:focus-within {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.inputShell[data-disabled='true'] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.textInput {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.textInput::placeholder {
-  color: var(--dsw-alias-label-secondary);
-}
-
-.textInput:disabled {
-  cursor: not-allowed;
-}
-
-.input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-}
-
-.input input {
-  font-size: 13px;
-  line-height: 20px;
-}
-
-/* Follow DSH's coarse-pointer input floor without widening fine-pointer forms. */
-@media (pointer: coarse) {
-  .input input {
-    font-size: 16px;
   }
 }
 
@@ -628,8 +552,6 @@
 }
 
 .page [hidden] { display: none !important; }
-.taskLocation > summary { width: fit-content; cursor: pointer; color: var(--dsw-alias-label-secondary); }
-.taskLocation[open] .fields { margin-top: 12px; }
 .feedback[data-state='idle'] { height: auto; min-height: 40px; padding: 8px 0; }
 .header a { color: var(--dsw-alias-link); text-decoration: none; width: fit-content; }
 .header a:hover { text-decoration: underline; }
@@ -665,3 +587,14 @@
   .page .button, .editorInput, .editorField select { min-height: 44px; }
   .editorInput, .editorField select { font-size: 16px; }
 }
+
+.taskChooser { display: grid; gap: 12px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+.taskSelect { width: 100%; min-width: 0; min-height: 36px; padding: 6px 8px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; }
+.taskSelect:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.stageScope { display: grid; gap: 8px; padding: 12px 16px; border-left: 2px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-bg-layer-1); }
+
+.stageScope strong { font-weight: 500; }
+
+.taskLocations { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 4px 12px; margin: 0; font-size: 12px; line-height: 18px; }
+.taskLocations dt { color: var(--dsw-alias-label-secondary); }
+.taskLocations dd { margin: 0; overflow-wrap: anywhere; }

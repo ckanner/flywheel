@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object", "additionalProperties":false,
+  "properties": {
+    "enabled":{"type":"boolean"},
+    "endpoint":{"type":"string","maxLength":2000},
+    "model":{"type":"string","minLength":1,"maxLength":120},
+    "expected-model":{"type":"string","minLength":1,"maxLength":120},
+    "key-env":{"type":"string","pattern":"^[A-Za-z_][A-Za-z0-9_]{0,119}$"},
+    "timeout-ms":{"type":"integer","minimum":1,"maximum":5000}
+  }
+}

@@ -1,4 +1,5 @@
 {
+  "jev-shadow": {"enabled": false, "endpoint": "", "model": "jev", "expected-model": "jev-1.14.0", "key-env": "MEROUTER_API_KEY", "timeout-ms": 5000},
   "version": 1,
   "sessions": {
     "mode": "scoped",

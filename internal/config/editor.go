@@ -11,7 +11,7 @@ import (
 
 // Editor values contain only configuration fields, never credential values or
 // arbitrary notes/commands from the source file. Unedited sections stay on disk.
-var editorSections = []string{"loops", "routes", "channels", "profiles", "sessions", "permissions", "budget", "watchdog", "retry", "worktree", "scheduler", "judge-panel"}
+var editorSections = []string{"jev-shadow", "loops", "routes", "channels", "profiles", "sessions", "permissions", "budget", "watchdog", "retry", "worktree", "scheduler", "judge-panel"}
 
 type EditorDocument struct {
 	Target   string                     `json:"target"`

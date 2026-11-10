@@ -12,7 +12,7 @@ const values = { loops: { review: { harness: 'dsh', model: 'gpt-6.1-sol', channe
 
 test('console draws real packet branches and forwards one revision-bound stage command', async t => {
   const ui = await mountPanel(t, request => reply(request, { state: { slug: 'checkout', revision: 7, status: 'stopped', packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 2, evidence: { l1: { pass: false } } } } } }));
-  await ui.type(0, '/repo/docs/checkout');
+  await ui.selectPath(0, '/repo/docs/checkout');
   await ui.click('刷新状态');
   const pick = async id => act(async () => ui.container.querySelector(`[data-node-id="${id}"]`).click());
   await pick('M01-T01');
@@ -87,7 +87,7 @@ test('running canvas refreshes through the read controller and stops polling whe
   const previous = Object.getOwnPropertyDescriptor(ui.document, 'hidden');
   Object.defineProperty(ui.document, 'hidden', { configurable: true, value: false });
   t.after(() => { if (previous) Object.defineProperty(ui.document, 'hidden', previous); else delete ui.document.hidden; });
-  await ui.type(0, '/repo/docs/task');
+  await ui.selectPath(0, '/repo/docs/task');
   await ui.click('刷新状态');
   assert.equal(ui.requests.length, 1);
   assert.ok([...timers.pending.values()].some(timer => timer.delay === 2000));
@@ -100,9 +100,9 @@ test('running canvas refreshes through the read controller and stops polling whe
 
 test('registered CLI runs open a freshly read canvas and metrics retain missing observations', async t => {
  const run = { id: 'run-one', taskDir: '/repo/docs/cli', cwd: '/repo', startedAt: '2026-11-08T10:00:00Z', conditions: 'one', summary: { slug: 'cli', status: 'paused' } };
- const ui = await mountPanel(t, request => reply(request, request.action === 'runs' ? { runs: [run] } : request.action === 'metrics' ? { metrics: { groups: [{ role: 'execute', model: 'Flash', harness: 'dsh', calls: 2, failedCalls: 1, runId: 'run-one', knownTokens: 5, knownCostUSD: 0, knownDurationMs: 25, missingDuration: 1, missingUsage: 1, missingCost: 2 }] } } : { state: { revision: 4, status: 'paused', packets: {} } }));
+ const ui = await mountPanel(t, request => reply(request, request.action === 'runs' ? { runs: [run] } : request.action === 'metrics' ? { metrics: { groups: [{ role: 'execute', model: 'Flash', harness: 'dsh', calls: 2, failedCalls: 1, runId: 'run-one', knownTokens: 5, knownCostUSD: 0, knownDurationMs: 25, missingDuration: 1, missingUsage: 1, missingCost: 2 }] } } : { state: { revision: 4, status: 'paused', packets: {} } }), { catalog: request => reply(request, { runs: [run] }) });
  await ui.click('运行与对比'); await ui.click('刷新最近运行');
- assert.equal(ui.requests.at(-1).action, 'runs');
+ assert.equal(ui.discoveryRequests.at(-1).action, 'runs');
  const reference = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('对照运行')).querySelector('select');
  await act(async () => { reference.value = 'run-one'; reference.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
  assert.match(ui.container.textContent, /相同契约与配置/);
@@ -122,7 +122,7 @@ test('session handoff keeps exact identity, sends prompts via stdin contract and
   if (request.action === 'session' && request.session.action === 'return') held = false;
   return reply(request, request.action === 'history' ? { history: { key, text: 'reply from exact receipt' } } : { cwd: '/repo', state: { revision: 7, status: 'paused', ...(held ? { handoff: { key } } : {}), sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 1 } } } });
  });
- await ui.type(0, '/repo/docs/cli'); await ui.click('刷新状态');
+ await ui.selectPath(0, '/repo/docs/cli'); await ui.click('刷新状态');
  await ui.click('查看最近回复'); assert.equal(ui.requests.at(-1).sessionKey, key);
  assert.match(ui.container.textContent, /reply from exact receipt/);
  const input = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '接管原因').querySelector('input');
@@ -140,7 +140,7 @@ test('PR actions require an explicit reviewed target and keep merge source/base 
  const remote = { repo: 'github.com/example/repo', url: 'https://github.com/example/repo', localBranch: 'feature', branch: 'feature', head: 'a'.repeat(40), defaultBase: 'main', pulls: [{ number: 9, url: 'https://github.com/example/repo/pull/9', state: 'OPEN', headRefOid: 'a'.repeat(40), baseRefName: 'main', isDraft: false, mergeStateStatus: 'CLEAN', statusCheckRollup: [{ name: 'tests', conclusion: 'SUCCESS' }] }] };
  const state = { slug: 'fixture', revision: 12, status: 'completed', packets: { 'M01-T01': { status: 'completed', route: 'default' } } };
  const ui = await mountPanel(t, request => reply(request, { state, ...(request.action === 'delivery' || request.action === 'deliver' ? { delivery: remote } : {}) }));
- await ui.type(0, '/repo/docs/fixture'); await ui.click('刷新状态');
+ await ui.selectPath(0, '/repo/docs/fixture'); await ui.click('刷新状态');
  await act(async () => ui.container.querySelector('[data-node-id="delivery"]').click());
  await ui.click('查询项目与 PR');
  assert.equal(ui.button('合并此 PR').disabled, true);
@@ -154,7 +154,7 @@ test('PR actions require an explicit reviewed target and keep merge source/base 
 test('full packet evidence is matched to the same refreshed state revision', async t => {
  const packet = { status: 'l1-failed', route: 'default', evidence: { l1: { pass: false, 'details-omitted': true } } };
  const ui = await mountPanel(t, request => reply(request, request.action === 'node' ? { projection: 'console-excerpt', state: { revision: 8, status: 'paused', packets: { 'M01-T01': packet } }, node: { id: 'M01-T01', revision: 8, packet: { ...packet, evidence: { l1: { pass: false, commands: [{ output: 'complete diagnostic' }] } } } } } : { projection: 'console-excerpt', state: { revision: 7, status: 'paused', packets: { 'M01-T01': packet } } }));
- await ui.type(0, '/repo/docs/task'); await ui.click('刷新状态'); await ui.click('读取完整节点证据');
+ await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新状态'); await ui.click('读取完整节点证据');
  assert.equal(ui.requests.at(-1).action, 'node'); assert.equal(ui.requests.at(-1).packet, 'M01-T01');
  assert.match(ui.container.textContent, /complete diagnostic/);
 });
@@ -170,4 +170,17 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{const 
  const delivery = await runControl({ action: 'deliver', taskDir: dir, cwd: dir, delivery: { action: 'create', confirmed: true, body: 'private prompt' } }, { binary });
  assert.equal(delivery.received.body, 'private prompt');
  for (const input of [{ action: 'deliver', delivery: { action: 'merge' } }, { action: 'delivery', delivery: { action: 'merge', confirmed: true } }, { action: 'node', packet: '../escape' }, { action: 'status', runId: 'fake' }]) await assert.rejects(runControl({ taskDir: dir, cwd: dir, ...input }, { binary }), ControlNotDispatchedError);
+});
+
+test('JEV starts disabled and saves an optional boolean without exposing a key field', async t => {
+  const ui = await mountPanel(t, request => reply(request, { editor: { scope: 'global', target: '/global/config.json', revision: 'one', values, defaults: values } }));
+  await ui.click('全局 / 项目配置');
+  await ui.click('读取配置草稿');
+  const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('JEV 影子评估'));
+  const select = label.querySelector('select');
+  assert.equal(select.value, 'false');
+  assert.match(ui.container.textContent, /不阻断任务/);
+  await act(async () => { select.value = 'true'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
+  await ui.click('保存配置');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { 'jev-shadow': { enabled: true } });
 });

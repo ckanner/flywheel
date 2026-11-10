@@ -154,12 +154,9 @@ Auto／Quick／Full 与统一入口需要包含本轮变更的同版本 CLI／�
 
 要查看或直接控制已有任务，再在顶部视图栏在内置“统计”之后选择 **Flywheel**（从 0.28.5 起）；未直接显示时检查该栏的更多视图入口。
 
-| 字段 | 用途 | 是否需要填写 |
-|---|---|---|
-| 任务资料目录 | Spec、packet、验收说明和任务记录所在的 `docs/<slug>/`，例如 `/Users/me/project/docs/fix-login` | 面板启动／刷新／停止需指定；配置与诊断可以留空。由准备 Skill 给出，无需自行编写这些文件才能使用入口 |
-| 项目目录（可选） | 对应源码项目／任务集成 worktree，例如 `/Users/me/project` | 当前源码默认读取会话实际工作目录；只在选择另一项目或 worktree 时覆盖 |
+新版不再要求填写任务目录或项目目录。当前会话唯一任务自动打开，多个任务或历史记录从“选择任务”选择；助手／引擎提供实际位置，有值时显示只读工作区、任务记录位置与分支。准备但尚未启动的任务可通过 `flywheel_control status` 关联。DSH 终端运行使用公开会话标识登记，不扫描磁盘或猜测 shell 命令。
 
-从 0.28.3 开始调用宿主 `workingDirectory.get(session)`，跟随会话中的目录切换；显式项目目录优先，getter 失败在派发前报错，不回退到会话最初的 `header.cwd`。0.28.2 仍取最初目录，切换 worktree 后请显式填写项目路径。本轮 DSH 工具 launch／start 会自动关联具体任务；只准备文件或在终端启动不会创建会话关联，仍可手动填写并刷新。两个字段都是项目路径，不是插件安装目录。控制面复用以下 Go JSON 接口：
+控制命令的 cwd 仍默认读取宿主 `workingDirectory.get(session)`；助手提供的明确工作区优先，getter 失败在派发前报告。以下路径是助手调用 Go 接口的参数，不是用户必须填写的 UI 配置：
 
 ```sh
 flywheel control launch --task-dir /repo/docs/my-task --cwd /repo --mode auto
@@ -280,3 +277,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 具体操作、边界、配置示例与 CLI 交互见[流程控制台指南](../../docs/flow-console.md)。旧状态可读；新版调用／接管使用 v2 会话账本，使旧引擎拒绝忽略接管标记。各 Provider 的真实账号状态仍需按正常流程验证。
 
 SDK 正常关闭允许 2 秒进行历史落盘和插件释放，随后仍使用有界 TERM/KILL 收尾。只有关闭回执与进程退出共同确认后才视为正常结束。
+
+源码配置编辑器新增默认关闭的 JEV 影子评估开关，仅记录建议，不影响实际工作流；需要 0.30.1。详见 [JEV 使用说明](../../docs/jev-shadow.md)。
+
+0.30.1 修复：默认使用任务选择；DSH 终端运行按会话标识自动发现，历史任务可一键打开。删除路径输入框，实际位置自动只读显示，单阶段 Review 显示本次结果；完整说明见 [流程控制台](../../docs/flow-console.md)。

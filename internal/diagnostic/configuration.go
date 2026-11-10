@@ -34,6 +34,7 @@ type Binding struct {
 }
 
 type Configuration struct {
+	JEVShadow config.JEVConfig       `json:"jev-shadow"`
 	Scheduler config.SchedulerConfig `json:"scheduler"`
 	Source    string                 `json:"source"`
 	Scope     string                 `json:"scope"`
@@ -124,7 +125,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
+	view := &Configuration{JEVShadow: cfg.JEVShadow, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		harness := b.Harness
 		if harness == "" {

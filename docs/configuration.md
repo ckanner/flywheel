@@ -433,3 +433,7 @@ DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，�
 ```
 
 这是字段片段，不是可直接替代完整配置的文件。控制台按实际文件读取完整草稿并校验后保存。CLI 运行索引、受管 Session 交互、指标完整性和 PR／Merge 权限边界见[流程控制台](flow-console.md)。
+
+## 可选 JEV 影子评估
+
+`jev-shadow.enabled` 默认 false，旧配置缺省同样关闭。全局／项目编辑器支持开关；开启只观察新任务，失败不阻断流程，不改变实际 Quick／Full。endpoint、固定响应版本、密钥变量名和时限详见 [JEV 指南](jev-shadow.md)。此功能需要 0.30.1 CLI／插件。

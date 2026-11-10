@@ -2,8 +2,11 @@ package machine
 
 import (
 	"errors"
+	"fmt"
+	"github.com/ckanner/flywheel/internal/childenv"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ckanner/flywheel/internal/config"
@@ -207,4 +210,37 @@ func TestRecoveredTelemetryKeepsItsOriginalEngineRun(t *testing.T) {
 	report, err = metrics.ReadReport(filepath.Join(fx.taskDir, "metrics.jsonl"), "recovery")
 	require.NoError(t, err)
 	require.Empty(t, report.Calls)
+}
+
+func TestRunCatalogBindsOnlyBoundedHostSessionDiscoveryIdentity(t *testing.T) {
+	for _, id := range []string{"session-desktop-123", "fork-session-456", "", "../other", "bad\nvalue", strings.Repeat("a", 201)} {
+		t.Run(fmt.Sprintf("length-%d-%x", len(id), []byte(id)[:min(len(id), 8)]), func(t *testing.T) {
+			_, c := sessionFixture(t)
+			previous := c.EnvLookup
+			c.EnvLookup = func(key string) (string, bool) {
+				if key == "DSH_SESSION_ID" {
+					return id, true
+				}
+				return previous(key)
+			}
+			directory := t.TempDir()
+			finish, err := c.beginRunRecord(directory, "review")
+			require.NoError(t, err)
+			var outcome error
+			finish(&outcome)
+			require.NoError(t, outcome)
+			rows, err := ListRuns(directory)
+			require.NoError(t, err)
+			require.Len(t, rows, 1)
+			if strings.HasPrefix(id, "session-") || strings.HasPrefix(id, "fork-") {
+				require.Equal(t, id, rows[0].HostSessionID)
+			} else {
+				require.Empty(t, rows[0].HostSessionID)
+			}
+			require.Equal(t, "review", rows[0].Kind)
+			// Discovery identity is never forwarded to stage tools or acceptance code.
+			require.NotContains(t, childenv.BuildChildEnv(c.EnvLookup, nil), "DSH_SESSION_ID")
+			require.NotContains(t, childenv.GateEnv(c.EnvLookup, nil), "DSH_SESSION_ID")
+		})
+	}
 }

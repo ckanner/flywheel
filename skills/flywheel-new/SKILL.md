@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.8.1"
+  version: "1.8.2"
 description: >-
   Prepare a reviewable Flywheel task proposal without starting the engine:
   research the repository, resolve intent questions, and generate docs/<slug>/
@@ -157,3 +157,10 @@ worktree 只隔离 Git 工作目录，不是 OS 安全沙箱。
 `state.json` 或搬走已有成果。契约获批并提交后，可按已有授权建立任务级 Draft PR；
 完整验收和对应 head 的检查／审阅满足仓库要求后，才由用户或获授权宿主合并 PR。
 引擎不自动 push、创建 PR 或合并远端 PR；本地 packet 合并不代表 PR 已获批准。
+
+## DSH 中显示准备好的任务
+
+资料准备完成后，可调用 `flywheel_control` 的 `status`，传入已核实的 taskDir 和 cwd
+绝对路径。只读查询会关联当前会话；即使 state 为空，也不启动引擎或制造完成状态。
+任务会出现在任务选择中，位置由助手提供，用户不需要填路径。工具不可用时明确说明
+尚未关联，不把加载技能或资料写入说成已经运行。

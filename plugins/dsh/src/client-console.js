@@ -80,9 +80,12 @@ function ConsoleCanvas({ control, selection, run, t }) {
   const [selected, setSelected] = React.useState(null);
   const [page, setPage] = React.useState(0);
   const [retryReason, setRetryReason] = React.useState('');
+  const [whole, setWhole] = React.useState(false);
   const viewport = React.useRef(null);
   const drag = React.useRef(null);
   const state = control.status?.state;
+  const single = singleRunKind(control);
+  const focused = !!single && !whole;
   const entries = Object.entries(state?.packets ?? {}).map(([id, packet]) => [id, record(packet) ? packet : {}]).sort(([a], [b]) => a.localeCompare(b));
   const pageIndex = Math.min(page, Math.max(0, Math.ceil(entries.length / 6) - 1));
   const visible = entries.slice(pageIndex * 6, pageIndex * 6 + 6);
@@ -127,7 +130,29 @@ function ConsoleCanvas({ control, selection, run, t }) {
   add('merge', 'Merge', pull?.state === 'MERGED' ? 'completed' : 'pending', finalX + 496, center);
   for (const [id] of visible) edges.push([expanded === id ? id + '/integrate' : id, 'aggregate']);
   edges.push(['aggregate', 'judge']); edges.push(['judge', 'delivery']); edges.push(['delivery', 'merge']);
-  const chosen = nodes.find(node => node.id === selected) ?? nodes.find(node => node.packet && node.packet.status !== 'completed') ?? nodes[0];
+  let canvasWidth = finalX + 720;
+  if (focused) {
+    nodes.length = 0; edges.length = 0;
+    const scope = state.control.packet ? entries.filter(([id]) => id === state.control.packet) : visible;
+    const operationStatus = control.stale || state.control.status === 'running' && !control.status.running ? 'unknown' : state.control.status;
+    if (['plan','final','integrate'].includes(single)) {
+      add(single, stageName(single,t), operationStatus, 24, 24, null, single);
+    } else {
+      for (const [i, [id, packet]] of scope.entries()) {
+        const stages = single === 'review' ? ['verify', 'review'] : single === 'execute' ? ['execute','verify'] : ['verify'];
+        stages.forEach((stage, column) => {
+          const evidence = packet.evidence ?? {};
+          let status = stage === 'review' ? evidence.review?.verdict ?? 'unknown' : stage === 'verify' ? evidence.l1?.pass === true ? 'pass' : evidence.l1?.pass === false ? 'failed' : 'pending' : evidence.executor ? 'executed' : 'pending';
+          if (stage === single && operationStatus !== 'passed') status = operationStatus;
+          add(id + '/' + stage, id + ' · ' + stageName(stage,t), status, 24 + column * 248, 24 + i * 180, packet, stage);
+          if (column) edges.push([id + '/' + stages[column-1], id + '/' + stage]);
+        });
+      }
+      if (!nodes.length) add(single, stageName(single,t), 'unknown', 24, 24, null, null);
+    }
+    canvasWidth = single === 'review' || single === 'execute' ? 520 : 272;
+  }
+  const chosen = nodes.find(node => node.id === selected) ?? (focused ? nodes.find(node => node.stage === single) : null) ?? nodes.find(node => node.packet && node.packet.status !== 'completed') ?? nodes[0];
   const packetID = chosen.packet ? chosen.id.split('/')[0] : undefined;
   const detailPacket = control.node && control.node.id === packetID && control.node.revision === state.revision ? control.node.packet : chosen.packet;
   const sessions = Object.entries(state.sessions?.records ?? {}).filter(([, value]) => record(value)).filter(([, value]) =>
@@ -150,9 +175,15 @@ function ConsoleCanvas({ control, selection, run, t }) {
     ({ passed: t('pass'), stale: t('consoleSnapshotStale'), pass: t('pass'), failed: t('fail'), return: t('reviewFailed'), unknown: t('consoleUnconfirmed') }[value] ?? textValue(value));
   const detail = (label, value) => h(React.Fragment, { key: label }, h('dt', null, label), h('dd', null, textValue(value)));
   return h('section', { className: css.consoleCanvas, 'aria-label': t('consoleCanvas') },
-    h('div', { className: css.consoleToolbar },
-      h('span', { className: css.meta }, t(quick ? 'consoleQuick' : 'consoleFull') + ' · ' + t(state.scheduler?.mode === 'parallel' ? 'consoleParallel' : 'consoleSerial')),
+    single && h('section', { className: css.stageScope },
+      h('strong', null, singleRunLabel(control,t)), h('p', { className: css.meta }, t('stageScopeHelp')),
+      h('p', { className: css.meta }, t('stageFullState', { status: t(state.status === 'completed' ? 'stageDelivered' : 'stageUndelivered') })),
       h('div', { className: css.actions },
+        h(Button, { 'aria-pressed': !whole, onClick: () => setWhole(false) }, t('stageFocus')),
+        h(Button, { 'aria-pressed': whole, onClick: () => setWhole(true) }, t('stageFull')))),
+    h('div', { className: css.consoleToolbar },
+      h('span', { className: css.meta }, (focused ? t('stageOnly', { stage: stageName(single,t) }) : t(quick ? 'consoleQuick' : 'consoleFull')) + ' · ' + t(state.scheduler?.mode === 'parallel' ? 'consoleParallel' : 'consoleSerial')),
+      h('div', { className: css.actions, hidden: focused },
         h(Button, { size: 'sm', disabled: pageIndex === 0, onClick: () => setPage(pageIndex - 1) }, t('consolePrevious')),
         h('span', { className: css.meta }, t('consolePage', { from: entries.length ? pageIndex * 6 + 1 : 0, to: Math.min((pageIndex + 1) * 6, entries.length), total: entries.length })),
         h(Button, { size: 'sm', disabled: (pageIndex + 1) * 6 >= entries.length, onClick: () => setPage(pageIndex + 1) }, t('consoleMore')))),
@@ -166,8 +197,8 @@ function ConsoleCanvas({ control, selection, run, t }) {
       event.currentTarget.setPointerCapture?.(event.pointerId);
     }, onPointerMove: event => { if (drag.current) viewport.current.scrollLeft = drag.current.scroll - event.clientX + drag.current.x; },
     onPointerUp: () => { drag.current = null; }, onPointerCancel: () => { drag.current = null; }, onLostPointerCapture: () => { drag.current = null; } },
-      h('div', { className: css.canvasWorld, style: { width: finalX + 720, height } },
-        h('svg', { className: css.canvasEdges, width: finalX + 720, height, 'aria-hidden': true }, ...edges.map(([from, to]) => {
+      h('div', { className: css.canvasWorld, style: { width: canvasWidth, height } },
+        h('svg', { className: css.canvasEdges, width: canvasWidth, height, 'aria-hidden': true }, ...edges.map(([from, to]) => {
           const a = nodes.find(n => n.id === from), b = nodes.find(n => n.id === to);
           return h('path', { key: from + to, d: `M${a.x + 200} ${a.y + 80} H${b.x - 20} V${b.y + 80} H${b.x}` });
         })),
@@ -184,7 +215,9 @@ function ConsoleCanvas({ control, selection, run, t }) {
       h('div', { className: css.consoleToolbar }, h('h3', { className: css.heading }, chosen.title),
         h('div', { className: css.actions }, chosen.stage && h(Button, { variant: 'primary', disabled: stageBlocked || chosen.packet?.status === 'completed',
           onClick: () => run('step', selection, false, { only: chosen.stage, packet: packetID, revision: state.revision }) }, t('consoleStageRun')),
-        h(Button, { disabled: stageBlocked, onClick: () => run('start', selection) }, t('consoleWhole')))),
+        !single && h(Button, { disabled: stageBlocked, onClick: () => run('start', selection) }, t('consoleWhole')))),
+      single && h('details', { className: css.details }, h('summary', null, t('stageContinue')),
+        h(Button, { disabled: stageBlocked, onClick: () => run('start', selection) }, t('consoleWhole'))),
       h('p', { className: css.meta }, t(stageBlocked ? 'consoleBlocked' : 'consoleStageHelp')),
       ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
       chosen.stage === 'execute' && h('details', { className: css.details }, h('summary', null, t('consoleManual')),
@@ -192,12 +225,15 @@ function ConsoleCanvas({ control, selection, run, t }) {
         h('label', { className: css.editorField }, t('consoleManualReason'), h('input', { className: css.editorInput, value: retryReason, maxLength: 300, disabled: stageBlocked, onChange: event => setRetryReason(event.target.value) })),
         h(Button, { disabled: stageBlocked || !retryReason.trim(), onClick: () => run('step', selection, false, { only: 'execute', packet: packetID, revision: state.revision, retryReason: retryReason.trim() }) }, t('consoleManual'))),
       chosenBinding && h('dl', { className: css.consoleProperties }, detail(t('consoleProvider'), chosenBinding.provider || chosenBinding.harness), detail(t('consoleModel'), chosenBinding.model), detail(t('consoleThinking'), chosenBinding.thinking), detail(t('permission'), permissionLabels[chosenBinding.permission] ? t(permissionLabels[chosenBinding.permission]) : chosenBinding.permission), detail(t('consoleSession'), sessionModeLabel({ session: { mode: chosenBinding.sessionMode } }, t))),
+      chosen.stage === 'review' && detailPacket?.evidence?.review && h('dl', { className: css.consoleProperties },
+        detail(t('stageRecordedVerdict'), detailPacket.evidence.review.verdict), detail(t('stageRecordedScore'), detailPacket.evidence.review.score)),
+      h('details', { className: css.details }, h('summary', null, t('stageMetadata')),
       h('dl', { className: css.consoleProperties },
         detail('Run', state.run?.id), detail('HEAD', state.run?.head), detail('配置 / 契约摘要', state.run?.conditions),
         detail(t('consoleTask'), control.status.taskDir), detail(t('consoleCwd'), chosen.packet?.worktree?.path ?? control.status.cwd),
         detail('依赖 / after', chosen.packet?.schedule?.after?.join(', ')), detail('写入范围 / writes', chosen.packet?.schedule?.writes?.join(', ')),
         detail(t('consoleBranch'), chosen.packet?.worktree?.branch || state.run?.branch), detail(t('consoleRevision'), state.revision),
-        detail(t('consoleAttempts'), chosen.packet?.attempts), detail(t('consoleFailures'), chosen.packet?.['failed-attempts'])),
+        ...(!focused || single === 'execute' ? [detail(t('consoleAttempts'), chosen.packet?.attempts), detail(t('consoleFailures'), chosen.packet?.['failed-attempts'])] : []))),
       control.status.projection && h('p', { className: css.meta }, t('consoleExcerpt')),
       packetID && h(Button, { disabled: control.pending !== null, onClick: () => run('node', selection, false, { packet: packetID }) }, t('consoleFullNode')),
       h('details', { className: css.details }, h('summary', null, t('consoleEvidence')),
@@ -284,6 +320,15 @@ function ConfigEditor({ control, selection, run, t }) {
         field(t('consoleBudgetPolicy'), draft.budget?.enforce ?? 'soft', value => update('budget', null, 'enforce', value), [['off', 'off'], ['soft', 'soft'], ['hard', 'hard']]),
         field(t('consoleTimeout'), draft.watchdog?.['wall-timeout-ms'], value => numeric('watchdog', 'wall-timeout-ms', value)),
         field(t('consoleRetries'), draft.retry?.['max-transport-retries'], value => numeric('retry', 'max-transport-retries', value))),
+      h('h4', { className: css.heading }, t('consoleJEV')),
+      h('p', { className: css.meta }, t('consoleJEVHelp')),
+      h('div', { className: css.editorGrid },
+        field(t('consoleJEV'), String(draft['jev-shadow']?.enabled ?? false), value => update('jev-shadow', null, 'enabled', value === 'true'), [['false', t('consoleJEVOff')], ['true', t('consoleJEVOn')]]),
+        field('System One endpoint', draft['jev-shadow']?.endpoint, value => update('jev-shadow', null, 'endpoint', value)),
+        field(t('consoleModel'), draft['jev-shadow']?.model ?? 'jev', value => update('jev-shadow', null, 'model', value)),
+        field(t('consoleJEVVersion'), draft['jev-shadow']?.['expected-model'] ?? 'jev-1.14.0', value => update('jev-shadow', null, 'expected-model', value)),
+        field(t('consoleJEVEnv'), draft['jev-shadow']?.['key-env'] ?? 'MEROUTER_API_KEY', value => update('jev-shadow', null, 'key-env', value)),
+        field(t('consoleJEVTimeout'), draft['jev-shadow']?.['timeout-ms'] ?? 5000, value => numeric('jev-shadow', 'timeout-ms', value))),
       h('div', { className: css.editorBindings }, ...bindingRows.map(([section, key, binding]) =>
         h('article', { key: section + key, className: css.editorBinding, 'data-binding-id': section + '.' + key }, h('h4', { className: css.heading }, (section === 'routes' ? t('executeRole') : t(roleLabels[key] || key)) + ' · ' + key), h('span', { className: css.meta }, section + '.' + key),
           h('div', { className: css.editorGrid },
@@ -422,3 +467,6 @@ function DeliveryPanel({ control, selection, run, t }) {
           pull.statusCheckRollup?.length ? pull.statusCheckRollup.map((check,index) => h('p', { key: index, className: css.meta }, [check.name || check.context, check.conclusion || check.state || check.status].filter(Boolean).join(' · '))) : h('p', { className: css.meta }, t('deliveryNoChecks'))),
         h(Button, { disabled: writeBlocked || pull.headRefOid !== remote.head || pull.state !== 'OPEN' || pull.isDraft || pull.mergeStateStatus !== 'CLEAN', onClick: () => deliver('merge', pull.number) }, t('deliveryMerge'))))) : h('p', { className: css.meta }, t('deliveryUnknown')));
 }
+
+Object.assign(zh, { consoleJEV: 'JEV 影子评估（可选）', consoleJEVOff: '关闭 · 沿用原流程', consoleJEVOn: '开启 · 只记录建议', consoleJEVVersion: '固定响应模型版本', consoleJEVEnv: '密钥环境变量名（不要填密钥）', consoleJEVTimeout: '请求时限（毫秒，最多 5000）', consoleJEVHelp: '默认关闭。开启后，新任务最多发送一次目标与验收摘要，独立记录用量与建议，不改变 Quick / Full。缺少密钥、超时或服务故障不阻断任务；硬预算任务跳过。桌面启动的引擎需能读取该环境变量。摘要可能含业务信息，请确认 endpoint 后再开启。' });
+Object.assign(en, { consoleJEV: 'JEV shadow evaluation (optional)', consoleJEVOff: 'Off · existing workflow', consoleJEVOn: 'On · advice only', consoleJEVVersion: 'Pinned response model', consoleJEVEnv: 'API key environment variable name (not the key)', consoleJEVTimeout: 'Request timeout (ms, at most 5000)', consoleJEVHelp: 'Off by default. Enabling sends one goal and acceptance summary per new task, with separate usage and advisory records. Quick / Full is unchanged. Missing credentials, timeouts and service failures do not block tasks; hard-budget tasks skip observation. The desktop engine must inherit the named variable. Summaries may contain business details; review the endpoint before enabling.' });

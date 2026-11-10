@@ -11,9 +11,9 @@ const stylesheet = __FLYWHEEL_CSS_TEXT__;
 // A browser timeout reports uncertainty; it cannot cancel a detached Go task.
 const CONTROL_WAIT_MS = 150000;
 
-// Own the two controls we use. Markup and native-prop/ref forwarding follow
+// Own the button control we use. Markup and native-prop/ref forwarding follow
 // DSH b830ec950faba0a46dda564be3e2d854afed94f1:
-// packages/client/ui-primitives/src/{Button,Input}.tsx. Scoped styles below copy
+// packages/client/ui-primitives/src/Button.tsx. Scoped styles below copy
 // their compact geometry; only public alias colors are shared with the host.
 // The copied portions retain their MIT notice in THIRD_PARTY_NOTICES.md.
 const Button = React.forwardRef(function FlywheelButton({
@@ -23,11 +23,6 @@ const Button = React.forwardRef(function FlywheelButton({
     className: [css.button, variant === 'primary' ? css.buttonPrimary : css.buttonOutline,
       size === 'sm' ? css.buttonSmall : '', className].filter(Boolean).join(' '),
   }, children);
-});
-const Input = React.forwardRef(function FlywheelInput({ className, ...rest }, ref) {
-  return h('span', { className: [css.inputShell, className].filter(Boolean).join(' '),
-    'data-disabled': rest.disabled ? 'true' : undefined,
-  }, h('input', { ...rest, ref, className: css.textInput }));
 });
 
 // The ongoing glyph and reduced-motion behavior are copied from the same
@@ -478,7 +473,7 @@ function readReply(reply, request) {
 
 function initialControl() {
   return { pending: null, status: null, checkedAt: null, stale: false, configuration: null,
-    node: null, delivery: null, deliveryStale: false, runs: null, metrics: null, history: null, diagnostic: null, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
+    node: null, delivery: null, deliveryStale: false, runs: null, runsLoading: false, runsError: null, runsCwd: null, metrics: null, history: null, diagnostic: null, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
 }
 
 // Transport state belongs to this apply-owned controller, not a component or
@@ -491,6 +486,32 @@ function createControl(execute, pendingOperations, isDisposed) {
   let lastAssociation = null;
   let associatedKey = null;
   let deferredAssociation = null;
+  let discovering = false;
+  // Discovery is a separate read lane: it cannot select a task, clear a pending
+  // mutation, or invalidate an in-flight status/configuration response.
+  const discover = async () => {
+    if (isDisposed() || discovering) return;
+    discovering = true;
+    source.update(draft => { draft.runsLoading = true; draft.runsError = null; });
+    let timer, disposeWait;
+    try {
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Task discovery timed out')), CONTROL_WAIT_MS);
+        disposeWait = () => reject(new Error('Task discovery closed'));
+        pendingOperations.add(disposeWait);
+      });
+      const value = await Promise.race([execute({ action: 'runs' }), deadline]);
+      if (!isDisposed()) source.update(draft => { draft.runs = value.runs; draft.runsCwd = value.cwd; });
+      return value;
+    } catch (error) {
+      if (!isDisposed()) source.update(draft => { draft.runsError = error instanceof Error ? error.message : String(error); });
+    } finally {
+      clearTimeout(timer);
+      pendingOperations.delete(disposeWait);
+      discovering = false;
+      if (!isDisposed()) source.update(draft => { draft.runsLoading = false; });
+    }
+  };
   const select = selection => {
     const normalized = selectionOf(selection);
     const key = selectionKey(normalized);
@@ -498,7 +519,7 @@ function createControl(execute, pendingOperations, isDisposed) {
     selected = key;
     epoch += 1;
     source.update(draft => {
-      Object.assign(draft, initialControl(), { pending: draft.pending, uncertainty: draft.uncertainty, runs: draft.runs });
+      Object.assign(draft, initialControl(), { pending: draft.pending, uncertainty: draft.uncertainty, runs: draft.runs, runsLoading: draft.runsLoading, runsError: draft.runsError, runsCwd: draft.runsCwd });
     });
   };
   const run = async (action, selection, probe = false, extra = {}) => {
@@ -611,7 +632,7 @@ function createControl(execute, pendingOperations, isDisposed) {
     if (shouldSelect && value.outcome === 'confirmed' &&
         (mutates(value.action) || !source.getSnapshot().status)) void run('status', next);
   };
-  return { source, select, run, associate, isMutating: () => active !== null && mutates(active.action) };
+  return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action) };
 }
 
 function Configuration({ value, t }) {
@@ -772,12 +793,11 @@ function Feedback({ control, selection, reconcile, t }) {
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
 }
 
-function TaskView({ hostSessionID, useStore, useProjection, actions, useControl, changeSelection, associate, run, reconcile, t }) {
+function TaskView({ hostSessionID, useStore, useProjection, actions, useControl, changeSelection, associate, run, discover, reconcile, t }) {
   const selection = useStore(value => value);
   const control = useControl(value => value);
   const association = useProjection('flywheelTask');
   const [page, setPage] = React.useState('canvas');
-  const [pathsOpen, setPathsOpen] = React.useState(!selection.taskDir);
   React.useEffect(() => {
     if (page !== 'canvas' || !control.status?.running || !selection.taskDir) return;
     let live = true;
@@ -791,6 +811,18 @@ function TaskView({ hostSessionID, useStore, useProjection, actions, useControl,
     return () => { live = false; clearTimeout(timer); };
   }, [page, control.status?.running, selection.taskDir, selection.cwd, run]);
   React.useEffect(() => { associate(association); }, [association, associate]);
+  React.useEffect(() => {
+    if (page !== 'canvas') return;
+    void discover();
+    let timer;
+    let live = true;
+    const refresh = async () => {
+      if (!document.hidden) await discover();
+      if (live) timer = setTimeout(refresh, 5000);
+    };
+    timer = setTimeout(refresh, 5000);
+    return () => { live = false; clearTimeout(timer); };
+  }, [page, discover]);
   const formId = React.useId();
   const busy = control.pending !== null;
   const locked = busy && mutates(control.pending.action);
@@ -803,13 +835,6 @@ function TaskView({ hostSessionID, useStore, useProjection, actions, useControl,
       (mutates(action) && control.uncertainty !== null) || (['launch', 'start'].includes(action) && !!control.status?.state?.handoff),
     onClick: () => run(action, selection, probe),
   }, t(labelKey));
-  const field = (name, hint, placeholder, problem) => h('div', { className: css.field },
-    h('label', { htmlFor: formId + '-' + name, className: css.fieldLabel }, t(name)),
-    h(Input, { id: formId + '-' + name, className: css.input,
-      value: selection[name], disabled: locked, placeholder, spellCheck: false,
-      'aria-invalid': !!problem, 'aria-describedby': formId + '-' + name + '-help',
-      onChange: event => changeSelection({ taskDir: selection.taskDir, cwd: selection.cwd, [name]: event.target.value }) }),
-    h('p', { id: formId + '-' + name + '-help', className: problem ? css.errorText : css.meta }, t(problem ?? hint)));
   return h('section', { className: css.page, 'aria-label': t('title') },
     h('style', { 'data-plugin': '@ckanner/dsh-plugin-flywheel',
       'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css',
@@ -817,23 +842,17 @@ function TaskView({ hostSessionID, useStore, useProjection, actions, useControl,
     h('header', { className: css.header },
       h('h2', { className: css.title }, t('consoleTitle')),
       h('p', { className: css.meta }, t('consoleHelp')),
-      h('p', { className: css.meta }, 'DSH session · ' + textValue(hostSessionID)),
+
       control.status?.state?.project?.url && h('a', { href: control.status.state.project.url, target: '_blank', rel: 'noopener noreferrer' }, control.status.state.project.repo),
       h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'GitHub · ckanner/flywheel')),
     h('nav', { className: css.consoleTabs, 'aria-label': t('view') }, ...[['canvas', 'consoleCanvas'], ['config', 'consoleConfig'], ['runs', 'consoleRuns']].map(([key, label]) =>
       h(Button, { key, size: 'sm', 'aria-pressed': page === key, onClick: () => setPage(key) }, t(label)))),
     h('section', { className: css.selection, 'aria-label': t('selection') },
-      association?.tasks?.length > 1 && h('div', { className: css.actions, 'aria-label': t('consoleAssociated') }, ...association.tasks.map(task => h(Button, { key: JSON.stringify([task.taskDir,task.cwd]), disabled: busy || control.uncertainty !== null, 'aria-pressed': selection.taskDir === task.taskDir, onClick: () => { const next = { taskDir: task.taskDir, cwd: task.cwd }; changeSelection(next); void run('status', next); } }, task.taskDir.split('/').at(-1)))),
-      h('details', { className: css.taskLocation, open: pathsOpen, onToggle: event => setPathsOpen(event.currentTarget.open) },
-        h('summary', null, t('selection')),
-        h('div', { className: css.fields },
-        field('taskDir', 'taskHint', '/Users/me/project/docs/fix-login', invalidTask),
-        field('cwd', 'cwdHint', '/Users/me/project', invalidCwd))),
-      selection.taskDir && h('p', { className: css.path }, selection.taskDir),
-      h('div', { className: css.actions, hidden: page !== 'canvas' },
+      h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }),
+      h('div', { className: css.actions, hidden: page !== 'canvas' || !selection.taskDir.trim() },
         button('status', 'status', true, false, 'primary'),
-        button('start', 'start', true), button('stop', 'stop', true)),
-      h('details', { className: css.launchOptions, hidden: page !== 'canvas', open: !control.status?.state }, h('summary', null, t('consoleLaunchOptions')),
+        !singleRunKind(control) && button('start', 'start', true), (control.status?.running || control.status?.state?.status === 'running' || control.pending && mutates(control.pending.action) || control.uncertainty) && button('stop', 'stop', true)),
+      h('details', { className: css.launchOptions, hidden: page !== 'canvas' || !selection.taskDir.trim(), open: false }, h('summary', null, t('consoleLaunchOptions')),
       h('div', { className: css.actions },
         h('label', { htmlFor: formId + '-mode' }, t('launchMode')),
         h('select', { id: formId + '-mode', value: selection.mode, disabled: locked, className: css.modeSelect,
@@ -841,14 +860,13 @@ function TaskView({ hostSessionID, useStore, useProjection, actions, useControl,
         ...['auto', 'quick', 'full'].map(mode => h('option', { key: mode, value: mode }, { auto: 'Auto', quick: 'ultraWork / Quick', full: 'Full' }[mode]))),
         button('launch', 'launch', true)),
       h('p', { id: formId + '-launch-help', className: css.meta }, t('launchHelp')))),
-    (page === 'canvas' || control.pending || control.error || control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
-    control.status?.state?.control && h('section', { className: css.notice, role: control.status.state.control.status === 'failed' ? 'alert' : 'status' },
+    (page === 'canvas' && selection.taskDir || control.pending || control.error || control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
+    page === 'canvas' && !singleRunKind(control) && control.status?.state?.control && h('section', { className: css.notice, role: control.status.state.control.status === 'failed' ? 'alert' : 'status' },
       h('strong', null, t('consoleLastOperation') + ' · ' + control.status.state.control.kind + ' · ' + t('consoleOperation_' + control.status.state.control.status)),
       control.status.state.control.message && h('p', null, control.status.state.control.message)),
     h('div', { hidden: page !== 'canvas' },
-      control.status?.state && h('div', { className: css.consoleToolbar }, h('h3', { className: css.heading }, control.status.state.slug), h('span', { className: css.meta }, taskLabel(control.status, t))),
       h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
-      h('details', { className: css.legacySummary, open: !control.status?.state }, h('summary', null, t('consoleTaskSummary')), h(TaskStatus, { control, selection, t }))),
+      selection.taskDir && h('details', { className: css.legacySummary, open: !control.status?.state }, h('summary', null, t('consoleTaskSummary')), h(TaskStatus, { control, selection, t }))),
     h('div', { hidden: page !== 'config' }, h(ConfigEditor, { key: selectionKey(selectionOf(selection)), control, selection, run, t })),
     h('div', { hidden: page !== 'runs' }, h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t })),
     h('details', { className: css.advanced, open: selection.advancedOpen,
@@ -906,6 +924,7 @@ exports.apply = function apply(ctx) {
           control.select(next);
         },
         run: control.run,
+        discover: control.discover,
         associate: value => control.associate(value, actions.setSelection),
         reconcile: () => {
           const outcome = control.source.getSnapshot().uncertainty;
