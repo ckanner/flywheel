@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.9.3"
+  version: "1.9.4"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -110,8 +110,9 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
    停止；关闭当前会话不等于停止后台引擎。监督模式已经暂停时明确说明尚未评审
    或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
    说明请求模式、生效策略与原因；Quick 的 Plan／Judge 不适用不等于已通过。
-   DSH 工具调用会关联当前会话视图；终端 CLI 不负责桌面会话关联，仍可手动打开
-   同一个 `task_dir`。手动打开时“项目目录”只有在会话目录就是 `repo_dir` 时可留空。
+   DSH 工具调用会明确关联当前会话视图。CLI 运行登记可带 DSH 提供的会话 ID，
+   无归属的独立终端运行可从“本机最近任务”选择同一个任务；不要求用户填写路径字段。
+   真实任务位置由引擎提供，只读展示；CLI 参数继续使用原 `task_dir` 与 `repo_dir`。
 
 ## 工作区与恢复
 

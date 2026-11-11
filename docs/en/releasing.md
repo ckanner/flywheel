@@ -1,6 +1,6 @@
 # Releasing Flywheel
 
-**0.30.1** is being prepared with task discovery, stage-focused canvases and default-off JEV shadow evaluation. After authorized commits, build and verify the formal candidate from its clean exact tag; development candidates cannot be published. Registry integrity and installation receipts determine actual publication status.
+**0.30.2** is being prepared with the canvas-first workbench, contextual node controls, configuration editor and run history. The user authorized commit, publication and desktop installation. Build and verify the formal candidate from its clean exact tag; development candidates cannot be published. Registry integrity, latest tags and installation receipts determine actual publication status. See the [workbench validation](../validation/2026-11-10-workbench-redesign.md).
 
 English · [简体中文](../releasing.md)
 
@@ -8,7 +8,7 @@ This guide is for maintainers. Users install from npm using the
 [getting started guide](getting-started.md). A merged PR, a GitHub Release or
 a successful local build does not establish that npm installation is ready.
 
-The current workflow-console release target is **0.30.0**. The [console validation record](../validation/2026-11-09-flow-console.md) covers source checks. Build one formal candidate from clean `v0.30.0`, verify those same tarballs on macOS and Linux, then publish; a development candidate is not publishable. Once session storage becomes v2, old engines refuse to continue; the new engine can still read v1.
+The initial unified workflow-console release was **0.30.0**. The [console validation record](../validation/2026-11-09-flow-console.md) covers its source checks. Build one formal candidate from its own clean exact tag, verify those same tarballs on macOS and Linux, then publish; a development candidate is not publishable. Once session storage becomes v2, old engines refuse to continue; the new engine can still read v1.
 
 The historical conversation-view ordering release is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Releases from 0.28.5 include the interactive release tool: build their own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for new releases.
 

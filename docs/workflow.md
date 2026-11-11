@@ -191,10 +191,10 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 
 预检不发送模型推理，不能证明账号额度或真实模型调用已经通过。启动会实际调用
 所选模型。DSH `flywheel_launch` 与 `flywheel_control` start 将明确的 `taskDir`
-和 `cwd` 关联到发起会话的 Flywheel 视图；单纯 shell 调 CLI 不会创建桌面会话关联。
-终端启动或另开已有任务时，仍可手动填“任务资料目录”和“项目目录”。后者仅在
-会话当前目录已经是同一 `repo_dir` 时可留空。插件通过公开
-`workingDirectory.get(session)` 读取目录；不扫描或猜测。仅在 shell 中 `cd`
+和 `cwd` 明确关联到发起会话的 Flywheel 视图。CLI 登记可带 DSH 提供的会话 ID；
+没有归属的独立终端运行可从“本机最近任务”选择，再查询真实状态。
+界面不提供任务／项目路径输入框，已知位置只读展示。插件通过公开
+`workingDirectory.get(session)` 读取宿主目录；不扫描或猜测。仅在 shell 中 `cd`
 不会改变 DSH 的会话目录，不要混用原 checkout 的账本和新 worktree。
 
 Full 的每个 packet 经实现、L1 与独立 Review 通过后，引擎提交并快进合入任务分支，

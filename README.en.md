@@ -168,4 +168,6 @@ The package currently declares **`UNLICENSED`**. An open-source license has not 
 
 The DSH view adds a horizontal task canvas, stage run/retry, per-stage configuration, controlled Provider-session interaction, declared parallel execution with serial integration, observed run metrics and PR/Merge receipts. See the [console guide](docs/en/flow-console.md). Source implementation does not imply npm publication or a local upgrade.
 
+The workbench prioritizes a large task overview, on-demand node details and separate task subgraphs. Configuration loads automatically into focused sections; adjacent save actions appear only after edits. Saved defaults apply to subsequent starts.
+
 Optional, default-off JEV shadow evaluation is included in the 0.30.1 source; see the [guide](docs/en/jev-shadow.md). Advice cannot change workflows, and observer failures do not block tasks.

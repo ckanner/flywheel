@@ -147,7 +147,7 @@ Preflight does not infer with a model or execute acceptance commands. Its unknow
 
 For the new unified entry, use `control launch ... --mode auto` in place of `start`. It consumes prepared contracts and defaults to Auto. `start` and foreground `run` accept optional `--mode auto|quick|full`; omission retains the contract or persisted choice. Existing legacy state remains Full. Restarting or requesting Auto does not reclassify or downgrade an established Full task.
 
-DSH's `flywheel_launch` and `flywheel_control` start associate the supplied `taskDir` and `cwd` with the initiating session. Calling the CLI from a shell alone does not establish a desktop association. For terminal-started tasks or manual opening, enter the actual task directory and project root. The project field may be blank only if the DSH session directory already matches; it is read through public `workingDirectory.get(session)`. A shell `cd` alone does not change that directory. The plugin does not scan or guess tasks.
+DSH's `flywheel_launch` and `flywheel_control` start explicitly associate the supplied `taskDir` and `cwd` with the initiating session. CLI registrations can retain DSH's host session ID; independent terminal runs without that identity can be selected from Recent tasks and freshly queried. The UI has no editable task/project path fields: known locations appear read-only. The host directory comes from public `workingDirectory.get(session)`; a shell `cd` alone does not change it. The plugin does not scan or guess tasks.
 
 ### Working directory by stage
 

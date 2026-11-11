@@ -7,7 +7,7 @@ provides its DSH SDK and Codex Pro workers. The engine owns task state, budgets,
 verification, Git delivery, and process lifecycles. The desktop is a control and
 observation interface; it does not need a parent model session to keep a task alive.
 
-This guide describes the **Flywheel 0.28.5** interfaces. Source availability does
+This guide describes the current source interfaces. Source availability does
 not mean that npm `latest` already contains them. Check the registry version and
 the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) before installing. The checked desktop runtimes are **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1**. The 0.28.4 engine range declares only those two versions. DSH 0.2.2 itself requires Node 24.9 or later; use its desktop-supplied CLI. Other builds and provider adapters need their own checks.
 
@@ -24,6 +24,8 @@ Version 0.28.4 aligns Cordis 4.0/4.1 and host peer declarations, testing the sam
 The package also ships an optional Claude Code Pro worker that calls the companion 0.4.0 public machine API without a second parent-model delegation. Unselected configurations do not require the optional peer. See [integration and release prerequisites](../../docs/en/claude-code-pro.md); default loops remain unchanged.
 
 ## Components
+
+Current source uses a canvas-first workbench with Workflow, Run history and Configuration pages. Node details open on demand; configuration loads automatically and protects unsaved drafts. Stage runs, retry, takeover and PR operations retain Go identity and receipt checks. See the [workbench guide](../../docs/en/flow-console.md); source changes do not update an installed version.
 
 | Component | Responsibility |
 |---|---|

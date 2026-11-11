@@ -40,14 +40,16 @@ test('one current-session CLI task auto-opens a fresh stage canvas; other sessio
  assert.equal(ui.container.querySelector('[data-node-id="plan"]'), null);
  assert.equal(ui.container.querySelector('[data-node-id="merge"]'), null);
  assert.equal(ui.container.querySelector('[data-node-id="M01-T01/review"]').getAttribute('data-tone'), 'success');
+ assert.equal(ui.container.querySelector('[aria-label="节点详情"]'), null, 'details are opened deliberately');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01/review"]').click());
  assert.equal(ui.container.querySelector('[aria-label="节点详情"] h3').textContent, 'M01-T01 · 评审');
- const continueDetails = [...ui.container.querySelectorAll('details')].find(x => x.querySelector('summary')?.textContent === '需要继续完整流程时');
- assert.equal(continueDetails.open, false);
  await ui.click('完整流程');
  assert.ok(ui.container.querySelector('[data-node-id="plan"]'));
- assert.ok(ui.container.querySelector('[data-node-id="merge"]'));
+ assert.ok(ui.container.querySelector('[data-node-id="delivery"]'));
  await ui.click('本次运行');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01/review"]').click());
  await ui.click('运行此阶段');
+ await ui.click('确认运行');
  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: own.taskDir, cwd: own.cwd, only: 'review', packet: 'M01-T01', revision: 48 });
 });
 

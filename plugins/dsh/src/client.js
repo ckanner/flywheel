@@ -557,6 +557,9 @@ function createControl(execute, pendingOperations, isDisposed) {
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
         if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node'].includes(action)) {
+          // A remote snapshot is bound to the previously observed candidate.
+          // A new engine revision requires another explicit remote inspection.
+          if (draft.delivery && value.state?.revision !== draft.status?.state?.revision) draft.deliveryStale = true;
           draft.status = value;
           draft.checkedAt = Date.now();
           draft.stale = false;
@@ -791,99 +794,6 @@ function Feedback({ control, selection, reconcile, t }) {
       mode === 'idle' && !control.status?.state && h('div', { className: css.idleFeedback },
         h('p', null, t('lifecycle')),
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
-}
-
-function TaskView({ hostSessionID, useStore, useProjection, actions, useControl, changeSelection, associate, run, discover, reconcile, t }) {
-  const selection = useStore(value => value);
-  const control = useControl(value => value);
-  const association = useProjection('flywheelTask');
-  const [page, setPage] = React.useState('canvas');
-  React.useEffect(() => {
-    if (page !== 'canvas' || !control.status?.running || !selection.taskDir) return;
-    let live = true;
-    let timer;
-    const refresh = async () => {
-      let result;
-      if (!document.hidden) result = await run('status', selection);
-      if (live) timer = setTimeout(refresh, result ? 2000 : 10000);
-    };
-    timer = setTimeout(refresh, 2000);
-    return () => { live = false; clearTimeout(timer); };
-  }, [page, control.status?.running, selection.taskDir, selection.cwd, run]);
-  React.useEffect(() => { associate(association); }, [association, associate]);
-  React.useEffect(() => {
-    if (page !== 'canvas') return;
-    void discover();
-    let timer;
-    let live = true;
-    const refresh = async () => {
-      if (!document.hidden) await discover();
-      if (live) timer = setTimeout(refresh, 5000);
-    };
-    timer = setTimeout(refresh, 5000);
-    return () => { live = false; clearTimeout(timer); };
-  }, [page, discover]);
-  const formId = React.useId();
-  const busy = control.pending !== null;
-  const locked = busy && mutates(control.pending.action);
-  const invalidTask = pathProblem(selection.taskDir);
-  const invalidCwd = pathProblem(selection.cwd);
-  const button = (action, labelKey, needsTask, probe = false, variant = 'outline') => h(Button, {
-    key: labelKey, variant, size: 'sm',
-    'aria-describedby': ['doctor', 'probe'].includes(labelKey) ? formId + '-' + labelKey + '-help' : undefined,
-    disabled: busy || !!invalidTask || !!invalidCwd || (needsTask && !selection.taskDir.trim()) ||
-      (mutates(action) && control.uncertainty !== null) || (['launch', 'start'].includes(action) && !!control.status?.state?.handoff),
-    onClick: () => run(action, selection, probe),
-  }, t(labelKey));
-  return h('section', { className: css.page, 'aria-label': t('title') },
-    h('style', { 'data-plugin': '@ckanner/dsh-plugin-flywheel',
-      'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css',
-    }, stylesheet),
-    h('header', { className: css.header },
-      h('h2', { className: css.title }, t('consoleTitle')),
-      h('p', { className: css.meta }, t('consoleHelp')),
-
-      control.status?.state?.project?.url && h('a', { href: control.status.state.project.url, target: '_blank', rel: 'noopener noreferrer' }, control.status.state.project.repo),
-      h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'GitHub · ckanner/flywheel')),
-    h('nav', { className: css.consoleTabs, 'aria-label': t('view') }, ...[['canvas', 'consoleCanvas'], ['config', 'consoleConfig'], ['runs', 'consoleRuns']].map(([key, label]) =>
-      h(Button, { key, size: 'sm', 'aria-pressed': page === key, onClick: () => setPage(key) }, t(label)))),
-    h('section', { className: css.selection, 'aria-label': t('selection') },
-      h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }),
-      h('div', { className: css.actions, hidden: page !== 'canvas' || !selection.taskDir.trim() },
-        button('status', 'status', true, false, 'primary'),
-        !singleRunKind(control) && button('start', 'start', true), (control.status?.running || control.status?.state?.status === 'running' || control.pending && mutates(control.pending.action) || control.uncertainty) && button('stop', 'stop', true)),
-      h('details', { className: css.launchOptions, hidden: page !== 'canvas' || !selection.taskDir.trim(), open: false }, h('summary', null, t('consoleLaunchOptions')),
-      h('div', { className: css.actions },
-        h('label', { htmlFor: formId + '-mode' }, t('launchMode')),
-        h('select', { id: formId + '-mode', value: selection.mode, disabled: locked, className: css.modeSelect,
-          'aria-describedby': formId + '-launch-help', onChange: event => actions.setMode(event.target.value) },
-        ...['auto', 'quick', 'full'].map(mode => h('option', { key: mode, value: mode }, { auto: 'Auto', quick: 'ultraWork / Quick', full: 'Full' }[mode]))),
-        button('launch', 'launch', true)),
-      h('p', { id: formId + '-launch-help', className: css.meta }, t('launchHelp')))),
-    (page === 'canvas' && selection.taskDir || control.pending || control.error || control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
-    page === 'canvas' && !singleRunKind(control) && control.status?.state?.control && h('section', { className: css.notice, role: control.status.state.control.status === 'failed' ? 'alert' : 'status' },
-      h('strong', null, t('consoleLastOperation') + ' · ' + control.status.state.control.kind + ' · ' + t('consoleOperation_' + control.status.state.control.status)),
-      control.status.state.control.message && h('p', null, control.status.state.control.message)),
-    h('div', { hidden: page !== 'canvas' },
-      h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
-      selection.taskDir && h('details', { className: css.legacySummary, open: !control.status?.state }, h('summary', null, t('consoleTaskSummary')), h(TaskStatus, { control, selection, t }))),
-    h('div', { hidden: page !== 'config' }, h(ConfigEditor, { key: selectionKey(selectionOf(selection)), control, selection, run, t })),
-    h('div', { hidden: page !== 'runs' }, h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t })),
-    h('details', { className: css.advanced, open: selection.advancedOpen,
-      onToggle: event => actions.setAdvancedOpen(event.currentTarget.open) },
-      h('summary', { className: css.heading }, t('advanced')),
-      h('div', { className: css.advancedBody },
-        h('p', { className: css.meta }, t('advancedHelp')),
-        h('div', { className: css.actions },
-          button('config', 'config', false), button('doctor', 'doctor', false),
-          button('doctor', 'probe', false, true)),
-        h('p', { className: css.meta, id: formId + '-doctor-help' }, t('doctorHelp')),
-        h('p', { className: css.meta, id: formId + '-probe-help' }, t('probeHelp')),
-        h(Diagnostic, { value: control.diagnostic, t }),
-        h(Configuration, { value: control.configuration, t }))),
-    control.raw && h('details', { className: css.details },
-      h('summary', null, t('raw')),
-      h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
 }
 
 exports.inject = ['slots', 'remote', 'remote.commands', 'locale'];

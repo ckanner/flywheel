@@ -90,8 +90,7 @@ function TaskChooser({ control, selection, hostSessionID, association, changeSel
   return h('section', { className: css.taskChooser, 'aria-label': t('taskChooser') },
     h('div', { className: css.consoleToolbar },
       h('div', null,
-        h('h3', { className: css.heading }, selection.taskDir ? current?.state?.slug || selected?.summary?.slug || selection.taskDir.split('/').filter(Boolean).at(-1) : t('taskNoSelection')),
-        current?.state && h('p', { className: css.meta }, singleRunKind(control) ? t('stageOnly', { stage: stageName(singleRunKind(control),t) }) : taskLabel(current,t))),
+        h('h3', { className: css.heading }, selection.taskDir ? current?.state?.slug || selected?.summary?.slug || selection.taskDir.split('/').filter(Boolean).at(-1) : t('taskNoSelection'))),
       h('div', { className: css.actions },
         selection.taskDir && h(Button, { disabled: busy, onClick: () => setOpen(!open), 'aria-expanded': show }, t('taskSwitch')),
         h(Button, { disabled: control.runsLoading, onClick: discover }, t('taskRefresh')))),
@@ -105,9 +104,11 @@ function TaskChooser({ control, selection, hostSessionID, association, changeSel
           ...tasks.filter(task => task.belongs === belongs).map(task => h('option', { key: selectionKey(task), value: selectionKey(task) },
             (task.summary?.slug || task.taskDir.split('/').at(-1)) + ' · ' + task.cwd.split('/').at(-1) + (task.branch ? ' · ' + task.branch : '') + (stageName(task.kind,t) ? ' · ' + stageName(task.kind,t) : ''))))))),
     show && !control.runsLoading && control.runs !== null && tasks.length === 0 && h('p', { className: css.meta }, t('taskNone')),
-    (project || taskPath) && h('dl', { className: css.taskLocations, 'aria-label': t('taskLocation') },
+    (project || taskPath) && h('details', null,
+      h('summary', { className: css.taskLocationSummary }, [project.split('/').filter(Boolean).at(-1), current?.state?.run?.branch || selected?.branch].filter(Boolean).join(' · ') || t('wbPaths')),
+      h('dl', { className: css.taskLocations, 'aria-label': t('taskLocation') },
       project && h(React.Fragment, null, h('dt', null, t('taskWorkspace')), h('dd', { 'data-workspace-path': project }, project)),
       taskPath && h(React.Fragment, null, h('dt', null, t('taskFolderLocation')), h('dd', { 'data-task-path': taskPath },
         project && taskPath.startsWith(project + '/') ? taskPath.slice(project.length + 1) : taskPath)),
-      (current?.state?.run?.branch || selected?.branch) && h(React.Fragment, null, h('dt', null, t('consoleBranch')), h('dd', null, current?.state?.run?.branch || selected.branch))));
+      (current?.state?.run?.branch || selected?.branch) && h(React.Fragment, null, h('dt', null, t('consoleBranch')), h('dd', null, current?.state?.run?.branch || selected.branch)))));
 }

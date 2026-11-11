@@ -22,7 +22,9 @@ Continue workflow is behind an explicit disclosure. A passed stage does not star
 
 In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its pages are Workflow canvas, Global/project configuration, and Runs and comparison. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
-Read a draft, edit the resource/Harness, model, effort, permissions and history policy, then inspect the target and diff. Version defaults replace the complete configuration. Go checks the content revision, backs up the original and publishes atomically. A running engine retains its snapshot; subsequent starts load the new settings.
+Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV shadow advice have separate sections. Save and Discard appear beside the form only after edits. Ordinary saving takes one click; first enabling JEV confirms the task-summary transfer boundary. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
+
+More configuration actions provides reload and installed-default restoration. Scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. A running engine retains its snapshot. The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
@@ -30,9 +32,13 @@ Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account 
 
 ## Canvas and operations
 
-The left-to-right canvas shows Plan/decomposition, scheduling, task branches, integration, final acceptance, PR and Merge. A packet expands into Execute, L1, Review and Git delivery. State colors have text labels. Details identify the DSH source conversation, project/worktree, branch, HEAD, run ID, actual invocation binding and failure evidence.
+The left-to-right overview groups Plan/decomposition, scheduling, task branches, integration/final checks and PR/Merge. Selecting a node opens view-local Progress, Sessions and Run configuration details. Open task workflow drills into Execute, L1, Review and Git delivery; integration and remote delivery groups also expand. Colors have text labels. Identity, project/worktree, branch, HEAD, run ID, bindings and evidence come from actual receipts.
 
-The canvas supports panning, locating the current node and packet paging. Large tasks use bounded diagnostic excerpts. Read full node evidence loads one packet with a matching fresh canvas revision; it never changes the original ledger.
+The canvas uses the available plugin width, with two-axis panning, zoom, fit width, current-step location, paging and a list alternative. New snapshots preserve the viewport and selection; location can switch to the running packet's page. Large tasks use bounded excerpts. Read full node evidence loads one packet with a matching fresh revision; it never changes the ledger.
+
+Focus canvas expands the view in a plugin-owned native dialog. Exit or Escape returns without starting or stopping the task. It does not change the DSH global layout or composer. Unknown operation outcomes exit focus mode so the original-invocation reconciliation action remains visible.
+
+Node operation confirmation freezes the observed revision; a changed snapshot invalidates it. Retry once requires a reason, while reopening a completed packet explains evidence invalidation. Review cannot run with a red current L1. Unqueried remote state, closed PR and merged PR remain distinct.
 
 - Run stage submits the observed revision for lease-bound admission.
 - Continue once records a reason and adds one Execute/L1 attempt without resetting failures or billing.
@@ -87,7 +93,7 @@ Ledger storage v2 is accepted by the new engine alongside legacy v1. Older engin
 
 CLI and desktop starts register run IDs. A conversation retains multiple confirmed task associations. The index lives in runs/ beside the global configuration, optionally overridden by absolute FLYWHEEL_RUNS_DIR. It shows the latest 100 registrations and never scans the disk. Query Go again for liveness.
 
-Compare operation kind, branch, HEAD, contract/configuration conditions, elapsed time and newly observed attempts, failures and deliveries. Select an exact run or all calls for the current task, including unregistered legacy observations. Invocation/receipt reconciliation precedes aggregation; late receipts keep their original attribution and are not double-billed.
+Run history uses a selection list with adjacent details for operation kind, branch, HEAD, contract/configuration conditions, elapsed time and newly observed attempts, failures and deliveries. Selecting a record does not launch it; opening its canvas refreshes current Go state. Metrics scope chooses the selected run or all calls for its task, including legacy observations. The reference compares conditions without changing the metrics target. Invocation/receipt reconciliation precedes aggregation; late receipts keep their original attribution and are not double-billed. A group with entirely missing cost shows Not reported, not $0.
 
 Usage, cost and duration are known amounts, with missing/partial observations retained. Costs may include estimates from configured prices. Call failure rate is not code quality. Different conditions permit descriptive comparison only; quality conclusions require acceptance evidence and an independent oracle.
 

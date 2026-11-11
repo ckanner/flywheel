@@ -66,7 +66,7 @@ test('native Flywheel view discovers tasks read-only and ships its scoped styles
   assert.match(ui.container.textContent, /还没有关联任务/);
   assert.deepEqual(ui.discoveryRequests, [{ action: 'runs' }]);
   assert.equal(detail(ui, '配置与排查（按需）').open, false);
-  for (const name of ['刷新状态', '启动']) assert.equal(ui.button(name).disabled, true);
+  for (const name of ['刷新状态', '启动']) assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === name), false);
   assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === '停止'), false);
   for (const name of ['查看模型配置', '检查安装与配置', '检查 DSH 接入']) assert.equal(ui.button(name).disabled, false);
   const styles = [...ui.document.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]')];
@@ -729,7 +729,7 @@ test('locations are read-only and unknown locations are not shown; locale change
   await ui.selectPath(0, '/repo/docs/task');
   await ui.setLocale('en');
   assert.equal(ui.selection().taskDir, '/repo/docs/task');
-  assert.match(ui.container.textContent, /Flywheel workflow console/);
+  assert.ok(ui.button('Workflow')); assert.ok(ui.button('Configuration'));
   assert.equal(ui.container.querySelectorAll('input').length, 0);
   assert.equal(ui.button('Refresh status').disabled, false);
   assert.equal(ui.requests.length, 0, 'locale changes cannot trigger a task command');

@@ -16,20 +16,20 @@ test('console draws real packet branches and forwards one revision-bound stage c
   await ui.click('刷新状态');
   const pick = async id => act(async () => ui.container.querySelector(`[data-node-id="${id}"]`).click());
   await pick('M01-T01');
+  assert.equal(ui.container.querySelector('[data-node-id="M01-T01/execute"]'), null, 'selection opens details without expanding the whole graph');
+  await ui.click('展开任务画布');
   await pick('M01-T01/execute');
-  await ui.click('运行此阶段');
-  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: '/repo/docs/checkout', only: 'execute', packet: 'M01-T01', revision: 7 });
   assert.match(ui.container.querySelector('[aria-label="节点详情"]').textContent, /尝试次数2/);
-  const graph = ui.container.querySelector('[data-node-id="M01-T01/execute"]');
-  assert.equal(graph.style.left, '768px');
-  const reason = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '继续原因').querySelector('input');
+  await ui.click('重试一次');
+  assert.equal(ui.requests.length, 1, 'opening a retry dialog does not dispatch');
+  assert.equal(ui.button('确认运行').disabled, true);
+  const reason = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '继续原因').querySelector('textarea');
   await act(async () => {
-    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLInputElement.prototype, 'value').set.call(reason, '修复了环境依赖');
+    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(reason, '修复了环境依赖');
     reason.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
   });
-  await ui.click('人工继续一次');
-  assert.equal(ui.requests.at(-1).retryReason, '修复了环境依赖');
-  assert.equal(ui.requests.at(-1).revision, 7);
+  await ui.click('确认运行');
+  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: '/repo/docs/checkout', only: 'execute', packet: 'M01-T01', revision: 7, retryReason: '修复了环境依赖' });
 });
 
 test('configuration scope is explicit, changed sections are saved and source conflicts retain the draft', async t => {
@@ -38,8 +38,7 @@ test('configuration scope is explicit, changed sections are saved and source con
     if (request.action === 'config-save' && reject) throw new Error('configuration changed');
     return reply(request, { editor: { scope: request.editor.scope, target: '/global/config.json', revision: 'version-one', values, defaults: values, applied: request.action === 'config-save' } });
   });
-  await ui.click('全局 / 项目配置');
-  await ui.click('读取配置草稿');
+  await ui.click('配置');
   assert.equal(ui.requests.at(-1).editor.scope, 'global');
   const area = ui.container.querySelector('textarea');
   await act(async () => {
@@ -48,20 +47,25 @@ test('configuration scope is explicit, changed sections are saved and source con
     area.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
   });
   reject = true;
-  await ui.click('保存配置');
+  await ui.click('保存修改');
   assert.deepEqual(ui.requests.at(-1).editor.values, { sessions: { mode: 'fresh', 'policy-version': 1 } });
-  assert.equal(ui.button('保存配置').disabled, true);
+  assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /保存结果未确认/);
   reject = false;
-  await ui.click('读取配置草稿');
+  await ui.click('重新读取配置');
+  assert.match(ui.container.querySelector('dialog').textContent, /未保存的修改/);
+  await ui.click('放弃草稿并继续');
   assert.doesNotMatch(ui.container.textContent, /保存结果未确认/);
+  await ui.click('模型分配');
   const binding = [...ui.container.querySelectorAll('article')].find(article => article.getAttribute('data-binding-id') === 'routes.default');
+  await act(async () => binding.querySelector('button').click());
   await act(async () => {
-    const resource = binding.querySelector('select');
+    const resource = ui.container.querySelector('dialog select');
     resource.value = 'claude-code-pro';
     resource.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true }));
   });
-  await ui.click('保存配置');
+  await ui.click('加入待保存修改');
+  await ui.click('保存修改');
   const change = ui.requests.at(-1).editor.values;
   assert.equal(change.routes.default.harness, 'claude-code-pro');
   assert.equal(change.routes.default.model, 'sonnet');
@@ -101,15 +105,15 @@ test('running canvas refreshes through the read controller and stops polling whe
 test('registered CLI runs open a freshly read canvas and metrics retain missing observations', async t => {
  const run = { id: 'run-one', taskDir: '/repo/docs/cli', cwd: '/repo', startedAt: '2026-11-08T10:00:00Z', conditions: 'one', summary: { slug: 'cli', status: 'paused' } };
  const ui = await mountPanel(t, request => reply(request, request.action === 'runs' ? { runs: [run] } : request.action === 'metrics' ? { metrics: { groups: [{ role: 'execute', model: 'Flash', harness: 'dsh', calls: 2, failedCalls: 1, runId: 'run-one', knownTokens: 5, knownCostUSD: 0, knownDurationMs: 25, missingDuration: 1, missingUsage: 1, missingCost: 2 }] } } : { state: { revision: 4, status: 'paused', packets: {} } }), { catalog: request => reply(request, { runs: [run] }) });
- await ui.click('运行与对比'); await ui.click('刷新最近运行');
+ await ui.click('运行记录'); await ui.click('刷新最近运行');
  assert.equal(ui.discoveryRequests.at(-1).action, 'runs');
  const reference = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('对照运行')).querySelector('select');
  await act(async () => { reference.value = 'run-one'; reference.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
  assert.match(ui.container.textContent, /相同契约与配置/);
  await ui.click('在画布中打开');
  assert.equal(ui.requests.at(-1).action, 'status'); assert.equal(ui.requests.at(-1).taskDir, run.taskDir);
- await ui.click('运行与对比'); await ui.click('读取所选运行指标');
- assert.match(ui.container.textContent, /\$0.0000 \/ 2/);
+ await ui.click('运行记录'); await ui.click('读取所选运行指标');
+ assert.match(ui.container.textContent, /未报告 \/ 2/);
  assert.match(ui.container.textContent, /调用失败率不等于代码质量/);
 });
 
@@ -123,6 +127,8 @@ test('session handoff keeps exact identity, sends prompts via stdin contract and
   return reply(request, request.action === 'history' ? { history: { key, text: 'reply from exact receipt' } } : { cwd: '/repo', state: { revision: 7, status: 'paused', ...(held ? { handoff: { key } } : {}), sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 1 } } } });
  });
  await ui.selectPath(0, '/repo/docs/cli'); await ui.click('刷新状态');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('会话');
+ assert.match(ui.container.textContent, /cd -- '\/repo\/unit' && flywheel session '\/repo\/docs\/cli'/);
  await ui.click('查看最近回复'); assert.equal(ui.requests.at(-1).sessionKey, key);
  assert.match(ui.container.textContent, /reply from exact receipt/);
  const input = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '接管原因').querySelector('input');
@@ -154,9 +160,22 @@ test('PR actions require an explicit reviewed target and keep merge source/base 
 test('full packet evidence is matched to the same refreshed state revision', async t => {
  const packet = { status: 'l1-failed', route: 'default', evidence: { l1: { pass: false, 'details-omitted': true } } };
  const ui = await mountPanel(t, request => reply(request, request.action === 'node' ? { projection: 'console-excerpt', state: { revision: 8, status: 'paused', packets: { 'M01-T01': packet } }, node: { id: 'M01-T01', revision: 8, packet: { ...packet, evidence: { l1: { pass: false, commands: [{ output: 'complete diagnostic' }] } } } } } : { projection: 'console-excerpt', state: { revision: 7, status: 'paused', packets: { 'M01-T01': packet } } }));
- await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新状态'); await ui.click('读取完整节点证据');
+ await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新状态');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('读取完整节点证据');
  assert.equal(ui.requests.at(-1).action, 'node'); assert.equal(ui.requests.at(-1).packet, 'M01-T01');
  assert.match(ui.container.textContent, /complete diagnostic/);
+});
+
+test('a newer state revision invalidates an earlier PR snapshot before another remote write',async t=>{
+ let revision=4;
+ const remote={repo:'github.com/example/repo',url:'https://github.com/example/repo',branch:'feature',head:'a'.repeat(40),defaultBase:'main',pulls:[{number:9,url:'https://github.com/example/repo/pull/9',state:'OPEN',headRefOid:'a'.repeat(40),baseRefName:'main',isDraft:false,mergeStateStatus:'CLEAN'}]};
+ const ui=await mountPanel(t,r=>reply(r,{state:{revision,status:'completed',packets:{}},...(r.action==='delivery'?{delivery:remote}:{})}));
+ await ui.selectPath(0,'/repo/docs/task');await ui.click('刷新状态');
+ await act(async()=>ui.container.querySelector('[data-node-id="delivery"]').click());await ui.click('查询项目与 PR');
+ await act(async()=>ui.container.querySelector('input[type="checkbox"]').click());assert.equal(ui.button('合并此 PR').disabled,false);
+ revision=5;await ui.click('刷新状态');assert.equal(ui.button('合并此 PR').disabled,true);assert.match(ui.container.textContent,/远端快照已过期/);
+ await ui.click('查询项目与 PR');assert.equal(ui.button('合并此 PR').disabled,false);
+ assert.equal(ui.requests.some(r=>r.action==='deliver'),false);
 });
 
 test('host session and delivery requests use bounded stdin, with no prompt or body in argv', async t => {
@@ -174,13 +193,15 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{const 
 
 test('JEV starts disabled and saves an optional boolean without exposing a key field', async t => {
   const ui = await mountPanel(t, request => reply(request, { editor: { scope: 'global', target: '/global/config.json', revision: 'one', values, defaults: values } }));
-  await ui.click('全局 / 项目配置');
-  await ui.click('读取配置草稿');
+  await ui.click('配置');
+  await ui.click('JEV 影子建议');
   const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('JEV 影子评估'));
-  const select = label.querySelector('select');
+  const select = ui.document.getElementById(label.htmlFor);
   assert.equal(select.value, 'false');
-  assert.match(ui.container.textContent, /不阻断任务/);
+  assert.match(ui.container.textContent, /不改变 Quick \/ Full/);
   await act(async () => { select.value = 'true'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
-  await ui.click('保存配置');
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).action, 'config-edit', 'enabling shadow sends no request before confirmation');
+  await ui.click('开启并保存');
   assert.deepEqual(ui.requests.at(-1).editor.values, { 'jev-shadow': { enabled: true } });
 });
