@@ -1,6 +1,6 @@
 # Releasing Flywheel
 
-**0.30.2** is being prepared with the canvas-first workbench, contextual node controls, configuration editor and run history. The user authorized commit, publication and desktop installation. Build and verify the formal candidate from its clean exact tag; development candidates cannot be published. Registry integrity, latest tags and installation receipts determine actual publication status. See the [workbench validation](../validation/2026-11-10-workbench-redesign.md).
+**0.30.2 is published**: all six exact package integrities, `latest` tags and official-registry installation were verified. The local CLI, DSH desktop plugin and complete default configuration were updated. After the user authorized a desktop restart, the running plugin reported 0.30.2; native canvas, node confirmation, configuration and run-history interactions passed with an offline task. GitHub Actions did not start because of billing/spending limits; the same immutable candidate passed local macOS/Linux gates. No real model inference was performed. See the [0.30.2 release record](../validation/2026-11-11-release-0.30.2.md) for source/artifact identity, failed attempts and verification boundaries, and the [workbench validation](../validation/2026-11-10-workbench-redesign.md) for development checks.
 
 English · [简体中文](../releasing.md)
 
