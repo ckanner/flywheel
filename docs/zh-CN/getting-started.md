@@ -20,7 +20,7 @@
 | DSH SDK profile 中的 DeepSeek 和 ChatGPT provider | 默认执行、独立 Review 与 Judge |
 | Go 1.27 或更高 | 仅本文 Go 示例与源码构建需要，npm 二进制安装不需要 |
 
-插件声明兼容 DSH `0.2.1-rc.5` 和 `0.2.2-rc.1`。DSH 0.2.2 自身要求 Node 24.9
+插件声明兼容 DSH `0.2.1-rc.5`、`0.2.2-rc.1` 和 `0.2.2-rc.2`。DSH 0.2.2 自身要求 Node 24.9
 或更高，应使用官方桌面附带的 CLI。安装前核对实际命令位置与版本：
 
 ```sh

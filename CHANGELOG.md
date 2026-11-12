@@ -5,6 +5,17 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.31.1 — DSH 0.2.2-rc.2 compatibility
+
+- Declare DSH `0.2.2-rc.2` alongside `0.2.1-rc.5` and `0.2.2-rc.1`; the host gate
+  now admits the current desktop release without an exact-version exemption.
+- Re-run the DSH plugin suite against the rc.2 host packages: 216 passed, 0 failed,
+  24 skipped, followed by 9/9 published-renderer legacy-host checks. The vendored
+  Codex Pro 0.9.0 candidate and the optional Claude Code Pro 0.4.0 peer are
+  unchanged.
+- Regenerate the lockfile against rc.2 dev dependencies; `npm ci --ignore-scripts`
+  still resolves the reviewed `vendor/dsh-subagent-codex-pro-0.9.0.tgz`.
+
 ## Unreleased
 
 - Make English the default root and DSH plugin README, with matching Simplified

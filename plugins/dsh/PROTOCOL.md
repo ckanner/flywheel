@@ -429,7 +429,7 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 
 ## DSH 宿主兼容性（0.28.4）
 
-包声明只接受 `0.2.1-rc.5` 与 `0.2.2-rc.1`。新 SDK 会按策略文件所属包的 engines.dsh 校验其准入；策略插件未加载就没有本次私有权限回执，worker 必须拒绝派发模型 prompt。权限插件在公开 agent/created 阶段（创建公告结束后、首个模型请求之前）写入显式 approval/policy，不在 session/created 只读公告中追加事件，再只读公开 approval.overrideOf(session)，不访问私有 effectivePolicy。证明通过本次 nonce/request/session 关联的私有文件返回，不追加自定义持久事件；未知／缺失回执仍不放行。
+包声明只接受 `0.2.1-rc.5`、`0.2.2-rc.1` 与 `0.2.2-rc.2`（0.31.1 起）。新 SDK 会按策略文件所属包的 engines.dsh 校验其准入；策略插件未加载就没有本次私有权限回执，worker 必须拒绝派发模型 prompt。权限插件在公开 agent/created 阶段（创建公告结束后、首个模型请求之前）写入显式 approval/policy，不在 session/created 只读公告中追加事件，再只读公开 approval.overrideOf(session)，不访问私有 effectivePolicy。证明通过本次 nonce/request/session 关联的私有文件返回，不追加自定义持久事件；未知／缺失回执仍不放行。
 
 持久化 create／新进程 resume 的公开 SDK 验证针对 `0.2.2-rc.1` SDK、JSONL persistence
 与 AgentLoop。`0.2.1-rc.5` 的 Host／UI／插件兼容测试不代表历史恢复已验证。无真实
