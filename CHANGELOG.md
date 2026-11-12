@@ -5,7 +5,9 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## 0.31.1 — DSH 0.2.2-rc.2 compatibility (unreleased)
+## Unreleased
+
+## 0.31.1 — Feedback-driven workflows and DSH rc.2 compatibility
 
 - Declare DSH `0.2.2-rc.2` alongside `0.2.1-rc.5` and `0.2.2-rc.1`; the host gate
   now admits the current desktop release without an exact-version exemption.
@@ -14,8 +16,6 @@ their original language.
   0.4.0 peer remain unchanged; preserve prior test results in the validation record.
 - Regenerate the lockfile against rc.2 dev dependencies; `npm ci --ignore-scripts`
   still resolves the reviewed `vendor/dsh-subagent-codex-pro-0.9.0.tgz`.
-
-## Unreleased
 
 - Add versioned, Go-owned bounded investigations with background control, token-bound
   cancellation, evidence reports, original-scope repair handoff and nonduplicating usage.
