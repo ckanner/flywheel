@@ -1,226 +1,207 @@
 # Releasing Flywheel
 
-**0.30.2 is published**: all six exact package integrities, `latest` tags and official-registry installation were verified. The local CLI, DSH desktop plugin and complete default configuration were updated. After the user authorized a desktop restart, the running plugin reported 0.30.2; native canvas, node confirmation, configuration and run-history interactions passed with an offline task. GitHub Actions did not start because of billing/spending limits; the same immutable candidate passed local macOS/Linux gates. No real model inference was performed. See the [0.30.2 release record](../validation/2026-11-11-release-0.30.2.md) for source/artifact identity, failed attempts and verification boundaries, and the [workbench validation](../validation/2026-11-10-workbench-redesign.md) for development checks.
+[Documentation](../README.md) · English · [简体中文](../zh-CN/releasing.md)
 
-English · [简体中文](../releasing.md)
+This runbook is for maintainers. Users should follow
+[getting started](getting-started.md). A source commit, GitHub Release, or
+successful `npm pack` does not establish that a version is available from npm.
+Actual releases and verification limits belong in the
+[validation records](../validation/README.md).
 
-This guide is for maintainers. Users install from npm using the
-[getting started guide](getting-started.md). A merged PR, a GitHub Release or
-a successful local build does not establish that npm installation is ready.
+## 1. Release identity and prerequisites
 
-The initial unified workflow-console release was **0.30.0**. The [console validation record](../validation/2026-11-09-flow-console.md) covers its source checks. Build one formal candidate from its own clean exact tag, verify those same tarballs on macOS and Linux, then publish; a development candidate is not publishable. Once session storage becomes v2, old engines refuse to continue; the new engine can still read v1.
+One release contains six packages at the same exact version, published in
+the following order:
 
-The historical conversation-view ordering release is **0.28.5**. Its [local review record](../validation/2026-11-05-view-order.md) separates source checks from npm publication, latest promotion and desktop acceptance. Releases from 0.28.5 include the interactive release tool: build their own clean exact tag, then run `npm run release:local -- --repository-visibility private`. The historical 0.28.0 two-checkout example below is not required for new releases.
+| Order | Package | Contents |
+| --- | --- | --- |
+| 1–4 | `@ckanner/flywheel-{darwin,linux}-{arm64,amd64}` | Four platform-specific Go binaries |
+| 5 | `@ckanner/dsh-plugin-flywheel` | Desktop plugin and workers |
+| 6 | `@ckanner/flywheel` | User-facing CLI, installer, and documentation |
 
-The unified release target for adaptive workflows and session phases P1–P4 is **0.29.1**. The actual Codex Pro 0.9.0 tarball is locked and bundled; installation does not query an unpublished registry version. [Provenance and license](../../plugins/dsh/vendor/README.md) identify those bytes. Claude 0.4.0 remains an optional peer; CI packs a fixed upstream source commit, checks its tarball hash, and installs it before the backend gates.
+The meta package pins all five dependencies. Every Flywheel package declares
+MIT and includes its `LICENSE`; the plugin retains third-party notices.
+The Codex Pro dependency is pinned to 0.9.0 and bundled from the
+[recorded source candidate](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md). Claude Code
+Pro 0.4.0 remains an optional peer, not a seventh Flywheel release package.
 
-`npm run test:sessions` exercises the real Go engine and public adapter through an offline native fixture on both CI operating systems. It does not establish live account access, model quality, cache benefits, or performance gains.
+Use Git, Go **1.27**, Node **24.22.1**, and npm **12.2.1**, matching the
+repository workflows. The end-user Node requirement is lower; the release
+toolchain is deliberately fixed. The reviewed source must be clean, all six
+versions must agree, and the exact `vX.Y.Z` tag must point to HEAD. Never move
+an existing release tag or replace already-published package bytes.
 
-## Release contract
+`candidate.json` records the source commit, tree, snapshot SHA-256, and each
+tarball's SHA-512 integrity. Build once, then verify, test, and publish those
+same tarballs. A candidate with `source.dirty: true` is for development only.
 
-One release contains six packages at the same exact version, in this order:
+## 2. Validate the release source
 
-1. `@ckanner/flywheel-darwin-arm64`
-2. `@ckanner/flywheel-darwin-amd64`
-3. `@ckanner/flywheel-linux-arm64`
-4. `@ckanner/flywheel-linux-amd64`
-5. `@ckanner/dsh-plugin-flywheel`
-6. `@ckanner/flywheel`
+Run the checks required by the [contribution guide](contributing.md) and
+the current [CI workflow](https://github.com/ckanner/flywheel/blob/main/.github/workflows/ci.yml):
 
-The meta package pins the plugin and platform dependencies. The plugin pins
-`dsh-subagent-codex-pro@0.9.0` as a reviewed bundled source candidate. Release tooling uses Node **24.22.1**, npm
-**12.2.1** and Go **1.27**. These are maintainer toolchain requirements; users
-need Node 22.18.0 or later and do not need Go to install from npm.
+| Area | Required evidence |
+| --- | --- |
+| Go | `make quality-gate` and the workflow's core-package race checks |
+| DSH plugin | Locked dependency installation, build, and behavior tests |
+| Backend boundary | DSH, Codex Pro, and Claude Code Pro offline bridge tests |
+| npm | `npm test` and real installation of the six-package candidate |
+| Native CLI | Build, version/help, and JSON configuration checks |
+| Session policies | `npm run test:sessions` with the built native binary |
+| Documentation | Links, language parity, packaged guides, and licenses |
 
-Build once from a clean, reviewed checkout whose `vX.Y.Z` tag points at exact
-HEAD. `candidate.json` records the source commit, tree, snapshot SHA-256 and
-every tarball's SHA-512 integrity. Verify, test and publish those same bytes.
-Development candidates with `source.dirty: true` cannot be published.
+Prepare the exact optional Claude tarball using the workflow's pinned source
+SHA and SHA-256 check. For plugin/bridge tests, the workflow temporarily
+installs it as a development dependency and restores the source manifests.
+Export `FLYWHEEL_CLAUDE_CODE_PRO_TARBALL` as the absolute path to that verified
+tarball before running candidate installation tests.
+An absent optional peer does not count as a passed Claude backend check.
 
-For the native Conversation View source, the isolated build installs the
-plugin's locked development and optional dependencies with `npm ci` and
-disabled lifecycle scripts before compiling its CSS Modules. It does not
-reuse a developer's `node_modules` or `dist` directory. These build
-dependencies are not runtime dependencies of the installed plugin.
+These checks use isolated profiles and offline model fixtures. They do not
+establish live account readiness, model quality, or physical desktop layout.
+Record the actual platforms tested; cross-compilation does not establish
+runtime verification on the target platform.
 
-Upload under `candidate-X-Y-Z` first. After all exact versions match their
-recorded integrity and registry installation succeeds, promote `latest` in
-the order above, with the user-facing meta package last. npm has no atomic
-six-package promotion; the scripts support safe retries and refuse to move
-a newer `latest` backwards.
+## 3. Build one candidate
 
-## Normal GitHub Actions path
-
-Merge the reviewed source after required checks pass, then create the release
-tag at that exact commit. The tag triggers
-[`publish.yml`](../../.github/workflows/publish.yml). An existing tag can also
-be supplied to that workflow's manual dispatch. Linux and macOS verify the
-same candidate artifact; publishing refreshes the remote tag and requires it
-to still identify the verified source.
-
-GitHub access is separate from npm publishing permission. Configure a trusted
-publisher for **each of the six packages**, with owner `ckanner`, repository
-`flywheel`, workflow `publish.yml`, no environment, and permission for both
-`npm publish` and `npm dist-tag`. The workflow also supports an authorized
-`NPM_TOKEN` fallback. Do not copy credentials into logs or task records.
-
-The publishing command requires explicit repository visibility. A private
-repository uses `--repository-visibility private`, which disables unsupported
-provenance generation. A public repository uses `public`, which requires
-provenance. Do not change visibility to make publication work. Trusted
-publishing authentication and provenance are separate capabilities.
-
-See npm's official [trusted publishing](https://docs.npmjs.com/trusted-publishers/)
-and [dist-tag](https://docs.npmjs.com/adding-dist-tags-to-packages/)
-documentation for account setup. `npm whoami` identifies an authenticated
-account; it does not prove publish or dist-tag authorization.
-
-## Authorized manual release when Actions cannot run
-
-A maintainer may explicitly authorize a manual release when the CI service
-cannot start, as with the recorded account billing blockage for 0.28.0.
-Record that authorization and the actual checks performed in the PR or release
-notes. Keep the normal workflow intact. Linux tests and macOS cross-compilation
-do not establish macOS runtime, desktop, account or model-call verification.
-
-Start from the final merged commit, including documentation changes. Check
-the remote tag freshly through authenticated Git or the GitHub API; a cached
-local tag is insufficient. Use the same checkout for these commands:
+From the clean checkout of the reviewed release tag, run each command and
+stop on failure:
 
 ```sh
-export npm_config_registry=https://registry.npmjs.org/
-FLYWHEEL_RELEASE_VERSION=0.28.0
+FLYWHEEL_RELEASE_VERSION=$(node -p "require('./package.json').version")
 FLYWHEEL_RELEASE_SHA=$(git rev-parse HEAD)
 node scripts/release-preflight.js --version "$FLYWHEEL_RELEASE_VERSION" --tag "v$FLYWHEEL_RELEASE_VERSION" --json
-make quality-gate
-npm --prefix plugins/dsh ci --ignore-scripts
-npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro)NodeWorkerOfflineBridge$' -count=1
-go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
-npm test
-bash scripts/build-npm.sh "$FLYWHEEL_RELEASE_VERSION" dist-npm
+npm run build:npm
 node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$FLYWHEEL_RELEASE_SHA"
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
 
-The explicit registry replaces the CI setup-node registry setting; do not
-inherit a fixture or private mirror for release writes. Run commands
-individually and stop at any failure. Preserve the six tarballs,
-`candidate.json`, toolchain versions and test results in a durable release
-artifact before uploading. If the source changes, discard the unpublished
-candidate and repeat from the new clean source. Never rebuild a replacement
-for a version already accepted by the registry.
+Set the Claude tarball environment variable described above before the final
+command. The build installs locked plugin dependencies inside an isolated
+source snapshot, with lifecycle scripts disabled, then builds the workers and
+four Go binaries. It does not reuse the caller's `node_modules` or `dist`.
+Root-level `npm install` is not required.
 
-Use a legitimate npm publishing session or an authorized token. A normal
-interactive login is `npm login --auth-type=web --registry=https://registry.npmjs.org/`.
-Local execution cannot use an Actions OIDC identity. Do not disable account
-2FA or change package security settings to make a manual run succeed.
+Preserve `dist-npm/`, its `candidate.json`, source identity, toolchain versions,
+and validation results. Verify all six packed MIT licenses and the root and
+plugin language editions. If source changes before any upload, prepare a new
+candidate from the new reviewed source. After any upload, retain the original
+candidate and follow the recovery rules below.
 
-For credentials that support non-interactive publication, the existing script
-performs the complete upload and promotion checks:
+## 4. GitHub Actions publication
+
+Pushing the reviewed tag triggers [publish.yml](https://github.com/ckanner/flywheel/blob/main/.github/workflows/publish.yml).
+An existing tag can also be supplied to its manual dispatch. Linux and macOS
+verify the same candidate artifact; the publish job refreshes remote refs and
+requires the tag to still identify the checked source.
+
+GitHub access and npm publication rights are separate. Configure trusted
+publishing for each of the six packages with owner `ckanner`, repository
+`flywheel`, workflow `publish.yml`, and no environment unless the workflow is
+changed to use one. Both **npm publish** and **npm dist-tag** permissions are
+needed. The workflow also supports an authorized `NPM_TOKEN` fallback.
+
+New packages require npm's initial package-creation authorization before
+their trusted publisher can be configured. Use the normal authorized npm
+flow; do not upload different placeholder bytes under the release version.
+See the official [trusted publisher](https://docs.npmjs.com/trusted-publishers/)
+and [dist-tag](https://docs.npmjs.com/adding-dist-tags-to-packages/) documentation
+for account setup. `npm whoami` identifies an account, not its publishing rights.
+
+Publication requires explicit repository visibility: `public` requires
+provenance; `private` disables unsupported private-source provenance. Choose
+the repository's actual visibility. Publishing a package does not change
+repository visibility, and OIDC authentication is separate from provenance.
+
+## 5. Publish locally from private source
+
+A maintainer can build from a normal Git checkout. With the current release
+policy, new uploads from a public repository must use section 4: the publisher
+requires provenance, which npm generates only in a supported cloud CI/CD
+environment, not an ordinary local browser-login session. See
+[npm provenance requirements](https://docs.npmjs.com/generating-provenance-statements/).
+The local upload example below applies only when the source repository is
+actually private. Do not label a public repository private to bypass this
+requirement. No downloaded archive is required. Complete source review and
+the checks above first. If Actions cannot run, record the maintainer's
+authorization, actual local results, and checks that were not performed;
+do not report unavailable CI as passing.
+
+From the same clean tagged source and its original candidate:
 
 ```sh
-node scripts/release-publish.js publish --directory dist-npm --source-sha "$FLYWHEEL_RELEASE_SHA" --repository-visibility private
-FLYWHEEL_NPM_VERSION="$FLYWHEEL_RELEASE_VERSION" npm run test:registry
-node scripts/release-publish.js promote --directory dist-npm --source-sha "$FLYWHEEL_RELEASE_SHA"
-node scripts/release-publish.js verify-latest --directory dist-npm --source-sha "$FLYWHEEL_RELEASE_SHA"
-```
-
-The standard CI runner continues to capture npm output. For a browser/2FA
-session, use the repository's `npm run release:local` command below. It reuses
-the existing release functions and inherits terminal I/O **only for `npm
-publish` and `npm dist-tag` writes**. Registry queries retain strict JSON
-parsing, timeouts, kill signals and buffer limits. A pending browser approval
-is not a successful publish.
-
-The registry smoke test installs the exact version from npm, runs the native
-CLI and embedded skills, and exercises DSH registration through a protocol
-fixture. It does not call a model or prove the user's live desktop is ready.
-Refresh and compare the remote tag again before publication and promotion.
-
-## Local build and publication from source
-
-A prebuilt archive is optional. A maintainer can clone the repository, build
-the six packages on their Mac/Linux machine and publish them from a normal
-terminal. Use Git, Go 1.27 (1.27.3 was validated for this release), Node
-24.22.1 and npm 12.2.1, with authorized GitHub read access and npm publishing
-access. Run and record the source quality gates above; the local publisher
-provides candidate and registry installation gates, not Go quality/race
-validation or source review.
-
-The existing `v0.28.0` tag remains fixed at
-`c865d2c130aa009f2348a883c01d0ac29da59624`. The newer interactive tooling lives
-on `main`, so keep a current checkout for the tooling and a detached worktree
-for the exact release source. Both come from Git; no downloaded candidate is
-required and no existing tag is moved. From the current `main` checkout, run
-these commands individually and stop at any failure:
-
-```sh
-export npm_config_registry=https://registry.npmjs.org/
-git fetch origin --tags
-git worktree add --detach ../flywheel-v0.28.0 c865d2c130aa009f2348a883c01d0ac29da59624
-node ../flywheel-v0.28.0/scripts/release-preflight.js --version 0.28.0 --tag v0.28.0 --json
-npm --prefix ../flywheel-v0.28.0 run build:npm
 npm login --auth-type=web --scope=@ckanner --registry=https://registry.npmjs.org/
-npm whoami --registry=https://registry.npmjs.org/
-npm run release:local -- --source-directory ../flywheel-v0.28.0 --repository-visibility private
+npm run release:local -- --repository-visibility private
 ```
 
-The candidate is written to `../flywheel-v0.28.0/dist-npm/`. No root
-`npm install` is needed before building: the build script compiles the worker
-and all four Go binaries. `--source-directory` defaults to the tooling
-repository; `--directory` selects another candidate directory. Explicit
-relative paths are resolved from the invocation directory. The source
-checkout must be clean and its version, local/remote tag, HEAD, tree,
-snapshot and candidate integrity must all agree.
+Complete the normal browser/2FA prompts in the terminal. The publisher
+requires a TTY; do not pipe its output through `tee`.
 
-`release:local` performs the following sequence:
+`release:local` performs these steps:
 
-1. Verify the complete source/candidate identity and query the source
-   repository's `origin` with `git ls-remote` for a fresh tag check.
-2. Run the real candidate installation test on this machine, then recheck
-   the source, candidate and remote tag.
-3. Publish platform packages, plugin and meta under `candidate-X-Y-Z`,
-   retaining existing integrity and newer-`latest` checks.
-4. Install the exact version from the official npm registry. Failure stops
-   before promotion.
-5. Recheck the source, candidate and remote tag, promote all six `latest`
-   tags and verify completion.
+1. Recheck clean source, exact local and remote tag, tree, snapshot, candidate
+   manifest, and package integrity.
+2. Run candidate installation, then verify the source and candidate again.
+3. Upload platform packages, plugin, and meta under `candidate-X-Y-Z`.
+4. Install the exact version from the official npm registry.
+5. Recheck source and remote tag, promote `latest` in the same order, and
+   verify all six tags and integrities.
 
-Use a real terminal and complete npm's normal browser/2FA prompts. Do not
-pipe the publisher through `tee`. The command does not log in, create or move
-tags, change repository visibility, or alter npm security settings. `private`
-matches the current repository; public-source releases must use `public`
-and satisfy provenance requirements.
+The command uses the repository's existing release checks. Only npm publish
+and dist-tag writes inherit terminal I/O; registry queries retain strict JSON
+parsing and bounded timeouts. The command does not log in, create or move
+tags, or change account security settings.
 
-After an interruption, keep the source worktree and its original `dist-npm/`,
-resolve the failure and rerun only the final command. Existing versions are
-skipped only when their integrity matches. Do not rebuild over a candidate
-that may already be uploaded. A newly built candidate that conflicts with an
-existing version must stop: recover the original candidate or arrange a new
-uniform version.
+For a reviewed older release that needs newer tooling, `--source-directory`
+can point at its exact tagged worktree and `--directory` at its original
+candidate. The source defaults to the tooling checkout; the candidate
+directory defaults to `dist-npm/` inside the selected source directory. Explicit
+relative paths resolve from the invocation directory. Do not copy newer
+tooling into old release source or rebuild an already-published version.
 
-Installation tests use isolated user directories and a DSH protocol fixture,
-with no model requests. On a Mac they exercise the native Darwin CLI/worker
-for the current architecture; they do not prove the live desktop or account
-works. Record the source SHA, candidate manifest, actual platform and test
-results in the GitHub Release before marking publication complete.
+## 6. Visibility, promotion, and retry behavior
 
-## Recovery and completion
+Packages first use the candidate tag. All exact versions and integrities must
+be visible and registry installation must succeed before `latest` moves.
+Platform packages are promoted first, the plugin next, and the user-facing
+meta package last. npm has no atomic six-package tag transaction.
 
-Only a failed npm response with structured `E404` means a version is absent.
-Authentication, network and malformed-response errors stop publication.
-Registry visibility checks use a bounded 180-second deadline per package;
-an accepted upload that is temporarily invisible is not permission to rebuild.
+Only a structured E404 means a queried version is absent. Authentication,
+transport, cancellation, malformed output, or missing integrity fails the
+operation. Registry queries accept the supported scalar and single-element
+array response shapes; multiple results are rejected.
 
-If some packages are already published, retain the original artifact and
-retry it. Existing versions must have exactly matching integrity. Resolve an
-installation or authentication failure before promoting; never unpublish,
-overwrite or retag different bytes to repair an incomplete release.
+After upload, visibility checks have a 180-second budget per package, with
+E404 backoff from 2 seconds to at most 15 seconds. Each read is bounded by
+30 seconds and the remaining budget. Promotion verification uses the same
+bounded approach for `latest` and integrity. It repeats reads, not writes,
+and refuses a newer `latest`, conflicting integrity, or invalid version.
 
-A release is complete when all six exact versions match the candidate,
-registry installation passes and all six `latest` tags identify that version
-with the same integrity. The record must identify whether this was an Actions
-release or an authorized manual release, list any unperformed platform checks,
-and link the source/tag and validation evidence. Historical release outcomes
-remain in the [Chinese release log](../releasing.md#3-失败恢复).
+| Failure | Recovery |
+| --- | --- |
+| Authentication or browser approval | Resolve the authorized npm login; retain the candidate. |
+| Some packages uploaded | Retry the original candidate; existing versions must match its integrity. |
+| Registry visibility timeout | Preserve the artifact and retry after the external issue is resolved. |
+| Installation or tag promotion failed | Resume with the same candidate; do not downgrade a newer `latest`. |
+| Source must change after upload | Use a new uniform version and a new reviewed tag. |
+| Original candidate is missing | Recover it; do not assume a rebuild has identical bytes. |
+
+With Actions, rerun failed jobs using the original artifact. Locally, rerun
+the final `release:local` command against the preserved source and candidate.
+
+## 7. Record completion
+
+Publication is complete only after all six exact versions and integrities,
+registry installation, and final `latest` checks have passed. Record those
+results separately from source review, local tests, CI, and desktop acceptance.
+For an additional exact-version installation check:
+
+```sh
+FLYWHEEL_NPM_VERSION=X.Y.Z npm run test:registry
+```
+
+Replace `X.Y.Z` with the released version. Record source SHA, candidate
+identity, actual platforms, failures/retries, and remaining limits in a dated
+validation record and release notes. See the
+[0.30.2 release record](../validation/2026-11-11-release-0.30.2.md) for a
+historical example; it is evidence for that release, not a live registry status.

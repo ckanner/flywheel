@@ -39,7 +39,7 @@ tree 为 `3145b47e12c2f65d2aebf60200c69aa7831b05af`。新增改动堆叠在该�
 - 未知派发、结果或清理不能进入成功路径，也不能通过 fresh、重试或换渠道绕过。
   原始 partial／unknown usage 继续保留；CLI 的 API 等价成本不是订阅账单。
 
-完整配置和能力边界见[中文指南](../claude-code-pro.md)与
+完整配置和能力边界见[中文指南](../zh-CN/claude-code-pro.md)与
 [English guide](../en/claude-code-pro.md)。
 
 ## 3. 独立审查发现及修复

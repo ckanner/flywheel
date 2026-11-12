@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ckanner. SPDX-License-Identifier: UNLICENSED
+// Copyright (c) 2026 ckanner. SPDX-License-Identifier: MIT
 "use strict";
 
 const { spawn } = require("node:child_process");

@@ -2,7 +2,7 @@
 
 日期：2026-11-01。基线：已合并的 `1c515ca0c694047d1f6c7d7c3d52853cc9bf9c2d`，实施分支 `feat/model-profiles-and-preflight`。本文保存本轮提交前的本地验收证据；远端双平台 CI 和合并结果以该 PR 的 Checks／合并记录为准，不由本地结果推断。源码合并不等于 npm 发布。
 
-设计见 [v0.26](../design.md)，范围见 [P01–P05 计划](../plans/2026-11-01-model-profiles-preflight.md)，使用见[配置指南](../configuration.md)与[Mac 安装教程](../getting-started.md)。前轮 DSH 集成与持久化行为的历史记录保留在[原验证记录](2026-11-01-results.md)。
+设计见 [v0.26](../design.md)，范围见 [P01–P05 计划](../plans/2026-11-01-model-profiles-preflight.md)，使用见[配置指南](../zh-CN/configuration.md)与[Mac 安装教程](../zh-CN/getting-started.md)。前轮 DSH 集成与持久化行为的历史记录保留在[原验证记录](2026-11-01-results.md)。
 
 ## 1. 最终本地门禁
 

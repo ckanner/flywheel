@@ -1,8 +1,20 @@
-# Model profiles, stage bindings, and diagnostics
+# Configuration
 
-[English README](../../README.en.md) · [中文](../configuration.md) · [Workflow](workflow.md)
+[Documentation](../README.md) · English · [简体中文](../zh-CN/configuration.md)
 
-Flywheel loads one complete configuration, expands its model profiles, and resolves each stage's binding before starting. Model selection is explicit configuration. Restart the engine after changing it. This guide follows the current source; existing user configuration is not automatically migrated during installation. The account-provider correction below is separate from the published 0.28.2 release.
+Flywheel loads one complete configuration, expands model profiles, and resolves
+stage bindings before starting. Model allocation, workflow selection, permissions,
+scheduling, and session history are separate policies. Restart the engine after
+changing configuration; installation preserves existing files.
+
+Use `config inspect` to find the effective file before editing. The examples below
+that show selected fields are **fragments** to place in a complete configuration.
+
+- [Configuration sources](#configuration-precedence) and [templates](#start-from-a-complete-template)
+- [Model fields](#fields-and-identities) and [subscription migration](#apply-the-subscription-preset-to-existing-configuration)
+- [Permissions](#full-access-without-per-action-approval) and [scheduling](#scheduling-and-worktrees)
+- [Session history](#session-policy-history-reuse-and-invocation-safety) and [workflow policy](#workflow-policy-and-recovery)
+- [Backend integration](#codex-pro-and-migration), [budgets](#fallback-and-budgets), and [diagnostics](#diagnose-without-inference)
 
 ## Configuration precedence
 
@@ -23,11 +35,111 @@ flywheel config inspect --cwd /absolute/path/to/repo --task-dir /absolute/path/t
 
 The result includes `source`, `scope`, resolved physical paths, `sessions`, and stage `bindings`. Each binding's `session` reports selected mode, adapter support, a reason, and `historyRecoveryTested:false`. Without `--task-dir`, discovery starts at the selected project and lower levels. Inspection does not create global configuration or task state, read account tokens, or invoke a model.
 
+### Editing configuration in the workflow console
+
+The Global / project configuration view first reads an explicit scope and file revision. Edit model bindings, role history policies, budget, timeouts, retries or the global permission policy, then review changes and save beside the form. Concurrent edits reject replacement; reread an unconfirmed save before proceeding. New project files use the current version's complete default template. A higher-priority task file can still hide the project/global file being edited. Files do not merge.
+
+Advanced callers send JSON on stdin to `flywheel control config-edit --cwd /absolute/repo`, with `{"scope":"project"}`. Save through `control config-save` using scope, the returned revision and values containing changed sections only. With reset=true, replacement starts from the full embedded default template. Saving creates a backup and publishes atomically; the next engine start loads the file.
+
+## Fields and identities
+
+| Field | Meaning | Example |
+|---|---|---|
+| `harness` | Process and tool-loop backend | `dsh`, `kimi`, `codex-pro`, `claude-code-pro`; `codex` is the explicit older CLI path |
+| `provider` | Registered DSH SDK LLM adapter ID; applies to DSH bindings | `deepseek-account`, `chatgpt` |
+| `channel` | A configuration label used for credentials, fallback, and accounting | `deepseek-account-sdk`, `chatgpt-sdk`, `kimi-subscription` |
+| `model` | Exact model identifier passed to the selected backend | `deepseek-flash`, `kimi-code/k3.1-pro`, `gpt-6.1-sol` |
+| `thinking` | Requested reasoning effort | `high` |
+| `profile` | Reusable model fields inside this Flywheel configuration | `flash`, `gpt-review`, `codex-pro` |
+
+A Flywheel model profile is different from a DSH `sdk` or `desktop` profile. The latter chooses the host's plugins and authorization configuration. A channel alias alone does not switch DSH accounts or create a separate subscription or quota pool.
+
+For DSH, the provider resolves from `binding.provider`, then `channels[channel].provider`, then the legacy channel name. Explicit binding and channel provider values must agree. Kimi and Codex use their own login state; a DSH provider cannot be attached to those harnesses and silently ignored.
+
+Only supported effort values should be used. The checked DSH Flash adapter accepts `off/low/high/max`; it has no `medium`. A configuration value names an intended binding, not evidence of account entitlement or measured model performance.
+
+### DeepSeek account and API-key providers
+
+| Access method | Provider | Credentials | Selection |
+|---|---|---|---|
+| Signed-in, funded DeepSeek account in DSH | `deepseek-account` | DSH's `deepseekAccount` service | Current source default; no `DEEPSEEK_API_KEY` required |
+| DeepSeek API key | `deepseek-official` | DSH credentials or launch environment; default reference `DEEPSEEK_API_KEY` | An explicitly selected alternative |
+
+The standard SDK profile layers over a [base](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/bundle/base/cordis.patch.yml) that includes the account service and both adapters. The standard desktop and SDK share the [account credential store](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/credentials/credentials-local/src/index.ts) when they use the same `DSH_HOME`. Profiles isolate plugin configuration; no token copy or switch to the reserved `desktop` profile is needed. Custom homes, credential stores, or SDK plugin sets must resolve the intended authorization source.
+
+After login, the desktop can choose the first account model when no provider API key exists. That host selection neither controls an independent SDK session nor guarantees Flash is the first model. Flywheel explicitly sends `deepseek-account` and `deepseek-flash`; the default preset has no API-key fallback for sign-in failures, invalid tokens, or insufficient quota. Explicit user-defined fallback chains retain their existing policy. The checked sources are the [account adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-account/src/index.ts), [API adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-api-key/src/index.ts), and [host default selection](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/api/session-controller/src/index.ts).
+
+Explicit API-key configurations remain supported. Select `deepseek-official` consistently in the relevant binding and its channel, and configure credentials through DSH's API-provider flow. Renaming a channel does not override a conflicting explicit provider. Account access does not need an additional API key.
+
+## Start from a complete template
+
+Inspect either bundled example:
+
+```sh
+flywheel template flywheel.config.example.json
+flywheel template flywheel.profiles.example.json
+```
+
+The first uses inline bindings. The second is a complete configuration with reusable profiles. If you choose to create a project configuration, first confirm that no file needs preserving; then export one template from the target Git root. For example, Bash's noclobber option prevents replacing an existing regular file:
+
+```sh
+(set -C; flywheel template flywheel.profiles.example.json > flywheel.config.json)
+```
+
+Do not create a task file containing only a few profiles and expect it to inherit the rest from the project file. An illustrative **fragment**, to incorporate into a complete file, is:
+
+```json
+{
+  "profiles": {
+    "flash": {
+      "harness": "dsh",
+      "provider": "deepseek-account",
+      "channel": "deepseek-account-sdk",
+      "model": "deepseek-flash",
+      "thinking": "high"
+    }
+  },
+  "routes": {
+    "default": { "profile": "flash" }
+  },
+  "loops": {
+    "intake": { "profile": "flash", "thinking": "low" }
+  },
+  "channels": {
+    "deepseek-account-sdk": {
+      "harness": "dsh",
+      "provider": "deepseek-account",
+      "env-key": null
+    }
+  }
+}
+```
+
+`loops` binds Plan, Review, Judge, Intake, and Garden. `routes` selects the Execute backend for default/frontend/hard packets. `drivers` selects real or mock drivers; it is not a provider-name mapping. The full default routing table is in the [model policy](model-policy.md).
+
+### Profile override and validation rules
+
+| Input | Effect |
+|---|---|
+| Stage omits a profile field | Inherit that field from the referenced profile |
+| Stage explicitly supplies `model`, `thinking`, `channel`, etc. | Override only that stage |
+| `thinking: ""` | Use the harness's default effort instead of re-inheriting the profile |
+| Plan `resident-session: false` | Explicitly disable Plan history reuse; loading, profile expansion, and effective config export preserve its presence |
+| `judge-panel: null` | Disable the optional second opinion |
+| Missing/empty profile `harness`, `model`, or `channel` | Configuration error |
+| Unknown profile, field, stage name, or harness | Configuration error |
+| A profile references another profile | Unsupported; configuration error |
+| `_note` or `_note_*` | Permitted explanatory metadata, excluded from execution bindings |
+
+`resident-session` is a legacy stage option, not a profile field. It continues to control the existing Kimi Plan behavior, and an explicit false also opts Plan out of scoped history. Other roles use the top-level `sessions` policy. Restoring history does not require a permanently running model process.
+
+Legal existing zero values, including `env-key: null`, `retry.jitter: 0`, and `worktree.enabled: false`, remain meaningful. When changing a harness or channel, also inspect any inherited provider. Use `provider: ""` when necessary to clear an explicit value before resolving the newly selected DSH channel.
+
 ## Apply the subscription preset to existing configuration
 
-The current source-level `subscriptions` preset uses ChatGPT subscriptions, Kimi Code subscriptions, and the signed-in, funded DeepSeek account in DSH, with Flash and `provider:deepseek-account`. Normal installation and upgrades preserve existing configuration, including old Z.AI/GLM routes, Kimi K3 bindings, API providers, and effort choices.
+The current `subscriptions` preset uses ChatGPT subscriptions, Kimi Code subscriptions, and the signed-in, funded DeepSeek account in DSH, with Flash and `provider:deepseek-account`. Normal installation and upgrades preserve existing configuration, including old Z.AI/GLM routes, Kimi K3 bindings, API providers, and effort choices.
 
-**Release boundary:** migration and `permissions.mode` shipped in 0.28.2, but that published preset still selects the `deepseek-official` API-key route. The account-default correction is available from 0.28.3. Check the registry version before installing. First check that `flywheel template flywheel.config.example.json` from your binary contains `deepseek-account`; rerunning migration with the published 0.28.2 binary does not select the new account default.
+Inspect the preset shipped with your installed binary using `flywheel template flywheel.config.example.json`. The current preset selects `deepseek-account`; an old binary can still contain older defaults. Release history belongs to the [changelog](../../CHANGELOG.md).
 
 From the actual project, preview and apply the selected configuration. Add `--task-dir /repo/docs/my-task` when the task has its own configuration:
 
@@ -39,7 +151,7 @@ flywheel config inspect --cwd /repo --json
 
 The first command only previews. `--apply` backs up the original bytes and updates the effective task/project/global file; with no file, it creates global configuration. Optional `--expect-sha256` binds application to a preview. Changed source files, invalid input, unsupported file identities, and extra custom routes/stages are rejected. Budgets, verification, worktrees, retries, pricing, notes, an explicit Plan `resident-session:false`, and the existing `sessions` policy or its omission are preserved. Model migration does not opt an existing file into scoped history.
 
-The preset replaces the model bindings, removes their old profile references, and clears fallback/model mappings on the selected channels so that old paid routes are no longer automatically reachable. Unreferenced custom profiles and channels remain intact, including the old 0.28.2 API channel; it is not an automatic fallback for the account route. The preset disables the optional second opinion and reports removal of the old unverified multimodal route. Kimi K3.1 Pro/high handles Plan, frontend execution, and Garden; DeepSeek Flash/high handles ordinary execution and Flash/low handles Intake; GPT-6.1 Sol/high handles hard execution and Review; GPT-6 Astra/high handles Judge. Hard execution uses Codex Pro; Review/Judge use the DSH ChatGPT provider. Kimi's omitted-model default is `kimi-code/k3.1-pro`, without overriding an explicitly selected model. See [Reasoning effort and account selection](model-policy.md) for the rationale and the project comparison that remains unperformed.
+The preset replaces the model bindings, removes their old profile references, and clears fallback/model mappings on the selected channels so that old paid routes are no longer automatically reachable. Unreferenced custom profiles and channels remain intact, including an older API channel; it is not an automatic fallback for the account route. The preset disables the optional second opinion and reports removal of the old unverified multimodal route. Kimi K3.1 Pro/high handles Plan, frontend execution, and Garden; DeepSeek Flash/high handles ordinary execution and Flash/low handles Intake; GPT-6.1 Sol/high handles hard execution and Review; GPT-6 Astra/high handles Judge. Hard execution uses Codex Pro; Review/Judge use the DSH ChatGPT provider. Kimi's omitted-model default is `kimi-code/k3.1-pro`, without overriding an explicitly selected model. See [Reasoning effort and account selection](model-policy.md) for the rationale and the project comparison that remains unperformed.
 
 Do not edit the target file while migrating. The lock coordinates Flywheel migration processes; the source is checked again before a complete file is atomically replaced. This is not an atomic compare-and-set against arbitrary external editors. Reports distinguish proposed configuration (`configurationStatus: proposed`), re-read effective configuration (`effective`), and an unconfirmed post-write result (`unconfirmed`). A failed backup or write must not present the proposed models as already effective.
 
@@ -51,11 +163,81 @@ Migration does not sign in or invoke models. Running tasks retain their startup 
 {"permissions":{"mode":"full-access"}}
 ```
 
-New installation templates and the explicit subscription migration select this mode for every stage. DSH/Codex request `danger-full-access` and `approval=never`; Codex Pro maps through its public machine API; Kimi print retains native auto behavior. This grants worker access within the current operating-system user's permissions. It is independent of the desktop conversation's permission dropdown.
+New installation templates and the explicit subscription migration set this global mode. Explicit per-binding overrides still take precedence. DSH/Codex request `danger-full-access` and `approval=never`; Codex Pro maps through its public machine API; Kimi print retains native auto behavior. This grants worker access within the current operating-system user's permissions. It is independent of the desktop conversation's permission dropdown.
 
 Existing files without this setting retain `role-based`: Plan/Execute request workspace-write, and Review/Judge request read-only. Neither policy waits for interactive approval. In restricted modes, `never` can reject an action; it does not itself grant full access. Invalid policy names and types fail before execution.
 
 Full access preserves task boundaries, frozen acceptance, verification, and candidate identity checks. A reviewer still cannot change the candidate or acceptance criteria and obtain a valid verdict. Select `role-based` explicitly when confinement is intended; a worktree is not an OS sandbox.
+
+### Per-binding permission overrides
+
+`permissions.bindings` overrides the global policy for `loops.<role>`,
+`routes.<route>`, or `judge-panel`. Values are `read-only`, `workspace-write`, or
+`danger-full-access`; omitted bindings retain the global policy. For example:
+
+```json
+{
+  "permissions": {
+    "mode": "full-access",
+    "bindings": {"loops.review": "read-only"}
+  }
+}
+```
+
+The [permission schema](https://github.com/ckanner/flywheel/blob/main/templates/permission-policy.schema.json) defines the
+accepted fields. Each backend must support the selected policy. Claude Code Pro
+requires full access; native approval settings do not provide an OS read-only sandbox.
+Changing effective permissions also changes session-reuse eligibility.
+
+## Scheduling and worktrees
+
+The embedded installation default selects parallel scheduling with a maximum of two packets.
+An existing complete file without `scheduler` normalizes to **serial**, and an
+explicit serial choice remains unchanged. Installing a new release does not replace
+that file. The [scheduler schema](https://github.com/ckanner/flywheel/blob/main/templates/scheduler-policy.schema.json)
+bounds total and per-channel concurrency from 1 to 8.
+
+```json
+{
+  "scheduler": {
+    "mode": "parallel",
+    "max-parallel": 2,
+    "providers": {"deepseek-account": 1}
+  },
+  "worktree": {"enabled": true}
+}
+```
+
+Despite the field name, `providers` keys are the **actual configuration channel
+names**, not DSH provider IDs. The inline template uses `deepseek-account`; if your
+binding uses `deepseek-account-sdk`, use that channel name instead.
+
+Parallel eligibility comes from a packet's frozen declaration:
+
+```yaml
+schedule:
+  after: [M01-T01]
+  writes: [src/search/, tests/search/]
+```
+
+Dependencies must name earlier known packets. Write scopes are normalized relative
+paths or directory prefixes, without globs or escapes. Only ready packets with
+nonoverlapping scopes qualify; missing declarations, conflicting scopes, and
+live-credential units remain serial. Hard budgets admit one model call at a time
+until its accounting is durable. Review, integration, and final gates remain serial.
+
+`worktree.enabled` defaults to true and controls automatic packet directory
+management, independently of scheduling. Parallel automatic management requires
+isolated worktrees and fails if creation fails. The legacy serial path can record
+an in-place fallback. With automatic management off, executors can share the task
+checkout or register a qualifying external worktree before implementation. Shared
+batches verify the complete combined candidate after workers finish and deliver
+only when every member passes; external worktrees are retained.
+
+Project workspace identity and execution location are recorded separately. Native
+backends that cannot separate a `workspace-write` sandbox root reject unsupported
+split-directory requests before dispatch, without expanding permissions. See the
+[console guide](flow-console.md#parallel-execution) for registration and batch rules.
 
 ## Session policy, history reuse, and invocation safety
 
@@ -63,9 +245,9 @@ Full access preserves task boundaries, frozen acceptance, verification, and cand
 {"sessions":{"mode":"scoped","policy-version":1}}
 ```
 
-Both new-installation templates explicitly select `scoped`. An existing file without `sessions` normalizes to `fresh`, policy version 1; upgrades do not rewrite it. An explicit policy must contain both fields. Unknown modes, future versions, nulls, typos, and incomplete objects fail before a model starts. The [session policy schema](../../templates/session-policy.schema.json) is the field contract.
+Both new-installation templates explicitly select `scoped`. An existing file without `sessions` normalizes to `fresh`, policy version 1; upgrades do not rewrite it. An explicit policy must contain both fields. Unknown modes, future versions, nulls, typos, and incomplete objects fail before a model starts. The [session policy schema](https://github.com/ckanner/flywheel/blob/main/templates/session-policy.schema.json) is the field contract.
 
-`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, Claude Code Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this first-phase role session policy.
+`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, Claude Code Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this role session policy.
 
 | Role | History scope and responsibility |
 |---|---|
@@ -157,109 +339,11 @@ flywheel control status --task-dir /repo/docs/task --cwd /repo
 
 `state.workflow` stores requested/effective policy, reason, evidence, risks, version, selection time, Plan/Judge applicability, and upgrades. A stage marked not applicable is not a passing check. Effective policy and completion requirements participate in evidence identity, so a Quick final Review cannot stand in for Full's Judge after upgrade. New packets can declare `workflow-risks: []` in `done-report-format`; the executor reports facts through that string array rather than editing policy or state.
 
-Quick reuses existing Execute and Review bindings without changing effort, accounts, fallbacks, or full-access settings. All required checks remain, and applicable L2/L3 run in the actual candidate before final Review. The reviewer checks every requirement; the first-success path uses two stage-agent calls, Execute and final Review. See the [Spec schema](../../templates/spec.schema.json), [state schema](../../templates/state.schema.json), and [workflow guide](workflow.md).
-
-## Optional Claude Code Pro
-
-The `claude-code-pro` harness and unreferenced `claude-sonnet` profile can be selected for any configured loop or Execute route. See the [Claude Code Pro guide](claude-code-pro.md) for model/effort choices, optional-peer installation, full-access-only permissions, continuation, and durable receipt recovery. The provider field remains specific to DSH native adapters; default stage allocation is unchanged.
-
-## Fields and identities
-
-| Field | Meaning | Example |
-|---|---|---|
-| `harness` | Process and tool-loop backend | `dsh`, `kimi`, `codex-pro`, `claude-code-pro`; `codex` is the explicit older CLI path |
-| `provider` | Registered DSH SDK LLM adapter ID; applies to DSH bindings | `deepseek-account`, `chatgpt` |
-| `channel` | A configuration label used for credentials, fallback, and accounting | `deepseek-account-sdk`, `chatgpt-sdk`, `kimi-subscription` |
-| `model` | Exact model identifier passed to the selected backend | `deepseek-flash`, `kimi-code/k3.1-pro`, `gpt-6.1-sol` |
-| `thinking` | Requested reasoning effort | `high` |
-| `profile` | Reusable model fields inside this Flywheel configuration | `flash`, `gpt-review`, `codex-pro` |
-
-A Flywheel model profile is different from a DSH `sdk` or `desktop` profile. The latter chooses the host's plugins and authorization configuration. A channel alias alone does not switch DSH accounts or create a separate subscription or quota pool.
-
-For DSH, the provider resolves from `binding.provider`, then `channels[channel].provider`, then the legacy channel name. Explicit binding and channel provider values must agree. Kimi and Codex use their own login state; a DSH provider cannot be attached to those harnesses and silently ignored.
-
-Only supported effort values should be used. The checked DSH Flash adapter accepts `off/low/high/max`; it has no `medium`. A configuration value names an intended binding, not evidence of account entitlement or measured model performance.
-
-### DeepSeek account and API-key providers
-
-| Access method | Provider | Credentials | Selection |
-|---|---|---|---|
-| Signed-in, funded DeepSeek account in DSH | `deepseek-account` | DSH's `deepseekAccount` service | Current source default; no `DEEPSEEK_API_KEY` required |
-| DeepSeek API key | `deepseek-official` | DSH credentials or launch environment; default reference `DEEPSEEK_API_KEY` | An explicitly selected alternative |
-
-The standard SDK profile layers over a [base](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/bundle/base/cordis.patch.yml) that includes the account service and both adapters. The standard desktop and SDK share the [account credential store](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/credentials/credentials-local/src/index.ts) when they use the same `DSH_HOME`. Profiles isolate plugin configuration; no token copy or switch to the reserved `desktop` profile is needed. Custom homes, credential stores, or SDK plugin sets must resolve the intended authorization source.
-
-After login, the desktop can choose the first account model when no provider API key exists. That host selection neither controls an independent SDK session nor guarantees Flash is the first model. Flywheel explicitly sends `deepseek-account` and `deepseek-flash`; the default preset has no API-key fallback for sign-in failures, invalid tokens, or insufficient quota. Explicit user-defined fallback chains retain their existing policy. The checked sources are the [account adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-account/src/index.ts), [API adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-api-key/src/index.ts), and [host default selection](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/api/session-controller/src/index.ts).
-
-Explicit API-key configurations remain supported. Select `deepseek-official` consistently in the relevant binding and its channel, and configure credentials through DSH's API-provider flow. Renaming a channel does not override a conflicting explicit provider. Account access does not need an additional API key.
-
-## Start from a complete template
-
-Inspect either bundled example:
-
-```sh
-flywheel template flywheel.config.example.json
-flywheel template flywheel.profiles.example.json
-```
-
-The first uses inline bindings. The second is a complete configuration with reusable profiles. If you choose to create a project configuration, first confirm that no file needs preserving; then export one template from the target Git root. For example, Bash's noclobber option prevents replacing an existing regular file:
-
-```sh
-(set -C; flywheel template flywheel.profiles.example.json > flywheel.config.json)
-```
-
-Do not create a task file containing only a few profiles and expect it to inherit the rest from the project file. An illustrative **fragment**, to incorporate into a complete file, is:
-
-```json
-{
-  "profiles": {
-    "flash": {
-      "harness": "dsh",
-      "provider": "deepseek-account",
-      "channel": "deepseek-account-sdk",
-      "model": "deepseek-flash",
-      "thinking": "high"
-    }
-  },
-  "routes": {
-    "default": { "profile": "flash" }
-  },
-  "loops": {
-    "intake": { "profile": "flash", "thinking": "low" }
-  },
-  "channels": {
-    "deepseek-account-sdk": {
-      "harness": "dsh",
-      "provider": "deepseek-account",
-      "env-key": null
-    }
-  }
-}
-```
-
-`loops` binds Plan, Review, Judge, Intake, and Garden. `routes` selects the Execute backend for default/frontend/hard packets. `drivers` selects real or mock drivers; it is not a provider-name mapping. The full default routing table is in the [README](../../README.en.md#default-model-routes).
-
-### Profile override and validation rules
-
-| Input | Effect |
-|---|---|
-| Stage omits a profile field | Inherit that field from the referenced profile |
-| Stage explicitly supplies `model`, `thinking`, `channel`, etc. | Override only that stage |
-| `thinking: ""` | Use the harness's default effort instead of re-inheriting the profile |
-| Plan `resident-session: false` | Explicitly disable Plan history reuse; loading, profile expansion, and effective config export preserve its presence |
-| `judge-panel: null` | Disable the optional second opinion |
-| Missing/empty profile `harness`, `model`, or `channel` | Configuration error |
-| Unknown profile, field, stage name, or harness | Configuration error |
-| A profile references another profile | Unsupported; configuration error |
-| `_note` or `_note_*` | Permitted explanatory metadata, excluded from execution bindings |
-
-`resident-session` is a legacy stage option, not a profile field. It continues to control the existing Kimi Plan behavior, and an explicit false also opts Plan out of scoped history. Other roles use the top-level `sessions` policy. Restoring history does not require a permanently running model process.
-
-Legal existing zero values, including `env-key: null`, `retry.jitter: 0`, and `worktree.enabled: false`, remain meaningful. When changing a harness or channel, also inspect any inherited provider. Use `provider: ""` when necessary to clear an explicit value before resolving the newly selected DSH channel.
+Quick reuses existing Execute and Review bindings without changing effort, accounts, fallbacks, or full-access settings. All required checks remain, and applicable L2/L3 run in the actual candidate before final Review. The reviewer checks every requirement; the first-success path uses two stage-agent calls, Execute and final Review. See the [Spec schema](https://github.com/ckanner/flywheel/blob/main/templates/spec.schema.json), [state schema](https://github.com/ckanner/flywheel/blob/main/templates/state.schema.json), and [workflow guide](workflow.md).
 
 ## Codex Pro and migration
 
-The 0.28.0 embedded hard route uses this binding. This is a **fragment**, not a complete replacement configuration:
+The embedded hard route uses this binding. This is a **fragment**, not a complete replacement configuration:
 
 ```json
 {
@@ -274,7 +358,7 @@ The 0.28.0 embedded hard route uses this binding. This is a **fragment**, not a 
 }
 ```
 
-The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.9.0` package and its `dsh-subagent-codex-pro/machine` entry. The current candidate bundles the real package built from reviewed upstream source; this does not claim that 0.9.0 has been published to the registry. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.4.0` optional peer and is unnecessary when that backend is not selected.
+The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.9.0` package and its `dsh-subagent-codex-pro/machine` entry. The dependency is pinned by the plugin package and lockfile; [vendor provenance](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) records the reviewed source package used during lifecycle development. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.4.0` optional peer and is unnecessary when that backend is not selected.
 
 The external tool name `subagent_codex_pro` is not a DSH provider. This route does not create a parent DSH model to make a second delegation. Missing dependencies or invalid receipts fail; they do not trigger an implicit fallback to the older CLI driver.
 
@@ -308,6 +392,10 @@ Claude's native initialization follows prompt submission, so its adapter does no
 The `codex-pro-receipt` metric preserves the complete machine receipt, including requested and actual configuration, thread/turn IDs, process outcomes, cleanup, usage, and failures. An accepted effort request is not proof of effective server reasoning effort; `effectiveEffort` remains null.
 
 An abnormal worker exit does not prove the plugin's separately managed processes stopped. If cleanup cannot be confirmed after startup, the engine records the evidence, escalates, and ends the run instead of automatically retrying or falling back. Before resuming, confirm the owned app-server/guardian processes have terminated. See [recovery](workflow.md#7-stop-and-recover-without-losing-evidence).
+
+## Optional Claude Code Pro
+
+The `claude-code-pro` harness and unreferenced `claude-sonnet` profile can be selected for any configured loop or Execute route. See the [Claude Code Pro guide](claude-code-pro.md) for model/effort choices, optional-peer installation, full-access-only permissions, continuation, and durable receipt recovery. The provider field remains specific to DSH native adapters; default stage allocation is unchanged.
 
 ## Fallback and budgets
 
@@ -349,38 +437,20 @@ Codex Pro checks actually import the public API and verify exact version 0.9.0/p
 
 `sessions.policy` confirms only the configured mode and version. Each applicable real binding's `.session` check reports selection, reason, and adapter support, while history recovery remains unknown. Doctor does not restore user histories, send a test turn, or treat a successful worker import as proof of durability.
 
-No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache/session files; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
+No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache files and temporary probe-session persistence; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
 
-Repository references: [inline defaults](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json), [complete profiles](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json), [design](https://github.com/ckanner/flywheel/blob/main/docs/design.md), and [worker protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md).
-
-### Editing configuration in the workflow console
-
-The Global / project configuration view first reads an explicit scope and file revision. Edit model bindings, role history policies, budget, timeouts, retries or the global permission policy, then review section changes before saving. Concurrent edits reject replacement; reread an unconfirmed save before proceeding. New project files use the current version's complete default template. Task files override project files, which override global configuration.
-
-Advanced callers send JSON on stdin to `flywheel control config-edit --cwd /absolute/repo`, with `{"scope":"project"}`. Save through `control config-save` using scope, the returned revision and values containing changed sections only. With reset=true, replacement starts from the full embedded default template. Saving creates a backup and publishes atomically; the next engine start loads the file.
-
-### Console permissions and scheduling
-
-`permissions.bindings` overrides the global mode by `loops.<role>`, `routes.<route>` or `judge-panel`, using read-only, workspace-write or danger-full-access. Read `permission-policy.schema.json` for the contract. Adapters must still prove the requested capability; native Claude approval modes are not advertised as an OS read-only sandbox.
-
-`scheduler` is defined by `scheduler-policy.schema.json`. The new default permits parallel execution with a limit of two; existing explicit serial settings remain unchanged. Parallel only dispatches independent units declared by frozen schedule.after/writes; max-parallel limits units and providers limits actual account channels. Hard budgets admit one model call until its accounting is durable. Missing declarations and overlapping write scopes are not independence.
-
-For example:
-
-```json
-{
-  "permissions": {
-    "mode": "full-access",
-    "bindings": {"loops.review":"read-only"}
-  },
-  "scheduler": {"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}
-}
-```
-
-This is a field excerpt, not a complete configuration replacement. The console reads and validates the complete selected file. See the [console guide](flow-console.md) for run indexing, controlled session interaction, observation completeness and remote-delivery authority.
 
 ## Optional JEV shadow evaluation
 
-`jev-shadow.enabled` defaults to false, including older configurations that omit it. The global/project editor exposes the switch. Enabling only observes new tasks; failures never block workflows or change Quick/Full. See the [JEV guide](jev-shadow.md) for endpoint, version pin, key variable and timeout. This feature requires the 0.30.1 CLI/plugin.
+`jev-shadow.enabled` defaults to false, including configurations that omit it. The
+global/project editor exposes the switch. Enabling observes new tasks independently;
+failures do not block execution or change Quick/Full. First enabling it discloses the
+task-summary transfer boundary. See the [JEV guide](jev-shadow.md) for the endpoint,
+pinned response version, key variable, timeout, and separate accounting.
 
-Automatic Worktree management (`worktree.enabled`, default true) is independent from scheduling. Off neither prohibits parallel dispatch nor prevents callers from creating Worktrees. Project membership and execution directories are separate; see the [console guide](flow-console.md) for directory registration. Native backends without a separate `workspace-write` sandbox root reject unsupported split-directory requests before dispatch, without expanding permissions.
+## Reference files
+
+- [Inline defaults](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)
+- [Complete profile example](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)
+- [System design](../design.md), in Chinese
+- [Worker protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md)

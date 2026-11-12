@@ -9,12 +9,13 @@
     "x64"
   ],
   "files": [
-    "flywheel"
+    "flywheel",
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ckanner/flywheel.git",
     "directory": "npm/platforms/linux-amd64"
   },
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

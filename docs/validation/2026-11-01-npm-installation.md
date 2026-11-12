@@ -2,7 +2,7 @@
 
 日期：2026-11-01（America/New_York）。实施基线为 `39638bd96e6fcb6cc681bc7c1f90b7b082620936`，分支为 `feat/npm-agent-installer`，六包目标版本为 `0.27.0`。本文记录提交前的实际本地验证；PR、双平台 CI、合并和 npm 发布结果分别以 GitHub Checks／合并记录及 npm registry 为准。源码合并不等于已经发布。
 
-范围见 [N01–N07 计划](../plans/2026-11-01-npm-installation.md)，用户入口见 [npm 安装与首任务教程](../getting-started.md)。前轮 [DSH 集成](2026-11-01-results.md) 和 [profiles／预检](2026-11-01-profiles-preflight.md) 的记录继续保留。
+范围见 [N01–N07 计划](../plans/2026-11-01-npm-installation.md)，用户入口见 [npm 安装与首任务教程](../zh-CN/getting-started.md)。前轮 [DSH 集成](2026-11-01-results.md) 和 [profiles／预检](2026-11-01-profiles-preflight.md) 的记录继续保留。
 
 ## 1. 实际执行结果
 
@@ -65,7 +65,7 @@ README、完整安装教程、首任务使用方法、插件 README／PROTOCOL�
 
 截至 **2026-11-02 01:57:41 UTC**，GitHub `main`、独立 Git 拉取及 npm `latest` 仍对应 [`21fd7acccf1f5989b14fecdc1957559eea6914f8`](https://github.com/ckanner/dsh-subagent-codex-pro/commit/21fd7acccf1f5989b14fecdc1957559eea6914f8)／[`0.7.0`](https://registry.npmjs.org/dsh-subagent-codex-pro/0.7.0)。此次重新执行 typecheck 与测试，**106 pass、6 skip、0 fail**；跳过项含真实模型与本机缺少 Codex 的 preflight，不能算作 live 成功。
 
-[本轮离线探针](evidence/codex-pro-070-probes.txt)仍复现有效配置回执缺失可接受、坏 usage 通知后仍标 complete、默认 full access、公共 run 子路径未导出。完整公开收据、权限和进程所有权的接入要求见 [adapter 交接文档](../integrations/codex-pro-adapter-handoff.md)。Flywheel 保留独立 `codex exec` 通路，没有把 DSH LLM provider 标签当成 external-subagent 接入。
+[本轮离线探针](evidence/codex-pro-070-probes.txt)仍复现有效配置回执缺失可接受、坏 usage 通知后仍标 complete、默认 full access、公共 run 子路径未导出。完整公开收据、权限和进程所有权的接入要求见 [adapter 交接文档](../archive/codex-pro-adapter-handoff.md)。Flywheel 保留独立 `codex exec` 通路，没有把 DSH LLM provider 标签当成 external-subagent 接入。
 
 ## 6. 尚需实际设备／账号证据
 

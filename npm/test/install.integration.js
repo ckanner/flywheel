@@ -55,7 +55,7 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.equal(binding.thinking, thinking);
     assert.equal(binding.permissionMode, 'danger-full-access');
   }
-  for (const document of ['docs/model-policy.md', 'docs/en/model-policy.md', 'docs/claude-code-pro.md', 'docs/en/claude-code-pro.md']) {
+  for (const document of ['LICENSE', 'README.md', 'README.zh-CN.md', 'docs/README.md', 'docs/README.zh-CN.md', 'docs/zh-CN/model-policy.md', 'docs/en/model-policy.md', 'docs/zh-CN/claude-code-pro.md', 'docs/en/claude-code-pro.md']) {
     await fs.access(path.join(root, document));
   }
   const demo = path.join(context.root, 'packaged tutorial demo');

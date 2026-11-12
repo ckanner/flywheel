@@ -1,8 +1,10 @@
 # 会话质量策略与配对评估
 
-P4 提供两部分可执行能力：按已确认事实进行有界重建，以及对相同任务运行三种历史策略的配对评估。重建阈值默认关闭；评估程序保存原始条件和结果，不把缺失用量写成零，也不预设质量、缓存率或速度收益。
+[文档目录](../README.zh-CN.md) · [English](../en/session-evaluation.md) · 简体中文
 
-配置入口见 [配置文档](configuration.md)，中断恢复的生命周期和账本语义见 [恢复文档](session-recovery.md)。实现入口为 [质量策略](../internal/machine/session_quality.go)、[评估器](../scripts/evaluate-sessions.js) 与 [任务集生成器](../scripts/prepare-session-evaluation.js)。
+Flywheel 支持按已确认事实进行有界上下文重建，以及对相同任务运行三种历史策略的配对评估。重建阈值默认关闭；评估程序保存原始条件和结果，不把缺失用量写成零，也不预设质量、缓存率或速度收益。
+
+配置入口见 [配置文档](configuration.md)，中断恢复的生命周期和账本语义见 [恢复文档](session-recovery.md)。实现入口为 [质量策略](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_quality.go)、[评估器](https://github.com/ckanner/flywheel/blob/main/scripts/evaluate-sessions.js) 与 [任务集生成器](https://github.com/ckanner/flywheel/blob/main/scripts/prepare-session-evaluation.js)。
 
 ## 有界重建
 

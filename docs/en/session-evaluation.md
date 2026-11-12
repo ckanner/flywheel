@@ -1,8 +1,10 @@
 # Session quality policy and paired evaluation
 
-P4 provides two executable capabilities: bounded rebuilding based on confirmed facts, and paired experiments using three history policies on the same tasks. Rebuild thresholds default to disabled. The evaluator preserves original conditions and results, keeps missing usage unknown, and assumes no quality, cache, or speed benefit.
+[Documentation](../README.md) · English · [简体中文](../zh-CN/session-evaluation.md)
 
-See [configuration](configuration.md) for the policy and [recovery](session-recovery.md) for lifecycle and ledger semantics. Implementation entry points are the [quality policy](../../internal/machine/session_quality.go), [evaluator](../../scripts/evaluate-sessions.js), and [corpus preparer](../../scripts/prepare-session-evaluation.js).
+Flywheel supports bounded context rebuilding based on confirmed facts and paired experiments using three history policies on the same tasks. Rebuild thresholds default to disabled. The evaluator preserves original conditions and results, keeps missing usage unknown, and assumes no quality, cache, or speed benefit.
+
+See [configuration](configuration.md) for the policy and [recovery](session-recovery.md) for lifecycle and ledger semantics. Implementation entry points are the [quality policy](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_quality.go), [evaluator](https://github.com/ckanner/flywheel/blob/main/scripts/evaluate-sessions.js), and [corpus preparer](https://github.com/ckanner/flywheel/blob/main/scripts/prepare-session-evaluation.js).
 
 ## Bounded rebuilding
 

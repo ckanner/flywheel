@@ -2,8 +2,8 @@
 
 2026-11-07。原始设计方案（PR #30 仅修改文档），取代“每次 Execute／Review 调用
 必须全新会话”的设计原则。本文保留提出方案时的基线分析和完整分期。
-**实施补注：**P1/P2 正常终态续接与已保存回执恢复已实现；P3 配套公开 lifecycle v1、durable ACK、supervisor journal 与精确只读恢复已接通；P4 具备角色策略、有界质量重建与固定源码／独立 oracle 的三组对照工具。当前字段、调用安全与能力差异以[设计](../design.md)、[配置](../configuration.md)及[恢复指南](../session-recovery.md)为准。真实账号质量、缓存及性能实验仍未取得有效结果，离线通过不替代该证据。下文保留原提案的版本基线与分期分析。
-English: [Session lifecycle proposal](../en/plans/2026-11-07-session-lifecycle.md)。
+**实施补注：**P1/P2 正常终态续接与已保存回执恢复已实现；P3 配套公开 lifecycle v1、durable ACK、supervisor journal 与精确只读恢复已接通；P4 具备角色策略、有界质量重建与固定源码／独立 oracle 的三组对照工具。当前字段、调用安全与能力差异以[设计](../design.md)、[配置](../zh-CN/configuration.md)及[恢复指南](../zh-CN/session-recovery.md)为准。真实账号质量、缓存及性能实验仍未取得有效结果，离线通过不替代该证据。下文保留原提案的版本基线与分期分析。
+English: [Session lifecycle proposal](2026-11-07-session-lifecycle.en.md)。
 
 ## 1. 决策
 

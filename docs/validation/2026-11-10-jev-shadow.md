@@ -2,7 +2,7 @@
 
 ## 范围与身份
 
-基线 `5d682291e39c46c4e5e7c275f3d195ffce7e5d6c`，分支 `codex/jev-workflow-shadow`；本轮为未提交源码。尚未发布 npm，也没有改动用户已安装的 0.30.0 或本机全局配置。完整设计见 [方案](../plans/2026-11-10-jev-shadow.md)，用户说明见 [指南](../jev-shadow.md)。
+基线 `5d682291e39c46c4e5e7c275f3d195ffce7e5d6c`，分支 `codex/jev-workflow-shadow`；本轮为未提交源码。尚未发布 npm，也没有改动用户已安装的 0.30.0 或本机全局配置。完整设计见 [方案](../plans/2026-11-10-jev-shadow.md)，用户说明见 [指南](../zh-CN/jev-shadow.md)。
 
 - 默认关闭、缺省关闭；Config schema、模板、全局／项目编辑器及只读 inspect 共用 `jev-shadow`。
 - 开启只观察首次普通 run 的新任务；先保存原工作流，再最多一个原生 System One 请求。不改变实际模式、任务预算、权限或 Session。硬预算跳过；实验用量单列。
@@ -20,7 +20,7 @@
 - 根目录 `npm test`：141 项通过，零跳过。
 - `go test -race ./internal/machine -run 'TestOptionalShadow|TestAutomaticShadow' -count=1` 通过。
 - DSH `npm --prefix plugins/dsh run check`：206 项主测试和 8 项旧宿主检查通过，零跳过。新增实际渲染交互测试确认默认关闭并发送布尔配置值。
-- Go/Node DSH、Codex Pro、Claude Code Pro 三组离线桥接通过。Claude 测的是本地精确公开接口候选（0.4.0，本轮复核 tarball SHA-256 为 `125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581`；来源和身份见 [vendor 记录](../../plugins/dsh/vendor/README.md)），不据此声称 registry 有新版本。未进行本轮原生桌面安装／UI 验收。
+- Go/Node DSH、Codex Pro、Claude Code Pro 三组离线桥接通过。Claude 测的是本地精确公开接口候选（0.4.0，本轮复核 tarball SHA-256 为 `125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581`；来源和身份见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)），不据此声称 registry 有新版本。未进行本轮原生桌面安装／UI 验收。
 
 首次全量 Go 测试发现既有 `TestRunClaudeCodeProPhysicalFailuresAndNonDispatch` 在关闭 stdin 的 fixture 中返回 watchdog timeout，未返回预期 request write failed。fixture 使用 shell + 额外 sleep 子进程，输出管道和 TERM 清理可拖到 3 秒 deadline。将该用例独立提取并改为 `exec sleep`，保持单进程、原错误与 unknown 断言，新增 `TimedOut=false`；没有修改驱动时限或生产清理逻辑。独立回归连续 30 次通过（8.946 秒）。首次失败保留在 `/tmp/flywheel-jev-quality.log`，不以重跑覆盖原记录。
 

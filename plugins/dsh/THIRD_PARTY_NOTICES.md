@@ -12,8 +12,8 @@ adapted from DeepSeek Harness at commit
 
 [Upstream source](https://github.com/deepseek-ai/deepseek-harness/tree/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-primitives/src)
 
-These adapted portions retain the upstream MIT license below. Other Flywheel
-source remains under the repository's existing license.
+These adapted portions retain the upstream MIT license below. Flywheel's own
+source is also licensed under MIT; see [LICENSE](LICENSE).
 
 MIT License
 

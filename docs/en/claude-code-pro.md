@@ -1,6 +1,6 @@
 # Optional Claude Code Pro backend
 
-[中文](../claude-code-pro.md) · [Configuration](configuration.md)
+[Documentation](../README.md) · English · [简体中文](../zh-CN/claude-code-pro.md)
 
 Select `harness: "claude-code-pro"` to call the public machine API of
 [`dsh-subagent-claude-code-pro`](https://github.com/ckanner/dsh-subagent-claude-code-pro).
@@ -8,13 +8,13 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-**Source and release boundary:** the integration requires plugin **0.4.0,
-machine protocol 1**. Version 0.3.1 only exposes the DSH tool interface and lacks
-the required machine receipt. The companion source version does not establish
-an npm publication. Flywheel 0.30.0 is released; prepare Claude 0.4.0 through
-the optional-dependency procedure below. No default stage or route selects Claude.
+The adapter requires **`dsh-subagent-claude-code-pro@0.4.0`**, machine protocol
+1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
+and older machine contracts are not substitutes. No default stage or route
+selects Claude. Package availability must be checked separately from source
+compatibility; see the [release guide](releasing.md).
 
-## 1. Prepare the optional dependency
+## Prepare the optional dependency
 
 Use Node.js 22.18.0 or later on macOS or Linux, with the user's installed and
 authenticated `claude` CLI accessible to the process starting the engine.
@@ -26,7 +26,8 @@ an **optional peer**. Other backends work without it. To select Claude, install
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
-After publication, install that exact release. Before publication, run
+When that exact version is available in the registry, install it. For an
+explicitly reviewed source candidate, run
 `npm pack --ignore-scripts` in the reviewed plugin checkout and install the actual
 resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidate.
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
@@ -44,9 +45,9 @@ an ambient Anthropic API key. Supported explicit credentials are passed through
 the machine runtime. The bridge does not serialize environment credential values
 into requests or diagnostics; text returned by the CLI is preserved as received.
 
-## 2. Define a profile, then choose its stages
+## Define a profile, then choose its stages
 
-The complete [profile template](../../templates/flywheel.profiles.example.json)
+The complete [profile template](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)
 includes an unreferenced `claude-sonnet` profile. This fragment belongs in your
 existing complete configuration; it is not a replacement file:
 
@@ -76,7 +77,7 @@ and max, with high as the default. A particular CLI or model can still reject a
 choice; Flywheel never silently substitutes another model or effort. Where the
 CLI cannot attest effective reasoning effort, only the requested value is recorded.
 
-When you decide the use case, reference the profile from the selected
+Reference the profile from the selected
 `loops.plan/review/judge/intake/garden` or Execute `routes.*` binding, for example
 `{"profile":"claude-sonnet"}`. This is a configuration capability, not a new default
 allocation. Clear any explicit inherited `provider`: that field identifies a DSH
@@ -100,10 +101,12 @@ An unused profile does not require the optional adapter. A selected binding make
 doctor check the worker, exact public API, and local CLI. These commands do not
 make model requests or prove account availability, quota, or live inference.
 
-## 3. Permissions and role history
+## Permissions and role history
 
-The initial adapter requires explicit `permissions.mode:full-access`, mapped to
-native `bypassPermissions` and noninteractive invocation. Native plan/acceptEdits
+The adapter requires explicit full access for its selected binding, mapped to
+native `bypassPermissions` and noninteractive invocation. Configure it globally
+with `permissions.mode:"full-access"` or use a supported binding override; see
+[Configuration](configuration.md). Native plan/acceptEdits
 approval policies are not OS read-only/workspace-write sandboxes; role-based
 requests therefore fail before dispatch. Reviewer and planner responsibilities,
 contract boundaries, and before/after candidate guards remain enforced by Go.
@@ -124,11 +127,17 @@ machine invocation are not-dispatched with known zero consumption, so fixing the
 environment can permit a later attempt. After invocation, a missing trustworthy
 outcome must stop replay even if cleanup is confirmed.
 
+For project membership, execution-directory selection, and worktrees, see
+[Workflow](workflow.md). These locations remain part of the recorded invocation
+identity; changing them does not authorize replay of an unresolved call.
+
+### Durable recovery
+
 Before dispatching Claude, an independent supervisor owns a durable journal and native guardian. Go persists and acknowledges intent/possible checkpoints before prompt submission. Worker loss cancels unacknowledged steps and initiates native cleanup; complete terminal receipts are durable before notification. Public `recoverMachine` reads only that invocation and never starts the CLI or resubmits a prompt.
 
-Claude init arrives after the prompt. There is no fabricated pre-dispatch thread-ready or native turn-accepted event; actual model, cwd, and permission checks still apply at terminal admission. Supervisor loss, corruption, or missing original candidate proof can leave execution blocked. See [recovery and context quality](session-recovery.md). Real-account quality, cache, and performance require separate paired evidence.
+Claude init arrives after the prompt. There is no fabricated pre-dispatch thread-ready or native turn-accepted event; actual model, cwd, and permission checks still apply at terminal admission. Supervisor loss, corruption, or missing original candidate proof can leave execution blocked. See [recovery and context quality](session-recovery.md). Real-account quality, cache, and performance require separate [paired evidence](session-evaluation.md).
 
-## 4. Usage and subscription cost
+## Usage and subscription cost
 
 CLI input_tokens excludes cache. For complete reports, Flywheel adds cache read
 and cache creation to input, then adds output to calculate total tokens. Missing
