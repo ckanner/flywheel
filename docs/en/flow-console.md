@@ -31,7 +31,7 @@ Continue workflow is behind an explicit disclosure. A passed stage does not star
 
 ## Configuration
 
-In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its pages are Workflow canvas, Global/project configuration, and Runs and comparison. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
+In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its navigation tabs are Workflow, Run history, and Configuration. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
 Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV shadow advice have separate sections. Save and Discard appear beside the form only after edits. Ordinary saving takes one click; first enabling JEV confirms the task-summary transfer boundary. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
 
