@@ -45,6 +45,11 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
+The [feedback-driven workflows and JEV proposal](plans/2026-11-12-feedback-driven-workflows.md)
+(Chinese; proposed) reviews Auto / Quick / Full, incident investigation,
+short feedback cycles, model policy, and bounded semantic decisions. It is a
+design for review, not a description of newly available runtime behavior.
+
 | Collection | Contents |
 | --- | --- |
 | [Plans](plans/README.md) | Dated design proposals and implementation decisions |
