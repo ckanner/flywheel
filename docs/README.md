@@ -29,6 +29,7 @@ execution separately.
 | Reference | English | 简体中文 |
 | --- | --- | --- |
 | Development setup, quality gates, and pull requests | [Contributing](en/contributing.md) | [贡献指南](zh-CN/contributing.md) |
+| Documentation ownership, bilingual updates, and review checklist | [Maintenance rules](en/contributing.md#keep-documentation-organized) | [文档维护规范](zh-CN/contributing.md#保持文档结构清晰) |
 | Build, verify, publish, and recover a six-package release | [Release runbook](en/releasing.md) | [发行手册](zh-CN/releasing.md) |
 | DSH package, host compatibility, and worker setup | [Plugin README](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) | [插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md) |
 
@@ -68,6 +69,9 @@ Update the section that owns a behavior. Keep release history in the
 changelog and dated evidence in validation records, rather than adding
 unrelated paragraphs to guide introductions or endings. The old
 `README.en.md` files remain compatibility links, not duplicate manuals.
+Use the [maintenance rules](en/contributing.md#keep-documentation-organized) to
+map each change to its affected documents and check the final PR. AI agents also
+follow the [repository operating rules](https://github.com/ckanner/flywheel/blob/main/AGENTS.md).
 
 This repository's documentation is distinct from the `docs/<task>/` contract
 and runtime ledger that Flywheel creates in a **target repository**.

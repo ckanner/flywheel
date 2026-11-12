@@ -8,15 +8,41 @@ on disk, unattended, escalating to a human when stuck. This repo holds the
 orchestrator (`cmd/` + `internal/`), the contract templates (`templates/`),
 and the button skills (`skills/`).
 
-docs/design.md is the authoritative design document. Session bootstrap: read it first — its introduction records the implementation phase, and its validation and future-work sections record pending checks and follow-ups. Its §2 design invariants are the
-highest constraint: any implementation decision that conflicts with them is
-wrong. The orchestrator is NOT an agent — keep every machine decision
-mechanically checkable.
+[docs/design.md](docs/design.md) defines the architecture and required design
+contracts. Read §2 and the sections affected by the task before changing behavior;
+§10 links implementation and validation evidence. Schemas define valid contract
+fields; current source and tests establish implemented behavior. If these disagree,
+resolve the discrepancy explicitly rather than documenting a bug as the intended
+contract. The orchestrator is NOT an agent — keep every machine decision
+mechanically checkable and preserve the design invariants.
 
 Note: this repo's own `docs/` holds project documentation (design.md /
 review ledgers); the `docs/<slug>/` ledger zone defined in
-DESIGN is a TARGET-repo concept (internal/ledger) — same prefix,
+the design is a TARGET-repo concept (internal/ledger) — same prefix,
 disjoint worlds.
+
+## Change Workflow
+
+1. **Establish scope.** Inspect the branch, HEAD, working-tree changes, and existing
+   PR before editing. Reuse the task checkout when appropriate and preserve other
+   work. Read the [documentation index](docs/README.md), applicable instructions,
+   design sections, schemas, source, and tests. Identify the affected contracts,
+   user guides, and validation before implementation; historical proposals and
+   acceptance records do not establish current defaults.
+2. **Keep the change coherent.** Implement the requested behavior and update its
+   owning documentation in the same PR. For contract changes, revise the relevant
+   design/schema/protocol alongside code and tests. Keep unrelated model defaults,
+   permissions, dependencies, and user configuration outside the task's scope.
+3. **Verify the final change.** Run the applicable checks below, then review the
+   final diff against the task and design contracts. Check both language editions
+   and affected packaged or embedded files. Recheck evidence affected by a later
+   edit; select checks for the changed behavior instead of repeating unrelated
+   suites. Never weaken a gate to make a change pass.
+4. **Complete the authorized delivery.** Report what changed, the checks actually
+   run, and remaining failures or limits. Distinguish pass, fail, skipped, and not
+   run; source validation, candidate installation, CI, registry publication, and
+   user-machine acceptance are separate evidence. Finish authorized commits and
+   PR updates using the reviewed change and the Git rules below.
 
 ## Build & Test
 
@@ -43,7 +69,7 @@ npm 发行修改须运行根目录 `npm test`，并构建一次六包候选，�
 Claude Code Pro 是 optional peer；验证该后端时先在 `plugins/dsh` 安装精确 0.4.0
 公开接口（未发布时使用已审查源码的真实 npm tarball）。默认未安装的跳过不算该后端
 通过；记录实测 tarball 身份，不能改版本冒充兼容或虚构 registry 发行。
-Codex Pro 0.9.0 未发布源码候选以 vendor 中真实 npm 包及实际 integrity 锁定，
+Codex Pro 0.9.0 以 vendor 记录中的已审查源码包及实际 integrity 锁定，
 通过 bundledDependencies 随插件分发；不可替换成未验证 registry integrity。
 P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓存或性能结论。
 
@@ -57,8 +83,9 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
   a malformed acceptance must fail fast, never crash mid-run after a spawn.
 - **Error taxonomy**: `internal/errs` codes (AUTH/QUOTA/RATE_LIMIT/SERVER/
   TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED)
-  are a wire contract. Changes are design changes: update docs/design.md §6 and the
-  变更记录 first, then code, then tests.
+  are a wire contract. Changes are design changes: define the change in
+  docs/design.md §6 before implementing it, then update code, tests, and
+  CHANGELOG.md in the same PR.
 - **Ledger zone**: paths inside `docs/<slug>/` are classified by
   `internal/ledger`. Boundary judgement excludes ledger paths; unit commits
   additionally exclude the volatile set (metrics.jsonl / orchestrator.log /
@@ -74,13 +101,18 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
   Enforced by internal/skillsembed tests (real YAML parsing + standard
   constraints, CI-blocking), NOT by regex.
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
-  `control launch|start|status|stop|config|doctor` prints one protocol-versioned JSON response;
+  `control <action>` prints one protocol-1 JSON response, independently of worker
+  protocol versions (see docs/design.md §12 and `internal/cli/control.go`);
+  `shadow prepare|run|report` prints one JSON report;
   `config inspect|migrate` and `doctor` print human text, or a single JSON document with `--json`;
   `install-skills` prints human text or one complete protocol-versioned summary with `--json`;
   npm `install`/`setup --json` returns a distinct installation report, retaining partial failures;
-  `status`/`stop`/`template` print human-readable text; errors go to
-  stderr. Exit codes: `0` ok, `1` usage/runtime error, `3` escalated /
-  budget-stopped / failed manual step.
+  `status`/`stop`/`template` and interactive `session` use text output.
+  Human diagnostics use stderr. Control failures, including parse errors, stay
+  in the stdout JSON envelope; other commands may return an error report or
+  fail before producing one. Preserve each interface's failure contract.
+  Exit codes: `0` ok, `1` usage/runtime error, `3` escalated / budget-stopped /
+  failed manual step; shadow also uses `3` for failed, unknown, or unrun items.
 - **SIGTERM kill switch**: machine.RunTask registers SIGTERM → kills in-flight
   child process groups → awaits quiescence → exits 143. Never remove this.
   The npm launcher must forward cancellation and await Go cleanup; a wrapper
@@ -113,36 +145,67 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
 
 100% statement coverage for every measured Go function is a hard gate
 (`make coverage`; the one-line cmd entry stub is excluded). It is a
-design tool: unreachable defensive branches get deleted (with a comment citing
-why), everything else gets an injection seam (sleep/now/env/log/clock) rather
-than a mocked-out test. Do not loosen the gate; do not write tests that assert
-implementation trivia to chase the number.
+design tool: exercise meaningful failure paths with narrow injection seams
+(sleep/now/env/log/clock), and assert observable behavior. Demonstrate why a branch
+is unreachable before removing it; never remove a valid defense solely to raise
+coverage. Do not loosen the gate or mirror implementation trivia in tests.
 
 ## Git Discipline
 
-- No commits or pushes without explicit user approval.
+- Commit and push only within the user's authorization. An explicit request to
+  submit or update a PR authorizes the commits and branch push needed for that PR;
+  reuse that authorization without asking again. It does not authorize merging
+  into the base branch, tagging, publishing, deploying, or changing user settings.
+- Preserve other work and concurrent remote updates. Inspect the current branch
+  head before updating it; do not overwrite another contributor's commits or
+  force-push without explicit authorization. A new base commit may need to be
+  integrated and the affected checks repeated before the PR is ready.
 - Commit messages: English Conventional Commits (`fix:`, `feat:`, `docs:`,
   `chore:`).
 - Target repos: never commit secrets, keys, or live credentials into a task
   directory; `approvals/` records env var NAMES only.
 
-## Language
+## Documentation Maintenance
+
+Use the change-to-document mapping and review checklist in the
+[English contribution guide](docs/en/contributing.md#keep-documentation-organized)
+or [中文贡献指南](docs/zh-CN/contributing.md#保持文档结构清晰). For every change:
+
+- Update the section that owns the behavior; add a named subsection when needed.
+  Keep the root README focused on the project and first steps. Release changes
+  belong in `CHANGELOG.md`; dated proposals, validation, and reviews belong in
+  their indexed directories. Never append a task journal to a README or this file.
+- Update affected English and Chinese guides in the same PR. Match commands,
+  fields, defaults, permissions, and limitations; prose need not be word-for-word.
+- When adding or moving a document, update navigation, reciprocal language links,
+  and incoming references, including scripts, tests, templates, and embedded
+  skills. Preserve compatibility entry points when existing consumers need them.
+- Check links, anchors, fenced examples, and the relevant package contents.
+  Relative package links must resolve inside the installed package; use explicit
+  repository links for source that is not shipped. Do not claim a dedicated docs
+  CI gate unless the repository actually implements it.
+- Preserve historical dates, source/candidate identities, results, and limits.
+  Mark factual corrections with their basis; record later acceptance separately
+  instead of replacing old outcomes. Package versions alone do not establish
+  registry or installed versions.
+
+### Language
 
 Use English as the default root and plugin README (`README.md`), with paired
 `README.zh-CN.md` translations. Keep `README.en.md` only as a compatibility
 link. Maintain user and maintainer guides in parallel `docs/en/` and
-`docs/zh-CN/` directories, linked from the documentation indexes. Update both
-languages when installation, configuration, workflow or runtime boundaries
-change. Keep the authoritative `docs/design.md` and SKILL.md bodies in
+`docs/zh-CN/` directories with matching filenames and reciprocal language links.
+Keep the authoritative `docs/design.md` and SKILL.md bodies in
 Chinese; historical plans, reviews and validation records do not need duplicate
-translations. Integrate current behavior into its existing section; put release
-changes in CHANGELOG.md and dated evidence in docs/validation/, not as
-unstructured additions to guide introductions or endings.
+translations. Label links to material available in only one language.
 Code comments mix per existing convention: English for mechanics, Chinese for
 design-document references.
 
 ## Maintaining This File
 
 Add a rule only when it is repo-specific, non-obvious, actionable, and prevents
-a recurring failure. Mechanizable constraints belong in code/tests/CI — this
-file keeps only rationale and safe exceptions.
+a recurring failure. Put detailed procedures and examples in the paired
+contribution guides and link them here. Update the owning section, remove rules
+superseded by the same change, and keep temporary progress or dated evidence out
+of this file. Mechanizable constraints belong in code/tests/CI; do not describe
+a proposed check as enforced until it exists.

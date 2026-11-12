@@ -25,6 +25,7 @@
 | 主题 | 简体中文 | English |
 | --- | --- | --- |
 | 开发环境、质量门禁和 PR 流程 | [贡献指南](zh-CN/contributing.md) | [Contributing](en/contributing.md) |
+| 文档归属、双语更新和审阅清单 | [文档维护规范](zh-CN/contributing.md#保持文档结构清晰) | [Maintenance rules](en/contributing.md#keep-documentation-organized) |
 | 六包构建、验证、发布和恢复 | [发行手册](zh-CN/releasing.md) | [Release runbook](en/releasing.md) |
 | DSH 包、宿主兼容和 worker 接入 | [插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md) | [Plugin README](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) |
 
@@ -55,5 +56,6 @@
 | `plugins/dsh/` | 插件专属说明和协议参考 |
 
 行为变化应更新所属章节；版本变化放入 CHANGELOG，验收证据放入对应记录，避免在指南开头或末尾追加无关段落。旧 `README.en.md` 只保留兼容跳转，不再维护重复正文。
+按[文档维护规范](zh-CN/contributing.md#保持文档结构清晰)确定本次改动需要同步的文档，并在 PR 前核对清单。AI agent 还须遵循 [AGENTS.md 操作规则](https://github.com/ckanner/flywheel/blob/main/AGENTS.md)。
 
 本仓库的项目文档与 Flywheel 在**目标仓库**中生成的 `docs/<task>/` 任务契约、运行账本是两类内容。

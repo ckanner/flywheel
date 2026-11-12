@@ -438,7 +438,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 
 测试必须检查公共行为与失败路径：真实 Git hook/merge/index/worktree、真实子进程/取消、协议错帧、身份失效、报告收集、权限失败。I/O 注入缝用于不可稳定制造的故障，不通过删除防御分支或镜像实现来凑覆盖率。插件另跑 Node 测试、真实官方 SDK 的无推理 doctor、Go→Node→SDK fixture。
 
-每次验收记录应固定源码、候选及环境身份，区分本地测试、远端 CI、真实桌面和账号推理。历史通过不能替代当前改动的验证。0.30.2 的正式发行和 Mac 桌面验收见相应记录；它不证明后续源码已发布，也不证明真实模型质量、计费或受限 Seatbelt 行为。
+每次验收记录应固定源码、候选及环境身份，区分本地测试、远端 CI、真实桌面和账号推理。历史通过不能替代当前改动的验证。0.30.2 和 0.31.0 的正式发行及 Mac 桌面验收见各自记录；这些结果不证明后续源码已发布，也不证明真实模型质量、计费或受限 Seatbelt 行为。
 
 ### 10.1 设计来源与验收记录
 
@@ -453,6 +453,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | 流程控制台、任务发现和工作台 | [控制台方案](plans/2026-11-08-flow-console.md)、[任务发现](plans/2026-11-10-task-discovery.md)、[工作台](plans/2026-11-10-workbench-redesign.md) | [控制台](validation/2026-11-09-flow-console.md)、[任务发现](validation/2026-11-10-task-discovery.md)、[工作台](validation/2026-11-10-workbench-redesign.md) |
 | 可选影子评估 | [JEV 方案](plans/2026-11-10-jev-shadow.md) | [JEV 验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
+| 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |
 
 提案保留当时的背景和分期，验收记录保留实际结果；现行行为以本文、schema 和当前使用指南为准。新增实现应修改对应章节，发布事实写入 changelog 和验收记录，不在文档开头或结尾追加另一套现行说明。
 

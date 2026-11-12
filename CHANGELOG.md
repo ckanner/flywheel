@@ -14,8 +14,11 @@ their original language.
   workbench descriptions with the implementation.
 - Adopt the MIT License for Flywheel source and all six npm packages, retain
   third-party notices, and include both language editions in distributions.
+- Define the AI agent change workflow, documentation ownership and update rules,
+  bilingual review checklist, and evidence requirements in AGENTS.md and the
+  contribution guides.
 
-## 0.31.0 — 项目归属与执行目录分离（发行候选）
+## 0.31.0 — 项目归属与执行目录分离
 
 - Session 归属原仓库，执行、验收与交付仍绑定实际任务目录；提示词和界面分别展示两层位置。
 - DSH SDK Session 使用稳定项目 header 和公开目录切换；桌面 Host 通过 Workspace 注册表补齐归属，探测会话使用临时持久化目录。
@@ -25,7 +28,7 @@ their original language.
 - 旧回执先按原身份核对；同项目的旧会话可继续使用，不重写历史头部。无法分离 workspace-write 沙箱根的后端明确拒绝该权限组合，不静默扩大权限。
 - 插件测试按文件串行运行，避免并发启动的测试进程挤占用于故障注入的真实截止时间；未放宽断言或 timeout。
 
-本节记录 0.31.0 源码变更；是否已上传、提升 latest 或安装，以对应发行记录为准。0.30.2 不包含本节变更。
+六包正式发布、官方 registry 安装、全部 latest 与 Mac 桌面升级均已验收；详见 [0.31.0 发行记录](docs/validation/2026-11-11-release-0.31.0.md)。
 
 ## 0.30.2 — 画布优先的流程工作台
 

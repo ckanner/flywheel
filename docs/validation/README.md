@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-11 | [0.31.0 正式发行与桌面验收](2026-11-11-release-0.31.0.md) |
 | 2026-11-11 | [0.30.2 正式发行与桌面验收](2026-11-11-release-0.30.2.md) |
 | 2026-11-10 | [流程工作台界面改造验收](2026-11-10-workbench-redesign.md) |
 | 2026-11-10 | [任务发现与单阶段画布验收](2026-11-10-task-discovery.md) |

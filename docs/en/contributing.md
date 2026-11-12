@@ -137,43 +137,154 @@ applicable gates and concrete remaining risks are resolved.
 
 ## Keep documentation organized
 
-The default project entry is [README.md](../../README.md) in English, with
-[README.zh-CN.md](../../README.zh-CN.md) as the Chinese counterpart. Current user
-and contributor guides live in `docs/en/` and `docs/zh-CN/`, using matching
-filenames and reciprocal language links.
+Documentation changes belong in the same PR as the behavior they describe. Identify
+which guides are affected before implementation, then update those guides in both
+languages. A narrow change does not require rewriting every guide or running every
+repository test.
+
+### Use the right source for each claim
+
+| Claim | Authoritative source | How to use it |
+|---|---|---|
+| Architecture, responsibilities, and invariants | [System design](../design.md), especially its design invariants | Treat these as intended constraints, not optional descriptions. |
+| Legal fields, types, required values, and wire formats | [Schemas and templates](https://github.com/ckanner/flywheel/tree/main/templates), the relevant parser, and [worker protocol](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md) | Check examples against the applicable schema and implemented interface. A schema accepting a field does not prove a backend supports it. |
+| Defaults, precedence, migration, and model bindings | [Templates embedded from the current source revision](https://github.com/ckanner/flywheel/tree/main/templates) and [configuration parsing and normalization](https://github.com/ckanner/flywheel/tree/main/internal/config) | For an installed release, also verify that version's actual templates and `config inspect` output. Distinguish defaults, omitted-field compatibility, and the user's effective configuration; an older installation cannot establish new source defaults. |
+| CLI, worker, and desktop behavior | Current [CLI](https://github.com/ckanner/flywheel/tree/main/internal/cli), [drivers](https://github.com/ckanner/flywheel/tree/main/internal/drivers), and [DSH plugin](https://github.com/ckanner/flywheel/tree/main/plugins/dsh) implementation and relevant tests | Verify commands, lifecycle boundaries, permission support, and UI labels against the implemented path. |
+| Packaging, release order, and automated gates | [Package manifest](https://github.com/ckanner/flywheel/blob/main/package.json), lockfiles, [scripts](https://github.com/ckanner/flywheel/tree/main/scripts), and [workflows](https://github.com/ckanner/flywheel/tree/main/.github/workflows) | Document the commands and gates that exist. A policy in prose is not evidence that CI enforces it. |
+| Completed tests, releases, or evaluations | [Dated validation records](../validation/README.md) and [evaluation evidence](../evaluation/README.md) | Limit claims to the recorded source, platform, inputs, and results; past results do not establish current registry or live-account status. |
+
+When design and implementation disagree, record the mismatch and resolve the
+intended behavior from the task's accepted requirements and design constraints.
+Correct the implementation when it violates that contract; update the design when
+an intended design change is part of the task, then align code, tests, and guides in
+the same PR. Do not silently declare the code correct by weakening an invariant,
+or describe a planned capability as implemented. If the intended behavior remains
+unresolved, state that limit instead of inventing a resolution.
+
+### Put content in its canonical location
+
+The default root and plugin `README.md` are English, with `README.zh-CN.md`
+counterparts. `README.en.md` remains a compatibility link, not another manual.
+Current user and maintainer guides use matching filenames in `docs/en/` and
+`docs/zh-CN/`, with reciprocal language links and the appropriate documentation index.
 
 | Content | Canonical location |
 |---|---|
 | Product overview and first commands | Root READMEs |
 | Current installation, workflow, configuration, and maintenance | `docs/en/` and `docs/zh-CN/` |
-| Authoritative architecture and invariants | `docs/design.md` |
+| Current architecture and invariants | `docs/design.md` |
 | Design proposals and their original context | `docs/plans/` |
-| Executed checks, environments, evidence, and limits | `docs/validation/` |
+| Executed checks, environments, evidence, and limits | `docs/validation/` and `docs/evaluation/` |
 | Historical reviews and superseded material | `docs/reviews/` and `docs/archive/` |
 | Package-specific interfaces and provenance | `plugins/dsh/` |
+| Rules for contributors and coding agents | The paired contribution guides and [AGENTS.md](https://github.com/ckanner/flywheel/blob/main/AGENTS.md) |
 
-Update the existing section that owns a behavior. Add a named subsection when
-needed, and update its navigation. Do not prepend a development update to the
-introduction or append unrelated instructions after the license. Release changes
-belong in the changelog; dated evidence belongs in validation records.
+This repository's documentation is separate from the `docs/<task>/` contracts and
+runtime ledger created in a target repository.
 
-Update both languages when installation, configuration, workflows, commands, or
-runtime boundaries change. Keep model IDs, JSON fields, permissions, examples,
-and capability limits equivalent. Historical design, proposal, and validation
-records do not need duplicate translations; label the language of those links.
+### Map a change to its documentation
 
-Check packaged documentation as well as the source tree. The package manifest
-must include the files linked from its README, or the link must intentionally
-point to the repository. Verify the exact candidate: an older tarball does not
-contain newly edited documentation merely because a source link now works.
+Use the following as an impact checklist. Update the named material only where the
+change affects its claims; design/schema/protocol changes also follow their own
+contract rules.
+
+| Change | Documentation to inspect and update when affected |
+|---|---|
+| Installation, upgrade, prerequisites, or setup | Root and plugin READMEs, `getting-started.md`, installation examples, and package contents |
+| CLI commands, control responses, workers, or backend support | `getting-started.md`, `workflow.md`, relevant backend guide, plugin README/`PROTOCOL.md`, and affected skill instructions |
+| Configuration, defaults, accounts, models, or permissions | `configuration.md`, `model-policy.md`, relevant README tables, actual template explanations, and migration instructions |
+| Scheduling, worktrees, execution locations, or delivery | `workflow.md`, `configuration.md`, `flow-console.md`, design sections, and affected skills |
+| Session reuse, recovery, handoff, or accounting | `session-recovery.md`, configuration/workflow/console sections, design, and affected worker contracts |
+| Desktop UI, task discovery, or operator controls | `flow-console.md`, plugin READMEs, and getting-started instructions that name the UI |
+| Evaluation tools, scenarios, or result interpretation | `session-evaluation.md` or `jev-shadow.md`, their input/output contracts, and dated evidence when new checks actually run |
+| Package layout, licenses, or release behavior | `releasing.md`, relevant installation instructions, manifests/lockfiles, packaged links, and applicable license/provenance notices |
+| A documentation move, rename, or heading change | Both documentation indexes, language links, all incoming paths/anchors, package lists, embedding references, scripts, and tests |
+| Contributor or AI operating rules | [AGENTS.md](https://github.com/ckanner/flywheel/blob/main/AGENTS.md), both contribution guides, and their navigation; keep the requirements consistent |
+
+The affected English and Chinese guides must ship in the same PR. Translate the
+meaning, not just the headings: commands, model IDs, JSON fields, examples, defaults,
+permissions, failure behavior, and capability limits must agree. A translation must
+not promise a broader capability or hide a limitation present in the other language.
+
+### Maintain readable structure and reliable history
+
+Update the section that owns a behavior; add a named subsection only when needed.
+Keep one page title, a logical heading hierarchy, short introductions, typed code
+fences, readable tables, and blank lines around headings and lists. Label fragments
+and placeholders, and use consistent terminology for project workspace, execution
+directory, task, packet, and session. Write concrete instructions rather than a
+conversation transcript. Do not prepend development updates to introductions or
+append unrelated status paragraphs after the license. Release changes belong in
+`CHANGELOG.md`; dated execution evidence belongs in validation records.
+
+Historical plans, reviews, archives, and validation records retain their original
+language and dated context. Preserve recorded dates, commits, trees, versions,
+hashes, inputs, platforms, and pass/fail/skip/not-run results. Correct a historical
+error with an explicitly labelled correction that identifies what changed and why;
+do not silently rewrite an old outcome or replace its candidate identity with a
+new one. Later completion belongs in a new dated record, linked from the old record
+when useful. Historical material does not need duplicate translations, but indexes
+must make its language and status clear.
+
+### Validate the affected documentation
+
+Before requesting review, check the items relevant to this change:
+
+- [ ] Update the owning section and affected English/Chinese counterparts in the
+  same PR, with equivalent meaning, matching filenames, and reciprocal language links.
+- [ ] Verify behavior and default claims against the relevant design, CLI, schema,
+  and source templates; support completed-test claims with matching dated evidence.
+  State unresolved differences and validation limits.
+- [ ] For moves or heading changes, use `rg` to check incoming paths and anchors in
+  guides, READMEs, skills, template embedding code, manifests, scripts, and tests.
+  Resolve links from the referring file; preserve historical immutable commit links.
+- [ ] Check local links, anchors, headings, fences, JSON/YAML examples, and safe shell
+  syntax as applicable; run `git diff --check`. Use a repository documentation checker
+  only if one exists; identify manual or ad hoc checks accurately.
+- [ ] For package or embedding changes, inspect the relevant build/pack output and
+  links in the actual candidate. Include relative-link targets or use repository URLs
+  for source-only material; an old tarball cannot verify newly edited documentation.
+- [ ] Record actual passed/failed/skipped/not-run results, methods, environments, and
+  applicable candidate identity in the PR. Do not imply unconfigured CI checks or
+  validation beyond the evidence; apply only gates relevant to the change.
+
+Use source/help inspection, syntax checks, or isolated fixtures for examples. Do not
+run live models, change accounts, install into real user profiles, publish, or deploy
+merely to check documentation; those actions require an already authorized task scope.
+
+## AI-assisted contribution workflow
+
+1. Establish the current task scope and existing authorization. Read applicable
+   repository instructions, inspect the branch, HEAD, and dirty work, and preserve
+   unrelated edits. Reuse the intended PR/worktree when continuing a task.
+2. Inspect the relevant authoritative sources and identify documentation impact
+   before implementation. Separate current behavior, proposed changes, and historical
+   evidence; surface unresolved design/code differences.
+3. Implement the scoped change and its affected bilingual documentation in the same
+   PR. Preserve the engine's state ownership, frozen contracts, and user customizations.
+4. Run the applicable checks and resolve concrete failures. Do not expand a small
+   documentation change into unrelated runtime work or live-account experiments.
+5. Review the final diff, relevant branch/base changes, translations, references, and
+   verification evidence. Recheck any conclusions invalidated by later edits.
+6. Complete the authorized commit/push/PR work and report the result. Reuse prior
+   authorization without asking again for the same action; a request for a PR alone
+   does not authorize merging, publishing, deploying, or changing repository visibility.
 
 ## Prepare a reviewable PR
 
-Explain the concrete problem, the change and resulting behavior, the checks run,
-and remaining validation limits. Review the final diff and evidence independently
-of an implementing model's completion claim. Follow active merge requirements
-and the user's authorization; preserve required gates and repository settings.
-Source merge and npm publication are separate operations.
+Explain the concrete problem, the change and resulting behavior, the affected
+bilingual guides, and any intentionally unchanged documentation whose relevance is
+not obvious. Review the final diff and evidence independently of an implementing
+model's completion claim. Follow active merge requirements and the user's
+authorization; preserve required gates and repository settings.
+
+Record each applicable check as **passed**, **failed**, **skipped**, or **not run**,
+including the command/method, relevant environment, and reason for skipped or
+unavailable checks. Distinguish local evidence from remote CI and live validation.
+For package or release work, record the tested candidate's source commit/tree,
+snapshot hash, tarball integrity, and dirty/clean status as applicable. Do not attach
+results from a different source or candidate to the PR's final state without stating
+that limitation. Source merge and npm publication remain separate operations.
 
 ## Release changes
 
