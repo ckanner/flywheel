@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { act, mountPanel, closeClientHarness } from './support/client-harness.js';
@@ -141,7 +141,7 @@ test('untrusted response text must be text before entering the report renderer',
 });
 
 test('typed investigation transport uses bounded stdin and rejects invalid envelopes before dispatch', async t => {
-  const dir = await mkdtemp(join(tmpdir(), 'flywheel-investigation-'));
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-investigation-')));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const binary = join(dir, 'engine');
   await writeFile(binary, '#!/usr/bin/env node\nlet raw="";process.stdin.on("data",c=>raw+=c);process.stdin.on("end",()=>{const body=JSON.parse(raw),args=process.argv.slice(2);console.log(JSON.stringify({protocol:1,ok:true,running:body.action==="run",state:null,taskDir:args[args.indexOf("--task-dir")+1],cwd:args[args.indexOf("--cwd")+1],preparation:' + JSON.stringify(preparation()) + ',received:body,argv:args}));});\n', { mode: 0o755 });
