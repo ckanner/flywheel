@@ -144,3 +144,44 @@ race。质量门禁包含 vet、gofmt 检查和逐函数 100% coverage，
 
 远端 CI 必须按本次实际提交 SHA 查询；旧文档提交的 runner 失败不是此次代码结果。
 最新 PR Checks 与本记录的本地源码验证分别解读。
+
+## 后续整合复核：当前主分支、DSH rc.2 与 Mac
+
+本节补录初始实现之后的整合，不替换上文 `ac46b04` 的原始 Linux 验证身份。
+已合入 #35 的 Skill 清理及 #36 的 DSH `0.2.2-rc.2` 兼容和六包版本一致性修复。
+三个 Skill 冲突保留新的调查语义、较新 metadata 版本及只读关联／配置调度指令；
+验收索引保留两项独立记录。当前源码六包统一 0.31.1，尚未据此发布 npm 或更新用户安装。
+
+本轮额外修复三个 Mac 失败：非法 UTF-8 文件名通过目录读取注入缝验证拒绝行为；
+工作目录解析失败通过窄注入缝验证且保留已有状态；插件传输测试使用物理规范路径，
+避免 `/var` 与 `/private/var` 别名误判。生产路径默认仍调用 `filepath.Abs`，没有放宽
+断言、跳过失败路径或降低覆盖率。
+
+最终代码候选来源为 `828f54c9992360c356bb076e1c1b78ccb7315f51`，tree
+`911f09f8362adfa3f8822159ea0708c57b7a2e45`；源码 snapshot SHA256
+`5dfaa3d313f197a1df62f14360daf8e6e51b7418f75a2db9f3e242c43733f2b3`。
+六包候选清单 SHA256 为 `1d79ced0e82262c1099cb87c0379618b7cd68738887bf623e7c9388191de3316`。
+后续仅补录本节文档，另核对最终文档打包，不将其称为该候选原始字节。
+
+| 本轮实际检查 | 结果 |
+| --- | --- |
+| macOS arm64 Go 1.27.3：`GOFLAGS=-timeout=20m make quality-gate` | 通过，逐函数 100% |
+| Linux arm64 容器 Go 1.27.3：原始 `make quality-gate` | 通过，逐函数 100% |
+| Linux 十包 race | machine、verify、watchdog、drivers、cli、modules、diagnostic、state、decision、investigation 全部通过 |
+| rc.2 插件与旧宿主 | 251/251 + 9/9，无跳过 |
+| 根 npm 测试 | 142/142，无跳过 |
+| 三组 Go → Node 公开适配器桥接 | DSH、Codex Pro、Claude Code Pro 全部通过，无跳过 |
+| 真实引擎离线会话评估 | 36 trials、96 次 fixture 调用，全部 oracle 通过 |
+| 同一六包候选安装 | macOS arm64 10/10，Linux arm64 10/10，无跳过 |
+| 当前实际 DSH rc.2 SDK 无推理探测 | cwd、完全权限与正常收尾确认，没有发送 prompt |
+| 源码与候选文档检查 | 本地链接、锚点、JSON/shell 围栏及六包版本／许可证一致性通过 |
+
+Mac 原始门禁先触发 Go 默认整包 600 秒累计超时；触发时当前子用例仅运行 1 秒，
+并非那个子用例卡住 10 分钟。保留首次失败，复跑只为整个测试包提供 20 分钟运行窗口；
+业务验收、单项超时和逐函数 100% 门禁保持原值。另见 rc.2 验证记录中保留的首次
+Codex 启动时序失败；同一截止的单独与完整复跑通过，不将原失败抹除。
+
+上述 Go 门禁和 race 使用相同的 319 个 Go 源／测试文件；随后合入的 rc.2 manifests
+及 Markdown 不改变这些已验证文件。可选 Claude 0.4.0 使用原已审阅 tarball，
+SHA256 `125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581`，未改
+版本冒充发行。真实模型质量、JEV 在线收益与用户桌面安装仍不在本轮离线验收结论中。
