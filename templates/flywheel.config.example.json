@@ -130,6 +130,7 @@
     "protected-test-patterns": [],
     "_note": "test-file-patterns 仅用于抽样识别；普通单测可随实现修改。冻结验收必须由 packet.boundaries.must-not-touch 或 protected-test-patterns 显式保护。100% 覆盖率仍由验收命令执行。"
   },
+  "scheduler": {"mode": "parallel", "max-parallel": 2},
   "worktree": {
     "enabled": true
   },

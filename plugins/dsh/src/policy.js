@@ -3,10 +3,10 @@
 import { link, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 
-export const inject = ['sandboxPolicy', 'approval', 'shell'];
+export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
 export async function apply(ctx, config) {
-  const { permissionMode, cwd, receiptPath, requestId, sessionId, nonce } = config;
+  const { permissionMode, cwd, workspaceCwd, sessionTitle, receiptPath, requestId, sessionId, nonce } = config;
   const fullAccess = permissionMode === 'danger-full-access';
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode) || typeof cwd !== 'string' ||
       ctx.shell.sandboxMode === undefined) {
@@ -38,6 +38,18 @@ export async function apply(ctx, config) {
   ctx.on('agent/created', async ({ agent }) => {
     const session = agent.session;
     if (String(session.id) !== sessionId) throw new Error('Flywheel policy refuses an unrelated SDK session');
+    if (workspaceCwd !== undefined && session.header.cwd !== workspaceCwd) {
+      throw new Error('Flywheel refuses to relabel a session from a different project workspace');
+    }
+    if (workspaceCwd !== undefined) {
+      // Public service accepts an unpublished Agent. Switch before attesting
+      // readiness. The native sandbox root remains the immutable project;
+      // unsupported split workspace-write requests are rejected at admission.
+      await ctx.workingDirectory.set(agent, cwd);
+    }
+    if (sessionTitle && ctx.get('sessionTitle')) {
+      ctx.get('sessionTitle').rename(session, [...sessionTitle].slice(0, 35).join(''));
+    }
     // Official events remain readable by a later SDK. An ad-hoc Session event
     // would make rc.1 reject the entire persisted log on resume.
     session.append('sandbox/mode', { mode: permissionMode });
@@ -46,6 +58,7 @@ export async function apply(ctx, config) {
     const receipt = {
       protocol: 1,
       requestId, sessionId, nonce,
+      ...(workspaceCwd === undefined ? {} : { workspaceCwd: session.header.cwd }),
       cwd: policy.workspaceRoot,
       permissionMode: policy.mode,
       // Read the explicit logged override through the public API.

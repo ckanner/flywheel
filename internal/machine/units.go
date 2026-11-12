@@ -224,6 +224,9 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 // ff-merge 失败时返回 ErrMergeConflict：worktree 原样保留、状态绝不标
 // completed（§5.2 state.json 不说谎），由调用方升级到人。
 func (c *Context) completeUnit(packet *contract.Packet) error {
+	if c.State.SharedExecution != nil {
+		return fmt.Errorf("%w: shared candidate requires whole-batch verification and delivery", ErrCommitFailed)
+	}
 	if err := c.err(); err != nil {
 		return err
 	}
@@ -332,7 +335,9 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 			"at":         c.nowISO(),
 			"ledger-sha": jsonNilable(ledgerCommit.SHA),
 		}
-		if cleanupErr := c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path); cleanupErr != nil {
+		if ps.Worktree.External {
+			c.Log(fmt.Sprintf("%s: external worktree retained", id))
+		} else if cleanupErr := c.removeUnitWorktree(ps.Worktree.Branch, ps.Worktree.Path); cleanupErr != nil {
 			ps.Commit.(map[string]any)["cleanup-error"] = cleanupErr.Error()
 			c.Log(fmt.Sprintf("%s: committed; worktree cleanup deferred: %v", id, cleanupErr))
 		} else {
@@ -383,6 +388,18 @@ func (c *Context) maybeDefectInjection(packet *contract.Packet) (*defectinjectio
 	for _, p := range c.State.Packets {
 		if p.Status == "completed" {
 			completedCount++
+		}
+	}
+	if c.sharedActive(packet.PacketID) {
+		// Batch completion is atomic, but sampling still uses each unit's
+		// deterministic delivery position instead of sampling every peer as #1.
+		for _, id := range c.State.SharedExecution.Packets {
+			if id == packet.PacketID {
+				break
+			}
+			if c.sharedActive(id) {
+				completedCount++
+			}
 		}
 	}
 	// 测试文件占比来自权威 diff（L1 boundary），与 verify 共用模式——
@@ -509,6 +526,7 @@ func (c *Context) injectionStop(packet *contract.Packet, oi *defectinjection.Out
 // execLoopOutcome keeps execution bounded. Structured Quick risk discovery
 // checkpoints a one-way upgrade; ordinary failures remain caller decisions.
 type execLoopOutcome struct {
+	Deferred bool // execution ended; shared-candidate acceptance waits for all workers
 	Green    bool // L1 全绿：子环达标（done-condition 由冻结契约的验收命令构成）
 	Stopped  bool // budget/凭证等待/fatal：跨环停止信号
 	Bounded  bool // FailedAttempts 耗尽：有界停止（调用方裁决：升级或报告）
@@ -548,12 +566,19 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 			manualUsed = true
 		}
 
-		exec, err := c.executeStep(packet)
+		exec := execOutcome{Success: c.sharedActive(packet.PacketID) && c.State.Packets[packet.PacketID].Status == "executed" && c.doneReportValid(packet)}
+		var err error
+		if !exec.Success {
+			exec, err = c.executeStep(packet)
+		}
 		if err != nil {
 			return execLoopOutcome{Stopped: true}, err
 		}
 		if exec.Stopped {
 			return execLoopOutcome{Stopped: true}, nil
+		}
+		if exec.Relocated {
+			continue // no implementation or acceptance is claimed by a directory proposal
 		}
 		if !exec.Success {
 			// C4（v0.18）：execute 失败路径的空转签名用编排器亲自 diff 的
@@ -568,6 +593,9 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 			return execLoopOutcome{Upgraded: true}, err
 		}
 
+		if c.parallel != nil && c.sharedActive(packet.PacketID) {
+			return execLoopOutcome{Deferred: true}, nil
+		}
 		l1 := c.l1Step(packet)
 		if !l1.Pass {
 			var failedCommands []string
@@ -744,6 +772,9 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (stri
 			return "stop", nil
 		}
 		if review.Pass {
+			if opts.DeferCommit {
+				return "verified", nil
+			}
 			if err := c.completeUnit(packet); err != nil {
 				if errors.Is(err, ErrMergeConflict) || errors.Is(err, ErrCommitFailed) {
 					// 合并冲突：worktree 已保留，升级到人（与其他升级同款

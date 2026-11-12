@@ -193,6 +193,19 @@ test('minute conversion preserves unedited watchdog fields and invalid numeric d
   assert.equal(field(ui, '传输重试上限').value, '5');
 });
 
+test('worktree isolation defaults on and saves an explicit off switch without altering session policy', async (t) => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('配置');
+  assert.equal(field(ui, '自动管理任务 Worktree').value, 'true');
+  await input(ui, '自动管理任务 Worktree', 'false');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: false } });
+  assert.equal(field(ui, '会话策略').value, 'scoped');
+  await input(ui, '自动管理任务 Worktree', 'true');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: true } });
+});
+
 test('serial scheduling omits concurrency and toggling parallel preserves the saved limit', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('配置');
@@ -277,6 +290,24 @@ test('node dialogs freeze revision and a newer snapshot cannot silently reuse a 
     ui.requests.some((r) => r.action === 'step'),
     false,
   );
+});
+
+test('shared batch and workspace association warnings remain visible without a control failure', async (t) => {
+  const ui = await mountPanel(t, (r) => reply(r, {
+    cwd: '/repo/task-checkout',
+    workspaceWarnings: ['工作区归属未同步：registry busy'],
+    state: {
+      revision: 9, status: 'paused', project: { 'workspace-cwd': '/repo' },
+      'shared-execution': { packets: ['M01-T01', 'M01-T02'], 'last-error': 'commit hook rejected delivery' },
+      packets: { 'M01-T01': { status: 'l1-passed' }, 'M01-T02': { status: 'executed' } },
+    },
+  }));
+  await ui.selectPath(0, '/repo/task-checkout/docs/task');
+  await ui.click('刷新状态');
+  assert.match(ui.container.textContent, /共享目录批次/);
+  assert.match(ui.container.textContent, /commit hook rejected delivery/);
+  assert.match(ui.container.textContent, /registry busy/);
+  assert.equal(ui.requests.length, 1, 'rendering pending collective delivery never launches another task');
 });
 
 test('locate moves to a running task outside the current page without executing it', async (t) => {

@@ -1,5 +1,7 @@
 # Flywheel for DSH
 
+Current source separates session project membership from task execution directories and reconciles SDK sessions with desktop workspaces. Automatic Worktree management and parallel scheduling are independent. See the [console guide](../../docs/en/flow-console.md) for existing-session and restricted-permission boundaries.
+
 [简体中文](README.md) · [Project overview](https://github.com/ckanner/flywheel/blob/main/README.en.md) · [Getting started](https://github.com/ckanner/flywheel/blob/main/docs/en/getting-started.md)
 
 This package connects the DSH desktop to Flywheel's deterministic Go engine and

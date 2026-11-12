@@ -1,3 +1,5 @@
+Object.assign(zh, { projectHome: '项目工作区', executionHome: '实际执行目录', externalWorktree: '自行管理的 Worktree（保留目录）' });
+Object.assign(en, { projectHome: 'Project workspace', executionHome: 'Execution directory', externalWorktree: 'Caller-managed Worktree (retained)' });
 // Compiled into the same lazy factory as client.js. All writes use the Go control boundary.
 Object.assign(zh, {
   consoleLastOperation: '最近节点操作', consoleOperation_running: '等待结束回执', consoleOperation_passed: '已完成', consoleOperation_failed: '未通过', consoleOperation_cancelled: '已取消', consoleSnapshotStale: '快照已过期', consoleLaunchOptions: '准备任务与启动选项', consoleTaskSummary: '任务总览与累计用量', consoleMockModel: '离线演练 · 不调用模型', consoleFullNode: '读取完整节点证据', consoleExcerpt: '画布使用有界摘要；完整节点证据按需读取', consoleAssociated: '本会话关联的任务', consoleResource: '资源 / Provider', consoleCustom: '自定义绑定',
@@ -93,6 +95,8 @@ function SessionInspector({ sessionKey, value, control, selection, run, t }) {
   return h('article', { className: css.sessionRecord },
     h('h4', { className: css.heading }, (roleLabels[value.role] ? t(roleLabels[value.role]) : value.role) + ' / ' + value.scope),
     h('p', { className: css.path }, value['thread-id'] || t('consoleUnknown')),
+    value['workspace-cwd'] && h('p', { className: css.path }, t('projectHome') + ': ' + value['workspace-cwd']),
+    value.cwd && h('p', { className: css.path }, t('executionHome') + ': ' + value.cwd),
     h('p', { className: css.meta }, [t('sessionAction_' + value.action), value.reason, value.last?.outcome].filter(Boolean).join(' · ')),
     h('div', { className: css.actions }, h(Button, { disabled: control.pending !== null, onClick: () => run('history', selection, false, { sessionKey }) }, t('sessionLatest'))),
     history && h('details', { className: css.details, open: true }, h('summary', null, t('sessionLatest')), h('p', { className: css.meta }, t('sessionLatestHelp')), h('pre', { className: css.raw }, history.text)),

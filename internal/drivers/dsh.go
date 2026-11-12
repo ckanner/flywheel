@@ -30,6 +30,8 @@ type DSHArgs struct {
 	PersistentSession bool
 	RequestID         string // engine invocation, not an SDK idempotency key
 	Cwd               string
+	WorkspaceCwd      string
+	SessionTitle      string
 	Command           string // executable path; empty => FLYWHEEL_DSH_WORKER or flywheel-dsh-worker
 	APIKeys           map[string]string
 	Watchdog          watchdog.Opts
@@ -49,6 +51,8 @@ type dshStart struct {
 	Protocol        int    `json:"protocol"`
 	RequestID       string `json:"requestId"`
 	Cwd             string `json:"cwd"`
+	WorkspaceCwd    string `json:"workspaceCwd,omitempty"`
+	SessionTitle    string `json:"sessionTitle,omitempty"`
 	Provider        string `json:"provider"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoningEffort"`
@@ -118,6 +122,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			RequestID       string          `json:"requestId"`
 			SessionID       string          `json:"sessionId"`
 			Cwd             string          `json:"cwd"`
+			WorkspaceCwd    string          `json:"workspaceCwd"`
 			Provider        string          `json:"provider"`
 			Model           string          `json:"model"`
 			ReasoningEffort string          `json:"reasoningEffort"`
@@ -147,7 +152,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 		}
 		switch frame.Type {
 		case "ready":
-			if ready || frame.SessionID == "" || frame.Cwd != request.Cwd || frame.Provider != request.Provider ||
+			if ready || frame.SessionID == "" || frame.Cwd != request.Cwd || frame.WorkspaceCwd != request.WorkspaceCwd || frame.Provider != request.Provider ||
 				frame.Model != request.Model || frame.ReasoningEffort != request.ReasoningEffort ||
 				frame.PermissionMode != request.PermissionMode || frame.ApprovalPolicy != "never" {
 				parsed.Error = "DSH worker effective settings mismatch"
@@ -294,12 +299,23 @@ func RunDSH(a DSHArgs) Result {
 	if err != nil {
 		return invalidDSHSession(a, "DSH cwd cannot be resolved: "+err.Error())
 	}
+	project := a.WorkspaceCwd
+	if project != "" {
+		project, err = filepath.Abs(project)
+		if err == nil {
+			project, err = filepath.EvalSymlinks(project)
+		}
+		if err != nil {
+			return invalidDSHSession(a, "DSH project workspace cannot be resolved: "+err.Error())
+		}
+	}
 	effort := a.Thinking
 	if effort == "" {
 		effort = "high"
 	}
 	request := dshStart{Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
 		Provider: a.Provider, Model: a.Model, ReasoningEffort: effort,
+		WorkspaceCwd: project, SessionTitle: a.SessionTitle,
 		PermissionMode: permission, Prompt: a.Prompt, TimeoutMS: a.Watchdog.WallTimeoutMs}
 	if a.RequestID != "" {
 		request.RequestID = a.RequestID

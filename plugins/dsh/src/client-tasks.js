@@ -85,7 +85,7 @@ function TaskChooser({ control, selection, hostSessionID, association, changeSel
   const selected = tasks.find(task => task.taskDir === (current?.taskDir || selection.taskDir) && (!(current?.cwd || selection.cwd) || task.cwd === (current?.cwd || selection.cwd)));
   const linked = association?.taskDir === selection.taskDir ? association : null;
   const taskPath = current?.taskDir || selected?.taskDir || linked?.taskDir || '';
-  const project = current?.cwd || selected?.cwd || linked?.cwd || control.runsCwd || '';
+  const project = current?.state?.project?.['workspace-cwd'] || selected?.workspaceCwd || current?.cwd || selected?.cwd || linked?.cwd || control.runsCwd || '';
   const show = open || !selection.taskDir;
   return h('section', { className: css.taskChooser, 'aria-label': t('taskChooser') },
     h('div', { className: css.consoleToolbar },
@@ -102,12 +102,13 @@ function TaskChooser({ control, selection, hostSessionID, association, changeSel
         h('option', { value: '' }, t('taskPick')),
         ...[true,false].map(belongs => h('optgroup', { key: String(belongs), label: t(belongs ? 'taskThisSession' : 'taskRecent') },
           ...tasks.filter(task => task.belongs === belongs).map(task => h('option', { key: selectionKey(task), value: selectionKey(task) },
-            (task.summary?.slug || task.taskDir.split('/').at(-1)) + ' · ' + task.cwd.split('/').at(-1) + (task.branch ? ' · ' + task.branch : '') + (stageName(task.kind,t) ? ' · ' + stageName(task.kind,t) : ''))))))),
+            (task.summary?.slug || task.taskDir.split('/').at(-1)) + ' · ' + (task.workspaceCwd || task.cwd).split('/').at(-1) + (task.branch ? ' · ' + task.branch : '') + (stageName(task.kind,t) ? ' · ' + stageName(task.kind,t) : ''))))))),
     show && !control.runsLoading && control.runs !== null && tasks.length === 0 && h('p', { className: css.meta }, t('taskNone')),
     (project || taskPath) && h('details', null,
       h('summary', { className: css.taskLocationSummary }, [project.split('/').filter(Boolean).at(-1), current?.state?.run?.branch || selected?.branch].filter(Boolean).join(' · ') || t('wbPaths')),
       h('dl', { className: css.taskLocations, 'aria-label': t('taskLocation') },
       project && h(React.Fragment, null, h('dt', null, t('taskWorkspace')), h('dd', { 'data-workspace-path': project }, project)),
+      current?.cwd && current.cwd !== project && h(React.Fragment, null, h('dt', null, t('executionHome')), h('dd', null, current.cwd)),
       taskPath && h(React.Fragment, null, h('dt', null, t('taskFolderLocation')), h('dd', { 'data-task-path': taskPath },
         project && taskPath.startsWith(project + '/') ? taskPath.slice(project.length + 1) : taskPath)),
       (current?.state?.run?.branch || selected?.branch) && h(React.Fragment, null, h('dt', null, t('consoleBranch')), h('dd', null, current?.state?.run?.branch || selected.branch)))));

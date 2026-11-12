@@ -82,7 +82,10 @@ type CallArgs struct {
 	MilestoneID       string
 	PacketID          string
 	TaskDir           string
-	Cwd               string
+	Cwd               string // actual execution checkout
+	WorkspaceCwd      string // stable project/session home; never substitutes for verification cwd
+	SessionTitle      string
+	CandidateScope    []string // Go-owned shared-execution receipt scope, not a native permission override
 	Packets           []string // plan：既有 packet id 清单
 
 	// 真实 harness 专用。
@@ -133,6 +136,14 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	default:
 		return rejectedHarnessCall(a, harness, fmt.Sprintf("unknown harness %q", harness))
 	}
+	if a.WorkspaceCwd != "" && !samePhysicalDirectory(a.WorkspaceCwd, a.Cwd) {
+		if a.PermissionMode == "workspace-write" {
+			return rejectedHarnessCall(a, harness, "this backend cannot separate project session home from a restricted execution root; permission has not been expanded")
+		}
+		if harness != "dsh" {
+			a.Cwd = a.WorkspaceCwd // task prompt names the independent execution checkout
+		}
+	}
 	if harness != "dsh" && a.Binding.Provider != "" {
 		return rejectedHarnessCall(a, harness, "provider selection is supported only by the DSH harness")
 	}
@@ -161,6 +172,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		}
 		return RunDSH(DSHArgs{
 			Prompt: a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
+			WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,

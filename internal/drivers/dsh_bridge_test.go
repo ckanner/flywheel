@@ -44,7 +44,7 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 		t.Setenv("FLYWHEEL_DSH_BIN", fixture)
 		root := t.TempDir()
 		calls := filepath.Join(root, "model-calls.jsonl")
-		a := DSHArgs{Command: worker, Cwd: t.TempDir(), Prompt: "FIRST_CONTRACT_MARKER",
+		a := DSHArgs{Command: worker, Cwd: t.TempDir(), WorkspaceCwd: t.TempDir(), SessionTitle: "Flywheel · execute/M01-T01", Prompt: "FIRST_CONTRACT_MARKER",
 			Provider: "offline-fixture", Model: "test-model", Thinking: "high", PermissionMode: "danger-full-access",
 			PersistentSession: true, RequestID: "first-invocation",
 			APIKeys:  map[string]string{"TEST_DSH_HISTORY": filepath.Join(root, "history"), "TEST_DSH_LLM_CALLS": calls},
@@ -70,6 +70,23 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 		require.NoError(t, err)
 		entries := strings.Split(strings.TrimSpace(string(raw)), "\n")
 		require.Len(t, entries, 2)
+		project, err := filepath.EvalSymlinks(a.WorkspaceCwd)
+		require.NoError(t, err)
+		execution, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		for _, line := range entries {
+			var call struct {
+				Directories []struct {
+					Header  string `json:"header"`
+					Current string `json:"current"`
+				} `json:"directories"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(line), &call))
+			require.Len(t, call.Directories, 1)
+			require.Equal(t, project, call.Directories[0].Header)
+			require.Equal(t, execution, call.Directories[0].Current)
+		}
+
 		assert.Contains(t, entries[1], "FIRST_CONTRACT_MARKER")
 		assert.Contains(t, entries[1], "published SDK fixture complete")
 		assert.Contains(t, entries[1], "CURRENT_FAILURE_MARKER")

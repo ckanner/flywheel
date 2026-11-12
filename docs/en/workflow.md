@@ -44,7 +44,9 @@ DeepSeek uses the existing signed-in, funded DSH account. `deepseek-official` AP
 
 Use the preparation model to identify risks and improve the contract. Increasing effort cannot repair missing requirements, an invalid test oracle, or an incorrectly chosen working directory. Later execution routes and the independent Review/Judge stages remain explicit configuration; see [Configuration](configuration.md).
 
-## 2. Create the task integration worktree first
+## 2. Choose the task execution directory
+
+First inspect the effective `worktree.enabled` setting. The default enabled mode follows the independent Worktree flow below. With automatic management off, use the selected task checkout; callers may still choose a Worktree and parallel scheduling remains independent. Session project membership is recorded separately from execution location. See the [console guide](flow-console.md).
 
 For an existing repository, create or deliberately reuse a task branch in its own worktree before invoking `flywheel-new`. The host or user performs this step. Choose unused names and substitute the repository's actual base branch:
 

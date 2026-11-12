@@ -132,6 +132,7 @@ func jsonToMap(v any) (map[string]any, error) {
 // ---- packet 处理（attempts 循环）----
 
 type processOpts struct {
+	DeferCommit bool   // shared candidates are committed only after every peer passes
 	PauseBefore string // "review"：L1 绿后冻结，等下一次 run 从 review 继续
 }
 
@@ -449,6 +450,13 @@ func (c *Context) run() (TaskSummary, error) {
 			if ferr := c.err(); ferr != nil {
 				return c.summary(), ferr
 			}
+			if c.State.SharedExecution != nil {
+				stopped, err := c.processSharedExecution(c.pauseBefore)
+				if err != nil || stopped {
+					return c.summary(), err
+				}
+				continue
+			}
 			packet := c.nextActionablePacket(milestone.ID)
 			if packet == nil {
 				break
@@ -456,6 +464,9 @@ func (c *Context) run() (TaskSummary, error) {
 			if batch := c.parallelBatch(milestone.ID); len(batch) > 1 {
 				if err := c.runParallelExecute(batch); err != nil {
 					return c.summary(), err
+				}
+				if c.State.SharedExecution != nil {
+					continue
 				}
 				stopped, err := c.recoverParallelFailures(batch, c.pauseBefore)
 				if err != nil || stopped {

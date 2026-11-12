@@ -39,6 +39,8 @@ type SessionRecord struct {
 	Role            string                `json:"role"`
 	Scope           string                `json:"scope"`
 	Cwd             string                `json:"cwd"`
+	WorkspaceCwd    string                `json:"workspace-cwd,omitempty"`
+	CandidateScope  []string              `json:"candidate-scope,omitempty"`
 	Binding         string                `json:"binding"`
 	Goal            string                `json:"goal"`
 	Contract        string                `json:"contract"`

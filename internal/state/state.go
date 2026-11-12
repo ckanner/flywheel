@@ -71,10 +71,11 @@ type Evidence struct {
 
 // WorktreeInfo 单元 worktree 信息（verify.ensureUnitWorktree 写入）。
 type WorktreeInfo struct {
-	Path   string `json:"path"`
-	Branch string `json:"branch"`
-	Mode   string `json:"mode"` // worktree | in-place
-	Reason string `json:"reason,omitempty"`
+	External bool   `json:"external,omitempty"` // caller/model owns creation and cleanup
+	Path     string `json:"path"`
+	Branch   string `json:"branch"`
+	Mode     string `json:"mode"` // worktree | in-place
+	Reason   string `json:"reason,omitempty"`
 }
 
 // osWriteFile 可替换注入点（写失败分支在真实环境不可稳定复现）。
@@ -107,6 +108,7 @@ type PacketState struct {
 	// 形状）。state.schema.json 声明为对象——machine 层写入，此处仅保证 JSON 往返。
 	Commit               any           `json:"commit"`
 	Worktree             *WorktreeInfo `json:"worktree"`
+	SharedPeers          []string      `json:"shared-peers,omitempty"`
 	Evidence             Evidence      `json:"evidence"`
 	LastFailureSignature *string       `json:"last-failure-signature"`
 	LastFeedback         any           `json:"last-feedback,omitempty"`
@@ -225,12 +227,21 @@ type ControlResult struct {
 }
 
 type ProjectIdentity struct {
-	Cwd  string `json:"cwd"`
-	Repo string `json:"repo,omitempty"`
-	URL  string `json:"url,omitempty"`
+	WorkspaceCwd string `json:"workspace-cwd,omitempty"`
+	Cwd          string `json:"cwd"`
+	Repo         string `json:"repo,omitempty"`
+	URL          string `json:"url,omitempty"`
+}
+
+type SharedExecution struct {
+	LastError string   `json:"last-error,omitempty"`
+	Cwd       string   `json:"cwd"`
+	BaseRef   string   `json:"base-ref"`
+	Packets   []string `json:"packets"`
 }
 
 type State struct {
+	SharedExecution      *SharedExecution          `json:"shared-execution,omitempty"`
 	Project              *ProjectIdentity          `json:"project,omitempty"`
 	Control              *ControlResult            `json:"control,omitempty"`
 	Run                  *RunIdentity              `json:"run,omitempty"`

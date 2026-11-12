@@ -1,3 +1,4 @@
+import { reconcileWorkspaces, watchWorkspaces } from './workspaces.js';
 import { ControlNotDispatchedError, runControl } from './control.js';
 import { resolveFlywheelBinary } from './installation.js';
 import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './task-association.js';
@@ -9,6 +10,7 @@ export function apply(ctx, config = {}) {
   // give a worker a tool that launches another orchestrator.
   if (process.env.FLYWHEEL_DSH_NATIVE_WORKER === '1') return;
   ctx.sessionProjections.register(taskAssociationProjection);
+  watchWorkspaces(ctx);
   const binary = resolveFlywheelBinary(config);
   const active = new Set();
   const sessionMutations = new WeakMap();
@@ -59,13 +61,19 @@ export function apply(ctx, config = {}) {
         // No control process has been launched if resolving the default fails.
         throw new ControlNotDispatchedError(error);
       }
-      return await runControl(input, {
+      const response = await runControl(input, {
         binary,
         defaultCwd,
         hostSessionID: session?.id,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
+      try { await reconcileWorkspaces(ctx, response); }
+      catch (error) {
+        // Association failure does not undo a successful engine mutation.
+        response.workspaceWarnings = ['工作区归属未同步：' + error.message];
+      }
+      return response;
     } finally {
       if (session && sessionMutations.get(session) === controller) sessionMutations.delete(session);
       active.delete(controller);

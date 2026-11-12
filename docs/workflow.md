@@ -71,7 +71,9 @@ Quick 不按文件数量判断风险。范围与实现模式必须明确、全�
 默认的运行期 Plan 仍为 Kimi CLI `kimi-code/k3.1-pro / high`，详见
 [默认配置](../templates/flywheel.config.example.json)；Kimi 别名也须在本机可用。
 
-## 2. 先建立任务集成 worktree
+## 2. 选择任务执行目录
+
+先核对有效配置的 `worktree.enabled`。默认开启时采用下面的独立任务 Worktree 流程；关闭时不自动创建，使用已明确选择的任务 checkout，仍可由用户或模型主动选择 Worktree。Session 的项目归属始终与执行目录分开记录；并行设置独立，详见[控制台指南](flow-console.md)。
 
 假设当前位于业务仓库根目录，远端为 `origin`、目标分支为 `main`。
 将示例任务名与目录名替换为本次需求；不同任务使用不同名称。
@@ -212,7 +214,7 @@ Full 的每个 packet 经实现、L1 与独立 Review 通过后，引擎提交�
 ### 5.1 Skills 入口与各 Loop 的工作目录
 
 内置 skills 将任务 worktree 约定作为准备、启动、恢复和单环入口的检查步骤。
-`flywheel-task`／`flywheel-new` 在生成契约前创建或复用任务 worktree；`flywheel-run` 以及单环
+`flywheel-task`／`flywheel-new` 在生成契约前按自动管理设置和用户选择确定任务 checkout；`flywheel-run` 以及单环
 skills 从实际任务目录解析同一 worktree 根，再调用 CLI。默认不从 `main`、
 `master` 或 detached HEAD 启动开发；已有明确工作区选择与授权不重复询问。
 恢复复用原任务路径及引擎保存的 packet 状态，不为恢复另建一份任务或复制 state。

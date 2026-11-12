@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,58 @@ import (
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParallelCallerManagedExecutionDirectoriesAreRegisteredAndRetained(t *testing.T) {
+	fx, cfg := parallelFixture(t)
+	off := false
+	cfg.Worktree.Enabled = &off
+	var firstCalls atomic.Int32
+	ready := make(chan struct{})
+	base := drivers.NewMockDriver(nil)
+	directories, pathErr := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, pathErr)
+	previous := parallelDrivers
+	t.Cleanup(func() { parallelDrivers = previous })
+	parallelDrivers = func(*config.Config) *drivers.Drivers {
+		d := happyDrivers()
+		d.execFn = func(a drivers.CallArgs) drivers.Result {
+			require.Equal(t, fx.root, a.WorkspaceCwd)
+			if a.Cwd == fx.root {
+				if firstCalls.Add(1) == 2 {
+					close(ready)
+				}
+				select {
+				case <-ready:
+				case <-time.After(5 * time.Second):
+					t.Error("turning automatic Worktrees off must not serialize model dispatch")
+				}
+				path := filepath.Join(directories, a.PacketID)
+				branch := "caller/" + a.PacketID
+				gitCmd(t, fx.root, "worktree", "add", "-b", branch, path)
+				raw, err := json.Marshal(map[string]any{"flywheelExecutionDirectory": map[string]string{"cwd": path, "branch": branch}})
+				require.NoError(t, err)
+				return drivers.MockResult(func(r *drivers.Result) { r.Text = string(raw) })
+			}
+			require.Equal(t, filepath.Join(directories, a.PacketID), a.Cwd)
+			require.Contains(t, a.Prompt, a.Cwd)
+			return base.Execute(a)
+		}
+		return d.set()
+	}
+	opts := runOpts(fx, happyDrivers().set())
+	opts.Config = cfg
+	summary, err := RunTask(opts)
+	require.NoError(t, err)
+	require.Equal(t, "completed", summary.Status)
+	require.Equal(t, int32(2), firstCalls.Load())
+	st := loadFixtureState(t, fx)
+	for _, id := range []string{"M01-T01", "M01-T02"} {
+		require.True(t, st.Packets[id].Worktree.External)
+		require.DirExists(t, st.Packets[id].Worktree.Path)
+		require.Equal(t, 2, st.Packets[id].Attempts)
+		require.FileExists(t, filepath.Join(fx.root, "build", id+".txt"))
+	}
+}
 
 func parallelFixture(t *testing.T) (fixture, *config.Config) {
 	fx := newGitFixture(t)

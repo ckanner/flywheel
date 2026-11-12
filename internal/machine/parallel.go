@@ -26,13 +26,14 @@ func jsonClone[T any](value T) T {
 }
 
 type parallelGroup struct {
-	owner     *Context
-	mu        sync.Mutex
-	logMu     sync.Mutex
-	cancel    context.CancelFunc
-	slots     chan struct{}
-	providers map[string]chan struct{}
-	threads   map[string]string
+	owner       *Context
+	mu          sync.Mutex
+	logMu       sync.Mutex
+	cancel      context.CancelFunc
+	slots       chan struct{}
+	providers   map[string]chan struct{}
+	threads     map[string]string
+	directories map[string]string
 }
 type parallelLane struct {
 	group   *parallelGroup
@@ -92,7 +93,7 @@ func (c *Context) parallelBatch(milestone string) []*contract.Packet {
 func (lane *parallelLane) merge(worker *Context) error {
 	owner := lane.group.owner
 	ps := worker.State.Packets[lane.id]
-	if ps.Worktree == nil || ps.Worktree.Mode != "worktree" {
+	if (worker.Config.Worktree.Enabled == nil || *worker.Config.Worktree.Enabled) && (ps.Worktree == nil || ps.Worktree.Mode != "worktree") {
 		return fmt.Errorf("parallel unit lost its isolated worktree")
 	}
 	owner.State.Packets[lane.id] = jsonClone(ps)
@@ -253,13 +254,23 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 			return fmt.Errorf("parallel execution requires a durable invocation adapter: %s", binding.Harness)
 		}
 	}
+	if c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled {
+		ids := make([]string, len(packets))
+		for i, packet := range packets {
+			ids[i] = packet.PacketID
+		}
+		c.State.SharedExecution = &state.SharedExecution{Cwd: c.Cwd, BaseRef: head, Packets: ids}
+	}
 	for _, packet := range packets {
 		ps := c.State.Packets[packet.PacketID]
-		wt := verify.EnsureUnitWorktree(c.Cwd, c.State.Slug, packet.PacketID, head)
-		if wt.Mode != "worktree" {
-			return fmt.Errorf("parallel worktree unavailable: %s", wt.Reason)
+		ps.BaseRef, ps.Parallel = &head, true
+		if c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled {
+			wt := verify.EnsureUnitWorktree(c.Cwd, c.State.Slug, packet.PacketID, head)
+			if wt.Mode != "worktree" {
+				return fmt.Errorf("parallel worktree unavailable: %s", wt.Reason)
+			}
+			ps.Worktree = &wt
 		}
-		ps.BaseRef, ps.Worktree, ps.Parallel = &head, &wt, true
 		c.save()
 		if err := c.err(); err != nil {
 			return err
@@ -296,7 +307,7 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 		go func() {
 			defer wg.Done()
 			result, err := worker.runExecuteLoop(packet)
-			if err == nil && !result.Green && !result.Bounded && !result.Spun {
+			if err == nil && !result.Green && !result.Bounded && !result.Spun && !result.Deferred {
 				err = fmt.Errorf("parallel packet %s stopped before L1 passed", packet.PacketID)
 			}
 			outcomes[i] = err
@@ -331,6 +342,16 @@ func (c *Context) prepareParallelIntegration(packet *contract.Packet) error {
 	head, ok := verify.GetBaseRef(c.Cwd)
 	if !ok {
 		return fmt.Errorf("cannot inspect integration HEAD")
+	}
+	if ps.Worktree == nil && c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled {
+		// Shared-checkout execution was allowed, but its concurrent test result
+		// cannot certify the quiescent candidate. Recheck before review/delivery.
+		if !c.l1Step(packet).Pass {
+			return fmt.Errorf("shared execution candidate failed acceptance after parallel workers stopped")
+		}
+		ps.Parallel = false
+		c.save()
+		return c.err()
 	}
 	if ps.Worktree == nil || ps.Worktree.Mode != "worktree" {
 		return fmt.Errorf("parallel integration workspace is missing")

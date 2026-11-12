@@ -418,7 +418,9 @@ DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，�
 
 `permissions.bindings` 在全局 `permissions.mode` 上按 `loops.<role>`、`routes.<route>`、`judge-panel` 覆盖实际宿主权限，值为 `read-only`、`workspace-write` 或 `danger-full-access`。语法以 `permission-policy.schema.json` 为准；后端仍须证明支持该权限，不会把 Claude 原生审批模式伪装成只读沙箱。
 
-`scheduler` 的字段以 `scheduler-policy.schema.json` 为准。默认 serial；parallel 只并发满足冻结 `schedule.after/writes` 的独立单元，`max-parallel` 控制任务并发，`providers` 按实际账号渠道限流。hard 预算在确认计费前只允许一个模型调用。声明缺失或写入冲突不会被解释为独立。
+`scheduler` 的字段以 `scheduler-policy.schema.json` 为准。新默认允许 parallel（最大并发 2），已有显式 serial 保留；parallel 只并发满足冻结 `schedule.after/writes` 的独立单元，`max-parallel` 控制任务并发，`providers` 按实际账号渠道限流。hard 预算在确认计费前只允许一个模型调用。声明缺失或写入冲突不会被解释为独立。
+
+`worktree.enabled` 默认 true，只控制引擎自动创建／管理 Worktree；关闭不禁止并行，也不禁止用户或模型自行创建。项目归属与实际执行目录分别记录，外部目录登记协议见[流程控制台](flow-console.md)。当前原生后端不能把 `workspace-write` 沙箱根和项目目录独立设置，不支持的分离组合会在派发前失败；不会扩大权限来掩盖问题。
 
 例如把 Review 固定为只读，并允许两个已声明独立的任务并行：
 
@@ -426,7 +428,7 @@ DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，�
 {
   "permissions": {
     "mode": "full-access",
-    "bindings": {"loops.review":"read-only","routes.hard":"workspace-write"}
+    "bindings": {"loops.review":"read-only"}
   },
   "scheduler": {"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}
 }

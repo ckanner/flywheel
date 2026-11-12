@@ -78,7 +78,7 @@ func (c *Context) persistSessionLifecycle(r *state.SessionRecord, event drivers.
 		Cwd: r.Cwd, Binding: r.Binding, GuardBefore: r.Last.GuardBefore}
 	if event.Event == "cleanup-confirmed" && event.CleanupConfirmed {
 		var err error
-		receipt.CandidateAfter, err = c.candidateFingerprint(r.Cwd)
+		receipt.CandidateAfter, err = c.sessionCandidateFingerprint(r.Cwd, r.CandidateScope)
 		if err != nil {
 			return fmt.Errorf("cannot checkpoint terminal candidate: %w", err)
 		}
@@ -140,7 +140,7 @@ func (c *Context) recoverSessionReceipt(key string, r *state.SessionRecord) erro
 	}
 	recovery := r.Last.Recovery
 	result, err := recoverSessionMachine(drivers.MachineRecoveryArgs{Harness: recovery.Harness, RequestID: r.Last.ID, RunID: event.RunID,
-		RecoveryDirectory: recovery.Directory, Cwd: r.Cwd, Model: recovery.Model, ReasoningEffort: recovery.Effort, PermissionMode: recovery.PermissionMode,
+		RecoveryDirectory: recovery.Directory, Cwd: sessionNativeCwd(r), Model: recovery.Model, ReasoningEffort: recovery.Effort, PermissionMode: recovery.PermissionMode,
 		PersistentSession: r.Last.Persistent, SessionID: r.Last.RequestedThread, Watchdog: watchdog.Opts{Context: c.RunContext}})
 	if err != nil {
 		return err
@@ -162,7 +162,7 @@ func (c *Context) recoverSessionReceipt(key string, r *state.SessionRecord) erro
 	// A quiescent pre-dispatch rejection can be bound to the unchanged original
 	// candidate without inventing a missing post-execution role guard.
 	if safeSessionOutcome(result, r.Last.ID) && result.Session.Dispatch == "not-dispatched" && checkpoint.CandidateAfter == "" {
-		candidate, candidateErr := c.candidateFingerprint(r.Cwd)
+		candidate, candidateErr := c.sessionCandidateFingerprint(r.Cwd, r.CandidateScope)
 		guard, guardErr := c.sessionGuard(r.Role, r.Scope)
 		if candidateErr == nil && guardErr == nil && candidate == r.Last.CandidateBefore && guard == r.Last.GuardBefore {
 			checkpoint.CandidateAfter, checkpoint.GuardAfter = candidate, guard

@@ -361,6 +361,29 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if err := c.checkPendingSessionRole(key, role, scope); err != nil {
 		return drivers.Result{}, err
 	}
+	var scopeErr error
+	args.CandidateScope, scopeErr = c.sharedInvocationScope(role, scope)
+	if scopeErr != nil {
+		return drivers.Result{}, scopeErr
+	}
+	if r != nil && (r.Last.Status == "received" || args.ExpectedSessionID != "") {
+		args.CandidateScope = r.CandidateScope
+	}
+	args.WorkspaceCwd = c.WorkspaceCwd
+	// A terminal result from the previous version must first reconcile with its
+	// original identity. A later invocation may rebuild in the project workspace.
+	if r != nil && (r.Last.Status == "received" || (r.WorkspaceCwd == "" && r.Cwd == c.WorkspaceCwd)) {
+		args.WorkspaceCwd = r.WorkspaceCwd
+	}
+	args.SessionTitle = "Flywheel · " + role + "/" + scope + " · " + c.State.Slug
+	args.Prompt = workspacePrompt(c.WorkspaceCwd, args.Cwd, role, scope) + args.Prompt
+	args.Prompt += c.sharedPrompt(strings.TrimPrefix(scope, "final:"))
+	if packet := c.State.Packets[strings.TrimPrefix(scope, "final:")]; packet != nil && packet.Worktree != nil {
+		args.Prompt = fmt.Sprintf("本次任务分支: %q\n", packet.Worktree.Branch) + args.Prompt
+	}
+	if role == "execute" && (c.sharedActive(scope) || (c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled)) {
+		args.Prompt += executionDirectoryPrompt()
+	}
 	tracked, persistent := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)
 	if r == nil && !tracked {
 		return call(args), nil
@@ -389,7 +412,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		if err != nil {
 			return drivers.Result{}, c.sessionBlock(key, err.Error())
 		}
-		candidate, err := c.candidateFingerprint(cwd)
+		candidate, err := c.sessionCandidateFingerprint(cwd, args.CandidateScope)
 		if err != nil || candidate != receipt.CandidateAfter {
 			return drivers.Result{}, c.sessionBlock(key, "candidate changed after the recorded terminal result")
 		}
@@ -427,7 +450,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if args.ExpectedSessionID != "" && (thread != args.ExpectedSessionID || action != "resume") {
 		return drivers.Result{}, fmt.Errorf("exact session resume refused: %s", reason)
 	}
-	candidate, err := c.candidateFingerprint(cwd)
+	candidate, err := c.sessionCandidateFingerprint(cwd, args.CandidateScope)
 	if err != nil {
 		return drivers.Result{}, err
 	}
@@ -449,7 +472,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	} else if action == "resume" && role == "plan" {
 		historyMode = "legacy-plan"
 	}
-	r = &state.SessionRecord{Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, Binding: binding, Goal: goal, Contract: contractIdentity,
+	r = &state.SessionRecord{Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
@@ -500,7 +523,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		result.Session = &drivers.SessionOutcome{RequestID: r.Last.ID, Protocol: "unconfirmed", Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 		result.Usage, result.CostUSD = nil, nil
 	}
-	after, snapshotErr := c.candidateFingerprint(cwd)
+	after, snapshotErr := c.sessionCandidateFingerprint(cwd, args.CandidateScope)
 	guardAfter, guardErr := c.sessionGuard(role, scope)
 	rejectChangedSessionGuard(role, guardBefore, guardAfter, &result)
 	var report []byte

@@ -59,6 +59,7 @@ type Context struct {
 	runID              string
 	consoleRetryReason string
 	TaskDir            string
+	WorkspaceCwd       string
 	Cwd                string
 	Config             *config.Config
 	Drivers            *drivers.Drivers
@@ -671,22 +672,23 @@ func CreateContext(opts Opts) (*Context, error) {
 		drv = drivers.CreateDrivers(opts.Config)
 	}
 	ctx := &Context{
-		TaskDir:     opts.TaskDir,
-		Cwd:         cwd,
-		Config:      opts.Config,
-		Drivers:     drv,
-		Spec:        spec,
-		Packets:     packets,
-		PacketList:  packetList,
-		State:       st,
-		Fresh:       fresh,
-		Log:         logf,
-		Sleep:       sleepf,
-		Now:         nowf,
-		EnvLookup:   env,
-		metricsFile: filepath.Join(opts.TaskDir, "metrics.jsonl"),
-		revision:    st.Revision,
-		RunContext:  opts.Context,
+		TaskDir:      opts.TaskDir,
+		Cwd:          cwd,
+		WorkspaceCwd: WorkspaceRoot(cwd),
+		Config:       opts.Config,
+		Drivers:      drv,
+		Spec:         spec,
+		Packets:      packets,
+		PacketList:   packetList,
+		State:        st,
+		Fresh:        fresh,
+		Log:          logf,
+		Sleep:        sleepf,
+		Now:          nowf,
+		EnvLookup:    env,
+		metricsFile:  filepath.Join(opts.TaskDir, "metrics.jsonl"),
+		revision:     st.Revision,
+		RunContext:   opts.Context,
 	}
 	if err := ctx.initializeWorkflow(opts.Mode); err != nil {
 		return nil, err

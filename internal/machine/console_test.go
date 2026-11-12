@@ -198,7 +198,7 @@ func TestIndependentManualNodesRespectDependenciesAndIsolation(t *testing.T) {
 	require.NoError(t, c.admitConsoleStep("execute", second.PacketID))
 	disabled := false
 	cfg.Worktree.Enabled = &disabled
-	require.Error(t, c.admitConsoleStep("execute", second.PacketID))
+	require.NoError(t, c.admitConsoleStep("execute", second.PacketID))
 	cfg.Worktree.Enabled = nil
 	c.revision--
 	require.Error(t, c.admitConsoleStep("execute", second.PacketID))

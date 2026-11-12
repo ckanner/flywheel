@@ -17,8 +17,10 @@ func TestSchedulerExplicitPolicyAndBounds(t *testing.T) {
 		_, err := parseConfig([]byte(`{"scheduler":`+raw+`}`), "test")
 		require.Error(t, err)
 	}
-	_, err := parseConfig([]byte(`{"scheduler":{"mode":"parallel"},"worktree":{"enabled":false}}`), "test")
-	require.ErrorContains(t, err, "worktrees")
+	off, err := parseConfig([]byte(`{"scheduler":{"mode":"parallel"},"worktree":{"enabled":false}}`), "test")
+	require.NoError(t, err)
+	require.Equal(t, "parallel", off.Scheduler.Mode)
+	require.False(t, *off.Worktree.Enabled)
 	cfg := Default()
 	cfg.Scheduler.Mode = "unknown"
 	require.Error(t, cfg.Validate())

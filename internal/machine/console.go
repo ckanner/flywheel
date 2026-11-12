@@ -10,6 +10,14 @@ import (
 // Console steps are deliberately bounded by the same serial milestone order
 // as an unattended run. The ordinary CLI's explicit manual API stays compatible.
 func (c *Context) admitConsoleStep(only, packetID string) error {
+	if c.State.SharedExecution != nil {
+		if err := c.reconcileSessionReceipts(); err != nil {
+			return err
+		}
+		if only == "integrate" || only == "final" {
+			return fmt.Errorf("resume the shared execution batch to verify and deliver all peers together")
+		}
+	}
 	if packet := c.State.Packets[packetID]; packet != nil && packet.Status == "completed" && only == "execute" && c.consoleRetryReason != "" {
 		if err := c.reopenConsolePacket(packetID); err != nil {
 			return err
@@ -44,10 +52,7 @@ func (c *Context) admitConsoleStep(only, packetID string) error {
 		}
 		packet = selected
 	}
-	if only == "execute" && packet.Schedule != nil {
-		if c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled {
-			return fmt.Errorf("independent manual execution requires worktrees")
-		}
+	if only == "execute" && packet.Schedule != nil && (c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled) {
 		ps := c.State.Packets[packetID]
 		if ps.Worktree == nil {
 			head, ok := verify.GetBaseRef(c.Cwd)
@@ -125,6 +130,7 @@ func (c *Context) reopenConsolePacket(packetID string) error {
 		invalidateEvidence(ps)
 		if ps.Status == "completed" {
 			ps.BaseRef, ps.Worktree = nil, nil
+			ps.SharedPeers = nil
 		}
 		ps.ContractSyncPending = ps.BaseRef != nil
 		ps.Status, ps.Commit = "pending", nil

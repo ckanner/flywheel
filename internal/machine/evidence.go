@@ -149,7 +149,8 @@ func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) 
 		DoneReport    string
 		Checks        any
 		Workflow      any `json:"Workflow,omitempty"`
-	}{1, candidate, packet, c.Spec, contractContent, doneReport, c.Config.Verify, c.workflowEvidencePolicy()})
+		SharedScope   any `json:"SharedScope,omitempty"`
+	}{1, candidate, packet, c.Spec, contractContent, doneReport, c.Config.Verify, c.workflowEvidencePolicy(), c.sharedVerificationPolicy(packet)})
 	h := sha256.Sum256(raw)
 	return hex.EncodeToString(h[:]), nil
 }

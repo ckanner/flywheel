@@ -104,6 +104,7 @@ type credsApproval struct {
 // ---- Execute 步骤（传输重试 + 渠道降级 §6）----
 
 type execOutcome struct {
+	Relocated bool
 	Success   bool
 	Stopped   bool
 	Awaiting  string // "credentials"：等人批凭证，非失败

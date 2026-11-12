@@ -43,7 +43,7 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 or 2 start request');
   }
   const allowed = new Set(['type', 'protocol', 'requestId', 'cwd', 'provider', 'model',
-    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs']);
+    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'workspaceCwd', 'sessionTitle']);
   if (value.protocol === 2) {
     allowed.add('sessionId');
     allowed.add('persistent');
@@ -68,7 +68,13 @@ export async function validateStart(value) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 24 * 60 * 60 * 1000) {
     throw new BridgeError('INVALID_REQUEST', 'timeoutMs must be between 1 and 86400000');
   }
-  return { ...value, requestId, provider, model, prompt, timeoutMs, cwd: await directory(value.cwd, 'cwd') };
+  if (value.sessionTitle !== undefined) nonempty(value.sessionTitle, 'sessionTitle', 512);
+  const request = { ...value, requestId, provider, model, prompt, timeoutMs, cwd: await directory(value.cwd, 'cwd'),
+    ...(value.workspaceCwd === undefined ? {} : { workspaceCwd: await directory(value.workspaceCwd, 'workspaceCwd') }) };
+  if (request.workspaceCwd && request.workspaceCwd !== request.cwd && request.permissionMode === 'workspace-write') {
+    throw new BridgeError('INVALID_REQUEST', 'DSH workspace-write binds its sandbox to the session project; separate execution roots require an explicitly compatible permission mode');
+  }
+  return request;
 }
 
 export async function readPolicyReceipt(path, identity) {
@@ -212,7 +218,7 @@ export class SessionFold {
     const policy = this.policy;
     const fullAccess = request.permissionMode === 'danger-full-access';
     if (!policy || policy.protocol !== PROTOCOL || policy.permissionMode !== request.permissionMode ||
-        policy.cwd !== request.cwd || policy.approvalPolicy !== 'never' ||
+        policy.cwd !== (request.workspaceCwd ?? request.cwd) || policy.approvalPolicy !== 'never' ||
         policy.confinedShell !== !fullAccess ||
         (fullAccess ? policy.enforcement !== undefined : policy.enforcement !== 'full')) {
       throw new BridgeError('INVALID_REQUEST', 'DSH did not attest the requested cwd and permission policy; prompt withheld');

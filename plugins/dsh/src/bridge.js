@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
 
-export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}) {
+export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
   // Each patch replaces an entire config row. Pin the checked rc.5/rc.1 enforcement
   // implementations, not the user's mutable permission dropdown defaults.
   const disable = ['permission', 'tool-plugin-manager', 'tool-working-directory',
@@ -16,6 +16,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
   return [
     ...disable.map(id => ({ id, disabled: true })),
+    ...(historyRoot ? [{ id: 'session-persistence-jsonl', config: { root: historyRoot } }] : []),
     { id: 'sandbox', name: '@deepseek-ai/dsh-sandbox-local', disabled: false, config: {} },
     { id: 'sandbox-policy', name: '@deepseek-ai/dsh-sandbox-policy', disabled: false,
       config: { mode: request.permissionMode, workspaceRoot: request.cwd } },
@@ -25,7 +26,9 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { id: 'approval', name: '@deepseek-ai/dsh-user-approval', disabled: false, config: { policy: 'never' } },
     { id: 'sdk-jsonrpc-server', config: { maxTokensAsSuccess: false } },
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
-      config: { permissionMode: request.permissionMode, cwd: request.cwd, ...admission } }] },
+      config: { permissionMode: request.permissionMode, cwd: request.cwd,
+        ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}),
+        ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}), ...admission } }] },
   ];
 }
 
@@ -217,7 +220,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     const patch = join(temp, 'worker.patch.json');
     sessionId = request.sessionId ?? `flywheel-${randomUUID()}`;
     const admission = { receiptPath: join(temp, 'policy.json'), requestId: request.requestId, sessionId, nonce: randomUUID() };
-    await writeFile(patch, JSON.stringify(makeOverlay(request, undefined, admission)), { mode: 0o600 });
+    await writeFile(patch, JSON.stringify(makeOverlay(request, undefined, admission, doctor ? join(temp, 'probe-history') : undefined)), { mode: 0o600 });
     controller.signal.throwIfAborted();
     fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
     runtime = new Runtime(bin, ['--profile', profile, '--patch', patch], {
@@ -240,7 +243,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     });
     if (controller.signal.aborted) runtime.fail(controller.signal.reason);
     const initialized = await runtime.request('initialize', {
-      cwd: request.cwd, provider: request.provider, model: request.model,
+      cwd: request.workspaceCwd ?? request.cwd, provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
     });
@@ -260,12 +263,18 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       resumeUnconfirmed = false;
     }
     // This creates the fresh Session and its permission facts without an LLM turn.
-    const working = await runtime.request('session/working-directory/get', { sessionId });
+    let working = await runtime.request('session/working-directory/get', { sessionId });
+    if (request.workspaceCwd !== undefined && working?.cwd !== request.cwd) {
+      working = await runtime.request('session/working-directory/set', { sessionId, path: request.cwd });
+    }
     if (working?.cwd !== request.cwd) throw new BridgeError('INVALID_REQUEST', 'DSH effective cwd differs from the requested workspace');
     fold.policy = await abortable(readPolicyReceipt(admission.receiptPath,
       { requestId: admission.requestId, sessionId, nonce: admission.nonce }), controller.signal);
+    if (request.workspaceCwd !== undefined && fold.policy.workspaceCwd !== request.workspaceCwd) {
+      throw new BridgeError('INVALID_REQUEST', 'DSH session project workspace differs from the requested project');
+    }
     fold.verifiedPolicy(request);
-    frame({ type: 'ready', sessionId, cwd: request.cwd, provider: request.provider, model: request.model,
+    frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
       policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,

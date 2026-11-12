@@ -3,6 +3,7 @@ package machine
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/config"
@@ -89,9 +90,17 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 	if err != nil {
 		return drivers.CallArgs{}, err
 	}
-	a := drivers.CallArgs{Cwd: r.Cwd, TaskDir: c.TaskDir, PacketID: strings.TrimPrefix(r.Scope, "final:"), Model: b.Model,
+	a := drivers.CallArgs{Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd, CandidateScope: r.CandidateScope, TaskDir: c.TaskDir, PacketID: strings.TrimPrefix(r.Scope, "final:"), Model: b.Model,
 		Binding:        config.LoopBinding{Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking},
 		PermissionMode: c.Config.PermissionMode(r.Role, b.Harness, id), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog(), ExpectedSessionID: r.ThreadID}
+	if len(r.CandidateScope) > 0 {
+		packet := c.Packets[a.PacketID]
+		if packet == nil || packet.Schedule == nil {
+			return drivers.CallArgs{}, fmt.Errorf("original shared session scope is unavailable")
+		}
+		a.CandidateScope = slices.Clone(packet.Schedule.Writes)
+		slices.Sort(a.CandidateScope)
+	}
 	binding, goal, _ := c.sessionIdentities(r.Scope, a)
 	if !c.scopedSessions(r.Role, b.Harness) || r.ThreadID == "" || !r.ResumeCandidate || binding != r.Binding || goal != r.Goal {
 		return drivers.CallArgs{}, fmt.Errorf("original session binding or history is unavailable; inspect configuration and recorded identity")

@@ -771,6 +771,7 @@ function Feedback({ control, selection, reconcile, t }) {
   }) : '';
   return h('div', { className: css.feedback, 'data-state': mode,
     role: 'region', 'aria-label': t('feedback'), tabIndex: mode === 'uncertain' || mode === 'error' ? 0 : undefined },
+    control.status?.workspaceWarnings?.map((warning, index) => h('p', { key: index, role: 'alert', className: css.notice }, warning)),
     busy && h('div', { className: control.uncertainty ? css.loadingCompact : css.loading,
       role: 'status', 'aria-label': pendingLabel },
       h(Spinner),

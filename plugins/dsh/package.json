@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/dsh-plugin-flywheel",
-  "version": "0.30.2",
+  "version": "0.31.0",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "UNLICENSED",
@@ -72,7 +72,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test test/*.test.js && node scripts/test-legacy-host.mjs",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.js && node scripts/test-legacy-host.mjs",
     "check": "npm test",
     "prepack": "npm run build"
   },
@@ -88,9 +88,12 @@
     "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.2.2-rc.1",
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.2-rc.1",
     "@deepseek-ai/dsh-session-projection": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session-title": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-json": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tool-executor-ptc": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-workspace": "0.2.2-rc.1",
     "jsdom": "26.1.0",
     "lightningcss": "1.33.0",
     "react": "18.3.1",

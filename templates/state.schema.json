@@ -7,7 +7,8 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
-    "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
+    "shared-execution": {"type":"object","additionalProperties":false,"required":["cwd","base-ref","packets"],"properties":{"last-error":{"type":"string","maxLength":2000},"cwd":{"type":"string","minLength":1},"base-ref":{"type":"string","minLength":1},"packets":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string","pattern":"^M[0-9]+-T[0-9]+$"}}}},
+    "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"workspace-cwd":{"type":"string","minLength":1},"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
     "control":{"type":"object","additionalProperties":false,"required":["kind","status","message","started-at"],"properties":{"kind":{"type":"string","minLength":1},"packet":{"type":"string"},"status":{"enum":["running","passed","failed","cancelled"]},"message":{"type":"string","maxLength":2000},"started-at":{"type":"string"},"finished-at":{"type":"string"}}},
     "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
     "delivery":{"type":"object","additionalProperties":false,"required":["action","repo","head","branch","status","at"],"properties":{"base":{"type":"string","minLength":1},"action":{"enum":["create","merge"]},"repo":{"type":"string","minLength":1},"head":{"type":"string","minLength":1},"branch":{"type":"string","minLength":1},"status":{"enum":["pending","confirmed","unknown"]},"at":{"type":"string"},"url":{"type":"string"},"number":{"type":"integer","minimum":1},"merge-sha":{"type":"string"},"error":{"type":"string"}}},
@@ -42,6 +43,8 @@
               "role": { "enum": ["plan", "execute", "review", "judge", "judge-panel"] },
               "scope": { "type": "string", "minLength": 1 },
               "cwd": { "type": "string", "minLength": 1 },
+              "workspace-cwd": { "type": "string", "minLength": 1 },
+              "candidate-scope": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},
               "binding": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "goal": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "contract": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -258,6 +261,7 @@
         "properties": {
           "schedule": {"$ref":"task-packet.schema.json#/properties/schedule"},
           "parallel": {"type": "boolean"},
+          "shared-peers": {"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string","pattern":"^M[0-9]+-T[0-9]+$"}},
           "milestone": { "type": "string", "pattern": "^M-\\d{2,}$" },
           "status": {
             "type": "string",
@@ -317,6 +321,7 @@
               "path": { "type": "string" },
               "branch": { "type": "string" },
               "mode": { "type": "string", "enum": ["worktree", "in-place"] },
+              "external": { "type": "boolean" },
               "reason": { "type": "string" }
             },
             "required": ["path", "branch", "mode"]

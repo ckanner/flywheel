@@ -1,3 +1,5 @@
+Object.assign(zh, { cfgWorktree: '自动管理任务 Worktree', cfgWorktreeHelp: '默认开启。关闭后不自动创建 Worktree；仍可并行，模型或用户可选择并登记执行目录。已有目录不会被删除', cfgWorktreeOn: '开启 · 自动创建 Worktree', cfgWorktreeOff: '关闭 · 自行管理执行目录' });
+Object.assign(en, { cfgWorktree: 'Automatically manage task Worktrees', cfgWorktreeHelp: 'On by default. Off does not create Worktrees and still allows parallel tasks; callers may register their own execution checkouts. Existing directories are retained', cfgWorktreeOn: 'On · automatic Worktrees', cfgWorktreeOff: 'Off · caller-managed execution' });
 // The editor owns drafts only. File identity, validation, backup and publication stay in Go.
 Object.assign(zh, {
   consoleResource: 'Provider',
@@ -518,13 +520,17 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           (v) => replace({ ...draft, sessions: { ...draft.sessions, mode: v, 'policy-version': 1 } }),
         ),
       ),
+      field('worktree.enabled', t('cfgWorktree'), t('cfgWorktreeHelp'),
+        select('worktree.enabled', String(draft.worktree?.enabled !== false),
+          [['true', t('cfgWorktreeOn')], ['false', t('cfgWorktreeOff')]],
+          (v) => replace({ ...draft, worktree: { ...draft.worktree, enabled: v === 'true' } }))),
       field(
         'scheduler.mode',
         t('consoleScheduling'),
         t('cfgScheduleHelp'),
         select(
           'scheduler.mode',
-          draft.scheduler?.mode ?? 'serial',
+          draft.scheduler?.mode ?? 'parallel',
           [
             ['serial', t('consoleSerial')],
             ['parallel', t('consoleParallel')],

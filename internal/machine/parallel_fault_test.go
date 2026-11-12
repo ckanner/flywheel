@@ -236,6 +236,46 @@ func TestParallelFailureRecordsPauseAndPreservesWork(t *testing.T) {
 	require.False(t, errors.Is(err, ErrMergeConflict))
 }
 
+func TestParallelBudgetAlreadySpentStopsBeforeAnyModelDispatch(t *testing.T) {
+	fx, cfg := parallelFixture(t)
+	limit := int64(1)
+	cfg.Budget.Enforce, cfg.Budget.DailyTokenLimit = "hard", &limit
+	c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set()})
+	require.NoError(t, err)
+	c.State.Budget.Daily[c.Now().UTC().Format("2006-01-02")] = state.DailyBucket{Tokens: 2}
+	old := parallelDrivers
+	t.Cleanup(func() { parallelDrivers = old })
+	parallelDrivers = func(*config.Config) *drivers.Drivers {
+		d := happyDrivers()
+		d.execFn = func(drivers.CallArgs) drivers.Result {
+			t.Error("exhausted shared budget must not dispatch")
+			return drivers.MockResult(nil)
+		}
+		return d.set()
+	}
+	require.ErrorContains(t, c.runParallelExecute(c.PacketList), "stopped before L1")
+	require.Equal(t, "budget-stopped", c.State.Status)
+	for _, packet := range c.State.Packets {
+		require.Zero(t, packet.Attempts)
+	}
+}
+
+func TestParallelCollectionFailureDeterministicallyPausesWithoutCompletingPeers(t *testing.T) {
+	fx, cfg := parallelFixture(t)
+	c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set()})
+	require.NoError(t, err)
+	c.State.Status = "running"
+	old := writeCollectedReport
+	t.Cleanup(func() { writeCollectedReport = old })
+	writeCollectedReport = func(string, []byte, os.FileMode) error { return errors.New("collection unavailable") }
+	require.ErrorContains(t, c.runParallelExecute(c.PacketList), "collection unavailable")
+	require.Equal(t, "paused", c.State.Status)
+	for _, packet := range c.State.Packets {
+		require.NotEqual(t, "completed", packet.Status)
+		require.DirExists(t, packet.Worktree.Path)
+	}
+}
+
 func TestParallelRecoveryUsesTheExistingBoundedEscalationBeforeIntegration(t *testing.T) {
 	for _, kind := range []string{"recover", "pause", "escalate", "error", "removed"} {
 		t.Run(kind, func(t *testing.T) {

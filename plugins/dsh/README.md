@@ -1,5 +1,7 @@
 # Flywheel 的 DSH 桌面入口与原生 worker
 
+当前源码将 Session 的项目归属与任务执行位置分开，并补齐 SDK 会话的桌面工作区登记。自动 Worktree 管理与并行调度分别配置；详细行为、旧会话与受限权限边界见[控制台指南](../../docs/flow-console.md)。
+
 [English](README.en.md) · 简体中文
 
 目标是 **DSH Mac 桌面 0.2.1-rc.5 与 0.2.2-rc.1** 的公开接口，0.28.4 的版本声明只允许这两个已核对版本。Go 继续管理状态机、任务、worktree、验收和成本上限；本包提供桌面操作入口、原生 SDK 执行通道和 Codex Pro machine API worker。无需 alpha、OAR、Forge 或一直活着的父智能体。

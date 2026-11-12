@@ -190,7 +190,7 @@ func Default() Config {
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Permissions:     PermissionsConfig{Mode: "role-based"},
-		Scheduler:       SchedulerConfig{Mode: "serial", MaxParallel: 2},
+		Scheduler:       SchedulerConfig{Mode: "parallel", MaxParallel: 2},
 		Sessions:        SessionsConfig{Mode: "fresh", PolicyVersion: SessionPolicyVersion},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
@@ -271,9 +271,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Scheduler.Mode != "serial" && c.Scheduler.Mode != "parallel" || c.Scheduler.MaxParallel < 1 || c.Scheduler.MaxParallel > 8 {
 		return errors.New("scheduler requires serial|parallel and max-parallel between 1 and 8")
-	}
-	if c.Scheduler.Mode == "parallel" && c.Worktree.Enabled != nil && !*c.Worktree.Enabled {
-		return errors.New("parallel scheduling requires worktrees")
 	}
 	for channel, limit := range c.Scheduler.Providers {
 		if channel == "" || limit < 1 || limit > 8 {

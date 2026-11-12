@@ -63,6 +63,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 
 	if ps.Status == "completed" && ps.Worktree == nil {
 		ps.BaseRef = nil // 手动重新执行已交付单元，从当前主分支开始新的候选。
+		ps.SharedPeers = nil
 		ps.ContractSyncPending = false
 	}
 	ms := c.State.Milestones[ps.Milestone]
@@ -86,7 +87,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		ps.Worktree = nil // 完成时已删除——按需重建
 	}
 	if ps.BaseRef != nil && ps.Worktree == nil {
-		if c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled {
+		if !c.sharedActive(id) && (c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled) {
 			wt := verify.EnsureUnitWorktree(c.Cwd, c.State.Slug, id, *ps.BaseRef)
 			ps.Worktree = &wt
 			if wt.Mode == "in-place" {
@@ -167,6 +168,29 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		}, c.Drivers.Execute.Execute)
 		if sessionErr != nil {
 			return execOutcome{}, sessionErr
+		}
+
+		proposal, proposalErr := parseExecutionDirectory(res.Text)
+		if proposal != nil || proposalErr != nil {
+			c.recordSpawnMetrics(spawnMetricsArgs{role: "execute", packetID: id, model: currentModel, channel: channel, prompt: prompt, result: &res})
+			if err := c.stopForUnconfirmedCleanup("execute", id, res); err != nil {
+				return execOutcome{}, err
+			}
+			if proposalErr == nil {
+				proposalErr = c.adoptExecutionDirectory(packet, proposal, res)
+			}
+			if proposalErr == nil {
+				return execOutcome{Relocated: true}, nil
+			}
+			if err := c.err(); err != nil {
+				return execOutcome{}, err
+			}
+			// This is a known model result rejected by deterministic admission,
+			// not an unknown call. Consume it so bounded repair can resume.
+			ps.LastFeedback = map[string]any{"error-code": string(errs.INVALID_REQUEST), "details": []string{proposalErr.Error()}, "at": c.nowISO()}
+			c.consumeSession("execute", id)
+			c.save()
+			return execOutcome{ErrorCode: errs.INVALID_REQUEST}, c.err()
 		}
 
 		// 交付物 = done-report，存在且 schema 合法。
@@ -390,7 +414,13 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 			}
 		}
 	}
+	var sharedViolations []verify.BoundaryViolation
+	executorFiles, sharedViolations = c.sharedBoundaryFiles(packet, executorFiles)
 	boundary := verify.CheckBoundaries(executorFiles, packet.Boundaries, c.effectiveTestFilePatterns())
+	if len(sharedViolations) > 0 {
+		boundary.Pass = false
+		boundary.Violations = append(boundary.Violations, sharedViolations...)
+	}
 	if packet.Schedule != nil {
 		for _, file := range executorFiles {
 			if !contract.InWriteScope(file, packet.Schedule.Writes) {
@@ -427,6 +457,9 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 		"commands":        gate.Results,
 		"boundary":        boundary,
 		"at":              c.nowISO(),
+	}
+	if c.sharedActive(id) {
+		ps.Evidence.L1.(map[string]any)["attribution"] = "shared-declared-scope"
 	}
 	if pass {
 		ps.Status = "l1-passed"

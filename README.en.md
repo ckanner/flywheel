@@ -1,5 +1,7 @@
 # Flywheel
 
+Project workspaces and execution directories are separate: sessions belong to the original repository, while tasks may execute in independent Worktrees. Automatic Worktree management is enabled by default and is independent from parallel scheduling. Caller-selected execution directories are validated and registered by the engine. See the [flow console guide](docs/en/flow-console.md).
+
 English | [简体中文](README.md)
 
 Flywheel turns reviewed software requirements into bounded coding tasks with explicit acceptance criteria. A deterministic Go engine runs Plan, Execute, Review, and verification loops. Models propose plans, implement changes, and review candidates; the engine owns state, retries, budgets, workspaces, verification, local Git delivery, and stopping.

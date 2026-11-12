@@ -363,7 +363,7 @@ Advanced callers send JSON on stdin to `flywheel control config-edit --cwd /abso
 
 `permissions.bindings` overrides the global mode by `loops.<role>`, `routes.<route>` or `judge-panel`, using read-only, workspace-write or danger-full-access. Read `permission-policy.schema.json` for the contract. Adapters must still prove the requested capability; native Claude approval modes are not advertised as an OS read-only sandbox.
 
-`scheduler` is defined by `scheduler-policy.schema.json`. Serial is the default. Parallel only dispatches independent units declared by frozen schedule.after/writes; max-parallel limits units and providers limits actual account channels. Hard budgets admit one model call until its accounting is durable. Missing declarations and overlapping write scopes are not independence.
+`scheduler` is defined by `scheduler-policy.schema.json`. The new default permits parallel execution with a limit of two; existing explicit serial settings remain unchanged. Parallel only dispatches independent units declared by frozen schedule.after/writes; max-parallel limits units and providers limits actual account channels. Hard budgets admit one model call until its accounting is durable. Missing declarations and overlapping write scopes are not independence.
 
 For example:
 
@@ -371,7 +371,7 @@ For example:
 {
   "permissions": {
     "mode": "full-access",
-    "bindings": {"loops.review":"read-only","routes.hard":"workspace-write"}
+    "bindings": {"loops.review":"read-only"}
   },
   "scheduler": {"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}
 }
@@ -382,3 +382,5 @@ This is a field excerpt, not a complete configuration replacement. The console r
 ## Optional JEV shadow evaluation
 
 `jev-shadow.enabled` defaults to false, including older configurations that omit it. The global/project editor exposes the switch. Enabling only observes new tasks; failures never block workflows or change Quick/Full. See the [JEV guide](jev-shadow.md) for endpoint, version pin, key variable and timeout. This feature requires the 0.30.1 CLI/plugin.
+
+Automatic Worktree management (`worktree.enabled`, default true) is independent from scheduling. Off neither prohibits parallel dispatch nor prevents callers from creating Worktrees. Project membership and execution directories are separate; see the [console guide](flow-console.md) for directory registration. Native backends without a separate `workspace-write` sandbox root reject unsupported split-directory requests before dispatch, without expanding permissions.

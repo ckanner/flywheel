@@ -166,7 +166,8 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
                 property(t('runsStart'), item.startedAt),
                 property(t('runsFinish'), item.finishedAt || t('runsLive')),
                 property(t('consoleBranch'), item.branch),
-                property(t('consoleCwd'), item.cwd),
+                property(t('projectHome'), item.workspaceCwd),
+                property(t('executionHome'), item.cwd),
               ),
               item.quality &&
                 item.finishedAt &&

@@ -1,5 +1,7 @@
 # Flywheel（飞轮）
 
+项目工作区与任务执行目录分开：Session 归属原仓库，任务可以在独立 Worktree 执行。配置页提供默认开启的“自动管理任务 Worktree”，与并行调度独立；自行选择目录须由引擎核对登记。详见[流程控制台](docs/flow-console.md)。
+
 [English](README.en.md) · 简体中文
 
 Flywheel 用确定性 Go 引擎驱动 Plan、Execute、Review 和分层验收，把已经明确的需求变成有边界、可验证、可持久化的软件交付。模型负责规划、实现和评审；引擎负责状态、重试、预算、工作区、验收、提交与停止。

@@ -1,3 +1,5 @@
+Object.assign(zh, { sharedBatch: '共享目录批次 · 统一验收与提交', sharedBatchError: '上次批次错误' });
+Object.assign(en, { sharedBatch: 'Shared checkout · collective verification and delivery', sharedBatchError: 'Previous batch error' });
 // Native Conversation View content; no host DOM replacement or second global sidebar.
 Object.assign(zh, {
   consoleCanvas: '流程',
@@ -1188,7 +1190,9 @@ function WorkbenchNodeInspector({
           property('Run', state.run?.id),
           property('HEAD', state.run?.head),
           property(t('consoleTask'), control.status.taskDir),
-          property(t('consoleCwd'), packet?.worktree?.path ?? control.status.cwd),
+          property(t('projectHome'), state.project?.['workspace-cwd']),
+          property(t('executionHome'), packet?.worktree?.path ?? control.status.cwd),
+          packet?.worktree?.external && property(t('externalWorktree'), packet.worktree.path),
           property(t('consoleBranch'), packet?.worktree?.branch || state.run?.branch),
           property(t('consoleRevision'), state.revision),
           property('after', packet?.schedule?.after?.join(', ')),
@@ -1344,7 +1348,7 @@ function TaskView({
         ),
       ),
     ),
-    (control.pending || control.error || control.uncertainty) &&
+    (control.pending || control.error || control.uncertainty || control.status?.workspaceWarnings?.length) &&
       !(
         page === 'config' &&
         (control.pending?.action === 'config-edit' || control.error?.action === 'config-edit') &&
@@ -1354,6 +1358,10 @@ function TaskView({
     h(
       'div',
       { hidden: page !== 'canvas' },
+      state?.['shared-execution'] && h('section', { className: css.notice, role: 'status' },
+        h('strong', null, t('sharedBatch')),
+        h('p', null, state['shared-execution'].packets.join(' · ')),
+        state['shared-execution']['last-error'] && h('p', { role: 'alert' }, t('sharedBatchError') + ': ' + state['shared-execution']['last-error'])),
       hasTask &&
         h(
           'div',

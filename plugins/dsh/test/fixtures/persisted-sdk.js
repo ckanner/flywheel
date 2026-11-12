@@ -11,12 +11,14 @@ import * as Server from '@deepseek-ai/dsh-sdk-jsonrpc-server';
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy';
 import Approval from '@deepseek-ai/dsh-user-approval';
 import * as WorkerPolicy from '../../src/policy.js';
+import { SessionTitleService } from '@deepseek-ai/dsh-session-title';
 
 const patch = JSON.parse(readFileSync(process.argv[process.argv.indexOf('--patch') + 1], 'utf8'));
 const policy = patch.find(row => row.id === 'sandbox-policy').config;
 const ctx = new Context();
 await mountAgentLoopTestDependencies(ctx, { workingDirectory: true });
-await ctx.plugin(Persistence, { root: process.env.TEST_DSH_HISTORY, compression: 'none' });
+await ctx.plugin(Persistence, { root: patch.find(row => row.id === 'session-persistence-jsonl')?.config.root ?? process.env.TEST_DSH_HISTORY, compression: 'none' });
+await ctx.plugin(SessionTitleService, { fallbackMaxWords: 8, fallbackMaxBytes: 96, maxTitleBytes: 120 });
 await ctx.plugin(SandboxPolicy, policy);
 await ctx.plugin(Approval, { policy: 'never' });
 ctx.provide('shell', {
@@ -37,6 +39,8 @@ class OfflineAdapter extends LlmAdapter {
   async *stream(request) {
     if (process.env.TEST_DSH_LLM_CALLS) appendFileSync(process.env.TEST_DSH_LLM_CALLS,
       JSON.stringify({ messages: request.messages, model: request.model, provider: request.provider,
+        directories: ctx.sessions.list().map(session => ({ header: session.header.cwd, current: ctx.workingDirectory.get(session) })),
+        titles: ctx.sessions.list().map(session => ctx.sessionTitle.get(session)?.title),
         reasoningEffort: request.reasoningEffort }) + '\n');
     yield { type: 'block-start', index: 0, blockType: 'text' };
     yield { type: 'text-delta', index: 0, text: 'published SDK fixture complete' };

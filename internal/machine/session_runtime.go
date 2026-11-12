@@ -36,6 +36,12 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	}
 	sort.Strings(credentials)
 	identity := []any{references, credentials}
+	if a.WorkspaceCwd != "" {
+		identity = append(identity, "project-workspace-v1", a.WorkspaceCwd)
+	}
+	if len(a.CandidateScope) > 0 {
+		identity = append(identity, "shared-declared-scope-v1", a.CandidateScope)
+	}
 	if adapter != "" {
 		identity = append(identity, adapter)
 	}

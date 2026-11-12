@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.8.2"
+  version: "1.8.3"
 description: >-
   Prepare a reviewable Flywheel task proposal without starting the engine:
   research the repository, resolve intent questions, and generate docs/<slug>/
@@ -46,7 +46,10 @@ Kimi 使用 `/skill:flywheel-new <需求>`。正常准备无需先填写 Flywhee
 
 ### 先固定任务工作区
 
-默认在本需求的**任务集成分支与独立 worktree**中准备契约。先核实目标仓库、
+先通过 `flywheel config inspect --cwd <原仓库绝对路径> --json` 核对自动 Worktree 管理。
+默认开启时，在本需求的**任务集成分支与独立 worktree**中准备契约；关闭时不自动创建，
+使用用户指定的任务 checkout，仍允许用户或模型自行选择 Worktree。项目归属保留原仓库；
+不要把任务 checkout 注册为 Provider／DSH 的新项目。以下创建命令只用于明确选择新 Worktree 时。先核实目标仓库、
 当前分支、`git status --short` 和 `git worktree list --porcelain`。已明确选择了
 本任务工作区就直接复用，不重复确认；不要仅凭目录名判断它属于本任务。
 若尚无任务工作区，从已核实的基线创建，不切换原 checkout：
@@ -145,7 +148,8 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 
 ## 交接边界
 
-引擎负责 packet worktree 的创建／复用、Execute 与 L1、独立 Review，合格单元
+开启自动管理时，引擎负责 packet worktree 的创建／复用；关闭时不自动创建，
+并行策略独立。任务实际目录以引擎记录为准，不能仅在 prompt 中声称换目录。Execute 与 L1、独立 Review，合格单元
 本地 `ff-only` 合回 `repo_dir` 当前所在的任务分支；不需要为每个 Loop 再手工建
 worktree。Full 的 Plan 在任务集成 worktree 修订契约，里程碑 L2/L3 与 Judge
 在合入后的任务集成 worktree 验证。Quick 在候选 worktree 收齐 L1 与适用 L2/L3，

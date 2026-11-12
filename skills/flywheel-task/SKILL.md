@@ -1,7 +1,7 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.2.1"
+  version: "1.2.2"
 description: Prepare and launch an authorized Flywheel implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
@@ -39,7 +39,10 @@ DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标
 
 1. 核对目标 Git 仓库、`git status --short`、实际分支、基线与
    `git worktree list --porcelain`。复用已明确属于本需求的任务集成 worktree；
-   否则从核实的基线创建新分支与独立 worktree，不切换原 checkout，不强制覆盖。
+   先用 `flywheel config inspect --cwd <原仓库绝对路径> --json` 核对实际 `worktree.enabled`。
+   开启时从核实的基线创建任务分支与独立 worktree；关闭时不自动创建，沿用用户指定的
+   任务 checkout，用户或模型仍可主动选择 Worktree。不要强制覆盖或混入用户 WIP。
+   原仓库是 Session 的项目归属，任务 checkout 是执行位置；不要把后者注册成软件的新项目。
    没有明确特殊选择时不从默认分支或 detached HEAD 直接运行开发任务。
 2. 在该 worktree 中研究代码、仓库门禁与既有实现模式，明确目标、非目标、
    成功标准、风险和验收入口。准备使用当前对话模型；`loops.plan` 只约束引擎阶段。
