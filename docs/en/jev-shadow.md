@@ -2,8 +2,8 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/jev-shadow.md)
 
-JEV is an optional experiment that observes a bounded task summary and records
-workflow advice. It does not choose the production workflow. Start with the
+This guide covers the optional workflow-shadow experiment. It captures a bounded
+task summary for later, explicit evaluation and does not choose the production workflow. Start with the
 [normal workflow](workflow.md); enable shadow evaluation only when collecting
 comparison evidence for a configured endpoint.
 
@@ -29,17 +29,17 @@ complete `flywheel.config.json`:
 }
 ```
 
-The shared template leaves the endpoint empty. Configuration stores the environment variable **name**, never the key. A desktop engine must inherit that variable; a terminal export alone does not establish this. Never put credentials in endpoint or model fields. Discovery selects one complete file in task → project → global → embedded order, without merging. Inspect the source with `config inspect --json`; saves affect subsequent starts. Disabling preserves previous records.
+The shared template leaves the endpoint empty. Configuration stores the environment variable **name**, never the key. Local capture does not look up credentials; the process running an explicit `shadow run` must inherit the variable. Never put credentials in endpoint or model fields. Discovery selects one complete file in task → project → global → embedded order, without merging. Inspect the source with `config inspect --json`; saves affect subsequent starts. Disabling preserves previous records.
 
-Enabling authorizes sending a bounded summary of task goals, requirement/acceptance descriptions and planning evidence, also retained privately for later labeling. No source files, diffs, execution logs or provider conversations are read. URL/home-prefix removal and common credential-pattern rejection are best effort, not universal anonymization. Decide whether these business summaries may be sent to your configured endpoint.
+Enabling captures task goals, requirement/acceptance descriptions and planning evidence privately for later review and labeling. The task itself sends nothing to JEV. No source files, diffs, execution logs or provider conversations are read. URL/home-prefix removal and common credential-pattern rejection are best effort, not universal anonymization. Review the business summary before explicitly sending it to your configured endpoint. This setting never authorizes a new data category or automatic adoption of diagnostic decisions.
 
-Only a new task's first ordinary run is observed, after existing workflow state is saved: at most one request, up to five seconds, without retries. Resume, retry and single-step commands do not backfill observations. Missing keys, invalid endpoints, timeouts, HTTP errors and record failures log a warning and leave the primary workflow running. Explicit Full or structural Quick exclusions skip inference. Hard-budget tasks skip automatic shadow usage, because experimental usage is metered separately. User cancellation still stops the whole task.
+Only a new task's first ordinary run is captured, after existing workflow state is saved. It writes the bounded input and pinned target locally, with no HTTP wait, credential lookup or background goroutine. Resume, retry and single-step commands do not backfill observations. Invalid targets, rejected summaries and record failures log a warning and leave the primary workflow running. Hard-budget tasks can also capture, because capture creates no API usage. Cancellation skips capture and retains the normal task-stop behavior. Explicit Full and structural Quick exclusions remain deterministic blockers when a later experiment evaluates the snapshot.
 
 Advice never changes Quick/Full, routing, permissions, sessions, acceptance or PR/Merge gates. Independent usage and latency records do not enter the task budget. Unknown usage stays unknown; no billing savings are implied.
 
 ## Explicit experiments
 
-Automatic records live under `~/.config/flywheel/shadow/<target-digest>/<input-digest>/` (0700 directories, 0600 files). Logs identify the directory. `cases.json` holds the bounded summary; `target.json` pins endpoint, model, questions and policy. Call records retain probabilities, suggestions, actual baseline, response model and usage. An intent without a terminal remains unknown and is not replayed. A different directory represents an explicit new experiment.
+Automatic captures live under `~/.config/flywheel/shadow/<target-digest>/<input-digest>/` (0700 directories, 0600 files). Logs identify the directory. `cases.json` holds the bounded summary; `target.json` pins endpoint, model, questions and policy. Before explicit evaluation, the report shows these cases as not run. The later `shadow run` owns its lifetime and separate call budget; it adds probabilities, suggestions, actual baseline, response model and usage. An intent without a terminal remains unknown and is not replayed. A different directory represents an explicit new experiment.
 
 With a Flywheel version that provides `shadow prepare|run|report`:
 
@@ -64,4 +64,4 @@ Eight atomic Noul questions use fixed experimental thresholds: every positive co
 
 This policy is **not production calibrated**. Reports separate decision-time, prepared, replay, historical and synthetic cases, and provisional versus confirmed labels. Current historical state need not be its initial Auto decision. Missing/provisional labels do not establish a false-Quick rate. Auto already uses preparation-time contract evidence; this experiment adds usage rather than removing a classifier call that never existed.
 
-The [six historical summaries](../evaluation/jev-historical-provisional.json) reference completed commits, with unknown actual modes and provisional labels. They test the interface and expose counterexamples, not production benefits. Real automatic routing would require independently confirmed decision-time samples and measured false-Quick/abstention rates. There is no production routing switch for JEV.
+The [six historical summaries](../evaluation/jev-historical-provisional.json) reference completed commits, with unknown actual modes and provisional labels. They test the interface and expose counterexamples, not production benefits. Real automatic workflow routing would require independently confirmed decision-time samples and measured false-Quick/abstention rates. There is no JEV Quick/Full routing switch. The separate bounded diagnostic decision policy cannot inherit this experiment's permissions or thresholds.

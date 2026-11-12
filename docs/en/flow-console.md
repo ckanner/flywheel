@@ -16,7 +16,7 @@ There are no editable task/project path fields. The project workspace remains th
 
 DSH keeps the original repository in the Session header and switches the current execution directory through its public API. The desktop Host periodically attaches Flywheel SDK sessions to matching existing projects; task status also ensures the original project is registered. It does not create a desktop workspace for every packet Worktree or rewrite old Session headers. Probes use temporary persistence, leaving no new user sessions. Native Providers start sessions in the project; task prompts name the actual execution directory for every shell/file operation. Backends unable to separate a `workspace-write` sandbox root reject that combination before dispatch instead of widening permissions. Full access and supported read-only modes retain their actual semantics.
 
-Loading a skill does not start the engine. `flywheel-task` prepares and calls `flywheel_launch`; a research/proposal-only response must explicitly say the engine was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
+Loading a skill does not start the engine. `flywheel-task` prepares the appropriate contract and invokes either the bounded investigation control or `flywheel_launch` for implementation. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
 
 | Conversation entry | Does it start the engine? | How the UI finds the task |
 |---|---|---|
@@ -41,11 +41,28 @@ When `run.kind` and `control.kind` identify the same single-stage operation, Thi
 
 Continue workflow is behind an explicit disclosure. A passed stage does not start subsequent stages or mark the task completed. Failed, cancelled and unknown operations cannot inherit an older green verdict. Run ID, HEAD and digests are collapsed under Run details and file locations.
 
+## Investigation before implementation
+
+A task with a preparation record and no implementation state opens the investigation
+panel. It shows the goal, action budget, collected observations, truncated excerpts,
+decision receipts, and the evidence report. Continue investigation submits the current
+revision to Go; a pending invocation instead offers reconciliation of the original
+receipt. Unknown control results require status reconciliation before another mutation.
+Stop waits for the running owner to settle; it cannot turn a missing action receipt
+into a confirmed cancellation.
+
+The panel does not offer ordinary code-workflow launch while the task is in preparation.
+`awaiting-report` asks the host assistant to submit an evidence-based analysis; it is
+not implementation completion. A report-only goal ends with that report. An already
+authorized repair can proceed after a supported report and a valid Spec are prepared,
+retaining the original scope and usage. See [bounded investigation](investigation.md)
+for the supported read/search actions, command protocol, and handoff requirements.
+
 ## Configuration
 
 In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its navigation tabs are Workflow, Run history, and Configuration. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
-Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV shadow advice have separate sections. Save and Discard appear beside the form only after edits. Ordinary saving takes one click; first enabling JEV confirms the task-summary transfer boundary. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
+Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV shadow advice have separate sections. Save and Discard appear beside the form only after edits. Ordinary saving takes one click; first enabling JEV explains local capture and the separate explicit evaluation transfer. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
 
 More configuration actions provides reload and installed-default restoration. Scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. A running engine retains its snapshot. The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
@@ -54,8 +71,9 @@ Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
 The optional [JEV shadow evaluator](jev-shadow.md) is disabled by default. Enabling
-it discloses the transmitted task summary; advice does not select workflow policy,
-and failures do not block the main task.
+it captures a local task summary; only an explicit `shadow run` sends it for evaluation.
+Advice does not select workflow policy. Investigation decisions use a separate,
+explicit policy described in the [investigation guide](investigation.md).
 
 ## Canvas and operations
 
@@ -150,4 +168,5 @@ Retries reconcile existing PR/merge results before mutations. Missing receipts r
 
 - [Configuration](configuration.md): complete files, model bindings, permissions, and scheduling.
 - [Workflow](workflow.md): preparation, execution, and PR review checkpoints.
+- [Investigation](investigation.md): bounded evidence collection, reports, and optional JEV decisions.
 - [Recovery](session-recovery.md): durable receipts and unresolved invocation handling.

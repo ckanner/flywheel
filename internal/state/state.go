@@ -89,6 +89,7 @@ var osReadFile = os.ReadFile
 
 // PacketState 单个 packet 的执行状态。
 type PacketState struct {
+	ExecutionPolicy      *ExecutionPolicyRecord   `json:"execution-policy,omitempty"`
 	Schedule             *contract.PacketSchedule `json:"schedule,omitempty"`
 	Parallel             bool                     `json:"parallel,omitempty"`
 	Milestone            string                   `json:"milestone"`
@@ -119,11 +120,23 @@ type PacketState struct {
 
 // MilestoneState 里程碑推进状态。
 type PlanProgress struct {
-	Status     string `json:"status"`
-	StartedAt  string `json:"started-at"`
-	FinishedAt string `json:"finished-at,omitempty"`
-	Contracts  string `json:"contracts"`
-	Error      string `json:"error,omitempty"`
+	Status     string          `json:"status"`
+	StartedAt  string          `json:"started-at"`
+	FinishedAt string          `json:"finished-at,omitempty"`
+	Contracts  string          `json:"contracts"`
+	Error      string          `json:"error,omitempty"`
+	Reason     string          `json:"reason,omitempty"`
+	Checkpoint *PlanCheckpoint `json:"checkpoint,omitempty"`
+}
+
+// PlanCheckpoint is trusted only after a clean Plan result, contract validation,
+// and the existing Git persistence/sync checks. Legacy passed status is not proof.
+type PlanCheckpoint struct {
+	Version   int    `json:"version"`
+	Milestone string `json:"milestone"`
+	Inputs    string `json:"inputs"`
+	Receipt   string `json:"receipt"`
+	Head      string `json:"head,omitempty"`
 }
 
 type MilestoneState struct {
@@ -241,6 +254,7 @@ type SharedExecution struct {
 }
 
 type State struct {
+	PreparationSource    *PreparationSource        `json:"preparation-source,omitempty"`
 	SharedExecution      *SharedExecution          `json:"shared-execution,omitempty"`
 	Project              *ProjectIdentity          `json:"project,omitempty"`
 	Control              *ControlResult            `json:"control,omitempty"`
@@ -318,15 +332,16 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
-		Revision  any             `json:"revision"`
-		Workflow  json.RawMessage `json:"workflow"`
-		Sessions  json.RawMessage `json:"sessions"`
-		Handoff   json.RawMessage `json:"handoff"`
-		Delivery  json.RawMessage `json:"delivery"`
-		Scheduler json.RawMessage `json:"scheduler"`
-		Run       json.RawMessage `json:"run"`
-		Control   json.RawMessage `json:"control"`
-		Project   json.RawMessage `json:"project"`
+		Revision          any             `json:"revision"`
+		Workflow          json.RawMessage `json:"workflow"`
+		Sessions          json.RawMessage `json:"sessions"`
+		Handoff           json.RawMessage `json:"handoff"`
+		Delivery          json.RawMessage `json:"delivery"`
+		Scheduler         json.RawMessage `json:"scheduler"`
+		Run               json.RawMessage `json:"run"`
+		Control           json.RawMessage `json:"control"`
+		Project           json.RawMessage `json:"project"`
+		PreparationSource json.RawMessage `json:"preparation-source"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
@@ -346,7 +361,7 @@ func Load(taskDir string) (*State, error) {
 			return nil, err
 		}
 	}
-	for name, raw := range map[string]json.RawMessage{"handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project} {
+	for name, raw := range map[string]json.RawMessage{"handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
 		if len(raw) > 0 {
 			var value any
 			_ = json.Unmarshal(raw, &value)

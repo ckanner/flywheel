@@ -12,7 +12,6 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/drivers"
-	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
 	"github.com/ckanner/flywheel/internal/watchdog"
@@ -246,7 +245,7 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 		return fmt.Errorf("parallel execution requires a Git checkout")
 	}
 	for _, packet := range packets {
-		binding, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
+		binding, _, _, err := c.executionBinding(packet)
 		if err != nil {
 			return err
 		}

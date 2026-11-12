@@ -358,6 +358,10 @@ func (c *Context) reloadPackets() error {
 }
 
 func (c *Context) run() (TaskSummary, error) {
+	defer c.measurePhase("engine", "")()
+	if c.fatal != nil {
+		return c.summary(), c.fatal
+	}
 	if c.State.Handoff != nil {
 		return c.summary(), fmt.Errorf("task is under human session control; validate and return it first")
 	}
@@ -411,7 +415,13 @@ func (c *Context) run() (TaskSummary, error) {
 		plan := planOutcome{OK: true, Packets: c.PacketList}
 		var err error
 		if !c.pendingSessionMilestone(milestone.ID) {
-			plan, err = c.planUntilValid(milestone)
+			required, reason := c.needsPlan(milestone.ID)
+			c.Log(fmt.Sprintf("Plan %s: %s", milestone.ID, reason))
+			if required {
+				plan, err = c.planUntilValidForReason(milestone, reason)
+			} else {
+				c.State.Milestones[milestone.ID].Plan.Reason = reason
+			}
 		}
 		if err != nil {
 			return c.summary(), err
@@ -843,7 +853,7 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 			step = &StepSum{Name: "execute", OK: false,
 				Detail: optStr(fmt.Sprintf("bounded stop (%d/%d attempts) — rerun, or --only plan to revise", ps.FailedAttempts, packet.Escalation.MaxRetries))}
 		case r.Spun:
-			step = &StepSum{Name: "execute", OK: false, Detail: optStr("spin detected (identical failure signature) — human judgement needed")}
+			step = &StepSum{Name: "execute", OK: false, Detail: optStr("spin detected (unchanged candidate and authoritative failures) — human judgement needed")}
 		case r.Upgraded:
 			step = &StepSum{Name: "execute", OK: false, Detail: optStr("workflow upgraded to Full; resume the full run")}
 		}

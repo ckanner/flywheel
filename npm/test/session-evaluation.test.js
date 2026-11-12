@@ -122,6 +122,23 @@ test("recovery audit corrections replace measured facts without inventing model 
   assert.throws(()=>resolveMetricRows([correction]),/no original/);
 });
 
+test("engine phase telemetry neither becomes model usage nor replaces measured trial wall time", () => {
+  const call = { "invocation-id": "one", role: "execute", usage: { input: 4, output: 2, totalTokens: 6 }, "duration-ms": 2000 };
+  const start = { "record-kind": "phase-start", "span-id": "span", "run-id": "run", phase: "execute", "started-at": "2026-11-12T00:00:00Z" };
+  const end = { ...start, "record-kind": "phase-end", "phase-invocation-id": "one", "ended-at": "2026-11-12T00:00:20Z" };
+  const rows = resolveMetricRows([start, call, end]);
+  assert.equal(rows.calls.length, 1);
+  assert.equal(rows.corrections, 0);
+  assert.equal(rows.duplicates, 0);
+  const state = { status: "completed", packets: {} };
+  const steps = [{ durationMs: 3000 }];
+  const withPhases = summarizeTrial(state, [start, call, end], steps, { pass: true }, { scenario: "first-pass" });
+  const baseline = summarizeTrial(state, [call], steps, { pass: true }, { scenario: "first-pass" });
+  assert.deepEqual(withPhases, baseline);
+  assert.equal(withPhases.calls, 1);
+  assert.equal(withPhases.usage.totalTokens.known, 6);
+});
+
 test("session evaluation executes two paired repetitions of all six scenarios in separate real Git clones", async t => {
   const f=await fixture(t,["first-pass","l1-repair","review-return","long-context","stop-resume","configuration-change"]);
   const physicalParent = path.join(f.dir, "physical-output");

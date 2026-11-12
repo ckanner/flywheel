@@ -58,6 +58,7 @@ type Context struct {
 	sessionCommand     *SessionCommand
 	runID              string
 	consoleRetryReason string
+	phaseParent        string
 	TaskDir            string
 	WorkspaceCwd       string
 	Cwd                string
@@ -120,6 +121,10 @@ func (c *Context) save() {
 	}
 	if c.parallel != nil {
 		c.parallel.save(c)
+		return
+	}
+	defer c.measurePhase("persistence", "")()
+	if c.fatal != nil {
 		return
 	}
 	st, err := state.Save(c.TaskDir, c.State, &c.revision)
@@ -453,6 +458,7 @@ func (c *Context) partitionChangedFiles(changedFiles []string) (executorFiles []
 			executorFiles = append(executorFiles, f)
 		}
 	}
+	contractViolations = append(contractViolations, c.preparationScopeViolations(executorFiles)...)
 	return executorFiles, contractViolations
 }
 
@@ -689,6 +695,9 @@ func CreateContext(opts Opts) (*Context, error) {
 		metricsFile:  filepath.Join(opts.TaskDir, "metrics.jsonl"),
 		revision:     st.Revision,
 		RunContext:   opts.Context,
+	}
+	if err := ctx.attachPreparation(); err != nil {
+		return nil, err
 	}
 	if err := ctx.initializeWorkflow(opts.Mode); err != nil {
 		return nil, err

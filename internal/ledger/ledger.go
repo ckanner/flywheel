@@ -9,6 +9,8 @@ import "strings"
 // garden-proposals.md 是 intake/garden 模块的产物（P3 修复：Node 版漏分类，
 // 导致它们可能落进单元 diff 判定）。
 var LedgerFiles = map[string]bool{
+	"preparation.json":    true,
+	".preparation.lock":   true,
 	".state.lock":         true, // C9 flock 锁文件（v0.18）——绝不进单元 diff/提交
 	".run.lock":           true,
 	".stop-request":       true,
@@ -23,20 +25,23 @@ var LedgerFiles = map[string]bool{
 }
 
 // LedgerDirs 账本目录（带尾部斜杠，供前缀匹配）。
-var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/"}
+var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", ".investigation/"}
 
 // CommitVolatileFiles 纯运行时产物：不进单元提交（活日志绝不能进 git 历史；
 // metrics 是追加式遥测）。账本区其余（state/retro/inbox/reports/approvals）
 // 留在已提交契约层。
 var CommitVolatileFiles = map[string]bool{
-	"metrics.jsonl":    true,
-	"orchestrator.log": true,
-	"orchestrator.pid": true,
-	".state.lock":      true, // v0.18：flock 锁文件是运行时产物，不入库
-	".run.lock":        true,
-	".stop-request":    true,
-	".control/":        true,
-	".sessions/":       true,
+	"preparation.json":  true,
+	".preparation.lock": true,
+	".investigation/":   true,
+	"metrics.jsonl":     true,
+	"orchestrator.log":  true,
+	"orchestrator.pid":  true,
+	".state.lock":       true, // v0.18：flock 锁文件是运行时产物，不入库
+	".run.lock":         true,
+	".stop-request":     true,
+	".control/":         true,
+	".sessions/":        true,
 }
 
 // IsLedgerTaskPath 判断任务目录相对路径（如 "reports/x.json"）是否为账本。

@@ -1,0 +1,592 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/preparation-state.schema.json",
+  "title": "Bounded investigation state and receipts v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "run-id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "contract": {
+      "$ref": "preparation.schema.json"
+    },
+    "contract-hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "running",
+        "awaiting-report",
+        "blocked",
+        "supported",
+        "inconclusive",
+        "access-blocked",
+        "cancelled"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "started-at": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "deadline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "actions-used": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "output-bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 262144
+    },
+    "elapsed-ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pending": {
+      "$ref": "#/$defs/invocation"
+    },
+    "decision-pending": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "decision-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "task-id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+            },
+            "run-id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+            },
+            "state-revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "contract-hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "candidate-hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "observation-hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "task-id",
+            "run-id",
+            "state-revision",
+            "contract-hash",
+            "candidate-hash",
+            "observation-hash"
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "enum": [
+                  "task-summary",
+                  "diagnostic-facts",
+                  "logs",
+                  "source",
+                  "diff"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              }
+            },
+            "required": [
+              "category",
+              "text"
+            ]
+          }
+        },
+        "missing-facts": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+              },
+              "kind": {
+                "const": "diagnostic"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "binding-hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "description",
+              "binding-hash"
+            ]
+          }
+        },
+        "baseline-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+        },
+        "semantic-uncertainty": {
+          "type": "boolean"
+        },
+        "executor-unknown": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version",
+        "decision-id",
+        "identity",
+        "facts",
+        "missing-facts",
+        "actions",
+        "baseline-id",
+        "semantic-uncertainty",
+        "executor-unknown"
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "decision-id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+          },
+          "snapshot-hash": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{64})?$"
+          },
+          "policy-hash": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{64})?$"
+          },
+          "target-hash": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{64})?$"
+          },
+          "question-hash": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{64})?$"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "skipped",
+              "error",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "action-id": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "applicability": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "choice-confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "probabilities": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "maxProperties": 16,
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "input_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "output_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "required": [
+              "input_tokens",
+              "output_tokens"
+            ]
+          },
+          "http-status": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 599
+          },
+          "duration-ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "version",
+          "decision-id",
+          "snapshot-hash",
+          "policy-hash",
+          "target-hash",
+          "question-hash",
+          "status",
+          "reason",
+          "action-id",
+          "model",
+          "applicability",
+          "choice-confidence",
+          "probabilities",
+          "usage",
+          "http-status",
+          "duration-ms"
+        ]
+      }
+    },
+    "decision-started-at": {
+      "type": "object",
+      "maxProperties": 101,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "report": {
+      "$ref": "#/$defs/report"
+    }
+  },
+  "required": [
+    "version",
+    "revision",
+    "run-id",
+    "cwd",
+    "contract",
+    "contract-hash",
+    "status",
+    "reason",
+    "started-at",
+    "deadline",
+    "actions-used",
+    "output-bytes",
+    "elapsed-ms",
+    "observations",
+    "decisions"
+  ],
+  "$defs": {
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "action-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+        },
+        "binding-hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "candidate-hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "started-at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "decision-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+        },
+        "adopted": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "id",
+        "action-id",
+        "binding-hash",
+        "candidate-hash",
+        "started-at",
+        "adopted",
+        "reason"
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/$defs/invocation"
+        },
+        "status": {
+          "enum": [
+            "observed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "content-hash": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{64})?$"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "finished-at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "duration-ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "invocation",
+        "status",
+        "output",
+        "content-hash",
+        "truncated",
+        "finished-at",
+        "duration-ms"
+      ]
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "supported",
+            "inconclusive",
+            "access-blocked"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "hypothesis": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+              },
+              "status": {
+                "enum": [
+                  "supported",
+                  "contradicted",
+                  "unknown"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "hypothesis",
+              "status",
+              "evidence",
+              "reason"
+            ]
+          }
+        },
+        "counter-evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "limitations": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "regression": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "rollback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "findings",
+        "counter-evidence",
+        "limitations",
+        "recommendation",
+        "regression",
+        "rollback"
+      ]
+    }
+  }
+}

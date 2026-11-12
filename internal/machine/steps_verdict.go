@@ -185,7 +185,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 		if a.ps != nil {
 			c.save()
 		}
-		c.Sleep(time.Duration(delay) * time.Millisecond)
+		c.waitRetry(time.Duration(delay)*time.Millisecond, a.packetID)
 	}
 	return verdictOutcome{ErrorCode: lastCode}, nil
 }
@@ -196,6 +196,10 @@ var reviewChangedFiles = verify.GetChangedFiles
 var reviewDiffText = verify.GetDiffText
 
 func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (reviewOutcome, error) {
+	defer c.measurePhase("review", packet.PacketID)()
+	if err := c.err(); err != nil {
+		return reviewOutcome{}, err
+	}
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	if !c.currentL1Evidence(packet) {
@@ -333,6 +337,10 @@ func loopToBinding(b config.LoopBinding) fallback.Binding {
 // 分歧 → split（Pass=false，inbox 叫人）；复核通道失败也升级，
 // 不能静默降为单 judge。两次调用都不得改变绑定的主候选。
 func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err error) {
+	defer c.measurePhase("judge", milestone.ID)()
+	if err := c.err(); err != nil {
+		return judgeOutcome{}, err
+	}
 	ms := c.State.Milestones[milestone.ID]
 	gateIdentity := evidenceIdentity(ms.Gate)
 	// run 总是先执行 milestoneGateStep。无身份仅保留内部独立 judge 的

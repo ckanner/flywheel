@@ -13,6 +13,12 @@ Object.assign(zh, {
   runsMissing: '未报告',
   runsMissingCount: '缺失 {count} 次',
   runsNoMetrics: '读取所选运行指标后显示用量与耗时；缺失费用不记作 0',
+  runsTimeline: '阶段时间记录',
+  runsTimelineWall: '已观测经过时间',
+  runsTimelineSum: '阶段耗时累计',
+  runsTimelineSpans: '已闭合 / 未知区间',
+  runsTimelineUnmatched: '未关联时间区间的调用',
+  runsTimelineHelp: '经过时间取已观测区间的并集；并行和嵌套阶段不能直接相加。未闭合区间保持未知，Provider 内部耗时尚不可见。',
 });
 Object.assign(en, {
   runsDetails: 'Run details',
@@ -29,6 +35,12 @@ Object.assign(en, {
   runsMissing: 'Not reported',
   runsMissingCount: 'Missing {count}',
   runsNoMetrics: 'Read selected-run metrics to inspect usage and duration. Missing cost is not zero',
+  runsTimeline: 'Phase timing',
+  runsTimelineWall: 'Observed elapsed time',
+  runsTimelineSum: 'Sum of phase durations',
+  runsTimelineSpans: 'Closed / unknown intervals',
+  runsTimelineUnmatched: 'Calls without a matched interval',
+  runsTimelineHelp: 'Elapsed time is the union of observed intervals; parallel and nested phases cannot be added together. Open intervals remain unknown. Provider-internal timing is not observed.',
 });
 
 function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, active = false }) {
@@ -68,6 +80,10 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
       h('dt', null, label),
       h('dd', null, textValue(value, t('runsMissing'))),
     );
+  const timeline = control.metrics?.timeline;
+  const measuredTime = (value) => timeline?.completeSpans > 0 && Number.isFinite(value)
+    ? (value / 1000).toFixed(3) + ' s'
+    : t('runsMissing');
   return h(
     'section',
     { className: css.runExplorer, 'aria-label': t('consoleRuns') },
@@ -229,6 +245,18 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
           { className: css.runMetrics },
           h('p', { className: css.meta }, t('consoleCompareHelp')),
           h('p', { className: css.meta }, t('runsQuality')),
+          timeline && h(
+            'article',
+            { className: css.metricRow },
+            h('h4', { className: css.heading }, t('runsTimeline')),
+            h('p', { className: css.meta }, t('runsTimelineHelp')),
+            h('dl', { className: css.consoleProperties },
+              property(t('runsTimelineWall'), measuredTime(timeline.observedWallMs)),
+              property(t('runsTimelineSum'), measuredTime(timeline.knownSpanMs)),
+              property(t('runsTimelineSpans'), timeline.completeSpans + ' / ' + timeline.unknownSpans),
+              property(t('runsTimelineUnmatched'), timeline.unmatchedCalls),
+            ),
+          ),
           !!(control.metrics.omittedGroups || control.metrics.omittedCalls) &&
             h('p', { className: css.meta }, t('runsBounded')),
           ...(control.metrics.groups ?? []).map((group, index) =>

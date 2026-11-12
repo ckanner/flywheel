@@ -813,7 +813,7 @@ func TestExecuteLoopRetriesUntilGreen(t *testing.T) {
 
 // TestExecuteLoopBoundedStop（v0.24）：持续失败 → FailedAttempts 耗尽 → 有界
 // 停止（单环模式不自动升级，人裁决）。Step.OK=false + Detail 报告界。
-func TestExecuteLoopBoundedStop(t *testing.T) { // 实际命中空转界（DC4 先于 max-retries）
+func TestExecuteLoopBoundedStop(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
 	sd.execFn = func(drivers.CallArgs) drivers.Result {
@@ -831,10 +831,11 @@ func TestExecuteLoopBoundedStop(t *testing.T) { // 实际命中空转界（DC4 �
 	require.NoError(t, err)
 	assert.False(t, summary.Step.OK)
 	require.NotNil(t, summary.Step.Detail)
-	// 同签名连续失败先触发空转检测（DC4），先于 max-retries 界——同为有界出口。
-	assert.Contains(t, *summary.Step.Detail, "spin detected")
+	// An unsettled model failure has no trustworthy candidate/check observation.
+	// It must stop at the original attempt bound, without inventing early spin.
+	assert.Contains(t, *summary.Step.Detail, "bounded stop")
 	st := loadFixtureState(t, fx)
-	assert.Equal(t, 2, st.Packets["M01-T01"].FailedAttempts, "DC4 空转在第 3 次同签名失败时触发")
+	assert.Equal(t, 3, st.Packets["M01-T01"].FailedAttempts, "unknown progress does not reset or bypass the attempt bound")
 	assert.NotEqual(t, "escalated", st.Status, "单环模式不自动升级（人在驾驶座）")
 }
 

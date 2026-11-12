@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ckanner/flywheel/internal/investigation"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
 )
@@ -98,6 +99,11 @@ func freezeStoppedTask(taskDir string) error {
 				return err
 			}
 		}
+	} else if preparation, err := state.LoadPreparation(taskDir); err == nil {
+		_, err = investigation.Cancel(taskDir, investigation.Options{ExpectedRevision: preparation.Revision})
+		return err
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }

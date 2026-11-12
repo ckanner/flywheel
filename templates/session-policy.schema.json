@@ -5,6 +5,7 @@
   "type": "object",
   "required": ["mode", "policy-version"],
   "properties": {
+    "context": {"enum": ["full", "verified-incremental"]},
     "mode": { "type": "string", "enum": ["fresh", "scoped"] },
     "policy-version": { "type": "integer", "const": 1 },
     "roles": {

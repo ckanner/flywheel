@@ -115,6 +115,22 @@ API prices do not directly determine subscription task capacity. The
 [session evaluation guide](session-evaluation.md) describes the repository's
 paired experiment tooling; effort comparisons need their own fixed conditions.
 
+## Bounded model and effort experiments
+
+The optional [execution policy](configuration.md#bounded-execution-policy-opt-in)
+declares complete allowed bindings per route, including account, effort,
+permission and history mode. Auto/Quick/Full do not enable it. A confirmed
+repeated L1 stall may advance the declared experiment order within existing
+attempt/token budgets and an explicit switch limit. This deterministic rule
+does not prove the next model is better. Channel errors use separately declared
+fallbacks; neither mechanism may select an undeclared model or payment channel.
+
+Effort changes cold-start the role and record complete before/after bindings.
+Comparisons must include rereading, startup and actual known/unknown usage and
+cost. Offline tests run real engine repair and recovery paths with controlled
+driver results; they do not establish live model quality or speed. Use matched
+real tasks with frozen oracles before changing defaults or claiming savings.
+
 ## Interpret configuration and quality evidence
 
 Source and offline protocol tests establish field transmission and error

@@ -9,6 +9,7 @@ was staged. Proposed work is not automatically shipped work. The
 
 | Date | Proposal | Focus |
 | --- | --- | --- |
+| 2026-11-12 | [Feedback-driven workflows and JEV](2026-11-12-feedback-driven-workflows.md) (Chinese; proposal with subsequent implementation) | Auto / Quick / Full, bounded investigation, fast feedback, model policy, and staged semantic decisions |
 | 2026-11-10 | [Workbench redesign](2026-11-10-workbench-redesign.md) | Canvas, configuration, and run-history interaction |
 | 2026-11-10 | [Task discovery](2026-11-10-task-discovery.md) | Session attribution and task selection |
 | 2026-11-10 | [JEV shadow evaluation](2026-11-10-jev-shadow.md) | Optional routing observations without changing execution |

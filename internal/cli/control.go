@@ -22,6 +22,7 @@ import (
 )
 
 type controlResponse struct {
+	Preparation   *state.PreparationState   `json:"preparation,omitempty"`
 	Projection    string                    `json:"projection,omitempty"`
 	Node          *machine.NodeDetail       `json:"node,omitempty"`
 	Delivery      *machine.DeliverySnapshot `json:"delivery,omitempty"`
@@ -77,7 +78,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <launch|start|step|status|stop|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
+		Use:   "control <launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -110,6 +111,8 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
+				case "investigate":
+					reply, err = controlInvestigation(cmd, resolvedTask, resolvedCwd)
 				case "delivery", "deliver":
 					var request machine.DeliveryRequest
 					raw, readErr := io.ReadAll(io.LimitReader(cmd.InOrStdin(), 131073))
@@ -202,7 +205,7 @@ func controlCmd() *cobra.Command {
 						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
 					}
 				default:
-					err = fmt.Errorf("control action must be launch, start, step, status, stop, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
+					err = fmt.Errorf("control action must be launch, start, step, status, stop, investigate, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
 				}
 			}
 			if resolvedCwd != "" {
@@ -297,6 +300,10 @@ func controlSnapshot(taskDir string) (controlResponse, error) {
 		reply.Sessions = sessionSummaries(reply.State)
 		return reply, err
 	}
+	if preparation, preparationErr := state.LoadPreparation(taskDir); !os.IsNotExist(preparationErr) {
+		reply.Preparation = preparation
+		return reply, preparationErr
+	}
 	return reply, nil
 }
 
@@ -368,7 +375,7 @@ func startControlledRun(taskDir, cwd, mode string, extra []string) (controlRespo
 			}
 			if exitErr != nil && (!reply.Running || len(extra) > 0) {
 				var semanticExit *exec.ExitError
-				if errors.As(exitErr, &semanticExit) && (semanticExit.ExitCode() == 3 || semanticExit.ExitCode() == 143) && reply.State != nil && (len(extra) == 0 || !reply.Running || reply.PID == child.Process.Pid) {
+				if errors.As(exitErr, &semanticExit) && (semanticExit.ExitCode() == 3 || semanticExit.ExitCode() == 143) && (reply.State != nil || reply.Preparation != nil) && (len(extra) == 0 || !reply.Running || reply.PID == child.Process.Pid) {
 					return reply, nil // a started task may finish escalated or interrupted
 				}
 				return reply, fmt.Errorf("orchestrator exited before readiness: %w; inspect orchestrator.log", exitErr)

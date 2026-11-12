@@ -45,9 +45,9 @@ func (c *Context) markInterruptedUnits() []string {
 // failAttempt 一次尝试失败记账 + 空转检测。返回 "spin"（应立即升级）或
 // "failed"。
 //
-// P2 修复：空转检测的 changedFiles 优先取权威 git diff（本轮 L1 boundary，
-// 编排器亲自 diff 的结果），executor 自报只作最后兜底——Node 直接信自报值，
-// executor 谎报 changed-files 即可绕过 Jaccard 空转检测。
+// Changed files remain in the audit signature, preferring the authoritative Git
+// diff. Early spin now requires unchanged candidate/check/failure observations;
+// neither executor self-report nor file-name similarity is proof of no progress.
 func (c *Context) failAttempt(packet *contract.Packet, errorCode errs.ErrorCode, failedCommands, authoritativeChangedFiles []string) string {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
@@ -81,15 +81,22 @@ func (c *Context) failAttempt(packet *contract.Packet, errorCode errs.ErrorCode,
 	if changed == nil {
 		changed = []string{}
 	}
-	signature := circuitbreaker.Signature([]string{string(errorCode)}, failedCommands, changed)
+	progress := c.failureProgress(packet, errorCode)
+	signature := circuitbreaker.Signature([]string{string(errorCode)}, failedCommands, changed, progress)
+	assessment := circuitbreaker.AssessProgress(derefString(ps.LastFailureSignature), signature)
+	ps.LastFeedback.(map[string]any)["progress"] = assessment
+	ps.LastFeedback.(map[string]any)["progress-evidence"] = progress
 	spin := circuitbreaker.DetectSpin(derefString(ps.LastFailureSignature), signature, ps.FailedAttempts)
+	if c.upgradeExecutionPolicy(packet, errorCode, assessment) {
+		spin = false
+	}
 	sig := signature
 	ps.LastFailureSignature = &sig
 	at := c.nowISO()
 	ps.UpdatedAt = &at
 	c.save()
 	if spin {
-		c.Log(fmt.Sprintf("spin detected on %s: consecutive identical failure signatures — escalating (§6)", id))
+		c.Log(fmt.Sprintf("spin detected on %s: unchanged candidate and authoritative failure observations — escalating (§6)", id))
 		return "spin"
 	}
 	return "failed"
@@ -224,6 +231,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 // ff-merge 失败时返回 ErrMergeConflict：worktree 原样保留、状态绝不标
 // completed（§5.2 state.json 不说谎），由调用方升级到人。
 func (c *Context) completeUnit(packet *contract.Packet) error {
+	defer c.measurePhase("delivery", packet.PacketID)()
 	if c.State.SharedExecution != nil {
 		return fmt.Errorf("%w: shared candidate requires whole-batch verification and delivery", ErrCommitFailed)
 	}
@@ -581,11 +589,9 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 			continue // no implementation or acceptance is claimed by a directory proposal
 		}
 		if !exec.Success {
-			// C4（v0.18）：execute 失败路径的空转签名用编排器亲自 diff 的
-			// 权威变更集——executor 自报不可信（DC4）。
-			if c.failAttempt(packet, orTransport(exec.ErrorCode), nil, c.authoritativeChangedFiles(packet)) == "spin" {
-				return execLoopOutcome{Spun: true}, nil
-			}
+			// A failed agent invocation has no completed acceptance observation.
+			// Keep the bounded attempt exit; do not infer spin from file names.
+			c.failAttempt(packet, orTransport(exec.ErrorCode), nil, c.authoritativeChangedFiles(packet))
 			continue
 		}
 		if risks := c.executorWorkflowRisks(packet); c.quick() && len(risks) > 0 {

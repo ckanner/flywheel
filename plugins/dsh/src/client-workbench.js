@@ -1,3 +1,65 @@
+Object.assign(zh, {
+  investigate: '调查', investigationTitle: '有界调查', investigationHelp: '由 Go 运行已批准的读取与搜索动作。调查结论独立于代码验收和交付。',
+  investigationRun: '继续调查', investigationReconcile: '核对原动作回执', investigationReport: '调查报告', investigationEvidence: '已收集证据', investigationBudget: '动作 {used}/{limit} · 累计 {ms} ms', investigationPartial: '有界片段 · 内容未完整展示', investigationDecision: '决策建议与实际采用',
+  investigationState_ready: '等待调查', investigationState_running: '调查中', 'investigationState_awaiting-report': '等待证据报告', investigationState_blocked: '结果未知 · 需核对', investigationState_supported: '报告有证据支持', investigationState_inconclusive: '尚无定论', 'investigationState_access-blocked': '缺少访问', investigationState_cancelled: '调查已取消',
+  investigationRepair: '已授权原范围内修复；形成合法 Spec 后由 Auto 选择 Quick / Full。', investigationReportOnly: '本目标以调查报告结束；没有启动代码实现。',
+});
+Object.assign(en, {
+  investigate: 'Investigate', investigationTitle: 'Bounded investigation', investigationHelp: 'Go runs approved reads and searches. An investigation conclusion is separate from code acceptance and delivery.',
+  investigationRun: 'Continue investigation', investigationReconcile: 'Reconcile original receipt', investigationReport: 'Investigation report', investigationEvidence: 'Collected evidence', investigationBudget: 'Actions {used}/{limit} · elapsed {ms} ms', investigationPartial: 'Bounded excerpt · incomplete content', investigationDecision: 'Advice and recorded adoption',
+  investigationState_ready: 'Ready to investigate', investigationState_running: 'Investigating', 'investigationState_awaiting-report': 'Awaiting evidence report', investigationState_blocked: 'Unknown result · reconcile', investigationState_supported: 'Report supported by cited evidence', investigationState_inconclusive: 'Inconclusive', 'investigationState_access-blocked': 'Access blocked', investigationState_cancelled: 'Investigation cancelled',
+  investigationRepair: 'Repair is authorized within the original scope. Prepare a valid Spec before Auto selects Quick or Full.', investigationReportOnly: 'The goal ends with an investigation report; implementation has not started.',
+});
+
+function validPreparationSnapshot(p) {
+  const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
+  return record(p) && p.version === 1 && Number.isSafeInteger(p.revision) && p.revision > 0 &&
+    ['ready', 'running', 'awaiting-report', 'blocked', 'supported', 'inconclusive', 'access-blocked', 'cancelled'].includes(p.status) &&
+    typeof p.reason === 'string' &&
+    strings(p.contract, ['id', 'goal', 'intent']) && ['investigate', 'investigate-and-fix'].includes(p.contract.intent) &&
+    record(p.contract.limits) && Number.isSafeInteger(p.contract.limits['max-actions']) &&
+    Array.isArray(p.observations) && p.observations.every(observation => record(observation) && strings(observation.invocation, ['id', 'action-id']) &&
+      ['output', 'error'].every(key => observation[key] == null || typeof observation[key] === 'string')) &&
+    (p.decisions == null || Array.isArray(p.decisions) && p.decisions.every(record)) &&
+    (p.report == null || strings(p.report, ['summary', 'counter-evidence', 'recommendation', 'regression', 'rollback']) && Array.isArray(p.report.findings) &&
+      p.report.findings.every(finding => strings(finding, ['hypothesis', 'status', 'reason'])) &&
+      (p.report.limitations == null || Array.isArray(p.report.limitations) && p.report.limitations.every(limit => typeof limit === 'string')));
+}
+
+function InvestigationPanel({ control, selection, run, t }) {
+  const preparation = control.status?.preparation;
+  if (!preparation) return null;
+  const busy = control.pending !== null || control.uncertainty !== null || control.stale;
+  const ended = !!preparation.report || preparation.status === 'cancelled';
+  const mutate = action => run('investigate', selection, false, { investigation: { action, revision: preparation.revision } });
+  return h('section', { className: css.section, 'aria-label': t('investigationTitle') },
+    h('h3', { className: css.heading }, t('investigationTitle') + ' · ' + preparation.contract.id),
+    h('p', { className: css.meta }, t('investigationHelp')),
+    h('p', null, preparation.contract.goal),
+    h('p', { role: 'status' }, t('investigationState_' + preparation.status)),
+    h('p', { className: css.meta }, t('investigationBudget', { used: preparation['actions-used'], limit: preparation.contract.limits['max-actions'], ms: preparation['elapsed-ms'] })),
+    h('p', { className: css.meta }, preparation.reason),
+    h('div', { className: css.actions },
+      h(Button, { disabled: busy || control.status.running || ended, onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
+      h(Button, { disabled: busy || ended || !control.status.running && !!preparation.pending, onClick: () => control.status.running ? run('stop', selection) : mutate('cancel') }, t('stop')),
+      h(Button, { disabled: control.pending !== null, onClick: () => run('status', selection) }, t('status'))),
+    h('p', { className: css.notice }, t(preparation.contract.intent === 'investigate-and-fix' ? 'investigationRepair' : 'investigationReportOnly')),
+    preparation.report && h('article', null, h('h4', null, t('investigationReport')), h('p', null, preparation.report.summary),
+      ...preparation.report.findings.map(finding => h('p', { key: finding.hypothesis }, finding.hypothesis + ' · ' + finding.status + ': ' + finding.reason)),
+      h('p', null, preparation.report['counter-evidence']),
+      ...(preparation.report.limitations ?? []).map((limit, i) => h('p', { key: i, className: css.warningText }, limit)),
+      h('p', null, preparation.report.recommendation), h('p', null, preparation.report.regression), h('p', null, preparation.report.rollback)),
+    h('details', { className: css.details }, h('summary', null, t('investigationEvidence')),
+      ...preparation.observations.map(observation => h('article', { key: observation.invocation.id },
+        h('h4', null, observation.invocation['action-id'] + ' · ' + observation.status),
+        h('p', { className: css.meta }, observation.invocation.id + ' · ' + observation['duration-ms'] + ' ms'),
+        observation.truncated && h('p', { className: css.warningText }, t('investigationPartial')),
+        h('pre', { className: css.raw }, observation.output || observation.error)))),
+    preparation.decisions?.length > 0 && h('details', { className: css.details }, h('summary', null, t('investigationDecision')),
+      ...preparation.decisions.map(receipt => h('p', { key: receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
+      ...preparation.observations.map(observation => h('p', { key: observation.invocation.id }, observation.invocation['action-id'] + ' · ' + observation.invocation.reason))));
+}
+
 Object.assign(zh, { sharedBatch: '共享目录批次 · 统一验收与提交', sharedBatchError: '上次批次错误' });
 Object.assign(en, { sharedBatch: 'Shared checkout · collective verification and delivery', sharedBatchError: 'Previous batch error' });
 // Native Conversation View content; no host DOM replacement or second global sidebar.
@@ -543,7 +605,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0 }) {
       locate();
     }
   }, [focusRequest, !!model]);
-  if (!model) return null;
+  if (!model) return h(InvestigationPanel, { control, selection, run, t });
   const { nodes, edges, state, quick, single, focused, entries, pageIndex } = model;
   const chosen = nodes.find((n) => n.id === selected);
   const selectNode = (node) => {
@@ -1285,7 +1347,8 @@ function TaskView({
   }, [page, control.status?.running, selection.taskDir, selection.cwd, run]);
   const busy = control.pending !== null,
     locked = busy && mutates(control.pending.action),
-    state = control.status?.state;
+    state = control.status?.state,
+    preparation = control.status?.preparation;
   const invalid = !!pathProblem(selection.taskDir) || !!pathProblem(selection.cwd),
     hasTask = !!selection.taskDir.trim();
   const button = (action, label, needsTask, probe = false, variant = 'outline') =>
@@ -1362,7 +1425,7 @@ function TaskView({
         h('strong', null, t('sharedBatch')),
         h('p', null, state['shared-execution'].packets.join(' · ')),
         state['shared-execution']['last-error'] && h('p', { role: 'alert' }, t('sharedBatchError') + ': ' + state['shared-execution']['last-error'])),
-      hasTask &&
+      hasTask && !preparation &&
         h(
           'div',
           { className: css.workbenchStatus },
@@ -1423,7 +1486,8 @@ function TaskView({
             ),
           ),
         ),
-      !state &&
+      preparation && h(InvestigationPanel, { control, selection, run, t }),
+      !state && !preparation &&
         h(
           'div',
           { className: css.workbenchEmpty },
@@ -1432,7 +1496,7 @@ function TaskView({
           h('code', null, '/flywheel-task <goal>'),
           h('p', { className: css.meta }, t('wbProposalHelp')),
         ),
-      h(ConsoleCanvas, {
+      !preparation && h(ConsoleCanvas, {
         key: selectionKey(selectionOf(selection)),
         control,
         selection,
@@ -1440,7 +1504,7 @@ function TaskView({
         t,
         focusRequest,
       }),
-      hasTask &&
+      hasTask && !preparation &&
         h(
           'details',
           { className: css.legacySummary },

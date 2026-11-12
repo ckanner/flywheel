@@ -37,6 +37,17 @@ Full；显式选择 Quick 也不能跳过资格检查，文件数量不能代替
 只准备方案时用 `/flywheel-new <需求>`；运行已有任务时用
 `/flywheel-run <绝对任务目录>`。Kimi 对应使用 `/skill:flywheel-task` 等 `/skill:` 名称。
 
+## 0.1 调查与专用入口
+
+Task 可以直接接收“先排查，告诉我原因”，自动准备并进入 Go 受管调查；无需先手动 New。
+只排查到报告结束；已授权“排查并修好”时，证据支持结论后在原范围内继续实现。
+新[调查指南](investigation.md)说明契约、证据、JEV 与恢复。原 New → 审阅 → Run 仍适合
+明确要求先审方案的复杂任务，Plan / Exec / Verify / Review / Status / Stop 均保留。
+
+Full 复用已确认且持久化的有效 Plan 检查点；显式 Plan、verification-gap、契约变化或
+不可信基线仍重规划。执行者先跑针对性检查，Go 完整门禁与独立 Review 继续负责完成。
+模型绑定默认不变；允许集合和可信增量上下文是独立 opt-in，见[配置](configuration.md)。
+
 ## 1. 选择准备阶段的模型
 
 `flywheel-task` 与 `flywheel-new` 使用宿主当前对话的模型。`loops.plan` 只控制

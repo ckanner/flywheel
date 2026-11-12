@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.8.4"
+  version: "1.9.0"
 description: >-
   Prepare a reviewable Flywheel task proposal without starting the engine:
   research the repository, resolve intent questions, and generate docs/<slug>/
@@ -24,6 +24,15 @@ Kimi 使用 `/skill:flywheel-new <需求>`。Flywheel 视图不提供任务／�
 任务资料目录由本 skill 在核实的任务 checkout 中创建，完成后报告其真实绝对路径。
 
 > 参数经 kimi 命名参数注入正文：`$requirement`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
+
+## 调查方案与直接实施
+
+New 保持准备后停下。只要求先看排查方案时，可读取 `preparation.schema.json` 与
+`preparation.example.json`，生成有界调查输入并用 `control investigate` 的
+`action: start` 保存准备记录；这一步不执行调查动作，不调用实现模型，不写 state.json。
+之后明确授权调查时由 Run 调 `action: run`。需求已要求“排查并修好”或直接交付时用
+Task，沿用已给出的权限，不机械增加 New 审批。明确复杂实现任务仍生成下面的 Spec /
+packets / 验收方案，待用户审阅。
 
 ## 问答纪律（硬规则）
 

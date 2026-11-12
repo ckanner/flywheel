@@ -112,7 +112,7 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"1. Read the contract and every context file before writing code.",
 		"2. Implement code and its unit/regression tests together. Keep the required 100% coverage gate and meaningful assertions. Do not weaken, delete, or bypass assertions to obtain a green result.",
 		"3. Frozen acceptance oracles are protected by boundaries.must-not-touch and explicit protected-test-patterns. Only the Plan Loop may revise task contracts within its allowed scope; changing an external frozen oracle requires an explicit human task. If the oracle is wrong or scope must change, stop and return concrete evidence to the planner.",
-		"4. Run the acceptance commands yourself and report exactly which passed and which failed.",
+		"4. Use targeted feedback checks (a reproducer, changed-package tests, or type checks) while iterating. Report exactly which commands you ran and their observed outcomes; do not claim unrun acceptance commands passed. The orchestrator runs every required final gate, including full L1 and coverage, after you exit; a redundant full-suite run is not required solely to prove completion.",
 		"5. NEVER declare the task done. Completion is judged externally by acceptance commands and review.",
 		"6. If reality contradicts the design or the work needs a scope change: STOP and say so. Do not expand or shrink scope on your own.",
 		"7. Do not touch must-not-touch paths; the git diff is checked after you finish.",

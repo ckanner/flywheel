@@ -65,25 +65,34 @@ func envSlice(m map[string]string) []string {
 
 // GateResult 单条验收命令的结果。
 type GateResult struct {
+	CheckID      string `json:"checkId,omitempty"`
 	Cmd          string `json:"cmd"`
 	Expect       string `json:"expect"`
 	ExitCode     int    `json:"exitCode"`
 	Pass         bool   `json:"pass"`
 	DurationMS   int64  `json:"durationMs"`
 	Output       string `json:"output,omitempty"`
-	TimedOut     bool   `json:"timedOut"`
-	Cancelled    bool   `json:"cancelled"`
-	Truncated    bool   `json:"truncated"`
-	Signal       string `json:"signal,omitempty"`
-	SpawnError   string `json:"spawnError,omitempty"`
-	CleanupError string `json:"cleanupError,omitempty"`
+	OutputDigest string `json:"outputDigest,omitempty"`
+	// OutputTruncated clips the displayed summary only; Truncated below means
+	// the watchdog lost process output and must invalidate the gate outcome.
+	OutputTruncated bool `json:"outputTruncated,omitempty"`
+	// ObservationComplete describes the command process outcome, not discovery
+	// of a complete test-case inventory inside an arbitrary shell command.
+	ObservationComplete bool   `json:"observationComplete"`
+	TimedOut            bool   `json:"timedOut"`
+	Cancelled           bool   `json:"cancelled"`
+	Truncated           bool   `json:"truncated"`
+	Signal              string `json:"signal,omitempty"`
+	SpawnError          string `json:"spawnError,omitempty"`
+	CleanupError        string `json:"cleanupError,omitempty"`
 }
 
 // GateReport 一个 gate 层的完整结果。普通失败继续收集结果；取消后的命令
 // 记录 cancelled 而不再启动，避免 stop 与下一条命令的 spawn 竞态。
 type GateReport struct {
-	Pass    bool         `json:"pass"`
-	Results []GateResult `json:"results"`
+	Pass          bool         `json:"pass"`
+	Results       []GateResult `json:"results"`
+	EnvironmentID string       `json:"environmentId,omitempty"`
 }
 
 // GateOpts RunGateCommands 选项。Env 为 nil 时用进程环境（经白名单过滤）。
@@ -106,26 +115,33 @@ func RunGateCommands(commands []contract.GateEntry, opts GateOpts) GateReport {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var report GateReport
-	for _, entry := range commands {
+	// One filtered environment snapshot makes every command in this gate use
+	// the same supplied variables; only its digest is retained in the report.
+	env := childenv.GateEnv(envLookup(opts.Env), opts.EnvAllowlist)
+	childEnv := envSlice(env)
+	sort.Strings(childEnv)
+	report := GateReport{EnvironmentID: gateEnvironmentID(env)}
+	for index, entry := range commands {
+		command := entry.Command()
+		checkID := gateCheckID(index, command, entry.Expect)
 		expected, perr := contract.ParseExpect(entry.Expect)
 		if perr != nil {
 			// 加载期已 fail-fast 校验过 expect；运行期再遇坏值按失败处理。
+			output, clipped := summarizeOutput(perr.Error())
 			report.Results = append(report.Results, GateResult{
-				Cmd: entry.Command(), Expect: entry.Expect,
-				ExitCode: 1, Pass: false, Output: perr.Error(),
+				CheckID: checkID, Cmd: command, Expect: entry.Expect,
+				ExitCode: 1, Pass: false, Output: output, OutputTruncated: clipped,
 			})
 			report.Pass = false
 			continue
 		}
-		command := entry.Command()
 		timeoutMS := opts.TimeoutMS
 		if timeoutMS <= 0 {
 			timeoutMS = 300_000
 		}
 		res := watchdog.Run("/bin/sh", []string{"-c", command}, watchdog.Opts{
 			Context: ctx, Cwd: opts.Cwd,
-			Env:           envSlice(childenv.GateEnv(envLookup(opts.Env), opts.EnvAllowlist)),
+			Env:           childEnv,
 			IdleTimeoutMs: timeoutMS, WallTimeoutMs: timeoutMS, KillGraceMs: opts.KillGraceMS,
 		})
 		if res.Cancelled {
@@ -136,8 +152,14 @@ func RunGateCommands(commands []contract.GateEntry, opts GateOpts) GateReport {
 			exitCode = *res.ExitCode
 		}
 		interrupted := res.TimedOut || res.Cancelled || res.Truncated || res.Signal != "" || res.SpawnError != "" || res.CleanupError != ""
+		complete := !interrupted && res.ExitCode != nil
+		pass := complete && exitCode == expected
+		digest := ""
+		if complete && !pass {
+			digest = gateOutputDigest(res.Stdout, res.Stderr)
+		}
 		output := ""
-		if exitCode != 0 || interrupted {
+		if !pass || exitCode != 0 {
 			output = res.Stdout + res.Stderr
 			if res.SpawnError != "" {
 				output += res.SpawnError
@@ -148,23 +170,25 @@ func RunGateCommands(commands []contract.GateEntry, opts GateOpts) GateReport {
 			if res.Truncated {
 				output += "\ncommand output truncated"
 			}
-			if len(output) > 2000 {
-				output = output[:2000]
-			}
 		}
+		output, clipped := summarizeOutput(output)
 		report.Results = append(report.Results, GateResult{
-			Cmd:          command,
-			Expect:       entry.Expect,
-			ExitCode:     exitCode,
-			Pass:         !interrupted && res.ExitCode != nil && exitCode == expected,
-			DurationMS:   res.DurationMS,
-			Output:       output,
-			TimedOut:     res.TimedOut,
-			Cancelled:    res.Cancelled,
-			Truncated:    res.Truncated,
-			Signal:       res.Signal,
-			SpawnError:   res.SpawnError,
-			CleanupError: res.CleanupError,
+			CheckID:             checkID,
+			Cmd:                 command,
+			Expect:              entry.Expect,
+			ExitCode:            exitCode,
+			Pass:                pass,
+			DurationMS:          res.DurationMS,
+			Output:              output,
+			OutputDigest:        digest,
+			OutputTruncated:     clipped,
+			ObservationComplete: complete,
+			TimedOut:            res.TimedOut,
+			Cancelled:           res.Cancelled,
+			Truncated:           res.Truncated,
+			Signal:              res.Signal,
+			SpawnError:          res.SpawnError,
+			CleanupError:        res.CleanupError,
 		})
 	}
 	report.Pass = true
@@ -409,6 +433,7 @@ func GetChangedFiles(cwd, baseRef string) (files []string, ok bool) {
 	if !ok {
 		return nil, false
 	}
+	files = []string{} // a successful empty diff is known, unlike an unavailable scan
 	set := map[string]bool{}
 	for _, line := range strings.Split(diffOut, "\n") {
 		if f := strings.TrimSpace(line); f != "" {

@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/ckanner/flywheel/internal/config"
@@ -22,6 +23,10 @@ import (
 var writeMetricsLine = (*os.File).Write
 var syncMetricsHandle = (*os.File).Sync
 var openMetricsSync = os.Open
+
+// A phase append must not race an accounting read/deduplicate/append operation.
+// Each record remains one durable JSONL write; the task lease still owns state.
+var appendMetricsMu sync.Mutex
 
 func flushMetrics(file *os.File) error {
 	if err := syncMetricsHandle(file); err != nil {
@@ -45,6 +50,12 @@ func PromptHash(prompt string) string {
 // entry 为任意键值集；ts 由本函数前置。Go map 序列化按键字典序（Node 版
 // ts 在首为插入序）——JSONL 消费方（人/jq）不依赖键序。
 func Append(file string, entry map[string]any) error {
+	appendMetricsMu.Lock()
+	defer appendMetricsMu.Unlock()
+	return appendEntry(file, entry)
+}
+
+func appendEntry(file string, entry map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
@@ -75,6 +86,8 @@ func AppendOnce(file, invocationID, receiptDigest string, entry map[string]any) 
 	if invocationID == "" {
 		return Append(file, entry)
 	}
+	appendMetricsMu.Lock()
+	defer appendMetricsMu.Unlock()
 	raw, err := os.ReadFile(file)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -119,7 +132,7 @@ func AppendOnce(file, invocationID, receiptDigest string, entry map[string]any) 
 		record[key] = value
 	}
 	record["invocation-id"], record["receipt-sha256"] = invocationID, receiptDigest
-	return Append(file, record)
+	return appendEntry(file, record)
 }
 
 // PriceForModel 模型定价查找（P1-13）：先全 id，再最后一段短 id，

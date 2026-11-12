@@ -395,7 +395,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			})
 			transportRetries++
 			c.Log(fmt.Sprintf("plan transport retry %d/%d after %s in %dms", transportRetries, maxTransport, code, delay))
-			c.Sleep(time.Duration(delay) * time.Millisecond)
+			c.waitRetry(time.Duration(delay)*time.Millisecond, milestone.ID)
 			continue
 		}
 		break
@@ -459,7 +459,12 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 // planValidationRetries 次后 inbox 叫人（契约质量问题是结构性的，重试烧钱
 // 无意义）。传输级失败仍由 planStep 内部闭环处理。
 func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback ...string) (result planOutcome, planErr error) {
-	progress := &state.PlanProgress{Status: "running", StartedAt: c.nowISO(), Contracts: sessionHash(c.State.ContractFingerprints)}
+	return c.planUntilValidForReason(milestone, "explicit Plan or repair request", initialFeedback...)
+}
+
+func (c *Context) planUntilValidForReason(milestone contract.Milestone, reason string, initialFeedback ...string) (result planOutcome, planErr error) {
+	defer c.measurePhase("plan", milestone.ID)()
+	progress := &state.PlanProgress{Status: "running", StartedAt: c.nowISO(), Contracts: sessionHash(c.State.ContractFingerprints), Reason: reason}
 	ms := c.State.Milestones[milestone.ID]
 	ms.Plan = progress
 	c.State.Milestones[milestone.ID] = ms
@@ -472,6 +477,7 @@ func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback .
 		} else if result.OK {
 			progress.Status = "passed"
 			progress.Contracts = sessionHash(c.State.ContractFingerprints)
+			progress.Checkpoint = c.confirmedPlanCheckpoint(milestone.ID, result.Result)
 		} else {
 			progress.Error = string(result.ErrorCode)
 		}
@@ -546,6 +552,10 @@ var inspectPlanDirtyFiles = verify.GetChangedFiles
 // persistPlanContracts 保留正在进行的实现，只把已校验的契约修订快进到其
 // worktree。冲突/提交失败都保留文件与分支；不 reset，不 force remove。
 func (c *Context) persistPlanContracts(message string) error {
+	defer c.measurePhase("persist-plan", "")()
+	if err := c.err(); err != nil {
+		return err
+	}
 	before, err := c.candidateFingerprint(c.Cwd)
 	if err != nil {
 		return fmt.Errorf("%w: cannot snapshot plan checkpoint: %v", ErrCommitFailed, err)
@@ -597,5 +607,6 @@ func (c *Context) persistPlanContracts(message string) error {
 		ps.ContractSyncPending = false
 		invalidateEvidence(ps)
 	}
+	c.persistPlanCheckpoints(head)
 	return nil
 }

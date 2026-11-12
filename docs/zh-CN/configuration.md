@@ -341,6 +341,85 @@ partial／unknown 用量不补零，也不能单凭缺失用量触发输入阈�
 未来字段或不合法值在启动前失败。如何对真实任务进行三策略配对评估、选择阈值以及
 保留未确认结果，见[会话效果评估](session-evaluation.md)。
 
+### 可信的执行者增量上下文
+
+可选 `sessions.context` 省略或为 `"full"` 时保留完整提示词；显式
+`"verified-incremental"` 开启仅针对 Execute 的优化。首轮与重建完整提供权威
+上下文；后续同角色续用只有在 Go 复核已消费终态回执、精确绑定、提示词版本、
+契约及全部 context/cache 文件内容摘要后，才可省略稳定契约。引用必须在当前
+执行目录内可读、为普通文件，每个文件最多 1 MiB。增量包含当前反馈、前后候选
+身份、尝试次数和权威引用。
+
+文件缺失或修订、契约变化、旧任务缺少检查点、上下文回执校验失败，均回到完整
+输入。模型、effort、权限或显式会话模式变化会重建历史。Plan、Review、Judge
+保持完整输入，Reviewer 每次仍检查完整当前候选与全部适用需求。
+`state.sessions.records[*].context` 保存模式、身份和原因。这是协议能力，不是
+已测得的 token 节省或模型等质量证据。
+
+## 有界执行策略（显式启用）
+
+`execution-policy` 版本 1 独立于 Auto／Quick／Full。省略时保持既有固定路由和
+渠道后备。[schema](https://github.com/ckanner/flywheel/blob/main/templates/execution-policy.schema.json)
+要求完整绑定及明确允许集合。核对账号和权限后，把以下章节加入实际命中的
+**完整配置文件**；不能将其独立放为局部 override 文件：
+
+```json
+{
+  "execution-policy": {
+    "version": 1,
+    "bindings": {
+      "flash-low": {
+        "harness": "dsh", "provider": "deepseek-account",
+        "channel": "deepseek-account", "model": "deepseek-flash",
+        "thinking": "low", "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "flash-high": {
+        "harness": "dsh", "provider": "deepseek-account",
+        "channel": "deepseek-account", "model": "deepseek-flash",
+        "thinking": "high", "permission": "danger-full-access",
+        "session-mode": "scoped"
+      }
+    },
+    "routes": {
+      "default": {
+        "initial": "flash-low", "allowed": ["flash-low", "flash-high"],
+        "quality-order": ["flash-low", "flash-high"],
+        "after-stalled-attempts": 1, "max-switches": 1
+      }
+    }
+  }
+}
+```
+
+绑定必须完整声明 harness／provider／channel／model／thinking、permission 和
+session-mode，非 DSH 的 provider 写为 `""`。版本 1 支持已有持久调用记录的
+DSH、Kimi、Codex Pro、Claude Code Pro。每个绑定权限必须等于该路由已有授权，
+所以示例假设路由本来就使用 `danger-full-access`；后端仍须验证模型实际可用性
+及公开配置／权限能力。
+
+`quality-order` 是用户声明的实验顺序，不是模型能力排名。只有完整重复 L1
+观测确认候选、检查集合、已记录环境及失败均未变化，Go 才可前进一项。版本 1
+要求 `after-stalled-attempts:1`，在既有空转停止前考虑切换。AUTH、QUOTA、
+传输／协议错误和 unknown 不触发能力升级。原 packet 的 `max-retries` 和任务
+token 预算继续生效；切换不清零失败、不增加尝试、不削减最终门禁或 Review。
+
+可选 `channel-fallbacks` 将一个允许绑定 ID 映射到另一个，目标须匹配显式配置
+的渠道后备链、目标 harness 和路由模型映射。已有渠道链不能越出允许集合。
+每个 packet 的 `max-switches` 同时限制两种切换。Go 在派发前冻结策略身份；
+`state.packets[*].execution-policy.history` 分别保存 `quality-upgrade` 和
+`channel-fallback` 的完整前后绑定、尝试与原因。并行 packet 各自持有记录。
+
+`config inspect --json` 在 `execution-policy` 下展示完整声明，普通绑定表仍是
+配置基线，当前选择由 packet／session 状态记录。Doctor 既有绑定探测不证明每个
+允许的实验绑定均已通过接纳；实际派发仍须通过适配器配置与权限检查。
+
+每次切换均冷启动 Execute，仅改变 effort 也不例外；effort 保留在会话身份中。
+unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被拒绝：恢复原配置，
+或者用新任务运行新实验。会话／适配器回执保留请求值与可得接口接纳事实；无法
+确认的 effective effort、用量和订阅成本保持 unknown。工作流、Review／Judge
+及交付授权仍是独立边界。
+
 ## 工作流策略与恢复
 
 工作流决定运行哪些阶段；模型 profiles、loops、routes 和 `permissions.mode` 仍决定
@@ -532,9 +611,11 @@ lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 wor
 
 ## 可选 JEV 影子评估
 
-`jev-shadow.enabled` 默认 false，省略时也关闭。全局／项目编辑器提供开关，开启后
-独立观察新任务；失败不阻断执行，也不改变 Quick／Full。首次开启会说明任务摘要
-发送边界。endpoint、固定响应版本、密钥变量、时限和单独计量见[JEV 指南](jev-shadow.md)。
+`jev-shadow.enabled` 默认 false，省略时也关闭。全局／项目编辑器提供开关。任务
+运行期间只捕获本地快照，不在任务关键路径发送 HTTP 请求；后续显式
+`flywheel shadow run` 才执行可选联网评估并单独记账。影子结果不能改变 Quick／Full
+或授权新动作。新的决策采用需独立显式 opt-in 与数据边界，既有影子开关不授予
+该权限。endpoint、版本、凭证、预算与恢复见[JEV 指南](jev-shadow.md)。
 
 ## 参考文件
 

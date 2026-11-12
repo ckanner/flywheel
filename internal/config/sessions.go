@@ -13,6 +13,7 @@ import (
 const SessionPolicyVersion = 1
 
 type SessionsConfig struct {
+	Context       string               `json:"context,omitempty"`
 	Mode          string               `json:"mode"`
 	PolicyVersion int                  `json:"policy-version"`
 	Roles         map[string]string    `json:"roles,omitempty"`

@@ -29,11 +29,32 @@ func contains(list []string, v string) bool {
 func runCmd() *cobra.Command {
 	var only, packet, unit, pauseBefore, mode, retryReason, sessionRequest, sessionDigest string
 	var revision int64
+	var investigate bool
 	cmd := &cobra.Command{
 		Use:   "run <docs/slug>",
 		Short: "以当前进程执行全自动循环（--only 只走一步状态转移）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if investigate {
+				if revision < 1 || only != "" || packet != "" || unit != "" || mode != "" || pauseBefore != "" || retryReason != "" || sessionRequest != "" || sessionDigest != "" {
+					return fmt.Errorf("--investigate requires only an observed positive --expect-revision")
+				}
+				dir, err := resolveTaskDir(args[0])
+				if err != nil {
+					return err
+				}
+				ctx, cancel := diagnosticContext(cmd)
+				defer cancel()
+				result, err := machine.RunInvestigation(ctx, dir, revision)
+				printJSON(cmd, result)
+				if ctx.Err() != nil || result != nil && result.Status == "cancelled" {
+					return &exitError{code: 143}
+				}
+				if result != nil && result.Status == "blocked" {
+					return &exitError{code: 3, cause: err}
+				}
+				return err
+			}
 			var expectedRevision *int64
 			if retryReason != "" && (only != "execute" || !cmd.Flags().Changed("expect-revision") || len(retryReason) > 1000) {
 				return fmt.Errorf("--retry-reason requires revision-bound Execute and at most 1000 bytes")
@@ -124,6 +145,7 @@ func runCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&sessionDigest, "session-request-digest", "", "受管会话请求内容摘要")
+	cmd.Flags().BoolVar(&investigate, "investigate", false, "执行已保存的有界调查；不执行实现阶段")
 	cmd.Flags().StringVar(&sessionRequest, "session-request", "", "受管会话请求文件（由 control session 创建）")
 	cmd.Flags().StringVar(&only, "only", "", "只走一步: plan|execute|review|verify|integrate|final")
 	cmd.Flags().StringVar(&packet, "packet", "", "指定 packet id（与 --unit 同义）")
