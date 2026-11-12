@@ -81,12 +81,16 @@ func TestInvestigationStartAndOwnershipFailuresPreserveExistingWork(t *testing.T
 	_, err = Cancel(t.TempDir(), Options{})
 	require.Error(t, err)
 
-	t.Run("removed-relative-working-directory", func(t *testing.T) {
-		removed := t.TempDir()
-		t.Chdir(removed)
-		require.NoError(t, os.Remove(removed))
+	t.Run("working-directory-resolution-fails", func(t *testing.T) {
+		original := absoluteInvestigationPath
+		t.Cleanup(func() { absoluteInvestigationPath = original })
+		failure := &os.PathError{Op: "getwd", Err: os.ErrNotExist}
+		absoluteInvestigationPath = func(string) (string, error) { return "", failure }
 		_, err := Start(dir, ".", raw, Options{})
-		require.ErrorContains(t, err, "getwd")
+		require.ErrorIs(t, err, failure)
+		preserved, err := os.ReadFile(filepath.Join(dir, "state.json"))
+		require.NoError(t, err)
+		require.Equal(t, unchanged, preserved)
 	})
 }
 

@@ -103,6 +103,13 @@ func TestFileInspectionBoundsTypesAndUTF8(t *testing.T) {
 	}
 }
 
+type inspectionNamedEntry struct {
+	os.DirEntry
+	name string
+}
+
+func (e inspectionNamedEntry) Name() string { return e.name }
+
 func TestDirectoryInspectionIsBoundedAndNamesAreUnambiguous(t *testing.T) {
 	directory := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(directory, "small"), 0700))
@@ -121,11 +128,17 @@ func TestDirectoryInspectionIsBoundedAndNamesAreUnambiguous(t *testing.T) {
 	}
 	_, _, err = readPath(context.Background(), directory, "large", 1024)
 	require.ErrorContains(t, err, "4096")
-	require.NoError(t, os.WriteFile(filepath.Join(directory, "small", string([]byte{255})), nil, 0600))
-	_, _, err = readPath(context.Background(), directory, "small", 1024)
-	require.ErrorContains(t, err, "UTF-8 names")
 	readDir := readInspectionDirectory
 	t.Cleanup(func() { readInspectionDirectory = readDir })
+	// APFS rejects this filename at creation; inject the directory-entry boundary
+	// so every platform exercises the same invalid-input rejection.
+	entries, err := os.ReadDir(filepath.Join(directory, "small"))
+	require.NoError(t, err)
+	readInspectionDirectory = func(*os.File, int) ([]os.DirEntry, error) {
+		return []os.DirEntry{inspectionNamedEntry{DirEntry: entries[0], name: string([]byte{255})}}, nil
+	}
+	_, _, err = readPath(context.Background(), directory, "small", 1024)
+	require.ErrorContains(t, err, "UTF-8 names")
 	readInspectionDirectory = func(*os.File, int) ([]os.DirEntry, error) { return nil, os.ErrPermission }
 	_, _, err = readPath(context.Background(), directory, "small", 1024)
 	require.ErrorIs(t, err, os.ErrPermission)

@@ -23,6 +23,10 @@ type Options struct {
 	ExpectedRevision int64
 }
 
+// Isolate OS-specific relative-directory resolution failures without changing
+// the process-wide working directory in tests.
+var absoluteInvestigationPath = filepath.Abs
+
 func (o Options) now() time.Time {
 	if o.Now != nil {
 		return o.Now()
@@ -39,7 +43,7 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 	if err != nil {
 		return nil, err
 	}
-	cwd, err = filepath.Abs(cwd)
+	cwd, err = absoluteInvestigationPath(cwd)
 	if err != nil {
 		return nil, err
 	}
