@@ -9,7 +9,7 @@ test('the shipped manifest passes the real DSH gate for every checked runtime wi
   for (const runtime of ['0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2']) {
     assert.equal(evaluatePluginCompatibility(manifest, {}, runtime), undefined, runtime);
   }
-  for (const runtime of ['0.2.1-rc.4', '0.2.2-alpha.3', '0.2.2', '0.3.0']) {
+  for (const runtime of ['0.2.1-rc.4', '0.2.2-alpha.3', '0.2.2-rc.3', '0.2.2', '0.3.0']) {
     const result = evaluatePluginCompatibility(manifest, {}, runtime);
     assert.ok(result, `unverified runtime ${runtime} must stay blocked`);
     assert.equal(result.exempted, false);

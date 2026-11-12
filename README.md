@@ -36,7 +36,7 @@ retries, budgets, workspaces, and delivery. Use it from the DeepSeek Harness
 
 For the desktop path, install Node.js **22.18.0 or later**, npm, Git, and a
 supported DSH desktop with its `dsh` command available. The plugin currently
-declares support for DSH **0.2.1-rc.5** and **0.2.2-rc.1**. Prepare the accounts
+declares support for DSH **0.2.1-rc.5**, **0.2.2-rc.1**, and **0.2.2-rc.2**. Prepare the accounts
 and CLI tools required by the model routes you choose. DSH itself may require
 a newer Node version; the supported 0.2.2-rc.1 SDK requires Node 24.9 or later.
 
