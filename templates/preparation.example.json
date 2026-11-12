@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "id": "timeout-investigation",
+  "goal": "Explain why a zero timeout is selected and identify a bounded repair.",
+  "expected": "An omitted timeout should keep the documented default.",
+  "intent": "investigate",
+  "environment": "Local repository checkout; no service or production access.",
+  "window": "Current checked-out version.",
+  "known-evidence": [],
+  "read-paths": [
+    "settings.json",
+    "src/loader.go",
+    "src"
+  ],
+  "implementation-scope": [],
+  "hypotheses": [
+    {
+      "id": "default",
+      "claim": "The loader replaces an omitted timeout with zero.",
+      "falsifier": "The loader explicitly preserves the documented default."
+    },
+    {
+      "id": "override",
+      "claim": "A supplied configuration explicitly sets zero.",
+      "falsifier": "The configuration contains no explicit timeout."
+    }
+  ],
+  "actions": [
+    {
+      "id": "read-settings",
+      "kind": "read_file",
+      "path": "settings.json",
+      "purpose": "Check whether zero is explicitly configured.",
+      "hypotheses": [
+        "override"
+      ]
+    },
+    {
+      "id": "find-default",
+      "kind": "search_text",
+      "path": "src/loader.go",
+      "query": "timeout",
+      "purpose": "Locate the timeout default and override path.",
+      "hypotheses": [
+        "default",
+        "override"
+      ]
+    },
+    {
+      "id": "list-source",
+      "kind": "list_files",
+      "path": "src",
+      "purpose": "Identify adjacent configuration modules by name.",
+      "hypotheses": [
+        "default"
+      ]
+    }
+  ],
+  "limits": {
+    "max-actions": 3,
+    "max-seconds": 60,
+    "max-file-bytes": 262144,
+    "max-output-bytes": 16384
+  }
+}

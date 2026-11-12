@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-12 | [反馈驱动工作流、受管调查与 JEV 有限决策实现验收](2026-11-12-feedback-driven-workflows.md) |
 | 2026-11-11 | [0.31.0 正式发行与桌面验收](2026-11-11-release-0.31.0.md) |
 | 2026-11-11 | [0.30.2 正式发行与桌面验收](2026-11-11-release-0.30.2.md) |
 | 2026-11-10 | [流程工作台界面改造验收](2026-11-10-workbench-redesign.md) |

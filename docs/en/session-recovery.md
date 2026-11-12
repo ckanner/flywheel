@@ -93,6 +93,26 @@ All thresholds default to disabled. They may rebuild only after the previous cal
 
 A rebuild records its reason and generation and hands over current contracts, workspace, valid reports, verification, and structured feedback. It never imports another role's private transcript or issues an unmetered model-compression call. A returning Reviewer must still inspect the entire current candidate.
 
+### Verified incremental inputs
+
+Explicit `sessions.context:"verified-incremental"` permits Execute to reuse a
+confirmed same-role stable contract after Go verifies that the consumed receipt
+proves `dispatched` and `completed`, together with the prompt version, current
+contract and readable context/cache file digests. A safe admission rejection or
+failed/cancelled turn may preserve the old thread, but cannot prove delivery of
+that turn's newly prepared authority; the next call resends full input. New
+input carries feedback, candidate identities, attempt and references. Changed or
+unavailable authority, legacy missing checkpoints and invalid context receipts
+select full input. The decision and reason are saved on the role record. Review
+and Judge keep full current inputs and never inherit Executor private history.
+
+An opt-in [execution policy](configuration.md#bounded-execution-policy-opt-in)
+can select another complete allowed binding. Every switch starts a new history
+generation, including effort-only changes. Explicit session mode is also part
+of the binding. Unknown/pending invocations reconcile first; fresh context cannot
+authorize replaying uncertain effects. Switch records separate quality upgrades
+from channel fallback and preserve the original task and packet budgets.
+
 ## Paired evaluation
 
 The repository tools pin source and use an independent frozen oracle to compare fresh, Execute-only scoped, and role-scoped policies. The corpus covers first-pass success, L1 repair, Review return, long context, stop/resume, and configuration changes, with repeated trials and rotated strategy order. Reports retain quality, omissions, regressions, repair rounds, repeated findings, elapsed time, known/unknown tokens and cache use, rebuild reasons, and recovery failures. Actual state evidence determines whether a scenario occurred.

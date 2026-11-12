@@ -46,6 +46,21 @@ Use `/flywheel-new <goal>` for preparation without launching, and
 `/flywheel-run <absolute-task-directory>` for an existing task. Kimi uses
 `/skill:flywheel-task` and the corresponding `/skill:` names.
 
+## 0.1 Investigation and direct controls
+
+Task can accept “diagnose this and explain the cause” directly, prepare its contract
+and enter the Go-owned investigation. Calling New first is not required. Report-only
+goals stop at the report; authorized repair continues within the original scope
+when the evidence supports a conclusion. See [Investigation](investigation.md) for
+contracts, evidence, JEV and recovery. New → review → Run remains appropriate when
+proposal review is requested. Plan / Exec / Verify / Review / Status / Stop remain.
+
+Full reuses a confirmed, persisted Plan checkpoint when its inputs and baseline stay
+valid. Explicit Plan, verification gaps, changed contracts or untrusted baselines
+still replan. Targeted executor checks complement the complete Go gate and independent
+Review. Default model bindings remain; execution allowlists and verified incremental
+context are independent opt-ins described in [Configuration](configuration.md).
+
 ## 1. Choose a model for preparation
 
 `flywheel-task` and `flywheel-new` run in the host's current conversation. The

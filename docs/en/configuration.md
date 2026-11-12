@@ -305,6 +305,98 @@ A quality rebuild requires the previous result to be consumed, accounted, and kn
 
 `state.sessions.records[*].quality` and corresponding metrics expose confirmed turns, unchanged-candidate observations, latest input measurement and completeness, generation rebuild count, and reason. The same schema bounds values and rejects unknown fields before dispatch. See [paired session evaluation](session-evaluation.md) for executable real-task comparisons, threshold selection, and unresolved-result handling.
 
+### Verified incremental executor context
+
+`sessions.context` is optional: omission or `"full"` retains the complete prompt;
+`"verified-incremental"` enables an Execute-only optimization. First calls and
+rebuilds receive full authority. Later same-role resumes may omit the stable
+contract only after Go rechecks the consumed terminal receipt, exact session
+binding, prompt version, contract and all context/cache file content digests.
+References must be readable regular files within the current execution directory,
+bounded to 1 MiB per file. The update includes feedback, current/prior candidate
+identities, attempt and authoritative references.
+
+Missing or revised references, contract changes, absent legacy checkpoints and
+invalid context receipts select full input. A changed model, effort, permission
+or explicit session mode rebuilds history. Plan, Review and Judge keep full
+inputs; Review always examines the complete current candidate and requirements.
+`state.sessions.records[*].context` records mode, identity and reason. This is
+protocol behavior, not measured evidence of token savings or equal quality.
+
+## Bounded execution policy (opt-in)
+
+`execution-policy` version 1 is independent of Auto/Quick/Full. Omission preserves
+fixed route bindings and channel fallback behavior. Its
+[schema](https://github.com/ckanner/flywheel/blob/main/templates/execution-policy.schema.json)
+requires complete bindings and an explicit allowed set. Add this section to the
+effective **complete** configuration after checking channels and permissions;
+do not install the fragment as a partial override file:
+
+```json
+{
+  "execution-policy": {
+    "version": 1,
+    "bindings": {
+      "flash-low": {
+        "harness": "dsh", "provider": "deepseek-account",
+        "channel": "deepseek-account", "model": "deepseek-flash",
+        "thinking": "low", "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "flash-high": {
+        "harness": "dsh", "provider": "deepseek-account",
+        "channel": "deepseek-account", "model": "deepseek-flash",
+        "thinking": "high", "permission": "danger-full-access",
+        "session-mode": "scoped"
+      }
+    },
+    "routes": {
+      "default": {
+        "initial": "flash-low", "allowed": ["flash-low", "flash-high"],
+        "quality-order": ["flash-low", "flash-high"],
+        "after-stalled-attempts": 1, "max-switches": 1
+      }
+    }
+  }
+}
+```
+
+Each binding explicitly declares harness/provider/channel/model/thinking,
+permission and session mode; non-DSH bindings use `provider:""`. Version 1 supports
+the durable DSH, Kimi, Codex Pro and Claude Code Pro adapters. Every binding's
+permission must equal the route's existing authorized permission, so this example
+assumes it already uses `danger-full-access`. Backend admission still validates
+actual model availability and public configuration/permission capabilities.
+
+`quality-order` is a user-declared experiment order, not a model ranking. Go may
+advance one entry when complete repeated L1 observations show the same candidate,
+check set, recorded environment and failures. Version 1 requires
+`after-stalled-attempts:1`, before the existing spin stop. AUTH, QUOTA,
+transport/protocol errors and unknown observations do not trigger quality
+upgrades. Original packet `max-retries` and task token budgets remain in force;
+switching never resets failures, adds attempts or weakens final gates/Review.
+
+Optional `channel-fallbacks` maps one allowed binding ID to another. Its target
+must match the configured channel fallback chain, target harness and route model
+mapping. A channel chain alone cannot escape the allowed set. `max-switches`
+bounds both kinds of switch per packet. Go freezes the policy identity before
+dispatch; `state.packets[*].execution-policy.history` records separate
+`quality-upgrade` and `channel-fallback` events with full before/after bindings,
+attempt and reason. Parallel packets retain independent records.
+
+`config inspect --json` exposes the complete declaration under
+`execution-policy`; the ordinary bindings table remains the configured baseline.
+Current choices belong to packet/session state. Doctor's existing binding probes
+do not establish admission of every allowed experimental binding; actual dispatch
+still requires the adapter's configuration and permission checks.
+
+Every switch cold-starts Execute, even an effort-only change; effort remains in
+the session binding. Unknown or unconsumed invocations reconcile first. Removing
+or changing a frozen policy is refused on resume: restore it, or use a new task
+for a changed experiment. Requested settings and available admission facts remain
+in session/adapter receipts; unavailable effective effort, usage and subscription
+cost stay unknown. Workflow, Review/Judge and delivery authorization are separate.
+
 ## Workflow policy and recovery
 
 Workflow policy chooses stages. Model profiles, loops, routes, and `permissions.mode` independently choose each stage's backend and permissions. **Put workflow in the Spec's YAML frontmatter, not in `flywheel.config.json`.** The unified `flywheel-task` entry defaults to Auto and records researched facts before Go validates them. This example shows the fields; replace the content with evidence from the actual task:
@@ -443,10 +535,13 @@ No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes
 ## Optional JEV shadow evaluation
 
 `jev-shadow.enabled` defaults to false, including configurations that omit it. The
-global/project editor exposes the switch. Enabling observes new tasks independently;
-failures do not block execution or change Quick/Full. First enabling it discloses the
-task-summary transfer boundary. See the [JEV guide](jev-shadow.md) for the endpoint,
-pinned response version, key variable, timeout, and separate accounting.
+global/project editor exposes the switch. During task execution it only captures
+local snapshots; it does not send HTTP requests on the task's critical path.
+A later explicit `flywheel shadow run` performs the optional network evaluation
+with separate accounting. Shadow results cannot change Quick/Full or authorize
+new actions. New decision adoption requires its own explicit opt-in and data
+boundary; the existing shadow switch does not grant it. See the
+[JEV guide](jev-shadow.md) for endpoint, version, credentials, budgets and recovery.
 
 ## Reference files
 

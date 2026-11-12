@@ -26,6 +26,8 @@ func TestGateTimeoutNeverMatchesExpectedExit(t *testing.T) {
 			require.Len(t, r.Results, 1)
 			assert.False(t, r.Pass)
 			assert.True(t, r.Results[0].TimedOut)
+			assert.False(t, r.Results[0].ObservationComplete)
+			assert.Empty(t, r.Results[0].OutputDigest)
 			assert.Equal(t, exit, r.Results[0].ExitCode, "即使trap恰好返回预期退出码，超时仍失败")
 		})
 	}
@@ -49,6 +51,9 @@ func TestGateTruncatedOutputNeverMatchesExpectedExit(t *testing.T) {
 				assert.False(t, r.Pass, "正常退出不能代替完整的验收证据")
 				assert.False(t, r.Results[0].Pass)
 				assert.True(t, r.Results[0].Truncated)
+				assert.False(t, r.Results[0].ObservationComplete)
+				assert.False(t, r.Results[0].OutputTruncated, "physical loss and a compact summary are separate facts")
+				assert.Empty(t, r.Results[0].OutputDigest)
 				assert.Equal(t, exit, r.Results[0].ExitCode)
 				assert.Contains(t, r.Results[0].Output, "12345678")
 				assert.Contains(t, r.Results[0].Output, "command output truncated")
@@ -62,6 +67,8 @@ func TestGateSpawnAndCleanupFailureNeverPass(t *testing.T) {
 		GateOpts{Cwd: filepath.Join(t.TempDir(), "missing")})
 	assert.False(t, r.Pass)
 	assert.NotEmpty(t, r.Results[0].SpawnError)
+	assert.False(t, r.Results[0].ObservationComplete)
+	assert.Empty(t, r.Results[0].OutputDigest)
 	assert.Equal(t, -1, r.Results[0].ExitCode)
 	assert.NotEmpty(t, r.Results[0].Output)
 
@@ -69,6 +76,8 @@ func TestGateSpawnAndCleanupFailureNeverPass(t *testing.T) {
 		GateOpts{Cwd: t.TempDir(), TimeoutMS: 30_000, KillGraceMS: 80})
 	assert.False(t, r.Pass)
 	assert.NotEmpty(t, r.Results[0].CleanupError)
+	assert.False(t, r.Results[0].ObservationComplete)
+	assert.Empty(t, r.Results[0].OutputDigest)
 	assert.Contains(t, r.Results[0].Output, "output did not close")
 
 	r = RunGateCommands([]contract.GateEntry{gateEntry("sleep 30 & exit 1", "exit 1")},
@@ -86,6 +95,8 @@ func TestGateCancelledContextDoesNotStartCommands(t *testing.T) {
 		GateOpts{Context: ctx})
 	assert.False(t, r.Pass)
 	assert.True(t, r.Results[0].Cancelled)
+	assert.False(t, r.Results[0].ObservationComplete)
+	assert.Empty(t, r.Results[0].OutputDigest)
 	assert.NoFileExists(t, marker)
 }
 
@@ -121,6 +132,10 @@ wait`, marker)
 	assert.True(t, r.Results[0].Cancelled)
 	assert.Equal(t, 0, r.Results[0].ExitCode, "取消原因不能被trap exit 0覆盖")
 	assert.True(t, r.Results[1].Cancelled)
+	assert.False(t, r.Results[0].ObservationComplete)
+	assert.False(t, r.Results[1].ObservationComplete)
+	assert.Empty(t, r.Results[0].OutputDigest)
+	assert.Empty(t, r.Results[1].OutputDigest)
 	assert.NoFileExists(t, next)
 	before, err := os.ReadFile(marker)
 	require.NoError(t, err)

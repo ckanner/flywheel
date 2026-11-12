@@ -14,11 +14,12 @@ import (
 // Report refines receipts by invocation identity before aggregating them. Missing
 // observations remain counted, including subscriptions without a reported price.
 type Report struct {
-	TotalCalls    int     `json:"totalCalls"`
-	OmittedCalls  int     `json:"omittedCalls"`
-	OmittedGroups int     `json:"omittedGroups"`
-	Calls         []Call  `json:"calls"`
-	Groups        []Group `json:"groups"`
+	Timeline      Timeline `json:"timeline"`
+	TotalCalls    int      `json:"totalCalls"`
+	OmittedCalls  int      `json:"omittedCalls"`
+	OmittedGroups int      `json:"omittedGroups"`
+	Calls         []Call   `json:"calls"`
+	Groups        []Group  `json:"groups"`
 }
 type Call struct {
 	Session *struct {
@@ -67,7 +68,7 @@ type Group struct {
 func ReadReport(file string, runIDs ...string) (*Report, error) {
 	input, err := os.Open(file)
 	if os.IsNotExist(err) {
-		return &Report{Calls: []Call{}, Groups: []Group{}}, nil
+		return &Report{Calls: []Call{}, Groups: []Group{}, Timeline: timeline(nil, nil, "")}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -94,10 +95,17 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 	})
 	calls := []Call{}
 	identities := map[string]int{}
+	phases := map[string]Phase{}
 	for scanner.Scan() {
 		var call Call
 		if err := json.Unmarshal(scanner.Bytes(), &call); err != nil {
 			return nil, err
+		}
+		if call.Kind == "phase-start" || call.Kind == "phase-end" {
+			if err := collectPhase(phases, scanner.Bytes()); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		if call.Cost != nil && *call.Cost < 0 || call.Duration != nil && *call.Duration < 0 || call.Usage != nil && (call.Usage.Input < 0 || call.Usage.Output < 0 || call.Usage.Total < 0) {
 			return nil, fmt.Errorf("negative metrics observation")
@@ -140,7 +148,9 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+	selectedRun := ""
 	if len(runIDs) > 0 && runIDs[0] != "" {
+		selectedRun = runIDs[0]
 		selected := []Call{}
 		for _, call := range calls {
 			if call.Run == runIDs[0] {
@@ -189,7 +199,7 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	report := &Report{TotalCalls: len(calls), OmittedCalls: max(0, len(calls)-200), OmittedGroups: max(0, len(keys)-500), Calls: calls[max(0, len(calls)-200):], Groups: []Group{}}
+	report := &Report{TotalCalls: len(calls), OmittedCalls: max(0, len(calls)-200), OmittedGroups: max(0, len(keys)-500), Calls: calls[max(0, len(calls)-200):], Groups: []Group{}, Timeline: timeline(phases, calls, selectedRun)}
 	for _, key := range keys[max(0, len(keys)-500):] {
 		report.Groups = append(report.Groups, *groups[key])
 	}

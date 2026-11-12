@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/preparation.schema.json",
+  "title": "Bounded investigation contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "expected": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "intent": {
+      "enum": [
+        "investigate",
+        "investigate-and-fix"
+      ]
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "window": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "known-evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      },
+      "minItems": 0,
+      "maxItems": 32,
+      "uniqueItems": true
+    },
+    "read-paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true
+    },
+    "implementation-scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "minItems": 0,
+      "maxItems": 32,
+      "uniqueItems": true
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+          },
+          "claim": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "falsifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "id",
+          "claim",
+          "falsifier"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+          },
+          "kind": {
+            "enum": [
+              "read_file",
+              "search_text",
+              "list_files"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+            },
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "path",
+          "purpose",
+          "hypotheses"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max-actions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "max-seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "max-file-bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "max-output-bytes": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 262144
+        }
+      },
+      "required": [
+        "max-actions",
+        "max-seconds",
+        "max-file-bytes",
+        "max-output-bytes"
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+            },
+            "mode": {
+              "enum": [
+                "off",
+                "offline",
+                "shadow",
+                "advisory",
+                "adopt"
+              ]
+            },
+            "allowed-data": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "task-summary",
+                  "diagnostic-facts",
+                  "logs",
+                  "source",
+                  "diff"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 5,
+              "uniqueItems": true
+            },
+            "min-applicability": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "min-choice": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "max-calls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "version",
+            "mode",
+            "allowed-data",
+            "min-applicability",
+            "min-choice",
+            "max-calls"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "model": {
+          "type": "string",
+          "pattern": "^jev-[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "key-env": {
+          "type": "string",
+          "pattern": "^[A-Z_][A-Z0-9_]*$",
+          "maxLength": 128
+        },
+        "timeout-ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "hard-budget": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "policy",
+        "endpoint",
+        "model",
+        "key-env",
+        "timeout-ms",
+        "hard-budget"
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "goal",
+    "expected",
+    "intent",
+    "environment",
+    "window",
+    "known-evidence",
+    "read-paths",
+    "implementation-scope",
+    "hypotheses",
+    "actions",
+    "limits"
+  ]
+}

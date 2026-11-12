@@ -143,6 +143,7 @@ type SchedulerConfig struct {
 }
 
 type Config struct {
+	ExecutionPolicy *ExecutionPolicy        `json:"execution-policy,omitempty"`
 	JEVShadow       JEVConfig               `json:"jev-shadow"`
 	Scheduler       SchedulerConfig         `json:"scheduler"`
 	Version         *int                    `json:"version"`
@@ -208,7 +209,7 @@ func (c *Config) Normalize() {
 	if c.Scheduler.MaxParallel == 0 {
 		c.Scheduler.MaxParallel = 2
 	}
-	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) {
+	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) && c.Sessions.Context == "" {
 		c.Sessions = d.Sessions
 	}
 	if c.Permissions.Mode == "" {
@@ -279,6 +280,9 @@ func (c *Config) Validate() error {
 	}
 
 	if err := c.Sessions.validate(); err != nil {
+		return err
+	}
+	if err := c.validateExecutionPolicy(); err != nil {
 		return err
 	}
 	var permissions any

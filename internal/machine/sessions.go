@@ -110,8 +110,12 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 			}
 		}
 	}
-	binding := sessionHash([]any{config.SessionPolicyVersion, a.Binding, a.Model, a.PermissionMode,
-		c.Config.Channels[a.Binding.Channel].EnvKey, sessionRuntimeIdentity(identityArgs)})
+	bindingInput := []any{config.SessionPolicyVersion, a.Binding, a.Model, a.PermissionMode,
+		c.Config.Channels[a.Binding.Channel].EnvKey, sessionRuntimeIdentity(identityArgs)}
+	if a.SessionMode != "" {
+		bindingInput = append(bindingInput, a.SessionMode)
+	}
+	binding := sessionHash(bindingInput)
 	return binding, sessionHash(goal), sessionHash(contractInput)
 }
 
@@ -334,6 +338,7 @@ func (c *Context) reconcileSessionReceipts() error {
 // Received results remain replayable until their stage and accounting are saved
 // together. requestId correlates evidence; it is not a backend idempotency key.
 func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (out drivers.Result, callErr error) {
+	defer c.measureManagedInvocation(role, scope)()
 	if c.parallel != nil {
 		release, err := c.parallel.enter(c, args.Binding.Channel)
 		if err != nil {
@@ -376,15 +381,12 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		args.WorkspaceCwd = r.WorkspaceCwd
 	}
 	args.SessionTitle = "Flywheel · " + role + "/" + scope + " · " + c.State.Slug
-	args.Prompt = workspacePrompt(c.WorkspaceCwd, args.Cwd, role, scope) + args.Prompt
-	args.Prompt += c.sharedPrompt(strings.TrimPrefix(scope, "final:"))
-	if packet := c.State.Packets[strings.TrimPrefix(scope, "final:")]; packet != nil && packet.Worktree != nil {
-		args.Prompt = fmt.Sprintf("本次任务分支: %q\n", packet.Worktree.Branch) + args.Prompt
-	}
-	if role == "execute" && (c.sharedActive(scope) || (c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled)) {
-		args.Prompt += executionDirectoryPrompt()
-	}
+	originalPrompt := args.Prompt
+	args.Prompt = c.sessionPrompt(role, scope, args)
 	tracked, persistent := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)
+	if args.SessionMode != "" {
+		persistent = args.SessionMode == "scoped" && tracked
+	}
 	if r == nil && !tracked {
 		return call(args), nil
 	}
@@ -463,6 +465,11 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		attempt = ps.Attempts
 	}
 	previous := r
+	contextArgs := args
+	contextArgs.Prompt = originalPrompt
+	contextCheckpoint, contextPrompt := c.sessionContextPrompt(role, scope, action, candidate, previous, contextArgs)
+	contextArgs.Prompt = contextPrompt
+	args.Prompt = c.sessionPrompt(role, scope, contextArgs)
 	if action == "rebuild" {
 		args.Prompt = sessionRebuildHandoff(previous, reason) + args.Prompt
 	}
@@ -472,7 +479,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	} else if action == "resume" && role == "plan" {
 		historyMode = "legacy-plan"
 	}
-	r = &state.SessionRecord{Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
+	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,

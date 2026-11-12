@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.8.1"
+  version: "1.9.0"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use for "/flywheel-status docs/<slug>" in DSH, "/skill:flywheel-status docs/<slug>" in Kimi, or a question about how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
@@ -24,7 +24,7 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
 1. **定位原任务**：先执行 `task_dir="$(cd "$slug" && pwd -P)"`，失败则报告路径问题。
    查询不要求创建 worktree、检查分支或切换 checkout；即使当前终端在 `main`、
    detached HEAD 或仓库外，也直接查询这个原任务路径，不搬移账本。
-   `state.json` 不存在时说明引擎尚未初始化状态，不能仅据此断言契约未生成。
+   `state.json` 不存在时先看控制回执是否有 `preparation`：这是尚未进入实现的调查，报告其预算、证据与独立终态；两者都没有才说明尚未初始化。不能仅据此断言契约未生成。
    可用 `flywheel control status --task-dir "$task_dir" --cwd "$task_dir"`
    获取只读快照；`state: null` 也不代表需要手工创建 state.json。
 2. **调用**（使用绝对任务路径，不依赖当前工作目录）：

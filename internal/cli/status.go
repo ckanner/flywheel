@@ -35,6 +35,15 @@ func statusCmd() *cobra.Command {
 				return err
 			}
 			if !state.Exists(taskDir) {
+				if preparation, preparationErr := state.LoadPreparation(taskDir); preparationErr == nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "调查: %s  状态: %s  revision: %d\n目标: %s\n动作: %d/%d  已耗时: %d ms\n原因: %s\n", preparation.Contract.ID, preparation.Status, preparation.Revision, preparation.Contract.Goal, preparation.ActionsUsed, preparation.Contract.Limits.MaxActions, preparation.ElapsedMS, preparation.Reason)
+					if preparation.Report != nil {
+						fmt.Fprintln(cmd.OutOrStdout(), preparation.Report.Summary)
+					}
+					return nil
+				} else if !os.IsNotExist(preparationErr) {
+					return preparationErr
+				}
 				return fmt.Errorf("state.json 不存在于 %s（任务尚未启动？）", taskDir)
 			}
 			st, err := state.Load(taskDir)

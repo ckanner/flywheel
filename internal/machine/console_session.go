@@ -87,12 +87,16 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 		route, id = packet.Route, "routes."+packet.Route
 	}
 	b, err := fallback.ResolveBinding(c.Config, r.Role, route)
+	permission, sessionMode := c.Config.PermissionMode(r.Role, b.Harness, id), ""
+	if packet := c.Packets[r.Scope]; r.Role == "execute" && packet != nil {
+		b, permission, sessionMode, err = c.executionBinding(packet)
+	}
 	if err != nil {
 		return drivers.CallArgs{}, err
 	}
 	a := drivers.CallArgs{Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd, CandidateScope: r.CandidateScope, TaskDir: c.TaskDir, PacketID: strings.TrimPrefix(r.Scope, "final:"), Model: b.Model,
 		Binding:        config.LoopBinding{Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking},
-		PermissionMode: c.Config.PermissionMode(r.Role, b.Harness, id), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog(), ExpectedSessionID: r.ThreadID}
+		PermissionMode: permission, SessionMode: sessionMode, APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog(), ExpectedSessionID: r.ThreadID}
 	if len(r.CandidateScope) > 0 {
 		packet := c.Packets[a.PacketID]
 		if packet == nil || packet.Schedule == nil {
@@ -102,7 +106,11 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 		slices.Sort(a.CandidateScope)
 	}
 	binding, goal, _ := c.sessionIdentities(r.Scope, a)
-	if !c.scopedSessions(r.Role, b.Harness) || r.ThreadID == "" || !r.ResumeCandidate || binding != r.Binding || goal != r.Goal {
+	scoped := c.scopedSessions(r.Role, b.Harness)
+	if sessionMode != "" {
+		scoped = sessionMode == "scoped" && c.trackedSessions(r.Role, b.Harness)
+	}
+	if !scoped || r.ThreadID == "" || !r.ResumeCandidate || binding != r.Binding || goal != r.Goal {
 		return drivers.CallArgs{}, fmt.Errorf("original session binding or history is unavailable; inspect configuration and recorded identity")
 	}
 	return a, nil

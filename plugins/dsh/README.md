@@ -119,6 +119,10 @@ or older tasks. The view reads registered run records and session associations,
 without scanning the repository. Known file locations appear as read-only
 information. A successful single-stage Review is not whole-task completion.
 
+Preparation-only tasks display a bounded investigation panel with observations,
+budgets, original-receipt reconciliation, Stop, and the evidence report. A report
+does not imply code delivery. See the [investigation guide](https://github.com/ckanner/flywheel/blob/main/docs/en/investigation.md).
+
 Visible canvases refresh task discovery; running tasks refresh status. Opening
 the view starts no task or diagnostic probe. Failed reads retain the previous
 confirmed snapshot and its timestamp. A missing or timed-out launch/start/stop
@@ -133,7 +137,7 @@ Go task; request Stop and await engine confirmation.
 |---|---|
 | `/flywheel` | Human command accepting a JSON control request |
 | `flywheel_launch` | Model tool to launch a prepared task, Auto by default |
-| `flywheel_control` | Model tool for launch/start/status/stop/config/doctor |
+| `flywheel_control` | Model tool for launch/start/status/stop/investigate/config/doctor |
 | Workbench controls | Additional revision-bound stages, configuration editing, managed handoff, and explicit delivery operations |
 
 A manual launch example is:

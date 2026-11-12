@@ -393,7 +393,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => ['launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
+const mutates = action => ['investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -405,6 +405,7 @@ function pathProblem(value) {
 
 function taskLabel(value, t) {
   if (value.running) return t('running');
+  if (value.preparation) return t('investigationState_' + value.preparation.status);
   if (!value.state) return t('uninitialized');
   if (value.state.status === 'running') return t('engineMissing');
   const key = taskLabels[value.state.status];
@@ -443,7 +444,7 @@ function readReply(reply, request) {
   const state = value.state;
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record);
-  if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node'].includes(request.action) &&
+  if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && !record(state.packets)) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
@@ -451,6 +452,11 @@ function readReply(reply, request) {
         (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
     throw new Error('Flywheel control returned malformed task status');
   }
+  const investigationStatusAfterHandoff = request.investigation?.action === 'status' && value.preparation === undefined &&
+    record(state) && Number.isSafeInteger(state.revision) && state.revision > 0 && typeof state.status === 'string' &&
+    state.status !== '' && record(state.packets);
+  if ((value.preparation !== undefined && !validPreparationSnapshot(value.preparation)) ||
+      (request.action === 'investigate' && !value.preparation && !investigationStatusAfterHandoff)) throw new Error('Flywheel control returned malformed investigation status');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
@@ -524,11 +530,11 @@ function createControl(execute, pendingOperations, isDisposed) {
   };
   const run = async (action, selection, probe = false, extra = {}) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
-    if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node'].includes(action) && !target.taskDir) return;
+    if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate'].includes(action) && !target.taskDir) return;
     select(selection);
     const requestEpoch = epoch;
     const requestKey = selected;
@@ -541,6 +547,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
+      ...(action === 'investigate' ? { investigation: extra.investigation } : {}),
       ...(action === 'step' ? { only: extra.only, packet: extra.packet, revision: extra.revision, ...(extra.retryReason ? { retryReason: extra.retryReason } : {}) } : {}) };
     const operation = { action, probe, ...target, key: requestKey };
     active = operation;
@@ -556,7 +563,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
-        if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node'].includes(action)) {
+        if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(action)) {
           // A remote snapshot is bound to the previously observed candidate.
           // A new engine revision requires another explicit remote inspection.
           if (draft.delivery && value.state?.revision !== draft.status?.state?.revision) draft.deliveryStale = true;
@@ -792,7 +799,7 @@ function Feedback({ control, selection, reconcile, t }) {
         h('details', { className: css.details },
           h('summary', null, t('errorDetails')),
           h('pre', { className: css.raw }, error.detail))),
-      mode === 'idle' && !control.status?.state && h('div', { className: css.idleFeedback },
+      mode === 'idle' && !control.status?.state && !control.status?.preparation && h('div', { className: css.idleFeedback },
         h('p', null, t('lifecycle')),
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
 }

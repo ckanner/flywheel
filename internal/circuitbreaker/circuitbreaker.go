@@ -70,10 +70,10 @@ func CheckBudget(st *state.State, cfg *config.Config, now time.Time) BudgetVerdi
 	return BudgetVerdict{Action: ActionWarn, Reason: reason, Enforce: enforce}
 }
 
-// Signature 失败签名（v0.14 DC4）：失败模式键（错误码+失败命令，去重排序后
-// sha256 前 16 hex）+ 变更文件集（去重排序，供相似度比较）。序列化为 JSON
-// 存入 state.json。
-func Signature(errorCodes, failedCommands, changedFiles []string) string {
+// Signature keeps the historical mode key/file list for audit compatibility.
+// The engine also supplies authoritative progress facts; file-name similarity
+// alone no longer decides whether those attempts are spinning.
+func Signature(errorCodes, failedCommands, changedFiles []string, progress ...ProgressEvidence) string {
 	mode := struct {
 		ErrorCodes     []string `json:"errorCodes"`
 		FailedCommands []string `json:"failedCommands"`
@@ -83,12 +83,12 @@ func Signature(errorCodes, failedCommands, changedFiles []string) string {
 	}
 	modeJSON, _ := json.Marshal(mode)
 	sum := sha256.Sum256(modeJSON)
-	sig := struct {
-		Key   string   `json:"key"`
-		Files []string `json:"files"`
-	}{
+	sig := failureSignature{
 		Key:   hex.EncodeToString(sum[:])[:16],
 		Files: dedupSorted(changedFiles),
+	}
+	if len(progress) > 0 {
+		sig.Progress = &progress[0]
 	}
 	out, _ := json.Marshal(sig)
 	return string(out)
@@ -133,22 +133,23 @@ func Jaccard(a, b []string) float64 {
 	return float64(intersection) / float64(union)
 }
 
-// DetectSpin 空转检测（v0.14 DC4）：同一 packet 连续 >=2 次失败且失败模式
-// 一致（错误码+失败命令键相同）且变更文件集高度相似（Jaccard >= 0.7）。
-// previousSignature 为 "" 表示无前科。损坏的存储签名永不阻断推进。
+// DetectSpin requires consecutive unchanged, comparable failure observations
+// when either signature carries progress. Mixed legacy/new observations stay
+// unknown. Two old signatures preserve the legacy helper's Jaccard semantics;
+// current engine writes always include progress. Corrupt signatures never block.
 func DetectSpin(previousSignature, currentSignature string, consecutiveFailures int) bool {
 	if consecutiveFailures < 2 || previousSignature == "" {
 		return false
 	}
-	var prev, curr struct {
-		Key   string   `json:"key"`
-		Files []string `json:"files"`
-	}
+	var prev, curr failureSignature
 	if err := json.Unmarshal([]byte(previousSignature), &prev); err != nil {
 		return false
 	}
 	if err := json.Unmarshal([]byte(currentSignature), &curr); err != nil {
 		return false
+	}
+	if prev.Progress != nil || curr.Progress != nil {
+		return prev.Key == curr.Key && compareProgress(prev.Progress, curr.Progress).Status == "stalled"
 	}
 	return prev.Key == curr.Key && Jaccard(prev.Files, curr.Files) >= SpinJaccardThreshold
 }

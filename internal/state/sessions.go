@@ -34,6 +34,7 @@ type SessionConfiguration struct {
 }
 
 type SessionRecord struct {
+	Context         *SessionContext       `json:"context,omitempty"`
 	Configuration   *SessionConfiguration `json:"configuration,omitempty"`
 	Task            string                `json:"task"`
 	Role            string                `json:"role"`
@@ -52,6 +53,14 @@ type SessionRecord struct {
 	Reason          string                `json:"reason"`
 	Quality         *SessionQuality       `json:"quality,omitempty"`
 	Last            *SessionInvocation    `json:"last"`
+}
+
+// Context is an input checkpoint, not a summary of private model reasoning.
+type SessionContext struct {
+	Version  int    `json:"version"`
+	Identity string `json:"identity,omitempty"`
+	Mode     string `json:"mode"`
+	Reason   string `json:"reason"`
 }
 
 // Quality counters describe confirmed work in one role's current generation.

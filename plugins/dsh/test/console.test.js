@@ -117,6 +117,23 @@ test('registered CLI runs open a freshly read canvas and metrics retain missing 
  assert.match(ui.container.textContent, /调用失败率不等于代码质量/);
 });
 
+test('run metrics distinguish parallel elapsed time from cumulative durations and retain unknown intervals', async t => {
+ const run = { id: 'run-one', taskDir: '/repo/docs/timed', cwd: '/repo', startedAt: '2026-11-12T10:00:00Z', summary: { status: 'paused' } };
+ let timeline = { coverage: 'partial-engine-timeline', completeSpans: 2, unknownSpans: 1, unmatchedCalls: 1, observedWallMs: 1500, knownSpanMs: 2500 };
+ const ui = await mountPanel(t, request => reply(request, request.action === 'metrics' ? { metrics: { groups: [], timeline } } : { runs: [run] }), { catalog: request => reply(request, { runs: [run] }) });
+ await ui.click('运行记录');
+ await ui.click('刷新最近运行');
+ await ui.click('读取所选运行指标');
+ assert.match(ui.container.textContent, /已观测经过时间1\.500 s/);
+ assert.match(ui.container.textContent, /阶段耗时累计2\.500 s/);
+ assert.match(ui.container.textContent, /已闭合 \/ 未知区间2 \/ 1/);
+ assert.match(ui.container.textContent, /Provider 内部耗时尚不可见/);
+ timeline = { ...timeline, completeSpans: 0, unknownSpans: 1, observedWallMs: 0, knownSpanMs: 0 };
+ await ui.click('读取所选运行指标');
+ assert.match(ui.container.textContent, /已观测经过时间未报告/);
+ assert.doesNotMatch(ui.container.textContent, /已观测经过时间0\.000 s/);
+});
+
 test('session handoff keeps exact identity, sends prompts via stdin contract and locks automatic execution', async t => {
  let held = false;
  const key = 'execute/M01-T01';

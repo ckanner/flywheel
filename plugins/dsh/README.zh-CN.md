@@ -102,6 +102,9 @@ npm 启动器通常会从同版本依赖中解析 worker。启动引擎的进程
 多个或历史任务需要明确选择。视图读取已登记运行与会话关联，不扫描仓库。
 已知位置只作为只读信息展示；单阶段 Review 成功不代表整个任务完成。
 
+只有准备记录的任务显示有界调查面板，包含观察、预算、原回执核对、停止与证据报告。
+调查报告不代表代码交付。详见[调查指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/investigation.md)。
+
 可见画布会刷新任务发现，运行中的任务会刷新状态。打开视图不启动任务或诊断。
 读取失败时保留最后确认的快照及时间。launch/start/stop 回复丢失或超时表示
 **结果未确认**；同一任务状态完成核对前，后续修改操作保持阻断，界面不会自动重试。
@@ -113,7 +116,7 @@ npm 启动器通常会从同版本依赖中解析 worker。启动引擎的进程
 |---|---|
 | `/flywheel` | 接收 JSON 控制请求的人工命令 |
 | `flywheel_launch` | 启动已准备任务的模型工具，默认 Auto |
-| `flywheel_control` | launch/start/status/stop/config/doctor 模型工具 |
+| `flywheel_control` | launch/start/status/stop/investigate/config/doctor 模型工具 |
 | 工作台控件 | 另外提供绑定 revision 的单阶段操作、配置编辑、受管接管及显式交付操作 |
 
 人工启动示例：

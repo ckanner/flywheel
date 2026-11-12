@@ -117,9 +117,17 @@ func (c *Context) candidateFingerprint(cwd string, extraExclude ...func(string) 
 }
 
 func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) {
+	identity, _, err := c.verificationSnapshot(packet)
+	return identity, err
+}
+
+// Return the candidate already scanned for the verification identity so failure
+// feedback can compare code without a second filesystem walk or a done-report
+// timestamp making an unchanged implementation appear different.
+func (c *Context) verificationSnapshot(packet *contract.Packet) (string, string, error) {
 	candidate, err := c.candidateFingerprint(c.unitCwd(packet))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	// 同时绑定主任务目录的权威契约；worktree 内旧副本不是规划修订的信源。
 	contractFiles := []string{"spec.md", "task-packet-" + packet.PacketID + ".md"}
@@ -127,14 +135,14 @@ func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) 
 	for _, name := range contractFiles {
 		raw, err := os.ReadFile(filepath.Join(c.TaskDir, name))
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		contractContent = append(contractContent, string(raw))
 	}
 	doneReport := ""
 	report, err := os.ReadFile(filepath.Join(c.TaskDir, "reports", packet.PacketID+".done.json"))
 	if err != nil && !os.IsNotExist(err) {
-		return "", err
+		return "", "", err
 	}
 	if err == nil {
 		h := sha256.Sum256(report)
@@ -152,7 +160,7 @@ func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) 
 		SharedScope   any `json:"SharedScope,omitempty"`
 	}{1, candidate, packet, c.Spec, contractContent, doneReport, c.Config.Verify, c.workflowEvidencePolicy(), c.sharedVerificationPolicy(packet)})
 	h := sha256.Sum256(raw)
-	return hex.EncodeToString(h[:]), nil
+	return hex.EncodeToString(h[:]), candidate, nil
 }
 
 func evidenceIdentity(ev any) string {

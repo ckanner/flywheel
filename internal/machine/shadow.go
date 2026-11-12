@@ -1,8 +1,6 @@
 package machine
 
 import (
-	"context"
-	"fmt"
 	"path/filepath"
 	"time"
 
@@ -19,13 +17,7 @@ func (c *Context) observeShadow() {
 	if !j.Enabled || !c.Fresh {
 		return
 	}
-	if c.Config.Budget.Enforce == "hard" {
-		c.Log("JEV shadow: skipped (hard budget; optional experiment is separately metered)")
-		return
-	}
-	key, _ := c.EnvLookup(j.KeyEnv)
-	if key == "" {
-		c.Log("JEV shadow: skipped (missing API key environment variable); workflow unchanged")
+	if c.RunContext != nil && c.RunContext.Err() != nil {
 		return
 	}
 	data, err := shadow.Capture(c.TaskDir, c.Spec, c.PacketList, c.State.Workflow.WorkflowSelection)
@@ -38,15 +30,12 @@ func (c *Context) observeShadow() {
 		c.Log("JEV shadow: skipped (result directory unavailable); workflow unchanged")
 		return
 	}
-	options := shadow.Options{Endpoint: j.Endpoint, Model: j.Model, ExpectedModel: j.ExpectedModel, APIKey: key,
+	options := shadow.Options{Endpoint: j.Endpoint, Model: j.Model, ExpectedModel: j.ExpectedModel,
 		Timeout: time.Duration(j.TimeoutMS) * time.Millisecond, MaxCalls: 1, SaveInput: true}
 	directory := shadow.ObservationDirectory(filepath.Join(filepath.Dir(path), "shadow"), data, options)
-	ctx, cancel := context.WithTimeout(c.RunContext, 5*time.Second)
-	defer cancel()
-	report, err := shadow.Run(ctx, data, directory, options)
-	if err != nil {
+	if err := shadow.Enqueue(data, directory, options); err != nil {
 		c.Log("JEV shadow: unavailable (target, input or record validation); workflow unchanged")
 		return
 	}
-	c.Log(fmt.Sprintf("JEV shadow: quick=%d full=%d abstain=%d errors=%d unknown=%d; workflow unchanged; separate usage and results: %s", report.Summary.QuickCandidates, report.Summary.FullCandidates, report.Summary.Abstentions, report.Summary.Errors, report.Summary.Unknown, directory))
+	c.Log("JEV shadow: snapshot queued; workflow unchanged; review cases.json and explicitly run a separately budgeted shadow experiment: " + directory)
 }

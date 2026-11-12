@@ -146,7 +146,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'flywheel_control',
     description: 'Control an existing Flywheel task via its deterministic Go engine. ' +
-      'Use launch for a prepared task (Auto by default), status to inspect progress, start to resume in the background, stop to await cancellation. ' +
+      'Use investigate with a versioned preparation contract to gather bounded evidence; run starts the Go investigation owner in the background. Report-only investigation never authorizes implementation. Use launch for a prepared implementation task (Auto by default), status to inspect progress, start to resume, stop to await cancellation. ' +
       'Launch/start associates the exact task with the current conversation’s Flywheel view. After an unconfirmed mutation, query the same task before another mutation. ' +
       'Use config to inspect effective model bindings or doctor for a local preflight; these may omit taskDir. ' +
       'Only doctor accepts probe=true to check the SDK without sending an inference prompt. ' +
@@ -155,8 +155,14 @@ export function apply(ctx, config = {}) {
     parameters: {
       type: 'object', additionalProperties: false,
       properties: {
-        action: { type: 'string', enum: ['launch', 'start', 'status', 'stop', 'config', 'doctor'] },
+        action: { type: 'string', enum: ['investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor'] },
         ...taskProperties,
+        investigation: { type: 'object', additionalProperties: false, properties: {
+          action: { type: 'string', enum: ['start', 'run', 'status', 'report', 'cancel'] },
+          revision: { type: 'integer', minimum: 1 },
+          contract: { type: 'object', description: 'Exact version-1 preparation.schema.json contract; use flywheel template to read the installed schema. Store no credentials.' },
+          report: { type: 'object', description: 'Evidence-cited investigation report; references must name recorded invocation IDs. This never marks code completed.' },
+        }, required: ['action'] },
         probe: { type: 'boolean', description: 'Doctor only: explicitly enable SDK checks without inference; defaults to false' },
       },
       required: ['action'],

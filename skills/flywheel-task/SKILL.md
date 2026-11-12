@@ -1,8 +1,8 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.2.2"
-description: Prepare and launch an authorized Flywheel implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
+  version: "1.3.0"
+description: Prepare and launch an authorized Flywheel investigation, implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
 arguments: requirement mode
@@ -21,7 +21,7 @@ DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标
 ## 1. 确认目标与已有任务
 
 用户明确调用本入口时，HTML、文档或代码任务都可准备可验收契约，不因“只是文档”
-静默省略流程。若用户要求仅调研、只看方案或暂不运行，遵守范围，并明确说明
+静默省略流程。若用户要求只看方案或暂不运行，遵守范围，并明确说明
 “已加载技能／已完成准备，尚未启动引擎”。加载正文不等于执行成功。
 
 
@@ -34,6 +34,21 @@ DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标
 - 确认 `flywheel control launch --help` 与 `flywheel template spec.schema.json` 可用。
   PATH 缺失时使用已安装的 `~/.config/flywheel/npm-launcher` 或用户明确配置的绝对路径。
   老版本没有 launch 时说明需要同版升级，不把 `--only execute` 当作 Quick。
+
+## 调查目标与入口选择
+
+Task 是推荐目标入口，保留 New → 审阅 → Run，以及 Plan / Exec / Verify / Review /
+Status / Stop。只有阶段回执时不要宣称完成整项任务。
+
+- “先排查，告诉我为什么”：读取[调查准备与交付](references/investigation.md)，准备
+  紧凑契约，通过 Go 调查后交付证据报告；不必先要求用户手动调用 New。
+- “排查并修好”：使用同一受管调查记录；结论有证据支持后，在原授权内准备实现契约
+  并继续下述 launch。沿用预算、范围与来源，不重开任务。
+- “已定位，快速修好”：直接准备实现契约，Auto / 显式 Quick 仍经 Go 资格判断。
+- “复杂任务先出方案，审阅后再实现”：使用 New，只交付准备结果；后续授权实施时 Run。
+
+调查动作、JEV 选择和失败恢复不在技能中循环。已有 preparation 且没有 Spec 时，
+使用它的真实 revision 恢复 Go 调查；已有实现任务时仍沿用原 Run 路径。
 
 ## 2. 准备真实工作区与契约
 

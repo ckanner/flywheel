@@ -29,6 +29,10 @@ var openReportFile = func(r *os.Root, rel string) (io.ReadCloser, error) { retur
 
 // executeStep 成功时 packet 状态变为 executed 并记录 executor 证据。
 func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
+	defer c.measurePhase("execute", packet.PacketID)()
+	if c.fatal != nil {
+		return execOutcome{}, c.fatal
+	}
 	if err := c.reconcileSessionReceipts(); err != nil {
 		return execOutcome{}, err
 	}
@@ -106,9 +110,12 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 	// Executor 只能写自己的工作区。报告先写 worktree 内账本目录，进程退出
 	// 且格式校验通过后由编排器收进主任务目录；无需开放主 checkout 写权限。
 	executionTaskDir := filepath.Join(uCwd, c.taskDirPrefix())
-	binding, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
+	binding, permission, sessionMode, err := c.executionBinding(packet)
 	if err != nil {
 		return execOutcome{}, err
+	}
+	if ps.ExecutionPolicy != nil {
+		c.save() // freeze the complete allowlist identity before dispatch
 	}
 	channel := binding.Channel
 	currentModel, currentHarness := binding.Model, binding.Harness
@@ -152,12 +159,14 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			apiKeys[k] = v
 		}
 		res, sessionErr := c.invokeScoped("execute", id, drivers.CallArgs{
-			Prompt:         prompt,
-			PacketID:       id,
-			TaskDir:        executionTaskDir,
-			Cwd:            uCwd,
-			PermissionMode: c.Config.PermissionMode("execute", currentHarness, "routes."+packet.Route),
-			Model:          currentModel,
+			ContextTemplateVersion: executeContextVersion,
+			Prompt:                 prompt,
+			PacketID:               id,
+			TaskDir:                executionTaskDir,
+			Cwd:                    uCwd,
+			PermissionMode:         permission,
+			SessionMode:            sessionMode,
+			Model:                  currentModel,
 			Binding: config.LoopBinding{
 				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
 				Channel: channel, Thinking: binding.Thinking,
@@ -314,7 +323,15 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			if next != "" {
 				mapped = fallback.ModelForChannel(c.Config, next, "execute", packet.Route)
 			}
+			allowed := false
 			if next != "" && !visited[next] && mapped != nil {
+				var policyErr error
+				allowed, policyErr = c.executionChannelFallback(packet, next, code)
+				if policyErr != nil {
+					return execOutcome{}, policyErr
+				}
+			}
+			if next != "" && !visited[next] && mapped != nil && allowed {
 				c.recordRetry(ps, "fallback", code, fmt.Sprintf("channel %s -> %s", channel, next))
 				c.Log(fmt.Sprintf("fallback: %s -> %s (%s)", channel, next, code))
 				channel = next
@@ -323,6 +340,12 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 					currentHarness = mapped.Harness
 				}
 				currentProvider = fallback.ResolveProvider(c.Config, currentHarness, "", channel)
+				permission = c.Config.PermissionMode("execute", currentHarness, "routes."+packet.Route)
+				if ps.ExecutionPolicy != nil {
+					selected := c.Config.ExecutionPolicy.Bindings[ps.ExecutionPolicy.Current]
+					currentModel, currentHarness, currentProvider, binding.Thinking = selected.Model, selected.Harness, selected.Provider, selected.Thinking
+					permission, sessionMode = selected.Permission, selected.SessionMode
+				}
 				t-- // 降级不消耗传输重试
 				c.save()
 				continue
@@ -346,7 +369,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 		})
 		c.recordRetry(ps, "transport", code, "backoff", delay)
 		c.save()
-		c.Sleep(time.Duration(delay) * time.Millisecond)
+		c.waitRetry(time.Duration(delay)*time.Millisecond, packet.PacketID)
 	}
 
 	return execOutcome{ErrorCode: lastCode}, nil
@@ -388,6 +411,10 @@ func readUnitReport(cwd, rel string) ([]byte, error) {
 // diff 在单元 worktree 内跑；主 checkout 另做契约防篡改扫描（executor 知道
 // taskDir 绝对路径——它的账本脏文件被排除，任务目录外的用户 WIP 不理睬）。
 func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
+	defer c.measurePhase("verify", packet.PacketID)()
+	if c.err() != nil {
+		return l1Outcome{}
+	}
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	timeoutMs := c.Config.Verify.CommandTimeoutMs
@@ -395,7 +422,7 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 	uCwd := c.unitCwd(packet)
 	// 验收会执行仓库代码；命令或并发编辑若改变候选，旧测试结果不能为
 	// 改后的内容背书。账本和 ignored 构建产物仍遵守统一快照排除规则。
-	beforeIdentity, beforeErr := c.verificationIdentity(packet)
+	beforeIdentity, _, beforeErr := c.verificationSnapshot(packet)
 	gate := verify.GateReport{}
 	if beforeErr == nil {
 		gate = verify.RunGateCommands(packet.Acceptance.L1, verify.GateOpts{
@@ -437,7 +464,7 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 		boundary.Pass = false
 	}
 	pass := gate.Pass && boundary.Pass
-	identity, identityErr := c.verificationIdentity(packet)
+	identity, candidate, identityErr := c.verificationSnapshot(packet)
 	if beforeErr != nil {
 		identityErr = fmt.Errorf("before acceptance: %w", beforeErr)
 	} else if identityErr != nil {
@@ -451,6 +478,9 @@ func (c *Context) l1Step(packet *contract.Packet) l1Outcome {
 	}
 	ps.Evidence.L1 = map[string]any{
 		"pass":            pass,
+		"candidate":       candidate,
+		"check-set":       sessionHash([]any{"l1-progress/v1", packet, c.Spec, c.Config.Verify, c.workflowEvidencePolicy(), c.sharedVerificationPolicy(packet)}),
+		"environment":     gate.EnvironmentID,
 		"identity":        identity,
 		"identity-before": beforeIdentity,
 		"identity-error":  jsonNilable(errorText(identityErr)),

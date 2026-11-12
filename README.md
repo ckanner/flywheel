@@ -113,6 +113,10 @@ success path has two stage-agent calls, excluding preparation, retries, and
 the agent's internal tool calls. Existing tasks without workflow metadata
 continue as Full. See [workflow and delivery](docs/en/workflow.md).
 
+When the cause is still unknown, Task can first run a [bounded investigation](docs/en/investigation.md).
+Report-only goals stop at an evidence report; authorized repairs retain the original
+scope before entering Auto. New → review → Run and direct stage controls remain available.
+
 ## Models and configuration
 
 The shipped template uses the following editable bindings. These are

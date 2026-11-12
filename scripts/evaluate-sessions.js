@@ -200,6 +200,9 @@ function resolveMetricRows(rows) {
   const calls = [], byID = new Map(), auditIDs = new Set();
   let corrections = 0, duplicates = 0;
   for (const row of rows) {
+	// Engine intervals are separately reported telemetry, not model invocations.
+	// The trial's process wall clock remains the end-to-end elapsed measure.
+	if (row["record-kind"] === "phase-start" || row["record-kind"] === "phase-end") continue;
     const id = row["invocation-id"] || row.session?.last?.id;
     if (id && auditIDs.has(id)) { duplicates++; continue; }
     if (id) auditIDs.add(id);

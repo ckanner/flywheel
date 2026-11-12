@@ -7,6 +7,18 @@ their original language.
 
 ## Unreleased
 
+- Add versioned, Go-owned bounded investigations with background control, token-bound
+  cancellation, evidence reports, original-scope repair handoff and nonduplicating usage.
+- Preserve Task, New, Run and direct stages while retaining Auto as a Quick/Full selector.
+- Reuse trusted persisted Plan checkpoints; provide structured comparable feedback and
+  conservative progress detection without weakening complete acceptance or review.
+- Add opt-in complete execution-binding allowlists and verified same-role incremental
+  context; retain default providers/models, cold-start identity checks and unknown blocking.
+- Add paired Choice/Noul decisions with separate data opt-in, durable unknown recovery and
+  atomic diagnostic-action adoption; move legacy automatic shadow HTTP off the task path.
+- Measure observable engine phase intervals with unknown coverage and separate cumulative
+  durations from wall-time interval unions. Real model speed/quality remains uncalibrated.
+
 - Make English the default root and DSH plugin README, with matching Simplified
   Chinese editions and compatibility links from the previous English paths.
 - Organize bilingual guides, architecture, plans, validation records, and

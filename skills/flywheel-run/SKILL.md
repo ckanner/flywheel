@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.9.4"
+  version: "1.10.0"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -20,6 +20,16 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
 > `slug` 是实际任务目录路径，例如 `docs/my-task` 或绝对路径，不再追加 `docs/`。
 > `pause` 可选，当前只接受 `review`。
 > `mode` 可选，只接受 `auto`、`quick`、`full`；未提供时省略该参数，保留已有选择。
+
+## 已有调查准备记录
+
+先用 `control status` 查询原目录。响应只有 `preparation` 而没有实现 `state` 时，
+保留原目录与预算，通过 `flywheel_control` 的 `action: investigate`、
+`investigation: {action: run, revision: <实际版本>}` 启动或核对原调查回执。
+非 DSH 使用同一 `control investigate` JSON stdin。该运行不接受 Quick / Full 或
+pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补造 Spec 来掩盖缺失根因。
+调查终态 supported / inconclusive / access-blocked / cancelled 不等于代码 completed。
+若用户要求仅看方案而尚未授权运行，继续保留原停止点。
 
 ## 步骤
 
