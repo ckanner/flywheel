@@ -54,7 +54,7 @@ function git(root, ...args) {
 function manifests() {
   const values = {};
   for (const entry of PACKAGES) {
-    const value = { name: entry.name, version: VERSION, license: "UNLICENSED",
+    const value = { name: entry.name, version: VERSION, license: "MIT",
       repository: { type: "git", url: "git+https://github.com/ckanner/flywheel.git", directory: entry.directory } };
     if (entry.platform) {
       const [os, arch] = entry.platform.split("-");

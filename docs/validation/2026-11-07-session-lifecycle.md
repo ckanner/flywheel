@@ -70,11 +70,11 @@ FIFO 和非法身份。该有界槽不代替后端历史的保留策略。本版
 | 取消、CAS 或缺失候选证明使已发生调用漏账 | 在恢复入口独立处理可信回执的可归属计量；保持未知执行阻断和原始 guard 校验；本地未派发取消不虚增未知用量 |
 | 非法回执哈希被写回状态后破坏 schema | 读取时拒绝非规范的非空 candidate／guard 哈希；缺失证明与损坏证明分开，9 个非法形状子用例先红后绿 |
 
-主要回归在 [sessions_test.go](../../internal/machine/sessions_test.go)、
-[session_workflow_test.go](../../internal/machine/session_workflow_test.go)、
-[session_fault_test.go](../../internal/machine/session_fault_test.go)、
-[session_guard_test.go](../../internal/machine/session_guard_test.go) 与
-[session_audit_test.go](../../internal/machine/session_audit_test.go)。状态、schema、配置、
+主要回归在 [sessions_test.go](https://github.com/ckanner/flywheel/blob/main/internal/machine/sessions_test.go)、
+[session_workflow_test.go](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_workflow_test.go)、
+[session_fault_test.go](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_fault_test.go)、
+[session_guard_test.go](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_guard_test.go) 与
+[session_audit_test.go](https://github.com/ckanner/flywheel/blob/main/internal/machine/session_audit_test.go)。状态、schema、配置、
 诊断、CLI、各后端和 Node worker 另有各自的行为与故障测试。
 
 ## 最终本地验证

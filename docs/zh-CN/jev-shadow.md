@@ -1,21 +1,29 @@
 # 可选 JEV 影子评估
 
-本文描述 0.30.1 的能力。0.30.0 不包含此开关；安装前按 registry 核对发行可用性。
+[文档目录](../README.zh-CN.md) · [English](../en/jev-shadow.md) · 简体中文
+
+JEV 是可选实验：读取有界任务摘要，记录工作流建议，不决定生产任务的实际模式。
+日常使用先阅读[工作流指南](workflow.md)；需要为配置的 endpoint 收集比较证据时，
+再启用影子评估。
 
 ## 开关与行为
 
 JEV **默认关闭**。旧配置不含 `jev-shadow` 也等同关闭：不读 JEV 密钥、不发请求、不写影子记录，仍按原来的 Go 规则选 Quick／Full。它不是编排器必需的依赖。
 
-桌面进入 **Flywheel → 全局 / 项目配置 → 读取配置草稿 → JEV 影子评估（可选）**。选择关闭或开启，填好 endpoint，保存。也可在实际生效的 `flywheel.config.json` 中加入：
+桌面进入 **Flywheel → 配置**，选择全局或项目范围，再打开 **JEV 影子建议**。
+配置会自动读取；核对 endpoint 后保存。也可将下面的片段合并到实际生效的完整
+`flywheel.config.json` 中：
 
 ```json
-"jev-shadow": {
-  "enabled": false,
-  "endpoint": "https://merouter.play.one2x.ai/v1/systemone",
-  "model": "jev",
-  "expected-model": "jev-1.14.0",
-  "key-env": "MEROUTER_API_KEY",
-  "timeout-ms": 5000
+{
+  "jev-shadow": {
+    "enabled": false,
+    "endpoint": "https://merouter.play.one2x.ai/v1/systemone",
+    "model": "jev",
+    "expected-model": "jev-1.14.0",
+    "key-env": "MEROUTER_API_KEY",
+    "timeout-ms": 5000
+  }
 }
 ```
 
@@ -41,7 +49,7 @@ JEV **默认关闭**。旧配置不含 `jev-shadow` 也等同关闭：不读 JEV
 
 自动观察保存到 `~/.config/flywheel/shadow/<目标摘要>/<输入摘要>/`，目录 0700，文件 0600。日志会给出具体目录。`cases.json` 为有界摘要；`target.json` 固定 endpoint、模型、问题和策略；调用记录有原始概率、建议、实际基线、响应版本及用量。只有派发意图而没有终态时保持 unknown，同目录不会重发；更换目录意味着显式新实验。
 
-下面是已构建新源码的 CLI 用法。独立实验是显式操作，即使自动开关关闭仍可使用；它不会启动或改动任务。
+使用提供 `shadow prepare|run|report` 命令的 Flywheel 版本：独立实验是显式操作，即使自动开关关闭仍可使用；它不会启动或改动任务。
 
 ```bash
 # 为尚未运行或已停止的任务准备摘要，先审阅文件内容。
@@ -68,4 +76,4 @@ flywheel shadow report --input /tmp/jev-cases.json \
 
 这些阈值来自初步实验，**尚未生产校准**。报告将决策时快照、准备快照、旧任务回放、历史摘要和合成样本分别统计；旧任务当前模式不一定是最初的 Auto 决策。人工标签缺失或 provisional 时，不报告已校准误放率。现有 Auto 已使用准备阶段的契约事实，影子调用是新增费用，不能宣称省掉了一次原本不存在的分类调用。
 
-第一批[六个历史工作项](evaluation/jev-historical-provisional.json)引用已完成提交，实际模式均标 unknown，人工标签为 provisional。它适合验证接口和找反例，不能证明生产收益。升级为真正自动路由前，需要独立确认的决策时样本、误放率与弃权率评估；本版本不提供这种生产路由开关。
+第一批[六个历史工作项](../evaluation/jev-historical-provisional.json)引用已完成提交，实际模式均标 unknown，人工标签为 provisional。它适合验证接口和找反例，不能证明生产收益。升级为真正自动路由前，需要独立确认的决策时样本、误放率与弃权率评估；当前没有 JEV 生产路由开关。

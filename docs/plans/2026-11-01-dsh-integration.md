@@ -54,13 +54,13 @@
 
 ## 最终验证记录
 
-完整质量门禁、覆盖率、race、插件和跨进程链路结果见 [2026-11-01 验证记录](../validation/2026-11-01-results.md)。Mac 的 arm64 / amd64 已交叉编译；尚未代替用户完成实机安装、Seatbelt 与真实模型验收。Codex Pro adapter 的独立后续任务见 [交接上下文](../integrations/codex-pro-adapter-handoff.md)。
+完整质量门禁、覆盖率、race、插件和跨进程链路结果见 [2026-11-01 验证记录](../validation/2026-11-01-results.md)。Mac 的 arm64 / amd64 已交叉编译；尚未代替用户完成实机安装、Seatbelt 与真实模型验收。Codex Pro adapter 的独立后续任务见 [交接上下文](../archive/codex-pro-adapter-handoff.md)。
 
 ## 发布前复核与远端流程
 
 用户已明确授权提交、推送、创建 PR、自审、等待 CI 与必需检查通过后合并。该授权属于本轮仓库交付，不改变 Flywheel 引擎本身不自动管理远端 PR 的职责。PR／合并／Actions 的实际结果以远端记录为准；本地测试不能替代这些结果。
 
-复核补充了从子目录发现项目配置、Git 执行位／链接类型持久化、验收输出截断，以及 macOS 临时目录符号链接行为的检查。README、全部内嵌 skills、CHANGELOG 和 [Mac 入门教程](../getting-started.md) 同步到实际接口；默认后台启动使用 control 协议，单环文档明确 Execute 包含 L1、Review 单步不自动跨环。CI 将 Go、插件、跨进程与对应平台构建纳入远端验证。首轮覆盖率记录是历史快照，发布前完整复验由对应证据与 PR 记录确认。
+复核补充了从子目录发现项目配置、Git 执行位／链接类型持久化、验收输出截断，以及 macOS 临时目录符号链接行为的检查。README、全部内嵌 skills、CHANGELOG 和 [Mac 入门教程](../zh-CN/getting-started.md) 同步到实际接口；默认后台启动使用 control 协议，单环文档明确 Execute 包含 L1、Review 单步不自动跨环。CI 将 Go、插件、跨进程与对应平台构建纳入远端验证。首轮覆盖率记录是历史快照，发布前完整复验由对应证据与 PR 记录确认。
 
 ## 提交与 PR 阶段
 

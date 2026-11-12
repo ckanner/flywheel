@@ -1,5 +1,20 @@
 # Changelog
 
+This file records source changes. Published package identities and validation
+results are recorded separately in the [release runbook](docs/en/releasing.md)
+and [validation index](docs/validation/README.md). Historical entries retain
+their original language.
+
+## Unreleased
+
+- Make English the default root and DSH plugin README, with matching Simplified
+  Chinese editions and compatibility links from the previous English paths.
+- Organize bilingual guides, architecture, plans, validation records, and
+  archives behind documentation indexes; reconcile current workflow and
+  workbench descriptions with the implementation.
+- Adopt the MIT License for Flywheel source and all six npm packages, retain
+  third-party notices, and include both language editions in distributions.
+
 ## 0.31.0 — 项目归属与执行目录分离（发行候选）
 
 - Session 归属原仓库，执行、验收与交付仍绑定实际任务目录；提示词和界面分别展示两层位置。
@@ -10,7 +25,7 @@
 - 旧回执先按原身份核对；同项目的旧会话可继续使用，不重写历史头部。无法分离 workspace-write 沙箱根的后端明确拒绝该权限组合，不静默扩大权限。
 - 插件测试按文件串行运行，避免并发启动的测试进程挤占用于故障注入的真实截止时间；未放宽断言或 timeout。
 
-当前为本地候选，尚未提交、发布或安装；0.30.2 正式发行不包含本轮修复。
+本节记录 0.31.0 源码变更；是否已上传、提升 latest 或安装，以对应发行记录为准。0.30.2 不包含本节变更。
 
 ## 0.30.2 — 画布优先的流程工作台
 
@@ -99,7 +114,7 @@
 
 ## 0.28.0
 
-Codex Pro 默认接入。安装和迁移见 [配置指南](docs/configuration.md#codex-pro-默认与旧配置迁移)；源码、测试、CI 和 registry 发布证据分别记录，不用离线通过代替用户 Mac 实测。
+Codex Pro 默认接入。安装和迁移见 [配置指南](docs/zh-CN/configuration.md#codex-pro-与旧配置迁移)；源码、测试、CI 和 registry 发布证据分别记录，不用离线通过代替用户 Mac 实测。
 
 - 新增 `codex-pro` Go driver 与独立 Node worker，直接使用 `dsh-subagent-codex-pro@0.8.0` 的公开 machine API。默认 hard 路由使用此插件；DSH Flash 默认执行、Kimi CLI 规划／前端、DSH 原生 GPT 评审保持原角色。旧 `codex` CLI 仅作为用户显式配置的兼容入口。
 - 完整传递模型、effort、目录、权限、取消与 deadline。每次使用 ephemeral 新会话；结果必须同时满足外层 worker 和插件终态／清理要求，正常 app-server 主动终止不冒充调用方取消。
@@ -139,7 +154,7 @@ Codex Pro 默认接入。安装和迁移见 [配置指南](docs/configuration.md
 
 ## 0.27.0
 
-DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录对应版本的源码变更，不单独证明 npm 已发布或用户 Mac 已验收；用 `npm view @ckanner/flywheel version` 核对实际发行。旧 0.22.1 不包含本节新增安装和 DSH 接口。安装与迁移见 [入门教程](docs/getting-started.md)。
+DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录对应版本的源码变更，不单独证明 npm 已发布或用户 Mac 已验收；用 `npm view @ckanner/flywheel version` 核对实际发行。旧 0.22.1 不包含本节新增安装和 DSH 接口。安装与迁移见 [入门教程](docs/zh-CN/getting-started.md)。
 
 - **启动期间的停止快照**：修复真实子进程已经运行、`Cmd.Start` 尚未返回登记时，`KillActiveChildren` 可能取得空快照的竞态；启动与登记由同一把快照锁保护，失败路径也释放锁。新增真实进程的确定性回归，原验收停止测试及 3 秒期限保持不变。正常 machine SIGTERM 路径已有 context 取消兜底，本修复补足独立 kill snapshot 的已启动进程契约。
 - **npm 一条命令安装**：新增 `npx -y @ckanner/flywheel@latest install` 与 `flywheel setup`，全局安装精确同版 CLI、平台二进制、worker、10 个内嵌 skills，再通过已有桌面 DSH 的正式接口注册并核验插件。支持 prefix／project／DSH 命令／profile、显式跳过、超时和 JSON 输出；普通 npm 包安装不通过 postinstall 修改用户目录。
@@ -175,4 +190,4 @@ DSH 桌面集成、可靠交付闭环与 npm 一条命令安装。此节记录�
 - **配置四级发现链**：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（首装自动物化，可直接编辑）→ 内嵌法定表兜底。
 - watchdog 交互钩子（协议驱动）、multimodal 执行路由、`FLYWHEEL_CONFIG` 覆盖。
 
-更早历史见 [历史设计](docs/design-history-v0.24.md) 的变更记录。
+更早历史见 [历史设计](docs/archive/design-v0.24.md) 的变更记录。

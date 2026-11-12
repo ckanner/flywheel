@@ -1,18 +1,18 @@
 # 可选 Claude Code Pro 后端
 
-[English](en/claude-code-pro.md) · [配置指南](configuration.md)
+[文档目录](../README.zh-CN.md) · [English](../en/claude-code-pro.md) · 简体中文
 
-Flywheel 现在可通过 `harness: "claude-code-pro"` 调用
+Flywheel 通过 `harness: "claude-code-pro"` 调用
 [`dsh-subagent-claude-code-pro`](https://github.com/ckanner/dsh-subagent-claude-code-pro)
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-**源码与发行边界：**此接入要求插件 **0.4.0 / machine protocol 1**；0.3.1 只有
-DSH 工具入口，0.3.2 只有旧 machine 契约，均不满足新 lifecycle/recovery 接口。0.4.0 是本次配套源码版本，不能据此推断 npm 已
-发布。Flywheel 0.30.0 已发布；Claude 0.4.0 仍按下面的可选依赖流程准备。
-合并、发布及用户安装各有独立状态。现有默认 loop／route 没有切换到 Claude。
+适配器要求 **`dsh-subagent-claude-code-pro@0.4.0`**、machine protocol 1
+及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
+接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
+发行流程见[发布指南](releasing.md)。
 
-## 1. 准备依赖
+## 准备依赖
 
 需要 Node.js 22.18.0 或更高、macOS 或 Linux，以及可被启动引擎的进程找到的
 `claude` CLI。用户按 CLI 自身流程完成登录；Flywheel 不复制登录数据。
@@ -22,8 +22,8 @@ Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精�
 让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.4.0`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
-正式发布后，将该精确版本装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
-发布前可从已审查的插件源码运行 `npm pack --ignore-scripts`，把产生的真实 `.tgz`
+registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
+验证明确审查过的源码候选时，可从插件源码运行 `npm pack --ignore-scripts`，把产生的真实 `.tgz`
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
 
@@ -37,9 +37,9 @@ Go 只传递白名单基础环境和所选 channel 明确注入的凭证；没�
 渠道不自动继承外部 Anthropic API key。显式凭证只通过受支持的环境名进入插件，
 环境凭证值不主动序列化到请求或 diagnostics；CLI 返回的文本按实际结果保留。
 
-## 2. 先定义模型，按需绑定阶段
+## 先定义模型，按需绑定阶段
 
-完整的 [profiles 模板](../templates/flywheel.profiles.example.json) 具有未引用的
+完整的 [profiles 模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json) 具有未引用的
 `claude-sonnet`。以下是加入自己现有完整配置的片段，不是替换全部配置的文件：
 
 ```json
@@ -66,7 +66,7 @@ Go 只传递白名单基础环境和所选 channel 明确注入的凭证；没�
 每个模型／CLI 版本都支持它；拒绝会原样保留，不静默更换模型或档位。CLI 没有回显
 有效 effort 时只记录请求值。
 
-未来决定用途时，让所需的 `loops.plan/review/judge/intake/garden` 或 Execute 的
+让所需的 `loops.plan/review/judge/intake/garden` 或 Execute 的
 `routes.*` 引用该 profile。例如，把某个绑定设为 `{"profile":"claude-sonnet"}`。
 这只是配置能力，不是默认阶段分配建议。现有绑定有显式 `provider` 时需同时清掉；
 `provider` 是 DSH 原生 LLM adapter 字段，不能填 `subagent_claude_code` 或
@@ -86,10 +86,11 @@ flywheel-claude-code-pro-worker --doctor
 未绑定的 profile 不要求安装 Claude；一旦绑定，doctor 会检查 worker、精确插件接口
 和 CLI。上述检查不发模型请求，不能证明账号额度或真实推理已通过。
 
-## 3. 权限与会话
+## 权限与会话
 
-首版要求显式 `permissions.mode:full-access`，映射为 Claude 原生
-`bypassPermissions` 与非交互调用。plan／acceptEdits 等原生审批模式不等于 OS 的
+适配器要求所选绑定明确采用完全权限，映射为 Claude 原生 `bypassPermissions`
+与非交互调用。可以全局设置 `permissions.mode:"full-access"`，也可以使用支持的
+阶段覆盖，具体见[配置指南](configuration.md)。plan／acceptEdits 等原生审批模式不等于 OS 的
 read-only／workspace-write 沙箱，因此 role-based 请求会在启动前拒绝。
 评审、规划的角色职责及候选前后检查仍有效；完全权限不允许通过修改验收取得 pass。
 
@@ -103,6 +104,11 @@ Intake／Garden 可选此后端，但继续执行独立建议调用，不拥有�
 确定发生在 machine 调用前的依赖缺失／参数拒绝被记录为未派发与零消耗；修好环境后
 可继续。已经进入调用却没有可信结果时，即使进程已清理，仍须停止而不能自动重放。
 
+项目归属、执行目录选择与 worktree 约定见[工作流指南](workflow.md)。这些位置仍属于
+调用身份；修改目录不会授权重放尚未确认的调用。
+
+### 持久化恢复
+
 插件在派发 Claude 前建立独立 supervisor、durable journal 和 native guardian。
 Go 保存并确认 intent/possible 检查点后才允许提交 prompt。worker 被强制终止时，
 supervisor 取消未确认步骤并收束原生进程，将完整终态落盘；正常调用也等待 guardian
@@ -111,9 +117,9 @@ supervisor 取消未确认步骤并收束原生进程，将完整终态落盘；
 Claude 的 init 只能在 prompt 后观察，不提供预派发 thread-ready 或真实 turn-accepted；
 终态仍须检查实际模型、目录与权限。supervisor 自身丢失、journal 损坏或缺少原候选
 检查点时仍可阻断，不能承诺任意崩溃都继续交付。详见[恢复与质量](session-recovery.md)。
-真实账号质量、缓存率和性能收益须另行评估，离线成功不证明这些结果。
+真实账号质量、缓存率和性能收益须另行[配对评估](session-evaluation.md)，离线成功不证明这些结果。
 
-## 4. 用量与成本
+## 用量与成本
 
 完整 CLI usage 中 input_tokens 不含缓存；Flywheel 总输入加上 cache read 和 cache
 creation，再加 output 得到总 token。缺失计数保持 partial/unknown，不能补零。

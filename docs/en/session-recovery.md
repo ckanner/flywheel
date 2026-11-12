@@ -1,6 +1,27 @@
 # Interrupted calls and context quality
 
-This guide describes the P3/P4 source implementation. P1/P2 role-history continuation and saved-receipt consumption remain available. The new public contracts require **Codex Pro 0.9.0** or **Claude Code Pro 0.4.0**. Source readiness, npm publication, account access, and measured task outcomes are separate evidence.
+[Documentation](../README.md) · English · [简体中文](../zh-CN/session-recovery.md)
+
+Flywheel separates reuse of a role’s conversation history from recovery of an
+interrupted invocation. Fresh and scoped histories both retain invocation safety
+checks. Durable public-journal recovery requires **Codex Pro 0.9.0** or
+**Claude Code Pro 0.4.0**; DSH and Kimi retain their own supported recovery paths.
+
+## Resume an existing task
+
+Use the original task ledger and integration directory. Read its status, then
+request continuation through the normal engine entry point:
+
+```sh
+flywheel control status --cwd /repo --task-dir /repo/docs/my-task
+flywheel control start --cwd /repo --task-dir /repo/docs/my-task
+```
+
+The engine reconciles earlier calls before making another model request. A
+`pending` or `unknown` outcome can keep the task blocked; preserve its journals
+and diagnostics rather than deleting state or selecting a fresh session to
+force progress. A status response describes current facts, not permission to
+replay an unresolved call.
 
 ## Ownership
 
@@ -44,6 +65,10 @@ At `cleanup-confirmed`, before acknowledging, Go captures the post-call candidat
 
 A durable receipt without the Go candidate checkpoint may reconcile trustworthy usage while leaving business execution blocked. A proven pre-dispatch rejection may be treated as unexecuted only with confirmed cleanup and an unchanged original candidate and guard. Review/Judge contract and candidate checks remain mandatory.
 
+### Shared-checkout execution
+
+For shared-checkout execution, an Execute receipt fingerprints its declared write scope and binds that scope into the session identity. Independent peer changes do not discard a known invocation; changes within its own scope still reject stale receipts. L1, independent Review and collective delivery validate the entire combined candidate. Scoped receipts neither prove batch completion nor bypass unknown dispatch, outcome or cleanup.
+
 ## Accounting and budgets
 
 Consumed invocations do not create another model request or call count. If an unknown invocation later yields trusted usage, Go appends an auditable correction tied to the same call, provider, original day, and lifetime totals. Recovery does not recreate an expired daily bucket.
@@ -54,7 +79,7 @@ Unknown is not zero. Rebuilds, role overrides, new workers, and Quick-to-Full tr
 
 ## Bounded context rebuilds
 
-`sessions.roles` can override fresh/scoped independently for Plan, Execute, Review, and Judge. Other roles inherit the global mode. See [session configuration](configuration.md#session-policy-history-reuse-and-invocation-safety).
+`sessions.roles` can override fresh/scoped independently for Plan, Execute, Review, Judge, and judge-panel. Other roles inherit the global mode. See [session configuration](configuration.md#session-policy-history-reuse-and-invocation-safety).
 
 Optional `sessions.quality` supports:
 
@@ -68,16 +93,14 @@ All thresholds default to disabled. They may rebuild only after the previous cal
 
 A rebuild records its reason and generation and hands over current contracts, workspace, valid reports, verification, and structured feedback. It never imports another role's private transcript or issues an unmetered model-compression call. A returning Reviewer must still inspect the entire current candidate.
 
-## Paired P4 evaluation
+## Paired evaluation
 
 The repository tools pin source and use an independent frozen oracle to compare fresh, Execute-only scoped, and role-scoped policies. The corpus covers first-pass success, L1 repair, Review return, long context, stop/resume, and configuration changes, with repeated trials and rotated strategy order. Reports retain quality, omissions, regressions, repair rounds, repeated findings, elapsed time, known/unknown tokens and cache use, rebuild reasons, and recovery failures. Actual state evidence determines whether a scenario occurred.
 
-The offline native fixture exercises the real Go engine, worker v3, and public plugin API. It validates the evaluator and safety behavior, not model quality, cache rates, or savings. Real paired results require an available native CLI, account, permissions, and model. Defaults remain unchanged until that evidence exists. See the [configuration guide](configuration.md) and the help for `scripts/prepare-session-evaluation.js` and `scripts/evaluate-sessions.js`.
+The offline native fixture exercises the real Go engine, worker v3, and public plugin API. It validates the evaluator and safety behavior, not model quality, cache rates, or savings. Real paired results require an available native CLI, account, permissions, and model. Defaults remain unchanged until that evidence exists. See the [paired evaluation guide](session-evaluation.md) for commands and report interpretation.
 
 ## Retention and operation
 
 Recovery journals have private permissions, exclusive creation, identity/digest checks, and atomic persistence. Existing directories never authorize redispatch. They are task audit data and may contain model output and diagnostics; keep their access and backups with the task. Do not copy credentials or delete uncertain evidence during upgrades.
 
 There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit resolution of an unknown result. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.
-
-For shared-checkout execution, an Execute receipt fingerprints its declared write scope and binds that scope into the session identity. Independent peer changes do not discard a known invocation; changes within its own scope still reject stale receipts. L1, independent Review and collective delivery validate the entire combined candidate. Scoped receipts neither prove batch completion nor bypass unknown dispatch, outcome or cleanup.

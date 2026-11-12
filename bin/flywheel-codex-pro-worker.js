@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 ckanner. SPDX-License-Identifier: UNLICENSED
+// Copyright (c) 2026 ckanner. SPDX-License-Identifier: MIT
 "use strict";
 
 const { loadCodexProWorkerPath, runChild } = require("./runtime.js");

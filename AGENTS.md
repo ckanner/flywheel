@@ -128,11 +128,16 @@ implementation trivia to chase the number.
 
 ## Language
 
-Keep the Chinese README, design documents and SKILL.md bodies. Maintain the
-English README (`README.en.md`), essential user guides (`docs/en/`) and DSH
-plugin README alongside their Chinese counterparts. Changes to installation,
-configuration, workflow or runtime boundaries must update both languages;
-historical design and validation records do not need duplicate translations.
+Use English as the default root and plugin README (`README.md`), with paired
+`README.zh-CN.md` translations. Keep `README.en.md` only as a compatibility
+link. Maintain user and maintainer guides in parallel `docs/en/` and
+`docs/zh-CN/` directories, linked from the documentation indexes. Update both
+languages when installation, configuration, workflow or runtime boundaries
+change. Keep the authoritative `docs/design.md` and SKILL.md bodies in
+Chinese; historical plans, reviews and validation records do not need duplicate
+translations. Integrate current behavior into its existing section; put release
+changes in CHANGELOG.md and dated evidence in docs/validation/, not as
+unstructured additions to guide introductions or endings.
 Code comments mix per existing convention: English for mechanics, Chinese for
 design-document references.
 

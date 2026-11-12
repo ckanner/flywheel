@@ -5,8 +5,8 @@
 最初的文档提交只记录设计；同一 PR 的后续实现加入了统一 `flywheel-task` 宿主入口、
 `control launch`、Auto／Quick／Full、单向升级，以及 DSH 会话的具体任务关联。
 这表示源码已实现第一阶段，不表示 npm 已发布或用户 Mac 已完成实机验收。
-现行行为、字段与可复制命令以 [系统设计](../design.md)、[工作流指南](../workflow.md)、
-[配置与恢复规则](../configuration.md#工作流策略与恢复) 和实际 schema 为准。
+现行行为、字段与可复制命令以 [系统设计](../design.md)、[工作流指南](../zh-CN/workflow.md)、
+[配置与恢复规则](../zh-CN/configuration.md#工作流策略与恢复) 和实际 schema 为准。
 本文下方保留提案时的背景、草案表达与验收目标；后续团队、并行和附件能力仍按分期推进。
 第一阶段已执行的检查及未验范围见 [2026-11-07 验收记录](../validation/2026-11-07-adaptive-workflow.md)。
 
@@ -53,8 +53,8 @@ Review、Judge 四次阶段 Agent 调用**。宿主准备不计入这四次；�
 不改变流程长度。Intake、Garden 是可选外围模块，不应算作每个任务的必经环节。
 
 现有 `--only execute` 只完成执行与 L1 子环，不包含完整评审和交付，不能作为 Quick
-的替代入口。依据见 [当前主循环](../../internal/machine/run.go)、
-[Plan 与里程碑验证](../../internal/machine/steps_plan.go) 及 [工作流指南](../workflow.md)。
+的替代入口。依据见 [当前主循环](https://github.com/ckanner/flywheel/blob/main/internal/machine/run.go)、
+[Plan 与里程碑验证](https://github.com/ckanner/flywheel/blob/main/internal/machine/steps_plan.go) 及 [工作流指南](../zh-CN/workflow.md)。
 
 ## 3. oh-my-openagent 的借鉴点
 
@@ -256,8 +256,8 @@ Quick 的最终 Review 默认使用现有 Review 绑定，只扩展评审输入�
 | Full Plan、Judge | 沿用各自已配置绑定 |
 
 这是复用现有配置的方案，不代表某个账号已经可用；不新增智谱/Z.AI 订阅、不自动
-跨渠道付费降级，也不在本期改变 `high` 等推理等级。依据见 [模型策略](../model-policy.md)
-和 [默认模板](../../templates/flywheel.config.example.json)。
+跨渠道付费降级，也不在本期改变 `high` 等推理等级。依据见 [模型策略](../zh-CN/model-policy.md)
+和 [默认模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)。
 
 Go 是编排主体，DSH 当前对话是准备与控制入口；无需一个长时间存活的父模型会话
 监督全部任务。Execute 与 Review 每次使用新会话，重试保留磁盘产物但不复用执行者

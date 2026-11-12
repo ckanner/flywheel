@@ -3,8 +3,8 @@
 2026-11-07. Original design proposal (PR #30 changed documentation only), replacing
 the rule that every Execute or Review invocation must start a fresh session.
 This document retains the original baseline analysis and full phased plan.
-**Implementation note:** P1/P2 normal-terminal continuation and saved-receipt recovery are implemented. P3 adds public lifecycle v1, durable acknowledgements, supervisor journals, and exact read-only recovery. P4 adds role policy, bounded quality rebuilds, and pinned-source paired evaluation with an independent oracle. The [current design](../../design.md), [configuration](../configuration.md), and [recovery guide](../session-recovery.md) define the effective contracts. Valid real-account quality, cache, and performance results remain unavailable; offline success does not substitute for them. The baseline analysis and phased proposal below are historical..
-中文：[按任务、角色与运行事实管理会话](../../plans/2026-11-07-session-lifecycle.md).
+**Implementation note:** P1/P2 normal-terminal continuation and saved-receipt recovery are implemented. P3 adds public lifecycle v1, durable acknowledgements, supervisor journals, and exact read-only recovery. P4 adds role policy, bounded quality rebuilds, and pinned-source paired evaluation with an independent oracle. The [current design](../design.md), [configuration](../en/configuration.md), and [recovery guide](../en/session-recovery.md) define the effective contracts. Valid real-account quality, cache, and performance results remain unavailable; offline success does not substitute for them. The baseline analysis and phased proposal below are historical..
+中文：[按任务、角色与运行事实管理会话](2026-11-07-session-lifecycle.md).
 
 ## 1. Decision
 
@@ -53,8 +53,8 @@ receipts. It does not need to create a DSH parent model and ask that model to ca
 
 The original decision was based on the inspected DSH rc.5 SDK and plugin
 interface constraints; it is not a claim about every future DSH version. See the
-[original integration plan](../../plans/2026-11-03-codex-pro-default.md) and
-[validation record](../../validation/2026-11-03-codex-pro-default.md).
+[original integration plan](2026-11-03-codex-pro-default.md) and
+[validation record](../validation/2026-11-03-codex-pro-default.md).
 
 | Dimension | Choice | Meaning |
 |---|---|---|

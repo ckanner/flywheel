@@ -1,21 +1,31 @@
 # Optional JEV shadow evaluation
 
-This describes 0.30.1 functionality. Version 0.30.0 does not include the switch; verify registry availability before upgrading.
+[Documentation](../README.md) · English · [简体中文](../zh-CN/jev-shadow.md)
+
+JEV is an optional experiment that observes a bounded task summary and records
+workflow advice. It does not choose the production workflow. Start with the
+[normal workflow](workflow.md); enable shadow evaluation only when collecting
+comparison evidence for a configured endpoint.
 
 ## Enable or disable
 
 JEV is **off by default**. Missing `jev-shadow` in older configuration also means off: no credential lookup, network requests or shadow records. Existing Go Quick/Full selection stays in charge.
 
-In the desktop, open **Flywheel → Global/project configuration → Read draft → JEV shadow evaluation (optional)**, configure the endpoint and save. Alternatively add this section to the effective `flywheel.config.json`:
+In the desktop, open **Flywheel → Configuration**, choose the global or project
+scope, then open **JEV shadow advice**. Configuration loads automatically; review
+the endpoint and save. Alternatively merge this section into the effective
+complete `flywheel.config.json`:
 
 ```json
-"jev-shadow": {
-  "enabled": false,
-  "endpoint": "https://merouter.play.one2x.ai/v1/systemone",
-  "model": "jev",
-  "expected-model": "jev-1.14.0",
-  "key-env": "MEROUTER_API_KEY",
-  "timeout-ms": 5000
+{
+  "jev-shadow": {
+    "enabled": false,
+    "endpoint": "https://merouter.play.one2x.ai/v1/systemone",
+    "model": "jev",
+    "expected-model": "jev-1.14.0",
+    "key-env": "MEROUTER_API_KEY",
+    "timeout-ms": 5000
+  }
 }
 ```
 
@@ -31,7 +41,7 @@ Advice never changes Quick/Full, routing, permissions, sessions, acceptance or P
 
 Automatic records live under `~/.config/flywheel/shadow/<target-digest>/<input-digest>/` (0700 directories, 0600 files). Logs identify the directory. `cases.json` holds the bounded summary; `target.json` pins endpoint, model, questions and policy. Call records retain probabilities, suggestions, actual baseline, response model and usage. An intent without a terminal remains unknown and is not replayed. A different directory represents an explicit new experiment.
 
-With a binary built from the new source:
+With a Flywheel version that provides `shadow prepare|run|report`:
 
 ```bash
 flywheel shadow prepare --task-dir docs/my-task > /tmp/jev-cases.json
@@ -54,4 +64,4 @@ Eight atomic Noul questions use fixed experimental thresholds: every positive co
 
 This policy is **not production calibrated**. Reports separate decision-time, prepared, replay, historical and synthetic cases, and provisional versus confirmed labels. Current historical state need not be its initial Auto decision. Missing/provisional labels do not establish a false-Quick rate. Auto already uses preparation-time contract evidence; this experiment adds usage rather than removing a classifier call that never existed.
 
-The [six historical summaries](../evaluation/jev-historical-provisional.json) reference completed commits, with unknown actual modes and provisional labels. They test the interface and expose counterexamples, not production benefits. Real automatic routing would require independently confirmed decision-time samples and measured false-Quick/abstention rates. This version has no production routing switch.
+The [six historical summaries](../evaluation/jev-historical-provisional.json) reference completed commits, with unknown actual modes and provisional labels. They test the interface and expose counterexamples, not production benefits. Real automatic routing would require independently confirmed decision-time samples and measured false-Quick/abstention rates. There is no production routing switch for JEV.

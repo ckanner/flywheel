@@ -1,6 +1,9 @@
 # Codex Pro adapter 0.7.0：固定版本审计与下一 session 交接
 
-> **历史审计，已由 0.8.0 接入替代。** 2026-11-03 已核验 [v0.8.0](https://github.com/ckanner/dsh-subagent-codex-pro/releases/tag/v0.8.0) 发布包及公开 machine API；Flywheel 0.28.0 默认 hard 路由改为 `codex-pro`。当前实现、迁移、完整策略事后检查限制见 [配置指南](../configuration.md#codex-pro-默认与旧配置迁移) 与 [本轮计划](../plans/2026-11-03-codex-pro-default.md)。下文保留 0.7.0 的当时证据，不能据此断言新版仍存在同样阻断。
+> 历史归档：本文保留当时的设计和交接背景，不代表当前默认行为。
+> 当前规范见[系统设计](../design.md)，使用指南见[文档索引](../README.zh-CN.md)。
+
+> **历史审计，已由 0.8.0 接入替代。** 2026-11-03 已核验 [v0.8.0](https://github.com/ckanner/dsh-subagent-codex-pro/releases/tag/v0.8.0) 发布包及公开 machine API；Flywheel 0.28.0 默认 hard 路由改为 `codex-pro`。当前实现、迁移、完整策略事后检查限制见 [配置指南](../zh-CN/configuration.md#codex-pro-与旧配置迁移) 与 [本轮计划](../plans/2026-11-03-codex-pro-default.md)。下文保留 0.7.0 的当时证据，不能据此断言新版仍存在同样阻断。
 
 核对日期：2026-11-01。审计对象为 [`ckanner/dsh-subagent-codex-pro@21fd7acccf1f5989b14fecdc1957559eea6914f8`](https://github.com/ckanner/dsh-subagent-codex-pro/commit/21fd7acccf1f5989b14fecdc1957559eea6914f8)，[package version `0.7.0`](https://github.com/ckanner/dsh-subagent-codex-pro/blob/21fd7acccf1f5989b14fecdc1957559eea6914f8/package.json)。**启动 deadline、resume 参数传递和内部运行收据已有实质进展；公开结果、权限、用量完整性和跨宿主进程所有权仍有接入阻断。Flywheel 尚未消费这个 external adapter。**
 
@@ -18,7 +21,7 @@
 | Flywheel `harness: dsh` | 独立 SDK worker 调用注册的原生 LLM provider，每次新 session | 当前用于 Flash／GPT 原生 agent，不把 external subagent 当成 LLM provider |
 | `dsh-subagent-codex-pro` | DSH external subagent provider 与 `subagent_codex` 工具，底层运行 Codex app-server | 先完成公开契约，再单独增加消费者 |
 
-Flywheel 的 `provider` 表示 DSH LLM adapter，`channel` 表示本配置的账号／凭证／计费渠道。`codex-pro` 是 external subagent provider；仅把 `provider` 或 `channel` 改成该名字不能接通它。相关入口：[driver 接口](../../internal/drivers/drivers.go)、[独立 Codex driver](../../internal/drivers/codex.go)、[原生 DSH driver](../../internal/drivers/dsh.go)、[worker 协议](../../plugins/dsh/PROTOCOL.md)。
+Flywheel 的 `provider` 表示 DSH LLM adapter，`channel` 表示本配置的账号／凭证／计费渠道。`codex-pro` 是 external subagent provider；仅把 `provider` 或 `channel` 改成该名字不能接通它。相关入口：[driver 接口](https://github.com/ckanner/flywheel/blob/main/internal/drivers/drivers.go)、[独立 Codex driver](https://github.com/ckanner/flywheel/blob/main/internal/drivers/codex.go)、[原生 DSH driver](https://github.com/ckanner/flywheel/blob/main/internal/drivers/dsh.go)、[worker 协议](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md)。
 
 **Go 继续拥有契约、状态、运行 lease、deadline、重试、预算、worktree、验证、提交、合并和停止。** Adapter 只执行一次有边界的委派并返回可验证结果；不写 Flywheel 的 `state.json`，不自行重试整个工作单元，不批准自己的实现通过验收，也不替 Go 提交或合并。
 

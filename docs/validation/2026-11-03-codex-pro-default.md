@@ -69,7 +69,7 @@ sha512-hbWPMkjWPsY8DDhcUIzBBCNR3TZexeOSSv9yP1zzIiyP2NvHfedfNkHz2ubreUyyonst+/539
 
 用户进一步要求完善并合并 PR，同时确认各 Loop 和 skills 的 worktree 规范。复核发现工作流文档已有说明，但技能入口尚未覆盖。因此补齐全部 10 个内置 skills：准备时建立或复用任务集成 worktree；启动、恢复和单环执行从任务路径解析同一物理仓库根与分支；packet 候选目录仍交给引擎管理。Status／Stop 只使用原任务路径，不受开发分支检查阻碍。入口遵循既有工作区选择与授权，不重复询问，也不迁移或重置已有 state。
 
-此次只修改 skills 和文档，没有改变引擎的 worktree 回退行为或增加全局强制隔离开关。`flywheel-new`／`run`／`exec` 递增为 1.7.0，其余七个 skills 为 1.6.0。各 Loop 的目录、确定性 verify 与模型 Judge 的区别、CLI／GUI 不自动执行 skill 正文的边界，均写入 [工作流](../workflow.md#51-skills-入口与各-loop-的工作目录)。
+此次只修改 skills 和文档，没有改变引擎的 worktree 回退行为或增加全局强制隔离开关。`flywheel-new`／`run`／`exec` 递增为 1.7.0，其余七个 skills 为 1.6.0。各 Loop 的目录、确定性 verify 与模型 Judge 的区别、CLI／GUI 不自动执行 skill 正文的边界，均写入 [工作流](../zh-CN/workflow.md#各阶段的执行目录)。
 
 | 追加检查 | 结果 |
 |---|---|

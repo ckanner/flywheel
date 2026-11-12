@@ -1,67 +1,89 @@
-# Install and run your first Flywheel task
+# Getting started
 
-[English README](../../README.en.md) · [中文](../getting-started.md) · [Workflow](workflow.md) · [Configuration](configuration.md)
+[Documentation](../README.md) · English · [简体中文](../zh-CN/getting-started.md)
 
-This guide covers **Flywheel 0.28.5**: npm installation, the DSH desktop and workers, configuration, preflight, a small task, and recovery. The checked desktop interfaces are **DSH Mac 0.2.1-rc.5 and 0.2.2-rc.1**, both declared from Flywheel 0.28.4. DSH 0.2.2 itself requires Node 24.9 or later; use its official desktop-supplied CLI. Real desktop UI, macOS permissions, authentication, and model inference still need testing on the intended machine.
+Install Flywheel, connect the backends you intend to use, then run a small task.
+This guide follows the current repository. Check the installed version and the npm
+version you choose; a merged change does not update an existing installation.
+Keep the CLI, platform packages, and DSH plugin at one version.
 
-Before installing, check `npm view @ckanner/flywheel version`. Continue with these instructions once the registry has the version you intend to use. A merged source change or GitHub Release does not establish npm publication, and an older installed release may not include these interfaces.
-
-**Adaptive workflow in current source:** `/flywheel-task`, `control launch`, Auto/Quick/Full, and automatic DSH task association require a CLI, plugin, and skills containing this implementation. Check `flywheel control launch --help`; the earlier 0.28.5 version label alone does not establish that these additions are installed.
-
-The top-level **Flywheel conversation view** below is available from `0.28.1`. Version `0.28.0` uses the composer popup; upgrade the CLI and desktop plugin to the same new version. Merging source or reloading the old version does not change that layout. CLI and task-directory interfaces remain the same.
-
-Subscription preset migration and `permissions.mode` are available from **0.28.2**. Upgrades preserve existing configuration; preview `flywheel config migrate --preset subscriptions`, review the model bindings and full-access policy, then explicitly apply it with `--apply` and a backup.
-
-**Ordering from 0.28.5:** the external Flywheel conversation view follows the built-in Statistics view. DSH still owns view selection and overflow navigation.
-
-**Fixes in 0.28.3:** the `deepseek-account` default and the current session directory when the project path is omitted. Version 0.28.2 still uses `deepseek-official` and the original directory. Check the registry version before installing. Upgrades preserve configuration; adopting the account preset requires explicit migration.
-
-**Optional Claude backend:** the default installation does not require Claude. Selecting `claude-code-pro` requires the companion 0.4.0 plugin in the worker's dependency tree and an installed/authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md) for configuration and source-candidate boundaries.
-
-The reviewed Codex Pro 0.9.0 source package is bundled with this Flywheel candidate; installation does not assume an unpublished registry version exists. See [provenance](../../plugins/dsh/vendor/README.md), [recovery](session-recovery.md), and [paired evaluation](session-evaluation.md).
+For the complete path through task branches and PR review, see [Workflow](workflow.md).
 
 ## 1. Prepare the environment
 
-| Requirement | Why it is needed |
+| Requirement | Purpose |
 |---|---|
-| Git with your commit identity | Worktrees and local delivery commits |
+| Git with a configured commit identity | Worktrees and local delivery commits |
 | Node.js 22.18.0 or later and npm | Installer, launchers, and JavaScript workers |
 | DSH Mac and its desktop-supplied `dsh` command | Desktop plugin management and DSH SDK execution |
-| Authenticated Kimi CLI | Default Plan, frontend execution, and optional Garden |
-| Codex executable and existing login | The hard route's Codex Pro plugin runs Codex app-server |
+| Authenticated Kimi CLI | Default Full Plan, frontend execution, and optional Garden |
+| Codex executable and existing login | The hard execution route uses Codex Pro and Codex app-server |
 | DeepSeek and ChatGPT providers in the DSH SDK profile | Default execution, independent Review, and Judge |
-| Go 1.27 or later | Only the Go example below and source builds; not npm binary installation |
+| Go 1.27 or later | Only the disposable Go example and source builds; not npm binary installation |
 
-Check command locations and versions with `git --version`, `node --version`, `npm --version`, `command -v dsh`, `dsh --version`, `kimi --version`, and `codex --version`. Check the desktop version in About as well. Use the respective tools' documented installation and login flows.
+The plugin declares DSH `0.2.1-rc.5` and `0.2.2-rc.1` compatibility. DSH 0.2.2 has
+its own Node 24.9 minimum; use the official desktop-supplied CLI. Check actual command
+locations and versions before setup:
 
-The defaults reuse the Kimi subscription, ChatGPT subscription, and existing signed-in, funded DeepSeek account. DeepSeek API access is an explicitly configured alternative. Flywheel does not log in, copy credentials, or replace the desktop application. Full needs its configured Plan, Execute, Review, and Judge backends. A qualified Quick task needs its actual execution route and independent Review; Plan and Judge are recorded as inapplicable. Unused execution routes do not become runtime requirements.
+```sh
+git --version
+node --version
+npm --version
+command -v dsh
+dsh --version
+kimi --version
+codex --version
+```
+
+Use each backend's normal installation and login flow. Flywheel does not sign in,
+copy credentials, or replace the desktop application. Full needs its configured
+Plan/Execute/Review/Judge backends. A qualified Quick task needs its actual execution
+route and independent final Review; an upgrade to Full requires the additional stages.
+Unused execution routes do not become task runtime requirements.
+
+Claude is optional. Selecting `claude-code-pro` additionally requires the matching
+0.4.0 companion package in the worker's dependency tree and an installed,
+authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md).
 
 ## 2. Install
 
 From a terminal that can find the desktop's `dsh` command:
 
 ```sh
+npm view @ckanner/flywheel version
 npx -y @ckanner/flywheel@latest install
+flywheel version
 ```
 
-For an agent consuming a single JSON result, use the same command with `--json`. The installer installs its exact version globally, resolves the platform binary and workers, installs that version's bundled skills (eleven in current source), creates global configuration only if absent, records a GUI launcher, registers the matching DSH plugin, and runs local diagnostics.
+Use a published exact version in place of `@latest` when pinning an installation.
+Add `--json` to the install command when an agent needs one structured result.
+The installer:
 
-`ok:true` means the installation steps completed. `ready:true` means that local doctor found no blocker. For example, missing Kimi can produce `ok:true, ready:false` with the reason in `diagnostic.checks`. Neither result proves real authentication or inference. A failed step retains its partial results so the actual cause can be corrected before retrying.
+1. Installs its exact version globally and resolves the matching platform binary and workers.
+2. Installs the bundled skills and creates global configuration only when absent.
+3. Records an absolute GUI launcher and the installation-time tool paths.
+4. Registers the same Flywheel plugin version with the selected DSH profile.
+5. Runs local diagnostics and reports completed steps and blockers.
 
-### Useful options
+`ok:true` means installation completed; `ready:true` means that local diagnostics
+found no blocker. Missing tools can produce `ok:true, ready:false`; inspect
+`diagnostic.checks`. Neither value proves account access or real model inference.
+An installation failure preserves partial results for diagnosis and retry.
+
+### Installation options
 
 | Option | Effect |
 |---|---|
 | `--prefix PATH` | Choose the npm global prefix |
-| `--project PATH` | Install skills into an existing project's `.agents/skills` and diagnose that project; CLI installation remains global |
-| `--dsh-bin PATH` | Use the verified desktop DSH command at an explicit path |
-| `--profile NAME` | Desktop plugin target profile, default `desktop`; unrelated to the worker's SDK profile |
+| `--project PATH` | Install project skills in `.agents/skills` and diagnose that existing project; CLI installation remains global |
+| `--dsh-bin PATH` | Select the verified desktop DSH command |
+| `--profile NAME` | Desktop plugin target profile, default `desktop`; separate from the worker's SDK profile |
 | `--no-dsh` | Skip desktop plugin registration |
-| `--no-global` | Set up the current persistent installation without another global install |
-| `--timeout-ms N` | External install-step timeout; default 600000 ms, range 100–1800000 |
+| `--no-global` | Set up an existing persistent installation without another global install |
+| `--timeout-ms N` | Per-step timeout, default 600000 ms, range 100–1800000 |
 | `--json` | Emit one structured installation result |
 
-For a user-owned global prefix:
+For a user-owned prefix:
 
 ```sh
 npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
@@ -69,53 +91,70 @@ export PATH="$HOME/.local/bin:$PATH"
 flywheel version
 ```
 
-Add the actual prefix's `bin` directory to your shell configuration for later terminals. Supply `--dsh-bin /absolute/path/to/dsh` if necessary. Do not guess an executable path inside a macOS app bundle.
+Keep the actual prefix's `bin` in your shell configuration. If needed, pass
+`--dsh-bin /absolute/path/to/dsh`; verify that path rather than guessing an app-bundle
+location. Plain `npm install --global @ckanner/flywheel` only places files. Complete
+setup explicitly afterward with `flywheel setup --no-global`. Do not use
+`--no-global` to make a temporary npx cache the permanent GUI entry.
 
-Plain `npm install --global @ckanner/flywheel` only places package files. Complete user setup explicitly afterward:
+## 3. Connect desktop and SDK backends
 
-```sh
-flywheel setup --no-global
-```
+Reload the desktop as directed by DSH, open an existing conversation, and select
+**Flywheel** beside the built-in views. It follows Statistics; check the overflow
+menu if necessary. The blank new-session landing page does not show conversation
+views. The console provides a canvas, configuration, and run history while DSH keeps
+its conversation, trajectory, composer, and sidebar.
 
-`install` and `setup` share options. Do not use `--no-global` to turn a temporary npx cache into the permanent GUI entry.
+Desktop plugin registration uses the desktop-supplied command and the `desktop`
+profile by default. An independent npm DSH CLI cannot manage that reserved profile.
+The worker normally runs in a separate **`sdk` profile** and does not inherit the
+conversation's selected model or every desktop plugin.
 
-## 3. Distinguish desktop and SDK setup
+### Account selection
 
-The installer uses the official desktop plugin interface with exact version selection:
+The default DeepSeek route explicitly selects `deepseek-account` / `deepseek-flash`.
+The standard SDK `base` profile includes the account adapter. With the same
+`DSH_HOME`, standard desktop and SDK setups share the existing account credential
+store. Custom homes, profiles, or credential stores need separate checking.
+`deepseek-official` is an explicitly configured API-key alternative, with no automatic
+paid fallback from the account preset.
 
-```text
-dsh plugin --profile desktop add --save-exact --ignore-scripts @ckanner/dsh-plugin-flywheel@<installed-version>
-```
-
-This is the command shape used internally, not a placeholder to paste literally. An independent npm DSH CLI cannot manage the reserved `desktop` profile. Reload according to the host's instructions and select **Flywheel** in the native view bar alongside Chat and Trajectory. Check that bar's More menu if the entry is not directly visible.
-
-This view controls and observes an already prepared task: progress, intervention, effective models, environment checks, and explicit start/refresh/stop. DSH keeps its chat, trajectory, composer, model selector, and right sidebar. Discuss requirements and prepare contracts through the original chat and skills. A launch or start through the DSH tools associates the exact task with that conversation. The view does not scan for tasks started elsewhere; select the same task directory to observe one.
-
-The worker defaults to a separate **`sdk` profile**. The standard SDK layers on `base`, which already includes DeepSeek's account and API adapters. Current source explicitly selects `provider: "deepseek-account"` and `model: "deepseek-flash"` to reuse the signed-in, funded account. `deepseek-official` is only for an explicitly chosen API-key configuration; there is no automatic paid-channel fallback.
-
-With the same `DSH_HOME`, the standard desktop and SDK can share the existing login in the default `<DSH_HOME>/.credentials.yaml`, independently of the profile. No token copying or switch to the `desktop` profile is needed. Check custom home, profile, or credential-store choices separately. The SDK does not inherit the desktop's selected conversation model; Flywheel uses its own effective bindings, visible through `config inspect` or the view's model-configuration action. Native GPT routing needs the ChatGPT adapter in the SDK profile. The checked adapter baseline can be installed with:
+Native GPT Review/Judge need the ChatGPT adapter in the SDK profile. The repository's
+checked adapter baseline can be installed with:
 
 ```sh
 dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 ```
 
-That is a checked compatibility version, not a claim about the latest adapter. Follow its authorization documentation for the chosen profile and keep `DSH_HOME` consistent. Do not copy tokens into task files or Git.
+This is a compatibility baseline, not a latest-version claim. Follow that adapter's
+normal authorization flow; keep `DSH_HOME` consistent and credentials out of task
+files and Git.
 
-The SDK worker's temporary permission and tool policy applies only to its child process. It does not edit the desktop profile or remove desktop capabilities. Worker-owned delegation, auxiliary model compaction, and currently the entire web tool are disabled. A native view does not make the worker inherit desktop plugins or merge its history. See the [plugin's lifecycle boundaries](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.en.md#permissions-and-lifecycle-boundaries) for the capability limits and separate work needed to restore retrieval safely.
+The hard route directly imports the pinned Codex Pro 0.9.0 public machine API.
+It needs the local Codex command/login, not a parent model delegating through the
+`subagent_codex_pro` tool. Optional Claude has its own dependency and login.
 
-The hard route uses the installed `dsh-subagent-codex-pro@0.9.0` dependency's public machine API directly. It does not use `subagent_codex_pro` as a native LLM provider or require a parent model to delegate. Its underlying Codex app-server still needs the local Codex command and login.
+The DSH worker's child-only policy disables delegation, auxiliary model compaction,
+and the current web tool. A native conversation view does not restore those worker
+capabilities or merge full worker histories into the parent trajectory. See the
+[plugin documentation](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) for lifecycle and capability boundaries.
 
 ### Desktop launcher
 
-Setup creates `~/.config/flywheel/npm-launcher` and an installation record with absolute Node/CLI paths, the checked DSH entry, and the installation-time tool PATH. The desktop plugin verifies the managed launcher before using it. A user-specified `flywheelBinary` takes precedence. Missing records can use the legacy PATH lookup; damaged records or modified managed launchers fail visibly.
+Setup writes `~/.config/flywheel/npm-launcher` and an installation record containing
+absolute Node/CLI paths and the checked DSH entry. An explicit `flywheelBinary`
+overrides the managed launcher. Missing records can use legacy PATH lookup;
+invalid records or modified launchers fail visibly.
 
-After moving Node or the npm prefix, or installing previously missing tools, run `flywheel setup --no-global` in a terminal where all required tools are available, preserving your original options. Save custom launcher changes before resolving a conflict. A shell export alone does not update an already running desktop process; recheck from the panel.
+After moving Node/the npm prefix or installing missing tools, rerun
+`flywheel setup --no-global` from a terminal that can find them, preserving original
+options. Save custom launcher changes before resolving a conflict. A terminal export
+does not update an already running desktop process.
 
 ## 4. Select configuration and skills
 
-If the view still shows Z.AI/GLM or Kimi K3, inspect its configuration source: upgrades preserve that file. A version containing this change can back up and migrate it with `flywheel config migrate --preset subscriptions --cwd /repo --apply --json`; omit `--apply` to preview, and add `--task-dir` for task overrides. This selects ChatGPT/Kimi Code/DeepSeek Flash, the agreed efforts, and full access for every stage. See [migration and permissions](configuration.md#apply-the-subscription-preset-to-existing-configuration). Published 0.28.1 does not contain this command.
-
-Configuration precedence is task directory, project root, global file, then embedded defaults. The first complete file wins; files do not merge. Existing configuration is preserved during upgrades. Inspect the actual source:
+Configuration discovery selects the first complete file in this order: task,
+project, global, embedded defaults. Files do not merge. Inspect the selected source:
 
 ```sh
 flywheel config inspect --cwd /absolute/path/to/repo --json
@@ -123,9 +162,23 @@ flywheel template flywheel.config.example.json
 flywheel template flywheel.profiles.example.json
 ```
 
-Use either complete template as a starting point and review it before writing a configuration file. The [configuration guide](configuration.md) covers safe export, fields, profile overrides, channel identity, and migration to `codex-pro`. `loops.plan` controls Full engine planning; the host's selected conversation model controls initial preparation through `flywheel-task` or `flywheel-new`.
+Upgrades preserve existing configuration, including old model, permission, history,
+and scheduling choices. To adopt the subscription model preset, preview first and
+then apply if it matches the intended accounts and full-access policy:
 
-Current source includes eleven skills. Skills are optional host entry points; the desktop panel and CLI also work independently. To inspect or install them for an existing project:
+```sh
+flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --json
+flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --apply --json
+```
+
+Add `--task-dir` for a task-level override. Migration backs up the selected file and
+preserves unrelated settings. It does not automatically opt an old configuration
+into scoped history or parallel scheduling. To adopt a full installed template, use
+the console's global/project configuration editor, load defaults, review, and save.
+[Configuration](configuration.md) explains precedence, permissions, and migration.
+
+The current source bundles eleven skills. They are optional host entry points; the
+CLI and console work independently. Inspect or install project skills with:
 
 ```sh
 flywheel skills list
@@ -133,9 +186,10 @@ flywheel skills read flywheel-task
 flywheel install-skills --project /absolute/path/to/repo --json
 ```
 
-Follow the host's skill-discovery rules. Copying files does not prove the host loaded them. Installer-owned unchanged snapshots can update; modified files, unowned directories, and invalid manifests are preserved and reported as conflicts.
-
-In DSH Chat, use `/flywheel-task <goal>` for research, preparation, and validated launch; Auto is the default. Use `/flywheel-new` for a proposal without launching, `/flywheel-run` for an existing task, and `/flywheel-status` for its state. Kimi uses `/skill:flywheel-task` and corresponding prefixed names. **No initial Flywheel-view form is required.** The view is an alternative way to open an already prepared task. See the [copyable workflow](workflow.md#0-normal-entry-describe-a-goal-and-launch).
+Follow the host's discovery rules. Installer-owned unchanged snapshots can update;
+modified or unowned files are preserved and reported as conflicts. In DSH, use
+`/flywheel-task <goal>` to prepare and launch, `/flywheel-new <goal>` for a proposal,
+and `/flywheel-run <task-path>` for an existing task. Kimi uses the `/skill:` prefix.
 
 ## 5. Run preflight without inference
 
@@ -146,39 +200,57 @@ flywheel doctor --cwd "$PWD" --json
 flywheel doctor --cwd "$PWD" --probe --json
 ```
 
-Local checks cover configuration, directories, command availability/version, and declared environment variables. `--probe` also initializes DSH SDK sessions, checks accepted configuration, working directory, permissions, and shutdown. It sends no inference prompt and runs no acceptance command. Provider initialization may query a model catalog and create SDK-owned cache/session files.
+Local checks cover configuration, directories, commands/versions, and declared
+environment variables. `--probe` initializes DSH SDK sessions and checks accepted
+configuration, directories, permissions, and shutdown. It sends no inference prompt
+and runs no acceptance command. Provider initialization may query catalogs or write
+caches; probe sessions use temporary persistence rather than the user session list.
 
-Codex Pro additionally verifies that the exact public machine API can be imported and that Node/Codex commands are available. It does not run a model task, prove account entitlement, or pre-check the complete policy. Its full-policy limitation remains a warning; model/effort/authorization remain unknown.
+Codex Pro diagnostics import the pinned API and check its lifecycle/recovery exports
+and local commands. They do not prove model entitlement, a particular saved thread's
+recovery, or effective reasoning effort. Runtime Codex calls separately validate the
+full policy at `thread-ready` before Go acknowledges dispatch. This does not turn a
+no-inference diagnostic into real account validation.
 
-Results use `pass`, `fail`, `warn`, `unknown`, and `skipped`. A fail produces exit code 1. A successful aggregate result only covers the checks performed. No preflight creates Flywheel state, worktrees, or global configuration. Check again in the desktop panel because GUI environment and profile selection may differ.
-
-After contracts exist, narrow the checks to the selected task:
+Results are `pass`, `fail`, `warn`, `unknown`, or `skipped`; a fail gives exit code 1.
+A task-specific preflight checks the Spec or persisted policy and only applicable
+bindings. It does not apply a later runtime `--mode` override:
 
 ```sh
 flywheel doctor --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --probe --json
 ```
 
-Task preflight uses a fresh Spec's qualification or the saved workflow policy. For qualified Quick it skips Plan, Judge, and the Judge panel; legacy tasks remain Full. It does not consume a later launch/run `--mode` override. A malformed saved policy blocks probes rather than being silently reclassified. Configuration inspection still lists all configured bindings.
-
-A task without packets can be inspected during preparation, but a real launch still needs at least one legal packet within the authorized scope. Fix schema, directory, provider, or permission failures at their source.
-
-The view's optional configuration and troubleshooting section offers “Inspect model configuration,” “Check installation and configuration,” and “Check DSH integration.” Use these for setup, configuration changes, or troubleshooting; they are not buttons that must be pressed for every task. Neither diagnostic performs model inference.
+No preflight creates Flywheel state or worktrees. Recheck from the desktop if its
+PATH/profile/environment differs. Diagnostics are useful after setup or changes;
+they are not a mandatory sequence of buttons for every task.
 
 ## 6. Prepare a task
 
 ### Existing repository
 
-The normal DSH entry is `/flywheel-task` followed by the actual requirement. The assistant researches the repository, creates or deliberately reuses a task integration branch and independent worktree, prepares compact contracts and real verification evidence, then launches within the existing authorization. Auto chooses Quick only when the contracts qualify; uncertain or complex tasks use Full. The [workflow guide](workflow.md) gives the branch commands, model bindings, delivery boundaries, and working directory for each stage.
+In DSH Chat:
 
-Use `/flywheel-new` when you want to review a proposal before execution. Both preparation entries report two actual absolute paths: the **project directory** is the code worktree; the **task files directory** is its `docs/<slug>` holding this task's contracts and later state/reports. You do not need to invent an empty directory or fill in the UI first. Keep both paths for observation and recovery.
+```text
+/flywheel-task Fix the identified issue, add regression coverage, and verify the result. mode=auto
+```
 
-Use the bundled templates to prepare a real Spec and packets with actual acceptance commands, protected oracles, and recorded dry-run results. Persist authorized contracts before starting so packet worktrees can read them from Git. Preparation and loop scheduling are separate: skills never write `state.json` or orchestrate stage retries themselves.
+The assistant researches the repository, chooses or reuses the task integration
+directory under the effective worktree policy, prepares contracts and baseline
+evidence, then launches within the authorized scope. Use `/flywheel-new` to stop at
+preparation. No initial console form is required.
+
+Keep the **project workspace**, **task execution root**, and **task files directory**
+separate. The project is the stable repository identity; task execution may use a
+linked worktree, with its contracts at `docs/<slug>`. Preparation reports actual
+paths. The engine later manages or registers packet execution directories, and owns
+`state.json`. See [Workflow](workflow.md#2-choose-the-task-execution-directory).
 
 ### Disposable first-run example
 
-For a first installation check, the packaged scaffold creates a separate Go addition task. The initial implementation is intentionally wrong; the executor must fix it and add ordinary tests without changing the frozen acceptance test. This example needs Go 1.27 or later and an unused destination directory.
-
-The scaffold intentionally has no `workflow` assessment and therefore follows legacy Full behavior. To try Quick, ask `flywheel-task` to inspect and qualify an actual small task; changing a mode flag alone does not supply the missing evidence.
+The packaged scaffold creates a separate Go addition task with an intentionally
+wrong implementation and protected acceptance test. It needs Go 1.27 or later and
+an unused destination. Its contracts have no workflow assessment and therefore use
+Full; a mode flag alone does not qualify them for Quick.
 
 ```sh
 FLYWHEEL_PACKAGE="$(npm root --global)/@ckanner/flywheel"
@@ -187,9 +259,12 @@ cd "$HOME/flywheel-demo"
 git init -b main
 ```
 
-For a custom prefix, resolve the package with `npm root --global --prefix "$HOME/.local"` instead. If the CLI is not on PATH, set `FLYWHEEL_BIN` to its absolute path when invoking the script. The scaffold writes files and reads installed templates; it does not invoke models or commit anything.
+For a custom prefix, resolve the package using `npm root --global --prefix
+"$HOME/.local"`. If the CLI is not on PATH, set `FLYWHEEL_BIN` to its absolute path
+when running the scaffold. It writes files and reads templates; it does not call
+models or commit.
 
-The scaffold includes `sum.go`, frozen `acceptance/sum_test.go`, `docs/add/spec.md`, a packet, a complete project configuration, and ignore rules for generated/volatile files. Run every L1 command from the packet. For the shipped example:
+Run every acceptance command from the generated packet. The supplied checks are:
 
 ```sh
 go test ./...
@@ -198,7 +273,8 @@ go test -coverprofile=coverage.out . &&
   awk '$NF != "100.0%" && $NF != "100%" { bad=1 } END { exit bad }'
 ```
 
-The initial failures are expected. Record the actual exit codes and summaries in the Spec's dry-run evidence. Review the contracts and frozen boundaries, then commit the scaffold in this new demonstration repository:
+Initial failures are expected. Record actual results in the Spec, review the frozen
+boundaries, then commit the scaffold and create the task branch:
 
 ```sh
 git add go.mod sum.go acceptance .gitignore flywheel.config.json docs/add
@@ -208,11 +284,13 @@ git worktree add -b task/add ../flywheel-demo-add
 cd ../flywheel-demo-add
 ```
 
-This disposable scaffold generates contracts before the task worktree is created; for an existing repository, use the preparation order in the preceding section. The real run below uses the new task worktree and its own `docs/add`, so local packet delivery stays on `task/add`.
+This demonstration generates contracts before creating its task worktree. In an
+existing repository, follow the preparation order in [Workflow](workflow.md).
 
 ## 7. Start, observe, stop, and recover
 
-The following commands invoke the real configured backends. Run them from the demo task worktree, or substitute your actual task name:
+These commands invoke the configured real backends. Run them from the demo task
+checkout, or substitute your actual task name:
 
 ```sh
 flywheel config inspect --cwd "$PWD" --task-dir "$PWD/docs/add" --json
@@ -221,71 +299,99 @@ flywheel control start --cwd "$PWD" --task-dir "$PWD/docs/add"
 flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
-In DSH Chat, the equivalent entries are `/flywheel-run <absolute-task-path>` and `/flywheel-status <same-path>`, with `/flywheel-stop <same-path>` when stopping is needed. Replace the placeholders with the real path returned during preparation. These skills resolve the project root without requiring an initial view selection.
+In DSH, `/flywheel-run <absolute-task-path>` and `/flywheel-status <same-path>` are
+equivalent entry points. Launch/start and read-only status association make the task
+selectable in the console. It reads registered tasks rather than scanning folders;
+known project/execution/file locations are read-only details. One current-session
+task can open automatically; multiple or unassociated tasks require selection.
 
-Launch/start through flywheel_launch or flywheel_control associates the task with this DSH conversation. Terminal runs record the host session ID; older runs are selectable from recent tasks. There are no editable path fields: known locations supplied by the assistant/engine appear read-only. Prepared tasks can also be associated through a read-only status query.
+The UI distinguishes this stage's result from overall delivery. Running state and
+registered discovery refresh automatically. A timeout or disconnect can leave an
+operation unconfirmed: keep its original paths and reconcile that task before
+another mutation. Old snapshots, page closure, or session switching cannot prove
+it stopped. Structured host evidence of rejection before control-process start is
+different from an unknown outcome.
 
-The UI separates the last stage from overall delivery and refreshes running state plus registered discovery. It does not scan directories. Public session projections restore explicit associations; forks do not inherit the parent task. Selection and status snapshots are separate, late replies cannot replace another task, and unconfirmed operations require reconciliation against their original target.
-
-After a launch/start/stop timeout or disconnect, the background task's outcome may be unconfirmed. Keep the original task and project paths, refresh that task's status, and inspect logs before deciding how to recover. The view disables further mutations until that task is successfully reconciled and never retries them automatically. A prior snapshot, closing a page, or switching sessions cannot prove the engine stopped. The native trajectory retains its parent-session records; full worker histories are not merged into it.
-
-If the host explicitly confirms rejection before the control process started, such as a missing directory, correct the path or environment and submit again. This requires structured host evidence; error-message text alone cannot establish that a lost request was never executed.
-
-For a foreground run that pauses before Review, use this instead of background start:
+For a foreground run that pauses before Review, use this **instead of** background
+start:
 
 ```sh
 flywheel run docs/add --pause-before review
 ```
 
-`control launch` and `control start` do not accept `--pause-before`, and pause mode cannot be combined with `--only`. `--only execute` runs the bounded execution/L1 loop; it is neither Quick nor a single model call. For Quick, `--only review` uses the task-final review contract and saves any required one-way Full upgrade without continuing into Plan or local merge; `--only verify` includes applicable candidate L2/L3, even with a selected packet. Running Plan on Quick requires an explicit `--mode full` upgrade. See the individual skills for partial-loop recovery.
+`control launch`/`start` do not accept `--pause-before`, which also cannot combine
+with `--only`. Partial-loop commands do not imply whole-task completion; see
+[Partial stages](workflow.md#partial-stages-and-permissions).
 
-Inspect progress:
+Inspect and stop with:
 
 ```sh
 flywheel status docs/add
 tail -n 80 docs/add/orchestrator.log
-git log -5 --oneline
-```
-
-Stop with:
-
-```sh
 flywheel control stop --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
-Only resume with `control start` after confirming the previous run ended and addressing its actual error. Retain the original task/worktree paths, reports, and state. A stop result concerns engine lifetime; recorded cleanup uncertainty still needs investigation, especially for Codex Pro's separately managed processes. See [recovery](workflow.md#7-stop-and-recover-without-losing-evidence).
+Resume from the same paths only after reconciling the previous run and addressing
+the actual failure. Keep state, reports, and worktrees. Unknown dispatch, outcome,
+or cleanup cannot be bypassed by switching to fresh history or another backend.
+See [Recovery](session-recovery.md).
 
-For the first real run, record whether the task reached `completed`, all requirements were covered, frozen acceptance remained unchanged, independent review and reports exist, and the implementation was delivered in local Git. Record actual model identity, latency, and usage separately from preflight. No check in this guide claims those results on your behalf.
+For the first real run, inspect `completed`, requirement coverage, unchanged frozen
+acceptance, independent review, reports, and local Git delivery. Real model identity,
+latency, and usage are separate observations from preflight. PR creation/merge is a
+separately authorized [console operation](flow-console.md#pr-and-merge).
 
-## 8. Upgrade and troubleshoot
+## 8. Upgrade, troubleshoot, or uninstall
 
-Stop active tasks and confirm their state, preserve configuration/customizations, then rerun the installation command with the original prefix/project/DSH options. To pin 0.28.0, first confirm that exact version exists in the registry and replace `@latest` with `@0.28.0`. `flywheel setup --no-global` repairs setup for the installed version without selecting a different CLI release.
+### Upgrade and repair
 
-Inside Flywheel's own source checkout, npm may consider the matching local package satisfied and then resolve an older global executable from PATH. If the installation report shows a different version, retry outside the checkout, or run `npm install --global --ignore-scripts --include=optional @ckanner/flywheel@0.30.0` followed by `flywheel setup --no-global` from that exact prefix. Preserve a custom prefix in both steps. Check the CLI version, installation report, and desktop-profile plugin version. Reload the running desktop as directed by the host so it loads the newly installed modules.
+Stop active tasks and reconcile their state. Preserve configuration/customizations,
+then repeat installation with the original prefix/project/DSH options. Confirm
+`flywheel version`, the installation report, and the desktop plugin version, then
+reload DSH as directed. `flywheel setup --no-global` repairs the installed version.
 
-From 0.30.0, adopting the complete packaged preset is explicit: choose the global or project scope in the configuration editor, read it, load this version's defaults, review, and save. Saving backs up and replaces the selected configuration. Higher-priority task/project files still take precedence.
+Run npx installation outside Flywheel's own source checkout so npm does not satisfy
+the request with that local package. If needed, explicitly install the chosen
+published version globally, then run setup from that exact prefix. Existing
+configuration stays in place; inspect higher-priority task files before assuming a
+project/global edit took effect.
 
-Existing hard-route configuration remains unchanged after upgrade. To adopt the new plugin route, change the effective hard binding or profile to `harness: "codex-pro"`, preserve model/channel/thinking, inspect it, and restart. Do not use `subagent_codex_pro` as a provider.
+### Troubleshooting
 
 | Symptom | First check |
 |---|---|
-| Missing `install` or `control` command | Published version, `flywheel version`, PATH, and any explicit desktop `flywheelBinary` |
-| The large composer popup is still present | Published `0.28.0` has the old layout; verify a build containing the conversation-view fix is installed, then reload as directed by DSH |
-| Flywheel is not directly visible in the top bar | Check More, plugin enablement, and the actual installed version; `/flywheel` and CLI remain diagnostic entry points |
-| Install succeeds but `ready:false` | Resolve the specific `diagnostic.checks` blockers |
-| Terminal works but the desktop does not | Managed launcher, explicit override, GUI PATH/profile/environment; rerun setup and check the panel |
-| A configuration edit has no effect | `config inspect` source and higher-priority task/project files; restart the engine |
-| Skill or launcher conflict | Preserve customizations, compare the specific files, and resolve the reported conflict without altering ownership hashes |
-| Worktree creation falls back in-place | Stop if isolation is required; inspect persisted mode and preserve work before recovery |
-| Cleanup is unconfirmed | Inspect task-owned processes and receipts before retrying; elapsed time alone is not proof |
-| Start/stop outcome is unconfirmed | Refresh the same task and inspect logs; timeout/disconnection proves neither no start nor a completed stop, and mutations are not retried automatically |
+| A command or new layout is missing | Installed CLI/plugin versions, PATH, and explicit `flywheelBinary` overrides |
+| Flywheel is absent from the view bar | Existing conversation, overflow menu, plugin enablement, and host reload |
+| `ok:true`, `ready:false` after install | Specific blockers in `diagnostic.checks` |
+| Global prefix is unwritable | Use a user-owned `--prefix` and its `bin` directory |
+| The desktop profile is rejected | Use the desktop-supplied DSH command, not an independent npm CLI |
+| Terminal works but desktop does not | Managed launcher, tool paths, SDK profile, and `DSH_HOME`; rerun setup after tool changes |
+| Provider is unregistered or unauthorized | The worker's SDK profile and that provider's normal login flow |
+| Model changes have no effect | Effective configuration source and engine restart |
+| A channel rename does not change accounts | Channel is a configuration/accounting label; actual authorization belongs to the backend |
+| Doctor shows unknown or skipped | Read the individual reason; neither means real inference passed |
+| Cost is missing | Usage/cost was not reported; unknown is not zero |
+| Acceptance fails despite exit 0 | Candidate drift, timeout, cancellation, truncation, or cleanup failure |
+| Isolation is unavailable | Recorded execution mode; parallel automatic worktree management fails instead of falling back |
+| Start/stop or cleanup is unconfirmed | Original task status, logs, owned processes, and trusted receipts before retrying |
+| Git delivery fails | Preserved worktree, hooks, and diff; resolve the cause without forced cleanup |
+| Skill or launcher ownership conflicts | Back up the specific customization and compare it; do not rewrite integrity manifests |
 
-Installation is not one atomic transaction across npm, DSH, and all skills. Correct the reported cause and retry; preserve completed steps and user files. Do not delete whole configuration directories or modify integrity manifests to bypass conflicts.
+Install is not one atomic transaction across npm, DSH, and skills. Correct the
+reported cause and retry without deleting unrelated user files. Acceptance commands
+may need additional named variables in `verify.env-allowlist`; do not inject all
+model credentials into tests.
 
-To uninstall, first stop running tasks, remove the desktop Flywheel plugin through the desktop's supported plugin-management interface, then uninstall the global CLI using the same prefix:
+### Uninstall
+
+Stop and reconcile active tasks, remove the desktop Flywheel plugin through DSH's
+supported plugin manager, then uninstall the global CLI using the same prefix:
 
 ```sh
 npm uninstall --global @ckanner/flywheel
 ```
 
-Configuration, task ledgers, modified skills, and worktrees require deliberate separate handling; do not remove them as an incidental cleanup step. Maintainer build and publication procedures are in the [release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md). Normal users do not need npm publishing credentials or GitHub OIDC to install Flywheel.
+Configuration, task ledgers, skills, installation records, and worktrees are retained
+for deliberate separate handling. This does not uninstall DSH/Kimi/Codex or remove
+account credentials. Source builds and contribution checks are in
+[Contributing](contributing.md); maintainer publication is in [Releasing](releasing.md).

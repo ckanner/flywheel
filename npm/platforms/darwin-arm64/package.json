@@ -9,12 +9,13 @@
     "arm64"
   ],
   "files": [
-    "flywheel"
+    "flywheel",
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ckanner/flywheel.git",
     "directory": "npm/platforms/darwin-arm64"
   },
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

@@ -1,6 +1,6 @@
 # Go ↔ DSH / Codex Pro / Claude Code Pro worker 协议
 
-此文件记录两种独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。两者之间只有本地 stdio，不开放 HTTP 端口。
+此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。两者之间只有本地 stdio，不开放 HTTP 端口。
 
 ## 启动与输入
 
@@ -246,7 +246,7 @@ Go 原子保存、fsync 检查点和 state 后，才向仍开放的 stdin 写一
 
 status 为 terminal/pending/unknown。只有 exact invocation 的完整 terminal 可继续核验；pending 不证明 process alive，错误不附带安全重放的 admission 证明。只读路径可重复且不产生新的模型调用。Go 还核对原 adapter 版本与 checkpoint 摘要；升级后不拿新版本解释不兼容的旧 journal。
 
-cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report；恢复到 receipt 不自动获得该证明。缺少它时可信用量可对账，业务保持阻断。状态、metrics 与候选消费语义见[恢复指南](../../docs/session-recovery.md)。
+cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report；恢复到 receipt 不自动获得该证明。缺少它时可信用量可对账，业务保持阻断。状态、metrics 与候选消费语义见[恢复指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/session-recovery.md)。
 
 ## Claude Code Pro worker
 
@@ -284,8 +284,8 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 
 `--doctor` 仅核验精确 peer 与导出，返回
 `{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.4.0",machineProtocol:1,available:true,inferenceTested:false}`。
-不启动 Claude，不测试账号。完整用户入口见[中文](../../docs/claude-code-pro.md)／
-[English](../../docs/en/claude-code-pro.md)。
+不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
+[English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 
 ## Go 角色账本与回执恢复
 
@@ -411,7 +411,7 @@ host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校�
 
 安装失败退出码为 1；SIGINT／SIGTERM／SIGHUP 取消按 `128 + signal` 返回，分别为 130／143／129。外部安装步骤有独立时限与进程组收尾窗口，取消不因迟到的成功结果转绿。已完成的 npm／DSH／skills 步骤不自动整体回退，调用者应保留报告、修复具体原因并重跑。
 
-`--prefix`、`--project`、`--dsh-bin`、`--profile`、`--no-dsh`、`--no-global`、`--timeout-ms`、`--json` 的完整语义见[教程](../../docs/getting-started.md#2-一条命令安装)。`--no-global` 指当前已经持久安装的包；默认 install 与 setup 都会确保本次版本的全局安装。`--no-dsh` 仅显式跳过插件注册，不把可能失败的本地 doctor 当成已通过。
+`--prefix`、`--project`、`--dsh-bin`、`--profile`、`--no-dsh`、`--no-global`、`--timeout-ms`、`--json` 的完整语义见[教程](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/getting-started.md#2-安装)。`--no-global` 指当前已经持久安装的包；默认 install 与 setup 都会确保本次版本的全局安装。`--no-dsh` 仅显式跳过插件注册，不把可能失败的本地 doctor 当成已通过。
 
 ### GUI 安装记录
 
@@ -425,7 +425,7 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 2. 存在安装记录时，验证其协议、owner 和绝对 launcher 路径，再验证 launcher 是普通非链接的可执行文件且 SHA-256 匹配。
 3. 仅当安装记录不存在时，兼容旧配置，从 PATH 查找 `flywheel`。
 
-损坏记录、符号链接、缺失或被修改的 launcher 都明确失败，不静默退回 PATH。SHA-256 核对的是 launcher 内容，不是账号状态或所有外部 CLI 的真实性。已有用户修改会在 setup 时保留并报告冲突；修复方法见[升级教程](../../docs/getting-started.md#8-升级排错与卸载)。普通 npm 卸载不会擅自删除安装记录、配置、skills 或任务数据。
+损坏记录、符号链接、缺失或被修改的 launcher 都明确失败，不静默退回 PATH。SHA-256 核对的是 launcher 内容，不是账号状态或所有外部 CLI 的真实性。已有用户修改会在 setup 时保留并报告冲突；修复方法见[升级教程](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/getting-started.md#8-升级排错与卸载)。普通 npm 卸载不会擅自删除安装记录、配置、skills 或任务数据。
 
 ## DSH 宿主兼容性（0.28.4）
 
