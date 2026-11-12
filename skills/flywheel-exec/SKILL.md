@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.9.3"
+  version: "1.9.4"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -31,7 +31,7 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 git -C "$repo_dir" worktree list --porcelain
 ```
 
-默认复用准备时选定的任务集成 worktree／分支，核对路径和实际分支；已有选择与
+默认复用准备时选定的任务集成 checkout／分支，核对路径和实际分支；已有选择与
 授权不重复询问。未明确选择的 `main`／`master`、已知默认分支或 detached HEAD
 不能直接开跑。新任务先按 `flywheel-new` 准备工作区；已有状态使用原路径，
 不切分支、复制／重置 state 或替换已有 packet worktree。
@@ -69,21 +69,25 @@ git -C "$repo_dir" worktree list --porcelain
 L2/L3，完成独立最终 Review 与 Git 持久化；继续闭环使用 `flywheel-run`，
 新需求的自动准备启动使用 `flywheel-task`。
 
-Execute 与 L1 的实际 CWD 由引擎选为该 packet 的候选 worktree；重试复用成果。
+Execute 与 L1 使用引擎记录的 packet 实际候选目录；重试复用成果。
 `sessions.mode=scoped` 时，Go 可在可信正常终态后延续同 packet 的 Executor 历史；
 fresh 不启用通用历史复用，两种模式均保留支持适配器的调用安全记录。不要自行选择
-会话 ID 或在 skill 中重试。done-report 先写候选 worktree，再由引擎校验、归档。不要手工创建、
-删除或重置 packet 分支，也不要把另一个 checkout 的账本传给当前 `repo_dir`。
-默认创建失败可能记录 `worktree unavailable` 并回退 `in-place`；显式关闭 worktree
-也会原地执行。严格隔离任务遇到这些模式应停止并处理，重启不证明隔离已恢复。
+会话 ID 或在 skill 中重试。done-report 先写实际候选目录，再由引擎校验、归档。
+自动管理开启时由引擎创建／复用 packet Worktree，不手工替换或重置它。关闭时可使用
+任务 checkout，也允许用户／模型在实现前选择并登记合格的外部 Worktree；
+不把关闭开关解释为禁止 Worktree 或禁止并行，不混用不同 checkout 的账本。
+本入口只执行一个 packet，不会因为配置允许并行就启动其他单元。
+串行路径创建失败可能回退 `in-place`；完整流程中自动管理开启的并行批次则停止派发。
+按引擎回执说明实际位置，严格隔离任务遇到原地执行应停止并处理，重启不证明隔离已恢复。
 
 清理、派发或结果未知时保留成果和审计并报告阻断。确认子进程结束不证明调用结果
 已知；从原任务路径交由 Go 核对回执，不切 fresh、换目录或重置 state 来绕过。
 不用固定等待代替确认。P3 的只读原调用恢复和 P4 的有界重建均由 Go 负责；
 只有原候选证据完整的回执能推进执行，质量阈值不能解除未知调用阻断。不要删除
 `.sessions`、直接重发 prompt 或在 skill 中自行压缩历史。
-完整运行通过 Review 等门禁后，引擎才本地 `ff-only` 合回任务分支；PR 的推送、
-创建和最终合并由外层按已有授权处理，本单环不自动执行这些远端操作。
+完整运行通过 Review 等门禁后，引擎才交付到任务集成分支；共享目录批次还须全部成员
+通过同一候选的验收。PR 的推送、创建和最终合并由外层按已有授权处理，
+本单环不自动执行这些远端操作。
 
 ## DSH 画布关联
 
