@@ -29,6 +29,9 @@ their original language.
 - Define the AI agent change workflow, documentation ownership and update rules,
   bilingual review checklist, and evidence requirements in AGENTS.md and the
   contribution guides.
+- Align skill instructions with task selection and read-only association, remove
+  retired path-form guidance, and distinguish configured scheduling, unmanaged
+  execution directories, and serial versus parallel Worktree failure behavior.
 
 ## 0.31.0 — 项目归属与执行目录分离
 

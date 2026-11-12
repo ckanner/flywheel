@@ -18,6 +18,18 @@ DSH keeps the original repository in the Session header and switches the current
 
 Loading a skill does not start the engine. `flywheel-task` prepares the appropriate contract and invokes either the bounded investigation control or `flywheel_launch` for implementation. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
 
+| Conversation entry | Does it start the engine? | How the UI finds the task |
+|---|---|---|
+| `/flywheel-new <goal>` | Prepares contracts for review only | Before handing over the proposal, the assistant registers a candidate through read-only `status`; an uninitialized task shows its identity and location, not execution progress |
+| `/flywheel-run <task directory>` | Starts or resumes an existing task | Start and query the original task path to associate it with the conversation; select the intended task when there are multiple candidates |
+| `/flywheel-task <goal>` | Prepares, then starts | Launch and associate through `flywheel_launch`, then check status |
+
+`new → run` and `task` use the same engine; the canvas is not exclusive to one
+skill. Writing task files alone does not register a view, and a failed association
+query must not be replaced with launch merely to populate the canvas. Report an
+unavailable association tool explicitly. Tasks actually run from a standalone
+terminal remain selectable under Recent tasks on this computer.
+
 While the canvas is visible, registered-task discovery refreshes every five seconds.
 An observed running task refreshes status every two seconds, backing off to ten
 seconds after an unsuccessful response. Hidden documents skip those requests.

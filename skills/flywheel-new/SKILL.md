@@ -20,8 +20,8 @@ arguments: requirement
 技能不包含运行循环，之后的状态转换仍由 Go 引擎负责。
 
 DSH 在对话中使用 `/flywheel-new <需求>`，也可从输入框的 `/` 菜单选择；
-Kimi 使用 `/skill:flywheel-new <需求>`。正常准备无需先填写 Flywheel 视图：
-任务资料目录由本 skill 在核实的任务 worktree 中创建，完成后报告其真实绝对路径。
+Kimi 使用 `/skill:flywheel-new <需求>`。Flywheel 视图不提供任务／项目路径输入框：
+任务资料目录由本 skill 在核实的任务 checkout 中创建，完成后报告其真实绝对路径。
 
 > 参数经 kimi 命名参数注入正文：`$requirement`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
 
@@ -61,7 +61,7 @@ packets / 验收方案，待用户审阅。
 不要把任务 checkout 注册为 Provider／DSH 的新项目。以下创建命令只用于明确选择新 Worktree 时。先核实目标仓库、
 当前分支、`git status --short` 和 `git worktree list --porcelain`。已明确选择了
 本任务工作区就直接复用，不重复确认；不要仅凭目录名判断它属于本任务。
-若尚无任务工作区，从已核实的基线创建，不切换原 checkout：
+需要新 Worktree 且尚无本任务目录时，从已核实的基线创建，不切换原 checkout：
 
 ```bash
 git -C "$source_repo" worktree add -b "$task_branch" "$task_worktree" "$base_ref"
@@ -72,7 +72,8 @@ git -C "$source_repo" worktree add -b "$task_branch" "$task_worktree" "$base_ref
 不盲用 `origin/main`，不使用 `-f`、`-B` 或 reset 覆盖既有分支／文件。
 若路径或分支已存在，先核对归属再复用；有运行状态的任务不得复制账本迁入新目录。
 
-将 `task_worktree` 设为刚创建或已核实可复用的任务目录，逐条执行，失败即停止：
+将 `task_worktree` 设为刚创建或已核实可复用的任务 checkout；关闭自动管理时，
+也可以是用户指定的已有 checkout。这个变量名不要求另建 Worktree。逐条执行，失败即停止：
 
 ```bash
 repo_dir="$(git -C "$task_worktree" rev-parse --show-toplevel)"
@@ -86,8 +87,8 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 以下调研、验收试跑和契约保存都在 `repo_dir` 中完成，`task_dir` 必须是其内部的
 `docs/<slug>`。在结果中报告这两个绝对路径及实际分支，供后续启动／恢复复用。
 仅在 shell 中 `cd` 或使用 `git -C` 不代表已改变 DSH 会话的当前工作目录；
-后续入口继续使用所报告的绝对任务路径。仅准备文件不改变视图；DSH 的
-`flywheel_launch` 或 `flywheel_control` start 调用才把具体任务关联到当前会话。
+后续入口继续使用所报告的绝对任务路径。仅写文件不登记画布；准备完成后使用下方的
+只读 `status` 关联，不为显示任务而调用 launch/start。
 
 需要独立任务并行时，按当前 `task-packet.schema.json` 的 `schedule` 声明实际依赖
 与写入范围；字段不受当前二进制支持时先升级，不能让 skill 自己实现调度。
@@ -100,7 +101,7 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
    （未 approved 的候选不是需求，提醒用户先确认）。
 2. **问意图**：只问意图类问题（范围、取舍、优先级、验收标准的主观部分）。
    一次问清，不要挤牙膏。
-3. **生成契约**：在所选任务 worktree 的 `repo_dir` 内创建 `docs/<slug>/`：
+3. **生成契约**：在所选任务 checkout 的 `repo_dir` 内创建 `docs/<slug>/`：
    - `spec.md` — 用 `flywheel template spec.example.md` 输出的内嵌模板格式（二进制自带，无需源码仓库）：编号需求
      R-01…R-n（每项可独立验证）+ 需求→里程碑映射 + 里程碑表。显式选 Full 时
      保留完整流程；不含新 workflow 字段的契约也按 Full 解释。需要 Auto／Quick 时
@@ -145,35 +146,47 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
    `git add docs/<slug>` 并 `git commit`（conventional 风格 message，如
    `docs(<slug>): add flywheel task contracts`）。契约层文件全部是已提交
    内容；未获提交授权时保留可审查的文件并说明尚未提交，勿提前启动。
-6. **提交人审**：本次草稿尚未经审阅时，生成并按授权保存后 STOP。明确告诉用户：
+6. **关联准备结果**：DSH 提供 `flywheel_control` 时，按下方“DSH 中显示准备好的任务”
+   执行一次只读 status；不启动引擎。工具不可用或关联失败时保留文件并说明结果。
+7. **提交人审**：本次草稿尚未经审阅时，完成准备和可用的只读关联后 STOP。明确告诉用户：
    请审 spec 与 packet 的需求编号、验收命令、边界与试跑证据。**冻结点 = 人审契约**——
    不要求源素材预先定稿；用户审过契约即冻结，此后范围变更只能走 Plan Loop。
    已批准的同一契约沿用已有审批，不重复索取；本 skill 不自行启动运行。
 
 获批后在 DSH 对话使用 `/flywheel-run <上述 task_dir>`，查看进度用
-`/flywheel-status <同一路径>`。使用 DSH `flywheel_control` start 启动时会关联
-同一任务到当前会话视图；通过终端 CLI 启动的任务仍可手动打开。手动打开时
-“任务资料目录”填 `task_dir`，“项目目录”填 `repo_dir`，仅会话目录已经相同时可留空。
+`/flywheel-status <同一路径>`。启动后由引擎记录真实进度；已关联或已登记运行的任务
+从 Flywheel 视图的任务选择中打开。独立终端运行可从“本机最近任务”选择，
+无需填写路径表单；CLI 和工具参数仍使用助手已核实的 `task_dir`／`repo_dir`。
 
 ## 交接边界
 
 开启自动管理时，引擎负责 packet worktree 的创建／复用；关闭时不自动创建，
-并行策略独立。任务实际目录以引擎记录为准，不能仅在 prompt 中声称换目录。Execute 与 L1、独立 Review，合格单元
-本地 `ff-only` 合回 `repo_dir` 当前所在的任务分支；不需要为每个 Loop 再手工建
-worktree。Full 的 Plan 在任务集成 worktree 修订契约，里程碑 L2/L3 与 Judge
-在合入后的任务集成 worktree 验证。Quick 在候选 worktree 收齐 L1 与适用 L2/L3，
+并行策略独立，按有效 `scheduler` 及冻结依赖／写入范围调度。任务实际目录以引擎记录为准，
+用户或模型自行选择的外部 Worktree 也须先经引擎登记，不能仅在 prompt 中声称换目录。
+Execute、L1 与独立 Review 使用实际候选目录；独立 Worktree 的合格单元集成到
+`repo_dir` 当前任务分支，共享 checkout 批次全部通过后统一交付，不逐个提前提交。
+Full 的 Plan 在任务集成 checkout 修订契约，里程碑 L2/L3 与 Judge
+在合入后的任务集成 checkout 验证。Quick 在候选目录收齐 L1 与适用 L2/L3，
 再作一次独立最终 Review；合格契约下运行期 Plan／独立 Judge 不适用。
 worktree 只隔离 Git 工作目录，不是 OS 安全沙箱。
 
-当前默认尝试 packet worktree；创建失败可能记录 `worktree unavailable` 并回退
-`in-place`，不是强制隔离保证。严格隔离任务遇到该情况应停止并处理，不能手改
+自动管理开启的并行批次必须成功准备独立 Worktree，创建失败停止派发，不回退共享目录。
+串行路径仍可能记录 `worktree unavailable` 并回退 `in-place`；以实际回执为准。
+严格隔离任务遇到原地执行应停止并处理，不能手改
 `state.json` 或搬走已有成果。契约获批并提交后，可按已有授权建立任务级 Draft PR；
 完整验收和对应 head 的检查／审阅满足仓库要求后，才由用户或获授权宿主合并 PR。
 引擎不自动 push、创建 PR 或合并远端 PR；本地 packet 合并不代表 PR 已获批准。
 
 ## DSH 中显示准备好的任务
 
-资料准备完成后，可调用 `flywheel_control` 的 `status`，传入已核实的 taskDir 和 cwd
-绝对路径。只读查询会关联当前会话；即使 state 为空，也不启动引擎或制造完成状态。
-任务会出现在任务选择中，位置由助手提供，用户不需要填路径。工具不可用时明确说明
-尚未关联，不把加载技能或资料写入说成已经运行。
+资料准备完成后，将已核实的绝对路径传给 `flywheel_control`：
+
+```json
+{"action":"status","taskDir":"<task_dir 绝对路径>","cwd":"<repo_dir 绝对路径>"}
+```
+
+只读查询成功会登记当前会话的任务候选；已有其它选择或多个候选时，从任务选择中打开。
+state 尚未初始化时只有任务与位置，不声称已有执行进度；不得为了生成画布偷偷启动。
+工具不可用或查询失败时，报告“任务已准备，关联未确认”及实际路径；已有未确认的
+原任务操作先核对，不靠切换目标或重复准备／启动绕过。
+加载 Skill、准备文件、关联任务和启动引擎分别报告。
