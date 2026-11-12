@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.9.4"
+  version: "1.9.5"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -39,7 +39,7 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
    ```
 
    逐条执行，任一命令失败就停止启动并报告路径问题。`repo_dir` 应是准备时选定的
-   任务集成 worktree；`task_dir` 必须来自这个 worktree，不能混用原 checkout 的账本。
+   任务集成 checkout；`task_dir` 必须来自同一目录，不能混用另一个 checkout 的账本。
    核对实际分支与既有任务选择。没有明确特殊授权时，不在 `main`／`master`、
    已知默认分支或空分支名（detached HEAD）直接开跑；新任务先按 `flywheel-new`
    创建或选用任务工作区。已选择工作区或明确授权的运行位置不重复询问。
@@ -130,27 +130,32 @@ Go 仍须核对可信终态回执。不要切换 fresh、换任务目录、删�
 | 阶段 | 实际工作目录 |
 |---|---|
 | Full Plan／升级后修订 | `repo_dir`，只允许修订任务内契约 |
-| Execute、L1、Review | 引擎管理的 packet 候选 worktree |
-| Quick 适用 L2/L3 | 最终 Review 前，在同一 packet 候选 worktree |
+| Execute、L1、Review | 引擎记录的 packet 实际候选目录 |
+| Quick 适用 L2/L3 | 最终 Review 前，在同一 packet 候选目录 |
 | Full 里程碑 L2/L3、Judge | 合入后的 `repo_dir` |
 
 Quick 的最终 Review 同时检查全部需求、验收充分性和 Quick 资格。验收缺口或
 新风险可升级到 Full；策略变更保留预算、工作区与历史，并使不匹配的证据失效。
-Go 串行调度 packet，并按 `sessions.mode` 决定同角色历史是否可复用；普通返修可
+Go 按有效 `scheduler`、冻结的依赖和写入范围选择串行／并行；不在 skill 中另起调度循环。
+独立 Worktree 的 Execute／L1 可并发；共享 checkout 批次先收齐 Execute，再串行验收完整
+共同候选。Review、集成与终验仍串行。并行资格不明确的旧契约保留串行行为。
+引擎按 `sessions.mode` 决定同角色历史是否可复用；普通返修可
 延续 Executor，复审可延续 Reviewer 自己的上下文，二者始终隔离。复审仍检查完整
 当前候选与全部适用要求。支持的主任务适配器在 fresh/scoped 下均记录调用安全事实，
 会话选择和回执消费由 Go 完成，skill 不接管。重试保留磁盘成果。
-当前宿主对话无需保持模型运行，也没有后台 Teams／并行 DAG 的隐式保证。
+当前宿主对话无需保持模型运行；Go 的 packet 并发不等于 DSH Teams 或父模型自主委派。
 
 核对实际配置的 `permissions.mode`：`role-based`（已有文件缺省）下 Plan／Execute
 请求 `workspace-write`，Review／Judge 请求 `read-only`；`full-access` 下全部模型
 阶段通过所选后端正式接口请求完全权限。Kimi print 保持原生 auto，不宣称 OS
 只读或工作区沙箱。完全权限不改变评审职责；候选或契约在评审期间变化时，裁决不能通过身份检查。
 
-packet worktree 由引擎创建／复用，无需 skill 手动切入。默认创建失败仍可能回退
-`in-place`；出现 `worktree unavailable` 或配置明确关闭 worktree 时，应如实说明
-实际模式，严格隔离要求下停止并处理。保留原成果和状态，不把重启当成隔离已恢复。
-单元合格后本地 `ff-only` 合回 `repo_dir` 当前分支，因此启动目录不能随意选择。
+`worktree.enabled` 只控制自动创建／管理 packet Worktree，与调度独立。关闭时可共享
+任务 checkout，或由用户／模型在实现前选择并登记合格的外部 Worktree；不强制原地执行。
+自动管理开启的并行批次创建 Worktree 失败就停止；串行路径仍可能回退 `in-place`。
+实际位置和模式以引擎回执为准，严格隔离要求下遇到原地执行应停止并处理。
+保留原成果和状态，不把重启当成隔离已恢复。独立 Worktree 的合格单元集成到
+`repo_dir` 当前任务分支；共享目录批次全部通过后统一提交，不逐个提前交付。
 
 GitHub PR 在外层管理：按已有授权推送任务分支／建立 Draft PR，完整终验及当前
 head 的检查与审阅满足仓库要求后再合并；引擎不自动执行这些远端操作。

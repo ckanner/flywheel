@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.8.1"
+  version: "1.8.2"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -30,7 +30,7 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 git -C "$repo_dir" worktree list --porcelain
 ```
 
-默认复用准备时选定的任务集成 worktree／分支。已有明确选择或授权不重复询问；
+默认复用准备时选定的任务集成 checkout／分支。已有明确选择或授权不重复询问；
 未明确选择的 `main`／`master`、已知默认分支或 detached HEAD 不能直接开跑。
 新任务先按 `flywheel-new` 准备工作区；已有状态先核对原任务路径，不切分支、
 复制／重置 state 或迁移已有成果。`task_dir` 与 `repo_dir` 必须属于同一 worktree。
@@ -38,7 +38,7 @@ git -C "$repo_dir" worktree list --porcelain
 ## 步骤
 
 1. **校验**：`docs/<slug>/` 存在且含 `spec.md` 和 task packets。确认所选运行配置来自任务、项目、全局或内嵌表，不强制每个任务都有自己的配置文件；状态由引擎初始化。
-2. **调用**（在解析出的任务集成 worktree 运行，直到合法契约或有界失败）：
+2. **调用**（在解析出的任务集成 checkout 运行，直到合法契约或有界失败）：
 
    ```bash
    cd "$repo_dir" && flywheel run "$task_dir" --only plan
@@ -64,8 +64,10 @@ Plan 历史由 Go 按任务／里程碑和 `sessions.mode` 管理；显式设置
 fresh 保留既有 Kimi Plan resident 行为，但不将它声明为通用角色会话。
 出现清理、派发或结果未知时停止，不在 skill 中重试；确认子进程退出不能代替
 可信结果回执。从原任务路径交由 Go 核对，不切模式或重置 state 绕过阻断。
-默认 packet worktree 创建有
-`in-place` 回退，不应把 Plan 成功解读成后续执行必然有隔离。
+Plan 不负责派发 packet 或决定执行目录隔离。后续由有效 `scheduler` 与
+`worktree.enabled` 决定：自动管理开启的并行批次必须准备独立 Worktree，失败停止；
+串行路径仍可能回退 `in-place`。关闭自动管理可使用任务 checkout 或已登记的外部
+Worktree，不禁止并行；Plan 成功不证明后续执行一定隔离。
 
 ## 注意
 
