@@ -262,6 +262,11 @@ wait for all admitted workers to settle, and every combined candidate is recheck
 Existing total/channel limits, hard budgets, attempts and unknown-result recovery
 remain in force.
 
+A replacement packet does not recover or cancel a sibling's still-running model
+call. The coordinator retains those calls and their shared accounting. An unknown
+result or failed receipt persistence stops new admission immediately and must be
+reconciled before resuming.
+
 `--pause-before review` also applies to independent parallel Worktrees. Once all
 Execute/L1 work in the current group passes and its workers settle, the task pauses
 before any Review or integration, retaining the verified candidates. Batch mode
@@ -286,6 +291,10 @@ confirmed SDK and process-group cleanup, and no cancellation or expired invocati
 deadline. It does not grant another attempt or reset a budget. Unknown cleanup
 remains blocking. Other harnesses start normally. Session history reuse is separate
 from runtime preparation and retains role isolation.
+
+Confirmed initialization failures preserve their reported error classification and
+the normal retry/fallback rules. An authentication or invalid-request failure does
+not become a transport retry or qualify as a harmless prepared-runtime expiration.
 
 These options are available in the configuration editor and advanced JSON. Saving
 applies to the next start; the current process retains its loaded policy. A resumed

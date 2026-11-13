@@ -245,6 +245,8 @@ Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` �
 
 所有 worker 使用私有状态视图，由一个协调器串行合并本 packet 的状态、session 和用量，再 CAS 保存。全局预算和实际账号渠道并发限制在派发前重新接纳，hard 预算只允许一个模型调用在飞，确认计费后才接纳下一次。取消等待全部已派发 worker 收尾。`state.scheduler` 记录当前运行载入的策略；下次启动可载入更新的调度设置，但原调用、未完成共享批次及未知回执仍须按原身份核对，切换策略不能清除这些责任。
 
+同一轮的 worker 从派发前的会话账本快照开始维护本 packet 的调用，ready queue 补位也使用这份快照，不把当前仍在运行的兄弟任务调用复制成自己的恢复对象。协调器持续保有全部实际调用、计费与跨 packet 历史归属，原有未核对回执仍须在恢复时处理；某个 worker 的真实未知结果或终态回执保存失败，均在协调器合并到阻断事实时立即停止新接纳并取消，不等该 worker 循环返回，不能被快照隔离掩盖。已经取得的可信回执仍完成计费；无法保存的回执保持未确认，不能伪造已记账。
+
 独立 worktree 的并行路径同样遵守 `--pause-before review`。本轮 Execute／L1 全部通过且已启动 worker 停稳后，先保存任务 `paused`，保留 packet 的 `l1-passed`、工作区与候选证据，不进入 Review 或 Git 集成。batch 的本轮是已接纳的有界批次；ready queue 可按原规则补完固定独立候选集，再在第一个 Review 前暂停。未接纳项保持原状态。恢复核对原候选后复用有效 Execute／L1 证据；之后吸收已交付成果改变了候选，仍须复验。
 
 独立 worktree 中 Execute／L1 可并发，Review、集成和最终 gate 保持串行。后完成分支先吸收已验证的集成 HEAD，原 L1／Review 证据失效，在合成候选上重新验证。集成冲突保留 worktree 并停止，不丢弃或强推成果。
@@ -404,6 +406,8 @@ Go 检查证据引用结构，不把语义结论当作已由代码独立证明�
 DSH 的 `ACCOUNT_SIGN_IN_REQUIRED`、`ACCOUNT_TOKEN_INVALID` 精确映射为 AUTH；账号退出引发的 `turn/end` 仅在 `kind:aborted` 且 hook reason 精确为 `deepseek-account/signed-out` 时也归 AUTH。`ACCOUNT_QUOTA` 保持 QUOTA。保留原始诊断并提示恢复同一账号的登录／额度，不误归 SERVER 后重试。默认账号配置不提供 API Key 后备；用户明确配置的后备链仍按既有策略处理。未知 ACCOUNT 前缀、其他 aborted/hook、通用 JSON-RPC 传输失败保持原有分类；调用方取消仍优先保留 cancelled 语义。依据为 rc.5 的账号 adapter 与账号退出任务取消契约，不增加新的 wire 错误类别。
 
 DSH 结构化 result.error.code 经协议身份、终态与既有码表校验，并确认 error 对应物理退出码 1 后，以独立 ErrorCode 字段穿过 driver、编排、辅助模块和诊断，不再把 AUTH 拼进文本后依赖英文关键词重猜。矛盾的退出码、超时、spawn、signal、截断、取消或未确认清理等进程事实不能被 provider 码掩盖；无结构化码的旧 driver 保留既有文本分类优先级。DSH error 帧的 settled:false 明示 SDK 清理尚未确认；已启动 worker 缺少可信终态回执（包括协议身份损坏、缺失终态或坏尾帧）也不能证明 SDK 已正常关闭。两者均保留 CleanupError 并停止自动重试，而不是推断进程仍在运行；正常启动前失败的 settled:true 不作此判断。SDK 的坏尾帧和 EOF 未换行残帧也必须覆盖先前的 provider 错误；不能在 SDK 协议已损坏后包装出可信的 AUTH/QUOTA 供后备决策。外部取消仍保持 cancelled。
+
+预热初始化的 `warm-result.error.code` 遵守相同规则：完整且身份匹配的输出、原私有未派发清理回执和预期物理退出均成立后，保留已知错误码供原有重试／渠道后备判断。认证、参数或服务错误不能因过滤预热控制帧而统一变成 TRANSPORT，也不能被当作安全过期取得额外冷启动。未知码和矛盾进程事实不取得可信结构化分类；正常 TTL 过期仍遵守原有精确回执与剩余期限条件。
 
 Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既有码；空答案使用明确的 `empty response` 诊断并归入 EMPTY_RESPONSE，不增加另一套重试或付费降级策略。
 

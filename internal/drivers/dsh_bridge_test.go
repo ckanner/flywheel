@@ -91,6 +91,29 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 		require.NoError(t, h.Close())
 	})
 
+	t.Run("prewarm initialization keeps nonretryable worker configuration errors", func(t *testing.T) {
+		t.Setenv("FLYWHEEL_DSH_PROFILE", "desktop")
+		a := warmArgs(t, "ok")
+		a.Command = worker
+		a.RequestID, a.PersistentSession = "invalid-prewarm-profile", true
+		log := filepath.Join(a.Cwd, "sdk.jsonl")
+		a.APIKeys = map[string]string{"TEST_DSH_LOG": log}
+		h := PrepareDSH(a)
+		t.Cleanup(func() { _ = h.Close() })
+		<-h.done
+		result := h.Run(a)
+		assert.False(t, result.Settled)
+		assert.Equal(t, errs.INVALID_REQUEST, result.ErrorCode)
+		require.NotNil(t, result.ErrorMessage)
+		assert.Contains(t, *result.ErrorMessage, "FLYWHEEL_DSH_PROFILE must name an SDK profile")
+		require.NotNil(t, result.Session)
+		assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+		assert.True(t, result.Session.CleanupConfirmed)
+		assert.Equal(t, &Usage{}, result.Usage)
+		assert.NoFileExists(t, log, "invalid initialization never starts an SDK or submits a prompt")
+		require.NoError(t, h.Close())
+	})
+
 	t.Run("public SDK prewarmed read-only Review through InvokeHarness", func(t *testing.T) {
 		publicSDK, err := filepath.Abs("../../plugins/dsh/test/fixtures/persisted-sdk.js")
 		require.NoError(t, err)

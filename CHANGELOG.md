@@ -21,6 +21,12 @@ their original language.
 - Recheck current activity deadlines and process completion before applying
   queued prewarm timeouts. Stale callbacks cannot cancel a recently active Review,
   overwrite a completed result, or turn failed preparation into a cold call.
+- Keep ready-queue replacements from reconciling a still-running sibling's
+  invocation. The coordinator retains live-call ownership, shared accounting and
+  history checks; genuinely unfinished prior calls still require recovery.
+- Preserve proven DSH initialization error codes when consuming a prepared
+  runtime, so authentication and invalid-request failures keep their normal
+  retry rules instead of becoming transport failures.
 - Preserve lowercase and mixed-case JEV credential variable names when freezing
   investigation contracts. Keep the existing configuration length limit and
   compatibility with previously valid preparation records.

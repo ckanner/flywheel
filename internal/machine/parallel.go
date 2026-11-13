@@ -121,6 +121,12 @@ func (lane *parallelLane) merge(worker *Context) error {
 				copy.Last.Accounted, copy.Last.Accounting = true, jsonClone(previous.Last.Accounting)
 			}
 			owner.State.Sessions.Records[key] = copy
+			if copy.Last.Status == "blocked" || copy.Action == "wait" {
+				// An unsafe or unpersisted result already blocks new work, even
+				// before its lane returns from accounting or the Execute loop.
+				lane.group.stopped = true
+				lane.group.cancel()
+			}
 		}
 	}
 	owner.State.Inbox = append(owner.State.Inbox, jsonClone(worker.State.Inbox[lane.inbox:])...)
@@ -285,9 +291,15 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) ([]*contract.Pa
 	outcomes := make([]error, len(packets))
 	var admissionErr error
 	var wg sync.WaitGroup
+	// Each lane owns only its new invocations; the coordinator owns their union.
+	// A replacement must not reconcile another live lane's intent as abandoned.
+	// Retain the full pre-cohort ledger so earlier unresolved effects still block,
+	// while sibling identity checks and accounting use the authoritative owner.
+	sessionsBefore := jsonClone(c.State.Sessions)
 	newWorker := func(packet *contract.Packet) *Context {
 		worker := *c
 		worker.State = jsonClone(c.State)
+		worker.State.Sessions = jsonClone(sessionsBefore)
 		worker.RunContext = runContext
 		worker.Drivers = parallelDrivers(c.Config)
 		worker.sessionReports = nil

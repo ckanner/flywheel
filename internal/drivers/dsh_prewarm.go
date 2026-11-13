@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -193,6 +194,8 @@ type DSHPrewarm struct {
 	closed         bool
 	readySeen      bool
 	warmTerminal   bool
+	warmErrorCode  errs.ErrorCode
+	warmErrorText  string
 	formalOutput   bool
 	formalRequest  dshStart
 	startError     error
@@ -307,7 +310,8 @@ func (h *DSHPrewarm) line(line string) {
 		Dispatched       *bool  `json:"dispatched"`
 		CleanupConfirmed *bool  `json:"cleanupConfirmed"`
 		Error            *struct {
-			Code string `json:"code"`
+			Code    errs.ErrorCode `json:"code"`
+			Message string         `json:"message"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(line), &frame); err != nil {
@@ -327,9 +331,17 @@ func (h *DSHPrewarm) line(line string) {
 			h.readySeen = true
 			close(h.ready)
 		} else {
+			if frame.Error != nil && !errs.IsKnownCode(frame.Error.Code) {
+				h.streamError = fmt.Errorf("SDK prewarm returned an invalid structured error receipt")
+				h.cancel()
+				return
+			}
 			h.warmTerminal = true
-			if frame.Error != nil && frame.Error.Code == "TIMEOUT" {
-				h.prepareExpired = true
+			if frame.Error != nil {
+				h.warmErrorCode, h.warmErrorText = frame.Error.Code, frame.Error.Message
+				if frame.Error.Code == errs.TIMEOUT {
+					h.prepareExpired = true
+				}
 			}
 		}
 		return
@@ -531,6 +543,7 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 	h.idleTimer.Stop()
 	h.wallTimer.Stop()
 	result, writeError, streamError := h.result, h.writeError, h.streamError
+	warmErrorCode, warmErrorText := h.warmErrorCode, h.warmErrorText
 	result.DurationMS = time.Since(started).Milliseconds()
 	if h.idleTimedOut || h.wallTimedOut {
 		result.TimedOut, result.IdleTimedOut, result.WallTimedOut = true, h.idleTimedOut, h.wallTimedOut
@@ -556,6 +569,14 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 			out.Session.Protocol = DSHSessionProtocol
 		}
 		out.Usage, out.CostUSD = &Usage{}, new(float64)
+		// Initialization failures still own their structured retry/fallback
+		// classification. Trust it only after the same receipt, stream and
+		// physical error-exit checks used for a formal worker failure.
+		if warmErrorCode != "" && writeError == nil && out.ExitCode != nil && *out.ExitCode == 1 && out.Signal == "" && !out.Cancelled && !out.TimedOut {
+			out.ErrorCode = warmErrorCode
+			message := string(warmErrorCode) + ": " + warmErrorText
+			out.ErrorMessage = &message
+		}
 		if !out.Cancelled && !out.TimedOut {
 			a.RequestID = request.RequestID
 			return h.coldAfterExpiry(a, started, out)
@@ -570,7 +591,9 @@ func (h *DSHPrewarm) coldAfterExpiry(a DSHArgs, started time.Time, unused Result
 	// Admit the cold cancellation handle atomically with Close; there is no
 	// unowned window between deciding to fall back and publishing its lifeline.
 	h.mu.Lock()
-	if !h.prepareExpired || h.formalSent || h.closed || !h.Matches(a) {
+	// The local TTL can fire while a failed initialization is still shutting
+	// down. Its later non-timeout terminal error must not become a cold call.
+	if !h.prepareExpired || h.formalSent || h.closed || !h.Matches(a) || (h.warmErrorCode != "" && h.warmErrorCode != errs.TIMEOUT) {
 		h.mu.Unlock()
 		return unused
 	}

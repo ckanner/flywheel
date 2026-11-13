@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,14 +70,33 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 		if strings.HasPrefix(scenario, "expired") {
 			frame["error"] = map[string]string{"code": "TIMEOUT"}
 		} else if strings.HasPrefix(scenario, "failed-initialize") {
-			frame["error"] = map[string]string{"code": "SERVER"}
+			code := "SERVER"
+			if selected, exists := os.LookupEnv("FLYWHEEL_TEST_DSH_WARM_CODE"); exists {
+				code = selected
+			}
+			if scenario == "failed-initialize-empty-code" {
+				code = ""
+			}
+			frame["error"] = map[string]string{"code": code, "message": "initialization refused"}
 		}
 		_ = encode.Encode(frame)
 	}
 	ready := map[string]any{"protocol": 1, "type": "warm-ready", "warmId": prepared.WarmID,
 		"binding": prepared.Binding, "level": "sdk-initialized", "dispatched": false}
 	if strings.HasPrefix(scenario, "expired") || scenario == "closed-unused" || strings.HasPrefix(scenario, "failed-initialize") {
+		if scenario == "failed-initialize-delayed" {
+			var release struct{ Type string }
+			if decoder.Decode(&release) != nil || release.Type != "close" {
+				os.Exit(2)
+			}
+		}
 		closeWarm()
+		if scenario == "failed-initialize-extra-frame" {
+			_ = encode.Encode(ready)
+		}
+		if scenario == "failed-initialize-bad-exit" {
+			os.Exit(0)
+		}
 		if strings.HasSuffix(scenario, "-held") {
 			// The real worker emits its terminal frame before its outer process
 			// exits. Keep that window open until the test releases owned stdin.
@@ -547,6 +567,141 @@ func TestDSHPrewarmQueuedTTLDoesNotReclassifyFailedPreparation(t *testing.T) {
 			assert.False(t, expired)
 			result := h.Run(a)
 			assert.False(t, result.Settled)
+			assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+			assert.True(t, result.Session.CleanupConfirmed)
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
+func TestDSHPrewarmInitializationFailureRetainsStructuredRetryPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		code      errs.ErrorCode
+		retryable bool
+		fallback  bool
+	}{
+		{errs.INVALID_REQUEST, false, false},
+		{errs.AUTH, false, false},
+		{errs.QUOTA, false, true},
+		{errs.SERVER, true, false},
+		{errs.RATE_LIMIT, true, true},
+	} {
+		t.Run(string(tc.code), func(t *testing.T) {
+			a := warmArgs(t, "failed-initialize")
+			a.RequestID = "failed-initialization-review"
+			a.APIKeys["FLYWHEEL_TEST_DSH_WARM_CODE"] = string(tc.code)
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			<-h.done
+			result := h.Run(a)
+			assert.False(t, result.Settled)
+			assert.Equal(t, tc.code, result.ErrorCode)
+			require.NotNil(t, result.ErrorMessage)
+			assert.Equal(t, string(tc.code)+": initialization refused", *result.ErrorMessage)
+			code := errs.ClassifyError(errs.SpawnResult{ExitCode: *result.ExitCode, ErrorCode: result.ErrorCode})
+			assert.Equal(t, tc.retryable, errs.IsRetryable(code))
+			assert.Equal(t, tc.fallback, errs.ShouldFallback(code))
+			require.NotNil(t, result.Session)
+			assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+			assert.True(t, result.Session.CleanupConfirmed)
+			assert.Equal(t, "complete", result.Session.UsageStatus)
+			assert.Equal(t, &Usage{}, result.Usage)
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
+func TestDSHPrewarmInitializationFailureAfterLocalTTLDoesNotAuthorizeColdCall(t *testing.T) {
+	for _, code := range []errs.ErrorCode{errs.AUTH, errs.SERVER} {
+		t.Run(string(code), func(t *testing.T) {
+			a := warmArgs(t, "failed-initialize-delayed")
+			a.RequestID = "failure-after-local-expiry"
+			a.APIKeys["FLYWHEEL_TEST_DSH_WARM_CODE"] = string(code)
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			// Initialization can fail before the worker's own deadline, with its
+			// terminal frame arriving after Go's TTL while SDK shutdown awaits.
+			h.expirePrepare()
+			h.controls <- nil
+			<-h.done
+			result := h.Run(a)
+			assert.False(t, result.Settled)
+			assert.Equal(t, code, result.ErrorCode)
+			require.NotNil(t, result.Session)
+			assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+			assert.True(t, result.Session.CleanupConfirmed)
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
+func TestDSHPrewarmInitializationFailureRequiresIntactErrorProof(t *testing.T) {
+	for _, tc := range []struct {
+		name, scenario, code string
+		cleanup              bool
+	}{
+		{"unknown-code", "failed-initialize", "UNRECOGNIZED", false},
+		{"empty-code", "failed-initialize-empty-code", "", false},
+		{"extra-frame", "failed-initialize-extra-frame", "AUTH", false},
+		{"wrong-exit", "failed-initialize-bad-exit", "AUTH", true},
+		{"missing-frame", "failed-initialize-no-output", "AUTH", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := warmArgs(t, tc.scenario)
+			a.RequestID = "untrusted-initialization-review"
+			a.APIKeys["FLYWHEEL_TEST_DSH_WARM_CODE"] = tc.code
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			<-h.done
+			result := h.Run(a)
+			assert.False(t, result.Settled)
+			assert.Equal(t, errs.TRANSPORT, result.ErrorCode)
+			require.NotNil(t, result.Session)
+			assert.Equal(t, tc.cleanup, result.Session.CleanupConfirmed)
+			if tc.cleanup {
+				assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+				assert.Empty(t, result.CleanupError)
+				require.NoError(t, h.Close())
+			} else {
+				assert.Equal(t, "unknown", result.Session.Dispatch)
+				assert.NotEmpty(t, result.CleanupError)
+				assert.Error(t, h.Close())
+			}
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+		})
+	}
+}
+
+func TestDSHPrewarmInitializationFailureDoesNotOverrideCancellationOrTimeout(t *testing.T) {
+	for _, cancelCall := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancelled=%t", cancelCall), func(t *testing.T) {
+			a := warmArgs(t, "failed-initialize-held")
+			a.RequestID = "cancelled-initialization-review"
+			a.APIKeys["FLYWHEEL_TEST_DSH_WARM_CODE"] = string(errs.AUTH)
+			a.Watchdog.IdleTimeoutMs = 30
+			a.Watchdog.KillGraceMs = 30
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			a.Watchdog.Context = ctx
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			require.Eventually(t, func() bool {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				return h.warmTerminal
+			}, time.Second, 5*time.Millisecond)
+			if cancelCall {
+				cancel()
+			}
+			result := h.Run(a)
+			assert.False(t, result.Settled)
+			assert.Equal(t, cancelCall, result.Cancelled)
+			assert.Equal(t, !cancelCall, result.TimedOut)
+			assert.NotEqual(t, errs.AUTH, result.ErrorCode)
+			require.NotNil(t, result.Session)
 			assert.Equal(t, "not-dispatched", result.Session.Dispatch)
 			assert.True(t, result.Session.CleanupConfirmed)
 			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
