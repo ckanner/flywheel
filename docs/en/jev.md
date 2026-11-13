@@ -8,12 +8,16 @@ no separate shadow, advice, adoption, or per-feature switch in the task workflow
 
 ## Enable once, use the usual task entries
 
-In the desktop, open **Flywheel → Configuration → JEV decisions** in the intended
-global or project scope. Configure the System One endpoint, fixed model version,
-and credential environment-variable name, enable JEV, and save. The process running
-Flywheel must receive that variable. Configuration stores its name, never its value.
-Saving this setting is the activation action; tasks do not ask for the same approval
-again. Advanced fields bound timeout, call count, thresholds and shared data.
+In the desktop, open **Flywheel → Settings → JEV** and choose the intended global
+or project scope. Turn on **Enable JEV** to reveal the connection fields, fill or
+confirm the System One endpoint, fixed model version and credential
+environment-variable name, then select **Save changes**. The switch edits a draft;
+activation takes effect when you save. Editing and saving do not test service
+connectivity. Tasks do not ask for the same approval again.
+
+The process running Flywheel must receive that environment variable. Configuration
+stores its name, never its value. Advanced fields bound timeout, call count,
+thresholds and shared data.
 
 `key-env` accepts 1–120 ASCII letters, digits and underscores, beginning with a
 letter or underscore. Uppercase, lowercase and mixed-case names retain their exact

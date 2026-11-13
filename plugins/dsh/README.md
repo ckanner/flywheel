@@ -130,12 +130,14 @@ cleanup. Commands use explicitly granted host-process authority in copied inputs
 the copy is not an OS sandbox. A report does not imply code delivery. See the
 [investigation guide](https://github.com/ckanner/flywheel/blob/main/docs/en/investigation.md).
 
-Under **Configuration → JEV decisions**, **Enable JEV** is the only JEV switch.
-It is off by default: existing execution paths run without JEV requests or shadow
-capture. Configure the System One endpoint, a pinned model and the API-key
-environment variable name, then save the enabled setting once. New investigations
-prepared through Task or New inherit the policy automatically; Run continues
-that frozen policy. Enabled JEV can choose the next approved evidence action, defer
+Under **Settings → JEV**, **Enable JEV** is the only JEV switch and is off by
+default. Choose the global or project scope, turn it on to reveal the connection
+fields, and fill or confirm the System One endpoint, pinned model and API-key
+environment variable name. Select **Save changes** to apply the setting. The switch
+edits a draft; editing and saving do not test service connectivity. When disabled,
+existing execution paths run without JEV requests or shadow capture. New
+investigations prepared through Task or New inherit the policy automatically;
+Run continues that frozen policy. Enabled JEV can choose the next approved evidence action, defer
 redundant actions on cited evidence, or end evidence collection early for a report.
 During implementation it can choose a legal next step after confirmed failure:
 local repair, an approved feedback check, bounded replanning or an allowed execution
