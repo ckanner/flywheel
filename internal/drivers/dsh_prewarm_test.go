@@ -61,17 +61,33 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 			raw, _ := json.Marshal(receipt)
 			_ = os.WriteFile(filepath.Join(prepared.ReceiptDirectory, "terminal.json"), raw, 0o600)
 		}
+		if scenario == "failed-initialize-no-output" {
+			return // receipt survived, but no terminal frame reached stdout
+		}
 		frame := map[string]any{"protocol": 1, "type": "warm-result", "warmId": prepared.WarmID,
 			"binding": prepared.Binding, "dispatched": false, "cleanupConfirmed": receipt.CleanupConfirmed}
 		if strings.HasPrefix(scenario, "expired") {
 			frame["error"] = map[string]string{"code": "TIMEOUT"}
+		} else if strings.HasPrefix(scenario, "failed-initialize") {
+			frame["error"] = map[string]string{"code": "SERVER"}
 		}
 		_ = encode.Encode(frame)
 	}
 	ready := map[string]any{"protocol": 1, "type": "warm-ready", "warmId": prepared.WarmID,
 		"binding": prepared.Binding, "level": "sdk-initialized", "dispatched": false}
-	if strings.HasPrefix(scenario, "expired") || scenario == "closed-unused" {
+	if strings.HasPrefix(scenario, "expired") || scenario == "closed-unused" || strings.HasPrefix(scenario, "failed-initialize") {
 		closeWarm()
+		if strings.HasSuffix(scenario, "-held") {
+			// The real worker emits its terminal frame before its outer process
+			// exits. Keep that window open until the test releases owned stdin.
+			var release struct{ Type string }
+			if decoder.Decode(&release) != nil || release.Type != "close" {
+				os.Exit(2)
+			}
+		}
+		if strings.HasPrefix(scenario, "failed-initialize") {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if scenario == "bad-ready" {
@@ -481,6 +497,180 @@ func TestDSHPrewarmQueuedTTLDoesNotCancelFormalInvocation(t *testing.T) {
 	cancel()
 	assert.True(t, (<-finished).Cancelled)
 	require.NoError(t, h.Close())
+}
+
+func TestDSHPrewarmQueuedIdleExpiryDoesNotCancelRecentActivity(t *testing.T) {
+	a := warmArgs(t, "hang")
+	a.Watchdog.IdleTimeoutMs = 300
+	h := PrepareDSH(a)
+	t.Cleanup(func() { _ = h.Close() })
+	awaitWarm(t, h)
+	finished := make(chan Result, 1)
+	go func() { finished <- h.Run(a) }()
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(a.Cwd, "formal-request.json")); return err == nil }, time.Second, 5*time.Millisecond)
+	// Reset can win the mutex after an old AfterFunc callback was queued. That
+	// callback still runs, but must use the deadline established by new output.
+	h.activity("new worker progress", "stderr")
+	h.expire(true)
+	h.mu.Lock()
+	timedOut := h.idleTimedOut
+	h.mu.Unlock()
+	assert.False(t, timedOut, "a queued callback cannot expire the refreshed idle window")
+	assert.NoError(t, h.ctx.Err(), "recent activity keeps the formal Review alive")
+	select {
+	case result := <-finished:
+		assert.True(t, result.TimedOut, "the genuine new idle deadline remains enforced")
+		assert.True(t, result.IdleTimedOut)
+		assert.False(t, result.WallTimedOut)
+	case <-time.After(3 * time.Second):
+		t.Fatal("the refreshed idle deadline did not stop an actually idle Review")
+	}
+	require.NoError(t, h.Close())
+}
+
+func TestDSHPrewarmQueuedTTLDoesNotReclassifyFailedPreparation(t *testing.T) {
+	for _, scenario := range []string{"failed-initialize", "failed-initialize-no-output"} {
+		t.Run(scenario, func(t *testing.T) {
+			a := warmArgs(t, scenario)
+			a.RequestID = "failed-initialization-review"
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			<-h.done
+			// Stop cannot retract a callback already queued before process exit.
+			// Neither a known initialization failure nor a missing terminal
+			// frame can supply permission for a cold call after physical exit.
+			assert.Equal(t, scenario == "failed-initialize", h.warmTerminal)
+			h.expirePrepare()
+			h.mu.Lock()
+			expired := h.prepareExpired
+			h.mu.Unlock()
+			assert.False(t, expired)
+			result := h.Run(a)
+			assert.False(t, result.Settled)
+			assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+			assert.True(t, result.Session.CleanupConfirmed)
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
+func TestDSHPrewarmQueuedTTLRespectsTerminalBeforeProcessExit(t *testing.T) {
+	for _, tc := range []struct {
+		scenario string
+		expired  bool
+	}{
+		{scenario: "failed-initialize-held", expired: false},
+		{scenario: "expired-held", expired: true},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			a := warmArgs(t, tc.scenario)
+			a.RequestID = "terminal-before-exit-review"
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			require.Eventually(t, func() bool {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				return h.warmTerminal
+			}, time.Second, 5*time.Millisecond)
+			select {
+			case <-h.processDone:
+				t.Fatal("fixture must retain the terminal-to-exit window")
+			default:
+			}
+
+			// A queued Go TTL cannot replace a terminal SERVER result while
+			// physical exit is still pending. A real TIMEOUT remains expired.
+			h.expirePrepare()
+			h.mu.Lock()
+			expired := h.prepareExpired
+			h.mu.Unlock()
+			assert.Equal(t, tc.expired, expired)
+			h.controls <- nil // release the fixture without dispatching a prompt
+			<-h.done
+			result := h.Run(a)
+			if tc.expired {
+				require.True(t, result.Settled, "%+v", result)
+				require.Equal(t, a.RequestID, result.Session.RequestID)
+				raw, err := os.ReadFile(filepath.Join(a.Cwd, "cold-model-call"))
+				require.NoError(t, err)
+				assert.Equal(t, a.RequestID, string(raw))
+			} else {
+				assert.False(t, result.Settled, "a known initialization failure cannot become cold model work")
+				require.NotNil(t, result.Session)
+				assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+				assert.True(t, result.Session.CleanupConfirmed)
+				assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+			}
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
+func TestDSHPrewarmTerminalBeforeExitStillHasBoundedCleanup(t *testing.T) {
+	originalGrace := dshWarmCloseGrace
+	dshWarmCloseGrace = 25 * time.Millisecond
+	t.Cleanup(func() { dshWarmCloseGrace = originalGrace })
+	a := warmArgs(t, "failed-initialize-held")
+	a.RequestID = "terminal-cleanup-review"
+	a.Watchdog.KillGraceMs = 25
+	h := PrepareDSH(a)
+	t.Cleanup(func() { _ = h.Close() })
+	require.Eventually(t, func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.warmTerminal
+	}, time.Second, 5*time.Millisecond)
+	select {
+	case <-h.processDone:
+		t.Fatal("fixture must still own a live process after its terminal frame")
+	default:
+	}
+
+	// Knowing the terminal outcome retires classification, not ownership of
+	// a worker that never exits. Do not release its stdin: TTL must clean up.
+	h.expirePrepare()
+	select {
+	case <-h.done:
+	case <-time.After(time.Second):
+		t.Fatal("terminal output must not disable bounded prewarm process cleanup")
+	}
+	h.mu.Lock()
+	expired := h.prepareExpired
+	h.mu.Unlock()
+	assert.False(t, expired, "forced cleanup cannot turn SERVER into safe expiration")
+	result := h.Run(a)
+	assert.False(t, result.Settled)
+	require.NotNil(t, result.Session)
+	assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+	assert.True(t, result.Session.CleanupConfirmed)
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+	require.NoError(t, h.Close())
+}
+
+func TestDSHPrewarmQueuedInvocationTimeoutsIgnoreExitedProcess(t *testing.T) {
+	for _, idle := range []bool{false, true} {
+		t.Run(fmt.Sprintf("idle=%t", idle), func(t *testing.T) {
+			a := warmArgs(t, "ok")
+			h := PrepareDSH(a)
+			t.Cleanup(func() { _ = h.Close() })
+			result := h.Run(a)
+			require.True(t, result.Settled, "%+v", result)
+			// A callback queued before Stop may run after physical exit, even
+			// before Run extracts the result. Neither deadline owns it anymore.
+			h.mu.Lock()
+			h.lastActivity = time.Now().Add(-time.Hour)
+			h.mu.Unlock()
+			h.expire(idle)
+			h.mu.Lock()
+			idleTimedOut, wallTimedOut := h.idleTimedOut, h.wallTimedOut
+			h.mu.Unlock()
+			assert.False(t, idleTimedOut)
+			assert.False(t, wallTimedOut)
+			assert.NoError(t, h.ctx.Err(), "an exited process cannot become timed out")
+			require.NoError(t, h.Close())
+		})
+	}
 }
 
 func TestDSHPrewarmLocalTTLAndSafeColdFallbackBoundaries(t *testing.T) {

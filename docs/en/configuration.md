@@ -262,6 +262,14 @@ wait for all admitted workers to settle, and every combined candidate is recheck
 Existing total/channel limits, hard budgets, attempts and unknown-result recovery
 remain in force.
 
+`--pause-before review` also applies to independent parallel Worktrees. Once all
+Execute/L1 work in the current group passes and its workers settle, the task pauses
+before any Review or integration, retaining the verified candidates. Batch mode
+finishes its admitted group; ready-queue mode may refill the fixed independent
+queue before reaching that boundary. Resuming the same task reuses valid execution
+evidence instead of repeating Execute. A candidate changed by later integration
+still requires validation again.
+
 `scheduler.prewarm: true` allows a serial packet to initialize one DSH Review
 runtime while its post-Execute deterministic checks run. Initialization sends no
 model prompt or Session request. Review inference still waits for its checks and

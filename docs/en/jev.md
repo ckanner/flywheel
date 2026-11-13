@@ -15,6 +15,10 @@ Flywheel must receive that variable. Configuration stores its name, never its va
 Saving this setting is the activation action; tasks do not ask for the same approval
 again. Advanced fields bound timeout, call count, thresholds and shared data.
 
+`key-env` accepts 1–120 ASCII letters, digits and underscores, beginning with a
+letter or underscore. Uppercase, lowercase and mixed-case names retain their exact
+spelling when an investigation freezes its configuration and reloads its state.
+
 The equivalent configuration section is:
 
 ```json

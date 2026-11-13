@@ -422,7 +422,7 @@
         },
         "key-env": {
           "type": "string",
-          "pattern": "^[A-Z_][A-Z0-9_]*$",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
           "maxLength": 128
         },
         "timeout-ms": {

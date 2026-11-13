@@ -249,6 +249,12 @@ ready queue 的首个窗口必须全部准备并保存目录后才派发；随�
 worker 收尾，再串行推进；合成候选始终复验。已有总并发／渠道限制、hard 预算、
 尝试上限和未知结果恢复约束继续生效。
 
+`--pause-before review` 同样适用于独立 Worktree 的并行任务。本轮 Execute／L1
+全部通过、worker 停稳后，任务在第一个 Review 和集成前暂停，保留已验证候选。
+batch 完成已接纳批次；ready queue 可先按原规则补完固定独立候选队列，再到达这个
+暂停点。恢复同一任务时复用仍有效的执行证据，不重复 Execute；后续集成改变候选
+时仍需重新验证。
+
 `scheduler.prewarm:true` 允许串行 packet 在 Execute 后运行确定性检查的同时，
 初始化一个 DSH Review runtime。初始化不发送模型 prompt，也不创建或恢复 Session；
 真正 Review 推理仍等待检查完成与正常准入。并行 Execute／L1 lane 不准备 runtime，

@@ -15,6 +15,15 @@ their original language.
   bind unused-worker cleanup to durable receipts and a version 3 session ledger.
   Other harnesses retain their public startup paths. Defaults remain batch
   dispatch and no prewarming pending live benefit acceptance.
+- Honor `--pause-before review` after successful parallel batches and ready
+  queues. Preserve verified candidates for resume before any Review or Git
+  integration, without dispatching their Execute work again.
+- Recheck current activity deadlines and process completion before applying
+  queued prewarm timeouts. Stale callbacks cannot cancel a recently active Review,
+  overwrite a completed result, or turn failed preparation into a cold call.
+- Preserve lowercase and mixed-case JEV credential variable names when freezing
+  investigation contracts. Keep the existing configuration length limit and
+  compatibility with previously valid preparation records.
 - Extend bounded investigation with explicitly authorized reproduction commands
   in private input copies and exact GET/HEAD requests. Record physical outcomes,
   output limits and cleanup without presenting host processes as OS sandboxes.

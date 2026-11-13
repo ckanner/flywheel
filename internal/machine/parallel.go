@@ -464,6 +464,7 @@ func (lane *parallelLane) finishTurn() {
 // Recover bounded execution failures before integrating a green sibling. Plan
 // revisions can then synchronize contract-only checkpoints to every worktree.
 func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore string) (bool, error) {
+	reviewReady := false
 	for _, previous := range batch {
 		packet := c.Packets[previous.PacketID]
 		if packet == nil {
@@ -471,6 +472,7 @@ func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore 
 		}
 		ps := c.State.Packets[packet.PacketID]
 		if ps.Status == "l1-passed" && c.doneReportValid(packet) && c.currentL1Evidence(packet) {
+			reviewReady = true
 			continue
 		}
 		outcome, err := c.processPacket(packet, processOpts{PauseBefore: "review"})
@@ -482,6 +484,14 @@ func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore 
 		}
 		c.State.Status = "running"
 		c.save()
+	}
+	// A newly verified cohort would otherwise look like a resumed candidate to
+	// processPacket, bypassing its Execute-to-Review pause. All workers have
+	// quiesced here; preserve their L1 evidence before any Review or integration.
+	if pauseBefore == "review" && reviewReady {
+		c.State.Status = "paused"
+		c.save()
+		return true, c.err()
 	}
 	return false, c.err()
 }

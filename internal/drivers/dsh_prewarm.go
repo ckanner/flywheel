@@ -269,7 +269,15 @@ func (h *DSHPrewarm) expirePrepare() {
 	if h.formalSent {
 		return // a queued prepare timer cannot cancel an already handed-off call
 	}
-	h.prepareExpired = true
+	select {
+	case <-h.processDone:
+		return // an exited preparation keeps its original terminal classification
+	default:
+	}
+	if !h.warmTerminal {
+		h.prepareExpired = true
+	}
+	// A terminal frame owns classification, but not physical process cleanup.
 	// Retire admission at the TTL, then allow the SDK's own bounded shutdown.
 	// Sending TERM to the inherited group immediately would kill the SDK before
 	// its owning worker can publish a trustworthy no-dispatch cleanup receipt.
@@ -466,7 +474,19 @@ func (h *DSHPrewarm) writeFailure(err error, finish func()) {
 
 func (h *DSHPrewarm) expire(idle bool) {
 	h.mu.Lock()
+	select {
+	case <-h.processDone:
+		h.mu.Unlock()
+		return // a queued callback cannot time out an already exited process
+	default:
+	}
 	if idle {
+		// Reset does not retract an AfterFunc callback that is already queued.
+		// Fresh output owns the current idle window even if that callback runs.
+		if time.Since(h.lastActivity) < dshTimeout(h.formal.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs) {
+			h.mu.Unlock()
+			return
+		}
 		h.idleTimedOut = true
 	} else {
 		h.wallTimedOut = true
