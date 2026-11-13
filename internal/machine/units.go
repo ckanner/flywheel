@@ -614,8 +614,14 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 		if c.parallel != nil && c.sharedActive(packet.PacketID) {
 			return execLoopOutcome{Deferred: true}, nil
 		}
+		if err := c.beginReviewPrewarm(packet); err != nil {
+			return execLoopOutcome{Stopped: true}, err
+		}
 		l1 := c.l1Step(packet)
 		if !l1.Pass {
+			if err := c.closeReviewPrewarm("discarded: L1 did not pass"); err != nil {
+				return execLoopOutcome{Stopped: true}, err
+			}
 			var failedCommands []string
 			for _, r := range l1.Gate.Results {
 				if !r.Pass {
@@ -653,7 +659,15 @@ func (c *Context) unitReviewInjection(packet *contract.Packet) (*defectinjection
 
 // processPacket 单个 packet 的完整处理循环。
 // P3 修复：resume 直达 review 时补跑缺陷注入采样（Node 直接跳过）。
-func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (string, error) {
+func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outcome string, runErr error) {
+	previousPrewarmPolicy := c.prewarmReview
+	c.prewarmReview = opts.PauseBefore != "review" && c.parallel == nil && c.State.SharedExecution == nil
+	defer func() {
+		if err := c.closeReviewPrewarm("discarded: packet processing ended"); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+		c.prewarmReview = previousPrewarmPolicy
+	}()
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 

@@ -1,0 +1,628 @@
+package drivers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/ckanner/flywheel/internal/watchdog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDSHPrewarmProcessFixture(t *testing.T) {
+	scenario := os.Getenv("FLYWHEEL_TEST_DSH_WARM")
+	if scenario == "" {
+		return
+	}
+	decoder := json.NewDecoder(os.Stdin)
+	var raw json.RawMessage
+	if decoder.Decode(&raw) != nil {
+		os.Exit(2)
+	}
+	var prepared dshPrepare
+	_ = json.Unmarshal(raw, &prepared)
+	encode := json.NewEncoder(os.Stdout)
+	if prepared.Type == "start" {
+		var request dshStart
+		_ = json.Unmarshal(raw, &request)
+		first, last := dshFixtureFrames(request)
+		if request.WorkspaceCwd != "" {
+			first["workspaceCwd"] = request.WorkspaceCwd
+		}
+		_ = os.WriteFile(filepath.Join(request.Cwd, "formal-request.json"), raw, 0o600)
+		_ = os.WriteFile(filepath.Join(request.Cwd, "cold-model-call"), []byte(request.RequestID), 0o600)
+		_ = encode.Encode(first)
+		if scenario == "expired-cold-missing" {
+			os.Exit(1)
+		}
+		if scenario == "expired-cold-hang" {
+			time.Sleep(3 * time.Second)
+		}
+		_ = encode.Encode(last)
+		os.Exit(0)
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	closeWarm := func() {
+		no := false
+		receipt := dshWarmReceipt{Protocol: 1, WarmID: prepared.WarmID, Binding: prepared.Binding, WorkerPID: os.Getpid(),
+			Dispatched: &no, CleanupConfirmed: scenario != "unclean"}
+		if scenario != "missing-receipt" {
+			raw, _ := json.Marshal(receipt)
+			_ = os.WriteFile(filepath.Join(prepared.ReceiptDirectory, "terminal.json"), raw, 0o600)
+		}
+		frame := map[string]any{"protocol": 1, "type": "warm-result", "warmId": prepared.WarmID,
+			"binding": prepared.Binding, "dispatched": false, "cleanupConfirmed": receipt.CleanupConfirmed}
+		if strings.HasPrefix(scenario, "expired") {
+			frame["error"] = map[string]string{"code": "TIMEOUT"}
+		}
+		_ = encode.Encode(frame)
+	}
+	ready := map[string]any{"protocol": 1, "type": "warm-ready", "warmId": prepared.WarmID,
+		"binding": prepared.Binding, "level": "sdk-initialized", "dispatched": false}
+	if strings.HasPrefix(scenario, "expired") || scenario == "closed-unused" {
+		closeWarm()
+		os.Exit(0)
+	}
+	if scenario == "bad-ready" {
+		ready["binding"] = "different"
+	}
+	if scenario == "malformed" {
+		fmt.Fprintln(os.Stdout, "{broken-json}")
+	} else if scenario == "early-output" {
+		_ = encode.Encode(map[string]any{"type": "ready"})
+	} else if scenario != "no-ready" {
+		_ = encode.Encode(ready)
+	}
+	if scenario == "duplicate-ready" {
+		_ = encode.Encode(ready)
+	}
+	var control struct {
+		Type    string    `json:"type"`
+		Request *dshStart `json:"request"`
+	}
+	read := make(chan error, 1)
+	go func() { read <- decoder.Decode(&control) }()
+	select {
+	case <-signals:
+		closeWarm()
+		os.Exit(143)
+	case err := <-read:
+		if err != nil || control.Type == "close" {
+			if scenario == "ignore-close" {
+				for {
+					time.Sleep(time.Second)
+				}
+			}
+			closeWarm()
+			os.Exit(0)
+		}
+	}
+	if control.Request == nil {
+		os.Exit(2)
+	}
+	r := *control.Request
+	first, last := dshFixtureFrames(r)
+	if r.WorkspaceCwd != "" {
+		first["workspaceCwd"] = r.WorkspaceCwd
+	}
+	_ = os.WriteFile(filepath.Join(prepared.Cwd, "formal-request.json"), []byte(dshJSONL(map[string]any{"request": r, "pid": os.Getpid()})), 0o600)
+	_ = encode.Encode(first)
+	if scenario == "hang" {
+		<-signals
+		last["status"], last["text"] = "cancelled", ""
+		_ = encode.Encode(last)
+		os.Exit(143)
+	}
+	if scenario == "missing-terminal" {
+		os.Exit(1)
+	}
+	_ = encode.Encode(last)
+	if scenario == "late-warm-result" {
+		closeWarm()
+	}
+	os.Exit(0)
+}
+
+func warmArgs(t *testing.T, scenario string) DSHArgs {
+	t.Helper()
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	directory := filepath.Join(cwd, "warm")
+	require.NoError(t, os.Mkdir(directory, 0o700))
+	return DSHArgs{Command: kimiScript(t, "GORACE=atexit_sleep_ms=0 exec "+shQuote(os.Args[0])+" -test.run '^TestDSHPrewarmProcessFixture$'\n"),
+		Cwd: cwd, Provider: "deepseek-account", Model: "deepseek-flash", Prompt: "formal Review only", Thinking: "high", PermissionMode: "read-only",
+		PrewarmID: "warm-owned-123", PrewarmDirectory: directory,
+		APIKeys: map[string]string{"FLYWHEEL_TEST_DSH_WARM": scenario}, Watchdog: watchdog.Opts{IdleTimeoutMs: 3000, WallTimeoutMs: 5000, KillGraceMs: 1000}}
+}
+
+func awaitWarm(t *testing.T, h *DSHPrewarm) {
+	t.Helper()
+	select {
+	case <-h.ready:
+	case <-h.done:
+		t.Fatalf("warm worker terminated before ready: %+v", h.result)
+	case <-time.After(3 * time.Second):
+		t.Fatal("warm worker did not report readiness")
+	}
+}
+
+func TestDSHPrewarmReusesOwnedProcessAndSeparatesFormalTiming(t *testing.T) {
+	a := warmArgs(t, "ok")
+	a.PersistentSession, a.RequestID, a.SessionID = true, "formal-review", "previous-review"
+	a.WorkspaceCwd = a.Cwd
+	binding, err := DSHPrewarmBinding(a)
+	require.NoError(t, err)
+	h := PrepareDSH(a)
+	awaitWarm(t, h)
+	assert.Equal(t, a.PrewarmID, h.ID())
+	assert.True(t, h.Matches(a))
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "formal-request.json"))
+	started := time.Now()
+	time.Sleep(60 * time.Millisecond)
+	var events []string
+	a.OnEvent = func(line string) { events = append(events, line) }
+	a.Prewarm = h
+	result := RunDSH(a)
+	require.True(t, result.Settled, "%+v", result)
+	assert.Equal(t, "formal-review", result.Session.RequestID)
+	assert.True(t, result.Session.ResumeAccepted)
+	assert.Equal(t, "previous-review", result.SessionID)
+	assert.Less(t, result.DurationMS, time.Since(started).Milliseconds()-30)
+	assert.Len(t, events, 2, "warm transport is separate from formal invocation events")
+	require.NoError(t, h.Close())
+	require.NoError(t, h.Close())
+	assert.Error(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, binding), "formal runs do not leave no-dispatch proof")
+	assert.False(t, h.Run(a).Settled, "consumed instances cannot run twice")
+}
+
+func TestDSHPrewarmDiscardAndRecover(t *testing.T) {
+	for _, scenario := range []string{"ok", "no-ready", "unclean", "missing-receipt", "bad-ready", "malformed", "early-output", "duplicate-ready"} {
+		t.Run(scenario, func(t *testing.T) {
+			a := warmArgs(t, scenario)
+			h := PrepareDSH(a)
+			if scenario == "ok" {
+				awaitWarm(t, h)
+			}
+			err := h.Close()
+			if scenario == "ok" || scenario == "no-ready" {
+				require.NoError(t, err)
+				require.NoError(t, h.Close())
+				require.NoError(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
+			} else {
+				require.Error(t, err)
+			}
+			assert.NoFileExists(t, filepath.Join(a.Cwd, "formal-request.json"))
+		})
+	}
+}
+
+func TestDSHPrewarmBindingChangesRejectBeforeModelDispatch(t *testing.T) {
+	for _, change := range []func(*DSHArgs){
+		func(a *DSHArgs) { a.Model = "different" }, func(a *DSHArgs) { a.Provider = "different" },
+		func(a *DSHArgs) { a.PermissionMode = "danger-full-access" }, func(a *DSHArgs) { a.Thinking = "max" },
+		func(a *DSHArgs) { a.APIKeys["CREDENTIAL"] = "changed" }, func(a *DSHArgs) { a.Command = "/different" },
+		func(a *DSHArgs) { a.Watchdog.WallTimeoutMs++ }, func(a *DSHArgs) { a.WorkspaceCwd = t.TempDir() },
+	} {
+		a := warmArgs(t, "ok")
+		h := PrepareDSH(a)
+		awaitWarm(t, h)
+		change(&a)
+		assert.False(t, h.Matches(a))
+		result := h.Run(a)
+		assert.False(t, result.Settled)
+		assert.Empty(t, result.CleanupError)
+		assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+		assert.NoFileExists(t, filepath.Join(a.Cwd, "formal-request.json"))
+	}
+	a := warmArgs(t, "unclean")
+	h := PrepareDSH(a)
+	a.Model = "different"
+	result := h.Run(a)
+	assert.NotEmpty(t, result.CleanupError)
+	assert.False(t, result.Session.CleanupConfirmed)
+}
+
+func TestDSHPrewarmCancelledExpiredAndUnknownResults(t *testing.T) {
+	for _, persistent := range []bool{false, true} {
+		a := warmArgs(t, "expired")
+		a.PersistentSession, a.RequestID = persistent, "formal-review"
+		h := PrepareDSH(a)
+		<-h.done
+		result := h.Run(a)
+		require.True(t, result.Settled, "%+v", result)
+		assert.Equal(t, "dispatched", result.Session.Dispatch)
+		assert.Equal(t, "formal-review", result.Session.RequestID)
+		assert.True(t, result.Session.CleanupConfirmed)
+		raw, err := os.ReadFile(filepath.Join(a.Cwd, "cold-model-call"))
+		require.NoError(t, err)
+		assert.Equal(t, "formal-review", string(raw), "safe expiration uses exactly the original invocation")
+		require.NoError(t, h.Close())
+	}
+	for _, scenario := range []string{"missing-terminal", "late-warm-result"} {
+		a := warmArgs(t, scenario)
+		h := PrepareDSH(a)
+		result := h.Run(a)
+		assert.False(t, result.Settled)
+		assert.NotEmpty(t, result.CleanupError)
+		assert.Equal(t, "unknown", result.Session.Outcome)
+		assert.Error(t, h.Close())
+	}
+	for _, idle := range []bool{false, true} {
+		a := warmArgs(t, "hang")
+		if idle {
+			a.Watchdog.IdleTimeoutMs = 100
+		} else {
+			a.Watchdog.WallTimeoutMs = 100
+		}
+		h := PrepareDSH(a)
+		awaitWarm(t, h)
+		result := h.Run(a)
+		assert.True(t, result.TimedOut)
+		assert.Equal(t, idle, result.IdleTimedOut)
+		assert.Equal(t, !idle, result.WallTimedOut)
+		require.NoError(t, h.Close())
+	}
+	a := warmArgs(t, "hang")
+	h := PrepareDSH(a)
+	awaitWarm(t, h)
+	ctx, cancel := context.WithCancel(context.Background())
+	a.Watchdog.Context = ctx
+	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+	assert.True(t, h.Run(a).Cancelled)
+	require.NoError(t, h.Close())
+}
+
+func TestDSHPrewarmNoProcessProofAndInvalidPreparation(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		a := warmArgs(t, "ok")
+		if cancelled {
+			a.Watchdog.IdleTimeoutMs, a.Watchdog.WallTimeoutMs = 0, 0
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			a.Watchdog.Context = ctx
+		} else {
+			a.Command = filepath.Join(t.TempDir(), "missing-worker")
+		}
+		h := PrepareDSH(a)
+		require.NoError(t, h.Close())
+		receipt, err := readDSHWarmReceipt(h.ID(), a.PrewarmDirectory, h.prepare.Binding)
+		require.NoError(t, err)
+		assert.True(t, receipt.NoProcess)
+		assert.Zero(t, receipt.WorkerPID)
+	}
+	for _, change := range []func(*DSHArgs){func(a *DSHArgs) { a.Doctor = true }, func(a *DSHArgs) { a.Cwd = "/missing-cwd" },
+		func(a *DSHArgs) { a.PrewarmID = "" }, func(a *DSHArgs) { a.PrewarmDirectory = "/missing-directory" }} {
+		a := warmArgs(t, "ok")
+		change(&a)
+		h := PrepareDSH(a)
+		assert.Error(t, h.Close())
+		assert.False(t, h.Run(a).Settled)
+	}
+}
+
+func TestDSHPrewarmStrictReceiptAndPublication(t *testing.T) {
+	a := warmArgs(t, "ok")
+	binding, err := DSHPrewarmBinding(a)
+	require.NoError(t, err)
+	require.NoError(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	require.NoError(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding), "evidence cannot be replaced")
+	path := filepath.Join(a.PrewarmDirectory, "terminal.json")
+	valid, err := os.ReadFile(path)
+	require.NoError(t, err)
+	for _, data := range []string{"{broken", string(valid) + "{}", strings.Replace(string(valid), `"dispatched":false`, `"dispatched":true`, 1),
+		strings.Replace(string(valid), `"cleanupConfirmed":true`, `"cleanupConfirmed":false`, 1),
+		strings.Replace(string(valid), `"protocol":1`, `"protocol":2`, 1),
+		strings.Replace(string(valid), `"noProcess":true`, `"noProcess":false`, 1),
+		strings.Replace(string(valid), `"workerPid":0`, fmt.Sprintf(`"workerPid":%d`, os.Getpid()), 1),
+		strings.Replace(string(valid), `"dispatched":false,`, "", 1),
+		strings.Replace(string(valid), `"protocol":1`, `"extra":1,"protocol":1`, 1)} {
+		require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+		assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding), data)
+	}
+	var receipt map[string]any
+	require.NoError(t, json.Unmarshal(valid, &receipt))
+	receipt["noProcess"], receipt["workerPid"] = false, os.Getpid()
+	raw, _ := json.Marshal(receipt)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	assert.ErrorContains(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding), "physically exited")
+	require.NoError(t, os.WriteFile(path, valid, 0o600))
+	assert.Error(t, RecoverDSHPrewarm("bad", a.PrewarmDirectory, binding))
+	assert.Error(t, RecordUnstartedDSHPrewarm("bad", a.PrewarmDirectory, binding))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, "bad"))
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, "/missing-dir", binding))
+	require.NoError(t, os.Chmod(path, 0o644))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	require.NoError(t, os.Chmod(path, 0o600))
+	require.NoError(t, os.WriteFile(path, []byte(strings.Repeat("x", 8193)), 0o600))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, os.Symlink(filepath.Join(a.Cwd, "outside"), path))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, syscall.Mkfifo(path, 0o600))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	require.NoError(t, os.Chmod(a.PrewarmDirectory, 0o755))
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+}
+
+type failingWarmWriter struct{}
+
+func (failingWarmWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+func (failingWarmWriter) Close() error              { return nil }
+
+func TestDSHPrewarmWriteFailuresAndIOEvidenceFailures(t *testing.T) {
+	a := warmArgs(t, "ok")
+	h := PrepareDSH(a)
+	awaitWarm(t, h)
+	stopped := false
+	h.writeFailure(io.ErrClosedPipe, func() { stopped = true })
+	assert.True(t, stopped)
+	assert.Error(t, h.Close())
+	binding, err := DSHPrewarmBinding(a)
+	require.NoError(t, err)
+	originalStat, originalFileStat, originalCreate, originalSync := dshWarmStat, dshWarmFileStat, dshWarmCreate, dshWarmSync
+	t.Cleanup(func() {
+		dshWarmStat, dshWarmFileStat, dshWarmCreate, dshWarmSync = originalStat, originalFileStat, originalCreate, originalSync
+	})
+	dshWarmStat = func(string) (os.FileInfo, error) { return nil, os.ErrPermission }
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmStat = originalStat
+	dshWarmFileStat = func(*os.File) (os.FileInfo, error) { return nil, os.ErrPermission }
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmFileStat = originalFileStat
+	dshWarmCreate = func(string, string) (*os.File, error) { return nil, os.ErrPermission }
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmCreate = func(dir, pattern string) (*os.File, error) {
+		file, err := originalCreate(dir, pattern)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+		return file, nil
+	}
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmCreate = originalCreate
+	dshWarmSync = func(*os.File) error { return os.ErrInvalid }
+	assert.Error(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+}
+
+type controlledWarmWriter struct {
+	writes int
+	failAt int
+	closed bool
+}
+
+func (w *controlledWarmWriter) Write(data []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failAt {
+		return 0, io.ErrClosedPipe
+	}
+	return len(data), nil
+}
+func (w *controlledWarmWriter) Close() error { w.closed = true; return nil }
+
+func TestDSHPrewarmTransportCancellationBeforeAndAfterAdmission(t *testing.T) {
+	for _, stage := range []string{"before-context", "before-exit", "ready-context", "ready-exit", "ready-expired", "first-write", "second-write"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			h := &DSHPrewarm{ctx: ctx, cancel: cancel, done: make(chan struct{}), processDone: make(chan struct{}), inputDone: make(chan struct{}), ready: make(chan struct{}), controls: make(chan *dshStart)}
+			h.prepareTimer = time.NewTimer(time.Hour)
+			defer h.prepareTimer.Stop()
+			writer := &controlledWarmWriter{}
+			if stage == "first-write" {
+				writer.failAt = 1
+			}
+			if stage == "before-context" {
+				cancel()
+			} else if stage == "before-exit" {
+				close(h.processDone)
+			}
+			stopped := false
+			finished := make(chan struct{})
+			go func() { h.interact(writer, func() { stopped = true }); close(finished) }()
+			if strings.HasPrefix(stage, "ready-") || stage == "second-write" {
+				h.controls <- &dshStart{Type: "start"}
+				switch stage {
+				case "ready-context":
+					cancel()
+				case "ready-exit":
+					close(h.processDone)
+				case "ready-expired":
+					h.mu.Lock()
+					h.prepareExpired = true
+					h.mu.Unlock()
+					close(h.ready)
+				case "second-write":
+					writer.failAt = 2
+					close(h.ready)
+				}
+			}
+			select {
+			case <-finished:
+			case <-time.After(time.Second):
+				t.Fatal("transport did not stop at the cancelled admission boundary")
+			}
+			assert.True(t, writer.closed)
+			assert.Equal(t, stage == "first-write" || stage == "second-write", stopped)
+			if stopped {
+				assert.ErrorIs(t, h.writeError, io.ErrClosedPipe)
+			}
+		})
+	}
+}
+
+func TestDSHPrewarmQueuedTTLDoesNotCancelFormalInvocation(t *testing.T) {
+	a := warmArgs(t, "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.Watchdog.Context = ctx
+	h := PrepareDSH(a)
+	awaitWarm(t, h)
+	finished := make(chan Result, 1)
+	go func() { finished <- h.Run(a) }()
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(a.Cwd, "formal-request.json")); return err == nil }, time.Second, 5*time.Millisecond)
+	h.expirePrepare() // A timer callback may already be queued when Stop wins ownership.
+	h.mu.Lock()
+	expired := h.prepareExpired
+	h.mu.Unlock()
+	assert.False(t, expired)
+	assert.NoError(t, h.ctx.Err(), "the formal call uses its own deadlines after handoff")
+	cancel()
+	assert.True(t, (<-finished).Cancelled)
+	require.NoError(t, h.Close())
+}
+
+func TestDSHPrewarmLocalTTLAndSafeColdFallbackBoundaries(t *testing.T) {
+	originalTTL, originalClose := dshWarmTTL, dshWarmCloseGrace
+	t.Cleanup(func() { dshWarmTTL, dshWarmCloseGrace = originalTTL, originalClose })
+	dshWarmTTL = 75 * time.Millisecond
+	dshWarmCloseGrace = 25 * time.Millisecond
+	a := warmArgs(t, "no-ready")
+	h := PrepareDSH(a)
+	<-h.done
+	assert.True(t, h.prepareExpired, "Go independently bounds an unresponsive prepare")
+	a.RequestID = "same-formal-invocation"
+	result := h.Run(a)
+	require.True(t, result.Settled, "%+v", result)
+	assert.Equal(t, a.RequestID, result.Session.RequestID)
+	require.NoError(t, h.Close())
+	dshWarmTTL, dshWarmCloseGrace = originalTTL, originalClose
+
+	a = warmArgs(t, "closed-unused")
+	h = PrepareDSH(a)
+	<-h.done
+	result = h.Run(a)
+	assert.False(t, result.Settled, "an initialization failure is not silently replaced by cold work")
+	assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+	require.NoError(t, h.Close())
+
+	a = warmArgs(t, "expired")
+	ctx, cancel := context.WithCancel(context.Background())
+	a.Watchdog.Context = ctx
+	h = PrepareDSH(a)
+	<-h.done
+	cancel()
+	result = h.Run(a)
+	assert.True(t, result.Cancelled)
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+	require.NoError(t, h.Close())
+
+	a = warmArgs(t, "expired")
+	h = PrepareDSH(a)
+	<-h.done
+	result = h.coldAfterExpiry(a, time.Now().Add(-time.Hour), Result{})
+	assert.True(t, result.TimedOut)
+	assert.True(t, result.WallTimedOut)
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+	require.NoError(t, h.Close())
+
+	a = warmArgs(t, "expired-cold-missing")
+	h = PrepareDSH(a)
+	<-h.done
+	result = h.Run(a)
+	assert.False(t, result.Settled)
+	assert.NotEmpty(t, result.CleanupError)
+	assert.ErrorContains(t, h.Close(), "cold invocation")
+
+	dshWarmCloseGrace = 25 * time.Millisecond
+	a = warmArgs(t, "ignore-close")
+	a.Watchdog.WallTimeoutMs, a.Watchdog.KillGraceMs = 600000, 50
+	h = PrepareDSH(a)
+	awaitWarm(t, h)
+	started := time.Now()
+	assert.Error(t, h.Close())
+	assert.Less(t, time.Since(started), time.Second, "discard cannot wait for the model's wall-time allowance")
+}
+
+func TestDSHPrewarmCloseWaitsForColdFallbackCleanup(t *testing.T) {
+	a := warmArgs(t, "expired-cold-hang")
+	a.Watchdog.KillGraceMs = 100
+	h := PrepareDSH(a)
+	<-h.done
+	finished := make(chan Result, 1)
+	go func() { finished <- h.Run(a) }()
+	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(a.Cwd, "cold-model-call")); return err == nil }, time.Second, 5*time.Millisecond)
+	started := time.Now()
+	assert.Error(t, h.Close(), "a killed cold invocation cannot borrow an old unused receipt")
+	result := <-finished
+	assert.True(t, result.Cancelled)
+	assert.NotEmpty(t, result.CleanupError)
+	assert.Less(t, time.Since(started), time.Second)
+}
+
+func TestDSHPrewarmEvidenceDurabilityAndGroupRecovery(t *testing.T) {
+	a := warmArgs(t, "ok")
+	binding, err := DSHPrewarmBinding(a)
+	require.NoError(t, err)
+	require.NoError(t, RecordUnstartedDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	assert.Error(t, PrepareDSH(a).Close(), "an existing receipt directory cannot be reused")
+	originalSync, originalOpen, originalProbe := dshWarmSync, dshWarmOpenDirectory, dshWarmProbe
+	t.Cleanup(func() { dshWarmSync, dshWarmOpenDirectory, dshWarmProbe = originalSync, originalOpen, originalProbe })
+	dshWarmSync = func(*os.File) error { return os.ErrPermission }
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding), "readable evidence still requires durability confirmation")
+	dshWarmSync = func(file *os.File) error {
+		if file.Name() == a.PrewarmDirectory {
+			return os.ErrPermission
+		}
+		return originalSync(file)
+	}
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmSync = originalSync
+	dshWarmOpenDirectory = func(string) (*os.File, error) { return nil, os.ErrNotExist }
+	assert.Error(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding))
+	dshWarmOpenDirectory = originalOpen
+	path := filepath.Join(a.PrewarmDirectory, "terminal.json")
+	no := false
+	receipt := dshWarmReceipt{Protocol: 1, WarmID: a.PrewarmID, Binding: binding, WorkerPID: 999999,
+		Dispatched: &no, CleanupConfirmed: true}
+	raw, err := json.Marshal(receipt)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	for _, groupStatus := range []error{nil, syscall.EPERM, syscall.EIO, syscall.ESRCH} {
+		var probes []int
+		dshWarmProbe = func(pid int, signal syscall.Signal) error {
+			probes = append(probes, pid)
+			assert.Zero(t, signal, "recovery only probes, never kills")
+			if pid < 0 {
+				return groupStatus
+			}
+			return syscall.ESRCH
+		}
+		err := RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding)
+		assert.Equal(t, groupStatus != syscall.ESRCH, err != nil)
+		assert.Equal(t, []int{999999, -999999}, probes, "a dead leader alone cannot prove group quiescence")
+	}
+}
+
+func TestDSHPrewarmRecoveryDoesNotIgnoreSurvivingProcessGroup(t *testing.T) {
+	a := warmArgs(t, "ok")
+	binding, err := DSHPrewarmBinding(a)
+	require.NoError(t, err)
+	child := exec.Command("/bin/sh", "-c", "sleep 4 >/dev/null 2>&1 &")
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	require.NoError(t, child.Start())
+	pid := child.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+	require.NoError(t, child.Wait())
+	require.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH)
+	require.NoError(t, syscall.Kill(-pid, 0), "the detached-stdio descendant still belongs to the original group")
+	no := false
+	receipt := dshWarmReceipt{Protocol: 1, WarmID: a.PrewarmID, Binding: binding, WorkerPID: pid, Dispatched: &no, CleanupConfirmed: true}
+	raw, err := json.Marshal(receipt)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(a.PrewarmDirectory, "terminal.json"), raw, 0o600))
+	assert.ErrorContains(t, RecoverDSHPrewarm(a.PrewarmID, a.PrewarmDirectory, binding), "process group")
+	require.NoError(t, syscall.Kill(-pid, 0), "read-only recovery must not kill a potentially reused group")
+}

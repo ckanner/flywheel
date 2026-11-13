@@ -165,7 +165,8 @@ func TestParallelSharedHardBudgetAndProviderLimitsBoundDispatch(t *testing.T) {
 			c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set(), Log: func(string) {}})
 			require.NoError(t, err)
 			require.Len(t, c.parallelBatch("M-01"), 2)
-			require.NoError(t, c.runParallelExecute(c.PacketList))
+			_, err = c.runParallelExecute(c.PacketList)
+			require.NoError(t, err)
 			require.Equal(t, int32(1), peak.Load())
 			require.Equal(t, int64(360), c.State.Budget.Totals.Tokens)
 		})
@@ -188,7 +189,8 @@ func TestParallelScopedReceiptsRemainIndependentAndAccounted(t *testing.T) {
 	}
 	c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set(), Log: func(string) {}})
 	require.NoError(t, err)
-	require.NoError(t, c.runParallelExecute(c.PacketList))
+	_, err = c.runParallelExecute(c.PacketList)
+	require.NoError(t, err)
 	st, err := state.Load(fx.taskDir)
 	require.NoError(t, err)
 	require.Len(t, st.Sessions.Records, 2)
@@ -225,7 +227,10 @@ func TestParallelCancelWaitsForEveryStartedExecutor(t *testing.T) {
 	require.NoError(t, err)
 	c.State.Status = "running"
 	done := make(chan error, 1)
-	go func() { done <- c.runParallelExecute(c.PacketList) }()
+	go func() {
+		_, err := c.runParallelExecute(c.PacketList)
+		done <- err
+	}()
 	select {
 	case <-both:
 	case <-time.After(5 * time.Second):
@@ -252,7 +257,8 @@ func TestParallelHardBudgetAccountsBeforeAdmittingTheNextCall(t *testing.T) {
 	}
 	c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set(), Log: func(string) {}})
 	require.NoError(t, err)
-	require.Error(t, c.runParallelExecute(c.PacketList))
+	_, err = c.runParallelExecute(c.PacketList)
+	require.Error(t, err)
 	require.Equal(t, int32(1), calls.Load())
 	require.Equal(t, int64(180), c.State.Budget.Totals.Tokens)
 	require.Equal(t, "budget-stopped", c.State.Status)

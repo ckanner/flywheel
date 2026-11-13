@@ -7,6 +7,14 @@ their original language.
 
 ## Unreleased
 
+- Add optional ready-queue dispatch for independent Full packets in automatically
+  managed Worktrees. Refill bounded Execute/L1 lanes as they finish; keep Review,
+  Plan, shared-candidate validation and Git integration behind quiescence barriers.
+- Add optional DSH SDK initialization during serial packet verification. Send the
+  real Review prompt only after normal admission, preserve scoped history, and
+  bind unused-worker cleanup to durable receipts and a version 3 session ledger.
+  Other harnesses retain their public startup paths. Defaults remain batch
+  dispatch and no prewarming pending live benefit acceptance.
 - Extend bounded investigation with explicitly authorized reproduction commands
   in private input copies and exact GET/HEAD requests. Record physical outcomes,
   output limits and cleanup without presenting host processes as OS sandboxes.

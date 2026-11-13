@@ -146,7 +146,8 @@ func TestParallelFaultsStopAdmissionWithoutLosingAnotherPermit(t *testing.T) {
 
 func TestParallelPreflightNeverFallsBackToSharedExecution(t *testing.T) {
 	noGit := unitTestContext(t)
-	require.ErrorContains(t, noGit.runParallelExecute(noGit.PacketList), "Git checkout")
+	_, err := noGit.runParallelExecute(noGit.PacketList)
+	require.ErrorContains(t, err, "Git checkout")
 	for _, kind := range []string{"adapter", "binding", "worktree", "save"} {
 		t.Run(kind, func(t *testing.T) {
 			fx, cfg := parallelFixture(t)
@@ -163,7 +164,8 @@ func TestParallelPreflightNeverFallsBackToSharedExecution(t *testing.T) {
 				_, path := verify.WorktreeNames(c.Cwd, c.State.Slug, c.PacketList[0].PacketID)
 				writeFile(t, path, "preserve")
 			}
-			require.Error(t, c.runParallelExecute(c.PacketList))
+			_, err = c.runParallelExecute(c.PacketList)
+			require.Error(t, err)
 			require.Zero(t, c.State.Packets[c.PacketList[0].PacketID].Attempts)
 		})
 	}
@@ -173,7 +175,8 @@ func integratedFirstFixture(t *testing.T) (fixture, *Context) {
 	fx, cfg := parallelFixture(t)
 	c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: cfg, Drivers: happyDrivers().set()})
 	require.NoError(t, err)
-	require.NoError(t, c.runParallelExecute(c.PacketList))
+	_, err = c.runParallelExecute(c.PacketList)
+	require.NoError(t, err)
 	result, err := c.reviewStep(c.PacketList[0], nil)
 	require.NoError(t, err)
 	require.True(t, result.Pass)
@@ -228,7 +231,7 @@ func TestParallelFailureRecordsPauseAndPreservesWork(t *testing.T) {
 		d.execFn = func(drivers.CallArgs) drivers.Result { return drivers.Result{CleanupError: "unknown cleanup"} }
 		return d.set()
 	}
-	err = c.runParallelExecute(c.PacketList)
+	_, err = c.runParallelExecute(c.PacketList)
 	require.Error(t, err)
 	require.Equal(t, "escalated", c.State.Status)
 	require.NotNil(t, c.State.Packets[c.PacketList[0].PacketID].LastFeedback)
@@ -253,7 +256,8 @@ func TestParallelBudgetAlreadySpentStopsBeforeAnyModelDispatch(t *testing.T) {
 		}
 		return d.set()
 	}
-	require.ErrorContains(t, c.runParallelExecute(c.PacketList), "stopped before L1")
+	_, err = c.runParallelExecute(c.PacketList)
+	require.ErrorContains(t, err, "stopped before L1")
 	require.Equal(t, "budget-stopped", c.State.Status)
 	for _, packet := range c.State.Packets {
 		require.Zero(t, packet.Attempts)
@@ -268,7 +272,8 @@ func TestParallelCollectionFailureDeterministicallyPausesWithoutCompletingPeers(
 	old := writeCollectedReport
 	t.Cleanup(func() { writeCollectedReport = old })
 	writeCollectedReport = func(string, []byte, os.FileMode) error { return errors.New("collection unavailable") }
-	require.ErrorContains(t, c.runParallelExecute(c.PacketList), "collection unavailable")
+	_, err = c.runParallelExecute(c.PacketList)
+	require.ErrorContains(t, err, "collection unavailable")
 	require.Equal(t, "paused", c.State.Status)
 	for _, packet := range c.State.Packets {
 		require.NotEqual(t, "completed", packet.Status)

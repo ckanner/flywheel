@@ -253,6 +253,17 @@ validate and review the combined candidate. Review, integration, and final gates
 remain serial. Hard budgets allow one model call in flight until its accounting is
 durable. See the [console guide](flow-console.md#parallel-execution).
 
+The optional `scheduler.dispatch="ready-queue"` fills free Execute/L1 slots among
+already independent Full packets with automatic Worktrees. Review, Plan revisions
+and integration still wait for started workers to settle. `scheduler.prewarm=true`
+can prepare one DSH Review runtime alongside a serial packet's deterministic
+checks, without sending a model prompt early. Parallel execution lanes and shared
+candidates do not prewarm; after an independent cohort settles, its serial Review
+path may start preparation. The useful overlap is mainly serial post-Execute L1
+and applicable Quick checks. Defaults remain batch dispatch and no prewarming;
+these settings do not change Task/New/Run or Auto/Quick/Full. Details and limits are
+in [Configuration](configuration.md#ready-queues-and-runtime-preparation).
+
 `scoped` history can reuse an eligible packet Executor session for repairs. Review
 uses its own independent history and always evaluates the complete current candidate.
 Plan is task/milestone scoped; Judge and second opinions remain separate. Old

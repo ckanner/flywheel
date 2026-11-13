@@ -285,6 +285,9 @@ func (c *Context) accountSessionReceipt(r *state.SessionRecord, result drivers.R
 // Always reconcile under the task lease, including after a mode/backend change.
 // A lost terminal receipt never grants permission to repeat its possible effects.
 func (c *Context) reconcileSessionReceipts() error {
+	if err := c.reconcileWorkerPrewarm(); err != nil {
+		return err
+	}
 	if legacy, ok := c.State.PlanSession.(map[string]any); ok && legacy["outcome-unknown"] == true {
 		return c.sessionBlock("plan/legacy", "previous resident Plan result remains unknown")
 	}
@@ -429,7 +432,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if c.State.Sessions == nil {
 		c.State.Sessions = &state.SessionLedger{Version: 2, Records: map[string]*state.SessionRecord{}}
 	}
-	c.State.Sessions.Version = 2
+	c.State.Sessions.Version = max(2, c.State.Sessions.Version)
 	action, reason, generation, thread := "create", "first invocation in this role scope", 1, ""
 	protocol := "flywheel/admission-v1"
 	if r != nil {
@@ -510,7 +513,15 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			Session: &drivers.SessionOutcome{Protocol: protocol, RequestID: args.RequestID,
 				Dispatch: "not-dispatched", Outcome: "cancelled", CleanupConfirmed: true, UsageStatus: "complete"}}
 	} else {
+		if err := c.claimReviewPrewarm(role, scope, &args); err != nil {
+			return drivers.Result{}, err
+		}
 		result = call(args)
+		if args.Prewarm != nil {
+			if err := args.Prewarm.Close(); err != nil {
+				result.CleanupError = strings.TrimPrefix(result.CleanupError+"; "+err.Error(), "; ")
+			}
+		}
 	}
 	if result.Session != nil {
 		unsent := safeSessionOutcome(result, r.Last.ID) && result.Session.Dispatch == "not-dispatched" && result.Session.Outcome != "completed"

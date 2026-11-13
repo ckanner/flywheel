@@ -134,6 +134,81 @@ v1 每次调用使用全新 session。Go 重试时重新提交冻结任务输入
 
 Go 的 `DSHArgs.Doctor` 使用这个入口；为保持 v1 必填 `prompt` 的 admission schema，它会用固定的探针说明替代调用者文本，worker 不将其交给 `session/prompt`。doctor 仍必须具备匹配的 ready、可靠 result、正常 SDK shutdown 与物理退出，不能因为没有推理而放松清理或权限检查。
 
+## DSH SDK 一次性预热
+
+`scheduler.prewarm:true` 允许引擎在确定性检查期间预启动即将使用的 DSH Review
+worker；默认关闭，是否改善实际任务耗时仍须配对验收。只有 DSH 的公开 SDK 支持这里
+的无 prompt 初始化。Codex Pro、Claude Code Pro 和 Kimi 继续原冷启动路径；历史复用
+与模块导入不称为原生预热。
+
+Go 使用同一个 `flywheel-dsh-worker --prewarm` 可执行入口。此模式的 stdio 是独立的
+两阶段 envelope protocol 1，**从 prepare 到最终退出始终保持 stdin 开放；EOF 即父进程
+失联，不能当作派发许可**。旧 v1/v2 单请求入口的 EOF 语义不变。prepare 最多等待
+10 秒，每条完整 UTF-8 JSON 帧不超过 8 MiB，不允许重复、未知字段或提前 start。
+
+```json
+{"type":"prepare","protocol":1,"warmId":"warm-owned-123","binding":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","receiptDirectory":"/absolute/task/.control/prewarm/warm-owned-123","ttlMs":60000,"cwd":"/absolute/worktree","provider":"deepseek-account","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"read-only"}
+```
+
+prepare 不含 prompt、Session ID 或正式 Request ID；可选 `workspaceCwd` 与普通请求
+同义。Go 的 binding SHA-256 绑定实际 command、SDK bin/profile/home、完整白名单子进程
+环境、目录、provider/model/effort、权限和调用时限；只保存摘要，不输出凭据。目录必须
+是新建空的绝对物理路径和 0700 私有目录。TTL 上限 60 秒，Go 与 worker 双方执行。
+Go 到期先原子禁止正式派发，再允许最多三秒正常清理，随后由 watchdog 收束；准备
+准入期限与清理宽限分别计量，60 秒不表示必须在该时刻强杀整个进程组。初始化期间沿用原覆盖策略与
+进程所有权，只调用 SDK `initialize`，不创建或恢复 Session，不发 `session/prompt`。
+
+```json
+{"protocol":1,"type":"warm-ready","warmId":"warm-owned-123","binding":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","level":"sdk-initialized","dispatched":false}
+```
+
+`warm-ready` 只证明 SDK 初始化和路由配置接受，不是 Session 权限收据、模型完成或
+计费证明。Go 等正式 invocation intent 已持久化、检查及预算允许后，才发送：
+
+```json
+{"type":"start","protocol":1,"warmId":"warm-owned-123","request":{"type":"start","protocol":2,"requestId":"formal-review","persistent":true,"sessionId":"existing-review","cwd":"/absolute/worktree","provider":"deepseek-account","model":"deepseek-flash","reasoningEffort":"high","permissionMode":"read-only","prompt":"评审通过确定性检查的候选","timeoutMs":1800000}}
+```
+
+嵌套请求遵循原 v1/v2 schema，但本模式明确拒绝新增 `maxTokens`，因为初始化未配置
+该值；冷调用原有支持不变。绑定与 prepare 必须一致。同一个 SDK 只允许消费
+一次。正式 start 后才选择或恢复 Session。worker 在自己的临时私有目录独占写入延迟
+admission 元数据，公开 `agent/created` hook 非阻塞读取有界普通文件，核对 warm nonce
+及实际 Session 身份后发布原权限收据；其中无 prompt 或凭据。权限、cwd、终态和 SDK
+清理检查与冷调用相同，正式 ready/event/result 仍使用正式 Request ID 和原协议版本。
+Go 从正式 `Run` 开始独立执行调用 idle/wall 上限，预热不会延长模型时限；结果
+`durationMs` 不包含此前与验证重叠的等待，预热窗口另计。
+
+不再需要时，Go 发送唯一的 `close`：
+
+```json
+{"type":"close","protocol":1,"warmId":"warm-owned-123"}
+```
+
+close、TTL、EOF、TERM/INT/HUP 均触发有界 shutdown。Go 发 close 后最多给外层 worker
+三秒协议收尾窗口，再取消现有 watchdog 并等待其 TERM/KILL；SDK 原有两秒正常关闭
+窗口不变，不等剩余模型 wall-time。尚未收到正式 start 的 worker
+在 SDK 关闭后，将 `terminal.json` 以 0600、独占、原子发布到指定证据目录，fsync 文件及目录后再输出
+`warm-result`。文件包含 protocol、warmId、binding、真实 workerPid、`dispatched:false`
+和 `cleanupConfirmed`；协议损坏或 SDK 清理未知不得为 true。只有无错误且确认清理
+的正常 close 才返回 `status:closed`／退出 0，否则返回 error 或 cancelled 和非零退出。
+正式 start 已接收则
+不写未派发证明，恢复归属于正式 Session 调用账本。
+
+Go 只在精确身份匹配、receipt 为有界私有普通文件、无重复终态或损坏传输、外层
+watchdog 已证明静止后清除当前 warm intent。崩溃恢复重新 fsync 已核对的文件及目录，并额外要求该 worker PID 和同号进程组
+（负 PID）的只读探测均明确为 ESRCH；leader 消失但孙进程仍存活、PID／进程组被复用
+或探测错误均阻断，不自行杀死或重放。确知尚未启动
+进程的 Go 路径可原子写 `noProcess:true,workerPid:0` 的独立本地事实。缺少收据、清理不明
+或输入写入未知都不能仅凭等待时间自动冷启动。预热句柄不跨任务、角色、目录或引擎
+进程复用，也不绕过硬预算或增加模型在飞数量。
+
+确定性检查超过 TTL 时，已过期预热视为优化未命中：只有精确未派发收据、SDK 和整个
+进程组清理已确认、正式 start 从未尝试发送、父上下文未取消且流完整时，才在同一个
+已持久化 Request ID 内冷调用一次。该路径不消耗 transport retry、不虚增模型调用，
+只使用从正式 Run 入口计算的剩余 wall／idle 时间；冷调用的清理由其自己的结果证明，
+不能借旧预热收据掩盖。正式移交会原子退休 prepare timer，已排队的 TTL 回调也不能
+取消正式调用。初始化错误、未知派发或不完整收据不会触发这一替代路径。
+
 ## Codex Pro worker协议
 
 公开入口为 `@ckanner/dsh-plugin-flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同版本依赖，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.9.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
@@ -156,7 +231,7 @@ v2 拒绝 ephemeral、缺失模式和空／非法句柄；所有 progress/result
 嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.9.0。
 v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公开 lifecycle/recovery。
 
-**这里与 DSH worker 的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或非法后续输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
+**这里与 DSH 旧单请求入口的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或非法后续输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
 
 ### 进度与完整结果
 

@@ -4,6 +4,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validatePrepare, matchWarmStart, writeWarmReceipt } from './prewarm.js';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
@@ -174,8 +175,11 @@ export class Runtime {
   }
 }
 
-export async function runWorker(input, { emit, env = process.env, signal, doctor = false, stderr } = {}) {
+export async function runWorker(input, { emit, env = process.env, signal, doctor = false, stderr, prewarm } = {}) {
   let request;
+  let prepared;
+  let formalStarted = false;
+  let warmClosed = false;
   let runtime;
   let temp;
   let sessionId;
@@ -192,7 +196,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let waited = false;
   const beforeReady = [];
   let deadline;
-  const started = Date.now();
+  let started = Date.now();
   const controller = new AbortController();
   const cancel = () => {
     cancelled = true;
@@ -207,7 +211,14 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       ? input.timeoutMs : 30 * 60 * 1000;
     deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'DSH worker lifecycle deadline exceeded')), budget);
     if (signal?.aborted) cancel();
-    request = await abortable(validateStart(input), controller.signal);
+    // Validate owned cleanup metadata even if an early close cancelled startup.
+    // This never creates a Session and lets EOF/close publish no-dispatch proof.
+    request = prewarm ? await validatePrepare(input) : await abortable(validateStart(input), controller.signal);
+    if (prewarm) {
+      prepared = request;
+      clearTimeout(deadline);
+      deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'SDK prewarm expired before dispatch')), request.ttlMs);
+    }
     if (doctor && request.protocol === 2) throw new BridgeError('INVALID_REQUEST', 'doctor does not create or resume persistent histories');
     controller.signal.throwIfAborted();
     const bin = env.FLYWHEEL_DSH_BIN || 'dsh';
@@ -218,17 +229,21 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     }
     temp = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-dsh-')));
     const patch = join(temp, 'worker.patch.json');
-    sessionId = request.sessionId ?? `flywheel-${randomUUID()}`;
-    const admission = { receiptPath: join(temp, 'policy.json'), requestId: request.requestId, sessionId, nonce: randomUUID() };
+    sessionId = prepared ? undefined : request.sessionId ?? `flywheel-${randomUUID()}`;
+    const admission = { receiptPath: join(temp, 'policy.json'), requestId: prepared ? prepared.warmId : request.requestId,
+      ...(prepared ? { deferredAdmissionPath: join(temp, 'admission.json') } : { sessionId }), nonce: randomUUID() };
     await writeFile(patch, JSON.stringify(makeOverlay(request, undefined, admission, doctor ? join(temp, 'probe-history') : undefined)), { mode: 0o600 });
     controller.signal.throwIfAborted();
-    fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
+    if (!prepared) fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
     runtime = new Runtime(bin, ['--profile', profile, '--patch', patch], {
       cwd: request.cwd,
       env: { ...env, DSH_PERMISSION_MODE: request.permissionMode,
         DSH_MAX_TOKENS_AS_SUCCESS: 'false', DSH_TELEMETRY_DISABLED: '1', FLYWHEEL_DSH_NATIVE_WORKER: '1' },
       stderr,
     }, (method, params) => {
+      if (prepared && !formalStarted && method === 'session.event') {
+        throw new BridgeError('TRANSPORT', 'SDK emitted a Session event before formal prewarm dispatch');
+      }
       if (method === 'session.event' && fold.accept(params)) {
         const eventFrame = { type: 'event', sessionId, event: params.event };
         if (readySent) frame(eventFrame);
@@ -249,6 +264,31 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     });
     if (initialized?.serverInfo?.name !== 'deepseek-harness-sdk-runtime') {
       throw new BridgeError('TRANSPORT', 'unexpected SDK runtime identity');
+    }
+    if (prepared) {
+      prewarm.ready();
+      emit({ protocol: 1, type: 'warm-ready', warmId: prepared.warmId, binding: prepared.binding,
+        level: 'sdk-initialized', dispatched: false });
+      const next = await abortable(prewarm.dispatch, controller.signal);
+      if (next === null) { warmClosed = true; throw new BridgeError('TRANSPORT', 'unused prewarm closed'); }
+      // Once a full request arrives its lifecycle belongs to the already durable
+      // invocation, even if validation fails before any model input is sent.
+      formalStarted = true;
+      request = next;
+      // Receiving the owned start retires the prepare deadline before filesystem
+      // validation yields. The formal deadline covers that validation as well.
+      started = Date.now();
+      clearTimeout(deadline);
+      const formalBudget = Number.isSafeInteger(next?.timeoutMs) && next.timeoutMs > 0 && next.timeoutMs <= 86400000
+        ? next.timeoutMs : 30 * 60 * 1000;
+      deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'DSH worker lifecycle deadline exceeded')), formalBudget);
+      request = await abortable(validateStart(next), controller.signal);
+      matchWarmStart(prepared, request);
+      sessionId = request.sessionId ?? `flywheel-${randomUUID()}`;
+      fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
+      await writeFile(admission.deferredAdmissionPath, JSON.stringify({ requestId: admission.requestId,
+        nonce: admission.nonce, sessionId, ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}) }),
+      { mode: 0o600, flag: 'wx' });
     }
     if (request.sessionId !== undefined) {
       // Public SDK resume restores exactly this identity, without a new input
@@ -309,7 +349,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       outcome = fold.finish(receipt.messageId);
     }
   } catch (error) {
-    failure = normalizedError(error);
+    if (!warmClosed) failure = normalizedError(error);
   } finally {
     if (runtime) {
       try {
@@ -341,7 +381,16 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     });
     signal?.removeEventListener('abort', cancel);
     controller.signal.removeEventListener('abort', abort);
+    if (prepared && !formalStarted) {
+      const confirmed = settled && !runtime?.protocolFailure;
+      try { await writeWarmReceipt(prepared, confirmed, failure); }
+      catch (error) { settled = false; failure = normalizedError(error); }
+      emit({ protocol: 1, type: 'warm-result', warmId: prepared.warmId, binding: prepared.binding,
+        dispatched: false, cleanupConfirmed: confirmed && settled, status: warmClosed && settled && !failure ? 'closed' : cancelled ? 'cancelled' : 'error',
+        ...(failure ? { error: failure } : {}) });
+    }
   }
+  if (prepared && !formalStarted) return { status: warmClosed && settled && !failure ? 'closed' : cancelled ? 'cancelled' : 'error', settled };
   const result = {
     type: 'result', status: cancelled ? 'cancelled' : failure ? 'error' : 'ok', settled,
     ...(sessionId ? { sessionId } : {}),
@@ -349,7 +398,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     usage: outcome?.usage ?? null, costUsd: null,
     ...(failure ? { error: failure } : {}),
   };
-  if (input?.protocol === 2) {
+  if ((formalStarted ? request.protocol : input?.protocol) === 2) {
     // Cleanup, result certainty and output validity are independent. A complete
     // native turn with empty/model-invalid output can still be repaired in its
     // own context. Disconnects, damaged frames and ambiguous restore failures

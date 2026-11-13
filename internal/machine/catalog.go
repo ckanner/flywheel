@@ -186,7 +186,7 @@ func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error
 	if c.State.Sessions == nil {
 		c.State.Sessions = &state.SessionLedger{Version: 2, Records: map[string]*state.SessionRecord{}}
 	}
-	c.State.Sessions.Version = 2
+	c.State.Sessions.Version = max(2, c.State.Sessions.Version)
 	c.State.Run = &state.RunIdentity{Bindings: c.runBindings(), Drivers: c.Config.Drivers, ID: record.ID, Kind: record.Kind, Head: record.Head, Branch: record.Branch, Conditions: record.Conditions, StartedAt: record.StartedAt}
 	c.save()
 	if err := c.err(); err != nil {

@@ -20,6 +20,9 @@ const DSHWorkerEnv = "FLYWHEEL_DSH_WORKER"
 
 // DSHArgs binds one SDK worker to one provider/model and permission scope.
 type DSHArgs struct {
+	Prewarm           PreparedDSH // one-use SDK initialization, never a shared model session
+	PrewarmID         string      // durable owner-chosen random identity before startup
+	PrewarmDirectory  string      // existing private physical directory for pre-dispatch cleanup evidence
 	Prompt            string
 	Doctor            bool // local SDK route/policy/shutdown probe; never submits a model prompt
 	Provider          string
@@ -281,7 +284,7 @@ func parseDSHUsage(raw json.RawMessage) (*Usage, error) {
 // RunDSH exchanges one versioned JSONL request/result with the bundled SDK worker.
 // The process inherits only the standard CLI environment, explicit channel keys,
 // and three DSH runtime settings. No user's complete shell environment is copied.
-func RunDSH(a DSHArgs) Result {
+func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 	permission := a.PermissionMode
 	if permission == "" {
 		permission = "read-only"
@@ -290,14 +293,14 @@ func RunDSH(a DSHArgs) Result {
 		(a.RequestID != "" && (strings.TrimSpace(a.RequestID) == "" || strings.ContainsAny(a.RequestID, "\x00\r\n"))) ||
 		(a.PersistentSession && (strings.TrimSpace(a.RequestID) == "" || a.Doctor || strings.ContainsAny(a.RequestID+a.SessionID, "\x00\r\n"))) ||
 		(permission != "read-only" && permission != "workspace-write" && permission != "danger-full-access") {
-		return invalidDSHSession(a, "DSH requires provider, model, supported permissions, and an explicit scoped request for history")
+		return dshStart{}, "", nil, nil, fmt.Errorf("DSH requires provider, model, supported permissions, and an explicit scoped request for history")
 	}
 	cwd, err := filepath.Abs(a.Cwd)
 	if err == nil {
 		cwd, err = filepath.EvalSymlinks(cwd)
 	}
 	if err != nil {
-		return invalidDSHSession(a, "DSH cwd cannot be resolved: "+err.Error())
+		return dshStart{}, "", nil, nil, fmt.Errorf("DSH cwd cannot be resolved: %w", err)
 	}
 	project := a.WorkspaceCwd
 	if project != "" {
@@ -306,7 +309,7 @@ func RunDSH(a DSHArgs) Result {
 			project, err = filepath.EvalSymlinks(project)
 		}
 		if err != nil {
-			return invalidDSHSession(a, "DSH project workspace cannot be resolved: "+err.Error())
+			return dshStart{}, "", nil, nil, fmt.Errorf("DSH project workspace cannot be resolved: %w", err)
 		}
 	}
 	effort := a.Thinking
@@ -340,6 +343,17 @@ func RunDSH(a DSHArgs) Result {
 			env[key] = value
 		}
 	}
+	return request, command, argv, env, nil
+}
+
+func RunDSH(a DSHArgs) Result {
+	if a.Prewarm != nil {
+		return a.Prewarm.Run(a)
+	}
+	request, command, argv, env, err := dshCall(a)
+	if err != nil {
+		return invalidDSHSession(a, err.Error())
+	}
 	var onActivity func(chunk, stream string)
 	events := jsonLines{onLine: a.OnEvent, limit: watchdog.MaxBuffer}
 	if a.OnEvent != nil {
@@ -347,7 +361,7 @@ func RunDSH(a DSHArgs) Result {
 	}
 	written := make(chan error, 1)
 	result := watchdog.Run(command, argv, watchdog.Opts{
-		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env),
+		Context: a.Watchdog.Context, Cwd: request.Cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
 		KillGraceMs: a.Watchdog.KillGraceMs, OnActivity: onActivity,
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
@@ -362,16 +376,21 @@ func RunDSH(a DSHArgs) Result {
 	if a.OnEvent != nil {
 		events.flush()
 	}
-	parsed := parseDSHStream(result.Stdout, request)
+	var writeError error
 	select {
-	case err := <-written:
-		if err != nil {
-			parsed.Error = "DSH worker request write failed: " + err.Error()
-			parsed.ErrorCode = errs.TRANSPORT
-			parsed.Session = nil
-			parsed.Usage, parsed.CostUSD = nil, nil
-		}
+	case writeError = <-written:
 	default: // no stdin writer when spawn fails or cancellation precedes Start
+	}
+	return finishDSH(a, request, result, writeError)
+}
+
+func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError error) Result {
+	parsed := parseDSHStream(result.Stdout, request)
+	if writeError != nil {
+		parsed.Error = "DSH worker request write failed: " + writeError.Error()
+		parsed.ErrorCode = errs.TRANSPORT
+		parsed.Session = nil
+		parsed.Usage, parsed.CostUSD = nil, nil
 	}
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
 	out.ErrorCode = parsed.ErrorCode

@@ -225,6 +225,35 @@ test('serial scheduling omits concurrency and toggling parallel preserves the sa
   assert.equal(field(ui, '最大并发任务').value, '3');
 });
 
+test('optional dispatch and prewarm settings preserve the scheduler and the single JEV switch', async (t) => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('配置');
+  assert.equal(field(ui, '提前启动评审运行环境').value, 'false');
+  assert.equal([...ui.container.querySelectorAll('label')].some((l) => l.textContent === '并行任务派发方式'), false);
+  await input(ui, '调度策略', 'parallel');
+  assert.equal(field(ui, '并行任务派发方式').value, 'batch');
+  await input(ui, '最大并发任务', '3');
+  await input(ui, '并行任务派发方式', 'ready-queue');
+  await input(ui, '提前启动评审运行环境', 'true');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
+  });
+  await input(ui, '调度策略', 'serial');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'serial', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
+  });
+  await input(ui, '提前启动评审运行环境', 'false');
+  await input(ui, '调度策略', 'parallel');
+  assert.equal(field(ui, '并行任务派发方式').value, 'ready-queue');
+  await input(ui, '并行任务派发方式', 'batch');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'batch', prewarm: false },
+  });
+});
+
 test('restoring defaults previews a full replacement and only save sends reset=true', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('配置');

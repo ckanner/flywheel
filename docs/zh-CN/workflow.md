@@ -209,6 +209,15 @@ DSH 对应使用 `/flywheel-run <绝对任务目录>` 和 `/flywheel-status <同
 Execute，再验证和评审完整共同候选。Review、集成与终验保持串行。hard 预算在前一调用
 完成持久化计量前只允许一个模型调用在飞，详见[控制台指南](flow-console.md#串行与并行)。
 
+可选 `scheduler.dispatch="ready-queue"` 在自动管理 Worktree 的 Full 任务中，为
+已就绪的独立 packet 补充空闲 Execute／L1 槽位；Review、Plan 修订和集成仍等待
+已启动 worker 停稳。`scheduler.prewarm=true` 可以在串行 packet 的确定性检查
+期间准备一个 DSH Review runtime，不提前发送模型 prompt。并行执行 lane 和共享
+候选不预热；独立并行组停稳后，串行 Review 路径才可开始准备。主要重叠机会是
+串行 Execute 后的 L1 和适用 Quick 检查。默认仍为 batch 调度且不预热；
+Task／New／Run 和 Auto／Quick／Full 的职责保持，详见
+[配置与限制](configuration.md#就绪队列与运行时准备)。
+
 `scoped` 历史可在资格满足时复用同 packet Executor Session 返修。Review 使用独立
 历史，每次仍检查完整当前候选；Plan 按任务／里程碑划分，Judge 和第二意见分别独立。
 旧配置省略 `sessions` 时继续 fresh。两种模式都有调用安全记录，派发、结果或清理未知

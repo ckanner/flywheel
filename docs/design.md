@@ -84,6 +84,10 @@ DSH 使用原仓库作为 Session header 的 cwd，再通过公开工作目录�
 
 DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；正常关闭保留 2 秒用于历史落盘与插件释放，再进行有界 TERM/KILL 收尾。无法证明正常关闭就不能报告成功。不依赖 Teams、OAR、Forge，也不把 external subagent 名称当成原生 LLM provider。
 
+可选 `scheduler.prewarm:true` 提前启动一次性 DSH Review 运行环境：在串行 packet 的 Execute 已确认收尾后，与 L1／适用 Quick 检查重叠执行 SDK 启动与 `initialize`。准备阶段不创建或恢复 Session，不发送 prompt，不使用占位推理。新协议以 `--prewarm` 明确选择，与原 v1／v2 的一次性请求保持兼容；最多一个待用 SDK，60 秒 TTL，stdin EOF 始终触发有界清理。正式 Review 仍先通过全部适用验证、预算和角色调用准入，持久化实际 invocation intent 后才能消费同一运行环境。
+
+预热绑定实际 worker、SDK 配置、环境、Provider、模型、effort、权限、物理执行与项目目录，并由 Go 另外限制任务、Review scope 和账号 channel。绑定变化、检查失败、暂停或不再需要 Review 时先等待关闭；未知清理阻断后续模型调用。正常闲置过期只有在未尝试发送正式请求、原回执明确未派发、SDK 与整个进程组清理确认、调用未取消且仍有剩余期限时，才可在同一个实际 invocation 下执行一次普通冷启动，不增加业务失败或重置超时。预热不跨任务、角色、引擎进程复用，也不在并行执行 lane 或共享候选中积累 SDK。仅有 Execute 的单步操作和明确暂停在 Review 之前的流程不预热。并行组停稳后才在串行 Review 中准备，不声称已经与该组之前的并发 L1 重叠。原生 Codex Pro、Claude Code Pro 和 Kimi 路径保持各自公开生命周期；当前不声称它们支持这项无 prompt 的预启动。DSH 内的 ChatGPT／DeepSeek Provider 使用同一 SDK 能力判定。
+
 Codex Pro worker 是另一种受管进程，直接导入 `dsh-subagent-codex-pro/machine`，不创建 DSH 父模型来再次委派。插件内部启动 Codex app-server，保留其完整 harness 与用户已有 Codex 登录。Go 管理 worker 生命周期；插件拥有 app-server、guardian 和内部取消／清理。正常完成必须同时满足外层 worker 的物理终态及插件完整回执。worker 异常退出不能被解释成插件子进程已清理；取消和未知清理结果均阻止成功。
 
 Claude Code Pro worker 同样直接调用公开 machine API。插件先建立独立 guardian 的
@@ -231,11 +235,21 @@ Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。�
 
 ### 4.8 调度与工作区管理
 
-新模板显式选择 `scheduler.mode:parallel`、`max-parallel:2`，`worktree.enabled` 默认开启。已有完整配置省略 scheduler 时仍按 serial 运行，显式 serial 同样保留。Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` 和互不重叠 `schedule.writes`、依赖已经交付的就绪 packet 并发执行。旧契约未声明这些范围时保持串行，不把口头“独立”当作调度依据。
+新模板显式选择 `scheduler.mode:parallel`、`max-parallel:2`，`worktree.enabled` 默认开启。已有完整配置省略 scheduler 时仍按 serial 运行，显式 serial 同样保留。`scheduler.dispatch` 缺省为 `batch`，可显式选择 `ready-queue`；`scheduler.prewarm` 缺省为 false。这两个运行时设置独立于 Auto／Quick／Full 和唯一的 `jev.enabled`，安装不改写用户配置，也不因新增能力提高默认并发。
 
-自动管理开启的并行批次必须先成功准备并持久化各自的独立 worktree；任何目录创建失败都停止派发，不退回共享目录并发。串行执行保留已有 worktree 不可用时的 `in-place` 回退及原因记录。所有 worker 使用私有状态视图，由一个协调器串行合并本 packet 的状态、session 和用量，再 CAS 保存。全局预算和实际账号渠道并发限制在派发前重新接纳，hard 预算只允许一个模型调用在飞，确认计费后才接纳下一次。取消等待整批已启动 worker 收尾。
+Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` 和互不重叠 `schedule.writes`、依赖已经交付的就绪 packet 并发执行。旧契约未声明这些范围时保持串行，不把口头“独立”当作调度依据。`batch` 一次选择不超过最大并发的成员，等待整批 Execute／L1 收尾后推进后续阶段。
+
+`ready-queue` 仅适用于 Full、parallel、最大并发大于 1 且自动管理独立 worktree 的路径。协调器在固定契约轮次中扫描全部已就绪、互相独立的 packet，以有界窗口运行；某个 worker 的 Execute／L1 完成后，空位即可接纳下一项，不等待其他长任务。依赖仅在真正交付后满足，不因 Execute 完成就提前接纳依赖者。Review、Plan 修订和 Git 集成继续等待全部已派发 worker 停稳后串行执行；发生契约修订后重新选择，不能把旧队列用于新契约。关闭自动管理时，包括可能登记外部 worktree 的任务，仍使用既有 batch 路径。
+
+自动管理开启时，每个 worker 派发前必须成功准备并持久化其独立 worktree。ready queue 的首个窗口须全部准备成功才开始派发，随后每个补位分别准备并 CAS 保存；准备失败停止新接纳、取消并等待已启动工作，不退回共享目录并发。尚未接纳的队列成员不创建目录、不改 packet 状态、不写模型调用意图。尝试耗尽或空转也停止补位，停稳后仅处理实际已启动成员的恢复或升级。串行执行保留已有 worktree 不可用时的 `in-place` 回退及原因记录。
+
+所有 worker 使用私有状态视图，由一个协调器串行合并本 packet 的状态、session 和用量，再 CAS 保存。全局预算和实际账号渠道并发限制在派发前重新接纳，hard 预算只允许一个模型调用在飞，确认计费后才接纳下一次。取消等待全部已派发 worker 收尾。`state.scheduler` 记录当前运行载入的策略；下次启动可载入更新的调度设置，但原调用、未完成共享批次及未知回执仍须按原身份核对，切换策略不能清除这些责任。
 
 独立 worktree 中 Execute／L1 可并发，Review、集成和最终 gate 保持串行。后完成分支先吸收已验证的集成 HEAD，原 L1／Review 证据失效，在合成候选上重新验证。集成冲突保留 worktree 并停止，不丢弃或强推成果。
+
+显式 `prewarm:true` 允许串行 packet 在 Execute 完成后，与确定性验证重叠准备下一个 DSH Review runtime，每次至多一个。准备只执行 SDK 初始化，不创建或恢复 Session、不提交模型 prompt；真正 Review 仍须等待完整前置验证、预算和候选身份核对。并行 Execute／L1 lane 不预热，独立并行组停稳后的串行 Review 路径才可准备；共享候选批次不预热。主要重叠机会是串行 Execute 后的 L1 与适用 Quick 检查，不能把并行 lane 的全部 L1 时间计作被隐藏的等待。
+
+角色历史与权限保持隔离，准备身份不匹配或未使用的 runtime 必须有界收尾，未知清理仍阻断。实例安全过期且尚未尝试正式 start 时，只有精确未派发回执、SDK 和进程组清理及剩余时限均成立，才可在同一已持久化 invocation 中冷启动一次，不增加业务尝试或重置预算。其他 harness 保持冷启动，session 续用本身不算预热。该流水边界没有让 Review 推理、Plan 或 Git 集成与仍在写入的 worker 重叠。真实速度、资源消耗与是否调整默认值另行验收，见 [P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)。
 
 关闭自动管理不禁止并行，也不禁止用户或执行者自行选择 worktree。共享同一 checkout 的批次只并发 Execute；Go 持久化批次成员和初始基线，执行回执按声明写入范围绑定候选。全部 worker 收尾后，逐 packet 串行运行确定性检查和独立 Review，证据绑定完整共同候选。共享边界按声明范围投影，同时拒绝批次范围外和禁止路径的改动；这不能归因具体进程，也不是文件隔离保证。
 
@@ -255,13 +269,15 @@ Go 校验仓库、基线、分支、候选和独占归属后登记；下一次�
 
 `state.json` 仅由 `internal/state` 写入：schema 校验、进程间锁、revision CAS、临时文件与原子 rename。任务生命周期另持 `.run.lock`；lease 是并发运行与停止完成的判断依据。运行信息文件原子更新，包含用于关联本次运行的随机 control token；PID 只作展示，不作为停止授权。日志、pid、锁、停止请求及临时控制文件不进入提交。
 
-`state.sessions` 是可选的角色账本。新引擎兼容旧 v1，新增调用或人工接管写入 v2，
-包含运行归属与绑定快照；旧状态缺字段仍可读取，未知版本或损坏结构明确失败。
-v2 是旧引擎必须在加载阶段拒绝的栅栏，防止其忽略 `handoff`。配置的 session
+`state.sessions` 是可选的角色账本。新引擎兼容 v1／v2／v3；普通新增调用或人工接管至少使用 v2，
+第一次预热提升为 v3，此后调用、接管和清理均不降级。账本包含运行归属与绑定快照；旧状态缺字段仍可读取，未知版本或损坏结构明确失败。
+v2 阻止更早引擎忽略 `handoff`，v3 阻止只认识 v1／v2 的引擎忽略新的预热清理责任。配置的 session
 policy-version 仍为 1，worker、lifecycle 和 recovery 协议分别版本化。记录按 Plan／里程碑、Execute／packet、Review／评审职责、
 Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd、绑定／目标／契约身份、
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
 intent／received／consumed／blocked、派发／结果／清理和用量事实。
+
+`state.worker-prewarm` 记录至多一个尚未交接或清理的准备意图，保存随机 ID、Review scope、运行身份和绑定摘要，不保存 prompt、凭证或可复用会话。先 CAS 保存意图，后启动 SDK；正式调用意图持久化后交接清理责任。未消费的终态回执在 `.control/prewarm/<id>/`，通过私有、有界文件与排他发布持久化，确认文件和目录同步，受现有 volatile 规则排除出 Git。恢复仅接受精确 ID／摘要、明确未发送 prompt、SDK 清理确认、外层 worker 及其原进程组均已退出；PID／进程组 ID 只用于检查退出，不能授权终止其他进程。没有可信证据、仍存活或标识被复用都保持阻断；重启不会续用预热实例，关闭优化也不能擦除旧责任。启动前 CAS 失败记录本地确定的 no-process 回执，不能为了补回执启动进程。
 
 调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
 下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
@@ -593,6 +609,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | 流程控制台、任务发现和工作台 | [控制台方案](plans/2026-11-08-flow-console.md)、[任务发现](plans/2026-11-10-task-discovery.md)、[工作台](plans/2026-11-10-workbench-redesign.md) | [控制台](validation/2026-11-09-flow-console.md)、[任务发现](validation/2026-11-10-task-discovery.md)、[工作台](validation/2026-11-10-workbench-redesign.md) |
 | JEV 总开关与取证决策 | [统一 JEV 方案](plans/2026-11-12-unified-jev-decisions.md) | [实现验收](validation/2026-11-12-unified-jev-decisions.md) |
 | JEV 执行决策与诊断实验 | [扩展方案](plans/2026-11-13-jev-execution-decisions.md) | [离线工程验证](validation/2026-11-13-jev-execution-decisions.md) |
+| P5 就绪队列与一次性 DSH 预热 | [实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md) | [工程验证与收益边界](validation/2026-11-13-p5-ready-queue-prewarm.md) |
 | 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
 | 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |

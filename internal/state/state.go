@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -254,7 +255,19 @@ type SharedExecution struct {
 	Packets   []string `json:"packets"`
 }
 
+// WorkerPrewarm is a cleanup obligation, never a model invocation or reusable
+// history. Its private receipt directory is derived from the task and ID.
+type WorkerPrewarm struct {
+	Version     int    `json:"version"`
+	ID          string `json:"id"`
+	Scope       string `json:"scope"`
+	Binding     string `json:"binding"`
+	StartedAt   string `json:"started-at"`
+	EngineRunID string `json:"engine-run-id,omitempty"`
+}
+
 type State struct {
+	WorkerPrewarm        *WorkerPrewarm            `json:"worker-prewarm,omitempty"`
 	RuntimeDecisions     *RuntimeDecisions         `json:"runtime-decisions,omitempty"`
 	PreparationSource    *PreparationSource        `json:"preparation-source,omitempty"`
 	SharedExecution      *SharedExecution          `json:"shared-execution,omitempty"`
@@ -334,6 +347,7 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
+		WorkerPrewarm     json.RawMessage `json:"worker-prewarm"`
 		Revision          any             `json:"revision"`
 		Workflow          json.RawMessage `json:"workflow"`
 		Sessions          json.RawMessage `json:"sessions"`
@@ -363,7 +377,7 @@ func Load(taskDir string) (*State, error) {
 			return nil, err
 		}
 	}
-	for name, raw := range map[string]json.RawMessage{"handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
+	for name, raw := range map[string]json.RawMessage{"worker-prewarm": probe.WorkerPrewarm, "handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
 		if len(raw) > 0 {
 			var value any
 			_ = json.Unmarshal(raw, &value)
@@ -375,6 +389,9 @@ func Load(taskDir string) (*State, error) {
 	var st State
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
+	}
+	if st.WorkerPrewarm != nil && (st.Sessions == nil || st.Sessions.Version < 3 || st.Packets[strings.TrimPrefix(st.WorkerPrewarm.Scope, "final:")] == nil) {
+		return nil, errf("worker prewarm requires its packet and a version 3 session ledger")
 	}
 	if err := validateRuntimeDecisions(&st); err != nil {
 		return nil, err

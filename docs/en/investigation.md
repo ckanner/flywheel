@@ -254,6 +254,10 @@ the same phase API; unobserved host-preparation time is never filled with zero.
 
 Offline checks do not establish fewer tokens, lower cost or equal final quality.
 JEV remains off by default; enabling the master switch activates the supported
-decisions. This change does not alter default models, enable prewarming or increase
-concurrency. Ready queues, persistent workers and importing existing candidates
-remain conditional on measurement and their own recovery/acceptance evidence.
+decisions. Default models and concurrency are unchanged. The
+[ready queue and bounded DSH runtime preparation](configuration.md#ready-queues-and-runtime-preparation)
+are now available as explicit scheduler settings, with batch dispatch and no
+prewarming remaining the defaults. Real performance and any default change still
+need measurement. Long-lived workers and general external-patch import remain
+separate work; the existing managed Session claim/return path keeps its original
+recovery and acceptance requirements.

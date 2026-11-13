@@ -24,6 +24,10 @@ func TestExampleConfigRoundTrip(t *testing.T) {
 	require.NoError(t, c.Validate(), "example config 必须通过法定校验")
 
 	assert.Nil(t, c.JudgePanel, "昂贵第二意见默认关闭")
+	assert.Equal(t, "parallel", c.Scheduler.Mode)
+	assert.Equal(t, 2, c.Scheduler.MaxParallel)
+	assert.Equal(t, "batch", c.Scheduler.Dispatch, "P5 不自动改变现有批次调度")
+	assert.False(t, c.Scheduler.Prewarm, "预热缺省关闭，实际收益另行验收")
 	for name, ch := range c.Channels {
 		assert.Empty(t, ch.Fallback, "渠道 %s 不自动转付费兜底", name)
 	}

@@ -142,6 +142,8 @@ type SchedulerConfig struct {
 	Mode        string         `json:"mode"`
 	MaxParallel int            `json:"max-parallel"`
 	Providers   map[string]int `json:"providers,omitempty"`
+	Dispatch    string         `json:"dispatch,omitempty"`
+	Prewarm     bool           `json:"prewarm,omitempty"`
 }
 
 type Config struct {
@@ -197,7 +199,7 @@ func Default() Config {
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Permissions:     PermissionsConfig{Mode: "role-based"},
-		Scheduler:       SchedulerConfig{Mode: "parallel", MaxParallel: 2},
+		Scheduler:       SchedulerConfig{Mode: "parallel", MaxParallel: 2, Dispatch: "batch"},
 		Sessions:        SessionsConfig{Mode: "fresh", PolicyVersion: SessionPolicyVersion},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
@@ -214,6 +216,9 @@ func (c *Config) Normalize() {
 	}
 	if c.Scheduler.MaxParallel == 0 {
 		c.Scheduler.MaxParallel = 2
+	}
+	if c.Scheduler.Dispatch == "" {
+		c.Scheduler.Dispatch = "batch"
 	}
 	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) && c.Sessions.Context == "" {
 		c.Sessions = d.Sessions
@@ -281,6 +286,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Scheduler.Mode != "serial" && c.Scheduler.Mode != "parallel" || c.Scheduler.MaxParallel < 1 || c.Scheduler.MaxParallel > 8 {
 		return errors.New("scheduler requires serial|parallel and max-parallel between 1 and 8")
+	}
+	if c.Scheduler.Dispatch != "batch" && c.Scheduler.Dispatch != "ready-queue" {
+		return errors.New("scheduler dispatch requires batch|ready-queue")
 	}
 	for channel, limit := range c.Scheduler.Providers {
 		if channel == "" || limit < 1 || limit > 8 {

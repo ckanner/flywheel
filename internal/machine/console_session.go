@@ -162,7 +162,7 @@ func (c *Context) runSessionCommand(request SessionCommand) (TaskSummary, error)
 		if c.Packets[packetID] == nil {
 			return c.summary(), fmt.Errorf("interactive takeover requires a packet-scoped session; use read-only history for milestone roles")
 		}
-		c.State.Sessions.Version = 2 // older engines must reject a task with a human ownership lease
+		c.State.Sessions.Version = max(2, c.State.Sessions.Version) // preserve any newer lifecycle fence
 		c.consoleRetryReason = request.Reason
 		if err := c.reopenConsolePacket(packetID); err != nil {
 			return c.summary(), err

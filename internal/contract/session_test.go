@@ -37,7 +37,7 @@ func TestSessionSchemaRejectsMalformedExtensionBeforeDispatch(t *testing.T) {
 		name string
 		edit func(map[string]any, map[string]any, map[string]any)
 	}{
-		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 3 }},
+		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 4 }},
 		{"missing version", func(v, _, _ map[string]any) { delete(v, "version") }},
 		{"null records", func(v, _, _ map[string]any) { v["records"] = nil }},
 		{"unknown ledger field", func(v, _, _ map[string]any) { v["trust-me"] = true }},
@@ -120,20 +120,23 @@ func TestConsoleLedgerVersionFencesAnOlderEngineBeforeDispatch(t *testing.T) {
 	ledger := sessionSchemaValue()
 	require.NoError(t, old.Validate(ledger))
 	require.NoError(t, ValidateSessionStateValue(ledger))
-	ledger["version"] = 2
-	require.Error(t, old.Validate(ledger), "v0.29.1 must not bypass the persisted human ownership marker")
-	require.NoError(t, ValidateSessionStateValue(ledger))
+	for _, version := range []int{2, 3} {
+		ledger["version"] = version
+		require.Error(t, old.Validate(ledger), "v0.29.1 must not bypass human ownership or newer runtime cleanup responsibilities")
+		require.NoError(t, ValidateSessionStateValue(ledger))
+	}
 }
 
 func TestConsoleStateExtensionsValidateAtTheReaderBoundary(t *testing.T) {
 	hash := strings.Repeat("a", 64)
 	values := map[string]any{
-		"handoff":   map[string]any{"key": "execute/M01-T01", "thread": "thread", "cwd": "/repo", "packet": "M01-T01", "candidate": hash, "started-at": "now", "reason": "manual"},
-		"delivery":  map[string]any{"action": "create", "repo": "github.com/a/b", "head": "head", "branch": "feature", "base": "main", "status": "pending", "at": "now"},
-		"scheduler": map[string]any{"mode": "parallel", "max-parallel": 2},
-		"run":       map[string]any{"id": "run", "kind": "execute", "conditions": hash, "startedAt": "now"},
-		"control":   map[string]any{"kind": "execute", "status": "running", "message": "", "started-at": "now"},
-		"project":   map[string]any{"cwd": "/repo"},
+		"worker-prewarm": map[string]any{"version": 1, "id": "warm-0001", "scope": "M01-T01", "binding": hash, "started-at": "2026-11-13T00:00:00Z"},
+		"handoff":        map[string]any{"key": "execute/M01-T01", "thread": "thread", "cwd": "/repo", "packet": "M01-T01", "candidate": hash, "started-at": "now", "reason": "manual"},
+		"delivery":       map[string]any{"action": "create", "repo": "github.com/a/b", "head": "head", "branch": "feature", "base": "main", "status": "pending", "at": "now"},
+		"scheduler":      map[string]any{"mode": "parallel", "max-parallel": 2},
+		"run":            map[string]any{"id": "run", "kind": "execute", "conditions": hash, "startedAt": "now"},
+		"control":        map[string]any{"kind": "execute", "status": "running", "message": "", "started-at": "now"},
+		"project":        map[string]any{"cwd": "/repo"},
 	}
 	for name, value := range values {
 		require.NoError(t, ValidateConsoleStateValue(name, value))

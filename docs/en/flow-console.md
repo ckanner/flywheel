@@ -104,7 +104,7 @@ Explicitly independent packets with satisfied dependencies can be run ahead in t
 Read `flywheel template scheduler-policy.schema.json` for the current fields and bounds. For example:
 
 ```json
-{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}}
+{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1},"dispatch":"batch","prewarm":false}}
 ```
 
 Provider-limit keys are actual configuration channel names. The example uses the inline template's `deepseek-account`; a binding using `deepseek-account-sdk` needs that key instead. Eligibility comes from frozen packet contracts:
@@ -116,6 +116,23 @@ schedule:
 ```
 
 Dependencies reference earlier known packet IDs. Writes are normalized relative paths or directory prefixes, without globs or escapes. Include ordinary tests/configuration and account for shared test resources. Undeclared independence, overlapping scopes and live-credential units remain serial.
+
+### Dispatch and runtime preparation
+
+The configuration editor also offers `scheduler.dispatch` and `scheduler.prewarm`.
+The defaults are `batch` and false. Selecting `ready-queue` fills a free Execute/L1
+slot from the remaining independent Full packets when automatic Worktree management
+is enabled and the parallel limit exceeds one. Review, replanning and integration
+retain the all-workers-settled barrier. Shared-checkout runs keep batch dispatch.
+
+Prewarming initializes one DSH Review runtime while a serial packet performs its
+post-Execute deterministic checks. It sends no model prompt until normal Review
+admission. Parallel Execute/L1 lanes and shared candidates do not prewarm; an
+independent cohort must settle before its serial Review path may prepare a runtime.
+Other harnesses use the cold path. Unused runtimes must finish bounded cleanup.
+Neither setting changes JEV activation, task qualification or completion gates.
+Saving takes effect on the next start. See [Configuration](configuration.md#ready-queues-and-runtime-preparation)
+for eligibility, recovery and the separate live-performance evaluation.
 
 ### Execution directories
 
@@ -146,7 +163,17 @@ Each terminal line is a prompt. `/history` reads the latest response; `/reconcil
 
 Returning runs L1, applicable Quick gates and independent Review. Human text is not a passing verdict. Candidate-bound human-takeover evidence allows normal subsequent delivery. Release does not claim verification and cannot bypass unknown effects or cleanup. Milestone sessions currently expose read-only responses; interactive handoff is packet-scoped.
 
-Ledger storage v2 is accepted by the new engine alongside legacy v1. Older engines reject v2 rather than ignoring human ownership. Session policy-version remains 1; worker/lifecycle versions are independent.
+This return path requires an existing eligible managed session. It does not import
+an arbitrary patch prepared before the task, and running Verify followed by Review
+does not create that provenance. A general existing-candidate admission interface
+remains separate work.
+
+The engine accepts session ledger storage versions 1, 2 and 3. Human handoff
+requires at least v2; the first runtime prewarm records v3 so older engines reject
+cleanup responsibilities they cannot interpret. Later handoffs retain v3.
+Session policy-version remains 1; worker/lifecycle versions are independent.
+[Recovery](session-recovery.md#dsh-runtime-preparation-after-a-restart) explains the
+original cleanup receipt required after an interrupted preparation.
 
 ## Discovery and comparison
 

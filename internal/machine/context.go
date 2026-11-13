@@ -54,6 +54,8 @@ import (
 // Context 一次运行的完整上下文。Sleep/Now/Log/EnvLookup 全部可注入
 // （测试注入假时钟与假 sleep；零值语义 = 真实环境）。
 type Context struct {
+	prewarm            *reviewPrewarm
+	prewarmReview      bool
 	parallel           *parallelLane
 	sessionCommand     *SessionCommand
 	runID              string

@@ -196,13 +196,17 @@ An existing complete file without `scheduler` normalizes to **serial**, and an
 explicit serial choice remains unchanged. Installing a new release does not replace
 that file. The [scheduler schema](https://github.com/ckanner/flywheel/blob/main/templates/scheduler-policy.schema.json)
 bounds total and per-channel concurrency from 1 to 8.
+Both new and existing configurations default to `dispatch: "batch"` and
+`prewarm: false`. These settings do not change the Quick/Full workflow or enable JEV.
 
 ```json
 {
   "scheduler": {
     "mode": "parallel",
     "max-parallel": 2,
-    "providers": {"deepseek-account": 1}
+    "providers": {"deepseek-account": 1},
+    "dispatch": "batch",
+    "prewarm": false
   },
   "worktree": {"enabled": true}
 }
@@ -238,6 +242,54 @@ Project workspace identity and execution location are recorded separately. Nativ
 backends that cannot separate a `workspace-write` sandbox root reject unsupported
 split-directory requests before dispatch, without expanding permissions. See the
 [console guide](flow-console.md#parallel-execution) for registration and batch rules.
+
+### Ready queues and runtime preparation
+
+`scheduler.dispatch` accepts `batch` or `ready-queue`. Batch dispatch waits for the
+current bounded group before selecting more work. Ready queues admit the next
+already independent packet when an Execute/L1 slot becomes free. They apply to
+Full with parallel scheduling, a maximum above one, and automatic Worktree
+management. Quick, serial scheduling, a maximum of one, and automatic management
+off retain their existing path. Shared-checkout execution retains its batch rules,
+including when executors may register external Worktrees later.
+
+The first ready-queue window must have every Worktree prepared and saved before
+dispatch. Later packets prepare their directory before taking a freed slot. A
+preparation failure stops admission and cancels and awaits started workers; queued
+packets that have not been admitted create no directory or model invocation.
+Dependencies become ready only after delivery. Review, replanning and integration
+wait for all admitted workers to settle, and every combined candidate is rechecked.
+Existing total/channel limits, hard budgets, attempts and unknown-result recovery
+remain in force.
+
+`scheduler.prewarm: true` allows a serial packet to initialize one DSH Review
+runtime while its post-Execute deterministic checks run. Initialization sends no
+model prompt or Session request. Review inference still waits for its checks and
+normal admission. Parallel Execute/L1 lanes do not prepare runtimes: after their
+barrier, preparation can begin only in the serial Review path. Shared-candidate
+batches do not prewarm. The main overlap opportunity is therefore a serial
+Execute's L1 and applicable Quick checks, not every parallel lane's validation.
+
+Unused or incompatible runtimes must finish bounded cleanup before further model
+work. If an unused runtime reaches its 60-second lifetime before a formal start
+is attempted, one cold invocation may use the same persisted request identity and
+remaining time allowance. This requires an exact, durable no-dispatch receipt,
+confirmed SDK and process-group cleanup, and no cancellation or expired invocation
+deadline. It does not grant another attempt or reset a budget. Unknown cleanup
+remains blocking. Other harnesses start normally. Session history reuse is separate
+from runtime preparation and retains role isolation.
+
+These options are available in the configuration editor and advanced JSON. Saving
+applies to the next start; the current process retains its loaded policy. A resumed
+run still reconciles existing invocations and shared batches before new dispatch.
+An outstanding prepared worker also requires its original no-prompt cleanup
+receipt, synchronized file and directory, and confirmed worker/process-group exit,
+even after `prewarm` is disabled; see
+[prewarm recovery](session-recovery.md#dsh-runtime-preparation-after-a-restart).
+Both optimizations remain optional while live latency, resource use and adoption
+defaults are evaluated separately. Offline checks establish behavior and recovery,
+not a guaranteed speed or token improvement. See the
+[P5 implementation plan](../plans/2026-11-13-p5-ready-queue-prewarm.md) (Chinese).
 
 ## Session policy, history reuse, and invocation safety
 

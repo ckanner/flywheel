@@ -96,7 +96,7 @@ Quick 在 UI 中显示为 ultraWork／Quick；它仍要求确定性验证和独�
 配置入口为 `scheduler`，字段和边界以 `flywheel template scheduler-policy.schema.json` 为准。例如：
 
 ```json
-{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}}
+{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1},"dispatch":"batch","prewarm":false}}
 ```
 
 `providers` 的键是实际配置渠道名。示例使用内联模板的 `deepseek-account`；绑定使用 `deepseek-account-sdk` 时应改用后者。并行资格来自冻结 packet 的声明，而不是模型临时口头建议：
@@ -108,6 +108,21 @@ schedule:
 ```
 
 依赖必须指向较早编号的已知 packet；写入范围是规范相对路径／目录前缀，不支持通配符或越出项目的路径。声明要覆盖实现、普通测试和必要配置，并考虑共享测试服务等真实依赖。未声明独立性、写入范围冲突或需要 live 凭证的单元保留串行。
+
+### 派发策略与运行时准备
+
+配置编辑器还提供 `scheduler.dispatch` 和 `scheduler.prewarm`，默认分别为
+`batch` 与 false。选择 `ready-queue` 后，自动管理 Worktree、并行上限大于 1 的
+Full 任务会在 Execute／L1 槽位释放时补入剩余独立 packet。Review、重规划和集成
+仍等待全部已派发 worker 停稳；共享 checkout 保持 batch 派发。
+
+预热会在串行 packet 的 Execute 后确定性检查期间，初始化一个 DSH Review
+runtime；正常 Review 准入前不发送模型 prompt。并行 Execute／L1 lane 和共享
+候选不预热，独立并行组停稳后的串行 Review 路径才可开始准备。其他 harness
+保持冷启动，未使用 runtime 也须完成有界清理。这两个设置不改变 JEV 总开关、
+任务资格或完成门禁，
+保存后在下次启动生效。适用条件、恢复约束和独立的真实性能验收见
+[配置指南](configuration.md#就绪队列与运行时准备)。
 
 ### 执行目录
 
@@ -138,7 +153,14 @@ flywheel session '/absolute/task-worktree/docs/task-slug' --key 'execute/M01-T01
 
 “验证并交回”重新运行 L1、适用的 Quick gate 和独立 Review；人工回复本身不是通过证据。Go 保存绑定当前候选的 `human-takeover` 来源，后续正常交付仍由引擎完成。“退出接管”不声称验收成功；结果或清理未知时也不能借此解除阻断。里程碑会话目前提供只读回复，交互接管以 packet 为单位。
 
-会话账本存储为 v2，新引擎兼容旧 v1；旧引擎会拒绝 v2，避免忽略接管标记。配置的 `sessions.policy-version` 仍是 1，worker／lifecycle 协议不因此改变。
+这个交回入口要求已有符合条件的受管 Session，不导入任务开始前任意写好的一版
+补丁；依次运行 Verify 和 Review 也不会补造来源证据。通用的已有候选接纳入口仍是
+独立工作。
+
+引擎支持会话账本存储版本 1、2、3。人工接管至少需要 v2；首次运行时预热记录 v3，
+让旧引擎拒绝无法理解的清理责任，后续接管不会降回 v2。配置的
+`sessions.policy-version` 仍是 1，worker／lifecycle 协议独立。
+[恢复指南](session-recovery.md#dsh-预热运行时的重启核对)说明中断准备后所需的原始清理回执。
 
 ## 发现运行与比较
 

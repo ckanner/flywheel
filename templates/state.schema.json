@@ -7,6 +7,19 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
+    "worker-prewarm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "scope", "binding", "started-at"],
+      "properties": {
+        "version": {"const": 1},
+        "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{8,128}$"},
+        "scope": {"type": "string", "pattern": "^(final:)?M[0-9]+-T[0-9]+$"},
+        "binding": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "started-at": {"type": "string", "minLength": 1},
+        "engine-run-id": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
     "runtime-decisions": {
       "type": "object",
       "additionalProperties": false,
@@ -163,7 +176,7 @@
     "sessions": {
       "type": "object", "additionalProperties": false, "required": ["version", "records"],
       "properties": {
-        "version": { "enum": [1, 2] },
+        "version": { "enum": [1, 2, 3] },
         "records": {
           "type": "object",
           "additionalProperties": {

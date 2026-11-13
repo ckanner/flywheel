@@ -496,7 +496,7 @@ func ValidateSessionStateValue(value any) error {
 // ValidateConsoleStateValue validates versioned control extensions without
 // imposing newly required fields on unrelated legacy state sections.
 func ValidateConsoleStateValue(name string, value any) error {
-	if name != "handoff" && name != "delivery" && name != "scheduler" && name != "run" && name != "control" && name != "project" && name != "preparation-source" {
+	if name != "worker-prewarm" && name != "handoff" && name != "delivery" && name != "scheduler" && name != "run" && name != "control" && name != "project" && name != "preparation-source" {
 		return fmt.Errorf("unknown console state extension")
 	}
 	schema, err := StateSchema()

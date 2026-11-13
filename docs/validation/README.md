@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-13 | [P5 就绪队列与 DSH 运行时预热：工程验证](2026-11-13-p5-ready-queue-prewarm.md) |
 | 2026-11-13 | [JEV 执行决策与诊断扩展：工程验证](2026-11-13-jev-execution-decisions.md) |
 | 2026-11-12 | [JEV 总开关与取证决策实现验收](2026-11-12-unified-jev-decisions.md) |
 | 2026-11-12 | [0.31.1 正式发行与桌面验收](2026-11-12-release-0.31.1.md) |

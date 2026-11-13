@@ -248,6 +248,13 @@ own supported paths. Quality rebuild thresholds default to disabled. See
 
 ### Permissions and worker lifecycle
 
+Optional `scheduler.prewarm:true` uses the DSH worker's two-phase `--prewarm`
+protocol to initialize one SDK during verification, without creating a Session
+or sending a prompt until the formal invocation is admitted. It defaults to
+false; other backends retain their existing startup paths. The same bounded
+shutdown and process-group proof apply to unused workers. See the
+[worker protocol](PROTOCOL.md#dsh-sdk-一次性预热) for expiry, cancellation and recovery.
+
 The DSH worker supports read-only, workspace-write, and explicit full access,
 with approvals set to never. New subscription presets request full access;
 existing files without a permission setting retain role-based behavior.

@@ -2,19 +2,25 @@
 // Public rc.5/rc.1 Cordis services; the worker verifies this acknowledgement before prompt().
 import { link, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
+import { readPolicyReceipt, nonempty } from './protocol.js';
 
 export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
 export async function apply(ctx, config) {
-  const { permissionMode, cwd, workspaceCwd, sessionTitle, receiptPath, requestId, sessionId, nonce } = config;
+  const { permissionMode, cwd, workspaceCwd, receiptPath, requestId, nonce, deferredAdmissionPath } = config;
+  let { sessionTitle, sessionId } = config;
   const fullAccess = permissionMode === 'danger-full-access';
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode) || typeof cwd !== 'string' ||
       ctx.shell.sandboxMode === undefined) {
     throw new Error('Flywheel requires a sandbox-capable DSH shell and explicit permission policy');
   }
   if (typeof receiptPath !== 'string' || !isAbsolute(receiptPath) ||
-      [requestId, sessionId, nonce].some(value => typeof value !== 'string' || value.trim() === '' || value.includes('\0'))) {
+      [requestId, ...(deferredAdmissionPath === undefined ? [sessionId] : []), nonce].some(value => typeof value !== 'string' || value.trim() === '' || value.includes('\0'))) {
     throw new Error('Flywheel policy requires an owned, correlated admission receipt');
+  }
+  if (deferredAdmissionPath !== undefined && (typeof deferredAdmissionPath !== 'string' || !isAbsolute(deferredAdmissionPath) ||
+      dirname(deferredAdmissionPath) !== dirname(receiptPath) || sessionId !== undefined)) {
+    throw new Error('Flywheel deferred admission requires the same owned receipt directory');
   }
   const parent = dirname(receiptPath);
   const owner = await stat(parent);
@@ -37,6 +43,14 @@ export async function apply(ctx, config) {
   // that announcement and before the factory admits any model work in both hosts.
   ctx.on('agent/created', async ({ agent }) => {
     const session = agent.session;
+    if (deferredAdmissionPath !== undefined) {
+      const identity = await readPolicyReceipt(deferredAdmissionPath, { requestId, nonce });
+      if (Object.keys(identity).some(key => !['requestId', 'nonce', 'sessionId', 'sessionTitle'].includes(key))) {
+        throw new Error('Flywheel deferred admission has unsupported fields');
+      }
+      sessionId = nonempty(identity.sessionId, 'sessionId', 512);
+      sessionTitle = identity.sessionTitle === undefined ? undefined : nonempty(identity.sessionTitle, 'sessionTitle', 512);
+    }
     if (String(session.id) !== sessionId) throw new Error('Flywheel policy refuses an unrelated SDK session');
     if (workspaceCwd !== undefined && session.header.cwd !== workspaceCwd) {
       throw new Error('Flywheel refuses to relabel a session from a different project workspace');

@@ -204,6 +204,11 @@ Codex／Claude 的公开接口另外提供 Go 持久化 ACK、supervisor journal
 
 ### 权限与 worker 生命周期
 
+可选 `scheduler.prewarm:true` 使用 DSH worker 的两阶段 `--prewarm` 协议，在验证期间
+初始化一个 SDK；正式调用获准前不创建 Session、不发送 prompt。默认关闭，其他后端
+沿用原启动路径。未使用的 worker 同样必须有界关闭并证明进程组已清理；过期、取消和
+恢复规则见[worker 协议](PROTOCOL.md#dsh-sdk-一次性预热)。
+
 DSH worker 支持 read-only、workspace-write 和显式完全权限，审批设为 never。
 新订阅预设请求完全权限；已有文件缺少权限设置时保留按角色权限。实际策略在
 prompt 前检查。完全权限不代表 OS 沙箱，也不取消宿主静态拒绝、账号限制或
