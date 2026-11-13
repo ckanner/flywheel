@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-12 | [JEV 总开关与取证决策实现验收](2026-11-12-unified-jev-decisions.md) |
 | 2026-11-12 | [0.31.1 正式发行与桌面验收](2026-11-12-release-0.31.1.md) |
 | 2026-11-12 | [反馈驱动工作流、受管调查与 JEV 有限决策实现验收](2026-11-12-feedback-driven-workflows.md) |
 | 2026-11-12 | [DSH 0.2.2-rc.2 兼容复核（0.31.1）](2026-11-12-dsh-0.2.2-rc.2.md) |

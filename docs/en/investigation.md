@@ -134,75 +134,32 @@ that proof. Contract, verification or scheduling changes, an unknown external HE
 legacy missing proof, explicit Plan or a verification gap require planning again.
 Speed changes the economics of feedback; it does not erase planning or quality gates.
 
-## Optional JEV decisions
+## JEV decisions
 
-Preparation `decision` is independent of legacy `jev-shadow` and absent by default.
-Its schema defines an explicit endpoint, fixed `jev-x.y.z` model, credential
-environment-variable name, timeout, policy version, mode, allowed data categories,
-thresholds and maximum calls. Credential values never enter the contract.
+Use the single `jev.enabled` setting described in the [JEV guide](jev.md). Start
+resolves configuration and freezes the policy automatically; Task, New and Run do
+not maintain separate decision modes. The default disabled path retains the
+original action order and collection limits. Enabled decisions may choose the
+next action, defer redundant evidence collection, or stop collection for a report
+when Go's evidence prerequisites are met.
 
-- Off/offline do not contact the service; shadow captures a local snapshot;
-  advisory records advice; adopt can select one approved diagnostic action.
-  Thresholds are explicit experiment parameters, not measured deployment accuracy.
-- At least two legal choices and actual semantic uncertainty are required. One
-  request pairs applicability Noul with Choice and retains full probabilities.
-  Missing applicability, version mismatch, unauthorized fields, insufficient budget
-  or unknown execution cause abstention.
-- Before adoption, recheck task/run/revision, contracts, candidate, observations and
-  action binding. Consume the decision and bind a unique action invocation in one
-  CAS before dispatch. JEV cannot invent commands, skip acceptance or declare success.
-- An unknown optional request is not resent. Usage remains unknown and the task can
-  take its legal deterministic baseline. An unknown action outcome blocks. Ending,
-  cancellation and deadline expiration still reconcile the optional request read-only.
-- Maximum calls include unknowns. Hard budgets skip optional JEV when the API cannot
-  enforce a provable request ceiling. Character estimates are not reservations.
+Deferred actions and early completion of collection are persisted with decision
+and observation references. They do not classify a hypothesis as proven or
+contradicted. The analyst still writes the evidence-grounded report, and repair
+still uses the original scope plus the ordinary verification and review flow.
+`awaiting-report` does not restart collection when Run is repeated.
 
-Legacy workflow shadow captures only a local bounded summary; explicit `shadow run`
-evaluates it later. That switch cannot adopt actions or authorize new source/log
-sharing. Offline or shadow results do not establish a causal speedup. Compare full
-tasks using the existing baseline, core improvements without JEV, and those same
-improvements plus one action family.
+The effective target, model, data categories, thresholds and budget are frozen at
+preparation time. Current OFF, incompatible target changes or tightened policy
+stop further optional decisions. In-flight results are rechecked before adoption;
+known/unknown receipts are reconciled without resending. A preparation initially
+created with JEV off keeps its baseline policy; a new preparation receives a newly
+enabled policy. The desktop labels its stored status as last observed.
 
-### Offline replay and explicit advisory evaluation
-
-The general decision capture is a `*.snapshot.json` document containing the frozen
-`snapshot`, `policy` and source `target-hash`. It is distinct from the legacy workflow
-shadow dataset. Review its facts and data permissions before any live evaluation.
-
-```bash
-flywheel decision replay --input frozen.snapshot.json --response native-response.json \
-  --endpoint "$JEV_ENDPOINT" --model jev-1.14.0 --expected-model jev-1.14.0
-```
-
-Replay accepts a recorded native System One response or a fixture, forces `offline`,
-does not read a credential, sends no HTTP and writes no journal or task state. The
-endpoint and equal fixed model IDs identify the intended target; the version above
-is an example and must match the response under evaluation. A bare Snapshot JSON
-requires `--policy reviewed-policy.json`. That flag also replaces the entire captured
-policy when used with a wrapper; omitted data permissions are not inherited.
-
-For an explicitly authorized live experiment:
-
-```bash
-flywheel decision evaluate --input frozen.snapshot.json --policy reviewed-policy.json \
-  --endpoint "$JEV_ENDPOINT" --model jev-1.14.0 --expected-model jev-1.14.0 \
-  --directory ./decision-evaluation --key-env MEROUTER_API_KEY --max-calls 5
-```
-
-`evaluate` always forces `advisory`, even if the source policy says `adopt`. The
-credential environment-variable name, fixed target, separate private journal and
-cumulative call cap are explicit. It preserves source data-category permissions and
-requires them to cover the snapshot. `--hard-budget` skips the optional call because
-the native API cannot enforce a request usage ceiling. Reusing the same journal and
-snapshot reads the original receipt; unknown requests consume the cap and are never
-resent. The command does not execute an action or change task state.
-
-Both commands print the baseline, effective policy, probabilities and receipt with
-`adopted: false`. Live errors or unknown outcomes return exit code 3 with that receipt;
-input/configuration errors return 1, cancellation before dispatch returns 143. A
-successful offline replay is parser/fixture evidence, not a measured model success.
-Limited task adoption still requires the separate preparation policy, data opt-in,
-frozen concrete Go action and current-state checks described above.
+The [JEV guide](jev.md#replay-and-explicit-evaluation) documents local replay and
+explicit online evaluation. Replay stays available without JEV. Online evaluation
+requires the same enabled master and configured target; its data/call limits cannot
+loosen configuration. Neither tool executes actions or changes task state.
 
 ## Measurement and remaining boundaries
 
@@ -214,6 +171,7 @@ model and internal tool breakdown remains unknown. Investigation actions/runs us
 the same phase API; unobserved host-preparation time is never filled with zero.
 
 Offline checks do not establish fewer tokens, lower cost or equal final quality.
-This change does not enable a new default model, JEV, prewarming or higher
+JEV remains off by default; enabling the master switch activates the supported
+decisions. This change does not alter default models, enable prewarming or increase
 concurrency. Ready queues, persistent workers and importing existing candidates
 remain conditional on measurement and their own recovery/acceptance evidence.

@@ -378,7 +378,6 @@ func (c *Context) run() (TaskSummary, error) {
 	if err := c.err(); err != nil {
 		return c.summary(), err
 	}
-	c.observeShadow()
 	if c.quick() {
 		upgraded, err := c.runQuick()
 		if err != nil || !upgraded {

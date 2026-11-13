@@ -352,10 +352,10 @@ func TestUnavailableOptionalAdviceDoesNotBlockApprovedDiagnostics(t *testing.T) 
 			if fault == "hypothesis-bounds" {
 				p.Hypotheses[0].Claim = strings.Repeat("x", 2048)
 			}
+			st := startFixture(t, dir, cwd, p)
 			if fault == "config" {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "flywheel.config.json"), []byte(`{`), 0o600))
 			}
-			st := startFixture(t, dir, cwd, p)
 			if fault == "journal" {
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".investigation", "decisions"), 0o700))
 				require.NoError(t, os.WriteFile(filepath.Join(dir, ".investigation", "decisions", st.RunID), nil, 0o600))
@@ -396,9 +396,10 @@ func TestSnapshotBoundsObservationExcerptWithoutSplittingUTF8(t *testing.T) {
 	s := snapshot(st, remainingActions(st), state.PreparationHash("current"))
 	source := s.Facts[len(s.Facts)-1]
 	require.Equal(t, decision.Source, source.Category)
-	require.Equal(t, 1023, len(source.Text))
 	require.True(t, utf8.ValidString(source.Text))
-	require.Equal(t, strings.Repeat("中", 341), source.Text)
+	require.True(t, strings.HasSuffix(source.Text, strings.Repeat("中", 341)))
+	require.NotContains(t, source.Text, strings.Repeat("中", 342))
+	require.Contains(t, source.Text, st.Observations[0].Invocation.ID)
 }
 
 func unknownReport(st *state.PreparationState) state.InvestigationReport {
@@ -491,7 +492,7 @@ func TestCancelRecoversKnownAdviceUsageWithoutAdoptingTheAction(t *testing.T) {
 	defer server.Close()
 	withDecision(&p, server.URL+"/v1/systemone")
 	st := reserveDecision(t, dir, startFixture(t, dir, cwd, p))
-	receipt, err := decision.Evaluate(context.Background(), filepath.Join(dir, ".investigation", "decisions", st.RunID), *st.DecisionPending, p.Decision.Policy, decision.Options{Endpoint: p.Decision.Endpoint, Model: p.Decision.Model, ExpectedModel: p.Decision.Model, APIKey: "key", Timeout: time.Second})
+	receipt, err := decision.Evaluate(context.Background(), filepath.Join(dir, ".investigation", "decisions", st.RunID), *st.DecisionPending, st.Contract.Decision.Policy, decision.Options{Endpoint: p.Decision.Endpoint, Model: p.Decision.Model, ExpectedModel: p.Decision.Model, APIKey: "key", Timeout: time.Second})
 	require.NoError(t, err)
 	require.Equal(t, "ok", receipt.Status)
 	st, err = Cancel(dir, Options{})

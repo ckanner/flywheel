@@ -202,3 +202,56 @@ test('native investigation tool association preserves unknown identity until the
   assert.equal(state.view.outcome, 'confirmed');
   assert.equal(state.view.taskDir, '/repo/docs/task');
 });
+
+
+test('JEV runtime status, actual adoption and evidence-backed stop remain distinct from completion', async t => {
+  let p = preparation({
+    status: 'awaiting-report', reason: 'jev-evidence-ready-for-report', 'jev-status': 'enabled',
+    contract: { ...preparation().contract, decision: { policy: { mode: 'adopt' } } },
+    observations: [{ invocation: { ...invocation, adopted: true, reason: 'approved-diagnostic-choice' }, status: 'observed', output: 'timeout configured', 'duration-ms': 4 }],
+    decisions: [{ 'decision-id': 'choice-1', status: 'ok', reason: 'evaluated' }, { 'decision-id': 'choice-2', status: 'ok', reason: 'evaluated' }],
+    'decision-effects': [
+      { 'decision-id': 'choice-1', 'action-id': 'defer-read', kind: 'defer', actions: ['read-duplicate'], evidence: [invocation.id] },
+      { 'decision-id': 'choice-2', 'action-id': 'finish', kind: 'finish', actions: ['read-remaining'], evidence: [invocation.id] },
+    ],
+  });
+  const ui = await mountPanel(t, request => reply(request, { preparation: p }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新状态');
+  const panel = () => ui.container.querySelector('[aria-label="有界调查"]');
+  assert.match(panel().textContent, /最近观察到的 JEV 状态: JEV 已开启/);
+  assert.match(panel().textContent, /JEV 已采用/);
+  assert.match(panel().textContent, /依据证据跳过后续动作/);
+  assert.match(panel().textContent, /提前结束取证 · 等待报告/);
+  assert.match(panel().textContent, /跳过动作: read-duplicate/);
+  assert.match(panel().textContent, /依据观察: original-action/);
+  assert.doesNotMatch(panel().textContent, /报告有证据支持/);
+  assert.equal(ui.button('继续调查').disabled, true, 'awaiting-report cannot restart evidence collection from the UI');
+  assert.equal(ui.requests.some(r => ['start', 'launch', 'investigate'].includes(r.action)), false);
+  p = { ...p, revision: 8, 'jev-status': 'disabled' };
+  await ui.click('刷新状态');
+  assert.match(panel().textContent, /JEV 已关闭 · 后续动作沿用原路径/);
+  assert.doesNotMatch(panel().textContent, /JEV 已开启/);
+  assert.match(panel().textContent, /JEV 已采用/, 'turning off preserves the previously adopted history');
+  p = { ...p, revision: 9, 'jev-status': 'policy-changed' };
+  await ui.click('刷新状态');
+  assert.match(panel().textContent, /JEV 配置已变更 · 本次调查沿用原路径/);
+  p = { ...p, revision: 10, 'jev-status': 'disabled' };
+  await ui.click('刷新状态');
+  await ui.setLocale('en');
+  assert.match(ui.container.textContent, /Last observed JEV state: JEV disabled · subsequent actions use the original path/);
+  assert.match(ui.container.textContent, /Evidence collection ended early · awaiting report/);
+});
+
+test('malformed JEV effects preserve the last valid investigation instead of crashing or pretending adoption', async t => {
+  let bad = false;
+  const ui = await mountPanel(t, request => reply(request, { preparation: preparation(bad ? { 'decision-effects': [{ 'decision-id': 'bad', 'action-id': 'finish', kind: 'finish', actions: {}, evidence: [] }] } : { 'jev-status': 'not-configured' }) }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新状态');
+  assert.match(ui.container.textContent, /本次调查未配置 JEV/);
+  bad = true;
+  await ui.click('刷新状态');
+  assert.match(ui.container.textContent, /malformed investigation status/);
+  assert.match(ui.container.textContent, /本次调查未配置 JEV/);
+  assert.doesNotMatch(ui.container.textContent, /JEV 已采用/);
+});

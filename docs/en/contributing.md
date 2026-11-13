@@ -196,7 +196,7 @@ contract rules.
 | Scheduling, worktrees, execution locations, or delivery | `workflow.md`, `configuration.md`, `flow-console.md`, design sections, and affected skills |
 | Session reuse, recovery, handoff, or accounting | `session-recovery.md`, configuration/workflow/console sections, design, and affected worker contracts |
 | Desktop UI, task discovery, or operator controls | `flow-console.md`, plugin READMEs, and getting-started instructions that name the UI |
-| Evaluation tools, scenarios, or result interpretation | `session-evaluation.md` or `jev-shadow.md`, their input/output contracts, and dated evidence when new checks actually run |
+| Evaluation tools, scenarios, or result interpretation | `session-evaluation.md` or `jev.md`, their input/output contracts, and dated evidence when new checks actually run |
 | Package layout, licenses, or release behavior | `releasing.md`, relevant installation instructions, manifests/lockfiles, packaged links, and applicable license/provenance notices |
 | A documentation move, rename, or heading change | Both documentation indexes, language links, all incoming paths/anchors, package lists, embedding references, scripts, and tests |
 | Contributor or AI operating rules | [AGENTS.md](https://github.com/ckanner/flywheel/blob/main/AGENTS.md), both contribution guides, and their navigation; keep the requirements consistent |

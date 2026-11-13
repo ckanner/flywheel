@@ -609,13 +609,17 @@ lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 wor
 
 桌面面板、`/flywheel` 和 `flywheel_control` 共用 `control config|doctor`，可省略 taskDir；只有 doctor 支持 `probe:true`。诊断阻断与传输失败分开显示。桌面使用的 PATH／profile／环境可能与终端不同，安装后应在面板里再检查一次。
 
-## 可选 JEV 影子评估
+## JEV 决策
 
-`jev-shadow.enabled` 默认 false，省略时也关闭。全局／项目编辑器提供开关。任务
-运行期间只捕获本地快照，不在任务关键路径发送 HTTP 请求；后续显式
-`flywheel shadow run` 才执行可选联网评估并单独记账。影子结果不能改变 Quick／Full
-或授权新动作。新的决策采用需独立显式 opt-in 与数据边界，既有影子开关不授予
-该权限。endpoint、版本、凭证、预算与恢复见[JEV 指南](jev-shadow.md)。
+`jev.enabled` 是唯一 JEV 启用设置，默认 false。桌面编辑器只提供一个总开关；
+开启后，调查准备自动冻结采用策略，包含动作选择、依据证据跳过冗余取证和提前
+进入报告。Task／New／Run 共用引擎拥有的同一策略。关闭后停止后续请求及采用，
+保留已有回执与预算。
+
+正常任务没有独立影子／建议开关。旧 `jev-shadow` 只用于把连接信息迁移到关闭的
+统一配置，编辑器保存时移除旧 key；明确的新 `jev` 优先。配置仍按任务／项目／
+全局／内嵌表选择一份完整文件，不深合并。目标地址、固定模型、密钥变量、限制、
+数据类别和恢复规则见 [JEV 指南](jev.md)。
 
 ## 参考文件
 

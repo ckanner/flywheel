@@ -532,16 +532,20 @@ Codex Pro checks actually import the public API and verify exact version 0.9.0/p
 No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache files and temporary probe-session persistence; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
 
 
-## Optional JEV shadow evaluation
+## JEV decisions
 
-`jev-shadow.enabled` defaults to false, including configurations that omit it. The
-global/project editor exposes the switch. During task execution it only captures
-local snapshots; it does not send HTTP requests on the task's critical path.
-A later explicit `flywheel shadow run` performs the optional network evaluation
-with separate accounting. Shadow results cannot change Quick/Full or authorize
-new actions. New decision adoption requires its own explicit opt-in and data
-boundary; the existing shadow switch does not grant it. See the
-[JEV guide](jev-shadow.md) for endpoint, version, credentials, budgets and recovery.
+`jev.enabled` is the only JEV activation setting and defaults to false. The desktop
+editor exposes one switch; enabled investigation preparations automatically freeze
+an adoption policy for action selection, evidence-backed deferral and early report
+handoff. Task/New/Run share the same engine-owned policy. Disabling stops subsequent
+requests and adoption, while existing receipts and budgets are retained.
+
+There is no independent task shadow/advisory switch. Legacy `jev-shadow` is read
+only to migrate connection hints into a disabled unified configuration; editor saves
+remove the old key. Explicit new `jev` wins, and configuration still selects one
+complete task/project/global/embedded file without merging. Endpoint, fixed model,
+credential variable, limits, data categories and recovery are documented in the
+[JEV guide](jev.md).
 
 ## Reference files
 

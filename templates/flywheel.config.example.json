@@ -1,5 +1,5 @@
 {
-  "jev-shadow": {"enabled": false, "endpoint": "", "model": "jev", "expected-model": "jev-1.14.0", "key-env": "MEROUTER_API_KEY", "timeout-ms": 5000},
+  "jev": {"enabled": false, "endpoint": "", "model": "jev-1.14.0", "key-env": "MEROUTER_API_KEY", "timeout-ms": 5000, "max-calls": 8, "min-applicability": 0.8, "min-choice": 0.6, "allowed-data": ["task-summary", "diagnostic-facts", "source"]},
   "version": 1,
   "sessions": {
     "mode": "scoped",

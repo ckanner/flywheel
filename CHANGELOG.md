@@ -7,6 +7,20 @@ their original language.
 
 ## Unreleased
 
+- Unify JEV under one default-off `jev.enabled` setting shared by configuration,
+  desktop, investigation preparation/resume and explicit online evaluation. Remove
+  the automatic shadow observer and separate legacy request client; preserve a
+  migration error for the retired command and read-only legacy config migration.
+- Automatically freeze enabled investigation policy, choose approved evidence
+  actions, defer redundant collection and hand evidence to the analyst early.
+  Record exact decision/evidence bindings without treating collection choices as
+  proven root causes or completed implementation.
+- Recheck current activation and policy before dispatch/adoption, preserve unknown
+  request/action recovery and cumulative budgets, and show actual adopted/baseline
+  behavior with the last observed JEV status. Retain local offline replay.
+- Update Task/New/Run guidance and paired JEV/configuration/investigation guides;
+  preserve Quick/Full eligibility, verification and provider/model defaults.
+
 ## 0.31.1 — Feedback-driven workflows and DSH rc.2 compatibility
 
 - Declare DSH `0.2.2-rc.2` alongside `0.2.1-rc.5` and `0.2.2-rc.1`; the host gate

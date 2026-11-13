@@ -105,6 +105,19 @@ npm 启动器通常会从同版本依赖中解析 worker。启动引擎的进程
 只有准备记录的任务显示有界调查面板，包含观察、预算、原回执核对、停止与证据报告。
 调查报告不代表代码交付。详见[调查指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/investigation.md)。
 
+在**配置 → JEV 决策**中，**启用 JEV** 是唯一总开关。默认关闭，沿用原路径，
+不请求 JEV，也不采集影子快照。配置 System One 地址、固定模型版本与密钥环境
+变量名后，保存一次开启设置；Task、New 创建的新调查自动继承策略，Run 继续该
+冻结策略。开启后，JEV 可以选择下一项已批准的读取动作、依据已引用的证据跳过
+冗余动作，或提前结束取证进入报告。它不能宣布根因已被证明，也不能跳过实现验收。
+
+关闭也会禁止已有调查的后续 JEV 调用与采用，同时保留回执和预算；重新开启不会
+改写此前关闭时创建的准备记录。面板分别展示配置状态、本次调查记录的状态、请求、
+已采用动作与有证据依据的效果。高级调用上限、概率阈值与数据类别共用这个总开关，
+没有独立的影子或采用开关。旧影子配置不会自动开启在线决策。
+详见[JEV 决策](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/jev.md)。
+
+
 可见画布会刷新任务发现，运行中的任务会刷新状态。打开视图不启动任务或诊断。
 读取失败时保留最后确认的快照及时间。launch/start/stop 回复丢失或超时表示
 **结果未确认**；同一任务状态完成核对前，后续修改操作保持阻断，界面不会自动重试。
@@ -230,7 +243,7 @@ npm --prefix plugins/dsh run check
 |---|---|
 | [Worker 协议](PROTOCOL.md) | 详细通信、权限、生命周期与错误契约 |
 | [依赖来源](vendor/README.md) | Codex 源码身份、tarball 摘要及可选 Claude 的源码依据 |
-| [JEV 影子评估](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/jev-shadow.md) | 默认关闭的建议实验，不改变实际路由 |
+| [JEV 决策](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/jev.md) | 一个总开关控制实际有界决策，保留离线回放与显式评估 |
 | [发布指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/releasing.md) | 构建、安装和发布同一批已验证产物 |
 
 ## 许可证

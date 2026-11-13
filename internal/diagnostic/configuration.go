@@ -35,7 +35,7 @@ type Binding struct {
 
 type Configuration struct {
 	ExecutionPolicy *config.ExecutionPolicy `json:"execution-policy,omitempty"`
-	JEVShadow       config.JEVConfig        `json:"jev-shadow"`
+	JEV             config.JEVConfig        `json:"jev"`
 	Scheduler       config.SchedulerConfig  `json:"scheduler"`
 	Source          string                  `json:"source"`
 	Scope           string                  `json:"scope"`
@@ -84,6 +84,16 @@ func InspectContext(parent context.Context, cwd, taskDir string) (*Configuration
 	return view, err
 }
 
+// LoadConfigurationContext resolves the same physical directories and project
+// root as inspection, then returns that single configuration read. Consumers
+// must not repeat discovery with unresolved paths before authorizing a request.
+func LoadConfigurationContext(parent context.Context, cwd, taskDir string) (*config.Config, error) {
+	ctx, cancel := context.WithTimeout(parent, doctorBudget)
+	defer cancel()
+	_, cfg, err := inspect(ctx, cwd, taskDir)
+	return cfg, err
+}
+
 func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.Config, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -126,7 +136,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{ExecutionPolicy: cfg.ExecutionPolicy, JEVShadow: cfg.JEVShadow, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
+	view := &Configuration{ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		harness := b.Harness
 		if harness == "" {

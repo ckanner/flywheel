@@ -39,11 +39,27 @@ func preparationFixture(t *testing.T) (string, string, contract.Preparation) {
 
 func startFixture(t *testing.T, dir, cwd string, p contract.Preparation) *state.PreparationState {
 	t.Helper()
+	if p.Decision != nil {
+		configureDecision(t, dir, p.Decision, p.Decision.Policy.Mode != decision.Off)
+	}
 	raw, err := json.Marshal(p)
 	require.NoError(t, err)
 	st, err := Start(dir, cwd, raw, Options{})
 	require.NoError(t, err)
 	return st
+}
+
+func configureDecision(t *testing.T, dir string, d *contract.InvestigationDecision, enabled bool) {
+	t.Helper()
+	path := filepath.Join(dir, "flywheel.config.json")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	cfg["jev"] = map[string]any{"enabled": enabled, "endpoint": d.Endpoint, "model": d.Model, "key-env": d.KeyEnv, "timeout-ms": d.TimeoutMS, "max-calls": d.Policy.MaxCalls, "min-applicability": d.Policy.MinApplicability, "min-choice": d.Policy.MinChoice, "allowed-data": d.Policy.AllowedData}
+	raw, err = json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
 }
 
 func reportFixture(st *state.PreparationState) state.InvestigationReport {
@@ -215,12 +231,17 @@ func TestJEVAdoptsOnlyApprovedDiagnosticAndBudgetsTheLiveDecision(t *testing.T) 
 	require.NotContains(t, string(raw), "test-key")
 }
 
-func TestJEVShadowOfflineAndUnknownRecoveryDoNotContactService(t *testing.T) {
+func TestMasterNormalizesHistoricalModesAndRecoversUnknownRequests(t *testing.T) {
 	for _, mode := range []decision.Mode{decision.Off, decision.Offline, decision.Shadow, decision.Advisory} {
 		t.Run(string(mode), func(t *testing.T) {
 			dir, cwd, p := preparationFixture(t)
 			p.Decision = &contract.InvestigationDecision{Policy: decision.Policy{Version: "experiment-1", Mode: mode, AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts, decision.Source}, MinApplicability: 0.9, MinChoice: 0.8, MaxCalls: 1}, Endpoint: "http://127.0.0.1:1/v1/systemone", Model: "jev-1.14.0", KeyEnv: "INVESTIGATION_TEST_KEY", TimeoutMS: 10}
 			st := startFixture(t, dir, cwd, p)
+			if mode == decision.Off {
+				require.Nil(t, st.Contract.Decision)
+			} else {
+				require.Equal(t, decision.Adopt, st.Contract.Decision.Policy.Mode)
+			}
 			if mode == decision.Advisory {
 				identity, err := candidate(context.Background(), st)
 				require.NoError(t, err)

@@ -346,7 +346,9 @@ CAS 与原子持久化。目标是调查或原范围内调查后修复；Quick�
 首个受管动作族仅有 Go 文件读取、字面量搜索、目录名字读取，受精确路径、打开 inode、
 文件／输出字节、总动作数与首次准备 deadline 限制。无任意 shell 或外部副作用接口。
 同一 `.run.lock` 与原 token 停止协议拥有后台生命周期，另有准备状态短写锁；宿主／
-skill 不执行循环。只剩一个合法动作直接执行，多项语义选择才考虑显式 JEV。
+skill 不执行循环。Go 按唯一 `jev.enabled` 总开关冻结策略；单一合法动作直接执行，
+多项语义选择才考虑 JEV。有效观察允许有证据引用的冗余动作跳过或提前转入报告，
+这些控制选项由引擎生成，不扩大原动作权限，也不把取证决定当成根因结论。
 
 动作先持久化唯一 invocation，再执行并先保存不可覆盖回执，最后 CAS 消费。未知动作
 阻断，不能换任务／会话／模式重放。JEV 的可选未知请求单独只读对账，保留未知用量，
@@ -474,30 +476,50 @@ Provider 内部排队／推理／工具细分保持 unknown。已测边界包括
 Verify、Review、Judge、受管调用、重试等待、持久化和调查。宿主准备对话不可观察的
 耗时不填零，也不把离线 fixture 的耗时宣称为真实模型加速。
 
-### 8.2 可选 JEV 影子评估
+### 8.2 JEV 唯一总开关
 
-独立 `shadow prepare|run|report` 读取任务契约和已有策略，准备可审阅的有界摘要，再显式调用 MeRouter 原生 System One。`jev-shadow.enabled` 默认关闭；关闭时没有自动请求或影子记录，也不需要密钥。显式开启后，仅新任务首次普通 run 在原策略落盘后最多捕获一次本地快照；不读密钥、不发 HTTP，也不创建无人管理的 goroutine。恢复和单步不重复捕获；之后显式 shadow run 才执行请求。自动开关不禁止独立实验。
+`jev.enabled` 是所有在线 JEV 路径的唯一启用设置，默认 false。开启后，在已支持的
+调查决策点自动使用采用策略；正常任务没有独立 shadow／advisory／adopt 或分功能
+开关。关闭时没有 JEV 请求、自动采集或建议采用，沿用原确定性调查动作与实现流程。
+Task／New／Run 共用 Go 创建时的配置解析；宿主提供调查目标与动作，不手写决策模式。
 
-本地捕获失败只告警；显式评估中的网络、密钥与未知结果按影子回执记录。硬预算任务跳过自动捕获；后续影子研究使用独立实验预算，不混入执行预算。观察不写任务 state，不改变 Quick／Full、模型路由或权限。原始概率、响应版本、输入摘要、实际基线和建议分别记录；失败或证据不足记为 abstain，不能写成安全通过。配置字段见 §13，操作见 [JEV 指南](zh-CN/jev-shadow.md)。
+旧 `observeShadow`、独立 `internal/shadow` 请求客户端已移除。`jev-shadow` 只在
+配置加载时校验并迁移连接信息，绝不把旧本地捕获授权提升为在线采用；明确的 `jev`
+对象优先。编辑器保存统一字段并移除旧 key，保留原备份与 CAS。隐藏 `shadow` 命令
+只返回迁移错误；历史快照、schema 和验收记录仍可保留。用户指南见 [JEV](zh-CN/jev.md)。
+
+创建调查时冻结有效目标、固定模型、凭据变量名、数据类别、阈值和调用上限。运行中
+关闭总开关，在请求派发前、返回后及采用前均阻止后续 JEV 效果；已派发请求仍用原
+身份对账，不重发、不清空用量。原本开启的运行重新开启后沿用同一预算；原本关闭的
+准备记录保留无 JEV 的原路径，新准备记录才获得新策略。目标不相容或当前权限／
+限制收紧时，原运行记录 policy-changed 并回到合法基线，不改写冻结契约。状态中的
+jev-status 是最近观察值，界面不能把它当作即时重新读取的配置。
 
 ### 8.3 有限决策与原子采用
 
-新 `internal/decision` 消费版本化 Snapshot／Policy，独立于旧工作流 shadow 开关。
-off／offline 不联网，shadow 只落本地快照，advisory 只记录建议，adopt 仅允许批准的
-Go 诊断动作。数据字段单独 opt-in；真实目标 endpoint、固定版本模型、问题／策略／
-动作集合与超时进入回执身份。一个原生请求配对 applicability Noul 与 action Choice，
-保存完整概率；置信度不是部署正确率，阈值仅是明确实验参数。
+`internal/decision` 消费版本化 Snapshot／Policy；运行策略由总开关生成 off 或
+adopt，offline／shadow／advisory 保留供旧记录读取和明确评估工具使用，不构成另一个
+任务开关。当前采用族是 Go 调查动作与引擎生成的取证控制。一个原生请求配对
+applicability Noul 与 action Choice，保存完整概率；阈值是配置参数，不是实测正确率。
+
+取证控制只在已有成功、未截断、与假设关联且候选摘要仍匹配的观察满足前提时，
+允许选择跳过冗余动作或提前结束收集。效果保存具体 decision、观察引用和动作绑定；
+跳过后回到 ready 继续其他动作，提前结束才进入 awaiting-report。结束后重复 Run
+不重新开始取证，Finish 仍可提交分析报告。取证结束不标记假设为 supported／
+contradicted，不生成根因或代码完成结论；报告及后续验收仍负责其原有语义边界。
 
 请求前持久化意图、独占调用额度，unknown 计入上限且不重发。采用前复核任务／run／
-revision、契约、候选、观察和绑定；receipt 消费、decision pending 清理与唯一 action
-invocation 必须在同一 CAS 保存后再派发。请求自己的 journal 写入不改变任务 revision，
-其他事实变化使建议失效。硬 token budget 无可实施的单次上限时跳过可选请求，不以
-估算预留或未知为零。JEV 无权扩权限、换渠道、提高预算、取消验收或宣布完成。
+revision、契约、候选、观察、当前启用状态和绑定；receipt 消费、decision pending 清理
+与动作 invocation 或取证效果必须原子 CAS 后生效。未知动作仍阻断。请求 journal
+写入不改变任务 revision，其他事实变化使建议失效。硬 token budget 无可实施的单次
+上限时跳过可选请求，不以估算预留或未知为零。JEV 无权扩权限、任意换渠道、提高
+预算、取消验收或宣布完成。
 
-`decision replay` 从冻结快照与原生响应离线评估，强制 offline，不读密钥、不联网；
-`decision evaluate` 要求显式目标、固定模型、密钥变量、私有 journal 与调用预算，
-强制 advisory。两者输出一份 JSON 决策报告，不执行动作、不改变任务状态；它们
-消费通用决策快照，不混用旧工作流 `shadow run` 数据集。具体参数见双语调查指南。
+`decision replay` 读取冻结输入与原生响应，强制 offline，不读密钥、不联网、不写
+账本；关闭总开关仍可查看旧记录。`decision evaluate` 服从同一总开关和作用域解析，
+从配置取得固定目标／凭据；显式参数必须匹配，数据取交集、阈值取更严格值、次数和
+超时不得放宽配置。它使用独立私有 journal，强制 advisory，不执行动作、不改任务。
+同一输入／journal 读取原回执；未知不重发。具体操作见双语 JEV 指南。
 
 ## 9. 权限与宿主能力
 
@@ -530,7 +552,8 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | 角色历史、恢复和质量策略 | [会话生命周期提案](plans/2026-11-07-session-lifecycle.md) | [P1/P2 验收](validation/2026-11-07-session-lifecycle.md)、[P3/P4 验收](validation/2026-11-08-session-p3-p4.md) |
 | 可选 Claude machine API | [Claude 指南](zh-CN/claude-code-pro.md) | [Claude 接入验收](validation/2026-11-07-claude-code-pro.md) |
 | 流程控制台、任务发现和工作台 | [控制台方案](plans/2026-11-08-flow-console.md)、[任务发现](plans/2026-11-10-task-discovery.md)、[工作台](plans/2026-11-10-workbench-redesign.md) | [控制台](validation/2026-11-09-flow-console.md)、[任务发现](validation/2026-11-10-task-discovery.md)、[工作台](validation/2026-11-10-workbench-redesign.md) |
-| 可选影子评估 | [JEV 方案](plans/2026-11-10-jev-shadow.md) | [JEV 验收](validation/2026-11-10-jev-shadow.md) |
+| JEV 总开关与取证决策 | [统一 JEV 方案](plans/2026-11-12-unified-jev-decisions.md) | [实现验收](validation/2026-11-12-unified-jev-decisions.md) |
+| 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
 | 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |
 
@@ -548,7 +571,10 @@ Auto／Quick／Full、角色历史、可信回执、Codex／Claude 的持久化 
 
 `control launch` 默认 mode=auto；`control start` 和 `run` 也接受可选 `--mode auto|quick|full`，省略时沿用 Spec 或持久化策略。status、stop、step、config、doctor 不接受模式切换。`--only` 运行指定子环至合法终态或有界停止；`--only execute` 仍为部分 Execute/L1，不是 Quick。Quick 的单步 Review 使用最终评审协议，单步 Verify 包含候选 L2/L3；单步 Plan 需显式升级 Full。`--pause-before review` 保留已验证候选用于下次恢复，不能与 `--only` 并用。
 
-独立 `shadow prepare|run|report` 输出单份 JSON；prepare/report 只读，run 显式执行有界影子调用。退出码 0=报告成功、1=输入或运行错误、3=含失败／未知／未运行项、143=取消。自动开关不禁止显式实验；两者均不能修改实际任务策略。详见 [JEV 指南](zh-CN/jev-shadow.md)。
+`decision replay|evaluate` 在完成评估后输出单份 JSON，均不执行动作。replay 完全离线，
+evaluate 服从统一 JEV 总开关。退出码 0=成功、1=输入／配置错误、3=失败／未知请求、
+143=取消；输入或配置解析前失败可不产生报告。旧 `shadow` 入口隐藏并返回迁移错误，
+不创建快照或请求。详见 [JEV 指南](zh-CN/jev.md)。
 
 `control investigate` 从有界 JSON stdin 接受 start／run／status／report／cancel。
 start 仅保存准备，run 需 observed revision 并在后台派发 `run --investigate`；该 worker
@@ -626,7 +652,11 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。
 
-顶层 `jev-shadow` 以 `templates/jev-policy.schema.json` 为字段信源。enabled 默认 false，旧配置同样关闭；其他字段仅定义可选观察的 endpoint、model、expected-model、key-env 和 timeout-ms（最大 5000）。不探测密钥或网络来决定主任务是否可运行，关闭时无观察副作用；配置格式错误仍按正常加载纪律报错。
+顶层 `jev` 以 `templates/jev-config.schema.json` 为字段信源：enabled 默认 false，
+endpoint 默认空，model 固定版本，key-env 只存变量名；timeout-ms、max-calls、
+min-applicability、min-choice 和 allowed-data 限定请求。开启配置校验目标与格式，
+不探测实际密钥或网络。唯一开关同时约束正常调查和显式在线评估。旧 `jev-shadow`
+仅用 `jev-policy.schema.json` 校验历史字段并做关闭状态迁移，不再是运行配置。
 
 可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
 
@@ -648,7 +678,8 @@ historyRecoveryTested 始终 false，不为验证历史而发模型请求。
 
 provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后备渠道。实际 provider 按 binding.provider → channels[channel].provider → 旧 DSH channel 名解析；两个显式 provider 不一致时拒绝加载。非 DSH harness 不能声明一个会被静默忽略的 provider。降级到另一个 channel 时重新解析其 provider，不能沿用旧账号的适配器。原始 profile 名只作配置来源，不进入 Kimi 恢复身份；实际绑定改变按原有会话条件冷启动。模型绑定改变影响后续调用，不单凭未使用 profile 的改动使历史代码验收失效。
 
-默认内嵌表见 [flywheel.config.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](zh-CN/configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的任务不热加载新配置，下次启动才使用新方案。
+默认内嵌表见 [flywheel.config.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](zh-CN/configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的实现任务不热加载模型配置，下次启动才使用新方案。JEV 调查的有效关闭和
+更严格授权另在每次决策边界重核，不重置已冻结的目标和账本。
 
 DSH 插件的兼容声明只覆盖已核对的 `0.2.1-rc.5`、`0.2.2-rc.1` 与 `0.2.2-rc.2`，不对未知预发布版本放行。权限事件只在公开 `agent/created` 阶段写入：Session 已完成只读创建公告，Agent 尚未释放首个模型请求。SDK 权限回执在写入显式 `approval/policy` 后，通过公开 `approval.overrideOf(session)` 读取实际覆盖值；不调用私有 `effectivePolicy`。候选必须通过两版真实发布的 renderer 生命周期检查，并在目标宿主验证无推理 SDK 收尾。
 

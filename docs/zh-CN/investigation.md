@@ -114,61 +114,24 @@ Full 首次 Plan 后，只有已确认终态、合法重载契约、成功持久
 显式 Plan 或 verification-gap 都重新规划。Plan 的价值是消除真实不确定性，速度快
 不构成删除规划或降低质量门禁的理由。
 
-## 可选 JEV
+## JEV 决策
 
-新 `decision` 配置与旧 `jev-shadow` 完全独立，省略时不发送请求。具体配置字段由
-准备 schema 定义，包含固定 `jev-x.y.z` 模型、显式 endpoint、密钥环境变量名、超时、
-策略版本、模式、数据允许集合、阈值与最大调用数。凭据值不写契约。
+使用 [JEV 指南](jev.md) 中唯一的 `jev.enabled` 设置。Start 自动解析配置并冻结
+策略，Task／New／Run 不再各自维护决策模式。默认关闭时沿用原动作顺序和收集
+限制；开启后可选择下一项动作、跳过冗余取证，或在满足 Go 证据前提后提前转入报告。
 
-- Off／offline 不联网；shadow 只保存可审查快照；advisory 只留建议；adopt 才允许选择
-  一个已批准的诊断动作。自动采用仍需独立实验政策，阈值不是本项目准确率保证。
-- 至少两个合法选项与真实语义不确定性才值得调用；单个请求配对 Noul 适用性与 Choice，
-  保留完整概率。没有适用选项、模型版本不符、证据字段未授权、预算不足或未知执行都弃权。
-- 采用前重新检查任务／run／revision、契约、候选、观察及动作绑定；将回执消费和唯一
-  action invocation 在同一 CAS 中保存后派发。JEV 不能生成命令、减少验收或宣布完成。
-- 可选请求未知时不重发，保留未知用量，转合法确定性基线。实际动作回执未知则 blocked。
-  结束、取消或 deadline 到期仍只读核对可选请求，不能留下无法结束的 pending 记录。
-- 最大调用数包括 unknown。硬预算没有可实施的单次消耗上限时跳过 JEV；不会用字符数
-  估计冒充可靠预留。shadow 研究与在线采用的费用和作用不同。
+跳过动作和提前结束收集均保存决策及观察引用，不会把假设自动标成已证明或已反驳。
+分析者仍要形成有证据的报告；修复仍须遵守原范围及普通验证、review 流程。
+`awaiting-report` 后重复 Run 不会重新开始收集。
 
-旧工作流影子开关仅捕获本地有界摘要，后续显式 `shadow run` 才请求服务；它不能采用
-动作，也不授权新增源码／日志发送。新动作族的离线和影子评估不能证明采用后更快。
-采用是否划算应比较既有基线、核心改进无 JEV、核心改进加单动作族三个版本的完整任务。
+目标、模型、数据类别、阈值和预算在创建准备记录时冻结。当前关闭、目标不再相容
+或收紧策略会停止后续可选决策；请求返回后、采用前仍要复核。已知／未知回执继续
+核对，不重发。创建时关闭的准备记录保留原基线路径，新准备记录才采用新开启的
+策略；桌面对持久状态明确标注“最近观察到的状态”。
 
-### 离线重放与显式 advisory 评估
-
-通用决策的 `*.snapshot.json` 捕获文件包含冻结的 `snapshot`、`policy` 和来源
-`target-hash`，与旧工作流 shadow 数据集不同。真实评估前先审阅事实与数据权限。
-
-```bash
-flywheel decision replay --input frozen.snapshot.json --response native-response.json \
-  --endpoint "$JEV_ENDPOINT" --model jev-1.14.0 --expected-model jev-1.14.0
-```
-
-`replay` 接受已记录的原生 System One 响应或 fixture，强制 `offline`；不读取密钥、
-不发送 HTTP、不写账本或任务状态。endpoint 和相同的固定模型版本只标明评估目标，
-上面的版本是示例，必须与待评估响应相符。裸 Snapshot JSON 还须指定
-`--policy reviewed-policy.json`。捕获文件也可用该参数完整替换策略；替换策略省略的
-数据权限不会从原捕获策略继承。
-
-明确授权的真实评估使用独立命令：
-
-```bash
-flywheel decision evaluate --input frozen.snapshot.json --policy reviewed-policy.json \
-  --endpoint "$JEV_ENDPOINT" --model jev-1.14.0 --expected-model jev-1.14.0 \
-  --directory ./decision-evaluation --key-env MEROUTER_API_KEY --max-calls 5
-```
-
-即使来源策略为 `adopt`，`evaluate` 也强制 `advisory`。密钥环境变量名、固定目标、
-独立私有账本和累计调用上限都须明确指定。来源策略的数据类别权限必须覆盖快照；
-不会借旧 shadow 开关扩大权限。`--hard-budget` 因原生 API 不能强制请求用量上限而
-跳过调用。同一账本和快照只读取原回执；未知请求计入上限且不重发。命令不执行动作、
-不改变任务状态。
-
-两种命令都输出基线、实际策略、概率和回执，并明确 `adopted: false`。真实调用错误
-或未知返回退出码 3 和回执；输入／配置错误为 1，发送前取消为 143。离线重放通过只
-证明解析与 fixture 行为，不证明模型实际成功率。任务中有限采用仍须独立准备策略、
-数据 opt-in、冻结的 Go 具体动作和上述当前状态校验。
+离线回放和显式在线评估见 [JEV 指南](jev.md#离线回放与显式评估)。关闭 JEV 仍可
+本地回放；在线评估必须服从同一已启用的总开关和配置目标，其数据与次数限制不能
+放宽配置。两种工具均不执行动作、不修改任务状态。
 
 ## 度量与当前边界
 
@@ -177,6 +140,6 @@ flywheel decision evaluate --input frozen.snapshot.json --policy reviewed-policy
 缺少结束、时钟倒退、无法关联的旧调用单列，Provider 内部排队／模型／工具细分保持
 unknown。调查动作和调查运行使用同一阶段接口，宿主准备对话的不可观察时间不补零。
 
-本实现没有基于这些离线测试宣布 token、更低成本或最终质量相同，也没有开启新默认
-模型、JEV、预热或更高并发。ready queue、持久 worker、已有候选导入等继续按测量结果
+本实现没有基于这些离线测试宣布更少 token、更低成本或最终质量相同。JEV 仍默认
+关闭，明确开启总开关才参与已支持的决策；没有改变默认模型、预热或并发设置。ready queue、持久 worker、已有候选导入等继续按测量结果
 决定；现有取消、共同候选复验和持久化规则保持有效。

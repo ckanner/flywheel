@@ -21,8 +21,9 @@ flywheel template preparation.example.json
 
 只排查设 `intent: investigate`，`implementation-scope: []`。已要求“排查并修好”设
 `investigate-and-fix` 并记录已授权的修复路径范围；不能用该字段自行扩大原需求。
-JEV 默认省略，旧 `jev-shadow` 不授权新数据发送或采用。需要实验时沿用用户明确
-批准的版本化 decision 配置、具体模型、渠道、数据字段和预算，不自动开启付费服务。
+调查输入省略 `decision`，由 Go 按有效配置的唯一 `jev.enabled` 总开关自动解析并
+冻结策略。已开启时不重复审批、不另设影子／采用开关；关闭时不得用任务内策略绕过。
+技能不修改用户设置，不直接调用 JEV；所有选择、跳过和提前报告仍由引擎执行。
 
 在 DSH 调 `flywheel_control`：`action: investigate`，传实际绝对 `taskDir`、`cwd`，
 并传 `investigation: {action: start, contract: <已校验的完整契约>}`。Go 保存
@@ -43,7 +44,7 @@ flywheel control investigate --task-dir "$task_dir" --cwd "$repo_dir" < start-re
 {"action":"investigate","taskDir":"/absolute/repo/docs/task","cwd":"/absolute/repo","investigation":{"action":"run","revision":1}}
 ```
 
-示例 `1` 必须替换为实际回执的 revision。Go 在后台运行整个有界动作集；不要在
+示例 `1` 必须替换为实际回执的 revision。Go 在后台运行有界调查循环；不要在
 skill 中逐动作调用或重写选择循环。通过同一目录的 `flywheel_control status`、
 `flywheel-status` 或视图查看；停止用 `flywheel-stop` / `control stop`。
 后台启动的 `ok:true` 仅表示启动请求确认，状态和报告以随后快照为准。
@@ -55,7 +56,8 @@ skill 中逐动作调用或重写选择循环。通过同一目录的 `flywheel_
 ## 形成报告并决定终点
 
 `awaiting-report` 表示 Go 已交付观察，当前宿主模型据此形成一次报告输入，不代表
-已经定位因果。引用观察的 `invocation.id`，逐项写假设为 supported / contradicted /
+已经定位因果。JEV 可能依据已有证据提前结束或跳过冗余动作；查看实际观察和
+`decision-effects`，不把这些取证决定当成假设已证明／已反驳，不重复 Run 继续收集。引用观察的 `invocation.id`，逐项写假设为 supported / contradicted /
 unknown，说明原因、反例检查、局限、推荐修复、回归检查和回退条件。
 报告顶层状态为 supported / inconclusive / access-blocked；supported 必须有真实
 观察引用，Go 校验引用和状态一致性，不代替分析者证明语义结论。

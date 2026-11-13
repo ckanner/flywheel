@@ -17,7 +17,7 @@
 | 接入可选 Claude machine 后端 | [Claude Code Pro](zh-CN/claude-code-pro.md) | [Claude Code Pro](en/claude-code-pro.md) |
 | 角色续接、调用中断与对账 | [恢复与上下文质量](zh-CN/session-recovery.md) | [Recovery and context quality](en/session-recovery.md) |
 | 使用固定任务和证据比较会话策略 | [会话评估](zh-CN/session-evaluation.md) | [Session evaluation](en/session-evaluation.md) |
-| 运行默认关闭的可选 JEV 实验 | [JEV 影子评估](zh-CN/jev-shadow.md) | [JEV shadow evaluation](en/jev-shadow.md) |
+| 通过一个开关启用有界 JEV 决策 | [JEV 决策](zh-CN/jev.md) | [JEV decisions](en/jev.md) |
 
 [首个任务脚本](examples/create-first-task.sh)用于创建隔离的教程仓库；准备和执行的区别见快速开始指南。
 

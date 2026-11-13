@@ -266,5 +266,5 @@ flywheel control stop --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 - [配置](configuration.md)：模型绑定、权限、预算与策略。
 - [流程控制台](flow-console.md)：任务、阶段、会话、运行对比与远端交付。
 - [恢复与上下文质量](session-recovery.md)：中断核对与安全续用。
-- [JEV 影子评估](jev-shadow.md)：可选且默认关闭，不改变实际工作流选择。
+- [JEV 决策](jev.md)：一个默认关闭的总开关控制已支持的调查决策，Go 保留工作流资格与验收规则。
 - [系统设计](../design.md)：权威实现契约。

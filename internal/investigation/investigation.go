@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/decision"
+	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/metrics"
 	"github.com/ckanner/flywheel/internal/state"
 )
@@ -26,6 +27,10 @@ type Options struct {
 // Isolate OS-specific relative-directory resolution failures without changing
 // the process-wide working directory in tests.
 var absoluteInvestigationPath = filepath.Abs
+
+// Keep cancellation at configuration-discovery boundaries reproducible without
+// changing process-wide directories or invoking a real service in tests.
+var loadInvestigationConfiguration = diagnostic.LoadConfigurationContext
 
 func (o Options) now() time.Time {
 	if o.Now != nil {
@@ -58,8 +63,20 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 	if state.Exists(dir) {
 		return nil, fmt.Errorf("implementation task already exists; do not replace it with a preparation")
 	}
+	global, err := loadInvestigationConfiguration(context.Background(), cwd, dir)
+	if err != nil {
+		return nil, err
+	}
+	// The master switch is the only runtime opt-in. Historical per-contract
+	// modes cannot enable a service or turn the normal path back into shadow.
+	p.Decision = nil
+	jevStatus := "disabled"
+	if j := global.JEV; j.Enabled {
+		p.Decision = &contract.InvestigationDecision{Policy: j.DecisionPolicy(), Endpoint: j.Endpoint, Model: j.Model, KeyEnv: j.KeyEnv, TimeoutMS: j.TimeoutMS, HardBudget: global.Budget.Enforce == "hard"}
+		jevStatus = "enabled"
+	}
 	now := o.now()
-	st := &state.PreparationState{Version: 1, RunID: rand.Text(), Cwd: cwd, Contract: *p, ContractHash: state.PreparationHash(p), Status: "ready", Reason: "approved-read-only-actions", StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(p.Limits.MaxSeconds) * time.Second).Format(time.RFC3339Nano), Observations: []state.InvestigationObservation{}, Decisions: []decision.Receipt{}}
+	st := &state.PreparationState{Version: 1, RunID: rand.Text(), Cwd: cwd, Contract: *p, ContractHash: state.PreparationHash(p), Status: "ready", Reason: "approved-read-only-actions", StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(p.Limits.MaxSeconds) * time.Second).Format(time.RFC3339Nano), Observations: []state.InvestigationObservation{}, Decisions: []decision.Receipt{}, JEVStatus: jevStatus}
 	return state.SavePreparation(dir, st)
 }
 
@@ -99,12 +116,13 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		return nil, err
 	}
 	defer release()
-	if terminal(st) {
+	if terminal(st) || (st.Status == "awaiting-report" && st.Reason == "jev-evidence-ready-for-report") {
 		return st, nil
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, st.Deadline)
 	ctx, cancel := context.WithTimeout(ctx, max(time.Duration(0), deadline.Sub(o.now())))
 	defer cancel()
+	activePolicy(ctx, dir, st)
 	if st.Pending != nil {
 		receipt, err := state.ReadPreparationReceipt(dir, *st.Pending)
 		if err != nil {
@@ -150,6 +168,33 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		}
 		if current != identity {
 			selected, selection = legal[0], decision.Selection{ActionID: legal[0].ID, Reason: "candidate-changed-baseline"}
+		}
+		if selection.Adopted {
+			active, hard := activePolicy(ctx, dir, st)
+			if !active || hard {
+				selected, selection = legal[0], decision.Selection{ActionID: legal[0].ID, Reason: "jev-disabled-before-adoption"}
+			}
+		}
+		if ctx.Err() != nil {
+			continue
+		}
+		if selection.Adopted && (selected.Kind == "finish" || selected.Kind == "defer") {
+			for _, control := range state.InvestigationControls(st, current) {
+				if control.ActionID == selected.ID {
+					st.DecisionEffects = append(st.DecisionEffects, state.InvestigationDecisionEffect{InvestigationControl: control, DecisionID: st.Decisions[len(st.Decisions)-1].DecisionID, Observations: len(st.Observations), BindingHash: state.PreparationHash(control), CandidateHash: current, At: o.now().Format(time.RFC3339Nano)})
+				}
+			}
+			st.Status, st.Reason = "ready", "jev-evidence-backed-defer"
+			if selected.Kind == "finish" {
+				st.Status, st.Reason = "awaiting-report", "jev-evidence-ready-for-report"
+			}
+			if err := persist(dir, &st, o); err != nil {
+				return st, err
+			}
+			if selected.Kind == "finish" {
+				return st, nil
+			}
+			continue
 		}
 		invocationID := selection.InvocationID
 		if invocationID == "" {
@@ -205,6 +250,11 @@ func remainingActions(st *state.PreparationState) []contract.InvestigationAction
 	for _, receipt := range st.Observations {
 		done[receipt.Invocation.ActionID] = true
 	}
+	for _, effect := range st.DecisionEffects {
+		for _, id := range effect.Actions {
+			done[id] = true
+		}
+	}
 	legal := []contract.InvestigationAction{}
 	for _, action := range st.Contract.Actions {
 		if !done[action.ID] {
@@ -217,30 +267,85 @@ func remainingActions(st *state.PreparationState) []contract.InvestigationAction
 func snapshot(st *state.PreparationState, legal []contract.InvestigationAction, candidateHash string) decision.Snapshot {
 	s := decision.Snapshot{Version: 1, ID: fmt.Sprintf("investigate-%d-%d", st.ActionsUsed, st.Revision+1), Identity: decision.Identity{TaskID: st.Contract.ID, RunID: st.RunID, Revision: st.Revision + 1, ContractHash: st.ContractHash, CandidateHash: candidateHash, ObservationHash: state.PreparationHash(st.Observations)}, BaselineID: legal[0].ID, SemanticUncertainty: len(st.Contract.Hypotheses) > 1, Facts: []decision.Fact{{Category: decision.TaskSummary, Text: st.Contract.Goal}}}
 	for _, h := range st.Contract.Hypotheses {
-		s.Facts = append(s.Facts, decision.Fact{Category: decision.DiagnosticFacts, Text: h.Claim + "; falsifier: " + h.Falsifier})
+		s.Facts = append(s.Facts, decision.Fact{Category: decision.DiagnosticFacts, Text: "Hypothesis " + h.ID + ": " + h.Claim + "; falsifier: " + h.Falsifier})
 	}
 	for _, action := range legal {
 		s.Actions = append(s.Actions, decision.Action{ID: action.ID, Kind: decision.Diagnostic, Description: action.Purpose, BindingHash: state.PreparationHash(action)})
 	}
-	for _, observation := range st.Observations {
-		text := observation.Output
-		if len(text) > 1024 {
-			text = text[:1024]
-			for !utf8.ValidString(text) {
-				text = text[:len(text)-1]
+	for _, control := range state.InvestigationControls(st, candidateHash) {
+		if len(s.Actions) < 16 {
+			description := "Defer the listed remaining read because cited observations already address its hypotheses; this is not a contradicted finding."
+			if control.Kind == "finish" {
+				description = "Stop evidence collection and ask the analyst for a report if the cited observations sufficiently address the hypotheses. This does not prove a root cause or complete a repair."
 			}
+			description += " Actions: " + strings.Join(control.Actions, ",") + "; evidence: " + strings.Join(control.Evidence, ",")
+			s.Actions = append(s.Actions, decision.Action{ID: control.ActionID, Kind: decision.Diagnostic, Description: excerpt(description, 1024), BindingHash: state.PreparationHash(control)})
+			s.SemanticUncertainty = true
 		}
+	}
+	for _, observation := range st.Observations {
+		text := excerpt(observation.Output, 1024)
 		if text != "" {
-			s.Facts = append(s.Facts, decision.Fact{Category: decision.Source, Text: text})
+			hypotheses := ""
+			for _, action := range st.Contract.Actions {
+				if action.ID == observation.Invocation.ActionID {
+					hypotheses = strings.Join(action.Hypotheses, ",")
+				}
+			}
+			s.Facts = append(s.Facts, decision.Fact{Category: decision.Source, Text: excerpt("Observation "+observation.Invocation.ID+" (action "+observation.Invocation.ActionID+"; hypotheses "+hypotheses+"; status "+observation.Status+"): "+text, 2048)})
 		}
 	}
 	return s
 }
 
+func excerpt(text string, limit int) string {
+	if len(text) > limit {
+		text = text[:limit]
+		for !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
+	}
+	return text
+}
+
+// Read the current master switch before dispatch and adoption, while retaining
+// frozen request identity for recovery. A switch never resets a run's journal.
+func activePolicy(ctx context.Context, dir string, st *state.PreparationState) (bool, bool) {
+	global, err := loadInvestigationConfiguration(ctx, st.Cwd, dir)
+	if err != nil {
+		st.JEVStatus = "config-unavailable"
+		return false, true
+	}
+	st.JEVStatus = "disabled"
+	if !global.JEV.Enabled {
+		return false, global.Budget.Enforce == "hard"
+	}
+	st.JEVStatus = "not-configured"
+	if st.Contract.Decision == nil || st.Contract.Decision.Policy.Mode != decision.Adopt {
+		return false, global.Budget.Enforce == "hard"
+	}
+	frozen, current := st.Contract.Decision, global.JEV
+	st.JEVStatus = "policy-changed"
+	if frozen.Endpoint != current.Endpoint || frozen.Model != current.Model || frozen.KeyEnv != current.KeyEnv || frozen.TimeoutMS != current.TimeoutMS || frozen.Policy.MaxCalls > current.MaxCalls || frozen.Policy.MinApplicability < current.MinApplicability || frozen.Policy.MinChoice < current.MinChoice {
+		return false, global.Budget.Enforce == "hard"
+	}
+	for _, category := range frozen.Policy.AllowedData {
+		if !slices.Contains(current.AllowedData, category) {
+			return false, global.Budget.Enforce == "hard"
+		}
+	}
+	st.JEVStatus = "enabled"
+	return true, global.Budget.Enforce == "hard"
+}
+
 func choose(ctx context.Context, dir string, st **state.PreparationState, legal []contract.InvestigationAction, candidateHash string, o Options) (contract.InvestigationAction, decision.Selection, error) {
 	baseline := decision.Selection{ActionID: legal[0].ID, Reason: "deterministic-baseline"}
 	cfg := (*st).Contract.Decision
-	if cfg == nil || cfg.Policy.Mode == decision.Off {
+	if cfg == nil {
+		return legal[0], baseline, nil
+	}
+	active, hard := activePolicy(ctx, dir, *st)
+	if !active && (*st).DecisionPending == nil {
 		return legal[0], baseline, nil
 	}
 	charged := 0
@@ -253,7 +358,7 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 		baseline.Reason = "decision-call-budget"
 		return legal[0], baseline, nil
 	}
-	options := decision.Options{Endpoint: cfg.Endpoint, Model: cfg.Model, ExpectedModel: cfg.Model, Timeout: time.Duration(cfg.TimeoutMS) * time.Millisecond, HardBudget: cfg.HardBudget, Now: o.Now}
+	options := decision.Options{Endpoint: cfg.Endpoint, Model: cfg.Model, ExpectedModel: cfg.Model, Timeout: time.Duration(cfg.TimeoutMS) * time.Millisecond, HardBudget: cfg.HardBudget || hard, Now: o.Now}
 	recovering := (*st).DecisionPending != nil
 	journal := filepath.Join(dir, ".investigation", "decisions", (*st).RunID)
 	var receipt decision.Receipt
@@ -266,17 +371,6 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 		if !found && err == nil {
 			receipt = decision.Receipt{Version: 1, DecisionID: (*st).DecisionPending.ID, Status: "unknown", Reason: "reserved-without-terminal"}
 		}
-	}
-	global, configErr := config.LoadReadOnly(dir, (*st).Cwd)
-	if configErr != nil {
-		if !recovering {
-			baseline.Reason = "decision-config-unavailable"
-			return legal[0], baseline, nil
-		}
-		// Missing budget authority prohibits adoption but not receipt recovery.
-		options.HardBudget = true
-	} else {
-		options.HardBudget = options.HardBudget || global.Budget.Enforce == "hard"
 	}
 	if !recovering {
 		s := snapshot(*st, legal, candidateHash)
@@ -310,7 +404,12 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 	current.Identity.Revision = (*st).Revision
 	current.Identity.CandidateHash = candidateHash
 	current.Identity.ObservationHash = state.PreparationHash((*st).Observations)
-	selected := decision.Select(current, receipt, cfg.Policy, options)
+	selected := baseline
+	active, hard = activePolicy(ctx, dir, *st)
+	options.HardBudget = options.HardBudget || hard
+	if active {
+		selected = decision.Select(current, receipt, cfg.Policy, options)
+	}
 	(*st).Decisions = append((*st).Decisions, receipt)
 	(*st).DecisionPending = nil
 	// The caller CAS-saves receipt consumption together with the unique action
@@ -318,6 +417,13 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 	for _, action := range legal {
 		if action.ID == selected.ActionID {
 			return action, selected, nil
+		}
+	}
+	if selected.Adopted {
+		for _, control := range state.InvestigationControls(*st, candidateHash) {
+			if control.ActionID == selected.ActionID {
+				return contract.InvestigationAction{ID: control.ActionID, Kind: control.Kind}, selected, nil
+			}
 		}
 	}
 	return legal[0], baseline, nil
@@ -370,7 +476,7 @@ func validateReport(st *state.PreparationState, report state.InvestigationReport
 		}
 		supported = supported || finding.Status == "supported"
 	}
-	if report.Status == "supported" && !supported || report.Status != "supported" && len(report.Limitations) == 0 {
+	if report.Status == "supported" && !supported || (report.Status != "supported" || len(st.DecisionEffects) > 0) && len(report.Limitations) == 0 {
 		return fmt.Errorf("report conclusion lacks support or explicit limitations")
 	}
 	return nil

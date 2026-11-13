@@ -58,25 +58,27 @@ type InvestigationReport struct {
 }
 
 type PreparationState struct {
-	Version           int                        `json:"version"`
-	Revision          int64                      `json:"revision"`
-	RunID             string                     `json:"run-id"`
-	Cwd               string                     `json:"cwd"`
-	Contract          contract.Preparation       `json:"contract"`
-	ContractHash      string                     `json:"contract-hash"`
-	Status            string                     `json:"status"`
-	Reason            string                     `json:"reason"`
-	StartedAt         string                     `json:"started-at"`
-	Deadline          string                     `json:"deadline"`
-	ActionsUsed       int                        `json:"actions-used"`
-	OutputBytes       int                        `json:"output-bytes"`
-	ElapsedMS         int64                      `json:"elapsed-ms"`
-	Pending           *PreparationInvocation     `json:"pending,omitempty"`
-	DecisionPending   *decision.Snapshot         `json:"decision-pending,omitempty"`
-	Observations      []InvestigationObservation `json:"observations"`
-	Decisions         []decision.Receipt         `json:"decisions"`
-	DecisionStartedAt map[string]string          `json:"decision-started-at,omitempty"`
-	Report            *InvestigationReport       `json:"report,omitempty"`
+	Version           int                           `json:"version"`
+	Revision          int64                         `json:"revision"`
+	RunID             string                        `json:"run-id"`
+	Cwd               string                        `json:"cwd"`
+	Contract          contract.Preparation          `json:"contract"`
+	ContractHash      string                        `json:"contract-hash"`
+	Status            string                        `json:"status"`
+	Reason            string                        `json:"reason"`
+	StartedAt         string                        `json:"started-at"`
+	Deadline          string                        `json:"deadline"`
+	ActionsUsed       int                           `json:"actions-used"`
+	OutputBytes       int                           `json:"output-bytes"`
+	ElapsedMS         int64                         `json:"elapsed-ms"`
+	Pending           *PreparationInvocation        `json:"pending,omitempty"`
+	DecisionPending   *decision.Snapshot            `json:"decision-pending,omitempty"`
+	Observations      []InvestigationObservation    `json:"observations"`
+	Decisions         []decision.Receipt            `json:"decisions"`
+	DecisionStartedAt map[string]string             `json:"decision-started-at,omitempty"`
+	JEVStatus         string                        `json:"jev-status,omitempty"`
+	DecisionEffects   []InvestigationDecisionEffect `json:"decision-effects,omitempty"`
+	Report            *InvestigationReport          `json:"report,omitempty"`
 }
 
 type PreparationSource struct {

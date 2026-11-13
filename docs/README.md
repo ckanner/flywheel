@@ -19,7 +19,7 @@ guides are maintained in English and Simplified Chinese.
 | Enable the optional Claude machine backend | [Claude Code Pro](en/claude-code-pro.md) | [Claude Code Pro](zh-CN/claude-code-pro.md) |
 | Resume roles and reconcile interrupted calls | [Recovery and context quality](en/session-recovery.md) | [恢复与上下文质量](zh-CN/session-recovery.md) |
 | Compare session policies with fixed tasks and evidence | [Session evaluation](en/session-evaluation.md) | [会话评估](zh-CN/session-evaluation.md) |
-| Run the optional, disabled-by-default JEV experiment | [JEV shadow evaluation](en/jev-shadow.md) | [JEV 影子评估](zh-CN/jev-shadow.md) |
+| Enable bounded JEV decisions with one switch | [JEV decisions](en/jev.md) | [JEV 决策](zh-CN/jev.md) |
 
 The [first-task script](examples/create-first-task.sh) creates an isolated
 tutorial repository. The getting started guide explains preparation and

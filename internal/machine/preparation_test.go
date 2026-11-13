@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/decision"
 	"github.com/ckanner/flywheel/internal/investigation"
@@ -85,15 +86,14 @@ func TestPreparationHandoffImportsKnownAndUnknownUsageOnceOnOriginalDays(t *test
 		_, _ = w.Write([]byte(`{"error":"usage unavailable"}`))
 	}))
 	defer server.Close()
-	p.Decision = &contract.InvestigationDecision{Policy: decision.Policy{Version: "handoff-fixture-v1", Mode: decision.Adopt,
-		AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts, decision.Source}, MinApplicability: .9, MinChoice: .8, MaxCalls: 3},
-		Endpoint: server.URL + "/v1/systemone", Model: "jev-1.14.0", KeyEnv: "PREPARATION_FIXTURE_KEY", TimeoutMS: 1000}
+	je := config.Default().JEV
+	je.Enabled, je.Endpoint, je.KeyEnv, je.TimeoutMS, je.MaxCalls = true, server.URL+"/v1/systemone", "PREPARATION_FIXTURE_KEY", 1000, 2
+	rewriteConfig(t, fx, func(values map[string]any) { values["jev"] = je })
 	opts := investigation.Options{Now: func() time.Time { return start.Add(time.Duration(elapsed.Load()) * time.Millisecond) }, LookupEnv: func(string) (string, bool) { return "fixture-key", true }}
 	startManagedPreparation(t, fx, p, opts)
 	prepared := finishManagedPreparation(t, fx, opts)
 	require.EqualValues(t, 2, calls.Load())
-	require.Len(t, prepared.Decisions, 3)
-	require.Equal(t, "skipped", prepared.Decisions[2].Status)
+	require.Len(t, prepared.Decisions, 2)
 	writeFile(t, state.StateFile(fx.taskDir), fixtureState(fx.slug))
 	c := unitTestContext(t, fx)
 	require.NotNil(t, c.State.PreparationSource)
@@ -117,6 +117,39 @@ func TestPreparationHandoffImportsKnownAndUnknownUsageOnceOnOriginalDays(t *test
 	require.ErrorContains(t, resumed.attachPreparation(), "provenance changed")
 	require.NoError(t, os.Remove(state.PreparationFile(fx.taskDir)))
 	require.ErrorContains(t, resumed.attachPreparation(), "load investigation provenance")
+}
+
+func TestPreparationHandoffDoesNotChargeSkippedJEVRequests(t *testing.T) {
+	fx, p := managedPreparationFixture(t, true)
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(500)
+	}))
+	defer server.Close()
+	je := config.Default().JEV
+	je.Enabled, je.Endpoint = true, server.URL+"/v1/systemone"
+	je.AllowedData = []decision.Category{}
+	rewriteConfig(t, fx, func(values map[string]any) { values["jev"] = je })
+	opts := investigation.Options{LookupEnv: func(string) (string, bool) { return "fixture-key", true }}
+	startManagedPreparation(t, fx, p, opts)
+	prepared := finishManagedPreparation(t, fx, opts)
+	require.NotEmpty(t, prepared.Decisions)
+	for _, receipt := range prepared.Decisions {
+		require.Equal(t, "skipped", receipt.Status)
+		require.Equal(t, "data-not-authorized", receipt.Reason)
+	}
+	require.Zero(t, calls.Load(), "a skipped decision must not reach the service")
+	writeFile(t, state.StateFile(fx.taskDir), fixtureState(fx.slug))
+	c := unitTestContext(t, fx)
+	require.NotNil(t, c.State.PreparationSource)
+	require.Zero(t, c.State.Budget.Totals.Tokens)
+	require.Zero(t, c.State.Budget.UnknownUsageCalls)
+	require.Zero(t, c.State.Budget.UnknownCostCalls, "no dispatched request means no unknown charge")
+	c.save()
+	require.NoError(t, c.err())
+	resumed := unitTestContext(t, fx)
+	require.Equal(t, c.State.Budget, resumed.State.Budget)
 }
 
 func TestPreparationHandoffRequiresSettledRepairAuthority(t *testing.T) {

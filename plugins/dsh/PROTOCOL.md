@@ -323,7 +323,7 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
-`configuration` 含 source、scope、cwd、taskDir、sessions、bindings。sessions 含 mode／policy-version、可选 roles 与 quality 配置；每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+`configuration` 含 source、scope、cwd、taskDir、sessions、bindings 和 jev。jev 使用统一配置字段，enabled 是唯一总开关；它表示配置状态，不代表已请求或采用。sessions 含 mode／policy-version、可选 roles 与 quality 配置；每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
 
 有会话记录的状态快照另含紧凑 `sessions` 数组：role、scope、generation、action、reason、
 resumeCandidate，以及 last 的 status、persistent、dispatch、outcome、cleanupConfirmed、
@@ -451,6 +451,7 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 
 | action | 额外输入 | 结果 |
 |---|---|---|
+| investigate | task-dir、cwd 与 stdin JSON：start/run/status/report/cancel 及所需 contract/revision | 由 Go 拥有的准备记录与有界调查结果 |
 | runs | cwd | 最近 100 条登记，运行状态另查 status |
 | metrics | task-dir，可选 run-id | 对账后的分组与有界调用明细；未知／部分数据不置零 |
 | node | task-dir、packet | 当前 packet 完整证据及相同 revision 的状态 |
@@ -458,6 +459,20 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 | session | stdin JSON：action、key、revision；claim 的 reason 或 send 的 prompt | 受管 claim/send/reconcile/return/release；后台结果写入 control 回执 |
 | delivery | stdin JSON：action=inspect，可选 headBranch | 仓库、当前 HEAD、PR 与检查状态 |
 | deliver | stdin JSON：create/merge、revision、expectedHead、expectedRepo、confirmed=true、base 等 | 明确授权的远端动作与回执 |
+
+调查响应的 `preparation` 保持 version 1。可选 `jev-status` 是最近一次准备／运行
+记录的有效状态（enabled、disabled、config-unavailable、not-configured、policy-changed），UI 不从
+冻结的 contract.decision 猜测当前总开关。observations[].invocation.adopted 标记
+实际采用的取证动作；decisions 保留调用／跳过与原因。可选 `decision-effects` 保存
+已采用的 defer／finish：decision-id、action-id、kind、actions、evidence、observations、
+binding-hash、candidate-hash、at。其中 actions 是跳过的原动作 ID，evidence 是已成功
+观察的 invocation ID。finish 只进入 awaiting-report，不产生报告或代码完成证据。
+UI 等待报告时禁用继续取证，仍允许停止和状态查询；所有决策与状态变更由 Go 执行。
+
+配置编辑只展示并保存 `jev.enabled` 一个总开关，保存本身是明确启用操作，没有第二个
+影子／采用开关或逐任务确认。Go 规范化旧配置，旧 jev-shadow.enabled 不授予在线调用
+或采用权限。UI 不保存密钥，只保存环境变量名；变更仍受文件 revision 与未确认保存
+协议保护。
 
 step 新增 integrate 和 final。阶段请求仍绑定 expect-revision；单节点操作不等同继续整个流程。
 

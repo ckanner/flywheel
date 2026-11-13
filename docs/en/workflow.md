@@ -324,5 +324,5 @@ in [Provider session interaction](flow-console.md#controlled-provider-session-in
 - [Configuration](configuration.md): model bindings, permissions, budgets, and policies.
 - [Workflow console](flow-console.md): tasks, stages, sessions, run comparison, and remote delivery.
 - [Recovery and context quality](session-recovery.md): interrupted calls and safe continuation.
-- [JEV shadow evaluation](jev-shadow.md): optional, default-off advice that does not change workflow selection.
+- [JEV decisions](jev.md): one default-off switch for supported investigation decisions; Go retains workflow eligibility and acceptance.
 - [System design](../design.md): authoritative implementation contracts, in Chinese.

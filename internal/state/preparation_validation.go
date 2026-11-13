@@ -74,6 +74,9 @@ func validatePreparationState(st *PreparationState) error {
 	if err := validatePreparationDecisions(st, started, actions); err != nil {
 		return err
 	}
+	if err := validatePreparationEffects(st, started); err != nil {
+		return err
+	}
 	terminalReport := st.Status == "supported" || st.Status == "inconclusive" || st.Status == "access-blocked"
 	if terminalReport != (st.Report != nil) || (st.Report != nil && st.Report.Status != st.Status) ||
 		((terminalReport || st.Status == "cancelled" || st.Status == "awaiting-report") && (st.Pending != nil || st.DecisionPending != nil)) ||
@@ -145,7 +148,7 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 				receipt.PolicyHash != PreparationHash(st.Contract.Decision.Policy) || receipt.SnapshotHash == "" || receipt.TargetHash == "" || receipt.QuestionHash == "" {
 				return fmt.Errorf("successful decision lacks its frozen policy, target or request identity")
 			}
-			found := false
+			found := knownCollectionControl(st, receipt.ActionID)
 			for _, action := range st.Contract.Actions {
 				found = found || action.ID == receipt.ActionID
 			}
@@ -175,6 +178,11 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 			found := false
 			for _, allowed := range st.Contract.Actions {
 				if action.ID == allowed.ID && !usedActions[action.ID] && action.BindingHash == PreparationHash(allowed) {
+					found = true
+				}
+			}
+			for _, control := range InvestigationControls(st, pending.Identity.CandidateHash) {
+				if action.ID == control.ActionID && action.Kind == decision.Diagnostic && action.BindingHash == PreparationHash(control) {
 					found = true
 				}
 			}
@@ -224,7 +232,7 @@ func validatePreparationReport(st *PreparationState) error {
 		}
 		supported = supported || finding.Status == "supported"
 	}
-	if (report.Status == "supported" && !supported) || (report.Status != "supported" && len(report.Limitations) == 0) {
+	if (report.Status == "supported" && !supported) || ((report.Status != "supported" || len(st.DecisionEffects) > 0) && len(report.Limitations) == 0) {
 		return fmt.Errorf("report conclusion lacks support or explicit limitations")
 	}
 	return nil

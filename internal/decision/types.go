@@ -80,8 +80,8 @@ type Snapshot struct {
 	ExecutorUnknown     bool     `json:"executor-unknown"`
 }
 
-// Policy must be opted into independently of the workflow-shadow setting.
-// Thresholds are explicit experiment parameters, not calibrated accuracy.
+// Runtime policies are frozen by the owner from the unified JEV configuration.
+// Thresholds are explicit decision parameters, not calibrated accuracy.
 type Policy struct {
 	Version          string     `json:"version"`
 	Mode             Mode       `json:"mode"`

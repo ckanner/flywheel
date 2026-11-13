@@ -55,8 +55,8 @@ type InvestigationLimits struct {
 	MaxOutputBytes int `json:"max-output-bytes"`
 }
 
-// KeyEnv stores a credential NAME only. The old jev-shadow opt-in grants none of
-// these data permissions or adoption authority.
+// KeyEnv stores a credential NAME only. Start freezes this record from the
+// unified JEV configuration; caller-provided historical modes cannot opt in.
 type InvestigationDecision struct {
 	Policy     decision.Policy `json:"policy"`
 	Endpoint   string          `json:"endpoint"`

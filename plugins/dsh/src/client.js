@@ -443,7 +443,9 @@ function readReply(reply, request) {
   }
   const state = value.state;
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
-    report.bindings.every(record);
+    report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
+      typeof report.jev.enabled === 'boolean' && typeof report.jev.model === 'string' &&
+      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0);
   if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && !record(state.packets)) ||
@@ -654,6 +656,12 @@ function Configuration({ value, t }) {
     h('p', { className: css.meta }, t('configurationHelp')),
     h('p', { className: css.meta }, t('source', { source: textValue(value.source, '') || t('embedded') })),
     h('p', { className: css.meta }, t('scope', { scope: textValue(value.scope) })),
+    record(value.jev) && h('article', { className: css.binding },
+      h('h4', { className: css.bindingTitle }, t('cfgJev')),
+      h('p', null, t(value.jev.enabled === true ? 'consoleJEVConfiguredOn' : 'consoleJEVConfiguredOff')),
+      value.jev.enabled === true && h('dl', { className: css.properties },
+        field('consoleJEVVersion', textValue(value.jev.model), true),
+        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown')))),
     h('div', { className: css.bindings }, ...(value.bindings ?? []).map((binding, index) =>
       h('article', { className: css.binding, key: textValue(binding?.id, String(index)) },
         h('div', { className: css.bindingHeader },

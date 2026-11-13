@@ -3,16 +3,21 @@ Object.assign(zh, {
   investigationRun: '继续调查', investigationReconcile: '核对原动作回执', investigationReport: '调查报告', investigationEvidence: '已收集证据', investigationBudget: '动作 {used}/{limit} · 累计 {ms} ms', investigationPartial: '有界片段 · 内容未完整展示', investigationDecision: '决策建议与实际采用',
   investigationState_ready: '等待调查', investigationState_running: '调查中', 'investigationState_awaiting-report': '等待证据报告', investigationState_blocked: '结果未知 · 需核对', investigationState_supported: '报告有证据支持', investigationState_inconclusive: '尚无定论', 'investigationState_access-blocked': '缺少访问', investigationState_cancelled: '调查已取消',
   investigationRepair: '已授权原范围内修复；形成合法 Spec 后由 Auto 选择 Quick / Full。', investigationReportOnly: '本目标以调查报告结束；没有启动代码实现。',
+  investigationJEVObserved: '最近观察到的 JEV 状态', investigationJEV_enabled: 'JEV 已开启 · 在符合条件的决策点参与', investigationJEV_disabled: 'JEV 已关闭 · 后续动作沿用原路径', 'investigationJEV_config-unavailable': 'JEV 配置不可用 · 沿用原路径', 'investigationJEV_not-configured': '本次调查未配置 JEV · 沿用原路径', 'investigationJEV_policy-changed': 'JEV 配置已变更 · 本次调查沿用原路径',
+  investigationAdopted: 'JEV 已采用', investigationBaseline: '原路径', investigationEffect_defer: '依据证据跳过后续动作', investigationEffect_finish: '提前结束取证 · 等待报告', investigationSkipped: '跳过动作', investigationCitations: '依据观察',
 });
 Object.assign(en, {
   investigate: 'Investigate', investigationTitle: 'Bounded investigation', investigationHelp: 'Go runs approved reads and searches. An investigation conclusion is separate from code acceptance and delivery.',
   investigationRun: 'Continue investigation', investigationReconcile: 'Reconcile original receipt', investigationReport: 'Investigation report', investigationEvidence: 'Collected evidence', investigationBudget: 'Actions {used}/{limit} · elapsed {ms} ms', investigationPartial: 'Bounded excerpt · incomplete content', investigationDecision: 'Advice and recorded adoption',
   investigationState_ready: 'Ready to investigate', investigationState_running: 'Investigating', 'investigationState_awaiting-report': 'Awaiting evidence report', investigationState_blocked: 'Unknown result · reconcile', investigationState_supported: 'Report supported by cited evidence', investigationState_inconclusive: 'Inconclusive', 'investigationState_access-blocked': 'Access blocked', investigationState_cancelled: 'Investigation cancelled',
   investigationRepair: 'Repair is authorized within the original scope. Prepare a valid Spec before Auto selects Quick or Full.', investigationReportOnly: 'The goal ends with an investigation report; implementation has not started.',
+  investigationJEVObserved: 'Last observed JEV state', investigationJEV_enabled: 'JEV enabled · participates at eligible decision points', investigationJEV_disabled: 'JEV disabled · subsequent actions use the original path', 'investigationJEV_config-unavailable': 'JEV configuration unavailable · original path', 'investigationJEV_not-configured': 'JEV not configured for this investigation · original path', 'investigationJEV_policy-changed': 'JEV policy changed · this investigation uses the original path',
+  investigationAdopted: 'JEV adopted', investigationBaseline: 'Original path', investigationEffect_defer: 'Evidence-backed actions skipped', investigationEffect_finish: 'Evidence collection ended early · awaiting report', investigationSkipped: 'Skipped actions', investigationCitations: 'Cited observations',
 });
 
 function validPreparationSnapshot(p) {
   const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
+  const stringArray = value => Array.isArray(value) && value.every(item => typeof item === 'string');
   return record(p) && p.version === 1 && Number.isSafeInteger(p.revision) && p.revision > 0 &&
     ['ready', 'running', 'awaiting-report', 'blocked', 'supported', 'inconclusive', 'access-blocked', 'cancelled'].includes(p.status) &&
     typeof p.reason === 'string' &&
@@ -21,6 +26,9 @@ function validPreparationSnapshot(p) {
     Array.isArray(p.observations) && p.observations.every(observation => record(observation) && strings(observation.invocation, ['id', 'action-id']) &&
       ['output', 'error'].every(key => observation[key] == null || typeof observation[key] === 'string')) &&
     (p.decisions == null || Array.isArray(p.decisions) && p.decisions.every(record)) &&
+    (p['jev-status'] == null || typeof p['jev-status'] === 'string') &&
+    (p['decision-effects'] == null || Array.isArray(p['decision-effects']) && p['decision-effects'].every(effect =>
+      strings(effect, ['decision-id', 'action-id', 'kind']) && ['defer', 'finish'].includes(effect.kind) && stringArray(effect.actions) && stringArray(effect.evidence))) &&
     (p.report == null || strings(p.report, ['summary', 'counter-evidence', 'recommendation', 'regression', 'rollback']) && Array.isArray(p.report.findings) &&
       p.report.findings.every(finding => strings(finding, ['hypothesis', 'status', 'reason'])) &&
       (p.report.limitations == null || Array.isArray(p.report.limitations) && p.report.limitations.every(limit => typeof limit === 'string')));
@@ -39,8 +47,9 @@ function InvestigationPanel({ control, selection, run, t }) {
     h('p', { role: 'status' }, t('investigationState_' + preparation.status)),
     h('p', { className: css.meta }, t('investigationBudget', { used: preparation['actions-used'], limit: preparation.contract.limits['max-actions'], ms: preparation['elapsed-ms'] })),
     h('p', { className: css.meta }, preparation.reason),
+    preparation['jev-status'] && h('p', { className: css.meta }, t('investigationJEVObserved') + ': ' + t('investigationJEV_' + preparation['jev-status'])),
     h('div', { className: css.actions },
-      h(Button, { disabled: busy || control.status.running || ended, onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
+      h(Button, { disabled: busy || control.status.running || ended || preparation.status === 'awaiting-report', onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
       h(Button, { disabled: busy || ended || !control.status.running && !!preparation.pending, onClick: () => control.status.running ? run('stop', selection) : mutate('cancel') }, t('stop')),
       h(Button, { disabled: control.pending !== null, onClick: () => run('status', selection) }, t('status'))),
     h('p', { className: css.notice }, t(preparation.contract.intent === 'investigate-and-fix' ? 'investigationRepair' : 'investigationReportOnly')),
@@ -50,14 +59,19 @@ function InvestigationPanel({ control, selection, run, t }) {
       ...(preparation.report.limitations ?? []).map((limit, i) => h('p', { key: i, className: css.warningText }, limit)),
       h('p', null, preparation.report.recommendation), h('p', null, preparation.report.regression), h('p', null, preparation.report.rollback)),
     h('details', { className: css.details }, h('summary', null, t('investigationEvidence')),
-      ...preparation.observations.map(observation => h('article', { key: observation.invocation.id },
+      ...preparation.observations.map(observation => h('article', { key: 'observation:' + observation.invocation.id },
         h('h4', null, observation.invocation['action-id'] + ' · ' + observation.status),
         h('p', { className: css.meta }, observation.invocation.id + ' · ' + observation['duration-ms'] + ' ms'),
         observation.truncated && h('p', { className: css.warningText }, t('investigationPartial')),
         h('pre', { className: css.raw }, observation.output || observation.error)))),
-    preparation.decisions?.length > 0 && h('details', { className: css.details }, h('summary', null, t('investigationDecision')),
-      ...preparation.decisions.map(receipt => h('p', { key: receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
-      ...preparation.observations.map(observation => h('p', { key: observation.invocation.id }, observation.invocation['action-id'] + ' · ' + observation.invocation.reason))));
+    (preparation.decisions?.length > 0 || preparation['decision-effects']?.length > 0) && h('details', { className: css.details }, h('summary', null, t('investigationDecision')),
+      ...(preparation.decisions ?? []).map(receipt => h('p', { key: 'receipt:' + receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
+      ...preparation.observations.map(observation => h('p', { key: 'observation:' + observation.invocation.id }, observation.invocation['action-id'] + ' · ' + t(observation.invocation.adopted === true ? 'investigationAdopted' : 'investigationBaseline') + ' · ' + observation.invocation.reason)),
+      ...(preparation['decision-effects'] ?? []).map(effect => h('article', { key: 'effect:' + effect['decision-id'] },
+        h('h4', null, t('investigationEffect_' + effect.kind)),
+        h('p', { className: css.meta }, effect['decision-id']),
+        effect.actions.length > 0 && h('p', null, t('investigationSkipped') + ': ' + effect.actions.join(', ')),
+        h('p', { className: css.meta }, t('investigationCitations') + ': ' + effect.evidence.join(', '))))));
 }
 
 Object.assign(zh, { sharedBatch: '共享目录批次 · 统一验收与提交', sharedBatchError: '上次批次错误' });

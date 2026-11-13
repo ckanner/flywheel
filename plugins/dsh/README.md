@@ -123,6 +123,25 @@ Preparation-only tasks display a bounded investigation panel with observations,
 budgets, original-receipt reconciliation, Stop, and the evidence report. A report
 does not imply code delivery. See the [investigation guide](https://github.com/ckanner/flywheel/blob/main/docs/en/investigation.md).
 
+Under **Configuration → JEV decisions**, **Enable JEV** is the only JEV switch.
+It is off by default: existing execution paths run without JEV requests or shadow
+capture. Configure the System One endpoint, a pinned model and the API-key
+environment variable name, then save the enabled setting once. New investigations
+prepared through Task or New inherit the policy automatically; Run continues
+that frozen policy. Enabled JEV can choose the next approved read, defer redundant
+actions on cited evidence, or end evidence collection early for a report. It
+cannot declare a root cause proven or bypass implementation acceptance.
+
+Turning JEV off also blocks subsequent JEV calls and adoption in an existing
+investigation, while retaining its receipts and budget. Turning it on does not
+rewrite a preparation created while disabled. The panel distinguishes configured
+JEV settings from the investigation's recorded status, calls, adopted actions and
+evidence-backed effects. Advanced request limits, confidence thresholds and data
+categories share the same switch; there is no separate shadow or adoption toggle.
+Legacy shadow configuration does not automatically opt into live decisions. See
+[JEV decisions](https://github.com/ckanner/flywheel/blob/main/docs/en/jev.md).
+
+
 Visible canvases refresh task discovery; running tasks refresh status. Opening
 the view starts no task or diagnostic probe. Failed reads retain the previous
 confirmed snapshot and its timestamp. A missing or timed-out launch/start/stop
@@ -276,7 +295,7 @@ window geometry, real-account inference, or measured quality gains.
 |---|---|
 | [Worker protocol](PROTOCOL.md) | Detailed wire, permission, lifecycle, and error contracts (Chinese) |
 | [Vendored package provenance](vendor/README.md) | Codex source identity, tarball hashes, and optional Claude source evidence |
-| [JEV shadow evaluation](https://github.com/ckanner/flywheel/blob/main/docs/en/jev-shadow.md) | Default-off advisory experiment; does not alter actual routing |
+| [JEV decisions](https://github.com/ckanner/flywheel/blob/main/docs/en/jev.md) | One master switch for actual bounded decisions, with offline replay and explicit evaluation |
 | [Release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) | Build, install, and publish the same checked artifacts |
 
 ## License

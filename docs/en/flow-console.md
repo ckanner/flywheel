@@ -22,7 +22,7 @@ Loading a skill does not start the engine. `flywheel-task` prepares the appropri
 |---|---|---|
 | `/flywheel-new <goal>` | Prepares contracts for review only | Before handing over the proposal, the assistant registers a candidate through read-only `status`; an uninitialized task shows its identity and location, not execution progress |
 | `/flywheel-run <task directory>` | Starts or resumes an existing task | Start and query the original task path to associate it with the conversation; select the intended task when there are multiple candidates |
-| `/flywheel-task <goal>` | Prepares, then starts | Launch and associate through `flywheel_launch`, then check status |
+| `/flywheel-task <goal>` | Prepares, then starts | Use investigation control for evidence collection or `flywheel_launch` for implementation, then check status |
 
 `new → run` and `task` use the same engine; the canvas is not exclusive to one
 skill. Writing task files alone does not register a view, and a failed association
@@ -62,18 +62,20 @@ for the supported read/search actions, command protocol, and handoff requirement
 
 In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its navigation tabs are Workflow, Run history, and Configuration. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
-Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV shadow advice have separate sections. Save and Discard appear beside the form only after edits. Ordinary saving takes one click; first enabling JEV explains local capture and the separate explicit evaluation transfer. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
+Opening Configuration automatically reads the selected scope. Workflow policy, model assignments, budget/retries and JEV decisions have separate sections. Save and Discard appear beside the form only after edits. Saving takes one click, including the single JEV master switch; the form explains actual adoption and the configured data scope. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
 
-More configuration actions provides reload and installed-default restoration. Scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. A running engine retains its snapshot. The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
+More configuration actions provides reload and installed-default restoration. Scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. Implementation runs retain their configuration snapshot. JEV investigations additionally recheck current activation and tighter permissions at decision boundaries; see [JEV recovery](jev.md#data-budgets-and-recovery). The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
-The optional [JEV shadow evaluator](jev-shadow.md) is disabled by default. Enabling
-it captures a local task summary; only an explicit `shadow run` sends it for evaluation.
-Advice does not select workflow policy. Investigation decisions use a separate,
-explicit policy described in the [investigation guide](investigation.md).
+[JEV decisions](jev.md) use one default-off master switch. Enabling it activates
+supported investigation decisions automatically. Configuration inspection is read
+only; it is not another switch. The investigation view shows the last observed JEV
+state, adopted versus baseline actions, and evidence-referenced deferral or early
+report effects. A stored state label is not a live re-read of configuration. These
+collection effects never mean the root cause is proven or implementation completed.
 
 ## Canvas and operations
 

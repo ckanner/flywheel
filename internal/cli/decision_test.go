@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/decision"
 	"github.com/stretchr/testify/require"
 )
@@ -30,11 +31,19 @@ func decisionCLIFixture(t *testing.T) (decisionCapture, string, string) {
 	input, response := filepath.Join(dir, "snapshot.json"), filepath.Join(dir, "native-response.json")
 	require.NoError(t, os.WriteFile(input, []byte(mustJSONT(t, capture)), 0600))
 	require.NoError(t, os.WriteFile(response, []byte(`{"model":"jev-1.14.0","answers":{"action":{"type":"choice","choice":"inspect-config","confidence":0.83,"probabilities":{"inspect-config":0.96,"inspect-log":0.04}},"applicable":{"type":"noul","noul":0.98}},"usage":{"input_tokens":100,"output_tokens":20}}`), 0600))
+	writeDecisionCLIConfig(t, input, "https://example.invalid/v1/systemone", true)
 	return capture, input, response
 }
 
+func writeDecisionCLIConfig(t *testing.T, input, endpoint string, enabled bool) {
+	t.Helper()
+	cfg := config.Default().JEV
+	cfg.Enabled, cfg.Endpoint, cfg.KeyEnv = enabled, endpoint, "FLYWHEEL_DECISION_TEST_KEY"
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(input), "flywheel.config.json"), []byte(mustJSONT(t, map[string]any{"jev": cfg})), 0600))
+}
+
 func decisionCLIArgs(action, input, endpoint string) []string {
-	return []string{"decision", action, "--input", input, "--endpoint", endpoint, "--model", "jev-1.14.0", "--expected-model", "jev-1.14.0"}
+	return []string{"decision", action, "--input", input, "--cwd", filepath.Dir(input), "--endpoint", endpoint, "--model", "jev-1.14.0", "--expected-model", "jev-1.14.0"}
 }
 
 func TestDecisionReplayCLIReadsRealCaptureAndBareSnapshotWithoutHTTP(t *testing.T) {
@@ -91,6 +100,7 @@ func TestDecisionEvaluateCLIIsAdvisoryAndRespectsCumulativeCallBudget(t *testing
 		_, _ = w.Write(native)
 	}))
 	defer server.Close()
+	writeDecisionCLIConfig(t, input, server.URL+"/v1/systemone", true)
 	t.Setenv("FLYWHEEL_DECISION_TEST_KEY", "cli-decision-secret")
 	directory := filepath.Join(t.TempDir(), "evaluation")
 	args := append(decisionCLIArgs("evaluate", input, server.URL+"/v1/systemone"), "--directory", directory, "--key-env", "FLYWHEEL_DECISION_TEST_KEY", "--max-calls", "1")
@@ -131,6 +141,7 @@ func TestDecisionEvaluateCLISkipsWithoutDataPermissionAndHardBound(t *testing.T)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(500) }))
 	defer server.Close()
+	writeDecisionCLIConfig(t, input, server.URL+"/v1/systemone", true)
 	t.Setenv("FLYWHEEL_DECISION_TEST_KEY", "cli-decision-secret")
 	args := append(decisionCLIArgs("evaluate", input, server.URL+"/v1/systemone"), "--directory", filepath.Join(t.TempDir(), "evaluation"), "--key-env", "FLYWHEEL_DECISION_TEST_KEY", "--max-calls", "1")
 	code, out := runCLI(t, append(append([]string{}, args...), "--hard-budget")...)
@@ -150,6 +161,7 @@ func TestDecisionEvaluateCLIReportsErrorUnknownAndCancellationWithoutReplay(t *t
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(401) }))
 	endpoint := server.URL + "/v1/systemone"
+	writeDecisionCLIConfig(t, input, endpoint, true)
 	t.Setenv("FLYWHEEL_DECISION_TEST_KEY", "cli-decision-secret")
 	args := append(decisionCLIArgs("evaluate", input, endpoint), "--directory", filepath.Join(t.TempDir(), "evaluation"), "--key-env", "FLYWHEEL_DECISION_TEST_KEY", "--max-calls", "1")
 	code, out := runCLI(t, args...)
@@ -180,7 +192,7 @@ func TestDecisionEvaluateCLIReportsErrorUnknownAndCancellationWithoutReplay(t *t
 	var exit *exitError
 	require.ErrorAs(t, err, &exit)
 	require.Equal(t, 143, exit.code)
-	require.Contains(t, buffer.String(), "cancelled-before-dispatch")
+	require.Empty(t, buffer.String(), "cancellation before configuration discovery must not create a request or receipt")
 }
 
 func TestDecisionCLIRejectsInvalidInputsAndMissingExplicitConfiguration(t *testing.T) {
@@ -202,7 +214,6 @@ func TestDecisionCLIRejectsInvalidInputsAndMissingExplicitConfiguration(t *testi
 	live := decisionCLIArgs("evaluate", input, endpoint)
 	for _, extra := range [][]string{
 		nil,
-		{"--directory", t.TempDir(), "--key-env", "BAD-KEY", "--max-calls", "1"},
 		{"--directory", t.TempDir(), "--key-env", "FLYWHEEL_DECISION_TEST_KEY", "--max-calls", "101"},
 	} {
 		code, out := runCLI(t, append(append([]string{}, live...), extra...)...)

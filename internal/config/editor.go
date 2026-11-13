@@ -11,7 +11,7 @@ import (
 
 // Editor values contain only configuration fields, never credential values or
 // arbitrary notes/commands from the source file. Unedited sections stay on disk.
-var editorSections = []string{"jev-shadow", "loops", "routes", "channels", "profiles", "sessions", "permissions", "budget", "watchdog", "retry", "worktree", "scheduler", "judge-panel"}
+var editorSections = []string{"jev", "loops", "routes", "channels", "profiles", "sessions", "permissions", "budget", "watchdog", "retry", "worktree", "scheduler", "judge-panel"}
 
 type EditorDocument struct {
 	Target   string                     `json:"target"`
@@ -110,6 +110,12 @@ func SaveEditor(cwd string, request EditorRequest) (*EditorDocument, error) {
 			return document, fmt.Errorf("configuration editor cannot change section %q", key)
 		}
 		root[key] = value
+	}
+	if _, legacy := root["jev-shadow"]; legacy {
+		if _, explicit := root["jev"]; !explicit {
+			root["jev"] = document.Values["jev"]
+		}
+		delete(root, "jev-shadow")
 	}
 	candidate := configJSON(root)
 	if _, err := parseConfig(candidate, document.Target); err != nil {
