@@ -189,7 +189,11 @@ close、TTL、EOF、TERM/INT/HUP 均触发有界 shutdown。Go 发 close 后最�
 窗口不变，不等剩余模型 wall-time。尚未收到正式 start 的 worker
 在 SDK 关闭后，将 `terminal.json` 以 0600、独占、原子发布到指定证据目录，fsync 文件及目录后再输出
 `warm-result`。文件包含 protocol、warmId、binding、真实 workerPid、`dispatched:false`
-和 `cleanupConfirmed`；协议损坏或 SDK 清理未知不得为 true。只有无错误且确认清理
+和 `cleanupConfirmed`；协议损坏或 SDK 清理未知不得为 true。发布的完整 JSON 文件
+最多 8192 字节，按序列化后的 UTF-8 计数，包含 JSON 转义与末尾换行。可选 `error`
+诊断过长时仅截断该文本并标明截断，正常短错误完整保留；身份、派发和清理证明字段
+不得删改。Go 保持相同大小上限与全部文件、身份和退出校验，诊断截断不构成清理证明。
+只有无错误且确认清理
 的正常 close 才返回 `status:closed`／退出 0，否则返回 error 或 cancelled 和非零退出。
 正式 start 已接收则
 不写未派发证明，恢复归属于正式 Session 调用账本。

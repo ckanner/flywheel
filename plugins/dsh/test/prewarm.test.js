@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { runWorker } from '../src/bridge.js';
-import { validatePrepare, matchWarmStart, prewarmInput } from '../src/prewarm.js';
+import { validatePrepare, matchWarmStart, prewarmInput, writeWarmReceipt } from '../src/prewarm.js';
 import { PassThrough } from 'node:stream';
 import { apply as applyPolicy } from '../src/policy.js';
 
@@ -65,6 +65,57 @@ test('unused SDK closes with durable cleanup proof and no prompt or Session', as
   assert.deepEqual(receipt, { protocol: 1, warmId: f.prepared.warmId, binding: f.prepared.binding,
     workerPid: process.pid, dispatched: false, cleanupConfirmed: true });
   assert.equal(frames.at(-1).type, 'warm-result');
+});
+
+test('private cleanup receipts bound serialized bytes without changing proof or short diagnostics', async t => {
+  for (const [name, message] of [
+    ['short', 'initialization-error: "quoted" \\ path\nnext line'],
+    ['ascii', 'initialization-error:' + 'x'.repeat(9000)],
+    ['multibyte', 'initialization-error:' + '初始失败😀'.repeat(2500)],
+    ['escaped', 'initialization-error:' + '"\\\n\t\u0000\ud800'.repeat(2000)],
+  ]) {
+    await t.test(name, async t => {
+      const f = await setup(t);
+      f.prepared.warmId = 'w'.repeat(128);
+      await writeWarmReceipt(f.prepared, true, { message });
+      const raw = await readFile(join(f.prepared.receiptDirectory, 'terminal.json'));
+      assert.ok(raw.length <= 8192, `published cleanup receipt is ${raw.length} bytes`);
+      assert.equal(raw.at(-1), 10, 'the trailing newline counts toward the limit');
+      const { error, ...proof } = JSON.parse(raw.toString('utf8'));
+      assert.deepEqual(proof, { protocol: 1, warmId: f.prepared.warmId, binding: f.prepared.binding,
+        workerPid: process.pid, dispatched: false, cleanupConfirmed: true });
+      if (name === 'short') assert.equal(error, message);
+      else {
+        assert.ok(error.endsWith(' [truncated]'));
+        assert.ok(message.startsWith(error.slice(0, -' [truncated]'.length)));
+      }
+    });
+  }
+});
+
+test('private cleanup receipt accepts the exact byte boundary and preserves unknown cleanup', async t => {
+  for (const extra of [0, 1]) {
+    const f = await setup(t);
+    const empty = { protocol: 1, warmId: f.prepared.warmId, binding: f.prepared.binding,
+      workerPid: process.pid, dispatched: false, cleanupConfirmed: false, error: '' };
+    const message = 'x'.repeat(8192 - Buffer.byteLength(JSON.stringify(empty) + '\n') + extra);
+    await writeWarmReceipt(f.prepared, false, { message });
+    const raw = await readFile(join(f.prepared.receiptDirectory, 'terminal.json'));
+    assert.equal(raw.length, 8192);
+    const receipt = JSON.parse(raw.toString('utf8'));
+    assert.equal(receipt.cleanupConfirmed, false);
+    assert.equal(receipt.dispatched, false);
+    if (extra === 0) assert.equal(receipt.error, message);
+    else assert.ok(receipt.error.endsWith(' [truncated]'));
+  }
+});
+
+test('private cleanup receipts never truncate identity fields to fit', async t => {
+  const f = await setup(t);
+  await assert.rejects(writeWarmReceipt({ ...f.prepared, warmId: 'w'.repeat(9000) }, true),
+    /cleanup identity exceeds the private receipt limit/);
+  await assert.rejects(readFile(join(f.prepared.receiptDirectory, 'terminal.pending')), { code: 'ENOENT' });
+  await assert.rejects(readFile(join(f.prepared.receiptDirectory, 'terminal.json')), { code: 'ENOENT' });
 });
 
 for (const scenario of ['forced-shutdown', 'shutdown-corrupt-tail']) {

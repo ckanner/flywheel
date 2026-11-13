@@ -25,6 +25,15 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 	if scenario == "" {
 		return
 	}
+	if scenario == "before-prepare" {
+		// Test-only startup barrier: the process exists, but has not read the
+		// prepare request or installed any receipt-producing shutdown handler.
+		if os.WriteFile(os.Getenv("FLYWHEEL_TEST_DSH_WARM_BOOT"), []byte(fmt.Sprint(os.Getpid())), 0o600) != nil {
+			os.Exit(2)
+		}
+		time.Sleep(10 * time.Second)
+		os.Exit(2)
+	}
 	decoder := json.NewDecoder(os.Stdin)
 	var raw json.RawMessage
 	if decoder.Decode(&raw) != nil {
@@ -42,6 +51,12 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 		}
 		_ = os.WriteFile(filepath.Join(request.Cwd, "formal-request.json"), raw, 0o600)
 		_ = os.WriteFile(filepath.Join(request.Cwd, "cold-model-call"), []byte(request.RequestID), 0o600)
+		if scenario == "admitted-no-ready" {
+			calls, err := os.OpenFile(filepath.Join(request.Cwd, "fixture-cold-calls.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil || json.NewEncoder(calls).Encode(request) != nil || calls.Close() != nil {
+				os.Exit(2)
+			}
+		}
 		_ = encode.Encode(first)
 		if scenario == "expired-cold-missing" {
 			os.Exit(1)
@@ -81,6 +96,14 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 		}
 		_ = encode.Encode(frame)
 	}
+	if scenario == "admitted-no-ready" {
+		// This is fixture admission, not SDK readiness. Signal handling and
+		// closeWarm are installed before the parent may shorten the deadline.
+		admitted, _ := json.Marshal(map[string]any{"warmId": prepared.WarmID, "binding": prepared.Binding, "workerPid": os.Getpid()})
+		if os.WriteFile(filepath.Join(prepared.Cwd, "fixture-prepare-admitted.json"), admitted, 0o600) != nil {
+			os.Exit(2)
+		}
+	}
 	ready := map[string]any{"protocol": 1, "type": "warm-ready", "warmId": prepared.WarmID,
 		"binding": prepared.Binding, "level": "sdk-initialized", "dispatched": false}
 	if strings.HasPrefix(scenario, "expired") || scenario == "closed-unused" || strings.HasPrefix(scenario, "failed-initialize") {
@@ -117,7 +140,7 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 		fmt.Fprintln(os.Stdout, "{broken-json}")
 	} else if scenario == "early-output" {
 		_ = encode.Encode(map[string]any{"type": "ready"})
-	} else if scenario != "no-ready" {
+	} else if scenario != "no-ready" && scenario != "admitted-no-ready" {
 		_ = encode.Encode(ready)
 	}
 	if scenario == "duplicate-ready" {
@@ -829,20 +852,77 @@ func TestDSHPrewarmQueuedInvocationTimeoutsIgnoreExitedProcess(t *testing.T) {
 }
 
 func TestDSHPrewarmLocalTTLAndSafeColdFallbackBoundaries(t *testing.T) {
-	originalTTL, originalClose := dshWarmTTL, dshWarmCloseGrace
-	t.Cleanup(func() { dshWarmTTL, dshWarmCloseGrace = originalTTL, originalClose })
-	dshWarmTTL = 75 * time.Millisecond
+	originalClose := dshWarmCloseGrace
+	t.Cleanup(func() { dshWarmCloseGrace = originalClose })
 	dshWarmCloseGrace = 25 * time.Millisecond
-	a := warmArgs(t, "no-ready")
-	h := PrepareDSH(a)
-	<-h.done
-	assert.True(t, h.prepareExpired, "Go independently bounds an unresponsive prepare")
+	a := warmArgs(t, "admitted-no-ready")
 	a.RequestID = "same-formal-invocation"
-	result := h.Run(a)
+	h := PrepareDSH(a)
+	t.Cleanup(func() { _ = h.Close() })
+	var admitted struct {
+		WarmID    string `json:"warmId"`
+		Binding   string `json:"binding"`
+		WorkerPID int    `json:"workerPid"`
+	}
+	require.Eventually(t, func() bool {
+		raw, err := os.ReadFile(filepath.Join(a.Cwd, "fixture-prepare-admitted.json"))
+		return err == nil && json.Unmarshal(raw, &admitted) == nil
+	}, 5*time.Second, 5*time.Millisecond, "fixture must accept prepare and install cleanup before expiry")
+	assert.Equal(t, h.ID(), admitted.WarmID)
+	assert.Equal(t, h.prepare.Binding, admitted.Binding)
+	assert.Positive(t, admitted.WorkerPID)
+	select {
+	case <-h.ready:
+		t.Fatal("fixture admission must not be reported as SDK readiness")
+	default:
+	}
+	finished := make(chan Result, 1)
+	go func() { finished <- h.Run(a) }()
+	require.Eventually(t, func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.formal != nil
+	}, 5*time.Second, 5*time.Millisecond)
+	// Exercise the real timer callback, but only after startup and admission.
+	// The formal invocation has already started, so expiry/cleanup must spend
+	// its original time budget rather than giving the cold call a fresh one.
+	h.mu.Lock()
+	stopped := h.prepareTimer.Stop()
+	if stopped {
+		h.prepareTimer.Reset(75 * time.Millisecond)
+	}
+	h.mu.Unlock()
+	require.True(t, stopped, "the original preparation deadline must not race the fixture barrier")
+	var result Result
+	select {
+	case result = <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expired preparation and its cold replacement must finish within the invocation budget")
+	}
+	assert.True(t, h.prepareExpired, "Go independently bounds an unresponsive prepare")
+	assert.False(t, h.readySeen, "cleanup after fixture admission never authorizes a warm start")
+	receipt, err := readDSHWarmReceipt(h.ID(), a.PrewarmDirectory, h.prepare.Binding)
+	require.NoError(t, err)
+	assert.Equal(t, admitted.WorkerPID, receipt.WorkerPID)
+	assert.False(t, receipt.NoProcess)
+	assert.False(t, *receipt.Dispatched)
+	assert.True(t, receipt.CleanupConfirmed)
+	require.NoError(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
 	require.True(t, result.Settled, "%+v", result)
+	require.NotNil(t, result.Session)
 	assert.Equal(t, a.RequestID, result.Session.RequestID)
+	assert.False(t, h.Run(a).Settled, "the same preparation cannot authorize another cold invocation")
+	raw, err := os.ReadFile(filepath.Join(a.Cwd, "fixture-cold-calls.jsonl"))
+	require.NoError(t, err)
+	calls := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	require.Len(t, calls, 1, "safe expiry authorizes exactly one cold call")
+	var request dshStart
+	require.NoError(t, json.Unmarshal([]byte(calls[0]), &request))
+	assert.Equal(t, a.RequestID, request.RequestID)
+	assert.Positive(t, request.TimeoutMS)
+	assert.Less(t, request.TimeoutMS, a.Watchdog.WallTimeoutMs, "cold fallback receives only the remaining formal deadline")
 	require.NoError(t, h.Close())
-	dshWarmTTL, dshWarmCloseGrace = originalTTL, originalClose
+	dshWarmCloseGrace = originalClose
 
 	a = warmArgs(t, "closed-unused")
 	h = PrepareDSH(a)
@@ -889,6 +969,55 @@ func TestDSHPrewarmLocalTTLAndSafeColdFallbackBoundaries(t *testing.T) {
 	started := time.Now()
 	assert.Error(t, h.Close())
 	assert.Less(t, time.Since(started), time.Second, "discard cannot wait for the model's wall-time allowance")
+}
+
+func TestDSHPrewarmDeadlineBeforeAdmissionDoesNotAuthorizeColdFallback(t *testing.T) {
+	originalClose := dshWarmCloseGrace
+	dshWarmCloseGrace = 25 * time.Millisecond
+	t.Cleanup(func() { dshWarmCloseGrace = originalClose })
+	a := warmArgs(t, "before-prepare")
+	a.RequestID = "unadmitted-formal-invocation"
+	boot := filepath.Join(a.Cwd, "fixture-before-prepare")
+	a.APIKeys["FLYWHEEL_TEST_DSH_WARM_BOOT"] = boot
+	h := PrepareDSH(a)
+	t.Cleanup(func() { _ = h.Close() })
+	var pid int
+	require.Eventually(t, func() bool {
+		raw, err := os.ReadFile(boot)
+		if err != nil {
+			return false
+		}
+		_, err = fmt.Sscan(string(raw), &pid)
+		return err == nil && pid > 0
+	}, 5*time.Second, 5*time.Millisecond, "must observe a live child before testing unknown admission")
+	require.NoError(t, syscall.Kill(pid, 0))
+	h.mu.Lock()
+	stopped := h.prepareTimer.Stop()
+	if stopped {
+		h.prepareTimer.Reset(75 * time.Millisecond)
+	}
+	h.mu.Unlock()
+	require.True(t, stopped)
+	select {
+	case <-h.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a real preparation deadline must stop a child that never accepts prepare")
+	}
+	assert.True(t, h.prepareExpired)
+	assert.False(t, h.readySeen)
+	assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH)
+	assert.ErrorIs(t, syscall.Kill(-pid, 0), syscall.ESRCH)
+	assert.NoFileExists(t, filepath.Join(a.PrewarmDirectory, "terminal.json"), "a started child is not no-process proof")
+	assert.Error(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
+	result := h.Run(a)
+	assert.False(t, result.Settled)
+	assert.NotEmpty(t, result.CleanupError)
+	require.NotNil(t, result.Session)
+	assert.False(t, result.Session.CleanupConfirmed)
+	assert.Equal(t, "unknown", result.Session.Outcome)
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
+	assert.NoFileExists(t, filepath.Join(a.Cwd, "formal-request.json"))
+	assert.Error(t, h.Close(), "physical exit alone cannot replace the missing SDK cleanup receipt")
 }
 
 func TestDSHPrewarmCloseWaitsForColdFallbackCleanup(t *testing.T) {

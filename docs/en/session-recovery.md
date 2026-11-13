@@ -77,13 +77,19 @@ while deterministic checks run. Before starting it, Go saves a single
 role/scope, binding and run. Its terminal receipt is private under
 `.control/prewarm/`; it is separate from a model invocation or passing Review.
 
+The complete terminal JSON is limited to 8 KiB after UTF-8 serialization, including
+escaped characters and the trailing newline. Long error diagnostics are shortened
+with a truncation marker; ordinary short errors and all identity, dispatch and
+cleanup fields remain intact. Diagnostic truncation does not relax any recovery
+check or turn an initialization failure into a safe-expiry fallback.
+
 A restarted engine never resumes that prepared worker. It may discharge the old
 responsibility only when the matching receipt proves that no prompt was submitted,
 SDK cleanup was confirmed, and both the recorded worker and its original process
 group have exited. Receipt publication synchronizes the file and its directory;
 recovery repeats those durability checks before clearing state. If no process was
 ever started, an explicit local no-process receipt can establish that fact;
-elapsed time or a missing PID cannot. Missing, corrupt or mismatched receipts, a
+elapsed time or a missing PID cannot. Missing, oversized, corrupt or mismatched receipts, a
 live or unconfirmed process/group, or uncertain cleanup keep the task blocked.
 Turning prewarming off does not bypass reconciliation. After safe resolution,
 subsequent work follows the current configuration and its normal invocation checks.
