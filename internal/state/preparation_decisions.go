@@ -54,6 +54,11 @@ func InvestigationControls(st *PreparationState, candidateHash string) []Investi
 		if observation.Status != "observed" || observation.Truncated || strings.TrimSpace(observation.Output) == "" || observation.Invocation.CandidateHash != candidateHash {
 			continue
 		}
+		// An expected nonzero reproducer exit is useful evidence for the analyst,
+		// but is not success evidence that can shorten the remaining collection.
+		if e := observation.Execution; e != nil && (e.TimedOut || e.Cancelled || e.Signal != "" || (e.Kind == "run_command" && (e.ExitCode == nil || *e.ExitCode != 0 || e.Cleanup != "removed")) || (e.Kind == "http_read" && (e.HTTPStatus < 200 || e.HTTPStatus > 299))) {
+			continue
+		}
 		for _, action := range st.Contract.Actions {
 			if action.ID == observation.Invocation.ActionID {
 				for _, hypothesis := range action.Hypotheses {

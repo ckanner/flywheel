@@ -469,6 +469,36 @@ binding-hash、candidate-hash、at。其中 actions 是跳过的原动作 ID，e
 观察的 invocation ID。finish 只进入 awaiting-report，不产生报告或代码完成证据。
 UI 等待报告时禁用继续取证，仍允许停止和状态查询；所有决策与状态变更由 Go 执行。
 
+调查 action 新增 `run_command` 和 `http_read`。`command` 冻结 argv、精确 inputs、
+env 变量名、timeout-ms、expect-exit 与 `execution-boundary:host-process`；HTTP
+冻结精确 url、GET／HEAD、headers-env 变量名、timeout-ms、max-bytes 和 expect-status。
+这些输入继续放在 bounded stdin 中，不能拼接进 CLI argv。普通文件动作仍使用 path；
+新动作不能因缺少 path 被客户端误判为不合法，完整契约资格由 Go schema 校验。
+
+`observations[].execution` 是可选的实际运行结果：kind、可选 exit-code／http-status／
+signal、timed-out、cancelled、可选 workspace／input-hash，以及 cleanup
+（removed／retained／not-created）。UI 不把预期非零退出、HTTP 失败、取消或输出
+截断显示成代码验收通过。副本隔离不宣称 OS 沙箱。unknown 实际动作回执不作为普通
+observation 消费；Go 保留 pending 与 blocked，UI 只能核对原回执，不能另派动作。
+
+实现状态的可选 `runtime-decisions` 版本为 1，汇总任务共享的 used、imported-calls、
+max-calls 与最近观察状态。records 的显示字段为 id、packet、attempt、started-at、
+action、status，可附 selection（action-id／adopted／reason）、去敏 receipt 摘要
+及 feedback GateReport。`repair`、`replan`、`model-N`、`feedback-N`、`recheck-N`
+由 Go 生成，客户端只显示；N 分别索引冻结的允许绑定、短反馈检查、失败 L1 检查。
+applied 是实际应用的控制决策，completed 是控制动作收尾，两者都不代表任务验收成功。
+feedback-completed 表示反馈已收尾；feedback-running／feedback-unknown 需要核对原执行，
+feedback-stale 表示反馈改变了候选或验证输入并阻断流程。请求 receipt 的 unknown 与
+stale 不能显示成成功采用。调用次数包括调查移交的已派发与未知请求。
+replan-running 表示重规划未收尾，恢复须核对原 Plan 会话，不允许自动重复派发。
+画布投影移除原始 snapshot／facts 和目标配置，最多保留末 10 条记录，
+`omitted-records` 是更早省略的条数。feedback.results 的 `omitted-items` 标记也会明确展示。
+实际模型切换来自 packet.execution-policy.history 的 from／to、before／after、kind、
+reason、attempt 与 at；jev-model-selection 标记已采用的 JEV 模型选择。UI 不从 model-N
+推测模型，不把配置变更覆盖成已启动的会话，节点模型仍来自实际会话或原始运行绑定。
+节点详情可查看所属 packet 的记录；客户端对新增结构做类型校验，畸形回执保留上次
+有效视图并要求刷新，禁止基于未确认状态直接 launch／start。
+
 配置编辑只展示并保存 `jev.enabled` 一个总开关，保存本身是明确启用操作，没有第二个
 影子／采用开关或逐任务确认。Go 规范化旧配置，旧 jev-shadow.enabled 不授予在线调用
 或采用权限。UI 不保存密钥，只保存环境变量名；变更仍受文件 revision 与未确认保存

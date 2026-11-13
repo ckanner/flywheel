@@ -14,6 +14,9 @@ cache-scope: [docs/spec.md]
 boundaries:
   must-not-touch: [src/payments/, acceptance/auth/, e2e/auth-flow.ts]
   max-files: 6
+# Optional approved short feedback; it never replaces any acceptance entry.
+# feedback-checks:
+#   - {cmd: "pnpm test auth -- --runInBand -t malformed", expect: "exit 0", purpose: "Distinguish malformed-token handling from other authentication failures"}
 acceptance:
   L1:
     - {cmd: "pnpm test auth", expect: "exit 0"}
@@ -50,7 +53,10 @@ You are the executor for exactly one task packet. You only do this one thing.
    the scope must change, return concrete evidence and a proposed revision
    to the Plan Loop. Revisions outside the task directory require an explicit
    human task; the planner cannot edit those files automatically.
-4. Run the acceptance commands yourself. Report what passed and what failed.
+4. Use targeted feedback checks while iterating, including approved
+   `feedback-checks` when they distinguish the current failure. Report the
+   commands actually run and their results. The orchestrator still runs the
+   complete acceptance gates after you exit; do not claim unrun checks passed.
 5. You NEVER declare the task "done". Completion is judged by the orchestrator
    (acceptance commands) and the Review Loop, not by you.
 6. If reality disagrees with the design, or the work requires changing scope:

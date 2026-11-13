@@ -34,7 +34,7 @@ func TestRecoveryReadsFrozenTerminalAndUnknownWithoutNewCalls(t *testing.T) {
 	if err != nil || !found || r.Status != "unknown" || r.Usage.Input != nil || calls != 1 {
 		t.Fatalf("intent recovery: %#v, %v, %v", r, found, err)
 	}
-	s.Version = 2
+	s.Version = 99
 	if _, _, err := Recover(directory, s, p, o); err == nil {
 		t.Fatal("invalid frozen identity accepted")
 	}

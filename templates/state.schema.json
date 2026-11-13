@@ -7,6 +7,138 @@
   "additionalProperties": false,
   "required": ["schema-version", "slug", "revision", "status", "milestones", "packets", "budget", "last-progress-at", "inbox"],
   "properties": {
+    "runtime-decisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "config",
+        "used",
+        "imported-calls",
+        "status",
+        "records"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "config": {
+          "allOf": [
+            {
+              "$ref": "jev-config.schema.json"
+            },
+            {
+              "type": "object",
+              "required": [
+                "enabled",
+                "endpoint",
+                "model",
+                "key-env",
+                "timeout-ms",
+                "max-calls",
+                "min-applicability",
+                "min-choice",
+                "allowed-data"
+              ],
+              "properties": {
+                "enabled": {
+                  "const": true
+                }
+              }
+            }
+          ]
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "imported-calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "records": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "packet",
+              "attempt",
+              "plan-revisions",
+              "started-at",
+              "snapshot",
+              "action",
+              "status",
+              "accounted"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
+              },
+              "packet": {
+                "type": "string",
+                "pattern": "^M[0-9]+-T[0-9]+$"
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "plan-revisions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "started-at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "object"
+              },
+              "receipt": {
+                "type": "object"
+              },
+              "selection": {
+                "type": "object"
+              },
+              "action": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "baseline",
+                  "applied",
+                  "stale",
+                  "feedback-running",
+                  "feedback-completed",
+                  "feedback-unknown",
+                  "feedback-stale",
+                  "replan-running",
+                  "completed"
+                ]
+              },
+              "plan-invocation-before": {
+                "type": "string",
+                "minLength": 1
+              },
+              "accounted": {
+                "type": "boolean"
+              },
+              "feedback": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "shared-execution": {"type":"object","additionalProperties":false,"required":["cwd","base-ref","packets"],"properties":{"last-error":{"type":"string","maxLength":2000},"cwd":{"type":"string","minLength":1},"base-ref":{"type":"string","minLength":1},"packets":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string","pattern":"^M[0-9]+-T[0-9]+$"}}}},
     "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"workspace-cwd":{"type":"string","minLength":1},"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
     "control":{"type":"object","additionalProperties":false,"required":["kind","status","message","started-at"],"properties":{"kind":{"type":"string","minLength":1},"packet":{"type":"string"},"status":{"enum":["running","passed","failed","cancelled"]},"message":{"type":"string","maxLength":2000},"started-at":{"type":"string"},"finished-at":{"type":"string"}}},
@@ -498,6 +630,7 @@
           },
           "updated-at": { "type": ["string", "null"] },
           "contract-sync-pending": { "type": "boolean", "description": "契约修订尚未同步到保留的工作区，恢复时必须完成同步。" },
+          "pending-strategy": {"type":"string","minLength":1},
           "execution-policy": {
             "$ref": "#/$defs/execution-policy-record"
           }

@@ -116,7 +116,9 @@
             "enum": [
               "read_file",
               "search_text",
-              "list_files"
+              "list_files",
+              "run_command",
+              "http_read"
             ]
           },
           "path": {
@@ -143,14 +145,173 @@
             "minItems": 1,
             "maxItems": 16,
             "uniqueItems": true
+          },
+          "command": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 4096
+                },
+                "minItems": 1,
+                "maxItems": 64
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "minItems": 1,
+                "maxItems": 32,
+                "uniqueItems": true
+              },
+              "env": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Z_][A-Z0-9_]*$"
+                },
+                "minItems": 0,
+                "maxItems": 16,
+                "uniqueItems": true
+              },
+              "timeout-ms": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300000
+              },
+              "expect-exit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "execution-boundary": {
+                "const": "host-process"
+              }
+            },
+            "required": [
+              "argv",
+              "inputs",
+              "env",
+              "timeout-ms",
+              "expect-exit",
+              "execution-boundary"
+            ]
+          },
+          "http": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "method": {
+                "enum": [
+                  "GET",
+                  "HEAD"
+                ]
+              },
+              "headers-env": {
+                "type": "object",
+                "maxProperties": 16,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                  "maxLength": 128
+                }
+              },
+              "timeout-ms": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 30000
+              },
+              "max-bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 262144
+              },
+              "expect-status": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 299
+              }
+            },
+            "required": [
+              "url",
+              "method",
+              "headers-env",
+              "timeout-ms",
+              "max-bytes",
+              "expect-status"
+            ]
           }
         },
         "required": [
           "id",
           "kind",
-          "path",
           "purpose",
           "hypotheses"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "read_file",
+                    "search_text",
+                    "list_files"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "path"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "run_command"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "command"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "http_read"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "http"
+              ]
+            }
+          }
         ]
       },
       "minItems": 1,

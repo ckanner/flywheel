@@ -9,7 +9,7 @@ it is not a third implementation completion mode.
 
 | Daily request | Entry | Engine behavior and endpoint |
 | --- | --- | --- |
-| Diagnose and explain | `/flywheel-task` | Managed reads/searches and an evidence report; no implementation |
+| Diagnose and explain | `/flywheel-task` | Managed evidence collection, approved diagnostic experiments and a report; no implementation |
 | Diagnose and repair within scope | `/flywheel-task` | Supported report, then Spec and Auto; retain provenance, usage and scope |
 | Repair an identified issue | Task Auto or explicit Quick | Qualification, mandatory checks, independent final Review and Git delivery |
 | Propose a complex change for review | `/flywheel-new` | Stop after preparation; Run Full after implementation authorization |
@@ -34,26 +34,92 @@ evidence, falsifiable hypotheses, exact read paths, concrete actions and budgets
 `implementation-scope`; report-only intent grants no implementation scope. A Spec
 is not required while only preparation exists.
 
-The initial action family is implemented directly by Go:
+Go executes the evidence actions. Models choose only among candidates already
+approved in the contract:
 
 | kind | Capability | Boundaries |
 | --- | --- | --- |
 | `read_file` | Read one approved UTF-8 file | Reject symlinks, special files and excessive input |
 | `search_text` | Literal search in one approved file, with line numbers | No regular expressions or command interpolation |
 | `list_files` | List names in one approved directory | No recursive content grant; at most 4096 names |
+| `run_command` | Run exact argv against a temporary copy of approved inputs for reproduction or diagnosis | Explicit `host-process` authority, action timeout, controlled environment, process-group cancellation and cleanup |
+| `http_read` | GET or HEAD against an exact approved URL | HTTPS (loopback HTTP for tests), no redirects/environment proxy, bounded response and output |
 
-Paths must be clean repository-relative paths. Each action references an approved
-path and existing hypotheses. The opened inode must match the inspected inode;
-`os.Root` confines traversal. A directory grant permits names only. This version
-has no arbitrary shell, external query, production restart, cache flush, data
-repair or writable investigator Agent action. Existing full-access configuration
-does not add capabilities to these Go handlers. Broader experiments require
-additional handlers, contracts and validation.
+File paths must be clean repository-relative paths, and file actions reference an
+approved path. Every action references existing hypotheses. The opened inode must
+match the inspected inode; `os.Root` confines traversal. A directory grant permits
+names only, not its descendants' contents. Command and HTTP arguments belong to the
+frozen contract. JEV cannot generate another command, URL or credential variable.
 
 `limits` freezes action count, overall deadline, per-file bytes and total output
 bytes. Resume does not reset them. The deadline starts at preparation, including
 paused time. Bounded UTF-8 excerpts retain a content digest; `truncated` means the
 display is incomplete, not that an entire log or test inventory was observed.
+
+### Reproduction tests and diagnostic commands
+
+`run_command` uses `command.argv` without an implicit shell. `command.inputs`
+lists exact approved regular files from the contract's `read-paths`. Each invocation
+copies these inputs with their relative directory structure and runs in that copy;
+ordinary writes to the copy are not transferred back to the source workspace. This
+is a bounded reproduction input set: at most 32 UTF-8 files, subject to the contract's
+file and output limits, with executable bits preserved. A directory entry does not
+copy its descendants automatically. The following
+action fragment illustrates the fields. Replace paths and the hypothesis ID with
+those actually approved in the current contract:
+
+```json
+{
+  "id": "reproduce-timeout",
+  "kind": "run_command",
+  "purpose": "Reproduce the observed timeout with isolated inputs",
+  "hypotheses": ["timeout"],
+  "command": {
+    "argv": ["/usr/bin/python3", "tests/reproduce.py"],
+    "inputs": ["tests/reproduce.py", "src/settings.py"],
+    "env": [],
+    "timeout-ms": 30000,
+    "expect-exit": 1,
+    "execution-boundary": "host-process"
+  }
+}
+```
+
+`host-process` explicitly means execution with the current user's real host
+permissions. The copy keeps ordinary relative writes outside the original workspace;
+**it is not an operating-system sandbox or a network boundary**. Approve the concrete
+program and arguments within the task's existing authority. Full-access settings
+and the JEV switch do not grant that action authority on their own. `env` contains
+environment-variable names, never secret values. An expected nonzero exit can
+establish a reproduced failure. Timeout, cancellation, signals, output truncation
+and cleanup errors cannot stand in for a normal expected exit.
+An expected nonzero exit can be valid reproduction evidence, but does not by itself
+qualify the remaining collection for deferral or early finish.
+
+An observation's `execution` records physical exit/signal, timeout, cancellation,
+input digest and copy cleanup. `removed` means cleanup completed, `retained` keeps
+the experiment for reconciliation, and `not-created` means no copy was created.
+Unknown process or cleanup outcomes leave the original invocation pending and block
+further actions. Recovery reads its original receipt rather than executing again
+to guess the result.
+
+### Approved external queries
+
+The `http_read` action's `http` object contains `url`, `method` (GET/HEAD),
+`headers-env`, `timeout-ms`, `max-bytes` and `expect-status`. An approved health
+query might use `headers-env: {"Authorization": "INCIDENT_STATUS_AUTH"}`. The
+variable supplies the complete header value; the contract and receipt do not store
+that secret value. The URL is an exact authorization: no redirects, environment
+proxy or embedded credentials. Go bounds request time and bytes and records the
+actual HTTP status and output digest. A GET/HEAD grant does not authorize arbitrary
+services, production restarts, cache flushes or data repair.
+
+Structured command/HTTP outcomes, such as exit code, status and completeness, use
+`diagnostic-facts` and may participate under the default data policy. Raw output is
+included as a bounded excerpt only when `logs` is explicitly allowed. Otherwise
+the snapshot records that missing content, and JEV can still choose from structured
+facts. File evidence uses `source`. Action approval does not add raw-log sharing
+permission, and a permitted category does not remove the need to protect secrets.
 
 ## CLI and desktop controls
 
@@ -71,8 +137,9 @@ saves ready preparation without executing actions. To run, submit
 Go starts a background owner under the existing task lifetime lease and token-bound
 stop protocol. In DSH, `flywheel_control` accepts `action: investigate` and the nested
 `investigation` request, associating the exact task with the conversation. The panel
-shows budgets, observations, excerpts, decisions and reports, with continue,
-reconcile, stop and refresh controls.
+shows budgets, observations, excerpts, process exits/HTTP status, cancellation and
+copy cleanup, decisions and reports, with continue, reconcile, stop and refresh
+controls.
 
 ```bash
 flywheel control status --task-dir "$task_dir" --cwd "$repo_dir"
@@ -119,6 +186,13 @@ preparation source cannot bypass scope or accounting.
 Executor prompts recommend targeted checks first. Go still runs the complete frozen
 acceptance against the current candidate before independent Review. This removes a
 fixed requirement to run the full suite twice; it does not cache or remove the gate.
+Packets can declare up to eight approved short `feedback-checks` with the same
+`cmd`/`expect` shape as acceptance commands. They support targeted reproduction
+without changing final acceptance. With JEV enabled, the engine can choose one of
+these checks or recheck a failed L1 command after its prior result is confirmed.
+Short checks offered to JEV also require a nonblank `purpose` of 1–160 characters;
+entries without it remain available to Executor. JEV candidates send the description
+without appending `cmd`/`script`; the description itself must omit secrets and raw logs.
 
 Feedback carries stable check IDs, expected and actual physical outcomes,
 candidate/check-set/environment identities, a full failed-output digest and bounded
@@ -148,6 +222,14 @@ and observation references. They do not classify a hypothesis as proven or
 contradicted. The analyst still writes the evidence-grounded report, and repair
 still uses the original scope plus the ordinary verification and review flow.
 `awaiting-report` does not restart collection when Run is repeated.
+
+After handoff to implementation, the same switch also controls the next step after
+a failure: continue repair, collect an approved feedback check, request replanning,
+or select a model/effort from allowed execution bindings. These choices share the
+task decision allowance, including calls already used during investigation. Changing
+packet, replanning or resuming does not reset that allowance. Feedback checks collect
+facts and never replace complete final acceptance. See the [JEV guide](jev.md) for
+candidate and state semantics.
 
 The effective target, model, data categories, thresholds and budget are frozen at
 preparation time. Current OFF, incompatible target changes or tightened policy

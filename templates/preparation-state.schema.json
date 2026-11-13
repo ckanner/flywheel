@@ -532,7 +532,8 @@
           "enum": [
             "observed",
             "failed",
-            "cancelled"
+            "cancelled",
+            "unknown"
           ]
         },
         "output": {
@@ -558,6 +559,61 @@
         "duration-ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "run_command",
+                "http_read"
+              ]
+            },
+            "exit-code": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "http-status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "signal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "timed-out": {
+              "type": "boolean"
+            },
+            "cancelled": {
+              "type": "boolean"
+            },
+            "workspace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "cleanup": {
+              "enum": [
+                "removed",
+                "retained",
+                "not-created"
+              ]
+            },
+            "input-hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "kind",
+            "timed-out",
+            "cancelled",
+            "cleanup"
+          ]
         }
       },
       "required": [

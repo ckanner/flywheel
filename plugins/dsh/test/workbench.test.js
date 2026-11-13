@@ -484,7 +484,7 @@ test('JEV request limits and fractional confidence thresholds survive the unifie
   await input(ui, '固定模型版本', 'jev-1.15.0');
   await input(ui, '密钥环境变量名（不要填密钥）', 'JEV_TEST_API_KEY');
   await input(ui, '请求超时', '2.5');
-  await input(ui, '每次调查最多请求次数', '6');
+  await input(ui, '每项任务最多 JEV 请求次数', '6');
   await input(ui, '最低适用概率', '1.1');
   assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /请输入大于 0 且不超过 1 的概率/);

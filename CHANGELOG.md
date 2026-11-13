@@ -7,6 +7,16 @@ their original language.
 
 ## Unreleased
 
+- Extend bounded investigation with explicitly authorized reproduction commands
+  in private input copies and exact GET/HEAD requests. Record physical outcomes,
+  output limits and cleanup without presenting host processes as OS sandboxes.
+- Add real failure-action decisions under the same JEV master switch: bounded
+  repair, approved feedback checks, replanning and existing allowed model/effort
+  bindings. Preserve final gates, role isolation and unchanged provider defaults.
+- Persist implementation decision intents, effects and usage across cancellation,
+  recovery, investigation handoff and parallel workers without resetting budgets
+  or replaying unknown actions. Document engineering results separately from
+  deferred live model, performance and desktop acceptance.
 - Unify JEV under one default-off `jev.enabled` setting shared by configuration,
   desktop, investigation preparation/resume and explicit online evaluation. Remove
   the automatic shadow observer and separate legacy request client; preserve a

@@ -1,7 +1,7 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 description: Prepare and launch an authorized Flywheel investigation, implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
 whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
 compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
@@ -49,6 +49,9 @@ Status / Stop。只有阶段回执时不要宣称完成整项任务。
 
 调查动作、JEV 选择和失败恢复不在技能中循环。已有 preparation 且没有 Spec 时，
 使用它的真实 revision 恢复 Go 调查；已有实现任务时仍沿用原 Run 路径。
+需要复现测试或外部查询时，按上述参考生成确切已授权动作。有效 `jev.enabled`
+同时控制调查和实现失败后的决策；模型选择只能使用已有 `execution-policy`
+允许绑定，不能因开启 JEV 新增账号、权限或费用渠道。
 
 ## 2. 准备真实工作区与契约
 

@@ -127,6 +127,16 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 	for _, c := range packet.Acceptance.Level("L1") {
 		stable = append(stable, fmt.Sprintf("- %s  (expect %s)", c.Command(), c.Expect))
 	}
+	if len(packet.FeedbackChecks) > 0 {
+		stable = append(stable, "", "## Approved short feedback checks (diagnostic only)",
+			"Use these when they provide relevant evidence. They do not replace any acceptance command or establish completion.")
+		for _, check := range packet.FeedbackChecks {
+			stable = append(stable, fmt.Sprintf("- %s  (expect %s)", check.Command(), check.Expect))
+			if check.Purpose != "" {
+				stable = append(stable, "  Diagnostic purpose: "+check.Purpose)
+			}
+		}
+	}
 	volatile := []string{
 		"",
 		"## Runtime (volatile)",

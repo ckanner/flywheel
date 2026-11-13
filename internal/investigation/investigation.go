@@ -76,7 +76,7 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 		jevStatus = "enabled"
 	}
 	now := o.now()
-	st := &state.PreparationState{Version: 1, RunID: rand.Text(), Cwd: cwd, Contract: *p, ContractHash: state.PreparationHash(p), Status: "ready", Reason: "approved-read-only-actions", StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(p.Limits.MaxSeconds) * time.Second).Format(time.RFC3339Nano), Observations: []state.InvestigationObservation{}, Decisions: []decision.Receipt{}, JEVStatus: jevStatus}
+	st := &state.PreparationState{Version: 1, RunID: rand.Text(), Cwd: cwd, Contract: *p, ContractHash: state.PreparationHash(p), Status: "ready", Reason: "approved-investigation-actions", StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(p.Limits.MaxSeconds) * time.Second).Format(time.RFC3339Nano), Observations: []state.InvestigationObservation{}, Decisions: []decision.Receipt{}, JEVStatus: jevStatus}
 	return state.SavePreparation(dir, st)
 }
 
@@ -127,6 +127,10 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		receipt, err := state.ReadPreparationReceipt(dir, *st.Pending)
 		if err != nil {
 			st.Status, st.Reason = "blocked", "action-outcome-unknown: "+err.Error()
+			return st, persist(dir, &st, o)
+		}
+		if receipt.Status == "unknown" {
+			st.Status, st.Reason = "blocked", "action-cleanup-unknown: "+receipt.Error+"; retained workspace: "+receipt.Execution.Workspace
 			return st, persist(dir, &st, o)
 		}
 		consume(st, *receipt)
@@ -215,13 +219,22 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		if err := metrics.BeginPhase(metricsFile, phase); err != nil {
 			return st, err
 		}
-		output, contentHash, truncated, actionErr := executeAction(ctx, st.Cwd, selected, st.Contract.Limits, st.Contract.Limits.MaxOutputBytes-st.OutputBytes)
-		receipt := state.InvestigationObservation{Invocation: *st.Pending, Status: "observed", Output: output, ContentHash: contentHash, Truncated: truncated, FinishedAt: o.now().Format(time.RFC3339Nano), DurationMS: max(int64(0), o.now().Sub(started).Milliseconds())}
-		if actionErr != nil {
-			receipt.Status, receipt.Error = "failed", actionErr.Error()
+		result := performAction(ctx, st.Cwd, selected, st.Contract.Limits, st.Contract.Limits.MaxOutputBytes-st.OutputBytes, o)
+		if result.Execution != nil && ctx.Err() == nil {
+			after, err := candidate(ctx, st)
+			if err != nil || after != current {
+				result.Err = fmt.Errorf("investigation inputs changed during the action")
+			}
+		}
+		receipt := state.InvestigationObservation{Invocation: *st.Pending, Status: "observed", Output: result.Output, ContentHash: result.ContentHash, Truncated: result.Truncated, Execution: result.Execution, FinishedAt: o.now().Format(time.RFC3339Nano), DurationMS: max(int64(0), o.now().Sub(started).Milliseconds())}
+		if result.Err != nil {
+			receipt.Status, receipt.Error = "failed", result.Err.Error()
 		}
 		if ctx.Err() != nil {
 			receipt.Status, receipt.Error = "cancelled", ctx.Err().Error()
+		}
+		if result.Unknown {
+			receipt.Status, receipt.Error = "unknown", result.Err.Error()
 		}
 		if err := state.SavePreparationReceipt(dir, receipt); err != nil {
 			return st, err
@@ -230,6 +243,10 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		phase.EndedAt = &ended
 		if err := metrics.EndPhase(metricsFile, phase); err != nil {
 			return st, err
+		}
+		if receipt.Status == "unknown" {
+			st.Status, st.Reason = "blocked", "action-cleanup-unknown: "+receipt.Error+"; retained workspace: "+receipt.Execution.Workspace
+			return st, persist(dir, &st, o)
 		}
 		consume(st, receipt)
 		if err := persist(dir, &st, o); err != nil {
@@ -284,6 +301,20 @@ func snapshot(st *state.PreparationState, legal []contract.InvestigationAction, 
 		}
 	}
 	for _, observation := range st.Observations {
+		if e := observation.Execution; e != nil {
+			result := "unknown"
+			if e.ExitCode != nil {
+				result = fmt.Sprintf("exit=%d", *e.ExitCode)
+			}
+			if e.Kind == "http_read" {
+				result = fmt.Sprintf("http-status=%d", e.HTTPStatus)
+			}
+			s.Facts = append(s.Facts, decision.Fact{Category: decision.DiagnosticFacts, Text: fmt.Sprintf("Action %s: status=%s; %s; timed-out=%t; cancelled=%t; truncated=%t; cleanup=%s; duration-ms=%d. This is an execution fact, not a proved hypothesis.", observation.Invocation.ActionID, observation.Status, result, e.TimedOut, e.Cancelled, observation.Truncated, e.Cleanup, observation.DurationMS)})
+			if st.Contract.Decision == nil || !slices.Contains(st.Contract.Decision.Policy.AllowedData, decision.Logs) {
+				s.MissingFacts = append(s.MissingFacts, "Output for action "+observation.Invocation.ActionID+" is withheld because logs are not authorized.")
+				continue
+			}
+		}
 		text := excerpt(observation.Output, 1024)
 		if text != "" {
 			hypotheses := ""
@@ -292,7 +323,11 @@ func snapshot(st *state.PreparationState, legal []contract.InvestigationAction, 
 					hypotheses = strings.Join(action.Hypotheses, ",")
 				}
 			}
-			s.Facts = append(s.Facts, decision.Fact{Category: decision.Source, Text: excerpt("Observation "+observation.Invocation.ID+" (action "+observation.Invocation.ActionID+"; hypotheses "+hypotheses+"; status "+observation.Status+"): "+text, 2048)})
+			category := decision.Source
+			if observation.Execution != nil {
+				category = decision.Logs
+			}
+			s.Facts = append(s.Facts, decision.Fact{Category: category, Text: excerpt("Observation "+observation.Invocation.ID+" (action "+observation.Invocation.ActionID+"; hypotheses "+hypotheses+"; status "+observation.Status+"): "+text, 2048)})
 		}
 	}
 	return s

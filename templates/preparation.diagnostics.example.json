@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "id": "timeout-reproduction",
+  "goal": "Compare an approved local timeout reproducer with an approved service response.",
+  "expected": "The omitted timeout uses the documented default.",
+  "intent": "investigate",
+  "environment": "Explicitly authorized host-process reproduction and HTTPS read; replace example paths and URL before use.",
+  "window": "Current checked-out inputs and the authorized service observation window.",
+  "known-evidence": [],
+  "read-paths": ["reproduce.py", "config.json"],
+  "implementation-scope": [],
+  "hypotheses": [
+    {
+      "id": "local-default",
+      "claim": "Local input loading loses the timeout default.",
+      "falsifier": "The approved reproducer retains the documented default."
+    },
+    {
+      "id": "service-config",
+      "claim": "The approved service endpoint reports a different timeout.",
+      "falsifier": "The endpoint reports the expected timeout for this deployment."
+    }
+  ],
+  "actions": [
+    {
+      "id": "run-reproducer",
+      "kind": "run_command",
+      "purpose": "Run the approved reproducer in a private copy of the selected inputs.",
+      "hypotheses": ["local-default"],
+      "command": {
+        "argv": ["python3", "reproduce.py"],
+        "inputs": ["reproduce.py", "config.json"],
+        "env": [],
+        "timeout-ms": 10000,
+        "expect-exit": 0,
+        "execution-boundary": "host-process"
+      }
+    },
+    {
+      "id": "read-approved-endpoint",
+      "kind": "http_read",
+      "purpose": "Read the exact endpoint explicitly authorized by the task; replace example.invalid before use.",
+      "hypotheses": ["service-config"],
+      "http": {
+        "url": "https://example.invalid/diagnostics/timeout",
+        "method": "GET",
+        "headers-env": {},
+        "timeout-ms": 5000,
+        "max-bytes": 4096,
+        "expect-status": 200
+      }
+    }
+  ],
+  "limits": {
+    "max-actions": 2,
+    "max-seconds": 30,
+    "max-file-bytes": 262144,
+    "max-output-bytes": 16384
+  }
+}

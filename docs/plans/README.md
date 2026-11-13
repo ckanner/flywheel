@@ -9,6 +9,7 @@ was staged. Proposed work is not automatically shipped work. The
 
 | Date | Proposal | Focus |
 | --- | --- | --- |
+| 2026-11-13 | [JEV execution decisions and bounded diagnostics](2026-11-13-jev-execution-decisions.md) (Chinese) | Reproduction commands, HTTP evidence, failure actions, allowed model selection, and shared durable budgets |
 | 2026-11-12 | [Unified JEV decisions](2026-11-12-unified-jev-decisions.md) (Chinese) | One master switch, actual investigation adoption, evidence-based deferral/report handoff, and durable recovery |
 | 2026-11-12 | [Feedback-driven workflows and JEV](2026-11-12-feedback-driven-workflows.md) (Chinese; proposal with subsequent implementation) | Auto / Quick / Full, bounded investigation, fast feedback, model policy, and staged semantic decisions |
 | 2026-11-10 | [Workbench redesign](2026-11-10-workbench-redesign.md) | Canvas, configuration, and run-history interaction |

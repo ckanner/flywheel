@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "1.10.0"
+  version: "1.11.0"
 description: >-
   Prepare a reviewable Flywheel task proposal without starting the engine:
   research the repository, resolve intent questions, and generate docs/<slug>/
@@ -34,6 +34,9 @@ New 保持准备后停下。只要求先看排查方案时，可读取 `preparat
 Task，沿用已给出的权限，不机械增加 New 审批。明确复杂实现任务仍生成下面的 Spec /
 packets / 验收方案，待用户审阅。调查输入省略 `decision`，由 Go 从有效配置的
 唯一 `jev.enabled` 总开关冻结策略，不在本入口添加影子／采用开关或重复审批。
+复现命令或外部读取使用 `preparation.diagnostics.example.json` 对照当前 schema，
+冻结确切 argv／输入／变量名或 URL／HTTP 方法及上限。只准备已授权动作，明确
+命令副本的 host-process 边界，不把工作目录隔离当 OS 沙箱；本入口仍不执行动作。
 
 ## 问答纪律（硬规则）
 

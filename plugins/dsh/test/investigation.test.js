@@ -255,3 +255,52 @@ test('malformed JEV effects preserve the last valid investigation instead of cra
   assert.match(ui.container.textContent, /本次调查未配置 JEV/);
   assert.doesNotMatch(ui.container.textContent, /JEV 已采用/);
 });
+
+test('diagnostic process and HTTP receipts show physical outcomes and cleanup separately from investigation conclusions', async t => {
+  const p = preparation({ observations: [
+    { invocation, status: 'observed', output: 'Regression reproduced with expected exit 1', 'duration-ms': 18,
+      execution: { kind: 'run_command', 'exit-code': 1, 'timed-out': false, cancelled: false, workspace: '/tmp/flywheel-copy', cleanup: 'removed' } },
+    { invocation: { ...invocation, id: 'http-1', 'action-id': 'health' }, status: 'failed', error: 'Unexpected response status', 'duration-ms': 4,
+      execution: { kind: 'http_read', 'http-status': 503, 'timed-out': false, cancelled: false, cleanup: 'not-created' } },
+    { invocation: { ...invocation, id: 'command-2', 'action-id': 'slow-check' }, status: 'cancelled', error: 'Stopped after timeout', 'duration-ms': 50, truncated: true,
+      execution: { kind: 'run_command', signal: 'SIGTERM', 'timed-out': true, cancelled: true, workspace: '/tmp/flywheel-cancelled', cleanup: 'removed' } },
+  ] });
+  const ui = await mountPanel(t, request => reply(request, { preparation: p }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新状态');
+  const receipts = ui.container.querySelectorAll('[data-investigation-execution]');
+  assert.equal(receipts.length, 3);
+  assert.match(receipts[0].textContent, /隔离副本中的命令/);
+  assert.match(receipts[0].textContent, /退出码1/);
+  assert.match(receipts[0].textContent, /实验副本已清理/);
+  assert.match(receipts[1].textContent, /HTTP 状态503/);
+  assert.match(receipts[1].textContent, /未创建实验副本/);
+  assert.match(receipts[2].textContent, /动作超时/);
+  assert.match(receipts[2].textContent, /动作已取消/);
+  assert.match(receipts[2].textContent, /终止信号SIGTERM/);
+  assert.match(receipts[2].textContent, /实验副本已清理/);
+  assert.doesNotMatch(ui.container.textContent, /报告有证据支持/);
+  await ui.setLocale('en');
+  assert.match(ui.container.textContent, /Command in an isolated copy/);
+  assert.match(ui.container.textContent, /Experiment copy cleaned up/);
+  assert.equal(ui.requests.length, 1, 'rendering physical outcomes does not dispatch another action');
+});
+
+test('malformed diagnostic execution details retain the last valid receipt and disable mutations', async t => {
+  const execution = { kind: 'run_command', 'exit-code': 0, 'timed-out': false, cancelled: false, cleanup: 'removed' };
+  let value = execution;
+  const ui = await mountPanel(t, request => reply(request, { preparation: preparation({ observations: [{ invocation, status: 'observed', output: 'valid receipt', execution: value }] }) }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新状态');
+  for (const invalid of [{ 'exit-code': {} }, { 'exit-code': 256 }, { 'http-status': 99 }, { 'timed-out': 'false' }, { cleanup: 'complete' }, { workspace: {} }, { kind: 'shell' }]) {
+    value = { ...execution, ...invalid };
+    await ui.click('刷新状态');
+    assert.match(ui.container.textContent, /malformed investigation status/);
+    assert.match(ui.container.textContent, /valid receipt/);
+    assert.match(ui.container.textContent, /退出码0/);
+    assert.equal(ui.button('继续调查').disabled, true);
+    value = execution;
+    await ui.click('刷新状态');
+    assert.equal(ui.button('继续调查').disabled, false);
+  }
+});

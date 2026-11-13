@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"unicode/utf8"
 )
 
@@ -141,7 +142,7 @@ func validCategory(c Category) bool {
 }
 
 func Validate(s Snapshot, p Policy) error {
-	if s.Version != 1 || !token.MatchString(s.ID) || s.Identity.Revision < 0 || !validText(s.Identity.TaskID, 512) || !validText(s.Identity.RunID, 256) || !validText(s.Identity.ContractHash, 128) || !validText(s.Identity.CandidateHash, 128) || !validText(s.Identity.ObservationHash, 128) {
+	if (s.Version != 1 && s.Version != 2) || !token.MatchString(s.ID) || s.Identity.Revision < 0 || !validText(s.Identity.TaskID, 512) || !validText(s.Identity.RunID, 256) || !validText(s.Identity.ContractHash, 128) || !validText(s.Identity.CandidateHash, 128) || !validText(s.Identity.ObservationHash, 128) {
 		return fmt.Errorf("invalid decision identity")
 	}
 	if !token.MatchString(p.Version) || (p.Mode != Off && p.Mode != Offline && p.Mode != Shadow && p.Mode != Advisory && p.Mode != Adopt) || p.MaxCalls < 1 || p.MaxCalls > 100 || !probability(p.MinApplicability) || p.MinApplicability <= 0 || !probability(p.MinChoice) || p.MinChoice <= 0 {
@@ -222,11 +223,15 @@ func Select(current Snapshot, receipt Receipt, p Policy, options Options) Select
 		selection.Reason = "decision-not-applicable"
 		return selection
 	}
+	kinds := options.AllowedKinds
+	if kinds == nil {
+		kinds = []ActionKind{Diagnostic}
+	}
 	for _, action := range current.Actions {
-		if action.ID == receipt.ActionID && action.Kind == Diagnostic {
+		if action.ID == receipt.ActionID && slices.Contains(kinds, action.Kind) {
 			selection.ActionID = action.ID
 			selection.Adopted = true
-			selection.Reason = "approved-diagnostic-choice"
+			selection.Reason = "approved-" + string(action.Kind) + "-choice"
 			selection.InvocationID = hash(struct{ Decision, Snapshot, Action string }{current.ID, receipt.SnapshotHash, action.BindingHash})
 			return selection
 		}

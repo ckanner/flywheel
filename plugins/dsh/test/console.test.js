@@ -219,7 +219,7 @@ test('one JEV master switch saves actual adoption settings without a second enab
   const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '启用 JEV');
   const select = ui.document.getElementById(label.htmlFor);
   assert.equal(select.value, 'false');
-  assert.match(ui.container.textContent, /一个开关控制所有已支持的 JEV 决策/);
+  assert.match(ui.container.textContent, /一个开关控制调查与执行中的 JEV 决策/);
   assert.equal(ui.container.querySelector('[id$="jev.model"]'), null, 'disabled JEV does not require connection fields');
   await act(async () => { select.value = 'true'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
   assert.equal(ui.requests.length, 1, 'editing does not dispatch or save');
@@ -232,7 +232,7 @@ test('one JEV master switch saves actual adoption settings without a second enab
   assert.equal(ui.requests.at(-1).action, 'config-save');
   assert.deepEqual(ui.requests.at(-1).editor.values, { jev: { ...stored.jev, enabled: true } });
   assert.equal(ui.container.querySelector('dialog'), null, 'Save is the explicit enable operation');
-  assert.match(ui.container.textContent, /关闭也会禁止已有调查的后续 JEV 请求与采用/);
+  assert.match(ui.container.textContent, /关闭也会禁止已有任务的后续 JEV 请求与采用/);
   await act(async () => { select.value = 'false'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).editor.values.jev.enabled, false);

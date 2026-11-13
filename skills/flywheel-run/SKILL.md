@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.11.0"
+  version: "1.12.0"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -32,6 +32,8 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
 若用户要求仅看方案而尚未授权运行，继续保留原停止点。JEV 服从有效配置的唯一
 `jev.enabled` 开关与原准备策略；关闭会停止后续请求及采用，不重置原回执／预算。
 `awaiting-report` 后形成报告，不重复启动取证，也不手工改准备状态来开启 JEV。
+复现命令与 HTTP 查询同样使用原动作回执；超时、取消、截断或清理未确认不能
+翻译为成功。引擎记录保留副本或未知动作时先核对现场，不另起命令代替恢复。
 
 ## 步骤
 
@@ -122,6 +124,9 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
    停止；关闭当前会话不等于停止后台引擎。监督模式已经暂停时明确说明尚未评审
    或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
    说明请求模式、生效策略与原因；Quick 的 Plan／Judge 不适用不等于已通过。
+   有 JEV 执行决策时，翻译真实采用的修复、补证据、重规划或模型绑定及原因；
+   区分建议、实际效果与未知。模型选择仍受原允许集合、切换次数和预算约束。
+   关闭总开关沿用原路径，不在 skill 中补一套决策或重试循环。
    DSH 工具调用会明确关联当前会话视图。CLI 运行登记可带 DSH 提供的会话 ID，
    无归属的独立终端运行可从“本机最近任务”选择同一个任务；不要求用户填写路径字段。
    真实任务位置由引擎提供，只读展示；CLI 参数继续使用原 `task_dir` 与 `repo_dir`。

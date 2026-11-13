@@ -49,7 +49,7 @@ to its named source, platform, and checks.
 The [feedback-driven workflows and JEV proposal](plans/2026-11-12-feedback-driven-workflows.md)
 (Chinese; historical proposal) explains Auto / Quick / Full, incident investigation,
 short feedback cycles, model policy and bounded semantic decisions. The current
-[implementation guide](en/investigation.md) describes supported behavior; live performance
+[investigation guide](en/investigation.md) and [JEV guide](en/jev.md) describe supported behavior; live performance
 claims and later conditional optimizations require separate evidence.
 
 | Collection | Contents |

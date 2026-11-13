@@ -750,7 +750,7 @@ test('effective JEV configuration is read-only and does not imply a successful r
   let report = ui.container.querySelector('[aria-label="实际模型配置"]');
   assert.match(report.textContent, /配置已开启 · 在符合条件的决策点调用/);
   assert.match(report.textContent, /固定模型版本jev-1.14.0/);
-  assert.match(report.textContent, /每次调查最多请求次数8/);
+  assert.match(report.textContent, /每项任务最多 JEV 请求次数8/);
   assert.doesNotMatch(report.textContent, /JEV 已采用/);
   assert.equal(report.querySelector('input,select'), null, 'inspection never adds a second master switch');
   enabled = false;

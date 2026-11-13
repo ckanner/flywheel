@@ -384,6 +384,12 @@ dispatch; `state.packets[*].execution-policy.history` records separate
 `quality-upgrade` and `channel-fallback` events with full before/after bindings,
 attempt and reason. Parallel packets retain independent records.
 
+With `jev.enabled`, confirmed failures can also select a legal binding through
+JEV. These switches are recorded as `jev-model-selection`, use the same
+`max-switches` and cold-start rules, and do not alter channel-error handling.
+The allowed bindings remain an explicit resource/permission declaration; the
+JEV switch does not add a provider, account or model to that set.
+
 `config inspect --json` exposes the complete declaration under
 `execution-policy`; the ordinary bindings table remains the configured baseline.
 Current choices belong to packet/session state. Doctor's existing binding probes
@@ -537,7 +543,9 @@ No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes
 `jev.enabled` is the only JEV activation setting and defaults to false. The desktop
 editor exposes one switch; enabled investigation preparations automatically freeze
 an adoption policy for action selection, evidence-backed deferral and early report
-handoff. Task/New/Run share the same engine-owned policy. Disabling stops subsequent
+handoff. Confirmed implementation failures can also select bounded repair, an
+approved feedback check, replanning or an allowed execution binding. Task/New/Run
+share the same engine-owned policy. Disabling stops subsequent
 requests and adoption, while existing receipts and budgets are retained.
 
 There is no independent task shadow/advisory switch. Legacy `jev-shadow` is read
@@ -546,6 +554,17 @@ remove the old key. Explicit new `jev` wins, and configuration still selects one
 complete task/project/global/embedded file without merging. Endpoint, fixed model,
 credential variable, limits, data categories and recovery are documented in the
 [JEV guide](jev.md).
+
+Packets may declare up to eight optional `feedback-checks`, using the same
+`cmd`/`script` and `expect` shape as an acceptance command. They are short,
+approved diagnostic candidates, not replacements for `acceptance.L1/L2/L3`.
+Add a concise `purpose` (up to 160 characters) explaining what each check can
+distinguish. JEV receives that approved purpose, not the command. A check without
+`purpose` remains executor guidance and is excluded from JEV's targeted candidates.
+Keep credentials, raw logs and command text out of the purpose. JEV may also use
+an eligible previously failed L1 check. Execution uses the existing
+verification timeout, environment allowlist and process cleanup rules. Changing
+these checks changes the contract identity and invalidates stale decisions.
 
 ## Reference files
 

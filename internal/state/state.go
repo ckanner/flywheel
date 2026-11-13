@@ -89,6 +89,7 @@ var osReadFile = os.ReadFile
 
 // PacketState 单个 packet 的执行状态。
 type PacketState struct {
+	PendingStrategy      string                   `json:"pending-strategy,omitempty"`
 	ExecutionPolicy      *ExecutionPolicyRecord   `json:"execution-policy,omitempty"`
 	Schedule             *contract.PacketSchedule `json:"schedule,omitempty"`
 	Parallel             bool                     `json:"parallel,omitempty"`
@@ -254,6 +255,7 @@ type SharedExecution struct {
 }
 
 type State struct {
+	RuntimeDecisions     *RuntimeDecisions         `json:"runtime-decisions,omitempty"`
 	PreparationSource    *PreparationSource        `json:"preparation-source,omitempty"`
 	SharedExecution      *SharedExecution          `json:"shared-execution,omitempty"`
 	Project              *ProjectIdentity          `json:"project,omitempty"`
@@ -373,6 +375,9 @@ func Load(taskDir string) (*State, error) {
 	var st State
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
+	}
+	if err := validateRuntimeDecisions(&st); err != nil {
+		return nil, err
 	}
 	return &st, nil
 }
@@ -572,15 +577,6 @@ func RecordUsage(st *State, u Usage, opts UsageOpts) {
 	if _, ok := b.Daily[day]; !ok {
 		b.Daily[day] = DailyBucket{}
 	}
-	// 日账本只保留最近 31 天（P2：长任务下 state.json 不得无限增长）。
-	days := make([]string, 0, len(b.Daily))
-	for k := range b.Daily {
-		days = append(days, k)
-	}
-	sort.Strings(days)
-	for i := 0; len(b.Daily) > 31; i++ {
-		delete(b.Daily, days[i])
-	}
 	tokens := int64(0)
 	if u.TotalTokens != nil {
 		tokens = *u.TotalTokens
@@ -598,6 +594,15 @@ func RecordUsage(st *State, u Usage, opts UsageOpts) {
 	d.Tokens += tokens
 	d.CostUSD = math.Round((d.CostUSD+cost)*1e8) / 1e8
 	b.Daily[day] = d
+	// 日账本只保留最近 31 天（P2：长任务下 state.json 不得无限增长）。
+	days := make([]string, 0, len(b.Daily))
+	for k := range b.Daily {
+		days = append(days, k)
+	}
+	sort.Strings(days)
+	for i := 0; len(b.Daily) > 31; i++ {
+		delete(b.Daily, days[i])
+	}
 	b.Totals.Input += u.Input
 	b.Totals.Output += u.Output
 	b.Totals.Reasoning += u.Reasoning

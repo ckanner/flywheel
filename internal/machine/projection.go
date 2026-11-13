@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/ckanner/flywheel/internal/decision"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -14,6 +15,24 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 		return nil, nil
 	}
 	view := jsonClone(st)
+	if ledger := view.RuntimeDecisions; ledger != nil {
+		if ledger.Config != nil {
+			ledger.MaxCalls = ledger.Config.MaxCalls
+		}
+		ledger.Config = nil
+		ledger.Omitted = max(0, len(ledger.Records)-10)
+		ledger.Records = ledger.Records[ledger.Omitted:]
+		for _, record := range ledger.Records {
+			if record == nil {
+				return nil, fmt.Errorf("state contains a null runtime decision")
+			}
+			record.Snapshot = nil
+			if receipt := record.Receipt; receipt != nil {
+				record.Receipt = &decision.Receipt{Status: receipt.Status, Reason: receipt.Reason, Model: receipt.Model, Usage: receipt.Usage, DurationMS: receipt.DurationMS}
+			}
+			record.Feedback = compactDiagnostic(record.Feedback)
+		}
+	}
 	for id, packet := range view.Packets {
 		if packet == nil {
 			return nil, fmt.Errorf("state contains a null packet %s", id)

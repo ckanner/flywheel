@@ -126,7 +126,7 @@ func load(root *os.Root, key string, expected Receipt) (Receipt, bool, error) {
 	}
 	if exists {
 		var actual Receipt
-		if json.Unmarshal(data, &actual) != nil || actual.Version != expected.Version || actual.DecisionID != expected.DecisionID || actual.SnapshotHash != expected.SnapshotHash || actual.PolicyHash != expected.PolicyHash || actual.TargetHash != expected.TargetHash || actual.QuestionHash != expected.QuestionHash || actual.DurationMS < 0 || (actual.Usage.Input != nil && *actual.Usage.Input < 0) || (actual.Usage.Output != nil && *actual.Usage.Output < 0) || (actual.Status != "ok" && actual.Status != "error" && actual.Status != "unknown" && actual.Status != "skipped") {
+		if json.Unmarshal(data, &actual) != nil || validateStoredReceipt(actual, expected) != nil {
 			return Receipt{}, false, fmt.Errorf("invalid decision receipt identity or terminal")
 		}
 		return actual, true, nil
