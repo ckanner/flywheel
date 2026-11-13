@@ -7,6 +7,11 @@ their original language.
 
 ## Unreleased
 
+- Use accessible switches for the JEV master setting, DSH Review preparation and
+  automatic Worktree management. Keep dispatch as a policy selector with explicit
+  eligibility, preserve unrelated settings, and discard only invalid hidden drafts
+  when disabling a feature. Clarify JEV live-disable behavior in the Settings form.
+
 - Add optional ready-queue dispatch for independent Full packets in automatically
   managed Worktrees. Refill bounded Execute/L1 lanes as they finish; keep Review,
   Plan, shared-candidate validation and Git integration behind quiescence barriers.

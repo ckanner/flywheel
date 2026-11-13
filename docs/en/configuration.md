@@ -296,7 +296,10 @@ Confirmed initialization failures preserve their reported error classification a
 the normal retry/fallback rules. An authentication or invalid-request failure does
 not become a transport retry or qualify as a harmless prepared-runtime expiration.
 
-These options are available in the configuration editor and advanced JSON. Saving
+In Settings → Execution, dispatch is a Batch/Ready queue selector and prewarm is
+an independent switch. The form shows unmet Ready queue configuration conditions
+without resetting the selected value; task eligibility is checked by the engine.
+Both options also remain available in advanced JSON. Saving
 applies to the next start; the current process retains its loaded policy. A resumed
 run still reconciles existing invocations and shared batches before new dispatch.
 An outstanding prepared worker also requires its original no-prompt cleanup
