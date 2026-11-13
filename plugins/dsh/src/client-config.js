@@ -189,7 +189,7 @@ Object.assign(en, {
 });
 
 const cloneConfig = (value) => JSON.parse(JSON.stringify(value));
-function ConfigEditor({ control, selection, run, t, active = false, cache, contextKey }) {
+function ConfigEditor({ control, selection, run, t, active = false, cache, contextKey, onClose, diagnostics }) {
   // Drafts survive task navigation in this live Session binding only. Restoring
   // one always rereads the file; cached data never grants a revision to save.
   const cached = React.useRef(cache?.get(contextKey));
@@ -346,7 +346,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         'div',
         { className: css.configFieldLabel },
         h('label', { htmlFor: inputID(key) }, label),
-        help && h('p', { className: css.meta, id: inputID(key) + '-help' }, help),
+        h('p', { className: css.meta, id: inputID(key) + '-help', hidden: !help }, help || ''),
       ),
       h('div', { className: css.configFieldControl }, controlNode),
     );
@@ -441,6 +441,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         (bindingOrder.indexOf(a[0] + '.' + a[1]) + 1 || 999) -
         (bindingOrder.indexOf(b[0] + '.' + b[1]) + 1 || 999),
     );
+  if (record(draft?.['judge-panel'])) rows.push(['panel', 'judge-panel', draft['judge-panel']]);
+  const bindingID = (group, key) => group === 'panel' ? 'judge-panel' : group + '.' + key;
   const resourceOf = (value) =>
     value.harness === 'dsh'
       ? ['chatgpt', 'deepseek-account'].includes(value.provider || value.channel)
@@ -496,31 +498,56 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       key,
       role,
       value: cloneConfig(value),
-      permission: draft.permissions?.bindings?.[group + '.' + key] ?? 'inherit',
+      permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit',
       session: draft.sessions?.roles?.[role] ?? 'inherit',
     });
+  };
+  const applySessionRole = (next, role, session) => {
+    const roles = { ...next.sessions?.roles };
+    if (session === 'inherit') delete roles[role];
+    else roles[role] = session;
+    next.sessions = { ...next.sessions, roles };
+    // Kimi's legacy Plan switch also controls history when mode=fresh.
+    // Explicit role choices must not advertise a different actual behavior.
+    if (role === 'plan' && session !== 'inherit' && next.loops?.plan) {
+      const plan = next.loops.plan;
+      if (plan.harness === 'kimi') plan['resident-session'] = session === 'scoped';
+      else delete plan['resident-session'];
+    }
+  };
+  const roleSession = (role) => {
+    let mode = draft.sessions?.mode ?? 'fresh';
+    if (role === 'plan') {
+      const plan = draft.loops?.plan;
+      if (plan?.['resident-session'] === false) mode = 'fresh';
+      else if ((plan?.harness || draft.profiles?.[plan?.profile]?.harness) === 'kimi' && plan['resident-session'] === true) mode = 'scoped';
+    }
+    return t('cfgInheritMode', { mode: t(mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') });
+  };
+  const inlineBinding = (group, key, field, value) => {
+    const next = cloneConfig(draft);
+    if (field === 'session') applySessionRole(next, group === 'routes' ? 'execute' : key, value);
+    else if (group === 'panel') next['judge-panel'][field] = value;
+    else next[group][key][field] = value;
+    replace(next);
   };
   const saveBinding = () => {
     const { group, key, role, value, permission, session } = bindingEdit,
       next = cloneConfig(draft);
-    next[group][key] = value;
+    if (group === 'panel') next['judge-panel'] = value;
+    else next[group][key] = value;
     if (value.channel && !next.channels?.[value.channel])
       next.channels = {
         ...next.channels,
         [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null },
       };
-    if (permission !== (next.permissions?.bindings?.[group + '.' + key] ?? 'inherit')) {
+    if (permission !== (next.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit')) {
       const bindings = { ...next.permissions?.bindings };
-      if (permission === 'inherit') delete bindings[group + '.' + key];
-      else bindings[group + '.' + key] = permission;
+      if (permission === 'inherit') delete bindings[bindingID(group, key)];
+      else bindings[bindingID(group, key)] = permission;
       next.permissions = { ...next.permissions, bindings };
     }
-    if (session !== (next.sessions?.roles?.[role] ?? 'inherit')) {
-      const roles = { ...next.sessions?.roles };
-      if (session === 'inherit') delete roles[role];
-      else roles[role] = session;
-      next.sessions = { ...next.sessions, roles };
-    }
+    if (session !== (next.sessions?.roles?.[role] ?? 'inherit')) applySessionRole(next, role, session);
     replace(next);
     setBindingEdit(null);
   };
@@ -598,27 +625,20 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     fields = h(
       React.Fragment,
       null,
-      field(
-        'budget.daily-token-limit',
-        t('consoleBudget'),
-        t('cfgBudgetHelp'),
-        number('budget', 'daily-token-limit', 1, 'tokens', true),
-      ),
-      field(
-        'budget.enforce',
-        t('cfgBudgetPolicy'),
-        null,
-        select(
-          'budget.enforce',
-          draft.budget?.enforce ?? 'soft',
-          [
-            ['off', t('cfgBudgetOff')],
-            ['soft', t('cfgBudgetSoft')],
-            ['hard', t('cfgBudgetHard')],
-          ],
-          (v) => update('budget', 'enforce', v),
-        ),
-      ),
+      field('budget.enforce', t('cfgBudgetPolicy'),
+        t((draft.budget?.enforce ?? 'soft') === 'off' ? 'cfgBudgetOffHelp' : (draft.budget?.enforce ?? 'soft') === 'hard' ? 'cfgBudgetHardHelp' : 'cfgBudgetSoftHelp'),
+        select('budget.enforce', draft.budget?.enforce ?? 'soft',
+          [['off', t('cfgBudgetOff')], ['soft', t('cfgBudgetSoft')], ['hard', t('cfgBudgetHard')]],
+          value => {
+            if (value === 'off') {
+              setNumbers(old => { const next = { ...old }; delete next['budget.daily-token-limit']; return next; });
+              setNumberErrors(old => { const next = { ...old }; delete next['budget.daily-token-limit']; return next; });
+            }
+            update('budget', 'enforce', value);
+          })),
+      draft.budget?.enforce !== 'off' && field('budget.daily-token-limit', t('consoleBudget'),
+        t('cfgBudgetDay'), number('budget', 'daily-token-limit', 1, 'Token', true)),
+      h('h4', { className: css.settingsSubheading }, t('cfgRunProtection')),
       field(
         'watchdog.wall-timeout-ms',
         t('cfgTimeout'),
@@ -633,37 +653,23 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ),
     );
   if (draft && section === 'models')
-    fields = h(
-      'div',
-      { className: css.modelRows },
-      h('p', { className: css.meta }, t('cfgBindingsHelp')),
-      ...rows.map(([group, key, value]) =>
-        h(
-          'article',
-          { key: group + '.' + key, className: css.modelRow, 'data-binding-id': group + '.' + key },
-          h('h4', { className: css.heading }, roleName(group, key)),
-          h(
-            'div',
-            null,
-            h('p', null, resourceNames[resourceOf(value)]),
-            h(
-              'p',
-              { className: css.meta },
-              [value.model, efforts[value.thinking ?? ''] ?? value.thinking].filter(Boolean).join(' · '),
-            ),
-          ),
-          h(
-            Button,
-            {
-              disabled: busy,
-              onClick: () => openBinding(group, key, value),
-              'aria-label': t('cfgEdit') + ' ' + roleName(group, key),
-            },
-            t('cfgEdit'),
-          ),
-        ),
-      ),
-    );
+    fields = h(React.Fragment, null,
+      h('p', { className: css.meta }, t('cfgSessionDefault', { mode: t(draft.sessions?.mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') })),
+      h('div', { className: css.stageTableScroll }, h('table', { className: css.stageTable, 'aria-label': t('cfgModels') },
+        h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
+        h('tbody', null, ...rows.map(([group, key, value]) => {
+          const role = group === 'routes' ? 'execute' : key;
+          const sessionChoices = [['inherit', roleSession(role)], ['scoped', t('cfgReuse')], ['fresh', t('cfgFresh')]];
+          const policy = draft.sessions?.roles?.[role];
+          const planConflict = role === 'plan' && policy && (policy === 'scoped' && value['resident-session'] === false || policy === 'fresh' && (value.harness || draft.profiles?.[value.profile]?.harness) === 'kimi' && value['resident-session'] === true);
+          return h('tr', { key: bindingID(group, key), 'data-binding-id': bindingID(group, key) },
+            h('th', { scope: 'row' }, roleName(group, key)),
+            h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
+            h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
+            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
+            h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
+        })))),
+      h('p', { className: css.settingsHelp }, t('consoleRouteSession')));
   if (draft && section === 'jev')
     fields = h(
       React.Fragment,
@@ -709,9 +715,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             ),
           ),
           h(
-            'details',
+            'section',
             { className: css.details },
-            h('summary', null, t('cfgJevAdvanced')),
+            h('h4', null, t('cfgJevAdvanced')),
             field('jev.timeout-ms', t('cfgJevTimeout'), null, number('jev', 'timeout-ms', 1000, t('cfgSeconds'))),
             field('jev.max-calls', t('cfgJevMaxCalls'), null, number('jev', 'max-calls', 1, t('cfgTimes'))),
             field('jev.min-applicability', t('cfgJevApplicability'), null, number('jev', 'min-applicability', 1, '', false, true)),
@@ -724,23 +730,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   return h(
     'section',
     { className: css.editor, 'aria-label': t('consoleConfig') },
-    h(
-      'nav',
-      { className: css.configNav, 'aria-label': t('consoleConfig') },
-      ...['strategy', 'models', 'limits', 'jev'].map((key) =>
-        h(
-          Button,
-          { key, 'aria-pressed': section === key, onClick: () => setSection(key) },
-          t({ strategy: 'cfgStrategy', models: 'cfgModels', limits: 'cfgLimits', jev: 'cfgJev' }[key]),
-        ),
-      ),
-    ),
-    h(
-      'div',
-      { className: css.configMain },
       h(
         'div',
         { className: css.configHeader },
+        onClose && h(Button, { onClick: () => deferDiscard(() => { discard(); onClose(); }), disabled: busy }, t('cfgBack')),
+        h('h2', { className: css.configTitle }, t('consoleConfig')),
         h(
           'div',
           { className: css.segmented, 'aria-label': t('consoleScope') },
@@ -752,29 +746,28 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             ),
           ),
         ),
+      ),
+    h(
+      'nav',
+      { className: css.configNav, 'aria-label': t('consoleConfig') },
+      ...['strategy', 'models', 'limits', 'jev', 'advanced'].map((key) =>
         h(
-          'details',
-          { className: css.configMore },
-          h('summary', null, t('cfgMore')),
-          h(
-            'div',
-            { className: css.actions },
-            h(Button, { disabled: busy, onClick: () => deferDiscard(load) }, t('cfgReload')),
-            h(
-              Button,
-              { disabled: busy || !doc || doc.scope !== scope, onClick: () => setDialog({ kind: 'reset' }) },
-              t('cfgReset'),
-            ),
-          ),
+          Button,
+          { key, 'aria-pressed': section === key, onClick: () => setSection(key) },
+          t({ strategy: 'cfgStrategy', models: 'cfgModels', limits: 'cfgLimits', jev: 'cfgJev', advanced: 'cfgAdvanced' }[key]),
         ),
       ),
+    ),
+    h(
+      'div',
+      { className: css.configMain },
       h(
         'div',
-        { className: css.configContent },
+        { className: css.configContent, 'data-section': section },
         h(
           'h3',
           { className: css.configTitle },
-          t({ strategy: 'cfgStrategy', models: 'cfgModels', limits: 'cfgLimits', jev: 'cfgJev' }[section]),
+          t({ strategy: 'cfgStrategy', models: 'cfgModels', limits: 'cfgLimits', jev: 'cfgJev', advanced: 'cfgAdvanced' }[section]),
         ),
         (!draft || doc?.scope !== scope) &&
           busy &&
@@ -793,9 +786,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h(Button, { onClick: () => deferDiscard(load) }, t('cfgReload')),
             control.error?.detail &&
               h(
-                'details',
+                'section',
                 { className: css.details },
-                h('summary', null, t('errorDetails')),
+                h('h4', null, t('errorDetails')),
                 h('pre', { className: css.raw }, control.error.detail),
               ),
           ),
@@ -804,19 +797,19 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           h(
             React.Fragment,
             null,
-            fields,
+            section !== 'advanced' && fields,
             h(
-              'details',
-              { className: css.configSource },
-              h('summary', null, t('cfgLocation')),
+              'section',
+              { className: css.configSource, hidden: section !== 'advanced' },
+              h('h4', null, t('cfgLocation')),
               h('p', { className: css.meta }, t('cfgScopeHelp')),
               h('p', null, t(doc.source === doc.target ? 'cfgFileSource' : 'cfgTemplateSource')),
               h('code', { className: css.path }, doc.target),
             ),
             h(
-              'details',
-              { className: css.configSource },
-              h('summary', null, t('cfgJson')),
+              'section',
+              { className: css.configSource, hidden: section !== 'advanced' },
+              h('h4', null, t('cfgJson')),
               h('textarea', {
                 className: css.editorJSON,
                 value: raw,
@@ -840,11 +833,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                 },
               }),
             ),
-            (changed.length > 0 || reset) &&
+            section === 'advanced' && (changed.length > 0 || reset) &&
               h(
-                'details',
+                'section',
                 { className: css.configSource },
-                h('summary', null, t('cfgRawDiff')),
+                h('h4', null, t('cfgRawDiff')),
                 reset && h('p', { className: css.warningText }, t('cfgResetPending')),
                 ...changed.map((key) =>
                   h(
@@ -860,6 +853,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                 ),
               ),
           ),
+        section === 'advanced' && h('div', { className: css.actions }, h(Button, { disabled: busy, onClick: () => deferDiscard(load) }, t('cfgReload'))),
+        diagnostics && h('div', { hidden: section !== 'advanced' }, diagnostics),
         invalid && h('p', { role: 'alert', className: css.errorText }, t('consoleInvalid')),
         Object.values(numberErrors).some(Boolean) &&
           h('p', { role: 'alert', className: css.errorText }, t('cfgInvalid')),
@@ -871,34 +866,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h(Button, { disabled: busy, onClick: () => deferDiscard(load) }, t('cfgReload')),
           ),
       ),
-      draft &&
-        doc?.scope === scope &&
-        h(
-          'footer',
-          { className: css.configSaveBar, 'data-dirty': dirty },
-          dirty
-            ? h(
-                React.Fragment,
-                null,
-                h(
-                  Button,
-                  {
-                    variant: 'primary',
-                    disabled: !ready || busy || control.configUncertainty,
-                    onClick: save,
-                  },
-                  t('cfgSave'),
-                ),
-                h(Button, { disabled: busy, onClick: discard }, t('cfgDiscard')),
-                h('span', { className: css.meta }, t(section === 'jev' ? 'cfgJevChanges' : 'cfgDirty')),
-              )
-            : h(
-                'p',
-                { className: css.meta, role: saved ? 'status' : undefined },
-                t(saved ? section === 'jev' ? 'cfgJevChanges' : 'cfgSaved' : 'cfgClean'),
-              ),
-        ),
     ),
+    h('footer', { className: css.configSaveBar, 'data-dirty': dirty },
+      h('span', { className: css.meta, role: saved ? 'status' : undefined }, t(section === 'jev' && (saved || dirty) ? 'cfgJevChanges' : saved ? 'cfgSaved' : dirty ? 'cfgDirty' : 'cfgClean')),
+      h('div', { className: css.actions },
+        h(Button, { disabled: busy || !doc || doc.scope !== scope, onClick: () => setDialog({ kind: 'reset' }) }, t('cfgReset')),
+        h(Button, { disabled: busy || !dirty || !base, onClick: discard }, t('cfgDiscard')),
+        h(Button, { variant: 'primary', disabled: !ready || !dirty || busy || control.configUncertainty || !!control.uncertainty, onClick: save }, t('cfgSave')))),
     dialog &&
       h(
         WorkbenchDialog,
@@ -1038,9 +1012,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             ),
           ),
         h(
-          'details',
+          'section',
           { className: css.details },
-          h('summary', null, t('cfgBindingAdvanced')),
+          h('h4', null, t('cfgBindingAdvanced')),
           field(
             'binding.harness',
             t('consoleAdapter'),
@@ -1063,3 +1037,24 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ),
   );
 }
+
+Object.assign(zh, {
+  consoleConfig: '设置', cfgStrategy: '运行方式', cfgModels: '模型与会话', cfgJev: 'JEV', cfgAdvanced: '高级与诊断', cfgBack: '← 返回流程',
+  cfgSessionHelp: '各角色独立，可按阶段覆盖', consoleSession: '会话策略', cfgReuse: '按角色复用', cfgFresh: '每次新建', cfgInheritMode: '继承 · {mode}', cfgSessionDefault: '默认：{mode}', cfgIndependent: '独立调用',
+  cfgWorktree: '独立 Worktree', cfgWorktreeHelp: '', cfgScheduleHelp: '', cfgParallelHelp: '', cfgPermissionHelp: '完全权限可访问工作区以外文件',
+  cfgBudgetPolicy: '用量预算', cfgBudgetOff: '关闭', cfgBudgetSoft: '仅提醒', cfgBudgetHard: '达到后停止',
+  cfgBudgetOffHelp: '不设 Token 门限，继续统计用量', cfgBudgetSoftHelp: '达到额度时提醒，任务继续运行', cfgBudgetHardHelp: '达到额度或用量无法确认时，暂停新调用', cfgBudgetDay: '按单个任务、UTC 日期统计；留空不设额度', consoleBudget: '单任务每日 Token 额度',
+  cfgRunProtection: '运行保护', cfgRetryHelp: '传输故障重试，不影响任务返修次数', cfgTimeoutHelp: '', cfgTimeout: '单次运行时限',
+  cfgClean: '修改用于下次启动', cfgDirty: '有未保存修改 · 下次启动生效', cfgReset: '恢复默认', cfgDiscard: '撤销',
+});
+Object.assign(en, {
+  consoleConfig: 'Settings', cfgStrategy: 'Execution', cfgModels: 'Models and sessions', cfgJev: 'JEV', cfgAdvanced: 'Advanced and diagnostics', cfgBack: '← Back to workflow',
+  cfgSessionHelp: 'Isolated roles; stages can override the default', cfgReuse: 'Reuse within role', cfgFresh: 'New each time', cfgInheritMode: 'Inherit · {mode}', cfgSessionDefault: 'Default: {mode}', cfgIndependent: 'Independent call',
+  cfgWorktree: 'Independent Worktrees', cfgWorktreeHelp: '', cfgScheduleHelp: '', cfgParallelHelp: '', cfgPermissionHelp: 'Full access includes files outside the workspace',
+  cfgBudgetPolicy: 'Usage budget', cfgBudgetOff: 'Off', cfgBudgetSoft: 'Warn only', cfgBudgetHard: 'Stop at limit', cfgBudgetOffHelp: 'No token limit; usage is still recorded', cfgBudgetSoftHelp: 'Warn at the limit and keep running', cfgBudgetHardHelp: 'Pause new calls at the limit or when usage is unknown', cfgBudgetDay: 'Per task and UTC day; blank means no limit', consoleBudget: 'Daily tokens per task',
+  cfgRunProtection: 'Run protection', cfgRetryHelp: 'Transport faults only; task repair limits stay unchanged', cfgTimeoutHelp: '', cfgTimeout: 'Run time limit',
+  cfgClean: 'Changes apply to the next start', cfgDirty: 'Unsaved changes · next start', cfgReset: 'Restore defaults', cfgDiscard: 'Discard',
+});
+
+Object.assign(zh, { cfgPlanConflict: 'Plan 旧历史开关与此策略不同', cfgApplyPolicy: '同步此策略' });
+Object.assign(en, { cfgPlanConflict: 'The legacy Plan history switch differs', cfgApplyPolicy: 'Align policy' });

@@ -21,7 +21,7 @@ test('report-only preparation displays its evidence report without implementatio
   const p = preparation({ status: 'supported', report, 'actions-used': 1, observations: [{ invocation, status: 'completed', output: 'A timeout occurred', 'duration-ms': 4, truncated: true }] });
   const ui = await mountPanel(t, request => reply(request, { preparation: p }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const panel = ui.container.querySelector('[aria-label="有界调查"]');
   assert.ok(panel);
   assert.match(panel.textContent, /报告有证据支持/);
@@ -29,7 +29,7 @@ test('report-only preparation displays its evidence report without implementatio
   assert.match(panel.textContent, /The log supports the timeout hypothesis/);
   assert.match(panel.textContent, /有界片段/);
   assert.equal(ui.container.querySelector('[data-node-id]'), null);
-  assert.equal([...ui.container.querySelectorAll('button')].some(button => ['启动', '创建并启动'].includes(button.textContent)), false);
+  assert.equal([...ui.container.querySelectorAll('button')].some(button => ['继续流程', '创建并启动'].includes(button.textContent)), false);
   assert.equal(ui.button('继续调查').disabled, true);
   assert.equal(ui.button('停止').disabled, true);
   assert.equal(ui.requests.length, 1);
@@ -46,7 +46,7 @@ test('continue binds the observed preparation revision and running stop uses the
     return reply(request, { running, preparation: preparation({ revision: running ? 8 : 7, status: running ? 'running' : 'ready' }) });
   });
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   await ui.click('继续调查');
   assert.deepEqual(ui.requests.at(-1), { action: 'investigate', taskDir: '/repo/docs/failure', investigation: { action: 'run', revision: 7 } });
   assert.equal(ui.button('继续调查').disabled, true);
@@ -65,13 +65,13 @@ test('an unconfirmed investigation cannot restart; status leads only to explicit
     return reply(request, { preparation: preparation(uncertain ? { revision: 9, status: 'blocked', pending: invocation } : {}) });
   });
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   await ui.click('继续调查');
   assert.equal(ui.button('继续调查').disabled, true);
   assert.equal(ui.button('停止').disabled, true);
   await ui.click('继续调查');
   assert.equal(ui.requests.length, 2);
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.equal(ui.requests.at(-1).action, 'status');
   assert.equal(ui.button('核对原动作回执').disabled, false);
   assert.equal(ui.button('停止').disabled, true, 'a pending executor receipt must be reconciled before cancellation');
@@ -84,7 +84,7 @@ test('an idle optional decision can be cancelled without resuming any baseline a
   const p = preparation({ contract: { ...preparation().contract, intent: 'investigate-and-fix' }, 'decision-pending': { 'decision-id': 'choice-1' } });
   const ui = await mountPanel(t, request => reply(request, { preparation: request.investigation?.action === 'cancel' ? { ...p, status: 'cancelled', 'decision-pending': undefined } : p }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.match(ui.container.textContent, /形成合法 Spec 后由 Auto 选择 Quick \/ Full/);
   assert.equal(ui.button('停止').disabled, false);
   assert.equal(ui.button('核对原动作回执').disabled, false);
@@ -104,18 +104,18 @@ test('nested investigation status accepts the implementation handoff but a mutat
   await act(async () => run('investigate', ui.selection(), false, { investigation: { action: 'status' } }));
   assert.deepEqual(ui.requests.at(-1).investigation, { action: 'status' });
   assert.equal(ui.container.querySelector('[aria-label="有界调查"]'), null);
-  assert.equal(ui.button('启动').disabled, false);
+  assert.equal(ui.button('继续流程').disabled, false);
   assert.doesNotMatch(ui.container.textContent, /malformed investigation status/);
   await act(async () => run('investigate', ui.selection(), false, { investigation: { action: 'run', revision: 7 } }));
   assert.match(ui.container.textContent, /malformed investigation status/);
-  assert.equal(ui.button('启动').disabled, true, 'ordinary implementation state cannot confirm a preparation mutation');
+  assert.equal(ui.button('继续流程').disabled, true, 'ordinary implementation state cannot confirm a preparation mutation');
 });
 
 test('malformed preparation responses remain a visible transport failure, without crashing the renderer', async t => {
   let malformed = false;
   const ui = await mountPanel(t, request => reply(request, { preparation: preparation(malformed ? { report: { summary: 'bad', findings: {} } } : {}) }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   malformed = true;
   await ui.click('继续调查');
   assert.match(ui.container.textContent, /malformed investigation status/);
@@ -127,15 +127,15 @@ test('untrusted response text must be text before entering the report renderer',
   let fields = {};
   const ui = await mountPanel(t, request => reply(request, { preparation: preparation(fields) }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   for (const malformed of [{ reason: {} }, { observations: [{ invocation, output: {} }] }, { report: { ...report, recommendation: {} } }]) {
     fields = malformed;
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.match(ui.container.textContent, /malformed investigation status/);
     assert.ok(ui.container.querySelector('[aria-label="有界调查"]'));
     assert.equal(ui.button('继续调查').disabled, true);
     fields = {};
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.equal(ui.button('继续调查').disabled, false);
   }
 });
@@ -217,7 +217,7 @@ test('JEV runtime status, actual adoption and evidence-backed stop remain distin
   });
   const ui = await mountPanel(t, request => reply(request, { preparation: p }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const panel = () => ui.container.querySelector('[aria-label="有界调查"]');
   assert.match(panel().textContent, /最近观察到的 JEV 状态: JEV 已开启/);
   assert.match(panel().textContent, /JEV 已采用/);
@@ -229,15 +229,15 @@ test('JEV runtime status, actual adoption and evidence-backed stop remain distin
   assert.equal(ui.button('继续调查').disabled, true, 'awaiting-report cannot restart evidence collection from the UI');
   assert.equal(ui.requests.some(r => ['start', 'launch', 'investigate'].includes(r.action)), false);
   p = { ...p, revision: 8, 'jev-status': 'disabled' };
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.match(panel().textContent, /JEV 已关闭 · 后续动作沿用原路径/);
   assert.doesNotMatch(panel().textContent, /JEV 已开启/);
   assert.match(panel().textContent, /JEV 已采用/, 'turning off preserves the previously adopted history');
   p = { ...p, revision: 9, 'jev-status': 'policy-changed' };
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.match(panel().textContent, /JEV 配置已变更 · 本次调查沿用原路径/);
   p = { ...p, revision: 10, 'jev-status': 'disabled' };
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   await ui.setLocale('en');
   assert.match(ui.container.textContent, /Last observed JEV state: JEV disabled · subsequent actions use the original path/);
   assert.match(ui.container.textContent, /Evidence collection ended early · awaiting report/);
@@ -247,10 +247,10 @@ test('malformed JEV effects preserve the last valid investigation instead of cra
   let bad = false;
   const ui = await mountPanel(t, request => reply(request, { preparation: preparation(bad ? { 'decision-effects': [{ 'decision-id': 'bad', 'action-id': 'finish', kind: 'finish', actions: {}, evidence: [] }] } : { 'jev-status': 'not-configured' }) }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.match(ui.container.textContent, /本次调查未配置 JEV/);
   bad = true;
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.match(ui.container.textContent, /malformed investigation status/);
   assert.match(ui.container.textContent, /本次调查未配置 JEV/);
   assert.doesNotMatch(ui.container.textContent, /JEV 已采用/);
@@ -267,7 +267,7 @@ test('diagnostic process and HTTP receipts show physical outcomes and cleanup se
   ] });
   const ui = await mountPanel(t, request => reply(request, { preparation: p }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const receipts = ui.container.querySelectorAll('[data-investigation-execution]');
   assert.equal(receipts.length, 3);
   assert.match(receipts[0].textContent, /隔离副本中的命令/);
@@ -291,16 +291,16 @@ test('malformed diagnostic execution details retain the last valid receipt and d
   let value = execution;
   const ui = await mountPanel(t, request => reply(request, { preparation: preparation({ observations: [{ invocation, status: 'observed', output: 'valid receipt', execution: value }] }) }));
   await ui.selectPath(0, '/repo/docs/failure');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   for (const invalid of [{ 'exit-code': {} }, { 'exit-code': 256 }, { 'http-status': 99 }, { 'timed-out': 'false' }, { cleanup: 'complete' }, { workspace: {} }, { kind: 'shell' }]) {
     value = { ...execution, ...invalid };
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.match(ui.container.textContent, /malformed investigation status/);
     assert.match(ui.container.textContent, /valid receipt/);
     assert.match(ui.container.textContent, /退出码0/);
     assert.equal(ui.button('继续调查').disabled, true);
     value = execution;
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.equal(ui.button('继续调查').disabled, false);
   }
 });

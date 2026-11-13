@@ -139,3 +139,21 @@ test('one session keeps multiple confirmed task identities without letting histo
  done(l,'three',result('/repo/docs/three'));
  assert.equal(l.view.tasks.length,3);
 });
+
+test('legacy UI status polling cannot create or replace a session task; explicit tools can', () => {
+  const l = log();
+  command(l,'poll',{action:'status',taskDir:'/repo/docs/unrelated'});
+  commandDone(l,'poll',result('/repo/docs/unrelated'));
+  assert.equal(l.view,null);
+  assert.deepEqual(l.state.tasks,{});
+  tool(l,'prepare',{action:'status',taskDir:'/repo/docs/prepared'},'flywheel_control');
+  done(l,'prepare',result('/repo/docs/prepared'));
+  assert.equal(l.view.taskDir,'/repo/docs/prepared');
+  command(l,'poll-other',{action:'status',taskDir:'/repo/docs/unrelated'});
+  commandDone(l,'poll-other',result('/repo/docs/unrelated'));
+  assert.equal(l.view.taskDir,'/repo/docs/prepared');
+  assert.equal(Object.keys(l.state.tasks).length,1);
+  tool(l,'next',{action:'status',taskDir:'/repo/docs/next'},'flywheel_control');
+  done(l,'next',result('/repo/docs/next'));
+  assert.equal(l.view.taskDir,'/repo/docs/next');
+});

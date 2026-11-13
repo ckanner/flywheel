@@ -14,7 +14,7 @@ Object.assign(zh, {
   consoleNext: '保存后的配置用于下次启动；任务级配置优先于项目和全局配置',
   consoleSession: '会话策略', consoleFresh: '每次新会话 · fresh', consoleScoped: '同任务同角色续接 · scoped',
   consoleLegacy: 'Kimi Plan 历史续接 · 已启用', consoleUnknown: '未报告',
-  consoleExpand: '展开 / 收起步骤', consoleDetails: '节点详情', consoleEvidence: '证据与失败原因',
+  consoleDetails: '节点详情', consoleEvidence: '证据与失败原因',
   consoleStageRun: '运行此阶段', consoleStageHelp: '阶段结束后等待继续；Execute 包含有界执行与 L1 验证',
   consoleBlocked: '先停止运行并刷新状态；阶段需满足前置验收和引擎接纳条件',
   consoleExternal: '外部交付状态未关联', consoleWhole: '继续整个流程', consoleSaved: '配置已保存，请重新查看生效配置',
@@ -42,7 +42,7 @@ Object.assign(en, {
   consoleRead: 'Read configuration draft', consoleSave: 'Save configuration', consoleDefaults: 'Load version defaults',
   consoleNext: 'Saved configuration applies on the next start; task configuration takes precedence',
   consoleSession: 'Session policy', consoleFresh: 'Fresh history per call', consoleScoped: 'Reuse history within each role scope',
-  consoleLegacy: 'Kimi Plan history enabled', consoleUnknown: 'Not reported', consoleExpand: 'Expand / collapse stages',
+  consoleLegacy: 'Kimi Plan history enabled', consoleUnknown: 'Not reported',
   consoleDetails: 'Node details', consoleEvidence: 'Evidence and failures', consoleStageRun: 'Run stage',
   consoleStageHelp: 'Wait after this stage; Execute includes its bounded execution and L1 loop',
   consoleBlocked: 'Stop and refresh first; stage admission and prior verification are enforced by the engine',
@@ -82,6 +82,7 @@ Object.assign(en, { runsObserved: 'New deliveries {completed} · attempts {attem
 
 Object.assign(zh, { sessionAction_create: '新建', sessionAction_resume: '续接', sessionAction_rebuild: '重建', sessionAction_wait: '等待核对', sessionAction_reconcile: '核对回执', sessionRelease: '退出接管 · 保持暂停', sessionReconcile: '核对原会话回执', sessionLatest: '查看最近回复', sessionLatestHelp: '这里读取经过摘要校验的最近一次回复；Provider 的完整会话历史仍保存在原后端。', sessionClaim: '暂停并接管会话', sessionReason: '接管原因', sessionSend: '发送到原 Session', sessionReturn: '验证并交回流程', sessionPrompt: '人工 Prompt', sessionHeld: '人工接管中 · 自动执行已锁定', sessionCommand: '终端交互命令', sessionNoClaim: '仅已确认收尾、可恢复的任务会话支持接管；里程碑会话可查看回复。', sessionKeep: '离开页面不会释放接管；测试和独立 Review 通过后才交回。' });
 Object.assign(en, { sessionAction_create: 'Create', sessionAction_resume: 'Resume', sessionAction_rebuild: 'Rebuild', sessionAction_wait: 'Await reconciliation', sessionAction_reconcile: 'Reconcile', sessionRelease: 'Release control and remain paused', sessionReconcile: 'Reconcile original invocation', sessionLatest: 'Read latest response', sessionLatestHelp: 'This is the latest digest-verified response, not the provider’s full history.', sessionClaim: 'Take over session', sessionReason: 'Takeover reason', sessionSend: 'Send to original session', sessionReturn: 'Validate and return', sessionPrompt: 'Human prompt', sessionHeld: 'Human control · automatic execution locked', sessionCommand: 'Terminal command', sessionNoClaim: 'Only settled, resumable packet sessions support interactive takeover. Milestone history remains readable.', sessionKeep: 'Leaving the page retains human control until validation and independent review pass.' });
+function sessionActionLabel(action, t) { return ['create', 'resume', 'rebuild', 'wait', 'reconcile'].includes(action) ? t('sessionAction_' + action) : t('consoleUnknown'); }
 const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
 function SessionInspector({ sessionKey, value, control, selection, run, t }) {
   const [reason, setReason] = React.useState('');
@@ -97,16 +98,16 @@ function SessionInspector({ sessionKey, value, control, selection, run, t }) {
     h('p', { className: css.path }, value['thread-id'] || t('consoleUnknown')),
     value['workspace-cwd'] && h('p', { className: css.path }, t('projectHome') + ': ' + value['workspace-cwd']),
     value.cwd && h('p', { className: css.path }, t('executionHome') + ': ' + value.cwd),
-    h('p', { className: css.meta }, [t('sessionAction_' + value.action), value.reason, value.last?.outcome].filter(Boolean).join(' · ')),
+    h('p', { className: css.meta }, [sessionActionLabel(value.action, t), value.reason, value.last?.outcome].filter(Boolean).join(' · ')),
     h('div', { className: css.actions }, h(Button, { disabled: control.pending !== null, onClick: () => run('history', selection, false, { sessionKey }) }, t('sessionLatest'))),
-    history && h('details', { className: css.details, open: true }, h('summary', null, t('sessionLatest')), h('p', { className: css.meta }, t('sessionLatestHelp')), h('pre', { className: css.raw }, history.text)),
+    history && h('section', { className: css.details, 'data-section': 'history' }, h('h4', null, t('sessionLatest')), h('p', { className: css.meta }, t('sessionLatestHelp')), h('pre', { className: css.raw }, history.text)),
     held ? h('div', null, h('p', { role: 'status', className: css.notice }, t('sessionHeld')), h('p', { className: css.meta }, t('sessionKeep')),
       h('label', { className: css.editorField }, t('sessionPrompt'), h('textarea', { className: css.editorJSON, value: prompt, disabled: busy, maxLength: 16000, onChange: event => setPrompt(event.target.value) })),
       h('div', { className: css.actions }, h(Button, { disabled: busy || state.handoff?.pending || !prompt.trim(), onClick: () => send('send') }, t('sessionSend')), h(Button, { disabled: busy, onClick: () => send('reconcile') }, t('sessionReconcile')), h(Button, { disabled: busy || state.handoff?.pending, onClick: () => send('return') }, t('sessionReturn')), h(Button, { disabled: busy || state.handoff?.pending, onClick: () => send('release') }, t('sessionRelease')))) :
-      h('details', { className: css.details }, h('summary', null, t('sessionClaim')), h('p', { className: css.meta }, t('sessionNoClaim')),
+      h('section', { className: css.details }, h('h4', null, t('sessionClaim')), h('p', { className: css.meta }, t('sessionNoClaim')),
         h('label', { className: css.editorField }, t('sessionReason'), h('input', { className: css.editorInput, disabled: busy || !canClaim, value: reason, maxLength: 300, onChange: event => setReason(event.target.value) })),
         h(Button, { disabled: busy || !canClaim || !reason.trim(), onClick: () => send('claim') }, t('sessionClaim'))),
-    /^(final:)?M\d+-T\d+$/.test(value.scope) && h('details', { className: css.details }, h('summary', null, t('sessionCommand')),
+    /^(final:)?M\d+-T\d+$/.test(value.scope) && h('section', { className: css.details }, h('h4', null, t('sessionCommand')),
       h('code', { className: css.path }, 'cd -- ' + shellQuote(value.cwd || control.status.cwd || selection.cwd) + ' && flywheel session ' + shellQuote(control.status.taskDir) + ' --key ' + shellQuote(sessionKey))));
 }
 
@@ -142,7 +143,7 @@ function DeliveryPanel({ control, selection, run, t }) {
       ...remote.pulls.map(pull => h('article', { className: css.sessionRecord, key: pull.number },
         h('a', { href: pull.url, target: '_blank', rel: 'noopener noreferrer' }, '#' + pull.number + ' · ' + pull.state),
         h('p', { className: css.meta }, [pull.baseRefName, pull.mergeStateStatus, pull.reviewDecision].filter(Boolean).join(' · ')),
-        h('details', { className: css.details }, h('summary', null, t('deliveryChecks')),
+        h('section', { className: css.details }, h('h4', null, t('deliveryChecks')),
           pull.statusCheckRollup?.length ? pull.statusCheckRollup.map((check,index) => h('p', { key: index, className: css.meta }, [check.name || check.context, check.conclusion || check.state || check.status].filter(Boolean).join(' · '))) : h('p', { className: css.meta }, t('deliveryNoChecks'))),
         h(Button, { disabled: writeBlocked || pull.headRefOid !== remote.head || pull.state !== 'OPEN' || pull.isDraft || pull.mergeStateStatus !== 'CLEAN', onClick: () => deliver('merge', pull.number) }, t('deliveryMerge'))))) : h('p', { className: css.meta }, t('deliveryUnknown')));
 }

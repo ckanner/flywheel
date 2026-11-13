@@ -26,7 +26,7 @@ test('runtime choices distinguish applied control, baseline and unsettled feedba
   ], 'omitted-records': 5 });
   const ui = await mountPanel(t, request => reply(request, state(decisions)));
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const panel = ui.container.querySelector('[data-runtime-decisions="task"]');
   assert.ok(panel);
   assert.match(panel.textContent, /任务请求 5\/8 · 其中调查移交 2/);
@@ -61,7 +61,7 @@ test('runtime feedback remains diagnostic even when a selected check passes and 
   ] } })] });
   const ui = await mountPanel(t, request => reply(request, state(decisions)));
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const panel = ui.container.querySelector('[data-runtime-decisions="task"]');
   assert.match(panel.textContent, /这是诊断反馈；最终仍执行完整验收/);
   assert.match(panel.textContent, /反馈检查已收尾/);
@@ -85,7 +85,7 @@ test('malformed runtime decisions retain the previous valid view and cannot ente
   let value = valid;
   const ui = await mountPanel(t, request => reply(request, state(value)));
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   for (const invalid of [
     { records: {} }, { used: -1 }, { status: {} }, { 'omitted-records': -1 },
     { records: [entry('bad', 'repair', 'applied', { selection: { adopted: {}, 'action-id': 'repair', reason: 'bad' } })] },
@@ -93,13 +93,13 @@ test('malformed runtime decisions retain the previous valid view and cannot ente
     { records: [entry('bad', 'repair', 'applied', { feedback: { pass: true, results: [{ 'omitted-items': {} }] } })] },
   ]) {
     value = { ...valid, ...invalid };
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.match(ui.container.textContent, /malformed task status/);
     assert.match(ui.container.textContent, /saved-decision/);
-    assert.equal(ui.button('启动').disabled, true);
+    assert.equal(ui.button('继续流程').disabled, true);
     value = valid;
-    await ui.click('刷新状态');
-    assert.equal(ui.button('启动').disabled, false);
+    await ui.click('刷新');
+    assert.equal(ui.button('继续流程').disabled, false);
   }
 });
 
@@ -112,7 +112,7 @@ test('applied model history shows concrete bindings and reasons without replacin
   value.sessions = { records: { previous: { role: 'execute', scope: 'M01-T01', configuration: before, last: { 'started-at': '2026-11-13T08:59:00Z', outcome: 'completed' } } } };
   const ui = await mountPanel(t, request => reply(request, value));
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const panel = ui.container.querySelector('[data-execution-switches="task"]');
   assert.match(panel.textContent, /fast → strong/);
   assert.match(panel.textContent, /采用 JEV 模型选择/);
@@ -134,15 +134,15 @@ test('malformed applied model history retains the last valid view and blocks sta
   let value = original;
   const ui = await mountPanel(t, request => reply(request, value));
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const change = { kind: 'jev-model-selection', from: 'fast', to: 'strong', before: { model: 'fast-model' }, after: { model: 'strong-model' }, reason: 'approved', at: '2026-11-13T09:00:00Z', attempt: 1 };
   for (const history of [{}, [{ ...change, after: { model: {} } }], [{ ...change, reason: {} }], [{ ...change, attempt: -1 }]]) {
     value = { ...original, packets: { 'M01-T01': { ...original.packets['M01-T01'], 'execution-policy': { history } } } };
-    await ui.click('刷新状态');
+    await ui.click('刷新');
     assert.match(ui.container.textContent, /malformed task status/);
     assert.match(ui.container.textContent, /saved-model-choice/);
-    assert.equal(ui.button('启动').disabled, true);
+    assert.equal(ui.button('继续流程').disabled, true);
     value = original;
-    await ui.click('刷新状态');
+    await ui.click('刷新');
   }
 });
