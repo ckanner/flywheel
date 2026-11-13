@@ -40,6 +40,12 @@ for await (const line of createInterface({ input: process.stdin })) {
       send({ id, error: { code: -32603, message: 'ACCOUNT_TOKEN_INVALID: native detail without a durable error code' } });
       continue;
     }
+    if (scenario.startsWith('initialize-long-')) {
+      const text = { ascii: 'x'.repeat(9000), multibyte: '初始失败😀'.repeat(2500),
+        escaped: '"\\\n\t\u0000'.repeat(2000) }[scenario.slice('initialize-long-'.length)];
+      send({ id, error: { code: -32603, message: 'initialization-error:' + text } });
+      continue;
+    }
     reply(id, { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } });
   } else if (method === 'session/resume') {
     if (scenario === 'resume-missing' || scenario === 'resume-busy') {

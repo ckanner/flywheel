@@ -4,6 +4,8 @@ import { join, isAbsolute } from 'node:path';
 import { BridgeError, MAX_FRAME_BYTES, directory, nonempty, record } from './protocol.js';
 
 export const PREWARM_MS = 60000;
+const MAX_RECEIPT_BYTES = 8192;
+const TRUNCATED_DIAGNOSTIC = ' [truncated]';
 const BINDING_FIELDS = ['cwd', 'workspaceCwd', 'provider', 'model', 'reasoningEffort', 'permissionMode'];
 
 export async function validatePrepare(value) {
@@ -42,9 +44,33 @@ export async function writeWarmReceipt(prepared, settled, error) {
   // A parent may recover this receipt only after proving this worker has exited.
   // Exclusive publication prevents overwriting evidence from another lifetime.
   const pending = join(prepared.receiptDirectory, 'terminal.pending');
+  const diagnostic = typeof error?.message === 'string' ? error.message : undefined;
   const receipt = { protocol: 1, warmId: prepared.warmId, binding: prepared.binding,
     workerPid: process.pid, dispatched: false, cleanupConfirmed: settled,
-    ...(error ? { error: error.message } : {}) };
+    ...(diagnostic === undefined ? {} : { error: '' }) };
+  let bytes = Buffer.byteLength(JSON.stringify(receipt) + '\n');
+  // Only diagnostic text is expendable. Never publish oversized or shortened
+  // proof fields; a validated prepare leaves ample room for the marker.
+  if (bytes > MAX_RECEIPT_BYTES || (diagnostic !== undefined && bytes + TRUNCATED_DIAGNOSTIC.length > MAX_RECEIPT_BYTES)) {
+    throw new BridgeError('INVALID_REQUEST', 'prewarm cleanup identity exceeds the private receipt limit');
+  }
+  if (diagnostic !== undefined) {
+    const parts = [], sizes = [];
+    // Read only the prefix that can fit. Per-code-point JSON size accounts for
+    // UTF-8, escapes and lone surrogates without splitting a surrogate pair.
+    for (const character of diagnostic) {
+      const size = Buffer.byteLength(JSON.stringify(character)) - 2;
+      if (bytes + size > MAX_RECEIPT_BYTES) {
+        while (bytes + TRUNCATED_DIAGNOSTIC.length > MAX_RECEIPT_BYTES) {
+          bytes -= sizes.pop(); parts.pop();
+        }
+        parts.push(TRUNCATED_DIAGNOSTIC);
+        break;
+      }
+      parts.push(character); sizes.push(size); bytes += size;
+    }
+    receipt.error = parts.join('');
+  }
   const file = await open(pending, 'wx', 0o600);
   try { await file.writeFile(JSON.stringify(receipt) + '\n'); await file.sync(); }
   finally { await file.close(); }

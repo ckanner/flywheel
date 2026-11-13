@@ -283,6 +283,10 @@ intent／received／consumed／blocked、派发／结果／清理和用量事实
 
 `state.worker-prewarm` 记录至多一个尚未交接或清理的准备意图，保存随机 ID、Review scope、运行身份和绑定摘要，不保存 prompt、凭证或可复用会话。先 CAS 保存意图，后启动 SDK；正式调用意图持久化后交接清理责任。未消费的终态回执在 `.control/prewarm/<id>/`，通过私有、有界文件与排他发布持久化，确认文件和目录同步，受现有 volatile 规则排除出 Git。恢复仅接受精确 ID／摘要、明确未发送 prompt、SDK 清理确认、外层 worker 及其原进程组均已退出；PID／进程组 ID 只用于检查退出，不能授权终止其他进程。没有可信证据、仍存活或标识被复用都保持阻断；重启不会续用预热实例，关闭优化也不能擦除旧责任。启动前 CAS 失败记录本地确定的 no-process 回执，不能为了补回执启动进程。
 
+Node 发布的预热终态回执与 Go 读取端共用 8192 字节上限，按完整 JSON 的 UTF-8
+序列化结果计数，包含转义和末尾换行。过长的 `error` 诊断仅保留带截断标记的前缀，
+正常短错误不变；身份、未派发和清理事实保持完整，恢复检查不因诊断被截断而放宽。
+
 调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
 下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
 的可信结果才保存可复用句柄。fresh 的原始后端会话标识仍可保留在回执中，既有 Kimi

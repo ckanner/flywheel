@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-13 | [DSH 预热回执大小与 TTL 测试同步修复](2026-11-13-prewarm-receipts-and-expiry-tests.md) |
 | 2026-11-13 | [DSH 设置开关与最新工作台整合复核](2026-11-13-dsh-settings-controls.md) |
 | 2026-11-13 | [P5 继续复核：就绪队列会话与预热错误处理](2026-11-13-p5-tracked-runtime-fixes.md) |
 | 2026-11-13 | [PR #37 后续复核：P5 恢复边界与 JEV 凭据名称](2026-11-13-p5-review-closure.md) |

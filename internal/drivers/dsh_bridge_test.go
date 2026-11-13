@@ -114,6 +114,59 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 		require.NoError(t, h.Close())
 	})
 
+	t.Run("long initialization diagnostics retain bounded recoverable cleanup proof", func(t *testing.T) {
+		for _, kind := range []string{"ascii", "multibyte", "escaped"} {
+			t.Run(kind, func(t *testing.T) {
+				a := warmArgs(t, "ok")
+				a.Command = worker
+				a.RequestID, a.PersistentSession = "failed-initialize-no-cold-call", true
+				log := filepath.Join(a.Cwd, "sdk.jsonl")
+				a.APIKeys = map[string]string{"TEST_DSH_LOG": log, "TEST_DSH_SCENARIO": "initialize-long-" + kind}
+				h := PrepareDSH(a)
+				t.Cleanup(func() { _ = h.Close() })
+				select {
+				case <-h.done:
+				case <-time.After(10 * time.Second):
+					t.Fatal("initialization failure did not finish its cleanup")
+				}
+				result := h.Run(a)
+				assert.False(t, result.Settled, "cleaned-up initialization failure is not a successful invocation")
+				assert.Equal(t, errs.TRANSPORT, result.ErrorCode)
+				require.NotNil(t, result.Session)
+				assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+				assert.True(t, result.Session.CleanupConfirmed)
+				assert.Empty(t, result.CleanupError)
+				assert.Equal(t, &Usage{}, result.Usage)
+				path := filepath.Join(a.PrewarmDirectory, "terminal.json")
+				raw, err := os.ReadFile(path)
+				require.NoError(t, err)
+				assert.LessOrEqual(t, len(raw), 8192, "full serialized receipt, including newline, obeys the Go limit")
+				receipt, err := readDSHWarmReceipt(h.ID(), a.PrewarmDirectory, h.prepare.Binding)
+				require.NoError(t, err)
+				assert.Equal(t, h.ID(), receipt.WarmID)
+				assert.Equal(t, h.prepare.Binding, receipt.Binding)
+				assert.True(t, strings.HasPrefix(receipt.Error, "initialize: initialization-error:"))
+				assert.True(t, strings.HasSuffix(receipt.Error, " [truncated]"))
+				require.NoError(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
+				var methods []string
+				for _, request := range readDSHSDKRequests(t, log) {
+					methods = append(methods, request.Method)
+				}
+				assert.Equal(t, []string{"initialize", "shutdown"}, methods, "no Session, prompt, or replacement cold worker")
+
+				// Diagnostic truncation cannot weaken the independently checked evidence.
+				require.NoError(t, os.Remove(path))
+				assert.Error(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
+				for _, invalid := range []string{"{broken", strings.Replace(string(raw), `"cleanupConfirmed":true`, `"cleanupConfirmed":false`, 1)} {
+					require.NoError(t, os.WriteFile(path, []byte(invalid), 0o600))
+					assert.Error(t, RecoverDSHPrewarm(h.ID(), a.PrewarmDirectory, h.prepare.Binding))
+				}
+				require.NoError(t, os.WriteFile(path, raw, 0o600))
+				require.NoError(t, h.Close())
+			})
+		}
+	})
+
 	t.Run("public SDK prewarmed read-only Review through InvokeHarness", func(t *testing.T) {
 		publicSDK, err := filepath.Abs("../../plugins/dsh/test/fixtures/persisted-sdk.js")
 		require.NoError(t, err)

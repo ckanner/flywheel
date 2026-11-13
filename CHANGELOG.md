@@ -7,6 +7,13 @@ their original language.
 
 ## Unreleased
 
+- Bound unused DSH prewarm cleanup receipts to 8 KiB of serialized UTF-8, including
+  JSON escaping and the trailing newline. Truncate only oversized diagnostic text
+  while preserving identity, dispatch and cleanup evidence and normal short errors.
+- Synchronize prewarm expiry fixtures after prepare admission before testing safe
+  cold fallback. Cover expiry before admission separately, retaining bounded
+  cleanup and rejection of fallback without a trustworthy receipt.
+
 - Use accessible switches for the JEV master setting, DSH Review preparation and
   automatic Worktree management. Keep dispatch as a policy selector with explicit
   eligibility, preserve unrelated settings, and discard only invalid hidden drafts
