@@ -7,6 +7,13 @@ their original language.
 
 ## Unreleased
 
+## 0.32.1 — DSH compatible-series upgrades
+
+- Admit compatible DSH 0.2-series rc and patch upgrades from 0.2.1-rc.5, while
+  keeping the 0.3 series (including prereleases) outside the compatibility boundary.
+  Replace per-version host/SDK allowlists, retain permission and cleanup checks,
+  and validate the locked 0.2.2-rc.3 host alongside the legacy host fixture.
+
 ## 0.32.0 — Session-scoped workbench and bounded runtime decisions
 
 - Bound unused DSH prewarm cleanup receipts to 8 KiB of serialized UTF-8, including

@@ -14,9 +14,19 @@ alone provides the plugin and workers, not the Go engine and skills.
 
 Requirements are **Node.js 22.18.0 or later**, npm, and a compatible DSH desktop
 with its desktop-supplied `dsh` command. This package declares DSH
-**0.2.1-rc.5, 0.2.2-rc.1 or 0.2.2-rc.2** and the corresponding Cordis 4.0/4.1 interfaces.
+**`>=0.2.1-rc.5 <0.3.0-0`** and the corresponding Cordis 4.0/4.1 interfaces.
+DSH includes prereleases when checking this range: later 0.2 rc/patch releases do
+not need an exact-version exemption or a new Flywheel release. The next minor,
+including 0.3 alpha/beta/rc releases, remains outside this contract.
 The selected host may have a higher Node requirement; use its supported runtime.
-Other host versions need their own compatibility checks.
+
+The range is an API compatibility policy, not evidence that every future host
+has been tested. Locked integration fixtures cover the legacy 0.2.1-rc.5 host
+and the current 0.2.2-rc.3 host/SDK. Required services, session identity,
+permission receipts and process cleanup remain checked at runtime. A missing
+service or invalid receipt still fails visibly before unconfirmed work is accepted.
+DSH peers stay optional and are supplied by the host; their npm ranges also
+include the two existing prerelease lines, without pinning individual rc releases.
 
 ```sh
 npx -y @ckanner/flywheel@latest install

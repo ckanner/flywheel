@@ -19,7 +19,7 @@ Flywheel 是面向 coding agent 的确定性 Go 编排器。模型负责规划�
 
 ## 安装
 
-使用桌面入口前，请准备 **Node.js 22.18.0 或更高版本**、npm、Git，以及带可用 `dsh` 命令的受支持 DSH 桌面。目前插件声明兼容 **DSH 0.2.1-rc.5、0.2.2-rc.1 和 0.2.2-rc.2**。还需准备所选模型路由使用的账号和 CLI 工具。DSH 自身可能要求更高版本的 Node；受支持的 0.2.2-rc.1 SDK 要求 Node 24.9 或更高。
+使用桌面入口前，请准备 **Node.js 22.18.0 或更高版本**、npm、Git，以及带可用 `dsh` 命令的受支持 DSH 桌面。插件采用 **DSH 0.2 兼容系列**范围，从 **0.2.1-rc.5** 起，到 **0.3.0 的任何预发布版之前**；范围内常规 rc／补丁升级无需重新发布 Flywheel。还需准备所选模型路由使用的账号和 CLI 工具。DSH 自身可能要求更高版本的 Node；DSH 0.2.2 SDK 要求 Node 24.9 或更高。
 
 ```sh
 npx -y @ckanner/flywheel@latest install

@@ -1,5 +1,6 @@
 // Test-only upstream MIT fixture, dsh-v0.2.2-rc.1 / 66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db.
 // Source: packages/boot/app-boot/src/plugin-compatibility.ts; see adjacent LICENSE.
+// Verified unchanged through dsh-v0.2.2-rc.3 / 38a6a5c965aa99ab525161efb7cc5cf1fe62fced.
 /** Evaluate plugin dsh requirements (`engines.dsh`, else dsh peers) without importing plugin code. */
 
 import fs from 'node:fs'

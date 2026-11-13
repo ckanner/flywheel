@@ -21,7 +21,10 @@ For the complete path through task branches and PR review, see [Workflow](workfl
 | DeepSeek and ChatGPT providers in the DSH SDK profile | Default execution, independent Review, and Judge |
 | Go 1.27 or later | Only the disposable Go example and source builds; not npm binary installation |
 
-The plugin declares DSH `0.2.1-rc.5`, `0.2.2-rc.1` and `0.2.2-rc.2` compatibility. DSH 0.2.2 has
+The plugin admits DSH `>=0.2.1-rc.5 <0.3.0-0`, including later prereleases in
+the 0.2 series. Routine rc/patch upgrades do not require adding a version to an allowlist.
+The 0.3 series, including its alpha/beta/rc versions, needs a new compatibility review.
+Range admission does not bypass required host services or SDK permission/cleanup checks. DSH 0.2.2 has
 its own Node 24.9 minimum; use the official desktop-supplied CLI. Check actual command
 locations and versions before setup:
 
