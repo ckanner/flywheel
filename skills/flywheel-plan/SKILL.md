@@ -1,7 +1,7 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.8.2"
+  version: "1.8.3"
 description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
 whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
 compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
@@ -85,5 +85,5 @@ Worktree，不禁止并行；Plan 成功不证明后续执行一定隔离。
 
 这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
 回执和关联结果。没有该工具时，明确给出原任务路径，
-用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
 不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

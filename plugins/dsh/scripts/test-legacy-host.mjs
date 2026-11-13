@@ -14,7 +14,8 @@ function checked(command, args, options) {
 try {
   for (const name of ['package.json', 'package-lock.json']) await copyFile(join(fixture, name), join(directory, name));
   checked('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--registry=https://registry.npmjs.org/'], { cwd: directory });
-  checked(process.execPath, ['--test', 'test/client-host.test.js', 'test/host-association.test.js', 'test/tool-runtime.test.js'], { cwd: root,
+  for (const name of ['console-read.js', 'control.js', 'protocol.js', 'task-association.js']) await copyFile(join(root, 'src', name), join(directory, name));
+  checked(process.execPath, ['--test', 'test/console-read.test.js', 'test/client-host.test.js', 'test/host-association.test.js', 'test/tool-runtime.test.js'], { cwd: root,
     env: { ...process.env, FLYWHEEL_TEST_DSH_HOST_DIR: directory } });
 } finally {
   await rm(directory, { recursive: true, force: true });

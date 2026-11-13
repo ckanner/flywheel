@@ -11,6 +11,8 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-13 | [工作台重设计：布局、预算与 Session 策略](2026-11-13-workspace-redesign.md) |
+| 2026-11-12 | [会话工作台、静默读取与交互优化](2026-11-12-session-console-ux.md) |
 | 2026-11-12 | [0.31.1 正式发行与桌面验收](2026-11-12-release-0.31.1.md) |
 | 2026-11-12 | [反馈驱动工作流、受管调查与 JEV 有限决策实现验收](2026-11-12-feedback-driven-workflows.md) |
 | 2026-11-12 | [DSH 0.2.2-rc.2 兼容复核（0.31.1）](2026-11-12-dsh-0.2.2-rc.2.md) |

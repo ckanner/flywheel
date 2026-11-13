@@ -5,7 +5,7 @@ import { transform } from 'lightningcss';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 await mkdir(join(root, 'dist'), { recursive: true });
-for (const name of ['workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js']) {
+for (const name of ['console-read.js', 'workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js']) {
   await copyFile(join(root, 'src', name), join(root, 'dist', name));
 }
 // Compile plugin-owned CSS Modules. The rendered component owns its style tag;

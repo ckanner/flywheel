@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.9.4"
+  version: "1.9.5"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -100,5 +100,5 @@ fresh 不启用通用历史复用，两种模式均保留支持适配器的调�
 
 这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
 回执和关联结果。没有该工具时，明确给出原任务路径，
-用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
 不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

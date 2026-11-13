@@ -402,7 +402,7 @@ test('full-access shell readiness records the absence of confinement and rejects
   assert.equal(registrations, 1, 'a failed readiness probe cannot register session policy evidence');
 });
 
-test('the native rc.5 view reaches the registered slash command through the session-scoped Remote', async t => {
+test('explicit UI mutations retain the registered command and durable session identity', async t => {
   const cwd = await mkdtemp(join(tmpdir(), 'flywheel-view-remote-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const registrations = {};
@@ -426,13 +426,13 @@ test('the native rc.5 view reaches the registered slash command through the sess
   });
   assert.equal(ui.definition.name, 'conversation.view');
   await ui.selectPath(0, cwd);
-  await ui.click('刷新状态');
+  await ui.click('继续流程');
   await act(async () => { await completion; });
   assert.deepEqual(invocation, { sessionId: 'desktop-session',
-    command: `/flywheel ${JSON.stringify({ action: 'status', taskDir: cwd })}` });
+    command: `/flywheel ${JSON.stringify({ action: 'start', taskDir: cwd })}` });
   assert.match(ui.container.querySelector('[aria-label="任务状态"]').textContent, /example/);
   assert.equal(ui.container.querySelector('[role="alert"]'), null);
-  assert.deepEqual(ui.requests.map(request => request.action), ['status']);
+  assert.deepEqual(ui.requests.map(request => request.action), ['start']);
 });
 
 test('the control process receives only its explicit host session identity', async t => {

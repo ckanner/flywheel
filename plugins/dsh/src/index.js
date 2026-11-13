@@ -81,6 +81,12 @@ export function apply(ctx, config = {}) {
     }
   };
   ctx.on('dispose', () => { for (const controller of active) controller.abort(); });
+  // Optional injection keeps command-only SDK/legacy fixtures independent.
+  ctx.inject?.(['typert'], async scope => {
+    // Host peers remain optional for CLI-only imports and native workers.
+    const { ConsoleReadService } = await import('./console-read.js');
+    new ConsoleReadService(scope, control, failure);
+  });
   ctx.commands.register({
     name: 'flywheel',
     description: '通过 Go 引擎控制 Flywheel 任务、查看实际模型配置或执行无推理环境检查。',

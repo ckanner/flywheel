@@ -47,7 +47,7 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
   const [selected, setSelected] = React.useState(''),
     [reference, setReference] = React.useState('');
   const [metricScope, setMetricScope] = React.useState('run');
-  const runs = control.runs ?? [],
+  const runs = (control.runs ?? []).filter(item => item.taskDir === selection.taskDir && item.cwd === (control.status?.cwd || selection.cwd)),
     busy = control.pending !== null;
   const item =
     runs.find((r) => r.id === selected) ??
@@ -231,9 +231,9 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
                     : textValue(item.conditions).slice(0, 12)),
               ),
               h(
-                'details',
+                'section',
                 { className: css.details },
-                h('summary', null, 'Run / ' + item.id),
+                h('h4', null, 'Run / ' + item.id),
                 h('pre', { className: css.raw }, JSON.stringify(item, null, 2)),
               ),
             ),

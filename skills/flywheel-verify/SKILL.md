@@ -1,7 +1,7 @@
 ---
 name: flywheel-verify
 metadata:
-  version: "1.7.1"
+  version: "1.7.2"
 description: Trigger only the verification gates (L1/L2/L3) for a Flywheel task — no model involved, pure deterministic commands. Use for "/flywheel-verify docs/<slug> [packet]" in DSH, "/skill:flywheel-verify docs/<slug> [packet]" in Kimi, or a request to re-run acceptance checks.
 whenToUse: 当用户只想重跑确定性验收（L1/L2/L3 命令，无模型参与）时使用。
 compatibility: "Requires the Flywheel CLI. No model call; verification commands run under the engine watchdog."
@@ -80,5 +80,5 @@ detached HEAD 先核对，不直接执行验收。新任务工作区由 `flywhee
 
 这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
 回执和关联结果。没有该工具时，明确给出原任务路径，
-用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
 不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

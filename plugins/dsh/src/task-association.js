@@ -58,7 +58,7 @@ function settle(state, id, value, failed, error) {
   const owns = view?.operationId === id;
   const successful = !failed && record(value) && value.protocol === 1 && value.ok === true &&
     path(value.taskDir) && (value.cwd === undefined || path(value.cwd)) && typeof value.running === 'boolean';
-  if (successful) {
+  if (successful && !(operation.action === 'status' && id.startsWith('command:') && (!view || !sameTask(operation, view)))) {
     const task = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
     const key = JSON.stringify([task.taskDir, task.cwd]);
     if (!tasks[key] || tasks[key].sequence < operation.sequence) {
@@ -68,7 +68,7 @@ function settle(state, id, value, failed, error) {
     // A later successful status explicitly reconciles the original target.
     const reconciles = operation.action === 'status' && view && sameTask(operation, view) && operation.sequence > view.sequence;
     if (owns || reconciles || (!view && operation.action === 'status') ||
-        (view?.outcome === 'confirmed' && operation.sequence > view.sequence && ['launch', 'start', 'investigate'].includes(operation.action))) {
+        (view?.outcome === 'confirmed' && operation.sequence > view.sequence && (['launch', 'start', 'investigate'].includes(operation.action) || operation.action === 'status' && id.startsWith('tool:')))) {
       view = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
     }
   } else if (owns) {
@@ -91,7 +91,7 @@ function contentValue(content) {
 
 export const taskAssociationProjection = {
   key: taskProjectionKey,
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema,
   init: (header, inheritedEventCount) => ({
     cwd: typeof header.cwd === 'string' ? header.cwd : '', inheritedEventCount,

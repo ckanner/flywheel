@@ -1,7 +1,7 @@
 ---
 name: flywheel-review
 metadata:
-  version: "1.8.1"
+  version: "1.8.2"
 description: Trigger only the Review Loop for a Flywheel task, optionally for one unit (single state transition). Use for "/flywheel-review docs/<slug> [unit]" in DSH, "/skill:flywheel-review docs/<slug> [unit]" in Kimi, or a request to re-run just the review of a unit.
 whenToUse: 当用户只想重跑某单元的 LLM 评审（L1 已绿之后）时使用。
 compatibility: "Requires the Flywheel CLI and a Review harness supporting the configured permissions.mode; default DSH with the ChatGPT provider plugin."
@@ -94,5 +94,5 @@ Reviewer 自己的上下文，不继承 Executor 历史；每次仍完整检查�
 
 这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
 回执和关联结果。没有该工具时，明确给出原任务路径，
-用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
 不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

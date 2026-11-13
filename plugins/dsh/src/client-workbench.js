@@ -49,13 +49,13 @@ function InvestigationPanel({ control, selection, run, t }) {
       h('p', null, preparation.report['counter-evidence']),
       ...(preparation.report.limitations ?? []).map((limit, i) => h('p', { key: i, className: css.warningText }, limit)),
       h('p', null, preparation.report.recommendation), h('p', null, preparation.report.regression), h('p', null, preparation.report.rollback)),
-    h('details', { className: css.details }, h('summary', null, t('investigationEvidence')),
+    h('section', { className: css.details }, h('h4', null, t('investigationEvidence')),
       ...preparation.observations.map(observation => h('article', { key: observation.invocation.id },
         h('h4', null, observation.invocation['action-id'] + ' · ' + observation.status),
         h('p', { className: css.meta }, observation.invocation.id + ' · ' + observation['duration-ms'] + ' ms'),
         observation.truncated && h('p', { className: css.warningText }, t('investigationPartial')),
         h('pre', { className: css.raw }, observation.output || observation.error)))),
-    preparation.decisions?.length > 0 && h('details', { className: css.details }, h('summary', null, t('investigationDecision')),
+    preparation.decisions?.length > 0 && h('section', { className: css.details }, h('h4', null, t('investigationDecision')),
       ...preparation.decisions.map(receipt => h('p', { key: receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
       ...preparation.observations.map(observation => h('p', { key: observation.invocation.id }, observation.invocation['action-id'] + ' · ' + observation.invocation.reason))));
 }
@@ -80,8 +80,8 @@ Object.assign(zh, {
   wbCanvasRegion: '运行画布',
   wbList: '列表',
   wbBack: '返回任务全貌',
-  wbExpand: '展开任务画布',
-  wbExpandGroup: '展开阶段',
+  wbExpand: '查看任务流程',
+  wbExpandGroup: '查看阶段流程',
   wbFit: '适合宽度',
   wbFocus: '专注画布',
   wbExitFocus: '退出专注画布',
@@ -437,8 +437,10 @@ function canvasModel(control, scope, page, whole, t) {
       edges.push([id, 'aggregate']);
     });
     add('aggregate', t('wbAggregate'), finalStatus, 612, center, null, null, 'final');
-    add('delivery', t('wbDelivery'), remoteStatus, 808, center, null, null, 'remote');
-    edges.push(['aggregate', 'delivery']);
+    add('delivery', 'PR', remoteStatus, 808, center);
+    add('merge', 'Merge', control.deliveryStale ? 'unknown' : pull?.state === 'MERGED' ? 'completed' : 'pending', 1004, center);
+    edges.push(['aggregate', 'delivery'], ['delivery', 'merge']);
+    width = 1192;
     height = Math.max(height, visible.length * 136 + 48);
   }
   return {
@@ -517,7 +519,7 @@ function stageBlockReason(control, node, state) {
   return null;
 }
 
-function ConsoleCanvas({ control, selection, run, t, focusRequest = 0 }) {
+function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect }) {
   const [scope, setScope] = React.useState(null),
     [selected, setSelected] = React.useState(null);
   const [page, setPage] = React.useState(0),
@@ -535,6 +537,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0 }) {
     drag = React.useRef(null),
     lastFocus = React.useRef(0);
   const model = canvasModel(control, scope, page, whole, t);
+  React.useEffect(() => { onInspect?.(!!selected); return () => onInspect?.(false); }, [selected, onInspect]);
   const manualView = React.useRef(false);
   React.useEffect(() => {
     const container = viewport.current?.parentElement;
@@ -542,13 +545,14 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0 }) {
     const resize = () => {
       const width = container.clientWidth;
       if (width > 0 && !manualView.current) setView(width < 520 ? 'list' : 'canvas');
+      if (width > 520 && viewport.current) setZoom(Math.min(1, Math.max(.9, Math.min((viewport.current.clientWidth - 40) / model.width, (viewport.current.clientHeight - 40) / model.height))));
     };
     resize();
     if (typeof ResizeObserver !== 'function') return;
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [!!model, focusMode]);
+  }, [!!model, focusMode, scope]);
   React.useEffect(() => {
     if (!focusMode || !model) {
       if (wasFocused.current) focusToggle.current?.focus();
@@ -623,14 +627,13 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0 }) {
     setZoom(1);
   };
   const planRequest = (node, retry = false) => {
-    setReason('');
-    setRequest({
-      only: node.stage || 'execute',
-      packet: node.packet ? node.id.split('/')[0] : undefined,
-      revision: state.revision,
-      retry,
-      reopen: node.packet?.status === 'completed',
-    });
+    if (stageBlockReason(control, node, state)) return;
+    const next = { only: node.stage || 'execute', packet: node.packet ? node.id.split('/')[0] : undefined, revision: state.revision, retry, reopen: node.packet?.status === 'completed' };
+    if (next.reopen) { setReason(''); setRequest(next); return; }
+    // The explicit click authorizes exactly one revision-bound step. The audit
+    // reason describes the action, not a fabricated explanation for the failure.
+    void run('step', selection, false, { only: next.only, packet: next.packet, revision: next.revision,
+      ...(retry ? { retryReason: 'Manual retry requested from the Flywheel console' } : {}) });
   };
   const finishRequest = () => {
     const next = request;
@@ -1093,204 +1096,41 @@ function WorkbenchNodeInspector({
     history: packet?.['evidence-history'],
     commit: packet?.commit,
   };
-  return h(
-    'section',
-    { className: css.nodeInspector, 'aria-label': t('consoleDetails') },
-    h(
-      'header',
-      { className: css.inspectorHeader },
-      h(
-        'div',
-        null,
-        packetID && h('span', { className: css.meta }, packetID),
-        h('h3', { className: css.heading }, chosen.title),
-      ),
-      h(Button, { onClick: onClose, 'aria-label': t('wbClose') }, '×'),
-    ),
-    h(
-      'nav',
-      { className: css.inspectorTabs, 'aria-label': t('consoleDetails') },
-      ...['progress', 'session', 'config'].map((key) =>
-        h(
-          Button,
-          { key, 'aria-pressed': tab === key, onClick: () => setTab(key) },
-          t({ progress: 'wbProgress', session: 'wbSession', config: 'wbConfiguration' }[key]),
-        ),
-      ),
-    ),
-    h(
-      'div',
-      { className: css.inspectorBody },
-      tab === 'progress' &&
-        h(
-          React.Fragment,
-          null,
-          h(
-            'p',
-            { className: css.nodeOutcome, 'data-tone': consoleTone(chosen.status) },
-            canvasStatus(chosen.status, t),
-          ),
-          ['error', 'warning'].includes(consoleTone(chosen.status)) &&
-            packet &&
-            h(
-              'div',
-              { className: css.configCallout },
-              h(
-                'p',
-                null,
-                textValue(
-                  typeof packet['last-feedback'] === 'string'
-                    ? packet['last-feedback']
-                    : packet['last-feedback']?.reason ||
-                        packet['last-feedback']?.['parallel-error'] ||
-                        packet.commit?.error,
-                  t('wbEvidence'),
-                ).slice(0, 800),
-              ),
-              packet['last-feedback']?.['error-code'] &&
-                h(
-                  'p',
-                  { className: css.meta },
-                  t('wbFailureCode') + ' · ' + textValue(packet['last-feedback']['error-code']),
-                ),
-            ),
-          ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
-          chosen.packet &&
-            !chosen.stage &&
-            h(
-              'ol',
-              { className: css.stageTimeline },
-              ...packetStages(packet, quick, t).map(([stage, title, status]) =>
-                h(
-                  'li',
-                  { key: stage, 'data-tone': consoleTone(status) },
-                  h('span', null, title),
-                  h('span', { className: css.meta }, canvasStatus(status, t)),
-                ),
-              ),
-            ),
-          ((chosen.packet && !chosen.stage) || chosen.group) &&
-            h(Button, { onClick: () => expand(chosen) }, t(chosen.packet ? 'wbExpand' : 'wbExpandGroup')),
-          chosen.stage === 'review' &&
-            packet?.evidence?.review &&
-            h(
-              'dl',
-              { className: css.consoleProperties },
-              property(t('stageRecordedVerdict'), packet.evidence.review.verdict),
-              property(t('stageRecordedScore'), packet.evidence.review.score),
-            ),
-          packetID &&
-            h(
-              'div',
-              { className: css.actions },
-              h(
-                Button,
-                {
-                  disabled: !!control.pending,
-                  onClick: () => run('node', selection, false, { packet: packetID }),
-                },
-                t('consoleFullNode'),
-              ),
-            ),
-          h(
-            'details',
-            { className: css.details, open: consoleTone(chosen.status) === 'error' },
-            h('summary', null, t('wbEvidence')),
-            h('pre', { className: css.raw }, JSON.stringify(evidence, null, 2)),
-          ),
-          packet &&
-            h(
-              'dl',
-              { className: css.consoleProperties },
-              property(t('consoleAttempts'), packet.attempts),
-              property(t('consoleFailures'), packet['failed-attempts']),
-            ),
-        ),
-      tab === 'session' &&
-        h(
-          React.Fragment,
-          null,
-          h('p', { className: css.meta }, t('wbExecutorHistory')),
-          sessions.length
-            ? sessions.map(([key, value]) =>
-                h(SessionInspector, { key, sessionKey: key, value, control, selection, run, t }),
-              )
-            : h('p', { className: css.meta }, t('wbNoSessions')),
-        ),
-      tab === 'config' &&
-        h(
-          React.Fragment,
-          null,
-          h('p', { className: css.meta }, t('wbSnapshot')),
-          binding
-            ? h(
-                'dl',
-                { className: css.consoleProperties },
-                property(t('consoleProvider'), binding.provider || binding.harness),
-                property(t('consoleModel'), binding.model),
-                property(t('consoleThinking'), binding.thinking),
-                property(
-                  t('permission'),
-                  permissionLabels[binding.permission]
-                    ? t(permissionLabels[binding.permission])
-                    : binding.permission,
-                ),
-                property(
-                  t('consoleSession'),
-                  sessionModeLabel({ session: { mode: binding.sessionMode } }, t),
-                ),
-              )
-            : h('p', { className: css.meta }, t('consoleUnknown')),
-        ),
-      h(
-        'details',
-        { className: css.details },
-        h('summary', null, t('stageMetadata')),
-        h(
-          'dl',
-          { className: css.consoleProperties },
-          property('Run', state.run?.id),
-          property('HEAD', state.run?.head),
-          property(t('consoleTask'), control.status.taskDir),
-          property(t('projectHome'), state.project?.['workspace-cwd']),
-          property(t('executionHome'), packet?.worktree?.path ?? control.status.cwd),
-          packet?.worktree?.external && property(t('externalWorktree'), packet.worktree.path),
-          property(t('consoleBranch'), packet?.worktree?.branch || state.run?.branch),
-          property(t('consoleRevision'), state.revision),
-          property('after', packet?.schedule?.after?.join(', ')),
-          property('writes', packet?.schedule?.writes?.join(', ')),
-        ),
-      ),
-    ),
-    h(
-      'footer',
-      { className: css.inspectorFooter },
-      blocked && h('p', { className: css.meta }, t(blocked)),
-      h(
-        'div',
-        { className: css.actions },
-        primaryStage &&
-          h(
-            Button,
-            {
-              variant: 'primary',
-              disabled: !!blocked || (packet?.status === 'completed' && !retry),
-              onClick: () => planRequest({ ...chosen, stage: primaryStage }, retry),
-            },
-            t(
-              retry
-                ? packet.status === 'completed'
-                  ? 'wbReopen'
-                  : 'wbRetry'
-                : chosen.stage
-                  ? 'consoleStageRun'
-                  : 'wbRunTask',
-            ),
-          ),
-        sessions.length > 0 && h(Button, { onClick: () => setTab('session') }, t('wbTakeover')),
-      ),
-    ),
-  );
+  const action = primaryStage && h(Button, {
+    variant: 'primary', disabled: !!blocked || (packet?.status === 'completed' && !retry),
+    onClick: () => planRequest({ ...chosen, stage: primaryStage }, retry),
+  }, t(retry ? packet.status === 'completed' ? 'wbReopen' : 'wbRetry' : chosen.stage ? 'consoleStageRun' : 'wbRunTask'));
+  const feedback = typeof packet?.['last-feedback'] === 'string' ? packet['last-feedback'] : packet?.['last-feedback']?.reason || packet?.['last-feedback']?.['parallel-error'] || packet?.commit?.error;
+  return h('section', { className: css.nodeInspector, 'aria-label': t('consoleDetails') },
+    h('header', { className: css.inspectorHeader }, h('div', null, packetID && h('span', { className: css.meta }, packetID), h('h3', { className: css.heading }, chosen.title)), h(Button, { onClick: onClose, 'aria-label': t('wbClose') }, '×')),
+    h('div', { className: css.inspectorBody },
+      tab !== 'progress' && h(Button, { onClick: () => setTab('progress') }, t('wbBackToNode')),
+      tab === 'progress' && h(React.Fragment, null,
+        h('p', { className: css.nodeOutcome, 'data-tone': consoleTone(chosen.status) }, canvasStatus(chosen.status, t)),
+        feedback && h('p', { className: css.nodeIssue }, textValue(feedback).slice(0, 800)),
+        h('div', { className: css.inspectorActions }, action, sessions.length > 0 && h(Button, { onClick: () => setTab('session') }, t('wbTakeover'))),
+        blocked && h('p', { className: css.settingsHelp }, t(blocked)),
+        chosen.packet && !chosen.stage && h('ol', { className: css.stageTimeline }, ...packetStages(packet, quick, t).map(([stage, title, status]) => h('li', { key: stage, 'data-tone': consoleTone(status) }, h('span', null, title), h('span', { className: css.meta }, canvasStatus(status, t))))),
+        ((chosen.packet && !chosen.stage) || chosen.group) && h(Button, { onClick: () => expand(chosen) }, t(chosen.packet ? 'wbExpand' : 'wbExpandGroup')),
+        ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
+        binding && h('section', { className: css.inspectorSection }, h('h4', null, t('wbConfiguration')),
+          h('dl', { className: css.consoleProperties }, property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })), property(t('consoleModel'), binding.model), property(t('consoleThinking'), ({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking] ? t(({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking]) : binding.thinking), property(t('permission'), permissionLabels[binding.permission] ? t(permissionLabels[binding.permission]) : binding.permission))),
+        h('section', { className: css.inspectorSection }, h('h4', null, t('wbSession')),
+          sessions.length ? sessions.map(([key, value]) => h('article', { key, className: css.sessionSummary },
+            h('h4', null, (roleLabels[value.role] ? t(roleLabels[value.role]) : value.role) + ' · ' + value.scope),
+            h('dl', { className: css.consoleProperties },
+              property(t('consoleAction'), ['pending', 'intent', 'blocked'].includes(value.last?.status) || ['unknown', 'blocked'].includes(value.last?.outcome) ? t('consoleUnconfirmed') : sessionActionLabel(value.action, t)),
+              property('Session', value['thread-id']), value.reason && property(t('consoleReason'), value.reason)))) : h('p', { className: css.meta }, t('wbNoSessions'))),
+        chosen.stage === 'review' && packet?.evidence?.review && h('dl', { className: css.consoleProperties }, property(t('stageRecordedVerdict'), packet.evidence.review.verdict), property(t('stageRecordedScore'), packet.evidence.review.score)),
+        packet && h('dl', { className: css.consoleProperties }, property(t('consoleAttempts'), packet.attempts), property(t('consoleFailures'), packet['failed-attempts'])),
+        h('section', { className: css.inspectorSection }, h('h4', null, t('stageMetadata')),
+          h('dl', { className: css.consoleProperties }, property('Run', state.run?.id), property(t('executionHome'), packet?.worktree?.path ?? control.status.cwd), property(t('consoleBranch'), packet?.worktree?.branch || state.run?.branch))),
+        h(Button, { onClick: () => setTab('evidence') }, t('wbEvidence'))),
+      tab === 'session' && h(React.Fragment, null, ...sessions.map(([key, value]) => h(SessionInspector, { key, sessionKey: key, value, control, selection, run, t }))),
+      tab === 'evidence' && h(React.Fragment, null,
+        packetID && h(Button, { disabled: !!control.pending, onClick: () => run('node', selection, false, { packet: packetID }) }, t('consoleFullNode')),
+        h('h4', { className: css.heading }, t('wbEvidence')), h('pre', { className: css.raw }, JSON.stringify(evidence, null, 2)),
+        h('dl', { className: css.consoleProperties }, property('HEAD', state.run?.head), property(t('consoleTask'), control.status.taskDir), property(t('projectHome'), state.project?.['workspace-cwd']), property(t('consoleRevision'), state.revision), property('after', packet?.schedule?.after?.join(', ')), property('writes', packet?.schedule?.writes?.join(', '))))));
 }
 
 function TaskView({
@@ -1311,6 +1151,7 @@ function TaskView({
     association = useProjection('flywheelTask');
   const [page, setPage] = React.useState('canvas'),
     [focusRequest, setFocusRequest] = React.useState(0);
+  const [inspecting, setInspecting] = React.useState(false);
   const configDrafts = React.useRef(new Map());
   React.useEffect(() => {
     associate(association);
@@ -1369,207 +1210,48 @@ function TaskView({
   const blocked = Object.values(state?.packets ?? {}).some((p) =>
     ['l1-failed', 'review-failed', 'escalated', 'blocked'].includes(p.status),
   );
-  return h(
-    'section',
-    { className: css.page, 'aria-label': t('consoleTitle') },
-    h(
-      'style',
-      {
-        'data-plugin': '@ckanner/dsh-plugin-flywheel',
-        'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css',
-      },
-      stylesheet,
-    ),
-    h(
-      'header',
-      { className: css.workbenchHeader },
+  const diagnostics = h('section', { className: css.advanced, 'aria-label': t('consoleDiagnostics') },
+    h('h3', { className: css.heading }, t('consoleDiagnostics')),
+    h('div', { className: css.actions }, button('config', 'config', false), button('doctor', 'doctor', false), button('doctor', 'probe', false, true)),
+    h('p', { className: css.settingsHelp }, t('inferenceBoundary')),
+    h(Diagnostic, { value: control.diagnostic, t }), h(Configuration, { value: control.configuration, t }),
+    control.raw && h('section', { className: css.details }, h('h4', null, t('raw')), h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
+  return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page },
+    h('style', { 'data-plugin': '@ckanner/dsh-plugin-flywheel', 'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css' }, stylesheet),
+    h('header', { className: css.workbenchHeader },
       h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }),
-      h(
-        'div',
-        { className: css.repositoryLinks },
-        state?.project?.url &&
-          h(
-            'a',
-            { href: state.project.url, target: '_blank', rel: 'noopener noreferrer' },
-            state.project.repo,
-          ),
-        h(
-          'a',
-          { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' },
-          'Flywheel · GitHub',
-        ),
-      ),
-    ),
-    h(
-      'nav',
-      { className: css.consoleTabs, 'aria-label': t('view') },
-      ...['canvas', 'runs', 'config'].map((key) =>
-        h(
-          Button,
-          { key, 'aria-pressed': page === key, onClick: () => setPage(key) },
-          t({ canvas: 'consoleCanvas', runs: 'consoleRuns', config: 'consoleConfig' }[key]),
-        ),
-      ),
-    ),
-    (control.pending || control.error || control.uncertainty || control.status?.workspaceWarnings?.length) &&
-      !(
-        page === 'config' &&
-        (control.pending?.action === 'config-edit' || control.error?.action === 'config-edit') &&
-        !control.uncertainty
-      ) &&
-      h(Feedback, { control, selection, reconcile, t }),
-    h(
-      'div',
-      { hidden: page !== 'canvas' },
-      state?.['shared-execution'] && h('section', { className: css.notice, role: 'status' },
-        h('strong', null, t('sharedBatch')),
-        h('p', null, state['shared-execution'].packets.join(' · ')),
-        state['shared-execution']['last-error'] && h('p', { role: 'alert' }, t('sharedBatchError') + ': ' + state['shared-execution']['last-error'])),
-      hasTask && !preparation &&
-        h(
-          'div',
-          { className: css.workbenchStatus },
-          state &&
-            h(
-              'span',
-              {
-                'data-tone': consoleTone(
-                  control.stale ? 'unknown' : control.status.running ? 'running' : state.status,
-                ),
-              },
-              singleRunKind(control) ? singleRunLabel(control, t) : taskLabel(control.status, t),
-            ),
-          button('status', 'status', true),
-          blocked &&
-            !control.status?.running &&
-            h(Button, { variant: 'primary', onClick: () => setFocusRequest((v) => v + 1) }, t('wbBlocked')),
-          !singleRunKind(control) && button('start', 'start', true, false, blocked ? 'outline' : 'primary'),
-          singleRunKind(control) &&
-            h(
-              'details',
-              { className: css.launchOptions },
-              h('summary', null, t('stageContinue')),
-              button('start', 'consoleWhole', true),
-            ),
-          (control.status?.running || state?.status === 'running' || locked || control.uncertainty) &&
-            button('stop', 'stop', true),
-          h(
-            'details',
-            { className: css.launchOptions },
-            h('summary', null, t('wbSwitchMode')),
-            h(
-              'div',
-              { className: css.launchOptionsBody },
-              h(
-                'label',
-                { className: css.editorField },
-                t('launchMode'),
-                h(
-                  'select',
-                  {
-                    className: css.modeSelect,
-                    value: selection.mode,
-                    disabled: locked,
-                    onChange: (e) => actions.setMode(e.target.value),
-                  },
-                  ...['auto', 'quick', 'full'].map((mode) =>
-                    h(
-                      'option',
-                      { key: mode, value: mode },
-                      mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full',
-                    ),
-                  ),
-                ),
-              ),
-              button('launch', 'launch', true),
-              h('p', { className: css.meta }, t('launchHelp')),
-            ),
-          ),
-        ),
+      h('div', { className: css.repositoryLinks },
+        state?.project?.url && h('a', { href: state.project.url, target: '_blank', rel: 'noopener noreferrer' }, state.project.repo),
+        h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'Flywheel · GitHub ↗'),
+        page !== 'config' && h(Button, { onClick: () => setPage('config') }, t('consoleConfig')))),
+    h('div', { className: css.workbenchNav, hidden: page === 'config' },
+      h('nav', { className: css.consoleTabs, 'aria-label': t('view') },
+        ...['canvas', 'runs'].map(key => h(Button, { key, 'aria-pressed': page === key, onClick: () => setPage(key) }, t(key === 'canvas' ? 'consoleCanvas' : 'consoleRuns')))),
+      page === 'canvas' && hasTask && !preparation && h('div', { className: css.workbenchStatus },
+        state && h('span', { 'data-tone': consoleTone(control.stale ? 'unknown' : control.status.running ? 'running' : state.status) }, singleRunKind(control) ? singleRunLabel(control, t) : taskLabel(control.status, t)),
+        button('status', 'status', true),
+        blocked && !inspecting && !control.status?.running && h(Button, { variant: 'primary', disabled: busy, onClick: () => setFocusRequest(v => v + 1) }, t('wbBlocked')),
+        !control.status?.running && state?.status !== 'completed' && (state || !control.status) && !(blocked && inspecting) && button('start', singleRunKind(control) ? 'consoleWhole' : 'start', true, false, blocked ? 'outline' : 'primary'),
+        (control.status?.running || state?.status === 'running' || locked || control.uncertainty) && button('stop', 'stop', true))),
+    (control.error || control.uncertainty || control.status?.workspaceWarnings?.length || control.pending && !(control.pending.action === 'status' && control.status)) &&
+      !(page === 'config' && (control.pending?.action === 'config-edit' || control.error?.action === 'config-edit') && !control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
+    h('div', { className: css.workflowPage, hidden: page !== 'canvas' },
+      state?.['shared-execution'] && h('section', { className: css.notice, role: 'status' }, h('strong', null, t('sharedBatch')), h('p', null, state['shared-execution'].packets.join(' · ')), state['shared-execution']['last-error'] && h('p', { role: 'alert' }, state['shared-execution']['last-error'])),
+      hasTask && control.status && !state && !preparation && !busy && !control.uncertainty && h('div', { className: css.launchOptionsBody },
+        h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
+        button('launch', 'launch', true, false, 'primary')),
       preparation && h(InvestigationPanel, { control, selection, run, t }),
-      !state && !preparation &&
-        h(
-          'div',
-          { className: css.workbenchEmpty },
-          h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')),
-          h('p', null, t('wbStartHelp')),
-          h('code', null, '/flywheel-task <goal>'),
-          h('p', { className: css.meta }, t('wbProposalHelp')),
-        ),
-      !preparation && h(ConsoleCanvas, {
-        key: selectionKey(selectionOf(selection)),
-        control,
-        selection,
-        run,
-        t,
-        focusRequest,
-      }),
-      hasTask && !preparation &&
-        h(
-          'details',
-          { className: css.legacySummary },
-          h('summary', null, t('consoleTaskSummary')),
-          h(TaskStatus, { control, selection, t }),
-        ),
-    ),
-    h(
-      'div',
-      { hidden: page !== 'config' },
-      h(ConfigEditor, {
-        key: selectionKey(selectionOf(selection)),
-        contextKey: selectionKey(selectionOf(selection)),
-        cache: configDrafts.current,
-        control,
-        selection,
-        run,
-        t,
-        active: page === 'config',
-      }),
-      h(
-        'details',
-        {
-          className: css.advanced,
-          open: selection.advancedOpen,
-          onToggle: (e) => actions.setAdvancedOpen(e.currentTarget.open),
-        },
-        h('summary', { className: css.heading }, t('advanced')),
-        h(
-          'div',
-          { className: css.advancedBody },
-          h('p', { className: css.meta }, t('advancedHelp')),
-          h(
-            'div',
-            { className: css.actions },
-            button('config', 'config', false),
-            button('doctor', 'doctor', false),
-            button('doctor', 'probe', false, true),
-          ),
-          h('p', { className: css.meta }, t('doctorHelp')),
-          h('p', { className: css.meta }, t('probeHelp')),
-          h(Diagnostic, { value: control.diagnostic, t }),
-          h(Configuration, { value: control.configuration, t }),
-        ),
-      ),
-      control.raw &&
-        h(
-          'details',
-          { className: css.details },
-          h('summary', null, t('raw')),
-          h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2)),
-        ),
-    ),
-    h(
-      'div',
-      { hidden: page !== 'runs' },
-      h(RunExplorer, {
-        control,
-        selection,
-        run,
-        changeSelection,
-        showCanvas: () => setPage('canvas'),
-        t,
-        active: page === 'runs',
-      }),
-    ),
-  );
+      !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
+      !preparation && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
+    h('div', { className: css.settingsPage, hidden: page !== 'config' },
+      h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts.current, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
+    h('div', { className: css.historyPage, hidden: page !== 'runs' },
+      h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t, active: page === 'runs' }),
+      hasTask && !preparation && h('section', { className: css.legacySummary }, h(TaskStatus, { control, selection, t }))),
+    page !== 'config' && h(TaskLocations, { control, selection, association, t }));
 }
+
+Object.assign(zh, { consoleDiagnostics: '环境检查' });
+Object.assign(en, { consoleDiagnostics: 'Environment checks' });
+Object.assign(zh, { wbBackToNode: '← 返回节点', wbTakeover: '进入会话', wbRetry: '修复并重试', wbBlocked: '处理失败任务', taskThisSession: '当前会话', consoleRuns: '记录', status: '刷新', start: '继续流程', wbEvidence: '查看证据', wbNoSessions: '尚无会话记录' });
+Object.assign(en, { wbBackToNode: '← Back to node', wbTakeover: 'Open session', wbRetry: 'Repair and retry', wbBlocked: 'Resolve failure', taskThisSession: 'Current conversation', consoleRuns: 'History', status: 'Refresh', start: 'Continue workflow', wbEvidence: 'Inspect evidence', wbNoSessions: 'No session recorded yet' });
