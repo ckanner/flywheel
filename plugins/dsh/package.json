@@ -53,7 +53,8 @@
     "@deepseek-ai/dsh-commands": "0.2.1-rc.5 || 0.2.2-rc.1 || 0.2.2-rc.2",
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.5 || 0.2.2-rc.1 || 0.2.2-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.5 || 0.2.2-rc.1 || 0.2.2-rc.2",
-    "dsh-subagent-claude-code-pro": "0.4.0"
+    "dsh-subagent-claude-code-pro": "0.4.0",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.5 || 0.2.2-rc.1 || 0.2.2-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -69,6 +70,9 @@
       "optional": true
     },
     "dsh-subagent-claude-code-pro": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
       "optional": true
     }
   },
@@ -107,7 +111,8 @@
     "lightningcss": "1.33.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "semver": "7.7.3"
+    "semver": "7.7.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.2"
   },
   "repository": {
     "type": "git",

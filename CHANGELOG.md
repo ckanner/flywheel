@@ -7,6 +7,20 @@ their original language.
 
 ## Unreleased
 
+- Rebuild the console as a canvas-first workspace with separate Settings, fixed-height
+  navigation, compact node actions, actual session receipts, and separate PR/Merge nodes.
+- Expose inline role-history overrides, reconcile explicit Kimi Plan history choices,
+  and hide token thresholds when budgets are off without disabling usage accounting.
+- Dispatch ordinary revision-bound node actions directly; keep reason/confirmation
+  for reopening completed work and retain all backend admission and recovery gates.
+
+- Bind the DSH console to the current conversation, remove cross-session task selection,
+  and ignore legacy passive status logs when rebuilding task associations.
+- Move console reads to a session-scoped read-only Remote so polling no longer adds
+  JSON command receipts to chat; keep durable records for explicit mutations and recovery.
+- Show locations and action groups directly, align buttons, separate prepared-task
+  launch from continuation, and move diagnostics out of the configuration form.
+
 ## 0.31.1 — Feedback-driven workflows and DSH rc.2 compatibility
 
 - Declare DSH `0.2.2-rc.2` alongside `0.2.1-rc.5` and `0.2.2-rc.1`; the host gate

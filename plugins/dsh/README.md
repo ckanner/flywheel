@@ -109,15 +109,19 @@ menu. The workbench has three pages:
 
 | Page | What it provides |
 |---|---|
-| Workflow canvas | Task selection, current stage, evidence, stage run/retry, role-session history, and managed intervention |
+| Workflow canvas | Current session task, current stage, evidence, stage run/retry, role-session history, and managed intervention |
 | Run history | Registered runs, known usage/cost, missing metrics, and comparisons with their conditions |
 | Configuration | Automatically loaded global/project settings, grouped editing, source display, and protected unsaved drafts |
 
-There are no editable task/project path fields. One task associated with the
-current conversation can open automatically; choose explicitly among multiple
-or older tasks. The view reads registered run records and session associations,
-without scanning the repository. Known file locations appear as read-only
-information. A successful single-stage Review is not whole-task completion.
+The view automatically follows the current conversation's explicit task association,
+then its latest registered host-session run. There is no task selector or path form;
+foreign and ownerless runs stay out of this view. Use `flywheel_control status` in the
+intended conversation to associate a prepared task. Locations and action groups are
+shown directly. A successful single-stage Review is not whole-task completion.
+
+Automatic refresh and other reads use a session-scoped read-only Remote and do not
+append JSON command records to chat. Explicit mutations and unknown-result recovery
+keep durable command receipts. Settings has fixed navigation and save controls, inline role-session overrides and an optional usage budget. Environment checks live in Advanced and diagnostics; raw diagnostic responses do not fill the normal workflow view.
 
 Preparation-only tasks display a bounded investigation panel with observations,
 budgets, original-receipt reconciliation, Stop, and the evidence report. A report

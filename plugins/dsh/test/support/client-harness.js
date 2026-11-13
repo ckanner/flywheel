@@ -85,7 +85,7 @@ export function deadlineClock() {
   };
 }
 
-export async function mountPanel(t, respond, { timers, locale = 'zh', association, catalog } = {}) {
+export async function mountPanel(t, respond, { timers, locale = 'zh', association, catalog, mountError } = {}) {
   const client = loadClient(timers);
   const definitions = new Map();
   const effects = [];
@@ -139,10 +139,21 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
         return () => definitions.delete(definition.name);
       },
     },
-    remote: { commands: { execute: async (sessionId, command, attachments) => {
+    remote: { $mount: async () => { if (mountError) throw mountError; return () => {}; }, flywheelConsole: { read: async (sessionId, wireRequest) => {
+      const request = JSON.parse(JSON.stringify(wireRequest));
+      allRequests.push(request);
+      if (request.action === 'runs') {
+        discoveryRequests.push(request); discoverySessions.push(sessionId);
+        if (catalog) return catalog(request, sessionId);
+        return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir: '', cwd: '/repo', state: null, runs: [] }) } } };
+      }
+      requests.push(request); sessions.push(sessionId);
+      return respond(request, sessionId);
+    } }, commands: { execute: async (sessionId, command, attachments) => {
       assert.equal(attachments.length, 0);
       assert.ok(command.startsWith('/flywheel '));
       const request = JSON.parse(command.slice('/flywheel '.length));
+      assert.ok(['status', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(request.action), 'reads must never append chat commands');
       allRequests.push(request);
       if (request.action === 'runs') {
         discoveryRequests.push(request); discoverySessions.push(sessionId);
@@ -260,7 +271,8 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
   const setAssociation = async (value, sessionId = currentSession) => {
     await act(async () => projectionSource(sessionId).set(value));
   };
-  return { container, root, definition, requests, discoveryRequests, allRequests, sessions, discoverySessions, button, click, selectPath, selection,
+  const refreshDiscovery = async () => act(async () => { await getBinding(currentSession, generation).props.discover(); });
+  return { refreshDiscovery, container, root, definition, requests, discoveryRequests, allRequests, sessions, discoverySessions, button, click, selectPath, selection,
     switchSession, setVisible, setLocale, setAssociation, unload, bindings, document: dom.window.document,
     translate: translate(definition.locale) };
 }

@@ -95,6 +95,8 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
     sessions.push(sessionId);
     return sessionId === 'session-a' ? (++requestsFromA === 1 ? pending.promise : replacementPending.promise) : reply(request, 'SESSION_B_RESULT');
   } } };
+  remote.$mount = async () => () => {};
+  remote.flywheelConsole = { read: (sessionId, request) => remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), []) };
   ctx.provide('remote', remote);
   ctx.provide('remote.commands', remote.commands);
 
@@ -153,14 +155,14 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
     return value;
   };
   await associate(projectionA, '/repo/task-a');
-  await act(async () => button('刷新状态').click());
-  assert.equal(button('刷新状态').disabled, true);
+  await act(async () => button('刷新').click());
+  assert.equal(button('刷新').disabled, true);
   await act(async () => shell.set({ visible: false }));
   assert.match(container.textContent, /Native conversation/);
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => shell.set({ visible: true }));
   assert.equal(location(), '/repo/task-a');
-  assert.equal(button('刷新状态').disabled, true, 'tab remount reuses the registry-owned pending controller');
+  assert.equal(button('刷新').disabled, true, 'tab remount reuses the registry-owned pending controller');
   assert.equal(container.querySelectorAll(styleSelector).length, 1);
 
   await act(async () => current.set(bindingB));
@@ -169,7 +171,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   assert.match(container.textContent, /SESSION_B_RESULT/);
   await act(async () => current.set(bindingA));
   assert.equal(location(), '/repo/task-a');
-  assert.equal(button('刷新状态').disabled, true);
+  assert.equal(button('刷新').disabled, true);
 
   const replacementA = await ctx.plugin(sessionPlugin);
   await act(async () => current.set(binding('session-a', replacementA)));

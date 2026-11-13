@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.10.0"
+  version: "1.10.1"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -121,7 +121,7 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
    或完成交付。失败或升级时转述实际原因，不在 skill 内重试，不改 `state.json`。
    说明请求模式、生效策略与原因；Quick 的 Plan／Judge 不适用不等于已通过。
    DSH 工具调用会明确关联当前会话视图。CLI 运行登记可带 DSH 提供的会话 ID，
-   无归属的独立终端运行可从“本机最近任务”选择同一个任务；不要求用户填写路径字段。
+   无归属的独立终端运行不会出现在任意 DSH 会话中；需要时在目标会话使用 `flywheel_control status` 显式关联，不要求用户填写路径字段。
    真实任务位置由引擎提供，只读展示；CLI 参数继续使用原 `task_dir` 与 `repo_dir`。
 
 ## 工作区与恢复
@@ -190,5 +190,5 @@ head 的检查与审阅满足仓库要求后再合并；引擎不自动执行这
 
 这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
 回执和关联结果。没有该工具时，明确给出原任务路径，
-用户可从“最近任务”选择；不要声称 UI 已关联。单阶段通过只表示本次阶段通过，
+不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
 不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。

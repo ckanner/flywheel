@@ -13,23 +13,18 @@ const values = { loops: { review: { harness: 'dsh', model: 'gpt-6.1-sol', channe
 test('console draws real packet branches and forwards one revision-bound stage command', async t => {
   const ui = await mountPanel(t, request => reply(request, { state: { slug: 'checkout', revision: 7, status: 'stopped', packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 2, evidence: { l1: { pass: false } } } } } }));
   await ui.selectPath(0, '/repo/docs/checkout');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   const pick = async id => act(async () => ui.container.querySelector(`[data-node-id="${id}"]`).click());
   await pick('M01-T01');
   assert.equal(ui.container.querySelector('[data-node-id="M01-T01/execute"]'), null, 'selection opens details without expanding the whole graph');
-  await ui.click('展开任务画布');
+  await ui.click('查看任务流程');
   await pick('M01-T01/execute');
   assert.match(ui.container.querySelector('[aria-label="节点详情"]').textContent, /尝试次数2/);
-  await ui.click('重试一次');
-  assert.equal(ui.requests.length, 1, 'opening a retry dialog does not dispatch');
-  assert.equal(ui.button('确认运行').disabled, true);
-  const reason = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '继续原因').querySelector('textarea');
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(reason, '修复了环境依赖');
-    reason.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
-  });
-  await ui.click('确认运行');
-  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: '/repo/docs/checkout', only: 'execute', packet: 'M01-T01', revision: 7, retryReason: '修复了环境依赖' });
+  await ui.click('修复并重试');
+  assert.equal(ui.requests.length, 2, 'one explicit click dispatches one bounded repair');
+  assert.equal(ui.container.querySelector('dialog'), null);
+  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: '/repo/docs/checkout', only: 'execute', packet: 'M01-T01', revision: 7, retryReason: 'Manual retry requested from the Flywheel console' });
+
 });
 
 test('configuration scope is explicit, changed sections are saved and source conflicts retain the draft', async t => {
@@ -38,7 +33,7 @@ test('configuration scope is explicit, changed sections are saved and source con
     if (request.action === 'config-save' && reject) throw new Error('configuration changed');
     return reply(request, { editor: { scope: request.editor.scope, target: '/global/config.json', revision: 'version-one', values, defaults: values, applied: request.action === 'config-save' } });
   });
-  await ui.click('配置');
+  await ui.click('设置');
   assert.equal(ui.requests.at(-1).editor.scope, 'global');
   const area = ui.container.querySelector('textarea');
   await act(async () => {
@@ -52,12 +47,12 @@ test('configuration scope is explicit, changed sections are saved and source con
   assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /保存结果未确认/);
   reject = false;
-  await ui.click('重新读取配置');
+  await ui.click('高级与诊断'); await ui.click('重新读取配置');
   assert.match(ui.container.querySelector('dialog').textContent, /未保存的修改/);
   await ui.click('放弃草稿并继续');
   assert.doesNotMatch(ui.container.textContent, /保存结果未确认/);
-  await ui.click('模型分配');
-  const binding = [...ui.container.querySelectorAll('article')].find(article => article.getAttribute('data-binding-id') === 'routes.default');
+  await ui.click('模型与会话');
+  const binding = [...ui.container.querySelectorAll('[data-binding-id]')].find(article => article.getAttribute('data-binding-id') === 'routes.default');
   await act(async () => binding.querySelector('button').click());
   await act(async () => {
     const resource = ui.container.querySelector('dialog select');
@@ -92,7 +87,7 @@ test('running canvas refreshes through the read controller and stops polling whe
   Object.defineProperty(ui.document, 'hidden', { configurable: true, value: false });
   t.after(() => { if (previous) Object.defineProperty(ui.document, 'hidden', previous); else delete ui.document.hidden; });
   await ui.selectPath(0, '/repo/docs/task');
-  await ui.click('刷新状态');
+  await ui.click('刷新');
   assert.equal(ui.requests.length, 1);
   assert.ok([...timers.pending.values()].some(timer => timer.delay === 2000));
   await timers.expire();
@@ -103,25 +98,25 @@ test('running canvas refreshes through the read controller and stops polling whe
 });
 
 test('registered CLI runs open a freshly read canvas and metrics retain missing observations', async t => {
- const run = { id: 'run-one', taskDir: '/repo/docs/cli', cwd: '/repo', startedAt: '2026-11-08T10:00:00Z', conditions: 'one', summary: { slug: 'cli', status: 'paused' } };
+ const run = { id: 'run-one', hostSessionId: 'desktop-session', taskDir: '/repo/docs/cli', cwd: '/repo', startedAt: '2026-11-08T10:00:00Z', conditions: 'one', summary: { slug: 'cli', status: 'paused' } };
  const ui = await mountPanel(t, request => reply(request, request.action === 'runs' ? { runs: [run] } : request.action === 'metrics' ? { metrics: { groups: [{ role: 'execute', model: 'Flash', harness: 'dsh', calls: 2, failedCalls: 1, runId: 'run-one', knownTokens: 5, knownCostUSD: 0, knownDurationMs: 25, missingDuration: 1, missingUsage: 1, missingCost: 2 }] } } : { state: { revision: 4, status: 'paused', packets: {} } }), { catalog: request => reply(request, { runs: [run] }) });
- await ui.click('运行记录'); await ui.click('刷新最近运行');
+ await ui.click('记录'); await ui.click('刷新最近运行');
  assert.equal(ui.discoveryRequests.at(-1).action, 'runs');
  const reference = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('对照运行')).querySelector('select');
  await act(async () => { reference.value = 'run-one'; reference.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
  assert.match(ui.container.textContent, /相同契约与配置/);
  await ui.click('在画布中打开');
  assert.equal(ui.requests.at(-1).action, 'status'); assert.equal(ui.requests.at(-1).taskDir, run.taskDir);
- await ui.click('运行记录'); await ui.click('读取所选运行指标');
+ await ui.click('记录'); await ui.click('读取所选运行指标');
  assert.match(ui.container.textContent, /未报告 \/ 2/);
  assert.match(ui.container.textContent, /调用失败率不等于代码质量/);
 });
 
 test('run metrics distinguish parallel elapsed time from cumulative durations and retain unknown intervals', async t => {
- const run = { id: 'run-one', taskDir: '/repo/docs/timed', cwd: '/repo', startedAt: '2026-11-12T10:00:00Z', summary: { status: 'paused' } };
+ const run = { id: 'run-one', hostSessionId: 'desktop-session', taskDir: '/repo/docs/timed', cwd: '/repo', startedAt: '2026-11-12T10:00:00Z', summary: { status: 'paused' } };
  let timeline = { coverage: 'partial-engine-timeline', completeSpans: 2, unknownSpans: 1, unmatchedCalls: 1, observedWallMs: 1500, knownSpanMs: 2500 };
  const ui = await mountPanel(t, request => reply(request, request.action === 'metrics' ? { metrics: { groups: [], timeline } } : { runs: [run] }), { catalog: request => reply(request, { runs: [run] }) });
- await ui.click('运行记录');
+ await ui.click('记录');
  await ui.click('刷新最近运行');
  await ui.click('读取所选运行指标');
  assert.match(ui.container.textContent, /已观测经过时间1\.500 s/);
@@ -143,27 +138,27 @@ test('session handoff keeps exact identity, sends prompts via stdin contract and
   if (request.action === 'session' && request.session.action === 'return') held = false;
   return reply(request, request.action === 'history' ? { history: { key, text: 'reply from exact receipt' } } : { cwd: '/repo', state: { revision: 7, status: 'paused', ...(held ? { handoff: { key } } : {}), sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 1 } } } });
  });
- await ui.selectPath(0, '/repo/docs/cli'); await ui.click('刷新状态');
- await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('会话');
+ await ui.selectPath(0, '/repo/docs/cli'); await ui.click('刷新');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('进入会话');
  assert.match(ui.container.textContent, /cd -- '\/repo\/unit' && flywheel session '\/repo\/docs\/cli'/);
  await ui.click('查看最近回复'); assert.equal(ui.requests.at(-1).sessionKey, key);
  assert.match(ui.container.textContent, /reply from exact receipt/);
  const input = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '接管原因').querySelector('input');
  await act(async () => { Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLInputElement.prototype,'value').set.call(input,'修复失败');input.dispatchEvent(new ui.document.defaultView.Event('input',{bubbles:true})); });
  await ui.click('暂停并接管会话'); assert.deepEqual(ui.requests.at(-1).session,{action:'claim',key,revision:7,reason:'修复失败'});
- assert.equal(ui.button('启动').disabled,true);
+ assert.equal(ui.container.querySelector('[aria-label="节点详情"] button[disabled]') !== null,true);
  const textarea = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '人工 Prompt').querySelector('textarea');
  await act(async () => { Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype,'value').set.call(textarea,'修复并解释原因');textarea.dispatchEvent(new ui.document.defaultView.Event('input',{bubbles:true})); });
  await ui.click('发送到原 Session'); assert.equal(ui.requests.at(-1).session.prompt,'修复并解释原因');
  await ui.click('验证并交回流程'); assert.equal(ui.requests.at(-1).session.action,'return');
- assert.equal(ui.button('启动').disabled,false);
+ await act(async () => ui.container.querySelector('button[aria-label="关闭详情"]').click()); assert.equal(ui.button('继续流程').disabled,false);
 });
 
 test('PR actions require an explicit reviewed target and keep merge source/base identity', async t => {
  const remote = { repo: 'github.com/example/repo', url: 'https://github.com/example/repo', localBranch: 'feature', branch: 'feature', head: 'a'.repeat(40), defaultBase: 'main', pulls: [{ number: 9, url: 'https://github.com/example/repo/pull/9', state: 'OPEN', headRefOid: 'a'.repeat(40), baseRefName: 'main', isDraft: false, mergeStateStatus: 'CLEAN', statusCheckRollup: [{ name: 'tests', conclusion: 'SUCCESS' }] }] };
  const state = { slug: 'fixture', revision: 12, status: 'completed', packets: { 'M01-T01': { status: 'completed', route: 'default' } } };
  const ui = await mountPanel(t, request => reply(request, { state, ...(request.action === 'delivery' || request.action === 'deliver' ? { delivery: remote } : {}) }));
- await ui.selectPath(0, '/repo/docs/fixture'); await ui.click('刷新状态');
+ await ui.selectPath(0, '/repo/docs/fixture'); await ui.click('刷新');
  await act(async () => ui.container.querySelector('[data-node-id="delivery"]').click());
  await ui.click('查询项目与 PR');
  assert.equal(ui.button('合并此 PR').disabled, true);
@@ -177,8 +172,8 @@ test('PR actions require an explicit reviewed target and keep merge source/base 
 test('full packet evidence is matched to the same refreshed state revision', async t => {
  const packet = { status: 'l1-failed', route: 'default', evidence: { l1: { pass: false, 'details-omitted': true } } };
  const ui = await mountPanel(t, request => reply(request, request.action === 'node' ? { projection: 'console-excerpt', state: { revision: 8, status: 'paused', packets: { 'M01-T01': packet } }, node: { id: 'M01-T01', revision: 8, packet: { ...packet, evidence: { l1: { pass: false, commands: [{ output: 'complete diagnostic' }] } } } } } : { projection: 'console-excerpt', state: { revision: 7, status: 'paused', packets: { 'M01-T01': packet } } }));
- await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新状态');
- await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('读取完整节点证据');
+ await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('查看证据'); await ui.click('读取完整节点证据');
  assert.equal(ui.requests.at(-1).action, 'node'); assert.equal(ui.requests.at(-1).packet, 'M01-T01');
  assert.match(ui.container.textContent, /complete diagnostic/);
 });
@@ -187,10 +182,10 @@ test('a newer state revision invalidates an earlier PR snapshot before another r
  let revision=4;
  const remote={repo:'github.com/example/repo',url:'https://github.com/example/repo',branch:'feature',head:'a'.repeat(40),defaultBase:'main',pulls:[{number:9,url:'https://github.com/example/repo/pull/9',state:'OPEN',headRefOid:'a'.repeat(40),baseRefName:'main',isDraft:false,mergeStateStatus:'CLEAN'}]};
  const ui=await mountPanel(t,r=>reply(r,{state:{revision,status:'completed',packets:{}},...(r.action==='delivery'?{delivery:remote}:{})}));
- await ui.selectPath(0,'/repo/docs/task');await ui.click('刷新状态');
+ await ui.selectPath(0,'/repo/docs/task');await ui.click('刷新');
  await act(async()=>ui.container.querySelector('[data-node-id="delivery"]').click());await ui.click('查询项目与 PR');
  await act(async()=>ui.container.querySelector('input[type="checkbox"]').click());assert.equal(ui.button('合并此 PR').disabled,false);
- revision=5;await ui.click('刷新状态');assert.equal(ui.button('合并此 PR').disabled,true);assert.match(ui.container.textContent,/远端快照已过期/);
+ revision=5;await ui.click('刷新');assert.equal(ui.button('合并此 PR').disabled,true);assert.match(ui.container.textContent,/远端快照已过期/);
  await ui.click('查询项目与 PR');assert.equal(ui.button('合并此 PR').disabled,false);
  assert.equal(ui.requests.some(r=>r.action==='deliver'),false);
 });
@@ -210,12 +205,12 @@ let raw='';process.stdin.on('data',c=>raw+=c);process.stdin.on('end',()=>{const 
 
 test('JEV starts disabled and saves an optional boolean without exposing a key field', async t => {
   const ui = await mountPanel(t, request => reply(request, { editor: { scope: 'global', target: '/global/config.json', revision: 'one', values, defaults: values } }));
-  await ui.click('配置');
-  await ui.click('JEV 影子建议');
-  const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent.startsWith('JEV 影子评估'));
+  await ui.click('设置');
+  await ui.click('JEV');
+  const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '影子评估');
   const select = ui.document.getElementById(label.htmlFor);
   assert.equal(select.value, 'false');
-  assert.match(ui.container.textContent, /不改变 Quick \/ Full/);
+  assert.match(ui.container.textContent, /不改变实际流程或模型选择/);
   await act(async () => { select.value = 'true'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).action, 'config-edit', 'enabling shadow sends no request before confirmation');

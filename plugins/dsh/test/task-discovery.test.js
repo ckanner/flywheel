@@ -10,11 +10,6 @@ const stageState = (id = 'run-one', status = 'passed') => ({
  control: { kind: 'review', packet: 'M01-T01', status },
  packets: { 'M01-T01': { status: 'l1-passed', attempts: 0, evidence: { l1: { pass: true, identity: 'same' }, review: { verdict: 'pass', score: 0.92, identity: 'same' } } } },
 });
-async function select(ui, run) {
- const choice = ui.container.querySelector('section[aria-label="选择任务"] select');
- assert.ok(choice);
- await act(async () => { choice.value = JSON.stringify([run.taskDir,run.cwd]); choice.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
-}
 
 test('opening discovers registered runs without starting a task and never renders path inputs', async t => {
  const ui = await mountPanel(t, request => reply(request, {}));
@@ -22,8 +17,9 @@ test('opening discovers registered runs without starting a task and never render
  assert.deepEqual(ui.discoveryRequests, [{ action: 'runs' }]);
  assert.equal(ui.container.querySelectorAll('input').length, 0);
  assert.doesNotMatch(ui.container.textContent, /手动指定|Users\/me/);
- assert.match(ui.container.textContent, /加载 Skill 不代表引擎已经启动/);
- assert.equal(ui.button('刷新任务列表').disabled, false);
+ assert.match(ui.container.textContent, /加载 Skill 本身不会启动引擎/);
+ assert.equal(ui.container.querySelector('details'), null);
+ assert.doesNotMatch(ui.container.textContent, /切换任务|选择任务|刷新任务列表/);
 });
 
 test('one current-session CLI task auto-opens a fresh stage canvas; other sessions never win', async t => {
@@ -49,20 +45,25 @@ test('one current-session CLI task auto-opens a fresh stage canvas; other sessio
  await ui.click('本次运行');
  await act(async () => ui.container.querySelector('[data-node-id="M01-T01/review"]').click());
  await ui.click('运行此阶段');
- await ui.click('确认运行');
  assert.deepEqual(ui.requests.at(-1), { action: 'step', taskDir: own.taskDir, cwd: own.cwd, only: 'review', packet: 'M01-T01', revision: 48 });
 });
 
-test('legacy runs and multiple associated tasks require an explicit choice', async t => {
- const legacy = item('legacy',undefined);
- const rows = [legacy,item('a','desktop-session'),item('b','desktop-session')];
- const ui = await mountPanel(t, request => reply(request, { state: stageState('legacy') }), { catalog: request => reply(request,{runs:rows}) });
- assert.deepEqual(ui.requests, []);
- assert.match(ui.container.textContent,/本会话有多个任务/);
- await select(ui,legacy);
- assert.deepEqual(ui.requests,[{action:'status',taskDir:legacy.taskDir,cwd:legacy.cwd}]);
- await ui.click('刷新任务列表');
- assert.equal(ui.requests.length,1,'refreshing discovery cannot replace an explicit selection');
+test('foreign and ownerless runs stay invisible; multiple owned tasks select the latest deterministically', async t => {
+ const rows = [item('legacy', undefined), item('foreign', 'other-session'), item('a', 'desktop-session'), { ...item('b', 'desktop-session'), startedAt:'2026-11-11T10:00:00Z' }];
+ const ui = await mountPanel(t, request => reply(request,{state:stageState('b')}), { catalog: request => reply(request,{runs:rows}) });
+ assert.equal(ui.selection().taskDir,'/repo/docs/b');
+ assert.equal(ui.container.querySelector('section[aria-label="当前任务"] select'),null);
+ assert.doesNotMatch(ui.container.textContent,/docs\/foreign|docs\/legacy/);
+ assert.equal(ui.requests.every(r=>r.taskDir==='/repo/docs/b'),true);
+});
+
+test('a session with no owned task remains empty even if other projects have recent runs', async t => {
+ const ui = await mountPanel(t, request=>reply(request,{}), {catalog:request=>reply(request,{runs:[item('foreign','other-session'),item('legacy',undefined)]})});
+ assert.equal(ui.selection().taskDir,'');
+ assert.equal(ui.requests.length,0);
+ assert.equal(ui.container.querySelector('[data-task-path]'),null);
+ await ui.click('记录');
+ assert.doesNotMatch(ui.container.textContent,/docs\/foreign|docs\/legacy/);
 });
 
 test('late discovery from an old session cannot select a task in the current session', async t => {
@@ -83,15 +84,15 @@ test('discovery stays independent of unresolved mutations and retains the select
  const timers = deadlineClock();
  const ui = await mountPanel(t,request=>request.action==='start'?launch.promise:reply(request,{state:stageState()}), {timers,catalog:request=>reply(request,{runs:rows})});
  await ui.selectPath(0,'/repo/docs/manual'); await ui.selectPath(1,'/repo');
- await ui.click('启动');
+ await ui.click('继续流程');
  rows=[item('automatic','desktop-session')];
- await ui.click('刷新任务列表');
+ await ui.refreshDiscovery();
  assert.equal(ui.requests.filter(r=>r.action==='start').length,1);
  assert.equal(ui.selection().taskDir,'/repo/docs/manual');
  await act(async()=>launch.reject(new Error('transport lost')));
- await ui.click('刷新任务列表');
+ await ui.refreshDiscovery();
  assert.equal(ui.selection().taskDir,'/repo/docs/manual');
- assert.equal(ui.button('启动').disabled,true);
+ assert.equal(ui.button('继续流程').disabled,true);
  assert.equal(ui.requests.some(r=>r.taskDir==='/repo/docs/automatic'),false);
 });
 
@@ -116,11 +117,11 @@ test('catalog failures keep a loaded canvas and support retry without tasks chan
  let fail=false;
  const one=item('run-one','desktop-session');
  const ui=await mountPanel(t,request=>reply(request,{state:stageState()}),{catalog:request=>fail?Promise.reject(new Error('unavailable')):reply(request,{runs:[one]})});
- fail=true;await ui.click('刷新任务列表');
+ fail=true;await ui.refreshDiscovery();
  assert.ok(ui.container.querySelector('[data-node-id="M01-T01/review"]'));
- assert.match(ui.container.textContent,/任务列表读取失败/);
- fail=false;await ui.click('刷新任务列表');
- assert.doesNotMatch(ui.container.textContent,/任务列表读取失败/);
+ assert.match(ui.container.textContent,/当前会话任务读取失败/);
+ fail=false;await ui.refreshDiscovery();
+ assert.doesNotMatch(ui.container.textContent,/当前会话任务读取失败/);
  assert.equal(ui.requests.length,1);
 });
 
@@ -128,22 +129,18 @@ test('a registered run preceding a failed state save cannot create a status refr
  const latest=item('not-persisted','desktop-session');
  const ui=await mountPanel(t,request=>reply(request,{state:stageState('previous-run')}),{catalog:request=>reply(request,{runs:[latest]})});
  assert.equal(ui.requests.length,1);
- await ui.click('刷新任务列表');
+ await ui.refreshDiscovery();
  assert.equal(ui.requests.length,2,'one status reconciliation for one new catalog snapshot');
 });
 
-test('prepared tasks associated by status are selectable without a run index or a path form', async t => {
- const prepared = { operationId:'command:prepare', sequence:4, action:'status', taskDir:'/repo/docs/prepared', cwd:'/repo', outcome:'confirmed', message:'' };
- const other = {...prepared,taskDir:'/repo/docs/another',operationId:'command:another',sequence:3};
+test('prepared task follows its session projection without selection or run history', async t => {
+ const prepared = { operationId:'tool:prepare', sequence:4, action:'status', taskDir:'/repo/docs/prepared', cwd:'/repo', outcome:'confirmed', message:'' };
+ const other = {...prepared,taskDir:'/repo/docs/another',operationId:'tool:another',sequence:3};
  const ui=await mountPanel(t,request=>reply(request,{state:null}),{association:{...prepared,tasks:[prepared,other]}});
- await ui.click('切换任务');
- const options=[...ui.container.querySelector('section[aria-label="选择任务"] select').options].map(x=>x.value);
- assert.ok(options.includes(JSON.stringify([other.taskDir,other.cwd])));
- await select(ui,other);
- assert.equal(ui.requests.at(-1).taskDir,other.taskDir);
- assert.equal(ui.container.querySelector('[data-task-path]').getAttribute('data-task-path'),other.taskDir);
- assert.equal(ui.container.querySelectorAll('input').length,0);
- assert.equal(ui.requests.every(x=>x.action==='status'),true);
+ assert.equal(ui.container.querySelector('[data-task-path]').getAttribute('data-task-path'),prepared.taskDir);
+ assert.doesNotMatch(ui.container.textContent,/切换任务|选择任务/);
+ assert.equal(ui.requests.every(x=>x.action==='status' && x.taskDir===prepared.taskDir),true);
+ assert.equal(ui.container.querySelector('[data-task-path]').closest('details'),null);
 });
 
 test('location rows appear only when the engine or conversation supplies real values', async t => {
@@ -152,8 +149,28 @@ test('location rows appear only when the engine or conversation supplies real va
  assert.equal(ui.container.querySelector('[data-workspace-path]'),null);
  assert.equal(ui.container.querySelector('[data-task-path]'),null);
  assert.equal(ui.container.querySelectorAll('input').length,0);
- known=true;await ui.click('刷新任务列表');
+ known=true;await ui.refreshDiscovery();
  assert.equal(ui.container.querySelector('[data-workspace-path]').textContent,'/known/workspace');
  assert.equal(ui.container.querySelector('[data-task-path]'),null);
  assert.equal(ui.container.querySelectorAll('input').length,0);
+});
+
+test('new CLI runs in this session follow automatically without borrowing a foreign run identity', async t => {
+ let rows=[item('first','desktop-session')];
+ const ui=await mountPanel(t,r=>reply(r,{state:stageState(r.taskDir.split('/').at(-1))}),{catalog:r=>reply(r,{runs:rows})});
+ rows=[{...item('second','desktop-session'),startedAt:'2026-11-12T10:00:00Z'}, {...item('foreign','other-session','second'),startedAt:'2026-11-13T10:00:00Z'}];
+ await ui.refreshDiscovery();
+ assert.equal(ui.selection().taskDir,'/repo/docs/second');
+ assert.equal(ui.requests.at(-1).action,'status');
+ assert.equal(ui.requests.filter(r=>r.action!=='status').length,0);
+ assert.equal(ui.container.querySelector('details'),null);
+});
+
+test('an unavailable read Remote reports an error without falling back to chat commands', async t => {
+ const ui=await mountPanel(t,r=>reply(r,{}),{mountError:new Error('read Remote unavailable')});
+ assert.equal(ui.allRequests.length,0);
+ assert.match(ui.container.textContent,/当前会话任务读取失败/);
+ await ui.click('重试');
+ assert.equal(ui.allRequests.length,0);
+ assert.equal(ui.selection().taskDir,'');
 });

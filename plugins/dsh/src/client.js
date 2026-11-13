@@ -68,10 +68,9 @@ function createSnapshot(initial) {
 // We do not import its engine, subscribe from React, or persist live state.
 function createViewStore() {
   const spec = {
-    init: () => ({ taskDir: '', cwd: '', mode: 'auto', advancedOpen: false }),
+    init: () => ({ taskDir: '', cwd: '', mode: 'auto' }),
     actions: {
       setSelection: (draft, next) => { draft.taskDir = next.taskDir; draft.cwd = next.cwd; },
-      setAdvancedOpen: (draft, open) => { draft.advancedOpen = open; },
       setMode: (draft, mode) => { draft.mode = mode; },
     },
   };
@@ -125,7 +124,7 @@ const zh = {
   probeHelp: '检查 DSH 接入：临时启动独立的 DSH 运行环境，检查配置、项目目录和权限后退出；可能联网读取模型目录',
   busy: '正在等待“{action}”确认…',
   busyOther: '正在等待上一个目录的“{action}”结束；其结果不会覆盖当前选择',
-  mutationLock: '启动或停止确认前，暂时不能切换任务资料目录或项目目录',
+  mutationLock: '操作结果确认前，保持当前任务关联并暂停后续操作',
   unknownOutcome: '“{action}”结果未确认',
   unknownHelp: '请求可能已经送达引擎。先刷新这个任务的状态，再决定下一步操作',
   reconcile: '刷新待确认任务',
@@ -273,7 +272,7 @@ const en = {
   errorTitle: '“{action}” did not complete',
   errorHelp: 'Check the connection and directories, then retry this read-only check.',
   notDispatchedTitle: '“{action}” was not dispatched to the engine',
-  notDispatchedHelp: 'Check the error details, correct the directories or engine configuration, then retry.',
+  notDispatchedHelp: 'Check the error details, check the session association or engine configuration, then retry.',
   errorDetails: 'Error details',
   feedback: 'Operation feedback',
   statusHeading: 'Task status',
@@ -619,7 +618,7 @@ function createControl(execute, pendingOperations, isDisposed) {
     if (active) { deferredAssociation = [value, setSelection]; return; }
     const next = { taskDir: value.taskDir, cwd: value.cwd };
     const sameOperation = lastAssociation?.operationId === value.operationId;
-    const shouldSelect = !lastAssociation || (!sameOperation && mutates(value.action)) ||
+    const shouldSelect = !lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
       (sameOperation && selected === associatedKey);
     lastAssociation = value;
     if (shouldSelect) {
@@ -750,10 +749,10 @@ function TaskStatus({ control, selection, t }) {
       (status.running && status.pid > 0 ? ' · PID ' + status.pid : '')),
     stale && h('p', { className: css.warningText },
       t('stale') + ' · ' + t('previousState', { status: taskLabel(status, t) })),
-    h('details', { className: css.details }, h('summary', null, t('workflow')), h(Workflow, { state: status.state, t })),
+    h(Workflow, { state: status.state, t }),
     status.state?.['current-milestone'] && h('p', null,
       t('milestone', { name: textValue(status.state['current-milestone']) })),
-    packets.length > 0 && h('details', { className: css.details }, h('summary', null, t('packetsCount', { count: packets.length })), h('table', { className: css.packets, 'aria-label': t('packets') },
+    packets.length > 0 && h('section', { className: css.details }, h('h4', null, t('packetsCount', { count: packets.length })), h('table', { className: css.packets, 'aria-label': t('packets') },
       h('caption', null, t('packetsCount', { count: packets.length })),
       h('thead', null, h('tr', null, ...['packet', 'state', 'route'].map(key => h('th', { key, scope: 'col' }, t(key))))),
       h('tbody', null, ...packets.map(([id, packet]) => h('tr', { key: id },
@@ -761,8 +760,8 @@ function TaskStatus({ control, selection, t }) {
         h('td', null, packetLabels[packet?.status] ? t(packetLabels[packet.status]) : textValue(packet?.status, t('unknown'))),
         h('td', null, textValue(packet?.route))))))),
     h(Budget, { value: status.state?.budget, t }),
-    status.state?.inbox?.length > 0 && h('details', { className: css.details },
-      h('summary', null, t('inboxCount', { count: status.state.inbox.length })),
+    status.state?.inbox?.length > 0 && h('section', { className: css.details },
+      h('h4', null, t('inboxCount', { count: status.state.inbox.length })),
       h('pre', { className: css.raw }, JSON.stringify(status.state.inbox, null, 2))));
 }
 
@@ -789,15 +788,15 @@ function Feedback({ control, selection, reconcile, t }) {
         h('p', null, t('unknownHelp')),
         h('code', { className: css.path }, control.uncertainty.taskDir),
         h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: reconcile }, t('reconcile')),
-        h('details', { className: css.details },
-          h('summary', null, t('errorDetails')),
+        h('section', { className: css.details },
+          h('h4', null, t('errorDetails')),
           h('pre', { className: css.raw }, control.uncertainty.detail || t('associationUnconfirmed')))),
       error && h('section', { className: css.error, role: 'alert' },
         h('h3', { className: css.heading }, t(error.dispatch === 'not-dispatched' ? 'notDispatchedTitle' : 'errorTitle',
           { action: t(actionKey(error)) })),
         h('p', null, t(error.dispatch === 'not-dispatched' ? 'notDispatchedHelp' : 'errorHelp')),
-        h('details', { className: css.details },
-          h('summary', null, t('errorDetails')),
+        h('section', { className: css.details },
+          h('h4', null, t('errorDetails')),
           h('pre', { className: css.raw }, error.detail))),
       mode === 'idle' && !control.status?.state && !control.status?.preparation && h('div', { className: css.idleFeedback },
         h('p', null, t('lifecycle')),
@@ -819,6 +818,15 @@ exports.apply = function apply(ctx) {
     for (const release of pendingOperations) release();
     pendingOperations.clear();
   });
+  const readsReady = ctx.remote.$mount({ package: '@ckanner/dsh-plugin-flywheel', descriptors: [{
+    id: '@ckanner/dsh-plugin-flywheel#flywheelConsole/read', service: 'flywheelConsole', namespace: 'flywheelConsole', method: 'read',
+    invocation: { kind: 'direct' }, parameters: [
+      { name: 'agent', wire: 'sessionId', source: 'lookup', lookup: 'agent', codec: { mode: 'src-json' } },
+      { name: 'input', wire: 'input', source: 'json', codec: { mode: 'src-json' } },
+    ], cancellation: { parameter: 'signal' }, result: { mode: 'src-json' },
+  }] });
+  // A missing read capability is a visible error, never a noisy command fallback.
+  readsReady.catch(() => {});
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     // External views follow the built-in Chat, Trajectory and Statistics views.
     name: 'conversation.view', id: 'flywheel', order: 1000, label: () => t('view'),
@@ -828,9 +836,13 @@ exports.apply = function apply(ctx) {
       // session id with a fresh binding must not adopt an old async result.
       let control = controls.get(actions);
       if (!control) {
-        control = createControl(async request => readReply(
-          await ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), []), request),
-        pendingOperations, () => disposed);
+        control = createControl(async request => {
+          const value = readReply(await (mutates(request.action) || request.action === 'status' && control?.source.getSnapshot().uncertainty
+            ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
+            : readsReady.then(() => ctx.remote.flywheelConsole.read(sessionId, request))), request);
+          if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
+          return value;
+        }, pendingOperations, () => disposed);
         controls.set(actions, control);
       }
       return {

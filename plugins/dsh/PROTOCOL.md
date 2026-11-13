@@ -381,7 +381,20 @@ host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校�
 
 浏览器端遵循[外部 plain-JS 插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)，不运行时导入 Harness Client 包。插件自有的 store handle 只通过公开的 `spec`／`create()` 结构交给槽位注册；每个实例提供 `actions`、`getSnapshot()`、`subscribe()` 和 `clearPersisted()`，由宿主负责会话作用域、实例缓存与 hooks 绑定。当前没有持久化配置，`clearPersisted()` 不删除任何任务文件。
 
-异步控制层另有插件自有 observable，快照在未变化时保持同一身份，经 `inject.hooks` 交给宿主绑定；React 组件不自行订阅，不读取 ctx 或原始服务对象。路径草稿与控制快照只是查看缓存，不成为任务账本，也不写入新的 DSH 会话事件。模型可见的命令和工具结果仍由宿主原有记录机制处理。此查看契约不改变 Go control 协议、worker JSONL 或后台任务的停止语义。
+异步控制层另有插件自有 observable，快照在未变化时保持同一身份，经 `inject.hooks` 交给宿主绑定；React 组件不自行订阅，不读取 ctx 或原始服务对象。会话关联与控制快照只是查看缓存，不成为任务账本，也不写入新的 DSH 会话事件。模型可见的命令和工具结果仍由宿主原有记录机制处理。此查看契约不改变 Go control 协议、worker JSONL 或后台任务的停止语义。
+
+### 会话控制台的静默读取
+
+`flywheelConsole/read` 是公开 Typert Remote，参数为宿主解析的 `agent`、控制请求 `input`
+和取消信号 `signal`。客户端显式挂载描述符，只有 React 是运行时共享模块。
+宿主只接受 runs/status/config/config-edit/metrics/history/node/delivery/doctor；其他 action
+在派发前拒绝。runs 仅返回当前会话的 hostSessionId；带任务的查询必须匹配当前投影或
+精确会话归属的运行记录，taskless 配置限定当前会话目录。返回 CommandResult 形状的
+`result`，复用成功 JSON 与结构化失败验证，但不经过 Commands execute、不追加会话事件。
+
+UI 写操作仍经过 `/flywheel`；结果未知时的显式 status 也保留日志以解除持久投影的锁。
+投影 stateVersion=3 会重放日志，排除旧版 UI status 对无关联或其他任务的绑定，工具的
+显式 status 仍可关联准备任务。fork 仍忽略继承的任务事件。旧聊天记录不删除。
 
 ## npm 安装报告与桌面入口
 
