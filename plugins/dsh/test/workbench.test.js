@@ -50,9 +50,9 @@ const template = {
     'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
   },
 };
-function editorResponder() {
+function editorResponder(overrides = {}) {
   const stored = {
-    global: structuredClone(template),
+    global: { ...structuredClone(template), ...structuredClone(overrides) },
     project: { ...structuredClone(template), sessions: { mode: 'fresh', 'policy-version': 1 } },
   };
   return (request) => {
@@ -83,6 +83,10 @@ function field(ui, label) {
 async function input(ui, label, value) {
   const node = field(ui, label);
   await act(async () => {
+    if (node.type === 'checkbox') {
+      if (node.checked !== (value === true || value === 'true')) node.click();
+      return;
+    }
     const proto =
       node.tagName === 'SELECT'
         ? ui.document.defaultView.HTMLSelectElement.prototype
@@ -91,6 +95,14 @@ async function input(ui, label, value) {
     node.dispatchEvent(
       new ui.document.defaultView.Event(node.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }),
     );
+  });
+}
+async function rawInput(ui, value) {
+  const node = ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]');
+  assert.ok(node);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(node, value);
+    node.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
   });
 }
 async function pick(ui, id) {
@@ -196,15 +208,15 @@ test('minute conversion preserves unedited watchdog fields and invalid numeric d
   assert.equal(field(ui, '传输重试上限').value, '5');
 });
 
-test('worktree isolation defaults on and saves an explicit off switch without altering session policy', async (t) => {
+test('automatic Worktree management defaults on and saves an explicit off switch without altering session policy', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('设置');
-  assert.equal(field(ui, '独立 Worktree').value, 'true');
-  await input(ui, '独立 Worktree', 'false');
+  assert.equal(field(ui, '自动管理任务 Worktree').checked, true);
+  await input(ui, '自动管理任务 Worktree', false);
   await ui.click('保存修改');
   assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: false } });
   assert.equal(field(ui, '会话策略').value, 'scoped');
-  await input(ui, '独立 Worktree', 'true');
+  await input(ui, '自动管理任务 Worktree', true);
   await ui.click('保存修改');
   assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: true } });
 });
@@ -228,8 +240,8 @@ test('serial scheduling omits concurrency and toggling parallel preserves the sa
 test('optional dispatch and prewarm settings preserve the scheduler and the single JEV switch', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('设置');
-  assert.equal(field(ui, '提前启动评审运行环境').value, 'false');
-  assert.equal([...ui.container.querySelectorAll('label')].some((l) => l.textContent === '并行任务派发方式'), false);
+  assert.equal(field(ui, '提前启动评审运行环境').checked, false);
+  assert.equal(field(ui, '并行任务派发方式').value, 'batch');
   await input(ui, '调度策略', 'parallel');
   assert.equal(field(ui, '并行任务派发方式').value, 'batch');
   await input(ui, '最大并发任务', '3');
@@ -252,6 +264,241 @@ test('optional dispatch and prewarm settings preserve the scheduler and the sing
   assert.deepEqual(ui.requests.at(-1).editor.values, {
     scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'batch', prewarm: false },
   });
+});
+
+test('native switches have associated labels and visible states and cannot change while saving', async t => {
+  const pending = deferred();
+  const respond = editorResponder({ jev: { ...template.jev, endpoint: 'https://jev.example/v1/systemone' } });
+  const ui = await mountPanel(t, r => r.action === 'config-save' ? pending.promise : respond(r));
+  await ui.click('设置');
+  const worktree = field(ui, '自动管理任务 Worktree');
+  const prewarm = field(ui, '提前启动评审运行环境');
+  for (const control of [worktree, prewarm]) {
+    assert.equal(control.type, 'checkbox');
+    assert.equal(control.getAttribute('role'), 'switch');
+    assert.ok(ui.document.getElementById(control.getAttribute('aria-describedby')));
+    control.focus();
+    assert.equal(ui.document.activeElement, control);
+  }
+  assert.equal(worktree.closest('label').textContent, '开启');
+  assert.equal(prewarm.closest('label').textContent, '关闭');
+  await act(async () => [...ui.container.querySelectorAll('label')].find(label => label.textContent === '提前启动评审运行环境').click());
+  assert.equal(prewarm.checked, true, 'the field label activates its native checkbox');
+  assert.equal(prewarm.closest('label').textContent, '开启');
+  await ui.click('JEV');
+  const jev = field(ui, '启用 JEV');
+  await act(async () => jev.click());
+  assert.equal(jev.checked, true);
+  assert.equal(ui.requests.length, 1, 'editing a switch only changes the draft');
+  await ui.click('保存修改');
+  assert.equal(jev.disabled, true);
+  await act(async () => jev.click());
+  assert.equal(jev.checked, true);
+  await ui.click('运行方式');
+  assert.equal(field(ui, '自动管理任务 Worktree').disabled, true);
+  assert.equal(field(ui, '提前启动评审运行环境').disabled, true);
+  await act(async () => pending.resolve(respond(ui.requests.at(-1))));
+  await ui.setLocale('en');
+  assert.equal(field(ui, 'Prepare the review runtime early').closest('label').textContent, 'On');
+  await ui.click('JEV');
+  assert.equal(field(ui, 'Enable JEV').checked, true);
+  assert.match(ui.container.querySelector('footer').textContent, /Configuration saved/);
+});
+
+test('ready queue eligibility explains unmet conditions without changing saved dispatch or provider limits', async t => {
+  const providers = { 'deepseek-account': 1 };
+  const ui = await mountPanel(t, editorResponder({
+    scheduler: { mode: 'serial', 'max-parallel': 1, providers, dispatch: 'ready-queue', prewarm: false },
+    worktree: { enabled: false },
+  }));
+  await ui.click('设置');
+  const notice = () => ui.container.querySelector('[data-dispatch-status]');
+  assert.equal(field(ui, '并行任务派发方式').tagName, 'SELECT');
+  assert.equal(field(ui, '并行任务派发方式').value, 'ready-queue');
+  assert.match(notice().textContent, /调度策略为串行/);
+  assert.match(notice().textContent, /并发上限为 1/);
+  assert.match(notice().textContent, /未开启自动 Worktree 管理/);
+  await input(ui, '调度策略', 'parallel');
+  await input(ui, '最大并发任务', '3');
+  await input(ui, '自动管理任务 Worktree', true);
+  assert.equal(notice().getAttribute('data-dispatch-status'), 'conditional');
+  assert.match(notice().textContent, /仍须核对 Full 任务/);
+  await input(ui, '提前启动评审运行环境', true);
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'parallel', 'max-parallel': 3, providers, dispatch: 'ready-queue', prewarm: true },
+    worktree: { enabled: true },
+  });
+  await input(ui, '调度策略', 'serial');
+  assert.equal(field(ui, '并行任务派发方式').value, 'ready-queue');
+  assert.equal(field(ui, '提前启动评审运行环境').checked, true);
+  await ui.setLocale('en');
+  assert.match(notice().textContent, /scheduling is serial/);
+  assert.match(ui.container.textContent, /only after validation and call admission/);
+});
+
+test('hiding numeric fields clears only their rejected drafts and preserves the last valid values', async t => {
+  const ui = await mountPanel(t, editorResponder({ scheduler: { mode: 'parallel', 'max-parallel': 2 } }));
+  await ui.click('设置');
+  await input(ui, '最大并发任务', '4');
+  await input(ui, '最大并发任务', '9');
+  assert.equal(field(ui, '最大并发任务').getAttribute('aria-invalid'), 'true');
+  await ui.click('预算与重试');
+  await input(ui, '传输重试上限', 'not a number');
+  await ui.click('运行方式');
+  await input(ui, '调度策略', 'serial');
+  assert.equal(ui.button('保存修改').disabled, true, 'an unrelated retry error still blocks saving');
+  await input(ui, '调度策略', 'parallel');
+  assert.equal(field(ui, '最大并发任务').value, '4');
+  await input(ui, '调度策略', 'serial');
+  await ui.click('预算与重试');
+  assert.equal(field(ui, '传输重试上限').value, 'not a number');
+  await input(ui, '传输重试上限', '5');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { scheduler: { mode: 'serial', 'max-parallel': 4 } });
+});
+
+test('JEV off discards rejected text and numbers while preserving valid connection edits and an empty data policy', async t => {
+  const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone', 'allowed-data': [] } }));
+  await ui.click('设置');
+  await ui.click('JEV');
+  assert.match(ui.container.textContent, /未授权任何数据类别/);
+  const endpoint = '😀'.repeat(1500);
+  await input(ui, 'MeRouter System One API 地址', endpoint);
+  await input(ui, '固定模型版本', 'jev-1.15.0');
+  await input(ui, '固定模型版本', '');
+  await input(ui, '密钥环境变量名（不要填密钥）', 'account_jev_key');
+  await input(ui, '密钥环境变量名（不要填密钥）', 'bad-key');
+  await input(ui, '每项任务最多 JEV 请求次数', '6');
+  await input(ui, '每项任务最多 JEV 请求次数', '101');
+  await input(ui, '最低选择概率', '0');
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.equal(field(ui, '固定模型版本').value, '');
+  await ui.click('预算与重试');
+  await input(ui, '传输重试上限', 'bad');
+  await ui.click('JEV');
+  await input(ui, '启用 JEV', false);
+  assert.equal(ui.container.querySelector('[id$="jev.model"]'), null);
+  assert.match(ui.container.textContent, /已放弃无效的 JEV 输入，保留上次有效值/);
+  assert.equal(ui.button('保存修改').disabled, true, 'only JEV input errors are discarded');
+  await ui.click('预算与重试');
+  await input(ui, '传输重试上限', '5');
+  await ui.click('JEV');
+  assert.equal(ui.button('保存修改').disabled, false);
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: {
+    ...template.jev, enabled: false, endpoint, model: 'jev-1.15.0', 'key-env': 'account_jev_key', 'max-calls': 6, 'allowed-data': [],
+  } });
+  assert.equal(ui.container.querySelector('footer').textContent.includes('下次启动'), false);
+  await input(ui, '启用 JEV', true);
+  assert.equal(field(ui, '固定模型版本').value, 'jev-1.15.0');
+  assert.equal(field(ui, '密钥环境变量名（不要填密钥）').value, 'account_jev_key');
+  assert.equal(field(ui, '最低选择概率').value, '0.6');
+});
+
+test('visible numeric controls enforce the scheduler and JEV schema boundaries before saving', async t => {
+  const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
+  await ui.click('设置');
+  await input(ui, '调度策略', 'parallel');
+  for (const bad of ['0', '9']) {
+    await input(ui, '最大并发任务', bad);
+    assert.equal(ui.button('保存修改').disabled, true);
+    assert.match(ui.container.textContent, /请输入 1 到 8 之间的数值/);
+  }
+  await input(ui, '最大并发任务', '8');
+  await ui.click('JEV');
+  for (const [label, values] of [['请求超时', ['0', '30.001']], ['每项任务最多 JEV 请求次数', ['0', '101']]]) {
+    for (const bad of values) {
+      await input(ui, label, bad);
+      assert.equal(field(ui, label).getAttribute('aria-invalid'), 'true');
+      assert.equal(ui.button('保存修改').disabled, true);
+    }
+    await input(ui, label, label === '请求超时' ? '0.001' : '1');
+    assert.equal(field(ui, label).getAttribute('aria-invalid'), 'false');
+  }
+  await input(ui, '请求超时', '30');
+  await input(ui, '每项任务最多 JEV 请求次数', '100');
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).editor.values.scheduler['max-parallel'], 8);
+  assert.equal(ui.requests.at(-1).editor.values.jev['timeout-ms'], 30000);
+  assert.equal(ui.requests.at(-1).editor.values.jev['max-calls'], 100);
+});
+
+test('invalid JEV text survives task navigation and scope cancellation and is cleared by an explicit reset', async t => {
+  const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
+  await ui.selectPath(0, '/repo/docs/a');
+  await ui.click('设置');
+  await ui.click('JEV');
+  await input(ui, '固定模型版本', 'jev');
+  await ui.click('项目');
+  assert.ok(ui.container.querySelector('dialog'));
+  await ui.click('取消');
+  assert.equal(field(ui, '固定模型版本').value, 'jev');
+  await ui.selectPath(0, '/repo/docs/b');
+  await ui.selectPath(0, '/repo/docs/a');
+  assert.equal(field(ui, '固定模型版本').value, 'jev');
+  assert.equal(ui.button('保存修改').disabled, true);
+  await ui.click('恢复默认');
+  await ui.click('载入待保存修改');
+  assert.equal(field(ui, '启用 JEV').checked, false);
+  assert.equal(ui.button('保存修改').disabled, false);
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).editor.reset, true);
+  assert.equal(ui.requests.at(-1).editor.values.jev.model, template.jev.model);
+});
+
+test('invalid advanced JEV fields remain visible and repairable after off without silently changing the JSON intent', async t => {
+  const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
+  await ui.click('设置');
+  await ui.click('高级与诊断');
+  const value = JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value);
+  value.jev.model = 'jev';
+  value.jev['key-env'] = 'bad-key';
+  value.jev['max-calls'] = 0;
+  value.jev['allowed-data'] = [];
+  value.jev._note = 'Keep the explicit empty data policy';
+  value.jev._note_source = { origin: 'manual' };
+  value.retry['max-transport-retries'] = 7;
+  await rawInput(ui, JSON.stringify(value));
+  await ui.click('JEV');
+  await input(ui, '启用 JEV', false);
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.match(ui.container.textContent, /高级配置中有无效字段/);
+  for (const key of ['jev.model', 'jev.key-env', 'jev.max-calls']) assert.ok(ui.container.textContent.includes(key));
+  await ui.click('修正高级配置');
+  const retained = JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value);
+  assert.deepEqual(retained, { ...value, jev: { ...value.jev, enabled: false } });
+  retained.jev.model = 'jev-1.15.0';
+  retained.jev['key-env'] = 'account_jev_key';
+  retained.jev['max-calls'] = 8;
+  await rawInput(ui, JSON.stringify(retained));
+  assert.equal(ui.button('保存修改').disabled, false, 'valid annotation keys and an empty data list remain accepted');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: retained.jev, retry: retained.retry });
+});
+
+test('unfinished advanced JSON disables structured edits while retaining the whole draft and repair actions', async t => {
+  const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
+  await ui.click('设置');
+  await ui.click('高级与诊断');
+  const value = JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value);
+  value.retry['max-transport-retries'] = 7;
+  const unfinished = JSON.stringify(value).slice(0, -1);
+  await rawInput(ui, unfinished);
+  await ui.click('JEV');
+  const jev = field(ui, '启用 JEV');
+  assert.equal(jev.matches(':disabled'), true);
+  await act(async () => jev.click());
+  assert.equal(jev.checked, true);
+  await ui.click('运行方式');
+  assert.equal(field(ui, '调度策略').matches(':disabled'), true);
+  await ui.click('修正高级配置');
+  assert.equal(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value, unfinished);
+  assert.equal(ui.button('保存修改').disabled, true);
+  await rawInput(ui, JSON.stringify(value));
+  assert.equal(ui.button('保存修改').disabled, false);
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { retry: { 'max-transport-retries': 7 } });
 });
 
 test('restoring defaults previews a full replacement and only save sends reset=true', async (t) => {

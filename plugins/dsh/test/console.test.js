@@ -212,11 +212,13 @@ test('one JEV master switch saves actual adoption settings without a second enab
   await ui.click('设置');
   await ui.click('JEV');
   const label = [...ui.container.querySelectorAll('label')].find(label => label.textContent === '启用 JEV');
-  const select = ui.document.getElementById(label.htmlFor);
-  assert.equal(select.value, 'false');
+  const toggle = ui.document.getElementById(label.htmlFor);
+  assert.equal(toggle.type, 'checkbox');
+  assert.equal(toggle.getAttribute('role'), 'switch');
+  assert.equal(toggle.checked, false);
   assert.match(ui.container.textContent, /一个开关控制调查与执行中的 JEV 决策/);
   assert.equal(ui.container.querySelector('[id$="jev.model"]'), null, 'disabled JEV does not require connection fields');
-  await act(async () => { select.value = 'true'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
+  await act(async () => toggle.click());
   assert.equal(ui.requests.length, 1, 'editing does not dispatch or save');
   assert.match(ui.container.textContent, /采用通过校验的选择/);
   assert.equal(ui.container.querySelectorAll('[id$="jev.enabled"]').length, 1);
@@ -228,7 +230,7 @@ test('one JEV master switch saves actual adoption settings without a second enab
   assert.deepEqual(ui.requests.at(-1).editor.values, { jev: { ...stored.jev, enabled: true } });
   assert.equal(ui.container.querySelector('dialog'), null, 'Save is the explicit enable operation');
   assert.match(ui.container.textContent, /关闭也会禁止已有任务的后续 JEV 请求与采用/);
-  await act(async () => { select.value = 'false'; select.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true })); });
+  await act(async () => toggle.click());
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).editor.values.jev.enabled, false);
   assert.equal(ui.requests.filter(r => r.action === 'config-save').length, 2);
@@ -240,7 +242,7 @@ test('a legacy shadow flag does not appear as a second switch or enable JEV', as
   const ui = await mountPanel(t, request => reply(request, { editor: { scope: 'global', target: '/global/config.json', revision: 'one', values: legacy, defaults: values } }));
   await ui.click('设置');
   await ui.click('JEV');
-  assert.equal(ui.container.querySelector('[id$="jev.enabled"]').value, 'false');
+  assert.equal(ui.container.querySelector('[id$="jev.enabled"]').checked, false);
   assert.equal(ui.container.querySelector('[id$="jev-shadow.enabled"]'), null);
   assert.equal([...ui.container.querySelectorAll('button')].some(button => /JEV 影子/.test(button.textContent)), false);
 });

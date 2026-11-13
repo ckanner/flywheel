@@ -61,18 +61,48 @@ In an existing DSH conversation view, Flywheel remains after Statistics; the bla
 
 Opening Settings automatically reads the selected scope. Execution, Models and sessions, Budget and retries, JEV, and Advanced and diagnostics have separate sections. Save, Discard and Restore defaults stay in a fixed footer; Save is disabled without changes. Saving takes one click, including the single JEV master switch; the form explains supported decisions and the configured data scope. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
 
-Reload, complete JSON editing, diagnostics and raw responses live in Advanced and diagnostics. The narrow navigation row is fixed at 54px with 36px buttons; shorter content cannot stretch it. Leaving Settings, scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. Implementation runs retain their configuration snapshot. JEV additionally rechecks current activation and tighter permissions at decision boundaries; see [JEV recovery](jev.md#data-budgets-and-recovery). The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
+Reload, complete JSON editing, diagnostics and raw responses live in Advanced and diagnostics. The narrow navigation row is fixed at 54px with 36px buttons (44px for coarse pointers); shorter content cannot stretch it. Leaving Settings, scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. Implementation runs retain their configuration snapshot. JEV additionally rechecks current activation and tighter permissions at decision boundaries; see [JEV recovery](jev.md#data-budgets-and-recovery). The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
 [JEV decisions](jev.md) use one default-off master switch. Enabling it activates
-supported investigation decisions automatically. Configuration inspection is read
+supported investigation and failure-action decisions automatically, including approved
+execution-model choices. Configuration inspection is read
 only; it is not another switch. The investigation view shows the last observed JEV
 state, adopted versus baseline actions, and evidence-referenced deferral or early
 report effects. A stored state label is not a live re-read of configuration. These
 collection effects never mean the root cause is proven or implementation completed.
+
+### Switches and scheduling choices
+
+Settings uses one JEV master switch. Automatic task Worktree management and early
+DSH Review runtime preparation have their own switches in Execution. Each switch
+has an associated label, a visible On/Off state, and native checkbox keyboard
+behavior. Toggling edits the draft; Save changes writes the selected scope. No
+second JEV confirmation or task-specific enable switch is required.
+
+Parallel dispatch remains a two-option policy selector: Batch waits for the
+current batch, while Ready queue refills an available Execute/L1 slot with another
+eligible independent packet. The form preserves the selected policy and explains
+unmet configuration conditions; it cannot establish whether a future task will
+use Full or have independent work. Ready queue requires Full, parallel scheduling,
+a maximum above one and automatic Worktrees. Early runtime preparation is
+independent of JEV and only initializes a supported DSH Review SDK; no Session or
+model prompt is created before normal admission. Defaults remain Batch and
+preparation Off. See [runtime scheduling](configuration.md#scheduling-and-worktrees).
+
+Automatic Worktree management controls engine-owned directories. Turning it off
+does not delete existing directories or prohibit externally managed Worktrees.
+The JEV section explains the allowed data boundary and current-task disable
+semantics beside the fields. Disabling JEV or switching to serial discards the
+invalid input drafts hidden by that change and retains the last valid values;
+unrelated errors still require correction. Detected invalid fields entered through advanced JSON remain editable there and
+block Save until corrected; Go still validates the complete configuration.
+A valid connection, provider quota, explicit empty allowed-data list, role policy
+or budget is not reset by an unrelated switch. Invalid drafts and stale/unknown
+saves retain the existing protections.
 
 ### Session defaults and stage overrides
 

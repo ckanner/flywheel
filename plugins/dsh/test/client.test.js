@@ -323,17 +323,18 @@ test('local and SDK checks retain structured failures, remedies and the inferenc
 test('editing a read target invalidates its late result without permitting overlapping operations', async t => {
   const oldRequest = deferred(), newRequest = deferred();
   const ui = await mountPanel(t, request => request.taskDir.endsWith('/old') ? oldRequest.promise : newRequest.promise);
+  const pendingFeedback = () => ui.container.querySelector('[role="region"][aria-label="操作反馈"] [role="status"]');
   await ui.selectPath(0, '/repo/docs/old');
   await ui.click('刷新');
-  assert.ok(ui.container.querySelector('[role="status"]'));
+  assert.ok(pendingFeedback());
   await ui.selectPath(0, '/repo/docs/new');
-  assert.match(ui.container.querySelector('[role="status"]').textContent, /上一个目录/);
+  assert.match(pendingFeedback().textContent, /上一个目录/);
   assert.equal(ui.button('刷新').disabled, true, 'the previous operation still owns the transport wait');
   await ui.click('刷新');
   assert.equal(ui.requests.length, 1);
   await act(async () => oldRequest.resolve(statusReply({ taskDir: '/repo/docs/old' }, 'OLD_RESULT', 'completed')));
   assert.doesNotMatch(ui.container.textContent, /OLD_RESULT/);
-  assert.equal(ui.container.querySelector('[role="status"]'), null);
+  assert.equal(pendingFeedback(), null, 'the transport wait clears independently of Settings live status');
   await ui.click('刷新');
   assert.equal(ui.requests.length, 2);
   await act(async () => newRequest.resolve(statusReply({ taskDir: '/repo/docs/new' }, 'NEW_RESULT')));

@@ -208,7 +208,7 @@
 .dialogBody { display: grid; gap: 14px; padding: 16px 0; min-height: 0; overflow: auto; flex: 1 1 auto; }
 .dialogActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .editor { display:grid; flex:1; min-height:0; height:100%; grid-template-columns:180px minmax(0,1fr); grid-template-rows:60px minmax(0,1fr) 58px; }
-.configNav { grid-column:1; grid-row:2; display:flex; flex-direction:column; align-items:stretch; align-content:flex-start; gap:4px; padding:20px 12px; background:var(--dsw-alias-bg-module-platform); border-right:.5px solid var(--dsw-alias-border-l3); overflow:auto; min-height:0; }
+.configNav { box-sizing:border-box; grid-column:1; grid-row:2; display:flex; flex-direction:column; align-items:stretch; align-content:flex-start; gap:4px; padding:20px 12px; background:var(--dsw-alias-bg-module-platform); border-right:.5px solid var(--dsw-alias-border-l3); overflow:auto; min-height:0; }
 .configNav .button { border:0; border-radius:7px; justify-content:flex-start; height:36px; min-height:36px; max-height:36px; flex:0 0 36px; font-size:13px; padding:0 12px; white-space:nowrap; }
 .configNav .button[aria-pressed='true'] { background: var(--dsw-alias-bg-layer-1); font-weight: 500; }
 .configMain { grid-column:2; grid-row:2; min-width:0; min-height:0; overflow:auto; }
@@ -216,6 +216,7 @@
 .configMore > summary { color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 12px; }
 .configMore > .actions { padding-top: 8px; }
 .configContent { max-width:800px; margin:0 auto; padding:28px 32px; }
+.configFields { border:0; margin:0; padding:0; min-width:0; }
 .configTitle { margin:0 0 18px; font-size:17px; line-height:24px; font-weight:500; }
 .configField { display:grid; grid-template-columns:minmax(140px,1fr) minmax(160px,260px); align-items:center; gap:20px; padding:14px 0; min-height:66px; border-bottom:.5px solid var(--dsw-alias-border-l3); min-width:0; }
 .configFieldLabel { display: grid; gap: 4px; }
@@ -223,6 +224,18 @@
 .configFieldLabel .meta { font-size:11px; line-height:17px; }
 .configFieldControl { min-width: 0; }
 .configFieldControl select { width:100%; height:34px; border-radius:7px; font-size:12px; }
+.configSwitch { position:relative; display:inline-flex; align-items:center; gap:8px; min-width:44px; min-height:44px; cursor:pointer; }
+.configSwitch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:inherit; }
+.configSwitchTrack { position:relative; flex:none; box-sizing:border-box; width:36px; height:20px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; background:var(--dsw-alias-bg-layer-2); pointer-events:none; }
+.configSwitchTrack::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:12px; background:var(--dsw-alias-label-secondary); }
+.configSwitch input:checked + .configSwitchTrack { border-color:var(--dsw-alias-state-business-primary); background:var(--dsw-alias-state-business-primary); }
+.configSwitch input:checked + .configSwitchTrack::after { transform:translateX(16px); background:var(--dsw-alias-label-primary-foreground); }
+.configSwitch input:focus-visible + .configSwitchTrack { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:3px; }
+.configSwitch input:disabled { cursor:not-allowed; }
+.configSwitch input:disabled ~ span { opacity:.4; }
+.configSwitchState { color:var(--dsw-alias-label-primary); pointer-events:none; }
+.configHintLine { display:block; margin-top:6px; }
+.configContent .configTiming { margin-bottom:12px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
 .inputUnit { display: flex; align-items: center; gap: 4px; border: .5px solid var(--dsw-alias-border-l3); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
 .inputUnit input { width: 100%; min-width: 0; min-height: 36px; padding: 7px 10px; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; border-radius: inherit; }
 .inputUnit input:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
@@ -297,8 +310,17 @@
 }
 @media (pointer: coarse) {
   .page .button, .taskSelect, .configFieldControl select { min-height: 44px; }
+  .configNav .button { height:44px; min-height:44px; max-height:44px; flex-basis:44px; }
+  @container (max-width: 800px) {
+    .configNav { padding-top:5px; padding-bottom:5px; }
+    .configNav .button { flex-basis:auto; }
+  }
   .page input, .page textarea, .page select { font-size: 16px; }
   .page summary { min-height: 36px; }
+}
+@media (forced-colors: active) {
+  .configSwitch input { position:static; width:20px; height:20px; opacity:1; }
+  .configSwitchTrack { display:none; }
 }
 
 .modeSelect {

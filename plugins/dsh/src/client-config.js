@@ -1,5 +1,5 @@
-Object.assign(zh, { cfgWorktree: '自动管理任务 Worktree', cfgWorktreeHelp: '默认开启。关闭后不自动创建 Worktree；仍可并行，模型或用户可选择并登记执行目录。已有目录不会被删除', cfgWorktreeOn: '开启 · 自动创建 Worktree', cfgWorktreeOff: '关闭 · 自行管理执行目录' });
-Object.assign(en, { cfgWorktree: 'Automatically manage task Worktrees', cfgWorktreeHelp: 'On by default. Off does not create Worktrees and still allows parallel tasks; callers may register their own execution checkouts. Existing directories are retained', cfgWorktreeOn: 'On · automatic Worktrees', cfgWorktreeOff: 'Off · caller-managed execution' });
+Object.assign(zh, { cfgWorktree: '自动管理任务 Worktree', cfgWorktreeHelp: '默认开启。关闭后不自动创建 Worktree；仍可并行，模型或用户可选择并登记执行目录。已有目录不会被删除' });
+Object.assign(en, { cfgWorktree: 'Automatically manage task Worktrees', cfgWorktreeHelp: 'On by default. Off keeps existing directories and still allows parallel tasks; callers may choose and register their own execution checkouts' });
 // The editor owns drafts only. File identity, validation, backup and publication stay in Go.
 Object.assign(zh, {
   consoleResource: 'Provider',
@@ -24,13 +24,20 @@ Object.assign(zh, {
   cfgSessionHelp: '同任务、同角色续接；执行与独立 Review 不共享历史',
   cfgScheduleHelp: '仅对契约声明独立、依赖已满足的任务并发执行',
   cfgDispatch: '并行任务派发方式',
-  cfgDispatchHelp: 'Full 并行任务自动管理 Worktree、并发上限大于 1 时，执行与验证结束即可补位；评审和集成仍串行',
+  cfgDispatchHelp: '批次处理等待本批 Execute／L1 收尾；就绪队列在执行与验证完成后补充空位。评审和集成仍串行',
+  cfgDispatchEligibility: '就绪队列仅适用于 Full 任务，且需要并行、并发数大于 1、自动管理独立 Worktree',
+  cfgDispatchBatchState: '当前配置为批次处理',
+  cfgDispatchReadyState: '配置条件已满足；运行时仍须核对 Full 任务的独立单元与依赖',
+  cfgDispatchUnavailable: '当前不使用就绪队列：{reasons}。保留已选策略',
+  cfgDispatchSerial: '调度策略为串行',
+  cfgDispatchSingle: '并发上限为 1',
+  cfgDispatchUnmanaged: '未开启自动 Worktree 管理',
+  cfgDispatchInvalid: '并发数量需要修正',
+  cfgReasonSeparator: '；',
   cfgDispatchBatch: '整批处理 · 默认',
   cfgDispatchReady: '就绪队列 · 空位立即补充',
   cfgPrewarm: '提前启动评审运行环境',
-  cfgPrewarmHelp: '串行处理任务时，在验证期间准备 DSH 评审环境，通过检查后才发送请求；并行执行槽位不预热。实际收益待验收',
-  cfgPrewarmOn: '开启 · 支持的 DSH 评审',
-  cfgPrewarmOff: '关闭 · 默认',
+  cfgPrewarmHelp: '默认关闭。在串行任务验证期间初始化 DSH 评审 SDK；验证和调用准入通过后才创建或恢复会话、发送 Prompt。并行执行槽位和共享候选批次不预热，其他后端保持冷启动',
   cfgParallelHelp: 'Review 与集成仍串行推进',
   cfgPermissionHelp: '后端不支持的权限会明确拒绝',
   cfgScopeHelp: '优先级：任务 → 项目 → 全局 → 安装默认；选择完整配置文件，不逐字段叠加',
@@ -53,6 +60,13 @@ Object.assign(zh, {
   cfgJson: '高级配置 JSON',
   cfgInvalid: '有无效字段，请修正后保存',
   cfgNumber: '请输入有效的非负数；换算后须为整数',
+  cfgNumberRange: '请输入 {min} 到 {max} 之间的数值',
+  cfgToggleOn: '开启',
+  cfgToggleOff: '关闭',
+  cfgNextStart: '运行方式、模型、会话与预算修改在下次启动生效',
+  cfgAdvancedTiming: '常规设置在下次启动生效；JEV 总开关的关闭也会阻止已有任务的后续请求与采用',
+  cfgStructuredInvalid: '高级配置中有无效字段，请修正后保存',
+  cfgFixJSON: '修正高级配置',
   cfgRequiredNumber: '此项需要填写数值',
   cfgMinutes: '分钟',
   cfgSeconds: '秒',
@@ -84,6 +98,11 @@ Object.assign(zh, {
   cfgJevProbability: '请输入大于 0 且不超过 1 的概率',
   cfgJevData: '允许发送的数据类别',
   cfgJevDataHelp: '可在高级配置 JSON 中调整；类别不包含的数据不会获得发送许可',
+  cfgJevNoData: '未授权任何数据类别',
+  cfgJevModelInvalid: '请输入固定模型版本，例如 jev-1.14.0，最多 120 个字符',
+  cfgJevKeyInvalid: '变量名须以英文字母或下划线开头，只能包含字母、数字和下划线，最多 120 个字符',
+  cfgJevEndpointInvalid: '地址最多 2000 个字符',
+  cfgJevDraftDiscarded: '已放弃无效的 JEV 输入，保留上次有效值',
   cfgJevChanges: '关闭也会禁止已有任务的后续 JEV 请求与采用；已记录的策略、回执和预算保留。调查创建时冻结策略，开启不会改写此前关闭时创建的调查',
   cfgLocation: '配置文件与来源',
   cfgRawDiff: '查看保存差异',
@@ -115,13 +134,20 @@ Object.assign(en, {
     'Reuse within the same task and role; execution and independent Review do not share history',
   cfgScheduleHelp: 'Parallel execution requires declared independence and satisfied dependencies',
   cfgDispatch: 'Parallel dispatch',
-  cfgDispatchHelp: 'For Full parallel tasks with automatic Worktrees and a limit above 1, refill slots after execution and verification. Review and integration stay serial',
+  cfgDispatchHelp: 'Batch waits for every Execute/L1 in the group. Ready queue refills slots after execution and verification. Review and integration stay serial',
+  cfgDispatchEligibility: 'Ready queue requires a Full task, parallel scheduling, a limit above 1 and automatically managed independent Worktrees',
+  cfgDispatchBatchState: 'Configured for batch processing',
+  cfgDispatchReadyState: 'Configuration conditions are met; the run must still have a Full task with eligible independent units and dependencies',
+  cfgDispatchUnavailable: 'Ready queue is inactive: {reasons}. The selected policy is retained',
+  cfgDispatchSerial: 'scheduling is serial',
+  cfgDispatchSingle: 'the concurrency limit is 1',
+  cfgDispatchUnmanaged: 'automatic Worktree management is off',
+  cfgDispatchInvalid: 'correct the concurrency limit',
+  cfgReasonSeparator: '; ',
   cfgDispatchBatch: 'Batch · default',
   cfgDispatchReady: 'Ready queue · refill available lanes',
   cfgPrewarm: 'Prepare the review runtime early',
-  cfgPrewarmHelp: 'Prepare DSH review during checks in serial packet processing; send the request after checks pass. Parallel execution slots do not prewarm. Live benefits remain to be measured',
-  cfgPrewarmOn: 'On · supported DSH reviews',
-  cfgPrewarmOff: 'Off · default',
+  cfgPrewarmHelp: 'Off by default. Initialize the DSH review SDK during serial task checks. Create or resume a session and send the prompt only after validation and call admission. Parallel execution slots and shared-candidate batches do not prewarm; other backends start cold',
   cfgParallelHelp: 'Review and integration remain serial',
   cfgPermissionHelp: 'Unsupported backend permissions are rejected explicitly',
   cfgScopeHelp:
@@ -146,6 +172,13 @@ Object.assign(en, {
   cfgJson: 'Advanced configuration JSON',
   cfgInvalid: 'Correct invalid fields before saving',
   cfgNumber: 'Enter a valid non-negative number that converts to an integer',
+  cfgNumberRange: 'Enter a value from {min} to {max}',
+  cfgToggleOn: 'On',
+  cfgToggleOff: 'Off',
+  cfgNextStart: 'Execution, model, session and budget changes apply to the next start',
+  cfgAdvancedTiming: 'Regular settings apply to the next start. Turning JEV off also blocks subsequent requests and adoption in existing tasks',
+  cfgStructuredInvalid: 'Advanced configuration contains invalid fields. Correct them before saving',
+  cfgFixJSON: 'Fix advanced configuration',
   cfgRequiredNumber: 'A numeric value is required',
   cfgMinutes: 'minutes',
   cfgSeconds: 'seconds',
@@ -180,6 +213,11 @@ Object.assign(en, {
   cfgJevProbability: 'Enter a probability greater than 0 and at most 1',
   cfgJevData: 'Permitted data categories',
   cfgJevDataHelp: 'Edit in Advanced configuration JSON. Other categories do not gain permission to be sent',
+  cfgJevNoData: 'No data categories permitted',
+  cfgJevModelInvalid: 'Enter a pinned model version such as jev-1.14.0, up to 120 characters',
+  cfgJevKeyInvalid: 'Use up to 120 letters, digits or underscores, starting with a letter or underscore',
+  cfgJevEndpointInvalid: 'The endpoint must be at most 2000 characters',
+  cfgJevDraftDiscarded: 'Invalid JEV inputs were discarded; the last valid values remain',
   cfgJevChanges: 'Turning it off also blocks further JEV requests and adoption in existing tasks; recorded policies, receipts and budgets remain. Investigations freeze their policy at creation; enabling does not rewrite preparations created while off',
   cfgLocation: 'Configuration file and source',
   cfgRawDiff: 'Review changes',
@@ -189,6 +227,58 @@ Object.assign(en, {
 });
 
 const cloneConfig = (value) => JSON.parse(JSON.stringify(value));
+// These bounds protect the visible controls; Go remains the save authority.
+const configNumberRules = {
+  'scheduler.max-parallel': { min: 1, max: 8 },
+  'jev.timeout-ms': { min: 1, max: 30000 },
+  'jev.max-calls': { min: 1, max: 100 },
+  'jev.min-applicability': { min: 0, max: 1, probability: true },
+  'jev.min-choice': { min: 0, max: 1, probability: true },
+};
+function boundedConfigError(path, value) {
+  const rule = configNumberRules[path];
+  if (!rule) return null;
+  if (rule.probability)
+    return typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 1 ? 'cfgJevProbability' : null;
+  if (!Number.isSafeInteger(value)) return 'cfgNumber';
+  return value < rule.min || value > rule.max ? 'cfgNumberRange' : null;
+}
+function jevTextError(key, value) {
+  if (key === 'endpoint') return typeof value !== 'string' || [...value].length > 2000 ? 'cfgJevEndpointInvalid' : null;
+  if (key === 'model') return typeof value !== 'string' || value.length > 120 || !/^jev-\d+\.\d+\.\d+$/.test(value) ? 'cfgJevModelInvalid' : null;
+  return typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,119}$/.test(value) ? 'cfgJevKeyInvalid' : null;
+}
+function configFieldErrors(values) {
+  const errors = {};
+  for (const path of Object.keys(configNumberRules)) {
+    const [group, key] = path.split('.');
+    if (record(values?.[group]) && Object.hasOwn(values[group], key)) {
+      const error = boundedConfigError(path, values[group][key]);
+      if (error) errors[path] = error;
+    }
+  }
+  if (values?.scheduler !== undefined && !record(values.scheduler)) errors.scheduler = 'cfgInvalid';
+  if (values?.jev !== undefined) {
+    if (!record(values.jev)) errors.jev = 'cfgInvalid';
+    else {
+      for (const key of Object.keys(values.jev))
+        if (key !== '_note' && !key.startsWith('_note_') &&
+            !['enabled', 'endpoint', 'model', 'key-env', 'timeout-ms', 'max-calls', 'min-applicability', 'min-choice', 'allowed-data'].includes(key))
+          errors['jev.' + key] = 'cfgInvalid';
+      for (const key of ['endpoint', 'model', 'key-env']) {
+        if (!Object.hasOwn(values.jev, key)) continue;
+        const error = jevTextError(key, values.jev[key]);
+        if (error) errors['jev.' + key] = error;
+      }
+      if (Object.hasOwn(values.jev, 'enabled') && typeof values.jev.enabled !== 'boolean') errors['jev.enabled'] = 'cfgInvalid';
+      const data = values.jev['allowed-data'];
+      if (data !== undefined && (!Array.isArray(data) || new Set(data).size !== data.length ||
+          data.some(value => !['task-summary', 'diagnostic-facts', 'logs', 'source', 'diff'].includes(value))))
+        errors['jev.allowed-data'] = 'cfgInvalid';
+    }
+  }
+  return errors;
+}
 function ConfigEditor({ control, selection, run, t, active = false, cache, contextKey, onClose, diagnostics }) {
   // Drafts survive task navigation in this live Session binding only. Restoring
   // one always rereads the file; cached data never grants a revision to save.
@@ -201,6 +291,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const [invalid, setInvalid] = React.useState(cached.current?.invalid ?? false),
     [numbers, setNumbers] = React.useState(cached.current?.numbers ?? {}),
     [numberErrors, setNumberErrors] = React.useState(cached.current?.numberErrors ?? {});
+  const [texts, setTexts] = React.useState(cached.current?.texts ?? {}),
+    [textErrors, setTextErrors] = React.useState(cached.current?.textErrors ?? {}),
+    [discardedJevInputs, setDiscardedJevInputs] = React.useState(cached.current?.discardedJevInputs ?? false);
   const [revision, setRevision] = React.useState(cached.current?.revision ?? ''),
     [conflict, setConflict] = React.useState(false);
   const [reset, setReset] = React.useState(cached.current?.reset ?? false),
@@ -240,6 +333,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     setInvalid(false);
     setNumbers({});
     setNumberErrors({});
+    setTexts({});
+    setTextErrors({});
+    setDiscardedJevInputs(false);
     setReset(false);
     setSaved(doc.applied === true);
   }, [doc, scope]);
@@ -254,7 +350,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         (key) => JSON.stringify(draft[key]) !== JSON.stringify(base?.[key]),
       )
     : [];
-  const dirty = changed.length > 0 || reset || invalid || Object.values(numberErrors).some(Boolean);
+  const fieldErrors = configFieldErrors(draft);
+  const dirty = changed.length > 0 || reset || invalid || Object.values(numberErrors).some(Boolean) || Object.values(textErrors).some(Boolean);
   React.useEffect(() => {
     if (cache && draft)
       cache.set(contextKey, {
@@ -266,6 +363,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         invalid,
         numbers,
         numberErrors,
+        texts,
+        textErrors,
+        discardedJevInputs,
         reset,
         revision,
         dirty,
@@ -279,6 +379,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     invalid,
     numbers,
     numberErrors,
+    texts,
+    textErrors,
+    discardedJevInputs,
     reset,
     revision,
     dirty,
@@ -291,7 +394,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     doc.revision === revision &&
     !conflict &&
     !invalid &&
-    !Object.values(numberErrors).some(Boolean);
+    !Object.values(numberErrors).some(Boolean) &&
+    !Object.values(textErrors).some(Boolean) &&
+    Object.keys(fieldErrors).length === 0;
   const update = (group, key, value) => replace({ ...draft, [group]: { ...draft[group], [key]: value } });
   const discard = () => {
     const latest = conflict ? doc.values : base;
@@ -303,6 +408,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     }
     setNumbers({});
     setNumberErrors({});
+    setTexts({});
+    setTextErrors({});
+    setDiscardedJevInputs(false);
     setReset(false);
   };
   const deferDiscard = (next) => {
@@ -318,6 +426,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       setRaw('');
       setNumbers({});
       setNumberErrors({});
+      setTexts({});
+      setTextErrors({});
+      setDiscardedJevInputs(false);
       setInvalid(false);
       setReset(false);
       setSaved(false);
@@ -337,6 +448,23 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         reset,
       },
     });
+  const clearNumberDrafts = (matches) => {
+    const keep = ([path]) => !matches(path);
+    setNumbers(old => Object.fromEntries(Object.entries(old).filter(keep)));
+    setNumberErrors(old => Object.fromEntries(Object.entries(old).filter(keep)));
+  };
+  const changeJev = (enabled) => {
+    const jevField = path => path.startsWith('jev.');
+    const discarded = !enabled && Object.entries({ ...numberErrors, ...textErrors })
+      .some(([path, error]) => jevField(path) && error);
+    if (!enabled) {
+      clearNumberDrafts(jevField);
+      setTexts(old => Object.fromEntries(Object.entries(old).filter(([path]) => !jevField(path))));
+      setTextErrors(old => Object.fromEntries(Object.entries(old).filter(([path]) => !jevField(path))));
+    }
+    setDiscardedJevInputs(discarded);
+    update('jev', 'enabled', enabled);
+  };
   const inputID = (key) => id + '-' + key;
   const field = (key, label, help, controlNode) =>
     h(
@@ -363,18 +491,41 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       },
       ...choices.map(([value, label]) => h('option', { key: value, value }, label)),
     );
-  const input = (key, value, onChange) =>
-    h('input', {
+  const toggle = (key, checked, onChange, unavailable = false) =>
+    h('label', { className: css.configSwitch, htmlFor: inputID(key) },
+      h('input', {
+        id: inputID(key), type: 'checkbox', role: 'switch', checked, disabled: busy || unavailable,
+        'aria-describedby': inputID(key) + '-help',
+        onChange: event => onChange(event.target.checked),
+      }),
+      h('span', { className: css.configSwitchTrack, 'aria-hidden': true }),
+      h('span', { className: css.configSwitchState, 'aria-hidden': true }, t(checked ? 'cfgToggleOn' : 'cfgToggleOff')));
+  const input = (key, value, onChange, validate) => {
+    const error = textErrors[key] || fieldErrors[key];
+    return h(React.Fragment, null, h('input', {
       id: inputID(key),
       className: css.editorInput,
-      value: value ?? '',
+      value: texts[key] ?? value ?? '',
       disabled: busy,
-      'aria-describedby': inputID(key) + '-help',
-      onChange: (e) => onChange(e.target.value),
-    });
+      'aria-invalid': !!error,
+      'aria-describedby': inputID(key) + '-help' + (error ? ' ' + inputID(key) + '-error' : ''),
+      onChange: (e) => {
+        const next = e.target.value;
+        if (!validate) { onChange(next); return; }
+        const invalidText = validate(next);
+        setTexts(old => ({ ...old, [key]: next }));
+        setTextErrors(old => ({ ...old, [key]: invalidText }));
+        setSaved(false);
+        setDiscardedJevInputs(false);
+        if (!invalidText) onChange(next);
+      },
+    }), error && h('p', { id: inputID(key) + '-error', role: 'alert', className: css.errorText }, t(error)));
+  };
   const number = (group, key, factor, unit, nullable = false, probability = false) => {
     const path = group + '.' + key,
-      current = draft[group]?.[key];
+      current = draft[group]?.[key],
+      error = numberErrors[path] || fieldErrors[path],
+      bounds = configNumberRules[path];
     return h(
       React.Fragment,
       null,
@@ -386,7 +537,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           inputMode: 'decimal',
           value: numbers[path] ?? (current == null ? '' : String(current / factor)),
           disabled: busy,
-          'aria-invalid': !!numberErrors[path],
+          'aria-invalid': !!error,
+          'aria-describedby': inputID(path) + '-help' + (error ? ' ' + inputID(path) + '-error' : ''),
           onChange: (e) => {
             const value = e.target.value;
             setNumbers((old) => ({ ...old, [path]: value }));
@@ -397,7 +549,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             }
             const scaled = Number(value) * factor,
               rounded = probability ? scaled : Math.round(scaled);
-            const error = !value.trim()
+            const invalidNumber = !value.trim()
               ? 'cfgRequiredNumber'
               : probability
                 ? !/^\d+(?:\.\d+)?$/.test(value.trim()) || !Number.isFinite(scaled) || scaled <= 0 || scaled > 1
@@ -408,15 +560,16 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                   scaled < 0 ||
                   Math.abs(scaled - rounded) > 0.000001
                 ? 'cfgNumber'
-                : null;
-            setNumberErrors((old) => ({ ...old, [path]: error }));
+                : boundedConfigError(path, rounded);
+            setNumberErrors((old) => ({ ...old, [path]: invalidNumber }));
             setSaved(false);
-            if (!error) update(group, key, rounded);
+            if (!invalidNumber) update(group, key, rounded);
           },
         }),
         h('span', null, unit),
       ),
-      numberErrors[path] && h('p', { role: 'alert', className: css.errorText }, t(numberErrors[path])),
+      error && h('p', { id: inputID(path) + '-error', role: 'alert', className: css.errorText },
+        t(error, bounds ? { min: bounds.min / factor, max: bounds.max / factor } : undefined)),
     );
   };
   const bindingOrder = [
@@ -553,6 +706,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   };
   const patchBinding = (key, value) =>
     setBindingEdit((old) => ({ ...old, value: { ...old.value, [key]: value } }));
+  const dispatchReasons = [];
+  if ((draft?.scheduler?.mode ?? 'serial') !== 'parallel') dispatchReasons.push(t('cfgDispatchSerial'));
+  if (numberErrors['scheduler.max-parallel'] || fieldErrors['scheduler.max-parallel']) dispatchReasons.push(t('cfgDispatchInvalid'));
+  else if ((draft?.scheduler?.['max-parallel'] ?? 2) <= 1) dispatchReasons.push(t('cfgDispatchSingle'));
+  if (draft?.worktree?.enabled === false) dispatchReasons.push(t('cfgDispatchUnmanaged'));
+  const readyQueue = draft?.scheduler?.dispatch === 'ready-queue';
+  const dispatchStatus = !readyQueue ? 'batch' : dispatchReasons.length ? 'unavailable' : 'conditional';
   let fields = null;
   if (draft && section === 'strategy')
     fields = h(
@@ -573,21 +733,23 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         ),
       ),
       field('worktree.enabled', t('cfgWorktree'), t('cfgWorktreeHelp'),
-        select('worktree.enabled', String(draft.worktree?.enabled !== false),
-          [['true', t('cfgWorktreeOn')], ['false', t('cfgWorktreeOff')]],
-          (v) => replace({ ...draft, worktree: { ...draft.worktree, enabled: v === 'true' } }))),
+        toggle('worktree.enabled', draft.worktree?.enabled !== false,
+          (enabled) => update('worktree', 'enabled', enabled))),
       field(
         'scheduler.mode',
         t('consoleScheduling'),
         t('cfgScheduleHelp'),
         select(
           'scheduler.mode',
-          draft.scheduler?.mode ?? 'parallel',
+          draft.scheduler?.mode ?? 'serial',
           [
             ['serial', t('consoleSerial')],
             ['parallel', t('consoleParallel')],
           ],
-          (v) => replace({ ...draft, scheduler: { 'max-parallel': 2, ...draft.scheduler, mode: v } }),
+          (v) => {
+            if (v === 'serial') clearNumberDrafts(path => path === 'scheduler.max-parallel');
+            replace({ ...draft, scheduler: { 'max-parallel': 2, ...draft.scheduler, mode: v } });
+          },
         ),
       ),
       draft.scheduler?.mode === 'parallel' &&
@@ -597,15 +759,18 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           t('cfgParallelHelp'),
           number('scheduler', 'max-parallel', 1, t('cfgTasks')),
         ),
-      draft.scheduler?.mode === 'parallel' &&
-        field('scheduler.dispatch', t('cfgDispatch'), t('cfgDispatchHelp'),
-          select('scheduler.dispatch', draft.scheduler?.dispatch ?? 'batch',
-            [['batch', t('cfgDispatchBatch')], ['ready-queue', t('cfgDispatchReady')]],
-            (v) => update('scheduler', 'dispatch', v))),
+      field('scheduler.dispatch', t('cfgDispatch'),
+        h(React.Fragment, null, t('cfgDispatchHelp'),
+          h('span', { className: css.configHintLine }, t('cfgDispatchEligibility')),
+          h('span', { className: css.configHintLine, role: 'status', 'data-dispatch-status': dispatchStatus },
+            t(dispatchStatus === 'batch' ? 'cfgDispatchBatchState' : dispatchStatus === 'conditional' ? 'cfgDispatchReadyState' : 'cfgDispatchUnavailable',
+              { reasons: dispatchReasons.join(t('cfgReasonSeparator')) }))),
+        select('scheduler.dispatch', draft.scheduler?.dispatch ?? 'batch',
+          [['batch', t('cfgDispatchBatch')], ['ready-queue', t('cfgDispatchReady')]],
+          (v) => update('scheduler', 'dispatch', v))),
       field('scheduler.prewarm', t('cfgPrewarm'), t('cfgPrewarmHelp'),
-        select('scheduler.prewarm', String(draft.scheduler?.prewarm === true),
-          [['false', t('cfgPrewarmOff')], ['true', t('cfgPrewarmOn')]],
-          (v) => update('scheduler', 'prewarm', v === 'true'))),
+        toggle('scheduler.prewarm', draft.scheduler?.prewarm === true,
+          (enabled) => update('scheduler', 'prewarm', enabled))),
       field(
         'permissions.mode',
         t('permission'),
@@ -631,8 +796,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           [['off', t('cfgBudgetOff')], ['soft', t('cfgBudgetSoft')], ['hard', t('cfgBudgetHard')]],
           value => {
             if (value === 'off') {
-              setNumbers(old => { const next = { ...old }; delete next['budget.daily-token-limit']; return next; });
-              setNumberErrors(old => { const next = { ...old }; delete next['budget.daily-token-limit']; return next; });
+              clearNumberDrafts(path => path === 'budget.daily-token-limit');
             }
             update('budget', 'enforce', value);
           })),
@@ -678,17 +842,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       field(
         'jev.enabled',
         t('consoleJEV'),
-        null,
-        select(
-          'jev.enabled',
-          String(draft.jev?.enabled ?? false),
-          [
-            ['false', t('consoleJEVOff')],
-            ['true', t('consoleJEVOn')],
-          ],
-          (v) => update('jev', 'enabled', v === 'true'),
-        ),
+        t('cfgJevChanges'),
+        toggle('jev.enabled', draft.jev?.enabled === true, changeJev, draft.jev !== undefined && !record(draft.jev)),
       ),
+      discardedJevInputs && h('p', { className: css.configCallout, role: 'status' }, t('cfgJevDraftDiscarded')),
       draft.jev?.enabled &&
         h(
           React.Fragment,
@@ -698,20 +855,20 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             'jev.endpoint',
             t('cfgJevEndpoint'),
             null,
-            input('jev.endpoint', draft.jev.endpoint, (v) => update('jev', 'endpoint', v)),
+            input('jev.endpoint', draft.jev.endpoint, (v) => update('jev', 'endpoint', v), v => jevTextError('endpoint', v)),
           ),
           field(
             'jev.model',
             t('consoleJEVVersion'),
             null,
-            input('jev.model', draft.jev.model ?? 'jev-1.14.0', (v) => update('jev', 'model', v)),
+            input('jev.model', draft.jev.model ?? 'jev-1.14.0', (v) => update('jev', 'model', v), v => jevTextError('model', v)),
           ),
           field(
             'jev.key-env',
             t('consoleJEVEnv'),
             t('cfgJevKeyHelp'),
             input('jev.key-env', draft.jev['key-env'] ?? 'MEROUTER_API_KEY', (v) =>
-              update('jev', 'key-env', v),
+              update('jev', 'key-env', v), v => jevTextError('key-env', v),
             ),
           ),
           h(
@@ -722,7 +879,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             field('jev.max-calls', t('cfgJevMaxCalls'), null, number('jev', 'max-calls', 1, t('cfgTimes'))),
             field('jev.min-applicability', t('cfgJevApplicability'), null, number('jev', 'min-applicability', 1, '', false, true)),
             field('jev.min-choice', t('cfgJevChoice'), null, number('jev', 'min-choice', 1, '', false, true)),
-            h('p', { className: css.meta }, t('cfgJevData') + ': ' + (Array.isArray(draft.jev['allowed-data']) ? draft.jev['allowed-data'].join(', ') : t('notConfigured'))),
+            h('p', { className: css.meta }, t('cfgJevData') + ': ' + (Array.isArray(draft.jev['allowed-data']) ? draft.jev['allowed-data'].length ? draft.jev['allowed-data'].join(', ') : t('cfgJevNoData') : t('notConfigured'))),
             h('p', { className: css.meta }, t('cfgJevDataHelp')),
           ),
         ),
@@ -797,7 +954,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           h(
             React.Fragment,
             null,
-            section !== 'advanced' && fields,
+            section !== 'jev' && h('p', { className: css.configTiming }, t(section === 'advanced' ? 'cfgAdvancedTiming' : 'cfgNextStart')),
+            section !== 'advanced' && h('fieldset', { className: css.configFields, disabled: invalid }, fields),
             h(
               'section',
               { className: css.configSource, hidden: section !== 'advanced' },
@@ -815,7 +973,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                 value: raw,
                 disabled: busy,
                 'aria-label': t('consoleValues'),
-                'aria-invalid': invalid,
+                'aria-invalid': invalid || Object.keys(fieldErrors).length > 0,
                 onChange: (e) => {
                   setRaw(e.target.value);
                   try {
@@ -826,6 +984,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                     setInvalid(false);
                     setNumbers({});
                     setNumberErrors({});
+                    setTexts({});
+                    setTextErrors({});
+                    setDiscardedJevInputs(false);
                     setSaved(false);
                   } catch {
                     setInvalid(true);
@@ -855,9 +1016,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           ),
         section === 'advanced' && h('div', { className: css.actions }, h(Button, { disabled: busy, onClick: () => deferDiscard(load) }, t('cfgReload'))),
         diagnostics && h('div', { hidden: section !== 'advanced' }, diagnostics),
-        invalid && h('p', { role: 'alert', className: css.errorText }, t('consoleInvalid')),
-        Object.values(numberErrors).some(Boolean) &&
+        (Object.values(numberErrors).some(Boolean) || Object.values(textErrors).some(Boolean)) &&
           h('p', { role: 'alert', className: css.errorText }, t('cfgInvalid')),
+        (invalid || Object.keys(fieldErrors).length > 0) && h('div', { className: css.configCallout, role: 'alert' },
+          h('p', null, t(invalid ? 'consoleInvalid' : 'cfgStructuredInvalid')),
+          Object.keys(fieldErrors).length > 0 && h('p', { className: css.meta }, Object.keys(fieldErrors).join(', ')),
+          section !== 'advanced' && h(Button, { onClick: () => setSection('advanced') }, t('cfgFixJSON'))),
         (control.configUncertainty || conflict) &&
           h(
             'div',
@@ -868,7 +1032,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ),
     ),
     h('footer', { className: css.configSaveBar, 'data-dirty': dirty },
-      h('span', { className: css.meta, role: saved ? 'status' : undefined }, t(section === 'jev' && (saved || dirty) ? 'cfgJevChanges' : saved ? 'cfgSaved' : dirty ? 'cfgDirty' : 'cfgClean')),
+      h('span', { className: css.meta, role: 'status' }, t(saved ? 'cfgSaved' : dirty ? 'cfgDirty' : 'cfgClean')),
       h('div', { className: css.actions },
         h(Button, { disabled: busy || !doc || doc.scope !== scope, onClick: () => setDialog({ kind: 'reset' }) }, t('cfgReset')),
         h(Button, { disabled: busy || !dirty || !base, onClick: discard }, t('cfgDiscard')),
@@ -898,6 +1062,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                     replace(cloneConfig(doc.defaults));
                     setNumbers({});
                     setNumberErrors({});
+                    setTexts({});
+                    setTextErrors({});
+                    setDiscardedJevInputs(false);
                     setReset(true);
                   } else next.next();
                 },
@@ -1041,19 +1208,19 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
 Object.assign(zh, {
   consoleConfig: '设置', cfgStrategy: '运行方式', cfgModels: '模型与会话', cfgJev: 'JEV', cfgAdvanced: '高级与诊断', cfgBack: '← 返回流程',
   cfgSessionHelp: '各角色独立，可按阶段覆盖', consoleSession: '会话策略', cfgReuse: '按角色复用', cfgFresh: '每次新建', cfgInheritMode: '继承 · {mode}', cfgSessionDefault: '默认：{mode}', cfgIndependent: '独立调用',
-  cfgWorktree: '独立 Worktree', cfgWorktreeHelp: '', cfgScheduleHelp: '', cfgParallelHelp: '', cfgPermissionHelp: '完全权限可访问工作区以外文件',
+  cfgScheduleHelp: '', cfgParallelHelp: '并发数为 1–8；Review 与集成仍串行', cfgPermissionHelp: '完全权限可访问工作区以外文件',
   cfgBudgetPolicy: '用量预算', cfgBudgetOff: '关闭', cfgBudgetSoft: '仅提醒', cfgBudgetHard: '达到后停止',
   cfgBudgetOffHelp: '不设 Token 门限，继续统计用量', cfgBudgetSoftHelp: '达到额度时提醒，任务继续运行', cfgBudgetHardHelp: '达到额度或用量无法确认时，暂停新调用', cfgBudgetDay: '按单个任务、UTC 日期统计；留空不设额度', consoleBudget: '单任务每日 Token 额度',
   cfgRunProtection: '运行保护', cfgRetryHelp: '传输故障重试，不影响任务返修次数', cfgTimeoutHelp: '', cfgTimeout: '单次运行时限',
-  cfgClean: '修改用于下次启动', cfgDirty: '有未保存修改 · 下次启动生效', cfgReset: '恢复默认', cfgDiscard: '撤销',
+  cfgClean: '没有待保存修改', cfgDirty: '有未保存修改', cfgSaved: '配置已保存', cfgReset: '恢复默认', cfgDiscard: '撤销',
 });
 Object.assign(en, {
   consoleConfig: 'Settings', cfgStrategy: 'Execution', cfgModels: 'Models and sessions', cfgJev: 'JEV', cfgAdvanced: 'Advanced and diagnostics', cfgBack: '← Back to workflow',
   cfgSessionHelp: 'Isolated roles; stages can override the default', cfgReuse: 'Reuse within role', cfgFresh: 'New each time', cfgInheritMode: 'Inherit · {mode}', cfgSessionDefault: 'Default: {mode}', cfgIndependent: 'Independent call',
-  cfgWorktree: 'Independent Worktrees', cfgWorktreeHelp: '', cfgScheduleHelp: '', cfgParallelHelp: '', cfgPermissionHelp: 'Full access includes files outside the workspace',
+  cfgScheduleHelp: '', cfgParallelHelp: 'Limit: 1–8. Review and integration remain serial', cfgPermissionHelp: 'Full access includes files outside the workspace',
   cfgBudgetPolicy: 'Usage budget', cfgBudgetOff: 'Off', cfgBudgetSoft: 'Warn only', cfgBudgetHard: 'Stop at limit', cfgBudgetOffHelp: 'No token limit; usage is still recorded', cfgBudgetSoftHelp: 'Warn at the limit and keep running', cfgBudgetHardHelp: 'Pause new calls at the limit or when usage is unknown', cfgBudgetDay: 'Per task and UTC day; blank means no limit', consoleBudget: 'Daily tokens per task',
   cfgRunProtection: 'Run protection', cfgRetryHelp: 'Transport faults only; task repair limits stay unchanged', cfgTimeoutHelp: '', cfgTimeout: 'Run time limit',
-  cfgClean: 'Changes apply to the next start', cfgDirty: 'Unsaved changes · next start', cfgReset: 'Restore defaults', cfgDiscard: 'Discard',
+  cfgClean: 'No pending changes', cfgDirty: 'Unsaved changes', cfgSaved: 'Configuration saved', cfgReset: 'Restore defaults', cfgDiscard: 'Discard',
 });
 
 Object.assign(zh, { cfgPlanConflict: 'Plan 旧历史开关与此策略不同', cfgApplyPolicy: '同步此策略' });
