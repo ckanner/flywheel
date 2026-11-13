@@ -7,6 +7,8 @@ their original language.
 
 ## Unreleased
 
+## 0.32.0 — Session-scoped workbench and bounded runtime decisions
+
 - Bound unused DSH prewarm cleanup receipts to 8 KiB of serialized UTF-8, including
   JSON escaping and the trailing newline. Truncate only oversized diagnostic text
   while preserving identity, dispatch and cleanup evidence and normal short errors.
