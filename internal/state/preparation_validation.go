@@ -42,6 +42,9 @@ func validatePreparationState(st *PreparationState) error {
 	seen, actions := map[string]bool{}, map[string]bool{}
 	outputBytes := 0
 	for _, observation := range st.Observations {
+		if observation.Status == "unknown" {
+			return fmt.Errorf("unknown investigation execution must remain pending")
+		}
 		if seen[observation.Invocation.ID] || actions[observation.Invocation.ActionID] {
 			return fmt.Errorf("duplicate investigation receipt or action")
 		}
@@ -50,6 +53,19 @@ func validatePreparationState(st *PreparationState) error {
 		}
 		if err := validatePreparationObservation(observation); err != nil {
 			return err
+		}
+		for _, action := range st.Contract.Actions {
+			if action.ID != observation.Invocation.ActionID {
+				continue
+			}
+			e := observation.Execution
+			if action.Command != nil || action.HTTP != nil {
+				if e == nil || e.Kind != action.Kind || (observation.Status == "observed" && ((action.Command != nil && (e.ExitCode == nil || *e.ExitCode != action.Command.ExpectExit)) || (action.HTTP != nil && e.HTTPStatus != action.HTTP.ExpectStatus))) {
+					return fmt.Errorf("execution observation does not match approved action")
+				}
+			} else if e != nil {
+				return fmt.Errorf("file observation cannot carry an external execution result")
+			}
 		}
 		finished, _ := time.Parse(time.RFC3339Nano, observation.FinishedAt)
 		if finished.Sub(started).Milliseconds() > st.ElapsedMS || observation.DurationMS > st.ElapsedMS {
@@ -72,6 +88,9 @@ func validatePreparationState(st *PreparationState) error {
 		return fmt.Errorf("preparation action or output budget does not match durable history")
 	}
 	if err := validatePreparationDecisions(st, started, actions); err != nil {
+		return err
+	}
+	if err := validatePreparationEffects(st, started); err != nil {
 		return err
 	}
 	terminalReport := st.Status == "supported" || st.Status == "inconclusive" || st.Status == "access-blocked"
@@ -126,8 +145,25 @@ func validatePreparationObservation(observation InvestigationObservation) error 
 		if len(observation.ContentHash) != 64 || observation.Error != "" {
 			return fmt.Errorf("successful observation requires content identity and no error")
 		}
-	} else if (observation.Status != "failed" && observation.Status != "cancelled") || observation.Error == "" {
+	} else if (observation.Status != "failed" && observation.Status != "cancelled" && observation.Status != "unknown") || observation.Error == "" {
 		return fmt.Errorf("unsuccessful observation requires a failure status and reason")
+	}
+	if e := observation.Execution; e != nil {
+		if e.Kind == "http_read" {
+			if e.Workspace != "" || e.ExitCode != nil || e.Signal != "" || e.InputHash != "" || e.Cleanup != "not-created" || observation.Status == "unknown" {
+				return fmt.Errorf("inconsistent HTTP observation")
+			}
+		} else if e.Kind != "run_command" || (e.Workspace != "" && !filepath.IsAbs(e.Workspace)) {
+			return fmt.Errorf("invalid command observation")
+		}
+		if observation.Status == "observed" && (e.TimedOut || e.Cancelled || e.Signal != "" || (e.Kind == "run_command" && (e.Cleanup != "removed" || e.ExitCode == nil || e.InputHash == "")) || (e.Kind == "http_read" && (e.HTTPStatus < 200 || e.HTTPStatus > 299))) {
+			return fmt.Errorf("successful observation lacks a reliable execution result")
+		}
+		if observation.Status == "unknown" && (e.Kind != "run_command" || e.Cleanup != "retained" || e.Workspace == "") {
+			return fmt.Errorf("unknown command must retain its workspace")
+		}
+	} else if observation.Status == "unknown" {
+		return fmt.Errorf("unknown observation requires its execution record")
 	}
 	return nil
 }
@@ -145,7 +181,7 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 				receipt.PolicyHash != PreparationHash(st.Contract.Decision.Policy) || receipt.SnapshotHash == "" || receipt.TargetHash == "" || receipt.QuestionHash == "" {
 				return fmt.Errorf("successful decision lacks its frozen policy, target or request identity")
 			}
-			found := false
+			found := knownCollectionControl(st, receipt.ActionID)
 			for _, action := range st.Contract.Actions {
 				found = found || action.ID == receipt.ActionID
 			}
@@ -175,6 +211,11 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 			found := false
 			for _, allowed := range st.Contract.Actions {
 				if action.ID == allowed.ID && !usedActions[action.ID] && action.BindingHash == PreparationHash(allowed) {
+					found = true
+				}
+			}
+			for _, control := range InvestigationControls(st, pending.Identity.CandidateHash) {
+				if action.ID == control.ActionID && action.Kind == decision.Diagnostic && action.BindingHash == PreparationHash(control) {
 					found = true
 				}
 			}
@@ -224,7 +265,7 @@ func validatePreparationReport(st *PreparationState) error {
 		}
 		supported = supported || finding.Status == "supported"
 	}
-	if (report.Status == "supported" && !supported) || (report.Status != "supported" && len(report.Limitations) == 0) {
+	if (report.Status == "supported" && !supported) || ((report.Status != "supported" || len(st.DecisionEffects) > 0) && len(report.Limitations) == 0) {
 		return fmt.Errorf("report conclusion lacks support or explicit limitations")
 	}
 	return nil

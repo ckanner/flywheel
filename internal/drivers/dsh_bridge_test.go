@@ -2,11 +2,13 @@ package drivers
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
@@ -36,6 +38,143 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 	require.NotNil(t, r.Usage)
 	assert.Equal(t, Usage{Input: 120, Output: 8, Reasoning: 3, CacheRead: 20, TotalTokens: 128}, *r.Usage)
 	assert.Nil(t, r.CostUSD)
+
+	t.Run("one-use SDK prewarm and early discard", func(t *testing.T) {
+		for _, consume := range []bool{false, true} {
+			a := warmArgs(t, "ok")
+			a.Command, a.Provider, a.Model, a.PermissionMode = worker, "deepseek-account", "deepseek-flash", "read-only"
+			log := filepath.Join(a.Cwd, "sdk.jsonl")
+			a.APIKeys = map[string]string{"TEST_DSH_LOG": log}
+			a.Watchdog.KillGraceMs = 5000
+			h := PrepareDSH(a)
+			if consume {
+				awaitWarm(t, h)
+				requests := readDSHSDKRequests(t, log)
+				require.Len(t, requests, 1)
+				assert.Equal(t, "initialize", requests[0].Method)
+				a.PersistentSession, a.RequestID, a.SessionID, a.Prewarm = true, "warm-formal-review", "previous-review", h
+				result := RunDSH(a)
+				require.True(t, result.Settled, "%+v", result)
+				assert.True(t, result.Session.ResumeAccepted)
+				assert.Equal(t, "warm-formal-review", result.Session.RequestID)
+				var methods []string
+				for _, request := range readDSHSDKRequests(t, log) {
+					methods = append(methods, request.Method)
+				}
+				assert.Equal(t, []string{"initialize", "session/resume", "session/working-directory/get", "session/prompt", "session/wait", "shutdown"}, methods)
+			}
+			require.NoError(t, h.Close())
+		}
+	})
+
+	t.Run("safe unused expiry uses one cold invocation without transport retry", func(t *testing.T) {
+		originalTTL := dshWarmTTL
+		dshWarmTTL = time.Second
+		t.Cleanup(func() { dshWarmTTL = originalTTL })
+		a := warmArgs(t, "ok")
+		a.Command, a.Provider, a.Model = worker, "deepseek-account", "deepseek-flash"
+		log := filepath.Join(a.Cwd, "sdk.jsonl")
+		a.APIKeys = map[string]string{"TEST_DSH_LOG": log}
+		a.Watchdog.KillGraceMs = 5000
+		h := PrepareDSH(a)
+		awaitWarm(t, h)
+		<-h.done
+		a.RequestID, a.Prewarm = "same-expired-formal-invocation", h
+		result := RunDSH(a)
+		require.True(t, result.Settled, "%+v", result)
+		assert.Equal(t, a.RequestID, result.Session.RequestID)
+		var methods []string
+		for _, request := range readDSHSDKRequests(t, log) {
+			methods = append(methods, request.Method)
+		}
+		assert.Equal(t, []string{"initialize", "shutdown", "initialize", "session/working-directory/get", "session/prompt", "session/wait", "shutdown"}, methods)
+		require.NoError(t, h.Close())
+	})
+
+	t.Run("prewarm initialization keeps nonretryable worker configuration errors", func(t *testing.T) {
+		t.Setenv("FLYWHEEL_DSH_PROFILE", "desktop")
+		a := warmArgs(t, "ok")
+		a.Command = worker
+		a.RequestID, a.PersistentSession = "invalid-prewarm-profile", true
+		log := filepath.Join(a.Cwd, "sdk.jsonl")
+		a.APIKeys = map[string]string{"TEST_DSH_LOG": log}
+		h := PrepareDSH(a)
+		t.Cleanup(func() { _ = h.Close() })
+		<-h.done
+		result := h.Run(a)
+		assert.False(t, result.Settled)
+		assert.Equal(t, errs.INVALID_REQUEST, result.ErrorCode)
+		require.NotNil(t, result.ErrorMessage)
+		assert.Contains(t, *result.ErrorMessage, "FLYWHEEL_DSH_PROFILE must name an SDK profile")
+		require.NotNil(t, result.Session)
+		assert.Equal(t, "not-dispatched", result.Session.Dispatch)
+		assert.True(t, result.Session.CleanupConfirmed)
+		assert.Equal(t, &Usage{}, result.Usage)
+		assert.NoFileExists(t, log, "invalid initialization never starts an SDK or submits a prompt")
+		require.NoError(t, h.Close())
+	})
+
+	t.Run("public SDK prewarmed read-only Review through InvokeHarness", func(t *testing.T) {
+		publicSDK, err := filepath.Abs("../../plugins/dsh/test/fixtures/persisted-sdk.js")
+		require.NoError(t, err)
+		t.Setenv("FLYWHEEL_DSH_BIN", publicSDK)
+		t.Setenv(DSHWorkerEnv, worker)
+		root := t.TempDir()
+		calls := filepath.Join(root, "calls.jsonl")
+		a := DSHArgs{Cwd: t.TempDir(), WorkspaceCwd: t.TempDir(), Provider: "offline-fixture", Model: "test-model", Thinking: "high",
+			PermissionMode: "read-only", Prompt: "Review verified candidate through original entry",
+			APIKeys:  map[string]string{"TEST_DSH_HISTORY": filepath.Join(root, "history"), "TEST_DSH_LLM_CALLS": calls},
+			Watchdog: watchdog.Opts{IdleTimeoutMs: 3000, WallTimeoutMs: 10000, KillGraceMs: 5000}}
+		var scoped string
+		for i := 0; i < 3; i++ {
+			a.PrewarmID = fmt.Sprintf("warm-readonly-%d", i)
+			a.PrewarmDirectory, err = filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			require.NoError(t, os.Chmod(a.PrewarmDirectory, 0o700))
+			a.PersistentSession, a.RequestID = i > 0, fmt.Sprintf("readonly-formal-%d", i)
+			if i == 2 {
+				a.SessionID = scoped
+			}
+			h := PrepareDSH(a)
+			awaitWarm(t, h)
+			if i == 0 {
+				assert.NoFileExists(t, calls)
+			}
+			result := InvokeHarness(CallArgs{Prewarm: h, Prompt: a.Prompt, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd,
+				Model: a.Model, Binding: config.LoopBinding{Harness: "dsh", Provider: a.Provider, Model: a.Model, Thinking: a.Thinking, Channel: "offline-account"},
+				PermissionMode: a.PermissionMode, PersistentSession: a.PersistentSession, SessionID: a.SessionID, RequestID: a.RequestID,
+				APIKeys: a.APIKeys, Watchdog: a.Watchdog}, "unused")
+			require.True(t, result.Settled, "%+v", result)
+			assert.Equal(t, i == 2, result.Session.ResumeAccepted)
+			if i == 1 {
+				scoped = result.SessionID
+			}
+			if i == 2 {
+				assert.Equal(t, scoped, result.SessionID)
+			}
+			require.NoError(t, h.Close())
+		}
+		raw, err := os.ReadFile(calls)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		require.Len(t, lines, 3)
+		project, err := filepath.EvalSymlinks(a.WorkspaceCwd)
+		require.NoError(t, err)
+		execution, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		for _, line := range lines {
+			var call struct {
+				Directories []struct {
+					Header  string
+					Current string
+				}
+			}
+			require.NoError(t, json.Unmarshal([]byte(line), &call))
+			require.Len(t, call.Directories, 1)
+			assert.Equal(t, project, call.Directories[0].Header)
+			assert.Equal(t, execution, call.Directories[0].Current)
+		}
+	})
 
 	t.Run("scoped persisted public SDK history", func(t *testing.T) {
 		fixture, err := filepath.Abs("../../plugins/dsh/test/fixtures/persisted-sdk.js")
@@ -90,6 +229,27 @@ func TestDSHNodeWorkerOfflineBridge(t *testing.T) {
 		assert.Contains(t, entries[1], "FIRST_CONTRACT_MARKER")
 		assert.Contains(t, entries[1], "published SDK fixture complete")
 		assert.Contains(t, entries[1], "CURRENT_FAILURE_MARKER")
+		a.PrewarmID = "warm-public-sdk-123"
+		a.PrewarmDirectory, err = filepath.EvalSymlinks(t.TempDir())
+		require.NoError(t, err)
+		require.NoError(t, os.Chmod(a.PrewarmDirectory, 0o700))
+		a.RequestID, a.Prompt = "warmed-invocation", "WARMED_PUBLIC_SDK_MARKER"
+		h := PrepareDSH(a)
+		awaitWarm(t, h)
+		beforeWarm, err := os.ReadFile(calls)
+		require.NoError(t, err)
+		assert.Equal(t, string(raw), string(beforeWarm), "public SDK initialize does not call the model")
+		a.Prewarm = h
+		warmed := RunDSH(a)
+		require.True(t, warmed.Settled, "%+v", warmed)
+		assert.Equal(t, first.Session.SessionID, warmed.SessionID)
+		assert.True(t, warmed.Session.ResumeAccepted)
+		require.NoError(t, h.Close())
+		a.Prewarm = nil
+		raw, err = os.ReadFile(calls)
+		require.NoError(t, err)
+		assert.Len(t, strings.Split(strings.TrimSpace(string(raw)), "\n"), 3)
+
 		a.SessionID, a.RequestID = "absent-history", "third-invocation"
 		missing := RunDSH(a)
 		assert.False(t, missing.Settled)

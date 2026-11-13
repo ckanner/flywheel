@@ -442,11 +442,14 @@ function readReply(reply, request) {
   }
   const state = value.state;
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
-    report.bindings.every(record);
+    report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
+      typeof report.jev.enabled === 'boolean' && typeof report.jev.model === 'string' &&
+      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0);
   if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
-       (state?.packets != null && !record(state.packets)) ||
+       (state?.packets != null && (!record(state.packets) || !Object.values(state.packets).every(validExecutionPolicyHistory))) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
+       !validRuntimeDecisions(state?.['runtime-decisions']) ||
        (state?.budget != null && (!record(state.budget) ||
         (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
     throw new Error('Flywheel control returned malformed task status');
@@ -460,7 +463,7 @@ function readReply(reply, request) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
   if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
-  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !record(value.node.packet))) throw new Error('Malformed node detail');
+  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
   if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(record))) throw new Error('Malformed run index');
   if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups))) throw new Error('Malformed run metrics');
@@ -535,6 +538,7 @@ function createControl(execute, pendingOperations, isDisposed) {
     const target = selectionOf(selection);
     if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate'].includes(action) && !target.taskDir) return;
     select(selection);
+    if (['launch', 'start'].includes(action) && source.getSnapshot().stale) return;
     const requestEpoch = epoch;
     const requestKey = selected;
     const request = { action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
@@ -653,6 +657,12 @@ function Configuration({ value, t }) {
     h('p', { className: css.meta }, t('configurationHelp')),
     h('p', { className: css.meta }, t('source', { source: textValue(value.source, '') || t('embedded') })),
     h('p', { className: css.meta }, t('scope', { scope: textValue(value.scope) })),
+    record(value.jev) && h('article', { className: css.binding },
+      h('h4', { className: css.bindingTitle }, t('cfgJev')),
+      h('p', null, t(value.jev.enabled === true ? 'consoleJEVConfiguredOn' : 'consoleJEVConfiguredOff')),
+      value.jev.enabled === true && h('dl', { className: css.properties },
+        field('consoleJEVVersion', textValue(value.jev.model), true),
+        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown')))),
     h('div', { className: css.bindings }, ...(value.bindings ?? []).map((binding, index) =>
       h('article', { className: css.binding, key: textValue(binding?.id, String(index)) },
         h('div', { className: css.bindingHeader },

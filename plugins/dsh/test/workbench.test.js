@@ -38,13 +38,16 @@ const template = {
     },
   },
   channels: { 'deepseek-account': { 'env-key': null } },
-  'jev-shadow': {
+  jev: {
     enabled: false,
     endpoint: '',
-    model: 'jev',
-    'expected-model': 'jev-1.14.0',
+    model: 'jev-1.14.0',
     'key-env': 'MEROUTER_API_KEY',
     'timeout-ms': 5000,
+    'max-calls': 8,
+    'min-applicability': 0.8,
+    'min-choice': 0.6,
+    'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
   },
 };
 function editorResponder() {
@@ -220,6 +223,35 @@ test('serial scheduling omits concurrency and toggling parallel preserves the sa
   await input(ui, '调度策略', 'serial');
   await input(ui, '调度策略', 'parallel');
   assert.equal(field(ui, '最大并发任务').value, '3');
+});
+
+test('optional dispatch and prewarm settings preserve the scheduler and the single JEV switch', async (t) => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('设置');
+  assert.equal(field(ui, '提前启动评审运行环境').value, 'false');
+  assert.equal([...ui.container.querySelectorAll('label')].some((l) => l.textContent === '并行任务派发方式'), false);
+  await input(ui, '调度策略', 'parallel');
+  assert.equal(field(ui, '并行任务派发方式').value, 'batch');
+  await input(ui, '最大并发任务', '3');
+  await input(ui, '并行任务派发方式', 'ready-queue');
+  await input(ui, '提前启动评审运行环境', 'true');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
+  });
+  await input(ui, '调度策略', 'serial');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'serial', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
+  });
+  await input(ui, '提前启动评审运行环境', 'false');
+  await input(ui, '调度策略', 'parallel');
+  assert.equal(field(ui, '并行任务派发方式').value, 'ready-queue');
+  await input(ui, '并行任务派发方式', 'batch');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, {
+    scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'batch', prewarm: false },
+  });
 });
 
 test('restoring defaults previews a full replacement and only save sends reset=true', async (t) => {
@@ -471,6 +503,34 @@ test('Review never becomes runnable from a red L1 and remote closed PR is not a 
   await ui.click('查询项目与 PR');
   assert.equal(ui.container.querySelector('[data-node-id="merge"]').getAttribute('data-tone'), 'idle');
   assert.match(ui.container.querySelector('[data-node-id="delivery"]').textContent, /PR 已关闭/);
+});
+
+
+test('JEV request limits and fractional confidence thresholds survive the unified configuration save', async t => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('设置');
+  await ui.click('JEV');
+  await input(ui, '启用 JEV', 'true');
+  await input(ui, 'MeRouter System One API 地址', 'https://jev.example/v1/systemone');
+  await input(ui, '固定模型版本', 'jev-1.15.0');
+  await input(ui, '密钥环境变量名（不要填密钥）', 'JEV_TEST_API_KEY');
+  await input(ui, '请求超时', '2.5');
+  await input(ui, '每项任务最多 JEV 请求次数', '6');
+  await input(ui, '最低适用概率', '1.1');
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.match(ui.container.textContent, /请输入大于 0 且不超过 1 的概率/);
+  await input(ui, '最低适用概率', '0.85');
+  await input(ui, '最低选择概率', '0');
+  assert.equal(ui.button('保存修改').disabled, true);
+  await input(ui, '最低选择概率', '0.65');
+  await ui.click('保存修改');
+  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: {
+    enabled: true, endpoint: 'https://jev.example/v1/systemone', model: 'jev-1.15.0', 'key-env': 'JEV_TEST_API_KEY',
+    'timeout-ms': 2500, 'max-calls': 6, 'min-applicability': 0.85, 'min-choice': 0.65,
+    'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
+  } });
+  assert.equal(ui.container.querySelector('dialog'), null);
+  assert.match(ui.container.textContent, /source/);
 });
 
 test('optional budget hides its threshold, retains accounting settings, and clears only the hidden numeric error', async t => {

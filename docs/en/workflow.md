@@ -61,6 +61,14 @@ still replan. Targeted executor checks complement the complete Go gate and indep
 Review. Default model bindings remain; execution allowlists and verified incremental
 context are independent opt-ins described in [Configuration](configuration.md).
 
+Authorized investigations can include exact reproduction commands in private
+input copies and explicit GET/HEAD requests. Their real execution boundary,
+deadline, output limits and receipts belong to the investigation contract.
+Enabling JEV also permits bounded choices after confirmed implementation failures:
+repair, an approved feedback check, replanning, or an already allowed execution
+binding. Go retains workflow eligibility and the complete final gates; a successful
+feedback experiment does not complete the implementation.
+
 ## 1. Choose a model for preparation
 
 `flywheel-task` and `flywheel-new` run in the host's current conversation. The
@@ -245,6 +253,17 @@ validate and review the combined candidate. Review, integration, and final gates
 remain serial. Hard budgets allow one model call in flight until its accounting is
 durable. See the [console guide](flow-console.md#parallel-execution).
 
+The optional `scheduler.dispatch="ready-queue"` fills free Execute/L1 slots among
+already independent Full packets with automatic Worktrees. Review, Plan revisions
+and integration still wait for started workers to settle. `scheduler.prewarm=true`
+can prepare one DSH Review runtime alongside a serial packet's deterministic
+checks, without sending a model prompt early. Parallel execution lanes and shared
+candidates do not prewarm; after an independent cohort settles, its serial Review
+path may start preparation. The useful overlap is mainly serial post-Execute L1
+and applicable Quick checks. Defaults remain batch dispatch and no prewarming;
+these settings do not change Task/New/Run or Auto/Quick/Full. Details and limits are
+in [Configuration](configuration.md#ready-queues-and-runtime-preparation).
+
 `scoped` history can reuse an eligible packet Executor session for repairs. Review
 uses its own independent history and always evaluates the complete current candidate.
 Plan is task/milestone scoped; Judge and second opinions remain separate. Old
@@ -324,5 +343,5 @@ in [Provider session interaction](flow-console.md#controlled-provider-session-in
 - [Configuration](configuration.md): model bindings, permissions, budgets, and policies.
 - [Workflow console](flow-console.md): tasks, stages, sessions, run comparison, and remote delivery.
 - [Recovery and context quality](session-recovery.md): interrupted calls and safe continuation.
-- [JEV shadow evaluation](jev-shadow.md): optional, default-off advice that does not change workflow selection.
+- [JEV decisions](jev.md): one default-off switch for investigation and bounded failure decisions; Go retains workflow eligibility and acceptance.
 - [System design](../design.md): authoritative implementation contracts, in Chinese.

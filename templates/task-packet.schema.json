@@ -85,6 +85,13 @@
         }
       }
     },
+    "feedback-checks": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/feedback-command" },
+      "description": "Optional approved short diagnostic checks. They provide failure feedback and never replace the complete acceptance gates."
+    },
     "acceptance": {
       "type": "object",
       "additionalProperties": false,
@@ -144,6 +151,18 @@
     }
   },
   "$defs": {
+    "feedback-command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expect"],
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1 },
+        "script": { "type": "string", "minLength": 1 },
+        "expect": { "type": "string", "pattern": "^exit \\d+$" },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S", "description": "Approved semantic purpose shared with JEV to compare targeted checks; omit secrets, raw commands and logs. Checks without a purpose remain executor guidance and are not JEV diagnostic candidates." }
+      },
+      "anyOf": [{ "required": ["cmd"] }, { "required": ["script"] }]
+    },
     "gate-command": {
       "type": "object",
       "additionalProperties": false,

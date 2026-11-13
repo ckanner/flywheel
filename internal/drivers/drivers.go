@@ -77,9 +77,10 @@ type Result struct {
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
 // （可能被降级链改写过 harness/channel）。
 type CallArgs struct {
-	ContextTemplateVersion int    // engine-generated executor input only; human prompts must never be trimmed
-	SessionMode            string // explicit allowlisted execution override; empty preserves role policy
-	ExpectedSessionID      string // managed human takeover must never silently create a different history
+	Prewarm                PreparedDSH // optional one-use DSH SDK startup, bound to this invocation
+	ContextTemplateVersion int         // engine-generated executor input only; human prompts must never be trimmed
+	SessionMode            string      // explicit allowlisted execution override; empty preserves role policy
+	ExpectedSessionID      string      // managed human takeover must never silently create a different history
 	Prompt                 string
 	MilestoneID            string
 	PacketID               string
@@ -173,7 +174,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			provider = a.Binding.Channel // direct callers retain legacy DSH bindings
 		}
 		return RunDSH(DSHArgs{
-			Prompt: a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
+			Prewarm: a.Prewarm,
+			Prompt:  a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
 			WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,

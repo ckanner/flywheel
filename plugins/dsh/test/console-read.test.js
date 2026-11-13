@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 const hostRequire = createRequire(process.env.FLYWHEEL_TEST_DSH_HOST_DIR
   ? resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, 'package.json') : new URL('../package.json', import.meta.url));
 const load = name => import(pathToFileURL(hostRequire.resolve(name)));
@@ -14,7 +15,7 @@ const source = name => process.env.FLYWHEEL_TEST_DSH_HOST_DIR
   ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, name)) : new URL('../src/' + name, import.meta.url);
 const { ConsoleReadService } = await import(source('console-read.js'));
 const { ControlNotDispatchedError } = await import(source('control.js'));
-import { realpath } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
 test('public Gateway reads are session-bound and append no conversation events', async t => {
   const ctx = new Context();
@@ -24,6 +25,8 @@ test('public Gateway reads are session-bound and append no conversation events',
   await ctx.plugin(Gateway);
   await ctx.plugin(SessionStore);
   const cwd = await realpath(process.cwd());
+  const unrelatedTask = await realpath(await mkdtemp(resolve(tmpdir(), 'flywheel-unassociated-')));
+  t.after(() => rm(unrelatedTask, { recursive: true, force: true }));
   const session = ctx.sessions.create('mine', { meta: { cwd } });
   const agent = { session };
   ctx.typert.lookups.register('agent', { parameter: 'agent', wire: 'sessionId', hostTypeSymbol: 'fixture#Agent', wireTypeSymbol: 'fixture#SessionId', resolve: id => id === session.id ? agent : undefined });
@@ -51,11 +54,11 @@ test('public Gateway reads are session-bound and append no conversation events',
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');
   }
   assert.equal(calls.length,count,'read endpoint never dispatches a mutation');
-  const denied = await read({ action:'status', taskDir:'/private/tmp', cwd });
+  const denied = await read({ action:'status', taskDir:unrelatedTask, cwd });
   assert.match(denied.result.text,/not associated/);
   assert.equal(calls.at(-1).action,'runs','unrelated task status never reaches Go');
   await assert.rejects(ctx.typertGateway.invoke({ namespace:'flywheelConsole', method:'read', args:{sessionId:'wrong',input:{action:'runs'}},peer }));
-  view = { taskDir:'/private/tmp', cwd, outcome:'unknown' };
-  assert.equal((await read({ action:'status',taskDir:'/private/tmp',cwd })).result.kind,'success','original unresolved target remains readable');
+  view = { taskDir:unrelatedTask, cwd, outcome:'unknown' };
+  assert.equal((await read({ action:'status',taskDir:unrelatedTask,cwd })).result.kind,'success','original unresolved target remains readable');
   assert.deepEqual(session.snapshotEvents(),before,'all passive reads leave session log untouched');
 });

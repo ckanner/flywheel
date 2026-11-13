@@ -19,10 +19,18 @@ Object.assign(zh, {
   cfgStrategy: '工作方式',
   cfgModels: '模型分配',
   cfgLimits: '预算与重试',
-  cfgJev: 'JEV 影子建议',
+  cfgJev: 'JEV 决策',
   cfgMore: '更多配置操作',
   cfgSessionHelp: '同任务、同角色续接；执行与独立 Review 不共享历史',
   cfgScheduleHelp: '仅对契约声明独立、依赖已满足的任务并发执行',
+  cfgDispatch: '并行任务派发方式',
+  cfgDispatchHelp: 'Full 并行任务自动管理 Worktree、并发上限大于 1 时，执行与验证结束即可补位；评审和集成仍串行',
+  cfgDispatchBatch: '整批处理 · 默认',
+  cfgDispatchReady: '就绪队列 · 空位立即补充',
+  cfgPrewarm: '提前启动评审运行环境',
+  cfgPrewarmHelp: '串行处理任务时，在验证期间准备 DSH 评审环境，通过检查后才发送请求；并行执行槽位不预热。实际收益待验收',
+  cfgPrewarmOn: '开启 · 支持的 DSH 评审',
+  cfgPrewarmOff: '关闭 · 默认',
   cfgParallelHelp: 'Review 与集成仍串行推进',
   cfgPermissionHelp: '后端不支持的权限会明确拒绝',
   cfgScopeHelp: '优先级：任务 → 项目 → 全局 → 安装默认；选择完整配置文件，不逐字段叠加',
@@ -64,14 +72,19 @@ Object.assign(zh, {
   cfgApplyBinding: '加入待保存修改',
   cfgBindingAdvanced: '后端与账号渠道',
   cfgModelHint: '使用此 Provider 支持的模型标识；预设不代表当前账号已授权',
-  cfgJevHelp: '可选，默认关闭。先捕获本地摘要，后续显式评估；不改变 Quick / Full 或模型路由',
-  cfgJevSend: '开启后，新任务首次普通运行仅保存任务目标与验收摘要，不发 HTTP。审阅后显式 shadow run 才发送并占用独立实验预算',
+  cfgJevHelp: '一个开关控制调查与执行中的 JEV 决策，包括取证、失败后下一步及批准的模型选择。关闭后停止后续 JEV 请求与采用，沿用原路径，也不采集影子快照',
+  cfgJevSend: '保存开启配置后，符合条件的决策会发送允许范围内的任务与证据片段，并采用通过校验的选择。预算、验收与权限仍由 Go 执行；不需要逐任务再次开启',
   cfgJevEndpoint: 'MeRouter System One API 地址',
-  cfgJevKeyHelp: '仅保存环境变量名，不填写 API Key；显式 shadow run 进程需要能读取该变量，本地捕获不需要密钥',
+  cfgJevKeyHelp: '仅保存环境变量名，不填写 API Key。运行 Flywheel 的进程需要能读取该变量',
   cfgJevTimeout: '请求超时',
   cfgJevAdvanced: '模型版本与请求参数',
-  cfgJevConfirm: '开启 JEV 影子建议',
-  cfgJevEnable: '开启并保存',
+  cfgJevMaxCalls: '每项任务最多 JEV 请求次数',
+  cfgJevApplicability: '最低适用概率',
+  cfgJevChoice: '最低选择概率',
+  cfgJevProbability: '请输入大于 0 且不超过 1 的概率',
+  cfgJevData: '允许发送的数据类别',
+  cfgJevDataHelp: '可在高级配置 JSON 中调整；类别不包含的数据不会获得发送许可',
+  cfgJevChanges: '关闭也会禁止已有任务的后续 JEV 请求与采用；已记录的策略、回执和预算保留。调查创建时冻结策略，开启不会改写此前关闭时创建的调查',
   cfgLocation: '配置文件与来源',
   cfgRawDiff: '查看保存差异',
   cfgModelRole: '阶段',
@@ -96,11 +109,19 @@ Object.assign(en, {
   cfgStrategy: 'Workflow policy',
   cfgModels: 'Model assignments',
   cfgLimits: 'Budget and retries',
-  cfgJev: 'JEV shadow advice',
+  cfgJev: 'JEV decisions',
   cfgMore: 'More configuration actions',
   cfgSessionHelp:
     'Reuse within the same task and role; execution and independent Review do not share history',
   cfgScheduleHelp: 'Parallel execution requires declared independence and satisfied dependencies',
+  cfgDispatch: 'Parallel dispatch',
+  cfgDispatchHelp: 'For Full parallel tasks with automatic Worktrees and a limit above 1, refill slots after execution and verification. Review and integration stay serial',
+  cfgDispatchBatch: 'Batch · default',
+  cfgDispatchReady: 'Ready queue · refill available lanes',
+  cfgPrewarm: 'Prepare the review runtime early',
+  cfgPrewarmHelp: 'Prepare DSH review during checks in serial packet processing; send the request after checks pass. Parallel execution slots do not prewarm. Live benefits remain to be measured',
+  cfgPrewarmOn: 'On · supported DSH reviews',
+  cfgPrewarmOff: 'Off · default',
   cfgParallelHelp: 'Review and integration remain serial',
   cfgPermissionHelp: 'Unsupported backend permissions are rejected explicitly',
   cfgScopeHelp:
@@ -146,15 +167,20 @@ Object.assign(en, {
   cfgBindingAdvanced: 'Backend and account channel',
   cfgModelHint: 'Use a supported Provider model identifier. A preset does not prove account authorization',
   cfgJevHelp:
-    'Optional and off by default. Capture locally for later explicit evaluation; Quick / Full and model routing stay unchanged',
+    'One switch controls JEV decisions during investigation and execution, including evidence collection, next steps after failure and approved model selection. Turning it off stops subsequent requests and adoption, keeps the original paths and disables shadow capture',
   cfgJevSend:
-    'Enabling captures the goal and acceptance summary locally on a new task’s first run, without HTTP. Review it before explicit shadow run uses a separate experiment budget',
+    'Saving an enabled configuration allows eligible decisions to send permitted task and evidence excerpts and adopt validated choices. Go retains budget, acceptance and permission checks; no per-task enable step is needed',
   cfgJevEndpoint: 'MeRouter System One API endpoint',
-  cfgJevKeyHelp: 'Store the variable name, not the API key. The explicit shadow run process must inherit it; local capture needs no key',
+  cfgJevKeyHelp: 'Store the variable name, not the API key. The Flywheel process must inherit this variable',
   cfgJevTimeout: 'Request timeout',
   cfgJevAdvanced: 'Model version and request options',
-  cfgJevConfirm: 'Enable JEV shadow advice',
-  cfgJevEnable: 'Enable and save',
+  cfgJevMaxCalls: 'Maximum JEV requests per task',
+  cfgJevApplicability: 'Minimum applicability probability',
+  cfgJevChoice: 'Minimum choice probability',
+  cfgJevProbability: 'Enter a probability greater than 0 and at most 1',
+  cfgJevData: 'Permitted data categories',
+  cfgJevDataHelp: 'Edit in Advanced configuration JSON. Other categories do not gain permission to be sent',
+  cfgJevChanges: 'Turning it off also blocks further JEV requests and adoption in existing tasks; recorded policies, receipts and budgets remain. Investigations freeze their policy at creation; enabling does not rewrite preparations created while off',
   cfgLocation: 'Configuration file and source',
   cfgRawDiff: 'Review changes',
   cfgModelRole: 'Stage',
@@ -311,11 +337,6 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         reset,
       },
     });
-  const submit = () => {
-    if (draft['jev-shadow']?.enabled === true && base['jev-shadow']?.enabled !== true)
-      setDialog({ kind: 'jev' });
-    else save();
-  };
   const inputID = (key) => id + '-' + key;
   const field = (key, label, help, controlNode) =>
     h(
@@ -351,7 +372,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       'aria-describedby': inputID(key) + '-help',
       onChange: (e) => onChange(e.target.value),
     });
-  const number = (group, key, factor, unit, nullable = false) => {
+  const number = (group, key, factor, unit, nullable = false, probability = false) => {
     const path = group + '.' + key,
       current = draft[group]?.[key];
     return h(
@@ -375,9 +396,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
               return;
             }
             const scaled = Number(value) * factor,
-              rounded = Math.round(scaled);
+              rounded = probability ? scaled : Math.round(scaled);
             const error = !value.trim()
               ? 'cfgRequiredNumber'
+              : probability
+                ? !/^\d+(?:\.\d+)?$/.test(value.trim()) || !Number.isFinite(scaled) || scaled <= 0 || scaled > 1
+                  ? 'cfgJevProbability'
+                  : null
               : !/^\d+(?:\.\d+)?$/.test(value.trim()) ||
                   !Number.isSafeInteger(rounded) ||
                   scaled < 0 ||
@@ -572,6 +597,15 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           t('cfgParallelHelp'),
           number('scheduler', 'max-parallel', 1, t('cfgTasks')),
         ),
+      draft.scheduler?.mode === 'parallel' &&
+        field('scheduler.dispatch', t('cfgDispatch'), t('cfgDispatchHelp'),
+          select('scheduler.dispatch', draft.scheduler?.dispatch ?? 'batch',
+            [['batch', t('cfgDispatchBatch')], ['ready-queue', t('cfgDispatchReady')]],
+            (v) => update('scheduler', 'dispatch', v))),
+      field('scheduler.prewarm', t('cfgPrewarm'), t('cfgPrewarmHelp'),
+        select('scheduler.prewarm', String(draft.scheduler?.prewarm === true),
+          [['false', t('cfgPrewarmOff')], ['true', t('cfgPrewarmOn')]],
+          (v) => update('scheduler', 'prewarm', v === 'true'))),
       field(
         'permissions.mode',
         t('permission'),
@@ -642,66 +676,54 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       null,
       h('p', { className: css.meta }, t('cfgJevHelp')),
       field(
-        'jev-shadow.enabled',
+        'jev.enabled',
         t('consoleJEV'),
         null,
         select(
-          'jev-shadow.enabled',
-          String(draft['jev-shadow']?.enabled ?? false),
+          'jev.enabled',
+          String(draft.jev?.enabled ?? false),
           [
             ['false', t('consoleJEVOff')],
             ['true', t('consoleJEVOn')],
           ],
-          (v) => update('jev-shadow', 'enabled', v === 'true'),
+          (v) => update('jev', 'enabled', v === 'true'),
         ),
       ),
-      draft['jev-shadow']?.enabled &&
+      draft.jev?.enabled &&
         h(
           React.Fragment,
           null,
           h('p', { className: css.configCallout }, t('cfgJevSend')),
           field(
-            'jev-shadow.endpoint',
+            'jev.endpoint',
             t('cfgJevEndpoint'),
             null,
-            input('jev-shadow.endpoint', draft['jev-shadow'].endpoint, (v) =>
-              update('jev-shadow', 'endpoint', v),
-            ),
+            input('jev.endpoint', draft.jev.endpoint, (v) => update('jev', 'endpoint', v)),
           ),
           field(
-            'jev-shadow.key-env',
+            'jev.model',
+            t('consoleJEVVersion'),
+            null,
+            input('jev.model', draft.jev.model ?? 'jev-1.14.0', (v) => update('jev', 'model', v)),
+          ),
+          field(
+            'jev.key-env',
             t('consoleJEVEnv'),
             t('cfgJevKeyHelp'),
-            input('jev-shadow.key-env', draft['jev-shadow']['key-env'] ?? 'MEROUTER_API_KEY', (v) =>
-              update('jev-shadow', 'key-env', v),
+            input('jev.key-env', draft.jev['key-env'] ?? 'MEROUTER_API_KEY', (v) =>
+              update('jev', 'key-env', v),
             ),
           ),
           h(
             'section',
             { className: css.details },
             h('h4', null, t('cfgJevAdvanced')),
-            field(
-              'jev-shadow.model',
-              t('consoleModel'),
-              null,
-              input('jev-shadow.model', draft['jev-shadow'].model ?? 'jev', (v) =>
-                update('jev-shadow', 'model', v),
-              ),
-            ),
-            field(
-              'jev-shadow.expected-model',
-              t('consoleJEVVersion'),
-              null,
-              input('jev-shadow.expected-model', draft['jev-shadow']['expected-model'] ?? 'jev-1.14.0', (v) =>
-                update('jev-shadow', 'expected-model', v),
-              ),
-            ),
-            field(
-              'jev-shadow.timeout-ms',
-              t('cfgJevTimeout'),
-              null,
-              number('jev-shadow', 'timeout-ms', 1000, t('cfgSeconds')),
-            ),
+            field('jev.timeout-ms', t('cfgJevTimeout'), null, number('jev', 'timeout-ms', 1000, t('cfgSeconds'))),
+            field('jev.max-calls', t('cfgJevMaxCalls'), null, number('jev', 'max-calls', 1, t('cfgTimes'))),
+            field('jev.min-applicability', t('cfgJevApplicability'), null, number('jev', 'min-applicability', 1, '', false, true)),
+            field('jev.min-choice', t('cfgJevChoice'), null, number('jev', 'min-choice', 1, '', false, true)),
+            h('p', { className: css.meta }, t('cfgJevData') + ': ' + (Array.isArray(draft.jev['allowed-data']) ? draft.jev['allowed-data'].join(', ') : t('notConfigured'))),
+            h('p', { className: css.meta }, t('cfgJevDataHelp')),
           ),
         ),
     );
@@ -846,18 +868,18 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ),
     ),
     h('footer', { className: css.configSaveBar, 'data-dirty': dirty },
-      h('span', { className: css.meta, role: saved ? 'status' : undefined }, t(saved ? 'cfgSaved' : dirty ? 'cfgDirty' : 'cfgClean')),
+      h('span', { className: css.meta, role: saved ? 'status' : undefined }, t(section === 'jev' && (saved || dirty) ? 'cfgJevChanges' : saved ? 'cfgSaved' : dirty ? 'cfgDirty' : 'cfgClean')),
       h('div', { className: css.actions },
         h(Button, { disabled: busy || !doc || doc.scope !== scope, onClick: () => setDialog({ kind: 'reset' }) }, t('cfgReset')),
         h(Button, { disabled: busy || !dirty || !base, onClick: discard }, t('cfgDiscard')),
-        h(Button, { variant: 'primary', disabled: !ready || !dirty || busy || control.configUncertainty || !!control.uncertainty, onClick: submit }, t('cfgSave')))),
+        h(Button, { variant: 'primary', disabled: !ready || !dirty || busy || control.configUncertainty || !!control.uncertainty, onClick: save }, t('cfgSave')))),
     dialog &&
       h(
         WorkbenchDialog,
         {
           t,
           title: t(
-            dialog.kind === 'reset' ? 'cfgReset' : dialog.kind === 'jev' ? 'cfgJevConfirm' : 'cfgUnsaved',
+            dialog.kind === 'reset' ? 'cfgReset' : 'cfgUnsaved',
           ),
           onClose: () => setDialog(null),
           actions: h(
@@ -877,16 +899,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                     setNumbers({});
                     setNumberErrors({});
                     setReset(true);
-                  } else if (next.kind === 'jev') save();
-                  else next.next();
+                  } else next.next();
                 },
               },
               t(
-                dialog.kind === 'reset'
-                  ? 'cfgLoadDefaults'
-                  : dialog.kind === 'jev'
-                    ? 'cfgJevEnable'
-                    : 'cfgDiscardContinue',
+                dialog.kind === 'reset' ? 'cfgLoadDefaults' : 'cfgDiscardContinue',
               ),
             ),
           ),
@@ -895,11 +912,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           'p',
           null,
           t(
-            dialog.kind === 'reset'
-              ? 'cfgResetHelp'
-              : dialog.kind === 'jev'
-                ? 'cfgJevSend'
-                : 'cfgDiscardHelp',
+            dialog.kind === 'reset' ? 'cfgResetHelp' : 'cfgDiscardHelp',
           ),
         ),
         dialog.kind === 'discard' && h('pre', { className: css.raw }, raw),
@@ -1032,7 +1045,7 @@ Object.assign(zh, {
   cfgBudgetPolicy: '用量预算', cfgBudgetOff: '关闭', cfgBudgetSoft: '仅提醒', cfgBudgetHard: '达到后停止',
   cfgBudgetOffHelp: '不设 Token 门限，继续统计用量', cfgBudgetSoftHelp: '达到额度时提醒，任务继续运行', cfgBudgetHardHelp: '达到额度或用量无法确认时，暂停新调用', cfgBudgetDay: '按单个任务、UTC 日期统计；留空不设额度', consoleBudget: '单任务每日 Token 额度',
   cfgRunProtection: '运行保护', cfgRetryHelp: '传输故障重试，不影响任务返修次数', cfgTimeoutHelp: '', cfgTimeout: '单次运行时限',
-  cfgClean: '修改用于下次启动', cfgDirty: '有未保存修改 · 下次启动生效', cfgReset: '恢复默认', cfgDiscard: '撤销', cfgJevHelp: '只记录建议，不改变实际流程或模型选择', consoleJEV: '影子评估',
+  cfgClean: '修改用于下次启动', cfgDirty: '有未保存修改 · 下次启动生效', cfgReset: '恢复默认', cfgDiscard: '撤销',
 });
 Object.assign(en, {
   consoleConfig: 'Settings', cfgStrategy: 'Execution', cfgModels: 'Models and sessions', cfgJev: 'JEV', cfgAdvanced: 'Advanced and diagnostics', cfgBack: '← Back to workflow',
@@ -1040,7 +1053,7 @@ Object.assign(en, {
   cfgWorktree: 'Independent Worktrees', cfgWorktreeHelp: '', cfgScheduleHelp: '', cfgParallelHelp: '', cfgPermissionHelp: 'Full access includes files outside the workspace',
   cfgBudgetPolicy: 'Usage budget', cfgBudgetOff: 'Off', cfgBudgetSoft: 'Warn only', cfgBudgetHard: 'Stop at limit', cfgBudgetOffHelp: 'No token limit; usage is still recorded', cfgBudgetSoftHelp: 'Warn at the limit and keep running', cfgBudgetHardHelp: 'Pause new calls at the limit or when usage is unknown', cfgBudgetDay: 'Per task and UTC day; blank means no limit', consoleBudget: 'Daily tokens per task',
   cfgRunProtection: 'Run protection', cfgRetryHelp: 'Transport faults only; task repair limits stay unchanged', cfgTimeoutHelp: '', cfgTimeout: 'Run time limit',
-  cfgClean: 'Changes apply to the next start', cfgDirty: 'Unsaved changes · next start', cfgReset: 'Restore defaults', cfgDiscard: 'Discard', cfgJevHelp: 'Capture advice only; no workflow or model routing changes', consoleJEV: 'Shadow evaluation',
+  cfgClean: 'Changes apply to the next start', cfgDirty: 'Unsaved changes · next start', cfgReset: 'Restore defaults', cfgDiscard: 'Discard',
 });
 
 Object.assign(zh, { cfgPlanConflict: 'Plan 旧历史开关与此策略不同', cfgApplyPolicy: '同步此策略' });

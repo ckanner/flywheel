@@ -27,14 +27,29 @@ type PreparationInvocation struct {
 }
 
 type InvestigationObservation struct {
-	Invocation  PreparationInvocation `json:"invocation"`
-	Status      string                `json:"status"`
-	Output      string                `json:"output"`
-	ContentHash string                `json:"content-hash"`
-	Truncated   bool                  `json:"truncated"`
-	Error       string                `json:"error,omitempty"`
-	FinishedAt  string                `json:"finished-at"`
-	DurationMS  int64                 `json:"duration-ms"`
+	Invocation  PreparationInvocation   `json:"invocation"`
+	Status      string                  `json:"status"`
+	Output      string                  `json:"output"`
+	ContentHash string                  `json:"content-hash"`
+	Truncated   bool                    `json:"truncated"`
+	Error       string                  `json:"error,omitempty"`
+	FinishedAt  string                  `json:"finished-at"`
+	DurationMS  int64                   `json:"duration-ms"`
+	Execution   *InvestigationExecution `json:"execution,omitempty"`
+}
+
+// Execution records physical outcomes; a copied working directory is not an
+// OS sandbox. Retained workspaces with unknown process cleanup block replay.
+type InvestigationExecution struct {
+	Kind       string `json:"kind"`
+	ExitCode   *int   `json:"exit-code,omitempty"`
+	HTTPStatus int    `json:"http-status,omitempty"`
+	Signal     string `json:"signal,omitempty"`
+	TimedOut   bool   `json:"timed-out"`
+	Cancelled  bool   `json:"cancelled"`
+	Workspace  string `json:"workspace,omitempty"`
+	Cleanup    string `json:"cleanup"`
+	InputHash  string `json:"input-hash,omitempty"`
 }
 
 type InvestigationFinding struct {
@@ -58,25 +73,27 @@ type InvestigationReport struct {
 }
 
 type PreparationState struct {
-	Version           int                        `json:"version"`
-	Revision          int64                      `json:"revision"`
-	RunID             string                     `json:"run-id"`
-	Cwd               string                     `json:"cwd"`
-	Contract          contract.Preparation       `json:"contract"`
-	ContractHash      string                     `json:"contract-hash"`
-	Status            string                     `json:"status"`
-	Reason            string                     `json:"reason"`
-	StartedAt         string                     `json:"started-at"`
-	Deadline          string                     `json:"deadline"`
-	ActionsUsed       int                        `json:"actions-used"`
-	OutputBytes       int                        `json:"output-bytes"`
-	ElapsedMS         int64                      `json:"elapsed-ms"`
-	Pending           *PreparationInvocation     `json:"pending,omitempty"`
-	DecisionPending   *decision.Snapshot         `json:"decision-pending,omitempty"`
-	Observations      []InvestigationObservation `json:"observations"`
-	Decisions         []decision.Receipt         `json:"decisions"`
-	DecisionStartedAt map[string]string          `json:"decision-started-at,omitempty"`
-	Report            *InvestigationReport       `json:"report,omitempty"`
+	Version           int                           `json:"version"`
+	Revision          int64                         `json:"revision"`
+	RunID             string                        `json:"run-id"`
+	Cwd               string                        `json:"cwd"`
+	Contract          contract.Preparation          `json:"contract"`
+	ContractHash      string                        `json:"contract-hash"`
+	Status            string                        `json:"status"`
+	Reason            string                        `json:"reason"`
+	StartedAt         string                        `json:"started-at"`
+	Deadline          string                        `json:"deadline"`
+	ActionsUsed       int                           `json:"actions-used"`
+	OutputBytes       int                           `json:"output-bytes"`
+	ElapsedMS         int64                         `json:"elapsed-ms"`
+	Pending           *PreparationInvocation        `json:"pending,omitempty"`
+	DecisionPending   *decision.Snapshot            `json:"decision-pending,omitempty"`
+	Observations      []InvestigationObservation    `json:"observations"`
+	Decisions         []decision.Receipt            `json:"decisions"`
+	DecisionStartedAt map[string]string             `json:"decision-started-at,omitempty"`
+	JEVStatus         string                        `json:"jev-status,omitempty"`
+	DecisionEffects   []InvestigationDecisionEffect `json:"decision-effects,omitempty"`
+	Report            *InvestigationReport          `json:"report,omitempty"`
 }
 
 type PreparationSource struct {
@@ -223,7 +240,7 @@ func ReadPreparationReceipt(dir string, pending PreparationInvocation) (*Investi
 	var observation InvestigationObservation
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
-	if d.Decode(&observation) != nil || !json.Valid(raw) || PreparationHash(observation.Invocation) != PreparationHash(pending) || observation.DurationMS < 0 || (observation.Status != "observed" && observation.Status != "failed" && observation.Status != "cancelled") {
+	if d.Decode(&observation) != nil || !json.Valid(raw) || PreparationHash(observation.Invocation) != PreparationHash(pending) || observation.DurationMS < 0 || (observation.Status != "observed" && observation.Status != "failed" && observation.Status != "cancelled" && observation.Status != "unknown") {
 		return nil, fmt.Errorf("investigation receipt identity or result mismatch")
 	}
 	if err := validatePreparationObservation(observation); err != nil {

@@ -80,7 +80,11 @@ func Evaluate(ctx context.Context, directory string, s Snapshot, p Policy, o Opt
 	if err := install(root, key+".input.json", input); err != nil {
 		return r, err
 	}
-	if previous, exists, err := load(root, key, r); exists || err != nil {
+	if previous, exists, err := load(root, key, r); err != nil {
+		// Keep the caller's reserved identity even when the journal is corrupt.
+		// A zero receipt would make its outer unknown-outcome ledger unloadable.
+		return r, err
+	} else if exists {
 		return previous, err
 	}
 	if o.APIKey == "" {

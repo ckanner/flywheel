@@ -87,7 +87,13 @@ func (c *Context) failAttempt(packet *contract.Packet, errorCode errs.ErrorCode,
 	ps.LastFeedback.(map[string]any)["progress"] = assessment
 	ps.LastFeedback.(map[string]any)["progress-evidence"] = progress
 	spin := circuitbreaker.DetectSpin(derefString(ps.LastFailureSignature), signature, ps.FailedAttempts)
-	if c.upgradeExecutionPolicy(packet, errorCode, assessment) {
+	action := ""
+	if c.Config.JEV.Enabled || c.State.RuntimeDecisions != nil {
+		action = c.runtimeFailureDecision(packet, errorCode, progress, spin)
+	}
+	if action == "spin" {
+		spin = true
+	} else if action == "failed" || c.upgradeExecutionPolicy(packet, errorCode, assessment) {
 		spin = false
 	}
 	sig := signature
@@ -155,6 +161,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	if c.quick() {
+		c.finishRuntimeReplan(packet)
 		feedback, _ := json.Marshal(ps.LastFeedback)
 		err := c.upgradeWorkflow("Quick repair or verification requires Full planning", []string{string(feedback)})
 		return "workflow-upgraded", err
@@ -167,7 +174,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 			return "", fmt.Errorf("packet %s references unknown milestone %q", id, ps.Milestone)
 		}
 		feedback, _ := json.Marshal(ps.LastFeedback)
-		plan, err := c.planUntilValid(milestone, "Returned packet "+id+": "+string(feedback))
+		plan, err := c.runtimePlan(packet, milestone, "Returned packet "+id+": "+string(feedback))
 		if err != nil {
 			return "", err
 		}
@@ -184,6 +191,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 				return "", err
 			}
 			invalidateEvidence(ps)
+			c.finishRuntimeReplan(packet)
 			ps.PlanRevisions++
 			ps.FailedAttempts = 0
 			ps.LastFailureSignature = nil
@@ -205,6 +213,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		}
 	}
 
+	c.finishRuntimeReplan(packet)
 	ps.Status = "inbox"
 	at := c.nowISO()
 	ps.UpdatedAt = &at
@@ -553,6 +562,9 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 		reason = manualReason[0]
 	}
 	manualUsed := false
+	if c.resumeRuntimeDecision(packet) == "spin" {
+		return execLoopOutcome{Spun: true}, c.err()
+	}
 	for {
 		if ferr := c.err(); ferr != nil {
 			return execLoopOutcome{Stopped: true}, ferr
@@ -602,8 +614,14 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 		if c.parallel != nil && c.sharedActive(packet.PacketID) {
 			return execLoopOutcome{Deferred: true}, nil
 		}
+		if err := c.beginReviewPrewarm(packet); err != nil {
+			return execLoopOutcome{Stopped: true}, err
+		}
 		l1 := c.l1Step(packet)
 		if !l1.Pass {
+			if err := c.closeReviewPrewarm("discarded: L1 did not pass"); err != nil {
+				return execLoopOutcome{Stopped: true}, err
+			}
 			var failedCommands []string
 			for _, r := range l1.Gate.Results {
 				if !r.Pass {
@@ -641,7 +659,15 @@ func (c *Context) unitReviewInjection(packet *contract.Packet) (*defectinjection
 
 // processPacket 单个 packet 的完整处理循环。
 // P3 修复：resume 直达 review 时补跑缺陷注入采样（Node 直接跳过）。
-func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (string, error) {
+func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outcome string, runErr error) {
+	previousPrewarmPolicy := c.prewarmReview
+	c.prewarmReview = opts.PauseBefore != "review" && c.parallel == nil && c.State.SharedExecution == nil
+	defer func() {
+		if err := c.closeReviewPrewarm("discarded: packet processing ended"); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+		c.prewarmReview = previousPrewarmPolicy
+	}()
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 

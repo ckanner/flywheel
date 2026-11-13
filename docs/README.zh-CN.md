@@ -17,7 +17,7 @@
 | 接入可选 Claude machine 后端 | [Claude Code Pro](zh-CN/claude-code-pro.md) | [Claude Code Pro](en/claude-code-pro.md) |
 | 角色续接、调用中断与对账 | [恢复与上下文质量](zh-CN/session-recovery.md) | [Recovery and context quality](en/session-recovery.md) |
 | 使用固定任务和证据比较会话策略 | [会话评估](zh-CN/session-evaluation.md) | [Session evaluation](en/session-evaluation.md) |
-| 运行默认关闭的可选 JEV 实验 | [JEV 影子评估](zh-CN/jev-shadow.md) | [JEV shadow evaluation](en/jev-shadow.md) |
+| 通过一个开关启用有界 JEV 决策 | [JEV 决策](zh-CN/jev.md) | [JEV decisions](en/jev.md) |
 
 [首个任务脚本](examples/create-first-task.sh)用于创建隔离的教程仓库；准备和执行的区别见快速开始指南。
 
@@ -36,7 +36,7 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
-[反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)，真实性能结论与后续条件性优化另需证据。
+[反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
 
 | 分类 | 内容 |
 | --- | --- |

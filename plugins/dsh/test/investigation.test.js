@@ -202,3 +202,105 @@ test('native investigation tool association preserves unknown identity until the
   assert.equal(state.view.outcome, 'confirmed');
   assert.equal(state.view.taskDir, '/repo/docs/task');
 });
+
+
+test('JEV runtime status, actual adoption and evidence-backed stop remain distinct from completion', async t => {
+  let p = preparation({
+    status: 'awaiting-report', reason: 'jev-evidence-ready-for-report', 'jev-status': 'enabled',
+    contract: { ...preparation().contract, decision: { policy: { mode: 'adopt' } } },
+    observations: [{ invocation: { ...invocation, adopted: true, reason: 'approved-diagnostic-choice' }, status: 'observed', output: 'timeout configured', 'duration-ms': 4 }],
+    decisions: [{ 'decision-id': 'choice-1', status: 'ok', reason: 'evaluated' }, { 'decision-id': 'choice-2', status: 'ok', reason: 'evaluated' }],
+    'decision-effects': [
+      { 'decision-id': 'choice-1', 'action-id': 'defer-read', kind: 'defer', actions: ['read-duplicate'], evidence: [invocation.id] },
+      { 'decision-id': 'choice-2', 'action-id': 'finish', kind: 'finish', actions: ['read-remaining'], evidence: [invocation.id] },
+    ],
+  });
+  const ui = await mountPanel(t, request => reply(request, { preparation: p }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新');
+  const panel = () => ui.container.querySelector('[aria-label="有界调查"]');
+  assert.match(panel().textContent, /最近观察到的 JEV 状态: JEV 已开启/);
+  assert.match(panel().textContent, /JEV 已采用/);
+  assert.match(panel().textContent, /依据证据跳过后续动作/);
+  assert.match(panel().textContent, /提前结束取证 · 等待报告/);
+  assert.match(panel().textContent, /跳过动作: read-duplicate/);
+  assert.match(panel().textContent, /依据观察: original-action/);
+  assert.doesNotMatch(panel().textContent, /报告有证据支持/);
+  assert.equal(ui.button('继续调查').disabled, true, 'awaiting-report cannot restart evidence collection from the UI');
+  assert.equal(ui.requests.some(r => ['start', 'launch', 'investigate'].includes(r.action)), false);
+  p = { ...p, revision: 8, 'jev-status': 'disabled' };
+  await ui.click('刷新');
+  assert.match(panel().textContent, /JEV 已关闭 · 后续动作沿用原路径/);
+  assert.doesNotMatch(panel().textContent, /JEV 已开启/);
+  assert.match(panel().textContent, /JEV 已采用/, 'turning off preserves the previously adopted history');
+  p = { ...p, revision: 9, 'jev-status': 'policy-changed' };
+  await ui.click('刷新');
+  assert.match(panel().textContent, /JEV 配置已变更 · 本次调查沿用原路径/);
+  p = { ...p, revision: 10, 'jev-status': 'disabled' };
+  await ui.click('刷新');
+  await ui.setLocale('en');
+  assert.match(ui.container.textContent, /Last observed JEV state: JEV disabled · subsequent actions use the original path/);
+  assert.match(ui.container.textContent, /Evidence collection ended early · awaiting report/);
+});
+
+test('malformed JEV effects preserve the last valid investigation instead of crashing or pretending adoption', async t => {
+  let bad = false;
+  const ui = await mountPanel(t, request => reply(request, { preparation: preparation(bad ? { 'decision-effects': [{ 'decision-id': 'bad', 'action-id': 'finish', kind: 'finish', actions: {}, evidence: [] }] } : { 'jev-status': 'not-configured' }) }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新');
+  assert.match(ui.container.textContent, /本次调查未配置 JEV/);
+  bad = true;
+  await ui.click('刷新');
+  assert.match(ui.container.textContent, /malformed investigation status/);
+  assert.match(ui.container.textContent, /本次调查未配置 JEV/);
+  assert.doesNotMatch(ui.container.textContent, /JEV 已采用/);
+});
+
+test('diagnostic process and HTTP receipts show physical outcomes and cleanup separately from investigation conclusions', async t => {
+  const p = preparation({ observations: [
+    { invocation, status: 'observed', output: 'Regression reproduced with expected exit 1', 'duration-ms': 18,
+      execution: { kind: 'run_command', 'exit-code': 1, 'timed-out': false, cancelled: false, workspace: '/tmp/flywheel-copy', cleanup: 'removed' } },
+    { invocation: { ...invocation, id: 'http-1', 'action-id': 'health' }, status: 'failed', error: 'Unexpected response status', 'duration-ms': 4,
+      execution: { kind: 'http_read', 'http-status': 503, 'timed-out': false, cancelled: false, cleanup: 'not-created' } },
+    { invocation: { ...invocation, id: 'command-2', 'action-id': 'slow-check' }, status: 'cancelled', error: 'Stopped after timeout', 'duration-ms': 50, truncated: true,
+      execution: { kind: 'run_command', signal: 'SIGTERM', 'timed-out': true, cancelled: true, workspace: '/tmp/flywheel-cancelled', cleanup: 'removed' } },
+  ] });
+  const ui = await mountPanel(t, request => reply(request, { preparation: p }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新');
+  const receipts = ui.container.querySelectorAll('[data-investigation-execution]');
+  assert.equal(receipts.length, 3);
+  assert.match(receipts[0].textContent, /隔离副本中的命令/);
+  assert.match(receipts[0].textContent, /退出码1/);
+  assert.match(receipts[0].textContent, /实验副本已清理/);
+  assert.match(receipts[1].textContent, /HTTP 状态503/);
+  assert.match(receipts[1].textContent, /未创建实验副本/);
+  assert.match(receipts[2].textContent, /动作超时/);
+  assert.match(receipts[2].textContent, /动作已取消/);
+  assert.match(receipts[2].textContent, /终止信号SIGTERM/);
+  assert.match(receipts[2].textContent, /实验副本已清理/);
+  assert.doesNotMatch(ui.container.textContent, /报告有证据支持/);
+  await ui.setLocale('en');
+  assert.match(ui.container.textContent, /Command in an isolated copy/);
+  assert.match(ui.container.textContent, /Experiment copy cleaned up/);
+  assert.equal(ui.requests.length, 1, 'rendering physical outcomes does not dispatch another action');
+});
+
+test('malformed diagnostic execution details retain the last valid receipt and disable mutations', async t => {
+  const execution = { kind: 'run_command', 'exit-code': 0, 'timed-out': false, cancelled: false, cleanup: 'removed' };
+  let value = execution;
+  const ui = await mountPanel(t, request => reply(request, { preparation: preparation({ observations: [{ invocation, status: 'observed', output: 'valid receipt', execution: value }] }) }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新');
+  for (const invalid of [{ 'exit-code': {} }, { 'exit-code': 256 }, { 'http-status': 99 }, { 'timed-out': 'false' }, { cleanup: 'complete' }, { workspace: {} }, { kind: 'shell' }]) {
+    value = { ...execution, ...invalid };
+    await ui.click('刷新');
+    assert.match(ui.container.textContent, /malformed investigation status/);
+    assert.match(ui.container.textContent, /valid receipt/);
+    assert.match(ui.container.textContent, /退出码0/);
+    assert.equal(ui.button('继续调查').disabled, true);
+    value = execution;
+    await ui.click('刷新');
+    assert.equal(ui.button('继续调查').disabled, false);
+  }
+});

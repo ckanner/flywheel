@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ckanner/flywheel/templates"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/ckanner/flywheel/internal/decision"
+	"github.com/ckanner/flywheel/templates"
 )
 
 // LoopBinding 非 execute 角色的绑定（loops 表）。
@@ -140,11 +142,13 @@ type SchedulerConfig struct {
 	Mode        string         `json:"mode"`
 	MaxParallel int            `json:"max-parallel"`
 	Providers   map[string]int `json:"providers,omitempty"`
+	Dispatch    string         `json:"dispatch,omitempty"`
+	Prewarm     bool           `json:"prewarm,omitempty"`
 }
 
 type Config struct {
 	ExecutionPolicy *ExecutionPolicy        `json:"execution-policy,omitempty"`
-	JEVShadow       JEVConfig               `json:"jev-shadow"`
+	JEV             JEVConfig               `json:"jev"`
 	Scheduler       SchedulerConfig         `json:"scheduler"`
 	Version         *int                    `json:"version"`
 	Drivers         map[string]string       `json:"drivers"`
@@ -173,9 +177,13 @@ type Config struct {
 // drivers 值后改 mock|real 二值——harness 选择归绑定表，此处只选驱动实现）。
 func Default() Config {
 	return Config{
-		JEVShadow: JEVConfig{Model: "jev", ExpectedModel: "jev-1.14.0", KeyEnv: "MEROUTER_API_KEY", TimeoutMS: 5000},
-		Drivers:   map[string]string{"plan": "real", "execute": "real", "review": "real"},
-		Budget:    BudgetConfig{Enforce: "soft", DailyTokenLimit: nil},
+		JEV: JEVConfig{
+			Model: "jev-1.14.0", KeyEnv: "MEROUTER_API_KEY", TimeoutMS: 5000, MaxCalls: 8,
+			MinApplicability: 0.8, MinChoice: 0.6,
+			AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts, decision.Source},
+		},
+		Drivers: map[string]string{"plan": "real", "execute": "real", "review": "real"},
+		Budget:  BudgetConfig{Enforce: "soft", DailyTokenLimit: nil},
 		Watchdog: WatchdogConfig{
 			IdleTimeoutMs: 300_000,
 			WallTimeoutMs: 3_600_000,
@@ -191,7 +199,7 @@ func Default() Config {
 		Verify:          VerifyConfig{CommandTimeoutMs: 300_000},
 		Worktree:        WorktreeConfig{Enabled: boolPtr(true)},
 		Permissions:     PermissionsConfig{Mode: "role-based"},
-		Scheduler:       SchedulerConfig{Mode: "parallel", MaxParallel: 2},
+		Scheduler:       SchedulerConfig{Mode: "parallel", MaxParallel: 2, Dispatch: "batch"},
 		Sessions:        SessionsConfig{Mode: "fresh", PolicyVersion: SessionPolicyVersion},
 		Credentials:     CredentialsConfig{PollIntervalMs: 30_000, TimeoutMs: 86_400_000},
 	}
@@ -202,12 +210,15 @@ func boolPtr(b bool) *bool { return &b }
 // Normalize 将缺省字段回填为默认值（Node deepMerge 语义的零值等价）。
 func (c *Config) Normalize() {
 	d := Default()
-	c.JEVShadow.normalize()
+	c.JEV.normalize()
 	if c.Scheduler.Mode == "" {
 		c.Scheduler.Mode = "serial"
 	}
 	if c.Scheduler.MaxParallel == 0 {
 		c.Scheduler.MaxParallel = 2
+	}
+	if c.Scheduler.Dispatch == "" {
+		c.Scheduler.Dispatch = "batch"
 	}
 	if c.Sessions.Mode == "" && c.Sessions.PolicyVersion == 0 && c.Sessions.Roles == nil && c.Sessions.Quality == (SessionQualityPolicy{}) && c.Sessions.Context == "" {
 		c.Sessions = d.Sessions
@@ -266,12 +277,18 @@ func (c *Config) Normalize() {
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
 	var jev any
-	_ = json.Unmarshal(configJSON(c.JEVShadow), &jev)
+	_ = json.Unmarshal(configJSON(c.JEV), &jev)
 	if err := validateJEV(jev); err != nil {
+		return err
+	}
+	if err := c.JEV.validateTarget(); err != nil {
 		return err
 	}
 	if c.Scheduler.Mode != "serial" && c.Scheduler.Mode != "parallel" || c.Scheduler.MaxParallel < 1 || c.Scheduler.MaxParallel > 8 {
 		return errors.New("scheduler requires serial|parallel and max-parallel between 1 and 8")
+	}
+	if c.Scheduler.Dispatch != "batch" && c.Scheduler.Dispatch != "ready-queue" {
+		return errors.New("scheduler dispatch requires batch|ready-queue")
 	}
 	for channel, limit := range c.Scheduler.Providers {
 		if channel == "" || limit < 1 || limit > 8 {

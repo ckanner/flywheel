@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -89,6 +90,7 @@ var osReadFile = os.ReadFile
 
 // PacketState 单个 packet 的执行状态。
 type PacketState struct {
+	PendingStrategy      string                   `json:"pending-strategy,omitempty"`
 	ExecutionPolicy      *ExecutionPolicyRecord   `json:"execution-policy,omitempty"`
 	Schedule             *contract.PacketSchedule `json:"schedule,omitempty"`
 	Parallel             bool                     `json:"parallel,omitempty"`
@@ -253,7 +255,20 @@ type SharedExecution struct {
 	Packets   []string `json:"packets"`
 }
 
+// WorkerPrewarm is a cleanup obligation, never a model invocation or reusable
+// history. Its private receipt directory is derived from the task and ID.
+type WorkerPrewarm struct {
+	Version     int    `json:"version"`
+	ID          string `json:"id"`
+	Scope       string `json:"scope"`
+	Binding     string `json:"binding"`
+	StartedAt   string `json:"started-at"`
+	EngineRunID string `json:"engine-run-id,omitempty"`
+}
+
 type State struct {
+	WorkerPrewarm        *WorkerPrewarm            `json:"worker-prewarm,omitempty"`
+	RuntimeDecisions     *RuntimeDecisions         `json:"runtime-decisions,omitempty"`
 	PreparationSource    *PreparationSource        `json:"preparation-source,omitempty"`
 	SharedExecution      *SharedExecution          `json:"shared-execution,omitempty"`
 	Project              *ProjectIdentity          `json:"project,omitempty"`
@@ -332,6 +347,7 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
+		WorkerPrewarm     json.RawMessage `json:"worker-prewarm"`
 		Revision          any             `json:"revision"`
 		Workflow          json.RawMessage `json:"workflow"`
 		Sessions          json.RawMessage `json:"sessions"`
@@ -361,7 +377,7 @@ func Load(taskDir string) (*State, error) {
 			return nil, err
 		}
 	}
-	for name, raw := range map[string]json.RawMessage{"handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
+	for name, raw := range map[string]json.RawMessage{"worker-prewarm": probe.WorkerPrewarm, "handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
 		if len(raw) > 0 {
 			var value any
 			_ = json.Unmarshal(raw, &value)
@@ -373,6 +389,12 @@ func Load(taskDir string) (*State, error) {
 	var st State
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return nil, errf("%s: invalid JSON: %v", file, err)
+	}
+	if st.WorkerPrewarm != nil && (st.Sessions == nil || st.Sessions.Version < 3 || st.Packets[strings.TrimPrefix(st.WorkerPrewarm.Scope, "final:")] == nil) {
+		return nil, errf("worker prewarm requires its packet and a version 3 session ledger")
+	}
+	if err := validateRuntimeDecisions(&st); err != nil {
+		return nil, err
 	}
 	return &st, nil
 }
@@ -572,15 +594,6 @@ func RecordUsage(st *State, u Usage, opts UsageOpts) {
 	if _, ok := b.Daily[day]; !ok {
 		b.Daily[day] = DailyBucket{}
 	}
-	// 日账本只保留最近 31 天（P2：长任务下 state.json 不得无限增长）。
-	days := make([]string, 0, len(b.Daily))
-	for k := range b.Daily {
-		days = append(days, k)
-	}
-	sort.Strings(days)
-	for i := 0; len(b.Daily) > 31; i++ {
-		delete(b.Daily, days[i])
-	}
 	tokens := int64(0)
 	if u.TotalTokens != nil {
 		tokens = *u.TotalTokens
@@ -598,6 +611,15 @@ func RecordUsage(st *State, u Usage, opts UsageOpts) {
 	d.Tokens += tokens
 	d.CostUSD = math.Round((d.CostUSD+cost)*1e8) / 1e8
 	b.Daily[day] = d
+	// 日账本只保留最近 31 天（P2：长任务下 state.json 不得无限增长）。
+	days := make([]string, 0, len(b.Daily))
+	for k := range b.Daily {
+		days = append(days, k)
+	}
+	sort.Strings(days)
+	for i := 0; len(b.Daily) > 31; i++ {
+		delete(b.Daily, days[i])
+	}
 	b.Totals.Input += u.Input
 	b.Totals.Output += u.Output
 	b.Totals.Reasoning += u.Reasoning

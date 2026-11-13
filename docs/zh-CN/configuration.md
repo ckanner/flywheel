@@ -192,13 +192,17 @@ flywheel config inspect --cwd /repo --json
 新安装默认配置选择并行调度，最大并发为 2。已有完整配置没有 `scheduler` 时归一为
 **serial**，显式 serial 也保持不变。安装新版不会替换这些配置。
 [调度 schema](https://github.com/ckanner/flywheel/blob/main/templates/scheduler-policy.schema.json)将总并发与各渠道并发限制在 1–8。
+新旧配置的 `dispatch` 均缺省为 `batch`，`prewarm` 缺省为 false；这两个设置不改变
+Quick／Full 流程，也不启用 JEV。
 
 ```json
 {
   "scheduler": {
     "mode": "parallel",
     "max-parallel": 2,
-    "providers": {"deepseek-account": 1}
+    "providers": {"deepseek-account": 1},
+    "dispatch": "batch",
+    "prewarm": false
   },
   "worktree": {"enabled": true}
 }
@@ -230,6 +234,54 @@ Review、集成与终验保持串行。
 项目工作区归属与实际执行位置分别记录。原生后端无法独立设置 `workspace-write`
 沙箱根时，会在派发前拒绝不支持的目录分离组合，不扩大权限。登记与批次规则见
 [控制台指南](flow-console.md#串行与并行)。
+
+### 就绪队列与运行时准备
+
+`scheduler.dispatch` 接受 `batch` 或 `ready-queue`。batch 等待当前有界批次结束后
+选择更多任务；ready queue 在一个 Execute／L1 槽位释放后接纳下一项已就绪的独立
+packet。适用条件是 Full、并行调度、最大并发大于 1、自动管理 Worktree。Quick、
+串行、最大并发为 1 和关闭自动管理的任务保持原路径。共享 checkout 沿用批次规则，
+包括执行者之后可能登记外部 Worktree 的情况。
+
+ready queue 的首个窗口必须全部准备并保存目录后才派发；随后补位先准备该项目录，
+再占用空闲槽位。准备失败停止新接纳、取消并等待已启动工作；尚未接纳的排队任务
+不创建目录或模型调用。依赖仅在交付后满足。Review、重规划和集成等待全部已接纳
+worker 收尾，再串行推进；合成候选始终复验。已有总并发／渠道限制、hard 预算、
+尝试上限和未知结果恢复约束继续生效。
+
+新补入的 packet 不会恢复或取消兄弟任务仍在运行的模型调用；这些调用及其共同
+计费继续由协调器持有。真实未知结果或终态回执保存失败均立即停止新接纳，恢复前
+必须核对原调用。
+
+`--pause-before review` 同样适用于独立 Worktree 的并行任务。本轮 Execute／L1
+全部通过、worker 停稳后，任务在第一个 Review 和集成前暂停，保留已验证候选。
+batch 完成已接纳批次；ready queue 可先按原规则补完固定独立候选队列，再到达这个
+暂停点。恢复同一任务时复用仍有效的执行证据，不重复 Execute；后续集成改变候选
+时仍需重新验证。
+
+`scheduler.prewarm:true` 允许串行 packet 在 Execute 后运行确定性检查的同时，
+初始化一个 DSH Review runtime。初始化不发送模型 prompt，也不创建或恢复 Session；
+真正 Review 推理仍等待检查完成与正常准入。并行 Execute／L1 lane 不准备 runtime，
+必须越过屏障进入串行 Review 后才可开始准备；共享候选批次不预热。因此主要重叠
+机会是串行 Execute 后的 L1 和适用 Quick 检查，不能把每个并行 lane 的验证时间
+都算作被隐藏的启动时间。
+
+未使用或身份不匹配的 runtime 必须先完成有界清理，才可继续模型工作。待用实例
+在尚未尝试正式派发前达到 60 秒存活上限时，只有精确、持久的未派发回执、SDK 和
+整个进程组的清理均已确认，且未取消、正式调用未超时，才可使用同一已持久化请求
+身份及剩余时限冷启动一次；这不增加尝试额度或重置预算。未知清理仍阻断。其他
+harness 保持普通启动。会话历史续用与运行时准备相互独立，角色历史仍隔离。
+
+已确认的初始化失败保留原错误分类，并遵守正常重试和渠道后备规则。认证或请求
+参数错误不会变成传输重试，也不视为允许冷启动回退的正常预热过期。
+
+配置编辑器和高级 JSON 都可设置这两个选项。保存后在下次启动生效，当前进程保持
+已载入策略；恢复时仍须核对已有调用和共享批次，再派发新工作。待收尾预热仍需原始
+未派发 prompt 的清理回执、文件和目录同步，以及 worker 与原进程组退出证明，
+关闭 `prewarm` 不能绕过，详见
+[预热恢复](session-recovery.md#dsh-预热运行时的重启核对)。两项优化保持可选，
+真实延迟、资源消耗与默认采用策略另行验收。离线检查证明行为和恢复正确，不承诺
+速度或 token 节省，详见 [P5 实施计划](../plans/2026-11-13-p5-ready-queue-prewarm.md)。
 
 ## 会话策略、历史复用与调用安全
 
@@ -409,6 +461,10 @@ token 预算继续生效；切换不清零失败、不增加尝试、不削减�
 每个 packet 的 `max-switches` 同时限制两种切换。Go 在派发前冻结策略身份；
 `state.packets[*].execution-policy.history` 分别保存 `quality-upgrade` 和
 `channel-fallback` 的完整前后绑定、尝试与原因。并行 packet 各自持有记录。
+
+开启 `jev.enabled` 后，确认结束的失败也可由 JEV 选择合法绑定，切换记录为
+`jev-model-selection`，共用原 `max-switches` 与冷启动规则，不改变渠道错误处理。
+允许绑定仍是明确的资源／权限声明，JEV 开关不会把新 provider、账号或模型加入集合。
 
 `config inspect --json` 在 `execution-policy` 下展示完整声明，普通绑定表仍是
 配置基线，当前选择由 packet／session 状态记录。Doctor 既有绑定探测不证明每个
@@ -609,13 +665,26 @@ lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 wor
 
 桌面面板、`/flywheel` 和 `flywheel_control` 共用 `control config|doctor`，可省略 taskDir；只有 doctor 支持 `probe:true`。诊断阻断与传输失败分开显示。桌面使用的 PATH／profile／环境可能与终端不同，安装后应在面板里再检查一次。
 
-## 可选 JEV 影子评估
+## JEV 决策
 
-`jev-shadow.enabled` 默认 false，省略时也关闭。全局／项目编辑器提供开关。任务
-运行期间只捕获本地快照，不在任务关键路径发送 HTTP 请求；后续显式
-`flywheel shadow run` 才执行可选联网评估并单独记账。影子结果不能改变 Quick／Full
-或授权新动作。新的决策采用需独立显式 opt-in 与数据边界，既有影子开关不授予
-该权限。endpoint、版本、凭证、预算与恢复见[JEV 指南](jev-shadow.md)。
+`jev.enabled` 是唯一 JEV 启用设置，默认 false。桌面编辑器只提供一个总开关；
+开启后，调查准备自动冻结采用策略，包含动作选择、依据证据跳过冗余取证和提前
+进入报告；确认结束的实施失败还可选择有界返修、已批准反馈检查、重规划或允许
+执行绑定。Task／New／Run 共用引擎拥有的同一策略。关闭后停止后续请求及采用，
+保留已有回执与预算。
+
+正常任务没有独立影子／建议开关。旧 `jev-shadow` 只用于把连接信息迁移到关闭的
+统一配置，编辑器保存时移除旧 key；明确的新 `jev` 优先。配置仍按任务／项目／
+全局／内嵌表选择一份完整文件，不深合并。目标地址、固定模型、密钥变量、限制、
+数据类别和恢复规则见 [JEV 指南](jev.md)。
+
+Packet 可选声明最多八项 `feedback-checks`，使用与验收命令相同的 `cmd`／`script`
+和 `expect` 结构。这些是已批准的短诊断候选，不替代 `acceptance.L1/L2/L3`。
+为每项填写简短 `purpose`（最多 160 字符），说明它能区分什么原因；JEV 接收这段
+已批准的用途说明，不接收原命令。缺少 `purpose` 的检查仍供执行者参考，但不进入
+JEV 的定向检查候选。用途不得包含凭据、原始日志或命令正文。JEV 也可选择已有
+失败且可核对的 L1 检查。
+执行沿用验证超时、环境白名单和进程收尾规则。检查变化属于契约身份变化，旧决策失效。
 
 ## 参考文件
 

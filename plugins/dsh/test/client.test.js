@@ -642,6 +642,7 @@ test('malformed configuration and diagnostic reports stay recoverable instead of
   const failures = [
     { action: 'config', name: '查看模型配置', value: { configuration: { bindings: {} } } },
     { action: 'config', name: '查看模型配置', value: { configuration: { bindings: [null] } } },
+    { action: 'config', name: '查看模型配置', value: { configuration: { bindings: [], jev: { enabled: true, model: 'jev-1.14.0', 'max-calls': {} } } } },
     { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: true, checks: [null] } } },
     { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: false, checks: [] } } },
     { action: 'doctor', name: '检查安装与配置', value: { diagnostic: { ok: true, checks: [], configuration: [] } } },
@@ -737,4 +738,23 @@ test('locations are read-only and unknown locations are not shown; locale change
   assert.equal(ui.selection().taskDir, '/repo/docs/task');
   assert.ok(ui.container.querySelector('[aria-label="实际模型配置"]'));
   for (const button of ui.container.querySelectorAll('button')) assert.equal(button.type, 'button');
+});
+
+
+test('effective JEV configuration is read-only and does not imply a successful request', async t => {
+  let enabled = true;
+  const ui = await mountPanel(t, request => commandReply(envelope(request, { configuration: { ...configuration(), jev: { enabled, model: 'jev-1.14.0', 'max-calls': 8 } } })));
+  await ui.click('查看模型配置');
+  let report = ui.container.querySelector('[aria-label="实际模型配置"]');
+  assert.match(report.textContent, /配置已开启 · 在符合条件的决策点调用/);
+  assert.match(report.textContent, /固定模型版本jev-1.14.0/);
+  assert.match(report.textContent, /每项任务最多 JEV 请求次数8/);
+  assert.doesNotMatch(report.textContent, /JEV 已采用/);
+  assert.equal(report.querySelector('input,select'), null, 'inspection never adds a second master switch');
+  enabled = false;
+  await ui.click('查看模型配置');
+  report = ui.container.querySelector('[aria-label="实际模型配置"]');
+  assert.match(report.textContent, /配置已关闭 · 沿用原路径/);
+  assert.doesNotMatch(report.textContent, /配置已开启/);
+  assert.equal(ui.requests.some(request => request.action !== 'config'), false);
 });

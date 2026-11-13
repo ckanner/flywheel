@@ -125,6 +125,13 @@ attempt/token budgets and an explicit switch limit. This deterministic rule
 does not prove the next model is better. Channel errors use separately declared
 fallbacks; neither mechanism may select an undeclared model or payment channel.
 
+When the single [JEV switch](jev.md) is enabled, a confirmed failure can also
+offer the already allowed bindings as decision candidates. The engine checks
+the frozen allowlist, permission, remaining attempts and switch budget before
+adoption. No extra JEV model-routing switch is required. Without an allowed
+alternative, the configured binding stays in use. A semantic choice is recorded
+as a choice, not as measured proof that the selected model is faster or better.
+
 Effort changes cold-start the role and record complete before/after bindings.
 Comparisons must include rereading, startup and actual known/unknown usage and
 cost. Offline tests run real engine repair and recovery paths with controlled

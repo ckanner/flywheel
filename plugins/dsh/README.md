@@ -124,8 +124,37 @@ append JSON command records to chat. Explicit mutations and unknown-result recov
 keep durable command receipts. Settings has fixed navigation and save controls, inline role-session overrides and an optional usage budget. Environment checks live in Advanced and diagnostics; raw diagnostic responses do not fill the normal workflow view.
 
 Preparation-only tasks display a bounded investigation panel with observations,
-budgets, original-receipt reconciliation, Stop, and the evidence report. A report
-does not imply code delivery. See the [investigation guide](https://github.com/ckanner/flywheel/blob/main/docs/en/investigation.md).
+budgets, original-receipt reconciliation, Stop, and the evidence report. Approved
+diagnostic commands and HTTP queries show exit/status codes, cancellation and copy
+cleanup. Commands use explicitly granted host-process authority in copied inputs;
+the copy is not an OS sandbox. A report does not imply code delivery. See the
+[investigation guide](https://github.com/ckanner/flywheel/blob/main/docs/en/investigation.md).
+
+Under **Configuration → JEV decisions**, **Enable JEV** is the only JEV switch.
+It is off by default: existing execution paths run without JEV requests or shadow
+capture. Configure the System One endpoint, a pinned model and the API-key
+environment variable name, then save the enabled setting once. New investigations
+prepared through Task or New inherit the policy automatically; Run continues
+that frozen policy. Enabled JEV can choose the next approved evidence action, defer
+redundant actions on cited evidence, or end evidence collection early for a report.
+During implementation it can choose a legal next step after confirmed failure:
+local repair, an approved feedback check, bounded replanning or an allowed execution
+binding. Investigation and implementation share the task's call allowance. A
+feedback check never removes complete final acceptance.
+
+Turning JEV off also blocks subsequent JEV calls and adoption in an existing
+task, while retaining its receipts and budget. Turning it on does not
+rewrite a preparation created while disabled. The panel distinguishes configured
+JEV settings from the investigation's recorded status, calls, adopted actions and
+evidence-backed effects. Task and node details distinguish applied control decisions,
+settled feedback, unresolved actions and the original baseline. They show actual
+feedback results and before/after model bindings with the switch reason; applying a
+configuration does not claim a new session has already run or final acceptance passed.
+Advanced request limits, confidence thresholds and data categories share the same
+switch; there is no separate shadow or adoption toggle.
+Legacy shadow configuration does not automatically opt into live decisions. See
+[JEV decisions](https://github.com/ckanner/flywheel/blob/main/docs/en/jev.md).
+
 
 Visible canvases refresh task discovery; running tasks refresh status. Opening
 the view starts no task or diagnostic probe. Failed reads retain the previous
@@ -223,6 +252,13 @@ own supported paths. Quality rebuild thresholds default to disabled. See
 
 ### Permissions and worker lifecycle
 
+Optional `scheduler.prewarm:true` uses the DSH worker's two-phase `--prewarm`
+protocol to initialize one SDK during verification, without creating a Session
+or sending a prompt until the formal invocation is admitted. It defaults to
+false; other backends retain their existing startup paths. The same bounded
+shutdown and process-group proof apply to unused workers. See the
+[worker protocol](PROTOCOL.md#dsh-sdk-一次性预热) for expiry, cancellation and recovery.
+
 The DSH worker supports read-only, workspace-write, and explicit full access,
 with approvals set to never. New subscription presets request full access;
 existing files without a permission setting retain role-based behavior.
@@ -280,7 +316,7 @@ window geometry, real-account inference, or measured quality gains.
 |---|---|
 | [Worker protocol](PROTOCOL.md) | Detailed wire, permission, lifecycle, and error contracts (Chinese) |
 | [Vendored package provenance](vendor/README.md) | Codex source identity, tarball hashes, and optional Claude source evidence |
-| [JEV shadow evaluation](https://github.com/ckanner/flywheel/blob/main/docs/en/jev-shadow.md) | Default-off advisory experiment; does not alter actual routing |
+| [JEV decisions](https://github.com/ckanner/flywheel/blob/main/docs/en/jev.md) | One master switch for actual bounded decisions, with offline replay and explicit evaluation |
 | [Release guide](https://github.com/ckanner/flywheel/blob/main/docs/en/releasing.md) | Build, install, and publish the same checked artifacts |
 
 ## License

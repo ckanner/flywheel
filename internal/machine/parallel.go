@@ -33,12 +33,17 @@ type parallelGroup struct {
 	providers   map[string]chan struct{}
 	threads     map[string]string
 	directories map[string]string
+	stopped     bool // stop queue admission without cancelling a bounded sibling
 }
 type parallelLane struct {
 	group   *parallelGroup
 	id      string
 	inbox   int
 	release func()
+}
+
+func (c *Context) readyQueueEnabled() bool {
+	return c.Config.Scheduler.Mode == "parallel" && c.Config.Scheduler.Dispatch == "ready-queue" && c.Config.Scheduler.MaxParallel > 1 && !c.quick() && (c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled)
 }
 
 func (c *Context) parallelBatch(milestone string) []*contract.Packet {
@@ -79,7 +84,7 @@ func (c *Context) parallelBatch(milestone string) []*contract.Packet {
 		}
 		batch = append(batch, p)
 		scopes = append(scopes, p.Schedule.Writes...)
-		if len(batch) == c.Config.Scheduler.MaxParallel {
+		if len(batch) == c.Config.Scheduler.MaxParallel && !c.readyQueueEnabled() {
 			break
 		}
 	}
@@ -116,6 +121,12 @@ func (lane *parallelLane) merge(worker *Context) error {
 				copy.Last.Accounted, copy.Last.Accounting = true, jsonClone(previous.Last.Accounting)
 			}
 			owner.State.Sessions.Records[key] = copy
+			if copy.Last.Status == "blocked" || copy.Action == "wait" {
+				// An unsafe or unpersisted result already blocks new work, even
+				// before its lane returns from accounting or the Execute loop.
+				lane.group.stopped = true
+				lane.group.cancel()
+			}
 		}
 	}
 	owner.State.Inbox = append(owner.State.Inbox, jsonClone(worker.State.Inbox[lane.inbox:])...)
@@ -239,19 +250,13 @@ func (lane *parallelLane) reserveThread(harness, thread string) error {
 
 var parallelDrivers = drivers.CreateDrivers
 
-func (c *Context) runParallelExecute(packets []*contract.Packet) error {
+// Only admitted packets are returned for bounded recovery. A queued packet has
+// no invocation or workspace state until a slot is available; Plan may replace
+// its contract after the active cohort has quiesced.
+func (c *Context) runParallelExecute(packets []*contract.Packet) ([]*contract.Packet, error) {
 	head, ok := verify.GetBaseRef(c.Cwd)
 	if !ok {
-		return fmt.Errorf("parallel execution requires a Git checkout")
-	}
-	for _, packet := range packets {
-		binding, _, _, err := c.executionBinding(packet)
-		if err != nil {
-			return err
-		}
-		if c.Config.Drivers["execute"] != "mock" && !config.SupportsScopedSessions(binding.Harness) {
-			return fmt.Errorf("parallel execution requires a durable invocation adapter: %s", binding.Harness)
-		}
+		return nil, fmt.Errorf("parallel execution requires a Git checkout")
 	}
 	if c.Config.Worktree.Enabled != nil && !*c.Config.Worktree.Enabled {
 		ids := make([]string, len(packets))
@@ -260,22 +265,18 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 		}
 		c.State.SharedExecution = &state.SharedExecution{Cwd: c.Cwd, BaseRef: head, Packets: ids}
 	}
-	for _, packet := range packets {
-		ps := c.State.Packets[packet.PacketID]
-		ps.BaseRef, ps.Parallel = &head, true
-		if c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled {
-			wt := verify.EnsureUnitWorktree(c.Cwd, c.State.Slug, packet.PacketID, head)
-			if wt.Mode != "worktree" {
-				return fmt.Errorf("parallel worktree unavailable: %s", wt.Reason)
-			}
-			ps.Worktree = &wt
-		}
-		c.save()
-		if err := c.err(); err != nil {
-			return err
+	readyQueue := c.readyQueueEnabled()
+	initial := len(packets)
+	if readyQueue {
+		initial = min(initial, c.Config.Scheduler.MaxParallel)
+	}
+	for _, packet := range packets[:initial] {
+		if err := c.prepareParallelPacket(packet, head); err != nil {
+			return nil, err
 		}
 	}
-	// Every workspace was published above before any worker starts.
+	// Every initial workspace is published before any worker starts. Queue
+	// replacements are prepared only after an Execute/L1 lane has finished.
 	parent := c.RunContext
 	if parent == nil {
 		parent = context.Background()
@@ -288,20 +289,34 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 	}
 	group := &parallelGroup{owner: c, cancel: cancel, slots: make(chan struct{}, limit), providers: map[string]chan struct{}{}, threads: map[string]string{}}
 	outcomes := make([]error, len(packets))
+	var admissionErr error
 	var wg sync.WaitGroup
-	workers := make([]*Context, len(packets))
-	for i, packet := range packets {
+	// Each lane owns only its new invocations; the coordinator owns their union.
+	// A replacement must not reconcile another live lane's intent as abandoned.
+	// Retain the full pre-cohort ledger so earlier unresolved effects still block,
+	// while sibling identity checks and accounting use the authoritative owner.
+	sessionsBefore := jsonClone(c.State.Sessions)
+	newWorker := func(packet *contract.Packet) *Context {
 		worker := *c
 		worker.State = jsonClone(c.State)
+		worker.State.Sessions = jsonClone(sessionsBefore)
 		worker.RunContext = runContext
 		worker.Drivers = parallelDrivers(c.Config)
 		worker.sessionReports = nil
+		worker.prewarm, worker.prewarmReview = nil, false
 		worker.parallel = &parallelLane{group: group, id: packet.PacketID, inbox: len(worker.State.Inbox)}
 		worker.Log = func(line string) { group.logMu.Lock(); defer group.logMu.Unlock(); c.Log(line) }
-		workers[i] = &worker
+		return &worker
 	}
-	for i, packet := range packets {
-		worker := workers[i]
+	type completion struct {
+		index int
+		err   error
+	}
+	finished := make(chan completion, initial)
+	started := make([]*contract.Packet, 0, len(packets))
+	start := func(i int, worker *Context) {
+		packet := packets[i]
+		started = append(started, packet)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -309,14 +324,55 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 			if err == nil && !result.Green && !result.Bounded && !result.Spun && !result.Deferred {
 				err = fmt.Errorf("parallel packet %s stopped before L1 passed", packet.PacketID)
 			}
-			outcomes[i] = err
 			if err != nil {
 				cancel()
 			}
+			if err != nil || !result.Green {
+				group.mu.Lock()
+				group.stopped = true
+				group.mu.Unlock()
+			}
+			finished <- completion{index: i, err: err}
 		}()
 	}
+	workers := make([]*Context, initial)
+	for i := range workers {
+		workers[i] = newWorker(packets[i])
+	}
+	for i, worker := range workers {
+		start(i, worker)
+	}
+	next, active := initial, initial
+	for active > 0 {
+		result := <-finished
+		active--
+		outcomes[result.index] = result.err
+		if !readyQueue || next == len(packets) {
+			continue
+		}
+		group.mu.Lock()
+		if !group.stopped && runContext.Err() == nil {
+			group.logMu.Lock()
+			budget := c.budgetGate()
+			group.logMu.Unlock()
+			if budget == "stop" {
+				admissionErr = fmt.Errorf("parallel queue admission stopped by shared budget")
+			} else {
+				admissionErr = c.prepareParallelPacket(packets[next], head)
+			}
+			if admissionErr != nil {
+				group.stopped = true
+				cancel()
+			} else if runContext.Err() == nil {
+				start(next, newWorker(packets[next]))
+				next++
+				active++
+			}
+		}
+		group.mu.Unlock()
+	}
 	wg.Wait()
-	err := errors.Join(outcomes...)
+	err := errors.Join(append(outcomes, admissionErr)...)
 	if err != nil {
 		if c.State.Status == "running" {
 			c.State.Status = "paused"
@@ -328,7 +384,32 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) error {
 		}
 		c.save()
 	}
-	return err
+	return started, err
+}
+
+func (c *Context) prepareParallelPacket(packet *contract.Packet, head string) error {
+	ps := c.State.Packets[packet.PacketID]
+	previousPolicy := ps.ExecutionPolicy
+	binding, _, _, err := c.executionBinding(packet)
+	preparedPolicy := ps.ExecutionPolicy
+	ps.ExecutionPolicy = previousPolicy
+	if err != nil {
+		return err
+	}
+	if c.Config.Drivers["execute"] != "mock" && !config.SupportsScopedSessions(binding.Harness) {
+		return fmt.Errorf("parallel execution requires a durable invocation adapter: %s", binding.Harness)
+	}
+	if c.Config.Worktree.Enabled == nil || *c.Config.Worktree.Enabled {
+		wt := verify.EnsureUnitWorktree(c.Cwd, c.State.Slug, packet.PacketID, head)
+		if wt.Mode != "worktree" {
+			return fmt.Errorf("parallel worktree unavailable: %s", wt.Reason)
+		}
+		ps.Worktree = &wt
+	}
+	ps.ExecutionPolicy = preparedPolicy
+	ps.BaseRef, ps.Parallel = &head, true
+	c.save()
+	return c.err()
 }
 
 // Integration runs after all workers have quiesced. Incorporating earlier units
@@ -374,7 +455,10 @@ func (c *Context) prepareParallelIntegration(packet *contract.Packet) error {
 		ps.Evidence.L1, ps.Evidence.Review, ps.Evidence.FinalGate, ps.Evidence.DefectInjection = nil, nil, nil, nil
 		ps.BaseRef = &head
 		c.save()
-		if !c.l1Step(packet).Pass {
+		// Admission can persist a workspace before cancellation prevents its
+		// first Execute. Such a workspace has no candidate to certify yet;
+		// processPacket must still execute it after incorporating this HEAD.
+		if ps.Evidence.Executor != nil && !c.l1Step(packet).Pass {
 			return fmt.Errorf("parallel integrated candidate failed acceptance")
 		}
 	}
@@ -392,6 +476,7 @@ func (lane *parallelLane) finishTurn() {
 // Recover bounded execution failures before integrating a green sibling. Plan
 // revisions can then synchronize contract-only checkpoints to every worktree.
 func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore string) (bool, error) {
+	reviewReady := false
 	for _, previous := range batch {
 		packet := c.Packets[previous.PacketID]
 		if packet == nil {
@@ -399,6 +484,7 @@ func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore 
 		}
 		ps := c.State.Packets[packet.PacketID]
 		if ps.Status == "l1-passed" && c.doneReportValid(packet) && c.currentL1Evidence(packet) {
+			reviewReady = true
 			continue
 		}
 		outcome, err := c.processPacket(packet, processOpts{PauseBefore: "review"})
@@ -410,6 +496,14 @@ func (c *Context) recoverParallelFailures(batch []*contract.Packet, pauseBefore 
 		}
 		c.State.Status = "running"
 		c.save()
+	}
+	// A newly verified cohort would otherwise look like a resumed candidate to
+	// processPacket, bypassing its Execute-to-Review pause. All workers have
+	// quiesced here; preserve their L1 evidence before any Review or integration.
+	if pauseBefore == "review" && reviewReady {
+		c.State.Status = "paused"
+		c.save()
+		return true, c.err()
 	}
 	return false, c.err()
 }

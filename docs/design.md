@@ -84,6 +84,10 @@ DSH 使用原仓库作为 Session header 的 cwd，再通过公开工作目录�
 
 DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；正常关闭保留 2 秒用于历史落盘与插件释放，再进行有界 TERM/KILL 收尾。无法证明正常关闭就不能报告成功。不依赖 Teams、OAR、Forge，也不把 external subagent 名称当成原生 LLM provider。
 
+可选 `scheduler.prewarm:true` 提前启动一次性 DSH Review 运行环境：在串行 packet 的 Execute 已确认收尾后，与 L1／适用 Quick 检查重叠执行 SDK 启动与 `initialize`。准备阶段不创建或恢复 Session，不发送 prompt，不使用占位推理。新协议以 `--prewarm` 明确选择，与原 v1／v2 的一次性请求保持兼容；最多一个待用 SDK，60 秒 TTL，stdin EOF 始终触发有界清理。正式 Review 仍先通过全部适用验证、预算和角色调用准入，持久化实际 invocation intent 后才能消费同一运行环境。
+
+预热绑定实际 worker、SDK 配置、环境、Provider、模型、effort、权限、物理执行与项目目录，并由 Go 另外限制任务、Review scope 和账号 channel。绑定变化、检查失败、暂停或不再需要 Review 时先等待关闭；未知清理阻断后续模型调用。正常闲置过期只有在未尝试发送正式请求、原回执明确未派发、SDK 与整个进程组清理确认、调用未取消且仍有剩余期限时，才可在同一个实际 invocation 下执行一次普通冷启动，不增加业务失败或重置超时。预热不跨任务、角色、引擎进程复用，也不在并行执行 lane 或共享候选中积累 SDK。仅有 Execute 的单步操作和明确暂停在 Review 之前的流程不预热。并行组停稳后才在串行 Review 中准备，不声称已经与该组之前的并发 L1 重叠。原生 Codex Pro、Claude Code Pro 和 Kimi 路径保持各自公开生命周期；当前不声称它们支持这项无 prompt 的预启动。DSH 内的 ChatGPT／DeepSeek Provider 使用同一 SDK 能力判定。
+
 Codex Pro worker 是另一种受管进程，直接导入 `dsh-subagent-codex-pro/machine`，不创建 DSH 父模型来再次委派。插件内部启动 Codex app-server，保留其完整 harness 与用户已有 Codex 登录。Go 管理 worker 生命周期；插件拥有 app-server、guardian 和内部取消／清理。正常完成必须同时满足外层 worker 的物理终态及插件完整回执。worker 异常退出不能被解释成插件子进程已清理；取消和未知清理结果均阻止成功。
 
 Claude Code Pro worker 同样直接调用公开 machine API。插件先建立独立 guardian 的
@@ -122,7 +126,7 @@ Quick 首版要求一个里程碑、一个可独立验收的 packet，全部需�
 
 Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.config.json`。引擎比较 Plan 前后非契约候选内容；越界改动保留在磁盘上并报错停止，不能自动提交，也不能用回滚删除现场。外部 oracle 修订需要明确的人工任务；运行配置由用户修改后重启。当前不实现外部 oracle 的自动修订、提交与 worktree 同步事务。
 
-所有规划入口，包括失败升级后的修订，都走 `planUntilValid`。无效文件的具体校验错误反馈给 planner；不能绕过加载校验直接投入执行。合法契约重新加载后同步现行 packet 集；契约变化必须记录，受影响的 Executor/L1/Review/缺陷注入证据失效，旧证据移入审计历史。
+所有规划入口，包括失败升级后的修订，都走同一有界 Plan 校验循环；普通入口与带决策身份的重规划共享实现。无效文件的具体校验错误反馈给 planner；不能绕过加载校验直接投入执行。合法契约重新加载后同步现行 packet 集；契约变化必须记录，受影响的 Executor/L1/Review/缺陷注入证据失效，旧证据移入审计历史。
 
 合法契约先作范围受限的提交。即使 planner 或用户已自行提交，仍须按当前权威 HEAD 检查同步，不能因为“本次没有新 commit”跳过。已有 worktree 尝试快进到修订检查点，保留未提交实现；重新锚定 base-ref 前检查期间没有混入实现变更，避免把 executor 改动抹出边界 diff。分支分叉或路径冲突时明确停止，不强制重建或丢弃工作。当前仍是保守的 fast-forward 策略，复杂重基由人处理。
 
@@ -189,6 +193,12 @@ L1 与 Review 的 `identity` 绑定：
 
 Executor 可先跑与当前修改有关的小检查，随后 Go 在实际候选上执行完整冻结门禁。
 不再要求执行者固定重复一次全量验收；最终 L1、适用 L2/L3、独立评审和持久化不减。
+Packet 可选 `feedback-checks` 为最多八项已批准短检查，使用 GateEntry 的 cmd／
+script 与 expect，另可写最多 160 字符的 `purpose`，但不属于完成 gate。用途说明
+作为已批准任务摘要提供给 JEV，不发送命令或原始日志。确认失败后的 JEV 决策
+可选择有用途的短检查；缺用途的条目只供执行者参考，也可复查既有失败 L1 检查。
+检查参数、验证配置、候选及结果都绑定决策；改变检查集合使旧选择失效。执行继续
+使用受管进程、验证超时与环境白名单，不接受 JEV 自行编写命令。
 命令结果包含稳定 check ID、物理终态、期望值、完整失败输出摘要、候选／检查集／
 环境身份以及 UTF-8 头尾片段。诊断展示截断与物理进程输出截断是不同字段；后者
 仍使门禁失败。观察完整只表示命令终态可知，不等于完整测试清单。
@@ -225,11 +235,25 @@ Quick 复用已有执行者、确定性验证、缺陷注入和单元交付。�
 
 ### 4.8 调度与工作区管理
 
-新模板显式选择 `scheduler.mode:parallel`、`max-parallel:2`，`worktree.enabled` 默认开启。已有完整配置省略 scheduler 时仍按 serial 运行，显式 serial 同样保留。Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` 和互不重叠 `schedule.writes`、依赖已经交付的就绪 packet 并发执行。旧契约未声明这些范围时保持串行，不把口头“独立”当作调度依据。
+新模板显式选择 `scheduler.mode:parallel`、`max-parallel:2`，`worktree.enabled` 默认开启。已有完整配置省略 scheduler 时仍按 serial 运行，显式 serial 同样保留。`scheduler.dispatch` 缺省为 `batch`，可显式选择 `ready-queue`；`scheduler.prewarm` 缺省为 false。这两个运行时设置独立于 Auto／Quick／Full 和唯一的 `jev.enabled`，安装不改写用户配置，也不因新增能力提高默认并发。
 
-自动管理开启的并行批次必须先成功准备并持久化各自的独立 worktree；任何目录创建失败都停止派发，不退回共享目录并发。串行执行保留已有 worktree 不可用时的 `in-place` 回退及原因记录。所有 worker 使用私有状态视图，由一个协调器串行合并本 packet 的状态、session 和用量，再 CAS 保存。全局预算和实际账号渠道并发限制在派发前重新接纳，hard 预算只允许一个模型调用在飞，确认计费后才接纳下一次。取消等待整批已启动 worker 收尾。
+Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` 和互不重叠 `schedule.writes`、依赖已经交付的就绪 packet 并发执行。旧契约未声明这些范围时保持串行，不把口头“独立”当作调度依据。`batch` 一次选择不超过最大并发的成员，等待整批 Execute／L1 收尾后推进后续阶段。
+
+`ready-queue` 仅适用于 Full、parallel、最大并发大于 1 且自动管理独立 worktree 的路径。协调器在固定契约轮次中扫描全部已就绪、互相独立的 packet，以有界窗口运行；某个 worker 的 Execute／L1 完成后，空位即可接纳下一项，不等待其他长任务。依赖仅在真正交付后满足，不因 Execute 完成就提前接纳依赖者。Review、Plan 修订和 Git 集成继续等待全部已派发 worker 停稳后串行执行；发生契约修订后重新选择，不能把旧队列用于新契约。关闭自动管理时，包括可能登记外部 worktree 的任务，仍使用既有 batch 路径。
+
+自动管理开启时，每个 worker 派发前必须成功准备并持久化其独立 worktree。ready queue 的首个窗口须全部准备成功才开始派发，随后每个补位分别准备并 CAS 保存；准备失败停止新接纳、取消并等待已启动工作，不退回共享目录并发。尚未接纳的队列成员不创建目录、不改 packet 状态、不写模型调用意图。尝试耗尽或空转也停止补位，停稳后仅处理实际已启动成员的恢复或升级。串行执行保留已有 worktree 不可用时的 `in-place` 回退及原因记录。
+
+所有 worker 使用私有状态视图，由一个协调器串行合并本 packet 的状态、session 和用量，再 CAS 保存。全局预算和实际账号渠道并发限制在派发前重新接纳，hard 预算只允许一个模型调用在飞，确认计费后才接纳下一次。取消等待全部已派发 worker 收尾。`state.scheduler` 记录当前运行载入的策略；下次启动可载入更新的调度设置，但原调用、未完成共享批次及未知回执仍须按原身份核对，切换策略不能清除这些责任。
+
+同一轮的 worker 从派发前的会话账本快照开始维护本 packet 的调用，ready queue 补位也使用这份快照，不把当前仍在运行的兄弟任务调用复制成自己的恢复对象。协调器持续保有全部实际调用、计费与跨 packet 历史归属，原有未核对回执仍须在恢复时处理；某个 worker 的真实未知结果或终态回执保存失败，均在协调器合并到阻断事实时立即停止新接纳并取消，不等该 worker 循环返回，不能被快照隔离掩盖。已经取得的可信回执仍完成计费；无法保存的回执保持未确认，不能伪造已记账。
+
+独立 worktree 的并行路径同样遵守 `--pause-before review`。本轮 Execute／L1 全部通过且已启动 worker 停稳后，先保存任务 `paused`，保留 packet 的 `l1-passed`、工作区与候选证据，不进入 Review 或 Git 集成。batch 的本轮是已接纳的有界批次；ready queue 可按原规则补完固定独立候选集，再在第一个 Review 前暂停。未接纳项保持原状态。恢复核对原候选后复用有效 Execute／L1 证据；之后吸收已交付成果改变了候选，仍须复验。
 
 独立 worktree 中 Execute／L1 可并发，Review、集成和最终 gate 保持串行。后完成分支先吸收已验证的集成 HEAD，原 L1／Review 证据失效，在合成候选上重新验证。集成冲突保留 worktree 并停止，不丢弃或强推成果。
+
+显式 `prewarm:true` 允许串行 packet 在 Execute 完成后，与确定性验证重叠准备下一个 DSH Review runtime，每次至多一个。准备只执行 SDK 初始化，不创建或恢复 Session、不提交模型 prompt；真正 Review 仍须等待完整前置验证、预算和候选身份核对。并行 Execute／L1 lane 不预热，独立并行组停稳后的串行 Review 路径才可准备；共享候选批次不预热。主要重叠机会是串行 Execute 后的 L1 与适用 Quick 检查，不能把并行 lane 的全部 L1 时间计作被隐藏的等待。
+
+角色历史与权限保持隔离，准备身份不匹配或未使用的 runtime 必须有界收尾，未知清理仍阻断。实例安全过期且尚未尝试正式 start 时，只有精确未派发回执、SDK 和进程组清理及剩余时限均成立，才可在同一已持久化 invocation 中冷启动一次，不增加业务尝试或重置预算。其他 harness 保持冷启动，session 续用本身不算预热。该流水边界没有让 Review 推理、Plan 或 Git 集成与仍在写入的 worker 重叠。真实速度、资源消耗与是否调整默认值另行验收，见 [P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)。
 
 关闭自动管理不禁止并行，也不禁止用户或执行者自行选择 worktree。共享同一 checkout 的批次只并发 Execute；Go 持久化批次成员和初始基线，执行回执按声明写入范围绑定候选。全部 worker 收尾后，逐 packet 串行运行确定性检查和独立 Review，证据绑定完整共同候选。共享边界按声明范围投影，同时拒绝批次范围外和禁止路径的改动；这不能归因具体进程，也不是文件隔离保证。
 
@@ -249,13 +273,15 @@ Go 校验仓库、基线、分支、候选和独占归属后登记；下一次�
 
 `state.json` 仅由 `internal/state` 写入：schema 校验、进程间锁、revision CAS、临时文件与原子 rename。任务生命周期另持 `.run.lock`；lease 是并发运行与停止完成的判断依据。运行信息文件原子更新，包含用于关联本次运行的随机 control token；PID 只作展示，不作为停止授权。日志、pid、锁、停止请求及临时控制文件不进入提交。
 
-`state.sessions` 是可选的角色账本。新引擎兼容旧 v1，新增调用或人工接管写入 v2，
-包含运行归属与绑定快照；旧状态缺字段仍可读取，未知版本或损坏结构明确失败。
-v2 是旧引擎必须在加载阶段拒绝的栅栏，防止其忽略 `handoff`。配置的 session
+`state.sessions` 是可选的角色账本。新引擎兼容 v1／v2／v3；普通新增调用或人工接管至少使用 v2，
+第一次预热提升为 v3，此后调用、接管和清理均不降级。账本包含运行归属与绑定快照；旧状态缺字段仍可读取，未知版本或损坏结构明确失败。
+v2 阻止更早引擎忽略 `handoff`，v3 阻止只认识 v1／v2 的引擎忽略新的预热清理责任。配置的 session
 policy-version 仍为 1，worker、lifecycle 和 recovery 协议分别版本化。记录按 Plan／里程碑、Execute／packet、Review／评审职责、
 Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd、绑定／目标／契约身份、
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
 intent／received／consumed／blocked、派发／结果／清理和用量事实。
+
+`state.worker-prewarm` 记录至多一个尚未交接或清理的准备意图，保存随机 ID、Review scope、运行身份和绑定摘要，不保存 prompt、凭证或可复用会话。先 CAS 保存意图，后启动 SDK；正式调用意图持久化后交接清理责任。未消费的终态回执在 `.control/prewarm/<id>/`，通过私有、有界文件与排他发布持久化，确认文件和目录同步，受现有 volatile 规则排除出 Git。恢复仅接受精确 ID／摘要、明确未发送 prompt、SDK 清理确认、外层 worker 及其原进程组均已退出；PID／进程组 ID 只用于检查退出，不能授权终止其他进程。没有可信证据、仍存活或标识被复用都保持阻断；重启不会续用预热实例，关闭优化也不能擦除旧责任。启动前 CAS 失败记录本地确定的 no-process 回执，不能为了补回执启动进程。
 
 调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
 下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
@@ -343,10 +369,24 @@ Git 完成顺序：验证身份仍有效 → 在 worktree 只提交实现路径 
 定义，`internal/state` 独占写入。准备保存、动作意图、观察、报告和恢复均使用版本化
 CAS 与原子持久化。目标是调查或原范围内调查后修复；Quick／Full 是后续实现策略。
 
-首个受管动作族仅有 Go 文件读取、字面量搜索、目录名字读取，受精确路径、打开 inode、
-文件／输出字节、总动作数与首次准备 deadline 限制。无任意 shell 或外部副作用接口。
+受管动作包含 Go 文件读取、字面量搜索、目录名字读取，以及显式批准的 `run_command`
+和 `http_read`。文件动作继续受精确路径、打开 inode、文件／输出字节、总动作数与
+首次准备 deadline 限制；目录读取只授权名字，不递归授权后代内容。
+
+命令冻结 argv、输入文件、环境变量名、超时和预期退出码。引擎复制精确批准的普通
+文件到私有副本后执行，不隐式拼接 shell；解释器须明确出现在已批准 argv 中。
+`execution-boundary: host-process` 声明真实权限边界：副本不构成 OS 沙箱，不能
+保证命令无法读取副本外文件或访问网络。需要强隔离时批准实际容器／沙箱入口。
+HTTP 仅 GET／HEAD 精确 URL，HTTPS（loopback 可 HTTP），禁 URL 凭据、fragment、
+重定向与环境代理；header 凭据只存环境变量名。方法名称不替代对端操作授权。
+单动作超时、响应／输出上限与总 deadline 一起生效，回执记录实际终态、输入身份
+和清理；未知执行或清理失败阻断，保留现场，不重放。预期非零退出可作为复现事实，
+但不是提前结束调查所需的成功观察；外部数据不能改变权限、预算或规则。
+
 同一 `.run.lock` 与原 token 停止协议拥有后台生命周期，另有准备状态短写锁；宿主／
-skill 不执行循环。只剩一个合法动作直接执行，多项语义选择才考虑显式 JEV。
+skill 不执行循环。Go 按唯一 `jev.enabled` 总开关冻结策略；单一合法动作直接执行，
+多项语义选择才考虑 JEV。有效观察允许有证据引用的冗余动作跳过或提前转入报告，
+这些控制选项由引擎生成，不扩大原动作权限，也不把取证决定当成根因结论。
 
 动作先持久化唯一 invocation，再执行并先保存不可覆盖回执，最后 CAS 消费。未知动作
 阻断，不能换任务／会话／模式重放。JEV 的可选未知请求单独只读对账，保留未知用量，
@@ -367,9 +407,13 @@ DSH 的 `ACCOUNT_SIGN_IN_REQUIRED`、`ACCOUNT_TOKEN_INVALID` 精确映射为 AUT
 
 DSH 结构化 result.error.code 经协议身份、终态与既有码表校验，并确认 error 对应物理退出码 1 后，以独立 ErrorCode 字段穿过 driver、编排、辅助模块和诊断，不再把 AUTH 拼进文本后依赖英文关键词重猜。矛盾的退出码、超时、spawn、signal、截断、取消或未确认清理等进程事实不能被 provider 码掩盖；无结构化码的旧 driver 保留既有文本分类优先级。DSH error 帧的 settled:false 明示 SDK 清理尚未确认；已启动 worker 缺少可信终态回执（包括协议身份损坏、缺失终态或坏尾帧）也不能证明 SDK 已正常关闭。两者均保留 CleanupError 并停止自动重试，而不是推断进程仍在运行；正常启动前失败的 settled:true 不作此判断。SDK 的坏尾帧和 EOF 未换行残帧也必须覆盖先前的 provider 错误；不能在 SDK 协议已损坏后包装出可信的 AUTH/QUOTA 供后备决策。外部取消仍保持 cancelled。
 
+预热初始化的 `warm-result.error.code` 遵守相同规则：完整且身份匹配的输出、原私有未派发清理回执和预期物理退出均成立后，保留已知错误码供原有重试／渠道后备判断。认证、参数或服务错误不能因过滤预热控制帧而统一变成 TRANSPORT，也不能被当作安全过期取得额外冷启动。未知码和矛盾进程事实不取得可信结构化分类；正常 TTL 过期仍遵守原有精确回执与剩余期限条件。
+
 Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既有码；空答案使用明确的 `empty response` 诊断并归入 EMPTY_RESPONSE，不增加另一套重试或付费降级策略。
 
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
+
+DSH 预热承载的正式调用按最近可观察活动刷新 idle deadline。计时回调执行时必须重新核对当前期限与进程状态，已排队的旧回调不能取消期限已经刷新的调用。准备 TTL 在已接收 worker 终态或进程结束后均不得改写过期状态，不能把已确认的初始化失败变成允许冷启动的安全过期；终态已到但进程仍活着时，TTL 后的原关闭宽限继续生效。worker 明确报告的真实过期仍保留原回退条件，真正超时仍执行原有界收尾。
 
 清理是否已确认另于 provider 错误码判断。已启动的 Codex Pro worker 丢失可信清理回执时，外层 worker 的退出不证明独立 guardian／app-server 进程组已经静止；driver 必须记录 `CleanupError`。所有模型阶段在记录回执和计量后遇到该字段即保存升级记录、保留工作区并停止本次运行，禁止传输重试、渠道降级、Plan 冷启动和下一任务。支持的主任务适配器还独立判断 dispatch/outcome：清理已确认也不能使未知派发或未知结果变为可重试。只有可信调用事实允许时才执行既有错误重试策略。恢复前确认遗留进程已停止只解决清理事实；没有可信结果回执仍阻断，固定等待也不能冒充证明。
 
@@ -474,30 +518,75 @@ Provider 内部排队／推理／工具细分保持 unknown。已测边界包括
 Verify、Review、Judge、受管调用、重试等待、持久化和调查。宿主准备对话不可观察的
 耗时不填零，也不把离线 fixture 的耗时宣称为真实模型加速。
 
-### 8.2 可选 JEV 影子评估
+### 8.2 JEV 唯一总开关
 
-独立 `shadow prepare|run|report` 读取任务契约和已有策略，准备可审阅的有界摘要，再显式调用 MeRouter 原生 System One。`jev-shadow.enabled` 默认关闭；关闭时没有自动请求或影子记录，也不需要密钥。显式开启后，仅新任务首次普通 run 在原策略落盘后最多捕获一次本地快照；不读密钥、不发 HTTP，也不创建无人管理的 goroutine。恢复和单步不重复捕获；之后显式 shadow run 才执行请求。自动开关不禁止独立实验。
+`jev.enabled` 是所有在线 JEV 路径的唯一启用设置，默认 false。开启后，在调查及
+确认失败后的执行决策点自动使用采用策略；正常任务没有独立 shadow／advisory／adopt 或分功能
+开关。关闭时没有 JEV 请求、自动采集或建议采用，沿用原确定性调查动作与实现流程。
+Task／New／Run 共用 Go 创建时的配置解析；宿主提供调查目标与动作，不手写决策模式。
 
-本地捕获失败只告警；显式评估中的网络、密钥与未知结果按影子回执记录。硬预算任务跳过自动捕获；后续影子研究使用独立实验预算，不混入执行预算。观察不写任务 state，不改变 Quick／Full、模型路由或权限。原始概率、响应版本、输入摘要、实际基线和建议分别记录；失败或证据不足记为 abstain，不能写成安全通过。配置字段见 §13，操作见 [JEV 指南](zh-CN/jev-shadow.md)。
+旧 `observeShadow`、独立 `internal/shadow` 请求客户端已移除。`jev-shadow` 只在
+配置加载时校验并迁移连接信息，绝不把旧本地捕获授权提升为在线采用；明确的 `jev`
+对象优先。编辑器保存统一字段并移除旧 key，保留原备份与 CAS。隐藏 `shadow` 命令
+只返回迁移错误；历史快照、schema 和验收记录仍可保留。用户指南见 [JEV](zh-CN/jev.md)。
+
+创建调查时冻结有效目标、固定模型、凭据变量名、数据类别、阈值和调用上限。运行中
+关闭总开关，在请求派发前、返回后及采用前均阻止后续 JEV 效果；已派发请求仍用原
+身份对账，不重发、不清空用量。原本开启的运行重新开启后沿用同一预算；原本关闭的
+准备记录保留无 JEV 的原路径，新准备记录才获得新策略。目标不相容或当前权限／
+限制收紧时，原运行记录 policy-changed 并回到合法基线，不改写冻结契约。状态中的
+jev-status 是最近观察值，界面不能把它当作即时重新读取的配置。
+
+JEV 配置接受 1–120 位 ASCII 字母、数字和下划线组成的凭据变量名，首位为字母或
+下划线；冻结契约保留大小写，不将名称转成大写。准备记录继续接受旧 schema 已允许
+的最长 128 位大写名称，保证已有冻结记录可读；这不扩大新配置的 120 位上限。
 
 ### 8.3 有限决策与原子采用
 
-新 `internal/decision` 消费版本化 Snapshot／Policy，独立于旧工作流 shadow 开关。
-off／offline 不联网，shadow 只落本地快照，advisory 只记录建议，adopt 仅允许批准的
-Go 诊断动作。数据字段单独 opt-in；真实目标 endpoint、固定版本模型、问题／策略／
-动作集合与超时进入回执身份。一个原生请求配对 applicability Noul 与 action Choice，
-保存完整概率；置信度不是部署正确率，阈值仅是明确实验参数。
+`internal/decision` 消费版本化 Snapshot／Policy；运行策略由总开关生成 off 或
+adopt，offline／shadow／advisory 保留供旧记录读取和明确评估工具使用，不构成另一个
+任务开关。调用方仅开放自己实现了执行与恢复的动作族：调查动作及取证控制、失败
+后的局部修复／补充反馈／重规划，以及冻结允许集内的模型／effort。协议枚举不提供
+执行权，实际候选由 Go 的前置条件与绑定生成。一个原生请求配对
+applicability Noul 与 action Choice，保存完整概率；阈值是配置参数，不是实测正确率。
+
+取证控制只在已有成功、未截断、与假设关联且候选摘要仍匹配的观察满足前提时，
+允许选择跳过冗余动作或提前结束收集。效果保存具体 decision、观察引用和动作绑定；
+跳过后回到 ready 继续其他动作，提前结束才进入 awaiting-report。结束后重复 Run
+不重新开始取证，Finish 仍可提交分析报告。取证结束不标记假设为 supported／
+contradicted，不生成根因或代码完成结论；报告及后续验收仍负责其原有语义边界。
+
+执行决策只在确认结束的失败边界发生，不替代渠道错误重试，不在每次工具调用前
+固定增加选择。可选动作包括在原边界继续修复、运行已批准的反馈检查、请求原有
+受限规划和选择 execution-policy 中的合法完整绑定。补充检查只增加反馈，最终
+完整 L1／适用 L2/L3 与独立评审不减少；Plan 仍遵守次数、范围、契约和持久化要求，
+Quick 请求重规划先保存 Full 升级。模型／effort 切换不重置尝试或预算，保持严格
+冷启动与权限身份。没有多个合法选项、证据不可靠或实际动作未知时走原基线／阻断。
 
 请求前持久化意图、独占调用额度，unknown 计入上限且不重发。采用前复核任务／run／
-revision、契约、候选、观察和绑定；receipt 消费、decision pending 清理与唯一 action
-invocation 必须在同一 CAS 保存后再派发。请求自己的 journal 写入不改变任务 revision，
-其他事实变化使建议失效。硬 token budget 无可实施的单次上限时跳过可选请求，不以
-估算预留或未知为零。JEV 无权扩权限、换渠道、提高预算、取消验收或宣布完成。
+revision、契约、候选、观察、当前启用状态和绑定；receipt 消费、decision pending 清理
+与动作 invocation 或取证效果必须原子 CAS 后生效。未知动作仍阻断。请求 journal
+写入不改变任务 revision，其他事实变化使建议失效。硬 token budget 无可实施的单次
+上限时跳过可选请求，不以估算预留或未知为零。JEV 无权扩权限、任意换渠道、提高
+预算、取消验收或宣布完成。
 
-`decision replay` 从冻结快照与原生响应离线评估，强制 offline，不读密钥、不联网；
-`decision evaluate` 要求显式目标、固定模型、密钥变量、私有 journal 与调用预算，
-强制 advisory。两者输出一份 JSON 决策报告，不执行动作、不改变任务状态；它们
-消费通用决策快照，不混用旧工作流 `shadow run` 数据集。具体参数见双语调查指南。
+实现任务维护自己的持久决策账本；调查移交携带已消耗调用和已知／未知用量。任务
+所有者协调并行 worker 的预约与消费，共用调用上限，不因 packet、恢复或切换模型
+获得新额度。决策采用保存可恢复的动作效果，重复恢复不重复检查、重规划、模型切换
+或用量导入。当前总开关关闭或目标／数据／预算政策不相容时不再采用，但仍按冻结
+身份核对已派发回执。显式在线 evaluation 使用独立实验账本，不改任务运行策略。
+
+重规划另在派发前保存 `replan-running` 与原 Plan invocation 边界。恢复只在本次
+新调用的回执、决策原因、当前 guard 和 Plan checkpoint 均一致时复用结果；仅有
+旧的 consumed 标志不构成证明，无法确认时阻断而不重发。反馈动作的 running／
+unknown 或候选发生变化同样阻断，不能靠关闭 JEV 绕过未确认的真实动作。
+执行决策使用 Snapshot v2 的失败策略问题，历史调查 v1 的问题与身份哈希保持兼容。
+
+`decision replay` 读取冻结输入与原生响应，强制 offline，不读密钥、不联网、不写
+账本；关闭总开关仍可查看旧记录。`decision evaluate` 服从同一总开关和作用域解析，
+从配置取得固定目标／凭据；显式参数必须匹配，数据取交集、阈值取更严格值、次数和
+超时不得放宽配置。它使用独立私有 journal，强制 advisory，不执行动作、不改任务。
+同一输入／journal 读取原回执；未知不重发。具体操作见双语 JEV 指南。
 
 ## 9. 权限与宿主能力
 
@@ -530,7 +619,10 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | 角色历史、恢复和质量策略 | [会话生命周期提案](plans/2026-11-07-session-lifecycle.md) | [P1/P2 验收](validation/2026-11-07-session-lifecycle.md)、[P3/P4 验收](validation/2026-11-08-session-p3-p4.md) |
 | 可选 Claude machine API | [Claude 指南](zh-CN/claude-code-pro.md) | [Claude 接入验收](validation/2026-11-07-claude-code-pro.md) |
 | 流程控制台、任务发现和工作台 | [控制台方案](plans/2026-11-08-flow-console.md)、[任务发现](plans/2026-11-10-task-discovery.md)、[工作台](plans/2026-11-10-workbench-redesign.md) | [控制台](validation/2026-11-09-flow-console.md)、[任务发现](validation/2026-11-10-task-discovery.md)、[工作台](validation/2026-11-10-workbench-redesign.md) |
-| 可选影子评估 | [JEV 方案](plans/2026-11-10-jev-shadow.md) | [JEV 验收](validation/2026-11-10-jev-shadow.md) |
+| JEV 总开关与取证决策 | [统一 JEV 方案](plans/2026-11-12-unified-jev-decisions.md) | [实现验收](validation/2026-11-12-unified-jev-decisions.md) |
+| JEV 执行决策与诊断实验 | [扩展方案](plans/2026-11-13-jev-execution-decisions.md) | [离线工程验证](validation/2026-11-13-jev-execution-decisions.md) |
+| P5 就绪队列与一次性 DSH 预热 | [实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md) | [工程验证与收益边界](validation/2026-11-13-p5-ready-queue-prewarm.md) |
+| 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
 | 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |
 
@@ -548,7 +640,10 @@ Auto／Quick／Full、角色历史、可信回执、Codex／Claude 的持久化 
 
 `control launch` 默认 mode=auto；`control start` 和 `run` 也接受可选 `--mode auto|quick|full`，省略时沿用 Spec 或持久化策略。status、stop、step、config、doctor 不接受模式切换。`--only` 运行指定子环至合法终态或有界停止；`--only execute` 仍为部分 Execute/L1，不是 Quick。Quick 的单步 Review 使用最终评审协议，单步 Verify 包含候选 L2/L3；单步 Plan 需显式升级 Full。`--pause-before review` 保留已验证候选用于下次恢复，不能与 `--only` 并用。
 
-独立 `shadow prepare|run|report` 输出单份 JSON；prepare/report 只读，run 显式执行有界影子调用。退出码 0=报告成功、1=输入或运行错误、3=含失败／未知／未运行项、143=取消。自动开关不禁止显式实验；两者均不能修改实际任务策略。详见 [JEV 指南](zh-CN/jev-shadow.md)。
+`decision replay|evaluate` 在完成评估后输出单份 JSON，均不执行动作。replay 完全离线，
+evaluate 服从统一 JEV 总开关。退出码 0=成功、1=输入／配置错误、3=失败／未知请求、
+143=取消；输入或配置解析前失败可不产生报告。旧 `shadow` 入口隐藏并返回迁移错误，
+不创建快照或请求。详见 [JEV 指南](zh-CN/jev.md)。
 
 `control investigate` 从有界 JSON stdin 接受 start／run／status／report／cancel。
 start 仅保存准备，run 需 observed revision 并在后台派发 `run --investigate`；该 worker
@@ -636,7 +731,11 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 配置按首个完整文件选择，不深度合并：任务目录 → 项目根 → 全局 `~/.config/flywheel/flywheel.config.json`（`FLYWHEEL_CONFIG` 可覆盖全局路径）→ 内嵌模板。升级不自动覆盖已有配置。模型绑定位于 `loops`、`routes`；`drivers` 只选择 mock/real，不是 provider 注册表。
 
-顶层 `jev-shadow` 以 `templates/jev-policy.schema.json` 为字段信源。enabled 默认 false，旧配置同样关闭；其他字段仅定义可选观察的 endpoint、model、expected-model、key-env 和 timeout-ms（最大 5000）。不探测密钥或网络来决定主任务是否可运行，关闭时无观察副作用；配置格式错误仍按正常加载纪律报错。
+顶层 `jev` 以 `templates/jev-config.schema.json` 为字段信源：enabled 默认 false，
+endpoint 默认空，model 固定版本，key-env 只存变量名；timeout-ms、max-calls、
+min-applicability、min-choice 和 allowed-data 限定请求。开启配置校验目标与格式，
+不探测实际密钥或网络。唯一开关同时约束调查、失败后的执行决策和显式在线评估。旧 `jev-shadow`
+仅用 `jev-policy.schema.json` 校验历史字段并做关闭状态迁移，不再是运行配置。
 
 可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
 
@@ -650,6 +749,11 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 进入绑定身份；原始适配器回执保留 requested／accepted／可得 effective 证据，
 缺失不填零、不臆造有效档位。
 
+开启 JEV 后，同一允许集也可为失败后的模型／effort 决策提供候选，仍消耗原
+`max-switches`，记录实际选择及完整绑定。未配置该策略时继续固定路由；JEV 不会
+自动生成额外模型、provider、账号或付费渠道许可。渠道后备保留既有错误分类，
+不能把 AUTH／QUOTA 当作质量不足。真实模型与 effort 的优劣由后续配对验收决定。
+
 顶层 `sessions` 的字段信源为 `templates/session-policy.schema.json`：mode 为
 fresh／scoped，policy-version 固定为 1。旧文件省略时保持 fresh；两份新模板显式
 scoped，模型迁移保留旧文件的会话策略或其省略。显式不完整、null、未来版本和未知
@@ -658,7 +762,8 @@ historyRecoveryTested 始终 false，不为验证历史而发模型请求。
 
 provider 表示 DSH SDK 的模型适配器，channel 表示账号／凭证／后备渠道。实际 provider 按 binding.provider → channels[channel].provider → 旧 DSH channel 名解析；两个显式 provider 不一致时拒绝加载。非 DSH harness 不能声明一个会被静默忽略的 provider。降级到另一个 channel 时重新解析其 provider，不能沿用旧账号的适配器。原始 profile 名只作配置来源，不进入 Kimi 恢复身份；实际绑定改变按原有会话条件冷启动。模型绑定改变影响后续调用，不单凭未使用 profile 的改动使历史代码验收失效。
 
-默认内嵌表见 [flywheel.config.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](zh-CN/configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的任务不热加载新配置，下次启动才使用新方案。
+默认内嵌表见 [flywheel.config.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)，具名配置完整示例见 [flywheel.profiles.example.json](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)，覆盖和预检规则见[配置指南](zh-CN/configuration.md)。现有用户要采用新方案，使用 `flywheel config migrate --preset subscriptions` 预览实际命中文件的变化，再以 `--apply` 显式应用。命令备份原始字节，保留预算、验证、worktree 和其他非模型设置，更新已约定的阶段模型、thinking、订阅渠道及 full-access 权限；默认关闭旧第二意见并明确停用未经验证的旧多模态路由。额外自定义路由/阶段会阻断迁移并列出，不能猜测替代。可用 `--expect-sha256` 绑定预览身份；应用前检测文件变动，失败不损坏原配置。运行中的实现任务不热加载模型配置，下次启动才使用新方案。JEV 的有效关闭和
+更严格授权另在每次决策边界重核，不重置已冻结的目标和账本。
 
 DSH 插件的兼容声明只覆盖已核对的 `0.2.1-rc.5`、`0.2.2-rc.1` 与 `0.2.2-rc.2`，不对未知预发布版本放行。权限事件只在公开 `agent/created` 阶段写入：Session 已完成只读创建公告，Agent 尚未释放首个模型请求。SDK 权限回执在写入显式 `approval/policy` 后，通过公开 `approval.overrideOf(session)` 读取实际覆盖值；不调用私有 `effectivePolicy`。候选必须通过两版真实发布的 renderer 生命周期检查，并在目标宿主验证无推理 SDK 收尾。
 

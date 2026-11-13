@@ -1,5 +1,5 @@
 {
-  "jev-shadow": {"enabled": false, "endpoint": "", "model": "jev", "expected-model": "jev-1.14.0", "key-env": "MEROUTER_API_KEY", "timeout-ms": 5000},
+  "jev": {"enabled": false, "endpoint": "", "model": "jev-1.14.0", "key-env": "MEROUTER_API_KEY", "timeout-ms": 5000, "max-calls": 8, "min-applicability": 0.8, "min-choice": 0.6, "allowed-data": ["task-summary", "diagnostic-facts", "source"]},
   "version": 1,
   "sessions": {
     "mode": "scoped",
@@ -130,7 +130,7 @@
     "protected-test-patterns": [],
     "_note": "test-file-patterns 仅用于抽样识别；普通单测可随实现修改。冻结验收必须由 packet.boundaries.must-not-touch 或 protected-test-patterns 显式保护。100% 覆盖率仍由验收命令执行。"
   },
-  "scheduler": {"mode": "parallel", "max-parallel": 2},
+  "scheduler": {"mode": "parallel", "max-parallel": 2, "dispatch": "batch", "prewarm": false},
   "worktree": {
     "enabled": true
   },

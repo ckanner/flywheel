@@ -2,15 +2,19 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"syscall"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/decision"
+	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +48,7 @@ func decisionCmd() *cobra.Command {
 }
 
 func decisionEvaluationCmd(live bool) *cobra.Command {
-	var input, policyFile, response, directory, keyEnv string
+	var input, policyFile, response, directory, keyEnv, taskDir, cwd string
 	var maxCalls int
 	options := decision.Options{}
 	name, description := "replay", "离线读取原生响应或 fixture；不发送 HTTP 请求"
@@ -53,6 +57,19 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 	}
 	cmd := &cobra.Command{Use: name, Short: description, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, cancel := diagnosticContext(cmd)
+			defer cancel()
+			var effective *config.Config
+			if live {
+				var err error
+				effective, err = configureDecisionEvaluation(ctx, taskDir, cwd, &keyEnv, &options)
+				if err != nil {
+					if ctx.Err() != nil {
+						return &exitError{code: 143, cause: err}
+					}
+					return err
+				}
+			}
 			if input == "" || options.Endpoint == "" || options.Model == "" || options.ExpectedModel == "" {
 				return fmt.Errorf("decision requires --input, --endpoint, --model and --expected-model")
 			}
@@ -66,13 +83,11 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 			capture.Policy.Mode = decision.Offline
 			var receipt decision.Receipt
 			if live {
-				capture.Policy.Mode, capture.Policy.MaxCalls = decision.Advisory, maxCalls
+				capture.Policy = boundEvaluationPolicy(capture.Policy, effective.JEV, maxCalls)
 				options.APIKey = os.Getenv(keyEnv)
 				if options.APIKey == "" {
 					return fmt.Errorf("decision key environment variable is empty: %s", keyEnv)
 				}
-				ctx, cancel := diagnosticContext(cmd)
-				defer cancel()
 				receipt, err = decision.Evaluate(ctx, directory, capture.Snapshot, capture.Policy, options)
 			} else {
 				var native []byte
@@ -85,7 +100,7 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 				return err
 			}
 			printJSON(cmd, decisionCLIReport{Mode: capture.Policy.Mode, Policy: capture.Policy, Baseline: capture.Snapshot.BaselineID, SourceTargetHash: capture.TargetHash, Receipt: receipt})
-			if receipt.Reason == "cancelled-before-dispatch" {
+			if receipt.Reason == "cancelled-before-dispatch" || ctx.Err() != nil {
 				return &exitError{code: 143}
 			}
 			if receipt.Status == "error" || receipt.Status == "unknown" {
@@ -93,7 +108,9 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 			}
 			return nil
 		}}
-	cmd.Flags().StringVar(&input, "input", "", "已审阅的 shadow .snapshot.json，或裸 Snapshot JSON")
+	cmd.Flags().StringVar(&input, "input", "", "已记录的决策输入 .input.json / .snapshot.json，或裸 Snapshot JSON")
+	cmd.Flags().StringVar(&taskDir, "task-dir", "", "可选任务目录，用于解析同一 JEV 总开关")
+	cmd.Flags().StringVar(&cwd, "cwd", "", "项目目录；显式评估也遵循此范围的 JEV 配置")
 	cmd.Flags().StringVar(&policyFile, "policy", "", "可选独立策略 JSON；裸 Snapshot 必需，mode 由子命令强制限定")
 	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "", "明确的 HTTPS /v1/systemone 地址；replay 仅记录身份")
 	cmd.Flags().StringVar(&options.Model, "model", "", "固定版本 jev-x.y.z；不允许可变别名")
@@ -108,6 +125,45 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 		cmd.Flags().StringVar(&response, "response", "", "原生 System One 响应或离线 fixture JSON")
 	}
 	return cmd
+}
+
+// Online evaluation uses the same enabled flag, target and credentials as task
+// decisions. Old explicit flags are accepted only when they match that config.
+// Replay never calls this helper and remains a local reader of existing records.
+func configureDecisionEvaluation(ctx context.Context, taskDir, cwd string, keyEnv *string, options *decision.Options) (*config.Config, error) {
+	cfg, err := diagnostic.LoadConfigurationContext(ctx, cwd, taskDir)
+	if err != nil {
+		return cfg, err
+	}
+	if !cfg.JEV.Enabled {
+		return cfg, fmt.Errorf("JEV is disabled in the effective configuration; enable jev.enabled to evaluate online")
+	}
+	for _, field := range []struct {
+		name  string
+		value *string
+		want  string
+	}{{"endpoint", &options.Endpoint, cfg.JEV.Endpoint}, {"model", &options.Model, cfg.JEV.Model}, {"expected-model", &options.ExpectedModel, cfg.JEV.Model}, {"key-env", keyEnv, cfg.JEV.KeyEnv}} {
+		if *field.value != "" && *field.value != field.want {
+			return cfg, fmt.Errorf("--%s must match the effective JEV configuration", field.name)
+		}
+		*field.value = field.want
+	}
+	options.Timeout = min(options.Timeout, time.Duration(cfg.JEV.TimeoutMS)*time.Millisecond)
+	options.HardBudget = options.HardBudget || cfg.Budget.Enforce == "hard"
+	return cfg, nil
+}
+
+func boundEvaluationPolicy(p decision.Policy, cfg config.JEVConfig, maxCalls int) decision.Policy {
+	p.Mode, p.MaxCalls = decision.Advisory, min(maxCalls, cfg.MaxCalls)
+	p.MinApplicability, p.MinChoice = max(p.MinApplicability, cfg.MinApplicability), max(p.MinChoice, cfg.MinChoice)
+	allowed := []decision.Category{}
+	for _, category := range p.AllowedData {
+		if slices.Contains(cfg.AllowedData, category) {
+			allowed = append(allowed, category)
+		}
+	}
+	p.AllowedData = allowed
+	return p
 }
 
 func readDecisionDocument(path string) ([]byte, error) {

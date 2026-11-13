@@ -19,7 +19,7 @@ guides are maintained in English and Simplified Chinese.
 | Enable the optional Claude machine backend | [Claude Code Pro](en/claude-code-pro.md) | [Claude Code Pro](zh-CN/claude-code-pro.md) |
 | Resume roles and reconcile interrupted calls | [Recovery and context quality](en/session-recovery.md) | [恢复与上下文质量](zh-CN/session-recovery.md) |
 | Compare session policies with fixed tasks and evidence | [Session evaluation](en/session-evaluation.md) | [会话评估](zh-CN/session-evaluation.md) |
-| Run the optional, disabled-by-default JEV experiment | [JEV shadow evaluation](en/jev-shadow.md) | [JEV 影子评估](zh-CN/jev-shadow.md) |
+| Enable bounded JEV decisions with one switch | [JEV decisions](en/jev.md) | [JEV 决策](zh-CN/jev.md) |
 
 The [first-task script](examples/create-first-task.sh) creates an isolated
 tutorial repository. The getting started guide explains preparation and
@@ -49,8 +49,10 @@ to its named source, platform, and checks.
 The [feedback-driven workflows and JEV proposal](plans/2026-11-12-feedback-driven-workflows.md)
 (Chinese; historical proposal) explains Auto / Quick / Full, incident investigation,
 short feedback cycles, model policy and bounded semantic decisions. The current
-[implementation guide](en/investigation.md) describes supported behavior; live performance
-claims and later conditional optimizations require separate evidence.
+[investigation guide](en/investigation.md) and [JEV guide](en/jev.md) describe supported behavior.
+The [P5 implementation plan](plans/2026-11-13-p5-ready-queue-prewarm.md) (Chinese)
+records optional scheduling and runtime preparation; live performance and any
+default adoption require separate evidence.
 
 | Collection | Contents |
 | --- | --- |

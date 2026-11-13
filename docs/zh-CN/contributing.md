@@ -162,7 +162,7 @@ CI 在 Ubuntu 和 macOS 使用同一候选，Linux 另跑 race。按实际执行
 | 调度、worktree、执行位置或交付 | `workflow.md`、`configuration.md`、`flow-console.md`、设计章节及相关 skills |
 | 会话续用、恢复、接管或计量 | `session-recovery.md`、配置／工作流／控制台相关章节、设计及受影响的 worker 契约 |
 | 桌面 UI、任务发现或操作控制 | `flow-console.md`、插件 README，以及提到该界面的快速开始步骤 |
-| 评估工具、场景或结果解释 | `session-evaluation.md` 或 `jev-shadow.md`、对应输入输出契约；实际执行新检查后补带日期证据 |
+| 评估工具、场景或结果解释 | `session-evaluation.md` 或 `jev.md`、对应输入输出契约；实际执行新检查后补带日期证据 |
 | 包布局、许可证或发行行为 | `releasing.md`、相关安装步骤、manifest／lockfile、包内链接及适用的许可／来源记录 |
 | 文档移动、重命名或标题变化 | 两份文档索引、语言链接、所有入链路径／锚点、包清单、内嵌引用、脚本与测试 |
 | 贡献者或 AI 操作规范 | [AGENTS.md](https://github.com/ckanner/flywheel/blob/main/AGENTS.md)、两份贡献指南及导航，保持要求一致 |

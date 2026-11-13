@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
-	"github.com/ckanner/flywheel/internal/decision"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/templates"
@@ -239,9 +239,10 @@ func TestInvestigationBackgroundStopCancelsOwnedDecisionWithoutImplementation(t 
 	defer server.Close()
 	defer close(release)
 	t.Setenv("PREPARATION_CLI_FIXTURE_KEY", "fixture-key")
-	p.Decision = &contract.InvestigationDecision{Policy: decision.Policy{Version: "stop-fixture-v1", Mode: decision.Adopt,
-		AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts, decision.Source}, MinApplicability: .9, MinChoice: .8, MaxCalls: 3},
-		Endpoint: server.URL + "/v1/systemone", Model: "jev-1.14.0", KeyEnv: "PREPARATION_CLI_FIXTURE_KEY", TimeoutMS: 10000}
+	cfg, err := config.LoadReadOnly(taskDir, cwd)
+	require.NoError(t, err)
+	cfg.JEV.Enabled, cfg.JEV.Endpoint, cfg.JEV.KeyEnv, cfg.JEV.TimeoutMS = true, server.URL+"/v1/systemone", "PREPARATION_CLI_FIXTURE_KEY", 10000
+	writeFileCli(t, filepath.Join(taskDir, "flywheel.config.json"), mustJSONT(t, cfg))
 	st := startInvestigationCLI(t, taskDir, cwd, p)
 	reply, err := investigationControl(t, taskDir, cwd, investigationRequest{Action: "run", Revision: st.Revision})
 	require.NoError(t, err, reply.Error)

@@ -378,7 +378,6 @@ func (c *Context) run() (TaskSummary, error) {
 	if err := c.err(); err != nil {
 		return c.summary(), err
 	}
-	c.observeShadow()
 	if c.quick() {
 		upgraded, err := c.runQuick()
 		if err != nil || !upgraded {
@@ -472,13 +471,14 @@ func (c *Context) run() (TaskSummary, error) {
 				break
 			}
 			if batch := c.parallelBatch(milestone.ID); len(batch) > 1 {
-				if err := c.runParallelExecute(batch); err != nil {
+				started, err := c.runParallelExecute(batch)
+				if err != nil {
 					return c.summary(), err
 				}
 				if c.State.SharedExecution != nil {
 					continue
 				}
-				stopped, err := c.recoverParallelFailures(batch, c.pauseBefore)
+				stopped, err := c.recoverParallelFailures(started, c.pauseBefore)
 				if err != nil || stopped {
 					return c.summary(), err
 				}

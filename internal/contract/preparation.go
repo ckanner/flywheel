@@ -37,15 +37,36 @@ type Hypothesis struct {
 	Falsifier string `json:"falsifier"`
 }
 
-// Actions are Go handlers, not commands. Paths are exact read grants; listing a
-// directory grants names only, not implicit permission to read its descendants.
+// Actions have frozen arguments. File paths are exact grants; listing a
+// directory never implicitly grants reads of its descendants. Command actions
+// explicitly grant a host process and run against copied approved inputs.
 type InvestigationAction struct {
-	ID         string   `json:"id"`
-	Kind       string   `json:"kind"`
-	Path       string   `json:"path"`
-	Query      string   `json:"query,omitempty"`
-	Purpose    string   `json:"purpose"`
-	Hypotheses []string `json:"hypotheses"`
+	ID         string                `json:"id"`
+	Kind       string                `json:"kind"`
+	Path       string                `json:"path,omitempty"`
+	Query      string                `json:"query,omitempty"`
+	Purpose    string                `json:"purpose"`
+	Hypotheses []string              `json:"hypotheses"`
+	Command    *InvestigationCommand `json:"command,omitempty"`
+	HTTP       *InvestigationHTTP    `json:"http,omitempty"`
+}
+
+type InvestigationCommand struct {
+	Argv              []string `json:"argv"`
+	Inputs            []string `json:"inputs"`
+	Env               []string `json:"env"`
+	TimeoutMS         int64    `json:"timeout-ms"`
+	ExpectExit        int      `json:"expect-exit"`
+	ExecutionBoundary string   `json:"execution-boundary"`
+}
+
+type InvestigationHTTP struct {
+	URL          string            `json:"url"`
+	Method       string            `json:"method"`
+	HeadersEnv   map[string]string `json:"headers-env"`
+	TimeoutMS    int64             `json:"timeout-ms"`
+	MaxBytes     int               `json:"max-bytes"`
+	ExpectStatus int               `json:"expect-status"`
 }
 
 type InvestigationLimits struct {
@@ -55,8 +76,8 @@ type InvestigationLimits struct {
 	MaxOutputBytes int `json:"max-output-bytes"`
 }
 
-// KeyEnv stores a credential NAME only. The old jev-shadow opt-in grants none of
-// these data permissions or adoption authority.
+// KeyEnv stores a credential NAME only. Start freezes this record from the
+// unified JEV configuration; caller-provided historical modes cannot opt in.
 type InvestigationDecision struct {
 	Policy     decision.Policy `json:"policy"`
 	Endpoint   string          `json:"endpoint"`
@@ -126,8 +147,11 @@ func ValidatePreparation(raw []byte) (*Preparation, error) {
 	}
 	actions := map[string]bool{}
 	for _, a := range p.Actions {
-		if actions[a.ID] || !paths[a.Path] || (a.Kind == "search_text") != (a.Query != "") {
+		if actions[a.ID] {
 			return nil, fmt.Errorf("duplicate, ungranted, or inconsistent investigation action: %s", a.ID)
+		}
+		if err := validateInvestigationAction(a, paths, p.Limits); err != nil {
+			return nil, err
 		}
 		actions[a.ID] = true
 		for _, id := range a.Hypotheses {

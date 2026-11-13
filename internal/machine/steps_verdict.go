@@ -4,6 +4,7 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -195,8 +196,13 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 var reviewChangedFiles = verify.GetChangedFiles
 var reviewDiffText = verify.GetDiffText
 
-func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (reviewOutcome, error) {
+func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out reviewOutcome, reviewErr error) {
 	defer c.measurePhase("review", packet.PacketID)()
+	defer func() {
+		if err := c.closeReviewPrewarm("discarded: review preparation ended"); err != nil {
+			reviewErr = errors.Join(reviewErr, err)
+		}
+	}()
 	if err := c.err(); err != nil {
 		return reviewOutcome{}, err
 	}
@@ -204,6 +210,9 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (revi
 	ps := c.State.Packets[id]
 	if !c.currentL1Evidence(packet) {
 		return reviewOutcome{ErrorCode: errs.INVALID_REQUEST}, nil
+	}
+	if err := c.beginReviewPrewarm(packet); err != nil {
+		return reviewOutcome{}, err
 	}
 	final := c.quick()
 	scope := id

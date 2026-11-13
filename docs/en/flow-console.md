@@ -20,7 +20,7 @@ Loading a skill does not start the engine. `flywheel-task` prepares the appropri
 |---|---|---|
 | `/flywheel-new <goal>` | Prepares contracts for review only | Before handing over the proposal, the assistant registers a candidate through read-only `status`; an uninitialized task shows its identity and location, not execution progress |
 | `/flywheel-run <task directory>` | Starts or resumes an existing task | Start and query the original task path to associate it with the conversation; the view follows the explicit association |
-| `/flywheel-task <goal>` | Prepares, then starts | Launch and associate through `flywheel_launch`, then check status |
+| `/flywheel-task <goal>` | Prepares, then starts | Use investigation control for evidence collection or `flywheel_launch` for implementation, then check status |
 
 `new → run` and `task` use the same engine; the canvas is not exclusive to one
 skill. Writing task files alone does not register a view, and a failed association
@@ -59,18 +59,20 @@ for the supported read/search actions, command protocol, and handoff requirement
 
 In an existing DSH conversation view, Flywheel remains after Statistics; the blank new-session landing page does not yet show these conversation views. Its primary navigation is Workflow and History; Settings opens a separate workspace. Global settings require no task directory. Project settings target the selected Git root. Discovery still selects one complete file in task → project → global → embedded order; it does not deep-merge files.
 
-Opening Settings automatically reads the selected scope. Execution, Models and sessions, Budget and retries, JEV, and Advanced and diagnostics have separate sections. Save, Discard and Restore defaults stay in a fixed footer; Save is disabled without changes. Ordinary saving takes one click; first enabling JEV explains local capture and the separate explicit evaluation transfer. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
+Opening Settings automatically reads the selected scope. Execution, Models and sessions, Budget and retries, JEV, and Advanced and diagnostics have separate sections. Save, Discard and Restore defaults stay in a fixed footer; Save is disabled without changes. Saving takes one click, including the single JEV master switch; the form explains supported decisions and the configured data scope. Serial mode omits concurrency controls. Minutes and seconds are converted precisely to engine millisecond fields.
 
-Reload, complete JSON editing, diagnostics and raw responses live in Advanced and diagnostics. The narrow navigation row is fixed at 54px with 36px buttons; shorter content cannot stretch it. Leaving Settings, scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. A running engine retains its snapshot. The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
+Reload, complete JSON editing, diagnostics and raw responses live in Advanced and diagnostics. The narrow navigation row is fixed at 54px with 36px buttons; shorter content cannot stretch it. Leaving Settings, scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. Implementation runs retain their configuration snapshot. JEV additionally rechecks current activation and tighter permissions at decision boundaries; see [JEV recovery](jev.md#data-budgets-and-recovery). The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
-The optional [JEV shadow evaluator](jev-shadow.md) is disabled by default. Enabling
-it captures a local task summary; only an explicit `shadow run` sends it for evaluation.
-Advice does not select workflow policy. Investigation decisions use a separate,
-explicit policy described in the [investigation guide](investigation.md).
+[JEV decisions](jev.md) use one default-off master switch. Enabling it activates
+supported investigation decisions automatically. Configuration inspection is read
+only; it is not another switch. The investigation view shows the last observed JEV
+state, adopted versus baseline actions, and evidence-referenced deferral or early
+report effects. A stored state label is not a live re-read of configuration. These
+collection effects never mean the root cause is proven or implementation completed.
 
 ### Session defaults and stage overrides
 
@@ -107,7 +109,7 @@ Explicitly independent packets with satisfied dependencies can be run ahead in t
 Read `flywheel template scheduler-policy.schema.json` for the current fields and bounds. For example:
 
 ```json
-{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1}}}
+{"scheduler":{"mode":"parallel","max-parallel":2,"providers":{"deepseek-account":1},"dispatch":"batch","prewarm":false}}
 ```
 
 Provider-limit keys are actual configuration channel names. The example uses the inline template's `deepseek-account`; a binding using `deepseek-account-sdk` needs that key instead. Eligibility comes from frozen packet contracts:
@@ -119,6 +121,23 @@ schedule:
 ```
 
 Dependencies reference earlier known packet IDs. Writes are normalized relative paths or directory prefixes, without globs or escapes. Include ordinary tests/configuration and account for shared test resources. Undeclared independence, overlapping scopes and live-credential units remain serial.
+
+### Dispatch and runtime preparation
+
+The configuration editor also offers `scheduler.dispatch` and `scheduler.prewarm`.
+The defaults are `batch` and false. Selecting `ready-queue` fills a free Execute/L1
+slot from the remaining independent Full packets when automatic Worktree management
+is enabled and the parallel limit exceeds one. Review, replanning and integration
+retain the all-workers-settled barrier. Shared-checkout runs keep batch dispatch.
+
+Prewarming initializes one DSH Review runtime while a serial packet performs its
+post-Execute deterministic checks. It sends no model prompt until normal Review
+admission. Parallel Execute/L1 lanes and shared candidates do not prewarm; an
+independent cohort must settle before its serial Review path may prepare a runtime.
+Other harnesses use the cold path. Unused runtimes must finish bounded cleanup.
+Neither setting changes JEV activation, task qualification or completion gates.
+Saving takes effect on the next start. See [Configuration](configuration.md#ready-queues-and-runtime-preparation)
+for eligibility, recovery and the separate live-performance evaluation.
 
 ### Execution directories
 
@@ -149,7 +168,17 @@ Each terminal line is a prompt. `/history` reads the latest response; `/reconcil
 
 Returning runs L1, applicable Quick gates and independent Review. Human text is not a passing verdict. Candidate-bound human-takeover evidence allows normal subsequent delivery. Release does not claim verification and cannot bypass unknown effects or cleanup. Milestone sessions currently expose read-only responses; interactive handoff is packet-scoped.
 
-Ledger storage v2 is accepted by the new engine alongside legacy v1. Older engines reject v2 rather than ignoring human ownership. Session policy-version remains 1; worker/lifecycle versions are independent.
+This return path requires an existing eligible managed session. It does not import
+an arbitrary patch prepared before the task, and running Verify followed by Review
+does not create that provenance. A general existing-candidate admission interface
+remains separate work.
+
+The engine accepts session ledger storage versions 1, 2 and 3. Human handoff
+requires at least v2; the first runtime prewarm records v3 so older engines reject
+cleanup responsibilities they cannot interpret. Later handoffs retain v3.
+Session policy-version remains 1; worker/lifecycle versions are independent.
+[Recovery](session-recovery.md#dsh-runtime-preparation-after-a-restart) explains the
+original cleanup receipt required after an interrupted preparation.
 
 ## Discovery and comparison
 

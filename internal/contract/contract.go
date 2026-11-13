@@ -46,6 +46,8 @@ type GateEntry struct {
 	Cmd    string `json:"cmd"`
 	Script string `json:"script"`
 	Expect string `json:"expect"`
+	// Purpose is permitted only for optional feedback checks, not acceptance gates.
+	Purpose string `json:"purpose,omitempty"`
 }
 
 // Command 返回实际要执行的命令（cmd ?? script）。
@@ -106,6 +108,7 @@ type Packet struct {
 	CacheScope           []string            `json:"cache-scope"`
 	Boundaries           Boundaries          `json:"boundaries"`
 	Acceptance           Acceptance          `json:"acceptance"`
+	FeedbackChecks       []GateEntry         `json:"feedback-checks,omitempty"`
 	ReviewRubric         string              `json:"review-rubric"`
 	Escalation           Escalation          `json:"escalation"`
 	DoneReportFormat     map[string][]string `json:"done-report-format"`
@@ -224,6 +227,7 @@ func compileAll(load func(string) ([]byte, error)) (*jsonschema.Schema, *jsonsch
 		"spec.schema.json":             specSchemaID,
 		"state.schema.json":            stateSchemaID,
 		"scheduler-policy.schema.json": "https://flywheel.local/schemas/scheduler-policy.schema.json",
+		"jev-config.schema.json":       "https://flywheel.local/schemas/jev-config.schema.json",
 	} {
 		data, err := load(name)
 		if err != nil {
@@ -492,7 +496,7 @@ func ValidateSessionStateValue(value any) error {
 // ValidateConsoleStateValue validates versioned control extensions without
 // imposing newly required fields on unrelated legacy state sections.
 func ValidateConsoleStateValue(name string, value any) error {
-	if name != "handoff" && name != "delivery" && name != "scheduler" && name != "run" && name != "control" && name != "project" && name != "preparation-source" {
+	if name != "worker-prewarm" && name != "handoff" && name != "delivery" && name != "scheduler" && name != "run" && name != "control" && name != "project" && name != "preparation-source" {
 		return fmt.Errorf("unknown console state extension")
 	}
 	schema, err := StateSchema()

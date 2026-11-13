@@ -210,7 +210,7 @@ func TestSelectionRechecksAllIdentityAndActionRules(t *testing.T) {
 		name, reason string
 		change       func(*Snapshot, *Policy, *Options, *Receipt)
 	}{
-		{"invalid", "invalid-or-unknown-execution", func(s *Snapshot, _ *Policy, _ *Options, _ *Receipt) { s.Version = 2 }},
+		{"invalid", "invalid-or-unknown-execution", func(s *Snapshot, _ *Policy, _ *Options, _ *Receipt) { s.Version = 3 }},
 		{"executor-unknown", "invalid-or-unknown-execution", func(s *Snapshot, _ *Policy, _ *Options, _ *Receipt) { s.ExecutorUnknown = true }},
 		{"advisory", "deterministic-baseline", func(_ *Snapshot, p *Policy, _ *Options, _ *Receipt) { p.Mode = Advisory }},
 		{"permission", "adoption-not-eligible", func(_ *Snapshot, p *Policy, _ *Options, _ *Receipt) { p.AllowedData = nil }},
@@ -240,7 +240,7 @@ func TestSelectionRechecksAllIdentityAndActionRules(t *testing.T) {
 
 func TestValidationRejectsMalformedSnapshotsAndPolicies(t *testing.T) {
 	tests := []func(*Snapshot, *Policy){
-		func(s *Snapshot, _ *Policy) { s.Version = 2 },
+		func(s *Snapshot, _ *Policy) { s.Version = 3 },
 		func(_ *Snapshot, p *Policy) { p.Mode = "unknown" },
 		func(_ *Snapshot, p *Policy) { p.MinChoice = math.NaN() },
 		func(_ *Snapshot, p *Policy) { p.AllowedData = []Category{"private-transcript"} },

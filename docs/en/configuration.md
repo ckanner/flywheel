@@ -196,13 +196,17 @@ An existing complete file without `scheduler` normalizes to **serial**, and an
 explicit serial choice remains unchanged. Installing a new release does not replace
 that file. The [scheduler schema](https://github.com/ckanner/flywheel/blob/main/templates/scheduler-policy.schema.json)
 bounds total and per-channel concurrency from 1 to 8.
+Both new and existing configurations default to `dispatch: "batch"` and
+`prewarm: false`. These settings do not change the Quick/Full workflow or enable JEV.
 
 ```json
 {
   "scheduler": {
     "mode": "parallel",
     "max-parallel": 2,
-    "providers": {"deepseek-account": 1}
+    "providers": {"deepseek-account": 1},
+    "dispatch": "batch",
+    "prewarm": false
   },
   "worktree": {"enabled": true}
 }
@@ -238,6 +242,71 @@ Project workspace identity and execution location are recorded separately. Nativ
 backends that cannot separate a `workspace-write` sandbox root reject unsupported
 split-directory requests before dispatch, without expanding permissions. See the
 [console guide](flow-console.md#parallel-execution) for registration and batch rules.
+
+### Ready queues and runtime preparation
+
+`scheduler.dispatch` accepts `batch` or `ready-queue`. Batch dispatch waits for the
+current bounded group before selecting more work. Ready queues admit the next
+already independent packet when an Execute/L1 slot becomes free. They apply to
+Full with parallel scheduling, a maximum above one, and automatic Worktree
+management. Quick, serial scheduling, a maximum of one, and automatic management
+off retain their existing path. Shared-checkout execution retains its batch rules,
+including when executors may register external Worktrees later.
+
+The first ready-queue window must have every Worktree prepared and saved before
+dispatch. Later packets prepare their directory before taking a freed slot. A
+preparation failure stops admission and cancels and awaits started workers; queued
+packets that have not been admitted create no directory or model invocation.
+Dependencies become ready only after delivery. Review, replanning and integration
+wait for all admitted workers to settle, and every combined candidate is rechecked.
+Existing total/channel limits, hard budgets, attempts and unknown-result recovery
+remain in force.
+
+A replacement packet does not recover or cancel a sibling's still-running model
+call. The coordinator retains those calls and their shared accounting. An unknown
+result or failed receipt persistence stops new admission immediately and must be
+reconciled before resuming.
+
+`--pause-before review` also applies to independent parallel Worktrees. Once all
+Execute/L1 work in the current group passes and its workers settle, the task pauses
+before any Review or integration, retaining the verified candidates. Batch mode
+finishes its admitted group; ready-queue mode may refill the fixed independent
+queue before reaching that boundary. Resuming the same task reuses valid execution
+evidence instead of repeating Execute. A candidate changed by later integration
+still requires validation again.
+
+`scheduler.prewarm: true` allows a serial packet to initialize one DSH Review
+runtime while its post-Execute deterministic checks run. Initialization sends no
+model prompt or Session request. Review inference still waits for its checks and
+normal admission. Parallel Execute/L1 lanes do not prepare runtimes: after their
+barrier, preparation can begin only in the serial Review path. Shared-candidate
+batches do not prewarm. The main overlap opportunity is therefore a serial
+Execute's L1 and applicable Quick checks, not every parallel lane's validation.
+
+Unused or incompatible runtimes must finish bounded cleanup before further model
+work. If an unused runtime reaches its 60-second lifetime before a formal start
+is attempted, one cold invocation may use the same persisted request identity and
+remaining time allowance. This requires an exact, durable no-dispatch receipt,
+confirmed SDK and process-group cleanup, and no cancellation or expired invocation
+deadline. It does not grant another attempt or reset a budget. Unknown cleanup
+remains blocking. Other harnesses start normally. Session history reuse is separate
+from runtime preparation and retains role isolation.
+
+Confirmed initialization failures preserve their reported error classification and
+the normal retry/fallback rules. An authentication or invalid-request failure does
+not become a transport retry or qualify as a harmless prepared-runtime expiration.
+
+These options are available in the configuration editor and advanced JSON. Saving
+applies to the next start; the current process retains its loaded policy. A resumed
+run still reconciles existing invocations and shared batches before new dispatch.
+An outstanding prepared worker also requires its original no-prompt cleanup
+receipt, synchronized file and directory, and confirmed worker/process-group exit,
+even after `prewarm` is disabled; see
+[prewarm recovery](session-recovery.md#dsh-runtime-preparation-after-a-restart).
+Both optimizations remain optional while live latency, resource use and adoption
+defaults are evaluated separately. Offline checks establish behavior and recovery,
+not a guaranteed speed or token improvement. See the
+[P5 implementation plan](../plans/2026-11-13-p5-ready-queue-prewarm.md) (Chinese).
 
 ## Session policy, history reuse, and invocation safety
 
@@ -383,6 +452,12 @@ bounds both kinds of switch per packet. Go freezes the policy identity before
 dispatch; `state.packets[*].execution-policy.history` records separate
 `quality-upgrade` and `channel-fallback` events with full before/after bindings,
 attempt and reason. Parallel packets retain independent records.
+
+With `jev.enabled`, confirmed failures can also select a legal binding through
+JEV. These switches are recorded as `jev-model-selection`, use the same
+`max-switches` and cold-start rules, and do not alter channel-error handling.
+The allowed bindings remain an explicit resource/permission declaration; the
+JEV switch does not add a provider, account or model to that set.
 
 `config inspect --json` exposes the complete declaration under
 `execution-policy`; the ordinary bindings table remains the configured baseline.
@@ -532,16 +607,33 @@ Codex Pro checks actually import the public API and verify exact version 0.9.0/p
 No probe sends an inference prompt, runs L1/L2/L3, creates a worktree, or writes Flywheel task state. SDK initialization may contact a provider's catalog and write its own cache files and temporary probe-session persistence; read-only here is scoped to Flywheel state and configuration. Recheck in the desktop panel because its PATH/profile/environment may differ from the terminal.
 
 
-## Optional JEV shadow evaluation
+## JEV decisions
 
-`jev-shadow.enabled` defaults to false, including configurations that omit it. The
-global/project editor exposes the switch. During task execution it only captures
-local snapshots; it does not send HTTP requests on the task's critical path.
-A later explicit `flywheel shadow run` performs the optional network evaluation
-with separate accounting. Shadow results cannot change Quick/Full or authorize
-new actions. New decision adoption requires its own explicit opt-in and data
-boundary; the existing shadow switch does not grant it. See the
-[JEV guide](jev-shadow.md) for endpoint, version, credentials, budgets and recovery.
+`jev.enabled` is the only JEV activation setting and defaults to false. The desktop
+editor exposes one switch; enabled investigation preparations automatically freeze
+an adoption policy for action selection, evidence-backed deferral and early report
+handoff. Confirmed implementation failures can also select bounded repair, an
+approved feedback check, replanning or an allowed execution binding. Task/New/Run
+share the same engine-owned policy. Disabling stops subsequent
+requests and adoption, while existing receipts and budgets are retained.
+
+There is no independent task shadow/advisory switch. Legacy `jev-shadow` is read
+only to migrate connection hints into a disabled unified configuration; editor saves
+remove the old key. Explicit new `jev` wins, and configuration still selects one
+complete task/project/global/embedded file without merging. Endpoint, fixed model,
+credential variable, limits, data categories and recovery are documented in the
+[JEV guide](jev.md).
+
+Packets may declare up to eight optional `feedback-checks`, using the same
+`cmd`/`script` and `expect` shape as an acceptance command. They are short,
+approved diagnostic candidates, not replacements for `acceptance.L1/L2/L3`.
+Add a concise `purpose` (up to 160 characters) explaining what each check can
+distinguish. JEV receives that approved purpose, not the command. A check without
+`purpose` remains executor guidance and is excluded from JEV's targeted candidates.
+Keep credentials, raw logs and command text out of the purpose. JEV may also use
+an eligible previously failed L1 check. Execution uses the existing
+verification timeout, environment allowlist and process cleanup rules. Changing
+these checks changes the contract identity and invalidates stale decisions.
 
 ## Reference files
 

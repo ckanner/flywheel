@@ -1,29 +1,63 @@
 Object.assign(zh, {
-  investigate: '调查', investigationTitle: '有界调查', investigationHelp: '由 Go 运行已批准的读取与搜索动作。调查结论独立于代码验收和交付。',
+  investigate: '调查', investigationTitle: '有界调查', investigationHelp: '由 Go 运行已批准的取证动作与诊断实验。调查结论独立于代码验收和交付。',
   investigationRun: '继续调查', investigationReconcile: '核对原动作回执', investigationReport: '调查报告', investigationEvidence: '已收集证据', investigationBudget: '动作 {used}/{limit} · 累计 {ms} ms', investigationPartial: '有界片段 · 内容未完整展示', investigationDecision: '决策建议与实际采用',
   investigationState_ready: '等待调查', investigationState_running: '调查中', 'investigationState_awaiting-report': '等待证据报告', investigationState_blocked: '结果未知 · 需核对', investigationState_supported: '报告有证据支持', investigationState_inconclusive: '尚无定论', 'investigationState_access-blocked': '缺少访问', investigationState_cancelled: '调查已取消',
   investigationRepair: '已授权原范围内修复；形成合法 Spec 后由 Auto 选择 Quick / Full。', investigationReportOnly: '本目标以调查报告结束；没有启动代码实现。',
+  investigationJEVObserved: '最近观察到的 JEV 状态', investigationJEV_enabled: 'JEV 已开启 · 在符合条件的决策点参与', investigationJEV_disabled: 'JEV 已关闭 · 后续动作沿用原路径', 'investigationJEV_config-unavailable': 'JEV 配置不可用 · 沿用原路径', 'investigationJEV_not-configured': '本次调查未配置 JEV · 沿用原路径', 'investigationJEV_policy-changed': 'JEV 配置已变更 · 本次调查沿用原路径',
+  investigationAdopted: 'JEV 已采用', investigationBaseline: '原路径', investigationEffect_defer: '依据证据跳过后续动作', investigationEffect_finish: '提前结束取证 · 等待报告', investigationSkipped: '跳过动作', investigationCitations: '依据观察',
+  investigationCommand: '隔离副本中的命令', investigationHTTP: '批准的 HTTP 查询', investigationExit: '退出码', investigationHTTPStatus: 'HTTP 状态', investigationSignal: '终止信号', investigationTimedOut: '动作超时', investigationCancelled: '动作已取消', investigationWorkspace: '实验副本', investigationCleanup_removed: '实验副本已清理', investigationCleanup_retained: '实验副本保留 · 需要核对收尾', 'investigationCleanup_not-created': '未创建实验副本',
 });
 Object.assign(en, {
-  investigate: 'Investigate', investigationTitle: 'Bounded investigation', investigationHelp: 'Go runs approved reads and searches. An investigation conclusion is separate from code acceptance and delivery.',
+  investigate: 'Investigate', investigationTitle: 'Bounded investigation', investigationHelp: 'Go runs approved evidence actions and diagnostic experiments. An investigation conclusion is separate from code acceptance and delivery.',
   investigationRun: 'Continue investigation', investigationReconcile: 'Reconcile original receipt', investigationReport: 'Investigation report', investigationEvidence: 'Collected evidence', investigationBudget: 'Actions {used}/{limit} · elapsed {ms} ms', investigationPartial: 'Bounded excerpt · incomplete content', investigationDecision: 'Advice and recorded adoption',
   investigationState_ready: 'Ready to investigate', investigationState_running: 'Investigating', 'investigationState_awaiting-report': 'Awaiting evidence report', investigationState_blocked: 'Unknown result · reconcile', investigationState_supported: 'Report supported by cited evidence', investigationState_inconclusive: 'Inconclusive', 'investigationState_access-blocked': 'Access blocked', investigationState_cancelled: 'Investigation cancelled',
   investigationRepair: 'Repair is authorized within the original scope. Prepare a valid Spec before Auto selects Quick or Full.', investigationReportOnly: 'The goal ends with an investigation report; implementation has not started.',
+  investigationJEVObserved: 'Last observed JEV state', investigationJEV_enabled: 'JEV enabled · participates at eligible decision points', investigationJEV_disabled: 'JEV disabled · subsequent actions use the original path', 'investigationJEV_config-unavailable': 'JEV configuration unavailable · original path', 'investigationJEV_not-configured': 'JEV not configured for this investigation · original path', 'investigationJEV_policy-changed': 'JEV policy changed · this investigation uses the original path',
+  investigationAdopted: 'JEV adopted', investigationBaseline: 'Original path', investigationEffect_defer: 'Evidence-backed actions skipped', investigationEffect_finish: 'Evidence collection ended early · awaiting report', investigationSkipped: 'Skipped actions', investigationCitations: 'Cited observations',
+  investigationCommand: 'Command in an isolated copy', investigationHTTP: 'Approved HTTP query', investigationExit: 'Exit code', investigationHTTPStatus: 'HTTP status', investigationSignal: 'Termination signal', investigationTimedOut: 'Action timed out', investigationCancelled: 'Action cancelled', investigationWorkspace: 'Experiment copy', investigationCleanup_removed: 'Experiment copy cleaned up', investigationCleanup_retained: 'Experiment copy retained · reconcile cleanup', 'investigationCleanup_not-created': 'No experiment copy created',
 });
+
+function validInvestigationExecution(value) {
+  return value == null || record(value) && ['run_command', 'http_read'].includes(value.kind) &&
+    ['timed-out', 'cancelled'].every(key => typeof value[key] === 'boolean') &&
+    ['removed', 'retained', 'not-created'].includes(value.cleanup) &&
+    (value['exit-code'] == null || Number.isSafeInteger(value['exit-code']) && value['exit-code'] >= 0 && value['exit-code'] <= 255) &&
+    (value['http-status'] == null || Number.isSafeInteger(value['http-status']) && value['http-status'] >= 100 && value['http-status'] <= 599) &&
+    ['signal', 'workspace', 'input-hash'].every(key => value[key] == null || typeof value[key] === 'string');
+}
 
 function validPreparationSnapshot(p) {
   const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
+  const stringArray = value => Array.isArray(value) && value.every(item => typeof item === 'string');
   return record(p) && p.version === 1 && Number.isSafeInteger(p.revision) && p.revision > 0 &&
     ['ready', 'running', 'awaiting-report', 'blocked', 'supported', 'inconclusive', 'access-blocked', 'cancelled'].includes(p.status) &&
     typeof p.reason === 'string' &&
     strings(p.contract, ['id', 'goal', 'intent']) && ['investigate', 'investigate-and-fix'].includes(p.contract.intent) &&
     record(p.contract.limits) && Number.isSafeInteger(p.contract.limits['max-actions']) &&
     Array.isArray(p.observations) && p.observations.every(observation => record(observation) && strings(observation.invocation, ['id', 'action-id']) &&
-      ['output', 'error'].every(key => observation[key] == null || typeof observation[key] === 'string')) &&
+      ['output', 'error'].every(key => observation[key] == null || typeof observation[key] === 'string') && validInvestigationExecution(observation.execution)) &&
     (p.decisions == null || Array.isArray(p.decisions) && p.decisions.every(record)) &&
+    (p['jev-status'] == null || typeof p['jev-status'] === 'string') &&
+    (p['decision-effects'] == null || Array.isArray(p['decision-effects']) && p['decision-effects'].every(effect =>
+      strings(effect, ['decision-id', 'action-id', 'kind']) && ['defer', 'finish'].includes(effect.kind) && stringArray(effect.actions) && stringArray(effect.evidence))) &&
     (p.report == null || strings(p.report, ['summary', 'counter-evidence', 'recommendation', 'regression', 'rollback']) && Array.isArray(p.report.findings) &&
       p.report.findings.every(finding => strings(finding, ['hypothesis', 'status', 'reason'])) &&
       (p.report.limitations == null || Array.isArray(p.report.limitations) && p.report.limitations.every(limit => typeof limit === 'string')));
+}
+
+function InvestigationExecution({ value, t }) {
+  if (!value) return null;
+  const property = (label, content) => h(React.Fragment, { key: label }, h('dt', null, label), h('dd', null, String(content)));
+  return h('div', { 'data-investigation-execution': value.kind },
+    h('p', { className: css.meta }, t(value.kind === 'run_command' ? 'investigationCommand' : 'investigationHTTP')),
+    h('dl', { className: css.consoleProperties },
+      value['exit-code'] != null && property(t('investigationExit'), value['exit-code']),
+      value['http-status'] != null && property(t('investigationHTTPStatus'), value['http-status']),
+      value.signal && property(t('investigationSignal'), value.signal)),
+    value['timed-out'] && h('p', { className: css.warningText }, t('investigationTimedOut')),
+    value.cancelled && h('p', { className: css.warningText }, t('investigationCancelled')),
+    h('p', { className: value.cleanup === 'retained' ? css.warningText : css.meta }, t('investigationCleanup_' + value.cleanup)),
+    value.workspace && h('section', { className: css.details }, h('h4', null, t('investigationWorkspace')), h('p', { className: css.meta }, value.workspace)));
 }
 
 function InvestigationPanel({ control, selection, run, t }) {
@@ -39,8 +73,9 @@ function InvestigationPanel({ control, selection, run, t }) {
     h('p', { role: 'status' }, t('investigationState_' + preparation.status)),
     h('p', { className: css.meta }, t('investigationBudget', { used: preparation['actions-used'], limit: preparation.contract.limits['max-actions'], ms: preparation['elapsed-ms'] })),
     h('p', { className: css.meta }, preparation.reason),
+    preparation['jev-status'] && h('p', { className: css.meta }, t('investigationJEVObserved') + ': ' + t('investigationJEV_' + preparation['jev-status'])),
     h('div', { className: css.actions },
-      h(Button, { disabled: busy || control.status.running || ended, onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
+      h(Button, { disabled: busy || control.status.running || ended || preparation.status === 'awaiting-report', onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
       h(Button, { disabled: busy || ended || !control.status.running && !!preparation.pending, onClick: () => control.status.running ? run('stop', selection) : mutate('cancel') }, t('stop')),
       h(Button, { disabled: control.pending !== null, onClick: () => run('status', selection) }, t('status'))),
     h('p', { className: css.notice }, t(preparation.contract.intent === 'investigate-and-fix' ? 'investigationRepair' : 'investigationReportOnly')),
@@ -50,14 +85,120 @@ function InvestigationPanel({ control, selection, run, t }) {
       ...(preparation.report.limitations ?? []).map((limit, i) => h('p', { key: i, className: css.warningText }, limit)),
       h('p', null, preparation.report.recommendation), h('p', null, preparation.report.regression), h('p', null, preparation.report.rollback)),
     h('section', { className: css.details }, h('h4', null, t('investigationEvidence')),
-      ...preparation.observations.map(observation => h('article', { key: observation.invocation.id },
+      ...preparation.observations.map(observation => h('article', { key: 'observation:' + observation.invocation.id },
         h('h4', null, observation.invocation['action-id'] + ' · ' + observation.status),
         h('p', { className: css.meta }, observation.invocation.id + ' · ' + observation['duration-ms'] + ' ms'),
+        h(InvestigationExecution, { value: observation.execution, t }),
         observation.truncated && h('p', { className: css.warningText }, t('investigationPartial')),
         h('pre', { className: css.raw }, observation.output || observation.error)))),
-    preparation.decisions?.length > 0 && h('section', { className: css.details }, h('h4', null, t('investigationDecision')),
-      ...preparation.decisions.map(receipt => h('p', { key: receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
-      ...preparation.observations.map(observation => h('p', { key: observation.invocation.id }, observation.invocation['action-id'] + ' · ' + observation.invocation.reason))));
+    (preparation.decisions?.length > 0 || preparation['decision-effects']?.length > 0) && h('section', { className: css.details }, h('h4', null, t('investigationDecision')),
+      ...(preparation.decisions ?? []).map(receipt => h('p', { key: 'receipt:' + receipt['decision-id'] }, receipt['decision-id'] + ' · ' + receipt.status + ' · ' + receipt.reason)),
+      ...preparation.observations.map(observation => h('p', { key: 'observation:' + observation.invocation.id }, observation.invocation['action-id'] + ' · ' + t(observation.invocation.adopted === true ? 'investigationAdopted' : 'investigationBaseline') + ' · ' + observation.invocation.reason)),
+      ...(preparation['decision-effects'] ?? []).map(effect => h('article', { key: 'effect:' + effect['decision-id'] },
+        h('h4', null, t('investigationEffect_' + effect.kind)),
+        h('p', { className: css.meta }, effect['decision-id']),
+        effect.actions.length > 0 && h('p', null, t('investigationSkipped') + ': ' + effect.actions.join(', ')),
+        h('p', { className: css.meta }, t('investigationCitations') + ': ' + effect.evidence.join(', '))))));
+}
+
+Object.assign(zh, {
+  runtimeDecisionTitle: 'JEV 执行决策', runtimeDecisionHelp: '展示引擎已记录的选择与执行结果；建议被接受不代表动作已经完成。', runtimeDecisionUsage: '任务请求 {used}/{limit} · 其中调查移交 {imported}', runtimeDecisionOmitted: '显示最近 {shown} 条，共 {total} 条；完整记录保留在任务账本',
+  runtimeDecisionPending: '决策请求待核对', runtimeDecisionApplied: '控制决策已应用 · 后续执行见节点状态', runtimeDecisionCompleted: '控制动作已收尾 · 任务结果见节点状态', runtimeDecisionUnknown: '结果未知 · 核对原回执', runtimeDecisionStale: '输入已变化 · 未采用', runtimeDecisionBaseline: '沿用基线', runtimeDecisionAdopted: '采用 JEV 选择', runtimeDecisionRepair: '继续局部修复', runtimeDecisionReplan: '请求重新规划', runtimeDecisionModel: '切换批准的模型配置', runtimeDecisionFeedback: '补充短反馈检查', runtimeDecisionRecheck: '复查失败的验收项', runtimeDecisionFeedbackRunning: '反馈检查未收尾 · 恢复前核对原执行', runtimeDecisionFeedbackCompleted: '反馈检查已收尾', runtimeDecisionFeedbackUnknown: '反馈结果未知 · 核对原执行，禁止重放', runtimeDecisionFeedbackStale: '反馈改变了候选或验证输入 · 已阻断', runtimeDecisionFeedbackHelp: '这是诊断反馈；最终仍执行完整验收。', runtimeDecisionCall: '决策请求', runtimeDecisionReason: '原因', runtimeDecisionAttempt: '执行尝试', runtimeDecisionStatus: '最近观察状态', runtimeDecisionResultsOmitted: '省略了 {count} 项较早的反馈结果', runtimeDecisionIncomplete: '反馈结果不完整',
+  runtimeDecisionReplanRunning: '重规划未收尾 · 恢复前核对原会话', runtimeDecisionUnapplied: 'JEV 选择未应用', runtimeModelHistory: '执行配置切换记录', runtimeModelHistoryHelp: '这里记录已应用的配置切换。实际启动的模型与会话以节点会话记录为准。', runtimeModelFrom: '切换前', runtimeModelTo: '切换后', runtimeModelJev: '采用 JEV 模型选择',
+});
+Object.assign(en, {
+  runtimeDecisionTitle: 'JEV execution decisions', runtimeDecisionHelp: 'Recorded choices and effects from the engine. Accepting advice does not mean its action has completed.', runtimeDecisionUsage: 'Task requests {used}/{limit} · {imported} imported from investigation', runtimeDecisionOmitted: 'Showing {shown} of {total} records; the complete history remains in the task ledger',
+  runtimeDecisionPending: 'Decision request needs reconciliation', runtimeDecisionApplied: 'Control decision applied · see node for subsequent execution', runtimeDecisionCompleted: 'Control action settled · see node for task outcome', runtimeDecisionUnknown: 'Unknown result · reconcile original receipt', runtimeDecisionStale: 'Inputs changed · not adopted', runtimeDecisionBaseline: 'Original baseline', runtimeDecisionAdopted: 'JEV choice accepted', runtimeDecisionRepair: 'Continue local repair', runtimeDecisionReplan: 'Request replanning', runtimeDecisionModel: 'Switch approved model configuration', runtimeDecisionFeedback: 'Collect a short feedback check', runtimeDecisionRecheck: 'Recheck failed acceptance', runtimeDecisionFeedbackRunning: 'Feedback action unsettled · reconcile before resuming', runtimeDecisionFeedbackCompleted: 'Feedback action settled', runtimeDecisionFeedbackUnknown: 'Unknown feedback result · reconcile original action, no replay', runtimeDecisionFeedbackStale: 'Feedback changed candidate or verification inputs · blocked', runtimeDecisionFeedbackHelp: 'This is diagnostic feedback. Final acceptance still runs in full.', runtimeDecisionCall: 'Decision request', runtimeDecisionReason: 'Reason', runtimeDecisionAttempt: 'Execution attempt', runtimeDecisionStatus: 'Last observed status', runtimeDecisionResultsOmitted: '{count} earlier feedback results omitted', runtimeDecisionIncomplete: 'Feedback observation is incomplete',
+  runtimeDecisionReplanRunning: 'Replanning unsettled · reconcile original session before resuming', runtimeDecisionUnapplied: 'JEV choice not applied', runtimeModelHistory: 'Execution configuration changes', runtimeModelHistoryHelp: 'These are applied configuration changes. Actual model dispatch and sessions remain in the node session records.', runtimeModelFrom: 'Before', runtimeModelTo: 'After', runtimeModelJev: 'JEV model selection applied',
+});
+
+function validRuntimeDecisions(value) {
+  const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
+  const optionalStrings = (object, keys) => keys.every(key => object[key] == null || typeof object[key] === 'string');
+  const count = number => Number.isSafeInteger(number) && number >= 0;
+  const feedback = report => report == null || record(report) && typeof report.pass === 'boolean' && Array.isArray(report.results) && report.results.every(result =>
+    record(result) && count(result['omitted-items']) && Object.keys(result).length === 1 ||
+    strings(result, ['cmd']) && typeof result.pass === 'boolean' && Number.isSafeInteger(result.exitCode) &&
+    ['timedOut', 'cancelled', 'truncated', 'outputTruncated', 'observationComplete'].every(key => result[key] == null || typeof result[key] === 'boolean') &&
+    optionalStrings(result, ['output', 'signal', 'cleanupError', 'spawnError', 'checkId']));
+  return value == null || record(value) && value.version === 1 && count(value.used) && count(value['imported-calls']) && typeof value.status === 'string' &&
+    (value['max-calls'] == null || count(value['max-calls'])) && (value['omitted-records'] == null || count(value['omitted-records'])) &&
+    Array.isArray(value.records) && value.records.every(entry =>
+      strings(entry, ['id', 'packet', 'action', 'status', 'started-at']) && count(entry.attempt) &&
+      (entry['plan-revisions'] == null || count(entry['plan-revisions'])) && (entry.accounted == null || typeof entry.accounted === 'boolean') &&
+      (entry.selection == null || strings(entry.selection, ['action-id', 'reason']) && typeof entry.selection.adopted === 'boolean') &&
+      (entry.receipt == null || strings(entry.receipt, ['status', 'reason']) && optionalStrings(entry.receipt, ['model'])) && feedback(entry.feedback));
+}
+
+function runtimeDecisionAction(action, t) {
+  const kind = action.match(/^(model|feedback|recheck)-\d+$/)?.[1] ?? action;
+  const label = { repair: 'runtimeDecisionRepair', replan: 'runtimeDecisionReplan', model: 'runtimeDecisionModel', feedback: 'runtimeDecisionFeedback', recheck: 'runtimeDecisionRecheck' }[kind];
+  return label ? t(label) + (kind !== action ? ' · ' + action : '') : action;
+}
+
+function RuntimeDecisionPanel({ ledger, packetID, t }) {
+  if (!ledger) return null;
+  const entries = ledger.records.filter(entry => !packetID || entry.packet === packetID);
+  if (packetID && entries.length === 0) return null;
+  const statuses = { pending: 'runtimeDecisionPending', baseline: 'runtimeDecisionBaseline', applied: 'runtimeDecisionApplied', completed: 'runtimeDecisionCompleted', stale: 'runtimeDecisionStale', 'replan-running': 'runtimeDecisionReplanRunning', 'feedback-running': 'runtimeDecisionFeedbackRunning', 'feedback-completed': 'runtimeDecisionFeedbackCompleted', 'feedback-unknown': 'runtimeDecisionFeedbackUnknown', 'feedback-stale': 'runtimeDecisionFeedbackStale' };
+  const total = ledger.records.length + (ledger['omitted-records'] ?? 0);
+  return h('section', { className: css.details, 'data-runtime-decisions': packetID ?? 'task' },
+    h('h4', null, t('runtimeDecisionTitle')),
+    h('p', { className: css.meta }, t('runtimeDecisionHelp')),
+    h('p', { className: css.meta }, t('runtimeDecisionUsage', { used: ledger.used, limit: ledger['max-calls'] ?? '—', imported: ledger['imported-calls'] })),
+    h('p', { className: css.meta }, t('runtimeDecisionStatus') + ': ' + ledger.status),
+    !packetID && total > entries.length && h('p', { className: css.meta }, t('runtimeDecisionOmitted', { shown: entries.length, total })),
+    ...entries.map(entry => h('article', { key: entry.id, 'data-decision-id': entry.id },
+      h('h4', null, entry.packet + ' · ' + runtimeDecisionAction(entry.action, t)),
+      h('p', { className: css.meta }, entry.id + ' · ' + t('runtimeDecisionAttempt') + ' ' + entry.attempt + ' · ' + entry['started-at']),
+      h('p', { className: ['pending', 'replan-running', 'feedback-running', 'feedback-unknown', 'feedback-stale'].includes(entry.status) ? css.warningText : css.meta }, statuses[entry.status] ? t(statuses[entry.status]) : entry.status),
+      entry.selection && h('p', null, t(!entry.selection.adopted ? 'runtimeDecisionBaseline' : ['stale', 'baseline', 'pending'].includes(entry.status) ? 'runtimeDecisionUnapplied' : 'runtimeDecisionAdopted') + ' · ' + entry.selection.reason),
+      entry.receipt && h('p', { className: css.meta }, t('runtimeDecisionCall') + ': ' + entry.receipt.status + ' · ' + entry.receipt.reason),
+      entry.receipt?.status === 'unknown' && h('p', { className: css.warningText }, t('runtimeDecisionUnknown')),
+      entry.feedback && h('div', { 'data-decision-feedback': entry.id },
+        h('p', { className: css.meta }, t('runtimeDecisionFeedbackHelp')),
+        ...entry.feedback.results.map((result, index) => result['omitted-items'] != null
+          ? h('p', { key: index, className: css.meta }, t('runtimeDecisionResultsOmitted', { count: result['omitted-items'] }))
+          : h('article', { key: index },
+          h('p', null, result.cmd),
+          h('p', { className: css.meta }, t('investigationExit') + ': ' + result.exitCode + ' · ' + (result.pass ? t('pass') : t('fail'))),
+          result.timedOut && h('p', { className: css.warningText }, t('investigationTimedOut')),
+          result.cancelled && h('p', { className: css.warningText }, t('investigationCancelled')),
+          result.observationComplete === false && h('p', { className: css.warningText }, t('runtimeDecisionIncomplete')),
+          (result.truncated || result.outputTruncated) && h('p', { className: css.warningText }, t('investigationPartial')),
+          result.signal && h('p', { className: css.warningText }, t('investigationSignal') + ': ' + result.signal),
+          (result.cleanupError || result.spawnError) && h('p', { className: css.warningText }, result.cleanupError || result.spawnError),
+          result.output && h('pre', { className: css.raw }, result.output)))))));
+}
+
+function validExecutionPolicyHistory(packet) {
+  const policy = packet?.['execution-policy'];
+  const binding = value => record(value) && ['harness', 'provider', 'channel', 'model', 'thinking', 'permission', 'sessionMode']
+    .every(key => value[key] == null || typeof value[key] === 'string');
+  return record(packet) && (policy == null || record(policy) &&
+    (policy.history == null || Array.isArray(policy.history) && policy.history.every(change =>
+      record(change) && ['kind', 'from', 'to', 'reason', 'at'].every(key => typeof change[key] === 'string') &&
+      Number.isSafeInteger(change.attempt) && change.attempt >= 0 && binding(change.before) && binding(change.after))));
+}
+
+function ExecutionPolicyChanges({ packets, packetID, t }) {
+  const changes = Object.entries(packets ?? {}).flatMap(([id, packet]) => !packetID || id === packetID
+    ? (packet['execution-policy']?.history ?? []).map(change => ({ id, change })) : []);
+  if (!changes.length) return null;
+  const fields = ['harness', 'provider', 'channel', 'model', 'thinking', 'permission', 'sessionMode'];
+  const bindingDetails = (binding, label) => h('div', null,
+    h('p', null, t(label)),
+    h('dl', { className: css.consoleProperties }, ...fields.filter(field => binding[field]).map(field =>
+      h(React.Fragment, { key: field }, h('dt', null, field), h('dd', null, binding[field])))));
+  return h('section', { className: css.details, 'data-execution-switches': packetID ?? 'task' },
+    h('h4', null, t('runtimeModelHistory')),
+    h('p', { className: css.meta }, t('runtimeModelHistoryHelp')),
+    ...changes.map(({ id, change }, index) => h('article', { key: index },
+      h('h4', null, id + ' · ' + change.from + ' → ' + change.to),
+      h('p', { className: css.meta }, (change.kind === 'jev-model-selection' ? t('runtimeModelJev') : change.kind) + ' · ' + t('runtimeDecisionAttempt') + ' ' + change.attempt + ' · ' + change.at),
+      h('p', null, t('runtimeDecisionReason') + ': ' + change.reason),
+      bindingDetails(change.before, 'runtimeModelFrom'),
+      bindingDetails(change.after, 'runtimeModelTo'))));
 }
 
 Object.assign(zh, { sharedBatch: '共享目录批次 · 统一验收与提交', sharedBatchError: '上次批次错误' });
@@ -1125,6 +1266,8 @@ function WorkbenchNodeInspector({
         packet && h('dl', { className: css.consoleProperties }, property(t('consoleAttempts'), packet.attempts), property(t('consoleFailures'), packet['failed-attempts'])),
         h('section', { className: css.inspectorSection }, h('h4', null, t('stageMetadata')),
           h('dl', { className: css.consoleProperties }, property('Run', state.run?.id), property(t('executionHome'), packet?.worktree?.path ?? control.status.cwd), property(t('consoleBranch'), packet?.worktree?.branch || state.run?.branch))),
+        packetID && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], packetID, t }),
+        packetID && h(ExecutionPolicyChanges, { packets: { [packetID]: packet }, packetID, t }),
         h(Button, { onClick: () => setTab('evidence') }, t('wbEvidence'))),
       tab === 'session' && h(React.Fragment, null, ...sessions.map(([key, value]) => h(SessionInspector, { key, sessionKey: key, value, control, selection, run, t }))),
       tab === 'evidence' && h(React.Fragment, null,
@@ -1202,6 +1345,7 @@ function TaskView({
           invalid ||
           (needsTask && !hasTask) ||
           (mutates(action) && !!control.uncertainty) ||
+          (['launch', 'start'].includes(action) && control.stale) ||
           (['launch', 'start'].includes(action) && !!state?.handoff),
         onClick: () => run(action, selection, probe),
       },
@@ -1241,6 +1385,8 @@ function TaskView({
         h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
         button('launch', 'launch', true, false, 'primary')),
       preparation && h(InvestigationPanel, { control, selection, run, t }),
+      state && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], t }),
+      state && h(ExecutionPolicyChanges, { packets: state.packets, t }),
       !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
       !preparation && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },

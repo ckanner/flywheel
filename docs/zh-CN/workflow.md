@@ -48,6 +48,11 @@ Full 复用已确认且持久化的有效 Plan 检查点；显式 Plan、verific
 不可信基线仍重规划。执行者先跑针对性检查，Go 完整门禁与独立 Review 继续负责完成。
 模型绑定默认不变；允许集合和可信增量上下文是独立 opt-in，见[配置](configuration.md)。
 
+已授权调查可使用输入副本中的确切复现命令及明确 GET／HEAD 请求，执行权限边界、
+deadline、输出上限和回执写入调查契约。开启 JEV 后，确认结束的实施失败也可在
+返修、已批准反馈检查、重规划或已有允许执行绑定中选择；流程资格和最终完整门禁
+仍由 Go 负责。一次反馈实验成功不等于实现完成。
+
 ## 1. 选择准备阶段的模型
 
 `flywheel-task` 与 `flywheel-new` 使用宿主当前对话的模型。`loops.plan` 只控制
@@ -204,6 +209,15 @@ DSH 对应使用 `/flywheel-run <绝对任务目录>` 和 `/flywheel-status <同
 Execute，再验证和评审完整共同候选。Review、集成与终验保持串行。hard 预算在前一调用
 完成持久化计量前只允许一个模型调用在飞，详见[控制台指南](flow-console.md#串行与并行)。
 
+可选 `scheduler.dispatch="ready-queue"` 在自动管理 Worktree 的 Full 任务中，为
+已就绪的独立 packet 补充空闲 Execute／L1 槽位；Review、Plan 修订和集成仍等待
+已启动 worker 停稳。`scheduler.prewarm=true` 可以在串行 packet 的确定性检查
+期间准备一个 DSH Review runtime，不提前发送模型 prompt。并行执行 lane 和共享
+候选不预热；独立并行组停稳后，串行 Review 路径才可开始准备。主要重叠机会是
+串行 Execute 后的 L1 和适用 Quick 检查。默认仍为 batch 调度且不预热；
+Task／New／Run 和 Auto／Quick／Full 的职责保持，详见
+[配置与限制](configuration.md#就绪队列与运行时准备)。
+
 `scoped` 历史可在资格满足时复用同 packet Executor Session 返修。Review 使用独立
 历史，每次仍检查完整当前候选；Plan 按任务／里程碑划分，Judge 和第二意见分别独立。
 旧配置省略 `sessions` 时继续 fresh。两种模式都有调用安全记录，派发、结果或清理未知
@@ -266,5 +280,5 @@ flywheel control stop --cwd "$PWD" --task-dir "$PWD/docs/my-feature"
 - [配置](configuration.md)：模型绑定、权限、预算与策略。
 - [流程控制台](flow-console.md)：任务、阶段、会话、运行对比与远端交付。
 - [恢复与上下文质量](session-recovery.md)：中断核对与安全续用。
-- [JEV 影子评估](jev-shadow.md)：可选且默认关闭，不改变实际工作流选择。
+- [JEV 决策](jev.md)：一个默认关闭的总开关控制调查及有界失败决策，Go 保留工作流资格与验收规则。
 - [系统设计](../design.md)：权威实现契约。

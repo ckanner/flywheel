@@ -7,6 +7,52 @@ their original language.
 
 ## Unreleased
 
+- Add optional ready-queue dispatch for independent Full packets in automatically
+  managed Worktrees. Refill bounded Execute/L1 lanes as they finish; keep Review,
+  Plan, shared-candidate validation and Git integration behind quiescence barriers.
+- Add optional DSH SDK initialization during serial packet verification. Send the
+  real Review prompt only after normal admission, preserve scoped history, and
+  bind unused-worker cleanup to durable receipts and a version 3 session ledger.
+  Other harnesses retain their public startup paths. Defaults remain batch
+  dispatch and no prewarming pending live benefit acceptance.
+- Honor `--pause-before review` after successful parallel batches and ready
+  queues. Preserve verified candidates for resume before any Review or Git
+  integration, without dispatching their Execute work again.
+- Recheck current activity deadlines and process completion before applying
+  queued prewarm timeouts. Stale callbacks cannot cancel a recently active Review,
+  overwrite a completed result, or turn failed preparation into a cold call.
+- Keep ready-queue replacements from reconciling a still-running sibling's
+  invocation. The coordinator retains live-call ownership, shared accounting and
+  history checks; genuinely unfinished prior calls still require recovery.
+- Preserve proven DSH initialization error codes when consuming a prepared
+  runtime, so authentication and invalid-request failures keep their normal
+  retry rules instead of becoming transport failures.
+- Preserve lowercase and mixed-case JEV credential variable names when freezing
+  investigation contracts. Keep the existing configuration length limit and
+  compatibility with previously valid preparation records.
+- Extend bounded investigation with explicitly authorized reproduction commands
+  in private input copies and exact GET/HEAD requests. Record physical outcomes,
+  output limits and cleanup without presenting host processes as OS sandboxes.
+- Add real failure-action decisions under the same JEV master switch: bounded
+  repair, approved feedback checks, replanning and existing allowed model/effort
+  bindings. Preserve final gates, role isolation and unchanged provider defaults.
+- Persist implementation decision intents, effects and usage across cancellation,
+  recovery, investigation handoff and parallel workers without resetting budgets
+  or replaying unknown actions. Document engineering results separately from
+  deferred live model, performance and desktop acceptance.
+- Unify JEV under one default-off `jev.enabled` setting shared by configuration,
+  desktop, investigation preparation/resume and explicit online evaluation. Remove
+  the automatic shadow observer and separate legacy request client; preserve a
+  migration error for the retired command and read-only legacy config migration.
+- Automatically freeze enabled investigation policy, choose approved evidence
+  actions, defer redundant collection and hand evidence to the analyst early.
+  Record exact decision/evidence bindings without treating collection choices as
+  proven root causes or completed implementation.
+- Recheck current activation and policy before dispatch/adoption, preserve unknown
+  request/action recovery and cumulative budgets, and show actual adopted/baseline
+  behavior with the last observed JEV status. Retain local offline replay.
+- Update Task/New/Run guidance and paired JEV/configuration/investigation guides;
+  preserve Quick/Full eligibility, verification and provider/model defaults.
 - Rebuild the console as a canvas-first workspace with separate Settings, fixed-height
   navigation, compact node actions, actual session receipts, and separate PR/Merge nodes.
 - Expose inline role-history overrides, reconcile explicit Kimi Plan history choices,

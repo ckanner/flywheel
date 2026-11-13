@@ -69,6 +69,39 @@ A durable receipt without the Go candidate checkpoint may reconcile trustworthy 
 
 For shared-checkout execution, an Execute receipt fingerprints its declared write scope and binds that scope into the session identity. Independent peer changes do not discard a known invocation; changes within its own scope still reject stale receipts. L1, independent Review and collective delivery validate the entire combined candidate. Scoped receipts neither prove batch completion nor bypass unknown dispatch, outcome or cleanup.
 
+### DSH runtime preparation after a restart
+
+Optional `scheduler.prewarm` prepares a DSH Review runtime without a model prompt
+while deterministic checks run. Before starting it, Go saves a single
+`worker-prewarm` responsibility in task state, including the preparation identity,
+role/scope, binding and run. Its terminal receipt is private under
+`.control/prewarm/`; it is separate from a model invocation or passing Review.
+
+A restarted engine never resumes that prepared worker. It may discharge the old
+responsibility only when the matching receipt proves that no prompt was submitted,
+SDK cleanup was confirmed, and both the recorded worker and its original process
+group have exited. Receipt publication synchronizes the file and its directory;
+recovery repeats those durability checks before clearing state. If no process was
+ever started, an explicit local no-process receipt can establish that fact;
+elapsed time or a missing PID cannot. Missing, corrupt or mismatched receipts, a
+live or unconfirmed process/group, or uncertain cleanup keep the task blocked.
+Turning prewarming off does not bypass reconciliation. After safe resolution,
+subsequent work follows the current configuration and its normal invocation checks.
+
+Within the same engine run, a safely expired unused runtime may fall back once to
+a cold invocation only before any formal start was attempted, with the same
+persisted invocation identity and its remaining deadlines. This is not restart
+reuse, a second billed model attempt, or a way around unknown effects. Cancellation,
+expired invocation deadlines, incomplete cleanup, or untrusted output prevent that
+fallback.
+
+Creating the first preparation record advances `state.sessions.version` to **3**
+and later operations retain that version. This storage compatibility marker makes
+older engines reject a task whose cleanup responsibilities they cannot interpret.
+The new engine still reads versions 1 and 2. `sessions.policy-version` remains 1;
+worker and lifecycle protocols retain their separate version contracts. Do not
+edit the storage version or delete receipts to force a downgrade.
+
 ## Accounting and budgets
 
 Consumed invocations do not create another model request or call count. If an unknown invocation later yields trusted usage, Go appends an auditable correction tied to the same call, provider, original day, and lifetime totals. Recovery does not recreate an expired daily bucket.

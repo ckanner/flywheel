@@ -103,7 +103,7 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
 - **Output contract**: `run`/`intake`/`garden` print a JSON summary to stdout;
   `control <action>` prints one protocol-1 JSON response, independently of worker
   protocol versions (see docs/design.md §12 and `internal/cli/control.go`);
-  `shadow prepare|run|report` prints one JSON report;
+  `decision replay|evaluate` prints one JSON decision report after evaluation;
   `config inspect|migrate` and `doctor` print human text, or a single JSON document with `--json`;
   `install-skills` prints human text or one complete protocol-versioned summary with `--json`;
   npm `install`/`setup --json` returns a distinct installation report, retaining partial failures;
@@ -112,7 +112,8 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
   in the stdout JSON envelope; other commands may return an error report or
   fail before producing one. Preserve each interface's failure contract.
   Exit codes: `0` ok, `1` usage/runtime error, `3` escalated / budget-stopped /
-  failed manual step; shadow also uses `3` for failed, unknown, or unrun items.
+  failed manual step; decision evaluation also uses `3` for failed or unknown requests.
+  The retired hidden `shadow` entry returns a migration error without running anything.
 - **SIGTERM kill switch**: machine.RunTask registers SIGTERM → kills in-flight
   child process groups → awaits quiescence → exits 143. Never remove this.
   The npm launcher must forward cancellation and await Go cleanup; a wrapper
