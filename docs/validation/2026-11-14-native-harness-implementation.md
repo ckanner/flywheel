@@ -4,7 +4,7 @@
 
 日期：2026-11-14。对应 Flywheel 0.34.0 开发候选与下表六个 PR。本记录区分源码测试、真实公开包集成、已安装候选、最终完整发行包及用户机器验收，不声明已合并、已发布 npm 或已完成真实模型／桌面验收。
 
-**首份完整候选的结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包安装后的 Node 完整检查、四条 Go→Node 桥接及 36 个 session 场景通过。完整 Flywheel 四平台单包构建通过，同一 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
+**当前本地结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包的四条 Go→Node 桥接及 36 个 session 场景通过。Tower 目录别名修正后，Node 主套件 395/395、legacy host 10/10、Kimi Go→Node 桥接和新四平台单包构建再次通过；这个新 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** 跨平台 CI 的失败、修正及最终 head 结果分别记录，不能用本地成功代替 macOS 成功。 LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
 
 ## 1. 六仓范围与最终配套源码
 
@@ -134,7 +134,22 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 
 安装门禁首次在测试夹具的旧断言处失败：它仍要求单个 Codex bundle。修复为精确检查 **Codex Pro 0.10.0 与 Preset Generator 0.4.0 两个 bundle**，同时补齐两种 Pro doctor 的 `nativeVersion:1`，验证安装后的 Kimi launcher／exports、generator 公开 composition API，以及两包均没有 registry 获取请求。使用 **同一个上述 tarball** 重跑，Host/Client 10 项和安装 15 项全部通过；未重打包换掉失败对象，也未弱化包身份检查。这些安装测试位于不随 tarball 发布的 `npm/test/` 中。
 
-首份候选之后的安装断言和证据链接修正只改变测试／文档。第二轮 CI 后的 Tower 修正则改变运行代码，已通过针对性 Kimi/Tower **22/22**（0 skip，约 `27.27s`）和独立只读审查；新增真实目录别名回归在修复前明确失败，修复后通过。完整 Node、Go→Node 和新候选安装结果须另行记录。最终 PR CI 从精确 head 构建并安装其自己的完整候选，各次 tarball hash 不混同。
+首份候选之后的安装断言和证据链接修正只改变测试／文档。第二轮 CI 后的 Tower 修正则改变运行代码，已通过针对性 Kimi/Tower **22/22**（0 skip，约 `27.27s`）和独立只读审查；新增真实目录别名回归在修复前明确失败，修复后通过。完整 Node、Go→Node 和新候选安装结果见下一小节。最终 PR CI 从精确 head 构建并安装其自己的完整候选，各次 tarball hash 不混同。
+
+### Tower 修正后的完整候选与复验
+
+运行源码对应远端 [be4351fbb9fb](https://github.com/ckanner/flywheel/commit/be4351fbb9fb54b450f3963b5065026434c592b0)，与本地干净构建提交 `1512b4b690a8d2b01edc70994ba4404b92659d79` 的 tree 均为 `1083a22b5177797fcde323480bda733b9042e06f`。该候选包含目录别名、URL query 和前缀边界修复，未改变五个配套包或 Go 运行代码。
+
+| 修正后门禁 | 实际结果 |
+| --- | --- |
+| 完整 Node `npm --prefix plugins/dsh run check` | **395/395** 主套件、**10/10** legacy host；均 0 fail、0 skip |
+| Kimi 实际 Go→Node worker 桥接 | **通过，2.048s**；使用完整检查刚构建的 worker |
+| `npm run build:npm` | **通过**；干净快照、四平台、单个完整包，`18,873,136` bytes |
+| 同一新候选 `npm run test:install` | **Host/Client 10/10、安装／迁移 15/15**；可选 Claude 0.5.0 参与验证，均 0 fail、0 skip |
+
+新 tarball SHA-256 为 `41f3db0ed3d5e50fc0b0825f8278d49b1d4653732f7f0f4758a7bf3b074e1ee8`，npm integrity 为 `sha512-1058P0psSstNlkzycB9HEeeCa/xmoGT4Th37/KTkApnmInUDUXnKIxECaWgWLQfp6NawoAoca8sJC7N1DVDH/g==`。完整 source snapshot、四平台引擎、包内 Tower 模块摘要及逐项结果见 [修正后候选证据](evidence/2026-11-14-native-harness-tower-candidate.json)。Kimi launcher 仍为 `0755`。
+
+本验证记录和该候选证据在构建后补齐；随后没有运行代码变化。最终 PR head 的 CI 会另外构建其文档快照对应的候选，Linux/macOS 安装同一份 CI artifact。最终状态由 [#44 checks](https://github.com/ckanner/flywheel/pull/44/checks) 与 PR 说明记录精确 head／run，避免通过提交 CI 结果文档不断重启 CI。
 
 ### 已核对的配套 CI
 
@@ -169,4 +184,6 @@ Claude 的部分并发、深度和模型路由缺少可验证的全树 pre-dispa
 - 引擎与 36 场景：`native-sessions-final.log` 和上节列出的 `report.json`，保留实际引擎与 manifest 摘要。
 - LCU：`/tmp/lcu-authority-race-source-tests.log`、`/tmp/lcu-authority-race-packed-tests.log`、`/tmp/lcu-merged-full-tests.log`；保留成功和失败两类证据。
 
-稳定证据归档：[完整候选身份与门禁摘要](evidence/2026-11-14-native-harness-candidate.json)、[36 场景原始 report](evidence/2026-11-14-native-harness-sessions.json)。最终单包构建／安装日志为 `native-package-build-final.log`、`native-install-final.log`；远端 CI 日志通过上表与 #44 checks 访问。原始 report 明确是离线 fixture，历史结果及当时源码身份保留。
+Tower 修正复验日志：`research/kimi-alias-prompt-before.log`、`research/kimi-alias-prompt-after.log`、`research/kimi-tower-alias-regression.log`、`native-tower-node-check.log`、`native-tower-go-node.log`、`native-tower-package-build.log`、`native-tower-install.log`。失败与通过日志分别保留。
+
+稳定证据归档：[修正后候选身份与门禁摘要](evidence/2026-11-14-native-harness-tower-candidate.json)、[首份完整候选身份与门禁摘要](evidence/2026-11-14-native-harness-candidate.json)、[36 场景原始 report](evidence/2026-11-14-native-harness-sessions.json)。最终单包构建／安装日志为 `native-package-build-final.log`、`native-install-final.log`；远端 CI 日志通过上表与 #44 checks 访问。原始 report 明确是离线 fixture，历史结果及当时源码身份保留。

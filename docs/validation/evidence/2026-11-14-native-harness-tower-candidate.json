@@ -1,0 +1,104 @@
+{
+  "candidate": {
+    "format_version": 2,
+    "version": "0.34.0",
+    "source": {
+      "commit": "1512b4b690a8d2b01edc70994ba4404b92659d79",
+      "tree": "1083a22b5177797fcde323480bda733b9042e06f",
+      "dirty": false,
+      "snapshot_sha256": "cd4d50eba9c2abe5c04d80d7059b3daf692127e5afcd51dd61c0b5a48d6bfc54"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.34.0",
+        "filename": "ckanner-flywheel-0.34.0.tgz",
+        "bytes": 18873136,
+        "integrity": "sha512-1058P0psSstNlkzycB9HEeeCa/xmoGT4Th37/KTkApnmInUDUXnKIxECaWgWLQfp6NawoAoca8sJC7N1DVDH/g=="
+      }
+    ]
+  },
+  "sha256": "41f3db0ed3d5e50fc0b0825f8278d49b1d4653732f7f0f4758a7bf3b074e1ee8",
+  "native": {
+    "protocol": 1,
+    "version": "0.34.0",
+    "platforms": {
+      "darwin-arm64": {
+        "bytes": 10385074,
+        "sha256": "ef7f4bab41bcc599647580a955212b5c0eedb39ace0845c9d39965dba1e92698"
+      },
+      "darwin-amd64": {
+        "bytes": 11320736,
+        "sha256": "53f218a5d9209b7397cd1d184dbbf4401db6b88b0b40f7670b86e7eea0877aeb"
+      },
+      "linux-arm64": {
+        "bytes": 10158240,
+        "sha256": "312ccc6461ebfd0dc767b024cbb1e4a05b4d6ac8915c60d471a2952823ee0343"
+      },
+      "linux-amd64": {
+        "bytes": 11096224,
+        "sha256": "3c898627cff6a1ad703d883083e04388fea7df97d7b3d90bfaa1e7208af7eabd"
+      }
+    }
+  },
+  "kimiLauncherMode": "0o755",
+  "equivalentRemoteSource": {
+    "repository": "ckanner/flywheel",
+    "commit": "be4351fbb9fb54b450f3963b5065026434c592b0",
+    "tree": "1083a22b5177797fcde323480bda733b9042e06f"
+  },
+  "packedTowerModule": {
+    "path": "package/dist/kimi-tower-candidate.mjs",
+    "sha256": "985704d3ac5d3fdb7641ba4b63ffbf6c91ea3ecd17e0c192b881ec2ac26773a4",
+    "declaredSourceReceiptPresent": true
+  },
+  "recordVersion": 1,
+  "observedDate": "2026-11-14",
+  "reason": "Tower directory-alias and prompt-boundary runtime correction after macOS CI exposed noncanonical helper fixtures",
+  "previousCandidate": "2026-11-14-native-harness-candidate.json",
+  "companionPackages": "unchanged exact versions, source commits, trees and tarballs in previousCandidate.companionPackages",
+  "checks": {
+    "kimiTowerFocused": {
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "milliseconds": 27270.454965
+    },
+    "nodeMain": {
+      "passed": 395,
+      "failed": 0,
+      "skipped": 0,
+      "milliseconds": 165670.774883
+    },
+    "nodeLegacyHost": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "milliseconds": 2009.826984
+    },
+    "kimiGoNodeBridge": {
+      "result": "pass",
+      "seconds": 2.048
+    },
+    "packedHost": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "milliseconds": 4512.678864
+    },
+    "installedCandidate": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "milliseconds": 46653.651485,
+      "optionalClaudeTarballTested": true
+    }
+  },
+  "limits": {
+    "registryPublished": false,
+    "targetMacAcceptance": false,
+    "liveModelInference": false,
+    "dshMasterImageRuntimeTested": false
+  },
+  "finalCI": "The final PR head includes subsequent evidence-only changes; PR #44 checks and body record its separately built exact-head candidate and Linux/macOS results."
+}

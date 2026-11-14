@@ -250,5 +250,6 @@
       "testsRemoved": 0
     },
     "finalExactHeadResult": "recorded in PR #44 checks and body; this historical run remains a failure"
-  }
+  },
+  "laterRuntimeCorrectionEvidence": "2026-11-14-native-harness-tower-candidate.json"
 }
