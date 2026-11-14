@@ -100,6 +100,67 @@ Sources: [plugin package][fw-package], [bundled provenance][fw-vendor],
 The old Python [MoonshotAI/kimi-cli][kimi-legacy] is archived. Its Wire protocol
 must not be presented as the current TypeScript Kimi Code integration.
 
+### 2.3 Desktop Agent Presets and the separate DSH SDK composition
+
+The user runs DSH Desktop with a custom `heavy` Agent Preset. That host
+conversation can use its loaded tools, plugins and preset for discussion and
+skill preparation. The Task skill explicitly uses the current conversation's
+model for preparation; `loops.plan` controls the later engine stage.
+[Task preparation][fw-task-skill]
+
+Formal loops follow a different boundary: the desktop plugin invokes the Go
+engine, which starts its own DSH worker. That worker launches the local
+`dsh --profile sdk --patch <temporary-overlay>` and uses SDK stdio JSON-RPC for
+initialization, prompts and results. `FLYWHEEL_DSH_PROFILE` may select a
+compatible custom SDK profile; the bridge explicitly refuses the reserved
+`desktop` profile. An independent process does not imply fresh history for every
+call: the existing role Session may resume under its lifecycle contract.
+[Desktop entry][fw-host-entry] · [Control process][fw-host-control] ·
+[Worker][fw-dsh-bridge]
+
+The desktop entry passes the project directory and host Session association,
+not the selected Agent Preset composition. An Agent Preset is an Agent's plugin
+composition, while `desktop` and `sdk` identify runtime profiles. `heavy` cannot
+simply replace `sdk` as an equivalent kind of name. The rc.3 SDK server creates
+Agents from the global composition without joining a preset roster; registering
+heavy by redirecting the generator's output to an SDK profile is insufficient
+to make that Agent select it. Flywheel's model `profiles` are a third concept:
+reusable model/provider/harness bindings. [SDK composition][dsh-sdk-app] ·
+[SDK Agent creation][dsh-sdk-server]
+
+The user's [preset generator][user-preset-readme], pinned at
+`0a9c6b8082c8b4338a1177ce5265f262656d911d`, reads the PTC base from the installed
+application's `app.asar` and defaults to writing
+`~/.dsh/profiles/desktop/cordis.patch.yml`. Its `daily` policy preserves PTC;
+`heavy` copies the same base but changes `tool-presentation` to `native` so
+computer-use tools can be called directly. Being generated from a PTC base and
+using PTC presentation are different facts. The repository does not establish
+the user's currently materialized configuration or installed application.
+[Generator source][user-preset-source]
+
+The standard rc.3 SDK defaults to the native executor. Its official PTC overlay
+disables native and enables PTC; Flywheel's current overlay does not perform
+that switch. A customized SDK profile still needs effective-state inspection.
+Desktop PTC use therefore does not establish PTC use inside a formal SDK loop.
+[SDK defaults][dsh-sdk-app] · [Official PTC overlay][dsh-ptc-overlay]
+
+Source inspection also found a version compatibility difference: the generator's
+`setPresentationMode` searches for a `tool-presentation` row, while the pinned
+rc.3 Web PTC base uses `tool-executor-ptc` and has no such row. Regenerating heavy
+against those exact new base bytes reaches the missing-row error path. This is
+a static source finding, not a run on the user's Mac or evidence that their
+existing heavy Session has failed. [Generator][user-preset-source] ·
+[rc.3 Web PTC base][dsh-web-ptc]
+
+Start DSH implementation by reusing the user's existing preset policy and its
+generation source, with an explicit managed SDK global composition/patch output.
+Preserve the SDK server, permissions, accounting and lifecycle contract. Direct
+selection of a named Agent Preset would require a separately implemented and
+verified public composition seam; the current protocol has no ready-made
+`preset=heavy` parameter. Do not automatically rewrite desktop configuration or
+copy the whole heavy preset, including delegation and computer use, into every
+loop.
+
 ## 3. Capability matrix and current integration boundaries
 
 | Native capability | Useful work | Current Flywheel boundary | Proposed disposition |
@@ -126,7 +187,7 @@ The rc.3 source provides several distinct capabilities:
 
 | Capability | Upstream contract | Adapter implication |
 | --- | --- | --- |
-| PTC `run_code` | Parallel-safe nested calls can overlap; exclusive calls form barriers; `maxParallelSubCalls` defaults to 10 | The current overlay does not specifically disable PTC. Probe the actual executor/profile before claiming enablement or token savings [DSH PTC][dsh-ptc] |
+| PTC `run_code` | Parallel-safe nested calls can overlap; exclusive calls form barriers; `maxParallelSubCalls` defaults to 10 | Standard rc.3 SDK uses native execution; Flywheel does not switch it to PTC. Probe custom profiles and reuse existing preset policy through an explicit SDK composition; desktop PTC is not worker evidence [DSH PTC][dsh-ptc] · [SDK defaults][dsh-sdk-app] |
 | Local SubAgent | Fresh/forked sessions, messages and continuation; the shared tree pool defaults to 8 active children | A candidate for small, constrained helpers once creation and lifecycle policies are extended [SubAgent][dsh-subagent] |
 | Agent Team | Durable tasks, dependencies and compare-and-set claims over the subagent tree | Its internal board does not become Flywheel's formal packet DAG [Team][dsh-team] |
 | Web search/fetch | Search and fetch are separately configurable; ordinary fetching need not call an auxiliary model | The current overlay disables `tool-web`; distinguish ordinary retrieval from model-backed tools when admitting it [Web tools][dsh-web] |
@@ -468,7 +529,7 @@ PTC, media and remote services each retain their own admission conditions.
 | Stage | Work | Exit condition |
 | --- | --- | --- |
 | P0: contracts and probes | Capability facts, invocation reservations, explicit baseline off, observation-quality levels, version/scope binding, known-before-dispatch fallback; extend existing machine interfaces | Offline probes demonstrate supported and unsupported cases without pretending a complete child ledger exists everywhere |
-| P1a: low-coordination capabilities | DSH PTC/ordinary retrieval and structured results; a separate input manifest for media | Tool scope, failure, result and usage contracts pass; model results still satisfy the existing schema |
+| P1a: low-coordination capabilities | Align existing preset policy with managed SDK composition; DSH PTC/ordinary retrieval and structured results; a separate input manifest for media | Check generator/executor version compatibility; tool scope, failure, result and usage contracts pass; model results still satisfy the existing schema |
 | P1b: small collaborations | Restricted DSH local helpers first, then Kimi Agent, Codex and Claude as their contracts allow | Child caps, permissions, results, accounting and cancellation are provable; combinations that cannot enforce read-only scope are not admitted |
 | P2: bounded native collaboration | DSH Team, Kimi Server Swarm, Claude Workflows as separate adapter/profile increments | Each route proves its own caps, lifecycle, actual model/account bindings and complete required observations |
 | P3: optional advanced work | Native Teams, additional compaction policy, multiwriter isolation, isolated Tower, and remote review | Dedicated acceptance proves ownership, crash recovery, artifact/candidate identity and a benefit over a simpler profile |
@@ -573,6 +634,14 @@ Recommended decisions for the implementation discussion:
 - [DSH policy][fw-dsh-policy], [DSH bridge][fw-dsh-bridge], [Kimi driver][fw-kimi],
   [Codex Pro bridge][fw-codex-bridge], [Claude Code Pro bridge][fw-claude-bridge].
 - [DSH usage fold][fw-dsh-protocol] and [durable invocation/session lifecycle][fw-sessions].
+- [Desktop entry][fw-host-entry], [control process][fw-host-control] and
+  [host Task preparation][fw-task-skill].
+
+### Existing user Agent Presets
+
+- [Preset generator policy][user-preset-readme] and
+  [the generator source][user-preset-source], pinned to
+  `0a9c6b8082c8b4338a1177ce5265f262656d911d`.
 
 ### Official native sources
 
@@ -581,6 +650,9 @@ Recommended decisions for the implementation discussion:
   [SDK Team configuration][dsh-sdk], [PTC executor][dsh-ptc],
   [Web tools][dsh-web], [Plan mode][dsh-plan], [Goal rounds][dsh-goal]
   and [SDK protocol][dsh-protocol].
+- DSH desktop/SDK boundary: [SDK defaults][dsh-sdk-app],
+  [SDK Agent creation][dsh-sdk-server], [official PTC overlay][dsh-ptc-overlay]
+  and [Web PTC base][dsh-web-ptc].
 - Kimi: [release][kimi-release], [changelog][kimi-changelog], [CLI][kimi-cli],
   [Agent profiles][kimi-agents], [tools][kimi-tools], [Tower][kimi-tower],
   [Server API][kimi-api], [session endpoints][kimi-session-api],
@@ -609,6 +681,11 @@ Recommended decisions for the implementation discussion:
 [fw-sessions]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/internal/machine/sessions.go
 [fw-codex-bridge]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/codex-pro-bridge.js
 [fw-claude-bridge]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/claude-code-pro-bridge.js
+[fw-host-entry]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/index.js
+[fw-host-control]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/control.js
+[fw-task-skill]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/skills/flywheel-task/SKILL.md
+[user-preset-readme]: https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/README.md
+[user-preset-source]: https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/src/gen-presets.mjs
 [dsh-team]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md
 [dsh-subagent]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/subagent/subagent/README.md
 [dsh-sdk]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/docs/user/guide/python-sdk.md#enable-team-mode
@@ -617,6 +694,10 @@ Recommended decisions for the implementation discussion:
 [dsh-plan]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/plan/plan-mode/README.md
 [dsh-goal]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/goal/goal-round-driver/README.md
 [dsh-protocol]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/protocol/README.md
+[dsh-sdk-app]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/sdk-app/README.md
+[dsh-sdk-server]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts
+[dsh-ptc-overlay]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml
+[dsh-web-ptc]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/web-app/presets/ptc.patch.yml
 [kimi-release]: https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai/kimi-code%402.6.2
 [kimi-legacy]: https://github.com/MoonshotAI/kimi-cli
 [kimi-changelog]: https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html

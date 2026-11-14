@@ -59,13 +59,54 @@ Kimi 当前维护项目是 `MoonshotAI/kimi-code`；旧 `MoonshotAI/kimi-cli` �
 本轮没有启动真实模型、检查用户订阅权益或验收 Mac 桌面；旧工作区的 rc.2
 `node_modules` 也不作为当前 rc.3 发行或用户宿主的运行证据。
 
+### 2.2 DSH 桌面、Agent Preset 与 SDK worker 的实际关系
+
+用户在 DSH 桌面会话中使用自己的 `heavy`（重活）Agent Preset。这个宿主会话可使用
+其实际加载的工具、插件和 preset 完成需求交流与 skill 准备；`flywheel-task` 明确
+规定准备使用当前对话模型，`loops.plan` 只约束引擎阶段。[F7]
+
+正式 loop 则由桌面插件经 Go 引擎调度独立 worker。DSH worker 启动本机
+`dsh --profile sdk --patch <临时覆盖>`，通过 stdio JSON-RPC 进行初始化、发送 prompt
+和等待结果；这是本地 DSH runtime 的 SDK 接口。可用 `FLYWHEEL_DSH_PROFILE` 选择
+兼容的自定义 SDK profile，当前 bridge 明确拒绝保留的 `desktop` profile。[F2]
+独立进程不等于每次全新历史：已有角色 Session 可按现有协议 resume。
+
+桌面入口传递项目目录与宿主 Session 关联，未传递所选 Agent Preset 的组合。
+Agent Preset 是 Agent 的插件组合，`sdk`/`desktop` 则是 runtime profile，不能把
+`heavy` 当成可直接替换 `sdk` 的同类名称。Flywheel 的模型 `profiles` 又是可复用的
+模型/provider/harness 绑定。rc.3 SDK server 明确从全局组合创建 Agent，
+没有自动加入 preset roster；把生成器的输出位置改成 SDK profile，仍不代表其 Agent
+会选用 `heavy`。[F7][D9][D11]
+
+用户的 [dsh-preset-generator][U1] 在 `0a9c6b8082c8b4338a1177ce5265f262656d911d`
+读取本机应用 `app.asar` 的 PTC 基底，默认写入 `~/.dsh/profiles/desktop/cordis.patch.yml`。
+仓库策略中 `daily` 保留 PTC；`heavy` 虽使用同一基底，却将 `tool-presentation` 改为
+`native`，目的是让 computer-use 工具直接可调用。它们都是从 PTC 基底生成，最终
+工具模式仍有区别；这份源码不证明用户当前已物化配置或安装包的实际状态。[U1][U2]
+
+此次补充核对还确定：标准 rc.3 SDK 的默认 executor 是 native，官方 PTC overlay
+才将 native 关闭、PTC 打开。当前 Flywheel overlay 没有执行这次切换；自定义 SDK
+profile 是否已切换仍需核验。因此宿主已使用 PTC，不会自动使正式 SDK loop 使用
+PTC。[D9][D10]
+
+还有一个静态版本兼容差异：生成器的 `setPresentationMode` 查找旧 `tool-presentation`
+行，而固定 rc.3 Web PTC 基底已经使用 `tool-executor-ptc`、没有该行。用这份新基底
+重新生成 `heavy` 会走缺行错误路径；这不是用户本机重新生成的实测结论，也不证明
+其现有桌面会话已失效。[U2][D12]
+
+DSH 的实施起点应调整为：复用用户现有 preset 的能力策略和生成来源，明确输出适合
+受管 SDK 的全局 composition/patch，并保留 SDK server、权限、计量和生命周期契约。
+若要直接选择 named Agent Preset，须另行实现并验证公开的 preset composition 接缝；
+当前协议没有可直接添加的 `preset=heavy` 参数。不自动改写用户桌面配置或把整个重活
+preset 连同自主委派、computer-use 等能力一并复制到所有 loop。
+
 ## 3. 各后端值得利用的能力
 
 ### 3.1 DSH：工具并行、本地子代理与持久化 Team
 
 | 能力 | 上游事实 | Flywheel 当前状态与建议 |
 | --- | --- | --- |
-| PTC `run_code` | 独立的并行安全工具可在一个程序内并发；排他调用形成屏障，`maxParallelSubCalls` 默认 10 | 当前 overlay 没有专门禁用 PTC，但实际 executor 取决于 profile。优先探测并验证工具并行，不能声称默认已经启用或必然节省 tokens |
+| PTC `run_code` | 独立的并行安全工具可在一个程序内并发；排他调用形成屏障，`maxParallelSubCalls` 默认 10 | 标准 rc.3 SDK 默认 native，当前 Flywheel overlay 未切换到 PTC；自定义 profile 另需核验。复用既有 preset 策略设计 SDK composition，不把桌面 PTC 当成 worker 已启用的证据 |
 | 本地 SubAgent | fresh/fork、独立 Session、消息和继续执行；tree pool 默认最多 8 个活跃 children | 当前 worker 明确限制委派。适合首先扩展少量受限的探索助手 |
 | Agent Team | 在现有 subagent tree 上增加持久化任务板、依赖和 CAS 认领 | 适合一次调用里的协作，不替代正式 packet DAG |
 | Web search/fetch | 可分别开启；普通抓取不必调用辅助模型 | 当前整个 `tool-web` 被关闭。应按实际后端拆分普通检索与额外模型调用 |
@@ -319,7 +360,7 @@ JEV 只对 Go 已按真实能力、权限和剩余额度过滤后的候选提出
 | 阶段 | 交付 | 可以进入下一阶段的条件 |
 | --- | --- | --- |
 | P0：能力与控制契约 | 各 adapter 的 probe、有效配置、观测粒度、明确 off、资源预留、原调用事实；扩展用户现有两个 machine 插件 | 未支持/未知场景不会误报 available；继承配置与子派发都有明确处理；不要求所有后端虚构相同 API |
-| P1a：低协调开销能力 | DSH PTC/普通检索的受管验证，按后端透传结构化结果；媒体另做输入 manifest | 工具边界、失败、输出和用量口径验证；模型结果仍通过原有 schema |
+| P1a：低协调开销能力 | 对齐既有 preset 策略与受管 SDK composition，验证 DSH PTC/普通检索；按后端透传结构化结果，媒体另做输入 manifest | 核对生成器与 executor 版本；工具边界、失败、输出和用量口径验证；模型结果仍通过原有 schema |
 | P1b：少量子代理 | 先 DSH 的受限本地 helpers，再按实际契约接入 Kimi Agent、Codex、Claude | child cap、权限、结果、用量与取消可证明；不能满足只读要求的组合不进入试点 |
 | P2：有明确任务结构的协作 | DSH Team task board、Kimi Server Swarm、Claude 保存的 Workflow，分别交付 adapter/profile | 公开 API、模式/恢复、全部派发机制、后台任务、去重与全局额度矩阵通过 |
 | P3：更复杂的能力 | 交互式 Teams、显式压缩控制、隔离多 writer、Tower 工作单元、远端 review | 每种能力单独定义所有权和生命周期，完成真实场景对比后再考虑默认采用 |
@@ -388,6 +429,12 @@ usage、可观察额度、峰值并发、限流及取消后残余工作。子代
 - [F4：Claude Code Pro bridge](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/claude-code-pro-bridge.js)、[可选 peer 的 source candidate 记录](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/vendor/README.md)、[固定插件 machine](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/ec0b99176b67512f3ca1838ec2a349dcb0189214/lib/machine.js)与 [CLI](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/ec0b99176b67512f3ca1838ec2a349dcb0189214/lib/cli.js)。
 - [F5：Kimi print driver](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/internal/drivers/kimi.go)。
 - [F6：插件依赖与兼容范围](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/package.json)。
+- [F7：宿主插件入口](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/index.js)、[CLI 调用与关联](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/control.js)、[Task skill 的准备边界](https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/skills/flywheel-task/SKILL.md)。
+
+### 用户已有的 Agent Preset
+
+- [U1：preset-generator 的定位与策略](https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/README.md)。
+- [U2：生成器、基底读取与重活配置](https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/src/gen-presets.mjs)。
 
 ### DSH 官方 rc.3
 
@@ -399,6 +446,10 @@ usage、可观察额度、峰值并发、限流及取消后残余工作。子代
 - [D6：Plan mode](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/plan/plan-mode/README.md)。
 - [D7：Goal rounds](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/goal/goal-round-driver/README.md)。
 - [D8：SDK protocol](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/protocol/README.md)。
+- [D9：标准 SDK 的默认 executor 与组合方式](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/sdk-app/README.md)。
+- [D10：官方 SDK PTC overlay](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml)、[base executor 默认值](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/base/cordis.patch.yml)。
+- [D11：SDK Agent 创建没有 preset composition](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts)。
+- [D12：rc.3 Web PTC 基底](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/web-app/presets/ptc.patch.yml)。
 
 ### Kimi 官方资料
 
@@ -428,6 +479,9 @@ usage、可观察额度、峰值并发、限流及取消后残余工作。子代
 [F4]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/claude-code-pro-bridge.js
 [F5]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/internal/drivers/kimi.go
 [F6]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/package.json
+[F7]: https://github.com/ckanner/flywheel/blob/63d8781ee1ece0cce443fa2e1ead62d1d6288817/plugins/dsh/src/index.js
+[U1]: https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/README.md
+[U2]: https://github.com/ckanner/dsh-preset-generator/blob/0a9c6b8082c8b4338a1177ce5265f262656d911d/src/gen-presets.mjs
 [D1]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md
 [D2]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/subagent/subagent/README.md
 [D3]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/docs/user/guide/python-sdk.md#enable-team-mode
@@ -436,6 +490,10 @@ usage、可观察额度、峰值并发、限流及取消后残余工作。子代
 [D6]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/plan/plan-mode/README.md
 [D7]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/goal/goal-round-driver/README.md
 [D8]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/protocol/README.md
+[D9]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/sdk-app/README.md
+[D10]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml
+[D11]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts
+[D12]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/web-app/presets/ptc.patch.yml
 [K1]: https://github.com/MoonshotAI/kimi-code
 [K2]: https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai/kimi-code%402.6.2
 [K3]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/agents.md
