@@ -733,6 +733,8 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 
 现有 worker 策略固定每次调用的目录、权限和审批，限制自主委派及 workflow／goal 驱动，禁用 `schedule`／`tool-schedule` 的自主提醒输入，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。临时覆盖不修改用户提醒存储。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。完全权限改变宿主访问策略，仍保留这些工具与辅助模型调用限制；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
 
+后续接入方向见[原生 Harness 能力方案](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）。该方案调研工具并行、子代理、Team/Swarm/Workflow 与 Tower 的接口和边界，仍待讨论；不改变本节现有 worker 策略，也不表示这些能力已实现。
+
 ### 12.3 受管阶段与远端交付
 
 `control step` 以状态 revision 绑定单阶段请求，在任务 lease 内重核后复用已有单环逻辑。支持 Plan、Execute、Review、Verify、Integrate 和 Final；单节点操作不等同继续整个流程。受管 Execute 可显式给出人工继续原因，先保存审计条目，再追加一次 Execute／L1 尝试；累计失败和预算不重置，未知调用仍须先核对。异步操作保存 running／passed／failed／cancelled 回执，失败不能只留在后台日志。受管 Session 的 claim／send／reconcile／return／release 规则见 §5.4。

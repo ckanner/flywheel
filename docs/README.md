@@ -54,6 +54,12 @@ The [P5 implementation plan](plans/2026-11-13-p5-ready-queue-prewarm.md) (Chines
 records optional scheduling and runtime preparation; live performance and any
 default adoption require separate evidence.
 
+The [native harness capabilities proposal](plans/2026-11-13-native-harness-capabilities.en.md)
+([中文](plans/2026-11-13-native-harness-capabilities.md)) researches DSH, Kimi,
+Codex, and Claude capabilities and proposes how to use them within existing
+loops. Its capability profiles, accounting, and lifecycle extensions are for
+discussion and are not implemented by this documentation change.
+
 | Collection | Contents |
 | --- | --- |
 | [Plans](plans/README.md) | Dated design proposals and implementation decisions |

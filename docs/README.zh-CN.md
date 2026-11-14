@@ -38,6 +38,8 @@
 
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
 
+[原生 Harness 能力方案](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）调研 DSH、Kimi、Codex 与 Claude 的能力，讨论如何用于现有各环节。文中的能力配置、计量与生命周期扩展均待讨论，本次文档变更没有实现这些能力。
+
 | 分类 | 内容 |
 | --- | --- |
 | [方案](plans/README.md) | 按日期保存的设计提案与实施决策 |
