@@ -20,7 +20,7 @@ worker 包。`plugins/dsh` 是 **private 源码／构建／测试区**，不是�
 旧四个平台包及 `@ckanner/dsh-plugin-flywheel` 保留为历史版本；新流程不上传它们的
 新版本，也不撤销其已发布字节。
 
-Codex Pro 0.10.0 继续内置[已审查源码候选](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
+Codex Pro 0.10.0 继续内置[已核对的正式发行包](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
 根目录与源码构建区锁文件都保持原 tarball integrity。Claude Code Pro 0.5.0 是外部
 可选 peer。Provider CLI 和账号凭据不在包内。普通 npm 安装只放置文件，`install`／
 `setup` 才执行用户设置，禁止在 postinstall 隐藏 profile 或凭据修改。

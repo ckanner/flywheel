@@ -1,15 +1,20 @@
 {
   "package": "dsh-plugin-chatgpt",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "repository": "https://github.com/ckanner/dsh-plugin-chatgpt",
-  "sourceCommit": "fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c",
-  "sourceTree": "168dc4e6284f002f09291667a926eab8a31b6687",
-  "tarball": "dsh-plugin-chatgpt-0.1.19.tgz",
-  "sha256": "838ef2f6cb6fa70f9a1a708729b1efb966bee4daeb4a4f2810ab3f69fe1a1179",
-  "integrity": "sha512-yUTExyMNrK9V9Cj4GgMrcYqHsO+xD5lteGLG5xgJ4QnvG+qUk1M740IoQiEdfGvaXlgX+mcJfy0phVJ2Cd+Gyg==",
+  "sourceCommit": "40d8f885e7a386af5f441b356b9c68496a47b0e3",
+  "sourceTree": "c8c4f4829a00b1917fd1aef8c4254e083a5b6180",
+  "tarball": "dsh-plugin-chatgpt-0.1.20.tgz",
+  "sha256": "c83db328fcf79289cf4e7fcf72c412b6cbcebd55e52bc587cadd88eb41fe6ae2",
+  "integrity": "sha512-vG+BxRoIpet1Qna+2yTl/4bKzOUikhyaECwQvqlmlbbpdaqz5M4c3h5wIThuVY3akfXXnjSqf9a+9HPjeycSHw==",
   "license": "MIT",
-  "registryReleaseVerified": false,
-  "toolchain": {
+  "registryReleaseVerified": true,
+  "registry": {
+    "tarball": "https://registry.npmjs.org/dsh-plugin-chatgpt/-/dsh-plugin-chatgpt-0.1.20.tgz",
+    "integrity": "sha512-vG+BxRoIpet1Qna+2yTl/4bKzOUikhyaECwQvqlmlbbpdaqz5M4c3h5wIThuVY3akfXXnjSqf9a+9HPjeycSHw==",
+    "verifiedAt": "2026-11-14T14:31:42.229804+00:00"
+  },
+  "verificationToolchain": {
     "node": "24.22.1",
     "npm": "12.2.1"
   }

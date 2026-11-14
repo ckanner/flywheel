@@ -33,6 +33,17 @@ Here, `native` describes capabilities inside Codex/Claude. DSH can still orchest
 
 These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-pro` / `claude-code-pro` worker uses the fixed selected `native-profile`, without reading another DSH profile's live settings. Independent `/machine` imports do not load desktop UI or DSH services. Normal daily/heavy preset regeneration preserves separately saved plugin settings.
 
+### Align independent worker dependencies
+
+Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix:
+
+```sh
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.0 dsh-plugin-lcu@0.5.0
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
+```
+
+Replace `sdk` with the chosen `FLYWHEEL_DSH_PROFILE` if customized. Keep it separate from `desktop`. These commands align software dependencies, not model credentials, permissions or native-profile enablement. Run `flywheel doctor --json` afterward; import availability does not prove live native admission or model vision.
+
 ## 2. Define profiles and bind them
 
 Use `flywheel config inspect --cwd /absolute/repo --json` to locate the effective complete file. Flywheel selects one file from task, project, global or defaults; it does not merge fields between them.
@@ -113,7 +124,7 @@ Add this field to a DSH profile's options and explicitly select full access for 
 
 The worker acquires a desktop lease before mounting LCU. Root and child GUI operations are serialized. The PTC tool name is `lcu_cua`; program objects still use `cua`. Handles belong to the current runtime epoch and must be reacquired after restart. Unknown cleanup is not automatically displaced by another invocation; inspect the original owner and actual runtime rather than deleting a lock to manufacture success.
 
-Images and a manifest persist under `<taskDir>/reports/native/<invocationId>/`. Archive hashes identify actual final AttachmentStore bytes; capture hashes are separate. An archived image does not prove model delivery, which may remain `unverified`. ChatGPT provider 0.1.19 fixes real image projection into requests, but this work has not performed live visual acceptance on the user's account.
+Images and a manifest persist under `<taskDir>/reports/native/<invocationId>/`. Archive hashes identify actual final AttachmentStore bytes; capture hashes are separate. An archived image does not prove model delivery, which may remain `unverified`. ChatGPT provider 0.1.20 fixes real image projection into requests, but this work has not performed live visual acceptance on the user's account.
 
 Public Pro machine APIs support explicit media and structured-output inputs. Formal Go loops do not automatically inject every archived image into the next turn or treat an external schema/native review text as their verdict contract.
 

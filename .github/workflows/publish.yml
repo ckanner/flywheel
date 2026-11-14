@@ -16,10 +16,7 @@ on:
 permissions:
   contents: read
 
-# Companion source is not yet an npm release. Verify the same reviewed bytes
-# as PR CI without adding the optional adapter to the complete published package.
-env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: d14ff8d8334fefd039c3d48ee2a969747d1e88c8
+# The optional Claude adapter is verified against its immutable registry tarball.
 
 concurrency:
   group: npm-publish
@@ -83,18 +80,11 @@ jobs:
         run: |
           bash scripts/build-npm.sh "$VERSION" dist-npm
           node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
-      - name: Pack the reviewed optional Claude machine API
+      - name: Fetch the verified published Claude machine API
         run: |
-          claude_source="$RUNNER_TEMP/flywheel-claude-code-pro"
-          git init "$claude_source"
-          git -C "$claude_source" remote add origin https://github.com/ckanner/dsh-subagent-claude-code-pro.git
-          git -C "$claude_source" fetch --depth=1 origin "$CLAUDE_CODE_PRO_SOURCE_SHA"
-          git -C "$claude_source" checkout --detach FETCH_HEAD
-          test "$(git -C "$claude_source" rev-parse HEAD)" = "$CLAUDE_CODE_PRO_SOURCE_SHA"
           mkdir -p "$GITHUB_WORKSPACE/dist-claude"
-          cd "$claude_source"
-          npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' ff2b1198a9358c43add7f89eb08b4e443c78fb0663c6d0a64ab79952aa992272 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
+          npm pack dsh-subagent-claude-code-pro@0.5.0 --ignore-scripts --registry=https://registry.npmjs.org/ --pack-destination "$GITHUB_WORKSPACE/dist-claude"
+          printf '%s  %s\n' fb15e28f7216d6e49a6717bad2fd568d2e00e7724feaadafae54405fd7a7597d "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate-${{ github.run_id }}

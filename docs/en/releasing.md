@@ -22,7 +22,7 @@ binary on first use or resolve an old platform/worker package. `plugins/dsh` is 
 old platform packages and `@ckanner/dsh-plugin-flywheel` are historical releases;
 this flow neither uploads new versions of them nor unpublishes their existing bytes.
 
-Codex Pro 0.10.0 remains bundled from its [reviewed source candidate](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
+Codex Pro 0.10.0 remains bundled from its [verified published package](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 The root and source-harness locks retain that tarball's real integrity. Claude Code
 Pro 0.5.0 is an optional external peer. Provider CLIs and account credentials are
 not included. Ordinary npm installation only places files; `install`/`setup` owns

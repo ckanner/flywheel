@@ -17,6 +17,17 @@ Flywheel 0.34.0 的实现候选可以在正式 loop 中调用各 harness 的原�
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
+### 对齐独立 worker 的依赖
+
+桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix：
+
+```sh
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.0 dsh-plugin-lcu@0.5.0
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
+```
+
+自定义了 `FLYWHEEL_DSH_PROFILE` 时，将 `sdk` 换成实际名称，并继续与 `desktop` 分离。这些命令只对齐软件依赖，不更改模型凭据、权限或原生 profile 开关。之后运行 `flywheel doctor --json`；可导入不等于已验证真实原生准入或模型视觉。
+
 ### DSH 桌面插件的默认配置与 PTC 调用
 
 Codex Pro 和 Claude Code Pro 自身提供原生能力配置页。打开插件管理器中对应插件的配置，设置 `native` 默认值；DSH 的 PTC 工具 `subagent_codex` 和 `subagent_claude_code` 会在每次调用开始时读取这些设置。已经启动的调用保留自己的配置快照，后续保存不会改变它的执行参数。
@@ -113,7 +124,7 @@ Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packet
 
 worker 先取得整台桌面的受管 lease；root 和后代的 GUI 操作顺序执行。PTC 工具名为 `lcu_cua`，程序对象仍为 `cua`。对象 handle 只属于当前 runtime epoch，重启后需重新取得。未确认清理的 lease 不被其他调用自动接管；先核对原 owner 的终态与实际 runtime，不能仅删除锁来假装完成。
 
-图片和 manifest 保存在 `<taskDir>/reports/native/<invocationId>/`。归档 hash 对应实际 DSH AttachmentStore 的最终字节，capture hash 单独保留。图片存在不等于模型已经收到；`imageDeliveredToModel` 可以为 `unverified`。ChatGPT provider 0.1.19 修复真实图片到模型请求的投影，但尚未在用户账号上完成实机视觉验收。
+图片和 manifest 保存在 `<taskDir>/reports/native/<invocationId>/`。归档 hash 对应实际 DSH AttachmentStore 的最终字节，capture hash 单独保留。图片存在不等于模型已经收到；`imageDeliveredToModel` 可以为 `unverified`。ChatGPT provider 0.1.20 修复真实图片到模型请求的投影，但尚未在用户账号上完成实机视觉验收。
 
 公开 Pro machine API 可以显式接收媒体与结构化输出设置；正式 Go loop 不会自动把所有归档图片注入下一轮，也不会把外部 JSON schema 或 native review 文本当作自己的验收 verdict。
 

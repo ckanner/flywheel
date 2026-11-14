@@ -7,6 +7,8 @@ their original language.
 
 ## 0.34.0 — Native harness capabilities
 
+- Align native companion fixtures and provenance with published Codex 0.10.0, Claude 0.5.0, LCU 0.5.0 and ChatGPT 0.1.20; verify the exact registry Claude tarball in CI and release jobs. Document separate desktop, worker and SDK dependency trees.
+
 - Add versioned native profiles across loops, routes, model profiles, second
   opinions and allowed execution bindings, including workbench selection,
   frozen history identity, durable native receipts and import-only diagnostics.
