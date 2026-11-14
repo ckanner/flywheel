@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import semver from 'semver';
 import { evaluatePluginCompatibility } from './fixtures/dsh-rc1-plugin-compatibility.ts';
 
-const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const manifest = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'));
 
 test('the shipped manifest admits compatible-series upgrades without a per-release exemption', () => {
   for (const runtime of ['0.2.1-rc.5', '0.2.1-rc.99', '0.2.1', '0.2.2-rc.1',

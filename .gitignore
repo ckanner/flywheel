@@ -5,6 +5,6 @@ node_modules/
 /cover.out
 /dist/
 *.exe
-npm/platforms/*/flywheel
+/native/
 /dist-npm/
 /dist-claude/

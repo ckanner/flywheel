@@ -22,30 +22,7 @@ function temporary(t) {
   return root;
 }
 
-function manifests() {
-  const values = {};
-  for (const entry of PACKAGES) {
-    values[entry.name] = { name: entry.name, version: VERSION,
-      repository: { type: "git", url: "git+https://github.com/ckanner/flywheel.git", directory: entry.directory } };
-    if (entry.platform) {
-      const [os, arch] = entry.platform.split("-");
-      Object.assign(values[entry.name], { os: [os], cpu: [arch === "amd64" ? "x64" : arch] });
-    }
-  }
-  values[META].optionalDependencies = Object.fromEntries(PACKAGES.filter((entry) => entry.platform).map((entry) => [entry.name, VERSION]));
-  values[META].dependencies = { [PLUGIN]: VERSION };
-  values[META].bin = { 'flywheel-codex-pro-worker': 'bin/flywheel-codex-pro-worker.js' };
-  values[PLUGIN].dependencies = { 'dsh-subagent-codex-pro': '0.9.0' };
-  values[PLUGIN].bundledDependencies = ['dsh-subagent-codex-pro'];
-  values[PLUGIN].exports = { './codex-pro-worker': './dist/codex-pro-worker.js' };
-  values[PLUGIN].bin = { 'flywheel-codex-pro-worker': './dist/codex-pro-worker.js' };
-  values[META].bin['flywheel-claude-code-pro-worker'] = 'bin/flywheel-claude-code-pro-worker.js';
-  values[PLUGIN].exports['./claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
-  values[PLUGIN].bin['flywheel-claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
-  values[PLUGIN].peerDependencies = { 'dsh-subagent-claude-code-pro': '0.4.0' };
-  values[PLUGIN].peerDependenciesMeta = { 'dsh-subagent-claude-code-pro': { optional: true } };
-  return values;
-}
+function manifests() { return require('./support/unified-package.js').manifests(VERSION); }
 
 function writeManifests(root, values = manifests()) {
   for (const entry of PACKAGES) {
@@ -64,7 +41,7 @@ function packFixture(directory, entry, manifest) {
   const staging = fs.mkdtempSync(path.join(directory, "tar-source-"));
   try {
     fs.mkdirSync(path.join(staging, "package"));
-    fs.writeFileSync(path.join(staging, "package/package.json"), JSON.stringify(manifest));
+    require('./support/unified-package.js').writeContents(path.join(staging, 'package'), manifest);
     fs.writeFileSync(path.join(staging, "package/content.txt"), `verified content for ${entry.name}`);
     execFileSync("tar", ["-czf", path.join(directory, entry.filename), "-C", staging, "package"], { stdio: "pipe" });
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
@@ -75,7 +52,7 @@ function packFixture(directory, entry, manifest) {
 function candidateFixture(t) {
   const directory = temporary(t);
   const values = manifests();
-  const candidate = { format_version: 1, version: VERSION,
+  const candidate = { format_version: 2, version: VERSION,
     source: { commit: SHA, tree: "b".repeat(40), dirty: false, snapshot_sha256: "c".repeat(64) },
     packages: PACKAGES.map((entry) => ({ name: entry.name, version: VERSION, filename: filenameFor(entry.name, VERSION) })) };
   for (const entry of candidate.packages) packFixture(directory, entry, values[entry.name]);
@@ -119,7 +96,7 @@ function registry(candidate, { populated = false } = {}) {
   return state;
 }
 
-test("all six package versions, exact dependencies and platform selectors must agree", () => {
+test("one package must own the native platforms, plugin exports and pinned adapters", () => {
   assert.equal(validatePackages(manifests()), VERSION);
   for (const mutate of [
     (values) => { values[PLUGIN].version = "0.1.0"; },
@@ -134,11 +111,11 @@ test("all six package versions, exact dependencies and platform selectors must a
     (values) => { values[PLUGIN].dependencies['dsh-subagent-claude-code-pro'] = '0.4.0'; },
     (values) => { delete values[PLUGIN].exports['./claude-code-pro-worker']; },
     (values) => { delete values[META].bin['flywheel-claude-code-pro-worker']; },
-    (values) => { values[META].optionalDependencies[PACKAGES[0].name] = "latest"; },
+    (values) => { values[META].optionalDependencies = { "@ckanner/flywheel-darwin-arm64": "latest" }; },
     (values) => { values[PACKAGES[0].name].cpu = ["x64"]; },
     (values) => { delete values[PLUGIN].repository; },
     (values) => { delete values[PLUGIN]; },
-  ]) { const values = manifests(); mutate(values); assert.throws(() => validatePackages(values)); }
+  ]) { const values = manifests(); mutate(values); assert.throws(() => validatePackages(values, VERSION)); }
   for (const version of ["0.22.1", "01.2.3", "0.27.0-beta.1", "latest", "0.27.0;echo bad"]) {
     assert.throws(() => validatePackages(manifests(), version));
   }
@@ -196,7 +173,7 @@ test("npm pack rejects malformed output, ambiguous package sets and wrong map ke
 
 test("npm pack requires the exact name, version and basename in either protocol", () => {
   const filename = filenameFor(META, VERSION);
-  for (const change of [{ name: PLUGIN }, { name: undefined }, { version: "0.1.0" }, { version: undefined },
+  for (const change of [{ name: "@fixture/wrong-package" }, { name: undefined }, { version: "0.1.0" }, { version: undefined },
     { filename: undefined }, { filename: `../${filename}` }, { filename: `./${filename}` },
     { filename: `/tmp/${filename}` }, { filename: `${filename}.extra` }]) {
     const packed = { name: META, version: VERSION, filename, ...change };
@@ -234,7 +211,7 @@ test("candidate verifies actual tar manifests, exact source and clean source pol
   assert.throws(() => verifyCandidate(directory), /dirty source/);
   assert.equal(verifyCandidate(directory, { allowDirty: true }).version, VERSION);
   candidate.source.dirty = false; candidate.packages[1] = candidate.packages[0]; save();
-  assert.throws(() => verifyCandidate(directory), /package set/);
+  assert.throws(() => verifyCandidate(directory), /exactly one/);
 });
 
 test("changed tar bytes and symlink substitution cannot pass candidate verification", (t) => {
@@ -252,7 +229,7 @@ test("rehashed tarball with a wrong embedded package version is still rejected",
   const { directory, candidate, values, save } = candidateFixture(t);
   const entry = candidate.packages[0];
   packFixture(directory, entry, { ...values[entry.name], version: "0.1.0" }); save();
-  assert.throws(() => verifyCandidate(directory), /version.*requested/);
+  assert.throws(() => verifyCandidate(directory), /requested version/);
 });
 
 test("public candidate verification CLI returns failure for a mismatched source", (t) => {
@@ -315,7 +292,7 @@ test("a successful empty integrity response never permits publication, while a m
     const remote = registry(candidate);
     remote.override = (args) => args[0] === "view" && args[2] === "dist-tags.latest" ? ok(value) : undefined;
     await publish(candidate, directory, remote.options);
-    assert.equal(remote.calls.filter((args) => args[0] === "publish").length, 6);
+    assert.equal(remote.calls.filter((args) => args[0] === "publish").length, 1);
   }
 });
 
@@ -449,7 +426,7 @@ test("an uncertain publish response succeeds only when registry bytes match", as
     return { status: 1, stdout: "", stderr: "connection reset after response" };
   };
   await publish(candidate, directory, remote.options);
-  assert.equal(remote.versions.size, 6);
+  assert.equal(remote.versions.size, 1);
 });
 
 test("failed publish with no registry version stops before later packages", async (t) => {
@@ -622,13 +599,13 @@ test("a local candidate changed after registry preflight is not published", asyn
   const { directory, candidate } = candidateFixture(t);
   const remote = registry(candidate); let latestReads = 0;
   remote.override = (args) => {
-    if (args[0] === "view" && args[2] === "dist-tags.latest" && ++latestReads === 7) fs.appendFileSync(path.join(directory, candidate.packages[0].filename), "changed");
+    if (args[0] === "view" && args[2] === "dist-tags.latest" && ++latestReads === PACKAGES.length + 1) fs.appendFileSync(path.join(directory, candidate.packages[0].filename), "changed");
   };
   await assert.rejects(publish(candidate, directory, remote.options), /Candidate changed/);
   assert.equal(remote.calls.filter((args) => args[0] === "publish").length, 0);
 });
 
-test("latest promotion requires all six versions and promotes the entry package last", async (t) => {
+test("latest promotion requires the verified complete package", async (t) => {
   const { candidate } = candidateFixture(t);
   const incomplete = registry(candidate);
   await assert.rejects(promote(candidate, incomplete.options), /not visible/);
@@ -736,14 +713,13 @@ test("latest and integrity queries share one deadline and stop before starting a
 test("a latest visibility timeout resumes the same candidate without repeating completed mutations", async (t) => {
   const { candidate } = candidateFixture(t);
   const remote = registry(candidate, { populated: true });
-  const delayed = candidate.packages[2];
-  remote.latest.set(PLUGIN, VERSION);
+  const delayed = candidate.packages[0];
   remote.override = (args) => args[0] === "view" && args[1] === delayed.name && args[2] === "dist-tags.latest"
     ? ok("0.22.1") : undefined;
   await assert.rejects(promote(candidate, remote.options), /latest does not identify the verified version within 180s/);
   assert.equal(remote.elapsed, 180000);
   assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
-    candidate.packages.filter((entry) => entry.name !== PLUGIN).map((entry) => `${entry.name}@${VERSION}`));
+    candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
   assert.ok([...remote.latest.values()].every((value) => value === VERSION), "mutations succeeded before delayed verification failed");
 
   remote.override = null;
@@ -803,4 +779,21 @@ test("release commands reject incomplete or unsafe options", () => {
   assert.throws(() => parseArgs([...publishArgs, "--repository-visibility", "unknown"]), /explicit repository visibility/);
   assert.throws(() => parseArgs(["promote", "--directory", "some dir", "--source-sha", SHA, "--repository-visibility", "private"]));
   for (const args of [[], ["publish"], ["publish", "--directory", "some dir", "--source-sha", SHA, "--allow-dirty"], ["promote", "--directory", "--source-sha", SHA]]) assert.throws(() => parseArgs(args));
+});
+
+test('a rehashed tarball cannot omit a foreign-platform engine or corrupt its native manifest', t => {
+  for (const fault of ['missing-platform', 'wrong-digest', 'wrong-version']) {
+    const {directory,candidate,save}=candidateFixture(t),entry=candidate.packages[0];
+    const staging=temporary(t),file=path.join(directory,entry.filename);
+    execFileSync('tar',['-xzf',file,'-C',staging]);
+    const manifestFile=path.join(staging,'package/native/manifest.json');
+    const native=JSON.parse(fs.readFileSync(manifestFile));
+    if(fault==='missing-platform')delete native.platforms['linux-amd64'];
+    else if(fault==='wrong-digest')native.platforms['linux-amd64'].sha256='0'.repeat(64);
+    else native.version='0.0.1';
+    fs.writeFileSync(manifestFile,JSON.stringify(native));
+    execFileSync('tar',['-czf',file,'-C',staging,'package']);
+    entry.bytes=fs.statSync(file).size;entry.integrity=fileIntegrity(file);save();
+    assert.throws(()=>verifyCandidate(directory),/native manifest|native binary integrity/);
+  }
 });

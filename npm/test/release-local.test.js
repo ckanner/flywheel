@@ -51,38 +51,14 @@ function git(root, ...args) {
   }).trim();
 }
 
-function manifests() {
-  const values = {};
-  for (const entry of PACKAGES) {
-    const value = { name: entry.name, version: VERSION, license: "MIT",
-      repository: { type: "git", url: "git+https://github.com/ckanner/flywheel.git", directory: entry.directory } };
-    if (entry.platform) {
-      const [os, arch] = entry.platform.split("-");
-      Object.assign(value, { os: [os], cpu: [arch === "amd64" ? "x64" : arch] });
-    }
-    values[entry.name] = value;
-  }
-  values[META].optionalDependencies = Object.fromEntries(PACKAGES.filter((entry) => entry.platform).map((entry) => [entry.name, VERSION]));
-  values[META].dependencies = { [PLUGIN]: VERSION };
-  values[META].bin = { "flywheel-codex-pro-worker": "bin/flywheel-codex-pro-worker.js" };
-  values[PLUGIN].dependencies = { "dsh-subagent-codex-pro": "0.9.0" };
-  values[PLUGIN].bundledDependencies = ['dsh-subagent-codex-pro'];
-  values[PLUGIN].exports = { "./codex-pro-worker": "./dist/codex-pro-worker.js" };
-  values[PLUGIN].bin = { "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js" };
-  values[META].bin['flywheel-claude-code-pro-worker'] = 'bin/flywheel-claude-code-pro-worker.js';
-  values[PLUGIN].exports['./claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
-  values[PLUGIN].bin['flywheel-claude-code-pro-worker'] = './dist/claude-code-pro-worker.js';
-  values[PLUGIN].peerDependencies = { 'dsh-subagent-claude-code-pro': '0.4.0' };
-  values[PLUGIN].peerDependenciesMeta = { 'dsh-subagent-claude-code-pro': { optional: true } };
-  return values;
-}
+function manifests() { return require('./support/unified-package.js').manifests(VERSION); }
 
 function repack(fixture, entry, contents = "verified local candidate", manifest = fixture.values[entry.name]) {
   const staging = fs.mkdtempSync(path.join(fixture.root, "pack-"));
   const file = path.join(fixture.directory, entry.filename);
   try {
     fs.mkdirSync(path.join(staging, "package"));
-    fs.writeFileSync(path.join(staging, "package/package.json"), JSON.stringify(manifest));
+    require('./support/unified-package.js').writeContents(path.join(staging, 'package'), manifest);
     fs.writeFileSync(path.join(staging, "package/content.txt"), `${contents}: ${entry.name}\n`);
     execFileSync("tar", ["-czf", file, "-C", staging, "package"], { stdio: "pipe", timeout: 10000 });
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
@@ -113,7 +89,7 @@ function fixture(t, { annotated = false, externalDirectory = false, changeManife
   if (annotated) git(sourceDirectory, "tag", "-a", `v${VERSION}`, "-m", "original release annotation");
   else git(sourceDirectory, "tag", `v${VERSION}`);
   git(sourceDirectory, "push", "origin", `refs/tags/v${VERSION}`);
-  const candidate = { format_version: 1, version: VERSION, source: {
+  const candidate = { format_version: 2, version: VERSION, source: {
     commit: git(sourceDirectory, "rev-parse", "HEAD"),
     tree: git(sourceDirectory, "rev-parse", "HEAD^{tree}"),
     dirty: false, snapshot_sha256: snapshot(sourceDirectory),
@@ -236,7 +212,7 @@ test("clean lightweight and annotated source tags complete installation, candida
     const delivered = await releaseLocal(source.options, remote.io);
     assert.equal(delivered.source.commit, source.candidate.source.commit);
     const operations = remote.events.filter((event) => ["install", "publish", "registry", "promote"].includes(event.kind));
-    assert.deepEqual(operations.map((event) => event.kind), ["install", ...Array(6).fill("publish"), "registry", ...Array(6).fill("promote")]);
+    assert.deepEqual(operations.map((event) => event.kind), ["install", "publish", "registry", "promote"]);
     for (const kind of ["publish", "promote"]) {
       assert.deepEqual(operations.filter((event) => event.kind === kind).map((event) => event.name), PACKAGES.map((entry) => entry.name));
     }
@@ -264,7 +240,7 @@ test("the CLI can release an explicitly saved candidate outside the source check
   const remote = registry(source);
   await main(["--source-directory", source.sourceDirectory, "--directory", source.directory,
     "--repository-visibility", "private"], remote.io);
-  assert.equal(remote.writes().length, 12);
+  assert.equal(remote.writes().length, 2);
   assert.equal(remote.events.find((event) => event.kind === "install").options.env.FLYWHEEL_NPM_PACKAGES_DIR, source.directory);
 });
 
@@ -357,36 +333,36 @@ test("failed or cancelled local installation never uploads a package", async (t)
   }
 });
 
-test("a failed registry installation leaves latest unchanged, and a retry reuses all six uploaded candidates", async (t) => {
+test("a failed registry installation leaves latest unchanged, and a retry reuses the uploaded candidate", async (t) => {
   const source = fixture(t);
   const remote = registry(source);
   const original = fs.readFileSync(path.join(source.directory, "candidate.json"));
   remote.registryResult = { status: 1, stdout: "", stderr: "fixture registry installation failed" };
   await assert.rejects(releaseLocal(source.options, remote.io), /test:registry/);
-  assert.equal(remote.events.filter((event) => event.kind === "publish").length, 6);
+  assert.equal(remote.events.filter((event) => event.kind === "publish").length, 1);
   assert.equal(remote.events.filter((event) => event.kind === "promote").length, 0);
   assert.ok([...remote.latest.values()].every((value) => value === "0.27.0"));
   remote.events.length = 0;
   remote.registryResult = ok();
   await releaseLocal(source.options, remote.io);
   assert.equal(remote.events.filter((event) => event.kind === "publish").length, 0);
-  assert.equal(remote.events.filter((event) => event.kind === "promote").length, 6);
+  assert.equal(remote.events.filter((event) => event.kind === "promote").length, 1);
   assert.deepEqual(fs.readFileSync(path.join(source.directory, "candidate.json")), original);
 });
 
-test("a partial publication retries only missing immutable versions using the same saved candidate", async (t) => {
+test("a failed upload retries the immutable package using the same saved candidate", async (t) => {
   const source = fixture(t);
   const remote = registry(source);
   const original = fs.readFileSync(path.join(source.directory, "candidate.json"));
-  remote.failPublish = PACKAGES[2].name;
+  remote.failPublish = PACKAGES[0].name;
   await assert.rejects(releaseLocal(source.options, remote.io), /publish/);
-  assert.equal(remote.versions.size, 2);
+  assert.equal(remote.versions.size, 0);
   assert.equal(remote.events.some((event) => event.kind === "registry" || event.kind === "promote"), false);
   remote.events.length = 0;
   remote.failPublish = null;
   await releaseLocal(source.options, remote.io);
-  assert.deepEqual(remote.events.filter((event) => event.kind === "publish").map((event) => event.name), PACKAGES.slice(2).map((entry) => entry.name));
-  assert.equal(remote.versions.size, 6);
+  assert.deepEqual(remote.events.filter((event) => event.kind === "publish").map((event) => event.name), PACKAGES.map((entry) => entry.name));
+  assert.equal(remote.versions.size, 1);
   assert.ok([...remote.latest.values()].every((value) => value === VERSION));
   assert.deepEqual(fs.readFileSync(path.join(source.directory, "candidate.json")), original);
 });
@@ -433,13 +409,13 @@ test("source, candidate and tag changes during registry smoke block promotion", 
     const remote = registry(source);
     remote.afterRegistry = () => mutate(source);
     await assert.rejects(releaseLocal(source.options, remote.io), /clean|source|candidate|manifest|origin|tag/i);
-    assert.equal(remote.events.filter((event) => event.kind === "publish").length, 6);
+    assert.equal(remote.events.filter((event) => event.kind === "publish").length, 1);
     assert.equal(remote.events.filter((event) => event.kind === "promote").length, 0);
     assert.ok([...remote.latest.values()].every((value) => value === "0.27.0"));
   });
 });
 
-test("a source change during partial latest promotion stops remaining tags", async (t) => {
+test("a source change after latest promotion prevents a successful completion receipt", async (t) => {
   const source = fixture(t);
   const remote = registry(source);
   remote.afterWrite = (kind) => {
@@ -450,7 +426,7 @@ test("a source change during partial latest promotion stops remaining tags", asy
   };
   await assert.rejects(releaseLocal(source.options, remote.io), /clean|source/i);
   assert.equal(remote.events.filter((event) => event.kind === "promote").length, 1);
-  assert.equal(remote.latest.get(META), "0.27.0", "the public entry must not be advanced after a failed dependency promotion");
+  assert.equal(remote.latest.get(META), VERSION, "a completed tag mutation is retained, but changed source prevents a successful release receipt");
 });
 
 test("scope registry and tarball publishConfig cannot redirect uploads to another registry", async (t) => {

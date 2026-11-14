@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 # Companion source is not yet an npm release. Verify the same reviewed bytes
-# as PR CI without adding the optional adapter to the six published packages.
+# as PR CI without adding the optional adapter to the complete published package.
 env:
   CLAUDE_CODE_PRO_SOURCE_SHA: ec0b99176b67512f3ca1838ec2a349dcb0189214
 
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.22.1"
-      - name: Verify six versions and exact clean release tag
+      - name: Verify the package version and exact clean release tag
         id: source
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -76,7 +76,7 @@ jobs:
           npm install --global npm@12.2.1 --ignore-scripts
           node --version
           npm --version
-      - name: Build the six-package candidate once
+      - name: Build the complete package candidate once
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
@@ -214,19 +214,13 @@ jobs:
           npm install --global npm@12.2.1 --ignore-scripts
           node --version
           npm --version
-      - name: Select npm authentication configuration
-        env:
-          # Read the secret directly, not setup-node's placeholder token.
-          FLYWHEEL_PUBLISH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Use npm OIDC trusted publishing without a stored token
         run: |
-          if [ -n "$FLYWHEEL_PUBLISH_TOKEN" ]; then
-            echo "npm authentication: OIDC with repository token fallback available."
-          else
-            config="$RUNNER_TEMP/flywheel-trusted-publishing.npmrc"
-            : > "$config"
-            printf 'NPM_CONFIG_USERCONFIG=%s\n' "$config" >> "$GITHUB_ENV"
-            echo "npm authentication: OIDC trusted publishing, no stored token."
-          fi
+          config="$RUNNER_TEMP/flywheel-trusted-publishing.npmrc"
+          : > "$config"
+          printf 'NPM_CONFIG_USERCONFIG=%s\n' "$config" >> "$GITHUB_ENV"
+          printf 'NODE_AUTH_TOKEN=\n' >> "$GITHUB_ENV"
+          echo "npm authentication: OIDC trusted publishing only."
       - name: Refresh source and release refs with GitHub authentication
         uses: actions/checkout@v4
         with:
@@ -247,9 +241,8 @@ jobs:
         run: |
           node scripts/release-preflight.js --tag "$RELEASE_TAG"
           node scripts/release-publish.js verify-candidate --directory dist-npm --source-sha "$SOURCE_SHA"
-      - name: Publish exact dependencies, plugin and meta without moving latest
+      - name: Publish the complete package without moving latest
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
           REPOSITORY_PRIVATE: ${{ toJSON(github.event.repository.private) }}
         run: |
@@ -263,12 +256,11 @@ jobs:
         env:
           FLYWHEEL_NPM_VERSION: ${{ needs.preflight.outputs.version }}
         run: npm run test:registry
-      - name: Promote verified packages, meta last
+      - name: Promote the verified package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: node scripts/release-publish.js promote --directory dist-npm --source-sha "$SOURCE_SHA"
-      - name: Verify all six registry versions and latest tags
+      - name: Verify the registry version and latest tag
         env:
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: node scripts/release-publish.js verify-latest --directory dist-npm --source-sha "$SOURCE_SHA"

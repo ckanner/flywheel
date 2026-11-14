@@ -215,7 +215,7 @@ watchdog 已证明静止后清除当前 warm intent。崩溃恢复重新 fsync �
 
 ## Codex Pro worker协议
 
-公开入口为 `@ckanner/dsh-plugin-flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同版本依赖，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.9.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
+公开入口为 `@ckanner/flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同一安装包内的 worker，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.9.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
 
 ### 请求与父进程连接
 
@@ -487,7 +487,7 @@ UI 写操作仍经过 `/flywheel`；结果未知时的显式 status 也保留日
 |---|---|
 | `protocol` | 固定为 `1` |
 | `ok` | 全部请求的软件安装步骤和最终版本核对是否完成；不是账号或推理成功 |
-| `version` | 本次安装器的精确包版本，决定 CLI、平台包、worker 与插件版本 |
+| `version` | 本次安装器的精确包版本，决定 CLI、内置引擎、worker 与插件版本 |
 | `steps` | 顺序记录 `global-cli`、`skills`、`desktop-launcher`、`dsh-plugin`、`preflight`；失败时只含已开始的步骤 |
 | `ready` | 本地 doctor 是否无阻断项；诊断未完成时为 `false` |
 | `authentication` | 固定 `unknown`，没有自动登录或真实模型请求 |
@@ -514,8 +514,8 @@ launcher 使用绝对 Node 与 CLI 路径，设置安装时可见的绝对工具
 桌面插件按以下顺序选择入口：
 
 1. 用户显式 `flywheelBinary`，必须是非空字符串；它优先于安装记录。
-2. 存在安装记录时，验证其协议、owner 和绝对 launcher 路径，再验证 launcher 是普通非链接的可执行文件且 SHA-256 匹配。
-3. 仅当安装记录不存在时，兼容旧配置，从 PATH 查找 `flywheel`。
+2. 存在安装记录时，验证其协议、owner 和绝对 launcher 路径，再验证 launcher 是普通非链接的可执行文件且 SHA-256 匹配。已安装完整包还要求记录版本与自身版本一致；不一致时运行该版本的 setup 刷新，不能混用旧引擎。
+3. 安装记录不存在时，使用完整包内的 `bin/flywheel.js`；宿主必须能找到 Node。仅 private 源码测试区可使用旧 PATH 查找。
 
 损坏记录、符号链接、缺失或被修改的 launcher 都明确失败，不静默退回 PATH。SHA-256 核对的是 launcher 内容，不是账号状态或所有外部 CLI 的真实性。已有用户修改会在 setup 时保留并报告冲突；修复方法见[升级教程](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/getting-started.md#8-升级排错与卸载)。普通 npm 卸载不会擅自删除安装记录、配置、skills 或任务数据。
 

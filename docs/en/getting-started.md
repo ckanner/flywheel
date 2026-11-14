@@ -5,9 +5,16 @@
 Install Flywheel, connect the backends you intend to use, then run a small task.
 This guide follows the current repository. Check the installed version and the npm
 version you choose; a merged change does not update an existing installation.
-Keep the CLI, platform packages, and DSH plugin at one version.
+Keep the CLI, bundled engines, and DSH plugin at one version.
 
 For the complete path through task branches and PR review, see [Workflow](workflow.md).
+
+From 0.33, `@ckanner/flywheel` is one complete package: CLI, DSH view/workers,
+embedded skills and four platform engines. No separate platform package or first-run
+engine download is needed. When upgrading from 0.32.x, quit DSH before running the
+installer; it replaces the old desktop package registration and preserves your
+configuration and histories. Reload DSH after setup. Existing old npm versions
+remain available for historical installations.
 
 ## 1. Prepare the environment
 
@@ -146,7 +153,7 @@ capabilities or merge full worker histories into the parent trajectory. See the
 
 Setup writes `~/.config/flywheel/npm-launcher` and an installation record containing
 absolute Node/CLI paths and the checked DSH entry. An explicit `flywheelBinary`
-overrides the managed launcher. Missing records can use legacy PATH lookup;
+overrides the managed launcher. Without a record, the installed package uses its bundled CLI;
 invalid records or modified launchers fail visibly.
 
 After moving Node/the npm prefix or installing missing tools, rerun

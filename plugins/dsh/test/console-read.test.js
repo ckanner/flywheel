@@ -11,7 +11,8 @@ const { Context } = await load('@deepseek-ai/cordis');
 const { default: TypertRegistry } = await load('@deepseek-ai/dsh-typert-registry');
 const { default: Gateway } = await load('@deepseek-ai/dsh-api-gateway');
 const { SessionStore } = await load('@deepseek-ai/dsh-session');
-const source = name => process.env.FLYWHEEL_TEST_DSH_HOST_DIR
+const source = name => process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR
+  ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR, 'dist', name.replace(/\.js$/, '.mjs'))) : process.env.FLYWHEEL_TEST_DSH_HOST_DIR
   ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, name)) : new URL('../src/' + name, import.meta.url);
 const { ConsoleReadService } = await import(source('console-read.js'));
 const { ControlNotDispatchedError } = await import(source('control.js'));

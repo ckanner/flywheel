@@ -8,26 +8,16 @@ const platforms = { darwin: "darwin", linux: "linux" };
 const architectures = { arm64: "arm64", x64: "amd64" };
 const forwardedSignals = ["SIGTERM", "SIGINT", "SIGHUP"];
 const ownPackage = require("../package.json");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
-function packageEntry(name, entry, expectedVersion, missingMessage) {
-  let installed;
-  let entryPath;
-  try {
-    installed = require(`${name}/package.json`);
-    entryPath = require.resolve(`${name}/${entry}`);
-  } catch {
-    throw new Error(missingMessage);
-  }
-  // npm may legitimately hoist dependencies. Check the resolved package's
-  // identity, rather than assuming a particular machine's node_modules path.
-  // A partial installation must not pick up an incompatible parent package.
-  if (installed.name !== name) {
-    throw new Error(`package identity mismatch for ${name}: found ${installed.name}; reinstall @ckanner/flywheel`);
-  }
-  if (typeof expectedVersion !== "string" || installed.version !== expectedVersion) {
-    throw new Error(`version mismatch for ${name}: expected ${expectedVersion}, found ${installed.version}; reinstall @ckanner/flywheel`);
-  }
-  return entryPath;
+function packageFile(relative) {
+  if (ownPackage.name !== '@ckanner/flywheel') throw new Error('Flywheel package identity mismatch');
+  const filename = path.resolve(__dirname, '..', relative);
+  const stat = fs.lstatSync(filename, { throwIfNoEntry: false });
+  if (!stat?.isFile() || stat.isSymbolicLink()) throw new Error(`Bundled ${relative} is missing or invalid; reinstall @ckanner/flywheel`);
+  return filename;
 }
 
 function loadNativePath() {
@@ -36,27 +26,31 @@ function loadNativePath() {
   if (!platform || !arch) {
     throw new Error(`unsupported platform ${process.platform}/${process.arch} (supported: darwin/linux × amd64/arm64)`);
   }
-  const name = `@ckanner/flywheel-${platform}-${arch}`;
-  return packageEntry(name, "flywheel", ownPackage.optionalDependencies?.[name],
-    `platform package ${name} is missing; reinstall @ckanner/flywheel with optional dependencies enabled`);
+  const key = `${platform}-${arch}`;
+  const manifest = JSON.parse(fs.readFileSync(packageFile('native/manifest.json'), 'utf8'));
+  if (manifest.protocol !== 1 || manifest.version !== ownPackage.version) {
+    throw new Error('Bundled engine version mismatch; reinstall @ckanner/flywheel');
+  }
+  const entry = manifest.platforms?.[key];
+  const filename = packageFile(`native/${key}/flywheel`);
+  const bytes = fs.readFileSync(filename);
+  if (!entry || entry.bytes !== bytes.length || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') ||
+      crypto.createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
+    throw new Error(`Bundled engine integrity mismatch for ${key}; reinstall @ckanner/flywheel`);
+  }
+  return filename;
 }
 
 function loadWorkerPath() {
-  const name = "@ckanner/dsh-plugin-flywheel";
-  return packageEntry(name, "worker", ownPackage.dependencies?.[name],
-    "the matching @ckanner/dsh-plugin-flywheel worker is missing; reinstall @ckanner/flywheel");
+  return packageFile('dist/worker.mjs');
 }
 
 function loadCodexProWorkerPath() {
-  const name = "@ckanner/dsh-plugin-flywheel";
-  return packageEntry(name, "codex-pro-worker", ownPackage.dependencies?.[name],
-    "the matching @ckanner/dsh-plugin-flywheel Codex Pro worker is missing; reinstall @ckanner/flywheel");
+  return packageFile('dist/codex-pro-worker.mjs');
 }
 
 function loadClaudeCodeProWorkerPath() {
-  const name = "@ckanner/dsh-plugin-flywheel";
-  return packageEntry(name, "claude-code-pro-worker", ownPackage.dependencies?.[name],
-    "the matching @ckanner/dsh-plugin-flywheel Claude Code Pro worker is missing; reinstall @ckanner/flywheel");
+  return packageFile('dist/claude-code-pro-worker.mjs');
 }
 
 function assertSupportedNode(version = process.versions.node) {

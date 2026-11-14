@@ -43,7 +43,7 @@ jobs:
           npm install --global npm@12.2.1 --ignore-scripts
           node --version
           npm --version
-      - name: Build one six-package npm candidate
+      - name: Build one complete npm candidate
         run: npm run build:npm
       - name: Pack the reviewed optional Claude machine API
         run: |
@@ -158,9 +158,10 @@ jobs:
           name: session-evaluation-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/flywheel-session-evaluation/results/report.json
           if-no-files-found: warn
-      - name: Pack the DSH plugin without publishing
-        working-directory: plugins/dsh
-        run: npm pack --pack-destination ../../dist/ci
+      - name: Preserve the same verified complete npm candidate
+        run: |
+          cp dist-npm/*.tgz dist/ci/
+          cp dist-npm/candidate.json dist/ci/
       - name: Save checked development packages
         uses: actions/upload-artifact@v4
         with:

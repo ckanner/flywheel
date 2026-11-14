@@ -80,7 +80,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 |---|---|
 | Go 引擎 | `make quality-gate`：vet、格式、测试和覆盖率 |
 | DSH 插件或 worker | 插件检查及适用的 Go → Node 跨进程桥接 |
-| npm 安装或发行 | 根 npm 测试、六包候选构建、安装同一批 tarball |
+| npm 安装或发行 | 根 npm 测试、单包候选构建、安装同一个 tarball |
 | 文档 | 链接、锚点、代码围栏、可运行示例、翻译一致性，以及受影响的内嵌／包内容 |
 
 Claude 桥接要求 worker 的依赖树中存在精确 0.4.0 optional machine API；因未安装 peer
@@ -230,11 +230,10 @@ hash、输入、平台以及通过／失败／跳过／未运行结果。修正�
 
 ## 发行改动
 
-遵循[发行指南](releasing.md)。六个 Flywheel 包保持同一精确版本、精确内部依赖和固定
-Codex Pro runtime。从最终干净源码构建一次，测试同一批 tarball；保留 source commit、tree、
+遵循[发行指南](releasing.md)。Flywheel 只发布一个完整包，包含四个平台引擎和固定的 Codex Pro runtime；
+private DSH 源码构建区不单独发布。从最终干净源码构建一次，测试同一批 tarball；保留 source commit、tree、
 snapshot hash 和各包 integrity，release tag 必须指向该源码。不能把 dirty 候选改称正式
 发行，也不能为已发布版本重新构建不同字节。
 
-使用仓库已有脚本完成候选检查、上传、registry 验证和 promotion。先发布平台包与插件，再发
-meta 包；移动 `latest` 前安装验证精确 registry 版本，最后核对六包标签和 integrity。部分
+使用仓库已有脚本完成候选检查、上传、registry 验证和 promotion。只上传完整候选包；移动 `latest` 前安装验证精确 registry 版本，最后核对标签和 integrity。部分
 发布失败后继续使用原候选。手动发布需要对应的明确授权，并准确记录已完成与不可用的检查。

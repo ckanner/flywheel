@@ -3,7 +3,7 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/flow-console.md)
 
 The DSH Flywheel view brings the current task, workflow stages, configuration, session
-interaction, and delivery into one place. Keep the CLI, platform packages, and DSH
+interaction, and delivery into one place. Keep the CLI, bundled engines, and DSH
 plugin at the same version. For installation, see [Getting started](getting-started.md).
 
 ## Find a task without entering paths

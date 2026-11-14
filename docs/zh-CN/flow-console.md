@@ -3,7 +3,7 @@
 [文档首页](../README.zh-CN.md) · [English](../en/flow-console.md) · 简体中文
 
 DSH 的 Flywheel 视图集中提供当前任务、流程阶段、配置、会话交互与交付。
-CLI、平台包和 DSH 插件应保持同一版本。安装步骤见[快速开始](getting-started.md)。
+CLI、内置引擎和 DSH 插件应保持同一版本。安装步骤见[快速开始](getting-started.md)。
 
 ## 找到任务，不必填写路径
 

@@ -110,33 +110,31 @@ async function installation(t) {
   await fs.mkdir(root);
   await Promise.all([fs.mkdir(path.join(root, "bin")), fs.mkdir(path.join(root, "npm")),
     fs.mkdir(home), fs.mkdir(commands)]);
-  const packageMeta = { ...meta, optionalDependencies: { [`@ckanner/flywheel-${platform}`]: meta.version } };
+  const packageMeta = { ...meta };
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify(packageMeta));
   await fs.copyFile(path.join(repository, "npm", "install.js"), path.join(root, "npm", "install.js"));
   for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js"]) {
     await fs.copyFile(path.join(repository, "bin", name), path.join(root, "bin", name));
   }
-  const native = path.join(root, "node_modules", "@ckanner", `flywheel-${platform}`);
-  const plugin = path.join(root, "node_modules", "@ckanner", "dsh-plugin-flywheel");
+  const native = path.join(root, "native", platform);
+  const plugin = root;
   await Promise.all([fs.mkdir(native, { recursive: true }), fs.mkdir(path.join(plugin, "dist"), { recursive: true })]);
-  await fs.writeFile(path.join(native, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version: meta.version }));
   await fs.writeFile(path.join(native, "flywheel"), nativeBody, { mode: 0o755 });
-  await fs.writeFile(path.join(plugin, "package.json"), JSON.stringify({ name: "@ckanner/dsh-plugin-flywheel", version: meta.version,
-    exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js", "./package.json": "./package.json" } }));
-  await fs.writeFile(path.join(plugin, "dist", "worker.js"), "// No model worker runs during installation.\n");
-  await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.js"), `
+  await fs.writeFile(path.join(root,'native/manifest.json'),JSON.stringify({protocol:1,version:meta.version,platforms:{[platform]:{bytes:Buffer.byteLength(nativeBody),sha256:require('node:crypto').createHash('sha256').update(nativeBody).digest('hex')}}}));
+  await fs.writeFile(path.join(plugin, "dist", "worker.mjs"), "// No model worker runs during installation.\n");
+  await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.mjs"), `
     if (process.argv[2] !== '--doctor') throw new Error('installation must never run a model');
     console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
       version: process.env.TEST_ADAPTER_VERSION || '0.9.0', machineProtocol: 1, available: true, inferenceTested: false }));
   `);
-  await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.js"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
+  await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.mjs"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
   await fs.writeFile(dsh, `#!/usr/bin/env node
 const fs = require("node:fs"); const args = process.argv.slice(2);
 fs.appendFileSync(process.env.TEST_INSTALL_LOG, JSON.stringify({ kind: "dsh", args }) + "\\n");
 if (args[0] === "--version") console.log("dsh 0.2.1-rc.5");
 else if (args.includes("list")) console.log(JSON.stringify([{ dependencies: {
-  "@ckanner/dsh-plugin-flywheel": { version: process.env.TEST_DSH_LIST_VERSION || ${JSON.stringify(meta.version)} }
+  "@ckanner/flywheel": { version: process.env.TEST_DSH_LIST_VERSION || ${JSON.stringify(meta.version)} }
 } }]));
 `, { mode: 0o755 });
   const npm = path.join(commands, "npm-fixture.js");
@@ -230,7 +228,7 @@ test("installer executes special paths literally and repeat setup keeps a stable
   const records = await f.records();
   assert.equal(records.some(entry => entry.kind === 'native' && entry.args[0] === 'config'), false, 'setup must not implicitly migrate model selections');
   const add = records.find(entry => entry.kind === "dsh" && entry.args.includes("add"));
-  assert.ok(add.args.includes(`@ckanner/dsh-plugin-flywheel@${meta.version}`));
+  assert.ok(add.args.includes(`@ckanner/flywheel@${meta.version}`));
   assert.ok(add.args.includes("--save-exact"));
   assert.ok(add.args.includes("--ignore-scripts"));
   for (const name of ["SHELL_INJECTION", "PREFIX_INJECTION", "DSH_INJECTION", "ARG_INJECTION"]) {
@@ -376,7 +374,7 @@ fs.unlink = async function(filename) {
 test("managed launcher updates preserve user edits and invalid installation records", { timeout: 10000 }, async t => {
   const directory = await temporary(t);
   const opts = { directory, prefix: path.join(directory, "prefix"), cli: path.join(directory, "cli.js"),
-    worker: path.join(directory, "worker.js"), environment: { PATH: path.dirname(process.execPath) } };
+    worker: path.join(directory, "worker.mjs"), environment: { PATH: path.dirname(process.execPath) } };
   const first = await writeLauncher(opts);
   const filename = path.join(directory, "installation.json");
   const second = await writeLauncher({ ...opts, previous: await readReceipt(filename), cli: path.join(directory, "updated cli.js") });

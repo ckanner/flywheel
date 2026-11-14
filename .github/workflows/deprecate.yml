@@ -1,5 +1,5 @@
-# npm 版本弃用（维护工具）：CI granular token 绕过 2FA/OTP——与 publish 同款
-# 认证路径。对 meta + 四个平台包的同一版本批量打弃用标记。
+# 手动 npm 弃用维护：使用单独授权的维护凭据，不属于 OIDC 自动发布流程。
+# 仅维护主包；历史拆包版本不被单包发行流程改写。
 name: deprecate
 
 on:
@@ -20,13 +20,9 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-      - name: Deprecate meta + platforms
+      - name: Deprecate the complete Flywheel package
         run: |
-          for pkg in "@ckanner/flywheel" \
-                     "@ckanner/flywheel-darwin-arm64" \
-                     "@ckanner/flywheel-darwin-amd64" \
-                     "@ckanner/flywheel-linux-arm64" \
-                     "@ckanner/flywheel-linux-amd64"; do
+          for pkg in "@ckanner/flywheel"; do
             if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
               npm deprecate "$pkg@$VERSION" "$MESSAGE"
               echo "deprecated: $pkg@$VERSION"
