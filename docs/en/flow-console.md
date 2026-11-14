@@ -30,7 +30,7 @@ unavailable association tool explicitly. Standalone terminal tasks without a hos
 While the canvas is visible, registered-task discovery refreshes every five seconds.
 An observed running task refreshes status every two seconds, backing off to ten
 seconds after an unsuccessful response. Hidden documents skip those requests.
-Refresh uses a read-only Remote instead of a slash command, so it does not append chat events or JSON. Explicit mutations and uncertain-result reconciliation retain durable command receipts. Old chat records are preserved.
+Refresh uses a read-only Remote instead of a slash command, so it does not append chat events or JSON. Explicit mutations and uncertain-result reconciliation retain durable command receipts. Old chat records are preserved. Session identity and read requests use strict Remote codecs; an unavailable or malformed read remains a visible error rather than falling back to chat commands.
 
 ## This stage versus the full workflow
 

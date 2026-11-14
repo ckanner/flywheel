@@ -5,6 +5,14 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.33.1 — Strict desktop read codecs
+
+- Fix task discovery and configuration reads rejected by the actual DSH Client
+  Gateway. Supply strict schema factories for session identity, read requests and
+  result envelopes; preserve session isolation and silent reads.
+- Exercise the shipped Client descriptor through the real public Client and Host
+  Gateway on both supported host fixtures instead of mocking Remote mounting.
+
 ## 0.33.0 — One complete npm distribution
 
 - Consolidate the CLI, DSH host/client, workers, embedded skills and four native
