@@ -464,6 +464,8 @@ host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校�
 
 ### 会话控制台的静默读取
 
+客户端参数与结果使用公开 `strict` codec（`typeSymbol`、`create().parse`）；结果还提供同一校验的 `decode`。Agent lookup 使用宿主规定的 wire 字段 `agentId`，其值仍为当前 Session ID；不能自行改名为 `sessionId`。Session ID 必须为非空字符串，请求只允许具名读取动作及相应字段，返回值保持 `{ result: { kind, text } }`。严格 codec 不替代 Host 的 Session／任务归属检查及 Go 控制验证；客户端仍只导入共享 React。`$mount` 成功后，通过父插件拥有的 `ctx.inject(['remote.flywheelConsole'])` 子作用域访问动态 namespace，随父插件撤销；初始外层 context 不直接访问未注入的服务。
+
 `flywheelConsole/read` 是公开 Typert Remote，参数为宿主解析的 `agent`、控制请求 `input`
 和取消信号 `signal`。客户端显式挂载描述符，只有 React 是运行时共享模块。
 宿主只接受 runs/status/config/config-edit/metrics/history/node/delivery/doctor；其他 action

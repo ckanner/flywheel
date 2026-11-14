@@ -112,7 +112,14 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
     effects.push(dispose);
     return dispose;
   };
+  let readRemote;
   client.apply({
+    inject: (dependencies, callback) => {
+      assert.deepEqual([...dependencies], ['remote.flywheelConsole']);
+      const fiber = Promise.resolve().then(() => callback({ remote: readRemote }));
+      fiber.dispose = async () => {};
+      return fiber;
+    },
     effect: trackEffect,
     on: (event, callback) => {
       assert.equal(event, 'dispose');
@@ -139,7 +146,7 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
         return () => definitions.delete(definition.name);
       },
     },
-    remote: { $mount: async () => { if (mountError) throw mountError; return () => {}; }, flywheelConsole: { read: async (sessionId, wireRequest) => {
+    remote: readRemote = { $mount: async () => { if (mountError) throw mountError; return () => {}; }, flywheelConsole: { read: async (sessionId, wireRequest) => {
       const request = JSON.parse(JSON.stringify(wireRequest));
       allRequests.push(request);
       if (request.action === 'runs') {

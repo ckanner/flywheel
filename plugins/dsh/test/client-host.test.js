@@ -99,6 +99,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   remote.flywheelConsole = { read: (sessionId, request) => remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), []) };
   ctx.provide('remote', remote);
   ctx.provide('remote.commands', remote.commands);
+  ctx.provide('remote.flywheelConsole', remote.flywheelConsole);
 
   const sessionPlugin = { name: 'fixture-session', apply() {} };
   const sessionA = await ctx.plugin(sessionPlugin);
