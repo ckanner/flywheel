@@ -2,9 +2,9 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/native-capabilities.md) · [Complete design](../plans/2026-11-13-native-harness-capabilities.en.md)
 
-The Flywheel 0.34.0 implementation candidate can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history.
+Flywheel 0.34.0 can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history.
 
-This guide describes source candidates. [Vendor records](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) identify the actual companion artifacts. Version numbers here do not imply registry publication or installation on the user's machine.
+This guide describes the implemented version. [Vendor records](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) identify the actual companion artifacts. Check user-machine installation separately; the [0.34.0 release record](../validation/2026-11-14-release-0.34.0.md) identifies the published artifact and completed checks.
 
 ## 1. Choose the actual harness
 

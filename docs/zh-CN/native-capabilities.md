@@ -2,9 +2,9 @@
 
 [文档](../README.zh-CN.md) · 简体中文 · [English](../en/native-capabilities.md) · [完整设计](../plans/2026-11-13-native-harness-capabilities.md)
 
-Flywheel 0.34.0 的实现候选可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。
+Flywheel 0.34.0 可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。
 
-本页描述源码候选。配套包身份见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，不能仅凭这里的版本号假设 npm 已发布或本机已经安装。
+本页描述该版本的实现。配套包身份和已核对的发行信息见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，本机安装应单独核对；[0.34.0 发行记录](../validation/2026-11-14-release-0.34.0.md) 标明正式产物身份和已完成的检查。
 
 ## 1. 选择实际后端
 

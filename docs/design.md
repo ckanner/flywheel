@@ -645,6 +645,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | P5 就绪队列与一次性 DSH 预热 | [实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md) | [工程验证与收益边界](validation/2026-11-13-p5-ready-queue-prewarm.md) |
 | 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
+| 0.34.0 原生能力与依赖对齐 | [原生能力](zh-CN/native-capabilities.md) | [正式发行与验收](validation/2026-11-14-release-0.34.0.md) |
 | 0.33.1 桌面读取与发行 | [发行流程](zh-CN/releasing.md) | [发行与验收记录](validation/2026-11-14-release-0.33.1.md) |
 | 0.33.0 单包分发 | [发行流程](zh-CN/releasing.md) | [工程验证](validation/2026-11-14-single-package.md) |
 | 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |
