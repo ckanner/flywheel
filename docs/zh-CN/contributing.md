@@ -70,11 +70,13 @@ Worktree 隔离 checkout 文件和 index，不是安全沙箱。串行执行保�
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
+
+`make test` 与 `make coverage` 使用有限的 15 分钟 Go 包级测试预算（`FLYWHEEL_TEST_TIMEOUT`）。machine 包包含数百个真实 Git 与持久化状态场景，macOS 需要这份累计预算；生产 watchdog、单项测试保护和每函数 100% 覆盖率门禁保持原有要求。
 
 | 改动 | 必需验证 |
 |---|---|
@@ -83,9 +85,9 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 | npm 安装或发行 | 根 npm 测试、单包候选构建、安装同一个 tarball |
 | 文档 | 链接、锚点、代码围栏、可运行示例、翻译一致性，以及受影响的内嵌／包内容 |
 
-Claude 桥接要求 worker 的依赖树中存在精确 0.4.0 optional machine API；因未安装 peer
+Claude 桥接要求 worker 的依赖树中存在精确 0.5.0 optional machine API；因未安装 peer
 而跳过不能算该后端通过。使用源码候选时保留已审查 source／tarball 身份。Codex Pro 的
-0.9.0 bundled 源码包同样由实际 integrity 与 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)
+0.10.0 bundled 源码包同样由实际 integrity 与 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)
 固定。
 
 生命周期、状态或进程改动还应复现 Linux CI 的 race 检查：

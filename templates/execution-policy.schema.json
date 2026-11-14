@@ -14,7 +14,8 @@
         "type": "object", "additionalProperties": false,
         "required": ["harness", "provider", "channel", "model", "thinking", "permission", "session-mode"],
         "properties": {
-          "harness": {"enum": ["dsh", "kimi", "codex-pro", "claude-code-pro"]},
+          "native-profile": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "harness": {"enum": ["dsh", "kimi", "codex-pro", "claude-code-pro"]},
           "provider": {"type": "string"},
           "channel": {"type": "string", "pattern": "\\S"},
           "model": {"type": "string", "pattern": "\\S"},

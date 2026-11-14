@@ -774,7 +774,7 @@
     }
   },
   "$defs": {
-    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
+    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,
       "required": ["applicable", "reason"],

@@ -10,6 +10,18 @@ const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
 const { registry, environment, run, firstInstall, installedRoot, waitFile } = require('./support/install-harness.js');
 
+
+// Desktop settings/UI peers must not become requirements of the independent
+// machine worker installed by Flywheel. Assert absence before exercising the
+// real public API below, so a leaked desktop import cannot pass accidentally.
+function assertNoDesktopPeers(manifestPath) {
+  const adapterRequire = require('node:module').createRequire(manifestPath);
+  for (const name of ['@deepseek-ai/schemastery', '@deepseek-ai/dsh-home-paths', '@deepseek-ai/cordis', 'react']) {
+    assert.throws(() => adapterRequire.resolve(name), { code: 'MODULE_NOT_FOUND' },
+      name + ' must be absent from this clean machine-only installation');
+  }
+}
+
 test('the complete npm candidate install and run from a clean agent environment', { timeout: 240000 }, async t => {
   const directory = path.resolve(process.env.FLYWHEEL_NPM_PACKAGES_DIR || 'dist-npm');
   const server = await registry(directory);
@@ -42,7 +54,9 @@ test('the complete npm candidate install and run from a clean agent environment'
   await fs.access(codexProWorker, 1);
   const claudeCodeProWorker = path.join(context.prefix, 'bin', 'flywheel-claude-code-pro-worker');
   await fs.access(claudeCodeProWorker, 1);
-  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1, inferenceTested: false });
+  const kimiNativeWorker = path.join(context.prefix, 'bin', 'flywheel-kimi-native-worker');
+  await fs.access(kimiNativeWorker, 1);
+  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
@@ -79,6 +93,8 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installedRequire = require('node:module').createRequire(path.join(root, 'package.json'));
   const workerPath = installedRequire.resolve('@ckanner/flywheel/worker');
   assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/flywheel/claude-code-pro-worker'));
+  assert.equal(report.paths.kimiNativeWorker, installedRequire.resolve('@ckanner/flywheel/kimi-native-worker'));
+  await fs.access(report.paths.kimiNativeWorker);
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
   assert.equal(typeof installedHost.apply, 'function');
@@ -87,6 +103,29 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
+
+  await t.test('the bundled generator imports its public composition API without fetching a registry release', async () => {
+    const compositionPath = installedRequire.resolve('dsh-preset-generator/composition');
+    assert.equal(installedRequire.resolve('dsh-preset-generator'), compositionPath);
+    const generator = await import(pathToFileURL(compositionPath));
+    assert.equal(generator.COMPOSITION_PROTOCOL, 1);
+    const composition = generator.createSdkPtcComposition({ runtimeProfile: 'sdk-install-check', preset: 'heavy' });
+    assert.equal(composition.runtimeProfile, 'sdk-install-check');
+    assert.equal(composition.presetPolicy, 'heavy');
+    assert.deepEqual(composition.requirements.tools, ['run_code']);
+    assert.equal(composition.requirements.executor, 'ptc');
+    assert.equal(generator.validateSdkPtcAdmission(composition, {}).eligible, false,
+      'an installed composition must still require observed runtime admission');
+    assert.ok(!server.requests.some(value => value.includes('dsh-preset-generator')));
+  });
+
+  await t.test('the installed Kimi worker reports the absent CLI without inference', async () => {
+    const doctor = await run(kimiNativeWorker, ['--doctor'], context.env, context.project);
+    assert.equal(doctor.code, 1, doctor.stdout + doctor.stderr);
+    assert.deepEqual(JSON.parse(doctor.stdout), { type: 'doctor', protocol: 1, available: false, cliVersion: null,
+      backendProtocol: 'kimi-server/v1', inferenceTested: false,
+      nativeAdmission: 'requires-actual-server-schema-and-effective-session-probe', recoverySupported: false });
+  });
 
   await t.test('a direct DSH installation resolves its own bundled CLI without a global record', async () => {
     const record = path.join(context.home, '.config/flywheel/installation.json');
@@ -126,10 +165,11 @@ test('the complete npm candidate install and run from a clean agent environment'
   });
 
   await t.test('installed worker imports the real pinned plugin and executes an offline app-server', async () => {
+    assertNoDesktopPeers(installedRequire.resolve('dsh-subagent-codex-pro/package.json'));
     const doctor = await run(codexProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stderr + doctor.stdout);
-    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.9.0',
-      machineProtocol: 1, available: true, inferenceTested: false });
+    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.10.0',
+      machineProtocol: 1, nativeVersion: 1, available: true, inferenceTested: false });
     const fixture = path.join(context.fixtures, 'offline-codex.mjs');
     await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-codex-pro.js'), fixture);
     await fs.chmod(fixture, 0o755);
@@ -150,7 +190,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.signal, null);
     const frames = stdout.trim().split('\n').map(line => JSON.parse(line));
     const result = frames.at(-1);
-    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.outcome.cleanup.confirmed, true);
     for (const pid of [result.receipt.outcome.execution.pid, result.receipt.outcome.execution.supervisorPid]) {
@@ -166,27 +206,26 @@ test('the complete npm candidate install and run from a clean agent environment'
     const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(calls[0].argv, ['app-server', '--stdio']);
     assert.equal(calls.find(call => call.method === 'turn/start').params.effort, 'high');
-      assert.ok(!server.requests.some(value => value.includes('dsh-subagent-codex-pro')),
-      'the reviewed bundled source must install without fetching an unpublished registry release');
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.4.0 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.0 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.4.0');
+    assert.equal(manifest.version, '0.5.0');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
     assert.deepEqual(manifest.dependencies || {}, {}, 'the offline candidate must remain dependency-free');
     const [npm, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];
     const installation = await run(npm, [...args, 'install', '--global', '--prefix', context.prefix,
       '--ignore-scripts', '--no-audit', '--no-fund', tarball], context.env, context.project);
     assert.equal(installation.code, 0, installation.stdout + installation.stderr);
+    assertNoDesktopPeers(installedRequire.resolve('dsh-subagent-claude-code-pro/package.json'));
     const doctor = await run(claudeCodeProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: manifest.name,
-      version: manifest.version, machineProtocol: 1, available: true, inferenceTested: false });
+      version: manifest.version, machineProtocol: 1, nativeVersion: 1, available: true, inferenceTested: false });
     const fixture = path.join(context.fixtures, 'offline-claude.mjs');
     await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-claude-code-pro.js'), fixture);
     await fs.chmod(fixture, 0o755);
@@ -311,6 +350,10 @@ test('the complete npm candidate install and run from a clean agent environment'
   const calls = (await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG, 'utf8')).trim().split('\n').map(JSON.parse);
   assert.ok(calls.some(args => args[3] === 'add' && args.at(-1) === `@ckanner/flywheel@${server.candidate.version}`));
   assert.ok(!server.requests.some(request => /flywheel-(darwin|linux)-/.test(request)), 'native engines must come from the single tarball');
+  for (const bundled of ['dsh-subagent-codex-pro', 'dsh-preset-generator']) {
+    assert.ok(!server.requests.some(request => request.includes(bundled)),
+      `${bundled} must install from the reviewed bundle without fetching a registry release`);
+  }
   assert.equal(await fs.stat(path.join(context.project, 'state.json')).then(() => true, () => false), false);
 });
 

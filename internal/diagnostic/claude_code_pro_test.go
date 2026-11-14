@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const claudeCodeProDoctorResponse = `{"protocol":1,"type":"doctor","package":"dsh-subagent-claude-code-pro","version":"0.4.0","machineProtocol":1,"available":true,"inferenceTested":false}`
+const claudeCodeProDoctorResponse = `{"protocol":1,"type":"doctor","package":"dsh-subagent-claude-code-pro","version":"0.5.0","machineProtocol":1,"available":true,"inferenceTested":false}`
 
 func TestClaudeCodeProDoctorShowsNativeHarnessAndImportsWithoutInference(t *testing.T) {
 	root, runtime := diagnosticFixture(t, `{
@@ -69,7 +69,7 @@ func TestClaudeCodeProDoctorRejectsUnavailableOrUnpinnedPublicAPI(t *testing.T) 
 	}{
 		{"missing peer", watchdog.Result{ExitCode: new(1), Stdout: `{"available":false}`}},
 		{"malformed", watchdog.Result{ExitCode: new(0), Stdout: `{`}},
-		{"wrong version", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(claudeCodeProDoctorResponse, "0.4.0", "0.3.1", 1)}},
+		{"wrong version", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(claudeCodeProDoctorResponse, "0.5.0", "0.3.1", 1)}},
 		{"wrong package", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(claudeCodeProDoctorResponse, "dsh-subagent-claude-code-pro", "another-package", 1)}},
 		{"wrong protocol", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(claudeCodeProDoctorResponse, `"protocol":1`, `"protocol":2`, 1)}},
 		{"wrong machine protocol", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(claudeCodeProDoctorResponse, `"machineProtocol":1`, `"machineProtocol":2`, 1)}},

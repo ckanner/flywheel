@@ -27,6 +27,10 @@ const KimiDefaultModel = "kimi-code/k3.1-pro"
 const KimiCommandEnv = "FLYWHEEL_KIMI_BIN"
 
 type KimiArgs struct {
+	Native            json.RawMessage
+	Managed           *NativeAdmission
+	WorkspaceCwd      string
+	PermissionMode    string
 	Prompt            string
 	SessionID         string // 长驻会话 resume 句柄；空 = 新会话
 	PersistentSession bool   // scoped lifecycle policy; CLI history is already persistent
@@ -155,6 +159,9 @@ func parseKimiUsage(raw json.RawMessage) *Usage {
 // RunKimi 驱动一次 print 调用。只有退出成功且收到收尾 hint 才确认完成；
 // 失败调用的 hint 不作为可恢复句柄暴露。任务验收仍由 engine 的 oracle 决定。
 func RunKimi(a KimiArgs) Result {
+	if len(a.Native) != 0 {
+		return runKimiNative(a)
+	}
 	tracked := a.PersistentSession || a.RequestID != ""
 	if tracked && (strings.TrimSpace(a.RequestID) == "" || strings.ContainsAny(a.RequestID+a.SessionID, "\x00\r\n")) {
 		out := invalidHarnessResult("kimi", a.Model, "tracked Kimi calls require a request identity and valid opaque session handle")

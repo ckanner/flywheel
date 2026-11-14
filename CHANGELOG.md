@@ -5,6 +5,28 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.0 — Native harness capabilities
+
+- Align native companion fixtures and provenance with published Codex 0.10.0, Claude 0.5.0, LCU 0.5.0 and ChatGPT 0.1.20; verify the exact registry Claude tarball in CI and release jobs. Document separate desktop, worker and SDK dependency trees.
+
+- Add versioned native profiles across loops, routes, model profiles, second
+  opinions and allowed execution bindings, including workbench selection,
+  frozen history identity, durable native receipts and import-only diagnostics.
+- Run DSH PTC composition from the shared generator with actual behavior probes,
+  native subagents/Team/Workflow and managed LCU. Serialize desktop ownership,
+  retain epoch-safe handles and durable media, and prove journal/physical cleanup.
+- Add an owned Kimi Server worker for Agent/Swarm/Tower. Use independent Tower
+  Git candidates, preserve dirty/untracked/binary changes and transfer only after
+  completion, cleanup and source/contract checks.
+- Integrate Codex Pro 0.10.0 and Claude Code Pro 0.5.0 native controls, child events
+  and truthful accounting. Add independent Review/interactive Team job commands;
+  unknown cloud work, child usage and cleanup never become inferred success.
+- Preserve role independence, explicit accounts/permissions and existing JEV
+  controls. Keep one complete npm package, bundle generator 0.4.0 and record the
+  reviewed companion source artifacts without claiming registry publication.
+- Refresh the bundled generator to create a profile's first preset patch or a
+  new output file, preserving existing settings and concurrent file creation.
+
 ## 0.33.1 — Strict desktop read codecs
 
 - Fix task discovery and configuration reads rejected by the actual DSH Client

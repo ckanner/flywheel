@@ -7,7 +7,14 @@ import { spawn } from 'node:child_process';
 const scenario = process.env.TEST_CODEX_PRO_SCENARIO || 'ok';
 const log = value => { if (process.env.TEST_CODEX_PRO_LOG) appendFileSync(process.env.TEST_CODEX_PRO_LOG, JSON.stringify(value) + '\n'); };
 log({ event: 'spawn', pid: process.pid, supervisorPid: process.ppid, argv: process.argv.slice(2), cwd: process.cwd() });
-if (process.argv.length !== 4 || process.argv[2] !== 'app-server' || process.argv[3] !== '--stdio') process.exit(91);
+const argv = process.argv.slice(2), config = {};
+while (argv[0] === '-c') {
+  argv.shift();
+  const pair = argv.shift(); const equals = pair.indexOf('=');
+  const value = pair.slice(equals + 1).replace(/([A-Za-z_][A-Za-z0-9_]*)\s*=/g, '"$1":');
+  config[pair.slice(0, equals)] = JSON.parse(value);
+}
+if (argv.length !== 2 || argv[0] !== 'app-server' || argv[1] !== '--stdio') process.exit(91);
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 const reply = (id, result) => send({ jsonrpc: '2.0', id, result });
@@ -41,6 +48,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   log(request);
   if (request.method === 'initialize') {
     if (scenario !== 'initialize-hang') reply(request.id, { userAgent: 'offline-fixture' });
+  } else if (request.method === 'config/read') {
+    reply(request.id, { config: scenario === 'native-mismatch' ? { ...config, 'agents.enabled': !config['agents.enabled'] } : config });
   } else if (request.method === 'thread/start' || request.method === 'thread/resume') {
     const { cwd, model, sandbox, approvalPolicy, ephemeral } = request.params;
     const resumed = request.method === 'thread/resume';
@@ -66,9 +75,17 @@ createInterface({ input: process.stdin }).on('line', line => {
       sandbox: scenario === 'wrong-sandbox'
         ? (sandbox === 'danger-full-access' ? { type: 'workspaceWrite', writableRoots: [cwd] } : { type: 'dangerFullAccess' })
         : policy });
-  } else if (request.method === 'turn/start') {
-    reply(request.id, { turn: { id: turnId } });
+  } else if (request.method === 'turn/start' || request.method === 'review/start') {
+    reply(request.id, { turn: { id: turnId }, reviewThreadId: threadId });
     notify('turn/started', { threadId, turn: { id: turnId } });
+    if (scenario === 'native-child') {
+      notify('item/completed', { threadId, turnId, item: { type: 'collabAgentToolCall', id: 'spawn-1', tool: 'spawnAgent', senderThreadId: threadId,
+        receiverThreadIds: ['child-thread'], model: 'child-model', agentsStates: { 'child-thread': { status: 'running' } } } });
+      notify('turn/started', { threadId: 'child-thread', turn: { id: 'child-turn' } });
+      for (let i = 0; i < 2; i++) notify('thread/tokenUsage/updated', { threadId: 'child-thread', turnId: 'child-turn',
+        tokenUsage: { total: { totalTokens: 15, inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, reasoningOutputTokens: 0 } } });
+      notify('turn/completed', { threadId: 'child-thread', turn: { id: 'child-turn', status: 'completed' } });
+    }
     notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text: 'fixture working' } });
     if (scenario === 'progress-hang') {
       setInterval(() => notify('item/completed', { threadId, turnId,
@@ -92,7 +109,8 @@ createInterface({ input: process.stdin }).on('line', line => {
       if (scenario === 'partial-usage') notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: { ...total, outputTokens: 'invalid' } } });
     }
     notify('account/rateLimits/updated', { rateLimits: { fixture: { usedPercent: 12 } } });
-    notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'final_answer', text: 'fixture complete\n' } });
+    notify('item/completed', { threadId, turnId, item: request.method === 'review/start' ? { type: 'exitedReviewMode', review: 'fixture native review' }
+      : { type: 'agentMessage', phase: 'final_answer', text: 'fixture complete\n' } });
     notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
   } else if (request.method === 'turn/interrupt') {
     reply(request.id, {});

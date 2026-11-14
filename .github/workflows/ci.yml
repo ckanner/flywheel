@@ -17,10 +17,7 @@ on:
 permissions:
   contents: read
 
-# Companion source is not yet an npm release. Build the reviewed immutable
-# commit once, then test the same dependency bytes on both operating systems.
-env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: ec0b99176b67512f3ca1838ec2a349dcb0189214
+# The optional Claude adapter is verified against its immutable registry tarball.
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -45,18 +42,11 @@ jobs:
           npm --version
       - name: Build one complete npm candidate
         run: npm run build:npm
-      - name: Pack the reviewed optional Claude machine API
+      - name: Fetch the verified published Claude machine API
         run: |
-          claude_source="$RUNNER_TEMP/flywheel-claude-code-pro"
-          git init "$claude_source"
-          git -C "$claude_source" remote add origin https://github.com/ckanner/dsh-subagent-claude-code-pro.git
-          git -C "$claude_source" fetch --depth=1 origin "$CLAUDE_CODE_PRO_SOURCE_SHA"
-          git -C "$claude_source" checkout --detach FETCH_HEAD
-          test "$(git -C "$claude_source" rev-parse HEAD)" = "$CLAUDE_CODE_PRO_SOURCE_SHA"
           mkdir -p "$GITHUB_WORKSPACE/dist-claude"
-          cd "$claude_source"
-          npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' 125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz" | sha256sum --check
+          npm pack dsh-subagent-claude-code-pro@0.5.0 --ignore-scripts --registry=https://registry.npmjs.org/ --pack-destination "$GITHUB_WORKSPACE/dist-claude"
+          printf '%s  %s\n' fb15e28f7216d6e49a6717bad2fd568d2e00e7724feaadafae54405fd7a7597d "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate
@@ -116,7 +106,7 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
@@ -126,13 +116,13 @@ jobs:
       - name: Verify Go to Node to SDK, Codex Pro and Claude protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1 -v
+        run: go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1 -v
       - name: Verify npm runtime, installer and release contracts
         run: npm test
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
         run: npm run test:install
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'

@@ -57,7 +57,7 @@ function resultFrame(result, code = 0) {
   assert.equal(result.signal, null);
   const frames = result.stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
   assert.equal(frames.filter(frame => frame.type === 'result').length, 1);
-  assert.ok(frames.slice(0, -1).every(frame => frame.type === 'progress'));
+  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event'].includes(frame.type)));
   assert.deepEqual(frames.at(-1).adapter, ADAPTER);
   return frames.at(-1);
 }
@@ -141,8 +141,48 @@ test('doctor imports the exact dependency without starting any Codex process', a
   const result = await f.launch({ args: ['--doctor'], input: null }).done;
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { protocol: 1, type: 'doctor', package: ADAPTER.package, version: ADAPTER.version,
-    machineProtocol: 1, available: true, inferenceTested: false });
+    machineProtocol: 1, nativeVersion: 1, available: true, inferenceTested: false });
   assert.deepEqual(await f.records(), []);
+});
+
+test('native controls, managed attribution and owned child evidence survive the installed worker', async t => {
+  const f = await setup(t, 'native-child');
+  const native = { version: 1, agents: { enabled: true, backend: 'v2', maxConcurrentThreads: 3, defaultModel: 'child-model' } };
+  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role: 'Executor', scope: 'candidate', channel: 'local', taskDir: f.cwd };
+  const result = await f.launch({ input: { ...f.request, native, managed } }).done;
+  const frame = resultFrame(result);
+  assert.deepEqual(frame.receipt.native.requested, native);
+  assert.equal(frame.receipt.native.effective.matched, true);
+  assert.equal(frame.receipt.native.completion.confirmed, true);
+  assert.equal(frame.receipt.native.usage.totalTokens, 15);
+  assert.equal(frame.receipt.outcome.usage.run.totalTokens, 108);
+  const events = result.stdout.trim().split('\n').map(JSON.parse).filter(f => f.type === 'native-event');
+  assert.ok(events.some(f => f.native.id === 'child-thread' && f.native.state === 'completed'));
+  assert.ok(events.every(f => JSON.stringify(f.managed) === JSON.stringify(managed)));
+  const records = await f.records();
+  assert.equal(records.find(r => r.method === 'thread/start').params.config['agents.enabled'], true);
+  assert.ok(records[0].argv.includes('agents.max_concurrent_threads_per_session=3'));
+  assert.equal(records.some(r => r.params?.managed), false);
+});
+
+test('native off applies real startup controls and a mismatch prevents model dispatch', async t => {
+  for (const scenario of ['ok', 'native-mismatch']) {
+    const f = await setup(t, scenario);
+    const result = resultFrame(await f.launch({ input: { ...f.request, native: { version: 1 } } }).done, scenario === 'ok' ? 0 : 1);
+    assert.equal(result.receipt.native.effective.matched, scenario === 'ok');
+    const rows = await f.records();
+    assert.ok(rows[0].argv.includes('agents.enabled=false'));
+    assert.ok(rows[0].argv.includes('features.multi_agent_v2=false'));
+    assert.equal(rows.some(r => r.method === 'turn/start'), scenario === 'ok');
+  }
+});
+
+test('managed metadata cannot authorize a foreign invocation or inject a lease', async t => {
+  const f = await setup(t), api = await loadAdapter();
+  const managed = { version: 1, runId: 'r', invocationId: f.request.requestId, role: 'Review', scope: 's', channel: 'c', taskDir: f.cwd };
+  for (const change of [{ invocationId: 'foreign' }, { lease: {} }, { taskDir: 'relative' }]) {
+    assert.throws(() => machineRequest({ ...f.request, managed: { ...managed, ...change } }, api, f.env), { code: 'INVALID_REQUEST' });
+  }
 });
 
 for (const scenario of ['wrong-model', 'wrong-cwd', 'wrong-approval', 'wrong-sandbox']) {

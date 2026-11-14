@@ -39,7 +39,8 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			Prompt:         a.prompt,
 			Model:          currentModel,
 			Binding: config.LoopBinding{
-				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
+				NativeProfile: a.binding.NativeProfile,
+				Harness:       currentHarness, Provider: currentProvider, Model: currentModel,
 				Channel: channel, Thinking: a.binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
@@ -337,7 +338,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 // loopToBinding config.LoopBinding → fallback.Binding（judge-panel 复用
 // agentVerdictStep 的传输重试/降级骨架）。
 func loopToBinding(b config.LoopBinding) fallback.Binding {
-	return fallback.Binding{Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
+	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}
 }
 
 // judgeStep 在 L2/L3 闸门通过后、里程碑关闭前，由独立裁决角色对照 spec 的需求

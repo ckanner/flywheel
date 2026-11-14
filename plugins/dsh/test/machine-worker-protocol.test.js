@@ -25,7 +25,7 @@ async function fixture(t, { scenario = 'normal', ackMs = 1500, firstInput } = {}
     'const event={lifecycleVersion:1,type:"lifecycle",requestId:request.requestId,runId:scenario==="wrong-run"&&i===1?"other-run":"run-a",sequence:scenario==="out-of-order"&&i===1?9:i+1,event:name,threadId:null,turnId:null,persistent:false,configuration:null,dispatch:i<2?"not-dispatched":"accepted",outcome:i<3?"unknown":"completed",cleanupConfirmed:i===4};',
     'if(scenario==="oversize-event")event.extra="x".repeat(2097152);',
     'await options.onLifecycle(event);',
-    'if(i===1){await appendFile("dispatch.txt","one turn\\n");phase="dispatched";}',
+    'if(i===1){await appendFile("dispatch.txt","one turn\\n");phase="dispatched"; if(scenario.startsWith("native-"))options.onNativeEvent({version:scenario==="native-invalid"?2:1,sequence:1,kind:"child.created",id:"child-a",parentId:"root-a",state:scenario==="native-overflow"?"x".repeat(2097152):"running"});}',
     '}return {ok:true,phase};}catch(error){return {ok:false,phase,failure:{code:error.code,message:error.message}};}}};',
     'await runMachineWorker({ADAPTER:{package:"transport-fixture",version:"1.0.0",protocol:1},LIMITS:{requestBytes:1048576,receiptFrameBytes:8388608,progressBytes:1048576,admissionMs:500,lifecycleAckMs:'+ackMs+'},WorkerError,loadAdapter:async()=>api,machineRequest:x=>x,doctorResult:()=>({}),label:"Test",commandName:"worker",attestAdmission:true});',
   ].join('\n'));
@@ -183,6 +183,20 @@ test('a read-only query only calls recoverMachine, including when the old cwd is
   assert.equal(run.frames[0].type,'recovery');
   assert.equal(run.frames[0].recovery.status,'unknown');
 });
+
+for (const scenario of ['native-valid', 'native-invalid', 'native-overflow']) {
+  test('native metadata is bounded, separately framed and never a lifecycle checkpoint: ' + scenario, async t => {
+    const run = await fixture(t, { scenario });
+    run.onFrame = frame => { if (frame.type === 'lifecycle') run.ack(frame.lifecycle); };
+    assert.equal((await run.done).code, scenario === 'native-valid' ? 0 : 1);
+    const events = run.frames.filter(frame => frame.type === 'native-event');
+    assert.equal(events.length, scenario === 'native-valid' ? 1 : 0);
+    if (scenario === 'native-valid') {
+      assert.equal(events[0].native.id, 'child-a');
+      assert.equal(run.frames.at(-1).receipt.ok, true);
+    } else assert.equal(run.frames.at(-1).error.code, scenario === 'native-invalid' ? 'INVALID_NATIVE_EVENT' : 'OUTPUT_LIMIT');
+  });
+}
 
 test('recovery rejects prompts, credentials, unknown fields and invalid history without a model call',()=>{
   class WorkerError extends Error{constructor(code,message){super(message);this.code=code;}}

@@ -112,6 +112,9 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 	}
 	bindingInput := []any{config.SessionPolicyVersion, a.Binding, a.Model, a.PermissionMode,
 		c.Config.Channels[a.Binding.Channel].EnvKey, sessionRuntimeIdentity(identityArgs)}
+	if a.Binding.NativeProfile != "" {
+		bindingInput = append(bindingInput, c.Config.NativeProfiles[a.Binding.NativeProfile])
+	}
 	if a.SessionMode != "" {
 		bindingInput = append(bindingInput, a.SessionMode)
 	}
@@ -338,10 +341,43 @@ func (c *Context) reconcileSessionReceipts() error {
 	return nil
 }
 
+// Resolve before computing any runtime/history identity, including manual
+// takeover. Native Kimi uses the managed ledger, never legacy CLI history IDs.
+func (c *Context) resolveInvocationNative(role string, args *drivers.CallArgs) error {
+	if args.Binding.NativeProfile != "" {
+		profile, exists := c.Config.NativeProfiles[args.Binding.NativeProfile]
+		if !exists || profile.Harness != args.Binding.Harness {
+			return fmt.Errorf("native profile %q does not support %s", args.Binding.NativeProfile, args.Binding.Harness)
+		}
+		args.Native = profile.Options
+	}
+	if args.Binding.Harness == "kimi" && (len(args.Native) != 0 || args.Binding.NativeProfile != "") {
+		var native struct {
+			Version int    `json:"version"`
+			Mode    string `json:"mode"`
+		}
+		if err := json.Unmarshal(args.Native, &native); err != nil || native.Version != 1 || (native.Mode != "agent" && native.Mode != "swarm" && native.Mode != "tower") {
+			return fmt.Errorf("native Kimi history requires a valid version 1 agent, swarm or tower profile")
+		}
+		if native.Mode == "tower" {
+			args.SessionMode = "fresh"
+		} else if args.SessionMode == "" && role == "plan" && c.Config.Loops["plan"].ResidentSession &&
+			c.Config.Sessions.ModeForRole("plan") == "fresh" && c.Config.Sessions.Roles["plan"] != "fresh" {
+			// Preserve the explicit legacy resident intent through real scoped
+			// receipts. A deliberate role-level fresh selection still wins.
+			args.SessionMode = "scoped"
+		}
+	}
+	return nil
+}
+
 // Received results remain replayable until their stage and accounting are saved
 // together. requestId correlates evidence; it is not a backend idempotency key.
 func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (out drivers.Result, callErr error) {
 	defer c.measureManagedInvocation(role, scope)()
+	if err := c.resolveInvocationNative(role, &args); err != nil {
+		return drivers.Result{}, err
+	}
 	if c.parallel != nil {
 		release, err := c.parallel.enter(c, args.Binding.Channel)
 		if err != nil {
@@ -449,7 +485,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			action, reason, generation, thread = "rebuild", qualityReason, generation+1, ""
 		}
 	}
-	if !persistent && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
+	if !persistent && len(args.Native) == 0 && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
 		action, reason, thread = "resume", "explicit legacy resident Plan binding matched", args.SessionID
 	}
 	if args.ExpectedSessionID != "" && (thread != args.ExpectedSessionID || action != "resume") {
@@ -482,7 +518,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	} else if action == "resume" && role == "plan" {
 		historyMode = "legacy-plan"
 	}
-	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
+	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{NativeOptions: args.Native, NativeProfile: args.Binding.NativeProfile, Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
@@ -500,6 +536,10 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		return drivers.Result{}, c.fatal
 	}
 	args.SessionID, args.PersistentSession, args.RequestID = thread, persistent, r.Last.ID
+	if len(args.Native) != 0 {
+		args.Managed = &drivers.NativeAdmission{Version: 1, RunID: c.runID, InvocationID: r.Last.ID,
+			Role: role, Scope: scope, CandidateID: candidate, Channel: args.Binding.Channel, TaskDir: c.TaskDir}
+	}
 	c.Log(fmt.Sprintf("session %s: %s (%s)", key, action, reason))
 	var result drivers.Result
 	cancelledBeforeDispatch := c.err() != nil

@@ -24,13 +24,15 @@ type SessionLedger struct {
 }
 
 type SessionConfiguration struct {
-	Harness     string `json:"harness"`
-	Model       string `json:"model"`
-	Provider    string `json:"provider"`
-	Channel     string `json:"channel"`
-	Thinking    string `json:"thinking"`
-	Permission  string `json:"permission"`
-	SessionMode string `json:"sessionMode"`
+	NativeProfile string          `json:"nativeProfile,omitempty"`
+	NativeOptions json.RawMessage `json:"nativeOptions,omitempty"`
+	Harness       string          `json:"harness"`
+	Model         string          `json:"model"`
+	Provider      string          `json:"provider"`
+	Channel       string          `json:"channel"`
+	Thinking      string          `json:"thinking"`
+	Permission    string          `json:"permission"`
+	SessionMode   string          `json:"sessionMode"`
 }
 
 type SessionRecord struct {

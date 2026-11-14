@@ -140,7 +140,9 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 				r.add(b.ID+".binding", "fail", "DSH 必须明确 provider 和 model", "INVALID_REQUEST", "修正 profile 或阶段绑定后重新检查")
 				ready = false
 			}
-			if probe && ready && probeAllowed {
+			if b.NativeProfile != "" {
+				r.add(b.ID+".sdk", "skipped", "原生 profile 使用独立 composition 与能力准入；未运行不覆盖这些能力的 legacy SDK 探测", "", "本地 manifest 检查不证明原生运行时生效；正式调用须核对实际准入回执")
+			} else if probe && ready && probeAllowed {
 				r.probe(ctx, cfg, *b, probes)
 			} else {
 				r.add(b.ID+".sdk", "skipped", "未运行 SDK 探测；必须显式请求且本地配置、契约和工作目录检查通过", "", "修复本地问题后使用 --probe；探测不会发送推理请求")
@@ -155,6 +157,7 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 				r.add(b.ID+".sandbox", "warn", "此 CLI 路径没有可由 Flywheel 证明的 OS 工作区沙箱", "", "使用可信项目；worktree 只隔离变更，不是安全沙箱")
 			}
 		}
+		r.nativeProfile(ctx, cfg, *b, commands)
 		r.add(b.ID+".authentication", "unknown", "配置渠道名称不证明实际账号；授权、额度和模型服务能力未验证", "", "按工具正常登录流程配置，再运行经确认的小型真实任务")
 	}
 	if ctx.Err() != nil {
@@ -318,6 +321,7 @@ func (r *Report) codexPro(ctx context.Context, b Binding, cache map[string]bool)
 				Package         string `json:"package"`
 				Version         string `json:"version"`
 				MachineProtocol int    `json:"machineProtocol"`
+				NativeVersion   int    `json:"nativeVersion"`
 				Available       bool   `json:"available"`
 				InferenceTested *bool  `json:"inferenceTested"`
 			}
@@ -326,6 +330,7 @@ func (r *Report) codexPro(ctx context.Context, b Binding, cache map[string]bool)
 				probe.Version == drivers.CodexProPackageVersion && probe.MachineProtocol == 1 &&
 				probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested
 			cache[key] = ok
+			cache[key+":native"] = ok && probe.NativeVersion == 1
 			if ok {
 				r.add("codex-pro.api", "pass", "已导入 dsh-subagent-codex-pro/machine "+drivers.CodexProPackageVersion+"（协议 1，未推理）", "", "")
 			} else {
@@ -358,6 +363,7 @@ func (r *Report) claudeCodePro(ctx context.Context, b Binding, cache map[string]
 				Package         string `json:"package"`
 				Version         string `json:"version"`
 				MachineProtocol int    `json:"machineProtocol"`
+				NativeVersion   int    `json:"nativeVersion"`
 				Available       bool   `json:"available"`
 				InferenceTested *bool  `json:"inferenceTested"`
 			}
@@ -366,6 +372,7 @@ func (r *Report) claudeCodePro(ctx context.Context, b Binding, cache map[string]
 				probe.Version == drivers.ClaudeCodeProPackageVersion && probe.MachineProtocol == 1 &&
 				probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested
 			cache[key] = ok
+			cache[key+":native"] = ok && probe.NativeVersion == 1
 			if ok {
 				r.add("claude-code-pro.api", "pass", "已导入 dsh-subagent-claude-code-pro/machine "+drivers.ClaudeCodeProPackageVersion+"（协议 1，未推理）", "", "")
 			} else {

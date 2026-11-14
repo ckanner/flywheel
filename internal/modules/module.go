@@ -6,6 +6,7 @@
 package modules
 
 import (
+	"crypto/rand"
 	"errors"
 	"math"
 	"os"
@@ -159,6 +160,7 @@ func recordModuleMetrics(m *Ctx, role, model, channel, prompt string, result dri
 		"attempt":                 nil,
 		"codex-pro-receipt":       result.CodexProReceipt,
 		"claude-code-pro-receipt": result.ClaudeCodeProReceipt,
+		"native-receipt":          result.NativeReceipt,
 		"invocation":              result.Session,
 	}
 	if err := metrics.Append(m.MetricsFile, entry); err != nil {
@@ -249,18 +251,29 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		}
 		visited[channel] = true
 		permission := m.Config.PermissionMode(o.Role, current.Harness)
-		result := dispatchRole(m.Drivers, o.Role, drivers.CallArgs{
+		args := drivers.CallArgs{
 			Prompt:         o.Prompt,
 			TaskDir:        m.TaskDir,
 			Cwd:            m.Cwd,
 			Model:          current.Model,
-			Binding:        config.LoopBinding{Harness: current.Harness, Provider: current.Provider, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
+			Binding:        config.LoopBinding{NativeProfile: current.NativeProfile, Harness: current.Harness, Provider: current.Provider, Model: current.Model, Channel: current.Channel, Thinking: current.Thinking},
 			APIKey:         ChannelAPIKey(m.Config, channel, m.EnvLookup),
 			APIKeys:        APIKeysFor(m.Config, channel, m.EnvLookup),
 			Watchdog:       ModuleWatchdogOpts(m.Config),
 			SessionID:      o.SessionID,
 			PermissionMode: permission,
-		})
+		}
+		if current.NativeProfile != "" {
+			profile, exists := m.Config.NativeProfiles[current.NativeProfile]
+			if !exists || profile.Harness != current.Harness {
+				m.fatalErr = errors.New("module native profile is missing or belongs to a different harness")
+				return CallResult{ErrorCode: errs.INVALID_REQUEST, Channel: channel, Model: current.Model}
+			}
+			args.Native, args.RequestID = profile.Options, "module-"+rand.Text()
+			args.Managed = &drivers.NativeAdmission{Version: 1, RunID: args.RequestID, InvocationID: args.RequestID,
+				Role: o.Role, Scope: o.Role, Channel: channel, TaskDir: m.TaskDir}
+		}
+		result := dispatchRole(m.Drivers, o.Role, args)
 
 		// Physical cancellation/timeout/cleanup dominates text classification.
 		// A protocol terminal marker is required even if the CLI exits zero.
@@ -327,7 +340,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 				if harness == "" {
 					harness = current.Harness
 				}
-				current = fallback.Binding{Harness: harness, Provider: fallback.ResolveProvider(m.Config, harness, "", next), Model: mapped.Model, Channel: next, Thinking: o.Binding.Thinking}
+				current = fallback.Binding{NativeProfile: o.Binding.NativeProfile, Harness: harness, Provider: fallback.ResolveProvider(m.Config, harness, "", next), Model: mapped.Model, Channel: next, Thinking: o.Binding.Thinking}
 				t-- // 降级不消耗 transport 重试名额
 				continue
 			}

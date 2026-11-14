@@ -16,6 +16,7 @@ guides are maintained in English and Simplified Chinese.
 | Use the canvas, stage controls, sessions, and run history | [Workbench](en/flow-console.md) | [流程工作台](zh-CN/flow-console.md) |
 | Resolve configuration, profiles, permissions, and scheduling | [Configuration](en/configuration.md) | [配置参考](zh-CN/configuration.md) |
 | Understand the default models and reasoning settings | [Model policy](en/model-policy.md) | [模型策略](zh-CN/model-policy.md) |
+| Use native Agents, Teams, Swarm, Tower and LCU | [Native capabilities](en/native-capabilities.md) | [原生能力](zh-CN/native-capabilities.md) |
 | Enable the optional Claude machine backend | [Claude Code Pro](en/claude-code-pro.md) | [Claude Code Pro](zh-CN/claude-code-pro.md) |
 | Resume roles and reconcile interrupted calls | [Recovery and context quality](en/session-recovery.md) | [恢复与上下文质量](zh-CN/session-recovery.md) |
 | Compare session policies with fixed tasks and evidence | [Session evaluation](en/session-evaluation.md) | [会话评估](zh-CN/session-evaluation.md) |
@@ -53,6 +54,14 @@ short feedback cycles, model policy and bounded semantic decisions. The current
 The [P5 implementation plan](plans/2026-11-13-p5-ready-queue-prewarm.md) (Chinese)
 records optional scheduling and runtime preparation; live performance and any
 default adoption require separate evidence.
+
+The [native harness, PTC and LCU implementation design](plans/2026-11-13-native-harness-capabilities.en.md)
+([中文](plans/2026-11-13-native-harness-capabilities.md)), revised on 2026-11-14,
+describes the six-repository implementation: shared SDK/PTC composition, native
+Agents/Teams/Swarm/Workflows, Tower candidates, GUI leases, media, accounting and
+recovery. Use the [native guide](en/native-capabilities.md) for configuration and
+the [validation record](validation/2026-11-14-native-harness-implementation.md)
+for the tested source and installation boundaries.
 
 | Collection | Contents |
 | --- | --- |

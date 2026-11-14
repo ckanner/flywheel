@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.33.1",
+  "version": "0.34.0",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -15,12 +15,15 @@
     "./worker": "./dist/worker.js",
     "./codex-pro-worker": "./dist/codex-pro-worker.js",
     "./package.json": "./package.json",
-    "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js"
+    "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js",
+    "./kimi-native-worker": "./dist/kimi-native-worker.js",
+    "./native-jobs": "./dist/native-jobs.js"
   },
   "bin": {
     "flywheel-dsh-worker": "./dist/worker.js",
     "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js",
-    "flywheel-claude-code-pro-worker": "./dist/claude-code-pro-worker.js"
+    "flywheel-claude-code-pro-worker": "./dist/claude-code-pro-worker.js",
+    "flywheel-kimi-native-worker": "./dist/kimi-native-worker.js"
   },
   "files": [
     "dist",
@@ -32,7 +35,13 @@
     "vendor/README.md",
     "vendor/codex-pro.json",
     "LICENSE",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "vendor/preset-generator.json",
+    "vendor/claude-code-pro.json",
+    "vendor/lcu.json",
+    "vendor/chatgpt.json",
+    "KIMI_NATIVE_PROTOCOL.md",
+    "KIMI_NATIVE_PROTOCOL.en.md"
   ],
   "dsh": {
     "bundle": {
@@ -53,8 +62,9 @@
     "@deepseek-ai/dsh-commands": "^0.2.1-rc.5 || ^0.2.2-0",
     "@deepseek-ai/dsh-session-projection": "^0.2.1-rc.5 || ^0.2.2-0",
     "@deepseek-ai/dsh-tools": "^0.2.1-rc.5 || ^0.2.2-0",
-    "dsh-subagent-claude-code-pro": "0.4.0",
-    "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.5 || ^0.2.2-0"
+    "dsh-subagent-claude-code-pro": "0.5.0",
+    "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.5 || ^0.2.2-0",
+    "dsh-plugin-lcu": "0.5.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -74,6 +84,9 @@
     },
     "@deepseek-ai/dsh-typert-protocol": {
       "optional": true
+    },
+    "dsh-plugin-lcu": {
+      "optional": true
     }
   },
   "scripts": {
@@ -83,8 +96,9 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "dsh-subagent-codex-pro": "0.9.0",
-    "zod": "4.3.6"
+    "dsh-subagent-codex-pro": "0.10.0",
+    "zod": "4.3.6",
+    "dsh-preset-generator": "0.4.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
@@ -112,7 +126,18 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "semver": "7.7.3",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.3"
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.3",
+    "dsh-subagent-claude-code-pro": "file:vendor/dsh-subagent-claude-code-pro-0.5.0.tgz",
+    "dsh-plugin-lcu": "file:vendor/dsh-plugin-lcu-0.5.0.tgz",
+    "dsh-plugin-chatgpt": "file:vendor/dsh-plugin-chatgpt-0.1.20.tgz",
+    "@deepseek-ai/dsh-agent-team": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-agent-team": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-subagent-control": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subagent-fork-in-process": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-session-query": "0.2.2-rc.3"
   },
   "repository": {
     "type": "git",
@@ -120,7 +145,8 @@
     "directory": "plugins/dsh"
   },
   "bundledDependencies": [
-    "dsh-subagent-codex-pro"
+    "dsh-subagent-codex-pro",
+    "dsh-preset-generator"
   ],
   "private": true
 }

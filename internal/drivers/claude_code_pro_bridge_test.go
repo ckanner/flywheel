@@ -46,13 +46,38 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 			ReasoningEffort: "max", PermissionMode: "danger-full-access", RequestID: "owned-" + scenario,
 			Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}}
 	}
+	t.Run("native child receipt is preserved without adding task snapshots to root usage", func(t *testing.T) {
+		a := args(t, "native-child")
+		// Resolve the fixture before deriving the private protocol 3 journal path.
+		cwd, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		a.Cwd = cwd
+		a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true,"maxConcurrent":3},"workflows":{"enabled":true}}`)
+		a.Managed = &NativeAdmission{Version: 1, RunID: "run", InvocationID: a.RequestID, Role: "Executor", Scope: "candidate", Channel: "local", TaskDir: a.Cwd}
+		a.RecoveryDirectory, a.OnLifecycle = filepath.Join(a.Cwd, "journal"), func(MachineLifecycle) error { return nil }
+		out := RunClaudeCodePro(a)
+		require.True(t, out.Settled, "%+v", out)
+		assert.Nil(t, out.Usage)
+		assert.Equal(t, "unknown", out.Session.UsageStatus)
+		assert.True(t, out.Session.CleanupConfirmed)
+		assert.Contains(t, out.Stdout, `"type":"native-event"`)
+		var native proNativeReceipt
+		require.NoError(t, json.Unmarshal(out.NativeReceipt, &native))
+		assert.True(t, proJSONEqual(a.Native, native.Requested))
+		require.Len(t, *native.Children, 1)
+		var receipt claudeCodeProReceipt
+		require.NoError(t, json.Unmarshal(out.ClaudeCodeProReceipt, &receipt))
+		root, _, err := parseClaudeCodeProUsage(receipt.Usage)
+		require.NoError(t, err)
+		assert.Equal(t, int64(22), root.TotalTokens)
+	})
 
 	t.Run("fresh calls keep native permission and cost semantics", func(t *testing.T) {
 		a := args(t, "ok")
 		r := RunClaudeCodePro(a)
 		require.True(t, r.Settled, "%+v", r)
 		assert.Equal(t, "echo:"+a.Prompt, r.Text)
-		assert.Equal(t, "claude-code-pro/0.4.0/worker-v1", r.Session.Protocol)
+		assert.Equal(t, "claude-code-pro/"+ClaudeCodeProPackageVersion+"/worker-v1", r.Session.Protocol)
 		assert.Equal(t, "completed", r.Session.Outcome)
 		assert.Equal(t, "dispatched", r.Session.Dispatch)
 		assert.True(t, r.Session.CleanupConfirmed)
@@ -90,7 +115,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		a.SessionID, a.RequestID, a.Prompt = first.SessionID, "owned-second", "current repair constraints"
 		second := RunClaudeCodePro(a)
 		require.True(t, second.Settled, "%+v", second)
-		assert.Equal(t, "claude-code-pro/0.4.0/worker-v2", second.Session.Protocol)
+		assert.Equal(t, "claude-code-pro/"+ClaudeCodeProPackageVersion+"/worker-v2", second.Session.Protocol)
 		assert.Equal(t, first.SessionID, second.SessionID)
 		assert.True(t, second.Session.ResumeAccepted)
 		assert.True(t, second.Session.ResumeCandidate)

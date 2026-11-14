@@ -1,0 +1,255 @@
+{
+  "candidate": {
+    "format_version": 2,
+    "version": "0.34.0",
+    "source": {
+      "commit": "1ba506a2ac6996700828ce40274b2c287de1103d",
+      "tree": "bc65e37eab9844064699cf402481112160fc092e",
+      "dirty": false,
+      "snapshot_sha256": "6002492ef2fee1ac1a73d46c33219cf6d2f0af79bdabc76ca15c124926d8f9c1"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.34.0",
+        "filename": "ckanner-flywheel-0.34.0.tgz",
+        "bytes": 18861167,
+        "integrity": "sha512-3vtGBDA1O1Q5JqBPi76Q3fpHjmmuZGPHJLE+mmOH/bnQLaKNo+4jlY3XnDzTSFDEOv5b4z5jRlXRvF3XIN1FEQ=="
+      }
+    ]
+  },
+  "sha256": "fa682d25986ea8d93514a7a6705edfbaea37aff0c9257adf73e4105a1d7b86f4",
+  "native": {
+    "protocol": 1,
+    "version": "0.34.0",
+    "platforms": {
+      "darwin-arm64": {
+        "bytes": 10385074,
+        "sha256": "ef7f4bab41bcc599647580a955212b5c0eedb39ace0845c9d39965dba1e92698"
+      },
+      "darwin-amd64": {
+        "bytes": 11320736,
+        "sha256": "53f218a5d9209b7397cd1d184dbbf4401db6b88b0b40f7670b86e7eea0877aeb"
+      },
+      "linux-arm64": {
+        "bytes": 10158240,
+        "sha256": "312ccc6461ebfd0dc767b024cbb1e4a05b4d6ac8915c60d471a2952823ee0343"
+      },
+      "linux-amd64": {
+        "bytes": 11096224,
+        "sha256": "3c898627cff6a1ad703d883083e04388fea7df97d7b3d90bfaa1e7208af7eabd"
+      }
+    }
+  },
+  "kimiLauncherMode": "0o755",
+  "recordVersion": 1,
+  "observedDate": "2026-11-14",
+  "equivalentRemoteSource": {
+    "repository": "ckanner/flywheel",
+    "commit": "854c3580ed7ec0f740c7882f23baca11dfa10b6a",
+    "tree": "bc65e37eab9844064699cf402481112160fc092e"
+  },
+  "companionPackages": {
+    "dsh-subagent-codex-pro": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.10.0",
+      "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
+      "sourceCommit": "c0045b06e6762b8dfc56f50b14cce7a53af2725b",
+      "sourceTree": "1c39704cf385e9f505f5d50e9d96ef2e0b88d5f5",
+      "tarball": "dsh-subagent-codex-pro-0.10.0.tgz",
+      "sha256": "4307f7bdc129dcffc03a8bc17d452c9bd3828801c12829b5f4514e6d23278416",
+      "integrity": "sha512-DFG9q5VpBI1G3dBAiRcD1Pv7rI5SoqOLFikqr3pgAcCDuIToqQsn0fy+2TjqerVBMKb2ikCrOGaTszJGLBV/Rg==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    },
+    "dsh-subagent-claude-code-pro": {
+      "package": "dsh-subagent-claude-code-pro",
+      "version": "0.5.0",
+      "repository": "https://github.com/ckanner/dsh-subagent-claude-code-pro",
+      "sourceCommit": "54d7eafa9102713597e3b96a6d70a9cbd86afc6b",
+      "sourceTree": "bf992d3e33889857526af370bbb16d91585c0ecc",
+      "tarball": "dsh-subagent-claude-code-pro-0.5.0.tgz",
+      "sha256": "338675c8fbafc47e7f2c7cc5ffaa6987bda952c5c9c1010ac441230597ce420c",
+      "integrity": "sha512-oMPlZJOIuv65j+g3hRYj6Ib0YNNyruA2va87UmKVk7mmBtQxww0LeKhrsNRTrrRGbgy9etuznMtY9F9dmrVw/Q==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    },
+    "dsh-plugin-lcu": {
+      "package": "dsh-plugin-lcu",
+      "version": "0.5.0",
+      "repository": "https://github.com/ckanner/dsh-plugin-lcu",
+      "sourceCommit": "7986057e92314b78caf66dde43d1a8d45ab6ada7",
+      "sourceTree": "6256c2a947efec8812ae5e4e7e83c4d098ad1ee1",
+      "tarball": "dsh-plugin-lcu-0.5.0.tgz",
+      "sha256": "e047b045546aafc3e394b975f66dc03f4d8202a9f923bdbfa34b3ebcb8e9d84a",
+      "integrity": "sha512-X1DBVThpWEUNDztjInEED9EH2Kp+L2ev+QfKCv/BYITtGbrS3veHgpC4C9Rxo4BoJipCpTLFx8PEPafr4SoIbw==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    },
+    "dsh-plugin-chatgpt": {
+      "package": "dsh-plugin-chatgpt",
+      "version": "0.1.19",
+      "repository": "https://github.com/ckanner/dsh-plugin-chatgpt",
+      "sourceCommit": "fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c",
+      "sourceTree": "168dc4e6284f002f09291667a926eab8a31b6687",
+      "tarball": "dsh-plugin-chatgpt-0.1.19.tgz",
+      "sha256": "838ef2f6cb6fa70f9a1a708729b1efb966bee4daeb4a4f2810ab3f69fe1a1179",
+      "integrity": "sha512-yUTExyMNrK9V9Cj4GgMrcYqHsO+xD5lteGLG5xgJ4QnvG+qUk1M740IoQiEdfGvaXlgX+mcJfy0phVJ2Cd+Gyg==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    },
+    "dsh-preset-generator": {
+      "package": "dsh-preset-generator",
+      "version": "0.4.0",
+      "repository": "https://github.com/ckanner/dsh-preset-generator",
+      "sourceCommit": "0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3",
+      "sourceTree": "c93bbc8453a95c2b4f06d432f1c7d0e67a56aaf0",
+      "tarball": "dsh-preset-generator-0.4.0.tgz",
+      "sha256": "bdeaf8ab4a0ef7d3eb59910072807e35361db456f1533425add835cc49f5b65d",
+      "integrity": "sha512-aQyf+7jrDyAwG1dVYaRqVnKIzn1G/5KrYdZT//XOFkFeOUMbeBvXeyYgv64E6NPiv7C085iZ9SbFNztCbxvYTQ==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "toolchain": {
+        "node": "24.22.1",
+        "npm": "12.2.1"
+      }
+    }
+  },
+  "checks": {
+    "goQualityGate": {
+      "result": "pass",
+      "perFunctionStatementCoverage": 100
+    },
+    "nodeMain": {
+      "passed": 394,
+      "failed": 0,
+      "skipped": 0
+    },
+    "nodeLegacyHost": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "nodeBridges": {
+      "backends": [
+        "DSH",
+        "CodexPro",
+        "ClaudeCodePro",
+        "KimiNative"
+      ],
+      "result": "pass",
+      "seconds": 43.574
+    },
+    "rootNpm": {
+      "passed": 152,
+      "failed": 0,
+      "skipped": 0
+    },
+    "packedHost": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "installedCandidate": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "optionalClaudeTarballTested": true
+    },
+    "sessions": {
+      "execution": "offline-fixture",
+      "trials": 36,
+      "calls": 96,
+      "qualityPass": 36,
+      "complete": true
+    }
+  },
+  "limits": {
+    "registryPublished": false,
+    "targetMacAcceptance": false,
+    "liveModelInference": false,
+    "dshMasterImageRuntimeTested": false,
+    "lcuEarlierLocalFullSuite": {
+      "passed": 64,
+      "failed": 6,
+      "skipped": 9,
+      "failure": "Unix socket listen EPERM; independently reproduced"
+    }
+  },
+  "ciFirstRun": {
+    "runId": 43582131166,
+    "head": "f1809e39a05c91c43e8384c8fd638b3bc6d4c7ab",
+    "npmCandidate": "success",
+    "linux": "success",
+    "macOS": {
+      "result": "failure",
+      "package": "internal/machine",
+      "cause": "aggregate Go package default timeout",
+      "elapsedSeconds": 600.065,
+      "runningTestElapsedSeconds": 2,
+      "partialStatementCoverage": 98.9
+    },
+    "macOSPassingBaselines": [
+      {
+        "runId": 43580329214,
+        "machineSeconds": 563.964
+      },
+      {
+        "runId": 43574758128,
+        "machineSeconds": 578.507
+      }
+    ],
+    "correction": {
+      "makePackageTimeout": "15m",
+      "ciJobTimeout": "20m",
+      "productionWatchdogChanged": false,
+      "perFunctionStatementCoverageRequired": 100,
+      "testsRemoved": 0
+    }
+  },
+  "ciSecondRun": {
+    "runId": 43583479213,
+    "head": "0299671d4a3ec68b8d3352aa58b2f114d94fa23a",
+    "npmCandidate": "success",
+    "linux": "success",
+    "macOS": {
+      "result": "failure",
+      "goQualityGate": "success",
+      "machineSeconds": 340.561,
+      "perFunctionStatementCoverage": 100,
+      "node": {
+        "passed": 388,
+        "failed": 6,
+        "skipped": 0
+      },
+      "cause": "Tower helper fixtures used a logical temporary-directory alias instead of the physical repository root",
+      "laterBridgeAndInstallGates": "not-run"
+    },
+    "correction": {
+      "canonicalizeSourceAndLinkedUnitFixtures": true,
+      "repositoryRootGuardPreserved": true,
+      "trackedSymlinkAncestorGuardPreserved": true,
+      "workerAliasRegressionReproducedRuntimePromptMappingOmission": true,
+      "originalAndSubmittedPromptDigestsRetained": true,
+      "testsRemoved": 0
+    },
+    "finalExactHeadResult": "recorded in PR #44 checks and body; this historical run remains a failure"
+  },
+  "laterRuntimeCorrectionEvidence": "2026-11-14-native-harness-tower-candidate.json"
+}

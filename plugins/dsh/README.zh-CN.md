@@ -54,9 +54,9 @@ DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH
 |---|---|
 | DeepSeek Flash | DSH `deepseek-account`，明确指定 `deepseek-flash`；标准共享账号存储不需要额外 API key |
 | DSH ChatGPT | 在 SDK profile 安装并授权所选 ChatGPT 适配器；桌面对话模型不决定 worker 配置 |
-| Codex Pro | worker 导入固定 0.9.0 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
+| Codex Pro | worker 导入固定 0.10.0 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
 | Kimi | Go 调用原生 Kimi CLI 及其登录；不使用 ACP 或父模型二次委派 |
-| Claude Code Pro | 可选 0.4.0 peer 和已安装 Claude CLI／登录；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
+| Claude Code Pro | 可选 0.5.0 peer 和已安装 Claude CLI／登录；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
 
 一个已经记录的 ChatGPT 适配器兼容示例：
 
@@ -226,10 +226,10 @@ DSH worker 支持 read-only、workspace-write 和显式完全权限，审批设�
 prompt 前检查。完全权限不代表 OS 沙箱，也不取消宿主静态拒绝、账号限制或
 操作系统权限；Git worktree 同样不是安全沙箱。
 
-临时 SDK overlay 只作用于独立 worker，关闭递归委派、workflow 驱动、自动标题／
-压缩、定时输入及整个 web-tool 包（搜索和抓取）。完全权限不会恢复这些额外模型／
-工具能力；恢复它们需要另外支持计量、取消和目录归属。overlay 不移除桌面工具，
-也不改写提醒存储。
+临时 SDK overlay 只作用于独立 worker。显式 native-profile 可启用受管 PTC 子 Agent、
+Team、Workflow、Web 与可选 LCU；未选择时保留原工具策略。自动标题、压缩、goal与
+定时输入仍关闭，完全权限本身不会启用原生能力。overlay 不修改桌面 preset 和提醒。
+配置、回执、Tower 与独立 Review/Team 入口见[原生能力指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/native-capabilities.md)。
 
 主任务 Codex 调用在 `thread-ready` 时核对完整实际沙箱策略，Go 确认后才继续
 派发；终态回执再次检查。旧版／建议调用保留终态检查。Claude 的原生 init 在
@@ -237,9 +237,9 @@ prompt 之后，不能提供相同的预派发观察；Kimi print 模式也没�
 的 OS 沙箱。
 
 成功结果需要可信终态回执和清理确认。外层 worker 退出不能证明 SDK 或 guardian
-已清理。SDK 正常关闭保留两秒用于历史落盘和释放，再进入有界 TERM/KILL 收尾。
+已清理。普通SDK关闭保留两秒；native为15秒，LCU为135秒，Go外层相应不少于20／145秒，再进入有界TERM/KILL收尾。
 结果丢失时保留证据并阻断自动重放。缺失用量与订阅美元成本保持 unknown，不填零。
-完整 worker 历史不会自动并入父会话轨迹；这些 worker 输入不支持图片和附件。
+完整worker历史不会自动并入父会话轨迹；公开Pro machine支持显式图片／结构化输出，正式Go loop不会自动注入所有归档截图。
 
 ## 维护与开发
 

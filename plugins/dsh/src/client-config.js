@@ -684,6 +684,27 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     else next[group][key][field] = value;
     replace(next);
   };
+  const nativeChoices = value => {
+    const inherited = draft.profiles?.[value.profile]?.['native-profile'];
+    const harness = value.harness || draft.profiles?.[value.profile]?.harness;
+    const choices = [['__inherit__', t('consoleInherit') + (inherited ? ' · ' + inherited : '')], ['', t('cfgNativeNone')],
+      ...Object.entries(draft['native-profiles'] ?? {}).filter(([, definition]) => definition.harness === harness).map(([name]) => [name, name])];
+    const selected = value['native-profile'];
+    if (selected && !choices.some(([name]) => name === selected)) choices.push([selected, selected]);
+    return choices;
+  };
+  const setNativeProfile = (value, name) => {
+    const next = { ...value };
+    if (name === '__inherit__') delete next['native-profile'];
+    else next['native-profile'] = name;
+    return next;
+  };
+  const inlineNativeProfile = (group, key, name) => {
+    const next = cloneConfig(draft);
+    if (group === 'panel') next['judge-panel'] = setNativeProfile(next['judge-panel'], name);
+    else next[group][key] = setNativeProfile(next[group][key], name);
+    replace(next);
+  };
   const saveBinding = () => {
     const { group, key, role, value, permission, session } = bindingEdit,
       next = cloneConfig(draft);
@@ -820,7 +841,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     fields = h(React.Fragment, null,
       h('p', { className: css.meta }, t('cfgSessionDefault', { mode: t(draft.sessions?.mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') })),
       h('div', { className: css.stageTableScroll }, h('table', { className: css.stageTable, 'aria-label': t('cfgModels') },
-        h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
+        h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'cfgNative', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
         h('tbody', null, ...rows.map(([group, key, value]) => {
           const role = group === 'routes' ? 'execute' : key;
           const sessionChoices = [['inherit', roleSession(role)], ['scoped', t('cfgReuse')], ['fresh', t('cfgFresh')]];
@@ -831,9 +852,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
             h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
+            h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
             h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
-      h('p', { className: css.settingsHelp }, t('consoleRouteSession')));
+      h('p', { className: css.settingsHelp }, t('consoleRouteSession')),
+      h('p', { className: css.settingsHelp }, t('cfgNativeHelp')));
   if (draft && section === 'jev')
     fields = h(
       React.Fragment,
@@ -1146,6 +1169,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             },
           ),
         ),
+        field('binding.native-profile', t('cfgNative'), t('cfgNativeHelp'),
+          select('binding.native-profile', bindingEdit.value['native-profile'] ?? '__inherit__', nativeChoices(bindingEdit.value),
+            name => setBindingEdit(old => ({ ...old, value: setNativeProfile(old.value, name) })))),
         field(
           'binding.permission',
           t('permission'),
@@ -1225,3 +1251,12 @@ Object.assign(en, {
 
 Object.assign(zh, { cfgPlanConflict: 'Plan 旧历史开关与此策略不同', cfgApplyPolicy: '同步此策略' });
 Object.assign(en, { cfgPlanConflict: 'The legacy Plan history switch differs', cfgApplyPolicy: 'Align policy' });
+
+Object.assign(zh, {
+  cfgNative: '原生能力', cfgNativeNone: '不启用原生能力配置',
+  cfgNativeHelp: '选择与当前后端匹配的能力配置；在高级 JSON 中编辑 native-profiles。JEV 关闭时仍生效，实际可用性以运行回执为准。',
+});
+Object.assign(en, {
+  cfgNative: 'Native capabilities', cfgNativeNone: 'No native capability profile',
+  cfgNativeHelp: 'Select a profile for this backend; edit native-profiles in advanced JSON. Profiles work with JEV off. Runtime receipts establish actual availability.',
+});

@@ -11,6 +11,8 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-14 | [原生依赖正式包与运行环境对齐](2026-11-14-published-companions.md) |
+| 2026-11-14 | [原生 Harness、PTC 与 LCU：六仓实现验证与最终候选验收状态](2026-11-14-native-harness-implementation.md) |
 | 2026-11-14 | [0.33.1 单包补丁发布与正式桌面验收](2026-11-14-release-0.33.1.md) |
 | 2026-11-14 | [0.33.0 单包正式发行与桌面读取缺口](2026-11-14-release-0.33.0.md) |
 | 2026-11-14 | [0.33.0 单包分发工程验证](2026-11-14-single-package.md) |

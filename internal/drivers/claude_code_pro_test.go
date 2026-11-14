@@ -89,7 +89,7 @@ func TestClaudeCodeProReceiptSeparatesNativePermissionHistoryAndCost(t *testing.
 			assert.Equal(t, "complete", p.Session.UsageStatus)
 			assert.Equal(t, scope != "fresh", p.Session.ResumeCandidate)
 			assert.Equal(t, scope == "resume", p.Session.ResumeAccepted)
-			assert.Equal(t, fmt.Sprintf("claude-code-pro/0.4.0/worker-v%d", r.Protocol), p.Session.Protocol)
+			assert.Equal(t, fmt.Sprintf("claude-code-pro/%s/worker-v%d", ClaudeCodeProPackageVersion, r.Protocol), p.Session.Protocol)
 			assert.Empty(t, p.Session.TurnID, "the CLI has no public turn identifier; never fabricate one")
 			var raw map[string]any
 			require.NoError(t, json.Unmarshal(p.Receipt, &raw))

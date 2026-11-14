@@ -542,6 +542,28 @@ test('a model dialog can be cancelled and an unchanged assignment creates no unr
   assert.deepEqual(Object.keys(ui.requests.at(-1).editor.values), ['routes']);
 });
 
+test('native profile selection retains explicit off and limits choices to the current harness', async t => {
+  const nativeProfiles = {
+    'dsh-heavy': { harness: 'dsh', options: { version: 1, preset: 'heavy', agents: { enabled: true } } },
+    'kimi-swarm': { harness: 'kimi', options: { version: 1, mode: 'swarm' } },
+  };
+  const ui = await mountPanel(t, editorResponder({ 'native-profiles': nativeProfiles }));
+  await ui.click('设置');
+  await ui.click('模型与会话');
+  await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  assert.deepEqual([...field(ui, '原生能力').options].map(option => option.value), ['__inherit__', '', 'dsh-heavy']);
+  await input(ui, '原生能力', 'dsh-heavy');
+  await ui.click('加入待保存修改');
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], 'dsh-heavy');
+  assert.equal(ui.requests.at(-1).editor.values.routes.default.model, 'deepseek-flash');
+  await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  await input(ui, '原生能力', '');
+  await ui.click('加入待保存修改');
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], '');
+});
+
 test('node dialogs freeze revision and a newer snapshot cannot silently reuse a confirmation', async (t) => {
   let revision = 7;
   const ui = await mountPanel(t, (r) =>

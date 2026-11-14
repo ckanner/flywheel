@@ -4,8 +4,8 @@
 
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
-checks. Durable public-journal recovery requires **Codex Pro 0.9.0** or
-**Claude Code Pro 0.4.0**; DSH and Kimi retain their own supported recovery paths.
+checks. Durable public-journal recovery requires **Codex Pro 0.10.0** or
+**Claude Code Pro 0.5.0**; DSH and Kimi retain their own supported recovery paths.
 
 ## Resume an existing task
 

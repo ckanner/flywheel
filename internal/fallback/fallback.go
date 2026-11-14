@@ -20,11 +20,12 @@ import (
 
 // Binding 一次调用的 harness+model+channel+thinking 解析结果。
 type Binding struct {
-	Harness  string
-	Provider string // DSH LLM adapter identity, distinct from the billing/account channel
-	Model    string
-	Channel  string
-	Thinking string
+	NativeProfile string
+	Harness       string
+	Provider      string // DSH LLM adapter identity, distinct from the billing/account channel
+	Model         string
+	Channel       string
+	Thinking      string
 }
 
 // ResolveBinding 为角色解析绑定：execute 走 routes[route]，其余走 loops[role]。
@@ -34,13 +35,13 @@ func ResolveBinding(cfg *config.Config, role, route string) (Binding, error) {
 		if !ok {
 			return Binding{}, fmt.Errorf("no route binding for %q in config", route)
 		}
-		return Binding{Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
+		return Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
 	}
 	b, ok := cfg.Loops[role]
 	if !ok {
 		return Binding{}, fmt.Errorf("no loop binding for %q in config", role)
 	}
-	return Binding{Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
+	return Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
 }
 
 // ResolveProvider separates a DSH adapter from its account channel. A fallback

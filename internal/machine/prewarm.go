@@ -33,7 +33,7 @@ func (c *Context) prewarmDirectory(id string) string {
 }
 
 func reviewDSHArgs(a drivers.CallArgs) drivers.DSHArgs {
-	return drivers.DSHArgs{Prompt: a.Prompt, Provider: a.Binding.Provider, Model: a.Model, Thinking: a.Binding.Thinking,
+	return drivers.DSHArgs{Native: a.Native, Managed: a.Managed, Prompt: a.Prompt, Provider: a.Binding.Provider, Model: a.Model, Thinking: a.Binding.Thinking,
 		PermissionMode: a.PermissionMode, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,
 		SessionID: a.SessionID, PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 		APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent}
@@ -65,9 +65,9 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 	if binding.Harness != "dsh" || c.missingKeyForRealDriver("review", binding.Channel) != "" {
 		return nil
 	}
-	a := reviewDSHArgs(drivers.CallArgs{Model: binding.Model, PermissionMode: c.Config.PermissionMode("review", binding.Harness),
+	a := reviewDSHArgs(drivers.CallArgs{Native: c.Config.NativeProfiles[binding.NativeProfile].Options, Model: binding.Model, PermissionMode: c.Config.PermissionMode("review", binding.Harness),
 		Cwd: c.unitCwd(packet), WorkspaceCwd: c.WorkspaceCwd, APIKeys: c.apiKeysFor(binding.Channel), Watchdog: c.wdog(),
-		Binding: config.LoopBinding{Harness: binding.Harness, Model: binding.Model, Channel: binding.Channel,
+		Binding: config.LoopBinding{NativeProfile: binding.NativeProfile, Harness: binding.Harness, Model: binding.Model, Channel: binding.Channel,
 			Provider: fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel), Thinking: binding.Thinking}})
 	a.PrewarmID = "warm-" + rand.Text()
 	a.PrewarmDirectory = c.prewarmDirectory(a.PrewarmID)
@@ -78,7 +78,7 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 	if err != nil {
 		return err
 	}
-	warm := &reviewPrewarm{binding: config.LoopBinding{Harness: "dsh", Provider: a.Provider, Model: a.Model, Channel: binding.Channel, Thinking: a.Thinking}, record: state.WorkerPrewarm{Version: 1, ID: a.PrewarmID, Scope: scope,
+	warm := &reviewPrewarm{binding: config.LoopBinding{NativeProfile: binding.NativeProfile, Harness: "dsh", Provider: a.Provider, Model: a.Model, Channel: binding.Channel, Thinking: a.Thinking}, record: state.WorkerPrewarm{Version: 1, ID: a.PrewarmID, Scope: scope,
 		Binding: identity, StartedAt: c.nowISO(), EngineRunID: c.runID}}
 	if c.runID != "" && c.metricsFile != "" {
 		warm.phase = &metrics.Phase{ID: a.PrewarmID, Run: c.runID, Name: "worker-prewarm", Scope: scope, ParentID: c.phaseParent, StartedAt: c.Now()}

@@ -8,10 +8,24 @@ function identifier(value) {
   return typeof value === 'string' && value.trim() !== '' && value.length <= 256 && !value.includes('\0');
 }
 
+/** Host-owned attribution, not provider arguments. External callers cannot supply leases. */
+export function validateNativeAdmission(value, requestId, WorkerError) {
+  if (value === undefined) return;
+  const fields = ['version', 'runId', 'invocationId', 'role', 'scope', 'candidateId', 'channel', 'taskDir'];
+  const text = value => typeof value === 'string' && value.trim() !== '' && value.length <= 4096 && !value.includes('\0');
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 ||
+      Object.keys(value).some(key => !fields.includes(key)) || value.invocationId !== requestId ||
+      !['invocationId', 'role', 'scope', 'channel', 'taskDir'].every(key => text(value[key])) ||
+      typeof value.runId !== 'string' || value.runId.length > 4096 || value.runId.includes('\0') ||
+      (value.candidateId !== undefined && !text(value.candidateId)) || !isAbsolute(value.taskDir)) {
+    throw new WorkerError('INVALID_REQUEST', 'The managed native identity must match this request and contain only host attribution fields');
+  }
+}
+
 /** Recovery carries only the old non-secret binding, never a prompt. */
 export function recoveryRequest(value, WorkerError) {
   const keys = new Set(['type', 'protocol', 'requestId', 'runId', 'recoveryDirectory', 'original']);
-  const originalKeys = new Set(['cwd', 'model', 'reasoningEffort', 'permissionMode', 'threadMode', 'threadId']);
+  const originalKeys = new Set(['cwd', 'model', 'reasoningEffort', 'permissionMode', 'threadMode', 'threadId', 'native', 'nativeOperation', 'managed']);
   const o = value?.original;
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.type !== 'recover' || value.protocol !== 3 ||
       Object.keys(value).some(key => !keys.has(key)) || !identifier(value.requestId) || !identifier(value.runId) ||
@@ -23,13 +37,16 @@ export function recoveryRequest(value, WorkerError) {
       (o.threadId !== undefined && (o.threadMode !== 'persistent' || !identifier(o.threadId)))) {
     throw new WorkerError('INVALID_REQUEST', 'Expected a protocol 3 read-only recovery request with the original non-secret binding');
   }
+  validateNativeAdmission(o.managed, value.requestId, WorkerError);
   // No cwd resolution, login, runMachine, thread/resume or model request here.
   return { protocol: 1, requestId: value.requestId, runId: value.runId, recoveryDirectory: value.recoveryDirectory };
 }
 
 // Parent lifeline and bounded transport; adapters own backend semantics.
 export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapter, machineRequest, doctorResult,
-  label, commandName, attestAdmission = false, runtimeOptions = () => ({}) }) {
+  label, commandName, attestAdmission = false, runtimeOptions = () => ({}),
+  invokeAdapter = (api, request, options) => api.runMachine(request, options),
+  recoverAdapter = (api, request) => api.recoverMachine(request) }) {
   const controller = new AbortController();
   let cancelledBy, inputFailure, outputFailure, requestId = 'invalid-request', protocol = 1, finished = false, adapterInvoked = false;
   let recovery = false, pendingAck, lifecycleSequence = 0, lifecycleRunId, lifecycleBytes = 0;
@@ -190,7 +207,7 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
       }
       if (recovery) {
         const query = recoveryRequest(value, WorkerError);
-        const evidence = await api.recoverMachine(query);
+        const evidence = await recoverAdapter(api, query, value.original);
         finished = true;
         lifeline.stop();
         const error = inputFailure || outputFailure;
@@ -211,13 +228,30 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
               outputFailure ??= new WorkerError('OUTPUT_LIMIT', label + ' progress exceeded the 1 MiB stream limit');
               controller.abort();
             } else write(frame);
+          },
+          onNativeEvent(event) {
+            if (controller.signal.aborted) return;
+            if (!event || typeof event !== 'object' || Array.isArray(event) || event.version !== 1 ||
+                !Number.isSafeInteger(event.sequence) || event.sequence < 1 || !identifier(event.id) ||
+                !identifier(event.kind) || typeof event.state !== 'string' ||
+                (event.parentId !== null && !identifier(event.parentId))) {
+              outputFailure ??= new WorkerError('INVALID_NATIVE_EVENT', 'The adapter emitted invalid native child metadata');
+              controller.abort(); return;
+            }
+            const frame = { protocol, type: 'native-event', requestId, adapter: ADAPTER, native: event,
+              ...(value.managed === undefined ? {} : { managed: value.managed }) };
+            progressBytes += Buffer.byteLength(JSON.stringify(frame) + '\n');
+            if (progressBytes > LIMITS.progressBytes) {
+              outputFailure ??= new WorkerError('OUTPUT_LIMIT', label + ' native evidence exceeded the 1 MiB stream limit');
+              controller.abort();
+            } else write(frame);
           } };
         adapterInvoked = true;
-        const receipt = await api.runMachine(request, options);
+        const receipt = await invokeAdapter(api, request, options);
         finished = true;
         lifeline.stop();
         const error = inputFailure || outputFailure;
-        if (outputFailure?.code === 'OUTPUT_LIMIT') outputFailure = undefined;
+        if (['OUTPUT_LIMIT', 'INVALID_NATIVE_EVENT'].includes(outputFailure?.code)) outputFailure = undefined;
         write({ protocol, type: 'result', requestId, adapter: ADAPTER, receipt,
           error: error ? { code: error.code, message: error.message } : null });
         process.exitCode = receipt.ok && !error && !controller.signal.aborted ? 0 : 1;

@@ -27,6 +27,7 @@ retries, budgets, workspaces, and delivery. Use it from the DeepSeek Harness
 - **Coordinates bounded parallel execution.** Packets with explicit
   dependencies and non-overlapping write scopes can execute concurrently;
   review and integration remain coordinated by the engine.
+- **Uses native harness capabilities.** Select PTC Agents/Teams, Kimi Swarm/Tower, Codex agents, Claude Workflows or managed LCU per role; see [native capabilities](docs/en/native-capabilities.md).
 - **Provides a desktop workbench.** Inspect task progress, evidence, sessions,
   run history, and configuration from DSH's native Flywheel view.
 - **Makes failures visible.** Unknown execution, usage, or cleanup stays

@@ -28,11 +28,19 @@ func (c *Context) executionPolicy(packet *contract.Packet) (*state.ExecutionPoli
 	}
 	bindings := map[string]config.ExecutionBinding{}
 	channels := map[string]config.Channel{}
+	native := map[string]config.NativeProfile{}
 	for _, id := range route.Allowed {
 		binding := p.Bindings[id]
 		bindings[id], channels[binding.Channel] = binding, c.Config.Channels[binding.Channel]
+		if binding.NativeProfile != "" {
+			native[binding.NativeProfile] = c.Config.NativeProfiles[binding.NativeProfile]
+		}
 	}
-	identity := sessionHash([]any{p.Version, route, bindings, channels})
+	identityInput := []any{p.Version, route, bindings, channels}
+	if len(native) != 0 {
+		identityInput = append(identityInput, native)
+	}
+	identity := sessionHash(identityInput)
 	if record == nil {
 		record = &state.ExecutionPolicyRecord{Version: 1, Identity: identity, Route: packet.Route, Current: route.Initial}
 		c.State.Packets[packet.PacketID].ExecutionPolicy = record
@@ -53,11 +61,11 @@ func (c *Context) executionBinding(packet *contract.Packet) (fallback.Binding, s
 		return binding, c.Config.PermissionMode("execute", binding.Harness, "routes."+packet.Route), "", err
 	}
 	b := c.Config.ExecutionPolicy.Bindings[record.Current]
-	return fallback.Binding{Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, nil
+	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, nil
 }
 
 func executionConfiguration(b config.ExecutionBinding) state.SessionConfiguration {
-	return state.SessionConfiguration{Harness: b.Harness, Model: b.Model, Provider: b.Provider, Channel: b.Channel, Thinking: b.Thinking, Permission: b.Permission, SessionMode: b.SessionMode}
+	return state.SessionConfiguration{NativeProfile: b.NativeProfile, Harness: b.Harness, Model: b.Model, Provider: b.Provider, Channel: b.Channel, Thinking: b.Thinking, Permission: b.Permission, SessionMode: b.SessionMode}
 }
 
 func (c *Context) switchExecutionPolicy(packet *contract.Packet, record *state.ExecutionPolicyRecord, route config.ExecutionRoute, next, kind, reason string) bool {

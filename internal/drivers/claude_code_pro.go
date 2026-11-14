@@ -21,7 +21,7 @@ import (
 const (
 	ClaudeCodeProWorkerEnv      = "FLYWHEEL_CLAUDE_CODE_PRO_WORKER"
 	ClaudeCodeProBinaryEnv      = "FLYWHEEL_CLAUDE_BIN"
-	ClaudeCodeProPackageVersion = "0.4.0"
+	ClaudeCodeProPackageVersion = "0.5.0"
 	claudeCodeProCleanupMS      = int64(10_000)
 	claudeCodeProRequestBytes   = 1 << 20 // worker LIMITS.requestBytes, including the JSONL newline
 )
@@ -53,6 +53,8 @@ func ClaudeCodeProBinary() string {
 }
 
 type ClaudeCodeProArgs struct {
+	Native            json.RawMessage
+	Managed           *NativeAdmission
 	Prompt            string
 	Model             string
 	ReasoningEffort   string
@@ -70,21 +72,24 @@ type ClaudeCodeProArgs struct {
 }
 
 type claudeCodeProStart struct {
-	Type              string `json:"type"`
-	Protocol          int    `json:"protocol"`
-	RequestID         string `json:"requestId"`
-	Cwd               string `json:"cwd"`
-	Model             string `json:"model"`
-	ReasoningEffort   string `json:"reasoningEffort"`
-	PermissionMode    string `json:"permissionMode"`
-	Prompt            string `json:"prompt"`
-	TimeoutMS         int64  `json:"timeoutMs"`
-	ThreadMode        string `json:"threadMode,omitempty"`
-	ThreadID          string `json:"threadId,omitempty"`
-	RecoveryDirectory string `json:"recoveryDirectory,omitempty"`
+	Native            json.RawMessage  `json:"native,omitempty"`
+	Managed           *NativeAdmission `json:"managed,omitempty"`
+	Type              string           `json:"type"`
+	Protocol          int              `json:"protocol"`
+	RequestID         string           `json:"requestId"`
+	Cwd               string           `json:"cwd"`
+	Model             string           `json:"model"`
+	ReasoningEffort   string           `json:"reasoningEffort"`
+	PermissionMode    string           `json:"permissionMode"`
+	Prompt            string           `json:"prompt"`
+	TimeoutMS         int64            `json:"timeoutMs"`
+	ThreadMode        string           `json:"threadMode,omitempty"`
+	ThreadID          string           `json:"threadId,omitempty"`
+	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
 }
 
 type claudeCodeProParsed struct {
+	NativeReceipt    json.RawMessage
 	Receipt          json.RawMessage
 	Text             string
 	Usage            *Usage
@@ -128,11 +133,12 @@ func (e *claudeCodeProExecution) UnmarshalJSON(raw []byte) error {
 }
 
 type claudeCodeProReceipt struct {
-	Protocol  int    `json:"protocol"`
-	Type      string `json:"type"`
-	RequestID string `json:"requestId"`
-	RunID     string `json:"runId"`
-	OK        *bool  `json:"ok"`
+	Native    json.RawMessage `json:"native"`
+	Protocol  int             `json:"protocol"`
+	Type      string          `json:"type"`
+	RequestID string          `json:"requestId"`
+	RunID     string          `json:"runId"`
+	OK        *bool           `json:"ok"`
 	Requested struct {
 		Cwd            string          `json:"cwd"`
 		Model          string          `json:"model"`
@@ -189,6 +195,7 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 	parsed := claudeCodeProParsed{Session: claudeCodeProUnknownSession(request)}
 	lifecycle := machineLifecycleFlow{harness: "claude-code-pro", request: codexProStart(request)}
 	terminal, trusted := false, true
+	var nativeSequence int64
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -220,6 +227,11 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 			break
 		}
 		switch frame.Type {
+		case "native-event":
+			if err := validateProNativeEvent(json.RawMessage(line), "claude-code-pro", codexProStart(request), &nativeSequence); err != nil {
+				trusted = false
+				parsed.Error = err.Error()
+			}
 		case "lifecycle":
 			if _, err := lifecycle.frame([]byte(line)); err != nil || request.Protocol != 3 {
 				trusted = false
@@ -287,9 +299,27 @@ func claudeCodeProAdmissionError(code string) bool {
 	}
 }
 
-func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) claudeCodeProParsed {
-	parsed := claudeCodeProParsed{Receipt: raw, Session: claudeCodeProUnknownSession(request)}
+func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) (parsed claudeCodeProParsed) {
+	parsed = claudeCodeProParsed{Receipt: raw, Session: claudeCodeProUnknownSession(request)}
 	var receipt claudeCodeProReceipt
+	defer func() {
+		parsed.NativeReceipt = receipt.Native
+		if receipt.OK == nil {
+			return
+		}
+		fold, err := foldProNative("claude-code-pro", request.Native, receipt.Native, *receipt.OK, parsed.CleanupConfirmed,
+			parsed.Session.Dispatch == "not-dispatched", parsed.Session.SessionID, parsed.Usage, parsed.Session.UsageStatus)
+		if err != nil {
+			parsed.Error = err.Error()
+			parsed.Settled, parsed.CleanupConfirmed, parsed.Usage = false, false, nil
+			parsed.Session.Outcome, parsed.Session.UsageStatus, parsed.Session.ResumeCandidate = "unknown", "unknown", false
+			return
+		}
+		parsed.Usage, parsed.Session.UsageStatus, parsed.CleanupConfirmed = fold.Usage, fold.Status, fold.Cleanup
+		if !fold.Completion {
+			parsed.Settled, parsed.Session.ResumeCandidate, parsed.Session.Outcome = false, false, "unknown"
+		}
+	}()
 	mode := "ephemeral"
 	if request.ThreadMode == "persistent" {
 		mode = "persistent"
@@ -396,7 +426,7 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 			parsed.Settled = true
 			return parsed
 		}
-		if len(*receipt.Output) != 0 || (receipt.Failure.Category == "cleanup-unconfirmed" && *c.Confirmed) {
+		if len(*receipt.Output) != 0 || (receipt.Failure.Category == "cleanup-unconfirmed" && *c.Confirmed && len(receipt.Native) == 0) {
 			parsed.Error = "invalid request: Claude Code Pro failure contradicts its output or cleanup"
 			return parsed
 		}
@@ -459,7 +489,7 @@ func claudeCodeProFailureCode(category string) errs.ErrorCode {
 }
 
 func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
-	request := claudeCodeProStart{Type: "start", Protocol: 1, RequestID: a.RequestID}
+	request := claudeCodeProStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
 	if request.RequestID == "" {
 		request.RequestID = rand.Text()
 	}
@@ -513,10 +543,15 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	}
 	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
 	request.PermissionMode, request.Prompt, request.TimeoutMS = a.PermissionMode, a.Prompt, wallMS
-	// The request contains only strings and bounded integers, so JSON encoding
-	// cannot fail. Check and send the same bytes: JSON escaping and the newline
-	// count toward the worker boundary, not just the unencoded prompt length.
-	payload, _ := json.Marshal(request)
+	// Raw native controls must encode successfully before a worker is started.
+	// Escaping and the newline count toward the same bounded worker request.
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return reject("Claude Code Pro native request is not valid JSON: " + err.Error())
+	}
+	if err := validateProNativeRequest("claude-code-pro", request.Native); err != nil {
+		return reject(err.Error())
+	}
 	payload = append(payload, '\n')
 	if len(payload) > claudeCodeProRequestBytes {
 		return reject("Claude Code Pro start request exceeds the worker's 1 MiB JSONL limit")
@@ -542,6 +577,7 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = claudeCodeProUnknownSession(request), nil, false
 	}
 	out := fromWatchdog(result, "claude-code-pro", "", a.Model)
+	out.NativeReceipt = parsed.NativeReceipt
 	out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
 	out.Cancelled, out.TimedOut, out.Truncated = out.Cancelled || parsed.Cancelled, out.TimedOut || parsed.TimedOut, out.Truncated || parsed.Truncated
 	if result.Truncated {

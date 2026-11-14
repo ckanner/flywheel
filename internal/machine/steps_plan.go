@@ -257,7 +257,8 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			SessionID:      sessionID,
 			Model:          model,
 			Binding: config.LoopBinding{
-				Harness: harness, Provider: provider, Model: model, Channel: channel, Thinking: binding.Thinking,
+				NativeProfile: binding.NativeProfile,
+				Harness:       harness, Provider: provider, Model: model, Channel: channel, Thinking: binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  c.apiKeysFor(channel),
@@ -295,7 +296,9 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 	channel := binding.Channel
 	model, harness := binding.Model, binding.Harness
 	provider := fallback.ResolveProvider(c.Config, harness, binding.Provider, channel)
-	resident := c.Config.Loops["plan"].ResidentSession && harness == "kimi"
+	// Native Kimi history is owned by the scoped session ledger. Its server IDs
+	// must neither inherit nor overwrite the legacy CLI plan-session cache.
+	resident := c.Config.Loops["plan"].ResidentSession && harness == "kimi" && binding.NativeProfile == ""
 	permission := c.Config.PermissionMode("plan", harness)
 	// Resume only an explicitly matching model, channel, harness, directory,
 	// effort and permission policy. Older incomplete identities cold-start once.
@@ -377,7 +380,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 					harness = mapped.Harness
 				}
 				provider = fallback.ResolveProvider(c.Config, harness, "", channel)
-				resident = c.Config.Loops["plan"].ResidentSession && harness == "kimi"
+				resident = c.Config.Loops["plan"].ResidentSession && harness == "kimi" && binding.NativeProfile == ""
 				sessionID = "" // 新渠道开新会话
 				continue
 			}

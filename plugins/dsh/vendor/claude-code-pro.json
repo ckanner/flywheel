@@ -1,0 +1,21 @@
+{
+  "package": "dsh-subagent-claude-code-pro",
+  "version": "0.5.0",
+  "repository": "https://github.com/ckanner/dsh-subagent-claude-code-pro",
+  "sourceCommit": "e559153123f52a12c35b758633290cf6ebd4cf4b",
+  "sourceTree": "49ab2543721295bf1c27bb4504a01b41c9acf9fc",
+  "tarball": "dsh-subagent-claude-code-pro-0.5.0.tgz",
+  "sha256": "fb15e28f7216d6e49a6717bad2fd568d2e00e7724feaadafae54405fd7a7597d",
+  "integrity": "sha512-Rd5EsxHMhLi8e6P3bOMwFFO2GfKU73zTHqgNCx20MkkobRJ+QQDamd+12pSIQoSrFoAF9R+Ls50Mx8DcDGEzUA==",
+  "license": "MIT",
+  "registryReleaseVerified": true,
+  "registry": {
+    "tarball": "https://registry.npmjs.org/dsh-subagent-claude-code-pro/-/dsh-subagent-claude-code-pro-0.5.0.tgz",
+    "integrity": "sha512-Rd5EsxHMhLi8e6P3bOMwFFO2GfKU73zTHqgNCx20MkkobRJ+QQDamd+12pSIQoSrFoAF9R+Ls50Mx8DcDGEzUA==",
+    "verifiedAt": "2026-11-14T14:31:42.202800+00:00"
+  },
+  "verificationToolchain": {
+    "node": "24.22.1",
+    "npm": "12.2.1"
+  }
+}

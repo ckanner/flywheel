@@ -9,6 +9,7 @@ was staged. Proposed work is not automatically shipped work. The
 
 | Date | Proposal | Focus |
 | --- | --- | --- |
+| 2026-11-13 (revised 2026-11-14) | [Native harness, PTC and LCU integration](2026-11-13-native-harness-capabilities.en.md) / [中文](2026-11-13-native-harness-capabilities.md) | Implemented six-repository design: native profiles, PTC/LCU, Agent/Team/Swarm/Workflow, Tower candidates, independent jobs, ownership, accounting and recovery |
 | 2026-11-13 | [P5 ready queues and bounded runtime preparation](2026-11-13-p5-ready-queue-prewarm.md) (Chinese) | Optional admission queues, DSH initialization alongside verification, preserved delivery barriers, and existing-candidate assessment |
 | 2026-11-13 | [JEV execution decisions and bounded diagnostics](2026-11-13-jev-execution-decisions.md) (Chinese) | Reproduction commands, HTTP evidence, failure actions, allowed model selection, and shared durable budgets |
 | 2026-11-12 | [Unified JEV decisions](2026-11-12-unified-jev-decisions.md) (Chinese) | One master switch, actual investigation adoption, evidence-based deferral/report handoff, and durable recovery |

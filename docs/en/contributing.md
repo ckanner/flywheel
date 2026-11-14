@@ -90,11 +90,13 @@ Run the applicable checks from the repository root:
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
+
+`make test` and `make coverage` use a finite 15-minute Go package timeout (`FLYWHEEL_TEST_TIMEOUT`). The machine package includes hundreds of real Git and durable-state scenarios and needs this aggregate budget on macOS. This does not change production watchdogs, individual test guards, or the per-function 100% coverage gate.
 
 | Change | Required verification |
 |---|---|
@@ -103,10 +105,10 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 | npm installation or release | Root npm tests, a complete single-package candidate build, and installation of that tarball |
 | Documentation | Links, anchors, fences, runnable examples, translation consistency, and affected embedding/package contents |
 
-The Claude bridge needs the exact optional 0.4.0 machine API in the worker's
+The Claude bridge needs the exact optional 0.5.0 machine API in the worker's
 dependency tree. An absent-peer skip does not verify that backend. Preserve the
 reviewed source/tarball identity when using a source candidate. Codex Pro's
-bundled 0.9.0 source package is likewise pinned by its actual integrity and
+bundled 0.10.0 source package is likewise pinned by its actual integrity and
 [vendor record](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 
 For lifecycle, state, or process changes, reproduce the Linux CI race check:

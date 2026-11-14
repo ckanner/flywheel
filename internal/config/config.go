@@ -20,6 +20,7 @@ import (
 
 // LoopBinding 非 execute 角色的绑定（loops 表）。
 type LoopBinding struct {
+	NativeProfile   string `json:"native-profile,omitempty"`
 	Harness         string `json:"harness"`
 	Model           string `json:"model"`
 	Channel         string `json:"channel"`
@@ -32,11 +33,12 @@ type LoopBinding struct {
 
 // RouteBinding execute 角色按 packet.route 的绑定（routes 表）。
 type RouteBinding struct {
-	Harness  string `json:"harness"`
-	Model    string `json:"model"`
-	Channel  string `json:"channel"`
-	Provider string `json:"provider,omitempty"`
-	Thinking string `json:"thinking"`
+	NativeProfile string `json:"native-profile,omitempty"`
+	Harness       string `json:"harness"`
+	Model         string `json:"model"`
+	Channel       string `json:"channel"`
+	Provider      string `json:"provider,omitempty"`
+	Thinking      string `json:"thinking"`
 }
 
 // Channel 渠道定义：env-key 可为 null（订阅 OAuth 登录，无 key 注入）。
@@ -51,11 +53,12 @@ type Channel struct {
 
 // ModelProfile is a reusable model binding. Session policy belongs to its loop.
 type ModelProfile struct {
-	Harness  string `json:"harness"`
-	Model    string `json:"model"`
-	Channel  string `json:"channel"`
-	Provider string `json:"provider,omitempty"`
-	Thinking string `json:"thinking,omitempty"`
+	NativeProfile string `json:"native-profile,omitempty"`
+	Harness       string `json:"harness"`
+	Model         string `json:"model"`
+	Channel       string `json:"channel"`
+	Provider      string `json:"provider,omitempty"`
+	Thinking      string `json:"thinking,omitempty"`
 }
 
 // Price 每百万 token 的美元价（pricing 表）。
@@ -147,30 +150,31 @@ type SchedulerConfig struct {
 }
 
 type Config struct {
-	ExecutionPolicy *ExecutionPolicy        `json:"execution-policy,omitempty"`
-	JEV             JEVConfig               `json:"jev"`
-	Scheduler       SchedulerConfig         `json:"scheduler"`
-	Version         *int                    `json:"version"`
-	Drivers         map[string]string       `json:"drivers"`
-	Loops           map[string]LoopBinding  `json:"loops"`
-	Routes          map[string]RouteBinding `json:"routes"`
-	Channels        map[string]Channel      `json:"channels"`
-	Profiles        map[string]ModelProfile `json:"profiles,omitempty"`
-	ProfileRefs     map[string]string       `json:"-"`
-	Budget          BudgetConfig            `json:"budget"`
-	Watchdog        WatchdogConfig          `json:"watchdog"`
-	Retry           RetryConfig             `json:"retry"`
-	Credentials     CredentialsConfig       `json:"credentials"`
-	Verify          VerifyConfig            `json:"verify"`
-	DefectInjection DefectInjectionConfig   `json:"defect-injection"`
-	Worktree        WorktreeConfig          `json:"worktree"`
-	Permissions     PermissionsConfig       `json:"permissions"`
-	Sessions        SessionsConfig          `json:"sessions"`
-	JudgePanel      *LoopBinding            `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
-	Intake          IntakeConfig            `json:"intake"`
-	Pricing         map[string]Price        `json:"pricing"`
-	MockBehaviors   map[string]any          `json:"mock-behaviors"`
-	File            string                  `json:"-"`
+	NativeProfiles  map[string]NativeProfile `json:"native-profiles,omitempty"`
+	ExecutionPolicy *ExecutionPolicy         `json:"execution-policy,omitempty"`
+	JEV             JEVConfig                `json:"jev"`
+	Scheduler       SchedulerConfig          `json:"scheduler"`
+	Version         *int                     `json:"version"`
+	Drivers         map[string]string        `json:"drivers"`
+	Loops           map[string]LoopBinding   `json:"loops"`
+	Routes          map[string]RouteBinding  `json:"routes"`
+	Channels        map[string]Channel       `json:"channels"`
+	Profiles        map[string]ModelProfile  `json:"profiles,omitempty"`
+	ProfileRefs     map[string]string        `json:"-"`
+	Budget          BudgetConfig             `json:"budget"`
+	Watchdog        WatchdogConfig           `json:"watchdog"`
+	Retry           RetryConfig              `json:"retry"`
+	Credentials     CredentialsConfig        `json:"credentials"`
+	Verify          VerifyConfig             `json:"verify"`
+	DefectInjection DefectInjectionConfig    `json:"defect-injection"`
+	Worktree        WorktreeConfig           `json:"worktree"`
+	Permissions     PermissionsConfig        `json:"permissions"`
+	Sessions        SessionsConfig           `json:"sessions"`
+	JudgePanel      *LoopBinding             `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
+	Intake          IntakeConfig             `json:"intake"`
+	Pricing         map[string]Price         `json:"pricing"`
+	MockBehaviors   map[string]any           `json:"mock-behaviors"`
+	File            string                   `json:"-"`
 }
 
 // Default 返回 §13 法定默认值表（Go 迁移时与 Node CONFIG_DEFAULTS 逐字一致；
@@ -276,6 +280,9 @@ func (c *Config) Normalize() {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
+	if err := c.validateNativeProfiles(); err != nil {
+		return err
+	}
 	var jev any
 	_ = json.Unmarshal(configJSON(c.JEV), &jev)
 	if err := validateJEV(jev); err != nil {

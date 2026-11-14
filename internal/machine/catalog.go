@@ -233,13 +233,13 @@ func (c *Context) runQuality(before map[string]state.PacketState) RunQuality {
 func (c *Context) runBindings() map[string]state.SessionConfiguration {
 	result := map[string]state.SessionConfiguration{}
 	add := func(id, role string, binding config.LoopBinding) {
-		result[id] = state.SessionConfiguration{Harness: binding.Harness, Model: binding.Model, Provider: fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel), Channel: binding.Channel, Thinking: binding.Thinking, Permission: c.Config.PermissionMode(role, binding.Harness, id), SessionMode: c.Config.Sessions.ModeForRole(role)}
+		result[id] = state.SessionConfiguration{NativeProfile: binding.NativeProfile, Harness: binding.Harness, Model: binding.Model, Provider: fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel), Channel: binding.Channel, Thinking: binding.Thinking, Permission: c.Config.PermissionMode(role, binding.Harness, id), SessionMode: c.Config.Sessions.ModeForRole(role)}
 	}
 	for role, binding := range c.Config.Loops {
 		add("loops."+role, role, binding)
 	}
 	for route, binding := range c.Config.Routes {
-		add("routes."+route, "execute", config.LoopBinding{Harness: binding.Harness, Model: binding.Model, Provider: binding.Provider, Channel: binding.Channel, Thinking: binding.Thinking})
+		add("routes."+route, "execute", config.LoopBinding{NativeProfile: binding.NativeProfile, Harness: binding.Harness, Model: binding.Model, Provider: binding.Provider, Channel: binding.Channel, Thinking: binding.Thinking})
 	}
 	if c.Config.JudgePanel != nil {
 		add("judge-panel", "judge-panel", *c.Config.JudgePanel)

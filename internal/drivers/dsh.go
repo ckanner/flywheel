@@ -20,6 +20,8 @@ const DSHWorkerEnv = "FLYWHEEL_DSH_WORKER"
 
 // DSHArgs binds one SDK worker to one provider/model and permission scope.
 type DSHArgs struct {
+	Native            json.RawMessage
+	Managed           *NativeAdmission
 	Prewarm           PreparedDSH // one-use SDK initialization, never a shared model session
 	PrewarmID         string      // durable owner-chosen random identity before startup
 	PrewarmDirectory  string      // existing private physical directory for pre-dispatch cleanup evidence
@@ -50,23 +52,26 @@ func DSHCommand() string {
 }
 
 type dshStart struct {
-	Type            string `json:"type"`
-	Protocol        int    `json:"protocol"`
-	RequestID       string `json:"requestId"`
-	Cwd             string `json:"cwd"`
-	WorkspaceCwd    string `json:"workspaceCwd,omitempty"`
-	SessionTitle    string `json:"sessionTitle,omitempty"`
-	Provider        string `json:"provider"`
-	Model           string `json:"model"`
-	ReasoningEffort string `json:"reasoningEffort"`
-	PermissionMode  string `json:"permissionMode"`
-	Prompt          string `json:"prompt"`
-	TimeoutMS       int64  `json:"timeoutMs,omitempty"`
-	SessionID       string `json:"sessionId,omitempty"`
-	Persistent      bool   `json:"persistent,omitempty"`
+	Native          json.RawMessage  `json:"native,omitempty"`
+	Managed         *NativeAdmission `json:"managed,omitempty"`
+	Type            string           `json:"type"`
+	Protocol        int              `json:"protocol"`
+	RequestID       string           `json:"requestId"`
+	Cwd             string           `json:"cwd"`
+	WorkspaceCwd    string           `json:"workspaceCwd,omitempty"`
+	SessionTitle    string           `json:"sessionTitle,omitempty"`
+	Provider        string           `json:"provider"`
+	Model           string           `json:"model"`
+	ReasoningEffort string           `json:"reasoningEffort"`
+	PermissionMode  string           `json:"permissionMode"`
+	Prompt          string           `json:"prompt"`
+	TimeoutMS       int64            `json:"timeoutMs,omitempty"`
+	SessionID       string           `json:"sessionId,omitempty"`
+	Persistent      bool             `json:"persistent,omitempty"`
 }
 
 type dshParsed struct {
+	NativeReceipt    json.RawMessage
 	SessionID        string
 	Text             string
 	Usage            *Usage
@@ -120,6 +125,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			continue
 		}
 		var frame struct {
+			Native          json.RawMessage `json:"native"`
 			Type            string          `json:"type"`
 			Protocol        int             `json:"protocol"`
 			RequestID       string          `json:"requestId"`
@@ -172,7 +178,16 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			if !ready || frame.SessionID != parsed.SessionID || len(frame.Event) == 0 || string(frame.Event) == "null" {
 				parsed.Error = "DSH worker event arrived without a matching ready session"
 			}
+		case "native-event":
+			if len(request.Native) == 0 || !ready || frame.SessionID != parsed.SessionID || len(frame.Event) == 0 || string(frame.Event) == "null" {
+				parsed.Error = "native event arrived without a matching admitted invocation"
+			}
 		case "result":
+			if err := validateNativeReceipt(request.Native, frame.Native, frame.Status == "ok", frame.Settled); err != nil {
+				parsed.Error = err.Error()
+				break
+			}
+			parsed.NativeReceipt = frame.Native
 			terminal = true
 			cleanupConfirmed = frame.Settled
 			if !frame.Settled {
@@ -316,7 +331,7 @@ func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 	if effort == "" {
 		effort = "high"
 	}
-	request := dshStart{Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
+	request := dshStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
 		Provider: a.Provider, Model: a.Model, ReasoningEffort: effort,
 		WorkspaceCwd: project, SessionTitle: a.SessionTitle,
 		PermissionMode: permission, Prompt: a.Prompt, TimeoutMS: a.Watchdog.WallTimeoutMs}
@@ -338,7 +353,7 @@ func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 		command = DSHCommand()
 	}
 	env := childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)
-	for _, key := range []string{"FLYWHEEL_DSH_BIN", "FLYWHEEL_DSH_PROFILE", "DSH_HOME"} {
+	for _, key := range []string{"FLYWHEEL_DSH_BIN", "FLYWHEEL_DSH_PROFILE", "DSH_HOME", "FLYWHEEL_RESOURCE_DIR"} {
 		if value, ok := os.LookupEnv(key); ok {
 			env[key] = value
 		}
@@ -363,7 +378,7 @@ func RunDSH(a DSHArgs) Result {
 	result := watchdog.Run(command, argv, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: request.Cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs: a.Watchdog.KillGraceMs, OnActivity: onActivity,
+		KillGraceMs: dshCleanupGrace(a), OnActivity: onActivity,
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			err := json.NewEncoder(stdin).Encode(request)
 			_ = stdin.Close()
@@ -393,6 +408,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		parsed.Usage, parsed.CostUSD = nil, nil
 	}
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
+	out.NativeReceipt = parsed.NativeReceipt
 	out.ErrorCode = parsed.ErrorCode
 	if out.CleanupError == "" {
 		out.CleanupError = parsed.CleanupError

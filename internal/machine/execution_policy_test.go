@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,6 +108,73 @@ func TestExecutionPolicyChannelFallbackRemainsDistinctAndBounded(t *testing.T) {
 				require.Empty(t, ps.ExecutionPolicy.History)
 			}
 			require.Zero(t, ps.FailedAttempts, "channel fallback is not a code quality failure")
+		})
+	}
+}
+
+func TestExecutionPolicyChannelFallbackSelectsTheAdmittedNativeProfile(t *testing.T) {
+	for _, target := range []string{"same harness", "different harness", "no native profile"} {
+		t.Run(target, func(t *testing.T) {
+			fx, c := sessionFixture(t)
+			enableExecutionPolicy(c)
+			c.Config.NativeProfiles = map[string]config.NativeProfile{
+				"source": {Harness: "dsh", Options: json.RawMessage(`{"version":1,"preset":"heavy","agents":{"enabled":false}}`)},
+				"target": {Harness: "dsh", Options: json.RawMessage(`{"version":1,"preset":"daily","agents":{"enabled":true}}`)},
+			}
+			initial := c.Config.ExecutionPolicy.Bindings["low"]
+			initial.NativeProfile = "source"
+			c.Config.ExecutionPolicy.Bindings["low"] = initial
+			selected := c.Config.ExecutionPolicy.Bindings["backup"]
+			selected.NativeProfile = "target"
+			if target == "different harness" {
+				selected.Harness, selected.Provider, selected.Model, selected.Permission = "kimi", "", "native-kimi-model", "danger-full-access"
+				c.Config.NativeProfiles["target"] = config.NativeProfile{Harness: "kimi", Options: json.RawMessage(`{"version":1,"mode":"swarm"}`)}
+				c.Config.Channels[selected.Channel] = config.Channel{Harness: "kimi", Models: map[string]string{"default": selected.Model}}
+			} else if target == "no native profile" {
+				selected.NativeProfile = ""
+			}
+			c.Config.ExecutionPolicy.Bindings["backup"] = selected
+			sd := happyDrivers()
+			calls := 0
+			sd.execFn = func(a drivers.CallArgs) drivers.Result {
+				calls++
+				if calls == 1 {
+					require.Equal(t, initial.NativeProfile, a.Binding.NativeProfile)
+					require.JSONEq(t, string(c.Config.NativeProfiles[initial.NativeProfile].Options), string(a.Native))
+					return drivers.MockResult(func(r *drivers.Result) {
+						r.ExitCode = new(1)
+						r.ErrorCode = errs.QUOTA
+						r.ErrorMessage = new("quota exhausted")
+					})
+				}
+				require.Equal(t, selected.NativeProfile, a.Binding.NativeProfile)
+				require.Equal(t, selected.Harness, a.Binding.Harness)
+				require.Equal(t, selected.Channel, a.Binding.Channel)
+				require.Equal(t, selected.Model, a.Model)
+				require.Equal(t, selected.Permission, a.PermissionMode, "fallback uses only the explicitly allowed permission")
+				require.Empty(t, a.SessionID, "native profile and channel changes cannot reuse old ownership")
+				if selected.NativeProfile == "" {
+					require.Empty(t, a.Native)
+				} else {
+					require.JSONEq(t, string(c.Config.NativeProfiles[selected.NativeProfile].Options), string(a.Native))
+				}
+				return sd.mock.Execute(a)
+			}
+			c.Drivers = sessionDriverSet(sd)
+			out, err := c.executeStep(c.Packets["M01-T01"])
+			require.NoError(t, err)
+			require.True(t, out.Success)
+			require.Equal(t, 2, calls)
+			ps := c.State.Packets["M01-T01"]
+			require.Len(t, ps.ExecutionPolicy.History, 1)
+			require.Equal(t, "channel-fallback", ps.ExecutionPolicy.History[0].Kind)
+			require.Equal(t, selected.NativeProfile, ps.ExecutionPolicy.History[0].After.NativeProfile)
+			require.Zero(t, ps.FailedAttempts)
+			loaded := loadFixtureState(t, fx)
+			record := loaded.Sessions.Records["execute/M01-T01"]
+			require.Equal(t, selected.NativeProfile, record.Configuration.NativeProfile)
+			require.Equal(t, selected.Harness, record.Configuration.Harness)
+			require.Equal(t, selected.Permission, record.Configuration.Permission)
 		})
 	}
 }

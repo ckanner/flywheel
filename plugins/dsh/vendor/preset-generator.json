@@ -1,0 +1,16 @@
+{
+  "package": "dsh-preset-generator",
+  "version": "0.4.0",
+  "repository": "https://github.com/ckanner/dsh-preset-generator",
+  "sourceCommit": "3dc21791b1efe81bea9a26aa9e92ff2172b4f645",
+  "sourceTree": "877ea728cad4d8ef4b21a691df2a03cfc9075efc",
+  "tarball": "dsh-preset-generator-0.4.0.tgz",
+  "sha256": "25e6a718605dfb3fc0f8869d1685dc44d2e1f35375ea8c184825bfe21564a141",
+  "integrity": "sha512-XLqrxSObp+OWvslJlWc//bHrXDEK1FLmCwqHpBJSzvKAAMVZH0jglEAXazD4/iWhw2TM8M2vWMN8iHXTCAhmbQ==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "toolchain": {
+    "node": "24.22.1",
+    "npm": "12.2.1"
+  }
+}

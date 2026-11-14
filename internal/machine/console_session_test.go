@@ -288,3 +288,127 @@ func TestHumanControlCanBeReleasedWithoutClaimingVerification(t *testing.T) {
 	require.Equal(t, "paused", c.State.Status)
 	require.Nil(t, c.State.Packets["M01-T01"].Evidence.Review)
 }
+
+func nativeKimiHandoffFixture(t *testing.T, mode string) (fixture, *Context, drivers.CallArgs) {
+	t.Helper()
+	fx, c := sessionFixture(t)
+	t.Setenv(drivers.KimiNativeWorkerEnv, "/owned/kimi-native-worker")
+	c.Config.Permissions.Mode = "full-access"
+	c.Config.Channels["native-account"] = config.Channel{}
+	c.Config.NativeProfiles = map[string]config.NativeProfile{"native": {
+		Harness: "kimi", Options: json.RawMessage(`{"version":1,"mode":"` + mode + `","agents":{"enabled":true}}`),
+	}}
+	c.Config.Routes["default"] = config.RouteBinding{Harness: "kimi", Model: "test-model", Channel: "native-account", NativeProfile: "native"}
+	a := sessionArgs(c)
+	a.PermissionMode = "danger-full-access"
+	a.Binding = config.LoopBinding{Harness: "kimi", Model: "test-model", Channel: "native-account", NativeProfile: "native"}
+	result, err := c.invokeScoped("execute", a.PacketID, a, func(a drivers.CallArgs) drivers.Result {
+		require.JSONEq(t, string(c.Config.NativeProfiles["native"].Options), string(a.Native))
+		require.True(t, a.PersistentSession)
+		require.Empty(t, a.SessionID)
+		result := sessionResult(a, drivers.MockResult(nil))
+		result.Harness, result.Session.Protocol = "kimi", drivers.KimiNativeProtocol
+		return result
+	})
+	require.NoError(t, err)
+	applySessionResult(t, c, "execute", a.PacketID, result)
+	return fx, c, a
+}
+
+func TestNativeKimiScopedSessionCanBeClaimedContinuedAndReturnedToEngine(t *testing.T) {
+	for _, mode := range []string{"agent", "swarm"} {
+		t.Run(mode, func(t *testing.T) {
+			fx, c, args := nativeKimiHandoffFixture(t, mode)
+			original := c.sessionRecord("execute", args.PacketID)
+			thread, binding, invocation := original.ThreadID, original.Binding, original.Last.ID
+			// Reconstruct the record from the real schema-validated state. A
+			// matching string in an in-memory fake is not enough for takeover.
+			stored := loadFixtureState(t, fx)
+			c.State.Sessions = stored.Sessions
+			require.JSONEq(t, string(c.Config.NativeProfiles["native"].Options), string(stored.Sessions.Records["execute/M01-T01"].Configuration.NativeOptions))
+			_, err := c.runSessionCommand(sessionRequest("claim"))
+			require.NoError(t, err)
+			oldInvoke := consoleInvoke
+			t.Cleanup(func() { consoleInvoke = oldInvoke })
+			manualCalls := 0
+			consoleInvoke = func(a drivers.CallArgs, model string) drivers.Result {
+				manualCalls++
+				require.Equal(t, thread, a.SessionID)
+				require.Equal(t, thread, a.ExpectedSessionID)
+				require.True(t, a.PersistentSession)
+				require.Equal(t, args.PermissionMode, a.PermissionMode)
+				require.Equal(t, args.Binding, a.Binding)
+				require.Equal(t, args.Model, model)
+				require.JSONEq(t, string(c.Config.NativeProfiles["native"].Options), string(a.Native))
+				require.Equal(t, a.RequestID, a.Managed.InvocationID)
+				require.Equal(t, "execute", a.Managed.Role)
+				result := sessionResult(a, drivers.MockResult(nil))
+				result.Harness, result.Session.Protocol = "kimi", drivers.KimiNativeProtocol
+				return result
+			}
+			_, err = c.runSessionCommand(sessionRequest("send"))
+			require.NoError(t, err)
+			require.Equal(t, 1, manualCalls)
+			continued := c.sessionRecord("execute", args.PacketID)
+			require.Equal(t, thread, continued.ThreadID)
+			require.Equal(t, binding, continued.Binding)
+			require.Equal(t, "resume", continued.Action)
+			require.Equal(t, 1, continued.Generation)
+			require.NotEqual(t, invocation, continued.Last.ID)
+			require.Equal(t, "consumed", continued.Last.Status)
+			require.Nil(t, c.State.Packets[args.PacketID].Evidence.Review)
+			_, err = c.runSessionCommand(sessionRequest("release"))
+			require.NoError(t, err)
+			result, err := c.invokeScoped("execute", args.PacketID, args, func(a drivers.CallArgs) drivers.Result {
+				require.Equal(t, thread, a.SessionID, "ordinary scoped execution resumes the same admitted native owner")
+				require.JSONEq(t, string(c.Config.NativeProfiles["native"].Options), string(a.Native))
+				return sessionResult(a, drivers.MockResult(nil))
+			})
+			require.NoError(t, err)
+			applySessionResult(t, c, "execute", args.PacketID, result)
+		})
+	}
+}
+
+func TestNativeKimiHandoffRejectsMissingChangedOrForeignProfilesBeforeDispatch(t *testing.T) {
+	for _, action := range []string{"claim", "send"} {
+		for _, change := range []string{"missing profile", "foreign harness", "changed options", "changed worker"} {
+			t.Run(action+"/"+change, func(t *testing.T) {
+				_, c, args := nativeKimiHandoffFixture(t, "agent")
+				if action == "send" {
+					_, err := c.runSessionCommand(sessionRequest("claim"))
+					require.NoError(t, err)
+				}
+				before := c.sessionRecord("execute", args.PacketID).Last.ID
+				switch change {
+				case "missing profile":
+					delete(c.Config.NativeProfiles, "native")
+				case "foreign harness":
+					c.Config.NativeProfiles["native"] = config.NativeProfile{Harness: "codex-pro", Options: json.RawMessage(`{"version":1}`)}
+				case "changed options":
+					c.Config.NativeProfiles["native"] = config.NativeProfile{Harness: "kimi", Options: json.RawMessage(`{"version":1,"mode":"swarm"}`)}
+				case "changed worker":
+					t.Setenv(drivers.KimiNativeWorkerEnv, "/different/kimi-native-worker")
+				}
+				oldInvoke := consoleInvoke
+				t.Cleanup(func() { consoleInvoke = oldInvoke })
+				consoleInvoke = func(drivers.CallArgs, string) drivers.Result {
+					t.Fatal("changed native ownership dispatched a manual model call")
+					return drivers.Result{}
+				}
+				_, err := c.runSessionCommand(sessionRequest(action))
+				if change == "missing profile" || change == "foreign harness" {
+					require.ErrorContains(t, err, "native profile")
+				} else {
+					require.ErrorContains(t, err, "original session binding")
+				}
+				require.Equal(t, before, c.sessionRecord("execute", args.PacketID).Last.ID)
+				if action == "claim" {
+					require.Nil(t, c.State.Handoff)
+				} else {
+					require.False(t, c.State.Handoff.Pending)
+				}
+			})
+		}
+	}
+}

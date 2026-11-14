@@ -71,6 +71,18 @@ After login, the desktop can choose the first account model when no provider API
 
 Explicit API-key configurations remain supported. Select `deepseek-official` consistently in the relevant binding and its channel, and configure credentials through DSH's API-provider flow. Renaming a channel does not override a conflicting explicit provider. Account access does not need an additional API key.
 
+## Native capability profiles
+
+`native-profiles` defines versioned harness options; a binding selects one with
+`native-profile`. Model profiles, loops, routes, judge-panel and allowed
+execution-policy bindings support this reference. The harness must match.
+Omission inherits model-profile settings; an explicit empty string disables an
+inherited capability profile. Static profiles work with JEV off. The workbench
+selects profiles for the current harness; edit definitions in advanced JSON.
+Native options participate in history and frozen policy identity, and actual
+admission/usage/cleanup remain runtime facts. See [Native capabilities](native-capabilities.md)
+for complete examples, LCU, Tower, independent Review/Team commands and limits.
+
 ## Start from a complete template
 
 Inspect either bundled example:
@@ -319,7 +331,7 @@ not a guaranteed speed or token improvement. See the
 
 Both new-installation templates explicitly select `scoped`. An existing file without `sessions` normalizes to `fresh`, policy version 1; upgrades do not rewrite it. An explicit policy must contain both fields. Unknown modes, future versions, nulls, typos, and incomplete objects fail before a model starts. The [session policy schema](https://github.com/ckanner/flywheel/blob/main/templates/session-policy.schema.json) is the field contract.
 
-`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, Claude Code Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse, retains each backend's native new-call behavior, and preserves existing Kimi Plan `resident-session` behavior. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this role session policy.
+`sessions.mode` controls history reuse; it does not disable invocation safety records. Main-task Plan, Execute, Review, and Judge calls to Codex Pro, Claude Code Pro, DSH, and Kimi journal intent and trusted terminal receipts in both modes. `fresh` disables general role history reuse and retains each backend's new-call behavior. It preserves Kimi Plan `resident-session` behavior only on the legacy CLI path without a `native-profile`. Native Agent/Swarm history uses the scoped role ledger; Tower always starts fresh. `scoped` can continue compatible history after a trusted normal terminal outcome. Other adapters and mock retain their existing invocation path. Intake and Garden are outside this role session policy.
 
 | Role | History scope and responsibility |
 |---|---|
@@ -330,7 +342,7 @@ Both new-installation templates explicitly select `scoped`. An existing file wit
 
 Quick final Review and Full packet Review have different completion requirements and cannot exchange old histories or verdicts. Quick's first-success path still has two stage-agent calls, Execute and final Review. Go owns all session selection, continuation, rebuilding, and accounting. Skills, models, and desktop controls do not scan backend history to guess a session.
 
-An explicit Plan `resident-session:false` still disables that role's history reuse under scoped mode; omission is different from an explicit opt-out. `resident-session:true` remains the legacy Kimi Plan option, not a cross-harness switch. Codex Pro still rejects it; select scoped Codex Pro history through `sessions`.
+An explicit Plan `resident-session:false` still disables that role's history reuse under scoped mode; omission is different from an explicit opt-out. Without a `native-profile`, `resident-session:true` retains the legacy Kimi CLI Plan behavior. For native Agent/Swarm, that explicit resident intent under global `fresh` instead selects the scoped role ledger, unless `sessions.roles.plan:"fresh"` explicitly disables reuse. It never imports old CLI sessions. Tower always stays fresh. This option does not enable history reuse across harnesses; Codex Pro still rejects it, so select scoped Codex Pro history through `sessions`.
 
 Reuse identity includes the actual task and working directories, role and scope, harness, provider, channel, model, thinking, permissions, and backend runtime references. Backend home/profile, worker, and command references reflect the child configuration actually used; only the names of injected credentials are included, never their values. Renaming a profile without changing its resolved binding does not invalidate history. A changed backend, account channel, model, permission, or working directory selects a new history. Changes to the Spec goal, non-goals, requirement identity, or packet goal, body, boundaries, and requirement mapping also invalidate the previous task semantics. Milestone-scoped Plan, Judge, and second opinions also check the milestone title and the identities and goal fields of its constituent packets. Compatible acceptance revisions can retain already-consumed history, with the current contract and evidence supplied again.
 
@@ -342,7 +354,7 @@ Completed but unconsumed receipts have stricter rules: Review and Judge must mat
 
 The single-slot limit applies only to Flywheel's recovery receipt. Native thread and Session histories follow the backend's retention rules. Rebuilding a role history or shutting down its worker does not automatically delete earlier backend histories.
 
-An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.9.0 and Claude Code Pro 0.4.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex can gate dispatch after verified `thread-ready`; Claude's native init follows prompt dispatch and cannot provide equivalent pre-dispatch configuration evidence. Both retain uncertainty when evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.0 and Claude Code Pro 0.5.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex can gate dispatch after verified `thread-ready`; Claude's native init follows prompt dispatch and cannot provide equivalent pre-dispatch configuration evidence. Both retain uncertainty when evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
 
 `status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
@@ -528,7 +540,7 @@ The embedded hard route uses this binding. This is a **fragment**, not a complet
 }
 ```
 
-The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.9.0` package and its `dsh-subagent-codex-pro/machine` entry. The dependency is pinned by the plugin package and lockfile; [vendor provenance](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) records the reviewed source package used during lifecycle development. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.4.0` optional peer and is unnecessary when that backend is not selected.
+The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.10.0` package and its `dsh-subagent-codex-pro/machine` entry. The dependency is pinned by the plugin package and lockfile; [vendor provenance](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) records the reviewed source package used during lifecycle development. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.5.0` optional peer and is unnecessary when that backend is not selected.
 
 The external tool name `subagent_codex_pro` is not a DSH provider. This route does not create a parent DSH model to make a second delegation. Missing dependencies or invalid receipts fail; they do not trigger an implicit fallback to the older CLI driver.
 
@@ -595,7 +607,7 @@ Local checks cover commands, versions, directories, configuration, and declared 
 
 DSH's `ready.reasoningEffort` echoes the requested value after SDK configuration acceptance; it is not an independent server attestation of effective reasoning effort. A no-inference probe cannot demonstrate quality gains from a higher effort. GPT, Kimi, and Flash also have different native effort enums; see [Reasoning effort](model-policy.md).
 
-Codex Pro checks actually import the public API and verify exact version 0.9.0/protocol 1, typed lifecycle/recovery exports, Node compatibility, and the Codex executable. Binding fields `durableJournal`, `readOnlyRecovery`, and `threadReadyBeforeDispatch` describe pinned adapter capabilities; Claude's last field is false. `historyRecoveryTested` remains false. `--probe` sends no model task and does not turn a successful import into evidence of account access, effective permissions, or recovery of a particular saved history.
+Codex Pro checks actually import the public API and verify exact version 0.10.0/protocol 1, typed lifecycle/recovery exports, Node compatibility, and the Codex executable. Binding fields `durableJournal`, `readOnlyRecovery`, and `threadReadyBeforeDispatch` describe pinned adapter capabilities; Claude's last field is false. `historyRecoveryTested` remains false. `--probe` sends no model task and does not turn a successful import into evidence of account access, effective permissions, or recovery of a particular saved history.
 
 | Status | Meaning |
 |---|---|

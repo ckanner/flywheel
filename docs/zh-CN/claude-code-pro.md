@@ -7,7 +7,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-适配器要求 **`dsh-subagent-claude-code-pro@0.4.0`**、machine protocol 1
+适配器要求 **`dsh-subagent-claude-code-pro@0.5.0`**、machine protocol 1
 及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
 接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
 发行流程见[发布指南](releasing.md)。
@@ -19,7 +19,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.4.0`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.0`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。

@@ -44,18 +44,19 @@ var dshWarmOpenDirectory = os.Open
 var dshWarmProbe = syscall.Kill
 
 type dshPrepare struct {
-	Type             string `json:"type"`
-	Protocol         int    `json:"protocol"`
-	WarmID           string `json:"warmId"`
-	Binding          string `json:"binding"`
-	ReceiptDirectory string `json:"receiptDirectory"`
-	TTLMS            int64  `json:"ttlMs"`
-	Cwd              string `json:"cwd"`
-	WorkspaceCwd     string `json:"workspaceCwd,omitempty"`
-	Provider         string `json:"provider"`
-	Model            string `json:"model"`
-	ReasoningEffort  string `json:"reasoningEffort"`
-	PermissionMode   string `json:"permissionMode"`
+	Native           json.RawMessage `json:"native,omitempty"`
+	Type             string          `json:"type"`
+	Protocol         int             `json:"protocol"`
+	WarmID           string          `json:"warmId"`
+	Binding          string          `json:"binding"`
+	ReceiptDirectory string          `json:"receiptDirectory"`
+	TTLMS            int64           `json:"ttlMs"`
+	Cwd              string          `json:"cwd"`
+	WorkspaceCwd     string          `json:"workspaceCwd,omitempty"`
+	Provider         string          `json:"provider"`
+	Model            string          `json:"model"`
+	ReasoningEffort  string          `json:"reasoningEffort"`
+	PermissionMode   string          `json:"permissionMode"`
 }
 
 type dshWarmReceipt struct {
@@ -77,6 +78,7 @@ func DSHPrewarmBinding(a DSHArgs) (string, error) {
 	}
 	a.Prompt, a.SessionID, a.RequestID, a.SessionTitle = "", "", "", ""
 	a.PersistentSession = false
+	a.Managed = nil
 	r, command, _, env, err := dshCall(a)
 	if err != nil {
 		return "", err
@@ -243,9 +245,10 @@ func PrepareDSH(a DSHArgs) *DSHPrewarm {
 	preparedArgs := a
 	preparedArgs.Prompt, preparedArgs.SessionID, preparedArgs.RequestID, preparedArgs.SessionTitle = "", "", "", ""
 	preparedArgs.PersistentSession = false
+	preparedArgs.Managed = nil
 	r, command, _, env, _ := dshCall(preparedArgs) // Binding validation already checked these arguments.
 	h.command, h.env = command, env
-	h.prepare = dshPrepare{Type: "prepare", Protocol: 1, WarmID: a.PrewarmID, Binding: binding,
+	h.prepare = dshPrepare{Native: r.Native, Type: "prepare", Protocol: 1, WarmID: a.PrewarmID, Binding: binding,
 		ReceiptDirectory: a.PrewarmDirectory, TTLMS: dshWarmTTL.Milliseconds(), Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd,
 		Provider: r.Provider, Model: r.Model, ReasoningEffort: r.ReasoningEffort, PermissionMode: r.PermissionMode}
 	if err != nil {
@@ -367,7 +370,7 @@ func dshTimeout(ms, fallback int64) time.Duration {
 func (h *DSHPrewarm) runProcess() {
 	events := jsonLines{onLine: h.line, limit: watchdog.MaxBuffer}
 	result := watchdog.Run(h.command, []string{"--prewarm"}, watchdog.Opts{
-		Context: h.ctx, Cwd: h.prepare.Cwd, Env: childenv.EnvSlice(h.env), KillGraceMs: h.args.Watchdog.KillGraceMs,
+		Context: h.ctx, Cwd: h.prepare.Cwd, Env: childenv.EnvSlice(h.env), KillGraceMs: dshCleanupGrace(h.args),
 		WallTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
 		IdleTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
 		OnActivity:    func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },

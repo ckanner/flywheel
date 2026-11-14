@@ -46,7 +46,7 @@ Full 需要所配置的 Plan／Execute／Review／Judge 后端；合格 Quick �
 运行前提。
 
 Claude 为可选后端。选择 `claude-code-pro` 时，还需在 worker 能解析的依赖树中安装
-匹配的 0.4.0 配套包，并准备已登录的 Claude CLI，详见[Claude Code Pro](claude-code-pro.md)。
+匹配的 0.5.0 配套包，并准备已登录的 Claude CLI，详见[Claude Code Pro](claude-code-pro.md)。
 
 ## 2. 安装
 
@@ -124,7 +124,7 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 这是兼容基线，不代表当前最新版本。按该 adapter 的正常授权流程操作，保持 `DSH_HOME`
 一致，不把凭证放进任务文件或 Git。
 
-hard 路由直接导入精确锁定的 Codex Pro 0.9.0 公开 machine API，需要本机 Codex 程序
+hard 路由直接导入精确锁定的 Codex Pro 0.10.0 公开 machine API，需要本机 Codex 程序
 与登录，不需要父模型通过 `subagent_codex_pro` 工具二次委派。可选 Claude 有独立的
 依赖与登录。
 

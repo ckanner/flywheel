@@ -53,6 +53,10 @@ function loadClaudeCodeProWorkerPath() {
   return packageFile('dist/claude-code-pro-worker.mjs');
 }
 
+function loadKimiNativeWorkerPath() {
+  return packageFile('dist/kimi-native-worker.mjs');
+}
+
 function assertSupportedNode(version = process.versions.node) {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:$|-)/.exec(version);
   if (!match || Number(match[1]) < 22 || (Number(match[1]) === 22 && Number(match[2]) < 18)) {
@@ -97,4 +101,4 @@ function runChild(command, args, { env = process.env, cwd, label = "flywheel" } 
   });
 }
 
-module.exports = { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, assertSupportedNode, runChild };
+module.exports = { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, assertSupportedNode, runChild };

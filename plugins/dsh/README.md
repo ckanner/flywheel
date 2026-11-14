@@ -65,9 +65,9 @@ provider, and tools. The reserved `desktop` profile cannot be used as a worker.
 |---|---|
 | DeepSeek Flash | DSH `deepseek-account` and explicit `deepseek-flash`; no additional API key is required for the standard shared account store |
 | DSH ChatGPT | Install and authorize the selected ChatGPT adapter in the SDK profile; changing the desktop chat model does not configure a worker |
-| Codex Pro | The worker imports `dsh-subagent-codex-pro/machine` from the pinned 0.9.0 package and uses the installed Codex CLI/login |
-| Kimi | Go invokes the native Kimi CLI with its own login; no ACP or parent-model delegation |
-| Claude Code Pro | Optional 0.4.0 peer and installed Claude CLI/login; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
+| Codex Pro | The worker imports `dsh-subagent-codex-pro/machine` from the pinned 0.10.0 package and uses the installed Codex CLI/login |
+| Kimi | Go uses the Kimi CLI by default, or its owned local Server worker for native Agent/Swarm/Tower; the same Kimi login applies |
+| Claude Code Pro | Optional 0.5.0 peer and installed Claude CLI/login; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
 
 One documented ChatGPT adapter compatibility example is:
 
@@ -278,12 +278,13 @@ Actual policy is checked before prompting. Full access does not establish an
 OS sandbox or remove host static denials, account restrictions, or OS permissions.
 A Git worktree is also not a security sandbox.
 
-The temporary SDK overlay applies only to the independent worker. It disables
-recursive delegation, workflow drivers, automatic titles/compaction, scheduled
-input, and the entire web-tool package, including search and fetch. Full access
-does not restore these auxiliary-model/tool capabilities. Restoring them needs
-separate accounting, cancellation, and directory-ownership support. The overlay
-does not remove desktop tools or edit reminder storage.
+The temporary SDK overlay applies only to the independent worker. An explicit
+native-profile enables owned PTC subagents, Team, Workflow, Web and optional LCU;
+without one, the existing tool policy remains in force. Automatic titles,
+compaction, goals and scheduled input remain disabled. Full access alone does
+not enable native capabilities. The overlay does not change desktop presets or
+reminder storage. Use the [native guide](https://github.com/ckanner/flywheel/blob/main/docs/en/native-capabilities.md)
+for configuration, receipts, Tower and independent native Review/Team jobs.
 
 Main-task Codex calls check the complete actual sandbox policy at `thread-ready`
 before Go acknowledges dispatch, then check the terminal receipt again.
@@ -293,11 +294,13 @@ print mode does not provide an OS sandbox that this adapter can promise.
 
 A successful result requires a trustworthy terminal receipt and confirmed
 process cleanup. An outer worker exit does not prove SDK or guardian cleanup.
-Graceful SDK shutdown allows two seconds for persistence/disposal before bounded
-TERM/KILL cleanup. Lost outcomes preserve evidence and block automatic replay.
+Graceful SDK shutdown allows two seconds for ordinary calls, 15 seconds for
+native calls and 135 seconds for LCU, with at least 20/145 seconds at the Go
+boundary, before bounded TERM/KILL cleanup. Lost outcomes preserve evidence and block automatic replay.
 Missing usage and subscription dollar cost remain unknown, not zero. Complete
 worker histories are not automatically merged into the parent's DSH trajectory;
-images and attachments are not supported by these worker inputs.
+public Pro inputs support explicit media/structured output, while formal Go
+loops do not automatically inject archived images.
 
 ## Maintain and develop
 

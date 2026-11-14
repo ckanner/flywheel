@@ -1,13 +1,18 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, readFile, open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatePrepare, matchWarmStart, writeWarmReceipt } from './prewarm.js';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
+import { nativeOverlay } from './native-policy.js';
+import { NativeTree } from './native.js';
+import { acquireGuiLease, settleGuiLease } from './native-resources.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
+  const native = request.native ? nativeOverlay(request, admission.runtimeProfile ?? 'sdk') : null;
   // Each patch replaces an entire config row. Pin the checked rc.5/rc.1 enforcement
   // implementations, not the user's mutable permission dropdown defaults.
   const disable = ['permission', 'tool-plugin-manager', 'tool-working-directory',
@@ -17,6 +22,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
   return [
     ...disable.map(id => ({ id, disabled: true })),
+    ...(native?.overlay ?? []),
     ...(historyRoot ? [{ id: 'session-persistence-jsonl', config: { root: historyRoot } }] : []),
     { id: 'sandbox', name: '@deepseek-ai/dsh-sandbox-local', disabled: false, config: {} },
     { id: 'sandbox-policy', name: '@deepseek-ai/dsh-sandbox-policy', disabled: false,
@@ -28,6 +34,8 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { id: 'sdk-jsonrpc-server', config: { maxTokensAsSuccess: false } },
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
       config: { permissionMode: request.permissionMode, cwd: request.cwd,
+        ...(native ? { native: request.native, managed: request.managed, composition: native.composition,
+          provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort, resuming: Boolean(request.sessionId) } : {}),
         ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}),
         ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}), ...admission } }] },
   ];
@@ -53,6 +61,26 @@ async function abortable(promise, signal) {
   } finally {
     signal.removeEventListener('abort', listener);
   }
+}
+
+export async function readNativeEvents(directory, identity, summary) {
+  const file = await open(join(directory, 'native-events.jsonl'), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  let events;
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error('native runtime evidence exceeds its bounded receipt');
+    events = await file.readFile('utf8');
+  } finally { await file.close(); }
+  const bytes = Buffer.byteLength(events);
+  if (bytes > 2 * 1024 * 1024 || (bytes && !events.endsWith('\n'))) throw new Error('native runtime evidence is incomplete or oversized');
+  const values = events.split('\n').filter(Boolean).map(line => JSON.parse(line));
+  if (values.length > 4096 || values.some((value, index) => !record(value) || value.version !== 1 ||
+      value.journalSequence !== index + 1 || value.requestId !== identity.requestId || value.nonce !== identity.nonce ||
+      value.rootSessionId !== identity.rootSessionId)) throw new Error('native runtime evidence has invalid sequence or invocation ownership');
+  if (summary !== undefined && (!record(summary) || summary.complete !== true || summary.events !== values.length || summary.bytes !== bytes)) {
+    throw new Error('native runtime journal did not confirm complete durable evidence');
+  }
+  return values;
 }
 
 /** A bounded JSON-RPC transport. It does not own a new process group. */
@@ -144,7 +172,7 @@ export class Runtime {
     });
   }
 
-  async close() {
+  async close({ graceMs = 2000 } = {}) {
     // The Go watchdog owns the whole inherited process group. We request the
     // SDK's child-first drain and bound the leader wait; Go performs the final
     // group sweep even on normal exit. A child must not detach/setsid.
@@ -154,7 +182,7 @@ export class Runtime {
       // SDK shutdown includes persistent history flush and plugin disposal.
       // Keep this bounded below Go's default 5s cancellation grace, while
       // allowing a normal fsync to complete under concurrent local workloads.
-      await bounded(this.exited, 2000);
+      await bounded(this.exited, graceMs);
     }
     if (!this.exit) {
       forced = true;
@@ -184,6 +212,10 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let temp;
   let sessionId;
   let fold;
+  let nativeTree, guiLease, nativeCleanup, nativeAdmission, policyIdentity;
+  let nativeRuntimeEvents = [];
+  let completionAtRootEnd;
+  let nativeAttempted = false;
   let outcome;
   let failure;
   let cancelled = false;
@@ -232,9 +264,24 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     sessionId = prepared ? undefined : request.sessionId ?? `flywheel-${randomUUID()}`;
     const admission = { receiptPath: join(temp, 'policy.json'), requestId: prepared ? prepared.warmId : request.requestId,
       ...(prepared ? { deferredAdmissionPath: join(temp, 'admission.json') } : { sessionId }), nonce: randomUUID() };
+    policyIdentity = { requestId: admission.requestId, nonce: admission.nonce };
+    if (!prepared && request.native?.lcu?.enabled) {
+      guiLease = await acquireGuiLease(request.managed, { env, signal: controller.signal });
+      request = { ...request, managed: { ...request.managed, lease: guiLease } };
+    }
+    if (request.native) admission.runtimeProfile = profile;
     await writeFile(patch, JSON.stringify(makeOverlay(request, undefined, admission, doctor ? join(temp, 'probe-history') : undefined)), { mode: 0o600 });
     controller.signal.throwIfAborted();
     if (!prepared) fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
+    const observeNative = event => {
+      const eventFrame = { type: 'native-event', sessionId, event };
+      if (readySent) frame(eventFrame);
+      else {
+        beforeReady.push(eventFrame);
+        if (beforeReady.length > 256) throw new BridgeError('TRANSPORT', 'excessive native events before readiness');
+      }
+    };
+    if (!prepared && request.native) nativeTree = new NativeTree(sessionId, request.native, observeNative);
     runtime = new Runtime(bin, ['--profile', profile, '--patch', patch], {
       cwd: request.cwd,
       env: { ...env, DSH_PERMISSION_MODE: request.permissionMode,
@@ -252,7 +299,8 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
           if (beforeReady.length > 256) throw new BridgeError('TRANSPORT', 'excessive SDK events before readiness');
         }
       }
-      if (method === 'subagent.started' && params?.parentSessionId === sessionId) {
+      if (nativeTree) nativeTree.notify(method, params);
+      else if (method === 'subagent.started' && params?.parentSessionId === sessionId) {
         throw new BridgeError('INVALID_REQUEST', 'DSH child delegation is disabled: the Go engine owns workers');
       }
     });
@@ -284,12 +332,18 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'DSH worker lifecycle deadline exceeded')), formalBudget);
       request = await abortable(validateStart(next), controller.signal);
       matchWarmStart(prepared, request);
+      if (request.native?.lcu?.enabled) {
+        guiLease = await acquireGuiLease(request.managed, { env, signal: controller.signal });
+        request = { ...request, managed: { ...request.managed, lease: guiLease } };
+      }
       sessionId = request.sessionId ?? `flywheel-${randomUUID()}`;
       fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
+      if (request.native) nativeTree = new NativeTree(sessionId, request.native, observeNative);
       await writeFile(admission.deferredAdmissionPath, JSON.stringify({ requestId: admission.requestId,
-        nonce: admission.nonce, sessionId, ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}) }),
+        nonce: admission.nonce, sessionId, ...(request.native ? { managed: request.managed, resuming: Boolean(request.sessionId) } : {}), ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}) }),
       { mode: 0o600, flag: 'wx' });
     }
+    nativeAttempted = Boolean(request.native);
     if (request.sessionId !== undefined) {
       // Public SDK resume restores exactly this identity, without a new input
       // and without a replacement on failure. A generic RPC error cannot tell
@@ -314,6 +368,8 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       throw new BridgeError('INVALID_REQUEST', 'DSH session project workspace differs from the requested project');
     }
     fold.verifiedPolicy(request);
+    nativeAdmission = fold.policy.native;
+    if (request.native && nativeAdmission?.matched !== true) throw new BridgeError('INVALID_REQUEST', 'native runtime did not attest its effective capabilities');
     frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
@@ -347,13 +403,19 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       }
       waited = true;
       outcome = fold.finish(receipt.messageId);
+      if (nativeTree) {
+        nativeRuntimeEvents = await readNativeEvents(temp, { ...policyIdentity, rootSessionId: sessionId });
+        nativeTree.observeRuntime(nativeRuntimeEvents);
+        completionAtRootEnd = nativeTree.completion();
+        if (!completionAtRootEnd.confirmed) throw new BridgeError('TRANSPORT', 'Native children remain active at root completion');
+      }
     }
   } catch (error) {
     if (!warmClosed) failure = normalizedError(error);
   } finally {
     if (runtime) {
       try {
-        const exit = await runtime.close();
+        const exit = await runtime.close({ graceMs: request?.native?.lcu?.enabled ? 135000 : request?.native ? 15000 : 2000 });
         if (exit.spawned && (exit.forced || exit.code !== 0 || exit.signal || !exit.graceful)) {
           settled = false;
           failure ??= { code: 'TRANSPORT', message: 'DSH runtime did not prove graceful shutdown of its managed processes' };
@@ -376,6 +438,23 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     if (request && Date.now() - started > request.timeoutMs && !cancelled) {
       failure = { code: 'TIMEOUT', message: 'DSH worker lifecycle deadline exceeded (including cleanup)' };
     }
+    if (temp && nativeAttempted) {
+      try {
+        nativeCleanup = JSON.parse(await readFile(join(temp, 'native-cleanup.json'), 'utf8'));
+        if (nativeCleanup.version !== 1 || nativeCleanup.requestId !== policyIdentity.requestId || nativeCleanup.nonce !== policyIdentity.nonce ||
+            nativeCleanup.error !== undefined || nativeCleanup.journal?.complete !== true ||
+            (request.native?.lcu?.enabled && (!Array.isArray(nativeCleanup.cleanup) || nativeCleanup.cleanup.length < 1 ||
+              nativeCleanup.cleanup.some(value => value.cleanup !== 'confirmed' || !value.runtimeExitConfirmed || !value.turnCleanupConfirmed)))) {
+          throw new Error('native runtime did not confirm complete owned cleanup');
+        }
+        nativeRuntimeEvents = await readNativeEvents(temp, { ...policyIdentity, rootSessionId: sessionId }, nativeCleanup.journal);
+        nativeTree.observeRuntime(nativeRuntimeEvents);
+      } catch (error) { settled = false; failure ??= normalizedError(error); }
+    }
+    if (guiLease) {
+      try { await settleGuiLease(guiLease, settled && (!nativeAttempted || Boolean(nativeCleanup)), nativeCleanup ?? null); }
+      catch (error) { settled = false; failure ??= normalizedError(error); }
+    }
     if (temp) await rm(temp, { recursive: true, force: true }).catch(error => {
       failure ??= { code: 'TRANSPORT', message: `could not remove worker overlay: ${error.message}` };
     });
@@ -395,7 +474,10 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     type: 'result', status: cancelled ? 'cancelled' : failure ? 'error' : 'ok', settled,
     ...(sessionId ? { sessionId } : {}),
     text: outcome?.text ?? fold?.text ?? '',
-    usage: outcome?.usage ?? null, costUsd: null,
+    usage: nativeTree ? nativeTree.addUsage(outcome?.usage ?? null) : outcome?.usage ?? null, costUsd: null,
+    ...(nativeTree ? { native: { ...nativeTree.receipt(nativeAdmission ?? { matched: false, observed: null },
+      { confirmed: settled, scope: 'owned-sdk-tree', gui: nativeCleanup?.lcu ?? null }), runtimeEvents: nativeRuntimeEvents,
+      completion: completionAtRootEnd ?? { confirmed: false, pendingIds: [] } } } : {}),
     ...(failure ? { error: failure } : {}),
   };
   if ((formalStarted ? request.protocol : input?.protocol) === 2) {
