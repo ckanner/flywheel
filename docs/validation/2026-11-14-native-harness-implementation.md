@@ -4,9 +4,11 @@
 
 日期：2026-11-14。对应 Flywheel 0.34.0 开发候选与下表六个 PR。本记录区分源码测试、真实公开包集成、已安装候选、最终完整发行包及用户机器验收，不声明已合并、已发布 npm 或已完成真实模型／桌面验收。
 
+**后续复核：** 下列首次完整集成的来源和结果保持原样。随后发现并修复了 Preset Generator 首次创建补丁失败的问题，更新了内嵌候选；ChatGPT 另补了一个登录通知测试时序修复。新来源、验证范围与既有结果的关系见下文“首次生成补丁的后续复核”。当前依赖身份以 [vendor 记录](../../plugins/dsh/vendor/README.md) 为准，最新完整包的 CI 以 [PR #44 checks](https://github.com/ckanner/flywheel/pull/44/checks) 的具体 head 为准。
+
 **当前本地结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包的四条 Go→Node 桥接及 36 个 session 场景通过。Tower 目录别名修正后，Node 主套件 395/395、legacy host 10/10、Kimi Go→Node 桥接和新四平台单包构建再次通过；这个新 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** 跨平台 CI 的失败、修正及最终 head 结果分别记录，不能用本地成功代替 macOS 成功。 LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
 
-## 1. 六仓范围与最终配套源码
+## 1. 首次完整集成的六仓范围与配套源码
 
 PR 链接定位本次交付，不代替精确提交的 CI 状态。Flywheel 实现内容与本地候选的精确对应见 §5；最终 PR head 的远端 CI 状态在 PR checks 与说明中记录。
 
@@ -168,6 +170,20 @@ Linux 将 `TMPDIR` 指向真实 symlink alias 后，原两用例精确复现相�
 | Codex Pro | `c0045b06e6762b8dfc56f50b14cce7a53af2725b` | [run 43580027819](https://github.com/ckanner/dsh-subagent-codex-pro/actions/runs/43580027819)：success |
 | Claude Code Pro | `54d7eafa9102713597e3b96a6d70a9cbd86afc6b` | [run 43579998664](https://github.com/ckanner/dsh-subagent-claude-code-pro/actions/runs/43579998664)：success |
 | ChatGPT | `fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c` | [run 43579984957](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/43579984957)：success |
+
+### 首次生成补丁的后续复核
+
+对六个 PR 的独立复核重新核对了当前 DSH release `dsh-v0.2.2-rc.3` 和 master `39163dd30f703a79079e2d2446545cff3c453738`。SDK 不自动挂载 named preset、官方 PTC overlay、Team 与 Workflow 生命周期均与当前接入一致。既有 Codex 子线程归属／未完成用量、Claude 迟到 task/tool 关联和 LCU receipt 等待期间的权限变化问题，均已在源码与回归中确认修复，对应四个 review 线程已解决。
+
+本轮实际复现 Preset Generator 在 `--out FILE` 为新文件、或 profile 尚无 `cordis.patch.yml` 时直接 `ENOENT`。修正仅将缺失文件作为空补丁，并用 `wx` 独占创建；既有内容合并、读权限错误、目录目标和缺失父目录均保持明确结果。运行期间由其他程序新建的文件不会被覆盖。
+
+- 新 Generator 源码：[3dc21791b1efe81bea9a26aa9e92ff2172b4f645](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645)，tree `877ea728cad4d8ef4b21a691df2a03cfc9075efc`，版本仍为未发布候选 `0.4.0`。
+- 源码测试 **21/21 通过**，新增五个真实 CLI 回归；分别使用 release/master 的实际 PTC preset 内容构造临时 ASAR，首次创建、Workflow 保留、PTC 唯一性和重复生成均通过。
+- Node `24.22.1` / npm `12.2.1` 正常打包的 tarball 为 `17,668` bytes，SHA-256 `25e6a718605dfb3fc0f8869d1685dc44d2e1f35375ea8c184825bfe21564a141`。两个 lockfile 和内嵌 tarball 已同步；完整 integrity 在 [preset-generator.json](../../plugins/dsh/vendor/preset-generator.json)。上文旧 tarball 与 CI 身份仅证明当时的候选。
+- ChatGPT [1cb961917bdb4a9d7ce86a997bc4f06d8807e904](https://github.com/ckanner/dsh-plugin-chatgpt/commit/1cb961917bdb4a9d7ce86a997bc4f06d8807e904) 将登录通知测试的固定 50ms 等待改为既有有界事件等待，并补失败清理；保留 signed-in 和 exactly-once 断言。最终 **277/277**、session **16/16** 及 typecheck/build/package/client/i18n 通过。只有不进入 npm 包的测试文件变化，Flywheel 的 provider 包继续使用既有已验证字节。
+- 本轮原锁定依赖下，Flywheel 本地 **395/395 主测试、10/10 旧宿主、152/152 根 npm 测试**再次通过；Codex **201 通过／5 live 跳过**、Claude **107/107**、LCU 受影响 **38/38** 和 packed consumer **21/21** 通过。LCU 全套仍为 **68 通过／6 Unix socket `EPERM`／9 Mac 跳过**，没有把环境限制计为通过。
+
+新 Generator 进入完整 Flywheel 包后，重新核对其精确依赖、四平台构建和同一候选的实际安装。新完整候选与 Linux/macOS CI 结果在 #44 的 PR 说明中按具体 head/run 记录；不沿用上文旧候选的成功状态，不为记录 CI 再次修改构建输入。真实账号、桌面和远端作业的验收边界保持 §6 所述。
 
 ## 6. 真实运行与产品能力限制
 

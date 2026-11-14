@@ -22,6 +22,8 @@ their original language.
 - Preserve role independence, explicit accounts/permissions and existing JEV
   controls. Keep one complete npm package, bundle generator 0.4.0 and record the
   reviewed companion source artifacts without claiming registry publication.
+- Refresh the bundled generator to create a profile's first preset patch or a
+  new output file, preserving existing settings and concurrent file creation.
 
 ## 0.33.1 — Strict desktop read codecs
 

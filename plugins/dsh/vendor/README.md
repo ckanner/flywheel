@@ -7,7 +7,7 @@ these are not replacement wrappers or invented registry downloads.
 | Package | Distribution role | Fetchable source commit | Source tree | Artifact identity |
 | --- | --- | --- | --- | --- |
 | `dsh-subagent-codex-pro@0.10.0` | Bundled public machine API | [c0045b06e676](https://github.com/ckanner/dsh-subagent-codex-pro/commit/c0045b06e6762b8dfc56f50b14cce7a53af2725b) | `1c39704cf385e9f505f5d50e9d96ef2e0b88d5f5` | [codex-pro.json](codex-pro.json) |
-| `dsh-preset-generator@0.4.0` | Bundled PTC composition API | [0ec05fbeb37d](https://github.com/ckanner/dsh-preset-generator/commit/0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3) | `c93bbc8453a95c2b4f06d432f1c7d0e67a56aaf0` | [preset-generator.json](preset-generator.json) |
+| `dsh-preset-generator@0.4.0` | Bundled PTC composition API | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.5.0` | Optional machine/native-jobs peer | [54d7eafa9102](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/54d7eafa9102713597e3b96a6d70a9cbd86afc6b) | `bf992d3e33889857526af370bbb16d91585c0ecc` | [claude-code-pro.json](claude-code-pro.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [7986057e9231](https://github.com/ckanner/dsh-plugin-lcu/commit/7986057e92314b78caf66dde43d1a8d45ab6ada7) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
 | `dsh-plugin-chatgpt@0.1.19` | DSH provider compatibility fixture | [fa5cfafcc1cc](https://github.com/ckanner/dsh-plugin-chatgpt/commit/fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c) | `168dc4e6284f002f09291667a926eab8a31b6687` | [chatgpt.json](chatgpt.json) |
@@ -17,6 +17,13 @@ Node 24.22.1/npm 12.2.1 build toolchain and `registryReleaseVerified:false`.
 Source trees, remote commit identity, packed bytes, registry release and user
 installation are separate evidence. Local merge commit hashes can differ from
 remote API-created commits; the tree and artifact are checked explicitly.
+
+The generator's follow-up fixes creation of the first profile patch or a new
+output file. It treats only `ENOENT` as absence and uses exclusive creation so
+another writer's new file is retained. Its 21 CLI/composition tests pass; the
+updated tarball is consumed through both lockfiles. Earlier candidate identities
+remain in the validation record. ChatGPT's subsequent test-only roster-notification
+fix does not change its provider artifact or the source pinned in this table.
 
 `dsh-subagent-codex-pro@0.10.0` and `dsh-preset-generator@0.4.0` remain exact
 runtime dependencies and bundledDependencies. Root lock entries resolve
