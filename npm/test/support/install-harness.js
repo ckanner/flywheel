@@ -10,7 +10,7 @@ const { capture } = require('../../install.js');
 
 /** Serve the actual published dependency, verified against the source lock. */
 async function runtimeDependency(name, version, suppliedTarball) {
-  const lock = JSON.parse(await fs.readFile(path.resolve(__dirname, '../../../plugins/dsh/package-lock.json'), 'utf8'));
+  const lock = JSON.parse(await fs.readFile(path.resolve(__dirname, '../../../package-lock.json'), 'utf8'));
   const entry = lock.packages?.['node_modules/' + name];
   const tarballName = `${name}-${version}.tgz`;
   if (entry?.version !== version || !entry.integrity?.startsWith('sha512-') ||
@@ -52,7 +52,7 @@ async function registry(directory) {
     packages.set(manifest.name, { manifest, entry, data });
     tarballs.set('/tarballs/' + entry.filename, data);
   }
-  const plugin = packages.get('@ckanner/dsh-plugin-flywheel');
+  const plugin = packages.get('@ckanner/flywheel');
   if (plugin?.manifest.dependencies?.['dsh-subagent-codex-pro'] !== '0.9.0' ||
       JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro'])) {
     throw new Error('the candidate must contain its exact reviewed Codex Pro source dependency');
@@ -66,7 +66,7 @@ async function registry(directory) {
     ['zod', '4.3.6', process.env.FLYWHEEL_ZOD_TARBALL],
   ]) {
     const dependency = await runtimeDependency(name, version, tarball);
-    if (packages.get('@ckanner/dsh-plugin-flywheel')?.manifest.dependencies?.[dependency.manifest.name] !== dependency.manifest.version) {
+    if (packages.get('@ckanner/flywheel')?.manifest.dependencies?.[dependency.manifest.name] !== dependency.manifest.version) {
       throw new Error('the candidate plugin does not pin the verified runtime dependency: ' + name);
     }
     packages.set(dependency.manifest.name, dependency);
@@ -107,7 +107,7 @@ async function environment(registryURL, version) {
   const env = { ...process.env, HOME: home, DSH_HOME: path.join(home, '.dsh'), NO_PROXY: '127.0.0.1,localhost',
     npm_config_registry: registryURL, npm_config_cache: path.join(root, 'npm cache'), npm_config_userconfig: npmrc,
     npm_config_prefix: prefix, npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
-    FLYWHEEL_DSH_FIXTURE_LOG: path.join(root, 'dsh-calls.jsonl'), FLYWHEEL_DSH_FIXTURE_VERSION: version };
+    FLYWHEEL_DSH_FIXTURE_LOG: path.join(root, 'dsh-calls.jsonl'), FLYWHEEL_DSH_FIXTURE_VERSION: version, FLYWHEEL_DSH_FIXTURE_STATE: path.join(root, 'desktop-state.json') };
   for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
   env.FLYWHEEL_KIMI_BIN = path.join(root, 'intentionally missing kimi');
   env.FLYWHEEL_CODEX_BIN = path.join(root, 'intentionally missing codex');
@@ -122,13 +122,17 @@ fs.appendFileSync(process.env.FLYWHEEL_DSH_FIXTURE_LOG, JSON.stringify(args)+'\n
 if (args.length === 1 && args[0] === '--version') { console.log('0.2.1-rc.5'); process.exit(0); }
 if (args[0] !== 'plugin' || args[1] !== '--profile' || args[2] !== 'desktop') process.exit(19);
 if (process.env.FLYWHEEL_DSH_FIXTURE_FAIL === '1') { console.error('fixture profile is locked'); process.exit(23); }
+let state;
+try {state=JSON.parse(fs.readFileSync(process.env.FLYWHEEL_DSH_FIXTURE_STATE,'utf8'));}
+catch {state=process.env.FLYWHEEL_DSH_FIXTURE_LEGACY ? {'@ckanner/dsh-plugin-flywheel':{version:process.env.FLYWHEEL_DSH_FIXTURE_LEGACY,from:'@ckanner/dsh-plugin-flywheel'}} : {};}
+const save=()=>fs.writeFileSync(process.env.FLYWHEEL_DSH_FIXTURE_STATE,JSON.stringify(state));
 if (args[3] === 'add') {
-  if (args.at(-1) !== '@ckanner/dsh-plugin-flywheel@'+process.env.FLYWHEEL_DSH_FIXTURE_VERSION) process.exit(24);
-  process.exit(0);
+  if (args.at(-1) !== '@ckanner/flywheel@'+process.env.FLYWHEEL_DSH_FIXTURE_VERSION) process.exit(24);
+  state['@ckanner/flywheel']={version:process.env.FLYWHEEL_DSH_FIXTURE_VERSION};save();process.exit(0);
 }
+if (args[3] === 'remove') {delete state[args[4]];save();process.exit(0);}
 if (args[3] === 'list') {
-  console.log(JSON.stringify([{dependencies:{'@ckanner/dsh-plugin-flywheel':{version:process.env.FLYWHEEL_DSH_FIXTURE_VERSION}}}]));
-  process.exit(0);
+  console.log(JSON.stringify([{dependencies:state[args[4]]?{[args[4]]:state[args[4]]}:{}}]));process.exit(0);
 }
 process.exit(25);
 `, { mode: 0o755 });

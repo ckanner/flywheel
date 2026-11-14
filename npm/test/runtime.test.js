@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { createHash } = require('node:crypto');
 const { spawn } = require("node:child_process");
 const { mkdtemp, mkdir, copyFile, chmod, writeFile, readFile, realpath, rename, rm } = require("node:fs/promises");
 const { tmpdir, constants } = require("node:os");
@@ -10,10 +11,6 @@ const { join, resolve } = require("node:path");
 const source = resolve(__dirname, "../..");
 const platform = `${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
 const version = "1.2.3";
-const workerManifest = {
-  name: "@ckanner/dsh-plugin-flywheel", version, type: "module",
-  exports: { "./worker": "./dist/worker.js", "./codex-pro-worker": "./dist/codex-pro-worker.js", "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js", "./package.json": "./package.json" },
-};
 const nativePreamble = `#!/usr/bin/env node
 const fs = require("node:fs");
 fs.appendFileSync(process.env.TEST_OWNED_PIDS, process.pid + "\\n");
@@ -59,23 +56,22 @@ async function fixture(t, { native = echoNative, worker = echoWorker } = {}) {
   await mkdir(join(root, "bin"));
   await writeFile(join(root, "package.json"), JSON.stringify({
     name: "@ckanner/flywheel", version,
-    dependencies: { "@ckanner/dsh-plugin-flywheel": version },
-    optionalDependencies: { [`@ckanner/flywheel-${platform}`]: version },
+
   }));
   for (const name of ["flywheel.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js", "runtime.js"]) {
     await copyFile(join(source, "bin", name), join(root, "bin", name));
   }
-  const nativeDir = join(root, "node_modules", "@ckanner", `flywheel-${platform}`);
-  const workerDir = join(root, "node_modules", "@ckanner", "dsh-plugin-flywheel");
+  const nativeDir = join(root, "native", platform);
+  const workerDir = join(root, "dist");
   await mkdir(nativeDir, { recursive: true });
-  await mkdir(join(workerDir, "dist"), { recursive: true });
+  await mkdir(workerDir, { recursive: true });
   const nativePath = join(nativeDir, "flywheel");
-  const workerPath = join(workerDir, "dist", "worker.js");
-  const codexProWorkerPath = join(workerDir, "dist", "codex-pro-worker.js");
-  const claudeCodeProWorkerPath = join(workerDir, "dist", "claude-code-pro-worker.js");
-  await writeFile(join(nativeDir, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version }));
+  const workerPath = join(workerDir, "worker.mjs");
+  const codexProWorkerPath = join(workerDir, "codex-pro-worker.mjs");
+  const claudeCodeProWorkerPath = join(workerDir, "claude-code-pro-worker.mjs");
+
   await writeFile(nativePath, nativePreamble + native, { mode: 0o755 });
-  await writeFile(join(workerDir, "package.json"), JSON.stringify(workerManifest));
+  await writeFile(join(root, 'native/manifest.json'), JSON.stringify({protocol:1,version,platforms:{[platform]:{bytes:Buffer.byteLength(nativePreamble+native),sha256:createHash('sha256').update(nativePreamble+native).digest('hex')}}}));
   await writeFile(workerPath, worker);
   await writeFile(codexProWorkerPath, worker);
   await writeFile(claudeCodeProWorkerPath, worker);
@@ -154,17 +150,17 @@ test("missing platform or worker packages fail visibly instead of selecting anot
   await rm(f.nativeDir, { recursive: true });
   const native = await f.launch(["version"]).exit;
   assert.equal(native.code, 1);
-  assert.match(native.stderr, /platform package .* is missing/);
+  assert.match(native.stderr, /Bundled native.* is missing/);
   await rm(f.workerDir, { recursive: true });
   const worker = await f.launch([], { executable: "flywheel-dsh-worker.js" }).exit;
   assert.equal(worker.code, 1);
-  assert.match(worker.stderr, /matching .* worker is missing/);
+  assert.match(worker.stderr, /Bundled dist.* is missing/);
   const codexPro = await f.launch([], { executable: "flywheel-codex-pro-worker.js" }).exit;
   assert.equal(codexPro.code, 1);
-  assert.match(codexPro.stderr, /matching .* Codex Pro worker is missing/);
+  assert.match(codexPro.stderr, /Bundled dist.* is missing/);
   const claude = await f.launch([], { executable: "flywheel-claude-code-pro-worker.js" }).exit;
   assert.equal(claude.code, 1);
-  assert.match(claude.stderr, /matching .* Claude Code Pro worker is missing/);
+  assert.match(claude.stderr, /Bundled dist.* is missing/);
 });
 
 test("a non-executable native binary reports a launch failure", async t => {
@@ -175,47 +171,24 @@ test("a non-executable native binary reports a launch failure", async t => {
   assert.match(result.stderr, /could not start .*EACCES/);
 });
 
-test("resolved native and worker versions must match the meta package's exact pins", async t => {
+test("a mismatched native manifest or corrupted bundled engine is rejected", async t => {
   const f = await fixture(t);
-  await writeFile(join(f.workerDir, "package.json"), JSON.stringify({ ...workerManifest, version: "1.2.2" }));
-  const wrongWorker = await f.launch(["version"]).exit;
-  assert.equal(wrongWorker.code, 1);
-  assert.match(wrongWorker.stderr, /version mismatch for @ckanner\/dsh-plugin-flywheel: expected 1\.2\.3, found 1\.2\.2/);
-  // Explicit user-managed workers do not pretend to be verified package peers.
-  const override = await f.launch(["version"], { env: { FLYWHEEL_DSH_WORKER: "/custom/worker", FLYWHEEL_CODEX_PRO_WORKER: "/custom/pro-worker", FLYWHEEL_CLAUDE_CODE_PRO_WORKER: "/custom/claude-worker" } }).exit;
-  assert.equal(override.code, 0, override.stderr);
-  await writeFile(join(f.workerDir, "package.json"), JSON.stringify(workerManifest));
-  await writeFile(join(f.nativeDir, "package.json"), JSON.stringify({ name: `@ckanner/flywheel-${platform}`, version: "1.2.2" }));
-  const wrongNative = await f.launch(["version"]).exit;
-  assert.equal(wrongNative.code, 1);
-  assert.match(wrongNative.stderr, /version mismatch for @ckanner\/flywheel-.*: expected 1\.2\.3, found 1\.2\.2/);
+  const manifestPath=join(f.root,'native/manifest.json');
+  const original=await readFile(manifestPath,'utf8');
+  const changed=JSON.parse(original);changed.version='1.2.2';await writeFile(manifestPath,JSON.stringify(changed));
+  assert.match((await f.launch(['version']).exit).stderr,/engine version mismatch/);
+  await writeFile(manifestPath,original);
+  await writeFile(f.nativePath,'wrong engine bytes');
+  assert.match((await f.launch(['version']).exit).stderr,/engine integrity mismatch/);
 });
 
-test("a stale parent dependency is rejected while a correctly hoisted package is accepted", async t => {
+test("missing bundled workers never resolve from an old parent package", async t => {
   const f = await fixture(t);
-  const parentPackage = join(f.container, "node_modules", "@ckanner", "dsh-plugin-flywheel");
-  await mkdir(join(parentPackage, ".."), { recursive: true });
-  await rename(f.workerDir, parentPackage);
-  await writeFile(join(parentPackage, "package.json"), JSON.stringify({ ...workerManifest, version: "1.2.2" }));
-  const staleParent = await f.launch(["version"]).exit;
-  assert.equal(staleParent.code, 1);
-  assert.match(staleParent.stderr, /version mismatch/);
-  await writeFile(join(parentPackage, "package.json"), JSON.stringify(workerManifest));
-  const correctParent = await f.launch(["version"]).exit;
-  assert.equal(correctParent.code, 0, correctParent.stderr);
-  assert.equal(JSON.parse(correctParent.stdout).worker, join(parentPackage, "dist", "worker.js"));
-  assert.equal(JSON.parse(correctParent.stdout).codexProWorker, join(parentPackage, "dist", "codex-pro-worker.js"));
-  assert.equal(JSON.parse(correctParent.stdout).claudeCodeProWorker, join(parentPackage, "dist", "claude-code-pro-worker.js"));
-  // A local matching dependency wins over an unrelated old parent installation.
-  await mkdir(join(f.workerDir, "dist"), { recursive: true });
-  await writeFile(join(f.workerDir, "package.json"), JSON.stringify(workerManifest));
-  await writeFile(f.workerPath, echoWorker);
-  await writeFile(f.codexProWorkerPath, echoWorker);
-  await writeFile(f.claudeCodeProWorkerPath, echoWorker);
-  await writeFile(join(parentPackage, "package.json"), JSON.stringify({ ...workerManifest, version: "1.2.2" }));
-  const correctLocal = await f.launch(["version"]).exit;
-  assert.equal(correctLocal.code, 0, correctLocal.stderr);
-  assert.equal(JSON.parse(correctLocal.stdout).worker, f.workerPath);
+  const parentPackage=join(f.container,'node_modules/@ckanner/dsh-plugin-flywheel');
+  await mkdir(parentPackage,{recursive:true});await rename(f.workerDir,join(parentPackage,'dist'));
+  await writeFile(join(parentPackage,'package.json'),JSON.stringify({name:'@ckanner/dsh-plugin-flywheel',version,exports:{'./worker':'./dist/worker.mjs','./package.json':'./package.json'}}));
+  const result=await f.launch(['version']).exit;
+  assert.equal(result.code,1);assert.match(result.stderr,/Bundled dist.* is missing/);
 });
 
 test("install and setup dispatch to the bundled installer with untouched arguments", async t => {
@@ -258,6 +231,7 @@ process.stdout.write("ready\\n");
 setInterval(() => {}, 1000);
 `;
 const nativeOwner = `
+const { createHash } = require('node:crypto');
 const { spawn } = require("node:child_process");
 const worker = spawn(process.execPath, ["-e", ${JSON.stringify(ownedWorker)}], {
   detached: true, stdio: ["ignore", "pipe", "inherit"], env: process.env,

@@ -31,7 +31,7 @@ execution separately.
 | --- | --- | --- |
 | Development setup, quality gates, and pull requests | [Contributing](en/contributing.md) | [贡献指南](zh-CN/contributing.md) |
 | Documentation ownership, bilingual updates, and review checklist | [Maintenance rules](en/contributing.md#keep-documentation-organized) | [文档维护规范](zh-CN/contributing.md#保持文档结构清晰) |
-| Build, verify, publish, and recover a six-package release | [Release runbook](en/releasing.md) | [发行手册](zh-CN/releasing.md) |
+| Build, verify, publish, and recover a complete single-package release | [Release runbook](en/releasing.md) | [发行手册](zh-CN/releasing.md) |
 | DSH package, host compatibility, and worker setup | [Plugin README](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) | [插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md) |
 
 The [architecture specification](design.md) is the maintained design contract

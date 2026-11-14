@@ -178,7 +178,7 @@ async function releaseLocal(options, io = {}) {
   await (io.promote ?? publisher.promote)(candidate, publishOptions);
   await (io.verifyLatest ?? publisher.verifyLatest)(candidate, publishOptions);
   checkpoint();
-  log(`release:local: completed ${candidate.version}; source ${candidate.source.commit}; all six packages verified and promoted to latest`);
+  log(`release:local: completed ${candidate.version}; source ${candidate.source.commit}; the complete package verified and promoted to latest`);
   return candidate;
 }
 

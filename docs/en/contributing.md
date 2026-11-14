@@ -100,7 +100,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 |---|---|
 | Go engine | `make quality-gate`: vet, formatting, tests, and coverage |
 | DSH plugin or worker | Plugin checks and the applicable Go-to-Node bridges |
-| npm installation or release | Root npm tests, a six-package candidate build, and installation of those tarballs |
+| npm installation or release | Root npm tests, a complete single-package candidate build, and installation of that tarball |
 | Documentation | Links, anchors, fences, runnable examples, translation consistency, and affected embedding/package contents |
 
 The Claude bridge needs the exact optional 0.4.0 machine API in the worker's
@@ -288,16 +288,15 @@ that limitation. Source merge and npm publication remain separate operations.
 
 ## Release changes
 
-Follow the [release guide](releasing.md). All six Flywheel packages share one exact
-version with exact internal dependencies and the pinned Codex Pro runtime. Build
+Follow the [release guide](releasing.md). Flywheel publishes one complete package containing all native platforms and the
+pinned Codex Pro runtime. The private DSH source harness is not published. Build
 once from final clean source and test those tarballs. Preserve the source commit,
 tree, snapshot hash, and package integrity values; the release tag must identify
 that source. Do not relabel a dirty candidate as a clean release or rebuild
 different bytes for a published version.
 
 Use the repository's release scripts for candidate checks, publication, registry
-verification, and promotion. Publish platform packages and the plugin before the
-meta package, test the exact registry version before moving `latest`, and verify
-all six tags and integrities. A partial publication resumes with the same
+verification, and promotion. Publish the complete candidate, test the exact registry version before moving
+`latest`, and verify the tag and integrity. A partial publication resumes with the same
 candidate. Manual publication requires its own explicit authorization and an
 accurate record of completed and unavailable checks.

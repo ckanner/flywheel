@@ -10,7 +10,7 @@ const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
 const { registry, environment, run, firstInstall, installedRoot, waitFile } = require('./support/install-harness.js');
 
-test('the six packaged npm candidates install and run from a clean agent environment', { timeout: 240000 }, async t => {
+test('the complete npm candidate install and run from a clean agent environment', { timeout: 240000 }, async t => {
   const directory = path.resolve(process.env.FLYWHEEL_NPM_PACKAGES_DIR || 'dist-npm');
   const server = await registry(directory);
   const context = await environment(server.url, server.candidate.version);
@@ -31,6 +31,11 @@ test('the six packaged npm candidates install and run from a clean agent environ
   assert.equal(report.ready, false, 'missing local harness/account prerequisites must remain visible');
   const root = await installedRoot(context);
   const cli = path.join(root, 'bin', 'flywheel.js');
+  assert.equal(server.candidate.packages.length, 1);
+  const native = JSON.parse(await fs.readFile(path.join(root, 'native/manifest.json'), 'utf8'));
+  assert.equal(native.version, server.candidate.version);
+  assert.deepEqual(Object.keys(native.platforms).sort(), ['darwin-amd64','darwin-arm64','linux-amd64','linux-arm64']);
+  for (const id of Object.keys(native.platforms)) await fs.access(path.join(root, 'native', id, 'flywheel'), 1);
   const worker = path.join(context.prefix, 'bin', 'flywheel-dsh-worker');
   await fs.access(worker, 1);
   const codexProWorker = path.join(context.prefix, 'bin', 'flywheel-codex-pro-worker');
@@ -72,18 +77,45 @@ test('the six packaged npm candidates install and run from a clean agent environ
   const before = await fs.readFile(globalConfig);
 
   const installedRequire = require('node:module').createRequire(path.join(root, 'package.json'));
-  const workerPath = installedRequire.resolve('@ckanner/dsh-plugin-flywheel/worker');
-  assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/dsh-plugin-flywheel/claude-code-pro-worker'));
-  const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/dsh-plugin-flywheel')));
+  const workerPath = installedRequire.resolve('@ckanner/flywheel/worker');
+  assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/flywheel/claude-code-pro-worker'));
+  const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
   assert.equal(typeof installedHost.apply, 'function');
   assert.ok(server.requests.includes('/zod'));
   assert.ok(server.requests.includes('/tarballs/zod-4.3.6.tgz'));
-  const installationModule = path.join(path.dirname(workerPath), 'installation.js');
+  const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
 
-  await t.test('default installation succeeds with an absent optional Claude adapter', async () => {
+  await t.test('a direct DSH installation resolves its own bundled CLI without a global record', async () => {
+    const record = path.join(context.home, '.config/flywheel/installation.json');
+    const saved = await fs.readFile(record);
+    const stale=JSON.parse(saved);stale.version='0.32.1';await fs.writeFile(record,JSON.stringify(stale));
+    assert.throws(()=>resolveFlywheelBinary({},context.env),/launcher version does not match/);
+    assert.equal(resolveFlywheelBinary({flywheelBinary:'/explicit/user/binary'},context.env),'/explicit/user/binary');
+    await fs.unlink(record);
+    try {
+      assert.equal(resolveFlywheelBinary({}, context.env), await fs.realpath(cli));
+      const status=await run(process.execPath,[cli,'control','runs','--cwd',context.project],context.env,context.project);
+      assert.equal(status.code,0,status.stderr+status.stdout);assert.equal(JSON.parse(status.stdout).ok,true);
+    } finally {await fs.writeFile(record,saved,{mode:0o600});}
+  });
+
+  await t.test('the bundled DSH worker drives the offline SDK from the installed package', async () => {
+    const fixture = path.join(context.fixtures, 'offline-dsh.mjs');
+    await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-dsh.js'), fixture);await fs.chmod(fixture,0o755);
+    const input={protocol:1,type:'start',requestId:'installed-single-dsh',cwd:await fs.realpath(context.project),provider:'deepseek-account',model:'fixture-model',reasoningEffort:'high',permissionMode:'danger-full-access',prompt:'Offline package check',timeoutMs:5000};
+    const result=await new Promise((resolve,reject)=>{
+      const child=spawn(worker,[],{cwd:context.project,env:{...context.env,FLYWHEEL_DSH_BIN:fixture},stdio:['pipe','pipe','pipe']});
+      let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);
+      const timer=setTimeout(()=>child.kill('SIGTERM'),10000);child.on('close',(code,signal)=>{clearTimeout(timer);resolve({code,signal,stdout,stderr});});child.stdin.end(JSON.stringify(input)+'\n');
+    });
+    assert.equal(result.code,0,result.stderr+result.stdout);assert.equal(result.signal,null);
+    const last=JSON.parse(result.stdout.trim().split('\n').at(-1));assert.equal(last.type,'result');assert.equal(last.status,'ok');assert.equal(last.settled,true);
+  });
+
+  await t.test('default installation succeeds with an absent optional Claude adapter' , async () => {
     const doctor = await run(claudeCodeProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 1, doctor.stdout + doctor.stderr);
     const result = JSON.parse(doctor.stdout);
@@ -277,7 +309,28 @@ test('the six packaged npm candidates install and run from a clean agent environ
     assert.deepEqual(await fs.readFile(skill), userVersion);
   });
   const calls = (await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args[3] === 'add' && args.at(-1) === `@ckanner/dsh-plugin-flywheel@${server.candidate.version}`));
-  assert.ok(server.requests.some(request => request.includes('flywheel-' + process.platform + '-' + (process.arch === 'x64' ? 'amd64' : process.arch))));
+  assert.ok(calls.some(args => args[3] === 'add' && args.at(-1) === `@ckanner/flywheel@${server.candidate.version}`));
+  assert.ok(!server.requests.some(request => /flywheel-(darwin|linux)-/.test(request)), 'native engines must come from the single tarball');
   assert.equal(await fs.stat(path.join(context.project, 'state.json')).then(() => true, () => false), false);
+});
+
+// This environment has its own home/profile and registry; it never touches the user's desktop.
+test('split desktop installation migrates to the same single package and can repeat', {timeout:240000}, async t => {
+  const server=await registry(path.resolve(process.env.FLYWHEEL_NPM_PACKAGES_DIR || 'dist-npm'));
+  const context=await environment(server.url,server.candidate.version);
+  t.after(async()=>{await server.close();await context.clean();});
+  context.env.FLYWHEEL_DSH_FIXTURE_LEGACY='0.32.1';
+  const first=await firstInstall(context,server.candidate.version);
+  assert.equal(first.code,0,first.stdout+first.stderr);
+  const report=JSON.parse(first.stdout),step=report.steps.find(s=>s.name==='dsh-plugin');
+  assert.equal(step.migration.status,'migrated');
+  const state=JSON.parse(await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_STATE,'utf8'));
+  assert.deepEqual(Object.keys(state),['@ckanner/flywheel']);
+  assert.equal(state['@ckanner/flywheel'].version,server.candidate.version);
+  const calls=(await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG,'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(calls.findIndex(a=>a[3]==='add') < calls.findIndex(a=>a[3]==='remove'));
+  const root=await installedRoot(context);const config=path.join(context.home,'.config/flywheel/flywheel.config.json');const before=await fs.readFile(config);
+  const second=await run(process.execPath,[path.join(root,'bin/flywheel.js'),'setup','--no-global','--prefix',context.prefix,'--dsh-bin',context.dsh,'--json'],context.env,context.project);
+  assert.equal(second.code,0,second.stderr+second.stdout);assert.deepEqual(await fs.readFile(config),before);
+  assert.equal(JSON.parse(second.stdout).steps.find(s=>s.name==='dsh-plugin').migration,undefined);
 });

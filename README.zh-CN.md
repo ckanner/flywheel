@@ -8,6 +8,11 @@ Flywheel 是面向 coding agent 的确定性 Go 编排器。模型负责规划�
 
 [快速开始](docs/zh-CN/getting-started.md) · [文档](docs/README.zh-CN.md) · [参与贡献](docs/zh-CN/contributing.md) · [MIT 许可证](LICENSE)
 
+从 0.33 起，`@ckanner/flywheel` 一个包包含 CLI、DSH 界面／worker、内嵌技能和
+四个平台引擎，不再需要独立平台包或首次运行下载引擎。从 0.32.x 升级前先退出 DSH，
+再运行原来的安装命令；安装器替换旧桌面包登记，保留配置和任务历史，完成后重载 DSH。
+历史 npm 版本继续保留。
+
 ## Flywheel 能做什么
 
 - **根据任务选择流程。** Auto 为满足条件、边界明确的任务选择 Quick，需要规划或更广泛验收时选择 Full。

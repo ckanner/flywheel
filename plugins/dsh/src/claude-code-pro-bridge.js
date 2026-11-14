@@ -19,7 +19,7 @@ export async function loadAdapter() {
   }
   let manifest, api;
   try { manifest = require('dsh-subagent-claude-code-pro/package.json'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.4.0 alongside @ckanner/dsh-plugin-flywheel; the optional adapter is not installed'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.4.0 alongside @ckanner/flywheel; the optional adapter is not installed'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.4.0 machine contract');
   }

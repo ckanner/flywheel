@@ -32,6 +32,13 @@ retries, budgets, workspaces, and delivery. Use it from the DeepSeek Harness
 - **Makes failures visible.** Unknown execution, usage, or cleanup stays
   unknown. The engine preserves work and stops when it cannot safely proceed.
 
+From 0.33, `@ckanner/flywheel` is one complete package: CLI, DSH view/workers,
+embedded skills and four platform engines. No separate platform package or first-run
+engine download is needed. When upgrading from 0.32.x, quit DSH before running the
+installer; it replaces the old desktop package registration and preserves your
+configuration and histories. Reload DSH after setup. Existing old npm versions
+remain available for historical installations.
+
 ## Install
 
 For the desktop path, install Node.js **22.18.0 or later**, npm, Git, and a

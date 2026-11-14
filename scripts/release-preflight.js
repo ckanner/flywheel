@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2026 ckanner. SPDX-License-Identifier: MIT
-// One release owns the engine, four native packages and the DSH plugin.
+// One published package owns the CLI, all native binaries, plugin and workers.
 "use strict";
 
 const fs = require("node:fs");
@@ -9,57 +9,37 @@ const { execFileSync } = require("node:child_process");
 
 const PLATFORMS = ["darwin-arm64", "darwin-amd64", "linux-arm64", "linux-amd64"];
 const META = "@ckanner/flywheel";
-const PLUGIN = "@ckanner/dsh-plugin-flywheel";
+const PLUGIN = META; // CLI, host plugin and machine workers share one published identity.
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const PACKAGES = [
-  ...PLATFORMS.map((platform) => ({ name: `${META}-${platform}`, directory: `npm/platforms/${platform}`, platform })),
-  { name: PLUGIN, directory: "plugins/dsh" },
-  { name: META, directory: "." },
-];
+const PACKAGES = [{ name: META, directory: "." }];
 
 function validatePackages(manifests, requestedVersion) {
   const meta = manifests[META];
   const version = requestedVersion ?? meta?.version;
   if (!VERSION.test(version ?? "")) throw new Error("Release version must be a stable X.Y.Z without leading zeroes");
-  for (const entry of PACKAGES) {
-    const manifest = manifests[entry.name];
-    if (!manifest || manifest.name !== entry.name) throw new Error(`Missing or incorrect manifest for ${entry.name}`);
-    if (manifest.version !== version) throw new Error(`${entry.name} version ${manifest.version} != requested ${version}`);
-    if (manifest.repository?.type !== "git" || manifest.repository?.url !== "git+https://github.com/ckanner/flywheel.git" ||
-        (manifest.repository.directory ?? ".") !== entry.directory) {
-      throw new Error(`${entry.name} must identify its Flywheel source repository and directory for provenance`);
-    }
-    if (entry.platform) {
-      const [os, arch] = entry.platform.split("-");
-      const cpu = arch === "amd64" ? "x64" : arch;
-      if (JSON.stringify(manifest.os) !== JSON.stringify([os]) || JSON.stringify(manifest.cpu) !== JSON.stringify([cpu])) {
-        throw new Error(`Incorrect os/cpu selector for ${entry.name}`);
-      }
-      if (meta.optionalDependencies?.[entry.name] !== version) throw new Error(`Meta optional dependency ${entry.name} must be exactly ${version}`);
-    }
+  if (Object.keys(manifests).length !== 1 || !meta || meta.name !== META || meta.version !== version || meta.private === true) {
+    throw new Error("Release must contain only the public @ckanner/flywheel package at the requested version");
   }
-  if (meta.dependencies?.[PLUGIN] !== version) throw new Error(`Meta dependency ${PLUGIN} must be exactly ${version}`);
-  if (manifests[PLUGIN].dependencies?.['dsh-subagent-codex-pro'] !== '0.9.0') {
-    throw new Error('The plugin dependency dsh-subagent-codex-pro must be exactly 0.9.0');
+  if (meta.repository?.type !== 'git' || meta.repository?.url !== 'git+https://github.com/ckanner/flywheel.git' ||
+      (meta.repository.directory ?? '.') !== '.') throw new Error('Flywheel must identify its source repository');
+  if (JSON.stringify(meta.os) !== JSON.stringify(['darwin', 'linux']) || JSON.stringify(meta.cpu) !== JSON.stringify(['x64', 'arm64'])) {
+    throw new Error('The unified package must support darwin/linux on x64/arm64');
   }
-  if (JSON.stringify(manifests[PLUGIN].bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro'])) {
-    throw new Error('The reviewed Codex Pro source candidate must be bundled; installation must not depend on an unpublished registry version');
+  if (Object.keys(meta.optionalDependencies ?? {}).length || Object.keys(meta.dependencies ?? {}).some(name => name.startsWith('@ckanner/flywheel') || name === '@ckanner/dsh-plugin-flywheel')) {
+    throw new Error('Flywheel must carry its own native binaries and plugin, not depend on legacy split packages');
   }
-  if (manifests[PLUGIN].exports?.['./codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
-      manifests[PLUGIN].bin?.['flywheel-codex-pro-worker'] !== './dist/codex-pro-worker.js' ||
-      meta.bin?.['flywheel-codex-pro-worker'] !== 'bin/flywheel-codex-pro-worker.js') {
-    throw new Error('The release must expose the installed Codex Pro worker');
+  if (meta.dependencies?.['dsh-subagent-codex-pro'] !== '0.9.0' || JSON.stringify(meta.bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro'])) {
+    throw new Error('The reviewed Codex Pro source candidate must be pinned and bundled');
   }
-  if (manifests[PLUGIN].peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.4.0' ||
-      manifests[PLUGIN].peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true ||
-      manifests[PLUGIN].dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
+  if (meta.peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.4.0' || meta.peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true || meta.dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
     throw new Error('Claude Code Pro must remain an optional peer pinned to machine-compatible 0.4.0');
   }
-  if (manifests[PLUGIN].exports?.['./claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
-      manifests[PLUGIN].bin?.['flywheel-claude-code-pro-worker'] !== './dist/claude-code-pro-worker.js' ||
-      meta.bin?.['flywheel-claude-code-pro-worker'] !== 'bin/flywheel-claude-code-pro-worker.js') {
-    throw new Error('The release must expose the installed Claude Code Pro worker');
+  const exports = { '.': './dist/index.mjs', './client': './dist/client.js', './worker-policy': './dist/policy.mjs', './worker': './dist/worker.mjs', './codex-pro-worker': './dist/codex-pro-worker.mjs', './claude-code-pro-worker': './dist/claude-code-pro-worker.mjs', './package.json': './package.json' };
+  for (const [key, value] of Object.entries(exports)) if (meta.exports?.[key] !== value) throw new Error(`Missing unified package export ${key}`);
+  for (const name of ['flywheel', 'flywheel-dsh-worker', 'flywheel-codex-pro-worker', 'flywheel-claude-code-pro-worker']) {
+    if (meta.bin?.[name] !== `bin/${name}.js`) throw new Error(`Missing CLI entry ${name}`);
   }
+  if (meta.dsh?.bundle?.patch !== './cordis.patch.yml' || meta.dsh?.client?.platform !== 'web' || !meta.engines?.dsh) throw new Error('Missing DSH host metadata');
   return version;
 }
 
@@ -104,7 +84,7 @@ if (require.main === module) {
   try {
     const options = parseArgs(process.argv.slice(2));
     const result = preflight(path.resolve(__dirname, ".."), options);
-    console.log(options.json ? JSON.stringify(result) : `release:check: ok (${result.version}; all six packages${result.tag ? "; exact tag and clean HEAD" : ""})`);
+    console.log(options.json ? JSON.stringify(result) : `release:check: ok (${result.version}; one complete package${result.tag ? "; exact tag and clean HEAD" : ""})`);
   } catch (error) {
     console.error(`release:check: ${error.message}`);
     process.exitCode = 1;

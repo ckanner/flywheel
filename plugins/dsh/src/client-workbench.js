@@ -1361,7 +1361,7 @@ function TaskView({
     h(Diagnostic, { value: control.diagnostic, t }), h(Configuration, { value: control.configuration, t }),
     control.raw && h('section', { className: css.details }, h('h4', null, t('raw')), h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
   return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page },
-    h('style', { 'data-plugin': '@ckanner/dsh-plugin-flywheel', 'data-plugin-css': '@ckanner/dsh-plugin-flywheel/client.module.css' }, stylesheet),
+    h('style', { 'data-plugin': '@ckanner/flywheel', 'data-plugin-css': '@ckanner/flywheel/client.module.css' }, stylesheet),
     h('header', { className: css.workbenchHeader },
       h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }),
       h('div', { className: css.repositoryLinks },

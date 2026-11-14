@@ -21,7 +21,7 @@ const { createRoot } = await import('react-dom/client');
 export const { act } = React;
 export const clientDocument = dom.window.document;
 const h = React.createElement;
-const source = await readFile(new URL('../../dist/client.js', import.meta.url), 'utf8');
+const source = await readFile(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR ? process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR + '/dist/client.js' : new URL('../../dist/client.js', import.meta.url), 'utf8');
 const bundleImports = [...source.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)].map(match => match[2]);
 assert.deepEqual([...new Set(bundleImports)], ['react'], 'the shipped plain-JS bundle depends on React alone');
 
@@ -49,7 +49,7 @@ export function loadClient(timers) {
     clearTimeout: timers?.clearTimeout ?? ((...args) => clearTimeout(...args)),
     queueMicrotask,
     window: { __ModuleLoader__: { load(definition) {
-      assert.equal(definition.id, '@ckanner/dsh-plugin-flywheel');
+      assert.equal(definition.id, '@ckanner/flywheel');
       client = definition.factory(name => {
         assert.ok(name in modules, `the external plain-JS client may load only React, not ${name}`);
         return modules[name];

@@ -3,10 +3,15 @@
 [文档首页](../README.zh-CN.md) · [English](../en/getting-started.md) · 简体中文
 
 先安装 Flywheel，配置实际要使用的后端，再运行一个小任务。本文对应当前仓库，安装时
-应核对所选 npm 版本与本机版本；源码合并不会更新已有安装。CLI、平台包和 DSH 插件
+应核对所选 npm 版本与本机版本；源码合并不会更新已有安装。CLI、内置引擎和 DSH 插件
 须保持同一版本。
 
 任务分支、契约与 PR 审阅的完整流程见[工作流指南](workflow.md)。
+
+从 0.33 起，`@ckanner/flywheel` 一个包包含 CLI、DSH 界面／worker、内嵌技能和
+四个平台引擎，不再需要独立平台包或首次运行下载引擎。从 0.32.x 升级前先退出 DSH，
+再运行原来的安装命令；安装器替换旧桌面包登记，保留配置和任务历史，完成后重载 DSH。
+历史 npm 版本继续保留。
 
 ## 1. 准备运行环境
 
@@ -130,8 +135,7 @@ web 工具。原生会话视图不会恢复这些 worker 能力，也不会把�
 ### 桌面启动器
 
 Setup 写入 `~/.config/flywheel/npm-launcher` 和安装记录，保存绝对 Node／CLI 路径
-及已核实的 DSH 入口。显式 `flywheelBinary` 优先于托管启动器；记录缺失可使用旧 PATH
-查找，记录损坏或 launcher 被改动则明确失败。
+及已核实的 DSH 入口。显式 `flywheelBinary` 优先于托管启动器；记录缺失时使用本包 CLI，记录损坏或 launcher 被改动则明确失败。
 
 移动 Node／npm prefix，或安装原先缺失的工具后，在能找到它们的终端中保留原参数，
 重跑 `flywheel setup --no-global`。处理冲突前先保留定制 launcher。终端 export 不会

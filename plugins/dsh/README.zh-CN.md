@@ -2,7 +2,7 @@
 
 [English](README.md) · 简体中文 · [项目介绍](https://github.com/ckanner/flywheel/blob/main/README.zh-CN.md) · [文档目录](https://github.com/ckanner/flywheel/blob/main/docs/README.zh-CN.md)
 
-`@ckanner/dsh-plugin-flywheel` 将 DeepSeek Harness（DSH）连接到 Flywheel 的
+`@ckanner/flywheel` 将 DeepSeek Harness（DSH）连接到 Flywheel 的
 Go 编排引擎，提供原生工作流视图、命令与模型工具入口，以及所选后端需要的 worker。
 任务状态、验收、预算、进程生命周期和 Git 交付由引擎管理。
 
@@ -86,7 +86,7 @@ dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | 原生 Claude 可执行文件及已有配置／登录根目录 |
 | `FLYWHEEL_KIMI_BIN` | 原生 Kimi 可执行文件，默认 `kimi` |
 
-npm 启动器通常会从同版本依赖中解析 worker。启动引擎的进程必须能看到相关
+npm 启动器直接解析当前完整包内的 worker。启动引擎的进程必须能看到相关
 可执行文件与环境设置；终端 export 不会更新已经启动的桌面进程。
 
 ## 启动任务与使用工作台
@@ -244,9 +244,13 @@ prompt 之后，不能提供相同的预派发观察；Kimi print 模式也没�
 ## 维护与开发
 
 插件显式 `flywheelBinary` 优先于受管安装记录。未设置时，使用
-`~/.config/flywheel/` 中经过验证的启动器；只有记录不存在时才允许旧 PATH 查找。
+`~/.config/flywheel/` 中经过验证的启动器；记录不存在时使用本包 `bin/flywheel.js`，
+仅 private 源码测试区保留旧 PATH 后备。
 记录损坏或启动器改变会明确失败。`controlTimeoutMs` 默认 60,000，限制的是桌面
 控制请求，不是整个任务预算。
+
+已有受管启动记录必须与当前包同版。单独更新 DSH 副本后，应运行该版本的 setup
+刷新受管安装；旧记录会明确报错，不把新版界面与旧引擎混用。
 
 升级、移动 npm 前缀、更换 Node 或补充原生 CLI 后，携带所需前缀和桌面 CLI
 选项运行 `flywheel setup --no-global`，再按需重载 DSH。已有配置与修改过的

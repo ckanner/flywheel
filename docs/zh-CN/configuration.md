@@ -581,7 +581,7 @@ full-access 核对 `danger-full-access`／`dangerFullAccess`，不将其称为�
 
 | 环境变量 | 用途 |
 |---|---|
-| `FLYWHEEL_DSH_WORKER` | 可选 DSH worker 路径；npm 启动器通常解析同版本依赖 |
+| `FLYWHEEL_DSH_WORKER` | 可选 DSH worker 路径；npm 启动器通常解析自身包内的 worker |
 | `FLYWHEEL_DSH_BIN` | DSH 命令，默认 PATH 中的 `dsh` |
 | `FLYWHEEL_DSH_PROFILE` | SDK profile，默认 `sdk`，不能为 `desktop` |
 | `DSH_HOME` | DSH 自身解释的配置根目录 |

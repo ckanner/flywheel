@@ -2,7 +2,7 @@
 
 English · [简体中文](README.zh-CN.md) · [Project overview](https://github.com/ckanner/flywheel/blob/main/README.md) · [Documentation](https://github.com/ckanner/flywheel/blob/main/docs/README.md)
 
-`@ckanner/dsh-plugin-flywheel` connects DeepSeek Harness (DSH) to Flywheel's
+`@ckanner/flywheel` connects DeepSeek Harness (DSH) to Flywheel's
 Go orchestration engine. It adds a native workflow view, command and model-tool
 controls, and the workers used by selected backends. The engine owns task state,
 verification, budgets, process lifecycles, and Git delivery.
@@ -101,7 +101,7 @@ does not silently fall back to `codex exec`. See
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | Native Claude executable and existing configuration/login root |
 | `FLYWHEEL_KIMI_BIN` | Native Kimi executable; default `kimi` |
 
-The npm launcher normally resolves workers from its matching dependency.
+The npm launcher normally resolves workers from its own installed package.
 Executables and environment settings must be visible to the process that starts
 the engine; a shell export does not update an already running desktop.
 
@@ -303,9 +303,14 @@ images and attachments are not supported by these worker inputs.
 
 The explicit plugin setting `flywheelBinary` takes precedence over the managed
 installation record. Without it, the plugin uses the validated launcher recorded
-under `~/.config/flywheel/`; only a missing record permits legacy PATH lookup.
+under `~/.config/flywheel/`. Without a record, the installed package uses its own
+`bin/flywheel.js`; only the private source harness retains the legacy PATH fallback.
 A damaged record or changed launcher fails visibly. `controlTimeoutMs` defaults
 to 60,000 and controls the desktop control request, not the task's total budget.
+
+An existing managed launcher must match the installed package version. After updating
+only the DSH copy, run setup for that version to refresh the managed installation;
+a stale record is reported instead of mixing a newer view with an older engine.
 
 After upgrading, moving the npm prefix, changing Node, or adding native CLIs,
 run `flywheel setup --no-global` with the intended prefix and desktop CLI

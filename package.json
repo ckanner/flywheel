@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.32.1",
+  "version": "0.33.0",
   "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",
@@ -17,7 +17,8 @@
     "arm64"
   ],
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.18.0",
+    "dsh": ">=0.2.1-rc.5 <0.3.0-0"
   },
   "repository": {
     "type": "git",
@@ -27,30 +28,91 @@
   "files": [
     "bin",
     "npm/*.js",
+    "dist",
+    "native",
+    "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
     "README.en.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "LICENSE",
-    "docs"
+    "THIRD_PARTY_NOTICES.md",
+    "docs",
+    "plugins/dsh/PROTOCOL.md",
+    "plugins/dsh/vendor/README.md",
+    "plugins/dsh/vendor/codex-pro.json",
+    "plugins/dsh/README.md",
+    "plugins/dsh/README.zh-CN.md",
+    "plugins/dsh/README.en.md",
+    "plugins/dsh/LICENSE",
+    "plugins/dsh/THIRD_PARTY_NOTICES.md"
   ],
-  "optionalDependencies": {
-    "@ckanner/flywheel-darwin-arm64": "0.32.1",
-    "@ckanner/flywheel-darwin-amd64": "0.32.1",
-    "@ckanner/flywheel-linux-arm64": "0.32.1",
-    "@ckanner/flywheel-linux-amd64": "0.32.1"
-  },
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
     "release:local": "node scripts/release-local.js",
     "test": "node --test npm/test/*.test.js",
-    "test:install": "node --test npm/test/install.integration.js",
+    "test:install": "node scripts/test-packed-host.js && node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.32.1 dist-npm",
+    "build:npm": "bash scripts/build-npm.sh 0.33.0 dist-npm",
     "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {
-    "@ckanner/dsh-plugin-flywheel": "0.32.1"
+    "dsh-subagent-codex-pro": "0.9.0",
+    "zod": "4.3.6"
+  },
+  "bundledDependencies": [
+    "dsh-subagent-codex-pro"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5 || ~4.1.0",
+    "@deepseek-ai/dsh-commands": "^0.2.1-rc.5 || ^0.2.2-0",
+    "@deepseek-ai/dsh-session-projection": "^0.2.1-rc.5 || ^0.2.2-0",
+    "@deepseek-ai/dsh-tools": "^0.2.1-rc.5 || ^0.2.2-0",
+    "dsh-subagent-claude-code-pro": "0.4.0",
+    "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.5 || ^0.2.2-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-commands": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "dsh-subagent-claude-code-pro": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./client": "./dist/client.js",
+    "./worker-policy": "./dist/policy.mjs",
+    "./worker": "./dist/worker.mjs",
+    "./codex-pro-worker": "./dist/codex-pro-worker.mjs",
+    "./package.json": "./package.json",
+    "./claude-code-pro-worker": "./dist/claude-code-pro-worker.mjs"
   }
 }

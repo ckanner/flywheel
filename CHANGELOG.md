@@ -5,7 +5,16 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased
+## 0.33.0 — One complete npm distribution
+
+- Consolidate the CLI, DSH host/client, workers, embedded skills and four native
+  engines into one `@ckanner/flywheel` npm tarball. Resolve and verify bundled
+  native files locally; do not download or borrow platform packages at runtime.
+- Migrate the old desktop package through the official DSH CLI, verifying the
+  replacement before removal and retaining explicit rollback/cancellation state.
+  Keep user configuration, modified skills and task histories intact.
+- Publish one immutable candidate through OIDC, test its registry installation,
+  then promote its single latest tag. Historical split packages remain unchanged.
 
 ## 0.32.1 — DSH compatible-series upgrades
 

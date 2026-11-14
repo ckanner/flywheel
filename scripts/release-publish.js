@@ -173,15 +173,14 @@ async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = de
     log(`Published and verified ${entry.name}@${entry.version} under ${tag}`);
   }
   await verifyRemote(candidate, { runNpm, wait, now });
-  log("All six exact versions are verified; latest is unchanged. Run registry installation tests before promotion.");
+  log("The exact package version is verified; latest is unchanged. Run registry installation tests before promotion.");
 }
 
 async function promote(candidate, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow, log = console.log } = {}) {
   await verifyRemote(candidate, { runNpm, wait, now });
   const entries = orderedPackages(candidate);
   for (const entry of entries) checkLatest(entry, runNpm);
-  // Dependencies first, public entry last. npm has no multi-package dist-tag
-  // transaction, so retries verify progress and never roll a newer tag back.
+  // Promote only the verified complete package; retries never roll a newer tag back.
   for (const entry of entries) {
     if (checkLatest(entry, runNpm) === entry.version) continue;
     const result = runNpm(["dist-tag", "add", `${entry.name}@${entry.version}`, "latest"]);
