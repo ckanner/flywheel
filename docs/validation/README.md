@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-13 | [0.32.1：DSH 兼容系列范围与发行（桌面重载待完成）](2026-11-13-release-0.32.1.md) |
 | 2026-11-13 | [0.32.0 正式发行与本机安装（桌面重载待完成）](2026-11-13-release-0.32.0.md) |
 | 2026-11-13 | [DSH 预热回执大小与 TTL 测试同步修复](2026-11-13-prewarm-receipts-and-expiry-tests.md) |
 | 2026-11-13 | [DSH 设置开关与最新工作台整合复核](2026-11-13-dsh-settings-controls.md) |
