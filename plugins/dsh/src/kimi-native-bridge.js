@@ -227,6 +227,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   };
   try {
     input = validateKimiNativeStart(raw);
+    const declaredCwd = input.cwd;
     input = { ...input, cwd: await realpath(input.cwd), managed: { ...input.managed, taskDir: await realpath(input.managed.taskDir) } };
     deadlineTimer = setTimeout(() => controller.abort(error('TIMEOUT', 'The Kimi invocation exceeded its wall timeout')), input.timeoutMs);
     checkAbort(controller.signal);
@@ -292,7 +293,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     promptId = 'flywheel-' + digest({ requestId: input.requestId, invocationId: input.managed.invocationId }).slice(0, 40);
     checkAbort(controller.signal);
     let submittedPrompt = input.prompt;
-    if (candidate) { const mapped = towerPrompt(input, candidate); submittedPrompt = mapped.prompt; promptMapping = mapped.mapping; }
+    if (candidate) { const mapped = towerPrompt(input, candidate, declaredCwd); submittedPrompt = mapped.prompt; promptMapping = mapped.mapping; }
     dispatch = 'unknown';
     const prompt = await runtime.request(sessionPath('/prompts'), { content: [{ type: 'text', text: submittedPrompt }], prompt_id: promptId,
       model: input.model, thinking: input.reasoningEffort, permission_mode: 'yolo', swarm_mode: input.native.mode === 'swarm',

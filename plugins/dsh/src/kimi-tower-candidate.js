@@ -188,23 +188,40 @@ export function towerCandidateReceipt(candidate, transfer) {
 }
 
 /** Remap exact project path references, never substrings in another path/URL. */
-export function towerPrompt(input, candidate) {
+export function towerPrompt(input, candidate, declaredCwd = input.cwd) {
   const source = input.cwd, target = candidate.path;
-  let cursor = 0, mapped = '', replacements = 0;
+  // Admission has already resolved the declared directory to source. Match
+  // either spelling in the original prompt, preferring a longer prefix at the
+  // same position; never re-scan text inserted from the candidate path.
+  // Removing trailing separators/dot components is equivalent for a directory;
+  // do not collapse '..', whose meaning can change across a symlink.
+  const prefixes = [...new Set([source, declaredCwd, declaredCwd.replace(/(?:\/+\.?)+$/, '') || '/'])].sort((a, b) => b.length - a.length);
+  const urls = [...input.prompt.matchAll(/(?:[A-Za-z][A-Za-z0-9+.-]*:)?\/\/[^\s"'`<>]+/g)]
+    .map(match => ({ start: match.index, end: match.index + match[0].length }));
+  let cursor = 0, urlIndex = 0, mapped = '', replacements = 0;
   for (;;) {
-    const index = input.prompt.indexOf(source, cursor);
+    let index = -1;
+    for (const value of prefixes) {
+      const position = input.prompt.indexOf(value, cursor);
+      if (position >= 0 && (index < 0 || position < index)) index = position;
+    }
     if (index < 0) { mapped += input.prompt.slice(cursor); break; }
+    while (urls[urlIndex]?.end <= index) urlIndex++;
+    const inUrl = urls[urlIndex] && index >= urls[urlIndex].start && index < urls[urlIndex].end;
     const before = index === 0 ? '' : input.prompt[index - 1];
-    const after = input.prompt[index + source.length] || '';
-    const startsPath = before === '' || /[\s"'`([{=:]/.test(before);
-    const endsPrefix = after === '' || /[\/\s"'`)\]},;:#?]/.test(after);
-    mapped += input.prompt.slice(cursor, index) + (startsPath && endsPrefix ? target : source);
-    if (startsPath && endsPrefix) replacements++;
-    cursor = index + source.length;
+    const startsPath = !inUrl && (before === '' || /[\s"'`([{=:]/.test(before));
+    const prefix = startsPath && prefixes.find(value => {
+      const after = input.prompt[index + value.length] || '';
+      return input.prompt.startsWith(value, index) && (after === '' || /[\/\s"'`)\]},;:#?]/.test(after));
+    });
+    if (!prefix) { mapped += input.prompt.slice(cursor, index + 1); cursor = index + 1; continue; }
+    mapped += input.prompt.slice(cursor, index) + target;
+    replacements++;
+    cursor = index + prefix.length;
   }
   const prompt = `Flywheel Tower candidate directory: ${target}\n` +
     'Run project edits and Git operations in this independent repository. External task contract files are read-only evidence at their supplied paths. ' +
     'Flywheel transfers this candidate after cleanup and owns validation, review and final commits.\n\n' + mapped;
-  return { prompt, mapping: { sourceCwd: source, candidateCwd: target, replacements,
+  return { prompt, mapping: { sourceCwd: source, declaredSourceCwd: declaredCwd, candidateCwd: target, replacements,
     rule: 'bounded-literal-absolute-path-prefix', originalPromptDigest: sha(input.prompt), effectivePromptDigest: sha(prompt), filesystemSandbox: false } };
 }

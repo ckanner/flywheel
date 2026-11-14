@@ -4,7 +4,7 @@
 
 日期：2026-11-14。对应 Flywheel 0.34.0 开发候选与下表六个 PR。本记录区分源码测试、真实公开包集成、已安装候选、最终完整发行包及用户机器验收，不声明已合并、已发布 npm 或已完成真实模型／桌面验收。
 
-**当前结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包安装后的 Node 完整检查、四条 Go→Node 桥接及 36 个 session 场景通过。完整 Flywheel 四平台单包构建通过，同一 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
+**首份完整候选的结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包安装后的 Node 完整检查、四条 Go→Node 桥接及 36 个 session 场景通过。完整 Flywheel 四平台单包构建通过，同一 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
 
 ## 1. 六仓范围与最终配套源码
 
@@ -83,6 +83,16 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 
 据此为 `make test`／`coverage` 明确设置有限的 `15m` 包级预算，保留全部测试、全部断言、每函数 100% coverage 和 CI job 的 20 分钟总预算。生产 watchdog 与业务超时没有变化，也没有把初次的 98.9% 计为通过。修正后的精确 head／workflow 结果由 #44 的 PR 说明与 checks 记录。
 
+### macOS Tower 路径与目录别名回归
+
+[第二轮 CI](https://github.com/ckanner/flywheel/actions/runs/43583479213) 对应 `0299671d4a3ec68b8d3352aa58b2f114d94fa23a`。单包构建和 Linux 全套通过；macOS 的 Go 质量门禁通过，machine 包 `340.561s`、每函数 coverage 100%。随后 Node 主套件为 **388 通过、6 失败、0 跳过**，没有运行后续安装／桥接门禁，不能记为 macOS 全套通过。
+
+六个失败均来自直接调用 Tower helper 的 fixture：macOS `mkdtemp` 返回的逻辑临时目录与 Git 报告的物理根目录不同。正式 worker 入口已解析 `cwd`／`taskDir`，candidate 自身也已规范化；修正将 source 和 linked-unit 两处 fixture 同样先 `realpath`。仓库根目录检查、tracked symlink 祖先拒绝、source／外部 contract 指纹和 Execute-only 导回规则都保留。
+
+通过真实 `runKimiWorker`、HTTP／WS 子进程增加 Linux 可重现的目录别名回归时，还复现了运行代码缺陷：入口规范化后丢失了声明路径的拼写，prompt 中该别名仍可能指回原工作区。修正保留已通过准入的声明别名，并在原 prompt 中一次性映射它和物理目录；候选路径不二次替换。配套回归验证原始／提交 prompt 的实际摘要、物理 source 指纹、外部契约及源 HEAD 不变、成功导回和清理。另覆盖 URL query 保留及嵌套前缀选择，防止相似路径误改或合法较短前缀漏改。
+
+旧候选身份与历史结果仍原样保留；包含这次运行修正的完整候选须单独构建、安装和记录，不能沿用旧 tarball 的通过结果。最终 PR head 的跨平台结果由 #44 的 checks 与说明记录。
+
 ## 4. 已闭合的关键回归
 
 - **Native profile 与真实通道一致。** Go→Node 请求保留原始 native options；`requested`、`effective` 和 `observed` 分开处理。显式 off 通过公开控制实际关闭，配置不匹配时不能仅靠提示词继续派发。
@@ -97,7 +107,7 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 
 ## 5. 最终集成与完整候选
 
-本节记录最终五个配套包和同一个完整 Flywheel tarball 的实际验收。候选在干净本地提交构建；随后仅补充安装测试断言与本验证记录，未改候选的运行代码或插件包。
+本节先保留最终五个配套包与首份完整 Flywheel tarball 的实际验收。该候选在干净本地提交构建，安装测试断言修正后仍用同一 tarball 验收。后续 Tower 目录别名修正改变了运行代码，须用新的完整候选单独验证，不能将原候选的通过结果转记给它。
 
 | 项目 | 最终命令／前提 | 实际结果与证据 |
 | --- | --- | --- |
@@ -106,14 +116,14 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 | 单包候选构建 | `npm run build:npm` | **通过**：隔离源码快照、正常 npm 安装、构建四平台引擎并核对清单和校验；仅生成一个 `ckanner-flywheel-0.34.0.tgz`，`18,861,167` bytes。精确身份如下；日志 `native-package-build-final.log` |
 | 同候选真实 npm 安装 | `FLYWHEEL_NPM_PACKAGES_DIR=dist-npm FLYWHEEL_CLAUDE_CODE_PRO_TARBALL=<已验证的0.5.0候选> npm run test:install` | **通过**：同一原始 tarball 的 Host/Client **10/10**；正常 npm 安装、独立 workers、可选 Claude、配置保留与重复安装／迁移 **15/15**；均 0 失败、0 跳过。日志 `native-install-final.log` |
 | 36 个引擎 session 场景 | `make build`；`FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions` | **引擎构建通过；36/36 场景、96 次调用完成，全部 `oraclePass:true`**，`stopReason:null`，6 类 scenario 各 6 次且 unknown/unobserved 均为 0；日志 `native-sessions-final.log` |
-| 精确远端 CI 与交付身份 | 六个 PR 的最终 head、checks；Flywheel 主分支文档更新合入后的 source 身份 | 五个配套源码 head 的远端 CI 均通过，链接如下。Flywheel 实现提交保留最新主分支 `c000f6d8a11522521d7a30203e74b735490e9b73`；新 PR head 的最终检查与交付状态见 [#44 checks](https://github.com/ckanner/flywheel/pull/44/checks)，由 PR 说明记录精确 run，避免文档提交自引用。Go 与已测运行代码未因文档合并／证据更新改变。 |
+| 精确远端 CI 与交付身份 | 六个 PR 的最终 head、checks；Flywheel 主分支文档更新合入后的 source 身份 | 五个配套源码 head 的远端 CI 均通过，链接如下。Flywheel 实现提交保留最新主分支 `c000f6d8a11522521d7a30203e74b735490e9b73`；新 PR head 的最终检查与交付状态见 [#44 checks](https://github.com/ckanner/flywheel/pull/44/checks)，由 PR 说明记录精确 run，避免文档提交自引用。Go 实现和五个配套包保持原验证身份；后续 Tower 运行修正另行验证。 |
 
 36 个场景的 report 为 `/tmp/flywheel-native-eval-AbJ1L5/results/report.json`，明确标为 `execution:"offline-fixture"`。使用的引擎 SHA-256 为 `5018c0e22d220f5517d5418f5f506c7de8f8942c6b753fd595b94a28bf208ade`；manifest SHA-256 为 `8e153aba584ac485524d46c8c06cf647868a3e567cd36f9491ea76c4d710b603`。该实验比较相同任务／绑定／effort／权限／oracle 下的 Execute/Review history mode，Plan/Judge 在实验三组中均显式 fresh；不代替 §4 专门针对原生 Kimi Plan 的 10 组回归。
 
 完整 Flywheel 候选已构建并安装验证；registry publication 与用户机器安装仍是独立状态，本轮没有发布或更改用户配置。
 
 
-### 完整候选身份
+### 首份完整候选身份
 
 本地构建提交为 `1ba506a2ac6996700828ce40274b2c287de1103d`，`dirty:false`，tree 为 `bc65e37eab9844064699cf402481112160fc092e`；远端 [854c3580ed7e](https://github.com/ckanner/flywheel/commit/854c3580ed7ec0f740c7882f23baca11dfa10b6a) 的 **tree 与其完全一致**。两种提交路径的 commit ID 不同，没有将本地 hash 当成可获取的远端提交。
 
@@ -124,7 +134,7 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 
 安装门禁首次在测试夹具的旧断言处失败：它仍要求单个 Codex bundle。修复为精确检查 **Codex Pro 0.10.0 与 Preset Generator 0.4.0 两个 bundle**，同时补齐两种 Pro doctor 的 `nativeVersion:1`，验证安装后的 Kimi launcher／exports、generator 公开 composition API，以及两包均没有 registry 获取请求。使用 **同一个上述 tarball** 重跑，Host/Client 10 项和安装 15 项全部通过；未重打包换掉失败对象，也未弱化包身份检查。这些安装测试位于不随 tarball 发布的 `npm/test/` 中。
 
-后续证据与源码链接修正只改变文档；候选仍保留构建当时的文档快照。最终 PR 的 CI 会从其精确 head 另行构建并安装完整候选，不能将两个不同文档快照的 tarball hash 混同。
+首份候选之后的安装断言和证据链接修正只改变测试／文档。第二轮 CI 后的 Tower 修正则改变运行代码，已通过针对性 Kimi/Tower **22/22**（0 skip，约 `27.27s`）和独立只读审查；新增真实目录别名回归在修复前明确失败，修复后通过。完整 Node、Go→Node 和新候选安装结果须另行记录。最终 PR CI 从精确 head 构建并安装其自己的完整候选，各次 tarball hash 不混同。
 
 ### 已核对的配套 CI
 

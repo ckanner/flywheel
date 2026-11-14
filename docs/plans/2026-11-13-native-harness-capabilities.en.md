@@ -130,7 +130,7 @@ Only complete exclusive root/child step usage produces a family total. Old child
 
 ### 4.3 Independent Git candidate and transfer
 
-Tower runs in a copied repository with its own `.git`, retaining HEAD, dirty and untracked files, binary changes, symlinks, mode changes and deletions. Exact execution-directory prefixes in the prompt are mapped with path boundaries; original and mapped prompt digests are recorded. URLs, similar path names and external contract paths are not rewritten indiscriminately.
+Tower runs in a copied repository with its own `.git`, retaining HEAD, dirty and untracked files, binary changes, symlinks, mode changes and deletions. Admission resolves the execution directory to its physical path while retaining the caller's declared alias. Both exact directory prefixes in the original prompt are mapped with path boundaries; inserted candidate paths are never scanned again. Receipts record the declared, physical and candidate directories plus original and submitted prompt digests. URLs (including queries), similar path names and external contract paths are preserved.
 
 This is an independent Git candidate directory, not an OS filesystem sandbox. A full-access process can still access other paths. Transfer therefore rechecks source HEAD, bytes/modes/links and the external task's Spec/packet contracts. Only named volatile runtime state and native evidence directories are excluded. Source or contract changes cause a conflict with the candidate retained.
 

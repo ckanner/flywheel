@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readlink, symlink, unlink, rm, chmod, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readlink, symlink, unlink, rm, chmod, lstat, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, towerGit, towerSnapshot, towerPrompt } from '../src/kimi-tower-candidate.js';
@@ -9,7 +9,9 @@ const directories = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 
 async function fixture() {
-  const cwd = await mkdtemp(join(tmpdir(), 'tower-source-test-'));
+  // Production admission resolves cwd/taskDir before using the trusted helpers.
+  // macOS tmpdir may retain /var while Git reports the physical /private/var.
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'tower-source-test-')));
   directories.push(cwd);
   const taskDir = join(cwd, 'docs', 'task');
   await mkdir(taskDir, { recursive: true });
@@ -104,9 +106,10 @@ test('a moved source HEAD and a changed frozen patch are rejected without rollba
   assert.equal(await readFile(frozen.patchPath, 'utf8'), 'tampered');
 });
 
-test('source snapshots refuse tracked paths that now traverse a symlink directory', async () => {
+test('source snapshots refuse non-root execution and tracked paths that traverse a symlink directory', async () => {
   const input = await fixture();
   await mkdir(join(input.cwd, 'nested'));
+  await assert.rejects(towerSnapshot(join(input.cwd, 'nested'), input.managed.taskDir), /repository root/);
   await writeFile(join(input.cwd, 'nested', 'file'), 'tracked');
   await towerGit(input.cwd, ['add', 'nested/file']);
   await towerGit(input.cwd, ['commit', '--quiet', '-m', 'nested']);
@@ -117,7 +120,7 @@ test('source snapshots refuse tracked paths that now traverse a symlink director
 
 test('linked unit worktrees retain independent Git state and bind the external task contract', async () => {
   const input = await fixture();
-  const unit = await mkdtemp(join(tmpdir(), 'tower-unit-test-'));
+  const unit = await realpath(await mkdtemp(join(tmpdir(), 'tower-unit-test-')));
   directories.push(unit);
   await towerGit(input.cwd, ['worktree', 'add', '--quiet', '--detach', unit, 'HEAD']);
   const unitInput = { ...input, cwd: unit };
@@ -144,14 +147,21 @@ test('linked unit worktrees retain independent Git state and bind the external t
 });
 
 test('Tower prompt mapping changes bounded source path references and records both prompt digests', () => {
-  const input = { cwd: '/source/repo', prompt: 'Edit /source/repo/src/a.js and `/source/repo`. cwd="/source/repo"; keep /source/repo-other and https://example.com/source/repo intact. Read /external/task/spec.md.' };
-  const result = towerPrompt(input, { path: '/private/candidate' });
-  assert.equal(result.mapping.replacements, 3);
-  assert.match(result.prompt, /Edit \/private\/candidate\/src\/a.js/);
-  assert.match(result.prompt, /`\/private\/candidate`/);
-  assert.match(result.prompt, /\/source\/repo-other/);
-  assert.match(result.prompt, /https:\/\/example.com\/source\/repo/);
-  assert.match(result.prompt, /Read \/external\/task\/spec.md/);
-  assert.equal(result.mapping.filesystemSandbox, false);
-  assert.notEqual(result.mapping.originalPromptDigest, result.mapping.effectivePromptDigest);
+  const input = { cwd: '/source/repo', prompt: 'Edit /source/repo/src/a.js and `/source/repo`. cwd="/source/repo"; alias=/source/repo/link/file; nested=/source/repo/link-other/file; keep /source/repo-other and https://example.com/source/repo intact. Query https://example.com/?cwd=/source/repo/link/file&next=/source/repo/next. Read /external/task/spec.md.' };
+  for (const alias of ['/source/repo/link', '/source/repo/link/', '/source/repo/link/.']) {
+    const result = towerPrompt(input, { path: '/source/repo/candidate' }, alias);
+    assert.equal(result.mapping.replacements, 5);
+    assert.match(result.prompt, /Edit \/source\/repo\/candidate\/src\/a.js/);
+    assert.match(result.prompt, /`\/source\/repo\/candidate`/);
+    assert.match(result.prompt, /alias=\/source\/repo\/candidate\/file/);
+    assert.match(result.prompt, /nested=\/source\/repo\/candidate\/link-other\/file/);
+    assert.doesNotMatch(result.prompt, /candidate\/candidate/);
+    assert.match(result.prompt, /\/source\/repo-other/);
+    assert.match(result.prompt, /https:\/\/example.com\/source\/repo/);
+    assert.ok(result.prompt.includes('https://example.com/?cwd=/source/repo/link/file&next=/source/repo/next'));
+    assert.match(result.prompt, /Read \/external\/task\/spec.md/);
+    assert.equal(result.mapping.declaredSourceCwd, alias);
+    assert.equal(result.mapping.filesystemSandbox, false);
+    assert.notEqual(result.mapping.originalPromptDigest, result.mapping.effectivePromptDigest);
+  }
 });

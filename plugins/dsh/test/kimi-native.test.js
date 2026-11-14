@@ -1,12 +1,13 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat, realpath, symlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runKimiWorker, validateKimiNativeStart, KimiConversation, kimiObservedUsage } from '../src/kimi-native-bridge.js';
-import { towerGit } from '../src/kimi-tower-candidate.js';
+import { towerGit, towerSnapshot } from '../src/kimi-tower-candidate.js';
 
 const server = fileURLToPath(new URL('./fixtures/kimi-native-server.mjs', import.meta.url));
 const cli = fileURLToPath(new URL('../src/kimi-native-worker.js', import.meta.url));
@@ -174,6 +175,48 @@ test('Tower enables the real mode in an independent repo and transfers only Exec
     else await assert.rejects(stat(join(f.input.cwd, 'tower-result.txt')), { code: 'ENOENT' });
     assert.ok(result.native.candidate.patchDigest);
   }
+});
+
+test('Tower admission resolves source and task directory aliases before fingerprinting and transfer', async () => {
+  const f = await fixture('tower');
+  const cwd = await realpath(f.input.cwd), taskDir = await realpath(f.input.managed.taskDir);
+  await towerGit(cwd, ['init', '--quiet', '-b', 'main']);
+  await writeFile(join(cwd, 'source.txt'), 'original\n');
+  await writeFile(join(taskDir, 'spec.md'), 'frozen contract\n');
+  await towerGit(cwd, ['add', '.']);
+  await towerGit(cwd, ['commit', '--quiet', '-m', 'fixture']);
+  await writeFile(join(taskDir, 'state.json'), '{"revision":1}');
+  const before = await towerSnapshot(cwd, taskDir);
+  const alias = join(f.root, 'project-alias');
+  await symlink(cwd, alias, 'dir');
+  f.input.cwd = alias;
+  f.input.managed.taskDir = join(alias, 'task');
+  f.input.prompt = `Edit "${join(alias, 'source.txt')}" and inspect "${join(cwd, 'source.txt')}". ` +
+    `Keep "${alias}-other/source.txt", https://example.invalid${alias}/source.txt and https://example.invalid/?cwd=${alias}/source.txt unchanged.`;
+  assert.notEqual(alias, cwd, 'exercise a real directory alias even on Linux');
+  const result = await runKimiWorker(f.input, f.options);
+  if (result.native.candidate) directories.push(dirname(result.native.candidate.path));
+  assert.equal(result.status, 'ok', JSON.stringify(result.error));
+  assert.equal(result.native.observed.promptMapping.sourceCwd, cwd);
+  assert.equal(result.native.observed.promptMapping.declaredSourceCwd, alias);
+  assert.equal(result.native.observed.managed.taskDir, taskDir);
+  assert.equal(result.native.candidate.sourceSnapshotDigest, before.digest, 'aliases preserve the physical source/contract fingerprint');
+  const submitted = (await f.log()).find(row => row.method === 'POST' && row.path?.endsWith('/prompts')).body.content[0].text;
+  const target = join(result.native.candidate.path, 'source.txt');
+  assert.ok(submitted.includes(`Edit "${target}" and inspect "${target}".`), 'both declared alias and physical paths must point at the candidate');
+  assert.ok(submitted.includes(`"${alias}-other/source.txt"`));
+  assert.ok(submitted.includes(`https://example.invalid${alias}/source.txt`));
+  assert.ok(submitted.includes(`https://example.invalid/?cwd=${alias}/source.txt`));
+  assert.equal(result.native.observed.promptMapping.replacements, 2);
+  assert.equal(result.native.observed.promptMapping.originalPromptDigest, createHash('sha256').update(f.input.prompt).digest('hex'));
+  assert.equal(result.native.observed.promptMapping.effectivePromptDigest, createHash('sha256').update(submitted).digest('hex'));
+  assert.deepEqual(result.native.completion, { confirmed: true, pendingIds: [] });
+  assert.equal(result.native.cleanup.confirmed, true);
+  assert.equal(result.native.candidate.transfer.applied, true);
+  assert.equal(await readFile(join(cwd, 'tower-result.txt'), 'utf8'), 'native Tower candidate\n');
+  assert.equal(await readFile(join(taskDir, 'spec.md'), 'utf8'), 'frozen contract\n');
+  assert.equal(await readFile(join(taskDir, 'state.json'), 'utf8'), '{"revision":1}');
+  assert.equal((await towerGit(cwd, ['rev-parse', 'HEAD'])).toString().trim(), before.head);
 });
 
 test('Tower timeout with unconfirmed native cleanup cannot freeze or transfer a partial candidate', async () => {

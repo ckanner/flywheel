@@ -222,5 +222,33 @@
       "perFunctionStatementCoverageRequired": 100,
       "testsRemoved": 0
     }
+  },
+  "ciSecondRun": {
+    "runId": 43583479213,
+    "head": "0299671d4a3ec68b8d3352aa58b2f114d94fa23a",
+    "npmCandidate": "success",
+    "linux": "success",
+    "macOS": {
+      "result": "failure",
+      "goQualityGate": "success",
+      "machineSeconds": 340.561,
+      "perFunctionStatementCoverage": 100,
+      "node": {
+        "passed": 388,
+        "failed": 6,
+        "skipped": 0
+      },
+      "cause": "Tower helper fixtures used a logical temporary-directory alias instead of the physical repository root",
+      "laterBridgeAndInstallGates": "not-run"
+    },
+    "correction": {
+      "canonicalizeSourceAndLinkedUnitFixtures": true,
+      "repositoryRootGuardPreserved": true,
+      "trackedSymlinkAncestorGuardPreserved": true,
+      "workerAliasRegressionReproducedRuntimePromptMappingOmission": true,
+      "originalAndSubmittedPromptDigestsRetained": true,
+      "testsRemoved": 0
+    },
+    "finalExactHeadResult": "recorded in PR #44 checks and body; this historical run remains a failure"
   }
 }

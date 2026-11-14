@@ -65,7 +65,7 @@ Tower 收到独立 `.git` 的仓库副本，不复用主仓 Git 管理目录；l
 
 只排除真正该任务的运行文件：state.json 及其原子临时文件、metrics.jsonl、orchestrator.log/pid、锁、stop-request、`.control/`、`.sessions/`、`reports/native/`；spec、packet 等保留在指纹中。Tower 自己的 `.tower/` 管理数据不导回。
 
-提交给模型的 prompt 会把有路径边界的 source cwd 前缀映射到 candidate cwd，并添加候选目录说明。相似路径、URL、外部契约路径不替换。receipt 的 `observed.promptMapping` 记录规则、替换次数、两个 prompt 摘要与两个目录。**这是独立 Git 候选工作目录，不是 OS 文件系统沙箱**：完整访问权限不因此变小；源内容或 HEAD 变化会使导回拒绝。
+入口将 cwd 解析为物理路径，同时保留调用者声明的目录别名。提交给模型的 prompt 会把这两种有路径边界的 source cwd 前缀映射到 candidate cwd，并添加候选目录说明；只扫描原始文本，不再次替换插入的候选路径。相似路径、URL（包括 query）、外部契约路径不替换。receipt 的 `observed.promptMapping` 记录规则、替换次数、原始／提交 prompt 摘要，以及声明、物理和候选目录。**这是独立 Git 候选工作目录，不是 OS 文件系统沙箱**：完整访问权限不因此变小；源内容或 HEAD 变化会使导回拒绝。
 
 只有 native completion 成功、cleanup confirmed 且 `managed.role==='execute'`，可信 adapter 才冻结 binary patch，再次精确核对源和外部契约、检查 patch 摘要、执行 `git apply --check`、二次快照检查、实际 apply 和结果一致性检查。非 Execute 仅交回候选。冲突、契约/HEAD 变化、patch 被改或后置条件不符会使 role 失败，并保留私有候选、源快照、patch 和 receipt。没有针对无关编辑器的全系统文件锁，也不宣称多文件 apply 是 OS 原子事务；Go 仍负责后续边界检查、验收和提交。
 
