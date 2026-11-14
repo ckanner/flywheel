@@ -17,6 +17,22 @@ This guide describes source candidates. [Vendor records](https://github.com/ckan
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 
+### Desktop plugin defaults and PTC calls
+
+Codex Pro and Claude Code Pro provide their own native capability settings pages. Open the corresponding plugin's configuration in the plugin manager to set its `native` defaults. The DSH PTC tools `subagent_codex` and `subagent_claude_code` read those defaults at the start of each call. A running call keeps its captured configuration; later saves affect subsequent calls.
+
+| Ordinary tool's `native` argument | Meaning |
+| --- | --- |
+| Omitted | Read the plugin's current default; if no default exists, preserve the CLI's existing behavior |
+| Object | Replace the complete native default for this call, without a field-by-field merge |
+| `null` | Explicitly disable native collaboration for this ordinary call, rather than fall back to implicit CLI enablement |
+
+Codex settings cover Agent enablement, concurrent child threads, child model/effort defaults and an optional V2 backend. Claude settings cover Agent definitions, concurrency/depth, Workflow and Advisor; enabling Advisor requires its model. The tools expose corresponding per-call overrides. Native settings remain subject to the existing permission and model-selection policies.
+
+Here, `native` describes capabilities inside Codex/Claude. DSH can still orchestrate these tools through PTC. Independent native Review and actual interactive Teams use dedicated operations; saving ordinary Agent defaults does not launch those jobs.
+
+These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-pro` / `claude-code-pro` worker uses the fixed selected `native-profile`, without reading another DSH profile's live settings. Independent `/machine` imports do not load desktop UI or DSH services. Normal daily/heavy preset regeneration preserves separately saved plugin settings.
+
 ## 2. Define profiles and bind them
 
 Use `flywheel config inspect --cwd /absolute/repo --json` to locate the effective complete file. Flywheel selects one file from task, project, global or defaults; it does not merge fields between them.
@@ -50,7 +66,7 @@ Incorporate this **fragment** into that complete file, choosing the definitions 
     },
     "claude-flow": {
       "harness": "claude-code-pro",
-      "options": {"version": 1, "agents": {"enabled": true}, "workflows": {"enabled": true}, "advisor": {"enabled": true}}
+      "options": {"version": 1, "agents": {"enabled": true}, "workflows": {"enabled": true}, "advisor": {"enabled": true, "model": "opus"}}
     }
   }
 }
@@ -138,7 +154,7 @@ Requests use the pinned public package API plus a private absolute `recoveryDire
 
 A remote Claude Review request needs `protocol:1`, a unique requestId, absolute cwd, `consent:true` and recoveryDirectory. It runs `ultrareview --json --no-post`. Local timeout does not settle the remote job; use the original requestId, runId and recoveryDirectory to read the original local journal and retrieve its durable receipt. This neither queries cloud status nor resubmits Review.
 
-Interactive Team accepts the public `runInteractiveTeam` prompt and permissionMode and requires tmux. `claude-control` supports capture/send/resize/cancel/attach with the original requestId/runId and recoveryDirectory. Full fields are in the [Claude native API](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/54d7eafa9102713597e3b96a6d70a9cbd86afc6b/docs/native-capabilities.md).
+Interactive Team accepts the public `runInteractiveTeam` prompt and permissionMode and requires tmux. `claude-control` supports capture/send/resize/cancel/attach with the original requestId/runId and recoveryDirectory. Full fields are in the [Claude native API](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/d14ff8d8334fefd039c3d48ee2a969747d1e88c8/docs/native-capabilities.md).
 
 Claude `recoverNativeJob` only reads the local durable journal. It does not start a process or query the cloud. Receipts explicitly retain `jobId:null`, `querySupported:false` and `cancelSupported:false`. A local recovery status of terminal does not establish remote completion: unknown remote state or unconfirmed native cleanup still forbids replay or a claim of cloud cancellation.
 
@@ -154,3 +170,5 @@ Native diagnostics inspect local workers, exact public manifests and capability 
 `native-receipt` retains intent, effective configuration, observations, children, usage, completion and cleanup. Native events are not durable lifecycle ACKs. Active children at root completion cannot become success merely because shutdown later cancels them. Unknown cleanup, damaged receipts and uncertain recovery continue to block progress.
 
 Concurrency and budgets retain their actual scope: Flywheel scheduling limits root invocations; Claude limits are an observed guard with `hard:false`; Kimi lacks that whole-tree hard cap. Unattributable external-agent, Advisor, compaction or Tower usage remains unknown, and hard budgets do not count it as zero. See [validation](../validation/2026-11-14-native-harness-implementation.md) for tested and untested runtime boundaries.
+
+See the [desktop configuration follow-up](../validation/2026-11-14-desktop-native-configuration.md) for plugin settings, typed PTC arguments and this candidate's package validation.

@@ -20,7 +20,7 @@ permissions:
 # Companion source is not yet an npm release. Build the reviewed immutable
 # commit once, then test the same dependency bytes on both operating systems.
 env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: 54d7eafa9102713597e3b96a6d70a9cbd86afc6b
+  CLAUDE_CODE_PRO_SOURCE_SHA: d14ff8d8334fefd039c3d48ee2a969747d1e88c8
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -56,7 +56,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist-claude"
           cd "$claude_source"
           npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' 338675c8fbafc47e7f2c7cc5ffaa6987bda952c5c9c1010ac441230597ce420c "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
+          printf '%s  %s\n' ff2b1198a9358c43add7f89eb08b4e443c78fb0663c6d0a64ab79952aa992272 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate

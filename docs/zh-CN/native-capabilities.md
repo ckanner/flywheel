@@ -17,6 +17,22 @@ Flywheel 0.34.0 的实现候选可以在正式 loop 中调用各 harness 的原�
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
+### DSH 桌面插件的默认配置与 PTC 调用
+
+Codex Pro 和 Claude Code Pro 自身提供原生能力配置页。打开插件管理器中对应插件的配置，设置 `native` 默认值；DSH 的 PTC 工具 `subagent_codex` 和 `subagent_claude_code` 会在每次调用开始时读取这些设置。已经启动的调用保留自己的配置快照，后续保存不会改变它的执行参数。
+
+| 普通工具的 `native` 参数 | 实际含义 |
+| --- | --- |
+| 省略 | 读取插件当前默认值；插件也未配置时，沿用 CLI 原有行为 |
+| 对象 | 以这个完整对象替换该次调用的 native 默认值；不与默认值逐字段合并 |
+| `null` | 明确关闭该次普通调用的原生协作能力，不退回 CLI 的隐式启用状态 |
+
+Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认模型和 effort，以及可选 V2 backend。Claude 的设置包括 Agent 定义、并发与深度、Workflow 和 Advisor；启用 Advisor 时必须指定其模型。工具也支持相应的逐次覆盖。原生能力设置遵守现有权限和模型选择策略。
+
+这里的 `native` 指 Codex/Claude 内部的能力，DSH 仍然可以用 PTC 编排这些工具。独立原生 Review 和真正的交互 Team 使用专门入口；保存普通 Agent 默认值不会启动这些任务。
+
+这些桌面默认值只属于桌面插件。Flywheel 的直接 `codex-pro` / `claude-code-pro` worker 使用所选 `native-profile` 的确定快照，不读取另一份 DSH profile 的动态设置；独立 `/machine` 入口也不会为此加载桌面 UI 或 DSH 服务。正常重生成 daily/heavy preset 会保留单独保存的插件配置。
+
 ## 2. 定义与绑定
 
 先运行 `flywheel config inspect --cwd /absolute/repo --json` 找到真正命中的完整配置。Flywheel 按任务→项目→全局→默认选择一个完整文件，文件之间不做字段合并。
@@ -50,7 +66,7 @@ Flywheel 0.34.0 的实现候选可以在正式 loop 中调用各 harness 的原�
     },
     "claude-flow": {
       "harness": "claude-code-pro",
-      "options": {"version": 1, "agents": {"enabled": true}, "workflows": {"enabled": true}, "advisor": {"enabled": true}}
+      "options": {"version": 1, "agents": {"enabled": true}, "workflows": {"enabled": true}, "advisor": {"enabled": true, "model": "opus"}}
     }
   }
 }
@@ -137,7 +153,7 @@ flywheel native claude-control --request /absolute/control.json
 
 远端 Claude Review 的请求需 `protocol:1`、唯一 requestId、绝对 cwd、`consent:true` 和 recoveryDirectory。它运行 `ultrareview --json --no-post`；本地超时不会证明远端 job 已结束。使用原 requestId、runId 和 recoveryDirectory 只读原本地 journal，取回已持久化的回执；不查询云端状态，也不重新提交 Review。
 
-交互 Team 请求使用公开 `runInteractiveTeam` 的 prompt 和 permissionMode；tmux 必须可用。`claude-control` 支持 capture/send/resize/cancel/attach，使用 receipt 中的原 requestId/runId 和同一 recoveryDirectory。完整字段见 [Claude native API](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/54d7eafa9102713597e3b96a6d70a9cbd86afc6b/docs/native-capabilities.md)。
+交互 Team 请求使用公开 `runInteractiveTeam` 的 prompt 和 permissionMode；tmux 必须可用。`claude-control` 支持 capture/send/resize/cancel/attach，使用 receipt 中的原 requestId/runId 和同一 recoveryDirectory。完整字段见 [Claude native API](https://github.com/ckanner/dsh-subagent-claude-code-pro/blob/d14ff8d8334fefd039c3d48ee2a969747d1e88c8/docs/native-capabilities.md)。
 
 Claude `recoverNativeJob` 只读本地 durable journal，不启动进程或向云端查询。当前回执明确 `jobId:null`、`querySupported:false`、`cancelSupported:false`。本地恢复 status 为 terminal 也不等于 remote 完成：若远端 state 仍为 unknown 或 native.cleanup.confirmed 为 false，不能自动重放或声称云任务已取消。
 
@@ -153,3 +169,5 @@ native doctor 检查本地 worker、精确 public manifest 与 capability 版本
 `native-receipt` 保存请求、实际配置、观察、children、usage、completion 与 cleanup。Pro 的 native-event 不是 durable lifecycle ACK。root 返回时仍有活跃子任务，不会因随后关进程而变成完成。清理不明、receipt 损坏或恢复不确定会继续阻断。
 
 预算和并发也保持真实语义：Flywheel scheduler 限根调用；Claude 的 requested limits 是 observed guard，`hard:false`；Kimi 没有该整树硬上限。外部子 Agent、Advisor、compaction 或 Tower 消耗无法精确归属时 total 保留 unknown。hard budget 不把 unknown 当成零。详细测试与尚未实机验证的范围见[验证记录](../validation/2026-11-14-native-harness-implementation.md)。
+
+桌面插件配置、PTC 参数类型和本轮真实包验证见[桌面配置跟进记录](../validation/2026-11-14-desktop-native-configuration.md)。

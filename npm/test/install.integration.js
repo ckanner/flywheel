@@ -10,6 +10,18 @@ const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
 const { registry, environment, run, firstInstall, installedRoot, waitFile } = require('./support/install-harness.js');
 
+
+// Desktop settings/UI peers must not become requirements of the independent
+// machine worker installed by Flywheel. Assert absence before exercising the
+// real public API below, so a leaked desktop import cannot pass accidentally.
+function assertNoDesktopPeers(manifestPath) {
+  const adapterRequire = require('node:module').createRequire(manifestPath);
+  for (const name of ['@deepseek-ai/schemastery', '@deepseek-ai/dsh-home-paths', '@deepseek-ai/cordis', 'react']) {
+    assert.throws(() => adapterRequire.resolve(name), { code: 'MODULE_NOT_FOUND' },
+      name + ' must be absent from this clean machine-only installation');
+  }
+}
+
 test('the complete npm candidate install and run from a clean agent environment', { timeout: 240000 }, async t => {
   const directory = path.resolve(process.env.FLYWHEEL_NPM_PACKAGES_DIR || 'dist-npm');
   const server = await registry(directory);
@@ -153,6 +165,7 @@ test('the complete npm candidate install and run from a clean agent environment'
   });
 
   await t.test('installed worker imports the real pinned plugin and executes an offline app-server', async () => {
+    assertNoDesktopPeers(installedRequire.resolve('dsh-subagent-codex-pro/package.json'));
     const doctor = await run(codexProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stderr + doctor.stdout);
     assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.10.0',
@@ -208,6 +221,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     const installation = await run(npm, [...args, 'install', '--global', '--prefix', context.prefix,
       '--ignore-scripts', '--no-audit', '--no-fund', tarball], context.env, context.project);
     assert.equal(installation.code, 0, installation.stdout + installation.stderr);
+    assertNoDesktopPeers(installedRequire.resolve('dsh-subagent-claude-code-pro/package.json'));
     const doctor = await run(claudeCodeProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: manifest.name,
