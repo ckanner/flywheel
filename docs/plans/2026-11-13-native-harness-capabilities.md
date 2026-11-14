@@ -169,6 +169,12 @@ app-server 提供 thread start/resume/fork、turn start/steer/interrupt、native
 CLI `2.1.269` 起支持 `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`。普通 Agent 的深度/并发限制
 不是 Workflow 的限制，不能只管其中一种就声称控制了全部原生派发。[C3]
 
+还需探测 `ultracode`：官方说明该模式会让普通 Agent 工具不再受会话的子代理并发
+限制约束，这不等于 Workflow 自己的 cap 失效。要求有界协作时，应排除会绕过所需
+限制的模式。组织 `availableModels` 阻止脚本请求的模型时，原生还可能替换模型；
+adapter 须在派发前排除未授权替换，无法证明时拒绝固定模型 profile，并在回执中
+核验实际绑定，不能只记录请求的模型名称。[C3]
+
 当前 Claude Pro 0.4.0 bridge 只接受 `danger-full-access`；默认读取原生 user/project/local
 settings，但没有把 agents、tools、Team/Workflow 策略和子任务树暴露为受管契约。[F4]
 父会话在 bypassPermissions 时，child 不能通过自己的 `permissionMode:plan` 收窄权限。

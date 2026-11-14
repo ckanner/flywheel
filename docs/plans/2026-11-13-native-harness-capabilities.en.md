@@ -269,6 +269,16 @@ Ordinary Agent concurrency and workflow concurrency are different limits.
 Enable them together only when their combined maximum is reserved and
 enforced, or make the profiles mutually exclusive. [Workflows][claude-workflows]
 
+Probe `ultracode` as well: official documentation says it bypasses the session's
+concurrent subagent limit for the ordinary Agent tool. That does not establish
+that the workflow runtime's own cap is bypassed. A bounded profile must exclude
+modes that defeat its required limit. When an organization's `availableModels`
+blocks a requested workflow-agent model, native substitution may also occur;
+rule out unauthorized substitution before dispatch and reject fixed-model
+profiles when that cannot be proved. Record the actual binding instead of
+treating the requested name as execution evidence.
+[Workflows][claude-workflows]
+
 Teams are experimental peer sessions; teammates cannot be assumed to resume
 with their parent. [Agent Teams][claude-teams]
 
