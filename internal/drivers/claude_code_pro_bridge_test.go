@@ -48,6 +48,10 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 	}
 	t.Run("native child receipt is preserved without adding task snapshots to root usage", func(t *testing.T) {
 		a := args(t, "native-child")
+		// Resolve the fixture before deriving the private protocol 3 journal path.
+		cwd, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		a.Cwd = cwd
 		a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true,"maxConcurrent":3},"workflows":{"enabled":true}}`)
 		a.Managed = &NativeAdmission{Version: 1, RunID: "run", InvocationID: a.RequestID, Role: "Executor", Scope: "candidate", Channel: "local", TaskDir: a.Cwd}
 		a.RecoveryDirectory, a.OnLifecycle = filepath.Join(a.Cwd, "journal"), func(MachineLifecycle) error { return nil }

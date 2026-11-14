@@ -93,6 +93,14 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 
 旧候选身份与历史结果仍原样保留；包含这次运行修正的完整候选须单独构建、安装和记录，不能沿用旧 tarball 的通过结果。最终 PR head 的跨平台结果由 #44 的 checks 与说明记录。
 
+### macOS Pro 桥接测试的恢复目录
+
+[第三轮 CI](https://github.com/ckanner/flywheel/actions/runs/43585747595) 对应 `f4ac488fa58f267f619adbee6a07eba2621cee92`：完整候选和 Linux 全套（含 race、安装与 36 场景）通过；macOS 完整 Go 门禁与 **395/395 主 Node + 10/10 legacy host** 通过。随后新增 Codex／Claude native Go→Node 各一个用例在约 40–50ms 返回 `WORKER_ERROR`、`receipt:null`，其余两者用例及 DSH、Kimi 桥接通过。后续 macOS npm／安装门禁没有执行，该轮整体仍为失败。
+
+Linux 将 `TMPDIR` 指向真实 symlink alias 后，原两用例精确复现相同失败。公开 Pro API 的 protocol 3 journal 要求物理父目录；正式引擎的 `CreateContext` 已规范化任务与执行目录，既有 durable lifecycle fixture 也已调用 `EvalSymlinks`。遗漏只在两个新 native fixture，它们直接用原始 `t.TempDir()` 派生 `RecoveryDirectory`。修正仅在这两处派生前解析物理目录，不改运行代码、journal 所有权校验、child 归属或用量断言。同一个 Linux alias 环境中，原两个用例在 `0.204s` 失败，修正后 **2/2 通过，0.690s**。随后沿用该 alias 环境复验 **四条完整 Go→Node 桥接，全部通过，44.975s**，没有跳过；本地 `make quality-gate` 随后再次通过，**每个受测函数均 100% statement coverage**。最终跨平台结果由 PR 的精确 head 检查继续核对。
+
+这轮 CI 的安装包已实际下载核对：`18,899,640` bytes，tarball SHA-256 `c1d5cabd85ce4d4a82c1cd2dfd69ff63c4577c3964682bb2f1c94469d527b345`；完整 integrity 见 [候选证据中的 ciThirdRun](evidence/2026-11-14-native-harness-tower-candidate.json)。GitHub PR test-merge `1e6cb302eddfd950d67ea32f24719999cb690b67` 的父提交为 main `c000f6d…` 与 PR head `f4ac488…`，tree 与该 PR head 同为 `a84f754fae398cd5f4fdb6c8ccc8df99ee645ae3`。artifact ZIP 摘要与内部 tarball 摘要分别验证，不混同；后续测试夹具／证据修正不改变运行代码。
+
 ## 4. 已闭合的关键回归
 
 - **Native profile 与真实通道一致。** Go→Node 请求保留原始 native options；`requested`、`effective` 和 `observed` 分开处理。显式 off 通过公开控制实际关闭，配置不匹配时不能仅靠提示词继续派发。
@@ -183,6 +191,8 @@ Claude 的部分并发、深度和模型路由缺少可验证的全树 pre-dispa
 - Flywheel Node／Kimi：`native-npm-final.log`、`native-node-check.log`、`native-legacy-fixed.log`、`native-journal-bridge.log`、`managed-lcu-root-tests.log`、`kimi-go-node-test.log`；最终五包集成以 `native-node-final-check.log`、`native-all-bridges-final.log` 为准。
 - 引擎与 36 场景：`native-sessions-final.log` 和上节列出的 `report.json`，保留实际引擎与 manifest 摘要。
 - LCU：`/tmp/lcu-authority-race-source-tests.log`、`/tmp/lcu-authority-race-packed-tests.log`、`/tmp/lcu-merged-full-tests.log`；保留成功和失败两类证据。
+
+Pro 桥接物理路径复验保留 `research/pro-bridge-alias-before.log` 的原失败和 `research/pro-bridge-alias-after.log` 的通过，以及 `research/pro-bridge-alias-all-four.log` 的完整四桥接结果；正式完整质量门禁结果见 `native-quality-pro-fixture-fix.log`。
 
 Tower 修正复验日志：`research/kimi-alias-prompt-before.log`、`research/kimi-alias-prompt-after.log`、`research/kimi-tower-alias-regression.log`、`native-tower-node-check.log`、`native-tower-go-node.log`、`native-tower-package-build.log`、`native-tower-install.log`。失败与通过日志分别保留。
 

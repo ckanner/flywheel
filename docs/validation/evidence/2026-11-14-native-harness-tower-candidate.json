@@ -100,5 +100,93 @@
     "liveModelInference": false,
     "dshMasterImageRuntimeTested": false
   },
-  "finalCI": "The final PR head includes subsequent evidence-only changes; PR #44 checks and body record its separately built exact-head candidate and Linux/macOS results."
+  "finalCI": "The final PR head includes subsequent evidence and test-fixture changes, with no further runtime changes; PR #44 checks and body record its separately built exact-head candidate and Linux/macOS results.",
+  "ciThirdRun": {
+    "runId": 43585747595,
+    "head": "f4ac488fa58f267f619adbee6a07eba2621cee92",
+    "artifactId": 14109977482,
+    "archiveSHA256": "00cb9a51c85e46f7d771753ef2b4775c2a6d5f5c7d6db7fc2c14ea235af33def",
+    "candidate": {
+      "format_version": 2,
+      "version": "0.34.0",
+      "source": {
+        "commit": "1e6cb302eddfd950d67ea32f24719999cb690b67",
+        "tree": "a84f754fae398cd5f4fdb6c8ccc8df99ee645ae3",
+        "dirty": false,
+        "snapshot_sha256": "ee8de5ef55e2c2d615715362ef17aa882a1e80dbe7dfd90bdbe2a7d2b31d06c2"
+      },
+      "packages": [
+        {
+          "name": "@ckanner/flywheel",
+          "version": "0.34.0",
+          "filename": "ckanner-flywheel-0.34.0.tgz",
+          "bytes": 18899640,
+          "integrity": "sha512-QJSntAISp7l5WOOb+5yMnufeB8nw72rb+nbJntJi4ZJL6Yll4cuyTk1xHlql3cMIsypRIwhKJmlL8FvpsrEBHQ=="
+        }
+      ]
+    },
+    "tarballSHA256": "c1d5cabd85ce4d4a82c1cd2dfd69ff63c4577c3964682bb2f1c94469d527b345",
+    "result": "failure",
+    "npmCandidate": "success",
+    "linux": "success",
+    "macOS": {
+      "goQualityGate": "success",
+      "perFunctionStatementCoverage": 100,
+      "nodeMain": {
+        "passed": 395,
+        "failed": 0,
+        "skipped": 0
+      },
+      "nodeLegacyHost": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "nodeBridges": {
+        "result": "failure",
+        "failedNativeCases": [
+          "ClaudeCodePro native child receipt",
+          "CodexPro native capability scope"
+        ],
+        "dsh": "pass",
+        "kimi": "pass",
+        "cause": "Two new Go test fixtures derived protocol 3 recovery journals from logical temporary-directory aliases instead of physical parents"
+      },
+      "laterNpmAndInstallGates": "not-run"
+    },
+    "fixtureCorrection": {
+      "linuxAliasedTMPDIRReproduced": true,
+      "productionCodeChanged": false,
+      "journalOwnershipGuardChanged": false,
+      "usageAndChildAssertionsPreserved": true,
+      "aliasedNativeCases": {
+        "before": {
+          "result": "failure",
+          "cases": 2,
+          "seconds": 0.204
+        },
+        "after": {
+          "result": "pass",
+          "cases": 2,
+          "seconds": 0.69
+        }
+      },
+      "aliasedAllFourBridges": {
+        "result": "pass",
+        "backends": [
+          "DSH",
+          "CodexPro",
+          "ClaudeCodePro",
+          "KimiNative"
+        ],
+        "seconds": 44.975
+      },
+      "localGoQualityGate": {
+        "result": "pass",
+        "perFunctionStatementCoverage": 100,
+        "log": "native-quality-pro-fixture-fix.log"
+      }
+    },
+    "finalExactHeadResult": "recorded in PR #44 checks and body; this historical run remains a failure"
+  }
 }

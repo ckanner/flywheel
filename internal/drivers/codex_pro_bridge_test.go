@@ -35,7 +35,9 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	t.Setenv(CodexProBinaryEnv, fixture)
 	testMachineLifecycleNodeBridge(t, "codex-pro")
 	t.Run("native capability scope and exclusive child usage cross every installed layer", func(t *testing.T) {
-		cwd := t.TempDir()
+		// Protocol 3 journals require a physical parent, including macOS temp aliases.
+		cwd, err := filepath.EvalSymlinks(t.TempDir())
+		require.NoError(t, err)
 		a := CodexProArgs{Command: worker, Cwd: cwd, Prompt: "offline native task", Model: "gpt-test", RequestID: "native-attempt",
 			ReasoningEffort: "high", PermissionMode: "workspace-write", RecoveryDirectory: filepath.Join(cwd, "journal"),
 			Native:      json.RawMessage(`{"version":1,"agents":{"enabled":true,"backend":"v2","maxConcurrentThreads":3}}`),
