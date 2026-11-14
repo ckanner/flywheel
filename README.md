@@ -10,6 +10,7 @@ retries, budgets, workspaces, and delivery. Use it from the DeepSeek Harness
 (DSH) desktop or the command line.
 
 [Getting started](docs/en/getting-started.md) ·
+[Usage handbook](docs/en/usage-handbook.md) ·
 [Documentation](docs/README.md) ·
 [Contributing](CONTRIBUTING.md) ·
 [MIT license](LICENSE)
@@ -88,7 +89,7 @@ Use `/flywheel-new` to prepare a task without starting it, or
 `/flywheel-run` to start or resume an existing task. In Kimi, use the
 `/skill:flywheel-task` form of the command.
 
-Open the **Flywheel** conversation view to select the task and inspect its
+Open the **Flywheel** conversation view to inspect the associated task's
 canvas, run history, or configuration. Task locations come from the session
 and recorded runs; the view does not require manually entered paths.
 

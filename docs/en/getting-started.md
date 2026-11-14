@@ -8,6 +8,7 @@ version you choose; a merged change does not update an existing installation.
 Keep the CLI, bundled engines, and DSH plugin at one version.
 
 For the complete path through task branches and PR review, see [Workflow](workflow.md).
+For incidents, issue fixes, and complex projects, follow the [Usage handbook](usage-handbook.md).
 
 From 0.33, `@ckanner/flywheel` is one complete package: CLI, DSH view/workers,
 embedded skills and four platform engines. No separate platform package or first-run
@@ -129,25 +130,28 @@ store. Custom homes, profiles, or credential stores need separate checking.
 `deepseek-official` is an explicitly configured API-key alternative, with no automatic
 paid fallback from the account preset.
 
-Native GPT Review/Judge need the ChatGPT adapter in the SDK profile. The repository's
-checked adapter baseline can be installed with:
+The default GPT Review/Judge bindings use the ChatGPT adapter in the SDK profile.
+Install the checked 0.1.20 companion if it is missing or needs updating:
 
 ```sh
-dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
-This is a compatibility baseline, not a latest-version claim. Follow that adapter's
-normal authorization flow; keep `DSH_HOME` consistent and credentials out of task
-files and Git.
+Check the installed version before changing an existing profile. Account authorization
+and live model availability still use the adapter's normal flow; keep `DSH_HOME`
+consistent and credentials out of task files and Git.
 
 The hard route directly imports the pinned Codex Pro 0.10.0 public machine API.
 It needs the local Codex command/login, not a parent model delegating through the
-`subagent_codex_pro` tool. Optional Claude has its own dependency and login.
+`subagent_codex` tool. Optional Claude has its own dependency and login.
 
-The DSH worker's child-only policy disables delegation, auxiliary model compaction,
-and the current web tool. A native conversation view does not restore those worker
-capabilities or merge full worker histories into the parent trajectory. See the
-[plugin documentation](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) for lifecycle and capability boundaries.
+Without a selected `native-profile`, the DSH worker's temporary policy disables
+delegation and the Web tool. An explicit profile can enable owned PTC Agents, Team,
+Workflow, Web and optional LCU; auxiliary model compaction remains disabled.
+Desktop views and presets do not configure the independent worker or merge its full
+history into the parent trajectory. See [Native capabilities](native-capabilities.md)
+for configuration and the [plugin documentation](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md)
+for lifecycle boundaries.
 
 ### Desktop launcher
 
@@ -310,10 +314,13 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
 In DSH, `/flywheel-run <absolute-task-path>` and `/flywheel-status <same-path>` are
-equivalent entry points. Launch/start and read-only status association make the task
-selectable in the console. It reads registered tasks rather than scanning folders;
-known project/execution/file locations are read-only details. One current-session
-task can open automatically; multiple or unassociated tasks require selection.
+the corresponding skills. The canvas follows the current conversation's explicit
+tool association, or its latest registered run with an exactly matching host session
+ID. To associate a prepared or standalone terminal task, have the host assistant call
+`flywheel_control` with `action: "status"` and the actual task and execution paths in
+that conversation. A terminal `flywheel control status` command alone does not create
+that association. There is no task selector or editable path form. Runs from other
+conversations and unassociated runs remain hidden. See [Workflow console](flow-console.md).
 
 The UI distinguishes this stage's result from overall delivery. Running state and
 registered discovery refresh automatically. A timeout or disconnect can leave an
