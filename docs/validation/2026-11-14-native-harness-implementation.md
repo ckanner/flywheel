@@ -4,15 +4,15 @@
 
 日期：2026-11-14。对应 Flywheel 0.34.0 开发候选与下表六个 PR。本记录区分源码测试、真实公开包集成、已安装候选、最终完整发行包及用户机器验收，不声明已合并、已发布 npm 或已完成真实模型／桌面验收。
 
-**当前结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包安装后的 Node 完整检查、四条 Go→Node 桥接及 36 个 session 场景通过。完整 Flywheel 单包构建／安装仍待验收。** LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
+**当前结论：Go 完整质量门禁通过，每个受测函数均为 100% statement coverage；最终五个配套包安装后的 Node 完整检查、四条 Go→Node 桥接及 36 个 session 场景通过。完整 Flywheel 四平台单包构建通过，同一 tarball 的 Host/Client 10/10 与安装／迁移 15/15 均通过。** LCU 全套测试另有明确的 Linux socket 环境限制，见下文，不能概括为六仓全套测试全部通过。
 
 ## 1. 六仓范围与最终配套源码
 
-PR 链接定位本次交付，不代替精确提交的 CI 状态。Flywheel 最终提交与完整包候选身份须在交付收尾时补齐。
+PR 链接定位本次交付，不代替精确提交的 CI 状态。Flywheel 实现内容与本地候选的精确对应见 §5；最终 PR head 的远端 CI 状态在 PR checks 与说明中记录。
 
 | 仓库与 PR | 候选版本 | 固定源码 | 本次交付边界 |
 | --- | --- | --- | --- |
-| [flywheel #44](https://github.com/ckanner/flywheel/pull/44) | `0.34.0` | **TODO(FINAL-FLYWHEEL-SOURCE)：最终实现提交／CI head、构建 snapshot** | 配置、Go 编排与状态、DSH/Kimi workers、Pro 桥接、独立 native jobs、资源与媒体证据、工作台、单包集成 |
+| [flywheel #44](https://github.com/ckanner/flywheel/pull/44) | `0.34.0` | [实现内容 854c3580ed7e](https://github.com/ckanner/flywheel/commit/854c3580ed7ec0f740c7882f23baca11dfa10b6a)；候选身份见 §5 | 配置、Go 编排与状态、DSH/Kimi workers、Pro 桥接、独立 native jobs、资源与媒体证据、工作台、单包集成 |
 | [dsh-preset-generator #1](https://github.com/ckanner/dsh-preset-generator/pull/1) | `0.4.0` | [0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3](https://github.com/ckanner/dsh-preset-generator/commit/0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3) | daily/heavy 共用的 SDK PTC composition、静态身份、行为准入契约 |
 | [dsh-plugin-lcu #1](https://github.com/ckanner/dsh-plugin-lcu/pull/1) | `0.5.0` | [7986057e92314b78caf66dde43d1a8d45ab6ada7](https://github.com/ckanner/dsh-plugin-lcu/commit/7986057e92314b78caf66dde43d1a8d45ab6ada7) | 受管挂载、lease/Agent/epoch 归属、回执等待后的再次授权检查、媒体与物理收尾 |
 | [dsh-subagent-codex-pro #6](https://github.com/ckanner/dsh-subagent-codex-pro/pull/6) | `0.10.0` | [c0045b06e6762b8dfc56f50b14cce7a53af2725b](https://github.com/ckanner/dsh-subagent-codex-pro/commit/c0045b06e6762b8dfc56f50b14cce7a53af2725b) | 原生控制与有效配置、早到子任务归属、独立用量增量、取消／恢复、独立 native review |
@@ -43,7 +43,7 @@ Go 验证环境为 Linux/amd64、Go `1.27.0`；Node 为 `24.22.1`。早期源码
 | Pro / Kimi 跨进程 fixture | 真正安装的公开 machine API、Go/Node workers；下游 Codex/Claude CLI 和 Kimi 本地 server 使用协议替身 | 实际 adapter 入口、进程和 journal 生命周期、消息关联、去重、异常与清理路径 |
 | 本地 manifest doctor | 导入固定版本公开接口，不创建模型回合、桌面会话或 GUI lease | 依赖可用性；实际 native admission 仍显示 `unknown` |
 
-DSH 验证代码见 [native-flow.test.js](../../plugins/dsh/test/native-flow.test.js)、[native-policy.test.js](../../plugins/dsh/test/native-policy.test.js) 和 [native-journal-bridge.test.js](../../plugins/dsh/test/native-journal-bridge.test.js)。rc.3 实际 PTC executor 已在可控 runtime 边界执行 canonical-value 与多图 deferred-context 路径；这不是 master `inspect` / `Image` 分支的真实 runtime 验收。
+DSH 验证代码见 [native-flow.test.js](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/plugins/dsh/test/native-flow.test.js)、[native-policy.test.js](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/plugins/dsh/test/native-policy.test.js) 和 [native-journal-bridge.test.js](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/plugins/dsh/test/native-journal-bridge.test.js)。rc.3 实际 PTC executor 已在可控 runtime 边界执行 canonical-value 与多图 deferred-context 路径；这不是 master `inspect` / `Image` 分支的真实 runtime 验收。
 
 ## 3. 已完成的验证矩阵
 
@@ -61,7 +61,7 @@ DSH 验证代码见 [native-flow.test.js](../../plugins/dsh/test/native-flow.tes
 | LCU 最终已打包接口 | 配套仓库 `npm run test:packed` | **21/21 通过**；隔离 consumer 正常 `npm install` 精确 rc.3 peers，未使用 `--force`、`--legacy-peer-deps` 或手工模块链接。不是 macOS 桌面验收 |
 | Preset Generator | 配套仓库 `npm test` | **16/16 通过**；daily/heavy、幂等生成、原有用户设置保留和共享 composition |
 | ChatGPT provider | 配套仓库 `npm test`；`npm run verify:install` | **277/277 通过**；最终 consumer install 通过，实际导入 Cordis `4.1.0`、Schemastery `3.19.0`、DSH `0.2.2-rc.3` peers。没有真实 ChatGPT 模型请求 |
-| Flywheel 根 npm 单元／协议测试 | `npm test` | **152/152 通过**，源码测试记录；最终完整候选仍须完成 §5 |
+| Flywheel 根 npm 单元／协议测试 | `npm test` | **152/152 通过**；最终完整候选安装验证另见 §5 |
 | 已安装的前一组 Pro 候选 | `node --test --test-concurrency=1 test/codex-pro-worker.test.js test/claude-code-pro-worker.test.js test/machine-lifecycle-bridge.test.js test/machine-worker-protocol.test.js test/native-doctor.test.js test/worker.test.js` | **137/137 通过，0 skip**。对应 Codex tree `ffa66a3...` 与 Claude tree `6c9948e...`；不能充当 §1 新 tree 的最终桥接验收 |
 | 前一组候选 Go→Node→公开 API | `FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(CodexPro\|ClaudeCodePro)NodeWorkerOfflineBridge$/^native' -count=1 -v` | **2/2 通过**：Codex root `108` + 独立 child `15` = `123`；Claude raw root `22` 留存且 child snapshots 不再相加。该行只代表前一候选，最终新包重验见 §5 |
 | Kimi server 跨进程 fixture | `FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^TestKimiNativeNodeWorkerOfflineBridge$' -count=1 -v` | **通过，2.382s**；实际 Go/Node worker 与本地协议 server fixture，不是实际 Kimi 账户／Swarm 服务验收 |
@@ -69,11 +69,11 @@ DSH 验证代码见 [native-flow.test.js](../../plugins/dsh/test/native-flow.tes
 
 ### 保留的初次失败与未闭合项
 
-前一轮 Flywheel `npm --prefix plugins/dsh run check` 的主套件为 **394/394 通过**，但后续旧 host consumer **9/10 通过、1 失败**：隔离目录遗漏 `protocol.js` 新依赖的 `native.js`，产生 `ERR_MODULE_NOT_FOUND`。补齐真实依赖复制后，旧 host 专项 **10/10 通过**。没有删除失败测试、放宽断言或把主套件成功当成整体 `check` 成功；最终完整重跑仍记录在 §5。
+前一轮 Flywheel `npm --prefix plugins/dsh run check` 的主套件为 **394/394 通过**，但后续旧 host consumer **9/10 通过、1 失败**：隔离目录遗漏 `protocol.js` 新依赖的 `native.js`，产生 `ERR_MODULE_NOT_FOUND`。补齐真实依赖复制后，旧 host 专项 **10/10 通过**。没有删除失败测试、放宽断言或把主套件成功当成整体 `check` 成功；最终完整重跑已通过，记录在 §5。
 
 Claude 合并过程的一份中间日志 `claude-latest-full-tests.log` 为 **92 项、91 通过、1 失败**，原因是未完成合并时的语法错误。它不是最终源码验收。采用已整合源码的 `claude-remote-final-tests.log` 才是上表 **107/107** 的依据。
 
-LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 为 **79 项：64 通过、6 失败、9 环境跳过**。6 个失败位于 `control.spec.ts`，本环境 UNIX socket `listen` 返回 `EPERM`；独立 `node:net` 探针可复现相同限制。最终 tree 只重跑了受影响源码测试与 packed consumer，不宣称完整套件已经转绿。需要在允许该 socket 能力的受支持环境完成全套测试；9 项跳过也不计作通过。
+LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 为 **79 项：64 通过、6 失败、9 环境跳过**。6 个失败位于 `control.spec.ts`，本环境 UNIX socket `listen` 返回 `EPERM`；独立 `node:net` 探针可复现相同限制。最终 tree 只重跑了受影响源码测试与 packed consumer，不宣称完整套件已经转绿。最终提交的远端 CI 已通过（见下表），与本地受限环境记录分开保存；本地这 6 项失败与 9 项跳过没有被改记为通过。
 
 ## 4. 已闭合的关键回归
 
@@ -85,24 +85,48 @@ LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 
 - **Native Kimi Plan 不继承 legacy CLI ID。** Agent/Swarm 使用角色 scoped ledger；既有 `resident-session:true` 意图可映射为 scoped；显式 `sessions.roles.plan:"fresh"` 优先。Tower 永远 fresh。10 组策略均执行两次实际 `planStep` 并在中间 Save→Load，第二次不会因非 persistent + sessionId 组合失败。普通无 native profile 的 CLI 行为保留。
 - **Doctor 不虚报能力准入。** DSH native profile 跳过 legacy SDK probe；`--native-doctor` 只导入 composition/managed API。manifest 可通过，实际 admission 仍为 unknown。配置检查对 Tower 显示 fresh、不可 scoped resume；对 native Agent/Swarm resident 显示实际有效策略。
 
-相关测试见 [native_plan_test.go](../../internal/machine/native_plan_test.go)、[console_session_test.go](../../internal/machine/console_session_test.go)、[execution_policy_test.go](../../internal/machine/execution_policy_test.go)、[Pro receipt tests](../../internal/drivers/pro_native_test.go) 和 [native diagnostics](../../internal/diagnostic/native_test.go)。
+相关测试见 [native_plan_test.go](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/internal/machine/native_plan_test.go)、[console_session_test.go](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/internal/machine/console_session_test.go)、[execution_policy_test.go](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/internal/machine/execution_policy_test.go)、[Pro receipt tests](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/internal/drivers/pro_native_test.go) 和 [native diagnostics](https://github.com/ckanner/flywheel/blob/854c3580ed7ec0f740c7882f23baca11dfa10b6a/internal/diagnostic/native_test.go)。
 
 ## 5. 最终集成与完整候选
 
-以下 TODO 是明确的验收缺口。执行后须填写实际 source/tree、使用的五个配套包摘要、命令退出结果、通过／失败／跳过数和日志位置；不能把“已计划”改写为“已通过”。
+本节记录最终五个配套包和同一个完整 Flywheel tarball 的实际验收。候选在干净本地提交构建；随后仅补充安装测试断言与本验证记录，未改候选的运行代码或插件包。
 
-| 项目 | 最终命令／前提 | 状态与待填证据 |
+| 项目 | 最终命令／前提 | 实际结果与证据 |
 | --- | --- | --- |
 | 新包完整 Node 检查 | 安装 §1 的最终精确候选后，`npm --prefix plugins/dsh run check` | **通过**：主套件 **394/394**，`161813.556ms`；legacy host **10/10**，`1922.511ms`；均 0 失败、0 跳过。Node `24.22.1` / npm `12.2.1`；日志 `native-node-final-check.log` |
 | 最终新包 Go→Node→公开 API | `FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH\|CodexPro\|ClaudeCodePro\|KimiNative)NodeWorkerOfflineBridge$' -count=1` | **四条入口及其子测试全部通过，43.574s**，无跳过；使用 §1 的最终五个配套包。日志 `native-all-bridges-final.log` |
-| 单包候选构建 | `npm run build:npm` | **TODO(FINAL-BUILD-NPM)：snapshot、source commit、dirty 状态、四平台引擎清单与校验、完整 Flywheel tarball 名称／size／SHA-256／integrity** |
-| 同候选真实 npm 安装 | `FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install` | **TODO(FINAL-TEST-INSTALL)：同一个原始 tarball 的 Host/Client、workers、optional peers、安装／迁移／重复安装结果** |
+| 单包候选构建 | `npm run build:npm` | **通过**：隔离源码快照、正常 npm 安装、构建四平台引擎并核对清单和校验；仅生成一个 `ckanner-flywheel-0.34.0.tgz`，`18,861,167` bytes。精确身份如下；日志 `native-package-build-final.log` |
+| 同候选真实 npm 安装 | `FLYWHEEL_NPM_PACKAGES_DIR=dist-npm FLYWHEEL_CLAUDE_CODE_PRO_TARBALL=<已验证的0.5.0候选> npm run test:install` | **通过**：同一原始 tarball 的 Host/Client **10/10**；正常 npm 安装、独立 workers、可选 Claude、配置保留与重复安装／迁移 **15/15**；均 0 失败、0 跳过。日志 `native-install-final.log` |
 | 36 个引擎 session 场景 | `make build`；`FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions` | **引擎构建通过；36/36 场景、96 次调用完成，全部 `oraclePass:true`**，`stopReason:null`，6 类 scenario 各 6 次且 unknown/unobserved 均为 0；日志 `native-sessions-final.log` |
-| 精确远端 CI 与交付身份 | 六个 PR 的最终 head、checks；Flywheel 主分支文档更新合入后的 source 身份 | **TODO(FINAL-CI-AND-DELIVERY)：实际 checks URL／结论；若仅更新文档，注明 Go 证据对应的代码未变化** |
+| 精确远端 CI 与交付身份 | 六个 PR 的最终 head、checks；Flywheel 主分支文档更新合入后的 source 身份 | 五个配套源码 head 的远端 CI 均通过，链接如下。Flywheel 实现提交保留最新主分支 `c000f6d8a11522521d7a30203e74b735490e9b73`；新 PR head 的最终检查与交付状态见 [#44 checks](https://github.com/ckanner/flywheel/pull/44/checks)，由 PR 说明记录精确 run，避免文档提交自引用。Go 与已测运行代码未因文档合并／证据更新改变。 |
 
 36 个场景的 report 为 `/tmp/flywheel-native-eval-AbJ1L5/results/report.json`，明确标为 `execution:"offline-fixture"`。使用的引擎 SHA-256 为 `5018c0e22d220f5517d5418f5f506c7de8f8942c6b753fd595b94a28bf208ade`；manifest SHA-256 为 `8e153aba584ac485524d46c8c06cf647868a3e567cd36f9491ea76c4d710b603`。该实验比较相同任务／绑定／effort／权限／oracle 下的 Execute/Review history mode，Plan/Judge 在实验三组中均显式 fresh；不代替 §4 专门针对原生 Kimi Plan 的 10 组回归。
 
-完整 Flywheel 候选的 build/install、registry publication、用户机器安装是独立状态。上述源码、配套包与引擎实验没有替尚未执行的完整包验收提供成功结论。
+完整 Flywheel 候选已构建并安装验证；registry publication 与用户机器安装仍是独立状态，本轮没有发布或更改用户配置。
+
+
+### 完整候选身份
+
+本地构建提交为 `1ba506a2ac6996700828ce40274b2c287de1103d`，`dirty:false`，tree 为 `bc65e37eab9844064699cf402481112160fc092e`；远端 [854c3580ed7e](https://github.com/ckanner/flywheel/commit/854c3580ed7ec0f740c7882f23baca11dfa10b6a) 的 **tree 与其完全一致**。两种提交路径的 commit ID 不同，没有将本地 hash 当成可获取的远端提交。
+
+- 源码 snapshot SHA-256：`6002492ef2fee1ac1a73d46c33219cf6d2f0af79bdabc76ca15c124926d8f9c1`。
+- 完整 tarball SHA-256：`fa682d25986ea8d93514a7a6705edfbaea37aff0c9257adf73e4105a1d7b86f4`。
+- npm integrity：`sha512-3vtGBDA1O1Q5JqBPi76Q3fpHjmmuZGPHJLE+mmOH/bnQLaKNo+4jlY3XnDzTSFDEOv5b4z5jRlXRvF3XIN1FEQ==`。
+- 四平台均为 `0.34.0`：darwin-arm64、darwin-amd64、linux-arm64、linux-amd64；每个引擎的 bytes/SHA-256 见归档 JSON。Kimi npm launcher 的 tar mode 为 `0755`。
+
+安装门禁首次在测试夹具的旧断言处失败：它仍要求单个 Codex bundle。修复为精确检查 **Codex Pro 0.10.0 与 Preset Generator 0.4.0 两个 bundle**，同时补齐两种 Pro doctor 的 `nativeVersion:1`，验证安装后的 Kimi launcher／exports、generator 公开 composition API，以及两包均没有 registry 获取请求。使用 **同一个上述 tarball** 重跑，Host/Client 10 项和安装 15 项全部通过；未重打包换掉失败对象，也未弱化包身份检查。这些安装测试位于不随 tarball 发布的 `npm/test/` 中。
+
+后续证据与源码链接修正只改变文档；候选仍保留构建当时的文档快照。最终 PR 的 CI 会从其精确 head 另行构建并安装完整候选，不能将两个不同文档快照的 tarball hash 混同。
+
+### 已核对的配套 CI
+
+| 仓库 | 精确 head | 远端结果 |
+| --- | --- | --- |
+| Preset Generator | `0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3` | [run 43577043240](https://github.com/ckanner/dsh-preset-generator/actions/runs/43577043240)：success |
+| LCU | `7986057e92314b78caf66dde43d1a8d45ab6ada7` | [run 43579319633](https://github.com/ckanner/dsh-plugin-lcu/actions/runs/43579319633)：success |
+| Codex Pro | `c0045b06e6762b8dfc56f50b14cce7a53af2725b` | [run 43580027819](https://github.com/ckanner/dsh-subagent-codex-pro/actions/runs/43580027819)：success |
+| Claude Code Pro | `54d7eafa9102713597e3b96a6d70a9cbd86afc6b` | [run 43579998664](https://github.com/ckanner/dsh-subagent-claude-code-pro/actions/runs/43579998664)：success |
+| ChatGPT | `fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c` | [run 43579984957](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/43579984957)：success |
 
 ## 6. 真实运行与产品能力限制
 
@@ -127,4 +151,4 @@ Claude 的部分并发、深度和模型路由缺少可验证的全树 pre-dispa
 - 引擎与 36 场景：`native-sessions-final.log` 和上节列出的 `report.json`，保留实际引擎与 manifest 摘要。
 - LCU：`/tmp/lcu-authority-race-source-tests.log`、`/tmp/lcu-authority-race-packed-tests.log`、`/tmp/lcu-merged-full-tests.log`；保留成功和失败两类证据。
 
-**TODO(FINAL-EVIDENCE-ARCHIVE)：交付收尾时补充稳定的 CI／artifact 链接或仓内 evidence 归档，以及 §5 最终命令日志。历史结果与当时源码身份应保留，不能用后来重跑的计数覆盖早期失败。**
+稳定证据归档：[完整候选身份与门禁摘要](evidence/2026-11-14-native-harness-candidate.json)、[36 场景原始 report](evidence/2026-11-14-native-harness-sessions.json)。最终单包构建／安装日志为 `native-package-build-final.log`、`native-install-final.log`；远端 CI 日志通过上表与 #44 checks 访问。原始 report 明确是离线 fixture，历史结果及当时源码身份保留。
