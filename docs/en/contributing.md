@@ -90,11 +90,13 @@ Run the applicable checks from the repository root:
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
+
+`make test` and `make coverage` use a finite 15-minute Go package timeout (`FLYWHEEL_TEST_TIMEOUT`). The machine package includes hundreds of real Git and durable-state scenarios and needs this aggregate budget on macOS. This does not change production watchdogs, individual test guards, or the per-function 100% coverage gate.
 
 | Change | Required verification |
 |---|---|

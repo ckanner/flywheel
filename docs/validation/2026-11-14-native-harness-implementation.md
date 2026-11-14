@@ -75,6 +75,14 @@ Claude 合并过程的一份中间日志 `claude-latest-full-tests.log` 为 **92
 
 LCU 前一 tree `3ff284b47cb225f29a643c287c6b627d5cc7e113` 的全套 `npm test` 为 **79 项：64 通过、6 失败、9 环境跳过**。6 个失败位于 `control.spec.ts`，本环境 UNIX socket `listen` 返回 `EPERM`；独立 `node:net` 探针可复现相同限制。最终 tree 只重跑了受影响源码测试与 packed consumer，不宣称完整套件已经转绿。最终提交的远端 CI 已通过（见下表），与本地受限环境记录分开保存；本地这 6 项失败与 9 项跳过没有被改记为通过。
 
+### macOS CI 累计测试预算修正
+
+[首轮 Flywheel CI](https://github.com/ckanner/flywheel/actions/runs/43582131166) 的完整单包构建与 Linux 全套（包括 race、安装和 36 场景）通过；macOS 在 `internal/machine` 累计 `600.065s` 后触发 Go 默认 10 分钟包级超时，因提前终止只得到 `98.9%`，该轮没有通过覆盖率门禁。超时时当前 `TestQuickCompletesWithTwoAgentCallsAndCandidateIntegrationEvidence/false` 仅运行约 2 秒，堆栈位于 Git 提交；没有据此把它描述为单项用例挂起 10 分钟。
+
+实际基线为 [main c000f6d 的 macOS job](https://github.com/ckanner/flywheel/actions/runs/43580329214/job/132403788792) `563.964s`、[PR #46 的 macOS job](https://github.com/ckanner/flywheel/actions/runs/43574758128/job/132386668622) `578.507s`，两者机器包和逐函数覆盖率均通过。本 PR 新增 8 个顶层 machine 回归；按测试文件／声明顺序静态核对，超时用例位于第 523/554 个顶层测试，后面仍有 31 个。此顺序是源码核对，不冒充逐项计时记录。
+
+据此为 `make test`／`coverage` 明确设置有限的 `15m` 包级预算，保留全部测试、全部断言、每函数 100% coverage 和 CI job 的 20 分钟总预算。生产 watchdog 与业务超时没有变化，也没有把初次的 98.9% 计为通过。修正后的精确 head／workflow 结果由 #44 的 PR 说明与 checks 记录。
+
 ## 4. 已闭合的关键回归
 
 - **Native profile 与真实通道一致。** Go→Node 请求保留原始 native options；`requested`、`effective` 和 `observed` 分开处理。显式 off 通过公开控制实际关闭，配置不匹配时不能仅靠提示词继续派发。

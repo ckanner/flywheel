@@ -191,5 +191,36 @@
       "skipped": 9,
       "failure": "Unix socket listen EPERM; independently reproduced"
     }
+  },
+  "ciFirstRun": {
+    "runId": 43582131166,
+    "head": "f1809e39a05c91c43e8384c8fd638b3bc6d4c7ab",
+    "npmCandidate": "success",
+    "linux": "success",
+    "macOS": {
+      "result": "failure",
+      "package": "internal/machine",
+      "cause": "aggregate Go package default timeout",
+      "elapsedSeconds": 600.065,
+      "runningTestElapsedSeconds": 2,
+      "partialStatementCoverage": 98.9
+    },
+    "macOSPassingBaselines": [
+      {
+        "runId": 43580329214,
+        "machineSeconds": 563.964
+      },
+      {
+        "runId": 43574758128,
+        "machineSeconds": 578.507
+      }
+    ],
+    "correction": {
+      "makePackageTimeout": "15m",
+      "ciJobTimeout": "20m",
+      "productionWatchdogChanged": false,
+      "perFunctionStatementCoverageRequired": 100,
+      "testsRemoved": 0
+    }
   }
 }

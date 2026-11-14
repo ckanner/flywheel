@@ -70,11 +70,13 @@ Worktree 隔离 checkout 文件和 index，不是安全沙箱。串行执行保�
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
+
+`make test` 与 `make coverage` 使用有限的 15 分钟 Go 包级测试预算（`FLYWHEEL_TEST_TIMEOUT`）。machine 包包含数百个真实 Git 与持久化状态场景，macOS 需要这份累计预算；生产 watchdog、单项测试保护和每函数 100% 覆盖率门禁保持原有要求。
 
 | 改动 | 必需验证 |
 |---|---|
