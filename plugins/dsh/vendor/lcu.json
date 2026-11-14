@@ -1,0 +1,16 @@
+{
+  "package": "dsh-plugin-lcu",
+  "version": "0.5.0",
+  "repository": "https://github.com/ckanner/dsh-plugin-lcu",
+  "sourceCommit": "7986057e92314b78caf66dde43d1a8d45ab6ada7",
+  "sourceTree": "6256c2a947efec8812ae5e4e7e83c4d098ad1ee1",
+  "tarball": "dsh-plugin-lcu-0.5.0.tgz",
+  "sha256": "e047b045546aafc3e394b975f66dc03f4d8202a9f923bdbfa34b3ebcb8e9d84a",
+  "integrity": "sha512-X1DBVThpWEUNDztjInEED9EH2Kp+L2ev+QfKCv/BYITtGbrS3veHgpC4C9Rxo4BoJipCpTLFx8PEPafr4SoIbw==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "toolchain": {
+    "node": "24.22.1",
+    "npm": "12.2.1"
+  }
+}

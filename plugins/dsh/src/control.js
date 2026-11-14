@@ -73,7 +73,7 @@ function validConfiguration(value) {
     Array.isArray(value.bindings) && value.bindings.every(binding => record(binding) &&
       ['id', 'role', 'harness'].every(key =>
         typeof binding[key] === 'string' && binding[key].trim() !== '') &&
-      ['route', 'profile', 'provider', 'channel', 'model', 'thinking', 'permissionMode'].every(key =>
+      ['route', 'profile', 'nativeProfile', 'provider', 'channel', 'model', 'thinking', 'permissionMode'].every(key =>
         binding[key] === undefined || typeof binding[key] === 'string') &&
       ['residentSession', 'inScope'].every(key => binding[key] === undefined || typeof binding[key] === 'boolean'));
 }

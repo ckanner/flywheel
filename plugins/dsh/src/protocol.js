@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { open, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
+import { validateNative, validateManaged } from './native.js';
 
 export const PROTOCOL = 1;
 export const SESSION_PROTOCOL = 'dsh-sdk/session-resume/worker-v2';
@@ -55,7 +56,7 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 or 2 start request');
   }
   const allowed = new Set(['type', 'protocol', 'requestId', 'cwd', 'provider', 'model',
-    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'workspaceCwd', 'sessionTitle']);
+    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'workspaceCwd', 'sessionTitle', 'native', 'managed']);
   if (value.protocol === 2) {
     allowed.add('sessionId');
     allowed.add('persistent');
@@ -66,6 +67,12 @@ export async function validateStart(value) {
     if (!allowed.has(key)) throw new BridgeError('INVALID_REQUEST', `unsupported start field: ${key}`);
   }
   const requestId = nonempty(value.requestId, 'requestId', 128);
+  validateNative(value.native);
+  validateManaged(value.managed, requestId);
+  if (value.managed !== undefined && value.native === undefined) throw new BridgeError('INVALID_REQUEST', 'managed identity requires native options');
+  if (value.native?.lcu?.enabled && (!value.managed || value.permissionMode !== 'danger-full-access')) {
+    throw new BridgeError('INVALID_REQUEST', 'LCU requires managed identity and explicitly selected full access');
+  }
   const provider = nonempty(value.provider, 'provider');
   const model = nonempty(value.model, 'model');
   const prompt = nonempty(value.prompt, 'prompt', MAX_FRAME_BYTES);

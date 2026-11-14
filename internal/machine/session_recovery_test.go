@@ -319,7 +319,7 @@ func TestSessionLifecycleAdmissionCheckpointAndIOFailures(t *testing.T) {
 					e.RequestID = "foreign"
 				case "foreign-history":
 					other := *r
-					other.ThreadID, other.Protocol = "owned-thread", "codex-pro/0.9.0/worker-v3"
+					other.ThreadID, other.Protocol = "owned-thread", "codex-pro/0.10.0/worker-v3"
 					c.State.Sessions.Records["execute/M01-T01"] = &other
 				case "snapshot":
 					snapshotOpen = func(string) (io.ReadCloser, error) { return nil, os.ErrPermission }

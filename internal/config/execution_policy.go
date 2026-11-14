@@ -20,13 +20,14 @@ type ExecutionPolicy struct {
 }
 
 type ExecutionBinding struct {
-	Harness     string `json:"harness"`
-	Provider    string `json:"provider"`
-	Channel     string `json:"channel"`
-	Model       string `json:"model"`
-	Thinking    string `json:"thinking"`
-	Permission  string `json:"permission"`
-	SessionMode string `json:"session-mode"`
+	NativeProfile string `json:"native-profile,omitempty"`
+	Harness       string `json:"harness"`
+	Provider      string `json:"provider"`
+	Channel       string `json:"channel"`
+	Model         string `json:"model"`
+	Thinking      string `json:"thinking"`
+	Permission    string `json:"permission"`
+	SessionMode   string `json:"session-mode"`
 }
 
 type ExecutionRoute struct {

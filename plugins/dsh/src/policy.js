@@ -3,12 +3,14 @@
 import { link, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { readPolicyReceipt, nonempty } from './protocol.js';
+import { createNativePolicy } from './native-policy.js';
 
 export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
 export async function apply(ctx, config) {
   const { permissionMode, cwd, workspaceCwd, receiptPath, requestId, nonce, deferredAdmissionPath } = config;
   let { sessionTitle, sessionId } = config;
+  let nativePolicy;
   const fullAccess = permissionMode === 'danger-full-access';
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode) || typeof cwd !== 'string' ||
       ctx.shell.sandboxMode === undefined) {
@@ -45,13 +47,18 @@ export async function apply(ctx, config) {
     const session = agent.session;
     if (deferredAdmissionPath !== undefined) {
       const identity = await readPolicyReceipt(deferredAdmissionPath, { requestId, nonce });
-      if (Object.keys(identity).some(key => !['requestId', 'nonce', 'sessionId', 'sessionTitle'].includes(key))) {
+      if (Object.keys(identity).some(key => !['requestId', 'nonce', 'sessionId', 'sessionTitle', 'managed', 'resuming'].includes(key))) {
         throw new Error('Flywheel deferred admission has unsupported fields');
       }
       sessionId = nonempty(identity.sessionId, 'sessionId', 512);
       sessionTitle = identity.sessionTitle === undefined ? undefined : nonempty(identity.sessionTitle, 'sessionTitle', 512);
+      config.managed = identity.managed;
+      config.resuming = identity.resuming;
     }
-    if (String(session.id) !== sessionId) throw new Error('Flywheel policy refuses an unrelated SDK session');
+    config.sessionId = sessionId;
+    nativePolicy ??= await createNativePolicy(ctx, config);
+    const root = String(session.id) === sessionId;
+    if (!root && !nativePolicy?.isChild(agent)) throw new Error('Flywheel policy refuses an unrelated SDK session');
     if (workspaceCwd !== undefined && session.header.cwd !== workspaceCwd) {
       throw new Error('Flywheel refuses to relabel a session from a different project workspace');
     }
@@ -61,17 +68,20 @@ export async function apply(ctx, config) {
       // unsupported split workspace-write requests are rejected at admission.
       await ctx.workingDirectory.set(agent, cwd);
     }
-    if (sessionTitle && ctx.get('sessionTitle')) {
+    if (root && sessionTitle && ctx.get('sessionTitle')) {
       ctx.get('sessionTitle').rename(session, [...sessionTitle].slice(0, 35).join(''));
     }
     // Official events remain readable by a later SDK. An ad-hoc Session event
     // would make rc.1 reject the entire persisted log on resume.
     session.append('sandbox/mode', { mode: permissionMode });
     session.append('approval/policy', { policy: 'never' });
+    const native = await nativePolicy?.admit(agent, root);
+    if (!root) return;
     const policy = ctx.sandboxPolicy.resolve({ session });
     const receipt = {
       protocol: 1,
       requestId, sessionId, nonce,
+      ...(native ? { native } : {}),
       ...(workspaceCwd === undefined ? {} : { workspaceCwd: session.header.cwd }),
       cwd: policy.workspaceRoot,
       permissionMode: policy.mode,

@@ -62,6 +62,15 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 
 需要继续用 API Key 的自定义配置仍受支持：在完整配置的相关绑定及其 channel 中一致选择 `deepseek-official`，按 DSH API provider 的正常方式配置凭证。不要仅改 channel 名却保留冲突的显式 provider；也不必为账号路径额外添加 API key。
 
+## 原生能力配置
+
+`native-profiles` 定义版本化 harness options，绑定使用 `native-profile` 引用。
+模型 profiles、loops、routes、judge-panel 和 execution-policy 的允许绑定均支持，
+引用必须与实际 harness 匹配。省略可继承模型 profile，显式空字符串关闭继承。
+静态能力不依赖 JEV 开关；工作台按当前 harness 选择配置，高级 JSON 编辑定义。
+实际 options 进入历史及冻结策略身份，准入、用量和清理仍取决于运行回执。
+完整示例、LCU、Tower 和独立 Review/Team 入口见[原生能力](native-capabilities.md)。
+
 ## 从完整模板开始
 
 查看默认内联表或可复用 profiles 表：
@@ -298,8 +307,9 @@ null、错拼字段和不完整对象在模型启动前拒绝。字段信源为
 
 `sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、Claude Code Pro、DSH 和 Kimi 的主任务
 Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图，再保存可信终态回执。
-`fresh` 不复用通用的角色历史，保持后端原有的新调用方式，并保留既有 Kimi Plan
-`resident-session` 行为；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
+`fresh` 不复用通用的角色历史，保持后端原有的新调用方式；仅未配置 `native-profile` 的
+旧 Kimi CLI 路径保留 Plan `resident-session` 行为。原生 Agent/Swarm 历史使用 scoped
+角色账本，Tower 始终 fresh；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
 其他适配器及 mock 仍使用原有调用路径；Intake／Garden 不在该角色会话策略内。
 
 | 角色 | 历史作用域与责任 |
@@ -314,8 +324,11 @@ Quick 的正常首次成功路径仍只有 Execute 和最终 Review 两次阶段
 会话选择、恢复、重建和计量；技能、模型与桌面控制面不扫描后端历史来猜测会话。
 
 Plan 显式 `resident-session:false` 在 scoped 下仍关闭该角色的历史复用；省略该字段
-不等于明确关闭。`resident-session:true` 是既有 Kimi Plan 选项，不是跨 harness 开关，
-Codex Pro 仍拒绝它；为 Codex Pro 选择 scoped 应使用 `sessions`。
+不等于明确关闭。未选择 `native-profile` 时，`resident-session:true` 保留旧 Kimi CLI
+Plan 行为。原生 Agent/Swarm 在全局 `fresh` 下将这个显式 resident 意图映射为 scoped
+角色账本；显式 `sessions.roles.plan:"fresh"` 仍优先关闭复用。旧 CLI Session 不会导入，
+Tower 始终 fresh。该选项不启用跨 harness 历史复用；Codex Pro 仍拒绝它，为 Codex Pro
+选择 scoped 应使用 `sessions`。
 
 复用身份包含实际任务／工作目录、角色／作用域、harness、provider、channel、model、
 thinking、权限及后端运行配置引用。home/profile、worker 和命令引用取实际子进程所用
@@ -344,7 +357,7 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.9.0 与 Claude Code Pro 0.4.0 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.0 与 Claude Code Pro 0.5.0 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 原生 init
 发生在 prompt 已派发之后，不能提供同等的派发前配置证明。两个后端都保留未知窗口，
@@ -551,10 +564,10 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 ```
 
 完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件精确消费
-`dsh-subagent-codex-pro@0.9.0` 的公开 `dsh-subagent-codex-pro/machine` API。
+`dsh-subagent-codex-pro@0.10.0` 的公开 `dsh-subagent-codex-pro/machine` API。
 精确依赖由插件 package 和 lockfile 锁定；生命周期开发时使用的源码包见
 [vendor 来源记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。内部仍使用 Codex app-server 和用户已有登录，不需要父模型二次委派；缺包、
-版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.4.0` optional peer，
+版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.5.0` optional peer，
 未选择该后端时无需安装。
 
 已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。
@@ -645,7 +658,7 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
 
-Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.9.0／协议 1、typed
+Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.10.0／协议 1、typed
 lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 worker 只查一次。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。

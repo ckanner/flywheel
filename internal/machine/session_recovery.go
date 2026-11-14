@@ -139,7 +139,11 @@ func (c *Context) recoverSessionReceipt(key string, r *state.SessionRecord) erro
 		return err
 	}
 	recovery := r.Last.Recovery
-	result, err := recoverSessionMachine(drivers.MachineRecoveryArgs{Harness: recovery.Harness, RequestID: r.Last.ID, RunID: event.RunID,
+	var native json.RawMessage
+	if r.Configuration != nil {
+		native = r.Configuration.NativeOptions
+	}
+	result, err := recoverSessionMachine(drivers.MachineRecoveryArgs{Native: native, Harness: recovery.Harness, RequestID: r.Last.ID, RunID: event.RunID,
 		RecoveryDirectory: recovery.Directory, Cwd: sessionNativeCwd(r), Model: recovery.Model, ReasoningEffort: recovery.Effort, PermissionMode: recovery.PermissionMode,
 		PersistentSession: r.Last.Persistent, SessionID: r.Last.RequestedThread, Watchdog: watchdog.Opts{Context: c.RunContext}})
 	if err != nil {

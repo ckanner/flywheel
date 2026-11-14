@@ -1,8 +1,9 @@
 // Public machine API consumer. Go remains the owner of scheduling and acceptance.
 import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
+import { validateNativeAdmission } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -20,7 +21,7 @@ export async function loadAdapter() {
   try {
     manifest = require('dsh-subagent-codex-pro/package.json');
   } catch {
-    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.9.0 dependency with Flywheel');
+    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.10.0 dependency with Flywheel');
   }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro package identity or version does not match the pinned contract');
@@ -31,7 +32,9 @@ export async function loadAdapter() {
       typeof api.parseMachineRequest !== 'function' || typeof api.runMachine !== 'function' || typeof api.MachineInputError !== 'function' ||
       api.MACHINE_LIFECYCLE_VERSION !== 1 || typeof api.recoverMachine !== 'function' ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
-      api.MACHINE_LIFECYCLE_CAPABILITIES?.threadReadyBeforeDispatch !== true) {
+      api.MACHINE_LIFECYCLE_CAPABILITIES?.threadReadyBeforeDispatch !== true ||
+      api.MACHINE_NATIVE_VERSION !== 1 || api.MACHINE_NATIVE_CAPABILITIES?.version !== 1 ||
+      api.MACHINE_NATIVE_CAPABILITIES?.agents !== true || api.MACHINE_NATIVE_CAPABILITIES?.review !== true) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro package identity, version or public machine API does not match the pinned contract');
   }
   return api;
@@ -41,7 +44,7 @@ export async function loadAdapter() {
 export function machineRequest(value, api, env) {
   const lifecycle = value?.protocol === 3;
   const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs',
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'native', 'managed', 'images', 'outputSchema',
     ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || ![1, 2, 3].includes(value.protocol) ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.requestId !== 'string' || value.requestId.length > 256 ||
@@ -56,11 +59,15 @@ export function machineRequest(value, api, env) {
   if (value.timeoutMs !== undefined && (!Number.isSafeInteger(value.timeoutMs) || value.timeoutMs < 1 || value.timeoutMs > 2147483647)) {
     throw new WorkerError('INVALID_REQUEST', 'timeoutMs must be a positive safe integer no greater than 2147483647');
   }
+  validateNativeAdmission(value.managed, value.requestId, WorkerError);
   try {
     return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, model: value.model,
       effort: value.reasoningEffort,
       permissionMode: value.permissionMode === 'danger-full-access' ? 'dangerously-bypass-approvals-and-sandbox' : value.permissionMode,
       prompt: value.prompt,
+      ...(value.native === undefined ? {} : { native: value.native }),
+      ...(value.images === undefined ? {} : { images: value.images }),
+      ...(value.outputSchema === undefined ? {} : { outputSchema: value.outputSchema }),
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
       command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: persistent ? 'persistent' : 'ephemeral',
       ...(persistent && value.threadId !== undefined ? { threadId: value.threadId } : {}), maxOutputBytes: LIMITS.machineOutputBytes });
@@ -71,5 +78,5 @@ export function machineRequest(value, api, env) {
 
 export function doctorResult() {
   return { protocol: 1, type: 'doctor', package: ADAPTER.package, version: ADAPTER.version,
-    machineProtocol: ADAPTER.protocol, available: true, inferenceTested: false };
+    machineProtocol: ADAPTER.protocol, nativeVersion: 1, available: true, inferenceTested: false };
 }

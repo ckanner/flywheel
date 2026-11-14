@@ -6,13 +6,13 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } fr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ADAPTER, loadAdapter, machineRequest, runtimeOptions } from '../src/claude-code-pro-bridge.js';
+import { ADAPTER, loadAdapter, machineRequest, invokeAdapter, recoverAdapter, runtimeOptions } from '../src/claude-code-pro-bridge.js';
 
 const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.4.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -63,7 +63,7 @@ function resultFrame(result, code = 0) {
   assert.equal(result.signal, null);
   const frames = result.stdout.trim().split('\n').map(JSON.parse);
   assert.equal(frames.filter(frame => frame.type === 'result').length, 1);
-  assert.ok(frames.slice(0, -1).every(frame => frame.type === 'progress'));
+  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event'].includes(frame.type)));
   assert.deepEqual(frames.at(-1).adapter, ADAPTER);
   return frames.at(-1);
 }
@@ -120,7 +120,7 @@ test('missing, stale and incompatible optional peers prove non-dispatch without 
   await writeFile(join(peer, 'package.json'), JSON.stringify({ ...manifest, version: ADAPTER.version }));
   await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=999;');
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_MISMATCH');
-  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
+  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export const MACHINE_NATIVE_VERSION=1; export const MACHINE_NATIVE_CAPABILITIES={version:1,agents:true,workflows:true}; export const validateNativeReviewRequest=()=>{}; export const validateInteractiveTeamRequest=()=>{}; export const runNativeReview=()=>{}; export const runInteractiveTeam=()=>{}; export const recoverNativeJob=()=>{}; export const controlInteractiveTeam=()=>{}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
   const unknown = resultFrame(await f.launch(options).done, 1);
   assert.equal(unknown.admission, undefined);
   assert.equal(unknown.error.code, 'WORKER_ERROR');
@@ -176,8 +176,64 @@ test('optional adapter doctor imports the public API without running Claude', li
   const out = await f.launch({ input: null, args: ['--doctor'] }).done;
   assert.equal(out.code, 0, out.stderr);
   assert.deepEqual(JSON.parse(out.stdout), { protocol: 1, type: 'doctor', package: ADAPTER.package,
-    version: ADAPTER.version, machineProtocol: 1, available: true, inferenceTested: false });
+    version: ADAPTER.version, machineProtocol: 1, nativeVersion: 1, available: true, inferenceTested: false });
   assert.deepEqual(await f.records(), []);
+});
+
+test('native Agent metadata stays separate from root output and managed identity reaches events', liveContract, async t => {
+  const f = await setup(t, 'native-child');
+  const native = { version: 1, agents: { enabled: true }, workflows: { enabled: true, maxConcurrent: 3 } };
+  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role: 'Executor', scope: 's', channel: 'c', taskDir: f.cwd };
+  const result = await f.launch({ input: { ...f.request, native, managed } }).done;
+  const receipt = resultFrame(result).receipt;
+  assert.deepEqual(receipt.native.requested, native);
+  assert.equal(receipt.native.effective.matched, true);
+  assert.equal(receipt.native.completion.confirmed, true);
+  assert.equal(receipt.native.children[0].usage.total_tokens, 10);
+  assert.equal(receipt.native.usage.childSnapshotsAreAdditive, false);
+  assert.equal(receipt.usage.totalTokens, 22);
+  const events = result.stdout.trim().split('\n').map(JSON.parse).filter(f => f.type === 'native-event');
+  assert.ok(events.length > 0);
+  assert.ok(events.every(f => JSON.stringify(f.managed) === JSON.stringify(managed)));
+});
+
+test('machine schema and image requests reach the CLI through the pinned public parser', liveContract, async t => {
+  const f = await setup(t);
+  const frame = resultFrame(await f.launch({ input: { ...f.request, native: { version: 1 }, maxBudgetUsd: 2,
+    images: [{ mimeType: 'image/png', data: 'aGVsbG8=' }],
+    outputSchema: { type: 'object', properties: { answer: { type: 'integer' } }, required: ['answer'] } } }).done);
+  assert.deepEqual(frame.receipt.structured, { answer: 42 });
+  const [call] = await f.records();
+  assert.equal(call.userContent[1].type, 'image');
+  assert.equal(call.argv[call.argv.indexOf('--max-budget-usd') + 1], '2');
+});
+
+test('dedicated jobs preflight once and route through their independent public interfaces', async () => {
+  class MachineInputError extends Error {}
+  const calls = [], api = { MachineInputError,
+    validateNativeReviewRequest: request => { calls.push(['review-validate', request]); if (request.consent !== true) throw new MachineInputError('consent'); },
+    validateInteractiveTeamRequest: request => calls.push(['team-validate', request]),
+    runNativeReview: (request, options) => ({ kind: 'review', request, options }),
+    runInteractiveTeam: (request, options) => ({ kind: 'team', request, options }),
+    recoverNativeJob: request => ({ kind: 'native-recovery', request }) };
+  const value = { type: 'start', protocol: 3, requestId: 'job', cwd: '/tmp', model: 'sonnet', reasoningEffort: 'high',
+    prompt: 'team task', permissionMode: 'danger-full-access', threadMode: 'ephemeral', recoveryDirectory: '/tmp/evidence' };
+  const remote = machineRequest({ ...value, nativeOperation: { kind: 'remote-review', target: 'main', consent: true } }, api, {});
+  assert.equal(invokeAdapter(api, remote, {}).kind, 'review');
+  assert.equal(remote.nativeJob.request.model, undefined);
+  assert.equal(remote.nativeJob.request.prompt, undefined);
+  const team = machineRequest({ ...value, nativeOperation: { kind: 'interactive-team', columns: 90 }, native: { version: 1, agents: { enabled: true } } }, api, {});
+  assert.equal(invokeAdapter(api, team, {}).kind, 'team');
+  assert.equal(team.nativeJob.request.prompt, value.prompt);
+  assert.equal(team.nativeJob.request.permissionMode, 'bypassPermissions');
+  assert.equal(recoverAdapter(api, { runId: 'original' }, { nativeOperation: { kind: 'remote-review' } }).kind, 'native-recovery');
+  for (const changed of [{ nativeOperation: { kind: 'remote-review', consent: false } },
+    { nativeOperation: { kind: 'remote-review', consent: true }, native: { version: 1 } },
+    { nativeOperation: { kind: 'interactive-team' }, threadMode: 'persistent' },
+    { nativeOperation: { kind: 'interactive-team', guessedControl: true } }]) {
+    assert.throws(() => machineRequest({ ...value, ...changed }, api, {}), { code: 'INVALID_REQUEST' });
+  }
+  assert.equal(calls[0][0], 'review-validate');
 });
 
 for (const scenario of ['wrong-cwd', 'wrong-model', 'wrong-permission', 'wrong-session', 'duplicate-result', 'malformed-after-terminal', 'missing-result', 'abnormal-exit']) {

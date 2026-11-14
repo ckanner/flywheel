@@ -2,7 +2,7 @@
 // Copyright (c) 2026 ckanner. SPDX-License-Identifier: MIT
 "use strict";
 
-const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
+const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
 
 async function main() {
   const args = process.argv.slice(2);
@@ -10,6 +10,10 @@ async function main() {
     return require("../npm/install.js").main(args.slice(1));
   }
   assertSupportedNode();
+
+  if (args[0] === 'native') {
+    return (await import('../dist/native-jobs.mjs')).main(args.slice(1));
+  }
 
   const env = { ...process.env };
   // An npm dependency's bin is not necessarily on a desktop application's
@@ -23,6 +27,9 @@ async function main() {
   }
   if (env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER === undefined) {
     env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER = loadClaudeCodeProWorkerPath();
+  }
+  if (env.FLYWHEEL_KIMI_NATIVE_WORKER === undefined) {
+    env.FLYWHEEL_KIMI_NATIVE_WORKER = loadKimiNativeWorkerPath();
   }
   return runChild(loadNativePath(), args, { env });
 }

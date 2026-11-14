@@ -2,6 +2,7 @@
 import { runWorker } from './bridge.js';
 import { prewarmInput } from './prewarm.js';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError } from './protocol.js';
+import { nativeDoctor } from './native-doctor.js';
 
 const controller = new AbortController();
 process.once('SIGTERM', () => controller.abort());
@@ -33,16 +34,22 @@ async function readInput() {
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 let warmInput;
 try {
-  if (process.argv.slice(2).some(arg => !['--doctor', '--prewarm'].includes(arg)) || process.argv.length > 3) {
-    throw new BridgeError('INVALID_REQUEST', 'worker accepts only optional --doctor or --prewarm');
+  if (process.argv.slice(2).some(arg => !['--doctor', '--native-doctor', '--prewarm'].includes(arg)) || process.argv.length > 3) {
+    throw new BridgeError('INVALID_REQUEST', 'worker accepts only optional --doctor, --native-doctor or --prewarm');
   }
-  warmInput = process.argv.includes('--prewarm') ? prewarmInput(controller) : undefined;
-  const request = warmInput ? await warmInput.admission : await readInput();
-  const result = await runWorker(request, {
-    emit, signal: controller.signal, doctor: process.argv.includes('--doctor'),
-    stderr: chunk => process.stderr.write(chunk), prewarm: warmInput,
-  });
-  process.exitCode = !result || ['ok', 'closed'].includes(result.status) ? 0 : result.status === 'cancelled' ? 143 : 1;
+  if (process.argv.includes('--native-doctor')) {
+    const result = await nativeDoctor();
+    emit(result);
+    process.exitCode = result.available ? 0 : 1;
+  } else {
+    warmInput = process.argv.includes('--prewarm') ? prewarmInput(controller) : undefined;
+    const request = warmInput ? await warmInput.admission : await readInput();
+    const result = await runWorker(request, {
+      emit, signal: controller.signal, doctor: process.argv.includes('--doctor'),
+      stderr: chunk => process.stderr.write(chunk), prewarm: warmInput,
+    });
+    process.exitCode = !result || ['ok', 'closed'].includes(result.status) ? 0 : result.status === 'cancelled' ? 143 : 1;
+  }
 } catch (error) {
   emit({ protocol: 1, requestId: 'invalid-request', type: 'result', status: 'error', settled: true,
     text: '', usage: null, costUsd: null, error: normalizedError(error) });

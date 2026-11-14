@@ -61,7 +61,7 @@ catalog or an account-entitlement check.
 
 | Checked integration | Accepted request values | Notes |
 |---|---|---|
-| GPT-6.1 Sol / Codex Pro 0.9.0 | `low`, `medium`, `high`, `xhigh`, `max` | The machine API forwards the selected effort |
+| GPT-6.1 Sol / Codex Pro 0.10.0 | `low`, `medium`, `high`, `xhigh`, `max` | The machine API forwards the selected effort |
 | Sol and Astra / DSH ChatGPT provider | `low`, `medium`, `high`, `xhigh`, `max` | The provider serializes `reasoning.effort` |
 | Kimi K3.1 Pro / native CLI | `low`, `high`, `max` | Thinking cannot be disabled; compatibility aliases `xhigh`, `max`, and `ultra` resolve to native `max` |
 | DeepSeek Flash / checked DSH adapter | `off`, `low`, `high`, `max` | This adapter rejects `medium` and `xhigh` |
@@ -150,6 +150,6 @@ Flywheel's `ready.reasoningEffort` echoes the request after initialization;
 it is not independent model-server attestation. Codex Pro separates
 `requestedEffort`, `accepted`, and an unknown `effectiveEffort:null`.
 See the [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)
-and [Codex Pro machine protocol](https://github.com/ckanner/dsh-subagent-codex-pro/blob/37da3d75de32b809c4fb1a631ccc15191f3d87f9/docs/machine.md).
+and [Codex Pro machine protocol](https://github.com/ckanner/dsh-subagent-codex-pro/blob/9c7d724cb19dc29457a56f4a4269c24278595d2f/docs/machine.md).
 A no-inference doctor cannot prove account balance, live inference, or the
 benefit of a higher effort setting.

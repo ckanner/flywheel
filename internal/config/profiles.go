@@ -8,9 +8,10 @@ import (
 	"strings"
 )
 
-var modelFields = []string{"harness", "model", "channel", "provider", "thinking"}
+var modelFields = []string{"harness", "model", "channel", "provider", "thinking", "native-profile"}
 var loopRoles = []string{"plan", "review", "judge", "intake", "garden"}
 var configFields = []string{
+	"native-profiles",
 	"execution-policy",
 	"jev", "jev-shadow", "version", "drivers", "loops", "routes", "channels", "profiles", "budget", "watchdog",
 	"retry", "credentials", "verify", "defect-injection", "worktree", "scheduler", "permissions", "sessions", "judge-panel", "intake", "pricing", "mock-behaviors",
@@ -208,6 +209,9 @@ func expandProfiles(raw []byte) ([]byte, map[string]string, error) {
 
 // Preserve supported notes without weakening strict typed decoding of fields.
 func prepareConfigSections(root map[string]json.RawMessage) error {
+	if err := prepareNativeProfiles(root); err != nil {
+		return err
+	}
 	if err := prepareExecutionPolicy(root); err != nil {
 		return err
 	}

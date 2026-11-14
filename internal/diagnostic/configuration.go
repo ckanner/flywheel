@@ -18,6 +18,7 @@ import (
 
 // Binding is a resolved stage, not a promise that an account can serve its model.
 type Binding struct {
+	NativeProfile   string        `json:"nativeProfile,omitempty"`
 	ID              string        `json:"id"`
 	Role            string        `json:"role"`
 	Route           string        `json:"route"`
@@ -34,15 +35,16 @@ type Binding struct {
 }
 
 type Configuration struct {
-	ExecutionPolicy *config.ExecutionPolicy `json:"execution-policy,omitempty"`
-	JEV             config.JEVConfig        `json:"jev"`
-	Scheduler       config.SchedulerConfig  `json:"scheduler"`
-	Source          string                  `json:"source"`
-	Scope           string                  `json:"scope"`
-	Cwd             string                  `json:"cwd"`
-	TaskDir         string                  `json:"taskDir"`
-	Bindings        []Binding               `json:"bindings"`
-	Sessions        config.SessionsConfig   `json:"sessions"`
+	NativeProfiles  map[string]config.NativeProfile `json:"native-profiles,omitempty"`
+	ExecutionPolicy *config.ExecutionPolicy         `json:"execution-policy,omitempty"`
+	JEV             config.JEVConfig                `json:"jev"`
+	Scheduler       config.SchedulerConfig          `json:"scheduler"`
+	Source          string                          `json:"source"`
+	Scope           string                          `json:"scope"`
+	Cwd             string                          `json:"cwd"`
+	TaskDir         string                          `json:"taskDir"`
+	Bindings        []Binding                       `json:"bindings"`
+	Sessions        config.SessionsConfig           `json:"sessions"`
 }
 
 var (
@@ -136,7 +138,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
+	view := &Configuration{NativeProfiles: cfg.NativeProfiles, ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		harness := b.Harness
 		if harness == "" {
@@ -161,7 +163,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 		}
 		permission := cfg.PermissionMode(role, harness, id)
 		view.Bindings = append(view.Bindings, Binding{
-			ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[id], Harness: harness,
+			NativeProfile: b.NativeProfile, ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[id], Harness: harness,
 			Provider: fallback.ResolveProvider(cfg, harness, b.Provider, b.Channel), Channel: b.Channel,
 			Model: model, Thinking: thinking, ResidentSession: b.ResidentSession && role == "plan" && harness == "kimi",
 			PermissionMode: permission, InScope: true,
@@ -173,7 +175,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	}
 	for route, b := range cfg.Routes {
 		add("routes."+route, "execute", route, config.LoopBinding{
-			Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking,
+			NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking,
 		})
 	}
 	if cfg.JudgePanel != nil {

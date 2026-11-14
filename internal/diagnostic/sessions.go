@@ -1,6 +1,10 @@
 package diagnostic
 
-import "github.com/ckanner/flywheel/internal/config"
+import (
+	"encoding/json"
+
+	"github.com/ckanner/flywheel/internal/config"
+)
 
 // SessionPolicy reports configured selection and adapter support, not proof
 // that any particular saved backend history exists or has been restored.
@@ -21,13 +25,33 @@ func sessionPolicy(cfg *config.Config, role, harness string, binding config.Loop
 	policy := SessionPolicy{Mode: "fresh", Supported: config.SupportsScopedSessions(harness), Reason: "fresh-policy",
 		DurableJournal: harness == "codex-pro" || harness == "claude-code-pro", ReadOnlyRecovery: harness == "codex-pro" || harness == "claude-code-pro",
 		ThreadReadyBeforeDispatch: harness == "codex-pro"}
+	nativeKimi := harness == "kimi" && binding.NativeProfile != ""
+	if nativeKimi {
+		profile, found := cfg.NativeProfiles[binding.NativeProfile]
+		var native struct {
+			Version int    `json:"version"`
+			Mode    string `json:"mode"`
+		}
+		if err := json.Unmarshal(profile.Options, &native); !found || profile.Harness != "kimi" || err != nil || native.Version != 1 || (native.Mode != "agent" && native.Mode != "swarm" && native.Mode != "tower") {
+			policy.Supported, policy.Reason = false, "invalid-native-profile"
+			return policy
+		}
+		if native.Mode == "tower" {
+			policy.Supported, policy.Reason = false, "native-tower-fresh-only"
+			return policy
+		}
+	}
 	if role == "intake" || role == "garden" {
 		policy.Reason = "advisory-role-outside-scoped-policy"
 		return policy
 	}
 	if cfg.Sessions.ModeForRole(role) == "fresh" {
 		if role == "plan" && harness == "kimi" && binding.ResidentSession && cfg.Sessions.Roles["plan"] != "fresh" {
-			policy.Mode, policy.Reason = "legacy-plan", "explicit-kimi-plan-history"
+			if nativeKimi {
+				policy.Mode, policy.Reason = "scoped", "native-kimi-plan-resident"
+			} else {
+				policy.Mode, policy.Reason = "legacy-plan", "explicit-kimi-plan-history"
+			}
 		}
 		return policy
 	}

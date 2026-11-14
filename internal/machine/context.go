@@ -272,9 +272,11 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	var resultState any
 	var codexProReceipt any
 	var claudeCodeProReceipt any
+	var nativeReceipt any
 	if a.result != nil {
 		codexProReceipt = a.result.CodexProReceipt
 		claudeCodeProReceipt = a.result.ClaudeCodeProReceipt
+		nativeReceipt = a.result.NativeReceipt
 		resultState = map[string]any{
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
 			"truncated": a.result.Truncated, "signal": a.result.Signal,
@@ -303,6 +305,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"result":                  resultState,
 		"codex-pro-receipt":       codexProReceipt,
 		"claude-code-pro-receipt": claudeCodeProReceipt,
+		"native-receipt":          nativeReceipt,
 		"session":                 sessionMetrics(c.State.Sessions, invocationID),
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)

@@ -18,7 +18,7 @@ import (
 const (
 	CodexProWorkerEnv      = "FLYWHEEL_CODEX_PRO_WORKER"
 	CodexProBinaryEnv      = "FLYWHEEL_CODEX_BIN"
-	CodexProPackageVersion = "0.9.0"
+	CodexProPackageVersion = "0.10.0"
 	codexProCleanupMS      = int64(10_000)
 )
 
@@ -41,6 +41,8 @@ func CodexProBinary() string {
 // CodexProArgs admits one explicitly configured public machine run. Scoped
 // calls request persistent history; SessionID resumes only that exact thread.
 type CodexProArgs struct {
+	Native            json.RawMessage
+	Managed           *NativeAdmission
 	Prompt            string
 	Model             string
 	ReasoningEffort   string
@@ -58,21 +60,24 @@ type CodexProArgs struct {
 }
 
 type codexProStart struct {
-	Type              string `json:"type"`
-	Protocol          int    `json:"protocol"`
-	RequestID         string `json:"requestId"`
-	Cwd               string `json:"cwd"`
-	Model             string `json:"model"`
-	ReasoningEffort   string `json:"reasoningEffort"`
-	PermissionMode    string `json:"permissionMode"`
-	Prompt            string `json:"prompt"`
-	TimeoutMS         int64  `json:"timeoutMs"`
-	ThreadMode        string `json:"threadMode,omitempty"`
-	ThreadID          string `json:"threadId,omitempty"`
-	RecoveryDirectory string `json:"recoveryDirectory,omitempty"`
+	Native            json.RawMessage  `json:"native,omitempty"`
+	Managed           *NativeAdmission `json:"managed,omitempty"`
+	Type              string           `json:"type"`
+	Protocol          int              `json:"protocol"`
+	RequestID         string           `json:"requestId"`
+	Cwd               string           `json:"cwd"`
+	Model             string           `json:"model"`
+	ReasoningEffort   string           `json:"reasoningEffort"`
+	PermissionMode    string           `json:"permissionMode"`
+	Prompt            string           `json:"prompt"`
+	TimeoutMS         int64            `json:"timeoutMs"`
+	ThreadMode        string           `json:"threadMode,omitempty"`
+	ThreadID          string           `json:"threadId,omitempty"`
+	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
 }
 
 type codexProParsed struct {
+	NativeReceipt    json.RawMessage
 	Receipt          json.RawMessage
 	SessionID        string
 	Text             string
@@ -188,11 +193,12 @@ type codexProFailure struct {
 }
 
 type codexProReceipt struct {
-	Protocol  int    `json:"protocol"`
-	Type      string `json:"type"`
-	RequestID string `json:"requestId"`
-	RunID     string `json:"runId"`
-	OK        *bool  `json:"ok"`
+	Native    json.RawMessage `json:"native"`
+	Protocol  int             `json:"protocol"`
+	Type      string          `json:"type"`
+	RequestID string          `json:"requestId"`
+	RunID     string          `json:"runId"`
+	OK        *bool           `json:"ok"`
 	Requested struct {
 		Cwd            string          `json:"cwd"`
 		Model          string          `json:"model"`
@@ -213,6 +219,7 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 	lifecycle := machineLifecycleFlow{harness: "codex-pro", request: request}
 	terminal := false
 	trustedStream := true
+	var nativeSequence int64
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -246,6 +253,11 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			break
 		}
 		switch frame.Type {
+		case "native-event":
+			if err := validateProNativeEvent(json.RawMessage(line), "codex-pro", request, &nativeSequence); err != nil {
+				trustedStream = false
+				parsed.Error = err.Error()
+			}
 		case "lifecycle":
 			if _, err := lifecycle.frame([]byte(line)); err != nil || request.Protocol != 3 {
 				trustedStream = false
@@ -306,9 +318,27 @@ func codexProUnknownSession(request codexProStart) *SessionOutcome {
 		RequestID: request.RequestID, Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 }
 
-func parseCodexProReceipt(raw json.RawMessage, request codexProStart) codexProParsed {
-	parsed := codexProParsed{Receipt: raw, Session: codexProUnknownSession(request)}
+func parseCodexProReceipt(raw json.RawMessage, request codexProStart) (parsed codexProParsed) {
+	parsed = codexProParsed{Receipt: raw, Session: codexProUnknownSession(request)}
 	var receipt codexProReceipt
+	defer func() {
+		parsed.NativeReceipt = receipt.Native
+		if receipt.OK == nil {
+			return
+		}
+		fold, err := foldProNative("codex-pro", request.Native, receipt.Native, *receipt.OK, parsed.CleanupConfirmed,
+			parsed.Session.Dispatch == "not-dispatched", parsed.Session.SessionID, parsed.Usage, parsed.Session.UsageStatus)
+		if err != nil {
+			parsed.Error = err.Error()
+			parsed.Settled, parsed.CleanupConfirmed, parsed.Usage = false, false, nil
+			parsed.Session.Outcome, parsed.Session.UsageStatus, parsed.Session.ResumeCandidate = "unknown", "unknown", false
+			return
+		}
+		parsed.Usage, parsed.Session.UsageStatus, parsed.CleanupConfirmed = fold.Usage, fold.Status, fold.Cleanup
+		if !fold.Completion {
+			parsed.Settled, parsed.Session.ResumeCandidate, parsed.Session.Outcome = false, false, "unknown"
+		}
+	}()
 	if err := json.Unmarshal(raw, &receipt); err != nil || !receiptHasFields(raw, "outcome", "failure") || receipt.Protocol != 1 || receipt.Type != "result" ||
 		receipt.RequestID != request.RequestID || receipt.RunID == "" || receipt.OK == nil ||
 		(receipt.Outcome == nil) == (receipt.Failure == nil) ||
@@ -610,7 +640,7 @@ func codexProFailureMessage(category, diagnostic, stopReason string, execution *
 // connection. Parent death closes the pipe and makes the worker abort/await the
 // plugin, while the plugin's own guardian handles worker death independently.
 func RunCodexPro(a CodexProArgs) Result {
-	request := codexProStart{Type: "start", Protocol: 1, RequestID: a.RequestID}
+	request := codexProStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
 	if request.RequestID == "" {
 		request.RequestID = rand.Text()
 	}
@@ -660,7 +690,13 @@ func RunCodexPro(a CodexProArgs) Result {
 	}
 	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
 	request.PermissionMode, request.Prompt, request.TimeoutMS = permission, a.Prompt, wallMS
-	payload, _ := json.Marshal(request) // the request has only JSON-safe strings and integers
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return reject("Codex Pro native request is not valid JSON: " + err.Error())
+	}
+	if err := validateProNativeRequest("codex-pro", request.Native); err != nil {
+		return reject(err.Error())
+	}
 	payload = append(payload, '\n')
 	if len(payload) > claudeCodeProRequestBytes {
 		return reject("Codex Pro start request exceeds the worker's 1 MiB JSONL limit")
@@ -687,6 +723,7 @@ func RunCodexPro(a CodexProArgs) Result {
 	}
 	out := fromWatchdog(result, "codex-pro", "", a.Model)
 	out.Session = parsed.Session
+	out.NativeReceipt = parsed.NativeReceipt
 	out.CodexProReceipt, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.SessionID, parsed.Text, parsed.Usage
 	if result.Truncated {
 		// A complete-looking prefix cannot attest what the capture dropped.

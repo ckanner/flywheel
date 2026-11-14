@@ -40,6 +40,7 @@ type SessionOutcome struct {
 
 // Result driver 单次调用的完整结果：watchdog 可观察量 + harness 语义字段。
 type Result struct {
+	NativeReceipt json.RawMessage `json:"nativeReceipt,omitempty"`
 	// watchdog 原始量。
 	ExitCode     *int   `json:"exitCode"`
 	Signal       string `json:"signal"`
@@ -77,6 +78,8 @@ type Result struct {
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
 // （可能被降级链改写过 harness/channel）。
 type CallArgs struct {
+	Native                 json.RawMessage // explicit, validated harness-native options; absent preserves legacy behavior
+	Managed                *NativeAdmission
 	Prewarm                PreparedDSH // optional one-use DSH SDK startup, bound to this invocation
 	ContextTemplateVersion int         // engine-generated executor input only; human prompts must never be trimmed
 	SessionMode            string      // explicit allowlisted execution override; empty preserves role policy
@@ -143,7 +146,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		if a.PermissionMode == "workspace-write" {
 			return rejectedHarnessCall(a, harness, "this backend cannot separate project session home from a restricted execution root; permission has not been expanded")
 		}
-		if harness != "dsh" {
+		if harness != "dsh" && !(harness == "kimi" && len(a.Native) != 0) {
 			a.Cwd = a.WorkspaceCwd // task prompt names the independent execution checkout
 		}
 	}
@@ -174,6 +177,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			provider = a.Binding.Channel // direct callers retain legacy DSH bindings
 		}
 		return RunDSH(DSHArgs{
+			Native: a.Native, Managed: a.Managed,
 			Prewarm: a.Prewarm,
 			Prompt:  a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
 			WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,
@@ -191,6 +195,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = KimiDefaultModel
 		}
 		return RunKimi(KimiArgs{
+			Native: a.Native, Managed: a.Managed,
+			WorkspaceCwd: a.WorkspaceCwd, PermissionMode: a.PermissionMode,
 			Prompt:            a.Prompt,
 			SessionID:         a.SessionID, // plan 长驻会话：machine 持有句柄并传入
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
@@ -239,6 +245,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = a.Binding.Model
 		}
 		return RunCodexPro(CodexProArgs{
+			Native: a.Native, Managed: a.Managed,
 			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
@@ -252,6 +259,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = a.Binding.Model
 		}
 		return RunClaudeCodePro(ClaudeCodeProArgs{
+			Native: a.Native, Managed: a.Managed,
 			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,

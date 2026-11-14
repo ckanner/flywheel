@@ -22,7 +22,11 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	case "dsh":
 		keys = append(keys, "DSH_HOME", "FLYWHEEL_DSH_PROFILE", "FLYWHEEL_DSH_BIN", drivers.DSHWorkerEnv)
 	case "kimi":
-		keys = append(keys, drivers.KimiCommandEnv)
+		keys = append(keys, drivers.KimiCommandEnv, "KIMI_CODE_HOME")
+		if len(a.Native) != 0 {
+			keys = append(keys, drivers.KimiNativeWorkerEnv)
+			adapter = drivers.KimiNativeProtocol
+		}
 	}
 	references := map[string]string{}
 	for _, name := range keys {

@@ -2,6 +2,7 @@
 import { open, realpath, stat, link, unlink, readdir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { BridgeError, MAX_FRAME_BYTES, directory, nonempty, record } from './protocol.js';
+import { validateNative, nativeDigest } from './native.js';
 
 export const PREWARM_MS = 60000;
 const MAX_RECEIPT_BYTES = 8192;
@@ -9,7 +10,7 @@ const TRUNCATED_DIAGNOSTIC = ' [truncated]';
 const BINDING_FIELDS = ['cwd', 'workspaceCwd', 'provider', 'model', 'reasoningEffort', 'permissionMode'];
 
 export async function validatePrepare(value) {
-  const keys = new Set(['type', 'protocol', 'warmId', 'binding', 'receiptDirectory', 'ttlMs', ...BINDING_FIELDS]);
+  const keys = new Set(['type', 'protocol', 'warmId', 'binding', 'receiptDirectory', 'ttlMs', 'native', ...BINDING_FIELDS]);
   if (!record(value) || value.type !== 'prepare' || value.protocol !== 1 ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.warmId !== 'string' || typeof value.binding !== 'string' ||
       !/^[a-zA-Z0-9_-]{8,128}$/.test(value.warmId) ||
@@ -19,6 +20,7 @@ export async function validatePrepare(value) {
   }
   const request = { ...value, cwd: await directory(value.cwd, 'cwd'),
     ...(value.workspaceCwd === undefined ? {} : { workspaceCwd: await directory(value.workspaceCwd, 'workspaceCwd') }) };
+  validateNative(value.native);
   for (const key of ['provider', 'model', 'reasoningEffort']) nonempty(value[key], key);
   if (request.workspaceCwd && request.workspaceCwd !== request.cwd && request.permissionMode === 'workspace-write') {
     throw new BridgeError('INVALID_REQUEST', 'separate execution roots require an explicitly compatible permission mode');
@@ -38,6 +40,7 @@ export function matchWarmStart(prepared, request) {
   if (BINDING_FIELDS.some(key => (prepared[key] ?? '') !== (request[key] ?? ''))) {
     throw new BridgeError('INVALID_REQUEST', 'formal request differs from the initialized SDK binding');
   }
+  if (nativeDigest(prepared.native ?? null) !== nativeDigest(request.native ?? null)) throw new BridgeError('INVALID_REQUEST', 'native composition changed after prewarm initialization');
 }
 
 export async function writeWarmReceipt(prepared, settled, error) {

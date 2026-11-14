@@ -813,6 +813,53 @@ function Feedback({ control, selection, reconcile, t }) {
         !selection.taskDir.trim() && h('p', null, t('taskRequired'))));
 }
 
+// Plain-JS external clients supply real schema factories through the public
+// Typert codec contract; src-json is not a valid generated Client input codec.
+function consoleReadCodec(type, parse) {
+  return { mode: 'strict', typeSymbol: '@ckanner/flywheel#' + type, create: () => ({ parse }) };
+}
+function consoleReadObject(value, keys, label) {
+  if (!record(value) || Object.keys(value).some(key => !keys.includes(key))) throw new Error('Invalid ' + label);
+  return value;
+}
+function consoleReadString(value, label) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Invalid ' + label);
+  return value;
+}
+function consoleReadInput(value) {
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  const output = { action: value.action };
+  for (const key of ['taskDir', 'cwd', 'packet', 'runId', 'sessionKey']) {
+    if (value[key] !== undefined) output[key] = consoleReadString(value[key], key);
+  }
+  if (value.probe !== undefined) {
+    if (value.action !== 'doctor' || typeof value.probe !== 'boolean') throw new Error('Invalid doctor probe');
+    output.probe = value.probe;
+  }
+  if (value.action === 'config-edit') {
+    consoleReadObject(value.editor, ['scope'], 'configuration scope');
+    if (!['global', 'project'].includes(value.editor.scope)) throw new Error('Invalid configuration scope');
+    output.editor = { scope: value.editor.scope };
+  } else if (value.editor !== undefined) throw new Error('Editor requires config-edit');
+  if (value.action === 'delivery') {
+    consoleReadObject(value.delivery, ['action', 'headBranch'], 'delivery inspection');
+    if (value.delivery.action !== 'inspect') throw new Error('Delivery Remote accepts inspection only');
+    output.delivery = { action: 'inspect' };
+    if (value.delivery.headBranch !== undefined) output.delivery.headBranch = consoleReadString(value.delivery.headBranch, 'headBranch');
+  } else if (value.delivery !== undefined) throw new Error('Delivery requires inspection');
+  if (value.action === 'node' ? !/^M\d+-T\d+$/.test(output.packet ?? '') : value.packet !== undefined) throw new Error('Invalid node packet');
+  if (value.action === 'history' ? !output.sessionKey : value.sessionKey !== undefined) throw new Error('Invalid history session key');
+  if (value.runId !== undefined && (value.action !== 'metrics' || value.runId.length > 128 || /[\0\r\n]/.test(value.runId))) throw new Error('Invalid metrics run ID');
+  return output;
+}
+function consoleReadResult(value) {
+  consoleReadObject(value, ['result'], 'console read result');
+  const result = consoleReadObject(value.result, ['kind', 'text'], 'console result envelope');
+  if (!['success', 'error'].includes(result.kind) || typeof result.text !== 'string') throw new Error('Invalid console result envelope');
+  return { result: { kind: result.kind, text: result.text } };
+}
+
 exports.inject = ['slots', 'remote', 'remote.commands', 'locale'];
 exports.apply = function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'flywheel: locales');
@@ -831,10 +878,25 @@ exports.apply = function apply(ctx) {
   const readsReady = ctx.remote.$mount({ package: '@ckanner/flywheel', descriptors: [{
     id: '@ckanner/flywheel#flywheelConsole/read', service: 'flywheelConsole', namespace: 'flywheelConsole', method: 'read',
     invocation: { kind: 'direct' }, parameters: [
-      { name: 'agent', wire: 'sessionId', source: 'lookup', lookup: 'agent', codec: { mode: 'src-json' } },
-      { name: 'input', wire: 'input', source: 'json', codec: { mode: 'src-json' } },
-    ], cancellation: { parameter: 'signal' }, result: { mode: 'src-json' },
-  }] });
+      { name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'agent', codec: consoleReadCodec('SessionId', value => consoleReadString(value, 'sessionId')) },
+      { name: 'input', wire: 'input', source: 'json', codec: consoleReadCodec('ConsoleReadRequest', consoleReadInput) },
+    ], cancellation: { parameter: 'signal' }, result: { ...consoleReadCodec('ConsoleReadResult', consoleReadResult), decode: consoleReadResult },
+  }] }).then(async () => {
+    let readConsole;
+    // The namespace is installed asynchronously by $mount. Own its consumer in
+    // an injected child scope; the outer plugin cannot access undeclared services.
+    const consumer = ctx.inject(['remote.flywheelConsole'], scope => {
+      readConsole = (sessionId, request) => scope.remote.flywheelConsole.read(sessionId, request);
+    });
+    try {
+      await consumer;
+      if (disposed || !readConsole) throw new Error('Flywheel read scope is unavailable');
+      return readConsole;
+    } catch (error) {
+      await consumer.dispose();
+      throw error;
+    }
+  });
   // A missing read capability is a visible error, never a noisy command fallback.
   readsReady.catch(() => {});
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
@@ -849,7 +911,7 @@ exports.apply = function apply(ctx) {
         control = createControl(async request => {
           const value = readReply(await (mutates(request.action) || request.action === 'status' && control?.source.getSnapshot().uncertainty
             ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
-            : readsReady.then(() => ctx.remote.flywheelConsole.read(sessionId, request))), request);
+            : readsReady.then(readConsole => readConsole(sessionId, request))), request);
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
         }, pendingOperations, () => disposed);

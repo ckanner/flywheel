@@ -14,6 +14,7 @@
 | 使用画布、阶段操作、会话和运行记录 | [流程工作台](zh-CN/flow-console.md) | [Workbench](en/flow-console.md) |
 | 配置优先级、profiles、权限和调度 | [配置参考](zh-CN/configuration.md) | [Configuration](en/configuration.md) |
 | 默认模型与推理等级的依据 | [模型策略](zh-CN/model-policy.md) | [Model policy](en/model-policy.md) |
+| 使用原生 Agent、Team、Swarm、Tower 与 LCU | [原生能力](zh-CN/native-capabilities.md) | [Native capabilities](en/native-capabilities.md) |
 | 接入可选 Claude machine 后端 | [Claude Code Pro](zh-CN/claude-code-pro.md) | [Claude Code Pro](en/claude-code-pro.md) |
 | 角色续接、调用中断与对账 | [恢复与上下文质量](zh-CN/session-recovery.md) | [Recovery and context quality](en/session-recovery.md) |
 | 使用固定任务和证据比较会话策略 | [会话评估](zh-CN/session-evaluation.md) | [Session evaluation](en/session-evaluation.md) |
@@ -38,7 +39,7 @@
 
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
 
-[原生 Harness、PTC 与 LCU 方案](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）于 2026-11-14 修订，将最新 presets 和 DSH、Kimi、Codex、Claude 能力映射到各环节，覆盖 SDK 组合、PTC 输出兼容、有界 helpers 和共享桌面所有权。文中的能力配置、计量与生命周期扩展仍为设计，本次文档变更没有实现这些能力。
+[原生 Harness、PTC 与 LCU 完整设计](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）于 2026-11-14 修订为六仓库实现设计，涵盖共享 SDK/PTC 组合、原生 Agent/Team/Swarm/Workflow、Tower 候选、GUI lease、媒体、用量和恢复。配置方法见[原生能力指南](zh-CN/native-capabilities.md)，已测源码和安装边界见[验收记录](validation/2026-11-14-native-harness-implementation.md)。
 
 | 分类 | 内容 |
 | --- | --- |

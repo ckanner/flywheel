@@ -49,7 +49,7 @@ ChatGPT 与 Kimi 订阅同样需要相应适配器或 CLI，以及其支持的�
 
 | 已核对的集成 | 可请求的值 | 说明 |
 |---|---|---|
-| GPT-6.1 Sol／Codex Pro 0.9.0 | `low`、`medium`、`high`、`xhigh`、`max` | machine API 传递指定 effort |
+| GPT-6.1 Sol／Codex Pro 0.10.0 | `low`、`medium`、`high`、`xhigh`、`max` | machine API 传递指定 effort |
 | Sol、Astra／DSH ChatGPT provider | `low`、`medium`、`high`、`xhigh`、`max` | provider 序列化为 `reasoning.effort` |
 | Kimi K3.1 Pro／原生 CLI | `low`、`high`、`max` | 不能关闭 thinking；兼容别名 `xhigh`、`max`、`ultra` 都映射到原生 `max` |
 | DeepSeek Flash／已核对的 DSH adapter | `off`、`low`、`high`、`max` | 此适配器拒绝 `medium` 和 `xhigh` |
@@ -124,5 +124,5 @@ DSH `initialize` 校验配置，但回复只包含 server 信息。Flywheel 的
 `ready.reasoningEffort` 是初始化成功后的请求回显，不是模型服务独立证明。
 Codex Pro 区分 `requestedEffort`、`accepted` 和未知的 `effectiveEffort:null`。
 依据见 [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)
-与 [Codex Pro machine 协议](https://github.com/ckanner/dsh-subagent-codex-pro/blob/37da3d75de32b809c4fb1a631ccc15191f3d87f9/docs/machine.md)。
+与 [Codex Pro machine 协议](https://github.com/ckanner/dsh-subagent-codex-pro/blob/9c7d724cb19dc29457a56f4a4269c24278595d2f/docs/machine.md)。
 无推理 doctor 不能证明账号余额、真实调用或更高档位的收益。

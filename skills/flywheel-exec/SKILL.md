@@ -1,7 +1,7 @@
 ---
 name: flywheel-exec
 metadata:
-  version: "1.9.5"
+  version: "1.10.0"
 description: Run the bounded Execute Loop for a Flywheel task, optionally for one packet, until L1 passes or a failure limit is reached. Use for "/flywheel-exec docs/<slug> [packet]" in DSH, "/skill:flywheel-exec docs/<slug> [packet]" in Kimi, or a request to run just one execution unit.
 whenToUse: 当用户只想手动跑某个执行单元（调试单个 packet、重跑失败单元）时使用。
 compatibility: "Requires Flywheel >=0.28.0 and configured route harnesses: DSH Flash for default, Kimi CLI for frontend, the bundled Codex Pro machine worker for hard tasks."
@@ -44,7 +44,7 @@ git -C "$repo_dir" worktree list --porcelain
    查看有效路由。0.28.0 的 hard 默认是 `codex-pro`，直接使用已安装插件的 machine API；
    旧配置不自动迁移。不要在 skill 中改用 `codex exec` 或启动父模型再次委派，
    也不要把 `subagent_codex_pro` 写成 DSH provider。
-   显式选择 `claude-code-pro` 时核对 doctor 的配套 0.4.0 machine API 与 full-access
+   显式选择 `claude-code-pro` 时核对 doctor 的配套 0.5.0 machine API 与 full-access
    前提；它也是独立 harness，不能在 skill 中改用 `subagent_claude_code` 再委派。
    未决定使用场景时保留原 routes，不因为存在可选 profile 自动切换模型。
 2. **调用**（按是否指定 packet 选择一条，不进入 packet 目录另启动引擎）：

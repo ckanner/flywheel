@@ -42,9 +42,11 @@ function verifyPackedContents(file, manifest) {
   for (const relative of [...Object.values(manifest.bin), ...Object.values(manifest.exports), 'cordis.patch.yml', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     if (!readPackedFile(file, relative.replace(/^\.\//, '')).length) throw new Error(`Packed entry is empty: ${relative}`);
   }
+  const composition = JSON.parse(readPackedFile(file, 'node_modules/dsh-preset-generator/package.json'));
+  if (composition.name !== 'dsh-preset-generator' || composition.version !== '0.4.0' || Object.keys(composition.dependencies ?? {}).length) throw new Error('Packed PTC composition must match the reviewed 0.4.0 source');
   const adapter = JSON.parse(readPackedFile(file, 'node_modules/dsh-subagent-codex-pro/package.json'));
-  if (adapter.name !== 'dsh-subagent-codex-pro' || adapter.version !== '0.9.0' || Object.keys(adapter.dependencies ?? {}).length) {
-    throw new Error('Packed Codex Pro must be the reviewed dependency-free 0.9.0 adapter');
+  if (adapter.name !== 'dsh-subagent-codex-pro' || adapter.version !== '0.10.0' || Object.keys(adapter.dependencies ?? {}).length) {
+    throw new Error('Packed Codex Pro must be the reviewed dependency-free 0.10.0 adapter');
   }
 }
 

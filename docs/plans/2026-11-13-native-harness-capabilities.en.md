@@ -1,743 +1,258 @@
-# Native harness, PTC and LCU integration within Flywheel loops
+# Native harnesses, PTC and LCU: complete integration design
 
-[简体中文](2026-11-13-native-harness-capabilities.md) · [Plan index](README.md) · [System design](../design.md)
+English · [简体中文](2026-11-13-native-harness-capabilities.md) · [Plans](README.md) · [User guide](../en/native-capabilities.md) · [Architecture](../design.md)
 
-**Status:** discussion proposal; no runtime implementation or default change.
-**Created:** 2026-11-13. **Fully revised:** 2026-11-14, America/New_York.
-**Flywheel baseline:** source [ac1ed320][fw-base], package declaration **0.33.0**.
-Evidence is pinned source and official documentation. Installed versions,
-account access, target Mac behavior and performance still require acceptance.
-The 2026-11-14 revision rechecks Flywheel, DSH release/master composition,
-presets, LCU, Kimi source identity, both Pro plugin heads and current Claude
-concurrency/restoration restrictions. Source review does not certify installed
-binaries, npm publication or the user's machine.
+**Status: implementation candidates across six repositories, delivered as PRs.** Created on 2026-11-13; revised on 2026-11-14 for Flywheel `0.34.0`. This document describes the implemented contracts and their limits. The [validation record](../validation/2026-11-14-native-harness-implementation.md) distinguishes source tests, packed installation, publication and acceptance on the user's Mac.
 
-## 1. Decisions proposed
+The [previous proposal](https://github.com/ckanner/flywheel/blob/9c95a69490c7f38d39ede055a00adc56bdce087c/docs/plans/2026-11-13-native-harness-capabilities.en.md) remains available at its original commit. This revision replaces the staged, limited-helper rollout with complete entry points for each supported native harness. Each adapter reports the permissions, limits and lifecycle facts it can actually establish.
 
-Use each harness's useful capabilities inside a bounded Flywheel invocation.
-Go continues to own contracts, packet scheduling, resources, verification,
-recovery and delivery. Native tasks, boards and helper opinions remain inputs
-to the enclosing role; they do not become formal packets or independent Review.
+## 1. Decision and architecture
 
-Start with a common capability contract and managed DSH PTC. Add small helpers
-when their permissions, limits and cleanup can be verified. Treat LCU as a
-separate desktop capability requiring explicit attachment, authorization,
-exclusive GUI ownership and artifact evidence. Develop Team/Swarm/Workflows
-through distinct adapter contracts; keep Tower and remote review separate.
+The user continues using the DSH desktop and the existing `heavy` or `daily` Agent Preset to prepare work and control Flywheel. Go runs formal loops. The DSH route uses a local SDK runtime, Codex and Claude use their Pro plugins' public machine APIs directly, and native Kimi uses an owned local Kimi Server. Model, account/provider and harness are separate choices; a model name does not confer another harness's tools or collaboration runtime.
 
-Preserve existing models and subscription paths. A DSH route using GPT is a DSH
-agent; Codex Pro runs Codex app-server, and Claude Pro runs Claude Code. LCU is
-currently a DSH integration. Do not wrap the existing Kimi frontend route in a
-DSH parent or change its model merely to obtain computer use. Visual work needs
-an explicitly eligible DSH binding with verified image input. [Model policy][fw-models]
+Every Plan / Execute / Review / Judge / Intake / Garden binding can reference a `native-profile`. Static profiles work with JEV disabled. With JEV enabled, existing explicit allowed sets continue to bound selection; JEV cannot invent a new account, backend or permission.
 
-## 2. Source baseline and changed findings
-
-| Component | Inspected identity | Meaning |
+| Component | Implemented integration | Evidence required for completion |
 | --- | --- | --- |
-| Flywheel | 0.33.0 / `ac1ed320c68f6a8a466005985264e65b5a72fad9` | One complete `@ckanner/flywheel` package; formal runtime contracts remain unchanged from 0.32.1 |
-| Preset generator | 0.3.0 / `f692cb07abbb9786444c183d74eee018b1a2f0e8` | Both `daily` and `heavy` use PTC; their generated plugin lists are identical |
-| LCU | 0.4.2 / `9efeded13d20b41a96621bb53d903954f68550e6` | Per-Agent `cua` bridge; Config and bundle defaults allow both presets |
-| DSH release | 0.2.2-rc.3; source `38a6a5c965aa99ab525161efb7cc5cf1fe62fced` | Standard SDK composition and the older PTC output contract |
-| DSH latest master | `39163dd30f703a79079e2d2446545cff3c453738` | New inspect/Image and private program-tool contracts despite the same PTC package version; see §5.C |
-| Codex Pro | Latest main `aaf465901def5aa1870c1165b9714d32294337a4`, 0.9.0; bundled source `37da3d75de32b809c4fb1a631ccc15191f3d87f9` | Production source unchanged between these identities; later changes are release documentation and test cleanup |
-| Claude Code Pro | Latest main `5eb637a9e82b317e67e50846005c407c54f1cea0`, 0.4.0; Flywheel source `ec0b99176b67512f3ca1838ec2a349dcb0189214` | Production source unchanged; later changes are release documentation and CI; still optional |
-| Kimi | Flywheel driver documents 2.4.1; inspected upstream `f082f04a093a3e71a2263c5461d52507dc31f83a`; release API 2.6.2, web changelog 2.6.0 | Distinct source/documentation observations, not certification of the installed CLI |
+| DSH | Shared PTC composition, behavioral executor probe, subagents, Team, PTC Workflow and explicit Web tools | Matching policy, root result, owned children, complete journal and SDK cleanup |
+| Kimi | Agent / Swarm / Tower over local HTTP and WebSocket APIs; independent Tower Git candidate | Root and continuation completion, quiescent tasks/agents; checked candidate transfer |
+| Codex Pro | Native app-server agent controls, child threads, accounting, recovery and independent review | Effective config/read, current turn identities, owned child completion and guardian cleanup |
+| Claude Code Pro | Agent definitions, Workflow, Advisor, independent interactive Team and remote Review | Actual init tools, current task-run identity and the appropriate local/remote lifecycle |
+| LCU | Desktop and managed SDK mounting, lineage, GUI leases, epochs/handles, media and cancellation | Current caller/lease, turn cleanup, physical runtime exit and durable media evidence |
+| ChatGPT provider | Real DSH attachment projection to Responses images, ordering and abort cleanup | Actual stored bytes and API input structure; visual understanding requires live acceptance |
 
-Sources: [package][fw-package], [adapter provenance][fw-vendor],
-[generator][user-preset-source], [LCU configuration][lcu-index],
-[LCU bundle][lcu-bundle], [Kimi release][kimi-release], [changelog][kimi-changelog].
-Plugin comparisons: [Codex][codex-latest-compare] and [Claude][claude-latest-compare].
-Keep the exact pinned artifact; a matching version does not authorize replacing its bytes.
+Go alone owns `state.json`, frozen contracts, budgets, packet scheduling, candidate validation, independent Review, commits and delivery. Native task boards, internal reviews, terminal text and screenshots are evidence; they do not directly advance the state machine.
 
-The generator now handles both the older `tool-presentation` row and concrete
-executor rows. The earlier missing-row finding is superseded at this revision.
-`daily` and `heavy` differ in identity, labels and metadata, not plugin contents.
-LCU availability depends on actual Agent binding and plugin configuration,
-not the word “heavy.” The generator reads the installed application's PTC base;
-its source revision alone does not identify the user's materialized preset.
-[Generator][user-preset-source]
+## 2. The DSH desktop, SDK and presets
 
-Flywheel now ships Host, Client, workers and four platform engines together;
-`plugins/dsh` is a private build/test directory. Worker exports use
-`@ckanner/flywheel`. Package migration did not add preset, PTC or LCU controls,
-change model/session defaults, or establish registry publication or live
-acceptance. [Distribution contract][fw-design] · [Complete package][fw-root-package]
+### 2.1 The SDK is already part of the local execution path
 
-## 3. Desktop preparation and formal runtime
+The desktop host is the control plane: commands, model tools, workbench and association with the user's current Session. The worker runs local `dsh --profile sdk --patch <temporary overlay>` and drives formal role sessions over stdio JSON-RPC. The same `DSH_HOME` can resolve the same local account authorization. SDK use does not require switching an account-backed subscription to an API-key provider.
 
-Keep four responsibilities distinct: a **model** performs inference;
-**provider/account** selects access and credentials; a **harness** runs tools,
-context and native collaboration; an **adapter** exposes them through Flywheel's
-invocation and receipt contracts. GPT within DSH does not acquire Codex's agent
-features, and PTC tool concurrency does not create additional model agents.
+The active desktop Agent's private history, tools and preset are not automatically inherited by formal loops. Independent Review never inherits Executor history. A DSH runtime profile (`sdk`), an Agent Preset (`heavy`) and a Flywheel model profile (`profiles`) are different objects. Setting `FLYWHEEL_DSH_PROFILE=heavy` does not select the Agent Preset.
 
-| Layer | Current responsibility | Proposed extension |
+The public SDK creates Agents from its global plugin composition. This implementation uses that seam and the generator's `createSdkPtcComposition()`. Receipts identify `sdk-global-overlay` and a composition digest, without fabricating a named-preset Session header.
+
+### 2.2 Shared policy and actual PTC admission
+
+`dsh-preset-generator@0.4.0` continues generating both presets from the installed application's resources, with PTC selected for both. Its public `/composition` entry exposes the same policy to Flywheel. Static inspection recognizes old and new executor registration forms and records bundle identity; static version information alone does not establish runtime behavior.
+
+Before the first paid prompt, the worker verifies the selected TypeScript executor, a single model-facing `run_code` tool, canonical JSON and `__handle` preservation, multi-image projection, and the actual output contract: `deferred-context-v1` or `inspect-image-v1`. The newer contract also checks the real `inspect` and `Image` identities. Probes use internal no-effect tools and a known image, with no model request or desktop operation.
+
+DSH release and master can declare the same `0.2.2-rc.3` version while containing different PTC contracts. Admission therefore combines public compatibility ranges with behavioral evidence. A failed probe stops dispatch and retains its diagnosis; changing a version string cannot make an incompatible executor pass.
+
+### 2.3 Owned native trees
+
+Policy admission uses public Agent lifecycle hooks and verifies the live Agent registry, real Session parent, model/provider/effort, cwd and permission. Requested tool switches are checked against actual raw schemas. Team uses the public agent-team service, and Workflow uses the public workflow tool.
+
+Local SDK child events and the policy's durable public `subagent/start` / `subagent/end` observations establish ownership together. External Pro activations also have provider/run/parent identities. Missing starts, changing ownership, damaged journals or unobserved settlement cannot be interpreted as complete work.
+
+## 3. Configuration and loop behavior
+
+### 3.1 Explicit native intent
+
+`native-profiles` maps a name to `{harness, options}`; `options.version` is 1. The field authority is `templates/native-profiles.schema.json`. References are supported in `loops`, `routes`, model `profiles`, `judge-panel` and `execution-policy.bindings`. LOAD rejects unknown fields/references and mismatched harnesses. Before dispatch, the adapter additionally checks the installed capability interface and effective settings.
+
+Omitting `native-profile` retains the ordinary harness path. Existing model-profile inheritance applies; an explicit empty string disables an inherited native profile. Both the name and actual options participate in invocation/history identity. Unrelated definitions do not invalidate a frozen execution policy; changing referenced options prevents reuse under the old identity.
+
+The following is a **fragment to incorporate into a complete configuration**, not an install-time migration or automatic change to model routing:
+
+```json
+{
+  "native-profiles": {
+    "dsh-heavy-team": {
+      "harness": "dsh",
+      "options": {
+        "version": 1,
+        "preset": "heavy",
+        "agents": {"enabled": true, "maxConcurrent": 4, "maxDepth": 2},
+        "team": {"enabled": true},
+        "workflows": {"enabled": true}
+      }
+    },
+    "kimi-swarm": {
+      "harness": "kimi",
+      "options": {"version": 1, "mode": "swarm", "agents": {"enabled": true}}
+    },
+    "kimi-tower": {
+      "harness": "kimi",
+      "options": {"version": 1, "mode": "tower", "agents": {"enabled": true}}
+    },
+    "codex-agents": {
+      "harness": "codex-pro",
+      "options": {"version": 1, "agents": {"enabled": true, "maxConcurrentThreads": 4, "backend": "v2"}}
+    },
+    "claude-workflow": {
+      "harness": "claude-code-pro",
+      "options": {
+        "version": 1,
+        "agents": {"enabled": true},
+        "workflows": {"enabled": true, "maxConcurrent": 4},
+        "advisor": {"enabled": true}
+      }
+    }
+  }
+}
+```
+
+Add the reference, such as `"native-profile":"dsh-heavy-team"`, to the intended binding. The workbench Models and sessions form selects profiles for the current harness. Advanced JSON edits their definitions. Revision checks, backups and atomic saves remain in force; new settings apply on the next engine start. There is no additional general intelligence switch.
+
+### 3.2 Loop responsibilities remain explicit
+
+| Loop or operation | Useful native capabilities | Authoritative output |
 | --- | --- | --- |
-| DSH host conversation | Discuss the goal and prepare contracts with its current model, tools and preset | Record relevant evidence and provenance; do not claim all prior host consumption was engine-metered |
-| Go engine | Choose configured bindings, admit invocations, validate results and deliver the candidate | Capability eligibility, resource reservations, GUI ownership and recovery |
-| Native worker/adapter | Run a bounded native session and report observed outcome/cleanup | Checked composition, child and tool facts, effective capability receipts |
-| Native agents/tools | Execute the admitted subproblem | Only the capabilities and resources granted to their actor |
+| Intake / Garden | Parallel evidence collection, Web, PTC and native agents | Independent advisory result and native receipt |
+| Plan | Team task board, Swarm analysis and code investigation | Root-produced Spec/packets, validated by Go |
+| Execute | Agents, Workflows, Tower candidates and LCU operations | Actual candidate subject to verification, Review and Git delivery |
+| Review | Its own isolated history and native children | Existing structured verdict contract |
+| Judge / second opinion | Parallel evidence checks | Separate role/scope and candidate identity |
+| Native Review / interactive Team | Harness-specific independent entry points | Native job receipt and recovery identity, not a Flywheel verdict |
 
-The Task skill uses the current conversation for preparation; `loops.plan`
-controls the later engine stage. The desktop plugin passes cwd and a host
-Session association to Go. Formal DSH loops start a separate local
-`dsh --profile sdk --patch …` and use SDK stdio JSON-RPC. This can reuse the
-existing account store and scoped role history without inheriting the desktop
-Agent's preset or conversation. [Task skill][fw-task-skill] ·
-[Host entry][fw-host-entry] · [Worker][fw-dsh-bridge]
+The configured model table, subscription channels and explicit fallback policy remain authoritative. Selecting ChatGPT inside DSH does not silently change the harness to Codex, and requesting Kimi Swarm does not turn a DSH provider into Kimi Server.
 
-Three names must remain distinct: a desktop **Agent Preset** is an Agent plugin
-composition; a DSH **runtime profile** such as `sdk` loads services; Flywheel
-**model profiles** reuse harness/provider/model/channel/effort bindings.
-`FLYWHEEL_DSH_PROFILE` selects an SDK-compatible runtime and rejects `desktop`.
-It does not select `heavy` as an Agent Preset. [Worker][fw-dsh-bridge]
+## 4. Kimi Agent, Swarm and Tower
 
-Standard rc.3 SDK uses a native executor and global composition without preset
-mounting. The official PTC overlay switches executors; current Flywheel does
-not apply that switch. Its request schema has no preset/PTC/LCU fields.
-Customized profiles require inspection of effective state.
-[SDK defaults][dsh-sdk-app] · [SDK creation][dsh-sdk-server] ·
-[PTC overlay][dsh-ptc-overlay] · [Worker protocol][fw-dsh-protocol]
+### 4.1 An owned local server
 
-The latest inspected master still creates SDK Agents without preset composition;
-its public session/initialize protocol adds no named-preset selector.
-[Master SDK creation][dsh-sdk-master]
+Without a native profile, Kimi retains the existing print CLI path. With one, Go starts the packaged native worker, which starts `kimi web --no-open --host 127.0.0.1 --port 0`. The worker uses and terminates only the server whose PID, registry entry, server ID and token belong to this invocation. Tokens are not emitted in receipts or logs.
 
-## 4. Common capability contract
+The worker validates actual OpenAPI/AsyncAPI schemas, establishes the Session and WebSocket subscriptions, then checks model, effort, permission, mode, agent profile and local cwd before submitting the prompt. Kimi owns its model/tool loop and native scheduling.
 
-The following are proposed facts, not accepted configuration fields or CLI flags.
+This Server seam requires explicit `danger-full-access`; its checked public API does not establish an OS sandbox. A requested `agents.maxConcurrent` is rejected because the API cannot enforce that whole-tree hard cap. Agent/Swarm/Tower remain usable without claiming that unsupported guarantee.
 
-| Area | Required distinction |
+### 4.2 Observation, continuation and usage
+
+Native turn ordinals begin at zero, so a fresh baseline is -1. Prompt IDs, turn IDs, ordinals, task IDs and child-agent references delimit the invocation. A connection reset or replacement snapshot is not treated as continuous observation. Root output, subsequent continuations, running tasks/agents and pending interactions jointly determine quiescence.
+
+Native Kimi does not import the legacy CLI PlanSession; it uses the role ledger. Scoped Agent/Swarm history binds task, role, scope, channel, physical paths, model, effort, permission and native options. Run/candidate IDs remain per-call evidence and do not invalidate every continuation. Tower always creates a fresh candidate and does not accept an old Session ID.
+
+Only complete exclusive root/child step usage produces a family total. Old child history during resume, compaction, missing child identities or usage, and Tower's unavailable complete tree accounting remain unknown. Placeholder `session.usage` zeros are not evidence. An interrupted native Server call without a durable terminal stays unknown; resending the prompt is not recovery.
+
+### 4.3 Independent Git candidate and transfer
+
+Tower runs in a copied repository with its own `.git`, retaining HEAD, dirty and untracked files, binary changes, symlinks, mode changes and deletions. Exact execution-directory prefixes in the prompt are mapped with path boundaries; original and mapped prompt digests are recorded. URLs, similar path names and external contract paths are not rewritten indiscriminately.
+
+This is an independent Git candidate directory, not an OS filesystem sandbox. A full-access process can still access other paths. Transfer therefore rechecks source HEAD, bytes/modes/links and the external task's Spec/packet contracts. Only named volatile runtime state and native evidence directories are excluded. Source or contract changes cause a conflict with the candidate retained.
+
+Only Execute transfers a completed, fully cleaned-up candidate, using `git apply --check --binary` before the trusted patch application. Other roles retain candidate artifacts without applying them. Transfer does not commit or bypass verification, independent Review or Git delivery.
+
+## 5. Codex and Claude entry points
+
+### 5.1 Codex Pro
+
+`dsh-subagent-codex-pro@0.10.0` retains machine protocol 1 and lifecycle v1 and adds native version 1. Native agents options map to public app-server controls, followed by actual `config/read` verification. Explicit child defaultModel/defaultEffort controls do not change the root's account or model.
+
+Child progress belongs to its current turn. A late old terminal cannot settle new work. Usage consists of owned per-thread exclusive deltas, excluding root; absent historical baselines remain unknown. Success requires the root result, empty pending IDs, settled children and native/guardian cleanup.
+
+Native `review/start` does not consume the complete Flywheel role prompt and verdict contract. Consequently role `native-profiles` reject a `review` field. The public adapter exposes native Review, and Flywheel supplies an independent command for it.
+
+### 5.2 Claude Code Pro
+
+`dsh-subagent-claude-code-pro@0.5.0` supports Agent definitions, Workflow and Advisor, recording invocation controls, actual init tools and native task observations. Init verifies available tools, not every CLI scheduler setting.
+
+Task-run IDs are opaque. Lexical ordering cannot establish freshness, and a terminal without the current run identity cannot finish a new task. Queued Agent/Task tool requests do not count as active workers: the observed concurrency guard counts started local_agent task runs. Limits are reported as `resourceBounds.hard:false`; cancellation on an observed overrun is not a pre-dispatch whole-tree semaphore.
+
+Root result usage, child task snapshots and Advisor work can overlap or be incomplete. Raw facts are retained. Child snapshots are not added as exclusive deltas, and an unprovable family total remains unknown.
+
+### 5.3 Independent job API and CLI
+
+```sh
+flywheel native codex-review --request /absolute/codex-review.json
+flywheel native claude-review --request /absolute/claude-review.json
+flywheel native claude-team --request /absolute/claude-team.json
+flywheel native claude-recover --request /absolute/recovery.json
+flywheel native claude-control --request /absolute/control.json
+```
+
+Inputs use each pinned public package API plus an absolute private `recoveryDirectory`. The CLI accepts a regular JSON file up to 1 MiB, writes one native receipt to stdout and diagnostics to stderr, and waits for the public API's cleanup on cancellation.
+
+Codex Review uses a fresh ephemeral thread and an explicit target. Claude remote Review requires `consent:true` and runs real `claude ultrareview --json --no-post`; it does not implicitly authorize a cloud job or publish a comment. Interactive Team uses an independently owned tmux server/pane with capture/send/resize/cancel/attach controls. Terminal text is not a formal verdict.
+
+A local timeout or exit does not settle a remote Review job. Use the original requestId, runId and recoveryDirectory to read the original local journal and retrieve its durable receipt. This neither queries cloud job status nor resubmits Review. Unknown pane ownership likewise cannot be converted into confirmed cleanup.
+
+Claude `recoverNativeJob` only reads the local durable journal. It does not start a process or query the cloud. Receipts explicitly retain `jobId:null`, `querySupported:false` and `cancelSupported:false`. A local recovery status of terminal does not establish remote completion: unknown remote state or unconfirmed native cleanup still forbids replay or a claim of cloud cancellation.
+
+## 6. LCU, desktop ownership and media
+
+### 6.1 Public managed mounting
+
+`dsh-plugin-lcu@0.5.0` preserves normal desktop Preset mounting/revocation and exposes `attachManagedLcu()` for owned SDK Agents. The live registry and real parent lineage establish the caller; a supplied Session ID is insufficient.
+
+Each Agent runtime has its own epoch, handles, turn lifecycle and MCP connection. The PTC tool is named `lcu_cua`, while programs still use `cua`. This avoids the newer executor's special coercion of the exact `cua` tool name, which would discard structured object handles. Existing programmatic Computer/Browser APIs and multiple images remain available.
+
+App/command, Chrome/audio and allowedApps/allowedOrigins settings reach the actual runtime. macOS TCC, the browser extension, target permissions and real runtime questions remain owned by those components. The implementation does not fabricate approval answers or claim a complete new desktop question relay.
+
+### 6.2 One lease per physical desktop
+
+Before managed LCU initialization, Flywheel acquires an atomic `local-desktop` lease in a private resource directory. The lease records invocation, owner, ID and epoch. Each operation rechecks caller and lease; root and children share ownership and execute GUI actions sequentially.
+
+A dead PID or PID reuse does not prove release, and unknown owners are not automatically displaced. Terminal lease records retain a digest and size of complete cleanup evidence; the full receipt remains available separately. This avoids oversized image evidence making the lock unreadable.
+
+### 6.3 Cancellation and physical exit
+
+Abort cancels MCP requests, waits for turn cleanup and then confirms native runtime exit. Normal native DSH shutdown has 15 seconds, with at least 20 seconds at the Go boundary. LCU receives 135 and 145 seconds respectively to cover its public turn-stop and native-close bounds.
+
+Root turn-stopping awaits the policy journal. Final `native-cleanup.json` binds request ID, nonce and complete/events/bytes. The journal is limited to 4096 events and 2 MiB, with contiguous `journalSequence`. The worker checks identity, byte count, complete lines and regular NOFOLLOW reads. Storage errors, attribution errors, unfinished turns and uncertain physical exit prevent success and GUI release.
+
+### 6.4 Durable media evidence
+
+DSH AttachmentStore may normalize image encoding. The adapter reads and archives the actual stored bytes and distinguishes captured and archived digests. It never attributes the capture hash to different normalized bytes.
+
+Media and a manifest persist under `<taskDir>/reports/native/<invocationId>/`, with regular-file, NOFOLLOW, size, hash and durable-write checks. Temporary worker deletion does not remove the evidence. `imageDeliveredToModel:'unverified'` distinguishes capture/storage/archive from confirmed model delivery. ChatGPT projection tests establish request construction; real model visual understanding requires a live test.
+
+## 7. Receipts, budgets and recovery
+
+Native receipts retain `version`, original `requested`, `effective`, `observed`, `children`, `usage`, `completion` and `cleanup`. Provider-specific identities and evidence remain visible instead of being compressed into an unsupported universal guarantee. Defaults belong in effective controls, without rewriting the caller's original request.
+
+A native-event is observation, not a durable lifecycle ACK. Existing public lifecycle checkpoints alone authorize the corresponding execution boundary. **Completion is frozen before cleanup**: cancelling pending children during shutdown cannot turn unfinished work into success. Go requires consistent root, child, requested/effective, completion, cleanup and outer-process facts.
+
+### 7.1 Concurrency and accounting
+
+`scheduler.max-parallel` and `scheduler.providers` limit Flywheel root invocations. DSH's exact-live-root activation pool (shared by Team/Workflow and local/external activations), Codex controls, Claude's observed guard and Kimi's native scheduler keep their own meanings. They are not a uniform hard global token or whole-tree concurrency cap. The local DSH admission layer also enforces real lineage depth for Workflow-created Agents; it cannot control unobservable descendants inside an external provider.
+
+| Harness | Usable accounting | Unknown cases |
+| --- | --- | --- |
+| DSH | Root plus complete exclusive committed local child Session events | External children without usage, missing events/journal |
+| Codex | Root plus complete owned child per-call deltas | Missing child baselines or events |
+| Claude | Raw root result and nonadditive child/Advisor observations | Unattributable family work |
+| Kimi | Complete fresh root/child step usage | Compaction, old children, Tower or missing steps |
+
+Unknown is not zero. The existing hard budget blocks additional calls when usage remains unknown; switching to fresh history or another adapter cannot bypass it. Soft/off retain their configured semantics. This implementation does not promise strict advance token reservations.
+
+### 7.2 History and recovery
+
+Go creates managed run/invocation/role/scope/candidate/channel/taskDir identity after durable invocation intent. Full native options are retained in Session configuration and frozen policy identity. Prewarm binds native intent but creates no Agent, GUI lease or prompt until formal admission.
+
+Pro read-only recovery includes the original native options and validates the recovered receipt against the original request. Current configuration cannot reinterpret an old call. Kimi Server does not claim Pro's durable ACK/recovery capability. LCU handles do not survive runtime epochs; objects must be reacquired from the real runtime.
+
+## 8. Repository delivery and packaging
+
+| Repository / PR | Deliverable |
 | --- | --- |
-| Identity | Installed harness/adapter/version; runtime profile; preset/composition source and digest; actual tool executor, exports and output/image contract |
-| Request and result | Requested policy, eligible policy, effective capabilities and observed use |
-| Model/account | Allowed parent/child bindings, effort, subscription route and actual model; modality verified separately |
-| Resources | Model agents, tool/I/O concurrency, GUI ownership and remote jobs are different resource classes |
-| Authority | Role, directories, permitted tools/methods, applications/origins, enforcement level and authorization source |
-| Evidence | Invocation/root/child identities where available; dispatch, outcome, usage completeness, cleanup and artifact identity |
-| Restoration | Profile revision/digest, native mode/board, connection epoch and compatibility of resumed actors |
+| [flywheel #44](https://github.com/ckanner/flywheel/pull/44) | Schema/configuration, drivers and history, DSH/Kimi adapters, job CLI, workbench, leases/media, single-package build and documentation |
+| [dsh-preset-generator #1](https://github.com/ckanner/dsh-preset-generator/pull/1) | 0.4.0 shared composition, static identity and behavioral admission contract |
+| [dsh-plugin-lcu #1](https://github.com/ckanner/dsh-plugin-lcu/pull/1) | 0.5.0 managed mounting, epochs/handles, physical cleanup, media and desktop lifecycle fixes |
+| [dsh-subagent-codex-pro #6](https://github.com/ckanner/dsh-subagent-codex-pro/pull/6) | 0.10.0 controls/events/accounting/completion and independent native review |
+| [dsh-subagent-claude-code-pro #2](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/2) | 0.5.0 agents/workflows/advisor, remote Review, interactive Team and recovery |
+| [dsh-plugin-chatgpt #8](https://github.com/ckanner/dsh-plugin-chatgpt/pull/8) | 0.1.19 attachment/image projection, abort handling and public dependency compatibility |
 
-A trustworthy aggregate may satisfy an aggregate-only policy, but cannot prove
-per-child permissions or exact child recovery. Missing facts remain unknown.
-Current session identities hash runtime references such as a profile name;
-new effective composition, capability and GUI identities must enter session
-reuse and prewarm bindings. [Session lifecycle][fw-sessions] ·
-[Runtime identity][fw-runtime-identity]
+Flywheel remains one `@ckanner/flywheel` package with CLI, DSH host/client, four workers, embedded skills and four-platform Go binaries. Codex 0.10.0 and generator 0.4.0 are pinned and bundled from real source tarballs. Claude 0.5.0 and LCU 0.5.0 are optional peers. ChatGPT remains a DSH provider chosen by the actual composition/account.
 
-## 5. DSH composition: two implementation paths
+Five vendor records identify fetchable source commits/trees, tarball hashes, integrity, license and unverified registry status. CI reproduces the fixed Claude source candidate and verifies its bytes. Normal npm resolution is required; force/legacy-peer workarounds are not used. PR delivery does not publish packages or modify the user's installed configuration.
 
-### A. Managed SDK global composition first
+## 9. Verification and acceptance
 
-Use the official PTC overlay and a managed SDK composition derived from the
-existing generator policy and identified application base. Preserve SDK RPC,
-permissions, accounting and lifecycle services. Record the resulting digest and
-verify its executor/tools before dispatch. Keep desktop configuration unchanged.
-This is an implementation path using existing composition mechanisms, not a
-capability already selected by Flywheel. [PTC overlay][dsh-ptc-overlay] ·
-[Generator][user-preset-source]
+Required gates include Go `make quality-gate` with 100% statement coverage for every measured function, full Node and legacy-host behavior, four real Go→Node worker boundaries, actual public Pro APIs, actual PTC/Team/LCU seams, Kimi local HTTP/WebSocket and real Git candidates, npm launcher tests, 36 real-engine session scenarios, and one packed installation with all four platform binaries.
 
-Initially enable efficient tools without incidental Goal, workflow, delegation
-or computer use. Ordinary retrieval and model-backed tools need separate
-admission. Current Flywheel rejects unrelated Agents and child dispatch and
-folds root events; helpers require deliberate extensions to those contracts.
-[Policy][fw-dsh-policy] · [Bridge][fw-dsh-bridge]
+Assertions cover rejection before dispatch, unchanged account/model routing, foreign-child attribution, late terminals, pending children at root completion, cancellation versus cleanup, failed journals and unreleased GUI leases, image order/hash, retained Tower conflicts, unknown usage and read-only recovery. Deterministic model/runtime fixtures are labeled as such.
 
-Formal LCU also requires a new **managed attachment gate in the LCU plugin**.
-It must bind a real engine invocation, native root, capability decision and GUI
-lease, while retaining the existing desktop preset guard. Loading LCU into a
-global SDK composition alone does not make its preset gate pass. Do not forge
-`session.header.agentPreset`, weaken the desktop guard, or pretend a preset-free
-SDK Agent is a desktop heavy Agent. [LCU attachment][lcu-index]
+Quality, repair count, elapsed time, usage and GUI success should later be compared on the same tasks and candidates. Multiple agents alone do not establish a speed or cost improvement. Mac TCC, Chrome extension, live account capabilities, model vision and remote Claude entitlement remain separate user-machine acceptance. Actual pass/fail/skipped/not-run results are in the [validation record](../validation/2026-11-14-native-harness-implementation.md).
 
-### B. Public preset composition when the SDK supports it
+## 10. Primary sources
 
-DSH exposes `agentPresets.mount(ctx, id)` for an unpublished Agent during setup;
-children can join the exact revision retained by their parent. The inspected
-SDK does not expose that creation seam. A future supported SDK integration
-could mount a named preset and replace part of path A; it should use public
-interfaces without a private upstream fork. [Preset registry][dsh-preset-registry]
+Current behavior is owned by the [architecture](../design.md), [schema](https://github.com/ckanner/flywheel/blob/main/templates/native-profiles.schema.json), [worker protocol](../../plugins/dsh/PROTOCOL.md), [Kimi protocol](../../plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md) and code/tests in this PR. The earlier proposal retains dated research; vendor records pin companion implementations.
 
-Test creation, child composition, disposal and resume independently. A live
-Agent retains a revision, but restoration by preset ID can select its current
-definition after restart. Reject resume when the recorded digest does not match. A new composition
-requires a separately admitted rebuild after the old responsibility is settled.
-An ID alone is insufficient. Neither A nor B currently
-provides Flywheel with a ready-made `preset=heavy` request.
-
-### C. Probe the PTC contract, not just its package version
-
-The release tag and latest master both declare PTC package version 0.2.2-rc.3,
-but only master exports `/run-code`, and their output/image contracts differ.
-Fingerprint actual bundle/module content, exports and schemas, then use
-non-mutating protocol fixtures; semver alone cannot select a compatible path.
-[Release package][dsh-ptc-release-package] · [Master package][dsh-ptc-master-package]
-
-| Composition | Source observation | Admission requirement |
-| --- | --- | --- |
-| rc.3 release | Older program output and deferred image context | Match its runtime instructions and result semantics |
-| Latest master | TypeScript; inspect selects output, while function return/final expression values are omitted; read_image/cua images become Image values shown with inspect | Verify text, images, errors and cancellation against actual runtime behavior |
-| Master with LCU 0.4.2 | The source interaction below is a compatibility risk, not a tested failure | Resolve value/image preservation before admitting GUI use |
-
-Master's transport treats a tool named `cua` specially: one projected image
-replaces its structured result with PtcImage; multiple images fail. LCU can
-return a handle with initial UI imagery, and its proxy needs that handle to
-construct methods. This combination may lose the handle. Copying Image as an
-ordinary object in the proxy also needs verification. This is a **source-derived
-risk, not a reproduced Mac failure**. Existing PTC support alone does not prove
-compatibility. [Transport][dsh-ptc-master-source] · [LCU value/projection][lcu-ptc] ·
-[Proxy decoding][lcu-bridge]
-
-Master also offers `createRunCodeTool` over a private tool list. It is a useful
-optional extension for a bounded program interface, but shares the same
-transport and does not solve the image issue or replace budgets/GUI leases.
-Keep the source-inspected global overlay as the first path, without requiring every
-user to upgrade. Test handle/scalar plus images, zero/one/multiple images,
-policy-removed images, inspect on success/failure, and completed effects after
-cancellation. [Factory][dsh-run-code-factory] · [Current contract][dsh-ptc-master]
-
-## 6. LCU: tool path, authority and physical resource
-
-### 6.1 The PTC bridge and screenshots
-
-LCU registers one model-facing tool, `cua`. In `run_code`, `connectCua` builds
-Proxies whose method calls pass through generated `tools.cua` bindings and the
-guarded tool pipeline; LCU translates them into its internal MCP `js` runtime.
-The internal `js` tool is not the model-facing API. Each Agent owns a connection
-and REPL. Current `hN` handles identify REPL-local objects; they carry no
-generation token or enforced epoch. Epoch binding is part of this proposal.
-[PTC tool][lcu-ptc] · [Proxy][lcu-bridge] · [Attachment lifecycle][lcu-index]
-
-The current runtime requires Apple Silicon macOS, local ChatGPT.app with its
-bundled Node/CUA runtime, and the Sky helper. Browser control also needs the
-official extension and desktop native messaging host. LCU does not add a
-Codex/ChatGPT model login or separate Python-wrapper requirement; model
-authentication and the local GUI runtime are separate dependencies. Verify
-Screen Recording/Accessibility permissions for the actual responsible process
-and test SDK launches on the user's Mac. [Runtime requirements][lcu-readme]
-
-Screenshots already have an image projection: LCU checks the routed model's
-image modality and the attachment service before returning DSH image blocks.
-A text-only outer worker request does not mean the Agent cannot receive images
-from its own tools. A missing modality/store produces diagnostics, not proof
-that the image was seen. Track capture success, image delivery to the actual
-model, and archival as run evidence as three separate facts; these are proposed
-receipt fields. [Image projection][lcu-tool]
-
-Also distinguish the release's deferred image path from master's Image/inspect
-path in §5.C. Producing an LCU image block does not prove that downstream
-transport and proxy processing delivered it intact to the model.
-
-Cross-loop transfer needs a separate frozen artifact manifest: candidate or
-build identity, content hash, media type, permitted path/store, capture time,
-app/origin/target and viewport, connection epoch, actual model route and delivery
-evidence. Read/copy external host paths only within permitted scope and verify
-the hash; do not trust a model-supplied path as artifact provenance. Another
-Reviewer cannot reuse an Executor's live handle or private context. Start by
-letting an independent Reviewer inspect frozen artifacts through a verified
-image-capable route.
-
-### 6.2 Admission and permission
-
-LCU checks preset eligibility when attaching; changing the preset is not a
-per-call revocation mechanism. Both Config and bundle defaults include `daily`
-and `heavy`. Attachment failure currently logs a warning and lets the Agent
-continue. Required GUI therefore needs actual tool, connection and approval
-capability receipts before task dispatch. Managed use needs explicit revocation
-and invocation-bound checks, with cleanup confirmed before revocation completes.
-[Attachment/configuration][lcu-index] · [Bundle][lcu-bundle]
-
-The current approval path cancels immediately without `userQuestions`, even
-when app/origin allowlists exist. With that service, an exact permitted app or
-origin may be accepted automatically; other requests need the actual answer.
-The native-app branch checks the agent-host guard before its app allowlist;
-browser origins follow their separate exact-origin checks.
-[Approvals][lcu-index] · [Host guard][lcu-host-guard]
-
-The standard rc.3 base already mounts `userQuestions`. SDK question delivery
-requires `initialize.capabilities.userQuestions=true`; current Flywheel sends
-no such capability and implements no host question/answer relay. Exact
-preauthorized targets can still pass LCU's check when the service is present;
-requests needing a person require the missing forwarding path. Service
-availability and working interactive delivery are separate facts.
-[Base composition][dsh-base] · [SDK server][dsh-sdk-server] · [Bridge][fw-dsh-bridge]
-
-Preserve precise existing authorization without asking again each turn. A host
-relay or explicitly designed preauthorization channel must retain real answers;
-models cannot answer for the user, and unknown/cancel cannot become allow.
-Flywheel full access, `approval=never` and repository sandbox settings grant no
-independent GUI access. Preserve the agent-host guard; never enable its testing
-override to satisfy a model request.
-
-Bind each question/answer to run, invocation, root, lease/runtime epoch, exact
-app/origin and native question ID. After cancellation, owner/runtime replacement
-or target changes, late answers cannot authorize new work. Reuse existing grants
-within their original scope and record authorization separately from execution.
-
-Proposed GUI modes are **disabled**, **observe** and **interact**. Current `cua`
-can invoke mutating methods and is not intrinsically read-only. “Observe” needs
-real method-level restrictions through every handle and dynamic call path;
-otherwise the policy is unsupported. “Interact” additionally binds authorized
-applications/origins and allowed effects. Neither mode expands delivery or
-account authorization.
-
-### 6.3 Exclusive GUI ownership
-
-Current packet scheduling checks `schedule.after`, nonoverlapping `writes`
-and channel/model slots. Worktrees do not isolate a display. LCU's `cua` lacks
-`isConcurrencySafe`, so its calls are exclusive within each `run_code` program;
-that is not a lock across programs, Agents, processes or runs.
-[Scheduler][fw-parallel] · [Packet schema][fw-packet-schema] · [LCU tool][lcu-ptc]
-
-For the first implementation, give one root GUI invocation an exclusive lease
-on the real host/display/desktop session. Disable GUI for its children; keep
-ordinary file tasks eligible for parallel execution. Current LCU attaches by
-Agent/preset rather than imposing a blanket child ban; root-only GUI is our
-proposed managed policy. All serial/parallel, Quick and manual-stage paths use
-the same admission gate and a shared coordinator across participating
-runs/processes, not only `parallelGroup`'s local mutex. Obtain GUI capacity
-before holding model slots, or atomically reserve the whole resource group.
-If model capacity is unavailable and nothing has been dispatched, release the
-temporary GUI reservation and requeue instead of holding the desktop idle.
-
-Persist owner, task/role/invocation, target and lease epoch before GUI dispatch.
-Check ownership at the tool boundary; release only after confirmed input stop
-and cleanup. TTL expiry or a returned process is not proof that control ended.
-The lease coordinates participating clients; it does not isolate the user or
-unrelated software. Detect changed UI state, pause or re-observe, and invalidate
-stale coordinates and handles before further actions.
-
-### 6.4 Stop, generation changes and restoration
-
-Current request abort removes local pending work and rejects its promise without
-sending a remote cancellation notification. Agent disposal invokes
-`void connection.close()`; `close()` waits after escalation to SIGKILL but does
-not validate that final exit result. Existing per-turn/application cleanup is
-useful, but these paths do not prove complete physical cleanup for Flywheel.
-Add awaitable stop/drain and correlated cleanup receipts before eligibility.
-`cua.stopApp` stops a held application for the current turn; it is not global
-cleanup or revocation of user authorization.
-[Connection][lcu-connection] · [Agent disposal/turn cleanup][lcu-index]
-
-LCU automatically rebuilds after application-generation changes, connecting
-the replacement before closing the old connection. REPL objects are not
-restored; an old `hN` can be invalid or reused in a new epoch. A managed route
-must disable transparent replacement or enforce epoch checks, retire and drain
-the old owner before admitting the replacement, reacquire state, and reject
-old handles. Unknown cleanup keeps the lease blocked. Reconnecting alone does
-not restore screenshot validity, UI state or authorization.
-[Managed session][lcu-session]
-
-## 7. Other native capabilities and adapter gaps
-
-| Capability | Useful work | Current gap / smallest credible path |
-| --- | --- | --- |
-| DSH PTC | Filtering results and parallel-safe I/O | Managed executor composition and tool/resource verification |
-| DSH SubAgent / Team | Exploration, hypotheses, specialist task contributions | Extend root-only policy and receipts; Team board stays inside one invocation |
-| Kimi Agent | Coder/explore/plan helpers with separate contexts | Explicit agent profile, restoration identity and child accounting |
-| Kimi Server Swarm | One template over independent items | Separate owned/authenticated Server adapter; no supported print enabling flag |
-| Codex subagents / native review | Parallel investigation and focused review | Extend existing Codex Pro machine contract; verify inherited permissions and child facts |
-| Claude subagents / Workflows | Specialist contexts and repeatable scripted audits | Extend existing optional machine contract, enforce caps and actual bindings |
-| Claude Teams | Peer discussion and shared task coordination | Interactive teammates; unavailable through the current print machine, requiring a separate observable adapter |
-| Tower / remote review | Isolated work-unit experiment / additional opinion | Dedicated repository or remote-job ownership and independent acceptance |
-
-### DSH Team and helpers
-
-rc.3 supports fresh/forked local subagents, messaging and continuation; its
-shared tree pool defaults to eight active children. The Host delegation-depth
-default is one, but explicit tool depths and direct service requests can
-override it; admission must cover those paths. PTC's parallel-safe tool cap
-defaults to ten. These are distinct resource classes, not Flywheel defaults.
-SDK Team can use the standard `sdk` profile with
-`agent-team.config.defaultEnabled=true`; `sdk-minimal` omits it. That default
-is saved for new roots, not retroactively applied on resume. An internal service
-method is not a public `team/setEnabled` RPC. [SubAgent][dsh-subagent] ·
-[PTC][dsh-ptc] · [SDK Team][dsh-sdk] · [Protocol][dsh-protocol]
-
-Team members share a checkout; `writeScopes` warns rather than enforcing a
-filesystem boundary. Turning Team off does not cancel children or erase its
-board. `session/wait` joins progressing work, while parked children can remain;
-final drain is still required. External Codex/Claude/ACP delegates do not inherit
-local continuation semantics. Native Plan guides behavior, and Goal round
-allowances do not establish isolation or cumulative spend limits.
-[Team][dsh-team] · [Plan][dsh-plan] · [Goal][dsh-goal]
-
-### Kimi: ordinary Agent, then Server Swarm
-
-Custom profiles have tool/subagent allowlists, checked again before execution.
-`--agent-file` is creation-only and incompatible with `--session/--continue`;
-resume restores the original profile, and an existing child can be resumed
-outside the subagent-type allowlist. Current Flywheel preallocates a `call-*`
-invocation ID, not a native session ID: it learns the latter from terminal
-`session.resume_hint`. Add profile selection at creation and bind its digest
-on resume. Ordinary Agent may already be available through native settings;
-absence of managed controls does not prove it is disabled. `--plan` conflicts
-with print `-p`. [Profiles][kimi-agents] · [Print][kimi-print] · [Driver][fw-kimi]
-
-Swarm cannot be enabled by the model or a supported current print flag. Beta
-Server exposes `swarm_mode` in session profiles/prompts and WebSocket task
-events. It is an optional route alongside print, not ACP. Probe installed
-OpenAPI/AsyncAPI contracts and own only the intended runtime/sessions. Profile
-updates are fieldwise without rollback; inspect partial failure and restored
-mode. [Server][kimi-api] · [Endpoints][kimi-session-api] · [Changelog][kimi-changelog]
-
-Prompt idempotency is in-memory, limited to 256 records per session and lost
-on restart. Aborting a turn does not empty its queue; asynchronous tasks need
-specific stops. Usage placeholders and context-size events are not billable
-usage. Hooks fail open on errors/timeouts and cannot be authorization barriers.
-[Task protocol][kimi-conversation] · [Endpoints][kimi-session-api] · [Hooks][kimi-hooks]
-
-Concretely, withdraw queued prompts, abort the main turn, stop visible child/
-Swarm tasks with WebSocket `task.stop`, and await their terminal state. Side-chat
-Agent turns currently lack an equivalent public stop endpoint: exclude them
-from managed profiles unless an independently owned runtime can prove complete
-shutdown. Main `:abort` alone is not a subtree stop receipt.
-
-Tower owns mission branches, worktrees, reviewers and merges. Its experimental
-headless path creates a session, then enables Tower through the profile API;
-creation rejects `tower_mode=true` because initialization can mutate Git state.
-There is no checked public external-oracle mode. Experiment only in an isolated
-repository copy with a fixed input commit and returned candidate; a worktree
-shares Git metadata and is insufficient isolation. [Tower][kimi-tower] ·
-[Endpoints][kimi-session-api] · [Merge][kimi-tower-merge]
-
-### Codex: preserve the subscribed machine route
-
-Official configuration defaults `agents.enabled` to true and uses
-`agents.max_concurrent_threads_per_session` (`agents.max_threads` is legacy).
-Children inherit parent sandbox/approval; custom agents cannot override that
-boundary. A writable root plus an “explorer” name is not a read-only helper.
-Verify a baseline off policy and enforceable permissions before claiming either.
-[Subagents][codex-subagents]
-
-Bundled machine 0.9.0 supplies root lifecycle observations, not a complete child
-ledger. Extend this plugin rather than changing billing routes or silently
-falling back to `codex exec`. App-server offers start/resume/fork, turn
-steer/interrupt, collaboration events and `review/start`; generate schemas from
-the installed binary. Adapt independent native Review and existing plugin
-image/structured-output support separately. An Executor fork is not the
-independent final Reviewer. [App-server][codex-app-server] · [Plugin][codex-plugin]
-
-### Claude: separate native mechanisms
-
-The optional 0.4.0 bridge accepts only `danger-full-access`, maps it to native
-`bypassPermissions`, and does not expose complete child/tool/workflow policy.
-Native user/project/local settings may participate. A child permissionMode
-cannot narrow a bypassed parent into an enforced read-only worker; require a
-verified profile/tool boundary or separate restricted invocation.
-[Bridge][fw-claude-bridge] · [Subagents][claude-subagents] · [Plugin][claude-plugin]
-
-**Workflows** support headless scripted orchestration. Their default concurrency
-is up to 16, potentially lower with available CPUs, with 1,000 total agents per
-run. Check versioned controls, including
-`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` from 2.1.269. Ordinary Agent and
-Workflow caps are separate; reserve their combined maximum or make profiles
-mutually exclusive. `/effort ultracode` bypasses the ordinary Agent concurrent
-subagent limit, not demonstrably the Workflow cap. `availableModels` can cause
-native model substitution: exclude unauthorized alternatives before dispatch
-and record actual models. A requested name is not execution evidence.
-[Workflows][claude-workflows]
-
-The ordinary cap also does not block in-session `/subtask` forks or resuming
-finished children. Restrict those entry points or prove their additional bound;
-setting one environment variable is not a global concurrency guarantee.
-Workflow restoration matches calls in launch order: a failure or changed prompt
-can replay later completed agents. Bind script/input digests, child attempts/
-generations and candidate/effect records; begin with read-only analysis rather
-than automatically replaying completed writes. [Subagents][claude-subagents] ·
-[Workflow restoration][claude-workflows]
-
-**Agent Teams** require an interactive session to spawn teammates. The current
-`claude -p` machine cannot gain support from an environment toggle alone; a
-later observable interactive adapter must also handle teammate restoration and
-shutdown. **Ultrareview** is remote work: `claude -p '/code-review ultra'` does not await findings, while the dedicated `claude ultrareview` command
-does. Ending the local wait may leave cloud work running; retrying creates a
-new review. Require remote job identity, candidate, eligibility, usage and
-cancel/reconcile semantics; posting needs separate authorization. **Advisor**
-is another account/model-dependent mechanism, not an implicit JEV replacement.
-[Teams][claude-teams] · [Ultrareview][claude-ultrareview] · [Advisor][claude-advisor]
-
-## 8. Applying capabilities to loops
-
-### Current bindings and initial capability choices
-
-| Stage / route | New-installation template binding | Initial direction |
-| --- | --- | --- |
-| Plan | Kimi CLI / K3.1 Pro / high | Managed ordinary Agent; explicit Server path only when Swarm is needed |
-| Execute default | DSH / DeepSeek Flash / high / deepseek-account | Managed PTC, then small bounded helpers |
-| Execute frontend | Kimi CLI / K3.1 Pro / high | Native tools/media; LCU needs a separately configured eligible DSH invocation |
-| Execute hard | Codex Pro machine / GPT-6.1 Sol / high | Native helpers after existing controls/events are extended |
-| Review | DSH / GPT-6.1 Sol / high / chatgpt | Independent PTC review and frozen media |
-| Judge | DSH / GPT-6 Astra / high / chatgpt | Existing evidence first, extra analysis where useful |
-| Intake | DSH / DeepSeek Flash / low / deepseek-account | One agent, structured output and low fixed overhead |
-| Garden | Kimi CLI / K3.1 Pro / high | Native retrieval, later bounded collaboration where useful |
-
-These are template facts, not overrides of user configuration. Claude remains
-explicitly optional. The desktop Codex/Claude tools can run through heavy's
-PTC executor; their public machine APIs bypass that desktop tool layer. The
-latest plugin heads add no managed child controls, so PTC-callable tools do not
-establish child accounting or recovery. [Bindings][fw-defaults] ·
-[Codex comparison][codex-latest-compare] · [Claude comparison][claude-latest-compare]
-
-### Role work and acceptance
-
-| Stage | Initial useful capability | Acceptance boundary |
-| --- | --- | --- |
-| Host preparation | Current preset exploration; saved UI/code evidence | Prepare validated inputs and provenance; do not claim host spend was fully metered |
-| Formal Investigation | Bounded hypothesis helpers and a leased GUI root for reproduction | Go owns diagnostics, observation receipts and repair handoff; GUI remains subject to resource admission |
-| Intake / ordinary Quick | One agent, structured output, efficient tools | Collaboration must justify overhead; Quick retains independent final Review |
-| Full Plan | Small exploration helpers | One planner produces contracts; Go validates and freezes them |
-| Execute | PTC, bounded helpers, optional controlled LCU root | Verify single-writer restrictions; GUI actions remain within admitted scope |
-| Review / Judge | Independent analysis, frozen screenshots, bounded review lenses | Exact verified candidate; no Executor history or live GUI handles |
-| Garden / repeated audits | Repository survey, later Swarm/Workflow | Findings remain proposals; native coordination does not authorize unrelated delivery |
-
-Kimi's native media tools and LCU's DSH image projection are different input
-paths. Model capability alone does not prove adapter delivery. Verify actual
-artifact delivery, then compare profiles while holding
-model/account/effort fixed. Test model changes separately; same-model helpers
-provide separate contexts without guaranteeing independent model diversity.
-[Model specification][kimi-models] · [Tools][kimi-tools]
-
-For a frontend change, Executor produces candidate A; a leased GUI root tests
-that build and archives observations. Once it stops and releases ownership,
-an independent Reviewer reads A and the frozen evidence. Interactive retesting
-requires a new lease and fresh target observation. Repairs produce candidate B
-and new evidence. A single-writer claim requires enforceable helper restrictions;
-otherwise use an entirely read-only group or separate constrained workers.
-Cross-packet writers remain under Go scheduling, not a shared native checkout.
-
-## 9. Reservations, usage and recovery
-
-Reserve a root plus its maximum permitted active descendants before starting
-it. The native cap must cover all enabled spawn paths, including workflows,
-nesting, restored children and model-calling tools. Without per-child admission
-hooks, a verified upfront group reservation is acceptable; do not claim Go
-checks every spawn. Acquire groups without roots holding partial capacity while
-waiting indefinitely for helpers. GUI leases and tool/I/O caps remain separate.
-
-The existing scheduler tracks global and per-channel capacity. P1b initially
-keeps helpers on one approved channel while checking actual models. Multi-channel
-profiles must reserve a global bound plus bounds for each channel/account as one
-group; aliases for the same account are not separate quota pools. Reject a
-profile whose child routes or bounds cannot be established rather than charging
-all children to the root channel. [Scheduler][fw-parallel]
-
-Concurrency does not bound cumulative spend. Usage-triggered cancellation is
-a soft threshold with in-flight overshoot; a hard token/monetary policy requires
-actual enforcement by the chosen route. Deduplicate either a trustworthy root
-aggregate including children or per-request child totals. Never add both,
-count historical totals as current work, or turn missing subscription usage
-into zero cost. [Existing usage contract][fw-design]
-
-Persist intent before dispatch. Record creation, dispatch, outcome and cleanup
-separately, with native identities only where observed. Stop admission, withdraw
-queued work, stop native actors/jobs, prove cleanup and save the receipt before
-releasing capacity. Unknown responsibility blocks retries, fallback and
-replacement; a local process exit does not settle remote or GUI work.
-
-Restoration binds role, goal, directories, model/account, permissions and
-capability digest. Old boards, modes, preset IDs and handles gain no new
-authorization automatically. Prewarm may initialize an eligible runtime but
-must not create formal Sessions, spawn children, interact with GUI or acquire
-GUI ownership speculatively. [Lifecycle][fw-sessions]
-
-The current new-installation template explicitly selects scoped history,
-parallel scheduling with two packet slots, batch dispatch, prewarm=false and
-full-access permissions. Existing complete configurations omitting the relevant
-policies normalize to fresh history, serial scheduling and role-based
-permissions. Use the actual effective configuration; this proposal does not
-reset user settings or turn full access into GUI authorization.
-[Installation defaults][fw-defaults] · [Configuration loading][fw-config]
-
-## 10. UI, deterministic selection and JEV
-
-Expose requested policy, effective composition/capabilities and observed use.
-Use role profiles with advanced limits and explicit GUI enablement/targets.
-Offer an observe mode only after method/target restrictions actually enforce it.
-Show availability reasons, actual image support, GUI owner,
-waiting state, authorization status, epoch changes and unresolved cleanup.
-Do not infer capabilities from preset labels or display unverified permission
-badges.
-
-Proposed selection semantics are **off**, **prefer** and **required**. Off must
-establish that the selected capability is actually off; prefer may choose the
-tested baseline only before possible related dispatch, after confirmed cleanup,
-and when that baseline meets the same constraints. Required rejects unavailable
-capabilities without changing model, account or permission. Initialization hooks and restoration can have effects, so a
-startup error alone cannot justify retry/fallback. Keep one engine-owned
-selection record rather than independent SDK/adapter/Go retries.
-
-JEV may recommend among deterministically eligible profiles. It cannot enlarge
-model/account choices, resource caps, GUI grants, permissions or budget. A
-static profile works with JEV disabled. Preserve the single JEV switch;
-`scheduler.dispatch` and `scheduler.prewarm` retain their existing meanings.
-Native work remains subject to L1/L2/L3, protected paths, independent Review,
-candidate identity and Git delivery. [Design][fw-design]
-
-## 11. Implementation sequence
-
-| Phase | Deliverable | Exit evidence |
-| --- | --- | --- |
-| P0: inventory and common policy | Installed/effective facts, capability digests, selection, resource/lifecycle contracts | Supported and unsupported cases distinguished without inference or GUI side effects |
-| P1a: managed PTC | Path A composition, bounded tools/retrieval and structured results | Executor/tool policy and effective receipts; desktop configuration preserved |
-| P1b: bounded helpers | DSH local helpers, then eligible Kimi/Codex/Claude profiles | Enforced caps, scope, usage and complete required cleanup |
-| P2a: controlled LCU | Managed attachment gate, real approval path, GUI lease, epochs, artifacts and awaited cleanup | Mac end-to-end and fault acceptance, root-only GUI; no unsupported observe claim |
-| P2b: native collaboration | Separate DSH Team, Kimi Server Swarm and Claude Workflow increments | Each adapter proves its own limits, model bindings, restoration and stop behavior |
-| P3: advanced work | Isolated Tower, interactive Teams, remote review, multiwriter isolation and explicit compaction controls | Dedicated isolation, remote/restart recovery and benefit over simpler profiles |
-
-P2a and P2b can proceed independently once their prerequisites are met. Path B
-is an optional SDK extension assessed separately, not a prerequisite for path A
-or all other capabilities. No phase requires rewriting every backend first.
-Keep existing subscribed plugin/CLI routes and unsupported combinations visible.
-New formal-engine capabilities start opt-in; decide default enablement after
-engineering acceptance and paired live measurements.
-
-| Repository / module | Implementation owner |
-| --- | --- |
-| dsh-preset-generator | Shared versioned composition policy and provenance; preserve user desktop settings |
-| dsh-plugin-lcu | Old/new PTC value-image compatibility, managed attachment/revocation, approvals, epoch handles, awaited cleanup and media facts |
-| DSH SDK/composition extension | Public composition for path A; a separate supported creation seam for named presets in path B |
-| Flywheel plugins/dsh | Bridge/policy/protocol, effective probes, events/media, Host/Client status |
-| Flywheel internal/contracts | Admission, global/channel/GUI resources, journal/session/prewarm, schemas and recovery |
-| Existing Codex/Claude machine plugins | Public controls/events, effective configuration, child facts and usage without changing login routes |
-| Kimi adapter | Keep print; optional authenticated Server runtime with its own lifecycle contract |
-
-Promote accepted fields into the architecture/protocol/schema before code and
-migrations. This PR only adds a future-direction link to current architecture.
-The root npm package remains the single installation/release unit.
-
-## 12. Validation and evidence
-
-Before eligibility, test unavailable versions, changed composition, incomplete
-approval services, unsupported image models, attempted method-level bypass,
-child fan-out, combined workflow caps, partial results and missing usage.
-Include same-version/different-bundle PTC, handle/image coexistence, Image identity,
-zero/one/multiple images, inspect output and image-policy rejection. Exercise
-Claude fork/resume cap exceptions and Workflow replay, Kimi side-chat rejection,
-cross-channel reservations, account aliases and late GUI answers.
-For LCU specifically cover two runs contending for one display, nonparticipating
-UI interference, stop during input, lost acknowledgements, application upgrade,
-reused handles, failed final exit, attachment failure and mismatched candidate
-or artifact hashes. Unknown cases must not silently release leases or retry.
-
-Use real protocol fixtures and failure injection, then the user's Mac and
-subscription routes. Future code retains repository Go coverage and applicable
-Node/bridge/race gates. For packaged behavior, test the complete 0.33 package,
-not only source-directory imports. These are implementation exit criteria;
-this proposal does not claim those tests ran for the new capabilities.
-
-Paired experiments hold repository HEAD, contract/oracle, model/account/effort,
-permissions, artifact identity, versions and resource limits fixed. Compare
-single-agent, PTC, helpers and collaboration on Quick repairs, exploration,
-visual frontend work, repeated audits and interrupted tasks. Measure final
-acceptance, missed/spurious findings, full p50/p95 time, startup/aggregation,
-known and unknown usage, quota pressure, retries, stop latency and leftover
-actors. Keep failed runs. Native examples guide experiments; they do not prove
-Flywheel speed, cost or quality improvements.
-
-## Sources
-
-Repository facts use the fixed Flywheel baseline; native sources retain their
-own identities. Current web documentation can evolve and must be checked
-against installed versions before implementation.
-
-- Flywheel: [design][fw-design], [package][fw-root-package], [provenance][fw-vendor],
-  [DSH bridge][fw-dsh-bridge], [policy][fw-dsh-policy], [Kimi][fw-kimi],
-  [Codex bridge][fw-codex-bridge], [Claude bridge][fw-claude-bridge],
-  [sessions][fw-sessions], [scheduler][fw-parallel].
-- Presets/LCU: [generator][user-preset-source], [LCU attachment/approval][lcu-index],
-  [PTC registration][lcu-ptc], [Proxy][lcu-bridge], [images][lcu-tool],
-  [connection][lcu-connection], [generation handling][lcu-session], [guard][lcu-host-guard].
-- DSH: [SDK][dsh-sdk-app], [SDK creation][dsh-sdk-server], [preset registry][dsh-preset-registry],
-  [PTC][dsh-ptc], [SubAgent][dsh-subagent], [Team][dsh-team], [protocol][dsh-protocol].
-- Kimi: [release][kimi-release], [CLI][kimi-cli], [profiles][kimi-agents],
-  [Server API][kimi-api], [session endpoints][kimi-session-api], [Tower][kimi-tower].
-  The archived [Python kimi-cli][kimi-legacy] is not the current TypeScript integration.
-- Codex: [subagents][codex-subagents], [app-server][codex-app-server], [bundled source][codex-plugin].
-- Claude: [subagents][claude-subagents], [Workflows][claude-workflows], [Teams][claude-teams],
-  [ultrareview][claude-ultrareview], [Advisor][claude-advisor], [optional source][claude-plugin].
-
-[fw-base]: https://github.com/ckanner/flywheel/commit/ac1ed320c68f6a8a466005985264e65b5a72fad9
-[dsh-ptc-release-package]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/package.json
-[dsh-ptc-master-package]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/package.json
-[dsh-ptc-master-source]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/src/ptc.ts
-[dsh-ptc-master]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/README.md
-[dsh-run-code-factory]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/src/run-code.ts
-[dsh-sdk-master]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/sdk/server/src/server.ts
-[codex-latest-compare]: https://github.com/ckanner/dsh-subagent-codex-pro/compare/37da3d75de32b809c4fb1a631ccc15191f3d87f9...aaf465901def5aa1870c1165b9714d32294337a4
-[claude-latest-compare]: https://github.com/ckanner/dsh-subagent-claude-code-pro/compare/ec0b99176b67512f3ca1838ec2a349dcb0189214...5eb637a9e82b317e67e50846005c407c54f1cea0
-[fw-design]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/docs/design.md
-[fw-models]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/docs/en/model-policy.md
-[fw-package]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/package.json
-[fw-vendor]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/vendor/README.md
-[fw-dsh-policy]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/policy.js
-[fw-dsh-bridge]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/bridge.js
-[fw-dsh-protocol]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/protocol.js
-[fw-kimi]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/drivers/kimi.go
-[fw-sessions]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/sessions.go
-[fw-codex-bridge]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/codex-pro-bridge.js
-[fw-claude-bridge]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/claude-code-pro-bridge.js
-[fw-host-entry]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/index.js
-[fw-host-control]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/control.js
-[fw-task-skill]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/skills/flywheel-task/SKILL.md
-[user-preset-readme]: https://github.com/ckanner/dsh-preset-generator/blob/f692cb07abbb9786444c183d74eee018b1a2f0e8/README.md
-[user-preset-source]: https://github.com/ckanner/dsh-preset-generator/blob/f692cb07abbb9786444c183d74eee018b1a2f0e8/src/gen-presets.mjs
-[dsh-team]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md
-[dsh-subagent]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/subagent/subagent/README.md
-[dsh-sdk]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/docs/user/guide/python-sdk.md#enable-team-mode
-[dsh-ptc]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/README.md
-[dsh-web]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/web/tool-web/README.md
-[dsh-plan]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/plan/plan-mode/README.md
-[dsh-goal]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/goal/goal-round-driver/README.md
-[dsh-protocol]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/protocol/README.md
-[dsh-sdk-app]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/sdk-app/README.md
-[dsh-sdk-server]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts
-[dsh-ptc-overlay]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml
-[dsh-web-ptc]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/web-app/presets/ptc.patch.yml
-[kimi-release]: https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai/kimi-code%402.6.2
-[kimi-legacy]: https://github.com/MoonshotAI/kimi-cli
-[kimi-changelog]: https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html
-[kimi-cli]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/kimi-command.md
-[kimi-agents]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/agents.md
-[kimi-tools]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/tools.md
-[kimi-tower]: https://www.kimi.com/code/docs/en/kimi-code-cli/guides/tower.html
-[kimi-api]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md
-[kimi-session-api]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md
-[kimi-conversation]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md
-[kimi-hooks]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/hooks.md
-[kimi-models]: https://www.kimi.com/code/docs/en/kimi-code/models.html
-[kimi-model-blog]: https://www.kimi.com/en/blog/kimi-k3-1-pro
-[kimi-print-defaults]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/agent/task/printDefaults.ts
-[kimi-print]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/apps/kimi-code/src/cli/v2/run-v2-print.ts
-[kimi-swarm]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/tools/agent-swarm/agentSwarmTool.ts
-[kimi-tower-merge]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/tools/merge/mergeTool.ts
-[kimi-tower-guard]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/bashGuard.ts
-[codex-subagents]: https://learn.chatgpt.com/docs/agent-configuration/subagents
-[codex-app-server]: https://learn.chatgpt.com/docs/app-server
-[codex-plugin]: https://github.com/ckanner/dsh-subagent-codex-pro/tree/37da3d75de32b809c4fb1a631ccc15191f3d87f9
-[claude-subagents]: https://code.claude.com/docs/en/sub-agents
-[claude-workflows]: https://code.claude.com/docs/en/workflows
-[claude-teams]: https://code.claude.com/docs/en/agent-teams
-[claude-ultrareview]: https://code.claude.com/docs/en/ultrareview
-[claude-advisor]: https://code.claude.com/docs/en/advisor
-[claude-plugin]: https://github.com/ckanner/dsh-subagent-claude-code-pro/tree/ec0b99176b67512f3ca1838ec2a349dcb0189214
-
-[fw-root-package]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/package.json
-[fw-runtime-identity]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/session_runtime.go
-[fw-parallel]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/parallel.go
-[fw-packet-schema]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/templates/task-packet.schema.json
-[dsh-preset-registry]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/preset/agent-preset-registry/src/index.ts
-[lcu-index]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/index.ts
-[lcu-bundle]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/cordis.patch.yml
-[lcu-ptc]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/ptc.ts
-[lcu-bridge]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/bridge.ts
-[lcu-tool]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/tool.ts
-[lcu-connection]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/connection.ts
-[lcu-session]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/session.ts
-[lcu-host-guard]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/host-guard.ts
-
-[fw-defaults]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/templates/flywheel.config.example.json
-[fw-config]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/config/config.go
-[lcu-readme]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/README.md
-
-[dsh-base]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/base/cordis.patch.yml
+- DSH: [release SDK](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts), [official PTC overlay](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml), [master PTC](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/src/ptc.ts), [Team](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md).
+- Kimi: [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md), [conversation API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md), [agents](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/agents.md).
+- Codex: the [pinned public machine contract](https://github.com/ckanner/dsh-subagent-codex-pro/blob/c0045b06e6762b8dfc56f50b14cce7a53af2725b/docs/machine.md) and its fixed official app-server references.
+- Claude: [Subagents](https://code.claude.com/docs/en/sub-agents), [Teams](https://code.claude.com/docs/en/agent-teams), [Workflows](https://code.claude.com/docs/en/workflows), [Ultrareview](https://code.claude.com/docs/en/ultrareview), [Advisor](https://code.claude.com/docs/en/advisor). The public adapter also preserves failures when the installed CLI does not expose the requested capability.

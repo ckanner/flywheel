@@ -95,8 +95,11 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 		return drivers.CallArgs{}, err
 	}
 	a := drivers.CallArgs{Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd, CandidateScope: r.CandidateScope, TaskDir: c.TaskDir, PacketID: strings.TrimPrefix(r.Scope, "final:"), Model: b.Model,
-		Binding:        config.LoopBinding{Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking},
+		Binding:        config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking},
 		PermissionMode: permission, SessionMode: sessionMode, APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog(), ExpectedSessionID: r.ThreadID}
+	if err := c.resolveInvocationNative(r.Role, &a); err != nil {
+		return drivers.CallArgs{}, err
+	}
 	if len(r.CandidateScope) > 0 {
 		packet := c.Packets[a.PacketID]
 		if packet == nil || packet.Schedule == nil {
@@ -107,8 +110,8 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 	}
 	binding, goal, _ := c.sessionIdentities(r.Scope, a)
 	scoped := c.scopedSessions(r.Role, b.Harness)
-	if sessionMode != "" {
-		scoped = sessionMode == "scoped" && c.trackedSessions(r.Role, b.Harness)
+	if a.SessionMode != "" {
+		scoped = a.SessionMode == "scoped" && c.trackedSessions(r.Role, b.Harness)
 	}
 	if !scoped || r.ThreadID == "" || !r.ResumeCandidate || binding != r.Binding || goal != r.Goal {
 		return drivers.CallArgs{}, fmt.Errorf("original session binding or history is unavailable; inspect configuration and recorded identity")

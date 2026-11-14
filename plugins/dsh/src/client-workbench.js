@@ -173,7 +173,7 @@ function RuntimeDecisionPanel({ ledger, packetID, t }) {
 
 function validExecutionPolicyHistory(packet) {
   const policy = packet?.['execution-policy'];
-  const binding = value => record(value) && ['harness', 'provider', 'channel', 'model', 'thinking', 'permission', 'sessionMode']
+  const binding = value => record(value) && ['harness', 'provider', 'channel', 'model', 'thinking', 'nativeProfile', 'permission', 'sessionMode']
     .every(key => value[key] == null || typeof value[key] === 'string');
   return record(packet) && (policy == null || record(policy) &&
     (policy.history == null || Array.isArray(policy.history) && policy.history.every(change =>
@@ -185,7 +185,7 @@ function ExecutionPolicyChanges({ packets, packetID, t }) {
   const changes = Object.entries(packets ?? {}).flatMap(([id, packet]) => !packetID || id === packetID
     ? (packet['execution-policy']?.history ?? []).map(change => ({ id, change })) : []);
   if (!changes.length) return null;
-  const fields = ['harness', 'provider', 'channel', 'model', 'thinking', 'permission', 'sessionMode'];
+  const fields = ['harness', 'provider', 'channel', 'model', 'thinking', 'nativeProfile', 'permission', 'sessionMode'];
   const bindingDetails = (binding, label) => h('div', null,
     h('p', null, t(label)),
     h('dl', { className: css.consoleProperties }, ...fields.filter(field => binding[field]).map(field =>
@@ -1255,7 +1255,7 @@ function WorkbenchNodeInspector({
         ((chosen.packet && !chosen.stage) || chosen.group) && h(Button, { onClick: () => expand(chosen) }, t(chosen.packet ? 'wbExpand' : 'wbExpandGroup')),
         ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
         binding && h('section', { className: css.inspectorSection }, h('h4', null, t('wbConfiguration')),
-          h('dl', { className: css.consoleProperties }, property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })), property(t('consoleModel'), binding.model), property(t('consoleThinking'), ({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking] ? t(({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking]) : binding.thinking), property(t('permission'), permissionLabels[binding.permission] ? t(permissionLabels[binding.permission]) : binding.permission))),
+          h('dl', { className: css.consoleProperties }, property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })), property(t('consoleModel'), binding.model), property(t('cfgNative'), binding['native-profile'] || binding.nativeProfile), property(t('consoleThinking'), ({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking] ? t(({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking]) : binding.thinking), property(t('permission'), permissionLabels[binding.permission] ? t(permissionLabels[binding.permission]) : binding.permission))),
         h('section', { className: css.inspectorSection }, h('h4', null, t('wbSession')),
           sessions.length ? sessions.map(([key, value]) => h('article', { key, className: css.sessionSummary },
             h('h4', null, (roleLabels[value.role] ? t(roleLabels[value.role]) : value.role) + ' · ' + value.scope),

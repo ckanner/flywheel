@@ -1,708 +1,276 @@
-# 原生 Harness、PTC 与 LCU 在 Flywheel 各环节中的接入方案
+# 原生 Harness、PTC 与 LCU：完整接入设计与实现
 
-[English](2026-11-13-native-harness-capabilities.en.md) · [方案索引](README.md) · [当前架构](../design.md)
+[English](2026-11-13-native-harness-capabilities.en.md) · [方案索引](README.md) · [使用指南](../zh-CN/native-capabilities.md) · [当前架构](../design.md)
 
-**状态：完整修订的设计提案，尚未实现。** 创建于 2026-11-13，依据最新源码于
-2026-11-14（America/New_York）修订。Flywheel 基线为
-`ac1ed320c68f6a8a466005985264e65b5a72fad9`，包声明版本 `0.33.0`。
-本文中的能力配置、回执、资源租约和阶段是拟议契约，不能直接写入当前配置文件。
-本 PR 更新方案及导航；后续另行实现实际接入，本 PR 不修改用户配置和默认模型。
+**状态：六仓库实现候选，随 PR 交付。** 创建于 2026-11-13；2026-11-14 修订为实现设计，Flywheel 候选版本 `0.34.0`。本文描述当前代码、接口和运行边界；验证结果独立记录在[验收记录](../validation/2026-11-14-native-harness-implementation.md)。源码候选、npm 发布、用户 Mac 上的实际账号和桌面验收是不同状态。
 
-## 1. 结论与本次调整
+[先前提案](https://github.com/ckanner/flywheel/blob/9c95a69490c7f38d39ede055a00adc56bdce087c/docs/plans/2026-11-13-native-harness-capabilities.md)保留在原提交。本修订取消“先限制为少量 helpers，再逐阶段开放”的交付安排，直接提供各原生后端可支持的完整入口，同时保留各后端实际能证明的权限、并发、用量和终态。
 
-**复用已经做好的 PTC presets 和 LCU，把它们接入 Flywheel 的受管调用。**
-当前 `daily` 和 `heavy` 都使用 PTC，LCU 已通过 `cua` bridge 支持 `run_code`。
-上一版“重活需要切回 native 工具”“生成器无法处理新 executor 行”的判断已被新代码
-消除。这两项不再是待解决问题。[U2][L2]
+## 1. 设计结论
 
-仍然需要完成的是：正式 SDK worker 的组合与准入、模型及 GUI 资源调度、子任务归属、
-停止与恢复、媒体证据以及 UI 中的真实运行状态。推荐先走现有 SDK 的全局 composition
-加官方 PTC overlay，并复用生成器的能力策略；直接选择 named Agent Preset 留作第二条
-公开扩展路线。LCU 则需要支持受管 SDK root 的正式挂载条件，沿用现有 `cua` bridge。
+用户继续在 DSH 桌面中使用 `heavy` 或 `daily` Agent Preset 准备需求和操作 Flywheel。正式 loop 由 Go 引擎运行：DSH 路径启动本地 SDK runtime；Codex、Claude 路径直接调用各 Pro 插件的公开 machine API；Kimi 原生模式使用本地 Kimi Server。模型、登录账号和 harness 是不同维度，能力跟随实际 harness，不因模型名称相同而转移。
 
-| 已完成的基础 | 对新方案的影响 | 还需要补齐的内容 |
+本实现让同一套 Plan / Execute / Review / Judge / Intake / Garden 绑定通过 `native-profile` 使用能力。JEV 关闭时静态配置照常生效；JEV 开启后只能在既有显式允许集合内选择，不能创造新的后端、账号或原生权限。
+
+| 组成 | 实现结果 | 正式完成依据 |
 | --- | --- | --- |
-| 生成器 0.3.0：`daily`、`heavy` 都明确选择 PTC | 保留用户熟悉的 presets；无须为 CUA 改用 native | 证明 SDK worker 的实际 composition 与 executor |
-| LCU 0.4.2：结构化 `cua` 调用、对象代理、图片投影 | 复用现成的程序化 Computer/Browser 接口 | SDK 挂载、真实授权、跨调用 GUI 所有权、停止回执与 epoch |
-| Flywheel 0.33.0：完整 npm 单包 | 继续使用 `@ckanner/flywheel` 的 host、client 和 workers | 扩展已有内部协议与 schema；无需另发一个 Flywheel UI 包 |
-| 各 harness 的工具、子代理、Team/Swarm/Workflow | 在合适的 loop 内利用原生运行能力 | 每种能力分别证明权限、限额、观测和生命周期 |
+| DSH | 共享生成器的 PTC composition、实际 executor probe、子 Agent、Team、PTC Workflow、显式 Web 工具 | 匹配的 policy 回执、root 结果、子任务终态、完整 journal、SDK 清理 |
+| Kimi | Server 模式的 Agent / Swarm / Tower，HTTP + WebSocket 连续观测，Tower 独立 Git 候选 | 所有已归属任务和 continuation 停稳；Tower 另核对源指纹和导回 |
+| Codex Pro | app-server 原生 agents controls、子线程事件、用量与恢复；独立原生 review | `config/read` 有效控制、当前 turn 的完成、owned thread 终态、guardian 清理 |
+| Claude Code Pro | Agent 定义、Workflow、Advisor；独立交互 Team 和远端 Review | init 工具事实、当前 task-run 身份、完整本地或远端生命周期 |
+| LCU | Desktop 与 SDK 两条挂载路径、受管 lineage、跨进程 GUI lease、PTC 对象与媒体、取消与物理退出 | 当前 lease/epoch、实际调用者、turn cleanup、runtime exit、证据归档 |
+| ChatGPT provider | DSH attachment 到 Responses image 的真实投影、顺序与 call ID、取消收尾 | 实际存储图片与输入结构；不凭截图存在宣称模型已理解 |
 
-Go 继续拥有正式 Spec/packet、跨 packet 调度、预算、同一候选验证、独立 Review、恢复
-和 Git 交付。原生 task board、子代理的“完成”、LCU 的截图或 Team 内部 review，均作为
-证据进入这些环节。近期优先级是 **DSH PTC → 少量有界 helpers；LCU 独立完成准入后
-试点真实 UI 检查**。DSH Team、Kimi Server Swarm、Claude Workflows 可以分别推进，
-不用等所有后端拥有同一组功能。
+Go 仍独占 `state.json`、冻结契约、预算、packet 调度、候选验证、独立 Review、提交与交付。Team task board、Swarm 内部评审、原生 Review 文本和 GUI 截图均不直接改变状态机。
 
-### 1.1 版本与证据
+## 2. DSH 桌面、SDK 和 Preset 的关系
 
-| 对象 | 本次核对基线 | 可据此得出的结论 |
+### 2.1 当前确实使用本机 DSH SDK
+
+桌面插件是控制面：接收命令和模型工具、展示工作台、关联用户当前 Session。Go 启动 worker，后者执行本机 `dsh --profile sdk --patch <临时覆盖>`，使用 stdio JSON-RPC 创建或恢复正式角色 Session。`DSH_HOME` 和账号配置可以指向同一份本机授权；无需为了运行 SDK 改用 API Key。
+
+桌面当前 Agent 的工具集、Preset 和私人对话历史不会自动成为正式 loop 的上下文。特别是独立 Review 不继承 Executor，也不继承桌面父会话。`sdk` 是 runtime profile，`heavy` 是 Agent Preset，Flywheel 的 `profiles` 是模型绑定；把 `FLYWHEEL_DSH_PROFILE` 写成 `heavy` 不能选择那个 Agent Preset。
+
+公开 SDK 创建接口仍以全局插件 composition 建立 Agent。本实现采用这个真实接缝，并调用生成器的 `createSdkPtcComposition()`；回执标明 `sdk-global-overlay` 及 composition digest，不伪造“已挂载 named preset”的 Session header。
+
+### 2.2 两个 Preset 与 SDK 共享 PTC 策略
+
+`dsh-preset-generator@0.4.0` 继续从实际 DSH 应用资源生成 `daily` 和 `heavy`。两者都选择 PTC；新增公开 `/composition` 入口供 worker 复用同一策略。静态检查识别旧、新 executor 注册形式并计算 bundle 身份，但不把静态版本或字符串命中作为运行证明。
+
+正式 DSH 调用在首个模型请求前验证：唯一模型工具是 `run_code`；运行语言是 TypeScript；普通工具的 canonical JSON 与对象 `__handle` 保持；多张图片仍能投影；运行时输出协议是 `deferred-context-v1` 或 `inspect-image-v1`。新版还验证 `inspect` / `Image` 的实际对象身份。probe 使用内部无副作用工具和已知图片，不调用模型或操作桌面。
+
+DSH release 与 master 可能同时声明 `0.2.2-rc.3`，PTC 输出协议却不同，因此采用“公开版本范围 + 实际行为准入”。probe 不通过时在派发前报错，保留具体原因；不能通过替换版本号或假工具声明绕过。
+
+### 2.3 能力在 SDK 内按树归属
+
+`native-policy.js` 在公开 Agent 生命周期中准入 root 与真实后代，核对实际 Agent registry、Session parent、provider、model、effort、工作目录和权限。工具开关按请求组合，Team 使用实际 `agent-team` service，Workflow 使用公开 workflow 工具；禁用的工具不能意外出现在 raw schema 中。
+
+本地 wire 子会话事件与公开 `subagent/start`、`subagent/end` journal 共同建立归属。外部 Pro 子代理也记录 provider/run/parent 身份，不能仅因为没有本地 Session 而漏掉。没有归属、缺失开始事件、身份改变、journal 截断均使结果保持失败或未知。
+
+## 3. 配置模型与各 loop
+
+### 3.1 配置是显式能力意图
+
+顶层 `native-profiles` 保存 `{harness, options}`，`options.version` 固定为 1；`templates/native-profiles.schema.json` 是字段信源。`loops`、`routes`、模型 `profiles`、`judge-panel` 与 `execution-policy.bindings` 可引用 `native-profile`。LOAD 阶段拒绝未知字段、未知引用和 harness 不匹配；后端在派发前进一步验证版本、实际工具与控制接口。
+
+省略 `native-profile` 延续普通 harness 路径；继承模型 profile 时按现有显式字段规则展开，显式空字符串可关闭继承的原生配置。配置名称和完整 options 都进入实际调用身份。无关 profile 的修改不废弃已有执行策略；被引用 options 改变会使旧角色历史失去复用资格。
+
+以下是合入完整配置的**片段**，不是完整配置文件，也不会自动修改用户默认路由：
+
+```json
+{
+  "native-profiles": {
+    "dsh-heavy-team": {
+      "harness": "dsh",
+      "options": {
+        "version": 1,
+        "preset": "heavy",
+        "agents": {"enabled": true, "maxConcurrent": 4, "maxDepth": 2},
+        "team": {"enabled": true},
+        "workflows": {"enabled": true}
+      }
+    },
+    "kimi-swarm": {
+      "harness": "kimi",
+      "options": {"version": 1, "mode": "swarm", "agents": {"enabled": true}}
+    },
+    "kimi-tower": {
+      "harness": "kimi",
+      "options": {"version": 1, "mode": "tower", "agents": {"enabled": true}}
+    },
+    "codex-agents": {
+      "harness": "codex-pro",
+      "options": {"version": 1, "agents": {"enabled": true, "maxConcurrentThreads": 4, "backend": "v2"}}
+    },
+    "claude-workflow": {
+      "harness": "claude-code-pro",
+      "options": {
+        "version": 1,
+        "agents": {"enabled": true},
+        "workflows": {"enabled": true, "maxConcurrent": 4},
+        "advisor": {"enabled": true}
+      }
+    }
+  }
+}
+```
+
+随后在实际绑定中加入 `"native-profile":"dsh-heavy-team"` 等引用。工作台“模型与会话”提供同 harness 的能力配置选择；高级 JSON 编辑定义本身；配置保存仍使用 revision、备份与原子写入，下次引擎启动生效。没有额外的“智能模式”总开关。
+
+### 3.2 loop 的职责不因原生协作改变
+
+| loop / 操作 | 可利用的能力 | 结果如何进入 Flywheel |
 | --- | --- | --- |
-| Flywheel | `ac1ed320…` / `0.33.0` | 最新 main 的单包分发和当前 bridges；不代表 npm registry 或用户安装已经更新 |
-| dsh-preset-generator | `f692cb07abbb9786444c183d74eee018b1a2f0e8` / `0.3.0` | 两个 presets 的生成策略；物化内容仍取决于本机 `app.asar` |
-| dsh-plugin-lcu | `9efeded13d20b41a96621bb53d903954f68550e6` / `0.4.2` | 当前 bridge、挂载、授权、媒体和生命周期代码；release 已存在 |
-| DSH release | `dsh-v0.2.2-rc.3`，`38a6a5c965aa99ab525161efb7cc5cf1fe62fced` | 已发布基线；标准 SDK 与 PTC 旧输出协议 |
-| DSH 最新 master | `39163dd30f703a79079e2d2446545cff3c453738` | PTC 已增加 `inspect` / `Image` 和私有 program tool 工厂；同名 rc.3 包并不保证同一协议，见 §2.4 |
-| Kimi Code | release `2.6.2`；源码 `f082f04a093a3e71a2263c5461d52507dc31f83a` | 延续 11-13 已核对研究；Flywheel driver 的既有 print 契约说明仍以 2.4.1 为检查基线 |
-| Codex Pro | 最新 main `aaf465901def5aa1870c1165b9714d32294337a4` / `0.9.0`；Flywheel vendor 来源 `37da3d75de32b809c4fb1a631ccc15191f3d87f9` | 两者生产实现相同，后续变化为发布说明与测试收尾；不替换已锁定 artifact |
-| Claude Code Pro | 最新 main `5eb637a9e82b317e67e50846005c407c54f1cea0` / `0.4.0`；Flywheel 来源 `ec0b99176b67512f3ca1838ec2a349dcb0189214` | 两者生产实现相同，后续变化为发布说明与 CI；仍是可选后端 |
+| Intake / Garden | 并行收集代码证据、Web、PTC、原生 agents | 一次独立调用的建议与 native receipt；不写状态 |
+| Plan | Team task board、Swarm 分析、并行代码调查 | root 提交 Spec/packet；Go 继续校验结构、依赖和范围 |
+| Execute | agents 分工、Workflow、Tower 候选、LCU 操作 | 实际候选进入 L1/L2/L3、Review 和 Git 交付 |
+| Review | 新建或续用本角色独立历史；可使用其 own agents | 仍必须给出既有 verdict 契约；子 Agent 的意见只是证据 |
+| Judge / 第二意见 | 原生协作辅助核查 | 独立 scope 和候选身份，不能继承 Executor |
+| 原生 Review / 交互 Team | harness 专属的独立入口 | 返回原生任务回执与恢复身份，不直接输出 Flywheel verdict |
 
-源代码、发布包、有效配置和实际运行证据分别记录。本轮没有调用真实模型，没有验收
-用户 Mac 的 TCC、浏览器扩展或 GUI 性能。生成器部分测试依赖安装的 Mac 应用；LCU 的
-Ubuntu CI 与 release 成功也不能替代真实 ChatGPT.app runtime 验收。本轮复核了 Kimi
-源码身份、两个 Pro 插件最新 main，以及 Claude 的并发/恢复/交互式限制；原生二进制、
-npm registry 与用户安装未作验收。最新 main 与 vendor 来源的比较见 [P1][P2]。
+默认模型表、订阅 channel 和显式 fallback 规则保持原配置语义。启用 DSH 中的 ChatGPT provider 不会自动切换为 Codex harness；同样，Kimi Swarm 不会在 DSH provider 上凭名称出现。
 
-## 2. 实际架构：桌面入口、SDK worker 与插件组合
+## 4. Kimi Agent、Swarm 与 Tower
 
-本文把四种职责分开：**模型**提供推理能力；**provider/account** 决定模型接入与账号；
-**harness** 拥有工具循环、上下文及原生协作；**adapter** 把它们接入 Flywheel 的调用
-和回执。因此，DSH 中使用 GPT 并不会自动获得 Codex 的 subagent，PTC 也不等于增加
-模型 Agent 数。能力必须跟随实际 harness，模型/effort 另行选择。
+### 4.1 独立受管 Server
 
-### 2.1 我们在 DSH 桌面里使用，也确实使用 DSH SDK
+未配置 native profile 时保留原 Kimi CLI print 路径。启用后 Go 调用打包的 Kimi native worker，后者启动 `kimi web --no-open --host 127.0.0.1 --port 0`。只有本次启动、PID/server ID/registry/token 匹配的本地服务可以被使用和关闭；日志与回执不暴露 token。
 
-日常对话、需求准备和 `flywheel-task` 的准备工作由桌面当前 Agent 完成，用户可以继续
-使用 `heavy`。正式 loop 由 host 插件调用 Go，再启动对应 worker；DSH 路径使用本地
-`dsh --profile sdk --patch <临时覆盖>` 的 stdio JSON-RPC。它运行在本机 DSH runtime，
-不需要改为另一种模型账户。[F2][F7]
+worker 核对实际 OpenAPI/AsyncAPI schema，建立 session 与 WebSocket 订阅，再核对模型、effort、permission、mode、agent profile 和本地执行目录。能力配置和工作目录有证据后才提交 prompt。模型的工具循环、Agent/Swarm/Tower 编排仍由 Kimi 执行。
 
-当前桌面入口传递项目目录及 host Session 关联，没有把当前 Agent 的 preset、工具集
-或私人历史传给正式 loop。`FLYWHEEL_DSH_PROFILE` 可选兼容的自定义 SDK profile，
-bridge 明确拒绝 `desktop`。runtime profile、Agent Preset、Flywheel 模型 `profiles`
-是三种不同配置；设置 `FLYWHEEL_DSH_PROFILE=heavy` 不等于选择 Agent Preset。
-独立 worker 进程仍可以按现有协议恢复角色 Session，共用 `DSH_HOME` 也可能复用账户
-授权；这些都不自动继承桌面插件组合。[F2][D9][D11]
+当前 Server 接缝不提供可证明的 OS 沙箱，故要求显式 `danger-full-access`；不把普通 Kimi CLI 的权限设置冒充 Server 的能力。`agents.maxConcurrent` 不是可强制的整树限额；若用户明确要求这个硬上限，worker 拒绝该组合并说明原因，普通 Agent/Swarm/Tower 可以直接运行。
 
-最新 master 仍明确从全局组合创建 SDK Agent，没有增加公开的 named-preset 选择字段；
-这项边界并未随本次 PTC 更新自动消失。[D20]
+### 4.2 连续观测、续接与计量
 
-| 责任层 | 所有权 | 向外提供的事实 |
+首个原生 turn ordinal 可以为 0；新调用的 baseline 为 -1，不能漏掉首轮。按 prompt ID、turn ID、ordinal、task ID 和 child agent 引用建立本次调用的观测。重连或 snapshot reset 不被视为无损历史；root 结果、后续 continuation、running tasks、agents 和待交互事项共同决定停稳。
+
+native Kimi 不导入旧 CLI PlanSession，统一使用角色账本。普通 scoped Agent/Swarm 续接绑定 task、role、scope、channel、真实目录、模型、effort、权限及 native options；run ID 与 candidate ID 只属于单次回执，不能因为每次调用改变就破坏正常续接。Tower 总是 fresh 候选，不接受旧 session 恢复。
+
+仅在所有本次 root/child step 的 exclusive usage 都完整时生成总量。恢复历史中的子 Agent、compaction、缺失 child identity 或计量，以及 Tower 未公开的整树消耗保留 unknown。`session.usage` 中的占位零不能替代真实 step 计量。中断后没有 durable terminal 的 Kimi Server 调用保持未知，不通过重新发 prompt“恢复”。
+
+### 4.3 Tower 独立候选与可信导回
+
+Tower 在具有独立 `.git` 的临时副本中运行，复制源 HEAD、工作区修改、未跟踪文件、二进制、symlink、权限位和删除。它不共享源 `.git` 管理数据。提示词中的精确执行目录前缀有边界地映射到 candidate，并记录原始与映射后摘要；URL、相似路径和外部 task 路径不盲目替换。
+
+这提供独立 Git 候选工作目录，**不构成 OS 文件系统沙箱**。源目录可能仍被完全权限的原生进程访问。因此导回必须重新检查源 HEAD、文件内容/模式/link 和外部 task Spec/packet 契约，排除的仅是明确的 runtime 账本与原生证据目录。source 有并发变化或契约变化时保留 candidate 并报冲突。
+
+只有 Execute 在 root/children 完成且所有 owned 进程清理确认后，才通过 `git apply --check --binary` 和可信 patch 导回。其他角色保留候选产物供审核，不自动应用。导回不提交 Git，也不跳过原有候选验证、Review 和交付。
+
+## 5. Codex 与 Claude 的完整原生入口
+
+### 5.1 Codex Pro
+
+`dsh-subagent-codex-pro@0.10.0` 保留 public machine protocol 1 与 lifecycle v1，增加 native version 1。agents options 映射到 app-server 的公开 controls，读取实际 `config/read` 后核对。defaultModel/defaultEffort 只在显式给出时改变子线程默认，不修改 root 账号或模型。
+
+子线程记录当前 turn 的单调进度；旧 turn 的晚到终态不能覆盖新工作。子用量按 owned thread 的 exclusive delta 归属，排除 root，防止重复累加；缺失历史 baseline 的 child 保留 unknown。成功必须同时证明 root 完成、pending IDs 为空、owned children 已结束、native 与 guardian 清理完成。
+
+Codex 原生 `review/start` 不消费 Flywheel 的完整角色 prompt 与 verdict 契约，因此正式 `native-profiles` 不接受 `review` 字段。公开包提供完整原生 Review API，Flywheel 通过独立命令暴露，不将其包装成一次普通 Review turn。
+
+### 5.2 Claude Code Pro
+
+`dsh-subagent-claude-code-pro@0.5.0` 支持 Agent 定义、Workflow 和 Advisor，并输出有效命令设置、init 可见工具和 native 子任务事件。init 只证明工具是否出现，不宣称已验证 CLI 内部所有调度配置。
+
+task-run ID 是不透明身份，不能按字符串大小判断先后；缺少当前 run 身份的旧 terminal 不能结束新 task。Agent/Task tool-use 可能仍排队，observed concurrency guard 只统计已 `task_started` 的 local_agent。配置限额标记 `resourceBounds.hard:false`；超限可取消已观测的工作，但不是派发前的整树 semaphore。
+
+root result usage、child task snapshot 和 Advisor 消耗可能重叠或不完整。保留 raw root result 与 child observations；不能把快照当独占 delta 相加。family total 不可证明时统一为 unknown。
+
+### 5.3 独立任务 API 与 CLI
+
+```sh
+flywheel native codex-review --request /absolute/codex-review.json
+flywheel native claude-review --request /absolute/claude-review.json
+flywheel native claude-team --request /absolute/claude-team.json
+flywheel native claude-recover --request /absolute/recovery.json
+flywheel native claude-control --request /absolute/control.json
+```
+
+请求使用对应公开包 API，并增加私有绝对 `recoveryDirectory`。CLI 限制为 regular JSON 文件，最多 1 MiB；stdout 返回一次完整原生 receipt，stderr 承载诊断。信号触发取消并等待公开 API 收尾。
+
+Codex Review 要求 fresh ephemeral thread 与显式 target。Claude 远端 Review 要求 `consent:true`，执行真实 `claude ultrareview --json --no-post`；不隐式同意云任务或发布 review comment。交互 Team 使用拥有独立身份的 tmux server/pane，支持 capture/send/resize/cancel/attach 控制；文本输出不是结构化验收结论。
+
+远端 Review 与本地进程有不同生命周期：本地 timeout/exit 不证明远端 job 结束。使用原 requestId、runId 和 recoveryDirectory 只读原本地 journal，取回已持久化回执；不会查询云端状态，也不会重新提交 Review。pane ownership 无法证明时也不能把清理标为成功。
+
+Claude `recoverNativeJob` 只读本地 durable journal，不启动进程或向云端查询。当前回执明确 `jobId:null`、`querySupported:false`、`cancelSupported:false`。本地恢复 status 为 terminal 也不等于 remote 完成：若远端 state 仍为 unknown 或 native.cleanup.confirmed 为 false，不能自动重放或声称云任务已取消。
+
+## 6. LCU 挂载、GUI 资源与媒体
+
+### 6.1 沿用公开桥接并区分生命周期
+
+`dsh-plugin-lcu@0.5.0` 保留用户桌面 Preset 的正常挂载与撤销；新增公开 `attachManagedLcu()` 供 owned SDK Agent 使用。真实 Agent registry 和 parent lineage 决定工具调用权，config 中出现一个 Session ID 不等于它是真实 caller。
+
+每个 Agent runtime 有独立 epoch、handle registry、turn lifecycle 和 MCP connection。`lcu_cua` 是 PTC 工具名，程序内仍使用 `cua`；避免新版 executor 对精确 `cua` 名称的特殊 image coercion 把结构化对象 handle 丢失。已有 `run_code`、对象代理、Computer/Browser 操作和多图输出都保留。
+
+app、command、Chrome、audio、allowedApps、allowedOrigins 从显式配置传入实际 runtime。Mac TCC、浏览器扩展、目标白名单和 runtime 的真实用户交互依旧由实际组件负责；本实现不伪造审批回答，也不宣称新增了完整的跨桌面问答 relay。
+
+### 6.2 一台桌面一个 lease
+
+Flywheel 在受管 LCU 创建前取得私有资源目录中的 `local-desktop` lease，记录 invocation、lease ID、epoch 和 owner；每次操作重查 lease 与 caller。root 和后代共享 GUI 所有权，操作顺序执行，不能因为模型 Agent 并发就并发移动同一鼠标。
+
+lease 使用跨进程原子文件约束。进程死掉或 PID 复用不等于资源已释放；无法证明清理的 owner 不被自动接管。终态 lease 保存完整 cleanup 证据的摘要与字节数，完整证据保留在回执中，避免大图把锁文件变成无法读取的超大文件。
+
+### 6.3 完成、取消和物理停止分别记录
+
+abort 首先取消 MCP 请求，再等待 turn 清理，最后关闭 native runtime 并确认实际退出。普通 native DSH shutdown 允许 15 秒，Go 外层不少于 20 秒；LCU 路径分别为 135 秒与 145 秒，覆盖公开 API 的 turn-stop 与 native close 上限。超时不是成功的快捷方式。
+
+policy 在 root turn-stopping 阶段等待 journal flush；最终关闭时写出 `native-cleanup.json`，绑定 request ID、nonce 与 journal complete/events/bytes。journal 最多 4096 条、2 MiB，每条有连续 `journalSequence`；读取核对每条 root 身份、大小与完整换行。写盘失败、超界、归属错误、未完成 turn 或物理退出不确定都会阻止成功和 lease 释放。
+
+### 6.4 媒体是可核验产物
+
+截图在 DSH AttachmentStore 中的最终编码可能与采集编码不同。adapter 从实际 store 读取并归档最终图片，分别记录 capture digest 与 archive digest；不得用采集 hash 去冒充经过正规化后的存储字节。
+
+媒体与 manifest 保存在 `<taskDir>/reports/native/<invocationId>/`。验证 regular file、NOFOLLOW、大小、摘要与 durable 写入；worker 临时目录删除后证据仍存在。`imageDeliveredToModel:'unverified'` 明确区分“生成/存储/归档图片”和“模型确实收到并使用该图片”。ChatGPT provider 的结构投影测试能够证明输入形成，真实模型视觉理解仍需实际账号验收。
+
+## 7. 统一回执、用量、预算和恢复
+
+### 7.1 三种事实分开保存
+
+```json
+{
+  "version": 1,
+  "requested": {"version": 1},
+  "effective": {"matched": true},
+  "observed": {},
+  "children": [],
+  "usage": {},
+  "completion": {"confirmed": true, "pendingIds": []},
+  "cleanup": {"confirmed": true}
+}
+```
+
+这是结构示意；各 harness 保留自己的有效配置、计量策略、owned identities 和原始事实。`requested` 必须与传入 options 等价；adapter 采用的默认值进入 effective，不回填或改写请求。native-event 是观察帧，不是 lifecycle ACK；只有原 durable lifecycle checkpoint 才允许推进有副作用的执行阶段。
+
+**completion 在清理前冻结。** root 停止时仍有 child 或 continuation 的 invocation 不能因为 shutdown 把它取消了，就倒推出任务已经完成。Go 只在 requested/effective、root、children、completion、cleanup 和外层进程终态相互一致时接受成功。
+
+### 7.2 并发按真实控制粒度解释
+
+`scheduler.max-parallel` 与 `scheduler.providers` 继续限制 Flywheel 根调用，不声称覆盖 harness 内部所有模型请求。DSH 每个 exact live root tree 共享的 activation 池（Team／Workflow、本地／外部 activation 共用）、本地 Agent 深度准入、Codex app-server controls、Claude 的 observed guard、Kimi 原生 scheduler 分别记录，不能统一描述成已强制的全局 token 或整树 concurrency semaphore。 DSH 本地准入也约束 Workflow 创建的真实后代深度，但不宣称控制外部 provider 内部不可观测的后代。
+
+| 后端 | 可以证明的用量 | 不完整时 |
 | --- | --- | --- |
-| DSH 桌面 host | 用户交互、准备材料、设置与状态展示 | 正式任务输入与 host 关联；准备消耗单独说明 |
-| Flywheel Go | run/packet、候选、调度、权限、预算、验收、恢复 | 冻结一次 invocation 的范围、资源和完成条件 |
-| worker / machine adapter | composition、原生请求、子任务归属、用量、清理 | 实际能力、原生身份、结果及停止回执 |
-| 原生 harness | 模型工具循环、上下文、内部协作 | 真实执行事件、结构化结果和终态 |
-| LCU / 本机 GUI | app/origin 授权、Computer/Browser 操作、媒体 | 目标和 runtime 身份、操作及图片交付事实 |
+| DSH | root 与完整本地 child 的 exclusive committed Session events | external child 无计量、journal 丢失或事件不完整 → unknown |
+| Codex | root result + 完整 owned child thread 的本次 exclusive delta | resumed child baseline 不足或丢事件 → unknown |
+| Claude | raw root result 与非可加的 child/Advisor observations | 有无法归属的 family 消耗 → total unknown |
+| Kimi | fresh root/child 的完整 step usage | compaction、旧 child、Tower 或缺失步骤 → unknown |
 
-0.33.0 将 CLI、DSH host/client、三个 workers 与四个平台 Go 二进制放入一个完整 npm
-包。`plugins/dsh` 仍是源码和构建测试目录，现为私有 harness；后续实现沿用根包的安装、
-manifest/version/size/SHA 校验及桌面迁移机制，避免额外的运行时下载或平行迁移入口。
-这次 main 更新没有为 Go driver 增加 preset/PTC/LCU 的正式能力字段。[F8]
+未知不是零。原有 hard budget 对未知用量继续阻断新的调用，不能用切换 fresh、降级 adapter 或只保留 root usage 绕过；soft/off 的既有语义由用户配置决定。当前实现不提供事前可预测的严格 token reservation。
 
-### 2.2 两个 presets 已经统一为 PTC
+### 7.3 会话身份与恢复
 
-生成器从已安装应用的 PTC 基底生成两个 presets。当前二者都设置 `presentation:'ptc'`，
-`enable` 与 `append` 都为空；生成的插件列表相同，区别主要是 ID、名称、说明和顺序。
-`setPresentation()` 同时识别旧 `tool-presentation` 和新 `tool-executor-native/ptc`，
-并替换为具体 executor 行。旧的兼容障碍已经解决。[U2]
+Go 在持久化 invocation intent 后生成 managed 身份：run、invocation、role、scope、candidate、channel 和绝对 taskDir。完整 native options 存入 session configuration，并进入历史与执行策略冻结身份；prewarm 同样绑定 composition intent，准备阶段不创建 Agent、不取得 GUI lease、不发送 prompt。
 
-生成器只更新自己管理的 preset 插入项，保留其他桌面配置和默认选择；它不负责安装
-runtime、配置账户或让所有 SDK worker 自动选中某个 preset。实际 ASAR 基底、输出
-摘要、唯一有效 executor 仍需记录，不能仅看名称。也不应建立两份手工维护的完整
-插件列表，分别给桌面与 SDK 使用。
+Pro 的原调用 native options 随 durable journal recovery 请求一同传入，恢复回执按原请求核对；更改当前配置不能重解释旧调用。Kimi Server 缺失 durable terminal 时明确保留 unknown，不假装具备 Pro 的 ACK/recovery 能力。LCU 句柄跨 runtime epoch 无效，恢复后必须从真实 runtime 重新取得对象。
 
-LCU 的当前默认 preset allowlist **同时包含 `daily` 与 `heavy`**。因此两个名称不能
-充当“无 GUI / 有 GUI”的权限边界。“重活”的说明表达使用定位；实际 CUA 可用性取决于
-安装、挂载、有效配置、授权和目标状态。[L1][L8]
+## 8. 仓库分工与分发
 
-### 2.3 PTC、模型协作与 GUI 是三类资源
-
-PTC 使用 `run_code` 编排工具；当前作用域选择最近的 executor。同一个程序里，明确
-通过 `isConcurrencySafe(args)` 明确返回 `true` 的工具调用才允许并行；省略、抛错或
-其他返回值均为排他调用。默认
-`maxParallelSubCalls=10` 是工具调用上限，不是模型 Agent 上限。[D4][D14]
-
-LCU 的 `cua` 未声明并行安全，已有 PTC 调度会约束单个程序内的调用；其他 Agent、
-其他 worker 或另一条 Flywheel run 仍可同时操作同一桌面。全局 GUI 资源必须由独立
-所有权契约协调。普通文件/HTTP I/O、额外模型推理和物理桌面输入分别计量、分别调度。
-
-### 2.4 最新 PTC 协议变化必须纳入兼容矩阵
-
-rc.3 tag 与最新 master 的 `tool-executor-ptc/package.json` 都写 `0.2.2-rc.3`，但
-master 新增 `/run-code` export，并改变了输出与图片契约。因此准入不能只按版本号
-判断，应记录实际 bundle/模块摘要、exports、工具 schema 和无副作用行为探测。[D16][D17]
-
-| 组合 | 已核对事实 | 接入条件 |
-| --- | --- | --- |
-| rc.3 发布基线 | 旧 PTC 程序输出与图片 deferred context | 使用匹配的程序模板及工具结果规则 |
-| 最新 master | TypeScript；选择性输出使用 `inspect(...)`；函数 return/最终表达式不成为结果；`read_image`/`cua` 图片适配为 `Image`，由 inspect 呈现 | 验证文本、图片、错误和取消的实际输出，不能沿用旧输出假设 |
-| master + LCU 0.4.2 | 存在下述源码组合风险，未执行真实组合验证 | 先修订图片/结构化值契约并通过夹具，再准入 GUI |
-
-具体风险是：master 的 transport 对名为 `cua` 的结果作图片特殊处理，恰好一张图片时
-返回 `PtcImage`，替代原结构化 value；多张图片会报错。LCU 的初次 app/tab 调用可以
-同时有 `__handle` 和图片，其 proxy 又依赖该 handle。两者直接组合可能丢失句柄；
-proxy 对普通对象的复制也需要验证是否保留 Image 身份。**这是源码推断，尚非真实
-Mac 复现结论**；已有 PTC 支持不能据此宣称最新组合已兼容。[D18][L2][L3]
-
-新增 `createRunCodeTool` 可把私有工具集合封装成有界 program tool，值得用作后续局部
-能力入口；它复用同一 transport，不能绕开上述问题，也不代替模型预算或 GUI 租约。
-首期仍优先已核对源码的全局 PTC overlay；工厂接口成为独立可选能力，避免强制升级全部
-用户。兼容检查至少覆盖结构化值/handle 与图片共存、零/单/多图、输出策略移除图片、
-`inspect` 的成功/失败输出，以及取消后已发生的工具副作用。[D19]
-
-## 3. 各后端现有能力与接入价值
-
-### 3.1 DSH：PTC、helpers 与 Team 分开接入
-
-| 能力 | 已核对事实 | 推荐接入 |
-| --- | --- | --- |
-| PTC | 标准 SDK 默认 native；官方 overlay 关闭 native、开启 PTC，并调整文件工具配置 | 复用 preset 策略生成受管 SDK composition，核验实际 executor [D9][D10] |
-| 本地 SubAgent | fresh/fork、消息、继续执行；每树默认最多 8 个活跃 children；delegation tool 继承的 Host 默认深度为 1，可覆写 | 先接少量探索助手，逐 child 强制权限、cap 和归属 [D2] |
-| Agent Team | 在 subagent tree 上增加持久化任务板、依赖与 CAS 认领 | 作为 invocation 内部协作，正式 packet DAG 留在 Go [D1] |
-| Web search/fetch | 可分别配置；普通 fetch 不必使用辅助模型 | 按实际工具效果开放检索和模型调用 [D5] |
-| Plan、Goal、压缩 | 各有不同交互和生命周期 | 作为后续独立能力；Plan 提示不构成权限隔离，Goal 轮数不构成累计费用预算 [D6][D7] |
-
-Team 有正式 headless 组合：标准 `sdk` 的 patch 可以配置
-`agent-team.config.defaultEnabled=true`，`sdk-minimal` 不包含 Team。默认值仅作用于
-新 root，公开 RPC 没有可直接假设的 `team/setEnabled`。关闭 Team 也不取消 children
-或清空任务板。`session/wait` 等待 root 与正在推进的后代，parked child 仍需
-drain/shutdown。[D1][D3][D8]
-
-Team 的 `writeScopes` 是冲突提示；成员共用 checkout，原生没有因此获得文件锁或
-独立 worktree。外部 SDK/ACP/Codex/Claude children 是一次执行，不具备本地 teammate
-同样的继续语义。[D1][D2]
-
-当前 Flywheel 的临时策略禁用委派、workflow/goal、schedule、web 及部分辅助模型功能；
-`agent/created` 只允许 root，bridge 拒绝子派发，usage fold 只消费 root。因此实现
-helpers 必须同时扩展策略、事件、身份树和清理，单独删除禁用列表不够。[F2][F9]
-
-### 3.2 Kimi：普通 Agent、Swarm、Tower 各有入口
-
-| 能力 | 当前公开入口 | 建议 |
-| --- | --- | --- |
-| 普通 `Agent`，含 coder/explore/plan | print 可以使用；新 Session 可通过 `--agent-file` 配置 | 作为小规模协作候选，补有效配置、子账本与 cap |
-| `AgentSwarm` | 显式 swarm mode；Server profile/prompt API 有字段 | 新增可选 Server adapter，不能给现有 print 虚构开启参数 |
-| Tower | 实验开关 + Server profile；先创建 Session 再启用 | 后期独立仓库工作单元，交回候选 patch/commit |
-| 原生 Plan / Hooks | `--plan` 与 `-p` 冲突；hooks 错误/超时 fail-open | 保留 Flywheel Plan 契约，hooks 不作唯一门禁 |
-
-当前维护项目是 TypeScript 的 `MoonshotAI/kimi-code`，旧 Python `kimi-cli` 已归档。
-Kimi print 不等于已禁用普通 Agent；准确状态是尚未受管和证明。[K1]–[K4]
-`--agent-file` 仅用于创建，不能与 `--session`/`--continue` 同用；child resume 还有
-委派白名单豁免。Flywheel 首调原生 Session ID 为空，预分配的是自己的 Request ID，
-因此创建时接 profile 不与首调身份冲突；恢复仍需绑定并核验配置摘要。[F5][K3]
-
-Server API 仍为 Beta，需对实际安装版本的 OpenAPI/AsyncAPI 核对。adapter 应拥有
-经过认证的本地 runtime/Session，停止只作用于本次工作。profile 更新不是原子事务；
-prompt 幂等记录仅存内存、每 Session 最多 256 条且重启清空；abort 不清空排队 prompt；
-Session usage 的占位零不能代表免费或实际零用量。这些都需要外层持久化意图、逐 task
-停止及用量核对。[K5][K6]
-
-停止时先撤销排队 prompt，再 abort main，并通过 WebSocket `task.stop` 停止可见的
-child/Swarm task，等待各自终态。当前 side-chat Agent turn 没有同等公开 stop 接口，
-受管 profile 应禁用它，或先实现并验证对整个隔离 runtime 的所有权与关闭；不能将
-`:abort` 宣称为“全部子任务已停止”。[K8]
-
-Tower 已承担 mission、worker/reviewer、分支、worktree、review 和 merge 职责。本次
-没有查到可直接关闭全部编排只借 workers 的公开模式。禁用某个 merge 工具仍不足以
-限制 Bash/Git；普通 worktree 还共享 Git 元数据。未来试点应在独立仓库副本中运行，
-限制正式状态与交付凭据的访问，由 Flywheel 在外部验证候选。[K7]
-
-### 3.3 Codex：扩展已有 machine 的 controls 与 events
-
-Codex 当前文档中的 `agents.enabled` 默认 true，并发项为
-`agents.max_concurrent_threads_per_session`，`agents.max_threads` 是兼容别名。
-child 继承父 sandbox/approval，自定义角色文件不能另设它们；explorer 名称不证明
-只读。app-server 有 thread start/resume/fork、turn interrupt、native review 和协作
-事件，应核对实际 CLI schema。[O1][O2]
-
-当前 Codex Pro machine 0.9.0 以 root thread 为中心，过滤其他 thread 的部分通知与
-用量，初始化 `experimentalApi:false`；Flywheel 尚未接入完整 child 事实。machine
-已有的图片与结构化结果能力也未成为 Flywheel 的通用输入契约。[F3][F12]
-优先扩展用户已有插件，保留订阅登录，再提供受管只读探索、`review/start` 和媒体/结果
-透传。正式 Reviewer 保持独立上下文；从 Executor 私人历史 fork 出来的 child 不能
-直接替代它。没有传 agents 参数也不能记录为已关闭所有协作。
-
-### 3.4 Claude：小型子代理、Workflows 与远端任务分别处理
-
-| 能力 | 用途 | 必须独立处理的边界 |
-| --- | --- | --- |
-| Subagents | 专项调查、假设检查、小范围审查 | tools/agents、实际模型、子事件和父权限继承 |
-| Dynamic Workflows | 同构批量分析、迁移、交叉检查；支持 `claude -p` | 受管脚本、并发及累计任务上限、所有派发机制 |
-| Agent Teams | 多 Session 共享任务/消息 | 实验状态、teammates 恢复与关闭 |
-| Ultrareview | 云端多代理代码审查 | 独立 job ID、查询/取消、账户条件与发帖授权 |
-| Advisor | 满足模型/账户条件时的第二意见 | 单独的模型与费用授权，避免和 JEV 重叠 |
-
-Workflows 默认最多 16 个并发、累计 1,000 个 agents；CLI `2.1.269` 起支持
-`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`。普通 Agent 的 cap 与 Workflow cap
-分开。`ultracode` 会绕过普通 Agent 的会话子代理并发限制；需要严格上限的 profile
-应排除该模式；`/subtask` fork 和已完成 child 的 resume 也可占槽而绕过普通 cap，
-须限制这些入口或证明其额外上界。组织 `availableModels` 还可能把受阻的请求模型替换成其他模型，必须
-在派发前排除未授权替换，回执再核验实际绑定。[C1][C3]
-
-当前 Flywheel Claude bridge 只接受 `danger-full-access`；这是本项目 bridge 的约束，
-不能泛化为原生插件只支持该权限。原生 user/project/local settings 会加载，但当前
-machine 协议未受管 agents、Team/Workflow 与子树。父 bypassPermissions 不能靠
-child 的 `permissionMode:plan` 收窄，工具白名单也不等于 OS 只读隔离。[F4][C1]
-
-Workflow 的恢复会按启动顺序匹配旧调用；失败或提示变更后，后续已完成 Agent 也可能
-重新运行。因此新增 child attempt/generation、脚本与输入摘要、候选和副作用记录；
-初期优先只读分析，写入任务不能直接依赖原生 resume 自动重放。Teams 的 teammates
-要求 interactive session，当前 `claude -p` machine 通道不支持它；后期必须单独实现
-可观测的交互式 adapter，设置一个环境变量不足以完成接入。[C2][C3]
-
-`claude -p '/code-review ultra'` 不等待完整审查，应使用专用 `claude ultrareview`
-接口并处理远端责任；本地进程结束不能代表云端取消，重启调用可能再创建一份审查。
-默认不发 PR 评论；订阅登录路径保持现有方式，不用要求 API key 的启动选项替换它。
-Claude 继续是显式选用的可选后端。[C2]–[C6]
-
-## 4. 统一能力意图与运行事实
-
-推荐统一“需要什么”和“实际发生什么”，让各 adapter 保留真实差异。以下是拟议
-profile/receipt 的内容，不是已经支持的配置 schema。
-
-| 内容 | 必须表达的事实 |
+| 仓库 / PR | 本次交付 |
 | --- | --- |
-| 身份与来源 | harness/adapter/CLI/schema 版本；模型、provider、账户渠道；cwd 与 candidate |
-| 组合 | runtime profile、preset ID/修订、生成输入与输出摘要、有效 executor、模块 exports、输出/图片协议、插件版本及实际工具注册 |
-| 使用意图 | PTC、普通检索、结构化结果、受限 helpers、内部 task board、GUI、隔离 mission 或远端 review |
-| 权限与资源 | root/child 实际权限、允许模型/工具/目标、模型槽位与工具并发、GUI lease、剩余时间 |
-| 观测 | requested / effective / observed、支持或拒绝原因、证据来源与观测时间 |
-| 生命周期 | root 和可见 child/task 身份、可能派发、取消、终态、清理与恢复能力 |
-| 用量 | 可信 aggregate 或去重后的 children、未知项、在途用量、硬预算与软停止的实际能力 |
-| 媒体 | 截图成功、图片交付实际模型、证据进入 run 三个独立事实 |
+| [flywheel #44](https://github.com/ckanner/flywheel/pull/44) | 配置与 schema、Go drivers/state/history、DSH/Kimi adapters、native job CLI、工作台选择、资源/媒体回执、单包构建与完整文档 |
+| [dsh-preset-generator #1](https://github.com/ckanner/dsh-preset-generator/pull/1) | 0.4.0 composition API、PTC 静态身份与真实准入契约、daily/heavy 兼容 |
+| [dsh-plugin-lcu #1](https://github.com/ckanner/dsh-plugin-lcu/pull/1) | 0.5.0 受管 Agent API、epoch/handle、物理收尾、媒体和桌面生命周期修复 |
+| [dsh-subagent-codex-pro #6](https://github.com/ckanner/dsh-subagent-codex-pro/pull/6) | 0.10.0 原生 controls/events/accounting/completion 与独立 review |
+| [dsh-subagent-claude-code-pro #2](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/2) | 0.5.0 Agent/Workflow/Advisor、远端 Review、交互 Team、恢复和实际并发观察 |
+| [dsh-plugin-chatgpt #8](https://github.com/ckanner/dsh-plugin-chatgpt/pull/8) | 0.1.19 attachment/image 投影、取消协议、公开依赖兼容与真实安装 |
 
-能力显示“可用”之前要核对实际生效的配置与工具注册，不能只看包已安装或 schema 中
-出现 `cua`。静态 probe 只能证明静态事实；实际目标授权、runtime 连接、模型视觉路由
-及 GUI lease 属于调用准入，并有自己的有效期。
+Flywheel 仍只发布一个 `@ckanner/flywheel` 包，包含 CLI、DSH host/client、四个 workers、内嵌 skills 和四个平台 Go 二进制。Codex 0.10.0 与 generator 0.4.0 以真实 tarball 锁定并 bundle；Claude 0.5.0 和 LCU 0.5.0 为 optional peer。ChatGPT 是 DSH provider，是否使用由已选 DSH composition/account 决定。
 
-拟议选择语义：
+五个配套候选都在 `plugins/dsh/vendor/*.json` 记录可取得的 source commit/tree、tarball hash、integrity、许可证和未验证 registry 发布状态。CI 从固定 Claude commit 复现并核对同一候选；正常 npm resolver 必须通过，不使用 force/legacy-peer 绕过兼容。提交 PR 不等于执行 npm publish，也不修改用户安装。
 
-- `off`：核验该能力的原生入口实际关闭；缺少显式开启参数不是关闭证明。
-- `prefer`：仅在确认没有任务相关模型/工具派发、清理已完成，且普通路径满足相同
-  约束时回退。已完成的无推理 probe 单独记录；未知探测责任仍阻断回退。
-- `required`：必要能力缺失就在首次可能派发前拒绝，说明原因，不隐式更换权限、
-  模型、账号或付费渠道。
+## 9. 验证策略与实施后的判断标准
 
-任何可能已派发、旧 child 活跃、工具副作用未知或清理未知的情况，都保留原 invocation
-用于核对。Go、SDK、adapter 不能各自重试一次制造重复任务。启动 hook 和恢复 Session
-也可能发生活动，启动异常不能自动证明“尚未派发”。
+必须通过 Go `make quality-gate`（每个计量函数 100% statement coverage）、DSH 完整 Node 行为与旧宿主兼容、四种 Go→Node 实际进程桥接、实际公开 Pro API、真实 PTC/Team/LCU 接缝、Kimi 本地 HTTP/WS 和真实 Git 候选、npm 启动器、36 项实际引擎 session 场景，以及包含四平台二进制的单包安装。测试使用确定性模型/runtime fixture 时明确标识，不称为真实模型验收。
 
-## 5. DSH composition 的推荐落地路线
+运行证据至少覆盖：错误 native config 不派发、模型/账号不静默改变、foreign child 不入树、旧 terminal 不覆盖新 epoch、root 结束但 child 仍活跃不成功、取消与清理分离、journal 写失败不释放 GUI、图片多块顺序与 hash、候选冲突保留、unknown usage 不变零、恢复不重放副作用。
 
-### 5.1 路线 A：受管 SDK 全局组合，优先实施
+实际收益另行用相同任务与候选比较质量、返修次数、耗时、用量与 GUI 成功率；不从“有多 Agent”推断更快或更省。Mac TCC、Chrome 扩展、真实账号能力、实时模型视觉与 Claude 云端权益仍需用户机器的独立验收，不能由离线绿灯代替。最终已运行项目、失败/跳过和未运行范围见[验收记录](../validation/2026-11-14-native-harness-implementation.md)。
 
-沿用当前标准 SDK 入口，由 Flywheel 生成版本化的临时 overlay。复用官方 PTC overlay
-和生成器的能力策略，核验 native/PTC executor 的最终选择及工具 schema/执行一致性。
-共享的生成逻辑应是纯粹的策略/组合转换，输入包括固定的 DSH 基底与插件版本，输出
-可审查且有摘要；避免复制两份完整 preset 列表。[U2][D10][D14]
+## 10. 主要源码与研究依据
 
-此路线不依赖 named preset，适合尽快启用正式 loop 的 PTC。当前 LCU 却按 Agent 的
-preset 判断是否挂载：先查 registry 的 composed preset，再查 session header；两者
-都没有就跳过。SDK server 目前从全局组合创建 Agent，不挂载 preset roster。[L1][D11]
+当前行为以[架构](../design.md)、[native schema](https://github.com/ckanner/flywheel/blob/main/templates/native-profiles.schema.json)、[worker 协议](../../plugins/dsh/PROTOCOL.md)、[Kimi 协议](../../plugins/dsh/KIMI_NATIVE_PROTOCOL.md)及同 PR 的源码/测试为准。历史研究保留在前述原提案，本次适配器来源固定在 vendor 记录。
 
-因此，**LCU 的受管 SDK 挂载需要新增公开入口**：由可信 host/adapter 传入已经核验的
-root、invocation、能力配置和 GUI 所有权，LCU 验证后注册 `cua` 并返回实际挂载回执。
-继续保留桌面 preset allowlist 的现有行为；不伪造 `header.agentPreset`，不借测试
-override 绕过 host guard。这个入口还应明确 revoke/dispose 与清理结果，不能只加一个
-全局“允许所有 Agent”布尔值。
-
-### 5.2 路线 B：公开的 Agent Preset 创建接缝，后续可选
-
-rc.3 已有公开 registry API：`agentPresets.mount(ctx, id)` 在尚未发布 Agent 的 creation
-`setup` 中绑定当前 preset 修订；`composeFrom(ctx, parent)` 使 child 继承父的确切
-修订。但标准 SDK server 没有暴露该 preset 创建接缝，也不存在可直接填的
-`preset=heavy` RPC 参数。[D11][D13]
-
-如果需要正式 loop 直接选择 daily/heavy，可通过受维护的 SDK 创建扩展或上游公开
-协议实现，再验证 preset mount、LCU 初始化顺序、root/child 策略和会话恢复。避免
-私自 patch SDK 内部实现。存活 Agent 绑定的修订可以稳定保持；重启或恢复时按相同
-preset ID 选择的是当前定义，不能声称代码被永久冻结。恢复必须比较实际组合摘要。
-
-两条路线共享能力意图、证据与测试。先用 A 打通受管 PTC，再根据 named preset 的
-维护收益决定是否做 B；不把完成 B 作为全部原生能力的前提。
-
-## 6. LCU：复用现有桥接，补齐 GUI 契约
-
-### 6.1 已有接口与实际依赖
-
-LCU 0.4.2 已注册结构化 `cua` 工具，并提供
-`connectCua(request => tools.cua(request), …)` 形式的代理，使 `run_code` 中的
-`cua.getApp/getTab` 和 handle 方法转成 `{target?, method, args}` 调用。内部仍调用
-ChatGPT CUA MCP 的持久 REPL `js`：先执行并保存结果，再用短调用读取结果标记；图片
-走单独的内容投影。现成 bridge 已完成程序化接入，无需重新让模型拼嵌套 JS。[L2][L3]
-
-实际 runtime 依赖 Apple Silicon macOS、本机 ChatGPT.app、其随附 Node/CUA runtime
-和 Sky helper；浏览器路径还依赖官方扩展与 desktop native host。LCU 本身不要求
-Codex/ChatGPT 模型登录，也不需要 Python/amontlabs LCU 包；模型账户和 GUI runtime
-是不同依赖。Screen Recording/Accessibility 等 TCC 权限需要核验实际负责进程，
-SDK 启动方式必须在用户 Mac 上单独验收。[L7]
-
-### 6.2 授权与挂载：保留真实的人和目标边界
-
-当前 LCU 先检查 `userQuestions` 服务；缺失时即使配置了目标 allowlist 也会取消。
-服务存在时，native app 先通过 host guard，再按精确 bundle ID 预授权；浏览器按精确
-origin 预授权；其他目标需要真实用户回答。[L1]
-
-标准 rc.3 SDK 的 base 已挂载 `userQuestions` 服务。当前 Flywheel initialize 没有
-开启 `capabilities.userQuestions`，也没有回答请求处理，所以缺的是正式 host 问答转发。
-源码允许已精确预授权的目标在服务存在时自动接受；需要新增人类回答的目标，还须
-接通 SDK capability 与真实回答通道。服务存在、已预授权、可以互动回答是三个不同
-事实，均需在实际组合中核验。[D11][D15][F2]
-
-方案应保留用户已有的准确授权，避免每轮重复确认；同时提供可用的 host approval
-转发，或经明确设计验证的预授权通道。模型不能代答，未知/错误/cancel 不能转为
-allow。`full-access`、`approval=never`、文件沙箱和 worktree 都不授予 GUI app/origin
-权限。host guard 对宿主/Agent host/终端的保护继续有效。
-
-问答关联 run、invocation、root、lease/runtime epoch、精确 app/origin 和原生 question
-ID。取消、换 owner、换 runtime 或目标变化后的迟到回答不能批准新动作。有效既有
-授权按其原范围复用；授权事实与操作实际执行分别记录。
-
-当前 LCU 按 Agent/preset 挂载，并未因 child 身份硬性禁用全部工具。首期方案主动
-只给受管 root CUA 能力，helpers 分析代码或冻结的媒体产物。DSH 子代理的人类
-交互本身受 root 存活等条件限制；先不扩散 GUI 审批与操作权。若提供“观察 / 交互”
-配置，必须在方法和目标层验证读取/动作限制；当前通用 bridge 没有完整的只读策略，
-不能以提示词“只观察”宣传只读隔离。[L1][L2]
-
-当前挂载失败会记录警告并让 Agent 继续运行，preset gate 主要在挂载时判断；切换到
-不允许的 preset 不足以证明旧连接即时撤销。对于 `required` GUI，adapter 必须在
-派发前拿到真实工具/连接/授权能力回执；对于 revoke，要等待动作停止与清理回执。
-
-### 6.3 一台桌面只有一个受管操作者
-
-新增由 Go 管理的 GUI resource lease，首期粒度为实际 host/display/desktop session，
-覆盖整个 GUI invocation。每个 Agent 独立连接、独立 REPL，仍然面对共享的焦点、
-鼠标、键盘和浏览器状态。当前 packet `schedule` 仅有 `after`/`writes`，现有 model
-slots 按 channel 计数；它们都没有表达桌面资源。[F10][F13][L2]
-
-| 设计点 | 推荐规则 |
+| 上游 | 已核对的一手来源 |
 | --- | --- |
-| 覆盖范围 | 所有 serial/parallel、Quick、手动 stage 路径共用准入；跨 run/进程共享 owner/broker |
-| owner | 持久化 run、role/packet、invocation、runtime epoch、目标与资源身份 |
-| 取得顺序 | 先取得 GUI 再消费模型槽，或原子取得整组资源；若没有模型容量且尚未派发，释放临时 GUI 预约并重新排队 |
-| 释放条件 | 停止新动作、确认 turn cleanup 与实际 runtime 收束后释放；PID/超时/TTL 不能单独证明清理 |
-| 首期范围 | GUI root 独占；代码/文件任务可继续并行；冻结截图的离线分析可并行 |
-| 可见状态 | 等待哪个资源、当前 owner、取消中、清理未知、可恢复的原因 |
-
-租约只能协调遵守它的参与者，无法阻止人或其他未受管程序操作桌面。动作前后要检查
-目标、页面/窗口和状态变化；遇到外部干扰暂停并重新观察。未来按 app/window 分锁
-需要先证明没有焦点、输入或 native runtime 的交叉影响。初期整调用独占较保守，
-但规则清晰且可验证；后续再用真实等待时间决定是否细化。
-
-### 6.4 epoch 与对象句柄：应用升级后重新取得目标
-
-CUA 代理对象存于每个 native REPL 的内存 map，句柄形如 `h1`，没有跨 runtime 的
-持久对象恢复；`tab.id/title/browserId` 等属性也是取得对象时的快照。[L2][L3]
-当前 `ManagedSession` 检测 ChatGPT.app generation 变化后会先创建新连接、迁移
-session ID，再关闭旧连接；对象 map 不会随之转移。旧 `h1` 可能失效，也可能在新
-runtime 中碰撞到另一个对象。[L4]
-
-受管路径必须给 handle/proxy 加上 worker/session/runtime epoch 归属，跨代拒绝旧
-句柄并清空代理缓存。需要正式 generation 事件或受管模式下关闭透明替换；新 runtime
-取得 GUI 操作权前确认旧 runtime 已停止。重新取得 app/tab、捕获新状态后才继续，
-不透明重试旧指令。仅名称相同、Session ID 相同或进程重启成功，都不能恢复旧对象身份。
-
-### 6.5 取消与清理：区分请求、确认和物理停止
-
-LCU 已使用真实 session ID、每 turn UUID 和 `turn_ended` Stop/Interrupt；wrapper
-经 ChatGPT 的 signed client IPC 执行清理。一类清理超时会设置 pending gate，在下一次
-CUA 调用前重试，这是可复用的基础。[L1][L5]
-
-但当前 request abort 只拒绝本地 pending promise，没有向远端发送取消；部分 cleanup
-失败只记警告；helper 重试有限；dispose 的 close 未提供等待完成的外层回执。
-`close()` 的 stdin→TERM→KILL 路径最后一次退出等待也没有检查布尔结果。因此，
-“Promise 被取消”“root 返回”“调用了 close”不能分别充当 GUI 已停止的证明。[L1][L5][L11]
-
-建议对每次调用记录：取消请求已接受、新动作已封锁、排队输入已处理、turn cleanup
-已确认、受管 runtime/后代已退出或可证明静止、lease 已释放。失败或未知状态继续
-占有清理责任，并阻断下一位 GUI owner；提供核对/恢复入口，避免静默重试。
-`cua.stopApp` 是当前 turn 内某个 app 的停止手段，不等于全局 cleanup 或撤销用户授权，
-也不需要在每次普通成功后随意调用它。
-
-### 6.6 截图：内部视觉与正式证据分别核对
-
-LCU 当前会校验图片 MIME/base64，并按 Agent 的实际 provider/model route 调用
-`resolveModelInfo` 验证 image input；附件存储成功后返回 DSH image content，可用时
-还附 host path。无法解析路由、模型无图像输入、无附件 store 或保存失败时，图片会
-变成诊断文本。[L6]
-
-所以 Flywheel 外层 prompt 只有文本，并不意味着内部 DSH Agent 看不到 LCU 截图。
-需要分别记录 **captureSucceeded、imageDeliveredToModel、evidenceAttachedToRun**。
-以上名称只是拟议事实字段。不能把“截图成功”的文字当图片交付，也不能把内部模型
-看过图片当成独立 Reviewer 已经取得证据。
-
-还须按 §2.4 区分旧 deferred context 与新 Image/inspect 通路，确认图像确实进入模型
-输入；LCU 生成 image block 不足以证明后续 PTC transport 与 proxy 没有丢失它。
-
-拟议媒体 manifest 绑定候选 commit/build、target/tab、viewport、runtime epoch、
-观测时间、实际模型路由、图像 hash 和 artifact reference。外部 host path 必须在允许
-范围内读取、复制并核验 hash，不能盲信模型返回的路径。独立 Review 可读取同一候选
-的冻结图片；需要再操作 UI 时，取得新的 GUI lease 并重新确认目标与状态。
-
-LCU 当前接在 DSH。Kimi 前端模型可以评估单独的结构化图片输入，但不能因此自动把
-Kimi loop 改经 DSH，或偷偷替换为有视觉能力的另一模型。GUI 与媒体 profile 必须验证
-实际选定路由满足需求，能力缺失时按 §4 的选择语义处理。
-
-## 7. 各 loop 如何使用
-
-以下是推荐试点，模型默认保持当前[模型策略](../zh-CN/model-policy.md)：DeepSeek Flash、
-Kimi K3.1 Pro、既有 ChatGPT/Codex 订阅路径；Claude 显式可选，不加入智谱或付费后备。
-能力名称不构成模型排名；同一模型下先比较执行方式，再单独比较模型/effort。
-
-### 7.1 保留当前绑定，在其实际 harness 内选能力
-
-| 当前阶段 / 路由 | 新安装模板的实际绑定 | 首期能力选择方向 |
-| --- | --- | --- |
-| Plan | Kimi CLI / K3.1 Pro / high | 受管普通 Agent；需要 Swarm 才显式选 Server 路径 |
-| Execute default | DSH / DeepSeek Flash / high / deepseek-account | 受管 PTC，随后少量受限 helpers |
-| Execute frontend | Kimi CLI / K3.1 Pro / high | 原生工具与媒体读取；LCU 需单独配置有资格的 DSH 调用 |
-| Execute hard | Codex Pro machine / GPT-6.1 Sol / high | 扩展当前插件的 controls/events 后使用原生助手 |
-| Review | DSH / GPT-6.1 Sol / high / chatgpt | 独立 DSH PTC 评审，可读取冻结媒体 |
-| Judge | DSH / GPT-6 Astra / high / chatgpt | 以既有证据为主，按需补独立分析 |
-| Intake | DSH / DeepSeek Flash / low / deepseek-account | 单代理、低固定开销与结构化结果 |
-| Garden | Kimi CLI / K3.1 Pro / high | 原生检索，后续按任务选择有界协作 |
-
-上表来自当前模板，不覆盖用户配置；Claude 仍为显式可选。桌面 Codex/Claude 插件注册
-的工具可以由 heavy 的 PTC executor 调用，正式 machine API 则不经过这层桌面工具；
-目前两个 Pro 仓库的新提交也没有新增受管 child controls。不能因工具能从 `run_code`
-调用，就推断 Flywheel 已取得子代理计量与恢复能力。[F1][P1][P2]
-
-### 7.2 各环节的工作与验收
-
-| 环节 | 推荐原生能力 | LCU / 媒体用途 | 最终责任 |
-| --- | --- | --- | --- |
-| 宿主准备 | 用户重活 preset 的 PTC、现有工具 | 观察现状、收集参考与明确授权 | 形成可校验输入；准备消耗与正式引擎分开 |
-| Intake | 工具检索、结构化输出，通常单代理 | 读取已有截图附件 | 原 Intake 契约和预算 |
-| Full Plan | helpers 分查接口、测试、兼容性，主 planner 汇总 | 必要时受管观察现有 UI，再冻结证据 | 单一正式 planner 写 Spec/packet |
-| Investigation | helpers 分别检查假设和证据 | GUI root 复现界面路径，记录前后状态与操作 | Go 管理诊断、修复交接与真实执行回执 |
-| Execute | PTC；主执行者写、助手研究；有结构时使用 Team/Workflow | 受管 DSH 路线对当前 build 作交互检查 | 原 packet、保护路径、验证和交付 |
-| Review | 独立上下文，分角度审查同一候选 | 分析冻结媒体；复测时重新取得桌面 | 独立 Reviewer 汇总原 verdict |
-| Judge | 按需要聚合额外证据 | 比对已冻结验收和对应候选证据 | 原 Judge/oracle；一致意见不能覆盖失败 |
-| Garden | 跨任务模式检索与归纳 | 一般使用既有产物 | 原整理范围，不重写冻结状态 |
-| Quick | 低固定开销，明确可并行时才加少量 helpers | 有 UI 验收要求才单独取得 GUI | 保留最终独立 Review 与候选验证 |
-
-单 writer 必须有执行层约束。DSH 可研究逐 child 注入更窄策略；对于无法收窄 child
-权限的后端，可将整次调用设为真正只读，或由 Flywheel 启动独立受限 worker。
-full-access child 的“不要修改”提示不算只读证明。跨 packet 并行继续由 Go 调度，
-不会把全部写入者塞进一个共享 checkout 的原生 Team。
-
-前端实例：Execute 产出候选 A，受管 GUI root 在对应 build 打开页面、操作并保存证据；
-它停止且释放 lease 后，独立 Reviewer 查看 A 与冻结图片。若需要复测，Reviewer
-作为新 owner 重新观察并操作。发现问题则返回原修复流程，新的候选 B 使用新证据。
-这使 LCU 成为可验收能力，而不是独立于候选版本的一组截图。
-
-## 8. 并发、计量、会话与恢复
-
-### 8.1 模型并发采用可证明的控制粒度
-
-首期采用整组预留：root 加最大允许 children 一起取得额度，再由原生 runtime 强制
-真实 cap。例如 root + 最多 2 个 children 占 3 槽；全局 6 槽最多接纳两组，数字仅为
-试点示例。这样不要求每次 spawn 都存在一个原生尚未提供的 Go RPC，也避免多个 root
-各自占槽后等待 child 额度。
-
-多种派发机制可并存时，预留合计上界或显式互斥；普通 Agent、Workflow、Team、
-`ultracode` 等绕过路径必须纳入探测。没有可验证 cap 的模式不能承诺严格全局并发。
-停止中或清理未知的组继续承担责任。工具内部若调用模型，也进入相应模型预算，
-不能借 PTC 工具并发绕过。GUI 的资源取得顺序按 §6.3 统一执行。
-
-现有 scheduler 同时约束全局 slots 与 channel。P1b 首期限定 helpers 在同一个已批准
-channel，仍核验实际模型；若开放跨渠道，启动前原子预留全局上界及每个 channel/account
-的上界向量。同一真实账号的配置别名不建立独立额度池；无法证明 child 路由或上界时
-拒绝该多渠道 profile，不能将所有消耗归到 root channel。[F10]
-
-### 8.2 用量与预算
-
-并发限制不等于累计 token/金额硬限额。事后 usage、阈值告警和异步取消提供的是
-对应的观测与软控制，可能仍有在途消耗。严格累计预算只准入确实支持且验证过的路径。
-缺失 usage 保留 unknown，不能将占位零、context size 或订阅解释为零费用/无限额度。
-
-按原生请求身份去重，采用“已包含 child 的可信父汇总”或“去重后的逐 child 汇总”
-之一，不能两者相加。历史累计、当前调用、cache、模型 token、API 等价估价和真实
-订阅账单分别记录。源码证明的是机制，费用和速度收益需要同条件实验。
-
-### 8.3 归属、恢复与预热
-
-扩展现有 invocation journal：必须有引擎 root invocation、run、role/packet、Request
-ID、候选、配置摘要与结果/清理状态。原生 root ID 在协议确认后绑定；只有真实存在的
-child/task/job ID 才记录，不给 aggregate-only 后端捏造树。无法满足所需权限或恢复
-粒度的 profile 不准入。
-
-取消顺序为停止新派发、处理队列、取消已知工作、等待终态和清理、保存回执。
-本地进程组收束不能代替远端 job 终止证据，GUI 还须满足物理停止契约。网络断开或
-parent 被杀时先核对原调用，不自动重新创建 Swarm、Workflow 或云端 review。
-
-当前 Session/预热 binding 覆盖模型、权限及运行环境引用，但 profile 路径/名称不能
-捕获文件内容改变。应加入实际 preset/SDK overlay、executor、工具策略、LCU/target
-policy 的摘要，以及会影响授权的 runtime 身份。[F11][F14][F15] 同名 preset 已变化、旧 board、
-旧 mode 或恢复 children 不自动获得新调用权限；必须重新核验。
-
-预热只做允许的无推理运行时准备，不创建正式 Session、child、模型调用或 GUI 操作，
-不提前取得长期 GUI lease。composition probe 与正式准入分开，预热项须按扩展后的
-binding 复用或失效。当前新安装模板的 scoped/parallel/batch/prewarm=false/full-access
-与旧配置缺省归一化不同；实施基于实际有效配置，不借本方案重置用户设置。[F1][F14][F15]
-
-## 9. UI 与 JEV 的设计
-
-设置按用户要完成的行为组织，避免为每个品牌复制一组看似相同的开关。保留现有唯一
-JEV 总开关；静态角色 profile 在 JEV 关闭时照常工作。JEV 只从 Go 已核验能力、权限、
-资源和预算的候选里提出选择，开启 JEV 不自动授权 GUI、Team 或新模型。
-
-| UI 区域 | 用户需要决定或看见的内容 |
-| --- | --- |
-| 原生执行 | 是否按阶段使用；每个 loop 引用的能力方案；默认保留现有绑定 |
-| 工具与协作 | PTC/结构化结果、helpers、Team/Swarm/Workflow 的实际可用性和限制 |
-| Computer / Browser | 单独启用与目标授权；请求/有效/实际 CUA 状态；观察模式仅在强制策略存在后提供 |
-| 资源 | 模型额度、GUI 等待原因与当前 owner；不把 PTC 并发显示为模型数 |
-| 运行记录 | 实际 executor、preset/配置修订、模型路由、能力拒绝原因、图片交付与证据状态 |
-| 停止与恢复 | 正在停止、清理已确认或仍未知；下一步核对动作 |
-
-基础页只呈现高频决定，高级上限和版本证据放入详情。不可用项展示具体原因，避免
-看起来可以开启但从未生效的“影子开关”。设置变更对下一次合法准入生效；正在运行的
-调用需要完成关闭和清理，不通过隐藏开关抹除责任。UI 显示 Go 的事实，不在浏览器端
-再实现一套调度器。
-
-现有 `scheduler.dispatch` 管正式 packet 调度，`scheduler.prewarm` 管受限初始化准备，
-两者继续各司其职。L1/L2/L3、保护路径、独立 Review、同一候选与 Git 交付规则保持由
-引擎执行。UI 的新增配置需与 schema、CLI、diagnostic、docs 一起交付。
-
-## 10. 实施阶段与仓库分工
-
-| 阶段 | 交付 | 完成条件 |
-| --- | --- | --- |
-| P0：事实和准入契约 | 有效能力 probe、组合摘要、requested/effective/observed、明确 off、资源与回执设计 | 同版本不同 PTC 行为可区分；恢复/预热 binding、媒体和 GUI 资源字段有版本化契约 |
-| P1a：受管 PTC 与结果 | 路线 A、共享生成策略、DSH PTC/普通检索、结构化结果适配 | executor/工具一致；错误与结果不绕过原 schema；无需 GUI 即可验收 |
-| P1b：少量 helpers | 先 DSH 本地受限 helpers，再扩展已有 Kimi/Codex/Claude 入口 | 实际 cap、权限、父子计量、停止和恢复均可证明 |
-| P2a：受管 LCU | 正式 SDK 挂载、root CUA、审批、跨 run GUI lease、epoch、媒体与停止回执 | 用户 Mac 端到端通过，未知清理阻断下一个 owner；图片与候选证据闭环 |
-| P2b：有结构的协作 | DSH Team、可选 Kimi Server Swarm、受管 Claude Workflow | 各自模式/队列/派发/后台责任/计量矩阵通过，不要求同日交付 |
-| P3：复杂运行单元 | Tower 独立仓库、交互式 Teams、远端 review、隔离多 writer、显式压缩控制 | 每种能力独立所有权、权限与生命周期，完成代表性对比 |
-
-P2a 与 P2b 可在各自依赖满足后并行；LCU 不必等待所有 Team/Swarm 能力完成。桌面 PTC
-已经存在，新增的正式引擎能力初期 opt-in，等收益和失效行为验证后再讨论默认开启。
-
-| 仓库 / 模块 | 后续实现责任 |
-| --- | --- |
-| `dsh-preset-generator` | 提取/复用版本化纯生成策略、输出 provenance；继续保护用户桌面配置 |
-| `dsh-plugin-lcu` | 新旧 PTC 图片/handle 兼容、公开受管挂载/撤销接口、授权通道、epoch-aware handle、可等待清理回执、媒体事实 |
-| DSH SDK / composition 扩展 | 路线 A 使用公开组合；路线 B 单独提供正式 creation seam，并验证修订/child 继承 |
-| Flywheel `plugins/dsh` | bridge/policy/protocol、实际能力 probe、事件与媒体投影、client/host 状态展示 |
-| Flywheel `internal` 与 contracts | 资源准入、journal/session/prewarm、driver 请求回执、schema/migration、恢复和验证 |
-| 现有 Codex/Claude machine 插件 | 公开 controls/events、有效配置、子运行与用量，继续复用登录 |
-| Kimi adapter | 保留 print；Server 为可选新增路径，独立拥有认证 runtime 与任务生命周期 |
-
-新字段先进入 `docs/design.md` 与相应协议/schema 的正式设计，再实现兼容解析、状态迁移
-和测试；此方案目前只在架构文档加入未来方向链接。根 npm 单包继续负责发布和安装，
-不把源码目录当成需要用户另装的第二个 Flywheel 产品。
-
-## 11. 验证与收益评估
-
-### 11.1 行为验收矩阵
-
-| 场景 | 验收要求 |
-| --- | --- |
-| 新旧 executor 基底、同名 preset 改动、恢复/预热 | 两种生成输入受支持；实际 executor 唯一；摘要变化使不兼容状态失效 |
-| 同版本不同 PTC 协议、handle+image、零/单/多图、Image 身份 | 按实际 bundle/export/行为区分；结构化值与图片不互相覆盖；inspect/错误/取消符合真实运行契约 |
-| SDK 未挂 preset、LCU attach 失败、无 `userQuestions`、未知 image route | 状态准确；required 在任务派发前拒绝，既有授权不被伪造或重复索取 |
-| 两个 GUI run、serial/Quick/manual、无模型槽位 | 全部经过同一资源准入；无交叉输入和资源占用死锁 |
-| 人或未受管应用改变焦点/页面 | 检测目标变化，暂停并重新观察；不声称租约提供物理桌面隔离 |
-| ChatGPT.app 更新、REPL reset、旧 `h1`、连接替换 | epoch 不混用；先确认旧操作停止，再取得新对象和状态 |
-| request abort、cleanup timeout、helper 退出失败、root 被杀 | 不能凭本地 Promise 或最终超时释放 GUI；责任可持久核对 |
-| 截图成功但模型不支持图片、附件失败、host path 越界 | 区分三项媒体事实；诊断文字不伪装成图像证据 |
-| 原生默认开协作、Agent 与 Workflow 并存、超深/挂起 children | 明确 off、有效 cap、整组额度、队列与清理都成立 |
-| Claude fork/resume 绕过、Workflow 重放、Kimi side-chat 不可停止 | 未覆盖入口拒绝准入；按 attempt 区分重放，已完成写入不静默重做 |
-| 多 channel children、账号别名、迟到 GUI 回答 | 按真实账号整组预留；迟到回答不能授权已取消或不同 owner 的调用 |
-| helper 越界写、Bash/PTC/MCP 绕过、用户 agents 覆盖 | 逐权限路径验证；不能强制的限制不宣称支持 |
-| usage 重复/丢失/占位零、父包含 child、服务重启 | 去重且保留 unknown；断线不自动重复创建任务 |
-| Team 完成但 oracle 失败、Review 继承 Executor 历史、候选已变化 | 原验收/独立性继续生效；媒体/结果绑定确切候选 |
-
-实现时需要真实 SDK/CLI 协议夹具、故障注入和用户 Mac/订阅路径端到端验收。涉及 Go
-时遵守仓库逐函数 100% 语句覆盖要求，并运行相关 Node/bridge/race 门禁。本次文档
-修改只验证文档范围、链接/锚点、引用、双语一致和独立源码评审，不以无关运行套件
-替代这些未来验收。
-
-### 11.2 是否值得默认开启
-
-选取 Quick、复杂调查、跨模块功能、真实 UI 回归、批量迁移、植入缺陷 review、长会话
-与中断恢复。固定 HEAD、候选/验收、模型/effort、账户、权限、输入、版本和资源条件，
-顺序交错比较明确单代理、PTC、小型 helpers、GUI 证据、Team/Swarm/Workflow。
-
-记录最终/首次验收率、漏报误报、返工、总耗时 p50/p95、token/cache、可观察订阅额度、
-峰值模型并发、GUI 等待/占用时间、限流、取消后残余工作和证据完整率；包括失败与重试。
-LCU 对交付质量的收益应体现为发现实际界面问题和形成可复验的证据，不能只统计截图
-数量。默认值由代表性任务的质量、耗时和资源取舍决定。
-
-## 12. 来源与研究范围
-
-固定 commit 链接锚定源码；在线文档代表各自研究日期。下列事实支持本方案的接入
-选择，不代替真实安装、模型运行、账户权益、Mac 授权或性能验收。
-
-| 范围 | 主要来源 |
-| --- | --- |
-| Flywheel 模型与入口 | [模型模板][F1]、[DSH bridge][F2]、[宿主入口][F7]、[单包声明][F8] |
-| 当前限制与资源 | [root policy][F9]、[scheduler][F10]、[session runtime binding][F11] |
-| 已有 adapters | [Codex bridge][F3]、[Claude bridge][F4]、[Kimi driver][F5]、[Codex wire][F12] |
-| 用户 presets | [README][U1]、[生成代码][U2]、[版本兼容测试][U3] |
-| DSH composition/PTC | [SDK 默认组合][D9]、[官方 overlay][D10]、[server 创建][D11]、[PTC 基底][D12]、[registry][D13]、[tool contracts][D14] |
-| DSH 协作 | [Team][D1]、[SubAgent][D2]、[SDK guide][D3]、[PTC][D4]、[Web][D5]、[Plan][D6]、[Goal][D7]、[protocol][D8] |
-| LCU 挂载与 PTC | [注册/授权][L1]、[PTC 工具][L2]、[对象代理][L3]、[bundle][L8] |
-| LCU 生命周期与媒体 | [generation][L4]、[connection][L5]、[图片投影][L6]、[runtime 检测][L7]、[changelog][L9]、[host guard][L10]、[helper cleanup][L11] |
-| Kimi | [项目][K1]、[release][K2]、[agents][K3]、[CLI][K4]、[Server][K5]、[sessions][K6]、[Tower][K7]、[模型能力][M1] |
-| Codex / Claude | [Codex agents][O1]、[app-server][O2]、[Claude subagents][C1]、[Teams][C2]、[Workflows][C3]、[ultrareview][C4]、[headless][C5]、[Advisor][C6] |
-
-[F1]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/templates/flywheel.config.example.json
-[F2]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/bridge.js
-[F3]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/codex-pro-bridge.js
-[F4]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/claude-code-pro-bridge.js
-[F5]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/drivers/kimi.go
-[F6]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/package.json
-[F7]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/index.js
-[U1]: https://github.com/ckanner/dsh-preset-generator/blob/f692cb07abbb9786444c183d74eee018b1a2f0e8/README.md
-[U2]: https://github.com/ckanner/dsh-preset-generator/blob/f692cb07abbb9786444c183d74eee018b1a2f0e8/src/gen-presets.mjs
-[D1]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md
-[D2]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/subagent/subagent/README.md
-[D3]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/docs/user/guide/python-sdk.md#enable-team-mode
-[D4]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/README.md
-[D5]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/web/tool-web/README.md
-[D6]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/plan/plan-mode/README.md
-[D7]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/goal/goal-round-driver/README.md
-[D8]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/protocol/README.md
-[D9]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/sdk-app/README.md
-[D10]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml
-[D11]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts
-[D12]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/web-app/presets/ptc.patch.yml
-[K1]: https://github.com/MoonshotAI/kimi-code
-[K2]: https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai/kimi-code%402.6.2
-[K3]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/agents.md
-[K4]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/kimi-command.md
-[K5]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md
-[K6]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md
-[K7]: https://www.kimi.com/code/docs/en/kimi-code-cli/guides/tower.html
-[M1]: https://www.kimi.com/code/docs/en/kimi-code/models.html
-[O1]: https://learn.chatgpt.com/docs/agent-configuration/subagents
-[O2]: https://learn.chatgpt.com/docs/app-server
-[C1]: https://code.claude.com/docs/en/sub-agents
-[C2]: https://code.claude.com/docs/en/agent-teams
-[C3]: https://code.claude.com/docs/en/workflows
-[C4]: https://code.claude.com/docs/en/ultrareview
-[C5]: https://code.claude.com/docs/en/headless
-[C6]: https://code.claude.com/docs/en/advisor
-[F8]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/package.json
-[F9]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/plugins/dsh/src/policy.js
-[F10]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/parallel.go
-[F11]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/session_runtime.go
-[F12]: https://github.com/ckanner/dsh-subagent-codex-pro/blob/37da3d75de32b809c4fb1a631ccc15191f3d87f9/src/wire.ts
-[U3]: https://github.com/ckanner/dsh-preset-generator/blob/f692cb07abbb9786444c183d74eee018b1a2f0e8/tests/generate.spec.mjs
-[D13]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/preset/agent-preset-registry/src/index.ts
-[D14]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tools/src/contracts.ts
-[L1]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/index.ts
-[L2]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/ptc.ts
-[L3]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/bridge.ts
-[L4]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/session.ts
-[L5]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/connection.ts
-[L6]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/tool.ts
-[L7]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/app.ts
-[L8]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/cordis.patch.yml
-[L9]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/CHANGELOG.md
-[L10]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/src/host-guard.ts
-[L11]: https://github.com/ckanner/dsh-plugin-lcu/blob/9efeded13d20b41a96621bb53d903954f68550e6/helper/sky-service.mjs
-[F13]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/templates/task-packet.schema.json
-[F14]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/drivers/dsh_prewarm.go
-[F15]: https://github.com/ckanner/flywheel/blob/ac1ed320c68f6a8a466005985264e65b5a72fad9/internal/machine/sessions.go
-[D15]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/bundle/base/cordis.patch.yml
-[D16]: https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/core/tool-executor-ptc/package.json
-[D17]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/package.json
-[D18]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/src/ptc.ts
-[D19]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/README.md
-[D20]: https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/sdk/server/src/server.ts
-[P1]: https://github.com/ckanner/dsh-subagent-codex-pro/compare/37da3d75de32b809c4fb1a631ccc15191f3d87f9...aaf465901def5aa1870c1165b9714d32294337a4
-[P2]: https://github.com/ckanner/dsh-subagent-claude-code-pro/compare/ec0b99176b67512f3ca1838ec2a349dcb0189214...5eb637a9e82b317e67e50846005c407c54f1cea0
-[K8]: https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md
+| DSH SDK / PTC | [release SDK](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/sdk/server/src/server.ts)、[官方 PTC overlay](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/apps/cli/config/examples/ptc.yml)、[master PTC](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tool-executor-ptc/src/ptc.ts) |
+| DSH Team / Agent | [Team service](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/team/agent-team/README.md)、[Subagent service](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/subagent/subagent/README.md) |
+| Kimi Server / Agent | [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md)、[conversation API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md)、[agents](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/customization/agents.md) |
+| Codex | [公开 machine 契约](https://github.com/ckanner/dsh-subagent-codex-pro/blob/c0045b06e6762b8dfc56f50b14cce7a53af2725b/docs/machine.md)及该 PR 中固定的官方 app-server 来源 |
+| Claude | [Subagents](https://code.claude.com/docs/en/sub-agents)、[Teams](https://code.claude.com/docs/en/agent-teams)、[Workflows](https://code.claude.com/docs/en/workflows)、[Ultrareview](https://code.claude.com/docs/en/ultrareview)、[Advisor](https://code.claude.com/docs/en/advisor)，公开包同时保留实际版本/能力不足的失败回执 |

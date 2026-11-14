@@ -1,0 +1,16 @@
+{
+  "package": "dsh-plugin-chatgpt",
+  "version": "0.1.19",
+  "repository": "https://github.com/ckanner/dsh-plugin-chatgpt",
+  "sourceCommit": "fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c",
+  "sourceTree": "168dc4e6284f002f09291667a926eab8a31b6687",
+  "tarball": "dsh-plugin-chatgpt-0.1.19.tgz",
+  "sha256": "838ef2f6cb6fa70f9a1a708729b1efb966bee4daeb4a4f2810ab3f69fe1a1179",
+  "integrity": "sha512-yUTExyMNrK9V9Cj4GgMrcYqHsO+xD5lteGLG5xgJ4QnvG+qUk1M740IoQiEdfGvaXlgX+mcJfy0phVJ2Cd+Gyg==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "toolchain": {
+    "node": "24.22.1",
+    "npm": "12.2.1"
+  }
+}

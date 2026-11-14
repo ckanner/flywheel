@@ -84,7 +84,7 @@ Full，不通过修改契约抢回 Quick。模型建议只是声明，执行与�
 权限以 `config inspect` 为准，不因流程模式覆盖用户绑定或恢复智谱等旧后备渠道。
 可选 `claude-code-pro` 是独立 harness；用户决定用途后才绑定 profile，不把
 `subagent_claude_code` 视为 DSH provider，也不增加父模型委派。启动前由 doctor
-核对配套 0.4.0 machine/lifecycle/recovery API 与 full-access，角色续接、只读恢复和
+核对配套 0.5.0 machine/lifecycle/recovery API 与 full-access，角色续接、只读恢复和
 质量重建由 Go 管理；保留原调用证据，不另写恢复状态或因配置变化重置预算。
 需要 live 凭证时如实声明 `needs-live-credentials`，沿用实际凭证授权机制，不能
 凭 full-access 或 Quick 名称跳过它。

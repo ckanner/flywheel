@@ -113,7 +113,7 @@ async function installation(t) {
   const packageMeta = { ...meta };
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify(packageMeta));
   await fs.copyFile(path.join(repository, "npm", "install.js"), path.join(root, "npm", "install.js"));
-  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js"]) {
+  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js", "flywheel-kimi-native-worker.js"]) {
     await fs.copyFile(path.join(repository, "bin", name), path.join(root, "bin", name));
   }
   const native = path.join(root, "native", platform);
@@ -121,11 +121,12 @@ async function installation(t) {
   await Promise.all([fs.mkdir(native, { recursive: true }), fs.mkdir(path.join(plugin, "dist"), { recursive: true })]);
   await fs.writeFile(path.join(native, "flywheel"), nativeBody, { mode: 0o755 });
   await fs.writeFile(path.join(root,'native/manifest.json'),JSON.stringify({protocol:1,version:meta.version,platforms:{[platform]:{bytes:Buffer.byteLength(nativeBody),sha256:require('node:crypto').createHash('sha256').update(nativeBody).digest('hex')}}}));
+  await fs.writeFile(path.join(plugin, "dist", "kimi-native-worker.mjs"), "// Unselected native Kimi worker.\n");
   await fs.writeFile(path.join(plugin, "dist", "worker.mjs"), "// No model worker runs during installation.\n");
   await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.mjs"), `
     if (process.argv[2] !== '--doctor') throw new Error('installation must never run a model');
     console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
-      version: process.env.TEST_ADAPTER_VERSION || '0.9.0', machineProtocol: 1, available: true, inferenceTested: false }));
+      version: process.env.TEST_ADAPTER_VERSION || '0.10.0', machineProtocol: 1, available: true, inferenceTested: false }));
   `);
   await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.mjs"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
@@ -205,7 +206,7 @@ test("installer executes special paths literally and repeat setup keeps a stable
   assert.equal(first.authentication, "unknown");
   assert.equal(first.configuration.action, 'created');
   assert.equal(first.configuration.automaticMigration, false);
-  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.9.0', protocol: 1, inferenceTested: false });
+  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1, inferenceTested: false });
   const record = await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json"));
   assert.equal(record.launcher.path, first.paths.launcher);
   assert.equal(record.codexProWorker, first.paths.codexProWorker);

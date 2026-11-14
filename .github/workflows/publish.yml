@@ -19,7 +19,7 @@ permissions:
 # Companion source is not yet an npm release. Verify the same reviewed bytes
 # as PR CI without adding the optional adapter to the complete published package.
 env:
-  CLAUDE_CODE_PRO_SOURCE_SHA: ec0b99176b67512f3ca1838ec2a349dcb0189214
+  CLAUDE_CODE_PRO_SOURCE_SHA: 54d7eafa9102713597e3b96a6d70a9cbd86afc6b
 
 concurrency:
   group: npm-publish
@@ -94,7 +94,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist-claude"
           cd "$claude_source"
           npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' 125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581 "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz" | sha256sum --check
+          printf '%s  %s\n' 338675c8fbafc47e7f2c7cc5ffaa6987bda952c5c9c1010ac441230597ce420c "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate-${{ github.run_id }}
@@ -151,7 +151,7 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
@@ -161,7 +161,7 @@ jobs:
       - name: Verify Go to Node to SDK, Codex Pro and Claude protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro)NodeWorkerOfflineBridge$' -count=1 -v
+        run: go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1 -v
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
@@ -178,7 +178,7 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: ${{ github.workspace }}/dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.4.0.tgz
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
         run: npm run test:install
       - name: Build native CLI for paired session evaluation
         run: make build

@@ -1,17 +1,44 @@
-# Bundled public Codex Pro source candidate
+# Reviewed companion source candidates
 
-Flywheel imports `dsh-subagent-codex-pro/machine` from the actual public package **0.9.0**. In the source checkout, this directory contains that package's reviewed npm tarball, not a replacement wrapper or a fabricated registry download.
+Flywheel 0.34.0 consumes real public packages from the reviewed trees below.
+The source checkout keeps their actual npm tarballs and lockfile integrity;
+these are not replacement wrappers or invented registry downloads.
 
-- Source: [37da3d75de32b809c4fb1a631ccc15191f3d87f9](https://github.com/ckanner/dsh-subagent-codex-pro/commit/37da3d75de32b809c4fb1a631ccc15191f3d87f9)
-- Source tree: `00df1042b0010dc37ce8ab6048f75a434325962c`
-- SHA-256: `4a86380fdde0d7f2673c4b1f2d5c8682cf61d6a4b83deb65eab8fe76f6032198`
-- npm integrity: `sha512-NtguC96kZVgKOMHv7kSiFVEZ4thjorHS1ZrNFQwbBLEBU2jOSWkFGlXk+BILPuxALUKkJJ4E1DSbA2+JG3gM0Q==`
-- Package license: MIT, Copyright (c) 2026 ckanner; the original `LICENSE` is present in the tarball and installed package.
+| Package | Distribution role | Fetchable source commit | Source tree | Artifact identity |
+| --- | --- | --- | --- | --- |
+| `dsh-subagent-codex-pro@0.10.0` | Bundled public machine API | [c0045b06e676](https://github.com/ckanner/dsh-subagent-codex-pro/commit/c0045b06e6762b8dfc56f50b14cce7a53af2725b) | `1c39704cf385e9f505f5d50e9d96ef2e0b88d5f5` | [codex-pro.json](codex-pro.json) |
+| `dsh-preset-generator@0.4.0` | Bundled PTC composition API | [0ec05fbeb37d](https://github.com/ckanner/dsh-preset-generator/commit/0ec05fbeb37d59f7e3af4baa0f6d9bfb0c5573a3) | `c93bbc8453a95c2b4f06d432f1c7d0e67a56aaf0` | [preset-generator.json](preset-generator.json) |
+| `dsh-subagent-claude-code-pro@0.5.0` | Optional machine/native-jobs peer | [54d7eafa9102](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/54d7eafa9102713597e3b96a6d70a9cbd86afc6b) | `bf992d3e33889857526af370bbb16d91585c0ecc` | [claude-code-pro.json](claude-code-pro.json) |
+| `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [7986057e9231](https://github.com/ckanner/dsh-plugin-lcu/commit/7986057e92314b78caf66dde43d1a8d45ab6ada7) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
+| `dsh-plugin-chatgpt@0.1.19` | DSH provider compatibility fixture | [fa5cfafcc1cc](https://github.com/ckanner/dsh-plugin-chatgpt/commit/fa5cfafcc1cc6bfb1f640e646b6dc3c4329d976c) | `168dc4e6284f002f09291667a926eab8a31b6687` | [chatgpt.json](chatgpt.json) |
 
-The source candidate adds lifecycle v1, durable acknowledgements, an independent supervisor journal, and read-only recovery. It has not been represented as a published registry version. The runtime dependency remains exactly `0.9.0`; the build-harness lock resolves `file:vendor/…tgz` and the root lock resolves `file:plugins/dsh/vendor/…tgz`, both with its actual integrity. `npm ci --ignore-scripts` materializes it, and `bundledDependencies` includes that package in Flywheel's complete tarball. A user installing the checked Flywheel candidate therefore does not need to download or assume the bytes of a registry `0.9.0` release. No native Codex executable, login data, or credentials are bundled.
+The records include tarball filename, SHA-256, npm integrity, MIT license,
+Node 24.22.1/npm 12.2.1 build toolchain and `registryReleaseVerified:false`.
+Source trees, remote commit identity, packed bytes, registry release and user
+installation are separate evidence. Local merge commit hashes can differ from
+remote API-created commits; the tree and artifact are checked explicitly.
 
-The tarball was built with Node 24.22.1/npm 12.2.1 from the pinned tree, using the upstream lockfile, `npm run build`, and `npm pack --ignore-scripts`. Upstream public API, compiled supervisor, and clean npm-install tests cover these bytes. Flywheel additionally runs its real worker/Go bridge and actual single-package installation checks. The package manager uses the lock integrity; `codex-pro.json` records source provenance separately.
+`dsh-subagent-codex-pro@0.10.0` and `dsh-preset-generator@0.4.0` remain exact
+runtime dependencies and bundledDependencies. Root lock entries resolve
+`file:plugins/dsh/vendor/…tgz`; the private build-harness lock resolves
+`file:vendor/…tgz`. Both use actual integrity. A consumer of the complete
+Flywheel candidate receives these bytes without depending on an unpublished
+registry version. Original licenses remain inside both bundled packages.
 
-Claude Code Pro **0.4.0** remains an optional peer and is not bundled. Its matching source candidate is [ec0b99176b67512f3ca1838ec2a349dcb0189214](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/ec0b99176b67512f3ca1838ec2a349dcb0189214), with tarball SHA-256 `125951f39d27a87072a9dc20c622a19089ad7ba84b69ba6228e1fbb03f46f581`. CI builds that immutable source, verifies the exact package hash, and installs it before running Claude-specific gates.
+Claude Code Pro 0.5.0 and LCU 0.5.0 are exact optional peers, not bundled
+runtime dependencies. The private build harness installs their reviewed local
+packages using normal npm resolution for real public-API tests. CI also fetches
+the fixed Claude source commit, packs it with the pinned toolchain, verifies its
+SHA-256 and installs the same candidate for Linux/macOS gates. ChatGPT 0.1.19 is
+a DSH provider fixture used to verify image/attachment compatibility; it is not
+a separate implicit inference backend for Flywheel.
 
-This is source-candidate packaging. It neither publishes the upstream packages nor changes Flywheel's npm `latest` tag.
+Normal npm resolver, public manifests, compiled APIs, source behavior and clean
+consumer installation are checked without `--force` or `--legacy-peer-deps`.
+The generator supplies shared composition policy; it does not bundle the DSH
+application's private resources. No native provider executable, login data or
+credentials are included. Details and actual test outcomes are in the
+[implementation validation](https://github.com/ckanner/flywheel/blob/main/docs/validation/2026-11-14-native-harness-implementation.md).
+
+This is source-candidate packaging. It does not publish companion packages or
+change Flywheel's npm latest tag.

@@ -39,4 +39,8 @@ SOFTWARE.
 
 ## Bundled Codex Pro public package
 
-This distribution bundles `dsh-subagent-codex-pro@0.9.0`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the complete package. Source identity and tarball integrity are recorded in `plugins/dsh/vendor/README.md` and `plugins/dsh/vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
+This distribution bundles `dsh-subagent-codex-pro@0.10.0`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the complete package. Source identity and tarball integrity are recorded in `plugins/dsh/vendor/README.md` and `plugins/dsh/vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
+
+## Bundled PTC composition source
+
+This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 ckanner, under the MIT License. Its original license remains at `node_modules/dsh-preset-generator/LICENSE`. The public composition module shares the desktop daily/heavy policy with the owned SDK worker. Source identity and actual tarball integrity are recorded in `plugins/dsh/vendor/preset-generator.json`; no DSH application resources, native executable or credentials are bundled.

@@ -5,6 +5,34 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.0 — Native harness capabilities
+
+- Add versioned native profiles across loops, routes, model profiles, second
+  opinions and allowed execution bindings, including workbench selection,
+  frozen history identity, durable native receipts and import-only diagnostics.
+- Run DSH PTC composition from the shared generator with actual behavior probes,
+  native subagents/Team/Workflow and managed LCU. Serialize desktop ownership,
+  retain epoch-safe handles and durable media, and prove journal/physical cleanup.
+- Add an owned Kimi Server worker for Agent/Swarm/Tower. Use independent Tower
+  Git candidates, preserve dirty/untracked/binary changes and transfer only after
+  completion, cleanup and source/contract checks.
+- Integrate Codex Pro 0.10.0 and Claude Code Pro 0.5.0 native controls, child events
+  and truthful accounting. Add independent Review/interactive Team job commands;
+  unknown cloud work, child usage and cleanup never become inferred success.
+- Preserve role independence, explicit accounts/permissions and existing JEV
+  controls. Keep one complete npm package, bundle generator 0.4.0 and record the
+  reviewed companion source artifacts without claiming registry publication.
+
+## 0.33.1 — Strict desktop read codecs
+
+- Fix task discovery and configuration reads rejected by the actual DSH Client
+  Gateway. Supply strict schema factories for session identity, read requests and
+  result envelopes; consume the dynamic namespace through an owned injected
+  scope, use the host Agent registry's `agentId` wire field, and preserve session
+  isolation, teardown and silent reads.
+- Exercise the shipped Client descriptor through the real public Client and Host
+  Gateway on both supported host fixtures instead of mocking Remote mounting.
+
 ## 0.33.0 — One complete npm distribution
 
 - Consolidate the CLI, DSH host/client, workers, embedded skills and four native

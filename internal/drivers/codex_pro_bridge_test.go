@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This opt-in bridge uses the built worker and the real, installed 0.9.0 public
+// This opt-in bridge uses the built worker and the real, installed 0.10.0 public
 // machine API/guardian. Only the app-server peer is fake; no model is contacted.
 func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {
@@ -34,6 +34,33 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, os.Chmod(fixture, 0o755))
 	t.Setenv(CodexProBinaryEnv, fixture)
 	testMachineLifecycleNodeBridge(t, "codex-pro")
+	t.Run("native capability scope and exclusive child usage cross every installed layer", func(t *testing.T) {
+		cwd := t.TempDir()
+		a := CodexProArgs{Command: worker, Cwd: cwd, Prompt: "offline native task", Model: "gpt-test", RequestID: "native-attempt",
+			ReasoningEffort: "high", PermissionMode: "workspace-write", RecoveryDirectory: filepath.Join(cwd, "journal"),
+			Native:      json.RawMessage(`{"version":1,"agents":{"enabled":true,"backend":"v2","maxConcurrentThreads":3}}`),
+			Managed:     &NativeAdmission{Version: 1, RunID: "run", InvocationID: "native-attempt", Role: "Executor", Scope: "candidate", Channel: "local", TaskDir: cwd},
+			OnLifecycle: func(MachineLifecycle) error { return nil },
+			APIKeys:     map[string]string{"TEST_CODEX_PRO_SCENARIO": "native-child", "TEST_CODEX_PRO_LOG": filepath.Join(cwd, "native.jsonl")},
+			Watchdog:    watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}}
+		out := RunCodexPro(a)
+		require.True(t, out.Settled, "%+v", out)
+		require.NotNil(t, out.Usage)
+		assert.Equal(t, int64(123), out.Usage.TotalTokens)
+		assert.Equal(t, "complete", out.Session.UsageStatus)
+		assert.True(t, out.Session.CleanupConfirmed)
+		assert.Contains(t, out.Stdout, `"type":"native-event"`)
+		var native proNativeReceipt
+		require.NoError(t, json.Unmarshal(out.NativeReceipt, &native))
+		assert.True(t, proJSONEqual(a.Native, native.Requested))
+		require.Len(t, *native.Children, 1)
+		assert.Equal(t, "fixture-thread", *(*native.Children)[0].ParentID)
+		var receipt codexProReceipt
+		require.NoError(t, json.Unmarshal(out.CodexProReceipt, &receipt))
+		root, err := parseCodexProUsage(receipt.Outcome.Usage)
+		require.NoError(t, err)
+		assert.Equal(t, int64(108), root.TotalTokens)
+	})
 
 	t.Run("scoped history crosses processes with independent invocation and run delta", func(t *testing.T) {
 		cwd := t.TempDir()
@@ -202,7 +229,7 @@ func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 			APIKeys: map[string]string{"TEST_CODEX_PRO_LOG": log}, Watchdog: watchdog.Opts{IdleTimeoutMs: 5000, WallTimeoutMs: 10000}})
 		require.True(t, r.Settled, "%+v", r)
 		require.NotNil(t, r.Session)
-		assert.Equal(t, "codex-pro/0.9.0/worker-v1", r.Session.Protocol)
+		assert.Equal(t, "codex-pro/"+CodexProPackageVersion+"/worker-v1", r.Session.Protocol)
 		assert.Equal(t, "call-freshEngine123", r.Session.RequestID)
 		assert.Equal(t, "completed", r.Session.Outcome)
 		assert.False(t, r.Session.ResumeCandidate)

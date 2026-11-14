@@ -8,7 +8,7 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-The adapter requires **`dsh-subagent-claude-code-pro@0.4.0`**, machine protocol
+The adapter requires **`dsh-subagent-claude-code-pro@0.5.0`**, machine protocol
 1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
 and older machine contracts are not substitutes. No default stage or route
 selects Claude. Package availability must be checked separately from source
@@ -22,7 +22,7 @@ Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.4.0` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.5.0` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 

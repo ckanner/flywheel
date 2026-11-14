@@ -1,6 +1,6 @@
-# Go ↔ DSH / Codex Pro / Claude Code Pro worker 协议
+# Go ↔ DSH / Kimi / Codex Pro / Claude Code Pro worker 协议
 
-此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。两者之间只有本地 stdio，不开放 HTTP 端口。
+此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。Go与worker之间使用本地stdio；Kimi native worker内部使用其拥有的loopback Server，见本文件原生扩展和Kimi专属协议。
 
 ## 启动与输入
 
@@ -19,6 +19,7 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 | `timeoutMs` | 1–86,400,000，默认 1,800,000；涵盖权限准备、初始化、运行和关闭 |
 | `workspaceCwd` | 可选的稳定项目目录，必须存在并规范化。SDK 在该目录初始化 Session header，当前执行目录仍为 `cwd`；ready 必须回显匹配的项目目录。省略保留旧行为 |
 | `sessionTitle` | 可选的人类可读任务／角色标题；只给新 Session 设置，续接不覆盖现有标题 |
+| `native` / `managed` | 版本化能力选项与Go生成的实际调用身份，见原生扩展 |
 
 项目归属与执行目录分离时，worker 在发送 prompt 前使用公开 working-directory 服务切换并核对当前目录；权限根仍如实记录 DSH 的 Session header 语义。当前 DSH 不支持将 `workspace-write` 沙箱根与项目目录独立设置，因此这类不同目录组合在派发前拒绝，不把权限改成 full access。`read-only` 与显式 full access 保留其实际权限。doctor 使用临时持久化根，清理后不留下新的用户会话。桌面 Workspace 登记只通过 Host 的公开注册表执行。
 
@@ -48,12 +49,12 @@ v2 拒绝缺失或 false 的 persistent；v1 不接受这些 v2 字段。版本�
 
 worker 不搜索 `.app` 内部目录、不下载或更新 CLI、不复制桌面授权文件，也不读取或修改 Flywheel 的 `state.json`。Go 的凭证环境白名单仍是外层边界。
 
-worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。覆盖文件在临时目录内、权限为 `0600`，结束后移除。DSH 子进程继承 Go 建立的 worker 进程组，禁止再为 SDK 创建 detached 组。覆盖禁用自主 goal／workflow／delegation、辅助模型调用及 `schedule`／`tool-schedule`；不修改用户 profile 或提醒存储。
+worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。覆盖文件在临时目录内、权限为 `0600`，结束后移除。DSH 子进程继承 Go 建立的 worker 进程组，禁止再为 SDK 创建 detached 组。未配置native时覆盖禁用自主goal／workflow／delegation、辅助模型调用及schedule；显式native按下文启用受管agents/Team/Workflow/Web/LCU，自主goal/schedule仍关闭。不修改用户profile或提醒存储。
 
 ## 输出帧
 
 每帧均回显请求的 `protocol`（1 或 2）及原 `requestId`。顺序是 `ready` → 零或多个
-`event` → 恰好一个 `result`；启动失败允许直接 `result`。v1 创建 Session 时的权限
+`event`／`native-event` → 恰好一个 `result`；启动失败允许直接 `result`。v1 创建 Session 时的权限
 事件缓冲至 ready 之后；v2 admission 前的恢复事件不转发为本轮活动。
 
 ### ready：SDK 配置与权限握手已通过
@@ -83,7 +84,7 @@ v2 的 ready 另含 `persistent:true`、`resumed:boolean`；恢复时 sessionId 
 {"protocol":1,"requestId":"call-123","type":"event","sessionId":"flywheel-uuid","event":{"seq":12,"type":"turn/end","data":{"turn":0,"reason":{"kind":"completed"}}}}
 ```
 
-只转发该根 Session 的持久事件，按 `seq` 去重。SDK streaming usage 不作重复累加。意外出现根 Session 的子智能体启动时，立即失败并关闭 SDK；编排与委派由 Go 管理。
+普通 `event` 只转发该根 Session 的持久事件，按 `seq` 去重。SDK streaming usage 不作重复累加。未配置 `native` 时，根 Session 出现子智能体启动会立即失败并关闭 SDK。显式 `native` 的 owned children 由 `NativeTree` 归属和核对，通过 `native-event` 与终态回执报告；Go 继续管理角色调用与外层编排。
 
 恢复过程中重放的旧事件不进入当前 output／usage fold，也不触发 Go 的 OnEvent。
 worker 在 admission 后、发送本次 prompt 前重置 fold，只计当前调用新增的输出与用量。
@@ -185,8 +186,9 @@ Go 从正式 `Run` 开始独立执行调用 idle/wall 上限，预热不会延�
 ```
 
 close、TTL、EOF、TERM/INT/HUP 均触发有界 shutdown。Go 发 close 后最多给外层 worker
-三秒协议收尾窗口，再取消现有 watchdog 并等待其 TERM/KILL；SDK 原有两秒正常关闭
-窗口不变，不等剩余模型 wall-time。尚未收到正式 start 的 worker
+三秒协议收尾窗口，再取消现有 watchdog 并等待其 TERM/KILL。SDK 未配置 `native` 时
+正常关闭宽限为两秒；显式 native／LCU 分别为 15／135 秒，Go 外层分别至少 20／145 秒，
+不等剩余模型 wall-time。尚未收到正式 start 的 worker
 在 SDK 关闭后，将 `terminal.json` 以 0600、独占、原子发布到指定证据目录，fsync 文件及目录后再输出
 `warm-result`。文件包含 protocol、warmId、binding、真实 workerPid、`dispatched:false`
 和 `cleanupConfirmed`；协议损坏或 SDK 清理未知不得为 true。发布的完整 JSON 文件
@@ -215,7 +217,7 @@ watchdog 已证明静止后清除当前 warm intent。崩溃恢复重新 fsync �
 
 ## Codex Pro worker协议
 
-公开入口为 `@ckanner/flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同一安装包内的 worker，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.9.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
+公开入口为 `@ckanner/flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同一安装包内的 worker，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.10.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
 
 ### 请求与父进程连接
 
@@ -232,7 +234,7 @@ v1 只接受这些字段；不接受 provider、resume、threadMode、threadId�
 ```
 
 v2 拒绝 ephemeral、缺失模式和空／非法句柄；所有 progress/result 回显外层版本。
-嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.9.0。
+嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.10.0。
 v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公开 lifecycle/recovery。
 
 **这里与 DSH 旧单请求入口的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或非法后续输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
@@ -248,7 +250,7 @@ v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公�
 最后恰好一个 result，字段结构如下，`receipt` 为插件实际完整对象：
 
 ```json
-{"protocol":1,"type":"result","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.9.0","protocol":1},"receipt":null,"error":{"code":"INVALID_REQUEST","message":"启动请求未通过校验"}}
+{"protocol":1,"type":"result","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"receipt":null,"error":{"code":"INVALID_REQUEST","message":"启动请求未通过校验"}}
 ```
 
 启动前不能获得 machine receipt 时为 null。运行已开始则即使失败也保留完整 receipt；`error` 非 null、重复／丢失 result、尾部垃圾、请求身份或 adapter 版本不符都不能成功。本通道没有 DSH `ready` 帧；v3 使用有类型的 `thread-ready` lifecycle 与 Go ACK。不能从普通 progress 文本虚构沙箱或实际 effort 证据。
@@ -257,7 +259,7 @@ Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/threa
 
 effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
 
-Go 由可信 receipt 生成 `codex-pro/0.9.0/worker-v1`、`worker-v2` 或 `worker-v3` 的 SessionOutcome。
+Go 由可信 receipt 生成 `codex-pro/0.10.0/worker-v1`、`worker-v2` 或 `worker-v3` 的 SessionOutcome。
 只有正常 completed、cleanup 已确认且 persistent 的结果才具备 resumeCandidate；
 这是适配器证据支持的尝试资格，不是 rollout 已持久化的证明。显式恢复必须接受同一
 thread，requested／outcome／execution 的 thread 身份和 thread/start、thread/resume
@@ -278,7 +280,7 @@ worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理�
 `flywheel-codex-pro-worker --doctor` 不读取 stdin，不调用 runMachine，不启动 app-server，仅导入并核验公开接口。成功返回单个 JSON：
 
 ```json
-{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.9.0","machineProtocol":1,"available":true,"inferenceTested":false}
+{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.10.0","machineProtocol":1,"available":true,"inferenceTested":false}
 ```
 
 Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、模型、完整策略或真实推理能力，`--probe` 也不会对 Codex Pro 发模型任务。
@@ -296,7 +298,7 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 上游公开导出 `MACHINE_LIFECYCLE_VERSION=1`、`MACHINE_LIFECYCLE_CAPABILITIES`、`recoverMachine`。capabilities 必须声明 durableJournal/readOnlyRecovery；Codex 的 threadReadyBeforeDispatch=true，Claude=false。worker 原样传递有类型的事件，不解析文本补 ID：
 
 ```json
-{"type":"lifecycle","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.9.0","protocol":1},"lifecycle":{"lifecycleVersion":1,"type":"lifecycle","requestId":"call-126","runId":"native-run","sequence":2,"event":"dispatch-intent","threadId":"thread-id","turnId":null,"persistent":true,"configuration":null,"dispatch":"not-dispatched","outcome":"unknown","cleanupConfirmed":false}}
+{"type":"lifecycle","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"lifecycle":{"lifecycleVersion":1,"type":"lifecycle","requestId":"call-126","runId":"native-run","sequence":2,"event":"dispatch-intent","threadId":"thread-id","turnId":null,"persistent":true,"configuration":null,"dispatch":"not-dispatched","outcome":"unknown","cleanupConfirmed":false}}
 ```
 
 事件枚举为 thread-ready、dispatch-intent、dispatch-possible、turn-accepted、terminal、cleanup-confirmed；字段记录实际事实，示例中的 null 不是已确认配置。Go 校验 backend 能力、实际身份和合法状态演进。Codex thread-ready 携带完整实际 configuration，ACK 前核对；Claude init 只在 prompt 后出现，不能发明预派发 thread-ready 或真实 turn-accepted。
@@ -320,7 +322,7 @@ Go 原子保存、fsync 检查点和 state 后，才向仍开放的 stdin 写一
 `original` 仅为旧调用的非秘密绑定，不含 prompt、凭证或环境；不会解析旧 cwd、认证、启动 CLI 或调用 thread/resume。worker 只调用公开 `recoverMachine({protocol:1,requestId,runId,recoveryDirectory})`，返回：
 
 ```json
-{"type":"recovery","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.9.0","protocol":1},"recovery":{"protocol":1,"type":"recovery","requestId":"call-126","runId":"native-run","status":"pending","receipt":null,"lifecycle":null,"reason":"No durable terminal receipt is available"},"error":null}
+{"type":"recovery","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"recovery":{"protocol":1,"type":"recovery","requestId":"call-126","runId":"native-run","status":"pending","receipt":null,"lifecycle":null,"reason":"No durable terminal receipt is available"},"error":null}
 ```
 
 status 为 terminal/pending/unknown。只有 exact invocation 的完整 terminal 可继续核验；pending 不证明 process alive，错误不附带安全重放的 admission 证明。只读路径可重复且不产生新的模型调用。Go 还核对原 adapter 版本与 checkpoint 摘要；升级后不拿新版本解释不兼容的旧 journal。
@@ -331,7 +333,7 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.4.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.5.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
 
@@ -362,7 +364,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.4.0",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.0",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 
@@ -464,6 +466,8 @@ host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校�
 
 ### 会话控制台的静默读取
 
+客户端参数与结果使用公开 `strict` codec（`typeSymbol`、`create().parse`）；结果还提供同一校验的 `decode`。Agent lookup 使用宿主规定的 wire 字段 `agentId`，其值仍为当前 Session ID；不能自行改名为 `sessionId`。Session ID 必须为非空字符串，请求只允许具名读取动作及相应字段，返回值保持 `{ result: { kind, text } }`。严格 codec 不替代 Host 的 Session／任务归属检查及 Go 控制验证；客户端仍只导入共享 React。`$mount` 成功后，通过父插件拥有的 `ctx.inject(['remote.flywheelConsole'])` 子作用域访问动态 namespace，随父插件撤销；初始外层 context 不直接访问未注入的服务。
+
 `flywheelConsole/read` 是公开 Typert Remote，参数为宿主解析的 `agent`、控制请求 `input`
 和取消信号 `signal`。客户端显式挂载描述符，只有 React 是运行时共享模块。
 宿主只接受 runs/status/config/config-edit/metrics/history/node/delivery/doctor；其他 action
@@ -492,7 +496,7 @@ UI 写操作仍经过 `/flywheel`；结果未知时的显式 status 也保留日
 | `ready` | 本地 doctor 是否无阻断项；诊断未完成时为 `false` |
 | `authentication` | 固定 `unknown`，没有自动登录或真实模型请求 |
 | `prefix`、`paths` | 得到后才记录；paths 包含 CLI、原生二进制、DSH worker、codexProWorker 与生成的 launcher 的绝对路径 |
-| `adapter` | 实际导入通过后记录 Codex Pro 包名、精确 0.9.0、protocol 1 与 inferenceTested=false；不代表账号已就绪 |
+| `adapter` | 实际导入通过后记录 Codex Pro 包名、精确 0.10.0、protocol 1 与 inferenceTested=false；不代表账号已就绪 |
 | `skills` | 安装成功时的数量及准确目录；每项结果保存在 skills 步骤的 `summary` |
 | `diagnostic` | 合法的完整本地 doctor 报告，包括失败检查项；不执行 `--probe` |
 | `error`、`cancelledBy` | 失败原因、可选取消信号；不是成功结果的一部分 |
@@ -605,3 +609,133 @@ session 请求经 `.control/session-request-*` 私有文件和内容摘要传给
 会话账本存储 v2 是旧引擎拒绝接管状态的兼容性栅栏。session policy-version 1、DSH worker v2、Pro worker v3 与 lifecycle/recovery 版本保持各自独立。
 
 远端写入绑定仓库、源 HEAD 和 base，检查项目记录与实际 fetch/push 目标。推送禁用隐式 tags、mirror 和 submodule 推送；合并不使用 admin 绕过。已创建／合并的结果先核对，已接收但未完成的合并请求保持 pending。GitHub CLI 的 [匹配 HEAD 语义](https://cli.github.com/manual/gh_pr_merge)与 [mergeStateStatus](https://docs.github.com/en/graphql/reference/pulls#mergestatestatus)为外部接口依据。
+
+## Native capability extension（0.34.0）
+
+本节是已实现的可选扩展，不替换既有 worker/lifecycle 版本。配置字段信源为
+`templates/native-profiles.schema.json`，使用方法见[原生能力指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/native-capabilities.md)。
+
+### 请求与所有权
+
+DSH v1/v2、Pro v1/v2/v3 Start 可带 `native` version 1 options；Kimi native 是单独
+protocol 1 worker。Go 从实际绑定的 native-profile 取得 options，在保存 invocation
+intent 后传入 managed：
+
+```json
+{
+  "version": 1,
+  "runId": "run-001",
+  "invocationId": "call-001",
+  "role": "execute",
+  "scope": "M01-T01",
+  "candidateId": "candidate-digest",
+  "channel": "deepseek-account-sdk",
+  "taskDir": "/absolute/repo/docs/task"
+}
+```
+
+`invocationId` 必须等于外层 requestId，taskDir 是绝对目录；candidateId 可省略，
+空 runId 仅保留尚无 main-run 身份的既有调用语义。managed 不授予权限，不允许从
+Start 注入 GUI lease，也不会被当成 model prompt 或 public Pro machine 字段。
+DSH LCU 的 lease 由 worker 成功取得后内部加入。完整 native options 同时保存到
+SessionConfiguration.nativeOptions；state schema 同步接受 nativeProfile/nativeOptions，
+Pro recover.original.native 必须使用原调用内容。
+
+### DSH composition 与实际准入
+
+`native:{version:1,preset:"daily"|"heavy",agents?,team?,workflows?,web?,lcu?}`。
+Team/Workflow 要求 agents.enabled。模型仍来自实际 Start provider/model/effort，
+原生选项不改变账号。生成器固定 0.4.0，公开 `/composition` 产生 SDK global overlay；
+回执不宣称 named preset 已被公开 SDK 挂载。
+
+正式 prompt 前执行实际 TypeScript PTC probe，确认唯一模型工具 run_code、canonical
+JSON/handles、多图与 deferred-context-v1 或 inspect-image-v1 输出。工具准入使用
+当前 Agent/model 的真实可用集合。旧未配置 native 的 Start 保留原禁止 delegation
+路径；显式 native 只开启对应受管树的工具，独立 goal/schedule/辅助标题与自动压缩
+不因此开启。
+
+本地 session.event/subagent 通知与公开 service 的 durable lifecycle journal共同
+确定 owned children，包含外部 provider activation。journal 每行含 version、
+journalSequence、requestId、nonce、rootSessionId、invocationId/runId，最多4096条／2MiB。
+root turn-stopping等待flush，关闭回执包含：
+
+```json
+{
+  "version": 1,
+  "requestId": "call-001",
+  "nonce": "owned-random-nonce",
+  "cleanup": [],
+  "lcu": null,
+  "journal": {"complete": true, "events": 0, "bytes": 0}
+}
+```
+
+bytes包含每行末尾换行。worker核对连续序号、每行身份与最终完整性，拒绝symlink／
+非regular文件／超界与截断。journal不完整使调用失败并保持资源未知，不能只因SDK退出
+而释放GUI。普通native SDK关闭宽限15秒，LCU135秒；Go外层至少20／145秒。
+
+LCU使用0.5.0公开 managed API，PTC工具名lcu_cua，程序对象cua。跨进程local-desktop
+lease限制同时操作整台桌面；每次操作检查真实caller和epoch。媒体从实际AttachmentStore
+归档到task reports/native/invocation，保留captured和archive不同摘要，不能把图片存在
+当作模型送达。原生runtime的目标权限和用户交互仍保持其真实约束。
+
+### 观察、完成与清理
+
+DSH native-event 使用外层 request/session 与 `event`；Pro native-event 使用严格
+adapter 身份、原 managed 和 `native` 观察对象。所有事件只作观察，不是 lifecycle
+ACK，不绕过 durable dispatch checkpoints。Kimi保留其本地server事件与连续订阅事实。
+
+各 native terminal 保留以下共同字段，具体有效配置和用量策略由harness定义：
+
+| 字段 | 必须保持的语义 |
+| --- | --- |
+| version | 1 |
+| requested | 与原始 native options JSON 等价；默认值不回填原请求 |
+| effective | matched及实际来源；DSH行为probe、Codex config/read、Claude tools-only等不同事实 |
+| observed / children | bounded、去重、可归属的实际事件和子任务身份 |
+| usage | 计量方法、完整性及不能直接相加的原始证据 |
+| completion | confirmed与pendingIds，在cleanup之前冻结 |
+| cleanup | 本地process group／owned SDK tree／remote job等真实作用域与确认 |
+
+root完成但child仍在运行时completion=false；清理取消child不能修改已冻结的完成事实。
+只有全部事实与外层进程终态相符才成功。未知用量保留null。Codex仅完整owned child
+exclusive delta可加到root；Claude task snapshot不叠加；DSH external无计量、Kimi
+compaction／旧child／Tower等保持未知。
+
+### Kimi native worker
+
+公开入口 `@ckanner/flywheel/kimi-native-worker`，可执行入口
+`flywheel-kimi-native-worker`；Go覆盖变量 `FLYWHEEL_KIMI_NATIVE_WORKER`，CLI覆盖
+`FLYWHEEL_KIMI_BIN`。账号环境使用真实 `KIMI_CODE_HOME`，不复制或更换授权。
+
+Start protocol1带native/managed，permissionMode必须danger-full-access。worker
+拥有loopback Kimi Server的PID/registry/serverID，验证HTTP/WS schemas与有效配置。
+SessionOutcome.protocol为kimi-server/v1；ready/event/result仍经过本地stdio。原始
+HTTP/WS内部端口不向外开放。首turn ordinal=0合法；fresh baseline=-1。
+
+mode为agent/swarm/tower，agentProfile可选。无法强制的agents.maxConcurrent明确拒绝。
+Tower独立Git候选只允许Execute在完成／清理与source及外部契约检查后导回；不能作为OS
+沙箱，也不恢复旧Session。没有durable terminal的调用保持unknown，不声称支持Pro的
+read-only journal recovery。详细字段、协议校验和fixtures见
+[Kimi native protocol](KIMI_NATIVE_PROTOCOL.md)（[English](KIMI_NATIVE_PROTOCOL.en.md)）。
+
+### 独立 native jobs
+
+npm入口 `flywheel native <codex-review|claude-review|claude-team|claude-recover|claude-control>
+--request /absolute/request.json`，使用实际固定public API加绝对recoveryDirectory。
+输入为最多1MiB的regular NOFOLLOW JSON文件。正常返回一个原生JSON receipt，usage或
+runtime错误保留既有公开结构；diagnostics到stderr。已取消返回130，失败／未知终态
+返回非零；这不是Go role verdict协议。
+
+Codex native review要求fresh ephemeral thread且不进入角色native-profiles，因为
+review/start不消费角色prompt。Claude远端review要求显式consent，使用no-post；
+本地进程退出不证明云端完成或取消。交互Team拥有独立tmuxserver/pane，控制及恢复按原
+requestId/runId核对。恢复只使用已公开且可证明的事实，不重新派发未知副作用。
+
+### 无推理诊断
+
+DSH `--native-doctor`只import固定generator composition与可选LCU managed API，输出
+nativeVersion1、实际依赖可用性、inferenceTested:false、admissionTested:false；不创建
+SDK/Agent/lease。启用native的DSH binding不复用legacy SDK probe作为原生准入结论。
+Kimi `--doctor`检查本地worker接口；Pro要求公开manifest nativeVersion1。Go doctor
+按binding分别列native.manifest与native.admission，后者在实际worker调用前保持unknown。

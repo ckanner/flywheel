@@ -205,10 +205,12 @@ func (m *machineInteraction) line(line string) {
 		return
 	}
 	var header struct {
-		Type      string  `json:"type"`
-		Protocol  int     `json:"protocol"`
-		RequestID string  `json:"requestId"`
-		Text      *string `json:"text"`
+		Type      string          `json:"type"`
+		Protocol  int             `json:"protocol"`
+		RequestID string          `json:"requestId"`
+		Text      *string         `json:"text"`
+		Adapter   machineAdapter  `json:"adapter"`
+		Native    json.RawMessage `json:"native"`
 	}
 	err := json.Unmarshal([]byte(line), &header)
 	if err == nil && (m.stdin == nil || m.terminal || header.Protocol != 3 || header.RequestID != m.flow.request.RequestID) {
@@ -235,6 +237,12 @@ func (m *machineInteraction) line(line string) {
 		case "progress":
 			if header.Text == nil {
 				err = fmt.Errorf("machine progress omitted text")
+			}
+		case "native-event":
+			// Observations are not durable lifecycle checkpoints and receive no
+			// ACK. The original stream and final receipt retain their evidence.
+			if len(m.flow.request.Native) == 0 || !machineAdapterMatches(header.Adapter, m.flow.harness) || len(header.Native) == 0 || string(header.Native) == "null" {
+				err = fmt.Errorf("machine native event is unrequested or uncorrelated")
 			}
 		case "result":
 			m.terminal = true

@@ -371,12 +371,12 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       const installedRequire = createRequire(path.join(installedRoot, "package.json"));
       const runtime = installedRequire("./bin/runtime.js");
       report.paths = { cli: path.join(installedRoot, "bin", "flywheel.js"), native: runtime.loadNativePath(), worker: runtime.loadWorkerPath(),
-        codexProWorker: runtime.loadCodexProWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath() };
+        codexProWorker: runtime.loadCodexProWorkerPath(), kimiNativeWorker: runtime.loadKimiNativeWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath() };
       const probe = await run(process.execPath, [report.paths.codexProWorker, '--doctor']);
       requireSuccess(probe, 'installed Codex Pro dependency');
       const adapter = parseDocument(probe, 'installed Codex Pro dependency');
       if (adapter.protocol !== 1 || adapter.type !== 'doctor' || adapter.package !== 'dsh-subagent-codex-pro' ||
-          adapter.version !== '0.9.0' || adapter.machineProtocol !== 1 || adapter.available !== true || adapter.inferenceTested !== false) {
+          adapter.version !== '0.10.0' || adapter.machineProtocol !== 1 || adapter.available !== true || adapter.inferenceTested !== false) {
         throw new Error('installed Codex Pro dependency did not verify the exact public machine API');
       }
       report.adapter = { package: adapter.package, version: adapter.version, protocol: adapter.machineProtocol, inferenceTested: false };

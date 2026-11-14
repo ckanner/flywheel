@@ -142,4 +142,23 @@ for(const harness of ['codex-pro','claude-code-pro']){
     assert.equal(facts.cleanup.confirmed,true);
     assert.equal(await f.turns(),1);
   });
+
+  if (harness === 'claude-code-pro') test('independent cloud review uses native command and read-only original recovery through worker v3', opts, async t => {
+    const f = await setup(t, harness);
+    f.original.threadMode = f.request.threadMode = 'ephemeral';
+    f.original.nativeOperation = f.request.nativeOperation = { kind: 'remote-review', target: 'main', consent: true, timeoutMinutes: 2 };
+    const run = f.launch();
+    assert.equal((await run.done).code, 0, run.stderr + JSON.stringify(run.frames));
+    const receipt = run.frames.at(-1).receipt;
+    assert.equal(receipt.operation, 'native-review');
+    assert.equal(receipt.remote.state, 'completed');
+    assert.equal(receipt.remote.cancelSupported, false);
+    assert.deepEqual(receipt.structured, { bugs: [{ title: 'offline finding' }] });
+    assert.deepEqual((await f.records())[0].argv, ['ultrareview', 'main', '--json', '--no-post', '--timeout', '2']);
+    const recovered = await f.recover(receipt.runId);
+    assert.equal(recovered.status, 'terminal');
+    assert.deepEqual(recovered.receipt, receipt);
+    assert.equal((await f.records()).length, 1);
+    assert.equal(run.frames.some(frame => frame.lifecycle?.event === 'thread-ready'), false);
+  });
 }

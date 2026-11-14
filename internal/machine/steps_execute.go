@@ -168,7 +168,8 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			SessionMode:            sessionMode,
 			Model:                  currentModel,
 			Binding: config.LoopBinding{
-				Harness: currentHarness, Provider: currentProvider, Model: currentModel,
+				NativeProfile: binding.NativeProfile,
+				Harness:       currentHarness, Provider: currentProvider, Model: currentModel,
 				Channel: channel, Thinking: binding.Thinking,
 			},
 			APIKey:   c.channelApiKey(channel),
@@ -344,6 +345,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 				if ps.ExecutionPolicy != nil {
 					selected := c.Config.ExecutionPolicy.Bindings[ps.ExecutionPolicy.Current]
 					currentModel, currentHarness, currentProvider, binding.Thinking = selected.Model, selected.Harness, selected.Provider, selected.Thinking
+					binding.NativeProfile = selected.NativeProfile
 					permission, sessionMode = selected.Permission, selected.SessionMode
 				}
 				t-- // 降级不消耗传输重试

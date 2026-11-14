@@ -14,6 +14,7 @@ import (
 // MachineRecoveryArgs describes an existing invocation. There is intentionally
 // no prompt, credential, new session option or retry callback on this interface.
 type MachineRecoveryArgs struct {
+	Native            json.RawMessage
 	Harness           string
 	RequestID         string
 	RunID             string
@@ -28,12 +29,13 @@ type MachineRecoveryArgs struct {
 }
 
 type machineRecoveryOriginal struct {
-	Cwd             string `json:"cwd"`
-	Model           string `json:"model"`
-	ReasoningEffort string `json:"reasoningEffort"`
-	PermissionMode  string `json:"permissionMode"`
-	ThreadMode      string `json:"threadMode"`
-	ThreadID        string `json:"threadId,omitempty"`
+	Native          json.RawMessage `json:"native,omitempty"`
+	Cwd             string          `json:"cwd"`
+	Model           string          `json:"model"`
+	ReasoningEffort string          `json:"reasoningEffort"`
+	PermissionMode  string          `json:"permissionMode"`
+	ThreadMode      string          `json:"threadMode"`
+	ThreadID        string          `json:"threadId,omitempty"`
 }
 
 type machineRecoveryRequest struct {
@@ -80,11 +82,13 @@ func recoveredMachineResult(harness string, raw json.RawMessage, request codexPr
 	message := ""
 	if harness == "codex-pro" {
 		parsed := parseCodexProReceipt(raw, request)
+		out.NativeReceipt = parsed.NativeReceipt
 		out.CodexProReceipt, out.Session, out.SessionID, out.Text, out.Usage = raw, parsed.Session, parsed.SessionID, parsed.Text, parsed.Usage
 		out.Settled, out.Cancelled, out.TimedOut, out.Truncated = parsed.Settled, parsed.Cancelled, parsed.TimedOut, parsed.Truncated
 		out.Session.CleanupConfirmed, out.CleanupError, message = parsed.CleanupConfirmed, parsed.CleanupError, parsed.Error
 	} else {
 		parsed := parseClaudeCodeProReceipt(raw, claudeCodeProStart(request))
+		out.NativeReceipt = parsed.NativeReceipt
 		out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = raw, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
 		out.Settled, out.Cancelled, out.TimedOut, out.Truncated = parsed.Settled, parsed.Cancelled, parsed.TimedOut, parsed.Truncated
 		out.Session.CleanupConfirmed, out.ErrorCode, message = parsed.CleanupConfirmed, parsed.ErrorCode, parsed.Error
@@ -117,7 +121,7 @@ func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
 		command = ClaudeCodeProCommand()
 	}
 	request := machineRecoveryRequest{Type: "recover", Protocol: 3, RequestID: a.RequestID, RunID: a.RunID, RecoveryDirectory: a.RecoveryDirectory,
-		Original: machineRecoveryOriginal{Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}}
+		Original: machineRecoveryOriginal{Native: a.Native, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}}
 	written := make(chan error, 1)
 	result := watchdog.Run(command, nil, watchdog.Opts{
 		Context: a.Watchdog.Context, Env: childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, nil)),
@@ -145,7 +149,7 @@ func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	original := codexProStart{Type: "start", Protocol: 3, RequestID: a.RequestID, Cwd: a.Cwd, Model: a.Model,
+	original := codexProStart{Native: a.Native, Type: "start", Protocol: 3, RequestID: a.RequestID, Cwd: a.Cwd, Model: a.Model,
 		ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}
 	out := recoveredMachineResult(a.Harness, raw, original)
 	if out.Session.RunID != a.RunID {
