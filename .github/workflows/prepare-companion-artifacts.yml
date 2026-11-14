@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     env:
       CODEX_SOURCE_SHA: 284f12c208d03f3f922ccab8eb8002d3bb950796
-      CLAUDE_SOURCE_SHA: 099e247446c9fdb3c43054148cd958ca62028e4c
+      CLAUDE_SOURCE_SHA: d14ff8d8334fefd039c3d48ee2a969747d1e88c8
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ckanner/dsh-subagent-claude-code-pro
-          ref: 099e247446c9fdb3c43054148cd958ca62028e4c
+          ref: d14ff8d8334fefd039c3d48ee2a969747d1e88c8
           path: _companion/claude
           persist-credentials: false
       - name: Pack exact sources, resolve locks, verify normal installation and transfer public artifacts
