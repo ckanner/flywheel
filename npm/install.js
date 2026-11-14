@@ -12,7 +12,8 @@ const { StringDecoder } = require("node:string_decoder");
 const meta = require("../package.json");
 
 const OWNER = "@ckanner/flywheel";
-const PLUGIN = "@ckanner/dsh-plugin-flywheel";
+const PLUGIN = OWNER;
+const LEGACY_PLUGIN = '@ckanner/dsh-plugin-flywheel';
 const SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"];
 const HELP = `Flywheel npm installation
 
@@ -250,6 +251,61 @@ function hasPluginVersion(document, version) {
   return Array.isArray(document) && document.some(project => project.dependencies?.[PLUGIN]?.version === version);
 }
 
+async function registerDesktopPackage(run, dshBin, profile, item, signal) {
+  const command = args => run(dshBin, ['plugin', '--profile', profile, ...args]);
+  const inspect = async name => {
+    const result = await command(['list', name, '--depth', '0', '--json']);
+    const document = parseDocument({ ...result, stdout: requireSuccess(result, 'DSH package inspection') }, 'DSH package inspection');
+    if (!Array.isArray(document)) throw new Error('DSH package inspection must return a project list');
+    if (document.some(project => !project || typeof project !== 'object' || Array.isArray(project) ||
+        (project.dependencies !== undefined && (!project.dependencies || typeof project.dependencies !== 'object' || Array.isArray(project.dependencies))))) {
+      throw new Error('DSH package inspection returned invalid project dependencies');
+    }
+    const entries = document.flatMap(project => Object.hasOwn(project.dependencies ?? {}, name) ? [project.dependencies[name]] : []);
+    if (entries.length > 1 || entries.some(entry => !entry || typeof entry.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(entry.version))) {
+      throw new Error(`Ambiguous DSH package identity for ${name}`);
+    }
+    return entries[0];
+  };
+  const legacy = await inspect(LEGACY_PLUGIN);
+  const previous = await inspect(PLUGIN);
+  if (legacy && [legacy.from, legacy.resolved].some(value => /^(?:file:|link:|git\+|git:|github:)/.test(value ?? ''))) {
+    throw new Error('Legacy Flywheel is a custom source installation; preserve it and migrate its profile explicitly');
+  }
+  if (legacy) item.migration = { from: LEGACY_PLUGIN, version: legacy.version, to: PLUGIN, status: 'pending' };
+  let replacement;
+  try {
+    // Keep the old package available until its complete replacement is installed.
+    requireSuccess(await command(['add', '--save-exact', '--ignore-scripts', `${PLUGIN}@${meta.version}`]), 'DSH plugin registration');
+    replacement = await inspect(PLUGIN);
+    if (replacement?.version !== meta.version) throw new Error('DSH profile did not report the exact installed plugin version');
+    if (legacy) {
+      requireSuccess(await command(['remove', LEGACY_PLUGIN]), 'Legacy DSH plugin removal');
+      if (await inspect(LEGACY_PLUGIN)) throw new Error('Legacy DSH plugin remains selected; both packages must not load together');
+      if ((await inspect(PLUGIN))?.version !== meta.version) throw new Error('Unified DSH package changed during migration');
+      item.migration.status = 'migrated';
+    }
+  } catch (error) {
+    if (legacy) {
+      item.migration.status = 'incomplete';
+      // Cancellation never starts another package-manager process. A retry
+      // re-reads the real profile instead of guessing which mutation completed.
+      if (!signal?.aborted && !previous && replacement?.version === meta.version) {
+        try {
+          const old = await inspect(LEGACY_PLUGIN), current = await inspect(PLUGIN);
+          if (old?.version === legacy.version && current?.version === meta.version &&
+              current.from === replacement.from && current.resolved === replacement.resolved) {
+            requireSuccess(await command(['remove', PLUGIN]), 'DSH migration rollback');
+            if (await inspect(PLUGIN) || (await inspect(LEGACY_PLUGIN))?.version !== legacy.version) throw new Error('DSH rollback could not be confirmed');
+            item.migration.status = 'rolled-back';
+          }
+        } catch (rollbackError) { item.migration.rollbackError = rollbackError.message; }
+      }
+    }
+    throw error;
+  }
+}
+
 async function installationLock(directory) {
   await fsp.mkdir(directory, { recursive: true });
   const filename = path.join(directory, 'npm-install.lock');
@@ -366,10 +422,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       if (!options.dsh) { item.status = "skipped"; item.reason = "explicit --no-dsh"; return; }
       if (!dshBin) throw new Error("DSH command not found. Enable the command in the existing desktop app, then rerun with --dsh-bin /absolute/path/to/dsh");
       item.version = requireSuccess(await run(dshBin, ["--version"]), "DSH version");
-      requireSuccess(await run(dshBin, ["plugin", "--profile", options.profile, "add", "--save-exact", "--ignore-scripts", `${PLUGIN}@${meta.version}`]), "DSH plugin registration");
-      const listing = await run(dshBin, ["plugin", "--profile", options.profile, "list", PLUGIN, "--depth", "0", "--json"]);
-      requireSuccess(listing, "DSH plugin verification");
-      if (!hasPluginVersion(parseDocument(listing, "DSH plugin list"), meta.version)) throw new Error("DSH profile did not report the exact installed plugin version");
+      await registerDesktopPackage(run, dshBin, options.profile, item, controller.signal);
       item.profile = options.profile;
       item.reloadRequired = true;
     });
@@ -440,4 +493,4 @@ async function main(args) {
   return report.ok ? 0 : 1;
 }
 
-module.exports = { main, install, parseOptions, findExecutable, npmCommand, capture, shellQuote, digest, readReceipt, writeLauncher, launcherContent, hasPluginVersion, installationLock };
+module.exports = { main, install, parseOptions, findExecutable, npmCommand, capture, shellQuote, digest, readReceipt, writeLauncher, launcherContent, hasPluginVersion, registerDesktopPackage, installationLock };

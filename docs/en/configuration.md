@@ -542,7 +542,7 @@ Main-task fresh and scoped calls both use outer worker protocol 3. Fresh selects
 
 | Variable | Purpose |
 |---|---|
-| `FLYWHEEL_DSH_WORKER` | Optional DSH worker override; the npm launcher normally resolves the matching dependency |
+| `FLYWHEEL_DSH_WORKER` | Optional DSH worker override; the npm launcher normally resolves the worker inside its own package |
 | `FLYWHEEL_DSH_BIN` | DSH command, otherwise `dsh` on PATH |
 | `FLYWHEEL_DSH_PROFILE` | SDK profile, default `sdk`; it must not be `desktop` |
 | `DSH_HOME` | Optional DSH configuration root, interpreted by DSH |

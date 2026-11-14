@@ -70,19 +70,19 @@ test('native Flywheel view discovers tasks read-only and ships its scoped styles
   for (const name of ['刷新', '继续流程']) assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === name), false);
   assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === '停止'), false);
   for (const name of ['查看模型配置', '检查安装与配置', '检查 DSH 接入']) assert.equal(ui.button(name).disabled, false);
-  const styles = [...ui.document.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]')];
+  const styles = [...ui.document.querySelectorAll('style[data-plugin="@ckanner/flywheel"]')];
   assert.equal(styles.length, 1, 'the view renders exactly one plugin-owned stylesheet');
   assert.ok(ui.container.contains(styles[0]), 'React owns the stylesheet inside the slot component');
-  assert.equal(ui.document.head.querySelector('[data-plugin="@ckanner/dsh-plugin-flywheel"]'), null);
+  assert.equal(ui.document.head.querySelector('[data-plugin="@ckanner/flywheel"]'), null);
   assert.match(styles[0].textContent, /--dsw-alias-/);
   for (const className of ui.container.firstElementChild.classList) {
     assert.ok(styles[0].textContent.includes(`.${className}`), 'compiled classes resolve in the shipped stylesheet');
   }
   await ui.setVisible(false);
-  assert.equal(ui.document.querySelector('style[data-plugin="@ckanner/dsh-plugin-flywheel"]'), null,
+  assert.equal(ui.document.querySelector('style[data-plugin="@ckanner/flywheel"]'), null,
     'unmounting the view releases its style rather than leaving a bootstrap DOM write');
   await ui.setVisible(true);
-  assert.equal(ui.container.querySelectorAll('style[data-plugin="@ckanner/dsh-plugin-flywheel"]').length, 1);
+  assert.equal(ui.container.querySelectorAll('style[data-plugin="@ckanner/flywheel"]').length, 1);
   assert.equal(ui.requests.length, 0, 'tab reopening does not dispatch a command');
 });
 

@@ -68,22 +68,30 @@ function build(root, version, output) {
     before.snapshot_sha256 = snapshot(root, source);
     // Install the locked build toolchain inside the snapshot. CSS Modules need
     // Lightning CSS; neither the caller's dist/ nor node_modules/ is a source.
+    execFileSync("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: source, stdio: "inherit" });
     const pluginDirectory = path.join(source, "plugins/dsh");
+    const helper = JSON.parse(fs.readFileSync(path.join(pluginDirectory, 'package.json'), 'utf8'));
+    if (helper.private !== true || helper.name !== '@ckanner/flywheel' || helper.version !== version || helper.engines.dsh !== JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')).engines.dsh) throw new Error('DSH source package must stay private and match the unified identity');
     execFileSync("npm", ["ci", "--include=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"], {
       cwd: pluginDirectory, stdio: "inherit",
     });
-    execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: pluginDirectory, stdio: "inherit" });
+    execFileSync(process.execPath, ["scripts/build.mjs", "--package-root", source], { cwd: pluginDirectory, stdio: "inherit" });
     const date = git(root, "show", "-s", "--format=%cs", "HEAD").trim();
+    const native = { protocol: 1, version, platforms: {} };
     for (const platform of PLATFORMS) {
       const [goos, goarch] = platform.split("-");
-      const binary = path.join(source, "npm/platforms", platform, "flywheel");
+      const binary = path.join(source, "native", platform, "flywheel");
+      fs.mkdirSync(path.dirname(binary), { recursive: true });
       execFileSync("go", ["build", "-buildvcs=false", "-trimpath", "-ldflags",
         `-s -w -X github.com/ckanner/flywheel/internal/build.Version=${version} -X github.com/ckanner/flywheel/internal/build.Date=${date}`,
         "-o", binary, "./cmd/flywheel"], {
         cwd: source, stdio: "inherit", env: { ...process.env, GOOS: goos, GOARCH: goarch, CGO_ENABLED: "0" },
       });
       fs.chmodSync(binary, 0o755);
+      const bytes = fs.readFileSync(binary);
+      native.platforms[platform] = { bytes: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex") };
     }
+    fs.writeFileSync(path.join(source, "native/manifest.json"), JSON.stringify(native, null, 2) + "\n");
     const entries = [];
     for (const entry of PACKAGES) {
       const result = execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", packages], {
@@ -97,7 +105,7 @@ function build(root, version, output) {
         snapshot(root) !== before.snapshot_sha256) {
       throw new Error("Source changed while building; discard this candidate and retry");
     }
-    const candidate = { format_version: 1, version, source: before, packages: entries };
+    const candidate = { format_version: 2, version, source: before, packages: entries };
     fs.writeFileSync(path.join(packages, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
     verifyCandidate(packages, { sourceSHA: before.commit, allowDirty: true });
     const destination = path.resolve(root, output);

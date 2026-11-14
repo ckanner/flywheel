@@ -628,6 +628,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | P5 就绪队列与一次性 DSH 预热 | [实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md) | [工程验证与收益边界](validation/2026-11-13-p5-ready-queue-prewarm.md) |
 | 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
+| 0.33.0 单包分发 | [发行流程](zh-CN/releasing.md) | [工程验证](validation/2026-11-14-single-package.md) |
 | 0.31.0 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.31.0.md) |
 
 提案保留当时的背景和分期，验收记录保留实际结果；现行行为以本文、schema 和当前使用指南为准。新增实现应修改对应章节，发布事实写入 changelog 和验收记录，不在文档开头或结尾追加另一套现行说明。
@@ -733,7 +734,7 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 
 现有 worker 策略固定每次调用的目录、权限和审批，限制自主委派及 workflow／goal 驱动，禁用 `schedule`／`tool-schedule` 的自主提醒输入，并关闭模型标题和自动模型压缩以免脱离 Go 的计量和生命周期管理。临时覆盖不修改用户提醒存储。当前也保守禁用整个 `tool-web`，包括搜索与抓取；这不表示所有网页工具都需要辅助模型。官方 [web 工具](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/web/tool-web/README.md)可分别配置两者，模型辅助调用与普通检索需分别核对。完全权限改变宿主访问策略，仍保留这些工具与辅助模型调用限制；恢复检索、压缩或其他扩展属于后续能力工作，须同时验证计量、预算、取消与工作目录边界。
 
-后续接入方向见[原生 Harness 能力方案](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）。该方案调研工具并行、子代理、Team/Swarm/Workflow 与 Tower 的接口和边界，仍待讨论；不改变本节现有 worker 策略，也不表示这些能力已实现。
+后续接入方向见[原生 Harness、PTC 与 LCU 方案](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)，2026-11-14 修订）。方案覆盖最新 presets 与 SDK 组合、PTC 输出兼容、受限子代理、Team/Swarm/Workflow、LCU 的桌面资源与媒体证据，以及 Tower 的隔离工作单元；仍为待实施设计，不改变本节现有 worker 策略，也不表示这些能力已接入。
 
 ### 12.3 受管阶段与远端交付
 
@@ -787,19 +788,21 @@ DSH 插件按公开 API 的兼容系列声明 `>=0.2.1-rc.5 <0.3.0-0`；DSH 使�
 
 ### 13.1 npm 安装与发行
 
-正式分发以 npm 为入口：`npx -y @ckanner/flywheel@latest install` 显式协调同版本全局 CLI、worker、DSH 桌面插件与内嵌 skills。普通 `npm install` 不通过 postinstall 修改用户配置；安装器不要求源码 checkout 或本机 Go 编译器。四个平台包仍由 optionalDependencies 选择，插件是精确版本依赖，全部六包版本一致。安装不会替换用户的 DSH 桌面或代办模型账号登录。
+正式分发以 npm 为入口：`npx -y @ckanner/flywheel@latest install` 显式协调同版本全局 CLI、worker、DSH 桌面插件与内嵌 skills。普通 `npm install` 不通过 postinstall 修改用户配置；安装器不要求源码 checkout 或本机 Go 编译器。从 0.33 起只发布 `@ckanner/flywheel`：一个 tarball 内含 CLI、DSH Host／Client、worker 与四个平台 Go 二进制；skills 与模板继续内嵌在引擎中。`native/manifest.json` 固定版本、平台集合和各二进制摘要，启动器仅选择包内当前平台并核对完整性，不再下载或查找独立平台包。源码中的 `plugins/dsh` 仅为 private 构建／测试区。安装不会替换用户的 DSH 桌面或代办模型账号登录。
+
+桌面从拆包版本升级时，安装器先读取现有依赖，安装并确认新的完整包，再通过官方 DSH CLI 移除旧 `@ckanner/dsh-plugin-flywheel`，最后确认旧名不存在且新版本精确匹配。旧包移除失败时，仅在能确认旧包仍存在且替代包为本次新增的情况下回退；取消不启动新的回退子进程，局部状态在 JSON 报告中保留，重试先重新读取实际状态。自定义 file/git 来源的旧插件不自动迁移。升级前应退出 DSH；当前进程未重载不算新版已生效。全局配置、项目契约和历史调用账本不因包迁移而重写。
 
 npm shim 异步运行原生引擎，收到 TERM/INT/HUP 时转发给 Go 并等待退出；不能把仅 wrapper 退出当成子进程完成。worker 通过安装包公开入口解析绝对路径。桌面入口使用安装记录与绝对启动路径，避免依赖 GUI 恰好继承终端 PATH。用户显式配置优先，安装不覆盖已有 Flywheel 模型配置。
 
 skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存内容与权限清单；升级前确认原内容未被用户修改，额外文件、未知标记或陌生目录保留并报冲突。先写完整 staging，再以 rename 切换并保留失败回滚；这是逐 skill 更新，不是全部目录的整体事务。旧文本标记只在目录与当前内嵌快照完全一致时迁移。`install-skills --json` 供安装器取得完整结果，部分失败不能报告整套成功。
 
-发布以精确 HEAD 标签与干净候选为依据。构建一次六包候选，Linux/macOS 安装测试消费同一组包；已存在版本必须核对 integrity。平台包与插件先发布、meta 最后发布，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
+发布以精确 HEAD 标签与干净候选为依据。构建一次完整单包候选（candidate format 2），Linux/macOS 安装测试消费同一个 tarball；候选验证同时核对四个平台二进制、公开入口、MIT 许可和内置 adapter。已存在版本必须核对 integrity；先发 candidate 标签，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.9.0`；该已审查源码候选以真实 npm tarball 锁定并 bundle 到插件，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。Claude 0.4.0 维持可选 peer。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.9.0`；该已审查源码候选以真实 npm tarball 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。Claude 0.4.0 维持可选 peer。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 
-GitHub Actions 的 publish job 使用固定 Node/npm 发行工具链，支持 OIDC trusted publishing 及已有 `NPM_TOKEN` 后备。无 token 时显式使用空 user npmrc，避免 setup-node 的认证占位配置；不在日志或 GitHub 环境文件中写入凭证。六个包各自的 npm trusted publisher 都必须对应 `ckanner/flywheel` 的 `publish.yml`，并分别允许直接 publish 与 dist-tag；GitHub 登录或 `id-token: write` 本身不授予 npm 包写权限。维护者配置和失败恢复见 [发行指南](zh-CN/releasing.md)。
+GitHub Actions 的 publish job 使用固定 Node/npm 工具链，仅通过 OIDC trusted publishing 认证；显式使用空 user npmrc 并清空认证占位值，不依赖存储 token 或浏览器逐包确认。只为完整包 `@ckanner/flywheel` 配置对应 `ckanner/flywheel`／`publish.yml` 的 npm Trusted Publisher，同时允许 publish 与 dist-tag。GitHub 登录或 `id-token: write` 本身不授予 npm 包写权限；新连接需实际 CI 发布来完成 npm 的验证。维护者配置和失败恢复见 [发行指南](zh-CN/releasing.md)。
 
 私有仓库的发行同样经过完整门禁。发布 job 在准备 npm 后，由官方 checkout 使用短暂的只读 GitHub 认证重新取得完整 refs，固定到已验证 source，再下载候选并检查精确 tag；后续不执行无凭证的远端 fetch。仓库可见性由 GitHub 事件显式传给 publisher，未知值拒绝发布。public 要求 npm provenance，private 显式关闭 npm 不支持的证明生成；这只记录 registry 的能力边界，不改变仓库可见性，也不取消本项目的 source／artifact integrity 校验。
 

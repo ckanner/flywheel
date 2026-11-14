@@ -828,8 +828,8 @@ exports.apply = function apply(ctx) {
     for (const release of pendingOperations) release();
     pendingOperations.clear();
   });
-  const readsReady = ctx.remote.$mount({ package: '@ckanner/dsh-plugin-flywheel', descriptors: [{
-    id: '@ckanner/dsh-plugin-flywheel#flywheelConsole/read', service: 'flywheelConsole', namespace: 'flywheelConsole', method: 'read',
+  const readsReady = ctx.remote.$mount({ package: '@ckanner/flywheel', descriptors: [{
+    id: '@ckanner/flywheel#flywheelConsole/read', service: 'flywheelConsole', namespace: 'flywheelConsole', method: 'read',
     invocation: { kind: 'direct' }, parameters: [
       { name: 'agent', wire: 'sessionId', source: 'lookup', lookup: 'agent', codec: { mode: 'src-json' } },
       { name: 'input', wire: 'input', source: 'json', codec: { mode: 'src-json' } },

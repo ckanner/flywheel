@@ -31,7 +31,7 @@ execution separately.
 | --- | --- | --- |
 | Development setup, quality gates, and pull requests | [Contributing](en/contributing.md) | [贡献指南](zh-CN/contributing.md) |
 | Documentation ownership, bilingual updates, and review checklist | [Maintenance rules](en/contributing.md#keep-documentation-organized) | [文档维护规范](zh-CN/contributing.md#保持文档结构清晰) |
-| Build, verify, publish, and recover a six-package release | [Release runbook](en/releasing.md) | [发行手册](zh-CN/releasing.md) |
+| Build, verify, publish, and recover a complete single-package release | [Release runbook](en/releasing.md) | [发行手册](zh-CN/releasing.md) |
 | DSH package, host compatibility, and worker setup | [Plugin README](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.md) | [插件说明](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md) |
 
 The [architecture specification](design.md) is the maintained design contract
@@ -54,11 +54,12 @@ The [P5 implementation plan](plans/2026-11-13-p5-ready-queue-prewarm.md) (Chines
 records optional scheduling and runtime preparation; live performance and any
 default adoption require separate evidence.
 
-The [native harness capabilities proposal](plans/2026-11-13-native-harness-capabilities.en.md)
-([中文](plans/2026-11-13-native-harness-capabilities.md)) researches DSH, Kimi,
-Codex, and Claude capabilities and proposes how to use them within existing
-loops. Its capability profiles, accounting, and lifecycle extensions are for
-discussion and are not implemented by this documentation change.
+The [native harness, PTC and LCU proposal](plans/2026-11-13-native-harness-capabilities.en.md)
+([中文](plans/2026-11-13-native-harness-capabilities.md)), revised on 2026-11-14,
+maps current presets and DSH/Kimi/Codex/Claude capabilities to Flywheel loops.
+It covers SDK composition, PTC output compatibility, bounded helpers and shared
+desktop ownership. Its capability, accounting and lifecycle extensions remain
+proposed; this documentation change does not implement them.
 
 | Collection | Contents |
 | --- | --- |

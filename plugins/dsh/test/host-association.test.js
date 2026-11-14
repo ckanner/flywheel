@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { apply, inject } from '../src/index.js';
+const { apply, inject } = await import(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR
+  ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR, 'dist/index.mjs')) : new URL('../src/index.js', import.meta.url));
 import { taskProjectionKey } from '../src/task-association.js';
 
 // Exercise the public registry and Session implementation from both supported

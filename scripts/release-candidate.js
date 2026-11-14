@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
-const { PACKAGES, VERSION } = require("./release-preflight.js");
+const { PACKAGES, PLATFORMS, VERSION } = require("./release-preflight.js");
 
 function filenameFor(name, version) {
   return `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
@@ -16,21 +16,48 @@ function fileIntegrity(file) {
 }
 
 function readPackedManifest(file) {
-  return JSON.parse(execFileSync("tar", ["-xOf", file, "package/package.json"], {
-    encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000,
-  }));
+  return JSON.parse(readPackedFile(file, 'package.json'));
+}
+
+function readPackedFile(file, relative) {
+  return execFileSync('tar', ['-xOf', file, 'package/' + relative], {
+    stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+function verifyPackedContents(file, manifest) {
+  const native = JSON.parse(readPackedFile(file, 'native/manifest.json'));
+  if (native.protocol !== 1 || native.version !== manifest.version ||
+      JSON.stringify(Object.keys(native.platforms ?? {}).sort()) !== JSON.stringify([...PLATFORMS].sort())) {
+    throw new Error('Packed native manifest must identify all four platforms at the package version');
+  }
+  for (const platform of PLATFORMS) {
+    const bytes = readPackedFile(file, `native/${platform}/flywheel`);
+    const expected = native.platforms[platform];
+    if (!bytes.length || expected.bytes !== bytes.length ||
+        crypto.createHash('sha256').update(bytes).digest('hex') !== expected.sha256) {
+      throw new Error(`Packed native binary integrity mismatch: ${platform}`);
+    }
+  }
+  for (const relative of [...Object.values(manifest.bin), ...Object.values(manifest.exports), 'cordis.patch.yml', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+    if (!readPackedFile(file, relative.replace(/^\.\//, '')).length) throw new Error(`Packed entry is empty: ${relative}`);
+  }
+  const adapter = JSON.parse(readPackedFile(file, 'node_modules/dsh-subagent-codex-pro/package.json'));
+  if (adapter.name !== 'dsh-subagent-codex-pro' || adapter.version !== '0.9.0' || Object.keys(adapter.dependencies ?? {}).length) {
+    throw new Error('Packed Codex Pro must be the reviewed dependency-free 0.9.0 adapter');
+  }
 }
 
 function verifyCandidate(directory, { sourceSHA, allowDirty = false, readManifest = readPackedManifest } = {}) {
   const candidate = JSON.parse(fs.readFileSync(path.join(directory, "candidate.json"), "utf8"));
-  if (candidate.format_version !== 1 || !VERSION.test(candidate.version ?? "")) throw new Error("Invalid release candidate format/version");
+  if (candidate.format_version !== 2 || !VERSION.test(candidate.version ?? "")) throw new Error("Invalid release candidate format/version");
   if (!/^[0-9a-f]{40}$/.test(candidate.source?.commit ?? "") || !/^[0-9a-f]{40}$/.test(candidate.source?.tree ?? "") ||
       !/^[0-9a-f]{64}$/.test(candidate.source?.snapshot_sha256 ?? "") || typeof candidate.source?.dirty !== "boolean") {
     throw new Error("Invalid release source identity");
   }
   if (sourceSHA && candidate.source.commit !== sourceSHA) throw new Error("Candidate source SHA does not match the verified source");
   if (candidate.source.dirty && !allowDirty) throw new Error("Refusing to publish a dirty source candidate");
-  if (!Array.isArray(candidate.packages) || candidate.packages.length !== PACKAGES.length) throw new Error("Candidate must contain exactly six packages");
+  if (!Array.isArray(candidate.packages) || candidate.packages.length !== PACKAGES.length) throw new Error("Candidate must contain exactly one complete package");
   const expected = new Set(PACKAGES.map((entry) => entry.name));
   const manifests = {};
   for (const entry of candidate.packages) {
@@ -45,7 +72,8 @@ function verifyCandidate(directory, { sourceSHA, allowDirty = false, readManifes
     manifests[entry.name] = readManifest(file);
   }
   require("./release-preflight.js").validatePackages(manifests, candidate.version);
+  for (const entry of candidate.packages) verifyPackedContents(path.join(directory, entry.filename), manifests[entry.name]);
   return candidate;
 }
 
-module.exports = { filenameFor, fileIntegrity, readPackedManifest, verifyCandidate };
+module.exports = { filenameFor, fileIntegrity, readPackedManifest, readPackedFile, verifyPackedContents, verifyCandidate };

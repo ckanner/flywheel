@@ -57,12 +57,12 @@ FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|
 npm test                 # npm 启动器、安装器、发行门禁的单元与协议测试
 make build
 FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions # 36 条真实引擎 / public adapter 离线配对场景
-npm run build:npm        # 隔离构建六个同版本包，只生成候选，不发布
+npm run build:npm        # 隔离构建一个完整包（含四平台引擎），只生成候选，不发布
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 ```
 
 Go 改动必须通过 `make quality-gate`；DSH 插件还须通过 Node 与跨进程桥接检查。
-npm 发行修改须运行根目录 `npm test`，并构建一次六包候选，通过真实 npm
+npm 发行修改须运行根目录 `npm test`，并构建一次单包候选，通过真实 npm
 安装测试。CI 在 Linux/macOS 验证同一个候选，并在 Linux 检查核心包 race。
 安装测试使用隔离 registry／用户目录和 DSH 协议桩；不改真实 profile。
 真实模型、桌面 UI 和账号冒烟不在默认门禁内；无凭证环境可以运行全部离线检查。
@@ -125,20 +125,21 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
   Plain npm installation only places package files; explicit `install`/`setup`
   owns user setup. Never hide profile, skills or credential changes in postinstall.
   Existing DSH and Node are prerequisites; harness login remains the user's own flow.
-- Keep the meta package, four optional platform packages and DSH plugin at one
-  exact version. The meta pins the plugin dependency as well as platform
-  optionalDependencies. Resolve package roots through Node, including hoisted
-  installs; do not silently fall back to mismatched binaries or workers.
+- Publish only `@ckanner/flywheel`. It contains the CLI, DSH host/client and
+  workers, embedded skills, and all four native binaries. Validate the bundled
+  native manifest and checksums; never fetch an engine at runtime or fall back
+  to an old platform/worker package. `plugins/dsh` is a private build/test harness,
+  not a separately published package. Legacy registry versions remain immutable.
 - User `flywheelBinary` takes precedence over the managed GUI installation
-  record. A missing record may use legacy PATH lookup; an invalid record or
-  changed launcher must fail visibly. Preserve custom config and modified
+  record. A missing record uses the installed package’s bundled CLI (source-only
+  fixtures may use PATH); an invalid record or changed launcher must fail visibly. Preserve custom config and modified
   skills: ownership requires a matching content manifest, not merely a marker.
 - Build worker and native binaries in an isolated source snapshot, pack once,
   then test and publish those exact tarballs. Publication requires a clean
   checkout and the release tag pointing at exact HEAD. Existing registry
   versions must match integrity; only a structured E404 means absent.
-- Publish dependencies/plugin before meta under a candidate tag. Verify all six
-  exact versions and registry installation before promoting latest; never
+- Publish the complete package under a candidate tag. Verify its exact
+  version, bundled contents and registry installation before promoting latest; never
   downgrade a newer latest. A failed retry reuses the checked artifact instead
   of rebuilding different bytes for an already published version.
 

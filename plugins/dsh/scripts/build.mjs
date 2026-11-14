@@ -1,12 +1,20 @@
-import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { transform } from 'lightningcss';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-await mkdir(join(root, 'dist'), { recursive: true });
-for (const name of ['console-read.js', 'workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'prewarm.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js']) {
-  await copyFile(join(root, 'src', name), join(root, 'dist', name));
+const packageRoot = process.argv[2] === '--package-root' && process.argv[3] ? resolve(process.argv[3]) : undefined;
+if (process.argv.length !== 2 && (process.argv.length !== 4 || !packageRoot)) throw new Error('usage: build.mjs [--package-root <directory>]');
+const outputs = [{ directory: join(root, 'dist'), moduleExtension: '.js' }, ...(packageRoot ? [{ directory: join(packageRoot, 'dist'), moduleExtension: '.mjs' }] : [])];
+for (const output of outputs) await mkdir(output.directory, { recursive: true });
+const moduleFiles = ['console-read.js', 'workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'prewarm.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js'];
+for (const name of moduleFiles) {
+  const source = await readFile(join(root, 'src', name), 'utf8');
+  for (const output of outputs) {
+    const body = output.moduleExtension === '.mjs' ? source.replace(/(['"])(\.\/[^'"]+)\.js\1/g, (whole, quote, relative) => moduleFiles.includes(relative.slice(2) + '.js') ? quote + relative + '.mjs' + quote : whole) : source;
+    await writeFile(join(output.directory, name.replace(/\.js$/, output.moduleExtension)), body);
+  }
 }
 // Compile plugin-owned CSS Modules. The rendered component owns its style tag;
 // external plugins must not write outside their React slot subtree.
@@ -22,11 +30,13 @@ const clientSources = ['client.js', 'client-console.js', 'client-tasks.js', 'cli
 const client = (await Promise.all(clientSources.map(name => readFile(join(root, 'src', name), 'utf8')))).join('\n')
   .replace('__FLYWHEEL_CSS_CLASSES__', JSON.stringify(classMap))
   .replace('__FLYWHEEL_CSS_TEXT__', JSON.stringify(stylesheet.code.toString()));
-await writeFile(join(root, 'dist/client.js'),
-  'window.__ModuleLoader__.load({id:"@ckanner/dsh-plugin-flywheel",factory:(require)=>{\n' +
-  'const module={exports:{}};const exports=module.exports;\n' +
-  client + '\nreturn module.exports;\n}});\n');
-await chmod(join(root, 'dist/worker.js'), 0o755);
-await chmod(join(root, 'dist/codex-pro-worker.js'), 0o755);
-await chmod(join(root, 'dist/claude-code-pro-worker.js'), 0o755);
-console.log('Built host plugin, native Conversation View, DSH SDK, Codex Pro and Claude Code Pro workers.');
+for (const output of outputs) {
+  await writeFile(join(output.directory, 'client.js'),
+    'window.__ModuleLoader__.load({id:"@ckanner/flywheel",factory:(require)=>{\n' +
+    'const module={exports:{}};const exports=module.exports;\n' +
+    client + '\nreturn module.exports;\n}});\n');
+  for (const worker of ['worker', 'codex-pro-worker', 'claude-code-pro-worker']) {
+    await chmod(join(output.directory, worker + output.moduleExtension), 0o755);
+  }
+}
+console.log('Built Flywheel host, Conversation View and machine workers.');
