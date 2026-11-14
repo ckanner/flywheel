@@ -694,7 +694,7 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 会话视图不提供任务选择器。只接受当前会话投影和精确匹配 `hostSessionId` 的运行索引；其他会话及无归属记录不可见。显式工具关联优先；没有投影时按开始时间选择最近的本会话任务，再请求 Go 状态。单纯打开页面、刷新或旧版 UI 产生的 `/flywheel status` 日志不能创建新的任务关联。未确认操作始终锁定原目标，fork 不继承关联。无关联时显示空状态，独立终端任务需要在目标会话通过 `flywheel_control status` 显式关联，不能按目录猜测或扫描磁盘。
 
-自动发现、轮询、配置读取、节点与指标读取使用公开 Typert `flywheelConsole/read` Remote，宿主解析实际 Agent／Session，按会话过滤运行并核对任务身份；该入口只允许读取，不能启动或修改任务。读取不执行 slash command，不追加会话事件，不把 JSON 刷进聊天。UI 变更和未知结果的显式 status 核对仍走有持久回执的命令，确保重载后可恢复操作锁；人工命令及模型工具保持原 JSON 协议，不删除历史事件。读取通道不可用时显示错误，不回退到刷屏命令。 客户端挂载使用公开 strict codec 工厂校验 Session ID、只读请求和返回 envelope，不以 src-json 充当生成的客户端输入 codec。兼容测试必须让实际打包 descriptor 经过真实 Client `$mount` 和 Host Gateway，不能仅模拟挂载成功。
+自动发现、轮询、配置读取、节点与指标读取使用公开 Typert `flywheelConsole/read` Remote，宿主解析实际 Agent／Session，按会话过滤运行并核对任务身份；该入口只允许读取，不能启动或修改任务。读取不执行 slash command，不追加会话事件，不把 JSON 刷进聊天。UI 变更和未知结果的显式 status 核对仍走有持久回执的命令，确保重载后可恢复操作锁；人工命令及模型工具保持原 JSON 协议，不删除历史事件。读取通道不可用时显示错误，不回退到刷屏命令。 客户端挂载使用公开 strict codec 工厂校验 Session ID、只读请求和返回 envelope，Agent lookup 的 wire 字段遵循真实宿主的 `agentId`，不以 src-json 充当生成的客户端输入 codec。兼容测试必须让实际打包 descriptor 经过真实 Client `$mount` 和 Host Gateway，不能仅模拟挂载成功。动态挂载完成后，以受父插件拥有的 `ctx.inject` 子作用域消费 `remote.flywheelConsole`，卸载时同时撤销读取 consumer；不得从未声明注入的外层 context 访问它。
 
 项目、任务记录和分支在有值时直接显示。阶段操作、来源、失败证据、会话入口及配置操作使用普通分组，不提供折叠控件；视图导航与画布子图导航仍保留。已有运行只提供适用的继续／停止操作，准备好的新任务才显示 Auto／Quick／Full 启动选项。主工作区只有流程与记录，设置独立进入。设置使用运行方式、模型与会话、预算与重试、JEV、高级与诊断五个分类；重新读取、完整 JSON 和原始回执放在高级与诊断，范围及保存／撤销／恢复默认保持固定位置。窄窗口的设置导航行固定 54px、每项 36px；触控指针下按钮为 44px，并使用 5px 上下留白，不与内容分享最小高度。离开设置、切换范围和重新读取保护未保存草稿。
 

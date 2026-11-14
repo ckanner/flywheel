@@ -9,7 +9,9 @@ their original language.
 
 - Fix task discovery and configuration reads rejected by the actual DSH Client
   Gateway. Supply strict schema factories for session identity, read requests and
-  result envelopes; preserve session isolation and silent reads.
+  result envelopes; consume the dynamic namespace through an owned injected
+  scope, use the host Agent registry's `agentId` wire field, and preserve session
+  isolation, teardown and silent reads.
 - Exercise the shipped Client descriptor through the real public Client and Host
   Gateway on both supported host fixtures instead of mocking Remote mounting.
 

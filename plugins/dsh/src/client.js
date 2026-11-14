@@ -878,10 +878,25 @@ exports.apply = function apply(ctx) {
   const readsReady = ctx.remote.$mount({ package: '@ckanner/flywheel', descriptors: [{
     id: '@ckanner/flywheel#flywheelConsole/read', service: 'flywheelConsole', namespace: 'flywheelConsole', method: 'read',
     invocation: { kind: 'direct' }, parameters: [
-      { name: 'agent', wire: 'sessionId', source: 'lookup', lookup: 'agent', codec: consoleReadCodec('SessionId', value => consoleReadString(value, 'sessionId')) },
+      { name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'agent', codec: consoleReadCodec('SessionId', value => consoleReadString(value, 'sessionId')) },
       { name: 'input', wire: 'input', source: 'json', codec: consoleReadCodec('ConsoleReadRequest', consoleReadInput) },
     ], cancellation: { parameter: 'signal' }, result: { ...consoleReadCodec('ConsoleReadResult', consoleReadResult), decode: consoleReadResult },
-  }] });
+  }] }).then(async () => {
+    let readConsole;
+    // The namespace is installed asynchronously by $mount. Own its consumer in
+    // an injected child scope; the outer plugin cannot access undeclared services.
+    const consumer = ctx.inject(['remote.flywheelConsole'], scope => {
+      readConsole = (sessionId, request) => scope.remote.flywheelConsole.read(sessionId, request);
+    });
+    try {
+      await consumer;
+      if (disposed || !readConsole) throw new Error('Flywheel read scope is unavailable');
+      return readConsole;
+    } catch (error) {
+      await consumer.dispose();
+      throw error;
+    }
+  });
   // A missing read capability is a visible error, never a noisy command fallback.
   readsReady.catch(() => {});
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
@@ -896,7 +911,7 @@ exports.apply = function apply(ctx) {
         control = createControl(async request => {
           const value = readReply(await (mutates(request.action) || request.action === 'status' && control?.source.getSnapshot().uncertainty
             ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
-            : readsReady.then(() => ctx.remote.flywheelConsole.read(sessionId, request))), request);
+            : readsReady.then(readConsole => readConsole(sessionId, request))), request);
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
         }, pendingOperations, () => disposed);
