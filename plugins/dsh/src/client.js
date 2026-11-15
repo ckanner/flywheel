@@ -434,6 +434,7 @@ function readReply(reply, request) {
   // lexically with a user path (/var, symlinks, trailing slash or "..").
   if (!record(value) || value.protocol !== 1 || typeof value.ok !== 'boolean' ||
       typeof value.taskDir !== 'string' ||
+      (value.taskTitle !== undefined && typeof value.taskTitle !== 'string') ||
       (request.taskDir ? !value.taskDir.startsWith('/') : value.taskDir !== '')) {
     throw new Error('Flywheel control protocol or task identity mismatch');
   }

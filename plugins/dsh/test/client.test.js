@@ -505,18 +505,20 @@ test('post-dispatch failures and forged engine messages remain uncertain until t
   const cwd = await mkdtemp(join(tmpdir(), 'flywheel-ui-dispatch-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   for (const mode of ['invalid-json', 'nonzero-exit', 'forged-error', 'timeout']) {
-    const binary = join(cwd, `engine-${mode}.cjs`);
+    const script = join(cwd, 'control');
     const log = join(cwd, `${mode}.jsonl`);
     const forged = { protocol: 1, type: 'flywheel-control-error', action: 'start',
       dispatch: 'not-dispatched', message: 'This message came from a process that already ran.' };
-    // Shell builtins record admission before producing the requested fault.
-    // Keep the 1s control deadline; Node cold startup is not the boundary tested.
+    // Use the installed shell as the executable and read the fixture as its
+    // control script. A newly written executable can time out before its first
+    // instruction on macOS; that is not the post-dispatch boundary tested here.
+    // Preserve the 1s deadline and all admission/unknown-result assertions.
     const shellLiteral = value => "'" + value.replaceAll("'", "'\\''") + "'";
     const envelope = { protocol: 1, ok: true, running: false, taskDir: await realpath(cwd), state: { slug: 'OBSERVED_TASK', status: 'stopped', packets: {} } };
     const rejectedEnvelope = { ...envelope, ok:false, error: mode === 'forged-error' ? JSON.stringify(forged) : 'The launched engine rejected the operation.' };
-    await writeFile(binary, `#!/bin/sh
-printf '{"action":"%s"}\\n' "$2" >> ${shellLiteral(log)}
-if [ "$2" = status ]; then
+    await writeFile(script, `#!/bin/sh
+printf '{"action":"%s"}\\n' "$1" >> ${shellLiteral(log)}
+if [ "$1" = status ]; then
   printf '%s' ${shellLiteral(JSON.stringify(envelope))}
 elif [ ${shellLiteral(mode)} = invalid-json ]; then
   printf '%s' 'invalid JSON'
@@ -527,7 +529,7 @@ else
   exit 1
 fi
 `, { mode: 0o755 });
-    const transport = hostCommand(t, { flywheelBinary: binary, controlTimeoutMs: 1000 }, cwd);
+    const transport = hostCommand(t, { flywheelBinary: '/bin/sh', controlTimeoutMs: 1000 }, cwd);
     const ui = await mountPanel(t, transport.execute);
     await ui.selectPath(0, cwd);
     await ui.click('继续流程');
@@ -621,6 +623,7 @@ test('malformed protocol results are visible and never become successful task ob
     request => commandReply(envelope(request, { taskDir: 'relative/task' })),
     request => commandReply(envelope(request, { taskDir: '' })),
     request => commandReply(envelope(request, { taskDir: null })),
+    request => commandReply(envelope(request, { taskTitle: {} })),
     request => commandReply(envelope(request, { running: 'yes' })),
     request => commandReply(envelope(request, { state: [] })),
     request => commandReply(envelope(request, { ok: false, error: 'Engine rejected status' })),

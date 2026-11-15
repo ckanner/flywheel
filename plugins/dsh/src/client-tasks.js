@@ -1,23 +1,23 @@
 // Task discovery consumes Go's registered runs; no directory scanning or shell parsing.
 Object.assign(zh, {
-  taskSelected: '当前任务', taskNoSelection: '还没有关联任务',
+  taskID: '任务 ID', taskHeading: '当前关联任务', taskSelected: '当前任务', taskNoSelection: '还没有关联任务',
   taskEmptyHelp: '此视图只显示当前会话关联的 Flywheel 任务。使用 /flywheel-task 准备并运行后，画布会自动出现；加载 Skill 本身不会启动引擎',
   taskDiscoveryError: '当前会话任务读取失败', taskRequired: '当前会话尚未关联任务', retry: '重试',
-  taskWorkspace: '工作区', taskLocation: '任务位置（自动取得）', taskFolderLocation: '任务记录',
+  taskWorkspace: '项目目录', taskLocation: '任务位置（自动取得）', taskFolderLocation: '任务记录',
   emptyBody: '在当前会话中使用 /flywheel-task 准备并运行任务',
-  stageFocus: '本次运行', stageFull: '完整流程', stageOnly: '仅运行{stage}阶段',
+  stageFocus: '本次运行', stageFull: '任务全貌', stageOnly: '仅运行{stage}阶段',
   stagePassed: '本次{stage}已通过', stageFailed: '本次{stage}未通过', stageCancelled: '本次{stage}已取消',
   stageRunning: '本次{stage}进行中', stageUnknown: '本次{stage}结果待核对',
   stageScopeHelp: '这里展示这次单阶段运行的回执。通过该阶段不代表完整任务已交付',
   stageContinue: '需要继续完整流程时', stageFullState: '整体交付：{status}', stageUndelivered: '尚未完成', stageDelivered: '已完成', stageRecordedScore: '记录评分', stageRecordedVerdict: '记录结论', stageMetadata: '运行记录与文件位置',
 });
 Object.assign(en, {
-  taskSelected: 'Current task', taskNoSelection: 'No task associated yet',
+  taskID: 'Task ID', taskHeading: 'Associated task', taskSelected: 'Current task', taskNoSelection: 'No task associated yet',
   taskEmptyHelp: 'This view follows the current conversation only. Use /flywheel-task to prepare and run a task; its canvas appears automatically. Loading a skill alone does not start the engine',
   taskDiscoveryError: 'Could not read this conversation’s task', taskRequired: 'No task is associated with this conversation', retry: 'Retry',
   taskWorkspace: 'Workspace', taskLocation: 'Task location (automatic)', taskFolderLocation: 'Task records',
   emptyBody: 'Use /flywheel-task in this conversation to prepare and run a task',
-  stageFocus: 'This run', stageFull: 'Full workflow', stageOnly: '{stage} stage only',
+  stageFocus: 'This run', stageFull: 'Task overview', stageOnly: '{stage} stage only',
   stagePassed: 'This {stage} passed', stageFailed: 'This {stage} failed', stageCancelled: 'This {stage} was cancelled',
   stageRunning: 'This {stage} is running', stageUnknown: 'This {stage} is unconfirmed',
   stageScopeHelp: 'This view shows the recorded outcome of one stage. Passing it does not mean the entire task was delivered',
@@ -82,21 +82,22 @@ function TaskChooser({ control, selection, hostSessionID, association, changeSel
   const project = current?.state?.project?.['workspace-cwd'] || selected?.workspaceCwd || current?.cwd || selected?.cwd || linked?.cwd || control.runsCwd || '';
   return h('section', { className: css.taskChooser, 'aria-label': t('taskSelected') },
     h('div', { className: css.taskContext },
-      h('span', null, project.split('/').filter(Boolean).at(-1) || t('taskThisSession')),
-      h('span', null, ' / ' + t('taskThisSession')),
+      h('span', null, t('taskThisSession')),
+      project && h('span', null, project.split('/').filter(Boolean).at(-1)),
       (current?.state?.run?.branch || selected?.branch) && h('code', null, current?.state?.run?.branch || selected.branch)),
-    h('h3', { className: css.heading }, selection.taskDir ? current?.state?.slug || selected?.summary?.slug || selection.taskDir.split('/').filter(Boolean).at(-1) : 'Flywheel'),
+    h('h3', { className: css.heading }, selection.taskDir ? current?.taskTitle?.trim() || t('taskHeading') : 'Flywheel'),
+    taskPath && h('div', { className: css.taskIdentifier }, t('taskID') + ' · ', h('code', null, current?.state?.slug || selected?.summary?.slug || taskPath.split('/').filter(Boolean).at(-1))),
     control.runsError && h('div', { className: css.actions, role: 'alert' },
       h('span', { className: css.errorText }, t('taskDiscoveryError')),
       h(Button, { disabled: control.runsLoading, onClick: discover }, t('retry'))));
 }
 
-function TaskLocations({ control, selection, association, t }) {
+function TaskLocations({ control, selection, t }) {
   const current = control.status;
-  const taskPath = current?.taskDir || association?.taskDir || selection.taskDir;
-  const project = current?.state?.project?.['workspace-cwd'] || current?.cwd || association?.cwd || control.runsCwd;
+  const taskPath = current?.taskDir || selection.taskDir;
+  const project = current?.state?.project?.['workspace-cwd'] || current?.cwd || selection.cwd || control.runsCwd;
   if (!project && !taskPath) return null;
-  return h('footer', { className: css.taskLocations, 'aria-label': t('taskLocation') },
+  return h('div', { className: css.taskLocations, 'aria-label': t('taskLocation') },
     project && h('span', null, t('taskWorkspace'), ' ', h('code', { 'data-workspace-path': project }, project)),
     current?.cwd && current.cwd !== project && h('span', null, t('executionHome'), ' ', h('code', null, current.cwd)),
     taskPath && h('span', null, t('taskFolderLocation'), ' ', h('code', { 'data-task-path': taskPath }, project && taskPath.startsWith(project + '/') ? taskPath.slice(project.length + 1) : taskPath)));

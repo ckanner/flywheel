@@ -32,6 +32,8 @@ test('one current-session CLI task auto-opens a fresh stage canvas; other sessio
  assert.equal(ui.container.querySelectorAll('input').length, 0);
  assert.match(ui.container.querySelector('[aria-label="任务位置（自动取得）"]').textContent, /docs\/run-one/);
  assert.match(ui.container.textContent, /整体交付：尚未完成/);
+ assert.ok(ui.container.querySelector('[data-node-id="plan"]'));
+ await ui.click('本次运行');
  assert.ok(ui.container.querySelector('[data-node-id="M01-T01/review"]'));
  assert.equal(ui.container.querySelector('[data-node-id="plan"]'), null);
  assert.equal(ui.container.querySelector('[data-node-id="merge"]'), null);
@@ -39,7 +41,7 @@ test('one current-session CLI task auto-opens a fresh stage canvas; other sessio
  assert.equal(ui.container.querySelector('[aria-label="节点详情"]'), null, 'details are opened deliberately');
  await act(async () => ui.container.querySelector('[data-node-id="M01-T01/review"]').click());
  assert.equal(ui.container.querySelector('[aria-label="节点详情"] h3').textContent, 'M01-T01 · 评审');
- await ui.click('完整流程');
+ await ui.click('任务全貌');
  assert.ok(ui.container.querySelector('[data-node-id="plan"]'));
  assert.ok(ui.container.querySelector('[data-node-id="delivery"]'));
  await ui.click('本次运行');
@@ -89,6 +91,7 @@ test('discovery stays independent of unresolved mutations and retains the select
  await ui.refreshDiscovery();
  assert.equal(ui.requests.filter(r=>r.action==='start').length,1);
  assert.equal(ui.selection().taskDir,'/repo/docs/manual');
+ assert.equal(ui.container.querySelector('[data-task-path]').getAttribute('data-task-path'),'/repo/docs/manual');
  await act(async()=>launch.reject(new Error('transport lost')));
  await ui.refreshDiscovery();
  assert.equal(ui.selection().taskDir,'/repo/docs/manual');
@@ -100,6 +103,7 @@ test('failed or cancelled review receipts cannot inherit an older green verdict'
  for(const status of ['failed','cancelled','running']) {
   const one=item('run-one','desktop-session');
   const ui=await mountPanel(t,request=>reply(request,{state:stageState('run-one',status)}),{catalog:request=>reply(request,{runs:[one]})});
+  await ui.click('本次运行');
   assert.notEqual(ui.container.querySelector('[data-node-id="M01-T01/review"]').getAttribute('data-tone'),'success');
   assert.doesNotMatch(ui.container.querySelector('section[aria-label="运行画布"]').textContent,/本次评审已通过/);
   await ui.unload();
@@ -118,7 +122,7 @@ test('catalog failures keep a loaded canvas and support retry without tasks chan
  const one=item('run-one','desktop-session');
  const ui=await mountPanel(t,request=>reply(request,{state:stageState()}),{catalog:request=>fail?Promise.reject(new Error('unavailable')):reply(request,{runs:[one]})});
  fail=true;await ui.refreshDiscovery();
- assert.ok(ui.container.querySelector('[data-node-id="M01-T01/review"]'));
+ assert.ok(ui.container.querySelector('[data-node-id="plan"]'));
  assert.match(ui.container.textContent,/当前会话任务读取失败/);
  fail=false;await ui.refreshDiscovery();
  assert.doesNotMatch(ui.container.textContent,/当前会话任务读取失败/);
@@ -173,4 +177,27 @@ test('an unavailable read Remote reports an error without falling back to chat c
  await ui.click('重试');
  assert.equal(ui.allRequests.length,0);
  assert.equal(ui.selection().taskDir,'');
+});
+
+test('task title, task ID and paths have distinct header roles while settings keeps association live', async t => {
+ const own = item('run-one', 'desktop-session');
+ const ui = await mountPanel(t, r => reply(r, { taskTitle: '验证筛选修复', state: stageState() }), {catalog:r=>reply(r,{runs:[own]})});
+ const header=ui.container.querySelector('header');
+ assert.equal(header.querySelector('h3').textContent,'验证筛选修复');
+ assert.match(header.textContent,/任务 ID.*questionnaire/);
+ assert.ok(header.querySelector('[data-task-path]'));
+ assert.equal(ui.container.querySelector('footer [data-task-path]'),null);
+ await ui.click('设置');
+ assert.equal(header.hidden,true);
+ await ui.setAssociation({sequence:55,operationId:'tool:next',action:'status',taskDir:'/repo/docs/next',cwd:'/repo',outcome:'confirmed',message:''});
+ assert.equal(ui.selection().taskDir,'/repo/docs/next','hiding the header must not unmount association effects');
+ await ui.click('← 返回流程');
+ assert.equal(header.hidden,false);
+});
+
+test('a missing display title never presents a slug as a conversation name', async t => {
+ const ui=await mountPanel(t,r=>reply(r,{state:stageState()}),{catalog:r=>reply(r,{runs:[item('run-one','desktop-session')]})});
+ const header=ui.container.querySelector('header');
+ assert.equal(header.querySelector('h3').textContent,'当前关联任务');
+ assert.match(header.textContent,/任务 ID.*questionnaire/);
 });
