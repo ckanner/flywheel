@@ -5,6 +5,10 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.3 — Provider-neutral JEV settings
+
+- Rename the endpoint field to JEV API URL and the model field to Model ID. Explain the System One endpoint and editable pinned-version default without changing validation, routing or existing credential-variable names.
+
 ## 0.34.2 — Conversation tasks and navigation styling
 
 - Use compact rounded hover targets for workflow and inspector navigation, keep

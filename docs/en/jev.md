@@ -10,7 +10,7 @@ no separate shadow, advice, adoption, or per-feature switch in the task workflow
 
 In the desktop, open **Flywheel → Settings → JEV** and choose the intended global
 or project scope. Turn on **Enable JEV** to reveal the connection fields, fill or
-confirm the System One endpoint, fixed model version and credential
+confirm the JEV API URL, Model ID and credential
 environment-variable name, then select **Save changes**. The switch edits a draft;
 activation takes effect when you save. Editing and saving do not test service
 connectivity. Tasks do not ask for the same approval again.
@@ -22,6 +22,8 @@ thresholds and shared data.
 `key-env` accepts 1–120 ASCII letters, digits and underscores, beginning with a
 letter or underscore. Uppercase, lowercase and mixed-case names retain their exact
 spelling when an investigation freezes its configuration and reloads its state.
+
+JEV API URL accepts a full System One-compatible `/v1/systemone` endpoint, whether from TypeSafe or a compatible gateway. Model ID is an editable prefilled value: choose a supported pinned `jev-x.y.z` version. Responses must still match that version; mutable latest/preview aliases are not accepted.
 
 The equivalent configuration section is:
 
