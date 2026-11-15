@@ -124,7 +124,7 @@ menu. The workbench has three pages:
 | Configuration | Automatically loaded global/project settings, grouped editing, source display, and protected unsaved drafts |
 
 The view automatically follows the current conversation's explicit task association,
-then its latest registered host-session run. There is no task selector or path form;
+then its latest registered host-session run. Multiple associated tasks appear in a conversation-only navigator; a single task opens directly. There is no cross-session selector or path form;
 foreign and ownerless runs stay out of this view. Use `flywheel_control status` in the
 intended conversation to associate a prepared task. Locations and action groups are
 shown directly. A successful single-stage Review is not whole-task completion.

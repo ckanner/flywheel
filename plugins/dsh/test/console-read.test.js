@@ -126,6 +126,16 @@ test('published Client and Host Gateway reads are session-bound and append no co
   assert.equal(calls.at(-1).action,'runs','unrelated task status never reaches Go');
   await assert.rejects(ctx.typertGateway.invoke({ namespace:'flywheelConsole', method:'read', args:{agentId:'wrong',input:{action:'runs'}},peer }));
   assert.deepEqual(session.snapshotEvents(),before,'all passive reads leave session log untouched');
+  const historicalTask = await realpath(await mkdtemp(resolve(tmpdir(), 'flywheel-history-')));
+  t.after(() => rm(historicalTask, { recursive: true, force: true }));
+  for (const [id, taskDir] of [['history', historicalTask], ['current', cwd]]) {
+    session.append('command/run', { commandId: id, name: 'flywheel', args: JSON.stringify({ action: 'launch', taskDir, cwd }), source: { kind: 'user' } });
+    session.append('command/done', { commandId: id, kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir, cwd, state: null }) });
+  }
+  const historyBefore = session.snapshotEvents();
+  assert.equal((await read({ action: 'status', taskDir: historicalTask, cwd })).result.kind, 'success', 'confirmed preparation history does not require a run index');
+  assert.equal((await read({ action: 'status', taskDir: historicalTask, cwd: unrelatedTask })).result.kind, 'error', 'history authorizes the exact task and execution root pair');
+  assert.deepEqual(session.snapshotEvents(), historyBefore, 'browsing history does not rebind the conversation or append messages');
   session.append('command/run', { commandId: 'fixture-pending', name: 'flywheel', args: JSON.stringify({ action: 'launch', taskDir: unrelatedTask, cwd }), source: { kind: 'user' } });
   const pendingBefore = session.snapshotEvents();
   assert.equal((await read({ action:'status',taskDir:unrelatedTask,cwd })).result.kind,'success','original pending target remains readable');

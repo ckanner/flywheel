@@ -8,7 +8,12 @@ plugin at the same version. For installation, see [Getting started](getting-star
 
 ## Find a task without entering paths
 
-The view follows the current conversation automatically; there is no task selector or editable path field. Its explicit tool association takes priority. Without one, the latest registered run with an exact matching host session ID opens. Foreign and ownerless runs are not shown. The index supplies identity only; Go status establishes progress. Unconfirmed operations retain their original target.
+The view follows the current conversation automatically, with no editable path fields. A conversation task navigator appears only when more than one task is associated; a single task opens directly. Its explicit tool association takes priority. Without one, the latest registered run with an exact matching host session ID opens. Foreign and ownerless runs are not shown. The index supplies identity only; Go status establishes progress. Unconfirmed operations retain their original target.
+
+
+The list uses retained conversation associations and recent run registrations; it does not scan directories or provide an unlimited archive. Multiple runs of the same task share one navigation entry. Selecting a task reads its current state without starting, stopping or rebinding it. Ordinary catalog refreshes retain a manual choice; a new explicit task association still follows the conversation. Other tasks show their last recorded status, not a live-running claim. Preparation-only entries say “Select to read status”. Failed reads retain the selected identity and error rather than another task's canvas.
+
+Switching is disabled during pending reads or mutations, unknown task outcomes and unconfirmed configuration saves. Confirmed preparation history remains readable without starting a run. Settings hides task navigation and retains draft protection. History remains the selected task's runs, not all runs in the conversation.
 
 The project, task folder, execution directory and branch appear directly when known. Use `flywheel_control status` in the intended conversation to associate a prepared or standalone terminal task. Old UI-generated status command records do not establish a new association.
 
@@ -33,6 +38,8 @@ seconds after an unsuccessful response. Hidden documents skip those requests.
 Refresh uses a read-only Remote instead of a slash command, so it does not append chat events or JSON. Explicit mutations and uncertain-result reconciliation retain durable command receipts. Old chat records are preserved. Session identity and read requests use strict Remote codecs; an unavailable or malformed read remains a visible error rather than falling back to chat commands.
 
 Task titles are separate from DSH conversation names. The title comes from validated Spec `title`; otherwise the heading says “Associated task”, with the slug separately labeled “Task ID”. Project and task-record paths appear automatically in the header; node details show execution Worktrees. Settings hides the task header while retaining association updates. Its five navigation items remain together at the top, with the form beside them and the save bar above the DSH composer.
+
+Navigation uses compact rounded hover targets with a separate selected underline. Hover and selection do not resize the controls; keyboard focus remains visible and touch targets are larger.
 
 ## This stage versus the full workflow
 
