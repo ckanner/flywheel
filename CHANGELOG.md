@@ -5,6 +5,18 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased
+
+- Preserve explicit Claude native agent effort (`low`, `medium`, `high`, `xhigh`,
+  `max`) through profile validation, the public machine API and CLI agent
+  definitions, independently of the parent stage's effort. Keep omitted child
+  effort absent and reject unsupported values before dispatch.
+- Pin the optional Claude companion to the reviewed 0.5.1 source candidate,
+  retaining exact worker, receipt and recovery identities. CI validates the
+  candidate archive; publication remains dependent on the same bytes being
+  released as Claude Code Pro 0.5.1. No default model, native profile or user
+  setting is changed.
+
 ## 0.34.3 — Provider-neutral JEV settings
 
 - Rename the endpoint field to JEV API URL and the model field to Model ID. Explain the System One endpoint and editable pinned-version default without changing validation, routing or existing credential-variable names.

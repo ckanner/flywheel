@@ -9,6 +9,7 @@ const { preflight } = require("./release-preflight.js");
 const { verifyCandidate, readPackedManifest } = require("./release-candidate.js");
 const { snapshot } = require("./release-build.js");
 const publisher = require("./release-publish.js");
+const { prepareClaudeRegistry, verifyArchive } = require("./claude-release-gate.js");
 
 const REGISTRY = "https://registry.npmjs.org/";
 const MAX_BUFFER = 4 * 1024 * 1024;
@@ -126,7 +127,7 @@ function requireTTY(io) {
 function createNpmRunner(sourceDirectory, io = {}, beforeWrite = () => {}) {
   return (args, { timeout = 180000, killSignal = "SIGTERM" } = {}) => {
     const mutation = args[0] === "publish" || (args[0] === "dist-tag" && args[1] === "add");
-    if (!mutation && args[0] !== "view") throw new Error(`Unexpected npm operation: ${args[0]}`);
+    if (!mutation && !["view", "pack"].includes(args[0])) throw new Error(`Unexpected npm operation: ${args[0]}`);
     if (mutation) {
       requireTTY(io);
       beforeWrite();
@@ -139,9 +140,14 @@ function createNpmRunner(sourceDirectory, io = {}, beforeWrite = () => {}) {
   };
 }
 
-function runInstallation(name, options, candidate, io) {
+function runInstallation(name, options, candidate, io, claudeTarball) {
   const env = npmEnvironment(io);
-  if (name === "test:install") env.FLYWHEEL_NPM_PACKAGES_DIR = options.directory;
+  if (name === "test:install") {
+    env.FLYWHEEL_NPM_PACKAGES_DIR = options.directory;
+    // The optional Claude installation smoke must run against the exact bytes
+    // fetched by the release gate, regardless of the caller's environment.
+    env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL = claudeTarball;
+  }
   else {
     env.FLYWHEEL_NPM_VERSION = candidate.version;
     env.FLYWHEEL_NPM_REGISTRY = REGISTRY;
@@ -157,6 +163,7 @@ async function releaseLocal(options, io = {}) {
   requireTTY(io);
   const { candidate, manifest } = verifySource(options);
   const remoteTag = verifyRemoteTag(options.sourceDirectory, candidate, io);
+  let companion;
   const checkpoint = () => {
     verifySource(options, manifest);
     const current = verifyRemoteTag(options.sourceDirectory, candidate, io);
@@ -164,22 +171,26 @@ async function releaseLocal(options, io = {}) {
       throw new Error("Origin release tag changed during release");
     }
     verifyRegistry(options.sourceDirectory, io);
+    if (companion) verifyArchive(companion.tarball, companion.metadata);
   };
   verifyRegistry(options.sourceDirectory, io);
-  runInstallation("test:install", options, candidate, io);
-  checkpoint();
   const runNpm = createNpmRunner(options.sourceDirectory, io, checkpoint);
   const log = io.log ?? console.log;
   const publishOptions = { runNpm, wait: io.wait, now: io.now, log, repositoryVisibility: options.repositoryVisibility };
-  await (io.publish ?? publisher.publish)(candidate, options.directory, publishOptions);
-  checkpoint();
-  runInstallation("test:registry", options, candidate, io);
-  checkpoint();
-  await (io.promote ?? publisher.promote)(candidate, publishOptions);
-  await (io.verifyLatest ?? publisher.verifyLatest)(candidate, publishOptions);
-  checkpoint();
-  log(`release:local: completed ${candidate.version}; source ${candidate.source.commit}; the complete package verified and promoted to latest`);
-  return candidate;
+  try {
+    companion = prepareClaudeRegistry(options.sourceDirectory, { runNpm });
+    runInstallation("test:install", options, candidate, io, companion.tarball);
+    checkpoint();
+    await (io.publish ?? publisher.publish)(candidate, options.directory, publishOptions);
+    checkpoint();
+    runInstallation("test:registry", options, candidate, io);
+    checkpoint();
+    await (io.promote ?? publisher.promote)(candidate, publishOptions);
+    await (io.verifyLatest ?? publisher.verifyLatest)(candidate, publishOptions);
+    checkpoint();
+    log(`release:local: completed ${candidate.version}; source ${candidate.source.commit}; the complete package verified and promoted to latest`);
+    return candidate;
+  } finally { companion?.dispose(); }
 }
 
 async function main(argv, io = {}) {

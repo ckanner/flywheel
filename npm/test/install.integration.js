@@ -209,12 +209,12 @@ test('the complete npm candidate install and run from a clean agent environment'
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.0 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.1 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.5.0');
+    assert.equal(manifest.version, '0.5.1');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
     assert.deepEqual(manifest.dependencies || {}, {}, 'the offline candidate must remain dependency-free');
     const [npm, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];
@@ -237,8 +237,10 @@ test('the complete npm candidate install and run from a clean agent environment'
     child.stdin.on('error', () => {});
     const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
     const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
+    const definitions = { scout: { description: 'Inspect the candidate', prompt: 'Report findings', model: 'sonnet', effort: 'xhigh' } };
     child.stdin.write(JSON.stringify({ protocol: 2, type: 'start', requestId: 'actual-claude-install', cwd: await fs.realpath(context.project),
       model: 'fixture-model', reasoningEffort: 'high', permissionMode: 'danger-full-access', threadMode: 'persistent',
+      native: { version: 1, agents: { enabled: true, definitions } },
       prompt: 'Offline installed Claude package validation.', timeoutMs: 5000 }) + '\n');
     let exit;
     try { exit = await done; } finally { clearTimeout(timeout); }
@@ -260,6 +262,10 @@ test('the complete npm candidate install and run from a clean agent environment'
     const calls = (await fs.readFile(path.join(context.project, 'claude-fixture.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(calls.length, 1);
     assert.ok(calls[0].argv.includes('--dangerously-skip-permissions'));
+    const option = name => calls[0].argv[calls[0].argv.indexOf(name) + 1];
+    assert.deepEqual(JSON.parse(option('--agents')), definitions);
+    assert.equal(option('--effort'), 'high');
+    assert.deepEqual(result.receipt.native.requested.agents.definitions, definitions);
     assert.deepEqual(await fs.readFile(globalConfig), before, 'opting into an adapter must not select or rewrite any loop');
   });
 

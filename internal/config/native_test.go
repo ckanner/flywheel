@@ -34,6 +34,31 @@ func TestNativeProfilesLoadAndReferences(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestClaudeAgentDefinitionEffort(t *testing.T) {
+	for _, effort := range []string{"", "low", "medium", "high", "xhigh", "max"} {
+		t.Run("accepted/"+effort, func(t *testing.T) {
+			definition := map[string]any{"description": "Inspect the candidate", "prompt": "Report concrete defects", "model": "sonnet"}
+			if effort != "" {
+				definition["effort"] = effort
+			}
+			options, err := json.Marshal(map[string]any{"version": 1, "agents": map[string]any{"enabled": true, "definitions": map[string]any{"reviewer": definition}}})
+			require.NoError(t, err)
+			input := `{"native-profiles":{"claude":{"harness":"claude-code-pro","options":` + string(options) + `}}}`
+			c, err := parseConfig([]byte(input), "native.json")
+			require.NoError(t, err)
+			require.NoError(t, c.validateNativeProfiles())
+			require.JSONEq(t, string(options), string(c.NativeProfiles["claude"].Options), "loading must preserve the explicit child effort and leave an omitted effort absent")
+		})
+	}
+	for _, effort := range []string{`""`, `"ultra"`, `"auto"`, `"HIGH"`, `null`, `true`, `1`, `{}`, `[]`} {
+		t.Run("rejected/"+effort, func(t *testing.T) {
+			input := `{"native-profiles":{"claude":{"harness":"claude-code-pro","options":{"version":1,"agents":{"enabled":true,"definitions":{"reviewer":{"description":"Inspect","prompt":"Report","effort":` + effort + `}}}}}}}`
+			_, err := parseConfig([]byte(input), "native.json")
+			require.ErrorContains(t, err, "native-profiles")
+		})
+	}
+}
+
 func TestNativeProfilesRejectUnsupportedContractsBeforeDispatch(t *testing.T) {
 	for _, options := range []string{
 		`{"version":2,"preset":"heavy"}`, `{"version":1,"preset":"unknown"}`,

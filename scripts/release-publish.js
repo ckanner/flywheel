@@ -8,6 +8,7 @@ const { spawnSync } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const { PACKAGES, VERSION } = require("./release-preflight.js");
 const { verifyCandidate, fileIntegrity } = require("./release-candidate.js");
+const { prepareClaudeRegistry } = require("./claude-release-gate.js");
 
 function compareVersions(a, b) {
   if (!VERSION.test(a ?? "") || !VERSION.test(b ?? "")) throw new Error("Cannot compare an invalid stable npm version");
@@ -217,14 +218,23 @@ function parseArgs(argv) {
   return options;
 }
 
-async function main(argv) {
+async function main(argv, io = {}) {
   const options = parseArgs(argv);
   const directory = path.resolve(options.directory);
   const candidate = verifyCandidate(directory, { sourceSHA: options["source-sha"], allowDirty: options.allowDirty });
-  if (options.operation === "publish") await publish(candidate, directory, { repositoryVisibility: options["repository-visibility"] });
-  else if (options.operation === "promote") await promote(candidate);
-  else if (options.operation === "verify-latest") await verifyLatest(candidate);
-  console.log(`${options.operation}: verified ${candidate.version}, source ${candidate.source.commit}`);
+  const log = io.log ?? console.log;
+  const publishOptions = { runNpm: io.runNpm, wait: io.wait, now: io.now, log,
+    repositoryVisibility: options["repository-visibility"] };
+  let companion;
+  try {
+    if (["publish", "promote"].includes(options.operation)) {
+      companion = prepareClaudeRegistry(io.sourceDirectory, { runNpm: io.runNpm });
+    }
+    if (options.operation === "publish") await publish(candidate, directory, publishOptions);
+    else if (options.operation === "promote") await promote(candidate, publishOptions);
+    else if (options.operation === "verify-latest") await verifyLatest(candidate, publishOptions);
+    log(`${options.operation}: verified ${candidate.version}, source ${candidate.source.commit}`);
+  } finally { companion?.dispose(); }
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch((error) => {

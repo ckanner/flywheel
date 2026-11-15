@@ -47,7 +47,7 @@ Full 需要所配置的 Plan／Execute／Review／Judge 后端；合格 Quick �
 运行前提。
 
 Claude 为可选后端。选择 `claude-code-pro` 时，还需在 worker 能解析的依赖树中安装
-匹配的 0.5.0 配套包，并准备已登录的 Claude CLI，详见[Claude Code Pro](claude-code-pro.md)。
+匹配的 0.5.1 配套包，并准备已登录的 Claude CLI，详见[Claude Code Pro](claude-code-pro.md)。
 
 ## 2. 安装
 

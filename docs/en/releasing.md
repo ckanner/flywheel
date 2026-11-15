@@ -24,9 +24,17 @@ this flow neither uploads new versions of them nor unpublishes their existing by
 
 Codex Pro 0.10.0 remains bundled from its [verified published package](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 The root and source-harness locks retain that tarball's real integrity. Claude Code
-Pro 0.5.0 is an optional external peer. Provider CLIs and account credentials are
+Pro 0.5.1 is an optional external peer. Provider CLIs and account credentials are
 not included. Ordinary npm installation only places files; `install`/`setup` owns
 user setup, with no profile or credential changes hidden in postinstall.
+
+Claude 0.5.1 is an unpublished companion candidate for the current source change.
+PR CI verifies its checked-in package identity, SHA-256 and integrity; this is not
+registry publication evidence. Actual publish and promotion paths must obtain the
+exact companion from the public registry and compare it with the reviewed vendor
+record before changing Flywheel's registry state. The local release path also
+passes that verified tarball to installation tests, so the optional Claude test
+cannot silently be skipped. An unavailable or different companion blocks release.
 
 ## 2. Source and validation
 
