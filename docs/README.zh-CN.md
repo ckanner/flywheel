@@ -9,6 +9,7 @@
 | 主题 | 简体中文 | English |
 | --- | --- | --- |
 | 安装、配置 provider、完成首个任务 | [快速开始](zh-CN/getting-started.md) | [Getting started](en/getting-started.md) |
+| 处理故障、修复 Issue、推进复杂项目 | [使用手册](zh-CN/usage-handbook.md) | [Usage handbook](en/usage-handbook.md) |
 | 准备契约、选择 Auto/Quick/Full、交付变更 | [工作流](zh-CN/workflow.md) | [Workflow](en/workflow.md) |
 | 故障调查、修复授权与有界语义决策 | [有界调查](zh-CN/investigation.md) | [Investigation](en/investigation.md) |
 | 使用画布、阶段操作、会话和运行记录 | [流程工作台](zh-CN/flow-console.md) | [Workbench](en/flow-console.md) |

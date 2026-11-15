@@ -6,7 +6,7 @@
 
 Flywheel 是面向 coding agent 的确定性 Go 编排器。模型负责规划、实现和评审；引擎负责任务契约、验收、重试、预算、工作区和交付。既可从 DeepSeek Harness（DSH）桌面使用，也可通过命令行运行。
 
-[快速开始](docs/zh-CN/getting-started.md) · [文档](docs/README.zh-CN.md) · [参与贡献](docs/zh-CN/contributing.md) · [MIT 许可证](LICENSE)
+[快速开始](docs/zh-CN/getting-started.md) · [使用手册](docs/zh-CN/usage-handbook.md) · [文档](docs/README.zh-CN.md) · [参与贡献](docs/zh-CN/contributing.md) · [MIT 许可证](LICENSE)
 
 从 0.33 起，`@ckanner/flywheel` 一个包包含 CLI、DSH 界面／worker、内嵌技能和
 四个平台引擎，不再需要独立平台包或首次运行下载引擎。从 0.32.x 升级前先退出 DSH，
@@ -54,7 +54,7 @@ npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
 
 技能先研究仓库，在 `docs/<task>/` 准备任务契约，再由 Go 校验并接管执行。只准备任务而不启动时使用 `/flywheel-new`；启动或恢复已有任务使用 `/flywheel-run`。在 Kimi 中，对应命令形式为 `/skill:flywheel-task`。
 
-打开原生会话中的 **Flywheel** 视图，选择任务后即可查看画布、运行记录和配置。任务位置来自会话与运行索引，无需手工输入路径。
+打开原生会话中的 **Flywheel** 视图，即可查看关联任务的画布、运行记录和配置。任务位置来自会话与运行索引，无需手工输入路径。
 
 已有任务可以通过 CLI 启动和查看：
 

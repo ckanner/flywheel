@@ -6,8 +6,9 @@
 Go 编排引擎，提供原生工作流视图、命令与模型工具入口，以及所选后端需要的 worker。
 任务状态、验收、预算、进程生命周期和 Git 交付由引擎管理。
 
-日常使用应通过完整 Flywheel 安装器安装。单独安装本插件只能得到插件和 worker，
-不包含 Go 引擎和 skills。
+日常使用应通过完整 Flywheel 安装器安装。正式发布的 `@ckanner/flywheel` 包含 CLI、
+引擎、worker、skills 和桌面插件。普通 npm 安装放置这些文件；`install`／`setup`
+负责登记桌面插件并配置启动器。
 
 ## 安装
 
@@ -55,13 +56,13 @@ DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH
 | DeepSeek Flash | DSH `deepseek-account`，明确指定 `deepseek-flash`；标准共享账号存储不需要额外 API key |
 | DSH ChatGPT | 在 SDK profile 安装并授权所选 ChatGPT 适配器；桌面对话模型不决定 worker 配置 |
 | Codex Pro | worker 导入固定 0.10.0 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
-| Kimi | Go 调用原生 Kimi CLI 及其登录；不使用 ACP 或父模型二次委派 |
+| Kimi | Go 默认调用 Kimi CLI，也可使用受管本地 Server worker 的原生 Agent／Swarm／Tower；沿用同一 Kimi 登录 |
 | Claude Code Pro | 可选 0.5.0 peer 和已安装 Claude CLI／登录；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
 
-一个已经记录的 ChatGPT 适配器兼容示例：
+已核对的 ChatGPT 配套版本为 0.1.20。SDK profile 缺失或需要更新时执行：
 
 ```sh
-dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
 此固定版本示例不代表当前账号拥有某模型权限。认证和真实模型可用性需要通过
@@ -268,6 +269,7 @@ npm --prefix plugins/dsh run check
 
 | 参考资料 | 用途 |
 |---|---|
+| [使用手册](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/usage-handbook.md) | 故障调查、Issue 修复和复杂项目的操作场景 |
 | [Worker 协议](PROTOCOL.md) | 详细通信、权限、生命周期与错误契约 |
 | [依赖来源](vendor/README.md) | Codex 源码身份、tarball 摘要及可选 Claude 的源码依据 |
 | [JEV 决策](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/jev.md) | 一个总开关控制实际有界决策，保留离线回放与显式评估 |

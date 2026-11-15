@@ -7,6 +7,7 @@
 须保持同一版本。
 
 任务分支、契约与 PR 审阅的完整流程见[工作流指南](workflow.md)。
+故障调查、Issue 修复和复杂项目的操作示例见[使用手册](usage-handbook.md)。
 
 从 0.33 起，`@ckanner/flywheel` 一个包包含 CLI、DSH 界面／worker、内嵌技能和
 四个平台引擎，不再需要独立平台包或首次运行下载引擎。从 0.32.x 升级前先退出 DSH，
@@ -114,23 +115,24 @@ flywheel version
 自定义 home、profile 或凭证存储须另外核对。`deepseek-official` 是显式配置的 API Key
 替代路径，账号预设没有通往它的自动付费后备。
 
-原生 GPT Review／Judge 需要 SDK profile 中的 ChatGPT adapter。仓库核对过的兼容
-基线可这样安装：
+默认 GPT Review／Judge 绑定使用 SDK profile 中的 ChatGPT adapter。缺失或需要更新时，
+安装已核对的 0.1.20 配套包：
 
 ```sh
-dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
-这是兼容基线，不代表当前最新版本。按该 adapter 的正常授权流程操作，保持 `DSH_HOME`
-一致，不把凭证放进任务文件或 Git。
+改动已有 profile 前先核对已安装版本。账号授权和真实模型可用性仍通过该 adapter 的
+正常流程确认，保持 `DSH_HOME` 一致，不把凭证放进任务文件或 Git。
 
 hard 路由直接导入精确锁定的 Codex Pro 0.10.0 公开 machine API，需要本机 Codex 程序
-与登录，不需要父模型通过 `subagent_codex_pro` 工具二次委派。可选 Claude 有独立的
+与登录，不需要父模型通过 `subagent_codex` 工具二次委派。可选 Claude 有独立的
 依赖与登录。
 
-DSH worker 只在子进程内应用权限与工具策略，禁用委派、辅助模型压缩以及当前的完整
-web 工具。原生会话视图不会恢复这些 worker 能力，也不会把完整 worker 历史合入父会话
-轨迹。生命周期与能力边界见[插件文档](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md)。
+未选择 `native-profile` 时，DSH worker 的临时策略禁用委派与 Web 工具。显式 profile
+可启用受管 PTC Agent、Team、Workflow、Web 与可选 LCU；辅助模型压缩仍关闭。
+桌面视图和 preset 不会自动配置独立 worker，也不会把完整 worker 历史合入父会话轨迹。
+配置方法见[原生能力](native-capabilities.md)，生命周期边界见[插件文档](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/README.zh-CN.md)。
 
 ### 桌面启动器
 
@@ -275,9 +277,11 @@ flywheel control status --cwd "$PWD" --task-dir "$PWD/docs/add"
 ```
 
 DSH 对应入口为 `/flywheel-run <绝对任务路径>` 和 `/flywheel-status <同一路径>`。
-启动和只读状态关联使任务可在控制台选择。控制台读取登记任务，不扫描文件夹；已知
-项目／执行／任务文件位置显示为只读详情。当前会话唯一任务可以自动打开，多个或
-未归属任务需要选择。
+画布跟随当前会话的显式工具关联；没有关联时，读取 host session ID 精确匹配的最新运行。
+准备中的任务或独立终端任务，需要宿主助手在目标会话通过 `flywheel_control` 的
+`action: "status"`，携带实际任务与执行路径建立关联。单独运行终端
+`flywheel control status` 不会建立该会话关联。从 0.34.2 起，多个关联任务显示“本会话任务”导航，单任务直接展示画布；不提供可编辑路径表单，
+其他会话和无归属运行不显示，详见[流程控制台](flow-console.md)。
 
 界面区分本阶段结果和整体交付，自动刷新运行状态与登记任务。超时或断连可能留下
 未确认操作：保留原路径，先核对原任务再提交新变更。旧快照、关闭页面或切换会话

@@ -9,6 +9,7 @@ operations are explicitly authorized.
 
 Use this guide for an existing repository. For installation and a disposable first
 run, start with [Getting started](getting-started.md).
+For incidents, issue fixes, and complex projects, use the [Usage handbook](usage-handbook.md).
 
 ## 0. Normal entry: describe a goal and launch
 
@@ -221,10 +222,14 @@ Status/stop never switch modes. Restarting or selecting Auto cannot downgrade an
 established Full task.
 
 DSH equivalents are `/flywheel-run <absolute-task-directory>` and
-`/flywheel-status <same-path>`. Starts and read-only status association make the task
-available in the console. The console selects registered tasks and has no editable
-task/project path fields. CLI runs with a DSH host ID can be matched to that session;
-other runs remain selectable in Recent tasks. Discovery does not scan directories.
+`/flywheel-status <same-path>`. The console follows the current conversation's explicit
+tool association, falling back to the latest registered run with an exactly matching
+DSH host session ID. A prepared or standalone terminal task needs a successful
+`flywheel_control` call with `action: "status"` and its actual task and execution paths
+in the intended conversation. A terminal status command alone does not establish
+that association. From 0.34.2, multiple associated tasks appear in a conversation-only navigator;
+a single task opens directly. There is no editable path form. Runs from other
+conversations and unassociated runs remain hidden. See [Workflow console](flow-console.md).
 
 ### Working directory by stage
 

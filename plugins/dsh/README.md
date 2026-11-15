@@ -7,8 +7,10 @@ Go orchestration engine. It adds a native workflow view, command and model-tool
 controls, and the workers used by selected backends. The engine owns task state,
 verification, budgets, process lifecycles, and Git delivery.
 
-Use the complete Flywheel installer for normal setup. Installing this package
-alone provides the plugin and workers, not the Go engine and skills.
+Use the complete Flywheel installer for normal setup. The published
+`@ckanner/flywheel` package includes the CLI, engine, workers, skills and desktop
+plugin. Plain npm installation places those files; `install`/`setup` registers
+the desktop plugin and configures the launcher.
 
 ## Install
 
@@ -69,10 +71,11 @@ provider, and tools. The reserved `desktop` profile cannot be used as a worker.
 | Kimi | Go uses the Kimi CLI by default, or its owned local Server worker for native Agent/Swarm/Tower; the same Kimi login applies |
 | Claude Code Pro | Optional 0.5.0 peer and installed Claude CLI/login; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
 
-One documented ChatGPT adapter compatibility example is:
+The checked ChatGPT companion is 0.1.20. If the SDK profile is missing it or needs
+updating, use:
 
 ```sh
-dsh plugin --profile sdk add dsh-plugin-chatgpt@0.1.17
+dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
 That versioned example does not establish current account entitlements.
@@ -334,6 +337,7 @@ window geometry, real-account inference, or measured quality gains.
 
 | Reference | Purpose |
 |---|---|
+| [Usage handbook](https://github.com/ckanner/flywheel/blob/main/docs/en/usage-handbook.md) | Scenarios for incidents, issue fixes, and complex projects |
 | [Worker protocol](PROTOCOL.md) | Detailed wire, permission, lifecycle, and error contracts (Chinese) |
 | [Vendored package provenance](vendor/README.md) | Codex source identity, tarball hashes, and optional Claude source evidence |
 | [JEV decisions](https://github.com/ckanner/flywheel/blob/main/docs/en/jev.md) | One master switch for actual bounded decisions, with offline replay and explicit evaluation |
