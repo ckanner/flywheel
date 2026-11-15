@@ -88,7 +88,9 @@ Object.assign(zh, {
   cfgModelHint: '使用此 Provider 支持的模型标识；预设不代表当前账号已授权',
   cfgJevHelp: '一个开关控制调查与执行中的 JEV 决策，包括取证、失败后下一步及批准的模型选择。关闭后停止后续 JEV 请求与采用，沿用原路径，也不采集影子快照',
   cfgJevSend: '保存开启配置后，符合条件的决策会发送允许范围内的任务与证据片段，并采用通过校验的选择。预算、验收与权限仍由 Go 执行；不需要逐任务再次开启',
-  cfgJevEndpoint: 'MeRouter System One API 地址',
+  cfgJevEndpoint: 'JEV API 地址',
+  cfgJevEndpointHelp: '填写兼容 System One 协议的完整接口地址，以 /v1/systemone 结尾。',
+  cfgJevModelHelp: '默认已填写，可修改为服务支持的固定版本。',
   cfgJevKeyHelp: '仅保存环境变量名，不填写 API Key。运行 Flywheel 的进程需要能读取该变量',
   cfgJevTimeout: '请求超时',
   cfgJevAdvanced: '模型版本与请求参数',
@@ -203,7 +205,9 @@ Object.assign(en, {
     'One switch controls JEV decisions during investigation and execution, including evidence collection, next steps after failure and approved model selection. Turning it off stops subsequent requests and adoption, keeps the original paths and disables shadow capture',
   cfgJevSend:
     'Saving an enabled configuration allows eligible decisions to send permitted task and evidence excerpts and adopt validated choices. Go retains budget, acceptance and permission checks; no per-task enable step is needed',
-  cfgJevEndpoint: 'MeRouter System One API endpoint',
+  cfgJevEndpoint: 'JEV API URL',
+  cfgJevEndpointHelp: 'Enter a full System One-compatible endpoint URL ending in /v1/systemone.',
+  cfgJevModelHelp: 'A default is provided; you can edit it to a pinned version supported by your service.',
   cfgJevKeyHelp: 'Store the variable name, not the API key. The Flywheel process must inherit this variable',
   cfgJevTimeout: 'Request timeout',
   cfgJevAdvanced: 'Model version and request options',
@@ -873,13 +877,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           field(
             'jev.endpoint',
             t('cfgJevEndpoint'),
-            null,
+            t('cfgJevEndpointHelp'),
             input('jev.endpoint', draft.jev.endpoint, (v) => update('jev', 'endpoint', v), v => jevTextError('endpoint', v)),
           ),
           field(
             'jev.model',
             t('consoleJEVVersion'),
-            null,
+            t('cfgJevModelHelp'),
             input('jev.model', draft.jev.model ?? 'jev-1.14.0', (v) => update('jev', 'model', v), v => jevTextError('model', v)),
           ),
           field(
