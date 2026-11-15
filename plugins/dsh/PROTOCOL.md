@@ -400,7 +400,7 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
 | `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
 
-共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `cwd`、`error`。成功解析目录后 `cwd` 是请求目录的规范化物理路径，供宿主关联校验；旧回复未带该字段仍按原任务身份机制处理。省略任务时 `taskDir:""`；配置／诊断不启动或修改任务，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。doctor 可只读已有工作流状态以判断必需阶段。
+共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `cwd`、`error`、`taskTitle`。`taskTitle` 仅来自通过契约校验的 Spec.title，是显示信息，不作为任务或会话身份；缺失或无效 Spec 时省略，仍保留状态／停止回执。成功解析目录后 `cwd` 是请求目录的规范化物理路径，供宿主关联校验；旧回复未带该字段仍按原任务身份机制处理。省略任务时 `taskDir:""`；配置／诊断不启动或修改任务，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。doctor 可只读已有工作流状态以判断必需阶段。
 
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 

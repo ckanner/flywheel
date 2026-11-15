@@ -5,6 +5,15 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.1 — Session workbench layout and editing
+
+- Reorganize the DSH session workbench: validated task titles and separate task IDs,
+  header paths, one status/action toolbar, a default task overview and compact
+  single-stage results. Keep settings navigation together and size the view above
+  the host composer.
+- Edit stage model assignments in the settings page with one explicit save action;
+  retain revision checks, unsaved-change protection and failed-save drafts.
+
 ## 0.34.0 — Native harness capabilities
 
 - Align native companion fixtures and provenance with published Codex 0.10.0, Claude 0.5.0, LCU 0.5.0 and ChatGPT 0.1.20; verify the exact registry Claude tarball in CI and release jobs. Document separate desktop, worker and SDK dependency trees.

@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-14 | [会话工作台布局与配置编辑修复](2026-11-14-session-console-layout.md) |
 | 2026-11-14 | [0.34.0 正式发行、依赖对齐与桌面升级](2026-11-14-release-0.34.0.md) |
 | 2026-11-14 | [原生依赖正式包与运行环境对齐](2026-11-14-published-companions.md) |
 | 2026-11-14 | [原生 Harness、PTC 与 LCU：六仓实现验证与最终候选验收状态](2026-11-14-native-harness-implementation.md) |

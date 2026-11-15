@@ -22,6 +22,7 @@ import (
 )
 
 type controlResponse struct {
+	TaskTitle     string                    `json:"taskTitle,omitempty"`
 	Preparation   *state.PreparationState   `json:"preparation,omitempty"`
 	Projection    string                    `json:"projection,omitempty"`
 	Node          *machine.NodeDetail       `json:"node,omitempty"`
@@ -283,6 +284,11 @@ func controlDirectory(path string) (string, error) {
 // running; a stale or reused PID cannot make another process look like this task.
 func controlSnapshot(taskDir string) (controlResponse, error) {
 	reply := controlResponse{Protocol: 1, TaskDir: taskDir}
+	// Optional display metadata; an invalid or missing Spec must not hide
+	// lifecycle/cleanup evidence or prevent stopping a damaged task.
+	if spec, specErr := contract.LoadSpec(taskDir); specErr == nil {
+		reply.TaskTitle = spec.Title
+	}
 	held, err := machine.RunLeaseHeld(taskDir)
 	if err != nil {
 		return reply, err

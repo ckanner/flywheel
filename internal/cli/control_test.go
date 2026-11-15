@@ -540,3 +540,22 @@ func TestControlStopsActualEngineAndManagedCLI(t *testing.T) {
 	assert.NoFileExists(t, machine.PidFile(taskDir))
 	assert.NoFileExists(t, machine.StopRequestFile(taskDir))
 }
+
+func TestControlSnapshotTaskTitleIsValidatedDisplayMetadata(t *testing.T) {
+	dir := t.TempDir()
+	writeFileCli(t, filepath.Join(dir, "spec.md"), cliE2ESpec)
+	r, err := controlSnapshot(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "CLI e2e", r.TaskTitle)
+	assert.Nil(t, r.State, "reading display metadata must not create task state")
+	for _, spec := range []string{"broken", strings.Replace(cliE2ESpec, "title: CLI e2e", "title: []", 1)} {
+		writeFileCli(t, filepath.Join(dir, "spec.md"), spec)
+		r, err = controlSnapshot(dir)
+		require.NoError(t, err, "invalid display metadata must not prevent status/stop")
+		assert.Empty(t, r.TaskTitle)
+	}
+	require.NoError(t, os.Remove(filepath.Join(dir, "spec.md")))
+	r, err = controlSnapshot(dir)
+	require.NoError(t, err)
+	assert.Empty(t, r.TaskTitle)
+}
