@@ -5,6 +5,12 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.5 — Explicit configuration scope
+
+- Give the global/project configuration switch a filled selected scope, a
+  checkmark and stronger foreground contrast. Keep `aria-pressed` as the
+  accessible state and add a client regression test for the selected tab.
+
 ## 0.34.4 — Claude native child-agent effort
 
 - Preserve explicit Claude native agent effort (`low`, `medium`, `high`, `xhigh`,

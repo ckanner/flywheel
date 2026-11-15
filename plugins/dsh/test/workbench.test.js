@@ -115,6 +115,9 @@ test('configuration opens with one read, retains a draft across tabs, and requir
   await ui.click('设置');
   assert.equal(ui.requests.length, 1);
   assert.equal(ui.requests[0].action, 'config-edit');
+  assert.equal(ui.button('全局').getAttribute('aria-pressed'), 'true');
+  assert.equal(ui.button('项目').getAttribute('aria-pressed'), 'false');
+  assert.match(ui.button('全局').parentElement.className, /scopeSegmented/);
   assert.equal(ui.container.querySelectorAll('button').length > 0, true);
   assert.equal(
     ui.button('保存修改').disabled,
@@ -132,6 +135,8 @@ test('configuration opens with one read, retains a draft across tabs, and requir
   await ui.click('项目');
   await ui.click('放弃草稿并继续');
   assert.equal(ui.requests.at(-1).editor.scope, 'project');
+  assert.equal(ui.button('项目').getAttribute('aria-pressed'), 'true');
+  assert.equal(ui.button('全局').getAttribute('aria-pressed'), 'false');
   assert.equal(ui.requests.filter((r) => r.action === 'config-save').length, 0);
   assert.match(ui.container.textContent, /选择完整配置文件，不逐字段叠加/);
 });

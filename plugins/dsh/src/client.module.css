@@ -133,6 +133,13 @@
 .segmented { display: flex; align-items:center; flex-wrap: wrap; gap: 4px; padding: 3px; width: fit-content; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
 .segmented .button { align-self:center; flex:0 0 auto; height:32px; min-height:32px; max-height:32px; padding:0 10px; border:0; border-radius:8px; background:transparent; }
 .segmented .button[aria-pressed='true'] { background: var(--dsw-alias-bg-layer-1); font-weight: 500; }
+
+/* Configuration scope is a two-state choice, so make the active scope obvious
+   even when the surrounding layer colors are close in contrast. */
+.scopeSegmented { gap: 2px; border: .5px solid var(--dsw-alias-border-l3); }
+.scopeSegmented .button { color: var(--dsw-alias-label-secondary); }
+.scopeSegmented .button[aria-pressed='true'] { background: var(--dsw-alias-state-business-primary); color: var(--dsw-alias-label-primary-foreground); font-weight: 600; }
+.scopeSegmented .button[aria-pressed='true']::before { content: '✓'; font-size: 12px; line-height: 1; }
 .canvasViewport { display: flex; overflow: auto; flex:1; min-height:220px; padding:16px 24px; cursor: grab; background-image: radial-gradient(var(--dsw-alias-border-l3) .65px, transparent .65px); background-size: 20px 20px; }
 .canvasScaleBounds { flex:none; width:var(--scaled-width); height:var(--scaled-height); margin:auto; position:relative; }
 .canvasWorld { position: relative; width: var(--canvas-width); height: var(--canvas-height); transform: scale(var(--canvas-scale)); transform-origin: 0 0; }

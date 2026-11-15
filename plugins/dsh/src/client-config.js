@@ -1029,7 +1029,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         h('h2', { className: css.configTitle }, t('consoleConfig')),
         h(
           'div',
-          { className: css.segmented, 'aria-label': t('consoleScope') },
+          { className: css.segmented + ' ' + css.scopeSegmented, 'aria-label': t('consoleScope') },
           ...['global', 'project'].map((key) =>
             h(
               Button,
