@@ -2,7 +2,7 @@
 
 Flywheel keeps exact reviewed package bytes. Codex Pro, LCU and ChatGPT below
 have been verified against the public npm registry. Claude Code Pro 0.5.1 is the
-reviewed, unpublished source candidate from [PR #4](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/4).
+reviewed source candidate from [PR #4](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/4).
 The private preset generator is intentionally bundled from its reviewed source;
 it has no public npm release. Version, source tree, archive and installed content
 remain separate identities.

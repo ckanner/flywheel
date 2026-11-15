@@ -25,7 +25,7 @@ Codex Pro 0.10.0 继续内置[已核对的正式发行包](https://github.com/ck
 可选 peer。Provider CLI 和账号凭据不在包内。普通 npm 安装只放置文件，`install`／
 `setup` 才执行用户设置，禁止在 postinstall 隐藏 profile 或凭据修改。
 
-本次源码变更配套的 Claude 0.5.1 尚未发布。PR CI 核对随源码候选的包身份、SHA-256
+已审查的 Claude 0.5.1 源码包固定在 vendor 记录中。PR CI 核对随源码候选的包身份、SHA-256
 和 integrity，这不构成 registry 发行证据。实际发布与提升标签前，必须从公共 registry
 取得精确插件并与已审查的 vendor 记录比对，之后才能修改 Flywheel 的 registry 状态。
 本地发行路径还会把该已验证 tarball 显式传入安装测试，不能悄悄跳过可选 Claude

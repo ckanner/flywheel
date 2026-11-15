@@ -33,11 +33,13 @@ resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidat
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
 source-candidate validation does not promote npm latest.
 
-The 0.5.1 companion for this change is an unpublished source candidate; its exact
-artifact is recorded in [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
-CI validates those candidate bytes. Registry installation and Flywheel publication
-must wait for the matching companion release. This worker rejects 0.5.0 rather
-than silently dropping the new field. Upgrade the worker and peer together;
+The reviewed 0.5.1 companion artifact is recorded in
+[vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
+CI validates those candidate bytes. Before publishing Flywheel, obtain the exact
+companion from the public registry and verify its package identity, SHA-256 and
+integrity against that record. Source validation alone does not establish registry
+availability. This worker rejects 0.5.0 rather than silently dropping the new field.
+Upgrade the worker and peer together;
 unresolved older invocations retain their original adapter/recovery identity and
 must be reconciled with their original version first.
 

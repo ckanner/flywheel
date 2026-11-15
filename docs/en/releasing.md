@@ -28,7 +28,7 @@ Pro 0.5.1 is an optional external peer. Provider CLIs and account credentials ar
 not included. Ordinary npm installation only places files; `install`/`setup` owns
 user setup, with no profile or credential changes hidden in postinstall.
 
-Claude 0.5.1 is an unpublished companion candidate for the current source change.
+The reviewed Claude 0.5.1 source archive is pinned in the vendor record.
 PR CI verifies its checked-in package identity, SHA-256 and integrity; this is not
 registry publication evidence. Actual publish and promotion paths must obtain the
 exact companion from the public registry and compare it with the reviewed vendor

@@ -27,9 +27,10 @@ registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
 
-本次配套 0.5.1 是尚未发布的源码候选，精确产物见
+已审查的配套 0.5.1 精确产物见
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json)。
-CI 验证这些候选字节；registry 安装及 Flywheel 发布必须等到匹配的插件正式发行。
+CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取得精确插件，
+并核对包身份、SHA-256 和 integrity 与该记录一致。源码验证本身不证明 registry 可用性。
 此 worker 会拒绝 0.5.0，不会悄悄丢弃新增字段。同步升级 worker 和 peer；旧版本的
 未决调用保留原适配器与恢复身份，须先使用原版本核对，不能改写为新版本。
 

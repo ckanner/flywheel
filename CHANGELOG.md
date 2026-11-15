@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased
+## 0.34.4 — Claude native child-agent effort
 
 - Preserve explicit Claude native agent effort (`low`, `medium`, `high`, `xhigh`,
   `max`) through profile validation, the public machine API and CLI agent
