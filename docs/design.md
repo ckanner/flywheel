@@ -105,7 +105,7 @@ LCU 通过公开 managed API 挂载，root 与真实后代共享一个跨进程 
 
 Kimi native 路径调用独立 worker，拥有 `kimi web` 的本地 server、registry、PID 与订阅，实际核对模型／effort／mode／permission后再派发。普通 CLI 路径保留。Agent/Swarm 使用角色账本；Tower 创建独立 `.git` 候选，只有 Execute 在完成和清理确认、source HEAD／bytes／modes／外部契约复核及 patch check 后导回。该副本不构成 OS 文件系统沙箱，Server 仅接受显式 full access；未知调用不重放。
 
-Codex 0.10.0 使用 config/read核对原生 agents controls与当前child turn；Claude 0.5.0支持Agent定义／Workflow／Advisor，并区分init工具事实与无法验证的hard cap。Codex原生review不消费角色prompt，因此通过 `flywheel native codex-review`独立入口；Claude `claude-review`、`claude-team`、`claude-recover`和`claude-control`保留远端job／tmux所有权与恢复回执。它们不写Flywheel state、不自动产生Review或Judge verdict，远端本地超时不证明云任务已结束。使用与协议见[原生能力指南](zh-CN/native-capabilities.md)及[完整设计](plans/2026-11-13-native-harness-capabilities.md)。
+Codex 0.10.0 使用 config/read核对原生 agents controls与当前child turn；Claude 0.5.1支持Agent定义／Workflow／Advisor，并区分init工具事实与无法验证的hard cap。Claude 定义中的可选 `effort` 限定为 low/medium/high/xhigh/max，配置加载时检查并原样透传至 `--agents`，与父绑定的 `thinking` 独立；省略时不注入默认值，tools-only init 不能证明实际子 effort。machine/native protocol 仍为 1，worker、回执与恢复保持精确插件版本身份。Codex原生review不消费角色prompt，因此通过 `flywheel native codex-review`独立入口；Claude `claude-review`、`claude-team`、`claude-recover`和`claude-control`保留远端job／tmux所有权与恢复回执。它们不写Flywheel state、不自动产生Review或Judge verdict，远端本地超时不证明云任务已结束。使用与协议见[原生能力指南](zh-CN/native-capabilities.md)及[完整设计](plans/2026-11-13-native-harness-capabilities.md)。
 
 ## 4. 执行闭环
 
@@ -821,7 +821,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次完整单包候选（candidate format 2），Linux/macOS 安装测试消费同一个 tarball；候选验证同时核对四个平台二进制、公开入口、MIT 许可和内置 adapter。已存在版本必须核对 integrity；先发 candidate 标签，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.0`；该正式发行包按 registry 的真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.5.0与LCU 0.5.0维持可选peer。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.0`；该正式发行包按 registry 的真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.5.1与LCU 0.5.0维持可选peer。Claude 0.5.1 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得精确版本并核对同一摘要，不能把源码验收当作插件已发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

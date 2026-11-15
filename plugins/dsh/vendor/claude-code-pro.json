@@ -1,18 +1,17 @@
 {
   "package": "dsh-subagent-claude-code-pro",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "repository": "https://github.com/ckanner/dsh-subagent-claude-code-pro",
-  "sourceCommit": "e559153123f52a12c35b758633290cf6ebd4cf4b",
-  "sourceTree": "49ab2543721295bf1c27bb4504a01b41c9acf9fc",
-  "tarball": "dsh-subagent-claude-code-pro-0.5.0.tgz",
-  "sha256": "fb15e28f7216d6e49a6717bad2fd568d2e00e7724feaadafae54405fd7a7597d",
-  "integrity": "sha512-Rd5EsxHMhLi8e6P3bOMwFFO2GfKU73zTHqgNCx20MkkobRJ+QQDamd+12pSIQoSrFoAF9R+Ls50Mx8DcDGEzUA==",
+  "sourceCommit": "412904d3120895c30c2d75fd47216e2d663a64c6",
+  "sourceTree": "58758c87df696f3b8c33cfdaa41f4be35a429bc2",
+  "tarball": "dsh-subagent-claude-code-pro-0.5.1.tgz",
+  "sha256": "5e12a708078729a85449ea72094bd7c50e57604fa5035c3aa0384c42ccfc884c",
+  "integrity": "sha512-hMcQFK4iq63welVTWvmSQKKezDZA8/WZGnCN9v7P1fR0oCYBC/Tm5O0SUxnsBosO//Z8GhJ8+MGdoJwB8Hfl3g==",
   "license": "MIT",
-  "registryReleaseVerified": true,
-  "registry": {
-    "tarball": "https://registry.npmjs.org/dsh-subagent-claude-code-pro/-/dsh-subagent-claude-code-pro-0.5.0.tgz",
-    "integrity": "sha512-Rd5EsxHMhLi8e6P3bOMwFFO2GfKU73zTHqgNCx20MkkobRJ+QQDamd+12pSIQoSrFoAF9R+Ls50Mx8DcDGEzUA==",
-    "verifiedAt": "2026-11-14T14:31:42.202800+00:00"
+  "registryReleaseVerified": false,
+  "buildToolchain": {
+    "node": "24.22.1",
+    "npm": "11.9.0"
   },
   "verificationToolchain": {
     "node": "24.22.1",

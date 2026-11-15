@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.1 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -114,7 +114,7 @@ test('missing, stale and incompatible optional peers prove non-dispatch without 
   assert.deepEqual(missing.admission, { dispatched: false, cleanupConfirmed: true });
   const peer = join(directory, 'node_modules', ADAPTER.package);
   await mkdir(peer, { recursive: true });
-  const manifest = { name: ADAPTER.package, version: '0.3.1', type: 'module', exports: { './package.json': './package.json', './machine': './machine.js' } };
+  const manifest = { name: ADAPTER.package, version: '0.5.0', type: 'module', exports: { './package.json': './package.json', './machine': './machine.js' } };
   await writeFile(join(peer, 'package.json'), JSON.stringify(manifest));
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_MISMATCH');
   await writeFile(join(peer, 'package.json'), JSON.stringify({ ...manifest, version: ADAPTER.version }));
@@ -151,6 +151,34 @@ test('installed public machine API receives exact model, effort, full access and
   assert.ok(record.argv.includes('--no-session-persistence'));
   assert.ok(record.argv.includes('--dangerously-skip-permissions'));
   assert.equal(record.credentialPresent, false);
+});
+
+test('installed public API carries each child effort to --agents without changing parent effort', liveContract, async t => {
+  const f = await setup(t);
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    const definitions = { scout: { description: 'Inspect the target', prompt: 'Report concrete findings', model: 'sonnet', effort } };
+    const native = { version: 1, agents: { enabled: true, definitions } };
+    const frame = resultFrame(await f.launch({ input: { ...f.request, requestId: 'child-effort-' + effort, native } }).done);
+    assert.equal(frame.error, null);
+    assert.equal(frame.receipt.ok, true);
+    assert.deepEqual(frame.receipt.native.requested, native);
+    const record = (await f.records()).at(-1);
+    const option = name => record.argv[record.argv.indexOf(name) + 1];
+    assert.deepEqual(JSON.parse(option('--agents')), definitions);
+    assert.equal(option('--effort'), 'high');
+  }
+});
+
+test('the installed public parser rejects invalid child effort before native dispatch', liveContract, async t => {
+  const f = await setup(t);
+  const native = { version: 1, agents: { enabled: true, definitions: {
+    scout: { description: 'Inspect the target', prompt: 'Report findings', effort: 'ultra' },
+  } } };
+  const frame = resultFrame(await f.launch({ input: { ...f.request, native } }).done, 1);
+  assert.equal(frame.receipt, null);
+  assert.equal(frame.error.code, 'INVALID_REQUEST');
+  assert.deepEqual(frame.admission, { dispatched: false, cleanupConfirmed: true });
+  assert.deepEqual(await f.records(), []);
 });
 
 test('persistent repair resumes only the provided session across independent worker processes', liveContract, async t => {

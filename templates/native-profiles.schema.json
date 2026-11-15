@@ -349,6 +349,15 @@
                           "minLength": 1,
                           "maxLength": 4096
                         },
+                        "effort": {
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max"
+                          ]
+                        },
                         "permissionMode": {
                           "type": "string",
                           "minLength": 1,

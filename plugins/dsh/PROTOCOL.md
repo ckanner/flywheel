@@ -333,7 +333,7 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.5.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.5.1`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
 
@@ -343,6 +343,13 @@ reasoningEffort、permissionMode、prompt、timeoutMs；v2 额外允许
 映射 persistent／显式 sessionId。主任务 v3 额外使用上面的 durable ACK/recovery；只接受 danger-full-access，映射 bypassPermissions；
 原生审批模式不等价于 OS read-only/workspace-write。命令来自
 FLYWHEEL_CLAUDE_BIN，权限、session、命令和输出上限不能通过额外 start 字段覆盖。
+
+native v1 的 `agents.definitions.<name>.effort` 可选，枚举为
+low/medium/high/xhigh/max。Go 配置 schema 在加载时检查，worker 将 native 对象完整
+交给公开 parser，插件原样序列化到 `--agents`；省略时不注入子 effort。父调用的
+reasoningEffort 仍独立映射到 `--effort`。此扩展不升级 machine/native protocol，
+但需要精确 0.5.1；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
+requested 证明请求参数，tools-only effective 不证明子模型实际 effort。
 
 terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
 adapter 是精确 package/version/protocol；receipt 原样保存 Claude machine v1 的
@@ -364,7 +371,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.0",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.1",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 

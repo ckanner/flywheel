@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/session-recovery.md) · 简体中文
 
 Flywheel 分别处理角色对话历史续用和中断调用恢复。fresh 与 scoped 都保留调用安全
-检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.0** 或 **Claude Code Pro 0.5.0**；
+检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.0** 或 **Claude Code Pro 0.5.1**；
 DSH 与 Kimi 继续使用各自支持的恢复路径。
 
 ## 恢复已有任务

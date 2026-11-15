@@ -10,6 +10,7 @@ const { PACKAGES, META, PLUGIN } = require("../../scripts/release-preflight.js")
 const { snapshot } = require("../../scripts/release-build.js");
 const { filenameFor, fileIntegrity, verifyCandidate } = require("../../scripts/release-candidate.js");
 const { parseArgs, verifyRemoteTag, createNpmRunner, releaseLocal, main } = require("../../scripts/release-local.js");
+const { readClaudeRelease, verifyArchive } = require("../../scripts/claude-release-gate.js");
 
 const VERSION = "0.28.0";
 const REGISTRY = "https://registry.npmjs.org/";
@@ -81,6 +82,11 @@ function fixture(t, { annotated = false, externalDirectory = false, changeManife
   }
   fs.writeFileSync(path.join(sourceDirectory, ".gitignore"), "dist-npm/\n");
   fs.writeFileSync(path.join(sourceDirectory, "source.txt"), "reviewed release source\n");
+  const claude = readClaudeRelease(TOOL_ROOT);
+  const vendor = path.join(sourceDirectory, "plugins/dsh/vendor");
+  fs.mkdirSync(vendor, { recursive: true });
+  fs.copyFileSync(path.join(TOOL_ROOT, "plugins/dsh/vendor/claude-code-pro.json"), path.join(vendor, "claude-code-pro.json"));
+  fs.copyFileSync(path.join(TOOL_ROOT, "plugins/dsh/vendor", claude.tarball), path.join(vendor, claude.tarball));
   git(sourceDirectory, "init", "-b", "main");
   git(sourceDirectory, "add", ".");
   git(sourceDirectory, "commit", "-m", "release fixture");
@@ -95,7 +101,7 @@ function fixture(t, { annotated = false, externalDirectory = false, changeManife
     dirty: false, snapshot_sha256: snapshot(sourceDirectory),
   }, packages: PACKAGES.map((entry) => ({ name: entry.name, version: VERSION, filename: filenameFor(entry.name, VERSION) })) };
   fs.mkdirSync(directory, { recursive: true });
-  const result = { root, sourceDirectory, directory, remote, candidate, values,
+  const result = { root, sourceDirectory, directory, remote, candidate, values, claude,
     options: { sourceDirectory, directory, repositoryVisibility: "private" } };
   result.save = () => fs.writeFileSync(path.join(directory, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
   for (const entry of candidate.packages) repack(result, entry);
@@ -107,7 +113,7 @@ function registry(fixture) {
   const entries = structuredClone(fixture.candidate.packages);
   const state = { events: [], versions: new Map(), latest: new Map(entries.map((entry) => [entry.name, "0.27.0"])),
     scope: "undefined", installResult: ok(), registryResult: ok(), failPublish: null,
-    afterInstall: null, afterRegistry: null, afterWrite: null, elapsed: 0 };
+    afterInstall: null, afterRegistry: null, afterWrite: null, elapsed: 0, claudeResult: null, afterClaude: null };
   state.spawnSync = (command, args, options) => {
     if (command === "git") {
       assert.equal(options.cwd, fixture.sourceDirectory);
@@ -128,13 +134,30 @@ function registry(fixture) {
       const kind = args[1] === "test:install" ? "install" : "registry";
       assert.ok(["test:install", "test:registry"].includes(args[1]));
       state.events.push({ kind, args, options });
-      if (kind === "install") { state.afterInstall?.(); return state.installResult; }
+      if (kind === "install") {
+        const archive = options.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL;
+        assert.equal(archive, state.events.find((event) => event.kind === "claude").archive);
+        verifyArchive(archive, fixture.claude);
+        state.afterInstall?.();
+        return state.installResult;
+      }
       state.afterRegistry?.();
       return state.registryResult;
     }
     assert.ok(args.includes(`--registry=${REGISTRY}`));
     assert.equal(args.filter((arg) => arg.startsWith("--scope=")).at(-1), "--scope=@ckanner",
       "registry reads and writes must select the scope whose registry was checked");
+    if (args[0] === "pack") {
+      assert.equal(args[1], `${fixture.claude.package}@${fixture.claude.version}`);
+      const destination = args[args.indexOf("--pack-destination") + 1];
+      const archive = path.join(destination, fixture.claude.tarball);
+      state.events.push({ kind: "claude", args, options, archive });
+      if (state.claudeResult) return state.claudeResult;
+      fs.copyFileSync(path.join(fixture.sourceDirectory, "plugins/dsh/vendor", fixture.claude.tarball), archive);
+      state.afterClaude?.(archive);
+      return json([{ name: fixture.claude.package, version: fixture.claude.version,
+        filename: fixture.claude.tarball, integrity: fixture.claude.integrity }]);
+    }
     if (args[0] === "view") {
       state.events.push({ kind: "read", args, options });
       if (args[2] === "dist-tags.latest") return json(state.latest.get(args[1]) ?? null);
@@ -209,6 +232,7 @@ test("clean lightweight and annotated source tags complete installation, candida
     const source = fixture(t, { annotated });
     const remote = registry(source);
     const original = fs.readFileSync(path.join(source.directory, "candidate.json"));
+    remote.io.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL = "/unverified/caller-provided.tgz";
     const delivered = await releaseLocal(source.options, remote.io);
     assert.equal(delivered.source.commit, source.candidate.source.commit);
     const operations = remote.events.filter((event) => ["install", "publish", "registry", "promote"].includes(event.kind));
@@ -222,6 +246,10 @@ test("clean lightweight and annotated source tags complete installation, candida
       assert.equal(event.args[event.args.indexOf("--tag") + 1], "candidate-0-28-0");
     }
     assert.equal(operations[0].options.env.FLYWHEEL_NPM_PACKAGES_DIR, source.directory);
+    const companion = remote.events.find((event) => event.kind === "claude");
+    assert.equal(operations[0].options.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL, companion.archive);
+    assert.ok(remote.events.indexOf(companion) < remote.events.indexOf(operations[0]));
+    assert.equal(fs.existsSync(path.dirname(companion.archive)), false, "registry archive and cache are disposed after release");
     const smoke = operations.find((event) => event.kind === "registry");
     assert.equal(smoke.options.env.FLYWHEEL_NPM_VERSION, VERSION);
     assert.equal(smoke.options.env.FLYWHEEL_NPM_REGISTRY, REGISTRY);
@@ -233,6 +261,33 @@ test("clean lightweight and annotated source tags complete installation, candida
     assert.deepEqual(fs.readFileSync(path.join(source.directory, "candidate.json")), original);
     assert.equal(git(source.sourceDirectory, "status", "--porcelain"), "");
   });
+});
+
+test("missing, failed or mismatched Claude registry releases stop before installation and any write", async (t) => {
+  const source = fixture(t);
+  for (const [name, configure] of [
+    ["not published", (remote) => { remote.claudeResult = missing(); }],
+    ["network failure", (remote) => { remote.claudeResult = { ...ok(), status: 1, stderr: "ECONNRESET" }; }],
+    ["timeout", (remote) => { remote.claudeResult = { ...ok(), error: Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }) }; }],
+    ["different bytes", (remote) => { remote.afterClaude = (file) => fs.appendFileSync(file, "not the reviewed artifact"); }],
+  ]) await t.test(name, async () => {
+    const remote = registry(source);
+    configure(remote);
+    await assert.rejects(releaseLocal(source.options, remote.io), /Claude.*unavailable|Claude.*SHA256\/integrity/);
+    assert.equal(remote.writes().length, 0);
+    assert.equal(remote.events.some((event) => ["install", "registry"].includes(event.kind)), false);
+    const companion = remote.events.find((event) => event.kind === "claude");
+    assert.equal(fs.existsSync(path.dirname(companion.archive)), false, "failed fetches leave no registry archive or cache");
+  });
+});
+
+test("a changed verified Claude archive during installation cannot reach publication", async (t) => {
+  const source = fixture(t);
+  const remote = registry(source);
+  remote.afterInstall = () => fs.appendFileSync(remote.events.find((event) => event.kind === "claude").archive, "changed during install");
+  await assert.rejects(releaseLocal(source.options, remote.io), /Claude.*SHA256\/integrity/);
+  assert.equal(remote.writes().length, 0);
+  assert.equal(fs.existsSync(path.dirname(remote.events.find((event) => event.kind === "claude").archive)), false);
 });
 
 test("the CLI can release an explicitly saved candidate outside the source checkout", async (t) => {

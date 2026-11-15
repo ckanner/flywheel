@@ -52,7 +52,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		cwd, err := filepath.EvalSymlinks(a.Cwd)
 		require.NoError(t, err)
 		a.Cwd = cwd
-		a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true,"maxConcurrent":3},"workflows":{"enabled":true}}`)
+		a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true,"maxConcurrent":3,"definitions":{"scout":{"description":"Find relevant code","prompt":"Inspect the target","model":"sonnet","effort":"low"},"auditor":{"description":"Check edge cases","prompt":"Report defects","effort":"xhigh"}}},"workflows":{"enabled":true}}`)
 		a.Managed = &NativeAdmission{Version: 1, RunID: "run", InvocationID: a.RequestID, Role: "Executor", Scope: "candidate", Channel: "local", TaskDir: a.Cwd}
 		a.RecoveryDirectory, a.OnLifecycle = filepath.Join(a.Cwd, "journal"), func(MachineLifecycle) error { return nil }
 		out := RunClaudeCodePro(a)
@@ -70,6 +70,17 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		root, _, err := parseClaudeCodeProUsage(receipt.Usage)
 		require.NoError(t, err)
 		assert.Equal(t, int64(22), root.TotalTokens)
+		log := readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl"))
+		require.Len(t, log, 1)
+		argv := log[0]["argv"].([]any)
+		values := map[string]string{}
+		for i, value := range argv[:len(argv)-1] {
+			if value == "--agents" || value == "--effort" {
+				values[value.(string)] = argv[i+1].(string)
+			}
+		}
+		assert.Equal(t, "max", values["--effort"], "the parent effort must remain independent")
+		assert.JSONEq(t, `{"scout":{"description":"Find relevant code","prompt":"Inspect the target","model":"sonnet","effort":"low"},"auditor":{"description":"Check edge cases","prompt":"Report defects","effort":"xhigh"}}`, values["--agents"])
 	})
 
 	t.Run("fresh calls keep native permission and cost semantics", func(t *testing.T) {

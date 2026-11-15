@@ -7,7 +7,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-适配器要求 **`dsh-subagent-claude-code-pro@0.5.0`**、machine protocol 1
+适配器要求 **`dsh-subagent-claude-code-pro@0.5.1`**、machine protocol 1
 及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
 接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
 发行流程见[发布指南](releasing.md)。
@@ -19,13 +19,20 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.0`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.1`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
 验证明确审查过的源码候选时，可从插件源码运行 `npm pack --ignore-scripts`，把产生的真实 `.tgz`
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
+
+已审查的配套 0.5.1 精确产物见
+[vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json)。
+CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取得精确插件，
+并核对包身份、SHA-256 和 integrity 与该记录一致。源码验证本身不证明 registry 可用性。
+此 worker 会拒绝 0.5.0，不会悄悄丢弃新增字段。同步升级 worker 和 peer；旧版本的
+未决调用保留原适配器与恢复身份，须先使用原版本核对，不能改写为新版本。
 
 | 环境变量 | 用途 |
 |---|---|
@@ -85,6 +92,44 @@ flywheel-claude-code-pro-worker --doctor
 
 未绑定的 profile 不要求安装 Claude；一旦绑定，doctor 会检查 worker、精确插件接口
 和 CLI。上述检查不发模型请求，不能证明账号额度或真实推理已通过。
+
+### 为具名原生 Agent 设置 effort
+
+每个 `native-profiles.<name>.options.agents.definitions.<agent>.effort` 接受
+`low`、`medium`、`high`、`xhigh` 或 `max`。例如，把以下片段加入同一个完整配置，
+再在已有 `claude-sonnet` profile 中加入 `"native-profile":"claude-agents"`：
+
+```json
+{
+  "native-profiles": {
+    "claude-agents": {
+      "harness": "claude-code-pro",
+      "options": {
+        "version": 1,
+        "agents": {
+          "enabled": true,
+          "definitions": {
+            "scout": {
+              "description": "检查相关代码",
+              "prompt": "读取目标代码，报告有具体依据的发现。",
+              "model": "sonnet",
+              "effort": "medium"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+父绑定的 `thinking` 仍单独传给父调用的 `--effort`；子定义原样进入 Claude 的
+`--agents` JSON。省略子 effort 时保持字段缺省，让 CLI 使用原生继承行为；Flywheel
+不会填入父值或自行设定子默认值。非法档位在配置加载时拒绝，不会派发 worker。
+
+同一字段也可用于 0.5.1 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
+请求。直接 Flywheel worker 仍读取选中的 native profile，不读取桌面设置。显式
+传递 effort 只能证明 CLI 请求参数；tools-only init 证据不能证明子模型实际采用的档位。
 
 ## 权限与会话
 

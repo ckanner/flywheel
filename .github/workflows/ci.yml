@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# The optional Claude adapter is verified against its immutable registry tarball.
+# PR CI verifies the reviewed source-pinned Claude candidate; publication separately requires matching registry bytes.
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -42,11 +42,18 @@ jobs:
           npm --version
       - name: Build one complete npm candidate
         run: npm run build:npm
-      - name: Fetch the verified published Claude machine API
+      - name: Verify the reviewed Claude machine API candidate
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/dist-claude"
-          npm pack dsh-subagent-claude-code-pro@0.5.0 --ignore-scripts --registry=https://registry.npmjs.org/ --pack-destination "$GITHUB_WORKSPACE/dist-claude"
-          printf '%s  %s\n' fb15e28f7216d6e49a6717bad2fd568d2e00e7724feaadafae54405fd7a7597d "$GITHUB_WORKSPACE/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz" | sha256sum --check
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { readClaudeRelease, verifyArchive } = require('./scripts/claude-release-gate.js');
+          const metadata = readClaudeRelease(process.cwd());
+          const archive = path.join('plugins/dsh/vendor', metadata.tarball);
+          verifyArchive(archive, metadata);
+          fs.mkdirSync('dist-claude', { recursive: true });
+          fs.copyFileSync(archive, path.join('dist-claude', metadata.tarball));
+          NODE
       - uses: actions/upload-artifact@v4
         with:
           name: npm-candidate
@@ -106,7 +113,7 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.1.tgz
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
@@ -122,7 +129,7 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.0.tgz
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.1.tgz
         run: npm run test:install
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'

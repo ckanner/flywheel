@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/native-capabilities.md) · [Complete design](../plans/2026-11-13-native-harness-capabilities.en.md)
 
-Flywheel 0.34.0 can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history.
+Flywheel can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history.
 
 This guide describes the implemented version. [Vendor records](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) identify the actual companion artifacts. Check user-machine installation separately; the [0.34.0 release record](../validation/2026-11-14-release-0.34.0.md) identifies the published artifact and completed checks.
 
@@ -13,7 +13,7 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `dsh` | PTC, subagents, Team, Workflow, explicit Web and LCU | Local DSH and an actual PTC probe; LCU additionally needs the 0.5.0 peer and full access |
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.0, logged-in Codex CLI and matching sandbox/approval receipts |
-| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.5.0, logged-in Claude CLI and explicit full access |
+| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.5.1, logged-in Claude CLI and explicit full access |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 
@@ -27,7 +27,7 @@ Codex Pro and Claude Code Pro provide their own native capability settings pages
 | Object | Replace the complete native default for this call, without a field-by-field merge |
 | `null` | Explicitly disable native collaboration for this ordinary call, rather than fall back to implicit CLI enablement |
 
-Codex settings cover Agent enablement, concurrent child threads, child model/effort defaults and an optional V2 backend. Claude settings cover Agent definitions, concurrency/depth, Workflow and Advisor; enabling Advisor requires its model. The tools expose corresponding per-call overrides. Native settings remain subject to the existing permission and model-selection policies.
+Codex settings cover Agent enablement, concurrent child threads, child model/effort defaults and an optional V2 backend. Claude settings cover Agent definitions with optional per-agent model/effort, concurrency/depth, Workflow and Advisor; enabling Advisor requires its model. The tools expose corresponding per-call overrides. Native settings remain subject to the existing permission and model-selection policies. See [named Claude agent effort](claude-code-pro.md#set-effort-for-named-native-agents) for accepted values and the distinction from the parent stage's effort.
 
 Here, `native` describes capabilities inside Codex/Claude. DSH can still orchestrate these tools through PTC. Independent native Review and actual interactive Teams use dedicated operations; saving ordinary Agent defaults does not launch those jobs.
 
@@ -35,10 +35,10 @@ These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-p
 
 ### Align independent worker dependencies
 
-Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix:
+Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.5.1 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.0 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.1 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 

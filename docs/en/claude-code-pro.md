@@ -8,7 +8,7 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-The adapter requires **`dsh-subagent-claude-code-pro@0.5.0`**, machine protocol
+The adapter requires **`dsh-subagent-claude-code-pro@0.5.1`**, machine protocol
 1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
 and older machine contracts are not substitutes. No default stage or route
 selects Claude. Package availability must be checked separately from source
@@ -22,7 +22,7 @@ Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.5.0` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.5.1` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
@@ -32,6 +32,16 @@ explicitly reviewed source candidate, run
 resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidate.
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
 source-candidate validation does not promote npm latest.
+
+The reviewed 0.5.1 companion artifact is recorded in
+[vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
+CI validates those candidate bytes. Before publishing Flywheel, obtain the exact
+companion from the public registry and verify its package identity, SHA-256 and
+integrity against that record. Source validation alone does not establish registry
+availability. This worker rejects 0.5.0 rather than silently dropping the new field.
+Upgrade the worker and peer together;
+unresolved older invocations retain their original adapter/recovery identity and
+must be reconciled with their original version first.
 
 | Variable | Purpose |
 |---|---|
@@ -100,6 +110,49 @@ flywheel-claude-code-pro-worker --doctor
 An unused profile does not require the optional adapter. A selected binding makes
 doctor check the worker, exact public API, and local CLI. These commands do not
 make model requests or prove account availability, quota, or live inference.
+
+### Set effort for named native agents
+
+Each `native-profiles.<name>.options.agents.definitions.<agent>.effort` accepts
+`low`, `medium`, `high`, `xhigh`, or `max`. For example, add this fragment to the
+same complete configuration, then add `"native-profile":"claude-agents"` to the
+existing `claude-sonnet` profile:
+
+```json
+{
+  "native-profiles": {
+    "claude-agents": {
+      "harness": "claude-code-pro",
+      "options": {
+        "version": 1,
+        "agents": {
+          "enabled": true,
+          "definitions": {
+            "scout": {
+              "description": "Inspect the relevant code",
+              "prompt": "Read the target and report concrete findings.",
+              "model": "sonnet",
+              "effort": "medium"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The parent binding's `thinking` remains its own `--effort`; the child definition
+travels unchanged in Claude's `--agents` JSON. An omitted child effort stays
+absent so the CLI keeps its native inheritance behavior. Flywheel does not fill
+it from the parent's value or invent a child default. Invalid values fail during
+configuration loading, before a worker is dispatched.
+
+The same definition field is available in the 0.5.1 desktop plugin's `native`
+settings and PTC override, and in independent interactive Team requests. Direct
+Flywheel workers still read their selected native profile, not desktop settings.
+Passing an explicit effort proves the requested CLI input; tools-only init
+evidence does not attest the effort actually used inside a child model.
 
 ## Permissions and role history
 

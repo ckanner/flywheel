@@ -357,7 +357,7 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.0 与 Claude Code Pro 0.5.0 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.0 与 Claude Code Pro 0.5.1 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 原生 init
 发生在 prompt 已派发之后，不能提供同等的派发前配置证明。两个后端都保留未知窗口，
@@ -567,7 +567,7 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 `dsh-subagent-codex-pro@0.10.0` 的公开 `dsh-subagent-codex-pro/machine` API。
 精确依赖由插件 package 和 lockfile 锁定；生命周期开发时使用的源码包见
 [vendor 来源记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。内部仍使用 Codex app-server 和用户已有登录，不需要父模型二次委派；缺包、
-版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.5.0` optional peer，
+版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.5.1` optional peer，
 未选择该后端时无需安装。
 
 已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。

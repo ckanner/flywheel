@@ -2,7 +2,7 @@
 
 [文档](../README.zh-CN.md) · 简体中文 · [English](../en/native-capabilities.md) · [完整设计](../plans/2026-11-13-native-harness-capabilities.md)
 
-Flywheel 0.34.0 可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。
+Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。
 
 本页描述该版本的实现。配套包身份和已核对的发行信息见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，本机安装应单独核对；[0.34.0 发行记录](../validation/2026-11-14-release-0.34.0.md) 标明正式产物身份和已完成的检查。
 
@@ -13,16 +13,16 @@ Flywheel 0.34.0 可以在正式 loop 中调用各 harness 的原生协作能力�
 | `dsh` | PTC、子 Agent、Team、Workflow、显式 Web、LCU | 本机 DSH；实际 PTC probe；LCU 另需 0.5.0 peer 和 full-access |
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.0；已登录 Codex CLI；实际 sandbox/approval 回执 |
-| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.5.0；已登录 Claude CLI；显式 full-access |
+| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.5.1；已登录 Claude CLI；显式 full-access |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
 ### 对齐独立 worker 的依赖
 
-桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix：
+桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.5.1 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.0 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.1 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
@@ -38,7 +38,7 @@ Codex Pro 和 Claude Code Pro 自身提供原生能力配置页。打开插件�
 | 对象 | 以这个完整对象替换该次调用的 native 默认值；不与默认值逐字段合并 |
 | `null` | 明确关闭该次普通调用的原生协作能力，不退回 CLI 的隐式启用状态 |
 
-Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认模型和 effort，以及可选 V2 backend。Claude 的设置包括 Agent 定义、并发与深度、Workflow 和 Advisor；启用 Advisor 时必须指定其模型。工具也支持相应的逐次覆盖。原生能力设置遵守现有权限和模型选择策略。
+Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认模型和 effort，以及可选 V2 backend。Claude 的设置包括可单独指定模型与 effort 的 Agent 定义、并发与深度、Workflow 和 Advisor；启用 Advisor 时必须指定其模型。工具也支持相应的逐次覆盖。原生能力设置遵守现有权限和模型选择策略。可用档位及其与父阶段 effort 的区别见[具名 Claude Agent effort](claude-code-pro.md#为具名原生-agent-设置-effort)。
 
 这里的 `native` 指 Codex/Claude 内部的能力，DSH 仍然可以用 PTC 编排这些工具。独立原生 Review 和真正的交互 Team 使用专门入口；保存普通 Agent 默认值不会启动这些任务。
 
