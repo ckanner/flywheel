@@ -11,7 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
-| 2026-11-15 | [0.34.2 多任务导航与 Tab 样式发行（桌面待解锁）](2026-11-15-release-0.34.2.md) |
+| 2026-11-15 | [0.34.2 多任务导航、Tab 样式发行与桌面验收](2026-11-15-release-0.34.2.md) |
 | 2026-11-14 | [本会话多任务导航验证](2026-11-14-session-task-navigation.md) |
 | 2026-11-14 | [0.34.1 工作台发行与本机验收](2026-11-14-release-0.34.1.md) |
 | 2026-11-14 | [会话工作台布局与配置编辑修复](2026-11-14-session-console-layout.md) |
