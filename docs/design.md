@@ -689,7 +689,7 @@ flywheel control config --cwd /repo
 flywheel control doctor --cwd /repo --task-dir /repo/docs/task --probe
 ```
 
-控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。有角色记录时增加紧凑 sessions 投影，显示角色／作用域、代次、动作／原因和最新调用的状态、派发、结果、清理、persistent 与 usageStatus，不读取原始回执或会话正文。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
+控制接口可附加 taskTitle：仅来自通过契约校验的 Spec.title，供显示使用；缺失或无效时省略，不阻断状态读取与停止，不用任务标识猜测标题。控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。有角色记录时增加紧凑 sessions 投影，显示角色／作用域、代次、动作／原因和最新调用的状态、派发、结果、清理、persistent 与 usageStatus，不读取原始回执或会话正文。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
 
 配置查看与本地 doctor 不物化全局配置、不写任务状态、不建 worktree、不执行验收命令。doctor 默认仅检查配置、契约和本地命令；显式 probe 才启动 DSH SDK 的无推理握手与权限检查，不发送 session/prompt。检查总预算 40 秒，另留进程清理窗口；相同 cwd/provider/channel/model/effort/权限的探测只做一次，不同账号渠道与读写权限不能合并。
 
@@ -705,19 +705,21 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 画布按 Plan／拆分、调度、任务分支、汇总终验、PR 和 Merge 展示流程。节点详情在视图内直接展示结果、操作、本次配置与真实角色会话；进入会话和查看证据使用各自的详情页；任务节点可展开 Execute、L1、Review 和 Git 交付子图。实际位置由助手与引擎提供，项目工作区、实际执行目录、任务资料位置分别只读显示，没有任务／项目路径输入框。窄窗口提供列表与跨分页定位，长路径、字段和错误在内容区换行或局部滚动。
 
-`run.kind` 与 `control.kind` 一致的单阶段操作优先展示“本次运行”及真实回执。仅 Review 的默认画布为 L1 → Review，明确记录结论并说明整体交付尚未完成；完整流程可显式展开。单阶段通过不自动启动后续阶段，不把任务改为 completed，失败、取消和未知结果不能沿用旧绿色裁决。Skill 加载、准备任务和实际启动分别报告。
+`run.kind` 与 `control.kind` 一致时，工具栏分别说明单阶段结果与整体交付状态。默认展示任务全貌；切到“本次运行”后以紧凑结果列表展示真实回执，Review 为 L1 → Review，不用单个节点撑满空画布。单阶段通过不自动启动后续阶段，不把任务改为 completed，失败、取消和未知结果不能沿用旧绿色裁决。Skill 加载、准备任务和实际启动分别报告。
 
 外部 plain-JS 客户端只运行时导入共享 React，不导入 `ui-primitives`、`client-store` 或其他 Harness Client 包。按钮和输入框由插件自己实现，参照已核对的宿主结构、尺寸和交互，颜色只依赖 `--dsw-alias-*`，字体继承宿主。CSS Modules 在构建时编译，样式由 React 视图拥有；不从业务代码操作全局 DOM，也不新建 iframe、侧栏或窗口级遮罩。视图位于 Conversation 已有标题栏之下，不重复叠加全局页面的 macOS 顶部留白。
 
 插件通过公开 `sessionProjections` 注册 `flywheelTask` 投影，消费本会话的命令／工具／PTC 调用与结果，客户端用 `useProjection('flywheelTask')` 读取。launch、start 及助手通过 `flywheel_control status` 准备任务的关联可在重载后重建；fork 不继承父会话任务。待确认操作保留原目标身份，防止重载后误发重复启动。组件不回写 state.json，也不伪造 worker 事件。
 
-会话视图不提供任务选择器。只接受当前会话投影和精确匹配 `hostSessionId` 的运行索引；其他会话及无归属记录不可见。显式工具关联优先；没有投影时按开始时间选择最近的本会话任务，再请求 Go 状态。单纯打开页面、刷新或旧版 UI 产生的 `/flywheel status` 日志不能创建新的任务关联。未确认操作始终锁定原目标，fork 不继承关联。无关联时显示空状态，独立终端任务需要在目标会话通过 `flywheel_control status` 显式关联，不能按目录猜测或扫描磁盘。
+会话视图仅在关联多个任务时显示“本会话任务”导航；零个任务显示准备入口，单个任务直接展示画布，不显示切换控件。只接受当前会话投影的已确认任务和精确匹配 `hostSessionId` 的运行索引，以 taskDir/cwd 对合并同一任务的多次运行；其他会话及无归属记录不可见。显式工具关联优先；没有投影时按开始时间选择最近的本会话任务，再请求 Go 状态。单纯打开页面、刷新或旧版 UI 产生的 `/flywheel status` 日志不能创建新的任务关联。未确认操作始终锁定原目标，fork 不继承关联。 手动切换只读新目标状态，不启动、停止或重写任务关联；普通任务索引轮询不抢回用户选择，新的明确任务关联仍自动跟随。状态读取、变更在途或任务／配置保存结果未知时禁用切换。非当前任务只显示最近登记状态或“点击读取状态”，不冒充实时状态；标题读取失败不显示其他任务的旧画布。记录页仍仅展示当前任务的多次运行。已确认但尚无运行索引的准备任务，也可通过本会话投影历史读取，Host 按精确 taskDir/cwd 校验，不能跨会话或以其他工作目录访问。无关联时显示空状态，独立终端任务需要在目标会话通过 `flywheel_control status` 显式关联，不能按目录猜测或扫描磁盘。
 
 自动发现、轮询、配置读取、节点与指标读取使用公开 Typert `flywheelConsole/read` Remote，宿主解析实际 Agent／Session，按会话过滤运行并核对任务身份；该入口只允许读取，不能启动或修改任务。读取不执行 slash command，不追加会话事件，不把 JSON 刷进聊天。UI 变更和未知结果的显式 status 核对仍走有持久回执的命令，确保重载后可恢复操作锁；人工命令及模型工具保持原 JSON 协议，不删除历史事件。读取通道不可用时显示错误，不回退到刷屏命令。 客户端挂载使用公开 strict codec 工厂校验 Session ID、只读请求和返回 envelope，Agent lookup 的 wire 字段遵循真实宿主的 `agentId`，不以 src-json 充当生成的客户端输入 codec。兼容测试必须让实际打包 descriptor 经过真实 Client `$mount` 和 Host Gateway，不能仅模拟挂载成功。动态挂载完成后，以受父插件拥有的 `ctx.inject` 子作用域消费 `remote.flywheelConsole`，卸载时同时撤销读取 consumer；不得从未声明注入的外层 context 访问它。
 
-项目、任务记录和分支在有值时直接显示。阶段操作、来源、失败证据、会话入口及配置操作使用普通分组，不提供折叠控件；视图导航与画布子图导航仍保留。已有运行只提供适用的继续／停止操作，准备好的新任务才显示 Auto／Quick／Full 启动选项。主工作区只有流程与记录，设置独立进入。设置使用运行方式、模型与会话、预算与重试、JEV、高级与诊断五个分类；重新读取、完整 JSON 和原始回执放在高级与诊断，范围及保存／撤销／恢复默认保持固定位置。窄窗口的设置导航行固定 54px、每项 36px；触控指针下按钮为 44px，并使用 5px 上下留白，不与内容分享最小高度。离开设置、切换范围和重新读取保护未保存草稿。
+DSH 保留会话名称；插件任务标题使用 taskTitle，没有时显示“当前关联任务”，slug 单独标为任务 ID。项目目录、任务记录和分支有值时在顶部只读显示，节点详情另示执行 Worktree；设置页隐藏任务标题但保持会话关联订阅。流程状态与操作只有一条工具栏，画布范围和画布／列表切换位于画布内部。布局使用宿主提供的 --dsh-conversation-viewport-height 与 --dsh-composer-height，在输入区域上方安排内容，旧宿主缺少测量时使用保守回退尺寸。阶段操作、来源、失败证据、会话入口及配置操作使用普通分组，不提供折叠控件；视图导航与画布子图导航仍保留。已有运行只提供适用的继续／停止操作，准备好的新任务才显示 Auto／Quick／Full 启动选项。主工作区只有流程与记录，设置独立进入。设置使用运行方式、模型与会话、预算与重试、JEV、诊断与配置文件五个连续靠上的分类；重新读取、完整 JSON 和原始回执放在诊断与配置文件，范围及保存／撤销／恢复默认保持固定位置。窄窗口的设置导航行固定 54px、每项 36px；触控指针下按钮为 44px，并使用 5px 上下留白，不与内容分享最小高度。离开设置、切换范围和重新读取保护未保存草稿。
 
-模型与会话表直接编辑模型、推理和角色继承／fresh／scoped；Provider、账号渠道与权限使用绑定编辑器。执行路由共用 Execute 角色策略，但 packet 会话仍独立。Plan 的显式 fresh/scoped 同步兼容旧 Kimi resident-session 开关；继承时保持原字段并展示其实际影响，不能误报新建或复用。已有显式角色策略与旧 Plan 开关冲突时显示同步入口，用户确认编辑并保存后才改变文件。启用的第二意见也独立展示和配置角色策略。节点 Session 动作、ID 和原因来自引擎记录；配置为 scoped 不证明本次已续接。
+模型与会话表直接编辑模型、推理和角色继承／fresh／scoped；Provider、账号渠道与权限进入设置页内的阶段编辑区，直接修改同一份草稿。返回模型列表不会提交或丢弃修改；底部“保存修改”是唯一写入入口，“撤销”撤销整个当前作用域草稿，不再提供“加入待保存修改”的第二层确认。执行路由共用 Execute 角色策略，但 packet 会话仍独立。Plan 的显式 fresh/scoped 同步兼容旧 Kimi resident-session 开关；继承时保持原字段并展示其实际影响，不能误报新建或复用。已有显式角色策略与旧 Plan 开关冲突时显示同步入口，用户确认编辑并保存后才改变文件。启用的第二意见也独立展示和配置角色策略。节点 Session 动作、ID 和原因来自引擎记录；配置为 scoped 不证明本次已续接。
+
+流程／记录及节点子导航使用独立的紧凑圆角悬停区域和选中下划线；悬停、选中不改变控件尺寸。分段切换按钮垂直居中且限制高度，桌面导航目标为 36px，触控目标为 44px；键盘 focus-visible 保留独立轮廓，禁用按钮不响应悬停。
 
 设置中的 `jev.enabled`、`scheduler.prewarm` 与 `worktree.enabled` 使用插件自有的
 原生 checkbox `role=switch`，提供关联标签、可见开关状态、键盘焦点和至少 44px

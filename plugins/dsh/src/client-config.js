@@ -1,5 +1,5 @@
-Object.assign(zh, { cfgWorktree: '自动管理任务 Worktree', cfgWorktreeHelp: '默认开启。关闭后不自动创建 Worktree；仍可并行，模型或用户可选择并登记执行目录。已有目录不会被删除' });
-Object.assign(en, { cfgWorktree: 'Automatically manage task Worktrees', cfgWorktreeHelp: 'On by default. Off keeps existing directories and still allows parallel tasks; callers may choose and register their own execution checkouts' });
+Object.assign(zh, { cfgWorktree: '自动管理任务 Worktree', cfgWorktreeHelp: '关闭后仍可并行，任务自行选择执行目录；保留已有目录' });
+Object.assign(en, { cfgWorktree: 'Automatically manage task Worktrees', cfgWorktreeHelp: 'Off still allows parallel work and caller-selected execution directories; existing directories are kept' });
 // The editor owns drafts only. File identity, validation, backup and publication stay in Go.
 Object.assign(zh, {
   consoleResource: 'Provider',
@@ -24,7 +24,7 @@ Object.assign(zh, {
   cfgSessionHelp: '同任务、同角色续接；执行与独立 Review 不共享历史',
   cfgScheduleHelp: '仅对契约声明独立、依赖已满足的任务并发执行',
   cfgDispatch: '并行任务派发方式',
-  cfgDispatchHelp: '批次处理等待本批 Execute／L1 收尾；就绪队列在执行与验证完成后补充空位。评审和集成仍串行',
+  cfgDispatchHelp: '整批处理等待本批完成；就绪队列在 Execute／L1 完成后补充空位',
   cfgDispatchEligibility: '就绪队列仅适用于 Full 任务，且需要并行、并发数大于 1、自动管理独立 Worktree',
   cfgDispatchBatchState: '当前配置为批次处理',
   cfgDispatchReadyState: '配置条件已满足；运行时仍须核对 Full 任务的独立单元与依赖',
@@ -55,7 +55,7 @@ Object.assign(zh, {
   cfgDiscardContinue: '放弃草稿并继续',
   cfgReset: '恢复安装版本默认配置',
   cfgResetHelp: '将完整默认配置载入草稿，保存时先备份原文件。当前任务的配置快照保持不变',
-  cfgLoadDefaults: '载入待保存修改',
+  cfgLoadDefaults: '载入默认配置',
   cfgResetPending: '待保存：完整替换为安装版本默认配置',
   cfgJson: '高级配置 JSON',
   cfgInvalid: '有无效字段，请修正后保存',
@@ -83,7 +83,7 @@ Object.assign(zh, {
   cfgBindingsHelp: '按真实配置编辑 Provider、模型、推理与权限；模型标识在运行时由后端核对',
   cfgEdit: '编辑',
   cfgBinding: '编辑阶段模型',
-  cfgApplyBinding: '加入待保存修改',
+  cfgBindingDone: '返回模型列表',
   cfgBindingAdvanced: '后端与账号渠道',
   cfgModelHint: '使用此 Provider 支持的模型标识；预设不代表当前账号已授权',
   cfgJevHelp: '一个开关控制调查与执行中的 JEV 决策，包括取证、失败后下一步及批准的模型选择。关闭后停止后续 JEV 请求与采用，沿用原路径，也不采集影子快照',
@@ -134,7 +134,7 @@ Object.assign(en, {
     'Reuse within the same task and role; execution and independent Review do not share history',
   cfgScheduleHelp: 'Parallel execution requires declared independence and satisfied dependencies',
   cfgDispatch: 'Parallel dispatch',
-  cfgDispatchHelp: 'Batch waits for every Execute/L1 in the group. Ready queue refills slots after execution and verification. Review and integration stay serial',
+  cfgDispatchHelp: 'Batch waits for the group; Ready queue refills slots after Execute/L1',
   cfgDispatchEligibility: 'Ready queue requires a Full task, parallel scheduling, a limit above 1 and automatically managed independent Worktrees',
   cfgDispatchBatchState: 'Configured for batch processing',
   cfgDispatchReadyState: 'Configuration conditions are met; the run must still have a Full task with eligible independent units and dependencies',
@@ -167,7 +167,7 @@ Object.assign(en, {
   cfgReset: 'Restore installed version defaults',
   cfgResetHelp:
     'Load the complete defaults into the draft. Saving backs up the old file; the current run retains its snapshot',
-  cfgLoadDefaults: 'Load pending changes',
+  cfgLoadDefaults: 'Load defaults',
   cfgResetPending: 'Pending: replace with the complete installed defaults',
   cfgJson: 'Advanced configuration JSON',
   cfgInvalid: 'Correct invalid fields before saving',
@@ -196,7 +196,7 @@ Object.assign(en, {
     'Edit actual Provider, model, reasoning and permissions. The backend checks model identifiers at runtime',
   cfgEdit: 'Edit',
   cfgBinding: 'Edit stage model',
-  cfgApplyBinding: 'Add to pending changes',
+  cfgBindingDone: 'Back to model list',
   cfgBindingAdvanced: 'Backend and account channel',
   cfgModelHint: 'Use a supported Provider model identifier. A preset does not prove account authorization',
   cfgJevHelp:
@@ -299,7 +299,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const [reset, setReset] = React.useState(cached.current?.reset ?? false),
     [saved, setSaved] = React.useState(false),
     [dialog, setDialog] = React.useState(null),
-    [bindingEdit, setBindingEdit] = React.useState(null);
+    [bindingSelection, setBindingSelection] = React.useState(null);
   const attempt = React.useRef(null),
     adopted = React.useRef(null),
     id = React.useId();
@@ -439,15 +439,21 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       adopted.current = null;
     });
   };
-  const save = () =>
+  const save = () => {
+    const values = cloneConfig(draft);
+    // Register only the final channel of an edited binding. Typing a channel
+    // must not leave a configuration entry for every partial input string.
+    for (const [group, key, value] of rows) {
+      const previous = group === 'panel' ? base?.['judge-panel'] : base?.[group]?.[key];
+      if (JSON.stringify(value) !== JSON.stringify(previous) && value.channel && !values.channels?.[value.channel]) {
+        values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null } };
+      }
+    }
+    const sections = Object.keys({ ...base, ...values }).filter(key => JSON.stringify(values[key]) !== JSON.stringify(base?.[key]));
     void run('config-save', selection, false, {
-      editor: {
-        scope,
-        revision,
-        values: reset ? draft : Object.fromEntries(changed.map((key) => [key, draft[key]])),
-        reset,
-      },
+      editor: { scope, revision, values: reset ? values : Object.fromEntries(sections.map(key => [key, values[key]])), reset },
     });
+  };
   const clearNumberDrafts = (matches) => {
     const keep = ([path]) => !matches(path);
     setNumbers(old => Object.fromEntries(Object.entries(old).filter(keep)));
@@ -644,17 +650,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     xhigh: t('cfgEffortXhigh'),
     max: t('cfgEffortMax'),
   };
-  const openBinding = (group, key, value) => {
-    const role = group === 'routes' ? 'execute' : key;
-    setBindingEdit({
-      group,
-      key,
-      role,
-      value: cloneConfig(value),
-      permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit',
-      session: draft.sessions?.roles?.[role] ?? 'inherit',
-    });
-  };
+  const openBinding = (group, key) => setBindingSelection({ group, key });
+  const bindingEdit = draft && bindingSelection && (() => {
+    const { group, key } = bindingSelection, role = group === 'routes' ? 'execute' : key;
+    const value = group === 'panel' ? draft['judge-panel'] : draft[group]?.[key];
+    return value ? { group, key, role, value, permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit', session: draft.sessions?.roles?.[role] ?? 'inherit' } : null;
+  })();
   const applySessionRole = (next, role, session) => {
     const roles = { ...next.sessions?.roles };
     if (session === 'inherit') delete roles[role];
@@ -705,16 +706,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     else next[group][key] = setNativeProfile(next[group][key], name);
     replace(next);
   };
-  const saveBinding = () => {
-    const { group, key, role, value, permission, session } = bindingEdit,
+  const setBindingEdit = (update) => {
+    if (update === null) { setBindingSelection(null); return; }
+    const { group, key, role, value, permission, session } = update(bindingEdit),
       next = cloneConfig(draft);
     if (group === 'panel') next['judge-panel'] = value;
     else next[group][key] = value;
-    if (value.channel && !next.channels?.[value.channel])
-      next.channels = {
-        ...next.channels,
-        [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null },
-      };
     if (permission !== (next.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit')) {
       const bindings = { ...next.permissions?.bindings };
       if (permission === 'inherit') delete bindings[bindingID(group, key)];
@@ -723,7 +720,6 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     }
     if (session !== (next.sessions?.roles?.[role] ?? 'inherit')) applySessionRole(next, role, session);
     replace(next);
-    setBindingEdit(null);
   };
   const patchBinding = (key, value) =>
     setBindingEdit((old) => ({ ...old, value: { ...old.value, [key]: value } }));
@@ -907,6 +903,118 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           ),
         ),
     );
+  const bindingFields = bindingEdit && h('section', { className: css.bindingEditor, 'aria-label': t('cfgBinding') },
+    h('div', { className: css.bindingHeader },
+      h(Button, { disabled: busy, onClick: () => setBindingSelection(null) }, t('cfgBindingDone')),
+      h('h4', { className: css.heading }, roleName(bindingEdit.group, bindingEdit.key))),
+    h('p', { className: css.settingsHelp }, t('cfgBindingSaveHelp')),
+        field(
+          'binding.resource',
+          t('consoleResource'),
+          null,
+          select(
+            'binding.resource',
+            resourceOf(bindingEdit.value),
+            Object.entries(resourceNames),
+            (value) => {
+              const next = preset(value);
+              if (next)
+                setBindingEdit((old) => {
+                  const value = cloneConfig(next);
+                  if (old.group !== 'loops' || old.key !== 'plan') delete value['resident-session'];
+                  return { ...old, value };
+                });
+            },
+          ),
+        ),
+        field(
+          'binding.model',
+          t('consoleModel'),
+          t('cfgModelHint'),
+          input('binding.model', bindingEdit.value.model, (v) => patchBinding('model', v)),
+        ),
+        field(
+          'binding.thinking',
+          t('consoleThinking'),
+          null,
+          select(
+            'binding.thinking',
+            bindingEdit.value.thinking ?? '',
+            Object.entries(efforts).concat(
+              bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
+                ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
+                : [],
+            ),
+            (v) => {
+              if (v) patchBinding('thinking', v);
+              else
+                setBindingEdit((old) => {
+                  const value = { ...old.value };
+                  delete value.thinking;
+                  return { ...old, value };
+                });
+            },
+          ),
+        ),
+        field('binding.native-profile', t('cfgNative'), t('cfgNativeHelp'),
+          select('binding.native-profile', bindingEdit.value['native-profile'] ?? '__inherit__', nativeChoices(bindingEdit.value),
+            name => setBindingEdit(old => ({ ...old, value: setNativeProfile(old.value, name) })))),
+        field(
+          'binding.permission',
+          t('permission'),
+          t('consolePermissionEffective'),
+          select(
+            'binding.permission',
+            bindingEdit.permission,
+            [
+              ['inherit', t('consoleInherit')],
+              ['read-only', t('permissionReadOnly')],
+              ['workspace-write', t('permissionWorkspace')],
+              ['danger-full-access', t('permissionFull')],
+            ],
+            (v) => setBindingEdit((old) => ({ ...old, permission: v })),
+          ),
+        ),
+        !['intake', 'garden'].includes(bindingEdit.key) &&
+          field(
+            'binding.session',
+            t('consoleSession'),
+            bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
+            select(
+              'binding.session',
+              bindingEdit.session,
+              [
+                ['inherit', t('consoleInherit')],
+                ['scoped', t('consoleScoped')],
+                ['fresh', t('consoleFresh')],
+              ],
+              (v) => setBindingEdit((old) => ({ ...old, session: v })),
+            ),
+          ),
+        h(
+          'section',
+          { className: css.details },
+          h('h4', null, t('cfgBindingAdvanced')),
+          field(
+            'binding.harness',
+            t('consoleAdapter'),
+            null,
+            input('binding.harness', bindingEdit.value.harness, (v) => patchBinding('harness', v)),
+          ),
+          field(
+            'binding.provider',
+            t('cfgProviderID'),
+            null,
+            input('binding.provider', bindingEdit.value.provider, (v) => patchBinding('provider', v)),
+          ),
+          field(
+            'binding.channel',
+            t('consoleChannel'),
+            null,
+            input('binding.channel', bindingEdit.value.channel, (v) => patchBinding('channel', v)),
+          ),
+        ),
+      );
   return h(
     'section',
     { className: css.editor, 'aria-label': t('consoleConfig') },
@@ -933,7 +1041,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ...['strategy', 'models', 'limits', 'jev', 'advanced'].map((key) =>
         h(
           Button,
-          { key, 'aria-pressed': section === key, onClick: () => setSection(key) },
+          { key, 'aria-pressed': section === key, onClick: () => { setSection(key); setBindingSelection(null); } },
           t({ strategy: 'cfgStrategy', models: 'cfgModels', limits: 'cfgLimits', jev: 'cfgJev', advanced: 'cfgAdvanced' }[key]),
         ),
       ),
@@ -978,7 +1086,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             React.Fragment,
             null,
             section !== 'jev' && h('p', { className: css.configTiming }, t(section === 'advanced' ? 'cfgAdvancedTiming' : 'cfgNextStart')),
-            section !== 'advanced' && h('fieldset', { className: css.configFields, disabled: invalid }, fields),
+            section !== 'advanced' && h('fieldset', { className: css.configFields, disabled: invalid }, section === 'models' && bindingEdit ? bindingFields : fields),
             h(
               'section',
               { className: css.configSource, hidden: section !== 'advanced' },
@@ -1107,141 +1215,21 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         ),
         dialog.kind === 'discard' && h('pre', { className: css.raw }, raw),
       ),
-    bindingEdit &&
-      h(
-        WorkbenchDialog,
-        {
-          t,
-          title: t('cfgBinding') + ' · ' + roleName(bindingEdit.group, bindingEdit.key),
-          onClose: () => setBindingEdit(null),
-          actions: h(
-            React.Fragment,
-            null,
-            h(Button, { onClick: () => setBindingEdit(null) }, t('wbCancel')),
-            h(Button, { variant: 'primary', disabled: busy, onClick: saveBinding }, t('cfgApplyBinding')),
-          ),
-        },
-        field(
-          'binding.resource',
-          t('consoleResource'),
-          null,
-          select(
-            'binding.resource',
-            resourceOf(bindingEdit.value),
-            Object.entries(resourceNames),
-            (value) => {
-              const next = preset(value);
-              if (next)
-                setBindingEdit((old) => {
-                  const value = cloneConfig(next);
-                  if (old.group !== 'loops' || old.key !== 'plan') delete value['resident-session'];
-                  return { ...old, value };
-                });
-            },
-          ),
-        ),
-        field(
-          'binding.model',
-          t('consoleModel'),
-          t('cfgModelHint'),
-          input('binding.model', bindingEdit.value.model, (v) => patchBinding('model', v)),
-        ),
-        field(
-          'binding.thinking',
-          t('consoleThinking'),
-          null,
-          select(
-            'binding.thinking',
-            bindingEdit.value.thinking ?? '',
-            Object.entries(efforts).concat(
-              bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
-                ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
-                : [],
-            ),
-            (v) => {
-              if (v) patchBinding('thinking', v);
-              else
-                setBindingEdit((old) => {
-                  const value = { ...old.value };
-                  delete value.thinking;
-                  return { ...old, value };
-                });
-            },
-          ),
-        ),
-        field('binding.native-profile', t('cfgNative'), t('cfgNativeHelp'),
-          select('binding.native-profile', bindingEdit.value['native-profile'] ?? '__inherit__', nativeChoices(bindingEdit.value),
-            name => setBindingEdit(old => ({ ...old, value: setNativeProfile(old.value, name) })))),
-        field(
-          'binding.permission',
-          t('permission'),
-          t('consolePermissionEffective'),
-          select(
-            'binding.permission',
-            bindingEdit.permission,
-            [
-              ['inherit', t('consoleInherit')],
-              ['read-only', t('permissionReadOnly')],
-              ['workspace-write', t('permissionWorkspace')],
-              ['danger-full-access', t('permissionFull')],
-            ],
-            (v) => setBindingEdit((old) => ({ ...old, permission: v })),
-          ),
-        ),
-        !['intake', 'garden'].includes(bindingEdit.key) &&
-          field(
-            'binding.session',
-            t('consoleSession'),
-            bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
-            select(
-              'binding.session',
-              bindingEdit.session,
-              [
-                ['inherit', t('consoleInherit')],
-                ['scoped', t('consoleScoped')],
-                ['fresh', t('consoleFresh')],
-              ],
-              (v) => setBindingEdit((old) => ({ ...old, session: v })),
-            ),
-          ),
-        h(
-          'section',
-          { className: css.details },
-          h('h4', null, t('cfgBindingAdvanced')),
-          field(
-            'binding.harness',
-            t('consoleAdapter'),
-            null,
-            input('binding.harness', bindingEdit.value.harness, (v) => patchBinding('harness', v)),
-          ),
-          field(
-            'binding.provider',
-            t('cfgProviderID'),
-            null,
-            input('binding.provider', bindingEdit.value.provider, (v) => patchBinding('provider', v)),
-          ),
-          field(
-            'binding.channel',
-            t('consoleChannel'),
-            null,
-            input('binding.channel', bindingEdit.value.channel, (v) => patchBinding('channel', v)),
-          ),
-        ),
-      ),
+
   );
 }
 
 Object.assign(zh, {
-  consoleConfig: '设置', cfgStrategy: '运行方式', cfgModels: '模型与会话', cfgJev: 'JEV', cfgAdvanced: '高级与诊断', cfgBack: '← 返回流程',
+  consoleConfig: '设置', cfgStrategy: '运行方式', cfgModels: '模型与会话', cfgJev: 'JEV', cfgAdvanced: '诊断与配置文件', cfgBack: '← 返回流程',
   cfgSessionHelp: '各角色独立，可按阶段覆盖', consoleSession: '会话策略', cfgReuse: '按角色复用', cfgFresh: '每次新建', cfgInheritMode: '继承 · {mode}', cfgSessionDefault: '默认：{mode}', cfgIndependent: '独立调用',
   cfgScheduleHelp: '', cfgParallelHelp: '并发数为 1–8；Review 与集成仍串行', cfgPermissionHelp: '完全权限可访问工作区以外文件',
   cfgBudgetPolicy: '用量预算', cfgBudgetOff: '关闭', cfgBudgetSoft: '仅提醒', cfgBudgetHard: '达到后停止',
   cfgBudgetOffHelp: '不设 Token 门限，继续统计用量', cfgBudgetSoftHelp: '达到额度时提醒，任务继续运行', cfgBudgetHardHelp: '达到额度或用量无法确认时，暂停新调用', cfgBudgetDay: '按单个任务、UTC 日期统计；留空不设额度', consoleBudget: '单任务每日 Token 额度',
   cfgRunProtection: '运行保护', cfgRetryHelp: '传输故障重试，不影响任务返修次数', cfgTimeoutHelp: '', cfgTimeout: '单次运行时限',
-  cfgClean: '没有待保存修改', cfgDirty: '有未保存修改', cfgSaved: '配置已保存', cfgReset: '恢复默认', cfgDiscard: '撤销',
+  cfgClean: '没有未保存的修改', cfgDirty: '有未保存修改', cfgSaved: '配置已保存', cfgReset: '恢复默认', cfgDiscard: '撤销',
 });
 Object.assign(en, {
-  consoleConfig: 'Settings', cfgStrategy: 'Execution', cfgModels: 'Models and sessions', cfgJev: 'JEV', cfgAdvanced: 'Advanced and diagnostics', cfgBack: '← Back to workflow',
+  consoleConfig: 'Settings', cfgStrategy: 'Execution', cfgModels: 'Models and sessions', cfgJev: 'JEV', cfgAdvanced: 'Diagnostics and config', cfgBack: '← Back to workflow',
   cfgSessionHelp: 'Isolated roles; stages can override the default', cfgReuse: 'Reuse within role', cfgFresh: 'New each time', cfgInheritMode: 'Inherit · {mode}', cfgSessionDefault: 'Default: {mode}', cfgIndependent: 'Independent call',
   cfgScheduleHelp: '', cfgParallelHelp: 'Limit: 1–8. Review and integration remain serial', cfgPermissionHelp: 'Full access includes files outside the workspace',
   cfgBudgetPolicy: 'Usage budget', cfgBudgetOff: 'Off', cfgBudgetSoft: 'Warn only', cfgBudgetHard: 'Stop at limit', cfgBudgetOffHelp: 'No token limit; usage is still recorded', cfgBudgetSoftHelp: 'Warn at the limit and keep running', cfgBudgetHardHelp: 'Pause new calls at the limit or when usage is unknown', cfgBudgetDay: 'Per task and UTC day; blank means no limit', consoleBudget: 'Daily tokens per task',
@@ -1260,3 +1248,6 @@ Object.assign(en, {
   cfgNative: 'Native capabilities', cfgNativeNone: 'No native capability profile',
   cfgNativeHelp: 'Select a profile for this backend; edit native-profiles in advanced JSON. Profiles work with JEV off. Runtime receipts establish actual availability.',
 });
+
+Object.assign(zh, { cfgBindingDone: '← 返回模型列表', cfgBindingSaveHelp: '修改后点击下方“保存修改”，统一保存到当前作用域。' });
+Object.assign(en, { cfgBindingDone: '← Back to model list', cfgBindingSaveHelp: 'Use Save changes below to save all edits to the selected scope.' });

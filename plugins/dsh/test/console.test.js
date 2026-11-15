@@ -47,7 +47,7 @@ test('configuration scope is explicit, changed sections are saved and source con
   assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /保存结果未确认/);
   reject = false;
-  await ui.click('高级与诊断'); await ui.click('重新读取配置');
+  await ui.click('诊断与配置文件'); await ui.click('重新读取配置');
   assert.match(ui.container.querySelector('dialog').textContent, /未保存的修改/);
   await ui.click('放弃草稿并继续');
   assert.doesNotMatch(ui.container.textContent, /保存结果未确认/);
@@ -55,11 +55,11 @@ test('configuration scope is explicit, changed sections are saved and source con
   const binding = [...ui.container.querySelectorAll('[data-binding-id]')].find(article => article.getAttribute('data-binding-id') === 'routes.default');
   await act(async () => binding.querySelector('button').click());
   await act(async () => {
-    const resource = ui.container.querySelector('dialog select');
+    const resource = ui.container.querySelector('[aria-label="编辑阶段模型"] select');
     resource.value = 'claude-code-pro';
     resource.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true }));
   });
-  await ui.click('加入待保存修改');
+  await ui.click('← 返回模型列表');
   await ui.click('保存修改');
   const change = ui.requests.at(-1).editor.values;
   assert.equal(change.routes.default.harness, 'claude-code-pro');

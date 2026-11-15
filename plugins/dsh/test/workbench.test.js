@@ -439,7 +439,7 @@ test('invalid JEV text survives task navigation and scope cancellation and is cl
   assert.equal(field(ui, '固定模型版本').value, 'jev');
   assert.equal(ui.button('保存修改').disabled, true);
   await ui.click('恢复默认');
-  await ui.click('载入待保存修改');
+  await ui.click('载入默认配置');
   assert.equal(field(ui, '启用 JEV').checked, false);
   assert.equal(ui.button('保存修改').disabled, false);
   await ui.click('保存修改');
@@ -450,7 +450,7 @@ test('invalid JEV text survives task navigation and scope cancellation and is cl
 test('invalid advanced JEV fields remain visible and repairable after off without silently changing the JSON intent', async t => {
   const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
   await ui.click('设置');
-  await ui.click('高级与诊断');
+  await ui.click('诊断与配置文件');
   const value = JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value);
   value.jev.model = 'jev';
   value.jev['key-env'] = 'bad-key';
@@ -480,7 +480,7 @@ test('invalid advanced JEV fields remain visible and repairable after off withou
 test('unfinished advanced JSON disables structured edits while retaining the whole draft and repair actions', async t => {
   const ui = await mountPanel(t, editorResponder({ jev: { ...template.jev, enabled: true, endpoint: 'https://jev.example/v1/systemone' } }));
   await ui.click('设置');
-  await ui.click('高级与诊断');
+  await ui.click('诊断与配置文件');
   const value = JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value);
   value.retry['max-transport-retries'] = 7;
   const unfinished = JSON.stringify(value).slice(0, -1);
@@ -509,35 +509,39 @@ test('restoring defaults previews a full replacement and only save sends reset=t
   await ui.click('取消');
   assert.equal(ui.requests.length, 1);
   await ui.click('恢复默认');
-  await ui.click('载入待保存修改');
+  await ui.click('载入默认配置');
   assert.equal(ui.requests.length, 1);
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).editor.reset, true);
   assert.deepEqual(ui.requests.at(-1).editor.values, template);
 });
 
-test('a model dialog can be cancelled and an unchanged assignment creates no unrelated overrides', async (t) => {
+test('stage edits share one save boundary and can be discarded without unrelated overrides', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('设置');
   await ui.click('模型与会话');
   const open = () =>
     act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   await open();
+  assert.equal(ui.container.querySelector('dialog'), null);
   await input(ui, '模型', 'changed-model');
-  await ui.click('取消');
+  assert.equal(ui.button('保存修改').disabled, false);
+  assert.equal(ui.requests.filter(r => r.action === 'config-save').length, 0);
+  await ui.click('撤销');
+  await ui.click('← 返回模型列表');
   assert.equal(
     ui.button('保存修改').disabled,
     true,
   );
   await open();
-  await ui.click('加入待保存修改');
+  await ui.click('← 返回模型列表');
   assert.equal(
     ui.button('保存修改').disabled,
     true,
   );
   await open();
   await input(ui, '模型', 'deepseek-custom');
-  await ui.click('加入待保存修改');
+  await ui.click('← 返回模型列表');
   await ui.click('保存修改');
   assert.deepEqual(Object.keys(ui.requests.at(-1).editor.values), ['routes']);
 });
@@ -553,13 +557,13 @@ test('native profile selection retains explicit off and limits choices to the cu
   await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   assert.deepEqual([...field(ui, '原生能力').options].map(option => option.value), ['__inherit__', '', 'dsh-heavy']);
   await input(ui, '原生能力', 'dsh-heavy');
-  await ui.click('加入待保存修改');
+  await ui.click('← 返回模型列表');
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], 'dsh-heavy');
   assert.equal(ui.requests.at(-1).editor.values.routes.default.model, 'deepseek-flash');
   await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   await input(ui, '原生能力', '');
-  await ui.click('加入待保存修改');
+  await ui.click('← 返回模型列表');
   await ui.click('保存修改');
   assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], '');
 });
@@ -919,4 +923,45 @@ test('an unresolved task operation allows drafting settings but visibly disables
   assert.match(ui.container.textContent,/结果未确认/);
   await ui.click('保存修改');
   assert.equal(ui.requests.some(r=>r.action==='config-save'),false);
+});
+
+test('stage edits survive navigation and failed saves with a single explicit save boundary', async t => {
+  const responder = editorResponder();
+  let fail = true;
+  const ui = await mountPanel(t, r => r.action === 'config-save' && fail
+    ? { ok: true, value: { result: { kind: 'error', text: 'write rejected' } } }
+    : responder(r));
+  await ui.click('设置');
+  await ui.click('模型与会话');
+  await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  await input(ui, '模型', 'reviewed-model');
+  assert.equal(ui.container.querySelector('dialog'), null);
+  assert.equal(ui.requests.filter(r => r.action === 'config-save').length, 0);
+  await ui.click('项目');
+  await ui.click('取消');
+  assert.equal(field(ui, '模型').value, 'reviewed-model');
+  await ui.click('保存修改');
+  assert.equal(field(ui, '模型').value, 'reviewed-model', 'a failed save retains stage edits');
+  assert.equal(ui.requests.filter(r => r.action === 'config-save').length, 1);
+  await ui.click('← 返回模型列表');
+  assert.equal(ui.container.querySelector('[data-binding-id="routes.default"] input').value, 'reviewed-model');
+  await ui.click('运行方式');
+  await ui.click('模型与会话');
+  assert.equal(ui.container.querySelector('[data-binding-id="routes.default"] input').value, 'reviewed-model');
+  fail = false;
+  // A failed write is reconciled through the existing revision-aware editor path.
+  await ui.click('诊断与配置文件');
+  assert.match(ui.container.textContent, /未保存/);
+});
+
+test('typing a channel saves only the final account channel and preserves unrelated values', async t => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('设置'); await ui.click('模型与会话');
+  await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  for (const value of ['n', 'ne', 'new-account']) await input(ui, '账号渠道', value);
+  await ui.click('保存修改');
+  const values = ui.requests.at(-1).editor.values;
+  assert.deepEqual(Object.keys(values.channels).sort(), ['deepseek-account','new-account']);
+  assert.equal(values.routes.default.channel,'new-account');
+  assert.equal(values.sessions,undefined);
 });

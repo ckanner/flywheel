@@ -664,7 +664,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
   const [scope, setScope] = React.useState(null),
     [selected, setSelected] = React.useState(null);
   const [page, setPage] = React.useState(0),
-    [whole, setWhole] = React.useState(false),
+    [whole, setWhole] = React.useState(true),
     [tab, setTab] = React.useState('progress');
   const [view, setView] = React.useState('canvas'),
     [zoom, setZoom] = React.useState(1);
@@ -838,55 +838,13 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
   return h(
     'section',
     { className: css.consoleCanvas, 'aria-label': t('wbCanvasRegion') },
-    single &&
-      h(
-        'div',
-        { className: css.stageScope },
-        h(
-          'div',
-          null,
-          h('strong', null, singleRunLabel(control, t)),
-          h(
-            'p',
-            { className: css.meta },
-            t('stageFullState', {
-              status: t(state.status === 'completed' ? 'stageDelivered' : 'stageUndelivered'),
-            }),
-          ),
-        ),
-        h(
-          'div',
-          { className: css.actions },
-          h(
-            Button,
-            {
-              'aria-pressed': !whole,
-              onClick: () => {
-                setWhole(false);
-                setSelected(null);
-              },
-            },
-            t('stageFocus'),
-          ),
-          h(
-            Button,
-            {
-              'aria-pressed': whole,
-              onClick: () => {
-                setWhole(true);
-                back();
-              },
-            },
-            t('stageFull'),
-          ),
-        ),
-      ),
     h(
       focusMode ? 'dialog' : 'div',
       {
         ref: canvasDialog,
         className: [css.canvasWorkbench, focusMode ? css.focusCanvas : ''].join(' '),
         'data-inspecting': !!chosen,
+        'data-single-run': focused,
         'aria-label': focusMode ? t('wbFocus') : undefined,
         onCancel: (event) => {
           event.preventDefault();
@@ -908,9 +866,12 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
                 { className: css.focusIdentity },
                 [state.slug, state.run?.branch].filter(Boolean).join(' · '),
               ),
+            single && h('div', { className: css.segmented, 'aria-label': t('stageScopeHelp') },
+              h(Button, { 'aria-pressed': whole, onClick: () => { setWhole(true); back(); } }, t('stageFull')),
+              h(Button, { 'aria-pressed': !whole, onClick: () => { setWhole(false); setSelected(null); } }, t('stageFocus'))),
             scope && !focused
               ? h(Button, { onClick: back }, t('wbBack'))
-              : h('span', null, t(focused ? 'stageFocus' : 'wbOverview')),
+              : !single && h('span', null, t('wbOverview')),
             h(
               'span',
               { className: css.meta },
@@ -924,7 +885,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
           ),
           h(
             'div',
-            { className: css.segmented },
+            { className: css.segmented, hidden: focused },
             ...['canvas', 'list'].map((v) =>
               h(
                 Button,
@@ -946,7 +907,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
           {
             className: css.canvasViewport,
             ref: viewport,
-            hidden: view !== 'canvas',
+            hidden: view !== 'canvas' || focused,
             'aria-label': t('wbCanvas'),
             onPointerDown: (event) => {
               if (event.pointerType !== 'mouse' || event.button !== 0 || event.target.closest('button'))
@@ -1011,7 +972,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
             ),
           ),
         ),
-        view === 'list' &&
+        (view === 'list' || focused) &&
           h(
             'div',
             { className: css.canvasList },
@@ -1044,7 +1005,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
             'div',
             { className: css.actions },
             h(Button, { onClick: locate }, t('wbLocate')),
-            view === 'canvas' &&
+            view === 'canvas' && !focused &&
               h(
                 React.Fragment,
                 null,
@@ -1362,8 +1323,8 @@ function TaskView({
     control.raw && h('section', { className: css.details }, h('h4', null, t('raw')), h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
   return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page },
     h('style', { 'data-plugin': '@ckanner/flywheel', 'data-plugin-css': '@ckanner/flywheel/client.module.css' }, stylesheet),
-    h('header', { className: css.workbenchHeader },
-      h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }),
+    h('header', { className: css.workbenchHeader, hidden: page === 'config' },
+      h('div', { className: css.taskIdentity }, h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }), h(TaskLocations, { control, selection, association, t })),
       h('div', { className: css.repositoryLinks },
         state?.project?.url && h('a', { href: state.project.url, target: '_blank', rel: 'noopener noreferrer' }, state.project.repo),
         h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'Flywheel · GitHub ↗'),
@@ -1372,7 +1333,7 @@ function TaskView({
       h('nav', { className: css.consoleTabs, 'aria-label': t('view') },
         ...['canvas', 'runs'].map(key => h(Button, { key, 'aria-pressed': page === key, onClick: () => setPage(key) }, t(key === 'canvas' ? 'consoleCanvas' : 'consoleRuns')))),
       page === 'canvas' && hasTask && !preparation && h('div', { className: css.workbenchStatus },
-        state && h('span', { 'data-tone': consoleTone(control.stale ? 'unknown' : control.status.running ? 'running' : state.status) }, singleRunKind(control) ? singleRunLabel(control, t) : taskLabel(control.status, t)),
+        state && h('span', { 'data-tone': consoleTone(control.stale ? 'unknown' : control.status.running ? 'running' : state.status) }, singleRunKind(control) ? singleRunLabel(control, t) + ' · ' + t('stageFullState', { status: t(state.status === 'completed' ? 'stageDelivered' : 'stageUndelivered') }) : taskLabel(control.status, t)),
         button('status', 'status', true),
         blocked && !inspecting && !control.status?.running && h(Button, { variant: 'primary', disabled: busy, onClick: () => setFocusRequest(v => v + 1) }, t('wbBlocked')),
         !control.status?.running && state?.status !== 'completed' && (state || !control.status) && !(blocked && inspecting) && button('start', singleRunKind(control) ? 'consoleWhole' : 'start', true, false, blocked ? 'outline' : 'primary'),
@@ -1393,8 +1354,7 @@ function TaskView({
       h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts.current, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
     h('div', { className: css.historyPage, hidden: page !== 'runs' },
       h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t, active: page === 'runs' }),
-      hasTask && !preparation && h('section', { className: css.legacySummary }, h(TaskStatus, { control, selection, t }))),
-    page !== 'config' && h(TaskLocations, { control, selection, association, t }));
+      hasTask && !preparation && h('section', { className: css.legacySummary }, h(TaskStatus, { control, selection, t }))));
 }
 
 Object.assign(zh, { consoleDiagnostics: '环境检查' });

@@ -434,6 +434,7 @@ function readReply(reply, request) {
   // lexically with a user path (/var, symlinks, trailing slash or "..").
   if (!record(value) || value.protocol !== 1 || typeof value.ok !== 'boolean' ||
       typeof value.taskDir !== 'string' ||
+      (value.taskTitle !== undefined && typeof value.taskTitle !== 'string') ||
       (request.taskDir ? !value.taskDir.startsWith('/') : value.taskDir !== '')) {
     throw new Error('Flywheel control protocol or task identity mismatch');
   }
@@ -920,10 +921,12 @@ exports.apply = function apply(ctx) {
       return {
         hostSessionID: sessionId,
         hooks: { control: control.source },
-        changeSelection: next => {
-          if (disposed || control.isMutating()) return;
+        changeSelection: (next, requireIdle = false) => {
+          const current = control.source.getSnapshot();
+          if (disposed || control.isMutating() || requireIdle && (current.pending || current.uncertainty || current.configUncertainty)) return false;
           actions.setSelection(next);
           control.select(next);
+          return true;
         },
         run: control.run,
         discover: control.discover,
