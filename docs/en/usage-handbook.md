@@ -75,6 +75,17 @@ the original repository; execution may use an integration worktree. Preparation
 reports both. A failed view association does not justify a duplicate launch.
 For a terminal-created task, see section 7.
 
+From 0.34.2, one DSH conversation can contain multiple Flywheel tasks. A
+conversation-only task navigator appears when needed, with repeated runs grouped
+under one task; a single task opens directly. Selecting a task only reads it, without
+starting or stopping work. Polling retains a manual choice, while a new explicit
+association still follows the conversation. Pending reads or unconfirmed operations
+lock switching. Other tasks show last-recorded status, not proof of current activity.
+History contains the selected task's runs. Packets and Provider sessions are separate
+levels; execution and Review sessions stay isolated by task and role. See the
+[console guide](flow-console.md).
+
+
 The current DSH model performs preparation and evidence analysis. `loops.plan`
 controls the engine Plan stage, not this conversation's model. Choose the host
 model for preparation; inspect engine bindings separately as described in section 6.
@@ -327,6 +338,7 @@ add this field to its existing `routes.hard` object, preserving the other fields
 {"native-profile": "codex-agents"}
 ```
 
+Edit profile definitions under **Settings → Diagnostics and config → Advanced JSON**.
 Only packets routed there use that selection.
 Inspect the saved file before the next start. Codex needs its logged-in CLI;
 optional Claude/LCU peers must resolve in the worker's own dependency tree. Claude's

@@ -77,6 +77,14 @@ Task／Run 的模型工具调用会关联当前会话的任务。画布跟随这
 加载 skill 或生成方案不等于引擎已启动；应看到启动回执和真实状态。
 独立终端任务的关联方法见[CLI 与人工接管](#7-cli-与人工接管)。
 
+从 0.34.2 起，一个 DSH Session 可以关联多个 Flywheel 任务。多个任务时自动显示
+“本会话任务”导航，同一任务的多次运行只占一项；只有一个任务时直接显示画布。
+点击任务只读取状态，不启动或停止它。普通刷新保留手动选择，新的明确关联仍自动跟随；
+读取或操作尚未确认时暂时锁定切换。其他任务的“最近记录”不是实时运行证明。
+“记录”页是当前选中任务的运行历史。任务内的 packet 与 Provider Session 是另外的层级，
+执行／Review 的会话仍按任务和角色隔离。详见[流程控制台](flow-console.md)。
+
+
 如果 CLI 能列出 skills，但宿主尚未发现它们，可在目标仓库补装项目入口：
 
 ```bash
@@ -354,14 +362,14 @@ Flywheel 内置 preset generator 的组合 API，使用它不要求重新生成�
 }
 ```
 
-在 **Flywheel → 设置 → 模型与会话** 中，为 hard 执行路由选择 `codex-agents`。
+在 **Flywheel → 设置 → 模型与会话** 中，为 hard（复杂执行）路由选择 `codex-agents`。
 等价操作是在已有 `routes.hard` 对象中增加以下字段，保留该对象的其他字段：
 
 ```json
 {"native-profile": "codex-agents"}
 ```
 
-定义在高级 JSON 中编辑；保存后下次启动采用。配置解析成功只证明字段和绑定合法，
+定义在 **设置 → 诊断与配置文件 → 高级配置 JSON** 中编辑；保存后下次启动采用。配置解析成功只证明字段和绑定合法，
 实际 Agent 能力仍由运行准入与回执确认。DSH Team、Kimi Swarm／Tower、Claude
 Workflow 和 LCU 的具体定义、依赖、权限及限制见[原生能力](native-capabilities.md)。
 独立 `flywheel native` Review／Team 作业有自己的回执，不自动成为正式 Review／Judge verdict。

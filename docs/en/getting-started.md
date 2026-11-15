@@ -319,7 +319,8 @@ tool association, or its latest registered run with an exactly matching host ses
 ID. To associate a prepared or standalone terminal task, have the host assistant call
 `flywheel_control` with `action: "status"` and the actual task and execution paths in
 that conversation. A terminal `flywheel control status` command alone does not create
-that association. There is no task selector or editable path form. Runs from other
+that association. From 0.34.2, multiple associated tasks appear in a conversation-only navigator;
+a single task opens directly. There is no editable path form. Runs from other
 conversations and unassociated runs remain hidden. See [Workflow console](flow-console.md).
 
 The UI distinguishes this stage's result from overall delivery. Running state and

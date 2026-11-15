@@ -227,7 +227,8 @@ tool association, falling back to the latest registered run with an exactly matc
 DSH host session ID. A prepared or standalone terminal task needs a successful
 `flywheel_control` call with `action: "status"` and its actual task and execution paths
 in the intended conversation. A terminal status command alone does not establish
-that association. There is no task selector or editable path form. Runs from other
+that association. From 0.34.2, multiple associated tasks appear in a conversation-only navigator;
+a single task opens directly. There is no editable path form. Runs from other
 conversations and unassociated runs remain hidden. See [Workflow console](flow-console.md).
 
 ### Working directory by stage
