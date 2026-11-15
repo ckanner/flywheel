@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.6 — Compact configuration scope selection
+
+- Remove the checkmark from the selected global/project scope and retain the
+  filled accent selection state with accessible aria-pressed semantics.
+
 ## 0.34.5 — Explicit configuration scope
 
 - Give the global/project configuration switch a filled selected scope, a
