@@ -34,7 +34,8 @@ export class ConsoleReadService extends Service {
           const taskDir = await realpath(input.taskDir);
           const cwd = await realpath(input.cwd ?? this.ctx.workingDirectory.get(agent.session));
           const matches = task => task?.taskDir === taskDir && task.cwd === cwd;
-          if (!matches(projection?.view) && !(await catalog()).runs.some(matches)) throw new ControlNotDispatchedError('This task is not associated with the current conversation');
+          const historical = Object.values(projection?.tasks ?? {}).some(task => task?.outcome === 'confirmed' && matches(task));
+          if (!matches(projection?.view) && !historical && !(await catalog()).runs.some(matches)) throw new ControlNotDispatchedError('This task is not associated with the current conversation');
         } else if (input.cwd != null && await realpath(input.cwd) !== await realpath(this.ctx.workingDirectory.get(agent.session))) {
           throw new ControlNotDispatchedError('Configuration must belong to the current conversation workspace');
         }

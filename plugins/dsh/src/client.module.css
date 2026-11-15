@@ -96,9 +96,9 @@
 .repositoryLinks a { color: var(--dsw-alias-link); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
 .repositoryLinks a:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
 .consoleToolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.consoleTabs { display:flex; gap:22px; flex:none; padding:0; border:0; align-self:stretch; }
-.consoleTabs .button { border:0; border-radius:0; height:48px; align-self:flex-start; padding:0; font-size:13px; color:var(--dsw-alias-label-secondary); border-bottom:2px solid transparent; }
-.consoleTabs .button[aria-pressed='true'] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-label-primary); font-weight: 500; }
+.consoleTabs { display:flex; gap:8px; flex:none; padding:0; border:0; align-self:center; align-items:center; min-height:48px; }
+.consoleTabs .button { font-size:13px; color:var(--dsw-alias-label-secondary); }
+.consoleTabs .button[aria-pressed='true'] { color:var(--dsw-alias-label-primary); font-weight:500; }
 .workbenchStatus { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-left:auto; padding:6px 0; font-size:12px; }
 .workbenchStatus > span { margin-right: 8px; }
 .workbenchEmpty { display:grid; justify-items:center; align-content:center; gap:12px; text-align:center; flex:1; min-height:200px; padding:32px 20px; }
@@ -130,8 +130,8 @@
 .canvasHeader { display:flex; align-items:center; justify-content:space-between; gap:10px; flex:none; padding:12px 24px; flex-wrap:wrap; }
 .canvasBreadcrumb { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; font-size: 12px; }
 .focusIdentity { font-weight: 500; }
-.segmented { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; width: fit-content; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
-.segmented .button { border: 0; border-radius: 8px; background: transparent; }
+.segmented { display: flex; align-items:center; flex-wrap: wrap; gap: 4px; padding: 3px; width: fit-content; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
+.segmented .button { align-self:center; flex:0 0 auto; height:32px; min-height:32px; max-height:32px; padding:0 10px; border:0; border-radius:8px; background:transparent; }
 .segmented .button[aria-pressed='true'] { background: var(--dsw-alias-bg-layer-1); font-weight: 500; }
 .canvasViewport { display: flex; overflow: auto; flex:1; min-height:220px; padding:16px 24px; cursor: grab; background-image: radial-gradient(var(--dsw-alias-border-l3) .65px, transparent .65px); background-size: 20px 20px; }
 .canvasScaleBounds { flex:none; width:var(--scaled-width); height:var(--scaled-height); margin:auto; position:relative; }
@@ -170,9 +170,11 @@
 .inspectorHeader { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:18px 20px; flex:none; }
 .inspectorHeader > div { min-width: 0; }
 .inspectorHeader .button { border: 0; }
-.inspectorTabs { display: flex; gap: 16px; padding: 0 16px; border-bottom: .5px solid var(--dsw-alias-border-l3); }
-.inspectorTabs .button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 0; }
-.inspectorTabs .button[aria-pressed='true'] { border-bottom-color: var(--dsw-alias-label-primary); font-weight: 500; }
+.inspectorTabs { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-height:48px; padding:6px 16px; border-bottom:.5px solid var(--dsw-alias-border-l3); }
+.consoleTabs .button, .inspectorTabs .button { position:relative; align-self:center; flex:0 0 auto; height:36px; min-height:36px; max-height:36px; min-width:52px; padding:0 12px; border:0; border-radius:8px; }
+.consoleTabs .button::after, .inspectorTabs .button::after { content:''; position:absolute; height:2px; left:12px; right:12px; bottom:-6px; border-radius:1px; background:transparent; pointer-events:none; }
+.consoleTabs .button[aria-pressed='true']::after, .inspectorTabs .button[aria-pressed='true']::after { background:var(--dsw-alias-label-primary); }
+.inspectorTabs .button[aria-pressed='true'] { color:var(--dsw-alias-label-primary); font-weight:500; }
 .inspectorBody { display:flex; flex-direction:column; gap:12px; min-height:0; flex:1; padding:0 20px 20px; overflow:auto; }
 .inspectorFooter { border-top: .5px solid var(--dsw-alias-border-l3); padding: 12px 16px; display: grid; gap: 8px; }
 .inspectorFooter .meta { font-size: 12px; line-height: 18px; }
@@ -303,7 +305,7 @@
  .configSaveBar > .meta { max-width:80px; font-size:11px; }
  .configSaveBar .actions { gap:4px; }
  .configSaveBar .button { padding:4px 6px; font-size:11px; }
- .consoleTabs { gap:18px; }
+ .consoleTabs { gap:8px; }
  .repositoryLinks { flex-wrap:nowrap; }
  .taskLocations { gap:4px; }
 }
@@ -311,7 +313,9 @@
   .workbenchDialog .configField { grid-template-columns: minmax(0,1fr); gap: 8px; }
 }
 @media (pointer: coarse) {
-  .page .button, .taskSelect, .configFieldControl select { min-height: 44px; }
+  .page .button, .taskSelect, .configFieldControl select { min-height:44px; }
+  .consoleTabs, .inspectorTabs { min-height:56px; }
+  .consoleTabs .button, .inspectorTabs .button, .segmented .button { height:44px; min-height:44px; max-height:44px; }
   .configNav .button { height:44px; min-height:44px; max-height:44px; flex-basis:44px; }
   @container (max-width: 800px) {
     .configNav { padding-top:5px; padding-bottom:5px; }
@@ -743,3 +747,14 @@
  .workbenchNav { padding:0 16px; flex-wrap:wrap; }
  .workbenchStatus { justify-content:flex-start; margin-left:0; }
 }
+
+/* Conversation-owned tasks: one compact, directly visible navigation region. */
+.sessionTasks { min-width:0; margin-bottom:12px; }
+.sessionTasksHeading { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.sessionTasksHeading strong { font-weight:500; color:var(--dsw-alias-label-primary); }
+.sessionTaskList { position:relative; display:grid; grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); gap:8px; max-height:176px; overflow:auto; padding:2px; }
+.sessionTaskList .sessionTaskButton { display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:3px; height:auto; min-height:72px; padding:10px 12px; text-align:left; white-space:normal; min-width:0; }
+.sessionTaskButton strong { font-size:13px; line-height:18px; font-weight:500; overflow-wrap:anywhere; }
+.sessionTaskButton[aria-pressed='true'] { border-color:var(--dsw-alias-state-business-primary); background:var(--dsw-alias-bg-layer-2); }
+.sessionTaskMeta, .sessionTaskPath { font-weight:400; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:17px; overflow-wrap:anywhere; }
+.sessionTaskPath { font-family:ui-monospace,SFMono-Regular,monospace; }

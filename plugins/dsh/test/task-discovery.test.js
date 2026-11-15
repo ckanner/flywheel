@@ -201,3 +201,71 @@ test('a missing display title never presents a slug as a conversation name', asy
  assert.equal(header.querySelector('h3').textContent,'当前关联任务');
  assert.match(header.textContent,/任务 ID.*questionnaire/);
 });
+
+const taskButtons = ui => [...ui.container.querySelectorAll('[aria-label="本会话任务"] button[data-task-key]')];
+const taskButton = (ui, slug) => taskButtons(ui).find(b => JSON.parse(b.dataset.taskKey)[0] === '/repo/docs/' + slug);
+const ownedTasks = () => [item('a','desktop-session'), {...item('b','desktop-session'), startedAt:'2026-11-12T10:00:00Z'}];
+
+test('conversation navigation deduplicates runs, reads selected task, and keeps manual choice on refresh', async t => {
+ let rows=[...ownedTasks(), {...item('old-a','desktop-session','a'),startedAt:'2026-11-01T10:00:00Z'},item('foreign','foreign')];
+ const ui=await mountPanel(t,r=>reply(r,{taskTitle:'Title '+r.taskDir,state:{slug:r.taskDir.split('/').at(-1),status:'pending',packets:{}}}),{catalog:r=>reply(r,{runs:rows})});
+ assert.equal(taskButtons(ui).length,2);
+ assert.match(taskButton(ui,'a').textContent,/最近记录/);
+ const before=ui.requests.length;
+ await act(async()=>taskButton(ui,'a').click());
+ assert.equal(ui.selection().taskDir,'/repo/docs/a');
+ assert.deepEqual(ui.requests.slice(before).map(r=>r.action),['status']);
+ assert.match(ui.container.querySelector('header h3').textContent,/Title.*docs\/a/);
+ rows=[...rows,{...item('c','desktop-session'),startedAt:'2026-11-13T10:00:00Z'}];
+ await ui.refreshDiscovery();
+ assert.equal(taskButtons(ui).length,3);
+ assert.equal(ui.selection().taskDir,'/repo/docs/a','catalog changes cannot steal a manual view');
+ await ui.click('记录');
+ assert.doesNotMatch(ui.container.querySelector('[aria-label="记录"]').textContent,/docs\/b|docs\/c/);
+ await ui.setVisible(false);await ui.setVisible(true);
+ assert.equal(ui.selection().taskDir,'/repo/docs/a');
+ assert.equal(ui.requests.every(r=>r.action==='status'),true,'navigation never launches or stops tasks');
+});
+
+test('zero or one task needs no navigator, and a failed task read never retains another task canvas', async t => {
+ const ui=await mountPanel(t,r=>r.taskDir.endsWith('/a')?Promise.reject(new Error('offline')):reply(r,{taskTitle:'B title',state:stageState()}),{catalog:r=>reply(r,{runs:ownedTasks()})});
+ await act(async()=>taskButton(ui,'a').click());
+ assert.equal(ui.selection().taskDir,'/repo/docs/a');
+ assert.equal(ui.container.querySelector('header h3').textContent,'当前关联任务');
+ assert.equal(ui.container.querySelector('[data-node-id="plan"]'),null);
+ assert.match(ui.container.textContent,/offline/);
+ const one=await mountPanel(t,r=>reply(r,{state:stageState()}),{catalog:r=>reply(r,{runs:[item('only','desktop-session')]})});
+ assert.equal(one.container.querySelector('[aria-label="本会话任务"]'),null);
+});
+
+test('navigation freezes during a read or uncertain mutation and never dispatches to the wrong task', async t => {
+ const held=deferred();let hold=false;
+ const ui=await mountPanel(t,r=>r.action==='start'?Promise.reject(new Error('lost receipt')):hold?held.promise:reply(r,{state:{slug:'b',status:'pending',packets:{}}}),{catalog:r=>reply(r,{runs:ownedTasks()})});
+ hold=true;
+ await act(async()=>{taskButton(ui,'a').click();taskButton(ui,'b').click();});
+ assert.equal(ui.selection().taskDir,'/repo/docs/a');
+ assert.equal(taskButton(ui,'b').disabled,true);
+ await act(async()=>held.resolve(reply({taskDir:'/repo/docs/a'},{state:{slug:'a',status:'pending',packets:{}}})));
+ hold=false;
+ await ui.click('继续流程');
+ assert.equal(taskButton(ui,'b').disabled,true);
+ await act(async()=>taskButton(ui,'b').click());
+ assert.equal(ui.selection().taskDir,'/repo/docs/a');
+ assert.match(ui.container.textContent,/操作尚未确认/);
+});
+
+test('prepared task history is navigable and a new explicit association still follows the conversation', async t => {
+ const task=(sequence,slug)=>({sequence,operationId:'tool:task-'+sequence,action:'status',taskDir:'/repo/docs/'+slug,cwd:'/repo',outcome:'confirmed',message:''});
+ const a=task(1,'a'),b=task(2,'b');
+ const ui=await mountPanel(t,r=>reply(r,{}),{association:{...b,tasks:[a,b]},catalog:r=>reply(r,{runs:[]})});
+ assert.equal(taskButtons(ui).length,2);
+ assert.match(taskButton(ui,'a').textContent,/点击读取状态/);
+ await act(async()=>taskButton(ui,'a').click());
+ await ui.setAssociation({...b,tasks:[a,b]});
+ assert.equal(ui.selection().taskDir,'/repo/docs/a','duplicate projection cannot reset a manual choice');
+ const c=task(3,'c');await ui.setAssociation({...c,tasks:[a,b,c]});
+ assert.equal(ui.selection().taskDir,'/repo/docs/c');
+ await ui.switchSession('foreign');
+ assert.equal(taskButtons(ui).length,0);
+ assert.doesNotMatch(ui.container.textContent,/docs\/a|docs\/b|docs\/c/);
+});

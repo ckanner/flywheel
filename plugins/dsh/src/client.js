@@ -921,10 +921,12 @@ exports.apply = function apply(ctx) {
       return {
         hostSessionID: sessionId,
         hooks: { control: control.source },
-        changeSelection: next => {
-          if (disposed || control.isMutating()) return;
+        changeSelection: (next, requireIdle = false) => {
+          const current = control.source.getSnapshot();
+          if (disposed || control.isMutating() || requireIdle && (current.pending || current.uncertainty || current.configUncertainty)) return false;
           actions.setSelection(next);
           control.select(next);
+          return true;
         },
         run: control.run,
         discover: control.discover,

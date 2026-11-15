@@ -5,6 +5,16 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.34.2 — Conversation tasks and navigation styling
+
+- Use compact rounded hover targets for workflow and inspector navigation, keep
+  selected underlines separate, and bound segmented controls across mouse/touch layouts.
+- Add conversation-scoped multi-task navigation with one entry per task, explicit
+  recorded-status labels and read-only switching. Keep manual choices during
+  catalog polling and lock switching during pending or uncertain operations.
+- Allow exact-identity reads of confirmed preparation history in the owning
+  conversation, even before a task has a registered run.
+
 ## 0.34.1 — Session workbench layout and editing
 
 - Reorganize the DSH session workbench: validated task titles and separate task IDs,
