@@ -13,7 +13,7 @@ import (
 
 const sessionUserActionEnv = "FLYWHEEL_SESSION_USER_ACTION"
 
-func sessionUserActionFromEnv(request *machine.SessionCommand) (*machine.SessionUserAction, error) {
+func sessionUserActionFromEnv(request *machine.SessionCommand, taskDir string) (*machine.SessionUserAction, error) {
 	raw, present := os.LookupEnv(sessionUserActionEnv)
 	if !present {
 		return nil, fmt.Errorf("session abandonment requires a verified host command or controlling terminal")
@@ -27,21 +27,22 @@ func sessionUserActionFromEnv(request *machine.SessionCommand) (*machine.Session
 	if err := decoder.Decode(&proof); err != nil || proof.Kind != "dsh" ||
 		proof.SessionID == "" || len(proof.SessionID) > 200 || proof.SessionID != os.Getenv("DSH_SESSION_ID") ||
 		proof.CommandID == "" || len(proof.CommandID) > 200 || strings.ContainsAny(proof.SessionID+proof.CommandID, "\x00\r\n") ||
-		proof.Action != "abandon" || proof.Key != request.Key || proof.Revision != request.Revision || proof.Reason != request.Reason {
+		proof.Action != "abandon" || proof.Key != request.Key || proof.Revision != request.Revision || proof.Reason != request.Reason ||
+		proof.TaskDir != taskDir || proof.Invocation != request.Invocation {
 		return nil, fmt.Errorf("session abandonment proof does not match this exact host command")
 	}
 	return &proof, nil
 }
 
-func sessionUserActionFromTTY(request *machine.SessionCommand, record *machine.SessionHistory) (*machine.SessionUserAction, error) {
+func sessionUserActionFromTTY(request *machine.SessionCommand, record *machine.SessionHistory, taskDir string) (*machine.SessionUserAction, error) {
 	terminal, err := openPlanningTTY()
 	if err != nil {
 		return nil, fmt.Errorf("session abandonment requires a verified host command or an interactive controlling terminal")
 	}
 	defer terminal.Close()
 	invocation := record.Invocation
-	if invocation == "" {
-		return nil, fmt.Errorf("the selected session has no recorded invocation to abandon")
+	if invocation == "" || invocation != request.Invocation {
+		return nil, fmt.Errorf("the selected session has no matching recorded invocation to abandon")
 	}
 	if _, err := fmt.Fprintf(terminal, "Session: %s\nInvocation: %s\nRecorded status: blocked (dispatch/outcome unknown)\nReason: %s\nType 'abandon %s' to retire this exact invocation without replay: ",
 		request.Key, invocation, request.Reason, invocation); err != nil {
@@ -51,17 +52,18 @@ func sessionUserActionFromTTY(request *machine.SessionCommand, record *machine.S
 	if err != nil || strings.TrimSpace(line) != "abandon "+invocation {
 		return nil, fmt.Errorf("the controlling terminal did not confirm this exact invocation")
 	}
-	return &machine.SessionUserAction{Kind: "tty", Key: request.Key, Revision: request.Revision, Action: "abandon", Reason: request.Reason}, nil
+	return &machine.SessionUserAction{Kind: "tty", TaskDir: taskDir, Key: request.Key, Invocation: invocation,
+		Revision: request.Revision, Action: "abandon", Reason: request.Reason}, nil
 }
 
 // sessionActionProof attaches the proof to an abandon command. The control
 // boundary uses only the host-generated environment proof; the human CLI adds
 // an interactive confirmation on the controlling terminal.
-func sessionActionProof(request *machine.SessionCommand, record *machine.SessionHistory, allowTTY bool) error {
+func sessionActionProof(request *machine.SessionCommand, record *machine.SessionHistory, taskDir string, allowTTY bool) error {
 	if request.Action != "abandon" {
 		return nil
 	}
-	proof, err := sessionUserActionFromEnv(request)
+	proof, err := sessionUserActionFromEnv(request, taskDir)
 	if err == nil {
 		request.UserAction = proof
 		return nil
@@ -69,7 +71,7 @@ func sessionActionProof(request *machine.SessionCommand, record *machine.Session
 	if !allowTTY {
 		return err
 	}
-	proof, err = sessionUserActionFromTTY(request, record)
+	proof, err = sessionUserActionFromTTY(request, record, taskDir)
 	if err != nil {
 		return err
 	}

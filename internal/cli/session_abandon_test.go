@@ -58,25 +58,25 @@ func blockedSessionFixture(t *testing.T) (string, string, *state.State, string) 
 }
 
 func TestSessionAbandonEnvironmentProofMustBindTheExactCommand(t *testing.T) {
-	request := &machine.SessionCommand{Action: "abandon", Key: "design-plan/planning:engine-1-1", Revision: 7, Reason: "retire this call"}
+	request := &machine.SessionCommand{Action: "abandon", Key: "design-plan/planning:engine-1-1", Revision: 7, Reason: "retire this call", Invocation: "call-abandon1"}
 	t.Setenv("DSH_SESSION_ID", "host-session")
-	proof := machine.SessionUserAction{Kind: "dsh", SessionID: "host-session", CommandID: "command-1",
-		Key: request.Key, Revision: request.Revision, Action: "abandon", Reason: request.Reason}
+	proof := machine.SessionUserAction{Kind: "dsh", SessionID: "host-session", CommandID: "command-1", TaskDir: "/repo",
+		Key: request.Key, Invocation: request.Invocation, Revision: request.Revision, Action: "abandon", Reason: request.Reason}
 	raw, err := json.Marshal(proof)
 	require.NoError(t, err)
 	t.Setenv(sessionUserActionEnv, string(raw))
-	require.NoError(t, sessionActionProof(request, nil, false))
+	require.NoError(t, sessionActionProof(request, nil, "/repo", false))
 	require.NotNil(t, request.UserAction)
 	assert.Equal(t, "dsh", request.UserAction.Kind)
 
 	request.Reason = "changed after proof"
-	require.ErrorContains(t, sessionActionProof(request, nil, false), "does not match")
+	require.ErrorContains(t, sessionActionProof(request, nil, "/repo", false), "does not match")
 	t.Setenv(sessionUserActionEnv, "{")
-	require.Error(t, sessionActionProof(request, nil, false))
+	require.Error(t, sessionActionProof(request, nil, "/repo", false))
 	t.Setenv(sessionUserActionEnv, "placeholder")
 	require.NoError(t, os.Unsetenv(sessionUserActionEnv))
 	request.Reason = "retire this call"
-	require.ErrorContains(t, sessionActionProof(request, nil, false), "verified host command")
+	require.ErrorContains(t, sessionActionProof(request, nil, "/repo", false), "verified host command")
 }
 
 type failingSessionTTY struct{}
@@ -123,7 +123,7 @@ func TestRunSessionAbandonRejectsMissingHostProof(t *testing.T) {
 	t.Chdir(cwd)
 	directory := filepath.Join(taskDir, ".control")
 	require.NoError(t, os.MkdirAll(directory, 0o700))
-	raw, err := json.Marshal(machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire"})
+	raw, err := json.Marshal(machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire", Invocation: "call-abandon1"})
 	require.NoError(t, err)
 	file := filepath.Join(directory, "session-request-abandon")
 	require.NoError(t, os.WriteFile(file, raw, 0o600))
@@ -134,22 +134,22 @@ func TestRunSessionAbandonRejectsMissingHostProof(t *testing.T) {
 }
 
 func TestSessionAbandonTTYProofRejectsMissingOrFailedTerminal(t *testing.T) {
-	request := &machine.SessionCommand{Action: "abandon", Key: "design-plan/planning:engine-1-1", Revision: 7, Reason: "retire"}
+	request := &machine.SessionCommand{Action: "abandon", Key: "design-plan/planning:engine-1-1", Revision: 7, Reason: "retire", Invocation: "call-abandon1"}
 	history := &machine.SessionHistory{Key: request.Key, Invocation: "call-abandon1"}
 	original := openPlanningTTY
 	t.Cleanup(func() { openPlanningTTY = original })
 	openPlanningTTY = func() (io.ReadWriteCloser, error) { return nil, fmt.Errorf("no terminal") }
-	_, err := sessionUserActionFromTTY(request, history)
+	_, err := sessionUserActionFromTTY(request, history, "/repo")
 	require.ErrorContains(t, err, "verified host command")
 
 	openPlanningTTY = func() (io.ReadWriteCloser, error) { return &failingSessionTTY{}, nil }
-	_, err = sessionUserActionFromTTY(request, history)
+	_, err = sessionUserActionFromTTY(request, history, "/repo")
 	require.ErrorContains(t, err, "cannot present")
 
 	history.Invocation = ""
 	openPlanningTTY = func() (io.ReadWriteCloser, error) { return &fakeSessionTTY{reader: strings.NewReader("")}, nil }
-	_, err = sessionUserActionFromTTY(request, history)
-	require.ErrorContains(t, err, "no recorded invocation")
+	_, err = sessionUserActionFromTTY(request, history, "/repo")
+	require.ErrorContains(t, err, "no matching recorded invocation")
 
 	t.Setenv("DSH_SESSION_ID", "host")
 	t.Setenv(sessionUserActionEnv, "{")
@@ -157,12 +157,12 @@ func TestSessionAbandonTTYProofRejectsMissingOrFailedTerminal(t *testing.T) {
 		return &fakeSessionTTY{reader: strings.NewReader("abandon call-abandon1\n")}, nil
 	}
 	history.Invocation = "call-abandon1"
-	require.NoError(t, sessionActionProof(request, history, true), "an invalid env proof may fall back to the controlling terminal")
+	require.NoError(t, sessionActionProof(request, history, "/repo", true), "an invalid env proof may fall back to the controlling terminal")
 }
 
 func TestSessionAbandonControlRequiresHostProofBeforeSpawn(t *testing.T) {
 	taskDir, cwd, st, key := blockedSessionFixture(t)
-	raw, err := json.Marshal(machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire"})
+	raw, err := json.Marshal(machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire", Invocation: "call-abandon1"})
 	require.NoError(t, err)
 	require.NoError(t, os.Unsetenv(sessionUserActionEnv))
 	cmd := controlCmd()
@@ -209,11 +209,11 @@ func TestSessionAbandonCLIRequiresConfirmedInvocation(t *testing.T) {
 
 func TestSessionAbandonControlEnvelopeCarriesSemanticReceipt(t *testing.T) {
 	taskDir, cwd, st, key := blockedSessionFixture(t)
-	request := machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire the unknown call"}
+	request := machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: "retire the unknown call", Invocation: "call-abandon1"}
 	raw, err := json.Marshal(request)
 	require.NoError(t, err)
-	proof := machine.SessionUserAction{Kind: "dsh", SessionID: "desktop-session", CommandID: "command-1",
-		Key: key, Revision: st.Revision, Action: "abandon", Reason: request.Reason}
+	proof := machine.SessionUserAction{Kind: "dsh", SessionID: "desktop-session", CommandID: "command-1", TaskDir: taskDir,
+		Key: key, Invocation: request.Invocation, Revision: st.Revision, Action: "abandon", Reason: request.Reason}
 	proofRaw, err := json.Marshal(proof)
 	require.NoError(t, err)
 	t.Setenv("DSH_SESSION_ID", "desktop-session")
@@ -298,47 +298,55 @@ func TestQuickSessionControlTimesOutWhenTheChildDoesNotExit(t *testing.T) {
 	require.ErrorContains(t, err, "did not finish the session command")
 }
 
+func receiptState(key, id, status string, handoff string) *state.State {
+	st := &state.State{Sessions: &state.SessionLedger{Records: map[string]*state.SessionRecord{
+		key: {Reason: "dispatch, outcome or cleanup remains unknown", Last: &state.SessionInvocation{ID: id, Status: status, CleanupConfirmed: true, Accounted: true}},
+	}}}
+	if handoff != "" {
+		st.Handoff = &state.Handoff{Key: handoff}
+	}
+	return st
+}
+
 func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
-	request := &machine.SessionCommand{Action: "reconcile", Key: "design-plan/planning:engine-1-1", Revision: 7}
-	st, err := state.InitPlanning(planning.Brief{Version: 1, ID: "receipt", Goal: "g", OriginalRequest: "r", Policy: "review-first", Constraints: []string{}, Evidence: []string{}}, nil)
-	require.NoError(t, err)
-	st.Sessions.Records[request.Key] = &state.SessionRecord{Reason: "dispatch, outcome or cleanup remains unknown", Last: &state.SessionInvocation{ID: "call-one", Status: "blocked", CleanupConfirmed: true, Accounted: true}}
-	receipt := sessionControlReceipt(st, request)
+	key := "design-plan/planning:engine-1-1"
+	request := &machine.SessionCommand{Action: "reconcile", Key: key, Revision: 7}
+	blocked := receiptState(key, "call-one", "blocked", "")
+	receipt := sessionControlReceipt(blocked, blocked, request)
 	require.NotNil(t, receipt)
 	assert.False(t, receipt.Applied)
 	assert.Equal(t, "blocked", receipt.Status)
 	assert.Contains(t, receipt.Message, "dispatch, outcome or cleanup remains unknown")
 
+	consumed := receiptState(key, "call-one", "consumed", "")
+	assert.True(t, sessionControlReceipt(consumed, blocked, request).Applied)
+
 	request.Action = "abandon"
 	request.Reason = "retire"
-	st.Sessions.Records[request.Key].Last.Status = "abandoned"
-	st.Sessions.Records[request.Key].Last.Abandon = &state.SessionAbandon{At: "now", Reason: request.Reason, Authority: "human"}
-	receipt = sessionControlReceipt(st, request)
+	abandoned := receiptState(key, "call-one", "abandoned", "")
+	abandoned.Sessions.Records[key].Last.Abandon = &state.SessionAbandon{At: "now", Reason: request.Reason, Authority: "human"}
+	receipt = sessionControlReceipt(abandoned, blocked, request)
 	assert.True(t, receipt.Applied)
 	assert.Equal(t, "abandoned", receipt.Status)
 	assert.Equal(t, "call-one", receipt.Invocation)
+	noReason := receiptState(key, "call-one", "blocked", "")
+	noReason.Sessions.Records[key].Reason = ""
+	assert.Equal(t, "the unresolved invocation was not retired", sessionControlReceipt(noReason, blocked, request).Message)
 
-	assert.Equal(t, "task state is unavailable", sessionControlReceipt(nil, request).Message)
-	st.Sessions = nil
-	assert.Equal(t, "session key not found", sessionControlReceipt(st, request).Message)
-	st.Sessions = &state.SessionLedger{Records: map[string]*state.SessionRecord{request.Key: {Last: &state.SessionInvocation{ID: "call-one", Status: "consumed", CleanupConfirmed: true}}}}
+	assert.Equal(t, "task state is unavailable", sessionControlReceipt(nil, nil, request).Message)
+	assert.Equal(t, "session key not found", sessionControlReceipt(&state.State{}, nil, request).Message)
+
 	request.Action = "claim"
-	assert.False(t, sessionControlReceipt(st, request).Applied)
-	st.Handoff = &state.Handoff{Key: request.Key}
-	assert.True(t, sessionControlReceipt(st, request).Applied)
+	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", key), receiptState(key, "call-one", "consumed", key), request).Applied)
+	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", key), receiptState(key, "call-one", "consumed", ""), request).Applied)
 	request.Action = "release"
-	assert.False(t, sessionControlReceipt(st, request).Applied)
-	st.Handoff = nil
-	assert.True(t, sessionControlReceipt(st, request).Applied)
+	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), nil, request).Applied)
+	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", key), request).Applied)
 	request.Action = "send"
-	assert.True(t, sessionControlReceipt(st, request).Applied)
+	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
+	assert.True(t, sessionControlReceipt(receiptState(key, "call-two", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
 	request.Action = "return"
-	assert.True(t, sessionControlReceipt(st, request).Applied)
+	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), blocked, request).Applied)
 	request.Action = "unknown"
-	assert.False(t, sessionControlReceipt(st, request).Applied)
-
-	request.Action = "abandon"
-	request.Reason = "retire"
-	st.Sessions.Records[request.Key] = &state.SessionRecord{Last: &state.SessionInvocation{ID: "call-one", Status: "blocked"}}
-	assert.Equal(t, "the unresolved invocation was not retired", sessionControlReceipt(st, request).Message)
+	assert.False(t, sessionControlReceipt(blocked, blocked, request).Applied)
 }

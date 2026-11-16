@@ -42,6 +42,22 @@ func TestInvestigationCanFollowThinBriefWithoutReplacingPlanningState(t *testing
 	require.False(t, allowsPlanningInvestigation(t.TempDir(), cwd))
 }
 
+func TestInvestigationTreatsAbandonedPlanningCallAsTerminal(t *testing.T) {
+	dir, cwd, _ := preparationFixture(t)
+	st := thinInvestigationBrief(t, dir, cwd)
+	hash := strings.Repeat("a", 64)
+	st.Sessions.Records["design-plan/planning:abandoned"] = &state.SessionRecord{
+		Task: dir, Role: "design-plan", Scope: "planning:abandoned", Cwd: cwd,
+		Binding: hash, Goal: hash, Contract: hash, Generation: 1, Action: "abandon", Reason: "retired", ResumeCandidate: false,
+		Last: &state.SessionInvocation{ID: "call-abandoned", Status: "abandoned", StartedAt: "2026-11-16T12:00:00Z", Attempt: 1,
+			CandidateBefore: hash, Accounted: true, Dispatch: "unknown", Outcome: "unknown", CleanupConfirmed: true,
+			UsageStatus: "unknown", Abandon: &state.SessionAbandon{At: "now", Reason: "retire", Authority: "human"}},
+	}
+	_, err := state.Save(dir, st, nil)
+	require.NoError(t, err)
+	require.True(t, allowsPlanningInvestigation(dir, cwd))
+}
+
 func TestInvestigationNeverReplacesPendingPlanningCall(t *testing.T) {
 	for _, scenario := range []string{"legacy-unknown", "received", "consumed"} {
 		t.Run(scenario, func(t *testing.T) {

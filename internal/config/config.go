@@ -320,7 +320,7 @@ func (c *Config) Normalize() {
 
 var watchdogRoles = map[string]bool{
 	"plan": true, "execute": true, "review": true, "judge": true, "judge-panel": true,
-	"intake": true, "garden": true, "design-plan": true, "design-review": true, "plan-review": true,
+	"design-plan": true, "design-review": true, "plan-review": true,
 }
 
 // validateWatchdog keeps the per-role map machine-checkable. Zero values were

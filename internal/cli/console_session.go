@@ -48,7 +48,7 @@ func startSessionControl(cmd *cobra.Command, taskDir, cwd string) (controlRespon
 	if request.Action == "abandon" {
 		// Validate the host-generated proof before spawning anything. The run
 		// child re-reads the same environment proof and passes it to the engine.
-		if err := sessionActionProof(request, nil, false); err != nil {
+		if err := sessionActionProof(request, nil, taskDir, false); err != nil {
 			return controlResponse{Protocol: 1, TaskDir: taskDir}, err
 		}
 	}
@@ -76,14 +76,19 @@ func startSessionControl(cmd *cobra.Command, taskDir, cwd string) (controlRespon
 		return controlResponse{Protocol: 1, TaskDir: taskDir}, err
 	}
 	quick := request.Action == "abandon" || request.Action == "reconcile" || request.Action == "claim" || request.Action == "release"
+	before, _ := controlSnapshotFn(taskDir)
 	reply, err := startControlledRunWait(taskDir, cwd, "", []string{"--only", "session", "--session-request", file.Name(), "--session-request-digest", fmt.Sprintf("%x", sha256.Sum256(raw)), "--expect-revision", fmt.Sprint(request.Revision)}, quick)
 	// The engine may exit semantically (for example escalated) while the control
-	// envelope remains ok:true. Surface the exact session outcome instead of
-	// making the caller infer it from an unrelated state revision.
-	reply.SessionControl = sessionControlReceipt(reply.State, request)
+	// envelope remains ok:true. Surface the exact session outcome as a transition
+	// from the pre-command snapshot instead of an ambiguous current-state predicate.
+	reply.SessionControl = sessionControlReceipt(reply.State, before.State, request)
 	if err != nil && reply.SessionControl != nil {
+		message := err.Error()
+		if reply.State != nil && reply.State.Control != nil && strings.TrimSpace(reply.State.Control.Message) != "" {
+			message = reply.State.Control.Message
+		}
 		reply.SessionControl.Applied = false
-		reply.SessionControl.Message = err.Error()
+		reply.SessionControl.Message = message
 	}
 	// On a launch error the child may still be reading. Leave its bounded private
 	// payload until the child consumes it; never erase an ambiguous request.

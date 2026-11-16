@@ -51,8 +51,8 @@ func sessionCmd() *cobra.Command {
 				return fmt.Errorf("session key not found")
 			}
 			history := &machine.SessionHistory{Key: key, Invocation: record.Last.ID}
-			request := &machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: reason}
-			if err := sessionActionProof(request, history, true); err != nil {
+			request := &machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: reason, Invocation: record.Last.ID}
+			if err := sessionActionProof(request, history, taskDir, true); err != nil {
 				return err
 			}
 			summary, err := machine.RunSingleStep(machine.RunSingleStepOpts{RunOpts: machine.RunOpts{TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drivers.CreateDrivers(cfg), Context: cmd.Context(), Log: logf(cmd), IndexDir: indexDir}, Only: "session", ExpectedRevision: &request.Revision, Session: request})

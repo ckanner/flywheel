@@ -59,7 +59,7 @@ type SessionControlReceipt struct {
 	Message    string `json:"message,omitempty"`
 }
 
-func sessionControlReceipt(st *state.State, request *machine.SessionCommand) *SessionControlReceipt {
+func sessionControlReceipt(st, before *state.State, request *machine.SessionCommand) *SessionControlReceipt {
 	receipt := &SessionControlReceipt{Key: request.Key, Action: request.Action}
 	if st == nil {
 		receipt.Message = "task state is unavailable"
@@ -72,10 +72,25 @@ func sessionControlReceipt(st *state.State, request *machine.SessionCommand) *Se
 	}
 	record := st.Sessions.Records[request.Key]
 	receipt.Status, receipt.Invocation = record.Last.Status, record.Last.ID
+	var beforeRecord *state.SessionRecord
+	if before != nil && before.Sessions != nil {
+		beforeRecord = before.Sessions.Records[request.Key]
+	}
+	beforeInvocation, beforeHandoff := "", ""
+	if beforeRecord != nil && beforeRecord.Last != nil {
+		beforeInvocation = beforeRecord.Last.ID
+	}
+	if before != nil && before.Handoff != nil {
+		beforeHandoff = before.Handoff.Key
+	}
 	switch request.Action {
 	case "abandon":
-		receipt.Applied = record.Last.Status == "abandoned" && record.Last.Abandon != nil &&
-			record.Last.Abandon.Reason == request.Reason
+		beforeStatus := ""
+		if beforeRecord != nil && beforeRecord.Last != nil {
+			beforeStatus = beforeRecord.Last.Status
+		}
+		receipt.Applied = record.Last.Status == "abandoned" && beforeStatus != "abandoned" &&
+			record.Last.Abandon != nil && record.Last.Abandon.Reason == request.Reason
 		if !receipt.Applied {
 			receipt.Message = record.Reason
 			if receipt.Message == "" {
@@ -86,16 +101,21 @@ func sessionControlReceipt(st *state.State, request *machine.SessionCommand) *Se
 		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
 		receipt.Message = record.Reason
 	case "claim":
-		receipt.Applied = st.Handoff != nil && st.Handoff.Key == request.Key
+		receipt.Applied = st.Handoff != nil && st.Handoff.Key == request.Key && beforeHandoff != request.Key
 		if !receipt.Applied {
-			receipt.Message = "the session was not claimed"
+			receipt.Message = "the session was not newly claimed"
 		}
 	case "release":
-		receipt.Applied = st.Handoff == nil
+		receipt.Applied = beforeHandoff == request.Key && st.Handoff == nil
 		if !receipt.Applied {
-			receipt.Message = "the session remains under human control"
+			receipt.Message = "the session was not under this handoff or remains controlled"
 		}
-	case "send", "return":
+	case "send":
+		receipt.Applied = beforeInvocation != "" && record.Last.ID != beforeInvocation
+		if !receipt.Applied {
+			receipt.Message = "the session command has not started a new invocation yet; refresh status"
+		}
+	case "return":
 		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
 		receipt.Message = record.Reason
 	default:

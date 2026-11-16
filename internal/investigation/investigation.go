@@ -96,7 +96,7 @@ func allowsPlanningInvestigation(dir, cwd string) bool {
 	}
 	if st.Sessions != nil {
 		for _, record := range st.Sessions.Records {
-			if record.Last != nil && record.Last.Status != "consumed" {
+			if record.Last != nil && !state.TerminalSessionStatus(record.Last.Status) {
 				return false
 			}
 		}

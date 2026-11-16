@@ -38,8 +38,9 @@ export async function validateControl(input, defaultCwd) {
       throw new Error('session requires a typed revision-bound command');
     }
     if (input.session.action === 'abandon' && (typeof input.session.reason !== 'string' || input.session.reason.trim() === '' ||
-        Buffer.byteLength(input.session.reason) > 1000 || 'prompt' in input.session)) {
-      throw new Error('session abandonment requires a bounded reason and no prompt');
+        Buffer.byteLength(input.session.reason) > 1000 || typeof input.session.invocation !== 'string' || input.session.invocation.trim() === '' ||
+        input.session.invocation.length > 200 || 'prompt' in input.session)) {
+      throw new Error('session abandonment requires a bounded reason, the exact invocation, and no prompt');
     }
   } else if ('session' in input) {
     throw new Error('session requires a typed revision-bound command');
@@ -117,7 +118,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     request = await validateControl(input, defaultCwd);
     if (request.planning?.action === 'approve' && !validPlanningUserAction(planningUserAction, request.planning)) throw new Error('Design approval requires a verified human command');
     if (planningUserAction !== undefined && request.planning?.action !== 'approve') throw new Error('User approval proof is only valid for design approval');
-    if (request.session?.action === 'abandon' && !validSessionUserAction(sessionUserAction, request.session)) throw new Error('Unknown-invocation abandonment requires a verified human command');
+    if (request.session?.action === 'abandon' && !validSessionUserAction(sessionUserAction, request.session, request.taskDir)) throw new Error('Unknown-invocation abandonment requires a verified human command');
     if (sessionUserAction !== undefined && request.session?.action !== 'abandon') throw new Error('Session abandonment proof is only valid for abandon');
     if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   } catch (error) {

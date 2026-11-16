@@ -2,6 +2,7 @@ package machine
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/state"
@@ -11,23 +12,28 @@ import (
 // boundary or the controlling terminal. A model tool cannot mint it, and the
 // engine requires it for the irreversible abandonment of an unknown call.
 type SessionUserAction struct {
-	Kind      string `json:"kind"` // dsh | tty
-	SessionID string `json:"sessionId,omitempty"`
-	CommandID string `json:"commandId,omitempty"`
-	Key       string `json:"key"`
-	Revision  int64  `json:"revision"`
-	Action    string `json:"action"`
-	Reason    string `json:"reason"`
+	Kind       string `json:"kind"` // dsh | tty
+	SessionID  string `json:"sessionId,omitempty"`
+	CommandID  string `json:"commandId,omitempty"`
+	TaskDir    string `json:"taskDir"`
+	Key        string `json:"key"`
+	Invocation string `json:"invocation"`
+	Revision   int64  `json:"revision"`
+	Action     string `json:"action"`
+	Reason     string `json:"reason"`
 }
 
-func (a *SessionUserAction) validate(request SessionCommand) (string, error) {
+func (a *SessionUserAction) validate(request SessionCommand, taskDir, invocation string) (string, error) {
 	if a == nil {
 		return "", fmt.Errorf("abandoning an unknown invocation requires a verified human command or controlling terminal")
 	}
 	if a.Kind != "dsh" && a.Kind != "tty" {
 		return "", fmt.Errorf("session abandonment proof has an invalid kind")
 	}
-	if a.Action != "abandon" || a.Key != request.Key || a.Revision != request.Revision || a.Reason != request.Reason {
+	proofDir, err := filepath.EvalSymlinks(a.TaskDir)
+	if err != nil || proofDir != taskDir || a.Action != "abandon" || a.Key != request.Key ||
+		a.Revision != request.Revision || a.Reason != request.Reason ||
+		a.Invocation != invocation || request.Invocation != invocation {
 		return "", fmt.Errorf("session abandonment proof does not match this exact command")
 	}
 	if strings.TrimSpace(a.Reason) == "" || len(a.Reason) > 1000 || strings.ContainsRune(a.Reason, 0) {
@@ -60,6 +66,9 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	if c.State.Handoff != nil {
 		return c.summary(), fmt.Errorf("the task is under human session control; return it before abandoning an invocation")
 	}
+	if request.Invocation == "" {
+		return c.summary(), fmt.Errorf("session abandonment requires the exact invocation ID")
+	}
 	if c.State.Sessions == nil {
 		return c.summary(), fmt.Errorf("session key not found")
 	}
@@ -69,6 +78,9 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	}
 	if request.Key != sessionKey(r.Role, r.Scope) {
 		return c.summary(), fmt.Errorf("session key does not match its recorded role and scope")
+	}
+	if request.Invocation != r.Last.ID {
+		return c.summary(), fmt.Errorf("session invocation %s does not match the recorded invocation %s", request.Invocation, r.Last.ID)
 	}
 	if !planningAbandonRole(r.Role) {
 		return c.summary(), fmt.Errorf("unknown invocation abandonment is limited to planning roles; use the packet reconciliation path for %s", r.Role)
@@ -85,7 +97,7 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	if r.Last.Dispatch != "unknown" && r.Last.Outcome != "unknown" {
 		return c.summary(), fmt.Errorf("session %s has known dispatch and outcome; apply or reconcile the receipt instead of abandoning", request.Key)
 	}
-	source, err := request.UserAction.validate(request)
+	source, err := request.UserAction.validate(request, c.TaskDir, r.Last.ID)
 	if err != nil {
 		return c.summary(), err
 	}
@@ -94,25 +106,45 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	if strings.HasPrefix(r.Scope, "planning:") {
 		requestID = strings.TrimPrefix(r.Scope, "planning:")
 	}
+	if requestID != "" {
+		if c.State.Planning == nil {
+			return c.summary(), fmt.Errorf("session %s names a planning request but the task has no planning authority", request.Key)
+		}
+		if c.State.Planning.PendingActivation != nil {
+			return c.summary(), fmt.Errorf("a planning activation transaction is pending; reconcile it before abandoning a session")
+		}
+		index := -1
+		for i := range c.State.Planning.Requests {
+			if c.State.Planning.Requests[i].ID == requestID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			return c.summary(), fmt.Errorf("planning request %s was not found for session %s", requestID, request.Key)
+		}
+		planningReq := &c.State.Planning.Requests[index]
+		if planningReq.Status != "pending" && planningReq.Status != "running" {
+			return c.summary(), fmt.Errorf("planning request %s is %s, not pending or running", requestID, planningReq.Status)
+		}
+		if planningReq.InputRevision != c.State.Planning.InputRevision {
+			return c.summary(), fmt.Errorf("planning request %s belongs to input revision %d, not the current revision", requestID, planningReq.InputRevision)
+		}
+		if planningReq.Role != "" && planningReq.Role != r.Role {
+			return c.summary(), fmt.Errorf("planning request %s belongs to role %s, not %s", requestID, planningReq.Role, r.Role)
+		}
+		planningReq.Status = "cancelled"
+	}
 	oldThread := r.ThreadID
 	r.Last.Abandon = &state.SessionAbandon{
 		At: c.nowISO(), Reason: request.Reason, Authority: "human",
-		RequestID: requestID, ThreadID: oldThread, Source: source,
+		RequestID: requestID, Invocation: r.Last.ID, ThreadID: oldThread, Source: source,
 	}
 	r.Last.Status = "abandoned"
 	r.Action = "abandon"
 	r.Reason = "human abandoned unknown invocation: " + request.Reason
 	r.ResumeCandidate = false
 	r.ThreadID = ""
-	if c.State.Planning != nil && requestID != "" {
-		for i := range c.State.Planning.Requests {
-			if c.State.Planning.Requests[i].ID == requestID {
-				// The old request has no result to apply. A later explicit Plan
-				// creates a new bounded request instead of resuming this one.
-				c.State.Planning.Requests[i].Status = "cancelled"
-			}
-		}
-	}
 	c.State.Status = "paused"
 	entry := map[string]any{
 		"at": c.nowISO(), "action": "session-abandon", "session": request.Key,

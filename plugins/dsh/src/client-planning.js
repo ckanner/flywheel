@@ -103,7 +103,7 @@ function BlockedInvocation({ recordKey, record, revision, busy, run, selection, 
   const last = record.last ?? {};
   const submit = async () => {
     const result = await run('session', selection, false, {
-      session: { action: 'abandon', key: recordKey, revision, reason: reason.trim() },
+      session: { action: 'abandon', key: recordKey, invocation: last.id, revision, reason: reason.trim() },
     });
     const next = result?.['session-control'] ?? null;
     setReceipt(next);

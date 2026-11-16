@@ -13,11 +13,12 @@ import (
 )
 
 type SessionCommand struct {
-	Action   string `json:"action"`
-	Key      string `json:"key"`
-	Revision int64  `json:"revision"`
-	Reason   string `json:"reason,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
+	Action     string `json:"action"`
+	Key        string `json:"key"`
+	Revision   int64  `json:"revision"`
+	Reason     string `json:"reason,omitempty"`
+	Prompt     string `json:"prompt,omitempty"`
+	Invocation string `json:"invocation,omitempty"`
 
 	// UserAction is supplied only by the host command boundary or a controlling
 	// terminal. It is deliberately not deserialized from request JSON.
@@ -38,8 +39,9 @@ func (r SessionCommand) Validate() error {
 			return fmt.Errorf("session prompt requires 1–65536 bytes and no takeover reason")
 		}
 	case "abandon":
-		if strings.TrimSpace(r.Reason) == "" || len(r.Reason) > 1000 || r.Prompt != "" || strings.ContainsRune(r.Reason, 0) {
-			return fmt.Errorf("abandon requires a bounded reason and no prompt")
+		if strings.TrimSpace(r.Reason) == "" || len(r.Reason) > 1000 || r.Prompt != "" || strings.ContainsRune(r.Reason, 0) ||
+			strings.TrimSpace(r.Invocation) == "" || len(r.Invocation) > 200 {
+			return fmt.Errorf("abandon requires a bounded reason, the exact invocation, and no prompt")
 		}
 	case "return", "reconcile", "release":
 		if r.Prompt != "" || r.Reason != "" {

@@ -105,7 +105,7 @@ func runCmd() *cobra.Command {
 				if expectedRevision == nil || session.Revision != *expectedRevision {
 					return fmt.Errorf("session payload revision does not match admission")
 				}
-				if err := sessionActionProof(session, nil, false); err != nil {
+				if err := sessionActionProof(session, nil, taskDir, false); err != nil {
 					return err
 				}
 			} else if sessionRequest != "" || sessionDigest != "" {

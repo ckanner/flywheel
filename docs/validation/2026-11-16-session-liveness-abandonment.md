@@ -5,7 +5,7 @@
 ## 来源与交付范围
 
 - 基线：`ckanner/flywheel` main，`85c1b2dcad6e28c44438c5f5e3cf71a890d17c2c`。
-- 分支：`fix-session-liveness-recovery`；PR 链接在创建后补充。
+- 分支：`fix-session-liveness-recovery`；[PR #53](https://github.com/ckanner/flywheel/pull/53)。
 - 环境：macOS arm64、Go `1.27.0`、Node `26.12.1`。未修改真实 DSH profile、账号、凭据或用户配置。
 - 本记录对应代码与离线验证，不声称 npm 发布、真实桌面 UI 或真实模型调用已验收。
 
@@ -17,8 +17,11 @@
 | 规划提示词 | 非 native harness 明确禁止后台/异步子代理，调查必须前台完成；Kimi native/profile 仍可观察子任务 |
 | 状态 | session ledger 增加 `abandoned` 状态和 `abandon` 对象；保留 unknown dispatch/outcome、原因、来源和旧 thread 证据 |
 | 引擎 | 仅规划角色的 blocked、已计量、清理确认调用可退役；不应用结果、不重放、不复用旧 thread；关联 request 标为 cancelled |
-| 人工边界 | 模型工具不暴露退役；DSH 用户命令证明或控制终端确认精确 invocation；CLI 提供 `session --abandon` |
-| 控制回执 | `session-control.applied/status/message/invocation` 明确异步 session 命令的语义结果；信封 `ok` 不再被误读为退役成功 |
+| 人工边界 | 模型工具不暴露退役；DSH 用户命令证明或控制终端确认精确 invocation；证明绑定 taskDir、key、revision、reason、invocation，不能跨任务或重复使用；CLI 提供 `session --abandon` |
+| 控制回执 | `session-control.applied/status/message/invocation` 由命令前后状态转移计算，send/return/claim/release 不再用上一次状态冒充成功；信封 `ok` 不再被误读为退役成功 |
+| 收尾门 | `abandoned` 与 `consumed` 一样视为已结算：重开已交付节点、启动 investigation、规划收据门都接受它；其他执行/评审路径仍要求真实 consumed |
+| 请求校验 | 退役会要求关联 planning request 存在且为 pending/running、input revision 与 role 匹配；终止请求、缺失请求、pending activation 都拒绝，不再任意改写 |
+| 状态不变量 | schema 要求 abandoned 至少保留一个 unknown 事实并禁止非 abandoned 记录携带 abandon；Save 重新校验 sessions；audit 记录准确 invocation |
 | 视图 | 规划面板显示未解开调用、准确 invocation 与原因，提供原因和确认框；退役后显示会话结果并允许显式 Plan |
 | 文档与技能 | 设计、恢复、配置、工作台、使用手册、原生能力、协议和中英技能同步说明 |
 
@@ -32,6 +35,15 @@
 6. **控制回执**：abandon/reconcile 返回 applied/status/message；`ok:true` 但记录仍 blocked 时 applied=false；快速 session 命令等待子进程退出后才生成回执。
 7. **视图**：blocked 规划调用显示 invocation 和原因；原因/确认缺一不可；真实用户命令提交后响应被采用，退役记录从阻断面板消失。
 8. **回归**：原有 planning、session、状态、CLI、插件客户端和 legacy host 测试保持通过；新增测试覆盖所有新分支。
+
+## 独立 review 处理
+
+- **证明重放/跨任务复用**：host 证明现在绑定规范化 taskDir、key、revision、reason 和 invocation；跨任务、错误 invocation、篡改 reason 都拒绝。共享 shell 仍可伪造 env，这已记录为“完整 shell 不属于模型工具边界”，与既能直接改写 state.json 的能力一致；实现不宣称 OS 级防伪。
+- **回执假阳性**：回执由命令前后快照的差异计算；send 要求新 invocation，claim/release 要求 handoff 前后变化，return/reconcile 要求 consumed+cleanup。未结算的 send/return 返回 applied=false 和“刷新状态”消息。
+- **abandoned 收尾门**：console reopen、investigation 和规划收据门统一使用 `TerminalSessionStatus`（consumed 或 abandoned）。
+- **任意 request 改写**：退役要求 request 存在且 pending/running、input revision/role 匹配；终止请求、缺失请求和 pending activation 都拒绝。
+- **未生效配置**：从 `watchdog.roles` 白名单移除从未接线的 intake/garden，避免静默忽略。
+- **覆盖缺口**：新增 dsh proof、task/invocation 绑定、receipt 转移、收尾门、schema/Save 不变量和 request 拒绝测试。
 
 ## 检查记录
 

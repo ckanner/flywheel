@@ -14,7 +14,7 @@ import {
 } from '../src/session-control.js';
 
 const binary = fileURLToPath(new URL('./fixtures/fake-session-control.js', import.meta.url));
-const session = { action: 'abandon', key: 'design-plan/planning:engine-1-1', revision: 7, reason: 'The idle watchdog killed a live call; retire it.' };
+const session = { action: 'abandon', key: 'design-plan/planning:engine-1-1', invocation: 'call-blocked1', revision: 7, reason: 'The idle watchdog killed a live call; retire it.' };
 const request = (taskDir) => ({ action: 'session', taskDir, cwd: taskDir, session });
 function env(t, name, value) {
   const old = process.env[name]; process.env[name] = value;
@@ -31,6 +31,7 @@ test('session abandonment requires a typed bounded reason and no prompt', async 
   assert.equal(validSessionAbandonCommand({ ...session, reason: '' }), false);
   assert.equal(validSessionAbandonCommand({ ...session, prompt: 'x' }), false);
   assert.equal(validSessionAbandonCommand({ ...session, revision: 0 }), false);
+  assert.equal(validSessionAbandonCommand({ ...session, invocation: '' }), false);
   await assert.rejects(runControl({ ...request(dir), session: { ...session, reason: '' } }), ControlNotDispatchedError);
 });
 
@@ -39,9 +40,11 @@ test('session abandonment proof is bound to an exact live user command and canno
   const event = { type: 'command/run', seq: 0, data: { name: 'flywheel', commandId: 'c1', args: raw, source: { kind: 'user' } } };
   const state = projection.apply(projection.init({}, 0), event);
   const proof = sessionUserAction(input, agentSession, 'c1', raw, state);
-  assert.deepEqual(proof, { kind: 'dsh', sessionId: 'desktop-session', commandId: 'c1', key: session.key, revision: 7, action: 'abandon', reason: session.reason });
-  assert.equal(validSessionUserAction(proof, session), true);
-  assert.equal(validSessionUserAction({ ...proof, reason: 'other' }, session), false);
+  assert.deepEqual(proof, { kind: 'dsh', sessionId: 'desktop-session', commandId: 'c1', taskDir: '/repo', key: session.key, invocation: session.invocation, revision: 7, action: 'abandon', reason: session.reason });
+  assert.equal(validSessionUserAction(proof, session, '/repo'), true);
+  assert.equal(validSessionUserAction({ ...proof, reason: 'other' }, session, '/repo'), false);
+  assert.equal(validSessionUserAction({ ...proof, invocation: 'call-other' }, session, '/repo'), false);
+  assert.equal(validSessionUserAction(proof, session, '/other'), false);
   for (const invalid of [projection.init({}, 0), projection.apply(projection.init({}, 1), event), projection.apply(state, event), projection.apply(state, { type: 'command/done', seq: 1, data: { commandId: 'c1' } }), projection.apply(projection.init({}, 0), { ...event, data: { ...event.data, source: { kind: 'model' } } })]) {
     assert.throws(() => sessionUserAction(input, agentSession, 'c1', raw, invalid), /unconsumed/);
   }
@@ -54,7 +57,7 @@ test('the process boundary strips inherited proof and forwards only the host-ver
   env(t, 'TEST_SESSION_LOG', log); env(t, 'FLYWHEEL_SESSION_USER_ACTION', 'inherited-forgery');
   const options = { binary, hostSessionID: 'desktop-session' };
   await assert.rejects(runControl(request(dir), options), ControlNotDispatchedError);
-  const proof = { kind: 'dsh', sessionId: 'desktop-session', commandId: 'c1', key: session.key, revision: 7, action: 'abandon', reason: session.reason };
+  const proof = { kind: 'dsh', sessionId: 'desktop-session', commandId: 'c1', taskDir: dir, key: session.key, invocation: session.invocation, revision: 7, action: 'abandon', reason: session.reason };
   await assert.rejects(runControl(request(dir), { ...options, sessionUserAction: { ...proof, reason: 'other' } }), ControlNotDispatchedError);
   await runControl(request(dir), { ...options, sessionUserAction: proof });
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);

@@ -268,6 +268,7 @@
                       "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
                       "authority": { "const": "human" },
                       "request-id": { "type": "string", "minLength": 1, "maxLength": 120 },
+                      "invocation": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
                       "thread-id": { "type": "string", "minLength": 1, "maxLength": 1024 },
                       "source": { "type": "string", "minLength": 1, "maxLength": 1024 }
                     }
@@ -307,8 +308,15 @@
                     "properties": {
                       "accounted": { "const": true },
                       "cleanup-confirmed": { "const": true }
-                    }
+                    },
+                    "anyOf": [
+                      { "properties": { "dispatch": { "const": "unknown" } } },
+                      { "properties": { "outcome": { "const": "unknown" } } }
+                    ]
                   }
+                }, {
+                  "if": { "required": ["status"], "properties": { "status": { "not": { "const": "abandoned" } } } },
+                  "then": { "properties": { "abandon": false } }
                 }]
               },
               "context": {

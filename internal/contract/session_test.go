@@ -91,7 +91,7 @@ func abandonedSessionSchemaValue() (map[string]any, map[string]any, map[string]a
 	invocation["dispatch"], invocation["outcome"], invocation["usage-status"] = "unknown", "unknown", "unknown"
 	invocation["abandon"] = map[string]any{
 		"at": "2026-11-16T05:45:00Z", "reason": "The model call was killed by the idle watchdog; retire it without replay.",
-		"authority": "human", "source": "tty",
+		"authority": "human", "source": "tty", "invocation": "call-one",
 	}
 	return value, record, invocation
 }
@@ -109,6 +109,8 @@ func TestSessionSchemaAcceptsExplicitUnknownInvocationAbandonment(t *testing.T) 
 		{"unaccounted", func(_, i map[string]any) { i["accounted"] = false }},
 		{"cleanup unknown", func(_, i map[string]any) { i["cleanup-confirmed"] = false }},
 		{"resumable", func(_, i map[string]any) { i["abandon"].(map[string]any)["extra"] = true }},
+		{"known dispatch and outcome", func(_, i map[string]any) { i["dispatch"], i["outcome"] = "dispatched", "completed" }},
+		{"invalid invocation", func(_, i map[string]any) { i["abandon"].(map[string]any)["invocation"] = "other" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			value, _, invocation := abandonedSessionSchemaValue()
@@ -121,6 +123,15 @@ func TestSessionSchemaAcceptsExplicitUnknownInvocationAbandonment(t *testing.T) 
 	record["thread-id"] = "thread"
 	record["protocol"] = "backend/v1"
 	require.Error(t, ValidateSessionStateValue(value), "abandoned history must not be resumable")
+}
+
+func TestSessionSchemaRejectsAbandonProofOnNonAbandonedInvocation(t *testing.T) {
+	value := sessionSchemaValue()
+	record := value["records"].(map[string]any)["execute/M01-T01"].(map[string]any)
+	record["last"].(map[string]any)["abandon"] = map[string]any{
+		"at": "2026-11-16T05:45:00Z", "reason": "retire", "authority": "human",
+	}
+	require.Error(t, ValidateSessionStateValue(value))
 }
 
 func TestSessionSchemaPreservesUnknownFactsInUnconsumedStates(t *testing.T) {

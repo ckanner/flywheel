@@ -135,16 +135,23 @@ type SessionInvocation struct {
 	Abandon          *SessionAbandon    `json:"abandon,omitempty"`
 }
 
+// TerminalSessionStatus reports whether an invocation has a settled effect
+// boundary: consumed applied a trusted result; abandoned retired an unknown one.
+func TerminalSessionStatus(status string) bool {
+	return status == "consumed" || status == "abandoned"
+}
+
 // SessionAbandon records the explicit human decision to retire an unresolved
 // planning invocation. It preserves the unknown dispatch/outcome facts; no
 // stage result is applied and the old thread is never resumed.
 type SessionAbandon struct {
-	At        string `json:"at"`
-	Reason    string `json:"reason"`
-	Authority string `json:"authority"`
-	RequestID string `json:"request-id,omitempty"`
-	ThreadID  string `json:"thread-id,omitempty"`
-	Source    string `json:"source,omitempty"`
+	At         string `json:"at"`
+	Reason     string `json:"reason"`
+	Authority  string `json:"authority"`
+	RequestID  string `json:"request-id,omitempty"`
+	Invocation string `json:"invocation,omitempty"`
+	ThreadID   string `json:"thread-id,omitempty"`
+	Source     string `json:"source,omitempty"`
 }
 
 // SessionReceipt stores the exact normalized result (including the raw public
@@ -361,11 +368,8 @@ func validateSessions(raw json.RawMessage) error {
 				len(abandon.Source) > 1024 || strings.ContainsAny(abandon.Source, "\x00\r\n") {
 				return fmt.Errorf("session %s abandonment facts are invalid", key)
 			}
-			if record.Last.Dispatch != "unknown" && record.Last.Outcome != "unknown" {
-				return fmt.Errorf("session %s abandonment requires an unresolved dispatch or outcome", key)
-			}
-			// resume-candidate:false is enforced by state.schema.json for abandoned;
-			// the schema check runs before this Go validation, so do not duplicate it.
+			// state.schema.json enforces that at least one of dispatch/outcome is
+			// unknown (and resume-candidate:false); the schema check above owns both.
 		}
 		if recovery := record.Last.Recovery; recovery != nil {
 			if !filepath.IsAbs(record.Task) || recovery.Directory != SessionRecoveryDirectory(record.Task, record.Last.ID) ||

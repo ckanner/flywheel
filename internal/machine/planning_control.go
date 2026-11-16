@@ -237,7 +237,7 @@ func planningHasPendingReceipt(st *state.State) bool {
 			// An explicit human abandonment retires the invocation without
 			// applying a result. It is terminal for the planning boundary just
 			// like a consumed receipt; the unknown facts remain in Last.
-			if record.Last != nil && record.Last.Status != "consumed" && record.Last.Status != "abandoned" {
+			if record.Last != nil && !state.TerminalSessionStatus(record.Last.Status) {
 				return true
 			}
 		}

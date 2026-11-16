@@ -20,11 +20,15 @@ their original language.
   applies no result, never resumes the old thread, cancels the associated
   planning request, and allows a later explicit Plan to create a new generation.
   The model tool cannot call it; the CLI requires a controlling terminal and the
-  Flywheel view requires an exact user command.
+  Flywheel view requires an exact user command. The proof is bound to the task
+  directory, key, revision, reason and exact invocation; a matching planning
+  request must still be pending/running and the audit records the invocation.
+  Abandoned records count as settled in console reopen and investigation gates.
 - Return an explicit `session-control.applied/status/message/invocation` receipt
   for asynchronous session commands instead of leaving callers to infer success
-  from the control envelope. Clarify that the workbench refresh only reconciles
-  the plugin's unconfirmed control action.
+  from the control envelope. Compute it from the command's before/after state so
+  send, return, claim and release cannot report a stale success. Clarify that the
+  workbench refresh only reconciles the plugin's unconfirmed control action.
 - Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
 
 ## 0.35.0 — Reviewed planning

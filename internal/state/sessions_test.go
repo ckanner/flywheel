@@ -45,6 +45,14 @@ func sessionTestState(t *testing.T, dir string) *State {
 	return st
 }
 
+func TestSaveRejectsInvalidSessionLedger(t *testing.T) {
+	dir := t.TempDir()
+	st := sessionTestState(t, dir)
+	st.Sessions.Records["wrong/key"] = sessionTestRecord(dir, "execute", "M01-T01")
+	_, err := Save(dir, st, nil)
+	require.ErrorContains(t, err, "does not match its role and scope")
+}
+
 func TestSessionStateRoundTripAndLegacyLoad(t *testing.T) {
 	dir := t.TempDir()
 	st := sessionTestState(t, dir)
@@ -91,6 +99,14 @@ func markAbandoned(s *SessionLedger) {
 	r.Last.Status, r.Last.Accounted, r.Last.CleanupConfirmed = "abandoned", true, true
 	r.Last.Dispatch, r.Last.Outcome, r.Last.UsageStatus = "unknown", "unknown", "unknown"
 	r.Last.Abandon = abandonedTestAbandon()
+}
+
+func TestTerminalSessionStatusCoversAppliedAndRetired(t *testing.T) {
+	assert.True(t, TerminalSessionStatus("consumed"))
+	assert.True(t, TerminalSessionStatus("abandoned"))
+	assert.False(t, TerminalSessionStatus("blocked"))
+	assert.False(t, TerminalSessionStatus("intent"))
+	assert.False(t, TerminalSessionStatus("received"))
 }
 
 func TestSessionStateRoundTripsExplicitAbandonment(t *testing.T) {

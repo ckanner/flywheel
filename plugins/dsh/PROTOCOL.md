@@ -423,9 +423,10 @@ usageStatus、accounted。投影只读取已校验的 state，不打开后端历
 `session-control` 为异步 session 命令的语义回执：key、action、applied、revision、
 status、invocation、message。它不改变共同 envelope 的 `ok` 含义；`ok:true` 只说明
 控制请求完成，`applied:false` 才是引擎没有实施该动作的证据。`session abandon`
-仅接受规划角色、已计量且清理确认的 blocked 调用，并要求
-`FLYWHEEL_SESSION_USER_ACTION` 与 `DSH_SESSION_ID` 精确匹配的 host 证明；模型工具
-不暴露该动作。人类 CLI 走控制终端的 `abandon <invocation>` 确认。
+仅接受规划角色、已计量且清理确认的 blocked 调用；host 证明绑定 taskDir、key、
+revision、reason 和准确 invocation，并要求 `FLYWHEEL_SESSION_USER_ACTION` 与
+`DSH_SESSION_ID` 精确匹配；模型工具不暴露该动作。人类 CLI 走控制终端的
+`abandon <invocation>` 确认。
 
 `diagnostic` 含 kind=`doctor`、ok、cwd、taskDir、probeRequested、inferenceTested=`false`、可选 configuration，以及 checks 数组。check 为 id/status/summary，可附 code/remedy；status 只允许 pass/fail/warn/unknown/skipped。配置本身无效时允许没有 configuration，仍返回完整失败检查项。
 

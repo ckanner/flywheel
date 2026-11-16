@@ -69,7 +69,7 @@ flywheel session /absolute/repo/docs/my-task \
   --abandon --reason "idle watchdog killed a live model call"
 ```
 
-The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a planning role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it.
+The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a planning role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The proof is bound to the task directory, key, revision, reason, and exact invocation and cannot be reused across tasks. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it. A model process with an unrestricted shell can already rewrite `state.json` and is outside this host-proof boundary.
 
 The record becomes `abandoned` with its reason, time, source, and original thread evidence; the old thread is never resumed. No stage result is applied and no model is called again. The associated planning request becomes `cancelled`, the task returns to `paused`, and a later explicit Plan creates a new request. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
 

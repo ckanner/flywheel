@@ -182,6 +182,7 @@ test('a blocked planning invocation is visible and can be retired only through t
     if (request.action === 'session') {
       assert.deepEqual(request.session.action, 'abandon');
       assert.deepEqual(request.session.key, 'design-plan/planning:engine-1-1');
+      assert.equal(request.session.invocation, 'call-blocked1');
       assert.equal(request.session.revision, 7);
       assert.equal(request.session.reason, 'Retire this exact call');
       return reply(request, {
