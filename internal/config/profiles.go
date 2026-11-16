@@ -9,7 +9,7 @@ import (
 )
 
 var modelFields = []string{"harness", "model", "channel", "provider", "thinking", "native-profile"}
-var loopRoles = []string{"plan", "review", "judge", "intake", "garden"}
+var loopRoles = []string{"plan", "review", "judge", "intake", "garden", "design-plan", "design-review", "plan-review"}
 var configFields = []string{
 	"native-profiles",
 	"execution-policy",

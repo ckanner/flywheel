@@ -35,6 +35,12 @@ var snapshotReadlink = os.Readlink
 
 func (c *Context) snapshotExcluded(rel string) bool {
 	prefix := filepath.ToSlash(c.taskDirPrefix())
+	if c.State != nil && c.State.Planning != nil && strings.HasPrefix(rel, prefix+"planning/") {
+		// Go-owned immutable exports are contracts even in a worker checkout.
+		// Keeping them in the candidate identity detects edits which a ledger
+		// exclusion would otherwise hide from execute, review and shared scopes.
+		return false
+	}
 	return strings.HasPrefix(rel, prefix) && ledger.IsLedgerTaskPath(strings.TrimPrefix(rel, prefix))
 }
 

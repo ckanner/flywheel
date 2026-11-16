@@ -3,11 +3,12 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/usage-handbook.md)
 
 Use this handbook to investigate an incident, fix an issue, or build a larger
-system from a DSH conversation. It describes the Flywheel 0.34 workflow; your
+system from a DSH conversation. It describes the current source workflow; your
 installed templates and effective configuration determine the actual settings.
 
-Start with `/flywheel-task`: the host researches the repository and prepares the
-contract; Go schedules work, verifies it and delivers accepted local Git changes.
+Start with `/flywheel-task`: the host records the goal, evidence and existing
+authority in a thin brief; Go owns design, independent review, progressive planning,
+verification and accepted local Git delivery.
 Use New to review a proposal first, or Run for an existing task. Push, PR, merge
 and publication follow their own authorization. Loading a skill is not a running task.
 
@@ -86,20 +87,21 @@ levels; execution and Review sessions stay isolated by task and role. See the
 [console guide](flow-console.md).
 
 
-The current DSH model performs preparation and evidence analysis. `loops.plan`
-controls the engine Plan stage, not this conversation's model. Choose the host
-model for preparation; inspect engine bindings separately as described in section 6.
+The current DSH model organizes the brief and feedback. `loops.design-plan` owns
+actual overall design; `loops.design-review` and `loops.plan-review` own independent
+reviews. Missing bindings inherit the existing Plan/Review backends. Changing the
+conversation model does not change those bindings. See [Reviewed planning](reviewed-planning.md).
 
 ## 2. Choose the entry and workflow mode
 
 | DSH entry | Purpose |
 | --- | --- |
 | `/flywheel-task <goal> [mode=<mode>]` | Prepare and launch authorized investigation or implementation; defaults to Auto. |
-| `/flywheel-new <goal>` | Prepare a reviewable proposal and stop before execution. |
+| `/flywheel-new <goal>` | Register a brief, run design/review, then stop for exact-version approval. |
 | `/flywheel-run <task-dir> [pause=review] [mode=<mode>]` | Start or resume the existing task; omitted mode preserves its selection. |
 | `/flywheel-status <task-dir>` | Read progress, evidence and the next action. |
 | `/flywheel-stop <task-dir>` | Stop the managed task and wait for its stop result. |
-| `/flywheel-plan <task-dir>` | Run only the bounded Full Plan loop. |
+| `/flywheel-plan <task-dir> [scope=<scope>] [id=<id>]` | Run design or scoped refinement and review only; legacy tasks retain milestone Plan. |
 | `/flywheel-exec <task-dir> [packet]` | Run a bounded Execute/L1 loop, optionally for one packet. |
 | `/flywheel-review <task-dir> [unit]` | Run independent Review for an eligible current candidate. |
 | `/flywheel-verify <task-dir> [packet]` | Run deterministic acceptance checks without a model. |
@@ -234,15 +236,19 @@ Show the architecture, migration/rollback approach, milestones, packet dependenc
 write scopes and executable acceptance. Do not start implementation.
 ```
 
-After reviewing it, authorize Run using the **actual path returned by preparation**:
+Discuss findings and submit feedback in the same Flywheel view; use Plan to produce
+a revised design and independent review. Choose **Approve this version and start**
+when ready. **Approve this version** keeps implementation stopped; a later
+**Start approved design** grants start authority. Once authorized, resume using the
+**actual task path**:
 
 ```text
 /flywheel-run /absolute/task-worktree/docs/task-scheduling mode=full
 ```
 
-Replace that path rather than inventing a second task with the same name. The host
-commits the reviewed contracts to the chosen integration branch so packet worktrees
-can obtain their exact baseline. Go alone creates and updates `state.json`.
+Replace that path rather than inventing a second task with the same name. Go activates the approved root and independently reviewed current child plans
+in the chosen integration branch. Distant milestones can be refined later within
+the approved envelope; material changes return to design review. Go alone creates and updates `state.json`.
 
 An illustrative breakdown, to adapt to the real codebase:
 
@@ -283,7 +289,10 @@ These are the embedded 0.34 installation bindings, not a claim about your setup:
 | Intake | DSH / DeepSeek account | `deepseek-flash` | `low` |
 
 Read the installed template with `flywheel template flywheel.config.example.json`.
-Quick uses its applicable Execute/Review bindings; it does not change their models.
+Quick uses its applicable Execute/Review bindings without changing their models.
+New tasks also perform initial design and Design Review. `design-plan` inherits
+Plan; `design-review` and `plan-review` inherit Review unless explicitly configured.
+Inspect `bindingSource`; role permissions and session identity remain independent.
 The second Judge opinion is off; optional Claude has no default stage binding.
 Selecting ChatGPT in DSH does not authenticate Codex CLI. To use the hard route,
 ask preparation/planning to assign appropriate packets to it. See
@@ -361,8 +370,10 @@ data scope, budgets and recovery; enabling it is not evidence of a measured spee
 
 ## 7. Status, stop, resume and deliberate manual control
 
-CLI starts consume prepared contracts; they do not generate Spec from a goal or
-create the outer task branch. Use the original integration checkout and its task
+Legacy CLI starts consume prepared contracts. New `control planning` consumes a
+structured brief, starts design/review and respects the selected approval policy;
+see [Reviewed planning](reviewed-planning.md#cli-and-recovery). Neither path automatically creates
+the outer task branch. Use the original integration checkout and its task
 directory together. Replace both paths with the locations reported by preparation:
 
 ```sh

@@ -8,7 +8,7 @@ const packageRoot = process.argv[2] === '--package-root' && process.argv[3] ? re
 if (process.argv.length !== 2 && (process.argv.length !== 4 || !packageRoot)) throw new Error('usage: build.mjs [--package-root <directory>]');
 const outputs = [{ directory: join(root, 'dist'), moduleExtension: '.js' }, ...(packageRoot ? [{ directory: join(packageRoot, 'dist'), moduleExtension: '.mjs' }] : [])];
 for (const output of outputs) await mkdir(output.directory, { recursive: true });
-const moduleFiles = ['native-doctor.js', 'kimi-native-worker.js', 'kimi-native-bridge.js', 'kimi-native-runtime.js', 'kimi-tower-candidate.js', 'native-jobs.js', 'managed-lcu.js', 'native.js', 'native-policy.js', 'native-resources.js', 'console-read.js', 'workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'prewarm.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js'];
+const moduleFiles = ['planning-control.js', 'native-doctor.js', 'kimi-native-worker.js', 'kimi-native-bridge.js', 'kimi-native-runtime.js', 'kimi-tower-candidate.js', 'native-jobs.js', 'managed-lcu.js', 'native.js', 'native-policy.js', 'native-resources.js', 'console-read.js', 'workspaces.js', 'index.js', 'control.js', 'task-association.js', 'worker.js', 'prewarm.js', 'bridge.js', 'policy.js', 'protocol.js', 'installation.js', 'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js', 'claude-code-pro-bridge.js', 'machine-worker.js'];
 for (const name of moduleFiles) {
   const source = await readFile(join(root, 'src', name), 'utf8');
   for (const output of outputs) {
@@ -26,7 +26,7 @@ const stylesheet = transform({
 const classMap = Object.fromEntries(Object.keys(stylesheet.exports).sort()
   .map(name => [name, stylesheet.exports[name].name]));
 // The web loader consumes a lazy factory, not an ES module or a global React.
-const clientSources = ['client.js', 'client-console.js', 'client-tasks.js', 'client-workbench.js', 'client-config.js', 'client-runs.js'];
+const clientSources = ['client.js', 'client-console.js', 'client-tasks.js', 'client-planning.js', 'client-workbench.js', 'client-config.js', 'client-runs.js'];
 const client = (await Promise.all(clientSources.map(name => readFile(join(root, 'src', name), 'utf8')))).join('\n')
   .replace('__FLYWHEEL_CSS_CLASSES__', JSON.stringify(classMap))
   .replace('__FLYWHEEL_CSS_TEXT__', JSON.stringify(stylesheet.code.toString()));

@@ -25,7 +25,7 @@ var LedgerFiles = map[string]bool{
 }
 
 // LedgerDirs 账本目录（带尾部斜杠，供前缀匹配）。
-var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", ".investigation/"}
+var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", ".investigation/", "planning/"}
 
 // CommitVolatileFiles 纯运行时产物：不进单元提交（活日志绝不能进 git 历史；
 // metrics 是追加式遥测）。账本区其余（state/retro/inbox/reports/approvals）

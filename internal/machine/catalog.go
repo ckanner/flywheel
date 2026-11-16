@@ -157,10 +157,14 @@ func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error
 	if !hostSessionPattern.MatchString(hostSession) {
 		hostSession = ""
 	}
+	workflow := "planning"
+	if c.State.Workflow != nil {
+		workflow = c.State.Workflow.Effective
+	}
 	record := &RunRecord{HostSessionID: hostSession, Version: 1, ID: c.runID, TaskDir: c.TaskDir, Cwd: c.Cwd, WorkspaceCwd: c.WorkspaceCwd, StartedAt: c.nowISO(),
 		ConfigHash: sessionHash(c.Config), ContractHash: sessionHash(c.State.ContractFingerprints),
 		Bindings: c.Config.Loops, Routes: c.Config.Routes, Sessions: c.Config.Sessions, Permissions: c.Config.Permissions,
-		Workflow: c.State.Workflow.Effective, Summary: c.summary()}
+		Workflow: workflow, Summary: c.summary()}
 	if len(kinds) > 0 {
 		record.Kind = kinds[0]
 	}

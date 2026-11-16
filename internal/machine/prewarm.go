@@ -90,7 +90,7 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 	if c.State.Sessions == nil {
 		c.State.Sessions = &state.SessionLedger{Records: map[string]*state.SessionRecord{}}
 	}
-	c.State.Sessions.Version = 3 // older engines must reject the unclosed cleanup obligation
+	c.State.Sessions.Version = max(3, c.State.Sessions.Version) // preserve reviewed planning's newer downgrade fence
 	c.save()
 	if c.fatal != nil {
 		// Rename may have succeeded before a failed fsync. Record the positive

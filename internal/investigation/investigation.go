@@ -60,7 +60,7 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 		return nil, err
 	}
 	defer release()
-	if state.Exists(dir) {
+	if state.Exists(dir) && !allowsPlanningInvestigation(dir, cwd) {
 		return nil, fmt.Errorf("implementation task already exists; do not replace it with a preparation")
 	}
 	global, err := loadInvestigationConfiguration(context.Background(), cwd, dir)
@@ -78,6 +78,30 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 	now := o.now()
 	st := &state.PreparationState{Version: 1, RunID: rand.Text(), Cwd: cwd, Contract: *p, ContractHash: state.PreparationHash(p), Status: "ready", Reason: "approved-investigation-actions", StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(p.Limits.MaxSeconds) * time.Second).Format(time.RFC3339Nano), Observations: []state.InvestigationObservation{}, Decisions: []decision.Receipt{}, JEVStatus: jevStatus}
 	return state.SavePreparation(dir, st)
+}
+
+// A thin brief can precede investigation. The control caller retains the shared
+// task run lease while Start holds the preparation lease. Once design evidence
+// or implementation exists, a separate investigation must not replace its input.
+func allowsPlanningInvestigation(dir, cwd string) bool {
+	st, err := state.Load(dir)
+	if err != nil || st.Planning == nil || st.Project == nil || st.Project.Cwd != cwd ||
+		st.Planning.CurrentDesign != nil || len(st.Planning.Designs) != 0 || st.Planning.CurrentPlan != nil ||
+		st.Planning.Active != nil || st.Planning.PendingActivation != nil || len(st.Planning.LegacyFiles) != 0 ||
+		len(st.Packets) != 0 || st.Handoff != nil || st.WorkerPrewarm != nil || st.PreparationSource != nil {
+		return false
+	}
+	if legacy, ok := st.PlanSession.(map[string]any); ok && legacy["outcome-unknown"] == true {
+		return false
+	}
+	if st.Sessions != nil {
+		for _, record := range st.Sessions.Records {
+			if record.Last != nil && record.Last.Status != "consumed" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func loadOwned(dir string, o Options) (*state.PreparationState, func(), error) {

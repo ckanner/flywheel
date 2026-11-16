@@ -5,6 +5,25 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased — Reviewed planning
+
+- Start New from a thin original brief, run bounded design and independent
+  design review, and pause for approval of the exact version. Keep design
+  approval separate from authorization to start implementation. Explicit Task
+  delegation retains its original authority and is never labelled human approval.
+- Make Plan perform real design or an explicit milestone/packet refinement.
+  Independently review child plans within the approved root, retain cumulative
+  review findings and round/usage accounting, and plan future milestones when
+  they become actionable. Explicit planning never starts implementation.
+- Reuse the current native provider adapters and profiles with independent
+  design-plan, design-review and plan-review roles. Show inherited bindings and
+  retain explicit permission and paid-channel fallback boundaries.
+- Add versioned planning control, trusted user approval buttons, durable queued
+  feedback, complete activation/recovery, and explicit legacy migration fences.
+  Preserve existing task history, investigation provenance and implementation
+  workspaces. Update the DSH views, button skills and both language editions of
+  the operating guides. These are source changes, not a registry release claim.
+
 ## 0.34.6 — Compact configuration scope selection
 
 - Remove the checkmark from the selected global/project scope and retain the

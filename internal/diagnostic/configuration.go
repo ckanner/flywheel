@@ -18,6 +18,7 @@ import (
 
 // Binding is a resolved stage, not a promise that an account can serve its model.
 type Binding struct {
+	BindingSource   string        `json:"bindingSource"`
 	NativeProfile   string        `json:"nativeProfile,omitempty"`
 	ID              string        `json:"id"`
 	Role            string        `json:"role"`
@@ -140,6 +141,11 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	}
 	view := &Configuration{NativeProfiles: cfg.NativeProfiles, ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
+		source := id
+		if strings.HasPrefix(id, "loops.") {
+			_, sourceRole, _ := cfg.LoopBindingForRole(role)
+			source = "loops." + sourceRole
+		}
 		harness := b.Harness
 		if harness == "" {
 			harness = "pi" // same legacy default as InvokeHarness
@@ -163,7 +169,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 		}
 		permission := cfg.PermissionMode(role, harness, id)
 		view.Bindings = append(view.Bindings, Binding{
-			NativeProfile: b.NativeProfile, ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[id], Harness: harness,
+			NativeProfile: b.NativeProfile, ID: id, Role: role, Route: route, Profile: cfg.ProfileRefs[source], Harness: harness, BindingSource: source,
 			Provider: fallback.ResolveProvider(cfg, harness, b.Provider, b.Channel), Channel: b.Channel,
 			Model: model, Thinking: thinking, ResidentSession: b.ResidentSession && role == "plan" && harness == "kimi",
 			PermissionMode: permission, InScope: true,
@@ -172,6 +178,11 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	}
 	for role, b := range cfg.Loops {
 		add("loops."+role, role, "", b)
+	}
+	for _, role := range []string{"design-plan", "design-review", "plan-review"} {
+		if b, source, ok := cfg.LoopBindingForRole(role); ok && source != role {
+			add("loops."+role, role, "", b)
+		}
 	}
 	for route, b := range cfg.Routes {
 		add("routes."+route, "execute", route, config.LoopBinding{

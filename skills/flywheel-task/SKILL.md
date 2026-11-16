@@ -1,138 +1,126 @@
 ---
 name: flywheel-task
 metadata:
-  version: "1.5.0"
-description: Prepare and launch an authorized Flywheel investigation, implementation or documentation task from a goal, with Auto, Quick or Full workflow selection and automatic DSH task-view association. Use for "/flywheel-task <goal>" in DSH, "/skill:flywheel-task <goal>" in Kimi, or a request to let Flywheel handle a task through verified delivery. Use flywheel-new when the user only wants a proposal, and flywheel-run to resume an existing task.
-whenToUse: 用户希望描述一次目标后由 Flywheel 准备并启动任务时使用；默认 Auto，可明确选择 Quick 或 Full。只要方案时用 flywheel-new，已有任务恢复用 flywheel-run。
-compatibility: "Requires the Flywheel CLI with control launch and workflow schema v1, Git, and the configured harnesses. DSH task-view association requires the matching plugin with flywheel_launch."
+  version: "2.0.0"
+description: >-
+  Register a thin brief and launch an authorized Flywheel task through Go-owned design,
+  independent review, progressive planning and verified implementation. Use for
+  "/flywheel-task <goal>" in DSH or "/skill:flywheel-task <goal>" in Kimi.
+  Retain existing implementation authority as delegated policy; a review-first request
+  stops for human design approval. Use flywheel-run for an existing task.
+whenToUse: 用户希望描述一次目标后由 Flywheel 完成设计、审查和授权范围内的交付时使用；调查目标沿用有界调查，先审方案用 flywheel-new。
+compatibility: "Requires matching Flywheel CLI/plugin with control planning, planning.schema.json, Git, and the configured Provider backends."
 arguments: requirement mode
 ---
 
-# flywheel-task — 从目标准备并启动
+# flywheel-task — 从目标推进授权任务
 
-在当前宿主对话中研究需求、准备契约，再调用一次 Go 启动接口。模式选择、重试、
-预算、升级、验收、提交与恢复均由引擎负责；不在 skill 中重新实现循环，永不写
-`state.json`。本入口默认 Auto，不自动更换当前对话模型或 Flywheel 模型配置。
+技能是按钮：检查目标和工作区、登记 brief、调用一次控制入口、翻译结果。
+设计、独立审查、细化、重试、验收与状态变更由 Go 负责。永不写 `state.json`，
+不在宿主对话中提前生成完整系统方案，不自行循环调用规划或审查 Agent。
 
-DSH 使用 `/flywheel-task <目标>`，Kimi 使用 `/skill:flywheel-task <目标>`。
-`/flywheel {…}` 是插件原有的人工 JSON 控制命令，与这个 skill 不同。
-可在请求中明确 `mode=quick` 或 `mode=full`；没有指定时使用 `auto`。
+DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skill:flywheel-task`。
+默认 Auto 不更换模型、provider、渠道或权限；Quick 的实现快路径仍需全部必需验收。
 
-## 1. 确认目标与已有任务
+## 1. 目标、既有任务与授权
 
-用户明确调用本入口时，HTML、文档或代码任务都可准备可验收契约，不因“只是文档”
-静默省略流程。若用户要求只看方案或暂不运行，遵守范围，并明确说明
-“已加载技能／已完成准备，尚未启动引擎”。加载正文不等于执行成功。
+- 复用用户已经明确的需求、工作区、权限和交付范围，不机械增加重复确认。
+  当前需求已有任务时，查询其原目录与 `state.planning`，使用 Run / Plan 继续；
+  不重建同名任务、复制 state 或重置预算。
+- 用户明确要求先讨论／审方案时用 `review-first`（也可直接用 New），不能因为
+  skill 名称是 Task 就自动执行。用户已要求“实现、修复、完成交付”等原范围实施时，
+  用 `delegated` 并保存具体原授权文字；新的实质范围变化仍须提出讨论。
+- 事实自行读代码和仓库指令；只有未给出的用户取舍会改变任务时才问。
+  图表、文档、HTML 和代码任务都保留真实验收，不能因“只是文档”省略流程。
+- 核对 `flywheel control planning --help` 与 `flywheel template planning.schema.json`。
+  老版本需同版升级，不把 `--only execute` 当 Quick，不自行模拟新协议。
 
+## 2. 调查目标
 
-- 沿用用户已经授权的需求、工作区、权限和交付范围。明确要求先看方案、暂不运行时，
-  改用 `flywheel-new` 准备后交付审阅；不要用本入口越过该停止点。
-- 事实自己查代码、配置与仓库指令；仅在缺失的产品取舍或目标身份会改变实现时询问。
-  已明确授权实施的需求不追加机械的人审步骤。
-- 当前需求已有实际任务目录时，核对它的 Spec、分支和状态；调用 `flywheel-run`
-  恢复同一任务，不重新生成同名任务、复制状态、重置预算或再分配 packet 工作区。
-- 确认 `flywheel control launch --help` 与 `flywheel template spec.schema.json` 可用。
-  PATH 缺失时使用已安装的 `~/.config/flywheel/npm-launcher` 或用户明确配置的绝对路径。
-  老版本没有 launch 时说明需要同版升级，不把 `--only execute` 当作 Quick。
+“先排查，告诉我为什么”或“排查并修好”读取[调查准备与交付](references/investigation.md)，
+使用现有 preparation / `control investigate` 路径。report-only 停在证据报告；已授权
+修复只在有证据的结论和原范围内继续。调查动作、复现命令、外部读取、JEV 选择、
+预算和恢复由 Go 执行，技能不循环。不要用空 Spec 掩盖缺失根因。
+调查的旧实现交接保留原路径；不能未经明确迁移就将已有任务转换为新规划协议。
+以下步骤用于没有现存调查／实现账本的新实现目标。
 
-## 调查目标与入口选择
+## 3. 工作区与薄 brief
 
-Task 是推荐目标入口，保留 New → 审阅 → Run，以及 Plan / Exec / Verify / Review /
-Status / Stop。只有阶段回执时不要宣称完成整项任务。
+1. 检查 Git 仓库、当前分支、`git status --short`、基线和
+   `git worktree list --porcelain`。用 `flywheel config inspect --cwd <原仓库绝对路径> --json`
+   核对 worktree 策略。已有任务 checkout 直接复用；开启自动管理且没有本任务工作区时，
+   从核实基线建立任务分支/worktree；关闭时不自动新建。无明确特殊选择不在默认分支
+   或 detached HEAD 实施。保护用户 WIP，不用强制 reset 或覆盖已有目录。
+2. 把所选 checkout 根解析为真实绝对 `repo_dir`，在其中创建 `docs/<slug>`，
+   解析为 `task_dir`。必须属于同一任务位置。保留原仓库的 Provider 项目身份；
+   shell 的 cd 不等于变更 DSH 当前目录，控制调用始终显式传这两个路径。
+3. 读足以定位目标的代码、指令和验收入口，记录真实证据、约束、成功标准与未决问题。
+   当前宿主模型只准备这些输入。实际设计使用 `loops.design-plan`（默认继承
+   `loops.plan`），独立审查使用 `loops.design-review`（默认继承 `loops.review`）。
+   不要求宿主先写完整 Spec、所有 packets 或自报审查结果。
+4. 依据当前 `planning.schema.json` 的 `$defs.brief` 生成下述输入。
+   `flywheel.config.json` 只在任务确实需要独立完整覆盖时创建；不要用少数字段
+   意外遮住项目/全局配置，也不自动新增账号、费用渠道或 full-access。
 
-- “先排查，告诉我为什么”：读取[调查准备与交付](references/investigation.md)，准备
-  紧凑契约，通过 Go 调查后交付证据报告；不必先要求用户手动调用 New。
-- “排查并修好”：使用同一受管调查记录；结论有证据支持后，在原授权内准备实现契约
-  并继续下述 launch。沿用预算、范围与来源，不重开任务。
-- “已定位，快速修好”：直接准备实现契约，Auto / 显式 Quick 仍经 Go 资格判断。
-- “复杂任务先出方案，审阅后再实现”：使用 New，只交付准备结果；后续授权实施时 Run。
+## 4. 调用一次
 
-调查动作、JEV 选择和失败恢复不在技能中循环。已有 preparation 且没有 Spec 时，
-使用它的真实 revision 恢复 Go 调查；已有实现任务时仍沿用原 Run 路径。
-需要复现测试或外部查询时，按上述参考生成确切已授权动作。有效 `jev.enabled`
-同时控制调查和实现失败后的决策；模型选择只能使用已有 `execution-policy`
-允许绑定，不能因开启 JEV 新增账号、权限或费用渠道。
-
-## 2. 准备真实工作区与契约
-
-1. 核对目标 Git 仓库、`git status --short`、实际分支、基线与
-   `git worktree list --porcelain`。复用已明确属于本需求的任务集成 checkout；
-   先用 `flywheel config inspect --cwd <原仓库绝对路径> --json` 核对实际 `worktree.enabled`。
-   开启时从核实的基线创建任务分支与独立 worktree；关闭时不自动创建，沿用用户指定的
-   任务 checkout，用户或模型仍可主动选择 Worktree。不要强制覆盖或混入用户 WIP。
-   原仓库是 Session 的项目归属，任务 checkout 是执行位置；不要把后者注册成软件的新项目。
-   没有明确特殊选择时不从默认分支或 detached HEAD 直接运行开发任务。
-2. 在所选任务 checkout 中研究代码、仓库门禁与既有实现模式，明确目标、非目标、
-   成功标准、风险和验收入口。准备使用当前对话模型；`loops.plan` 只约束引擎阶段。
-   不固定再调用一个分类 Agent，不为小任务默认组建完整团队。
-3. 读取二进制内嵌的 `spec.schema.json`、`task-packet.schema.json` 和相应 example，
-   在该 checkout 内生成 `docs/<slug>/spec.md` 与实际需要的 task packets。
-   编号需求必须映射到 packet，验收用可执行命令；沿用仓库的覆盖率、集成和 UI
-   门禁，不因 Quick 降低要求。详情与工作流字段示例见
-   [契约准备](references/contract.md)。
-4. 将所选 Git checkout 根解析为真实绝对路径 `repo_dir`，将其中的
-   `docs/<slug>` 解析为真实绝对路径 `task_dir`。两者必须属于同一任务执行位置。
-   仅在 shell 中 `cd` 不会改变 DSH 会话目录，调用工具时显式传入这两个路径。
-5. 按现有授权检查并提交本任务契约与冻结验收；不混入无关暂存文件或凭证。
-   契约必须实际进入 Git，packet worktree 才能取得相同基线。若仓库要求独立提交授权
-   且会话中没有该授权，先完成可审查契约，说明具体规则后再取得所需授权。
-
-`flywheel.config.json` 仅在任务需要独立配置时创建；它是完整配置覆盖，并非局部合并。
-保留已选的模型、provider、渠道和 `permissions.mode`。Quick／Full 不改变权限，
-也不提供新的远端 push、PR、合并或发布授权。不要静默新增付费渠道。
-
-## 3. 校验并启动一次
-
-首次使用、升级或修改配置后可执行 `config inspect` 和本地 `doctor`，确认实际绑定。
-预检不执行模型推理或本任务验收；通过不证明账号额度充足。真实阻断先处理，
-不要把 unknown 翻译成通过，也不要在 skill 内静默切换模型。
-
-在 DSH 优先调用模型工具，参数使用上一步解析的实际绝对路径：
+将以下对象的路径与目标替换为本次事实，通过 DSH **`flywheel_control`** 调用：
 
 ```json
 {
+  "action": "planning",
   "taskDir": "/absolute/task-worktree/docs/task-slug",
   "cwd": "/absolute/task-worktree",
-  "mode": "auto"
+  "planning": {
+    "action": "prepare",
+    "request-id": "brief-task-slug-1",
+    "start": true,
+    "brief": {
+      "version": 1,
+      "id": "task-slug",
+      "goal": "修复已经定位的失败并完成回归验收",
+      "original-request": "用户原始请求",
+      "constraints": ["保留现有公共接口"],
+      "evidence": ["已核实的代码位置和复现证据；没有时用空数组"],
+      "policy": "delegated",
+      "authorization": "用户确实已给出的原范围实施授权，不是模型自己的批准声明",
+      "implementation-authorized": true,
+      "mode": "auto"
+    }
+  }
 }
 ```
 
-把该对象传给 **`flywheel_launch`**。插件将具体任务关联到当前会话的 Flywheel 视图；
-用户无需复制目录。DSH 已提供该工具时不要绕过它改走 Bash。没有 DSH 工具的宿主使用 CLI：
+只请求先审方案时，改为 `policy:review-first`、`implementation-authorized:false`，
+省略 authorization；沿用明确的停止点。delegated 必须有实际已有授权，
+不能因为模板有该字段就编造。可把 mode 换成用户明确指定的 quick/full。
+
+没有 DSH 工具时，把 `planning` 内层 JSON 存入私有 `request_file` 后调用：
 
 ```bash
-flywheel control launch --task-dir "$task_dir" --cwd "$repo_dir" --mode "$mode"
+flywheel control planning --task-dir "$task_dir" --cwd "$repo_dir" < "$request_file"
 ```
 
-`mode` 只接受 `auto`、`quick`、`full`。Go 校验契约、作资格判断并保存生效策略；
-证据不足时选择 Full，显式 Quick 也不能绕过资格。不要提前把宿主的建议说成已生效。
-CLI 本身消费已准备的契约，不会用一句目标自动生成需求或创建外层任务分支；
-这些工作由本 skill 的宿主准备阶段完成。
+DSH 提供工具时不绕过其关联机制。缺少 PATH 可使用用户指定 launcher；首次安装
+使用 `npx -y @ckanner/flywheel@latest install --json`，按真实结果处理。
+首次使用或配置变更后可做 config inspect / doctor；它们不证明账号、额度或推理成功。
 
-## 4. 解释回执与继续交付
+## 5. 翻译与恢复
 
-启动后通过 `flywheel_control` 的 `status` 核对原 task_dir／repo_dir，确认画布关联。
-若仅运行过 `--only review`／`verify` 等单阶段，明确报告该阶段和回执；不能把它当成
-本入口已经完成全流程。启动或关联失败要给出具体回执，不用“任务已经创建”替代。
+- 说明实际任务、执行目录与分支、`ok`、`running`、`state.planning.phase`，以及
+  规划或实现当前阶段。控制请求完成、审查通过、方案获批、整个任务完成分别报告。
+- `review-first` 停在精确版本的人工批准；反馈后用 Plan 再跑设计与审查。
+  delegated 仍须独立 Design Review，只有有效原授权与无实质越界时才继续。
+  不代点批准按钮、不设置审批来源变量、不自报 `actor:user`。
+- Plan / 子计划审查使用独立角色与作用域。已批准根方案内细化由引擎继续；发现固定
+  决策、需求、约束或验收改变时返回根方案讨论，不用小任务名绕过批准。
+- Quick 新协议包含紧凑设计和设计审查；其实现阶段仍是 Execute、必需验收与独立
+  最终 Review。Full 使用逐步细化和完整门禁。不要宣称整个新任务只有两次模型调用。
+- 结果未知、超时或断连时，先对原 taskDir/cwd 调用 `status` 核对，不能重复 prepare
+  或 launch。后续通过 Run 继续原任务；预算、工作区、恢复和计量都保留。
+- 原生 Team/PTC、Codex review、Claude team 都按有效 native 配置准入；工具输出只是
+  证据，不能代替正式审查／批准。新 role 的 backend 继承不表示权限随同继承。
+- 本入口不新增远端 push、PR、合并或发布授权；相关交付按已给出的实际范围执行。
 
-
-- 读取协议中的 `ok`、`running`、`state.status` 和工作流记录。`ok:true` 只表示
-  控制请求成功；说明请求模式、生效策略及原因，不能把启动成功说成任务完成。
-- 结果未确认、超时或断连时，先对**原 task_dir 与 repo_dir**调用
-  `flywheel_control` 的 `status` 或 `control status`，查看原任务日志；不要重复 launch、
-  换目录启动，或声称已停止。只在事实确认后继续操作。
-- Quick 正常路径为 Execute、全部必需验证、一次独立最终 Review、Git 持久化；
-  Plan／Judge 显示“不适用”及原因，不显示假通过。Full 保留完整阶段。
-  引擎升级 Full 时转述具体原因；已有授权继续沿用，新需求取舍才交用户决定。
-- Go 按冻结依赖和写入范围决定串行／并行调度及会话选择。scoped 可延续同角色、同作用域的正常终态历史，
-  Execute／Review 始终隔离，复审仍检查完整当前候选；fresh 不启用通用历史复用。
-  支持的主任务适配器在两种模式下均记录调用安全事实，未知调用不能靠换模式绕过。
-  重试保留工作区成果；
-  不需要一个长期父模型会话监督后台任务。关闭视图或准备对话不等于停止任务。
-- 状态为 completed 后，核对同一候选的需求证据、测试、独立评审与实际 Git 交付，
-  再按已有授权完成外层 push、PR、检查、合并或发布。控制台提供按明确仓库与 HEAD 授权的推送／PR／合并入口；引擎不会自动推断远端交付授权。
-  原有仓库门禁仍适用；源码合并、npm 发布、Mac 上更新与真实账号验收分别说明。
-
-后台观察用 `flywheel-status`，停止用 `flywheel-stop`，恢复用 `flywheel-run`。
-保留失败成果；清理、派发或结果未知时报告阻断。子进程退出不代表结果已知；
-从原路径交由 Go 核对回执，不用固定等待、新建任务或重置状态代替证明。
+旧版完整 Spec/packet 的手工准备与调查修复交接仍见[契约参考](references/contract.md)。
+这条兼容路径不要求已有用户重新创建任务；新目标默认使用上面的 brief。

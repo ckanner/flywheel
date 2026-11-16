@@ -15,6 +15,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/machine"
+	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -58,6 +59,13 @@ func statusCmd() *cobra.Command {
 				suffix = fmt.Sprintf("（编排器运行中, pid %d）", pid)
 			}
 			fmt.Fprintf(out, "任务: %s  状态: %s%s\n", st.Slug, st.Status, suffix)
+			if p := st.Planning; p != nil {
+				startAllowed := p.CurrentDesign != nil && planning.StartAllowed(p, *p.CurrentDesign)
+				fmt.Fprintf(out, "规划: %s  策略: %s  累计轮次: %d（每请求最多 %d）\n实施启动已授权: %t\n原因: %s\n", p.Phase, p.Policy, p.Rounds, p.MaxRounds, startAllowed, p.Reason)
+				if p.CurrentDesign != nil {
+					fmt.Fprintf(out, "当前方案: revision %d  digest %s\n", p.CurrentDesign.Revision, p.CurrentDesign.Digest)
+				}
+			}
 			if st.Workflow != nil {
 				fmt.Fprintf(out, "流程: %s → %s（策略 v%d）\n原因: %s\n", st.Workflow.Requested, st.Workflow.Effective, st.Workflow.Version, st.Workflow.Reason)
 				for _, stage := range []string{"plan", "judge"} {
@@ -69,6 +77,8 @@ func statusCmd() *cobra.Command {
 				for _, upgrade := range st.Workflow.Upgrades {
 					fmt.Fprintf(out, "流程升级 %s → %s: %s（%s）\n", upgrade.From, upgrade.To, upgrade.Reason, upgrade.At)
 				}
+			} else if st.Planning != nil {
+				fmt.Fprintln(out, "流程: 实现尚未激活（先完成方案与执行计划审查）")
 			} else {
 				fmt.Fprintln(out, "流程: full（旧任务保持完整流程）")
 			}

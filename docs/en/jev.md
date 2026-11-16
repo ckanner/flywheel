@@ -61,7 +61,7 @@ Use the normal entries after configuration:
 
 - **Task** prepares and runs authorized investigation or implementation from your goal. Go resolves
   the JEV policy automatically; the host does not handwrite a decision mode.
-- **New** prepares an investigation contract or an implementation proposal and stops before execution.
+- **New** registers an investigation contract, or starts implementation design/review and stops for exact-version approval. See [Reviewed planning](reviewed-planning.md).
 - **Run** starts or resumes the prepared investigation or implementation task in its original directory.
 - Auto, Quick and Full remain implementation workflow choices. Their eligibility,
   acceptance and review requirements continue to be enforced by Go.

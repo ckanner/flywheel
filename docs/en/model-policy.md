@@ -32,6 +32,21 @@ Claude Code Pro is available as an [optional backend](claude-code-pro.md), with
 no default stage or route assigned. Its profile uses an explicit native model
 and effort rather than an implicit replacement for another subscription.
 
+## Planning roles and the current conversation
+
+New/Task register a thin brief. The host conversation handles facts and discussion;
+the engine performs actual design. `loops.design-plan` inherits `loops.plan` when
+absent; `loops.design-review` and `loops.plan-review` inherit `loops.review`. Explicit
+overrides can choose a different supported model, effort or native profile without
+changing the source role. `config inspect` reports the resolved `bindingSource`.
+The configuration view shows these inherited rows without adding them to saved
+configuration until edited. Session scope and permission overrides remain separate.
+
+Complex design quality should be evaluated at the design/review bindings, not by
+requiring the user to switch the host conversation before every New. Existing
+model and effort defaults remain unchanged; model choice is still an engineering
+starting point, not measured optimality. See [Reviewed planning](reviewed-planning.md).
+
 ## Account selection
 
 The default and `subscriptions` preset use `deepseek-account` with

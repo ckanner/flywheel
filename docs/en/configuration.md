@@ -16,6 +16,29 @@ that show selected fields are **fragments** to place in a complete configuration
 - [Session history](#session-policy-history-reuse-and-invocation-safety) and [workflow policy](#workflow-policy-and-recovery)
 - [Backend integration](#codex-pro-and-migration), [budgets](#fallback-and-budgets), and [diagnostics](#diagnose-without-inference)
 
+
+## Reviewed-planning bindings
+
+New tasks have separate `design-plan`, `design-review` and `plan-review` roles.
+Missing `loops.design-plan` inherits the `loops.plan` backend; both new review roles
+inherit `loops.review`. Explicit `loops.<role>` / `drivers.<role>` bindings override
+that source. Profile, model, effort and native profile resolve through the source;
+`config inspect` includes `bindingSource` so inheritance is visible. Setting an
+explicit binding's `native-profile` to an empty string disables inherited native
+capabilities. The desktop settings view shows inherited rows; editing one saves
+only that role's override.
+
+Role identity, sessions and permissions do not inherit the source role's overrides.
+`sessions.roles` accepts all three new roles independently. Under `role-based`, new
+reviewers default to read-only; a Claude Code Pro backend requires an already
+authorized full-access policy or explicit `permissions.bindings` for
+`loops.design-review` and `loops.plan-review` with `danger-full-access`. Doctor
+reports unsupported restricted combinations rather than broadening them.
+Cross-channel fallback still requires `channels.<channel>.models.<new-role>`;
+inheritance does not extend previously authorized fallback models or spending.
+See [Reviewed planning](reviewed-planning.md) for design approval and scoped Plan.
+
+
 ## Configuration precedence
 
 The discovery order is:
@@ -360,7 +383,7 @@ An unknown dispatch, outcome, or cleanup state blocks further execution. Changin
 
 ### Role overrides and context quality
 
-Optional `sessions.roles` selects `fresh` or `scoped` separately for `plan`, `execute`, `review`, `judge`, and `judge-panel`. Omitted roles inherit `mode`. An explicit `roles.plan:"fresh"` also disables the legacy Kimi Plan reuse shortcut; an explicit `resident-session:false` still prevents Plan reuse. Intake and Garden do not accept these overrides. This example changes history policy without changing model or account allocation:
+Optional `sessions.roles` selects `fresh` or `scoped` separately for `design-plan`, `design-review`, `plan-review`, `plan`, `execute`, `review`, `judge`, and `judge-panel`. Omitted roles inherit `mode`. An explicit `roles.plan:"fresh"` also disables the legacy Kimi Plan reuse shortcut; an explicit `resident-session:false` still prevents Plan reuse. Intake and Garden do not accept these overrides. This example changes history policy without changing model or account allocation:
 
 ```json
 {

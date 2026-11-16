@@ -25,7 +25,7 @@ func TestMigrationUsesInspectionDiscoveryAndShowsEffectiveBindings(t *testing.T)
 	require.NotNil(t, preview.Current)
 	require.NotNil(t, preview.Configuration)
 	assert.Equal(t, "kimi-code/k3", preview.Current.Bindings[0].Model)
-	require.Len(t, preview.Configuration.Bindings, 8)
+	require.Len(t, preview.Configuration.Bindings, 11)
 	for _, binding := range preview.Configuration.Bindings {
 		assert.NotEqual(t, "zcode", binding.Harness)
 		assert.Equal(t, "danger-full-access", binding.PermissionMode)

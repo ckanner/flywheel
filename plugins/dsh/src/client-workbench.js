@@ -1276,7 +1276,7 @@ function TaskView({
     };
   }, [page, discover]);
   React.useEffect(() => {
-    if (page !== 'canvas' || !control.status?.running || !selection.taskDir) return;
+    if (page !== 'canvas' || !selection.taskDir || !control.status?.running && control.planningReceipt?.status !== 'queued') return;
     let live = true,
       timer;
     const refresh = async () => {
@@ -1289,7 +1289,7 @@ function TaskView({
       live = false;
       clearTimeout(timer);
     };
-  }, [page, control.status?.running, selection.taskDir, selection.cwd, run]);
+  }, [page, control.status?.running, control.planningReceipt?.status, control.planningReceipt?.['request-id'], selection.taskDir, selection.cwd, run]);
   const busy = control.pending !== null,
     locked = busy && mutates(control.pending.action),
     state = control.status?.state,
@@ -1307,7 +1307,8 @@ function TaskView({
           (needsTask && !hasTask) ||
           (mutates(action) && !!control.uncertainty) ||
           (['launch', 'start'].includes(action) && control.stale) ||
-          (['launch', 'start'].includes(action) && !!state?.handoff),
+          (['launch', 'start'].includes(action) && !!state?.handoff) ||
+          (['launch', 'start'].includes(action) && !!state?.planning && (!currentPlanningApproval(state.planning) || !currentPlanningStartAllowed(state.planning) || !!state.planning['pending-activation'])),
         onClick: () => run(action, selection, probe),
       },
       t(label),
@@ -1346,10 +1347,11 @@ function TaskView({
         h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
         button('launch', 'launch', true, false, 'primary')),
       preparation && h(InvestigationPanel, { control, selection, run, t }),
+      state?.planning && h(PlanningPanel, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
       state && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], t }),
       state && h(ExecutionPolicyChanges, { packets: state.packets, t }),
       !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
-      !preparation && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
+      !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
       h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts.current, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
     h('div', { className: css.historyPage, hidden: page !== 'runs' },

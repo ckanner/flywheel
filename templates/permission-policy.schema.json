@@ -7,7 +7,7 @@
     "mode": {"enum": ["role-based", "full-access"]},
     "bindings": {
       "type": "object",
-      "propertyNames": {"pattern": "^(loops\\.(plan|review|judge|intake|garden)|judge-panel|routes\\.[a-zA-Z0-9_-]+)$"},
+      "propertyNames": {"pattern": "^(loops\\.(plan|review|judge|intake|garden|design-plan|design-review|plan-review)|judge-panel|routes\\.[a-zA-Z0-9_-]+)$"},
       "additionalProperties": {"enum": ["read-only", "workspace-write", "danger-full-access"]}
     }
   },

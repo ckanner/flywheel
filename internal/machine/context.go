@@ -54,6 +54,9 @@ import (
 // Context 一次运行的完整上下文。Sleep/Now/Log/EnvLookup 全部可注入
 // （测试注入假时钟与假 sleep；零值语义 = 真实环境）。
 type Context struct {
+	planningOnly       bool
+	planningPause      bool
+	planningMode       string
 	prewarm            *reviewPrewarm
 	prewarmReview      bool
 	parallel           *parallelLane
@@ -403,7 +406,7 @@ func (c *Context) apiKeysFor(channel string) map[string]string {
 // CONTRACT_FILE_RE 边界判定针对的是 EXECUTOR 的 diff；任务目录里只有编排器
 // 自己的账本文件被排除（core/ledger.js 常量单一信源）——契约文件
 // （spec.md / task-packet-*.md / config）留在判定内：executor 篡改契约即违规。
-var contractFileRe = regexp.MustCompile(`^(spec\.md|task-packet-.*\.md|flywheel\.config\.json)$`)
+var contractFileRe = regexp.MustCompile(`^(spec\.md|task-packet-.*\.md|flywheel\.config\.json|planning/(brief\.json|design-[0-9]+\.(json|md)|plan-[0-9]+\.json|review-[0-9]+\.json))$`)
 
 func (c *Context) taskDirPrefix() string {
 	rel, err := filepath.Rel(c.Cwd, c.TaskDir)
@@ -454,7 +457,7 @@ func (c *Context) partitionChangedFiles(changedFiles []string) (executorFiles []
 			continue
 		}
 		inner := f[len(prefix):]
-		if ledger.IsLedgerTaskPath(inner) {
+		if ledger.IsLedgerTaskPath(inner) && !(c.State.Planning != nil && strings.HasPrefix(inner, "planning/")) {
 			continue
 		}
 		if contractFileRe.MatchString(inner) {
@@ -490,7 +493,7 @@ func (c *Context) channelApiKey(channel string) string {
 // 渠道绝不 spawn——否则 pi 会静默回退到全局 auth.json。仅对真实驱动强制
 // （mock 不需要 key）。
 func (c *Context) missingKeyForRealDriver(role, channel string) string {
-	if c.Config.Drivers[role] == "mock" {
+	if c.Config.DriverKind(role) == "mock" {
 		return ""
 	}
 	return fallback.MissingChannelEnv(c.Config, channel, c.EnvLookup)
@@ -609,6 +612,17 @@ func canonicalDirectory(path string) (string, error) {
 
 // CreateContext 加载状态机需要的一切并返回运行上下文。
 func CreateContext(opts Opts) (*Context, error) {
+	st, err := loadReviewedState(opts.TaskDir)
+	if err != nil {
+		return nil, err
+	}
+	if st != nil {
+		return newPlanningContext(opts, st)
+	}
+	return createImplementationContext(opts)
+}
+
+func createImplementationContext(opts Opts) (*Context, error) {
 	taskDir, err := canonicalDirectory(opts.TaskDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve task directory: %w", err)
@@ -617,6 +631,9 @@ func CreateContext(opts Opts) (*Context, error) {
 	spec, err := contract.LoadSpec(opts.TaskDir)
 	if err != nil {
 		return nil, err
+	}
+	if spec.PlanningRef != nil {
+		return nil, fmt.Errorf("planning-ref requires its original reviewed planning state")
 	}
 	packetList, err := contract.LoadPackets(opts.TaskDir, spec)
 	if err != nil {

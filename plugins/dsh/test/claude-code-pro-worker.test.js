@@ -208,10 +208,11 @@ test('optional adapter doctor imports the public API without running Claude', li
   assert.deepEqual(await f.records(), []);
 });
 
-test('native Agent metadata stays separate from root output and managed identity reaches events', liveContract, async t => {
+for (const role of ['execute', 'design-plan', 'design-review', 'plan-review']) {
+test(`${role}: native Agent metadata stays separate from root output and managed identity reaches events`, liveContract, async t => {
   const f = await setup(t, 'native-child');
   const native = { version: 1, agents: { enabled: true }, workflows: { enabled: true, maxConcurrent: 3 } };
-  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role: 'Executor', scope: 's', channel: 'c', taskDir: f.cwd };
+  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role, scope: role + ':candidate', channel: 'c', taskDir: f.cwd };
   const result = await f.launch({ input: { ...f.request, native, managed } }).done;
   const receipt = resultFrame(result).receipt;
   assert.deepEqual(receipt.native.requested, native);
@@ -224,6 +225,7 @@ test('native Agent metadata stays separate from root output and managed identity
   assert.ok(events.length > 0);
   assert.ok(events.every(f => JSON.stringify(f.managed) === JSON.stringify(managed)));
 });
+}
 
 test('machine schema and image requests reach the CLI through the pinned public parser', liveContract, async t => {
   const f = await setup(t);

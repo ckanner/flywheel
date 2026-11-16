@@ -20,9 +20,16 @@ func (c *Context) attachPreparation() error {
 	if err != nil {
 		return fmt.Errorf("load investigation provenance: %w", err)
 	}
-	if preparation.Cwd != c.Cwd || preparation.Contract.Intent != "investigate-and-fix" || preparation.Status != "supported" || preparation.Report == nil || preparation.Pending != nil || preparation.DecisionPending != nil {
+	if preparation.Cwd != c.Cwd || preparation.Status != "supported" || preparation.Report == nil || preparation.Pending != nil || preparation.DecisionPending != nil ||
+		preparation.Contract.Intent != "investigate-and-fix" && !c.planningRepairApproved(preparation) {
 		return fmt.Errorf("investigation is not settled with repair authority and a supported report for this workspace")
 	}
+	return c.importPreparation(preparation)
+}
+
+// Imported investigation costs and identity survive planning, retries and later
+// explicit repair authorization. Importing evidence never changes its intent.
+func (c *Context) importPreparation(preparation *state.PreparationState) error {
 	source := state.PreparationSource{Version: 1, ID: preparation.Contract.ID, RunID: preparation.RunID, ContractHash: preparation.ContractHash, ReportHash: state.PreparationHash(preparation.Report), ImplementationScope: preparation.Contract.ImplementationScope, ElapsedMS: preparation.ElapsedMS, Actions: preparation.ActionsUsed, Accounted: true}
 	if old := c.State.PreparationSource; old != nil {
 		if state.PreparationHash(old) != state.PreparationHash(source) {
@@ -65,9 +72,10 @@ func (c *Context) preparationScopeViolations(paths []string) []boundaryViolation
 		return nil
 	}
 	violations := []boundaryViolationLite{}
+	scopeEnvelope := c.effectivePreparationScope()
 	for _, path := range paths {
 		allowed := false
-		for _, scope := range c.State.PreparationSource.ImplementationScope {
+		for _, scope := range scopeEnvelope {
 			if scope == "." || path == scope || strings.HasPrefix(path, scope+"/") {
 				allowed = true
 				break

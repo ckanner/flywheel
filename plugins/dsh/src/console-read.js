@@ -3,10 +3,11 @@ import { Remote, bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol';
 import { realpath } from 'node:fs/promises';
 import { ControlNotDispatchedError } from './control.js';
 import { taskProjectionKey } from './task-association.js';
+import { validPlanningCommand } from './planning-control.js';
 
 // A read-only Remote, separate from logged human commands. Never add mutations
 // here: their durable command/tool receipts own replay and uncertain outcomes.
-export const consoleReadActions = new Set(['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor']);
+export const consoleReadActions = new Set(['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning']);
 const initializers = [];
 export class ConsoleReadService extends Service {
   constructor(ctx, control, failure) {
@@ -19,6 +20,7 @@ export class ConsoleReadService extends Service {
   async read(agent, input, signal) {
     try {
       if (!agent?.session || !consoleReadActions.has(input?.action)) throw new ControlNotDispatchedError('Only session-scoped console reads are supported');
+      if (input.action === 'planning' && (input.planning?.action !== 'status' || !validPlanningCommand(input.planning))) throw new ControlNotDispatchedError('Console planning reads accept status only');
       // Taskless configuration uses the real session directory. The client may
       // not turn a read endpoint into arbitrary cross-session task discovery.
       const projection = this.ctx.sessionProjections.stateOf(agent.session, taskProjectionKey);

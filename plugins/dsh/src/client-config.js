@@ -448,6 +448,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     // Register only the final channel of an edited binding. Typing a channel
     // must not leave a configuration entry for every partial input string.
     for (const [group, key, value] of rows) {
+      if (group !== 'panel' && !Object.hasOwn(draft[group] ?? {}, key)) continue;
       const previous = group === 'panel' ? base?.['judge-panel'] : base?.[group]?.[key];
       if (JSON.stringify(value) !== JSON.stringify(previous) && value.channel && !values.channels?.[value.channel]) {
         values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null } };
@@ -582,7 +583,16 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         t(error, bounds ? { min: bounds.min / factor, max: bounds.max / factor } : undefined)),
     );
   };
+  const inheritedPlanningRoles = { 'design-plan': 'plan', 'design-review': 'review', 'plan-review': 'review' };
+  const inheritedPlanningBinding = key => {
+    const source = draft?.loops?.[inheritedPlanningRoles[key]];
+    if (!record(source)) return undefined;
+    const { 'resident-session': _legacyPlanHistory, ...binding } = source;
+    return binding;
+  };
+  const effectiveBinding = (group, key) => draft?.[group]?.[key] ?? (group === 'loops' ? inheritedPlanningBinding(key) : undefined);
   const bindingOrder = [
+    'loops.design-plan', 'loops.design-review', 'loops.plan-review',
     'loops.plan',
     'routes.default',
     'routes.frontend',
@@ -595,7 +605,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   ];
   const rows = ['loops', 'routes']
     .flatMap((group) =>
-      Object.entries(draft?.[group] ?? {})
+      Object.entries(group === 'loops' ? { ...Object.fromEntries(Object.entries(inheritedPlanningRoles).filter(([, source]) => record(draft?.loops?.[source])).map(([role]) => [role, inheritedPlanningBinding(role)])), ...draft?.loops } : draft?.[group] ?? {})
         .filter(([, value]) => record(value))
         .map(([key, value]) => [group, key, value]),
     )
@@ -657,7 +667,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const openBinding = (group, key) => setBindingSelection({ group, key });
   const bindingEdit = draft && bindingSelection && (() => {
     const { group, key } = bindingSelection, role = group === 'routes' ? 'execute' : key;
-    const value = group === 'panel' ? draft['judge-panel'] : draft[group]?.[key];
+    const value = group === 'panel' ? draft['judge-panel'] : effectiveBinding(group, key);
     return value ? { group, key, role, value, permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit', session: draft.sessions?.roles?.[role] ?? 'inherit' } : null;
   })();
   const applySessionRole = (next, role, session) => {
@@ -686,7 +696,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const next = cloneConfig(draft);
     if (field === 'session') applySessionRole(next, group === 'routes' ? 'execute' : key, value);
     else if (group === 'panel') next['judge-panel'][field] = value;
-    else next[group][key][field] = value;
+    else { next[group] ??= {}; next[group][key] = { ...effectiveBinding(group, key), [field]: value }; }
     replace(next);
   };
   const nativeChoices = value => {
@@ -707,7 +717,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const inlineNativeProfile = (group, key, name) => {
     const next = cloneConfig(draft);
     if (group === 'panel') next['judge-panel'] = setNativeProfile(next['judge-panel'], name);
-    else next[group][key] = setNativeProfile(next[group][key], name);
+    else { next[group] ??= {}; next[group][key] = setNativeProfile(effectiveBinding(group, key), name); }
     replace(next);
   };
   const setBindingEdit = (update) => {
@@ -715,7 +725,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const { group, key, role, value, permission, session } = update(bindingEdit),
       next = cloneConfig(draft);
     if (group === 'panel') next['judge-panel'] = value;
-    else next[group][key] = value;
+    else { next[group] ??= {}; next[group][key] = value; }
     if (permission !== (next.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit')) {
       const bindings = { ...next.permissions?.bindings };
       if (permission === 'inherit') delete bindings[bindingID(group, key)];
@@ -839,6 +849,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     );
   if (draft && section === 'models')
     fields = h(React.Fragment, null,
+      h('p', { className: css.meta }, t('planningInheritedHelp')),
       h('p', { className: css.meta }, t('cfgSessionDefault', { mode: t(draft.sessions?.mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') })),
       h('div', { className: css.stageTableScroll }, h('table', { className: css.stageTable, 'aria-label': t('cfgModels') },
         h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'cfgNative', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
@@ -848,7 +859,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           const policy = draft.sessions?.roles?.[role];
           const planConflict = role === 'plan' && policy && (policy === 'scoped' && value['resident-session'] === false || policy === 'fresh' && (value.harness || draft.profiles?.[value.profile]?.harness) === 'kimi' && value['resident-session'] === true);
           return h('tr', { key: bindingID(group, key), 'data-binding-id': bindingID(group, key) },
-            h('th', { scope: 'row' }, roleName(group, key)),
+            h('th', { scope: 'row' }, roleName(group, key), group === 'loops' && inheritedPlanningRoles[key] && !draft.loops?.[key] && h('p', { className: css.settingsHelp }, t('planningInherited', { source: 'loops.' + inheritedPlanningRoles[key] }))),
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
             h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),

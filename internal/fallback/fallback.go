@@ -37,7 +37,7 @@ func ResolveBinding(cfg *config.Config, role, route string) (Binding, error) {
 		}
 		return Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: ResolveProvider(cfg, b.Harness, b.Provider, b.Channel), Model: b.Model, Channel: b.Channel, Thinking: b.Thinking}, nil
 	}
-	b, ok := cfg.Loops[role]
+	b, _, ok := cfg.LoopBindingForRole(role)
 	if !ok {
 		return Binding{}, fmt.Errorf("no loop binding for %q in config", role)
 	}

@@ -6,6 +6,9 @@ import "github.com/ckanner/flywheel/internal/contract"
 // replace the original evidence with a new set of commands and timestamps.
 func (c *Context) sessionMilestoneGate(milestone contract.Milestone) (gateOutcome, error) {
 	if !c.sessionReplay("judge", milestone.ID) && !c.sessionReplay("judge-panel", milestone.ID) {
+		if err := c.admitReviewedBoundary(); err != nil {
+			return gateOutcome{}, err
+		}
 		return c.milestoneGateStep(milestone), nil
 	}
 	gate, ok := c.State.Milestones[milestone.ID].Gate.(map[string]any)

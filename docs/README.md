@@ -12,6 +12,7 @@ guides are maintained in English and Simplified Chinese.
 | --- | --- | --- |
 | Install, configure providers, and complete a first task | [Getting started](en/getting-started.md) | [快速开始](zh-CN/getting-started.md) |
 | Handle incidents, issue fixes, and complex projects | [Usage handbook](en/usage-handbook.md) | [使用手册](zh-CN/usage-handbook.md) |
+| Design, discuss, review, approve, and progressively refine | [Reviewed planning](en/reviewed-planning.md) | [方案设计与审查](zh-CN/reviewed-planning.md) |
 | Prepare contracts, choose Auto/Quick/Full, and deliver changes | [Workflow](en/workflow.md) | [工作流](zh-CN/workflow.md) |
 | Diagnose incidents, retain repair authority, and use bounded decisions | [Investigation](en/investigation.md) | [有界调查](zh-CN/investigation.md) |
 | Use the canvas, stage controls, sessions, and run history | [Workbench](en/flow-console.md) | [流程工作台](zh-CN/flow-console.md) |
@@ -49,10 +50,10 @@ claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
-(Chinese; not implemented) proposes genuine design work in Plan, independent
-design review, user approval of exact design versions, and rolling refinement
-during execution. It reuses existing native Provider capabilities, including DSH
-Team and PTC, and explains the state, recovery, and interface changes still needed.
+(Chinese; original proposal) records the design for genuine Plan work, independent
+review, exact-version user approval and progressive refinement. The current
+[reviewed-planning guide](en/reviewed-planning.md) describes the implemented controls
+and compatibility boundaries; live Provider acceptance remains separate from source tests.
 
 The [feedback-driven workflows and JEV proposal](plans/2026-11-12-feedback-driven-workflows.md)
 (Chinese; historical proposal) explains Auto / Quick / Full, incident investigation,

@@ -1,26 +1,28 @@
 ---
 name: flywheel-plan
 metadata:
-  version: "1.8.3"
-description: Run only the bounded Plan Loop for a Flywheel task until contracts validate or the retry limit is reached. Use for "/flywheel-plan docs/<slug>" in DSH, "/skill:flywheel-plan docs/<slug>" in Kimi, or a request to re-run just the planning step.
-whenToUse: 当用户只想重跑某任务的 Plan Loop 单步（修订/确认 packet 序列）时使用。
-compatibility: "Requires the Flywheel CLI and the configured Plan harness; default Kimi CLI with subscription login and high thinking, without ACP."
-arguments: slug
+  version: "2.0.0"
+description: >-
+  Run Go-owned design and independent review for a reviewed-planning task, or refine an
+  explicit milestone or packet within its approved root design. Plan stops after planning;
+  it never automatically starts implementation. Existing legacy tasks retain their milestone
+  Plan semantics. Use for "/flywheel-plan <task-dir> [scope=design|milestone|packet|replan] [id=<scope-id>]"
+  in DSH or the corresponding Kimi skill.
+whenToUse: 用户想进行整体方案设计、根据反馈修订方案，或细化具体里程碑/工作单元时使用；只运行规划和审查，完成后停下。
+compatibility: "Requires matching Flywheel CLI/plugin with control planning for new tasks; legacy run --only plan remains supported."
+arguments: slug scope id
 ---
 
-# flywheel-plan — 只触发 Plan Loop
+# flywheel-plan — 设计、审查与逐步细化
 
-Button only: validate + invoke CLI + translate. No loop logic here.
+Button only：读取原任务、核对目标范围、调用一次 Go 入口、翻译结果。
+技能不写方案循环、不写 `state.json`，不自行选择 Provider session，不代替用户批准。
+DSH 使用 `/flywheel-plan <任务资料目录> [scope=…] [id=…]`；Kimi 使用 `/skill:flywheel-plan`。
+`slug` 是已经存在的路径，不自动再拼接 `docs/`。
 
-DSH 在对话中使用 `/flywheel-plan <任务资料目录>`；Kimi 使用 `/skill:flywheel-plan <任务资料目录>`。
+## 1. 定位原任务
 
-> 参数经 kimi 命名参数注入正文：`$slug`（其他 harness 忽略 arguments 字段，实参随调用文本原样传入，语义相同）。
-
-`slug` 表示实际任务目录路径，例如 `docs/my-task` 或绝对路径；不是需要自动拼接 `docs/` 的短名称。先将用户输入解析为已经存在的目录，后续引用同一路径。
-
-## 固定任务工作区
-
-逐条解析，任一步失败就停止；不能用原终端或 DSH 会话目录代替任务所在仓库：
+逐条解析，失败就停止；不借用其他 checkout 的账本：
 
 ```bash
 task_dir="$(cd "$slug" && pwd -P)"
@@ -28,62 +30,83 @@ repo_dir="$(git -C "$task_dir" rev-parse --show-toplevel)"
 repo_dir="$(cd "$repo_dir" && pwd -P)"
 task_branch="$(git -C "$repo_dir" branch --show-current)"
 git -C "$repo_dir" worktree list --porcelain
+flywheel control status --task-dir "$task_dir" --cwd "$repo_dir"
 ```
 
-默认复用准备时选定的任务集成 checkout／分支。已有明确选择或授权不重复询问；
-未明确选择的 `main`／`master`、已知默认分支或 detached HEAD 不能直接开跑。
-新任务先按 `flywheel-new` 准备工作区；已有状态先核对原任务路径，不切分支、
-复制／重置 state 或迁移已有成果。`task_dir` 与 `repo_dir` 必须属于同一 worktree。
+DSH 优先用 `flywheel_control({action:"status",taskDir,cwd})` 取得同一回执并关联视图。
+复用准备时选定的任务分支；不切分支、迁移状态、重建 packet 目录或重置预算。
+没有明确特殊选择时，默认分支或 detached HEAD 不作为新的实施任务位置。
 
-## 步骤
+## 2. 新规划协议：默认整体方案
 
-1. **校验**：`docs/<slug>/` 存在且含 `spec.md` 和 task packets。确认所选运行配置来自任务、项目、全局或内嵌表，不强制每个任务都有自己的配置文件；状态由引擎初始化。
-2. **调用**（在解析出的任务集成 checkout 运行，直到合法契约或有界失败）：
+有 `state.planning.version:1` 时，读取实际 `state.revision`、当前设计引用和未决 findings。
+不要求初始已有 spec.md 或 packets；它们由引擎在批准与子计划审查后激活。
 
-   ```bash
-   cd "$repo_dir" && flywheel run "$task_dir" --only plan
-   ```
+| scope | 用途 | id |
+|---|---|---|
+| `design`（缺省） | 真正的整体设计、修订和独立 Design Review | 省略 |
+| `milestone` | 在已批准根方案内细化一个里程碑 | 实际里程碑 ID，例如 M-01 |
+| `packet` | 在已批准根方案内细化一个工作单元 | 实际 packet ID，例如 M01-T01 |
+| `replan` | 根据新证据重新规划；仍沿用原 scope 的版本和审查历史 | 省略或 root → design；M-01 → milestone；M01-T01 → packet |
 
-   该入口要求 Full。原任务是 Quick 且用户明确要求改走规划时，追加
-   `--mode full`，让 Go 持久化升级后运行；不要手改 Spec 或 state 来跳过策略检查。
-   仅想完成现有 Quick 时使用 `flywheel-run`，合格任务不需要再调用本步骤。
+用户只补充本次细化要求（例如“展开 M-01 的崩溃恢复步骤”）时，把原意放进
+`action:plan` 的可选 `text`；Go 将其保留为当前 request 的不可变说明，同时提供给
+Planner 和 Reviewer。它不改变全局输入版本，也不撤销根方案批准；子计划仍须通过
+原范围审查。不要将局部说明误发为全局反馈。
 
-   若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
+用户改变整体目标、固定决定或实施范围时，先提交一个有 `revision`、稳定 `request-id`、`text` 和当前 `design`
+引用的 `action:feedback`，`start:false`。反馈只有回执 `applied` 才算采用；`queued`
+表示等待现有 owner 处理。排队时报告真实状态，不在技能里轮询或叠加 Plan。
+已应用后使用最新状态版本触发一次 Plan；不能把反馈文字直接当作新批准。
 
-3. **翻译结果**：把输出的 JSON 摘要讲成人话——当前里程碑、Plan Loop 确认/
-   修订了哪些 packet、state.json 的新 revision。失败时原样报告错误信息并
-   建议下一步（看 `orchestrator.log` / 检查契约）。
-
-Plan 的模型 CWD 是 `repo_dir`，可修订任务内 Spec／packet，不直接改实现或配置。
-合法契约由引擎提交并尝试快进同步到已有 packet worktree；冲突时保留现场，
-不得手工 reset、重建 packet 工作区或修改 `state.json`。这一步不执行实现／Review，
-不创建或合并远端 PR；任务分支的 PR 操作由外层按已有授权执行。
-
-Plan 历史由 Go 按任务／里程碑和 `sessions.mode` 管理；显式设置的
-`resident-session:false` 继续关闭 Plan 历史复用，不在 skill 中改写它。
-fresh 保留既有 Kimi Plan resident 行为，但不将它声明为通用角色会话。
-出现清理、派发或结果未知时停止，不在 skill 中重试；确认子进程退出不能代替
-可信结果回执。从原任务路径交由 Go 核对，不切模式或重置 state 绕过阻断。
-Plan 不负责派发 packet 或决定执行目录隔离。后续由有效 `scheduler` 与
-`worktree.enabled` 决定：自动管理开启的并行批次必须准备独立 Worktree，失败停止；
-串行路径仍可能回退 `in-place`。关闭自动管理可使用任务 checkout 或已登记的外部
-Worktree，不禁止并行；Plan 成功不证明后续执行一定隔离。
-
-## 注意
-
-- 全部里程碑都已关闭时 CLI 会报错 `no open milestone`——此时没有可规划的
-  内容，直接告诉用户即可，不需要任何动作。
-
-## DSH 画布关联
-
-从 DSH 终端运行时，引擎使用宿主的会话标识登记运行；不要手写、复制或伪造这个标识。
-首次运行、阶段结束或结果待核对时，再通过 `flywheel_control` 查询一次原任务：
+DSH 的模型工具参数示例：
 
 ```json
-{"action":"status","taskDir":"<已核实的 task_dir 绝对路径>","cwd":"<已核实的 repo_dir 绝对路径>"}
+{
+  "action": "planning",
+  "taskDir": "/absolute/task-worktree/docs/task-slug",
+  "cwd": "/absolute/task-worktree",
+  "planning": {
+    "action": "plan",
+    "revision": 7,
+    "request-id": "plan-task-slug-2",
+    "scope": "design",
+    "start": true
+  }
+}
 ```
 
-这是只读查询，会将真实任务关联到当前会话画布；关联失败不重跑阶段，分别报告引擎
-回执和关联结果。没有该工具时，明确给出原任务路径，
-不得声称 UI 已关联，也不要让用户寻找任务选择器。单阶段通过只表示本次阶段通过，
-不能说完整流程已完成；加载 Skill、创建任务资料与引擎实际运行必须分别报告。
+`revision:7` 只是格式示例，必须换成刚读取的实际版本；scope / scope-id 来自任务事实。
+没有 DSH 工具时将内层 JSON 写入私有文件并调用：
+
+```bash
+flywheel control planning --task-dir "$task_dir" --cwd "$repo_dir" < "$request_file"
+```
+
+此 action 以 planning-only 运行：即使已有实施授权，显式 Plan 结束后也停止，
+不会顺带开始 Execute。Go 负责有界设计/审查循环、独立角色调用、用量、scope checks
+与状态保存。人讨论通过反馈进入下一轮，审查 pass 不等于人已批准。
+
+## 3. 旧任务兼容
+
+状态没有 planning 字段、只有旧 Spec/packets 时，继续旧里程碑 Plan：
+
+```bash
+cd "$repo_dir" && flywheel run "$task_dir" --only plan
+```
+
+旧路径要求 Full。已有 Quick 且用户明确改走完整规划时才加 `--mode full`；
+不要手改 workflow/state。所有里程碑已关闭的 `no open milestone` 如实报告。
+不能仅因升级二进制就自动迁移旧账本。用户明确要求迁移时，用新 `control planning`
+的 `action:migrate`，绑定当前 revision、稳定 request-id 和明确 policy；
+解释迁移将进入新设计审查。迁移前后的旧实施证据与预算由 Go 保留。
+
+## 4. 翻译回执
+
+汇报整体设计或子计划的精确 revision/digest、独立 review verdict、findings、
+轮次及停止原因。根方案与子计划分别说明，不能把子计划审查冒充批准新的根方案。
+`awaiting-design-approval` 时让用户在 Flywheel 视图选择“批准此版本”或“批准此版本并开始”；
+CLI 由真实交互终端确认。模型工具不能 approve，也不能通过环境变量伪造人源。
+`needs-user-decision` 说明需要哪项取舍；unknown、清理未确认、预算停止保留原回执，
+先查询原任务，禁止在技能内重试或切 fresh 绕过。Plan 成功不代表代码验收或 PR 完成。
+继续既有实施用 Run；已批准但未授权启动时用视图“开始已批准方案”。

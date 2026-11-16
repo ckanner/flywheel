@@ -225,6 +225,7 @@ func unregisterSigterm(ch chan os.Signal) {
 // TaskSummary runTask/runSingleStep 的返回摘要；state.json 才是事实信源。
 // JSON 键与 Node 版逐字一致（CLI 直接输出）。
 type TaskSummary struct {
+	PlanningPhase    string   `json:"planning-phase,omitempty"`
 	Slug             string   `json:"slug"`
 	Status           string   `json:"status"`
 	CurrentMilestone *string  `json:"current-milestone"`
@@ -254,7 +255,12 @@ func (c *Context) summary() TaskSummary {
 			done++
 		}
 	}
+	planningPhase := ""
+	if c.State.Planning != nil {
+		planningPhase = c.State.Planning.Phase
+	}
 	return TaskSummary{
+		PlanningPhase:    planningPhase,
 		Slug:             c.State.Slug,
 		Status:           c.State.Status,
 		CurrentMilestone: c.State.CurrentMilestone,
@@ -284,7 +290,8 @@ type RunOpts struct {
 // RunTaskOpts RunTask 入参。
 type RunTaskOpts struct {
 	RunOpts
-	PauseBefore string
+	PauseBefore  string
+	PlanningOnly bool
 }
 
 // RunTask 全自动运行：里程碑 → packet → attempts（execute → L1 → review）
@@ -312,6 +319,10 @@ func RunTask(opts RunTaskOpts) (result TaskSummary, runErr error) {
 		return TaskSummary{}, err
 	}
 	ctx.pauseBefore = opts.PauseBefore
+	if opts.PlanningOnly && ctx.State.Planning == nil {
+		return ctx.summary(), fmt.Errorf("--planning-only requires a reviewed planning task; migrate legacy tasks explicitly")
+	}
+	ctx.planningOnly = opts.PlanningOnly
 	if err := ctx.writePid(); err != nil {
 		return ctx.summary(), err
 	}
@@ -361,6 +372,12 @@ func (c *Context) run() (TaskSummary, error) {
 	defer c.measurePhase("engine", "")()
 	if c.fatal != nil {
 		return c.summary(), c.fatal
+	}
+	if c.State.Planning != nil {
+		ready, err := c.prepareReviewedExecution()
+		if err != nil || !ready {
+			return c.summary(), err
+		}
 	}
 	if c.State.Handoff != nil {
 		return c.summary(), fmt.Errorf("task is under human session control; validate and return it first")
@@ -572,6 +589,9 @@ func (c *Context) run() (TaskSummary, error) {
 }
 
 func (c *Context) finishTask() error {
+	if err := c.admitReviewedBoundary(); err != nil {
+		return err
+	}
 	if !c.contractsComplete() {
 		return fmt.Errorf("current contracts contain unfinished units; refusing completed status")
 	}
@@ -701,6 +721,19 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	if err != nil {
 		return TaskSummary{}, err
 	}
+	if ctx.State.Planning != nil && opts.Only != "plan" && !ctx.canReleaseReviewedHandoff(opts.Only, opts.Session) {
+		if ctx.State.Planning.PendingActivation != nil {
+			if err := ctx.resumePlanningActivation(); err != nil {
+				return ctx.summary(), err
+			}
+		}
+		if err := ctx.loadPlanningContracts(); err != nil {
+			return ctx.summary(), err
+		}
+		if err := ctx.admitReviewedExecution(); err != nil {
+			return ctx.summary(), err
+		}
+	}
 	ctx.State.Control = &state.ControlResult{Kind: opts.Only, Packet: opts.PacketID, Status: "running", Message: "", StartedAt: ctx.nowISO()}
 	if opts.Session != nil {
 		ctx.State.Control.Kind += "." + opts.Session.Action
@@ -739,8 +772,13 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	ctx.consoleRetryReason = opts.RetryReason
 	ctx.sessionCommand = opts.Session
 	if opts.ExpectedRevision != nil && opts.Only != "session" {
-		if err := ctx.admitConsoleStep(opts.Only, opts.PacketID); err != nil {
-			return ctx.summary(), err
+		if ctx.State.Planning != nil && opts.Only == "plan" && opts.PacketID != "" {
+			return ctx.summary(), fmt.Errorf("use control planning scope packet for packet-specific refinement")
+		}
+		if !(ctx.State.Planning != nil && opts.Only == "plan") {
+			if err := ctx.admitConsoleStep(opts.Only, opts.PacketID); err != nil {
+				return ctx.summary(), err
+			}
 		}
 	}
 	summary, err := ctx.runSingle(opts.Only, opts.PacketID)
@@ -761,6 +799,28 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 }
 
 func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
+	if c.State.Planning != nil {
+		if c.canReleaseReviewedHandoff(only, c.sessionCommand) {
+			if err := c.reconcileSessionReceipts(); err != nil {
+				return c.summary(), err
+			}
+			return c.runSessionCommand(*c.sessionCommand)
+		}
+		if only == "plan" {
+			return c.runReviewedSinglePlan(packetID)
+		}
+		if c.State.Planning.PendingActivation != nil {
+			if err := c.resumePlanningActivation(); err != nil {
+				return c.summary(), err
+			}
+		}
+		if err := c.loadPlanningContracts(); err != nil {
+			return c.summary(), err
+		}
+		if err := c.admitReviewedExecution(); err != nil {
+			return c.summary(), err
+		}
+	}
 	if only != "session" && c.State.Handoff != nil {
 		return c.summary(), fmt.Errorf("task is under human session control")
 	}

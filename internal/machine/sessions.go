@@ -46,7 +46,7 @@ func (c *Context) trackedSessions(role, harness string) bool {
 	if role == "judge-panel" {
 		driverRole = "judge"
 	}
-	if c.Config.Drivers[driverRole] == "mock" {
+	if c.Config.DriverKind(driverRole) == "mock" {
 		return false
 	}
 	return config.SupportsScopedSessions(harness)
@@ -63,6 +63,9 @@ func (c *Context) scopedSessions(role, harness string) bool {
 // Acceptance and context changes can reuse history under an unchanged declared
 // goal. Applying a received result requires the exact original contract instead.
 func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, string, string) {
+	if c.State.Planning != nil && (c.Spec == nil || strings.HasPrefix(scope, "planning:")) {
+		return c.planningSessionIdentities(scope, a)
+	}
 	requirements := make([][3]string, 0, len(c.Spec.Requirements))
 	for _, r := range c.Spec.Requirements {
 		requirements = append(requirements, [3]string{r.ID, r.Title, r.Milestone})
@@ -122,9 +125,28 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 	return binding, sessionHash(goal), sessionHash(contractInput)
 }
 
+func (c *Context) planningSessionIdentities(scope string, a drivers.CallArgs) (string, string, string) {
+	identityArgs := a
+	identityArgs.APIKeys = map[string]string{}
+	for key := range a.APIKeys {
+		identityArgs.APIKeys[key] = ""
+	}
+	if key := c.Config.Channels[a.Binding.Channel].EnvKey; key != nil {
+		identityArgs.APIKeys[*key] = ""
+	}
+	binding := sessionHash([]any{config.SessionPolicyVersion, a.Binding, a.Model, a.PermissionMode,
+		sessionRuntimeIdentity(identityArgs), c.Config.NativeProfiles[a.Binding.NativeProfile], a.SessionMode})
+	p := c.State.Planning
+	return binding, sessionHash([]any{p.Brief.Goal, p.Brief.OriginalRequest, scope}),
+		sessionHash([]any{p.Brief, p.InputRevision, p.CurrentDesign, p.CurrentPlans, p.Feedback, c.State.PreparationSource})
+}
+
 // Persist the original role boundary so restart cannot reset its baseline to
 // an already-mutated candidate. Review/Judge also bind the actual input proof.
 func (c *Context) sessionGuard(role, scope string) (string, error) {
+	if c.State.Planning != nil && (planningRole(role) || role == "plan") {
+		return c.planningGuard()
+	}
 	switch role {
 	case "plan":
 		return c.planScopeIdentity()
@@ -375,6 +397,11 @@ func (c *Context) resolveInvocationNative(role string, args *drivers.CallArgs) e
 // together. requestId correlates evidence; it is not a backend idempotency key.
 func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (out drivers.Result, callErr error) {
 	defer c.measureManagedInvocation(role, scope)()
+	if c.State.Planning != nil && !planningRole(role) && role != "plan" {
+		if err := c.admitReviewedExecution(); err != nil {
+			return drivers.Result{}, err
+		}
+	}
 	if err := c.resolveInvocationNative(role, &args); err != nil {
 		return drivers.Result{}, err
 	}
@@ -396,6 +423,15 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	}
 	if err := c.reconcileSessionReceipts(); err != nil {
 		return drivers.Result{}, err
+	}
+	if c.State.Planning != nil && !c.sessionReplay(role, scope) {
+		pending, err := c.planningQueuePending()
+		if err != nil {
+			return drivers.Result{}, err
+		}
+		if pending {
+			return drivers.Result{}, errPlanningQueued
+		}
 	}
 	key := sessionKey(role, scope)
 	if c.sessionReports == nil {

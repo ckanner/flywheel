@@ -111,7 +111,7 @@ Codex 0.10.0 使用 config/read核对原生 agents controls与当前child turn�
 
 ### 4.0 Auto、Quick 与 Full
 
-工作流与模型路由是两项独立选择。Auto 由 Go 根据宿主已经研究并保存的契约事实选择 Quick 或 Full，不额外固定调用分类模型。显式 Full 保留完整流程；显式 Quick 仍需满足资格。旧 Spec／旧状态没有工作流字段时按 Full 处理，升级软件不减少既有任务的阶段。
+工作流与模型路由是两项独立选择。Auto 由 Go 根据已校验的实施契约事实选择 Quick 或 Full，不额外固定调用分类模型。新任务的契约由下述设计与独立评审循环生成并激活；旧任务继续读取原有契约。显式 Full 保留完整流程；显式 Quick 仍需满足资格。旧 Spec／旧状态没有工作流字段时按 Full 处理，升级软件不减少既有任务的阶段。
 
 Quick 首版要求一个里程碑、一个可独立验收的 packet，全部需求均有验证说明、必需检查可执行、没有未决设计或完整流程风险。宿主记录代码依据、范围判断、风险与不适用检查的理由；不能仅写“低风险”或按文件数量替代判断。鉴权、权限、支付、迁移、并发、事务、跨模块重构以及资格不明确的任务使用 Full。Go 校验结构与声明的一致性，不声称能从布尔字段证明语义安全；执行和最终评审仍可发现需要升级的证据。
 
@@ -134,7 +134,11 @@ Quick 首版要求一个里程碑、一个可独立验收的 packet，全部需�
 
 ### 4.1 Plan
 
-初始需求由用户确认；运行中 Plan 只能直接修订任务目录内的 `spec.md` 与 `task-packet-*.md`，并保持已批准的需求范围。普通实现测试由 executor 完成，冻结验收的路径必须写入 `boundaries.must-not-touch`，或在配置中用 `protected-test-patterns` 声明。
+新任务使用 `control planning` 登记 `planning.schema.json` 定义的薄 brief，保留原始请求、目标、约束、证据、设计策略与原始实施授权。New 启动真正的整体设计与独立 Design Review；默认 `review-first` 在通过评审后等待人批准精确设计版本。Task 在原始请求已经明确委托实施时，可显式选择 `delegated`，仍须经过独立评审，自动批准的来源是原始委托，记录为 delegated，不能伪装为 human。
+
+**新规划协议**与原来面向实施契约的 Plan 分开记录。以下直接写 Spec/packet 的旧 Plan 行为只用于未迁移的 legacy 任务；新规划角色只读调查并返回结构化提案，由 Go 校验、密封版本和投影。新 Plan 默认做整体方案；`scope:milestone|packet|replan` 明确局部细化或重规划。旧 `run --only plan` 保留里程碑含义；新协议在该入口也经过独立子计划评审。显式 Plan 和 `run --planning-only` 不自动执行，Quick 也不因此被强制升级为 Full。
+
+旧任务的初始需求由用户确认；运行中旧 Plan 只能直接修订任务目录内的 `spec.md` 与 `task-packet-*.md`，并保持已批准的需求范围。普通实现测试由 executor 完成，冻结验收的路径必须写入 `boundaries.must-not-touch`，或在配置中用 `protected-test-patterns` 声明。
 
 Plan 不得直接修改实现、任务目录外的冻结 oracle，或 `flywheel.config.json`。引擎比较 Plan 前后非契约候选内容；越界改动保留在磁盘上并报错停止，不能自动提交，也不能用回滚删除现场。外部 oracle 修订需要明确的人工任务；运行配置由用户修改后重启。当前不实现外部 oracle 的自动修订、提交与 worktree 同步事务。
 
@@ -150,6 +154,20 @@ Plan 复用；省略该字段不等于关闭。fresh 仅在未配置 `native-pro
 将全局 `fresh` 下的显式 `resident-session:true` 意图映射为 scoped 角色账本，显式 `sessions.roles.plan:"fresh"`
 仍优先关闭复用；不导入旧 CLI Session，Tower 始终 fresh。实际绑定、工作目录、权限和运行配置不匹配时不续用旧
 历史；未知调用先阻断，不能以冷启动覆盖。会话不是状态真相。
+
+### 4.1.0 设计、讨论、独立评审与批准
+
+整体设计须覆盖需求与非目标、现状依据、备选方案与取舍、接口/数据/状态、失败恢复、兼容迁移、安全与费用约束、里程碑、验证策略。决定区分 fixed/delegated/unresolved；未决必要决定不能凭默认假设通过。每个设计记录不可变 revision/digest、输入版本、仓库基线与真实 planner invocation。
+
+`design-plan` 与 `design-review` 是不同的受管根调用，分别拥有会话、用量、终态和清理回执。默认一位 Planner 和一位独立 Reviewer，不固定启用专家面板；按配置使用已有原生 Agent/Team/Workflow/Swarm。一次根调用内部的专家意见是该调用的证据，不能同时算作正式独立评审。Reviewer 检查完整方案，并保留稳定 finding ID、事实、影响与关闭证据；通过须没有未关闭 blocker/major 和未解决必要决定。每个 scope request 默认最多三轮完整设计/评审，传输和格式重试另行累计持久化；重启、重新 Run 或切后端不清空已花费用和轮数。
+
+人工批准绑定当前设计的精确版本、digest、独立通过的 review 和可信控制事件。批准与开始实施分别记录：“批准此版本”只批准，“批准并开始”同时提供开始授权；普通 Run 不能补造缺失的开始授权。新的用户反馈使旧输入的批准失效，旧版本仍保留以供对照。反馈在运行时排队，由拥有运行租约的 Go 引擎先结算并消费原调用，再在安全边界采用；`start:false` 采用后停住，等待明确继续。queued、applied 与 rejected 是不同回执。
+
+控制台只读快照中的规划分区按 JSON 实际编码体积限制为 512 KiB；先保留当前/上一版/最近批准的设计和当前子计划引用，再按需省略历史与重复正文。`planning.projection` 明示显示摘要、省略计数和完整账本入口；这个字段不属于权威状态 schema，摘要不能写回 `state.json`。当前设计或其独立审查不完整时 `approval-complete:false`，UI 禁止批准；CLI 仍可从原状态完整显示设计和审查，由用户在交互终端确认精确 digest。必要身份元数据仍超额时明确失败，不能输出超限帧或静默截断后允许批准。
+
+根设计审批与实施计划的版本分开。子计划复用 `plan`，由独立 `plan-review` 检查相同根设计、当前依赖和累计变化。Go 固定核对原目标、全部需求/里程碑和验收底线、明确写入范围、未受影响/已完成 packet 内容；Reviewer 再给出 within-envelope/material-change/unclear。只有独立通过且 within-envelope 可激活；实质变化必须回整体设计与批准。未来里程碑可声明 `planning: deferred`，不伪造 packet 或恒真验收；开始该里程碑前才生成真实 packet。后续细化不会仅因整个 Spec 的 planning-ref 变化就重新打开已完成且内容未变的 packet。
+
+`loops.design-plan` 默认继承 `loops.plan` 后端；`loops.design-review`、`loops.plan-review` 默认继承 `loops.review` 后端。原生 profile 随实际绑定继承，逻辑角色、会话历史和权限解析仍独立，`config inspect` 展示 binding source。继承不自动复制针对旧角色的权限特例，也不补造新角色的跨渠道付费 fallback 映射；需要时显式配置。DSH PTC/Team、Codex agents、Claude agents/workflow/advisor、Kimi 原生模式继续使用现有公开 adapter 与生命周期，而不是另建一套弱化 worker。独立 reviewer 不继承 planner 私有历史；模型与 effort 仍由各自已解析的根绑定决定。
 
 ### 4.1.1 可信 Plan 检查点
 
@@ -285,7 +303,15 @@ Go 校验仓库、基线、分支、候选和独占归属后登记；下一次�
 
 ### 5.1 状态所有权与角色账本
 
+新规划任务在 `state.planning` 分区保存真实薄 brief、不可变设计/子计划/评审、批准、反馈与累计 request 计数。开始设计时可以没有 Spec、packet 或工作流选择；不制造这些对象来复用旧入口。`planning/` 中的 JSON/Markdown 是 Go 导出的可审阅副本，状态分区仍是权威，副本被改写或存在未拥有文件会阻断采用。模型不能写批准、版本或状态。
+
+实施计划激活先持久化完整文件集合、原文件所有权 hash 和 Git 基线的 intent，再投影 `spec.md`/packets、删除已拥有且未被外部修改的退休 packet、提交已核对的契约、同步既有 worktree，最后以 CAS 设置 active refs。恢复在加载实施契约之前处理 pending activation，不能凭部分落盘文件开始 Execute。规划导出和投影统一 Git 可表示的普通文件模式，避免主目录与 worktree 的候选身份不同。所有实施入口，包括普通/单步调用、验证、并行队列补位、共享候选交付和远端 Deliver，使用同一设计/子计划准入；未知调用必须先按原身份对账。
+
+新 Spec 的 `planning-ref` 是实际激活身份与旧读者拒绝标记；规划任务从创建时使用 session ledger v4，即使还没有原生调用，也让旧 stop/intake/garden 读者拒绝写回。迁移旧任务必须显式 `action:migrate`，保存迁移 intent 和原始契约摘要，再加入兼容标记及规划分区；保留原任务目录、用量、调用与实现现场，不伪造过去的评审/批准。不能仅修改 schema-version 或绕过未知调用。
+
 `state.json` 仅由 `internal/state` 写入：schema 校验、进程间锁、revision CAS、临时文件与原子 rename。任务生命周期另持 `.run.lock`；lease 是并发运行与停止完成的判断依据。运行信息文件原子更新，包含用于关联本次运行的随机 control token；PID 只作展示，不作为停止授权。日志、pid、锁、停止请求及临时控制文件不进入提交。
+
+任务根与 `planning/` 下的 `.planning-tmp-*` 是 Go 原子写入保留的普通临时文件。持有任务 lease 的准备或恢复清除这些中断文件，并从权威 state 重建导出；同名前缀若为符号链接、目录或特殊文件则拒绝继续。清理不覆盖普通用户文件。
 
 `state.sessions` 是可选的角色账本。新引擎兼容 v1／v2／v3；普通新增调用或人工接管至少使用 v2，
 第一次预热提升为 v3，此后调用、接管和清理均不降级。账本包含运行归属与绑定快照；旧状态缺字段仍可读取，未知版本或损坏结构明确失败。
@@ -643,6 +669,7 @@ Go 的 `make quality-gate` 执行 vet、gofmt 和 **逐函数 100% statement cov
 | JEV 总开关与取证决策 | [统一 JEV 方案](plans/2026-11-12-unified-jev-decisions.md) | [实现验收](validation/2026-11-12-unified-jev-decisions.md) |
 | JEV 执行决策与诊断实验 | [扩展方案](plans/2026-11-13-jev-execution-decisions.md) | [离线工程验证](validation/2026-11-13-jev-execution-decisions.md) |
 | P5 就绪队列与一次性 DSH 预热 | [实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md) | [工程验证与收益边界](validation/2026-11-13-p5-ready-queue-prewarm.md) |
+| 受审查方案设计、精确批准与渐进规划 | [方案](plans/2026-11-16-reviewed-planning.md)、[操作指南](zh-CN/reviewed-planning.md) | [实现、恢复与 Provider 离线验证](validation/2026-11-16-reviewed-planning.md) |
 | 历史影子评估（已退役） | [原 JEV 方案](plans/2026-11-10-jev-shadow.md) | [历史验收](validation/2026-11-10-jev-shadow.md) |
 | 0.30.2 发行与安装 | [发行流程](zh-CN/releasing.md) | [发行记录](validation/2026-11-11-release-0.30.2.md) |
 | 0.34.0 原生能力与依赖对齐 | [原生能力](zh-CN/native-capabilities.md) | [正式发行与验收](validation/2026-11-14-release-0.34.0.md) |

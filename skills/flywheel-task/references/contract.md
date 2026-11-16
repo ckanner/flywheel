@@ -1,6 +1,7 @@
 # 紧凑契约准备
 
-供 `flywheel-task` 的宿主准备阶段使用。字段以当前二进制的
+用于已有 legacy 任务、明确手工准备的兼容路径及调查修复交接。新实现目标
+默认使用薄 brief，由 Go 的方案/子计划调用形成这些契约，不要求宿主提前写全。字段以当前二进制的
 `flywheel template spec.schema.json` 和 `flywheel template task-packet.schema.json`
 为准；不新增只有提示词理解的运行字段。
 

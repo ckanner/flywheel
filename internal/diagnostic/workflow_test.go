@@ -3,6 +3,7 @@ package diagnostic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,4 +85,20 @@ func TestDoctorUsesWorkflowPolicyWithoutWritingOrExecuting(t *testing.T) {
 	after, err = os.ReadFile(state.StateFile(task))
 	require.NoError(t, err)
 	assert.Equal(t, raw, after, "invalid policy must be retained, not repaired by inspection")
+}
+
+func TestDoctorResolverFailureBlocksInitializationAfterContractValidation(t *testing.T) {
+	root, runtime := diagnosticFixture(t, dshConfiguration)
+	task := taskFixture(t, root, "frontend")
+	old := resolveWorkflow
+	t.Cleanup(func() { resolveWorkflow = old })
+	resolveWorkflow = func(*state.State, *contract.Spec, []*contract.Packet, string) (contract.WorkflowSelection, error) {
+		return contract.WorkflowSelection{}, errors.New("saved policy cannot be resolved")
+	}
+	report := Doctor(context.Background(), root, task, true)
+	assert.False(t, report.OK)
+	assert.Equal(t, "pass", checkByID(t, report, "contracts").Status)
+	assert.Equal(t, "fail", checkByID(t, report, "workflow").Status)
+	assert.Empty(t, runtime.probes, "valid file shape alone cannot authorize initialization when workflow resolution fails")
+	assert.NoFileExists(t, state.StateFile(task))
 }

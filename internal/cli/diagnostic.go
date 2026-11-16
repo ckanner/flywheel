@@ -117,9 +117,9 @@ func printConfiguration(cmd *cobra.Command, view *diagnostic.Configuration) {
 	fmt.Fprintf(out, "配置来源: %s (%s)\n工作目录: %s\n任务目录: %s\n", view.Source, view.Scope, view.Cwd, view.TaskDir)
 	fmt.Fprintf(out, "会话策略: %s（策略 v%d；历史恢复未验证）\n", view.Sessions.Mode, view.Sessions.PolicyVersion)
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "阶段\tProfile\tHarness\tProvider\tChannel\tModel\tThinking\t权限\t会话")
+	fmt.Fprintln(table, "阶段\t绑定来源\tProfile\tHarness\tProvider\tChannel\tModel\tThinking\t权限\t会话")
 	for _, b := range view.Bindings {
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s (%s)\n", b.ID, b.Profile, b.Harness, b.Provider, b.Channel, b.Model, b.Thinking, b.PermissionMode, b.Session.Mode, b.Session.Reason)
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s (%s)\n", b.ID, b.BindingSource, b.Profile, b.Harness, b.Provider, b.Channel, b.Model, b.Thinking, b.PermissionMode, b.Session.Mode, b.Session.Reason)
 	}
 	_ = table.Flush()
 	fmt.Fprintln(out, "此命令只解析配置；账号授权、额度与模型服务能力未验证。")

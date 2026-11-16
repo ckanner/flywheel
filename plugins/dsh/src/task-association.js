@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { validInvestigationCommand } from './protocol.js';
+import { validPlanningCommand } from './planning-control.js';
 
 // This read model folds existing public command/tool events. Third-party DSH
 // plugins must not invent Session.append event types or write engine state.
 export const taskProjectionKey = 'flywheelTask';
 const modes = ['auto', 'quick', 'full'];
-const taskActions = ['investigate', 'launch', 'start', 'status', 'stop', 'step', 'session', 'deliver'];
-export const mutatesTask = action => ['investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver'].includes(action);
+const taskActions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'step', 'session', 'deliver'];
+export const mutatesTask = action => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver'].includes(action);
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const path = value => typeof value === 'string' && value.startsWith('/') && !/[\0\r\n]/.test(value);
 const parse = value => { try { return JSON.parse(value); } catch { return null; } };
@@ -28,13 +29,15 @@ function request(input, cwd, operationId, sequence, launchOnly = false) {
   if (!record(input)) return null;
   const value = launchOnly ? { ...input, action: 'launch' } : input;
   if (!taskActions.includes(value.action) || !path(value.taskDir) || !path(value.cwd ?? cwd) ||
-      Object.keys(input).some(key => !(launchOnly ? ['taskDir', 'cwd', 'mode'] : ['action', 'taskDir', 'cwd', 'mode', 'only', 'packet', 'revision', 'retryReason', 'session', 'delivery', 'investigation']).includes(key)) ||
+      Object.keys(input).some(key => !(launchOnly ? ['taskDir', 'cwd', 'mode'] : ['action', 'taskDir', 'cwd', 'mode', 'only', 'packet', 'revision', 'retryReason', 'session', 'delivery', 'investigation', 'planning']).includes(key)) ||
       ('mode' in value && (!['start', 'launch'].includes(value.action) || !modes.includes(value.mode)))) return null;
   if (value.action === 'step' && (!['plan', 'execute', 'review', 'verify', 'integrate', 'final'].includes(value.only) || !Number.isSafeInteger(value.revision) || value.revision < 1)) return null;
   if (value.action === 'investigate' ? !validInvestigationCommand(value.investigation) : 'investigation' in value) return null;
+  if (value.action === 'planning' ? !validPlanningCommand(value.planning) : 'planning' in value) return null;
   if (value.action === 'session' && (!record(value.session) || !['claim','send','return','reconcile','release'].includes(value.session.action) || !Number.isSafeInteger(value.session.revision) || value.session.revision < 1 || typeof value.session.key !== 'string')) return null;
   if (value.action === 'deliver' && (!record(value.delivery) || value.delivery.confirmed !== true || !['create','merge'].includes(value.delivery.action))) return null;
-  return { operationId, sequence, action: value.action, taskDir: value.taskDir, cwd: value.cwd ?? cwd };
+  const action = value.action === 'planning' && value.planning.action === 'status' ? 'status' : value.action;
+  return { operationId, sequence, action, taskDir: value.taskDir, cwd: value.cwd ?? cwd };
 }
 
 function begin(state, input, id, event, launchOnly = false) {
@@ -68,7 +71,7 @@ function settle(state, id, value, failed, error) {
     // A later successful status explicitly reconciles the original target.
     const reconciles = operation.action === 'status' && view && sameTask(operation, view) && operation.sequence > view.sequence;
     if (owns || reconciles || (!view && operation.action === 'status') ||
-        (view?.outcome === 'confirmed' && operation.sequence > view.sequence && (['launch', 'start', 'investigate'].includes(operation.action) || operation.action === 'status' && id.startsWith('tool:')))) {
+        (view?.outcome === 'confirmed' && operation.sequence > view.sequence && (['planning', 'launch', 'start', 'investigate'].includes(operation.action) || operation.action === 'status' && id.startsWith('tool:')))) {
       view = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
     }
   } else if (owns) {

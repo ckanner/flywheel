@@ -145,10 +145,11 @@ test('doctor imports the exact dependency without starting any Codex process', a
   assert.deepEqual(await f.records(), []);
 });
 
-test('native controls, managed attribution and owned child evidence survive the installed worker', async t => {
+for (const role of ['execute', 'design-plan', 'design-review', 'plan-review']) {
+test(`${role}: native controls, managed attribution and owned child evidence survive the installed worker`, async t => {
   const f = await setup(t, 'native-child');
   const native = { version: 1, agents: { enabled: true, backend: 'v2', maxConcurrentThreads: 3, defaultModel: 'child-model' } };
-  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role: 'Executor', scope: 'candidate', channel: 'local', taskDir: f.cwd };
+  const managed = { version: 1, runId: 'run', invocationId: f.request.requestId, role, scope: role + ':candidate', channel: 'local', taskDir: f.cwd };
   const result = await f.launch({ input: { ...f.request, native, managed } }).done;
   const frame = resultFrame(result);
   assert.deepEqual(frame.receipt.native.requested, native);
@@ -164,6 +165,7 @@ test('native controls, managed attribution and owned child evidence survive the 
   assert.ok(records[0].argv.includes('agents.max_concurrent_threads_per_session=3'));
   assert.equal(records.some(r => r.params?.managed), false);
 });
+}
 
 test('native off applies real startup controls and a mismatch prevents model dispatch', async t => {
   for (const scenario of ['ok', 'native-mismatch']) {

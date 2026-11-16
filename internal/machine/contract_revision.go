@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/contract"
+	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -37,10 +40,11 @@ func (c *Context) reconcileContractRevisions() error {
 			return err
 		}
 		raw, _ := json.Marshal(struct {
-			Spec, Packet    string
+			Spec            any
+			Packet          string
 			Verify          any
 			DefectInjection any `json:"DefectInjection,omitempty"`
-		}{string(spec), string(packet), c.Config.Verify, c.workflowDefectPolicy()})
+		}{c.packetSpecIdentity(p, spec), string(packet), c.Config.Verify, c.workflowDefectPolicy()})
 		h := sha256.Sum256(raw)
 		fresh[p.PacketID] = hex.EncodeToString(h[:])
 	}
@@ -103,6 +107,37 @@ func (c *Context) reconcileContractRevisions() error {
 	}
 	c.State.ContractFingerprints = fresh
 	return nil
+}
+
+// A progressive child plan changes the Spec projection without revising an
+// earlier packet's approved contract. Bind that packet to the immutable root,
+// its own requirements and milestone gate, not another milestone's expansion
+// or the aggregate planning-ref. Legacy tasks retain byte-for-byte Spec checks.
+func (c *Context) packetSpecIdentity(packet *contract.Packet, raw []byte) any {
+	if c.State.Planning == nil {
+		return string(raw)
+	}
+	requirements := map[string]contract.Requirement{}
+	for _, requirement := range c.Spec.Requirements {
+		if slices.Contains(packet.Requirements, requirement.ID) {
+			requirements[requirement.ID] = requirement
+		}
+	}
+	milestoneID, _ := contract.MilestoneOfPacket(packet.PacketID) // schema-validated packet ID
+	var milestone contract.Milestone
+	for _, m := range c.Spec.Milestones {
+		if m.ID == milestoneID {
+			milestone = m
+			milestone.Planning = "" // deferred/ready describes projection availability
+			break
+		}
+	}
+	return struct {
+		Version      int
+		Design       *planning.Ref
+		Requirements map[string]contract.Requirement
+		Milestone    contract.Milestone
+	}{c.Spec.SpecVersion, c.State.Planning.CurrentDesign, requirements, milestone}
 }
 
 func (c *Context) isPlannerContract(rel string) bool {
