@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased — Session liveness and unknown-invocation retirement
+## 0.36.0 — Session liveness, provider recovery and readable sessions
 
 - Preserve real root and owned-child activity across DSH, Codex Pro and Claude
   Code Pro, independently of completed messages, native ledger deduplication and
