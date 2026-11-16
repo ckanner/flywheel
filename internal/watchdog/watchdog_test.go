@@ -71,6 +71,111 @@ func TestRunIdleResetOnActivity(t *testing.T) {
 	assert.Equal(t, 10, strings.Count(r.Stdout, "tick-"))
 }
 
+func TestRunQueuedIdleCallbackUsesLatestActivityDeadline(t *testing.T) {
+	originalNow, originalTimer := idleNow, newIdleTimer
+	var clock atomic.Int64
+	clock.Store(time.Now().UnixNano())
+	idleNow = func() time.Time { return time.Unix(0, clock.Load()) }
+	callbacks := make(chan func(), 1)
+	newIdleTimer = func(_ time.Duration, callback func()) *time.Timer {
+		callbacks <- callback
+		// The test owns delivery of expiration callbacks. The timer still
+		// supports Reset/Stop, but cannot autonomously kill the real child.
+		return time.NewTimer(time.Hour)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan Result, 1)
+	stdin := make(chan io.WriteCloser, 1)
+	output := make(chan string, 1)
+	var worker sync.WaitGroup
+	worker.Add(1)
+	t.Cleanup(func() {
+		cancel()
+		worker.Wait()
+		idleNow, newIdleTimer = originalNow, originalTimer
+	})
+	go func() {
+		defer worker.Done()
+		done <- Run("cat", nil, Opts{
+			Context: ctx, IdleTimeoutMs: 30_000, WallTimeoutMs: 60_000, KillGraceMs: 100,
+			InteractStdin: func(pipe io.WriteCloser, _ func()) { stdin <- pipe },
+			OnActivity: func(chunk, stream string) {
+				if stream == "stdout" {
+					output <- chunk
+				}
+			},
+		})
+	}()
+	callback := <-callbacks
+	pipe := <-stdin
+	// The old deadline has elapsed, but its callback has not acquired the
+	// watchdog lock yet. A new output chunk wins the lock and refreshes it.
+	clock.Add(int64(30 * time.Second))
+	_, err := io.WriteString(pipe, "observable progress\n")
+	require.NoError(t, err)
+	require.Equal(t, "observable progress\n", <-output)
+	callback()
+	_, err = io.WriteString(pipe, "still active\n")
+	require.NoError(t, err, "an expired callback must not kill after newer output renewed the idle deadline")
+	select {
+	case chunk := <-output:
+		require.Equal(t, "still active\n", chunk)
+	case result := <-done:
+		t.Fatalf("the stale idle callback killed a live child after fresh output: %+v", result)
+	case <-time.After(3 * time.Second):
+		t.Fatal("the child stopped responding after the stale idle callback")
+	}
+
+	// Silence lasting the full *new* interval must still terminate the group.
+	clock.Add(int64(30 * time.Second))
+	callback()
+	select {
+	case result := <-done:
+		assert.True(t, result.IdleTimedOut)
+		assert.True(t, result.TimedOut)
+		assert.False(t, result.WallTimedOut)
+		assert.False(t, result.Cancelled)
+		assert.Empty(t, result.CleanupError)
+	case <-time.After(3 * time.Second):
+		t.Fatal("a genuinely expired idle deadline did not terminate the child")
+	}
+	callback() // A queued timer after process settlement cannot act again.
+}
+
+func TestRunWithoutIdleObservationRetainsWallAndCancellation(t *testing.T) {
+	originalTimer := newIdleTimer
+	var idleTimers atomic.Int32
+	newIdleTimer = func(timeout time.Duration, callback func()) *time.Timer {
+		idleTimers.Add(1)
+		return originalTimer(timeout, callback)
+	}
+	t.Cleanup(func() { newIdleTimer = originalTimer })
+	for _, stop := range []string{"wall", "cancel"} {
+		t.Run(stop, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			opts := Opts{Context: ctx, DisableIdleTimeout: true,
+				IdleTimeoutMs: 1, WallTimeoutMs: 80, KillGraceMs: 100}
+			if stop == "cancel" {
+				opts.WallTimeoutMs = 30_000
+				opts.OnActivity = func(chunk, _ string) {
+					if strings.Contains(chunk, "ready") {
+						cancel()
+					}
+				}
+			}
+			result := Run("sh", []string{"-c", "echo ready; sleep 30"}, opts)
+			assert.False(t, result.IdleTimedOut)
+			assert.Equal(t, stop == "wall", result.WallTimedOut)
+			assert.Equal(t, stop == "wall", result.TimedOut)
+			assert.Equal(t, stop == "cancel", result.Cancelled)
+			assert.True(t, result.ExitCode != nil || result.Signal != "", "termination must await the child")
+			assert.Empty(t, result.CleanupError)
+		})
+	}
+	assert.Zero(t, idleTimers.Load(), "an unobservable transport must not arm an idle timeout")
+}
+
 func TestRunOnActivityCallback(t *testing.T) {
 	var calls atomic.Int32
 	var mu sync.Mutex

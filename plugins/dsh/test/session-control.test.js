@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +65,32 @@ test('the process boundary strips inherited proof and forwards only the host-ver
   assert.deepEqual(calls[0].command, session);
   assert.deepEqual(JSON.parse(calls[0].proof), proof);
   assert.equal(calls[0].dsh, 'desktop-session');
+});
+
+test('human abandonment keeps exact command authority while normalizing task aliases for the engine', async t => {
+  const dir = await directory(t), other = await directory(t), alias = join(other, 'task-alias');
+  await symlink(dir, alias, 'dir');
+  const log = join(other, 'calls.jsonl');
+  env(t, 'TEST_SESSION_LOG', log);
+  const options = { binary, hostSessionID: 'desktop-session' };
+  for (const taskDir of [alias, dir + '/', dir + '/./']) {
+    const input = request(taskDir), raw = JSON.stringify(input);
+    const event = { type: 'command/run', seq: 0, data: { name: 'flywheel', commandId: 'c1', args: raw, source: { kind: 'user' } } };
+    const proof = sessionUserAction(input, { id: 'desktop-session' }, 'c1', raw, projection.apply(projection.init({}, 0), event));
+    const result = await runControl(input, { ...options, sessionUserAction: proof });
+    assert.equal(result.taskDir, dir);
+    assert.equal(proof.taskDir, taskDir, 'normalization must not mutate the original human-event proof');
+    await assert.rejects(runControl(request(other), { ...options, sessionUserAction: proof }), ControlNotDispatchedError,
+      'a proof for the same session key and revision must not authorize a different task');
+    await assert.rejects(runControl(request(dir), { ...options, sessionUserAction: proof }), ControlNotDispatchedError,
+      'the proof must first match the exact original command, even when a different spelling resolves to the same task');
+  }
+  const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(calls.length, 3, 'only the three exact human commands were dispatched');
+  for (const call of calls) {
+    assert.equal(JSON.parse(call.proof).taskDir, dir, 'the child receives the canonical task directory in its proof');
+    assert.deepEqual(call.command, session);
+  }
 });
 
 test('published host accepts a user command and rejects model tool abandonment', async t => {

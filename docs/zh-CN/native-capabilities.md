@@ -107,7 +107,7 @@ Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packet
 
 开启 native profile 不新增第二个循环控制器：Go 继续决定是否重试、预算是否允许、哪个 candidate 被验收以及何时交付。原生 task board 的完成状态不是 Flywheel completed。
 
-规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期；使用普通 Kimi print 时，主 stdout 不包含后台子代理活动，watchdog 无法把子代理进度当成活动。因此非 native 规划调用必须在提示词中要求调查留在前台，或改用 Kimi native profile。长时间、可并行的调查优先使用 native profile；无论哪种路径，unknown 规划调用都只能通过受控退役结束，不能换后端或重放。
+规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
 
 ## 4. LCU 与截图
 

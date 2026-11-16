@@ -49,6 +49,8 @@ export function sessionUserAction(input, session, commandId, rawInput, projectio
 }
 
 export function validSessionUserAction(value, command, taskDir) {
+  // taskDir is the original command path. The process boundary normalizes it
+  // only after this exact-event check, alongside the validated request path.
   return record(value) && value.kind === 'dsh' && text(value.sessionId) && text(value.commandId) &&
     command?.action === 'abandon' && value.action === 'abandon' && value.taskDir === taskDir &&
     value.key === command.key && value.invocation === command.invocation &&

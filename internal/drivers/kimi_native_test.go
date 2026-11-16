@@ -107,6 +107,7 @@ func TestRunKimiNativeRealPipesAndBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(raw), KimiDefaultModel)
 	require.Contains(t, string(raw), "/explicit-account-home")
+	require.Contains(t, string(raw), `"idleTimeoutMs":300000`)
 	var events []string
 	args.OnEvent = func(s string) { events = append(events, s) }
 	args.Command = "/explicit/kimi"
@@ -115,10 +116,14 @@ func TestRunKimiNativeRealPipesAndBinding(t *testing.T) {
 	args.PersistentSession = true
 	args.Model = "chosen"
 	args.Thinking = "max"
+	args.Watchdog.IdleTimeoutMs = 1200
 	got = RunKimi(args)
 	require.True(t, got.Settled)
 	require.True(t, got.Session.ResumeAccepted)
 	require.Len(t, events, 2)
+	raw, err = os.ReadFile(filepath.Join(cwd, "native-input.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"idleTimeoutMs":1200`, "the progress cadence must use the parent's effective idle deadline")
 	a := CallArgs{Cwd: cwd, WorkspaceCwd: t.TempDir(), Native: args.Native, Prompt: "record", PermissionMode: "danger-full-access", Binding: config.LoopBinding{Harness: "kimi", Model: "chosen"}, APIKeys: args.APIKeys}
 	got = InvokeHarness(a, "")
 	require.True(t, got.Settled, "%+v", got)

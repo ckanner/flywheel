@@ -34,6 +34,7 @@ type kimiNativeStart struct {
 	PermissionMode  string           `json:"permissionMode"`
 	Prompt          string           `json:"prompt"`
 	TimeoutMS       int64            `json:"timeoutMs"`
+	IdleTimeoutMS   int64            `json:"idleTimeoutMs,omitempty"`
 	SessionID       string           `json:"sessionId,omitempty"`
 	Persistent      bool             `json:"persistent,omitempty"`
 	Native          json.RawMessage  `json:"native"`
@@ -123,7 +124,8 @@ func parseKimiNativeStream(stdout string, request kimiNativeStart) (Result, erro
 func runKimiNative(a KimiArgs) Result {
 	r := kimiNativeStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd,
 		Model: a.Model, ReasoningEffort: a.Thinking, PermissionMode: a.PermissionMode, Prompt: a.Prompt,
-		SessionID: a.SessionID, Persistent: a.PersistentSession, Native: a.Native, Managed: a.Managed, TimeoutMS: a.Watchdog.WallTimeoutMs}
+		SessionID: a.SessionID, Persistent: a.PersistentSession, Native: a.Native, Managed: a.Managed,
+		TimeoutMS: a.Watchdog.WallTimeoutMs, IdleTimeoutMS: a.Watchdog.IdleTimeoutMs}
 	if r.RequestID == "" {
 		r.RequestID = "native-" + rand.Text()
 	}
@@ -135,6 +137,9 @@ func runKimiNative(a KimiArgs) Result {
 	}
 	if r.TimeoutMS <= 0 {
 		r.TimeoutMS = watchdog.DefaultWallTimeoutMs
+	}
+	if r.IdleTimeoutMS <= 0 {
+		r.IdleTimeoutMS = watchdog.DefaultIdleTimeoutMs
 	}
 	reject := func(detail string) Result {
 		out := invalidHarnessResult("kimi", r.Model, detail)
@@ -168,7 +173,7 @@ func runKimiNative(a KimiArgs) Result {
 		env[KimiCommandEnv] = a.Command
 	}
 	result, writeErr := runMachineWorker(KimiNativeCommand(), "kimi", codexProStart{Protocol: 1}, payload, watchdog.Opts{
-		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env), IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
+		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env), IdleTimeoutMs: r.IdleTimeoutMS,
 		WallTimeoutMs: r.TimeoutMS, KillGraceMs: max(a.Watchdog.KillGraceMs, 15000),
 	}, nil, a.OnEvent)
 	return finishKimiNative(r, result, writeErr)

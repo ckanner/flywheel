@@ -512,9 +512,9 @@ cost stay unknown. Workflow, Review/Judge and delivery authorization are separat
 
 ## Watchdog and planning liveness
 
-`watchdog` is the two-timer guard: `idle-timeout-ms` kills the process group after no stdout/stderr activity, `wall-timeout-ms` is the absolute bound, and `kill-grace-ms` is the SIGTERM-to-SIGKILL grace. Defaults are 300 seconds idle, 3600 seconds wall, and 5 seconds grace; the kill grace is never shortened per role.
+`watchdog` provides an output-idle bound where the transport exposes progress, an absolute `wall-timeout-ms` bound, and a `kill-grace-ms` SIGTERM-to-SIGKILL grace. Defaults are 300 seconds idle, 3600 seconds wall, and 5 seconds grace; the kill grace is never shortened per role. Kimi print has no reliable output-idle signal, so its driver uses the wall bound and explicit cancellation without arming the idle timer.
 
-`watchdog.roles.<role>` overrides idle/wall for one role. Planning roles default to a 900-second idle while execute and review keep 300 seconds, so a model that is still working without output is not mistaken for a hung process. Example:
+`watchdog.roles.<role>` overrides idle/wall for one role. Where output-idle detection applies, planning roles default to 900 seconds while execute and review keep 300 seconds. These are policy bounds, not proof that a silent model is hung. Example:
 
 ```json
 "watchdog": {
@@ -528,7 +528,11 @@ cost stay unknown. Workflow, Review/Judge and delivery authorization are separat
 }
 ```
 
-Idle can only be refreshed by observable output; it cannot prove progress from background subagents or silent model inference. Harnesses without child lifecycle events, such as Kimi print, must keep investigation in the foreground in the prompt or use a Kimi native profile. Do not set zero or an extreme value to disable the guard; the wall bound still applies. An unknown dispatch/outcome/cleanup planning invocation cannot be fixed by switching bindings, fresh history, deleting the ledger, or replay; use the explicit retirement action in [session recovery](session-recovery.md). Unknown is not zero and is never silently rewritten as known.
+Kimi print buffers assistant deltas, omits thinking deltas and does not expose child progress. Even foreground work can therefore be silent; neither a longer idle value nor a prompt instruction repairs that observation gap. All print roles use their effective wall deadline (including a role override); their idle values do not apply. Use `wall-timeout-ms` to bound a long print call. Explicit stop/cancel and process-group cleanup still apply; zero does not mean an unlimited wall deadline.
+
+The Kimi native worker forwards real root/child item, step and lifecycle progress as metadata to the parent watchdog. It does not forward reasoning or tool payloads and does not manufacture heartbeat events from timers or WebSocket ping/pong. Idle callbacks recheck the latest activity deadline, so a stale queued callback cannot kill work that has already produced new activity. Foreground investigation remains a result-collection constraint for non-native planning, not a liveness guarantee.
+
+Unknown planning dispatch/outcome cannot be fixed by switching bindings, fresh history, deleting the ledger or replay. Use the explicit retirement action in [session recovery](session-recovery.md) only after cleanup is confirmed; unconfirmed cleanup remains blocked. Unknown is not zero and is never silently rewritten as known.
 
 ## Workflow policy and recovery
 

@@ -136,6 +136,20 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 		planningReq.Status = "cancelled"
 	}
 	oldThread := r.ThreadID
+	if oldThread == "" {
+		oldThread = r.Last.RequestedThread
+	}
+	// The legacy resident Plan cache is a second owner of the same CLI history.
+	// Leaving its unknown marker blocks every retry; leaving its history ID can
+	// resume the retired thread. Retire only the cache tied to this exact call,
+	// in the same CAS as Last, while preserving the thread in the audit record.
+	if legacy, ok := c.State.PlanSession.(map[string]any); ok && requestID == "" && r.Role == "plan" &&
+		r.Protocol == "kimi-print/v1" && legacy["harness"] == "kimi" && legacy["cwd"] == r.Cwd {
+		thread, _ := legacy["session-id"].(string)
+		if thread != "" && (thread == r.Last.RequestedThread || thread == r.ThreadID) {
+			c.State.PlanSession = nil
+		}
+	}
 	r.Last.Abandon = &state.SessionAbandon{
 		At: c.nowISO(), Reason: request.Reason, Authority: "human",
 		RequestID: requestID, Invocation: r.Last.ID, ThreadID: oldThread, Source: source,
@@ -149,6 +163,7 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	entry := map[string]any{
 		"at": c.nowISO(), "action": "session-abandon", "session": request.Key,
 		"invocation": r.Last.ID, "reason": request.Reason, "source": source,
+		"thread-id": oldThread, "dispatch": r.Last.Dispatch, "outcome": r.Last.Outcome,
 	}
 	c.State.Inbox = append(c.State.Inbox, entry)
 	c.appendInbox(entry)

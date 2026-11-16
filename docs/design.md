@@ -475,13 +475,15 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 
 ### 6.1 规划调用的活性、未知结果与人工退役
 
-watchdog 的 idle 期限只由可观察的 stdout/stderr 活动刷新。对能够静默等待模型或原生子代理的 harness，这不足以证明无进展：Kimi print 只向父进程输出主会话 JSONL，后台子代理的完成通知不会刷新 idle；设计提示词因此必须要求非 native harness 把调查留在前台，或改用能暴露子代理生命周期的 Kimi native profile。全局 `watchdog` 仍保留 `idle-timeout-ms`、`wall-timeout-ms` 和 `kill-grace-ms`；`watchdog.roles.<role>` 只覆盖指定角色的 idle/wall，规划角色默认使用更长的 900 秒 idle，执行/评审保持默认 300 秒。收尾宽限不按角色缩短。
+watchdog 的 idle 期限只适用于能暴露实际进展的传输。Kimi print 只订阅主代理事件，会缓存 assistant delta、不输出 thinking delta，后台子代理进展也不可见；前台研究同样可能正常静默。因此 print driver 不启动输出 idle 计时器，所有角色均保留生效的 wall 期限、用户取消与原进程组清理。模型提示词不能补造活性证据；非 native 前台调查约束仅用于在当前调用内完成并收集结果。Kimi native worker 将实际观察到的主／子代理 item、step 和生命周期事件以元信息转发给 Go，不转发思考或工具正文，不用定时器或 WS ping/pong 伪造进展。
+
+全局 `watchdog` 仍保留 `idle-timeout-ms`、`wall-timeout-ms` 和 `kill-grace-ms`；`watchdog.roles.<role>` 只覆盖指定角色的 idle/wall。在适用输出 idle 的传输上，规划角色默认 900 秒，执行／评审默认 300 秒；它们是静默策略上限，不是模型已挂起的证明。print 使用相同角色的 wall 覆盖，idle 值不作用于 print。通用 watchdog 与 DSH warm path 都在锁内核对最新活动期限，过期排队回调不能终止已刷新期限的调用。收尾宽限不按角色缩短。
 
 Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 后 driver 只能记录 unknown。unknown 不能被换 fresh、换后端、删除账本或重新派发来“修复”，也不能由 status、绑定变更或工作台刷新自动变成已知。为规划角色增加受限的人工退役路径：
 
 - 仅 `design-plan`、`design-review`、`plan`、`plan-review` 的 `blocked` 调用可退役；记录必须已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown。
 - 必须提供受限原因，并由验证过的 DSH 用户命令或控制终端证明这是人的决定；证明绑定 taskDir、key、revision、reason 和准确 invocation，不能跨任务或重复使用。模型工具不暴露该动作；宿主 env 证明会重新核对，不继承父进程伪造值。获得完整 shell 的模型进程已能直接改写账本，不属于本宿主证明边界，不宣称 OS 级防伪。
-- 状态变为 `abandoned`，保留原 unknown 事实、原因、时间、来源和旧 thread 证据；旧 thread 不再可恢复。不应用任何阶段结果，不再次派发模型。
+- 状态变为 `abandoned`，保留原 unknown 事实、原因、时间、来源和旧 thread 证据；旧 thread 不再可恢复。不应用任何阶段结果，不再次派发模型。旧 Kimi resident Plan 的精确关联缓存在同一状态保存中同步退役，其他未知缓存保持阻断；线程和 unknown 事实另写入持久审计，后续代次不能覆盖证据。
 - 关联的规划 request 标为 `cancelled`；任务回到 `paused`，下一次显式 Plan 产生新 request/generation。`planningHasPendingReceipt` 把 `abandoned` 视作已终结的边界。
 - 不能把退役实现成“成功”或“未派发”；它只结束未知副作用，不伪造结果。
 

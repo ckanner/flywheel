@@ -6,15 +6,47 @@ import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, tow
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const identifier = value => typeof value === 'string' && value.trim() && value.length <= 512 && !/[\0\r\n]/.test(value);
 const encoded = value => encodeURIComponent(value);
+// Only real session events refresh the parent's output watchdog. Forward the
+// identity/type, never model reasoning, streamed text or tool argument/results.
+// A transport ping is not model progress and is deliberately not included.
+const activityEvents = new Set(['agent', 'task', 'turn.started', 'turn.updated', 'turn.ended',
+  'item.started', 'item.updated', 'item.delta', 'item.ended', 'item.removed', 'turns.removed', 'interaction']);
+const progressEvents = new Set(['turn.updated', 'item.updated', 'item.delta']);
+
+// Liveness needs evidence of recent work, not one log line per token. Bound
+// progress notifications across the entire tree so a long streamed answer
+// cannot exhaust the parent's output buffer. Only a real event can emit one;
+// no timer, ping, or locally synthesized heartbeat extends the idle deadline.
+export function createKimiActivityReporter(idleTimeoutMs, emit, now = () => performance.now()) {
+  const interval = Math.min(1000, Math.max(1, Math.floor(idleTimeoutMs / 4)));
+  const pendingTypes = new Set();
+  let lastProgress = -Infinity;
+  return frame => {
+    if (!activityEvents.has(frame.type) || !identifier(frame.agent_id)) return;
+    const event = { type: frame.type, agentId: frame.agent_id, taskId: frame.task_id,
+      turnId: frame.turn_id ?? frame.turn?.turn_id, itemId: frame.item_id ?? frame.item?.item_id,
+      status: frame.status ?? frame.turn?.status, outcome: frame.outcome ?? frame.turn?.outcome };
+    if (progressEvents.has(frame.type)) {
+      pendingTypes.add(frame.type);
+      const at = now();
+      if (at - lastProgress < interval) return;
+      lastProgress = at;
+      event.coalescedTypes = [...pendingTypes];
+      pendingTypes.clear();
+    }
+    emit(event);
+  };
+}
 
 export function validateKimiNativeStart(input) {
   if (!object(input) || input.type !== 'start' || input.protocol !== 1 || !identifier(input.requestId)
-      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'sessionId', 'persistent', 'native', 'managed'].includes(key))
+      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'persistent', 'native', 'managed'].includes(key))
       || !identifier(input.cwd) || !isAbsolute(input.cwd) || !identifier(input.model) || !identifier(input.reasoningEffort)
       || (input.workspaceCwd !== undefined && (!identifier(input.workspaceCwd) || !isAbsolute(input.workspaceCwd)))
       || (input.persistent !== undefined && typeof input.persistent !== 'boolean')
       || input.permissionMode !== 'danger-full-access' || typeof input.prompt !== 'string' || !input.prompt.trim()
       || Buffer.byteLength(JSON.stringify(input)) > 1024 * 1024 || !Number.isSafeInteger(input.timeoutMs) || input.timeoutMs <= 0
+      || (input.idleTimeoutMs !== undefined && (!Number.isSafeInteger(input.idleTimeoutMs) || input.idleTimeoutMs <= 0))
       || (input.sessionId !== undefined && (!identifier(input.sessionId) || input.persistent !== true))) {
     throw error('INVALID_REQUEST', 'Expected a bounded protocol 1 Kimi start request with explicit full-access permission');
   }
@@ -176,16 +208,13 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   const controller = new AbortController();
   const cancel = () => controller.abort(signal?.reason);
   if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
-  let deadlineTimer;
+  let deadlineTimer, reportActivity;
   const send = (type, content) => emit({ protocol: 1, requestId: input?.requestId || 'invalid-request', type, sessionId, ...content });
   const sessionPath = suffix => `/api/v1/sessions/${encoded(sessionId)}${suffix}`;
   const observe = frame => {
-    if (frame.session_id !== sessionId) return;
+    if (frame.session_id !== sessionId || !identifier(frame.agent_id)) return;
     conversation.fold(frame);
-    if (ready && ['task', 'turn.started', 'turn.ended', 'interaction'].includes(frame.type)) {
-      send('event', { event: { type: frame.type, agentId: frame.agent_id, taskId: frame.task_id,
-        turnId: frame.turn?.turn_id, status: frame.status ?? frame.turn?.status, outcome: frame.outcome ?? frame.turn?.outcome } });
-    }
+    if (ready) reportActivity(frame);
     const turn = promptId && conversation.matchingPrompt(promptId);
     if (turn) { requestedTurnId = turn.turn_id; dispatch = 'dispatched'; }
   };
@@ -227,6 +256,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   };
   try {
     input = validateKimiNativeStart(raw);
+    reportActivity = createKimiActivityReporter(input.idleTimeoutMs ?? 300_000, event => send('event', { event }));
     const declaredCwd = input.cwd;
     input = { ...input, cwd: await realpath(input.cwd), managed: { ...input.managed, taskDir: await realpath(input.managed.taskDir) } };
     deadlineTimer = setTimeout(() => controller.abort(error('TIMEOUT', 'The Kimi invocation exceeded its wall timeout')), input.timeoutMs);

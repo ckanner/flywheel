@@ -512,9 +512,9 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 
 ## Watchdog 与规划调用活性
 
-`watchdog` 是全局双计时看门狗：`idle-timeout-ms` 在 stdout/stderr 没有任何活动时终止进程组，`wall-timeout-ms` 是绝对上限，`kill-grace-ms` 是 SIGTERM 到 SIGKILL 的收尾宽限。默认 idle 300 秒、wall 3600 秒、grace 5 秒；收尾宽限不按角色缩短。
+`watchdog` 对能暴露进展的传输使用输出 idle 上限，同时保留绝对的 `wall-timeout-ms` 上限和 `kill-grace-ms` 的 SIGTERM 到 SIGKILL 收尾宽限。默认 idle 300 秒、wall 3600 秒、grace 5 秒；收尾宽限不按角色缩短。Kimi print 没有可靠的输出 idle 信号，因此 driver 不启动 idle 计时器，仍使用 wall 上限和显式取消。
 
-`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；规划角色默认 idle 900 秒，执行和评审保持 300 秒，避免“模型仍在工作但长时间没有输出”被误判为挂起。示例：
+`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；在适用输出 idle 检测的传输上，规划角色默认 900 秒，执行和评审保持 300 秒。这是策略上限，不能证明静默模型已经挂起。示例：
 
 ```json
 "watchdog": {
@@ -528,7 +528,11 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 }
 ```
 
-idle 只能由可观察输出刷新；不能证明后台子代理或静默模型推理的进展。Kimi print 等没有子代理生命周期事件的 harness 必须在提示词中把调查留在前台，或改用 Kimi native profile。不要设成 0 或极大值来“关掉”看门狗；wall 仍是硬上限。派发/结果/清理为 unknown 的规划调用不能用换绑定、换 fresh、删账本或重放修复；使用[会话恢复](session-recovery.md)中的显式退役动作。未知不是零，也不会被自动改写成已知。
+Kimi print 会缓存 assistant delta、不输出 thinking delta，也不暴露子代理进展，因此前台工作也可能长时间静默。延长 idle 或修改提示词不能补上这个观测缺口。所有 print 角色使用各自生效的 wall 上限（包括角色覆盖），idle 配置不作用于 print；长调用应调整 `wall-timeout-ms`。显式停止、取消和进程组清理保持生效，wall 设为 0 不代表无限运行。
+
+Kimi native worker 会把真实主代理／子代理的 item、step 和生命周期进展作为元信息传给父进程看门狗，不转发思考或工具正文，不用定时器或 WebSocket ping/pong 制造心跳。idle 回调会重新核对最新活动期限，已经排队的旧回调不能误杀刚有新活动的调用。非 native 规划保留前台调查约束，用于收集完整结果，不作为活性保证。
+
+派发／结果为 unknown 的规划调用不能用换绑定、换 fresh、删账本或重放修复；只有清理已确认后才能使用[会话恢复](session-recovery.md)中的显式退役动作，清理未知仍然阻断。未知不是零，也不会被自动改写成已知。
 
 ## 工作流策略与恢复
 

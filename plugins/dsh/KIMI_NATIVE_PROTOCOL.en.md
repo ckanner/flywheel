@@ -14,6 +14,7 @@ The worker receives one UTF-8 JSONL `start` on stdin, which the parent keeps ope
   cwd: '/physical/role-worktree', workspaceCwd: '/physical/project',
   model: 'configured-model-alias', reasoningEffort: 'high',
   permissionMode: 'danger-full-access', prompt: 'Role instructions', timeoutMs: 600000,
+  idleTimeoutMs: 300000, // effective parent idle bound; optional, default 300000
   persistent: true, // sessionId is supplied only to resume Agent/Swarm history
   native: {
     version: 1, mode: 'agent', // agent | swarm | tower
@@ -40,6 +41,8 @@ Admission reads and hashes actual `/openapi.json` and `/asyncapi.json`, checking
 ## Execution, completion and cancellation
 
 The worker subscribes to `main` before submission and correlates `prompt_id` with actual `user_message.prompt_ids`; HTTP acceptance and WS events may arrive in either order. The first ordinal is **0**, so fresh history has baseline **-1**. Task/agent_refs observations discover and subscribe child agents. Completion considers native tasks, queues, interactions and session busy state together. The first root turn ending is insufficient; Tower's automatic root continuations must also end.
+
+Observed root/child item, step and lifecycle activity is forwarded as `event` metadata to Go's idle watchdog; reasoning text and tool arguments/results are not copied. High-frequency item/step progress is coalesced across the task tree, with an interval no greater than one second and derived from the effective parent `idleTimeoutMs` (a positive integer, default 300000). `event.coalescedTypes` identifies the progress kinds observed since the previous notification. Lifecycle boundaries and the terminal result are not throttled. Only actual events trigger progress notifications; timers and WebSocket ping/pong do not manufacture model activity. The wall deadline and cancellation/cleanup remain independent bounds.
 
 `native.completion={confirmed,pendingIds}` is captured **before** cleanup. Success requires completed root turns, idle observed children/agents, an empty queue, no pending interaction and consistent final REST/WS reconciliation. Cancelling children during shutdown cannot convert incomplete work to success. Receipts retain actual task/child IDs, states and models.
 

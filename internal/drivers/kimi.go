@@ -10,6 +10,9 @@
 //   - 当前 print writer 不输出 token usage；未知保持 nil，不能记成免费。
 //   - thinking 每次由 KIMI_MODEL_THINKING_EFFORT 显式注入，默认 high，
 //     不修改用户配置。显式模型别名由 binding 提供，省略时使用当前订阅默认。
+//   - print JSONL buffers assistant deltas and omits thinking/child progress;
+//     silence is not an idle signal. Keep the wall deadline and cancellation,
+//     but do not kill this transport for a lack of stdout/stderr activity.
 package drivers
 
 import (
@@ -199,13 +202,14 @@ func RunKimi(a KimiArgs) Result {
 	}
 
 	result := watchdog.Run(command, args, watchdog.Opts{
-		Context:       a.Watchdog.Context,
-		Cwd:           a.Cwd,
-		Env:           childenv.EnvSlice(env),
-		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
-		WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs:   a.Watchdog.KillGraceMs,
-		OnActivity:    onActivity,
+		Context:            a.Watchdog.Context,
+		Cwd:                a.Cwd,
+		Env:                childenv.EnvSlice(env),
+		IdleTimeoutMs:      a.Watchdog.IdleTimeoutMs,
+		DisableIdleTimeout: true,
+		WallTimeoutMs:      a.Watchdog.WallTimeoutMs,
+		KillGraceMs:        a.Watchdog.KillGraceMs,
+		OnActivity:         onActivity,
 	})
 	// watchdog.Wait has drained both streams; no callback can race this tail.
 	if a.OnEvent != nil {

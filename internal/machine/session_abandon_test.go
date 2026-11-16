@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/stretchr/testify/assert"
@@ -293,4 +294,168 @@ func TestSessionCommandValidateAbandon(t *testing.T) {
 	base.Invocation = "call-one"
 	base.Prompt = "do not send"
 	require.Error(t, base.Validate())
+}
+
+func TestAbandonLegacyResidentPlanAllowsFreshRetry(t *testing.T) {
+	fx, c := sessionFixture(t)
+	c.Config.Sessions.Mode = "fresh"
+	binding := c.Config.Loops["plan"]
+	binding.Harness, binding.ResidentSession = "kimi", true
+	c.Config.Loops["plan"] = binding
+	c.State.PlanSession = map[string]any{"session-id": "legacy-plan-history", "channel": binding.Channel,
+		"model": binding.Model, "harness": "kimi", "cwd": c.Cwd, "thinking": binding.Thinking,
+		"permission-mode": c.Config.PermissionMode("plan", "kimi")}
+	c.save()
+	require.NoError(t, c.err())
+	sd := newScripted(nil)
+	sd.planFn = func(a drivers.CallArgs) drivers.Result {
+		require.Equal(t, "legacy-plan-history", a.SessionID)
+		result := sessionResult(a, drivers.Result{ExitCode: new(1)})
+		result.Session.Protocol = "kimi-print/v1"
+		result.Session.Dispatch, result.Session.Outcome, result.Session.ResumeCandidate = "unknown", "unknown", false
+		return result
+	}
+	c.Drivers = sd.set()
+	_, err := c.planStep(c.Spec.Milestones[0], "")
+	require.ErrorContains(t, err, "legacy resumed Plan outcome is unknown")
+	st := loadFixtureState(t, fx)
+	require.Equal(t, true, st.PlanSession.(map[string]any)["outcome-unknown"])
+	key := "plan/" + c.Spec.Milestones[0].ID
+	invocation := st.Sessions.Records[key].Last.ID
+	request := SessionCommand{Action: "abandon", Key: key, Revision: st.Revision,
+		Invocation: invocation, Reason: "Retire the cancelled resident Plan and start a fresh design call."}
+	request.UserAction = &SessionUserAction{Kind: "tty", TaskDir: fx.taskDir, Key: key,
+		Invocation: invocation, Revision: st.Revision, Action: request.Action, Reason: request.Reason}
+	_, err = RunSingleStep(RunSingleStepOpts{
+		RunOpts: RunOpts{TaskDir: fx.taskDir, Cwd: fx.root, Config: c.Config, Drivers: c.Drivers},
+		Only:    "session", ExpectedRevision: &st.Revision, Session: &request,
+	})
+	require.NoError(t, err)
+	st = loadFixtureState(t, fx)
+	require.Nil(t, st.PlanSession, "the exact abandoned history must also leave the legacy resume cache")
+	retired := st.Sessions.Records[key]
+	require.Equal(t, "abandoned", retired.Last.Status)
+	require.Equal(t, "unknown", retired.Last.Outcome)
+	require.Equal(t, "legacy-plan-history", retired.Last.Abandon.ThreadID)
+	require.Equal(t, invocation, retired.Last.Abandon.Invocation)
+	previousGeneration := retired.Generation
+	sd.planFn = func(a drivers.CallArgs) drivers.Result {
+		require.Empty(t, a.SessionID, "the abandoned resident history cannot be resumed")
+		result := sessionResult(a, drivers.MockResult(nil))
+		result.Session.Protocol = "kimi-print/v1"
+		return result
+	}
+	restarted, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: c.Config, Drivers: sd.set()})
+	require.NoError(t, err)
+	outcome, err := restarted.planStep(restarted.Spec.Milestones[0], "")
+	require.NoError(t, err)
+	require.True(t, outcome.OK)
+	require.Len(t, sd.log.plan, 2)
+	require.Equal(t, previousGeneration+1, restarted.State.Sessions.Records[key].Generation)
+	st = loadFixtureState(t, fx)
+	var audit map[string]any
+	for _, value := range st.Inbox {
+		entry := value.(map[string]any)
+		if entry["action"] == "session-abandon" && entry["invocation"] == invocation {
+			audit = entry
+		}
+	}
+	require.NotNil(t, audit, "the next generation must retain the prior abandonment evidence")
+	require.Equal(t, "legacy-plan-history", audit["thread-id"])
+	require.Equal(t, "unknown", audit["dispatch"])
+	require.Equal(t, "unknown", audit["outcome"])
+}
+
+func TestAbandonPreservesUnrelatedLegacyPlanCache(t *testing.T) {
+	for _, scenario := range []string{"other thread", "other cwd", "other harness", "other protocol", "missing thread"} {
+		t.Run(scenario, func(t *testing.T) {
+			fx := abandonTaskFixture(t)
+			record := fx.ctx.State.Sessions.Records[fx.key]
+			delete(fx.ctx.State.Sessions.Records, fx.key)
+			record.Role, record.Scope, record.Protocol = "plan", "M-01", "kimi-print/v1"
+			record.Last.RequestedThread = "retired-thread"
+			fx.key = "plan/M-01"
+			fx.ctx.State.Sessions.Records[fx.key] = record
+			legacy := map[string]any{"session-id": "retired-thread", "harness": "kimi", "cwd": record.Cwd, "outcome-unknown": true}
+			switch scenario {
+			case "other thread":
+				legacy["session-id"] = "unrelated-history"
+			case "other cwd":
+				legacy["cwd"] = t.TempDir()
+			case "other harness":
+				legacy["harness"] = "other"
+			case "other protocol":
+				record.Protocol = "kimi-native/v1"
+			case "missing thread":
+				delete(legacy, "session-id")
+			}
+			fx.ctx.State.PlanSession = legacy
+			_, err := fx.ctx.abandonSession(abandonCommand(&fx, fx.key, "Retire only this exact Plan invocation."))
+			require.NoError(t, err)
+			loaded, err := state.Load(fx.root)
+			require.NoError(t, err)
+			require.Equal(t, legacy, loaded.PlanSession, "one abandoned call cannot erase another unknown cache")
+			require.True(t, planningHasPendingReceipt(loaded))
+		})
+	}
+}
+
+func TestAbandonUnknownDesignThenExplicitPlanRetainsOriginalBoundary(t *testing.T) {
+	fx, opts, calls := briefEngineFixture(t, false)
+	enableSessionPolicy(&Context{Config: opts.Config})
+	for _, driver := range []drivers.Driver{opts.Drivers.DesignPlan, opts.Drivers.DesignReview} {
+		d := driver.(*fnDriver)
+		original := d.fn
+		d.fn = func(a drivers.CallArgs) drivers.Result {
+			result := sessionResult(a, original(a))
+			if d.role == "design-plan" && calls[d.role] == 1 {
+				result.Text, result.Usage, result.CostUSD = "", nil, nil
+				result.TimedOut, result.Settled = true, false
+				result.Session.Dispatch, result.Session.Outcome, result.Session.UsageStatus = "unknown", "unknown", "unknown"
+				result.Session.ResumeCandidate = false
+			}
+			return result
+		}
+	}
+	_, err := RunTask(opts)
+	require.ErrorContains(t, err, "requires reconciliation")
+	st := loadFixtureState(t, fx)
+	require.Empty(t, st.Planning.Designs)
+	require.Empty(t, st.Planning.Reviews)
+	require.Len(t, st.Planning.Requests, 1)
+	originalRequest := st.Planning.Requests[0].ID
+	key := "design-plan/planning:" + originalRequest
+	invocation := st.Sessions.Records[key].Last.ID
+	_, err = RunTask(opts)
+	require.ErrorContains(t, err, "requires reconciliation")
+	require.Equal(t, 1, calls["design-plan"], "ordinary Run cannot replay an unknown call")
+	st = loadFixtureState(t, fx)
+	request := SessionCommand{Action: "abandon", Key: key, Revision: st.Revision,
+		Invocation: invocation, Reason: "Retire this drained unknown design call; I will request a new Plan."}
+	request.UserAction = &SessionUserAction{Kind: "tty", TaskDir: fx.taskDir, Key: key,
+		Invocation: invocation, Revision: st.Revision, Action: request.Action, Reason: request.Reason}
+	_, err = RunSingleStep(RunSingleStepOpts{RunOpts: opts.RunOpts, Only: "session", ExpectedRevision: &st.Revision, Session: &request})
+	require.NoError(t, err)
+	summary, err := RunTask(opts)
+	require.NoError(t, err)
+	require.Equal(t, "paused", summary.Status)
+	require.Equal(t, 1, calls["design-plan"], "abandonment itself does not authorize a replacement call")
+	st = loadFixtureState(t, fx)
+	_, _, err = ControlPlanning(opts.RunOpts, PlanningCommand{Action: "plan", Revision: st.Revision,
+		RequestID: "explicit-design-after-abandon", Scope: "design"}, "")
+	require.NoError(t, err)
+	summary, err = RunTask(opts)
+	require.NoError(t, err)
+	require.Equal(t, "awaiting-design-approval", summary.PlanningPhase)
+	require.Equal(t, 2, calls["design-plan"])
+	require.Equal(t, 1, calls["design-review"])
+	st = loadFixtureState(t, fx)
+	require.Len(t, st.Planning.Designs, 1)
+	require.Len(t, st.Planning.Reviews, 1)
+	require.Len(t, st.Planning.Requests, 2)
+	require.Equal(t, "cancelled", st.Planning.Requests[0].Status)
+	require.Equal(t, "abandoned", st.Sessions.Records[key].Last.Status)
+	require.Equal(t, "unknown", st.Sessions.Records[key].Last.Outcome)
+	require.Equal(t, invocation, st.Sessions.Records[key].Last.ID)
+	require.NoDirExists(t, filepath.Join(fx.root, "build"))
 }

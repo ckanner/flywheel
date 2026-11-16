@@ -9,6 +9,8 @@
 - 环境：macOS arm64、Go `1.27.0`、Node `26.12.1`。未修改真实 DSH profile、账号、凭据或用户配置。
 - 本记录对应代码与离线验证，不声称 npm 发布、真实桌面 UI 或真实模型调用已验收。
 
+以下初次实现、review 和检查记录保留原 PR 的证据；`3b8e3fc` 之后的根因复审及修正见末节。当前行为以设计契约与中英文使用指南为准。
+
 ## 实现内容
 
 | 层 | 代码与行为 |
@@ -62,3 +64,46 @@
 - 本次没有真实 Kimi/DSH 设计调用、真实桌面按钮或 npm 安装包验收；真实模型仍可能长时间无输出，role idle 只是策略上限，不是活性证明。
 - 快速 session 命令的等待测试使用本地 fake orchestrator；真实引擎启动延迟和状态保存仍需桌面场景复核。
 - 退役只适用于规划角色；packet 角色继续使用人工接管/原调用对账路径，不因本次变更获得新的通用放弃动作。
+
+## PR #53 二次复审与修复（2026-11-16）
+
+### 基线与根因证据
+
+复审基线为 `3b8e3fc4a83e240ab62b59b940bfb509de7d85f8`，环境为 Linux amd64、Go 1.27.4、Node 24.22.1。本节没有访问用户的告警仓库运行目录或真实 Kimi 账号；事故时间线依据 PR 描述，协议判断依据源码，修复验证使用真实本地进程和离线协议 fixture。
+
+上游 Kimi 固定源码 `f538d534cc9f4e96f4bacfdf02e28df682a4f611` 提供了比“后台子代理没有输出”更基础的证据：
+
+- [`PromptJsonWriter`](https://github.com/MoonshotAI/kimi-code/blob/f538d534cc9f4e96f4bacfdf02e28df682a4f611/apps/kimi-code/src/cli/prompt-render.ts#L149-L205) 缓存 assistant delta、忽略 thinking delta、缓存工具参数；因此前台模型调用也可能持续静默。
+- [`runNativeTurn`](https://github.com/MoonshotAI/kimi-code/blob/f538d534cc9f4e96f4bacfdf02e28df682a4f611/apps/kimi-code/src/cli/v2/run-v2-print.ts#L576-L600) 订阅当前主代理的事件总线，不提供完整子任务进展流。
+
+所以 stdout 静默不等于模型停止工作；300→900 秒只改变触发点，前台提示词不能补造观测。进程已清理、调用结果已知、任务结果可采用也是三件不同的事。
+
+### 发现与处理
+
+| 发现 | 处理与回归 |
+| --- | --- |
+| P1：print 仍按不可观察的输出 idle 杀死正常调用 | print 不启动 idle timer，仍保留有效角色 wall、显式取消与进程组清理。静默后合法完成的真实 CLI fixture 修复前失败、修复后通过；真正 wall 超时仍保留 unknown 结果，不接受成功 hint 掩盖超时 |
+| P1：native 已观察进展但未传给 Go | 转发真实主／子代理 item、step 和生命周期元信息，不复制思考、工具正文或账号 banner；Go→Node→HTTP/WS 长进展测试超过 idle 窗口仍完整完成 |
+| P2：已经排队的旧 idle 回调误杀新活动 | 同一锁内重核最新 deadline；确定性测试让旧回调在新输出之后执行，修复前误杀、修复后继续，真实新期限到达仍终止 |
+| P2：退役后旧 resident Plan cache 仍挡住重试 | 同一 CAS 清退精确关联旧缓存，保留其他未知缓存；实际 Plan unknown→公开 abandon→重启 fresh Plan 测试通过，原线程与 unknown 事实跨代次留在审计中 |
+| P2：合法目录别名被用户证明拒绝 | 先验证原始用户事件，再同步规范化请求与证明路径；符号链接、尾斜线、`/./` 通过，跨任务和篡改原始命令仍拒绝 |
+| P2：reconcile 清除 pending 后误报未应用 | 实际 send 在持久化 intent 后、派发前取消可留下 consumed+pending；恢复后只对同 key/thread/invocation 的真实 pending 转换报告 applied，重复操作与改变身份仍拒绝 |
+
+另一次独立复审发现逐 token 转发会放大 Go 的累计输出缓冲。现以有效 `idleTimeoutMs` 推导最多一秒的高频进展通知间隔，只在实际事件到来时合并通知，不用定时器或 ping 续命；生命周期与终态不节流。确定性测试覆盖 100000 次短 delta，真实桥接测试把 stdout 上限缩到 64 KiB，在大量 delta 后仍保留完整结果和清理回执。
+
+新协议端到端回归还验证：普通 Run 不重放 unknown 调用；人工退役后普通 Run 不自动新建替代请求；显式 Plan 才创建新请求，重新设计与独立审查后停在待批准，没有自动进入实施。
+
+### 本次最终检查
+
+| 检查 | 本次修订结果 |
+| --- | --- |
+| `go build ./...` | 通过 |
+| `make quality-gate` | 通过：vet、fmt-check、全部覆盖率测试；总计与每个 measured function 均 100.0% |
+| `go test -race ./internal/watchdog ./internal/drivers -count=1` | 通过，无 race 报告 |
+| `npm --prefix plugins/dsh run check` | 432 个插件测试和 10 个 rc5/legacy host 测试通过，0 失败、0 跳过，包含打包 host 检查 |
+| `FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH\|CodexPro\|ClaudeCodePro\|KimiNative)NodeWorkerOfflineBridge$' -count=1` | 四个真实 Node worker 离线桥接通过；Kimi 含主代理、子代理、密集进展及 64 KiB 输出预算场景 |
+| `git diff --check` | 通过 |
+
+前述 macOS/CI 记录不自动代表本次修订；本节记录本地 Linux 离线结果，修订后的远端 CI 以对应 commit 的运行记录为准。
+
+真实模型、用户桌面按钮、npm 发布和告警仓库复测均不属于本节离线证据。

@@ -391,3 +391,35 @@ func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
 	request.Action = "unknown"
 	assert.False(t, sessionControlReceipt(blocked, blocked, request).Applied)
 }
+
+func TestSessionReconcileReceiptRecognizesClearedPendingHandoff(t *testing.T) {
+	key := "execute/M01-T01"
+	request := &machine.SessionCommand{Action: "reconcile", Key: key, Revision: 7}
+	before := receiptState(key, "call-cancelled-before-dispatch", "consumed", key)
+	before.Handoff.Thread = "original-thread"
+	before.Handoff.Pending = true
+	after := receiptState(key, "call-cancelled-before-dispatch", "consumed", key)
+	after.Handoff.Thread = "original-thread"
+	require.True(t, sessionControlReceipt(after, before, request).Applied,
+		"clearing a pending handoff is reconciliation even when local cancellation already consumed its receipt")
+	assert.False(t, sessionControlReceipt(after, after, request).Applied, "repeating the settled command is not a new transition")
+	for _, change := range []string{"pending", "invocation", "handoff", "thread", "missing handoff"} {
+		t.Run(change, func(t *testing.T) {
+			changed := receiptState(key, "call-cancelled-before-dispatch", "consumed", key)
+			changed.Handoff.Thread = "original-thread"
+			switch change {
+			case "pending":
+				changed.Handoff.Pending = true
+			case "invocation":
+				changed.Sessions.Records[key].Last.ID = "unrelated-call"
+			case "handoff":
+				changed.Handoff.Key = "execute/M01-T02"
+			case "thread":
+				changed.Handoff.Thread = "unrelated-thread"
+			case "missing handoff":
+				changed.Handoff = nil
+			}
+			assert.False(t, sessionControlReceipt(changed, before, request).Applied)
+		})
+	}
+}

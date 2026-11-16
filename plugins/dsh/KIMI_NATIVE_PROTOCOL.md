@@ -14,6 +14,7 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
   cwd: '/physical/role-worktree', workspaceCwd: '/physical/project',
   model: 'configured-model-alias', reasoningEffort: 'high',
   permissionMode: 'danger-full-access', prompt: 'Role instructions', timeoutMs: 600000,
+  idleTimeoutMs: 300000, // 父进程生效的 idle 上限；可省略，默认 300000
   persistent: true, // sessionId 仅在恢复 Agent/Swarm 历史时传入
   native: {
     version: 1, mode: 'agent', // agent | swarm | tower
@@ -40,6 +41,8 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 ## 执行、完成、取消
 
 通过 WS 先订阅 `main`，以 `prompt_id` 关联实际 `user_message.prompt_ids` 和 HTTP 接受结果；两者到达顺序不限。首次 ordinal 是 **0**，新会话的历史基线是 **-1**。随后从 task/agent_refs 发现并订阅子 agent。子任务、队列、交互和整个会话 busy 状态共同决定完成；首个主 turn 结束不足以成功。Tower 的自动主 agent continuation 也必须结束。
+
+实际观察到的主／子代理 item、step 和生命周期活动会以 `event` 元信息转发给 Go idle 看门狗，不复制思考正文或工具参数／结果。高频 item/step 进展在整棵任务树内合并，间隔不超过一秒，并由父进程生效的 `idleTimeoutMs` 推导（正整数，省略时默认 300000）；`event.coalescedTypes` 列出上次通知以来观察到的进展类型。生命周期边界与最终 result 不节流。只有真实事件触发进展通知，定时器和 WebSocket ping/pong 不制造模型活动。wall 期限与取消／清理仍独立生效。
 
 `native.completion={confirmed,pendingIds}` 在 cleanup **之前**记录。成功必须先看到全部主 turn 完成、已观察子任务和 agent 空闲、队列为空、没有待回答交互，且最后的 REST/WS 对账一致。关闭阶段取消了子任务，不能将未完成的结果改成成功。receipt 保留实际 task/child ID、状态和模型。
 

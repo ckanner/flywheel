@@ -69,6 +69,10 @@ flywheel session /absolute/repo/docs/my-task \
 
 退役后记录变为 `abandoned`，保留原因、时间、来源和旧 thread 证据；旧 thread 永不续用。不应用任何阶段结果，也不再次调用模型。关联规划 request 标为 `cancelled`，任务回到 `paused`；之后显式运行 Plan 会创建新 request。`control session` 会返回 `session-control.applied/status/message`，不能用控制信封的 `ok:true` 推断退役成功。
 
+旧 Kimi resident Plan 的精确关联续会话缓存，会在同一次状态保存中同步退役；其他线程和未知缓存仍保持阻断。原线程和 unknown dispatch/outcome 另保留在审计历史中，后续旧式调用覆盖 session 最新记录时不会丢失。DSH 先核对原始用户命令，再把引擎证明绑定到规范化任务路径；符号链接别名、尾斜线仍指向同一任务，但证明不能跨任务复用。
+
+人工 send 在派发前取消时，可能留下已 consumed 的回执和 pending 接管状态。Reconcile 清除 pending 后，会按这次真实转换报告 applied；重复核对已完成状态不算新成功动作。
+
 这不是“删除账本来重放”：原账本、receipt 和 unknown 证据仍保留。不要手改 `state.json` 或搬走 `.sessions/` 来伪造终态。
 
 ### 回执成功仍须有原候选证据

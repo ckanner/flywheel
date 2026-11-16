@@ -118,7 +118,13 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     request = await validateControl(input, defaultCwd);
     if (request.planning?.action === 'approve' && !validPlanningUserAction(planningUserAction, request.planning)) throw new Error('Design approval requires a verified human command');
     if (planningUserAction !== undefined && request.planning?.action !== 'approve') throw new Error('User approval proof is only valid for design approval');
-    if (request.session?.action === 'abandon' && !validSessionUserAction(sessionUserAction, request.session, request.taskDir)) throw new Error('Unknown-invocation abandonment requires a verified human command');
+    if (request.session?.action === 'abandon') {
+      // First bind authority to the exact user event, including its original
+      // path spelling. Only then use the resolved task identity for both argv
+      // and the engine proof (macOS aliases, symlinks and trailing slashes).
+      if (!validSessionUserAction(sessionUserAction, request.session, input.taskDir)) throw new Error('Unknown-invocation abandonment requires a verified human command');
+      sessionUserAction = { ...sessionUserAction, taskDir: request.taskDir };
+    }
     if (sessionUserAction !== undefined && request.session?.action !== 'abandon') throw new Error('Session abandonment proof is only valid for abandon');
     if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   } catch (error) {

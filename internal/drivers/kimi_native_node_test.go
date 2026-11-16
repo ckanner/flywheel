@@ -41,4 +41,31 @@ func TestKimiNativeNodeWorkerOfflineBridge(t *testing.T) {
 	require.True(t, r.Session.ResumeAccepted)
 	require.Equal(t, int64(23), r.Usage.TotalTokens)
 	require.NotContains(t, r.Stdout+r.Stderr, "fixture-secret")
+
+	for _, fixtureCase := range []string{"root-progress", "child-progress", "burst-progress"} {
+		t.Run(fixtureCase, func(t *testing.T) {
+			// The owned server streams real item/step progress for three seconds,
+			// longer than the parent's idle window, without ending the turn.
+			server := kimiScript(t, "KIMI_FIXTURE_CASE="+shQuote(fixtureCase)+" exec "+shQuote(node)+" "+shQuote(filepath.Join(root, "test/fixtures/kimi-native-server.mjs"))+" \"$@\"\n")
+			t.Setenv(KimiCommandEnv, server)
+			t.Setenv("KIMI_CODE_HOME", t.TempDir())
+			call := a
+			call.SessionID = ""
+			call.Watchdog.IdleTimeoutMs = 1500
+			if fixtureCase == "burst-progress" {
+				// Thousands of valid tiny deltas must not consume the final
+				// receipt's buffer budget merely to report ongoing activity.
+				original := watchdog.MaxBuffer
+				watchdog.MaxBuffer = 64 * 1024
+				t.Cleanup(func() { watchdog.MaxBuffer = original })
+			}
+			result := RunKimi(call)
+			require.True(t, result.Settled, "%+v", result)
+			require.False(t, result.IdleTimedOut)
+			require.False(t, result.Truncated)
+			require.Contains(t, result.Stdout, `"type":"item.delta"`)
+			require.NotContains(t, result.Stdout, "private-tool-progress")
+			require.True(t, result.Session.CleanupConfirmed)
+		})
+	}
 }

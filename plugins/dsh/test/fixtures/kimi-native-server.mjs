@@ -113,7 +113,7 @@ const server = http.createServer(async (req, res) => {
       publish(s, agentState(s));
       publish(s, { type: 'turn.started', agent_id: 'main', turn: { ...turn, items: undefined } });
       publish(s, { type: 'item.ended', agent_id: 'main', turn_id: turn.turn_id, item: user });
-      if (fixtureCase === 'child' || fixtureCase === 'cancel-queue') {
+      if (['child', 'child-progress', 'cancel-queue'].includes(fixtureCase)) {
         s.task = { type: 'task', agent_id: 'main', task_id: 'task-child', kind: 'subagent', child_agent_id: 'child-1', status: 'running', model: 'native-child-model' };
         s.childTurns = [{ turn_id: 'child-turn', ordinal: 0, kind: 'agent', status: 'running', items: [], steps: [] }];
         publish(s, s.task);
@@ -124,6 +124,24 @@ const server = http.createServer(async (req, res) => {
       const accepted = s.active;
       // Events precede HTTP acceptance to exercise cross-channel correlation.
       setTimeout(() => send(accepted), 5);
+      const streamsProgress = ['root-progress', 'child-progress', 'burst-progress'].includes(fixtureCase);
+      if (streamsProgress) {
+        const agentId = fixtureCase === 'child-progress' ? 'child-1' : 'main';
+        const activeTurn = agentId === 'main' ? turn : s.childTurns[0];
+        const item = { type: 'tool_call', name: 'Read', item_id: 'progress-item', output: '' };
+        activeTurn.items.push(item);
+        publish(s, { type: 'item.started', agent_id: agentId, turn_id: activeTurn.turn_id, item });
+        const timer = setInterval(() => {
+          if (!s.active) { clearInterval(timer); return; }
+          const delta = 'private-tool-progress';
+          for (let index = 0; index < (fixtureCase === 'burst-progress' ? 250 : 1); index++) {
+            item.output += delta;
+            publish(s, { type: 'item.delta', agent_id: agentId, turn_id: activeTurn.turn_id, item_id: item.item_id, field: 'output', delta });
+          }
+          publish(s, { type: 'item.updated', agent_id: agentId, turn_id: activeTurn.turn_id, item_id: item.item_id, set: { status: 'running' } });
+          publish(s, { type: 'turn.updated', agent_id: agentId, turn_id: activeTurn.turn_id, step: { index: 1, status: 'running' } });
+        }, 80);
+      }
       if (!['cancel-queue', 'question', 'unstoppable'].includes(fixtureCase)) setTimeout(() => {
         if (s.task) {
           s.task = { ...s.task, status: 'ended', outcome: 'completed' }; publish(s, s.task);
@@ -132,7 +150,7 @@ const server = http.createServer(async (req, res) => {
           publish(s, { ...agentState(s, 'child-1'), status: 'idle' });
         }
         terminal(s);
-      }, 160);
+      }, streamsProgress ? 3000 : 160);
       return;
     }
     send(null, 40400);

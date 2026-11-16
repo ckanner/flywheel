@@ -107,7 +107,7 @@ Plan can use Team or Swarm to investigate, while its root produces formal Spec a
 
 Native scheduling does not replace Go's decisions about retries, budgets, accepted candidates and delivery. A completed native task board is not a completed Flywheel task.
 
-A native planning profile lets the worker observe child tasks and WS lifecycle. Plain Kimi print does not include background subagent activity on the main stdout, so the watchdog cannot treat child progress as liveness. Non-native planning calls must therefore keep investigation in the foreground in the prompt, or use a Kimi native profile. Prefer native profiles for long or parallel investigations; on either path, an unknown planning invocation can only be ended by the controlled retirement action, not by switching backends or replaying.
+A native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
 
 ## 4. LCU and screenshots
 

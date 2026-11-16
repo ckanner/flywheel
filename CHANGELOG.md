@@ -8,13 +8,16 @@ their original language.
 ## Unreleased — Session liveness and unknown-invocation retirement
 
 - Add per-role watchdog overrides. Planning roles default to a 900-second idle
-  timeout while execute/review keep 300 seconds, so a model that is still working
-  without stdout activity is not mistaken for a hung process. The wall bound and
-  process-group cleanup remain unchanged.
+  timeout while execute/review keep 300 seconds where output activity can be
+  observed. Kimi print buffers output and omits thinking/child progress, so it
+  uses its finite role wall deadline and cancellation without an idle timer.
+  Native Kimi forwards actual item/step progress as metadata. Recheck current
+  idle deadlines to reject stale queued timer callbacks. Process-group cleanup
+  remains mandatory.
 - Make the planning prompt capability-aware: when the harness has no observable
   native child lifecycle (plain Kimi print), background/async subagents are
-  explicitly disallowed and investigation must stay in the foreground. Document
-  the Kimi native alternative and the liveness limits.
+  explicitly disallowed and investigation must stay in the foreground to collect
+  results within the owned call. This prompt constraint is not a liveness proof.
 - Add an explicit human-only retirement action for blocked planning invocations
   with unknown dispatch/outcome. It preserves the unknown facts and audit trail,
   applies no result, never resumes the old thread, cancels the associated
@@ -24,11 +27,17 @@ their original language.
   directory, key, revision, reason and exact invocation; a matching planning
   request must still be pending/running and the audit records the invocation.
   Abandoned records count as settled in console reopen and investigation gates.
+  Retire a precisely matching legacy Kimi resident Plan cache atomically and
+  retain thread/unknown facts in the audit history across later generations.
+  Validate the original DSH user command before binding its proof to a canonical
+  task path; aliases remain usable without weakening cross-task protection.
 - Return an explicit `session-control.applied/status/message/invocation` receipt
   for asynchronous session commands instead of leaving callers to infer success
   from the control envelope. Compute it from the command's before/after state so
   send, return, claim and release cannot report a stale success. Clarify that the
   workbench refresh only reconciles the plugin's unconfirmed control action.
+  Reconcile also reports a real pending-handoff transition after pre-dispatch
+  cancellation, even when the invocation receipt was already consumed.
 - Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
 
 ## 0.35.0 — Reviewed planning

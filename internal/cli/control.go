@@ -102,7 +102,13 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 		if beforeRecord != nil && beforeRecord.Last != nil {
 			beforeStatus = beforeRecord.Last.Status
 		}
-		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed && beforeStatus != "consumed"
+		// Local cancellation may consume a no-dispatch receipt while leaving the
+		// manual handoff pending. Reconcile then settles the handoff without
+		// changing the invocation's already-terminal status.
+		pendingCleared := before != nil && before.Handoff != nil && beforeHandoff == request.Key && before.Handoff.Pending &&
+			st.Handoff != nil && st.Handoff.Key == request.Key && st.Handoff.Thread == before.Handoff.Thread && !st.Handoff.Pending &&
+			beforeInvocation != "" && record.Last.ID == beforeInvocation
+		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed && (beforeStatus != "consumed" || pendingCleared)
 		receipt.Message = record.Reason
 	case "claim":
 		receipt.Applied = st.Handoff != nil && st.Handoff.Key == request.Key && beforeHandoff != request.Key

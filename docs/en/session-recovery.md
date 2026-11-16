@@ -73,6 +73,10 @@ The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown 
 
 The record becomes `abandoned` with its reason, time, source, and original thread evidence; the old thread is never resumed. No stage result is applied and no model is called again. The associated planning request becomes `cancelled`, the task returns to `paused`, and a later explicit Plan creates a new request. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
 
+For a legacy Kimi resident Plan, the exact matching resume cache is retired in the same state write. Other threads and unknown caches remain blocked. The invocation's original thread and unknown dispatch/outcome are also retained in the audit history when a later legacy call replaces the session's latest record. DSH verifies the original user command before binding the engine proof to the canonical task path, so symlink aliases and trailing slashes identify the same task without allowing cross-task proof reuse.
+
+A manual send cancelled before dispatch may leave a consumed receipt with a pending handoff. Reconcile clears that pending state and reports the actual transition as applied; repeating an already-settled reconcile is not a new successful operation.
+
 This is not "delete the ledger and replay": the original ledger, receipt, and unknown evidence remain. Do not hand-edit `state.json` or move `.sessions/` to fabricate a terminal result.
 
 ### A successful receipt also needs original candidate evidence
