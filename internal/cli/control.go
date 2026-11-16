@@ -98,7 +98,11 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 			}
 		}
 	case "reconcile":
-		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
+		beforeStatus := ""
+		if beforeRecord != nil && beforeRecord.Last != nil {
+			beforeStatus = beforeRecord.Last.Status
+		}
+		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed && beforeStatus != "consumed"
 		receipt.Message = record.Reason
 	case "claim":
 		receipt.Applied = st.Handoff != nil && st.Handoff.Key == request.Key && beforeHandoff != request.Key
@@ -116,7 +120,8 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 			receipt.Message = "the session command has not started a new invocation yet; refresh status"
 		}
 	case "return":
-		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
+		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed &&
+			beforeHandoff == request.Key && st.Handoff == nil
 		receipt.Message = record.Reason
 	default:
 		receipt.Message = "unsupported session action"

@@ -320,6 +320,7 @@ func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
 
 	consumed := receiptState(key, "call-one", "consumed", "")
 	assert.True(t, sessionControlReceipt(consumed, blocked, request).Applied)
+	assert.False(t, sessionControlReceipt(consumed, consumed, request).Applied)
 
 	request.Action = "abandon"
 	request.Reason = "retire"
@@ -346,7 +347,8 @@ func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
 	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
 	assert.True(t, sessionControlReceipt(receiptState(key, "call-two", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
 	request.Action = "return"
-	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), blocked, request).Applied)
+	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", key), request).Applied)
+	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), blocked, request).Applied)
 	request.Action = "unknown"
 	assert.False(t, sessionControlReceipt(blocked, blocked, request).Applied)
 }
