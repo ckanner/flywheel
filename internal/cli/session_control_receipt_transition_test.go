@@ -88,3 +88,15 @@ func TestSessionControlPreSnapshotFailureCannotTurnAnUnchangedReceiptIntoSuccess
 	assert.Contains(t, reply.SessionControl.Message, "may already have executed")
 	assert.Equal(t, "call-already-consumed", reply.SessionControl.Invocation)
 }
+
+func TestSessionControlReleaseReceiptKeepsKnownNoOpDistinctFromUnknownEvidence(t *testing.T) {
+	const key = "execute/M01-T01"
+	for _, handoff := range []string{"", key} {
+		before := receiptState(key, "call-one", "consumed", handoff)
+		after := receiptState(key, "call-one", "consumed", handoff)
+		receipt := sessionControlReceipt(after, before, &machine.SessionCommand{Action: "release", Key: key, Revision: 1})
+		assert.False(t, receipt.Applied, "an absent or unchanged handoff is not a release transition")
+		assert.Contains(t, receipt.Message, "the session was not under this handoff or remains controlled")
+		assert.NotContains(t, receipt.Message, "could not be verified", "complete before-state distinguishes a known no-op from missing evidence")
+	}
+}
