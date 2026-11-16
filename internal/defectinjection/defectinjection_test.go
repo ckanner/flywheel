@@ -136,6 +136,7 @@ func TestRunDefectInjectionRestoreFailed(t *testing.T) {
 		PatchFile: writePatch(t, dir),
 		TestCmd:   "suite",
 		Cwd:       dir,
+		TimeoutMs: 20_000, // exercises the restore compensation cap as well
 		Run: func(cmd string, args []string, _ string, _ int64, _ []string) RunResult {
 			if cmd == "git" && len(args) > 1 && args[1] == "-R" {
 				return RunResult{ExitCode: 128, Stderr: "  patch does not reverse  "}
