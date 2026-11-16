@@ -26,6 +26,16 @@ their original language.
 - Pin reviewed Codex Pro 0.10.1 and Claude Code Pro 0.5.2 candidate archives.
   Claude queries verify supported partial/child streaming CLI flags before task
   dispatch. Source/candidate verification does not publish either companion.
+- Reject stale or foreign Codex child attribution, bound retained native/usage
+  evidence, and keep Claude ambient watchers separate from current task runs.
+  An incomplete child-ownership ledger cannot attest remote cleanup; local
+  process cleanup remains independently recorded.
+- Count Kimi native retained state instead of cumulative snapshot traffic, with
+  the same bounded accounting for WebSocket updates and final HTTP reconciliation.
+  Verify a new native history's requested title and ownership before dispatch.
+- Require intact, correlated evidence for provider stop and cleanup facts.
+  Valid worker observation errors can still preserve independently verified
+  cleanup; derived cancellation never hides the original error or grants resume.
 
 - Add per-role watchdog overrides. Planning roles default to a 900-second idle
   timeout while execute/review keep 300 seconds where output activity can be
@@ -58,6 +68,9 @@ their original language.
   workbench refresh only reconciles the plugin's unconfirmed control action.
   Reconcile also reports a real pending-handoff transition after pre-dispatch
   cancellation, even when the invocation receipt was already consumed.
+  If the pre-command invocation is unavailable, preserve the observed after-state
+  and report that the effect cannot be verified; do not mislabel an existing
+  handoff or consumed receipt as success by the latest command.
 - Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
 - Give defect-injection rollback its effective independent 1–10 second budget
   in both the cancellation context and command watchdog, preserving the

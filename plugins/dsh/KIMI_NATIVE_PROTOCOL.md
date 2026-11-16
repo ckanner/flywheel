@@ -34,7 +34,7 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 
 每次调用启动前台 `kimi web --no-open --host 127.0.0.1 --port 0`。`FLYWHEEL_KIMI_BIN` 可以指定 CLI。登录和模型配置沿用 `KIMI_CODE_HOME`（否则 `~/.kimi-code`），不重写用户配置。Worker 从真实实例注册表核对本次 child PID、启动时间、loopback 端口，再使用已有 `server.token` 验证 `/meta` 的 server_id、认证、backend 和 WebSocket 支持。带 bearer token 的 CLI banner/stdout/stderr 不转发、不写入 receipt。
 
-准入读取并哈希实际 `/openapi.json` 和 `/asyncapi.json`，核对所需创建/配置/队列/环境/历史/关闭路由和订阅/任务生命周期消息。`:abort` 在上游 OpenAPI 中未完整投影，因此对尚未 dispatch 的本次空闲会话做实际幂等探测。最终还必须由实际 WS agent 状态确认 model、thinking、permission、plan/swarm/tower 标志，以及 REST local environment/cwd。只有这些事实吻合，`native.effective.matched` 才为 true。
+准入读取并哈希实际 `/openapi.json` 和 `/asyncapi.json`，核对所需创建/配置/队列/环境/历史/关闭路由和订阅/任务生命周期消息。创建接口必须支持 title、归属 metadata 与 local environment 字段；新历史返回的标题、绑定与工作目录必须与请求一致，才能发送任务 prompt。归属不匹配时，不向该历史执行会话级清理。`:abort` 在上游 OpenAPI 中未完整投影，因此对尚未 dispatch 的本次空闲会话做实际幂等探测。最终还必须由实际 WS agent 状态确认 model、thinking、permission、plan/swarm/tower 标志，以及 REST local environment/cwd。只有这些事实吻合，`native.effective.matched` 才为 true。
 
 `--doctor` 仅检查 CLI 可执行性及版本，返回 `inferenceTested:false`。它不能证明模式、账号、模型或 API 准入。旧的 `kimi server` 命令、SDK、named preset RPC 和任意 agent-file 加载均不是此接口。
 
@@ -45,6 +45,8 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 实际观察到的主／子代理 item、step 和生命周期活动会以 `event` 元信息转发给 Go idle 看门狗，不复制思考正文或工具参数／结果。高频 item/step 进展在整棵任务树内合并，间隔不超过一秒，并由父进程生效的 `idleTimeoutMs` 推导（正整数，省略时默认 300000）；`event.coalescedTypes` 列出上次通知以来观察到的进展类型。生命周期边界与最终 result 不节流。只有真实事件触发进展通知，定时器和 WebSocket ping/pong 不制造模型活动。wall 期限与取消／清理仍独立生效。
 
 `native.completion={confirmed,pendingIds}` 在 cleanup **之前**记录。成功必须先看到全部主 turn 完成、已观察子任务和 agent 空闲、队列为空、没有待回答交互，且最后的 REST/WS 对账一致。关闭阶段取消了子任务，不能将未完成的结果改成成功。receipt 保留实际 task/child ID、状态和模型。
+
+conversation 观察按实际保留的 JSON payload 限制为 64 MiB，不累计整个协议流量。agent/task/turn 状态被替换或删除时释放旧配额，文本 delta 只计算新增片段。WS 更新与最终 HTTP turn 对账共用这一预算和既有 agent/turn/task 数量上限；单帧、HTTP 响应及最终正文另有独立上限。反复接收同一份有界状态不会耗尽累计流量计数器。
 
 未预期的 approval/question 返回 `INTERACTION_REQUIRED`，不编造回答。断线、重新投影 conversation、未知 dispatch 不重发 prompt。取消先撤回 queued prompts，再中止主 turn、停止已观察任务并等待空闲；关闭 remote control 和本次 owned runtime 后，核对进程退出及已观察后代进程身份。所有清理受独立、有界 grace 约束。无法确认队列/子任务/进程已收束时，`settled` 与 `cleanup.confirmed` 都为 false。
 

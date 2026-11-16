@@ -24,7 +24,9 @@ func TestKimiPrintPrepareProcessFixture(t *testing.T) {
 		os.Exit(2)
 	}
 	raw, _ := json.Marshal(request)
-	_ = os.WriteFile(filepath.Join(request["cwd"].(string), "prepare-request.json"), raw, 0600)
+	if os.WriteFile(filepath.Join(request["cwd"].(string), "prepare-request.json"), raw, 0600) != nil {
+		os.Exit(2)
+	}
 	frame := map[string]any{"protocol": 1, "type": "prepared-print", "requestId": request["requestId"], "status": "ok",
 		"sessionId": "session-one", "sessionTitle": request["sessionTitle"], "cleanupConfirmed": true, "inferenceDispatched": false, "error": nil}
 	exit := 0
@@ -128,25 +130,46 @@ func TestKimiPrintPreparationFailureNeverDispatchesTheTask(t *testing.T) {
 
 func TestKimiPrintPreparationResolvesRelativeWorkspaceBeforeChangingDirectory(t *testing.T) {
 	t.Setenv(KimiNativeWorkerEnv, prepareFixtureCommand(t))
-	t.Chdir(t.TempDir())
+	root := t.TempDir()
+	t.Chdir(root)
 	require.NoError(t, os.Mkdir("project", 0700))
-	result := prepareKimiPrintSession(KimiArgs{Cwd: "project", SessionTitle: "Readable project"})
-	require.True(t, result.Settled, "%+v", result)
-	raw, err := os.ReadFile("project/prepare-request.json")
-	require.NoError(t, err)
-	var request map[string]any
-	require.NoError(t, json.Unmarshal(raw, &request))
-	require.True(t, filepath.IsAbs(request["cwd"].(string)))
-	// An unresolvable caller directory is rejected before either owned process starts.
-	require.NoError(t, os.Mkdir("removed-cwd", 0700))
-	require.NoError(t, os.Chdir("removed-cwd"))
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Remove(cwd))
-	result = prepareKimiPrintSession(KimiArgs{Cwd: ".", SessionTitle: "Unreadable workspace"})
-	require.False(t, result.Settled)
-	require.Equal(t, "not-dispatched", result.Session.Dispatch)
-	require.True(t, result.Session.CleanupConfirmed)
+	require.NoError(t, os.Symlink("project", "project-alias"))
+	for _, cwd := range []string{"project", "project-alias"} {
+		t.Run(cwd, func(t *testing.T) {
+			result := prepareKimiPrintSession(KimiArgs{Cwd: cwd, SessionTitle: "Readable project"})
+			require.True(t, result.Settled, "%+v", result)
+			raw, err := os.ReadFile("project/prepare-request.json")
+			require.NoError(t, err)
+			var request map[string]any
+			require.NoError(t, json.Unmarshal(raw, &request))
+			require.Equal(t, filepath.Join(root, cwd), request["cwd"])
+		})
+	}
+}
+
+func TestKimiPrintPreparationRejectsInvalidWorkspaceBeforeStartingWorker(t *testing.T) {
+	t.Setenv(KimiNativeWorkerEnv, prepareFixtureCommand(t))
+	t.Chdir(t.TempDir())
+	t.Run("missing relative directory", func(t *testing.T) {
+		result := prepareKimiPrintSession(KimiArgs{Cwd: "missing-project", SessionTitle: "Missing workspace"})
+		require.False(t, result.Settled)
+		require.NotEmpty(t, result.SpawnError)
+		require.Equal(t, "not-dispatched", result.Session.Dispatch)
+		require.True(t, result.Session.CleanupConfirmed)
+	})
+	t.Run("path resolution failure", func(t *testing.T) {
+		original := kimiPrintSessionAbs
+		t.Cleanup(func() { kimiPrintSessionAbs = original })
+		// Deleting the current directory does not reliably make Getwd fail on
+		// macOS. Exercise the same error boundary without relying on that behavior.
+		kimiPrintSessionAbs = func(string) (string, error) { return "", os.ErrNotExist }
+		result := prepareKimiPrintSession(KimiArgs{Cwd: ".", SessionTitle: "Unreadable workspace"})
+		require.False(t, result.Settled)
+		require.Empty(t, result.SpawnError)
+		require.Equal(t, "not-dispatched", result.Session.Dispatch)
+		require.True(t, result.Session.CleanupConfirmed)
+		require.NoFileExists(t, "prepare-request.json", "path resolution failure must not start the preparation worker")
+	})
 }
 
 func TestKimiPrintPreparationAndTaskShareOneWallBudget(t *testing.T) {

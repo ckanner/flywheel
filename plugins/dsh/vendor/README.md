@@ -10,9 +10,9 @@ Version, source tree, archive and installed content remain separate identities.
 
 | Package | Role | Source commit | Source tree | Record |
 | --- | --- | --- | --- | --- |
-| `dsh-subagent-codex-pro@0.10.1` | Bundled machine API source candidate | [911868c0b383](https://github.com/ckanner/dsh-subagent-codex-pro/commit/911868c0b3836c79c9b61ddb51cd8c4aed0043f9) | `1ea5a546b386c678da947a6960b7950dfa6ff005` | [codex-pro.json](codex-pro.json) |
+| `dsh-subagent-codex-pro@0.10.1` | Bundled machine API source candidate | [49099acd4944](https://github.com/ckanner/dsh-subagent-codex-pro/commit/49099acd49447ddf556b0e49f4d8e87b187d90c2) | `ff08276190fa4b5ca40332aaebd0105c8eca48a9` | [codex-pro.json](codex-pro.json) |
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
-| `dsh-subagent-claude-code-pro@0.5.2` | Optional machine/native-jobs source candidate | [ab9d52b322bd](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/ab9d52b322bd53cc10f45bb3cb03735ed170ef91) | `a3a7f97d7faf2c8695838eecb89b788c5d00c982` | [claude-code-pro.json](claude-code-pro.json) |
+| `dsh-subagent-claude-code-pro@0.5.2` | Optional machine/native-jobs source candidate | [34291ff600bb](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/34291ff600bb70fa7dd628435fa10046c11b21d1) | `ff056d7052706101543c50a9eea701c701271d7d` | [claude-code-pro.json](claude-code-pro.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
 | `dsh-plugin-chatgpt@0.1.20` | DSH provider compatibility fixture | [40d8f885e7a3](https://github.com/ckanner/dsh-plugin-chatgpt/commit/40d8f885e7a386af5f441b356b9c68496a47b0e3) | `c8c4f4829a00b1917fd1aef8c4254e083a5b6180` | [chatgpt.json](chatgpt.json) |
 

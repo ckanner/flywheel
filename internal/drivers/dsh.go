@@ -415,11 +415,15 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 	parsed := parseDSHStream(result.Stdout, request)
 	if writeError != nil {
 		parsed.Cancelled = false
+		parsed.CleanupConfirmed = false
 		parsed.Error = "DSH worker request write failed: " + writeError.Error()
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	}
+	// A retained terminal prefix cannot certify the omitted bytes of either
+	// stream. Apply the same receipt-trust boundary to fresh and scoped calls.
+	parsed.CleanupConfirmed = parsed.CleanupConfirmed && !result.Truncated
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
 	out.NativeReceipt = parsed.NativeReceipt
 	out.ErrorCode = parsed.ErrorCode
@@ -436,8 +440,9 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// A complete-looking prefix cannot attest the omitted tail, even when
 		// only stderr exceeded the capture bound. Its charge is unconfirmed.
 		out.Usage, out.CostUSD = nil, nil
+		out.ErrorCode = errs.TRANSPORT
 	}
-	mergeWorkerTermination(&out, parsed.Cancelled, parsed.ErrorCode == errs.TIMEOUT, false)
+	mergeWorkerTermination(&out, parsed.Cancelled, parsed.ErrorCode == errs.TIMEOUT && !result.Truncated, false)
 	if out.TimedOut {
 		out.ErrorCode = errs.TIMEOUT
 	}
@@ -500,7 +505,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// request; arbitrary error codes/prose never prove non-dispatch.
 		out.Session = &SessionOutcome{Protocol: DSHFreshSessionProtocol, RequestID: request.RequestID,
 			SessionID: parsed.SessionID, Dispatch: "unknown", Outcome: "unknown",
-			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "", UsageStatus: "unknown"}
+			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "" && out.Signal == "" && out.ExitCode != nil, UsageStatus: "unknown"}
 		if out.Settled {
 			out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
 		} else if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {

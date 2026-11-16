@@ -319,6 +319,8 @@ v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公�
 
 启动前不能获得 machine receipt 时为 null。运行已开始则即使失败也保留完整 receipt；`error` 非 null、重复／丢失 result、尾部垃圾、请求身份或 adapter 版本不符都不能成功。本通道没有 DSH `ready` 帧；v3 使用有类型的 `thread-ready` lifecycle 与 Go ACK。不能从普通 progress 文本虚构沙箱或实际 effort 证据。
 
+合法终态中的 `INVALID_ACTIVITY`、`INVALID_NATIVE_EVENT` 或 `OUTPUT_LIMIT` 表示 worker 拒绝了观察数据并等待同一次 adapter 调用清理，不等同于 JSONL／身份损坏。完整、独立核验通过的 receipt 仍可保留 session/run、usage 和 cleanup；业务 outcome 为 unknown，不能成为 resume checkpoint，内层为清理而产生的 cancelled/timedOut 不替代 worker 首因。坏帧、错误身份、缺失必需 durable lifecycle、ACK 失败及未知 worker 错误继续使对应证据不可信。这一边界也适用于 Claude worker。
+
 Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/thread/turn 身份、模型、cwd、approval=never、实际沙箱模式、完整 sandboxPolicy、stopReason、cleanup 与执行事实。受限模式的 workspaceWrite 显式 writableRoots 必须处于工作区内，networkAccess 必须明确 false；显式完全权限要求 `sandbox:danger-full-access` 与精确的 `{type:"dangerFullAccess"}` policy，不要求不存在的受限模式字段；Codex 标准临时目录标记保留，不宣称只能写 cwd。主任务 v3 在 `thread-ready` ACK 前也核对这份完整策略，不符合时阻止 turn/start。旧协议或未请求 lifecycle 的辅助调用仍只在返回后完整检查；这些路径不能宣称预执行完整策略 guard。
 
 effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
@@ -527,7 +529,9 @@ usageStatus、accounted。投影只读取已校验的 state，不打开后端历
 `session-control` 为异步 session 命令的语义回执：key、action、applied、revision、
 status、invocation、message。它不改变共同 envelope 的 `ok` 含义；`ok:true` 只说明
 控制请求完成，`applied:false` 表示本次尚未确认对应动作生效，须结合 message、running
-和 status 区分拒绝、未变化及仍在处理。`session abandon`
+和 status 区分拒绝、未变化、仍在处理及无法核实效果。缺少操作前的 invocation
+证据时，保留 after-state 并明确提示命令可能已执行；`applied:false` 不是未执行证明，
+下一次修改前须刷新状态。`session abandon`
 仅接受规划角色、已计量且清理确认的 blocked 调用；host 证明绑定 taskDir、key、
 revision、reason 和准确 invocation，并要求 `FLYWHEEL_SESSION_USER_ACTION` 与
 `DSH_SESSION_ID` 精确匹配；模型工具不暴露该动作。人类 CLI 走控制终端的

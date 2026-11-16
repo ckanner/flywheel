@@ -291,14 +291,19 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 				parsed.CleanupConfirmed = false
 				parsed.Error = "invalid request: Codex Pro adapter package/version/protocol mismatch"
 			}
-			if frame.Error != nil {
-				// An outer protocol failure cannot grant a continuation checkpoint.
-				trustedStream = false
-				parsed.Error = codexProFailureMessage(frame.Error.Code, frame.Error.Message, "", nil)
-			}
 			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
 				trustedStream = false
 				parsed.Error = "invalid request: Codex Pro result omitted durable lifecycle evidence"
+			}
+			if frame.Error != nil {
+				if !machineWorkerObservationError(frame.Error.Code) {
+					trustedStream = false
+				}
+				// A worker observation failure forbids applying/resuming this
+				// result, but does not erase independently validated cleanup.
+				parsed.Cancelled, parsed.TimedOut, parsed.Truncated, parsed.Settled = false, false, false, false
+				parsed.Session.Outcome, parsed.Session.ResumeCandidate = "unknown", false
+				parsed.Error = codexProFailureMessage(frame.Error.Code, frame.Error.Message, "", nil)
 			}
 		default:
 			trustedStream = false
@@ -316,6 +321,8 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 	}
 	if !trustedStream {
 		parsed.StreamFailed = true
+		parsed.CleanupConfirmed = false
+		parsed.Cancelled, parsed.TimedOut, parsed.Truncated = false, false, false
 		parsed.Session = codexProUnknownSession(request)
 		parsed.Usage = nil // retain raw evidence, but do not bill an untrusted stream
 	}
@@ -384,14 +391,13 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) (parsed co
 		execution, cleanup, usage = f.Execution, f.Cleanup, f.Usage
 		category, diagnostic = f.Category, f.Diagnostic
 	}
-	if execution != nil {
-		parsed.TimedOut = execution.TimedOut != nil && *execution.TimedOut
-		parsed.Cancelled = execution.Cancelled != nil && *execution.Cancelled
-		parsed.Truncated = execution.Truncated != nil && *execution.Truncated
-	}
 	executionMatches := execution != nil && execution.RunID == receipt.RunID && execution.Ownership == "supervised-group" &&
 		(receipt.Outcome == nil || execution.ThreadID == receipt.Outcome.ThreadID) &&
 		(request.ThreadID == "" || execution.ThreadID == request.ThreadID || (receipt.Outcome == nil && execution.ThreadID == ""))
+	if execution != nil && !executionMatches {
+		parsed.Error = "invalid request: Codex Pro execution identity or ownership mismatch"
+		return parsed
+	}
 	// Failed calls may attest cleanup. This alone never proves a terminal model
 	// outcome or permits a scoped or fresh replay.
 	parsed.CleanupConfirmed = cleanup != nil && cleanup.Confirmed && executionMatches
@@ -425,6 +431,13 @@ func parseCodexProReceipt(raw json.RawMessage, request codexProStart) (parsed co
 		return parsed
 	}
 	if !*receipt.OK {
+		// Attribute termination only after the native execution identity and
+		// typed dispatch have been checked; foreign receipts are not causes.
+		if executionMatches {
+			parsed.TimedOut = execution.TimedOut != nil && *execution.TimedOut
+			parsed.Cancelled = execution.Cancelled != nil && *execution.Cancelled
+			parsed.Truncated = execution.Truncated != nil && *execution.Truncated
+		}
 		// Only typed pre-turn stages from the pinned API prove non-dispatch.
 		// A resume rejection may mean a busy thread; its prose is not evidence
 		// that a fresh writer may safely repeat this prompt.
@@ -745,7 +758,9 @@ func RunCodexPro(a CodexProArgs) Result {
 	// A protocol/ACK error can cause the worker to cancel its native task.
 	// That cleanup action does not replace the known initiating failure; an
 	// actual caller cancellation is already present in the watchdog result.
-	mergeWorkerTermination(&out, parsed.Cancelled && !parsed.StreamFailed, parsed.TimedOut, parsed.Truncated)
+	providerFactsTrusted := !parsed.StreamFailed && !result.Truncated
+	parsed.CleanupConfirmed = parsed.CleanupConfirmed && providerFactsTrusted
+	mergeWorkerTermination(&out, parsed.Cancelled && providerFactsTrusted, parsed.TimedOut && providerFactsTrusted, parsed.Truncated && providerFactsTrusted)
 	if parsed.CleanupError != "" {
 		out.CleanupError = strings.TrimPrefix(out.CleanupError+"; "+parsed.CleanupError, "; ")
 	}

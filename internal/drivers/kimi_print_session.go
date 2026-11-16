@@ -14,6 +14,10 @@ import (
 
 var kimiPrintSessionPreparer = prepareKimiPrintSession
 
+// Directory removal does not make Getwd fail consistently across platforms.
+// Keep the resolution boundary injectable so its failure can be tested directly.
+var kimiPrintSessionAbs = filepath.Abs
+
 // Creating title metadata is deliberately separate from sending a business
 // prompt. A failed/unknown preparation can never silently run an unnamed task.
 func prepareKimiPrintSession(a KimiArgs) Result {
@@ -32,7 +36,7 @@ func prepareKimiPrintSession(a KimiArgs) Result {
 	if wall <= 0 {
 		wall = watchdog.DefaultWallTimeoutMs
 	}
-	cwd, err := filepath.Abs(a.Cwd)
+	cwd, err := kimiPrintSessionAbs(a.Cwd)
 	if err != nil {
 		out := invalidHarnessResult("kimi", model, "Kimi print-session workspace cannot be resolved")
 		out.Session = &SessionOutcome{Protocol: "kimi-print/v1", RequestID: a.RequestID, Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "complete"}

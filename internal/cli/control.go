@@ -48,7 +48,8 @@ type controlResponse struct {
 
 // SessionControlReceipt makes an asynchronous session command's semantic
 // outcome explicit. The control envelope may still be ok:true; applied=false
-// means the engine refused the command or left the original record unchanged.
+// means no requested transition was confirmed. Message distinguishes a refusal
+// or unchanged record from an operation whose effect could not be verified.
 type SessionControlReceipt struct {
 	Key        string `json:"key"`
 	Action     string `json:"action"`
@@ -76,19 +77,19 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 	if before != nil && before.Sessions != nil {
 		beforeRecord = before.Sessions.Records[request.Key]
 	}
-	beforeInvocation, beforeHandoff := "", ""
-	if beforeRecord != nil && beforeRecord.Last != nil {
-		beforeInvocation = beforeRecord.Last.ID
+	if beforeRecord == nil || beforeRecord.Last == nil || beforeRecord.Last.ID == "" {
+		// The child may have executed even when the earlier snapshot failed.
+		// Preserve the observed after-state, but do not infer this command's
+		// success from a postcondition that could already have been true.
+		receipt.Message = "the session command's effect could not be verified because the pre-command invocation is unavailable; it may already have executed; refresh status before another mutation"
+		return receipt
 	}
-	if before != nil && before.Handoff != nil {
+	beforeInvocation, beforeStatus, beforeHandoff := beforeRecord.Last.ID, beforeRecord.Last.Status, ""
+	if before.Handoff != nil {
 		beforeHandoff = before.Handoff.Key
 	}
 	switch request.Action {
 	case "abandon":
-		beforeStatus := ""
-		if beforeRecord != nil && beforeRecord.Last != nil {
-			beforeStatus = beforeRecord.Last.Status
-		}
 		receipt.Applied = record.Last.Status == "abandoned" && beforeStatus != "abandoned" &&
 			record.Last.Abandon != nil && record.Last.Abandon.Reason == request.Reason
 		if !receipt.Applied {
@@ -98,16 +99,12 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 			}
 		}
 	case "reconcile":
-		beforeStatus := ""
-		if beforeRecord != nil && beforeRecord.Last != nil {
-			beforeStatus = beforeRecord.Last.Status
-		}
 		// Local cancellation may consume a no-dispatch receipt while leaving the
 		// manual handoff pending. Reconcile then settles the handoff without
 		// changing the invocation's already-terminal status.
-		pendingCleared := before != nil && before.Handoff != nil && beforeHandoff == request.Key && before.Handoff.Pending &&
+		pendingCleared := before.Handoff != nil && beforeHandoff == request.Key && before.Handoff.Pending &&
 			st.Handoff != nil && st.Handoff.Key == request.Key && st.Handoff.Thread == before.Handoff.Thread && !st.Handoff.Pending &&
-			beforeInvocation != "" && record.Last.ID == beforeInvocation
+			record.Last.ID == beforeInvocation
 		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed && (beforeStatus != "consumed" || pendingCleared)
 		receipt.Message = record.Reason
 	case "claim":
@@ -121,7 +118,7 @@ func sessionControlReceipt(st, before *state.State, request *machine.SessionComm
 			receipt.Message = "the session was not under this handoff or remains controlled"
 		}
 	case "send":
-		receipt.Applied = beforeInvocation != "" && record.Last.ID != beforeInvocation
+		receipt.Applied = record.Last.ID != beforeInvocation
 		if !receipt.Applied {
 			receipt.Message = "the session command has not started a new invocation yet; refresh status"
 		}

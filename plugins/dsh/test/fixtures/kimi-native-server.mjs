@@ -95,6 +95,7 @@ const server = http.createServer(async (req, res) => {
       const s = sessions[id] = { id, title: fixtureCase === 'wrong-title' ? 'Session placeholder' : body.title,
         metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
         cwd: body.environment_cwd || body.metadata.cwd, active: null, queued: [], turns: [] };
+      if (fixtureCase === 'wrong-creation-owner') s.metadata = { ...s.metadata, flywheel_native_binding: 'foreign-invocation' };
       await save(); send(sessionState(s)); return;
     }
     const match = path.match(/^\/api\/v1\/sessions\/([^/:]+)(.*)$/);

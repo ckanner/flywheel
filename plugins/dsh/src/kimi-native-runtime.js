@@ -171,7 +171,8 @@ export function inspectKimiSchemas(openapi, asyncapi, mode) {
   const config = dereference(openapi, creation.agent_config).properties || {};
   const prompt = properties('/api/v1/sessions/{session_id}/prompts');
   const profile = dereference(openapi, properties('/api/v1/sessions/{session_id}/profile').agent_config).properties || {};
-  if (['model', 'thinking', 'permission_mode', 'swarm_mode', 'profile'].some(key => !config[key])
+  if (['title', 'metadata', 'agent_config', 'environment_id', 'environment_cwd'].some(key => !creation[key])
+      || ['model', 'thinking', 'permission_mode', 'swarm_mode', 'profile'].some(key => !config[key])
       || ['content', 'prompt_id', 'disabled_tools'].some(key => !prompt[key])
       || (mode === 'tower' && ['tower_mode', 'tower_base'].some(key => !profile[key]))) {
     throw error('UNSUPPORTED_SCHEMA', 'Kimi request schemas do not describe the selected native profile');

@@ -46,11 +46,26 @@ DSH 和 Pro 插件的活动从真实观察合并而来，只包含事件类型�
 活动是辅助观察，不是派发 ACK、业务结果、token 账单或清理证明。已校验的活动帧
 不会累计挤掉有界 stdout 捕获中的终态回执；损坏或身份不匹配的帧仍使协议失败。
 
+子任务归属必须匹配当前父 turn 和实际发送线程。旧轮次的 collaboration 事件、
+外来线程都不能建立归属。Claude 的 ambient 后台监听任务不计入工作活性或完成
+账本，后续 progress 即使省略 ambient 标记也保留这一分类。Claude init 之前的
+启动 hook，只有 session ID 匹配调用方指定的新建／恢复历史时才计为活动。
+
+传输流量与实际保留状态分别受限。Kimi native 的重复快照替换旧状态，不累计
+消耗传输流量配额；Codex 保留的 native 归属与 usage 证据计入内存预算。单帧、
+保留状态与最终结果的上限仍然有效。
+
 DSH 调用中断后，完整且身份匹配的回执与正常进程退出，可以独立保留实际
 Session ID、dispatch 事实及 SDK cleanupConfirmed；业务 outcome 仍为 unknown，
 自动重放仍被阻止。截断／损坏传输、物理终止信号、缺少退出证据或清理未知，
 不能提供这种证明。应使用下文既有的核对和人工规划退役入口；修改 timeout
 不会解除先前未知调用的责任。
+Pro 回执遵循相同边界：内层 ownership 不匹配、缺少 lifecycle 证据或外层流损坏，
+都不能提供可信的 timeout、cancelled 或 cleanup 事实。原始回执仍保留供检查；
+Go 自身观察到的超时和调用方取消不因此失效。
+合法的 worker 进度／native 元数据校验错误或观察配额错误，与传输损坏不同。
+其完整且身份匹配的清理回执可以保留独立核验的身份、usage 和 cleanup；业务结果
+仍为 unknown，不能据此授予续跑 checkpoint，也不把清理所用的取消当作首因。
 
 ## 可读的原生会话名称
 
@@ -132,6 +147,9 @@ flywheel session /absolute/repo/docs/my-task \
 旧 Kimi resident Plan 的精确关联续会话缓存，会在同一次状态保存中同步退役；其他线程和未知缓存仍保持阻断。原线程和 unknown dispatch/outcome 另保留在审计历史中，后续旧式调用覆盖 session 最新记录时不会丢失。DSH 先核对原始用户命令，再把引擎证明绑定到规范化任务路径；符号链接别名、尾斜线仍指向同一任务，但证明不能跨任务复用。
 
 人工 send 在派发前取消时，可能留下已 consumed 的回执和 pending 接管状态。Reconcile 清除 pending 后，会按这次真实转换报告 applied；重复核对已完成状态不算新成功动作。
+如果无法读取操作前的 invocation，回执保留已观察到的操作后状态，但不能证明
+这是本次命令造成的变化。此时 `applied:false` 的 message 会明确说明无法验证、
+命令可能已经执行；应先刷新状态再进行下一次修改，不能把它当作未执行的证明。
 
 这不是“删除账本来重放”：原账本、receipt 和 unknown 证据仍保留。不要手改 `state.json` 或搬走 `.sessions/` 来伪造终态。
 

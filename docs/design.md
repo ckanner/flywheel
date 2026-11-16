@@ -78,7 +78,7 @@ DSH 使用原仓库作为 Session header 的 cwd，再通过公开工作目录�
 
 原生 CLI／machine 后端在项目目录启动，提示词要求每次文件、shell、测试与 Git 操作显式使用实际执行目录。当前后端不能分离 `workspace-write` 沙箱根和项目目录时，在派发前拒绝该组合，不扩大权限；完全权限与支持的只读模式保持各自语义。旧会话保留真实历史目录，待消费回执先按原身份核对，不修改历史头部来伪造归属。同项目的兼容历史可按会话策略继续使用。
 
-新建受管会话使用可读标题 `Flywheel · <role[/scope]> · <task>`。task 优先取已加载 spec.title，未有 spec 时取规划 brief.goal，最后使用 task slug；换行、控制符与 Unicode 格式控制被规范化，长度按字符有界且总标题不超过 512 UTF-8 字节。内部 planning invocation ID 不进入展示标题；opaque session ID 与冻结绑定不变。DSH 通过公开 sessionTitle 服务写入并核对标题，Codex Pro 用 thread/name/set，Claude Code Pro 用原生 -n；只在新持久历史设置，恢复历史不覆盖用户名称。Kimi native 在公开 session create 写标题。Kimi print 绕过 TUI 的自动标题路径且没有命名 CLI flag：使用独立受管的本地公开 API 创建无 prompt 的具名空历史，关闭并确认进程清理后由原 print 命令续用；两步共用原 wall 预算与相同 KIMI_CODE_HOME，不显式覆盖 thinking/profile/environment。设置 auto 权限和 plan_mode:false 仅保持原 fresh print 行为；失败不静默运行匿名任务，也不进行额外模型命名调用。公开 API 的 create/close 会多产生一轮原生 SessionStart/SessionEnd（包括用户配置的 hooks），这是首次具名 print 的明确成本；业务 prompt 仍只发送一次，后续 resume 跳过准备。Agent/Swarm 直接在原创建流程中命名，无额外准备生命周期。旧 codex exec 等未提供已验证命名接口的兼容后端不冒称此能力。
+新建受管会话使用可读标题 `Flywheel · <role[/scope]> · <task>`。task 优先取已加载 spec.title，未有 spec 时取规划 brief.goal，最后使用 task slug；换行、控制符与 Unicode 格式控制被规范化，长度按字符有界且总标题不超过 512 UTF-8 字节。内部 planning invocation ID 不进入展示标题；opaque session ID 与冻结绑定不变。DSH 通过公开 sessionTitle 服务写入并核对标题，Codex Pro 用 thread/name/set，Claude Code Pro 用原生 -n；只在新持久历史设置，恢复历史不覆盖用户名称。Kimi native 在公开 session create 写标题，并在 prompt 前核对返回的标题、绑定与工作目录；未确认归属时不向该历史发起会话级清理。Kimi print 绕过 TUI 的自动标题路径且没有命名 CLI flag：使用独立受管的本地公开 API 创建无 prompt 的具名空历史，关闭并确认进程清理后由原 print 命令续用；两步共用原 wall 预算与相同 KIMI_CODE_HOME，不显式覆盖 thinking/profile/environment。设置 auto 权限和 plan_mode:false 仅保持原 fresh print 行为；失败不静默运行匿名任务，也不进行额外模型命名调用。公开 API 的 create/close 会多产生一轮原生 SessionStart/SessionEnd（包括用户配置的 hooks），这是首次具名 print 的明确成本；业务 prompt 仍只发送一次，后续 resume 跳过准备。Agent/Swarm 直接在原创建流程中命名，无额外准备生命周期。旧 codex exec 等未提供已验证命名接口的兼容后端不冒称此能力。
 
 `worktree.enabled` 只控制引擎自动管理执行目录，与并行策略独立。目录选择、外部 worktree 登记和共享目录批次见 §4.8。
 
@@ -483,7 +483,11 @@ watchdog 的 idle 期限只适用于能暴露实际进展的传输。旧 codex e
 
 DSH policy 通过公开 agent/assistant-stream 订阅真实根／owned 后代的短暂流式事件，校验 registry/lineage 后走独立元信息通道；SDK 冷启动和预热正式调用执行同一活动协议。外部 Codex/Claude 插件仅在宿主提供可选 `flywheelProviderActivity` 服务时上报，不依赖虚构的 SDK 核心通知 API。Pro 插件公开 activity version 1：根与真实子 turn 的思考／工具／partial 事件与 durable native ledger 去重分离，没有显式 native 配置时也跟踪真实子任务归属。Claude 查询先在同一 wall 预算内无推理检查 CLI 的 --include-partial-messages、--forward-subagent-text 与新会话 --name 能力；不支持时在发送 prompt 前明确失败。
 
+Codex collaboration 子任务认领必须来自当前父线程、当前 turn 和匹配的实际 sender。Claude ambient watcher 不作为业务活性或待完成子任务，后续省略 ambient 的消息沿用相应 task/run 分类；同一 task 的新旧 run 按上游 run_id 时序区分。未知或截断的 child ownership 账本不能证明远端工作已经停止，即使本地进程组已确认清理。
+
 活动不提供完成、配置、清理或 durable ACK 证据，不包含原始思考、工具参数／结果、会话 ID 或 prompt。按真实事件合并并限频，完全不生成定时心跳。单帧和保留结果受限，原始累计流量不当作保留内存；worker 展示进度满额后停止追加正文但继续观察活动并保留终态。Go 的结果捕获层严格核验后合并活动，不让无界活动累计挤掉生命周期与终态；坏帧、重复、身份错配与尾部残帧仍可使调用失败。原始事件回调仍实时接收，最终诊断仅保留有界活动摘要。请求排队、未产生首个 delta、静默的远端工具等不可见阶段仍可能耗尽配置的 idle 预算；这是资源策略，不是模型已死或安全重试的证明。
+
+Codex 的保留预算包含答案、native 归属与 usage 证据。Kimi native 的 64 MiB observation 配额衡量当前保留的 JSON 投影，替换或删除释放旧配额，WS 与 HTTP 对账共用预算；逐 delta 不重复序列化完整历史。合法 worker 观测错误报告与传输损坏分别处理：完整且身份匹配的回执仍可保留独立确认的清理、身份与用量；业务结果保持 unknown，不能获得 resume checkpoint，也不把清理的取消动作当作失败首因。
 
 错误原因与清理动作分开记录：Go 先触发 idle/wall 超时，再要求插件取消，顶层仍为 TIMEOUT 且保留具体超时字段，不变成用户取消；插件原始 cancelled 回执照存。真实父 context 取消保持 Cancelled。DSH 的可信 session ID、派发与清理事实不被外层超时擦除，业务 outcome 仍 unknown、不能自动重放或给出 resumeCandidate。
 
@@ -497,7 +501,7 @@ Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 
 - 关联的规划 request 标为 `cancelled`；任务回到 `paused`，下一次显式 Plan 产生新 request/generation。`planningHasPendingReceipt` 把 `abandoned` 视作已终结的边界。
 - 不能把退役实现成“成功”或“未派发”；它只结束未知副作用，不伪造结果。
 
-控制信封的 `ok:true` 只表示控制请求被处理；异步 session 动作另返回 `session-control.applied/status/message/invocation`。工作台“核对”仍只刷新插件自己的未确认控制动作，不是引擎未知调用的退役入口。
+控制信封的 `ok:true` 只表示控制请求被处理；异步 session 动作另返回 `session-control.applied/status/message/invocation`。只有操作前后 invocation 证据完整且匹配才确认本次变更；前态不可读时保留后态并说明效果无法验证，不能把既有终态当作本次成功，也不能推断命令必定未执行。工作台“核对”仍只刷新插件自己的未确认控制动作，不是引擎未知调用的退役入口。
 
 ## 7. 模型与 harness 默认表
 

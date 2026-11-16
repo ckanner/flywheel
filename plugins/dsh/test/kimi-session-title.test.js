@@ -139,3 +139,24 @@ test('native Kimi receives the full task title and resume never renames history'
   assert.equal(creates[0].body.title, f.input.sessionTitle);
   assert.ok(!calls.some(row => row.path?.endsWith('/profile') && row.body?.title));
 });
+
+for (const fixtureCase of ['no-title-schema', 'wrong-title', 'wrong-creation-owner']) {
+  test('native Kimi rejects unconfirmed new-history identity before dispatch: ' + fixtureCase, async t => {
+    const f = await setup(t, fixtureCase);
+    const input = { ...f.input, type: 'start', persistent: true, prompt: 'bound work', permissionMode: 'danger-full-access',
+      native: { version: 1, mode: 'agent' }, managed: { version: 1, runId: '', invocationId: f.input.requestId,
+        role: 'design-plan', scope: 'planning:opaque-id', channel: 'kimi', taskDir: f.input.cwd } };
+    const result = await runKimiWorker(input, { env: f.env });
+    assert.equal(result.status, 'error', JSON.stringify(result));
+    assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+    assert.equal(result.lifecycle.cleanupConfirmed, true);
+    const calls = await f.log();
+    assert.ok(!calls.some(row => row.path?.endsWith('/prompts') && row.method === 'POST'), 'unverified metadata must never admit a task prompt');
+    if (fixtureCase === 'no-title-schema') assert.ok(!calls.some(row => row.path === '/api/v1/sessions' && row.method === 'POST'));
+    if (fixtureCase === 'wrong-creation-owner') {
+      assert.ok(!calls.some(row => row.method === 'POST' && /\/sessions\/[^/]+/.test(row.path)),
+        'a foreign history must not receive targeted abort, profile or prompt mutations during cleanup');
+      assert.ok(calls.some(row => row.path === '/api/v1/shutdown'), 'the owned runtime still stops');
+    }
+  });
+}

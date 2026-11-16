@@ -254,6 +254,10 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 		case "result":
 			terminal = true
 			parsed = parseClaudeCodeProReceipt(frame.Receipt, request)
+			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
+				trusted = false
+				parsed.Error = "invalid request: Claude Code Pro result omitted durable lifecycle evidence"
+			}
 			if !receiptHasFields(json.RawMessage(line), "receipt", "error") || frame.Adapter.Package != "dsh-subagent-claude-code-pro" ||
 				frame.Adapter.Version != ClaudeCodeProPackageVersion || frame.Adapter.Protocol != 1 {
 				trusted = false
@@ -270,12 +274,15 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 					parsed.Error, parsed.ErrorCode = "Claude Code Pro worker admission failed: "+frame.Error.Message, errs.INVALID_REQUEST
 				}
 			} else if frame.Error != nil {
-				trusted = false
+				if !machineWorkerObservationError(frame.Error.Code) {
+					trusted = false
+				}
+				// The error report and the independently validated cleanup
+				// receipt answer different questions. Neither grants a checkpoint.
+				parsed.Cancelled, parsed.TimedOut, parsed.Truncated, parsed.Settled = false, false, false, false
+				parsed.Session.Outcome, parsed.Session.ResumeCandidate = "unknown", false
+				parsed.ErrorCode = errs.TRANSPORT
 				parsed.Error = "Claude Code Pro worker failed without a trusted invocation result: " + frame.Error.Message
-			}
-			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
-				trusted = false
-				parsed.Error = "invalid request: Claude Code Pro result omitted durable lifecycle evidence"
 			}
 		default:
 			trusted = false
@@ -291,6 +298,7 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 	if !trusted {
 		parsed.StreamFailed = true
 		parsed.CleanupConfirmed, parsed.Settled, parsed.Usage, parsed.ErrorCode = false, false, nil, ""
+		parsed.Cancelled, parsed.TimedOut, parsed.Truncated = false, false, false
 		parsed.Session = claudeCodeProUnknownSession(request)
 	}
 	parsed.Session.CleanupConfirmed = parsed.CleanupConfirmed
@@ -365,7 +373,6 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 		parsed.Error = usageErr.Error()
 		return parsed
 	}
-	parsed.Cancelled, parsed.TimedOut, parsed.Truncated = *e.Cancelled, *e.TimedOut, *e.Truncated
 	parsed.Session.RunID = receipt.RunID
 	if sessionID != nil {
 		parsed.Session.SessionID = *sessionID
@@ -447,6 +454,9 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 			}
 		}
 	}
+	// Only a structurally valid failure with correlated ownership may supply
+	// termination facts. Contradictory success/ownership remains a transport error.
+	parsed.Cancelled, parsed.TimedOut, parsed.Truncated = *e.Cancelled, *e.TimedOut, *e.Truncated
 	parsed.ErrorCode = claudeCodeProFailureCode(receipt.Failure.Category)
 	parsed.Error = "Claude Code Pro " + receipt.Failure.Stage + " failure: " + receipt.Failure.Detail
 	return parsed
@@ -593,7 +603,9 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
 	// Preserve a real caller cancellation, but do not relabel a known worker
 	// protocol/ACK failure as a user stop just because cleanup used abort.
-	mergeWorkerTermination(&out, parsed.Cancelled && !parsed.StreamFailed, parsed.TimedOut, parsed.Truncated)
+	providerFactsTrusted := !parsed.StreamFailed && !result.Truncated
+	parsed.CleanupConfirmed = parsed.CleanupConfirmed && providerFactsTrusted
+	mergeWorkerTermination(&out, parsed.Cancelled && providerFactsTrusted, parsed.TimedOut && providerFactsTrusted, parsed.Truncated && providerFactsTrusted)
 	if result.Truncated {
 		out.Usage, out.Session.UsageStatus = nil, "unknown"
 	}

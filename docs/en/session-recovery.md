@@ -57,6 +57,18 @@ it is neither a durable dispatch ACK nor a result, token bill or cleanup proof.
 Validated advisory activity frames do not displace a terminal receipt from bounded output
 capture; malformed or uncorrelated frames still fail the protocol checks.
 
+Child attribution must match the active parent turn and the actual sender.
+Stale collaboration events and foreign threads do not establish ownership.
+Claude's ambient background watchers are excluded from both work activity and
+completion tracking, including later progress that omits the ambient flag.
+Startup hook activity is accepted before Claude's init frame only when its
+session ID matches the caller-selected new or resumed history.
+
+Stream traffic and retained state have different limits. Repeated Kimi native
+snapshots replace the previous state instead of consuming a cumulative traffic
+quota; native and usage evidence retained by Codex is included in its memory
+budget. Frame, retained-state and final-result bounds remain enforced.
+
 After an interrupted DSH call, an intact correlated receipt and normal process
 exit can independently preserve the actual Session ID, dispatch fact and
 confirmed SDK cleanup. The business outcome stays unknown and automatic replay
@@ -64,6 +76,15 @@ stays blocked. A truncated/corrupt stream, physical termination signal, missing
 exit evidence or unconfirmed cleanup cannot supply that proof. Use the existing
 reconciliation and explicit planning-retirement controls below; changing a
 timeout does not resolve an earlier unknown invocation.
+The same rule applies to Pro receipts: an invalid inner ownership binding,
+missing lifecycle evidence or damaged outer stream cannot supply a trusted
+timeout, cancellation or cleanup fact. The original receipt remains available
+for inspection; a timeout or cancellation observed by Go itself remains valid.
+A valid worker report of rejected activity/native metadata or an observation
+quota is different from a damaged stream. Its complete, correlated cleanup
+receipt can preserve independently verified identity, usage and cleanup, while
+the business outcome remains unknown and no continuation checkpoint is granted.
+Cleanup cancellation cannot replace that initiating worker error.
 
 ## Readable native session names
 
@@ -154,6 +175,11 @@ The record becomes `abandoned` with its reason, time, source, and original threa
 For a legacy Kimi resident Plan, the exact matching resume cache is retired in the same state write. Other threads and unknown caches remain blocked. The invocation's original thread and unknown dispatch/outcome are also retained in the audit history when a later legacy call replaces the session's latest record. DSH verifies the original user command before binding the engine proof to the canonical task path, so symlink aliases and trailing slashes identify the same task without allowing cross-task proof reuse.
 
 A manual send cancelled before dispatch may leave a consumed receipt with a pending handoff. Reconcile clears that pending state and reports the actual transition as applied; repeating an already-settled reconcile is not a new successful operation.
+If the pre-command invocation could not be read, the receipt keeps the observed
+after-state but cannot confirm that this command caused it. It returns
+`applied:false` with an explicit verification message; the command may already
+have executed. Refresh status before another mutation rather than treating that
+value as proof of non-execution.
 
 This is not "delete the ledger and replay": the original ledger, receipt, and unknown evidence remain. Do not hand-edit `state.json` or move `.sessions/` to fabricate a terminal result.
 
