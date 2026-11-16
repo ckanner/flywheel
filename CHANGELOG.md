@@ -34,6 +34,9 @@ their original language.
   including V2 started markers; genuine subsequent turns and queued follow-up
   work still require completion. Regress both event orders through the worker
   and Go driver using the exact bundled companion.
+- Preserve parent-only Codex child terminal evidence through repeated creation
+  snapshots before any child turn ID is known, without inventing turn or usage
+  facts. Pin the repaired companion archive and exercise its public worker.
 - Require confirmed Codex naming before a new persistent machine task is sent.
   A failed explicit or fallback title write preserves the known thread,
   not-dispatched status and physical cleanup in the durable failure receipt.

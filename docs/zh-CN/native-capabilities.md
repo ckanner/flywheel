@@ -185,6 +185,11 @@ Codex 已观察到的子 turn 和线程关闭事实优先于迟到的创建快�
 和 V2 started 标记）。旧的 running 快照不能重开已完成的子任务，旧的终态快照
 也不能完成较新的运行中 turn；真正的新 turn 或后续排队任务仍需要各自的完成证据。
 
+只有已确认归属的父层快照提供子任务终态、尚无 child turn ID 时，同样保留该
+终态；重复的 running 创建快照不能撤销它。缺失的 turn 身份与用量仍保持未知，
+完成判定不会补造这两项事实。
+后续排队任务也不会恢复旧创建快照的状态更新权，旧快照不能提前完成这轮新工作。
+
 预算和并发也保持真实语义：Flywheel scheduler 限根调用；Claude 的 requested limits 是 observed guard，`hard:false`；Kimi 没有该整树硬上限。外部子 Agent、Advisor、compaction 或 Tower 消耗无法精确归属时 total 保留 unknown。hard budget 不把 unknown 当成零。详细测试与尚未实机验证的范围见[验证记录](../validation/2026-11-14-native-harness-implementation.md)。
 
 桌面插件配置、PTC 参数类型和本轮真实包验证见[桌面配置跟进记录](../validation/2026-11-14-desktop-native-configuration.md)。

@@ -176,6 +176,64 @@ func TestCodexProProviderActivityOfflineBridge(t *testing.T) {
 		})
 	}
 
+	for _, scenario := range []string{"native-parent-terminal-replay", "native-parent-terminal-queued"} {
+		t.Run("parent-only child state survives "+scenario, func(t *testing.T) {
+			a := setup(t, scenario)
+			a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true}}`)
+			out := RunCodexPro(a)
+			pending := scenario == "native-parent-terminal-queued"
+			assert.Equal(t, !pending, out.Settled, "%+v", out)
+			assert.False(t, out.TimedOut)
+			assert.False(t, out.Cancelled)
+			assert.Equal(t, "fixture complete\n", out.Text)
+			require.NotNil(t, out.Session)
+			assert.True(t, out.Session.CleanupConfirmed)
+			var native struct {
+				Children []struct {
+					ID     string  `json:"id"`
+					State  string  `json:"state"`
+					TurnID *string `json:"turnId"`
+					Usage  struct {
+						Status string `json:"status"`
+					} `json:"usage"`
+				} `json:"children"`
+				Completion struct {
+					Confirmed  bool     `json:"confirmed"`
+					PendingIDs []string `json:"pendingIds"`
+				} `json:"completion"`
+				Usage struct {
+					Status      string `json:"status"`
+					TotalTokens *int   `json:"totalTokens"`
+				} `json:"usage"`
+			}
+			require.NoError(t, json.Unmarshal(out.NativeReceipt, &native))
+			require.Len(t, native.Children, 1)
+			child := native.Children[0]
+			assert.Equal(t, "child-thread", child.ID)
+			if pending {
+				assert.Equal(t, "running", child.State)
+				assert.Equal(t, []string{"child-thread"}, native.Completion.PendingIDs)
+				assert.False(t, out.Session.ResumeCandidate)
+				var receipt codexProReceipt
+				require.NoError(t, json.Unmarshal(out.CodexProReceipt, &receipt))
+				require.NotNil(t, receipt.Outcome)
+				require.NotNil(t, receipt.Outcome.Execution)
+				require.NotNil(t, receipt.Outcome.Execution.Failure)
+				assert.Equal(t, "native", receipt.Outcome.Execution.Failure.Stage)
+				assert.Equal(t, "completion", receipt.Outcome.Execution.Failure.Category)
+			} else {
+				assert.Equal(t, "completed", child.State)
+				assert.Empty(t, native.Completion.PendingIDs)
+			}
+			assert.Nil(t, child.TurnID, "parent fallback does not invent a child turn")
+			assert.Equal(t, "unknown", child.Usage.Status)
+			assert.Equal(t, !pending, native.Completion.Confirmed)
+			assert.Equal(t, "partial", native.Usage.Status)
+			assert.Nil(t, native.Usage.TotalTokens, "completion does not fill missing usage")
+			assertCodexProProcessesStopped(t, readCodexProLog(t, a.APIKeys["TEST_CODEX_PRO_LOG"]))
+		})
+	}
+
 	t.Run("rejected persistent title preserves no-dispatch cleanup and recovery", func(t *testing.T) {
 		a := setup(t, "name-rejected")
 		a.PersistentSession, a.SessionTitle = true, "Flywheel · Alerts · Design review"

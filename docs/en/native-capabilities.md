@@ -188,6 +188,13 @@ not reopened by an older running snapshot, and a newer running turn is not
 completed by an older terminal snapshot. A genuine new turn or later queued
 follow-up still needs its own completion evidence.
 
+This also covers a child whose terminal state was observed only in an owned
+parent snapshot, before any child turn ID. A repeated running creation snapshot
+cannot undo that terminal evidence. Missing turn identity and usage remain
+unknown; completion does not supply either.
+Later queued work does not restore that old snapshot's authority to finish the
+new work.
+
 Concurrency and budgets retain their actual scope: Flywheel scheduling limits root invocations; Claude limits are an observed guard with `hard:false`; Kimi lacks that whole-tree hard cap. Unattributable external-agent, Advisor, compaction or Tower usage remains unknown, and hard budgets do not count it as zero. See [validation](../validation/2026-11-14-native-harness-implementation.md) for tested and untested runtime boundaries.
 
 See the [desktop configuration follow-up](../validation/2026-11-14-desktop-native-configuration.md) for plugin settings, typed PTC arguments and this candidate's package validation.

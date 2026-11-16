@@ -10,7 +10,7 @@ Version, source tree, archive and installed content remain separate identities.
 
 | Package | Role | Source commit | Source tree | Record |
 | --- | --- | --- | --- | --- |
-| `dsh-subagent-codex-pro@0.10.1` | Bundled machine API source candidate | [f31659536ed0](https://github.com/ckanner/dsh-subagent-codex-pro/commit/f31659536ed085f86c31f28e56a48ebed9d6b85b) | `5135f6d4b00be228e2f8a4c211f6f081406e993e` | [codex-pro.json](codex-pro.json) |
+| `dsh-subagent-codex-pro@0.10.1` | Bundled machine API source candidate | [1bcde1268d380](https://github.com/ckanner/dsh-subagent-codex-pro/commit/1bcde1268d380aa197ab872605b76a353d3ae0a1) | `7a9341650a9675342188b1ba3449a7c993fc5353` | [codex-pro.json](codex-pro.json) |
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.5.2` | Optional machine/native-jobs source candidate | [34291ff600bb](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/34291ff600bb70fa7dd628435fa10046c11b21d1) | `ff056d7052706101543c50a9eea701c701271d7d` | [claude-code-pro.json](claude-code-pro.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |

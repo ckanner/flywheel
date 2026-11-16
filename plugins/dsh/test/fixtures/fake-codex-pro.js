@@ -111,6 +111,18 @@ function reorderedNativeChild() {
   }
 }
 
+// A parent-only terminal snapshot must survive replay of an older creation
+// snapshot, even when no child listener supplied a turn ID or usage evidence.
+function replayedParentSnapshot() {
+  const snapshot = (tool, id, status) => notify('item/completed', { threadId, turnId,
+    item: { type: 'collabAgentToolCall', id, tool, senderThreadId: threadId,
+      receiverThreadIds: ['child-thread'], model: 'child-model', agentsStates: { 'child-thread': { status } } } });
+  snapshot('spawnAgent', 'spawn-replayed', 'completed');
+  const queued = scenario === 'native-parent-terminal-queued';
+  if (queued) snapshot('sendInput', 'input-new-work', 'running');
+  snapshot('spawnAgent', 'spawn-replayed', queued ? 'completed' : 'running');
+}
+
 createInterface({ input: process.stdin }).on('line', line => {
   const request = JSON.parse(line);
   log(request);
@@ -167,6 +179,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       notify('turn/completed', { threadId: 'child-thread', turn: { id: 'child-turn', status: 'completed' } });
     }
     if (['native-stale-spawn', 'native-new-turn-pending', 'native-new-turn-completed'].includes(scenario)) reorderedNativeChild();
+    if (['native-parent-terminal-replay', 'native-parent-terminal-queued'].includes(scenario)) replayedParentSnapshot();
     notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text: 'fixture working' } });
     if (scenario === 'progress-hang') {
       setInterval(() => notify('item/completed', { threadId, turnId,

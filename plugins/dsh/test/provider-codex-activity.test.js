@@ -127,6 +127,31 @@ for (const scenario of ['native-child', 'native-stale-spawn', 'native-new-turn-c
   });
 }
 
+for (const scenario of ['native-parent-terminal-replay', 'native-parent-terminal-queued']) {
+  test(`installed worker preserves parent-only terminal or queued work through ${scenario}`, { timeout: 15000 }, async t => {
+    const f = await setup(t, scenario), pending = scenario === 'native-parent-terminal-queued';
+    const run = await f.launch({ ...f.request, native: { version: 1, agents: { enabled: true } } }).done;
+    const receipt = pending ? run.frames.at(-1).receipt : completed(run);
+    if (pending) {
+      assert.equal(run.code, 1, JSON.stringify(run.frames.at(-1)));
+      assert.equal(receipt.ok, false);
+      assert.equal(receipt.outcome.execution.failure.stage, 'native');
+      assert.equal(receipt.outcome.execution.failure.category, 'completion');
+      assert.equal(receipt.outcome.cleanup.confirmed, true);
+    }
+    assert.equal(receipt.native.completion.confirmed, !pending);
+    assert.deepEqual(receipt.native.completion.pendingIds, pending ? ['child-thread'] : []);
+    assert.equal(receipt.native.children.length, 1);
+    const child = receipt.native.children[0];
+    assert.equal(child.id, 'child-thread');
+    assert.equal(child.state, pending ? 'running' : 'completed');
+    assert.equal(child.turnId, null, 'parent fallback does not invent a child turn');
+    assert.equal(child.usage.status, 'unknown');
+    assert.equal(receipt.native.usage.status, 'partial');
+    assert.equal(receipt.native.usage.totalTokens, null, 'completion does not fill missing usage');
+  });
+}
+
 test('installed worker keeps a new child turn pending despite a late completed spawn snapshot', { timeout: 15000 }, async t => {
   const f = await setup(t, 'native-new-turn-pending');
   const run = await f.launch({ ...f.request, native: { version: 1, agents: { enabled: true } } }).done;
