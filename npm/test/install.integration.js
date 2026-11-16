@@ -66,7 +66,10 @@ test('the complete npm candidate install and run from a clean agent environment'
   const config = await run(report.paths.launcher, ['config', 'inspect', '--cwd', context.project, '--json'], context.env, context.project);
   assert.equal(config.code, 0, config.stderr);
   const bindings = JSON.parse(config.stdout).bindings;
-  assert.equal(bindings.length, 8);
+  assert.equal(bindings.length, 11);
+  for (const id of ['loops.design-plan', 'loops.design-review', 'loops.plan-review']) {
+    assert.ok(bindings.some(binding => binding.id === id), `effective configuration must expose implicit ${id}`);
+  }
   for (const [id, thinking] of [['loops.intake', 'low'], ['routes.default', 'high']]) {
     const binding = bindings.find(value => value.id === id);
     assert.ok(binding, `installed configuration must include ${id}`);
