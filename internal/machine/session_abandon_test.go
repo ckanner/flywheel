@@ -137,6 +137,14 @@ func TestSessionUserActionDshProofBindsTaskAndInvocation(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+	for _, reason := range []string{"", strings.Repeat("x", 1001), "nul\x00reason"} {
+		badRequest := cmd
+		badRequest.Reason = reason
+		badProof := *proof
+		badProof.Reason = reason
+		_, err := badProof.validate(badRequest, fx.root, cmd.Invocation)
+		require.ErrorContains(t, err, "bounded reason")
+	}
 }
 
 func TestRunSingleStepAbandonsBeforeTheUnresolvedReceiptGate(t *testing.T) {
@@ -212,6 +220,9 @@ func TestAbandonRejectsUnverifiedOrIneligibleCommands(t *testing.T) {
 		{"request role mismatch", func(fx *abandonFixtureData, _ *SessionCommand) {
 			fx.ctx.State.Planning.Requests[0].Role = "plan"
 		}, "belongs to role plan"},
+		{"request input revision mismatch", func(fx *abandonFixtureData, _ *SessionCommand) {
+			fx.ctx.State.Planning.Requests[0].InputRevision++
+		}, "belongs to input revision"},
 		{"missing planning request", func(fx *abandonFixtureData, cmd *SessionCommand) {
 			record := fx.ctx.State.Sessions.Records[fx.key]
 			delete(fx.ctx.State.Sessions.Records, fx.key)
