@@ -51,11 +51,25 @@ func TestRealInjectionRestoresWithoutDiscardingExecutorChanges(t *testing.T) {
 func TestInjectedTestTimeoutIsInconclusiveAndRestores(t *testing.T) {
 	dir, patch := injectionRepo(t)
 	before := gitForTest(t, dir, "diff")
+	var injected RunResult
 	o := RunDefectInjection(Args{
 		Cwd: dir, PatchFile: patch,
 		TestCmd:   `if [ -f poison.txt ]; then trap 'exit 1' TERM; while :; do :; done; fi`,
-		TimeoutMs: 150, KillGraceMs: 100,
+		TimeoutMs: 3000, KillGraceMs: 1000,
+		Run: func(command string, args []string, cwd string, timeoutMs int64, envAllowlist []string) RunResult {
+			// Only the deliberately hanging, poisoned test gets a short
+			// deadline. Real git apply/rollback must not depend on a busy
+			// CI runner completing process startup and IO within 150 ms.
+			if command == "/bin/sh" {
+				if _, err := os.Stat(filepath.Join(cwd, "poison.txt")); err == nil {
+					injected = managedRun(context.Background(), command, args, cwd, 150, 1000, envAllowlist)
+					return injected
+				}
+			}
+			return managedRun(context.Background(), command, args, cwd, timeoutMs, 1000, envAllowlist)
+		},
 	})
+	require.True(t, injected.TimedOut, "the injected test must actually hit the watchdog deadline")
 	assert.Equal(t, "inconclusive", o.Outcome)
 	assert.False(t, o.Pass)
 	assert.False(t, o.TestsWentRed, "超时恰好exit1也不能证明缺陷被检测")

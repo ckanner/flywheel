@@ -10,6 +10,7 @@ import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, recor
 import { nativeOverlay } from './native-policy.js';
 import { NativeTree } from './native.js';
 import { acquireGuiLease, settleGuiLease } from './native-resources.js';
+import { acceptDshActivity, DSH_ACTIVITY_METHOD } from './dsh-activity.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
   const native = request.native ? nativeOverlay(request, admission.runtimeProfile ?? 'sdk') : null;
@@ -34,6 +35,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { id: 'sdk-jsonrpc-server', config: { maxTokensAsSuccess: false } },
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
       config: { permissionMode: request.permissionMode, cwd: request.cwd,
+        activity: { version: 1, idleTimeoutMs: request.idleTimeoutMs ?? 300000 },
         ...(native ? { native: request.native, managed: request.managed, composition: native.composition,
           provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort, resuming: Boolean(request.sessionId) } : {}),
         ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}),
@@ -226,6 +228,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let dispatch = 'not-dispatched';
   let promptId = '';
   let waited = false;
+  let activitySequence = 0;
   const beforeReady = [];
   let deadline;
   let started = Date.now();
@@ -288,6 +291,17 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
         DSH_MAX_TOKENS_AS_SUCCESS: 'false', DSH_TELEMETRY_DISABLED: '1', FLYWHEEL_DSH_NATIVE_WORKER: '1' },
       stderr,
     }, (method, params) => {
+      if (method === DSH_ACTIVITY_METHOD) {
+        const activity = acceptDshActivity(params, { ...policyIdentity, rootSessionId: sessionId }, activitySequence);
+        if (activity) {
+          if (!readySent || dispatch === 'not-dispatched' || fold.policy.activity?.version !== 1) {
+            throw new BridgeError('TRANSPORT', 'DSH activity arrived before its owned policy and prompt admission');
+          }
+          activitySequence = activity.sequence;
+          frame({ type: 'activity', sessionId, activity });
+        }
+        return;
+      }
       if (prepared && !formalStarted && method === 'session.event') {
         throw new BridgeError('TRANSPORT', 'SDK emitted a Session event before formal prewarm dispatch');
       }
@@ -373,6 +387,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
+      activity: fold.policy.activity ?? { version: 1, observation: 'durable-events-only', opaquePhases: ['streaming', 'external-providers', 'silent-tool', 'startup'] },
       policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,
         approvalPolicy: fold.policy.approvalPolicy, confinedShell: fold.policy.confinedShell,
         ...(fold.policy.enforcement === undefined ? {} : { enforcement: fold.policy.enforcement }) },

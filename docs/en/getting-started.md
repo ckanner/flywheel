@@ -53,7 +53,7 @@ route and independent final Review; an upgrade to Full requires the additional s
 Unused execution routes do not become task runtime requirements.
 
 Claude is optional. Selecting `claude-code-pro` additionally requires the matching
-0.5.1 companion package in the worker's dependency tree and an installed,
+0.5.2 companion package in the worker's dependency tree and an installed,
 authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md).
 
 ## 2. Install
@@ -141,7 +141,7 @@ Check the installed version before changing an existing profile. Account authori
 and live model availability still use the adapter's normal flow; keep `DSH_HOME`
 consistent and credentials out of task files and Git.
 
-The hard route directly imports the pinned Codex Pro 0.10.0 public machine API.
+The hard route directly imports the pinned Codex Pro 0.10.1 public machine API.
 It needs the local Codex command/login, not a parent model delegating through the
 `subagent_codex` tool. Optional Claude has its own dependency and login.
 

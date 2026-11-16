@@ -163,15 +163,16 @@ func (f *machineLifecycleFlow) frame(raw []byte) (MachineLifecycle, error) {
 // its callback fsyncs evidence and completes state CAS; any error starts normal
 // watchdog cleanup, never a second dispatch.
 type machineInteraction struct {
-	mu          sync.Mutex
-	stdin       io.Writer
-	finish      func()
-	err         error
-	terminal    bool
-	flow        machineLifecycleFlow
-	onLifecycle func(MachineLifecycle) error
-	onEvent     func(string)
-	lines       jsonLines
+	mu               sync.Mutex
+	stdin            io.Writer
+	finish           func()
+	err              error
+	terminal         bool
+	activitySequence int64
+	flow             machineLifecycleFlow
+	onLifecycle      func(MachineLifecycle) error
+	onEvent          func(string)
+	lines            jsonLines
 }
 
 func newMachineInteraction(harness string, request codexProStart, onLifecycle func(MachineLifecycle) error, onEvent func(string)) *machineInteraction {
@@ -218,6 +219,8 @@ func (m *machineInteraction) line(line string) {
 	}
 	if err == nil {
 		switch header.Type {
+		case "activity":
+			err = validateProActivityEvent(json.RawMessage(line), m.flow.harness, m.flow.request, &m.activitySequence)
 		case "lifecycle":
 			var event MachineLifecycle
 			event, err = m.flow.frame([]byte(line))
@@ -271,6 +274,9 @@ func (m *machineInteraction) failure() error {
 // lifecycle frames and sends durable acknowledgements on that existing pipe.
 func runMachineWorker(command, harness string, request codexProStart, payload []byte, opts watchdog.Opts,
 	onLifecycle func(MachineLifecycle) error, onEvent func(string)) (watchdog.Result, error) {
+	if opts.StdoutCapture == nil && (harness == "codex-pro" || harness == "claude-code-pro") {
+		opts.StdoutCapture = newProActivityCapture(harness, request)
+	}
 	var interaction *machineInteraction
 	events := jsonLines{onLine: onEvent, limit: watchdog.MaxBuffer}
 	written := make(chan error, 1)

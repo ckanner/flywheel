@@ -199,6 +199,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		}
 		return RunKimi(KimiArgs{
 			Native: a.Native, Managed: a.Managed,
+			SessionTitle: a.SessionTitle,
 			WorkspaceCwd: a.WorkspaceCwd, PermissionMode: a.PermissionMode,
 			Prompt:            a.Prompt,
 			SessionID:         a.SessionID, // plan 长驻会话：machine 持有句柄并传入
@@ -249,7 +250,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		}
 		return RunCodexPro(CodexProArgs{
 			Native: a.Native, Managed: a.Managed,
-			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
+			SessionTitle: a.SessionTitle,
+			Prompt:       a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,
@@ -263,7 +265,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		}
 		return RunClaudeCodePro(ClaudeCodeProArgs{
 			Native: a.Native, Managed: a.Managed,
-			Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
+			SessionTitle: a.SessionTitle,
+			Prompt:       a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
 			PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 			APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent,

@@ -262,7 +262,7 @@ func (c *Context) planStep(milestone contract.Milestone, feedback string) (planO
 			},
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  c.apiKeysFor(channel),
-			Watchdog: c.wdog(),
+			Watchdog: c.wdogFor("plan"),
 		}, c.Drivers.Plan.Plan)
 		if sessionErr != nil {
 			if c.fatal == nil {

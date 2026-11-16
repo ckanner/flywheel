@@ -450,6 +450,12 @@ func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 	if err := validatePlanningState(st); err != nil {
 		return nil, err
 	}
+	if st.Sessions != nil {
+		raw, _ := json.Marshal(st.Sessions)
+		if err := validateSessions(raw); err != nil {
+			return nil, err
+		}
+	}
 	release, err := lockStateFile(taskDir)
 	if err != nil {
 		return nil, errf("%s: lock failed: %v", taskDir, err)

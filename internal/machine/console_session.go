@@ -13,11 +13,16 @@ import (
 )
 
 type SessionCommand struct {
-	Action   string `json:"action"`
-	Key      string `json:"key"`
-	Revision int64  `json:"revision"`
-	Reason   string `json:"reason,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
+	Action     string `json:"action"`
+	Key        string `json:"key"`
+	Revision   int64  `json:"revision"`
+	Reason     string `json:"reason,omitempty"`
+	Prompt     string `json:"prompt,omitempty"`
+	Invocation string `json:"invocation,omitempty"`
+
+	// UserAction is supplied only by the host command boundary or a controlling
+	// terminal. It is deliberately not deserialized from request JSON.
+	UserAction *SessionUserAction `json:"-"`
 }
 
 func (r SessionCommand) Validate() error {
@@ -32,6 +37,11 @@ func (r SessionCommand) Validate() error {
 	case "send":
 		if strings.TrimSpace(r.Prompt) == "" || len(r.Prompt) > 65536 || r.Reason != "" {
 			return fmt.Errorf("session prompt requires 1–65536 bytes and no takeover reason")
+		}
+	case "abandon":
+		if strings.TrimSpace(r.Reason) == "" || len(r.Reason) > 1000 || r.Prompt != "" || strings.ContainsRune(r.Reason, 0) ||
+			strings.TrimSpace(r.Invocation) == "" || len(r.Invocation) > 200 {
+			return fmt.Errorf("abandon requires a bounded reason, the exact invocation, and no prompt")
 		}
 	case "return", "reconcile", "release":
 		if r.Prompt != "" || r.Reason != "" {
@@ -96,7 +106,7 @@ func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) 
 	}
 	a := drivers.CallArgs{Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd, CandidateScope: r.CandidateScope, TaskDir: c.TaskDir, PacketID: strings.TrimPrefix(r.Scope, "final:"), Model: b.Model,
 		Binding:        config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking},
-		PermissionMode: permission, SessionMode: sessionMode, APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog(), ExpectedSessionID: r.ThreadID}
+		PermissionMode: permission, SessionMode: sessionMode, APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdogFor(r.Role), ExpectedSessionID: r.ThreadID}
 	if err := c.resolveInvocationNative(r.Role, &a); err != nil {
 		return drivers.CallArgs{}, err
 	}
@@ -127,6 +137,9 @@ func (c *Context) runSessionCommand(request SessionCommand) (TaskSummary, error)
 		return c.summary(), fmt.Errorf("session key not found")
 	}
 	r := c.State.Sessions.Records[request.Key]
+	if request.Action == "abandon" {
+		return c.abandonSession(request)
+	}
 	if request.Action == "reconcile" {
 		if c.State.Handoff == nil || c.State.Handoff.Key != request.Key {
 			return c.summary(), fmt.Errorf("claim this session before reconciling manual work")

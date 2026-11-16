@@ -7,7 +7,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-适配器要求 **`dsh-subagent-claude-code-pro@0.5.1`**、machine protocol 1
+适配器要求 **`dsh-subagent-claude-code-pro@0.5.2`**、machine protocol 1
 及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
 接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
 发行流程见[发布指南](releasing.md)。
@@ -19,7 +19,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.1`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.2`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
@@ -27,11 +27,11 @@ registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
 
-已审查的配套 0.5.1 精确产物见
+已审查的配套 0.5.2 精确产物见
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json)。
 CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取得精确插件，
 并核对包身份、SHA-256 和 integrity 与该记录一致。源码验证本身不证明 registry 可用性。
-此 worker 会拒绝 0.5.0，不会悄悄丢弃新增字段。同步升级 worker 和 peer；旧版本的
+此 worker 会拒绝旧配套版本，不会悄悄丢弃活动或命名能力。同步升级 worker 和 peer；旧版本的
 未决调用保留原适配器与恢复身份，须先使用原版本核对，不能改写为新版本。
 
 | 环境变量 | 用途 |
@@ -43,6 +43,23 @@ CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取
 Go 只传递白名单基础环境和所选 channel 明确注入的凭证；没有配置 env-key 的订阅
 渠道不自动继承外部 Anthropic API key。显式凭证只通过受支持的环境名进入插件，
 环境凭证值不主动序列化到请求或 diagnostics；CLI 返回的文本按实际结果保留。
+
+## CLI 流式能力与可读会话名称
+
+查询路径在发送业务 prompt 前，使用无模型请求的 `claude --help` 检查
+`--include-partial-messages`、`--forward-subagent-text`（上游 2.1.211 引入），
+新建具名持久会话还要求 `--name`。以已安装 CLI 实际提供的 flags 为准，版本号本身
+不能替代能力检查；缺少能力时，在业务文本送入 CLI 前明确失败。检查与正式查询
+共用原 wall 预算和取消信号。
+
+真实根／子任务的 partial、tool、task 活动刷新 Flywheel 的 idle 预算，不复制私有
+思考正文，也不通过定时心跳伪造进展；native 状态去重不抹掉活动。长期小增量不会
+耗尽累计原始流量预算，单帧和保留结果仍有上限。排队或不可见的工具仍可能静默；
+停止后如何处理见[活动、超时与恢复](session-recovery.md)，不能只因超时自动重试。
+
+新持久历史通过原生 `-n` 获得 Flywheel 的任务／角色标题；恢复时保留已有标题，
+包括用户手动改名。脱离 Flywheel 使用时，插件优先采用明确委派标签，缺省使用可读
+工作区名称；命名不额外调用模型。
 
 ## 先定义模型，按需绑定阶段
 
@@ -127,7 +144,7 @@ flywheel-claude-code-pro-worker --doctor
 `--agents` JSON。省略子 effort 时保持字段缺省，让 CLI 使用原生继承行为；Flywheel
 不会填入父值或自行设定子默认值。非法档位在配置加载时拒绝，不会派发 worker。
 
-同一字段也可用于 0.5.1 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
+同一字段也可用于 0.5.2 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
 请求。直接 Flywheel worker 仍读取选中的 native profile，不读取桌面设置。显式
 传递 effort 只能证明 CLI 请求参数；tools-only init 证据不能证明子模型实际采用的档位。
 

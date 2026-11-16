@@ -8,6 +8,7 @@ Object.assign(zh, {
   planningReview: '审查记录', planningNoReview: '本版本尚无独立审查回执', planningReview_pass: '通过', planningReview_revise: '需修订', 'planningReview_needs-user-decision': '需用户决定', planningReview_blocked: '阻断', planningEvidence: '证据', planningImpact: '影响', planningResolution: '处理结果', planningTarget: '目标',
   planningStartApproved: '开始已批准方案', planningApprove: '批准此版本', planningApproveStart: '批准此版本并开始', planningApprovalHelp: '按钮只批准上方显示的版本与摘要；版本变更后须重新审阅。模型和 Team 的意见不会代替你的批准。', planningApprovedBy: '批准记录：{kind} · {source}', planningStartAuthorized: '实现启动已授权', planningStartSeparate: '方案已批准；尚未授权启动实现', planningActivationPending: '执行计划激活事务未完成；实现保持阻断。',
   planningFeedback: '方案反馈', planningFeedbackHelp: '写明需要调整的目标、约束或取舍。反馈保留当前方案引用；采用后再运行 Plan 形成新版本。', planningSendFeedback: '提交反馈', planningFeedbackApplied: '已采用的反馈', planningReceipt_queued: '已排队 · 等待引擎采用', planningReceipt_applied: '已应用', planningReceipt_rejected: '未采用', planningReceipt_unchanged: '未变更', planningReceipt: '本次请求',
+  planningBlockedInvocation: '未解开的规划调用', planningBlockedInvocationHelp: '引擎无法证明这次调用是否已派发或已结束。退役只结束这次未知调用，不应用结果、不重放、不复用旧线程；之后请显式运行 Plan 产生新版本。', planningAbandonReason: '退役原因', planningAbandonConfirm: '我确认退役这次调用：不应用结果、不重放、不复用旧线程', planningAbandon: '退役未知调用', planningAbandonApplied: '已退役；没有应用结果', planningAbandonRejected: '退役未生效：', planningAbandonInvocation: '调用', planningAbandonStatus: '派发/结果/清理',
   planningPlan: '运行 Plan', planningScope: '规划范围', planningScope_design: '整体方案', planningScope_milestone: '里程碑', planningScope_packet: '工作单元', planningScope_replan: '重新规划', planningScopeID: '范围 ID', planningPlanHelp: 'Plan 只运行设计或细化及其审查，结束后停下。不会自动开始实现。', planningChild: '当前执行子计划', planningNoChild: '尚无执行子计划；根方案可以先独立批准。', planningActive: '当前激活版本', planningNotActive: '尚未激活', planningFiles: '契约文件', planningTrace: '需求与里程碑', planningDecision: '设计决定', planningStateRevision: '任务状态版本 {revision}', planningInherited: '继承 {source}；修改后保存为独立角色配置', planningInheritedHelp: '新增规划角色默认继承现有 Plan / Review 的后端绑定，保持独立会话和权限。只修改一个角色时不会改动其来源角色。',
 });
 Object.assign(en, {
@@ -20,6 +21,7 @@ Object.assign(en, {
   planningReview: 'Review record', planningNoReview: 'No independent review receipt for this version', planningReview_pass: 'Pass', planningReview_revise: 'Revise', 'planningReview_needs-user-decision': 'Needs user decision', planningReview_blocked: 'Blocked', planningEvidence: 'Evidence', planningImpact: 'Impact', planningResolution: 'Resolution', planningTarget: 'Target',
   planningStartApproved: 'Start approved design', planningApprove: 'Approve this version', planningApproveStart: 'Approve this version and start', planningApprovalHelp: 'Approval binds the displayed version and digest. A changed version needs another review. Model and Team opinions do not replace your approval.', planningApprovedBy: 'Approval: {kind} · {source}', planningStartAuthorized: 'Implementation start authorized', planningStartSeparate: 'Design approved; implementation start is not authorized yet', planningActivationPending: 'Execution plan activation is incomplete; implementation remains blocked.',
   planningFeedback: 'Design feedback', planningFeedbackHelp: 'Describe changes to goals, constraints or decisions. Feedback retains this design reference. Run Plan after adoption to produce the next version.', planningSendFeedback: 'Submit feedback', planningFeedbackApplied: 'Applied feedback', planningReceipt_queued: 'Queued · awaiting engine adoption', planningReceipt_applied: 'Applied', planningReceipt_rejected: 'Not adopted', planningReceipt_unchanged: 'Unchanged', planningReceipt: 'Request receipt',
+  planningBlockedInvocation: 'Unresolved planning call', planningBlockedInvocationHelp: 'The engine cannot prove whether this call was dispatched or finished. Abandoning retires only this unknown invocation: no result is applied, it is not replayed, and the old thread is not resumed. Run Plan explicitly afterwards to produce a new version.', planningAbandonReason: 'Reason for abandonment', planningAbandonConfirm: 'I confirm this retires the invocation: no result is applied, no replay, and the old thread is not resumed', planningAbandon: 'Abandon unknown invocation', planningAbandonApplied: 'Abandoned; no result was applied', planningAbandonRejected: 'Abandonment did not apply: ', planningAbandonInvocation: 'Invocation', planningAbandonStatus: 'Dispatch/outcome/cleanup',
   planningPlan: 'Run Plan', planningScope: 'Planning scope', planningScope_design: 'Overall design', planningScope_milestone: 'Milestone', planningScope_packet: 'Work packet', planningScope_replan: 'Replan', planningScopeID: 'Scope ID', planningPlanHelp: 'Plan runs design or refinement and its review, then stops. It does not automatically start implementation.', planningChild: 'Current execution child plans', planningNoChild: 'No execution child plan yet. The root design can be approved independently.', planningActive: 'Active version', planningNotActive: 'Not active yet', planningFiles: 'Contract files', planningTrace: 'Requirements and milestones', planningDecision: 'Design decisions', planningStateRevision: 'Task state revision {revision}', planningInherited: 'Inherits {source}; editing saves an independent role binding', planningInheritedHelp: 'The new planning roles inherit existing Plan / Review backend bindings with separate sessions and permissions. Editing one role leaves its source role unchanged.',
 });
 Object.assign(zh, { planningInstructions: '本次规划说明（可选）', planningInstructionsHelp: '只补充当前范围的细化要求。目标、固定决定或实施范围有变化时，请使用上方的方案反馈。', planningApprovalIncomplete: '审批需要完整方案与审查记录；当前快照省略了内容，按钮审批已停用。请在交互式 CLI 中审阅并批准确切版本。' });
@@ -93,9 +95,42 @@ function PlanningDocument({ value, t }) {
       h('ul', null, ...value.decisions.map((decision, index) => h('li', { key: decision.id ?? index },
         [decision.id, decision.kind, decision.statement, decision.rationale].filter(Boolean).join(' · '))))));
 }
+const blockedPlanningRoles = new Set(['design-plan', 'design-review', 'plan', 'plan-review']);
+function BlockedInvocation({ recordKey, record, revision, busy, run, selection, t }) {
+  const [reason, setReason] = React.useState('');
+  const [confirmed, setConfirmed] = React.useState(false);
+  const [receipt, setReceipt] = React.useState(null);
+  const last = record.last ?? {};
+  const submit = async () => {
+    const result = await run('session', selection, false, {
+      session: { action: 'abandon', key: recordKey, invocation: last.id, revision, reason: reason.trim() },
+    });
+    const next = result?.['session-control'] ?? null;
+    setReceipt(next);
+    if (next?.applied) {
+      setReason('');
+      setConfirmed(false);
+    }
+  };
+  return h('article', { className: css.binding, 'data-session-key': recordKey },
+    h('h4', null, t('planningBlockedInvocation')),
+    h('code', { className: css.planningRef }, recordKey),
+    h('p', { className: css.meta }, t('planningAbandonInvocation') + ': ' + (last.id ?? '—') + ' · ' + t('planningAbandonStatus') + ': ' + [last.dispatch, last.outcome, last['cleanup-confirmed'] ? 'cleanup-confirmed' : 'cleanup-unknown'].filter(Boolean).join(' / ')),
+    record.reason && h('p', { role: 'alert' }, record.reason),
+    h('p', { className: css.meta }, t('planningBlockedInvocationHelp')),
+    h('textarea', { className: css.planningInput, 'aria-label': t('planningAbandonReason'), maxLength: 1000, value: reason, disabled: busy, onChange: event => setReason(event.target.value) }),
+    h('label', null, h('input', { type: 'checkbox', checked: confirmed, disabled: busy, onChange: event => setConfirmed(event.target.checked) }), ' ', t('planningAbandonConfirm')),
+    h('div', { className: css.actions },
+      h(Button, { variant: 'primary', disabled: busy || !reason.trim() || !confirmed, onClick: submit }, t('planningAbandon'))),
+    receipt && h('p', { role: receipt.applied ? 'status' : 'alert', 'data-session-control': receipt.applied ? 'applied' : 'rejected' },
+      receipt.applied ? t('planningAbandonApplied') : t('planningAbandonRejected') + (receipt.message ? ' ' + receipt.message : '')));
+}
+
 function PlanningPanel({ control, selection, run, t }) {
   const [feedback, setFeedback] = React.useState(''), [scope, setScope] = React.useState('design'), [scopeID, setScopeID] = React.useState(''), [instructions, setInstructions] = React.useState('');
   const p = control.status?.state?.planning, stateRevision = control.status?.state?.revision;
+  const sessions = control.status?.state?.sessions?.records ?? {};
+  const blocked = Object.entries(sessions).filter(([, record]) => record && blockedPlanningRoles.has(record.role) && record.last?.status === 'blocked');
   if (!p) return null;
   const current = (p.designs ?? []).find(design => samePlanningRef(design.ref, p['current-design']));
   const previous = [...(p.designs ?? [])].reverse().find(design => current && design.ref.revision < current.ref.revision);
@@ -132,6 +167,9 @@ function PlanningPanel({ control, selection, run, t }) {
     latestRequest && h('p', { className: css.meta }, t('planningRequestRound', { scope: t('planningScope_' + latestRequest.scope), id: latestRequest['scope-id'] || '', rounds: latestRequest.rounds ?? 0, max: latestRequest['max-rounds'] ?? p['max-rounds'], status: textValue(latestRequest.status) })),
     p.reason && h('p', null, p.reason),
     p['pending-activation'] && h('p', { role: 'alert', className: css.warningText }, t('planningActivationPending')),
+    blocked.length > 0 && h('section', { 'aria-label': t('planningBlockedInvocation') },
+      h('h3', null, t('planningBlockedInvocation')),
+      ...blocked.map(([key, record]) => h(BlockedInvocation, { key, recordKey: key, record, revision: stateRevision, busy, run, selection, t }))),
     h('section', { 'aria-label': t('planningDraft') }, h('h3', null, t('planningDraft')),
       current ? h(PlanningDocument, { value: current, t }) : h('p', null, t('planningNoDraft')),
       h(PlanningReview, { value: review, t }),

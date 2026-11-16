@@ -56,6 +56,7 @@ type dshPrepare struct {
 	Provider         string          `json:"provider"`
 	Model            string          `json:"model"`
 	ReasoningEffort  string          `json:"reasoningEffort"`
+	IdleTimeoutMS    int64           `json:"idleTimeoutMs,omitempty"`
 	PermissionMode   string          `json:"permissionMode"`
 }
 
@@ -250,7 +251,7 @@ func PrepareDSH(a DSHArgs) *DSHPrewarm {
 	h.command, h.env = command, env
 	h.prepare = dshPrepare{Native: r.Native, Type: "prepare", Protocol: 1, WarmID: a.PrewarmID, Binding: binding,
 		ReceiptDirectory: a.PrewarmDirectory, TTLMS: dshWarmTTL.Milliseconds(), Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd,
-		Provider: r.Provider, Model: r.Model, ReasoningEffort: r.ReasoningEffort, PermissionMode: r.PermissionMode}
+		Provider: r.Provider, Model: r.Model, ReasoningEffort: r.ReasoningEffort, PermissionMode: r.PermissionMode, IdleTimeoutMS: r.IdleTimeoutMS}
 	if err != nil {
 		h.startError = err
 		cancel()
@@ -375,6 +376,11 @@ func (h *DSHPrewarm) runProcess() {
 		IdleTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
 		OnActivity:    func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },
 		InteractStdin: h.interact,
+		StdoutCapture: newDSHActivityCapture(func() dshStart {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.formalRequest
+		}),
 	})
 	close(h.processDone)
 	if result.ExitCode != nil || result.Signal != "" {
@@ -600,11 +606,14 @@ func (h *DSHPrewarm) coldAfterExpiry(a DSHArgs, started time.Time, unused Result
 		h.mu.Unlock()
 		return unused
 	}
-	wall := dshTimeout(a.Watchdog.WallTimeoutMs, 30*60*1000) - time.Since(started)
+	wall := dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs) - time.Since(started)
 	idle := dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs) - time.Since(h.lastActivity)
 	if wall < time.Millisecond || idle < time.Millisecond {
 		h.mu.Unlock()
 		unused.TimedOut, unused.WallTimedOut, unused.IdleTimedOut = true, wall < time.Millisecond, idle < time.Millisecond
+		unused.ErrorCode = errs.TIMEOUT
+		message := timeoutMessage("DSH worker", unused)
+		unused.ErrorMessage = &message
 		return unused
 	}
 	ctx := a.Watchdog.Context

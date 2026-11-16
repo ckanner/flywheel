@@ -376,7 +376,7 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.0 与 Claude Code Pro 0.5.1 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.1 与 Claude Code Pro 0.5.2 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 原生 init
 发生在 prompt 已派发之后，不能提供同等的派发前配置证明。两个后端都保留未知窗口，
@@ -510,6 +510,34 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 确认的 effective effort、用量和订阅成本保持 unknown。工作流、Review／Judge
 及交付授权仍是独立边界。
 
+## Watchdog 与规划调用活性
+
+`watchdog` 对能暴露进展的传输使用输出 idle 上限，同时保留绝对的 `wall-timeout-ms` 上限和 `kill-grace-ms` 的 SIGTERM 到 SIGKILL 收尾宽限。默认 idle 300 秒、wall 3600 秒、grace 5 秒；收尾宽限不按角色缩短。Kimi print 没有可靠的输出 idle 信号，因此 driver 不启动 idle 计时器，仍使用 wall 上限和显式取消。
+
+`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；在适用输出 idle 检测的传输上，规划角色默认 900 秒，执行和评审保持 300 秒。这是策略上限，不能证明静默模型已经挂起。示例：
+
+```json
+"watchdog": {
+  "idle-timeout-ms": 300000,
+  "wall-timeout-ms": 3600000,
+  "kill-grace-ms": 5000,
+  "roles": {
+    "design-plan": { "idle-timeout-ms": 900000 },
+    "plan": { "idle-timeout-ms": 900000 }
+  }
+}
+```
+
+Kimi print 会缓存 assistant delta、不输出 thinking delta，也不暴露子代理进展，因此前台工作也可能长时间静默。延长 idle 或修改提示词不能补上这个观测缺口。所有 print 角色使用各自生效的 wall 上限（包括角色覆盖），idle 配置不作用于 print；长调用应调整 `wall-timeout-ms`。显式停止、取消和进程组清理保持生效，wall 设为 0 不代表无限运行。
+
+Kimi native worker 会把真实主代理／子代理的 item、step 和生命周期进展作为元信息传给父进程看门狗，不转发思考或工具正文，不用定时器或 WebSocket ping/pong 制造心跳。idle 回调会重新核对最新活动期限，已经排队的旧回调不能误杀刚有新活动的调用。非 native 规划保留前台调查约束，用于收集完整结果，不作为活性保证。
+
+派发／结果为 unknown 的规划调用不能用换绑定、换 fresh、删账本或重放修复；只有清理已确认后才能使用[会话恢复](session-recovery.md)中的显式退役动作，清理未知仍然阻断。未知不是零，也不会被自动改写成已知。
+
+### 缺陷注入的还原期限
+
+缺陷注入的基线与测试命令使用 `verify.command-timeout-ms`。注入后，`git apply -R` 使用独立的取消上下文和有界还原期限：正的命令预算限制在 1–10 秒之间，没有有效预算时使用 10 秒。该期限同时传给 context 与命令 watchdog，之后仍保留原进程清理宽限。这不会延长测试本身，也不能把测试超时当成已检出缺陷；还原未确认时停止运行并保留工作区。
+
 ## 工作流策略与恢复
 
 工作流决定运行哪些阶段；模型 profiles、loops、routes 和 `permissions.mode` 仍决定
@@ -583,10 +611,10 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 ```
 
 完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件精确消费
-`dsh-subagent-codex-pro@0.10.0` 的公开 `dsh-subagent-codex-pro/machine` API。
+`dsh-subagent-codex-pro@0.10.1` 的公开 `dsh-subagent-codex-pro/machine` API。
 精确依赖由插件 package 和 lockfile 锁定；生命周期开发时使用的源码包见
 [vendor 来源记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。内部仍使用 Codex app-server 和用户已有登录，不需要父模型二次委派；缺包、
-版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.5.1` optional peer，
+版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.5.2` optional peer，
 未选择该后端时无需安装。
 
 已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。
@@ -677,7 +705,7 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
 
-Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.10.0／协议 1、typed
+Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.10.1／协议 1、typed
 lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 worker 只查一次。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。

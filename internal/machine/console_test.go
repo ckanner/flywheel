@@ -129,6 +129,21 @@ func TestConsoleReopenArchivesDownstreamWithoutErasingBudget(t *testing.T) {
 	require.Equal(t, "pending", c.State.Milestones[first.Milestone].Status)
 }
 
+func TestConsoleReopenTreatsAbandonedPlanningReceiptAsTerminal(t *testing.T) {
+	_, c := sessionFixture(t)
+	hash := strings.Repeat("a", 64)
+	c.State.Sessions = &state.SessionLedger{Version: 1, Records: map[string]*state.SessionRecord{
+		"design-plan/planning:pending": {Task: c.TaskDir, Role: "design-plan", Scope: "planning:pending", Cwd: c.Cwd,
+			Binding: hash, Goal: hash, Contract: hash, Generation: 1, Action: "abandon", Reason: "retired",
+			Last: &state.SessionInvocation{ID: "call-abandoned", Status: "abandoned", StartedAt: "2026-11-16T12:00:00Z",
+				Attempt: 1, CandidateBefore: hash, CleanupConfirmed: true, Accounted: true, Dispatch: "unknown",
+				Outcome: "unknown", UsageStatus: "unknown",
+				Abandon: &state.SessionAbandon{At: "now", Reason: "retire", Authority: "human"}}},
+	}}
+	c.State.Packets["M01-T01"].Status = "completed"
+	require.NoError(t, c.reopenConsolePacket("M01-T01"))
+}
+
 func TestConsoleReopenRejectsUnknownReceiptsAndRetainedWorktrees(t *testing.T) {
 	_, c := sessionFixture(t)
 	require.Error(t, c.reopenConsolePacket("absent"))

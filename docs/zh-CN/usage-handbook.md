@@ -434,7 +434,9 @@ flywheel control launch --cwd "$repo_dir" --task-dir "$task_dir" --mode auto
 
 `ok:true` 说明控制请求成功。实现是否完成看 `state.status`；`running:false` 也可能是
 暂停、`escalated`、`budget-stopped` 等状态。只有调查记录时返回 `preparation`，
-不伪造实现 `state`。控制请求断连或就绪超时后先查询同一任务，不重复启动来猜结果。
+不伪造实现 `state`。异步 `session` 动作另返回 `session-control.applied/status/message`；
+`ok:true` 不能说明未知调用已经退役或对账成功。控制请求断连或就绪超时后先查询同一任务，
+不重复启动来猜结果。
 
 ### 单阶段与暂停
 
@@ -498,6 +500,19 @@ flywheel session "$task_dir" --key "execute/M01-T01"
 交回后使用 Run 或 `control start` 继续剩余流程与交付。接管要求、复验和恢复限制
 见[会话恢复](session-recovery.md)与[工作台](flow-console.md)。
 
+规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）的调用如果
+已经 `blocked` 且 dispatch/outcome 无法证明，可以在确认清理和计量后用显式退役
+结束这次副作用范围；这不是重放，也不会应用结果：
+
+```bash
+flywheel session "$task_dir" --key "design-plan/planning:engine-1-1" \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+命令会在控制终端显示准确 invocation 并要求输入 `abandon <invocation>`；Flywheel
+视图的同一动作使用真实用户命令证明。模型工具不暴露它。之后显式 Run Plan 创建
+新的 request。详见[会话恢复](session-recovery.md#人工退役未知的规划调用)。
+
 ## 8. 遇到问题时如何继续
 
 | 现象 | 下一步 |
@@ -510,7 +525,7 @@ flywheel session "$task_dir" --key "execute/M01-T01"
 | desktop 可用，但 worker 缺少 provider／插件 | 核对独立 SDK profile 或全局 worker 的依赖树，按快速开始／原生能力指南修复实际位置 |
 | 终端可用，桌面找不到命令 | 核对受管 launcher、显式 `flywheelBinary` 和安装时路径；在正确环境保留原参数重跑 `setup --no-global` 并重载 DSH |
 | `escalated` 或 `budget-stopped` | 阅读具体原因、失败证据和预算；处理后从原任务继续，需要追加尝试时使用工作台操作 |
-| 派发、结果或清理为 unknown／pending | 保留原调用和工作区，让引擎核对可信回执；进程退出不等于结果已知 |
+| 派发、结果或清理为 unknown／pending | 保留原调用和工作区，让引擎核对可信回执；进程退出不等于结果已知。规划角色确认清理和计量后可显式退役，其他角色仍按会话恢复处理 |
 | Git 集成失败或冲突 | 保留任务分支和 worktree，解决实际冲突后由引擎重新验证当前候选 |
 | 本地 completed，但没有 PR | 按既有授权让宿主或工作台 PR 节点推送并创建；继续核对远端检查和源 HEAD |
 

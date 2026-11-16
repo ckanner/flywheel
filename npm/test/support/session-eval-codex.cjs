@@ -91,6 +91,17 @@ createInterface({ input: process.stdin }).on("line", line => {
     log({ event: message.method, threadId, persistent, model: p.model, sandbox: p.sandbox });
     reply(message.id, { thread: { id: threadId, ephemeral: !persistent }, cwd: p.cwd, model: p.model,
       approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer || "user", sandbox, reasoningEffort: null });
+  } else if (message.method === "thread/name/set") {
+    const requestId = (Number.isSafeInteger(message.id) && message.id >= 0) ||
+      (typeof message.id === "string" && message.id.length > 0);
+    if (!requestId || !history || p.threadId !== threadId || history.threadId !== threadId ||
+        typeof p.name !== "string" || !p.name.trim() || Buffer.byteLength(p.name) > 1024 ||
+        /[\u0000-\u001f\u007f]/.test(p.name)) {
+      return send({ jsonrpc: "2.0", id: message.id ?? null, error: { code: -32602, message: "invalid fixture thread name request" } });
+    }
+    history = { ...history, name: p.name }; save();
+    log({ event: "thread/name/set", threadId, name: p.name });
+    reply(message.id, {});
   } else if (message.method === "turn/start") {
     turnId = crypto.randomUUID();
     const prompt = (p.input || []).filter(x => x.type === "text").map(x => x.text).join("\n");

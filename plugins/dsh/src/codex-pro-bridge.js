@@ -1,9 +1,9 @@
 // Public machine API consumer. Go remains the owner of scheduling and acceptance.
 import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
-import { validateNativeAdmission } from './machine-worker.js';
+import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.1', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -21,7 +21,7 @@ export async function loadAdapter() {
   try {
     manifest = require('dsh-subagent-codex-pro/package.json');
   } catch {
-    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.10.0 dependency with Flywheel');
+    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.10.1 dependency with Flywheel');
   }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro package identity or version does not match the pinned contract');
@@ -37,6 +37,11 @@ export async function loadAdapter() {
       api.MACHINE_NATIVE_CAPABILITIES?.agents !== true || api.MACHINE_NATIVE_CAPABILITIES?.review !== true) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro package identity, version or public machine API does not match the pinned contract');
   }
+  if (api.MACHINE_ACTIVITY_VERSION !== 1 || api.MACHINE_ACTIVITY_CAPABILITIES?.version !== 1 ||
+      api.MACHINE_ACTIVITY_CAPABILITIES?.metadataOnly !== true || api.MACHINE_ACTIVITY_CAPABILITIES?.coalesced !== true ||
+      api.MACHINE_ACTIVITY_CAPABILITIES?.rootAndChildren !== true) {
+    throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro does not expose the required provider activity contract');
+  }
   return api;
 }
 
@@ -44,7 +49,7 @@ export async function loadAdapter() {
 export function machineRequest(value, api, env) {
   const lifecycle = value?.protocol === 3;
   const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'native', 'managed', 'images', 'outputSchema',
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema',
     ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || ![1, 2, 3].includes(value.protocol) ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.requestId !== 'string' || value.requestId.length > 256 ||
@@ -60,6 +65,7 @@ export function machineRequest(value, api, env) {
     throw new WorkerError('INVALID_REQUEST', 'timeoutMs must be a positive safe integer no greater than 2147483647');
   }
   validateNativeAdmission(value.managed, value.requestId, WorkerError);
+  validateObservationRequest(value, WorkerError);
   try {
     return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, model: value.model,
       effort: value.reasoningEffort,
@@ -69,6 +75,7 @@ export function machineRequest(value, api, env) {
       ...(value.images === undefined ? {} : { images: value.images }),
       ...(value.outputSchema === undefined ? {} : { outputSchema: value.outputSchema }),
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
+      ...(persistent && value.threadId === undefined && value.sessionTitle !== undefined ? { threadName: value.sessionTitle } : {}),
       command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: persistent ? 'persistent' : 'ephemeral',
       ...(persistent && value.threadId !== undefined ? { threadId: value.threadId } : {}), maxOutputBytes: LIMITS.machineOutputBytes });
   } catch (error) {

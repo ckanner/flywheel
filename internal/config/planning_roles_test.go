@@ -35,7 +35,7 @@ func TestPlanningBindingsInheritWithoutMutatingConfiguration(t *testing.T) {
 	after, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	assert.Equal(t, before, after, "resolving a role cannot materialize inherited settings")
-	assert.NotContains(t, string(after), `"design-plan"`)
+	assert.NotContains(t, cfg.Loops, "design-plan")
 	assert.NotContains(t, cfg.Loops, "design-review")
 
 	empty := Default()

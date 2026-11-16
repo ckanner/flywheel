@@ -12,8 +12,8 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | --- | --- | --- |
 | `dsh` | PTC, subagents, Team, Workflow, explicit Web and LCU | Local DSH and an actual PTC probe; LCU additionally needs the 0.5.0 peer and full access |
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
-| `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.0, logged-in Codex CLI and matching sandbox/approval receipts |
-| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.5.1, logged-in Claude CLI and explicit full access |
+| `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.1, logged-in Codex CLI and matching sandbox/approval receipts |
+| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.5.2, logged-in Claude CLI and explicit full access |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 
@@ -35,10 +35,10 @@ These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-p
 
 ### Align independent worker dependencies
 
-Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.5.1 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
+Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.5.2 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.1 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.2 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
@@ -106,6 +106,8 @@ The desktop Models and sessions form includes a Native capabilities selector, sh
 Plan can use Team or Swarm to investigate, while its root produces formal Spec and packets. Execute can use agents, Workflow or Tower, with results subject to the existing verification and independent Review. Review and Judge use their own role histories and children, never Executor history. Intake/Garden can use the same capabilities for advice without writing state.
 
 Native scheduling does not replace Go's decisions about retries, budgets, accepted candidates and delivery. A completed native task board is not a completed Flywheel task.
+
+A native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
 
 ## 4. LCU and screenshots
 
@@ -179,6 +181,19 @@ flywheel doctor --cwd /absolute/repo --probe --json
 Native diagnostics inspect local workers, exact public manifests and capability versions. They do not invoke a model, start a Team/cloud job or operate the GUI. A DSH native profile does not use a legacy SDK probe as native admission evidence. Formal worker admission must prove actual PTC, model and target behavior. `native.admission` remains unknown; `inferenceTested:false` and `admissionTested:false` do not mean a failed login attempt.
 
 `native-receipt` retains intent, effective configuration, observations, children, usage, completion and cleanup. Native events are not durable lifecycle ACKs. Active children at root completion cannot become success merely because shutdown later cancels them. Unknown cleanup, damaged receipts and uncertain recovery continue to block progress.
+
+For Codex, observed child turns and thread closure take precedence over delayed
+creation snapshots (`spawnAgent` and V2 started markers). A completed child is
+not reopened by an older running snapshot, and a newer running turn is not
+completed by an older terminal snapshot. A genuine new turn or later queued
+follow-up still needs its own completion evidence.
+
+This also covers a child whose terminal state was observed only in an owned
+parent snapshot, before any child turn ID. A repeated running creation snapshot
+cannot undo that terminal evidence. Missing turn identity and usage remain
+unknown; completion does not supply either.
+Later queued work does not restore that old snapshot's authority to finish the
+new work.
 
 Concurrency and budgets retain their actual scope: Flywheel scheduling limits root invocations; Claude limits are an observed guard with `hard:false`; Kimi lacks that whole-tree hard cap. Unattributable external-agent, Advisor, compaction or Tower usage remains unknown, and hard budgets do not count it as zero. See [validation](../validation/2026-11-14-native-harness-implementation.md) for tested and untested runtime boundaries.
 

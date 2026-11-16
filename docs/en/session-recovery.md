@@ -4,8 +4,8 @@
 
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
-checks. Durable public-journal recovery requires **Codex Pro 0.10.0** or
-**Claude Code Pro 0.5.1**; DSH and Kimi retain their own supported recovery paths.
+checks. Durable public-journal recovery requires **Codex Pro 0.10.1** or
+**Claude Code Pro 0.5.2**; DSH and Kimi retain their own supported recovery paths.
 
 ## Resume an existing task
 
@@ -22,6 +22,110 @@ The engine reconciles earlier calls before making another model request. A
 and diagnostics rather than deleting state or selecting a fresh session to
 force progress. A status response describes current facts, not permission to
 replay an unresolved call.
+
+## Observable progress and time limits
+
+An idle timeout means that no observable activity arrived within the configured
+silence budget. It does not prove that the model stopped reasoning, that a tool
+deadlocked, or that the provider rejected the request. A wall timeout bounds the
+whole invocation even when progress continues. User cancellation is a third,
+separate cause: a child acknowledging cancellation during timeout cleanup does
+not change the original idle/wall timeout into a user cancellation.
+
+The transport determines which progress can be observed:
+
+| Transport | Progress used by Flywheel | Time limits |
+|---|---|---|
+| DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
+| Codex Pro 0.10.1 / Claude Code Pro 0.5.2 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
+| Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
+
+DSH also covers a parent waiting in PTC while an owned native child streams.
+External provider, foreground PTC and background-job calls share a versioned
+optional Flywheel activity service; an older or unrelated plugin without that
+service's callback remains unobservable between its normal output events.
+Startup, waiting for a first event, silent tools and unsupported provider phases
+can still consume the configured silence budget. The ready capabilities describe
+these limits; they do not promise that every live operation produces events.
+
+DSH and the Pro plugins coalesce activity from real observations. Their metadata
+contains event types, counts and root/child scope, without model text, hidden
+reasoning or tool bodies. No timer,
+ping or artificial heartbeat is used to keep a call alive. Activity is advisory:
+it is neither a durable dispatch ACK nor a result, token bill or cleanup proof.
+Validated advisory activity frames do not displace a terminal receipt from bounded output
+capture; malformed or uncorrelated frames still fail the protocol checks.
+
+Child attribution must match the active parent turn and the actual sender.
+Stale collaboration events and foreign threads do not establish ownership.
+Claude's ambient background watchers are excluded from both work activity and
+completion tracking, including later progress that omits the ambient flag.
+Startup hook activity is accepted before Claude's init frame only when its
+session ID matches the caller-selected new or resumed history.
+
+Stream traffic and retained state have different limits. Repeated Kimi native
+snapshots replace the previous state instead of consuming a cumulative traffic
+quota; native and usage evidence retained by Codex is included in its memory
+budget. Frame, retained-state and final-result bounds remain enforced.
+
+After an interrupted DSH call, an intact correlated receipt and normal process
+exit can independently preserve the actual Session ID, dispatch fact and
+confirmed SDK cleanup. The business outcome stays unknown and automatic replay
+stays blocked. A truncated/corrupt stream, physical termination signal, missing
+exit evidence or unconfirmed cleanup cannot supply that proof. Use the existing
+reconciliation and explicit planning-retirement controls below; changing a
+timeout does not resolve an earlier unknown invocation.
+The same rule applies to Pro receipts: an invalid inner ownership binding,
+missing lifecycle evidence or damaged outer stream cannot supply a trusted
+timeout, cancellation or cleanup fact. The original receipt remains available
+for inspection; a timeout or cancellation observed by Go itself remains valid.
+A valid worker report of rejected activity/native metadata or an observation
+quota is different from a damaged stream. Its complete, correlated cleanup
+receipt can preserve independently verified identity, usage and cleanup, while
+the business outcome remains unknown and no continuation checkpoint is granted.
+Cleanup cancellation cannot replace that initiating worker error.
+
+## Readable native session names
+
+Fresh DSH, Codex Pro, Claude Code Pro and Kimi sessions receive a readable label
+derived from the task title or goal, role and applicable work scope. Opaque
+request IDs remain in the ledger and receipts. Continuing an existing session
+keeps its original name, including a name the user edited. Naming does not make
+a separate model request or change the selected model, thinking effort, task
+permissions or recovery identity.
+
+DSH uses its public title service and verifies the accepted snapshot; its native
+UTF-8 byte limit controls truncation. An explicitly requested fresh title with a
+missing service or failed read-back is rejected before the task prompt. Codex
+and Claude Pro use their supported native naming interfaces. Codex requires the
+new persistent thread's name write to be confirmed before `thread-ready` and
+task dispatch. A failed write returns a `thread-name` failure with
+`not-dispatched`, the known thread ID and independently verified cleanup;
+read-only recovery preserves these facts without retrying. An empty thread's
+existence does not establish that it can be resumed. The legacy
+`codex exec` transport does not acquire this naming capability merely by sharing
+the new timeout policy.
+
+Kimi print has no corresponding print title flag. For a new named call Flywheel
+first creates an idle session through the public Kimi session API, verifies the
+title and ownership, and confirms that the owned preparation runtime exited.
+It then runs print against that exact session. Preparation sends no task prompt
+and performs no title-generation inference; preparation and execution share the
+same wall budget. The original print model, automatic permission behavior and
+conditional thinking-effort behavior remain in force. An unsupported API or
+unconfirmed preparation cleanup prevents dispatch. Resume keeps its existing
+session and does not perform this preparation again.
+
+The public Kimi API opens and closes a native session during this preparation.
+For a first named print call, configured `SessionStart` and `SessionEnd` hooks
+therefore run for an extra startup/shutdown before print resumes. The business
+prompt is still sent once. Agent/Swarm set the name during their existing
+creation flow and do not need this extra lifecycle.
+
+These contracts are covered by deterministic tests of the published SDK and
+public plugin interfaces with offline model/CLI fixtures. They do not establish
+live account availability, provider performance or desktop UI behavior.
 
 ## Ownership
 
@@ -58,6 +162,31 @@ Restarting the same task lets Go use the original adapter version, request/run I
 | `unknown`, corruption, or mismatch | The outcome is unproven; preserve evidence and block replay, including after switching modes or backends |
 
 Queries may be repeated. Cross-machine recovery requires the original data and environment and is not promised. Killing the supervisor itself can leave pending evidence. This is not an exactly-once execution guarantee.
+
+### Explicitly retiring an unknown planning invocation
+
+A planning-role invocation (`design-plan`, `design-review`, `plan`, `plan-review`) whose dispatch or outcome is unproven and has no recoverable journal can be explicitly retired instead of blocking the task forever. This is not recovery or replay: it preserves the unknown facts and only ends the invocation's effect boundary.
+
+```sh
+flywheel session /absolute/repo/docs/my-task \
+  --key design-plan/planning:engine-1-1 \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a planning role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The proof is bound to the task directory, key, revision, reason, and exact invocation and cannot be reused across tasks. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it. A model process with an unrestricted shell can already rewrite `state.json` and is outside this host-proof boundary.
+
+The record becomes `abandoned` with its reason, time, source, and original thread evidence; the old thread is never resumed. No stage result is applied and no model is called again. The associated planning request becomes `cancelled`, the task returns to `paused`, and a later explicit Plan creates a new request. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
+
+For a legacy Kimi resident Plan, the exact matching resume cache is retired in the same state write. Other threads and unknown caches remain blocked. The invocation's original thread and unknown dispatch/outcome are also retained in the audit history when a later legacy call replaces the session's latest record. DSH verifies the original user command before binding the engine proof to the canonical task path, so symlink aliases and trailing slashes identify the same task without allowing cross-task proof reuse.
+
+A manual send cancelled before dispatch may leave a consumed receipt with a pending handoff. Reconcile clears that pending state and reports the actual transition as applied; repeating an already-settled reconcile is not a new successful operation.
+If the pre-command invocation could not be read, the receipt keeps the observed
+after-state but cannot confirm that this command caused it. It returns
+`applied:false` with an explicit verification message; the command may already
+have executed. Refresh status before another mutation rather than treating that
+value as proof of non-execution.
+
+This is not "delete the ledger and replay": the original ledger, receipt, and unknown evidence remain. Do not hand-edit `state.json` or move `.sessions/` to fabricate a terminal result.
 
 ### A successful receipt also needs original candidate evidence
 
@@ -162,4 +291,4 @@ The offline native fixture exercises the real Go engine, worker v3, and public p
 
 Recovery journals have private permissions, exclusive creation, identity/digest checks, and atomic persistence. Existing directories never authorize redispatch. They are task audit data and may contain model output and diagnostics; keep their access and backups with the task. Do not copy credentials or delete uncertain evidence during upgrades.
 
-There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit resolution of an unknown result. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.
+There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit retirement of an unknown planning invocation. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.

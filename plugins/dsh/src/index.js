@@ -3,6 +3,7 @@ import { ControlNotDispatchedError, runControl } from './control.js';
 import { resolveFlywheelBinary } from './installation.js';
 import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './task-association.js';
 import { planningUserAction, planningUserProjection, planningUserProjectionKey } from './planning-control.js';
+import { sessionUserAction, sessionUserProjection, sessionUserProjectionKey } from './session-control.js';
 
 export const inject = ['commands', 'tools', 'workingDirectory', 'sessionProjections'];
 
@@ -12,6 +13,7 @@ export function apply(ctx, config = {}) {
   if (process.env.FLYWHEEL_DSH_NATIVE_WORKER === '1') return;
   ctx.sessionProjections.register(taskAssociationProjection);
   ctx.sessionProjections.register(planningUserProjection);
+  ctx.sessionProjections.register(sessionUserProjection);
   watchWorkspaces(ctx);
   const binary = resolveFlywheelBinary(config);
   const active = new Set();
@@ -22,7 +24,7 @@ export function apply(ctx, config = {}) {
     dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
     message: error instanceof Error ? error.message : String(error),
   });
-  const control = async (input, agent, signal, operationId, humanPlanningAction) => {
+  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction) => {
     const session = agent?.session;
     const planningRead = input?.action === 'planning' && input.planning?.action === 'status';
     const mutation = mutatesTask(input?.action) && !planningRead;
@@ -69,6 +71,7 @@ export function apply(ctx, config = {}) {
         defaultCwd,
         hostSessionID: session?.id,
         planningUserAction: humanPlanningAction,
+        sessionUserAction: humanSessionAction,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
@@ -103,12 +106,16 @@ export function apply(ctx, config = {}) {
         } catch (error) {
           throw new ControlNotDispatchedError(error);
         }
-        let humanPlanningAction;
+        let humanPlanningAction, humanSessionAction;
         try { humanPlanningAction = planningUserAction(input, agent?.session, commandId, rawInput,
           input?.action === 'planning' && input.planning?.action === 'approve' && agent?.session
             ? ctx.sessionProjections.stateOf(agent.session, planningUserProjectionKey) : undefined); }
         catch (error) { throw new ControlNotDispatchedError(error); }
-        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction);
+        try { humanSessionAction = sessionUserAction(input, agent?.session, commandId, rawInput,
+          input?.action === 'session' && input.session?.action === 'abandon' && agent?.session
+            ? ctx.sessionProjections.stateOf(agent.session, sessionUserProjectionKey) : undefined); }
+        catch (error) { throw new ControlNotDispatchedError(error); }
+        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction, humanSessionAction);
         return { kind: 'success', text: JSON.stringify(value, null, 2) };
       } catch (error) {
         // CommandResult preserves only kind/text. Wrap every failure, including
@@ -121,6 +128,7 @@ export function apply(ctx, config = {}) {
   const executeTool = async (args, execution) => {
     try {
       if (args?.action === 'planning' && args.planning?.action === 'approve') throw new ControlNotDispatchedError('Use the human design approval control; model tools cannot approve a design');
+      if (args?.action === 'session' && args.session?.action === 'abandon') throw new ControlNotDispatchedError('Use the human session abandonment control; model tools cannot retire an unknown invocation');
       return JSON.stringify(await control(args, execution.agent, execution.signal, 'tool:' + execution.callId));
     } catch (error) {
       toolFailures.set(execution, failure(args, error));

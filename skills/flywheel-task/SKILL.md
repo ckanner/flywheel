@@ -118,6 +118,8 @@ DSH 提供工具时不绕过其关联机制。缺少 PATH 可使用用户指定 
   最终 Review。Full 使用逐步细化和完整门禁。不要宣称整个新任务只有两次模型调用。
 - 结果未知、超时或断连时，先对原 taskDir/cwd 调用 `status` 核对，不能重复 prepare
   或 launch。后续通过 Run 继续原任务；预算、工作区、恢复和计量都保留。
+  规划角色的 blocked unknown 只能由用户在视图或 `flywheel session ... --abandon`
+  显式退役；模型不能代输确认或声称已退役。
 - 原生 Team/PTC、Codex review、Claude team 都按有效 native 配置准入；工具输出只是
   证据，不能代替正式审查／批准。新 role 的 backend 继承不表示权限随同继承。
 - 本入口不新增远端 push、PR、合并或发布授权；相关交付按已给出的实际范围执行。

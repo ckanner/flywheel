@@ -18,9 +18,13 @@ test('start normalizes cwd and rejects resume, extra write roots, implicit permi
   for (const permissionMode of ['read-only', 'workspace-write', 'danger-full-access']) {
     assert.equal((await validateStart({ ...request(cwd), permissionMode })).permissionMode, permissionMode);
   }
+  for (const idleTimeoutMs of [1, 1200, 86400000]) {
+    assert.equal((await validateStart({ ...request(cwd), idleTimeoutMs })).idleTimeoutMs, idleTimeoutMs);
+  }
   for (const extra of [{ sessionId: 'old' }, { writableRoots: ['/'] }, { permissionMode: undefined },
     { permissionMode: 'dangerously-bypass-approvals-and-sandbox' }, { permissionMode: 'full' },
-    { provider: '' }, { model: '' }, { reasoningEffort: '' }, { timeoutMs: 0 }, { maxTokens: -1 }, { cwd: '.' }]) {
+    { provider: '' }, { model: '' }, { reasoningEffort: '' }, { timeoutMs: 0 }, { maxTokens: -1 }, { cwd: '.' },
+    { idleTimeoutMs: 0 }, { idleTimeoutMs: -1 }, { idleTimeoutMs: 1.5 }, { idleTimeoutMs: 86400001 }]) {
     await assert.rejects(validateStart({ ...request(cwd), ...extra }));
   }
 });

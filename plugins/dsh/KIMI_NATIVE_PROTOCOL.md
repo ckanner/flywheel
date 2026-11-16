@@ -2,7 +2,7 @@
 
 [English](KIMI_NATIVE_PROTOCOL.en.md)
 
-本协议由 `kimi-native-worker.js` / `runKimiWorker()` 实现，供 Go 引擎选择 Kimi 原生 Agent、Swarm 或 Tower。普通 Kimi CLI 路径不受影响。Go 继续拥有角色循环、预算、边界检查、Review、提交和验收；原生子任务属于本次角色调用。
+本协议由 `kimi-native-worker.js` / `runKimiWorker()` 实现，供 Go 引擎选择 Kimi 原生 Agent、Swarm 或 Tower。普通 Kimi print 的推理传输保持独立，新会话的具名准备见下文。Go 继续拥有角色循环、预算、边界检查、Review、提交和验收；原生子任务属于本次角色调用。
 
 ## 入口与能力准入
 
@@ -14,6 +14,7 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
   cwd: '/physical/role-worktree', workspaceCwd: '/physical/project',
   model: 'configured-model-alias', reasoningEffort: 'high',
   permissionMode: 'danger-full-access', prompt: 'Role instructions', timeoutMs: 600000,
+  idleTimeoutMs: 300000, // 父进程生效的 idle 上限；可省略，默认 300000
   persistent: true, // sessionId 仅在恢复 Agent/Swarm 历史时传入
   native: {
     version: 1, mode: 'agent', // agent | swarm | tower
@@ -33,7 +34,7 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 
 每次调用启动前台 `kimi web --no-open --host 127.0.0.1 --port 0`。`FLYWHEEL_KIMI_BIN` 可以指定 CLI。登录和模型配置沿用 `KIMI_CODE_HOME`（否则 `~/.kimi-code`），不重写用户配置。Worker 从真实实例注册表核对本次 child PID、启动时间、loopback 端口，再使用已有 `server.token` 验证 `/meta` 的 server_id、认证、backend 和 WebSocket 支持。带 bearer token 的 CLI banner/stdout/stderr 不转发、不写入 receipt。
 
-准入读取并哈希实际 `/openapi.json` 和 `/asyncapi.json`，核对所需创建/配置/队列/环境/历史/关闭路由和订阅/任务生命周期消息。`:abort` 在上游 OpenAPI 中未完整投影，因此对尚未 dispatch 的本次空闲会话做实际幂等探测。最终还必须由实际 WS agent 状态确认 model、thinking、permission、plan/swarm/tower 标志，以及 REST local environment/cwd。只有这些事实吻合，`native.effective.matched` 才为 true。
+准入读取并哈希实际 `/openapi.json` 和 `/asyncapi.json`，核对所需创建/配置/队列/环境/历史/关闭路由和订阅/任务生命周期消息。创建接口必须支持 title、归属 metadata 与 local environment 字段；新历史返回的标题、绑定与工作目录必须与请求一致，才能发送任务 prompt。归属不匹配时，不向该历史执行会话级清理。`:abort` 在上游 OpenAPI 中未完整投影，因此对尚未 dispatch 的本次空闲会话做实际幂等探测。最终还必须由实际 WS agent 状态确认 model、thinking、permission、plan/swarm/tower 标志，以及 REST local environment/cwd。只有这些事实吻合，`native.effective.matched` 才为 true。
 
 `--doctor` 仅检查 CLI 可执行性及版本，返回 `inferenceTested:false`。它不能证明模式、账号、模型或 API 准入。旧的 `kimi server` 命令、SDK、named preset RPC 和任意 agent-file 加载均不是此接口。
 
@@ -41,7 +42,11 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 
 通过 WS 先订阅 `main`，以 `prompt_id` 关联实际 `user_message.prompt_ids` 和 HTTP 接受结果；两者到达顺序不限。首次 ordinal 是 **0**，新会话的历史基线是 **-1**。随后从 task/agent_refs 发现并订阅子 agent。子任务、队列、交互和整个会话 busy 状态共同决定完成；首个主 turn 结束不足以成功。Tower 的自动主 agent continuation 也必须结束。
 
+实际观察到的主／子代理 item、step 和生命周期活动会以 `event` 元信息转发给 Go idle 看门狗，不复制思考正文或工具参数／结果。高频 item/step 进展在整棵任务树内合并，间隔不超过一秒，并由父进程生效的 `idleTimeoutMs` 推导（正整数，省略时默认 300000）；`event.coalescedTypes` 列出上次通知以来观察到的进展类型。生命周期边界与最终 result 不节流。只有真实事件触发进展通知，定时器和 WebSocket ping/pong 不制造模型活动。wall 期限与取消／清理仍独立生效。
+
 `native.completion={confirmed,pendingIds}` 在 cleanup **之前**记录。成功必须先看到全部主 turn 完成、已观察子任务和 agent 空闲、队列为空、没有待回答交互，且最后的 REST/WS 对账一致。关闭阶段取消了子任务，不能将未完成的结果改成成功。receipt 保留实际 task/child ID、状态和模型。
+
+conversation 观察按实际保留的 JSON payload 限制为 64 MiB，不累计整个协议流量。agent/task/turn 状态被替换或删除时释放旧配额，文本 delta 只计算新增片段。WS 更新与最终 HTTP turn 对账共用这一预算和既有 agent/turn/task 数量上限；单帧、HTTP 响应及最终正文另有独立上限。反复接收同一份有界状态不会耗尽累计流量计数器。
 
 未预期的 approval/question 返回 `INTERACTION_REQUIRED`，不编造回答。断线、重新投影 conversation、未知 dispatch 不重发 prompt。取消先撤回 queued prompts，再中止主 turn、停止已观察任务并等待空闲；关闭 remote control 和本次 owned runtime 后，核对进程退出及已观察后代进程身份。所有清理受独立、有界 grace 约束。无法确认队列/子任务/进程已收束时，`settled` 与 `cleanup.confirmed` 都为 false。
 
@@ -74,3 +79,29 @@ Tower 收到独立 `.git` 的仓库副本，不复用主仓 Git 管理目录；l
 `test/kimi-native.test.js` 使用真实本地 HTTP/WS 子进程验证三种模式、事件顺序、原生子任务、用量未知值、准入拒绝、取消、历史恢复、CLI lifeline、一次 final、token 不泄漏及 Tower 失败门禁；`test/kimi-tower-candidate.test.js` 使用实际 Git 验证 dirty/untracked/binary/link/mode/deletion、linked worktree、外部契约、候选冲突和 prompt 路径映射。测试不联系用户账号或模型；CLI 可执行性、真实账号准入和付费推理验证是不同的证据。
 
 实现依据是上游 `MoonshotAI/kimi-code` 提交 `f082f04a093a3e71a2263c5461d52507dc31f83a` 的 [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md)、[会话配置](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md)、[conversation/task 生命周期](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md)、[Tower](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/guides/tower.md)、[实例注册表](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/kap-server/src/instanceRegistry.ts)、[逐 batch Swarm 并发](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/session/agentRunBatch.ts) 和 [Tower 限流服务](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/towerRateLimitService.ts)。安装现场仍以实际 API 探测为准。
+
+## Print 会话的具名准备
+
+同一已打包 worker 另接受 `prepare-print` 请求，仅允许 protocol、requestId、cwd、
+model、reasoningEffort、sessionTitle、timeoutMs，拒绝 prompt 和 sessionId。
+已核对的上游 print 在 TUI 首条提示词／标题服务之下直接提交 turn，CLI 也没有标题
+参数，因此不能依赖普通交互入口的自动命名。
+
+独立受管且鉴权的本地 API 运行时核对 create schema，在原物理工作区创建无 prompt
+的具名空历史，并确认 title、归属元数据与 idle 状态。只显式传请求的 model、
+`permission_mode:auto`、`plan_mode:false` 以保持 fresh print 原行为；不显式设置
+thinking/profile/environment。原 effort 环境覆盖同时传给准备和 print；两者使用
+同一 KIMI_CODE_HOME。确认准备运行时物理清理后，原 print 使用新 ID 的 `--session`
+执行任务，消耗同一调用原 wall 预算的剩余时间。
+
+唯一 `prepared-print` 回执包含 requestId/status/sessionId/sessionTitle、
+cleanupConfirmed、`inferenceDispatched:false` 与 error。准备回执缺失、错配或清理
+未知都会阻止正式派发。没有额外标题模型调用，准备步骤不发送业务 prompt，也不会
+重试未知任务。既有历史跳过准备并保留原名；native `start` 同样接受 sessionTitle，
+只用于首次创建。显示标题不替代用于身份与恢复的 opaque session ID。
+
+公开 create／resume 会打开原生会话，close 会关闭它。因此首次具名 print 比原先
+直接创建多一次准备运行时的会话启动与关闭；配置了 `SessionStart` / `SessionEnd`
+hook 时，这些 hook 也会多执行一轮。正式 print 仍只接收一次业务 prompt，恢复
+已有历史时不再准备。Agent／Swarm 在原有运行时直接设置创建标题，没有这次额外
+准备生命周期。这里不绕过上游 hooks，也不把命名描述为无副作用的元数据写入。

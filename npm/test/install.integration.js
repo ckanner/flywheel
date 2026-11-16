@@ -58,7 +58,7 @@ test('the complete npm candidate install and run from a clean agent environment'
   await fs.access(claudeCodeProWorker, 1);
   const kimiNativeWorker = path.join(context.prefix, 'bin', 'flywheel-kimi-native-worker');
   await fs.access(kimiNativeWorker, 1);
-  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1, inferenceTested: false });
+  assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.1', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
@@ -173,7 +173,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assertNoDesktopPeers(installedRequire.resolve('dsh-subagent-codex-pro/package.json'));
     const doctor = await run(codexProWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stderr + doctor.stdout);
-    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.10.0',
+    assert.deepEqual(JSON.parse(doctor.stdout), { protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro', version: '0.10.1',
       machineProtocol: 1, nativeVersion: 1, available: true, inferenceTested: false });
     const fixture = path.join(context.fixtures, 'offline-codex.mjs');
     await fs.copyFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/fake-codex-pro.js'), fixture);
@@ -195,7 +195,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.signal, null);
     const frames = stdout.trim().split('\n').map(line => JSON.parse(line));
     const result = frames.at(-1);
-    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.1', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.outcome.cleanup.confirmed, true);
     for (const pid of [result.receipt.outcome.execution.pid, result.receipt.outcome.execution.supervisorPid]) {
@@ -214,12 +214,12 @@ test('the complete npm candidate install and run from a clean agent environment'
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.1 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.2 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.5.1');
+    assert.equal(manifest.version, '0.5.2');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
     assert.deepEqual(manifest.dependencies || {}, {}, 'the offline candidate must remain dependency-free');
     const [npm, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];

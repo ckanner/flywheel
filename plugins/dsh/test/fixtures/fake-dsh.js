@@ -20,6 +20,14 @@ const admission = patch.find(row => row.insert).insert[0].config;
 const log = row => { if (process.env.TEST_DSH_LOG) appendFileSync(process.env.TEST_DSH_LOG, JSON.stringify(row) + '\n'); };
 const send = value => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n');
 const reply = (id, result) => send({ id, result });
+const activity = sessionId => {
+  const params = { version: 1, requestId: admission.requestId, nonce: admission.nonce, rootSessionId: sessionId,
+    activity: { version: 1, sequence: 1, kind: 'provider-progress', source: 'dsh', scope: 'root',
+      eventTypes: ['assistant/reasoning-delta'], observedEvents: 50 } };
+  if (scenario === 'activity-foreign') params.rootSessionId = 'foreign-session';
+  if (scenario === 'activity-malformed') params.activity.text = 'private text must not become activity';
+  send({ method: 'flywheel.activity', params });
+};
 let seq = 0;
 const event = (sessionId, type, data) => {
   const value = { method: 'session.event', params: { sessionId, event: { seq: seq++, type, data } } };
@@ -70,9 +78,13 @@ for await (const line of createInterface({ input: process.stdin })) {
       ...(fullAccess ? {} : { enforcement: 'full' }),
       ...(scenario === 'forged-confinement' ? { confinedShell: true, enforcement: 'full' } : {}),
       ...(scenario === 'unexpected-enforcement' ? { enforcement: 'partial' } : {}),
+      ...(scenario.startsWith('activity-') && scenario !== 'activity-unattested' ? { activity: { version: 1, observation: 'events-only' } } : {}),
     }), { mode: 0o600, flag: 'wx' });
+    if (scenario === 'activity-before-ready') activity(params.sessionId);
     reply(id, { cwd: scenario === 'wrong-cwd' ? '/' : initialized.cwd });
   } else if (method === 'session/prompt') {
+    if (scenario.startsWith('activity-')) activity(params.sessionId);
+    if (scenario === 'activity-duplicate') activity(params.sessionId);
     event(params.sessionId, 'agent/inbox/spliced', { inserted: [{ id: 'message-1' }] });
     if (scenario !== 'empty' && !accountFailure && scenario !== 'account-signed-out') {
       const value = event(params.sessionId, 'assistant/message', {

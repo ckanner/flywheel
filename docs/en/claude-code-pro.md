@@ -8,7 +8,7 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-The adapter requires **`dsh-subagent-claude-code-pro@0.5.1`**, machine protocol
+The adapter requires **`dsh-subagent-claude-code-pro@0.5.2`**, machine protocol
 1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
 and older machine contracts are not substitutes. No default stage or route
 selects Claude. Package availability must be checked separately from source
@@ -22,7 +22,7 @@ Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.5.1` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.5.2` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
@@ -33,12 +33,12 @@ resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidat
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
 source-candidate validation does not promote npm latest.
 
-The reviewed 0.5.1 companion artifact is recorded in
+The reviewed 0.5.2 companion artifact is recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
 CI validates those candidate bytes. Before publishing Flywheel, obtain the exact
 companion from the public registry and verify its package identity, SHA-256 and
 integrity against that record. Source validation alone does not establish registry
-availability. This worker rejects 0.5.0 rather than silently dropping the new field.
+availability. This worker rejects older companions rather than silently dropping activity or naming capabilities.
 Upgrade the worker and peer together;
 unresolved older invocations retain their original adapter/recovery identity and
 must be reconciled with their original version first.
@@ -54,6 +54,27 @@ selected by the channel. A subscription channel with no env-key does not inherit
 an ambient Anthropic API key. Supported explicit credentials are passed through
 the machine runtime. The bridge does not serialize environment credential values
 into requests or diagnostics; text returned by the CLI is preserved as received.
+
+## CLI streaming and readable session names
+
+The query path checks `claude --help` without a model prompt before dispatch.
+It requires `--include-partial-messages` and `--forward-subagent-text` (introduced
+upstream in 2.1.211), plus `--name` when creating a named persistent session.
+The installed CLI's actual capabilities determine admission; a version label
+alone is insufficient. An unsupported CLI fails before receiving task text.
+The capability probe and query share the original wall budget and cancellation.
+
+Real root/child partial, tool and task activity refreshes Flywheel's idle budget
+without forwarding private reasoning or manufacturing timer heartbeats. Native
+state deduplication does not suppress activity. Long streams of small deltas do
+not consume a cumulative raw-output budget; individual frames and retained
+results remain bounded. Queueing and opaque tools can still be silent. See
+[activity, timeouts and recovery](session-recovery.md) before retrying a stopped call.
+
+New persistent histories receive the Flywheel task/role title through the native
+`-n` option. Resume keeps the existing title, including a user's rename. Outside
+Flywheel, the plugin uses the explicit delegation label or a readable workspace
+fallback. Naming does not send a separate model request.
 
 ## Define a profile, then choose its stages
 
@@ -148,7 +169,7 @@ absent so the CLI keeps its native inheritance behavior. Flywheel does not fill
 it from the parent's value or invent a child default. Invalid values fail during
 configuration loading, before a worker is dispatched.
 
-The same definition field is available in the 0.5.1 desktop plugin's `native`
+The same definition field is available in the 0.5.2 desktop plugin's `native`
 settings and PTC override, and in independent interactive Team requests. Direct
 Flywheel workers still read their selected native profile, not desktop settings.
 Passing an explicit effort proves the requested CLI input; tools-only init

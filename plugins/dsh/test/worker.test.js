@@ -40,6 +40,31 @@ test('full worker handshake, durable result, usage and SDK shutdown agree with t
   assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
 });
 
+for (const scenario of ['activity-valid', 'activity-duplicate', 'activity-foreign']) {
+  test(`${scenario}: worker forwards only admitted, current activity without interpreting it as output or usage`, async t => {
+    const { request, options, frames } = await setup(t, scenario);
+    const result = await runWorker(request, options);
+    assert.equal(result.status, 'ok');
+    const activity = frames.filter(frame => frame.type === 'activity');
+    assert.equal(activity.length, scenario === 'activity-foreign' ? 0 : 1);
+    assert.equal(result.text, 'fixture complete');
+    assert.equal(result.usage.total_tokens, 128);
+    assert.equal(frames[0].activity.observation, 'events-only');
+    assert.ok(!JSON.stringify(activity).includes('nonce'));
+  });
+}
+
+for (const scenario of ['activity-malformed', 'activity-before-ready', 'activity-unattested']) {
+  test(`${scenario}: owned metadata cannot bypass the policy and transport contract`, async t => {
+    const { request, options, frames, methods } = await setup(t, scenario);
+    const result = await runWorker(request, options);
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'TRANSPORT');
+    assert.equal(frames.filter(frame => frame.type === 'activity').length, 0);
+    if (scenario === 'activity-before-ready') assert.ok(!(await methods()).includes('session/prompt'));
+  });
+}
+
 test('an explicit full-access request reaches the SDK with truthful policy and normal shutdown', async t => {
   const { request, options, frames, methods } = await setup(t);
   const result = await runWorker({ ...request, permissionMode: 'danger-full-access' }, options);
@@ -319,5 +344,5 @@ test('full access changes the explicit permission policy while retaining engine 
   assert.equal(row('tool-schedule').disabled, true);
   assert.equal(row('compaction-basic').disabled, true);
   assert.deepEqual(patch.find(item => item.insert).insert[0].config,
-    { permissionMode: 'danger-full-access', cwd: '/workspace' });
+    { permissionMode: 'danger-full-access', cwd: '/workspace', activity: { version: 1, idleTimeoutMs: 300000 } });
 });

@@ -10,6 +10,9 @@
 //   - 当前 print writer 不输出 token usage；未知保持 nil，不能记成免费。
 //   - thinking 每次由 KIMI_MODEL_THINKING_EFFORT 显式注入，默认 high，
 //     不修改用户配置。显式模型别名由 binding 提供，省略时使用当前订阅默认。
+//   - print JSONL buffers assistant deltas and omits thinking/child progress;
+//     silence is not an idle signal. Keep the wall deadline and cancellation,
+//     but do not kill this transport for a lack of stdout/stderr activity.
 package drivers
 
 import (
@@ -18,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -33,6 +37,7 @@ type KimiArgs struct {
 	PermissionMode    string
 	Prompt            string
 	SessionID         string // 长驻会话 resume 句柄；空 = 新会话
+	SessionTitle      string // readable task/role label; never an opaque identifier
 	PersistentSession bool   // scoped lifecycle policy; CLI history is already persistent
 	RequestID         string // engine invocation identity, never a backend idempotency key
 	Model             string
@@ -169,6 +174,27 @@ func RunKimi(a KimiArgs) Result {
 			Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "unknown"}
 		return out
 	}
+	resuming := a.SessionID != ""
+	var preparationMS int64
+	if !resuming && a.SessionTitle != "" {
+		prepared := kimiPrintSessionPreparer(a)
+		if !prepared.Settled {
+			return prepared
+		}
+		a.SessionID, preparationMS = prepared.SessionID, prepared.DurationMS
+		wall := a.Watchdog.WallTimeoutMs
+		if wall <= 0 {
+			wall = watchdog.DefaultWallTimeoutMs
+		}
+		a.Watchdog.WallTimeoutMs = wall - preparationMS
+		if a.Watchdog.WallTimeoutMs <= 0 {
+			prepared.Settled, prepared.TimedOut, prepared.WallTimedOut = false, true, true
+			prepared.ErrorCode = errs.TIMEOUT
+			message := timeoutMessage("Kimi print-session preparation", prepared)
+			prepared.ErrorMessage = &message
+			return prepared
+		}
+	}
 	args := []string{}
 	if a.SessionID != "" {
 		args = append(args, "--session", a.SessionID)
@@ -185,6 +211,9 @@ func RunKimi(a KimiArgs) Result {
 	}
 	env := childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)
 	env["KIMI_MODEL_THINKING_EFFORT"] = effort
+	if home, exists := os.LookupEnv("KIMI_CODE_HOME"); exists {
+		env["KIMI_CODE_HOME"] = home
+	}
 	command := a.Command
 	if command == "" {
 		command = os.Getenv(KimiCommandEnv)
@@ -199,13 +228,14 @@ func RunKimi(a KimiArgs) Result {
 	}
 
 	result := watchdog.Run(command, args, watchdog.Opts{
-		Context:       a.Watchdog.Context,
-		Cwd:           a.Cwd,
-		Env:           childenv.EnvSlice(env),
-		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
-		WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs:   a.Watchdog.KillGraceMs,
-		OnActivity:    onActivity,
+		Context:            a.Watchdog.Context,
+		Cwd:                a.Cwd,
+		Env:                childenv.EnvSlice(env),
+		IdleTimeoutMs:      a.Watchdog.IdleTimeoutMs,
+		DisableIdleTimeout: true,
+		WallTimeoutMs:      a.Watchdog.WallTimeoutMs,
+		KillGraceMs:        a.Watchdog.KillGraceMs,
+		OnActivity:         onActivity,
 	})
 	// watchdog.Wait has drained both streams; no callback can race this tail.
 	if a.OnEvent != nil {
@@ -236,6 +266,7 @@ func RunKimi(a KimiArgs) Result {
 	settled := result.ExitCode != nil && *result.ExitCode == 0 && !result.TimedOut && !result.Cancelled &&
 		result.Signal == "" && result.CleanupError == "" && !result.Truncated && message == "" && parsed.SessionID != ""
 	out := fromWatchdog(result, "kimi", "kimi", model)
+	out.DurationMS += preparationMS
 	out.Usage, out.Settled, out.Text = parsed.Usage, settled, parsed.Text
 	if settled {
 		out.SessionID = parsed.SessionID
@@ -261,7 +292,7 @@ func RunKimi(a KimiArgs) Result {
 		out.Session.SessionID = parsed.SessionID
 		out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
 		out.Session.ResumeCandidate = true
-		out.Session.ResumeAccepted = a.SessionID != ""
+		out.Session.ResumeAccepted = resuming
 	}
 	return out
 }

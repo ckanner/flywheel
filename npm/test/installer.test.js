@@ -126,7 +126,7 @@ async function installation(t) {
   await fs.writeFile(path.join(plugin, "dist", "codex-pro-worker.mjs"), `
     if (process.argv[2] !== '--doctor') throw new Error('installation must never run a model');
     console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
-      version: process.env.TEST_ADAPTER_VERSION || '0.10.0', machineProtocol: 1, available: true, inferenceTested: false }));
+      version: process.env.TEST_ADAPTER_VERSION || '0.10.1', machineProtocol: 1, available: true, inferenceTested: false }));
   `);
   await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.mjs"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
@@ -206,7 +206,7 @@ test("installer executes special paths literally and repeat setup keeps a stable
   assert.equal(first.authentication, "unknown");
   assert.equal(first.configuration.action, 'created');
   assert.equal(first.configuration.automaticMigration, false);
-  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.0', protocol: 1, inferenceTested: false });
+  assert.deepEqual(first.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.1', protocol: 1, inferenceTested: false });
   const record = await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json"));
   assert.equal(record.launcher.path, first.paths.launcher);
   assert.equal(record.codexProWorker, first.paths.codexProWorker);

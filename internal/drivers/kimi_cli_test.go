@@ -185,6 +185,31 @@ printf '%s' '`+kimiComplete+`'
 	assert.Equal(t, []string{kimiComplete}, events)
 }
 
+func TestKimiPrintSilenceDoesNotProveAnIdleInvocation(t *testing.T) {
+	// Print buffers assistant text, omits thinking deltas, and does not expose
+	// child progress. A valid completion may arrive after several idle windows.
+	command := kimiScript(t, `sleep 0.15
+printf '%s\n' '{"role":"assistant","content":"completed after silent planning"}' '`+kimiComplete+`'
+`)
+	r := RunKimi(KimiArgs{Command: command, Prompt: "plan", RequestID: "silent-plan",
+		Watchdog: watchdog.Opts{IdleTimeoutMs: 25, WallTimeoutMs: 2000, KillGraceMs: 100}})
+	require.True(t, r.Settled, "%+v", r)
+	assert.False(t, r.TimedOut)
+	assert.Equal(t, "completed after silent planning", r.Text)
+	assert.Equal(t, "completed", r.Session.Outcome)
+	assert.True(t, r.Session.CleanupConfirmed)
+}
+
+func TestKimiPrintSilentHangStillHasAWallDeadline(t *testing.T) {
+	r := RunKimi(KimiArgs{Command: kimiScript(t, "exec sleep 10\n"), Prompt: "plan", RequestID: "silent-hang",
+		Watchdog: watchdog.Opts{IdleTimeoutMs: 25, WallTimeoutMs: 100, KillGraceMs: 100}})
+	assert.True(t, r.WallTimedOut)
+	assert.False(t, r.IdleTimedOut)
+	assert.False(t, r.Settled)
+	assert.Equal(t, "unknown", r.Session.Outcome)
+	assert.True(t, r.Session.CleanupConfirmed)
+}
+
 func TestKimiWatchdogTimeoutCannotBecomeSuccessfulHint(t *testing.T) {
 	command := kimiScript(t, `finish() { printf '%s\n' '`+kimiComplete+`'; exit 0; }
 trap finish TERM

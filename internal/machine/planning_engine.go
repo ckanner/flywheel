@@ -247,14 +247,14 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 	if c.State.Planning.Active != nil {
 		files = c.planFiles(c.State.Planning.Active.Plans)
 	}
-	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files)
+	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files, prompts.PlanningPromptOptions{NativeAgents: b.NativeProfile != ""})
 	before, err := c.planningGuard()
 	if err != nil {
 		return drivers.Result{}, role, "", err
 	}
 	res, err := c.invokeScoped(role, scope, drivers.CallArgs{Prompt: prompt, TaskDir: c.TaskDir, Cwd: c.Cwd,
 		MilestoneID: r.ScopeID, Model: b.Model, Binding: config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking},
-		PermissionMode: c.Config.PermissionMode(role, b.Harness), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdog()}, call)
+		PermissionMode: c.Config.PermissionMode(role, b.Harness), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdogFor(role)}, call)
 	if err != nil {
 		return res, role, "", err
 	}

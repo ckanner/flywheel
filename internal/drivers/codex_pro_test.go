@@ -436,7 +436,7 @@ func TestCodexProWorkerProcessFixture(t *testing.T) {
 		proObject(receipt, "outcome", "execution")["truncated"] = true
 	}
 	fmt.Fprintln(os.Stderr, "worker diagnostic")
-	fmt.Print(strings.TrimSpace(dshJSONL(codexProFrame(request, receipt))))
+	fmt.Print(dshJSONL(codexProFrame(request, receipt)))
 	if scenario == "outer-truncated" {
 		fmt.Print("\n" + strings.Repeat(" ", 32*1024))
 	}

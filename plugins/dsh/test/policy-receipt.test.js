@@ -72,6 +72,7 @@ function policyContext(config) {
   const events = [];
   let callback;
   const ctx = {
+    get: () => undefined,
     on: (name, fn) => { assert.equal(name, 'agent/created'); callback = fn; },
     shell: {
       sandboxMode: 'read-only', resolve: spec => spec,
@@ -118,4 +119,27 @@ test('policy publication cannot follow a pre-existing staging symlink', async t 
   await applyPolicy(ctx, f.config);
   await assert.rejects(created(), { code: 'EEXIST' });
   assert.equal(await readFile(target, 'utf8'), 'untouched');
+});
+
+test('an explicitly requested fresh title requires the public service and a matching persisted snapshot', async t => {
+  for (const service of [undefined, { rename() {} },
+    { rename: () => ({ title: '' }), get: () => ({ title: '' }) },
+    { rename: () => ({ title: 'accepted' }), get: () => ({ title: 'different' }) }]) {
+    const f = await fixture(t);
+    const { ctx, created } = policyContext(f.config);
+    ctx.get = () => service;
+    await applyPolicy(ctx, { ...f.config, sessionTitle: 'Requested task title · review' });
+    await assert.rejects(created(), /sessionTitle service|could not verify/);
+    await assert.rejects(readFile(f.receiptPath), { code: 'ENOENT' });
+  }
+  const f = await fixture(t);
+  const { ctx, created } = policyContext(f.config);
+  const title = 'Task title longer than thirty-five characters · plan review';
+  let requested;
+  const snapshot = { title: 'Native normalized title' };
+  ctx.get = () => ({ rename: (_session, value) => { requested = value; return snapshot; }, get: () => snapshot });
+  await applyPolicy(ctx, { ...f.config, sessionTitle: title });
+  await created();
+  assert.equal(requested, title, 'the native byte limit owns normalization');
+  assert.equal((await readPolicyReceipt(f.receiptPath, f.identity)).sessionId, f.identity.sessionId);
 });

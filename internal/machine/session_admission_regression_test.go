@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +22,24 @@ printf '%s\n' '{"role":"assistant","content":"completed"}'
 printf '%s\n' '{"role":"meta","type":"session.resume_hint","session_id":"admission-session"}'
 `), 0o700))
 	t.Setenv(drivers.KimiCommandEnv, command)
+	preparer := filepath.Join(t.TempDir(), "prepare-kimi")
+	require.NoError(t, os.WriteFile(preparer, []byte("#!/bin/sh\nFLYWHEEL_ADMISSION_TITLE_FIXTURE=1 exec '"+os.Args[0]+"' -test.run '^TestAdmissionTitlePrepareFixture$'\n"), 0700))
+	t.Setenv(drivers.KimiNativeWorkerEnv, preparer)
 	return command
+}
+
+func TestAdmissionTitlePrepareFixture(t *testing.T) {
+	if os.Getenv("FLYWHEEL_ADMISSION_TITLE_FIXTURE") == "" {
+		return
+	}
+	var request map[string]any
+	if json.NewDecoder(os.Stdin).Decode(&request) != nil {
+		os.Exit(2)
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"protocol": 1, "type": "prepared-print", "requestId": request["requestId"],
+		"status": "ok", "sessionId": "admission-session", "sessionTitle": request["sessionTitle"], "cleanupConfirmed": true,
+		"inferenceDispatched": false, "error": nil})
+	os.Exit(0)
 }
 
 func TestSessionHarnessAdmissionCanBeRepairedAfterRestart(t *testing.T) {

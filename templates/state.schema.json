@@ -202,7 +202,7 @@
               "thread-id": { "type": "string", "minLength": 1 },
               "protocol": { "type": "string", "minLength": 1 },
               "resume-candidate": { "type": "boolean" },
-              "action": { "enum": ["create", "resume", "rebuild", "wait", "reconcile"] },
+              "action": { "enum": ["create", "resume", "rebuild", "wait", "reconcile", "abandon"] },
               "reason": { "type": "string", "minLength": 1 },
               "quality": {
                 "type": "object", "additionalProperties": false,
@@ -223,7 +223,7 @@
                 "properties": {
                   "id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
                   "engine-run-id": {"type":"string","minLength":1},
-                  "status": { "enum": ["intent", "received", "consumed", "blocked"] },
+                  "status": { "enum": ["intent", "received", "consumed", "blocked", "abandoned"] },
                   "started-at": { "type": "string", "minLength": 1 },
                   "attempt": { "type": "integer", "minimum": 0 },
                   "requested-thread": { "type": "string", "minLength": 1 },
@@ -260,6 +260,19 @@
                       }
                     }
                   },
+                  "abandon": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["at", "reason", "authority"],
+                    "properties": {
+                      "at": { "type": "string", "minLength": 1, "maxLength": 64 },
+                      "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+                      "authority": { "const": "human" },
+                      "request-id": { "type": "string", "minLength": 1, "maxLength": 120 },
+                      "invocation": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
+                      "thread-id": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                      "source": { "type": "string", "minLength": 1, "maxLength": 1024 }
+                    }
+                  },
                   "recovery": {
                     "type": "object", "additionalProperties": false,
                     "required": ["version", "harness", "adapter-version", "directory", "model", "effort", "permission-mode", "sequence"],
@@ -288,6 +301,22 @@
                       "outcome": { "enum": ["completed", "failed", "cancelled"] }
                     }
                   }
+                }, {
+                  "if": { "properties": { "status": { "const": "abandoned" } } },
+                  "then": {
+                    "required": ["abandon"],
+                    "properties": {
+                      "accounted": { "const": true },
+                      "cleanup-confirmed": { "const": true }
+                    },
+                    "anyOf": [
+                      { "properties": { "dispatch": { "const": "unknown" } } },
+                      { "properties": { "outcome": { "const": "unknown" } } }
+                    ]
+                  }
+                }, {
+                  "if": { "required": ["status"], "properties": { "status": { "not": { "const": "abandoned" } } } },
+                  "then": { "properties": { "abandon": false } }
                 }]
               },
               "context": {
@@ -322,6 +351,9 @@
             "allOf": [{
               "if": { "properties": { "resume-candidate": { "const": true } } },
               "then": { "required": ["thread-id", "protocol"] }
+            }, {
+              "if": { "properties": { "last": { "properties": { "status": { "const": "abandoned" } } } } },
+              "then": { "properties": { "resume-candidate": { "const": false } } }
             }]
           }
         }

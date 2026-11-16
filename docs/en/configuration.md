@@ -377,7 +377,7 @@ Completed but unconsumed receipts have stricter rules: Review and Judge must mat
 
 The single-slot limit applies only to Flywheel's recovery receipt. Native thread and Session histories follow the backend's retention rules. Rebuilding a role history or shutting down its worker does not automatically delete earlier backend histories.
 
-An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.0 and Claude Code Pro 0.5.1 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex can gate dispatch after verified `thread-ready`; Claude's native init follows prompt dispatch and cannot provide equivalent pre-dispatch configuration evidence. Both retain uncertainty when evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.1 and Claude Code Pro 0.5.2 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex can gate dispatch after verified `thread-ready`; Claude's native init follows prompt dispatch and cannot provide equivalent pre-dispatch configuration evidence. Both retain uncertainty when evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
 
 `status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
@@ -510,6 +510,34 @@ for a changed experiment. Requested settings and available admission facts remai
 in session/adapter receipts; unavailable effective effort, usage and subscription
 cost stay unknown. Workflow, Review/Judge and delivery authorization are separate.
 
+## Watchdog and planning liveness
+
+`watchdog` provides an output-idle bound where the transport exposes progress, an absolute `wall-timeout-ms` bound, and a `kill-grace-ms` SIGTERM-to-SIGKILL grace. Defaults are 300 seconds idle, 3600 seconds wall, and 5 seconds grace; the kill grace is never shortened per role. Kimi print has no reliable output-idle signal, so its driver uses the wall bound and explicit cancellation without arming the idle timer.
+
+`watchdog.roles.<role>` overrides idle/wall for one role. Where output-idle detection applies, planning roles default to 900 seconds while execute and review keep 300 seconds. These are policy bounds, not proof that a silent model is hung. Example:
+
+```json
+"watchdog": {
+  "idle-timeout-ms": 300000,
+  "wall-timeout-ms": 3600000,
+  "kill-grace-ms": 5000,
+  "roles": {
+    "design-plan": { "idle-timeout-ms": 900000 },
+    "plan": { "idle-timeout-ms": 900000 }
+  }
+}
+```
+
+Kimi print buffers assistant deltas, omits thinking deltas and does not expose child progress. Even foreground work can therefore be silent; neither a longer idle value nor a prompt instruction repairs that observation gap. All print roles use their effective wall deadline (including a role override); their idle values do not apply. Use `wall-timeout-ms` to bound a long print call. Explicit stop/cancel and process-group cleanup still apply; zero does not mean an unlimited wall deadline.
+
+The Kimi native worker forwards real root/child item, step and lifecycle progress as metadata to the parent watchdog. It does not forward reasoning or tool payloads and does not manufacture heartbeat events from timers or WebSocket ping/pong. Idle callbacks recheck the latest activity deadline, so a stale queued callback cannot kill work that has already produced new activity. Foreground investigation remains a result-collection constraint for non-native planning, not a liveness guarantee.
+
+Unknown planning dispatch/outcome cannot be fixed by switching bindings, fresh history, deleting the ledger or replay. Use the explicit retirement action in [session recovery](session-recovery.md) only after cleanup is confirmed; unconfirmed cleanup remains blocked. Unknown is not zero and is never silently rewritten as known.
+
+### Defect-injection rollback deadlines
+
+Defect-injection baseline and test commands use `verify.command-timeout-ms`. After injection, `git apply -R` has an independent cancellation context and a bounded rollback deadline: a positive command budget is clamped to 1–10 seconds; a missing effective budget uses 10 seconds. The context and the command watchdog receive the same rollback deadline, followed by the existing cleanup grace. This does not extend the test itself or turn a timed-out test into evidence that the defect was detected. Unconfirmed rollback stops the run and preserves the workspace.
+
 ## Workflow policy and recovery
 
 Workflow policy chooses stages. Model profiles, loops, routes, and `permissions.mode` independently choose each stage's backend and permissions. **Put workflow in the Spec's YAML frontmatter, not in `flywheel.config.json`.** The unified `flywheel-task` entry defaults to Auto and records researched facts before Go validates them. This example shows the fields; replace the content with evidence from the actual task:
@@ -563,7 +591,7 @@ The embedded hard route uses this binding. This is a **fragment**, not a complet
 }
 ```
 
-The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.10.0` package and its `dsh-subagent-codex-pro/machine` entry. The dependency is pinned by the plugin package and lockfile; [vendor provenance](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) records the reviewed source package used during lifecycle development. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.5.1` optional peer and is unnecessary when that backend is not selected.
+The complete profile template uses `profiles.codex-pro` and references it from `routes.hard`. The worker consumes the exact public `dsh-subagent-codex-pro@0.10.1` package and its `dsh-subagent-codex-pro/machine` entry. The dependency is pinned by the plugin package and lockfile; [vendor provenance](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) records the reviewed source package used during lifecycle development. The plugin runs Codex app-server and uses the existing Codex login. Claude remains a separate exact `0.5.2` optional peer and is unnecessary when that backend is not selected.
 
 The external tool name `subagent_codex_pro` is not a DSH provider. This route does not create a parent DSH model to make a second delegation. Missing dependencies or invalid receipts fail; they do not trigger an implicit fallback to the older CLI driver.
 
@@ -630,7 +658,7 @@ Local checks cover commands, versions, directories, configuration, and declared 
 
 DSH's `ready.reasoningEffort` echoes the requested value after SDK configuration acceptance; it is not an independent server attestation of effective reasoning effort. A no-inference probe cannot demonstrate quality gains from a higher effort. GPT, Kimi, and Flash also have different native effort enums; see [Reasoning effort](model-policy.md).
 
-Codex Pro checks actually import the public API and verify exact version 0.10.0/protocol 1, typed lifecycle/recovery exports, Node compatibility, and the Codex executable. Binding fields `durableJournal`, `readOnlyRecovery`, and `threadReadyBeforeDispatch` describe pinned adapter capabilities; Claude's last field is false. `historyRecoveryTested` remains false. `--probe` sends no model task and does not turn a successful import into evidence of account access, effective permissions, or recovery of a particular saved history.
+Codex Pro checks actually import the public API and verify exact version 0.10.1/protocol 1, typed lifecycle/recovery exports, Node compatibility, and the Codex executable. Binding fields `durableJournal`, `readOnlyRecovery`, and `threadReadyBeforeDispatch` describe pinned adapter capabilities; Claude's last field is false. `historyRecoveryTested` remains false. `--probe` sends no model task and does not turn a successful import into evidence of account access, effective permissions, or recovery of a particular saved history.
 
 | Status | Meaning |
 |---|---|

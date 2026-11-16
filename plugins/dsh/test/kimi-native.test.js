@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runKimiWorker, validateKimiNativeStart, KimiConversation, kimiObservedUsage } from '../src/kimi-native-bridge.js';
+import { runKimiWorker, validateKimiNativeStart, KimiConversation, kimiObservedUsage, createKimiActivityReporter } from '../src/kimi-native-bridge.js';
 import { towerGit, towerSnapshot } from '../src/kimi-tower-candidate.js';
 
 const server = fileURLToPath(new URL('./fixtures/kimi-native-server.mjs', import.meta.url));
@@ -60,6 +60,57 @@ test('native child identity and complete step usage are reconciled before succes
   assert.equal(result.usage.totalTokens, 30);
   assert.equal(result.native.children[0].status, 'ended');
   assert.equal(result.native.observed.usage.observedSteps.length, 2);
+});
+
+test('live root and child progress reaches the parent without tool or reasoning payloads', async () => {
+  for (const fixtureCase of ['root-progress', 'child-progress']) {
+    const f = await fixture('swarm', fixtureCase);
+    const result = await runKimiWorker(f.input, f.options);
+    assert.equal(result.status, 'ok', JSON.stringify(result.error));
+    const agentId = fixtureCase === 'child-progress' ? 'child-1' : 'main';
+    const progress = f.frames.filter(frame => frame.type === 'event' && frame.event.agentId === agentId);
+    const reportedTypes = new Set(progress.flatMap(frame => frame.event.coalescedTypes || [frame.event.type]));
+    for (const type of ['item.delta', 'item.updated', 'turn.updated']) {
+      assert.ok(reportedTypes.has(type), `${agentId} ${type} must reach the process watchdog`);
+    }
+    assert.doesNotMatch(JSON.stringify(f.frames), /private-tool-progress|fixture-secret/);
+    assert.ok(progress.every(frame => !('delta' in frame.event) && !('set' in frame.event) && !('item' in frame.event)));
+    assert.equal(result.lifecycle.cleanupConfirmed, true);
+    assert.equal(result.native.completion.confirmed, true);
+  }
+});
+
+test('progress reporting coalesces a busy agent tree within short idle windows without inventing heartbeats', () => {
+  let at = 0;
+  const events = [], idleTimeoutMs = 100;
+  const report = createKimiActivityReporter(idleTimeoutMs, event => events.push({ at, event }), () => at);
+  const kinds = ['item.delta', 'item.updated', 'turn.updated'];
+  for (let index = 0; index < 100_000; index++) {
+    at = index / 100;
+    report({ type: kinds[index % kinds.length], agent_id: `child-${index % 12}`, turn_id: 'turn', item_id: 'item',
+      delta: 'private-thinking-or-tool-output', set: { text: 'private-thinking-or-tool-output' } });
+  }
+  assert.ok(events.length >= 35 && events.length <= 41, '100,000 real progress frames share one bounded notification cadence across the tree');
+  for (let index = 1; index < events.length; index++) {
+    assert.ok(events[index].at - events[index - 1].at < idleTimeoutMs, 'a custom short idle deadline must not inherit a fixed one-second throttle');
+  }
+  assert.deepEqual(new Set(events.flatMap(row => row.event.coalescedTypes)), new Set(kinds));
+  assert.doesNotMatch(JSON.stringify(events), /private-thinking-or-tool-output/);
+  const count = events.length;
+  report({ type: 'turn.ended', agent_id: 'main', turn: { turn_id: 'turn', status: 'ended', outcome: 'completed' } });
+  assert.equal(events.length, count + 1, 'lifecycle evidence is never delayed behind content progress');
+  at += 60_000;
+  report({ type: 'ping', agent_id: 'main' });
+  assert.equal(events.length, count + 1, 'elapsed local time and transport pings cannot emit liveness');
+});
+
+test('native progress interval input is optional but explicit invalid deadlines are rejected', async () => {
+  const f = await fixture();
+  assert.doesNotThrow(() => validateKimiNativeStart(f.input));
+  assert.doesNotThrow(() => validateKimiNativeStart({ ...f.input, idleTimeoutMs: 1 }));
+  for (const idleTimeoutMs of [0, -1, 0.5, '100', null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => validateKimiNativeStart({ ...f.input, idleTimeoutMs }), /bounded protocol 1/);
+  }
 });
 
 test('placeholder session usage never becomes known zero when real turn usage is absent', async () => {

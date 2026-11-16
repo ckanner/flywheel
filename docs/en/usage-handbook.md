@@ -397,11 +397,28 @@ Choose the operation you need; this table is not a script to run sequentially:
 
 `ok:true` acknowledges the operation. `running` describes the owner;
 `state.status` describes implementation progress. An investigation can have only
-`preparation`. A green stage does not mean whole-task completion.
+`preparation`. A green stage does not mean whole-task completion. An asynchronous
+`session` action also returns `session-control.applied/status/message`; `ok:true`
+does not prove that an unknown invocation was retired or reconciled.
 
 Omitting mode preserves the saved strategy. Closing a view does not stop the engine.
 Do not copy/reset state, delete receipts or switch to fresh history to bypass an
 unknown invocation. Follow [session recovery](session-recovery.md).
+
+A planning-role invocation (`design-plan`, `design-review`, `plan`,
+`plan-review`) that is `blocked` with unproven dispatch/outcome can be explicitly
+retired after accounting and cleanup confirmation. This ends only the invocation's
+effect boundary; it is not a replay and applies no result:
+
+```sh
+flywheel session "$task_dir" --key "design-plan/planning:engine-1-1" \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+The command shows the exact invocation and requires `abandon <invocation>` on a
+controlling terminal; the Flywheel view uses a verified user command. Model tools
+do not expose it. A later explicit Run Plan creates a new request. See
+[session recovery](session-recovery.md#explicitly-retiring-an-unknown-planning-invocation).
 
 For foreground/manual operations, first `cd "$repo_dir"`. To stop before Review,
 use this **instead of** background start and keep the process attached until it pauses:
@@ -461,7 +478,7 @@ rather than launching another task. See the [console guide](flow-console.md).
 | Terminal works, desktop fails | Check the managed launcher, `command`/PATH, SDK profile and environment of the desktop process; follow setup repair in [Getting started](getting-started.md). |
 | A configuration change has no effect | Inspect with the actual cwd/task-dir; check higher-priority complete files and restart the engine when required. |
 | `awaiting-report` | Ask the host to submit the evidence-grounded report; do not repeatedly start collection. |
-| Unknown dispatch, result or cleanup | Preserve the original task and reconcile its trusted receipt; process exit alone is not a known result. |
+| Unknown dispatch, result or cleanup | Preserve the original task and reconcile its trusted receipt; process exit alone is not a known result. Planning roles can explicitly retire after cleanup and accounting; other roles keep the recovery path. |
 | `budget-stopped` or unknown usage | Inspect actual accounting and the intended policy; new directories, fresh sessions and model switches do not reset the allowance. |
 | Acceptance, Review or Git delivery fails | Read the current evidence, preserve worktrees, resolve the actual defect/conflict and resume; do not weaken frozen acceptance or force-reset work. |
 | Skills absent or customized-file conflict | Inspect `skills list/read`, project discovery and the conflicting snapshot; retain custom work. |

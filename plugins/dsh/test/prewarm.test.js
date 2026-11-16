@@ -174,10 +174,15 @@ test('strict prepare validation and transport reject unexpected, duplicate and e
   const f = await setup(t);
   for (const patch of [{ prompt: 'forbidden' }, { sessionId: 'forbidden' }, { ttlMs: 60001 }, { binding: 'wrong' },
     { permissionMode: 'silent-full-access' }, { receiptDirectory: 'relative' }, { warmId: '' },
-    { warmId: 12345678 }, { binding: ['a'.repeat(64)] }, { warmId: ['valid-looking-id'] }]) {
+    { warmId: 12345678 }, { binding: ['a'.repeat(64)] }, { warmId: ['valid-looking-id'] },
+    { idleTimeoutMs: 0 }, { idleTimeoutMs: 1.5 }, { idleTimeoutMs: 86400001 }]) {
     await assert.rejects(validatePrepare({ ...f.prepared, ...patch }));
   }
   assert.throws(() => matchWarmStart(f.prepared, { ...f.request, model: 'changed' }));
+  const prepared = await validatePrepare({ ...f.prepared, idleTimeoutMs: 1200 });
+  assert.doesNotThrow(() => matchWarmStart(prepared, { ...f.request, idleTimeoutMs: 1200 }));
+  assert.throws(() => matchWarmStart(prepared, { ...f.request, idleTimeoutMs: 2400 }));
+  assert.throws(() => matchWarmStart(prepared, f.request));
   for (const payload of ['{bad}\n', Buffer.from([0xff, 10]), JSON.stringify({ ...f.prepared, type: 'start' }) + '\n']) {
     const controller = new AbortController(), input = new PassThrough();
     const transport = prewarmInput(controller, input);

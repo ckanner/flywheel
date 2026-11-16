@@ -55,9 +55,9 @@ DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH
 |---|---|
 | DeepSeek Flash | DSH `deepseek-account`，明确指定 `deepseek-flash`；标准共享账号存储不需要额外 API key |
 | DSH ChatGPT | 在 SDK profile 安装并授权所选 ChatGPT 适配器；桌面对话模型不决定 worker 配置 |
-| Codex Pro | worker 导入固定 0.10.0 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
+| Codex Pro | worker 导入固定 0.10.1 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
 | Kimi | Go 默认调用 Kimi CLI，也可使用受管本地 Server worker 的原生 Agent／Swarm／Tower；沿用同一 Kimi 登录 |
-| Claude Code Pro | 可选 0.5.1 peer 和已安装 Claude CLI／登录；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
+| Claude Code Pro | 可选 0.5.2 peer 和已安装 Claude CLI／登录；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
 
 已核对的 ChatGPT 配套版本为 0.1.20。SDK profile 缺失或需要更新时执行：
 

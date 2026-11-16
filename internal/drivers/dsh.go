@@ -66,6 +66,7 @@ type dshStart struct {
 	PermissionMode  string           `json:"permissionMode"`
 	Prompt          string           `json:"prompt"`
 	TimeoutMS       int64            `json:"timeoutMs,omitempty"`
+	IdleTimeoutMS   int64            `json:"idleTimeoutMs,omitempty"`
 	SessionID       string           `json:"sessionId,omitempty"`
 	Persistent      bool             `json:"persistent,omitempty"`
 }
@@ -118,6 +119,7 @@ func validateDSHLifecycle(s *SessionOutcome, request dshStart, sessionID string,
 func parseDSHStream(stdout string, request dshStart) dshParsed {
 	var parsed dshParsed
 	ready, terminal, cleanupConfirmed := false, false, false
+	var activitySequence int64
 	providerError := ""
 	for _, line := range strings.Split(stdout, "\n") {
 		line = strings.TrimSpace(line)
@@ -177,6 +179,12 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 		case "event":
 			if !ready || frame.SessionID != parsed.SessionID || len(frame.Event) == 0 || string(frame.Event) == "null" {
 				parsed.Error = "DSH worker event arrived without a matching ready session"
+			}
+		case "activity":
+			if !ready {
+				parsed.Error = "DSH activity arrived before its matching ready session"
+			} else if err := validateDshActivityEvent(json.RawMessage(line), request, parsed.SessionID, &activitySequence); err != nil {
+				parsed.Error = err.Error()
 			}
 		case "native-event":
 			if len(request.Native) == 0 || !ready || frame.SessionID != parsed.SessionID || len(frame.Event) == 0 || string(frame.Event) == "null" {
@@ -258,6 +266,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 	// A malformed stream cannot attest a trustworthy shutdown receipt.
 	parsed.CleanupConfirmed = terminal && cleanupConfirmed && parsed.Error == ""
 	if parsed.Error != "" {
+		parsed.Cancelled = false // an untrusted prior terminal cannot establish the cancellation cause
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
@@ -334,7 +343,9 @@ func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 	request := dshStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
 		Provider: a.Provider, Model: a.Model, ReasoningEffort: effort,
 		WorkspaceCwd: project, SessionTitle: a.SessionTitle,
-		PermissionMode: permission, Prompt: a.Prompt, TimeoutMS: a.Watchdog.WallTimeoutMs}
+		PermissionMode: permission, Prompt: a.Prompt,
+		TimeoutMS:     dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
+		IdleTimeoutMS: dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds()}
 	if a.RequestID != "" {
 		request.RequestID = a.RequestID
 	}
@@ -379,6 +390,7 @@ func RunDSH(a DSHArgs) Result {
 		Context: a.Watchdog.Context, Cwd: request.Cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
 		KillGraceMs: dshCleanupGrace(a), OnActivity: onActivity,
+		StdoutCapture: newDSHActivityCapture(func() dshStart { return request }),
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			err := json.NewEncoder(stdin).Encode(request)
 			_ = stdin.Close()
@@ -402,11 +414,16 @@ func RunDSH(a DSHArgs) Result {
 func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError error) Result {
 	parsed := parseDSHStream(result.Stdout, request)
 	if writeError != nil {
+		parsed.Cancelled = false
+		parsed.CleanupConfirmed = false
 		parsed.Error = "DSH worker request write failed: " + writeError.Error()
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	}
+	// A retained terminal prefix cannot certify the omitted bytes of either
+	// stream. Apply the same receipt-trust boundary to fresh and scoped calls.
+	parsed.CleanupConfirmed = parsed.CleanupConfirmed && !result.Truncated
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
 	out.NativeReceipt = parsed.NativeReceipt
 	out.ErrorCode = parsed.ErrorCode
@@ -423,8 +440,12 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// A complete-looking prefix cannot attest the omitted tail, even when
 		// only stderr exceeded the capture bound. Its charge is unconfirmed.
 		out.Usage, out.CostUSD = nil, nil
+		out.ErrorCode = errs.TRANSPORT
 	}
-	out.Cancelled = out.Cancelled || parsed.Cancelled
+	mergeWorkerTermination(&out, parsed.Cancelled, parsed.ErrorCode == errs.TIMEOUT && !result.Truncated, false)
+	if out.TimedOut {
+		out.ErrorCode = errs.TIMEOUT
+	}
 	if out.ErrorCode != "" && out.ExitCode != nil && *out.ExitCode != 1 && !out.TimedOut && !out.Cancelled &&
 		out.Signal == "" && out.SpawnError == "" && out.CleanupError == "" && !out.Truncated {
 		parsed.Error = fmt.Sprintf("DSH worker exit code %d did not match the expected failure exit 1: %s", *out.ExitCode, parsed.Error)
@@ -432,7 +453,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 	}
 	out.Settled = parsed.Settled && parsed.Error == "" && !out.Cancelled && !out.TimedOut && !out.Truncated &&
 		out.Signal == "" && out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
-	if !out.Settled && !out.Cancelled {
+	if !out.Settled && (!out.Cancelled || out.TimedOut) {
 		if out.ErrorCode == "" {
 			// A successful protocol receipt cannot sanitize a failing process.
 			// Keep logs as diagnostics instead of reclassifying their prose.
@@ -441,7 +462,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		message := parsed.Error
 		switch {
 		case out.TimedOut:
-			message = "DSH worker timed out"
+			message = timeoutMessage("DSH worker", out)
 		case out.SpawnError != "":
 			message = out.SpawnError
 		case out.Truncated:
@@ -460,8 +481,19 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// into a safe replay decision by a successful inner turn.
 		if out.Session == nil || out.TimedOut || out.Cancelled || out.Truncated || out.Signal != "" || out.CleanupError != "" ||
 			out.ExitCode == nil || (parsed.Settled && *out.ExitCode != 0) || (!parsed.Settled && *out.ExitCode != 1) {
+			observed := out.Session
 			out.Session = &SessionOutcome{Protocol: DSHSessionProtocol, RequestID: a.RequestID, SessionID: a.SessionID,
 				Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
+			// Unknown business outcome cannot erase independently verified identity,
+			// dispatch and cleanup. In particular a worker's normal exit 143 after
+			// an owned cancellation is not an unconfirmed native process exit.
+			// Damaged streams, physical signals and cleanup errors still fail closed.
+			if observed != nil && !out.Truncated && out.Signal == "" && out.CleanupError == "" && out.ExitCode != nil {
+				out.Session.SessionID = observed.SessionID
+				out.Session.Dispatch = observed.Dispatch
+				out.Session.CleanupConfirmed = observed.CleanupConfirmed
+				out.Session.ResumeAccepted = observed.ResumeAccepted
+			}
 			if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {
 				out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
 				out.Usage, out.CostUSD = &Usage{}, new(float64)
@@ -473,7 +505,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// request; arbitrary error codes/prose never prove non-dispatch.
 		out.Session = &SessionOutcome{Protocol: DSHFreshSessionProtocol, RequestID: request.RequestID,
 			SessionID: parsed.SessionID, Dispatch: "unknown", Outcome: "unknown",
-			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "", UsageStatus: "unknown"}
+			CleanupConfirmed: parsed.CleanupConfirmed && out.CleanupError == "" && out.Signal == "" && out.ExitCode != nil, UsageStatus: "unknown"}
 		if out.Settled {
 			out.Session.Dispatch, out.Session.Outcome = "dispatched", "completed"
 		} else if out.SpawnError != "" || (out.Cancelled && out.ExitCode == nil && out.Signal == "") {

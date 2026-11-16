@@ -34,7 +34,9 @@ type kimiNativeStart struct {
 	PermissionMode  string           `json:"permissionMode"`
 	Prompt          string           `json:"prompt"`
 	TimeoutMS       int64            `json:"timeoutMs"`
+	IdleTimeoutMS   int64            `json:"idleTimeoutMs,omitempty"`
 	SessionID       string           `json:"sessionId,omitempty"`
+	SessionTitle    string           `json:"sessionTitle,omitempty"`
 	Persistent      bool             `json:"persistent,omitempty"`
 	Native          json.RawMessage  `json:"native"`
 	Managed         *NativeAdmission `json:"managed,omitempty"`
@@ -107,6 +109,7 @@ func parseKimiNativeStream(stdout string, request kimiNativeStart) (Result, erro
 			out.Session, out.NativeReceipt, out.Usage, out.Text, out.SessionID = lifecycle, frame.Native, usage, frame.Text, frame.SessionID
 			out.Settled, out.Cancelled = frame.Status == "ok", frame.Status == "cancelled"
 			if frame.Error != nil {
+				out.TimedOut = frame.Error.Code == string(errs.TIMEOUT)
 				message := frame.Error.Code + ": " + frame.Error.Message
 				out.ErrorMessage = &message
 			}
@@ -123,7 +126,9 @@ func parseKimiNativeStream(stdout string, request kimiNativeStart) (Result, erro
 func runKimiNative(a KimiArgs) Result {
 	r := kimiNativeStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd,
 		Model: a.Model, ReasoningEffort: a.Thinking, PermissionMode: a.PermissionMode, Prompt: a.Prompt,
-		SessionID: a.SessionID, Persistent: a.PersistentSession, Native: a.Native, Managed: a.Managed, TimeoutMS: a.Watchdog.WallTimeoutMs}
+		SessionID: a.SessionID, Persistent: a.PersistentSession, Native: a.Native, Managed: a.Managed,
+		SessionTitle: a.SessionTitle,
+		TimeoutMS:    a.Watchdog.WallTimeoutMs, IdleTimeoutMS: a.Watchdog.IdleTimeoutMs}
 	if r.RequestID == "" {
 		r.RequestID = "native-" + rand.Text()
 	}
@@ -135,6 +140,9 @@ func runKimiNative(a KimiArgs) Result {
 	}
 	if r.TimeoutMS <= 0 {
 		r.TimeoutMS = watchdog.DefaultWallTimeoutMs
+	}
+	if r.IdleTimeoutMS <= 0 {
+		r.IdleTimeoutMS = watchdog.DefaultIdleTimeoutMs
 	}
 	reject := func(detail string) Result {
 		out := invalidHarnessResult("kimi", r.Model, detail)
@@ -168,8 +176,9 @@ func runKimiNative(a KimiArgs) Result {
 		env[KimiCommandEnv] = a.Command
 	}
 	result, writeErr := runMachineWorker(KimiNativeCommand(), "kimi", codexProStart{Protocol: 1}, payload, watchdog.Opts{
-		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env), IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
+		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env), IdleTimeoutMs: r.IdleTimeoutMS,
 		WallTimeoutMs: r.TimeoutMS, KillGraceMs: max(a.Watchdog.KillGraceMs, 15000),
+		StdoutCapture: newKimiActivityCapture(r),
 	}, nil, a.OnEvent)
 	return finishKimiNative(r, result, writeErr)
 }
@@ -178,9 +187,11 @@ func finishKimiNative(request kimiNativeStart, result watchdog.Result, writeErr 
 	parsed, parseErr := parseKimiNativeStream(result.Stdout, request)
 	out := fromWatchdog(result, "kimi", "kimi", request.Model)
 	out.Session, out.NativeReceipt, out.Text, out.Usage, out.SessionID = parsed.Session, parsed.NativeReceipt, parsed.Text, parsed.Usage, parsed.SessionID
-	out.Cancelled = out.Cancelled || parsed.Cancelled
-	out.ErrorMessage = parsed.ErrorMessage
 	valid := parseErr == nil && writeErr == nil && !out.Truncated
+	// Only a trustworthy receipt may add a provider termination cause. Cleanup
+	// cancellation cannot hide a damaged stream, and outer cancellation stays.
+	mergeWorkerTermination(&out, valid && parsed.Cancelled, valid && parsed.TimedOut, false)
+	out.ErrorMessage = parsed.ErrorMessage
 	if !valid {
 		out.Usage, out.Session = nil, &SessionOutcome{Protocol: KimiNativeProtocol, RequestID: request.RequestID, Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}
 		message := fmt.Sprintf("Kimi native transport was not trustworthy: parse=%v write=%v truncated=%v", parseErr, writeErr, out.Truncated)
@@ -199,7 +210,11 @@ func finishKimiNative(request kimiNativeStart, result watchdog.Result, writeErr 
 	}
 	if !out.Settled && !out.Cancelled {
 		out.ErrorCode = errs.TRANSPORT
-		if out.ErrorMessage == nil {
+		if out.TimedOut {
+			out.ErrorCode = errs.TIMEOUT
+			message := timeoutMessage("Kimi native worker", out)
+			out.ErrorMessage = &message
+		} else if out.ErrorMessage == nil {
 			message := "Kimi native worker did not complete successfully"
 			out.ErrorMessage = &message
 		}

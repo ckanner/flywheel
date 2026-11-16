@@ -174,7 +174,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			},
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  apiKeys,
-			Watchdog: c.wdog(),
+			Watchdog: c.wdogFor("execute"),
 		}, c.Drivers.Execute.Execute)
 		if sessionErr != nil {
 			return execOutcome{}, sessionErr

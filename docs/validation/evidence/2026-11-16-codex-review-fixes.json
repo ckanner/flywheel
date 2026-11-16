@@ -1,0 +1,319 @@
+{
+  "recordedAt": "2026-11-16T17:09:14Z",
+  "purpose": "Follow-up closure of child creation snapshot ordering and required machine naming; exact unpublished candidate acceptance",
+  "toolchain": {
+    "go": "1.27.4",
+    "node": "24.22.1",
+    "npm": "11.9.0"
+  },
+  "reviewBaselines": {
+    "flywheel": "294b6db985d9da62f2f33a58307a29bb90919022",
+    "codex": "71f67c469336cde65745d5253a2dabb4c2afd197",
+    "claude": "2b41b87a62d77dc9404a6f10773c086ba01a53ee"
+  },
+  "candidate": {
+    "format_version": 2,
+    "version": "0.35.0",
+    "source": {
+      "commit": "01d3244bc809620506e0611f7f46c74c67c700eb",
+      "tree": "93e2afe124a9ba0c8eee68c95a13549a821f1241",
+      "dirty": false,
+      "snapshot_sha256": "e41b0bc260d529ea5b9e1c0b5c89923c40bcb7a408c5e2b6e130983a6cbc8138"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.35.0",
+        "filename": "ckanner-flywheel-0.35.0.tgz",
+        "bytes": 20031297,
+        "integrity": "sha512-Bze0IlxB2wfw/rNlTlAq8kUgKS9tnYtuFjzgU4VK1XOyZ7eHGvStXGvglaTsjwF32I/Bu8ZwHNxdpY5NpQWmuA=="
+      }
+    ]
+  },
+  "candidateFileSha256": "5299b5b0c88edec5c79796cc1a36b1402ef23d327a31f325b71df4b8cd413c15",
+  "archiveSha256": "884880a06a39aef143cb4f4943955e83b82313c7620935e692ac71376a4ecef0",
+  "nativeManifest": {
+    "protocol": 1,
+    "version": "0.35.0",
+    "platforms": {
+      "darwin-arm64": {
+        "bytes": 10938290,
+        "sha256": "ba2d2a1707f82f8046a9aabc1c2e031bb5771c1326c6108dc7d579ea357388c0"
+      },
+      "darwin-amd64": {
+        "bytes": 11939296,
+        "sha256": "d3d84b53efefaacb831f1c5352eda1bccc8d4b8c452c14160256813dbf0daaa0"
+      },
+      "linux-arm64": {
+        "bytes": 10748064,
+        "sha256": "7dbffbad8d9c2fdaeee909e91a34e7063e51cd5af655fed21c45aa7ecf806c9e"
+      },
+      "linux-amd64": {
+        "bytes": 11710624,
+        "sha256": "d44ee50732c126f664a8724cd8e2eac3dc98bd309d9e21175e6454895e228101"
+      }
+    }
+  },
+  "companions": {
+    "codex-pro": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.10.1",
+      "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
+      "sourceCommit": "f31659536ed085f86c31f28e56a48ebed9d6b85b",
+      "sourceTree": "5135f6d4b00be228e2f8a4c211f6f081406e993e",
+      "tarball": "dsh-subagent-codex-pro-0.10.1.tgz",
+      "sha256": "73a156d24e739e45a35419c3fa6cf6f2ed2ceb12cda2f76c798e75fc2a093473",
+      "integrity": "sha512-588AzKXNdCiU5RtcC/kLICnqegLX4/bf6tgy1rRy60msN45U2WZHfKbyAYnefM3lDdtbQsBwQl5Rh8k521qzwA==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "verificationToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      },
+      "buildToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      }
+    },
+    "claude-code-pro": {
+      "package": "dsh-subagent-claude-code-pro",
+      "version": "0.5.2",
+      "repository": "https://github.com/ckanner/dsh-subagent-claude-code-pro",
+      "sourceCommit": "34291ff600bb70fa7dd628435fa10046c11b21d1",
+      "sourceTree": "ff056d7052706101543c50a9eea701c701271d7d",
+      "tarball": "dsh-subagent-claude-code-pro-0.5.2.tgz",
+      "sha256": "d9f5d764d14a6cd1ead1563c6bd461193132ee1bba04675536ee9d8d2c22884a",
+      "integrity": "sha512-VxtKSiahuszDIHqYPMVimjspDtRNI+DtBdfFLo+AoeSrnLZyStGNla+gX1qpr385uzbeWIv63sAFVvZ0T2+FaA==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "buildToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      },
+      "verificationToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      }
+    }
+  },
+  "oldPackageReproduction": {
+    "nodeWorker": {
+      "tests": 6,
+      "controlsPassed": 2,
+      "expectedFailures": 4
+    },
+    "goBridge": {
+      "tests": 5,
+      "controlsPassed": 2,
+      "expectedFailures": 3
+    }
+  },
+  "validation": {
+    "codex": {
+      "typecheck": "pass",
+      "tests": 278,
+      "passed": 273,
+      "failed": 0,
+      "skippedLiveAccount": 5,
+      "newNativeOrderingTests": 19,
+      "newNamingAdmissionTests": 8,
+      "actualPackInstall": "pass",
+      "installedPublicOrderingCases": [
+        "parent-first",
+        "child-first",
+        "v2-child-first",
+        "next-pending",
+        "next-completed"
+      ],
+      "installedRejectedNamingCases": [
+        "explicit",
+        "fallback"
+      ],
+      "readOnlyRecovery": "pass"
+    },
+    "goQualityGate": {
+      "exitCode": 0,
+      "statementPercent": 100,
+      "everyMeasuredFunctionPercent": 100
+    },
+    "nodeCheck": {
+      "plugin": 491,
+      "hostCompatibility": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "goNodeBridge": {
+      "topLevel": 8,
+      "subtests": 98,
+      "passedLines": 106,
+      "failed": 0,
+      "skipped": 0,
+      "durationSeconds": 101.838
+    },
+    "npmUnit": {
+      "tests": 166,
+      "failed": 0,
+      "skipped": 0
+    },
+    "installedPackage": {
+      "packedHost": 10,
+      "installationAndMigration": 15,
+      "failed": 0,
+      "skipped": 0,
+      "optionalClaudeArchiveInstalledAndExecuted": true
+    },
+    "sessionEvaluation": {
+      "complete": true,
+      "trialCount": 36,
+      "oraclePassCount": 36,
+      "calls": 96,
+      "variants": {
+        "fresh": 12,
+        "executor-scoped": 12,
+        "role-scoped": 12
+      },
+      "scenarioCoverage": {
+        "first-pass": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "l1-repair": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "review-return": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "long-context": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "stop-resume": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "configuration-change": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        }
+      },
+      "nativeEvents": {
+        "spawn": 96,
+        "thread/start": 86,
+        "turn/start": 96,
+        "thread/name/set": 40,
+        "thread/resume": 10
+      },
+      "namedFreshPersistentThreads": 40,
+      "resumesWithoutRename": 10,
+      "resumedThreadNamesPreserved": 10,
+      "allNamesBeforeBusinessPrompt": true,
+      "ephemeralNames": 0,
+      "nameExamples": [
+        "Flywheel · execute/M01-T01 · Immutable integer interval compaction (first-pass)",
+        "Flywheel · execute/M01-T01 · Immutable integer interval compaction (first-pass)",
+        "Flywheel · review/final:M01-T01 · Immutable integer interval compaction (first-pass)"
+      ],
+      "candidateSHA256": "884880a06a39aef143cb4f4943955e83b82313c7620935e692ac71376a4ecef0",
+      "sourceCommit": "01d3244bc809620506e0611f7f46c74c67c700eb",
+      "engineSHA256": "d44ee50732c126f664a8724cd8e2eac3dc98bd309d9e21175e6454895e228101",
+      "engineAndPublicWorkerFromSameIsolatedCandidate": true,
+      "publicWorker": "bin/flywheel-codex-pro-worker.js",
+      "publicWorkerSHA256": "7a633987f320d05ce0885add858e53f6c34a9d32461fa75540eb2aa9edcbcecf",
+      "bundledCodexFilesMatched": 110,
+      "installedCodexFilesMatched": 110,
+      "fullReportSHA256": "11dd0dec1f6ee4c1653fb89fde639d2bd68ff16c2efb05a07179ec9f92913e00",
+      "harnessChange": "Only the block copying source worker files was replaced with the installed candidate public worker; prepare/evaluate code and all assertions were preserved.",
+      "harnessDiffSHA256": "dac2f57502dbbaaa2ff1f5aaf0b78d4f1f5a02070e6d1243be25c5e391b21ed5",
+      "offlineDependencyResolution": "Existing real zod 4.3.6 packed locally because the isolated npm cache lacked registry metadata; candidate bytes remained unchanged.",
+      "exitCode": 0
+    },
+    "claude": {
+      "sourceUnchanged": true,
+      "reviewedHead": "2b41b87a62d77dc9404a6f10773c086ba01a53ee",
+      "archiveFilesMatched": 57,
+      "actualWorkerAndInstallationRegressed": true
+    }
+  },
+  "remoteCISnapshot": {
+    "observedAt": "2026-11-16T17:09:14Z",
+    "codex": {
+      "commit": "f31659536ed085f86c31f28e56a48ebed9d6b85b",
+      "runId": 43913351959,
+      "jobs": [
+        {
+          "name": "test (24.x, macos-latest)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "test (22.x, macos-latest)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "test (24.x, ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "test (22.x, ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "claude": {
+      "commit": "2b41b87a62d77dc9404a6f10773c086ba01a53ee",
+      "runId": 43902455228,
+      "conclusion": "success"
+    },
+    "flywheelSource": {
+      "commit": "01d3244bc809620506e0611f7f46c74c67c700eb",
+      "runId": 43914039570,
+      "jobs": [
+        {
+          "name": "npm-candidate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "name": "test (macos-latest)",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ],
+      "subsequentDocumentationHeadNeedsOwnChecks": true
+    }
+  },
+  "limits": {
+    "merged": false,
+    "published": false,
+    "liveModelAccountTested": false,
+    "desktopAccepted": false,
+    "existingUserSessionsRenamed": false,
+    "localMacOSExecution": false,
+    "goProductionSourceChanged": false,
+    "raceReRunLocally": false,
+    "unknownOutcomeRemainsNonReplayable": true
+  }
+}
+

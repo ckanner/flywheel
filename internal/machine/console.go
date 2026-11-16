@@ -3,7 +3,9 @@ package machine
 import (
 	"errors"
 	"fmt"
+
 	"github.com/ckanner/flywheel/internal/contract"
+	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
 )
 
@@ -96,7 +98,7 @@ func (c *Context) reopenConsolePacket(packetID string) error {
 
 	if c.State.Sessions != nil {
 		for _, record := range c.State.Sessions.Records {
-			if record.Last.Status != "consumed" || !record.Last.CleanupConfirmed {
+			if !state.TerminalSessionStatus(record.Last.Status) || !record.Last.CleanupConfirmed {
 				return fmt.Errorf("reconcile all pending session receipts before reopening a delivered node")
 			}
 		}

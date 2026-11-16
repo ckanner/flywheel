@@ -376,7 +376,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       requireSuccess(probe, 'installed Codex Pro dependency');
       const adapter = parseDocument(probe, 'installed Codex Pro dependency');
       if (adapter.protocol !== 1 || adapter.type !== 'doctor' || adapter.package !== 'dsh-subagent-codex-pro' ||
-          adapter.version !== '0.10.0' || adapter.machineProtocol !== 1 || adapter.available !== true || adapter.inferenceTested !== false) {
+          adapter.version !== '0.10.1' || adapter.machineProtocol !== 1 || adapter.available !== true || adapter.inferenceTested !== false) {
         throw new Error('installed Codex Pro dependency did not verify the exact public machine API');
       }
       report.adapter = { package: adapter.package, version: adapter.version, protocol: adapter.machineProtocol, inferenceTested: false };

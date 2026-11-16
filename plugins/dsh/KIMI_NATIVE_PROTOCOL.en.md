@@ -2,7 +2,7 @@
 
 [中文](KIMI_NATIVE_PROTOCOL.md)
 
-`kimi-native-worker.js` and `runKimiWorker()` implement native Kimi Agent, Swarm and Tower execution for the Go engine. The ordinary Kimi CLI path is unchanged. Go owns role loops, budgets, boundary checks, Review, commits and acceptance; native children belong to one role invocation.
+`kimi-native-worker.js` and `runKimiWorker()` implement native Kimi Agent, Swarm and Tower execution for the Go engine. The ordinary Kimi print inference transport remains separate; new readable-history preparation is described below. Go owns role loops, budgets, boundary checks, Review, commits and acceptance; native children belong to one role invocation.
 
 ## Entry and admission
 
@@ -14,6 +14,7 @@ The worker receives one UTF-8 JSONL `start` on stdin, which the parent keeps ope
   cwd: '/physical/role-worktree', workspaceCwd: '/physical/project',
   model: 'configured-model-alias', reasoningEffort: 'high',
   permissionMode: 'danger-full-access', prompt: 'Role instructions', timeoutMs: 600000,
+  idleTimeoutMs: 300000, // effective parent idle bound; optional, default 300000
   persistent: true, // sessionId is supplied only to resume Agent/Swarm history
   native: {
     version: 1, mode: 'agent', // agent | swarm | tower
@@ -33,7 +34,7 @@ The worker receives one UTF-8 JSONL `start` on stdin, which the parent keeps ope
 
 Every invocation starts foreground `kimi web --no-open --host 127.0.0.1 --port 0`; `FLYWHEEL_KIMI_BIN` may select the CLI. Account login and model configuration remain in `KIMI_CODE_HOME`, defaulting to `~/.kimi-code`; the adapter does not rewrite user configuration. It matches the new child PID, start time and loopback port in the real instance registry, then authenticates with the existing `server.token` and verifies `/meta` server_id, authentication, backend and WebSocket support. CLI startup stdout/stderr may contain the bearer token; raw bytes are neither forwarded nor included in receipts.
 
-Admission reads and hashes actual `/openapi.json` and `/asyncapi.json`, checking required creation/configuration/queue/environment/history/shutdown routes and subscription/task lifecycle messages. Upstream OpenAPI does not fully project the `:abort` action dispatcher, so an actual idempotent abort probe runs on the owned idle session before dispatch. Actual WS agent state must then match model, thinking, permission and plan/swarm/tower flags, and REST must confirm the local execution directory. Only matching facts set `native.effective.matched:true`.
+Admission reads and hashes actual `/openapi.json` and `/asyncapi.json`, checking required creation/configuration/queue/environment/history/shutdown routes and subscription/task lifecycle messages. Creation must expose title, ownership metadata and local environment fields; the returned new history must confirm its requested title, binding and workspace before any task prompt. A mismatched owner is not targeted by session-specific cleanup. Upstream OpenAPI does not fully project the `:abort` action dispatcher, so an actual idempotent abort probe runs on the owned idle session before dispatch. Actual WS agent state must then match model, thinking, permission and plan/swarm/tower flags, and REST must confirm the local execution directory. Only matching facts set `native.effective.matched:true`.
 
 `--doctor` checks only CLI availability and version, returning `inferenceTested:false`. It does not establish mode, account, model or API admission. This interface does not use the obsolete `kimi server` command, an SDK, a named-preset RPC, or arbitrary agent-file loading.
 
@@ -41,7 +42,11 @@ Admission reads and hashes actual `/openapi.json` and `/asyncapi.json`, checking
 
 The worker subscribes to `main` before submission and correlates `prompt_id` with actual `user_message.prompt_ids`; HTTP acceptance and WS events may arrive in either order. The first ordinal is **0**, so fresh history has baseline **-1**. Task/agent_refs observations discover and subscribe child agents. Completion considers native tasks, queues, interactions and session busy state together. The first root turn ending is insufficient; Tower's automatic root continuations must also end.
 
+Observed root/child item, step and lifecycle activity is forwarded as `event` metadata to Go's idle watchdog; reasoning text and tool arguments/results are not copied. High-frequency item/step progress is coalesced across the task tree, with an interval no greater than one second and derived from the effective parent `idleTimeoutMs` (a positive integer, default 300000). `event.coalescedTypes` identifies the progress kinds observed since the previous notification. Lifecycle boundaries and the terminal result are not throttled. Only actual events trigger progress notifications; timers and WebSocket ping/pong do not manufacture model activity. The wall deadline and cancellation/cleanup remain independent bounds.
+
 `native.completion={confirmed,pendingIds}` is captured **before** cleanup. Success requires completed root turns, idle observed children/agents, an empty queue, no pending interaction and consistent final REST/WS reconciliation. Cancelling children during shutdown cannot convert incomplete work to success. Receipts retain actual task/child IDs, states and models.
+
+Conversation observation bounds the retained JSON payload to 64 MiB, not cumulative protocol traffic. Replaced or deleted agent/task/turn state releases its previous allowance; incremental text accounts only for the new fragment. WebSocket updates and final HTTP turn reconciliation share this budget and the existing agent/turn/task count limits. Single-frame, HTTP-response and final-text limits remain separate. Repeated snapshots of the same bounded state do not exhaust an ever-growing traffic counter.
 
 Unexpected approvals/questions return `INTERACTION_REQUIRED`; the adapter fabricates no answer. A lost socket, replaced conversation projection or unknown dispatch never triggers prompt replay. Cancellation withdraws queued prompts before aborting the root turn, stopping observed tasks and awaiting idle. It then disables remote control, shuts down only the owned runtime, and checks process exit and identities of observed descendants. Cleanup has a separate bounded grace. Unconfirmed queue, task or process cleanup leaves both `settled` and `cleanup.confirmed` false.
 
@@ -74,3 +79,37 @@ Only successful native completion, confirmed cleanup and `managed.role==='execut
 `test/kimi-native.test.js` uses actual local HTTP/WS child processes to test all three modes, cross-channel ordering, native children, unknown usage, admission refusals, cancellation, history, CLI lifeline, one final result, token suppression and Tower failure gates. `test/kimi-tower-candidate.test.js` uses actual Git for dirty/untracked/binary/link/mode/deletion cases, linked worktrees, external contracts, candidate conflicts and prompt mapping. These tests contact neither a user account nor a model. CLI availability, real account admission and paid inference are separate evidence.
 
 The implementation was checked against `MoonshotAI/kimi-code` commit `f082f04a093a3e71a2263c5461d52507dc31f83a`: [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md), [sessions/configuration](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md), [conversation/task lifecycle](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md), [Tower](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/guides/tower.md), [instance registry](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/kap-server/src/instanceRegistry.ts), [per-batch Swarm concurrency](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/session/agentRunBatch.ts), and [Tower rate limiting](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/towerRateLimitService.ts). Actual installed runtime probes remain authoritative.
+
+## Named print-session preparation
+
+The same packaged worker accepts a separate `prepare-print` request with protocol,
+requestId, cwd, model, reasoningEffort, sessionTitle and timeoutMs. It rejects prompt
+and sessionId fields. The checked upstream print path submits turns below the TUI
+first-prompt/title service and offers no title CLI option, so native auto-titling
+is not assumed.
+
+An owned authenticated local API runtime verifies the session-creation schema,
+creates an empty named history with the caller's physical workspace, and confirms
+its title, ownership metadata and idle state. It sets only the requested model,
+`permission_mode:auto` and `plan_mode:false` to match fresh print behavior.
+Thinking/profile/environment remain provider defaults; the same existing effort
+environment override is passed to both preparation and print. Both use the same
+KIMI_CODE_HOME. After confirmed physical cleanup, the original print command uses
+`--session` with that new identity and the remaining original wall budget.
+
+The single `prepared-print` receipt has requestId/status/sessionId/sessionTitle,
+cleanupConfirmed, `inferenceDispatched:false` and error. Missing, mismatched or
+unclean preparation prevents task dispatch. No title model is called, no business
+prompt is sent during preparation, and failure does not retry an unknown task.
+Existing histories skip preparation and retain their title. Native `start` also
+accepts sessionTitle, setting it only during new session creation. The display
+title never replaces the opaque session handle used for identity/recovery.
+
+The public create/resume operations open a native session, and close ends it.
+The first named print call therefore adds one preparation session startup and
+shutdown before the ordinary print invocation. Configured `SessionStart` and
+`SessionEnd` hooks run for that extra lifecycle as well. The business prompt is
+still sent exactly once; an existing-history resume skips preparation.
+Agent/Swarm set the title in their existing creation runtime and do not add this
+preparation lifecycle. The adapter does not bypass upstream hooks or treat
+naming as a side-effect-free metadata write.

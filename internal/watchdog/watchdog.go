@@ -30,6 +30,13 @@ const (
 	DefaultKillGraceMs   = 5_000     // SIGTERM → SIGKILL 升级宽限
 )
 
+// Narrow clock/timer seams let tests deliver an already-queued idle callback
+// after fresh output without depending on scheduler timing.
+var (
+	idleNow      = time.Now
+	newIdleTimer = time.AfterFunc
+)
+
 // Result runWithWatchdog 结果。ExitCode 与 Signal 正交记录："超时被 trap 成
 // exit 0"不得读成绿灯。
 type Result struct {
@@ -55,14 +62,29 @@ type Opts struct {
 	IdleTimeoutMs int64
 	WallTimeoutMs int64
 	KillGraceMs   int64
+	// DisableIdleTimeout is for transports whose stdout/stderr cannot expose
+	// ongoing work. Wall timeout, explicit cancellation and group cleanup stay
+	// mandatory; silence alone cannot establish a hang on these transports.
+	DisableIdleTimeout bool
 	// OnActivity 每收到一段输出即回调（chunk, "stdout"/"stderr"）。
 	OnActivity func(chunk string, stream string)
+	// StdoutCapture transforms retained stdout only. Raw bytes still renew idle
+	// and reach OnActivity unchanged; stderr and process cleanup are unaffected.
+	// Protocol adapters may omit verified advisory events from retained memory.
+	StdoutCapture OutputCapture
 	// InteractStdin 可选交互钩子（协议驱动用，如 zcode app-server）：Start 后
 	// 获得子进程 stdin 写入器与 finish 函数——driver 写请求帧、经 OnActivity
 	// 解析事件流，会话结束后调用 finish() 走与超时同一条清理路径（SIGTERM →
 	// grace → SIGKILL → quiescence；kill 开关契约不变）。finish 幂等，调用后
 	// 不得再写 stdin。钩子在独立 goroutine 运行，Run 返回前不等待其退出。
 	InteractStdin func(stdin io.WriteCloser, finish func())
+}
+
+// OutputCapture is owned by one Run. Filter runs on the stdout-copy goroutine;
+// Flush runs once after that goroutine finishes, preserving any incomplete tail.
+type OutputCapture interface {
+	Filter(chunk []byte) []byte
+	Flush() []byte
 }
 
 // ---- 在飞子进程登记表（SIGTERM 全杀的依据）----
@@ -218,9 +240,11 @@ type streamWriter struct {
 	stream       string
 	idleTimer    *time.Timer
 	idleTimeout  time.Duration
+	idleDeadline *time.Time
 	idleTimedOut *bool
 	readError    *error
 	onActivity   func(chunk, stream string)
+	capture      OutputCapture
 }
 
 // ReadFrom 保留管道排空错误。exec.Cmd.Wait 对非零退出优先返回 ExitError，
@@ -238,11 +262,20 @@ func (w *streamWriter) ReadFrom(r io.Reader) (int64, error) {
 
 func (w *streamWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
-	w.buf.Write(p)
 	if w.idleTimer != nil && !*w.idleTimedOut {
-		w.idleTimer.Reset(w.idleTimeout) // 任何活动都证明流还活着
+		*w.idleDeadline = idleNow().Add(w.idleTimeout)
+		w.idleTimer.Reset(w.idleTimeout)
 	}
 	w.mu.Unlock()
+	// Observe the read before parsing/copying it; capture work must not move
+	// the receipt of real output beyond an already-queued idle deadline.
+	retained := p
+	if w.capture != nil {
+		retained = w.capture.Filter(p)
+	}
+	if len(retained) != 0 {
+		w.buf.Write(retained)
+	}
 	if w.onActivity != nil {
 		w.onActivity(string(p), w.stream)
 	}
@@ -291,7 +324,8 @@ func Run(command string, args []string, opts Opts) Result {
 	stdoutBuf := &cappedBuffer{cap: MaxBuffer}
 	stderrBuf := &cappedBuffer{cap: MaxBuffer}
 	stdoutW := &streamWriter{mu: &mu, buf: stdoutBuf, stream: "stdout",
-		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity,
+		capture: opts.StdoutCapture}
 	stderrW := &streamWriter{mu: &mu, buf: stderrBuf, stream: "stderr",
 		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
 	cmd.Stdout = stdoutW
@@ -333,14 +367,32 @@ func Run(command string, args []string, opts Opts) Result {
 		})
 	}
 
-	idleTimer := time.AfterFunc(idleTimeout, func() {
+	var idleTimer *time.Timer
+	if !opts.DisableIdleTimeout {
+		// Reset cannot retract an AfterFunc callback already queued by the
+		// runtime. Decide against the latest deadline under the same lock as
+		// output, and rearm stale callbacks instead of killing renewed work.
 		mu.Lock()
-		if !finished {
+		idleDeadline := idleNow().Add(idleTimeout)
+		idleTimer = newIdleTimer(idleTimeout, func() {
+			mu.Lock()
+			if finished || idleTimedOut {
+				mu.Unlock()
+				return
+			}
+			if remaining := idleDeadline.Sub(idleNow()); remaining > 0 {
+				idleTimer.Reset(remaining)
+				mu.Unlock()
+				return
+			}
 			idleTimedOut = true
-		}
+			mu.Unlock()
+			beginKill()
+		})
+		stdoutW.idleTimer, stderrW.idleTimer = idleTimer, idleTimer
+		stdoutW.idleDeadline, stderrW.idleDeadline = &idleDeadline, &idleDeadline
 		mu.Unlock()
-		beginKill()
-	})
+	}
 	wallTimer := time.AfterFunc(wallTimeout, func() {
 		mu.Lock()
 		if !finished {
@@ -349,13 +401,6 @@ func Run(command string, args []string, opts Opts) Result {
 		mu.Unlock()
 		beginKill()
 	})
-	// 持锁赋值：Start() 后 exec 复制 goroutine 可能已在 Write() 里读
-	// idleTimer——裸写构成数据竞争（-race 实证，Go 迁移遗留）。赋值前的
-	// 早期输出看到 nil 跳过 Reset，与原语义一致（计时器刚以全量时长武装）。
-	mu.Lock()
-	stdoutW.idleTimer = idleTimer
-	stderrW.idleTimer = idleTimer
-	mu.Unlock()
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -376,6 +421,11 @@ func Run(command string, args []string, opts Opts) Result {
 	if err := cmd.Wait(); errors.Is(err, exec.ErrWaitDelay) {
 		res.CleanupError = "child output did not close within cleanup grace"
 	}
+	if opts.StdoutCapture != nil {
+		if tail := opts.StdoutCapture.Flush(); len(tail) != 0 {
+			stdoutBuf.Write(tail)
+		}
+	}
 
 	mu.Lock()
 	finished = true
@@ -392,7 +442,9 @@ func Run(command string, args []string, opts Opts) Result {
 		res.CleanupError = strings.TrimPrefix(res.CleanupError+"; "+err.Error(), "; ")
 	}
 	unregister(child.pid)
-	idleTimer.Stop()
+	if idleTimer != nil {
+		idleTimer.Stop()
+	}
 	wallTimer.Stop()
 	close(child.exited)
 

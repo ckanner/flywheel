@@ -5,8 +5,9 @@
 //	          -c model_reasoning_effort=<effort> -C <cwd> <prompt>
 //
 // stdout 为 JSONL 事件流（thread.started / item.completed / turn.completed /
-// error / turn.failed）——流式输出天然满足看门狗 idle 语义（对比 zcode 一次性
-// 模式的全程静默）。usage 明细在 turn.completed 上暴露：input/cached/cache_write/
+// error / turn.failed）。exec JSONL 不转发连续 reasoning/text delta，正常推理
+// 可以长时间静默，因此只使用有限 wall 期限与取消，不按输出 idle 推断卡死。
+// usage 明细在 turn.completed 上暴露：input/cached/cache_write/
 // output/reasoning 五桶（v0.22 探针实证）。订阅 OAuth 用户侧登录（codex login），
 // 编排器零 key 注入；沙箱按角色选择 read-only 或 workspace-write，审批
 // never，不默认 danger-full-access。版本硬门槛：gpt-6-astra 需 CLI ≥0.154（npm）
@@ -193,13 +194,14 @@ func RunCodex(a CodexArgs) Result {
 	}
 
 	result := watchdog.Run("codex", args, watchdog.Opts{
-		Context:       a.Watchdog.Context,
-		Cwd:           a.Cwd,
-		Env:           childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
-		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs,
-		WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs:   a.Watchdog.KillGraceMs,
-		OnActivity:    onActivity,
+		Context:            a.Watchdog.Context,
+		Cwd:                a.Cwd,
+		Env:                childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, a.APIKeys)),
+		IdleTimeoutMs:      a.Watchdog.IdleTimeoutMs,
+		DisableIdleTimeout: true,
+		WallTimeoutMs:      a.Watchdog.WallTimeoutMs,
+		KillGraceMs:        a.Watchdog.KillGraceMs,
+		OnActivity:         onActivity,
 	})
 	if a.OnEvent != nil {
 		events.flush()

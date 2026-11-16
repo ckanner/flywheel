@@ -108,5 +108,7 @@ cd "$repo_dir" && flywheel run "$task_dir" --only plan
 `awaiting-design-approval` 时让用户在 Flywheel 视图选择“批准此版本”或“批准此版本并开始”；
 CLI 由真实交互终端确认。模型工具不能 approve，也不能通过环境变量伪造人源。
 `needs-user-decision` 说明需要哪项取舍；unknown、清理未确认、预算停止保留原回执，
-先查询原任务，禁止在技能内重试或切 fresh 绕过。Plan 成功不代表代码验收或 PR 完成。
+先查询原任务，禁止在技能内重试或切 fresh 绕过。规划角色的 blocked unknown 由用户在
+视图或 `flywheel session ... --abandon` 退役；模型不能代输确认或把它说成成功，
+之后仍需显式 Plan。Plan 成功不代表代码验收或 PR 完成。
 继续既有实施用 Run；已批准但未授权启动时用视图“开始已批准方案”。

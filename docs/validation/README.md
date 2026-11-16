@@ -11,6 +11,10 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-16 | [Codex 后续复审：子线程状态与命名准入修复](2026-11-16-codex-review-fixes.md) |
+| 2026-11-16 | [Provider 活性与会话名称：交叉复审闭环](2026-11-16-provider-liveness-review-closure.md) |
+| 2026-11-16 | [Provider 活性、终止原因与可读会话名修复验证](2026-11-16-provider-liveness-and-titles.md) |
+| 2026-11-16 | [会话活性与未知规划调用退役实现验证](2026-11-16-session-liveness-abandonment.md) |
 | 2026-11-16 | [受审查规划生命周期：实现、恢复与 Provider 离线验证](2026-11-16-reviewed-planning.md) |
 | 2026-11-15 | [0.34.3 JEV 设置文案发行与桌面验收](2026-11-15-release-0.34.3.md) |
 | 2026-11-15 | [0.34.2 多任务导航、Tab 样式发行与桌面验收](2026-11-15-release-0.34.2.md) |

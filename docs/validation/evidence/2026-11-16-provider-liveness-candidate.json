@@ -1,0 +1,69 @@
+{
+  "recordedAt": "2026-11-16",
+  "purpose": "Offline source-candidate validation; no registry publication",
+  "toolchain": {
+    "go": "1.27.4",
+    "node": "24.22.1",
+    "npm": "11.9.0"
+  },
+  "candidate": {
+    "format_version": 2,
+    "version": "0.35.0",
+    "source": {
+      "commit": "e58e106481e714bd7f019e36ea76c41e26dc523b",
+      "tree": "395aa5dd8278045480b9d1021aa74a6b07ed4b02",
+      "dirty": false,
+      "snapshot_sha256": "638907929a584a62d535732306315c1a5cce3ce6a14c5ea5922abd9eaeaf5853"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.35.0",
+        "filename": "ckanner-flywheel-0.35.0.tgz",
+        "bytes": 20012563,
+        "integrity": "sha512-ZxyDEhdzEIfy9MtpbF4YqyK3Vkt2QHGXczNDvAR72E0FeIkr5+KXYw3Sdry5TWB31nRnJHY/8B3oPNEwE6dGSA=="
+      }
+    ]
+  },
+  "archiveSha256": "fcb37715fd221ed8cd512898208f0298cb7ccf5db7c83852be98effc0e350218",
+  "validation": {
+    "goQualityGate": "pass; every measured function 100%",
+    "goNodeBridge": {
+      "topLevel": 8,
+      "subtests": 90,
+      "failed": 0
+    },
+    "race": [
+      "internal/watchdog",
+      "internal/drivers"
+    ],
+    "nodeCheck": {
+      "plugin": 469,
+      "hostCompatibility": 10,
+      "failed": 0,
+      "skipped": 0,
+      "laterKimiFocused": 27
+    },
+    "npmUnit": {
+      "tests": 166,
+      "failed": 0,
+      "skipped": 0,
+      "laterReleaseEvaluationFocused": 23
+    },
+    "sessionEvaluation": {
+      "trials": 36,
+      "oraclePass": 36,
+      "calls": 96,
+      "newPersistentTitles": 40,
+      "resumesWithoutRename": 10,
+      "stopReason": null
+    },
+    "installedPackage": {
+      "packedHostTests": 10,
+      "installationAndMigrationTests": 15,
+      "failed": 0,
+      "skipped": 0,
+      "actualClaudeOptionalPeer": "0.5.2"
+    }
+  }
+}

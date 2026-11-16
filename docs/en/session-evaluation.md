@@ -106,7 +106,7 @@ Deltas require all three paired policies, matching fixed conditions, and equal o
 The repository provides three distinct evidence paths:
 
 1. `node --test npm/test/session-evaluation.test.js` tests manifest validation, isolation, unknown usage, pairing, and stopping through an explicitly labeled runner protocol fixture.
-2. The command below runs the real Go CLI → worker 3 → actual public Codex 0.9 package → native CLI fixture for 36 trials. The fixture implements native protocol and controlled code work, never Go state/metrics/receipts. The real engine evaluates L1, Review, Git boundaries, and history decisions.
+2. The command below runs the real Go CLI → worker 3 → actual public Codex Pro 0.10.1 API from the reviewed source candidate → native CLI fixture for 36 trials. The fixture implements native protocol and controlled code work, never Go state/metrics/receipts. The real engine evaluates L1, Review, Git boundaries, and history decisions.
 3. `--live` performs actual backend inference and supplies model quality, cache, time, and cost evidence.
 
 ```sh

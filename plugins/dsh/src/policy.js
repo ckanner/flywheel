@@ -4,6 +4,7 @@ import { link, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { readPolicyReceipt, nonempty } from './protocol.js';
 import { createNativePolicy } from './native-policy.js';
+import { createDshActivityPublisher } from './dsh-activity.js';
 
 export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
@@ -41,6 +42,11 @@ export async function apply(ctx, config) {
       (fullAccess ? result.sandbox.denied !== false || result.sandbox.enforcement !== undefined : result.sandbox.enforcement !== 'full')) {
     throw new Error(fullAccess ? 'Flywheel readiness probe did not confirm explicit full access' : 'Flywheel sandbox readiness probe did not prove full enforcement');
   }
+  const activity = config.activity?.version === 1 ? createDshActivityPublisher(ctx, {
+    identity: () => ({ requestId, nonce, rootSessionId: sessionId }),
+    idleTimeoutMs: config.activity.idleTimeoutMs,
+    children: config.native?.agents?.enabled === true,
+  }) : null;
   // Session creation is read-only in rc.1. Agent creation is awaited after
   // that announcement and before the factory admits any model work in both hosts.
   ctx.on('agent/created', async ({ agent }) => {
@@ -68,20 +74,31 @@ export async function apply(ctx, config) {
       // unsupported split workspace-write requests are rejected at admission.
       await ctx.workingDirectory.set(agent, cwd);
     }
-    if (root && sessionTitle && ctx.get('sessionTitle')) {
-      ctx.get('sessionTitle').rename(session, [...sessionTitle].slice(0, 35).join(''));
+    if (root && sessionTitle) {
+      // The public title service owns UTF-8 normalization and its configured
+      // byte limit. An extra character slice discards useful task/scope names.
+      const titles = ctx.get('sessionTitle');
+      if (typeof titles?.rename !== 'function' || typeof titles?.get !== 'function') {
+        throw new Error('Flywheel requires the public sessionTitle service to name a new Session');
+      }
+      const accepted = titles.rename(session, sessionTitle);
+      if (typeof accepted?.title !== 'string' || accepted.title.trim() === '' || titles.get(session)?.title !== accepted.title) {
+        throw new Error('Flywheel could not verify the requested Session title');
+      }
     }
     // Official events remain readable by a later SDK. An ad-hoc Session event
     // would make rc.1 reject the entire persisted log on resume.
     session.append('sandbox/mode', { mode: permissionMode });
     session.append('approval/policy', { policy: 'never' });
     const native = await nativePolicy?.admit(agent, root);
+    activity?.admit(agent, root);
     if (!root) return;
     const policy = ctx.sandboxPolicy.resolve({ session });
     const receipt = {
       protocol: 1,
       requestId, sessionId, nonce,
       ...(native ? { native } : {}),
+      ...(activity ? { activity: activity.capabilities } : {}),
       ...(workspaceCwd === undefined ? {} : { workspaceCwd: session.header.cwd }),
       cwd: policy.workspaceRoot,
       permissionMode: policy.mode,

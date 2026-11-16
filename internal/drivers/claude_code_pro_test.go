@@ -510,7 +510,7 @@ func TestClaudeCodeProRequestByteLimitIncludesEscapingAndNewline(t *testing.T) {
 	cwd, err := filepath.EvalSymlinks(a.Cwd)
 	require.NoError(t, err)
 	request := claudeCodeProStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: cwd,
-		Model: a.Model, ReasoningEffort: "high", PermissionMode: a.PermissionMode, TimeoutMS: a.Watchdog.WallTimeoutMs}
+		Model: a.Model, ReasoningEffort: "high", PermissionMode: a.PermissionMode, TimeoutMS: a.Watchdog.WallTimeoutMs, IdleTimeoutMS: a.Watchdog.IdleTimeoutMs}
 	empty, err := json.Marshal(request)
 	require.NoError(t, err)
 	available := claudeCodeProRequestBytes - len(empty) - 1

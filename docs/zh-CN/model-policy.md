@@ -61,7 +61,7 @@ ChatGPT 与 Kimi 订阅同样需要相应适配器或 CLI，以及其支持的�
 
 | 已核对的集成 | 可请求的值 | 说明 |
 |---|---|---|
-| GPT-6.1 Sol／Codex Pro 0.10.0 | `low`、`medium`、`high`、`xhigh`、`max` | machine API 传递指定 effort |
+| GPT-6.1 Sol／Codex Pro 0.10.1 | `low`、`medium`、`high`、`xhigh`、`max` | machine API 传递指定 effort |
 | Sol、Astra／DSH ChatGPT provider | `low`、`medium`、`high`、`xhigh`、`max` | provider 序列化为 `reasoning.effort` |
 | Kimi K3.1 Pro／原生 CLI | `low`、`high`、`max` | 不能关闭 thinking；兼容别名 `xhigh`、`max`、`ultra` 都映射到原生 `max` |
 | DeepSeek Flash／已核对的 DSH adapter | `off`、`low`、`high`、`max` | 此适配器拒绝 `medium` 和 `xhigh` |

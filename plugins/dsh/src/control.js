@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { directory, nonempty, record, validInvestigationCommand } from './protocol.js';
 import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
+import { validSessionUserAction } from './session-control.js';
 
 const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
@@ -31,7 +32,19 @@ export async function validateControl(input, defaultCwd) {
   if ('mode' in input && (!['launch', 'start'].includes(input.action) || !['auto', 'quick', 'full'].includes(input.mode))) {
     throw new Error('mode must be auto, quick, or full and is only supported by launch/start');
   }
-  if (input.action === 'session' ? !record(input.session) || !['claim', 'send', 'return', 'reconcile', 'release'].includes(input.session.action) || typeof input.session.key !== 'string' || !Number.isSafeInteger(input.session.revision) || input.session.revision < 1 : 'session' in input) throw new Error('session requires a typed revision-bound command');
+  if (input.action === 'session') {
+    if (!record(input.session) || !['claim', 'send', 'return', 'reconcile', 'release', 'abandon'].includes(input.session.action) ||
+        typeof input.session.key !== 'string' || !Number.isSafeInteger(input.session.revision) || input.session.revision < 1) {
+      throw new Error('session requires a typed revision-bound command');
+    }
+    if (input.session.action === 'abandon' && (typeof input.session.reason !== 'string' || input.session.reason.trim() === '' ||
+        Buffer.byteLength(input.session.reason) > 1000 || typeof input.session.invocation !== 'string' || input.session.invocation.trim() === '' ||
+        input.session.invocation.length > 200 || 'prompt' in input.session)) {
+      throw new Error('session abandonment requires a bounded reason, the exact invocation, and no prompt');
+    }
+  } else if ('session' in input) {
+    throw new Error('session requires a typed revision-bound command');
+  }
   if (input.action === 'history' ? typeof input.sessionKey !== 'string' || !input.sessionKey : 'sessionKey' in input) throw new Error('history requires an exact session key');
   if (input.session && Buffer.byteLength(JSON.stringify(input.session)) > 131072) throw new Error('session command too large');
   if (['delivery','deliver'].includes(input.action) ? !record(input.delivery) || (input.action === 'delivery' ? input.delivery.action !== 'inspect' : !['create','merge'].includes(input.delivery.action) || input.delivery.confirmed !== true) : 'delivery' in input) throw new Error('delivery writes require explicit confirmation');
@@ -94,7 +107,7 @@ function validDiagnostic(value, request) {
 }
 
 /** Only the engine executable can mutate engine state. No shell interpolation. */
-export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, signal, timeoutMs = 60000 } = {}) {
+export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, sessionUserAction, signal, timeoutMs = 60000 } = {}) {
   let request;
   try {
     nonempty(binary, 'flywheelBinary', 4096);
@@ -105,6 +118,14 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     request = await validateControl(input, defaultCwd);
     if (request.planning?.action === 'approve' && !validPlanningUserAction(planningUserAction, request.planning)) throw new Error('Design approval requires a verified human command');
     if (planningUserAction !== undefined && request.planning?.action !== 'approve') throw new Error('User approval proof is only valid for design approval');
+    if (request.session?.action === 'abandon') {
+      // First bind authority to the exact user event, including its original
+      // path spelling. Only then use the resolved task identity for both argv
+      // and the engine proof (macOS aliases, symlinks and trailing slashes).
+      if (!validSessionUserAction(sessionUserAction, request.session, input.taskDir)) throw new Error('Unknown-invocation abandonment requires a verified human command');
+      sessionUserAction = { ...sessionUserAction, taskDir: request.taskDir };
+    }
+    if (sessionUserAction !== undefined && request.session?.action !== 'abandon') throw new Error('Session abandonment proof is only valid for abandon');
     if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   } catch (error) {
     throw new ControlNotDispatchedError(error);
@@ -125,8 +146,10 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
   const env = { ...process.env };
   delete env.DSH_SESSION_ID;
   delete env.FLYWHEEL_PLANNING_USER_ACTION;
+  delete env.FLYWHEEL_SESSION_USER_ACTION;
   if (typeof hostSessionID === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(hostSessionID)) env.DSH_SESSION_ID = hostSessionID;
   if (planningUserAction !== undefined) env.FLYWHEEL_PLANNING_USER_ACTION = JSON.stringify(planningUserAction);
+  if (sessionUserAction !== undefined) env.FLYWHEEL_SESSION_USER_ACTION = JSON.stringify(sessionUserAction);
   return new Promise((resolve, reject) => {
     let child;
     try {

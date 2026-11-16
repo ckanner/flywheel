@@ -47,11 +47,20 @@ func toSpawnResult(r drivers.Result) errs.SpawnResult {
 	return sr
 }
 
-func (c *Context) wdog() watchdog.Opts {
+func (c *Context) wdogFor(role string) watchdog.Opts {
+	idle, wall := c.Config.Watchdog.IdleTimeoutMs, c.Config.Watchdog.WallTimeoutMs
+	if override, ok := c.Config.Watchdog.Roles[role]; ok && role != "" {
+		if override.IdleTimeoutMs > 0 {
+			idle = override.IdleTimeoutMs
+		}
+		if override.WallTimeoutMs > 0 {
+			wall = override.WallTimeoutMs
+		}
+	}
 	return watchdog.Opts{
 		Context:       c.RunContext,
-		IdleTimeoutMs: c.Config.Watchdog.IdleTimeoutMs,
-		WallTimeoutMs: c.Config.Watchdog.WallTimeoutMs,
+		IdleTimeoutMs: idle,
+		WallTimeoutMs: wall,
 		KillGraceMs:   c.Config.Watchdog.KillGraceMs,
 	}
 }

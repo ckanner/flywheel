@@ -126,8 +126,8 @@ const zh = {
   busyOther: '正在等待上一个目录的“{action}”结束；其结果不会覆盖当前选择',
   mutationLock: '操作结果确认前，保持当前任务关联并暂停后续操作',
   unknownOutcome: '“{action}”结果未确认',
-  unknownHelp: '请求可能已经送达引擎。先刷新这个任务的状态，再决定下一步操作',
-  reconcile: '刷新待确认任务',
+  unknownHelp: '请求可能已经送达引擎。刷新只确认这次控制动作是否送达；它不会退役引擎中已未知的会话调用。',
+  reconcile: '刷新控制状态',
   errorTitle: '“{action}”未完成',
   errorHelp: '检查连接和目录后，重新执行这项只读检查',
   notDispatchedTitle: '“{action}”未发送到引擎',
@@ -267,8 +267,8 @@ const en = {
   busyOther: 'Waiting for “{action}” for the previous directory; its result will not replace the current selection',
   mutationLock: 'Task and project directories are locked until start or stop is confirmed',
   unknownOutcome: '“{action}” outcome is unconfirmed',
-  unknownHelp: 'The request may have reached the engine. Refresh this task before choosing the next action.',
-  reconcile: 'Refresh unconfirmed task',
+  unknownHelp: 'The request may have reached the engine. Refresh confirms only whether this control action was delivered; it does not retire an unknown engine session invocation.',
+  reconcile: 'Refresh control state',
   errorTitle: '“{action}” did not complete',
   errorHelp: 'Check the connection and directories, then retry this read-only check.',
   notDispatchedTitle: '“{action}” was not dispatched to the engine',
@@ -411,6 +411,13 @@ function taskLabel(value, t) {
   return key ? t(key) : t('unknownState', { status: textValue(value.state.status, t('unreported')) });
 }
 
+function validSessionControl(value) {
+  return record(value) && typeof value.key === 'string' && value.key !== '' &&
+    typeof value.action === 'string' && value.action !== '' && typeof value.applied === 'boolean' &&
+    Number.isSafeInteger(value.revision) && value.revision >= 0 &&
+    ['status', 'invocation', 'message'].every(key => value[key] === undefined || typeof value[key] === 'string');
+}
+
 function readReply(reply, request) {
   if (!reply?.ok) throw new Error(reply?.error?.message ?? 'DSH command transport failed');
   const result = reply.value?.result;
@@ -462,7 +469,8 @@ function readReply(reply, request) {
       (request.action === 'investigate' && !value.preparation && !investigationStatusAfterHandoff)) throw new Error('Flywheel control returned malformed investigation status');
   if ((state?.planning !== undefined && !validPlanningSnapshot(state.planning)) ||
       (request.action === 'planning' && !state?.planning) ||
-      (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control']))) throw new Error('Flywheel control returned malformed planning status');
+      (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control'])) ||
+      (value['session-control'] !== undefined && !validSessionControl(value['session-control']))) throw new Error('Flywheel control returned malformed planning or session status');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }

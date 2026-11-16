@@ -87,6 +87,8 @@ func TestRunDSHPreservesStructuredErrorsAndUnconfirmedCleanup(t *testing.T) {
 			require.NotNil(t, result.ErrorMessage)
 			if scenario == "structured-quota" {
 				assert.Equal(t, errs.QUOTA, result.ErrorCode)
+			} else if scenario == "error-before-timeout" {
+				assert.Equal(t, errs.TIMEOUT, result.ErrorCode)
 			} else if scenario == "error-exit-zero" || scenario == "error-exit-other" {
 				assert.Equal(t, errs.TRANSPORT, result.ErrorCode)
 			} else {
@@ -99,7 +101,8 @@ func TestRunDSHPreservesStructuredErrorsAndUnconfirmedCleanup(t *testing.T) {
 				assert.Contains(t, *result.ErrorMessage, "请重新检查账号状态")
 			case "error-before-timeout":
 				assert.True(t, result.TimedOut)
-				assert.Contains(t, *result.ErrorMessage, "timed out")
+				assert.False(t, result.Cancelled)
+				assert.Contains(t, *result.ErrorMessage, "wall timeout")
 			case "error-exit-zero", "error-exit-other":
 				assert.Contains(t, *result.ErrorMessage, "did not match the expected failure exit 1")
 			default:

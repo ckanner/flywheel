@@ -5,6 +5,89 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased — Session liveness and unknown-invocation retirement
+
+- Preserve real root and owned-child activity across DSH, Codex Pro and Claude
+  Code Pro, independently of completed messages, native ledger deduplication and
+  explicit native settings. Expose a metadata-only public activity contract and
+  an optional DSH host service; no timer fabricates provider progress.
+- Bound individual frames, retained results and display history instead of
+  accumulating the entire raw progress stream. Keep the final receipt available
+  after long healthy output, and preserve protocol/identity errors.
+- Preserve TIMEOUT as the initiating cause when cleanup cancels a native child,
+  retaining trusted cleanup and session evidence without inventing a model outcome.
+  The legacy Codex exec transport uses wall-only, as Kimi print does.
+- Name new DSH, Codex Pro, Claude Code Pro and Kimi sessions from the task and
+  role, preserving names on resume. Kimi print prepares a named empty history
+  through its public local API, with no prompt or extra model call and the same
+  wall budget and original print policy. The first named print call adds one
+  native startup/shutdown, including configured SessionStart/SessionEnd hooks;
+  its business prompt is still dispatched once.
+- Pin reviewed Codex Pro 0.10.1 and Claude Code Pro 0.5.2 candidate archives.
+  Claude queries verify supported partial/child streaming CLI flags before task
+  dispatch. Source/candidate verification does not publish either companion.
+- Reject stale or foreign Codex child attribution, bound retained native/usage
+  evidence, and keep Claude ambient watchers separate from current task runs.
+  An incomplete child-ownership ledger cannot attest remote cleanup; local
+  process cleanup remains independently recorded.
+- Preserve Codex child turn and closure facts over delayed creation snapshots,
+  including V2 started markers; genuine subsequent turns and queued follow-up
+  work still require completion. Regress both event orders through the worker
+  and Go driver using the exact bundled companion.
+- Preserve parent-only Codex child terminal evidence through repeated creation
+  snapshots before any child turn ID is known, without inventing turn or usage
+  facts. Pin the repaired companion archive and exercise its public worker.
+- Require confirmed Codex naming before a new persistent machine task is sent.
+  A failed explicit or fallback title write preserves the known thread,
+  not-dispatched status and physical cleanup in the durable failure receipt.
+- Count Kimi native retained state instead of cumulative snapshot traffic, with
+  the same bounded accounting for WebSocket updates and final HTTP reconciliation.
+  Verify a new native history's requested title and ownership before dispatch.
+- Require intact, correlated evidence for provider stop and cleanup facts.
+  Valid worker observation errors can still preserve independently verified
+  cleanup; derived cancellation never hides the original error or grants resume.
+
+- Add per-role watchdog overrides. Planning roles default to a 900-second idle
+  timeout while execute/review keep 300 seconds where output activity can be
+  observed. Kimi print buffers output and omits thinking/child progress, so it
+  uses its finite role wall deadline and cancellation without an idle timer.
+  Native Kimi forwards actual item/step progress as metadata. Recheck current
+  idle deadlines to reject stale queued timer callbacks. Process-group cleanup
+  remains mandatory.
+- Make the planning prompt capability-aware: when the harness has no observable
+  native child lifecycle (plain Kimi print), background/async subagents are
+  explicitly disallowed and investigation must stay in the foreground to collect
+  results within the owned call. This prompt constraint is not a liveness proof.
+- Add an explicit human-only retirement action for blocked planning invocations
+  with unknown dispatch/outcome. It preserves the unknown facts and audit trail,
+  applies no result, never resumes the old thread, cancels the associated
+  planning request, and allows a later explicit Plan to create a new generation.
+  The model tool cannot call it; the CLI requires a controlling terminal and the
+  Flywheel view requires an exact user command. The proof is bound to the task
+  directory, key, revision, reason and exact invocation; a matching planning
+  request must still be pending/running and the audit records the invocation.
+  Abandoned records count as settled in console reopen and investigation gates.
+  Retire a precisely matching legacy Kimi resident Plan cache atomically and
+  retain thread/unknown facts in the audit history across later generations.
+  Validate the original DSH user command before binding its proof to a canonical
+  task path; aliases remain usable without weakening cross-task protection.
+- Return an explicit `session-control.applied/status/message/invocation` receipt
+  for asynchronous session commands instead of leaving callers to infer success
+  from the control envelope. Compute it from the command's before/after state so
+  send, return, claim and release cannot report a stale success. Clarify that the
+  workbench refresh only reconciles the plugin's unconfirmed control action.
+  Reconcile also reports a real pending-handoff transition after pre-dispatch
+  cancellation, even when the invocation receipt was already consumed.
+  If the pre-command invocation is unavailable, preserve the observed after-state
+  and report that the effect cannot be verified; do not mislabel an existing
+  handoff or consumed receipt as success by the latest command.
+- Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
+- Give defect-injection rollback its effective independent 1–10 second budget
+  in both the cancellation context and command watchdog, preserving the
+  10-second unspecified default. Keep timeout/cancellation and cleanup assertions
+  while removing unrelated sub-second Git and shell-fork timing dependencies
+  from the liveness regression fixtures.
+
 ## 0.35.0 — Reviewed planning
 
 - Start New from a thin original brief, run bounded design and independent

@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/session-recovery.md) · 简体中文
 
 Flywheel 分别处理角色对话历史续用和中断调用恢复。fresh 与 scoped 都保留调用安全
-检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.0** 或 **Claude Code Pro 0.5.1**；
+检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.1** 或 **Claude Code Pro 0.5.2**；
 DSH 与 Kimi 继续使用各自支持的恢复路径。
 
 ## 恢复已有任务
@@ -18,6 +18,84 @@ flywheel control start --cwd /repo --task-dir /repo/docs/my-task
 引擎会先核对先前的调用，再决定能否发起新请求。`pending` 或 `unknown` 可能使任务
 保持阻断；应保留 journal 和诊断，不要删除状态或改成 fresh 会话来强行继续。
 状态回复描述当前事实，不代表可以重放尚未确认的调用。
+
+## 可观察的进展与调用时限
+
+idle timeout 表示在配置的静默预算内没有收到可观察活动，不证明模型停止思考、
+工具死锁或 Provider 拒绝请求。wall timeout 限制整次调用的总时长，即使持续有
+进展也会生效。用户主动取消是另一种原因：子进程为了超时清理而确认 cancelled，
+不会把原来的 idle／wall timeout 改成用户取消。
+
+能观察到哪些进展，取决于实际 transport：
+
+| 调用方式 | Flywheel 观察的进展 | 时限 |
+|---|---|---|
+| DSH SDK，包括一次性预热 | 已接纳根 Agent 和 owned local children 的公开 assistant-stream；已集成外部 Codex／Claude Provider 的有效回调 | 可配置的 idle 静默预算与 wall 总期限 |
+| Codex Pro 0.10.1 / Claude Code Pro 0.5.2 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
+| Kimi native | 归属于已接纳调用及 Agent 树的受支持原生事件 | 可配置的 idle 静默预算与 wall 总期限 |
+| Kimi print / 旧 `codex exec` | 没有足以持续判断进展的输出契约 | 保留 wall 总期限，不因 print 静默执行 idle 终止 |
+
+DSH 覆盖父 Agent 在 PTC 中等待、只有 owned native child 持续流式输出的情况。
+外部 Provider、foreground PTC 和 background job 使用同一个版本化可选 Flywheel
+活动服务；旧插件或未接入此回调的其他插件，在正常输出事件之间仍不可观察。
+启动、首事件前等待、静默工具及不支持的 Provider 阶段仍可能耗尽配置的静默预算。
+ready capability 如实列出这些边界，不承诺所有仍在运行的操作都会持续产生事件。
+
+DSH 和 Pro 插件的活动从真实观察合并而来，只包含事件类型、次数和 root／child
+范围，不带模型文本、隐藏推理或工具正文。计时器、ping 或人工心跳不会被用来维持调用。
+活动是辅助观察，不是派发 ACK、业务结果、token 账单或清理证明。已校验的活动帧
+不会累计挤掉有界 stdout 捕获中的终态回执；损坏或身份不匹配的帧仍使协议失败。
+
+子任务归属必须匹配当前父 turn 和实际发送线程。旧轮次的 collaboration 事件、
+外来线程都不能建立归属。Claude 的 ambient 后台监听任务不计入工作活性或完成
+账本，后续 progress 即使省略 ambient 标记也保留这一分类。Claude init 之前的
+启动 hook，只有 session ID 匹配调用方指定的新建／恢复历史时才计为活动。
+
+传输流量与实际保留状态分别受限。Kimi native 的重复快照替换旧状态，不累计
+消耗传输流量配额；Codex 保留的 native 归属与 usage 证据计入内存预算。单帧、
+保留状态与最终结果的上限仍然有效。
+
+DSH 调用中断后，完整且身份匹配的回执与正常进程退出，可以独立保留实际
+Session ID、dispatch 事实及 SDK cleanupConfirmed；业务 outcome 仍为 unknown，
+自动重放仍被阻止。截断／损坏传输、物理终止信号、缺少退出证据或清理未知，
+不能提供这种证明。应使用下文既有的核对和人工规划退役入口；修改 timeout
+不会解除先前未知调用的责任。
+Pro 回执遵循相同边界：内层 ownership 不匹配、缺少 lifecycle 证据或外层流损坏，
+都不能提供可信的 timeout、cancelled 或 cleanup 事实。原始回执仍保留供检查；
+Go 自身观察到的超时和调用方取消不因此失效。
+合法的 worker 进度／native 元数据校验错误或观察配额错误，与传输损坏不同。
+其完整且身份匹配的清理回执可以保留独立核验的身份、usage 和 cleanup；业务结果
+仍为 unknown，不能据此授予续跑 checkpoint，也不把清理所用的取消当作首因。
+
+## 可读的原生会话名称
+
+新建 DSH、Codex Pro、Claude Code Pro 和 Kimi 会话时，Flywheel 根据任务标题或
+目标、角色及适用的工作范围生成可读名称。request ID 等技术标识仍保存在账本和
+回执中。续接已有会话保留原名称，包括用户手动修改的名称。命名不额外调用模型，
+不改变选定模型、思考级别、任务权限或恢复身份。
+
+DSH 使用公开 title 服务并验证已接受的 snapshot，由原生 UTF-8 字节限制处理
+截断。显式请求新标题而服务缺失或回读失败时，会在任务 prompt 前拒绝派发。
+Codex／Claude Pro 使用各自受支持的原生命名接口。Codex 新建持久线程必须先
+确认名称写入，才会发送 `thread-ready` 和任务。写入失败返回 `thread-name`
+失败，保留 `not-dispatched`、已知 thread ID 与独立核验的清理事实；只读恢复
+不重试命名或任务。仅存在一个空线程不代表它已经可以续接。旧 `codex exec`
+不会因为共享新的超时策略就自动获得这种命名能力。
+
+Kimi print 没有对应的 print title 参数。新建带名称的调用时，Flywheel 先通过
+公开 Kimi session API 创建 idle 会话，验证名称与归属，并确认其拥有的准备
+运行时已退出，再让 print 续接这个准确的会话。准备阶段不发送任务 prompt，
+不进行标题生成推理，和正式执行共用同一个 wall 预算；原 print 的模型、auto
+权限及有条件的 thinking effort 行为保持一致。API 不支持或准备清理未确认时
+不派发；恢复已有会话不重新做这一步。
+
+这次准备使用的公开 Kimi API 会打开并关闭原生会话。因此首次具名 print 若配置
+了 `SessionStart` / `SessionEnd` hook，会在正式 print 续接之前多执行一轮
+启动／关闭 hook；业务 prompt 仍只发送一次。Agent／Swarm 在原有创建流程中
+直接设置名称，不需要这次额外生命周期。
+
+这些契约由真实已发布 SDK、公开插件接口及离线模型／CLI fixture 的确定性
+测试覆盖，不代表已经验证真实账号可用性、Provider 性能或桌面 UI 行为。
 
 ## 谁拥有哪些事实
 
@@ -54,6 +132,29 @@ Go 将事件与原调用身份核对后，先原子保存并 `fsync` 检查点�
 | `unknown` / 损坏 / 错配 | 无法证明该次调用结果，保留证据并阻断；不能换 fresh、换后端或删账本来重放 |
 
 只读查询可以重复。原生机器、历史文件或 journal 不可用时，不承诺跨机器恢复。supervisor 自身也被终止时可能只剩 pending；本实现没有 exactly-once 执行保证。
+
+### 人工退役未知的规划调用
+
+规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）的调用如果没有可信 dispatch/outcome，且没有可恢复的 journal，可以明确退役，而不是让整个任务永久锁死。这个动作不是恢复或重放：它保留 unknown 事实，只结束该次调用的副作用范围。
+
+```sh
+flywheel session /absolute/repo/docs/my-task \
+  --key design-plan/planning:engine-1-1 \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+要求：记录为 `blocked`、已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown；角色必须是规划角色。命令在控制终端显示准确调用 ID 并要求输入 `abandon <invocation>`；Flywheel 视图的同一动作只接受来源为真实用户的 `/flywheel` 命令。证明绑定 taskDir、key、revision、reason 和准确 invocation，不能跨任务或重复使用；模型工具不暴露该动作。有完整 shell 的模型进程已能直接改写 state.json，不属于本宿主证明边界。
+
+退役后记录变为 `abandoned`，保留原因、时间、来源和旧 thread 证据；旧 thread 永不续用。不应用任何阶段结果，也不再次调用模型。关联规划 request 标为 `cancelled`，任务回到 `paused`；之后显式运行 Plan 会创建新 request。`control session` 会返回 `session-control.applied/status/message`，不能用控制信封的 `ok:true` 推断退役成功。
+
+旧 Kimi resident Plan 的精确关联续会话缓存，会在同一次状态保存中同步退役；其他线程和未知缓存仍保持阻断。原线程和 unknown dispatch/outcome 另保留在审计历史中，后续旧式调用覆盖 session 最新记录时不会丢失。DSH 先核对原始用户命令，再把引擎证明绑定到规范化任务路径；符号链接别名、尾斜线仍指向同一任务，但证明不能跨任务复用。
+
+人工 send 在派发前取消时，可能留下已 consumed 的回执和 pending 接管状态。Reconcile 清除 pending 后，会按这次真实转换报告 applied；重复核对已完成状态不算新成功动作。
+如果无法读取操作前的 invocation，回执保留已观察到的操作后状态，但不能证明
+这是本次命令造成的变化。此时 `applied:false` 的 message 会明确说明无法验证、
+命令可能已经执行；应先刷新状态再进行下一次修改，不能把它当作未执行的证明。
+
+这不是“删除账本来重放”：原账本、receipt 和 unknown 证据仍保留。不要手改 `state.json` 或搬走 `.sessions/` 来伪造终态。
 
 ### 回执成功仍须有原候选证据
 
@@ -143,4 +244,4 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 上游恢复目录与文件使用私有权限、独占创建、身份/摘要检查和原子持久化；已存在目录不会触发二次执行。它们属于任务审计证据，可能含模型输出与诊断。按任务一起保存、备份和控制访问，不复制凭证，也不因安装升级而删除未知调用的证据。
 
-当前没有自动删除这些恢复证据的保留计时器。确认任务完成或由人解决未知结果之后，才能按项目的任务归档流程处理；删除 journal 不是解除阻断的恢复方法。`control status`/doctor 是查看入口，模型与 skills 不修改 `state.json`。需要恢复时仍从原任务目录使用正常 Go 启动入口，由引擎核对并决定下一步。
+当前没有自动删除这些恢复证据的保留计时器。确认任务完成，或对规划角色使用上面的显式退役动作之后，才能按项目的任务归档流程处理；删除 journal 不是解除阻断的恢复方法。`control status`/doctor 是查看入口，模型与 skills 不修改 `state.json`。需要恢复时仍从原任务目录使用正常 Go 启动入口，由引擎核对并决定下一步。

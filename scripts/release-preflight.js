@@ -28,13 +28,13 @@ function validatePackages(manifests, requestedVersion) {
   if (Object.keys(meta.optionalDependencies ?? {}).length || Object.keys(meta.dependencies ?? {}).some(name => name.startsWith('@ckanner/flywheel') || name === '@ckanner/dsh-plugin-flywheel')) {
     throw new Error('Flywheel must carry its own native binaries and plugin, not depend on legacy split packages');
   }
-  if (meta.dependencies?.['dsh-subagent-codex-pro'] !== '0.10.0' || JSON.stringify(meta.bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro', 'dsh-preset-generator'])) {
+  if (meta.dependencies?.['dsh-subagent-codex-pro'] !== '0.10.1' || JSON.stringify(meta.bundledDependencies) !== JSON.stringify(['dsh-subagent-codex-pro', 'dsh-preset-generator'])) {
     throw new Error('The reviewed Codex Pro source candidate must be pinned and bundled');
   }
   if (meta.dependencies?.['dsh-preset-generator'] !== '0.4.0') throw new Error('The shared PTC composition source must be pinned and bundled');
   if (meta.peerDependencies?.['dsh-plugin-lcu'] !== '0.5.0' || meta.peerDependenciesMeta?.['dsh-plugin-lcu']?.optional !== true) throw new Error('Managed LCU must remain an explicit optional peer');
-  if (meta.peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.5.1' || meta.peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true || meta.dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
-    throw new Error('Claude Code Pro must remain an optional peer pinned to machine-compatible 0.5.1');
+  if (meta.peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.5.2' || meta.peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true || meta.dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
+    throw new Error('Claude Code Pro must remain an optional peer pinned to machine-compatible 0.5.2');
   }
   const exports = { '.': './dist/index.mjs', './client': './dist/client.js', './worker-policy': './dist/policy.mjs', './worker': './dist/worker.mjs', './codex-pro-worker': './dist/codex-pro-worker.mjs', './claude-code-pro-worker': './dist/claude-code-pro-worker.mjs', './kimi-native-worker': './dist/kimi-native-worker.mjs', './native-jobs': './dist/native-jobs.mjs', './package.json': './package.json' };
   for (const [key, value] of Object.entries(exports)) if (meta.exports?.[key] !== value) throw new Error(`Missing unified package export ${key}`);

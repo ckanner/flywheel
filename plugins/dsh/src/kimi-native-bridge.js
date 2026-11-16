@@ -2,22 +2,56 @@ import { isAbsolute } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { OwnedKimiRuntime, KimiSocket, inspectKimiSchemas, digest, error, pause, checkAbort } from './kimi-native-runtime.js';
 import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, towerCandidateReceipt, towerPrompt } from './kimi-tower-candidate.js';
+import { validateObservationRequest } from './machine-worker.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const identifier = value => typeof value === 'string' && value.trim() && value.length <= 512 && !/[\0\r\n]/.test(value);
 const encoded = value => encodeURIComponent(value);
+// Only real session events refresh the parent's output watchdog. Forward the
+// identity/type, never model reasoning, streamed text or tool argument/results.
+// A transport ping is not model progress and is deliberately not included.
+const activityEvents = new Set(['agent', 'task', 'turn.started', 'turn.updated', 'turn.ended',
+  'item.started', 'item.updated', 'item.delta', 'item.ended', 'item.removed', 'turns.removed', 'interaction']);
+const progressEvents = new Set(['turn.updated', 'item.updated', 'item.delta']);
+
+// Liveness needs evidence of recent work, not one log line per token. Bound
+// progress notifications across the entire tree so a long streamed answer
+// cannot exhaust the parent's output buffer. Only a real event can emit one;
+// no timer, ping, or locally synthesized heartbeat extends the idle deadline.
+export function createKimiActivityReporter(idleTimeoutMs, emit, now = () => performance.now()) {
+  const interval = Math.min(1000, Math.max(1, Math.floor(idleTimeoutMs / 4)));
+  const pendingTypes = new Set();
+  let lastProgress = -Infinity;
+  return frame => {
+    if (!activityEvents.has(frame.type) || !identifier(frame.agent_id)) return;
+    const event = { type: frame.type, agentId: frame.agent_id, taskId: frame.task_id,
+      turnId: frame.turn_id ?? frame.turn?.turn_id, itemId: frame.item_id ?? frame.item?.item_id,
+      status: frame.status ?? frame.turn?.status, outcome: frame.outcome ?? frame.turn?.outcome };
+    if (progressEvents.has(frame.type)) {
+      pendingTypes.add(frame.type);
+      const at = now();
+      if (at - lastProgress < interval) return;
+      lastProgress = at;
+      event.coalescedTypes = [...pendingTypes];
+      pendingTypes.clear();
+    }
+    emit(event);
+  };
+}
 
 export function validateKimiNativeStart(input) {
   if (!object(input) || input.type !== 'start' || input.protocol !== 1 || !identifier(input.requestId)
-      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'sessionId', 'persistent', 'native', 'managed'].includes(key))
+      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'sessionTitle', 'persistent', 'native', 'managed'].includes(key))
       || !identifier(input.cwd) || !isAbsolute(input.cwd) || !identifier(input.model) || !identifier(input.reasoningEffort)
       || (input.workspaceCwd !== undefined && (!identifier(input.workspaceCwd) || !isAbsolute(input.workspaceCwd)))
       || (input.persistent !== undefined && typeof input.persistent !== 'boolean')
       || input.permissionMode !== 'danger-full-access' || typeof input.prompt !== 'string' || !input.prompt.trim()
       || Buffer.byteLength(JSON.stringify(input)) > 1024 * 1024 || !Number.isSafeInteger(input.timeoutMs) || input.timeoutMs <= 0
+      || (input.idleTimeoutMs !== undefined && (!Number.isSafeInteger(input.idleTimeoutMs) || input.idleTimeoutMs <= 0))
       || (input.sessionId !== undefined && (!identifier(input.sessionId) || input.persistent !== true))) {
     throw error('INVALID_REQUEST', 'Expected a bounded protocol 1 Kimi start request with explicit full-access permission');
   }
+  validateObservationRequest(input, class extends Error { constructor(code, message) { super(message); this.code = code; } });
   const native = input.native, managed = input.managed;
   if (!object(native) || native.version !== 1 || !['agent', 'swarm', 'tower'].includes(native.mode)
       || Object.keys(native).some(key => !['version', 'mode', 'agents', 'agentProfile', 'tower'].includes(key))
@@ -42,22 +76,97 @@ export function validateKimiNativeStart(input) {
 
 /** A replacement-based projection; HTTP acceptance and live turns may race. */
 export class KimiConversation {
+  static #events = new Set(['agent', 'turns', 'turns.failed', 'turn.started', 'turn.ended', 'turn.updated',
+    'item.started', 'item.ended', 'item.updated', 'item.delta', 'item.removed', 'turns.removed', 'task', 'task.list', 'interaction']);
+  #sizes = new WeakMap();
   constructor() { this.agents = new Map(); this.turns = new Map(); this.tasks = new Map(); this.snapshots = new Set(); this.pending = new Map(); this.lastChange = Date.now(); this.bytes = 0; this.unmeteredWork = false; }
-  agentTurns(id) { if (!this.turns.has(id)) this.turns.set(id, new Map()); return this.turns.get(id); }
+  // Budget the JSON payload actually retained by the projection. Transport
+  // frame limits are separate: repeated snapshots and discarded notifications
+  // do not consume a lifetime allowance. Cached field/array sizes let a delta
+  // update its item and turn without serializing the accumulated answer again.
+  #measure(value) {
+    if (value === undefined) return undefined;
+    if (value === null || typeof value !== 'object') return { bytes: Buffer.byteLength(JSON.stringify(value)),
+      tail: typeof value === 'string' && value.length ? value.charCodeAt(value.length - 1) : undefined };
+    const cached = this.#sizes.get(value);
+    if (cached) return cached;
+    let info;
+    if (Array.isArray(value)) {
+      info = { bytes: 2 + Math.max(0, value.length - 1) + value.reduce((sum, item) => sum + (this.#measure(item)?.bytes ?? 4), 0) };
+    } else {
+      info = this.#fields({ bytes: 2, fields: new Map() }, Object.entries(value).map(([key, item]) => [key, this.#measure(item)]));
+    }
+    this.#sizes.set(value, info);
+    return info;
+  }
+  #fields(prior, changes) {
+    const fields = new Map(prior.fields);
+    let bytes = prior.bytes - 2 - Math.max(0, fields.size - 1);
+    for (const [key, value] of changes) {
+      const old = fields.get(key);
+      if (old) bytes -= old.keyBytes + 1 + old.bytes;
+      if (value) {
+        const keyBytes = old?.keyBytes ?? Buffer.byteLength(JSON.stringify(key));
+        fields.set(key, { bytes: value.bytes, tail: value.tail, keyBytes });
+        bytes += keyBytes + 1 + value.bytes;
+      } else fields.delete(key);
+    }
+    return { bytes: bytes + 2 + Math.max(0, fields.size - 1), fields };
+  }
+  #patch(prior, updates) {
+    const next = { ...prior, ...updates };
+    this.#sizes.set(next, this.#fields(this.#measure(prior), Object.entries(updates).map(([key, value]) => [key, this.#measure(value)])));
+    return next;
+  }
+  #reserve(delta) {
+    if (this.bytes + delta > 64 * 1024 * 1024) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded retained observation limit');
+    this.bytes += delta;
+  }
+  #replace(map, key, next, limit = Infinity) {
+    if (!map.has(key) && map.size >= limit) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded observation count');
+    this.#reserve(this.#measure(next).bytes - (this.#measure(map.get(key))?.bytes ?? 0));
+    map.set(key, next);
+  }
+  #remove(map, key) {
+    const prior = map.get(key);
+    if (prior !== undefined) { this.#reserve(-this.#measure(prior).bytes); map.delete(key); }
+  }
+  #setArray(turn, field, array, info = this.#measure(array), mutate = () => {}) {
+    const prior = this.#measure(turn), next = this.#fields(prior, [[field, info]]);
+    this.#reserve(next.bytes - prior.bytes);
+    mutate();
+    turn[field] = array;
+    this.#sizes.set(array, info);
+    this.#sizes.set(turn, next);
+  }
+  #setItem(turn, index, item) {
+    const items = turn.items, before = this.#measure(items).bytes;
+    const bytes = before + this.#measure(item).bytes - (index < 0 ? 0 : this.#measure(items[index]).bytes)
+      + (index < 0 && items.length ? 1 : 0);
+    this.#setArray(turn, 'items', items, { bytes }, () => { if (index < 0) items.push(item); else items[index] = item; });
+  }
+  agentTurns(id) {
+    if (!this.turns.has(id)) {
+      if (this.turns.size >= 512) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded child observation limit');
+      this.turns.set(id, new Map());
+    }
+    return this.turns.get(id);
+  }
   mergeTurn(agentId, turn) {
-    if (!object(turn) || !identifier(turn.turn_id) || !Number.isSafeInteger(turn.ordinal) || turn.ordinal < 0) throw error('WS_PROTOCOL', 'Kimi turn identity or ordinal is invalid');
+    if (!identifier(agentId) || !object(turn) || !identifier(turn.turn_id) || !Number.isSafeInteger(turn.ordinal) || turn.ordinal < 0
+        || (turn.items != null && (!Array.isArray(turn.items) || turn.items.some(item => !object(item))))
+        || (turn.steps != null && (!Array.isArray(turn.steps) || turn.steps.some(step => !object(step))))) throw error('WS_PROTOCOL', 'Kimi turn identity, ordinal or content is invalid');
     const turns = this.agentTurns(agentId), prior = turns.get(turn.turn_id);
-    turns.set(turn.turn_id, { ...prior, ...turn, items: turn.items ?? prior?.items ?? [] });
-    if (turns.size > 4096) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded turn observation limit');
+    const updates = { ...turn, items: turn.items?.map(item => ({ ...item })) ?? prior?.items ?? [] };
+    if (Array.isArray(turn.steps)) updates.steps = turn.steps.map(step => ({ ...step }));
+    this.#replace(turns, turn.turn_id, prior ? this.#patch(prior, updates) : updates, 4096);
   }
   fold(frame) {
-    if (!identifier(frame.agent_id)) return;
-    this.bytes += Buffer.byteLength(JSON.stringify(frame));
-    if (this.bytes > 64 * 1024 * 1024) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded invocation observation limit');
+    if (!identifier(frame?.agent_id) || !KimiConversation.#events.has(frame.type)) return;
     this.lastChange = Date.now();
     const agentId = frame.agent_id, turns = this.agentTurns(agentId);
     switch (frame.type) {
-      case 'agent': this.agents.set(agentId, frame); if (frame.compacting) this.unmeteredWork = true; break;
+      case 'agent': this.#replace(this.agents, agentId, { ...frame }); if (frame.compacting) this.unmeteredWork = true; break;
       case 'turns':
         if (!Array.isArray(frame.turns)) throw error('WS_PROTOCOL', 'Kimi conversation snapshot is invalid');
         if (this.snapshots.has(agentId)) throw error('CONVERSATION_RESET', 'Kimi replaced a subscribed conversation; this invocation cannot certify continuous observation');
@@ -67,42 +176,60 @@ export class KimiConversation {
       case 'turn.started': case 'turn.ended': this.mergeTurn(agentId, frame.turn); break;
       case 'turn.updated': {
         const turn = turns.get(frame.turn_id);
-        if (turn && frame.step) { turn.steps = (turn.steps || []).filter(step => step.index !== frame.step.index); turn.steps.push(frame.step); }
+        if (turn && frame.step) {
+          if (!object(frame.step)) throw error('WS_PROTOCOL', 'Kimi step update is invalid');
+          this.#setArray(turn, 'steps', [...(turn.steps || []).filter(step => step.index !== frame.step.index), { ...frame.step }]);
+        }
         break;
       }
       case 'item.started': case 'item.ended': {
         const turn = turns.get(frame.turn_id);
         if (!turn || !object(frame.item)) throw error('WS_PROTOCOL', 'Kimi item has no matching turn');
         const index = turn.items.findIndex(item => item.item_id === frame.item.item_id);
-        if (index < 0) turn.items.push(frame.item); else turn.items[index] = frame.item;
+        this.#setItem(turn, index, { ...frame.item });
         break;
       }
       case 'item.updated': case 'item.delta': {
-        const item = turns.get(frame.turn_id)?.items.find(item => item.item_id === frame.item_id);
+        const turn = turns.get(frame.turn_id), index = turn?.items.findIndex(item => item.item_id === frame.item_id);
+        const item = index >= 0 ? turn.items[index] : undefined;
         if (!item) throw error('WS_PROTOCOL', 'Kimi item update has no matching item');
-        if (frame.type === 'item.updated') Object.assign(item, frame.set);
-        else if (['text', 'input_text', 'output'].includes(frame.field) && typeof frame.delta === 'string') item[frame.field] = (item[frame.field] || '') + frame.delta;
+        if (frame.type === 'item.updated') {
+          if (!object(frame.set)) throw error('WS_PROTOCOL', 'Kimi item replacement fields are invalid');
+          this.#setItem(turn, index, this.#patch(item, frame.set));
+        } else if (['text', 'input_text', 'output'].includes(frame.field) && typeof frame.delta === 'string') {
+          const text = item[frame.field] ?? '';
+          if (typeof text !== 'string') throw error('WS_PROTOCOL', 'Kimi text delta targets a non-text field');
+          const prior = this.#measure(item), before = typeof item[frame.field] === 'string' ? prior.fields.get(frame.field) : { bytes: 2 };
+          const added = this.#measure(frame.delta);
+          // JSON escapes lone surrogates (6 bytes each), but joining a high/low
+          // pair across delta boundaries encodes one 4-byte UTF-8 character.
+          const paired = before.tail >= 0xd800 && before.tail <= 0xdbff
+            && frame.delta.charCodeAt(0) >= 0xdc00 && frame.delta.charCodeAt(0) <= 0xdfff;
+          const info = { bytes: before.bytes + added.bytes - 2 - (paired ? 8 : 0), tail: frame.delta.length ? added.tail : before.tail };
+          const next = { ...item, [frame.field]: text + frame.delta };
+          this.#sizes.set(next, this.#fields(prior, [[frame.field, info]]));
+          this.#setItem(turn, index, next);
+        }
         break;
       }
       case 'item.removed': {
-        const turn = turns.get(frame.turn_id); if (turn) turn.items = turn.items.filter(item => item.item_id !== frame.item_id); break;
+        const turn = turns.get(frame.turn_id); if (turn) this.#setArray(turn, 'items', turn.items.filter(item => item.item_id !== frame.item_id)); break;
       }
-      case 'turns.removed': for (const id of frame.turn_ids || []) turns.delete(id); break;
-      case 'task': this.tasks.set(agentId + '/' + frame.task_id, frame); break;
+      case 'turns.removed': for (const id of frame.turn_ids || []) this.#remove(turns, id); break;
+      case 'task': this.#replace(this.tasks, agentId + '/' + frame.task_id, { ...frame }, 4096); break;
       case 'task.list':
         // An absent running task is no longer active, but retain its observation
         // for accounting rather than silently deleting the child's identity.
         for (const [key, task] of this.tasks) if (task.agent_id === agentId && task.status === 'running'
-            && !(frame.tasks || []).some(next => next.task_id === task.task_id)) this.tasks.set(key, { ...task, status: 'ended', outcome: task.outcome || 'unknown' });
-        for (const task of frame.tasks || []) this.tasks.set(agentId + '/' + task.task_id, { ...task, agent_id: agentId });
+            && !(frame.tasks || []).some(next => next.task_id === task.task_id)) this.#replace(this.tasks, key, this.#patch(task, { status: 'ended', outcome: task.outcome || 'unknown' }));
+        for (const task of frame.tasks || []) this.#replace(this.tasks, agentId + '/' + task.task_id, { ...task, agent_id: agentId }, 4096);
         break;
       case 'interaction': {
         const key = agentId + '/' + (frame.interaction_id || frame.id);
-        if (frame.status === 'pending') this.pending.set(key, frame); else this.pending.delete(key);
+        if (frame.status === 'pending') this.#replace(this.pending, key, { ...frame }); else this.#remove(this.pending, key);
         break;
       }
     }
-    if (this.tasks.size > 4096 || this.turns.size > 512) throw error('OBSERVATION_LIMIT', 'Kimi exceeded the bounded child observation limit');
   }
   newTurns(agentId, baseline = -1) { return [...this.agentTurns(agentId).values()].filter(turn => turn.ordinal > baseline && turn.kind === 'agent').sort((a, b) => a.ordinal - b.ordinal); }
   matchingPrompt(promptId) { return this.newTurns('main').find(turn => turn.items.some(item => item.type === 'user_message' && item.prompt_ids?.includes(promptId))); }
@@ -176,16 +303,13 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   const controller = new AbortController();
   const cancel = () => controller.abort(signal?.reason);
   if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
-  let deadlineTimer;
+  let deadlineTimer, reportActivity;
   const send = (type, content) => emit({ protocol: 1, requestId: input?.requestId || 'invalid-request', type, sessionId, ...content });
   const sessionPath = suffix => `/api/v1/sessions/${encoded(sessionId)}${suffix}`;
   const observe = frame => {
-    if (frame.session_id !== sessionId) return;
+    if (frame.session_id !== sessionId || !identifier(frame.agent_id)) return;
     conversation.fold(frame);
-    if (ready && ['task', 'turn.started', 'turn.ended', 'interaction'].includes(frame.type)) {
-      send('event', { event: { type: frame.type, agentId: frame.agent_id, taskId: frame.task_id,
-        turnId: frame.turn?.turn_id, status: frame.status ?? frame.turn?.status, outcome: frame.outcome ?? frame.turn?.outcome } });
-    }
+    if (ready) reportActivity(frame);
     const turn = promptId && conversation.matchingPrompt(promptId);
     if (turn) { requestedTurnId = turn.turn_id; dispatch = 'dispatched'; }
   };
@@ -227,6 +351,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   };
   try {
     input = validateKimiNativeStart(raw);
+    reportActivity = createKimiActivityReporter(input.idleTimeoutMs ?? 300_000, event => send('event', { event }));
     const declaredCwd = input.cwd;
     input = { ...input, cwd: await realpath(input.cwd), managed: { ...input.managed, taskDir: await realpath(input.managed.taskDir) } };
     deadlineTimer = setTimeout(() => controller.abort(error('TIMEOUT', 'The Kimi invocation exceeded its wall timeout')), input.timeoutMs);
@@ -253,10 +378,18 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
       if (session.metadata?.flywheel_native_binding !== binding || session.metadata?.cwd !== cwd) throw error('RESUME_BINDING_MISMATCH', 'Kimi history belongs to a different task, role, candidate or native contract');
       resumed = true; ownsSession = true;
     } else {
+      const title = input.sessionTitle || `Flywheel · ${input.managed.role}/${input.managed.scope}`;
       session = await runtime.request('/api/v1/sessions', { metadata: { cwd, flywheel_native_binding: binding },
-        title: `Flywheel ${input.managed.role}`, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd }, { signal: controller.signal });
+        title, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd }, { signal: controller.signal });
       sessionId = session.id;
+      // Fresh creation must attest the same ownership facts as resume. Do not
+      // send a prompt, or target another history during cleanup, on a mismatched
+      // response. Once ownership is known, a rejected title still permits cleanup.
+      if (!identifier(sessionId) || session.metadata?.flywheel_native_binding !== binding || session.metadata?.cwd !== cwd) {
+        throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the newly created history and workspace binding');
+      }
       ownsSession = true;
+      if (session.title !== title) throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the requested readable session title');
     }
     if (!identifier(sessionId) || session.id !== sessionId) throw error('RUNTIME_PROTOCOL', 'Kimi returned an invalid session identity');
     if (candidate) await runtime.request(sessionPath('/profile'), { agent_config: { tower_mode: true, tower_base: candidate.branch } }, { signal: controller.signal });

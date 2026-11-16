@@ -7,6 +7,16 @@ import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 if (process.argv.includes('--version')) { process.stdout.write('kimi 9.8.7-fixture\n'); process.exit(0); }
+if (process.argv.includes('-p')) {
+  const args = process.argv.slice(2), id = args[args.indexOf('--session') + 1];
+  const sessions = JSON.parse(await readFile(join(process.env.KIMI_CODE_HOME, 'fixture-sessions.json'), 'utf8'));
+  if (!sessions[id]?.title || sessions[id].agent_config?.permission_mode !== 'auto' || sessions[id].agent_config?.plan_mode !== false) process.exit(92);
+  if (process.env.KIMI_FIXTURE_LOG) await appendFile(process.env.KIMI_FIXTURE_LOG,
+    JSON.stringify({ type: 'print', sessionId: id, cwd: process.cwd(), args }) + '\n');
+  process.stdout.write(JSON.stringify({ role: 'assistant', content: 'Named print fixture completed' }) + '\n');
+  process.stdout.write(JSON.stringify({ role: 'meta', type: 'session.resume_hint', session_id: id }) + '\n');
+  process.exit(0);
+}
 if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(['web', '--no-open', '--host', '127.0.0.1', '--port', '0'])) process.exit(2);
 const fixtureCase = process.env.KIMI_FIXTURE_CASE || 'normal';
 const root = process.env.KIMI_CODE_HOME;
@@ -25,10 +35,11 @@ const paths = ['/api/v1/meta', '/api/v1/sessions', '/api/v1/sessions/{session_id
   '/api/v1/shutdown', '/api/v1/remote-control'];
 const property = { type: 'string' };
 const schema = properties => ({ type: 'object', properties });
-const config = schema(Object.fromEntries(['model', 'thinking', 'permission_mode', 'swarm_mode', 'profile', 'tower_mode', 'tower_base'].map(key => [key, property])));
+const config = schema(Object.fromEntries(['model', 'thinking', 'permission_mode', 'plan_mode', 'swarm_mode', 'profile', 'tower_mode', 'tower_base'].map(key => [key, property])));
 const requestBody = properties => ({ requestBody: { content: { 'application/json': { schema: schema(properties) } } } });
 const openapi = { openapi: '3.1.0', paths: Object.fromEntries(paths.map(path => [path, { get: {}, post: {} }])) };
-openapi.paths['/api/v1/sessions'].post = requestBody({ agent_config: config, environment_id: property, environment_cwd: property });
+openapi.paths['/api/v1/sessions'].post = requestBody({ title: property, metadata: schema({ cwd: property }), agent_config: config, environment_id: property, environment_cwd: property });
+if (fixtureCase === 'no-title-schema') delete openapi.paths['/api/v1/sessions'].post.requestBody.content['application/json'].schema.properties.title;
 openapi.paths['/api/v1/sessions/{session_id}/profile'].post = requestBody({ agent_config: config });
 openapi.paths['/api/v1/sessions/{session_id}/prompts'].post = requestBody({ content: property, prompt_id: property, disabled_tools: property });
 if (fixtureCase === 'missing-schema') delete openapi.paths['/api/v1/sessions/{session_id}/prompts'].post.requestBody.content['application/json'].schema.properties.disabled_tools;
@@ -81,8 +92,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/api/v1/sessions' && req.method === 'POST') {
       const id = 'session-' + (Object.keys(sessions).length + 1);
-      const s = sessions[id] = { id, metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
-        cwd: body.environment_cwd, active: null, queued: [], turns: [] };
+      const s = sessions[id] = { id, title: fixtureCase === 'wrong-title' ? 'Session placeholder' : body.title,
+        metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
+        cwd: body.environment_cwd || body.metadata.cwd, active: null, queued: [], turns: [] };
+      if (fixtureCase === 'wrong-creation-owner') s.metadata = { ...s.metadata, flywheel_native_binding: 'foreign-invocation' };
       await save(); send(sessionState(s)); return;
     }
     const match = path.match(/^\/api\/v1\/sessions\/([^/:]+)(.*)$/);
@@ -113,7 +126,7 @@ const server = http.createServer(async (req, res) => {
       publish(s, agentState(s));
       publish(s, { type: 'turn.started', agent_id: 'main', turn: { ...turn, items: undefined } });
       publish(s, { type: 'item.ended', agent_id: 'main', turn_id: turn.turn_id, item: user });
-      if (fixtureCase === 'child' || fixtureCase === 'cancel-queue') {
+      if (['child', 'child-progress', 'cancel-queue'].includes(fixtureCase)) {
         s.task = { type: 'task', agent_id: 'main', task_id: 'task-child', kind: 'subagent', child_agent_id: 'child-1', status: 'running', model: 'native-child-model' };
         s.childTurns = [{ turn_id: 'child-turn', ordinal: 0, kind: 'agent', status: 'running', items: [], steps: [] }];
         publish(s, s.task);
@@ -124,6 +137,24 @@ const server = http.createServer(async (req, res) => {
       const accepted = s.active;
       // Events precede HTTP acceptance to exercise cross-channel correlation.
       setTimeout(() => send(accepted), 5);
+      const streamsProgress = ['root-progress', 'child-progress', 'burst-progress'].includes(fixtureCase);
+      if (streamsProgress) {
+        const agentId = fixtureCase === 'child-progress' ? 'child-1' : 'main';
+        const activeTurn = agentId === 'main' ? turn : s.childTurns[0];
+        const item = { type: 'tool_call', name: 'Read', item_id: 'progress-item', output: '' };
+        activeTurn.items.push(item);
+        publish(s, { type: 'item.started', agent_id: agentId, turn_id: activeTurn.turn_id, item });
+        const timer = setInterval(() => {
+          if (!s.active) { clearInterval(timer); return; }
+          const delta = 'private-tool-progress';
+          for (let index = 0; index < (fixtureCase === 'burst-progress' ? 250 : 1); index++) {
+            item.output += delta;
+            publish(s, { type: 'item.delta', agent_id: agentId, turn_id: activeTurn.turn_id, item_id: item.item_id, field: 'output', delta });
+          }
+          publish(s, { type: 'item.updated', agent_id: agentId, turn_id: activeTurn.turn_id, item_id: item.item_id, set: { status: 'running' } });
+          publish(s, { type: 'turn.updated', agent_id: agentId, turn_id: activeTurn.turn_id, step: { index: 1, status: 'running' } });
+        }, 80);
+      }
       if (!['cancel-queue', 'question', 'unstoppable'].includes(fixtureCase)) setTimeout(() => {
         if (s.task) {
           s.task = { ...s.task, status: 'ended', outcome: 'completed' }; publish(s, s.task);
@@ -132,7 +163,7 @@ const server = http.createServer(async (req, res) => {
           publish(s, { ...agentState(s, 'child-1'), status: 'idle' });
         }
         terminal(s);
-      }, 160);
+      }, streamsProgress ? 3000 : 160);
       return;
     }
     send(null, 40400);

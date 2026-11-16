@@ -113,6 +113,9 @@ flywheel control planning --task-dir "$task_dir" --cwd "$repo_dir" < "$request_f
   用户点“开始已批准方案”。普通 Run 不把暂停实施改成授权。
 - 超时、断连或结果未知，先对原目录调用 `flywheel_control status`，不要重复 prepare、
   新建任务、重置预算或删除状态。Go 独占重试、审查、审批和激活事务。
+  规划角色的 `blocked` unknown 只能由用户在 Flywheel 视图或
+  `flywheel session ... --abandon` 显式退役；模型工具不暴露它，不能代输确认，
+  也不能把退役描述成成功、未派发或可重放。退役后仍需用户显式 Plan 生成新版本。
 
 ## 调查专用路径
 

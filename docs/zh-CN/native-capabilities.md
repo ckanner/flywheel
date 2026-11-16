@@ -12,17 +12,17 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | --- | --- | --- |
 | `dsh` | PTC、子 Agent、Team、Workflow、显式 Web、LCU | 本机 DSH；实际 PTC probe；LCU 另需 0.5.0 peer 和 full-access |
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
-| `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.0；已登录 Codex CLI；实际 sandbox/approval 回执 |
-| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.5.1；已登录 Claude CLI；显式 full-access |
+| `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.1；已登录 Codex CLI；实际 sandbox/approval 回执 |
+| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.5.2；已登录 Claude CLI；显式 full-access |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
 ### 对齐独立 worker 的依赖
 
-桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.5.1 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
+桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.5.2 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.1 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.2 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
@@ -107,6 +107,8 @@ Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packet
 
 开启 native profile 不新增第二个循环控制器：Go 继续决定是否重试、预算是否允许、哪个 candidate 被验收以及何时交付。原生 task board 的完成状态不是 Flywheel completed。
 
+规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
+
 ## 4. LCU 与截图
 
 给 DSH profile 增加以下 options 字段，并为对应角色明确选择 full-access：
@@ -178,6 +180,15 @@ flywheel doctor --cwd /absolute/repo --probe --json
 native doctor 检查本地 worker、精确 public manifest 与 capability 版本，不发模型、启动 Team、创建云 job 或操作 GUI。DSH native profile 不拿 legacy SDK probe 冒充 native 准入；其实际 PTC、模型与目标能力要在正式 worker admission 时证明。`native.admission` 保持 unknown，`inferenceTested:false` 和 `admissionTested:false` 不等于失败的登录尝试。
 
 `native-receipt` 保存请求、实际配置、观察、children、usage、completion 与 cleanup。Pro 的 native-event 不是 durable lifecycle ACK。root 返回时仍有活跃子任务，不会因随后关进程而变成完成。清理不明、receipt 损坏或恢复不确定会继续阻断。
+
+Codex 已观察到的子 turn 和线程关闭事实优先于迟到的创建快照（`spawnAgent`
+和 V2 started 标记）。旧的 running 快照不能重开已完成的子任务，旧的终态快照
+也不能完成较新的运行中 turn；真正的新 turn 或后续排队任务仍需要各自的完成证据。
+
+只有已确认归属的父层快照提供子任务终态、尚无 child turn ID 时，同样保留该
+终态；重复的 running 创建快照不能撤销它。缺失的 turn 身份与用量仍保持未知，
+完成判定不会补造这两项事实。
+后续排队任务也不会恢复旧创建快照的状态更新权，旧快照不能提前完成这轮新工作。
 
 预算和并发也保持真实语义：Flywheel scheduler 限根调用；Claude 的 requested limits 是 observed guard，`hard:false`；Kimi 没有该整树硬上限。外部子 Agent、Advisor、compaction 或 Tower 消耗无法精确归属时 total 保留 unknown。hard budget 不把 unknown 当成零。详细测试与尚未实机验证的范围见[验证记录](../validation/2026-11-14-native-harness-implementation.md)。
 

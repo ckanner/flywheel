@@ -57,7 +57,7 @@ function resultFrame(result, code = 0) {
   assert.equal(result.signal, null);
   const frames = result.stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
   assert.equal(frames.filter(frame => frame.type === 'result').length, 1);
-  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event'].includes(frame.type)));
+  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event', 'activity'].includes(frame.type)));
   assert.deepEqual(frames.at(-1).adapter, ADAPTER);
   return frames.at(-1);
 }
@@ -265,12 +265,15 @@ test('a broken stdout waits for the app-server and guardian to disappear', { tim
   assert.doesNotMatch(result.stderr, /Unhandled|EPIPE/);
 });
 
-test('progress budget failure preserves the raw cancellation receipt instead of dropping frames silently', { timeout: 10000 }, async t => {
+test('full display progress preserves the actual task deadline and cleanup receipt', { timeout: 10000 }, async t => {
   const f = await setup(t, 'progress-limit');
-  const frame = resultFrame(await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256) } }).done, 1);
-  assert.equal(frame.error.code, 'OUTPUT_LIMIT');
+  const result = await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256), timeoutMs: 1500 } }).done;
+  const frame = resultFrame(result, 1);
+  assert.equal(frame.error, null);
+  assert.match(result.stdout, /progress omitted/i);
   assert.equal(frame.receipt.ok, false);
-  assert.equal(frame.receipt.outcome.execution.cancelled, true);
+  assert.equal(frame.receipt.outcome.execution.timedOut, true);
+  assert.equal(frame.receipt.outcome.execution.truncated, false);
   assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
   absentGroup(frame.receipt.outcome.execution);
 });

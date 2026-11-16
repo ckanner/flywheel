@@ -56,7 +56,7 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 or 2 start request');
   }
   const allowed = new Set(['type', 'protocol', 'requestId', 'cwd', 'provider', 'model',
-    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'workspaceCwd', 'sessionTitle', 'native', 'managed']);
+    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'idleTimeoutMs', 'workspaceCwd', 'sessionTitle', 'native', 'managed']);
   if (value.protocol === 2) {
     allowed.add('sessionId');
     allowed.add('persistent');
@@ -80,6 +80,9 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'permissionMode must be read-only, workspace-write or danger-full-access');
   }
   if (value.reasoningEffort !== undefined) nonempty(value.reasoningEffort, 'reasoningEffort', 64);
+  if (value.idleTimeoutMs !== undefined && (!Number.isSafeInteger(value.idleTimeoutMs) || value.idleTimeoutMs < 1 || value.idleTimeoutMs > 86400000)) {
+    throw new BridgeError('INVALID_REQUEST', 'idleTimeoutMs must be between 1 and 86400000');
+  }
   if (value.maxTokens !== undefined && (!Number.isSafeInteger(value.maxTokens) || value.maxTokens < 1)) {
     throw new BridgeError('INVALID_REQUEST', 'maxTokens must be a positive integer');
   }

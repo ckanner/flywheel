@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { runKimiWorker } from './kimi-native-bridge.js';
+import { prepareKimiPrintSession } from './kimi-print-session.js';
 
 const controller = new AbortController();
 let finished = false, inputError, request = { requestId: 'invalid-request' }, outputError;
@@ -56,11 +57,12 @@ try {
   else {
     let value;
     try { value = await input(); } catch { value = request; }
-    const result = await runKimiWorker(value, { emit: write, signal: controller.signal,
+    const run = value?.type === 'prepare-print' ? prepareKimiPrintSession : runKimiWorker;
+    const result = await run(value, { emit: write, signal: controller.signal,
       stderr: message => process.stderr.write('[Kimi native] ' + message) });
     if (inputError) {
       result.status = 'error'; result.error = { code: 'INPUT_ERROR', message: inputError };
-      result.lifecycle.resumeCandidate = false;
+      if (result.lifecycle) result.lifecycle.resumeCandidate = false;
     }
     finished = true;
     write(result);

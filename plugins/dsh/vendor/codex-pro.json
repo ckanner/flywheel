@@ -1,21 +1,20 @@
 {
   "package": "dsh-subagent-codex-pro",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
-  "sourceCommit": "29b388a286748740b8bbbcbcdf0e5bf02038befa",
-  "sourceTree": "47ab29706d2f8346dc600cf96144c7b43263091c",
-  "tarball": "dsh-subagent-codex-pro-0.10.0.tgz",
-  "sha256": "d5437a2a1a125c05f6fe61afcae4c822f2bca94bc11cc5e15c45f9137cc74a61",
-  "integrity": "sha512-eOY3+XvOdl81vQLxpp2rhbAnVvaiO2xvwgPKc3BAObGZXhw/4yt3u+MzuifM53vF3fp2KKIL23vWWVuDNe2UvQ==",
+  "sourceCommit": "1bcde1268d380aa197ab872605b76a353d3ae0a1",
+  "sourceTree": "7a9341650a9675342188b1ba3449a7c993fc5353",
+  "tarball": "dsh-subagent-codex-pro-0.10.1.tgz",
+  "sha256": "80c8416fc480ef926eb27be6aaf7269a6f299ea97ecd699f8584db86da37f047",
+  "integrity": "sha512-EWfXJGEISmB5fZPZHVm7GTjZZCNSdXx+sDuBKPibwYl6yjxuDSMeddZcskhzhOv7BqyCQPIBJMSLkEWVzABrrw==",
   "license": "MIT",
-  "registryReleaseVerified": true,
-  "registry": {
-    "tarball": "https://registry.npmjs.org/dsh-subagent-codex-pro/-/dsh-subagent-codex-pro-0.10.0.tgz",
-    "integrity": "sha512-eOY3+XvOdl81vQLxpp2rhbAnVvaiO2xvwgPKc3BAObGZXhw/4yt3u+MzuifM53vF3fp2KKIL23vWWVuDNe2UvQ==",
-    "verifiedAt": "2026-11-14T14:31:42.189612+00:00"
-  },
+  "registryReleaseVerified": false,
   "verificationToolchain": {
     "node": "24.22.1",
-    "npm": "12.2.1"
+    "npm": "11.9.0"
+  },
+  "buildToolchain": {
+    "node": "24.22.1",
+    "npm": "11.9.0"
   }
 }
