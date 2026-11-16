@@ -182,6 +182,12 @@ Native diagnostics inspect local workers, exact public manifests and capability 
 
 `native-receipt` retains intent, effective configuration, observations, children, usage, completion and cleanup. Native events are not durable lifecycle ACKs. Active children at root completion cannot become success merely because shutdown later cancels them. Unknown cleanup, damaged receipts and uncertain recovery continue to block progress.
 
+For Codex, observed child turns and thread closure take precedence over delayed
+creation snapshots (`spawnAgent` and V2 started markers). A completed child is
+not reopened by an older running snapshot, and a newer running turn is not
+completed by an older terminal snapshot. A genuine new turn or later queued
+follow-up still needs its own completion evidence.
+
 Concurrency and budgets retain their actual scope: Flywheel scheduling limits root invocations; Claude limits are an observed guard with `hard:false`; Kimi lacks that whole-tree hard cap. Unattributable external-agent, Advisor, compaction or Tower usage remains unknown, and hard budgets do not count it as zero. See [validation](../validation/2026-11-14-native-harness-implementation.md) for tested and untested runtime boundaries.
 
 See the [desktop configuration follow-up](../validation/2026-11-14-desktop-native-configuration.md) for plugin settings, typed PTC arguments and this candidate's package validation.

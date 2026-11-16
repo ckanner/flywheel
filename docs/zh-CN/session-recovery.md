@@ -76,8 +76,11 @@ Go 自身观察到的超时和调用方取消不因此失效。
 
 DSH 使用公开 title 服务并验证已接受的 snapshot，由原生 UTF-8 字节限制处理
 截断。显式请求新标题而服务缺失或回读失败时，会在任务 prompt 前拒绝派发。
-Codex／Claude Pro 使用各自受支持的原生命名接口；旧 `codex exec` 不会因为共享
-新的超时策略就自动获得这种命名能力。
+Codex／Claude Pro 使用各自受支持的原生命名接口。Codex 新建持久线程必须先
+确认名称写入，才会发送 `thread-ready` 和任务。写入失败返回 `thread-name`
+失败，保留 `not-dispatched`、已知 thread ID 与独立核验的清理事实；只读恢复
+不重试命名或任务。仅存在一个空线程不代表它已经可以续接。旧 `codex exec`
+不会因为共享新的超时策略就自动获得这种命名能力。
 
 Kimi print 没有对应的 print title 参数。新建带名称的调用时，Flywheel 先通过
 公开 Kimi session API 创建 idle 会话，验证名称与归属，并确认其拥有的准备

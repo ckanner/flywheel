@@ -98,7 +98,12 @@ permissions or recovery identity.
 DSH uses its public title service and verifies the accepted snapshot; its native
 UTF-8 byte limit controls truncation. An explicitly requested fresh title with a
 missing service or failed read-back is rejected before the task prompt. Codex
-and Claude Pro use their supported native naming interfaces. The legacy
+and Claude Pro use their supported native naming interfaces. Codex requires the
+new persistent thread's name write to be confirmed before `thread-ready` and
+task dispatch. A failed write returns a `thread-name` failure with
+`not-dispatched`, the known thread ID and independently verified cleanup;
+read-only recovery preserves these facts without retrying. An empty thread's
+existence does not establish that it can be resumed. The legacy
 `codex exec` transport does not acquire this naming capability merely by sharing
 the new timeout policy.
 

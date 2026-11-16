@@ -181,6 +181,10 @@ native doctor 检查本地 worker、精确 public manifest 与 capability 版本
 
 `native-receipt` 保存请求、实际配置、观察、children、usage、completion 与 cleanup。Pro 的 native-event 不是 durable lifecycle ACK。root 返回时仍有活跃子任务，不会因随后关进程而变成完成。清理不明、receipt 损坏或恢复不确定会继续阻断。
 
+Codex 已观察到的子 turn 和线程关闭事实优先于迟到的创建快照（`spawnAgent`
+和 V2 started 标记）。旧的 running 快照不能重开已完成的子任务，旧的终态快照
+也不能完成较新的运行中 turn；真正的新 turn 或后续排队任务仍需要各自的完成证据。
+
 预算和并发也保持真实语义：Flywheel scheduler 限根调用；Claude 的 requested limits 是 observed guard，`hard:false`；Kimi 没有该整树硬上限。外部子 Agent、Advisor、compaction 或 Tower 消耗无法精确归属时 total 保留 unknown。hard budget 不把 unknown 当成零。详细测试与尚未实机验证的范围见[验证记录](../validation/2026-11-14-native-harness-implementation.md)。
 
 桌面插件配置、PTC 参数类型和本轮真实包验证见[桌面配置跟进记录](../validation/2026-11-14-desktop-native-configuration.md)。

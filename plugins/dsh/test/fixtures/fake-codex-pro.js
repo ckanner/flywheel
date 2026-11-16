@@ -88,6 +88,29 @@ async function observedTurn() {
   notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
 }
 
+// Child notifications and the parent's spawn result use independent listeners.
+// The parent's status snapshot can therefore arrive after a real child terminal
+// event, or after the same child has already begun its next turn.
+function reorderedNativeChild() {
+  const childId = 'child-thread', firstTurn = 'child-turn', nextTurn = 'child-turn-2';
+  const hasNextTurn = scenario !== 'native-stale-spawn';
+  notify('thread/started', { thread: { id: childId,
+    source: { subAgent: { thread_spawn: { parent_thread_id: threadId } } } } });
+  notify('turn/started', { threadId: childId, turn: { id: firstTurn } });
+  notify('thread/tokenUsage/updated', { threadId: childId, turnId: firstTurn,
+    tokenUsage: { total: { totalTokens: 15, inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, reasoningOutputTokens: 0 } } });
+  notify('turn/completed', { threadId: childId, turn: { id: firstTurn, status: 'completed' } });
+  if (hasNextTurn) notify('turn/started', { threadId: childId, turn: { id: nextTurn } });
+  notify('item/completed', { threadId, turnId, item: { type: 'collabAgentToolCall', id: 'spawn-late',
+    tool: 'spawnAgent', senderThreadId: threadId, receiverThreadIds: [childId], model: 'child-model',
+    agentsStates: { [childId]: { status: hasNextTurn ? 'completed' : 'running' } } } });
+  if (scenario === 'native-new-turn-completed') {
+    notify('thread/tokenUsage/updated', { threadId: childId, turnId: nextTurn,
+      tokenUsage: { total: { totalTokens: 30, inputTokens: 20, outputTokens: 10, cachedInputTokens: 0, reasoningOutputTokens: 0 } } });
+    notify('turn/completed', { threadId: childId, turn: { id: nextTurn, status: 'completed' } });
+  }
+}
+
 createInterface({ input: process.stdin }).on('line', line => {
   const request = JSON.parse(line);
   log(request);
@@ -121,6 +144,10 @@ createInterface({ input: process.stdin }).on('line', line => {
         ? (sandbox === 'danger-full-access' ? { type: 'workspaceWrite', writableRoots: [cwd] } : { type: 'dangerFullAccess' })
         : policy });
   } else if (request.method === 'thread/name/set') {
+    if (scenario === 'name-rejected') {
+      send({ jsonrpc: '2.0', id: request.id, error: { code: -32603, message: 'offline fixture rejects the thread name' } });
+      return;
+    }
     history = { ...history, name: request.params.name };
     saveHistory();
     reply(request.id, {});
@@ -139,6 +166,7 @@ createInterface({ input: process.stdin }).on('line', line => {
         tokenUsage: { total: { totalTokens: 15, inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, reasoningOutputTokens: 0 } } });
       notify('turn/completed', { threadId: 'child-thread', turn: { id: 'child-turn', status: 'completed' } });
     }
+    if (['native-stale-spawn', 'native-new-turn-pending', 'native-new-turn-completed'].includes(scenario)) reorderedNativeChild();
     notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text: 'fixture working' } });
     if (scenario === 'progress-hang') {
       setInterval(() => notify('item/completed', { threadId, turnId,

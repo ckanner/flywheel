@@ -109,6 +109,136 @@ func TestCodexProProviderActivityOfflineBridge(t *testing.T) {
 		})
 	}
 
+	for _, scenario := range []string{"native-child", "native-stale-spawn", "native-new-turn-pending", "native-new-turn-completed"} {
+		t.Run(scenario+" preserves observed child turn state", func(t *testing.T) {
+			a := setup(t, scenario)
+			a.Native = json.RawMessage(`{"version":1,"agents":{"enabled":true}}`)
+			out := RunCodexPro(a)
+			pending := scenario == "native-new-turn-pending"
+			assert.Equal(t, !pending, out.Settled, "%+v", out)
+			assert.False(t, out.TimedOut)
+			assert.False(t, out.Cancelled)
+			require.NotNil(t, out.Session)
+			assert.True(t, out.Session.CleanupConfirmed)
+			var native struct {
+				Children []struct {
+					ID     string `json:"id"`
+					State  string `json:"state"`
+					TurnID string `json:"turnId"`
+					Usage  struct {
+						Status string `json:"status"`
+					} `json:"usage"`
+				} `json:"children"`
+				Completion struct {
+					Confirmed  bool     `json:"confirmed"`
+					PendingIDs []string `json:"pendingIds"`
+				} `json:"completion"`
+				Usage struct {
+					TotalTokens *int `json:"totalTokens"`
+				} `json:"usage"`
+			}
+			require.NoError(t, json.Unmarshal(out.NativeReceipt, &native))
+			require.Len(t, native.Children, 1)
+			child := native.Children[0]
+			assert.Equal(t, "child-thread", child.ID)
+			assert.Equal(t, !pending, native.Completion.Confirmed)
+			if strings.HasPrefix(scenario, "native-new-turn-") {
+				assert.Equal(t, "child-turn-2", child.TurnID)
+			} else {
+				assert.Equal(t, "child-turn", child.TurnID)
+			}
+			if pending {
+				assert.Equal(t, "running", child.State)
+				assert.Equal(t, "partial", child.Usage.Status)
+				assert.Equal(t, []string{"child-thread"}, native.Completion.PendingIDs)
+				assert.Nil(t, native.Usage.TotalTokens, "cleanup does not prove the new child turn completed")
+				assert.False(t, out.Session.ResumeCandidate)
+				var receipt codexProReceipt
+				require.NoError(t, json.Unmarshal(out.CodexProReceipt, &receipt))
+				require.NotNil(t, receipt.Outcome)
+				require.NotNil(t, receipt.Outcome.Execution)
+				require.NotNil(t, receipt.Outcome.Execution.Failure)
+				assert.Equal(t, "native", receipt.Outcome.Execution.Failure.Stage)
+				assert.Equal(t, "completion", receipt.Outcome.Execution.Failure.Category)
+			} else {
+				assert.Equal(t, "fixture complete\n", out.Text)
+				assert.Equal(t, "completed", child.State)
+				assert.Equal(t, "complete", child.Usage.Status)
+				assert.Empty(t, native.Completion.PendingIDs)
+				require.NotNil(t, native.Usage.TotalTokens)
+				wantTokens := 15
+				if scenario == "native-new-turn-completed" {
+					wantTokens = 30
+				}
+				assert.Equal(t, wantTokens, *native.Usage.TotalTokens)
+			}
+			assertCodexProProcessesStopped(t, readCodexProLog(t, a.APIKeys["TEST_CODEX_PRO_LOG"]))
+		})
+	}
+
+	t.Run("rejected persistent title preserves no-dispatch cleanup and recovery", func(t *testing.T) {
+		a := setup(t, "name-rejected")
+		a.PersistentSession, a.SessionTitle = true, "Flywheel · Alerts · Design review"
+		var lifecycle []MachineLifecycle
+		a.OnLifecycle = func(event MachineLifecycle) error { lifecycle = append(lifecycle, event); return nil }
+		out := RunCodexPro(a)
+		assert.False(t, out.Settled, "%+v", out)
+		assert.False(t, out.TimedOut)
+		assert.False(t, out.Cancelled)
+		require.NotNil(t, out.ErrorMessage)
+		assert.Contains(t, *out.ErrorMessage, "thread name")
+		assert.Contains(t, *out.ErrorMessage, "no task prompt was sent")
+		require.NotNil(t, out.Session)
+		assert.Equal(t, "fixture-thread", out.Session.SessionID)
+		assert.Equal(t, "not-dispatched", out.Session.Dispatch)
+		assert.Equal(t, "failed", out.Session.Outcome)
+		assert.True(t, out.Session.CleanupConfirmed)
+		assert.False(t, out.Session.ResumeCandidate)
+		var receipt codexProReceipt
+		require.NoError(t, json.Unmarshal(out.CodexProReceipt, &receipt))
+		require.NotNil(t, receipt.Failure)
+		assert.Equal(t, "thread-name", receipt.Failure.Stage)
+		assert.Equal(t, "protocol", receipt.Failure.Category)
+		require.Len(t, lifecycle, 2)
+		assert.Equal(t, "terminal", lifecycle[0].Event)
+		assert.Equal(t, "cleanup-confirmed", lifecycle[1].Event)
+		for _, event := range lifecycle {
+			require.NotNil(t, event.ThreadID)
+			assert.Equal(t, "fixture-thread", *event.ThreadID)
+			assert.Nil(t, event.TurnID)
+			assert.Equal(t, "not-dispatched", event.Dispatch)
+			assert.Equal(t, "failed", event.Outcome)
+		}
+
+		t.Setenv(CodexProWorkerEnv, worker)
+		recovered, err := RecoverMachine(MachineRecoveryArgs{Harness: "codex-pro", RequestID: a.RequestID,
+			RunID: receipt.RunID, RecoveryDirectory: a.RecoveryDirectory, Cwd: a.Cwd, Model: a.Model,
+			ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, PersistentSession: true})
+		require.NoError(t, err)
+		assert.True(t, recovered.Recovered)
+		assert.False(t, recovered.Settled)
+		assert.False(t, recovered.Cancelled)
+		assert.False(t, recovered.TimedOut)
+		assert.JSONEq(t, string(out.CodexProReceipt), string(recovered.CodexProReceipt))
+		assert.Equal(t, out.Session, recovered.Session)
+		entries := readCodexProLog(t, a.APIKeys["TEST_CODEX_PRO_LOG"])
+		var names []string
+		spawns := 0
+		for _, entry := range entries {
+			if entry["event"] == "spawn" {
+				spawns++
+			}
+			if entry["method"] == "thread/name/set" {
+				names = append(names, entry["params"].(map[string]any)["name"].(string))
+			}
+		}
+		assert.Equal(t, []string{a.SessionTitle}, names)
+		assert.Equal(t, 1, spawns, "failure and read-only recovery do not dispatch a replacement")
+		assert.False(t, codexProLogHasMethod(entries, "turn/start"))
+		assert.False(t, codexProLogHasMethod(entries, "review/start"))
+		assertCodexProProcessesStopped(t, entries)
+	})
+
 	for _, scenario := range []string{"activity-quiet", "activity-foreign", "activity-stale-root", "activity-completed-child"} {
 		t.Run(scenario+" cannot renew real idle deadline", func(t *testing.T) {
 			a := setup(t, scenario)

@@ -111,6 +111,77 @@ for (const scenario of ['activity-raw-volume', 'activity-display-volume']) {
   });
 }
 
+for (const scenario of ['native-child', 'native-stale-spawn', 'native-new-turn-completed']) {
+  test(`installed worker preserves exact child completion through ${scenario}`, { timeout: 15000 }, async t => {
+    const f = await setup(t, scenario);
+    const receipt = completed(await f.launch({ ...f.request, native: { version: 1, agents: { enabled: true } } }).done);
+    assert.equal(receipt.native.completion.confirmed, true);
+    assert.deepEqual(receipt.native.completion.pendingIds, []);
+    assert.equal(receipt.native.children.length, 1);
+    const child = receipt.native.children[0];
+    assert.equal(child.id, 'child-thread');
+    assert.equal(child.state, 'completed');
+    assert.equal(child.turnId, scenario === 'native-new-turn-completed' ? 'child-turn-2' : 'child-turn');
+    assert.equal(child.usage.status, 'complete');
+    assert.equal(receipt.native.usage.totalTokens, scenario === 'native-new-turn-completed' ? 30 : 15);
+  });
+}
+
+test('installed worker keeps a new child turn pending despite a late completed spawn snapshot', { timeout: 15000 }, async t => {
+  const f = await setup(t, 'native-new-turn-pending');
+  const run = await f.launch({ ...f.request, native: { version: 1, agents: { enabled: true } } }).done;
+  assert.equal(run.code, 1, JSON.stringify(run.frames.at(-1)));
+  const receipt = run.frames.at(-1).receipt;
+  assert.equal(receipt.ok, false);
+  assert.equal(receipt.outcome.execution.failure.stage, 'native');
+  assert.equal(receipt.outcome.execution.failure.category, 'completion');
+  assert.equal(receipt.outcome.cleanup.confirmed, true);
+  assert.equal(receipt.native.completion.confirmed, false);
+  assert.deepEqual(receipt.native.completion.pendingIds, ['child-thread']);
+  assert.equal(receipt.native.children[0].turnId, 'child-turn-2');
+  assert.equal(receipt.native.children[0].state, 'running');
+  assert.equal(receipt.native.children[0].usage.status, 'partial');
+  assert.equal(receipt.native.usage.totalTokens, null);
+});
+
+for (const sessionTitle of ['Flywheel · Alerts · Design review', undefined]) {
+  test(`installed persistent worker fails before dispatch when ${sessionTitle ? 'the explicit title' : 'the fallback title'} is rejected`, { timeout: 15000 }, async t => {
+    const f = await setup(t, 'name-rejected');
+    const input = { ...f.request, threadMode: 'persistent', ...(sessionTitle === undefined ? {} : { sessionTitle }) };
+    const run = await f.launch(input).done;
+    assert.equal(run.code, 1, JSON.stringify(run.frames.at(-1)));
+    const receipt = run.frames.at(-1).receipt;
+    assert.equal(receipt.ok, false);
+    assert.equal(receipt.outcome, null);
+    assert.equal(receipt.failure.stage, 'thread-name');
+    assert.equal(receipt.failure.category, 'protocol');
+    assert.match(receipt.failure.diagnostic, /thread name.*no task prompt was sent/);
+    assert.equal(receipt.failure.execution.threadId, 'fixture-thread');
+    assert.equal(receipt.failure.execution.turnId, null);
+    assert.equal(receipt.failure.execution.dispatch, 'not-dispatched');
+    assert.equal(receipt.failure.execution.cancelled, false);
+    assert.equal(receipt.failure.execution.timedOut, false);
+    assert.equal(receipt.failure.cleanup.confirmed, true);
+    const lifecycle = run.frames.filter(x => x.type === 'lifecycle').map(x => x.lifecycle);
+    assert.deepEqual(lifecycle.map(x => x.event), ['terminal', 'cleanup-confirmed']);
+    assert.ok(lifecycle.every(x => x.threadId === 'fixture-thread' && x.turnId === null
+      && x.dispatch === 'not-dispatched' && x.outcome === 'failed'));
+
+    const recovered = await f.launch({ protocol: 3, type: 'recover', requestId: input.requestId, runId: receipt.runId,
+      recoveryDirectory: input.recoveryDirectory, original: { cwd: input.cwd, model: input.model,
+        reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, threadMode: input.threadMode } }).done;
+    assert.equal(recovered.code, 0, recovered.stderr + JSON.stringify(recovered.frames));
+    assert.deepEqual(recovered.frames.at(-1).recovery.receipt, receipt);
+    const records = await f.records();
+    assert.equal(records.filter(x => x.event === 'spawn').length, 1, 'failure and recovery do not start a replacement provider');
+    const names = records.filter(x => x.method === 'thread/name/set');
+    assert.equal(names.length, 1);
+    if (sessionTitle !== undefined) assert.equal(names[0].params.name, sessionTitle);
+    assert.equal(records.some(x => ['turn/start', 'review/start'].includes(x.method)), false, 'no business prompt is dispatched');
+    assert.equal(JSON.parse(await readFile(f.history, 'utf8')).name, undefined);
+  });
+}
+
 test('quiet installed provider has no generated heartbeat and preserves its real timeout receipt', { timeout: 10000 }, async t => {
   const f = await setup(t, 'activity-quiet'), run = await f.launch({ ...f.request, timeoutMs: 1300 }).done;
   assert.equal(run.code, 1);

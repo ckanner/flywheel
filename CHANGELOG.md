@@ -30,6 +30,13 @@ their original language.
   evidence, and keep Claude ambient watchers separate from current task runs.
   An incomplete child-ownership ledger cannot attest remote cleanup; local
   process cleanup remains independently recorded.
+- Preserve Codex child turn and closure facts over delayed creation snapshots,
+  including V2 started markers; genuine subsequent turns and queued follow-up
+  work still require completion. Regress both event orders through the worker
+  and Go driver using the exact bundled companion.
+- Require confirmed Codex naming before a new persistent machine task is sent.
+  A failed explicit or fallback title write preserves the known thread,
+  not-dispatched status and physical cleanup in the durable failure receipt.
 - Count Kimi native retained state instead of cumulative snapshot traffic, with
   the same bounded accounting for WebSocket updates and final HTTP reconciliation.
   Verify a new native history's requested title and ownership before dispatch.
