@@ -4,6 +4,8 @@
 
 ## 范围与证据身份
 
+实现提交为 [`e58e106481e714bd7f019e36ea76c41e26dc523b`](https://github.com/ckanner/flywheel/commit/e58e106481e714bd7f019e36ea76c41e26dc523b)，tree `395aa5dd8278045480b9d1021aa74a6b07ed4b02`。下面的完整安装候选直接构建自该干净提交；后续验收补记只修改本记录与 evidence，不改运行时代码。
+
 这是原始跨 Provider 审查之后的实现验证，不替换原审查的历史结论。修改范围是
 Flywheel、Codex Pro 与 Claude Code Pro。ChatGPT 0.1.20、LCU 0.5.0 和 preset
 generator 0.4.0 没有发现必须修改源码的同类缺陷；DSH 公共流桥接修复适用于实际
@@ -125,8 +127,54 @@ metadata 和 idle 状态。确认拥有的准备运行时物理退出后才派�
 | Go 完整门禁 | 最终代码 `make quality-gate` 通过：vet、fmt、全包测试及每函数100%（含 Kimi 结构化 TIMEOUT 最后回归） |
 | 36 trial 真实引擎评估 | 36/36 质量通过，六类场景各6条、96次 adapter 调用，未提前停止；40个新持久历史在prompt前命名，10次resume不改名 |
 | 发行/evaluator补充 | 23/23相关npm单测、fixture拒绝路径和workflow YAML解析通过；CI保留远端30分钟时限，publish仍核验官方Claude归档 |
-| 最终真实 Go → Node 桥接 | 扩展后的8个顶层 bridge 测试全部通过（105.336s），覆盖四后端原协议、三组新增activity及Kimi print命名 |
-| 完整候选安装 | 实现提交之后以干净源码隔离构建、安装；实际身份与安装结果在后续验收补记，不将尚未执行的步骤计为通过 |
+| 最终真实 Go → Node 桥接 | 8个顶层测试、90个子用例通过（105.336s），覆盖四后端原协议、三组新增activity及Kimi print命名 |
+| 并发 race | `go test -race ./internal/watchdog ./internal/drivers -count=1` 通过，无 DATA RACE；两包6.808s/137.302s |
+| 完整候选构建 | 干净实现提交隔离 snapshot、锁定依赖、四平台 native binaries 与完整单包构建通过 |
+| 实际候选安装 | packed-host 10/10；干净安装、实际Codex/Claude worker、取消、重试配置保留与旧split-desktop迁移15/15，两个报告均0 skip |
+
+### 可复核的命令
+
+```bash
+make quality-gate
+npm --prefix plugins/dsh run check
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge)$' -count=1 -v
+go test -race ./internal/watchdog ./internal/drivers -count=1
+npm test
+make build
+FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm FLYWHEEL_CLAUDE_CODE_PRO_TARBALL="$PWD/plugins/dsh/vendor/dsh-subagent-claude-code-pro-0.5.2.tgz" npm run test:install
+```
+
+完整 Node check 后对最后的 Kimi 长目录／deadline 分类修改重跑了相关27个用例；
+最终 Go 全门禁、跨层桥接和安装包均包含这些修改。发行/evaluator相关23个单测
+覆盖最后的fixture/workflow消费版本更新。没有为了得到通过而修改生产校验、
+放宽覆盖率或跳过可选插件。
+
+### 完整 Flywheel 候选身份
+
+这次保留开发分支的包版本 `0.35.0` 构建验收候选；没有覆盖或发布任何同版本
+registry 包。将来发行需要独立决定新版本，并遵守精确候选及 registry gate。
+
+- archive：`ckanner-flywheel-0.35.0.tgz`，20,012,563 bytes。
+- SHA-256：`fcb37715fd221ed8cd512898208f0298cb7ccf5db7c83852be98effc0e350218`。
+- integrity：`sha512-ZxyDEhdzEIfy9MtpbF4YqyK3Vkt2QHGXczNDvAR72E0FeIkr5+KXYw3Sdry5TWB31nRnJHY/8B3oPNEwE6dGSA==`。
+- source snapshot SHA-256：`638907929a584a62d535732306315c1a5cce3ce6a14c5ea5922abd9eaeaf5853`，`dirty:false`。
+- 机器可读身份：[candidate evidence](evidence/2026-11-16-provider-liveness-candidate.json)。
+
+### 远端 CI 与本地证据分开
+
+实现提交的 Flywheel [CI run 43890392471](https://github.com/ckanner/flywheel/actions/runs/43890392471)
+已完成候选构建，Linux 测试正在执行、macOS 尚有排队项；后续文档补记的 HEAD
+需要自己的 CI，不能把该 run 当作另一提交的结果。
+
+Codex 第一轮 Linux Node22/24通过，macOS暴露的是新测试临时路径别名；已提交测试
+专用修复，真实符号链接 TMPDIR 下11/11通过且重打包字节不变。新
+[run 43889015567](https://github.com/ckanner/dsh-subagent-codex-pro/actions/runs/43889015567)
+的Linux Node22/24已通过、macOS仍待执行。Claude
+[run 43886603084](https://github.com/ckanner/dsh-subagent-claude-code-pro/actions/runs/43886603084)
+的Linux Node22/24和macOS Node24通过；macOS Node22第一次未执行步骤即取消，
+已单独重跑，记录时仍在排队。这些是本次补记时的快照，不宣称远端全绿或可直接合并。
 
 各修复均有针对失效模式的回归，不只是断言 mock 被调用。跨层测试以短 idle/wall
 放大同一竞态边界；测试时长不能当作模型性能或最佳 timeout 测量。临时环境中的
