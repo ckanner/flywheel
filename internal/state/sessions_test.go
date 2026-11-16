@@ -73,7 +73,7 @@ func TestSessionStateRejectsMalformedOrContradictoryCheckpoints(t *testing.T) {
 		name   string
 		change func(*SessionLedger)
 	}{
-		{"unknown version", func(s *SessionLedger) { s.Version = 4 }},
+		{"unknown version", func(s *SessionLedger) { s.Version = 5 }},
 		{"nil records", func(s *SessionLedger) { s.Records = nil }},
 		{"nil record", func(s *SessionLedger) { s.Records["execute/M01-T01"] = nil }},
 		{"nil invocation", func(s *SessionLedger) { s.Records["execute/M01-T01"].Last = nil }},

@@ -202,7 +202,7 @@ flywheel install-skills --project /absolute/path/to/repo --json
 
 Follow the host's discovery rules. Installer-owned unchanged snapshots can update;
 modified or unowned files are preserved and reported as conflicts. In DSH, use
-`/flywheel-task <goal>` to prepare and launch, `/flywheel-new <goal>` for a proposal,
+`/flywheel-task <goal>` to prepare and launch, `/flywheel-new <goal>` for design/review followed by approval,
 and `/flywheel-run <task-path>` for an existing task. Kimi uses the `/skill:` prefix.
 
 ## 5. Run preflight without inference
@@ -249,9 +249,11 @@ In DSH Chat:
 ```
 
 The assistant researches the repository, chooses or reuses the task integration
-directory under the effective worktree policy, prepares contracts and baseline
-evidence, then launches within the authorized scope. Use `/flywheel-new` to stop at
-preparation. No initial console form is required.
+directory under the effective worktree policy, records a thin brief and launches
+Go-owned design and independent review. Task retains existing implementation
+authority; `/flywheel-new` stops after review for your approval. Use the Flywheel
+view to give feedback, run Plan, approve only, or approve and start. No initial
+console form is required. See [Reviewed planning](reviewed-planning.md).
 
 Keep the **project workspace**, **task execution root**, and **task files directory**
 separate. The project is the stable repository identity; task execution may use a

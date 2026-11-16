@@ -48,7 +48,7 @@ func TestConfigMigrateCLICompletesPreviewApplyInspectAndIdempotentUpgrade(t *tes
 	assert.Equal(t, "task", preview.Scope)
 	assert.Equal(t, taskDir, preview.TaskDir)
 	assert.NotEmpty(t, preview.Current.Bindings)
-	require.Len(t, preview.Configuration.Bindings, 8)
+	require.Len(t, preview.Configuration.Bindings, 11)
 	assert.Equal(t, original, configFileBytesCLI(t, path))
 	code, human := runCLI(t, append([]string{"config", "migrate"}, args...)...)
 	require.Zero(t, code, human)

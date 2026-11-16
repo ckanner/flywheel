@@ -423,7 +423,8 @@ func TestDoctorCredentialChecksAndReportsNeverExposeValues(t *testing.T) {
 	}
 	report := Doctor(context.Background(), root, "", true)
 	assert.False(t, report.OK)
-	assert.Equal(t, "AUTH", checkByID(t, report, "loops.review.sdk").Code)
+	assert.Equal(t, "AUTH", checkByID(t, report, "loops.design-review.sdk").Code)
+	assert.Equal(t, "skipped", checkByID(t, report, "loops.review.sdk").Status)
 	assert.Equal(t, "pass", checkByID(t, report, "loops.review.credential").Status)
 	raw, err := json.Marshal(report)
 	require.NoError(t, err)
@@ -698,8 +699,9 @@ func TestDoctorCancellationWaitsForProbeAndStopsLaterBindings(t *testing.T) {
 	assert.Equal(t, "TIMEOUT", checkByID(t, report, "deadline").Code)
 	assert.Equal(t, "TRANSPORT", checkByID(t, report, "judge-panel.sdk").Code)
 	assert.Len(t, runtime.probes, 1, "cancellation must prevent all later bindings from initializing")
+	required := map[string]bool{"loops.plan": true, "loops.review": true, "loops.judge": true, "judge-panel": true, "routes.frontend": true}
 	for _, b := range report.Configuration.Bindings {
-		assert.Equal(t, b.ID != "routes.default" && b.Role != "intake" && b.Role != "garden", b.InScope,
+		assert.Equal(t, required[b.ID], b.InScope,
 			"cancellation cannot leave an unused binding marked in scope: %s", b.ID)
 	}
 }

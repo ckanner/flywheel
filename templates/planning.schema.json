@@ -1,0 +1,907 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/planning.schema.json",
+  "title": "Reviewed planning state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "phase": {
+      "enum": [
+        "drafting",
+        "reviewing",
+        "awaiting-input",
+        "awaiting-design-approval",
+        "approved",
+        "activating",
+        "ready",
+        "blocked",
+        "cancelled",
+        "budget-stopped"
+      ]
+    },
+    "brief": {
+      "$ref": "#/$defs/brief"
+    },
+    "legacy-files": {
+      "$ref": "#/$defs/activation/properties/old-files"
+    },
+    "policy": {
+      "enum": [
+        "review-first",
+        "delegated"
+      ]
+    },
+    "input-revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max-rounds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "rounds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/request"
+      },
+      "minItems": 0,
+      "maxItems": 1024
+    },
+    "designs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/design"
+      },
+      "minItems": 0,
+      "maxItems": 256
+    },
+    "plans": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/plan"
+      },
+      "minItems": 0,
+      "maxItems": 1024
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/review"
+      },
+      "minItems": 0,
+      "maxItems": 4096
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/approval"
+      },
+      "minItems": 0,
+      "maxItems": 1024
+    },
+    "feedback": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/feedback"
+      },
+      "minItems": 0,
+      "maxItems": 1024
+    },
+    "current-design": {
+      "$ref": "#/$defs/ref"
+    },
+    "current-plan": {
+      "$ref": "#/$defs/ref"
+    },
+    "current-plans": {
+      "type": "object",
+      "maxProperties": 1024,
+      "additionalProperties": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "active": {
+      "$ref": "#/$defs/activation"
+    },
+    "pending-activation": {
+      "$ref": "#/$defs/activation"
+    },
+    "start-authorized": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "\\S"
+    }
+  },
+  "required": [
+    "version",
+    "phase",
+    "brief",
+    "policy",
+    "input-revision",
+    "max-rounds",
+    "rounds",
+    "requests",
+    "designs",
+    "plans",
+    "reviews",
+    "approvals",
+    "feedback",
+    "current-plans",
+    "start-authorized"
+  ],
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "revision",
+        "digest"
+      ]
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "original-request": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "pattern": "\\S"
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "pattern": "\\S"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "pattern": "\\S"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "policy": {
+          "enum": [
+            "review-first",
+            "delegated"
+          ]
+        },
+        "authorization": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "implementation-authorized": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "auto",
+            "quick",
+            "full"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "id",
+        "goal",
+        "original-request",
+        "constraints",
+        "evidence",
+        "policy",
+        "implementation-authorized"
+      ]
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^R-[0-9]{2,}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "milestone": {
+          "type": "string",
+          "pattern": "^M-[0-9]{2,}$"
+        },
+        "verification": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "milestone",
+        "verification"
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "kind": {
+          "enum": [
+            "fixed",
+            "delegated",
+            "unresolved"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "statement",
+        "rationale"
+      ]
+    },
+    "milestone": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^M-[0-9]{2,}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "gate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "gate"
+      ]
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "input-revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "document": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144,
+          "pattern": "\\S"
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requirement"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/decision"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/milestone"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "baseline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "planner-invocation": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "implementation-scope": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "required": [
+        "ref",
+        "input-revision",
+        "document",
+        "requirements",
+        "decisions",
+        "milestones",
+        "baseline",
+        "planner-invocation",
+        "implementation-scope"
+      ]
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "input-revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scope": {
+          "enum": [
+            "milestone",
+            "packet",
+            "replan"
+          ]
+        },
+        "scope-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "files": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 256,
+          "patternProperties": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 131072,
+              "pattern": "\\S"
+            }
+          },
+          "additionalProperties": false
+        },
+        "dependencies": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "scope-verdict": {
+          "enum": [
+            "within-envelope",
+            "material-change",
+            "unclear"
+          ]
+        },
+        "planner-invocation": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        }
+      },
+      "required": [
+        "ref",
+        "design",
+        "input-revision",
+        "scope",
+        "scope-id",
+        "files",
+        "dependencies",
+        "scope-verdict",
+        "planner-invocation"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "severity": {
+          "enum": [
+            "blocker",
+            "major",
+            "minor",
+            "info"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "impact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "resolution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved",
+            "accepted"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "target",
+        "evidence",
+        "impact",
+        "status"
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "kind": {
+          "enum": [
+            "design",
+            "plan"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/ref"
+        },
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "input-revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "invocation": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "role": {
+          "enum": [
+            "design-review",
+            "plan-review"
+          ]
+        },
+        "binding": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "revise",
+            "needs-user-decision",
+            "blocked"
+          ]
+        },
+        "scope-verdict": {
+          "enum": [
+            "within-envelope",
+            "material-change",
+            "unclear"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "pattern": "\\S"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "input-revision",
+        "invocation",
+        "role",
+        "binding",
+        "verdict",
+        "summary",
+        "findings"
+      ]
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "delegated"
+          ]
+        },
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "review-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "request-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "start": {
+          "type": "boolean"
+        },
+        "report-hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "design",
+        "review-id",
+        "request-id",
+        "source",
+        "at",
+        "start"
+      ]
+    },
+    "feedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request-id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "target": {
+          "$ref": "#/$defs/ref"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "pattern": "\\S"
+        },
+        "policy": {
+          "enum": [
+            "review-first",
+            "delegated"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "request-id",
+        "source",
+        "text",
+        "at"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [{
+        "if": {"properties": {"scope": {"enum": ["milestone", "packet"]}}},
+        "then": {"properties": {"scope-id": {"minLength": 1}}}
+      }],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "scope": {
+          "enum": [
+            "design",
+            "milestone",
+            "packet",
+            "replan"
+          ]
+        },
+        "scope-id": {
+          "type": "string",
+          "pattern": "^(|[A-Za-z0-9][A-Za-z0-9_.:-]{0,119})$"
+        },
+        "input-revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max-rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "awaiting-input",
+            "blocked",
+            "cancelled",
+            "budget-stopped"
+          ]
+        },
+        "planning-only": {
+          "type": "boolean"
+        },
+        "feedback": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "stage": {
+          "enum": [
+            "planner",
+            "reviewer",
+            "finished"
+          ]
+        },
+        "role": {
+          "enum": ["design-plan", "design-review", "plan", "plan-review"]
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "\\S"
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "scope-id",
+        "input-revision",
+        "rounds",
+        "max-rounds",
+        "status",
+        "planning-only",
+        "retries"
+      ]
+    },
+    "activation-ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "version",
+        "design",
+        "plans"
+      ]
+    },
+    "activation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "files": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 256,
+          "patternProperties": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "old-files": {
+          "type": "object",
+          "minProperties": 0,
+          "maxProperties": 256,
+          "patternProperties": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "stage": {
+          "enum": [
+            "intent",
+            "projected",
+            "committed",
+            "synced",
+            "active"
+          ]
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        },
+        "head": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "design",
+        "plans",
+        "files",
+        "old-files",
+        "stage",
+        "base"
+      ]
+    }
+  }
+}

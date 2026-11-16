@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { directory, nonempty, record, validInvestigationCommand } from './protocol.js';
+import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
 
-const actions = ['investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'];
+const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
 
 // This marker is issued only where the host can prove that no control process
@@ -17,10 +18,12 @@ export async function validateControl(input, defaultCwd) {
   if (!record(input) || !actions.includes(input.action)) {
     throw new Error('action must be launch, start, step, status, stop, config, config-edit, config-save, or doctor');
   }
-  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe', 'mode', 'only', 'packet', 'revision', 'retryReason', 'editor', 'session', 'sessionKey', 'delivery', 'runId', 'investigation'].includes(key))) {
+  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe', 'mode', 'only', 'packet', 'revision', 'retryReason', 'editor', 'session', 'sessionKey', 'delivery', 'runId', 'investigation', 'planning'].includes(key))) {
     throw new Error('unknown Flywheel control argument');
   }
   if (input.action === 'investigate' ? !validInvestigationCommand(input.investigation) : 'investigation' in input) throw new Error('investigate requires a typed, revision-bound preparation command');
+  if (input.action === 'planning' ? !validPlanningCommand(input.planning) : 'planning' in input) throw new Error('planning requires a typed, version-bound planning command');
+  if (input.planning && Buffer.byteLength(JSON.stringify(input.planning)) > 131072) throw new Error('planning input exceeds 128 KiB');
   if (input.investigation && Buffer.byteLength(JSON.stringify(input.investigation)) > 131072) throw new Error('investigation input exceeds 128 KiB');
   if ('probe' in input && (input.action !== 'doctor' || typeof input.probe !== 'boolean')) {
     throw new Error('probe must be a boolean and is only supported by doctor');
@@ -53,6 +56,7 @@ export async function validateControl(input, defaultCwd) {
   const needsTask = !['config', 'doctor', 'config-edit', 'config-save', 'runs'].includes(input.action);
   return {
     action: input.action,
+    ...(input.planning ? { planning: input.planning } : {}),
     ...(input.investigation ? { investigation: input.investigation } : {}),
     ...(input.action === 'node' ? { packet: input.packet } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
@@ -90,7 +94,7 @@ function validDiagnostic(value, request) {
 }
 
 /** Only the engine executable can mutate engine state. No shell interpolation. */
-export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, signal, timeoutMs = 60000 } = {}) {
+export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, signal, timeoutMs = 60000 } = {}) {
   let request;
   try {
     nonempty(binary, 'flywheelBinary', 4096);
@@ -99,6 +103,8 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
       throw new Error('controlTimeoutMs must be between 100 and 120000');
     }
     request = await validateControl(input, defaultCwd);
+    if (request.planning?.action === 'approve' && !validPlanningUserAction(planningUserAction, request.planning)) throw new Error('Design approval requires a verified human command');
+    if (planningUserAction !== undefined && request.planning?.action !== 'approve') throw new Error('User approval proof is only valid for design approval');
     if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   } catch (error) {
     throw new ControlNotDispatchedError(error);
@@ -118,12 +124,14 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
   if (request.retryReason) args.push('--retry-reason', request.retryReason);
   const env = { ...process.env };
   delete env.DSH_SESSION_ID;
+  delete env.FLYWHEEL_PLANNING_USER_ACTION;
   if (typeof hostSessionID === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(hostSessionID)) env.DSH_SESSION_ID = hostSessionID;
+  if (planningUserAction !== undefined) env.FLYWHEEL_PLANNING_USER_ACTION = JSON.stringify(planningUserAction);
   return new Promise((resolve, reject) => {
     let child;
     try {
       child = spawn(binary, args, {
-        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery || request.investigation ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery || request.investigation || request.planning ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
       reject(new ControlNotDispatchedError(error));
@@ -144,9 +152,9 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     };
     const cancel = () => stop(new Error('Flywheel control request cancelled'));
     const timer = setTimeout(() => stop(new Error('Flywheel control request timed out')), timeoutMs);
-    if (request.editor || request.session || request.delivery || request.investigation) {
+    if (request.editor || request.session || request.delivery || request.investigation || request.planning) {
       child.stdin.on('error', error => stop(error));
-      child.stdin.end(JSON.stringify(request.editor ?? request.session ?? request.delivery ?? request.investigation));
+      child.stdin.end(JSON.stringify(request.editor ?? request.session ?? request.delivery ?? request.investigation ?? request.planning));
     }
     signal?.addEventListener('abort', cancel, { once: true });
     // Decode across chunks so a split UTF-8 code point is not replaced in a
@@ -201,6 +209,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
         record(response.state) && Number.isSafeInteger(response.state.revision) && response.state.revision > 0 &&
         typeof response.state.status === 'string' && response.state.status !== '' && record(response.state.packets);
       if ((request.action === 'investigate' && !investigationStatusAfterHandoff && (!record(response.preparation) || response.preparation.version !== 1 || !Number.isSafeInteger(response.preparation.revision) || response.preparation.revision < 1 || !record(response.preparation.contract) || !Array.isArray(response.preparation.observations))) ||
+          (request.action === 'planning' && (!record(response.state?.planning) || response.state.planning.version !== 1 || !Number.isSafeInteger(response.state.revision) || response.state.revision < 1)) ||
           (request.action === 'node' && (!record(response.node) || response.node.id !== request.packet || !record(response.node.packet))) ||
           (['delivery','deliver'].includes(request.action) && (!record(response.delivery) || !Array.isArray(response.delivery.pulls))) ||
           (request.action === 'history' && (!record(response.history) || response.history.key !== request.sessionKey)) ||

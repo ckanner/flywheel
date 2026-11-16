@@ -189,6 +189,9 @@ func (c *Context) processSharedExecution(pauseBefore string) (stopped bool, runE
 }
 
 func (c *Context) commitSharedExecution(members []*contract.Packet) error {
+	if err := c.admitReviewedBoundary(); err != nil {
+		return err
+	}
 	if err := c.err(); err != nil {
 		return err
 	}

@@ -122,12 +122,15 @@ type Driver interface {
 
 // Drivers 按角色装配的驱动集合（Node createDrivers 返回值等价）。
 type Drivers struct {
-	Plan    Driver
-	Execute Driver
-	Review  Driver
-	Judge   Driver
-	Intake  Driver
-	Garden  Driver
+	DesignPlan   Driver
+	DesignReview Driver
+	PlanReview   Driver
+	Plan         Driver
+	Execute      Driver
+	Review       Driver
+	Judge        Driver
+	Intake       Driver
+	Garden       Driver
 }
 
 // InvokeHarness 通用 harness 分发（Node invokeHarness）：harness 取自绑定表，
@@ -382,7 +385,7 @@ func (d realDriver) Garden(a CallArgs) Result  { return d.harness(a, a.Prompt) }
 // CreateDrivers 按 config.drivers 装配六角色：`mock` 选 mock 实现，否则真实
 // 分发（Node createDrivers 等价）。
 func CreateDrivers(cfg *config.Config) *Drivers {
-	isMock := func(role string) bool { return cfg.Drivers[role] == "mock" }
+	isMock := func(role string) bool { return cfg.DriverKind(role) == "mock" }
 	mock := NewMockDriver(cfg.MockBehaviors)
 	var real Driver = realDriver{}
 	pick := func(role string) Driver {
@@ -392,11 +395,14 @@ func CreateDrivers(cfg *config.Config) *Drivers {
 		return real
 	}
 	return &Drivers{
-		Plan:    pick("plan"),
-		Execute: pick("execute"),
-		Review:  pick("review"),
-		Judge:   pick("judge"),
-		Intake:  pick("intake"),
-		Garden:  pick("garden"),
+		DesignPlan:   pick("design-plan"),
+		DesignReview: pick("design-review"),
+		PlanReview:   pick("plan-review"),
+		Plan:         pick("plan"),
+		Execute:      pick("execute"),
+		Review:       pick("review"),
+		Judge:        pick("judge"),
+		Intake:       pick("intake"),
+		Garden:       pick("garden"),
 	}
 }

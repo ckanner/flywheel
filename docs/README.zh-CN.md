@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | 安装、配置 provider、完成首个任务 | [快速开始](zh-CN/getting-started.md) | [Getting started](en/getting-started.md) |
 | 处理故障、修复 Issue、推进复杂项目 | [使用手册](zh-CN/usage-handbook.md) | [Usage handbook](en/usage-handbook.md) |
+| 方案讨论、独立审查、精确批准与逐步细化 | [方案设计与审查](zh-CN/reviewed-planning.md) | [Reviewed planning](en/reviewed-planning.md) |
 | 准备契约、选择 Auto/Quick/Full、交付变更 | [工作流](zh-CN/workflow.md) | [Workflow](en/workflow.md) |
 | 故障调查、修复授权与有界语义决策 | [有界调查](zh-CN/investigation.md) | [Investigation](en/investigation.md) |
 | 使用画布、阶段操作、会话和运行记录 | [流程工作台](zh-CN/flow-console.md) | [Workbench](en/flow-console.md) |
@@ -37,6 +38,8 @@
 ## 设计决策与证据
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
+
+[真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
 

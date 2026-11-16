@@ -3,12 +3,12 @@
 [文档首页](../README.zh-CN.md) · 简体中文 · [English](../en/usage-handbook.md)
 
 本手册按实际目标说明如何使用 Flywheel：排查故障、修复 issue，以及完成复杂系统项目。
-以下对应 0.34 工作流；实际设置以安装版本的模板和有效配置为准。
+以下对应当前源码支持的工作流；实际设置以安装版本的模板和有效配置为准。
 可以直接复制对话示例，并替换其中的问题、仓库和路径。安装细节见[快速开始](getting-started.md)，
 完整流程和契约规则见[工作流](workflow.md)。
 
-日常从 `/flywheel-task` 开始。DSH 助手研究需求并准备任务契约，Go 引擎负责执行、
-验证、重试、预算、恢复和本地 Git 交付。需要先审方案时用 `/flywheel-new`；
+日常从 `/flywheel-task` 开始。DSH 助手把目标、证据和已有授权记入薄 brief，
+Go 引擎负责设计、独立审查、逐步细化、执行、验证、预算、恢复和本地 Git 交付。需要先审方案时用 `/flywheel-new`；
 已有任务用 `/flywheel-run`。推送、PR、合并和发布按各自明确的授权继续处理。
 
 - [在 DSH 中开始](#1-在-dsh-中开始)
@@ -60,10 +60,11 @@ DSH，并保留原 prefix、profile 和定制设置。CLI、内置引擎和桌�
 
 ### 打开项目并发起任务
 
-1. 在 DSH 打开目标仓库并进入对话。当前对话模型负责研究代码和准备契约；
-   Flywheel 的 `loops.plan` 只控制引擎启动后的 Plan，不切换当前对话模型。
+1. 在 DSH 打开目标仓库并进入对话。当前模型整理 brief 和反馈；真正设计使用
+   `loops.design-plan`，独立方案/子计划审查用 `loops.design-review` / `loops.plan-review`。
+   缺省绑定继承原 Plan/Review 后端，不要求宿主先完成架构。
 2. 在对话输入 `/flywheel-task` 加上目标和验收要求。先审方案时改用 `/flywheel-new`。
-3. 助手选择或复用任务分支和执行目录，在其中准备 `docs/<任务名>/`，再调用启动接口。
+3. 助手选择或复用任务分支和执行目录，在其中创建 `docs/<任务名>/`，登记 brief 并启动 Go 规划。
 4. 查看真实启动回执，并打开“统计”之后的 **Flywheel** 会话视图；窄窗口可检查更多菜单。
    新会话的空白首页尚不显示这排会话视图。
 
@@ -106,11 +107,11 @@ flywheel install-skills --project "$PWD" --json
 | DSH 入口 | 用途 |
 | --- | --- |
 | `/flywheel-task <目标> mode=auto` | 准备并启动新调查、实现或文档任务；省略 mode 也使用 Auto |
-| `/flywheel-new <目标>` | 准备可审阅方案，不启动实施 |
+| `/flywheel-new <目标>` | 登记 brief，运行设计/审查，停下等你批准精确版本 |
 | `/flywheel-run <任务目录>` | 启动或恢复已有任务，沿用已保存的流程策略 |
 | `/flywheel-status <任务目录>` | 查看进度、用量、结果和阻断 |
 | `/flywheel-stop <任务目录>` | 请求停止运行，保留任务成果和记录 |
-| `/flywheel-plan <任务目录>` | 单独运行规划或重规划，要求 Full |
+| `/flywheel-plan <任务目录> [scope=<scope>] [id=<id>]` | 设计或细化并独立审查，结束后停止；旧任务保留里程碑 Plan |
 | `/flywheel-exec <任务目录> M01-T01` | 运行指定 packet 的有界 Execute／L1 循环 |
 | `/flywheel-verify <任务目录> M01-T01` | 运行适用的确定性验收，不调用模型 |
 | `/flywheel-review <任务目录> M01-T01` | 对满足前置条件的当前候选单独评审 |
@@ -139,7 +140,7 @@ flywheel skills read flywheel-run
 | Full | 多个 packet、未决设计，或权限、迁移、并发等风险 | Plan → 分项执行／验证／Review／交付 → 集成验证与 Judge |
 
 Quick 保留适用的 L1／L2／L3 和仓库必需检查。首次成功路径有 Execute 与最终 Review
-两次阶段模型调用；宿主准备、工具轮次、重试另计。显式 Quick 仍要满足资格；发现新风险
+两次实现阶段模型调用；新任务还有初始设计与 Design Review，宿主准备、工具轮次、重试另计。显式 Quick 仍要满足资格；发现新风险
 时可以单向升级为 Full。没有工作流元数据的旧任务继续使用 Full。
 
 Auto 选择工作流，模型由执行路由和配置决定。`--only execute` 是单阶段操作，
@@ -275,17 +276,22 @@ Auto 选择工作流，模型由执行路由和配置决定。`--only execute` �
 ```text
 /flywheel-new 为这个仓库设计多租户任务调度系统。
 
-准备 Full 工作流的需求、架构取舍、milestones、task packets、
-验收方式、迁移与回退方案，先交付方案供我审阅。
+记录需求与约束，由引擎设计 Full 工作流的架构取舍、milestones、
+验收方式、迁移与回退方案。独立设计审查后停下供我讨论和批准。
 ```
 
-审阅并授权实施后，用准备结果中的真实目录：
+在同一 Flywheel 视图讨论 findings、提交反馈，再用 Plan 修订。确定后点
+“批准此版本并开始”；“批准此版本”仍停在实施前，之后可点“开始已批准方案”。
+已授权启动的任务，用原结果中的真实目录继续：
 
 ```text
 /flywheel-run <实际任务目录> mode=full
 ```
 
-从零研究需求用 New；已有契约需要重新规划时才用 Plan。一个任务可以包含多个
+New 登记目标并自动跑首轮设计/审查；Plan 默认做真正整体设计，后续也可用
+`scope=milestone id=M-01` 或 `scope=packet id=M01-T01` 细化任务。根方案可以先批准，
+不必先写全远期 packets；范围内细节继续，实质变化回到根方案讨论。
+详见[方案设计与审查](reviewed-planning.md)。一个任务可以包含多个
 里程碑和 packets；packet 是内部执行单元，不会自动各建一个 PR。按可独立交付的
 需求或里程碑组织 PR。跨多个仓库的系统可按仓库和交付边界拆任务，统一维护接口规范
 与集成验收。
@@ -319,6 +325,11 @@ Claude Code Pro 是可选后端，默认未分配阶段。以上是可编辑的�
 或模型排名的保证。DSH 的 ChatGPT provider 与 Codex CLI 的登录分别管理；桌面当前
 模型不会决定独立 SDK worker 的模型。需要 hard 路由时，可在需求中明确要求对应
 packet 使用该路由，由准备／规划阶段写入契约。详见[模型策略](model-policy.md)。
+
+新增 `design-plan` 默认继承 Plan，`design-review` 与 `plan-review` 默认继承 Review。
+config inspect 的 `bindingSource` 显示来源；后端绑定继承不复用角色会话或权限覆盖，
+也不自动新增跨渠道 fallback 授权。当前对话只整理 brief/反馈，实际设计模型由上述
+引擎绑定决定，详见[方案设计与审查](reviewed-planning.md)。
 
 ### 区分三层配置
 
@@ -396,7 +407,9 @@ JEV 在已批准候选中选择取证或失败后的下一步，也可在允许�
 
 ### 从已有契约启动
 
-CLI 消费已准备的契约，不从一句目标生成 Spec，也不自动创建外层任务分支。
+旧 launch/start 消费已准备契约；新 control planning 接收结构化 brief，运行设计与
+审查并遵守授权策略，见[方案设计与审查](reviewed-planning.md)。两条路径都不自动
+创建外层任务分支。
 以下示例假设 Task／New 已在真实任务 checkout 中准备并提交契约。
 把两个路径替换为准备结果中的实际路径；它们必须属于同一个任务执行位置：
 
@@ -491,7 +504,7 @@ flywheel session "$task_dir" --key "execute/M01-T01"
 | --- | --- |
 | 提示找不到 skill 或 CLI | 用 `skills list` 核对内嵌入口、检查项目技能安装结果和 PATH；必要时使用已安装 launcher |
 | DSH 看不到任务画布 | 先进入已有会话，再用模型工具 `flywheel_control status` 关联原任务 |
-| 只生成方案，没有开始执行 | New 本来就只准备；已授权实施后对真实任务目录使用 Run |
+| 只生成方案，没有开始执行 | New 运行设计与审查后等批准；在同一视图批准并开始，已有启动授权再用 Run |
 | 调查停在 `awaiting-report` | 让当前助手根据已有观察提交报告；不重复取证来代替报告 |
 | 模型、账号或权限与预期不同 | 用带 `--task-dir` 的 `config inspect` 查看真正命中的完整配置和实际 binding |
 | desktop 可用，但 worker 缺少 provider／插件 | 核对独立 SDK profile 或全局 worker 的依赖树，按快速开始／原生能力指南修复实际位置 |

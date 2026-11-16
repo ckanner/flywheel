@@ -216,6 +216,14 @@ func Deliver(opts RunOpts, request DeliveryRequest) (snapshot *DeliverySnapshot,
 	if err != nil {
 		return nil, err
 	}
+	if c.State.Planning != nil {
+		if err := c.loadPlanningContracts(); err != nil {
+			return nil, err
+		}
+		if err := c.admitReviewedExecution(); err != nil {
+			return nil, err
+		}
+	}
 	if c.State.Handoff != nil {
 		return nil, fmt.Errorf("return the human-controlled session first")
 	}

@@ -2,6 +2,7 @@ import { reconcileWorkspaces, watchWorkspaces } from './workspaces.js';
 import { ControlNotDispatchedError, runControl } from './control.js';
 import { resolveFlywheelBinary } from './installation.js';
 import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './task-association.js';
+import { planningUserAction, planningUserProjection, planningUserProjectionKey } from './planning-control.js';
 
 export const inject = ['commands', 'tools', 'workingDirectory', 'sessionProjections'];
 
@@ -10,6 +11,7 @@ export function apply(ctx, config = {}) {
   // give a worker a tool that launches another orchestrator.
   if (process.env.FLYWHEEL_DSH_NATIVE_WORKER === '1') return;
   ctx.sessionProjections.register(taskAssociationProjection);
+  ctx.sessionProjections.register(planningUserProjection);
   watchWorkspaces(ctx);
   const binary = resolveFlywheelBinary(config);
   const active = new Set();
@@ -20,10 +22,11 @@ export function apply(ctx, config = {}) {
     dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
     message: error instanceof Error ? error.message : String(error),
   });
-  const control = async (input, agent, signal, operationId) => {
+  const control = async (input, agent, signal, operationId, humanPlanningAction) => {
     const session = agent?.session;
-    const mutation = mutatesTask(input?.action);
-    if (session && (mutation || input?.action === 'status')) {
+    const planningRead = input?.action === 'planning' && input.planning?.action === 'status';
+    const mutation = mutatesTask(input?.action) && !planningRead;
+    if (session && (mutation || input?.action === 'status' || planningRead)) {
       try {
         const projection = ctx.sessionProjections.stateOf(session, taskProjectionKey);
         if (!projection) throw new Error('Flywheel task association is unavailable for this session');
@@ -65,6 +68,7 @@ export function apply(ctx, config = {}) {
         binary,
         defaultCwd,
         hostSessionID: session?.id,
+        planningUserAction: humanPlanningAction,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
@@ -99,7 +103,12 @@ export function apply(ctx, config = {}) {
         } catch (error) {
           throw new ControlNotDispatchedError(error);
         }
-        const value = await control(input, agent, signal, 'command:' + commandId);
+        let humanPlanningAction;
+        try { humanPlanningAction = planningUserAction(input, agent?.session, commandId, rawInput,
+          input?.action === 'planning' && input.planning?.action === 'approve' && agent?.session
+            ? ctx.sessionProjections.stateOf(agent.session, planningUserProjectionKey) : undefined); }
+        catch (error) { throw new ControlNotDispatchedError(error); }
+        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction);
         return { kind: 'success', text: JSON.stringify(value, null, 2) };
       } catch (error) {
         // CommandResult preserves only kind/text. Wrap every failure, including
@@ -111,6 +120,7 @@ export function apply(ctx, config = {}) {
   const toolFailures = new WeakMap();
   const executeTool = async (args, execution) => {
     try {
+      if (args?.action === 'planning' && args.planning?.action === 'approve') throw new ControlNotDispatchedError('Use the human design approval control; model tools cannot approve a design');
       return JSON.stringify(await control(args, execution.agent, execution.signal, 'tool:' + execution.callId));
     } catch (error) {
       toolFailures.set(execution, failure(args, error));
@@ -152,6 +162,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'flywheel_control',
     description: 'Control an existing Flywheel task via its deterministic Go engine. ' +
+      'Use planning prepare with a thin brief to start design and independent review; planning plan requests design or scoped refinement only, with optional text retained as instructions for that request. New uses review-first. Global feedback references the observed state revision. Human design approval is available only through the Flywheel view or interactive CLI, never this model tool. ' +
       'Use investigate with a versioned preparation contract to gather bounded evidence; run starts the Go investigation owner in the background. Report-only investigation never authorizes implementation. Use launch for a prepared implementation task (Auto by default), status to inspect progress, start to resume, stop to await cancellation. ' +
       'Launch/start associates the exact task with the current conversation’s Flywheel view. After an unconfirmed mutation, query the same task before another mutation. ' +
       'Use config to inspect effective model bindings or doctor for a local preflight; these may omit taskDir. ' +
@@ -161,8 +172,20 @@ export function apply(ctx, config = {}) {
     parameters: {
       type: 'object', additionalProperties: false,
       properties: {
-        action: { type: 'string', enum: ['investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor'] },
+        action: { type: 'string', enum: ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor'] },
         ...taskProperties,
+        planning: { type: 'object', additionalProperties: false, properties: {
+          action: { type: 'string', enum: ['prepare', 'plan', 'feedback', 'status', 'migrate'] },
+          revision: { type: 'integer', minimum: 1 },
+          'request-id': { type: 'string', description: 'Stable request identity; reuse it when reconciling the same action.' },
+          brief: { type: 'object', description: 'Installed planning brief contract, retaining the original user request and existing authority. New defaults to review-first.' },
+          design: { type: 'object', additionalProperties: false, properties: { revision: { type: 'integer', minimum: 1 }, digest: { type: 'string' } }, required: ['revision', 'digest'] },
+          scope: { type: 'string', enum: ['design', 'milestone', 'packet', 'replan'] },
+          'scope-id': { type: 'string' },
+          text: { type: 'string', description: 'Plan: scope-local instructions retained for planner and reviewer without invalidating root approval. Feedback: changed global goals or constraints. Migrate: reason for an explicitly requested migration.' },
+          policy: { type: 'string', enum: ['review-first', 'delegated'] },
+          start: { type: 'boolean', description: 'Start the requested planning work; this does not approve a design.' },
+        }, required: ['action'] },
         investigation: { type: 'object', additionalProperties: false, properties: {
           action: { type: 'string', enum: ['start', 'run', 'status', 'report', 'cancel'] },
           revision: { type: 'integer', minimum: 1 },

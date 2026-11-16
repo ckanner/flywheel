@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "1.13.0"
+  version: "2.0.0"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -21,6 +21,25 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
 > `pause` 可选，当前只接受 `review`。
 > `mode` 可选，只接受 `auto`、`quick`、`full`；未提供时省略该参数，保留已有选择。
 
+## 已有规划记录
+
+先对原 task_dir / repo_dir 查询 `control status`（DSH 使用 `flywheel_control status`）。
+有 `state.planning` 时，不要求提前已有 Spec 或 packets：
+
+- 读取 phase、current-design、独立审查及批准记录；根方案与当前子计划各有精确引用。
+  `awaiting-design-approval` 表示设计已到用户停止点，普通 Run 不能代替批准。
+- 用户在 Flywheel 视图选择“批准此版本”仅批准；“批准此版本并开始”同时授权启动。
+  已批准但 `start-authorized:false` 时，使用真实用户按钮“开始已批准方案”。
+  模型不得调用 approve、伪造用户 actor/审批环境或代输入终端 digest。
+- 已获启动授权且无阻断时，按下面相同 `control start` 恢复。Go 会先完成当前所需
+  子计划与独立 Plan Review，核对根方案范围，再进入实现，不需要一次细化全部远期任务。
+- 显式 Plan 只做规划且会停下，即使先前有启动授权。接下来 Run 是一次新的继续动作。
+- pending-activation、过期引用、未知调用、清理未确认和预算停止必须先由原账本核对；
+  不能复制任务或切模式绕过。反馈改变输入后，要先 Plan，不把新文字当旧批准的延伸。
+
+规划初期没有 `state.workflow` 表示实现策略尚未激活，不应误报为旧 Full。
+没有 planning 的已有 Spec/packet 仍保留原流程；升级不会自动迁移。
+
 ## 已有调查准备记录
 
 先用 `control status` 查询原目录。响应只有 `preparation` 而没有实现 `state` 时，
@@ -37,7 +56,7 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
 
 ## 步骤
 
-1. **校验**：任务目录含 `spec.md` 和 `task-packet-*.md`，需求和运行已获授权。
+1. **校验**：原任务含有效 planning 记录，或旧路径的 `spec.md` 和 `task-packet-*.md`，需求和运行已获授权。
    用户要求先审阅时沿用该停止点；已明确授权同一需求则不重复索取审批。
    配置可来自任务、项目、全局或内嵌表；不强制任务目录另存配置。
    `state.json` 可以不存在，由引擎初始化；不得手工创建或修改它。

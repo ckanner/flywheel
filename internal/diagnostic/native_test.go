@@ -300,7 +300,8 @@ func TestNativeKimiSessionInspectionMatchesEffectiveHistorySelection(t *testing.
 	root, _ := diagnosticFixture(t, `{"sessions":{"mode":"fresh","policy-version":1},"native-profiles":{"native":{"harness":"kimi","options":{"version":1,"mode":"agent"}}},"loops":{"plan":{"harness":"kimi","model":"m","channel":"c","native-profile":"native","resident-session":true}}}`)
 	view, err := Inspect(root, "")
 	require.NoError(t, err)
-	require.Len(t, view.Bindings, 1)
-	require.Equal(t, "scoped", view.Bindings[0].Session.Mode)
-	require.Equal(t, "native-kimi-plan-resident", view.Bindings[0].Session.Reason)
+	require.Len(t, view.Bindings, 2)
+	binding := bindingByID(t, view, "loops.plan")
+	require.Equal(t, "scoped", binding.Session.Mode)
+	require.Equal(t, "native-kimi-plan-resident", binding.Session.Reason)
 }

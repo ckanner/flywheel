@@ -764,3 +764,10 @@
 .sessionTaskButton[aria-pressed='true'] { border-color:var(--dsw-alias-state-business-primary); background:var(--dsw-alias-bg-layer-2); }
 .sessionTaskMeta, .sessionTaskPath { font-weight:400; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:17px; overflow-wrap:anywhere; }
 .sessionTaskPath { font-family:ui-monospace,SFMono-Regular,monospace; }
+
+.planningPanel { padding: 1rem; display: grid; gap: 1rem; min-width: 0; }
+.planningPanel section { min-width: 0; }
+.planningRef { display: block; overflow-wrap: anywhere; font-size: .8rem; }
+.planningProse { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; max-height: 32rem; overflow: auto; padding: .75rem; border: 1px solid var(--ds-color-border, #8885); border-radius: .4rem; }
+.planningInput { display: block; box-sizing: border-box; width: 100%; min-height: 6rem; margin-bottom: .6rem; padding: .6rem; color: inherit; background: transparent; border: 1px solid var(--ds-color-border, #8885); border-radius: .4rem; font: inherit; resize: vertical; }
+.planningDocument, .planningReview, .planningPrevious { margin-block: .5rem; }

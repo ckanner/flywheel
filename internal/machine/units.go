@@ -241,6 +241,9 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 // completed（§5.2 state.json 不说谎），由调用方升级到人。
 func (c *Context) completeUnit(packet *contract.Packet) error {
 	defer c.measurePhase("delivery", packet.PacketID)()
+	if err := c.admitReviewedBoundary(); err != nil {
+		return err
+	}
 	if c.State.SharedExecution != nil {
 		return fmt.Errorf("%w: shared candidate requires whole-batch verification and delivery", ErrCommitFailed)
 	}
@@ -613,6 +616,9 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 
 		if c.parallel != nil && c.sharedActive(packet.PacketID) {
 			return execLoopOutcome{Deferred: true}, nil
+		}
+		if err := c.admitReviewedBoundary(); err != nil {
+			return execLoopOutcome{Stopped: true}, err
 		}
 		if err := c.beginReviewPrewarm(packet); err != nil {
 			return execLoopOutcome{Stopped: true}, err

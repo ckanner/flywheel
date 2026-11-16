@@ -8,14 +8,19 @@ import (
 )
 
 // ResolveWorkflow is a read-only resolver shared by runtime and diagnostics.
-// nil state denotes a new task; an existing state without policy is legacy Full.
+// nil state and a new reviewed brief without a selected workflow denote new
+// tasks. Migrated/existing legacy state without policy remains legacy Full.
 // Resume never reclassifies. The caller must persist an explicit Full upgrade
 // before launching any model or changing contracts.
 func ResolveWorkflow(st *State, spec *contract.Spec, packets []*contract.Packet, mode string) (contract.WorkflowSelection, error) {
+	freshPlanning := st != nil && st.Planning != nil && st.Workflow == nil && len(st.Planning.LegacyFiles) == 0
+	if freshPlanning && mode == "" {
+		mode = st.Planning.Brief.Mode
+	}
 	if mode != "" && !contract.ValidWorkflowMode(mode) {
 		return contract.WorkflowSelection{}, fmt.Errorf("unsupported workflow mode %q", mode)
 	}
-	if st == nil {
+	if st == nil || freshPlanning {
 		return contract.SelectWorkflow(spec, packets, mode)
 	}
 	if st.Workflow == nil {

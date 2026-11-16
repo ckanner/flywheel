@@ -14,6 +14,25 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 - [会话历史](#会话策略历史复用与调用安全)与[工作流策略](#工作流策略与恢复)
 - [后端接入](#codex-pro-与旧配置迁移)、[预算](#后备渠道与预算)和[预检](#无推理诊断)
 
+
+## 方案规划角色的绑定
+
+新任务使用独立 `design-plan`、`design-review`、`plan-review` 角色。缺省
+`loops.design-plan` 继承 `loops.plan` 后端，两个新审查角色继承 `loops.review`。
+显式 `loops.<role>` / `drivers.<role>` 覆盖来源绑定；profile、model、effort 与 native
+profile 随来源解析，config inspect 的 `bindingSource` 明确展示继承。显式绑定中的
+`native-profile:""` 可关闭继承的原生能力。桌面配置页展示继承行，修改后只保存该
+角色的独立覆盖。
+
+角色身份、历史及权限不会继承来源角色的覆盖。`sessions.roles` 可以独立设置这三个
+新角色。`role-based` 下新审查角色默认只读；Claude Code Pro 后端需要已有授权的
+full-access，或分别给 `permissions.bindings` 中 `loops.design-review` 和
+`loops.plan-review` 配置 `danger-full-access`。doctor 会报告不支持的权限组合，
+不会自动扩大权限。跨渠道 fallback 仍须显式 `channels.<channel>.models.<新角色>`，
+继承不扩大原来的付费渠道和模型授权。审批与作用域 Plan 见
+[方案设计与审查](reviewed-planning.md)。
+
+
 ## 配置来源
 
 发现顺序为任务目录、项目 Git 根目录、全局文件、内嵌默认表，选择第一个存在的完整文件。全局默认路径为 `~/.config/flywheel/flywheel.config.json`；`FLYWHEEL_CONFIG` 可覆盖全局文件路径，但不能越过已经存在的任务／项目配置。当前不通过 `XDG_CONFIG_HOME` 改变该默认路径。
@@ -369,7 +388,7 @@ recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Cla
 
 ### 按角色选择与上下文质量
 
-`sessions.roles` 可对 `plan`、`execute`、`review`、`judge`、`judge-panel` 分别
+`sessions.roles` 可对 `design-plan`、`design-review`、`plan-review`、`plan`、`execute`、`review`、`judge`、`judge-panel` 分别
 选择 `fresh` 或 `scoped`；省略的角色继承 `mode`。显式 `roles.plan:"fresh"`
 也关闭旧 Kimi Plan 的历史捷径；显式 `resident-session:false` 继续阻止 Plan 复用。
 Intake／Garden 不接受角色覆盖。示例只改变历史策略，不改变模型与渠道：

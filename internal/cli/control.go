@@ -22,26 +22,27 @@ import (
 )
 
 type controlResponse struct {
-	TaskTitle     string                    `json:"taskTitle,omitempty"`
-	Preparation   *state.PreparationState   `json:"preparation,omitempty"`
-	Projection    string                    `json:"projection,omitempty"`
-	Node          *machine.NodeDetail       `json:"node,omitempty"`
-	Delivery      *machine.DeliverySnapshot `json:"delivery,omitempty"`
-	History       *machine.SessionHistory   `json:"history,omitempty"`
-	Metrics       *metrics.Report           `json:"metrics,omitempty"`
-	Runs          []machine.RunRecord       `json:"runs"`
-	Protocol      int                       `json:"protocol"`
-	OK            bool                      `json:"ok"`
-	Running       bool                      `json:"running"`
-	PID           int                       `json:"pid"`
-	TaskDir       string                    `json:"taskDir"`
-	Cwd           string                    `json:"cwd,omitempty"`
-	State         *state.State              `json:"state"`
-	Sessions      []sessionSummary          `json:"sessions,omitempty"`
-	Error         string                    `json:"error,omitempty"`
-	Configuration *diagnostic.Configuration `json:"configuration,omitempty"`
-	Diagnostic    *diagnostic.Report        `json:"diagnostic,omitempty"`
-	Editor        *config.EditorDocument    `json:"editor,omitempty"`
+	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
+	TaskTitle       string                          `json:"taskTitle,omitempty"`
+	Preparation     *state.PreparationState         `json:"preparation,omitempty"`
+	Projection      string                          `json:"projection,omitempty"`
+	Node            *machine.NodeDetail             `json:"node,omitempty"`
+	Delivery        *machine.DeliverySnapshot       `json:"delivery,omitempty"`
+	History         *machine.SessionHistory         `json:"history,omitempty"`
+	Metrics         *metrics.Report                 `json:"metrics,omitempty"`
+	Runs            []machine.RunRecord             `json:"runs"`
+	Protocol        int                             `json:"protocol"`
+	OK              bool                            `json:"ok"`
+	Running         bool                            `json:"running"`
+	PID             int                             `json:"pid"`
+	TaskDir         string                          `json:"taskDir"`
+	Cwd             string                          `json:"cwd,omitempty"`
+	State           *state.State                    `json:"state"`
+	Sessions        []sessionSummary                `json:"sessions,omitempty"`
+	Error           string                          `json:"error,omitempty"`
+	Configuration   *diagnostic.Configuration       `json:"configuration,omitempty"`
+	Diagnostic      *diagnostic.Report              `json:"diagnostic,omitempty"`
+	Editor          *config.EditorDocument          `json:"editor,omitempty"`
 }
 
 func controlEditor(cmd *cobra.Command, cwd, action string) (*config.EditorDocument, error) {
@@ -79,7 +80,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
+		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,7 +105,11 @@ func controlCmd() *cobra.Command {
 			} else if cmd.Flags().Changed("probe") && action != "doctor" {
 				err = fmt.Errorf("--probe is only valid for control doctor")
 			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs") {
-				resolvedTask, err = controlDirectory(taskDir)
+				if action == "planning" {
+					resolvedTask, err = planningControlDirectory(taskDir)
+				} else {
+					resolvedTask, err = controlDirectory(taskDir)
+				}
 			}
 			if err == nil {
 				reply.TaskDir = resolvedTask
@@ -112,6 +117,8 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
+				case "planning":
+					reply, err = controlPlanning(cmd, resolvedTask, resolvedCwd)
 				case "investigate":
 					reply, err = controlInvestigation(cmd, resolvedTask, resolvedCwd)
 				case "delivery", "deliver":
@@ -206,7 +213,7 @@ func controlCmd() *cobra.Command {
 						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
 					}
 				default:
-					err = fmt.Errorf("control action must be launch, start, step, status, stop, investigate, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
+					err = fmt.Errorf("control action must be planning, launch, start, step, status, stop, investigate, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
 				}
 			}
 			if resolvedCwd != "" {
@@ -304,6 +311,12 @@ func controlSnapshot(taskDir string) (controlResponse, error) {
 	if state.Exists(taskDir) {
 		reply.State, err = state.Load(taskDir)
 		reply.Sessions = sessionSummaries(reply.State)
+		if reply.State != nil && reply.State.Planning != nil {
+			reply.TaskTitle = reply.State.Planning.Brief.Goal
+		}
+		if preparation, prepErr := state.LoadPreparation(taskDir); prepErr == nil {
+			reply.Preparation = preparation
+		}
 		return reply, err
 	}
 	if preparation, preparationErr := state.LoadPreparation(taskDir); !os.IsNotExist(preparationErr) {

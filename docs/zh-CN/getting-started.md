@@ -177,7 +177,7 @@ flywheel install-skills --project /absolute/path/to/repo --json
 
 沿用宿主的技能发现规则。安装器拥有且未修改的快照可更新，修改过或不属于安装器的
 文件会保留并报告冲突。DSH 使用 `/flywheel-task <目标>` 准备并启动，
-`/flywheel-new <目标>` 只准备方案，`/flywheel-run <任务路径>` 运行已有任务；Kimi
+`/flywheel-new <目标>` 运行设计与审查后等你批准，`/flywheel-run <任务路径>` 运行已有任务；Kimi
 对应使用 `/skill:` 前缀。
 
 ## 5. 运行无推理预检
@@ -218,8 +218,10 @@ flywheel doctor --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --probe --json
 /flywheel-task 修复已定位的问题，补齐回归测试并验证结果。mode=auto
 ```
 
-助手研究仓库，按照有效 worktree 策略选择或复用任务集成目录，准备契约与基线证据，
-再在授权范围内启动。只想准备时用 `/flywheel-new`，无需先填写控制台表单。
+助手研究仓库，按照有效 worktree 策略选择或复用任务集成目录，记录薄 brief，
+启动 Go 管理的设计与独立审查。Task 沿用已有实施授权；`/flywheel-new` 在审查后停下
+等待你批准。通过 Flywheel 视图反馈、Plan 修订、仅批准或批准并开始，无需先填写路径
+表单。详见[方案设计与审查](reviewed-planning.md)。
 
 区分**项目工作区**、**任务执行根**与**任务文件目录**：项目是稳定仓库归属，执行可
 位于 linked worktree，其契约放在 `docs/<slug>`。准备结果应报告真实路径。后续

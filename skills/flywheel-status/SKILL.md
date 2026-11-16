@@ -1,7 +1,7 @@
 ---
 name: flywheel-status
 metadata:
-  version: "1.9.0"
+  version: "2.0.0"
 description: Read-only progress report for a Flywheel task — reads state.json/retro.md/metrics and explains progress in plain language. Use for "/flywheel-status docs/<slug>" in DSH, "/skill:flywheel-status docs/<slug>" in Kimi, or a question about how a flywheel task is doing.
 whenToUse: 当用户询问任务进度、成本、缓存命中率、是否停滞或有 inbox 待办时使用（只读，不改状态）。
 compatibility: "Requires the Flywheel CLI; read-only status and measured usage reporting."
@@ -27,7 +27,14 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
    `state.json` 不存在时先看控制回执是否有 `preparation`：这是尚未进入实现的调查，报告其预算、证据与独立终态；两者都没有才说明尚未初始化。不能仅据此断言契约未生成。
    可用 `flywheel control status --task-dir "$task_dir" --cwd "$task_dir"`
    获取只读快照；`state: null` 也不代表需要手工创建 state.json。
-2. **调用**（使用绝对任务路径，不依赖当前工作目录）：
+2. **调用**（使用绝对任务路径，不依赖当前工作目录）：规划任务优先读取结构化状态，
+   DSH 用 `flywheel_control({action:"status",taskDir,cwd})`；其他宿主调用：
+
+   ```bash
+   flywheel control status --task-dir "$task_dir" --cwd "$task_dir"
+   ```
+
+   它包含精确方案、独立审查、批准和子计划记录。需要人读摘要或查询旧任务时可用：
 
    ```bash
    flywheel status "$task_dir"
@@ -36,8 +43,14 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
    若 `flywheel` 不在 PATH，使用已安装的 `~/.config/flywheel/npm-launcher` 或用户显式配置的绝对路径。首次安装使用 `npx -y @ckanner/flywheel@latest install --json`，核对结果 `ok` 与每一步；`ready:false` 表示仍需处理模型依赖或配置。安装不证明账号已授权，预检不调用付费模型。
 
 3. **翻译结果**，用人话讲：
+   - 有 `state.planning` 时，先报告 phase、当前/已批准根方案、各 scope 子计划的
+     revision/digest、独立审查与 findings、累计/本轮次数、已应用反馈、启动授权。
+     queued 的 planning-control 回执只是排队，不能算应用或通过。没有实现 workflow
+     时说明尚未激活，不能按旧 Full 报告。根批准与子计划 Review 分别报告。
+     等待人工批准时给出同一 Flywheel 视图的精确版本按钮；查询不会 approve 或启动。
+     只批准后未授权启动时说明“开始已批准方案”，普通 Run 不会扩大授权。
    - 请求模式、生效 Quick／Full、选择理由与升级历史。需要机器完整记录时用
-     `control status` 读取 `state.workflow`；旧状态无字段按 Full 解释。
+     `control status` 读取 `state.workflow`；无 planning 的旧状态无字段才按 Full 解释。
      Plan／Judge 不适用时说明原因，不把它们显示为通过。状态查询不重分类或切换模式。
    - 任务状态、编排器是否存活（pid）、当前里程碑、上次推进时间——
      推进时间久未更新 = 可能停滞/断链，提醒用户。

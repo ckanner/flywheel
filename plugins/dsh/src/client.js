@@ -136,7 +136,7 @@ const zh = {
   feedback: '操作反馈',
   statusHeading: '任务状态',
   emptyHeading: '还没有任务状态',
-  emptyBody: '在“对话”输入 /flywheel-task 和需求。助手准备并启动任务后，会自动关联到本会话，无需复制路径。/flywheel-new 仍可只准备任务；也可填写已有任务目录后操作',
+  emptyBody: '在“对话”输入 /flywheel-task 和需求，任务会关联到本会话。使用 /flywheel-new 可先运行设计和审查，停下来等你批准方案。',
   emptySelected: '点击“刷新状态”查看这个任务；打开本页不会自动启动任务',
   lastChecked: '上次确认：{time}',
   stale: '本次状态未确认，下方保留上次结果',
@@ -277,7 +277,7 @@ const en = {
   feedback: 'Operation feedback',
   statusHeading: 'Task status',
   emptyHeading: 'No task status yet',
-  emptyBody: 'In Chat, enter /flywheel-task and your requirement. After the assistant prepares and launches the task, this conversation links to its exact directory automatically. /flywheel-new still prepares only. You can also enter an existing task directory here.',
+  emptyBody: 'In Chat, enter /flywheel-task and your goal to associate a task with this conversation. Use /flywheel-new to run design and independent review, then stop for your approval.',
   emptySelected: 'Refresh status to inspect this task. Opening this view does not start it.',
   lastChecked: 'Last confirmed: {time}',
   stale: 'Current status is unconfirmed; the previous result is retained below',
@@ -380,7 +380,7 @@ const packetLabels = {
   'l1-failed': 'l1Failed', 'review-failed': 'reviewFailed', completed: 'completed',
   interrupted: 'interrupted', escalated: 'escalated', inbox: 'inbox',
 };
-const roleLabels = { plan: 'planRole', execute: 'executeRole', review: 'reviewRole', judge: 'judgeRole',
+const roleLabels = { 'design-plan': 'designPlanRole', 'design-review': 'designReviewRole', 'plan-review': 'planReviewRole', plan: 'planRole', execute: 'executeRole', review: 'reviewRole', judge: 'judgeRole',
   intake: 'intakeRole', garden: 'gardenRole', 'judge-panel': 'panelRole' };
 const checkLabels = { pass: 'pass', fail: 'fail', warn: 'warn', unknown: 'unverified', skipped: 'skipped' };
 const permissionLabels = {
@@ -392,7 +392,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => ['investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
+const mutates = action => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -446,7 +446,7 @@ function readReply(reply, request) {
     report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
       typeof report.jev.enabled === 'boolean' && typeof report.jev.model === 'string' &&
       Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0);
-  if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(request.action) &&
+  if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && (!record(state.packets) || !Object.values(state.packets).every(validExecutionPolicyHistory))) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
@@ -460,6 +460,9 @@ function readReply(reply, request) {
     state.status !== '' && record(state.packets);
   if ((value.preparation !== undefined && !validPreparationSnapshot(value.preparation)) ||
       (request.action === 'investigate' && !value.preparation && !investigationStatusAfterHandoff)) throw new Error('Flywheel control returned malformed investigation status');
+  if ((state?.planning !== undefined && !validPlanningSnapshot(state.planning)) ||
+      (request.action === 'planning' && !state?.planning) ||
+      (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control']))) throw new Error('Flywheel control returned malformed planning status');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
@@ -481,7 +484,7 @@ function readReply(reply, request) {
 }
 
 function initialControl() {
-  return { pending: null, status: null, checkedAt: null, stale: false, configuration: null,
+  return { pending: null, status: null, planningReceipt: null, checkedAt: null, stale: false, configuration: null,
     node: null, delivery: null, deliveryStale: false, runs: null, runsLoading: false, runsError: null, runsCwd: null, metrics: null, history: null, diagnostic: null, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
 }
 
@@ -533,16 +536,18 @@ function createControl(execute, pendingOperations, isDisposed) {
   };
   const run = async (action, selection, probe = false, extra = {}) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
-    if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate'].includes(action) && !target.taskDir) return;
+    if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action) && !target.taskDir) return;
     select(selection);
-    if (['launch', 'start'].includes(action) && source.getSnapshot().stale) return;
+    if (['launch', 'start', 'planning'].includes(action) && source.getSnapshot().stale) return;
     const requestEpoch = epoch;
     const requestKey = selected;
-    const request = { action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
+    const queuedReceipt = action === 'status' && source.getSnapshot().planningReceipt?.status === 'queued' &&
+      source.getSnapshot().planningReceipt?.['request-id'];
+    const request = { action: queuedReceipt ? 'planning' : action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
       ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
       ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}),
       ...(['config-edit', 'config-save'].includes(action) ? { editor: extra.editor } : {}),
@@ -552,6 +557,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
       ...(action === 'investigate' ? { investigation: extra.investigation } : {}),
+      ...(queuedReceipt ? { planning: { action: 'status', 'request-id': queuedReceipt } } : action === 'planning' ? { planning: extra.planning } : {}),
       ...(action === 'step' ? { only: extra.only, packet: extra.packet, revision: extra.revision, ...(extra.retryReason ? { retryReason: extra.retryReason } : {}) } : {}) };
     const operation = { action, probe, ...target, key: requestKey };
     active = operation;
@@ -567,7 +573,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
       source.update(draft => {
-        if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate'].includes(action)) {
+        if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(action)) {
           // A remote snapshot is bound to the previously observed candidate.
           // A new engine revision requires another explicit remote inspection.
           if (draft.delivery && value.state?.revision !== draft.status?.state?.revision) draft.deliveryStale = true;
@@ -586,6 +592,7 @@ function createControl(execute, pendingOperations, isDisposed) {
         if (action === 'history') draft.history = value.history;
         if (action === 'runs') draft.runs = value.runs;
         if (action === 'metrics') draft.metrics = value.metrics;
+        if (value['planning-control']) draft.planningReceipt = value['planning-control'];
         draft.raw = value;
       });
       return value;
@@ -673,6 +680,7 @@ function Configuration({ value, t }) {
         h('dl', { className: css.properties },
           field('model', textValue(binding?.model, '') || t('notConfigured'), true),
           binding?.profile && field('profile', textValue(binding.profile)),
+          binding?.bindingSource && field('bindingSource', binding.bindingSource, true),
           field('harness', textValue(binding?.harness), true),
           field('provider', textValue(binding?.provider, '') || (binding?.harness === 'dsh' ? t('notConfigured') : t('nativeProvider'))),
           field('channel', textValue(binding?.channel, '') || t('notConfigured')),
@@ -722,6 +730,7 @@ function Budget({ value, t }) {
 function Workflow({ state, t }) {
   if (!state) return null;
   const workflow = state.workflow;
+  if (!workflow && state.planning) return h('p', { className: css.meta }, t('planningWorkflowPending'));
   const modes = { auto: 'Auto', quick: 'Quick', full: 'Full' };
   const mode = value => Object.hasOwn(modes, value) ? modes[value] : t('unknown');
   const legacy = workflow == null;
@@ -828,8 +837,8 @@ function consoleReadString(value, label) {
   return value;
 }
 function consoleReadInput(value) {
-  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery'], 'console read request');
-  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning'].includes(value.action)) throw new Error('Console Remote accepts reads only');
   const output = { action: value.action };
   for (const key of ['taskDir', 'cwd', 'packet', 'runId', 'sessionKey']) {
     if (value[key] !== undefined) output[key] = consoleReadString(value[key], key);
@@ -849,6 +858,12 @@ function consoleReadInput(value) {
     output.delivery = { action: 'inspect' };
     if (value.delivery.headBranch !== undefined) output.delivery.headBranch = consoleReadString(value.delivery.headBranch, 'headBranch');
   } else if (value.delivery !== undefined) throw new Error('Delivery requires inspection');
+  if (value.action === 'planning') {
+    consoleReadObject(value.planning, ['action', 'request-id'], 'planning status');
+    if (value.planning.action !== 'status' || value.planning['request-id'] !== undefined &&
+        (typeof value.planning['request-id'] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(value.planning['request-id']))) throw new Error('Planning Remote accepts bounded status reads only');
+    output.planning = { ...value.planning };
+  } else if (value.planning !== undefined) throw new Error('Planning status requires planning');
   if (value.action === 'node' ? !/^M\d+-T\d+$/.test(output.packet ?? '') : value.packet !== undefined) throw new Error('Invalid node packet');
   if (value.action === 'history' ? !output.sessionKey : value.sessionKey !== undefined) throw new Error('Invalid history session key');
   if (value.runId !== undefined && (value.action !== 'metrics' || value.runId.length > 128 || /[\0\r\n]/.test(value.runId))) throw new Error('Invalid metrics run ID');
@@ -910,7 +925,7 @@ exports.apply = function apply(ctx) {
       let control = controls.get(actions);
       if (!control) {
         control = createControl(async request => {
-          const value = readReply(await (mutates(request.action) || request.action === 'status' && control?.source.getSnapshot().uncertainty
+          const value = readReply(await (mutates(request.action) && !(request.action === 'planning' && request.planning?.action === 'status') || request.action === 'status' && control?.source.getSnapshot().uncertainty
             ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
             : readsReady.then(readConsole => readConsole(sessionId, request))), request);
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);

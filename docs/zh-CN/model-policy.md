@@ -27,6 +27,18 @@ Harness 负责智能体与工具循环；DSH 的 `provider` 选择原生 LLM 适
 Claude Code Pro 是[可选后端](claude-code-pro.md)，默认未分配任何阶段或路由。
 使用时明确指定原生模型与推理等级，不会隐式替换其他订阅渠道。
 
+## 规划角色与当前对话模型
+
+New/Task 登记薄 brief，宿主对话整理事实并讨论，真正设计由引擎执行。未显式配置时，
+`loops.design-plan` 继承 `loops.plan`，`loops.design-review` 和 `loops.plan-review`
+继承 `loops.review`。可以给新角色独立设置支持的模型、思考等级和 native profile，
+不改变来源角色。config inspect 的 `bindingSource` 显示实际来源；配置视图展示这些
+继承行，只有编辑后才新增独立配置。角色作用域、历史和权限覆盖继续独立。
+
+复杂设计的模型选择应落在 design/review 绑定，不要求每次 New 前先切换宿主模型。
+现有模型和思考等级默认值保持不变，选择仍是工程起点而非已测最优。完整交互见
+[方案设计与审查](reviewed-planning.md)。
+
 ## 账号选择
 
 默认配置和 `subscriptions` 预设使用 `deepseek-account` 与 `deepseek-flash`。

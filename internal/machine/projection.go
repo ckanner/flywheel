@@ -14,7 +14,18 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 	if st == nil {
 		return nil, nil
 	}
-	view := jsonClone(st)
+	// Planning histories retain complete immutable files for every version.
+	// Select a bounded view before cloning instead of duplicating all histories.
+	source := *st
+	source.Planning = nil
+	view := jsonClone(&source)
+	if st.Planning != nil {
+		var err error
+		view.Planning, err = consolePlanningProjection(st.Planning, 512<<10)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if ledger := view.RuntimeDecisions; ledger != nil {
 		if ledger.Config != nil {
 			ledger.MaxCalls = ledger.Config.MaxCalls

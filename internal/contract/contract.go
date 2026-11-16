@@ -19,6 +19,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/templates"
 )
 
@@ -119,9 +120,10 @@ type Packet struct {
 
 // Milestone 里程碑（spec.md）。
 type Milestone struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Gate  string `json:"gate"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Gate     string `json:"gate"`
+	Planning string `json:"planning,omitempty"`
 }
 
 // Requirement 编号需求（R-01…），映射到里程碑。
@@ -134,13 +136,14 @@ type Requirement struct {
 
 // Spec 完整 spec.md 契约。
 type Spec struct {
-	SpecVersion  int           `json:"spec-version"`
-	Title        string        `json:"title"`
-	Goal         string        `json:"goal"`
-	NonGoals     []string      `json:"non-goals"`
-	Milestones   []Milestone   `json:"milestones"`
-	Requirements []Requirement `json:"requirements"`
-	Workflow     *Workflow     `json:"workflow,omitempty"`
+	PlanningRef  *planning.ActivationRef `json:"planning-ref,omitempty"`
+	SpecVersion  int                     `json:"spec-version"`
+	Title        string                  `json:"title"`
+	Goal         string                  `json:"goal"`
+	NonGoals     []string                `json:"non-goals"`
+	Milestones   []Milestone             `json:"milestones"`
+	Requirements []Requirement           `json:"requirements"`
+	Workflow     *Workflow               `json:"workflow,omitempty"`
 
 	// 派生集合（交叉校验缓存）。
 	ReqIDs       map[string]bool
@@ -228,6 +231,7 @@ func compileAll(load func(string) ([]byte, error)) (*jsonschema.Schema, *jsonsch
 		"state.schema.json":            stateSchemaID,
 		"scheduler-policy.schema.json": "https://flywheel.local/schemas/scheduler-policy.schema.json",
 		"jev-config.schema.json":       "https://flywheel.local/schemas/jev-config.schema.json",
+		"planning.schema.json":         "https://flywheel.local/schemas/planning.schema.json",
 	} {
 		data, err := load(name)
 		if err != nil {
@@ -442,7 +446,15 @@ func LoadPackets(taskDir string, spec *Spec) ([]*Packet, error) {
 	}
 	sort.Slice(packets, func(i, j int) bool { return packets[i].PacketID < packets[j].PacketID })
 	if spec != nil {
+		deferred := map[string]bool{}
+		for _, milestone := range spec.Milestones {
+			deferred[milestone.ID] = milestone.Planning == "deferred"
+		}
 		for _, p := range packets {
+			milestone, _ := MilestoneOfPacket(p.PacketID) // ParsePacket already validated it.
+			if deferred[milestone] {
+				return nil, errf(p.File, "milestone %s is deferred and cannot own executable packets", milestone)
+			}
 			for _, r := range p.Requirements {
 				if !spec.ReqIDs[r] {
 					return nil, errf(p.File, "requirement %s not declared in spec.md", r)

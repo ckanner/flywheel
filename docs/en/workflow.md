@@ -3,8 +3,8 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/workflow.md)
 
 Flywheel turns a reviewed task contract into verified local Git changes. The host
-assistant prepares the task; the Go engine owns scheduling, verification, recovery,
-and delivery. The workflow console can also create and merge a PR when those remote
+assistant prepares a thin brief; the Go engine owns design, independent review,
+scheduling, verification, recovery and delivery. The workflow console can also create and merge a PR when those remote
 operations are explicitly authorized.
 
 Use this guide for an existing repository. For installation and a disposable first
@@ -19,9 +19,11 @@ In DSH Chat, describe the requirement with the task skill:
 /flywheel-task Fix the identified issue, add regression coverage, and complete verification. mode=auto
 ```
 
-The host researches the code, selects or reuses the task execution directory,
-prepares the Spec, packets, executable acceptance checks, and workflow evidence,
-then calls `flywheel_launch` within the authorized scope. The plugin associates the
+The host checks the code and task execution directory, records a thin brief with
+the original request and authority, then calls `flywheel_control` with
+`action:planning` / `planning.action:prepare`. Go owns design and independent review
+before implementation. Review-first requests stop for approval; delegated tasks
+continue within their recorded authority. The plugin associates the
 actual task with the conversation. Loading a skill or receiving a proposal alone
 does not mean the engine started; check the launch result and task status.
 
@@ -37,13 +39,14 @@ need explicit reasons. Authentication, permissions, payments, migrations,
 concurrency, or unresolved design risks select Full. An explicit Quick request
 still has to qualify; file count alone is not a risk assessment.
 
-A first-success Quick run has two stage-agent calls: Execute and final Review.
-Preparation, internal tool turns, retries, and upgrades are additional work. Required
+A first-success Quick implementation has two stage-agent calls: Execute and final
+Review. New reviewed-planning tasks also run compact initial design and Design
+Review; preparation, internal tool turns, retries and upgrades are additional work. Required
 tests, coverage, applicable L2/L3, defect sampling, budgets, and cleanup remain in
 force. Plan/Judge are marked not applicable with reasons. A newly discovered risk or
 verification gap saves a one-way Quick → Full upgrade, preserving work and budgets.
 
-Use `/flywheel-new <goal>` for preparation without launching, and
+Use `/flywheel-new <goal>` to start design/review and stop for approval, and
 `/flywheel-run <absolute-task-directory>` for an existing task. Kimi uses
 `/skill:flywheel-task` and the corresponding `/skill:` names.
 
@@ -70,23 +73,21 @@ repair, an approved feedback check, replanning, or an already allowed execution
 binding. Go retains workflow eligibility and the complete final gates; a successful
 feedback experiment does not complete the implementation.
 
-## 1. Choose a model for preparation
+## 1. Choose conversation and planning models separately
 
-`flywheel-task` and `flywheel-new` run in the host's current conversation. The
-`loops.plan` binding controls planning **after the engine starts**; it does not
-change that host conversation's model.
+The current DSH conversation organizes the brief and user feedback. It does not need
+to produce the complete architecture before New starts. Actual overall design uses
+`loops.design-plan`; absent an override, it inherits the existing `loops.plan`
+backend. Independent Design Review and Plan Review use `loops.design-review` and
+`loops.plan-review`, defaulting to the `loops.review` backend. Roles and history stay
+independent. The existing model and effort defaults are unchanged.
 
-| Preparation work | Suggested DSH provider / model | Effort |
-|---|---|---|
-| Architecture, protocols, lifecycle, or uncertain acceptance | `chatgpt` / `gpt-6-astra` | `high` |
-| A bounded feature with established implementation patterns | `chatgpt` / `gpt-6.1-sol` | `high` |
-| An explicit small fix or documentation update | `deepseek-account` / `deepseek-flash` | `high` |
-
-These are engineering starting points, not project benchmark results. Check exact
-model IDs and supported effort in the selected account. Raising effort does not
-repair missing requirements or an invalid test oracle. Runtime defaults and the
-separate account channels are described in [Model policy](model-policy.md) and
-[Configuration](configuration.md).
+Use `config inspect` to see `bindingSource` and the resolved backend, model and
+effort. The configuration view displays inherited planning roles and lets you make
+an explicit override. Existing Provider native capabilities remain available under
+the same admission rules. See [Reviewed planning](reviewed-planning.md) for the
+complete discussion/approval flow and [Model policy](model-policy.md) for measured
+limits and model-selection considerations.
 
 ## 2. Choose the task execution directory
 
@@ -151,14 +152,23 @@ flywheel skills read flywheel-new
 ```
 
 ```text
-/flywheel-new Prepare docs/my-feature for this requirement. Inspect the code, define bounded packets and executable acceptance checks, run the baseline checks, and present the contracts for review.
+/flywheel-new Design this feature from the repository evidence. Compare the relevant options, run independent design review, and stop so I can discuss and approve the design.
 ```
 
 No initial console form is required. Preparation should report the actual task
 execution root and task files path, while retaining the original project identity.
 A repository can contain several tasks; a repository path alone does not select one.
 
-A runnable task needs a reviewed `spec.md` and at least one legal
+For new tasks, review the current design and findings in the Flywheel view. Submit
+feedback and run Plan to revise. **Approve this version** stops before implementation;
+**Approve this version and start** also authorizes continuation. Go then refines and
+reviews the current child plan and activates its execution contracts. You do not
+have to prepare every distant packet first. See [Reviewed planning](reviewed-planning.md).
+
+### Legacy or explicitly prepared execution contracts
+
+The following describes the existing manual path and the contracts activated by Go.
+A runnable implementation needs a reviewed `spec.md` and at least one legal
 `task-packet-*.md`. Establish requirement IDs, exclusions, routes, editable and
 protected paths, L1 commands, milestone L2/L3 commands, and actual baseline results.
 Keep frozen acceptance separate from implementation tests. Executors may add normal
@@ -202,6 +212,10 @@ authorize merge. The console's later PR operation re-queries an existing PR afte
 push, avoiding duplicate creation.
 
 ## 5. Run from the same task execution directory
+
+For a new reviewed-planning task, first use the exact-version controls described
+above. Plain Run preserves a review-first stop and does not authorize implementation
+after approval-only. Use **Start approved design** to grant start authority.
 
 For an existing prepared task, run these commands from its integration checkout:
 

@@ -34,7 +34,7 @@ func TestInspectAndDoctorUseTheSameFullAccessForEveryStage(t *testing.T) {
 	}
 	view, err := Inspect(root, "")
 	require.NoError(t, err)
-	require.Len(t, view.Bindings, 9)
+	require.Len(t, view.Bindings, 12)
 	for _, b := range view.Bindings {
 		assert.Equal(t, "danger-full-access", b.PermissionMode, b.ID)
 		if b.Harness == "kimi" {

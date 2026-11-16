@@ -160,7 +160,7 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
       assert.equal(attachments.length, 0);
       assert.ok(command.startsWith('/flywheel '));
       const request = JSON.parse(command.slice('/flywheel '.length));
-      assert.ok(['status', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(request.action), 'reads must never append chat commands');
+      assert.ok(['planning', 'status', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(request.action), 'reads must never append chat commands');
       allRequests.push(request);
       if (request.action === 'runs') {
         discoveryRequests.push(request); discoverySessions.push(sessionId);

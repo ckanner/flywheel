@@ -93,6 +93,7 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'metrics', runId: 'run-1' }, { action: 'history', sessionKey: 'task:review' },
     { action: 'node', packet: 'M01-T01' }, { action: 'delivery', delivery: { action: 'inspect', headBranch: 'feature/example' } },
     { action: 'doctor', probe: false },
+    { action: 'planning', planning: { action: 'status' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'feedback-1' } },
   ]) assert.deepEqual(JSON.parse(JSON.stringify(inputSchema.parse(input))), input);
   for (const input of [null, [], {}, { action: 'start' }, { action: 'runs', unknown: true },
     { action: 'runs', cwd: null }, { action: 'runs', probe: true }, { action: 'doctor', probe: 'yes' },
@@ -101,6 +102,9 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'runs', delivery: { action: 'inspect' } }, { action: 'node', packet: '../foreign' },
     { action: 'runs', packet: 'M01-T01' }, { action: 'history' }, { action: 'runs', sessionKey: 'foreign' },
     { action: 'metrics', runId: 'bad\nID' }, { action: 'runs', runId: 'run-1' },
+    { action: 'planning', planning: { action: 'approve' } }, { action: 'planning', planning: { action: 'status', start: true } },
+    { action: 'planning', planning: { action: 'status', 'request-id': '' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'a'.repeat(121) } },
+    { action: 'status', planning: { action: 'status' } }, { action: 'planning' },
   ]) assert.throws(() => inputSchema.parse(input), JSON.stringify(input));
   for (const kind of ['success', 'error']) assert.equal(resultSchema.parse({ result: { kind, text: '{}' } }).result.kind, kind);
   for (const value of [null, {}, { result: { kind: 'unknown', text: '{}' } }, { result: { kind: 'success', text: 1 } }]) {
@@ -116,9 +120,13 @@ test('published Client and Host Gateway reads are session-bound and append no co
     assert.deepEqual(JSON.parse(result.result.text).runs.map(r => r.hostSessionId), ['mine']);
   }
   assert.equal((await read({ action:'status', taskDir:cwd, cwd })).result.kind,'success');
+  assert.equal((await read({ action:'planning', taskDir:cwd, cwd, planning: { action: 'status', 'request-id': 'feedback-1' } })).result.kind,'success');
   const count = calls.length;
   for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');
+  }
+  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate']) {
+    assert.equal((await read({ action: 'planning', taskDir:cwd, cwd, planning: { action } })).result.kind, 'error');
   }
   assert.equal(calls.length,count,'read endpoint never dispatches a mutation');
   const denied = await read({ action:'status', taskDir:unrelatedTask, cwd });

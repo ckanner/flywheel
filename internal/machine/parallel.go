@@ -254,6 +254,9 @@ var parallelDrivers = drivers.CreateDrivers
 // no invocation or workspace state until a slot is available; Plan may replace
 // its contract after the active cohort has quiesced.
 func (c *Context) runParallelExecute(packets []*contract.Packet) ([]*contract.Packet, error) {
+	if err := c.admitReviewedBoundary(); err != nil {
+		return nil, err
+	}
 	head, ok := verify.GetBaseRef(c.Cwd)
 	if !ok {
 		return nil, fmt.Errorf("parallel execution requires a Git checkout")
@@ -388,6 +391,17 @@ func (c *Context) runParallelExecute(packets []*contract.Packet) ([]*contract.Pa
 }
 
 func (c *Context) prepareParallelPacket(packet *contract.Packet, head string) error {
+	// During a running group, queue replacements must not apply feedback to
+	// the owner's input while peers still hold receipts for the previous input.
+	if c.State.Planning != nil {
+		pending, err := c.planningQueuePending()
+		if err != nil {
+			return err
+		}
+		if pending {
+			return fmt.Errorf("parallel queue paused for new planning input")
+		}
+	}
 	ps := c.State.Packets[packet.PacketID]
 	previousPolicy := ps.ExecutionPolicy
 	binding, _, _, err := c.executionBinding(packet)
@@ -415,6 +429,9 @@ func (c *Context) prepareParallelPacket(packet *contract.Packet, head string) er
 // Integration runs after all workers have quiesced. Incorporating earlier units
 // invalidates this unit's test/review proof and requires acceptance on the union.
 func (c *Context) prepareParallelIntegration(packet *contract.Packet) error {
+	if err := c.admitReviewedBoundary(); err != nil {
+		return err
+	}
 	ps := c.State.Packets[packet.PacketID]
 	if !ps.Parallel {
 		return nil

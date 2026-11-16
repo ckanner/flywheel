@@ -402,6 +402,7 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 
 | action | 输入与输出 |
 |---|---|
+| `planning` | 必需 taskDir／cwd；stdin 接收版本化规划命令，返回 state.planning 与 planning-control 回执，见下节 |
 | `launch` | 必需 taskDir／cwd；可选 `--mode`（auto、quick、full），缺省 auto；校验已准备契约并启动 |
 | `start` | 必需 taskDir／cwd；可选 `--mode`，省略时保留契约或持久化策略；旧任务仍 Full |
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
@@ -411,7 +412,7 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
-`configuration` 含 source、scope、cwd、taskDir、sessions、bindings 和 jev。jev 使用统一配置字段，enabled 是唯一总开关；它表示配置状态，不代表已请求或采用。sessions 含 mode／policy-version、可选 roles 与 quality 配置；每个 binding 包括 id、role、route、profile、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+`configuration` 含 source、scope、cwd、taskDir、sessions、bindings 和 jev。jev 使用统一配置字段，enabled 是唯一总开关；它表示配置状态，不代表已请求或采用。sessions 含 mode／policy-version、可选 roles 与 quality 配置；每个 binding 包括 id、role、route、profile、bindingSource、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
 
 有会话记录的状态快照另含紧凑 `sessions` 数组：role、scope、generation、action、reason、
 resumeCandidate，以及 last 的 status、persistent、dispatch、outcome、cleanupConfirmed、
@@ -424,6 +425,55 @@ usageStatus、accounted。投影只读取已校验的 state，不打开后端历
 
 config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。launch/start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
 
+### Reviewed planning 控制与可信批准
+
+新增 `control planning --task-dir <绝对目录> --cwd <绝对目录> --compact`。stdin 是一个
+JSON 对象，host 外层工具/command 请求为 `{action:"planning",taskDir,cwd,planning:{…}}`。
+未知字段拒绝，不接受模型自报 actor、source 或 approval proof。
+
+| 内层 action | 字段与含义 |
+|---|---|
+| prepare | brief、可选 request-id/start；brief 服从 planning.schema.json 的 $defs.brief，缺省启动设计；start:false 只登记 |
+| plan | revision、request-id、scope、可选 scope-id/text/start；text 是该 request 不可变的局部规划说明，供 planner/reviewer 使用，不增加全局 input-revision；design / milestone / packet / replan；显式 Plan 运行 planning-only，已有启动授权也不顺带执行 |
+| feedback | revision、request-id、text，可选 design/policy/start；输入绑定观测版本，运行中的 owner 可排队采用 |
+| approve | revision、request-id、精确 design:{revision,digest}、可选 start；仅可信用户来源，start 缺省 false |
+| status | 只读规划状态，可选 request-id 查询排队请求的已核对终态；不接受变更字段 |
+| migrate | revision、request-id、可选 policy/text/start；明确迁移已有 legacy 任务，不能由升级隐式触发 |
+
+响应继续 protocol 1，包含原 `state.revision` 与 `state.planning`。可选
+`planning-control:{request-id,action,status,revision,message}` 的 status 是
+queued / applied / rejected / unchanged。queued 不修改已采用 feedback，也不代表审查、
+批准或启动；状态快照和控制回执分别解释。当前/上一设计正文、当前scope子计划与近期
+审查按响应上限投影；历史引用仍用于追踪，不将省略正文当作空设计。
+
+只读投影可带 `state.planning.projection:{kind:"console-excerpt",approval-complete,ledger:"state.json",omitted:{类别:数量}}`。
+权威 planning schema 不接受该显示标记，不能回写投影。省略当前完整设计或 review 时，
+`approval-complete:false` 禁用 UI 批准；不能把截断正文当完整已审方案。无 `--compact`
+的 CLI 状态保留完整记录；交互式 CLI 批准展示权威设计与审查。
+
+`scope=replan` 是重新规划的意图，不新建审查范围：无 id 或 root 归为 design，
+M-01 这类 id 归为 milestone，M01-T01 归为 packet；沿用该范围的版本和 findings。
+控制台已有 queued 回执时，刷新调用 `planning/status` 加原 request-id；同一个只读
+Remote 核对关联任务，不追加会话命令事件，也不启动规划或实施。
+
+模型工具 `flywheel_control` 的 planning action 不列出 approve，并在执行边界再次拒绝。
+人工 `/flywheel` command 使用公开 `sessionProjections` 的 `flywheelPlanningUser` 投影，
+从本 Session 自有 command/run 的 `source.kind:user`、commandId 和原始 args 核对
+精确输入。继承的 fork 事件、已 command/done 消费的事件、重复 commandId、模型来源或
+不匹配 args 不产生批准凭据。投影不新增 Session 事件，不同步扫描旧事件日志。
+
+仅核对成功后，host 为本次子进程注入 `FLYWHEEL_PLANNING_USER_ACTION` JSON：
+`{kind:"dsh",sessionId,commandId,"request-id",revision,design,start}`。
+runControl 始终剥离父环境继承的同名变量，只有独立 host option 可设置；用户工具 JSON
+不能提供该 option。Go 必须精确比对 request/ref/revision/start，记录 dsh 用户来源。
+普通 model worker 环境不传播该凭据。无 host 用户凭据时，CLI 人工批准独立打开
+交互终端显示确切版本并要求输入 `approve <digest>`，不从模型 JSON 接受 actor。
+
+approve-only 不获得 StartAuthorized；之后普通 Run 不补权限。已经批准的根方案可通过
+一次新的真实用户 approve(start:true) 动作授权开始，不需要重复一次设计讨论。
+根批准可以先于任何子计划；Plan Review、scope 校验、冻结验收和激活事务由 Go 管理。
+`pending-activation`、过期设计或未知调用仍阻断实施，不由 UI 刷新消除。
+
 ### DSH 启动工具与任务关联
 
 `flywheel_launch({taskDir,cwd?,mode?})` 使用 action=launch，mode 缺省 auto。
@@ -431,7 +481,7 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 使用同一校验与控制层；mode 仅限 launch/start，probe 仅限 doctor。
 省略 cwd 时采用当前会话公开 workingDirectory 服务，跨 worktree 时显式传入。
 若 `header.cwd` 和 `working-directory/change` 均未记录当前目录，launch/start/stop 必须显式传入绝对 cwd；宿主在派发 Go 前返回 `not-dispatched`，即使 getter 有外部默认目录也不据此猜测关联，status 仍可使用 getter。
-CLI 只消费已准备契约，宿主的 `flywheel-task` skill 负责研究与生成契约。
+旧 launch/start 消费已准备契约；新 `control planning prepare` 接收宿主提供的薄 brief，由 Go 负责设计与独立审查，宿主不提前生成完整设计。
 
 `sessionProjections` 的 `flywheelTask` 投影从宿主已有的 command/tool/PTC
 调用与结果记录解析具体任务。客户端只通过公开 `useProjection('flywheelTask')`

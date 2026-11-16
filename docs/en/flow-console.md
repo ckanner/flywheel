@@ -19,13 +19,13 @@ The project, task folder, execution directory and branch appear directly when kn
 
 DSH keeps the original repository in the Session header and switches the current execution directory through its public API. The desktop Host periodically attaches Flywheel SDK sessions to matching existing projects; task status also ensures the original project is registered. It does not create a desktop workspace for every packet Worktree or rewrite old Session headers. Probes use temporary persistence, leaving no new user sessions. Native Providers start sessions in the project; task prompts name the actual execution directory for every shell/file operation. Backends unable to separate a `workspace-write` sandbox root reject that combination before dispatch instead of widening permissions. Full access and supported read-only modes retain their actual semantics.
 
-Loading a skill does not start the engine. `flywheel-task` prepares the appropriate contract and invokes either the bounded investigation control or `flywheel_launch` for implementation. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
+Loading a skill does not start the engine. `flywheel-task` prepares a thin brief and invokes `planning prepare` for design/review and authorized implementation; investigation goals retain their bounded investigation control. Existing prepared-contract tasks still use launch/start. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
 
 | Conversation entry | Does it start the engine? | How the UI finds the task |
 |---|---|---|
-| `/flywheel-new <goal>` | Prepares contracts for review only | Before handing over the proposal, the assistant registers a candidate through read-only `status`; an uninitialized task shows its identity and location, not execution progress |
+| `/flywheel-new <goal>` | Starts design and independent review; implementation stops for approval | The planning tool associates the exact task and shows its design phase |
 | `/flywheel-run <task directory>` | Starts or resumes an existing task | Start and query the original task path to associate it with the conversation; the view follows the explicit association |
-| `/flywheel-task <goal>` | Prepares, then starts | Use investigation control for evidence collection or `flywheel_launch` for implementation, then check status |
+| `/flywheel-task <goal>` | Starts planning; continues according to recorded authority | Use investigation control or planning prepare, then check the original task status |
 
 `new → run` and `task` use the same engine; the canvas is not exclusive to one
 skill. Writing task files alone does not register a view, and a failed association
@@ -40,6 +40,30 @@ Refresh uses a read-only Remote instead of a slash command, so it does not appen
 Task titles are separate from DSH conversation names. The title comes from validated Spec `title`; otherwise the heading says “Associated task”, with the slug separately labeled “Task ID”. Project and task-record paths appear automatically in the header; node details show execution Worktrees. Settings hides the task header while retaining association updates. Its five navigation items remain together at the top, with the form beside them and the save bar above the DSH composer.
 
 Navigation uses compact rounded hover targets with a separate selected underline. Hover and selection do not resize the controls; keyboard focus remains visible and touch targets are larger.
+
+
+## Design and approval in the same view
+
+A task with planning v1 displays **Design and review** before its implementation
+canvas. Read the current document, exact revision/digest, requirements, decisions
+and independent review findings; expand the previous version for comparison.
+Approved root designs and current child plans appear separately, including their
+reviews, contract files and activation state. Missing projected history is labelled
+as unavailable in this snapshot, rather than invented or treated as empty evidence.
+
+**Approve this version** records approval only. **Approve this version and start**
+adds implementation authority in the same user action; after approval-only the
+button becomes **Start approved design**. The request binds the observed state
+revision and displayed design digest. Stale, unreviewed, changed-input, pending
+activation or running states cannot be approved. Refreshing or remounting does not
+approve or start work. Ordinary Continue preserves the approval/start boundary.
+
+Submit feedback with a design reference. The request receipt distinguishes queued,
+applied and rejected input; only adopted feedback appears in the applied list.
+Use **Run Plan** to request overall design, replan, milestone or packet scope.
+Explicit Plan runs planning/review only and stops. Scope IDs use the actual task's
+milestone or packet identifiers. See [Reviewed planning](reviewed-planning.md).
+
 
 ## This stage versus the full workflow
 

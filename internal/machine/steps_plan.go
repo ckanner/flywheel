@@ -466,6 +466,9 @@ func (c *Context) planUntilValid(milestone contract.Milestone, initialFeedback .
 }
 
 func (c *Context) planUntilValidForReason(milestone contract.Milestone, reason string, initialFeedback ...string) (result planOutcome, planErr error) {
+	if c.State.Planning != nil {
+		return c.reviewedMilestonePlan(milestone, reason, initialFeedback)
+	}
 	defer c.measurePhase("plan", milestone.ID)()
 	progress := &state.PlanProgress{Status: "running", StartedAt: c.nowISO(), Contracts: sessionHash(c.State.ContractFingerprints), Reason: reason}
 	ms := c.State.Milestones[milestone.ID]

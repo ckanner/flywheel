@@ -148,14 +148,16 @@ test('history resume preserves canonical native options across reordered config,
   assert.equal(second.lifecycle.turnId, 'turn-2');
   assert.equal(second.usage.totalTokens, 23);
   assert.doesNotMatch(second.text, /result 1/);
-  const third = await runKimiWorker({ ...resumed, managed: { ...resumed.managed, role: 'review' } }, f.options);
-  assert.equal(third.error.code, 'RESUME_BINDING_MISMATCH');
-  assert.equal(third.lifecycle.dispatch, 'not-dispatched');
-  assert.equal(third.lifecycle.resumeAccepted, false);
+  for (const role of ['review', 'design-plan', 'design-review', 'plan-review']) {
+    const changed = await runKimiWorker({ ...resumed, managed: { ...resumed.managed, role } }, f.options);
+    assert.equal(changed.error.code, 'RESUME_BINDING_MISMATCH');
+    assert.equal(changed.lifecycle.dispatch, 'not-dispatched');
+    assert.equal(changed.lifecycle.resumeAccepted, false);
+  }
 });
 
 test('Tower enables the real mode in an independent repo and transfers only Execute after confirmed cleanup', async () => {
-  for (const role of ['execute', 'review']) {
+  for (const role of ['execute', 'review', 'design-plan', 'design-review', 'plan-review']) {
     const f = await fixture('tower');
     f.input.persistent = true; f.input.managed.role = role;
     await towerGit(f.input.cwd, ['init', '--quiet', '-b', 'main']);

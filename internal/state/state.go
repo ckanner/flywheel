@@ -17,6 +17,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
+	"github.com/ckanner/flywheel/internal/planning"
 )
 
 // CasConflictError CAS 冲突：磁盘 revision 与调用方决策依据不一致。
@@ -267,6 +268,7 @@ type WorkerPrewarm struct {
 }
 
 type State struct {
+	Planning             *planning.State           `json:"planning,omitempty"`
 	WorkerPrewarm        *WorkerPrewarm            `json:"worker-prewarm,omitempty"`
 	RuntimeDecisions     *RuntimeDecisions         `json:"runtime-decisions,omitempty"`
 	PreparationSource    *PreparationSource        `json:"preparation-source,omitempty"`
@@ -347,6 +349,7 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("state.json not found in %s", taskDir)
 	}
 	var probe struct {
+		Planning          json.RawMessage `json:"planning"`
 		WorkerPrewarm     json.RawMessage `json:"worker-prewarm"`
 		Revision          any             `json:"revision"`
 		Workflow          json.RawMessage `json:"workflow"`
@@ -377,6 +380,13 @@ func Load(taskDir string) (*State, error) {
 			return nil, err
 		}
 	}
+	if len(probe.Planning) > 0 {
+		var value any
+		_ = json.Unmarshal(probe.Planning, &value)
+		if err := planning.ValidateValue(value); err != nil {
+			return nil, err
+		}
+	}
 	for name, raw := range map[string]json.RawMessage{"worker-prewarm": probe.WorkerPrewarm, "handoff": probe.Handoff, "delivery": probe.Delivery, "scheduler": probe.Scheduler, "run": probe.Run, "control": probe.Control, "project": probe.Project, "preparation-source": probe.PreparationSource} {
 		if len(raw) > 0 {
 			var value any
@@ -394,6 +404,9 @@ func Load(taskDir string) (*State, error) {
 		return nil, errf("worker prewarm requires its packet and a version 3 session ledger")
 	}
 	if err := validateRuntimeDecisions(&st); err != nil {
+		return nil, err
+	}
+	if err := validatePlanningState(&st); err != nil {
 		return nil, err
 	}
 	return &st, nil
@@ -434,6 +447,9 @@ func syncStatePath(path string) error {
 }
 
 func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
+	if err := validatePlanningState(st); err != nil {
+		return nil, err
+	}
 	release, err := lockStateFile(taskDir)
 	if err != nil {
 		return nil, errf("%s: lock failed: %v", taskDir, err)
@@ -447,7 +463,8 @@ func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 			return nil, errf("%s: unreadable during CAS check: %v", file, rerr)
 		}
 		var onDisk struct {
-			Revision *int64 `json:"revision"`
+			Revision *int64          `json:"revision"`
+			Planning json.RawMessage `json:"planning"`
 		}
 		if jerr := json.Unmarshal(raw, &onDisk); jerr != nil {
 			return nil, errf("%s: unreadable during CAS check: %v", file, jerr)
@@ -462,6 +479,18 @@ func Save(taskDir string, st *State, expectedRevision *int64) (*State, error) {
 		}
 		if onDisk.Revision == nil || found != expected {
 			return nil, &CasConflictError{File: file, Expected: expected, Found: found}
+		}
+		if len(onDisk.Planning) > 0 {
+			var previous planning.State
+			var value any
+			_ = json.Unmarshal(onDisk.Planning, &value)
+			if err := planning.ValidateValue(value); err != nil {
+				return nil, err
+			}
+			_ = json.Unmarshal(onDisk.Planning, &previous)
+			if err := planning.ValidateTransition(&previous, st.Planning); err != nil {
+				return nil, err
+			}
 		}
 	}
 	next := *st

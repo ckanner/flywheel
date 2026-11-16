@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,13 +41,14 @@ type Report struct {
 }
 
 var (
-	lookPath       = exec.LookPath
-	runCommand     = watchdog.Run
-	probeDSH       = drivers.RunDSH
-	readDirectory  = os.ReadDir
-	doctorBudget   = 40 * time.Second
-	commandTimeout = int64(10_000)
-	versionPattern = regexp.MustCompile(`\d{1,6}\.\d{1,6}(?:\.\d{1,6})?(?:-[A-Za-z0-9.]{1,48})?`)
+	lookPath        = exec.LookPath
+	runCommand      = watchdog.Run
+	probeDSH        = drivers.RunDSH
+	readDirectory   = os.ReadDir
+	resolveWorkflow = state.ResolveWorkflow
+	doctorBudget    = 40 * time.Second
+	commandTimeout  = int64(10_000)
+	versionPattern  = regexp.MustCompile(`\d{1,6}\.\d{1,6}(?:\.\d{1,6})?(?:-[A-Za-z0-9.]{1,48})?`)
 )
 
 func (r *Report) add(id, status, summary, code, remedy string) {
@@ -110,13 +110,13 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 		if role == "judge-panel" {
 			role = "judge"
 		}
-		if cfg.Drivers[role] == "mock" {
+		if cfg.DriverKind(role) == "mock" {
 			r.add(b.ID, "skipped", "使用 mock driver；未检查真实模型通道", "", "")
 			continue
 		}
 		r.add(b.ID+".session", "unknown", fmt.Sprintf("会话选择 %s：%s；适配器支持=%t，历史恢复未验证", b.Session.Mode, b.Session.Reason, b.Session.Supported), "", "配置与无推理探测不证明历史已保存或可以恢复；运行时仍须检查调用回执")
 		if b.Harness == "claude-code-pro" && b.PermissionMode != "danger-full-access" {
-			r.add(b.ID+".permission", "fail", "Claude Code Pro 仅支持显式 full-access；原生审批模式不等于 OS 只读或工作区沙箱", "INVALID_REQUEST", "需要受限权限时选择 DSH 或 Codex；选择 Claude 时须明确配置 permissions.mode=full-access")
+			r.add(b.ID+".permission", "fail", "Claude Code Pro 仅支持显式 full-access；原生审批模式不等于 OS 只读或工作区沙箱", "INVALID_REQUEST", "需要受限权限时选择 DSH 或 Codex；选择 Claude 时须明确配置 permissions.bindings."+b.ID+"=danger-full-access 或 permissions.mode=full-access")
 			continue
 		}
 		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
@@ -177,6 +177,26 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 	if cfg.JudgePanel != nil {
 		required["judge-panel"] = true
 	}
+	var st *state.State
+	if state.Exists(r.TaskDir) {
+		var err error
+		st, err = state.Load(r.TaskDir)
+		if err != nil {
+			r.add("workflow", "fail", "无法确认任务已保存的流程或规划状态", "INVALID_REQUEST", "检查任务状态和策略版本；不会重新分类或覆盖已有状态")
+			r.requireBindings(required)
+			return required
+		}
+	}
+	if st != nil && st.Planning != nil {
+		planningRequired, implementation := r.planningScope(st)
+		if !implementation {
+			r.requireBindings(planningRequired)
+			return planningRequired
+		}
+		for id := range planningRequired {
+			required[id] = true
+		}
+	}
 	spec, err := contract.LoadSpec(r.TaskDir)
 	var packets []*contract.Packet
 	if err == nil {
@@ -202,14 +222,7 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 		r.add("contracts", "fail", "任务契约无法加载或未通过 schema 校验", "INVALID_REQUEST", "检查 spec.md 与 task-packet 文件；预检不会运行其中的命令")
 	} else {
 		r.add("contracts", "pass", "任务契约结构已验证", "", "")
-		var st *state.State
-		if state.Exists(r.TaskDir) {
-			st, err = state.Load(r.TaskDir)
-		}
-		var selection contract.WorkflowSelection
-		if err == nil {
-			selection, err = state.ResolveWorkflow(st, spec, packets, "")
-		}
+		selection, err := resolveWorkflow(st, spec, packets, "")
 		if err != nil {
 			r.add("workflow", "fail", "无法确认任务已保存的流程策略", "INVALID_REQUEST", "检查任务状态和策略版本；不会重新分类或覆盖已有状态")
 		} else {
@@ -221,20 +234,7 @@ func (r *Report) taskScope(cfg *config.Config) map[string]bool {
 			}
 		}
 	}
-	present := map[string]bool{}
-	for _, b := range r.Configuration.Bindings {
-		present[b.ID] = true
-	}
-	ids := make([]string, 0, len(required))
-	for id := range required {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		if !present[id] {
-			r.add(id, "fail", "缺少任务所需的模型绑定", "INVALID_REQUEST", "在 loops 或 routes 中补齐此绑定")
-		}
-	}
+	r.requireBindings(required)
 	return required
 }
 
