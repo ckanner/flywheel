@@ -34,7 +34,9 @@ test('the complete npm candidate install and run from a clean agent environment'
   assert.equal(report.authentication, 'unknown');
   assert.equal(report.skills.count, 11);
   const taskSkill = path.join(context.home, '.agents', 'skills', 'flywheel-task');
-  assert.match(await fs.readFile(path.join(taskSkill, 'SKILL.md'), 'utf8'), /flywheel_launch/);
+  const taskSkillText = await fs.readFile(path.join(taskSkill, 'SKILL.md'), 'utf8');
+  assert.match(taskSkillText, /flywheel_control/);
+  assert.match(taskSkillText, /"action": "planning"/);
   assert.match(await fs.readFile(path.join(taskSkill, 'references', 'contract.md'), 'utf8'), /scope-clear/);
   assert.equal(report.configuration.action, 'created');
   assert.equal(report.configuration.automaticMigration, false);
