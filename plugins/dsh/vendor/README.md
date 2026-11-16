@@ -31,7 +31,7 @@ validation records. In particular, the former Codex 0.10.0 and Claude 0.5.1
 archives are not relabeled as the new activity/naming candidates. ChatGPT 0.1.20
 remains the reviewed provider fixture. See the
 [provider validation record](../../../docs/validation/2026-11-16-provider-liveness-and-titles.md)
-for the initial implementation. The subsequent [review closure](../../../docs/validation/2026-11-16-provider-liveness-review-closure.md) records the earlier archives, additional fixes, exact-candidate acceptance and its limits. Current source identities and archive hashes are in the table and records above.
+for the initial implementation. The subsequent [review closure](../../../docs/validation/2026-11-16-provider-liveness-review-closure.md) records the earlier archives, additional fixes, exact-candidate acceptance and its limits. The [Codex follow-up](../../../docs/validation/2026-11-16-codex-review-fixes.md) records the current child-creation and required-naming fixes, regression results and exact-candidate acceptance. Current source identities and archive hashes are in the table and records above.
 
 Codex Pro and the generator are exact bundled runtime dependencies. Both source
 locks resolve the corresponding vendor tarballs with actual integrity. Claude
