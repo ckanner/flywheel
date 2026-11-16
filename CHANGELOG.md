@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased — Reviewed planning
+## 0.35.0 — Reviewed planning
 
 - Start New from a thin original brief, run bounded design and independent
   design review, and pause for approval of the exact version. Keep design
