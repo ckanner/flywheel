@@ -1,0 +1,250 @@
+{
+  "recordedAt": "2026-11-16",
+  "purpose": "Final cross-provider review closure and exact unpublished source-candidate acceptance",
+  "toolchain": {
+    "go": "1.27.4",
+    "node": "24.22.1",
+    "npm": "11.9.0"
+  },
+  "candidate": {
+    "format_version": 2,
+    "version": "0.35.0",
+    "source": {
+      "commit": "fabd8eba00fd785d5366d6b15642378ae1628651",
+      "tree": "aceeb2193b0834bb4d8a9fb807f4acb4b2f9f972",
+      "dirty": false,
+      "snapshot_sha256": "e350f21e252589ceb0eebdb3bc66d87e103e2eb1e40921abf23edc19434d1450"
+    },
+    "packages": [
+      {
+        "name": "@ckanner/flywheel",
+        "version": "0.35.0",
+        "filename": "ckanner-flywheel-0.35.0.tgz",
+        "bytes": 20022042,
+        "integrity": "sha512-HQ1W6AxA3S0pIIhvauC5Q3/UqFqiFPQB298NbHpIFQdB7lVs7b/DREFDPTMiR/fQt5KFfsaOTzICwlzoXlKCOA=="
+      }
+    ]
+  },
+  "candidateFileSha256": "995e97e88defa1cf9dc81cb28a6b805bb79a7a7d1803e12653e74fb7d1c0b3d9",
+  "archiveSha256": "d4df9130583c908233501018a57e9e83d51c915b1ef0ea8f3c9d944dd363c98b",
+  "nativeManifest": {
+    "protocol": 1,
+    "version": "0.35.0",
+    "platforms": {
+      "darwin-arm64": {
+        "bytes": 10938290,
+        "sha256": "ba2d2a1707f82f8046a9aabc1c2e031bb5771c1326c6108dc7d579ea357388c0"
+      },
+      "darwin-amd64": {
+        "bytes": 11939296,
+        "sha256": "d3d84b53efefaacb831f1c5352eda1bccc8d4b8c452c14160256813dbf0daaa0"
+      },
+      "linux-arm64": {
+        "bytes": 10748064,
+        "sha256": "7dbffbad8d9c2fdaeee909e91a34e7063e51cd5af655fed21c45aa7ecf806c9e"
+      },
+      "linux-amd64": {
+        "bytes": 11710624,
+        "sha256": "d44ee50732c126f664a8724cd8e2eac3dc98bd309d9e21175e6454895e228101"
+      }
+    }
+  },
+  "companions": {
+    "codex-pro": {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.10.1",
+      "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
+      "sourceCommit": "49099acd49447ddf556b0e49f4d8e87b187d90c2",
+      "sourceTree": "ff08276190fa4b5ca40332aaebd0105c8eca48a9",
+      "tarball": "dsh-subagent-codex-pro-0.10.1.tgz",
+      "sha256": "d760e599cf19af54a93d77e1e2e4249e416b252467fe6d57d2174854507a6f6e",
+      "integrity": "sha512-5UOyoiVO10VD3Kp1zMLsjldINys7a2GjOzpMhbv7K88IziRMyOENrLgkHVL1+Q8iGOMWGwA3ZV+1EltIsQmBrw==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "verificationToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      },
+      "buildToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      }
+    },
+    "claude-code-pro": {
+      "package": "dsh-subagent-claude-code-pro",
+      "version": "0.5.2",
+      "repository": "https://github.com/ckanner/dsh-subagent-claude-code-pro",
+      "sourceCommit": "34291ff600bb70fa7dd628435fa10046c11b21d1",
+      "sourceTree": "ff056d7052706101543c50a9eea701c701271d7d",
+      "tarball": "dsh-subagent-claude-code-pro-0.5.2.tgz",
+      "sha256": "d9f5d764d14a6cd1ead1563c6bd461193132ee1bba04675536ee9d8d2c22884a",
+      "integrity": "sha512-VxtKSiahuszDIHqYPMVimjspDtRNI+DtBdfFLo+AoeSrnLZyStGNla+gX1qpr385uzbeWIv63sAFVvZ0T2+FaA==",
+      "license": "MIT",
+      "registryReleaseVerified": false,
+      "buildToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      },
+      "verificationToolchain": {
+        "node": "24.22.1",
+        "npm": "11.9.0"
+      }
+    }
+  },
+  "validation": {
+    "goQualityGate": {
+      "exitCode": 0,
+      "statementPercent": 100,
+      "everyMeasuredFunctionPercent": 100
+    },
+    "race": {
+      "packages": [
+        "internal/watchdog",
+        "internal/drivers"
+      ],
+      "exitCode": 0,
+      "raceReports": 0,
+      "runtimeSourcesUnchangedAfterCheck": true
+    },
+    "nodeCheck": {
+      "plugin": 485,
+      "hostCompatibility": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "goNodeBridge": {
+      "topLevel": 8,
+      "subtests": 93,
+      "passedLines": 101,
+      "failed": 0,
+      "skipped": 0,
+      "durationSeconds": 103.988
+    },
+    "npmUnit": {
+      "tests": 166,
+      "failed": 0,
+      "skipped": 0
+    },
+    "installedPackage": {
+      "packed_host_tests": 10,
+      "packed_host_pass": 10,
+      "install_tests": 15,
+      "install_pass": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0
+    },
+    "sessionEvaluationWithCandidateEngine": {
+      "complete": true,
+      "trials": 36,
+      "quality_pass": 36,
+      "calls": 96,
+      "turn_start_events": 96,
+      "stopReason": null,
+      "scenarioCoverage": {
+        "first-pass": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "l1-repair": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "review-return": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "long-context": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "stop-resume": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        },
+        "configuration-change": {
+          "planned": true,
+          "observed": 6,
+          "unobserved": 0,
+          "unknown": 0
+        }
+      },
+      "fresh_persistent_named_before_prompt": 40,
+      "resume_without_rename": 10,
+      "thread_name_calls": 40,
+      "fresh_ephemeral": 46,
+      "frozen_adapter_matches_candidate_files": 110,
+      "sample_titles": [
+        "Flywheel · execute/M01-T01 · Immutable integer interval compaction (first-pass)",
+        "Flywheel · execute/M01-T01 · Immutable integer interval compaction (first-pass)",
+        "Flywheel · review/final:M01-T01 · Immutable integer interval compaction (first-pass)"
+      ],
+      "exit_code": 0
+    },
+    "standaloneCompanions": {
+      "codex": {
+        "tests": 250,
+        "passed": 245,
+        "skippedLiveAccount": 5,
+        "typecheck": "pass",
+        "actualPackInstall": "pass"
+      },
+      "claude": {
+        "tests": 174,
+        "passed": 174,
+        "skipped": 0,
+        "actualPackInstall": "pass",
+        "hostCombinations": 8
+      }
+    }
+  },
+  "remoteCISnapshot": {
+    "codex": {
+      "commit": "49099acd49447ddf556b0e49f4d8e87b187d90c2",
+      "runId": 43894473187,
+      "conclusion": "success",
+      "matrix": [
+        "ubuntu/node22",
+        "ubuntu/node24",
+        "macos/node22",
+        "macos/node24"
+      ]
+    },
+    "claude": {
+      "commit": "34291ff600bb70fa7dd628435fa10046c11b21d1",
+      "runId": 43896639421,
+      "conclusion": "success",
+      "matrix": [
+        "ubuntu/node22",
+        "ubuntu/node24",
+        "macos/node22",
+        "macos/node24"
+      ]
+    },
+    "flywheelSource": {
+      "commit": "fabd8eba00fd785d5366d6b15642378ae1628651",
+      "runId": 43897783989,
+      "candidateBuild": "success",
+      "ubuntu": "in_progress",
+      "macos": "queued",
+      "subsequentDocumentationHeadNeedsOwnChecks": true
+    }
+  },
+  "limits": {
+    "published": false,
+    "merged": false,
+    "liveModelAccountTested": false,
+    "desktopAccepted": false,
+    "unknownOutcomeRemainsNonReplayable": true
+  }
+}

@@ -2,6 +2,8 @@
 
 [验证索引](README.md) · [原始审查 F1–F8](../reviews/2026-11-16-provider-liveness.md) · [会话恢复指南](../zh-CN/session-recovery.md) · [PR #53](https://github.com/ckanner/flywheel/pull/53)
 
+后续交叉复审、追加缺陷修复和最终精确候选见 [复审闭环记录](2026-11-16-provider-liveness-review-closure.md)。本页保留首轮实现及候选的原始身份，不将其重新标记为后续版本。
+
 ## 范围与证据身份
 
 实现提交为 [`e58e106481e714bd7f019e36ea76c41e26dc523b`](https://github.com/ckanner/flywheel/commit/e58e106481e714bd7f019e36ea76c41e26dc523b)，tree `395aa5dd8278045480b9d1021aa74a6b07ed4b02`。下面的完整安装候选直接构建自该干净提交；后续验收补记只修改本记录与 evidence，不改运行时代码。
