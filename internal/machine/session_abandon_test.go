@@ -200,6 +200,9 @@ func TestAbandonRejectsUnverifiedOrIneligibleCommands(t *testing.T) {
 		}, "does not match its recorded role"},
 		{"invalid proof kind", func(_ *abandonFixtureData, cmd *SessionCommand) { cmd.UserAction.Kind = "model" }, "invalid kind"},
 		{"wrong invocation", func(_ *abandonFixtureData, cmd *SessionCommand) { cmd.Invocation = "call-other" }, "does not match the recorded invocation"},
+		{"missing invocation", func(_ *abandonFixtureData, cmd *SessionCommand) { cmd.Invocation = "" }, "requires the exact invocation"},
+		{"missing planning authority", func(fx *abandonFixtureData, _ *SessionCommand) { fx.ctx.State.Planning = nil }, "no planning authority"},
+		{"proof task mismatch", func(_ *abandonFixtureData, cmd *SessionCommand) { cmd.UserAction.TaskDir = "/flywheel-missing-task" }, "does not match"},
 		{"terminal request", func(fx *abandonFixtureData, _ *SessionCommand) {
 			fx.ctx.State.Planning.Requests[0].Status = "completed"
 		}, "not pending or running"},

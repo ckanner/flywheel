@@ -50,10 +50,10 @@
 | 检查 | 结果 |
 | --- | --- |
 | `go build ./...` | 通过 |
-| `go test ./internal/config ./internal/state ./internal/contract ./internal/prompts ./internal/cli` | 通过 |
+| `go test ./...` | 通过（全部包；machine 包约 751 秒） |
 | `go vet ./...` / `gofmt -l` | 通过；无诊断或未格式化文件 |
 | `make coverage` | 待最终运行记录 |
-| `npm --prefix plugins/dsh test` | 428 个插件测试与 10 个 rc5/legacy host 测试全部通过，0 失败/跳过（最终 UI 守卫后又跑了 43 个直接相关测试，0 失败） |
+| `npm --prefix plugins/dsh test` | 428 个插件测试与 10 个 rc5/legacy host 测试全部通过，0 失败/跳过；review 修复后又跑了 43 个直接相关测试，0 失败 |
 | 真实模型/桌面/发布验收 | 未运行；离线 fixture 不等于真实账号或桌面验证 |
 
 ## 限制

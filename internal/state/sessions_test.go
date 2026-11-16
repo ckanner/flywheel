@@ -45,6 +45,15 @@ func sessionTestState(t *testing.T, dir string) *State {
 	return st
 }
 
+func TestValidateSessionsRejectsOutOfRangeInteger(t *testing.T) {
+	dir := t.TempDir()
+	st := sessionTestState(t, dir)
+	raw, err := json.Marshal(st.Sessions)
+	require.NoError(t, err)
+	raw = bytes.Replace(raw, []byte(`"attempt":1`), []byte(`"attempt":1000000000000000000000000000000`), 1)
+	require.ErrorContains(t, validateSessions(raw), "cannot unmarshal")
+}
+
 func TestSaveRejectsInvalidSessionLedger(t *testing.T) {
 	dir := t.TempDir()
 	st := sessionTestState(t, dir)

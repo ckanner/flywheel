@@ -368,8 +368,11 @@ func validateSessions(raw json.RawMessage) error {
 				len(abandon.Source) > 1024 || strings.ContainsAny(abandon.Source, "\x00\r\n") {
 				return fmt.Errorf("session %s abandonment facts are invalid", key)
 			}
-			// state.schema.json enforces that at least one of dispatch/outcome is
-			// unknown (and resume-candidate:false); the schema check above owns both.
+			if record.Last.Dispatch != "unknown" && record.Last.Outcome != "unknown" {
+				return fmt.Errorf("session %s abandonment requires an unresolved dispatch or outcome", key)
+			}
+			// state.schema.json also enforces at least one unknown fact (and
+			// resume-candidate:false); keep the Go error for in-memory callers.
 		}
 		if recovery := record.Last.Recovery; recovery != nil {
 			if !filepath.IsAbs(record.Task) || recovery.Directory != SessionRecoveryDirectory(record.Task, record.Last.ID) ||

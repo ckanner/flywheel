@@ -69,6 +69,27 @@ func TestSessionAbandonEnvironmentProofMustBindTheExactCommand(t *testing.T) {
 	require.NotNil(t, request.UserAction)
 	assert.Equal(t, "dsh", request.UserAction.Kind)
 
+	t.Setenv("DSH_SESSION_ID", "other-session")
+	require.ErrorContains(t, sessionActionProof(request, nil, "/repo", false), "does not match")
+	t.Setenv("DSH_SESSION_ID", "host-session")
+	t.Setenv(sessionUserActionEnv, strings.Repeat("x", (1<<20)+1))
+	require.ErrorContains(t, sessionActionProof(request, nil, "/repo", false), "malformed or oversized")
+	for name, mutate := range map[string]func(*machine.SessionUserAction){
+		"kind":       func(p *machine.SessionUserAction) { p.Kind = "tty" },
+		"task":       func(p *machine.SessionUserAction) { p.TaskDir = "/other" },
+		"invocation": func(p *machine.SessionUserAction) { p.Invocation = "call-other" },
+	} {
+		value := proof
+		mutate(&value)
+		bad, err := json.Marshal(value)
+		require.NoError(t, err)
+		t.Setenv(sessionUserActionEnv, string(bad))
+		require.Error(t, sessionActionProof(request, nil, "/repo", false), name)
+	}
+	_, err = json.Marshal(proof)
+	require.NoError(t, err)
+	t.Setenv(sessionUserActionEnv, string(raw))
+
 	request.Reason = "changed after proof"
 	require.ErrorContains(t, sessionActionProof(request, nil, "/repo", false), "does not match")
 	t.Setenv(sessionUserActionEnv, "{")
@@ -243,6 +264,22 @@ func TestSessionAbandonControlEnvelopeCarriesSemanticReceipt(t *testing.T) {
 	require.NotNil(t, reply.SessionControl)
 	assert.False(t, reply.SessionControl.Applied)
 	assert.Contains(t, reply.SessionControl.Message, "orchestrator exited before readiness")
+
+	// A refused session command records its semantic reason in state; the
+	// control receipt should prefer that over the generic child-exit transport.
+	st.Control = &state.ControlResult{Kind: "session", Status: "failed", Message: "session is not blocked; it cannot be abandoned"}
+	originalSnapshot := controlSnapshotFn
+	t.Cleanup(func() { controlSnapshotFn = originalSnapshot })
+	controlSnapshotFn = func(string) (controlResponse, error) { return controlResponse{State: st}, nil }
+	cmd = controlCmd()
+	cmd.SetIn(bytes.NewReader(raw))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	reply, err = startSessionControl(cmd, taskDir, cwd)
+	require.Error(t, err)
+	require.NotNil(t, reply.SessionControl)
+	assert.False(t, reply.SessionControl.Applied)
+	assert.Contains(t, reply.SessionControl.Message, "session is not blocked")
 }
 
 func TestQuickSessionControlWaitsForTheChildToExit(t *testing.T) {
@@ -330,6 +367,7 @@ func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
 	assert.True(t, receipt.Applied)
 	assert.Equal(t, "abandoned", receipt.Status)
 	assert.Equal(t, "call-one", receipt.Invocation)
+	assert.False(t, sessionControlReceipt(abandoned, abandoned, request).Applied, "an already-abandoned record is not a new transition")
 	noReason := receiptState(key, "call-one", "blocked", "")
 	noReason.Sessions.Records[key].Reason = ""
 	assert.Equal(t, "the unresolved invocation was not retired", sessionControlReceipt(noReason, blocked, request).Message)
@@ -345,6 +383,7 @@ func TestSessionControlReceiptMakesSemanticOutcomeExplicit(t *testing.T) {
 	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", key), request).Applied)
 	request.Action = "send"
 	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
+	assert.False(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), &state.State{}, request).Applied)
 	assert.True(t, sessionControlReceipt(receiptState(key, "call-two", "consumed", ""), receiptState(key, "call-one", "consumed", ""), request).Applied)
 	request.Action = "return"
 	assert.True(t, sessionControlReceipt(receiptState(key, "call-one", "consumed", ""), receiptState(key, "call-one", "consumed", key), request).Applied)
