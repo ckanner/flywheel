@@ -55,6 +55,22 @@ Go 将事件与原调用身份核对后，先原子保存并 `fsync` 检查点�
 
 只读查询可以重复。原生机器、历史文件或 journal 不可用时，不承诺跨机器恢复。supervisor 自身也被终止时可能只剩 pending；本实现没有 exactly-once 执行保证。
 
+### 人工退役未知的规划调用
+
+规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）的调用如果没有可信 dispatch/outcome，且不是 Kimi/DSH 那种可恢复 journal，可以明确退役，而不是让整个任务永久锁死。这个动作不是恢复或重放：它保留 unknown 事实，只结束该次调用的副作用范围。
+
+```sh
+flywheel session /absolute/repo/docs/my-task \
+  --key design-plan/planning:engine-1-1 \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+要求：记录为 `blocked`、已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown；角色必须是规划角色。命令在控制终端显示准确调用 ID 并要求输入 `abandon <invocation>`；Flywheel 视图的同一动作只接受来源为真实用户的 `/flywheel` 命令。模型工具不暴露该动作。
+
+退役后记录变为 `abandoned`，保留原因、时间、来源和旧 thread 证据；旧 thread 永不续用。不应用任何阶段结果，也不再次调用模型。关联规划 request 标为 `cancelled`，任务回到 `paused`；之后显式运行 Plan 会创建新 request。`control session` 会返回 `session-control.applied/status/message`，不能用控制信封的 `ok:true` 推断退役成功。
+
+这不是“删除账本来重放”：原账本、receipt 和 unknown 证据仍保留。不要手改 `state.json` 或搬走 `.sessions/` 来伪造终态。
+
 ### 回执成功仍须有原候选证据
 
 `cleanup-confirmed` 到达时，Go 在 ACK 前保存该次执行结束后的候选摘要、原角色 guard，以及 Execute 的报告。恢复得到成功回执后，必须同时有这份原调用的证据，才能应用业务结果。重启后重新拍摄的工作区、重新跑过的验收不能替代原检查点。
@@ -143,4 +159,4 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 上游恢复目录与文件使用私有权限、独占创建、身份/摘要检查和原子持久化；已存在目录不会触发二次执行。它们属于任务审计证据，可能含模型输出与诊断。按任务一起保存、备份和控制访问，不复制凭证，也不因安装升级而删除未知调用的证据。
 
-当前没有自动删除这些恢复证据的保留计时器。确认任务完成或由人解决未知结果之后，才能按项目的任务归档流程处理；删除 journal 不是解除阻断的恢复方法。`control status`/doctor 是查看入口，模型与 skills 不修改 `state.json`。需要恢复时仍从原任务目录使用正常 Go 启动入口，由引擎核对并决定下一步。
+当前没有自动删除这些恢复证据的保留计时器。确认任务完成，或对规划角色使用上面的显式退役动作之后，才能按项目的任务归档流程处理；删除 journal 不是解除阻断的恢复方法。`control status`/doctor 是查看入口，模型与 skills 不修改 `state.json`。需要恢复时仍从原任务目录使用正常 Go 启动入口，由引擎核对并决定下一步。

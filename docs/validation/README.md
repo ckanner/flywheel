@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-16 | [会话活性与未知规划调用退役实现验证](2026-11-16-session-liveness-abandonment.md) |
 | 2026-11-16 | [受审查规划生命周期：实现、恢复与 Provider 离线验证](2026-11-16-reviewed-planning.md) |
 | 2026-11-15 | [0.34.3 JEV 设置文案发行与桌面验收](2026-11-15-release-0.34.3.md) |
 | 2026-11-15 | [0.34.2 多任务导航、Tab 样式发行与桌面验收](2026-11-15-release-0.34.2.md) |

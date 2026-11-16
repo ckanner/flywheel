@@ -407,8 +407,9 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 | `start` | 必需 taskDir／cwd；可选 `--mode`，省略时保留契约或持久化策略；旧任务仍 Full |
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
 | `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
+| `session` | 必需 taskDir／cwd；stdin 接收 revision-bound session 命令；可选 `abandon` 只用于规划角色未知调用，要求人工证明；返回 `session-control` |
 
-共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `cwd`、`error`、`taskTitle`。`taskTitle` 仅来自通过契约校验的 Spec.title，是显示信息，不作为任务或会话身份；缺失或无效 Spec 时省略，仍保留状态／停止回执。成功解析目录后 `cwd` 是请求目录的规范化物理路径，供宿主关联校验；旧回复未带该字段仍按原任务身份机制处理。省略任务时 `taskDir:""`；配置／诊断不启动或修改任务，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。doctor 可只读已有工作流状态以判断必需阶段。
+共同 envelope 为 `protocol:1, ok, running, pid, taskDir, state`，可选 `cwd`、`error`、`taskTitle`、`session-control`。`taskTitle` 仅来自通过契约校验的 Spec.title，是显示信息，不作为任务或会话身份；缺失或无效 Spec 时省略，仍保留状态／停止回执。成功解析目录后 `cwd` 是请求目录的规范化物理路径，供宿主关联校验；旧回复未带该字段仍按原任务身份机制处理。省略任务时 `taskDir:""`；配置／诊断不启动或修改任务，通常 `running:false, pid:0, state:null`，不能用这些字段覆盖面板已经显示的任务运行状态。doctor 可只读已有工作流状态以判断必需阶段。
 
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
@@ -418,6 +419,13 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 resumeCandidate，以及 last 的 status、persistent、dispatch、outcome、cleanupConfirmed、
 usageStatus、accounted。投影只读取已校验的 state，不打开后端历史或原始回执；旧的
 完整 state 字段继续保留。状态查询不会核销回执、修改计量或解除未知调用的阻断。
+
+`session-control` 为异步 session 命令的语义回执：key、action、applied、revision、
+status、invocation、message。它不改变共同 envelope 的 `ok` 含义；`ok:true` 只说明
+控制请求完成，`applied:false` 才是引擎没有实施该动作的证据。`session abandon`
+仅接受规划角色、已计量且清理确认的 blocked 调用，并要求
+`FLYWHEEL_SESSION_USER_ACTION` 与 `DSH_SESSION_ID` 精确匹配的 host 证明；模型工具
+不暴露该动作。人类 CLI 走控制终端的 `abandon <invocation>` 确认。
 
 `diagnostic` 含 kind=`doctor`、ok、cwd、taskDir、probeRequested、inferenceTested=`false`、可选 configuration，以及 checks 数组。check 为 id/status/summary，可附 code/remedy；status 只允许 pass/fail/warn/unknown/skipped。配置本身无效时允许没有 configuration，仍返回完整失败检查项。
 

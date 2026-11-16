@@ -115,7 +115,7 @@ type SessionUsage struct {
 type SessionInvocation struct {
 	EngineRunID      string             `json:"engine-run-id,omitempty"`
 	ID               string             `json:"id"`
-	Status           string             `json:"status"` // intent | received | consumed | blocked
+	Status           string             `json:"status"` // intent | received | consumed | blocked | abandoned
 	StartedAt        string             `json:"started-at"`
 	Attempt          int                `json:"attempt"`
 	RequestedThread  string             `json:"requested-thread,omitempty"`
@@ -132,6 +132,19 @@ type SessionInvocation struct {
 	UsageStatus      string             `json:"usage-status"`
 	Recovery         *SessionRecovery   `json:"recovery,omitempty"`
 	Accounting       *SessionAccounting `json:"accounting,omitempty"`
+	Abandon          *SessionAbandon    `json:"abandon,omitempty"`
+}
+
+// SessionAbandon records the explicit human decision to retire an unresolved
+// planning invocation. It preserves the unknown dispatch/outcome facts; no
+// stage result is applied and the old thread is never resumed.
+type SessionAbandon struct {
+	At        string `json:"at"`
+	Reason    string `json:"reason"`
+	Authority string `json:"authority"`
+	RequestID string `json:"request-id,omitempty"`
+	ThreadID  string `json:"thread-id,omitempty"`
+	Source    string `json:"source,omitempty"`
 }
 
 // SessionReceipt stores the exact normalized result (including the raw public
@@ -339,6 +352,20 @@ func validateSessions(raw json.RawMessage) error {
 		}
 		if record.Last.Status == "consumed" && !record.Last.Accounted || record.Last.Status == "intent" && record.Last.Accounted {
 			return fmt.Errorf("session %s accounting contradicts invocation status", key)
+		}
+		if record.Last.Status == "abandoned" {
+			abandon := record.Last.Abandon
+			if !record.Last.Accounted || !record.Last.CleanupConfirmed || abandon == nil ||
+				strings.TrimSpace(abandon.At) == "" || strings.TrimSpace(abandon.Reason) == "" ||
+				len(abandon.Reason) > 1000 || abandon.Authority != "human" || strings.ContainsRune(abandon.Reason, 0) ||
+				len(abandon.Source) > 1024 || strings.ContainsAny(abandon.Source, "\x00\r\n") {
+				return fmt.Errorf("session %s abandonment facts are invalid", key)
+			}
+			if record.Last.Dispatch != "unknown" && record.Last.Outcome != "unknown" {
+				return fmt.Errorf("session %s abandonment requires an unresolved dispatch or outcome", key)
+			}
+			// resume-candidate:false is enforced by state.schema.json for abandoned;
+			// the schema check runs before this Go validation, so do not duplicate it.
 		}
 		if recovery := record.Last.Recovery; recovery != nil {
 			if !filepath.IsAbs(record.Task) || recovery.Directory != SessionRecoveryDirectory(record.Task, record.Last.ID) ||

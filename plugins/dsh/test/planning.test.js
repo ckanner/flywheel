@@ -172,6 +172,37 @@ test('historical implementation start cannot hide the exact new design start act
   assert.equal(ui.button('批准此版本并开始').disabled, true);
 });
 
+test('a blocked planning invocation is visible and can be retired only through the user command', async t => {
+  const blocked = {
+    role: 'design-plan', scope: 'planning:engine-1-1', action: 'wait',
+    reason: 'dispatch, outcome or cleanup remains unknown', 'resume-candidate': false,
+    last: { id: 'call-blocked1', status: 'blocked', dispatch: 'unknown', outcome: 'unknown', 'cleanup-confirmed': true, accounted: true, 'usage-status': 'unknown' },
+  };
+  const ui = await mountPanel(t, request => {
+    if (request.action === 'session') {
+      assert.deepEqual(request.session.action, 'abandon');
+      assert.deepEqual(request.session.key, 'design-plan/planning:engine-1-1');
+      assert.equal(request.session.revision, 7);
+      assert.equal(request.session.reason, 'Retire this exact call');
+      return reply(request, {
+        state: { ...planningTask(planningState({ phase: 'drafting' })), sessions: { version: 4, records: { 'design-plan/planning:engine-1-1': { ...blocked, last: { ...blocked.last, status: 'abandoned' } } } } },
+        'session-control': { key: request.session.key, action: 'abandon', applied: true, revision: 7, status: 'abandoned', invocation: 'call-blocked1' },
+      });
+    }
+    return reply(request, { state: { ...planningTask(planningState({ phase: 'drafting' })), sessions: { version: 4, records: { 'design-plan/planning:engine-1-1': blocked } } } });
+  });
+  await ui.selectPath(0, '/repo/docs/planning'); await ui.click('刷新');
+  assert.match(ui.container.textContent, /未解开的规划调用/);
+  assert.match(ui.container.textContent, /call-blocked1/);
+  const reason = ui.container.querySelector('textarea[aria-label="退役原因"]');
+  await act(async () => { Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(reason, 'Retire this exact call'); reason.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true })); });
+  const confirm = ui.container.querySelector('input[type="checkbox"]');
+  await act(async () => { confirm.click(); });
+  await ui.click('退役未知调用');
+  assert.equal(ui.requests.at(-1).action, 'session');
+  assert.equal(ui.container.textContent.includes('未解开的规划调用'), false, 'the retired invocation disappears from the blocked panel');
+});
+
 test('feedback displays queued acknowledgement separately from applied input and Plan stays scoped', async t => {
   let feedbackCommand, adopted = false;
   const ui = await mountPanel(t, request => {

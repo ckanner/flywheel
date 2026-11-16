@@ -45,7 +45,7 @@ func (c *Context) agentVerdictStep(a verdictArgs) (verdictOutcome, error) {
 			},
 			APIKey:   c.channelApiKey(channel),
 			APIKeys:  c.apiKeysFor(channel),
-			Watchdog: c.wdog(),
+			Watchdog: c.wdogFor(a.role),
 		}
 		switch a.role {
 		case "review":

@@ -79,6 +79,50 @@ func TestSessionSchemaRejectsMalformedExtensionBeforeDispatch(t *testing.T) {
 	require.Error(t, ValidateSessionStateValue([]any{}))
 }
 
+func abandonedSessionSchemaValue() (map[string]any, map[string]any, map[string]any) {
+	value := sessionSchemaValue()
+	record := value["records"].(map[string]any)["execute/M01-T01"].(map[string]any)
+	record["role"], record["scope"] = "design-plan", "planning:engine-1-1"
+	record["resume-candidate"], record["action"] = false, "abandon"
+	delete(record, "thread-id")
+	delete(record, "protocol")
+	invocation := record["last"].(map[string]any)
+	invocation["status"], invocation["accounted"] = "abandoned", true
+	invocation["dispatch"], invocation["outcome"], invocation["usage-status"] = "unknown", "unknown", "unknown"
+	invocation["abandon"] = map[string]any{
+		"at": "2026-11-16T05:45:00Z", "reason": "The model call was killed by the idle watchdog; retire it without replay.",
+		"authority": "human", "source": "tty",
+	}
+	return value, record, invocation
+}
+
+func TestSessionSchemaAcceptsExplicitUnknownInvocationAbandonment(t *testing.T) {
+	value, _, _ := abandonedSessionSchemaValue()
+	require.NoError(t, ValidateSessionStateValue(value))
+	for _, tc := range []struct {
+		name string
+		edit func(map[string]any, map[string]any)
+	}{
+		{"missing proof", func(_, i map[string]any) { delete(i, "abandon") }},
+		{"non-human authority", func(_, i map[string]any) { i["abandon"].(map[string]any)["authority"] = "model" }},
+		{"empty reason", func(_, i map[string]any) { i["abandon"].(map[string]any)["reason"] = "" }},
+		{"unaccounted", func(_, i map[string]any) { i["accounted"] = false }},
+		{"cleanup unknown", func(_, i map[string]any) { i["cleanup-confirmed"] = false }},
+		{"resumable", func(_, i map[string]any) { i["abandon"].(map[string]any)["extra"] = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value, _, invocation := abandonedSessionSchemaValue()
+			tc.edit(value, invocation)
+			require.Error(t, ValidateSessionStateValue(value))
+		})
+	}
+	value, record, _ := abandonedSessionSchemaValue()
+	record["resume-candidate"] = true
+	record["thread-id"] = "thread"
+	record["protocol"] = "backend/v1"
+	require.Error(t, ValidateSessionStateValue(value), "abandoned history must not be resumable")
+}
+
 func TestSessionSchemaPreservesUnknownFactsInUnconsumedStates(t *testing.T) {
 	for _, status := range []string{"intent", "blocked"} {
 		value := sessionSchemaValue()

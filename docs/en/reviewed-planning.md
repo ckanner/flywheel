@@ -205,7 +205,10 @@ After a timeout or lost reply, inspect the **original task** before another muta
 A successful control envelope is an acknowledgement, not task completion. Unknown
 outcome, cleanup uncertainty and incomplete usage remain visible and block unsafe
 continuation. Do not copy state, clear receipts, switch fresh/scoped modes, or create
-a new task to hide the original result.
+a new task to hide the original result. A planning role may use the
+[explicit retirement action](session-recovery.md#explicitly-retiring-an-unknown-planning-invocation)
+after cleanup and accounting; it ends only that unknown effect boundary, and an
+explicit Plan is still required to create a new request. It is not replay or success.
 
 If a manual native-session handoff changed a contract and implementation is now
 blocked, release that same handoff first. Release only succeeds for its exact

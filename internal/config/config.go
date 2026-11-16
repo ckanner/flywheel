@@ -74,11 +74,19 @@ type BudgetConfig struct {
 	DailyTokenLimit *int64 `json:"daily-token-limit"`
 }
 
-// WatchdogConfig 双计时看门狗参数（§6）。
+// WatchdogConfig 双计时看门狗参数（§6）。Roles 只覆盖指定角色的
+// idle/wall 上限；规划角色默认允许更长的静默研究，而执行角色保持较短
+// 的挂起检测。KillGrace 始终全局，收尾宽限不能按角色缩短。
 type WatchdogConfig struct {
-	IdleTimeoutMs int64 `json:"idle-timeout-ms"`
-	WallTimeoutMs int64 `json:"wall-timeout-ms"`
-	KillGraceMs   int64 `json:"kill-grace-ms"`
+	IdleTimeoutMs int64                         `json:"idle-timeout-ms"`
+	WallTimeoutMs int64                         `json:"wall-timeout-ms"`
+	KillGraceMs   int64                         `json:"kill-grace-ms"`
+	Roles         map[string]WatchdogRoleConfig `json:"roles,omitempty"`
+}
+
+type WatchdogRoleConfig struct {
+	IdleTimeoutMs int64 `json:"idle-timeout-ms,omitempty"`
+	WallTimeoutMs int64 `json:"wall-timeout-ms,omitempty"`
 }
 
 // RetryConfig 传输层重试（§6）。
@@ -192,6 +200,15 @@ func Default() Config {
 			IdleTimeoutMs: 300_000,
 			WallTimeoutMs: 3_600_000,
 			KillGraceMs:   5_000,
+			// Design and plan calls can legitimately wait for a model or an
+			// observed native subagent without stdout activity. Execute/review
+			// keep the tighter generic hang detector.
+			Roles: map[string]WatchdogRoleConfig{
+				"design-plan":   {IdleTimeoutMs: 900_000},
+				"design-review": {IdleTimeoutMs: 900_000},
+				"plan":          {IdleTimeoutMs: 900_000},
+				"plan-review":   {IdleTimeoutMs: 900_000},
+			},
 		},
 		Retry: RetryConfig{
 			BaseDelayMs:         500,
@@ -245,6 +262,29 @@ func (c *Config) Normalize() {
 	if c.Watchdog.KillGraceMs == 0 {
 		c.Watchdog.KillGraceMs = d.Watchdog.KillGraceMs
 	}
+	if c.Watchdog.Roles == nil {
+		c.Watchdog.Roles = d.Watchdog.Roles
+	} else {
+		roles := make(map[string]WatchdogRoleConfig, len(c.Watchdog.Roles)+len(d.Watchdog.Roles))
+		for role, value := range d.Watchdog.Roles {
+			roles[role] = value
+		}
+		for role, value := range c.Watchdog.Roles {
+			defaults, known := roles[role]
+			if !known {
+				roles[role] = value
+				continue
+			}
+			if value.IdleTimeoutMs == 0 {
+				value.IdleTimeoutMs = defaults.IdleTimeoutMs
+			}
+			if value.WallTimeoutMs == 0 {
+				value.WallTimeoutMs = defaults.WallTimeoutMs
+			}
+			roles[role] = value
+		}
+		c.Watchdog.Roles = roles
+	}
 	if c.Retry.BaseDelayMs == 0 {
 		c.Retry.BaseDelayMs = d.Retry.BaseDelayMs
 	}
@@ -278,6 +318,48 @@ func (c *Config) Normalize() {
 	}
 }
 
+var watchdogRoles = map[string]bool{
+	"plan": true, "execute": true, "review": true, "judge": true, "judge-panel": true,
+	"intake": true, "garden": true, "design-plan": true, "design-review": true, "plan-review": true,
+}
+
+// validateWatchdog keeps the per-role map machine-checkable. Zero values were
+// already normalized from defaults; an explicit negative or unknown role is a
+// configuration error rather than a silently ignored override.
+func (c *Config) validateWatchdog() error {
+	check := func(name string, idle, wall int64) error {
+		if idle < 1 || idle > 86_400_000 {
+			return fmt.Errorf("watchdog.%s.idle-timeout-ms must be between 1 and 86400000", name)
+		}
+		if wall < 1 || wall > 86_400_000 {
+			return fmt.Errorf("watchdog.%s.wall-timeout-ms must be between 1 and 86400000", name)
+		}
+		return nil
+	}
+	if err := check("global", c.Watchdog.IdleTimeoutMs, c.Watchdog.WallTimeoutMs); err != nil {
+		return err
+	}
+	for role, value := range c.Watchdog.Roles {
+		if !watchdogRoles[role] {
+			return fmt.Errorf("watchdog.roles contains unknown role %q", role)
+		}
+		if value.IdleTimeoutMs == 0 && value.WallTimeoutMs == 0 {
+			return fmt.Errorf("watchdog.roles.%s requires an idle or wall timeout override", role)
+		}
+		if value.IdleTimeoutMs != 0 {
+			if err := check(role, value.IdleTimeoutMs, c.Watchdog.WallTimeoutMs); err != nil {
+				return err
+			}
+		}
+		if value.WallTimeoutMs != 0 {
+			if err := check(role, c.Watchdog.IdleTimeoutMs, value.WallTimeoutMs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
 	if err := c.validateNativeProfiles(); err != nil {
@@ -303,6 +385,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if err := c.validateWatchdog(); err != nil {
+		return err
+	}
 	if err := c.Sessions.validate(); err != nil {
 		return err
 	}

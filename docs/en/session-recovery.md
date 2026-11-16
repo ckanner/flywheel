@@ -59,6 +59,22 @@ Restarting the same task lets Go use the original adapter version, request/run I
 
 Queries may be repeated. Cross-machine recovery requires the original data and environment and is not promised. Killing the supervisor itself can leave pending evidence. This is not an exactly-once execution guarantee.
 
+### Explicitly retiring an unknown planning invocation
+
+A planning-role invocation (`design-plan`, `design-review`, `plan`, `plan-review`) whose dispatch or outcome is unproven and has no recoverable journal can be explicitly retired instead of blocking the task forever. This is not recovery or replay: it preserves the unknown facts and only ends the invocation's effect boundary.
+
+```sh
+flywheel session /absolute/repo/docs/my-task \
+  --key design-plan/planning:engine-1-1 \
+  --abandon --reason "idle watchdog killed a live model call"
+```
+
+The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a planning role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it.
+
+The record becomes `abandoned` with its reason, time, source, and original thread evidence; the old thread is never resumed. No stage result is applied and no model is called again. The associated planning request becomes `cancelled`, the task returns to `paused`, and a later explicit Plan creates a new request. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
+
+This is not "delete the ledger and replay": the original ledger, receipt, and unknown evidence remain. Do not hand-edit `state.json` or move `.sessions/` to fabricate a terminal result.
+
 ### A successful receipt also needs original candidate evidence
 
 At `cleanup-confirmed`, before acknowledging, Go captures the post-call candidate digest, original role guards, and Execute report. A recovered success may advance the task only with that original proof. A new workspace snapshot or rerun verification after restart cannot substitute for it.
@@ -162,4 +178,4 @@ The offline native fixture exercises the real Go engine, worker v3, and public p
 
 Recovery journals have private permissions, exclusive creation, identity/digest checks, and atomic persistence. Existing directories never authorize redispatch. They are task audit data and may contain model output and diagnostics; keep their access and backups with the task. Do not copy credentials or delete uncertain evidence during upgrades.
 
-There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit resolution of an unknown result. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.
+There is currently no automatic journal-retention timer. Archive evidence through the project's task lifecycle after completion or explicit retirement of an unknown planning invocation. Deleting a journal is not a recovery procedure. `control status` and doctor are observation surfaces; models and skills never write `state.json`. Resume through the normal Go entry point from the original task directory so the engine can reconcile before making a new call.

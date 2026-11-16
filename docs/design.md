@@ -319,7 +319,8 @@ v2 阻止更早引擎忽略 `handoff`，v3 阻止只认识 v1／v2 的引擎忽�
 policy-version 仍为 1，worker、lifecycle 和 recovery 协议分别版本化。记录按 Plan／里程碑、Execute／packet、Review／评审职责、
 Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd、绑定／目标／契约身份、
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
-intent／received／consumed／blocked、派发／结果／清理和用量事实。
+intent／received／consumed／blocked／abandoned、派发／结果／清理和用量事实。
+`abandoned` 是规划角色经人工确认后的终结状态，保留原 unknown 事实，见 §6.1。
 
 `state.worker-prewarm` 记录至多一个尚未交接或清理的准备意图，保存随机 ID、Review scope、运行身份和绑定摘要，不保存 prompt、凭证或可复用会话。先 CAS 保存意图，后启动 SDK；正式调用意图持久化后交接清理责任。未消费的终态回执在 `.control/prewarm/<id>/`，通过私有、有界文件与排他发布持久化，确认文件和目录同步，受现有 volatile 规则排除出 Git。恢复仅接受精确 ID／摘要、明确未发送 prompt、SDK 清理确认、外层 worker 及其原进程组均已退出；PID／进程组 ID 只用于检查退出，不能授权终止其他进程。没有可信证据、仍存活或标识被复用都保持阻断；重启不会续用预热实例，关闭优化也不能擦除旧责任。启动前 CAS 失败记录本地确定的 no-process 回执，不能为了补回执启动进程。
 
@@ -471,6 +472,20 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 `stop` 与 `control stop` 不向 pid 文件中的数字发送信号。它们原子写入带本次随机 control token 的 `.stop-request`；引擎仅接受匹配自己 token 的请求并取消运行上下文。旧请求、坏请求及被复用的 PID 不应停止另一次运行。没有有效 token 的旧运行不能通过自动 PID signalling 假装支持新协议。
 
 停止控制方等待本次引擎退出受管调用栈、释放任务 lease，并取得 lease 后才 CAS 保存 stopped。lease 释放不证明任意逃逸子进程已经清理；管理范围仍是本次拥有的进程组。已观测的 `CleanupError` 保留在 driver/Gate 证据与 metrics 中并阻止交付，需按错误记录人工处理。45 秒内不能确认停止则返回失败、保持状态，不强杀仍在恢复的引擎；GUI 超时应留足 60 秒。只读 status 以运行 lease 判断活动状态，PID 只作为辅助展示。
+
+### 6.1 规划调用的活性、未知结果与人工退役
+
+watchdog 的 idle 期限只由可观察的 stdout/stderr 活动刷新。对能够静默等待模型或原生子代理的 harness，这不足以证明无进展：Kimi print 只向父进程输出主会话 JSONL，后台子代理的完成通知不会刷新 idle；设计提示词因此必须要求非 native harness 把调查留在前台，或改用能暴露子代理生命周期的 Kimi native profile。全局 `watchdog` 仍保留 `idle-timeout-ms`、`wall-timeout-ms` 和 `kill-grace-ms`；`watchdog.roles.<role>` 只覆盖指定角色的 idle/wall，规划角色默认使用更长的 900 秒 idle，执行/评审保持默认 300 秒。收尾宽限不按角色缩短。
+
+Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 后 driver 只能记录 unknown。unknown 不能被换 fresh、换后端、删除账本或重新派发来“修复”，也不能由 status、绑定变更或工作台刷新自动变成已知。为规划角色增加受限的人工退役路径：
+
+- 仅 `design-plan`、`design-review`、`plan`、`plan-review` 的 `blocked` 调用可退役；记录必须已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown。
+- 必须提供受限原因，并由验证过的 DSH 用户命令或控制终端证明这是人的决定；模型工具不暴露该动作，也不接受继承的 env 证明。
+- 状态变为 `abandoned`，保留原 unknown 事实、原因、时间、来源和旧 thread 证据；旧 thread 不再可恢复。不应用任何阶段结果，不再次派发模型。
+- 关联的规划 request 标为 `cancelled`；任务回到 `paused`，下一次显式 Plan 产生新 request/generation。`planningHasPendingReceipt` 把 `abandoned` 视作已终结的边界。
+- 不能把退役实现成“成功”或“未派发”；它只结束未知副作用，不伪造结果。
+
+控制信封的 `ok:true` 只表示控制请求被处理；异步 session 动作另返回 `session-control.applied/status/message/invocation`。工作台“核对”仍只刷新插件自己的未确认控制动作，不是引擎未知调用的退役入口。
 
 ## 7. 模型与 harness 默认表
 
@@ -716,7 +731,7 @@ flywheel control config --cwd /repo
 flywheel control doctor --cwd /repo --task-dir /repo/docs/task --probe
 ```
 
-控制接口可附加 taskTitle：仅来自通过契约校验的 Spec.title，供显示使用；缺失或无效时省略，不阻断状态读取与停止，不用任务标识猜测标题。控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。有角色记录时增加紧凑 sessions 投影，显示角色／作用域、代次、动作／原因和最新调用的状态、派发、结果、清理、persistent 与 usageStatus，不读取原始回执或会话正文。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
+控制接口可附加 taskTitle：仅来自通过契约校验的 Spec.title，供显示使用；缺失或无效时省略，不阻断状态读取与停止，不用任务标识猜测标题。控制接口 stdout 始终是单个 JSON，保留 protocol=1、ok、running、pid、taskDir、state、可选 error；解析到执行根时附加可选 cwd。有角色记录时增加紧凑 sessions 投影，显示角色／作用域、代次、动作／原因和最新调用的状态、派发、结果、清理、persistent 与 usageStatus，不读取原始回执或会话正文。config 增加 configuration，doctor 增加 diagnostic；两者允许省略 taskDir，省略时返回空字符串。异步 session 动作另返回 session-control（key、action、applied、revision、status、invocation、message），envelope 的 ok 不表示该动作已成功实施。stderr 只诊断。launch／start 校验契约并派生独立后台引擎，双流进 orchestrator.log；status 不写状态；stop 不伪造停止。旧命令继续原输出形态。退出码 0=成功，1=用法/运行错误，3=升级/预算/失败步骤，143=已中断。
 
 配置查看与本地 doctor 不物化全局配置、不写任务状态、不建 worktree、不执行验收命令。doctor 默认仅检查配置、契约和本地命令；显式 probe 才启动 DSH SDK 的无推理握手与权限检查，不发送 session/prompt。检查总预算 40 秒，另留进程清理窗口；相同 cwd/provider/channel/model/effort/权限的探测只做一次，不同账号渠道与读写权限不能合并。
 

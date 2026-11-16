@@ -97,7 +97,13 @@
   "watchdog": {
     "idle-timeout-ms": 300000,
     "wall-timeout-ms": 3600000,
-    "kill-grace-ms": 5000
+    "kill-grace-ms": 5000,
+    "roles": {
+      "design-plan": { "idle-timeout-ms": 900000 },
+      "design-review": { "idle-timeout-ms": 900000 },
+      "plan": { "idle-timeout-ms": 900000 },
+      "plan-review": { "idle-timeout-ms": 900000 }
+    }
   },
   "retry": {
     "base-delay-ms": 500,

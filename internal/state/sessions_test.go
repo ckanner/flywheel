@@ -68,6 +68,47 @@ func TestSessionStateRoundTripAndLegacyLoad(t *testing.T) {
 	assert.Nil(t, loaded.Sessions, "legacy state does not opt into history implicitly")
 }
 
+func abandonedTestRecord(taskDir string) *SessionRecord {
+	r := sessionTestRecord(taskDir, "design-plan", "planning:engine-1-1")
+	r.ThreadID, r.Protocol, r.ResumeCandidate = "", "", false
+	r.Action, r.Reason = "wait", "dispatch, outcome or cleanup remains unknown"
+	r.Last.Status, r.Last.Dispatch, r.Last.Outcome = "blocked", "unknown", "unknown"
+	r.Last.UsageStatus, r.Last.Accounted, r.Last.CleanupConfirmed = "unknown", true, true
+	return r
+}
+
+func abandonedTestAbandon() *SessionAbandon {
+	return &SessionAbandon{
+		At: "2026-11-16T05:45:00Z", Authority: "human",
+		Reason: "The model call was killed by the idle watchdog; retire it without replay.",
+		Source: "tty",
+	}
+}
+
+func markAbandoned(s *SessionLedger) {
+	r := s.Records["execute/M01-T01"]
+	r.ThreadID, r.Protocol, r.ResumeCandidate = "", "", false
+	r.Last.Status, r.Last.Accounted, r.Last.CleanupConfirmed = "abandoned", true, true
+	r.Last.Dispatch, r.Last.Outcome, r.Last.UsageStatus = "unknown", "unknown", "unknown"
+	r.Last.Abandon = abandonedTestAbandon()
+}
+
+func TestSessionStateRoundTripsExplicitAbandonment(t *testing.T) {
+	dir := t.TempDir()
+	st := sessionTestState(t, dir)
+	record := abandonedTestRecord(dir)
+	record.Last.Status = "abandoned"
+	record.Last.Abandon = abandonedTestAbandon()
+	st.Sessions.Records = map[string]*SessionRecord{"design-plan/planning:engine-1-1": record}
+	saved, err := Save(dir, st, nil)
+	require.NoError(t, err)
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+	assert.Equal(t, saved.Sessions, loaded.Sessions)
+	assert.Equal(t, "abandoned", loaded.Sessions.Records["design-plan/planning:engine-1-1"].Last.Status)
+	assert.Equal(t, "human", loaded.Sessions.Records["design-plan/planning:engine-1-1"].Last.Abandon.Authority)
+}
+
 func TestSessionStateRejectsMalformedOrContradictoryCheckpoints(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -90,6 +131,28 @@ func TestSessionStateRejectsMalformedOrContradictoryCheckpoints(t *testing.T) {
 		{"received no cleanup", func(s *SessionLedger) { s.Records["execute/M01-T01"].Last.CleanupConfirmed = false }},
 		{"received unknown dispatch", func(s *SessionLedger) { s.Records["execute/M01-T01"].Last.Dispatch = "unknown" }},
 		{"shared thread", func(s *SessionLedger) { s.Records["review/M01-T01"] = sessionTestRecord("task", "review", "M01-T01") }},
+		{"abandoned missing proof", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].Last.Abandon = nil }},
+		{"abandoned non-human", func(s *SessionLedger) {
+			markAbandoned(s)
+			s.Records["execute/M01-T01"].Last.Abandon.Authority = "model"
+		}},
+		{"abandoned empty reason", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].Last.Abandon.Reason = "" }},
+		{"abandoned unaccounted", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].Last.Accounted = false }},
+		{"abandoned cleanup unknown", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].Last.CleanupConfirmed = false }},
+		{"abandoned known facts", func(s *SessionLedger) {
+			markAbandoned(s)
+			s.Records["execute/M01-T01"].Last.Dispatch, s.Records["execute/M01-T01"].Last.Outcome = "dispatched", "completed"
+		}},
+		{"abandoned resumable", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].ResumeCandidate = true }},
+		{"abandoned empty time", func(s *SessionLedger) { markAbandoned(s); s.Records["execute/M01-T01"].Last.Abandon.At = "" }},
+		{"abandoned long reason", func(s *SessionLedger) {
+			markAbandoned(s)
+			s.Records["execute/M01-T01"].Last.Abandon.Reason = strings.Repeat("x", 1001)
+		}},
+		{"abandoned invalid source", func(s *SessionLedger) {
+			markAbandoned(s)
+			s.Records["execute/M01-T01"].Last.Abandon.Source = "bad\nsource"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

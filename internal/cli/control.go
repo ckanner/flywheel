@@ -23,6 +23,7 @@ import (
 
 type controlResponse struct {
 	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
+	SessionControl  *SessionControlReceipt          `json:"session-control,omitempty"`
 	TaskTitle       string                          `json:"taskTitle,omitempty"`
 	Preparation     *state.PreparationState         `json:"preparation,omitempty"`
 	Projection      string                          `json:"projection,omitempty"`
@@ -43,6 +44,64 @@ type controlResponse struct {
 	Configuration   *diagnostic.Configuration       `json:"configuration,omitempty"`
 	Diagnostic      *diagnostic.Report              `json:"diagnostic,omitempty"`
 	Editor          *config.EditorDocument          `json:"editor,omitempty"`
+}
+
+// SessionControlReceipt makes an asynchronous session command's semantic
+// outcome explicit. The control envelope may still be ok:true; applied=false
+// means the engine refused the command or left the original record unchanged.
+type SessionControlReceipt struct {
+	Key        string `json:"key"`
+	Action     string `json:"action"`
+	Applied    bool   `json:"applied"`
+	Revision   int64  `json:"revision"`
+	Status     string `json:"status,omitempty"`
+	Invocation string `json:"invocation,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+func sessionControlReceipt(st *state.State, request *machine.SessionCommand) *SessionControlReceipt {
+	receipt := &SessionControlReceipt{Key: request.Key, Action: request.Action}
+	if st == nil {
+		receipt.Message = "task state is unavailable"
+		return receipt
+	}
+	receipt.Revision = st.Revision
+	if st.Sessions == nil || st.Sessions.Records[request.Key] == nil || st.Sessions.Records[request.Key].Last == nil {
+		receipt.Message = "session key not found"
+		return receipt
+	}
+	record := st.Sessions.Records[request.Key]
+	receipt.Status, receipt.Invocation = record.Last.Status, record.Last.ID
+	switch request.Action {
+	case "abandon":
+		receipt.Applied = record.Last.Status == "abandoned" && record.Last.Abandon != nil &&
+			record.Last.Abandon.Reason == request.Reason
+		if !receipt.Applied {
+			receipt.Message = record.Reason
+			if receipt.Message == "" {
+				receipt.Message = "the unresolved invocation was not retired"
+			}
+		}
+	case "reconcile":
+		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
+		receipt.Message = record.Reason
+	case "claim":
+		receipt.Applied = st.Handoff != nil && st.Handoff.Key == request.Key
+		if !receipt.Applied {
+			receipt.Message = "the session was not claimed"
+		}
+	case "release":
+		receipt.Applied = st.Handoff == nil
+		if !receipt.Applied {
+			receipt.Message = "the session remains under human control"
+		}
+	case "send", "return":
+		receipt.Applied = record.Last.Status == "consumed" && record.Last.CleanupConfirmed
+		receipt.Message = record.Reason
+	default:
+		receipt.Message = "unsupported session action"
+	}
+	return receipt
 }
 
 func controlEditor(cmd *cobra.Command, cwd, action string) (*config.EditorDocument, error) {
@@ -71,6 +130,9 @@ var (
 	controlStat         = os.Stat
 	controlStartWait    = 5 * time.Second
 	controlPollInterval = 20 * time.Millisecond
+	// Injection seam for the wait-for-session-exit path; production reads the
+	// same snapshot used by status.
+	controlSnapshotFn = controlSnapshot
 )
 
 // control is an argv-only, single-JSON boundary for the DSH plugin. Parse/flag
@@ -335,7 +397,11 @@ func startControlledTask(taskDir, cwd string, modes ...string) (controlResponse,
 }
 
 func startControlledRun(taskDir, cwd, mode string, extra []string) (controlResponse, error) {
-	reply, err := controlSnapshot(taskDir)
+	return startControlledRunWait(taskDir, cwd, mode, extra, false)
+}
+
+func startControlledRunWait(taskDir, cwd, mode string, extra []string, waitForExit bool) (controlResponse, error) {
+	reply, err := controlSnapshotFn(taskDir)
 	if err != nil {
 		return reply, err
 	}
@@ -388,7 +454,7 @@ func startControlledRun(taskDir, cwd, mode string, extra []string) (controlRespo
 	for {
 		select {
 		case exitErr := <-exited:
-			reply, snapshotErr := controlSnapshot(taskDir)
+			reply, snapshotErr := controlSnapshotFn(taskDir)
 			if snapshotErr != nil {
 				return reply, snapshotErr
 			}
@@ -401,7 +467,7 @@ func startControlledRun(taskDir, cwd, mode string, extra []string) (controlRespo
 			}
 			return reply, nil
 		case <-ticker.C:
-			reply, err = controlSnapshot(taskDir)
+			reply, err = controlSnapshotFn(taskDir)
 			if err != nil {
 				return reply, err
 			}
@@ -409,12 +475,18 @@ func startControlledRun(taskDir, cwd, mode string, extra []string) (controlRespo
 				if len(extra) > 0 && reply.PID != child.Process.Pid {
 					continue // Another window owns the run; await this child's admission result.
 				}
+				if waitForExit {
+					continue // Session abandon/reconcile/claim/release must settle before its receipt.
+				}
 				return reply, nil
 			}
 		case <-timer.C:
 			// Start admission is uncertain, not cancelled: the detached engine may
 			// still finish loading its contract. Never launch another run here.
 			reply.Running, reply.PID = true, child.Process.Pid
+			if waitForExit {
+				return reply, fmt.Errorf("orchestrator pid %d started but did not finish the session command; refresh status before another mutation", child.Process.Pid)
+			}
 			return reply, fmt.Errorf("orchestrator pid %d started but readiness was not confirmed; inspect orchestrator.log and refresh status", child.Process.Pid)
 		}
 	}

@@ -107,6 +107,8 @@ Plan can use Team or Swarm to investigate, while its root produces formal Spec a
 
 Native scheduling does not replace Go's decisions about retries, budgets, accepted candidates and delivery. A completed native task board is not a completed Flywheel task.
 
+A native planning profile lets the worker observe child tasks and WS lifecycle. Plain Kimi print does not include background subagent activity on the main stdout, so the watchdog cannot treat child progress as liveness. Non-native planning calls must therefore keep investigation in the foreground in the prompt, or use a Kimi native profile. Prefer native profiles for long or parallel investigations; on either path, an unknown planning invocation can only be ended by the controlled retirement action, not by switching backends or replaying.
+
 ## 4. LCU and screenshots
 
 Add this field to a DSH profile's options and explicitly select full access for the affected role:

@@ -66,7 +66,7 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 		return nil
 	}
 	a := reviewDSHArgs(drivers.CallArgs{Native: c.Config.NativeProfiles[binding.NativeProfile].Options, Model: binding.Model, PermissionMode: c.Config.PermissionMode("review", binding.Harness),
-		Cwd: c.unitCwd(packet), WorkspaceCwd: c.WorkspaceCwd, APIKeys: c.apiKeysFor(binding.Channel), Watchdog: c.wdog(),
+		Cwd: c.unitCwd(packet), WorkspaceCwd: c.WorkspaceCwd, APIKeys: c.apiKeysFor(binding.Channel), Watchdog: c.wdogFor("review"),
 		Binding: config.LoopBinding{NativeProfile: binding.NativeProfile, Harness: binding.Harness, Model: binding.Model, Channel: binding.Channel,
 			Provider: fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel), Thinking: binding.Thinking}})
 	a.PrewarmID = "warm-" + rand.Text()

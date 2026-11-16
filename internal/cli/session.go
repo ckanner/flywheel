@@ -13,8 +13,9 @@ import (
 )
 
 func sessionCmd() *cobra.Command {
-	var key string
-	cmd := &cobra.Command{Use: "session <docs/slug> --key <role/scope>", Short: "在原 Provider Session 中交互；/return 验证交回，/release 交回并暂停，/quit 保留接管", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var key, reason string
+	var abandon bool
+	cmd := &cobra.Command{Use: "session <docs/slug> --key <role/scope> [--abandon --reason <text>]", Short: "在原 Provider Session 中交互；/return 验证交回，/release 交回并暂停，/quit 保留接管；--abandon 退役无法解开的规划调用", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		taskDir, err := resolveTaskDir(args[0])
 		if err != nil {
 			return err
@@ -34,6 +35,32 @@ func sessionCmd() *cobra.Command {
 		st, err := state.Load(taskDir)
 		if err != nil {
 			return err
+		}
+		if !abandon && reason != "" {
+			return fmt.Errorf("--reason requires --abandon")
+		}
+		if abandon {
+			if strings.TrimSpace(reason) == "" {
+				return fmt.Errorf("--abandon requires --reason")
+			}
+			if st.Sessions == nil {
+				return fmt.Errorf("session key not found")
+			}
+			record := st.Sessions.Records[key]
+			if record == nil || record.Last == nil {
+				return fmt.Errorf("session key not found")
+			}
+			history := &machine.SessionHistory{Key: key, Invocation: record.Last.ID}
+			request := &machine.SessionCommand{Action: "abandon", Key: key, Revision: st.Revision, Reason: reason}
+			if err := sessionActionProof(request, history, true); err != nil {
+				return err
+			}
+			summary, err := machine.RunSingleStep(machine.RunSingleStepOpts{RunOpts: machine.RunOpts{TaskDir: taskDir, Cwd: cwd, Config: cfg, Drivers: drivers.CreateDrivers(cfg), Context: cmd.Context(), Log: logf(cmd), IndexDir: indexDir}, Only: "session", ExpectedRevision: &request.Revision, Session: request})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Session %s retired as abandoned at revision %d; no result was applied and the old thread will not be resumed.\n", key, summary.Revision)
+			return nil
 		}
 		run := func(action, prompt string) error {
 			current, err := state.Load(taskDir)
@@ -88,5 +115,7 @@ func sessionCmd() *cobra.Command {
 		return scanner.Err()
 	}}
 	cmd.Flags().StringVar(&key, "key", "", "准确的角色／作用域键，来自控制台")
+	cmd.Flags().BoolVar(&abandon, "abandon", false, "退役一次无法对账的规划调用；必须提供原因并在控制终端确认精确调用 ID")
+	cmd.Flags().StringVar(&reason, "reason", "", "退役未知调用的理由（最多 1000 字节）")
 	return cmd
 }

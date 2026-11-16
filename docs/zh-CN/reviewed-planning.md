@@ -174,7 +174,9 @@ flywheel control planning --task-dir /absolute/task/docs/my-task --cwd /absolute
 
 超时或回复丢失时，先查看**原任务**再做下一次变更。控制成功只是请求回执，不等于
 任务完成。结果未知、清理未确认和用量缺失保持真实可见；不能复制 state、清空回执、
-切 fresh/scoped 或另建任务来隐藏旧结果。
+切 fresh/scoped 或另建任务来隐藏旧结果。规划角色确认清理和计量后，可以使用
+[人工退役未知调用](session-recovery.md#人工退役未知的规划调用)；退役只结束该次
+未知副作用，之后仍需显式 Plan 创建新 request，不能把它当作重放或成功。
 
 如果原生会话的人工接管改动了契约，导致实施被阻断，先释放同一次 handoff。释放
 要求精确匹配原 session key/thread、已记录调用均已消费且清理已确认；它不会批准

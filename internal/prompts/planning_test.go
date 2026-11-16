@@ -61,6 +61,15 @@ func planningPromptInput(t *testing.T, prompt string) map[string]json.RawMessage
 	return input
 }
 
+func TestBuildPlanningPromptKeepsNonNativeHarnessForeground(t *testing.T) {
+	st := &planning.State{Version: 1, InputRevision: 1, MaxRounds: 3,
+		Brief: planning.Brief{Version: 1, ID: "prompt", Goal: "goal", OriginalRequest: "request", Policy: "review-first", Constraints: []string{}, Evidence: []string{}}}
+	request := planning.Request{ID: "engine-1-1", Scope: "design", InputRevision: 1, MaxRounds: 3, Status: "running"}
+	note := "没有向 Flywheel 暴露后台子代理的生命周期"
+	assert.Contains(t, BuildPlanningPrompt(st, request, false, nil), note)
+	assert.NotContains(t, BuildPlanningPrompt(st, request, false, nil, PlanningPromptOptions{NativeAgents: true}), note)
+}
+
 func TestBuildPlanningPromptSeparatesRolesAndTreatsExternalMaterialAsData(t *testing.T) {
 	root := planning.Ref{Revision: 2, Digest: strings.Repeat("a", 64)}
 	child := planning.Ref{Revision: 3, Digest: strings.Repeat("b", 64)}

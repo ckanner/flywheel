@@ -64,6 +64,16 @@ Use **Run Plan** to request overall design, replan, milestone or packet scope.
 Explicit Plan runs planning/review only and stops. Scope IDs use the actual task's
 milestone or packet identifiers. See [Reviewed planning](reviewed-planning.md).
 
+When a planning role has a `blocked` unknown invocation, the panel shows the
+unresolved call, its exact invocation and reason, and an abandonment form. A reason
+and an explicit confirmation (no result applied, no replay, old thread not resumed)
+are required; the action is a real user command and is revalidated against the
+current state. Model tools do not expose it. Abandonment ends only this effect
+boundary; an explicit Run Plan is still required to produce a new version.
+“Refresh control state” reconciles only the plugin’s unconfirmed control action; it
+cannot turn an engine session’s unknown into a known result and is not a substitute
+for abandonment.
+
 
 ## This stage versus the full workflow
 

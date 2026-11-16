@@ -510,6 +510,26 @@ for a changed experiment. Requested settings and available admission facts remai
 in session/adapter receipts; unavailable effective effort, usage and subscription
 cost stay unknown. Workflow, Review/Judge and delivery authorization are separate.
 
+## Watchdog and planning liveness
+
+`watchdog` is the two-timer guard: `idle-timeout-ms` kills the process group after no stdout/stderr activity, `wall-timeout-ms` is the absolute bound, and `kill-grace-ms` is the SIGTERM-to-SIGKILL grace. Defaults are 300 seconds idle, 3600 seconds wall, and 5 seconds grace; the kill grace is never shortened per role.
+
+`watchdog.roles.<role>` overrides idle/wall for one role. Planning roles default to a 900-second idle while execute and review keep 300 seconds, so a model that is still working without output is not mistaken for a hung process. Example:
+
+```json
+"watchdog": {
+  "idle-timeout-ms": 300000,
+  "wall-timeout-ms": 3600000,
+  "kill-grace-ms": 5000,
+  "roles": {
+    "design-plan": { "idle-timeout-ms": 900000 },
+    "plan": { "idle-timeout-ms": 900000 }
+  }
+}
+```
+
+Idle can only be refreshed by observable output; it cannot prove progress from background subagents or silent model inference. Harnesses without child lifecycle events, such as Kimi print, must keep investigation in the foreground in the prompt or use a Kimi native profile. Do not set zero or an extreme value to disable the guard; the wall bound still applies. An unknown dispatch/outcome/cleanup planning invocation cannot be fixed by switching bindings, fresh history, deleting the ledger, or replay; use the explicit retirement action in [session recovery](session-recovery.md). Unknown is not zero and is never silently rewritten as known.
+
 ## Workflow policy and recovery
 
 Workflow policy chooses stages. Model profiles, loops, routes, and `permissions.mode` independently choose each stage's backend and permissions. **Put workflow in the Spec's YAML frontmatter, not in `flywheel.config.json`.** The unified `flywheel-task` entry defaults to Auto and records researched facts before Go validates them. This example shows the fields; replace the content with evidence from the actual task:

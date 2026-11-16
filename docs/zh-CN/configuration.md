@@ -510,6 +510,26 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 确认的 effective effort、用量和订阅成本保持 unknown。工作流、Review／Judge
 及交付授权仍是独立边界。
 
+## Watchdog 与规划调用活性
+
+`watchdog` 是全局双计时看门狗：`idle-timeout-ms` 在 stdout/stderr 没有任何活动时终止进程组，`wall-timeout-ms` 是绝对上限，`kill-grace-ms` 是 SIGTERM 到 SIGKILL 的收尾宽限。默认 idle 300 秒、wall 3600 秒、grace 5 秒；收尾宽限不按角色缩短。
+
+`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；规划角色默认 idle 900 秒，执行和评审保持 300 秒，避免“模型仍在工作但长时间没有输出”被误判为挂起。示例：
+
+```json
+"watchdog": {
+  "idle-timeout-ms": 300000,
+  "wall-timeout-ms": 3600000,
+  "kill-grace-ms": 5000,
+  "roles": {
+    "design-plan": { "idle-timeout-ms": 900000 },
+    "plan": { "idle-timeout-ms": 900000 }
+  }
+}
+```
+
+idle 只能由可观察输出刷新；不能证明后台子代理或静默模型推理的进展。Kimi print 等没有子代理生命周期事件的 harness 必须在提示词中把调查留在前台，或改用 Kimi native profile。不要设成 0 或极大值来“关掉”看门狗；wall 仍是硬上限。派发/结果/清理为 unknown 的规划调用不能用换绑定、换 fresh、删账本或重放修复；使用[会话恢复](session-recovery.md)中的显式退役动作。未知不是零，也不会被自动改写成已知。
+
 ## 工作流策略与恢复
 
 工作流决定运行哪些阶段；模型 profiles、loops、routes 和 `permissions.mode` 仍决定

@@ -71,7 +71,8 @@ DSH 在对话中使用 `/flywheel-status <任务资料目录>`；Kimi 使用 `/s
    - inbox 有待处理条目时**必须显著提醒**：这需要人。
    - 有 packet worktree 记录时说明实际路径／模式；`in-place` 不是独立工作区。
      清理、派发或结果未知时明确阻断；不能只凭引擎或子进程已停就建议立即重试，
-     也不能建议改 fresh、另建任务或删除记录。
+     也不能建议改 fresh、另建任务或删除记录。规划角色的 blocked unknown 可提示
+     用户在视图或 `flywheel session ... --abandon` 退役；不要建议模型代输确认。
    - 用户要更多细节时，可读该任务目录中的 `retro.md`、`metrics.jsonl`、
      `orchestrator.log` 再讲。
 

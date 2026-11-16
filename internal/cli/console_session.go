@@ -45,6 +45,13 @@ func startSessionControl(cmd *cobra.Command, taskDir, cwd string) (controlRespon
 	if err != nil {
 		return controlResponse{Protocol: 1, TaskDir: taskDir}, err
 	}
+	if request.Action == "abandon" {
+		// Validate the host-generated proof before spawning anything. The run
+		// child re-reads the same environment proof and passes it to the engine.
+		if err := sessionActionProof(request, nil, false); err != nil {
+			return controlResponse{Protocol: 1, TaskDir: taskDir}, err
+		}
+	}
 	directory := filepath.Join(taskDir, ".control")
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return controlResponse{Protocol: 1, TaskDir: taskDir}, err
@@ -68,7 +75,16 @@ func startSessionControl(cmd *cobra.Command, taskDir, cwd string) (controlRespon
 	if err := sessionInputSync(file); err != nil {
 		return controlResponse{Protocol: 1, TaskDir: taskDir}, err
 	}
-	reply, err := startControlledRun(taskDir, cwd, "", []string{"--only", "session", "--session-request", file.Name(), "--session-request-digest", fmt.Sprintf("%x", sha256.Sum256(raw)), "--expect-revision", fmt.Sprint(request.Revision)})
+	quick := request.Action == "abandon" || request.Action == "reconcile" || request.Action == "claim" || request.Action == "release"
+	reply, err := startControlledRunWait(taskDir, cwd, "", []string{"--only", "session", "--session-request", file.Name(), "--session-request-digest", fmt.Sprintf("%x", sha256.Sum256(raw)), "--expect-revision", fmt.Sprint(request.Revision)}, quick)
+	// The engine may exit semantically (for example escalated) while the control
+	// envelope remains ok:true. Surface the exact session outcome instead of
+	// making the caller infer it from an unrelated state revision.
+	reply.SessionControl = sessionControlReceipt(reply.State, request)
+	if err != nil && reply.SessionControl != nil {
+		reply.SessionControl.Applied = false
+		reply.SessionControl.Message = err.Error()
+	}
 	// On a launch error the child may still be reading. Leave its bounded private
 	// payload until the child consumes it; never erase an ambiguous request.
 	return reply, err

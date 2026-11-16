@@ -721,7 +721,7 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	if err != nil {
 		return TaskSummary{}, err
 	}
-	if ctx.State.Planning != nil && opts.Only != "plan" && !ctx.canReleaseReviewedHandoff(opts.Only, opts.Session) {
+	if ctx.State.Planning != nil && opts.Only != "plan" && !isSessionAbandon(opts.Session) && !ctx.canReleaseReviewedHandoff(opts.Only, opts.Session) {
 		if ctx.State.Planning.PendingActivation != nil {
 			if err := ctx.resumePlanningActivation(); err != nil {
 				return ctx.summary(), err
@@ -799,6 +799,11 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 }
 
 func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
+	// Abandonment is the one session action that must run before the unresolved
+	// receipt gate: it retires that receipt instead of replaying it.
+	if only == "session" && isSessionAbandon(c.sessionCommand) {
+		return c.runSessionCommand(*c.sessionCommand)
+	}
 	if c.State.Planning != nil {
 		if c.canReleaseReviewedHandoff(only, c.sessionCommand) {
 			if err := c.reconcileSessionReceipts(); err != nil {

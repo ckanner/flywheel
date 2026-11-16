@@ -34,7 +34,7 @@ function request(input, cwd, operationId, sequence, launchOnly = false) {
   if (value.action === 'step' && (!['plan', 'execute', 'review', 'verify', 'integrate', 'final'].includes(value.only) || !Number.isSafeInteger(value.revision) || value.revision < 1)) return null;
   if (value.action === 'investigate' ? !validInvestigationCommand(value.investigation) : 'investigation' in value) return null;
   if (value.action === 'planning' ? !validPlanningCommand(value.planning) : 'planning' in value) return null;
-  if (value.action === 'session' && (!record(value.session) || !['claim','send','return','reconcile','release'].includes(value.session.action) || !Number.isSafeInteger(value.session.revision) || value.session.revision < 1 || typeof value.session.key !== 'string')) return null;
+  if (value.action === 'session' && (!record(value.session) || !['claim','send','return','reconcile','release','abandon'].includes(value.session.action) || !Number.isSafeInteger(value.session.revision) || value.session.revision < 1 || typeof value.session.key !== 'string')) return null;
   if (value.action === 'deliver' && (!record(value.delivery) || value.delivery.confirmed !== true || !['create','merge'].includes(value.delivery.action))) return null;
   const action = value.action === 'planning' && value.planning.action === 'status' ? 'status' : value.action;
   return { operationId, sequence, action, taskDir: value.taskDir, cwd: value.cwd ?? cwd };

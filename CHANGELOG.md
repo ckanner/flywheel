@@ -5,6 +5,28 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased — Session liveness and unknown-invocation retirement
+
+- Add per-role watchdog overrides. Planning roles default to a 900-second idle
+  timeout while execute/review keep 300 seconds, so a model that is still working
+  without stdout activity is not mistaken for a hung process. The wall bound and
+  process-group cleanup remain unchanged.
+- Make the planning prompt capability-aware: when the harness has no observable
+  native child lifecycle (plain Kimi print), background/async subagents are
+  explicitly disallowed and investigation must stay in the foreground. Document
+  the Kimi native alternative and the liveness limits.
+- Add an explicit human-only retirement action for blocked planning invocations
+  with unknown dispatch/outcome. It preserves the unknown facts and audit trail,
+  applies no result, never resumes the old thread, cancels the associated
+  planning request, and allows a later explicit Plan to create a new generation.
+  The model tool cannot call it; the CLI requires a controlling terminal and the
+  Flywheel view requires an exact user command.
+- Return an explicit `session-control.applied/status/message/invocation` receipt
+  for asynchronous session commands instead of leaving callers to infer success
+  from the control envelope. Clarify that the workbench refresh only reconciles
+  the plugin's unconfirmed control action.
+- Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
+
 ## 0.35.0 — Reviewed planning
 
 - Start New from a thin original brief, run bounded design and independent
