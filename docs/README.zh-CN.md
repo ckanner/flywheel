@@ -38,6 +38,8 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
+[真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，待审阅、尚未实现）建议让 Plan 承担完整设计，通过独立评审后由用户批准确切版本，并在执行中滚动细化任务。方案复用 DSH Team、PTC 等现有 Provider 原生能力，同时明确仍需新增的状态、恢复与交互协议。
+
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
 
 [原生 Harness、PTC 与 LCU 完整设计](plans/2026-11-13-native-harness-capabilities.md)（[English](plans/2026-11-13-native-harness-capabilities.en.md)）于 2026-11-14 修订为六仓库实现设计，涵盖共享 SDK/PTC 组合、原生 Agent/Team/Swarm/Workflow、Tower 候选、GUI lease、媒体、用量和恢复。配置方法见[原生能力指南](zh-CN/native-capabilities.md)，已测源码和安装边界见[验收记录](validation/2026-11-14-native-harness-implementation.md)。

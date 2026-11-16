@@ -48,6 +48,12 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
+The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
+(Chinese; not implemented) proposes genuine design work in Plan, independent
+design review, user approval of exact design versions, and rolling refinement
+during execution. It reuses existing native Provider capabilities, including DSH
+Team and PTC, and explains the state, recovery, and interface changes still needed.
+
 The [feedback-driven workflows and JEV proposal](plans/2026-11-12-feedback-driven-workflows.md)
 (Chinese; historical proposal) explains Auto / Quick / Full, incident investigation,
 short feedback cycles, model policy and bounded semantic decisions. The current
