@@ -464,6 +464,66 @@ func TestStatusReportsUnknownUsageAndCost(t *testing.T) {
 	assert.Contains(t, out, "2 次调用未报告 usage，3 次调用成本未知")
 }
 
+// The CLI cancellation tests exercise the real named-print handoff. This owned
+// subprocess implements only the no-inference preparation protocol; the later
+// print fixture, not this short-lived preparer, is the process being cancelled.
+func controlKimiPrepareMain() int {
+	var request struct {
+		Type            string `json:"type"`
+		Protocol        int    `json:"protocol"`
+		RequestID       string `json:"requestId"`
+		Cwd             string `json:"cwd"`
+		Model           string `json:"model"`
+		ReasoningEffort string `json:"reasoningEffort"`
+		SessionTitle    string `json:"sessionTitle"`
+		TimeoutMS       int64  `json:"timeoutMs"`
+	}
+	decoder := json.NewDecoder(os.Stdin)
+	decoder.DisallowUnknownFields()
+	if len(os.Args) != 2 || decoder.Decode(&request) != nil || request.Type != "prepare-print" || request.Protocol != 1 ||
+		request.RequestID == "" || !filepath.IsAbs(request.Cwd) || request.Model == "" || request.ReasoningEffort == "" ||
+		request.SessionTitle == "" || request.TimeoutMS <= 0 {
+		return 2
+	}
+	record, _ := json.Marshal(map[string]any{"request": request, "workerPid": os.Getpid()})
+	writeControlFixtureFile(os.Args[1], record)
+	if json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"protocol": 1, "type": "prepared-print", "requestId": request.RequestID, "status": "ok",
+		"sessionId": "control-kimi-prepared", "sessionTitle": request.SessionTitle,
+		"cleanupConfirmed": true, "inferenceDispatched": false, "error": nil,
+	}) != nil {
+		return 2
+	}
+	return 0
+}
+
+func installControlKimiPreparation(t *testing.T, bin, markers string) string {
+	t.Helper()
+	record := filepath.Join(markers, "prepare-request.json")
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	worker := filepath.Join(bin, "prepare-kimi-print")
+	script := "#!/bin/sh\nFLYWHEEL_CLI_EXEC_HELPER=kimi-print-prepare GORACE=atexit_sleep_ms=0 exec " + quote(os.Args[0]) + " " + quote(record) + "\n"
+	require.NoError(t, os.WriteFile(worker, []byte(script), 0o755))
+	t.Setenv("FLYWHEEL_KIMI_NATIVE_WORKER", worker)
+	return record
+}
+
+func assertControlKimiPreparation(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var record struct {
+		Request   map[string]any `json:"request"`
+		WorkerPID int            `json:"workerPid"`
+	}
+	require.NoError(t, json.Unmarshal(data, &record))
+	assert.Equal(t, "prepare-print", record.Request["type"])
+	assert.NotEmpty(t, record.Request["sessionTitle"])
+	assert.NotContains(t, record.Request, "prompt", "preparation must not execute the planning task")
+	require.Positive(t, record.WorkerPID)
+	assert.ErrorIs(t, syscall.Kill(record.WorkerPID, 0), syscall.ESRCH, "the preparation worker is reaped before the actual print process is cancelled")
+}
+
 func TestRunCommandContextCancellationReturns143AfterCleanup(t *testing.T) {
 	taskDir := newCLISandbox(t)
 	chdirT(t, filepath.Dir(filepath.Dir(taskDir)))
@@ -472,8 +532,12 @@ func TestRunCommandContextCancellationReturns143AfterCleanup(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(mustReadFile(configPath)), &cfg))
 	cfg["drivers"].(map[string]any)["plan"] = "real"
 	writeFileCli(t, configPath, mustJSONT(t, cfg))
-	bin, marker := t.TempDir(), filepath.Join(t.TempDir(), "started")
-	script := "#!/bin/sh\ntrap 'exit 0' TERM\nprintf ready > '" + strings.ReplaceAll(marker, "'", "'\\''") + "'\nwhile :; do sleep 0.01; done\n"
+	bin, markers := t.TempDir(), t.TempDir()
+	marker, cleaned := filepath.Join(markers, "started"), filepath.Join(markers, "cleaned")
+	prepared := installControlKimiPreparation(t, bin, markers)
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	script := "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = control-kimi-prepared ] && [ -s " + quote(prepared) + " ] || exit 2\n" +
+		"trap \"printf done > " + quote(cleaned) + "; exit 0\" TERM\nprintf ready > " + quote(marker) + "\nwhile :; do sleep 0.01; done\n"
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "kimi"), []byte(script), 0o755))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FLYWHEEL_KIMI_BIN", "")
@@ -481,7 +545,7 @@ func TestRunCommandContextCancellationReturns143AfterCleanup(t *testing.T) {
 	defer cancel()
 	started := make(chan bool, 1)
 	go func() {
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(10 * time.Second)
 		seen := false
 		for time.Now().Before(deadline) {
 			if _, err := os.Stat(marker); err == nil {
@@ -501,9 +565,11 @@ func TestRunCommandContextCancellationReturns143AfterCleanup(t *testing.T) {
 	root.SetErr(&stderr)
 	err := root.Execute()
 	assert.True(t, <-started, "offline Kimi fixture must be the process being cancelled")
+	assertControlKimiPreparation(t, prepared)
 	var exit *exitError
 	require.ErrorAs(t, err, &exit, out.String()+stderr.String())
 	assert.Equal(t, 143, exit.code)
+	assert.FileExists(t, cleaned, "context cancellation waits for the actual print process to handle termination")
 	assert.NoFileExists(t, machine.PidFile(taskDir))
 	release, leaseErr := machine.AcquireRunLease(taskDir)
 	require.NoError(t, leaseErr, "CLI return must follow run cleanup")
@@ -522,8 +588,10 @@ func TestControlStopsActualEngineAndManagedCLI(t *testing.T) {
 	writeFileCli(t, configPath, mustJSONT(t, cfg))
 	bin, markers := t.TempDir(), t.TempDir()
 	ready, cleaned := filepath.Join(markers, "ready"), filepath.Join(markers, "cleaned")
+	prepared := installControlKimiPreparation(t, bin, markers)
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
-	script := "#!/bin/sh\ntrap \"printf done > " + quote(cleaned) + "; exit 0\" TERM\nprintf ready > " + quote(ready) + "\nwhile :; do sleep 0.01; done\n"
+	script := "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = control-kimi-prepared ] && [ -s " + quote(prepared) + " ] || exit 2\n" +
+		"trap \"printf done > " + quote(cleaned) + "; exit 0\" TERM\nprintf ready > " + quote(ready) + "\nwhile :; do sleep 0.01; done\n"
 	require.NoError(t, os.WriteFile(filepath.Join(bin, "kimi"), []byte(script), 0o755))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FLYWHEEL_KIMI_BIN", "")
@@ -531,7 +599,8 @@ func TestControlStopsActualEngineAndManagedCLI(t *testing.T) {
 	require.Zero(t, code, "%+v", started)
 	require.True(t, started.Running)
 	t.Cleanup(func() { _ = syscall.Kill(started.PID, syscall.SIGKILL) })
-	require.Eventually(t, func() bool { _, err := os.Stat(ready); return err == nil }, 2*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { _, err := os.Stat(ready); return err == nil }, 10*time.Second, 5*time.Millisecond)
+	assertControlKimiPreparation(t, prepared)
 	code, stopped := runControlTest(t, "stop", taskDir, cwd)
 	require.Zero(t, code, "%+v", stopped)
 	assert.False(t, stopped.Running)

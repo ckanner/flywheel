@@ -49,6 +49,8 @@ func executeHelperMain(mode string) int {
 		os.Args = []string{"flywheel", "status", filepath.Join(os.TempDir(), "definitely-missing-task")}
 	case "control-child":
 		return controlChildHelperMain()
+	case "kimi-print-prepare":
+		return controlKimiPrepareMain()
 	case "diagnostic":
 		return Execute()
 	default:

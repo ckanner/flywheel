@@ -12,13 +12,14 @@ import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy';
 import Approval from '@deepseek-ai/dsh-user-approval';
 import * as WorkerPolicy from '../../src/policy.js';
 import { SessionTitleService } from '@deepseek-ai/dsh-session-title';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const patch = JSON.parse(readFileSync(process.argv[process.argv.indexOf('--patch') + 1], 'utf8'));
 const policy = patch.find(row => row.id === 'sandbox-policy').config;
 const ctx = new Context();
 await mountAgentLoopTestDependencies(ctx, { workingDirectory: true });
 await ctx.plugin(Persistence, { root: patch.find(row => row.id === 'session-persistence-jsonl')?.config.root ?? process.env.TEST_DSH_HISTORY, compression: 'none' });
-await ctx.plugin(SessionTitleService, { fallbackMaxWords: 8, fallbackMaxBytes: 96, maxTitleBytes: 120 });
+if (process.env.TEST_DSH_NO_TITLE_SERVICE !== '1') await ctx.plugin(SessionTitleService, { fallbackMaxWords: 8, fallbackMaxBytes: 96, maxTitleBytes: 120 });
 await ctx.plugin(SandboxPolicy, policy);
 await ctx.plugin(Approval, { policy: 'never' });
 ctx.provide('shell', {
@@ -40,10 +41,15 @@ class OfflineAdapter extends LlmAdapter {
     if (process.env.TEST_DSH_LLM_CALLS) appendFileSync(process.env.TEST_DSH_LLM_CALLS,
       JSON.stringify({ messages: request.messages, model: request.model, provider: request.provider,
         directories: ctx.sessions.list().map(session => ({ header: session.header.cwd, current: ctx.workingDirectory.get(session) })),
-        titles: ctx.sessions.list().map(session => ctx.sessionTitle.get(session)?.title),
+        titles: ctx.sessions.list().map(session => ctx.get('sessionTitle')?.get(session)?.title),
         reasoningEffort: request.reasoningEffort }) + '\n');
     yield { type: 'block-start', index: 0, blockType: 'text' };
-    yield { type: 'text-delta', index: 0, text: 'published SDK fixture complete' };
+    const answer = 'published SDK fixture complete';
+    const chunks = Number(process.env.TEST_DSH_STREAM_CHUNKS ?? 1);
+    for (let i = 0; i < chunks; i++) {
+      if (process.env.TEST_DSH_STREAM_DELAY_MS) await delay(Number(process.env.TEST_DSH_STREAM_DELAY_MS), undefined, { signal: request.signal });
+      yield { type: 'text-delta', index: 0, text: answer.slice(Math.floor(i * answer.length / chunks), Math.floor((i + 1) * answer.length / chunks)) };
+    }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: 'published SDK fixture complete' } };
     yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } };
     yield { type: 'finish', reason: { kind: 'completed' } };

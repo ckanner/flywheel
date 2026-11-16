@@ -3,6 +3,37 @@ import { isAbsolute } from 'node:path';
 const LIFECYCLE_EVENTS = new Set(['thread-ready', 'dispatch-intent', 'dispatch-possible', 'turn-accepted', 'terminal', 'cleanup-confirmed']);
 const ACK_BYTES = 4096;
 const MAX_LIFECYCLE_EVENTS = 64;
+const ACTIVITY_FIELDS = new Set(['version', 'sequence', 'kind', 'source', 'scope', 'eventTypes', 'observedEvents']);
+const ACTIVITY_TYPES = Object.freeze({
+  'codex-pro': new Set(['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta',
+    'item/plan/delta', 'item/reasoning/summaryTextDelta', 'item/reasoning/summaryPartAdded', 'item/reasoning/textDelta',
+    'item/commandExecution/outputDelta', 'item/mcpToolCall/progress', 'turn/plan/updated', 'turn/diff/updated', 'thread/tokenUsage/updated']),
+  'claude-code-pro': new Set(['session-init', 'api-retry', 'compaction', 'task-started', 'task-progress', 'task-updated',
+    'task-notification', 'hook-started', 'hook-progress', 'hook-response', 'assistant-text', 'assistant-thinking',
+    'tool-use', 'tool-result', 'tool-progress', 'stream-start', 'stream-delta', 'stream-stop', 'result']),
+});
+
+/** Activity is disposable observation, never a durable checkpoint or result. */
+export function validProviderActivity(event, source, previousSequence = 0) {
+  const types = ACTIVITY_TYPES[source];
+  return !!types && !!event && typeof event === 'object' && !Array.isArray(event) &&
+    Object.keys(event).every(key => ACTIVITY_FIELDS.has(key)) && event.version === 1 && event.kind === 'provider-progress' &&
+    event.source === source && ['root', 'child', 'mixed'].includes(event.scope) &&
+    Number.isSafeInteger(event.sequence) && event.sequence > previousSequence &&
+    Number.isSafeInteger(event.observedEvents) && event.observedEvents > 0 &&
+    Array.isArray(event.eventTypes) && event.eventTypes.length > 0 && event.eventTypes.length <= 16 &&
+    new Set(event.eventTypes).size === event.eventTypes.length && event.eventTypes.every(type => types.has(type));
+}
+
+export function validateObservationRequest(value, WorkerError) {
+  if (value.idleTimeoutMs !== undefined && (!Number.isSafeInteger(value.idleTimeoutMs) || value.idleTimeoutMs <= 0 || value.idleTimeoutMs > 2147483647)) {
+    throw new WorkerError('INVALID_REQUEST', 'idleTimeoutMs must be a positive integer no greater than 2147483647');
+  }
+  if (value.sessionTitle !== undefined && (typeof value.sessionTitle !== 'string' || !value.sessionTitle.trim() ||
+      [...value.sessionTitle].length > 200 || /[\p{Cc}\p{Cf}]/u.test(value.sessionTitle))) {
+    throw new WorkerError('INVALID_REQUEST', 'sessionTitle must be a readable single-line title of at most 200 characters');
+  }
+}
 
 function identifier(value) {
   return typeof value === 'string' && value.trim() !== '' && value.length <= 256 && !value.includes('\0');
@@ -217,17 +248,38 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
       } else {
         const request = machineRequest(value, api, process.env);
         requestId = request.requestId;
-        let progressBytes = 0;
+        let progressBytes = 0, nativeBytes = 0, activitySequence = 0, lastActivity = -Infinity, progressOmitted = false;
+        const activityIntervalMs = Math.min(1000, Math.max(1, Math.floor((value.idleTimeoutMs ?? 300_000) / 4)));
         const options = { signal: controller.signal, env: process.env, ...runtimeOptions(process.env),
+          activityIntervalMs,
           ...(protocol === 3 ? { recoveryDirectory: value.recoveryDirectory, onLifecycle } : {}),
+          onActivity(event) {
+            if (controller.signal.aborted) return;
+            if (!validProviderActivity(event, ADAPTER.package.replace(/^dsh-subagent-/, ''), activitySequence)) {
+              outputFailure ??= new WorkerError('INVALID_ACTIVITY', 'The adapter emitted invalid or out-of-order provider activity metadata');
+              controller.abort(); return;
+            }
+            activitySequence = event.sequence;
+            const at = performance.now();
+            // The public adapter coalesces at source. This second bound also
+            // protects stdout from a defective callback and a slow consumer.
+            // Never flush a stale event on a timer: only new work extends idle.
+            if (at - lastActivity < activityIntervalMs || process.stdout.writableNeedDrain) return;
+            lastActivity = at;
+            write({ protocol, type: 'activity', requestId, adapter: ADAPTER, activity: event });
+          },
           onProgress(text) {
             if (controller.signal.aborted) return;
             const frame = { protocol, type: 'progress', requestId, text };
-            progressBytes += Buffer.byteLength(JSON.stringify(frame) + '\n');
-            if (progressBytes > LIMITS.progressBytes) {
-              outputFailure ??= new WorkerError('OUTPUT_LIMIT', label + ' progress exceeded the 1 MiB stream limit');
-              controller.abort();
-            } else write(frame);
+            const bytes = Buffer.byteLength(JSON.stringify(frame) + '\n');
+            if (progressBytes + bytes > LIMITS.progressBytes || process.stdout.writableNeedDrain) {
+              // Text progress is a bounded display transcript. Losing this
+              // optional display must not cancel useful work or its final result.
+              if (!progressOmitted && !process.stdout.writableNeedDrain) {
+                write({ protocol, type: 'progress', requestId, text: '[Further display progress omitted; provider activity and the final receipt remain enabled.]' });
+                progressOmitted = true;
+              }
+            } else { progressBytes += bytes; write(frame); }
           },
           onNativeEvent(event) {
             if (controller.signal.aborted) return;
@@ -240,8 +292,8 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
             }
             const frame = { protocol, type: 'native-event', requestId, adapter: ADAPTER, native: event,
               ...(value.managed === undefined ? {} : { managed: value.managed }) };
-            progressBytes += Buffer.byteLength(JSON.stringify(frame) + '\n');
-            if (progressBytes > LIMITS.progressBytes) {
+            nativeBytes += Buffer.byteLength(JSON.stringify(frame) + '\n');
+            if (nativeBytes > LIMITS.progressBytes) {
               outputFailure ??= new WorkerError('OUTPUT_LIMIT', label + ' native evidence exceeded the 1 MiB stream limit');
               controller.abort();
             } else write(frame);
@@ -251,7 +303,7 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
         finished = true;
         lifeline.stop();
         const error = inputFailure || outputFailure;
-        if (['OUTPUT_LIMIT', 'INVALID_NATIVE_EVENT'].includes(outputFailure?.code)) outputFailure = undefined;
+        if (['OUTPUT_LIMIT', 'INVALID_NATIVE_EVENT', 'INVALID_ACTIVITY'].includes(outputFailure?.code)) outputFailure = undefined;
         write({ protocol, type: 'result', requestId, adapter: ADAPTER, receipt,
           error: error ? { code: error.code, message: error.message } : null });
         process.exitCode = receipt.ok && !error && !controller.signal.aborted ? 0 : 1;

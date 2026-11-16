@@ -76,7 +76,7 @@
     "chatgpt-subscription": { "env-key": null },
     "claude-subscription": {
       "env-key": null,
-      "_note": "显式可选的 Claude Code Pro 机器接口；需要同一 Node 解析树可见的 dsh-subagent-claude-code-pro@0.5.1、已安装且登录的 claude CLI。此 profile 不绑定默认阶段；原生审批模式不提供 OS 沙箱，首版需 permissions.mode=full-access。"
+      "_note": "显式可选的 Claude Code Pro 机器接口；需要同一 Node 解析树可见的 dsh-subagent-claude-code-pro@0.5.2、已安装且登录的 claude CLI。此 profile 不绑定默认阶段；原生审批模式不提供 OS 沙箱，首版需 permissions.mode=full-access。"
     }
   },
   "judge-panel": null,

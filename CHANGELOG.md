@@ -7,6 +7,26 @@ their original language.
 
 ## Unreleased — Session liveness and unknown-invocation retirement
 
+- Preserve real root and owned-child activity across DSH, Codex Pro and Claude
+  Code Pro, independently of completed messages, native ledger deduplication and
+  explicit native settings. Expose a metadata-only public activity contract and
+  an optional DSH host service; no timer fabricates provider progress.
+- Bound individual frames, retained results and display history instead of
+  accumulating the entire raw progress stream. Keep the final receipt available
+  after long healthy output, and preserve protocol/identity errors.
+- Preserve TIMEOUT as the initiating cause when cleanup cancels a native child,
+  retaining trusted cleanup and session evidence without inventing a model outcome.
+  The legacy Codex exec transport uses wall-only, as Kimi print does.
+- Name new DSH, Codex Pro, Claude Code Pro and Kimi sessions from the task and
+  role, preserving names on resume. Kimi print prepares a named empty history
+  through its public local API, with no prompt or extra model call and the same
+  wall budget and original print policy. The first named print call adds one
+  native startup/shutdown, including configured SessionStart/SessionEnd hooks;
+  its business prompt is still dispatched once.
+- Pin reviewed Codex Pro 0.10.1 and Claude Code Pro 0.5.2 candidate archives.
+  Claude queries verify supported partial/child streaming CLI flags before task
+  dispatch. Source/candidate verification does not publish either companion.
+
 - Add per-role watchdog overrides. Planning roles default to a 900-second idle
   timeout while execute/review keep 300 seconds where output activity can be
   observed. Kimi print buffers output and omits thinking/child progress, so it

@@ -2,6 +2,7 @@ import { isAbsolute } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { OwnedKimiRuntime, KimiSocket, inspectKimiSchemas, digest, error, pause, checkAbort } from './kimi-native-runtime.js';
 import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, towerCandidateReceipt, towerPrompt } from './kimi-tower-candidate.js';
+import { validateObservationRequest } from './machine-worker.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const identifier = value => typeof value === 'string' && value.trim() && value.length <= 512 && !/[\0\r\n]/.test(value);
@@ -40,7 +41,7 @@ export function createKimiActivityReporter(idleTimeoutMs, emit, now = () => perf
 
 export function validateKimiNativeStart(input) {
   if (!object(input) || input.type !== 'start' || input.protocol !== 1 || !identifier(input.requestId)
-      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'persistent', 'native', 'managed'].includes(key))
+      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'sessionTitle', 'persistent', 'native', 'managed'].includes(key))
       || !identifier(input.cwd) || !isAbsolute(input.cwd) || !identifier(input.model) || !identifier(input.reasoningEffort)
       || (input.workspaceCwd !== undefined && (!identifier(input.workspaceCwd) || !isAbsolute(input.workspaceCwd)))
       || (input.persistent !== undefined && typeof input.persistent !== 'boolean')
@@ -50,6 +51,7 @@ export function validateKimiNativeStart(input) {
       || (input.sessionId !== undefined && (!identifier(input.sessionId) || input.persistent !== true))) {
     throw error('INVALID_REQUEST', 'Expected a bounded protocol 1 Kimi start request with explicit full-access permission');
   }
+  validateObservationRequest(input, class extends Error { constructor(code, message) { super(message); this.code = code; } });
   const native = input.native, managed = input.managed;
   if (!object(native) || native.version !== 1 || !['agent', 'swarm', 'tower'].includes(native.mode)
       || Object.keys(native).some(key => !['version', 'mode', 'agents', 'agentProfile', 'tower'].includes(key))
@@ -284,7 +286,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
       resumed = true; ownsSession = true;
     } else {
       session = await runtime.request('/api/v1/sessions', { metadata: { cwd, flywheel_native_binding: binding },
-        title: `Flywheel ${input.managed.role}`, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd }, { signal: controller.signal });
+        title: input.sessionTitle || `Flywheel · ${input.managed.role}/${input.managed.scope}`, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd }, { signal: controller.signal });
       sessionId = session.id;
       ownsSession = true;
     }

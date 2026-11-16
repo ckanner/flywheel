@@ -4,8 +4,8 @@
 
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
-checks. Durable public-journal recovery requires **Codex Pro 0.10.0** or
-**Claude Code Pro 0.5.1**; DSH and Kimi retain their own supported recovery paths.
+checks. Durable public-journal recovery requires **Codex Pro 0.10.1** or
+**Claude Code Pro 0.5.2**; DSH and Kimi retain their own supported recovery paths.
 
 ## Resume an existing task
 
@@ -22,6 +22,84 @@ The engine reconciles earlier calls before making another model request. A
 and diagnostics rather than deleting state or selecting a fresh session to
 force progress. A status response describes current facts, not permission to
 replay an unresolved call.
+
+## Observable progress and time limits
+
+An idle timeout means that no observable activity arrived within the configured
+silence budget. It does not prove that the model stopped reasoning, that a tool
+deadlocked, or that the provider rejected the request. A wall timeout bounds the
+whole invocation even when progress continues. User cancellation is a third,
+separate cause: a child acknowledging cancellation during timeout cleanup does
+not change the original idle/wall timeout into a user cancellation.
+
+The transport determines which progress can be observed:
+
+| Transport | Progress used by Flywheel | Time limits |
+|---|---|---|
+| DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
+| Codex Pro 0.10.1 / Claude Code Pro 0.5.2 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
+| Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
+
+DSH also covers a parent waiting in PTC while an owned native child streams.
+External provider, foreground PTC and background-job calls share a versioned
+optional Flywheel activity service; an older or unrelated plugin without that
+service's callback remains unobservable between its normal output events.
+Startup, waiting for a first event, silent tools and unsupported provider phases
+can still consume the configured silence budget. The ready capabilities describe
+these limits; they do not promise that every live operation produces events.
+
+DSH and the Pro plugins coalesce activity from real observations. Their metadata
+contains event types, counts and root/child scope, without model text, hidden
+reasoning or tool bodies. No timer,
+ping or artificial heartbeat is used to keep a call alive. Activity is advisory:
+it is neither a durable dispatch ACK nor a result, token bill or cleanup proof.
+Validated advisory activity frames do not displace a terminal receipt from bounded output
+capture; malformed or uncorrelated frames still fail the protocol checks.
+
+After an interrupted DSH call, an intact correlated receipt and normal process
+exit can independently preserve the actual Session ID, dispatch fact and
+confirmed SDK cleanup. The business outcome stays unknown and automatic replay
+stays blocked. A truncated/corrupt stream, physical termination signal, missing
+exit evidence or unconfirmed cleanup cannot supply that proof. Use the existing
+reconciliation and explicit planning-retirement controls below; changing a
+timeout does not resolve an earlier unknown invocation.
+
+## Readable native session names
+
+Fresh DSH, Codex Pro, Claude Code Pro and Kimi sessions receive a readable label
+derived from the task title or goal, role and applicable work scope. Opaque
+request IDs remain in the ledger and receipts. Continuing an existing session
+keeps its original name, including a name the user edited. Naming does not make
+a separate model request or change the selected model, thinking effort, task
+permissions or recovery identity.
+
+DSH uses its public title service and verifies the accepted snapshot; its native
+UTF-8 byte limit controls truncation. An explicitly requested fresh title with a
+missing service or failed read-back is rejected before the task prompt. Codex
+and Claude Pro use their supported native naming interfaces. The legacy
+`codex exec` transport does not acquire this naming capability merely by sharing
+the new timeout policy.
+
+Kimi print has no corresponding print title flag. For a new named call Flywheel
+first creates an idle session through the public Kimi session API, verifies the
+title and ownership, and confirms that the owned preparation runtime exited.
+It then runs print against that exact session. Preparation sends no task prompt
+and performs no title-generation inference; preparation and execution share the
+same wall budget. The original print model, automatic permission behavior and
+conditional thinking-effort behavior remain in force. An unsupported API or
+unconfirmed preparation cleanup prevents dispatch. Resume keeps its existing
+session and does not perform this preparation again.
+
+The public Kimi API opens and closes a native session during this preparation.
+For a first named print call, configured `SessionStart` and `SessionEnd` hooks
+therefore run for an extra startup/shutdown before print resumes. The business
+prompt is still sent once. Agent/Swarm set the name during their existing
+creation flow and do not need this extra lifecycle.
+
+These contracts are covered by deterministic tests of the published SDK and
+public plugin interfaces with offline model/CLI fixtures. They do not establish
+live account availability, provider performance or desktop UI behavior.
 
 ## Ownership
 

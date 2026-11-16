@@ -12,13 +12,14 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 const (
 	CodexProWorkerEnv      = "FLYWHEEL_CODEX_PRO_WORKER"
 	CodexProBinaryEnv      = "FLYWHEEL_CODEX_BIN"
-	CodexProPackageVersion = "0.10.0"
+	CodexProPackageVersion = "0.10.1"
 	codexProCleanupMS      = int64(10_000)
 )
 
@@ -48,6 +49,7 @@ type CodexProArgs struct {
 	ReasoningEffort   string
 	PermissionMode    string
 	SessionID         string
+	SessionTitle      string
 	PersistentSession bool
 	RequestID         string
 	Cwd               string
@@ -71,6 +73,8 @@ type codexProStart struct {
 	PermissionMode    string           `json:"permissionMode"`
 	Prompt            string           `json:"prompt"`
 	TimeoutMS         int64            `json:"timeoutMs"`
+	IdleTimeoutMS     int64            `json:"idleTimeoutMs,omitempty"`
+	SessionTitle      string           `json:"sessionTitle,omitempty"`
 	ThreadMode        string           `json:"threadMode,omitempty"`
 	ThreadID          string           `json:"threadId,omitempty"`
 	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
@@ -87,6 +91,7 @@ type codexProParsed struct {
 	Cancelled        bool
 	TimedOut         bool
 	Truncated        bool
+	StreamFailed     bool // worker protocol/envelope failure, distinct from a provider cancellation receipt
 	CleanupError     string
 	Error            string
 	Session          *SessionOutcome
@@ -219,7 +224,7 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 	lifecycle := machineLifecycleFlow{harness: "codex-pro", request: request}
 	terminal := false
 	trustedStream := true
-	var nativeSequence int64
+	var nativeSequence, activitySequence int64
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -253,6 +258,11 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 			break
 		}
 		switch frame.Type {
+		case "activity":
+			if err := validateProActivityEvent(json.RawMessage(line), "codex-pro", request, &activitySequence); err != nil {
+				trustedStream = false
+				parsed.Error = err.Error()
+			}
 		case "native-event":
 			if err := validateProNativeEvent(json.RawMessage(line), "codex-pro", request, &nativeSequence); err != nil {
 				trustedStream = false
@@ -305,6 +315,7 @@ func parseCodexProStream(stdout string, request codexProStart) codexProParsed {
 		parsed.Error = "Codex Pro worker ended without a terminal receipt"
 	}
 	if !trustedStream {
+		parsed.StreamFailed = true
 		parsed.Session = codexProUnknownSession(request)
 		parsed.Usage = nil // retain raw evidence, but do not bill an untrusted stream
 	}
@@ -690,6 +701,7 @@ func RunCodexPro(a CodexProArgs) Result {
 	}
 	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
 	request.PermissionMode, request.Prompt, request.TimeoutMS = permission, a.Prompt, wallMS
+	request.SessionTitle, request.IdleTimeoutMS = a.SessionTitle, max(0, a.Watchdog.IdleTimeoutMs)
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return reject("Codex Pro native request is not valid JSON: " + err.Error())
@@ -718,6 +730,7 @@ func RunCodexPro(a CodexProArgs) Result {
 	}, a.OnLifecycle, a.OnEvent)
 	parsed := parseCodexProStream(result.Stdout, request)
 	if interactionErr != nil {
+		parsed.StreamFailed = true
 		parsed.Error = "Codex Pro worker transport failed: " + interactionErr.Error()
 		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = codexProUnknownSession(request), nil, false
 	}
@@ -729,9 +742,10 @@ func RunCodexPro(a CodexProArgs) Result {
 		// A complete-looking prefix cannot attest what the capture dropped.
 		out.Usage, out.Session.UsageStatus = nil, "unknown"
 	}
-	out.Cancelled = out.Cancelled || parsed.Cancelled
-	out.TimedOut = out.TimedOut || parsed.TimedOut
-	out.Truncated = out.Truncated || parsed.Truncated
+	// A protocol/ACK error can cause the worker to cancel its native task.
+	// That cleanup action does not replace the known initiating failure; an
+	// actual caller cancellation is already present in the watchdog result.
+	mergeWorkerTermination(&out, parsed.Cancelled && !parsed.StreamFailed, parsed.TimedOut, parsed.Truncated)
 	if parsed.CleanupError != "" {
 		out.CleanupError = strings.TrimPrefix(out.CleanupError+"; "+parsed.CleanupError, "; ")
 	}
@@ -758,7 +772,8 @@ func RunCodexPro(a CodexProArgs) Result {
 		message := parsed.Error
 		switch {
 		case out.TimedOut:
-			message = "Codex Pro worker timed out"
+			message = timeoutMessage("Codex Pro worker", out)
+			out.ErrorCode = errs.TIMEOUT
 		case out.SpawnError != "":
 			message = out.SpawnError
 		case out.CleanupError != "":

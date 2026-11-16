@@ -21,7 +21,7 @@ import (
 const (
 	ClaudeCodeProWorkerEnv      = "FLYWHEEL_CLAUDE_CODE_PRO_WORKER"
 	ClaudeCodeProBinaryEnv      = "FLYWHEEL_CLAUDE_BIN"
-	ClaudeCodeProPackageVersion = "0.5.1"
+	ClaudeCodeProPackageVersion = "0.5.2"
 	claudeCodeProCleanupMS      = int64(10_000)
 	claudeCodeProRequestBytes   = 1 << 20 // worker LIMITS.requestBytes, including the JSONL newline
 )
@@ -60,6 +60,7 @@ type ClaudeCodeProArgs struct {
 	ReasoningEffort   string
 	PermissionMode    string
 	SessionID         string
+	SessionTitle      string
 	PersistentSession bool
 	RequestID         string
 	Cwd               string
@@ -83,6 +84,8 @@ type claudeCodeProStart struct {
 	PermissionMode    string           `json:"permissionMode"`
 	Prompt            string           `json:"prompt"`
 	TimeoutMS         int64            `json:"timeoutMs"`
+	IdleTimeoutMS     int64            `json:"idleTimeoutMs,omitempty"`
+	SessionTitle      string           `json:"sessionTitle,omitempty"`
 	ThreadMode        string           `json:"threadMode,omitempty"`
 	ThreadID          string           `json:"threadId,omitempty"`
 	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
@@ -98,6 +101,7 @@ type claudeCodeProParsed struct {
 	Cancelled        bool
 	TimedOut         bool
 	Truncated        bool
+	StreamFailed     bool // worker protocol/envelope failure, distinct from a provider cancellation receipt
 	Error            string
 	ErrorCode        errs.ErrorCode
 	Session          *SessionOutcome
@@ -195,7 +199,7 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 	parsed := claudeCodeProParsed{Session: claudeCodeProUnknownSession(request)}
 	lifecycle := machineLifecycleFlow{harness: "claude-code-pro", request: codexProStart(request)}
 	terminal, trusted := false, true
-	var nativeSequence int64
+	var nativeSequence, activitySequence int64
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -227,6 +231,11 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 			break
 		}
 		switch frame.Type {
+		case "activity":
+			if err := validateProActivityEvent(json.RawMessage(line), "claude-code-pro", codexProStart(request), &activitySequence); err != nil {
+				trusted = false
+				parsed.Error = err.Error()
+			}
 		case "native-event":
 			if err := validateProNativeEvent(json.RawMessage(line), "claude-code-pro", codexProStart(request), &nativeSequence); err != nil {
 				trusted = false
@@ -280,6 +289,7 @@ func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeC
 		parsed.Error = "Claude Code Pro worker ended without a terminal receipt"
 	}
 	if !trusted {
+		parsed.StreamFailed = true
 		parsed.CleanupConfirmed, parsed.Settled, parsed.Usage, parsed.ErrorCode = false, false, nil, ""
 		parsed.Session = claudeCodeProUnknownSession(request)
 	}
@@ -543,6 +553,7 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	}
 	request.Cwd, request.Model, request.ReasoningEffort = cwd, a.Model, effort
 	request.PermissionMode, request.Prompt, request.TimeoutMS = a.PermissionMode, a.Prompt, wallMS
+	request.SessionTitle, request.IdleTimeoutMS = a.SessionTitle, max(0, a.Watchdog.IdleTimeoutMs)
 	// Raw native controls must encode successfully before a worker is started.
 	// Escaping and the newline count toward the same bounded worker request.
 	payload, err := json.Marshal(request)
@@ -573,13 +584,16 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	}, a.OnLifecycle, a.OnEvent)
 	parsed := parseClaudeCodeProStream(result.Stdout, request)
 	if interactionErr != nil {
+		parsed.StreamFailed = true
 		parsed.Error = "Claude Code Pro worker transport failed: " + interactionErr.Error()
 		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = claudeCodeProUnknownSession(request), nil, false
 	}
 	out := fromWatchdog(result, "claude-code-pro", "", a.Model)
 	out.NativeReceipt = parsed.NativeReceipt
 	out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
-	out.Cancelled, out.TimedOut, out.Truncated = out.Cancelled || parsed.Cancelled, out.TimedOut || parsed.TimedOut, out.Truncated || parsed.Truncated
+	// Preserve a real caller cancellation, but do not relabel a known worker
+	// protocol/ACK failure as a user stop just because cleanup used abort.
+	mergeWorkerTermination(&out, parsed.Cancelled && !parsed.StreamFailed, parsed.TimedOut, parsed.Truncated)
 	if result.Truncated {
 		out.Usage, out.Session.UsageStatus = nil, "unknown"
 	}
@@ -605,7 +619,8 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 		message := parsed.Error
 		switch {
 		case out.TimedOut:
-			message = "Claude Code Pro worker timed out"
+			message = timeoutMessage("Claude Code Pro worker", out)
+			out.ErrorCode = errs.TIMEOUT
 		case out.SpawnError != "":
 			message = out.SpawnError
 		case out.CleanupError != "":

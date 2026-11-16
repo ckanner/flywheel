@@ -2,7 +2,7 @@
 
 [中文](KIMI_NATIVE_PROTOCOL.md)
 
-`kimi-native-worker.js` and `runKimiWorker()` implement native Kimi Agent, Swarm and Tower execution for the Go engine. The ordinary Kimi CLI path is unchanged. Go owns role loops, budgets, boundary checks, Review, commits and acceptance; native children belong to one role invocation.
+`kimi-native-worker.js` and `runKimiWorker()` implement native Kimi Agent, Swarm and Tower execution for the Go engine. The ordinary Kimi print inference transport remains separate; new readable-history preparation is described below. Go owns role loops, budgets, boundary checks, Review, commits and acceptance; native children belong to one role invocation.
 
 ## Entry and admission
 
@@ -77,3 +77,37 @@ Only successful native completion, confirmed cleanup and `managed.role==='execut
 `test/kimi-native.test.js` uses actual local HTTP/WS child processes to test all three modes, cross-channel ordering, native children, unknown usage, admission refusals, cancellation, history, CLI lifeline, one final result, token suppression and Tower failure gates. `test/kimi-tower-candidate.test.js` uses actual Git for dirty/untracked/binary/link/mode/deletion cases, linked worktrees, external contracts, candidate conflicts and prompt mapping. These tests contact neither a user account nor a model. CLI availability, real account admission and paid inference are separate evidence.
 
 The implementation was checked against `MoonshotAI/kimi-code` commit `f082f04a093a3e71a2263c5461d52507dc31f83a`: [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md), [sessions/configuration](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md), [conversation/task lifecycle](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md), [Tower](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/guides/tower.md), [instance registry](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/kap-server/src/instanceRegistry.ts), [per-batch Swarm concurrency](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/session/agentRunBatch.ts), and [Tower rate limiting](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/towerRateLimitService.ts). Actual installed runtime probes remain authoritative.
+
+## Named print-session preparation
+
+The same packaged worker accepts a separate `prepare-print` request with protocol,
+requestId, cwd, model, reasoningEffort, sessionTitle and timeoutMs. It rejects prompt
+and sessionId fields. The checked upstream print path submits turns below the TUI
+first-prompt/title service and offers no title CLI option, so native auto-titling
+is not assumed.
+
+An owned authenticated local API runtime verifies the session-creation schema,
+creates an empty named history with the caller's physical workspace, and confirms
+its title, ownership metadata and idle state. It sets only the requested model,
+`permission_mode:auto` and `plan_mode:false` to match fresh print behavior.
+Thinking/profile/environment remain provider defaults; the same existing effort
+environment override is passed to both preparation and print. Both use the same
+KIMI_CODE_HOME. After confirmed physical cleanup, the original print command uses
+`--session` with that new identity and the remaining original wall budget.
+
+The single `prepared-print` receipt has requestId/status/sessionId/sessionTitle,
+cleanupConfirmed, `inferenceDispatched:false` and error. Missing, mismatched or
+unclean preparation prevents task dispatch. No title model is called, no business
+prompt is sent during preparation, and failure does not retry an unknown task.
+Existing histories skip preparation and retain their title. Native `start` also
+accepts sessionTitle, setting it only during new session creation. The display
+title never replaces the opaque session handle used for identity/recovery.
+
+The public create/resume operations open a native session, and close ends it.
+The first named print call therefore adds one preparation session startup and
+shutdown before the ordinary print invocation. Configured `SessionStart` and
+`SessionEnd` hooks run for that extra lifecycle as well. The business prompt is
+still sent exactly once; an existing-history resume skips preparation.
+Agent/Swarm set the title in their existing creation runtime and do not add this
+preparation lifecycle. The adapter does not bypass upstream hooks or treat
+naming as a side-effect-free metadata write.

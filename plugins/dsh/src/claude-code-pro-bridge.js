@@ -1,9 +1,9 @@
 // Claude Code is an independent harness, not a DSH native model provider.
 import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
-import { validateNativeAdmission } from './machine-worker.js';
+import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.5.1', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.5.2', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -20,9 +20,9 @@ export async function loadAdapter() {
   }
   let manifest, api;
   try { manifest = require('dsh-subagent-claude-code-pro/package.json'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.5.1 alongside @ckanner/flywheel; the optional adapter is not installed'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.5.2 alongside @ckanner/flywheel; the optional adapter is not installed'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
-    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.5.1 machine contract');
+    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.5.2 machine contract');
   }
   try { api = await import('dsh-subagent-claude-code-pro/machine'); }
   catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'The pinned Claude Code Pro public machine API could not be imported'); }
@@ -38,6 +38,11 @@ export async function loadAdapter() {
       typeof api.recoverNativeJob !== 'function' || typeof api.controlInteractiveTeam !== 'function') {
     throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro does not expose the pinned public machine API');
   }
+  if (api.MACHINE_ACTIVITY_VERSION !== 1 || api.MACHINE_ACTIVITY_CAPABILITIES?.version !== 1 ||
+      api.MACHINE_ACTIVITY_CAPABILITIES?.metadataOnly !== true || api.MACHINE_ACTIVITY_CAPABILITIES?.coalesced !== true ||
+      api.MACHINE_ACTIVITY_CAPABILITIES?.rootAndChildren !== true) {
+    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro does not expose the required provider activity contract');
+  }
   return api;
 }
 
@@ -45,7 +50,7 @@ export async function loadAdapter() {
 export function machineRequest(value, api, env) {
   const lifecycle = value?.protocol === 3;
   const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'native', 'managed', 'images', 'outputSchema', 'maxBudgetUsd',
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema', 'maxBudgetUsd',
     ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (lifecycle) keys.add('nativeOperation');
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' ||
@@ -64,11 +69,13 @@ export function machineRequest(value, api, env) {
     throw new WorkerError('INVALID_REQUEST', 'timeoutMs must be a positive safe integer no greater than 2147483647');
   }
   validateNativeAdmission(value.managed, value.requestId, WorkerError);
+  validateObservationRequest(value, WorkerError);
   try {
     if (value.nativeOperation !== undefined) return nativeJobRequest(value, api, env);
     return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, prompt: value.prompt,
       model: value.model, effort: value.reasoningEffort, permissionMode: 'bypassPermissions',
       sessionMode: persistent ? 'persistent' : 'ephemeral',
+      ...(persistent && value.threadId === undefined && value.sessionTitle !== undefined ? { sessionName: value.sessionTitle } : {}),
       ...(persistent && value.threadId !== undefined ? { sessionId: value.threadId } : {}),
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
       ...(value.native === undefined ? {} : { native: value.native }),
@@ -102,6 +109,7 @@ function nativeJobRequest(value, api, env) {
     if (Object.keys(op).some(key => !['kind', 'tmuxCommand', 'columns', 'rows'].includes(key))) throw new api.MachineInputError('unsupported interactive team control');
     const { kind, ...team } = op;
     request = { ...common, ...team, prompt: value.prompt, model: value.model, effort: value.reasoningEffort,
+      ...(value.sessionTitle === undefined ? {} : { sessionName: value.sessionTitle }),
       permissionMode: 'bypassPermissions', ...(value.native === undefined ? {} : { native: value.native }) };
     api.validateInteractiveTeamRequest(request);
   } else throw new api.MachineInputError('unsupported independent native operation');

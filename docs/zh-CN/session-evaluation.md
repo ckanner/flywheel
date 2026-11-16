@@ -106,7 +106,7 @@ P3 的 `record-kind:"reconciliation"` 行按 `reconciles-invocation` 替换原�
 仓库提供三层不同的证据入口：
 
 1. `node --test npm/test/session-evaluation.test.js` 验证 manifest、隔离、未知用量、配对与停止规则，使用明确标记的 runner 协议 fixture。
-2. 下列命令运行真实 Go CLI → worker 3 → 实际公开 Codex 0.9 包 → 原生 CLI fixture，共 36 个 trial。fixture 只实现原生协议和受控代码工作，不写 Go state/metrics/receipts；真实引擎执行 L1、Review 判定、Git 边界与恢复选择。
+2. 下列命令运行真实 Go CLI → worker 3 → 已审查源码候选 Codex Pro 0.10.1 的实际公开 API → 原生 CLI fixture，共 36 个 trial。fixture 只实现原生协议和受控代码工作，不写 Go state/metrics/receipts；真实引擎执行 L1、Review 判定、Git 边界与恢复选择。
 3. `--live` 使用真实后端推理，才能提供模型质量、缓存、耗时与费用方面的实际证据。
 
 ```sh

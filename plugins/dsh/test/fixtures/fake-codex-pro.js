@@ -3,6 +3,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 const scenario = process.env.TEST_CODEX_PRO_SCENARIO || 'ok';
 const log = value => { if (process.env.TEST_CODEX_PRO_LOG) appendFileSync(process.env.TEST_CODEX_PRO_LOG, JSON.stringify(value) + '\n'); };
@@ -43,6 +44,50 @@ process.on('SIGTERM', () => {
   Promise.resolve(descendantExit).then(() => setTimeout(() => { log({ event: 'cleanup' }); process.exit(0); }, 50));
 });
 process.stdout.on('error', () => process.exit(1));
+
+// Real owned notifications are deliberately separated from display progress.
+// These scenarios exercise every installed adapter/worker/watchdog layer.
+async function observedTurn() {
+  if (scenario === 'activity-quiet') return;
+  const child = ['activity-child', 'activity-default-child', 'activity-completed-child'].includes(scenario);
+  const activeThread = child ? 'activity-child-thread' : scenario === 'activity-foreign' ? 'foreign-thread' : threadId;
+  const activeTurn = child ? 'activity-child-turn' : scenario === 'activity-stale-root' ? 'preceding-root-turn' : turnId;
+  if (child) {
+    notify('item/completed', { threadId, turnId, item: { type: 'collabAgentToolCall', id: 'activity-spawn',
+      tool: 'spawnAgent', senderThreadId: threadId, receiverThreadIds: [activeThread],
+      agentsStates: { [activeThread]: { status: 'running' } } } });
+    notify('turn/started', { threadId: activeThread, turn: { id: activeTurn } });
+  }
+  const completeChild = () => {
+    notify('thread/tokenUsage/updated', { threadId: activeThread, turnId: activeTurn,
+      tokenUsage: { total: { totalTokens: 15, inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, reasoningOutputTokens: 0 } } });
+    notify('turn/completed', { threadId: activeThread, turn: { id: activeTurn, status: 'completed' } });
+  };
+  if (scenario === 'activity-completed-child') completeChild();
+  const burst = scenario === 'activity-raw-volume' || scenario === 'activity-display-volume';
+  const count = burst ? 420 : 70;
+  const kinds = ['item/reasoning/summaryTextDelta', 'item/reasoning/textDelta', 'item/agentMessage/delta', 'item/commandExecution/outputDelta'];
+  let rawBytes = 0;
+  for (let i = 0; i < count; i++) {
+    if (stopping) return;
+    const delta = burst ? 'x'.repeat(4096) : 'PRIVATE_REASONING_AND_TOOL_CONTENT';
+    rawBytes += Buffer.byteLength(delta);
+    const writable = scenario === 'activity-display-volume'
+      ? notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text: delta } })
+      : notify(kinds[i % kinds.length], { threadId: activeThread, turnId: activeTurn, itemId: 'activity-item', delta });
+    if (!writable) await once(process.stdout, 'drain');
+    if (!burst) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  log({ event: 'activity-complete', count, rawBytes, scope: child ? 'child' : 'root' });
+  if (child && scenario !== 'activity-completed-child') completeChild();
+  const delta = { totalTokens: 108, inputTokens: 100, cachedInputTokens: 25, outputTokens: 8, reasoningOutputTokens: 3 };
+  const total = Object.fromEntries(Object.entries(delta).map(([key, value]) => [key, value + (history?.total?.[key] ?? 0)]));
+  notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total, last: delta } });
+  history = { ...history, threadId, turnId, total }; saveHistory();
+  notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', phase: 'final_answer', text: 'fixture complete\n' } });
+  notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
+}
+
 createInterface({ input: process.stdin }).on('line', line => {
   const request = JSON.parse(line);
   log(request);
@@ -75,9 +120,17 @@ createInterface({ input: process.stdin }).on('line', line => {
       sandbox: scenario === 'wrong-sandbox'
         ? (sandbox === 'danger-full-access' ? { type: 'workspaceWrite', writableRoots: [cwd] } : { type: 'dangerFullAccess' })
         : policy });
+  } else if (request.method === 'thread/name/set') {
+    history = { ...history, name: request.params.name };
+    saveHistory();
+    reply(request.id, {});
   } else if (request.method === 'turn/start' || request.method === 'review/start') {
     reply(request.id, { turn: { id: turnId }, reviewThreadId: threadId });
     notify('turn/started', { threadId, turn: { id: turnId } });
+    if (scenario.startsWith('activity-')) {
+      observedTurn().catch(() => process.exit(92));
+      return;
+    }
     if (scenario === 'native-child') {
       notify('item/completed', { threadId, turnId, item: { type: 'collabAgentToolCall', id: 'spawn-1', tool: 'spawnAgent', senderThreadId: threadId,
         receiverThreadIds: ['child-thread'], model: 'child-model', agentsStates: { 'child-thread': { status: 'running' } } } });
@@ -104,7 +157,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       const delta = { totalTokens: 108, inputTokens: 100, cachedInputTokens: 25, outputTokens: 8, reasoningOutputTokens: 3 };
       const total = Object.fromEntries(Object.entries(delta).map(([key, value]) => [key, value + (history?.total?.[key] ?? 0)]));
       notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total, last: delta } });
-      history = { threadId, turnId, total };
+      history = { ...history, threadId, turnId, total };
       saveHistory();
       if (scenario === 'partial-usage') notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: { ...total, outputTokens: 'invalid' } } });
     }
@@ -114,6 +167,6 @@ createInterface({ input: process.stdin }).on('line', line => {
     notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
   } else if (request.method === 'turn/interrupt') {
     reply(request.id, {});
-    notify('turn/completed', { threadId, turn: { id: turnId, status: 'interrupted' } });
+    notify('turn/completed', { threadId: request.params.threadId, turn: { id: request.params.turnId, status: 'interrupted' } });
   }
 });

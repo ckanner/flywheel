@@ -2,7 +2,7 @@
 
 [English](KIMI_NATIVE_PROTOCOL.en.md)
 
-本协议由 `kimi-native-worker.js` / `runKimiWorker()` 实现，供 Go 引擎选择 Kimi 原生 Agent、Swarm 或 Tower。普通 Kimi CLI 路径不受影响。Go 继续拥有角色循环、预算、边界检查、Review、提交和验收；原生子任务属于本次角色调用。
+本协议由 `kimi-native-worker.js` / `runKimiWorker()` 实现，供 Go 引擎选择 Kimi 原生 Agent、Swarm 或 Tower。普通 Kimi print 的推理传输保持独立，新会话的具名准备见下文。Go 继续拥有角色循环、预算、边界检查、Review、提交和验收；原生子任务属于本次角色调用。
 
 ## 入口与能力准入
 
@@ -77,3 +77,29 @@ Tower 收到独立 `.git` 的仓库副本，不复用主仓 Git 管理目录；l
 `test/kimi-native.test.js` 使用真实本地 HTTP/WS 子进程验证三种模式、事件顺序、原生子任务、用量未知值、准入拒绝、取消、历史恢复、CLI lifeline、一次 final、token 不泄漏及 Tower 失败门禁；`test/kimi-tower-candidate.test.js` 使用实际 Git 验证 dirty/untracked/binary/link/mode/deletion、linked worktree、外部契约、候选冲突和 prompt 路径映射。测试不联系用户账号或模型；CLI 可执行性、真实账号准入和付费推理验证是不同的证据。
 
 实现依据是上游 `MoonshotAI/kimi-code` 提交 `f082f04a093a3e71a2263c5461d52507dc31f83a` 的 [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md)、[会话配置](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md)、[conversation/task 生命周期](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md)、[Tower](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/guides/tower.md)、[实例注册表](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/kap-server/src/instanceRegistry.ts)、[逐 batch Swarm 并发](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/session/agentRunBatch.ts) 和 [Tower 限流服务](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/towerRateLimitService.ts)。安装现场仍以实际 API 探测为准。
+
+## Print 会话的具名准备
+
+同一已打包 worker 另接受 `prepare-print` 请求，仅允许 protocol、requestId、cwd、
+model、reasoningEffort、sessionTitle、timeoutMs，拒绝 prompt 和 sessionId。
+已核对的上游 print 在 TUI 首条提示词／标题服务之下直接提交 turn，CLI 也没有标题
+参数，因此不能依赖普通交互入口的自动命名。
+
+独立受管且鉴权的本地 API 运行时核对 create schema，在原物理工作区创建无 prompt
+的具名空历史，并确认 title、归属元数据与 idle 状态。只显式传请求的 model、
+`permission_mode:auto`、`plan_mode:false` 以保持 fresh print 原行为；不显式设置
+thinking/profile/environment。原 effort 环境覆盖同时传给准备和 print；两者使用
+同一 KIMI_CODE_HOME。确认准备运行时物理清理后，原 print 使用新 ID 的 `--session`
+执行任务，消耗同一调用原 wall 预算的剩余时间。
+
+唯一 `prepared-print` 回执包含 requestId/status/sessionId/sessionTitle、
+cleanupConfirmed、`inferenceDispatched:false` 与 error。准备回执缺失、错配或清理
+未知都会阻止正式派发。没有额外标题模型调用，准备步骤不发送业务 prompt，也不会
+重试未知任务。既有历史跳过准备并保留原名；native `start` 同样接受 sessionTitle，
+只用于首次创建。显示标题不替代用于身份与恢复的 opaque session ID。
+
+公开 create／resume 会打开原生会话，close 会关闭它。因此首次具名 print 比原先
+直接创建多一次准备运行时的会话启动与关闭；配置了 `SessionStart` / `SessionEnd`
+hook 时，这些 hook 也会多执行一轮。正式 print 仍只接收一次业务 prompt，恢复
+已有历史时不再准备。Agent／Swarm 在原有运行时直接设置创建标题，没有这次额外
+准备生命周期。这里不绕过上游 hooks，也不把命名描述为无副作用的元数据写入。

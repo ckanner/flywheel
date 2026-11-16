@@ -455,7 +455,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	if r != nil && (r.Last.Status == "received" || (r.WorkspaceCwd == "" && r.Cwd == c.WorkspaceCwd)) {
 		args.WorkspaceCwd = r.WorkspaceCwd
 	}
-	args.SessionTitle = "Flywheel · " + role + "/" + scope + " · " + c.State.Slug
+	args.SessionTitle = c.sessionTitle(role, scope)
 	originalPrompt := args.Prompt
 	args.Prompt = c.sessionPrompt(role, scope, args)
 	tracked, persistent := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)

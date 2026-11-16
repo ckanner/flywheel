@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Context } from '@deepseek-ai/cordis';
 import { agentEvents } from '@deepseek-ai/dsh-agent';
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
@@ -23,6 +24,7 @@ import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol';
 import { createNativePolicy, nativeOverlay } from '../src/native-policy.js';
 import { NativeTree } from '../src/native.js';
 import { SessionFold } from '../src/protocol.js';
+import { createDshActivityPublisher, DSH_ACTIVITY_METHOD, validDshActivity } from '../src/dsh-activity.js';
 import { validatePng } from './fixtures/png-fixture.js';
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -49,7 +51,8 @@ class ScriptedModel extends LlmAdapter {
     const root = this.sdk && options.messages.some(message => message.content.some(block => block.type === 'text' && block.text === 'sdk root fixture'));
     if (root && this.rootCalls++ === 0) {
       const block = { type: 'tool-call', id: 'sdk-native-delegation', name: 'run_code', arguments: JSON.stringify({
-        code: "const task = await tools.team_task_create({subject:'SDK fixture',description:'Test actual native dispatch'}); const child = await tools.subagent({name:'sdk-child',description:'SDK native child',prompt:'sdk child fixture'}); console.log(JSON.stringify({task,child}));",
+        code: "const task = await tools.team_task_create({subject:'SDK fixture',description:'Test actual native dispatch'}); const child = await tools.subagent({name:'sdk-child',description:'SDK native child',prompt:'sdk child fixture'});" +
+          (this.slowChild ? " await tools.wait_agent({timeout_ms:10000});" : '') + " console.log(JSON.stringify({task,child}));",
         description: 'Run native Team and child fixture through the SDK',
       }) };
       yield { type: 'block-start', index: 0, blockType: 'tool-call' };
@@ -61,14 +64,19 @@ class ScriptedModel extends LlmAdapter {
     }
     const text = root ? 'SDK root final answer' : 'offline child result';
     yield { type: 'block-start', index: 0, blockType: 'text' };
-    yield { type: 'text-delta', index: 0, text };
+    if (!root && this.slowChild) {
+      for (let i = 0; i < 12; i++) {
+        await delay(100, undefined, { signal: options.signal });
+        yield { type: 'text-delta', index: 0, text: text.slice(Math.floor(text.length * i / 12), Math.floor(text.length * (i + 1) / 12)) };
+      }
+    } else yield { type: 'text-delta', index: 0, text };
     yield { type: 'block-end', index: 0, block: { type: 'text', text } };
     yield { type: 'usage', usage: { inputTokens: 3, outputTokens: 2 } };
     yield { type: 'finish', reason: { kind: 'stop' } };
   }
 }
 
-async function fixture(t, { sdk = false, maxDepth = 3, hold = false } = {}) {
+async function fixture(t, { sdk = false, maxDepth = 3, hold = false, activity = false, slowChild = false } = {}) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-native-flow-')));
   const ctx = new Context();
   t.after(async () => { await ctx.fiber.dispose(); await rm(directory, { recursive: true, force: true }); });
@@ -92,6 +100,7 @@ async function fixture(t, { sdk = false, maxDepth = 3, hold = false } = {}) {
   // This is the global executor composition used by the SDK overlay. Children
   // inherit the actual PTC service rather than a test-only root tool override.
   const model = new ScriptedModel(sdk); ctx.llm.registerAdapter(['offline'], model);
+  model.slowChild = slowChild;
   if (hold) model.gate = Promise.withResolvers();
   const driver = await mountAgentLoopTestHarness(ctx);
   const native = { version: 1, preset: 'heavy', agents: { enabled: true, maxDepth, maxConcurrent: 4 }, team: { enabled: true } };
@@ -120,7 +129,15 @@ async function fixture(t, { sdk = false, maxDepth = 3, hold = false } = {}) {
     if (info.local) tree.notify('subagent.finished', { parentSessionId: info.parentSessionId, childSessionId: info.id, stopReason: info.stopReason });
   });
   const policy = await createNativePolicy(ctx, config);
-  ctx.on('agent/created', async ({ agent }) => { admissions.push({ id: agent.id, receipt: await policy.admit(agent, agent.id === 'root') }); });
+  let responseBytes;
+  const publisher = activity ? createDshActivityPublisher(ctx, {
+    identity: () => ({ requestId: config.requestId, nonce: config.nonce, rootSessionId: 'root' }),
+    children: true, idleTimeoutMs: 400,
+  }, { notify: (method, params) => responseBytes.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n') }) : null;
+  ctx.on('agent/created', async ({ agent }) => {
+    admissions.push({ id: agent.id, receipt: await policy.admit(agent, agent.id === 'root') });
+    publisher?.admit(agent, agent.id === 'root');
+  });
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const result = await next(); steps.push({ id: agent.id, tools: (await ctx.systemPrompt.assemble({ scope: agent })).tools.map(tool => tool.name), team: ctx.agentTeams.isEnabled(agent) }); return result;
   });
@@ -128,7 +145,8 @@ async function fixture(t, { sdk = false, maxDepth = 3, hold = false } = {}) {
   let root, client, exitPromise;
   const notifications = [];
   if (sdk) {
-    const requestBytes = new PassThrough(), responseBytes = new PassThrough();
+    const requestBytes = new PassThrough();
+    responseBytes = new PassThrough();
     let exited;
     exitPromise = new Promise(resolve => { exited = resolve; });
     client = new JsonRpcLineTransport(responseBytes, requestBytes);
@@ -312,5 +330,26 @@ test('real SDK JSON-RPC initialization, creation, prompt, native child dispatch 
   assert.equal(cleanup.journal.events, events.length);
   assert.equal(cleanup.requestId, f.config.requestId);
   assert.equal(cleanup.nonce, f.config.nonce);
+  assert.deepEqual(f.observedErrors, []);
+});
+
+test('published SDK forwards actual owned child streaming while its parent awaits PTC delegation', async t => {
+  const f = await fixture(t, { sdk: true, activity: true, slowChild: true });
+  const prompt = await f.client.request('session/prompt', { sessionId: 'root', contentBlocks: [{ type: 'text', text: 'sdk root fixture' }] }, signal());
+  await f.client.request('session/wait', { sessionId: 'root' }, signal());
+  const result = f.fold.finish(prompt.messageId);
+  assert.equal(result.text, 'SDK root final answer');
+  const observations = f.notifications.filter(row => row.method === DSH_ACTIVITY_METHOD);
+  const child = observations.filter(row => row.params.activity.scope === 'child');
+  assert.ok(child.length >= 5, JSON.stringify(observations));
+  assert.ok(child.some(row => row.params.activity.eventTypes.includes('assistant/text-delta')));
+  assert.ok(observations.every((row, index) => validDshActivity(row.params.activity) && row.params.activity.sequence === index + 1));
+  assert.ok(!JSON.stringify(observations).includes('offline child result'));
+  assert.ok(!JSON.stringify(observations).includes('sdk root fixture'));
+  assert.equal(f.model.calls.length, 3, 'activity does not start extra model calls');
+  await f.runtimeEvents();
+  assert.deepEqual(f.tree.completion(), { confirmed: true, pendingIds: [] });
+  await f.client.request('shutdown', {}, signal());
+  assert.equal(await f.exitPromise, 0);
   assert.deepEqual(f.observedErrors, []);
 });

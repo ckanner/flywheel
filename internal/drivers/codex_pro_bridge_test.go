@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This opt-in bridge uses the built worker and the real, installed 0.10.0 public
+// This opt-in bridge uses the built worker and the real, installed 0.10.1 public
 // machine API/guardian. Only the app-server peer is fake; no model is contacted.
 func TestCodexProNodeWorkerOfflineBridge(t *testing.T) {
 	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {

@@ -68,12 +68,23 @@ type Opts struct {
 	DisableIdleTimeout bool
 	// OnActivity 每收到一段输出即回调（chunk, "stdout"/"stderr"）。
 	OnActivity func(chunk string, stream string)
+	// StdoutCapture transforms retained stdout only. Raw bytes still renew idle
+	// and reach OnActivity unchanged; stderr and process cleanup are unaffected.
+	// Protocol adapters may omit verified advisory events from retained memory.
+	StdoutCapture OutputCapture
 	// InteractStdin 可选交互钩子（协议驱动用，如 zcode app-server）：Start 后
 	// 获得子进程 stdin 写入器与 finish 函数——driver 写请求帧、经 OnActivity
 	// 解析事件流，会话结束后调用 finish() 走与超时同一条清理路径（SIGTERM →
 	// grace → SIGKILL → quiescence；kill 开关契约不变）。finish 幂等，调用后
 	// 不得再写 stdin。钩子在独立 goroutine 运行，Run 返回前不等待其退出。
 	InteractStdin func(stdin io.WriteCloser, finish func())
+}
+
+// OutputCapture is owned by one Run. Filter runs on the stdout-copy goroutine;
+// Flush runs once after that goroutine finishes, preserving any incomplete tail.
+type OutputCapture interface {
+	Filter(chunk []byte) []byte
+	Flush() []byte
 }
 
 // ---- 在飞子进程登记表（SIGTERM 全杀的依据）----
@@ -233,6 +244,7 @@ type streamWriter struct {
 	idleTimedOut *bool
 	readError    *error
 	onActivity   func(chunk, stream string)
+	capture      OutputCapture
 }
 
 // ReadFrom 保留管道排空错误。exec.Cmd.Wait 对非零退出优先返回 ExitError，
@@ -250,12 +262,20 @@ func (w *streamWriter) ReadFrom(r io.Reader) (int64, error) {
 
 func (w *streamWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
-	w.buf.Write(p)
 	if w.idleTimer != nil && !*w.idleTimedOut {
 		*w.idleDeadline = idleNow().Add(w.idleTimeout)
 		w.idleTimer.Reset(w.idleTimeout)
 	}
 	w.mu.Unlock()
+	// Observe the read before parsing/copying it; capture work must not move
+	// the receipt of real output beyond an already-queued idle deadline.
+	retained := p
+	if w.capture != nil {
+		retained = w.capture.Filter(p)
+	}
+	if len(retained) != 0 {
+		w.buf.Write(retained)
+	}
 	if w.onActivity != nil {
 		w.onActivity(string(p), w.stream)
 	}
@@ -304,7 +324,8 @@ func Run(command string, args []string, opts Opts) Result {
 	stdoutBuf := &cappedBuffer{cap: MaxBuffer}
 	stderrBuf := &cappedBuffer{cap: MaxBuffer}
 	stdoutW := &streamWriter{mu: &mu, buf: stdoutBuf, stream: "stdout",
-		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
+		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity,
+		capture: opts.StdoutCapture}
 	stderrW := &streamWriter{mu: &mu, buf: stderrBuf, stream: "stderr",
 		idleTimeout: idleTimeout, idleTimedOut: &idleTimedOut, readError: &outputReadError, onActivity: opts.OnActivity}
 	cmd.Stdout = stdoutW
@@ -399,6 +420,11 @@ func Run(command string, args []string, opts Opts) Result {
 	// Wait 返回 = 进程退出 + exec 内部复制 goroutine 排干 —— Node 'close'。
 	if err := cmd.Wait(); errors.Is(err, exec.ErrWaitDelay) {
 		res.CleanupError = "child output did not close within cleanup grace"
+	}
+	if opts.StdoutCapture != nil {
+		if tail := opts.StdoutCapture.Flush(); len(tail) != 0 {
+			stdoutBuf.Write(tail)
+		}
 	}
 
 	mu.Lock()

@@ -105,10 +105,10 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 | npm installation or release | Root npm tests, a complete single-package candidate build, and installation of that tarball |
 | Documentation | Links, anchors, fences, runnable examples, translation consistency, and affected embedding/package contents |
 
-The Claude bridge needs the exact optional 0.5.1 machine API in the worker's
+The Claude bridge needs the exact optional 0.5.2 machine API in the worker's
 dependency tree. An absent-peer skip does not verify that backend. Preserve the
 reviewed source/tarball identity when using a source candidate. Codex Pro's
-bundled 0.10.0 source package is likewise pinned by its actual integrity and
+bundled 0.10.1 source package is likewise pinned by its actual integrity and
 [vendor record](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 
 For lifecycle, state, or process changes, reproduce the Linux CI race check:

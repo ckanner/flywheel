@@ -7,6 +7,16 @@ import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 if (process.argv.includes('--version')) { process.stdout.write('kimi 9.8.7-fixture\n'); process.exit(0); }
+if (process.argv.includes('-p')) {
+  const args = process.argv.slice(2), id = args[args.indexOf('--session') + 1];
+  const sessions = JSON.parse(await readFile(join(process.env.KIMI_CODE_HOME, 'fixture-sessions.json'), 'utf8'));
+  if (!sessions[id]?.title || sessions[id].agent_config?.permission_mode !== 'auto' || sessions[id].agent_config?.plan_mode !== false) process.exit(92);
+  if (process.env.KIMI_FIXTURE_LOG) await appendFile(process.env.KIMI_FIXTURE_LOG,
+    JSON.stringify({ type: 'print', sessionId: id, cwd: process.cwd(), args }) + '\n');
+  process.stdout.write(JSON.stringify({ role: 'assistant', content: 'Named print fixture completed' }) + '\n');
+  process.stdout.write(JSON.stringify({ role: 'meta', type: 'session.resume_hint', session_id: id }) + '\n');
+  process.exit(0);
+}
 if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(['web', '--no-open', '--host', '127.0.0.1', '--port', '0'])) process.exit(2);
 const fixtureCase = process.env.KIMI_FIXTURE_CASE || 'normal';
 const root = process.env.KIMI_CODE_HOME;
@@ -25,10 +35,11 @@ const paths = ['/api/v1/meta', '/api/v1/sessions', '/api/v1/sessions/{session_id
   '/api/v1/shutdown', '/api/v1/remote-control'];
 const property = { type: 'string' };
 const schema = properties => ({ type: 'object', properties });
-const config = schema(Object.fromEntries(['model', 'thinking', 'permission_mode', 'swarm_mode', 'profile', 'tower_mode', 'tower_base'].map(key => [key, property])));
+const config = schema(Object.fromEntries(['model', 'thinking', 'permission_mode', 'plan_mode', 'swarm_mode', 'profile', 'tower_mode', 'tower_base'].map(key => [key, property])));
 const requestBody = properties => ({ requestBody: { content: { 'application/json': { schema: schema(properties) } } } });
 const openapi = { openapi: '3.1.0', paths: Object.fromEntries(paths.map(path => [path, { get: {}, post: {} }])) };
-openapi.paths['/api/v1/sessions'].post = requestBody({ agent_config: config, environment_id: property, environment_cwd: property });
+openapi.paths['/api/v1/sessions'].post = requestBody({ title: property, metadata: schema({ cwd: property }), agent_config: config, environment_id: property, environment_cwd: property });
+if (fixtureCase === 'no-title-schema') delete openapi.paths['/api/v1/sessions'].post.requestBody.content['application/json'].schema.properties.title;
 openapi.paths['/api/v1/sessions/{session_id}/profile'].post = requestBody({ agent_config: config });
 openapi.paths['/api/v1/sessions/{session_id}/prompts'].post = requestBody({ content: property, prompt_id: property, disabled_tools: property });
 if (fixtureCase === 'missing-schema') delete openapi.paths['/api/v1/sessions/{session_id}/prompts'].post.requestBody.content['application/json'].schema.properties.disabled_tools;
@@ -81,8 +92,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/api/v1/sessions' && req.method === 'POST') {
       const id = 'session-' + (Object.keys(sessions).length + 1);
-      const s = sessions[id] = { id, metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
-        cwd: body.environment_cwd, active: null, queued: [], turns: [] };
+      const s = sessions[id] = { id, title: fixtureCase === 'wrong-title' ? 'Session placeholder' : body.title,
+        metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
+        cwd: body.environment_cwd || body.metadata.cwd, active: null, queued: [], turns: [] };
       await save(); send(sessionState(s)); return;
     }
     const match = path.match(/^\/api\/v1\/sessions\/([^/:]+)(.*)$/);

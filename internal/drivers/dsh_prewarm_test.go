@@ -177,6 +177,9 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join(prepared.Cwd, "formal-request.json"), []byte(dshJSONL(map[string]any{"request": r, "pid": os.Getpid()})), 0o600)
 	_ = encode.Encode(first)
+	if scenario == "activity-flood" {
+		emitDSHActivityFlood(r)
+	}
 	if scenario == "hang" {
 		<-signals
 		last["status"], last["text"] = "cancelled", ""
@@ -224,6 +227,7 @@ func TestDSHPrewarmReusesOwnedProcessAndSeparatesFormalTiming(t *testing.T) {
 	require.NoError(t, err)
 	h := PrepareDSH(a)
 	awaitWarm(t, h)
+	assert.Equal(t, a.Watchdog.IdleTimeoutMs, h.prepare.IdleTimeoutMS, "the prepared SDK uses the formal activity coalescing interval")
 	assert.Equal(t, a.PrewarmID, h.ID())
 	assert.True(t, h.Matches(a))
 	assert.NoFileExists(t, filepath.Join(a.Cwd, "formal-request.json"))
@@ -950,6 +954,9 @@ func TestDSHPrewarmLocalTTLAndSafeColdFallbackBoundaries(t *testing.T) {
 	result = h.coldAfterExpiry(a, time.Now().Add(-time.Hour), Result{})
 	assert.True(t, result.TimedOut)
 	assert.True(t, result.WallTimedOut)
+	assert.Equal(t, errs.TIMEOUT, result.ErrorCode)
+	require.NotNil(t, result.ErrorMessage)
+	assert.Contains(t, *result.ErrorMessage, "wall timeout")
 	assert.NoFileExists(t, filepath.Join(a.Cwd, "cold-model-call"))
 	require.NoError(t, h.Close())
 

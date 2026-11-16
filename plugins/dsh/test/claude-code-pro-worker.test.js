@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.1 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.2 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -63,7 +63,7 @@ function resultFrame(result, code = 0) {
   assert.equal(result.signal, null);
   const frames = result.stdout.trim().split('\n').map(JSON.parse);
   assert.equal(frames.filter(frame => frame.type === 'result').length, 1);
-  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event'].includes(frame.type)));
+  assert.ok(frames.slice(0, -1).every(frame => ['progress', 'native-event', 'activity'].includes(frame.type)));
   assert.deepEqual(frames.at(-1).adapter, ADAPTER);
   return frames.at(-1);
 }
@@ -120,7 +120,7 @@ test('missing, stale and incompatible optional peers prove non-dispatch without 
   await writeFile(join(peer, 'package.json'), JSON.stringify({ ...manifest, version: ADAPTER.version }));
   await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=999;');
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_MISMATCH');
-  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export const MACHINE_NATIVE_VERSION=1; export const MACHINE_NATIVE_CAPABILITIES={version:1,agents:true,workflows:true}; export const validateNativeReviewRequest=()=>{}; export const validateInteractiveTeamRequest=()=>{}; export const runNativeReview=()=>{}; export const runInteractiveTeam=()=>{}; export const recoverNativeJob=()=>{}; export const controlInteractiveTeam=()=>{}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
+  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_ACTIVITY_VERSION=1; export const MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export const MACHINE_NATIVE_VERSION=1; export const MACHINE_NATIVE_CAPABILITIES={version:1,agents:true,workflows:true}; export const validateNativeReviewRequest=()=>{}; export const validateInteractiveTeamRequest=()=>{}; export const runNativeReview=()=>{}; export const runInteractiveTeam=()=>{}; export const recoverNativeJob=()=>{}; export const controlInteractiveTeam=()=>{}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
   const unknown = resultFrame(await f.launch(options).done, 1);
   assert.equal(unknown.admission, undefined);
   assert.equal(unknown.error.code, 'WORKER_ERROR');
@@ -307,13 +307,16 @@ test('the native deadline returns a failed receipt after cleanup', liveContract,
   assert.throws(() => process.kill(-receipt.execution.processGroupId, 0), { code: 'ESRCH' });
 });
 
-test('an oversized native output fails with confirmed cleanup', liveContract, async t => {
+test('large display progress does not disguise the actual task timeout', liveContract, async t => {
   const f = await setup(t, 'progress-hang');
-  const frame = resultFrame(await f.launch().done, 1);
+  const result = await f.launch({ input: { ...f.request, timeoutMs: 1500 } }).done;
+  const frame = resultFrame(result, 1);
   assert.equal(frame.receipt.ok, false);
   assert.equal(frame.receipt.cleanup.confirmed, true);
   assert.equal(frame.receipt.session.resumable, false);
-  assert.ok(frame.error?.code === 'OUTPUT_LIMIT' || frame.receipt.execution.truncated);
+  assert.equal(frame.error, null);
+  assert.equal(frame.receipt.execution.timedOut, true);
+  assert.equal(frame.receipt.execution.truncated, false);
 });
 
 for (const scenario of ['partial-usage', 'unknown-usage']) {

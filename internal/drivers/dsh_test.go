@@ -161,6 +161,9 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	}
 	fmt.Print(dshJSONL(ready))
 	fmt.Fprintln(os.Stderr, "worker diagnostic")
+	if scenario == "activity-flood" {
+		emitDSHActivityFlood(request)
+	}
 	if scenario == "exit-error-auth-text" {
 		fmt.Fprintln(os.Stderr, "401 unauthorized appears in a process diagnostic")
 	}
@@ -215,7 +218,7 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		}
 		os.Exit(1)
 	}
-	fmt.Print(strings.TrimSpace(dshJSONL(result)))
+	fmt.Print(dshJSONL(result))
 	if scenario == "success-malformed-tail" {
 		fmt.Print("\n{broken-json}\n")
 	}
@@ -275,7 +278,7 @@ func TestRunDSHWorkerBindingEnvironmentAndUsage(t *testing.T) {
 	assert.Equal(t, int64(15), r.Usage.TotalTokens, "reasoning is already included in output")
 	require.NotNil(t, r.CostUSD)
 	assert.Equal(t, 0.00005, *r.CostUSD)
-	assert.Len(t, events, 2, "stdout tail is delivered and stderr is separate")
+	assert.Len(t, events, 2, "stdout frames are delivered and stderr is separate")
 	raw, err := os.ReadFile(filepath.Join(a.Cwd, "worker-input.json"))
 	require.NoError(t, err)
 	var captured struct {

@@ -7,7 +7,7 @@ import { validateNative, nativeDigest } from './native.js';
 export const PREWARM_MS = 60000;
 const MAX_RECEIPT_BYTES = 8192;
 const TRUNCATED_DIAGNOSTIC = ' [truncated]';
-const BINDING_FIELDS = ['cwd', 'workspaceCwd', 'provider', 'model', 'reasoningEffort', 'permissionMode'];
+const BINDING_FIELDS = ['cwd', 'workspaceCwd', 'provider', 'model', 'reasoningEffort', 'permissionMode', 'idleTimeoutMs'];
 
 export async function validatePrepare(value) {
   const keys = new Set(['type', 'protocol', 'warmId', 'binding', 'receiptDirectory', 'ttlMs', 'native', ...BINDING_FIELDS]);
@@ -17,6 +17,9 @@ export async function validatePrepare(value) {
       !/^[a-f0-9]{64}$/.test(value.binding ?? '') || !Number.isSafeInteger(value.ttlMs) || value.ttlMs < 1 || value.ttlMs > PREWARM_MS ||
       !['read-only', 'workspace-write', 'danger-full-access'].includes(value.permissionMode)) {
     throw new BridgeError('INVALID_REQUEST', 'expected a bounded, identified SDK prepare request without a prompt');
+  }
+  if (value.idleTimeoutMs !== undefined && (!Number.isSafeInteger(value.idleTimeoutMs) || value.idleTimeoutMs < 1 || value.idleTimeoutMs > 86400000)) {
+    throw new BridgeError('INVALID_REQUEST', 'idleTimeoutMs must be between 1 and 86400000');
   }
   const request = { ...value, cwd: await directory(value.cwd, 'cwd'),
     ...(value.workspaceCwd === undefined ? {} : { workspaceCwd: await directory(value.workspaceCwd, 'workspaceCwd') }) };

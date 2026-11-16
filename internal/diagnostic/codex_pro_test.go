@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const codexProDoctorResponse = `{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.10.0","machineProtocol":1,"available":true,"inferenceTested":false}`
+const codexProDoctorResponse = `{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.10.1","machineProtocol":1,"available":true,"inferenceTested":false}`
 
 func TestCodexProDoctorImportsThePinnedAPIWithoutInference(t *testing.T) {
 	root, runtime := diagnosticFixture(t, `{
@@ -66,7 +66,7 @@ func TestCodexProDoctorRejectsUnprovenOrInconsistentImports(t *testing.T) {
 		{"invalid JSON", watchdog.Result{ExitCode: new(0), Stdout: "private-credential-value"}},
 		{"missing inference assertion", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, `,"inferenceTested":false`, "", 1)}},
 		{"performed inference", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, `"inferenceTested":false`, `"inferenceTested":true`, 1)}},
-		{"wrong version", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, "0.10.0", "0.7.0", 1)}},
+		{"wrong version", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, "0.10.1", "0.7.0", 1)}},
 		{"wrong package", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, "dsh-subagent-codex-pro", "another-package", 1)}},
 		{"wrong protocol", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, `"protocol":1`, `"protocol":2`, 1)}},
 		{"wrong machine protocol", watchdog.Result{ExitCode: new(0), Stdout: strings.Replace(codexProDoctorResponse, `"machineProtocol":1`, `"machineProtocol":2`, 1)}},

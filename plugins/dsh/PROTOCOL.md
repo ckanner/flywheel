@@ -17,8 +17,9 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 | `reasoningEffort` | 原样传给 DSH adapter，必须是该模型支持的非空值；省略使用 adapter 默认值 |
 | `maxTokens` | 正整数，每次原生模型请求的输出上限，传入 SDK initialize |
 | `timeoutMs` | 1–86,400,000，默认 1,800,000；涵盖权限准备、初始化、运行和关闭 |
+| `idleTimeoutMs` | 可选的 1–86,400,000 毫秒，默认 300,000；策略插件据此合并真实活动通知，外层 Go watchdog 执行静默预算。Go 始终显式传递本轮有效的 idle 和 wall 值，零配置分别使用 300,000 和 3,600,000 毫秒 |
 | `workspaceCwd` | 可选的稳定项目目录，必须存在并规范化。SDK 在该目录初始化 Session header，当前执行目录仍为 `cwd`；ready 必须回显匹配的项目目录。省略保留旧行为 |
-| `sessionTitle` | 可选的人类可读任务／角色标题；只给新 Session 设置，续接不覆盖现有标题 |
+| `sessionTitle` | 可选的人类可读任务／角色标题；只给新 Session 设置，续接不覆盖现有标题。完整标题交给公开 `sessionTitle.rename`，再用 `get` 验证已接受的原生 snapshot；由 DSH 的 `maxTitleBytes` 处理 UTF-8 长度，不额外截成 35 字符。显式请求新标题而服务缺失或回读失败时，在 prompt 前失败 |
 | `native` / `managed` | 版本化能力选项与Go生成的实际调用身份，见原生扩展 |
 
 项目归属与执行目录分离时，worker 在发送 prompt 前使用公开 working-directory 服务切换并核对当前目录；权限根仍如实记录 DSH 的 Session header 语义。当前 DSH 不支持将 `workspace-write` 沙箱根与项目目录独立设置，因此这类不同目录组合在派发前拒绝，不把权限改成 full access。`read-only` 与显式 full access 保留其实际权限。doctor 使用临时持久化根，清理后不留下新的用户会话。桌面 Workspace 登记只通过 Host 的公开注册表执行。
@@ -54,7 +55,7 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 ## 输出帧
 
 每帧均回显请求的 `protocol`（1 或 2）及原 `requestId`。顺序是 `ready` → 零或多个
-`event`／`native-event` → 恰好一个 `result`；启动失败允许直接 `result`。v1 创建 Session 时的权限
+`event`／`native-event`／`activity` → 恰好一个 `result`；启动失败允许直接 `result`。v1 创建 Session 时的权限
 事件缓冲至 ready 之后；v2 admission 前的恢复事件不转发为本轮活动。
 
 ### ready：SDK 配置与权限握手已通过
@@ -78,6 +79,13 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 v2 的 ready 另含 `persistent:true`、`resumed:boolean`；恢复时 sessionId 必须与请求
 精确匹配，不能返回一个新 ID 冒充恢复成功。serverInfo 不足以确认 SDK npm 包版本。
 
+ready 的 `activity` 说明本次策略插件实际安装的观察通道：`version:1`、
+`observation:"events-only"`、`root:"agent/assistant-stream"`、
+`children:"admitted-local-agents"`（未启用原生子 Agent 时为 `"disabled"`），以及
+`externalProviders:"flywheelProviderActivity/v1-when-installed"`。同时明确
+`opaquePhases` 包括 startup、before-first-event、silent-tool、external-provider-without-activity。
+旧 SDK fixture／策略未提供此证明时只报告 `durable-events-only`，不声称可观察整棵调用树。
+
 ### event：可审计的原始持久事件
 
 ```json
@@ -88,6 +96,55 @@ v2 的 ready 另含 `persistent:true`、`resumed:boolean`；恢复时 sessionId 
 
 恢复过程中重放的旧事件不进入当前 output／usage fold，也不触发 Go 的 OnEvent。
 worker 在 admission 后、发送本次 prompt 前重置 fold，只计当前调用新增的输出与用量。
+
+### activity：不含正文的实时进展
+
+```json
+{"protocol":2,"requestId":"call-124","type":"activity","sessionId":"flywheel-uuid","activity":{"version":1,"sequence":7,"kind":"provider-progress","source":"dsh","scope":"child","eventTypes":["assistant/reasoning-delta"],"observedEvents":38}}
+```
+
+公开 DSH SDK 的 `session.event` 只转发持久事件。策略插件另订阅公开
+`agent/assistant-stream`，观察真实 `start`／`chunk`／`end`；metadata 不含文本、
+推理正文、工具参数、命令输出或凭据。仅接受已通过本轮权限／原生能力 admission 的
+真实 Agent 对象，核对注册表、稳定父链与根 Session；外来 Agent、旧对象、已释放父链
+和重放的 stream revision 不构成本轮活动。子 Agent 独自流式输出时同样可刷新静默预算。
+
+所有 root／child 通道共享一个合并窗口 `max(1, min(1000, floor(idleTimeoutMs/4)))` 毫秒。
+只有新的真实观察才能发送通知，计时器本身不发送心跳。`sequence` 严格递增；
+`observedEvents` 计观察次数，`scope` 为 root／child／mixed。类型仅允许
+`assistant/` 前缀的 start、chunk、end、block-start、block-end、text-delta、reasoning-delta、
+tool-call-delta、usage、finish，以及 provider/codex-pro、provider/claude-code-pro，
+后两项代表已校验的外部 Provider 回调，不表示它创建了一个 DSH local Agent。
+每帧最多 16 个去重类型，Go 验证完整活动帧最多 4096 字节，拒绝多余字段、错误身份、
+错误类型及重复序号。活动计数不进入 token usage、费用、持久历史、完成判定或清理证明。
+
+冷调用与预热调用的 Go stdout capture 都只保留最近一条已经校验的活动诊断，
+原始活动仍逐条送达 OnEvent 并刷新 watchdog。活动先绑定完整 matching ready，再核对
+序号；累计活动超过 16 MiB 也不会挤掉终态回执。普通输出和终态不被删除，仍受原有
+捕获上限约束。错误活动、终态后的帧或 EOF 未换行残帧保留明确的解析失败证据；
+过滤早前活动不能使重复／身份错误的帧重新变得合法，也不能产生 cleanup 证明。
+
+策略插件向同一个 SDK stdout 写一个 namespaced `flywheel.activity` JSON-RPC notification；
+原 SDK 仍是唯一 stdin reader 和请求服务器。私有 envelope 绑定 requestId、nonce 和
+rootSessionId；worker 只有在 matching admission 与本轮 prompt 派发后才接收，再输出上面的
+外层活动帧。外来身份和重复私有通知被忽略；已匹配身份但格式损坏会使协议失败。
+
+Codex Pro／Claude Code Pro 等外部 Provider 在 foreground、PTC 和 background jobs 中可能
+没有 DSH local Agent，因此使用**可选的 Flywheel host 扩展**，而不是伪造 DSH stream：
+
+```js
+const activity = ctx.get('flywheelProviderActivity');
+// activity.version === 1; activity.intervalMs is the host's coalescing interval.
+activity.report(owningAgent, { ...machineActivity, invocationId });
+```
+
+`machineActivity` 采用公开 machine API v1 的 version、sequence、kind、source、scope、
+eventTypes、observedEvents 元数据；`invocationId` 是插件为本次调用生成的唯一标识。
+服务验证 source 为 codex-pro／claude-code-pro、真实 owning Agent 及每次调用的递增序号，
+再合并为 DSH 活动。插件在取消或结算后停止报告；普通 DSH 没有这个服务时保留原有行为。
+未接入扩展的 Provider、首事件前等待、静默工具和启动阶段仍不可连续观察。
+DSH 的 idle 是可配置的静默资源预算，不是模型死锁证明；独立 wall deadline、取消和
+进程清理仍然生效。不能靠增大发送频率、重复元数据或人工心跳掩盖这些阶段。
 
 ### result：关闭后的唯一结果
 
@@ -129,6 +186,12 @@ Go 在验证协议身份、终态、已知 code 及 error 对应物理退出码 
 
 SIGTERM/SIGINT 请求取消。worker 先发送 SDK `shutdown`，再按有界窗口升级至 SIGTERM/SIGKILL 并等待 SDK leader 退出。Go watchdog 在正常退出、取消和超时路径都清扫自己拥有的进程组。DSH 还有自己托管的命令生命周期，因此正常 SDK dispose/exit 是成功收据的一部分；强杀时不能据此宣称所有独立进程组已清理。主动 `setsid` 的进程不在普通进程组保证内。
 
+外层 idle／wall 超时保留 TIMEOUT 及各自诊断；worker 为配合清理而返回 cancelled 不改变
+发起终止的原因。用户主动取消仍为 Cancelled。持久调用被中断后业务 outcome 保持 unknown，
+不自动续接或重放；但完整、身份匹配的回执及正常进程退出可以独立保留实际 Session ID、
+dispatch、resumeAccepted 与 cleanupConfirmed。退出 143 本身不抹掉已经验证的 SDK shutdown。
+损坏／截断的传输、物理信号、缺少退出证据或清理错误仍保留 cleanup 未确认。
+
 v1 每次调用使用全新 session。Go 重试时重新提交冻结任务输入，已有 worktree 与外部验收证据由 Go 决定是否保留；不会恢复旧 Session 后悄悄更换模型或权限。桌面关闭、窗口隐藏、插件卸载均不会主动停止已经由引擎后台启动的任务；显式 `control stop` 才请求引擎停止并等待清理。
 
 `flywheel-dsh-worker --doctor` 接收同一请求格式，只执行初始化与权限握手，然后关闭 SDK，绝不发送模型 prompt。它不能证明凭证、远端推理或终端 UI 已通过真实使用验证。
@@ -152,7 +215,8 @@ Go 使用同一个 `flywheel-dsh-worker --prewarm` 可执行入口。此模式�
 ```
 
 prepare 不含 prompt、Session ID 或正式 Request ID；可选 `workspaceCwd` 与普通请求
-同义。Go 的 binding SHA-256 绑定实际 command、SDK bin/profile/home、完整白名单子进程
+同义，`idleTimeoutMs` 与正式请求绑定，确保预先安装的活动观察使用同一静默预算。
+Go 的 binding SHA-256 绑定实际 command、SDK bin/profile/home、完整白名单子进程
 环境、目录、provider/model/effort、权限和调用时限；只保存摘要，不输出凭据。目录必须
 是新建空的绝对物理路径和 0700 私有目录。TTL 上限 60 秒，Go 与 worker 双方执行。
 Go 到期先原子禁止正式派发，再允许最多三秒正常清理，随后由 watchdog 收束；准备
@@ -217,7 +281,7 @@ watchdog 已证明静止后清除当前 warm intent。崩溃恢复重新 fsync �
 
 ## Codex Pro worker协议
 
-公开入口为 `@ckanner/flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同一安装包内的 worker，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.10.0` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
+公开入口为 `@ckanner/flywheel/codex-pro-worker`，可执行入口为 `flywheel-codex-pro-worker`。`FLYWHEEL_CODEX_PRO_WORKER` 允许显式覆盖；npm 启动器解析同一安装包内的 worker，不依靠碰巧可用的全局旧 worker。worker 实际导入 bundle 的已审查源码包 `dsh-subagent-codex-pro@0.10.1` 的 `./machine` API，严格检查包名、版本、machine protocol 1 及 lifecycle/recovery capabilities；源码来源见 `vendor/README.md`，不宣称该版本已在 registry 发布。Node 最低 22.18.0，仅支持 macOS／Linux。
 
 ### 请求与父进程连接
 
@@ -225,7 +289,7 @@ watchdog 已证明静止后清除当前 warm intent。崩溃恢复重新 fsync �
 {"type":"start","protocol":1,"requestId":"call-123","cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","prompt":"执行冻结工作单元","timeoutMs":1800000}
 ```
 
-v1 只接受这些字段；不接受 provider、resume、threadMode、threadId、额外写目录、任意 CLI 参数或未知权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 为 read-only／workspace-write／danger-full-access；最后一项在 Node adapter 边界映射为 machine API 的 `dangerously-bypass-approvals-and-sandbox`，Go 同时核对映射后的 requested 字段和 canonical 生效模式。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort。v1 固定 ephemeral，command 为 `FLYWHEEL_CODEX_BIN` 或 `codex`。
+v1 还允许可选的 `idleTimeoutMs` 与 `sessionTitle`；不接受 provider、resume、threadMode、threadId、额外写目录、任意 CLI 参数或未知权限模式。requestId 非空且最多 256 字符；cwd 为绝对路径，Go 先规范化成物理目录。model／reasoningEffort／prompt 必须是非空文本，permissionMode 为 read-only／workspace-write／danger-full-access；最后一项在 Node adapter 边界映射为 machine API 的 `dangerously-bypass-approvals-and-sandbox`，Go 同时核对映射后的 requested 字段和 canonical 生效模式。timeoutMs 显式值必须为 1–2,147,483,647 的安全整数，省略使用上游 600,000 毫秒；worker 不接受通过 0 关闭期限。Go 传递有效 wall deadline 和 high 默认 thinking；worker 将 reasoningEffort 映射到 machine 的 effort。v1 固定 ephemeral，command 为 `FLYWHEEL_CODEX_BIN` 或 `codex`。
 
 旧低层 scoped 入口使用外层 v2，增加必填 `threadMode:"persistent"` 和可选的精确 threadId：
 
@@ -234,10 +298,10 @@ v1 只接受这些字段；不接受 provider、resume、threadMode、threadId�
 ```
 
 v2 拒绝 ephemeral、缺失模式和空／非法句柄；所有 progress/result 回显外层版本。
-嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.10.0。
+嵌套 adapter、machine 请求与原始 receipt 仍为协议 1，精确包版本仍为 0.10.1。
 v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公开 lifecycle/recovery。
 
-**这里与 DSH 旧单请求入口的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或非法后续输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，machine 原始输出上限 1 MiB，序列化 progress 累计最多 1 MiB，完整终态帧最多 8 MiB。超限明确失败，不能裁掉回执后判成功。
+**这里与 DSH 旧单请求入口的 EOF 语义不同：Go 写入一行后保持 stdin 开放。** stdin 是父进程的存活连接；未完成前 EOF、读取错误或非法后续输入触发 AbortSignal，并等待插件有界清理。不能用 `echo … | worker` 的关闭 stdin 行为冒充正常调用。运行请求首行等待上限 10 秒；请求最多 1 MiB，Codex machine 单帧与保留结果各受 1 MiB 预算约束，原始累计流量不作为保留内存上限。序列化 progress 展示累计最多 1 MiB；到限只停止追加展示正文并输出一次省略说明，活动与终态继续。完整终态帧最多 8 MiB，native 与 durable lifecycle 另有独立边界；真实单帧／结果超限明确失败，不能裁掉回执后判成功。
 
 ### 进度与完整结果
 
@@ -250,7 +314,7 @@ v1/v2 不启用有 ACK 的生命周期；主任务使用下面的 v3 接通公�
 最后恰好一个 result，字段结构如下，`receipt` 为插件实际完整对象：
 
 ```json
-{"protocol":1,"type":"result","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"receipt":null,"error":{"code":"INVALID_REQUEST","message":"启动请求未通过校验"}}
+{"protocol":1,"type":"result","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.1","protocol":1},"receipt":null,"error":{"code":"INVALID_REQUEST","message":"启动请求未通过校验"}}
 ```
 
 启动前不能获得 machine receipt 时为 null。运行已开始则即使失败也保留完整 receipt；`error` 非 null、重复／丢失 result、尾部垃圾、请求身份或 adapter 版本不符都不能成功。本通道没有 DSH `ready` 帧；v3 使用有类型的 `thread-ready` lifecycle 与 Go ACK。不能从普通 progress 文本虚构沙箱或实际 effort 证据。
@@ -259,13 +323,45 @@ Go 同时校验外层 worker 物理终态和插件 receipt：请求及 run/threa
 
 effort 的证据只可为 turn/start 请求接受，保留 `effectiveEffort:null`。usage 使用 `run` 增量，不能把 threadTotal 当成本次消耗；只有 complete 才记入可知预算，partial/unknown 原样存入 receipt 并增加未知调用计数。cached input／reasoning output 是总 input／output 的子项，不重复累加。订阅 costUSD 保持 null、costStatus 保持 unknown。receipt 没有实际 provider 时保持未知，不根据 channel 发明 provider。
 
-Go 由可信 receipt 生成 `codex-pro/0.10.0/worker-v1`、`worker-v2` 或 `worker-v3` 的 SessionOutcome。
+Go 由可信 receipt 生成 `codex-pro/0.10.1/worker-v1`、`worker-v2` 或 `worker-v3` 的 SessionOutcome。
 只有正常 completed、cleanup 已确认且 persistent 的结果才具备 resumeCandidate；
 这是适配器证据支持的尝试资格，不是 rollout 已持久化的证明。显式恢复必须接受同一
 thread，requested／outcome／execution 的 thread 身份和 thread/start、thread/resume
 来源均须一致。缺失／坏 receipt、流错误或 worker 异常保持 unknown。只有可信的
 request／initialize／新 thread-start 等派发前阶段可证明 not-dispatched；thread-resume
 拒绝仍未知，不从 busy／no-rollout 文本猜测安全冷启动。
+
+### 共有的活动与名称扩展
+
+Codex Pro 0.10.1 和 Claude Code Pro 0.5.2 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
+`MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}`。
+外层请求的可选 `idleTimeoutMs` 是 1–2,147,483,647 正整数；省略按 300000 计算
+观察合并间隔 `min(1000, max(1, floor(idleTimeoutMs/4)))`，不改变有效 wall 预算。
+公开 API 通过 `onActivity` 上报；worker 再核对字段集合、来源、递增序号与事件类型。
+
+```json
+{"protocol":3,"type":"activity","requestId":"call-123","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.1","protocol":1},"activity":{"version":1,"sequence":1,"kind":"provider-progress","source":"codex-pro","scope":"child","eventTypes":["item/reasoning/textDelta"],"observedEvents":3}}
+```
+
+`source` 为 codex-pro 或 claude-code-pro，`scope` 为 root/child/mixed，类型集合有界
+且只能来自相应 adapter allowlist；counts/sequence 是正安全整数。不得加入原始文本、
+思考、工具参数或结果、session/thread ID。实际事件驱动限频，背压时省略 advisory
+发送；没有定时心跳。根与真实 owned 后代都适用，不依赖用户是否显式设置 native。
+Claude 的 partial、tool/task progress 独立于 native durable ledger 的状态去重。
+
+活动不是派发、终态或清理证据，协议 3 不给它 ACK，也不推进状态机。Go 实时检查后
+在捕获流中仅保留有界活动摘要，防止长期活动填满结果缓冲；原始 OnEvent 仍收到实时
+事件。坏帧、重复序号、身份错配、终态后帧与非空 EOF 残帧不能因合并而被洗白。
+
+`sessionTitle` 为非空单行、最多 200 个 Unicode 字符、不含控制／格式控制的标签。
+新 persistent 历史映射为 Codex 的 `threadName` 或 Claude 的 `sessionName`，由各自
+公开 API 使用原生命名能力。resume 和 ephemeral 调用不设置标题，不覆盖用户重命名。
+独立 Claude interactive-team 可以接收同一明确标题。Go 默认从任务 title/brief/slug
+与 role/scope 构造；provider ID 和 session ID 不代替展示名称。
+
+外层超时引发的 child cancel 保留原始 receipt，但顶层继续报告 TIMEOUT 与 idle/wall
+来源。真实用户 context cancel 仍为 Cancelled。清理确认与业务 outcome 分开判断：
+可信物理退出不能凭空证明模型完成，也不能授权未知调用的重试。
 
 ### 取消与进程终态
 
@@ -280,7 +376,7 @@ worker 捕获 SIGINT／SIGTERM／SIGHUP，先取消并等待插件返回清理�
 `flywheel-codex-pro-worker --doctor` 不读取 stdin，不调用 runMachine，不启动 app-server，仅导入并核验公开接口。成功返回单个 JSON：
 
 ```json
-{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.10.0","machineProtocol":1,"available":true,"inferenceTested":false}
+{"protocol":1,"type":"doctor","package":"dsh-subagent-codex-pro","version":"0.10.1","machineProtocol":1,"available":true,"inferenceTested":false}
 ```
 
 Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、模型、完整策略或真实推理能力，`--probe` 也不会对 Codex Pro 发模型任务。
@@ -298,7 +394,7 @@ Go doctor 同时检查 Node 与 Codex 命令。包导入成功不证明账号、
 上游公开导出 `MACHINE_LIFECYCLE_VERSION=1`、`MACHINE_LIFECYCLE_CAPABILITIES`、`recoverMachine`。capabilities 必须声明 durableJournal/readOnlyRecovery；Codex 的 threadReadyBeforeDispatch=true，Claude=false。worker 原样传递有类型的事件，不解析文本补 ID：
 
 ```json
-{"type":"lifecycle","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"lifecycle":{"lifecycleVersion":1,"type":"lifecycle","requestId":"call-126","runId":"native-run","sequence":2,"event":"dispatch-intent","threadId":"thread-id","turnId":null,"persistent":true,"configuration":null,"dispatch":"not-dispatched","outcome":"unknown","cleanupConfirmed":false}}
+{"type":"lifecycle","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.1","protocol":1},"lifecycle":{"lifecycleVersion":1,"type":"lifecycle","requestId":"call-126","runId":"native-run","sequence":2,"event":"dispatch-intent","threadId":"thread-id","turnId":null,"persistent":true,"configuration":null,"dispatch":"not-dispatched","outcome":"unknown","cleanupConfirmed":false}}
 ```
 
 事件枚举为 thread-ready、dispatch-intent、dispatch-possible、turn-accepted、terminal、cleanup-confirmed；字段记录实际事实，示例中的 null 不是已确认配置。Go 校验 backend 能力、实际身份和合法状态演进。Codex thread-ready 携带完整实际 configuration，ACK 前核对；Claude init 只在 prompt 后出现，不能发明预派发 thread-ready 或真实 turn-accepted。
@@ -322,7 +418,7 @@ Go 原子保存、fsync 检查点和 state 后，才向仍开放的 stdin 写一
 `original` 仅为旧调用的非秘密绑定，不含 prompt、凭证或环境；不会解析旧 cwd、认证、启动 CLI 或调用 thread/resume。worker 只调用公开 `recoverMachine({protocol:1,requestId,runId,recoveryDirectory})`，返回：
 
 ```json
-{"type":"recovery","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.0","protocol":1},"recovery":{"protocol":1,"type":"recovery","requestId":"call-126","runId":"native-run","status":"pending","receipt":null,"lifecycle":null,"reason":"No durable terminal receipt is available"},"error":null}
+{"type":"recovery","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.1","protocol":1},"recovery":{"protocol":1,"type":"recovery","requestId":"call-126","runId":"native-run","status":"pending","receipt":null,"lifecycle":null,"reason":"No durable terminal receipt is available"},"error":null}
 ```
 
 status 为 terminal/pending/unknown。只有 exact invocation 的完整 terminal 可继续核验；pending 不证明 process alive，错误不附带安全重放的 admission 证明。只读路径可重复且不产生新的模型调用。Go 还核对原 adapter 版本与 checkpoint 摘要；升级后不拿新版本解释不兼容的旧 journal。
@@ -333,22 +429,30 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.5.1`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.5.2`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
 
 start 字段与 Codex 外层 v1/v2/v3 一致：type、protocol、requestId、cwd、model、
-reasoningEffort、permissionMode、prompt、timeoutMs；v2 额外允许
+reasoningEffort、permissionMode、prompt、timeoutMs，以及可选 idleTimeoutMs/sessionTitle；v2 额外允许
 `threadMode:persistent` 和可选 threadId。v1 映射原生 sessionMode=ephemeral，v2
 映射 persistent／显式 sessionId。主任务 v3 额外使用上面的 durable ACK/recovery；只接受 danger-full-access，映射 bypassPermissions；
 原生审批模式不等价于 OS read-only/workspace-write。命令来自
 FLYWHEEL_CLAUDE_BIN，权限、session、命令和输出上限不能通过额外 start 字段覆盖。
 
+Claude query 单帧上限为 16 MiB，最终答案按请求的 1 MiB 保留预算核验，图片数量／字节另有有界上限；中间文本只保留展示 tail，不按累计 raw 流量终止任务。
+
+Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --help` 检查
+`--include-partial-messages`、`--forward-subagent-text` 与新会话命名所需的 `--name`。
+实际 flags 支持是准入依据；forward-subagent-text 由上游 2.1.211 引入，嵌套/特定
+工具的实时行为仍依赖所装 CLI 的具体实现。检查和正式调用共用原 wall 预算，缺失
+能力不自动试发 prompt，也不切换后端。短暂 partial 事件不进入最终答案文本。
+
 native v1 的 `agents.definitions.<name>.effort` 可选，枚举为
 low/medium/high/xhigh/max。Go 配置 schema 在加载时检查，worker 将 native 对象完整
 交给公开 parser，插件原样序列化到 `--agents`；省略时不注入子 effort。父调用的
 reasoningEffort 仍独立映射到 `--effort`。此扩展不升级 machine/native protocol，
-但需要精确 0.5.1；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
+但需要精确 0.5.2；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
 requested 证明请求参数，tools-only effective 不证明子模型实际 effort。
 
 terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
@@ -371,7 +475,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.1",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.2",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 
@@ -566,7 +670,7 @@ UI 写操作仍经过 `/flywheel`；结果未知时的显式 status 也保留日
 | `ready` | 本地 doctor 是否无阻断项；诊断未完成时为 `false` |
 | `authentication` | 固定 `unknown`，没有自动登录或真实模型请求 |
 | `prefix`、`paths` | 得到后才记录；paths 包含 CLI、原生二进制、DSH worker、codexProWorker 与生成的 launcher 的绝对路径 |
-| `adapter` | 实际导入通过后记录 Codex Pro 包名、精确 0.10.0、protocol 1 与 inferenceTested=false；不代表账号已就绪 |
+| `adapter` | 实际导入通过后记录 Codex Pro 包名、精确 0.10.1、protocol 1 与 inferenceTested=false；不代表账号已就绪 |
 | `skills` | 安装成功时的数量及准确目录；每项结果保存在 skills 步骤的 `summary` |
 | `diagnostic` | 合法的完整本地 doctor 报告，包括失败检查项；不执行 `--probe` |
 | `error`、`cancelledBy` | 失败原因、可选取消信号；不是成功结果的一部分 |
