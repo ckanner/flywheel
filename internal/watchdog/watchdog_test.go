@@ -155,7 +155,7 @@ func TestRunWithoutIdleObservationRetainsWallAndCancellation(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			opts := Opts{Context: ctx, DisableIdleTimeout: true,
-				IdleTimeoutMs: 1, WallTimeoutMs: 80, KillGraceMs: 100}
+				IdleTimeoutMs: 1, WallTimeoutMs: 80, KillGraceMs: 1000}
 			if stop == "cancel" {
 				opts.WallTimeoutMs = 30_000
 				opts.OnActivity = func(chunk, _ string) {
@@ -164,15 +164,16 @@ func TestRunWithoutIdleObservationRetainsWallAndCancellation(t *testing.T) {
 					}
 				}
 			}
-			result := Run("sh", []string{"-c", "echo ready; sleep 30"}, opts)
+			// Keep one owned process: cancellation on "ready" must not race
+			// a shell forking sleep after the initial process-group signal.
+			// Other tests cover descendant cleanup; this checks idle opt-out.
+			result := Run("sh", []string{"-c", "echo ready; exec sleep 30"}, opts)
 			assert.False(t, result.IdleTimedOut)
 			assert.Equal(t, stop == "wall", result.WallTimedOut)
 			assert.Equal(t, stop == "wall", result.TimedOut)
 			assert.Equal(t, stop == "cancel", result.Cancelled)
 			assert.True(t, result.ExitCode != nil || result.Signal != "", "termination must await the child")
-			// Cleanup confirmation has dedicated coverage below. Darwin can
-			// report EPERM for an already-reaped group; that is orthogonal to
-			// whether this transport armed an idle timeout.
+			assert.Empty(t, result.CleanupError)
 		})
 	}
 	assert.Zero(t, idleTimers.Load(), "an unobservable transport must not arm an idle timeout")

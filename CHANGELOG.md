@@ -39,6 +39,11 @@ their original language.
   Reconcile also reports a real pending-handoff transition after pre-dispatch
   cancellation, even when the invocation receipt was already consumed.
 - Add schema, engine, CLI and DSH plugin tests; update English and Chinese guides.
+- Give defect-injection rollback its effective independent 1–10 second budget
+  in both the cancellation context and command watchdog, preserving the
+  10-second unspecified default. Keep timeout/cancellation and cleanup assertions
+  while removing unrelated sub-second Git and shell-fork timing dependencies
+  from the liveness regression fixtures.
 
 ## 0.35.0 — Reviewed planning
 

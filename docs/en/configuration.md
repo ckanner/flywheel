@@ -534,6 +534,10 @@ The Kimi native worker forwards real root/child item, step and lifecycle progres
 
 Unknown planning dispatch/outcome cannot be fixed by switching bindings, fresh history, deleting the ledger or replay. Use the explicit retirement action in [session recovery](session-recovery.md) only after cleanup is confirmed; unconfirmed cleanup remains blocked. Unknown is not zero and is never silently rewritten as known.
 
+### Defect-injection rollback deadlines
+
+Defect-injection baseline and test commands use `verify.command-timeout-ms`. After injection, `git apply -R` has an independent cancellation context and a bounded rollback deadline: a positive command budget is clamped to 1–10 seconds; a missing effective budget uses 10 seconds. The context and the command watchdog receive the same rollback deadline, followed by the existing cleanup grace. This does not extend the test itself or turn a timed-out test into evidence that the defect was detected. Unconfirmed rollback stops the run and preserves the workspace.
+
 ## Workflow policy and recovery
 
 Workflow policy chooses stages. Model profiles, loops, routes, and `permissions.mode` independently choose each stage's backend and permissions. **Put workflow in the Spec's YAML frontmatter, not in `flywheel.config.json`.** The unified `flywheel-task` entry defaults to Auto and records researched facts before Go validates them. This example shows the fields; replace the content with evidence from the actual task:

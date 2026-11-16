@@ -107,3 +107,18 @@
 前述 macOS/CI 记录不自动代表本次修订；本节记录本地 Linux 离线结果，修订后的远端 CI 以对应 commit 的运行记录为准。
 
 真实模型、用户桌面按钮、npm 发布和告警仓库复测均不属于本节离线证据。
+
+## 远端 CI 时序复查（2026-11-16）
+
+修订 `4ca33427231fb1d3d5844d8c146c704189a8ae55` 的 [CI 43868764599](https://github.com/ckanner/flywheel/actions/runs/43868764599) 中，npm candidate 通过，但 Linux 与 macOS 的 quality gate 各暴露一个测试时序失败：
+
+- Linux 的 `TestInjectedTestTimeoutIsInconclusiveAndRestores` 返回 restore-failed，未确认还原成功；原日志未打印具体还原诊断。源码检查发现它把故意挂起的测试、真实 Git apply 和 rollback 都限在 150ms，并只给 100ms 清理，令还原断言依赖无关的进程启动 / I/O 时序。修订后只有已经注入 poison 的真实 shell 测试采用 150ms，baseline / Git 仍经真实 watchdog，使用 3 秒期限、1 秒清理宽限，并新增断言确认故障测试确实发生 timeout。保留“不把超时 exit 1 当作检出缺陷”、还原成功和 executor diff 完整的断言。
+- macOS 的 `TestRunWithoutIdleObservationRetainsWallAndCancellation/cancel` 报告 100ms 清理宽限内管道未完整排空；原 fixture 还包含 ready 回调取消与 shell fork sleep 的竞争。修订为 `exec sleep`，保留单一被拥有进程，并给清理 1 秒；80ms wall、明确取消、零 idle timer 和真实退出断言保持。进程树清理由独立测试继续验证。
+
+两个测试的初次修订在 Linux 连续运行 15 次通过；当时 `make quality-gate` 通过，total 与每个 measured function 均 100%。独立源码复审未发现削弱断言。未本地运行 macOS，远端 CI 结果仍需按对应 commit 核验。
+
+提交前检测到远端并发增加 `317163f` 和 `c3eeea9`，已保留并整合。后者试图给还原 context 增加 1 秒下限，但 runner 仍向 watchdog 传原始 `a.TimeoutMs`，因此实际还原命令仍会受短期限终止；未指定超时时还将原 10 秒还原 context 缩为 1 秒。本轮补正为：普通调用保留原预算，Git 还原显式向 context 与 runner 传相同预算；`<=0` 保持 10 秒默认，正值不足 1 秒时用 1 秒，上限仍为 10 秒。保留取消后的独立补偿和原清理宽限。watchdog 测试保留清理断言，通过明确的单进程 fixture 避免无关 fork 时序，而不是删除失败断言。
+
+整合后新增 8 组实际传入执行器的预算边界检查，原 context 取消后仍执行独立补偿；另用原 1ms 预算、100ms 延迟和真实 watchdog / Git 反向补丁，确认 1 秒还原预算确实生效并保留 executor 原有 diff。最终 `make quality-gate` 再次通过，所有包、total 与每个 measured function 均 100%，`git diff --check` 与受影响文档的本地链接 / 代码围栏检查通过。
+
+同轮的[跨 Provider 复审](../reviews/2026-11-16-provider-liveness.md)记录了 DSH、Codex Pro、Claude Code Pro 的新发现；该审查不将这些尚未实施的修复计入本 PR 的 Kimi 验收结果。

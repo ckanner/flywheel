@@ -196,14 +196,14 @@ func RunDefectInjection(a Args) Outcome {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	run := func(ctx context.Context, command string, args []string) RunResult {
+	run := func(ctx context.Context, command string, args []string, timeoutMs int64) RunResult {
 		if ctx.Err() != nil {
 			return RunResult{ExitCode: -1, Cancelled: true}
 		}
 		if a.Run != nil {
-			return a.Run(command, args, a.Cwd, a.TimeoutMs, a.EnvAllowlist)
+			return a.Run(command, args, a.Cwd, timeoutMs, a.EnvAllowlist)
 		}
-		return managedRun(ctx, command, args, a.Cwd, a.TimeoutMs, a.KillGraceMs, a.EnvAllowlist)
+		return managedRun(ctx, command, args, a.Cwd, timeoutMs, a.KillGraceMs, a.EnvAllowlist)
 	}
 	outcomeOf := func(name, detail string) Outcome {
 		return Outcome{Outcome: name, Detail: new(detail)}
@@ -242,7 +242,7 @@ func RunDefectInjection(a Args) Outcome {
 	}
 
 	// 先跑基线（P0-2 case 3）：套件本来就是红的时"注入后变红"证明不了任何事。
-	baseline := run(ctx, "/bin/sh", []string{"-c", a.TestCmd})
+	baseline := run(ctx, "/bin/sh", []string{"-c", a.TestCmd}, a.TimeoutMs)
 	if reason := baseline.incompleteReason(); reason != "" {
 		return outcomeOf("inconclusive", "baseline incomplete: "+reason)
 	}
@@ -253,19 +253,18 @@ func RunDefectInjection(a Args) Outcome {
 	// 取消不会传播给补偿操作：测试停止后仍必须有界地反向还原已注入的hunk。
 	restorePatch := func() RunResult {
 		timeoutMs := a.TimeoutMs
-		if timeoutMs < 1000 {
+		if timeoutMs <= 0 || timeoutMs > MaxRestoreTimeoutMs {
+			timeoutMs = MaxRestoreTimeoutMs
+		} else if timeoutMs < 1000 {
 			// Compensation is independent of the injected test budget. A short
 			// test timeout must not also make git apply -R lose a race under load.
 			timeoutMs = 1000
 		}
-		if timeoutMs > MaxRestoreTimeoutMs {
-			timeoutMs = MaxRestoreTimeoutMs
-		}
 		restoreCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 		defer cancel()
-		return run(restoreCtx, "git", []string{"apply", "-R", patchAbs})
+		return run(restoreCtx, "git", []string{"apply", "-R", patchAbs}, timeoutMs)
 	}
-	apply := run(ctx, "git", []string{"apply", patchAbs})
+	apply := run(ctx, "git", []string{"apply", patchAbs}, a.TimeoutMs)
 	if reason := apply.incompleteReason(); reason != "" {
 		restored := restorePatch()
 		o := Outcome{BaselineGreen: new(true), Outcome: "restore-failed",
@@ -282,7 +281,7 @@ func RunDefectInjection(a Args) Outcome {
 		return o
 	}
 
-	tests := run(ctx, "/bin/sh", []string{"-c", a.TestCmd})
+	tests := run(ctx, "/bin/sh", []string{"-c", a.TestCmd}, a.TimeoutMs)
 	incomplete := tests.incompleteReason()
 	testsWentRed := incomplete == "" && tests.ExitCode != 0
 

@@ -8,5 +8,6 @@ records before applying an old recommendation.
 
 | Date | Review |
 | --- | --- |
+| 2026-11-16 | [Provider liveness, timeout and recovery audit](2026-11-16-provider-liveness.md) (Chinese; exact-source findings and offline reproductions) |
 | 2026-09-12 | [PR #4 / #5 review](2026-09-12-pr4-pr5-review.md) |
 | 2026-08-24 | [v0.18 review and repair plan](2026-08-24-v0.18-review-fixplan.md) |
