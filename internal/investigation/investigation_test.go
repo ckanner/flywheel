@@ -22,6 +22,9 @@ import (
 func preparationFixture(t *testing.T) (string, string, contract.Preparation) {
 	t.Helper()
 	cwd := t.TempDir()
+	var err error
+	cwd, err = filepath.EvalSymlinks(cwd)
+	require.NoError(t, err)
 	dir := filepath.Join(cwd, "docs", "investigation")
 	require.NoError(t, os.MkdirAll(filepath.Join(cwd, "src"), 0o700))
 	require.NoError(t, os.MkdirAll(dir, 0o700))

@@ -3,6 +3,7 @@ package investigation
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 
 func thinInvestigationBrief(t *testing.T, dir, cwd string) *state.State {
 	t.Helper()
+	cwd, err := filepath.EvalSymlinks(cwd)
+	require.NoError(t, err)
 	st, err := state.InitPlanning(planning.Brief{Version: 1, ID: "research-first", Goal: "Review a repair design", OriginalRequest: "Investigate the timeout before designing a repair", Constraints: []string{}, Evidence: []string{}, Policy: "review-first"}, nil)
 	require.NoError(t, err)
 	st.Project = &state.ProjectIdentity{Cwd: cwd, WorkspaceCwd: cwd}

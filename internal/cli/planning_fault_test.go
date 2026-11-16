@@ -114,7 +114,9 @@ func TestPlanningCLIRejectsMalformedAndActionSpecificInputBeforeMutation(t *test
 	directory := t.TempDir()
 	resolved, err := planningControlDirectory(directory)
 	require.NoError(t, err)
-	require.Equal(t, directory, resolved)
+	realDirectory, err := filepath.EvalSymlinks(directory)
+	require.NoError(t, err)
+	require.Equal(t, realDirectory, resolved)
 	missing := filepath.Join(directory, "not-created")
 	resolved, err = planningControlDirectory(missing)
 	require.NoError(t, err)
@@ -401,7 +403,9 @@ func TestPlanningCLIStartsOnlyTheRequestedStageWithExactArgv(t *testing.T) {
 			require.NoError(t, err)
 			var args []string
 			require.NoError(t, json.Unmarshal(raw, &args))
-			want := []string{"run", taskDir}
+			realTaskDir, err := filepath.EvalSymlinks(taskDir)
+			require.NoError(t, err)
+			want := []string{"run", realTaskDir}
 			if action == "plan" || action == "feedback" {
 				want = append(want, "--planning-only")
 			}
