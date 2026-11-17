@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased
+## 0.36.1 — Retained view state
 
 - Retain the Workflow, History or Settings page, selected settings section and
   unsaved configuration draft when a live conversation view is hidden and reopened.
