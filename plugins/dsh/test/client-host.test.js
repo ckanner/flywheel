@@ -79,6 +79,8 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   const pending = deferred(), replacementPending = deferred();
   let requestsFromA = 0;
   const requests = [], discoveries = [];
+  const configRequests = [];
+  const configValues = { sessions: { mode: 'scoped', 'policy-version': 1 } };
   const sessions = [];
   const reply = (request, slug) => ({ ok: true, value: { result: { kind: 'success', text: JSON.stringify({
     protocol: 1, ok: true, taskDir: request.taskDir, running: false, state: { slug, status: 'pending', packets: {} },
@@ -90,6 +92,15 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
     if (request.action === 'runs') {
       discoveries.push({ sessionId, request });
       return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, taskDir: '', cwd: '/repo', running: false, state: null, runs: [] }) } } };
+    }
+    if (request.action === 'config-edit') {
+      configRequests.push(request);
+      return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({
+        protocol: 1, ok: true, taskDir: request.taskDir, cwd: request.cwd, running: false, state: null,
+        editor: { scope: request.editor.scope, target: '/global/flywheel.config.json',
+          source: '/global/flywheel.config.json', revision: 'global-one',
+          values: configValues, defaults: configValues, applied: false },
+      }) } } };
     }
     requests.push(request);
     sessions.push(sessionId);
@@ -123,7 +134,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
 
   // The plugin must wait for the native declaration, then contribute beside
   // existing views. Only the fixture shell owns root and its children.
-  const plugin = await ctx.plugin(client);
+  let plugin = await ctx.plugin(client);
   assert.equal(ctx.slots.spec('conversation.view'), undefined);
   const ownerPlugin = { name: 'fixture-conversation-owner', inject: ['slots'], apply(owner) {
     owner.slots.register({ name: 'fixture.conversation', children: { 'conversation.view': { kind: 'list', scope: 'session' } } },
@@ -204,13 +215,47 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   await act(async () => shell.set({ visible: false }));
   await act(async () => shell.set({ visible: true }));
   assert.equal(requests.length, 5, 'restoring the same tab does not repeat a launch or status read');
+
+  const page = () => container.querySelector('[data-page]')?.getAttribute('data-page');
+  const mode = () => container.querySelector('select[id$="-sessions.mode"]');
+  const editMode = async value => act(async () => {
+    Object.getOwnPropertyDescriptor(clientDocument.defaultView.HTMLSelectElement.prototype, 'value').set.call(mode(), value);
+    mode().dispatchEvent(new clientDocument.defaultView.Event('change', { bubbles: true }));
+  });
+  await act(async () => button('设置').click());
+  assert.equal(mode()?.value, 'scoped');
+  await editMode('fresh');
+  await act(async () => shell.set({ visible: false }));
+  assert.equal(container.querySelector('[data-page]'), null, 'the native Chat view unmounts the Flywheel slot');
+  await act(async () => shell.set({ visible: true }));
+  assert.equal(page(), 'config');
+  assert.equal(mode()?.value, 'fresh', 'the retained binding keeps its unsaved draft across tab unmounts');
+
+  const replacementB = await ctx.plugin(sessionPlugin);
+  await act(async () => current.set(binding('session-b', replacementB)));
+  assert.equal(page(), 'canvas', 'a replacement Context gets a fresh page store');
+  await act(async () => button('设置').click());
+  assert.equal(mode()?.value, 'scoped', 'a replacement Context must not inherit a retired binding draft');
+  await editMode('fresh');
+  await act(async () => { await sessionB.dispose(); });
+  await act(async () => shell.set({ visible: false }));
+  await act(async () => shell.set({ visible: true }));
+  assert.equal(mode()?.value, 'fresh', 'late old Context disposal cannot clear the replacement binding draft');
+
+  await act(async () => { await plugin.dispose(); });
+  await act(async () => { plugin = await ctx.plugin(client); });
+  assert.equal(page(), 'canvas');
+  await act(async () => button('设置').click());
+  assert.equal(mode()?.value, 'scoped', 'a new plugin apply must not inherit the previous apply draft');
+  assert.equal(configRequests.length, 3, 'each new binding reads its own document, but tab remounts do not duplicate reads');
+
   await act(async () => { await plugin.dispose(); });
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)), new Set(['chat', 'trajectory']));
   assert.equal(container.querySelector(styleSelector), null);
   await act(async () => shell.set({ visible: false }));
   assert.match(container.textContent, /Native conversation/);
-  assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status', 'status', 'status']);
-  assert.deepEqual(sessions, ['session-a', 'session-b', 'session-a', 'session-b', 'session-b']);
+  assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status', 'status', 'status', 'status', 'status']);
+  assert.deepEqual(sessions, ['session-a', 'session-b', 'session-a', 'session-b', 'session-b', 'session-b', 'session-b']);
   assert.deepEqual(crashes, [], 'the real renderer reported no crashed or abdicated plugin entry');
   assert.equal(clientDocument.head.innerHTML, headBefore);
   assert.equal(clientDocument.body.childElementCount, bodyChildrenBefore);

@@ -1239,6 +1239,7 @@ function WorkbenchNodeInspector({
 
 function TaskView({
   hostSessionID,
+  configDrafts,
   useStore,
   useProjection,
   actions,
@@ -1253,10 +1254,10 @@ function TaskView({
   const selection = useStore((value) => value),
     control = useControl((value) => value),
     association = useProjection('flywheelTask');
-  const [page, setPage] = React.useState('canvas'),
-    [focusRequest, setFocusRequest] = React.useState(0);
+  const page = useStore((value) => value.page ?? 'canvas');
+  const setPage = actions.setPage;
+  const [focusRequest, setFocusRequest] = React.useState(0);
   const [inspecting, setInspecting] = React.useState(false);
-  const configDrafts = React.useRef(new Map());
   React.useEffect(() => {
     associate(association);
   }, [association, associate]);
@@ -1353,7 +1354,7 @@ function TaskView({
       !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
       !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
-      h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts.current, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
+      h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
     h('div', { className: css.historyPage, hidden: page !== 'runs' },
       h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t, active: page === 'runs' }),
       hasTask && !preparation && h('section', { className: css.legacySummary }, h(TaskStatus, { control, selection, t }))));

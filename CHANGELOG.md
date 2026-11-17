@@ -5,6 +5,17 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased
+
+- Retain the Workflow, History or Settings page, selected settings section and
+  unsaved configuration draft when a live conversation view is hidden and reopened.
+  Keep drafts with the renderer's actual view binding, so a replacement binding
+  or plugin reload starts fresh even when the Session ID is reused.
+- Preserve accepted scope changes and reloads while their reads are pending.
+  Consume a configuration save confirmed while the view was hidden without
+  reporting a false external conflict; retain real revision conflicts and
+  unconfirmed-save protection.
+
 ## 0.36.0 — Session liveness, provider recovery and readable sessions
 
 - Preserve real root and owned-child activity across DSH, Codex Pro and Claude

@@ -106,6 +106,18 @@ Opening Settings automatically reads the selected scope. Execution, Models and s
 
 Reload, complete JSON editing, diagnostics and raw responses live in Diagnostics and config. The narrow navigation row is fixed at 54px with 36px buttons (44px for coarse pointers); shorter content cannot stretch it. Leaving Settings, scope changes or reloads first disclose unsaved drafts; restoring defaults loads a pending full replacement before saving. Stage assignments edit the same draft inside Settings. Back to model list keeps edits; Save changes at the bottom is the only write action. Discard removes all unsaved changes in the current scope. Failures retain the draft and an uncertain save requires reconciliation. Go checks file identity, backs up the original and publishes atomically. Implementation runs retain their configuration snapshot. JEV additionally rechecks current activation and tighter permissions at decision boundaries; see [JEV recovery](jev.md#data-budgets-and-recovery). The displayed source is file-level: task → project → global → installed defaults selects one file, not a per-field overlay. New files start from the installed template.
 
+Switching to Chat or another conversation and returning to the same retained
+view restores the Workflow, History or Settings page, the selected settings
+section and any unsaved draft. These drafts live only in that view's memory;
+reloading the plugin or rebuilding the conversation view starts fresh, even for
+the same Session ID. Save changes before those operations if you need to keep them.
+
+Hiding the view does not cancel an in-flight configuration read or save. Returning
+shows its actual result: a confirmed save becomes the current saved configuration,
+while an unknown save still requires reconciliation. An explicitly accepted scope
+change or reload continues loading the chosen file without reviving the discarded
+draft. File revision conflicts still prevent a stale save.
+
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
