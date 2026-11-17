@@ -39,6 +39,8 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
+[ChatGPT Web Pro 模型 Provider 提案](plans/2026-11-17-chatgpt-web-provider.md)（[English](plans/2026-11-17-chatgpt-web-provider.en.md)）设计了可配置到规划、执行、审查等角色的 DSH 模型，包含本地工具闭环、持久恢复、上下文压缩和网页会话轮换。当前供设计评审，不表示 Provider 已可用，也不改变现有默认模型。
+
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。

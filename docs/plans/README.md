@@ -9,6 +9,7 @@ was staged. Proposed work is not automatically shipped work. The
 
 | Date | Proposal | Focus |
 | --- | --- | --- |
+| 2026-11-17 | [ChatGPT Web Pro model provider](2026-11-17-chatgpt-web-provider.en.md) / [中文](2026-11-17-chatgpt-web-provider.md) (proposed; not implemented) | Configurable DSH model for all model roles including Execute, validated tool calls, durable browser recovery, context compaction and conversation rollover |
 | 2026-11-16 | [Reviewed design and progressive planning](2026-11-16-reviewed-planning.md) (Chinese; original proposal, current behavior in the [user guide](../en/reviewed-planning.md)) | New / Plan semantics, independent design review, version-specific approval, rolling execution plans, and reuse of native Provider capabilities |
 | 2026-11-13 (revised 2026-11-14) | [Native harness, PTC and LCU integration](2026-11-13-native-harness-capabilities.en.md) / [中文](2026-11-13-native-harness-capabilities.md) | Implemented six-repository design: native profiles, PTC/LCU, Agent/Team/Swarm/Workflow, Tower candidates, independent jobs, ownership, accounting and recovery |
 | 2026-11-13 | [P5 ready queues and bounded runtime preparation](2026-11-13-p5-ready-queue-prewarm.md) (Chinese) | Optional admission queues, DSH initialization alongside verification, preserved delivery barriers, and existing-candidate assessment |
