@@ -1237,22 +1237,9 @@ function WorkbenchNodeInspector({
         h('dl', { className: css.consoleProperties }, property('HEAD', state.run?.head), property(t('consoleTask'), control.status.taskDir), property(t('projectHome'), state.project?.['workspace-cwd']), property(t('consoleRevision'), state.revision), property('after', packet?.schedule?.after?.join(', ')), property('writes', packet?.schedule?.writes?.join(', '))))));
 }
 
-// Config drafts and their selected section are scoped by DSH Session, not by
-// one mounted component. The view can be hidden while the user visits Chat and
-// then remounted with the same Session binding; the draft must still be there.
-const configDraftsBySession = new Map();
-function configDraftsFor(hostSessionID) {
-  const key = String(hostSessionID ?? '');
-  let cache = configDraftsBySession.get(key);
-  if (!cache) {
-    cache = new Map();
-    configDraftsBySession.set(key, cache);
-  }
-  return cache;
-}
-
 function TaskView({
   hostSessionID,
+  configDrafts,
   useStore,
   useProjection,
   actions,
@@ -1271,7 +1258,6 @@ function TaskView({
   const setPage = actions.setPage;
   const [focusRequest, setFocusRequest] = React.useState(0);
   const [inspecting, setInspecting] = React.useState(false);
-  const configDrafts = configDraftsFor(hostSessionID);
   React.useEffect(() => {
     associate(association);
   }, [association, associate]);

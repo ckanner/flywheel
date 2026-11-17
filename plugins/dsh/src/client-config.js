@@ -304,38 +304,77 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     [discardedJevInputs, setDiscardedJevInputs] = React.useState(cached.current?.discardedJevInputs ?? false);
   const [revision, setRevision] = React.useState(cached.current?.revision ?? ''),
     [conflict, setConflict] = React.useState(false);
+  // The baseline document identifies a confirmed save received while hidden.
+  // An older applied document must not overwrite edits made after that save.
+  const [baseDocument, setBaseDocument] = React.useState(cached.current?.document ?? null);
   const [reset, setReset] = React.useState(cached.current?.reset ?? false),
     [saved, setSaved] = React.useState(false),
     [dialog, setDialog] = React.useState(null),
     [bindingSelection, setBindingSelection] = React.useState(null);
-  const attempt = React.useRef(null),
+  // Preserve an attempted replacement read while the accepted draft is empty.
+  // A clean loaded document still receives a fresh read on a later remount.
+  const attempt = React.useRef(cached.current?.draft ? null : cached.current?.readAttempt ?? null),
     adopted = React.useRef(null),
     id = React.useId();
   const doc = control.editor,
     busy = control.pending !== null;
-  const load = () => {
+  const clearDraft = (nextScope = scope) => {
+    // Persist the accepted discard and destination before an asynchronous read
+    // can outlive this component; a missing draft is also meaningful state.
+    cache?.set(contextKey, { scope: nextScope, section, dirty: false, document: doc });
+    setDraft(null);
+    setBase(null);
+    setBaseDocument(doc);
+    setRaw('');
+    setInvalid(false);
+    setNumbers({});
+    setNumberErrors({});
+    setTexts({});
+    setTextErrors({});
+    setDiscardedJevInputs(false);
+    setReset(false);
+    setSaved(false);
+    setConflict(false);
+    setRevision('');
     cached.current = null;
     adopted.current = null;
+    hadCachedDraft.current = false;
+  };
+  const read = () => {
     attempt.current = scope;
+    const entry = cache?.get(contextKey);
+    if (entry) cache.set(contextKey, { ...entry, readAttempt: scope });
     void run('config-edit', selection, false, { editor: { scope } });
   };
+  const load = () => {
+    clearDraft();
+    read();
+  };
   React.useEffect(() => {
+    // A task switch can invalidate an in-flight read. Only keep its cached
+    // attempt when the controller still has the request, its reply, or error.
+    if (cached.current && !cached.current.draft && cached.current.readAttempt === scope && !busy &&
+        control.error?.action !== 'config-edit' && (doc?.scope !== scope || doc === cached.current.document))
+      attempt.current = null;
     if (!active || busy || attempt.current === scope) return;
-    // A remounted view starts with a dirty module-scoped draft. Do not replace
+    // A remounted view starts with a dirty binding-scoped draft. Do not replace
     // it with a fresh read behind the user's back; the engine's revision check
     // still rejects a save if the file changed while the view was hidden.
-    if (hadCachedDraft.current && scope === initialScope.current && doc) {
+    if (hadCachedDraft.current && scope === initialScope.current && doc?.scope === scope) {
       hadCachedDraft.current = false;
       attempt.current = scope;
       return;
     }
-    attempt.current = scope;
-    void run('config-edit', selection, false, { editor: { scope } });
-  }, [active, busy, scope, run, selection.taskDir, selection.cwd, doc]);
+    read();
+  }, [active, busy, scope, run, selection.taskDir, selection.cwd, doc, control.error]);
   React.useEffect(() => {
     if (!doc || doc.scope !== scope || adopted.current === doc) return;
+    // A discarded document is not a reply to the replacement read. It may
+    // remain in the controller while that read is pending or has failed.
+    if (cached.current && !cached.current.draft && cached.current.document === doc) return;
     adopted.current = doc;
-    if (cached.current?.dirty) {
+    const confirmedHiddenSave = doc.applied === true && cached.current?.document !== doc;
+    if (cached.current?.dirty && !confirmedHiddenSave) {
       setConflict(cached.current.revision !== doc.revision);
       cached.current = null;
       return;
@@ -345,6 +384,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     setConflict(false);
     setDraft(cloneConfig(doc.values));
     setBase(cloneConfig(doc.values));
+    setBaseDocument(doc);
     setRaw(JSON.stringify(doc.values, null, 2));
     setInvalid(false);
     setNumbers({});
@@ -369,12 +409,14 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const fieldErrors = configFieldErrors(draft);
   const dirty = changed.length > 0 || reset || invalid || Object.values(numberErrors).some(Boolean) || Object.values(textErrors).some(Boolean);
   React.useEffect(() => {
-    if (cache && draft)
+    if (cache)
       cache.set(contextKey, {
         scope,
         section,
         draft,
         base,
+        document: baseDocument,
+        readAttempt: attempt.current,
         raw,
         invalid,
         numbers,
@@ -391,6 +433,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     section,
     draft,
     base,
+    baseDocument,
     raw,
     invalid,
     numbers,
@@ -419,6 +462,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     replace(cloneConfig(latest));
     if (conflict) {
       setBase(cloneConfig(latest));
+      setBaseDocument(doc);
       setRevision(doc.revision);
       setConflict(false);
     }
@@ -437,22 +481,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     if (scope === value) return;
     deferDiscard(() => {
       setScope(value);
-      setDraft(null);
-      setBase(null);
-      setRaw('');
-      setNumbers({});
-      setNumberErrors({});
-      setTexts({});
-      setTextErrors({});
-      setDiscardedJevInputs(false);
-      setInvalid(false);
-      setReset(false);
-      setSaved(false);
-      setConflict(false);
-      setRevision('');
-      cached.current = null;
+      clearDraft(value);
       attempt.current = null;
-      adopted.current = null;
     });
   };
   const save = () => {

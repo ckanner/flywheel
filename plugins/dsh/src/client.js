@@ -894,7 +894,10 @@ exports.apply = function apply(ctx) {
   // Drafts are slot-owned view state. No busy/status value is persisted or
   // restored as a live fact after a new Session binding or a plugin reload.
   const viewStore = createViewStore();
-  const controls = new WeakMap();
+  // The host retains an actions identity across tab unmounts, then replaces it
+  // when that Session's Context ends. Keep drafts on that same lifetime, not
+  // in a process-wide Session-ID cache that outlives the owning binding.
+  const bindings = new WeakMap();
   const pendingOperations = new Set();
   let disposed = false;
   ctx.on('dispose', () => {
@@ -933,7 +936,8 @@ exports.apply = function apply(ctx) {
     inject: (sessionId, actions) => {
       // Bound actions identify one retained Session binding. A recycled
       // session id with a fresh binding must not adopt an old async result.
-      let control = controls.get(actions);
+      let binding = bindings.get(actions);
+      let control = binding?.control;
       if (!control) {
         control = createControl(async request => {
           const value = readReply(await (mutates(request.action) && !(request.action === 'planning' && request.planning?.action === 'status') || request.action === 'status' && control?.source.getSnapshot().uncertainty
@@ -942,10 +946,12 @@ exports.apply = function apply(ctx) {
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
         }, pendingOperations, () => disposed);
-        controls.set(actions, control);
+        binding = { control, configDrafts: new Map() };
+        bindings.set(actions, binding);
       }
       return {
         hostSessionID: sessionId,
+        configDrafts: binding.configDrafts,
         hooks: { control: control.source },
         changeSelection: (next, requireIdle = false) => {
           const current = control.source.getSnapshot();

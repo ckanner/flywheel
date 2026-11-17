@@ -111,6 +111,9 @@ async function pick(ui, id) {
 
 test('view page and config draft survive leaving and returning to the conversation view', async (t) => {
   const ui = await mountPanel(t, editorResponder());
+  await ui.setVisible(false);
+  await ui.setVisible(true);
+  assert.equal(ui.requests.length, 0, 'an empty inactive editor has not attempted a read');
   await ui.click('设置');
   assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'config');
   await ui.click('预算与重试');
@@ -124,6 +127,173 @@ test('view page and config draft survive leaving and returning to the conversati
   await ui.setVisible(false);
   await ui.setVisible(true);
   assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'canvas');
+});
+
+for (const replyBeforeRemount of [true, false]) {
+  test(`a save completing ${replyBeforeRemount ? 'before' : 'after'} remount is adopted without discarding edits made after that save`, async t => {
+    const pending = deferred();
+    const respond = editorResponder();
+    let submitted;
+    const ui = await mountPanel(t, request => {
+      if (request.action === 'config-save') { submitted = request; return pending.promise; }
+      return respond(request);
+    });
+    await ui.click('设置');
+    await input(ui, '会话策略', 'fresh');
+    await ui.click('保存修改');
+    await ui.setVisible(false);
+    const complete = () => act(async () => pending.resolve(reply(submitted, {
+      editor: {
+        scope: 'global', target: '/global/flywheel.config.json', source: '/global/flywheel.config.json',
+        revision: 'global-two', values: { ...template, ...submitted.editor.values }, defaults: template, applied: true,
+      },
+    })));
+    if (replyBeforeRemount) await complete();
+    await ui.setVisible(true);
+    if (!replyBeforeRemount) {
+      assert.equal(field(ui, '会话策略').value, 'fresh');
+      assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'true');
+      assert.equal(ui.button('保存修改').disabled, true);
+      await complete();
+    }
+    assert.equal(field(ui, '会话策略').value, 'fresh');
+    assert.equal(ui.container.textContent.includes('文件已被外部修改'), false);
+    assert.match(ui.container.querySelector('footer').textContent, /配置已保存/);
+    assert.equal(ui.button('保存修改').disabled, true);
+    assert.equal(ui.button('撤销').disabled, true);
+    assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-save']);
+
+    await input(ui, '会话策略', 'scoped');
+    await ui.setVisible(false);
+    await ui.setVisible(true);
+    assert.equal(field(ui, '会话策略').value, 'scoped', 'the old applied document is not a new save receipt');
+    assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'true');
+    assert.equal(ui.button('保存修改').disabled, false);
+    assert.equal(ui.requests.length, 2, 'restoring a later dirty draft neither reloads nor replays the save');
+  });
+}
+
+test('an unconfirmed save while hidden retains its draft and requires explicit reconciliation', async t => {
+  const pending = deferred();
+  const respond = editorResponder();
+  const ui = await mountPanel(t, request => request.action === 'config-save' ? pending.promise : respond(request));
+  await ui.click('设置');
+  await input(ui, '会话策略', 'fresh');
+  await ui.click('保存修改');
+  await ui.setVisible(false);
+  await act(async () => pending.reject(new Error('save receipt unavailable')));
+  await ui.setVisible(true);
+  assert.equal(field(ui, '会话策略').value, 'fresh');
+  assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'true');
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.equal(ui.button('重新读取配置').disabled, false);
+  assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-save']);
+  await ui.click('保存修改');
+  assert.equal(ui.requests.length, 2, 'an unknown save cannot be replayed or silently reconciled on remount');
+});
+
+for (const replyBeforeRemount of [true, false]) {
+  test(`an accepted scope discard survives hiding with its read completing ${replyBeforeRemount ? 'before' : 'after'} remount`, async t => {
+    const pending = deferred();
+    const respond = editorResponder();
+    let projectRead;
+    const ui = await mountPanel(t, request => {
+      if (request.editor.scope === 'project') { projectRead = request; return pending.promise; }
+      return respond(request);
+    });
+    await ui.click('设置');
+    await ui.click('预算与重试');
+    await input(ui, '传输重试上限', 'invalid discarded value');
+    await ui.click('项目');
+    await ui.click('放弃草稿并继续');
+    assert.ok(projectRead);
+    await ui.setVisible(false);
+    if (replyBeforeRemount) await act(async () => pending.resolve(respond(projectRead)));
+    await ui.setVisible(true);
+    assert.equal(ui.button('项目').getAttribute('aria-pressed'), 'true');
+    assert.equal(ui.button('预算与重试').getAttribute('aria-pressed'), 'true');
+    if (!replyBeforeRemount) await act(async () => pending.resolve(respond(projectRead)));
+    assert.equal(field(ui, '传输重试上限').value, '5');
+    assert.equal(field(ui, '传输重试上限').getAttribute('aria-invalid'), 'false');
+    assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
+    assert.deepEqual(ui.requests.map(request => [request.action, request.editor.scope]), [
+      ['config-edit', 'global'], ['config-edit', 'project'],
+    ]);
+    await ui.click('运行方式');
+    assert.equal(field(ui, '会话策略').value, 'fresh');
+    await ui.click('全局');
+    assert.equal(field(ui, '会话策略').value, 'scoped', 'the accepted discard did not restore the previous global draft');
+  });
+
+  test(`an accepted reload discard survives hiding with its read completing ${replyBeforeRemount ? 'before' : 'after'} remount`, async t => {
+    const pending = deferred();
+    const respond = editorResponder();
+    let reads = 0;
+    let reload;
+    const ui = await mountPanel(t, request => {
+      if (++reads === 2) { reload = request; return pending.promise; }
+      return respond(request);
+    });
+    await ui.click('设置');
+    await ui.click('诊断与配置文件');
+    await rawInput(ui, '{discarded invalid JSON');
+    await ui.click('重新读取配置');
+    await ui.click('放弃草稿并继续');
+    assert.ok(reload);
+    await ui.setVisible(false);
+    if (replyBeforeRemount) await act(async () => pending.resolve(respond(reload)));
+    await ui.setVisible(true);
+    assert.equal(ui.button('诊断与配置文件').getAttribute('aria-pressed'), 'true');
+    assert.equal(ui.container.textContent.includes('{discarded invalid JSON'), false);
+    if (!replyBeforeRemount) await act(async () => pending.resolve(respond(reload)));
+    const raw = ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]');
+    assert.equal(raw.getAttribute('aria-invalid'), 'false');
+    assert.deepEqual(JSON.parse(raw.value), template);
+    assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
+    assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-edit']);
+  });
+}
+
+test('a reload failure after remount retains the accepted discard and offers an explicit retry', async t => {
+  const pending = deferred();
+  const respond = editorResponder();
+  let reads = 0;
+  const ui = await mountPanel(t, request => ++reads === 2 ? pending.promise : respond(request));
+  await ui.click('设置');
+  await ui.click('诊断与配置文件');
+  await rawInput(ui, '{discarded invalid JSON');
+  await ui.click('重新读取配置');
+  await ui.click('放弃草稿并继续');
+  await ui.setVisible(false);
+  await ui.setVisible(true);
+  await act(async () => pending.reject(new Error('reload unavailable')));
+  assert.equal(ui.requests.length, 2, 'remount must not automatically retry the pending read after it fails');
+  assert.equal(ui.button('诊断与配置文件').getAttribute('aria-pressed'), 'true');
+  assert.equal(ui.container.textContent.includes('{discarded invalid JSON'), false);
+  assert.equal(ui.container.textContent.includes('配置读取失败'), true);
+  assert.equal(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]'), null);
+  assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
+  await ui.click('重新读取配置');
+  assert.equal(ui.requests.length, 3);
+  assert.deepEqual(JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value), template);
+});
+
+test('returning to a task retries an abandoned read instead of retaining an empty cached editor', async t => {
+  const pending = deferred();
+  const respond = editorResponder();
+  let reads = 0;
+  const ui = await mountPanel(t, request => ++reads === 1 ? pending.promise : respond(request));
+  await ui.selectPath(0, '/repo/docs/a');
+  await ui.click('设置');
+  const abandoned = ui.requests[0];
+  await ui.selectPath(0, '/repo/docs/b');
+  await ui.selectPath(0, '/repo/docs/a');
+  await act(async () => pending.resolve(respond(abandoned)));
+  assert.equal(ui.requests.length, 2, 'the old reply is ignored after task selection changes');
+  assert.equal(ui.requests[1].taskDir, '/repo/docs/a');
+  assert.equal(ui.requests[1].action, 'config-edit');
+  assert.equal(field(ui, '会话策略').value, 'scoped');
+  assert.equal(ui.container.textContent.includes('配置读取失败'), false);
 });
 
 test('configuration opens with one read, retains a draft across tabs, and requires an explicit scope discard', async (t) => {
