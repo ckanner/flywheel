@@ -4,8 +4,8 @@
 
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
-checks. Durable public-journal recovery requires **Codex Pro 0.10.1** or
-**Claude Code Pro 0.5.2**; DSH and Kimi retain their own supported recovery paths.
+checks. Durable public-journal recovery requires **Codex Pro 0.10.2** or
+**Claude Code Pro 0.5.3**; DSH and Kimi retain their own supported recovery paths.
 
 ## Resume an existing task
 
@@ -37,7 +37,7 @@ The transport determines which progress can be observed:
 | Transport | Progress used by Flywheel | Time limits |
 |---|---|---|
 | DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
-| Codex Pro 0.10.1 / Claude Code Pro 0.5.2 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Codex Pro 0.10.2 / Claude Code Pro 0.5.3 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
 | Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
 | Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
 
@@ -126,6 +126,56 @@ creation flow and do not need this extra lifecycle.
 These contracts are covered by deterministic tests of the published SDK and
 public plugin interfaces with offline model/CLI fixtures. They do not establish
 live account availability, provider performance or desktop UI behavior.
+
+## Find the session in its native client
+
+For managed main-task calls, `fresh` controls which conversation is supplied as
+input; it does not request deletion of the completed conversation. Codex Pro
+and Claude Code Pro now request persistent native history in both fresh and
+scoped modes. Fresh always starts without a prior ID and gets a new readable
+name. Scoped can reuse a compatible, confirmed history. DSH and Kimi keep their
+existing native persistence, and Flywheel now retains their observed fresh IDs
+for inspection. Merely knowing an ID never grants managed continuation.
+
+Native storage, a row in a client's list, and permission to continue are separate:
+
+| Backend | Where retained root history can be found | Discovery limits |
+| --- | --- | --- |
+| DSH SDK | DSH desktop using the same `DSH_HOME`, SDK persistence store and original project workspace | The Flywheel desktop plugin attaches matching out-of-process SDK histories through the public Workspace service. A separate home/store is separate history. The execution Worktree is not an extra project. |
+| Kimi print / supported native API | Kimi Code using the same `KIMI_CODE_HOME` and session project | A new named print call first creates and verifies an empty history, then print uses that exact ID. Native Agent/Swarm still require their full public conversation API; admitting a server identity alone does not establish those capabilities. |
+| Codex Pro | The local Codex store under the same `CODEX_HOME`; matching native project/history search or `codex resume <thread-id>` | The app-server records an interactive-compatible source, but clients may additionally filter by project, provider, account or other fields. A newly created empty thread can lack a resumable rollout. Local history is not automatic cross-device cloud sync. |
+| Claude Code Pro | Exact saved root UUID through `claude --resume <UUID>`; supported Desktop handoff through `claude --desktop --resume <UUID>` | Official Claude rules exclude print/Agent SDK sessions from the ordinary picker and latest-session continuation. A readable title does not remove that filter or automatically register a Desktop sidebar entry. |
+
+Use the same local user, configuration directory and project environment as the
+original provider call. In Flywheel's session detail, the native ID and provider
+guidance are read-only. Native terminal commands appear only after the task is
+stopped, the latest invocation is consumed and cleanup is confirmed. They use
+the original project directory, falling back to the historical cwd for older
+records, and open the session without sending a prompt. Continue managed work
+through Flywheel's takeover and validation flow; a native client is not a
+replacement for task reconciliation.
+
+Claude Desktop handoff requires an interactive terminal, CLI 2.1.285 or later,
+supported macOS or x64 Windows, an installed Desktop app and subscription
+sign-in. Keep any custom `CLAUDE_CONFIG_DIR` consistent. The target cannot still
+be owned by a running terminal/background session. Do not put the command in a
+pipe or add print/SDK mode or a new prompt. See the official
+[session filtering rules](https://code.claude.com/docs/en/sessions#where-the-session-picker-looks)
+and [Desktop handoff requirements](https://code.claude.com/docs/en/desktop#coming-from-the-cli).
+Codex source/list details are recorded in its
+[native history guide](https://github.com/ckanner/dsh-subagent-codex-pro#thread-lifetime).
+
+Old Pro ephemeral calls have no native transcript to reconstruct; their saved
+Flywheel response remains available. Old DSH/Kimi fresh records can recover a
+display ID from the exact, digest-verified invocation receipt without changing
+the ledger or reuse eligibility. An unacknowledged receipt must be reconciled
+before it is displayed. Low-level explicit ephemeral requests remain ephemeral.
+Intake/Garden Pro calls also retain independent named histories, including a new
+ID on any safe retry; they do not enter the main-task role ledger or reuse a
+returned ID. DSH/Kimi advice calls receive readable titles without changing their
+persistence protocol; named Kimi print uses the preparation lifecycle described
+above. External DSH delegations still honor their configured/per-call persistence
+policy. A native child/task ID is not automatically a resumable root-session ID.
 
 ## Ownership
 

@@ -81,9 +81,27 @@ export class OwnedKimiRuntime {
         this.token = token;
         this.base = `http://127.0.0.1:${entry.port}`;
         const meta = await this.request('/api/v1/meta', undefined, { signal });
-        if (meta.server_id !== entry.server_id || meta.dangerous_bypass_auth !== false || meta.backend !== 'v2' || meta.capabilities?.websocket !== true) {
-          throw error('RUNTIME_IDENTITY', 'The authenticated server does not match the newly owned local runtime');
+        if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+          throw error('RUNTIME_PROTOCOL', 'Kimi returned an invalid runtime identity document');
         }
+        // Kimi 2.5.3 writes a registry instance id and a /meta server id from
+        // separate generators. Treat the ids as equal only when the runtime
+        // versions agree; PID, start time, loopback port and the authenticated
+        // meta capabilities still establish ownership. Older runtimes without
+        // host_version keep the strict id check.
+        const sameServerID = meta.server_id === entry.server_id;
+        const sameHostVersion = typeof entry.host_version === 'string' && entry.host_version !== '' &&
+          typeof meta.server_version === 'string' && meta.server_version !== '' && entry.host_version === meta.server_version;
+        if (typeof meta.server_id !== 'string' || meta.server_id.trim() === '' ||
+            (!sameServerID && !sameHostVersion) ||
+            meta.dangerous_bypass_auth !== false || meta.backend !== 'v2' || meta.capabilities?.websocket !== true) {
+          throw error('RUNTIME_IDENTITY', sameServerID
+            ? 'The authenticated server does not match the newly owned local runtime'
+            : 'The Kimi registry and /meta server identities differ without matching runtime versions; the owned local runtime was not admitted');
+        }
+        this.identity = { serverIDMatched: sameServerID, versionMatched: sameHostVersion,
+          registryServerID: entry.server_id, metaServerID: meta.server_id,
+          registryHostVersion: entry.host_version ?? null, metaServerVersion: meta.server_version ?? null };
         this.meta = meta;
         await this.sampleProcesses();
         return;
@@ -112,6 +130,9 @@ export class OwnedKimiRuntime {
     const text = Buffer.concat(chunks).toString('utf8');
     let json;
     try { json = JSON.parse(text); } catch { throw error('RUNTIME_PROTOCOL', 'Kimi returned a non-JSON response'); }
+    if (!json || typeof json !== 'object' || Array.isArray(json) || (!raw && !Number.isSafeInteger(json.code))) {
+      throw error('RUNTIME_PROTOCOL', 'Kimi returned an invalid response envelope');
+    }
     if (!response.ok || (!raw && json.code !== 0)) {
       // Server errors can include prompts, account details and attachment paths.
       // Stable machine code is sufficient for the receipt; do not echo bodies.
@@ -124,8 +145,13 @@ export class OwnedKimiRuntime {
     if (!this.child) return { exited: true, processesConfirmed: true, forced: false };
     let inspected = this.processInspection, forced = false;
     try { await this.sampleProcesses(); inspected = true; } catch { inspected = false; }
-    if (!this.closed && this.base) {
+    if (!this.closed && this.meta) {
       try { await this.request('/api/v1/shutdown', {}, { timeout: 2000 }); } catch { /* Exit below remains authoritative. */ }
+    } else if (!this.closed) {
+      // The endpoint may have failed authentication or identity admission.
+      // Only the spawned OS process is owned until /meta has been accepted.
+      forced = true;
+      this.child.kill('SIGTERM');
     }
     let deadline = Date.now() + 3500;
     while (!this.closed && Date.now() < deadline) await pause(30);
@@ -160,6 +186,98 @@ function dereference(document, schema, seen = new Set()) {
   return { ...schema, properties };
 }
 
+/** Initialize only a fresh create response, never an arbitrary resumed history. */
+export async function initializeKimiCreatedSession(runtime, openapi, created, request, ownerKey, options = {}) {
+  const id = created?.id, owner = request.metadata[ownerKey], cwd = request.metadata.cwd;
+  const verify = (session, bound) => {
+    if (typeof id !== 'string' || !id.trim() || id.length > 512 || /[\0\r\n]/.test(id) ||
+        !session || session.id !== id || session.title !== request.title || session.metadata?.cwd !== cwd ||
+        session.busy !== false || session.main_turn_active !== false || session.pending_interaction !== 'none' ||
+        (bound && session.metadata[ownerKey] !== owner)) {
+      throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the new history identity, title, workspace, ownership or idle state');
+    }
+  };
+  verify(created, false);
+  if (Object.hasOwn(created.metadata, ownerKey)) {
+    verify(created, true);
+    return created;
+  }
+  // Published Kimi 2.5.3 accepts metadata/agent_config in its create schema but
+  // ignores them. Its public profile route does apply those fields. Initialize
+  // only the just-created, empty, unclaimed history; never overwrite an owner.
+  const verifyUnclaimed = session => {
+    verify(session, false);
+    if (Object.keys(session.metadata).some(key => key !== 'cwd') || session.archived === true ||
+        session.last_prompt || session.current_prompt_id) {
+      throw error('RUNTIME_PROTOCOL', 'Kimi returned an existing or claimed history instead of an empty new session');
+    }
+  };
+  verifyUnclaimed(created);
+  const fields = dereference(openapi, openapi.paths?.['/api/v1/sessions/{session_id}/profile']?.post?.requestBody?.content?.['application/json']?.schema).properties || {};
+  const supported = dereference(openapi, fields.agent_config).properties || {};
+  const { profile, ...agentConfig } = request.agent_config;
+  const turns = Boolean(openapi.paths?.['/api/v1/sessions/{session_id}/agents/{agent_id}/turns']?.get);
+  const messages = Boolean(openapi.paths?.['/api/v1/sessions/{session_id}/messages']?.get);
+  if (!fields.metadata || Object.keys(agentConfig).some(key => !supported[key]) || (!turns && !messages) ||
+      !openapi.paths?.['/api/v1/sessions/{session_id}']?.get || !openapi.paths?.['/api/v1/sessions/{session_id}/prompts']?.get ||
+      (profile !== undefined && profile !== 'agent')) {
+    throw error('UNSUPPORTED_SCHEMA', 'Kimi cannot initialize and attest the requested new-session profile through its public API');
+  }
+  const path = '/api/v1/sessions/' + encodeURIComponent(id);
+  verifyUnclaimed(await runtime.request(path, undefined, options));
+  // Session message_count and usage are placeholders in 2.5.3. Inspect actual
+  // history and the active/queued prompts instead of trusting those counters.
+  const history = await runtime.request(path + (turns ? '/agents/main/turns?page_size=1' : '/messages?page_size=1'), undefined, options);
+  const queue = await runtime.request(path + '/prompts', undefined, options);
+  const items = history?.[turns ? 'turns' : 'items'];
+  if (!Array.isArray(items) || items.length !== 0 || history.has_more !== false ||
+      !queue || queue.active !== null || !Array.isArray(queue.queued) || queue.queued.length !== 0) {
+    throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm empty history and an empty prompt queue before initialization');
+  }
+  verifyUnclaimed(await runtime.request(path, undefined, options));
+  verify(await runtime.request(path + '/profile', { metadata: { [ownerKey]: owner }, agent_config: agentConfig }, options), true);
+  const initialized = await runtime.request(path, undefined, options);
+  verify(initialized, true);
+  if (initialized.agent_config?.model !== agentConfig.model) {
+    throw error('RUNTIME_PROTOCOL', 'Kimi did not retain the requested model for the new session');
+  }
+  return initialized;
+}
+
+/** Read effective print settings without submitting a prompt or implementing v2 execution. */
+export async function readKimiMainAgent(runtime, sessionId, asyncapi, signal) {
+  const messages = new Set(Object.values(asyncapi.components?.messages || {}).map(item => item.name));
+  const controlEnvelope = messages.has('subscribe_v2');
+  const required = controlEnvelope ? ['client_hello', 'client_hello.ack', 'subscribe_v2', 'subscribe_v2.ack', 'agent', 'ping', 'pong']
+    : ['subscribe', 'response', 'agent', 'ping', 'pong'];
+  if (asyncapi.channels?.kimiCodeWebSocket?.address !== '/api/v1/ws' || required.some(name => !messages.has(name))) {
+    throw error('UNSUPPORTED_SCHEMA', 'Kimi cannot attest effective print settings through an agent-state subscription');
+  }
+  let agent;
+  const socket = new KimiSocket(runtime, frame => {
+    if (frame.type === 'agent' && frame.session_id === sessionId && frame.agent_id === 'main') agent = frame;
+  }, { controlEnvelope });
+  try {
+    await socket.open(signal);
+    if (controlEnvelope) {
+      await socket.command('client_hello', { client_id: 'flywheel-print-preparation' });
+      const subscribed = await socket.command('subscribe_v2', { session_id: sessionId, transcript: { main: 'turn' } });
+      if (!Array.isArray(subscribed.payload?.accepted) || !subscribed.payload.accepted.includes(sessionId) ||
+          !Array.isArray(subscribed.payload?.not_found) || subscribed.payload.not_found.length !== 0) {
+        throw error('RUNTIME_PROTOCOL', 'Kimi did not accept the new print-session state subscription');
+      }
+    } else await socket.command('subscribe', { session_id: sessionId, agent_ids: ['main'] });
+    const deadline = Date.now() + 5000;
+    while (!agent) {
+      checkAbort(signal); socket.check();
+      if (Date.now() > deadline) throw error('RUNTIME_PROTOCOL', 'Kimi did not provide effective settings for the new print session');
+      await pause(20);
+    }
+    checkAbort(signal); socket.check();
+    return agent;
+  } finally { socket.close(); }
+}
+
 /** Match actual runtime contracts; no semantic-version inference is used. */
 export function inspectKimiSchemas(openapi, asyncapi, mode) {
   const paths = ['/api/v1/meta', '/api/v1/sessions', '/api/v1/sessions/{session_id}', '/api/v1/sessions/{session_id}/profile',
@@ -186,7 +304,7 @@ export function inspectKimiSchemas(openapi, asyncapi, mode) {
 }
 
 export class KimiSocket {
-  constructor(runtime, receive) { this.runtime = runtime; this.receive = receive; this.pending = new Map(); this.sequence = 0; this.lastMessage = Date.now(); }
+  constructor(runtime, receive, { controlEnvelope = false } = {}) { this.runtime = runtime; this.receive = receive; this.controlEnvelope = controlEnvelope; this.pending = new Map(); this.sequence = 0; this.lastMessage = Date.now(); }
   async open(signal) {
     this.socket = new WebSocket(this.runtime.base.replace('http:', 'ws:') + '/api/v1/ws', ['kimi-code.bearer.' + this.runtime.token]);
     this.socket.addEventListener('message', event => {
@@ -194,10 +312,11 @@ export class KimiSocket {
       try {
         if (typeof event.data !== 'string' || Buffer.byteLength(event.data) > 2 * 1024 * 1024) throw error('WS_PROTOCOL', 'Kimi sent an invalid or oversized WebSocket frame');
         const frame = JSON.parse(event.data);
-        if (frame.type === 'ping') { this.socket.send(JSON.stringify({ type: 'pong' })); return; }
-        if (frame.type === 'response') {
-          const waiter = this.pending.get(frame.request_id);
-          if (waiter) { clearTimeout(waiter.timer); this.pending.delete(frame.request_id); frame.code === 0 ? waiter.resolve(frame) : waiter.reject(error('KIMI_WS_' + frame.code, 'Kimi WebSocket command was rejected')); }
+        if (frame.type === 'ping') { this.socket.send(JSON.stringify({ type: 'pong', ...(this.controlEnvelope ? { payload: { nonce: frame.payload?.nonce } } : {}) })); return; }
+        if (frame.type === 'response' || (this.controlEnvelope && frame.type === 'ack')) {
+          const requestId = frame.type === 'ack' ? frame.id : frame.request_id;
+          const waiter = this.pending.get(requestId);
+          if (waiter) { clearTimeout(waiter.timer); this.pending.delete(requestId); frame.code === 0 ? waiter.resolve(frame) : waiter.reject(error('KIMI_WS_' + frame.code, 'Kimi WebSocket command was rejected')); }
           return;
         }
         this.receive(frame);
@@ -223,7 +342,7 @@ export class KimiSocket {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(request_id); reject(error('WS_TIMEOUT', 'Kimi did not acknowledge ' + type)); }, timeout);
       this.pending.set(request_id, { resolve, reject, timer });
-      this.socket.send(JSON.stringify({ type, request_id, ...fields }));
+      this.socket.send(JSON.stringify(this.controlEnvelope ? { type, id: request_id, payload: fields } : { type, request_id, ...fields }));
     });
   }
   check() {

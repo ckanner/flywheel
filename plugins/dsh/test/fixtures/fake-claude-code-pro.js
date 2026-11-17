@@ -9,7 +9,7 @@ const flag = name => { const index = argv.indexOf(name); return index < 0 ? unde
 const settingsPath = join(process.cwd(), 'claude-fixture.json');
 const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {};
 const scenario = settings.scenario || 'ok';
-// The real 0.5.2 public API probes capabilities in a separate owned process
+// The real 0.5.3 public API probes capabilities in a separate owned process
 // before it sends any prompt. A probe must not appear as an inference in logs.
 if (argv.includes('--help')) {
   process.stdout.write('--include-partial-messages\n--name\n-n\n' +

@@ -80,10 +80,45 @@ function consoleTone(status) {
 Object.assign(zh, { runsObserved: '本轮新增交付 {completed} · 执行尝试 {attempts} · 失败尝试 {failed} · 总耗时 {seconds} s', runsPartial: '部分数据 {count} 次', runsBounded: '每个已显示分组均汇总其全部调用；明细最多 200 条、分组最多 500 个。按 run 筛选可查看其完整汇总。', runsAll: '当前任务全部调用（含早期记录）', runsRefresh: '刷新最近运行', runsOpen: '在画布中打开', runsMetrics: '读取所选运行指标', runsCompare: '比较条件', runsEqual: '相同契约与配置', runsDifferent: '条件不同，仅并列展示', runsLegacy: '早期调用（未登记 run ID）', runsSamples: '调用 / 失败', runsLatency: '已知调用耗时累计', runsUsage: '已知 Token / 缺失调用', runsCost: '已知费用 / 缺失调用', runsQuality: '验收质量见各节点证据；模型质量需要独立 oracle', runsEmpty: '暂无已登记运行。CLI 启动或桌面启动后会自动登记。', runsReference: '对照运行', runsLive: '尚无退出回执，打开画布核对', runsReadOnly: '登记记录用于发现；当前运行状态以刷新后的引擎回执为准。' });
 Object.assign(en, { runsObserved: 'New deliveries {completed} · attempts {attempts} · failed attempts {failed} · elapsed {seconds} s', runsPartial: 'partial {count}', runsBounded: 'Each displayed group aggregates all its calls. Details are limited to 200 calls and 500 groups; filter by run for its full summary.', runsAll: 'All calls for this task, including legacy records', runsRefresh: 'Refresh recent runs', runsOpen: 'Open canvas', runsMetrics: 'Read selected run metrics', runsCompare: 'Comparison conditions', runsEqual: 'Same contracts and configuration', runsDifferent: 'Different conditions; descriptive comparison only', runsLegacy: 'Legacy call without run ID', runsSamples: 'Calls / failed', runsLatency: 'Sum of known call durations', runsUsage: 'Known tokens / missing calls', runsCost: 'Known cost / missing calls', runsQuality: 'Validation quality is recorded in node evidence; model quality needs an independent oracle', runsEmpty: 'No registered runs. CLI and desktop launches register automatically.', runsReference: 'Reference run', runsLive: 'No exit receipt; open canvas to reconcile', runsReadOnly: 'The index is for discovery; refresh engine status to establish liveness.' });
 
-Object.assign(zh, { sessionAction_create: '新建', sessionAction_resume: '续接', sessionAction_rebuild: '重建', sessionAction_wait: '等待核对', sessionAction_reconcile: '核对回执', sessionRelease: '退出接管 · 保持暂停', sessionReconcile: '核对原会话回执', sessionLatest: '查看最近回复', sessionLatestHelp: '这里读取经过摘要校验的最近一次回复；Provider 的完整会话历史仍保存在原后端。', sessionClaim: '暂停并接管会话', sessionReason: '接管原因', sessionSend: '发送到原 Session', sessionReturn: '验证并交回流程', sessionPrompt: '人工 Prompt', sessionHeld: '人工接管中 · 自动执行已锁定', sessionCommand: '终端交互命令', sessionNoClaim: '仅已确认收尾、可恢复的任务会话支持接管；里程碑会话可查看回复。', sessionKeep: '离开页面不会释放接管；测试和独立 Review 通过后才交回。' });
+Object.assign(zh, { sessionAction_create: '新建', sessionAction_resume: '续接', sessionAction_rebuild: '重建', sessionAction_wait: '等待核对', sessionAction_reconcile: '核对回执', sessionRelease: '退出接管 · 保持暂停', sessionReconcile: '核对原会话回执', sessionLatest: '查看最近回复', sessionLatestHelp: '这里读取经过摘要校验的最近一次回复；完整原生会话历史需由后端支持并保存。', sessionClaim: '暂停并接管会话', sessionReason: '接管原因', sessionSend: '发送到原 Session', sessionReturn: '验证并交回流程', sessionPrompt: '人工 Prompt', sessionHeld: '人工接管中 · 自动执行已锁定', sessionCommand: '终端交互命令', sessionNoClaim: '仅已确认收尾、可恢复的任务会话支持接管；里程碑会话可查看回复。', sessionKeep: '离开页面不会释放接管；测试和独立 Review 通过后才交回。' });
 Object.assign(en, { sessionAction_create: 'Create', sessionAction_resume: 'Resume', sessionAction_rebuild: 'Rebuild', sessionAction_wait: 'Await reconciliation', sessionAction_reconcile: 'Reconcile', sessionRelease: 'Release control and remain paused', sessionReconcile: 'Reconcile original invocation', sessionLatest: 'Read latest response', sessionLatestHelp: 'This is the latest digest-verified response, not the provider’s full history.', sessionClaim: 'Take over session', sessionReason: 'Takeover reason', sessionSend: 'Send to original session', sessionReturn: 'Validate and return', sessionPrompt: 'Human prompt', sessionHeld: 'Human control · automatic execution locked', sessionCommand: 'Terminal command', sessionNoClaim: 'Only settled, resumable packet sessions support interactive takeover. Milestone history remains readable.', sessionKeep: 'Leaving the page retains human control until validation and independent review pass.' });
 function sessionActionLabel(action, t) { return ['create', 'resume', 'rebuild', 'wait', 'reconcile'].includes(action) ? t('sessionAction_' + action) : t('consoleUnknown'); }
 const shellQuote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
+Object.assign(zh, {
+  sessionNative: '在原生客户端查看历史',
+  sessionNative_dsh: '使用同一 DSH_HOME，在 DSH 桌面端的项目工作区查找此会话；执行 Worktree 与项目工作区可能不同。',
+  sessionNative_kimi: '使用同一 KIMI_CODE_HOME，在 Kimi Code 对应项目的会话列表中按名称或 ID 查找。旧会话沿用其原目录。',
+  sessionNative_codex: '使用同一 CODEX_HOME，在 Codex 的对应项目或 Worktree 中查找。客户端版本及列表筛选会影响显示；也可以用下方命令按 ID 打开。',
+  sessionNative_claude: '使用同一 CLAUDE_CONFIG_DIR。后台会话不显示在普通 /resume 列表中，可以按 ID 打开；桌面命令要求已安装 Claude Desktop、支持的 macOS / Windows 和订阅登录。',
+  sessionNativeEphemeral: '这次旧调用使用临时会话，原生历史未保留。仍可读取 Flywheel 保存的最近回复。',
+  sessionNativeOpen: '在会话所属项目的终端运行；这些命令仅打开会话，不会自动发送提示词。需要继续任务时，使用 Flywheel 的人工接管和验证流程。',
+});
+Object.assign(en, {
+  sessionNative: 'View history in the native client',
+  sessionNative_dsh: 'Use the same DSH_HOME and find this session in the DSH desktop project workspace. The execution Worktree may differ from that workspace.',
+  sessionNative_kimi: 'Use the same KIMI_CODE_HOME and find the name or ID in the matching Kimi Code project. Older sessions retain their original directory.',
+  sessionNative_codex: 'Use the same CODEX_HOME and the matching Codex project or Worktree. Client versions and list filters affect visibility; the command below opens the exact ID.',
+  sessionNative_claude: 'Use the same CLAUDE_CONFIG_DIR. Headless sessions are excluded from the ordinary /resume list; open the exact ID. Desktop handoff requires Claude Desktop, supported macOS / Windows and a subscription login.',
+  sessionNativeEphemeral: 'This older call used an ephemeral session and did not retain native history. The latest response saved by Flywheel remains readable.',
+  sessionNativeOpen: 'Run in a terminal at the session’s project directory. These commands open the session without sending a prompt. Continue managed work through Flywheel takeover and validation.',
+});
+function NativeSessionInfo({ value, history, control, thread, t }) {
+  const harness = value.configuration?.harness || history?.harness;
+  const provider = ({ dsh: 'dsh', kimi: 'kimi', 'kimi-native': 'kimi', 'codex-pro': 'codex', 'claude-code-pro': 'claude' })[harness];
+  if (!provider) return null;
+  const pro = provider === 'codex' || provider === 'claude';
+  if (pro && value.last?.persistent !== true) return h('p', { className: css.meta, 'data-section': 'native-session' }, t('sessionNativeEphemeral'));
+  if (!thread) return null;
+  const settled = !control.status.running && control.pending === null && !control.stale && control.uncertainty === null &&
+    !control.status.state.handoff && value.last?.status === 'consumed' && value.last?.['cleanup-confirmed'] === true && value.last?.outcome !== 'unknown';
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(thread);
+  const nativeCwd = value['workspace-cwd'] || value.cwd;
+  const commands = settled && pro && uuid && nativeCwd ? (provider === 'claude' ? ['claude --resume ', 'claude --desktop --resume '] : ['codex resume ']) : [];
+  return h('section', { className: css.details, 'data-section': 'native-session' },
+    h('h4', null, t('sessionNative')), h('p', { className: css.meta }, t('sessionNative_' + provider)),
+    commands.length > 0 && h('p', { className: css.meta }, t('sessionNativeOpen')),
+    ...commands.map(command => h('p', { key: command }, h('code', { className: css.path }, 'cd -- ' + shellQuote(nativeCwd) + ' && ' + command + shellQuote(thread)))));
+}
 function SessionInspector({ sessionKey, value, control, selection, run, t }) {
   const [reason, setReason] = React.useState('');
   const [prompt, setPrompt] = React.useState('');
@@ -92,15 +127,17 @@ function SessionInspector({ sessionKey, value, control, selection, run, t }) {
   const busy = control.pending !== null || control.status.running || control.stale || control.uncertainty !== null;
   const canClaim = !state.handoff && value['resume-candidate'] && value.last?.status === 'consumed' && value.last?.['cleanup-confirmed'] && /^(final:)?M\d+-T\d+$/.test(value.scope);
   const send = action => run('session', selection, false, { session: { action, key: sessionKey, revision: state.revision, ...(action === 'claim' ? { reason } : action === 'send' ? { prompt } : {}) } });
-  const history = control.history?.key === sessionKey ? control.history : null;
+  const history = control.history?.key === sessionKey && value.last?.id && control.history.invocationId === value.last.id ? control.history : null;
+  const thread = value['thread-id'] || history?.threadId;
   return h('article', { className: css.sessionRecord },
     h('h4', { className: css.heading }, (roleLabels[value.role] ? t(roleLabels[value.role]) : value.role) + ' / ' + value.scope),
-    h('p', { className: css.path }, value['thread-id'] || t('consoleUnknown')),
+    h('p', { className: css.path }, thread || t('consoleUnknown')),
     value['workspace-cwd'] && h('p', { className: css.path }, t('projectHome') + ': ' + value['workspace-cwd']),
     value.cwd && h('p', { className: css.path }, t('executionHome') + ': ' + value.cwd),
     h('p', { className: css.meta }, [sessionActionLabel(value.action, t), value.reason, value.last?.outcome].filter(Boolean).join(' · ')),
     h('div', { className: css.actions }, h(Button, { disabled: control.pending !== null, onClick: () => run('history', selection, false, { sessionKey }) }, t('sessionLatest'))),
     history && h('section', { className: css.details, 'data-section': 'history' }, h('h4', null, t('sessionLatest')), h('p', { className: css.meta }, t('sessionLatestHelp')), h('pre', { className: css.raw }, history.text)),
+    h(NativeSessionInfo, { value, history, control, thread, t }),
     held ? h('div', null, h('p', { role: 'status', className: css.notice }, t('sessionHeld')), h('p', { className: css.meta }, t('sessionKeep')),
       h('label', { className: css.editorField }, t('sessionPrompt'), h('textarea', { className: css.editorJSON, value: prompt, disabled: busy, maxLength: 16000, onChange: event => setPrompt(event.target.value) })),
       h('div', { className: css.actions }, h(Button, { disabled: busy || state.handoff?.pending || !prompt.trim(), onClick: () => send('send') }, t('sessionSend')), h(Button, { disabled: busy, onClick: () => send('reconcile') }, t('sessionReconcile')), h(Button, { disabled: busy || state.handoff?.pending, onClick: () => send('return') }, t('sessionReturn')), h(Button, { disabled: busy || state.handoff?.pending, onClick: () => send('release') }, t('sessionRelease')))) :

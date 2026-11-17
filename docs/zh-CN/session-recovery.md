@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/session-recovery.md) · 简体中文
 
 Flywheel 分别处理角色对话历史续用和中断调用恢复。fresh 与 scoped 都保留调用安全
-检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.1** 或 **Claude Code Pro 0.5.2**；
+检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.2** 或 **Claude Code Pro 0.5.3**；
 DSH 与 Kimi 继续使用各自支持的恢复路径。
 
 ## 恢复已有任务
@@ -31,7 +31,7 @@ idle timeout 表示在配置的静默预算内没有收到可观察活动，不�
 | 调用方式 | Flywheel 观察的进展 | 时限 |
 |---|---|---|
 | DSH SDK，包括一次性预热 | 已接纳根 Agent 和 owned local children 的公开 assistant-stream；已集成外部 Codex／Claude Provider 的有效回调 | 可配置的 idle 静默预算与 wall 总期限 |
-| Codex Pro 0.10.1 / Claude Code Pro 0.5.2 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
+| Codex Pro 0.10.2 / Claude Code Pro 0.5.3 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi native | 归属于已接纳调用及 Agent 树的受支持原生事件 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi print / 旧 `codex exec` | 没有足以持续判断进展的输出契约 | 保留 wall 总期限，不因 print 静默执行 idle 终止 |
 
@@ -96,6 +96,44 @@ Kimi print 没有对应的 print title 参数。新建带名称的调用时，Fl
 
 这些契约由真实已发布 SDK、公开插件接口及离线模型／CLI fixture 的确定性
 测试覆盖，不代表已经验证真实账号可用性、Provider 性能或桌面 UI 行为。
+
+## 在原生客户端中找到会话
+
+受管主任务的 `fresh` 控制下一次调用使用哪段输入历史，不要求丢弃已完成会话。
+Codex Pro／Claude Code Pro 在 fresh 与 scoped 下都请求原生 persistent 历史。
+fresh 每次不传旧 ID，创建独立、具名的会话；scoped 只有在兼容且证据确认后才续用。
+DSH／Kimi 保持原有原生持久化，Flywheel 同时保留 fresh 调用观察到的真实 ID，便于查看。
+知道一个 ID 不会单独赋予受管续接资格。
+
+原生文件是否保存、列表是否显示，以及是否允许继续，是三个不同问题：
+
+| 后端 | 已保存根会话的查看位置 | 列表与环境限制 |
+| --- | --- | --- |
+| DSH SDK | 使用相同 `DSH_HOME`、SDK 持久化存储和原项目工作区的 DSH 桌面端 | Flywheel 桌面插件通过公开 Workspace 服务附加匹配的独立 SDK 历史。不同 home／存储是不同历史；执行 Worktree 不成为额外桌面项目。 |
+| Kimi print／受支持的 native API | 同一 `KIMI_CODE_HOME` 与项目下的 Kimi Code 会话 | 首次具名 print 先建立并核对空历史，再使用准确 ID。native Agent／Swarm 仍须完整公开 conversation API；通过服务器身份校验不代表具备这些能力。 |
+| Codex Pro | 同一 `CODEX_HOME` 的本地历史、对应项目的原生历史／搜索，或 `codex resume <thread-id>` | app-server 记录的来源满足默认交互式来源筛选；客户端还可能按项目、模型 Provider、账号等过滤。只有 ID 的空线程可能尚无可续接 rollout。本地保存不等于跨设备云同步。 |
+| Claude Code Pro | `claude --resume <UUID>`；支持的桌面环境可用 `claude --desktop --resume <UUID>` | 官方规则将 print／Agent SDK 会话排除在普通 picker 与最新会话续接之外。可读标题不会移除该筛选，也不会自动添加 Desktop 侧栏条目。 |
+
+使用与原调用相同的本地用户、配置目录及项目环境。Flywheel 会话详情只读显示
+原生 ID 和各 Provider 的入口说明；只有任务已停止、最新调用已消费且清理确认后，
+才显示原生终端命令。命令使用原项目目录，旧记录回退到历史 cwd；只打开会话，
+不会自动发送 prompt。需要继续受管任务时，使用 Flywheel 的人工接管与验证流程；
+原生客户端不能代替调用对账。
+
+Claude Desktop 接管要求交互终端、CLI 2.1.285 或以上、受支持的 macOS 或 x64 Windows、
+已安装的 Desktop 应用和订阅登录。自定义 `CLAUDE_CONFIG_DIR` 必须一致，目标会话
+不能仍被其他终端或后台会话占用。不能使用管道、print／SDK 模式或额外 prompt。
+具体以官方[会话筛选规则](https://code.claude.com/docs/en/sessions#where-the-session-picker-looks)
+与 [Desktop 接管条件](https://code.claude.com/docs/en/desktop#coming-from-the-cli)为准。
+Codex 来源和列表契约见[原生历史说明](https://github.com/ckanner/dsh-subagent-codex-pro#thread-lifetime)。
+
+旧 Pro ephemeral 调用没有可重建的原生 transcript，仍可查看 Flywheel 保存的最近回复。
+旧 DSH／Kimi fresh 记录可从摘要已验证且 invocation 匹配的回执中取回只读展示 ID，
+不回写账本、不开放复用；尚未由状态确认的回执必须先对账再显示。低层显式 ephemeral
+请求保持不保存历史。Intake／Garden 的 Pro 调用也保留独立具名历史，安全重试仍新建 ID，
+不参与角色账本、不复用返回 ID。DSH／Kimi 辅助调用获得可读标题，不改变原保存协议；
+Kimi 具名 print 使用上述准备生命周期。外部 DSH 委派继续遵循显式配置／逐次持久化策略。
+原生子任务 ID 也不自动等于可恢复的根 Session ID。
 
 ## 谁拥有哪些事实
 

@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { realpath } from 'node:fs/promises';
-import { OwnedKimiRuntime, KimiSocket, inspectKimiSchemas, digest, error, pause, checkAbort } from './kimi-native-runtime.js';
+import { OwnedKimiRuntime, KimiSocket, inspectKimiSchemas, initializeKimiCreatedSession, digest, error, pause, checkAbort } from './kimi-native-runtime.js';
 import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, towerCandidateReceipt, towerPrompt } from './kimi-tower-candidate.js';
 import { validateObservationRequest } from './machine-worker.js';
 
@@ -379,17 +379,13 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
       resumed = true; ownsSession = true;
     } else {
       const title = input.sessionTitle || `Flywheel · ${input.managed.role}/${input.managed.scope}`;
-      session = await runtime.request('/api/v1/sessions', { metadata: { cwd, flywheel_native_binding: binding },
-        title, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd }, { signal: controller.signal });
-      sessionId = session.id;
-      // Fresh creation must attest the same ownership facts as resume. Do not
-      // send a prompt, or target another history during cleanup, on a mismatched
-      // response. Once ownership is known, a rejected title still permits cleanup.
-      if (!identifier(sessionId) || session.metadata?.flywheel_native_binding !== binding || session.metadata?.cwd !== cwd) {
-        throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the newly created history and workspace binding');
-      }
+      const creationRequest = { metadata: { cwd, flywheel_native_binding: binding },
+        title, agent_config: agentConfig, environment_id: 'local', environment_cwd: cwd };
+      session = await runtime.request('/api/v1/sessions', creationRequest, { signal: controller.signal });
+      sessionId = identifier(session?.id) ? session.id : '';
+      session = await initializeKimiCreatedSession(runtime, openapi, session, creationRequest, 'flywheel_native_binding', { signal: controller.signal });
+      // No session-specific cleanup targets an unverified or foreign owner.
       ownsSession = true;
-      if (session.title !== title) throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the requested readable session title');
     }
     if (!identifier(sessionId) || session.id !== sessionId) throw error('RUNTIME_PROTOCOL', 'Kimi returned an invalid session identity');
     if (candidate) await runtime.request(sessionPath('/profile'), { agent_config: { tower_mode: true, tower_base: candidate.branch } }, { signal: controller.signal });
@@ -480,7 +476,8 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     // Cleanup has a separate bounded grace. An aborted model request must not
     // cancel queue withdrawal, child stop or owned-server shutdown requests.
     if (runtime) {
-      cleanup = { confirmed: false, queueDrained: !ownsSession, tasksStopped: !ownsSession, remoteControlOff: !runtime.base };
+      const admittedRuntime = Boolean(runtime.meta);
+      cleanup = { confirmed: false, queueDrained: !ownsSession, tasksStopped: !ownsSession, remoteControlOff: admittedRuntime ? false : null };
       const cleanupDeadline = Date.now() + 6000;
       const cleanupSignal = AbortSignal.timeout(6000);
       const options = { signal: cleanupSignal, timeout: 1000 };
@@ -514,7 +511,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
             for (const agentId of subscribed) { try { await readTurns(agentId, options); } catch { /* Missing final usage stays unknown. */ } }
           }
         }
-        if (runtime.base && !runtime.closed) {
+        if (admittedRuntime && runtime.base && !runtime.closed) {
           let remote = await runtime.request('/api/v1/remote-control', undefined, options);
           if (remote.state !== 'off') {
             await runtime.request('/api/v1/remote-control', { enabled: false }, options);
@@ -526,7 +523,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
       socket?.close();
       const process = await runtime.stop();
       cleanup.process = process;
-      cleanup.confirmed = cleanup.queueDrained && cleanup.tasksStopped && cleanup.remoteControlOff && process.exited && process.processesConfirmed;
+      cleanup.confirmed = cleanup.queueDrained && cleanup.tasksStopped && (!admittedRuntime || cleanup.remoteControlOff) && process.exited && process.processesConfirmed;
       if (!cleanup.confirmed && !failure) failure = error('CLEANUP_UNKNOWN', 'Kimi work or process cleanup could not be confirmed');
     }
   }
@@ -547,7 +544,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     : terminal.outcome === 'completed' ? 'completed' : terminal.outcome === 'interrupted' ? 'cancelled' : 'failed';
   const native = { version: 1, requested: raw?.native ?? null, matched, effective: { ...effective, matched },
     observed: { server: runtime?.meta ? { id: runtime.meta.server_id, version: runtime.meta.server_version, backend: runtime.meta.backend,
-      ownedPid: runtime.child.pid, authenticated: true, local: true } : null, schema: schema ?? null, environment: environment ?? null,
+      ownedPid: runtime.child.pid, authenticated: true, local: true, identity: runtime.identity ?? null } : null, schema: schema ?? null, environment: environment ?? null,
       binding: binding ?? null, managed: input?.managed ?? null, promptMapping: promptMapping ?? null, abortProbe: matched, usage: observedUsage, nativeLimits: { wholeTreeUpperBound: null, admission: 'native-runtime', hardMaxConcurrentSupported: false },
       disabledTools: ready ? ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : [])] : [], inferenceTested: dispatch === 'dispatched' },
     children: [...conversation.tasks.values()].map(task => ({ taskId: task.task_id, parentAgentId: task.agent_id, agentId: task.child_agent_id ?? null,

@@ -7,7 +7,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
 循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-适配器要求 **`dsh-subagent-claude-code-pro@0.5.2`**、machine protocol 1
+适配器要求 **`dsh-subagent-claude-code-pro@0.5.3`**、machine protocol 1
 及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
 接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
 发行流程见[发布指南](releasing.md)。
@@ -19,7 +19,7 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.2`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.3`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
@@ -27,7 +27,7 @@ registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
 
-已审查的配套 0.5.2 精确产物见
+已审查的配套 0.5.3 精确产物见
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json)。
 CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取得精确插件，
 并核对包身份、SHA-256 和 integrity 与该记录一致。源码验证本身不证明 registry 可用性。
@@ -60,6 +60,18 @@ Go 只传递白名单基础环境和所选 channel 明确注入的凭证；没�
 新持久历史通过原生 `-n` 获得 Flywheel 的任务／角色标题；恢复时保留已有标题，
 包括用户手动改名。脱离 Flywheel 使用时，插件优先采用明确委派标签，缺省使用可读
 工作区名称；命名不额外调用模型。
+
+受管 fresh 调用现在每次保存一条新的具名原生历史，不传上一条 Session ID。
+scoped 可续用已经确认的 ID，保存历史本身不授权复用。Claude 官方 picker 排除
+print／SDK 会话；请通过真实根 UUID 使用受支持的 CLI／Desktop 入口，见
+[原生历史可见性](session-recovery.md#在原生客户端中找到会话)。
+
+0.5.3 配套插件会在 CLI 探测或任务启动前，拒绝有效环境中启用了
+`CLAUDE_CODE_SKIP_PROMPT_HISTORY` 的 persistent 新建／续接请求。
+显式 ephemeral 仍可用，用户设置不会被改写。原生真值为 `1`、`true`、`yes`、`on`，
+忽略大小写与首尾空格。Flywheel 的 Go 环境白名单原本就不转发此变量；新增检查
+同时保护直接 machine、DSH 委派和交互 Team 调用。它不证明任意存储故障，
+也不核验 CLI 内部随后加载的所有设置。
 
 ## 先定义模型，按需绑定阶段
 
@@ -144,7 +156,7 @@ flywheel-claude-code-pro-worker --doctor
 `--agents` JSON。省略子 effort 时保持字段缺省，让 CLI 使用原生继承行为；Flywheel
 不会填入父值或自行设定子默认值。非法档位在配置加载时拒绝，不会派发 worker。
 
-同一字段也可用于 0.5.2 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
+同一字段也可用于 0.5.3 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
 请求。直接 Flywheel worker 仍读取选中的 native profile，不读取桌面设置。显式
 传递 effort 只能证明 CLI 请求参数；tools-only init 证据不能证明子模型实际采用的档位。
 

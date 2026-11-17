@@ -62,6 +62,60 @@ test('native child identity and complete step usage are reconciled before succes
   assert.equal(result.native.observed.usage.observedSteps.length, 2);
 });
 
+test('an unclaimed fresh session can initialize through profile only with native lifecycle admission, and resume never reclaims it', async () => {
+  const f = await fixture('swarm', 'create-ignores-configuration');
+  f.input.persistent = true;
+  const first = await runKimiWorker(f.input, f.options);
+  assert.equal(first.status, 'ok', JSON.stringify(first.error));
+  assert.equal(first.native.effective.matched, true);
+  const second = await runKimiWorker({ ...f.input, sessionId: first.sessionId }, f.options);
+  assert.equal(second.status, 'ok', JSON.stringify(second.error));
+  assert.equal(second.lifecycle.resumeAccepted, true);
+  const calls = await f.log(), profiles = calls.filter(row => row.method === 'POST' && row.path?.endsWith('/profile'));
+  assert.equal(profiles.length, 1, 'only the freshly created history can be initialized');
+  assert.equal(profiles[0].body.metadata.flywheel_native_binding, first.native.observed.binding);
+  assert.deepEqual(profiles[0].body.agent_config, { model: f.input.model, thinking: 'high', permission_mode: 'yolo', plan_mode: false, swarm_mode: true });
+  assert.ok(calls.findIndex(row => row.method === 'POST' && row.path?.endsWith('/profile')) < calls.findIndex(row => row.method === 'POST' && row.path?.endsWith('/prompts')));
+});
+
+test('an ignored nondefault native profile is not silently replaced by the default agent during fresh initialization', async () => {
+  const f = await fixture('agent', 'create-ignores-configuration');
+  f.input.native.agentProfile = 'custom-reviewer';
+  const result = await runKimiWorker(f.input, f.options);
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'UNSUPPORTED_SCHEMA');
+  assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+  assert.equal(result.lifecycle.cleanupConfirmed, true);
+  assert.ok(!(await f.log()).some(row => row.method === 'POST' && /\/sessions\/[^/]+/.test(row.path)));
+});
+
+test('Kimi 2.5.3 print compatibility does not bypass its unsupported native conversation contract', async () => {
+  const f = await fixture('agent', 'kimi-2.5.3');
+  const result = await runKimiWorker(f.input, f.options);
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'UNSUPPORTED_SCHEMA');
+  assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+  assert.equal(result.lifecycle.cleanupConfirmed, true);
+  assert.equal(result.native.effective.matched, false);
+  assert.ok(!(await f.log()).some(row => row.method === 'POST' && row.path?.startsWith('/api/v1/sessions')));
+});
+
+for (const [fixtureCase, code] of [['id-mismatch-remote-on', 'RUNTIME_IDENTITY'],
+  ...['malformed-meta', 'missing-meta', 'null-meta-envelope', 'missing-meta-code'].map(name => [name, 'RUNTIME_PROTOCOL'])]) {
+  test(`a rejected runtime receives no remote-control or shutdown cleanup requests: ${fixtureCase}`, async () => {
+    const f = await fixture('agent', fixtureCase);
+    const result = await runKimiWorker(f.input, f.options);
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, code);
+    assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+    assert.equal(result.lifecycle.cleanupConfirmed, true, 'the owned local process still exits');
+    assert.equal(result.native.observed.server, null);
+    assert.equal(result.native.cleanup.remoteControlOff, null, 'the rejected endpoint remote state is not observed or rewritten');
+    assert.deepEqual((await f.log()).map(({ method, path }) => ({ method, path })), [{ method: 'GET', path: '/api/v1/meta' }]);
+    assert.equal(f.frames.filter(frame => frame.type === 'ready').length, 0);
+  });
+}
+
 test('live root and child progress reaches the parent without tool or reasoning payloads', async () => {
   for (const fixtureCase of ['root-progress', 'child-progress']) {
     const f = await fixture('swarm', fixtureCase);

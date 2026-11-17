@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.2 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.3 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

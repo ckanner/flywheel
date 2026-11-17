@@ -40,6 +40,18 @@ func TestKimiPrintPrepareProcessFixture(t *testing.T) {
 		frame["status"], exit = "cancelled", 130
 	case "timeout":
 		frame["status"], frame["error"], exit = "error", map[string]string{"code": "TIMEOUT", "message": "elapsed"}, 1
+	case "identity":
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "RUNTIME_IDENTITY", "message": "registry and meta ids differ"}, 1
+	case "schema":
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "UNSUPPORTED_SCHEMA", "message": "missing title field"}, 1
+	case "auth":
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "RUNTIME_AUTH", "message": "token rejected"}, 1
+	case "runtime-start":
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "RUNTIME_START", "message": "server did not start"}, 1
+	case "prepare-failed":
+		// A fetch-style connection failure has no top-level stable code and is
+		// intentionally retained as a transport retry.
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "PREPARE_FAILED", "message": "connection reset"}, 1
 	case "wrong-title":
 		frame["sessionTitle"] = "different"
 	case "wrong-id":
@@ -126,6 +138,32 @@ func TestKimiPrintPreparationFailureNeverDispatchesTheTask(t *testing.T) {
 	out = RunKimi(KimiArgs{Cwd: t.TempDir(), SessionTitle: "missing worker"})
 	require.NotEmpty(t, out.SpawnError)
 	require.True(t, out.Session.CleanupConfirmed)
+}
+
+func TestKimiPrintPreparationPreservesDeterministicFailureCodes(t *testing.T) {
+	t.Setenv(KimiNativeWorkerEnv, prepareFixtureCommand(t))
+	for _, tc := range []struct {
+		title     string
+		code      errs.ErrorCode
+		retryable bool
+		cause     string
+	}{
+		{"identity", errs.INVALID_REQUEST, false, "RUNTIME_IDENTITY"},
+		{"schema", errs.INVALID_REQUEST, false, "UNSUPPORTED_SCHEMA"},
+		{"auth", errs.AUTH, false, "RUNTIME_AUTH"},
+		{"runtime-start", errs.TRANSPORT, true, "RUNTIME_START"},
+		{"prepare-failed", errs.TRANSPORT, true, "PREPARE_FAILED"},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
+			out := RunKimi(KimiArgs{Cwd: t.TempDir(), SessionTitle: tc.title, Prompt: "task", RequestID: "invocation", Command: "/must-not-launch-task"})
+			require.False(t, out.Settled)
+			require.Equal(t, tc.code, out.ErrorCode)
+			require.Equal(t, tc.retryable, errs.IsRetryable(out.ErrorCode))
+			require.Equal(t, "not-dispatched", out.Session.Dispatch)
+			require.NotNil(t, out.ErrorMessage)
+			require.Contains(t, *out.ErrorMessage, tc.cause)
+		})
+	}
 }
 
 func TestKimiPrintPreparationResolvesRelativeWorkspaceBeforeChangingDirectory(t *testing.T) {

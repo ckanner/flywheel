@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/config"
@@ -224,6 +226,31 @@ type CallOptions struct {
 	SessionID string // kimi 长驻会话句柄；模块调用恒空
 }
 
+// Native history gets a label from task metadata, never the private advice
+// prompt. 120 Unicode characters fit both Kimi's 200-character name and the
+// Pro adapters' 512-byte contracts, even when every character uses four bytes.
+func (m *Ctx) sessionTitle(role string) string {
+	label := filepath.Base(m.TaskDir)
+	if label == "." || label == string(os.PathSeparator) {
+		label = filepath.Base(m.Cwd)
+	}
+	label = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf) {
+			return ' '
+		}
+		return r
+	}, label)
+	label = strings.Join(strings.Fields(label), " ")
+	title := "Flywheel · " + role
+	if label != "" {
+		title += " · " + label
+	}
+	if runes := []rune(title); len(runes) > 120 {
+		title = string(runes[:119]) + "…"
+	}
+	return title
+}
+
 // CallAgent 标准 transport-retry + channel-fallback 链（§6）的一次 agent 调用。
 // 成功返回助手文本；失败经完整重试链后返回稳定错误码。
 func CallAgent(m *Ctx, o CallOptions) CallResult {
@@ -262,6 +289,12 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 			Watchdog:       ModuleWatchdogOpts(m.Config),
 			SessionID:      o.SessionID,
 			PermissionMode: permission,
+		}
+		// Advice stays fresh: preserve inspectable native history without
+		// remembering or feeding a returned session ID into another attempt.
+		args.PersistentSession = current.Harness == "codex-pro" || current.Harness == "claude-code-pro"
+		if config.SupportsScopedSessions(current.Harness) {
+			args.SessionTitle = m.sessionTitle(o.Role)
 		}
 		if current.NativeProfile != "" {
 			profile, exists := m.Config.NativeProfiles[current.NativeProfile]

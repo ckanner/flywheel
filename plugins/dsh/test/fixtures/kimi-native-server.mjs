@@ -19,10 +19,20 @@ if (process.argv.includes('-p')) {
 }
 if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(['web', '--no-open', '--host', '127.0.0.1', '--port', '0'])) process.exit(2);
 const fixtureCase = process.env.KIMI_FIXTURE_CASE || 'normal';
+const kimi253 = fixtureCase.startsWith('kimi-2.5.3');
+const ignoresCreation = kimi253 || fixtureCase.startsWith('create-ignores-');
 const root = process.env.KIMI_CODE_HOME;
 const token = 'fixture-secret-must-never-appear';
 const registry = join(root, 'server', 'instances');
 const registryPath = join(registry, `owned-${process.pid}.json`);
+// Kimi 2.5.3 emits distinct registry and /meta server ids. Exercise both the
+// accepted version-matched case and the rejected version-drift case.
+const idMismatch = kimi253 || ['id-mismatch', 'id-mismatch-version', 'id-mismatch-no-version', 'id-mismatch-remote-on'].includes(fixtureCase);
+const registryServerID = idMismatch ? 'registry-' + process.pid : 'owned-' + process.pid;
+const metaServerID = idMismatch ? 'meta-' + process.pid : 'owned-' + process.pid;
+const registryHostVersion = fixtureCase === 'id-mismatch-no-version' ? undefined : kimi253 ? '2.5.3' : 'fixture-9.8.7';
+const metaServerVersion = ['id-mismatch-version', 'id-mismatch-remote-on'].includes(fixtureCase) ? 'fixture-9.8.8' : registryHostVersion || 'fixture-9.8.7';
+let remoteControlEnabled = fixtureCase === 'id-mismatch-remote-on';
 await mkdir(registry, { recursive: true });
 await writeFile(join(root, 'server.token'), token);
 const log = async value => { if (process.env.KIMI_FIXTURE_LOG) await appendFile(process.env.KIMI_FIXTURE_LOG, JSON.stringify(value) + '\n'); };
@@ -32,24 +42,32 @@ const save = () => writeFile(join(root, 'fixture-sessions.json'), JSON.stringify
 const sockets = new Set();
 const paths = ['/api/v1/meta', '/api/v1/sessions', '/api/v1/sessions/{session_id}', '/api/v1/sessions/{session_id}/profile',
   '/api/v1/sessions/{session_id}/environment', '/api/v1/sessions/{session_id}/prompts', '/api/v1/sessions/{session_id}/agents/{agent_id}/turns',
+  '/api/v1/sessions/{session_id}/messages',
   '/api/v1/shutdown', '/api/v1/remote-control'];
 const property = { type: 'string' };
 const schema = properties => ({ type: 'object', properties });
 const config = schema(Object.fromEntries(['model', 'thinking', 'permission_mode', 'plan_mode', 'swarm_mode', 'profile', 'tower_mode', 'tower_base'].map(key => [key, property])));
+if (kimi253) delete config.properties.profile;
 const requestBody = properties => ({ requestBody: { content: { 'application/json': { schema: schema(properties) } } } });
 const openapi = { openapi: '3.1.0', paths: Object.fromEntries(paths.map(path => [path, { get: {}, post: {} }])) };
 openapi.paths['/api/v1/sessions'].post = requestBody({ title: property, metadata: schema({ cwd: property }), agent_config: config, environment_id: property, environment_cwd: property });
 if (fixtureCase === 'no-title-schema') delete openapi.paths['/api/v1/sessions'].post.requestBody.content['application/json'].schema.properties.title;
-openapi.paths['/api/v1/sessions/{session_id}/profile'].post = requestBody({ agent_config: config });
+openapi.paths['/api/v1/sessions/{session_id}/profile'].post = requestBody({ metadata: schema({ cwd: property }), agent_config: config });
+if (fixtureCase.endsWith('-missing-profile-schema')) delete openapi.paths['/api/v1/sessions/{session_id}/profile'].post.requestBody.content['application/json'].schema.properties.metadata;
 openapi.paths['/api/v1/sessions/{session_id}/prompts'].post = requestBody({ content: property, prompt_id: property, disabled_tools: property });
 if (fixtureCase === 'missing-schema') delete openapi.paths['/api/v1/sessions/{session_id}/prompts'].post.requestBody.content['application/json'].schema.properties.disabled_tools;
-const names = ['subscribe', 'response', 'agent', 'task', 'task.list', 'task.stop', 'turns', 'turn.started', 'turn.ended', 'interaction', 'ping', 'pong'];
+// Mirrors the published 2.5.3 create/profile omission and v2-only subscription
+// surface. Other fixtures retain the native turn/item protocol under test.
+if (kimi253) delete openapi.paths['/api/v1/sessions/{session_id}/agents/{agent_id}/turns'];
+const names = kimi253 ? ['client_hello', 'client_hello.ack', 'subscribe_v2', 'subscribe_v2.ack', 'agent', 'task', 'task.list', 'task.stop', 'interaction', 'ping', 'pong']
+  : ['subscribe', 'response', 'agent', 'task', 'task.list', 'task.stop', 'turns', 'turn.started', 'turn.ended', 'interaction', 'ping', 'pong'];
 const asyncapi = { asyncapi: '3.1.0', channels: { kimiCodeWebSocket: { address: '/api/v1/ws' } }, components: { messages: Object.fromEntries(names.map(name => [name.replaceAll('.', '_'), { name }])) } };
 const agentState = (s, agentId = 'main') => ({ type: 'agent', session_id: s.id, agent_id: agentId,
   status: s.active ? 'running' : 'idle', compacting: false, model: s.agent_config.model, thinking: s.agent_config.thinking,
-  permission_mode: fixtureCase === 'mismatch-permission' ? 'manual' : 'yolo', plan_mode: false,
+  permission_mode: fixtureCase === 'mismatch-permission' ? 'manual' : s.agent_config.permission_mode, plan_mode: Boolean(s.agent_config.plan_mode),
   swarm_mode: Boolean(s.agent_config.swarm_mode), tower_mode: Boolean(s.agent_config.tower_mode) });
-const sessionState = s => ({ ...s, busy: Boolean(s.active || s.task?.status === 'running'), main_turn_active: Boolean(s.active),
+const sessionState = s => ({ ...(kimi253 ? { id: s.id, title: s.title, metadata: s.metadata, archived: false,
+  agent_config: { model: s.agent_config.model }, message_count: 0 } : s), busy: Boolean(s.active || s.task?.status === 'running'), main_turn_active: Boolean(s.active),
   pending_interaction: s.question ? 'question' : 'none', usage: { input_tokens: 0, output_tokens: 0, total_cost_usd: 0 } });
 function frame(socket, value) {
   const payload = Buffer.from(JSON.stringify(value));
@@ -81,8 +99,17 @@ const server = http.createServer(async (req, res) => {
     await log({ method: req.method, path, ...(body ? { body } : {}) });
     const send = (data, code = 0) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ code, data })); };
     if (path === '/openapi.json' || path === '/asyncapi.json') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(path === '/openapi.json' ? openapi : asyncapi)); return; }
-    if (path === '/api/v1/meta') { send({ server_id: 'owned-' + process.pid, server_version: 'fixture-9.8.7', backend: 'v2', dangerous_bypass_auth: false, capabilities: { websocket: true } }); return; }
-    if (path === '/api/v1/remote-control') { send({ state: 'off' }); return; }
+    if (path === '/api/v1/meta') {
+      if (fixtureCase === 'null-meta-envelope') { res.setHeader('Content-Type', 'application/json'); res.end('null'); return; }
+      if (fixtureCase === 'missing-meta-code') { res.setHeader('Content-Type', 'application/json'); res.end('{}'); return; }
+      send(fixtureCase === 'malformed-meta' ? null : fixtureCase === 'missing-meta' ? undefined : {
+        server_id: metaServerID, server_version: metaServerVersion, backend: 'v2', dangerous_bypass_auth: false, capabilities: { websocket: true },
+      }); return;
+    }
+    if (path === '/api/v1/remote-control') {
+      if (body) remoteControlEnabled = body.enabled;
+      send({ enabled: remoteControlEnabled, state: remoteControlEnabled ? 'on' : 'off' }); return;
+    }
     if (path === '/api/v1/shutdown') {
       send({ ok: true });
       await save();
@@ -93,25 +120,43 @@ const server = http.createServer(async (req, res) => {
     if (path === '/api/v1/sessions' && req.method === 'POST') {
       const id = 'session-' + (Object.keys(sessions).length + 1);
       const s = sessions[id] = { id, title: fixtureCase === 'wrong-title' ? 'Session placeholder' : body.title,
-        metadata: body.metadata, agent_config: body.agent_config, environment_id: body.environment_id,
+        metadata: ignoresCreation ? { cwd: body.metadata.cwd } : body.metadata,
+        agent_config: ignoresCreation ? { model: '', permission_mode: 'manual', plan_mode: true, thinking: 'off', swarm_mode: false } : body.agent_config,
+        environment_id: body.environment_id,
         cwd: body.environment_cwd || body.metadata.cwd, active: null, queued: [], turns: [] };
       if (fixtureCase === 'wrong-creation-owner') s.metadata = { ...s.metadata, flywheel_native_binding: 'foreign-invocation' };
+      if (fixtureCase.endsWith('-foreign-owner')) s.metadata = { ...s.metadata, flywheel_print_invocation: 'foreign-invocation', flywheel_native_binding: 'foreign-binding' };
+      if (fixtureCase.endsWith('-existing-history')) s.turns = [{ turn_id: 'prior-turn', ordinal: 0, kind: 'agent', status: 'ended', items: [{ type: 'user_message', item_id: 'prior-message' }] }];
+      if (fixtureCase.endsWith('-queued-prompt')) s.queued = [{ prompt_id: 'prior-prompt', status: 'queued' }];
       await save(); send(sessionState(s)); return;
     }
+    if (path === '/api/v1/sessions' && req.method === 'GET') { send({ items: Object.values(sessions).map(sessionState), has_more: false }); return; }
     const match = path.match(/^\/api\/v1\/sessions\/([^/:]+)(.*)$/);
     const s = match && sessions[decodeURIComponent(match[1])];
     if (!s) { send(null, 40401); return; }
     const suffix = match[2];
     if (suffix === '' || suffix === '/profile') {
-      if (body) { Object.assign(s.agent_config, body.agent_config); await save(); }
+      if (suffix === '' && fixtureCase.endsWith('-changed-identity')) { send({ ...sessionState(s), id: 'foreign-id' }); return; }
+      if (body) {
+        if (body.metadata) s.metadata = { ...s.metadata, ...body.metadata };
+        Object.assign(s.agent_config, body.agent_config);
+        if (fixtureCase.endsWith('-profile-wrong-permission')) s.agent_config.permission_mode = 'manual';
+        if (fixtureCase.endsWith('-profile-wrong-owner')) s.metadata = { ...s.metadata, flywheel_print_invocation: 'foreign-invocation', flywheel_native_binding: 'foreign-binding' };
+        await save();
+        if (fixtureCase.endsWith('-profile-not-persisted')) {
+          const response = sessionState(s); s.metadata = { cwd: s.metadata.cwd }; await save(); send(response); return;
+        }
+      }
       send(sessionState(s)); return;
     }
+    if (suffix === '/messages') { send({ items: s.turns, has_more: false }); return; }
     if (suffix === '/environment') { send({ environment_id: fixtureCase === 'remote-environment' ? 'ssh-fixture' : 'local', cwd: s.cwd }); return; }
     if (suffix === ':abort') {
       if (fixtureCase !== 'unstoppable') terminal(s, 'interrupted');
       send({ aborted: true }); return;
     }
     if (suffix.startsWith('/agents/')) {
+      if (kimi253) { send(null, 404); return; }
       const agentId = decodeURIComponent(suffix.split('/')[2]);
       send({ turns: agentId === 'main' ? s.turns : s.childTurns || [], has_more: false }); return;
     }
@@ -193,6 +238,15 @@ server.on('upgrade', (req, socket) => {
       let command; try { command = JSON.parse(payload.toString()); } catch { socket.destroy(); return; }
       await log({ websocket: command.type, ...command });
       if (command.type === 'pong') continue;
+      if (kimi253) {
+        if (command.type === 'client_hello') { frame(socket, { type: 'ack', id: command.id, code: 0, msg: 'success', payload: {} }); continue; }
+        if (command.type === 'subscribe_v2') {
+          const id = command.payload?.session_id, s = sessions[id];
+          frame(socket, { type: 'ack', id: command.id, code: 0, msg: 'success', payload: { accepted: s ? [id] : [], not_found: s ? [] : [id] } });
+          if (s) { socket.subscriptions.set(id, new Set(['main'])); frame(socket, agentState(s)); }
+        }
+        continue;
+      }
       const s = sessions[command.session_id];
       frame(socket, { type: 'response', request_id: command.request_id, code: s ? 0 : 40401, ...(command.type === 'task.stop' && s?.task ? { task: { ...s.task, status: 'ended', outcome: 'cancelled' } } : {}) });
       if (!s) continue;
@@ -214,7 +268,7 @@ server.on('upgrade', (req, socket) => {
   });
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-await writeFile(registryPath, JSON.stringify({ server_id: 'owned-' + process.pid, pid: process.pid, host: '127.0.0.1', port: server.address().port, started_at: Date.now(), heartbeat_at: Date.now() }));
+await writeFile(registryPath, JSON.stringify({ server_id: registryServerID, pid: process.pid, host: '127.0.0.1', port: server.address().port, started_at: Date.now(), heartbeat_at: Date.now(), ...(registryHostVersion ? { host_version: registryHostVersion } : {}) }));
 process.stdout.write(`Local: http://127.0.0.1:${server.address().port}/#token=${token}\n`);
 process.stderr.write('Token: ' + token + '\n');
 if (fixtureCase === 'unstoppable') process.on('SIGTERM', () => {});

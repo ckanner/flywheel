@@ -53,10 +53,10 @@ async function registry(directory) {
     tarballs.set('/tarballs/' + entry.filename, data);
   }
   const plugin = packages.get('@ckanner/flywheel');
-  const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.1'], ['dsh-preset-generator', '0.4.0']];
+  const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.2'], ['dsh-preset-generator', '0.4.0']];
   if (bundledDependencies.some(([name, version]) => plugin?.manifest.dependencies?.[name] !== version) ||
       JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(bundledDependencies.map(([name]) => name))) {
-    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.1 and preset generator 0.4.0 source dependencies');
+    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2 and preset generator 0.4.0 source dependencies');
   }
   for (const [name, version] of bundledDependencies) {
     const bundled = JSON.parse(execFileSync('tar', ['-xOf', path.join(directory, plugin.entry.filename),

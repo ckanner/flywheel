@@ -226,25 +226,26 @@ func safeSessionOutcome(r drivers.Result, id string) bool {
 
 func applySessionFacts(record *state.SessionRecord, result drivers.Result, digest, candidate string) {
 	s := result.Session
+	// Native persistence preserves inspectable history; only the saved scoped
+	// policy may make it eligible for managed reuse. Older records without an
+	// explicit policy retain their original persistence semantics.
+	reusable := record.Last.Persistent && (record.Configuration == nil || record.Configuration.SessionMode != "fresh")
 	record.Last.ReceiptDigest, record.Last.CandidateAfter = digest, candidate
 	record.Last.Status, record.ResumeCandidate = "blocked", false
-	if !record.Last.Persistent {
-		record.ThreadID = ""
-	}
 	if s != nil {
 		record.Last.Dispatch, record.Last.Outcome = s.Dispatch, s.Outcome
 		record.Last.CleanupConfirmed, record.Last.UsageStatus = s.CleanupConfirmed, s.UsageStatus
 		record.Protocol = s.Protocol
-		if record.Last.Persistent && s.SessionID != "" {
+		if s.RequestID == record.Last.ID && s.SessionID != "" {
 			record.ThreadID = s.SessionID
 		}
 	}
 	if safeSessionOutcome(result, record.Last.ID) && candidate != "" {
 		record.Last.Status = "received"
-		record.ResumeCandidate = record.Last.Persistent && s.ResumeCandidate && s.SessionID != ""
+		record.ResumeCandidate = reusable && s.ResumeCandidate && s.SessionID != ""
 		// A proven startup/admission failure did not touch the previously
 		// confirmed history. Keep that checkpoint for the existing bounded retry.
-		if record.Last.Persistent && record.Last.RequestedThread != "" && (s.SessionID == "" || s.SessionID == record.Last.RequestedThread) && s.Dispatch == "not-dispatched" && s.Outcome != "completed" {
+		if reusable && record.Last.RequestedThread != "" && (s.SessionID == "" || s.SessionID == record.Last.RequestedThread) && s.Dispatch == "not-dispatched" && s.Outcome != "completed" {
 			record.ThreadID, record.ResumeCandidate = record.Last.RequestedThread, true
 		}
 	}
@@ -458,9 +459,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	args.SessionTitle = c.sessionTitle(role, scope)
 	originalPrompt := args.Prompt
 	args.Prompt = c.sessionPrompt(role, scope, args)
-	tracked, persistent := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)
+	tracked, scoped := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)
 	if args.SessionMode != "" {
-		persistent = args.SessionMode == "scoped" && tracked
+		scoped = args.SessionMode == "scoped" && tracked
 	}
 	if r == nil && !tracked {
 		return call(args), nil
@@ -509,7 +510,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	protocol := "flywheel/admission-v1"
 	if r != nil {
 		generation = r.Generation
-		if persistent && r.Task == c.TaskDir && r.Cwd == cwd && r.Binding == binding && r.Goal == goal && r.ResumeCandidate {
+		if scoped && r.Task == c.TaskDir && r.Cwd == cwd && r.Binding == binding && r.Goal == goal && r.ResumeCandidate {
 			action, reason, thread = "resume", "same role, goal and effective binding after confirmed terminal receipt", r.ThreadID
 			protocol = r.Protocol
 		} else {
@@ -521,7 +522,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			action, reason, generation, thread = "rebuild", qualityReason, generation+1, ""
 		}
 	}
-	if !persistent && len(args.Native) == 0 && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
+	if !scoped && len(args.Native) == 0 && role == "plan" && args.SessionID != "" && c.Config.Sessions.Roles["plan"] != "fresh" {
 		action, reason, thread = "resume", "explicit legacy resident Plan binding matched", args.SessionID
 	}
 	if args.ExpectedSessionID != "" && (thread != args.ExpectedSessionID || action != "resume") {
@@ -549,11 +550,15 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		args.Prompt = sessionRebuildHandoff(previous, reason) + args.Prompt
 	}
 	historyMode := "fresh"
-	if persistent {
+	if scoped {
 		historyMode = "scoped"
 	} else if action == "resume" && role == "plan" {
 		historyMode = "legacy-plan"
 	}
+	// Fresh governs input history, not whether a native client can inspect the
+	// completed session. These machine adapters otherwise delete fresh history.
+	// Record the exact request for lifecycle matching and later read-only recovery.
+	persistent := scoped || args.Binding.Harness == "codex-pro" || args.Binding.Harness == "claude-code-pro"
 	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{NativeOptions: args.Native, NativeProfile: args.Binding.NativeProfile, Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),

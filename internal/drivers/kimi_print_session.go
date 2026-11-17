@@ -14,6 +14,23 @@ import (
 
 var kimiPrintSessionPreparer = prepareKimiPrintSession
 
+// Kimi preparation runs before any inference. Deterministic compatibility,
+// schema or identity failures must not be retried as transport faults. The
+// generic PREPARE_FAILED catch-all (for example a nested fetch failure) and
+// startup/registry races remain transport-retryable.
+func kimiPrintPreparationErrorCode(code string) errs.ErrorCode {
+	switch code {
+	case string(errs.TIMEOUT):
+		return errs.TIMEOUT
+	case "RUNTIME_AUTH":
+		return errs.AUTH
+	case "RUNTIME_IDENTITY", "RUNTIME_PROTOCOL", "UNSUPPORTED_SCHEMA", "INVALID_REQUEST":
+		return errs.INVALID_REQUEST
+	default:
+		return errs.TRANSPORT
+	}
+}
+
 // Directory removal does not make Getwd fail consistently across platforms.
 // Keep the resolution boundary injectable so its failure can be tested directly.
 var kimiPrintSessionAbs = filepath.Abs
@@ -110,8 +127,15 @@ func prepareKimiPrintSession(a KimiArgs) Result {
 	if out.Settled {
 		out.SessionID = receipt.SessionID
 	} else {
+		failureCode := ""
+		if trusted && receipt.Error != nil {
+			failureCode = receipt.Error.Code
+		}
 		message := "Kimi could not prepare a named print session; the task prompt was not sent"
-		out.ErrorCode = errs.TRANSPORT
+		if failureCode != "" {
+			message = "Kimi print-session preparation failed (" + failureCode + "); the task prompt was not sent"
+		}
+		out.ErrorCode = kimiPrintPreparationErrorCode(failureCode)
 		if out.TimedOut {
 			out.ErrorCode = errs.TIMEOUT
 			message = timeoutMessage("Kimi print-session preparation", out)

@@ -96,7 +96,7 @@ test("source candidate verification checks both hashes and identity without clai
   const source = fixture(t);
   const before = fs.readFileSync(source.record);
   assert.equal(source.metadata.registryReleaseVerified, false);
-  assert.equal(verifyArchive(source.archive, source.metadata).version, "0.5.2");
+  assert.equal(verifyArchive(source.archive, source.metadata).version, "0.5.3");
   assert.deepEqual(fs.readFileSync(source.record), before);
   for (const changes of [{ version: "0.5.0" }, { package: "another-package" }, { tarball: "../other.tgz" },
     { sourceCommit: "not-a-commit" }, { sourceTree: "not-a-tree" }, { sha256: "bad" }, { integrity: "sha1-bad" }]) {

@@ -102,7 +102,7 @@ type CallArgs struct {
 	Watchdog          watchdog.Opts
 	OnEvent           func(line string)            // stdout NDJSON 行回调
 	SessionID         string                       // plan 长驻会话句柄（machine 层持有；kimi -r <id> 续会话，空 = 新会话）
-	PersistentSession bool                         // request role-scoped retained history
+	PersistentSession bool                         // request retained native history; SessionID independently selects reuse
 	RequestID         string                       // engine invocation correlation, not backend idempotency
 	RecoveryDirectory string                       // private, exclusive evidence directory for this invocation
 	OnLifecycle       func(MachineLifecycle) error // nil return permits the next durable ACK

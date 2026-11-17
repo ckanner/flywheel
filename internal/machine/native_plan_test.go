@@ -42,7 +42,7 @@ func TestNativeKimiPlanHistoryUsesOnlyScopedReceiptsAcrossTwoRealPlanSteps(t *te
 			c.save()
 			require.NoError(t, c.err())
 			sd := happyDrivers()
-			calls, firstThread := 0, ""
+			calls, firstThread, lastThread := 0, "", ""
 			sd.planFn = func(a drivers.CallArgs) drivers.Result {
 				calls++
 				require.JSONEq(t, string(native), string(a.Native))
@@ -64,6 +64,7 @@ func TestNativeKimiPlanHistoryUsesOnlyScopedReceiptsAcrossTwoRealPlanSteps(t *te
 				if calls == 1 {
 					firstThread = result.SessionID
 				}
+				lastThread = result.SessionID
 				return result
 			}
 			c.Drivers = sd.set()
@@ -94,7 +95,8 @@ func TestNativeKimiPlanHistoryUsesOnlyScopedReceiptsAcrossTwoRealPlanSteps(t *te
 				require.Equal(t, "scoped", record.Configuration.SessionMode)
 				require.Equal(t, 1, record.Generation)
 			} else {
-				require.Empty(t, record.ThreadID)
+				require.Equal(t, lastThread, record.ThreadID)
+				require.NotEqual(t, firstThread, record.ThreadID)
 				require.False(t, record.ResumeCandidate)
 				require.Equal(t, "fresh", record.Configuration.SessionMode)
 				require.Equal(t, 2, record.Generation)

@@ -39,7 +39,7 @@ SOFTWARE.
 
 ## Bundled Codex Pro public package
 
-This distribution bundles `dsh-subagent-codex-pro@0.10.1`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the packed plugin. Source identity and tarball integrity are recorded in `vendor/README.md` and `vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
+This distribution bundles `dsh-subagent-codex-pro@0.10.2`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the packed plugin. Source identity and tarball integrity are recorded in `vendor/README.md` and `vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
 
 ## Bundled PTC composition source
 

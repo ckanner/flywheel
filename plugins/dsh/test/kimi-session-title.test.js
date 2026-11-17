@@ -53,6 +53,89 @@ test('a real absolute workspace path longer than 512 characters can prepare a na
   assert.ok(!calls.some(row => row.path?.endsWith('/prompts')));
 });
 
+test('Kimi 2.5.3 registry and meta server ids may differ when their runtime versions agree', async (t) => {
+  const f = await setup(t, 'id-mismatch'), result = await prepareKimiPrintSession(f.input, { env: f.env });
+  assert.equal(result.status, 'ok', JSON.stringify(result));
+  assert.equal(result.inferenceDispatched, false);
+  assert.equal(result.cleanupConfirmed, true);
+  const calls = await f.log();
+  assert.ok(calls.some(row => row.path === '/api/v1/sessions' && row.method === 'POST'));
+  assert.ok(!calls.some(row => row.path?.endsWith('/prompts')));
+});
+
+test('published Kimi 2.5.3 create/profile semantics prepare a named durable print history with verified effective settings', async t => {
+  const f = await setup(t, 'kimi-2.5.3');
+  const result = await prepareKimiPrintSession(f.input, { env: f.env });
+  assert.equal(result.status, 'ok', JSON.stringify(result));
+  assert.equal(result.inferenceDispatched, false);
+  assert.equal(result.cleanupConfirmed, true);
+  const calls = await f.log(), profile = calls.findIndex(row => row.method === 'POST' && row.path?.endsWith('/profile'));
+  assert.ok(profile > calls.findIndex(row => row.path?.endsWith('/messages')));
+  assert.ok(profile > calls.findIndex(row => row.method === 'GET' && row.path?.endsWith('/prompts')));
+  assert.deepEqual(calls[profile].body, { metadata: { flywheel_print_invocation: f.input.requestId },
+    agent_config: { model: f.input.model, permission_mode: 'auto', plan_mode: false } });
+  assert.ok(calls.slice(profile + 1).some(row => row.method === 'GET' && row.path === '/api/v1/sessions/' + result.sessionId), 'profile changes are read back');
+  assert.ok(calls.some(row => row.websocket === 'client_hello'));
+  assert.ok(calls.some(row => row.websocket === 'subscribe_v2' && row.payload.session_id === result.sessionId), 'actual main-agent settings are observed');
+  assert.ok(!calls.some(row => row.method === 'POST' && (row.path?.endsWith('/prompts') || row.path?.endsWith('/title/generate'))));
+  const reopened = new OwnedKimiRuntime(f.env, 'agent');
+  try {
+    await reopened.start(AbortSignal.timeout(5000));
+    const list = await reopened.request('/api/v1/sessions');
+    const history = list.items.find(item => item.id === result.sessionId);
+    assert.equal(history.title, f.input.sessionTitle);
+    assert.equal(history.metadata.flywheel_print_invocation, f.input.requestId);
+    assert.equal(history.metadata.cwd, await realpath(f.input.cwd));
+  } finally {
+    const stopped = await reopened.stop();
+    assert.equal(stopped.exited && stopped.processesConfirmed, true);
+  }
+});
+
+for (const fixtureCase of ['foreign-owner', 'existing-history', 'queued-prompt', 'changed-identity', 'missing-profile-schema',
+  'profile-wrong-owner', 'profile-not-persisted', 'profile-wrong-permission']) {
+  test('print initialization refuses unclaimed/history/config ambiguity: ' + fixtureCase, async t => {
+    const f = await setup(t, 'kimi-2.5.3-' + fixtureCase);
+    const result = await prepareKimiPrintSession(f.input, { env: f.env });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, fixtureCase === 'missing-profile-schema' ? 'UNSUPPORTED_SCHEMA' : 'RUNTIME_PROTOCOL');
+    assert.equal(result.inferenceDispatched, false);
+    assert.equal(result.cleanupConfirmed, true);
+    const calls = await f.log();
+    assert.ok(!calls.some(row => row.method === 'POST' && row.path?.endsWith('/prompts')));
+    if (!fixtureCase.startsWith('profile-')) {
+      assert.ok(!calls.some(row => row.method === 'POST' && /\/sessions\/[^/]+/.test(row.path)), 'ambiguous or foreign histories receive no profile or cleanup mutation');
+    }
+  });
+}
+
+test('a genuine preparation connection TypeError retains the retryable PREPARE_FAILED classification', async t => {
+  const f = await setup(t), originalRequest = OwnedKimiRuntime.prototype.request;
+  t.mock.method(OwnedKimiRuntime.prototype, 'request', async function (path, body, options) {
+    if (path === '/api/v1/meta') throw new TypeError('injected failed connection');
+    return originalRequest.call(this, path, body, options);
+  });
+  const result = await prepareKimiPrintSession(f.input, { env: f.env });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'PREPARE_FAILED');
+  assert.equal(result.cleanupConfirmed, true);
+  assert.equal(result.inferenceDispatched, false);
+  assert.deepEqual(await f.log(), [], 'unadmitted HTTP endpoints receive no shutdown mutation');
+});
+
+for (const [fixtureCase, code] of [['id-mismatch-version', 'RUNTIME_IDENTITY'], ['id-mismatch-no-version', 'RUNTIME_IDENTITY'],
+  ...['malformed-meta', 'missing-meta', 'null-meta-envelope', 'missing-meta-code'].map(name => [name, 'RUNTIME_PROTOCOL'])]) {
+  test('invalid registry/meta admission is rejected before any HTTP mutation: ' + fixtureCase, async (t) => {
+    const f = await setup(t, fixtureCase), result = await prepareKimiPrintSession(f.input, { env: f.env });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, code);
+    assert.equal(result.cleanupConfirmed, true);
+    const calls = await f.log();
+    assert.deepEqual(calls.map(({ method, path }) => ({ method, path })), [{ method: 'GET', path: '/api/v1/meta' }],
+      'a rejected endpoint receives no cleanup or session mutations; the owned OS process is stopped instead');
+  });
+}
+
 for (const cleanupFailure of ['unconfirmed', 'throws']) {
   test(`the 1ms preparation deadline retains TIMEOUT when cleanup ${cleanupFailure}`, { timeout: 15000 }, async t => {
     const f = await setup(t), originalStop = OwnedKimiRuntime.prototype.stop;

@@ -5,6 +5,40 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased
+
+- Accept the Kimi 2.5.3 registry/`/meta` server-id difference only when the
+  registry host version and the authenticated server version match; preserve
+  both ids for diagnostics and retain the strict check for unknown runtimes.
+- Preserve deterministic Kimi print-session preparation failures as
+  non-retryable compatibility/configuration errors instead of treating every
+  preparation failure as a transport retry. No task prompt is dispatched.
+- Initialize Kimi 2.5.3's freshly created, empty print histories through its
+  supported profile API when creation ignores ownership/configuration fields;
+  verify retained ownership and effective model/auto permissions/plan state
+  before print dispatch. Native execution still requires its full public API.
+- Keep rejected Kimi HTTP endpoints outside cleanup authority: terminate and
+  reap the spawned process without sending shutdown or remote-control writes
+  to an endpoint that did not pass admission. Reject malformed identity and
+  response envelopes as deterministic protocol failures.
+- Separate fresh conversation input from native history retention. Managed
+  Codex and Claude fresh calls keep distinct named histories, while scoped
+  reuse still requires matching policy and confirmed invocation evidence.
+  Preserve observed DSH/Kimi fresh IDs without granting continuation.
+- Retain independent named Pro histories for Intake/Garden advice and safe
+  retries, without adding role-ledger reuse. Give supported DSH/Kimi advice
+  calls readable metadata titles while preserving their existing protocols.
+- Show native history IDs and client entry guidance from the current invocation
+  only. Require a confirmed receipt digest before showing the latest response;
+  recover display IDs for older fresh records without mutating their ledger.
+  Distinguish native storage, list filtering and supported Desktop handoff.
+- Pin the reviewed Claude Code Pro 0.5.3 source candidate, which rejects a
+  forwarded native history opt-out before persistent task dispatch and preserves
+  explicit ephemeral calls. This does not publish the companion or Flywheel.
+- Pin Codex Pro 0.10.2, which carries configured durable-history intent and
+  originator through the generic DSH Host provider. Each Host task stays fresh;
+  standalone defaults, explicit ephemeral and dedicated review remain unchanged.
+
 ## 0.36.1 — Retained view state
 
 - Retain the Workflow, History or Settings page, selected settings section and

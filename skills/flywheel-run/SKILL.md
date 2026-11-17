@@ -97,7 +97,7 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
    用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
    Codex Pro 只做本地包／命令检查；其完整策略事后检查警告不能翻译成运行前隔离保证。
    可选 `claude-code-pro` 同样由独立 worker 调用公开 machine API；先核对配套
-   0.5.2 插件与 CLI。首版只支持明确 full-access，不把原生审批模式当作 OS 沙箱。
+   0.5.3 插件与 CLI。首版只支持明确 full-access，不把原生审批模式当作 OS 沙箱。
    不主动改变 loop 绑定，也不在 skill 内扫描或选择 Claude session。
    `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
@@ -158,7 +158,7 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
 确认 worker／guardian／app-server 已结束只解决清理问题，不证明调用结果已知；
 Go 仍须核对可信终态回执。不要切换 fresh、换任务目录、删除回执或重置 state 来绕过阻断。
 外层退出或等待几秒不算证明，skill 不自行选择会话 ID 或实现恢复循环。
-配套 Codex 0.10.1／Claude 0.5.2 支持由 Go 只读核对原调用 journal；pending 不证明
+配套 Codex 0.10.2／Claude 0.5.3 支持由 Go 只读核对原调用 journal；pending 不证明
 进程仍活着，找到成功回执也须有原候选检查点。只从原路径调用一次正常恢复入口，
 不删除 `.sessions`，不直接调用插件重发 prompt。按角色覆盖与质量阈值由 Go 解释，
 阈值默认关闭，重建不会重置预算或解除 unknown；不在 skill 中另做压缩。
