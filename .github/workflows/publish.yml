@@ -141,6 +141,17 @@ jobs:
         with:
           name: claude-code-pro-candidate-${{ github.run_id }}
           path: dist-claude
+      - name: Resolve and verify the downloaded Claude candidate
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { readClaudeRelease, verifyArchive } = require('./scripts/claude-release-gate.js');
+          const metadata = readClaudeRelease();
+          const tarball = path.resolve('dist-claude', metadata.tarball);
+          verifyArchive(tarball, metadata);
+          fs.appendFileSync(process.env.GITHUB_ENV, 'FLYWHEEL_CLAUDE_CODE_PRO_TARBALL=' + tarball + '\n');
+          NODE
       - name: Build and test the DSH plugin
         working-directory: plugins/dsh
         run: |
@@ -152,7 +163,7 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.3.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund "$FLYWHEEL_CLAUDE_CODE_PRO_TARBALL"
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
@@ -179,7 +190,6 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: ${{ github.workspace }}/dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.3.tgz
         run: npm run test:install
       - name: Build native CLI for paired session evaluation
         run: make build

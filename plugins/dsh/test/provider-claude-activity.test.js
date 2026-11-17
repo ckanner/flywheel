@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const live = { skip: installed ? false : 'install the pinned public Claude Code Pro 0.5.3 candidate', timeout: 20000 };
+const live = { skip: installed ? false : 'install the pinned public Claude Code Pro 0.6.0 candidate', timeout: 20000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -94,7 +94,8 @@ for (const scenario of ['activity-root-tools', 'activity-root-thinking', 'activi
     assert.equal(JSON.stringify(activity).includes('tool_use_id'), false);
     assert.ok((await f.records('claude-fixture-activity.jsonl')).length >= 10);
     const [record] = await f.records();
-    for (const flag of ['--include-partial-messages', '--forward-subagent-text']) assert.ok(record.argv.includes(flag));
+    assert.ok(record.argv.includes('--include-partial-messages'));
+    assert.equal(record.initialize.forwardSubagentText, true);
     assert.ok(run.frames.some(frame => frame.type === 'lifecycle' && frame.lifecycle.event === 'cleanup-confirmed'));
     if (scenario === 'activity-native-progress') {
       assert.equal(receipt.native.observed.events.filter(event => event.kind === 'task-progress').length, 1,
@@ -180,7 +181,7 @@ test('fresh Claude titles are readable, private prompts stay out, and resume kee
   const fallback = { ...input, requestId: 'fallback', prompt: 'PRIVATE_PROMPT_CONTENT must not be a title' }; delete fallback.sessionTitle;
   completed(await f.launch(fallback).done);
   const records = await f.records();
-  const name = record => record.argv.includes('-n') ? record.argv[record.argv.indexOf('-n') + 1] : undefined;
+  const name = record => record.initialize.title;
   assert.deepEqual(records.map(name), [input.sessionTitle, undefined, undefined, 'Claude · ' + basename(f.cwd)]);
   assert.ok(records[2].argv.includes('--no-session-persistence'));
 });

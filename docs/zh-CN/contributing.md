@@ -85,7 +85,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 | npm 安装或发行 | 根 npm 测试、单包候选构建、安装同一个 tarball |
 | 文档 | 链接、锚点、代码围栏、可运行示例、翻译一致性，以及受影响的内嵌／包内容 |
 
-Claude 桥接要求 worker 的依赖树中存在精确 0.5.3 optional machine API；因未安装 peer
+Claude 桥接要求 worker 的依赖树中存在精确 0.6.0 optional machine API；因未安装 peer
 而跳过不能算该后端通过。使用源码候选时保留已审查 source／tarball 身份。Codex Pro 的
 0.10.2 bundled 源码包同样由实际 integrity 与 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)
 固定。

@@ -4,10 +4,10 @@
 
 Flywheel 通过 `harness: "claude-code-pro"` 调用
 [`dsh-subagent-claude-code-pro`](https://github.com/ckanner/dsh-subagent-claude-code-pro)
-的公开 machine API。插件运行用户已安装的 Claude Code CLI，使用该 CLI 的原生工具
-循环与登录环境。Go 仍负责阶段调度、角色会话、验证、预算和交付。
+的公开 machine API。插件通过官方 **Agent SDK 0.3.326** 运行配置指定的本地
+Claude Code 程序，保留原生工具循环。Go 仍负责阶段调度、角色会话、验证、预算和交付。
 
-适配器要求 **`dsh-subagent-claude-code-pro@0.5.3`**、machine protocol 1
+适配器要求 **`dsh-subagent-claude-code-pro@0.6.0`**、machine protocol 1
 及其公开 lifecycle/recovery 接口。旧桌面工具接口和旧 machine 契约不能替代这些
 接口。默认阶段和路由均未选择 Claude。源码兼容性与包可用性需要分别核对；
 发行流程见[发布指南](releasing.md)。
@@ -15,11 +15,11 @@ Flywheel 通过 `harness: "claude-code-pro"` 调用
 ## 准备依赖
 
 需要 Node.js 22.18.0 或更高、macOS 或 Linux，以及可被启动引擎的进程找到的
-`claude` CLI。用户按 CLI 自身流程完成登录；Flywheel 不复制登录数据。
+兼容的 `claude` 程序及获准使用的认证；Flywheel 不复制登录数据或代办登录。
 
 Flywheel 包含 `flywheel-claude-code-pro-worker`，把 Claude 插件作为精确版本的
 **optional peer**。没有选择这个后端时无需安装插件，也不会启动 Claude。选择后必须
-让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.5.3`。仅在 DSH
+让 worker 的 Node 依赖解析能找到 `dsh-subagent-claude-code-pro@0.6.0`。仅在 DSH
 desktop profile 安装插件，不保证独立 worker 能访问该目录。
 
 registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 npm prefix 或同一项目依赖树。
@@ -27,7 +27,7 @@ registry 已有该精确版本时，将它装到 Flywheel 所在的同一全局 
 安装到同一 prefix，再用新构建的 Flywheel 验证。不要用 0.3.1 替代，也不要编辑包版本
 伪装兼容。此开发候选流程不提升 npm latest。
 
-已审查的配套 0.5.3 精确产物见
+已审查的配套 0.6.0 精确产物见
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json)。
 CI 验证这些候选字节；发布 Flywheel 前，必须从公共 registry 取得精确插件，
 并核对包身份、SHA-256 和 integrity 与该记录一致。源码验证本身不证明 registry 可用性。
@@ -44,20 +44,44 @@ Go 只传递白名单基础环境和所选 channel 明确注入的凭证；没�
 渠道不自动继承外部 Anthropic API key。显式凭证只通过受支持的环境名进入插件，
 环境凭证值不主动序列化到请求或 diagnostics；CLI 返回的文本按实际结果保留。
 
-## CLI 流式能力与可读会话名称
+## 官方 SDK、本地程序与认证
+
+普通调用进入配套插件独立 guardian 内的 SDK `query()`。SDK 负责请求与控制协议，
+适配器继续负责原生进程组、有界流校验、活动、用量和持久化回执。SDK 结束本身
+不能证明物理清理完成。原生 Review 与交互式 Team 保留各自专用 CLI 入口。
+
+`FLYWHEEL_CLAUDE_BIN` 保持权威，默认 `claude`；本地程序缺失或不兼容时，不会
+静默切换到 SDK 自带程序。安装 SDK 可能同时安装可选平台程序包，但不会改变实际
+选用的程序、配置目录或账号。
+
+本地配置与凭据解析仍由 Claude 原生程序处理。SDK 支持本地可执行文件，不表示
+所有订阅都已获准用于第三方集成。[官方 SDK 文档](https://code.claude.com/docs/en/agent-sdk/overview)
+要求第三方产品使用 API 认证，另行获准提供 claude.ai 登录或额度的情况除外。通过
+明确的 Flywheel channel 配置所需凭据；渠道名称本身不会选择或授权账号。下方示例
+使用 `ANTHROPIC_API_KEY`。
+
+在桌面配置编辑器中新选 Claude 资源时，建议使用 `claude-api` 通道与
+`ANTHROPIC_API_KEY`；已有通道定义、凭据映射及资源绑定保留其配置值。
+
+## 流式能力与可读会话名称
 
 查询路径在发送业务 prompt 前，使用无模型请求的 `claude --help` 检查
-`--include-partial-messages`、`--forward-subagent-text`（上游 2.1.211 引入），
+`--include-partial-messages`、`--forward-subagent-text`，
 新建具名持久会话还要求 `--name`。以已安装 CLI 实际提供的 flags 为准，版本号本身
 不能替代能力检查；缺少能力时，在业务文本送入 CLI 前明确失败。检查与正式查询
 共用原 wall 预算和取消信号。
+SDK 随后检查同一进程 initialize 响应中的 `claude_code_version`，只有稳定的
+**2.1.325 或更新版本**才放行任务输入。这是本适配器最低已验证版本，不表示每项
+上游功能首次出现的版本。版本缺失、过旧或为预发布版时，在任务输入前失败。
+此时原生进程已经启动，回执保留实际 PID 与独立清理事实；当前 machine 契约保持
+保守的 unknown 结果，不伪称进程从未派发。
 
 真实根／子任务的 partial、tool、task 活动刷新 Flywheel 的 idle 预算，不复制私有
 思考正文，也不通过定时心跳伪造进展；native 状态去重不抹掉活动。长期小增量不会
 耗尽累计原始流量预算，单帧和保留结果仍有上限。排队或不可见的工具仍可能静默；
 停止后如何处理见[活动、超时与恢复](session-recovery.md)，不能只因超时自动重试。
 
-新持久历史通过原生 `-n` 获得 Flywheel 的任务／角色标题；恢复时保留已有标题，
+新持久历史通过 SDK `title` 选项获得 Flywheel 的任务／角色标题；恢复时保留已有标题，
 包括用户手动改名。脱离 Flywheel 使用时，插件优先采用明确委派标签，缺省使用可读
 工作区名称；命名不额外调用模型。
 
@@ -66,7 +90,7 @@ scoped 可续用已经确认的 ID，保存历史本身不授权复用。Claude 
 print／SDK 会话；请通过真实根 UUID 使用受支持的 CLI／Desktop 入口，见
 [原生历史可见性](session-recovery.md#在原生客户端中找到会话)。
 
-0.5.3 配套插件会在 CLI 探测或任务启动前，拒绝有效环境中启用了
+0.6.0 配套插件会在 CLI 探测或任务启动前，拒绝有效环境中启用了
 `CLAUDE_CODE_SKIP_PROMPT_HISTORY` 的 persistent 新建／续接请求。
 显式 ephemeral 仍可用，用户设置不会被改写。原生真值为 `1`、`true`、`yes`、`on`，
 忽略大小写与首尾空格。Flywheel 的 Go 环境白名单原本就不转发此变量；新增检查
@@ -84,12 +108,12 @@ print／SDK 会话；请通过真实根 UUID 使用受支持的 CLI／Desktop �
     "claude-sonnet": {
       "harness": "claude-code-pro",
       "model": "sonnet",
-      "channel": "claude-subscription",
+      "channel": "claude-api",
       "thinking": "high"
     }
   },
   "channels": {
-    "claude-subscription": { "env-key": null }
+    "claude-api": { "env-key": "ANTHROPIC_API_KEY" }
   },
   "permissions": { "mode": "full-access" },
   "sessions": { "mode": "scoped", "policy-version": 1 }
@@ -153,10 +177,11 @@ flywheel-claude-code-pro-worker --doctor
 ```
 
 父绑定的 `thinking` 仍单独传给父调用的 `--effort`；子定义原样进入 Claude 的
-`--agents` JSON。省略子 effort 时保持字段缺省，让 CLI 使用原生继承行为；Flywheel
+SDK `agents`，经 initialize 传递；交互 Team 保留 `--agents`。省略子 effort 时保持
+字段缺省，让 CLI 使用原生继承行为；Flywheel
 不会填入父值或自行设定子默认值。非法档位在配置加载时拒绝，不会派发 worker。
 
-同一字段也可用于 0.5.3 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
+同一字段也可用于 0.6.0 桌面插件的 `native` 设置、PTC 逐次覆盖及独立交互 Team
 请求。直接 Flywheel worker 仍读取选中的 native profile，不读取桌面设置。显式
 传递 effort 只能证明 CLI 请求参数；tools-only init 证据不能证明子模型实际采用的档位。
 

@@ -13,16 +13,16 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | `dsh` | PTC、子 Agent、Team、Workflow、显式 Web、LCU | 本机 DSH；实际 PTC probe；LCU 另需 0.5.0 peer 和 full-access |
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.2；已登录 Codex CLI；实际 sandbox/approval 回执 |
-| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.5.3；已登录 Claude CLI；显式 full-access |
+| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.6.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
 ### 对齐独立 worker 的依赖
 
-桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.5.3 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
+桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.6.0 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.3 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.6.0 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 

@@ -5,7 +5,7 @@
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
 checks. Durable public-journal recovery requires **Codex Pro 0.10.2** or
-**Claude Code Pro 0.5.3**; DSH and Kimi retain their own supported recovery paths.
+**Claude Code Pro 0.6.0**; DSH and Kimi retain their own supported recovery paths.
 
 ## Resume an existing task
 
@@ -37,7 +37,7 @@ The transport determines which progress can be observed:
 | Transport | Progress used by Flywheel | Time limits |
 |---|---|---|
 | DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
-| Codex Pro 0.10.2 / Claude Code Pro 0.5.3 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Codex Pro 0.10.2 / Claude Code Pro 0.6.0 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
 | Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
 | Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
 
@@ -195,7 +195,7 @@ Go prepares the task's `.sessions/` parent and saves intent before an invocation
 Typed events include `thread-ready`, `dispatch-intent`, `dispatch-possible`, `turn-accepted`, `terminal`, and `cleanup-confirmed`. Events must reflect actual backend observations:
 
 - **Codex** reports its actual thread/configuration before `turn/start`. Go checks the complete permission policy, cwd, model, and identity before acknowledging. A failed acknowledgement prevents the next turn boundary.
-- **Claude** exposes native init only after prompt submission. It supports pre-dispatch intent/possible acknowledgements, but does not invent a pre-prompt thread-ready or native turn-accepted event. Its observed configuration remains a terminal admission check.
+- **Claude** checks the SDK initialize/version handshake before task input, but the native `system/init` configuration message follows prompt submission. It supports pre-dispatch intent/possible acknowledgements, but does not invent a pre-prompt thread-ready or native turn-accepted event. Its observed configuration remains a terminal admission check.
 
 Go correlates each event, atomically saves and `fsync`s its checkpoint and state, then sends the matching ACK. Missing, early, duplicate, mismatched, or expired ACKs cannot release execution. `persistent:true` describes requested history preservation; it does not prove that an empty thread has a resumable rollout.
 

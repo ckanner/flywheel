@@ -214,14 +214,15 @@ test('the complete npm candidate install and run from a clean agent environment'
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.5.3 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.6.0 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.5.3');
+    assert.equal(manifest.version, '0.6.0');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
-    assert.deepEqual(manifest.dependencies || {}, {}, 'the offline candidate must remain dependency-free');
+    assert.deepEqual(manifest.dependencies, { '@anthropic-ai/claude-agent-sdk': '0.3.326' },
+      'the candidate must use the pinned official SDK as a runtime dependency');
     const [npm, args] = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath]] : ['npm', []];
     const installation = await run(npm, [...args, 'install', '--global', '--prefix', context.prefix,
       '--ignore-scripts', '--no-audit', '--no-fund', tarball], context.env, context.project);
@@ -266,10 +267,10 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.throws(() => process.kill(-result.receipt.execution.processGroupId, 0), { code: 'ESRCH' });
     const calls = (await fs.readFile(path.join(context.project, 'claude-fixture.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(calls.length, 1);
-    assert.ok(calls[0].argv.includes('--dangerously-skip-permissions'));
-    const option = name => calls[0].argv[calls[0].argv.indexOf(name) + 1];
-    assert.deepEqual(JSON.parse(option('--agents')), definitions);
-    assert.equal(option('--effort'), 'high');
+    assert.ok(calls[0].argv.includes('--allow-dangerously-skip-permissions'));
+    assert.ok(calls[0].argv.includes('--permission-mode=bypassPermissions'));
+    assert.deepEqual(calls[0].initialize.agents, definitions);
+    assert.ok(calls[0].argv.includes('--effort=high'));
     assert.deepEqual(result.receipt.native.requested.agents.definitions, definitions);
     assert.deepEqual(await fs.readFile(globalConfig), before, 'opting into an adapter must not select or rewrite any loop');
   });

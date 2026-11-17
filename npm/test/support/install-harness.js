@@ -7,6 +7,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { capture } = require('../../install.js');
+const { claudeSdkDependencies } = require('./claude-sdk-registry.js');
 
 /** Serve the actual published dependency, verified against the source lock. */
 async function runtimeDependency(name, version, suppliedTarball) {
@@ -75,6 +76,15 @@ async function registry(directory) {
     packages.set(dependency.manifest.name, dependency);
     tarballs.set('/tarballs/' + dependency.entry.filename, dependency.data);
   }
+  if (process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL) {
+    for (const dependency of await claudeSdkDependencies()) {
+      const current = packages.get(dependency.manifest.name);
+      const versions = current ? (Array.isArray(current) ? current : [current]) : [];
+      if (!versions.some(item => item.manifest.version === dependency.manifest.version)) versions.push(dependency);
+      packages.set(dependency.manifest.name, versions);
+      tarballs.set('/tarballs/' + dependency.entry.filename, dependency.data);
+    }
+  }
   const requests = [];
   let url;
   const server = http.createServer((request, response) => {
@@ -84,10 +94,13 @@ async function registry(directory) {
     if (tarball) { response.writeHead(200, { 'content-type': 'application/octet-stream' }); response.end(tarball); return; }
     const entry = packages.get(pathname.slice(1));
     if (entry) {
-      const version = { ...entry.manifest, dist: { tarball: url + '/tarballs/' + entry.entry.filename, integrity: entry.entry.integrity,
-        shasum: crypto.createHash('sha1').update(entry.data).digest('hex') } };
+      const entries = Array.isArray(entry) ? entry : [entry];
+      const versions = Object.fromEntries(entries.map(item => [item.manifest.version, { ...item.manifest,
+        dist: { tarball: url + '/tarballs/' + item.entry.filename, integrity: item.entry.integrity,
+          shasum: crypto.createHash('sha1').update(item.data).digest('hex') } }]));
+      const latest = entries.at(-1).manifest;
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ name: version.name, 'dist-tags': { latest: version.version }, versions: { [version.version]: version } }));
+      response.end(JSON.stringify({ name: latest.name, 'dist-tags': { latest: latest.version }, versions }));
       return;
     }
     response.writeHead(404, { 'content-type': 'application/json' });

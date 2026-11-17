@@ -7,6 +7,15 @@ their original language.
 
 ## Unreleased
 
+- Integrate the reviewed Claude Code Pro 0.6.0 source candidate with official
+  Agent SDK 0.3.326, keeping the configured local native executable, persistent
+  named sessions, real root/child activity, durable receipts and owned process
+  cleanup. Preserve independent Review/interactive Team and the machine v1
+  contract. Exercise the actual SDK and its locked dependencies in installed
+  package checks; document native runtime compatibility and API authentication.
+- New Claude resource selections in the desktop editor use the explicit
+  `claude-api` / `ANTHROPIC_API_KEY` preset. Existing channels, credential mappings
+  and resource bindings are preserved.
 - Accept the Kimi 2.5.3 registry/`/meta` server-id difference only when the
   registry host version and the authenticated server version match; preserve
   both ids for diagnostics and retain the strict check for unknown runtimes.

@@ -18,7 +18,7 @@ import (
 // watchdog all participate. The only fake component is the native CLI itself.
 func TestClaudeCodeProProviderActivityOfflineBridge(t *testing.T) {
 	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {
-		t.Skip("set FLYWHEEL_TEST_NODE_BRIDGE=1 with the built worker and pinned Claude 0.5.3 candidate installed")
+		t.Skip("set FLYWHEEL_TEST_NODE_BRIDGE=1 with the built worker and pinned Claude 0.6.0 candidate installed")
 	}
 	_, err := exec.LookPath("node")
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestClaudeCodeProProviderActivityOfflineBridge(t *testing.T) {
 			log := readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl"))
 			require.Len(t, log, 1)
 			assert.Contains(t, log[0]["argv"], "--include-partial-messages")
-			assert.Contains(t, log[0]["argv"], "--forward-subagent-text")
+			assert.Equal(t, true, log[0]["initialize"].(map[string]any)["forwardSubagentText"])
 			assert.Greater(t, len(readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture-activity.jsonl"))), 30)
 			if scenario == "activity-child-thinking" {
 				assert.Empty(t, out.NativeReceipt, "child activity also works with no explicit native profile")
@@ -151,9 +151,9 @@ func TestClaudeCodeProProviderActivityOfflineBridge(t *testing.T) {
 		assert.Equal(t, stored["name"], updated["name"])
 		log := readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl"))
 		require.Len(t, log, 2)
-		assert.Contains(t, log[0]["argv"], "Flywheel · Alerts · Planner")
-		assert.NotContains(t, log[1]["argv"], "-n")
-		assert.Contains(t, log[1]["argv"], "--resume")
+		assert.Equal(t, "Flywheel · Alerts · Planner", log[0]["initialize"].(map[string]any)["title"])
+		assert.NotContains(t, log[1]["initialize"].(map[string]any), "title")
+		assert.Contains(t, log[1]["argv"], "--resume="+first.SessionID)
 		assertClaudeCodeProStopped(t, log)
 	})
 }

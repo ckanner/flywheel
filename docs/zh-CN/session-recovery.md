@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/session-recovery.md) · 简体中文
 
 Flywheel 分别处理角色对话历史续用和中断调用恢复。fresh 与 scoped 都保留调用安全
-检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.2** 或 **Claude Code Pro 0.5.3**；
+检查。公开 journal 的持久化恢复要求 **Codex Pro 0.10.2** 或 **Claude Code Pro 0.6.0**；
 DSH 与 Kimi 继续使用各自支持的恢复路径。
 
 ## 恢复已有任务
@@ -31,7 +31,7 @@ idle timeout 表示在配置的静默预算内没有收到可观察活动，不�
 | 调用方式 | Flywheel 观察的进展 | 时限 |
 |---|---|---|
 | DSH SDK，包括一次性预热 | 已接纳根 Agent 和 owned local children 的公开 assistant-stream；已集成外部 Codex／Claude Provider 的有效回调 | 可配置的 idle 静默预算与 wall 总期限 |
-| Codex Pro 0.10.2 / Claude Code Pro 0.5.3 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
+| Codex Pro 0.10.2 / Claude Code Pro 0.6.0 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi native | 归属于已接纳调用及 Agent 树的受支持原生事件 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi print / 旧 `codex exec` | 没有足以持续判断进展的输出契约 | 保留 wall 总期限，不因 print 静默执行 idle 终止 |
 
@@ -153,7 +153,7 @@ Go 准备任务的 `.sessions/` 父目录并保存调用意图，上游 API 再�
 上游按实际可观察边界发送 `thread-ready`、`dispatch-intent`、`dispatch-possible`、`turn-accepted`、`terminal` 和 `cleanup-confirmed`。不同后端可观察到的事件不同，不能自行补齐：
 
 - **Codex** 的 `thread-ready` 在 `turn/start` 之前返回实际 thread/configuration。Go 在确认 ACK 前核对完整权限策略、cwd、模型和身份。任一确认失败会阻止后续 turn。
-- **Claude** 只有提交 prompt 后才返回原生 init。它提供派发前的 intent/possible ACK，但不宣称有 prompt 前的 thread-ready 或真实 turn-accepted；实际配置仍是终态接纳检查。
+- **Claude** 在任务输入前核对 SDK initialize／版本握手，但原生 `system/init` 配置消息仍在提交 prompt 后返回。它提供派发前的 intent/possible ACK，但不宣称有 prompt 前的 thread-ready 或真实 turn-accepted；实际配置仍是终态接纳检查。
 
 Go 将事件与原调用身份核对后，先原子保存并 `fsync` 检查点与状态，再回 ACK。缺失、错误、重复、过早或超时的 ACK 不能释放后续步骤。`persistent:true` 表示请求保留原生历史；不表示空 thread 已有可恢复 rollout。
 

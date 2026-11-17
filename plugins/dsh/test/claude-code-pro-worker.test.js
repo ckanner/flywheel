@@ -12,10 +12,15 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.5.3 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.6.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const option = (record, name) => {
+  const inline = record.argv.find(arg => arg.startsWith(name + '='));
+  if (inline !== undefined) return inline.slice(name.length + 1);
+  const index = record.argv.indexOf(name); return index < 0 ? undefined : record.argv[index + 1];
+};
 
 async function setup(t, scenario = 'ok') {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'flywheel claude $() ')));
@@ -149,11 +154,12 @@ test('installed public machine API receives exact model, effort, full access and
   assert.throws(() => process.kill(-r.execution.processGroupId, 0), { code: 'ESRCH' });
   const [record] = await f.records();
   assert.ok(record.argv.includes('--no-session-persistence'));
-  assert.ok(record.argv.includes('--dangerously-skip-permissions'));
+  assert.ok(record.argv.includes('--allow-dangerously-skip-permissions'));
+  assert.equal(option(record, '--permission-mode'), 'bypassPermissions');
   assert.equal(record.credentialPresent, false);
 });
 
-test('installed public API carries each child effort to --agents without changing parent effort', liveContract, async t => {
+test('installed public API carries each child effort through SDK initialize without changing parent effort', liveContract, async t => {
   const f = await setup(t);
   for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
     const definitions = { scout: { description: 'Inspect the target', prompt: 'Report concrete findings', model: 'sonnet', effort } };
@@ -163,9 +169,8 @@ test('installed public API carries each child effort to --agents without changin
     assert.equal(frame.receipt.ok, true);
     assert.deepEqual(frame.receipt.native.requested, native);
     const record = (await f.records()).at(-1);
-    const option = name => record.argv[record.argv.indexOf(name) + 1];
-    assert.deepEqual(JSON.parse(option('--agents')), definitions);
-    assert.equal(option('--effort'), 'high');
+    assert.deepEqual(record.initialize.agents, definitions);
+    assert.equal(option(record, '--effort'), 'high');
   }
 });
 
@@ -193,9 +198,22 @@ test('persistent repair resumes only the provided session across independent wor
   assert.equal(next.usage.totalTokens, 22);
   assert.notEqual(next.runId, first.runId);
   const calls = await f.records();
-  assert.ok(calls[0].argv.includes('--session-id'));
-  assert.ok(calls[1].argv.includes('--resume'));
-  assert.ok(!calls[1].argv.includes('--session-id'));
+  assert.equal(option(calls[0], '--session-id'), first.session.id);
+  assert.equal(option(calls[1], '--resume'), first.session.id);
+  assert.equal(option(calls[1], '--session-id'), undefined);
+});
+
+test('SDK initialization rejects an old native runtime without sending a task or fabricating a no-process receipt', liveContract, async t => {
+  const f = await setup(t, 'unsupported-sdk-init');
+  const receipt = resultFrame(await f.launch().done, 1).receipt;
+  assert.equal(receipt.ok, false);
+  assert.equal(receipt.failure.category, 'unsupported-runtime');
+  assert.equal(receipt.execution.dispatch, 'dispatched');
+  assert.equal(receipt.execution.outcome, 'unknown');
+  assert.equal(receipt.cleanup.confirmed, true);
+  assert.ok(receipt.execution.processGroupId > 0);
+  assert.throws(() => process.kill(-receipt.execution.processGroupId, 0), { code: 'ESRCH' });
+  assert.deepEqual(await f.records(), [], 'initialize/EOF must not invent a fixture prompt or history');
 });
 
 test('optional adapter doctor imports the public API without running Claude', liveContract, async t => {
@@ -235,7 +253,7 @@ test('machine schema and image requests reach the CLI through the pinned public 
   assert.deepEqual(frame.receipt.structured, { answer: 42 });
   const [call] = await f.records();
   assert.equal(call.userContent[1].type, 'image');
-  assert.equal(call.argv[call.argv.indexOf('--max-budget-usd') + 1], '2');
+  assert.equal(option(call, '--max-budget-usd'), '2');
 });
 
 test('dedicated jobs preflight once and route through their independent public interfaces', async () => {
@@ -266,15 +284,33 @@ test('dedicated jobs preflight once and route through their independent public i
   assert.equal(calls[0][0], 'review-validate');
 });
 
-for (const scenario of ['wrong-cwd', 'wrong-model', 'wrong-permission', 'wrong-session', 'duplicate-result', 'malformed-after-terminal', 'missing-result', 'abnormal-exit']) {
+for (const scenario of ['wrong-cwd', 'wrong-model', 'wrong-permission', 'wrong-session', 'duplicate-result', 'malformed-after-terminal', 'malformed-sdk-control-after-terminal', 'failed-result-malformed-sdk-control', 'missing-result', 'abnormal-exit']) {
   test(`${scenario} cannot yield a reusable successful Claude result`, liveContract, async t => {
     const f = await setup(t, scenario);
     const frame = resultFrame(await f.launch().done, 1);
     assert.equal(frame.receipt.ok, false);
     assert.equal(frame.receipt.session.resumable, false);
     assert.equal(frame.receipt.cleanup.confirmed, true);
+    if (scenario.includes('sdk-control')) {
+      assert.equal(frame.receipt.execution.outcome, 'unknown');
+      assert.equal(frame.receipt.execution.terminalReceived, false);
+      assert.equal(frame.receipt.usage.status, 'unknown');
+    }
   });
 }
+
+test('an intact native failed result and exit 1 preserve known outcome and usage through the SDK', liveContract, async t => {
+  const f = await setup(t, 'native-failure-exit-one');
+  const receipt = resultFrame(await f.launch().done, 1).receipt;
+  assert.equal(receipt.ok, false);
+  assert.equal(receipt.execution.outcome, 'failed');
+  assert.equal(receipt.execution.terminalReceived, true);
+  assert.equal(receipt.execution.exitCode, 1);
+  assert.equal(receipt.usage.status, 'complete');
+  assert.equal(receipt.usage.totalTokens, 22);
+  assert.equal(receipt.cleanup.confirmed, true);
+  assert.equal(receipt.session.resumable, false);
+});
 
 test('explicit channel credentials reach only the selected native backend', liveContract, async t => {
   const f = await setup(t);
@@ -294,8 +330,8 @@ test('an unavailable resume fails once without creating a replacement session', 
   assert.equal(receipt.cleanup.confirmed, true);
   const calls = await f.records();
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].argv[calls[0].argv.indexOf('--resume') + 1], threadId);
-  assert.ok(!calls[0].argv.includes('--session-id'));
+  assert.equal(option(calls[0], '--resume'), threadId);
+  assert.equal(option(calls[0], '--session-id'), undefined);
 });
 
 test('the native deadline returns a failed receipt after cleanup', liveContract, async t => {

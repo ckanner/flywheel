@@ -53,8 +53,8 @@ route and independent final Review; an upgrade to Full requires the additional s
 Unused execution routes do not become task runtime requirements.
 
 Claude is optional. Selecting `claude-code-pro` additionally requires the matching
-0.5.3 companion package in the worker's dependency tree and an installed,
-authenticated Claude CLI. See [Claude Code Pro](claude-code-pro.md).
+0.6.0 companion package in the worker's dependency tree and an installed,
+compatible Claude executable with authorized authentication. See [Claude Code Pro](claude-code-pro.md).
 
 ## 2. Install
 

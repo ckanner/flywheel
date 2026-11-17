@@ -3,27 +3,53 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 
 const argv = process.argv.slice(2);
-const flag = name => { const index = argv.indexOf(name); return index < 0 ? undefined : argv[index + 1]; };
+const flag = name => {
+  const inline = argv.find(arg => arg.startsWith(name + '='));
+  if (inline !== undefined) return inline.slice(name.length + 1);
+  const index = argv.indexOf(name); return index < 0 ? undefined : argv[index + 1];
+};
 const settingsPath = join(process.cwd(), 'claude-fixture.json');
 const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {};
 const scenario = settings.scenario || 'ok';
-// The real 0.5.3 public API probes capabilities in a separate owned process
+if (argv.includes('--version')) { process.stdout.write('2.1.326 (Claude Code)\n'); process.exit(0); }
+// The real 0.6.0 public API probes capabilities in a separate owned process
 // before it sends any prompt. A probe must not appear as an inference in logs.
 if (argv.includes('--help')) {
   process.stdout.write('--include-partial-messages\n--name\n-n\n' +
     (scenario === 'unsupported-child-stream' ? '' : '--forward-subagent-text\n'));
   process.exit(0);
 }
-let input = '';
-for await (const chunk of process.stdin) input += chunk;
-const userContent = input.trim() ? JSON.parse(input.trim()).message.content : [];
+// Exercise the real SDK's bidirectional initialize protocol. Record the actual
+// wire request; do not invent old argv flags for options now sent through stdin.
+let initialize;
+const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const message = await new Promise((resolve, reject) => {
+  lines.on('line', line => {
+    let frame;
+    try { frame = JSON.parse(line); } catch (error) { reject(error); return; }
+    if (frame.type === 'control_request') {
+      if (frame.request?.subtype === 'initialize') initialize = frame.request;
+      process.stdout.write(JSON.stringify({ type: 'control_response', response: {
+        subtype: 'success', request_id: frame.request_id,
+        response: { commands: [], agents: [], models: [], account: {},
+          claude_code_version: scenario === 'unsupported-sdk-init' ? '2.1.324' : '2.1.326',
+          output_style: 'default', available_output_styles: ['default'] },
+      } }) + '\n');
+    } else if (frame.type === 'user') resolve(frame);
+  });
+  lines.once('close', () => resolve(undefined));
+  lines.once('error', reject);
+});
+if (!message && argv[0] !== 'ultrareview') process.exit(0);
+const userContent = message?.message?.content ?? [];
 const prompt = userContent.filter(block => block.type === 'text').map(block => block.text).join('\n');
 const resume = flag('--resume');
 const id = resume || flag('--session-id') || randomUUID();
 const log = join(process.cwd(), 'claude-fixture.jsonl');
-appendFileSync(log, JSON.stringify({ argv, prompt, userContent, pid: process.pid, scenario,
+appendFileSync(log, JSON.stringify({ argv, initialize, prompt, userContent, pid: process.pid, scenario,
   credentialPresent: Boolean(process.env.ANTHROPIC_API_KEY), leakedDSH: Boolean(process.env.DSH_SECRET) }) + '\n');
 const emit = event => process.stdout.write(JSON.stringify(event) + '\n');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -42,11 +68,11 @@ if (scenario === 'resume-missing' && resume) {
 emit({ type: 'system', subtype: 'init', session_id: id,
   model: scenario === 'wrong-model' ? 'unexpected-model' : flag('--model'), cwd: scenario === 'wrong-cwd' ? '/' : process.cwd(),
   permissionMode: scenario === 'wrong-permission' ? 'plan' : flag('--permission-mode'),
-  claude_code_version: 'fixture-offline',
+  claude_code_version: '2.1.326',
   tools: scenario === 'native-mismatch' ? ['Agent', 'Workflow'] : ['Read', 'Bash',
     ...((flag('--disallowedTools') || '').split(',').includes('Agent') ? [] : ['Agent']),
     ...(process.env.CLAUDE_CODE_DISABLE_WORKFLOWS === '0' ? ['Workflow'] : [])],
-  agents: flag('--agents') ? Object.keys(JSON.parse(flag('--agents'))) : [] });
+  agents: Object.keys(initialize?.agents ?? (flag('--agents') ? JSON.parse(flag('--agents')) : {})) });
 if (scenario === 'oversized-frame') {
   emit({ type: 'stream_event', session_id: id, parent_tool_use_id: null,
     event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'x'.repeat(17 * 1024 * 1024) } } });
@@ -103,7 +129,8 @@ if (['hang', 'stubborn', 'progress-hang', 'activity-then-silent'].includes(scena
   setInterval(() => {}, 1000);
 } else {
   const answer = prior ? 'prior:' + prior + '|echo:' + prompt : 'echo:' + prompt;
-  if (!argv.includes('--no-session-persistence')) writeFileSync(history, JSON.stringify({ prompt, name: flag('-n') ?? stored.name ?? null }));
+  if (!argv.includes('--no-session-persistence')) writeFileSync(history, JSON.stringify({ prompt,
+    name: initialize?.title ?? flag('-n') ?? stored.name ?? null }));
   emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'text', text: answer }] } });
   if (scenario !== 'missing-result') {
     const result = { type: 'result', subtype: 'success', is_error: false, uuid: randomUUID(),
@@ -111,11 +138,19 @@ if (['hang', 'stubborn', 'progress-hang', 'activity-then-silent'].includes(scena
       usage: scenario === 'partial-usage' ? { input_tokens: 10, output_tokens: 5 } :
         { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 4, cache_creation_input_tokens: 3 },
       total_cost_usd: 0.12 };
-    if (flag('--json-schema')) result.structured_output = { answer: 42 };
+    if (initialize?.jsonSchema || flag('--json-schema')) result.structured_output = { answer: 42 };
     if (scenario === 'unknown-usage') delete result.usage;
+    if (scenario === 'native-failure-exit-one' || scenario === 'failed-result-malformed-sdk-control') {
+      result.subtype = 'error_during_execution';
+      result.is_error = true;
+      result.errors = ['offline native execution failure'];
+      delete result.result;
+    }
     emit(result);
     if (scenario === 'duplicate-result') emit(result);
     if (scenario === 'malformed-after-terminal') process.stdout.write('not-json\n');
+    if (scenario === 'malformed-sdk-control-after-terminal' || scenario === 'failed-result-malformed-sdk-control') emit({ type: 'control_response' });
   }
-  process.exitCode = scenario === 'abnormal-exit' ? 2 : 0;
+  process.exitCode = scenario === 'abnormal-exit' ? 2 :
+    (scenario === 'native-failure-exit-one' || scenario === 'failed-result-malformed-sdk-control') ? 1 : 0;
 }

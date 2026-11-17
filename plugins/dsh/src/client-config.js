@@ -493,7 +493,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       if (group !== 'panel' && !Object.hasOwn(draft[group] ?? {}, key)) continue;
       const previous = group === 'panel' ? base?.['judge-panel'] : base?.[group]?.[key];
       if (JSON.stringify(value) !== JSON.stringify(previous) && value.channel && !values.channels?.[value.channel]) {
-        values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null } };
+        const fallback = { 'env-key': value.harness === 'claude-code-pro' && value.channel === 'claude-api' ? 'ANTHROPIC_API_KEY' : null };
+        values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? fallback };
       }
     }
     const sections = Object.keys({ ...base, ...values }).filter(key => JSON.stringify(values[key]) !== JSON.stringify(base?.[key]));
@@ -683,7 +684,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       'claude-code-pro': {
         harness: 'claude-code-pro',
         model: 'sonnet',
-        channel: 'claude-subscription',
+        channel: 'claude-api',
         thinking: 'high',
       },
     })[resource];
