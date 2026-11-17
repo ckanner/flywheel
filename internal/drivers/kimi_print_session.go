@@ -15,7 +15,8 @@ import (
 var kimiPrintSessionPreparer = prepareKimiPrintSession
 
 // Kimi preparation runs before any inference. Deterministic compatibility,
-// schema or identity failures must not be retried as transport faults; only
+// schema or identity failures must not be retried as transport faults. The
+// generic PREPARE_FAILED catch-all (for example a nested fetch failure) and
 // startup/registry races remain transport-retryable.
 func kimiPrintPreparationErrorCode(code string) errs.ErrorCode {
 	switch code {
