@@ -112,7 +112,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # macOS quality-gate plus the 36 paired-session scenarios can legitimately
+    # exceed 25 minutes on a loaded runner; the candidate itself is unchanged.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
