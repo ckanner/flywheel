@@ -198,6 +198,63 @@ func TestManagedSessionValidationAndHistoryFailures(t *testing.T) {
 	_, err = ReadSessionHistory(fx.taskDir, "execute/M01-T01")
 	require.Error(t, err)
 }
+
+func TestSessionHistoryRecoversOnlyTheExactObservedIDWithoutChangingReuse(t *testing.T) {
+	for _, scenario := range []string{"observed", "foreign-invocation", "no-outcome", "legacy-result-only", "ledger-wins", "no-observed-id", "missing-digest"} {
+		t.Run(scenario, func(t *testing.T) {
+			fx, c := handoffFixture(t)
+			const key = "execute/M01-T01"
+			r := c.State.Sessions.Records[key]
+			r.ThreadID, r.ResumeCandidate, r.Last.Persistent = "", false, false
+			receipt, _, err := state.ReadSessionReceipt(fx.taskDir, key, r.Last.ID, r.Last.ReceiptDigest)
+			require.NoError(t, err)
+			result := drivers.Result{Harness: "dsh", Text: "saved response", Session: &drivers.SessionOutcome{RequestID: r.Last.ID, SessionID: "retained-native-id"}}
+			want := ""
+			switch scenario {
+			case "observed":
+				want = "retained-native-id"
+			case "foreign-invocation":
+				result.Session.RequestID = "another-invocation"
+			case "no-outcome":
+				result.Session = nil
+			case "legacy-result-only":
+				result.Session, result.SessionID = nil, "uncorrelated-id"
+			case "ledger-wins":
+				r.ThreadID, want = "ledger-id", "ledger-id"
+			case "no-observed-id":
+				result.Session.SessionID = ""
+			}
+			receipt.Result, err = json.Marshal(result)
+			require.NoError(t, err)
+			r.Last.ReceiptDigest, err = state.WriteSessionReceipt(fx.taskDir, key, *receipt)
+			require.NoError(t, err)
+			if scenario == "missing-digest" {
+				r.Last.ReceiptDigest = ""
+				r.Last.Status = "blocked"
+			}
+			c.save()
+			require.NoError(t, c.err())
+			before, err := os.ReadFile(filepath.Join(fx.taskDir, "state.json"))
+			require.NoError(t, err)
+			history, err := ReadSessionHistory(fx.taskDir, key)
+			if scenario == "missing-digest" {
+				require.ErrorContains(t, err, "no confirmed response receipt")
+				require.Nil(t, history)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, want, history.Thread)
+				require.Equal(t, r.Last.ID, history.Invocation)
+				require.Equal(t, "saved response", history.Text)
+			}
+			after, err := os.ReadFile(filepath.Join(fx.taskDir, "state.json"))
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			require.False(t, r.ResumeCandidate)
+			require.False(t, r.Last.Persistent)
+		})
+	}
+}
+
 func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func TestManualReceiptRecoveryConsumesOnceBeforeAnotherPrompt(t *testing.T) {

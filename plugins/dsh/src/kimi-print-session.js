@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { realpath } from 'node:fs/promises';
-import { OwnedKimiRuntime, checkAbort, error } from './kimi-native-runtime.js';
+import { OwnedKimiRuntime, initializeKimiCreatedSession, readKimiMainAgent, checkAbort, error } from './kimi-native-runtime.js';
 import { validateObservationRequest } from './machine-worker.js';
 
 const identifier = value => typeof value === 'string' && value.trim() && value.length <= 512 && !/[\0\r\n]/.test(value);
@@ -37,7 +37,8 @@ export async function prepareKimiPrintSession(input, { env = process.env, signal
     runtime = new OwnedKimiRuntime(env, 'agent');
     cleanupConfirmed = false;
     await runtime.start(controller.signal);
-    const openapi = await runtime.request('/openapi.json', undefined, { raw: true, signal: controller.signal });
+    const [openapi, asyncapi] = await Promise.all(['/openapi.json', '/asyncapi.json'].map(path =>
+      runtime.request(path, undefined, { raw: true, signal: controller.signal })));
     const creation = openapi.paths?.['/api/v1/sessions']?.post?.requestBody?.content?.['application/json']?.schema;
     const resolve = (schema, seen = new Set()) => {
       if (!schema || typeof schema !== 'object') return {};
@@ -53,7 +54,7 @@ export async function prepareKimiPrintSession(input, { env = process.env, signal
         ['model', 'permission_mode', 'plan_mode'].some(key => !config[key])) {
       throw error('UNSUPPORTED_SCHEMA', 'The installed Kimi API cannot prepare a named print session with its original model and auto permission mode');
     }
-    const session = await runtime.request('/api/v1/sessions', {
+    const creationRequest = {
       title, metadata: { cwd, flywheel_print_invocation: input.requestId },
       // Print always uses auto permissions and skips default_plan_mode on a
       // fresh history. Preserve those semantics when the CLI sees --session.
@@ -61,12 +62,14 @@ export async function prepareKimiPrintSession(input, { env = process.env, signal
       // conditional effort override without overriding a disabled-thinking profile.
       // Omitted environment/profile/native controls retain Kimi's own defaults.
       agent_config: { model: input.model, permission_mode: 'auto', plan_mode: false },
-    }, { signal: controller.signal });
-    if (!identifier(session.id)) throw error('RUNTIME_PROTOCOL', 'Kimi did not return a valid new print-session identity');
+    };
+    const session = await runtime.request('/api/v1/sessions', creationRequest, { signal: controller.signal });
+    if (!identifier(session?.id)) throw error('RUNTIME_PROTOCOL', 'Kimi did not return a valid new print-session identity');
     sessionId = session.id;
-    if (session.title !== title || session.metadata?.cwd !== cwd || session.metadata?.flywheel_print_invocation !== input.requestId ||
-        session.busy !== false || session.main_turn_active !== false || session.pending_interaction !== 'none') {
-      throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the requested title, workspace, ownership or idle new history');
+    await initializeKimiCreatedSession(runtime, openapi, session, creationRequest, 'flywheel_print_invocation', { signal: controller.signal });
+    const agent = await readKimiMainAgent(runtime, sessionId, asyncapi, controller.signal);
+    if (agent.model !== input.model || agent.permission_mode !== 'auto' || agent.plan_mode !== false || agent.status !== 'idle') {
+      throw error('RUNTIME_PROTOCOL', 'Kimi did not confirm the requested print model, auto permission and disabled plan mode');
     }
   } catch (cause) {
     failure = { code: typeof cause?.code === 'string' ? cause.code : 'PREPARE_FAILED',

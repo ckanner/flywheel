@@ -75,6 +75,9 @@ func ReadSessionHistory(taskDir, key string) (*SessionHistory, error) {
 		return nil, fmt.Errorf("session key not found")
 	}
 	r := st.Sessions.Records[key]
+	if r.Last.ReceiptDigest == "" {
+		return nil, fmt.Errorf("session has no confirmed response receipt; reconcile the invocation first")
+	}
 	receipt, _, err := state.ReadSessionReceipt(taskDir, key, r.Last.ID, r.Last.ReceiptDigest)
 	if err != nil {
 		return nil, err
@@ -88,7 +91,14 @@ func ReadSessionHistory(taskDir, key string) (*SessionHistory, error) {
 	if truncated {
 		text = string([]rune(text)[:min(len([]rune(text)), 16384)])
 	}
-	return &SessionHistory{Key: key, Thread: r.ThreadID, Cwd: r.Cwd, Invocation: r.Last.ID, Text: text, Truncated: truncated, Harness: result.Harness, Model: result.Model}, nil
+	thread := r.ThreadID
+	// Older fresh records discarded the observed native ID even when the
+	// provider retained its history. Recover only the display value from this
+	// exact invocation's digest-bound receipt; never grant resume eligibility.
+	if thread == "" && result.Session != nil && result.Session.RequestID == r.Last.ID {
+		thread = result.Session.SessionID
+	}
+	return &SessionHistory{Key: key, Thread: thread, Cwd: r.Cwd, Invocation: r.Last.ID, Text: text, Truncated: truncated, Harness: result.Harness, Model: result.Model}, nil
 }
 
 func (c *Context) handoffArgs(r *state.SessionRecord) (drivers.CallArgs, error) {

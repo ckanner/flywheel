@@ -288,7 +288,7 @@ func TestFreshSupportedCallsRetainSafetyLedgerWithoutSharingHistory(t *testing.T
 		applySessionResult(t, c, "execute", a.PacketID, res)
 		r := c.sessionRecord("execute", a.PacketID)
 		require.False(t, r.ResumeCandidate)
-		require.Empty(t, r.ThreadID)
+		require.Equal(t, res.Session.SessionID, r.ThreadID, "fresh policy retains the observed handle without permitting reuse")
 		require.Equal(t, i+1, r.Generation)
 	}
 	require.Equal(t, int64(360), c.State.Budget.Totals.Tokens)

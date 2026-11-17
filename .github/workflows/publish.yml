@@ -152,7 +152,7 @@ jobs:
           cp package.json "$claude_peer_backup/package.json"
           cp package-lock.json "$claude_peer_backup/package-lock.json"
           trap 'cp "$claude_peer_backup/package.json" package.json; cp "$claude_peer_backup/package-lock.json" package-lock.json; rm -rf "$claude_peer_backup"' EXIT
-          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.2.tgz
+          npm install --save-dev --ignore-scripts --no-audit --no-fund ../../dist-claude/dsh-subagent-claude-code-pro-0.5.3.tgz
           cp "$claude_peer_backup/package.json" package.json
           cp "$claude_peer_backup/package-lock.json" package-lock.json
           npm run check
@@ -179,7 +179,7 @@ jobs:
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: ${{ github.workspace }}/dist-npm
-          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.2.tgz
+          FLYWHEEL_CLAUDE_CODE_PRO_TARBALL: ${{ github.workspace }}/dist-claude/dsh-subagent-claude-code-pro-0.5.3.tgz
         run: npm run test:install
       - name: Build native CLI for paired session evaluation
         run: make build

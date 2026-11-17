@@ -76,7 +76,7 @@ catalog or an account-entitlement check.
 
 | Checked integration | Accepted request values | Notes |
 |---|---|---|
-| GPT-6.1 Sol / Codex Pro 0.10.1 | `low`, `medium`, `high`, `xhigh`, `max` | The machine API forwards the selected effort |
+| GPT-6.1 Sol / Codex Pro 0.10.2 | `low`, `medium`, `high`, `xhigh`, `max` | The machine API forwards the selected effort |
 | Sol and Astra / DSH ChatGPT provider | `low`, `medium`, `high`, `xhigh`, `max` | The provider serializes `reasoning.effort` |
 | Kimi K3.1 Pro / native CLI | `low`, `high`, `max` | Thinking cannot be disabled; compatibility aliases `xhigh`, `max`, and `ultra` resolve to native `max` |
 | DeepSeek Flash / checked DSH adapter | `off`, `low`, `high`, `max` | This adapter rejects `medium` and `xhigh` |

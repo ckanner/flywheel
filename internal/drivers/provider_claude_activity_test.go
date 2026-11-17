@@ -18,7 +18,7 @@ import (
 // watchdog all participate. The only fake component is the native CLI itself.
 func TestClaudeCodeProProviderActivityOfflineBridge(t *testing.T) {
 	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {
-		t.Skip("set FLYWHEEL_TEST_NODE_BRIDGE=1 with the built worker and pinned Claude 0.5.2 candidate installed")
+		t.Skip("set FLYWHEEL_TEST_NODE_BRIDGE=1 with the built worker and pinned Claude 0.5.3 candidate installed")
 	}
 	_, err := exec.LookPath("node")
 	require.NoError(t, err)

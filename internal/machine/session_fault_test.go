@@ -515,7 +515,7 @@ func TestSessionFaultLegacyPlanResumeStillTracksFreshModeInvocation(t *testing.T
 	assert.Equal(t, "resume", record.Action)
 	assert.Equal(t, "explicit-legacy-plan-history", record.Last.RequestedThread)
 	assert.False(t, record.Last.Persistent)
-	assert.Empty(t, record.ThreadID)
+	assert.Equal(t, r.Session.SessionID, record.ThreadID)
 	assert.False(t, record.ResumeCandidate)
 	applySessionResult(t, c, "plan", "M-01", r)
 }

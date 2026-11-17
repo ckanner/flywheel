@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.1', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.2', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -21,7 +21,7 @@ export async function loadAdapter() {
   try {
     manifest = require('dsh-subagent-codex-pro/package.json');
   } catch {
-    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.10.1 dependency with Flywheel');
+    throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install the exact dsh-subagent-codex-pro@0.10.2 dependency with Flywheel');
   }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version) {
     throw new WorkerError('ADAPTER_MISMATCH', 'Codex Pro package identity or version does not match the pinned contract');

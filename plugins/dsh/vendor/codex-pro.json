@@ -1,12 +1,12 @@
 {
   "package": "dsh-subagent-codex-pro",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "repository": "https://github.com/ckanner/dsh-subagent-codex-pro",
-  "sourceCommit": "1bcde1268d380aa197ab872605b76a353d3ae0a1",
-  "sourceTree": "7a9341650a9675342188b1ba3449a7c993fc5353",
-  "tarball": "dsh-subagent-codex-pro-0.10.1.tgz",
-  "sha256": "80c8416fc480ef926eb27be6aaf7269a6f299ea97ecd699f8584db86da37f047",
-  "integrity": "sha512-EWfXJGEISmB5fZPZHVm7GTjZZCNSdXx+sDuBKPibwYl6yjxuDSMeddZcskhzhOv7BqyCQPIBJMSLkEWVzABrrw==",
+  "sourceCommit": "18079d8b8c751f5b50375473a96960eeb68b61be",
+  "sourceTree": "b7c2e312c66dffb9b4aff6ce8c1b523cf5a3e7fe",
+  "tarball": "dsh-subagent-codex-pro-0.10.2.tgz",
+  "sha256": "bd66d165ff314c3259af12aaba85e97bec407bff16efcc1109c0b49bd4baa04a",
+  "integrity": "sha512-r8ip9u2YVau1yNHtG4od4frfcyFWHZDqJ9+FvCNYr/P8UBzoGePBRPboWid7VsrzPJ5jGMnxc3hizT6aoynbvg==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "verificationToolchain": {

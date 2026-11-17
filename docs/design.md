@@ -32,7 +32,7 @@ Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 c
 
 默认以 DSH Mac 桌面为入口，支持 Kimi、ChatGPT 订阅和 DSH 已登录并充值的 DeepSeek 账号。DeepSeek 只使用 Flash，默认 provider 为 `deepseek-account`；`deepseek-official` API Key 仍是显式可选配置，不自动回退。Kimi 通过原生 CLI 调用，不使用 ACP。GPT 可以在 DSH 原生 agent 中执行，也可以通过 Codex Pro 插件的 machine API 使用完整 Codex harness；这两个后端的工具、权限和会话语义不同。
 
-具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.10.1` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联减少已明确小任务的重复规划与终验。有界并行按冻结依赖和写入范围调度；桌面控制台提供受管阶段操作、配置编辑、会话接管和明确授权的远端交付。原生能力通过 native-profiles 接入各 loop，支持 DSH Team、Kimi Agent/Swarm/Tower、Codex agents 与 Claude Workflow；各后端实际边界见 §3.3。开放式自动模型选型仍不属于现有实现；显式允许集合内的执行升级见 §13。
+具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.10.2` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联减少已明确小任务的重复规划与终验。有界并行按冻结依赖和写入范围调度；桌面控制台提供受管阶段操作、配置编辑、会话接管和明确授权的远端交付。原生能力通过 native-profiles 接入各 loop，支持 DSH Team、Kimi Agent/Swarm/Tower、Codex agents 与 Claude Workflow；各后端实际边界见 §3.3。开放式自动模型选型仍不属于现有实现；显式允许集合内的执行升级见 §13。
 
 ## 2. 设计不变量
 
@@ -107,7 +107,7 @@ LCU 通过公开 managed API 挂载，root 与真实后代共享一个跨进程 
 
 Kimi native 路径调用独立 worker，拥有 `kimi web` 的本地 server、registry、PID 与订阅，实际核对模型／effort／mode／permission后再派发。普通 CLI 路径保留。Agent/Swarm 使用角色账本；Tower 创建独立 `.git` 候选，只有 Execute 在完成和清理确认、source HEAD／bytes／modes／外部契约复核及 patch check 后导回。该副本不构成 OS 文件系统沙箱，Server 仅接受显式 full access；未知调用不重放。
 
-Codex 0.10.1 使用 config/read核对原生 agents controls与当前child turn；Claude 0.5.2支持Agent定义／Workflow／Advisor，并区分init工具事实与无法验证的hard cap。Claude 定义中的可选 `effort` 限定为 low/medium/high/xhigh/max，配置加载时检查并原样透传至 `--agents`，与父绑定的 `thinking` 独立；省略时不注入默认值，tools-only init 不能证明实际子 effort。machine/native protocol 仍为 1，worker、回执与恢复保持精确插件版本身份。Codex原生review不消费角色prompt，因此通过 `flywheel native codex-review`独立入口；Claude `claude-review`、`claude-team`、`claude-recover`和`claude-control`保留远端job／tmux所有权与恢复回执。它们不写Flywheel state、不自动产生Review或Judge verdict，远端本地超时不证明云任务已结束。使用与协议见[原生能力指南](zh-CN/native-capabilities.md)及[完整设计](plans/2026-11-13-native-harness-capabilities.md)。
+Codex 0.10.2 使用 config/read核对原生 agents controls与当前child turn；Claude 0.5.3支持Agent定义／Workflow／Advisor，并区分init工具事实与无法验证的hard cap。Claude 定义中的可选 `effort` 限定为 low/medium/high/xhigh/max，配置加载时检查并原样透传至 `--agents`，与父绑定的 `thinking` 独立；省略时不注入默认值，tools-only init 不能证明实际子 effort。machine/native protocol 仍为 1，worker、回执与恢复保持精确插件版本身份。Codex原生review不消费角色prompt，因此通过 `flywheel native codex-review`独立入口；Claude `claude-review`、`claude-team`、`claude-recover`和`claude-control`保留远端job／tmux所有权与恢复回执。它们不写Flywheel state、不自动产生Review或Judge verdict，远端本地超时不证明云任务已结束。使用与协议见[原生能力指南](zh-CN/native-capabilities.md)及[完整设计](plans/2026-11-13-native-harness-capabilities.md)。
 
 ## 4. 执行闭环
 
@@ -251,6 +251,11 @@ stalled；允许集合内的质量升级仍受同一尝试预算约束，不能�
 
 二者是外挂建议模块，不拥有主任务状态机。Intake 发现候选任务，Garden 提出知识资产改进；建议经人确认后进入正式契约。模块使用相同的进程终态、用量未知和预算纪律，不因“只是文本建议”接受未收尾的成功。
 
+辅助调用不参与角色历史复用，但仍保留可检查的原生历史：Codex／Claude Pro 每次请求新的
+persistent 会话，不回传上一次的 ID；DSH／Kimi 保持原有保存协议。具备已验证命名能力的
+四条路径使用模块角色与任务目录生成有界标题，不把建议 prompt 放进标题。重试仍独立新建，
+原 unknown／取消／清理与预算守卫不变；Kimi 首次具名 print 承担 §3.1 同样的准备生命周期。
+
 有结构化 Session 事实的适配器若返回未知派发或未知结果，辅助模块在保存可归属计量后
 也停止重试／渠道回退。进程清理已确认不能代替业务结果已知；本地确定尚未启动的拒绝
 记录 not-dispatched 与零实际消耗，不能误记为已执行的未知任务。
@@ -331,11 +336,16 @@ Node 发布的预热终态回执与 Go 读取端共用 8192 字节上限，按�
 正常短错误不变；身份、未派发和清理事实保持完整，恢复检查不因诊断被截断而放宽。
 
 调用安全记录与历史复用分别控制。Codex Pro、Claude Code Pro、DSH、Kimi 的主任务调用在 fresh/scoped
-下都先保存 intent 再派发。`last.persistent` 表示是否参与通用角色历史；只有它为 true
-的可信结果才保存可复用句柄。fresh 的原始后端会话标识仍可保留在回执中；仅未配置
+下都先保存 intent 再派发。`last.persistent` 记录本次原生持久化请求，供 lifecycle 与只读恢复精确匹配；
+它不再单独表示通用角色复用资格。Codex／Claude Pro 的 fresh 调用也请求 persistent，但每次
+都不传旧 thread ID；`configuration.sessionMode:fresh` 明确禁止自动与受管人工复用。scoped
+仍须可信终态、清理、候选与绑定等证据才可复用。DSH／Kimi 保持原有原生保存方式。
+身份匹配的非空原生 ID 在两种模式下都保存作展示；unknown 事实与阻断不因此消失。
+旧调用 recovery 使用当时保存的 persistent 值；缺少 configuration 的旧记录保留原兼容语义。
+仅未配置
 `native-profile` 的旧 Kimi CLI Plan 保留 resident 行为，不冒充跨里程碑的通用会话。
-其他适配器、mock 与 Intake／Garden
-保留原路径。模式或后端变化不能绕过已保存的未知调用。
+其他适配器与 mock 保留原路径；Intake／Garden 的独立原生历史见 §4.6，仍不进入角色账本。
+模式或后端变化不能绕过已保存的未知调用。
 
 每个作用域有一个 `.sessions` 原子回执槽，使用私有目录／文件、限定大小与禁止符号
 链接的读取；回执不进入 Git，历史审计事实进入 metrics。只有已保存且身份匹配的调用
@@ -395,7 +405,7 @@ context/cache 文件摘要相同。安全启动拒绝或失败／取消调用即
 
 `state.handoff` 是任务级持久保留标记，普通 run 与单阶段操作必须拒绝绕过它。packet 作用域的已有 Session 只有在原调用已消费、清理确认、绑定与目标匹配时才能接管。人工 prompt 仍经过原 driver、预算、回执与计费路径，并要求精确恢复原 thread，不能冷启动代替。未知或未消费的调用先核对，再决定后续操作。
 
-交回引擎时重新运行 L1、适用 Quick gate 和独立 Review；编排器记录绑定当前候选的 `human-takeover` 来源证据，不伪造模型 done-report。后续交付仍由普通引擎验证和提交；release 只恢复暂停状态，不宣称验收通过。里程碑 Session 当前只提供只读回复；完整 Provider 历史与受管最近回执分别标识。命令请求通过私有控制文件和内容摘要传给子进程，原 prompt 不进入 argv。
+交回引擎时重新运行 L1、适用 Quick gate 和独立 Review；编排器记录绑定当前候选的 `human-takeover` 来源证据，不伪造模型 done-report。后续交付仍由普通引擎验证和提交；release 只恢复暂停状态，不宣称验收通过。里程碑 Session 当前只提供只读回复；完整 Provider 历史与受管最近回执分别标识。最近回复必须先有 state 确认的 receipt digest；仅凭回执槽中出现文件不予展示。旧 fresh 记录丢失的原生 ID 可从摘要已核验且 requestId 匹配最新 invocation 的回执补充到只读响应，不能回写账本或授权复用。客户端同时核对 session key 和 invocation ID，不显示同一 scope 上一次调用的缓存回复。原生打开命令使用原项目目录（旧记录保留 cwd）、经过校验的 UUID 和 shell 引号；仅在状态已核对、任务停稳且 cleanup 已确认时显示，不自动启动客户端或发送 prompt。原生列表筛选、同一配置目录和 Desktop 平台限制见会话恢复指南。命令请求通过私有控制文件和内容摘要传给子进程，原 prompt 不进入 argv。
 
 ### 5.5 契约变更与 Git 持久化
 
@@ -524,9 +534,9 @@ Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 
 
 ### 7.1 Codex Pro 接入契约
 
-`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。主任务 fresh/scoped 均使用外层 worker v3，分别显式选择 ephemeral/persistent；低层兼容 v1/v2。内部仍为插件 0.10.1 的 machine request/receipt protocol 1，另有 lifecycle version 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
+`codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。主任务 fresh/scoped 均使用外层 worker v3 并显式保存 persistent 原生历史；fresh 每次省略旧 ID，scoped 仅在核验后续用精确 ID。低层兼容 v1/v2 的显式 ephemeral 语义不变。内部仍为插件 0.10.2 的 machine request/receipt protocol 1，另有 lifecycle version 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。
 
-worker 精确依赖插件 `0.10.1` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
+worker 精确依赖插件 `0.10.2` 的公开 `runMachine` API，使用其协议 1 请求、进度回调和终态回执。模型／cwd／sandbox／approval 回执不符合请求时失败；接受 `workspace-write`、`read-only` 或明确选择的 `danger-full-access`，审批策略为 `never`。完全权限在公开 machine API 边界映射为 `dangerously-bypass-approvals-and-sandbox`，回执中的 Codex sandbox 为 `danger-full-access`、policy 类型为 `dangerFullAccess`，不能要求不存在的受限模式字段。插件仅能证明 effort 已被配置接受时，保留 `accepted` 与 `effectiveEffort: null`，不得改写成已证明实际推理强度。
 
 权限检查分两个时点：插件检查实际配置，主任务 v3 的 thread-ready 再把完整 sandboxPolicy 送交 Go，在 ACK 前完成完整检查，阻止不符合策略的 turn/start。终态还须重新核对。受限模式不得有工作区外额外 writable roots 或 networkAccess；完全权限明确记录 dangerFullAccess，不宣称 OS 隔离。旧 v1/v2 以及未请求 lifecycle 的辅助调用仍只有终态完整策略检查，不能外推为预执行 guard。doctor 报告静态接口能力，不证明具体账号、历史或实际沙箱可用。
 
@@ -542,7 +552,7 @@ worker 精确依赖插件 `0.10.1` 的公开 `runMachine` API，使用其协议 
 `thinking` 缺省 high，支持插件允许的 low/medium/high/xhigh/max；CLI、模型与账号仍
 可能拒绝某档位，不能把传参成功宣称为实际推理强度已验证。
 
-Flywheel 分发 worker，把插件 0.5.0 声明为精确的 optional peer。未选择它时不用安装
+Flywheel 分发 worker，把插件 0.5.3 声明为精确的 optional peer。未选择它时不用安装
 该 peer；选中时 `doctor` 与 worker 核验包名／版本／公开导出，并检查本地 `claude`
 命令。桌面安装目录不一定是 worker 的 Node 解析树；必须安装在该 worker 能解析的
 同一依赖树或全局 prefix。依赖缺失、接口不符和无效请求在 machine 调用前证明未派发；
@@ -554,8 +564,8 @@ acceptEdits 等是原生工具审批策略，不等价于 OS read-only/workspace
 模式、会话和版本；完整模型 ID 要求一致，sonnet/opus/haiku 别名按同 family 核对。
 这是运行后接纳检查，不声称在首个工具动作前拦截自定义 CLI 配置。
 
-主任务 fresh/scoped 外层 v3 分别映射 `sessionMode:ephemeral/persistent`，threadId 映射显式
-sessionId resume；新建与恢复不能同时请求。旧 v1/v2 低层入口保留。主任务仍由 Go 按角色保存句柄，评审不
+主任务 fresh/scoped 外层 v3 均映射 `sessionMode:persistent`，fresh 每次新建独立历史，scoped 的 threadId 映射显式
+sessionId resume；新建与恢复不能同时请求。旧 v1/v2 低层入口与显式 ephemeral 保留。主任务仍由 Go 按角色保存句柄，评审不
 共享执行者历史。内部 machine v1 与终态回执独立版本化；保留 runId、进程组、独立
 dispatch/outcome/cleanup、原始 usage 和错误。CLI 无真实 turnId 时不构造远端 turnId。
 缺失／损坏终态、异常退出和未知清理均不能成为续用检查点，且不能自动 fresh 重放。
@@ -886,7 +896,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次完整单包候选（candidate format 2），Linux/macOS 安装测试消费同一个 tarball；候选验证同时核对四个平台二进制、公开入口、MIT 许可和内置 adapter。已存在版本必须核对 integrity；先发 candidate 标签，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.1`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.5.2与LCU 0.5.0维持可选peer。Codex 0.10.1 与 Claude 0.5.2 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 内置于完整包，核验其实际 bundle 字节。不能把源码验收当作插件独立发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.2`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.5.3与LCU 0.5.0维持可选peer。Codex 0.10.2 与 Claude 0.5.3 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 内置于完整包，核验其实际 bundle 字节。不能把源码验收当作插件独立发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

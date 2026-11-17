@@ -8,7 +8,7 @@ The plugin runs the user's installed Claude Code CLI, with its native tool loop
 and login environment. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-The adapter requires **`dsh-subagent-claude-code-pro@0.5.2`**, machine protocol
+The adapter requires **`dsh-subagent-claude-code-pro@0.5.3`**, machine protocol
 1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
 and older machine contracts are not substitutes. No default stage or route
 selects Claude. Package availability must be checked separately from source
@@ -22,7 +22,7 @@ Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.5.2` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.5.3` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
@@ -33,7 +33,7 @@ resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidat
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
 source-candidate validation does not promote npm latest.
 
-The reviewed 0.5.2 companion artifact is recorded in
+The reviewed 0.5.3 companion artifact is recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
 CI validates those candidate bytes. Before publishing Flywheel, obtain the exact
 companion from the public registry and verify its package identity, SHA-256 and
@@ -75,6 +75,21 @@ New persistent histories receive the Flywheel task/role title through the native
 `-n` option. Resume keeps the existing title, including a user's rename. Outside
 Flywheel, the plugin uses the explicit delegation label or a readable workspace
 fallback. Naming does not send a separate model request.
+
+Fresh managed calls now retain a new named native history on every invocation,
+without supplying an old session ID. Scoped calls can continue a confirmed ID;
+retention alone does not authorize reuse. The official Claude picker excludes
+print/SDK histories, so use the saved root UUID and the supported CLI/Desktop
+entry points in [native history visibility](session-recovery.md#find-the-session-in-its-native-client).
+
+The 0.5.3 companion rejects persistent creation/resume when its effective
+environment enables `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, before a CLI probe or
+task starts. It preserves explicit ephemeral calls and never changes that user
+preference. Native true values are `1`, `true`, `yes` and `on`, ignoring case and
+surrounding spaces. Flywheel's Go environment allowlist already excludes this
+variable; the guard also protects direct machine, DSH delegation and interactive
+team callers. It does not attest arbitrary storage failures or settings loaded
+later inside the CLI.
 
 ## Define a profile, then choose its stages
 
@@ -169,7 +184,7 @@ absent so the CLI keeps its native inheritance behavior. Flywheel does not fill
 it from the parent's value or invent a child default. Invalid values fail during
 configuration loading, before a worker is dispatched.
 
-The same definition field is available in the 0.5.2 desktop plugin's `native`
+The same definition field is available in the 0.5.3 desktop plugin's `native`
 settings and PTC override, and in independent interactive Team requests. Direct
 Flywheel workers still read their selected native profile, not desktop settings.
 Passing an explicit effort proves the requested CLI input; tools-only init

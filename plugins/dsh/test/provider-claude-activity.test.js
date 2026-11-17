@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const live = { skip: installed ? false : 'install the pinned public Claude Code Pro 0.5.2 candidate', timeout: 20000 };
+const live = { skip: installed ? false : 'install the pinned public Claude Code Pro 0.5.3 candidate', timeout: 20000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

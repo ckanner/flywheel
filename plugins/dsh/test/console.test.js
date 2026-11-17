@@ -132,11 +132,11 @@ test('run metrics distinguish parallel elapsed time from cumulative durations an
 test('session handoff keeps exact identity, sends prompts via stdin contract and locks automatic execution', async t => {
  let held = false;
  const key = 'execute/M01-T01';
- const session = { role: 'execute', scope: 'M01-T01', cwd: '/repo/unit', 'thread-id': 'provider-thread', 'resume-candidate': true, last: { status: 'consumed', 'cleanup-confirmed': true, outcome: 'completed' } };
+ const session = { role: 'execute', scope: 'M01-T01', cwd: '/repo/unit', 'thread-id': 'provider-thread', 'resume-candidate': true, last: { id: 'invocation-one', status: 'consumed', 'cleanup-confirmed': true, outcome: 'completed' } };
  const ui = await mountPanel(t, request => {
   if (request.action === 'session' && request.session.action === 'claim') held = true;
   if (request.action === 'session' && request.session.action === 'return') held = false;
-  return reply(request, request.action === 'history' ? { history: { key, text: 'reply from exact receipt' } } : { cwd: '/repo', state: { revision: 7, status: 'paused', ...(held ? { handoff: { key } } : {}), sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 1 } } } });
+  return reply(request, request.action === 'history' ? { history: { key, invocationId: 'invocation-one', text: 'reply from exact receipt' } } : { cwd: '/repo', state: { revision: 7, status: 'paused', ...(held ? { handoff: { key } } : {}), sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 1 } } } });
  });
  await ui.selectPath(0, '/repo/docs/cli'); await ui.click('刷新');
  await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('进入会话');
@@ -152,6 +152,55 @@ test('session handoff keeps exact identity, sends prompts via stdin contract and
  await ui.click('发送到原 Session'); assert.equal(ui.requests.at(-1).session.prompt,'修复并解释原因');
  await ui.click('验证并交回流程'); assert.equal(ui.requests.at(-1).session.action,'return');
  await act(async () => ui.container.querySelector('button[aria-label="关闭详情"]').click()); assert.equal(ui.button('继续流程').disabled,false);
+});
+
+test('native history guidance distinguishes retained sessions, provider filters and ephemeral calls', async t => {
+ const id = '12345678-abcd-4abc-8def-123456789abc';
+ for (const [harness, persistent, expected, commands] of [
+  ['dsh', false, /同一 DSH_HOME/, []],
+  ['kimi', false, /同一 KIMI_CODE_HOME/, []],
+  ['kimi-native', true, /同一 KIMI_CODE_HOME/, []],
+  ['codex-pro', true, /同一 CODEX_HOME/, ['codex resume']],
+  ['claude-code-pro', true, /后台会话不显示在普通 \/resume 列表/, ['claude --resume', 'claude --desktop --resume']],
+  ['codex-pro', false, /原生历史未保留/, []],
+  ['claude-code-pro', false, /原生历史未保留/, []],
+ ]) await t.test(harness + '/' + persistent, async t => {
+  const key = 'execute/M01-T01';
+  const session = { role: 'execute', scope: 'M01-T01', cwd: '/repo/unit', 'workspace-cwd': "/repo/it's a project", configuration: { harness, sessionMode: 'fresh' }, 'thread-id': id, last: { id: 'call-one', persistent, status: 'consumed', outcome: 'completed', 'cleanup-confirmed': true } };
+  const state = { revision: 7, status: 'paused', sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default' } } };
+  const ui = await mountPanel(t, request => reply(request, { cwd: '/repo', state }));
+  await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新');
+  await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('进入会话');
+  const native = ui.container.querySelector('[data-section="native-session"]');
+  assert.match(native.textContent, expected);
+  assert.deepEqual([...native.querySelectorAll('code')].map(node => node.textContent), commands.map(command => "cd -- '/repo/it'\\''s a project' && " + command + " '" + id + "'"));
+  assert.equal(ui.requests.length, 1, 'rendering a native entry never launches a client or sends a prompt');
+ });
+});
+
+test('native history uses only the current invocation receipt and hides terminal commands until cleanup', async t => {
+ const key = 'execute/M01-T01';
+ const id = '12345678-abcd-4abc-8def-123456789abc';
+ const session = { role: 'execute', scope: 'M01-T01', cwd: '/repo/unit', configuration: { harness: 'claude-code-pro', sessionMode: 'fresh' }, last: { id: 'call-two', persistent: true, status: 'consumed', outcome: 'completed', 'cleanup-confirmed': true } };
+ const state = { revision: 7, status: 'paused', sessions: { records: { [key]: session } }, packets: { 'M01-T01': { status: 'l1-failed', route: 'default' } } };
+ let invocationId = 'call-one';
+ const ui = await mountPanel(t, request => reply(request, { cwd: '/repo', state, ...(request.action === 'history' ? { history: { key, invocationId, threadId: id, harness: 'claude-code-pro', text: 'verified reply' } } : {}) }));
+ await ui.selectPath(0, '/repo/docs/task'); await ui.click('刷新');
+ await act(async () => ui.container.querySelector('[data-node-id="M01-T01"]').click()); await ui.click('进入会话');
+ await ui.click('查看最近回复');
+ assert.equal(!!ui.container.querySelector('[data-section="history"]'), false);
+ assert.equal(!!ui.container.querySelector('[data-section="native-session"]'), false, 'an older receipt cannot supply a native ID for the current call');
+ invocationId = 'call-two';
+ await ui.click('查看最近回复');
+ assert.match(ui.container.querySelector('[data-section="history"]').textContent, /verified reply/);
+ assert.match(ui.container.querySelector('[data-section="native-session"]').textContent, /claude --desktop --resume/);
+ session.last['cleanup-confirmed'] = false;
+ await ui.click('刷新');
+ assert.equal(!!ui.container.querySelector('[data-section="native-session"] code'), false);
+ session.last['cleanup-confirmed'] = true;
+ session.last.outcome = 'unknown';
+ await ui.click('刷新');
+ assert.equal(!!ui.container.querySelector('[data-section="native-session"] code'), false);
 });
 
 test('PR actions require an explicit reviewed target and keep merge source/base identity', async t => {

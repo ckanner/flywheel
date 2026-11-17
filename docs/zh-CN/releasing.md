@@ -20,12 +20,12 @@ worker 包。`plugins/dsh` 是 **private 源码／构建／测试区**，不是�
 旧四个平台包及 `@ckanner/dsh-plugin-flywheel` 保留为历史版本；新流程不上传它们的
 新版本，也不撤销其已发布字节。
 
-Codex Pro 0.10.1 内置[已核对的源码候选包](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
-根目录与源码构建区锁文件保持该候选的真实 tarball integrity；这不表示配套插件已发行。Claude Code Pro 0.5.2 是外部
+Codex Pro 0.10.2 内置[已核对的源码候选包](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
+根目录与源码构建区锁文件保持该候选的真实 tarball integrity；这不表示配套插件已发行。Claude Code Pro 0.5.3 是外部
 可选 peer。Provider CLI 和账号凭据不在包内。普通 npm 安装只放置文件，`install`／
 `setup` 才执行用户设置，禁止在 postinstall 隐藏 profile 或凭据修改。
 
-已审查的 Claude 0.5.2 源码包固定在 vendor 记录中。PR CI 核对随源码候选的包身份、SHA-256
+已审查的 Claude 0.5.3 源码包固定在 vendor 记录中。PR CI 核对随源码候选的包身份、SHA-256
 和 integrity，这不构成 registry 发行证据。实际发布与提升标签前，必须从公共 registry
 取得精确插件并与已审查的 vendor 记录比对，之后才能修改 Flywheel 的 registry 状态。
 本地发行路径还会把该已验证 tarball 显式传入安装测试，不能悄悄跳过可选 Claude

@@ -19,7 +19,7 @@ import (
 const (
 	CodexProWorkerEnv      = "FLYWHEEL_CODEX_PRO_WORKER"
 	CodexProBinaryEnv      = "FLYWHEEL_CODEX_BIN"
-	CodexProPackageVersion = "0.10.1"
+	CodexProPackageVersion = "0.10.2"
 	codexProCleanupMS      = int64(10_000)
 )
 

@@ -11,9 +11,10 @@ import * as StorageJSON from '@deepseek-ai/dsh-storage-json';
 import * as Domain from '@deepseek-ai/dsh-storage-domain';
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace';
 import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl';
+import { foldSessionTitle } from '@deepseek-ai/dsh-session-title';
 import { runWorker } from '../src/bridge.js';
 
-test('published Workspace registry attaches an out-of-process SDK session and preserves membership after restart', async t => {
+test('published Workspace registry retains an exited SDK session and its readable title after host restart', async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-public-workspace-')));
   t.after(() => rm(root, { recursive: true, force: true }));
   const project = join(root, 'project'), unit = join(root, 'unit'), history = join(root, 'history');
@@ -30,23 +31,42 @@ test('published Workspace registry attaches an out-of-process SDK session and pr
   const ctx = await host();
   t.after(() => ctx.fiber.dispose());
   const workspace = await ctx.workspaceRegistry.create(project);
+  const title = 'Flywheel · execute/M01-T01 · 检查告警重复发送';
   const result = await runWorker({ type: 'start', protocol: 2, persistent: true, requestId: 'public-workspace',
     cwd: unit, workspaceCwd: project, provider: 'offline-fixture', model: 'test-model',
-    permissionMode: 'danger-full-access', prompt: 'offline association check', timeoutMs: 10000 }, {
+    permissionMode: 'danger-full-access', prompt: 'offline association check', sessionTitle: title, timeoutMs: 10000 }, {
     env: { PATH: process.env.PATH, TEST_DSH_HISTORY: history,
       FLYWHEEL_DSH_BIN: fileURLToPath(new URL('./fixtures/persisted-sdk.js', import.meta.url)) },
     emit: () => {}, stderr: () => {},
   });
   assert.equal(result.status, 'ok', JSON.stringify(result));
+  assert.equal(result.lifecycle.cleanupConfirmed, true, 'the SDK must finish graceful shutdown before history is read');
+  async function storedTitle(host) {
+    // Public read handles and the title package's log fold inspect the exact
+    // durable history; no fixture writes or private transcript decoding.
+    const handle = await host.sessionPersistence.open(result.sessionId, 'read');
+    try {
+      assert.equal(handle.header.cwd, project);
+      return foldSessionTitle((await handle.read()).events);
+    } finally {
+      await handle.close();
+    }
+  }
+  const savedTitle = await storedTitle(ctx);
+  assert.equal(savedTitle?.title, title);
+  assert.equal(savedTitle.source.kind, 'user', 'the explicit readable title must survive automatic fallback generation');
   assert.deepEqual(workspace.sessionIds, []);
   await reconcileWorkspaces(ctx);
   assert.deepEqual(workspace.sessionIds, [result.sessionId]);
   assert.equal(ctx.workspaceRegistry.list().length, 1, 'execution Worktree must not become a desktop project');
+  const persistenceIdentity = ctx.sessionPersistence.identity;
   await ctx.fiber.dispose();
   const restored = await host();
   t.after(() => restored.fiber.dispose());
+  assert.notEqual(restored.sessionPersistence.identity, persistenceIdentity, 'restart must use a new persistence service');
   assert.deepEqual(restored.workspaceRegistry.list().map(w => ({ path: w.path, sessions: w.sessionIds })),
     [{ path: project, sessions: [result.sessionId] }]);
+  assert.deepEqual(await storedTitle(restored), savedTitle, 'the desktop host must read the same accepted title after restart');
 });
 
 test('desktop registers SDK sessions with an existing project, never a worktree or foreign session', async () => {

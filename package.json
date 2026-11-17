@@ -65,7 +65,7 @@
     "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {
-    "dsh-subagent-codex-pro": "0.10.1",
+    "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6",
     "dsh-preset-generator": "0.4.0"
   },
@@ -78,7 +78,7 @@
     "@deepseek-ai/dsh-commands": "^0.2.1-rc.5 || ^0.2.2-0",
     "@deepseek-ai/dsh-session-projection": "^0.2.1-rc.5 || ^0.2.2-0",
     "@deepseek-ai/dsh-tools": "^0.2.1-rc.5 || ^0.2.2-0",
-    "dsh-subagent-claude-code-pro": "0.5.2",
+    "dsh-subagent-claude-code-pro": "0.5.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.5 || ^0.2.2-0",
     "dsh-plugin-lcu": "0.5.0"
   },

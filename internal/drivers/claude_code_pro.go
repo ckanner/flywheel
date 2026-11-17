@@ -21,7 +21,7 @@ import (
 const (
 	ClaudeCodeProWorkerEnv      = "FLYWHEEL_CLAUDE_CODE_PRO_WORKER"
 	ClaudeCodeProBinaryEnv      = "FLYWHEEL_CLAUDE_BIN"
-	ClaudeCodeProPackageVersion = "0.5.2"
+	ClaudeCodeProPackageVersion = "0.5.3"
 	claudeCodeProCleanupMS      = int64(10_000)
 	claudeCodeProRequestBytes   = 1 << 20 // worker LIMITS.requestBytes, including the JSONL newline
 )

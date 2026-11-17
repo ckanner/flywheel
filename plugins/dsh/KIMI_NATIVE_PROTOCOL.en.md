@@ -36,6 +36,18 @@ Every invocation starts foreground `kimi web --no-open --host 127.0.0.1 --port 0
 
 Admission reads and hashes actual `/openapi.json` and `/asyncapi.json`, checking required creation/configuration/queue/environment/history/shutdown routes and subscription/task lifecycle messages. Creation must expose title, ownership metadata and local environment fields; the returned new history must confirm its requested title, binding and workspace before any task prompt. A mismatched owner is not targeted by session-specific cleanup. Upstream OpenAPI does not fully project the `:abort` action dispatcher, so an actual idempotent abort probe runs on the owned idle session before dispatch. Actual WS agent state must then match model, thinking, permission and plan/swarm/tower flags, and REST must confirm the local execution directory. Only matching facts set `native.effective.matched:true`.
 
+Some runtimes advertise creation metadata/configuration but omit them from the
+created history. The adapter can initialize that history through the public
+`/profile` route only when the create response and subsequent reads confirm the
+same ID, original title and physical cwd, idle state, no prior custom metadata,
+no actual history and no active or queued prompts. It does not use placeholder
+`message_count` or usage counters as proof of emptiness. The ownership marker and
+model are read back after initialization; effective settings still require the
+ordinary WS admission. Foreign owners, previous content, changed identities and
+unconfirmed updates fail before dispatch. This path never rewrites a resumed
+session. A nondefault `agentProfile` cannot fall back to a setter that cannot
+establish it and is rejected with `UNSUPPORTED_SCHEMA`.
+
 `--doctor` checks only CLI availability and version, returning `inferenceTested:false`. It does not establish mode, account, model or API admission. This interface does not use the obsolete `kimi server` command, an SDK, a named-preset RPC, or arbitrary agent-file loading.
 
 ## Execution, completion and cancellation
@@ -50,6 +62,8 @@ Conversation observation bounds the retained JSON payload to 64 MiB, not cumulat
 
 Unexpected approvals/questions return `INTERACTION_REQUIRED`; the adapter fabricates no answer. A lost socket, replaced conversation projection or unknown dispatch never triggers prompt replay. Cancellation withdraws queued prompts before aborting the root turn, stopping observed tasks and awaiting idle. It then disables remote control, shuts down only the owned runtime, and checks process exit and identities of observed descendants. Cleanup has a separate bounded grace. Unconfirmed queue, task or process cleanup leaves both `settled` and `cleanup.confirmed` false.
 
+Authentication and runtime identity admission precede all cleanup HTTP actions as well as session creation. A rejected `/meta` endpoint receives no remote-control or shutdown request; the adapter terminates and reaps only its spawned OS process and observed descendants. In that case `cleanup.remoteControlOff` remains `null` because that endpoint's state was not observed, while physical cleanup can still be confirmed for the undispatched invocation. A malformed identity document reports `RUNTIME_PROTOCOL`, preserving the non-retryable preparation classification.
+
 The worker inherits Go's process group and does not create a detached group. The Go watchdog retains final group cleanup ownership. `settled` means cleanup was confirmed, rather than role success: an error/cancelled result may also be settled=true.
 
 ## Results, usage and history
@@ -61,6 +75,15 @@ Terminal fields are `protocol/requestId/type/status/settled/sessionId/text/usage
 Usage comes only from four actual ended model-step counters in the public conversation projection. Complete accounting returns `{input,output,cacheRead,cacheWrite,totalTokens}`; input includes input_other and both cache input categories. Placeholder zeros in `session.usage` and WS context_tokens are not invocation billing. Missing steps, unidentified children, compaction or unscoped resumed child history yield usage=null, retaining attributable partial step facts. Tower whole-tree usage is currently always unknown; costUsd is always null. Go's existing unknown-budget policy remains authoritative.
 
 Persistent Agent/Swarm history binds taskDir, role, scope, channel, physical cwd/workspace, model, effort, permission and native profile. runId/invocationId/candidateId belong to the current receipt and do not prevent same-role history reuse after restart or revision. Resumed history counts only current root turns; old child history is never charged wholesale again. Another role or configuration cannot reuse the history.
+
+These are Kimi's native durable histories in the same `KIMI_CODE_HOME`, not an
+adapter-only transcript. Stopping the owned server does not delete or archive
+them. A Kimi Code client using that home can list them and resume by their native
+session ID (`kimi --session <id>`); workspace filters use the session's physical
+cwd. Native role worktrees and Tower candidate directories can therefore appear
+under their own workspace. Native child agents remain within their root history,
+not fabricated top-level sessions. A client using a different home or machine
+does not automatically share this local store.
 
 Tower is always fresh: explicit sessionId is rejected; persistent=true without sessionId may run, but resumeCandidate remains false. This interface has no durable recovery journal/ACK protocol: `recover` is unsupported, and a new start must not replay an invocation whose dispatch is unknown.
 
@@ -80,6 +103,30 @@ Only successful native completion, confirmed cleanup and `managed.role==='execut
 
 The implementation was checked against `MoonshotAI/kimi-code` commit `f082f04a093a3e71a2263c5461d52507dc31f83a`: [Server API](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api.md), [sessions/configuration](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-sessions.md), [conversation/task lifecycle](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/reference/server-api-conversation.md), [Tower](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/docs/en/guides/tower.md), [instance registry](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/kap-server/src/instanceRegistry.ts), [per-batch Swarm concurrency](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/swarm/session/agentRunBatch.ts), and [Tower rate limiting](https://github.com/MoonshotAI/kimi-code/blob/f082f04a093a3e71a2263c5461d52507dc31f83a/packages/agent-core-v2/src/features/tower/towerRateLimitService.ts). Actual installed runtime probes remain authoritative.
 
+### Published Kimi 2.5.3 compatibility
+
+The published `@moonshot-ai/kimi-code@2.5.3` artifact (tarball SHA-1
+`c653b04968bcfd6136943aa7afd12bc358dbd5b2`) was also exercised in an isolated
+home with a configured offline model and no prompt. Its create handler ignores
+custom metadata and `agent_config`; its profile handler applies metadata, model,
+permission and plan settings. The repaired print preparation passed, the owned
+runtime exited, and a new runtime listed the same readable title and persisted
+ownership marker. Live main-agent state confirmed the requested model,
+`permission_mode:auto` and `plan_mode:false`. No model request or title generation
+is needed for that preparation.
+
+That artifact does **not** implement native execution's required
+`/agents/{agent_id}/turns` route or flat `subscribe`/`response` and turn/item
+stream. It instead exposes v2 transcript subscriptions. Agent/Swarm/Tower
+therefore return `UNSUPPORTED_SCHEMA` before creating a session or dispatching a
+prompt. Supporting a read-only v2 agent snapshot for print preparation does not
+admit that different native execution protocol. Newer official source at
+[`a692ff9af2c68157297a324b013a8960ceae66bb`](https://github.com/MoonshotAI/kimi-code/tree/a692ff9af2c68157297a324b013a8960ceae66bb)
+contains the required conversation API and creation behavior; the installed
+runtime must still pass capability and effective-state checks. Version strings,
+source inspection, no-prompt lifecycle tests, paid inference and desktop UI
+acceptance remain separate evidence.
+
 ## Named print-session preparation
 
 The same packaged worker accepts a separate `prepare-print` request with protocol,
@@ -90,8 +137,11 @@ is not assumed.
 
 An owned authenticated local API runtime verifies the session-creation schema,
 creates an empty named history with the caller's physical workspace, and confirms
-its title, ownership metadata and idle state. It sets only the requested model,
+its title, ownership metadata and idle state, using the guarded profile
+initialization above when creation omits those settings. It sets only the requested model,
 `permission_mode:auto` and `plan_mode:false` to match fresh print behavior.
+It verifies those effective settings with the runtime's advertised main-agent
+subscription (flat `subscribe` or v2 `client_hello`/`subscribe_v2`) before closing.
 Thinking/profile/environment remain provider defaults; the same existing effort
 environment override is passed to both preparation and print. Both use the same
 KIMI_CODE_HOME. After confirmed physical cleanup, the original print command uses
