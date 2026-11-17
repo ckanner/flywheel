@@ -5,6 +5,15 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased
+
+- Accept the Kimi 2.5.3 registry/`/meta` server-id difference only when the
+  registry host version and the authenticated server version match; preserve
+  both ids for diagnostics and retain the strict check for unknown runtimes.
+- Preserve deterministic Kimi print-session preparation failures as
+  non-retryable compatibility/configuration errors instead of treating every
+  preparation failure as a transport retry. No task prompt is dispatched.
+
 ## 0.36.1 — Retained view state
 
 - Retain the Workflow, History or Settings page, selected settings section and

@@ -32,7 +32,7 @@ Worker 从 stdin 接收一个 UTF-8 JSONL `start`，父进程继续保持 stdin 
 
 `invocationId` 必须等于 `requestId`；`runId` 是必需的字符串，可以为空。未知 Start/native/managed 字段、非显式完整权限、无效目录、Tower sessionId，以及 `agents.maxConcurrent` 均拒绝。`maxConcurrent` 拒绝的原因是当前公开 API 不能保证整棵原生任务树的硬上限。Swarm/Tower 不接受 `agents.enabled:false`。
 
-每次调用启动前台 `kimi web --no-open --host 127.0.0.1 --port 0`。`FLYWHEEL_KIMI_BIN` 可以指定 CLI。登录和模型配置沿用 `KIMI_CODE_HOME`（否则 `~/.kimi-code`），不重写用户配置。Worker 从真实实例注册表核对本次 child PID、启动时间、loopback 端口，再使用已有 `server.token` 验证 `/meta` 的 server_id、认证、backend 和 WebSocket 支持。带 bearer token 的 CLI banner/stdout/stderr 不转发、不写入 receipt。
+每次调用启动前台 `kimi web --no-open --host 127.0.0.1 --port 0`。`FLYWHEEL_KIMI_BIN` 可以指定 CLI。登录和模型配置沿用 `KIMI_CODE_HOME`（否则 `~/.kimi-code`），不重写用户配置。Worker 从真实实例注册表核对本次 child PID、启动时间、loopback 端口，再使用已有 `server.token` 验证 `/meta`、认证、backend 和 WebSocket 支持。Kimi 2.5.3 的注册表 `server_id` 与 `/meta` `server_id` 可能由不同生成器给出：仅当注册表 `host_version` 与 `/meta` `server_version` 都非空且相等时接受该差异，并在诊断中保留两个 ID；没有匹配版本时仍拒绝。带 bearer token 的 CLI banner/stdout/stderr 不转发、不写入 receipt。
 
 准入读取并哈希实际 `/openapi.json` 和 `/asyncapi.json`，核对所需创建/配置/队列/环境/历史/关闭路由和订阅/任务生命周期消息。创建接口必须支持 title、归属 metadata 与 local environment 字段；新历史返回的标题、绑定与工作目录必须与请求一致，才能发送任务 prompt。归属不匹配时，不向该历史执行会话级清理。`:abort` 在上游 OpenAPI 中未完整投影，因此对尚未 dispatch 的本次空闲会话做实际幂等探测。最终还必须由实际 WS agent 状态确认 model、thinking、permission、plan/swarm/tower 标志，以及 REST local environment/cwd。只有这些事实吻合，`native.effective.matched` 才为 true。
 

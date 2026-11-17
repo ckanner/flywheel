@@ -81,9 +81,24 @@ export class OwnedKimiRuntime {
         this.token = token;
         this.base = `http://127.0.0.1:${entry.port}`;
         const meta = await this.request('/api/v1/meta', undefined, { signal });
-        if (meta.server_id !== entry.server_id || meta.dangerous_bypass_auth !== false || meta.backend !== 'v2' || meta.capabilities?.websocket !== true) {
-          throw error('RUNTIME_IDENTITY', 'The authenticated server does not match the newly owned local runtime');
+        // Kimi 2.5.3 writes a registry instance id and a /meta server id from
+        // separate generators. Treat the ids as equal only when the runtime
+        // versions agree; PID, start time, loopback port and the authenticated
+        // meta capabilities still establish ownership. Older runtimes without
+        // host_version keep the strict id check.
+        const sameServerID = meta.server_id === entry.server_id;
+        const sameHostVersion = typeof entry.host_version === 'string' && entry.host_version !== '' &&
+          typeof meta.server_version === 'string' && meta.server_version !== '' && entry.host_version === meta.server_version;
+        if (typeof meta.server_id !== 'string' || meta.server_id.trim() === '' ||
+            (!sameServerID && !sameHostVersion) ||
+            meta.dangerous_bypass_auth !== false || meta.backend !== 'v2' || meta.capabilities?.websocket !== true) {
+          throw error('RUNTIME_IDENTITY', sameServerID
+            ? 'The authenticated server does not match the newly owned local runtime'
+            : 'The Kimi registry and /meta server identities differ without matching runtime versions; the owned local runtime was not admitted');
         }
+        this.identity = { serverIDMatched: sameServerID, versionMatched: sameHostVersion,
+          registryServerID: entry.server_id, metaServerID: meta.server_id,
+          registryHostVersion: entry.host_version ?? null, metaServerVersion: meta.server_version ?? null };
         this.meta = meta;
         await this.sampleProcesses();
         return;

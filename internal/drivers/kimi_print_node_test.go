@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/require"
 )
@@ -66,4 +67,29 @@ func TestKimiPrintSessionTitleOfflineBridge(t *testing.T) {
 	}
 	require.Equal(t, 1, creates)
 	require.Equal(t, 2, prints)
+}
+
+func TestKimiPrintIdentityFailureIsNotRetryableOfflineBridge(t *testing.T) {
+	if os.Getenv("FLYWHEEL_TEST_NODE_BRIDGE") != "1" {
+		t.Skip("enable the real Node worker boundary with FLYWHEEL_TEST_NODE_BRIDGE=1")
+	}
+	node, err := exec.LookPath("node")
+	require.NoError(t, err)
+	root, err := filepath.Abs("../../plugins/dsh")
+	require.NoError(t, err)
+	cwd, home := t.TempDir(), t.TempDir()
+	worker := kimiScript(t, "exec "+shQuote(node)+" "+shQuote(filepath.Join(root, "dist/kimi-native-worker.js"))+"\n")
+	server := kimiScript(t, "KIMI_FIXTURE_CASE=id-mismatch-version exec "+shQuote(node)+" "+shQuote(filepath.Join(root, "test/fixtures/kimi-native-server.mjs"))+" \"$@\"\n")
+	t.Setenv(KimiNativeWorkerEnv, worker)
+	t.Setenv(KimiCommandEnv, server)
+	t.Setenv("KIMI_CODE_HOME", home)
+	out := InvokeHarness(CallArgs{Cwd: cwd, Prompt: "MUST_NOT_REACH_PRINT", RequestID: "identity-one",
+		SessionTitle: "Flywheel · design-plan · 身份不匹配", Binding: config.LoopBinding{Harness: "kimi", Model: "kimi-for-coding", Thinking: "high"},
+		Watchdog: watchdog.Opts{IdleTimeoutMs: 50, WallTimeoutMs: 15000}}, "")
+	require.False(t, out.Settled)
+	require.Equal(t, errs.INVALID_REQUEST, out.ErrorCode)
+	require.False(t, errs.IsRetryable(out.ErrorCode), "a deterministic identity failure must not enter transport retry")
+	require.Equal(t, "not-dispatched", out.Session.Dispatch)
+	require.NotNil(t, out.ErrorMessage)
+	require.Contains(t, *out.ErrorMessage, "RUNTIME_IDENTITY")
 }

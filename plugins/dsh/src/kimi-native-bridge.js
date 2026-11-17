@@ -547,7 +547,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     : terminal.outcome === 'completed' ? 'completed' : terminal.outcome === 'interrupted' ? 'cancelled' : 'failed';
   const native = { version: 1, requested: raw?.native ?? null, matched, effective: { ...effective, matched },
     observed: { server: runtime?.meta ? { id: runtime.meta.server_id, version: runtime.meta.server_version, backend: runtime.meta.backend,
-      ownedPid: runtime.child.pid, authenticated: true, local: true } : null, schema: schema ?? null, environment: environment ?? null,
+      ownedPid: runtime.child.pid, authenticated: true, local: true, identity: runtime.identity ?? null } : null, schema: schema ?? null, environment: environment ?? null,
       binding: binding ?? null, managed: input?.managed ?? null, promptMapping: promptMapping ?? null, abortProbe: matched, usage: observedUsage, nativeLimits: { wholeTreeUpperBound: null, admission: 'native-runtime', hardMaxConcurrentSupported: false },
       disabledTools: ready ? ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : [])] : [], inferenceTested: dispatch === 'dispatched' },
     children: [...conversation.tasks.values()].map(task => ({ taskId: task.task_id, parentAgentId: task.agent_id, agentId: task.child_agent_id ?? null,

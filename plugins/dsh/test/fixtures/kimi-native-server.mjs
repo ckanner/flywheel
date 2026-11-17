@@ -23,6 +23,13 @@ const root = process.env.KIMI_CODE_HOME;
 const token = 'fixture-secret-must-never-appear';
 const registry = join(root, 'server', 'instances');
 const registryPath = join(registry, `owned-${process.pid}.json`);
+// Kimi 2.5.3 emits distinct registry and /meta server ids. Exercise both the
+// accepted version-matched case and the rejected version-drift case.
+const idMismatch = fixtureCase === 'id-mismatch' || fixtureCase === 'id-mismatch-version' || fixtureCase === 'id-mismatch-no-version';
+const registryServerID = idMismatch ? 'registry-' + process.pid : 'owned-' + process.pid;
+const metaServerID = idMismatch ? 'meta-' + process.pid : 'owned-' + process.pid;
+const registryHostVersion = fixtureCase === 'id-mismatch-no-version' ? undefined : 'fixture-9.8.7';
+const metaServerVersion = fixtureCase === 'id-mismatch-version' ? 'fixture-9.8.8' : 'fixture-9.8.7';
 await mkdir(registry, { recursive: true });
 await writeFile(join(root, 'server.token'), token);
 const log = async value => { if (process.env.KIMI_FIXTURE_LOG) await appendFile(process.env.KIMI_FIXTURE_LOG, JSON.stringify(value) + '\n'); };
@@ -81,7 +88,7 @@ const server = http.createServer(async (req, res) => {
     await log({ method: req.method, path, ...(body ? { body } : {}) });
     const send = (data, code = 0) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ code, data })); };
     if (path === '/openapi.json' || path === '/asyncapi.json') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(path === '/openapi.json' ? openapi : asyncapi)); return; }
-    if (path === '/api/v1/meta') { send({ server_id: 'owned-' + process.pid, server_version: 'fixture-9.8.7', backend: 'v2', dangerous_bypass_auth: false, capabilities: { websocket: true } }); return; }
+    if (path === '/api/v1/meta') { send({ server_id: metaServerID, server_version: metaServerVersion, backend: 'v2', dangerous_bypass_auth: false, capabilities: { websocket: true } }); return; }
     if (path === '/api/v1/remote-control') { send({ state: 'off' }); return; }
     if (path === '/api/v1/shutdown') {
       send({ ok: true });
@@ -214,7 +221,7 @@ server.on('upgrade', (req, socket) => {
   });
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-await writeFile(registryPath, JSON.stringify({ server_id: 'owned-' + process.pid, pid: process.pid, host: '127.0.0.1', port: server.address().port, started_at: Date.now(), heartbeat_at: Date.now() }));
+await writeFile(registryPath, JSON.stringify({ server_id: registryServerID, pid: process.pid, host: '127.0.0.1', port: server.address().port, started_at: Date.now(), heartbeat_at: Date.now(), ...(registryHostVersion ? { host_version: registryHostVersion } : {}) }));
 process.stdout.write(`Local: http://127.0.0.1:${server.address().port}/#token=${token}\n`);
 process.stderr.write('Token: ' + token + '\n');
 if (fixtureCase === 'unstoppable') process.on('SIGTERM', () => {});

@@ -53,6 +53,28 @@ test('a real absolute workspace path longer than 512 characters can prepare a na
   assert.ok(!calls.some(row => row.path?.endsWith('/prompts')));
 });
 
+test('Kimi 2.5.3 registry and meta server ids may differ when their runtime versions agree', async (t) => {
+  const f = await setup(t, 'id-mismatch'), result = await prepareKimiPrintSession(f.input, { env: f.env });
+  assert.equal(result.status, 'ok', JSON.stringify(result));
+  assert.equal(result.inferenceDispatched, false);
+  assert.equal(result.cleanupConfirmed, true);
+  const calls = await f.log();
+  assert.ok(calls.some(row => row.path === '/api/v1/sessions' && row.method === 'POST'));
+  assert.ok(!calls.some(row => row.path?.endsWith('/prompts')));
+});
+
+for (const fixtureCase of ['id-mismatch-version', 'id-mismatch-no-version']) {
+  test('a registry/meta identity mismatch without matching versions is rejected: ' + fixtureCase, async (t) => {
+    const f = await setup(t, fixtureCase), result = await prepareKimiPrintSession(f.input, { env: f.env });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'RUNTIME_IDENTITY');
+    assert.equal(result.cleanupConfirmed, true);
+    const calls = await f.log();
+    assert.ok(!calls.some(row => row.path === '/api/v1/sessions' || row.path?.endsWith('/prompts')),
+      'identity is checked before any session or prompt mutation');
+  });
+}
+
 for (const cleanupFailure of ['unconfirmed', 'throws']) {
   test(`the 1ms preparation deadline retains TIMEOUT when cleanup ${cleanupFailure}`, { timeout: 15000 }, async t => {
     const f = await setup(t), originalStop = OwnedKimiRuntime.prototype.stop;
