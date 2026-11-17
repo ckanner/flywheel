@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased
+## 0.37.0 — Kimi 2.5.3 admission, native history and the Claude Agent SDK
 
 - Integrate the reviewed Claude Code Pro 0.6.0 source candidate with official
   Agent SDK 0.3.326, keeping the configured local native executable, persistent
