@@ -49,11 +49,12 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
-The [ChatGPT Web Pro provider proposal](plans/2026-11-17-chatgpt-web-provider.en.md)
-([中文](plans/2026-11-17-chatgpt-web-provider.md)) designs a configurable DSH model
-for planning, execution and review, including local tool calls, durable recovery,
-context compaction and conversation rollover. It is a design for review, not an
-available provider or a change to the current model defaults.
+The [ChatGPT plugin Web Pro model proposal](plans/2026-11-17-chatgpt-web-provider.en.md)
+([中文](plans/2026-11-17-chatgpt-web-provider.md)) designs a native DSH model and
+Pro effort inside the existing ChatGPT provider, with plugin-owned browser
+transport, tool calls, compaction and recovery. Flywheel consumes that same model
+through its loop and execution-route configuration. This revised design is under
+review; the feature is not implemented and current model defaults are unchanged.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
 (Chinese; original proposal) records the design for genuine Plan work, independent

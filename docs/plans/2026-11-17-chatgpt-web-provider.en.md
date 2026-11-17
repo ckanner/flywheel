@@ -1,175 +1,192 @@
-# ChatGPT Web Pro: complete design for a configurable model provider
+# ChatGPT DSH Plugin: Web GPT-6 Pro and Complete Session Support
 
-English · [简体中文](2026-11-17-chatgpt-web-provider.md) · [Plan index](README.md) · [Current architecture](../design.md)
+English · [简体中文](2026-11-17-chatgpt-web-provider.md) · [Proposal index](README.md) · [Current Flywheel architecture](../design.md)
 
-**Status: proposal for design review. This PR contains a design only; it does not claim that the feature is implemented or released.** Date: 2026-11-17. Flywheel baseline: `0.37.0` / `db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c`.
+**Status: design proposal; not implemented or released.** Revision 2, 2026-11-17. This document fully replaces the initial PR #57 proposal with a plugin-first design: provide native model capabilities in the existing ChatGPT plugin, then let Flywheel select them through configuration. Source baselines and validation limits are in sections 3 and 15.
 
-## 1. Decision and goals
+## 1. User goals and the actual interaction
 
-Add an isolated **`chatgpt-web` provider** to the existing `ckanner/dsh-plugin-chatgpt` package, registering the **`gpt-6-pro` model** through DSH's `LlmAdapter`. Preserve the existing `chatgpt` SIWC provider's authentication, model catalog, and call path. Load the web components only when explicitly configured; ordinary SIWC use must neither launch a browser nor require a ready web account.
+The primary deliverable is a **native DSH model capability**. A user who installs and configures only the existing `ckanner/dsh-plugin-chatgpt` can use ChatGPT Web GPT-6 / Pro from the DSH conversation interface, including conversation, design, file and Shell tools, code execution, Review, and continued work in long sessions. Flywheel is one consumer of this capability.
 
-Flywheel uses this model through **`harness: "dsh"` + `provider: "chatgpt-web"`**. It can serve design, planning, **execution**, review, final acceptance judgment, Intake, Garden, and authorized DSH subagents. Planning and review are typical uses, not limits on the product's capabilities.
+The intended interaction is:
 
-GPT-6 Pro supplies model reasoning; DSH supplies the agent loop, local tools, and permissions; Flywheel supplies deterministic orchestration, frozen contracts, verification, and Git delivery. Giving the web model local tools requires a complete bridge from a text protocol to DSH tool calls. Code generated in a web answer does not itself modify the local repository.
+1. Enable "Web models" in the existing ChatGPT Provider settings card, choose a dedicated browser connection, and manually complete the initial ChatGPT sign-in.
+2. Return to the DSH conversation interface and select **GPT-6 Pro · Web** from the **ChatGPT** group in the existing model selector.
+3. The native reasoning-effort selector displays **Pro** and selects it by default. The first release exposes only the Pro effort that has passed actual web-selection verification.
+4. Send a task directly in DSH. The plugin controls the web model, while DSH executes local tools; the user does not need to install Oracle, start another CLI, or create a Flywheel task.
+5. As work approaches the context budget, the plugin coordinates compaction and web-conversation migration. DSH retains the logical Session and displays compaction/resumption status and links to the corresponding web conversations.
+6. When orchestration is needed, choose the same Provider, model, and Pro effort in a Flywheel Loop or execution route.
 
-The completion criterion is that a user can select this provider in configuration and the UI, bind it to Execute, and complete a task using real local tools, tests, and independent Review. Long-running work must correctly resume, compact, and move between web conversations. Recovery must not redispatch requests with unknown outcomes or repeat confirmed tool side effects.
+**Core delivery criterion: without Flywheel, the plugin independently supports native DSH conversation, real tool loops, controlled compaction, continuing sessions, and failure recovery. Flywheel integration reuses that same implementation.**
 
-### 1.1 Invariants to preserve
+### 1.1 Native interaction principles
 
-- Go remains the only writer of Flywheel state. Web answers, provider logs, and DSH native events cannot directly advance `state.json`.
-- Existing role and scope isolation remains intact. Independent Review must not inherit the Executor's web conversation or account/Project context that can be isolated.
-- Honor the user's fresh/scoped policy. Tool rounds within one agent invocation may reuse a web conversation; this does not permit history reuse across fresh role invocations.
-- Preserve the actual cwd, permissions, frozen acceptance criteria, verification of the same candidate, budgets, cancellation, recovery, and cleanup conditions. Selecting Pro grants no additional tool permissions.
-- Never silently fall back to another model, account, provider, or billing channel. Pro is not an alias for high/max/ultra.
-- Record Dispatch, Activity, Outcome, Cleanup, and Usage separately. Opening a new chat cannot bypass an unknown outcome, and estimates must not masquerade as actual server metering.
-- Full capability is the final goal. Implementation may proceed through acceptance milestones, but an intermediate version that only answers questions is not a complete Execute provider.
+- Reuse DSH's model and reasoning-effort selectors instead of introducing a separate "Pro task console."
+- Distinguish the existing account connection from the web connection within the same ChatGPT Provider settings card. A successful connection in one channel does not make the other ready.
+- Use the model name and badge to identify the Web channel. Show account/connection status, the actual model and effort, the current conversation, compaction status, and actionable failures.
+- Selecting a model must not trigger sign-in, browser startup, or inference. Explicit connection actions and actual calls own the corresponding resources.
+- Serve both DSH desktop and independent SDK profiles. Installation on the desktop does not automatically install or configure the SDK profile.
 
-## 2. Verified baseline and gaps
+## 2. Core decisions and changes from the first proposal
 
-| Project | Inspected baseline | Existing capabilities and gaps addressed by this design |
+| Topic | Decision in this revision |
+| --- | --- |
+| Code ownership | The existing `ckanner/dsh-plugin-chatgpt` package provides the complete web-model capability |
+| User-visible Provider | Reuse `chatgpt` and honor the plugin's existing custom Provider route configuration |
+| New model ID | `gpt-6-pro-web`; display name `GPT-6 Pro · Web` |
+| Native reasoning effort | `pro`, displayed as `Pro`; the model's default effort is also `pro` |
+| Internal channel | A unified model entry dispatches exact model IDs to the existing SIWC transport or the plugin's own Web transport |
+| Browser implementation | The plugin implements managed browser control itself; Oracle is an engineering reference only |
+| Long sessions | The plugin owns budgets, synchronization, and migration; DSH's public CompactionEngine owns authoritative history-compaction transactions |
+| Flywheel | Select the model through ordinary DSH Provider/model/effort configuration, with general capability admission and recovery integration |
+
+This revision replaces three decisions in the first proposal: "add a user-visible `chatgpt-web` Provider," "Pro must omit effort," and "run a pinned Oracle engine." It does not retain two contradictory recommended configurations. The old proposal identifiers were never released, so no runtime compatibility aliases are needed.
+
+**Source correction: DSH reasoning effort is an opaque ID owned by the Adapter; a model may declare `pro`.** The native selector reads that model's efforts and defaultEffort. The first proposal unnecessarily required effort omission and did not fully use the existing interface. This revision uses an actual Pro effort.
+
+The following engineering invariants remain:
+
+- Model, effort, account, transport, and billing channel are never silently substituted. Pro does not map to high/max/ultra.
+- DSH owns AgentLoop, tool execution, permissions, and authoritative session records. The web worker does not execute arbitrary local Shell commands.
+- Unknown dispatch or tool outcomes require recovery/reconciliation first; changing conversations, models, or plans cannot bypass them.
+- Record Dispatch, Activity, Outcome, Cleanup, and Usage independently. Estimated usage must not become claimed server-side usage.
+- Flywheel's Go orchestrator remains the sole writer of its state. The plugin cannot write Flywheel state or decide that acceptance has passed.
+
+## 3. Verified baselines and actual gaps
+
+| Component | Pinned baseline | Facts relevant to this revision |
 | --- | --- | --- |
-| Flywheel | `db6b93e6`, 0.37.0 | Supports DSH providers, profiles, loops, execution routes, role sessions, and recovery; has no chatgpt-web provider |
-| ChatGPT plugin | `40d8f885`, 0.1.20 | Uses SIWC through DSH's LlmAdapter; has no web model transport |
-| DSH | Official `master`: `39163dd3`, 0.2.2-rc.3 | Has LlmAdapter, a tool loop, session persistence, and CompactionEngine; the plugin must implement the web protocol and identity across processes |
-| Oracle | `0a064e7b`, 0.23.1, Node >=24 | Has browser submission, complete internal answer objects, conversation continuation, and result recovery; lacks a complete model-provider contract |
+| ChatGPT plugin | `40d8f885`, 0.1.20 | Registers native ChatGPT models and a settings card; all current model calls enter the SIWC adapter |
+| Official DSH master | `39163dd3`, 0.2.2-rc.3 | Supports model-defined efforts, native model selection, tool loops, persistent sessions, and the public CompactionEngine |
+| Flywheel | `db6b93e6`, 0.37.0 | Already has DSH model configuration; execution-policy and some UI effort allowlists do not include pro |
+| Oracle, reference material | `0a064e7b`, 0.23.1 | Supplies reference implementations and failure fixtures for browser interaction, model/effort selection, continuation, and capture |
 
-These findings come from pinned source and documentation; see section 15. No live-account inference, web conversation exhaustion experiment, or Mac browser acceptance was performed.
+Source inspection confirms:
 
-The following gaps determine the architecture and cannot be hidden by installation settings:
+1. The plugin's `HarnessAdapter.stream()` unconditionally enters the existing request conversion and SIWC adapter. Adding a catalog entry alone does not create a web call.
+2. The SIWC catalog is empty when SIWC is not signed in, and catalog errors can affect outer listing. The Web subcatalog must be independent so that lack of SIWC authentication does not hide it.
+3. The current wrapper projects only provider/id/name. It must retain valid description, modalities, badge, and other metadata so the native selector can identify Web accurately.
+4. Native DSH ModelSelect reads efforts/defaultEffort and supports Pro. A separate selector is unnecessary.
+5. DSH `providerRetryPolicy(provider)` is a Provider-level policy, with no model-level override in the current prepared call. A unified ChatGPT Provider must not disable SIWC retries globally to accommodate Web.
+6. Basic compaction in DSH prefers the last answered model when choosing its default summarization route. Switching to Web does not prove that summarization will also use Web. Its default headroom is not a measured web-context limit.
+7. Flywheel's SDK overlay currently disables the default compaction-basic implementation. Installing the plugin alone does not establish that this profile has an appropriate compaction backend.
+8. Oracle's log-tail output, periodic status, and existing follow-up behavior do not meet the entire contract in this design. This revision implements the capabilities itself instead of presenting a CLI/MCP wrapper as a complete model interface.
 
-1. **Oracle MCP is not a dynamic model interface.** `consult` has no input for a dynamic follow-up to an existing conversation/session; `browserFollowUps` contains strings supplied in advance. The `output` from `consult` / `wait` is a bounded log tail, not the complete last model answer. Cancelling an MCP waiter does not cancel the background task.
-2. **Oracle CLI continuation provides insufficient selection evidence.** `--followup` inherits the parent's model and browser configuration; the resume path skips model-version selection. Pro effort has a verification path, but this does not establish a fresh confirmation of the GPT-6 version.
-3. **Oracle does not compact long conversations or rotate them.** Switching from inline text to attachments at roughly 60k characters is an input-delivery strategy. Its token estimate excludes existing web history, and the browser path does not run the API's `--max-input` check.
-4. **The web model has no native DSH tool API.** Converting a complete answer into a DSH `tool-call` requires our own versioned protocol with identity and schema validation. Command-like text in Markdown must not be executed.
-5. **Flywheel currently fills in high.** `dsh.go` replaces empty thinking with high. Start/prewarm serialization, prewarm validation, Execute policy, and the UI must all preserve a genuinely absent effort.
-6. **Flywheel currently disables DSH's default compaction.** Its SDK overlay disables `compaction-basic` and `command-compact`; a new provider cannot be described as automatically inheriting desktop compaction.
-7. **A successful response's replayState cannot recover an unknown invocation on its own.** DSH persists `finish.replayState` with the successful assistant message. A crash after submission but before an answer exists still requires an independent write-ahead journal.
-8. **Browser logs do not prove activity.** Oracle prints periodic status even when the UI has not changed. These logs cannot refresh actual work progress or prove that remote generation stopped.
+Section 15 provides pinned sources. Real-account, Mac-browser, full-conversation, and real tool-task acceptance have not run. This PR revises the design; it is not a feature-acceptance record.
 
-## 3. Architecture and alternatives
+## 4. Model and effort contracts within one Provider
 
-```mermaid
-flowchart TD
-  F["Flywheel: role configuration and invocation ledger"] --> A["DSH AgentLoop"]
-  A --> P["ChatGPT Web LlmAdapter"]
-  P --> R["Managed runtime and pinned Oracle engine"]
-  R <--> C["ChatGPT: GPT-6 / Pro"]
-  A <--> T["DSH local tools, PTC, MCP"]
-  P <--> J["Session mappings and invocation journal"]
-```
+### 4.1 Native model registration
 
-| Layer | Responsibilities | Outside its responsibility |
-| --- | --- | --- |
-| Flywheel Go | Stages and routes, admission, budgets, state, acceptance, candidates, delivery, and recovery decisions | Browser DOM interaction or arbitrary execution of actions in model output |
-| DSH AgentLoop / tools | Receive model blocks; execute tools under the actual tool catalog, permissions, and cwd; persist results | Treat web text as an accepted Flywheel judgment |
-| New web adapter | Model catalog, message projection, tool protocol, session synchronization, compaction coordination, and response conversion | A second shell/file executor |
-| Managed runtime | Bind the web account and tab; submit; capture the current answer; report real activity; stop; recover without resubmitting | Flywheel's state machine or automatic retries through another channel |
-| Oracle engine | Reuse reviewed browser interaction and content-capture code | Be assumed to provide a stable official SDK or complete recovery protocol |
-
-### 3.1 Why use a DSH provider
-
-- **DSH provider — selected:** reuses the existing local tool loop and permissions, supports configuration for each model role, and adds the web-specific contracts at the provider boundary.
-- **MCP consultation tool only — retained as an optional entry:** useful when an existing agent occasionally consults Pro, but it does not make Pro that agent's primary model and does not meet this design's full goal.
-- **New Flywheel-specific harness — not selected here:** would require another implementation or embedding of the tool loop, permissions, sessions, and SDK behavior. Review this separately if a concrete requirement exceeds what DSH can support.
-- **Existing SIWC/API provider changes — a separate channel:** official API models, modes, and compaction are not equivalent to the web subscription route. Similar names do not make authentication, quotas, or behavior interchangeable.
-
-`harness: "codex-pro", provider: "chatgpt-web"` is not a valid integration. This DSH configuration cannot replace the primary model inside native Codex or Claude. Those agents can use an additional consultation tool; that differs from configuring a Flywheel Execute route to use DSH + Web Pro.
-
-### 3.2 Oracle dependency boundary
-
-Wrap a pinned Oracle engine in a **versioned machine interface owned by the plugin**. Oracle currently exposes CLI/MCP entry points, not a promised stable browser SDK. Do not scatter imports of its internal paths throughout the main provider or parse human logs as responses.
-
-Prefer adding a reusable upstream entry point. Until an upstream release provides it, maintain a reviewed source snapshot or patch set, recording the commit, build provenance, package integrity, patches, and MIT notice. Contain it within one transport module so the engine can later be replaced. Do not reuse an unmodified upstream version number to imply that a patch was published upstream, and do not download latest on each invocation.
-
-The minimum extensions are dynamic single-turn continuation, model and effort verification on every turn, isolated Project creation and admission, the complete last answer and its identity, structured activity, explicit cancellation, receipts separating local resources from remote state, and read-only recovery. Wrapping the existing `oracle-mcp consult` alone is insufficient.
-
-## 4. User configuration and model semantics
-
-### 4.1 Provider and model identity
-
-Proposed registration:
-
-- Provider ID: `chatgpt-web`; display name: `ChatGPT Web`.
-- Model ID: `gpt-6-pro`; display name: `GPT-6 Pro · ChatGPT Web`.
-- Target web selection: GPT-6 + Pro. This model ID is our provider's stable routing identifier, not a claim that an API slug with the same name exists.
-- `resolveModel` exposes no separate reasoning-effort levels. Requests must genuinely omit `reasoningEffort`; non-empty values such as high/max/pro are explicitly rejected for this fixed-mode model.
-- Initially declare only the verified text input capability. Add images, PTC, Teams, and other capabilities after the acceptance described in section 11. Any window number must be labelled as a local effective input budget, not the official web context window.
-- Drive `providerInfo`, `listModels`, `resolveModel`, `prepareCall`, and `stream` from the same capability table. The settings namespace registered with DSH must match the actual schema.
-- Obtain fresh UI selection evidence before every dispatch. Stop if the target model or Pro cannot be confirmed. UI evidence does not attest to the cloud service's internal weights or computation.
-
-### 4.2 Flywheel configuration example
-
-**This is a proposed configuration fragment that becomes runnable only after this design is implemented. It is not supported by current 0.37.0.** Incorporate the fragment into the complete configuration that actually takes effect; Flywheel does not deep-merge separate configuration files.
+The following is the proposed exact-model metadata shape for resolveModel/prepareCall. Implementation must use DSH's branded-type constructors and actual types; this is not directly executable plugin code. listModels supplies discovery fields, after which DSH resolves the exact model's reasoning metadata. Adding a Pro field only to listing does not complete this integration:
 
 ```json
 {
-  "profiles": {
-    "web-pro": {
-      "harness": "dsh",
-      "provider": "chatgpt-web",
-      "model": "gpt-6-pro",
-      "channel": "chatgpt-web-subscription",
-      "thinking": ""
-    }
-  },
-  "loops": {
-    "design-plan": { "profile": "web-pro" },
-    "review": { "profile": "web-pro" }
-  },
-  "routes": {
-    "hard": { "profile": "web-pro" }
-  },
-  "channels": {
-    "chatgpt-web-subscription": {
-      "harness": "dsh",
-      "provider": "chatgpt-web",
-      "env-key": null
-    }
-  },
-  "sessions": {
-    "mode": "scoped",
-    "policy-version": 1
+  "provider": "chatgpt",
+  "id": "gpt-6-pro-web",
+  "name": "GPT-6 Pro · Web",
+  "reasoning": {
+    "efforts": [
+      { "id": "pro", "name": "Pro" }
+    ],
+    "defaultEffort": "pro"
   }
 }
 ```
 
-This example explicitly assigns Pro to the hard execution route, design-plan, and review. Unless separately overridden, design-review and plan-review inherit review and therefore also use Pro; other role-model bindings remain unchanged. The global scoped policy affects every applicable role without its own override. Use the existing `sessions.roles` configuration when only selected roles should reuse sessions. This is not a forced migration of existing tasks. A channel is a configuration alias; the plugin's named connection selects the web account. Changing a channel name alone must not imply an account switch.
+`gpt-6-pro-web` is a reserved model ID in this plugin, identifying the web GPT-6 + Pro route; it is not claimed to be an official API model slug. `pro` is a native `reasoningEffort` carried through DSH's normal request field. Internally, the plugin records the target web model version and effort; a Pro label alone cannot establish the complete model identity.
 
-| Use | Configuration entry | Semantics to preserve |
-| --- | --- | --- |
-| Initial design | `loops.design-plan` | Inherits the plan backend when unset, while retaining a separate role |
-| Independent design review | `loops.design-review` | Inherits the review backend when unset |
-| Planning / milestone planning | `loops.plan` | Preserve the actual planning contract and scope |
-| Plan review | `loops.plan-review` | Inherits the review backend when unset |
-| **Execution** | **`routes.default/frontend/hard/multimodal`** | Selected by the packet route; there is no loops.execute |
-| Code review / final acceptance judgment | `loops.review`, `loops.judge` | Preserve separate history and structured decisions |
-| Second opinion | Top-level `judge-panel` | Remains subject to enablement and independence requirements |
-| Intake / Garden | `loops.intake`, `loops.garden` | Replace only the model work within those flows |
-| Bounded execution-model switching | `execution-policy.bindings` and each route's allowed set | Select only explicitly allowed bindings that pass capability checks |
+`providerInfo`, `listModels`, `resolveModel`, `prepareCall`, and `stream` use one exact routing table. Honor the Provider name actually configured in the plugin. Its default is chatgpt, but internal checks must not hardcode that name everywhere.
 
-Verify commands, state transitions, approval, and Git delivery do not become model roles. JEV currently uses a separate `/v1/systemone` HTTP contract and cannot be replaced through this configuration; changing its model requires a separate design.
+The first version declares and accepts only pro for this model. When DSH omits effort, use the declared defaultEffort; explicitly supplied high/max/ultra and other values are rejected. Switching back to an SIWC model reads that model's own efforts rather than retaining Pro from the previous model.
 
-### 4.3 Preserve absent effort end to end
+### 4.2 Catalog, authentication, and routing isolation
 
-Implementation must cover all of the following:
+The unified Adapter composes two internal transports without registering the same Provider twice:
 
-1. Configuration parsing, profile expansion, and effective-configuration display: preserve the explicit override semantics of `thinking: ""`.
-2. DSH driver: omit effort for the web provider's supported fixed mode; retain compatibility defaults for other providers rather than removing defaults globally.
-3. Start/prepare JSON, ready validation, worker arguments, and SDK initialize: absence means no independent effort. Do not send an empty string to the SDK.
-4. Prewarm requests, binding summaries, warm-start matching, and recovery: distinguish absent from non-empty effort without filling in high again.
-5. Execute policy schema and validation: conditionally allow empty thinking for this provider; continue validating other models against their actual capabilities.
-6. UI: show the fixed Pro mode and hide inapplicable effort options. Saving must not remove the explicit empty override and cause high to be inherited again.
-7. SDK resume: reject reuse of an unsupported effort left in an old header, or rebuild after confirming that doing so is safe. Omitting a new value does not necessarily clear an old one.
+- SIWC models retain existing authentication, catalog, protocol, attachment conversion, and retry behavior.
+- Route Web models by exact ID before SIWC metadata fallback, authentication, and `requestOf(options)`.
+- Do not strip `-web` and forward the request to SIWC. Web failure must not silently switch to SIWC/API.
+- Reserved model-ID conflicts must be reported. If an upstream catalog later returns the same ID, it cannot silently overwrite the Web route.
+- With Web enabled, merge its static catalog independently of the SIWC catalog. Missing SIWC authentication or an SIWC listing error must not hide Web. Web being disabled or unready must not break existing models.
+- Express model visibility, static capability, and actual admission for the current account separately. A visible catalog entry does not prove subscription quota or successful real-web verification.
+- Refresh catalog/connection changes through `llm/adapters-updated`. Catalog queries and resolve do not open browsers or send prompts.
 
-The provider's model contract expresses the Pro selection. Logs retain both `reasoningEffort: absent` and `observedWebEffort: Pro`; do not invent high to make the display uniform.
+Interpret the existing ContextWindowLimit and per-model overrides by exact route. Web may expose only the conservative input limit that the plugin actually enforces, labeled as local policy. It cannot present the SIWC/API catalog's window as the web window.
 
-## 5. Complete tool loop for Execute
+### 4.3 Binding after selection
 
-### 5.1 Input and reply protocol
+A formal call freezes provider, model, effort, transport, connection, non-secret account identity, actual directories, tools, permissions, and policy version. Selector metadata does not replace per-turn web verification.
 
-Each input includes the effective instructions, normalized ordered messages, tool schemas, required attachments, invocation identity, and the current turn's protocol requirements. System/developer labels inside a web message are text role markers; they do not provide the priority guarantees of native API system messages.
+Switching from SIWC to Web changes the channel even within the same Provider. That change must be part of session, prewarm, and recovery identity. Matching provider alone is insufficient to reuse a runtime. If the model/account of an unsettled call changes, settle the original call before admitting the new binding.
 
-The proposed reply permits one complete JSON object, distinguishing a final answer from tool requests. For example:
+## 5. Plugin architecture and its own browser implementation
+
+```mermaid
+flowchart TD
+  U["DSH conversation and model selection"] --> A["DSH AgentLoop"]
+  F["Flywheel: ordinary model configuration"] --> A
+  A --> P["Unified ChatGPT Adapter"]
+  P --> S["Existing SIWC transport"]
+  P --> W["Own Web transport and session coordination"]
+  W <--> C["ChatGPT Web: GPT-6 / Pro"]
+  A <--> T["DSH local tools and permissions"]
+  W <--> H["DSH compaction service and plugin journal"]
+```
+
+### 5.1 Module responsibilities
+
+| Plugin module | Responsibility |
+| --- | --- |
+| Model registry / Composite adapter | Catalog composition, model/effort metadata, exact transport selection, and existing SIWC compatibility |
+| Web connection manager | Dedicated profiles, account bindings, browser/CDP connections, owned resources, and cross-process leases |
+| Page adapter | Web layouts, model/Pro selection, project/conversation ownership, composer, attachments, terminal states, errors, and stopping |
+| Turn coordinator | Admission, submission, observation, complete result, stopping, and read-only recovery for one model call |
+| WebSessionCoordinator | DSH session mapping, incremental synchronization, capacity budgets, public compaction-service calls, and generation migration |
+| Tool/media bridge | Complete-response protocol validation, DSH block conversion, actual attachment bytes, and receipts |
+| Journal / recovery service | Write-ahead journal, complete-result artifacts, durable host associations, unknown fences, and recovery adoption |
+| Plugin UI / diagnostics | Existing settings card, native model metadata, connection/failure status, session links, and compaction/recovery controls |
+
+These are internal plugin boundaries, not a requirement for new public npm packages or additional user installation steps. A managed background worker may isolate browser control; typed IPC remains an implementation detail, not a new Flywheel harness.
+
+DSH desktop and SDK may use the same connection concurrently. The connection manager must coordinate the dedicated profile, Chrome ownership, queue, and call leases through private IPC/a cross-process broker. Two workers must not independently launch the same profile. One host exiting cancels only the work it owns; it must not kill another host's admitted calls. Internal interfaces and provenance must be versioned and verified through local identity and directory permissions.
+
+Broker/lease keys use the canonical actual browser-profile path and OS user identity. Different connection names or stateDir values pointing to the same profile still refer to one shared resource. A shared broker/Chrome process must not belong to a process group that the first SDK request can kill wholesale. A client exit revokes only its own owner leases. Even when no clients remain, unresolved cloud calls must be reconciled before bounded shutdown of local shared resources.
+
+### 5.2 Oracle as a reference
+
+Implement page adaptation and the call state machine in the plugin, using verified general-purpose CDP libraries if appropriate. Consult pinned Oracle source for model menus, the Pro slider, attachments, stable preambles, cancellation races, page recovery, and profile ownership.
+
+**Oracle CLI, MCP, internal module imports, source snapshots, and background services are not required runtime dependencies.** Users do not install Oracle separately. Do not parse log tails as answers, copy the existing resume behavior that skips model verification, or substitute reverse-engineered private ChatGPT HTTP interfaces.
+
+Candidate general-purpose libraries can be informed by Oracle's chrome-remote-interface and chrome-launcher dependencies, but the plugin pins its own exact versions, integrity, and compatibility tests. Oracle's Node >=24 requirement does not automatically apply to this plugin. Prefer the current DSH/plugin Node baseline and decide through actual dependency and packaging acceptance.
+
+If specific source is copied, retain its MIT attribution and notice. Record a pinned version when borrowing behaviors and test ideas as well. Centralize page-adapter code so selectors do not spread into tools, compaction, and Flywheel.
+
+### 5.3 One web-model turn
+
+Fresh calls, resumed calls, and the first call after migration use the same pre-submit checks:
+
+1. The host call remains valid, the signal is not cancelled, the execution domain has no unresolved fence, and sufficient budget remains.
+2. Acquire the connection permit, conversation write lease, and registered owned page; wait for history hydration to finish.
+3. Verify the account, project, conversation, hosted-context policy, and current tool permissions.
+4. Observe model version and effort separately, then jointly confirm GPT-6 + Pro. Stop before submission for an unknown layout or mismatch.
+5. Validate this turn's incremental input, attachments, input budget, and request digest, then persist submit-intent.
+6. Submit only once and obtain acceptance evidence matching the current prompt.
+7. Observe this answer. Capture, validate, and persist the complete result before delivering it to DSH.
+8. Once the remote turn is confirmed terminal and the complete result is safely persisted, release the web-model permit and end the stream so DSH can commit. Reconcile durable host acknowledgment through a separate callback/transaction; waiting inside an unfinished stream for its own message to commit would deadlock. The conversation remains pending-delivery until host confirmation permits the next turn.
+
+The Page adapter returns structured observations by compatibility version, locale, and fixture, and records the selection-evidence time. It does not guess unknown buttons. If the page becomes unobservable after submission, retain unknown for the original request instead of changing it to "not sent."
+
+**Stable text or temporary absence of the Stop button does not prove completion.** Pro may produce a preamble and then continue thinking. Completion must combine the current turn/message identity, accepted prompt, positive terminal UI evidence, and complete-content digest. Intermediate preambles, notices, quotations, prompt echoes, and old answers must not enter executable-tool parsing.
+
+## 6. DSH tool loops and complete capabilities
+
+### 6.1 Input and response protocol
+
+The web interface does not supply a native DSH tool API that this plugin can directly reuse. The plugin supplies effective instructions, ordered history, actual tool schemas, call identity, and the response format in the turn's messages. Textual system/developer markers do not carry native API system-message priority, and prompts cannot be treated as permission boundaries.
+
+Proposed tool response:
 
 ```json
 {
@@ -187,7 +204,7 @@ The proposed reply permits one complete JSON object, distinguishing a final answ
 }
 ```
 
-`read_file` is only an illustrative protocol name. Actual tool names and arguments must come from the current DSH request; do not hard-code invented tools. The final-answer form is:
+`read_file` is illustrative only; actual names and arguments come from the current DSH tool catalog. A final response is:
 
 ```json
 {
@@ -195,385 +212,411 @@ The proposed reply permits one complete JSON object, distinguishing a final answ
   "requestId": "webcall-example-2",
   "generation": 2,
   "kind": "final",
-  "text": "The final answer for this turn, or structured artifact text required by the host"
+  "text": "The final answer for this turn or the structured artifact text required by the host"
 }
 ```
 
-The provider converts tool objects into DSH `ToolCallBlock` values (`type/id/name/arguments`, with arguments serialized as JSON) and final answers into text blocks. Flywheel separately validates Plan, done-report, Review, Judge, and other artifact contracts. A valid web protocol reply is not automatically a valid business decision.
+Validate the entire single JSON object: protocol, requestId, generation, unknown fields, tool names, argument schemas, unique IDs, size, depth, and call count. No executable deltas may reach DSH before the whole batch passes. Do not infer Shell commands from Markdown.
 
-### 5.2 Execution order and validation
+Convert tool objects to DSH ToolCallBlock values, with arguments serialized as JSON. DSH executes tools and persists their results; the plugin appends the corresponding tool results on the next call. Final text enters ordinary session and host-artifact handling. Flywheel's Plan/Review/Judge and other business schemas remain independently validated.
 
-1. Validate the current session, effective tool catalog, permissions, input budget, and remaining invocation deadline.
-2. Persist dispatch intent and the input digest before submitting the web turn.
-3. Capture only **the matching, explicitly completed final assistant message for this turn**, including its complete raw content and digest. A log tail, old answer, prompt echo, quotation, or unfinished fragment cannot substitute for it.
-4. Strictly validate the whole JSON object: matching protocol/requestId/generation, rejection of unknown fields, tool names, argument schemas, unique IDs, size, depth, and call count.
-5. Emit executable tool-call blocks to DSH only after the entire batch passes. DSH's existing tool executor controls execution and approval; the runtime does not execute shell commands.
-6. Persist tool results by call ID and return them to the provider. Normal continuation appends only the new results to the web conversation and continues the loop.
-7. DSH persists the final text and passes it to Flywheel's normal result handling. L1, applicable checks, and independent Review are still required.
+Format correction begins only after the original answer has definitively ended, with bounded attempts, time, and usage. It is not a transport retry, and no unvalidated action executes beforehand. Complete source text may be stored in a private artifact referenced by path, byte count, and digest. Reads must stay within the bound directory and reject path escape, links, and truncation.
 
-Write the complete result to a private artifact before transport. The protocol may carry only its path, byte length, and digest. The caller reads only regular files within the bound directory, rejecting path escapes, links, and truncation. Do not leak tool requests to the executor as incremental tool-call events before final validation. Keep display activity separate from executable content.
+### 6.2 Tools, media, and subagents
 
-Protocol-repair requests have a separate small limit and consume the original invocation's time and usage budget. No unvalidated action may execute before repair. Fail explicitly when the repair allowance is exhausted. Request IDs and schemas establish format and association, not correctness of model intent; permissions, acceptance, and independent Review retain their roles.
+| Capability | Plugin target | Admission requirements |
+| --- | --- | --- |
+| Ordinary conversation, design, Review | Complete text and structured output | Current turn, complete result, and business schema |
+| Local execution | DSH Read/Search/Write/Shell/Test tool loop | Actual cwd, permissions, at least two tool rounds, and persisted results |
+| PTC | Use the real run_code tool and schema | Handles, deferred output, errors, and nested calls return correctly |
+| Agent/Team/Workflow | Reuse native DSH capabilities | Lineage, independent invocations, activity, budgets, cancellation, and domain recovery |
+| Image input and screenshots | Upload actual bytes from AttachmentStore | MIME, order, hash, upload completion, and model visibility |
+| LCU | Invoke through existing tools and image handling | Explicit permission, shared GUI coordination, and complete cancellation |
+| Hosted web tools/apps | Declare and admit independently | Writable actions disabled by default; host permissions cannot be bypassed |
 
-### 5.3 Tool side effects and crash windows
+Before reaching the adapter, DSH currently converts file blocks into path text and images for models without image support into placeholders. Original media must therefore be checked on the pre-projection side of the public `llm/stream` hook, covering user input, tool screenshots, auxiliary purposes, and recovered history. Explicitly reject images before image capability passes acceptance; once enabled, declare image support and obtain actual bytes. Checking only the projected object is insufficient.
 
-DSH already has a session checkpoint policy that flushes around model requests, top-level tool execution, and the next step. The new provider must not bypass these barriers.
+Ordinary files should first be exposed through local read/search tools. Arbitrary path text is not upload authorization. Native file upload needs an explicit public projection/admission integration point and attachment-provenance records. Capabilities that have not passed acceptance remain unavailable; do not silently drop images or switch backends.
 
-Add receipt associations for `requestId + toolCallId + argumentDigest + intent/resultDigest`. Recovery of a completed tool call uses its saved result rather than executing it again. A crash after a side effect but before its result is durable leaves the result unknown and stops the execution scope for reconciliation. Generic shell operations cannot be described as exactly-once.
+## 7. Long-session management owned by the plugin
 
-In current DSH tools, start writes tool/call, and commit writes tool/result with its source association. The checkpoint policy on the public tools/execute waterfall flushes before a top-level tool body executes. A tools/result notification is not itself an acknowledgment that the result has been synchronized to disk; reconciliation must use durable events.
+### 7.1 One authoritative history, two capacity budgets
 
-DSH recovery also repairs a started call without a result by adding `TOOL_OUTCOME_UNKNOWN`. That error result repairs the record but does not mechanically block further work. The new host policy must recognize trusted repair/source records and establish a durable **unknown admission fence** for the execution scope. It blocks new model dispatches and new tools with side effects, including attempts to repeat the unresolved action with a new call ID, provider, or generation. Only a host-defined set of read-only recovery/reconciliation operations is allowed; the model cannot establish read-only status by assertion. Deterministic evidence or an explicit human resolve can lift the fence. Do not rely on advice in an error message to avoid retries, or compact the repaired error away as an ordinary failure. Go receives the blocking fact; the provider does not write Flywheel state directly.
+DSH's durable events, derived history, and compaction checkpoints are authoritative. The plugin stores only web synchronization cursors, mappings, input projections, and recovery evidence. It must not secretly compact a second history that DSH cannot see.
 
-The host persists an `executionDomainId` associated with the task, role/scope, and original invocation; the current requestId is not a substitute. This domain covers the root and all admitted child agents/nested PTC execution, regardless of whether they use the web provider. Fresh/resumed invocations, fallback, and new invocations created by replanning inherit any unresolved fence. An unknown child invocation propagates to the root and freezes admission of new sibling work. Cancel/drain work already in flight and reconcile each invocation separately; do not retroactively claim it never executed. In ordinary DSH desktop use, host policy persists the execution domain. In Flywheel, Go must also durably retain the blocking fact across workers.
+WebSessionCoordinator checks both:
 
-## 6. Managed machine interface and durable invocation state
+- **Current model-input budget:** effective instructions, tool schemas, protocol, messages, attachment projections, and output reserve.
+- **Cumulative web-history budget:** conservative estimates of sent/captured content, turn count, and observable limits.
 
-### 6.1 Interface
+Input, output reserve, cumulative history, per-turn size, turn count, and compaction/correction/migration attempts must all have finite values fixed by an empirically validated policy manifest and policyVersion. Do not mark the model ready without an accepted policy. Neither an API window nor Basic's default headroom is a measured GPT-6 Pro web limit. Uncertain attachment estimates must not count as zero.
 
-Provide a proposed `/web-machine` entry in the plugin package. The browser runs in a managed child process, with version negotiation for:
+### 7.2 Incremental continuation and migration decisions
 
-| Operation | Semantics |
-| --- | --- |
-| `capabilities / prepare` | Verify versions, configuration, browser, and account binding without a model request |
-| `startTurn` | Start one managed model turn for the specified logical session/generation |
-| `observe` | Return ordered activity, state, and complete-result references while retaining the original invocation identity |
-| `recover` | Read and reconcile the original request and web turn; do not send a new business prompt |
-| `cancel` | Stop managed local work and, where possible, the specified web generation; return separate evidence for each |
-| `close` | Release the control resources and leases owned by this invocation; do not close unrelated user Chrome sessions |
+Store normalized content prefixes, confirmed synchronization cursors, and the bidirectional association between web protocol objects and DSH blocks. Although DSH supplies full messages on each call, append only new content to the web conversation instead of repeatedly resending the entire history.
 
-Distinguish local readiness, acceptance of the web prompt, completion of the answer, and delivery of the result. The interface must not offer an automatic restart while the original request's state is unknown.
+Appending requires the same owner, model/effort, transport, account, hosted-context policy, and tool/instruction contracts; a matching prefix; and a settled previous turn and tool work. Message count cannot replace content digests. Raw web JSON cannot be compared byte-for-byte with DSH blocks.
 
-### 6.2 Four layers of identity and the journal
+- If the local request remains small but remote history is large, create a new generation directly from current authoritative history.
+- If local input is also too large, reduce it through a DSH compaction transaction and flush before migration.
+- For history rewind/fork/prune or changes to permissions, model, tools, or instructions, recheck compatibility. Migrate incompatible state only after the original call can be settled.
+- An explicit web context-length rejection enters bounded migration. Timeout, network failure, and rate limiting are not context overflow.
+- If the new bootstrap is still over budget, reduce the compactable range further or stop explicitly. Do not create conversations indefinitely.
 
-Record at least:
+### 7.3 Reuse DSH compaction transactions
 
-- Flywheel task / role / scope / invocation, or an independent invocation owner for ordinary DSH use;
-- DSH session ID, branch/surface revision, and purpose;
-- Runtime invocation, Oracle session, and browser connection/account scope;
-- ChatGPT project ID, conversation generation, URL, user/assistant message IDs, the chat's parent Project, and parent-message relationships.
+Each DSH context can have only one CompactionEngine. Reuse Basic when the desktop already has it. If the SDK lacks an engine, load one compatible backend through public composition. The ChatGPT plugin and default compaction must not register two global services.
 
-DSH `GenerateOptions` has no Flywheel requestId. Obtain the binding from the admitted agent through a **proposed managed host service** instead of slipping unknown fields into the SDK. On the ordinary desktop, the plugin generates the owner. For Flywheel, a policy service binds Go's actual invocation, session, and nonce. The complete binding includes the actual project and execution directory, model, permissions, tool catalog, protocol/runtime versions, and non-secret browser connection identity.
+The plugin supplies Web-specific policies: input budget, output reserve, summarization target, preserved facts, migration conditions, and invocation accounting. Compaction runs through public `compactIfNeeded`, `compactNow`, `compactRegion`, or a reviewed public extension. Automatic and manual compaction share the same transaction and migration coordination.
 
-Classify eligibility for the main invocation in the public `llm/stream` pre-projection hook. Only an admitted request recognized by `isAgentLoopRequest()`, with a sessionId and no auxiliary purpose, may join the main conversation. Any explicit purpose, non-AgentLoop one-shot, missing sessionId, or unknown purpose must not fall into the main conversation key. Allocate separate invocations for supported auxiliary purposes and explicitly reject unsupported ones. Each summarization call gets a different invocation; sessionId plus purpose is not sufficient for reuse. The proposed host service passes classification and binding to the adapter through a controlled call context. Do not assume that the projected object retains the original WeakSet identity or look up the current request solely by a shared sessionId.
+**The default summarization route is the current Web target model + Pro, using an independent auxiliary call.** Users may explicitly configure another summarization route, but its actual channel, account, and budget must be shown and admitted by the host. Basic's preference for the "last answered model" must not silently invoke old SIWC/a paid API when switching to Web.
 
-The call context binds at least an independent call ID, call kind, purpose, host owner, executionDomainId, agent lifecycle, session/surface revision, binding/source-request digests, and signal. The adapter rechecks validity before dispatch; terminal completion or disposal revokes the context. Only validated scalars cross process boundaries, not host objects or secrets. The plugin must reuse the host's same DSH LLM module instance; bundling another copy creates a separate WeakSet and breaks classification. If AsyncLocalStorage is used, it must cover creation of the lazy AsyncIterable and the full next/return/throw lifecycle, not only the function that returns the iterator. Concurrently interleaved main and auxiliary requests must demonstrate that identities cannot cross.
+The current public interfaces cannot fully carry the proposed target and summarization-route policy. This design explicitly depends on a public DSH extension: before constructing and measuring the final GenerateOptions, pass the agent, proposed target, purpose, and effective budget to the summarization-route policy. The actual provider/model/effort in durable records must match the real request. Do not secretly change routes at the adapter endpoint or invoke Basic's private compactPressure/selectCompactableRange methods.
 
-The provider uses a private, versioned write-ahead journal, advancing through these facts:
+Use the public tokenMeter's proposed-header measurement and complete tool-pair ranges to select the compaction region. The summarization input itself must fit. A large history may require multiple bounded, independently accounted compaction transactions; do not record several model calls as one. If a single indivisible unit remains over budget, fail explicitly.
 
-| Order | Durable fact |
-| --- | --- |
-| 1 | `prepared`: invocation and admission bindings are ready |
-| 2 | `submit-intent`: intent to submit is saved |
-| 3 | `submitted-confirmed`: web acceptance of the prompt is verified |
-| 4 | `response-captured`: complete answer and digest are saved |
-| 5 | `response-validated`: answer passes protocol and identity validation |
-| 6 | `delivered-to-dsh`: delivered to DSH, but not yet proof of a durable commit |
-| 7 | `host-commit-confirmed`: DSH's durable record and associations are verified |
+Summaries preserve task constraints, frozen acceptance, unresolved issues, trusted evidence references, and paired tool tails. Retain original events and source ranges, and persist the checkpoint before approving web migration. Basic may log a warning and continue after compaction failure, so the final Web input-admission guard always remains in place; a known over-budget request must not be sent.
 
-Persist and synchronize every step atomically; processing may stop at any step. `submit-intent` does not prove dispatch, and absence of the next step does not prove non-dispatch. A successful `finish.replayState` carries only safe ledger references, generation, message identity, and digests; it cannot replace the independent journal. Keep the provider response ID separate from the DSH assistant MessageId: AgentLoop generates the latter, and the current StreamChunk contract does not let an adapter choose it.
+### 7.4 Auxiliary-call isolation
 
-Flywheel must negotiate a new DSH worker extension version carrying provider runtime identity, invocation facts, receipts, and recovery capabilities. Existing v1/v2 retain their semantics. If an older worker cannot understand the new capabilities, reject the web provider before dispatch; do not send extension fields and then ignore validation. Allocate the exact outer version during implementation against the protocol current at that time. This design's inner protocol is `dsh-chatgpt-web/1`; the two versions are distinct.
+Classify main-call eligibility in the pre-projection hook using `isAgentLoopRequest()`, the real Agent, sessionId, purpose, and admitted binding. Only the main loop without an auxiliary purpose joins the main conversation.
 
-### 6.3 Recovery and repeated delivery
+Each explicit purpose such as compaction or title receives a separate invocation. Even with the same sessionId, it must not reuse the main conversation or a previous summarization conversation. Non-AgentLoop one-shots, missing sessionId, and unknown purposes use an explicitly supported independent path or are rejected; they must not enter an anonymous shared session. Auxiliary requests do not own local-tool execution capability.
 
-- Confirmed non-dispatch with confirmed local cleanup: allow retry under the existing policy.
-- Unknown submission outcome: lock the conversation and first read the original turn, page, and journal; do not resubmit.
-- Answer captured but not committed to DSH: save it by digest as a pending result for adoption by a host recovery transaction, retaining the same provider response/tool-call identity. Do not simply yield old actions again in the next ordinary model request.
-- DSH has already persisted the assistant/tool results: reconcile and acknowledge delivery without creating another tool call.
-- Incomplete capture, conflicting identity, or manual modification of the original page: preserve evidence and block; do not present an old answer as a new one.
-- Indeterminate remote request or local tool state: retain unknown, preserving the task, workspace, and known cleanup facts.
+The plugin reuses the host's same DSH LLM module instead of bundling a second WeakSet. A controlled call context stores independent ID, kind, purpose, owner, executionDomainId, Agent lifecycle, session/surface revision, binding and request digests, and signal. If AsyncLocalStorage is used, it must cover creation and the next/return/throw lifecycle of the lazy AsyncIterable, and be revoked on termination to prevent identity crossover between concurrent auxiliary calls.
 
-Host commit acknowledgment must follow the DSH session flush. Reconcile durable session events during recovery; an AsyncIterable returning is not a durable ACK. Current DSH resume first repairs and closes an interrupted step/turn, so an ordinary adapter stream cannot pretend to continue the original step. A new public **adopt-recovered-response** integration point is required. It verifies the original request, surface revision, and host step state; confirms that the original assistant was not committed, its tools did not execute, and no unknown fence exists; then adopts the result once in a new recovery transaction owned by the host, records the original step/provider-response association, and flushes. If the original assistant already exists, it only reconciles and acknowledges. Until this integration point is implemented, captured results may be displayed read-only, but automatic redelivery of executable tools remains blocked. This is a delivery dependency for complete recovery.
-
-The adoption transaction uses executionDomainId plus DSH sessionId, originalRequestId, and providerResponseId as its durable idempotency key. Repeated requests return the saved host commit identity without creating a second assistant message or tool batch. Current tool definitions, permissions, and binding must also remain compatible with the original result. If permissions were revoked or a tool was replaced during recovery, a correct old-response digest does not authorize automatic execution.
-
-## 7. Session reuse, compaction, and automatic conversation rotation
-
-### 7.1 Normal reuse
-
-DSH requests generally contain the full history. For each logical session, the provider stores a normalized **content-prefix** digest and a confirmed synchronization cursor. It must not repeatedly send the full history to an existing web chat.
-
-Reuse for an ordinary append requires the same owner/account/provider/model/purpose, unchanged tool and instruction contracts, a matching content prefix, a settled prior turn, no unconfirmed tool results, and a valid lease. Normally send only new user/tool messages. Record submission confirmation and answer persistence separately; message count alone must not advance the cursor.
-
-The protocol object generated in the web conversation differs from the tool-call/text blocks projected into DSH. Preserve the mapping and digests in both directions for each conversion. Compare prefixes using normalized semantics and confirmed conversions, not raw byte equality between web JSON and DSH blocks.
-
-One DSH session may map to several web generations. Each web conversation has only one writer across processes for the entire turn. Tasks, roles, subagents, and auxiliary purposes do not share conversations. Separate chats alone do not guarantee isolation from account-level memory; they must also pass the hosted-context admission requirements in section 9.2.
-
-### 7.2 Two budgets and two kinds of reconstruction
-
-Manage both:
-
-1. **Local model-request budget:** effective instructions, tool schemas, protocol wrapping, history, attachment projection, and output reserve.
-2. **Cumulative remote-conversation budget:** a conservative estimate of submitted/captured content and turn count, not the actual remaining web context window.
-
-Budgets come from user connection configuration and measured policy. Do not hard-code an unconfirmed GPT-6 Pro web window. If `resolveModel.context` requires a number, expose only an effective limit explicitly identified as local policy. Preserve uncertainty for attachments that cannot be estimated reliably; do not count them as zero. Large raw tool results first follow DSH's evidence-preserving truncation/pagination contract.
-
-- If cumulative remote history is too large but the current local derived history is small enough, bootstrap a new generation from that authoritative history without an extra summarization call.
-- If the local input is also too large, run controlled local compaction, persist a checkpoint, and bootstrap a new generation from the actual compacted derived history.
-- Changes to model, account, permissions, tool catalog, instructions, history rewind/fork, pruning, or manual web edits require a compatibility check. Rebuild an incompatible conversation only after the old invocation can be safely settled.
-- If the new chat's bootstrap still exceeds budget, reduce the material further or decompose the task and fail explicitly. Do not loop indefinitely over opening new chats and retrying.
-
-### 7.3 DSH compaction integration
-
-Ordinary DSH desktop use retains the existing public CompactionEngine. A summarization request with `purpose: "compaction"` must use a separate auxiliary invocation/conversation, with tool execution disabled, even when its sessionId matches. The same applies to title and other auxiliary purposes. Do not send summarization instructions into the main execution chat or keep appending unrelated summarization tasks to one auxiliary chat.
-
-Flywheel uses a **controlled overlay limited to admitted chatgpt-web root and child sessions**:
-
-- Install `BasicCompactionEngine(auto:false)` or a dedicated backend implementing the public CompactionEngine contract. Do not globally re-enable autonomous compaction or extra model calls for other providers.
-- Inspect the current request through public agent hooks, the token meter, balanced tool ranges, and compaction interfaces.
-- Do not modify the frozen Spec/packet/acceptance. Preserve current constraints, unresolved questions, references to trusted evidence, and a fully paired tool-history tail. Pending tool calls must not disappear across a compaction boundary.
-- A checkpoint records source ranges, source/output digests, model/purpose, invocation usage, and preserved facts. Retain the original events.
-- After replacing the surface, call `sessions.flush` and confirm the new derived history before authorizing a web generation change.
-- Account for model summarization calls within the same outer budget, retaining unknown usage where necessary. Use an explicitly configured summary policy; never silently switch to a paid API or another account.
-- Stop if valid compaction cannot finish within budget; do not introduce an unmetered, unbounded summarization retry loop.
-
-Public `compactIfNeeded` reads the old request header, while Basic's pressure calculation for a proposed header is private. A complete implementation must use public `tokenMeter.measure(session, proposedHeader)` and balanced ranges for preflight checks against the intended purpose/model, or first add a public DSH integration point. Do not call private methods or imply that the intended-purpose model capacity check already exists.
-
-### 7.4 Rotation transaction and hard-limit recovery
+### 7.5 Migration transaction
 
 ```mermaid
 flowchart TD
-  A["Another model call is needed"] --> B{"Prior turn and tools settled?"}
-  B -->|"No"| C["Recover the original invocation or remain blocked"]
-  B -->|"Yes"| D{"Local history and remote conversation reusable?"}
-  D -->|"Yes"| E["Append this turn's delta"]
-  D -->|"No"| F["Persist checkpoint and migration intent"]
-  F --> G["Create a chat and verify model and Pro"]
-  G --> H["Persist the new generation, then continue"]
+  A["Continue this call"] --> B{"Original call and tools settled?"}
+  B -->|"No"| C["Recover the original call or remain blocked"]
+  B -->|"Yes"| D{"Local input needs compaction?"}
+  D -->|"Yes"| E["DSH compaction transaction and flush"]
+  D -->|"No"| F["Persist migration intent"]
+  E --> F
+  F --> G["Verify new container and model"]
+  G --> H["Persist generation and continue"]
 ```
 
-Migration intent records the old/new mapping, checkpoint, bootstrap digest, and reason. Also journal isolated Project creation intent, the actual project ID, and policy-verification state before proceeding. If a crash occurs after creation but before journal confirmation, first locate the original owned container through read-only recovery. Block if its identity cannot be confirmed instead of repeatedly creating containers. Preserve old evidence if creating the new chat fails. After a crash following bootstrap submission, recover that new invocation instead of creating yet another chat. Update the active generation only after the new mapping is durable and the turn identity is established.
+The migration journal records old/new mappings, source checkpoint, bootstrap digest, reason, project-creation intent, and actual ID. If a crash occurs after creation but before journal confirmation, first locate the owned container read-only. If identity cannot be established, block instead of repeatedly creating containers. After bootstrap submission, recover under the original invocation; do not resubmit.
 
-An explicit web context/conversation-limit rejection enters the same recovery path. Network timeouts, rate limits, and generic errors must not be relabelled as context overflow. Once the old chat rejects messages, rely on local records rather than asking it to accept another summary request. Rotation also remains blocked when an already submitted request has an unknown outcome.
+When the old conversation is full, rely on DSH records rather than requiring it to accept another summarization instruction. Compaction is lossy and does not promise preservation of hidden reasoning or unlimited context. Conversation rotation does not reset subscription quota.
 
-Summaries are lossy. They cannot promise preservation of the web model's hidden reasoning or unlimited context. Opening a new chat does not reset subscription quota.
+## 8. Sessions, hosted context, and readable names
 
-## 8. Activity, deadlines, cancellation, and cleanup
+### 8.1 Logical sessions and web generations
 
-### 8.1 Activity
+One DSH Session maps to a chain of web generations, recording project/conversation identities, parent-message relationships, summaries, and the active generation. Ordinary tool loops reuse the current generation; migration after safety checks retains the chain.
 
-Executable content cannot reach DSH before full protocol validation, so provide a separate channel for activity independent of content. Extend the existing `flywheelProviderActivity` source allowlist and Go validation, binding events to the actual agent, invocation, generation, sequence number, and event type.
+DSH desktop shows the complete logical Session, tool trace, current web link, and historical generations. Web conversations in the normal persistent mode remain in ChatGPT history instead of being automatically archived as hard-to-find one-shot calls. Do not claim history visibility has passed without verifying that the account can revisit it.
 
-Distinguish:
+Web projects and conversations use readable task, role, and generation names. When none exists, derive a bounded local label from the initial request. Set and read back titles through the UI, modifying only owned objects from this invocation and preserving user-edited titles. Web naming does not invoke Pro again. An enabled DSH LLM-title service is a separate auxiliary call and must be accounted independently.
 
-- Process/transport heartbeat: diagnostic only;
-- UI generation-state snapshot: an observation of state, not proof of new progress;
-- New assistant content or confirmed progress changes: real activity;
-- Prompt acceptance, terminal state, durable result, and cleanup: separate facts.
+### 8.2 Isolated working sessions and personalized conversations
 
-Use a declared opaque/wall policy for web Pro reasoning phases without observable changes. Do not inherit an assumption that silent stdout means a hang, or let periodic logs keep a task alive indefinitely. The role invocation's wall deadline, existing user cancellation, and cleanup deadline remain effective. Protocol repair, reconnection, compaction, and rotation all consume the same remaining budget.
+A Chrome profile isolates only local data. Memory, history, custom instructions, project sources, and apps on the same account may enter the effective context. The plugin explicitly manages hosted-context policy; a new conversation ID alone does not prove isolation, and the plugin must not automatically change global user preferences.
 
-### 8.2 Record local resources and remote generation separately
+The default managed working mode uses **a new private project-only project for every generation of every logical session**, containing only the corresponding main conversation and admitted materials. Project instructions are controlled by the current contract, with source/instruction/sharing digests recorded. Roles, subagents, auxiliary calls, and generations do not share projects, preventing old history from reentering through project memory.
 
-The proposed terminal receipt contains at least:
+Admission verifies account prerequisites, project memory settings, sources, collaborators, GPT-6 + Pro inside the project, and the conversation's parent project. Pro being selectable on the home page does not prove availability within a project. New and changed settings may take effect differently, so "just changed an old project" is not verification. A project failure must not fall back to the home page and continue sending.
 
-| Fact | Required representation |
+Ordinary desktop conversations may explicitly choose a personalized policy that follows the user's account preferences. The UI identifies that their context may originate outside DSH. This mode does not provide strict isolation, cannot serve Review/Judge roles requiring independence, and cannot promise that old memory will never reenter after migration. Do not automatically switch to personalized mode when managed mode is unavailable.
+
+Unpersonalized Temporary Chat may be evaluated separately as a future mode, but it is not this revision's persistent default. Saving it as a regular conversation does not preserve the original isolation semantics.
+
+Recheck the current container, sources, and policy on every turn. Manually moving a conversation or adding sources/collaborators invalidates prior admission. Guarantees cover publicly observable settings, not the platform's hidden instructions.
+
+## 9. Durable state, recovery, and preventing duplicate execution
+
+### 9.1 Invocation facts and the write-ahead journal
+
+The plugin's internal Web worker offers versioned prepare/start/observe/recover/cancel/close semantics. Recover is read-only; the host performs adoption separately. Users do not operate a machine API.
+
+Durable identity includes at least the host owner/execution domain, DSH session/surface, provider/model/effort/transport, connection/account fingerprint, project/conversation generation, web message identity, and complete-result digest. Bind Flywheel identity through a managed host service instead of injecting unknown SDK fields. Ordinary desktop use does not depend on a Flywheel ID.
+
+| Order | Durable fact |
 | --- | --- |
-| dispatch | not-dispatched / confirmed / unknown, with supporting evidence |
-| outcome | completed / failed / cancelled / unknown, preserving the original stop reason |
-| local cleanup | Whether owned workers, control channels, tab leases, and local tools are quiescent or released |
-| remote generation | Observed completed, observed stopped, not dispatched, or unknown |
-| usage | complete / partial / unknown; local estimates listed separately |
-| selection | Requested and currently observed model/effort, observation time, and verification state |
+| 1 | prepared: call binding, policy, and budget are ready |
+| 2 | submit-intent: submission intent and prompt digest are synchronized |
+| 3 | submitted-confirmed: acceptance evidence for the current prompt is saved |
+| 4 | response-captured: complete-result artifact is saved |
+| 5 | response-validated: protocol and identity validation are complete |
+| 6 | delivered-to-dsh: delivered, but not yet proof of durable host commit |
+| 7 | host-commit-confirmed: DSH's durable record and associations are verified |
 
-Cancellation must prevent new local tools or model turns, attempt to stop generation on the exact owned page, drain owned DSH tools, terminate managed child processes, and persist a receipt. Closing a tab, disconnecting CDP, killing a CLI, or cancelling an MCP waiter cannot alone prove that cloud generation stopped.
+Persist and synchronize every step atomically. Submit-intent does not prove dispatch; absence of the next step does not prove non-dispatch. DSH's `finish.replayState` saves association references only with a successful message and cannot replace the pre-submit journal. Record the Provider response ID separately from the assistant MessageId generated by DSH.
 
-If remote state remains unknown, retain quarantine and block automatic replay/reuse even after local resources are cleaned up. Success does not require destroying shared Chrome; it requires settling this invocation's owned work and releasing its control resources. Never close unrelated user tabs or the user's entire everyday browser.
+Associate host ACKs by call kind. Main calls reconcile assistant/tool events and flush; compaction reconciles its compactionId, summary/checkpoint transaction, and flush rather than waiting for a nonexistent assistant message. Title/one-shot calls must declare their corresponding host operation and durable or non-durable delivery semantics, without pretending to commit an assistant message. The adapter first persists its result and ends the iterator; after committing, the host uses a separate ACK channel. The next model/tool admission barrier rechecks that commit, preventing the stream and commit from waiting on each other.
 
-Flywheel must incorporate provider remote state into the new receipt and recovery checks, rather than inferring all cleanup from DSH SDK process exit. Preserve existing contracts for older providers. Separate the outer timeout from the inner cancellation mechanism and retain TIMEOUT as the original cause.
+### 9.2 Adopting a captured response during recovery
 
-### 8.3 Error classification
+- Confirmed non-dispatch and confirmed local cleanup: allow retry within budget.
+- Unknown submission outcome: lock the original conversation and read its original turn and journal; do not resend.
+- Complete answer captured but not committed to DSH: save it as a pending result for a dedicated host transaction.
+- Assistant/tool results already durable: reconcile existing records and only acknowledge delivery, without a second invocation.
+- Identity conflict, manual web edits, or incomplete result: retain evidence and block.
 
-Reuse Flywheel's existing error codes, with bounded web-specific reasons:
+Current DSH resume repairs and closes interrupted steps/turns first, so an ordinary adapter cannot continue the old step. This design depends on a new public `adopt-recovered-response` transaction. Under host admission and a session write lease, it verifies the original request/surface, that tools have not executed, compatibility with current permissions/tool implementations, and absence of an unknown fence; it then adopts once in a new host recovery transaction and flushes.
 
-- AUTH: signed out, account-binding mismatch, or login challenge;
-- QUOTA / RATE_LIMIT: explicit quota or rate limits;
-- CONTEXT_WINDOW_EXCEEDED: a context rejection with page provenance and identity;
-- INVALID_REQUEST: unsupported configuration/capability or input that violates local policy;
-- TRANSPORT / SERVER / TIMEOUT / EMPTY_RESPONSE: classify from the observed facts.
+The idempotency key is executionDomainId plus DSH sessionId, originalRequestId, and providerResponseId, recorded in the host's durable log. Repeated adoption returns the original commit identity. Before this integration point exists, a result may be shown read-only, but old tool responses must not be replayed through the next ordinary stream and called successful recovery.
 
-Tool-protocol format failures retain a separate reason, raw-answer digest, and bounded repair count. They must not be reported as executed actions. Read errors only from actual UI error controls; an answer discussing error text must not trigger classification. Source inspection and offline fixtures cannot establish recognition across every language or web version.
+Auxiliary-result recovery includes call kind and host operation/compaction ID in its association and idempotency key. Determine whether the summarization transaction already committed, then let the same authoritative CompactionEngine adopt or reject the result. Do not create an ordinary assistant message or bypass checkpoints to alter history. Without the corresponding recovery integration point, retain the result read-only and block automatic redispatch. Main-call adoption cannot simply be applied to summaries or titles.
 
-DSH automatically retries requests for several generic error codes. The web adapter's `providerRetryPolicy()` must therefore return a complete `ResolvedRetryPolicy` with `maxRetries` set to 0. It can use public `resolveRetryPolicy({ mode: "normal", maxRetries: 0 }, "chatgpt-web.retry")` to construct it, rather than returning a partial object with missing fields. The managed runtime may retry only confirmed non-dispatches, within bounds. Uncertainty after `submit-intent` must first establish a durable dispatch fence, then return a result that retains the original cause and cannot be retried automatically. Even if the user configures more aggressive retries, the fence must reject the next admission. Flywheel's outer retry, fallback, replanning, and new-session paths must honor the same fact. Protocol repair is a new child invocation after the previous turn has conclusively ended; it is not implemented through generic retry.
+### 9.3 Blocking an execution domain after an unknown tool side effect
 
-## 9. Installation, authentication, SDK, and session visibility
+DSH already has tool/call, tool/result, and checkpoints. A tools/result notification is not a durable ACK. After a crash, a call that started but lacks a durable result is repaired as `TOOL_OUTCOME_UNKNOWN`. This records a fact; it does not inherently prohibit later side effects.
 
-### 9.1 Connection selection and deployment
+The plugin's general host policy must establish a durable executionDomainId and unknown fence covering the original root, admitted subagents, PTC nested execution, and corresponding workspace responsibilities. Unresolved fences continue across Providers, fresh/resume, fallback, new conversations, and replanning. The current requestId cannot replace a durable execution domain.
 
-Manage web connections through plugin settings: named connection, dedicated browser profile, explicit browser path, runtime version, state directory, concurrency, and context policy. In the first version, each DSH profile explicitly selects one `activeConnection`. Desktop and SDK configurations must point to the same managed connection or explicitly use different ones. Include that selection, normalized paths, and non-secret account identity in the effective binding. A Flywheel channel does not select a connection. The first version does not support switching web accounts within one worker profile merely by changing channels.
+Unknown child outcomes propagate to the domain coordinator and freeze new sibling admission. Cancel/drain already-running work and reconcile each outcome independently. Only host-defined read-only recovery operations are allowed; the model cannot designate itself read-only. Deterministic evidence or explicit human resolution is required to clear the fence. A model's "completed" statement is not evidence.
 
-The proposed settings namespace is `chatgpt-web`. `enabled` defaults to false, and `activeConnection` is required when enabled. `connections.<id>` defines the browser profile, browser/runtime executables, private stateDir, `maxConcurrentTurns` (initially 1), hosted-context policy, and context policy. The context policy must specify finite input/output reserves, a cumulative remote budget, turn limits, repair/compaction/migration counts, and rules for inheriting the wall budget. Finalize production thresholds through P1's measured policy manifest and record policyVersion. Without a validated policy, do not mark the capability ready or use an API window size as a purported web limit. Include every policy change in the runtime digest and expose policies for inspection and explicit override in the UI. They are not an implicit pass-through of arbitrary modelOptions.
+In ordinary desktop use, the plugin host policy persists the execution domain. Flywheel additionally persists the blocking fact across workers in Go. Do not promise exactly-once semantics for arbitrary Shell commands, or discard unknown as an ordinary failure during compaction.
 
-- Sign in manually once in a dedicated browser profile and reuse it. Do not copy everyday Chrome cookies by default or read user credentials into a task.
-- Load browser dependencies lazily. The web runtime requires Node >=24; installation diagnostics must check the appropriate executable without breaking non-web routes that require only Node 22.
-- Install and update through the existing npm workflow and explicit setup, pinning dependencies and provenance. Do not depend on temporary source directories, manual ZIP installation, or postinstall changes to accounts/profiles.
-- Flywheel's separate SDK profile must also load this provider and its controlled companion policy. Having the desktop plugin does not mean the SDK enabled it. Do not set `FLYWHEEL_DSH_PROFILE` to desktop.
-- Doctor performs no inference by default. Check modules, versions, profiles, model contracts, and absent effort. Active browser-login/model-menu inspection is an explicit user operation; it sends no test prompt. A static pass must not be presented as verified account quota or live inference.
-- Doctor/prewarm prepare only the local runtime and admission: no paid prompt, task Project, placeholder chat, or LLM naming call. An actual start creates its owned container. Shut down unused runtimes within a bounded period.
+### 9.4 Retry contract within the unified Provider
 
-### 9.2 Hosted-context admission
+Preserve existing SIWC Provider-level retry behavior. **Do not globally return a zero-retry policy from the unified chatgpt Adapter to handle Web.**
 
-A Chrome profile isolates only local browser data. Memory, Reference chat history, custom instructions, Projects, and connected apps on the same account may add model context or capabilities. A new chat is not inherently equivalent to model input containing only the DSH request. Production Flywheel calls must verify and freeze an observable hosted-context policy; they must not automatically change the user's global account preferences.
+Web retry decisions must use the call's frozen transport and journal. The managed runtime retries only confirmed non-submission, within bounds. Uncertainty after submission first creates a dispatch fence, then returns while preserving the original TIMEOUT/TRANSPORT cause.
 
-The preferred persistent mode is a **new private project-only Project for every generation of each logical session, containing only that generation's single main chat and explicitly admitted material**. This invocation's protocol controls the project instructions and records their digest. The Project has no external collaborators or connected sources; auxiliary summary calls use their own isolated containers. Different roles, subagents, and generations do not share Projects, preventing memory across project chats from reintroducing execution history or old compacted content. Creation, setting readback, source inventory, and checks before each call are proposed runtime additions. Oracle's existing project-URL support does not supply these checks. The managed path must not fall back to the ordinary home page if a Project fails to load. New chats, continuations, and migrations all recheck the target project ID and admission evidence before sending; failure remains not-dispatched.
+The current `llm-retry` always mode may continue retrying after a downstream rejection, so an ordinary request-error listener cannot reliably impose a hard veto. This design explicitly requires a **public per-call replay-veto/stop outcome** in DSH. Before normal/always retry executes, consult the actual policy of the prepared call. A no-replay decision terminates the request and propagates blocked/unknown; more aggressive user retry settings cannot override the fact.
 
-Official documentation describes project-only memory as limiting references across Projects, with project instructions overriding global custom instructions. These settings still depend on account/workspace conditions, and changing an existing Project's settings may take time to take effect. A just-modified old Project is therefore not proof of immediate isolation. Admit only a new container confirmed to satisfy the policy; fail before dispatch if it cannot be verified. A user may explicitly select and verify another persistent configuration without cross-chat memory, but a dedicated browser profile or channel name alone cannot satisfy admission.
+This mechanism applies to Web's non-replayable facts and execution domains still blocked by their fences, including recovery or fallback to SIWC/other models within those domains. Unrelated, ordinary SIWC calls retain their existing policy. The veto reads both the prepared route and the durable domain fence. New admission still checks the fence to prevent outer replanning from bypassing it. The design must also prevent an always-retry loop from spinning indefinitely on fence rejections. Do not invent error codes to solve retry behavior. Until this public integration point is complete, full recovery capability is not delivered.
 
-Actual admission verifies the account's project-memory prerequisites, creates a private project-only Project, reads back memory/instructions/sources/sharing, saves the project ID, confirms GPT-6 + Pro inside that Project, and verifies the main chat's parent Project, in that order. Pro availability on the home page does not establish availability inside a Project. If prerequisites are not met, report unavailable accurately rather than silently enabling global Memory. Both Projects and chats use readable task/role/generation names to avoid unidentifiable containers.
+## 10. Activity, cancellation, permissions, concurrency, and cost
 
-`Unpersonalized Temporary Chat` may be evaluated as another explicit mode, but history visibility, a revisitable URL, and recovery require separate acceptance. It is not the default persistent mode, and saving it as an ordinary chat does not preserve a claim of the original unpersonalized guarantees. If no connection meets isolation and recovery requirements, independent Review/Judge remain unavailable. Do not record an ordinary-chat result as a passed independent review.
+### 10.1 Activity and deadlines
 
-Record the policy, project/source/instruction digests, and observation time on every turn. Manually moving a chat into another Project, changing settings, or adding sources requires readmission or blocking. This guarantee covers public configuration and owned containers; it does not claim control over ChatGPT's hidden platform instructions. Built-in web apps and write actions require separate admission under section 10.
+Executable deltas cannot be emitted before content validation, so the plugin's general activity events are independent of answer text. Events carry the real owner, call ID, generation, sequence, and bounded type. DSH desktop can display them; Flywheel consumes them through an adapter.
 
-### 9.3 History, titles, and data
+Distinguish process heartbeats, UI-state snapshots, actual new content/progress, prompt acceptance, terminal states, and cleanup. Repeated unchanged logs are not activity. Pro's unobservable reasoning phases use an explicit opaque/wall policy; stdout silence cannot prove a hang.
 
-The DSH desktop shows the logical session and tool trace; ChatGPT history shows conversation generations inside their corresponding isolated Projects. Preserve revisitable history through the persistent mode in section 9.2. Explicitly override Oracle's default archiving of successful single-call chats to retain them. The local UI shows the current link, previous generations, original task, and role without inventing a single shared web ID.
+The original call's wall deadline, cancellation, correction, compaction, migration, and queuing share a budget. Disconnects and new conversations do not reset it. Declare observability while retaining failure detection; heartbeats cannot keep a call alive indefinitely.
 
-Use readable task/role titles, adding the generation when rotating. DSH titles use the existing public service. Set and read back web titles through verified UI operations, modifying only chats created by this invocation. On failure, expose title status and a readable local label. Do not spend an extra Pro call on naming or overwrite a user's manual changes to an old title.
+Apply separate bounded policies to single frames, complete-answer artifacts, retained buffers, cumulative protocol traffic, and activity events. Coalesce high-frequency activity according to actual arrivals, preserving delivery capacity for terminal and cleanup receipts. Rich activity must not be counted against a tiny final-answer limit. Errors retain the host's AUTH/QUOTA/RATE_LIMIT/CONTEXT_WINDOW_EXCEEDED/INVALID_REQUEST/TRANSPORT/SERVER/TIMEOUT/EMPTY_RESPONSE taxonomy with bounded Web reasons. Web quota or context errors must originate from identity-matched UI controls, not error text quoted inside an answer.
 
-Include browser connection, paths, non-secret account fingerprint, and runtime digest in session/prewarm identity. Account switching, profile changes, or changed runtime capabilities require readmission. Cookies, tokens, full email addresses, and sensitive content must not enter PRs, general logs, or replayState.
+### 10.2 Local cleanup and cloud state
 
-## 10. Concurrency, permissions, and cost
+Receipts separately preserve dispatch, outcome, stop reason, local cleanup, remote generation, usage, and current model/effort evidence.
 
-- Hold a cross-process conversation lease from before dispatch until terminal or blocked state. Separate tabs must not write concurrently to the same chat.
-- Use independent chats for different tasks, roles, and children. A connection-level queue limits model turns in flight. The proposed default is 1, with explicit increases permitted; Oracle's tab limit does not guarantee server-allowed concurrency.
-- Queue waits remain not-dispatched, consume the original invocation's remaining wall time, are cancellable, and emit no fabricated progress. A permit acquired after cancellation/timeout must not lead to submission. A connection permit covers only the current web model turn and is released before waiting for local tools/subagents, preventing a parent from holding it while waiting for a child that needs it. Retain capacity responsibility for unknown remote turns; ending a local wait must not release that capacity for unbounded oversubscription.
-- Reconcile leases using owner/epoch and the durable journal. PID liveness or a fixed timeout alone is insufficient to take over from a previous owner with unknown state.
-- DSH local file/shell tools strictly retain their sandbox, permissions, and actual cwd. PTC may invoke only tools admitted for this call. A local OS sandbox does not constrain write actions in remote MCP tools or web apps; these need their own allowlist, authorization, and side-effect classification. Read-only Review/Judge may expose only verified read-only external tools, never capabilities with unknown permissions. Hosted web apps/write actions are disabled by default in the first version. Reject the corresponding call if their disabled state cannot be verified; prompts do not substitute for permission guarantees. Sending model requests, uploading admitted context, and naming chats on owned ChatGPT pages are limited transport actions, not grants of arbitrary external or LCU access to the model.
-- Transport operations requiring GUI focus share desktop coordination with LCU. Do not hold a GUI lease throughout model reasoning and deadlock a later LCU tool. Web transport and model-directed GUI actions must not manipulate the same owned tab simultaneously.
-- Local token estimates serve capacity and policy only; they are not exact server usage. Without authoritative metering, web and summarization usage/cost remain unknown.
-- Preserve existing soft/hard/off budget semantics. A hard token budget cannot use web estimates as a fabricated verifiable bill. The current hard daily-token-limit stops further model dispatch after unknown usage is recorded; the web provider must honor that rule when authoritative usage is unavailable. Installation and the UI must explain compatibility, and complete-task acceptance must not silently switch to soft/off.
-- Count reconnection, repair, compaction, rotation, and auxiliary calls toward call/time limits. Rebuilding must not reset task, packet, failure, or account budgets.
+Cancellation first blocks new calls and tools, attempts to stop the exact owned page, and drains owned local tools and control resources under an independent finite cleanup budget. Async resources arriving after cancellation must still be released. A stopped call cannot later create a tab or submit a delayed prompt.
 
-Web tool loops generally add interactions and waits. Do not assume they are faster or cheaper than API calls. Evaluation should record latency per turn, queue time, tool rounds, reconstruction reasons, protocol-repair rate, task completion rate, and human takeover rate. Use those observations to decide where Pro is useful.
+Closing a tab, disconnecting CDP, killing a worker, or releasing a waiter does not prove cloud generation stopped. An unknown remote call retains isolation and capacity responsibility even when local cleanup is complete; it cannot be automatically replayed. A shared browser need not be destroyed after each successful call. Release only that call's resources without closing unrelated user tabs or another host's work.
 
-## 11. Capability matrix and acceptance boundaries
+### 10.3 Concurrency and tool permissions
 
-Being configurable for any model role does not automatically transfer every capability from another harness. Report a proposed capability as unavailable until its acceptance is complete; do not silently switch backends.
+- One writer owns each conversation across processes for the whole turn. Lease takeover verifies owner/epoch and the journal, not just PID existence or a fixed timeout.
+- Connection concurrency defaults to 1. A permit covers one web-model turn and is released before waiting for local tools or subagents, avoiding parent/child deadlock.
+- Queued calls remain not-dispatched, use the remaining wall budget, and can be cancelled. Recheck cancellation and binding after receiving a permit to prevent late submission.
+- A remote unknown turn cannot become unlimited oversellable capacity merely because its local process exited.
+- DSH local tools retain their existing cwd, sandbox, and permissions. Remote MCP and web apps need separate allowlists/side-effect classifications; a local OS sandbox does not constrain remote writes.
+- Read-only Review/Judge exposes only verified read-only external tools. Writable hosted apps are disabled in the first version; reject calls when that state cannot be verified.
+- CDP is the primary transport. If GUI focus is required, coordinate with LCU rather than occupying the whole desktop during long reasoning or allowing two controllers to manipulate the same tab.
 
-| Capability | Target implementation | Required verification |
-| --- | --- | --- |
-| Conversation, design, Review | Complete text and structured artifacts | Current-turn identity, complete output, business schema |
-| **Execute** | DSH file/search/shell/test tool loop | At least two tool rounds, real cwd modifications, verification, and independent Review |
-| PTC | Use the actual single run_code tool and schema | TypeScript, handles, deferred output, and error return |
-| DSH subagents / Teams / Workflows | Use existing native profiles and real child agents | Separate sessions, lineage, concurrency, activity, budgets, and cancellation |
-| Image input / multimodal routes | Project actual DSH AttachmentStore bytes into web attachments | MIME, ordering, hash, upload completion, and model visibility; a path alone is insufficient |
-| LCU | Existing PTC/LCU tool calls and returned screenshots | Explicit permissions, GUI lease, image projection, and complete cancellation |
-| ChatGPT's built-in web tools | Register explicitly allowed, observable capabilities separately | Writable apps disabled by default; verify read-only permissions and hosted-context policy; do not describe web-internal work as local modifications |
-| Native Codex agents / Claude Workflows | Remain capabilities of the original harness | Selecting the web provider does not automatically port them |
-| JEV / deterministic Verify | Retain their existing dedicated interfaces | Outside the model-provider substitutions in this design |
+### 10.4 Accounting
 
-Version capability declarations separately for transport, tool bridge, media, and native composition. DSH currently converts file blocks into path text and image blocks for text-only models into placeholders before calling the adapter. An adapter finding no image therefore cannot prove that no image was lost. Install a guard specific to chatgpt-web on the **pre-projection** side of public `llm/stream`, rejecting unsupported original images. Once images are enabled, declare image support and read actual bytes through AttachmentStore. Cover user input, tool screenshots, auxiliary purposes, and recovered history.
+If authoritative usage/cost is unavailable, preserve unknown. Local token estimates serve capacity policy only. Account for summarization, format correction, reconnects, and migration separately; do not invent zero usage or free calls.
 
-Ordinary files are supplied through DSH's local read/search tools by default. A path in model output is not an authorized web attachment. Native file uploads require an explicit public projection/admission integration point that preserves provenance, MIME, hash, byte count, and this upload's identity. Before media acceptance, reject LCU or image requests before dispatch; never silently drop images and return success. Full project acceptance must cover the PTC/subagent paths in the user's actual heavy-work preset, not just a simplified conversation without tools.
+The plugin does not weaken Flywheel's existing hard/soft/off budgets. For example, an unknown usage record under a hard daily-token-limit blocks subsequent calls. Diagnostics must explain compatibility rather than silently changing budgets to pass acceptance. Ordinary DSH also records the facts that are actually known and the account's rate-limit/quota state.
 
-## 12. Implementation scope and sequence
+Measure task completion, tool rounds, latency, queuing, correction rate, compaction/migration count, and manual recovery before choosing suitable tasks and defaults. Do not assume Web is faster or cheaper than other channels.
 
-### 12.1 Repository responsibilities
+## 11. How Flywheel consumes the same model
 
-| Repository | Scope |
+### 11.1 Target configuration
+
+The following is a configuration fragment for the completed implementation. **Current 0.37.0 cannot use the new model from this configuration yet.** Incorporate it into the effective complete configuration; Flywheel does not deep-merge files.
+
+```json
+{
+  "profiles": {
+    "web-pro": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "model": "gpt-6-pro-web",
+      "thinking": "pro",
+      "channel": "chatgpt-web-subscription"
+    }
+  },
+  "loops": {
+    "design-plan": { "profile": "web-pro" },
+    "review": { "profile": "web-pro" }
+  },
+  "routes": {
+    "hard": { "profile": "web-pro" }
+  },
+  "channels": {
+    "chatgpt-web-subscription": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "env-key": null
+    }
+  }
+}
+```
+
+This example selects Web Pro for design-plan, review, and the hard execution route. Unoverridden design-review/plan-review inherit review. Existing fresh/scoped configuration still controls session reuse; the fragment does not change the global sessions policy.
+
+The channel is a named Flywheel configuration and budget attribution, not a browser-account selector. The plugin's activeConnection selects the web connection, with one selected per DSH profile in the first version. Two different channel names do not imply two different accounts.
+
+| Model work | Configuration entry |
 | --- | --- |
-| `ckanner/dsh-plugin-chatgpt` | Web adapter registration/settings, fixed model catalog, typed runtime, tool protocol, message projection, journal, context/media, desktop UI, and existing SIWC regression coverage |
-| `ckanner/flywheel` | Absent effort end to end, SDK composition, admission/identity, provider activity/receipts, recovery/timeouts, execution policy, doctor, installation, UI, documentation, and cross-process tests |
-| `ckanner/dsh-preset-generator` | Align web capability admission only when required by actual public composition; do not duplicate the provider implementation |
-| `ckanner/dsh-plugin-lcu` | Add integration points only if shared GUI coordination or media contracts expose a gap |
-| DSH / Oracle upstream or reviewed snapshots | Add public transport, pressure, or lifecycle integration points; pin source and behavioral evidence instead of inferring compatibility from version strings |
-| Codex Pro / Claude Code Pro | The main path in this design does not replace their model backends; define any optional consultation entry separately |
+| Initial design and independent design review | loops.design-plan / loops.design-review |
+| Planning and plan review | loops.plan / loops.plan-review |
+| Execution | routes.default / frontend / hard / multimodal |
+| Code review and final judgment | loops.review / loops.judge |
+| Second opinion | Top-level judge-panel |
+| Intake / Garden | loops.intake / loops.garden |
+| Bounded execution-model switching | execution-policy.bindings and route allowed sets |
 
-### 12.2 Implementation milestones
+There is no loops.execute. JEV's dedicated HTTP contract, deterministic Verify, Git delivery, and state transitions do not become part of this model configuration. Native Codex/Claude harnesses do not have their main models replaced by it either.
 
-| Phase | Deliverable | Condition for advancing |
+### 11.2 Required Flywheel integration
+
+1. **Model/effort:** explicitly send `thinking: "pro"`. Existing DSH wire and prewarm accept non-empty strings, so the first proposal's empty-effort exception is unnecessary. Do not change Pro to high.
+2. **Execution policy:** schema and Go validation allow DSH adapter-owned effort and verify it against exact model capabilities before a formal call. Other harnesses retain their existing allowlists, and configured allowed bindings remain strictly enforced.
+3. **UI:** consume this DSH model's valid efforts/defaultEffort and display Pro natively. Revalidate effort when the model changes rather than inferring quality from a generic high/max ordering.
+4. **SDK composition:** load the same ChatGPT plugin's Web component and general host policy, and configure a real connection for the independent SDK profile. Do not substitute the desktop profile for the SDK profile.
+5. **Compaction:** connect Web root/child calls to the same plugin policy and sole CompactionEngine, passing frozen contracts, remaining budgets, and call accounting. Go and the worker do not implement another summarizer or DOM layer.
+6. **Identity and recovery:** expose transport/connection, runtime version, execution domain, Web-call facts, and recovery capabilities. Model/effort/account changes cannot reuse old bindings.
+7. **Activity and cleanup:** map general plugin events to existing activity/receipt validation and negotiate a new worker extension version. If older v1/v2 workers cannot understand the capability, reject before dispatch rather than ignoring fields and continuing.
+8. **Installation/doctor:** verify SDK plugins, general dependencies, policies, and versions. Static checks are not real-account or quota checks.
+
+Configuration loading can verify field shapes and allowed bindings. The model's metadata defines the actual meaning of DSH effort, and execution/prewarm admission must validate it. Relaxing a schema does not make an unknown effort valid. The initial configuration explicitly supplies pro. If Flywheel later permits omission to use model defaults, separately address the old driver's high fallback; this example must not silently depend on it.
+
+Flywheel-specific constraints enter only through a general host-policy extension. Desktop plugin functionality must not import or depend on Flywheel packages, file layouts, or state machines.
+
+## 12. Settings, installation, and data lifecycle
+
+Add proposed `web` settings under the existing ChatGPT namespace, without a new user-visible Provider. When Web is enabled:
+
+| Setting | Rule |
+| --- | --- |
+| enabled | Defaults to false; does not start a browser or change existing SIWC defaults |
+| activeConnection | Explicitly select one named connection when enabling |
+| connections | Dedicated profile, browser path, private state directory, account binding, and connection policy |
+| maxConcurrentTurns | Initially 1; explicitly adjustable within measured and account-supported bounds |
+| hosted-context policy | Managed isolation by default; personalization requires explicit selection and cannot serve independent Review |
+| budget policy | Validated local input/output, cumulative history, turn, correction/compaction/migration limits, and version |
+| summarization route | Defaults to this call's Web model/Pro; explicit overrides require admission, display, and accounting |
+
+The user completes the first browser sign-in in the dedicated profile. Do not copy everyday Chrome cookies by default. Connection, model selection, and diagnostics have independent states. Catalog failures must not trigger inference or read other accounts' credentials.
+
+Installation follows the existing npm workflow. Browser modules load lazily, and one candidate validates pinned dependencies, build contents, and SDK loading paths. There are no postinstall account-setting changes, per-call latest downloads, or implicit Oracle dependencies.
+
+Doctor/prewarm do not send prompts or create business projects or placeholder chats. An explicit connection check may inspect sign-in and menus. Record "statically loadable," "account connected," "target model selectable," and "real inference passed" separately.
+
+Store web state, journals, and complete results in private directories rather than target code repositories or general logs. Cookies, tokens, full email addresses, and sensitive text do not enter replayState/PRs. Cross-process synchronization sends only necessary validated scalars.
+
+Retention/cleanup affects only plugin-owned objects and respects unresolved calls and the user's retention policy. Never delete recovery evidence for an unknown call. Deleting web projects/conversations or local logs requires an explicit user action; package upgrades must not automatically clear history.
+
+## 13. Implementation scope, public integration points, and delivery order
+
+### 13.1 Repository responsibilities
+
+| Repository | Responsibility |
+| --- | --- |
+| ckanner/dsh-plugin-chatgpt | Main implementation: unified model entry, Pro metadata, own browser transport, session/compaction coordination, tool/media bridge, durable recovery, connection management, and UI |
+| DSH upstream or an explicitly maintained compatibility patch | Public per-call replay-veto, summarization-route/proposed-target policy, recovery-response adoption, and related integration points; pinned compatible version |
+| ckanner/flywheel | Ordinary model configuration and Pro validation, SDK composition, host policy, identity/activity/receipts, budgets, installation, and UI |
+| ckanner/dsh-preset-generator | Update Web-model capability and PTC/subagent admission for actual composition; do not duplicate Provider implementation |
+| ckanner/dsh-plugin-lcu | Add only necessary GUI-coordination/media contracts |
+| Oracle | Pinned-source reference and provenance record; no runtime dependency |
+
+### 13.2 Public contracts that must be settled first
+
+- **Per-call replay-veto:** takes the actual prepared transport/call, durable dispatch facts, and domain fence; returns retryability or a non-replayable stop outcome. Normal/always cannot override it, blocking remains effective across models, and unrelated SIWC is not affected.
+- **Compaction policy:** takes the real Agent, proposed target, purpose, and remaining budget; returns the actual summarization route/effort and acceptable range before GenerateOptions is formed, usage recorded, and checkpoints created. The sole CompactionEngine owns history mutation.
+- **Recovery adoption:** under the corresponding host-operation/session write lease, reconcile the original result with current permissions and adopt once by call kind and durable idempotency key. Main calls and compaction transactions have separate ACKs; existing commits return their original identity.
+- **Host call context and tool guard:** determine main/auxiliary eligibility before projection, bind the execution domain, cover subagents/PTC, and revoke on lifecycle end.
+
+These are delivery dependencies, not claims about currently supported interfaces. Prefer existing public capabilities and contribute minimal public extensions. Do not call DSH private methods, alter published version identifiers to pretend compatibility, or describe ordinary plugin-internal functions as official SDK APIs.
+
+### 13.3 Milestones
+
+| Phase | Deliverable | Acceptance gate |
 | --- | --- | --- |
-| P0 Contracts | Provider/model/connection, web reply, machine receipt, session and compaction schemas | Bilingual contract review, clear current/proposed distinction, no runtime release |
-| P1 Transport and journal | Pinned Oracle runtime, isolated Project lifecycle, fresh/resume, complete results, selection verification, cancel/recover/lease | Failure fixtures and minimal live-account browser acceptance; finalized isolation/capacity policy manifest; no home-page fallback or log tail presented as a result |
-| P2 DSH model and Execute | LlmAdapter, invocation classification, tool loop, persistence barriers, unknown admission fences, settings, and SDK loading | Real DSH tool loop modifying files and running tests; invalid, duplicate, or unknown actions do not execute |
-| P3 Continuity | Incremental projection, desktop/Flywheel compaction, generation migration, and a dedicated host transaction for adopting recovered responses | Prefix changes, full chats, crashes, and auxiliary summary calls neither contaminate state nor trigger replay |
-| P4 All Flywheel roles | loops/routes/panel/policy, absent effort, prewarm, budgets, activity, UI, doctor | Cross-process acceptance for all roles and cold/warm paths; regression coverage for existing providers |
-| P5 Full capabilities and release | PTC/subagents/media/LCU acceptance, pinned provenance, bilingual guides, npm candidate | Real Mac end-to-end task plus independent Review; installation verification of the exact candidate |
+| P0 Contracts and experience | Unified Provider, model/Pro, connection/host contracts, bilingual interaction design | Review this proposal; make interface dependencies and independent desktop goals explicit |
+| P1 Own browser foundation | Connection broker, page adapter, isolated-project admission/lifecycle, selection verification, complete results, journal, cancel/recover | Minimal real-account call without Oracle/Flywheel installed; Pro verification within the same project and failure fixtures |
+| P2 Native DSH model and execution | Native catalog/effort, independent authentication state, tool protocol, replay-veto/unknown blocking, permissions, and media guard | DSH model selection to file modification and tests, with real multi-round tools; SIWC regression |
+| P3 Long sessions and recovery | Sole compaction backend, Web summarization policy, incremental history, generation migration, adoption | Native DSH long tasks, full conversations, model switching, and crash recovery; pure Q&A is insufficient |
+| P4 Flywheel consumption | loops/routes/policy/UI, SDK, budgets, prewarm, activity, and receipts | Model roles and cold/warm/resume cross-process acceptance using the same plugin implementation |
+| P5 Complete capabilities and release | PTC/subagents/media/LCU, real Mac tasks, installation candidate, and bilingual guides | Real acceptance for selected capabilities; one exact npm candidate installs successfully, with a clear maintenance path |
 
-These phases define implementation order; Execute, recovery, and long-context behavior are not unspecified future work. Announce full integration only after every phase and the user's selected capabilities pass acceptance. Publication and default-model changes require separate delivery decisions.
+This is implementation order, not an indefinite deferral of long context, Execute, or recovery. Full acceptance uses the user's actual heavy-work Preset and real tasks. A capability that has not passed cannot be released based only on a boolean declaration.
 
-During implementation, update the owning sections of `docs/design.md`, `plugins/dsh/PROTOCOL.md`, relevant schemas, bilingual configuration/recovery/native/installation guides, and the changelog. This design PR does not rewrite current guides to describe unimplemented behavior; proposed examples remain in this proposal.
+Implementation updates the plugin contracts/settings, Flywheel's current architecture/protocol, relevant schemas, bilingual usage/installation/recovery guides, and changelogs together. This PR updates only the proposal and indexes; unimplemented features do not enter current usage guides.
 
-## 13. Regression and acceptance matrix
+## 14. Regression and acceptance matrix
 
 | ID | Scenario | Required observation |
 | --- | --- | --- |
-| T01 | Existing SIWC without web configuration | Works normally, launches no Chrome, adds no authentication requirement |
-| T02 | DSH desktop / separate SDK | Correct registration of the same provider; missing SDK components fail explicitly |
-| T03 | Fresh / resumed web turn | Confirm GPT-6 and Pro on every turn; do not submit on version/effort mismatch |
-| T04 | Absent effort on cold start, prewarm, resume | Actually omitted on the wire; no high fallback; conflicting old headers rejected |
-| T05 | Profiles, all loops, routes, panel, execution-policy, UI | Consistent effective configuration; Execute uses routes; explicit empty overrides survive save/load |
-| T06 | Complete result exceeds the MCP log-tail length | Obtain the entire raw result; never use the log tail as model output |
-| T07 | Invalid JSON, truncation, old response, quoted JSON, wrong ID, unknown tool | Reject the whole batch with no local side effects |
-| T08 | Multiple Read/Search/Write/Test rounds | DSH executes tools and returns results under the correct cwd and permissions |
-| T09 | Replay/crash after tool execution | Reuse confirmed results; stop to reconcile unknown side effects |
-| T10 | DSH supplies full messages on every call | Web receives only deltas; protocol-object/block mappings are verifiable |
-| T11 | Compaction, prune, rewind, fork, changed instructions/tool catalog | Do not append on prefix mismatch; safely switch generation |
-| T12 | Compaction/title/unknown purpose, missing sessionId, non-AgentLoop one-shot | Classify before projection; isolate each auxiliary invocation or explicitly reject it without contaminating the main chat |
-| T13 | Local budget / web conversation limit | Checkpoint proactively or migrate after a confirmed rejection; fail boundedly if the new bootstrap still exceeds budget |
-| T14 | Unpaired tools, essential constraints, trusted verification evidence | Compaction preserves necessary facts and original sources |
-| T15 | Crash before/after submission, after capture, before/after DSH flush | Recover from the corresponding journal state without repeated submission or duplicate tool delivery |
-| T16 | Two workers on one conversation / recovery across processes | One writer for the entire turn; no blind takeover from an unknown owner |
-| T17 | Only subagent activity / prolonged web reasoning without visible progress | Correct identity; ordinary idle does not kill opaque work; periodic logs do not fabricate progress |
-| T18 | User cancellation / wall timeout / parent exit | Preserve the original cause; settle owned tools and runtime; record unknown remote state separately |
-| T19 | Explicit context rejection / quota / login / connection error | Correct classification; quoted error text does not misclassify; no silent fallback |
-| T20 | Missing usage/cost; summary and repair calls | Unknown does not become zero; reconstruction/retry does not reset budgets |
-| T21 | Execute / Review / parent and child agents | Separate roles, readable titles, generation links, and no expanded permissions |
-| T22 | PTC, Teams, media, LCU | Each meets its actual section 11 contract; capability booleans alone are insufficient |
-| T23 | Unsupported Node / missing Chrome / plugin installed only on desktop | Accurate doctor guidance, no paid probe, no damage to other providers |
-| T24 | Exact npm candidate and real Mac | Installation paths, SDK profile, login, selection, real Execute, and independent Review pass end to end |
-| T25 | DSH generic retry, user always-retry, Flywheel fallback | An unknown fence after submit-intent prevents every redispatch; budgets do not reset |
-| T26 | DSH repaired TOOL_OUTCOME_UNKNOWN; new call ID/model/chat | Execution scope remains blocked until deterministic reconciliation or explicit resolve |
-| T27 | Captured response after DSH repaired/closed the old step | Dedicated host adoption transaction reconciles once; the next ordinary stream cannot replay old tools |
-| T28 | Memory/history enabled, changed Project sources/instructions, failed Project load, generation changes | Hosted-context admission works; no home-page fallback; independent Review and compaction do not reabsorb old execution history |
-| T29 | Original images, tool screenshots, auxiliary purposes, recovered projection | Pre-projection guard rejects unsupported media; placeholders cannot conceal it |
-| T30 | Connection-queue cancellation race, parent waiting for child agent, writable external MCP/app | No late submission, deadlock, or oversubscription; local read-only is not mistaken for remote read-only |
-| T31 | Crash after Project creation, no Pro inside the Project, wrong parent Project / added chat or collaborator | Creation/recovery first reconcile the owned container; verify Pro in that same isolated Project; unmet conditions fail before dispatch rather than opening a new container to bypass them |
+| T01 | Only ChatGPT plugin installed, without Flywheel/Oracle | Web model + Pro are selectable natively in DSH and support a real conversation |
+| T02 | Web enabled/disabled, only one authentication present, one-sided listing failure | Transport states remain independent; usable models are not hidden and browsers are not launched |
+| T03 | Native model/effort switching and custom Provider route | Correct metadata/default Pro; SIWC uses its own efforts, with no hardcoded ID |
+| T04 | Web ID through resolve/prepare/stream/direct call | No SIWC conversion/authentication/request path; conflicting IDs are not overwritten |
+| T05 | fresh/resume/migration, menu and locale variations, Pro label alone | Joint GPT-6 + Pro verification; unknown layout or mismatch prevents submission |
+| T06 | Stable preamble followed by more thinking, temporarily absent Stop, old answer/echo | No premature completion; capture only this turn's positive terminal state |
+| T07 | Large answer, artifact truncation/path escape | Verify complete result and digest; no log-tail result or out-of-scope read |
+| T08 | Invalid JSON, unknown fields/tools, wrong ID, duplicate call, truncation | Reject the entire batch without local side effects |
+| T09 | Multiple Read/Search/Write/Test rounds | DSH executes with correct cwd/permissions, returns results, and persists them |
+| T10 | Replaying an executed tool, TOOL_OUTCOME_UNKNOWN, new call/Provider | Reuse confirmed results; durable domain blocking prevents side-effect replay |
+| T11 | Full messages on every call, conversion between web JSON and DSH blocks | Append only actual new content; prefixes and mappings can be reconciled |
+| T12 | prune/rewind/fork and changes to tools/instructions/model/account | Readmit/migrate after safe settlement; do not reuse the old binding |
+| T13 | Main, compaction/title, unknown purpose, no session, concurrent interleaving | Classify before projection; isolate or reject auxiliary calls; call contexts never cross |
+| T14 | Native DSH automatic/manual compaction, SDK without an engine | Use the sole authoritative engine; missing contracts fail explicitly, without a private second history |
+| T15 | SIWC-to-Web model switch, explicit summarization route, default headroom | Actual summarization model/effort matches records; no implicit cross-channel call |
+| T16 | Oversized summarization input, multi-part tool pairs, one oversized indivisible unit | Account for multiple bounded independent transactions; explicitly stop when reduction is impossible |
+| T17 | Local/remote capacity, explicit web context rejection, oversized bootstrap | Checkpoint or migrate safely; no infinite summarization/conversation creation |
+| T18 | Crashes after main/auxiliary delivery but before their host commits, and ACK ordering | Recover by call kind without resending unknown calls; stream termination and durable ACK do not wait on each other |
+| T19 | Captured response after old step repair, repeated adoption, revoked permissions | Idempotent host transaction and current-permission checks; no ordinary-stream replay |
+| T20 | Normal SIWC retry, Web normal/always, unknown-domain fallback to SIWC/other models | Preserve unrelated SIWC semantics; blocked domains neither duplicate submission nor spin forever |
+| T21 | Two workers/desktop and SDK, aliases for one profile, launching owner exits | Coordinate by actual profile; a single request cannot kill shared processes or launch duplicate Chrome |
+| T22 | Queue cancellation, parent waiting for child Agent, remote unknown | No late send, deadlock, or oversubscription; remaining wall budget is preserved |
+| T23 | Real main/child activity, unchanged heartbeat, unobservable long reasoning | Activity is identified; opaque policy works; periodic logs do not invent progress |
+| T24 | User cancellation/wall/host exit and late resources | Preserve the first cause and drain local work; record cloud unknown separately |
+| T25 | project-only prerequisites, no Pro inside project, navigation failure/wrong project | Combined admission within the same project; no home-page fallback or silent mode switch |
+| T26 | Project-creation crash, cross-generation work, new sources/collaborators | Locate original containers read-only; old memory cannot bypass isolation/compaction |
+| T27 | Personalized conversation used for independent Review, manual web edits | Reject unsupported independence claims; diagnose invalidated bindings |
+| T28 | DSH/Web titles, persistent history, migration links | Readable names and real revisit-able links, without extra Pro naming calls |
+| T29 | Original images, tool screenshots, auxiliary/recovered history | Reject unsupported media before projection; upload actual bytes when enabled |
+| T30 | PTC/Team/LCU and remote MCP/apps | Real native tools, lineage, GUI coordination, and external permissions |
+| T31 | Flywheel profiles/loops/routes/panel/execution-policy | Same chatgpt model + pro; Execute uses routes, and unsupported harnesses do not accept pro |
+| T32 | SDK profile, cold start/prewarm/resume, old high binding | Same plugin with complete identity; Pro is not replaced by high or matched to an old binding |
+| T33 | Unknown usage, compaction/correction accounting, hard budgets | Unknown is not zero; budgets are not reset or silently weakened |
+| T34 | Missing Chrome/dependency/capability, doctor/setup, package upgrade | Accurate diagnostics; no paid probes, placeholder chats, or automatic history deletion |
+| T35 | Existing SIWC installation, models, images, tools, and retries without Web configuration | Existing functionality and default choices pass regression |
+| T36 | Exact npm candidate, real tasks in native DSH and Flywheel on the user's Mac | Complete standalone DSH first, then orchestrated execution + independent Review; record evidence separately |
 
-Record verification in four layers: protocol/projection unit tests; real DSH and worker offline cross-process fixtures; pinned Oracle DOM/recovery fixtures; and live-account end-to-end acceptance on the user's Mac. Offline passes do not substitute for web UI or model-behavior acceptance, and one live question/answer does not establish failure recovery.
+Validation layers are pure protocol/budget tests; real DSH/SDK offline fixtures; DOM/failure fixtures for the plugin's own page adapter; and real-account end-to-end tests on the user's Mac. Offline results do not replace UI/model acceptance, and single-turn Q&A does not replace long-session/recovery tests.
 
-For implementation changes involving Go, run `make quality-gate` and preserve 100% statement coverage for every measured function. For DSH worker changes, run plugin checks and the relevant cross-process bridge checks. Release changes use installation verification of the same exact npm candidate. For this design document, check links, fences, example syntax, bilingual consistency, and diffs only; do not claim runtime regression tests passed.
+Production implementation follows each repository's gates. Flywheel Go changes retain make quality-gate's 100% per-function coverage; worker changes require Node and cross-process bridge checks; release validation uses the same exact candidate. Link, example, and bilingual checks for this document do not claim those runtime tests have passed.
 
-## 14. Decisions for this design review
+## 15. Pinned source and reference material
 
-1. **Capability scope:** agree on a separate chatgpt-web provider and fixed gpt-6-pro model that reuse DSH's tool loop, beyond a consultation-only tool.
-2. **Code ownership:** prefer isolated modules within the existing ChatGPT plugin package. Split the package only when size or maintenance evidence warrants it.
-3. **Execution:** accept the strict text-tool protocol approach and its verification cost. The web model has no native API tool contract, so real Execute acceptance is required.
-4. **Continuity:** reuse normally, deciding when to rotate from authoritative history and prefix checks. Compaction, auxiliary invocations, and recovery of unknown outcomes must be implemented together.
-5. **Delivery sequence:** implement in stages toward full role support and recovery while retaining current defaults. Any decision to make Pro the default for a stage depends on measured quality, latency, and quota behavior.
+### ChatGPT plugin and native DSH models
 
-These are decisions for joint review. This PR requires no installation or login, and merging the design does not mean the feature has shipped.
+- [Plugin entry, model registration, and settings](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/index.ts) · [SIWC adapter, catalog, and metadata fallback](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/adapter.ts) · [SIWC request conversion](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/convert/request.ts)
+- [Native DSH ModelSelect](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/client/ui-model-selection/src/client/ModelSelect.tsx) · [Model/effort metadata](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/types.ts) · [ReasoningEffortId](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/brand.ts)
+- [LlmAdapter, prepareCall, and public stream](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts) · [Main-call marker](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/call-config.ts) · [Retry executor](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm-retry/src/index.ts)
 
-## 15. Pinned source and references
+### DSH sessions, tools, and compaction
 
-### Flywheel and our plugins
-
-- [Flywheel architecture and invariants](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/docs/design.md)
-- [Profile fields](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/profiles.go) · [Planning-role inheritance](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/planning_roles.go)
-- [DSH driver and effort default](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh.go) · [Go prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh_prewarm.go)
-- [Worker protocol](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/PROTOCOL.md)
-- [Worker overlay / SDK](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/bridge.js) · [Prewarm validation](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/prewarm.js)
-- [Execution-policy schema](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/templates/execution-policy.schema.json) · [Execution-policy validation](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/execution_policy.go)
-- [Session runtime identity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/machine/session_runtime.go) · [DSH activity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/dsh-activity.js)
-- [Dedicated JEV configuration](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/jev.go)
-- [Existing ChatGPT plugin entry](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/index.ts)
-
-### DSH public interfaces
-
-- [LlmAdapter / LlmRuntime](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts) · [Request/stream types](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/types.ts) · [Messages / replayState](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/message.ts)
-- [Agent tool loop](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/agent-loop/src/agent.ts) · [Checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/session/session-checkpoint-policy/src/index.ts)
-- [Tool persistence](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/batch.ts) · [Public tool events](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/events.ts) · [Interrupted-session repair](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/src/repair.ts)
-- [LLM retry policy](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/retry-policy.ts) · [Remote MCP tools](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/mcp/mcp-client/src/tools.ts)
-- [CompactionEngine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction/src/index.ts) · [Basic engine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/index.ts) · [Summarizer](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/summarizer.ts)
+- [AgentLoop](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/agent-loop/src/agent.ts) · [Session repair](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/src/repair.ts)
+- [Tool persistence](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/batch.ts) · [Public tool events](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/events.ts) · [Checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/session/session-checkpoint-policy/src/index.ts)
+- [CompactionEngine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction/src/index.ts) · [Basic engine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/index.ts) · [Summarizer](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/summarizer.ts) · [TokenMeter and proposed header](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/token-meter/src/index.ts)
 - [SDK profile](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/bundle/sdk-app/README.md) · [SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/sdk/server/src/server.ts)
 
-### Oracle / OpenAI
+### Flywheel consumer interfaces
 
-- [Oracle 0.23.1](https://github.com/steipete/oracle/releases/tag/v0.23.1) · [MIT license](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/LICENSE)
-- [Internal browser contracts](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/types.ts) · [Browser execution / continuation](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/index.ts)
-- [MCP inputs](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/types.ts) · [Consult result](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/tools/consult.ts) · [Wait](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/tools/wait.ts)
-- [Input estimates and attachments](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/prompt.ts) · [UI errors](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/uiWarnings.ts) · [Periodic thinking logs](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/thinkingStatus.ts)
-- [Official ChatGPT GPT-6 documentation](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt) · [Responses API compaction](https://developers.openai.com/api/docs/guides/compaction): the latter is an API contract, not a capability automatically available through Oracle's browser engine.
-- [Memory](https://help.openai.com/en/articles/8590148-memory-in-chatgpt) · [Projects and project-only memory](https://help.openai.com/en/articles/10169521-projects-in-chatgpt) · [Temporary Chat personalization and saving](https://help.openai.com/en/articles/8914046-temporary-chat-in-chatgpt): sources for the publicly observable context admission in section 9.2, not a claim of control over hidden platform context.
+- [Current architecture and invariants](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/docs/design.md) · [Profiles](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/profiles.go) · [Role inheritance](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/planning_roles.go)
+- [DSH driver](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh.go) · [Prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh_prewarm.go) · [Worker protocol](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/PROTOCOL.md)
+- [SDK composition](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/bridge.js) · [Worker prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/prewarm.js) · [Configuration UI](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/client-config.js)
+- [Execution-policy schema](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/templates/execution-policy.schema.json) · [Go execution-policy validation](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/execution_policy.go) · [Session identity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/machine/session_runtime.go)
+
+### Oracle engineering references and OpenAI product material
+
+- [Pinned Oracle version and MIT license](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/LICENSE) · [General-purpose CDP dependencies](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/package.json)
+- [Browser call flow](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/index.ts) · [Model selection](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/modelSelection.ts) · [Effort fixture](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/tests/browser/thinkingTime.test.ts)
+- [Preambles and final answers](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/assistantResponse.ts) · [Turn identity](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/conversationTurns.ts) · [Cancellation races](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/cancellation.ts)
+- [ChatGPT GPT-6](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt) · [Memory](https://help.openai.com/en/articles/8590148-memory-in-chatgpt) · [Projects](https://help.openai.com/en/articles/10169521-projects-in-chatgpt) · [Temporary Chat](https://help.openai.com/en/articles/8914046-temporary-chat-in-chatgpt)

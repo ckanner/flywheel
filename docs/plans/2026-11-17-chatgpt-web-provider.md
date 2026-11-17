@@ -1,175 +1,192 @@
-# ChatGPT Web Pro：可配置模型 Provider 完整设计
+# ChatGPT DSH 插件：网页 GPT-6 Pro 模型与完整会话能力
 
-简体中文 · [English](2026-11-17-chatgpt-web-provider.en.md) · [方案索引](README.md) · [当前架构](../design.md)
+简体中文 · [English](2026-11-17-chatgpt-web-provider.en.md) · [方案索引](README.md) · [当前 Flywheel 架构](../design.md)
 
-**状态：提案，供设计评审；本 PR 只提交设计，不表示功能已经实现或发布。** 日期：2026-11-17。Flywheel 基线为 `0.37.0` / `db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c`。
+**状态：设计提案，尚未实现或发布。** 2026-11-17 第二版，按“先在现有 ChatGPT 插件中提供原生模型能力，再由 Flywheel 配置使用”完整重写，替代 PR #57 首稿。源码基线及验证边界见第 3、15 节。
 
-## 1. 决策与目标
+## 1. 用户目标与实际交互
 
-在现有 `ckanner/dsh-plugin-chatgpt` 包中增加隔离的 **`chatgpt-web` Provider**，通过 DSH 的 `LlmAdapter` 注册 **`gpt-6-pro` 模型**。保留现有 `chatgpt` SIWC Provider 的认证、模型目录和调用链。网页组件按显式配置加载；普通 SIWC 使用不启动浏览器，也不依赖网页账号就绪。
+本项目首先交付一个 **DSH 原生模型能力**。用户只安装、配置现有 `ckanner/dsh-plugin-chatgpt`，就能在 DSH 对话框使用 ChatGPT 网页的 GPT-6 / Pro，包括对话、方案设计、文件与 Shell 工具、代码执行、Review，以及长会话继续工作。Flywheel 是该能力的一个使用者。
 
-Flywheel 通过 **`harness: "dsh"` + `provider: "chatgpt-web"`** 使用该模型。它可以参与设计、规划、**执行**、审查、终验判断、Intake、Garden，以及获准的 DSH 子代理。规划和 review 是典型使用场景，不是产品能力边界。
+目标操作流程：
 
-GPT-6 Pro 提供模型推理；DSH 提供 Agent loop、本地工具和权限；Flywheel 提供确定性编排、冻结契约、验证和 Git 交付。网页模型要能使用本地工具，必须实现文本协议到 DSH 工具调用的适配闭环；模型在网页里生成一段代码，不等于本地仓库已经修改。
+1. 在现有 ChatGPT Provider 设置卡中启用“网页模型”，选择专用浏览器连接，手动完成首次 ChatGPT 登录。
+2. 回到 DSH 对话框，在现有模型选择器的 **ChatGPT** 分组选择 **GPT-6 Pro · Web**。
+3. 原生思考档位显示并默认选择 **Pro**。第一版只发布实际完成网页核验的 Pro 档位。
+4. 在 DSH 中直接发送任务。插件控制网页模型，DSH 执行本地工具；用户不必安装 Oracle、启动额外 CLI 或创建 Flywheel 任务。
+5. 工作接近上下文预算时，插件协调压缩和网页会话迁移。DSH 保留逻辑 Session，显示压缩／续接状态及可回访的网页聊天链接。
+6. 需要编排任务时，在 Flywheel 的 Loop 或执行 route 中选择同一 Provider、模型和 Pro 档位。
 
-本设计的完成标准是：用户能在配置和 UI 选择该 Provider，将其绑定 Execute，完成有真实本地工具、测试和独立 Review 的任务；长期工作能正确续接、压缩和更换网页会话；故障恢复不重复派发未知请求或已确认的工具副作用。
+**核心交付标准：离开 Flywheel，插件也能独立完成原生 DSH 对话、真实工具循环、受控压缩、持续会话和故障恢复；接入 Flywheel 后复用同一实现。**
 
-### 1.1 必须保持的不变量
+### 1.1 原生交互原则
 
-- Go 仍是 Flywheel 状态的唯一写入者；网页回答、Provider 日志和 DSH native 事件不能直接推进 `state.json`。
-- 原有角色／scope 隔离保持，独立 Review 不继承 Executor 的网页聊天或可隔离的账号／项目上下文。
-- 遵守用户配置的 fresh/scoped 策略；同一 Agent 调用内的工具回环可复用网页会话，但不因此跨 fresh 角色调用复用历史。
-- 保留实际 cwd、权限、冻结验收、同一候选验证、预算、取消、恢复和清理条件。选用 Pro 不增加工具权限。
-- 模型、账号、Provider 或计费渠道不静默降级；不将 Pro 解释成 high/max/ultra 的别名。
-- Dispatch、Activity、Outcome、Cleanup、Usage 分别记录。未知结果不能靠新建聊天绕过，估算不能伪装成服务端实际计量。
-- 完整能力是最终目标；实施顺序允许分阶段验收，不把“能问答”的中间版本宣布为完整 Execute Provider。
+- 复用 DSH 的模型与思考档位选择器，不另造一个“Pro 任务控制台”。
+- 在同一 ChatGPT Provider 设置卡中区分“现有账号连接”和“网页连接”；一个连接成功不能代表另一个连接已就绪。
+- 模型名和 badge 明确标识 Web 渠道；显示账号／连接状态、实际模型与档位、当前聊天、压缩状态和需要处理的故障。
+- 用户选择模型不应触发登录、浏览器启动或模型推理。显式连接操作与实际调用才拥有相应资源。
+- 同一能力同时服务 DSH 桌面和独立 SDK profile；安装在桌面不自动意味着 SDK 已安装和配置。
 
-## 2. 已核查的现状和缺口
+## 2. 核心决策与首稿修订
 
-| 项目 | 核查基线 | 已有能力及本设计要补的内容 |
+| 事项 | 本版决定 |
+| --- | --- |
+| 代码归属 | 现有 `ckanner/dsh-plugin-chatgpt` 包，提供完整网页模型能力 |
+| 用户可见 Provider | 复用现有 `chatgpt`，遵守插件已有自定义 Provider route 配置 |
+| 新模型 ID | `gpt-6-pro-web`；显示名 `GPT-6 Pro · Web` |
+| 原生思考档位 | `pro`，显示名 `Pro`，模型默认档位也是 `pro` |
+| 内部调用渠道 | 统一模型入口，按精确模型 ID 分到现有 SIWC transport 或自研 Web transport |
+| 浏览器实现 | 插件自行实现受管浏览器控制；Oracle 仅为工程参考 |
+| 长会话 | 插件负责预算、同步与迁移；DSH 的公开 CompactionEngine 负责权威历史压缩事务 |
+| Flywheel | 通过普通 DSH Provider/model/effort 配置使用，补通用能力准入和恢复适配 |
+
+首稿中“新增用户可见 `chatgpt-web` Provider”“Pro 必须省略 effort”“运行固定 Oracle 引擎”三项决定由本版替换，不提供两套相互矛盾的推荐配置。旧提案标识尚未发布，无需建立运行时兼容别名。
+
+**源码纠正：DSH 的 reasoning effort 是 Adapter 拥有的 opaque ID，模型可以声明 `pro`。** 原生选择器会读取该模型的 efforts 与 defaultEffort。首稿将省略 effort 作为必要条件，没有充分利用现有接口；本版使用真实 Pro 档位。
+
+保留的工程不变量：
+
+- 模型、档位、账号、transport 和计费渠道不静默替换；Pro 不映射为 high/max/ultra。
+- DSH 拥有 AgentLoop、工具执行、权限与权威会话记录；网页 worker 不执行任意本地 Shell。
+- 未知派发或工具结果先恢复／对账，不能通过换聊天、换模型或重规划绕过。
+- Dispatch、Activity、Outcome、Cleanup、Usage 分别记录；估算用量不变成服务端实际用量。
+- Flywheel 的 Go 编排器仍是其状态唯一写入者；插件不能写 Flywheel state 或决定验收通过。
+
+## 3. 已核查基线与实际缺口
+
+| 项目 | 固定基线 | 与本版有关的事实 |
 | --- | --- | --- |
-| Flywheel | `db6b93e6`，0.37.0 | 支持 DSH Provider、profiles、loops、执行 routes、角色会话及恢复；尚无 chatgpt-web |
-| ChatGPT 插件 | `40d8f885`，0.1.20 | 通过 DSH LlmAdapter 使用 SIWC；没有网页模型传输 |
-| DSH | 官方 `master`：`39163dd3`，0.2.2-rc.3 | 有 LlmAdapter、工具循环、会话持久化及 CompactionEngine；网页协议与跨进程身份需要插件实现 |
-| Oracle | `0a064e7b`，0.23.1，Node >=24 | 有浏览器发送、完整内部回答对象、续聊及结果恢复；没有完整模型 Provider 契约 |
+| ChatGPT 插件 | `40d8f885`，0.1.20 | 已注册原生 ChatGPT 模型与设置卡；当前全部模型调用进入 SIWC adapter |
+| DSH 官方 master | `39163dd3`，0.2.2-rc.3 | 支持模型自定义 effort、原生模型选择、工具循环、持久会话及公开 CompactionEngine |
+| Flywheel | `db6b93e6`，0.37.0 | 已有 DSH 模型配置；执行策略和部分 UI 的档位白名单不包含 pro |
+| Oracle，参考材料 | `0a064e7b`，0.23.1 | 提供浏览器交互、模型／档位选择、续聊、捕获和故障 fixture 的参考实现 |
 
-核查依据为固定源码和文档，见第 15 节。没有运行真实账号推理、把网页聊天跑满或完成 Mac 浏览器验收。
+源码核查确认：
 
-以下缺口影响架构选择，不能用安装配置掩盖：
+1. 插件 `HarnessAdapter.stream()` 无条件进入现有请求转换与 SIWC adapter；只增加一个模型目录条目不会变成网页调用。
+2. SIWC 未登录时，其模型目录返回空；目录错误也会影响外层 listing。Web 子目录必须独立，不因没有 SIWC 登录而消失。
+3. 当前包装层只投影 provider/id/name，需要保留合法 description、modalities 和 badge 等元数据，原生选择器才能准确展示 Web 身份。
+4. DSH 原生 ModelSelect 读取模型 efforts/defaultEffort，支持 Pro，无需改造成另一套选择器。
+5. DSH `providerRetryPolicy(provider)` 是 Provider 级策略，当前 prepared call 无模型级覆盖；统一 ChatGPT Provider 后不能用全局零重试影响 SIWC。
+6. DSH Basic 压缩的默认摘要路由优先参考最后已回答模型；切换到 Web 不证明摘要也会走 Web。其默认 headroom 不能当成网页上下文实测值。
+7. Flywheel SDK overlay 当前禁用默认 compaction-basic；新模型不能仅靠安装插件就假定该 profile 已有合适的压缩后端。
+8. Oracle 的日志尾输出、定时状态和已有 follow-up 行为不满足本设计全部契约；本版自行实现这些能力，不绕一层 CLI/MCP 冒充完整模型接口。
 
-1. **Oracle MCP 不能直接当动态模型接口。** `consult` 没有已有 conversation/session 的动态 follow-up 输入；`browserFollowUps` 是预先给定的字符串。`consult` / `wait` 的 `output` 为有界日志尾部，不是完整最后一轮模型答案。MCP waiter 取消不取消后台任务。
-2. **Oracle CLI 的续聊证据不够。** `--followup` 继承父模型／浏览器配置；恢复路径跳过模型版本选择。Pro effort 有校验路径，但不能据此声称已重新确认 GPT-6 版本。
-3. **Oracle 没有长会话压缩和换聊。** 约 60k 字符的内联转附件是输入传输策略；当前 token 估算不包含旧网页历史。浏览器路径不执行 API 的 `--max-input` 检查。
-4. **网页模型没有 DSH 原生 tool API。** 要把完整回答转成 DSH `tool-call`，必须自建有版本、身份和 schema 校验的协议；不能执行 Markdown 中看起来像命令的文字。
-5. **Flywheel 当前会回填 high。** `dsh.go` 将空 thinking 改成 high；start/prewarm 序列化、预热校验、Execute 策略和 UI 都需要同步处理真正的“未传 effort”。
-6. **Flywheel 当前禁用 DSH 默认压缩。** SDK overlay 禁用 `compaction-basic` 和 `command-compact`，不能宣称新增 Provider 会自动继承桌面压缩。
-7. **成功响应的 replayState 不足以恢复未知调用。** DSH 的 `finish.replayState` 随成功 assistant message 持久化；发送后、回答形成前的崩溃仍需独立预写日志。
-8. **浏览器日志不是活性证明。** Oracle 会在 UI 无变化时打印定时状态；这些日志不能刷新真实工作进度，也不能证明远端终止。
+第 15 节给出固定来源。尚未运行真实账号、Mac 浏览器、网页满窗或真实工具任务；本 PR 是方案修订，不是功能验收记录。
 
-## 3. 分层架构与方案取舍
+## 4. 一个 Provider 下的模型与档位契约
 
-```mermaid
-flowchart TD
-  F["Flywheel：角色配置与调用账本"] --> A["DSH AgentLoop"]
-  A --> P["ChatGPT Web LlmAdapter"]
-  P --> R["受管 runtime 与固定 Oracle 引擎"]
-  R <--> C["ChatGPT：GPT-6 / Pro"]
-  A <--> T["DSH 本地工具、PTC、MCP"]
-  P <--> J["会话映射与调用日志"]
-```
+### 4.1 原生模型注册
 
-| 层 | 责任 | 不拥有的责任 |
-| --- | --- | --- |
-| Flywheel Go | 阶段与路由、调用准入、预算、状态、验收、候选、交付和恢复决策 | 浏览器 DOM、模型输出里的任意动作执行 |
-| DSH AgentLoop / tools | 接收模型 blocks，按实际工具表、权限和 cwd 执行工具并持久化结果 | 把网页文本当已通过的 Flywheel 裁决 |
-| 新 Web adapter | 模型目录、消息投影、工具协议、会话同步、压缩协调、模型响应转换 | 第二套 Shell／文件执行器 |
-| 受管 runtime | 网页账号／tab 绑定、提交、当前回答捕获、真实活动、停止和只读恢复 | Flywheel 状态机与自动跨渠道重试 |
-| Oracle 引擎 | 复用已审查的网页交互和内容捕获实现 | 被假定为稳定官方 SDK 或完整恢复协议 |
-
-### 3.1 为什么选择 DSH Provider
-
-- **DSH Provider（采用）：** 能复用现有本地工具循环与权限，可在各模型角色配置；Provider 侧补齐网页特有契约。
-- **仅提供 MCP 顾问工具（保留为可选入口）：** 适合已有 Agent 临时咨询 Pro，但不会把该 Agent 的主模型变成 Pro，不满足本设计的完整目标。
-- **新增 Flywheel 专用 harness（本轮不采用）：** 需要重新实现或嵌入工具循环、权限、会话和 SDK 行为，增加维护成本。出现 DSH 无法承载的实际需求时再单独评审。
-- **改现有 SIWC／API Provider（独立渠道）：** 官方 API 的模型／mode 和压缩能力不等于网页版订阅路由。不能因为名字相近就互换认证、额度或行为。
-
-`harness: "codex-pro", provider: "chatgpt-web"` 不是合法接入方式。原生 Codex/Claude 的主模型不能通过这份 DSH 配置被替换；它们可使用额外咨询工具，但与 Flywheel 将某个 Execute route 设为 DSH + Web Pro 是两种能力。
-
-### 3.2 Oracle 的依赖边界
-
-采用**插件拥有的、版本化机器接口**封装固定 Oracle 引擎。Oracle 当前公开入口是 CLI/MCP，没有承诺稳定的浏览器 SDK；不在主 Provider 中散布内部路径导入，也不解析人类日志作为响应。
-
-实现优先向上游补充可复用入口。若上游发行尚未提供，维护经审查的固定源码快照／补丁，记录 commit、构建来源、包 integrity、补丁清单和 MIT notice；封装在单一 transport 模块，后续可替换引擎。不得冒用原版版本号声称补丁已由上游发布，不在每轮调用时下载 latest。
-
-最少扩展包括：动态单轮续接、每轮模型与 effort 核验、隔离项目创建与准入、完整最后一轮回答及身份、结构化活动、明确取消、资源与远端状态分离的回执、只读恢复。只包一个现有 `oracle-mcp consult` 不算完成。
-
-## 4. 用户配置与模型语义
-
-### 4.1 Provider 和模型身份
-
-拟议注册：
-
-- Provider ID：`chatgpt-web`；显示名：`ChatGPT Web`。
-- Model ID：`gpt-6-pro`；显示名：`GPT-6 Pro · ChatGPT Web`。
-- 目标网页选择：GPT-6 + Pro。该模型 ID 是我们 Provider 的稳定路由标识，不宣称同名 API slug。
-- `resolveModel` 不发布独立 reasoning 努力档。请求必须真正省略 `reasoningEffort`；非空 high/max/pro 等值在该固定模型上均明确拒绝。
-- 当前已验证输入先按 text 声明；图片、PTC、Team 等按第 11 节验收后扩展能力。窗口数字只能标注为本地有效输入预算，不能冒充官方网页窗口。
-- `providerInfo`、`listModels`、`resolveModel`、`prepareCall` 和 `stream` 由同一能力表驱动；DSH 配置注册的 settings namespace 与实际 schema 一致。
-- 每轮派发前取得新的 UI 选择证据；无法确认目标模型或 Pro 时停止。UI 证据不等于云端内部权重／计算量证明。
-
-### 4.2 Flywheel 配置示例
-
-**以下是拟议配置片段，依赖本设计实施后才可运行；不是当前 0.37.0 的可用配置。** 应将片段纳入实际生效的完整配置，Flywheel 不会跨配置文件深合并。
+下列是拟议的 resolveModel／prepareCall 精确模型元数据形态，实施时使用 DSH 的品牌类型构造器和实际类型，不把示例当成可直接执行的插件代码。listModels 提供发现字段，DSH 再解析精确模型的 reasoning；只在 listing 中加一个 Pro 字段不算完成：
 
 ```json
 {
-  "profiles": {
-    "web-pro": {
-      "harness": "dsh",
-      "provider": "chatgpt-web",
-      "model": "gpt-6-pro",
-      "channel": "chatgpt-web-subscription",
-      "thinking": ""
-    }
-  },
-  "loops": {
-    "design-plan": { "profile": "web-pro" },
-    "review": { "profile": "web-pro" }
-  },
-  "routes": {
-    "hard": { "profile": "web-pro" }
-  },
-  "channels": {
-    "chatgpt-web-subscription": {
-      "harness": "dsh",
-      "provider": "chatgpt-web",
-      "env-key": null
-    }
-  },
-  "sessions": {
-    "mode": "scoped",
-    "policy-version": 1
+  "provider": "chatgpt",
+  "id": "gpt-6-pro-web",
+  "name": "GPT-6 Pro · Web",
+  "reasoning": {
+    "efforts": [
+      { "id": "pro", "name": "Pro" }
+    ],
+    "defaultEffort": "pro"
   }
 }
 ```
 
-此例显式将 hard 执行路由、design-plan 和 review 设为 Pro。未显式覆盖的 design-review／plan-review 会继承 review，因此也使用 Pro；其他角色的模型绑定不变。全局 scoped 策略影响所有未单独覆盖的适用角色；仅需部分角色复用时使用既有 `sessions.roles`。这不是强制迁移现有任务。channel 是配置别名，网页账号由插件中的具名连接选择，不能仅改 channel 名就假装换了账号。
+`gpt-6-pro-web` 是本插件保留的模型 ID，表示网页 GPT-6＋Pro 路由，不宣称它是官方 API model slug。`pro` 是原生 `reasoningEffort`，通过 DSH 的正常请求字段传递；插件内部记录目标网页模型版本与网页档位，不能从一个 Pro 标签推断完整模型身份。
 
-| 场景 | 配置入口 | 必须保留的语义 |
-| --- | --- | --- |
-| 初始设计 | `loops.design-plan` | 未配置时继承 plan 后端，角色仍独立 |
-| 独立设计审查 | `loops.design-review` | 未配置时继承 review 后端 |
-| 计划／里程碑规划 | `loops.plan` | 保留实际计划契约与 scope |
-| 计划审查 | `loops.plan-review` | 未配置时继承 review 后端 |
-| **执行** | **`routes.default/frontend/hard/multimodal`** | 由 packet route 选择；没有 loops.execute |
-| 代码审查／终验判断 | `loops.review`、`loops.judge` | 保留独立历史与结构化裁决 |
-| 第二意见 | 顶层 `judge-panel` | 仍受启用条件与独立性约束 |
-| Intake／Garden | `loops.intake`、`loops.garden` | 只替换其中的模型工作 |
-| 有界执行模型切换 | `execution-policy.bindings` 和各 route 的 allowed 集合 | 只能选择显式允许且通过能力检查的绑定 |
+`providerInfo`、`listModels`、`resolveModel`、`prepareCall`、`stream` 使用同一精确路由表。遵守插件实际配置的 Provider 名；默认是 chatgpt，不能在所有内部判断中硬编码它。
 
-Verify 命令、状态转移、批准和 Git 交付不变成模型角色。当前 JEV 使用独立 `/v1/systemone` HTTP 契约，不能通过上述配置直接替换；若要更换 JEV 模型，另立设计。
+第一版对该模型声明且只接受 pro。DSH 省略 effort 时使用其已声明的 defaultEffort；显式 high/max/ultra 等值明确拒绝。切回 SIWC 模型时读取该模型自己的 efforts，不能沿用上一个模型的 Pro。
 
-### 4.3 空 effort 必须端到端一致
+### 4.2 目录、认证和路由隔离
 
-实施必须同时覆盖：
+统一 Adapter 组合两个内部 transport，不重复注册同一个 Provider：
 
-1. 配置解析、profile 展开和有效配置展示：保留 `thinking: ""` 的显式覆盖语义。
-2. DSH driver：对已支持固定模式的 Web Provider 省略 effort；保留其他 Provider 原有兼容默认，不能全局删掉默认造成回归。
-3. start／prepare 的 JSON、ready 校验、worker 参数和 SDK initialize：缺省代表无独立 effort；禁止把空字符串发送到 SDK。
-4. 预热请求、绑定摘要、warm-start 匹配和恢复：缺省／非空必须能区分，不重新回填 high。
-5. Execute policy schema 与校验：条件允许该 Provider 的空 thinking；其他模型继续按真实能力校验。
-6. UI：显示固定的 Pro 模式，隐藏不适用的 effort 选项；保存时不能删除显式空覆盖而重新继承 high。
-7. SDK resume：旧 header 中残留的不支持 effort 必须拒绝复用或在确认安全后重建；不能依赖“省略新值”自动清除旧值。
+- SIWC 模型继续使用既有认证、目录、协议、附件转换与重试行为。
+- Web 模型在 SIWC metadata fallback、认证和 `requestOf(options)` 之前按精确 ID 分流。
+- 不能删除 `-web` 后交给 SIWC，也不能因网页失败自动改走 SIWC/API。
+- 保留模型 ID 冲突必须明确报告；上游目录未来返回同名 ID 时不能静默覆盖 Web 路由。
+- 启用 Web 后，其静态目录与 SIWC 目录独立合并；无 SIWC 账号、SIWC listing 错误不隐藏 Web。Web disabled／未就绪也不破坏原模型。
+- 模型可见性、静态能力和本次账号实际准入分别表达。目录可见不代表有订阅额度或真实网页验证已通过。
+- 目录／连接变化沿用 `llm/adapters-updated` 刷新。目录查询和 resolve 不打开浏览器、不发送 prompt。
 
-Pro 选择由 Provider 的模型契约表达，日志同时保留 `reasoningEffort: absent` 与 `observedWebEffort: Pro`，不能为了显示统一伪造 high。
+现有 ContextWindowLimit 及 per-model 覆盖需按精确路由解释。Web 只能暴露插件实际执行的保守输入上限，并标明是本地策略；不能拿 SIWC/API 目录窗口冒充网页窗口。
 
-## 5. Execute 的完整工具闭环
+### 4.3 选择后的调用绑定
 
-### 5.1 输入与返回协议
+正式调用冻结 provider、model、effort、transport、connection、账号非秘密身份、实际目录、工具表、权限及策略版本。选择器元数据不能代替网页每轮核验。
 
-每轮输入包含：当前有效指令、规范化的有序消息、工具 schemas、必要附件、调用标识和本轮协议要求。网页消息里的 system/developer 标签只是文本角色标记，不具有 API 原生系统消息的优先级保证。
+同一 Provider 也可能发生 SIWC 与 Web 的渠道切换；该切换必须进入会话、预热和恢复身份。仅比较 provider 相同不足以复用旧运行时。变更未结算调用的模型／账号时，先处理原调用，再准入新绑定。
 
-拟议返回只允许一个完整的 JSON 对象，区分最终回答与工具请求。例如：
+## 5. 插件内部架构与自研浏览器实现
+
+```mermaid
+flowchart TD
+  U["DSH 对话框与模型选择"] --> A["DSH AgentLoop"]
+  F["Flywheel：普通模型配置"] --> A
+  A --> P["ChatGPT 统一 Adapter"]
+  P --> S["现有 SIWC transport"]
+  P --> W["自研 Web transport 与会话协调"]
+  W <--> C["ChatGPT 网页：GPT-6 / Pro"]
+  A <--> T["DSH 本地工具与权限"]
+  W <--> H["DSH 压缩服务与插件持久日志"]
+```
+
+### 5.1 模块责任
+
+| 插件模块 | 责任 |
+| --- | --- |
+| Model registry / Composite adapter | 目录合并、模型／effort 元数据、精确 transport 选择、原 SIWC 兼容 |
+| Web connection manager | 专用 profile、账号绑定、浏览器/CDP 连接、owned 资源和跨进程租约 |
+| Page adapter | 网页布局、模型／Pro 选择、项目／聊天归属、composer、附件、终态、错误与停止 |
+| Turn coordinator | 一次模型调用的准入、提交、观察、完整结果、停止与只读恢复 |
+| WebSessionCoordinator | DSH 会话映射、增量同步、容量预算、调用公开压缩服务与 generation 迁移 |
+| Tool/media bridge | 完整回答协议校验、DSH blocks 转换、真实附件 bytes 与回执 |
+| Journal / recovery service | 提交前日志、完整结果 artifact、宿主持久关联、unknown 阻断与恢复采用 |
+| Plugin UI / diagnostics | 现有设置卡、原生模型元数据、连接与故障状态、会话链接、压缩与恢复入口 |
+
+这些是插件内部边界，不要求拆成新的公开 npm 包或多个用户安装步骤。可用受管后台 worker 隔离浏览器控制，typed IPC 是插件实现细节，不成为新的 Flywheel harness。
+
+DSH 桌面与 SDK 可能同时使用同一连接。连接管理器必须以私有 IPC／跨进程 broker 协调专用 profile、Chrome 所有权、队列和调用租约；不能让两个 worker 各自启动同一个 profile。一个宿主退出只取消自己拥有的工作，不杀掉另一个宿主的已准入调用。内部接口及来源必须版本化、经过本地身份和目录权限校验。
+
+broker／lease 键使用规范化的实际 browser-profile 路径与 OS 用户身份；不同 connection 名或 stateDir 指向同一 profile 时仍是同一个共享资源。共享 broker／Chrome 不属于首个 SDK 请求可整体 kill 的进程组，客户端退出只撤销自己的 owner 租约；无人使用时也须先核对未决云端调用，才能有界退出本地共享资源。
+
+### 5.2 Oracle 的参考边界
+
+自行实现页面适配与调用状态机，可使用经验证的通用 CDP 库。参考 Oracle 固定源码中的模型菜单、Pro slider、附件、稳定前言、取消竞争、页面恢复和 profile 所有权案例。
+
+**不将 Oracle CLI、MCP、内部模块导入、源码快照或其后台服务作为必需运行时依赖。** 不要求用户另装 Oracle，不通过日志尾解析答案，不复制现有 resume 跳过模型核验的行为，也不实现 ChatGPT 私有 HTTP 接口的逆向替代。
+
+候选通用栈可参考 Oracle 使用的 chrome-remote-interface 与 chrome-launcher，但插件锁定自己的精确版本、integrity 和兼容测试。Oracle 自身 Node >=24 的要求不自动成为本插件要求；优先保持当前 DSH／插件 Node 基线，经实际依赖和打包验收决定。
+
+若复制具体源码，保留其 MIT 来源和 notice；参考行为与测试思想也记录固定版本。页面适配代码集中维护，避免 selector 散落在工具、压缩和 Flywheel 中。
+
+### 5.3 一次网页模型回合
+
+fresh、resume 和迁移后的首轮使用同一发送前检查：
+
+1. 宿主调用仍有效，signal 未取消，执行域无未解除 fence，剩余预算足够。
+2. 获取连接许可、conversation 写租约和已登记的 owned 页面；等待历史加载完成。
+3. 核对账号、项目、聊天、上下文策略和本次工具权限。
+4. 分别观察模型版本和 effort，联合确认 GPT-6＋Pro；未知布局或错配在提交前停止。
+5. 校验本次增量、附件、输入预算及 request digest，持久化 submit-intent。
+6. 只提交一次，取得匹配当前 prompt 的接受证据。
+7. 观察本次回答；完整捕获、校验并持久化结果，再交付 DSH。
+8. 远端已确认终态且完整结果已安全持久化后释放网页模型许可，结束 stream 供 DSH 提交；宿主持久 ACK 由独立回调／事务对账，不能在尚未结束的 stream 内等待自身消息提交而死锁。聊天继续保持 pending-delivery，直到宿主确认后才允许下一轮。
+
+Page adapter 按兼容版本、locale 和 fixture 返回结构化观察，记录 selection evidence 时间；不猜测未知按钮。发送后页面失去可观察性时保留原请求 unknown，不改成“未发送”。
+
+**文本稳定或 Stop 按钮暂时消失不足以证明完成。** Pro 可能先输出前言再继续思考；完成判断必须结合本次 turn/message 身份、已接受 prompt、正向终态 UI 证据和完整内容 digest。中间前言、提示、引用、prompt echo 和旧回答不进入可执行工具解析。
+
+## 6. DSH 工具循环与完整能力
+
+### 6.1 输入和回答协议
+
+网页没有本插件可直接复用的 DSH 原生 tool API。插件向本轮消息提供有效指令、有序历史、实际工具 schemas、调用身份和返回格式。文本中的 system/developer 标记不具备 API 原生系统消息优先级，不能把提示词当权限边界。
+
+拟议工具回答：
 
 ```json
 {
@@ -187,7 +204,7 @@ Pro 选择由 Provider 的模型契约表达，日志同时保留 `reasoningEffo
 }
 ```
 
-`read_file` 仅为协议示意名；实际工具名和参数必须来自当前 DSH 请求，不能硬编码假工具。最终回答形态：
+`read_file` 仅是示意名，实际名称与参数来自当前 DSH 工具表。最终回答为：
 
 ```json
 {
@@ -199,381 +216,407 @@ Pro 选择由 Provider 的模型契约表达，日志同时保留 `reasoningEffo
 }
 ```
 
-Provider 将工具对象转换为 DSH `ToolCallBlock`（`type/id/name/arguments`，arguments 为序列化 JSON），把 final 转为 text blocks；Flywheel 仍独立验证 Plan、done-report、Review、Judge 等产物契约。网页协议合法不等于业务裁决合法。
+必须完整校验单个 JSON 对象的协议、requestId、generation、未知字段、工具名称、参数 schema、ID 唯一性、大小、深度和调用数。整批通过前不向 DSH 泄露可执行增量；不从 Markdown 中猜测 Shell 命令。
 
-### 5.2 执行顺序和校验
+工具对象转换为 DSH ToolCallBlock，arguments 为序列化 JSON。DSH 执行工具并持久化结果，插件下一轮追加对应 tool results；最终 text 进入正常会话和宿主产物处理。Flywheel 的 Plan／Review／Judge 等业务 schema 仍单独验证。
 
-1. 验证当前会话、有效工具表、权限、输入预算和剩余调用期限。
-2. 保存派发意图及输入摘要，再提交当前网页回合。
-3. 只捕获**本次匹配的、明确结束的最后一轮 assistant 消息**；获取完整原文和内容摘要。日志尾部、旧回答、prompt echo、引用和未完成片段不能替代。
-4. 对整个 JSON 对象严格校验：协议／requestId／generation 匹配、未知字段、工具名、参数 schema、ID 唯一性、大小、深度、调用数。
-5. 整批通过后才向 DSH 发出可执行 tool-call blocks。DSH 原有 tools executor 决定执行和审批，runtime 不执行 shell。
-6. 工具结果按 call ID 持久化并返回 Provider；正常续接仅向网页追加本次新增结果，继续循环。
-7. 最终文本通过 DSH 持久化进入 Flywheel 普通结果处理，随后仍须执行 L1／适用检查与独立 Review。
+格式修正仅在原回答明确结束后发起，次数、时间和用量有界；不借 transport 重试实现，修正前不执行未验证动作。完整原文可保存到私有 artifact，用路径、字节数与 digest 引用；读取须限制在绑定目录内，拒绝路径逃逸、链接和截断。
 
-完整结果在传输前写入私有 artifact，协议可只携带路径、字节数和 digest；调用方只读取已绑定目录内的普通文件，拒绝路径逃逸、链接和截断。工具请求不得在最终校验前以增量 tool-call 的方式漏给执行器。可展示的活动与待执行内容分离。
+### 6.2 工具、媒体与子代理
 
-格式修正请求有独立小上限，并消耗原 invocation 的时间与用量预算；修正前不得执行任何未验证动作。没有格式修正额度时明确失败。请求标识和 schema 只证明格式与关联，不能证明模型意图正确；权限、验收与独立 Review 继续承担其职责。
+| 能力 | 插件目标 | 准入要求 |
+| --- | --- | --- |
+| 普通对话、设计、Review | 完整文本与结构化输出 | 当前回合、完整结果与业务 schema |
+| 本地执行 | DSH Read/Search/Write/Shell/Test 工具循环 | 真实 cwd、权限、至少两轮工具调用和已持久结果 |
+| PTC | 使用真实 run_code 与 schema | handle、deferred output、错误和嵌套调用正常返回 |
+| Agent/Team/Workflow | 复用 DSH 原生能力 | lineage、独立调用、活动、预算、取消和域内恢复 |
+| 图像输入与截图 | AttachmentStore 的真实 bytes 上传 | MIME、顺序、hash、上传完成与模型可见性 |
+| LCU | 经现有工具和图像链路调用 | 明确权限、共享 GUI 协调及完整取消 |
+| 网页 hosted tools/apps | 单独声明和准入 | 可写动作默认关闭，不能绕过宿主权限 |
 
-### 5.3 工具副作用和崩溃窗口
+DSH 当前会在 adapter 前把 file block 转成路径文本，把不支持图片的模型的 image 转成 placeholder。因此必须在公开 `llm/stream` 的 pre-projection 侧检查原始媒体，覆盖用户输入、工具截图、辅助用途和恢复历史。未验收图片时明确拒绝；启用后声明 image 并取得真实 bytes，不能只检查投影后对象。
 
-DSH 已有会话 checkpoint policy，在模型请求、顶层工具执行及下一步前 flush。新 Provider 不绕过这些屏障。
+普通文件优先通过本地 read/search 工具提供内容。任意路径文本不是上传授权；原生文件上传需要明确的公共投影／准入接缝和附件来源记录。未验收能力标为 unavailable，不静默丢图或切换后端。
 
-新增工具回执关联应保存 `requestId + toolCallId + argumentDigest + intent/resultDigest`。同一已完成工具调用恢复时采用已保存结果，不能再次执行。若在副作用发生后、结果持久化前崩溃，该工具结果保持 unknown，执行域停下来对账；通用 Shell 操作不能被宣称具有 exactly-once。
+## 7. 插件拥有的长会话管理
 
-当前 DSH tools 的 start 会写入 tool/call，commit 写入带来源关联的 tool/result；公开 tools/execute waterfall 的 checkpoint policy 在顶层工具 body 前 flush。tools/result 通知本身不是结果已同步到磁盘的 ACK，必须以持久事件对账。
+### 7.1 一份权威历史，两类容量预算
 
-DSH 恢复还会把“已开始但无结果”的调用补为 `TOOL_OUTCOME_UNKNOWN`；这个错误结果只是事实修复，不是机械阻断。新 host policy 必须识别可信的 repair/source 记录，为该执行域建立持久的 **unknown admission fence**：禁止新模型派发和新副作用工具，包括换 call ID、换 Provider、换 generation 后的同一未解决动作。只允许宿主限定的只读恢复／对账操作集合，不能靠模型自称只读；确定性证据或明确的人工 resolve 才可解除。不能依赖错误文本中的“不要重试”建议，也不能把 repaired error 在压缩后当普通失败丢掉。Go 接收该阻断事实，Provider 不直接写 Flywheel state。
+DSH 持久事件、derived history 和 compaction checkpoint 是权威。插件只保存网页同步游标、映射、输入投影与恢复证据；不能私下压缩出一份 DSH 看不到的“第二历史”。
 
-宿主持久 `executionDomainId` 关联 task、role/scope 和原 invocation，不能拿当前 requestId 代替。该域覆盖根和全部已准入子 Agent／PTC 嵌套执行，不限定为 Web Provider 来源；fresh/resume、fallback、重新规划的新 invocation 仍继承未解除的 fence。子调用未知向根传播并冻结兄弟的新准入；已在飞工作取消／排空并分别对账，不能追溯声称其未执行。普通 DSH 桌面由 host policy 保存对应的执行域，Flywheel 中还必须由 Go 持久保留跨 worker 的阻断事实。
+WebSessionCoordinator 同时检查：
 
-## 6. 受管机器接口与持久调用状态
+- **本次模型输入预算：** 有效指令、工具 schemas、协议、消息、附件投影与输出预留。
+- **网页历史累计预算：** 已发送／捕获内容、回合数和可观察限制的保守估计。
 
-### 6.1 接口
+输入、输出预留、累计预算、单轮大小、回合数、压缩／修正／迁移次数均需有限值，由实测策略清单和 policyVersion 固定。缺少已验收策略不标 ready；不能把 API 窗口或 Basic 默认 headroom 当成 GPT-6 Pro 网页实测上限。附件估算不确定性不能当作零。
 
-在插件包中提供拟议 `/web-machine` 入口；浏览器运行于受管子进程，按版本协商提供：
+### 7.2 增量续聊与换聊判断
 
-| 操作 | 语义 |
-| --- | --- |
-| `capabilities / prepare` | 验证版本、配置、浏览器与账号绑定，不发模型请求 |
-| `startTurn` | 对指定 logical session/generation 发起一个受管模型回合 |
-| `observe` | 返回有序活动、状态与完整结果引用，保持原 invocation 身份 |
-| `recover` | 只读核对原请求和原网页回合；不发送新的业务 prompt |
-| `cancel` | 停止本地受管工作，并尽可能停止指定网页生成；返回分开的证据 |
-| `close` | 释放本次拥有的控制资源与租约，不关闭用户无关 Chrome |
+保存规范化内容前缀、已确认同步游标、网页协议对象与 DSH blocks 的双向关联。DSH 每轮带完整 messages，网页只接收新增内容，不能反复发送整份历史。
 
-必须区别本地 ready、网页 prompt 已接受、回答完成和结果已交付。接口不提供“原请求状态不明时自动 restart”。
+只有 owner、模型／effort、transport、账号、上下文策略、工具／指令契约相同，前缀一致，旧回合及工具已结算，才允许追加。消息数量不能代替内容摘要；网页原始 JSON 与 DSH blocks 不能直接按字节比较。
 
-### 6.2 四层身份与日志
+- 本地请求仍小而远端历史偏大：直接以当前权威历史创建新 generation。
+- 本地输入也过大：先通过 DSH 压缩事务缩小并 flush，再迁移。
+- history rewind/fork/prune、权限／模型／工具／指令变化：重新核验兼容性；不兼容时仅在原调用可结算后迁移。
+- 网页明确拒绝上下文长度：进入有界迁移路径；超时、网络故障和限流不是 context overflow。
+- 新 bootstrap 仍超预算：继续缩小可压缩范围或明确停止，不能无限新建聊天。
 
-至少记录：
+### 7.3 复用 DSH 压缩事务
 
-- Flywheel task / role / scope / invocation，或普通 DSH 的独立调用 owner；
-- DSH session ID、branch/surface revision、purpose；
-- runtime invocation、Oracle session、浏览器 connection/account scope；
-- ChatGPT project ID、conversation generation、URL、user/assistant message ID、聊天所属项目及父消息关系。
+DSH 每个 context 只能有一个 CompactionEngine。桌面已有 Basic 时复用它；SDK 缺失时通过公开 composition 加载一个兼容后端。不能让 ChatGPT 插件与默认压缩同时注册第二个全局服务。
 
-DSH `GenerateOptions` 没有 Flywheel requestId；通过**拟议受管 host service**从已准入 Agent 获取绑定，而不是给 SDK 偷塞未知字段。普通桌面由插件生成 owner；Flywheel 由 policy 服务绑定 Go 的真实 invocation、session 和 nonce。完整绑定包含实际项目与执行目录、模型、权限、工具表、协议／runtime 版本及非秘密浏览器连接身份。
+插件提供 Web 专属策略：输入预算、输出预留、摘要目标、保留事实、迁移条件与调用计量。压缩由公开 `compactIfNeeded`、`compactNow`、`compactRegion` 或经评审的公共扩展执行。自动压缩与手动压缩共享同一事务及迁移协调。
 
-主调用资格在公开 `llm/stream` 的 pre-projection hook 分类：只有 `isAgentLoopRequest()` 可识别、拥有 sessionId 且已准入的无辅助 purpose 请求，才能加入主 conversation。任何明确 purpose、非 AgentLoop one-shot、无 sessionId 或未知 purpose 都不能落入主会话键；支持的辅助用途分配独立 invocation，未支持用途明确拒绝。每次摘要调用也有不同的 invocation，不能仅按 sessionId＋purpose 复用。拟议 host service 将分类与绑定通过受控调用上下文传递到 adapter，不能假定投影后对象保留原 WeakSet 身份，或仅按共享 sessionId 查找当前请求。
+**默认摘要路由是本次 Web 目标模型＋Pro，使用独立辅助调用。** 用户可显式配置其他摘要路由，但需要显示实际渠道、账号和预算，并通过宿主准入。不能因 Basic 优先选择“最后已回答模型”而在切换到 Web 时隐式调用旧 SIWC／付费 API。
 
-调用上下文至少绑定独立 call ID、call kind、purpose、宿主 owner、executionDomainId、Agent lifecycle、session/surface revision、binding／原请求摘要和 signal。adapter 派发前重新核对它仍有效，终态或 dispose 后撤销；跨进程只传已校验标量，不传宿主对象或秘密。插件必须复用宿主同一份 DSH LLM 模块，避免打包另一份 WeakSet 导致分类失效。若使用 AsyncLocalStorage，须覆盖 lazy AsyncIterable 的创建及 next/return/throw 整个生命周期；不能只包住返回 iterator 的函数。并发交错主请求与辅助请求必须验证不会串身份。
+当前公开接口不足以完整传递 proposed target 和摘要路由策略。本设计明确依赖 DSH 补公共接缝：在最终 GenerateOptions 构造及计量前，将 agent、proposed target、purpose、有效预算交给摘要路由策略；持久记录的实际 provider/model/effort 必须与真正发送一致。不得在 adapter 末端偷偷换路由，或调用 Basic 私有 compactPressure/selectCompactableRange。
 
-Provider 使用私有、版本化的预写日志，按以下事实推进：
+使用公开 tokenMeter 的 proposed-header 测量和完整工具配对范围选择压缩区间。摘要输入本身也必须放得下；大历史需要多个有界、独立记账的压缩事务，不能把多次模型调用伪记为一次。单个不可拆分单元仍超预算则明确失败。
 
-| 顺序 | 持久事实 |
-| --- | --- |
-| 1 | `prepared`：调用和准入绑定已准备 |
-| 2 | `submit-intent`：即将提交的意图已保存 |
-| 3 | `submitted-confirmed`：网页接受 prompt 已核验 |
-| 4 | `response-captured`：完整回答与 digest 已保存 |
-| 5 | `response-validated`：回答通过协议和身份校验 |
-| 6 | `delivered-to-dsh`：已交给 DSH，尚不等于持久提交 |
-| 7 | `host-commit-confirmed`：DSH 持久记录及关联已核验 |
+摘要保留任务约束、冻结验收、未决问题、可信证据引用与配对工具尾部。原始事件和来源范围保留，checkpoint 先持久化，再批准网页迁移。Basic 压缩失败可能记 warning 后继续，因此最终 Web 输入准入 guard 始终保留，不能直接发送已知超预算请求。
 
-每一步原子保存并同步；状态可能停止在任意一步。`submit-intent` 不是已派发证明；缺少下一步也不是未派发证明。成功 `finish.replayState` 只携带安全的 ledger 引用、generation、message identity 和摘要，不能替代独立日志。Provider response ID 与 DSH assistant MessageId 分开：后者由 AgentLoop 生成，当前 StreamChunk 不允许 adapter 指定它。
+### 7.4 辅助调用隔离
 
-Flywheel 需要协商新的 DSH worker 扩展版本，传递 Provider runtime identity、调用事实、回执与恢复能力；旧 v1/v2 保持原语义。旧 worker 不理解新能力时派发前拒绝 Web Provider，不能发送扩展字段后忽略校验。具体外层版本号在实施时按当时协议分配，本设计内层协议固定为 `dsh-chatgpt-web/1`，二者不是同一个版本。
+主调用资格在 pre-projection hook 通过 `isAgentLoopRequest()`、真实 Agent、sessionId、purpose 和已准入 binding 判断。只有无辅助 purpose 的主循环进入主 conversation。
 
-### 6.3 恢复和重复交付
+compaction、title 等明确 purpose，每次分配独立 invocation；即使 sessionId 相同，也不复用主聊天或前一次摘要聊天。非 AgentLoop one-shot、无 sessionId、未知 purpose 采用明确支持的独立路径或拒绝，不落入匿名共享会话。辅助请求不拥有本地工具执行能力。
 
-- 提交前确定未派发且本地清理确认：允许按原有策略重试。
-- 提交结果未知：锁住该 conversation，先读取原回合、页面和 journal，不重发。
-- 回答已捕获未提交 DSH：按 digest 保存为 pending result，交由宿主恢复事务采用，保持同一 Provider response/tool-call identity；不得在下一普通模型请求里直接重新 yield 旧动作。
-- DSH 已保存 assistant/tool results：对账后确认交付，不再次创建工具调用。
-- 捕获内容不完整、身份冲突、原网页被手工修改：保留证据并阻断，不能用旧 answer 充当新 answer。
-- 无法确定远端请求／本地工具的状态：维持 unknown；保留原任务、工作区与已知清理事实。
+插件复用宿主同一份 DSH LLM 模块，避免打包另一份 WeakSet。受控 call context 保存独立 ID、类型、purpose、owner、executionDomainId、Agent lifecycle、session/surface revision、binding 与请求摘要、signal。若使用 AsyncLocalStorage，必须覆盖 lazy AsyncIterable 的创建和 next/return/throw 生命周期，终态撤销，防止并发辅助调用串身份。
 
-宿主提交确认需要在 DSH 会话 flush 后完成；恢复通过 durable session 事件核对，不将一次 AsyncIterable 返回当成 durable ACK。DSH 当前 resume 会先修复并关闭中断的 step/turn，普通 adapter stream 不能伪装成原 step 的继续。需要新增公开的 **adopt-recovered-response** 接缝：核对原 request、surface revision、host step 状态，确认原 assistant 未入账、工具未执行且无 unknown fence，再在宿主拥有的新恢复事务中接收一次、记录原 step/Provider response 关联并 flush。若原 assistant 已存在则只做对账 ACK。该接缝完成前，捕获结果可以只读展示，但自动重新交付可执行工具保持 blocked；此项是完整恢复的交付依赖。
-
-采用事务以 executionDomainId＋DSH sessionId＋originalRequestId＋providerResponseId 为持久幂等键；重复请求返回已保存的宿主提交身份，不创建第二个 assistant 或工具批次。还需核对当前工具表、权限和 binding 与原结果兼容；恢复期间撤销权限或替换工具后，旧响应 digest 正确也不构成自动执行授权。
-
-## 7. 会话复用、压缩和自动换聊
-
-### 7.1 正常复用
-
-DSH 请求通常包含完整历史。Provider 为每个 logical session 保存规范化的**内容前缀**摘要与已确认同步游标，不能每次把完整历史重复发送到已有网页聊天。
-
-普通追加满足以下条件才复用：相同 owner/account/provider/model/purpose、相同工具与指令契约、前缀内容一致、旧回合已结算、无未确认工具结果、租约有效。正常只发新增 user/tool 消息；提交确认与回答持久化分别记录，不能仅按消息数量推进游标。
-
-模型自己在网页生成的协议对象与 DSH 投影后的 tool-call/text block 表示不同，需要保存这一次转换的双向对应及摘要。前缀比较使用规范化语义和已确认转换，不能拿原始网页 JSON 与 DSH blocks 直接比字节。
-
-同一 DSH session 可以对应多个网页 generations；同一网页 conversation 全回合只能有一个跨进程写入者。跨任务、角色、子代理、辅助 purpose 不共享聊天。不同聊天本身不保证账号级记忆隔离；还必须通过第 9.2 节的网页宿主上下文准入。
-
-### 7.2 两种预算与两种重建
-
-必须同时管理：
-
-1. **本地模型请求预算：** 有效指令、工具 schemas、协议包装、历史、附件投影及输出预留。
-2. **远端聊天累计预算：** 已发送／捕获内容和回合数量的保守估计；这不是网页真实剩余窗口。
-
-预算来自用户连接配置和实测策略，不硬编码一个未经官方确认的 GPT-6 Pro 网页窗口。`resolveModel.context` 若需要数字，只暴露声明为本地策略的有效上限。对无法可靠估算的附件保留不确定性，不能算作零；超大原始工具结果先按 DSH 的有证据裁剪／分页契约处理。
-
-- 远端累计历史偏大，而当前本地 derived history 已足够小：直接用该权威历史开启新 generation，不必额外调用摘要模型。
-- 本地输入也过大：先执行受控本地压缩，持久化 checkpoint，再用压缩后的真实 derived history 开启新 generation。
-- 模型／账号／权限／工具表变化、history rewind/fork、prune、指令变化或手工改网页：重新做兼容检查；不兼容时仅在旧调用可安全结算后重建。
-- 新聊天的 bootstrap 仍超预算：进一步缩小材料或分解任务，明确失败；禁止无限“新建聊天再试”。
-
-### 7.3 DSH 压缩接入
-
-普通 DSH 桌面沿用已有公开 CompactionEngine。摘要请求带 `purpose: "compaction"`，即使 sessionId 相同，也必须使用独立的辅助 invocation/conversation，禁用工具执行；title 等辅助用途同理。不能把摘要指令发进主执行聊天，也不能让不同摘要任务持续追加到同一辅助聊天。
-
-Flywheel 使用**只适用于已准入 chatgpt-web 根／子会话的受控 overlay**：
-
-- 安装 `BasicCompactionEngine(auto:false)` 或符合公开 CompactionEngine 的专用后端；不全局重新开启其他 Provider 的自主压缩或额外模型调用。
-- 通过公开 agent hooks、token meter、balanced tool ranges 与 compaction 接口检查当前请求。
-- 不修改冻结 Spec/packet/acceptance；必须保留当前约束、待解决问题、可信证据引用和完整配对的工具尾部。未决工具调用不跨压缩边界丢失。
-- checkpoint 记录来源范围、原始摘要、输出摘要、模型／目的、调用用量及 preserved facts；原始事件保留。
-- surface 替换后先 `sessions.flush`，确认新的 derived history，再批准网页 generation 转换。
-- 模型摘要调用单独计入同一外层预算，保留 unknown usage；默认使用显式配置的摘要策略，不能偷偷换到付费 API 或另一个账号。
-- 预算内无法完成有效压缩时停止，不添加未计量、无限重试的摘要循环。
-
-公开 `compactIfNeeded` 读取旧 request header；Basic 的 proposed-header 压力函数是 private。完整实现必须基于公开 `tokenMeter.measure(session, proposedHeader)` 和 balanced ranges 实现目的路由预检，或先推动 DSH 增加公开接缝。不得调用 private 方法或假装已有目的模型容量检查。
-
-### 7.4 换聊事务与硬上限恢复
+### 7.5 迁移事务
 
 ```mermaid
 flowchart TD
-  A["需要继续调用"] --> B{"旧回合与工具已结算？"}
+  A["本轮需要继续"] --> B{"旧调用和工具已结算？"}
   B -->|"否"| C["恢复原调用或保持阻断"]
-  B -->|"是"| D{"本地历史与远端均可续用？"}
-  D -->|"是"| E["追加本轮增量"]
-  D -->|"否"| F["保存 checkpoint 与迁移意图"]
-  F --> G["新建并验证模型与 Pro"]
-  G --> H["保存新 generation 后继续"]
+  B -->|"是"| D{"本地输入需要压缩？"}
+  D -->|"是"| E["DSH 压缩事务并 flush"]
+  D -->|"否"| F["保存迁移意图"]
+  E --> F
+  F --> G["新容器与模型核验"]
+  G --> H["保存 generation 并继续"]
 ```
 
-迁移意图保存旧／新映射、checkpoint、bootstrap digest 和原因。隔离项目创建意图、实际 project ID 与策略核验状态同样先记账；创建后日志确认前崩溃时先只读定位原 owned 容器，身份无法确认则阻断，不不断新建。新聊天建立失败时保留旧证据；bootstrap 提交后崩溃按新 invocation 恢复，不再重复创建聊天。仅新映射已持久化且本轮身份明确后更新 active generation。
+迁移日志保存旧／新映射、来源 checkpoint、bootstrap digest、原因、项目创建意图和实际 ID。创建后日志确认前崩溃，先只读定位 owned 容器；无法确认则阻断，不连续新建。bootstrap 提交后按原 invocation 恢复，不能重发。
 
-网页明确提示 context/conversation limit 时，进入同一恢复路径；网络超时、限流或通用错误不能冒充上下文溢出。旧聊天已拒绝消息时，依赖本地记录，不要求它再接受一条总结指令。已提交但结果未知时，换聊流程同样阻断。
+旧聊天已满时依赖 DSH 记录，不要求它再接受一条总结指令。压缩有损，不承诺保留隐藏推理或无限上下文；换聊不会重置订阅额度。
 
-摘要有损，不能承诺保留网页内部隐含推理或获得无限上下文。新聊天不重置订阅额度。
+## 8. 会话、网页上下文与可读名称
 
-## 8. 活性、期限、取消与清理
+### 8.1 逻辑会话与网页 generations
 
-### 8.1 活性
+一个 DSH Session 对应一串网页 generations，记录 project/conversation、消息父子关系、摘要及当前 active generation。普通工具循环复用当前 generation；按安全检查迁移时保留链路。
 
-完整协议输出校验前不能向 DSH 发可执行内容，因此另设内容无关的活动通道。扩展现有 `flywheelProviderActivity` 来源白名单和 Go 校验，绑定真实 Agent、invocation、generation、序号与事件类型。
+DSH 桌面显示完整逻辑 Session、工具轨迹、当前网页链接及历史代次。正常持久模式的网页聊天保留在 ChatGPT 历史中，不自动归档成用户找不到的单次调用。没有账户可回访验证时不宣称历史可见性已通过。
 
-区分：
+网页项目／聊天标题复用可读任务、角色与代次，缺失时由首条请求生成有界本地标签；通过 UI 设置并回读，仅修改本次 owned 对象，不覆盖用户手改标题。网页命名不额外调用 Pro；DSH 已启用的 LLM 标题服务属于单独 auxiliary 调用，须独立计量。
 
-- 进程／传输 heartbeat：仅供诊断；
-- UI 生成状态快照：说明观察状态，不代表有新进展；
-- 新 assistant 内容、可确认的进度变化：真实活动；
-- prompt acceptance、终态、结果持久化与 cleanup：各自独立事实。
+### 8.2 隔离工作会话与个性化聊天
 
-网页 Pro 无可观察变化的推理阶段使用声明的 opaque/wall 策略；不能沿用“stdout 静默即挂死”，也不能用定时日志无限续命。整个角色调用的 wall deadline、原有用户取消和清理期限继续有效；格式修正、重连、压缩、换聊都从同一剩余预算扣除。
+Chrome profile 只隔离本地数据；同账号的 Memory、history、自定义指令、项目来源和 apps 可能进入有效上下文。插件显式管理 hosted-context policy，不能仅凭新 conversation ID 宣称隔离，也不自动改用户全局偏好。
 
-### 8.2 本地资源与远端生成分别记录
+默认受管工作模式采用**每个 logical session 的每个 generation 一个新的私有 project-only 项目**，只包含对应主聊天和准入材料。项目指令受本次契约控制，记录来源／指令／sharing 摘要；不同角色、子代理、辅助调用和 generation 不共享项目，避免旧历史经项目记忆重新进入。
 
-拟议终态回执至少包含：
+准入核验账号前置条件、项目 memory 设置、来源、协作者、项目内 GPT-6＋Pro 和聊天 parent project。主页可选 Pro 不证明项目内可选；新旧设置可能有生效差异，不能用“刚改了旧项目”替代验证。项目失败不得退回首页继续发送。
 
-| 事实 | 必需表达 |
+普通桌面对话可显式选择个性化策略，沿用用户账号偏好；UI 标明其上下文可能来自 DSH 之外。该模式不具备严格隔离保证，不能用于要求独立性的 Review/Judge，也不能宣称迁移后旧记忆绝不重入。不得在受管模式不可用时自动改成个性化。
+
+Unpersonalized Temporary Chat 可作为另一个未来模式单独验收，但不作为本版持久默认；保存为普通聊天不等于保留原隔离语义。
+
+每轮复核当前容器、来源和策略；手工移动聊天、追加来源或协作者使旧准入失效。保证限于可公开观察配置，不宣称控制平台隐藏指令。
+
+## 9. 持久状态、恢复与防重复执行
+
+### 9.1 调用事实和预写日志
+
+插件内部 Web worker 提供版本化 prepare/start/observe/recover/cancel/close 语义。recover 只读，恢复采用由宿主单独执行；用户不需要操作 machine API。
+
+持久身份至少包含宿主 owner／调用域、DSH session/surface、provider/model/effort/transport、连接／账号指纹、project/conversation generation、网页消息身份和完整结果 digest。Flywheel 身份经受管 host service 绑定，不能偷塞未知 SDK 字段；普通桌面不依赖 Flywheel ID。
+
+| 顺序 | 持久事实 |
 | --- | --- |
-| dispatch | not-dispatched / confirmed / unknown，附对应证据 |
-| outcome | completed / failed / cancelled / unknown，保留最初 stop reason |
-| local cleanup | owned worker、控制通道、tab lease、本地工具是否已静止／释放 |
-| remote generation | 已观察完成、已观察停止、未派发或 unknown |
-| usage | complete / partial / unknown；本地估算另列 |
-| selection | requested 与本轮 observed model/effort，时间和验证状态 |
+| 1 | prepared：调用绑定、策略与预算已准备 |
+| 2 | submit-intent：提交意图及 prompt digest 已同步 |
+| 3 | submitted-confirmed：当前 prompt 的接受证据已保存 |
+| 4 | response-captured：完整结果 artifact 已保存 |
+| 5 | response-validated：协议与身份校验完成 |
+| 6 | delivered-to-dsh：已交付，尚不等于宿主持久提交 |
+| 7 | host-commit-confirmed：DSH 持久记录与关联已核验 |
 
-取消必须阻止新的本地工具／模型回合，向准确 owned 页面尝试停止生成，排空 owned DSH 工具，退出受管子进程并保存回执。关闭 tab、断开 CDP、杀 CLI、取消 MCP waiter 都不能单独证明云端停止。
+每步原子保存并同步。submit-intent 不是已派发证明，缺少下一步也不是未派发证明。DSH 的 `finish.replayState` 只随成功消息保存关联引用，不能替代发送前日志。Provider response ID 与由 DSH 生成的 assistant MessageId 分开记录。
 
-远端仍未知时，即使本地资源已清理，也保留隔离标记并阻断自动重放／复用。成功不要求销毁共享 Chrome；只要求本轮拥有的工作已结算、控制资源已释放。不得关闭用户无关 tab 或整个日常浏览器。
+宿主 ACK 按 call kind 关联：主调用核对 assistant／工具事件及 flush；compaction 核对其 compactionId、summary／checkpoint 事务及 flush，不能等待不存在的 assistant 消息。title／one-shot 必须声明对应宿主操作及持久或非持久交付语义，不冒充 assistant 提交。adapter 先完成结果持久化并结束迭代器，宿主提交后走独立 ACK 通道；下一模型／工具准入屏障再核对提交，不让 stream 与提交互等。
 
-Flywheel 需把 Provider 远端状态纳入新的回执与恢复检查，不能仅以 DSH SDK 进程退出推导全部 cleanup；对旧 Provider 保持原有契约。外层 timeout 与内层取消手段分开，保留 TIMEOUT 首因。
+### 9.2 已捕获响应的恢复采用
 
-### 8.3 错误分类
+- 确定未派发且本地清理确认：允许预算内重试。
+- 提交结果未知：锁住原聊天，读取原回合与日志；不重发。
+- 完整回答已捕获但未提交 DSH：保存为 pending result，由专门宿主事务采用。
+- assistant／工具结果已持久：核对已有记录，仅确认交付，不创建第二次调用。
+- 身份冲突、手工改网页、结果不完整：保留证据并阻断。
 
-复用 Flywheel 现有错误码，附 Web 专属有界 reason：
+当前 DSH resume 会先修复和关闭中断 step/turn，普通 adapter 不能继续原 step。本设计依赖新增公开 `adopt-recovered-response` 事务：持有宿主准入与会话写租约，核对原 request、surface、工具未执行、当前权限／工具实现兼容及无 unknown fence，在新的宿主恢复事务中接收一次并 flush。
 
-- AUTH：账号未登录、绑定不符或登录挑战；
-- QUOTA / RATE_LIMIT：明确的额度／频率限制；
-- CONTEXT_WINDOW_EXCEEDED：有页面来源和身份的上下文拒绝；
-- INVALID_REQUEST：不支持的配置／能力或输入不满足本地政策；
-- TRANSPORT / SERVER / TIMEOUT / EMPTY_RESPONSE：按真实事实分类。
+幂等键为 executionDomainId＋DSH sessionId＋originalRequestId＋providerResponseId，进入宿主持久日志；重复采用返回原提交身份。接缝未实现前可以只读展示结果，不能在下一普通 stream 中重放旧工具响应并宣称恢复完成。
 
-工具协议格式失败保留独立 reason、原始答复 digest 和有限修正次数，不能把它当已执行动作。只读取真实 UI 错误控件；答案里讨论错误文案不能触发错误分类。源代码和离线 fixture 不能证明所有语言／网页版本已识别。
+辅助结果恢复使用其 call kind 和宿主 operation／compaction ID 作为关联与幂等键的一部分，确认摘要事务是否已提交，再由同一权威 CompactionEngine 采用或拒绝；不创建普通 assistant，不绕过 checkpoint 修改历史。没有对应恢复接缝时只读保留结果并阻断自动重派；不能将主调用 adoption 直接套在摘要或标题上。
 
-DSH 对若干通用码自带请求重试，因此 Web adapter 的 `providerRetryPolicy()` 必须返回完整的 `ResolvedRetryPolicy`，其中 `maxRetries` 为 0；可使用公开 `resolveRetryPolicy({ mode: "normal", maxRetries: 0 }, "chatgpt-web.retry")` 构造，而非返回缺字段的局部对象。由受管 runtime 仅对“已确认未派发”的情况做有界重试。`submit-intent` 后的不确定性必须先建立持久 dispatch fence，再向宿主返回保留首因的不可自动重试结果。即使用户配置更积极的 retry，下一次准入也必须被 fence 拦住。Flywheel 的外层重试、fallback、重规划和新会话同样遵守该事实；格式修正是旧回合已确认结束后的新子调用，不借通用重试实现。
+### 9.3 工具副作用未知时的执行域阻断
 
-## 9. 安装、认证、SDK 和会话可见性
+DSH 已有 tool/call、tool/result 及 checkpoint；tools/result 通知不是 durable ACK。崩溃后已开始而无持久结果的调用会修复成 `TOOL_OUTCOME_UNKNOWN`，这只记录事实，不天然禁止后续副作用。
 
-### 9.1 连接选择与部署
+插件通用 host policy 必须建立持久 executionDomainId 和 unknown fence：覆盖原根、已准入子 Agent、PTC 嵌套执行及对应工作区责任；跨 Provider、fresh/resume、fallback、换聊天或重新规划仍继承未解除的阻断。不能用当前 requestId 代替持久执行域。
 
-网页连接由插件设置管理：具名 connection、专用浏览器 profile、明确浏览器路径、runtime 版本、状态目录、并发和上下文策略。首版每个 DSH profile 明确选择一个 `activeConnection`；desktop 与 SDK 要指向同一受管连接，或明确使用不同连接。该选择、规范化路径和非秘密账号身份进入实际 binding。Flywheel channel 不选择连接，首版不支持仅靠不同 channel 在同一个 worker profile 下切换网页账号。
+子调用未知向域协调者传播，冻结兄弟的新准入；已在飞工作取消／排空并分别对账。只允许宿主限定的只读恢复操作，不能靠模型自称只读。确定性证据或明确人工 resolve 才解除；模型的“已完成”声明不构成证据。
 
-拟议设置命名空间为 `chatgpt-web`；`enabled` 默认 false，`activeConnection` 在启用时必填；`connections.<id>` 定义 browser profile、browser/runtime 可执行文件、私有 stateDir、`maxConcurrentTurns`（初始 1）、hosted-context policy 和 context policy。context policy 必须有有限的输入／输出预留、远端累计预算、回合上限、修正／压缩／迁移次数及 wall 预算继承规则。具体生产阈值由 P1 的实测策略清单定版，记录 policyVersion；缺少已验证策略时不将能力标为 ready，不借用 API 窗口数冒充网页上限。所有策略变化都进入 runtime digest，UI 可查看和明确覆盖；不是任意 modelOptions 的隐式透传。
+普通桌面由插件宿主策略保存执行域；Flywheel 还由 Go 保留跨 worker 的阻断事实。不能承诺通用 Shell exactly-once，也不能在压缩中把 unknown 当普通失败丢掉。
 
-- 初次使用在专用浏览器 profile 手动登录，复用该 profile；不默认复制日常 Chrome cookies，不读取用户凭据并写入任务。
-- 浏览器相关依赖惰性加载。Web runtime 要求 Node >=24；安装诊断明确检查对应可执行文件，不能拖坏原来仅需 Node 22 的非 Web 路由。
-- 安装和更新通过现有 npm 工作流及显式 setup，锁定依赖和来源；不依赖临时源码目录、手工 ZIP 或 postinstall 修改账号／profile。
-- Flywheel 的独立 SDK profile 也必须加载该 Provider 和受控 companion policy。桌面插件存在不代表 SDK 已启用；不能把 `FLYWHEEL_DSH_PROFILE` 设成 desktop。
-- doctor 默认无推理；检查模块、版本、profile、模型契约和缺省 effort。主动浏览器登录／模型菜单检查作为明确用户操作，不发送测试 prompt，不把静态 pass 写成账号额度或真实推理已通过。
-- doctor／预热只准备本地运行时与准入，无 paid prompt、无业务项目／占位聊天、无 LLM 命名；正式 start 才创建其 owned 容器，未使用的 runtime 必须有界关闭。
+### 9.4 统一 Provider 下的重试契约
 
-### 9.2 网页宿主上下文准入
+保持现有 SIWC Provider 级重试行为。**不得在统一 chatgpt Adapter 上全局返回零重试来处理 Web。**
 
-Chrome profile 只隔离本地浏览器数据；同账号的 Memory、Reference chat history、自定义指令、Projects 和已连接 apps 可能增加模型上下文或能力。新 Chat 不天然等价于只含 DSH 请求的模型输入。正式 Flywheel 调用必须核验并冻结可公开观察的 hosted-context policy；不能自动修改用户账号全局偏好。
+Web 的重试决定必须基于本次冻结的 transport 与 journal。受管 runtime 只对确定未提交的情况做有界重试；提交后不确定性先写 dispatch fence，再保留原始 TIMEOUT／TRANSPORT 首因返回。
 
-首选持久模式为 **新建的私有 project-only 项目，每个 logical session 的每个 generation 一个项目，只含该 generation 的一个主聊天和明确准入的材料**。项目指令由本次协议控制并记录摘要，项目无外部协作者／连接来源；辅助摘要调用使用自己的隔离容器。不同角色、子代理和 generation 不共享项目，防止项目内聊天记忆把执行历史或已压缩的旧内容重新带回。创建、设置回读、来源清单与调用前复核是拟议 runtime 的新增能力，Oracle 当前的 project URL 支持不能替代这些检查。受管路径禁止从项目加载失败回退到普通首页；新建、续聊和迁移都在发送前复核目标 project ID 与准入证据，失败保持 not-dispatched。
+当前 `llm-retry` 的 always 模式可能继续执行下游拒绝后的重试，普通 request-error listener 不能稳定提供硬否决。本设计明确要求 DSH 增加**公开的单次调用 replay-veto／停止结果**：在执行通用 normal/always 重试前询问已准备调用的真实策略，禁止重放时终止本次请求并传播 blocked／unknown，用户更积极的重试选项不能覆盖该事实。
 
-官方说明 project-only memory 限制跨项目引用，项目指令覆盖全局自定义指令；这些设置仍受账号／工作区条件影响，已有项目改设置可能延迟生效。因此不把“刚改了一个旧项目设置”当立即隔离证明；只接纳已确认满足策略的新容器，无法核验时在派发前失败。可由用户显式选择并核验另一种无跨聊天记忆的持久配置，但不能仅凭专用 profile 或 channel 名称通过准入。
+该机制作用于 Web 的不可重放事实及仍被其 fence 阻断的执行域，包括该域改走 SIWC／其他模型的恢复或 fallback；无关、正常 SIWC 调用保留原策略。veto 同时读取 prepared route 和持久 domain fence。新准入仍检查 fence，防止外层重规划绕过；也必须避免“被 fence 拒绝后 always 无限空转”。不得伪造错误码解决重试问题。未完成这个公共接缝前，不宣称完整恢复能力已交付。
 
-真实准入依次核验账号具备项目记忆前置条件、创建私有 project-only 项目、回读 memory/instructions/sources/sharing、保存 project ID、在项目内确认 GPT-6＋Pro，并验证主聊天的 parent project。主页可选 Pro 不证明项目内也可选；不具备条件时准确报告 unavailable，不静默开启全局 Memory。项目及聊天都采用可读任务／角色／代次名称，避免产生无法辨识的容器。
+## 10. 活性、取消、权限、并发和成本
 
-`Unpersonalized Temporary Chat` 可作为另一个明确模式评估，但其历史可见性、可回访 URL 和恢复能力需单独验收；它不是默认持久模式，保存为普通聊天后也不能继续声称具有原来的非个性化保证。若没有满足隔离与恢复条件的连接，独立 Review/Judge 能力保持 unavailable，不能把普通聊天的结果记为独立审查通过。
+### 10.1 活性与期限
 
-每轮记录 policy、project/source/instruction 摘要和观察时间；手工移入其他项目、改变设置或追加来源导致重新准入或阻断。此保证限于公开配置与 owned 容器，不宣称控制 ChatGPT 隐藏的平台指令。网页自带 apps／可写动作另按第 10 节准入。
+内容校验前不能发可执行增量，因此插件通用活动事件独立于回答文本。事件携带真实 owner、调用 ID、generation、序号和有界类型；DSH 桌面可显示，Flywheel 通过适配消费。
 
-### 9.3 历史、标题和数据
+区分进程 heartbeat、UI 状态快照、真实新增内容／进展、prompt acceptance、终态与 cleanup。无变化的定时日志不是活动。Pro 的不可观察推理阶段采用明确的 opaque/wall 策略，不能按 stdout 静默推断挂死。
 
-DSH 桌面展示逻辑 Session 和工具轨迹；ChatGPT 历史展示相应隔离项目中的 conversation generations。通过第 9.2 节的持久模式保持可回访历史；Oracle 成功单次调用的默认归档策略需要显式改为保留。本地 UI 展示当前链接、历史 generations、原任务与角色，不伪造同一个网页 ID。
+原调用 wall deadline、取消、修正、压缩、迁移和排队共享预算；连接断开或换聊天不重置期限。声明观测能力并保留故障检测，不能用 heartbeat 无限续命。
 
-标题使用可读任务／角色名，换聊附代次；DSH 标题走既有公开服务。网页标题通过可验证 UI 操作设置并回读，只改本次创建的聊天；失败显示 title 状态与本地可读标签，不用额外 Pro 调用命名，不覆盖用户手改的旧标题。
+单帧、完整回答 artifact、保留缓冲、累计协议流量和活动事件分别设有界策略；高频活动按实际到达合并，终态与清理回执保留传输能力，不能把丰富活动直接计成很小的最终答案上限。错误沿用宿主 AUTH／QUOTA／RATE_LIMIT／CONTEXT_WINDOW_EXCEEDED／INVALID_REQUEST／TRANSPORT／SERVER／TIMEOUT／EMPTY_RESPONSE 分类，并附有界 Web reason；网页限额或上下文错误须来自身份匹配的真实 UI 控件，不能从答案引用的错误文字推断。
 
-浏览器连接、路径、账号非秘密指纹和 runtime 摘要加入 session/prewarm identity。账号切换、profile 修改或运行时能力变化需要重新准入；Cookie、token、完整邮箱和敏感正文不进入 PR、通用日志或 replayState。
+### 10.2 本地清理与云端状态
 
-## 10. 并发、权限与成本
+回执分别保存 dispatch、outcome、stop reason、local cleanup、remote generation、usage 和本轮 model/effort evidence。
 
-- 同一 conversation 从派发前到终态／阻断持有跨进程 lease；不同 tab 不能并发写同一个聊天。
-- 不同 task/role/child 使用独立聊天；连接级队列限制同时在飞的模型回合。默认建议 1，可显式提高；Oracle 的 tab 上限不是服务端允许并发的保证。
-- 队列等待保持 not-dispatched，使用原 invocation 剩余 wall 时间并可取消，不发伪进度；取消／超时后即使取得 permit 也不得提交。连接 permit 只覆盖当前网页模型回合，在本地工具／子代理等待前释放，避免父 Agent 持 permit 等待子 Agent 的死锁。unknown 远端回合保留占用责任，不能因本地等待退出就释放成可无界超售的额度。
-- 租约使用 owner/epoch 和持久日志核对，PID 存活或固定超时不足以接管未知旧 owner。
-- DSH 本地文件／Shell 严格沿用原 sandbox、权限和实际 cwd；PTC 只能调用本次已准入工具。本地 OS sandbox 不约束远端 MCP 或网页 app 的写操作：这些能力需要独立 allowlist、授权和副作用分类。Read-only Review/Judge 只允许已核验的只读外部工具，不明能力不暴露。网页 hosted apps／可写动作首版默认关闭；无法核验关闭状态时拒绝对应调用，不靠提示词代替权限保证。transport 对 owned ChatGPT 页面发送模型请求、上传准入上下文和命名，是有限传输动作，不赋予模型任意外部权限或 LCU 权限。
-- 需要 GUI 焦点的 transport 操作与 LCU 使用共享桌面协调；不能持有 GUI lease 等待整个模型推理并让后续 LCU 工具死锁。网页传输与模型控制的 GUI 操作不可同时操纵同一 owned tab。
-- 本地估算 token 仅用于容量和策略，不进入“精确服务端 usage”。网页调用及摘要若无权威计量，usage/cost 保持 unknown。
-- 现有 soft/hard/off 预算语义不放松；hard token budget 不能依赖网页估算伪造可核实账单。当前 hard daily-token-limit 在记录 unknown usage 后停止后续模型派发，Web Provider 无权威用量时也遵守；安装和 UI 明确显示兼容性，完整任务验收不得暗中切到 soft/off。
-- 重连、修正、压缩、换聊及辅助调用都计入调用次数／时间；不能重置 task、packet、失败和账号预算。
+取消先阻止新调用和工具，向准确 owned 页面尝试停止，排空本地 owned 工具与控制资源，使用独立有限清理预算。异步资源在取消后才到达时仍需释放；不能停止后又创建 tab 或迟到提交。
 
-网页工具回环通常增加交互和等待次数；不预设比 API 更快或更便宜。实际评估记录每轮延迟、排队、工具轮数、重建原因、协议修正率、任务完成率和人工接管率，用这些数据决定哪些场景值得选用 Pro。
+关 tab、断 CDP、杀 worker、释放等待者不能证明云端停止。远端 unknown 保持隔离和占用责任，即使本地已清理，也不得自动重放。共享浏览器不需随一次成功调用销毁，只释放该调用资源，不关闭无关用户 tab 或其他宿主的工作。
 
-## 11. 能力矩阵与验收边界
+### 10.3 并发与工具权限
 
-“可配置到任何模型角色”与“自动拥有其他 harness 的所有能力”分开。拟议能力在对应验收完成前报告 unavailable，不自动换后端。
+- 同 conversation 全回合跨进程单写入者；租约接管核对 owner/epoch 和日志，不只看 PID 或固定超时。
+- 连接并发默认 1，许可覆盖单个网页模型回合；进入本地工具／子 Agent 等待前释放，避免父子死锁。
+- 排队保持 not-dispatched，使用剩余 wall，可取消；取得许可后再次核验取消和绑定，防止迟到发送。
+- unknown 远端回合不能因本地退出而释放成可无限超售的新容量。
+- DSH 本地工具继续使用原 cwd、sandbox 和权限。远端 MCP 与网页 apps 另有 allowlist／副作用分类，本地 OS sandbox 不会约束远端写操作。
+- Read-only Review/Judge 只暴露已核验的只读外部工具；可写 hosted apps 首版关闭，无法核验关闭时拒绝调用。
+- CDP 为主要传输路径；确需 GUI 焦点时与 LCU 共用协调，不能在长推理期间霸占整个桌面或让两个控制者操作同一 tab。
 
-| 能力 | 目标实现 | 必须验证 |
-| --- | --- | --- |
-| 普通对话、设计、Review | 完整文本与结构化产物 | 当前回合身份、完整输出、业务 schema |
-| **Execute** | DSH 文件／搜索／Shell／测试工具循环 | 至少两轮工具调用、真实 cwd 修改、验证与独立 Review |
-| PTC | 使用实际单一 run_code 工具和 schema | TypeScript、handle、deferred output 和错误回传 |
-| DSH 子代理／Team／Workflow | 用已有 native profile 和真实子 Agent 运行 | 独立会话、lineage、并发、活动、预算和取消 |
-| 图像输入／多模态路由 | DSH AttachmentStore 的真实 bytes 投影到网页附件 | MIME、顺序、hash、上传完成、模型可见性；不能只传路径 |
-| LCU | 经现有 PTC/LCU 工具调用与截图回传 | 明确权限、GUI lease、图像投影及完整取消 |
-| ChatGPT 网页自带工具 | 按显式允许集合及可观察能力单独登记 | 可写 apps 默认禁用；验证只读权限和 hosted-context policy，不把网页内部工作声称为本地修改 |
-| 原生 Codex agents／Claude Workflow | 继续属于原 harness | 选择 Web Provider 不自动移植这些能力 |
-| JEV／确定性 Verify | 保持已有专用接口 | 不是本次模型 Provider 配置的替换对象 |
+### 10.4 计量
 
-能力声明按 transport、tool bridge、media、native composition 分项版本化。DSH 当前会在调用 adapter 前把 file block 转成路径文本，把 text-only 模型的 image block 转成 placeholder，因此“adapter 内检查没有图片”不能证明没有丢图。必须在公开 `llm/stream` 的 **pre-projection** 侧安装仅针对 chatgpt-web 的 guard，看到未支持的原始 image 即拒绝；启用图片后声明 image 并按 AttachmentStore 读取真实 bytes。覆盖用户输入、工具截图、辅助 purpose 和恢复后的历史。
+网页若无权威 usage/cost，则保留 unknown；本地 token 估算只用于容量策略。摘要、格式修正、重连和迁移单独记账，不伪造免费或零用量。
 
-普通文件默认通过 DSH 本地 read/search 工具提供内容，不把模型输出里的路径当成已授权网页附件。要支持原生文件上传，必须增加明确的公共投影／准入接缝，保存来源、MIME、hash、字节数和本次上传身份。未验收媒体时，LCU 或图像请求在派发前拒绝；不能静默丢图后返回成功。完整项目验收覆盖用户实际重活 Preset 的 PTC/子代理路径，不能只在简化的无工具对话里验证。
+Flywheel 既有 hard/soft/off 预算不被插件放松；例如 hard daily-token-limit 遇到未知用量会阻止后续调用，应在诊断中明确兼容性，不能暗中改预算来让验收通过。普通 DSH 同样记录真实可知事实及账号限流／额度状态。
 
-## 12. 实施范围与顺序
+评估任务完成率、工具轮数、延迟、排队、修正率、压缩／迁移次数和人工恢复率，再决定适用任务与默认选择，不预设 Web 比其他渠道快或便宜。
 
-### 12.1 仓库责任
+## 11. Flywheel 如何消费同一个模型
 
-| 仓库 | 改动范围 |
+### 11.1 目标配置
+
+以下为实施后的配置片段，**当前 0.37.0 尚不能据此使用新模型**。将其纳入实际生效的完整配置；Flywheel 不跨文件深合并。
+
+```json
+{
+  "profiles": {
+    "web-pro": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "model": "gpt-6-pro-web",
+      "thinking": "pro",
+      "channel": "chatgpt-web-subscription"
+    }
+  },
+  "loops": {
+    "design-plan": { "profile": "web-pro" },
+    "review": { "profile": "web-pro" }
+  },
+  "routes": {
+    "hard": { "profile": "web-pro" }
+  },
+  "channels": {
+    "chatgpt-web-subscription": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "env-key": null
+    }
+  }
+}
+```
+
+此例将 design-plan、review 和 hard 执行路由设为 Web Pro；未覆盖的 design-review／plan-review 会继承 review。会话复用继续由现有 fresh/scoped 配置决定；本片段不改全局 sessions 策略。
+
+channel 是 Flywheel 的命名配置和预算归属，不选择网页账号。网页连接由插件 activeConnection 决定，首版每个 DSH profile 选择一个；不能靠两个不同 channel 名声称切换两个账号。
+
+| 模型工作 | 配置入口 |
 | --- | --- |
-| `ckanner/dsh-plugin-chatgpt` | Web adapter 注册／设置、固定模型目录、typed runtime、工具协议、消息投影、journal、上下文与媒体、桌面 UI；现有 SIWC 回归 |
-| `ckanner/flywheel` | 空 effort 端到端、SDK composition、准入与身份、Provider 活性／回执、恢复与超时、执行策略、doctor、安装、UI、文档及跨进程测试 |
-| `ckanner/dsh-preset-generator` | 仅在实际公共 composition 需要时同步 Web capability 准入；不复制 Provider 实现 |
-| `ckanner/dsh-plugin-lcu` | 仅在共享 GUI 协调或媒体契约发现缺口时补接缝 |
-| DSH／Oracle 上游或受审查快照 | 补公共 transport、pressure 或生命周期接缝；固定源码与行为证据，不依赖版本字符串猜兼容 |
-| Codex Pro／Claude Code Pro | 本设计主路径无需更换其模型后端；可选咨询入口另行明确 |
+| 初始方案与独立方案审查 | loops.design-plan / loops.design-review |
+| 规划与计划审查 | loops.plan / loops.plan-review |
+| 执行 | routes.default / frontend / hard / multimodal |
+| 代码审查与终验判断 | loops.review / loops.judge |
+| 第二意见 | 顶层 judge-panel |
+| Intake / Garden | loops.intake / loops.garden |
+| 有界执行模型切换 | execution-policy.bindings 与 route allowed 集合 |
 
-### 12.2 实施里程碑
+没有 loops.execute。JEV 的专用 HTTP 契约、确定性 Verify、Git 交付和状态转移不变成这个模型配置的一部分。原生 Codex/Claude harness 的主模型也不会由此被替换。
 
-| 阶段 | 交付 | 进入下一阶段的条件 |
+### 11.2 Flywheel 必需适配
+
+1. **模型／档位：** 明确传 `thinking: "pro"`。现有 DSH wire 和 prewarm 接受非空字符串，无需首稿的空 effort 特例；不把 Pro 改成 high。
+2. **执行策略：** schema 和 Go 校验允许 DSH 的 adapter-owned effort，并在正式调用前按精确模型能力验证；其他 harness 保持已有白名单，配置的 allowed bindings 仍严格执行。
+3. **UI：** 消费该 DSH 模型的合法 efforts/defaultEffort，原生显示 Pro；切换模型重新检查档位，不按通用 high/max 排序推断质量。
+4. **SDK composition：** 加载同一 ChatGPT 插件的 Web 组件和通用 host policy，并配置独立 SDK profile 的真实连接；不得把 SDK profile 偷换成 desktop。
+5. **压缩：** 为 Web 根／子调用接入同一插件策略与唯一 CompactionEngine，传入冻结契约、剩余预算和调用计量；不在 Go 或 worker 里再实现摘要和 DOM。
+6. **身份与恢复：** 暴露 transport/connection、runtime 版本、execution domain、Web 调用事实和恢复能力；模型／effort／账号变更不复用旧绑定。
+7. **活动与清理：** 将插件通用事件映射到现有 activity／回执校验，协商新的 worker 扩展版本。旧 v1/v2 不理解能力时派发前拒绝，不忽略字段继续。
+8. **安装／doctor：** 核对 SDK 插件、通用依赖、策略和版本；静态检查不等于真实账号或额度检查。
+
+配置加载可验证字段形状和允许绑定；DSH effort 的真实语义由该模型元数据决定，必须在执行及预热准入中验证。未知 effort 不因 schema 放宽就自动合法。首版配置明确 pro；若将来让 Flywheel 省略 effort 使用模型默认，需另行处理旧 driver 的 high 回填，不能在此示例中偷偷依赖它。
+
+Flywheel 专属约束只通过通用 host policy 扩展传入；插件桌面功能不得 import 或依赖 Flywheel 包、文件布局和状态机。
+
+## 12. 设置、安装与数据生命周期
+
+现有 ChatGPT namespace 下增加拟议 `web` 设置，不新增用户可见 Provider。启用 Web 时：
+
+| 设置 | 规则 |
+| --- | --- |
+| enabled | 默认 false；不启动浏览器，不改变已有 SIWC 默认 |
+| activeConnection | 启用时明确选择一个具名连接 |
+| connections | 专用 profile、浏览器路径、私有状态目录、账号绑定及连接策略 |
+| maxConcurrentTurns | 初始 1，可在实测和账号允许范围内显式调整 |
+| hosted-context policy | 默认受管隔离；个性化需明确选择且不用于独立 Review |
+| budget policy | 经验证的本地输入／输出、累计历史、回合、修正／压缩／迁移上限及版本 |
+| summarization route | 默认本次 Web 模型／Pro；显式覆盖须准入、展示并计量 |
+
+浏览器第一次登录由用户在专用 profile 完成，不默认复制日常 Chrome cookies。连接、模型选择和诊断有独立状态；列表获取失败不能触发模型调用或读取其他账号凭据。
+
+安装沿用现有 npm 工作流。浏览器模块惰性加载；依赖锁定、构建内容和 SDK 加载路径由同一候选验收。没有 postinstall 账号设置变更，没有每轮下载 latest，没有隐式 Oracle 依赖。
+
+doctor／预热不发 prompt，不创建业务项目或占位聊天。显式连接检查可以核验登录和菜单；“静态可加载”“账号已连接”“目标模型可选”“真实推理通过”分别记录。
+
+网页状态、journal 和完整结果存于私有目录，不写进目标代码仓库或通用日志。Cookie、token、完整邮箱与敏感正文不进 replayState／PR；同步跨进程仅发送必要、已校验标量。
+
+retention／清理只操作插件 owned 对象并尊重未决调用和用户保留策略。不得清理仍处于 unknown 的恢复证据；删除网页项目／聊天与本地日志需要明确用户操作，不能随包升级自动清空历史。
+
+## 13. 实施范围、公开接缝与交付顺序
+
+### 13.1 仓库责任
+
+| 仓库 | 责任 |
+| --- | --- |
+| ckanner/dsh-plugin-chatgpt | 主体实现：统一模型入口、Pro 元数据、自研浏览器、会话／压缩协调、工具媒体桥、持久恢复、连接与 UI |
+| DSH 上游或明确维护的兼容补丁 | 单次调用 replay-veto、摘要路由／proposed-target 策略、恢复响应采用等公共接缝；固定兼容版本 |
+| ckanner/flywheel | 普通模型配置与 Pro 校验、SDK composition、host policy、身份／活动／回执、预算、安装与 UI |
+| ckanner/dsh-preset-generator | 按实际 composition 同步 Web 模型能力与 PTC／子代理准入，不复制 Provider 实现 |
+| ckanner/dsh-plugin-lcu | 仅补实际需要的 GUI 协调／媒体契约 |
+| Oracle | 固定源码参考与来源记录，无运行时依赖 |
+
+### 13.2 必须先定清楚的公共契约
+
+- **单次调用 replay-veto：** 输入实际 prepared transport/call、持久派发事实及 domain fence；输出可重试或不可重放的停止结果；normal/always 不可越过，跨模型阻断有效，无关 SIWC 不受误伤。
+- **压缩策略：** 输入真实 Agent、proposed target、purpose 和剩余预算；输出真实摘要 route/effort 与可接受范围，再形成 GenerateOptions、记录用量及 checkpoint。唯一 CompactionEngine 拥有历史修改。
+- **恢复采用：** 在对应宿主操作／会话写租约内核对原结果和当前权限，按 call kind 及持久幂等键接收一次；主调用与压缩事务各自 ACK，已有提交返回原身份。
+- **宿主调用上下文与工具 guard：** 在投影前确定主／辅助资格，绑定 execution domain，覆盖子 Agent/PTC；生命周期结束即撤销。
+
+这些是交付依赖，不能写成当前接口已支持。优先使用当前公开能力并贡献最小公共扩展；不调用 DSH private 方法、不修改已发布版本号冒充兼容、不将普通插件内部函数宣称为官方 SDK API。
+
+### 13.3 里程碑
+
+| 阶段 | 交付 | 验收门槛 |
 | --- | --- | --- |
-| P0 契约 | Provider/model/connection、Web reply、machine receipt、会话与压缩 schema | 双语契约审查；当前／拟议清晰；无 runtime 发布 |
-| P1 transport 与日志 | 固定 Oracle runtime、隔离项目生命周期、fresh/resume、完整结果、选择验证、cancel/recover/lease | 故障 fixture 与真实浏览器最小账号验收；隔离／容量策略清单定版；无首页降级或日志尾部冒充结果 |
-| P2 DSH 模型与 Execute | LlmAdapter、调用分类、工具闭环、持久化屏障、unknown 准入阻断、设置和 SDK 加载 | 文件修改＋测试的真实 DSH 工具循环；非法／重复／未知动作不执行 |
-| P3 连续性 | 增量投影、桌面/Flywheel 压缩、generation 迁移、专用宿主恢复采用事务 | 前缀变化、已满聊天、崩溃、摘要辅助调用均不污染／重放 |
-| P4 Flywheel 全角色 | loops/routes/panel/policy、空 effort、prewarm、预算、activity、UI、doctor | 全角色与冷／热路径跨进程验收；现有 Provider 回归 |
-| P5 完整能力与发行 | PTC/子代理/媒体/LCU 逐项验收、来源锁定、双语文档、npm 候选 | 真实 Mac 端到端任务＋独立 Review；精确候选安装验证 |
+| P0 契约与体验 | 统一 Provider、模型/Pro、连接／宿主契约、双语交互设计 | 本文评审；明确接口依赖与独立桌面目标 |
+| P1 自研浏览器基础 | 连接 broker、page adapter、隔离项目准入／生命周期、选择核验、完整结果、日志、cancel/recover | 不装 Oracle/Flywheel 的真实账号最小调用；同项目内 Pro 核验与故障 fixture |
+| P2 原生 DSH 模型与执行 | 原生目录/effort、独立认证状态、工具协议、replay-veto／unknown 阻断、权限和媒体 guard | DSH 模型选择→文件修改→测试，多轮真实工具；SIWC 回归 |
+| P3 长会话与恢复 | 唯一压缩后端、Web 摘要策略、增量历史、generation 迁移、adoption | 原生 DSH 长任务、满窗、切模型及崩溃恢复；不能只做问答 |
+| P4 Flywheel 消费 | loops/routes/policy/UI、SDK、预算、预热、活动与回执 | 各模型角色、冷／热/resume 跨进程验收，同一插件实现 |
+| P5 完整能力与发行 | PTC/子代理/媒体/LCU、Mac真实任务、安装候选与双语指南 | 所选能力真实验收；一个精确 npm 候选可安装，维护路径清晰 |
 
-阶段是实施顺序，不把 Execute、恢复或长上下文留为未定义的“以后再说”。所有阶段完成并满足用户所选能力后才宣布完整集成；线上发布和默认模型调整需单独的交付决策。
+这是实施顺序，不把长上下文、Execute 或恢复降为无期限的附加项。完整验收以用户实际重活 Preset 和真实任务为准；未通过能力不能只靠布尔声明发布。
 
-实现时按归属更新 `docs/design.md`、`plugins/dsh/PROTOCOL.md`、相关 schemas、双语配置／恢复／native／安装指南和变更日志。本设计 PR 不修改当前指南，把尚未实现的示例放在本提案中。
+实现时同步插件契约／设置、Flywheel 当前架构与协议、相关 schemas、双语使用／安装／恢复指南和变更日志。本 PR 仅更新提案与索引，不把未实现功能写进当前使用指南。
 
-## 13. 回归与验收矩阵
+## 14. 回归与验收矩阵
 
 | 编号 | 场景 | 必须观察到的结果 |
 | --- | --- | --- |
-| T01 | 无网页配置的现有 SIWC | 正常工作，不启动 Chrome，不新增认证要求 |
-| T02 | DSH desktop / 独立 SDK | 同一 Provider 正确注册；SDK 缺组件明确失败 |
-| T03 | fresh / resumed 网页回合 | 每轮确认 GPT-6 和 Pro；版本／effort 错配不发送 |
-| T04 | 空 effort 冷启动、预热、resume | wire 真正省略；不回填 high；旧 header 冲突拒绝 |
-| T05 | profiles、全部 loops、routes、panel、execution-policy、UI | 有效配置一致；Execute 使用 route；显式空覆盖可往返保存 |
-| T06 | 完整结果超过 MCP 日志尾长度 | 获取全部原文；不读取日志尾作模型输出 |
-| T07 | 非法 JSON、截断、旧响应、引用 JSON、错误 ID、未知工具 | 整批拒绝；没有任何本地副作用 |
-| T08 | 多轮 Read/Search/Write/Test | 工具由 DSH 执行；结果回传；cwd 和权限正确 |
-| T09 | 工具执行完成后重放／崩溃 | 已确认结果复用；未知副作用停下对账 |
-| T10 | DSH 每轮提供完整 messages | 网页只接收增量；协议对象与 blocks 的映射可核对 |
-| T11 | compaction、prune、rewind、fork、改指令／工具表 | 前缀不匹配不追加；安全切换 generation |
-| T12 | compaction/title／未知 purpose、无 sessionId、非 AgentLoop one-shot | pre-projection 分类；每次辅助 invocation 独立或明确拒绝，不污染主聊天 |
-| T13 | 本地预算／网页对话上限 | 提前 checkpoint 或确认拒绝后迁移；新 bootstrap 仍超限则有界失败 |
-| T14 | 未配对工具／关键约束／可信验证证据 | 压缩不丢失必要事实；保留原始来源 |
-| T15 | 提交前后、捕获后、DSH flush 前后崩溃 | 按相应 journal 恢复，不重复提交或重复交付工具 |
-| T16 | 同 conversation 两 worker／跨进程恢复 | 全回合单写入者；未知 owner 不被盲目抢占 |
-| T17 | 只有子代理活动／网页长时间不可见推理 | 身份正确；opaque 不被普通 idle 误杀；定时日志不伪造进展 |
-| T18 | 用户取消／wall timeout／父进程退出 | 首因保留；owned 本地工具与 runtime 收尾；远端未知独立记录 |
-| T19 | 显式上下文拒绝／额度／登录／连接错误 | 正确分类；答案引用错误文案不误判；无静默 fallback |
-| T20 | usage/cost 缺失、摘要及修正调用 | unknown 不变零；预算不被重建或重试重置 |
-| T21 | 执行／Review／父子 Agent | 角色独立、可读标题与 generations 链接、权限不扩大 |
-| T22 | PTC、Team、媒体、LCU | 每项符合第 11 节真实契约，不只靠能力布尔值 |
-| T23 | 不支持 Node／缺 Chrome／插件只装 desktop | 准确 doctor 提示；不做付费探测，不破坏其他 Provider |
-| T24 | npm 精确候选与真实 Mac | 安装路径、SDK profile、登录、模型选择、真实 Execute＋独立 Review 全链路通过 |
-| T25 | DSH 通用 retry、用户 always-retry、Flywheel fallback | submit-intent 后 unknown fence 阻止任何重新派发；不重置预算 |
-| T26 | DSH repaired TOOL_OUTCOME_UNKNOWN、换新 call ID／模型／聊天 | 执行域保持 blocked，确定性对账或明确 resolve 后才解除 |
-| T27 | 已捕获响应＋DSH 已修复／关闭旧 step | 专用宿主采用事务对账一次；不能用下一普通 stream 重放旧工具 |
-| T28 | Memory/history 开启、项目来源／指令变更、项目加载失败、跨 generation | hosted-context 准入有效；不回退首页，独立 Review 和压缩不重新吸收旧执行历史 |
-| T29 | 原始 image、工具截图、辅助用途、恢复投影 | pre-projection guard 拦截未支持媒体；不能被 placeholder 掩盖 |
-| T30 | 连接队列取消竞争、父等待子 Agent、外部可写 MCP/app | 不迟到派发／死锁／超售；本地只读不被误认为远端只读 |
-| T31 | Project 创建后崩溃、项目内无 Pro、错误父项目／新增聊天或协作者 | 创建与恢复先核对 owned 容器；在同一隔离项目验收 Pro，条件不足则派发前失败，不新建绕过 |
+| T01 | 仅安装 ChatGPT 插件，无 Flywheel/Oracle | DSH 原生可选 Web 模型＋Pro，能真实对话 |
+| T02 | Web enabled/disabled、仅一种认证存在、单侧 listing 失败 | 两种 transport 状态独立，不隐藏可用模型或启动浏览器 |
+| T03 | 原生模型/effort 切换、自定义 Provider route | metadata/default Pro 正确；SIWC 使用自身档位，ID 不硬编码 |
+| T04 | Web ID 经 resolve/prepare/stream/direct call | 不进入 SIWC 转换／认证／请求；冲突 ID 不被覆盖 |
+| T05 | fresh/resume/迁移、不同菜单和locale、只有Pro标签 | 联合核验 GPT-6＋Pro；未知布局或错配不发送 |
+| T06 | 稳定前言后继续思考、Stop暂时缺失、旧回答/echo | 不提前完成；只捕获本次正向终态 |
+| T07 | 大回答、artifact截断／路径逃逸 | 完整结果和digest核对，不取日志尾，不越界读取 |
+| T08 | 非法JSON、未知字段／工具、错ID、重复call、截断 | 整批拒绝；没有本地副作用 |
+| T09 | 多轮Read/Search/Write/Test | DSH在正确cwd和权限执行，结果回传并持久 |
+| T10 | 已执行工具重放、TOOL_OUTCOME_UNKNOWN、新call/Provider | 已确认结果复用；持久域阻断，不能重放副作用 |
+| T11 | 每轮完整messages、网页JSON与DSH block转换 | 仅追加真实增量，前缀和映射可核对 |
+| T12 | prune/rewind/fork、改工具/指令/模型/账号 | 安全结算后重新准入／迁移，旧绑定不复用 |
+| T13 | 主请求、compaction/title、未知purpose、无session、并发交错 | 投影前分类，辅助独立或拒绝，call context不串线 |
+| T14 | 原生DSH自动／手动压缩，SDK缺engine | 使用唯一权威engine；缺契约明确失败，不私存第二历史 |
+| T15 | SIWC→Web模型切换、显式摘要route、默认headroom | 实际摘要模型/effort与记录一致，无隐式跨渠道调用 |
+| T16 | 摘要输入也超预算、多段工具配对、单个超大单元 | 多个有界独立事务计量；无法缩小明确停止 |
+| T17 | 本地/远端容量、明确网页context拒绝、bootstrap仍过大 | checkpoint或安全迁移；不无限摘要／新建 |
+| T18 | 主／辅助交付后、各自宿主commit前崩溃及ACK顺序 | 按call kind恢复，未知不重发；stream结束与持久ACK不互等 |
+| T19 | 已捕获响应＋旧step已修复、重复adoption、权限撤销 | 宿主事务幂等，当前权限核验，不能普通stream重放 |
+| T20 | 正常SIWC retry、Web normal/always、unknown域fallback到SIWC/其他模型 | 无关SIWC语义不变；阻断域既不重复提交也不无限空转 |
+| T21 | 两worker/桌面+SDK、别名指向同profile、启动者退出 | 按实际profile协调；共享进程不被单请求kill，不重复Chrome |
+| T22 | queue取消、父等子Agent、远端unknown | 不迟到发送、死锁或超售，保持剩余wall |
+| T23 | 主/子真实活动、无变化heartbeat、不可见长推理 | 活动有身份；opaque策略有效，定时日志不伪造进展 |
+| T24 | 用户取消/wall/宿主退出、迟到资源 | 首因保留，本地排空；云端未知独立记录 |
+| T25 | project-only前置条件、项目内无Pro、导航失败/错项目 | 同项目组合准入，失败不退首页或静默换模式 |
+| T26 | 项目创建崩溃、跨generation、新增来源／协作者 | 只读定位原容器；旧记忆不绕过隔离与压缩边界 |
+| T27 | 个性化聊天用于独立Review、手工改网页 | 正确拒绝独立性声明，绑定失效可诊断 |
+| T28 | DSH/Web标题、持久历史、迁移链接 | 可读名称、真实可回访链路，不额外调用Pro命名 |
+| T29 | 原始图片、工具截图、辅助／恢复历史 | pre-projection拒绝未支持媒体，启用后真实bytes上传 |
+| T30 | PTC/Team/LCU及远端MCP/apps | 真实原生工具能力、lineage、GUI协调和外部权限 |
+| T31 | Flywheel profiles/loops/routes/panel/execution-policy | 同一chatgpt模型＋pro；Execute用routes，无非法harness接受pro |
+| T32 | SDK profile、冷启动/prewarm/resume、旧high绑定 | 同一插件且身份完整，Pro不回填high，不误复用 |
+| T33 | usage unknown、压缩／修正计量、hard预算 | unknown不变零；预算不重置、不暗中降级 |
+| T34 | 缺Chrome/依赖/能力、doctor/setup、包升级 | 准确诊断，无付费探测／占位聊天／自动删历史 |
+| T35 | 无Web配置的现有SIWC安装、模型、图像、工具、重试 | 既有功能和默认选择回归通过 |
+| T36 | 精确npm候选、用户Mac原生DSH及Flywheel真实任务 | 先独立DSH完成，再编排执行＋独立Review，证据分别记录 |
 
-验证分四层记录：纯协议／投影单测；真实 DSH 与 worker 离线跨进程 fixture；固定版本 Oracle DOM／恢复 fixture；用户 Mac 上真实账号端到端。离线通过不能代替网页 UI 或模型行为验收，真实单次问答不能代替故障恢复。
+验证分层：纯协议与预算单测；真实 DSH/SDK 离线 fixture；自研页面适配器 DOM／故障 fixture；用户 Mac 真实账号端到端。离线不替代 UI／模型验收，单轮问答不替代长会话与恢复。
 
-实施涉及 Go 时运行 `make quality-gate`，保持逐函数 100% 语句覆盖；涉及 DSH worker 时运行插件检查及相应跨进程桥接；发行变更使用同一精确 npm 候选安装验证。只为本设计文档做链接、围栏、示例语法、双语一致性和差异检查，不声称运行时回归已通过。
+生产实现按各仓库门禁执行；Flywheel Go 改动保持 make quality-gate 的逐函数 100% 覆盖，worker 改动做 Node 与跨进程桥接；发行验证同一个精确候选。本文的链接、示例和双语检查不能声称这些运行时测试已通过。
 
-## 14. 本次设计评审重点
+## 15. 固定源码与参考资料
 
-1. **能力定位：** 同意独立 chatgpt-web Provider＋固定 gpt-6-pro 模型，复用 DSH 工具循环，而非仅顾问工具。
-2. **代码归属：** 优先在现有 ChatGPT 插件包中隔离模块；只有体积／维护证据要求时再拆包。
-3. **执行能力：** 接受严格文本工具协议的工程路线及其验证成本；网页没有原生 API 工具契约，需真实 Execute 验收。
-4. **连续性：** 正常复用，按权威历史和前缀判断换聊；压缩、辅助调用和 unknown 恢复必须一起实现。
-5. **落地顺序：** 以完整角色与恢复为目标分阶段实现，保留现有默认模型；是否把 Pro 设为某阶段默认，依据实际质量、延迟和额度表现另定。
+### ChatGPT 插件与 DSH 原生模型
 
-这些是共同评审的决策点，不要求在本 PR 中先安装或登录，也不将合并设计等同于已经发布功能。
+- [插件入口、模型注册和设置](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/index.ts) · [SIWC adapter、目录与metadata fallback](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/adapter.ts) · [SIWC请求转换](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/convert/request.ts)
+- [DSH原生ModelSelect](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/client/ui-model-selection/src/client/ModelSelect.tsx) · [模型／档位元数据](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/types.ts) · [ReasoningEffortId](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/brand.ts)
+- [LlmAdapter、prepareCall和公开stream](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts) · [主调用标记](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/call-config.ts) · [retry executor](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm-retry/src/index.ts)
 
-## 15. 固定源码与资料
+### DSH 会话、工具与压缩
 
-### Flywheel / 自有插件
-
-- [Flywheel 当前架构与不变量](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/docs/design.md)
-- [profiles 字段](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/profiles.go) · [规划角色继承](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/planning_roles.go)
-- [DSH driver 与 effort 默认](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh.go) · [Go prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh_prewarm.go)
-- [worker protocol](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/PROTOCOL.md)
-- [worker overlay／SDK](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/bridge.js) · [prewarm 校验](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/prewarm.js)
-- [执行策略 schema](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/templates/execution-policy.schema.json) · [执行策略校验](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/execution_policy.go)
-- [会话 runtime identity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/machine/session_runtime.go) · [DSH activity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/dsh-activity.js)
-- [JEV 专用配置](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/jev.go)
-- [现有 ChatGPT 插件入口](https://github.com/ckanner/dsh-plugin-chatgpt/blob/40d8f885e7a386af5f441b356b9c68496a47b0e3/src/index.ts)
-
-### DSH 公共接口
-
-- [LlmAdapter / LlmRuntime](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts) · [请求／流类型](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/types.ts) · [messages / replayState](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/message.ts)
-- [Agent 工具循环](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/agent-loop/src/agent.ts) · [checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/session/session-checkpoint-policy/src/index.ts)
-- [工具持久化](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/batch.ts) · [工具公共事件](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/events.ts) · [中断修复](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/src/repair.ts)
-- [LLM 重试策略](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/retry-policy.ts) · [MCP 远端工具](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/mcp/mcp-client/src/tools.ts)
-- [CompactionEngine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction/src/index.ts) · [Basic engine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/index.ts) · [summarizer](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/summarizer.ts)
+- [AgentLoop](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/agent-loop/src/agent.ts) · [session修复](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/src/repair.ts)
+- [工具持久化](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/batch.ts) · [公共工具事件](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/events.ts) · [checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/session/session-checkpoint-policy/src/index.ts)
+- [CompactionEngine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction/src/index.ts) · [Basic engine](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/index.ts) · [summarizer](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/compaction/compaction-basic/src/summarizer.ts) · [TokenMeter与proposed header](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/token-meter/src/index.ts)
 - [SDK profile](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/bundle/sdk-app/README.md) · [SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/sdk/server/src/server.ts)
 
-### Oracle / OpenAI
+### Flywheel 消费接口
 
-- [Oracle 0.23.1](https://github.com/steipete/oracle/releases/tag/v0.23.1) · [MIT license](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/LICENSE)
-- [Browser 内部契约](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/types.ts) · [浏览器执行／续接](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/index.ts)
-- [MCP 输入](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/types.ts) · [consult 结果](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/tools/consult.ts) · [wait](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/mcp/tools/wait.ts)
-- [输入估算与附件](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/prompt.ts) · [UI 错误](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/uiWarnings.ts) · [定时 thinking 日志](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/thinkingStatus.ts)
-- [ChatGPT GPT-6 官方说明](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt) · [Responses API compaction](https://developers.openai.com/api/docs/guides/compaction)：后者是 API 契约，不是 Oracle browser 自动具有的能力。
-- [Memory](https://help.openai.com/en/articles/8590148-memory-in-chatgpt) · [Projects 与 project-only memory](https://help.openai.com/en/articles/10169521-projects-in-chatgpt) · [Temporary Chat 个性化与保存](https://help.openai.com/en/articles/8914046-temporary-chat-in-chatgpt)：用于第 9.2 节可公开观察的上下文准入，不等于控制平台隐藏上下文。
+- [当前架构与不变量](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/docs/design.md) · [profiles](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/profiles.go) · [角色继承](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/planning_roles.go)
+- [DSH driver](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh.go) · [prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/drivers/dsh_prewarm.go) · [worker protocol](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/PROTOCOL.md)
+- [SDK composition](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/bridge.js) · [worker prewarm](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/prewarm.js) · [配置UI](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/plugins/dsh/src/client-config.js)
+- [执行策略schema](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/templates/execution-policy.schema.json) · [执行策略Go校验](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/config/execution_policy.go) · [session identity](https://github.com/ckanner/flywheel/blob/db6b93e6b2f74b8bcc6563c54bcafbd0813ccd0c/internal/machine/session_runtime.go)
+
+### Oracle 工程参考与 OpenAI 产品资料
+
+- [Oracle固定版本及MIT许可](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/LICENSE) · [通用CDP依赖](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/package.json)
+- [浏览器调用流程](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/index.ts) · [模型选择](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/modelSelection.ts) · [effort fixture](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/tests/browser/thinkingTime.test.ts)
+- [前言与最终回答](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/actions/assistantResponse.ts) · [turn identity](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/conversationTurns.ts) · [取消竞争](https://github.com/steipete/oracle/blob/0a064e7b604df933f84e64f0b5a69f1b178dee78/src/browser/cancellation.ts)
+- [ChatGPT GPT-6](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt) · [Memory](https://help.openai.com/en/articles/8590148-memory-in-chatgpt) · [Projects](https://help.openai.com/en/articles/10169521-projects-in-chatgpt) · [Temporary Chat](https://help.openai.com/en/articles/8914046-temporary-chat-in-chatgpt)

@@ -39,7 +39,7 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
-[ChatGPT Web Pro 模型 Provider 提案](plans/2026-11-17-chatgpt-web-provider.md)（[English](plans/2026-11-17-chatgpt-web-provider.en.md)）设计了可配置到规划、执行、审查等角色的 DSH 模型，包含本地工具闭环、持久恢复、上下文压缩和网页会话轮换。当前供设计评审，不表示 Provider 已可用，也不改变现有默认模型。
+[ChatGPT 插件 Web Pro 模型提案](plans/2026-11-17-chatgpt-web-provider.md)（[English](plans/2026-11-17-chatgpt-web-provider.en.md)）以现有 ChatGPT Provider 中的 DSH 原生模型与 Pro 档位为入口，由插件自研浏览器调用、工具适配、压缩和恢复；Flywheel 通过 Loop 与执行路由配置使用同一模型。修订稿供设计评审，功能尚未实现，现有默认模型不变。
 
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 
