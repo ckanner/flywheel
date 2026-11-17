@@ -1237,6 +1237,20 @@ function WorkbenchNodeInspector({
         h('dl', { className: css.consoleProperties }, property('HEAD', state.run?.head), property(t('consoleTask'), control.status.taskDir), property(t('projectHome'), state.project?.['workspace-cwd']), property(t('consoleRevision'), state.revision), property('after', packet?.schedule?.after?.join(', ')), property('writes', packet?.schedule?.writes?.join(', '))))));
 }
 
+// Config drafts and their selected section are scoped by DSH Session, not by
+// one mounted component. The view can be hidden while the user visits Chat and
+// then remounted with the same Session binding; the draft must still be there.
+const configDraftsBySession = new Map();
+function configDraftsFor(hostSessionID) {
+  const key = String(hostSessionID ?? '');
+  let cache = configDraftsBySession.get(key);
+  if (!cache) {
+    cache = new Map();
+    configDraftsBySession.set(key, cache);
+  }
+  return cache;
+}
+
 function TaskView({
   hostSessionID,
   useStore,
@@ -1253,10 +1267,11 @@ function TaskView({
   const selection = useStore((value) => value),
     control = useControl((value) => value),
     association = useProjection('flywheelTask');
-  const [page, setPage] = React.useState('canvas'),
-    [focusRequest, setFocusRequest] = React.useState(0);
+  const page = useStore((value) => value.page ?? 'canvas');
+  const setPage = actions.setPage;
+  const [focusRequest, setFocusRequest] = React.useState(0);
   const [inspecting, setInspecting] = React.useState(false);
-  const configDrafts = React.useRef(new Map());
+  const configDrafts = configDraftsFor(hostSessionID);
   React.useEffect(() => {
     associate(association);
   }, [association, associate]);
@@ -1353,7 +1368,7 @@ function TaskView({
       !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
       !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
-      h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts.current, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
+      h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
     h('div', { className: css.historyPage, hidden: page !== 'runs' },
       h(RunExplorer, { control, selection, run, changeSelection, showCanvas: () => setPage('canvas'), t, active: page === 'runs' }),
       hasTask && !preparation && h('section', { className: css.legacySummary }, h(TaskStatus, { control, selection, t }))));

@@ -284,9 +284,13 @@ function configFieldErrors(values) {
   return errors;
 }
 function ConfigEditor({ control, selection, run, t, active = false, cache, contextKey, onClose, diagnostics }) {
-  // Drafts survive task navigation in this live Session binding only. Restoring
-  // one always rereads the file; cached data never grants a revision to save.
+  // Drafts survive task and view navigation in this live Session binding only.
+  // A dirty cached draft is reused after remount; the engine's revision check
+  // still prevents a stale draft from being saved as if it were current.
   const cached = React.useRef(cache?.get(contextKey));
+  const initialScope = React.useRef(cached.current?.scope ?? 'global');
+  const hadCachedDraft = React.useRef(cached.current?.dirty === true);
+
   const [scope, setScope] = React.useState(cached.current?.scope ?? 'global'),
     [section, setSection] = React.useState(cached.current?.section ?? 'strategy');
   const [draft, setDraft] = React.useState(cached.current?.draft ?? null),
@@ -317,9 +321,17 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   };
   React.useEffect(() => {
     if (!active || busy || attempt.current === scope) return;
+    // A remounted view starts with a dirty module-scoped draft. Do not replace
+    // it with a fresh read behind the user's back; the engine's revision check
+    // still rejects a save if the file changed while the view was hidden.
+    if (hadCachedDraft.current && scope === initialScope.current && doc) {
+      hadCachedDraft.current = false;
+      attempt.current = scope;
+      return;
+    }
     attempt.current = scope;
     void run('config-edit', selection, false, { editor: { scope } });
-  }, [active, busy, scope, run, selection.taskDir, selection.cwd]);
+  }, [active, busy, scope, run, selection.taskDir, selection.cwd, doc]);
   React.useEffect(() => {
     if (!doc || doc.scope !== scope || adopted.current === doc) return;
     adopted.current = doc;

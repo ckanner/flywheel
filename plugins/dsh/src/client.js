@@ -68,10 +68,13 @@ function createSnapshot(initial) {
 // We do not import its engine, subscribe from React, or persist live state.
 function createViewStore() {
   const spec = {
-    init: () => ({ taskDir: '', cwd: '', mode: 'auto' }),
+    init: () => ({ taskDir: '', cwd: '', mode: 'auto', page: 'canvas' }),
     actions: {
       setSelection: (draft, next) => { draft.taskDir = next.taskDir; draft.cwd = next.cwd; },
       setMode: (draft, mode) => { draft.mode = mode; },
+      // Navigation belongs to the retained Session view binding. Remounting the
+      // slot for another conversation tab must not send the user back to canvas.
+      setPage: (draft, page) => { if (['canvas', 'runs', 'config'].includes(page)) draft.page = page; },
     },
   };
   return {

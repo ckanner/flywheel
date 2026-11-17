@@ -109,6 +109,23 @@ async function pick(ui, id) {
   await act(async () => ui.container.querySelector(`[data-node-id="${id}"]`).click());
 }
 
+test('view page and config draft survive leaving and returning to the conversation view', async (t) => {
+  const ui = await mountPanel(t, editorResponder());
+  await ui.click('设置');
+  assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'config');
+  await ui.click('预算与重试');
+  await input(ui, '单次运行时限', '0.5');
+  await ui.setVisible(false);
+  await ui.setVisible(true);
+  assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'config');
+  assert.equal(field(ui, '单次运行时限').value, '0.5');
+  await ui.click('流程');
+  assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'canvas');
+  await ui.setVisible(false);
+  await ui.setVisible(true);
+  assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'canvas');
+});
+
 test('configuration opens with one read, retains a draft across tabs, and requires an explicit scope discard', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   assert.equal(ui.requests.length, 0);
