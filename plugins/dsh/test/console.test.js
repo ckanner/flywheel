@@ -65,7 +65,56 @@ test('configuration scope is explicit, changed sections are saved and source con
   assert.equal(change.routes.default.harness, 'claude-code-pro');
   assert.equal(change.routes.default.model, 'sonnet');
   assert.equal(change.routes.default.provider, undefined);
-  assert.deepEqual(change.channels['claude-subscription'], { 'env-key': null });
+  assert.equal(change.routes.default.channel, 'claude-api');
+  assert.deepEqual(change.channels['claude-api'], { 'env-key': 'ANTHROPIC_API_KEY' });
+  assert.equal(change.channels['claude-subscription'], undefined);
+});
+
+test('selecting Claude retains existing API and subscription channel definitions', async t => {
+  const channels = { 'claude-api': { 'env-key': 'CUSTOM_CLAUDE_KEY' },
+    'claude-subscription': { 'env-key': null, _note: 'Explicit existing account choice' },
+    chatgpt: { 'env-key': null } };
+  const originalChannels = structuredClone(channels);
+  const existing = { ...values, channels };
+  const ui = await mountPanel(t, request => reply(request, { editor: { scope: request.editor.scope,
+    target: '/global/config.json', revision: 'version-one', values: existing, defaults: values,
+    applied: request.action === 'config-save' } }));
+  await ui.click('设置');
+  await ui.click('模型与会话');
+  const binding = ui.container.querySelector('[data-binding-id="routes.default"]');
+  await act(async () => binding.querySelector('button').click());
+  await act(async () => {
+    const resource = ui.container.querySelector('[aria-label="编辑阶段模型"] select');
+    resource.value = 'claude-code-pro';
+    resource.dispatchEvent(new ui.document.defaultView.Event('change', { bubbles: true }));
+  });
+  await ui.click('← 返回模型列表');
+  await ui.click('保存修改');
+  const change = ui.requests.at(-1).editor.values;
+  assert.equal(change.routes.default.channel, 'claude-api');
+  assert.equal(change.channels, undefined, 'existing channels must not be rewritten when selecting a resource');
+  assert.deepEqual(existing.channels, originalChannels);
+});
+
+test('editing an existing Claude binding preserves its explicit account channel', async t => {
+  const existing = { ...values, routes: { default: { harness: 'claude-code-pro', model: 'sonnet',
+    channel: 'claude-subscription', thinking: 'high' } }, channels: { 'claude-subscription': { 'env-key': null } } };
+  const ui = await mountPanel(t, request => reply(request, { editor: { scope: request.editor.scope,
+    target: '/global/config.json', revision: 'version-one', values: existing, defaults: values,
+    applied: request.action === 'config-save' } }));
+  await ui.click('设置');
+  await ui.click('模型与会话');
+  const input = ui.container.querySelector('[data-binding-id="routes.default"] input');
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'opus');
+    input.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
+  });
+  await ui.click('保存修改');
+  const change = ui.requests.at(-1).editor.values;
+  assert.equal(change.routes.default.model, 'opus');
+  assert.equal(change.routes.default.channel, 'claude-subscription');
+  assert.equal(change.channels, undefined, 'an existing account selection must not be migrated implicitly');
 });
 
 test('editor transport sends bounded JSON over stdin and never includes the document in argv', async t => {

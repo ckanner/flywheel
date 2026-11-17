@@ -74,13 +74,16 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		require.Len(t, log, 1)
 		argv := log[0]["argv"].([]any)
 		values := map[string]string{}
-		for i, value := range argv[:len(argv)-1] {
-			if value == "--agents" || value == "--effort" {
-				values[value.(string)] = argv[i+1].(string)
+		for _, value := range argv {
+			if key, val, ok := strings.Cut(value.(string), "="); ok {
+				values[key] = val
 			}
 		}
 		assert.Equal(t, "max", values["--effort"], "the parent effort must remain independent")
-		assert.JSONEq(t, `{"scout":{"description":"Find relevant code","prompt":"Inspect the target","model":"sonnet","effort":"low"},"auditor":{"description":"Check edge cases","prompt":"Report defects","effort":"xhigh"}}`, values["--agents"])
+		initialization := log[0]["initialize"].(map[string]any)
+		definitions, err := json.Marshal(initialization["agents"])
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"scout":{"description":"Find relevant code","prompt":"Inspect the target","model":"sonnet","effort":"low"},"auditor":{"description":"Check edge cases","prompt":"Report defects","effort":"xhigh"}}`, string(definitions))
 	})
 
 	t.Run("fresh calls keep native permission and cost semantics", func(t *testing.T) {
@@ -108,8 +111,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		log := readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl"))
 		require.Len(t, log, 1)
 		assert.Contains(t, log[0]["argv"], "--no-session-persistence")
-		assert.Contains(t, log[0]["argv"], "--effort")
-		assert.Contains(t, log[0]["argv"], "max")
+		assert.Contains(t, log[0]["argv"], "--effort=max")
 		assert.Equal(t, false, log[0]["credentialPresent"])
 		assert.Equal(t, false, log[0]["leakedDSH"])
 		assertClaudeCodeProStopped(t, log)
@@ -138,8 +140,7 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		require.Len(t, log, 2)
 		assert.NotEqual(t, log[0]["pid"], log[1]["pid"])
 		assert.NotContains(t, log[0]["argv"], "--no-session-persistence")
-		assert.Contains(t, log[1]["argv"], "--resume")
-		assert.Contains(t, log[1]["argv"], first.SessionID)
+		assert.Contains(t, log[1]["argv"], "--resume="+first.SessionID)
 		assert.Equal(t, true, log[1]["credentialPresent"])
 		assertClaudeCodeProStopped(t, log)
 		require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "claude-fixture.json"), []byte(`{"scenario":"resume-missing"}`), 0o600))
@@ -151,11 +152,11 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 		assert.True(t, refused.Session.CleanupConfirmed)
 		log = readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl"))
 		require.Len(t, log, 3, "a refused resume cannot silently start a new history")
-		assert.Contains(t, log[2]["argv"], "--resume")
+		assert.Contains(t, log[2]["argv"], "--resume="+first.SessionID)
 		assertClaudeCodeProStopped(t, log)
 	})
 
-	for _, scenario := range []string{"unknown-usage", "partial-usage", "wrong-model", "wrong-cwd", "wrong-permission", "wrong-session", "missing-result", "duplicate-result", "malformed-after-terminal", "abnormal-exit"} {
+	for _, scenario := range []string{"unknown-usage", "partial-usage", "wrong-model", "wrong-cwd", "wrong-permission", "wrong-session", "missing-result", "duplicate-result", "malformed-after-terminal", "malformed-sdk-control-after-terminal", "failed-result-malformed-sdk-control", "abnormal-exit"} {
 		t.Run(scenario, func(t *testing.T) {
 			a := args(t, scenario)
 			r := RunClaudeCodePro(a)
@@ -174,6 +175,18 @@ func TestClaudeCodeProNodeWorkerOfflineBridge(t *testing.T) {
 			assertClaudeCodeProStopped(t, readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl")))
 		})
 	}
+
+	t.Run("an intact native failed result and exit 1 preserve known usage", func(t *testing.T) {
+		a := args(t, "native-failure-exit-one")
+		r := RunClaudeCodePro(a)
+		assert.False(t, r.Settled)
+		assert.Equal(t, "failed", r.Session.Outcome)
+		assert.Equal(t, "complete", r.Session.UsageStatus)
+		assert.Equal(t, &Usage{Input: 17, Output: 5, CacheRead: 4, CacheWrite: 3, TotalTokens: 22}, r.Usage)
+		assert.True(t, r.Session.CleanupConfirmed)
+		assert.False(t, r.Session.ResumeCandidate)
+		assertClaudeCodeProStopped(t, readCodexProLog(t, filepath.Join(a.Cwd, "claude-fixture.jsonl")))
+	})
 
 	t.Run("missing native binary proves no dispatch and preserves requested history", func(t *testing.T) {
 		a := args(t, "ok")

@@ -335,7 +335,7 @@ request／initialize／新 thread-start 等派发前阶段可证明 not-dispatch
 
 ### 共有的活动与名称扩展
 
-Codex Pro 0.10.2 和 Claude Code Pro 0.5.3 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
+Codex Pro 0.10.2 和 Claude Code Pro 0.6.0 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
 `MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}`。
 外层请求的可选 `idleTimeoutMs` 是 1–2,147,483,647 正整数；省略按 300000 计算
 观察合并间隔 `min(1000, max(1, floor(idleTimeoutMs/4)))`，不改变有效 wall 预算。
@@ -431,9 +431,16 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.5.3`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.6.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
+
+0.6.0 普通调用通过官方 Agent SDK 0.3.326 的 `query()`，由既有 guardian 的公开
+spawn hook 启动 `FLYWHEEL_CLAUDE_BIN` 指定的本地程序。SDK 负责请求／控制协议，
+插件保留逐帧 UTF-8／JSON／大小校验、真实活动、结果身份、物理退出和进程组清理。
+SDK 迭代结束不证明清理完成。machine／lifecycle version 仍为 1，真实原生
+`system/init` 仍标记 `configuration.source:cli-init`。原生 Review 与交互 Team 保留
+专用 CLI；普通调用失败不回退到旧 print runner。
 
 start 字段与 Codex 外层 v1/v2/v3 一致：type、protocol、requestId、cwd、model、
 reasoningEffort、permissionMode、prompt、timeoutMs，以及可选 idleTimeoutMs/sessionTitle；v2 额外允许
@@ -449,12 +456,17 @@ Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --
 实际 flags 支持是准入依据；forward-subagent-text 由上游 2.1.211 引入，嵌套/特定
 工具的实时行为仍依赖所装 CLI 的具体实现。检查和正式调用共用原 wall 预算，缺失
 能力不自动试发 prompt，也不切换后端。短暂 partial 事件不进入最终答案文本。
+SDK 同一进程的 initialize 响应还须提供稳定的 `claude_code_version >= 2.1.325`，
+之后才放行用户任务。这是最低已验证版本；缺失、过旧或预发布版拒绝。该拒绝保留
+已经观察到的原生 PID／dispatch 与独立 cleanup，当前契约保守记录 unknown／possible，
+不因尚未发送 prompt 而伪造进程从未启动。新会话标题、Agent 定义与子级文本转发
+通过 SDK initialize 发送；根 effort、权限与显式持久化通过 SDK 正式选项传递。
 
 native v1 的 `agents.definitions.<name>.effort` 可选，枚举为
 low/medium/high/xhigh/max。Go 配置 schema 在加载时检查，worker 将 native 对象完整
-交给公开 parser，插件原样序列化到 `--agents`；省略时不注入子 effort。父调用的
+交给公开 parser，插件原样传入 SDK `agents`（交互 Team 使用 `--agents`）；省略时不注入子 effort。父调用的
 reasoningEffort 仍独立映射到 `--effort`。此扩展不升级 machine/native protocol，
-但需要精确 0.5.3；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
+但需要精确 0.6.0；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
 requested 证明请求参数，tools-only effective 不证明子模型实际 effort。
 
 terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
@@ -477,7 +489,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.5.3",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.6.0",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 

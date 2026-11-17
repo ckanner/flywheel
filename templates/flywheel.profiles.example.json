@@ -43,7 +43,7 @@
     "claude-sonnet": {
       "harness": "claude-code-pro",
       "model": "sonnet",
-      "channel": "claude-subscription",
+      "channel": "claude-api",
       "thinking": "high"
     }
   },
@@ -74,9 +74,9 @@
     },
     "kimi-subscription": { "env-key": null },
     "chatgpt-subscription": { "env-key": null },
-    "claude-subscription": {
-      "env-key": null,
-      "_note": "显式可选的 Claude Code Pro 机器接口；需要同一 Node 解析树可见的 dsh-subagent-claude-code-pro@0.5.3、已安装且登录的 claude CLI。此 profile 不绑定默认阶段；原生审批模式不提供 OS 沙箱，首版需 permissions.mode=full-access。"
+    "claude-api": {
+      "env-key": "ANTHROPIC_API_KEY",
+      "_note": "显式可选的 Claude Code Pro 机器接口；需要同一 Node 解析树可见的 dsh-subagent-claude-code-pro@0.6.0（官方 Agent SDK 0.3.326）、兼容的本地 claude 程序与明确的 API 认证。本地登录态可用性不代表第三方产品已获准使用订阅额度，另行批准的账号渠道由用户显式配置。此 profile 不绑定默认阶段；原生审批模式不提供 OS 沙箱，需 permissions.mode=full-access。"
     }
   },
   "judge-panel": null,

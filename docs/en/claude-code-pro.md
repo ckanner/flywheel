@@ -4,11 +4,11 @@
 
 Select `harness: "claude-code-pro"` to call the public machine API of
 [`dsh-subagent-claude-code-pro`](https://github.com/ckanner/dsh-subagent-claude-code-pro).
-The plugin runs the user's installed Claude Code CLI, with its native tool loop
-and login environment. Go retains scheduling, role sessions, verification,
+The plugin uses official **Agent SDK 0.3.326** to run the configured local Claude
+Code executable with its native tool loop. Go retains scheduling, role sessions, verification,
 budgets, and delivery.
 
-The adapter requires **`dsh-subagent-claude-code-pro@0.5.3`**, machine protocol
+The adapter requires **`dsh-subagent-claude-code-pro@0.6.0`**, machine protocol
 1 and the public lifecycle/recovery interfaces. The older desktop-tool interface
 and older machine contracts are not substitutes. No default stage or route
 selects Claude. Package availability must be checked separately from source
@@ -16,13 +16,13 @@ compatibility; see the [release guide](releasing.md).
 
 ## Prepare the optional dependency
 
-Use Node.js 22.18.0 or later on macOS or Linux, with the user's installed and
-authenticated `claude` CLI accessible to the process starting the engine.
-Flywheel does not copy credentials or sign in on the user's behalf.
+Use Node.js 22.18.0 or later on macOS or Linux, with a compatible local `claude`
+executable and authorized authentication available to the process starting the
+engine. Flywheel does not copy credentials or sign in on the user's behalf.
 
 Flywheel ships `flywheel-claude-code-pro-worker` and declares the exact plugin as
 an **optional peer**. Other backends work without it. To select Claude, install
-`dsh-subagent-claude-code-pro@0.5.3` in the same Node dependency tree or global npm
+`dsh-subagent-claude-code-pro@0.6.0` in the same Node dependency tree or global npm
 prefix as Flywheel. Installing it only in a DSH desktop profile does not establish
 that the independent worker can resolve it.
 
@@ -33,7 +33,7 @@ resulting `.tgz` into the same prefix, alongside a newly built Flywheel candidat
 Do not relabel 0.3.1 or substitute it for the missing machine interface. This
 source-candidate validation does not promote npm latest.
 
-The reviewed 0.5.3 companion artifact is recorded in
+The reviewed 0.6.0 companion artifact is recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/claude-code-pro.json).
 CI validates those candidate bytes. Before publishing Flywheel, obtain the exact
 companion from the public registry and verify its package identity, SHA-256 and
@@ -55,14 +55,46 @@ an ambient Anthropic API key. Supported explicit credentials are passed through
 the machine runtime. The bridge does not serialize environment credential values
 into requests or diagnostics; text returned by the CLI is preserved as received.
 
-## CLI streaming and readable session names
+## Official SDK, local runtime and authentication
+
+Ordinary calls enter the companion's SDK `query()` inside its independent
+guardian. The SDK owns the request/control protocol; the adapter still owns
+the native process group, bounded stream validation, activity, usage and durable
+receipts. SDK completion alone cannot establish physical cleanup. Native Review
+and interactive Team retain their dedicated CLI operations.
+
+`FLYWHEEL_CLAUDE_BIN` remains authoritative; its default is `claude`. A missing or
+incompatible local executable does not fall back to the SDK's bundled runtime.
+Installing the SDK may include an optional platform binary, but does not change
+the selected executable, settings directory or account.
+
+Local configuration and credential resolution remain native Claude behavior.
+SDK support for a local executable does not authorize every subscription-backed
+third-party integration. The [official SDK documentation](https://code.claude.com/docs/en/agent-sdk/overview)
+requires API authentication for third-party products unless separately approved
+to offer claude.ai login or rate limits. Configure the intended credential through
+an explicit Flywheel channel; a channel label alone does not select or authorize
+an account. The example below uses `ANTHROPIC_API_KEY`.
+
+A new Claude resource selected in the desktop configuration editor proposes
+the `claude-api` channel with `ANTHROPIC_API_KEY`. Existing channel definitions,
+credential mappings and resource bindings retain their configured values.
+
+## Streaming and readable session names
 
 The query path checks `claude --help` without a model prompt before dispatch.
-It requires `--include-partial-messages` and `--forward-subagent-text` (introduced
-upstream in 2.1.211), plus `--name` when creating a named persistent session.
+It requires `--include-partial-messages` and `--forward-subagent-text`, plus
+`--name` when creating a named persistent session.
 The installed CLI's actual capabilities determine admission; a version label
 alone is insufficient. An unsupported CLI fails before receiving task text.
 The capability probe and query share the original wall budget and cancellation.
+The SDK then checks `claude_code_version` in the same process's initialize
+response and only releases task input for a stable **2.1.325 or newer** runtime.
+This is the minimum validated release for this adapter, not a claim about when
+each upstream feature first appeared. Missing, old or prerelease versions fail
+before task input. Since that native process has already started, its actual PID
+and cleanup facts remain in the receipt; the current machine contract retains a
+conservative unknown outcome rather than claiming that no process was dispatched.
 
 Real root/child partial, tool and task activity refreshes Flywheel's idle budget
 without forwarding private reasoning or manufacturing timer heartbeats. Native
@@ -71,8 +103,8 @@ not consume a cumulative raw-output budget; individual frames and retained
 results remain bounded. Queueing and opaque tools can still be silent. See
 [activity, timeouts and recovery](session-recovery.md) before retrying a stopped call.
 
-New persistent histories receive the Flywheel task/role title through the native
-`-n` option. Resume keeps the existing title, including a user's rename. Outside
+New persistent histories receive the Flywheel task/role title through the SDK's
+`title` option. Resume keeps the existing title, including a user's rename. Outside
 Flywheel, the plugin uses the explicit delegation label or a readable workspace
 fallback. Naming does not send a separate model request.
 
@@ -82,7 +114,7 @@ retention alone does not authorize reuse. The official Claude picker excludes
 print/SDK histories, so use the saved root UUID and the supported CLI/Desktop
 entry points in [native history visibility](session-recovery.md#find-the-session-in-its-native-client).
 
-The 0.5.3 companion rejects persistent creation/resume when its effective
+The 0.6.0 companion rejects persistent creation/resume when its effective
 environment enables `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, before a CLI probe or
 task starts. It preserves explicit ephemeral calls and never changes that user
 preference. Native true values are `1`, `true`, `yes` and `on`, ignoring case and
@@ -103,12 +135,12 @@ existing complete configuration; it is not a replacement file:
     "claude-sonnet": {
       "harness": "claude-code-pro",
       "model": "sonnet",
-      "channel": "claude-subscription",
+      "channel": "claude-api",
       "thinking": "high"
     }
   },
   "channels": {
-    "claude-subscription": { "env-key": null }
+    "claude-api": { "env-key": "ANTHROPIC_API_KEY" }
   },
   "permissions": { "mode": "full-access" },
   "sessions": { "mode": "scoped", "policy-version": 1 }
@@ -179,12 +211,12 @@ existing `claude-sonnet` profile:
 ```
 
 The parent binding's `thinking` remains its own `--effort`; the child definition
-travels unchanged in Claude's `--agents` JSON. An omitted child effort stays
+travels unchanged through SDK `agents` in initialize; interactive Team retains native `--agents`. An omitted child effort stays
 absent so the CLI keeps its native inheritance behavior. Flywheel does not fill
 it from the parent's value or invent a child default. Invalid values fail during
 configuration loading, before a worker is dispatched.
 
-The same definition field is available in the 0.5.3 desktop plugin's `native`
+The same definition field is available in the 0.6.0 desktop plugin's `native`
 settings and PTC override, and in independent interactive Team requests. Direct
 Flywheel workers still read their selected native profile, not desktop settings.
 Passing an explicit effort proves the requested CLI input; tools-only init

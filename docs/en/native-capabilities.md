@@ -13,7 +13,7 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `dsh` | PTC, subagents, Team, Workflow, explicit Web and LCU | Local DSH and an actual PTC probe; LCU additionally needs the 0.5.0 peer and full access |
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.2, logged-in Codex CLI and matching sandbox/approval receipts |
-| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.5.3, logged-in Claude CLI and explicit full access |
+| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.6.0, compatible local Claude runtime, authorized authentication and explicit full access |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 
@@ -35,10 +35,10 @@ These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-p
 
 ### Align independent worker dependencies
 
-Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.5.3 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
+Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.6.0 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.5.3 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.6.0 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 

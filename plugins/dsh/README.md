@@ -69,7 +69,7 @@ provider, and tools. The reserved `desktop` profile cannot be used as a worker.
 | DSH ChatGPT | Install and authorize the selected ChatGPT adapter in the SDK profile; changing the desktop chat model does not configure a worker |
 | Codex Pro | The worker imports `dsh-subagent-codex-pro/machine` from the pinned 0.10.2 package and uses the installed Codex CLI/login |
 | Kimi | Go uses the Kimi CLI by default, or its owned local Server worker for native Agent/Swarm/Tower; the same Kimi login applies |
-| Claude Code Pro | Optional 0.5.3 peer and installed Claude CLI/login; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
+| Claude Code Pro | Optional 0.6.0 peer and compatible local Claude runtime with authorized authentication; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
 
 The checked ChatGPT companion is 0.1.20. If the SDK profile is missing it or needs
 updating, use:
