@@ -48,6 +48,10 @@ func TestKimiPrintPrepareProcessFixture(t *testing.T) {
 		frame["status"], frame["error"], exit = "error", map[string]string{"code": "RUNTIME_AUTH", "message": "token rejected"}, 1
 	case "runtime-start":
 		frame["status"], frame["error"], exit = "error", map[string]string{"code": "RUNTIME_START", "message": "server did not start"}, 1
+	case "prepare-failed":
+		// A fetch-style connection failure has no top-level stable code and is
+		// intentionally retained as a transport retry.
+		frame["status"], frame["error"], exit = "error", map[string]string{"code": "PREPARE_FAILED", "message": "connection reset"}, 1
 	case "wrong-title":
 		frame["sessionTitle"] = "different"
 	case "wrong-id":
@@ -148,6 +152,7 @@ func TestKimiPrintPreparationPreservesDeterministicFailureCodes(t *testing.T) {
 		{"schema", errs.INVALID_REQUEST, false, "UNSUPPORTED_SCHEMA"},
 		{"auth", errs.AUTH, false, "RUNTIME_AUTH"},
 		{"runtime-start", errs.TRANSPORT, true, "RUNTIME_START"},
+		{"prepare-failed", errs.TRANSPORT, true, "PREPARE_FAILED"},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			out := RunKimi(KimiArgs{Cwd: t.TempDir(), SessionTitle: tc.title, Prompt: "task", RequestID: "invocation", Command: "/must-not-launch-task"})

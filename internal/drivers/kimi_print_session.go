@@ -23,7 +23,7 @@ func kimiPrintPreparationErrorCode(code string) errs.ErrorCode {
 		return errs.TIMEOUT
 	case "RUNTIME_AUTH":
 		return errs.AUTH
-	case "RUNTIME_IDENTITY", "RUNTIME_PROTOCOL", "UNSUPPORTED_SCHEMA", "INVALID_REQUEST", "PREPARE_FAILED":
+	case "RUNTIME_IDENTITY", "RUNTIME_PROTOCOL", "UNSUPPORTED_SCHEMA", "INVALID_REQUEST":
 		return errs.INVALID_REQUEST
 	default:
 		return errs.TRANSPORT
