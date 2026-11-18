@@ -269,9 +269,9 @@ DSH 每个 context 只能有一个 CompactionEngine。桌面已有 Basic 时复�
 
 插件提供 Web 专属策略：输入预算、输出预留、摘要目标、保留事实、迁移条件与调用计量。压缩由公开 `compactIfNeeded`、`compactNow`、`compactRegion` 或经评审的公共扩展执行。自动压缩与手动压缩共享同一事务及迁移协调。
 
-**默认摘要路由是本次 Web 目标模型＋Pro，使用独立辅助调用。** 用户可显式配置其他摘要路由，但需要显示实际渠道、账号和预算，并通过宿主准入。不能因 Basic 优先选择“最后已回答模型”而在切换到 Web 时隐式调用旧 SIWC／付费 API。
+**默认摘要路由是本次 Web 目标模型＋Pro，使用独立辅助调用。** 用户显式配置的摘要 provider/model 优先于该默认值，保留自己的 effort 与计量；需要显示实际渠道、账号和预算，并通过宿主准入。未显式配置摘要路由时，不能因 Basic 优先选择“最后已回答模型”而在切换到 Web 时隐式调用旧 SIWC／付费 API。
 
-当前公开接口不足以完整传递 proposed target 和摘要路由策略。本设计明确依赖 DSH 补公共接缝：在最终 GenerateOptions 构造及计量前，将 agent、proposed target、purpose、有效预算交给摘要路由策略；持久记录的实际 provider/model/effort 必须与真正发送一致。不得在 adapter 末端偷偷换路由，或调用 Basic 私有 compactPressure/selectCompactableRange。
+原版公开接口不足以完整传递 proposed target 和摘要路由策略。本集成要求公开 `summaryRoute:2` 扩展：在最终 GenerateOptions 构造及计量前，将 agent、显式 `configuredTarget`（若有）、`proposedTarget`、历史默认值、purpose、有效预算交给摘要路由策略。先选显式目标；只有最终摘要目标为 Web 模型时，插件才应用 Web Pro 策略。旧 `summaryRoute:1` 宿主在派发前拒绝。其他必需宿主 capability 仍为 1，外层 Web/host binding 契约版本也不变。持久记录的实际 provider/model/effort 必须与真正发送一致。不得在 adapter 末端偷偷换路由，或调用 Basic 私有 compactPressure/selectCompactableRange。
 
 使用公开 tokenMeter 的 proposed-header 测量和完整工具配对范围选择压缩区间。摘要输入本身也必须放得下；大历史需要多个有界、独立记账的压缩事务，不能把多次模型调用伪记为一次。单个不可拆分单元仍超预算则明确失败。
 
@@ -526,7 +526,7 @@ retention／清理只操作插件 owned 对象并尊重未决调用和用户保�
 ### 13.2 必须先定清楚的公共契约
 
 - **单次调用 replay-veto：** 输入实际 prepared transport/call、持久派发事实及 domain fence；输出可重试或不可重放的停止结果；normal/always 不可越过，跨模型阻断有效，无关 SIWC 不受误伤。
-- **压缩策略：** 输入真实 Agent、proposed target、purpose 和剩余预算；输出真实摘要 route/effort 与可接受范围，再形成 GenerateOptions、记录用量及 checkpoint。唯一 CompactionEngine 拥有历史修改。
+- **压缩策略：** `summaryRoute:2` 输入真实 Agent、显式 `configuredTarget`、proposed target、历史默认值、purpose 和剩余预算；显式选择优先，输出真实摘要 route/effort 与可接受范围，再形成 GenerateOptions、记录用量及 checkpoint。唯一 CompactionEngine 拥有历史修改。
 - **恢复采用：** 在对应宿主操作／会话写租约内核对原结果和当前权限，按 call kind 及持久幂等键接收一次；主调用与压缩事务各自 ACK，已有提交返回原身份。
 - **宿主调用上下文与工具 guard：** 在投影前确定主／辅助资格，绑定 execution domain，覆盖子 Agent/PTC；生命周期结束即撤销。
 

@@ -60,9 +60,21 @@ host `recoveryCheckpoint(identity)` 必须在 beginInvocation 后、prompt 前�
 
 Web 的 prepare/start 都经实际 SDK 精确模型 metadata 校验，并要求 ChatGPT 插件
 公开 `chatgptWebHost` v1 与已有唯一 `compaction.compactIfNeeded` 服务。
+插件宿主准入要求 `summaryRoute:2`，其他必需 capability
+`replayVeto`、`durableResponseAck`、`durableSummaryAck`、`pressurePolicy` 均为 1；
+旧 `summaryRoute:1` 不能放行。该独立能力升级不改变 worker Web extension v1、
+`chatgptWebHost` v1、binding 的 `hostContractVersion:1` 或 recovery 契约版本。
 DSH 持久事件、derived history 和 compaction checkpoint 是权威，唯一 CompactionEngine
 提交历史变更，工具仍由 DSH 执行。插件提供 Web 投影、预算/摘要路由、迁移与恢复
 协调；其同步游标、映射和证据不构成第二份权威历史。
+`compaction/summary-route` 用 `configuredTarget` 传递用户显式摘要 provider/model，
+优先于本次 `proposedTarget`。只有选中的摘要目标仍是该 Web 模型时，插件才应用
+Pro 与 Web 输出预算；显式其他路由保留其 effort 与计量。未显式配置时才依据
+proposed target 选择 Web 默认摘要，不能让旧历史默认模型覆盖本次模型选择。
+宿主的手动压缩维护操作必须保留真实发起 Agent 的上下文，使辅助摘要的恢复元数据
+和执行域绑定原 Session 与物理 workspace。插件状态目录不能替代 workspace，
+也不能由插件按 sessionId 猜测 Agent。摘要捕获后中断仍阻断同一 workspace 的新
+Agent（包括 fresh 非 Web 路由）；原摘要只经显式、幂等的宿主恢复事务采用。
 `admitBinding` 返回 protocol 1、transport `chatgpt-web`、精确 provider/model/effort、
 connectionId、accountFingerprint、policyVersion、contextPolicy `project-only`、
 observation `opaque`、usage `unknown`、hostContractVersion 1、runtimeVersion

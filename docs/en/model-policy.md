@@ -112,6 +112,11 @@ Edit the relevant binding in your complete effective configuration, for example:
 This source integration requires the matching ChatGPT plugin Web host and its
 public DSH host-policy extension in the selected SDK profile. A package version,
 desktop login or static model catalog alone does not establish those capabilities.
+The plugin requires `summaryRoute: 2`; `replayVeto`, `durableResponseAck`,
+`durableSummaryAck`, and `pressurePolicy` remain at version 1. An older
+`summaryRoute: 1` host is rejected before dispatch. The worker Web extension,
+`chatgptWebHost`, and binding `hostContractVersion` remain version 1; those
+identifiers do not replace the plugin's individual host-capability checks.
 The worker refuses a missing host contract or CompactionEngine before sending the
 prompt. Configure the plugin’s dedicated browser connection and project-only
 context policy using the [ChatGPT plugin](https://github.com/ckanner/dsh-plugin-chatgpt).
@@ -146,6 +151,24 @@ fresh calls, roles and providers until the original invocation is reconciled.
 Resume also requires the same connection, account and policy binding. Web
 session ledgers use version 5 and cannot be continued by older Flywheel readers.
 Offline contract tests do not establish a successful live account/browser run.
+
+For compaction, an explicitly configured summary provider/model takes precedence
+over the proposed main-call model. The host passes that explicit choice as
+`configuredTarget`, separately from `proposedTarget` and the historical default.
+The plugin applies its Pro summary policy only when the selected summary target
+is this Web model. A different explicit summary route retains its own model,
+effort and accounting. With no explicit summary route, a proposed
+Web target uses Web Pro even when the last answered model was SIWC. Flywheel
+does not override the host's summary selection.
+
+Manual compaction keeps the actual initiating Agent's context throughout the
+host maintenance operation, just as automatic compaction does. Summary recovery
+and execution-domain ownership therefore bind the real session and physical
+workspace, including when the plugin stores its state in another directory.
+An interrupted summary blocks new work in that workspace, including fresh
+non-Web Agents, until its original evidence is reconciled. The plugin does not
+guess the initiating Agent from a session ID; explicit summary adoption remains
+bound to the original host transaction and cannot apply the summary twice.
 
 ### Reconcile an interrupted Web invocation
 

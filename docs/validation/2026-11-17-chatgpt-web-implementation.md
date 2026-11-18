@@ -15,7 +15,7 @@
 
 插件实现和使用说明位于 [feat/chatgpt-web-pro](https://github.com/ckanner/dsh-plugin-chatgpt/tree/feat/chatgpt-web-pro)。[兼容 manifest](https://github.com/ckanner/dsh-plugin-chatgpt/blob/feat/chatgpt-web-pro/compat/manifest.json) 记录补丁 SHA-256、精确上游基线、应用后 tree 和验证范围。它不是已发布的官方 SDK；安装插件不会自动给原版 SDK 或桌面端打补丁。
 
-最终兼容补丁 SHA-256 为 `9718aaf2b8087dc953507347ef018f8fe6a8bbb181c7fa60aaadf32517c978b9`，334,255 bytes；应用后 tree 为 `333e1019f2333068ba4f6157705bf2d6d4b676cf`。在独立 Git index 上完成了精确基线的 apply check 和实际应用核对。
+最初实现快照的兼容补丁 SHA-256 为 `9718aaf2b8087dc953507347ef018f8fe6a8bbb181c7fa60aaadf32517c978b9`，334,255 bytes；应用后 tree 为 `333e1019f2333068ba4f6157705bf2d6d4b676cf`。当时在独立 Git index 上完成了精确基线的 apply check 和实际应用核对。这些历史身份不包含 §8 的 `summaryRoute:2` 接续修复；当前补丁身份以配套插件的兼容 manifest 为准。
 
 ## 2. 用户获得的模型能力
 
@@ -142,12 +142,13 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm \
 这些门禁执行后的精确候选、安装包恢复结果与 CI 证据记录在 PR 中；本文不预先
 宣称尚未执行的发行门禁通过，也不为追加结果而重新生成不同字节的候选。
 
-精确 ChatGPT 候选源码为
+上述打包验证当时采用的 ChatGPT 候选源码为
 [`191a2cc11ded693970e0c77a8fd351dfa3aec9cf`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/191a2cc11ded693970e0c77a8fd351dfa3aec9cf)，
 tree `eff36fdf3756ac95856420e518abf50328f9aefc`。候选
 `dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` 含 199 文件、735161 bytes，SHA-256 为
 `e53a5ee4d8c6d5300f896ca680f362a453fcf1385e5eec227eeaa29b395b59d7`；
-完整 integrity 与构建工具链见 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json)。
+此 archive 身份保留为历史证据；当前选择的候选、完整 integrity 与构建工具链见
+[vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json)。
 [CI run 44245907991](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44245907991)
 的 Node 22/24 与 Ubuntu/macOS 精确宿主矩阵全过。每个 OS 覆盖 391 项宿主测试、
 8 个真实跨层场景和 6 个真实 Chromium fixture 场景，包含媒体。macOS profile
@@ -156,3 +157,76 @@ tree `eff36fdf3756ac95856420e518abf50328f9aefc`。候选
 这些是源码、浏览器 fixture 和真实 peer 安装验证，不代表发布 patched SDK/npm
 正式版本、把 provider 装入用户 SDK profile 或验证真实 ChatGPT 账号。真实账号/
 当前页面、完整 heavy Preset 任务与有歧义的项目创建定位仍是独立门槛。
+
+## 8. 2026-11-18 接续复审：浏览器归属与压缩契约
+
+本轮复审检查 Flywheel 消费的配套插件及宿主契约。此前快照和测试结果保留，
+不能用其证明更新后的候选已经通过验证。
+
+| 发现的问题 | 更新后配套候选要求的行为 |
+| --- | --- |
+| 新建聊天完成准备后，输入页可能在上传或提交前跳转至其他聊天 | 在实际操作边界再次验证已准入的新聊天 URL；其他会话或新聊天页面不能接收原请求的图片和 prompt。 |
+| 恢复可能把已停止、带错误提示的页面当作完整回答 | 恢复与正常轮询应用相同的生成错误检查；仅有部分文本且生成不再运行，不构成可采用的完整响应。 |
+| Web 压缩策略可能覆盖用户显式配置的其他摘要 provider/model | 单独传递显式 `configuredTarget`、`proposedTarget` 与历史默认值，显式选择优先。仅选中的 Web 摘要使用 Web Pro 策略，其他显式路由保留自己的 effort 与计量。 |
+| 手动压缩丢失真实发起 Agent；插件状态目录与 workspace 不同时，已捕获但中断的摘要缺少恢复元数据，并错误阻断状态目录，真实 workspace 内的 fresh 非 Web Agent 仍可继续 | 宿主维护操作全程保留真实 Agent 上下文，摘要恢复与执行域阻断绑定原 Session/workspace，并覆盖 fresh 和非 Web Agent。原摘要仅通过显式、幂等的宿主事务采用，插件不能按 sessionId 推测 Agent。 |
+
+第三项修复要求兼容 DSH 宿主及插件准入使用 `summaryRoute:2`。
+`replayVeto`、`durableResponseAck`、`durableSummaryAck`、`pressurePolicy` 仍为 1；
+Web extension v1、`chatgptWebHost` v1、binding 的 `hostContractVersion:1`
+及 `chatgpt-web/read-only-recovery/1` 不变。旧摘要路由能力在派发前拒绝；
+只安装更新后的插件，不会自动更新宿主。
+
+配套变更前，本轮已重新构建 Flywheel 提交
+`0804c467c7f29f436e01bba27398ade0e15cfa56`，18 项定向 Node Web policy/recovery/bundle
+测试全部通过，0 skip。`internal/drivers` 和 `internal/machine` 的 Web Go 测试在
+`FLYWHEEL_TEST_NODE_BRIDGE=1` 下通过，包含实际 Node worker 及四类恢复结果。
+该复审未复现新的 Flywheel 执行或恢复缺陷。
+
+更新后的配套 archive 固定至插件源码提交
+[`783c8ce53287be47840c9b28eb70041584834e74`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/783c8ce53287be47840c9b28eb70041584834e74)，
+tree `0e02c3aed787b585209587e7e819b924d1f43de3`。单次构建的
+`dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` 含 203 文件、755337 bytes，使用
+Node 24.22.1 / npm 12.2.1，SHA-256 为
+`3a1bf051514a4649492e9909a6a1286ed30253c32248956988f8b3f109ecfb60`。
+完整 integrity 记录在 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json)
+及源码 lock。内嵌兼容 DSH 补丁仍基于官方提交
+`ca33fd6843b205e279c7ccb6cb73a472c78f5760`（`0.2.2-rc.4`）；补丁
+354986 bytes，SHA-256 为
+`d6f629762a2a7a7a3792eda1748f3942a222f9ebeeac99c3edec999ecc283fbb`，
+产出 tree `4086a378e17bc09b7fbfb19999e76be180664d94`。
+
+插件 [CI run 44293903906](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44293903906)
+在该精确源码提交上的四项 job 均通过。Node 22/24 各报告 400 tests：399 pass、
+1 skip。Linux/macOS 兼容宿主 job 各通过 395 项宿主测试、14 个真实跨层场景及
+全部 7 个 Chromium fixture 场景，浏览器场景 0 skip；两项 job 均在测试前后验证
+精确 patched host tree。单次构建的 archive 已逐文件核对，并使用 Cordis 4.1.0、
+Schemastery 3.19.0、DSH `0.2.2-rc.3` peer 完成隔离 consumer 安装。该安装证明
+包可加载；原版 peer 的版本号本身不能证明必需 Web 宿主能力存在。
+
+更新此精确 vendor pin 后，Flywheel 源码检查在 Node 24.22.1、npm 12.2.1、
+Go 1.27.4 下通过：
+
+| 检查 | 结果 |
+| --- | --- |
+| 根目录及私有 DSH 的全新 `npm ci`；精确安装插件内容 | 通过；安装后的全部 203 个插件文件与固定 archive 一致。重新构建的独立恢复 manifest 记录同一插件 commit、tree 及 archive SHA-256。 |
+| 根目录 `npm test` | 167 pass，0 fail，0 skip。 |
+| `npm --prefix plugins/dsh run check` | 构建、全部 563 项主测试及 10 项旧宿主检查通过，0 skip。 |
+| 下方 Go 到 Node 桥接矩阵 | 11 项顶层测试通过，含嵌套场景共 118 条 PASS 记录，0 fail，0 skip。 |
+
+Go 结果由文档规定的 10 项选择及 CI 额外选择的 Kimi 身份测试合并；后者单独
+运行，没有重复第一组选中的测试：
+
+```sh
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge|DSHWebNodeWorkerOfflineBridge|DSHWebRecoveryNodeBridge)$' -count=1 -v
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^TestKimiPrintIdentityFailureIsNotRetryableOfflineBridge$' -count=1 -v
+```
+
+`TestDSHWebRecoveryNodeBridge` 的 `completed`、`retired`、`unsent`、
+`browser-unsent` 均通过，分别保留 SDK 派发与浏览器派发事实，并证明恢复没有
+新增模型请求。`TestDSHWebNodeWorkerOfflineBridge` 实际执行 cold 与 prewarmed
+两类 Node worker 调用，保留 invocation、execution-domain 身份及 unknown
+usage/cost。
+
+最终 Flywheel 候选及精确安装结果在构建已推送的干净源码后记录到 PR，不为追加
+证据而重打不同字节的包。用户真实 macOS Desktop、当前 ChatGPT 网页及已登录
+账号仍须独立验收。

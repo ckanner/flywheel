@@ -94,6 +94,10 @@ Web 路径明确选择 `harness:"dsh"`、`provider:"chatgpt"`、
 本次源码集成要求所选 SDK profile 实际加载匹配的 ChatGPT Web host、公开 DSH
 host-policy 扩展和唯一 CompactionEngine。包版本、桌面登录状态、静态模型目录都
 不能单独证明这些能力；缺失时 worker 在 prompt 前明确拒绝。
+插件要求 `summaryRoute: 2`；`replayVeto`、`durableResponseAck`、
+`durableSummaryAck`、`pressurePolicy` 仍为版本 1。旧 `summaryRoute: 1` 宿主在
+派发前拒绝。worker Web extension、`chatgptWebHost` 和 binding 的
+`hostContractVersion` 仍为版本 1，不能用这些外层版本号代替插件逐项宿主能力校验。
 通过 [ChatGPT 插件](https://github.com/ckanner/dsh-plugin-chatgpt) 配置专用浏览器
 连接及 project-only 上下文策略；稳定 0.1.20 安装示例不包含这个新路径。
 源码 harness 以 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json) 的摘要
@@ -117,6 +121,19 @@ CompactionEngine。插件协调 Web 会话轮换、输入预算、摘要路由�
 会阻止跨角色、fresh 或更换 Provider 自动重放，必须先对账原调用；续接还要求
 connection、account、policy 完全相同。Web Session 账本使用 v5，旧 Flywheel 不能
 继续读取写回。离线契约测试不等于真实账号／浏览器验收已通过。
+
+压缩时，用户显式配置的摘要 provider/model 优先于本次主调用的 proposed model。
+宿主用 `configuredTarget` 单独传递该显式选择，与 `proposedTarget` 和历史默认值
+区分。插件仅在最终选中的摘要目标为此 Web 模型时应用 Pro 摘要策略；显式选择
+其他摘要路由时，保留其模型、effort 与计量。没有显式摘要路由时，本次
+proposed target 为 Web 则使用 Web Pro，即使最后回答的模型仍是 SIWC。
+Flywheel 不覆盖宿主的摘要选择。
+
+手动压缩与自动压缩一样，宿主在整个维护操作中保留真实发起 Agent 的上下文。
+因此摘要恢复和执行域归属绑定真实 Session 与物理 workspace，即使插件状态目录
+位于另一处也不改变归属。摘要中断且未对账时，同一 workspace 的新工作继续阻断，
+包括 fresh 非 Web Agent。插件不通过 sessionId 猜测发起 Agent；显式采用摘要仍
+绑定原宿主事务，不能重复应用同一摘要。
 
 ### 对账中断的 Web 调用
 

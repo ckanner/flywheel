@@ -7,6 +7,11 @@ their original language.
 
 ## Unreleased
 
+- Pin the reviewed ChatGPT Web companion fixes for new-chat ownership and
+  recovery of generation errors. Require the compatible host's `summaryRoute:2`
+  capability so explicit summary models take precedence, and retain the actual
+  initiating Agent during manual compaction so interrupted summaries remain
+  recoverable and fence the correct workspace until explicitly reconciled.
 - Reconcile original ChatGPT Web invocations through the plugin's public
   read-only evidence contract. Preserve original SDK terminal/shutdown and Go
   candidate/role checkpoints; confirm unsent attempts or explicit rejected

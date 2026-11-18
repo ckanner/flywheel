@@ -15,7 +15,7 @@ English · [简体中文](2026-11-17-chatgpt-web-implementation.md) · [Design](
 
 Plugin sources and guides are on [feat/chatgpt-web-pro](https://github.com/ckanner/dsh-plugin-chatgpt/tree/feat/chatgpt-web-pro). Its [compatibility manifest](https://github.com/ckanner/dsh-plugin-chatgpt/blob/feat/chatgpt-web-pro/compat/manifest.json) pins the patch hash, upstream commit, patched tree, and verification scope. This is not a published official SDK. Installing the plugin does not patch an existing SDK or Desktop application.
 
-The final compatibility patch is 334,255 bytes with SHA-256 `9718aaf2b8087dc953507347ef018f8fe6a8bbb181c7fa60aaadf32517c978b9`; its patched tree is `333e1019f2333068ba4f6157705bf2d6d4b676cf`. An isolated Git index verified both apply-check and actual application against the exact base.
+The initial implementation snapshot used a 334,255-byte compatibility patch with SHA-256 `9718aaf2b8087dc953507347ef018f8fe6a8bbb181c7fa60aaadf32517c978b9`; its patched tree was `333e1019f2333068ba4f6157705bf2d6d4b676cf`. An isolated Git index verified both apply-check and actual application against the exact base. These historical identities do not include the later `summaryRoute: 2` follow-up in §8; use the companion plugin's compatibility manifest for its current patch identity.
 
 ## 2. Model behavior
 
@@ -159,12 +159,13 @@ Their final candidate identity, packed-install recovery results and CI evidence
 are recorded in the PR after execution; this source record does not predeclare
 those release-gate results or require repacking merely to append them here.
 
-The exact ChatGPT source candidate is
+The ChatGPT source candidate recorded for the preceding packaging check was
 [`191a2cc11ded693970e0c77a8fd351dfa3aec9cf`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/191a2cc11ded693970e0c77a8fd351dfa3aec9cf),
 tree `eff36fdf3756ac95856420e518abf50328f9aefc`. Its 199-file, 735161-byte
 `dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` has SHA-256
 `e53a5ee4d8c6d5300f896ca680f362a453fcf1385e5eec227eeaa29b395b59d7`;
-the full integrity and build toolchain are in
+that archive identity is retained here as historical evidence. The currently
+selected candidate, full integrity and build toolchain are in
 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json).
 [CI run 44245907991](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44245907991)
 passed Node 22/24 and both Ubuntu/macOS exact-host jobs. Each OS exercised the
@@ -176,3 +177,83 @@ These are source, browser-fixture and installed-peer checks; they do not publish
 a patched SDK or npm release, install the provider in a user's SDK profile, or
 attest a real ChatGPT account. Real account/current-page acceptance, a complete
 heavy Preset task, and ambiguous project-creation discovery remain separate gates.
+
+## 8. 2026-11-18 follow-up review: browser ownership and compaction contracts
+
+This follow-up reviews the companion plugin and host contract consumed by
+Flywheel. It preserves the earlier snapshots and their test results; those
+results do not certify the updated candidate.
+
+| Finding | Required behavior in the updated companion candidate |
+| --- | --- |
+| A newly prepared composer could navigate to another chat before upload or submission | Revalidate the admitted new-chat URL at the mutation boundary. A different conversation or new-chat page cannot receive the original request's images or prompt. |
+| Recovery could treat a stopped page with an error banner as a complete answer | Apply the same generation-error checks during recovery as during normal polling. Visible partial text does not become an adoptable complete response merely because generation is no longer running. |
+| Web compaction policy could override an explicit different summary provider/model | Pass explicit `configuredTarget` separately from `proposedTarget` and the historical default; explicit selection wins. Only a selected Web summary receives the Web Pro policy. Other explicit routes retain their own effort and accounting. |
+| Manual compaction lost the actual initiating Agent; with separate plugin state and workspace directories, an interrupted captured summary lacked recovery metadata and fenced the state directory, allowing a fresh non-Web Agent in the real workspace to proceed | Keep the actual Agent's context throughout the host maintenance operation. Bind summary recovery and the execution-domain fence to its real session/workspace, preserve that fence across fresh and non-Web Agents, and adopt the original summary only through the explicit idempotent host transaction. The plugin must not infer an Agent from a session ID. |
+
+The third fix requires `summaryRoute: 2` in the compatible DSH host and plugin
+admission. `replayVeto`, `durableResponseAck`, `durableSummaryAck`, and
+`pressurePolicy` remain version 1. Web extension v1, `chatgptWebHost` v1,
+binding `hostContractVersion: 1`, and `chatgpt-web/read-only-recovery/1` are
+unchanged. The older summary-route capability is rejected before dispatch;
+installing updated plugin bytes alone does not update the host.
+
+Before the companion changes, this review rebuilt Flywheel commit
+`0804c467c7f29f436e01bba27398ade0e15cfa56` and passed all 18 focused Node Web
+policy/recovery/bundle tests, with zero skips. The Web Go tests in
+`internal/drivers` and `internal/machine` also passed with
+`FLYWHEEL_TEST_NODE_BRIDGE=1`, including the actual Node worker and four recovery
+dispositions. No additional Flywheel execution/recovery defect was reproduced
+in that review.
+
+The updated companion archive is pinned to plugin source commit
+[`783c8ce53287be47840c9b28eb70041584834e74`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/783c8ce53287be47840c9b28eb70041584834e74),
+tree `0e02c3aed787b585209587e7e819b924d1f43de3`. The single 203-file,
+755337-byte `dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` was built with Node 24.22.1 /
+npm 12.2.1 and has SHA-256
+`3a1bf051514a4649492e9909a6a1286ed30253c32248956988f8b3f109ecfb60`.
+Its full integrity is recorded in [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json)
+and the source lock. The embedded compatible DSH patch remains based on official
+commit `ca33fd6843b205e279c7ccb6cb73a472c78f5760` (`0.2.2-rc.4`); its
+354986-byte patch has SHA-256
+`d6f629762a2a7a7a3792eda1748f3942a222f9ebeeac99c3edec999ecc283fbb`
+and produces tree `4086a378e17bc09b7fbfb19999e76be180664d94`.
+
+Plugin [CI run 44293903906](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44293903906)
+passed all four jobs on that exact source commit. Each Node 22/24 job reported
+400 tests: 399 passed and one skipped. Each Linux/macOS compatible-host job
+passed 395 host tests, 14 real cross-layer cases and all seven Chromium fixture
+cases with zero browser skips; both jobs verified the exact patched host tree
+before and after testing. The single archive passed per-file content verification
+and an isolated consumer install with Cordis 4.1.0, Schemastery 3.19.0 and DSH
+`0.2.2-rc.3` peers. That install establishes package loadability; stock peer
+versions do not establish the required Web host capabilities.
+
+After updating this exact vendor pin, Flywheel source checks passed with Node
+24.22.1, npm 12.2.1 and Go 1.27.4:
+
+| Check | Result |
+| --- | --- |
+| Fresh root and private DSH `npm ci`; exact installed plugin contents | Passed; all 203 installed plugin files match the pinned archive. The rebuilt independent recovery manifest records the same plugin commit, tree and archive SHA-256. |
+| Root `npm test` | 167 passed, zero failed or skipped. |
+| `npm --prefix plugins/dsh run check` | Build, all 563 primary tests and all ten legacy-host checks passed, zero skipped. |
+| Go to Node bridge matrix below | Eleven top-level tests and 118 passing records including nested cases, zero failed or skipped. |
+
+The Go result combines the documented ten-test selection with the additional
+Kimi identity test selected by CI, without repeating the first selection:
+
+```sh
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge|DSHWebNodeWorkerOfflineBridge|DSHWebRecoveryNodeBridge)$' -count=1 -v
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^TestKimiPrintIdentityFailureIsNotRetryableOfflineBridge$' -count=1 -v
+```
+
+`TestDSHWebRecoveryNodeBridge` passed `completed`, `retired`, `unsent` and
+`browser-unsent`, retaining SDK dispatch separately from browser dispatch and
+proving recovery made no further model request. `TestDSHWebNodeWorkerOfflineBridge`
+executed both cold and prewarmed actual Node worker calls, preserving invocation
+and execution-domain identity and unknown usage/cost.
+
+The final Flywheel candidate and exact installation results belong in the PR
+after building the clean pushed source, without repacking to append evidence.
+Real macOS Desktop, the current ChatGPT website and logged-in account acceptance
+remain outstanding.
