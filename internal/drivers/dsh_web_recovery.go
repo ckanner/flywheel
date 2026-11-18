@@ -98,7 +98,7 @@ func RecoverDSHWeb(a DSHWebRecoveryArgs) (Result, error) {
 		}
 	}
 	written := make(chan error, 1)
-	result := watchdog.Run(DSHCommand(), nil, watchdog.Opts{Context: a.Watchdog.Context,
+	result := watchdog.Run(DSHCommand(), nil, watchdog.Opts{Context: a.Watchdog.Context, Cwd: a.Cwd,
 		Env: childenv.EnvSlice(env), IdleTimeoutMs: 10_000, WallTimeoutMs: 10_000, KillGraceMs: 1_000,
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			defer stdin.Close() // The DSH worker requires one line followed by EOF.

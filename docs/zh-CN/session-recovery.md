@@ -163,6 +163,8 @@ Go 将事件与原调用身份核对后，先原子保存并 `fsync` 检查点�
 
 重新启动同一任务时，Go 根据原调用保存的 adapter 版本、request/run ID、任务目录与绑定，调用公开 `recoverMachine`。它只读取那个调用的 journal，不启动原生 CLI，不执行 `thread/resume`，不查询其他任务，不重新提交 prompt。
 
+Codex Pro 和 Claude Code Pro 的恢复 worker 与正常派发一样，在原物理执行目录启动。因此相对 worker 配置和 wrapper 从该目录解析，不使用引擎重启时的目录；这不会启动原生模型，也不改变只读原 journal 的恢复契约。
+
 | 恢复返回 | 含义与引擎行为 |
 |---|---|
 | `terminal` | 找到同一调用的完整原始回执；继续核验身份、执行终态、清理、用量与原候选证据 |

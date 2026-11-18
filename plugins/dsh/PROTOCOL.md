@@ -133,6 +133,8 @@ prewarm。短期进程只加载 `dsh-plugin-chatgpt/web-recovery` 公开文件�
 已退出、私有文件/目录无 symlink、原 home/profile/bin、identity/settings 摘要、
 同域 invocation 版本、原 connection/account/policy、所有调用和本地工具已结算。
 对于 profile 管理配置，helper 证明冻结原配置与原调用一致；不重新加载当前 profile。
+只读恢复 worker 在原调用的物理 `cwd` 启动，保留相对 worker 路径及依赖工作目录的
+wrapper 行为；不能改用引擎本次启动目录来解释原调用。
 
 成功查询返回 `{protocol:1,type:"web-recovery",requestId,revision,frames:[ready,result]}`。
 revision 是所读原证据快照的摘要；ready/result 仍通过正常 protocol 2 严格校验。
@@ -536,7 +538,10 @@ Go 原子保存、fsync 检查点和 state 后，才向仍开放的 stdin 写一
 {"type":"recover","protocol":3,"requestId":"call-126","runId":"native-run","recoveryDirectory":"/absolute/task/.sessions/recovery-digest","original":{"cwd":"/absolute/worktree","model":"gpt-6.1-sol","reasoningEffort":"high","permissionMode":"workspace-write","threadMode":"persistent"}}
 ```
 
-`original` 仅为旧调用的非秘密绑定，不含 prompt、凭证或环境；不会解析旧 cwd、认证、启动 CLI 或调用 thread/resume。worker 只调用公开 `recoverMachine({protocol:1,requestId,runId,recoveryDirectory})`，返回：
+`original` 仅为旧调用的非秘密绑定，不含 prompt、凭证或环境。Go 在原物理 `cwd`
+启动只读 worker，保留相对 worker 路径及 wrapper 的目录语义；reader 不重新选择
+工作区或认证，不启动 CLI 或调用 thread/resume。worker 只调用公开
+`recoverMachine({protocol:1,requestId,runId,recoveryDirectory})`，返回：
 
 ```json
 {"type":"recovery","protocol":3,"requestId":"call-126","adapter":{"package":"dsh-subagent-codex-pro","version":"0.10.2","protocol":1},"recovery":{"protocol":1,"type":"recovery","requestId":"call-126","runId":"native-run","status":"pending","receipt":null,"lifecycle":null,"reason":"No durable terminal receipt is available"},"error":null}

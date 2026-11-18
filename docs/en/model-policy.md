@@ -178,6 +178,8 @@ answer are separate actions. On the next task reconciliation, Flywheel reads
 the original private receipts without starting DSH, a browser, a model, or a tool.
 It requires the original connection/account/policy, execution domain, SDK
 home/profile selection, exited owners, and unchanged candidate/role boundaries.
+The read-only worker starts in the original physical execution directory, so
+relative worker paths and wrappers keep the same directory semantics as dispatch.
 Profile-managed settings are the frozen settings admitted for the old call;
 the next new SDK invocation still validates the current configuration.
 

@@ -55,6 +55,12 @@ func TestMachineRecoveryProcessFixture(t *testing.T) {
 	if json.NewDecoder(os.Stdin).Decode(&q) != nil || q.Type != "recover" {
 		os.Exit(2)
 	}
+	if scenario == "original-cwd" {
+		cwd, err := os.Getwd()
+		if err != nil || cwd != q.Original.Cwd {
+			os.Exit(4)
+		}
+	}
 	raw, _ := json.Marshal(q)
 	_ = os.WriteFile(filepath.Join(q.Original.Cwd, "recovery-query.json"), raw, 0o600)
 	if os.Getenv("OPENAI_API_KEY") != "" {
@@ -144,6 +150,35 @@ func TestRecoverMachineUsesOnlyPublicReadOnlyQueryAndOriginalSettings(t *testing
 	encodeMachineRecovery = func(*json.Encoder, any) error { return errors.New("broken pipe") }
 	_, err = RecoverMachine(a)
 	require.ErrorContains(t, err, "write failed")
+}
+
+func TestMachineRecoveryKeepsOriginalWorkerDirectory(t *testing.T) {
+	for _, harness := range []string{"codex-pro", "claude-code-pro"} {
+		t.Run(harness, func(t *testing.T) {
+			cwd, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			a := MachineRecoveryArgs{Harness: harness, RequestID: "call-recover", RunID: "run-recover",
+				RecoveryDirectory: t.TempDir(), Cwd: cwd, Model: "gpt-test", ReasoningEffort: "high",
+				PermissionMode: "danger-full-access", PersistentSession: true, SessionID: "11111111-1111-4111-8111-111111111111"}
+			workerEnv := CodexProWorkerEnv
+			if harness == "claude-code-pro" {
+				a.Model, workerEnv = "sonnet", ClaudeCodeProWorkerEnv
+			}
+			t.Setenv("OPENAI_API_KEY", "must-not-reach-readonly-query")
+			worker := filepath.Join(cwd, "owned-worker")
+			require.NoError(t, os.WriteFile(worker, []byte("#!/bin/sh\nFLYWHEEL_TEST_MACHINE_RECOVERY="+harness+"/original-cwd exec "+shQuote(os.Args[0])+" -test.run '^TestMachineRecoveryProcessFixture$'\n"), 0o700))
+			for name, command := range map[string]string{"absolute-worker": worker, "relative-worker": "./owned-worker"} {
+				t.Run(name, func(t *testing.T) {
+					t.Setenv(workerEnv, command)
+					result, err := RecoverMachine(a)
+					require.NoError(t, err)
+					require.True(t, result.Recovered)
+					require.True(t, result.Settled)
+					require.Equal(t, a.SessionID, result.Session.SessionID)
+				})
+			}
+		})
+	}
 }
 
 func TestDurableReceiptDispatchFactsRemainIndependentFromCleanup(t *testing.T) {

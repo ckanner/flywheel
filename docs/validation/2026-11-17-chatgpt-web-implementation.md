@@ -230,3 +230,44 @@ usage/cost。
 最终 Flywheel 候选及精确安装结果在构建已推送的干净源码后记录到 PR，不为追加
 证据而重打不同字节的包。用户真实 macOS Desktop、当前 ChatGPT 网页及已登录
 账号仍须独立验收。
+
+## 9. 2026-11-18 接续复审：发送前身份、当前工作区与恢复目录
+
+此前各节保留当时的源码身份和验证结果。本轮复现并修复三类问题：
+
+| 问题 | 复现和修复 |
+| --- | --- |
+| P1：同 URL 下的发送身份变化 | `prepare` 后账号、模型、Pro 档位、活动生成或 hosted controls 改变，旧纯文本路径仍输入并发送；图片路径可能先上传再发现账号变化。插件在任何上传或输入前统一复核，图片上传后再次复核，不静默切回选择或重发。生产 page 的 DOM 负对照捕获旧缺陷。 |
+| P1：执行域遗漏当前 worktree | 旧集成读取初始 root header，根或已继承 child 的后续工具也跳过新目录登记。真实 DSH 工作目录切换、子 Agent 独立目录及非 Web 工具均复现缺陷。现在使用当前 Agent 的公开目录服务，保持父域及所有旧目录关联，重启后的 fresh 非 Web 调用继续被拦截。 |
+| P2：恢复 worker 启动目录不一致 | Web、Codex Pro、Claude Code Pro 正常派发使用原 `cwd`，恢复却使用引擎启动目录。相对 worker 和依赖 cwd 的绝对 wrapper 共六个真实子进程场景在旧代码失败。两个只读恢复入口现在均沿用原物理目录，六场景通过。 |
+
+工作区修复保留稳定绑定的早返回，让集成层先对账已持久的工具结果，再做正常
+guard。独立正负对照确认错误顺序的 flush/后续派发均为 0，修正后均为 1；新增
+回归也验证未对账前 guard 仍拒绝。无目录服务的旧宿主保留相对路径 fallback；
+服务存在但失败时不退回旧 header。协议、宿主能力版本、环境过滤、原候选与角色
+校验及 unknown 禁重放规则没有变化。
+
+### 精确插件候选与本地验证
+
+插件提交 `5d2325abf0da9d7897cd273ed30d463dba0cc204`，tree 为
+`b780ceb8cf4501e0aed47270cba140b6e29624cb`。单次打包的 `0.2.0-alpha.1`
+候选为 **203 files / 756836 bytes**，SHA-256 为
+`f49fb116f45d3be2c4e8749b53fa246a4bb94c25f6bfbdba0006e5e28b556f03`。
+vendor、archive、lock 和独立 reader 来源已同步，全部 203 个安装文件逐字节一致。
+DSH 兼容补丁保持 §8 的身份，没有重新生成。
+
+使用 Node 24.22.1、npm 12.2.1、Go 1.27.4：
+
+| 检查 | 本轮证据 |
+| --- | --- |
+| 插件完整测试 | 410 项：409 pass、1 skip、0 fail；skip 为独立 Chrome fixture。 |
+| 插件构建和安装 | TypeScript、build、11 Remote 方法、双语 README 通过；同一 tarball 内容校验及真实 peers 隔离安装通过。 |
+| 真实 patched DSH + Flywheel policy | 17 个跨层场景通过，包含 root/child 当前目录；仅网页是 fixture。 |
+| Flywheel DSH | 更新精确 vendor 后的 build、563/563 主测试及 10/10 旧宿主测试通过，0 skip。 |
+| Flywheel Go | 最终 `make quality-gate` 全通过：vet、fmt、全部测试及每函数 100% statement coverage；六个新增恢复目录场景通过。 |
+| 根 npm | 最终串行完整运行 167/167，0 skip。首次并行运行一项 timeout cleanup 日志断言失败，未计为通过；原用例单独运行通过。受控延迟 doctor 启动可复现缺日志，同时进程组已退出，不能仅凭该断言推断清理泄漏。 |
+
+本地真实 Chromium 在用例开始前因 runner 的 Unix socket/ptrace 权限退出；不把
+这次启动失败记为通过，也不绕过限制。当前提交的双 OS CI、Flywheel DSH 门禁、
+完整候选和同一包安装结果记录在 PR。兼容 SDK/Desktop 发行物及真实账号验收仍
+未完成；开发候选没有发布。

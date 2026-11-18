@@ -141,6 +141,8 @@ Flywheel 不覆盖宿主的摘要选择。
 已拒绝回答是三个独立动作。Flywheel 下次对账只读取原私有回执，不启动 DSH、
 浏览器、模型或工具。必须核对原 connection/account/policy、execution domain、
 SDK home/profile 选择、原 owner 已退出，以及原候选和角色边界。
+只读 worker 在原物理执行目录启动，使相对 worker 路径和 wrapper 与原派发保持
+相同的目录语义。
 profile 管理设置以旧调用准入时冻结的配置为准；下一次新 SDK 调用仍独立验证
 当前配置，读取旧回执不表示当前 profile 文件未改变。
 

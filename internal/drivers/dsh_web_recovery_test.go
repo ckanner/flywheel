@@ -88,6 +88,12 @@ func TestDSHWebRecoveryProcessFixture(t *testing.T) {
 	if inputErr != nil || json.Unmarshal(input, &q) != nil || q.Type != "web-recover" || q.Protocol != 1 || os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("FLYWHEEL_DSH_PROFILE") != "sdk" || os.Getenv("DSH_HOME") == "" {
 		os.Exit(2)
 	}
+	if scenario == "original-cwd" {
+		cwd, err := os.Getwd()
+		if err != nil || cwd != q.Original.Cwd {
+			os.Exit(3)
+		}
+	}
 	raw, _ := json.Marshal(q)
 	_ = os.WriteFile(filepath.Join(q.Original.Cwd, "query.json"), raw, 0o600)
 	fmt.Print(dshJSONL(webRecoveryFrame(q, scenario)))
@@ -138,6 +144,27 @@ func TestDSHWebRecoverQueryNeverStartsSDKOrSendsPrompt(t *testing.T) {
 	encodeDSHWebRecovery = func(*json.Encoder, any) error { return errors.New("broken pipe") }
 	_, err = RecoverDSHWeb(a)
 	require.ErrorContains(t, err, "write failed")
+}
+
+func TestDSHWebRecoveryKeepsOriginalWorkerDirectory(t *testing.T) {
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	a := DSHWebRecoveryArgs{RequestID: "original", RecoveryDirectory: t.TempDir(), Cwd: cwd,
+		Provider: "chatgpt", PermissionMode: "read-only", ExecutionDomainID: "domain"}
+	t.Setenv("OPENAI_API_KEY", "must-not-reach-the-query")
+	t.Setenv("DSH_HOME", t.TempDir())
+	t.Setenv("FLYWHEEL_DSH_PROFILE", "sdk")
+	worker := filepath.Join(cwd, "owned-worker")
+	require.NoError(t, os.WriteFile(worker, []byte("#!/bin/sh\nFLYWHEEL_TEST_WEB_RECOVERY=original-cwd exec "+shQuote(os.Args[0])+" -test.run '^TestDSHWebRecoveryProcessFixture$'\n"), 0o700))
+	for name, command := range map[string]string{"absolute-worker": worker, "relative-worker": "./owned-worker"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(DSHWorkerEnv, command)
+			result, err := RecoverDSHWeb(a)
+			require.NoError(t, err)
+			require.True(t, result.Recovered)
+			require.Equal(t, "completed", result.Session.Outcome)
+		})
+	}
 }
 
 func TestDSHWebRecoveryDirectoryRequiresFormalPersistentInvocation(t *testing.T) {

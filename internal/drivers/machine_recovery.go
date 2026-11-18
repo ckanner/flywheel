@@ -124,7 +124,7 @@ func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
 		Original: machineRecoveryOriginal{Native: a.Native, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}}
 	written := make(chan error, 1)
 	result := watchdog.Run(command, nil, watchdog.Opts{
-		Context: a.Watchdog.Context, Env: childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, nil)),
+		Context: a.Watchdog.Context, Cwd: a.Cwd, Env: childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, nil)),
 		IdleTimeoutMs: 10_000, WallTimeoutMs: 10_000, KillGraceMs: 1_000,
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			err := encodeMachineRecovery(json.NewEncoder(stdin), request)

@@ -257,3 +257,50 @@ The final Flywheel candidate and exact installation results belong in the PR
 after building the clean pushed source, without repacking to append evidence.
 Real macOS Desktop, the current ChatGPT website and logged-in account acceptance
 remain outstanding.
+
+## 9. 2026-11-18 follow-up: submission identity, current workspaces and recovery directories
+
+Earlier sections retain their original source identities and results. This review
+reproduced and fixed three issues:
+
+| Finding | Reproduction and correction |
+| --- | --- |
+| P1: submission identity changed at the same URL | After preparation, a different account, model, Pro effort, active generation or hosted control could still receive a text submission; images could upload before the account mismatch was detected. The plugin rechecks before any upload or text entry and again after uploading. It neither silently restores a selection nor resends. Production-page DOM negative controls detect the old behavior. |
+| P1: current worktrees were missing from execution domains | The integration read the initial root header, and roots or already inherited children skipped later directory registration. Actual DSH directory changes, separate child worktrees and non-Web tools reproduced the gap. Ownership now uses the current Agent's public directory service while preserving its parent domain and earlier directories. Fresh non-Web calls remain fenced after restart. |
+| P2: recovery workers started in a different directory | Normal Web, Codex Pro and Claude Code Pro dispatch used the original cwd, but recovery used the engine's launch directory. Six actual subprocess cases with relative workers or cwd-dependent absolute wrappers failed before the fix. Both read-only recovery entries now retain the original physical cwd; all six cases pass. |
+
+Stable workspace bindings retain their early return so the integration can settle
+durable tool results before its normal guard. An independent negative/positive
+control observed zero flushes and dispatches with the wrong ordering, and one of
+each after correction; the regression also requires the guard to reject before
+settlement. Older hosts without the directory service retain relative-path
+fallback. A present service's failure cannot select the stale header. Protocols,
+host capability versions, environment filtering, original candidate/role checks
+and the unknown-outcome replay veto are unchanged.
+
+### Exact companion candidate and local checks
+
+Plugin commit: `5d2325abf0da9d7897cd273ed30d463dba0cc204`; tree:
+`b780ceb8cf4501e0aed47270cba140b6e29624cb`. The single packed
+`0.2.0-alpha.1` candidate contains **203 files / 756836 bytes**, SHA-256
+`f49fb116f45d3be2c4e8749b53fa246a4bb94c25f6bfbdba0006e5e28b556f03`.
+Vendor metadata, archive, lock and reader source agree; all 203 installed files
+match byte-for-byte. The DSH patch retains the exact identity from section 8.
+
+With Node 24.22.1, npm 12.2.1 and Go 1.27.4:
+
+| Check | Evidence |
+| --- | --- |
+| Complete plugin suite | 410 tests: 409 pass, one independent Chrome-fixture skip, no failure. |
+| Plugin build and install | TypeScript, build, 11 Remote methods and bilingual README passed; exact-archive contents and isolated installation with actual peers passed. |
+| Actual patched DSH and Flywheel policy | 17 cross-layer scenarios passed, including current root/child directories; only the page is scripted. |
+| Flywheel DSH | After the exact vendor update, build, 563/563 main tests and 10/10 legacy-host tests passed with no skips. |
+| Flywheel Go | Final quality gate passed vet, formatting, all tests and 100% statements in every measured function; all six new recovery-directory cases passed. |
+| Root npm | Final full serial run passed 167/167 with no skips. An initial concurrent run failed one timeout cleanup-log assertion and is not counted as passing. The original case passed alone. Delaying doctor startup reproduced the missing log while its process group had exited; that assertion alone does not establish a cleanup leak. |
+
+Local real Chromium exited before exercising the fixture because the runner
+denied Unix socket/ptrace operations. This attempt is not passing evidence and
+no restriction was bypassed. Current-commit dual-OS CI, the Flywheel DSH gate,
+complete candidate and same-archive installation results are recorded in the PR.
+Compatible SDK/Desktop artifacts and live-account acceptance remain outstanding;
+these development candidates have not been published.

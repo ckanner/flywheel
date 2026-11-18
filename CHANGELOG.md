@@ -7,6 +7,13 @@ their original language.
 
 ## Unreleased
 
+- Preserve the original physical execution directory when starting Web,
+  Codex Pro or Claude Code Pro recovery workers, including relative worker
+  paths and wrappers that depend on their working directory.
+- Consume the ChatGPT companion's submission identity rechecks and current
+  Agent workspace fencing. Moving a root or child worktree retains previous
+  unresolved domain associations; unchanged URLs no longer skip account,
+  model/effort or active hosted-control checks before sending content.
 - Pin the reviewed ChatGPT Web companion fixes for new-chat ownership and
   recovery of generation errors. Require the compatible host's `summaryRoute:2`
   capability so explicit summary models take precedence, and retain the actual

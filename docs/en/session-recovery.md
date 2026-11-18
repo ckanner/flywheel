@@ -205,6 +205,8 @@ An independent supervisor owns the native guardian. Worker loss cancels unacknow
 
 Restarting the same task lets Go use the original adapter version, request/run IDs, directory, and binding to call public `recoverMachine`. It reads exactly one invocation journal: no CLI startup, `thread/resume`, other-history search, or prompt resubmission.
 
+Codex Pro and Claude Code Pro recovery workers start in the original physical execution directory, just like normal dispatch. Relative worker overrides and wrappers therefore resolve from that directory, not the directory where the engine was restarted. This does not start a native model or change the journal-only recovery contract.
+
 | Result | Interpretation |
 |---|---|
 | `terminal` | A complete original receipt is available; validate identity, outcome, cleanup, accounting, and original candidate evidence |
