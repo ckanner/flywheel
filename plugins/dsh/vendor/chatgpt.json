@@ -2,19 +2,19 @@
   "package": "dsh-plugin-chatgpt",
   "version": "0.2.0-alpha.1",
   "repository": "https://github.com/ckanner/dsh-plugin-chatgpt",
-  "sourceCommit": "191a2cc11ded693970e0c77a8fd351dfa3aec9cf",
-  "sourceTree": "eff36fdf3756ac95856420e518abf50328f9aefc",
+  "sourceCommit": "94cc042ea922837ba0aece85a942a8bc982881a7",
+  "sourceTree": "a3d8c8340bce692d2665dc3f6ed67a61a6582611",
   "tarball": "dsh-plugin-chatgpt-0.2.0-alpha.1.tgz",
-  "sha256": "e53a5ee4d8c6d5300f896ca680f362a453fcf1385e5eec227eeaa29b395b59d7",
-  "integrity": "sha512-FD6S6pa+CzgyVPQLzw76c2ljEjJCJzH3IDuLf7ZDbPIrti31H0WH5jTHGIvhHZt06zuwZQAWRIjgYR4CgQIQDg==",
+  "sha256": "a305597d397253c2f89d9ff77fc7097a7e9ab1c0e17da56c9eb506d611ca0def",
+  "integrity": "sha512-B32AMphED3nNP15uu9KD7jVapP8ZWR0eRoZElJsVNdNdUFychpO/0MW4GotMVHbmjqqmCI1CcRax58HtQrO9Fg==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "verificationToolchain": {
     "node": "24.22.1",
-    "npm": "11.9.0"
+    "npm": "12.2.1"
   },
   "buildToolchain": {
     "node": "24.22.1",
-    "npm": "11.9.0"
+    "npm": "12.2.1"
   }
 }

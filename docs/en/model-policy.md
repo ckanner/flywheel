@@ -134,8 +134,11 @@ visible as unsupported; a changed model must be checked again. Execution and
 prewarm independently validate the actual SDK profile, even when the desktop
 catalog accepted the selection. `pro` is not mapped to `high` or `max`.
 
-The plugin owns Web conversation rotation, recovery, tools and DSH compaction;
-Flywheel owns role isolation, budgets and invocation receipts. Web is an opaque
+DSH owns committed session events, derived history, tool execution and the single
+CompactionEngine that commits history changes. The plugin coordinates Web
+conversation rotation, input budgets, summary routes, tool-protocol adaptation
+and recovery; its browser projections and journals do not form a second
+authoritative history. Flywheel owns role isolation, budgets and invocation receipts. Web is an opaque
 transport: the wall deadline remains active, while output silence alone does not
 trigger idle termination. Usage and cost are unknown, so a hard usage budget can
 block subsequent calls. An unknown remote result blocks automatic replay across
@@ -157,7 +160,8 @@ the next new SDK invocation still validates the current configuration.
 
 | Original evidence | Reconciliation result |
 |---|---|
-| Positive no-dispatch proof; candidate and role guard still equal the original before values | Known failed invocation; no successful answer is invented |
+| Positive proof that the SDK prompt was not dispatched; candidate and role guard still equal the original before values | Known failed invocation; no successful answer is invented |
+| Browser never submitted, but the SDK accepted the prompt; original failed SDK terminal, turn identity, normal shutdown and Go candidate/guard receipt are present | Known failed SDK invocation; retain its dispatched fact and retire that failed history |
 | Original SDK prompt/wait/complete terminal and normal shutdown, matching committed main answer, original Go terminal candidate/guard receipt | Recover that original completed result |
 | Explicit digest-bound discard of a rejected response, normal original SDK shutdown, its observed turn identity, intact protocol, settled tools, original Go terminal candidate/guard receipt | Known failed invocation; no history reuse or successful output |
 | Captured final adopted after the original SDK disconnected, without its complete business terminal | Remains blocked |
@@ -168,6 +172,9 @@ Only new managed Web calls record the required recovery checkpoint. Older
 invocations without it cannot be retrofitted into a successful result. A settled
 failure releases the uncertainty fence; normal task policy still decides the
 next action. Recovery preserves unknown usage and does not send another prompt.
+Browser no-dispatch alone does not prove that SDK history stayed untouched. An
+interrupted SDK admission or accepted prompt without the required original
+terminal proof remains blocked, even if the browser never submitted.
 
 ## Choose and evaluate a baseline
 

@@ -32,7 +32,7 @@ func TestDSHWebRecoveryNodeBridge(t *testing.T) {
 	t.Setenv("FLYWHEEL_DSH_BIN", sdk)
 	t.Setenv("FLYWHEEL_DSH_PROFILE", "sdk")
 	t.Setenv("DSH_HOME", t.TempDir())
-	for _, scenario := range []string{"completed", "retired", "unsent"} {
+	for _, scenario := range []string{"completed", "retired", "unsent", "browser-unsent"} {
 		t.Run(scenario, func(t *testing.T) {
 			cwd, err := filepath.EvalSymlinks(t.TempDir())
 			require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestDSHWebRecoveryNodeBridge(t *testing.T) {
 			directory := filepath.Join(cwd, ".sessions", fmt.Sprintf("recovery-%x", sha256.Sum256([]byte(id))))
 			require.NoError(t, os.Mkdir(filepath.Dir(directory), 0o700))
 			sdkScenario := "ok"
-			if scenario == "retired" {
+			if scenario == "retired" || scenario == "browser-unsent" {
 				sdkScenario = "rejected-response"
 			}
 			calls := filepath.Join(cwd, "calls.jsonl")
@@ -86,6 +86,12 @@ func TestDSHWebRecoveryNodeBridge(t *testing.T) {
 				assert.True(t, os.IsNotExist(err))
 			} else {
 				assert.NotEmpty(t, got.Session.TurnID)
+				assert.Equal(t, "dispatched", got.Session.Dispatch)
+				if scenario == "browser-unsent" {
+					var receipt DSHWebReceipt
+					require.NoError(t, json.Unmarshal(got.WebReceipt, &receipt))
+					assert.Equal(t, "not-dispatched", receipt.Facts.Dispatch)
+				}
 				after, err := os.ReadFile(calls)
 				require.NoError(t, err)
 				assert.Equal(t, before, after, "recovery did not send another model request")

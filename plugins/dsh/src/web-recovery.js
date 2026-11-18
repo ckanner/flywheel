@@ -117,16 +117,24 @@ export async function recoverWebWorker(request, { env = process.env, inspect } =
   // No new identity/profile observation can settle a native child tree. A
   // recorded, already-confirmed normal terminal may be recovered verbatim.
   if (journal.original.nativeDigest !== nativeDigest(null) && (!journal.result?.settled || journal.result?.lifecycle?.outcome === 'unknown')) blocked('native child completion lacks its original terminal proof');
-  const knownUnsent = evidence.disposition === 'not-dispatched' && facts.dispatch === 'not-dispatched';
+  const remoteUnsent = evidence.disposition === 'not-dispatched' && facts.dispatch === 'not-dispatched';
   const business = journal.business;
-  if (!knownUnsent && (!business?.sdkCleanupConfirmed || business.protocolIntact !== true || journal.phase !== 'settled')) blocked('original SDK business or shutdown proof is missing');
-  let outcome = 'failed', status = 'error', text = '', turnId = knownUnsent ? '' : business.turnId ?? '';
+  // Browser submission and SDK prompt admission are different facts. Once the
+  // SDK accepted a prompt, its persisted history is no longer the untouched
+  // checkpoint that Go may reuse after a positively unsent SDK invocation.
+  const sdkUnsent = remoteUnsent && !journal.promptId && !business?.promptId &&
+    (journal.phase === 'admitted' || journal.phase === 'settled' && journal.result?.lifecycle?.dispatch === 'not-dispatched');
+  if ((!sdkUnsent || journal.phase === 'settled') &&
+      (!business?.sdkCleanupConfirmed || business.protocolIntact !== true || journal.phase !== 'settled')) blocked('original SDK business or shutdown proof is missing');
+  if (remoteUnsent && !sdkUnsent && (!business.terminalKnown || !['failed','cancelled'].includes(business.outcome) ||
+      !business.promptId || business.promptId !== journal.promptId || !business.turnId)) blocked('browser no-dispatch evidence does not prove the original SDK terminal');
+  let outcome = 'failed', status = 'error', text = '', turnId = sdkUnsent ? '' : business.turnId ?? '';
   if (evidence.disposition === 'retired' && !turnId) blocked('retired response lacks its original SDK turn identity');
-  if (!knownUnsent && evidence.disposition === 'committed' && facts.outcome === 'completed' && business.completed === true) {
+  if (!remoteUnsent && evidence.disposition === 'committed' && facts.outcome === 'completed' && business.completed === true) {
     if (!business.promptId || business.promptId !== journal.promptId || !business.turnId || !Array.isArray(evidence.terminalMain) ||
         !evidence.terminalMain.some(item => typeof item.text === 'string' && item.text === business.text && typeof item.hostCommitId === 'string' && item.hostCommitId)) blocked('committed model output is not the original complete SDK result');
     outcome = 'completed'; status = 'ok'; text = business.text; turnId = business.turnId;
-  } else if (!knownUnsent && evidence.disposition !== 'retired') {
+  } else if (!remoteUnsent && evidence.disposition !== 'retired') {
     // A recovered tool response or compaction is not the rest of an Agent run.
     if (!business.terminalKnown || !['failed','cancelled'].includes(business.outcome)) blocked('model response adoption did not complete the original SDK invocation');
     if (facts.outcome !== 'failed') blocked('a later adopted final is not the original SDK terminal');
@@ -137,10 +145,10 @@ export async function recoverWebWorker(request, { env = process.env, inspect } =
     sessionId: journal.ready.sessionId, text, usage: null, costUsd: null,
     web: { version: 1, binding, facts },
     lifecycle: { protocol: SESSION_PROTOCOL, requestId: request.requestId, sessionId: journal.ready.sessionId,
-      dispatch: facts.dispatch, outcome, cleanupConfirmed: true, resumeCandidate: outcome === 'completed', resumeAccepted: journal.ready.resumed === true,
+      dispatch: sdkUnsent ? 'not-dispatched' : 'dispatched', outcome, cleanupConfirmed: true, resumeCandidate: outcome === 'completed', resumeAccepted: journal.ready.resumed === true,
       turnId, usageStatus: 'unknown' },
   };
   if (status === 'ok') delete result.error;
-  else result.error = { code: knownUnsent ? 'TRANSPORT' : 'INVALID_REQUEST', message: knownUnsent ? 'Original Web invocation is confirmed not dispatched' : 'Original Web invocation settled without a successful SDK result' };
+  else result.error = { code: remoteUnsent ? 'TRANSPORT' : 'INVALID_REQUEST', message: sdkUnsent ? 'Original SDK invocation is confirmed not dispatched' : remoteUnsent ? 'Original SDK invocation failed before Web submission' : 'Original Web invocation settled without a successful SDK result' };
   return { protocol: 1, type: 'web-recovery', requestId: request.requestId, revision: evidence.revision, frames: [journal.ready, result] };
 }

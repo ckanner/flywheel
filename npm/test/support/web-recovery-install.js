@@ -108,6 +108,32 @@ async function assertInstalledWebRecovery(context, workerPath) {
     'the installed public worker must expose the same read-only recovery with one JSON line followed by EOF');
   assert.deepEqual(await snapshot(root), before, 'recovery must neither write evidence nor restart SDK, model, browser or tools');
 
+  // A resumed SDK can persist the next prompt and fail before Chrome submits.
+  // Browser no-dispatch must not become the untouched-SDK fact that allows Go
+  // to reuse the prior history after a positively unsent invocation.
+  const failedId = 'packed-resumed-browser-unsent';
+  const failedDirectory = path.join(root, '.sessions', 'recovery-' + createHash('sha256').update(failedId).digest('hex'));
+  const failedRequest = { ...request, requestId: failedId, sessionId: journal.ready.sessionId,
+    web: { ...request.web, recoveryDirectory: failedDirectory } };
+  const failedEnv = { ...env, FLYWHEEL_TEST_WEB_FAIL_BEFORE_SUBMIT: '1' };
+  const failed = await invoke(path.join(__dirname, 'web-recovery-owner.mjs'), { request: failedRequest, env: failedEnv }, failedEnv, root);
+  assert.equal(failed.result.status, 'error');
+  assert.equal(failed.result.lifecycle.dispatch, 'dispatched');
+  assert.equal(failed.result.lifecycle.resumeAccepted, true);
+  assert.equal(failed.result.web.facts.dispatch, 'not-dispatched');
+  const failedJournal = JSON.parse(await fs.readFile(path.join(failedDirectory, 'worker.json'), 'utf8'));
+  const { nativeDigest: _failedDigest, requestId: _failedId, ...failedIdentity } = failedJournal.original;
+  const failedQuery = { ...query, requestId: failedId, recoveryDirectory: failedDirectory,
+    original: { ...failedIdentity, native: null }, expectedBinding: failedJournal.ready.web };
+  const failedBefore = await snapshot(root);
+  const recoveredFailure = await invoke(workerPath, failedQuery, failedEnv, context.project);
+  assert.equal(recoveredFailure.frames[1].lifecycle.dispatch, 'dispatched');
+  assert.equal(recoveredFailure.frames[1].lifecycle.outcome, 'failed');
+  assert.equal(recoveredFailure.frames[1].lifecycle.turnId, failed.result.lifecycle.turnId);
+  assert.equal(recoveredFailure.frames[1].lifecycle.resumeCandidate, false);
+  assert.equal(recoveredFailure.frames[1].web.facts.dispatch, 'not-dispatched');
+  assert.deepEqual(await snapshot(root), failedBefore, 'failed SDK recovery must also remain read-only');
+
   // Keep the worker envelope internally consistent so the negative case
   // reaches the actual bundled plugin reader, not an earlier digest guard.
   journal.checkpoint.contract = 'unsupported-checkpoint';

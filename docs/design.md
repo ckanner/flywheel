@@ -542,7 +542,7 @@ DSH `thinking` 是 adapter-owned 的 opaque ID。执行策略 schema 只校验�
 
 预热只做无 prompt 的静态绑定准入，不能宣称浏览器已登录或模型实时可用；正式 agent 创建后以本轮 requestId 作为 `hostInvocationId`，调用 `beginInvocation` 并再次核对 binding。Web executionDomainId 源于已规范化的持久 taskDir，跨 worker、角色、fresh/rebuild 和 fallback 保持相同；不是每次请求随机生成。binding 固定 transport、provider/model/effort、connectionId、accountFingerprint、policyVersion、project-only contextPolicy 与 web-runtime/1，恢复必须逐字段匹配。Go session ledger v5 保存 Web binding，构成旧引擎拒绝读取的兼容标记；即使只发生 Web 预热也保留该标记。
 
-Web 路径保留 DSH 唯一压缩引擎，Go 不实现第二套摘要或浏览器 DOM。传输观察等级为 opaque，因此不启动输出 idle watchdog；总 wall 期限和用户取消持续有效。插件实际活动按 host invocation/domain/session/request/generation/sequence 验证，只转发有界 provider/chatgpt-web 元数据，不靠计时心跳证明进度。SDK 关闭时读取真实 invocationFacts；结果 unknown 与本地 cleanup confirmed 可以同时存在，unknown 先对账并阻止 fresh、换 provider 或新角色重放。总用量与费用保持 null/unknown，不从浏览器文字估算为实际计费。doctor 使用明确的 `web.probe:true`，只验证准入，记录 not-dispatched/failed/idle，不伪造已完成模型调用。
+DSH 持久事件、derived history 和 compaction checkpoint 是唯一权威历史；DSH 的唯一 CompactionEngine 提交历史变更，DSH 工具执行器拥有工具执行。ChatGPT 插件协调网页投影/增量同步、输入预算、摘要路由、会话迁移和恢复，只保留这些流程所需的映射与证据，不建立第二份可独立修改的逻辑历史。Go 不实现第二套摘要或浏览器 DOM。传输观察等级为 opaque，因此不启动输出 idle watchdog；总 wall 期限和用户取消持续有效。插件实际活动按 host invocation/domain/session/request/generation/sequence 验证，只转发有界 provider/chatgpt-web 元数据，不靠计时心跳证明进度。SDK 关闭时读取真实 invocationFacts；结果 unknown 与本地 cleanup confirmed 可以同时存在，unknown 先对账并阻止 fresh、换 provider 或新角色重放。总用量与费用保持 null/unknown，不从浏览器文字估算为实际计费。doctor 使用明确的 `web.probe:true`，只验证准入，记录 not-dispatched/failed/idle，不伪造已完成模型调用。
 
 #### Web 原调用只读对账
 
@@ -566,7 +566,7 @@ provider/host/浏览器驱动/SDK 入口及非限定 Node filesystem/crypto/path
 profile 管理的设置绑定到原准入时冻结的配置，读取不宣称当前 profile 文件没有变化；
 任何后续新调用仍经过当前 SDK 的独立准入。
 
-只有以下证据能解除原调用阻断：正面证明未派发且候选与角色 guard 仍与派发前相同，
+只有以下证据能解除原调用阻断：正面证明 SDK prompt 未派发且候选与角色 guard 仍与派发前相同，
 按 failed 结算；原完整 SDK prompt/wait/terminal 和关闭证据与已 ACK 主回答一致，
 并且原 Go terminal receipt 的 candidate/guard 与当前仍一致，恢复原 completed；
 或原 SDK 已正常关闭、协议完整、保留实际观察到的 turn identity、无未决工具，且插件已显式 retire 对应无效响应，
@@ -574,6 +574,12 @@ profile 管理的设置绑定到原准入时冻结的配置，读取不宣称当
 捕获后断线再 adopt 纯 final、工具或摘要，不补足原 SDK 的业务完成证明；缺失原 sent
 调用的 Go terminal candidate receipt、owner 仍活跃、子工具未知、账号/域版本变化、
 候选或 role guard 无法核对，继续阻断。不得以恢复时新采样替代原 sent 调用的角色边界。
+
+`web.facts.dispatch` 描述浏览器提交，`lifecycle.dispatch` 描述 SDK prompt 派发。
+浏览器未提交但 SDK 已接受 prompt 时，原持久历史已经可能变化；仅在原 SDK 失败
+终态、turn identity、正常关闭及 Go candidate/guard 证明齐全时按 dispatched/failed
+结算，不走未派发 SDK 调用的历史保留分支。SDK 派发意图或 prompt 接收后的中断缺少
+完整原终态时继续 blocked，不能只凭浏览器 no-dispatch 补造业务终态。
 
 恢复覆盖主结果 receipt 之前，Go 先把已严格核验的原 candidate/guard 保存到独立
 `role/scope/web-original` receipt 槽，并把其 digest 通过 state CAS 确认；只有该

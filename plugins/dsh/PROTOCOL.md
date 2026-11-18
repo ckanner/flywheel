@@ -60,6 +60,9 @@ host `recoveryCheckpoint(identity)` 必须在 beginInvocation 后、prompt 前�
 
 Web 的 prepare/start 都经实际 SDK 精确模型 metadata 校验，并要求 ChatGPT 插件
 公开 `chatgptWebHost` v1 与已有唯一 `compaction.compactIfNeeded` 服务。
+DSH 持久事件、derived history 和 compaction checkpoint 是权威，唯一 CompactionEngine
+提交历史变更，工具仍由 DSH 执行。插件提供 Web 投影、预算/摘要路由、迁移与恢复
+协调；其同步游标、映射和证据不构成第二份权威历史。
 `admitBinding` 返回 protocol 1、transport `chatgpt-web`、精确 provider/model/effort、
 connectionId、accountFingerprint、policyVersion、contextPolicy `project-only`、
 observation `opaque`、usage `unknown`、hostContractVersion 1、runtimeVersion
@@ -87,6 +90,8 @@ worker 读取并校验后在 `result.web` 返回：
 facts 聚合主调用、辅助模型和子调用，invocations 详细 journal 留在插件；Flywheel 只存
 有界摘要。dispatch 为 not-dispatched/dispatched/unknown；outcome 为
 completed/failed/cancelled/unknown；remoteGeneration 为 idle/running/unknown。
+`web.facts.dispatch` 表示浏览器提交，`lifecycle.dispatch` 表示 SDK prompt 派发；
+SDK 已接受 prompt 而浏览器未提交时两者不同，不得抹掉已变化的 SDK 历史。
 remote 非 idle 或 dispatch unknown 不能同时宣称已知 outcome；本地关闭不证明远端结束。
 普通成功必须 dispatched/completed/idle 且 localCleanupConfirmed。doctor 成功只表示探针通过，
 facts 保持 not-dispatched/failed/idle。result.usage 与 costUsd 必须 null，lifecycle
@@ -126,9 +131,15 @@ wait/terminal/completed、原关闭记录与相同主回答，才允许 complete
 纯 final/tool/summary adopt 缺少这些业务证据继续阻断，未知 remote/tool/cleanup
 也不能解除。原已知 SDK failed 加同一已结算插件失败可恢复为 failed。
 
+插件 `not-dispatched` 不单独证明 SDK 未派发。只有原 `admitted` 阶段，或已结算
+原记录明确说明 SDK 未派发且没有 prompt receipt，才保留 lifecycle not-dispatched。
+SDK 已接受 prompt 时必须有其原失败终态、真实 turnId、prompt receipt 与正常关闭
+证据，恢复为 lifecycle dispatched/failed，同时保留 Web facts not-dispatched。
+派发意图或接收后的 SDK 终态仍未知则继续阻断，不复用已追加失败 prompt 的历史。
+
 worker 查询不写任何原证据。Go 另行核对原 terminal receipt 的 candidate/role
 guard，并原子更新自身 receipt/state；已派发调用缺失该原检查点继续阻断。
-仅正面证明未派发的调用可在当前 candidate/guard 等于原 before 时结算失败。
+仅正面证明 SDK 未派发的调用可在当前 candidate/guard 等于原 before 时结算失败。
 usage/cost 保持 null/unknown；完成对账不新增模型调用，也不重复预算记账。
 
 原 Go candidate/guard 在覆盖主结果前写入独立 `role/scope/web-original` receipt

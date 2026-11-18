@@ -109,7 +109,9 @@ provider/model 公开 metadata 读取合法 efforts 和默认值。目录不支�
 标为不支持；更换模型后须重新核对。实际执行与预热仍在所选 SDK profile 独立验证，
 不会因为桌面目录通过就跳过 SDK 准入，也不会把 pro 偷换为 high/max。
 
-Web 会话轮换、恢复、工具与 DSH 压缩由插件负责；Flywheel 管理角色隔离、预算与
+DSH 拥有已提交 Session 事件、derived history、工具执行及提交历史变更的唯一
+CompactionEngine。插件协调 Web 会话轮换、输入预算、摘要路由、工具协议适配和恢复；
+网页投影和日志不是第二份权威历史。Flywheel 管理角色隔离、预算与
 调用回执。Web 是 opaque transport：保留总 wall 时限，输出静默本身不触发 idle
 终止。用量和费用为 unknown，因此硬用量预算可能阻止后续调用。远端结果 unknown
 会阻止跨角色、fresh 或更换 Provider 自动重放，必须先对账原调用；续接还要求
@@ -127,7 +129,8 @@ profile 管理设置以旧调用准入时冻结的配置为准；下一次新 SD
 
 | 原调用证据 | 对账结果 |
 |---|---|
-| 正面证明未派发，当前 candidate/role guard 仍等于原 before | 已知失败；不伪造成功回答 |
+| 正面证明 SDK prompt 未派发，当前 candidate/role guard 仍等于原 before | 已知失败；不伪造成功回答 |
+| 浏览器未提交，但 SDK 已接受 prompt；原 SDK 失败终态、turn identity、正常关闭和 Go candidate/guard 回执齐全 | 已知 SDK 失败；保留 dispatched 事实，不复用该失败历史 |
 | 原 SDK prompt/wait/完整 terminal/正常关闭，同一已提交主回答，以及原 Go terminal candidate/guard 回执 | 恢复该原 completed 结果 |
 | 显式按 digest 丢弃已拒绝回答，原 SDK 正常关闭、有实际观察的 turn identity、协议完整、工具已结算，保留原 Go terminal candidate/guard 回执 | 已知失败；无成功文本，不提供历史复用 |
 | 原 SDK 断线后才 adopt 纯 final，缺少原业务完成终态 | 继续阻断 |
@@ -137,6 +140,8 @@ profile 管理设置以旧调用准入时冻结的配置为准；下一次新 SD
 只有新 managed Web 调用会记录所需恢复检查点；旧调用不能事后补造。
 已知失败可解除不确定性栅栏，后续是否继续由正常任务策略决定。对账保持用量
 unknown，不补发 prompt。
+浏览器未提交不证明 SDK 历史未变化。SDK 准入或已接受 prompt 后中断，缺少所需
+原终态证明时，即使浏览器未发送也继续阻断。
 
 ## 选择并评估基线
 

@@ -9,7 +9,7 @@ const contract = 'chatgpt-web/read-only-recovery/1';
 const publicEntry = 'dsh-plugin-chatgpt/web-recovery';
 const allowedImports = new Set(['node:fs', 'node:fs/promises', 'node:crypto', 'node:path', 'node:os']);
 const allowedPluginFiles = new Set(['lib/web/recovery.js', 'lib/web/config.js', 'lib/web/policy.js',
-  'lib/web/protocol.js', 'lib/web/image-policy.js', 'lib/web/media.js', 'lib/web/store.js',
+  'lib/web/protocol.js', 'lib/web/tool-evidence.js', 'lib/web/image-policy.js', 'lib/web/media.js', 'lib/web/store.js',
   'lib/web/browser/storage.js', 'lib/abort.js']);
 const dependencies = new Map([['ajv', '8.17.1'], ['fast-uri', '3.1.9'], ['fast-deep-equal', '3.1.3'], ['json-schema-traverse', '1.0.0']]);
 

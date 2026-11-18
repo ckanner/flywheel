@@ -62,7 +62,10 @@ const host = new ChatGptWebHost(stateDir, config.provider, {
         conversationUrl: conversation.url, projectUrl: conversation.projectUrl,
         bindingDigest: request.bindingDigest, capturedAt: Date.now() };
       return {
-        targetId: 'packed-original-page', prepare: async () => ({ conversation, evidence }),
+        targetId: 'packed-original-page', prepare: async () => {
+          if (process.env.FLYWHEEL_TEST_WEB_FAIL_BEFORE_SUBMIT === '1') throw new Error('original browser admission failed before submit');
+          return { conversation, evidence };
+        },
         inspect: async () => ({ conversation, evidence }), async submit() { log({ kind: 'page-submit' }); },
         async close() {}, async stop() { return false; },
         async sample() {

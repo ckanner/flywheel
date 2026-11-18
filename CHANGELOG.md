@@ -15,6 +15,10 @@ their original language.
   answers do not manufacture completion; missing or contradictory proof remains
   blocked. Recovery launches no SDK, browser, model or tool and retains unknown
   usage without double accounting.
+- Preserve SDK prompt admission separately from browser submission during Web
+  recovery. A browser admission failure after SDK acceptance retains the
+  original dispatched/failed turn and cannot revive its modified history as an
+  untouched no-dispatch checkpoint. Missing original SDK terminal proof stays blocked.
 
 - Add the negotiated ChatGPT Web extension to DSH workers: exact model/effort
   admission, static prewarm binding and formal host invocation, persistent

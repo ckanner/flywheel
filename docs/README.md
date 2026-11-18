@@ -51,8 +51,10 @@ to its named source, platform, and checks.
 
 The [ChatGPT plugin Web Pro model proposal](plans/2026-11-17-chatgpt-web-provider.en.md)
 ([中文](plans/2026-11-17-chatgpt-web-provider.md)) designs a native DSH model and
-Pro effort inside the existing ChatGPT provider, with plugin-owned browser
-transport, tool calls, compaction and recovery. Flywheel consumes that same model
+Pro effort inside the existing ChatGPT provider. The plugin owns browser
+transport, tool-protocol adaptation, Web budget/migration policy and recovery
+coordination; DSH retains authoritative history, tool execution and the single
+CompactionEngine that commits history changes. Flywheel consumes that same model
 through its loop and execution-route configuration. An implementation candidate
 now includes the plugin, a pinned host compatibility patch, and the Flywheel
 consumer. [Validation and remaining acceptance](validation/2026-11-17-chatgpt-web-implementation.en.md)

@@ -113,10 +113,36 @@ test('preserves a confirmed original failed SDK terminal and blocks a later adop
 
 test('allows positively unsent invocation without synthesizing a successful business result', async t => {
   const f = await fixture(t);
-  f.journal.phase = 'admitted'; delete f.journal.business; delete f.journal.result; await f.save();
+  f.journal.phase = 'admitted'; delete f.journal.promptId; delete f.journal.business; delete f.journal.result; await f.save();
   f.evidence.disposition = 'not-dispatched'; f.evidence.facts.dispatch = 'not-dispatched'; f.evidence.facts.outcome = 'failed'; f.evidence.terminalMain = [];
   const result = (await recoverWebWorker(f.query, f)).frames[1];
   assert.equal(result.status, 'error'); assert.equal(result.lifecycle.dispatch, 'not-dispatched'); assert.equal(result.lifecycle.outcome, 'failed');
+});
+
+test('browser no-dispatch cannot erase an admitted SDK prompt or revive its failed history', async t => {
+  const f = await fixture(t, 'rejected-response');
+  f.evidence.disposition = 'not-dispatched'; f.evidence.facts.dispatch = 'not-dispatched'; f.evidence.facts.outcome = 'failed'; f.evidence.terminalMain = [];
+  const result = (await recoverWebWorker(f.query, f)).frames[1];
+  assert.equal(result.lifecycle.dispatch, 'dispatched');
+  assert.equal(result.lifecycle.outcome, 'failed');
+  assert.equal(result.lifecycle.turnId, f.journal.business.turnId);
+  assert.equal(result.lifecycle.resumeCandidate, false);
+  assert.equal(result.web.facts.dispatch, 'not-dispatched');
+  const saved = structuredClone(f.journal);
+  for (const phase of ['dispatch-intent', 'prompt-accepted']) {
+    f.journal.phase = phase; delete f.journal.business; await f.save();
+    await assert.rejects(recoverWebWorker(f.query, f), /SDK business or shutdown/);
+  }
+  Object.assign(f.journal, saved);
+  for (const key of ['terminalKnown', 'turnId', 'promptId']) {
+    f.journal.business = { ...saved.business, [key]: key === 'terminalKnown' ? false : '' }; await f.save();
+    await assert.rejects(recoverWebWorker(f.query, f), /original SDK terminal/);
+  }
+  f.journal.business = { ...saved.business, promptId: '', turnId: '', terminalKnown: false, outcome: 'unknown' };
+  delete f.journal.promptId; f.journal.result.lifecycle.dispatch = 'not-dispatched'; await f.save();
+  assert.equal((await recoverWebWorker(f.query, f)).frames[1].lifecycle.dispatch, 'not-dispatched');
+  f.journal.business.sdkCleanupConfirmed = false; await f.save();
+  await assert.rejects(recoverWebWorker(f.query, f), /shutdown proof/);
 });
 
 test('requires original owner exit, terminal content, and complete immutable plugin evidence', async t => {
