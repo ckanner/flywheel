@@ -187,8 +187,11 @@ createInterface({ input: process.stdin }).on('line', line => {
       return;
     }
     if (scenario === 'progress-limit') {
+      // Cross the 1 MiB display bound deterministically. One-character frames
+      // can take long enough on loaded macOS runners that the task deadline
+      // fires before the worker reaches the omission marker.
       for (let count = 0; count < 5000; count++) notify('item/completed', { threadId, turnId,
-        item: { type: 'agentMessage', phase: 'commentary', text: 'x' } });
+        item: { type: 'agentMessage', phase: 'commentary', text: 'x'.repeat(256) } });
       return;
     }
     if (['hang', 'stubborn', 'descendant'].includes(scenario)) return;

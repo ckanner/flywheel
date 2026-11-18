@@ -39,6 +39,14 @@ their original language.
   exact provider and compatible patched DSH host in the user's SDK profile.
   This integration does not publish an alpha release or claim live account acceptance.
 
+## 0.37.1 — Full-page workbench
+
+- Give the Session-scoped Flywheel workbench the complete conversation content
+  area and hide the unrelated host composer while that view is mounted. The
+  resident composer and its draft return when the user switches back to Chat.
+- Stabilize the existing progress-limit fixture so its display-bound regression
+  crosses the 1 MiB threshold deterministically on loaded macOS runners.
+
 ## 0.37.0 — Kimi 2.5.3 admission, native history and the Claude Agent SDK
 
 - Integrate the reviewed Claude Code Pro 0.6.0 source candidate with official

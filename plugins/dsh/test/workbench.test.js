@@ -111,6 +111,9 @@ async function pick(ui, id) {
 
 test('view page and config draft survive leaving and returning to the conversation view', async (t) => {
   const ui = await mountPanel(t, editorResponder());
+  const page = ui.container.querySelector('[data-page]');
+  assert.equal(page.getAttribute('data-flywheel-page'), '');
+  assert.equal(page.getAttribute('data-conversation-composer-overlay'), '');
   await ui.setVisible(false);
   await ui.setVisible(true);
   assert.equal(ui.requests.length, 0, 'an empty inactive editor has not attempted a read');
