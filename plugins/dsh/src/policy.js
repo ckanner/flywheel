@@ -5,12 +5,14 @@ import { dirname, isAbsolute } from 'node:path';
 import { readPolicyReceipt, nonempty } from './protocol.js';
 import { createNativePolicy } from './native-policy.js';
 import { createDshActivityPublisher } from './dsh-activity.js';
+import { createWebPolicy } from './web-policy.js';
 
 export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
 export async function apply(ctx, config) {
   const { permissionMode, cwd, workspaceCwd, receiptPath, requestId, nonce, deferredAdmissionPath } = config;
   let { sessionTitle, sessionId } = config;
+  let hostInvocationId = config.hostInvocationId, expectedBinding = config.web?.expectedBinding, deadlineMs = config.deadlineMs;
   let nativePolicy;
   const fullAccess = permissionMode === 'danger-full-access';
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(permissionMode) || typeof cwd !== 'string' ||
@@ -42,10 +44,12 @@ export async function apply(ctx, config) {
       (fullAccess ? result.sandbox.denied !== false || result.sandbox.enforcement !== undefined : result.sandbox.enforcement !== 'full')) {
     throw new Error(fullAccess ? 'Flywheel readiness probe did not confirm explicit full access' : 'Flywheel sandbox readiness probe did not prove full enforcement');
   }
+  const webPolicy = await createWebPolicy(ctx, config);
   const activity = config.activity?.version === 1 ? createDshActivityPublisher(ctx, {
     identity: () => ({ requestId, nonce, rootSessionId: sessionId }),
     idleTimeoutMs: config.activity.idleTimeoutMs,
     children: config.native?.agents?.enabled === true,
+    ...(config.web ? { webIdentity: () => ({ hostInvocationId, executionDomainId: config.web.executionDomainId }) } : {}),
   }) : null;
   // Session creation is read-only in rc.1. Agent creation is awaited after
   // that announcement and before the factory admits any model work in both hosts.
@@ -53,13 +57,16 @@ export async function apply(ctx, config) {
     const session = agent.session;
     if (deferredAdmissionPath !== undefined) {
       const identity = await readPolicyReceipt(deferredAdmissionPath, { requestId, nonce });
-      if (Object.keys(identity).some(key => !['requestId', 'nonce', 'sessionId', 'sessionTitle', 'managed', 'resuming'].includes(key))) {
+      if (Object.keys(identity).some(key => !['requestId', 'nonce', 'sessionId', 'sessionTitle', 'managed', 'resuming', 'hostInvocationId', 'expectedWebBinding', 'deadlineMs'].includes(key))) {
         throw new Error('Flywheel deferred admission has unsupported fields');
       }
       sessionId = nonempty(identity.sessionId, 'sessionId', 512);
       sessionTitle = identity.sessionTitle === undefined ? undefined : nonempty(identity.sessionTitle, 'sessionTitle', 512);
       config.managed = identity.managed;
       config.resuming = identity.resuming;
+      hostInvocationId = identity.hostInvocationId;
+      expectedBinding = identity.expectedWebBinding;
+      deadlineMs = identity.deadlineMs;
     }
     config.sessionId = sessionId;
     nativePolicy ??= await createNativePolicy(ctx, config);
@@ -93,11 +100,13 @@ export async function apply(ctx, config) {
     const native = await nativePolicy?.admit(agent, root);
     activity?.admit(agent, root);
     if (!root) return;
+    const web = await webPolicy?.admit(agent, hostInvocationId, expectedBinding, deadlineMs);
     const policy = ctx.sandboxPolicy.resolve({ session });
     const receipt = {
       protocol: 1,
       requestId, sessionId, nonce,
       ...(native ? { native } : {}),
+      ...(web ? { web } : {}),
       ...(activity ? { activity: activity.capabilities } : {}),
       ...(workspaceCwd === undefined ? {} : { workspaceCwd: session.header.cwd }),
       cwd: policy.workspaceRoot,

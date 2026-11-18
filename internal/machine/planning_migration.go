@@ -192,7 +192,7 @@ func migratePlanning(opts RunOpts, command PlanningCommand) (*state.State, bool,
 	if st.Sessions == nil {
 		st.Sessions = &state.SessionLedger{Records: map[string]*state.SessionRecord{}}
 	}
-	st.Sessions.Version = 4
+	st.Sessions.Version = max(4, st.Sessions.Version)
 	if st.Project == nil {
 		st.Project = &state.ProjectIdentity{Cwd: cwd, WorkspaceCwd: WorkspaceRoot(cwd)}
 	}

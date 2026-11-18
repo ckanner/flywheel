@@ -38,6 +38,10 @@ func dshFixtureFrames(r dshStart) (map[string]any, map[string]any) {
 			"sessionId": sessionID, "dispatch": "dispatched", "outcome": "completed", "cleanupConfirmed": true,
 			"resumeCandidate": true, "resumeAccepted": r.SessionID != "", "turnId": "1", "usageStatus": "unknown"}
 	}
+	if r.Web != nil {
+		binding, receipt := dshWebFixture(r, sessionID)
+		ready["web"], result["web"] = binding, receipt
+	}
 	return ready, result
 }
 
@@ -167,6 +171,9 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 	if scenario == "exit-error-auth-text" {
 		fmt.Fprintln(os.Stderr, "401 unauthorized appears in a process diagnostic")
 	}
+	if scenario == "web-opaque" {
+		time.Sleep(100 * time.Millisecond)
+	}
 	if scenario == "hang" {
 		time.Sleep(5 * time.Second)
 	}
@@ -177,7 +184,7 @@ func TestDSHWorkerProcessFixture(t *testing.T) {
 		fmt.Print("{broken-json}\n")
 		os.Exit(1)
 	}
-	if scenario == "unknown-usage" || scenario == "doctor" {
+	if request.Web != nil || scenario == "unknown-usage" || scenario == "doctor" {
 		result["usage"] = nil
 	} else {
 		result["usage"] = map[string]any{"input_tokens": 10, "output_tokens": 5, "reasoning_tokens": 3, "cache_read_tokens": 8, "cache_write_tokens": 0, "total_tokens": 15}

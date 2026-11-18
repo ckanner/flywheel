@@ -132,14 +132,16 @@ func (c *Config) validateExecutionPolicy() error {
 	return nil
 }
 
-// These are the documented adapter request vocabularies. Backends still verify
-// model availability and actual admission; these values are not quality ranks.
+// DSH effort IDs belong to the exact adapter model. Configuration only checks
+// their shape; SDK initialize resolves and validates the requested model before
+// cold dispatch or prewarm readiness. Native harnesses retain their vocabularies.
 func executionEffortSupported(b ExecutionBinding) bool {
+	if b.Harness == "dsh" {
+		return strings.TrimSpace(b.Thinking) != "" && len(b.Thinking) <= 128 && !strings.ContainsAny(b.Thinking, "\x00\r\n")
+	}
 	values := []string{"low", "medium", "high", "xhigh", "max"}
 	if b.Harness == "kimi" {
 		values = []string{"low", "high", "max"}
-	} else if b.Harness == "dsh" && strings.HasPrefix(b.Provider, "deepseek") {
-		values = []string{"off", "low", "high", "max"}
 	}
 	return slices.Contains(values, b.Thinking)
 }

@@ -37,7 +37,7 @@ func TestSessionSchemaRejectsMalformedExtensionBeforeDispatch(t *testing.T) {
 		name string
 		edit func(map[string]any, map[string]any, map[string]any)
 	}{
-		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 5 }},
+		{"unknown version", func(v, _, _ map[string]any) { v["version"] = 6 }},
 		{"missing version", func(v, _, _ map[string]any) { delete(v, "version") }},
 		{"null records", func(v, _, _ map[string]any) { v["records"] = nil }},
 		{"unknown ledger field", func(v, _, _ map[string]any) { v["trust-me"] = true }},

@@ -249,6 +249,12 @@ func applySessionFacts(record *state.SessionRecord, result drivers.Result, diges
 			record.ThreadID, record.ResumeCandidate = record.Last.RequestedThread, true
 		}
 	}
+	if len(result.WebReceipt) != 0 {
+		var receipt drivers.DSHWebReceipt
+		if json.Unmarshal(result.WebReceipt, &receipt) == nil && receipt.Version == 1 {
+			record.WebBinding, _ = json.Marshal(receipt.Binding)
+		}
+	}
 	observeSessionQuality(record, result)
 }
 
@@ -457,6 +463,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		args.WorkspaceCwd = r.WorkspaceCwd
 	}
 	args.SessionTitle = c.sessionTitle(role, scope)
+	if args.Binding.Harness == "dsh" && (args.Model == drivers.DSHWebModel || args.Model == "" && args.Binding.Model == drivers.DSHWebModel) {
+		args.Web = &drivers.DSHWebRequest{Version: 1, ExecutionDomainID: "flywheel-" + sessionHash([]any{"web-domain-v1", c.TaskDir}), RequireIsolation: true}
+	}
 	originalPrompt := args.Prompt
 	args.Prompt = c.sessionPrompt(role, scope, args)
 	tracked, scoped := c.trackedSessions(role, args.Binding.Harness), c.scopedSessions(role, args.Binding.Harness)
@@ -517,6 +526,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 			action, reason, generation = "rebuild", "history unavailable or scope, goal, directory or binding changed", generation+1
 		}
 	}
+	if action == "resume" && args.Web != nil && len(r.WebBinding) == 0 {
+		action, reason, generation, thread = "rebuild", "Web connection binding was not previously confirmed", generation+1, ""
+	}
 	if action == "resume" {
 		if qualityReason := sessionQualityReason(role, r, c.Config.Sessions.Quality); qualityReason != "" {
 			action, reason, generation, thread = "rebuild", qualityReason, generation+1, ""
@@ -541,6 +553,17 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		attempt = ps.Attempts
 	}
 	previous := r
+	if args.Web != nil {
+		c.State.Sessions.Version = max(5, c.State.Sessions.Version)
+		if action == "resume" {
+			var expected drivers.DSHWebBinding
+			// reconcileSessionReceipts has already schema-validated this bounded
+			// object: its integers are literal 1 and every other field is a
+			// required string. No JSON/Go range ambiguity remains here.
+			_ = json.Unmarshal(r.WebBinding, &expected)
+			args.Web.ExpectedBinding = &expected
+		}
+	}
 	contextArgs := args
 	contextArgs.Prompt = originalPrompt
 	contextCheckpoint, contextPrompt := c.sessionContextPrompt(role, scope, action, candidate, previous, contextArgs)
@@ -558,13 +581,16 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	// Fresh governs input history, not whether a native client can inspect the
 	// completed session. These machine adapters otherwise delete fresh history.
 	// Record the exact request for lifecycle matching and later read-only recovery.
-	persistent := scoped || args.Binding.Harness == "codex-pro" || args.Binding.Harness == "claude-code-pro"
+	persistent := scoped || args.Binding.Harness == "codex-pro" || args.Binding.Harness == "claude-code-pro" || args.Web != nil
 	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{NativeOptions: args.Native, NativeProfile: args.Binding.NativeProfile, Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
 			Persistent: persistent, RequestedThread: thread, CandidateBefore: candidate, GuardBefore: guardBefore,
 			Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}}
+	if args.Web != nil && args.Web.ExpectedBinding != nil {
+		r.WebBinding, _ = json.Marshal(args.Web.ExpectedBinding)
+	}
 	if !persistent {
 		r.ThreadID = ""
 	}

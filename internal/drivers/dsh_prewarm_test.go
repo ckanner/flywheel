@@ -136,6 +136,10 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 	if scenario == "bad-ready" {
 		ready["binding"] = "different"
 	}
+	if prepared.Web != nil {
+		b, _ := dshWebFixture(dshStart{Provider: prepared.Provider, Model: prepared.Model, Web: prepared.Web}, "")
+		ready["web"] = b
+	}
 	if scenario == "malformed" {
 		fmt.Fprintln(os.Stdout, "{broken-json}")
 	} else if scenario == "early-output" {
@@ -179,6 +183,9 @@ func TestDSHPrewarmProcessFixture(t *testing.T) {
 	_ = encode.Encode(first)
 	if scenario == "activity-flood" {
 		emitDSHActivityFlood(r)
+	}
+	if scenario == "web-opaque" {
+		time.Sleep(100 * time.Millisecond)
 	}
 	if scenario == "hang" {
 		<-signals

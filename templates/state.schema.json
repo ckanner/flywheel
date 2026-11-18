@@ -181,7 +181,7 @@
     "sessions": {
       "type": "object", "additionalProperties": false, "required": ["version", "records"],
       "properties": {
-        "version": { "enum": [1, 2, 3, 4] },
+        "version": { "enum": [1, 2, 3, 4, 5] },
         "records": {
           "type": "object",
           "additionalProperties": {
@@ -189,6 +189,7 @@
             "required": ["task", "role", "scope", "cwd", "binding", "goal", "contract", "generation", "resume-candidate", "action", "reason", "last"],
             "properties": {
               "configuration": {"$ref":"#/$defs/session-configuration"},
+              "web-binding": {"$ref":"#/$defs/web-binding"},
               "task": { "type": "string", "minLength": 1 },
               "role": { "enum": ["plan", "execute", "review", "judge", "judge-panel", "design-plan", "design-review", "plan-review"] },
               "scope": { "type": "string", "minLength": 1 },
@@ -811,6 +812,21 @@
     }
   },
   "$defs": {
+    "web-binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol", "transport", "provider", "model", "reasoningEffort", "connectionId", "accountFingerprint", "policyVersion", "contextPolicy", "observation", "usage", "hostContractVersion", "runtimeVersion"],
+      "properties": {
+        "protocol": {"const": 1}, "transport": {"const": "chatgpt-web"},
+        "provider": {"type": "string", "minLength": 1, "maxLength": 512},
+        "model": {"const": "gpt-6-pro-web"}, "reasoningEffort": {"const": "pro"},
+        "connectionId": {"type": "string", "minLength": 1, "maxLength": 512},
+        "accountFingerprint": {"type": "string", "minLength": 1, "maxLength": 512},
+        "policyVersion": {"type": "string", "minLength": 1, "maxLength": 512},
+        "contextPolicy": {"const": "project-only"}, "observation": {"const": "opaque"},
+        "usage": {"const": "unknown"}, "hostContractVersion": {"const": 1},
+        "runtimeVersion": {"const": "web-runtime/1"}
+      }
+    },
     "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,

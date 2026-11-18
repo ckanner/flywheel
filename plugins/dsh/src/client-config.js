@@ -707,6 +707,22 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     xhigh: t('cfgEffortXhigh'),
     max: t('cfgEffortMax'),
   };
+
+  const exactModel = value => {
+    const binding = { ...draft.profiles?.[value.profile], ...value };
+    return binding.harness === 'dsh' ? { provider: binding.provider || draft.channels?.[binding.channel]?.provider || binding.channel, id: binding.model } : null;
+  };
+  const thinkingValue = value => value.thinking ?? draft.profiles?.[value.profile]?.thinking ?? '';
+  const effortChoices = value => {
+    const model = exactModel(value), chosen = thinkingValue(value);
+    if (!model) return Object.entries(efforts).concat(chosen && !Object.hasOwn(efforts, chosen) ? [[chosen, chosen]] : []);
+    const info = control.modelInfos?.[JSON.stringify([model.provider, model.id])];
+    const options = info?.efforts.map(e => [e.id, e.name + (info.defaultEffort === e.id ? ' · ' + t('cfgEffortDefault') : '')]) ?? [];
+    if (!options.some(([id]) => id === chosen)) options.unshift([chosen, (chosen || t('cfgEffortDefault')) + ' · ' + t(info ? 'cfgEffortUnsupported' : 'cfgEffortUnchecked')]);
+    return options;
+  };
+  const effortMetadata = value => { const m = exactModel(value); return m && control.modelInfos?.[JSON.stringify([m.provider, m.id])]; };
+  const readEfforts = value => { const model = exactModel(value); if (model?.provider && model.id) void run('model-info', selection, false, { model }); };
   const openBinding = (group, key) => setBindingSelection({ group, key });
   const bindingEdit = draft && bindingSelection && (() => {
     const { group, key } = bindingSelection, role = group === 'routes' ? 'execute' : key;
@@ -905,7 +921,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('th', { scope: 'row' }, roleName(group, key), group === 'loops' && inheritedPlanningRoles[key] && !draft.loops?.[key] && h('p', { className: css.settingsHelp }, t('planningInherited', { source: 'loops.' + inheritedPlanningRoles[key] }))),
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
-            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
+            h('td', null, h('select', { className: css.modeSelect, value: thinkingValue(value), disabled: busy || Boolean(exactModel(value) && !effortMetadata(value)), 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...effortChoices(value).map(([effort, label]) => h('option', { key: effort, value: effort }, label)))),
             h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
             h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
@@ -991,18 +1007,17 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           t('cfgModelHint'),
           input('binding.model', bindingEdit.value.model, (v) => patchBinding('model', v)),
         ),
+        exactModel(bindingEdit.value) && h('div', { className: css.settingsHelp },
+          h(Button, { disabled: busy, onClick: () => readEfforts(bindingEdit.value) }, t('cfgReadEfforts')),
+          h('p', null, t('cfgEffortMetadataHelp'))),
         field(
           'binding.thinking',
           t('consoleThinking'),
           null,
           select(
             'binding.thinking',
-            bindingEdit.value.thinking ?? '',
-            Object.entries(efforts).concat(
-              bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
-                ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
-                : [],
-            ),
+            thinkingValue(bindingEdit.value),
+            effortChoices(bindingEdit.value),
             (v) => {
               if (v) patchBinding('thinking', v);
               else
@@ -1309,3 +1324,6 @@ Object.assign(en, {
 
 Object.assign(zh, { cfgBindingDone: '← 返回模型列表', cfgBindingSaveHelp: '修改后点击下方“保存修改”，统一保存到当前作用域。' });
 Object.assign(en, { cfgBindingDone: '← Back to model list', cfgBindingSaveHelp: 'Use Save changes below to save all edits to the selected scope.' });
+
+Object.assign(zh, { cfgReadEfforts: '读取此模型的推理档位', cfgEffortUnchecked: '尚未核对', cfgEffortUnsupported: '当前模型不支持', cfgEffortMetadataHelp: '从当前桌面端读取精确模型的合法档位与默认值；执行和预热仍会在实际 SDK profile 中再次核对。更换模型后请重新读取并选择合法档位。' });
+Object.assign(en, { cfgReadEfforts: 'Read this model’s reasoning efforts', cfgEffortUnchecked: 'Not verified', cfgEffortUnsupported: 'Unsupported by this model', cfgEffortMetadataHelp: 'Read the exact model’s supported efforts and default from this desktop host. Execution and prewarm revalidate against the actual SDK profile. After changing models, read and select a supported effort again.' });

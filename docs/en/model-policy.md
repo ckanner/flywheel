@@ -97,6 +97,43 @@ The checked ChatGPT provider is 0.1.17 at `388868f91bcdc05795fb94d21b868ded6d721
 [model catalog](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/models/served.ts)
 and [request serialization](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/convert/request.ts).
 
+## ChatGPT Web Pro through the DSH provider
+
+The Web route is selected as `harness: "dsh"`, `provider: "chatgpt"`,
+`model: "gpt-6-pro-web"`, and `thinking: "pro"`. It can be assigned to a loop,
+execution route, or an explicitly allowed execution-policy binding. Existing
+model defaults and other providers’ effort vocabularies remain unchanged.
+Edit the relevant binding in your complete effective configuration, for example:
+
+```json
+{"harness":"dsh","provider":"chatgpt","channel":"chatgpt","model":"gpt-6-pro-web","thinking":"pro"}
+```
+
+This source integration requires the matching ChatGPT plugin Web host and its
+public DSH host-policy extension in the selected SDK profile. A package version,
+desktop login or static model catalog alone does not establish those capabilities.
+The worker refuses a missing host contract or CompactionEngine before sending the
+prompt. Configure the plugin’s dedicated browser connection and project-only
+context policy using the [ChatGPT plugin](https://github.com/ckanner/dsh-plugin-chatgpt).
+The existing pinned 0.1.20 installation example does not enable this new route.
+
+In the desktop model editor, use **Read this model’s reasoning efforts** after
+selecting a DSH model. The menu reads that exact provider/model’s public metadata
+and marks the adapter’s default. A saved value missing from the catalog remains
+visible as unsupported; a changed model must be checked again. Execution and
+prewarm independently validate the actual SDK profile, even when the desktop
+catalog accepted the selection. `pro` is not mapped to `high` or `max`.
+
+The plugin owns Web conversation rotation, recovery, tools and DSH compaction;
+Flywheel owns role isolation, budgets and invocation receipts. Web is an opaque
+transport: the wall deadline remains active, while output silence alone does not
+trigger idle termination. Usage and cost are unknown, so a hard usage budget can
+block subsequent calls. An unknown remote result blocks automatic replay across
+fresh calls, roles and providers until the original invocation is reconciled.
+Resume also requires the same connection, account and policy binding. Web
+session ledgers use version 5 and cannot be continued by older Flywheel readers.
+Offline contract tests do not establish a successful live account/browser run.
+
 ## Choose and evaluate a baseline
 
 Seven of the eight default bindings use `high`; Intake uses `low`. Keeping a

@@ -120,6 +120,13 @@ draft. File revision conflicts still prevent a stale save.
 
 Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
 
+For a DSH model, open its stage editor and choose **Read this model’s reasoning
+efforts**. This read uses the current desktop’s exact provider/model metadata,
+displays its supported effort IDs and default, and does not send a model prompt.
+An old value remains marked unverified or unsupported until checked. Changing
+models requires another read; SDK execution and prewarm validate independently.
+The Web model requires explicit `pro`, without changing other models’ menus.
+
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
 [JEV decisions](jev.md) use one default-off master switch. Enabling it activates

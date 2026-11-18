@@ -1157,3 +1157,28 @@ test('typing a channel saves only the final account channel and preserves unrela
   assert.equal(values.routes.default.channel,'new-account');
   assert.equal(values.sessions,undefined);
 });
+
+
+test('DSH efforts come from the exact model catalog and changing models cannot carry Pro as a supported option', async t => {
+  const responder = editorResponder();
+  const ui = await mountPanel(t, request => request.action === 'model-info'
+    ? reply(request, { modelInfo: { ...request.model, source: 'desktop-host',
+      efforts: request.model.id === 'gpt-6-pro-web' ? [{ id: 'pro', name: 'Pro' }] : [{ id: 'high', name: 'High' }],
+      defaultEffort: request.model.id === 'gpt-6-pro-web' ? 'pro' : 'high' } }) : responder(request));
+  await ui.click('设置'); await ui.click('模型与会话');
+  await act(async () => ui.container.querySelector('[data-binding-id="loops.review"] button').click());
+  await input(ui, '模型', 'gpt-6-pro-web');
+  assert.ok(![...field(ui, '推理等级').options].some(option => option.value === 'pro'), 'no global Pro catalog is invented');
+  await ui.click('读取此模型的推理档位');
+  const efforts = [...field(ui, '推理等级').options];
+  assert.equal(efforts.find(option => option.value === 'pro').textContent, 'Pro · 后端默认');
+  assert.match(efforts.find(option => option.value === 'high').textContent, /不支持/);
+  await input(ui, '推理等级', 'pro');
+  await input(ui, '模型', 'ordinary-model');
+  assert.match(field(ui, '推理等级').selectedOptions[0].textContent, /尚未核对/);
+  await ui.click('读取此模型的推理档位');
+  assert.match(field(ui, '推理等级').selectedOptions[0].textContent, /不支持/);
+  await input(ui, '推理等级', 'high');
+  await ui.click('保存修改');
+  assert.equal(ui.requests.at(-1).editor.values.loops.review.thinking, 'high');
+});

@@ -3,6 +3,7 @@ import { open, realpath, stat, link, unlink, readdir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { BridgeError, MAX_FRAME_BYTES, directory, nonempty, record } from './protocol.js';
 import { validateNative, nativeDigest } from './native.js';
+import { validateWebRequest } from './web-policy.js';
 
 export const PREWARM_MS = 60000;
 const MAX_RECEIPT_BYTES = 8192;
@@ -10,7 +11,7 @@ const TRUNCATED_DIAGNOSTIC = ' [truncated]';
 const BINDING_FIELDS = ['cwd', 'workspaceCwd', 'provider', 'model', 'reasoningEffort', 'permissionMode', 'idleTimeoutMs'];
 
 export async function validatePrepare(value) {
-  const keys = new Set(['type', 'protocol', 'warmId', 'binding', 'receiptDirectory', 'ttlMs', 'native', ...BINDING_FIELDS]);
+  const keys = new Set(['type', 'protocol', 'warmId', 'binding', 'receiptDirectory', 'ttlMs', 'native', 'web', ...BINDING_FIELDS]);
   if (!record(value) || value.type !== 'prepare' || value.protocol !== 1 ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.warmId !== 'string' || typeof value.binding !== 'string' ||
       !/^[a-zA-Z0-9_-]{8,128}$/.test(value.warmId) ||
@@ -24,6 +25,8 @@ export async function validatePrepare(value) {
   const request = { ...value, cwd: await directory(value.cwd, 'cwd'),
     ...(value.workspaceCwd === undefined ? {} : { workspaceCwd: await directory(value.workspaceCwd, 'workspaceCwd') }) };
   validateNative(value.native);
+  validateWebRequest(value);
+  if (value.web?.probe) throw new BridgeError('INVALID_REQUEST', 'Web probes cannot prewarm');
   for (const key of ['provider', 'model', 'reasoningEffort']) nonempty(value[key], key);
   if (request.workspaceCwd && request.workspaceCwd !== request.cwd && request.permissionMode === 'workspace-write') {
     throw new BridgeError('INVALID_REQUEST', 'separate execution roots require an explicitly compatible permission mode');
@@ -39,6 +42,8 @@ export async function validatePrepare(value) {
 }
 
 export function matchWarmStart(prepared, request) {
+  if (request.web?.probe) throw new BridgeError('INVALID_REQUEST', 'Web probes cannot consume prewarming');
+  if ((prepared.web?.version ?? null) !== (request.web?.version ?? null) || prepared.web?.executionDomainId !== request.web?.executionDomainId || prepared.web?.requireIsolation !== request.web?.requireIsolation) throw new BridgeError('INVALID_REQUEST', 'Web execution domain changed after prewarm initialization');
   if (request.maxTokens !== undefined) throw new BridgeError('INVALID_REQUEST', 'maxTokens cannot be introduced after SDK initialization');
   if (BINDING_FIELDS.some(key => (prepared[key] ?? '') !== (request[key] ?? ''))) {
     throw new BridgeError('INVALID_REQUEST', 'formal request differs from the initialized SDK binding');

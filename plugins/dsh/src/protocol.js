@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { open, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { validateNative, validateManaged } from './native.js';
+import { validateWebRequest } from './web-policy.js';
 
 export const PROTOCOL = 1;
 export const SESSION_PROTOCOL = 'dsh-sdk/session-resume/worker-v2';
@@ -56,7 +57,7 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'expected one protocol 1 or 2 start request');
   }
   const allowed = new Set(['type', 'protocol', 'requestId', 'cwd', 'provider', 'model',
-    'reasoningEffort', 'permissionMode', 'prompt', 'maxTokens', 'timeoutMs', 'idleTimeoutMs', 'workspaceCwd', 'sessionTitle', 'native', 'managed']);
+    'reasoningEffort', 'permissionMode', 'prompt', 'web', 'maxTokens', 'timeoutMs', 'idleTimeoutMs', 'workspaceCwd', 'sessionTitle', 'native', 'managed']);
   if (value.protocol === 2) {
     allowed.add('sessionId');
     allowed.add('persistent');
@@ -67,6 +68,7 @@ export async function validateStart(value) {
     if (!allowed.has(key)) throw new BridgeError('INVALID_REQUEST', `unsupported start field: ${key}`);
   }
   const requestId = nonempty(value.requestId, 'requestId', 128);
+  validateWebRequest(value);
   validateNative(value.native);
   validateManaged(value.managed, requestId);
   if (value.managed !== undefined && value.native === undefined) throw new BridgeError('INVALID_REQUEST', 'managed identity requires native options');
@@ -79,7 +81,7 @@ export async function validateStart(value) {
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(value.permissionMode)) {
     throw new BridgeError('INVALID_REQUEST', 'permissionMode must be read-only, workspace-write or danger-full-access');
   }
-  if (value.reasoningEffort !== undefined) nonempty(value.reasoningEffort, 'reasoningEffort', 64);
+  if (value.reasoningEffort !== undefined) nonempty(value.reasoningEffort, 'reasoningEffort', 128);
   if (value.idleTimeoutMs !== undefined && (!Number.isSafeInteger(value.idleTimeoutMs) || value.idleTimeoutMs < 1 || value.idleTimeoutMs > 86400000)) {
     throw new BridgeError('INVALID_REQUEST', 'idleTimeoutMs must be between 1 and 86400000');
   }

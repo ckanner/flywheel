@@ -80,6 +80,35 @@ ChatGPT provider 的核对快照为 0.1.17、`388868f91bcdc05795fb94d21b868ded6d
 [模型目录](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/models/served.ts)
 与[请求序列化](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/convert/request.ts)。
 
+## 通过 DSH Provider 使用 ChatGPT Web Pro
+
+Web 路径明确选择 `harness:"dsh"`、`provider:"chatgpt"`、
+`model:"gpt-6-pro-web"`、`thinking:"pro"`，可以配置到任意 Loop、执行 Route
+或显式允许的 execution-policy binding。既有模型默认值与其他 Provider 的档位范围
+保持原样。在当前生效的完整配置中编辑对应 binding，例如：
+
+```json
+{"harness":"dsh","provider":"chatgpt","channel":"chatgpt","model":"gpt-6-pro-web","thinking":"pro"}
+```
+
+本次源码集成要求所选 SDK profile 实际加载匹配的 ChatGPT Web host、公开 DSH
+host-policy 扩展和唯一 CompactionEngine。包版本、桌面登录状态、静态模型目录都
+不能单独证明这些能力；缺失时 worker 在 prompt 前明确拒绝。
+通过 [ChatGPT 插件](https://github.com/ckanner/dsh-plugin-chatgpt) 配置专用浏览器
+连接及 project-only 上下文策略；既有固定 0.1.20 安装示例不包含这个新路径。
+
+在桌面模型编辑器选择 DSH 模型后，点击**读取此模型的推理档位**，从精确的
+provider/model 公开 metadata 读取合法 efforts 和默认值。目录不支持的旧值会保留并
+标为不支持；更换模型后须重新核对。实际执行与预热仍在所选 SDK profile 独立验证，
+不会因为桌面目录通过就跳过 SDK 准入，也不会把 pro 偷换为 high/max。
+
+Web 会话轮换、恢复、工具与 DSH 压缩由插件负责；Flywheel 管理角色隔离、预算与
+调用回执。Web 是 opaque transport：保留总 wall 时限，输出静默本身不触发 idle
+终止。用量和费用为 unknown，因此硬用量预算可能阻止后续调用。远端结果 unknown
+会阻止跨角色、fresh 或更换 Provider 自动重放，必须先对账原调用；续接还要求
+connection、account、policy 完全相同。Web Session 账本使用 v5，旧 Flywheel 不能
+继续读取写回。离线契约测试不等于真实账号／浏览器验收已通过。
+
 ## 选择并评估基线
 
 八个默认阶段／路由中七个使用 `high`，Intake 使用 `low`。稳定的初始设置方便

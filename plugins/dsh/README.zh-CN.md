@@ -65,6 +65,11 @@ DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
+新增的 `gpt-6-pro-web` / `pro` 路径还要求该 SDK profile 加载匹配的 ChatGPT Web
+host、公开 DSH host-policy 扩展、已配置的 project-only 浏览器连接和唯一
+CompactionEngine。固定 0.1.20 包不提供该路径；缺能力时在 prompt 前拒绝，详见
+[Web 模型配置](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/model-policy.md#通过-dsh-provider-使用-chatgpt-web-pro)。
+
 此固定版本示例不代表当前账号拥有某模型权限。认证和真实模型可用性需要通过
 各后端支持的流程检查。Flywheel 不安装原生模型 CLI、不复制凭证，也不提供订阅额度。
 

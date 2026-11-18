@@ -22,7 +22,7 @@ const scopes = new Set(['root', 'child', 'mixed']);
 const activityKeys = new Set(['version', 'sequence', 'kind', 'source', 'scope', 'eventTypes', 'observedEvents']);
 const streamKinds = new Set(['block-start', 'block-end', 'text-delta', 'reasoning-delta', 'tool-call-delta', 'usage', 'finish']);
 const eventTypes = new Set(['assistant/start', 'assistant/chunk', 'assistant/end',
-  ...[...streamKinds].map(type => 'assistant/' + type), 'provider/codex-pro', 'provider/claude-code-pro']);
+  ...[...streamKinds].map(type => 'assistant/' + type), 'provider/codex-pro', 'provider/claude-code-pro', 'provider/chatgpt-web']);
 
 export function dshActivityInterval(idleTimeoutMs = 300000) {
   return Math.max(1, Math.min(1000, Math.floor(idleTimeoutMs / 4)));
@@ -52,7 +52,7 @@ export function validDshActivity(value, { external = false } = {}) {
  * report(agent, { ...machineActivity, invocationId }). Native providers keep
  * their own streaming/UI channels and use this only when the service exists.
  */
-export function createDshActivityPublisher(ctx, { identity: getIdentity, idleTimeoutMs = 300000, children = false }, {
+export function createDshActivityPublisher(ctx, { identity: getIdentity, idleTimeoutMs = 300000, children = false, webIdentity }, {
   now = () => performance.now(),
   notify = (method, params) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n'),
 } = {}) {
@@ -107,6 +107,21 @@ export function createDshActivityPublisher(ctx, { identity: getIdentity, idleTim
     entry.revision = frame.revision;
     const type = frame.type === 'chunk' && streamKinds.has(frame.chunk?.type) ? frame.chunk.type : frame.type;
     observe(agent, ['assistant/' + type]);
+  });
+  if (webIdentity) ctx.on('chatgpt-web/activity', value => {
+    const expected = webIdentity();
+    if (!object(value) || !expected || Object.keys(value).some(key => !['hostInvocationId','executionDomainId','sessionId','requestId','generation','kind','sequence','bindingDigest','at','observedBytes'].includes(key)) ||
+        value.hostInvocationId !== expected.hostInvocationId || value.executionDomainId !== expected.executionDomainId ||
+        value.bindingDigest !== undefined && !identity(value.bindingDigest) || value.at !== undefined && !positive(value.at) ||
+        value.observedBytes !== undefined && (!Number.isSafeInteger(value.observedBytes) || value.observedBytes < 0) ||
+        !identity(value.requestId) || !positive(value.generation) || !positive(value.sequence) ||
+        !['prompt-accepted','content-delta','phase-change','response-completed'].includes(value.kind)) return;
+    const entry = admitted.get(value.sessionId);
+    if (!entry || !owns(entry.agent)) return;
+    const key = 'web:' + value.requestId + ':' + value.generation;
+    if (value.sequence <= (entry.external.get(key) ?? 0) || !entry.external.has(key) && entry.external.size >= 4096) return;
+    entry.external.set(key, value.sequence);
+    observe(entry.agent, ['provider/chatgpt-web']);
   });
   ctx.on('agent/disposed', ({ agent }) => {
     if (admitted.get(String(agent.id))?.agent === agent) admitted.delete(String(agent.id));

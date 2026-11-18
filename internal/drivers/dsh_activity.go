@@ -11,7 +11,7 @@ import (
 
 var dshActivityTypes = []string{"assistant/start", "assistant/chunk", "assistant/end", "assistant/block-start", "assistant/block-end",
 	"assistant/text-delta", "assistant/reasoning-delta", "assistant/tool-call-delta", "assistant/usage", "assistant/finish",
-	"provider/codex-pro", "provider/claude-code-pro"}
+	"provider/codex-pro", "provider/claude-code-pro", "provider/chatgpt-web"}
 
 func allowedDshActivityEvent(event string) bool {
 	return slices.Contains(dshActivityTypes, event)

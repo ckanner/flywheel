@@ -56,7 +56,13 @@ func TestExecutionPolicyRejectsInvalidOrUnauthorizedBindings(t *testing.T) {
 		},
 		"unsupported effort": func(c *Config) {
 			b := c.ExecutionPolicy.Bindings["low"]
-			b.Thinking = "medium"
+			b.Harness, b.Provider, b.Thinking = "codex-pro", "", "off"
+			c.Channels["account"] = Channel{}
+			c.ExecutionPolicy.Bindings["low"] = b
+		},
+		"malformed effort": func(c *Config) {
+			b := c.ExecutionPolicy.Bindings["low"]
+			b.Thinking = "\n"
 			c.ExecutionPolicy.Bindings["low"] = b
 		},
 		"missing route": func(c *Config) { delete(c.Routes, "default") },
@@ -107,7 +113,11 @@ func TestExecutionEffortVocabularyAndSchemaFailure(t *testing.T) {
 		{"kimi", "", "max", true}, {"kimi", "", "xhigh", false},
 		{"codex-pro", "", "medium", true}, {"codex-pro", "", "off", false},
 		{"dsh", "chatgpt", "xhigh", true}, {"dsh", "deepseek-account", "off", true},
-		{"dsh", "deepseek-official", "medium", false},
+		{"dsh", "deepseek-official", "medium", true},
+		{"dsh", "custom-chatgpt", "pro", true}, {"dsh", "custom", "adapter-owned", true},
+		{"dsh", "custom", "", false}, {"dsh", "custom", "  ", false},
+		{"dsh", "custom", "bad\x00id", false}, {"dsh", "custom", string(make([]byte, 129)), false},
+		{"codex-pro", "", "pro", false}, {"claude-code-pro", "", "pro", false}, {"kimi", "", "pro", false},
 	} {
 		require.Equal(t, tc.valid, executionEffortSupported(ExecutionBinding{Harness: tc.harness, Provider: tc.provider, Thinking: tc.effort}))
 	}

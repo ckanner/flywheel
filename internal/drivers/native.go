@@ -69,7 +69,7 @@ func dshCleanupGrace(a DSHArgs) int64 {
 	if native.LCU.Enabled {
 		return max(a.Watchdog.KillGraceMs, 145000)
 	}
-	if len(a.Native) != 0 {
+	if len(a.Native) != 0 || a.Model == DSHWebModel {
 		return max(a.Watchdog.KillGraceMs, 20000)
 	}
 	return a.Watchdog.KillGraceMs

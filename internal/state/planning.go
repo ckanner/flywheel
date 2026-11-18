@@ -39,7 +39,7 @@ func validatePlanningState(st *State) error {
 		}
 		return nil
 	}
-	if st.Sessions == nil || st.Sessions.Version != 4 || st.Slug != st.Planning.Brief.ID {
+	if st.Sessions == nil || st.Sessions.Version < 4 || st.Slug != st.Planning.Brief.ID {
 		return fmt.Errorf("planning task identity and version 4 session ledger are required")
 	}
 	return planning.Validate(st.Planning)

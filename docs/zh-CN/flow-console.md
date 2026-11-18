@@ -100,6 +100,11 @@ invocation 和原因，并提供退役表单：必须填写原因并勾选“不
 
 支持的资源入口包括 ChatGPT · DSH、ChatGPT · Codex Pro、Kimi Code、DeepSeek Account（默认 Flash）及可选 Claude Code Pro。模型初值来自本版本模板，真实能力以 `config inspect`／`doctor` 为准。Claude 的可选适配器必须匹配公开 machine API；缺失或权限不支持会拒绝调用，不自动换后端。账号登录仍由各 Provider 自己完成。
 
+DSH 模型可在阶段编辑器点击**读取此模型的推理档位**，从当前桌面 Host 读取精确
+provider/model 的公开 metadata，展示合法 effort ID 与默认值，不发送模型 prompt。
+旧值保留并标为未核对或不支持；更换模型后需要重新读取。SDK 执行和预热仍会独立
+验证所选 profile，Web 模型显式选择 pro，不向其他模型的菜单加入该档位。
+
 `permissions.bindings` 可以覆盖 `loops.<role>`、`routes.<route>` 和 `judge-panel`；未覆盖项使用全局策略。会话策略按角色覆盖：执行 routes 共用 execute 的策略，各 packet 的历史仍隔离。scoped 只续接相同任务、角色、目标和绑定下可恢复的历史；fresh 也保留调用安全账本。
 
 [JEV 决策](jev.md) 只有一个默认关闭的总开关，开启后自动参与已支持的调查与失败后决策，包括批准的执行模型选择。

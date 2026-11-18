@@ -139,7 +139,7 @@ func TestSessionStateRejectsMalformedOrContradictoryCheckpoints(t *testing.T) {
 		name   string
 		change func(*SessionLedger)
 	}{
-		{"unknown version", func(s *SessionLedger) { s.Version = 5 }},
+		{"unknown version", func(s *SessionLedger) { s.Version = 6 }},
 		{"nil records", func(s *SessionLedger) { s.Records = nil }},
 		{"nil record", func(s *SessionLedger) { s.Records["execute/M01-T01"] = nil }},
 		{"nil invocation", func(s *SessionLedger) { s.Records["execute/M01-T01"].Last = nil }},
@@ -563,4 +563,20 @@ func TestLoadRejectsInvalidConsoleExtensionsBeforeAnyControlMutation(t *testing.
 	writeRaw(t, StateFile(dir), `{"revision":1,"project":{"cwd":"/repo"},"scheduler":{"mode":"serial","max-parallel":2}}`)
 	_, err := Load(dir)
 	require.NoError(t, err)
+}
+
+func TestWebSessionBindingRequiresDowngradeFenceAndRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	st := sessionTestState(t, dir)
+	binding := json.RawMessage(`{"protocol":1,"transport":"chatgpt-web","provider":"chatgpt","model":"gpt-6-pro-web","reasoningEffort":"pro","connectionId":"connection","accountFingerprint":"opaque-account","policyVersion":"policy/1","contextPolicy":"project-only","observation":"opaque","usage":"unknown","hostContractVersion":1,"runtimeVersion":"web-runtime/1"}`)
+	st.Sessions.Records["execute/M01-T01"].WebBinding = binding
+	_, err := Save(dir, st, nil)
+	require.ErrorContains(t, err, "version 5")
+	st.Sessions.Version = 5
+	_, err = Save(dir, st, nil)
+	require.NoError(t, err)
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+	require.JSONEq(t, string(binding), string(loaded.Sessions.Records["execute/M01-T01"].WebBinding))
+	require.Equal(t, 5, loaded.Sessions.Version)
 }

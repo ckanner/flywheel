@@ -33,7 +33,7 @@ func (c *Context) prewarmDirectory(id string) string {
 }
 
 func reviewDSHArgs(a drivers.CallArgs) drivers.DSHArgs {
-	return drivers.DSHArgs{Native: a.Native, Managed: a.Managed, Prompt: a.Prompt, Provider: a.Binding.Provider, Model: a.Model, Thinking: a.Binding.Thinking,
+	return drivers.DSHArgs{Web: a.Web, Native: a.Native, Managed: a.Managed, Prompt: a.Prompt, Provider: a.Binding.Provider, Model: a.Model, Thinking: a.Binding.Thinking,
 		PermissionMode: a.PermissionMode, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,
 		SessionID: a.SessionID, PersistentSession: a.PersistentSession, RequestID: a.RequestID,
 		APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent}
@@ -69,6 +69,9 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 		Cwd: c.unitCwd(packet), WorkspaceCwd: c.WorkspaceCwd, APIKeys: c.apiKeysFor(binding.Channel), Watchdog: c.wdogFor("review"),
 		Binding: config.LoopBinding{NativeProfile: binding.NativeProfile, Harness: binding.Harness, Model: binding.Model, Channel: binding.Channel,
 			Provider: fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel), Thinking: binding.Thinking}})
+	if a.Model == drivers.DSHWebModel {
+		a.Web = &drivers.DSHWebRequest{Version: 1, ExecutionDomainID: "flywheel-" + sessionHash([]any{"web-domain-v1", c.TaskDir}), RequireIsolation: true}
+	}
 	a.PrewarmID = "warm-" + rand.Text()
 	a.PrewarmDirectory = c.prewarmDirectory(a.PrewarmID)
 	if err := makePrewarmDirectory(a.PrewarmDirectory, 0o700); err != nil {
@@ -90,7 +93,10 @@ func (c *Context) beginReviewPrewarm(packet *contract.Packet) error {
 	if c.State.Sessions == nil {
 		c.State.Sessions = &state.SessionLedger{Records: map[string]*state.SessionRecord{}}
 	}
-	c.State.Sessions.Version = max(3, c.State.Sessions.Version) // preserve reviewed planning's newer downgrade fence
+	c.State.Sessions.Version = max(3, c.State.Sessions.Version) // preserve newer downgrade fences
+	if a.Web != nil {
+		c.State.Sessions.Version = max(5, c.State.Sessions.Version)
+	}
 	c.save()
 	if c.fatal != nil {
 		// Rename may have succeeded before a failed fsync. Record the positive

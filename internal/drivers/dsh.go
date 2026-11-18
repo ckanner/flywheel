@@ -20,6 +20,7 @@ const DSHWorkerEnv = "FLYWHEEL_DSH_WORKER"
 
 // DSHArgs binds one SDK worker to one provider/model and permission scope.
 type DSHArgs struct {
+	Web               *DSHWebRequest
 	Native            json.RawMessage
 	Managed           *NativeAdmission
 	Prewarm           PreparedDSH // one-use SDK initialization, never a shared model session
@@ -52,6 +53,7 @@ func DSHCommand() string {
 }
 
 type dshStart struct {
+	Web             *DSHWebRequest   `json:"web,omitempty"`
 	Native          json.RawMessage  `json:"native,omitempty"`
 	Managed         *NativeAdmission `json:"managed,omitempty"`
 	Type            string           `json:"type"`
@@ -72,6 +74,7 @@ type dshStart struct {
 }
 
 type dshParsed struct {
+	WebReceipt       json.RawMessage
 	NativeReceipt    json.RawMessage
 	SessionID        string
 	Text             string
@@ -119,6 +122,7 @@ func validateDSHLifecycle(s *SessionOutcome, request dshStart, sessionID string,
 func parseDSHStream(stdout string, request dshStart) dshParsed {
 	var parsed dshParsed
 	ready, terminal, cleanupConfirmed := false, false, false
+	var webBinding *DSHWebBinding
 	var activitySequence int64
 	providerError := ""
 	for _, line := range strings.Split(stdout, "\n") {
@@ -127,6 +131,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			continue
 		}
 		var frame struct {
+			Web             json.RawMessage `json:"web"`
 			Native          json.RawMessage `json:"native"`
 			Type            string          `json:"type"`
 			Protocol        int             `json:"protocol"`
@@ -174,6 +179,12 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 				parsed.Error = "DSH worker history request or restored session identity mismatch"
 				break
 			}
+			var err error
+			webBinding, err = validateDSHWebReady(frame.Web, request)
+			if err != nil {
+				parsed.Error = err.Error()
+				break
+			}
 			ready = true
 			parsed.SessionID = frame.SessionID
 		case "event":
@@ -191,6 +202,11 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 				parsed.Error = "native event arrived without a matching admitted invocation"
 			}
 		case "result":
+			if err := validateDSHWebResult(frame.Web, request, webBinding, frame.SessionID, frame.Status, frame.Usage, frame.CostUSD, frame.Settled, frame.Lifecycle); err != nil {
+				parsed.Error = err.Error()
+				break
+			}
+			parsed.WebReceipt = frame.Web
 			if err := validateNativeReceipt(request.Native, frame.Native, frame.Status == "ok", frame.Settled); err != nil {
 				parsed.Error = err.Error()
 				break
@@ -269,6 +285,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 		parsed.Cancelled = false // an untrusted prior terminal cannot establish the cancellation cause
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
+		parsed.WebReceipt = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	} else if providerError != "" {
 		parsed.Error = providerError
@@ -352,8 +369,15 @@ func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 	if a.PersistentSession {
 		request.Protocol, request.RequestID, request.Persistent, request.SessionID = 2, a.RequestID, true, a.SessionID
 	}
+	request.Web, err = prepareDSHWeb(a.Web, request)
+	if err != nil {
+		return dshStart{}, "", nil, nil, err
+	}
 	var argv []string
 	if a.Doctor {
+		if request.Web != nil {
+			request.Web.Probe = true
+		}
 		argv = []string{"--doctor"}
 		// Protocol v1 requires a nonempty admission prompt. The doctor worker
 		// consumes this fixed marker locally and skips session/prompt entirely.
@@ -389,7 +413,8 @@ func RunDSH(a DSHArgs) Result {
 	result := watchdog.Run(command, argv, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: request.Cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs: dshCleanupGrace(a), OnActivity: onActivity,
+		DisableIdleTimeout: request.Web != nil,
+		KillGraceMs:        dshCleanupGrace(a), OnActivity: onActivity,
 		StdoutCapture: newDSHActivityCapture(func() dshStart { return request }),
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			err := json.NewEncoder(stdin).Encode(request)
@@ -419,6 +444,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		parsed.Error = "DSH worker request write failed: " + writeError.Error()
 		parsed.ErrorCode = errs.TRANSPORT
 		parsed.Session = nil
+		parsed.WebReceipt = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	}
 	// A retained terminal prefix cannot certify the omitted bytes of either
@@ -426,6 +452,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 	parsed.CleanupConfirmed = parsed.CleanupConfirmed && !result.Truncated
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
 	out.NativeReceipt = parsed.NativeReceipt
+	out.WebReceipt = parsed.WebReceipt
 	out.ErrorCode = parsed.ErrorCode
 	if out.CleanupError == "" {
 		out.CleanupError = parsed.CleanupError
@@ -512,6 +539,9 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 			out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed = "not-dispatched", "failed", true
 			out.Usage, out.CostUSD = &Usage{}, new(float64)
 		}
+	}
+	if request.Web != nil {
+		out.Usage, out.CostUSD = nil, nil
 	}
 	// An intact correlated native receipt can still measure usage when outer
 	// process cleanup/exit is unsafe. Accounting certainty is separate from replay.

@@ -29,12 +29,33 @@ ctx.provide('shell', {
     ...(request.sandboxPolicy.mode === 'danger-full-access' ? {} : { enforcement: 'full' }),
   } }) }),
 });
+const webScenario = process.env.TEST_DSH_WEB_SCENARIO;
+let webIdentity, webDispatched = false, webCompleted = false;
+const webBinding = { protocol: 1, transport: 'chatgpt-web', provider: 'offline-fixture', model: 'gpt-6-pro-web', reasoningEffort: 'pro',
+  connectionId: 'offline-connection', accountFingerprint: 'offline-account', policyVersion: 'fixture-policy/1', contextPolicy: 'project-only',
+  observation: 'opaque', usage: 'unknown', hostContractVersion: 1, runtimeVersion: 'web-runtime/1' };
+if (webScenario && webScenario !== 'missing-host') {
+  // Offline contract fixture only: the production host is implemented by the
+  // ChatGPT plugin, with its own durable transport/commit journal and account.
+  ctx.provide('compaction', { compactIfNeeded: async () => {} });
+  ctx.provide('chatgptWebHost', {
+    version: 1, admitBinding: async () => ({ ...webBinding, ...(webScenario === 'account-change' ? { accountFingerprint: 'different-account' } : {}) }),
+    beginInvocation: async input => { webIdentity = { sessionId: input.sessionId, executionDomainId: input.executionDomainId, hostInvocationId: input.hostInvocationId }; },
+    invocationFacts: async input => {
+      if (JSON.stringify(input) !== JSON.stringify(webIdentity)) throw new Error('foreign fixture invocation');
+      return { version: 1, ...input, dispatch: webDispatched ? 'dispatched' : 'not-dispatched',
+        outcome: webScenario === 'unknown' && webDispatched ? 'unknown' : webCompleted ? 'completed' : 'failed',
+        remoteGeneration: webScenario === 'unknown' && webDispatched ? 'unknown' : 'idle',
+        localCleanupConfirmed: webScenario !== 'unclean', usageStatus: 'unknown' };
+    },
+  });
+}
 await ctx.plugin(WorkerPolicy, patch.find(row => row.insert).insert[0].config);
 
 class OfflineAdapter extends LlmAdapter {
   async resolveModel(provider, model) {
     return { id: model, provider, name: model, reasoning: {
-      efforts: ['low', 'high', 'max'].map(id => ({ id, name: id })),
+      efforts: (webScenario && webScenario !== 'unsupported-effort' ? ['pro'] : ['low', 'high', 'max']).map(id => ({ id, name: id })),
     } };
   }
   async *stream(request) {
@@ -43,6 +64,11 @@ class OfflineAdapter extends LlmAdapter {
         directories: ctx.sessions.list().map(session => ({ header: session.header.cwd, current: ctx.workingDirectory.get(session) })),
         titles: ctx.sessions.list().map(session => ctx.get('sessionTitle')?.get(session)?.title),
         reasoningEffort: request.reasoningEffort }) + '\n');
+    if (webScenario) {
+      await delay(15);
+      webDispatched = true;
+      ctx.emit('chatgpt-web/activity', { ...webIdentity, requestId: 'offline-browser-request', generation: 1, sequence: 1, kind: 'prompt-accepted' });
+    }
     yield { type: 'block-start', index: 0, blockType: 'text' };
     const answer = 'published SDK fixture complete';
     const chunks = Number(process.env.TEST_DSH_STREAM_CHUNKS ?? 1);
@@ -52,6 +78,7 @@ class OfflineAdapter extends LlmAdapter {
     }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: 'published SDK fixture complete' } };
     yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } };
+    if (webScenario) webCompleted = true;
     yield { type: 'finish', reason: { kind: 'completed' } };
   }
 }

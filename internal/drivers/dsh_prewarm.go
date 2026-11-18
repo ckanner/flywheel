@@ -44,6 +44,7 @@ var dshWarmOpenDirectory = os.Open
 var dshWarmProbe = syscall.Kill
 
 type dshPrepare struct {
+	Web              *DSHWebRequest  `json:"web,omitempty"`
 	Native           json.RawMessage `json:"native,omitempty"`
 	Type             string          `json:"type"`
 	Protocol         int             `json:"protocol"`
@@ -80,6 +81,11 @@ func DSHPrewarmBinding(a DSHArgs) (string, error) {
 	a.Prompt, a.SessionID, a.RequestID, a.SessionTitle = "", "", "", ""
 	a.PersistentSession = false
 	a.Managed = nil
+	if a.Web != nil {
+		copy := *a.Web
+		copy.ExpectedBinding = nil
+		a.Web = &copy
+	}
 	r, command, _, env, err := dshCall(a)
 	if err != nil {
 		return "", err
@@ -247,9 +253,14 @@ func PrepareDSH(a DSHArgs) *DSHPrewarm {
 	preparedArgs.Prompt, preparedArgs.SessionID, preparedArgs.RequestID, preparedArgs.SessionTitle = "", "", "", ""
 	preparedArgs.PersistentSession = false
 	preparedArgs.Managed = nil
+	if preparedArgs.Web != nil {
+		web := *preparedArgs.Web
+		web.ExpectedBinding = nil
+		preparedArgs.Web = &web
+	}
 	r, command, _, env, _ := dshCall(preparedArgs) // Binding validation already checked these arguments.
 	h.command, h.env = command, env
-	h.prepare = dshPrepare{Native: r.Native, Type: "prepare", Protocol: 1, WarmID: a.PrewarmID, Binding: binding,
+	h.prepare = dshPrepare{Web: r.Web, Native: r.Native, Type: "prepare", Protocol: 1, WarmID: a.PrewarmID, Binding: binding,
 		ReceiptDirectory: a.PrewarmDirectory, TTLMS: dshWarmTTL.Milliseconds(), Cwd: r.Cwd, WorkspaceCwd: r.WorkspaceCwd,
 		Provider: r.Provider, Model: r.Model, ReasoningEffort: r.ReasoningEffort, PermissionMode: r.PermissionMode, IdleTimeoutMS: r.IdleTimeoutMS}
 	if err != nil {
@@ -297,7 +308,7 @@ func (h *DSHPrewarm) activity(chunk, stream string) {
 	h.mu.Lock()
 	h.lastActivity = time.Now()
 	if h.idleTimer != nil && !h.idleTimedOut {
-		h.idleTimer.Reset(dshTimeout(h.formal.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs))
+		h.idleTimer.Reset(dshWebIdleTimeout(*h.formal))
 	}
 	h.mu.Unlock()
 }
@@ -306,13 +317,14 @@ func (h *DSHPrewarm) line(line string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var frame struct {
-		Protocol         int    `json:"protocol"`
-		Type             string `json:"type"`
-		WarmID           string `json:"warmId"`
-		Binding          string `json:"binding"`
-		Level            string `json:"level"`
-		Dispatched       *bool  `json:"dispatched"`
-		CleanupConfirmed *bool  `json:"cleanupConfirmed"`
+		Web              json.RawMessage `json:"web"`
+		Protocol         int             `json:"protocol"`
+		Type             string          `json:"type"`
+		WarmID           string          `json:"warmId"`
+		Binding          string          `json:"binding"`
+		Level            string          `json:"level"`
+		Dispatched       *bool           `json:"dispatched"`
+		CleanupConfirmed *bool           `json:"cleanupConfirmed"`
 		Error            *struct {
 			Code    errs.ErrorCode `json:"code"`
 			Message string         `json:"message"`
@@ -332,6 +344,11 @@ func (h *DSHPrewarm) line(line string) {
 			return
 		}
 		if frame.Type == "warm-ready" {
+			if _, err := validateDSHWebReady(frame.Web, dshStart{Web: h.prepare.Web, Provider: h.prepare.Provider, Model: h.prepare.Model, ReasoningEffort: h.prepare.ReasoningEffort}); err != nil {
+				h.streamError = err
+				h.cancel()
+				return
+			}
 			h.readySeen = true
 			close(h.ready)
 		} else {
@@ -372,10 +389,11 @@ func (h *DSHPrewarm) runProcess() {
 	events := jsonLines{onLine: h.line, limit: watchdog.MaxBuffer}
 	result := watchdog.Run(h.command, []string{"--prewarm"}, watchdog.Opts{
 		Context: h.ctx, Cwd: h.prepare.Cwd, Env: childenv.EnvSlice(h.env), KillGraceMs: dshCleanupGrace(h.args),
-		WallTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
-		IdleTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
-		OnActivity:    func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },
-		InteractStdin: h.interact,
+		WallTimeoutMs:      DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
+		IdleTimeoutMs:      DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
+		OnActivity:         func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },
+		InteractStdin:      h.interact,
+		DisableIdleTimeout: h.prepare.Web != nil,
 		StdoutCapture: newDSHActivityCapture(func() dshStart {
 			h.mu.Lock()
 			defer h.mu.Unlock()
@@ -504,7 +522,7 @@ func (h *DSHPrewarm) expire(idle bool) {
 	if idle {
 		// Reset does not retract an AfterFunc callback that is already queued.
 		// Fresh output owns the current idle window even if that callback runs.
-		if time.Since(h.lastActivity) < dshTimeout(h.formal.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs) {
+		if time.Since(h.lastActivity) < dshWebIdleTimeout(*h.formal) {
 			h.mu.Unlock()
 			return
 		}
@@ -538,7 +556,7 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 	h.formal = &a
 	h.lastActivity = started
 	h.formalRequest = request
-	h.idleTimer = time.AfterFunc(dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs), func() { h.expire(true) })
+	h.idleTimer = time.AfterFunc(dshWebIdleTimeout(a), func() { h.expire(true) })
 	h.wallTimer = time.AfterFunc(dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs), func() { h.expire(false) })
 	h.mu.Unlock()
 	stop := func() bool { return false }
@@ -578,6 +596,9 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 			out.Session.Protocol = DSHSessionProtocol
 		}
 		out.Usage, out.CostUSD = &Usage{}, new(float64)
+		if request.Web != nil {
+			out.Usage, out.CostUSD, out.Session.UsageStatus = nil, nil, "unknown"
+		}
 		// Initialization failures still own their structured retry/fallback
 		// classification. Trust it only after the same receipt, stream and
 		// physical error-exit checks used for a formal worker failure.
@@ -607,7 +628,7 @@ func (h *DSHPrewarm) coldAfterExpiry(a DSHArgs, started time.Time, unused Result
 		return unused
 	}
 	wall := dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs) - time.Since(started)
-	idle := dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs) - time.Since(h.lastActivity)
+	idle := dshWebIdleTimeout(a) - time.Since(h.lastActivity)
 	if wall < time.Millisecond || idle < time.Millisecond {
 		h.mu.Unlock()
 		unused.TimedOut, unused.WallTimedOut, unused.IdleTimedOut = true, wall < time.Millisecond, idle < time.Millisecond

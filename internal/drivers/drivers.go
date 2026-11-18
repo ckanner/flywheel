@@ -40,6 +40,7 @@ type SessionOutcome struct {
 
 // Result driver 单次调用的完整结果：watchdog 可观察量 + harness 语义字段。
 type Result struct {
+	WebReceipt    json.RawMessage `json:"webReceipt,omitempty"`
 	NativeReceipt json.RawMessage `json:"nativeReceipt,omitempty"`
 	// watchdog 原始量。
 	ExitCode     *int   `json:"exitCode"`
@@ -78,6 +79,7 @@ type Result struct {
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
 // （可能被降级链改写过 harness/channel）。
 type CallArgs struct {
+	Web                    *DSHWebRequest  // plugin-owned Web transport; never a second harness
 	Native                 json.RawMessage // explicit, validated harness-native options; absent preserves legacy behavior
 	Managed                *NativeAdmission
 	Prewarm                PreparedDSH // optional one-use DSH SDK startup, bound to this invocation
@@ -180,7 +182,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			provider = a.Binding.Channel // direct callers retain legacy DSH bindings
 		}
 		return RunDSH(DSHArgs{
-			Native: a.Native, Managed: a.Managed,
+			Native: a.Native, Managed: a.Managed, Web: a.Web,
 			Prewarm: a.Prewarm,
 			Prompt:  a.Prompt, Provider: provider, Model: model, Thinking: a.Binding.Thinking,
 			WorkspaceCwd: a.WorkspaceCwd, SessionTitle: a.SessionTitle,

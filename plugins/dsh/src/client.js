@@ -485,6 +485,11 @@ function readReply(reply, request) {
   if (request.action === 'config' && !configurationValid(value.configuration)) {
     throw new Error('Flywheel control returned malformed model configuration');
   }
+  if (request.action === 'model-info' && (!record(value.modelInfo) || value.modelInfo.provider !== request.model.provider || value.modelInfo.id !== request.model.id ||
+      value.modelInfo.source !== 'desktop-host' || !Array.isArray(value.modelInfo.efforts) || value.modelInfo.efforts.length > 128 ||
+      !value.modelInfo.efforts.every(e => record(e) && typeof e.id === 'string' && e.id.trim() && e.id.length <= 128 && !/[\0\r\n]/.test(e.id) && typeof e.name === 'string' && e.name.trim() && e.name.length <= 512) ||
+      new Set(value.modelInfo.efforts.map(e => e.id)).size !== value.modelInfo.efforts.length ||
+      value.modelInfo.defaultEffort !== undefined && !value.modelInfo.efforts.some(e => e.id === value.modelInfo.defaultEffort))) throw new Error('Malformed exact-model metadata');
   if (request.action === 'doctor' && (!record(value.diagnostic) ||
       value.diagnostic.ok !== value.ok || !Array.isArray(value.diagnostic.checks) ||
       !value.diagnostic.checks.every(record) ||
@@ -496,7 +501,7 @@ function readReply(reply, request) {
 
 function initialControl() {
   return { pending: null, status: null, planningReceipt: null, checkedAt: null, stale: false, configuration: null,
-    node: null, delivery: null, deliveryStale: false, runs: null, runsLoading: false, runsError: null, runsCwd: null, metrics: null, history: null, diagnostic: null, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
+    node: null, delivery: null, deliveryStale: false, runs: null, runsLoading: false, runsError: null, runsCwd: null, metrics: null, history: null, diagnostic: null, modelInfos: {}, editor: null, configUncertainty: false, raw: null, error: null, uncertainty: null };
 }
 
 // Transport state belongs to this apply-owned controller, not a component or
@@ -547,7 +552,7 @@ function createControl(execute, pendingOperations, isDisposed) {
   };
   const run = async (action, selection, probe = false, extra = {}) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning', 'model-info'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
@@ -564,6 +569,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       ...(['config-edit', 'config-save'].includes(action) ? { editor: extra.editor } : {}),
       ...(['delivery','deliver'].includes(action) ? { delivery: extra.delivery } : {}),
       ...(action === 'node' ? { packet: extra.packet } : {}),
+      ...(action === 'model-info' ? { model: extra.model } : {}),
       ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
@@ -600,6 +606,7 @@ function createControl(execute, pendingOperations, isDisposed) {
         if (['config-edit', 'config-save'].includes(action)) { draft.editor = value.editor; draft.configUncertainty = false; }
         if (['delivery','deliver'].includes(action)) { draft.delivery = value.delivery; draft.deliveryStale = false; }
         if (action === 'node') draft.node = value.node;
+        if (action === 'model-info') draft.modelInfos[JSON.stringify([value.modelInfo.provider, value.modelInfo.id])] = value.modelInfo;
         if (action === 'history') draft.history = value.history;
         if (action === 'runs') draft.runs = value.runs;
         if (action === 'metrics') draft.metrics = value.metrics;
@@ -848,8 +855,8 @@ function consoleReadString(value, label) {
   return value;
 }
 function consoleReadInput(value) {
-  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning'], 'console read request');
-  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning', 'model'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning', 'model-info'].includes(value.action)) throw new Error('Console Remote accepts reads only');
   const output = { action: value.action };
   for (const key of ['taskDir', 'cwd', 'packet', 'runId', 'sessionKey']) {
     if (value[key] !== undefined) output[key] = consoleReadString(value[key], key);
@@ -858,6 +865,15 @@ function consoleReadInput(value) {
     if (value.action !== 'doctor' || typeof value.probe !== 'boolean') throw new Error('Invalid doctor probe');
     output.probe = value.probe;
   }
+  if (value.action === 'model-info') {
+    consoleReadObject(value.model, ['provider', 'id'], 'model metadata query');
+    output.model = {};
+    for (const key of ['provider', 'id']) {
+      const text = consoleReadString(value.model[key], key);
+      if (text.length > 512 || /[\0\r\n]/.test(text)) throw new Error('Invalid model identity');
+      output.model[key] = text;
+    }
+  } else if (value.model !== undefined) throw new Error('Model metadata requires model-info');
   if (value.action === 'config-edit') {
     consoleReadObject(value.editor, ['scope'], 'configuration scope');
     if (!['global', 'project'].includes(value.editor.scope)) throw new Error('Invalid configuration scope');

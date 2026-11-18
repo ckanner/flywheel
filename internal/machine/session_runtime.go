@@ -20,6 +20,9 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 		keys = append(keys, "CLAUDE_CONFIG_DIR", drivers.ClaudeCodeProBinaryEnv, drivers.ClaudeCodeProWorkerEnv)
 		adapter = drivers.ClaudeCodeProPackageVersion + "/lifecycle-v1"
 	case "dsh":
+		if a.Model == drivers.DSHWebModel || a.Binding.Model == drivers.DSHWebModel {
+			adapter = "chatgpt-web/extension-v1"
+		}
 		keys = append(keys, "DSH_HOME", "FLYWHEEL_DSH_PROFILE", "FLYWHEEL_DSH_BIN", drivers.DSHWorkerEnv)
 	case "kimi":
 		keys = append(keys, drivers.KimiCommandEnv, "KIMI_CODE_HOME")

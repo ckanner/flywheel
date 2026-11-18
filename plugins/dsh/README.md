@@ -78,6 +78,12 @@ updating, use:
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
+The new `gpt-6-pro-web` / `pro` route additionally requires the matching ChatGPT
+Web host and public DSH host-policy extension in that SDK profile, its configured
+project-only browser connection, and the profile’s single CompactionEngine.
+The pinned 0.1.20 package does not provide that route. Missing capabilities fail
+before a prompt; see [Web model configuration](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md#chatgpt-web-pro-through-the-dsh-provider).
+
 That versioned example does not establish current account entitlements.
 Authentication and live model availability must be checked through each
 backend's supported flow. Flywheel does not install native model CLIs, copy

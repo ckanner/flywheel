@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDshActivityPublisher, acceptDshActivity, validDshActivity, dshActivityInterval, DSH_ACTIVITY_METHOD } from '../src/dsh-activity.js';
 
-function fixture({ children = true, idleTimeoutMs = 1000 } = {}) {
+function fixture({ children = true, idleTimeoutMs = 1000, web = false } = {}) {
   const handlers = new Map(), services = new Map(), agents = new Map(), frames = [];
   let at = 0, dispose;
   const ctx = { get: key => key === 'agents' ? { get: id => agents.get(id) } : services.get(key),
     provide: (key, value) => services.set(key, value), on: (key, fn) => handlers.set(key, fn),
     effect: fn => { dispose = fn(); } };
   const identity = { requestId: 'request-one', nonce: 'private-nonce', rootSessionId: 'root' };
-  const publisher = createDshActivityPublisher(ctx, { identity: () => identity, idleTimeoutMs, children },
+  const publisher = createDshActivityPublisher(ctx, { identity: () => identity, idleTimeoutMs, children, ...(web ? { webIdentity: () => ({ hostInvocationId: 'owned-call', executionDomainId: 'owned-domain' }) } : {}) },
     { now: () => at, notify: (method, params) => frames.push({ method, params }) });
   const agent = (id, parentId) => {
     const value = { id, session: { id, header: { origin: parentId ? 'subagent' : 'sdk', ...(parentId ? { parentSession: parentId } : {}) } } };
@@ -115,4 +115,24 @@ test('SDK activity receiver rejects damaged owned metadata and ignores foreign a
   assert.equal(dshActivityInterval(), 1000);
   assert.equal(dshActivityInterval(1), 1);
   assert.equal(dshActivityInterval(1200), 300);
+});
+
+
+test('Web activity belongs to its exact host invocation, domain and admitted Session and contains no output', () => {
+  const f = fixture({ web: true, idleTimeoutMs: 4 });
+  const send = value => f.handlers.get('chatgpt-web/activity')(value);
+  const progress = { hostInvocationId: 'owned-call', executionDomainId: 'owned-domain', sessionId: 'root', requestId: 'web-request', generation: 1, sequence: 1, kind: 'prompt-accepted' };
+  for (const bad of [{ ...progress, hostInvocationId: 'old-call' }, { ...progress, executionDomainId: 'foreign-domain' },
+    { ...progress, sessionId: 'foreign-session' }, { ...progress, requestId: '' }, { ...progress, sequence: 0 },
+    { ...progress, generation: 0 }, { ...progress, kind: 'heartbeat' }, { ...progress, text: 'secret' }]) send(bad);
+  assert.equal(f.frames.length, 0);
+  send({ ...progress, bindingDigest: 'digest', at: Date.now(), observedBytes: 5 });
+  assert.deepEqual(f.frames[0].params.activity.eventTypes, ['provider/chatgpt-web']);
+  f.time(100); send(progress);
+  assert.equal(f.frames.length, 1, 'replayed sequence cannot report progress');
+  send({ ...progress, sequence: 2, kind: 'content-delta' });
+  assert.equal(f.frames.length, 2);
+  assert.ok(!JSON.stringify(f.frames).includes('web-request'), 'transport IDs stay inside the host validation boundary');
+  f.dispose(); f.time(200); send({ ...progress, sequence: 3 });
+  assert.equal(f.frames.length, 2);
 });

@@ -11,6 +11,7 @@ import { nativeOverlay } from './native-policy.js';
 import { NativeTree } from './native.js';
 import { acquireGuiLease, settleGuiLease } from './native-resources.js';
 import { acceptDshActivity, DSH_ACTIVITY_METHOD } from './dsh-activity.js';
+import { validateWebBinding, validateWebFacts } from './web-policy.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
   const native = request.native ? nativeOverlay(request, admission.runtimeProfile ?? 'sdk') : null;
@@ -22,7 +23,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     'tool-goal', 'goal-round-driver', 'schedule', 'tool-schedule',
     'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
   return [
-    ...disable.map(id => ({ id, disabled: true })),
+    ...disable.filter(id => !request.web || !['compaction-basic', 'command-compact'].includes(id)).map(id => ({ id, disabled: true })),
     ...(native?.overlay ?? []),
     ...(historyRoot ? [{ id: 'session-persistence-jsonl', config: { root: historyRoot } }] : []),
     { id: 'sandbox', name: '@deepseek-ai/dsh-sandbox-local', disabled: false, config: {} },
@@ -36,6 +37,8 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
       config: { permissionMode: request.permissionMode, cwd: request.cwd,
         activity: { version: 1, idleTimeoutMs: request.idleTimeoutMs ?? 300000 },
+        ...(request.web ? { web: request.web, provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort,
+          hostInvocationId: request.requestId, deadlineMs: Date.now() + (request.timeoutMs ?? request.ttlMs) } : {}),
         ...(native ? { native: request.native, managed: request.managed, composition: native.composition,
           provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort, resuming: Boolean(request.sessionId) } : {}),
         ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}),
@@ -215,6 +218,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let sessionId;
   let fold;
   let nativeTree, guiLease, nativeCleanup, nativeAdmission, policyIdentity;
+  let webBinding, webReceipt;
   let nativeRuntimeEvents = [];
   let completionAtRootEnd;
   let nativeAttempted = false;
@@ -254,6 +258,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       clearTimeout(deadline);
       deadline = setTimeout(() => controller.abort(new BridgeError('TIMEOUT', 'SDK prewarm expired before dispatch')), request.ttlMs);
     }
+    if (request.web && Boolean(request.web.probe) !== doctor) throw new BridgeError('INVALID_REQUEST', 'Web probe requires doctor mode');
     if (doctor && request.protocol === 2) throw new BridgeError('INVALID_REQUEST', 'doctor does not create or resume persistent histories');
     controller.signal.throwIfAborted();
     const bin = env.FLYWHEEL_DSH_BIN || 'dsh';
@@ -266,7 +271,8 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     const patch = join(temp, 'worker.patch.json');
     sessionId = prepared ? undefined : request.sessionId ?? `flywheel-${randomUUID()}`;
     const admission = { receiptPath: join(temp, 'policy.json'), requestId: prepared ? prepared.warmId : request.requestId,
-      ...(prepared ? { deferredAdmissionPath: join(temp, 'admission.json') } : { sessionId }), nonce: randomUUID() };
+      ...(prepared ? { deferredAdmissionPath: join(temp, 'admission.json') } : { sessionId }),
+      ...(request.web && !prepared ? { deadlineMs: started + request.timeoutMs } : {}), nonce: randomUUID() };
     policyIdentity = { requestId: admission.requestId, nonce: admission.nonce };
     if (!prepared && request.native?.lcu?.enabled) {
       guiLease = await acquireGuiLease(request.managed, { env, signal: controller.signal });
@@ -327,10 +333,14 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     if (initialized?.serverInfo?.name !== 'deepseek-harness-sdk-runtime') {
       throw new BridgeError('TRANSPORT', 'unexpected SDK runtime identity');
     }
+    if (request.web) {
+      const admissionReceipt = await readPolicyReceipt(join(temp, 'web-admission.json'), policyIdentity);
+      webBinding = validateWebBinding(admissionReceipt.binding, request);
+    }
     if (prepared) {
       prewarm.ready();
       emit({ protocol: 1, type: 'warm-ready', warmId: prepared.warmId, binding: prepared.binding,
-        level: 'sdk-initialized', dispatched: false });
+        level: 'sdk-initialized', dispatched: false, ...(webBinding ? { web: webBinding } : {}) });
       const next = await abortable(prewarm.dispatch, controller.signal);
       if (next === null) { warmClosed = true; throw new BridgeError('TRANSPORT', 'unused prewarm closed'); }
       // Once a full request arrives its lifecycle belongs to the already durable
@@ -354,7 +364,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       fold = new SessionFold(sessionId, { strict: request.protocol === 2 });
       if (request.native) nativeTree = new NativeTree(sessionId, request.native, observeNative);
       await writeFile(admission.deferredAdmissionPath, JSON.stringify({ requestId: admission.requestId,
-        nonce: admission.nonce, sessionId, ...(request.native ? { managed: request.managed, resuming: Boolean(request.sessionId) } : {}), ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}) }),
+        nonce: admission.nonce, sessionId, ...(request.web ? { hostInvocationId: request.requestId, expectedWebBinding: request.web.expectedBinding, deadlineMs: started + request.timeoutMs } : {}), ...(request.native ? { managed: request.managed, resuming: Boolean(request.sessionId) } : {}), ...(!request.sessionId && request.sessionTitle ? { sessionTitle: request.sessionTitle } : {}) }),
       { mode: 0o600, flag: 'wx' });
     }
     nativeAttempted = Boolean(request.native);
@@ -382,11 +392,16 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       throw new BridgeError('INVALID_REQUEST', 'DSH session project workspace differs from the requested project');
     }
     fold.verifiedPolicy(request);
+    if (request.web) {
+      validateWebBinding(fold.policy.web, request, webBinding);
+      webBinding = validateWebBinding(fold.policy.web, request);
+    }
     nativeAdmission = fold.policy.native;
     if (request.native && nativeAdmission?.matched !== true) throw new BridgeError('INVALID_REQUEST', 'native runtime did not attest its effective capabilities');
     frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
+      ...(webBinding ? { web: webBinding } : {}),
       activity: fold.policy.activity ?? { version: 1, observation: 'durable-events-only', opaquePhases: ['streaming', 'external-providers', 'silent-tool', 'startup'] },
       policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,
         approvalPolicy: fold.policy.approvalPolicy, confinedShell: fold.policy.confinedShell,
@@ -430,7 +445,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   } finally {
     if (runtime) {
       try {
-        const exit = await runtime.close({ graceMs: request?.native?.lcu?.enabled ? 135000 : request?.native ? 15000 : 2000 });
+        const exit = await runtime.close({ graceMs: request?.native?.lcu?.enabled ? 135000 : request?.native || request?.web ? 15000 : 2000 });
         if (exit.spawned && (exit.forced || exit.code !== 0 || exit.signal || !exit.graceful)) {
           settled = false;
           failure ??= { code: 'TRANSPORT', message: 'DSH runtime did not prove graceful shutdown of its managed processes' };
@@ -466,6 +481,19 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
         nativeTree.observeRuntime(nativeRuntimeEvents);
       } catch (error) { settled = false; failure ??= normalizedError(error); }
     }
+    if (temp && request?.web && readySent) {
+      try {
+        const receipt = await readPolicyReceipt(join(temp, 'web-terminal.json'), policyIdentity);
+        if (receipt.error !== undefined || receipt.version !== 1) throw new BridgeError('TRANSPORT', 'Web runtime did not publish owned terminal facts');
+        const binding = validateWebBinding(receipt.binding, request, webBinding);
+        const facts = validateWebFacts(receipt.facts, { hostInvocationId: request.requestId, executionDomainId: request.web.executionDomainId, sessionId });
+        webReceipt = { version: 1, binding, facts };
+        if (!facts.localCleanupConfirmed) settled = false;
+        if ((!doctor && facts.outcome !== 'completed' || doctor && (facts.dispatch !== 'not-dispatched' || facts.outcome !== 'failed')) || facts.remoteGeneration !== 'idle' || !facts.localCleanupConfirmed) {
+          failure ??= { code: 'TRANSPORT', message: 'Web invocation remains unconfirmed; recover its original invocation before retrying' };
+        }
+      } catch (error) { settled = false; failure ??= normalizedError(error); }
+    }
     if (guiLease) {
       try { await settleGuiLease(guiLease, settled && (!nativeAttempted || Boolean(nativeCleanup)), nativeCleanup ?? null); }
       catch (error) { settled = false; failure ??= normalizedError(error); }
@@ -489,7 +517,8 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     type: 'result', status: cancelled ? 'cancelled' : failure ? 'error' : 'ok', settled,
     ...(sessionId ? { sessionId } : {}),
     text: outcome?.text ?? fold?.text ?? '',
-    usage: nativeTree ? nativeTree.addUsage(outcome?.usage ?? null) : outcome?.usage ?? null, costUsd: null,
+    usage: request?.web ? null : nativeTree ? nativeTree.addUsage(outcome?.usage ?? null) : outcome?.usage ?? null, costUsd: null,
+    ...(webReceipt ? { web: webReceipt } : {}),
     ...(nativeTree ? { native: { ...nativeTree.receipt(nativeAdmission ?? { matched: false, observed: null },
       { confirmed: settled, scope: 'owned-sdk-tree', gui: nativeCleanup?.lcu ?? null }), runtimeEvents: nativeRuntimeEvents,
       completion: completionAtRootEnd ?? { confirmed: false, pendingIds: [] } } } : {}),
@@ -500,8 +529,9 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     // native turn with empty/model-invalid output can still be repaired in its
     // own context. Disconnects, damaged frames and ambiguous restore failures
     // never become a confirmed failure merely because the process has exited.
-    const terminalKnown = waited && fold?.receipts.has(promptId) && fold?.terminal && !runtime?.protocolFailure;
-    const terminal = terminalKnown ? fold.terminal.kind === 'completed' ? 'completed'
+    const webKnown = !request?.web || webReceipt?.facts.remoteGeneration === 'idle' && webReceipt.facts.outcome !== 'unknown';
+    const terminalKnown = webKnown && waited && fold?.receipts.has(promptId) && fold?.terminal && !runtime?.protocolFailure;
+    const terminal = terminalKnown && request.web ? webReceipt.facts.outcome : terminalKnown ? fold.terminal.kind === 'completed' ? 'completed'
       : fold.terminal.kind === 'aborted' ? 'cancelled' : 'failed'
       : dispatch === 'not-dispatched' && !resumeUnconfirmed ? 'failed' : 'unknown';
     result.lifecycle = {

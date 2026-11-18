@@ -2,7 +2,7 @@
 
 English · [简体中文](2026-11-17-chatgpt-web-provider.md) · [Proposal index](README.md) · [Current Flywheel architecture](../design.md)
 
-**Status: design proposal; not implemented or released.** Revision 2, 2026-11-17. This document fully replaces the initial PR #57 proposal with a plugin-first design: provide native model capabilities in the existing ChatGPT plugin, then let Flywheel select them through configuration. Source baselines and validation limits are in sections 3 and 15.
+**Status: revision 2 has an implementation candidate; not merged or released.** The 2026-11-17 plugin-first design replaces the initial PR #57 proposal. Original source baselines remain in sections 3 and 15. Actual code, cross-review, offline results and unfinished capabilities are recorded in the [implementation validation record](../validation/2026-11-17-chatgpt-web-implementation.en.md). This is not a claim that T01–T36 all passed.
 
 ## 1. User goals and the actual interaction
 
@@ -72,7 +72,7 @@ Source inspection confirms:
 7. Flywheel's SDK overlay currently disables the default compaction-basic implementation. Installing the plugin alone does not establish that this profile has an appropriate compaction backend.
 8. Oracle's log-tail output, periodic status, and existing follow-up behavior do not meet the entire contract in this design. This revision implements the capabilities itself instead of presenting a CLI/MCP wrapper as a complete model interface.
 
-Section 15 provides pinned sources. Real-account, Mac-browser, full-conversation, and real tool-task acceptance have not run. This PR revises the design; it is not a feature-acceptance record.
+Section 15 pins the design-time sources. Implementation uses the newer DSH `ca33fd6843b205e279c7ccb6cb73a472c78f5760` / `0.2.2-rc.4` with an explicitly maintained compatibility patch. Real host, tool and JSONL offline results are in the separate validation record. Actual account, Mac browser and website full-context acceptance remain incomplete.
 
 ## 4. Model and effort contracts within one Provider
 
@@ -174,7 +174,7 @@ Fresh calls, resumed calls, and the first call after migration use the same pre-
 5. Validate this turn's incremental input, attachments, input budget, and request digest, then persist submit-intent.
 6. Submit only once and obtain acceptance evidence matching the current prompt.
 7. Observe this answer. Capture, validate, and persist the complete result before delivering it to DSH.
-8. Once the remote turn is confirmed terminal and the complete result is safely persisted, release the web-model permit and end the stream so DSH can commit. Reconcile durable host acknowledgment through a separate callback/transaction; waiting inside an unfinished stream for its own message to commit would deadlock. The conversation remains pending-delivery until host confirmation permits the next turn.
+8. Once the remote turn is confirmed terminal and the complete result is persisted, end the stream so DSH can commit. Reconcile durable ACK through a separate callback/transaction without waiting inside the unfinished stream. Implementation review further requires retaining both connection capacity and conversation pending-delivery until ACK, before another web turn may start. ACK precedes local tools/subagents, avoiding parent/child deadlock.
 
 The Page adapter returns structured observations by compatibility version, locale, and fixture, and records the selection-evidence time. It does not guess unknown buttons. If the page becomes unobservable after submission, retain unknown for the original request instead of changing it to "not sent."
 
@@ -530,7 +530,7 @@ Retention/cleanup affects only plugin-owned objects and respects unresolved call
 - **Recovery adoption:** under the corresponding host-operation/session write lease, reconcile the original result with current permissions and adopt once by call kind and durable idempotency key. Main calls and compaction transactions have separate ACKs; existing commits return their original identity.
 - **Host call context and tool guard:** determine main/auxiliary eligibility before projection, bind the execution domain, cover subagents/PTC, and revoke on lifecycle end.
 
-These are delivery dependencies, not claims about currently supported interfaces. Prefer existing public capabilities and contribute minimal public extensions. Do not call DSH private methods, alter published version identifiers to pretend compatibility, or describe ordinary plugin-internal functions as official SDK APIs.
+These public extensions are delivered as an exact-source compatibility patch, not as a claim of stock SDK support. The patch preserves upstream version identifiers and separately records its base, hash and capabilities. It does not call DSH private methods or describe plugin-internal functions as official SDK APIs.
 
 ### 13.3 Milestones
 
@@ -545,7 +545,7 @@ These are delivery dependencies, not claims about currently supported interfaces
 
 This is implementation order, not an indefinite deferral of long context, Execute, or recovery. Full acceptance uses the user's actual heavy-work Preset and real tasks. A capability that has not passed cannot be released based only on a boolean declaration.
 
-Implementation updates the plugin contracts/settings, Flywheel's current architecture/protocol, relevant schemas, bilingual usage/installation/recovery guides, and changelogs together. This PR updates only the proposal and indexes; unimplemented features do not enter current usage guides.
+Implementation updates plugin contracts/settings, Flywheel architecture/protocol, schemas, bilingual installation/recovery guides and changelogs. This PR contains the Flywheel consumer; its companion plugin PR contains the implementation and compatibility patch. The [validation record](../validation/2026-11-17-chatgpt-web-implementation.en.md) explicitly retains media, format correction, ambiguous-project recovery and live-environment acceptance gaps. Offline results do not waive those requirements.
 
 ## 14. Regression and acceptance matrix
 

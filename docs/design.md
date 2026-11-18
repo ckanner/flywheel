@@ -66,7 +66,7 @@ flowchart TD
 
 Flywheel 作为外部会话视图，通过公开 slot 注册的 order 排在内置“对话／轨迹／统计”之后；不改写内置条目或宿主 DOM。
 
-DSH 插件是控制面，提供面板、人工命令和模型工具。它只使用 Go 的 JSON 控制接口，不直接读写 `state.json`，不重新实现任务状态机，不让桌面父智能体保持存活来监督后台任务。
+DSH 插件是控制面，提供面板、人工命令和模型工具。任务控制使用 Go 的 JSON 接口；精确模型目录等宿主只读能力使用公开 DSH 服务。插件不直接读写 `state.json`，不重新实现任务状态机，不让桌面父智能体保持存活来监督后台任务。
 
 引擎将任务目录与执行根统一为绝对物理路径，再计算账本、契约和报告的相对位置。macOS 的 `/var`／`/private/var` 或用户自建符号链接不能改变同一任务的身份；路径无法解析时停止，不能把错误的 `../` 前缀传入 Git 排除规则。
 
@@ -84,7 +84,7 @@ DSH 使用原仓库作为 Session header 的 cwd，再通过公开工作目录�
 
 ### 3.2 Worker 与进程所有权
 
-DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；普通路径关闭保留 2 秒用于历史落盘与插件释放；启用 native 时为 15 秒，LCU 路径为 135 秒，Go 外层分别至少 20／145 秒。之后才进行有界 TERM/KILL 收尾。无法证明正常关闭就不能报告成功。可显式启用 SDK 内的 Team，但不能把 external subagent 名称当成原生 LLM provider。
+DSH worker 是独立进程，通过正式 SDK 的 stdio JSON-RPC 驱动原生会话。每次调用创建一个 SDK 进程，worker 和 SDK 继承 Go 管理的进程组，不另行 detached。SDK 自己创建的托管命令还须经 SDK 关闭协议排空；普通路径关闭保留 2 秒用于历史落盘与插件释放；启用 native 或 ChatGPT Web 时为 15 秒，LCU 路径为 135 秒，Go 外层分别至少 20／145 秒。之后才进行有界 TERM/KILL 收尾。无法证明正常关闭就不能报告成功。可显式启用 SDK 内的 Team，但不能把 external subagent 名称当成原生 LLM provider。
 
 可选 `scheduler.prewarm:true` 提前启动一次性 DSH Review 运行环境：在串行 packet 的 Execute 已确认收尾后，与 L1／适用 Quick 检查重叠执行 SDK 启动与 `initialize`。准备阶段不创建或恢复 Session，不发送 prompt，不使用占位推理。新协议以 `--prewarm` 明确选择，与原 v1／v2 的一次性请求保持兼容；最多一个待用 SDK，60 秒 TTL，stdin EOF 始终触发有界清理。正式 Review 仍先通过全部适用验证、预算和角色调用准入，持久化实际 invocation intent 后才能消费同一运行环境。
 
@@ -533,6 +533,16 @@ Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 
 七个 high 与 Intake low 是尚未完成本项目 A/B 的工程基线。GPT Sol/Astra 支持 xhigh/max，Kimi K3.1 Pro 原生是 low/high/max；不因为拼写相似假设不同 provider 的档位等价。hard 与高影响 Judge 可作为优先比较 xhigh 的候选，默认不自动提高档位或新增失败后升级策略。官方能力、链路证据与建议分别记录在[推理等级说明](zh-CN/model-policy.md)。
 
 标准 SDK 叠加 base，已含 DeepSeek account provider 与账号服务；默认凭证存储位于共享的 DSH home，与 desktop/sdk profile 配置目录独立。同一 DSH_HOME 下可以使用已保存的账号授权，不要求复制 token。桌面登录后的默认模型选择不自动决定 SDK initialize，Flywheel 明确发送 deepseek-account/deepseek-flash；不同 home、凭证 store 或自定义 SDK 插件集仍需核对。已有配置和 0.28.2 API 绑定不随升级暗中改写，采用新账号预设需显式迁移。
+
+### DSH 精确模型档位与 ChatGPT Web
+
+DSH `thinking` 是 adapter-owned 的 opaque ID。执行策略 schema 只校验非空、无 NUL/CR/LF、长度不超过 128；其他 harness 保持既有枚举。模型是否接受该 ID 由实际 SDK `initialize → llm.resolveCallConfig` 核对，冷启动和预热一致。桌面配置编辑器通过会话绑定的只读 `model-info` Remote 调用公开 `llm.resolveModelInfo(provider, model)`，只显示精确目录的 efforts/default；未知旧值标为未核对或不支持，不能通过向全局选项追加 pro 来证明可用。
+
+`gpt-6-pro-web` + `thinking:pro` 是 ChatGPT 插件提供的明确 Web route，可绑定任意 DSH 阶段或执行路由。Flywheel 通过 worker `web` extension v1 协商，不把 `pro` 映射成 high/max，不替换官方 API 或现有 ChatGPT transport。SDK profile 必须实际加载匹配的 `chatgptWebHost` v1、其公开 host-policy 扩展及唯一 CompactionEngine；缺失时在 prompt 前拒绝。当前 npm host 的版本号本身不证明这些扩展已存在。
+
+预热只做无 prompt 的静态绑定准入，不能宣称浏览器已登录或模型实时可用；正式 agent 创建后以本轮 requestId 作为 `hostInvocationId`，调用 `beginInvocation` 并再次核对 binding。Web executionDomainId 源于已规范化的持久 taskDir，跨 worker、角色、fresh/rebuild 和 fallback 保持相同；不是每次请求随机生成。binding 固定 transport、provider/model/effort、connectionId、accountFingerprint、policyVersion、project-only contextPolicy 与 web-runtime/1，恢复必须逐字段匹配。Go session ledger v5 保存 Web binding，构成旧引擎拒绝读取的兼容标记；即使只发生 Web 预热也保留该标记。
+
+Web 路径保留 DSH 唯一压缩引擎，Go 不实现第二套摘要或浏览器 DOM。传输观察等级为 opaque，因此不启动输出 idle watchdog；总 wall 期限和用户取消持续有效。插件实际活动按 host invocation/domain/session/request/generation/sequence 验证，只转发有界 provider/chatgpt-web 元数据，不靠计时心跳证明进度。SDK 关闭时读取真实 invocationFacts；结果 unknown 与本地 cleanup confirmed 可以同时存在，unknown 先对账并阻止 fresh、换 provider 或新角色重放。总用量与费用保持 null/unknown，不从浏览器文字估算为实际计费。doctor 使用明确的 `web.probe:true`，只验证准入，记录 not-dispatched/failed/idle，不伪造已完成模型调用。
 
 ### 7.1 Codex Pro 接入契约
 

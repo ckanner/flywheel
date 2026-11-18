@@ -42,6 +42,11 @@ test('published Client and Host Gateway reads are session-bound and append no co
   await ctx.agents.register(agent);
   const before = session.snapshotEvents();
   ctx.provide('workingDirectory', { get: () => cwd });
+  const metadataQueries = [];
+  ctx.provide('llm', { resolveModelInfo: async (provider, model, signal) => {
+    metadataQueries.push({ provider, model }); assert.ok(signal instanceof AbortSignal);
+    return { reasoning: { efforts: [{ id: 'pro', name: 'Pro' }], defaultEffort: 'pro' } };
+  } });
   const calls = [];
   const control = async (input, actual, signal) => {
     assert.equal(actual, agent); assert.ok(signal instanceof AbortSignal);
@@ -92,7 +97,7 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'config-edit', editor: { scope: 'global' } }, { action: 'config-edit', editor: { scope: 'project' } },
     { action: 'metrics', runId: 'run-1' }, { action: 'history', sessionKey: 'task:review' },
     { action: 'node', packet: 'M01-T01' }, { action: 'delivery', delivery: { action: 'inspect', headBranch: 'feature/example' } },
-    { action: 'doctor', probe: false },
+    { action: 'doctor', probe: false }, { action: 'model-info', model: { provider: 'chatgpt', id: 'gpt-6-pro-web' } },
     { action: 'planning', planning: { action: 'status' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'feedback-1' } },
   ]) assert.deepEqual(JSON.parse(JSON.stringify(inputSchema.parse(input))), input);
   for (const input of [null, [], {}, { action: 'start' }, { action: 'runs', unknown: true },
@@ -105,6 +110,8 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'planning', planning: { action: 'approve' } }, { action: 'planning', planning: { action: 'status', start: true } },
     { action: 'planning', planning: { action: 'status', 'request-id': '' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'a'.repeat(121) } },
     { action: 'status', planning: { action: 'status' } }, { action: 'planning' },
+    { action: 'model-info' }, { action: 'model-info', model: { provider: 'chatgpt', id: 'm', extra: true } },
+    { action: 'runs', model: { provider: 'chatgpt', id: 'm' } }, { action: 'model-info', model: { provider: 'chatgpt', id: 'bad\nmodel' } },
   ]) assert.throws(() => inputSchema.parse(input), JSON.stringify(input));
   for (const kind of ['success', 'error']) assert.equal(resultSchema.parse({ result: { kind, text: '{}' } }).result.kind, kind);
   for (const value of [null, {}, { result: { kind: 'unknown', text: '{}' } }, { result: { kind: 'success', text: 1 } }]) {
@@ -121,6 +128,12 @@ test('published Client and Host Gateway reads are session-bound and append no co
   }
   assert.equal((await read({ action:'status', taskDir:cwd, cwd })).result.kind,'success');
   assert.equal((await read({ action:'planning', taskDir:cwd, cwd, planning: { action: 'status', 'request-id': 'feedback-1' } })).result.kind,'success');
+  const countBeforeModel = calls.length;
+  await clientView.run('model-info', { taskDir: '', cwd }, false, { model: { provider: 'chatgpt', id: 'gpt-6-pro-web' } });
+  assert.equal(clientView.hooks.control.getSnapshot().error, null);
+  assert.equal(clientView.hooks.control.getSnapshot().modelInfos[JSON.stringify(['chatgpt', 'gpt-6-pro-web'])].defaultEffort, 'pro');
+  assert.deepEqual(metadataQueries, [{ provider: 'chatgpt', model: 'gpt-6-pro-web' }]);
+  assert.equal(calls.length, countBeforeModel, 'model metadata is read from the public desktop LLM service without invoking Go or a model');
   const count = calls.length;
   for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');

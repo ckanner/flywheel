@@ -5,6 +5,22 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased
+
+- Add the negotiated ChatGPT Web extension to DSH workers: exact model/effort
+  admission, static prewarm binding and formal host invocation, persistent
+  task domains, connection/account/policy resume checks, content-free activity,
+  opaque wall-only execution, truthful remote/cleanup facts and unknown usage.
+  Session ledger v5 rejects older readers; unresolved calls still block replay
+  across roles, fresh histories and providers.
+- Read DSH reasoning choices and defaults from exact public model metadata in
+  the desktop editor. DSH execution-policy effort IDs are adapter-owned; other
+  harnesses keep their existing accepted values. Unsupported choices fail SDK
+  admission without replacing the model or effort.
+- Preserve the selected profile’s single CompactionEngine for Web calls and
+  reject missing public Web host extensions. This source change does not update
+  the pinned ChatGPT 0.1.20 candidate or claim live browser/account acceptance.
+
 ## 0.37.0 — Kimi 2.5.3 admission, native history and the Claude Agent SDK
 
 - Integrate the reviewed Claude Code Pro 0.6.0 source candidate with official

@@ -36,6 +36,7 @@ type SessionConfiguration struct {
 }
 
 type SessionRecord struct {
+	WebBinding      json.RawMessage       `json:"web-binding,omitempty"`
 	Context         *SessionContext       `json:"context,omitempty"`
 	Configuration   *SessionConfiguration `json:"configuration,omitempty"`
 	Task            string                `json:"task"`
@@ -354,6 +355,9 @@ func validateSessions(raw json.RawMessage) error {
 	}
 	threads := map[[2]string]string{}
 	for key, record := range ledger.Records {
+		if len(record.WebBinding) != 0 && ledger.Version < 5 {
+			return fmt.Errorf("Web binding requires version 5 session ledger")
+		}
 		if key != record.Role+"/"+record.Scope {
 			return fmt.Errorf("session key %q does not match its role and scope", key)
 		}

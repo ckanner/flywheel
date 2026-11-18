@@ -20,6 +20,7 @@ Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行
 | `idleTimeoutMs` | 可选的 1–86,400,000 毫秒，默认 300,000；策略插件据此合并真实活动通知，外层 Go watchdog 执行静默预算。Go 始终显式传递本轮有效的 idle 和 wall 值，零配置分别使用 300,000 和 3,600,000 毫秒 |
 | `workspaceCwd` | 可选的稳定项目目录，必须存在并规范化。SDK 在该目录初始化 Session header，当前执行目录仍为 `cwd`；ready 必须回显匹配的项目目录。省略保留旧行为 |
 | `sessionTitle` | 可选的人类可读任务／角色标题；只给新 Session 设置，续接不覆盖现有标题。完整标题交给公开 `sessionTitle.rename`，再用 `get` 验证已接受的原生 snapshot；由 DSH 的 `maxTitleBytes` 处理 UTF-8 长度，不额外截成 35 字符。显式请求新标题而服务缺失或回读失败时，在 prompt 前失败 |
+| `web` | 可选的严格 Web extension v1；仅精确 Web model 使用，详见下文 |
 | `native` / `managed` | 版本化能力选项与Go生成的实际调用身份，见原生扩展 |
 
 项目归属与执行目录分离时，worker 在发送 prompt 前使用公开 working-directory 服务切换并核对当前目录；权限根仍如实记录 DSH 的 Session header 语义。当前 DSH 不支持将 `workspace-write` 沙箱根与项目目录独立设置，因此这类不同目录组合在派发前拒绝，不把权限改成 full access。`read-only` 与显式 full access 保留其实际权限。doctor 使用临时持久化根，清理后不留下新的用户会话。桌面 Workspace 登记只通过 Host 的公开注册表执行。
@@ -38,6 +39,56 @@ v2 拒绝缺失或 false 的 persistent；v1 不接受这些 v2 字段。版本�
 公开 `session/resume` 恢复；missing、busy 或通用恢复错误均不自动冷启动替代。
 
 `provider` 明确选择认证路径：`deepseek-account` 使用 DSH 账号服务，`deepseek-official` 使用 API Key；不省略 provider 来猜桌面默认，worker 不在账号失败时自行换用 API。默认预设没有后备渠道，Go 仍可按用户显式配置的后备链执行原有策略。标准 SDK 与桌面在相同 DSH home 下默认共用账号授权存储，无需复制凭证。
+
+## ChatGPT Web extension v1
+
+`model:gpt-6-pro-web` 必须显式使用 `reasoningEffort:pro` 并携带：
+
+```json
+{"web":{"version":1,"executionDomainId":"flywheel-stable-task-digest","requireIsolation":true}}
+```
+
+可选 `expectedBinding` 是上一已确认历史的完整 binding；可选 `probe:true` 仅匹配
+`--doctor`，不能放入普通 start 或 prepare。未知字段拒绝。旧 worker 不认识 `web`
+字段会在模型派发前失败，不能靠回显 model 名冒充支持。
+
+Web 的 prepare/start 都经实际 SDK 精确模型 metadata 校验，并要求 ChatGPT 插件
+公开 `chatgptWebHost` v1 与已有唯一 `compaction.compactIfNeeded` 服务。
+`admitBinding` 返回 protocol 1、transport `chatgpt-web`、精确 provider/model/effort、
+connectionId、accountFingerprint、policyVersion、contextPolicy `project-only`、
+observation `opaque`、usage `unknown`、hostContractVersion 1、runtimeVersion
+`web-runtime/1`。prepare 的 `warm-ready.web` 是这个静态 binding，不能证明浏览器活着
+或额度可用。正式 `ready.web` 再核对同一 binding；resume 还与 expectedBinding 完全一致。
+
+正式 agent 创建时先调用 `beginInvocation`，参数为本轮 requestId（hostInvocationId）、
+稳定 executionDomainId、真实 sessionId、物理 workspace、requireIsolation 和从本轮起点计算的绝对 deadlineMs。
+预热从不调用 beginInvocation；同 invocation 的重复准入由插件幂等处理，未决旧域不可覆盖。
+公开 `chatgpt-web/activity` 只接收身份匹配、单调 sequence 的实际事件，聚合为既有
+DSH `activity` 帧中的 `provider/chatgpt-web`，不转发原文或私有 nonce。
+Go 对该 transport 采用 wall-only，保留取消及清理预算。
+
+SDK 正常关闭会通过真实 Cordis effect disposer 发布私有、原子、已 fsync 的终态。
+worker 读取并校验后在 `result.web` 返回：
+
+```json
+{
+  "version":1,
+  "binding":{"protocol":1,"transport":"chatgpt-web","provider":"chatgpt","model":"gpt-6-pro-web","reasoningEffort":"pro","connectionId":"opaque-connection","accountFingerprint":"opaque-account","policyVersion":"policy/1","contextPolicy":"project-only","observation":"opaque","usage":"unknown","hostContractVersion":1,"runtimeVersion":"web-runtime/1"},
+  "facts":{"version":1,"hostInvocationId":"call-123","executionDomainId":"flywheel-stable-task-digest","sessionId":"flywheel-session","dispatch":"dispatched","outcome":"completed","remoteGeneration":"idle","localCleanupConfirmed":true,"usageStatus":"unknown"}
+}
+```
+
+facts 聚合主调用、辅助模型和子调用，invocations 详细 journal 留在插件；Flywheel 只存
+有界摘要。dispatch 为 not-dispatched/dispatched/unknown；outcome 为
+completed/failed/cancelled/unknown；remoteGeneration 为 idle/running/unknown。
+remote 非 idle 或 dispatch unknown 不能同时宣称已知 outcome；本地关闭不证明远端结束。
+普通成功必须 dispatched/completed/idle 且 localCleanupConfirmed。doctor 成功只表示探针通过，
+facts 保持 not-dispatched/failed/idle。result.usage 与 costUsd 必须 null，lifecycle
+usageStatus 必须 unknown；缺失回执、身份冲突、伪造 0 用量均拒绝。
+
+managed Web 的 ledger 为 v5，`web-binding` 保存精确动态绑定；unknown 调用仍由既有
+全任务恢复栅栏阻止跨角色、fresh 或更换 provider 自动重放。物理 worker 退出与
+remote generation certainty 独立判断。Web SDK 关闭宽限 15 秒，外层至少 20 秒。
 
 ## 运行参数
 
