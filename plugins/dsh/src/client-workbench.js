@@ -1323,7 +1323,10 @@ function TaskView({
     h('p', { className: css.settingsHelp }, t('inferenceBoundary')),
     h(Diagnostic, { value: control.diagnostic, t }), h(Configuration, { value: control.configuration, t }),
     control.raw && h('section', { className: css.details }, h('h4', null, t('raw')), h('pre', { className: css.raw }, JSON.stringify(control.raw, null, 2))));
-  return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page },
+  // The workbench is not a chat target: tell the host to give this view the
+  // full content area, and mark it so the stylesheet can hide the composer
+  // seat only while this view is mounted. Switching back to Chat restores it.
+  return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page, 'data-conversation-composer-overlay': '', 'data-flywheel-page': '' },
     h('style', { 'data-plugin': '@ckanner/flywheel', 'data-plugin-css': '@ckanner/flywheel/client.module.css' }, stylesheet),
     h('header', { className: css.workbenchHeader, hidden: page === 'config' },
       h('div', { className: css.taskIdentity }, h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }), h(TaskLocations, { control, selection, association, t })),
