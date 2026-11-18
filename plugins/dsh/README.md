@@ -71,8 +71,8 @@ provider, and tools. The reserved `desktop` profile cannot be used as a worker.
 | Kimi | Go uses the Kimi CLI by default, or its owned local Server worker for native Agent/Swarm/Tower; the same Kimi login applies |
 | Claude Code Pro | Optional 0.6.0 peer and compatible local Claude runtime with authorized authentication; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
 
-The checked ChatGPT companion is 0.1.20. If the SDK profile is missing it or needs
-updating, use:
+The stable ChatGPT installation example for the existing subscription transport
+uses 0.1.20. If that SDK profile is missing it or needs updating, use:
 
 ```sh
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
@@ -81,8 +81,20 @@ dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.
 The new `gpt-6-pro-web` / `pro` route additionally requires the matching ChatGPT
 Web host and public DSH host-policy extension in that SDK profile, its configured
 project-only browser connection, and the profile’s single CompactionEngine.
-The pinned 0.1.20 package does not provide that route. Missing capabilities fail
-before a prompt; see [Web model configuration](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md#chatgpt-web-pro-through-the-dsh-provider).
+The stable 0.1.20 package does not provide that route. The source build/test harness
+pins the exact reviewed `0.2.0-alpha.1` archive recorded in
+[vendor/chatgpt.json](vendor/chatgpt.json); it is not a claimed npm release and
+is not bundled as another runtime provider. To use Web, install that exact
+candidate into the same SDK profile and use its exact compatible patched DSH
+host. A Flywheel upgrade does not perform either step or alter the profile.
+Flywheel bundles the candidate's narrow public read-only recovery reader and
+its schema validators as an independent relative module. This lets an installed
+worker inspect original evidence without resolving another SDK profile's
+dependencies or starting the provider, SDK, browser or tools. Its exact source,
+output hashes and original licenses ship in the `dist/web-recovery-reader.*`
+manifest and license files.
+Missing capabilities fail before a prompt; see
+[Web model configuration](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md#chatgpt-web-pro-through-the-dsh-provider).
 
 That versioned example does not establish current account entitlements.
 Authentication and live model availability must be checked through each

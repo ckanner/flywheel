@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ type DSHWebRequest struct {
 	RequireIsolation  bool           `json:"requireIsolation"`
 	Probe             bool           `json:"probe,omitempty"`
 	ExpectedBinding   *DSHWebBinding `json:"expectedBinding,omitempty"`
+	RecoveryDirectory string         `json:"recoveryDirectory,omitempty"`
 }
 
 type DSHWebBinding struct {
@@ -84,6 +86,9 @@ func prepareDSHWeb(web *DSHWebRequest, request dshStart) (*DSHWebRequest, error)
 	}
 	if web.Version != 1 || !dshWebString(web.ExecutionDomainID) || !web.RequireIsolation {
 		return nil, fmt.Errorf("DSH Web requires a stable execution domain and project-only isolation")
+	}
+	if web.RecoveryDirectory != "" && (!filepath.IsAbs(web.RecoveryDirectory) || strings.ContainsRune(web.RecoveryDirectory, 0) || request.Protocol != 2 || !request.Persistent || web.Probe) {
+		return nil, fmt.Errorf("DSH Web recovery requires a persistent managed invocation and absolute recovery directory")
 	}
 	if web.ExpectedBinding != nil {
 		if err := validateDSHWebBinding(*web.ExpectedBinding, request); err != nil {

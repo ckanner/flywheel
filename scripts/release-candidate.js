@@ -25,6 +25,30 @@ function readPackedFile(file, relative) {
   });
 }
 
+function verifyWebRecoveryContents(read) {
+  const vendor = JSON.parse(read('plugins/dsh/vendor/chatgpt.json'));
+  const manifest = JSON.parse(read('dist/web-recovery-reader.manifest.json'));
+  const expected = { package: vendor.package, version: vendor.version, commit: vendor.sourceCommit,
+    tree: vendor.sourceTree, archiveSHA256: vendor.sha256 };
+  const allowed = new Set(['node:fs', 'node:fs/promises', 'node:crypto', 'node:path', 'node:os']);
+  if (manifest.version !== 1 || manifest.contract !== 'chatgpt-web/read-only-recovery/1' ||
+      manifest.publicEntry !== 'dsh-plugin-chatgpt/web-recovery' ||
+      Object.keys(expected).some(key => manifest.source?.[key] !== expected[key]) ||
+      vendor.package !== 'dsh-plugin-chatgpt' || vendor.version !== '0.2.0-alpha.1' ||
+      !/^[a-f0-9]{40}$/.test(vendor.sourceCommit) || !/^[a-f0-9]{40}$/.test(vendor.sourceTree) ||
+      !/^[a-f0-9]{64}$/.test(vendor.sha256) || manifest.file !== 'web-recovery-reader.mjs' ||
+      manifest.licenses?.file !== 'web-recovery-reader.LICENSES.md' ||
+      !Array.isArray(manifest.imports) || manifest.imports.some(name => !allowed.has(name))) {
+    throw new Error('Packed Web recovery must use the exact reviewed public reader with only Node filesystem/protocol imports');
+  }
+  for (const item of [manifest, manifest.licenses]) {
+    const bytes = read('dist/' + item.file);
+    if (!bytes.length || bytes.length !== item.bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== item.sha256) {
+      throw new Error('Packed Web recovery module/license integrity mismatch: ' + item.file);
+    }
+  }
+}
+
 function verifyPackedContents(file, manifest) {
   const native = JSON.parse(readPackedFile(file, 'native/manifest.json'));
   if (native.protocol !== 1 || native.version !== manifest.version ||
@@ -42,6 +66,7 @@ function verifyPackedContents(file, manifest) {
   for (const relative of [...Object.values(manifest.bin), ...Object.values(manifest.exports), 'cordis.patch.yml', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     if (!readPackedFile(file, relative.replace(/^\.\//, '')).length) throw new Error(`Packed entry is empty: ${relative}`);
   }
+  verifyWebRecoveryContents(relative => readPackedFile(file, relative));
   const composition = JSON.parse(readPackedFile(file, 'node_modules/dsh-preset-generator/package.json'));
   if (composition.name !== 'dsh-preset-generator' || composition.version !== '0.4.0' || Object.keys(composition.dependencies ?? {}).length) throw new Error('Packed PTC composition must match the reviewed 0.4.0 source');
   const adapter = JSON.parse(readPackedFile(file, 'node_modules/dsh-subagent-codex-pro/package.json'));
@@ -78,4 +103,4 @@ function verifyCandidate(directory, { sourceSHA, allowDirty = false, readManifes
   return candidate;
 }
 
-module.exports = { filenameFor, fileIntegrity, readPackedManifest, readPackedFile, verifyPackedContents, verifyCandidate };
+module.exports = { filenameFor, fileIntegrity, readPackedManifest, readPackedFile, verifyWebRecoveryContents, verifyPackedContents, verifyCandidate };

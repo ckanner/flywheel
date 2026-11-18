@@ -544,6 +544,42 @@ DSH `thinking` 是 adapter-owned 的 opaque ID。执行策略 schema 只校验�
 
 Web 路径保留 DSH 唯一压缩引擎，Go 不实现第二套摘要或浏览器 DOM。传输观察等级为 opaque，因此不启动输出 idle watchdog；总 wall 期限和用户取消持续有效。插件实际活动按 host invocation/domain/session/request/generation/sequence 验证，只转发有界 provider/chatgpt-web 元数据，不靠计时心跳证明进度。SDK 关闭时读取真实 invocationFacts；结果 unknown 与本地 cleanup confirmed 可以同时存在，unknown 先对账并阻止 fresh、换 provider 或新角色重放。总用量与费用保持 null/unknown，不从浏览器文字估算为实际计费。doctor 使用明确的 `web.probe:true`，只验证准入，记录 not-dispatched/failed/idle，不伪造已完成模型调用。
 
+#### Web 原调用只读对账
+
+正式 managed Web 调用把插件 `recoveryCheckpoint` 的原调用身份、冻结连接配置与
+worker 的 prompt 接收、SDK terminal、正常关闭事实持久化到该调用专属的
+`.sessions/recovery-<requestId sha256>/worker.json`。Go 的 v5 ledger 只保存原路径与
+`chatgpt-web/read-only-recovery/1` 契约；prepare/doctor 不创建正式恢复证据。
+目录为 0700、文件为 0600，先 fsync 再公开结果；旧调用缺少这个锚点时不能事后补造。
+
+恢复查询从 Flywheel 自有相对模块读取插件公开 `dsh-plugin-chatgpt/web-recovery`
+契约。构建时以 vendor 中精确候选编译独立 reader 和 schema 验证器，禁止引入
+provider/host/浏览器驱动/SDK 入口及非限定 Node filesystem/crypto/path/os 外部依赖；
+完整原许可证、输入/输出摘要及源码身份随 dist 交付并在候选验证时检查。
+用户 SDK profile 中的 provider 安装不会自动进入 worker 模块搜索路径；正式模型
+调用仍要求该 profile 中安装精确候选及兼容 patched 宿主。
+
+对账启动短期 worker `web-recover` 查询，只读取原私有证据，不启动 DSH SDK、浏览器、
+模型或工具，也不执行 adopt/retire。插件公开 helper 逐项核对原 invocation/domain
+版本、connection/account/policy、完整响应与格式修正链、host commit、工具和清理事实；
+原 worker 与 SDK owner 均须已有退出证据。查询还核对原 DSH home/profile/bin 选择。
+profile 管理的设置绑定到原准入时冻结的配置，读取不宣称当前 profile 文件没有变化；
+任何后续新调用仍经过当前 SDK 的独立准入。
+
+只有以下证据能解除原调用阻断：正面证明未派发且候选与角色 guard 仍与派发前相同，
+按 failed 结算；原完整 SDK prompt/wait/terminal 和关闭证据与已 ACK 主回答一致，
+并且原 Go terminal receipt 的 candidate/guard 与当前仍一致，恢复原 completed；
+或原 SDK 已正常关闭、协议完整、保留实际观察到的 turn identity、无未决工具，且插件已显式 retire 对应无效响应，
+核对同一原 Go candidate/guard 后按 failed 结算。failed 不提供成功文本或可复用历史。
+捕获后断线再 adopt 纯 final、工具或摘要，不补足原 SDK 的业务完成证明；缺失原 sent
+调用的 Go terminal candidate receipt、owner 仍活跃、子工具未知、账号/域版本变化、
+候选或 role guard 无法核对，继续阻断。不得以恢复时新采样替代原 sent 调用的角色边界。
+
+恢复覆盖主结果 receipt 之前，Go 先把已严格核验的原 candidate/guard 保存到独立
+`role/scope/web-original` receipt 槽，并把其 digest 通过 state CAS 确认；只有该
+确认成功才可写新结果。对账重试始终按该独立原 digest 读取，覆盖结果后崩溃或最终
+CAS 失败不会丢失原候选证据，也不需要放宽旧主 receipt 的 digest 门禁。
+
 ### 7.1 Codex Pro 接入契约
 
 `codex-pro` 不是 DSH LLM provider ID。使用 `harness: "codex-pro"`、显式模型、thinking 和账号 channel 选择该路径；不接受被忽略的 provider 或旧 resident-session 选项。主任务 fresh/scoped 均使用外层 worker v3 并显式保存 persistent 原生历史；fresh 每次省略旧 ID，scoped 仅在核验后续用精确 ID。低层兼容 v1/v2 的显式 ephemeral 语义不变。内部仍为插件 0.10.2 的 machine request/receipt protocol 1，另有 lifecycle version 1。权限由显式 `permissions.mode` 决定，不能从桌面全访问设置隐式继承。

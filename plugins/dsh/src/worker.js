@@ -3,6 +3,7 @@ import { runWorker } from './bridge.js';
 import { prewarmInput } from './prewarm.js';
 import { BridgeError, MAX_FRAME_BYTES, normalizedError } from './protocol.js';
 import { nativeDoctor } from './native-doctor.js';
+import { recoverWebWorker } from './web-recovery.js';
 
 const controller = new AbortController();
 process.once('SIGTERM', () => controller.abort());
@@ -44,11 +45,17 @@ try {
   } else {
     warmInput = process.argv.includes('--prewarm') ? prewarmInput(controller) : undefined;
     const request = warmInput ? await warmInput.admission : await readInput();
-    const result = await runWorker(request, {
-      emit, signal: controller.signal, doctor: process.argv.includes('--doctor'),
-      stderr: chunk => process.stderr.write(chunk), prewarm: warmInput,
-    });
-    process.exitCode = !result || ['ok', 'closed'].includes(result.status) ? 0 : result.status === 'cancelled' ? 143 : 1;
+    if (!warmInput && request.type === 'web-recover') {
+      if (process.argv.length !== 2) throw new BridgeError('INVALID_REQUEST', 'Web recovery is a separate read-only query');
+      emit(await recoverWebWorker(request));
+      process.exitCode = 0;
+    } else {
+      const result = await runWorker(request, {
+        emit, signal: controller.signal, doctor: process.argv.includes('--doctor'),
+        stderr: chunk => process.stderr.write(chunk), prewarm: warmInput,
+      });
+      process.exitCode = !result || ['ok', 'closed'].includes(result.status) ? 0 : result.status === 'cancelled' ? 143 : 1;
+    }
   }
 } catch (error) {
   emit({ protocol: 1, requestId: 'invalid-request', type: 'result', status: 'error', settled: true,

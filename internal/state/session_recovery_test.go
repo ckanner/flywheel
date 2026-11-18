@@ -95,3 +95,20 @@ func TestRecoveryStateKeepsExactInvocationPathsAndAccounting(t *testing.T) {
 	raw, _ := json.Marshal(st.Sessions)
 	require.NoError(t, validateSessions(raw))
 }
+
+func TestWebRecoveryStateRequiresOriginalVersionFiveContract(t *testing.T) {
+	dir := t.TempDir()
+	st := sessionTestState(t, dir)
+	st.Sessions.Version = 5
+	r := st.Sessions.Records["execute/M01-T01"]
+	r.Last.Recovery = &SessionRecovery{Version: 1, Harness: "dsh", AdapterVersion: "chatgpt-web/read-only-recovery/1", Directory: SessionRecoveryDirectory(dir, r.Last.ID), Model: "gpt-6-pro-web", Effort: "pro", PermissionMode: "workspace-write"}
+	raw, _ := json.Marshal(st.Sessions)
+	require.NoError(t, validateSessions(raw))
+	st.Sessions.Version = 4
+	raw, _ = json.Marshal(st.Sessions)
+	require.ErrorContains(t, validateSessions(raw), "version 5")
+	st.Sessions.Version = 5
+	r.Last.Recovery.AdapterVersion = "invented"
+	raw, _ = json.Marshal(st.Sessions)
+	require.ErrorContains(t, validateSessions(raw), "original contract")
+}

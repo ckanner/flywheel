@@ -69,6 +69,7 @@ export async function validateStart(value) {
   }
   const requestId = nonempty(value.requestId, 'requestId', 128);
   validateWebRequest(value);
+  if (value.web?.recoveryDirectory && (value.protocol !== 2 || value.persistent !== true || value.web.probe)) throw new BridgeError('INVALID_REQUEST', 'Web recovery requires a persistent managed invocation');
   validateNative(value.native);
   validateManaged(value.managed, requestId);
   if (value.managed !== undefined && value.native === undefined) throw new BridgeError('INVALID_REQUEST', 'managed identity requires native options');

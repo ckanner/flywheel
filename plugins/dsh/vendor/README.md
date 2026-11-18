@@ -3,8 +3,10 @@
 Flywheel keeps exact reviewed package bytes. Codex Pro 0.10.2 and Claude Code
 Pro 0.6.0 are reviewed source candidates from [Codex PR #9](https://github.com/ckanner/dsh-subagent-codex-pro/pull/9)
 and [Claude PR #10](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/10).
-They are not claimed to be published registry releases. LCU and ChatGPT below
-have been verified against the public npm registry. The private preset generator
+They are not claimed to be published registry releases. LCU below has been
+verified against the public npm registry. ChatGPT 0.2.0-alpha.1 is an exact
+reviewed Web-provider source candidate from [ChatGPT PR #9](https://github.com/ckanner/dsh-plugin-chatgpt/pull/9),
+not a claimed registry release. The private preset generator
 is intentionally bundled from reviewed source; it has no public npm release.
 Version, source tree, archive and installed content remain separate identities.
 
@@ -14,7 +16,7 @@ Version, source tree, archive and installed content remain separate identities.
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.6.0` | Optional official Agent SDK machine/native-jobs candidate | [25754c3b4144](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/25754c3b41446c1f1225e7d7c6c12905aa67e33a) | `7ffd8deef680661c5b36890b459ce61ad468deea` | [claude-code-pro.json](claude-code-pro.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
-| `dsh-plugin-chatgpt@0.1.20` | DSH provider compatibility fixture | [40d8f885e7a3](https://github.com/ckanner/dsh-plugin-chatgpt/commit/40d8f885e7a386af5f441b356b9c68496a47b0e3) | `c8c4f4829a00b1917fd1aef8c4254e083a5b6180` | [chatgpt.json](chatgpt.json) |
+| `dsh-plugin-chatgpt@0.2.0-alpha.1` | Independent read-only recovery build source and SDK compatibility fixture | [191a2cc11ded](https://github.com/ckanner/dsh-plugin-chatgpt/commit/191a2cc11ded693970e0c77a8fd351dfa3aec9cf) | `eff36fdf3756ac95856420e518abf50328f9aefc` | [chatgpt.json](chatgpt.json) |
 
 Published-package records include the registry URL, exact integrity, SHA-256 and
 verification timestamp. Their verification toolchain does not claim how the
@@ -29,7 +31,9 @@ original source identity.
 Earlier published versions and reviewed candidates remain identified in dated
 validation records. In particular, the former Codex 0.10.0 and Claude 0.5.1
 archives are not relabeled as the new activity/naming candidates. ChatGPT 0.1.20
-remains the reviewed provider fixture. See the
+remains the documented stable SIWC installation example; the source build/test
+harness now installs the exact alpha recorded above. The old 0.1.20 archive remains an
+identified historical fixture, outside the current source lock. See the
 [provider validation record](../../../docs/validation/2026-11-16-provider-liveness-and-titles.md)
 for the initial implementation. The subsequent [review closure](../../../docs/validation/2026-11-16-provider-liveness-review-closure.md) records the earlier archives, additional fixes, exact-candidate acceptance and its limits. The [Codex follow-up](../../../docs/validation/2026-11-16-codex-review-fixes.md) records the preceding child-creation and required-naming fixes, regression results and exact-candidate acceptance. The [native history review](../../../docs/validation/2026-11-17-native-session-visibility.md) records the current retention and discovery fixes. Current source identities and archive hashes are in the table and records above.
 
@@ -42,8 +46,18 @@ Flywheel publication and promotion must first obtain the optional Claude
 0.6.0 companion from the public registry and verify that it matches the reviewed
 bytes. Codex is distributed inside the complete Flywheel package; its exact
 bundled bytes are checked without claiming a separate registry release. Source-candidate CI
-does not satisfy that publication prerequisite. ChatGPT is a provider fixture,
-not an additional implicit model backend.
+does not satisfy that publication prerequisite. The ChatGPT candidate supplies
+the private source harness and the public `dsh-plugin-chatgpt/web-recovery`
+entry used to build Flywheel's independent read-only recovery module. Its schema
+validators are bundled, with original licenses and exact input/output hashes in
+`dist/web-recovery-reader.LICENSES.md` and `dist/web-recovery-reader.manifest.json`.
+The build rejects host/browser/SDK modules and external imports other than the
+bounded Node filesystem, crypto, path and OS helpers. Installed recovery workers
+resolve this module relative to their own package, without looking for another
+profile's `node_modules`. The full provider is not bundled. Web use requires
+installing the same reviewed alpha into the selected SDK profile and using its
+compatible exact-source patched DSH host. Updating this vendor does not modify
+the user's SDK profile or default model bindings.
 
 The [Agent SDK migration](../../../docs/validation/2026-11-17-claude-agent-sdk.md)
 records Claude 0.6.0's exact source/SDK identities, native history acceptance,

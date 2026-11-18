@@ -9,7 +9,7 @@ const http = require("node:http");
 const { execFileSync, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { PACKAGES, META, PLUGIN, validatePackages, preflight, parseArgs: parsePreflight } = require("../../scripts/release-preflight.js");
-const { filenameFor, fileIntegrity, verifyCandidate } = require("../../scripts/release-candidate.js");
+const { filenameFor, fileIntegrity, verifyWebRecoveryContents, verifyCandidate } = require("../../scripts/release-candidate.js");
 const { parsePackOutput, snapshot } = require("../../scripts/release-build.js");
 const { compareVersions, isNotFound, readValue, publish, promote, verifyLatest, waitForPackage, parseArgs } = require("../../scripts/release-publish.js");
 
@@ -212,6 +212,30 @@ test("candidate verifies actual tar manifests, exact source and clean source pol
   assert.equal(verifyCandidate(directory, { allowDirty: true }).version, VERSION);
   candidate.source.dirty = false; candidate.packages[1] = candidate.packages[0]; save();
   assert.throws(() => verifyCandidate(directory), /exactly one/);
+});
+
+test('packed Web recovery rejects missing bytes, stale provenance and runtime package imports', t => {
+  const directory = temporary(t);
+  require('./support/unified-package.js').writeContents(directory, manifests()[META]);
+  const read = name => fs.readFileSync(path.join(directory, name));
+  verifyWebRecoveryContents(read);
+  const file = path.join(directory, 'dist/web-recovery-reader.manifest.json');
+  const saved = fs.readFileSync(file, 'utf8');
+  for (const mutate of [
+    value => { value.source.commit = 'f'.repeat(40); },
+    value => { value.publicEntry = 'dsh-plugin-chatgpt/web-host'; },
+    value => { value.imports = ['dsh-plugin-chatgpt/web-recovery']; },
+    value => { value.imports = ['node:child_process']; },
+    value => { value.sha256 = 'f'.repeat(64); },
+    value => { value.licenses.sha256 = 'f'.repeat(64); },
+  ]) {
+    const value = JSON.parse(saved); mutate(value);
+    fs.writeFileSync(file, JSON.stringify(value));
+    assert.throws(() => verifyWebRecoveryContents(read), /Packed Web recovery/);
+  }
+  fs.writeFileSync(file, saved);
+  fs.unlinkSync(path.join(directory, 'dist/web-recovery-reader.mjs'));
+  assert.throws(() => verifyWebRecoveryContents(read), { code: 'ENOENT' });
 });
 
 test("changed tar bytes and symlink substitution cannot pass candidate verification", (t) => {

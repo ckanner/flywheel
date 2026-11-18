@@ -44,3 +44,17 @@ This distribution bundles `dsh-subagent-codex-pro@0.10.2`, Copyright (c) 2026 ck
 ## Bundled PTC composition source
 
 This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 ckanner, under the MIT License. Its original license remains at `node_modules/dsh-preset-generator/LICENSE`. The public composition module shares the desktop daily/heavy policy with the owned SDK worker. Source identity and actual tarball integrity are recorded in `plugins/dsh/vendor/preset-generator.json`; no DSH application resources, native executable or credentials are bundled.
+
+## Bundled ChatGPT Web read-only recovery
+
+The independent recovery reader is built from the public
+`dsh-plugin-chatgpt/web-recovery` entry of `dsh-plugin-chatgpt@0.2.0-alpha.1`, Copyright (c) 2026 ckanner,
+under the MIT License. It contains the filesystem and protocol validators needed
+to inspect original invocation evidence, plus Ajv 8.17.1 (MIT), fast-deep-equal
+3.1.3 (MIT), json-schema-traverse 1.0.0 (MIT), and fast-uri 3.1.9 (BSD-3-Clause).
+The complete original licenses are retained in
+`dist/web-recovery-reader.LICENSES.md`. The generated
+`dist/web-recovery-reader.manifest.json` identifies exact source, inputs,
+dependencies, output and license hashes; the source archive is recorded in
+`plugins/dsh/vendor/chatgpt.json`. The full ChatGPT provider, browser transport
+and DSH host remain separate installations in the user's selected SDK profile.

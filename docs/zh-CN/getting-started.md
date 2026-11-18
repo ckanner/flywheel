@@ -125,6 +125,10 @@ dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.
 改动已有 profile 前先核对已安装版本。账号授权和真实模型可用性仍通过该 adapter 的
 正常流程确认，保持 `DSH_HOME` 一致，不把凭证放进任务文件或 Git。
 
+此稳定安装覆盖既有订阅 transport。新 Web Pro 模型另需在同一个 SDK profile
+安装已审查 alpha archive 并使用匹配的 patched 宿主；源码 harness 的 vendor
+更新不自动安装或启用两者。选择前请按[Web 模型配置](model-policy.md#通过-dsh-provider-使用-chatgpt-web-pro)完成准入。
+
 hard 路由直接导入精确锁定的 Codex Pro 0.10.2 公开 machine API，需要本机 Codex 程序
 与登录，不需要父模型通过 `subagent_codex` 工具二次委派。可选 Claude 有独立的
 依赖与登录。

@@ -1,6 +1,6 @@
 // Public ChatGPT plugin host contract. No DOM, credentials or summaries live here.
 import { open, link, unlink } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
 import { BridgeError, record } from './protocol.js';
 
 export const WEB_MODEL = 'gpt-6-pro-web';
@@ -23,8 +23,9 @@ export function validateWebRequest(request) {
     return;
   }
   const web = request.web;
-  if (!keys(web, ['version','executionDomainId','requireIsolation','expectedBinding','probe']) || web.version !== 1 || !text(web.executionDomainId) ||
-      web.requireIsolation !== true || web.probe !== undefined && web.probe !== true || request.reasoningEffort !== 'pro') {
+  if (!keys(web, ['version','executionDomainId','requireIsolation','expectedBinding','probe','recoveryDirectory']) || web.version !== 1 || !text(web.executionDomainId) ||
+      web.requireIsolation !== true || web.probe !== undefined && web.probe !== true || request.reasoningEffort !== 'pro' ||
+      web.recoveryDirectory !== undefined && (typeof web.recoveryDirectory !== 'string' || !isAbsolute(web.recoveryDirectory) || web.recoveryDirectory.includes('\0'))) {
     throw new BridgeError('INVALID_REQUEST', 'Web Pro requires extension 1, a persistent execution domain, project-only isolation and explicit pro effort');
   }
   if (web.expectedBinding !== undefined) validateWebBinding(web.expectedBinding, request);
@@ -85,6 +86,10 @@ export async function createWebPolicy(ctx, config) {
         reasoningEffort: config.reasoningEffort, requireIsolation: true, deadlineMs });
       validateWebBinding(actual, config, initial);
       if (expectedBinding) validateWebBinding(actual, config, expectedBinding);
+      if (typeof host.recoveryCheckpoint === 'function') {
+        const checkpoint = await host.recoveryCheckpoint(current);
+        await publish(join(root, 'web-checkpoint.json'), { requestId: config.requestId, nonce: config.nonce, checkpoint });
+      }
       return initial;
     },
   };

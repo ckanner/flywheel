@@ -19,6 +19,9 @@ var recoverSessionMachine = drivers.RecoverMachine
 // without claiming an unimplemented live recovery contract.
 func (c *Context) prepareSessionLifecycle(r *state.SessionRecord, args *drivers.CallArgs) error {
 	harness := args.Binding.Harness
+	if harness == "dsh" && args.Web != nil {
+		return c.prepareWebSessionRecovery(r, args)
+	}
 	if harness != "codex-pro" && harness != "claude-code-pro" {
 		return nil
 	}
@@ -134,6 +137,9 @@ func (c *Context) loadSessionLifecycle(r *state.SessionRecord) (*state.SessionRe
 }
 
 func (c *Context) recoverSessionReceipt(key string, r *state.SessionRecord) error {
+	if r.Last.Recovery.Harness == "dsh" {
+		return c.recoverWebSessionReceipt(key, r)
+	}
 	checkpoint, event, err := c.loadSessionLifecycle(r)
 	if err != nil {
 		return err

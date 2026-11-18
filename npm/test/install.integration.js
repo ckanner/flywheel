@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { assertFlashAccountProfile } = require('./support/installed-profiles.js');
+const { assertInstalledWebRecovery } = require('./support/web-recovery-install.js');
 const { spawn, execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
@@ -108,6 +109,11 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
+
+  await t.test('the installed Web recovery reads original SDK and plugin evidence without the provider package or new work', async () => {
+    assert.throws(() => installedRequire.resolve('dsh-plugin-chatgpt/web-recovery'), { code: 'MODULE_NOT_FOUND' });
+    await assertInstalledWebRecovery(context, workerPath);
+  });
 
   await t.test('the bundled generator imports its public composition API without fetching a registry release', async () => {
     const compositionPath = installedRequire.resolve('dsh-preset-generator/composition');

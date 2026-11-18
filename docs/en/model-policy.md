@@ -115,7 +115,17 @@ desktop login or static model catalog alone does not establish those capabilitie
 The worker refuses a missing host contract or CompactionEngine before sending the
 prompt. Configure the plugin’s dedicated browser connection and project-only
 context policy using the [ChatGPT plugin](https://github.com/ckanner/dsh-plugin-chatgpt).
-The existing pinned 0.1.20 installation example does not enable this new route.
+The stable 0.1.20 installation example does not enable this new route. The source
+harness pins the reviewed `0.2.0-alpha.1` archive and its hashes in
+[vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json). It also builds the
+public read-only recovery reader and schema validators into Flywheel's own
+relative module, with source/output hashes and original licenses. The installed
+recovery worker needs no provider package in its module search path and cannot
+start SDK, browser or model work. This build dependency does not install a
+provider in the user's SDK profile. Actual Web use requires
+installing those exact candidate bytes in the same SDK profile and running the
+matching exact-source patched DSH host; the alpha is not claimed as a registry
+release or as stock SDK support.
 
 In the desktop model editor, use **Read this model’s reasoning efforts** after
 selecting a DSH model. The menu reads that exact provider/model’s public metadata
@@ -133,6 +143,31 @@ fresh calls, roles and providers until the original invocation is reconciled.
 Resume also requires the same connection, account and policy binding. Web
 session ledgers use version 5 and cannot be continued by older Flywheel readers.
 Offline contract tests do not establish a successful live account/browser run.
+
+### Reconcile an interrupted Web invocation
+
+Inspect the original request in the ChatGPT plugin before continuing the task.
+Observation, adopting a captured answer, and explicitly discarding a rejected
+answer are separate actions. On the next task reconciliation, Flywheel reads
+the original private receipts without starting DSH, a browser, a model, or a tool.
+It requires the original connection/account/policy, execution domain, SDK
+home/profile selection, exited owners, and unchanged candidate/role boundaries.
+Profile-managed settings are the frozen settings admitted for the old call;
+the next new SDK invocation still validates the current configuration.
+
+| Original evidence | Reconciliation result |
+|---|---|
+| Positive no-dispatch proof; candidate and role guard still equal the original before values | Known failed invocation; no successful answer is invented |
+| Original SDK prompt/wait/complete terminal and normal shutdown, matching committed main answer, original Go terminal candidate/guard receipt | Recover that original completed result |
+| Explicit digest-bound discard of a rejected response, normal original SDK shutdown, its observed turn identity, intact protocol, settled tools, original Go terminal candidate/guard receipt | Known failed invocation; no history reuse or successful output |
+| Captured final adopted after the original SDK disconnected, without its complete business terminal | Remains blocked |
+| Adopted tool response or summary without the rest of the original SDK operation | Remains blocked |
+| Unknown tool/remote generation/cleanup, live owner, changed binding/domain/candidate, or missing original sent-call candidate receipt | Remains blocked |
+
+Only new managed Web calls record the required recovery checkpoint. Older
+invocations without it cannot be retrofitted into a successful result. A settled
+failure releases the uncertainty fence; normal task policy still decides the
+next action. Recovery preserves unknown usage and does not send another prompt.
 
 ## Choose and evaluate a baseline
 

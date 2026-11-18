@@ -59,7 +59,7 @@ DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH
 | Kimi | Go 默认调用 Kimi CLI，也可使用受管本地 Server worker 的原生 Agent／Swarm／Tower；沿用同一 Kimi 登录 |
 | Claude Code Pro | 可选 0.6.0 peer 和兼容本地 Claude 程序与获准使用的认证；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
 
-已核对的 ChatGPT 配套版本为 0.1.20。SDK profile 缺失或需要更新时执行：
+既有订阅 transport 的稳定 ChatGPT 安装示例使用 0.1.20。SDK profile 缺失或需要更新时执行：
 
 ```sh
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
@@ -67,7 +67,16 @@ dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.
 
 新增的 `gpt-6-pro-web` / `pro` 路径还要求该 SDK profile 加载匹配的 ChatGPT Web
 host、公开 DSH host-policy 扩展、已配置的 project-only 浏览器连接和唯一
-CompactionEngine。固定 0.1.20 包不提供该路径；缺能力时在 prompt 前拒绝，详见
+CompactionEngine。稳定 0.1.20 包不提供该路径。源码构建/测试 harness 现锁定
+[vendor/chatgpt.json](vendor/chatgpt.json) 记录的精确 `0.2.0-alpha.1` 候选 archive，
+不宣称该候选已在 npm 发行，也不作为额外 provider 随 Flywheel 发布包内置。
+实际使用 Web 必须把该精确候选装入同一个 SDK profile，并使用它匹配的精确
+patched DSH 宿主；升级 Flywheel 不自动执行这两步或改写 profile。
+Flywheel 只将该候选公开的只读恢复 reader 与 schema 验证器编译为自有相对模块，
+让安装后的 worker 可核对原证据，无须从另一个 SDK profile 搜索依赖，也不会启动
+provider、SDK、浏览器或工具。精确来源、输出摘要和原许可证随
+`dist/web-recovery-reader.*` 清单及许可证文件交付。
+缺能力时在 prompt 前拒绝，详见
 [Web 模型配置](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/model-policy.md#通过-dsh-provider-使用-chatgpt-web-pro)。
 
 此固定版本示例不代表当前账号拥有某模型权限。认证和真实模型可用性需要通过

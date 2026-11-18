@@ -141,6 +141,12 @@ Check the installed version before changing an existing profile. Account authori
 and live model availability still use the adapter's normal flow; keep `DSH_HOME`
 consistent and credentials out of task files and Git.
 
+This stable installation covers the existing subscription transport. The new
+Web Pro model needs the separately reviewed alpha archive in the same SDK
+profile and its compatible patched host; the source harness's vendor update
+does not install or activate either. Follow [Web model setup](model-policy.md#chatgpt-web-pro-through-the-dsh-provider)
+before selecting that model.
+
 The hard route directly imports the pinned Codex Pro 0.10.2 public machine API.
 It needs the local Codex command/login, not a parent model delegating through the
 `subagent_codex` tool. Optional Claude has its own dependency and login.

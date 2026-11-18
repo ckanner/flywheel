@@ -27,6 +27,7 @@ export async function validatePrepare(value) {
   validateNative(value.native);
   validateWebRequest(value);
   if (value.web?.probe) throw new BridgeError('INVALID_REQUEST', 'Web probes cannot prewarm');
+  if (value.web?.recoveryDirectory) throw new BridgeError('INVALID_REQUEST', 'A prepared runtime has no formal invocation recovery directory');
   for (const key of ['provider', 'model', 'reasoningEffort']) nonempty(value[key], key);
   if (request.workspaceCwd && request.workspaceCwd !== request.cwd && request.permissionMode === 'workspace-write') {
     throw new BridgeError('INVALID_REQUEST', 'separate execution roots require an explicitly compatible permission mode');

@@ -41,6 +41,7 @@ if (webScenario && webScenario !== 'missing-host') {
   ctx.provide('chatgptWebHost', {
     version: 1, admitBinding: async () => ({ ...webBinding, ...(webScenario === 'account-change' ? { accountFingerprint: 'different-account' } : {}) }),
     beginInvocation: async input => { webIdentity = { sessionId: input.sessionId, executionDomainId: input.executionDomainId, hostInvocationId: input.hostInvocationId }; },
+    recoveryCheckpoint: async input => ({ version: 1, contract: 'chatgpt-web/read-only-recovery/1', identity: input, ownerPid: process.pid, fixture: true }),
     invocationFacts: async input => {
       if (JSON.stringify(input) !== JSON.stringify(webIdentity)) throw new Error('foreign fixture invocation');
       return { version: 1, ...input, dispatch: webDispatched ? 'dispatched' : 'not-dispatched',
@@ -68,6 +69,7 @@ class OfflineAdapter extends LlmAdapter {
       await delay(15);
       webDispatched = true;
       ctx.emit('chatgpt-web/activity', { ...webIdentity, requestId: 'offline-browser-request', generation: 1, sequence: 1, kind: 'prompt-accepted' });
+      if (webScenario === 'rejected-response') throw new Error('captured Web response rejected by the original protocol');
     }
     yield { type: 'block-start', index: 0, blockType: 'text' };
     const answer = 'published SDK fixture complete';

@@ -7,6 +7,15 @@ their original language.
 
 ## Unreleased
 
+- Reconcile original ChatGPT Web invocations through the plugin's public
+  read-only evidence contract. Preserve original SDK terminal/shutdown and Go
+  candidate/role checkpoints; confirm unsent attempts or explicit rejected
+  response retirement as failures, and recover success only from a complete
+  original business result. Captured/adopted tools, summaries and later final
+  answers do not manufacture completion; missing or contradictory proof remains
+  blocked. Recovery launches no SDK, browser, model or tool and retains unknown
+  usage without double accounting.
+
 - Add the negotiated ChatGPT Web extension to DSH workers: exact model/effort
   admission, static prewarm binding and formal host invocation, persistent
   task domains, connection/account/policy resume checks, content-free activity,
@@ -18,8 +27,13 @@ their original language.
   harnesses keep their existing accepted values. Unsupported choices fail SDK
   admission without replacing the model or effort.
 - Preserve the selected profile’s single CompactionEngine for Web calls and
-  reject missing public Web host extensions. This source change does not update
-  the pinned ChatGPT 0.1.20 candidate or claim live browser/account acceptance.
+  reject missing public Web host extensions. The build/test harness pins the
+  exact reviewed ChatGPT 0.2.0-alpha.1 candidate. Its public read-only recovery
+  reader and schema validators are bundled independently, with exact source and
+  output hashes and complete licenses; recovery does not depend on resolving
+  another profile's provider package. Actual model work still requires the
+  exact provider and compatible patched DSH host in the user's SDK profile.
+  This integration does not publish an alpha release or claim live account acceptance.
 
 ## 0.37.0 — Kimi 2.5.3 admission, native history and the Claude Agent SDK
 

@@ -95,7 +95,14 @@ Web 路径明确选择 `harness:"dsh"`、`provider:"chatgpt"`、
 host-policy 扩展和唯一 CompactionEngine。包版本、桌面登录状态、静态模型目录都
 不能单独证明这些能力；缺失时 worker 在 prompt 前明确拒绝。
 通过 [ChatGPT 插件](https://github.com/ckanner/dsh-plugin-chatgpt) 配置专用浏览器
-连接及 project-only 上下文策略；既有固定 0.1.20 安装示例不包含这个新路径。
+连接及 project-only 上下文策略；稳定 0.1.20 安装示例不包含这个新路径。
+源码 harness 以 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json) 的摘要
+锁定已审查 `0.2.0-alpha.1` archive，并将其公开只读恢复 reader 与 schema 验证器
+构建为 Flywheel 自有相对模块，保留来源/输出摘要和原许可证。安装后的恢复 worker
+无需在自身模块路径查找 provider，也不能启动 SDK、浏览器或模型。
+此构建依赖不会把 provider 装入用户 SDK profile。
+实际使用必须把该精确候选安装到同一个 SDK profile，并运行匹配的精确源码
+patched DSH 宿主；不宣称 alpha 已在 registry 发行或原版 SDK 已支持。
 
 在桌面模型编辑器选择 DSH 模型后，点击**读取此模型的推理档位**，从精确的
 provider/model 公开 metadata 读取合法 efforts 和默认值。目录不支持的旧值会保留并
@@ -108,6 +115,28 @@ Web 会话轮换、恢复、工具与 DSH 压缩由插件负责；Flywheel 管�
 会阻止跨角色、fresh 或更换 Provider 自动重放，必须先对账原调用；续接还要求
 connection、account、policy 完全相同。Web Session 账本使用 v5，旧 Flywheel 不能
 继续读取写回。离线契约测试不等于真实账号／浏览器验收已通过。
+
+### 对账中断的 Web 调用
+
+继续任务前，在 ChatGPT 插件中检查原请求。只读观察、采用已捕获回答与显式丢弃
+已拒绝回答是三个独立动作。Flywheel 下次对账只读取原私有回执，不启动 DSH、
+浏览器、模型或工具。必须核对原 connection/account/policy、execution domain、
+SDK home/profile 选择、原 owner 已退出，以及原候选和角色边界。
+profile 管理设置以旧调用准入时冻结的配置为准；下一次新 SDK 调用仍独立验证
+当前配置，读取旧回执不表示当前 profile 文件未改变。
+
+| 原调用证据 | 对账结果 |
+|---|---|
+| 正面证明未派发，当前 candidate/role guard 仍等于原 before | 已知失败；不伪造成功回答 |
+| 原 SDK prompt/wait/完整 terminal/正常关闭，同一已提交主回答，以及原 Go terminal candidate/guard 回执 | 恢复该原 completed 结果 |
+| 显式按 digest 丢弃已拒绝回答，原 SDK 正常关闭、有实际观察的 turn identity、协议完整、工具已结算，保留原 Go terminal candidate/guard 回执 | 已知失败；无成功文本，不提供历史复用 |
+| 原 SDK 断线后才 adopt 纯 final，缺少原业务完成终态 | 继续阻断 |
+| adopt 工具回答或摘要，缺少原 SDK 后续完整业务操作 | 继续阻断 |
+| 工具、远端、清理仍未知，owner 活跃，绑定/域/候选变化，或已派发调用缺少原 candidate 回执 | 继续阻断 |
+
+只有新 managed Web 调用会记录所需恢复检查点；旧调用不能事后补造。
+已知失败可解除不确定性栅栏，后续是否继续由正常任务策略决定。对账保持用量
+unknown，不补发 prompt。
 
 ## 选择并评估基线
 

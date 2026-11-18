@@ -52,6 +52,12 @@ v2 拒绝缺失或 false 的 persistent；v1 不接受这些 v2 字段。版本�
 `--doctor`，不能放入普通 start 或 prepare。未知字段拒绝。旧 worker 不认识 `web`
 字段会在模型派发前失败，不能靠回显 model 名冒充支持。
 
+正式 protocol 2 persistent start 可额外携带 `web.recoveryDirectory`，必须为
+Go 已准备的原任务 `.sessions/recovery-<原 requestId 的 SHA-256>` 绝对路径。
+worker 独占创建 0700 子目录和 0600 `worker.json`；prepare/probe 拒绝该字段。
+host `recoveryCheckpoint(identity)` 必须在 beginInvocation 后、prompt 前提供
+`chatgpt-web/read-only-recovery/1` 原身份锚点；缺少时正式调用在 prompt 前失败。
+
 Web 的 prepare/start 都经实际 SDK 精确模型 metadata 校验，并要求 ChatGPT 插件
 公开 `chatgptWebHost` v1 与已有唯一 `compaction.compactIfNeeded` 服务。
 `admitBinding` 返回 protocol 1、transport `chatgpt-web`、精确 provider/model/effort、
@@ -89,6 +95,45 @@ usageStatus 必须 unknown；缺失回执、身份冲突、伪造 0 用量均拒
 managed Web 的 ledger 为 v5，`web-binding` 保存精确动态绑定；unknown 调用仍由既有
 全任务恢复栅栏阻止跨角色、fresh 或更换 provider 自动重放。物理 worker 退出与
 remote generation certainty 独立判断。Web SDK 关闭宽限 15 秒，外层至少 20 秒。
+
+### 原调用只读恢复协议
+
+发布包将精确候选的公开 `dsh-plugin-chatgpt/web-recovery` reader 与 schema 验证器
+编译为自有 `dist/web-recovery-reader.mjs`，恢复 worker 以相对路径加载。
+其 manifest 与原许可证同包交付，候选验证核对来源及输出摘要；该模块仅允许
+Node filesystem/crypto/path/os 外部导入，不初始化 SDK、provider 或浏览器。
+用户另一个 SDK profile 安装的 provider 不被当作 worker 的解析依赖。
+
+Go 对旧 unknown 调用发送单个 JSON 行并关闭 stdin：
+
+```json
+{"type":"web-recover","protocol":1,"requestId":"original-call","recoveryDirectory":"/task/.sessions/recovery-<sha256>","original":{"cwd":"/repo","workspaceCwd":"","provider":"chatgpt","model":"gpt-6-pro-web","reasoningEffort":"pro","permissionMode":"workspace-write","persistent":true,"requestedSessionId":"","executionDomainId":"original-task-domain","native":null}}
+```
+
+可选 `expectedBinding` 是原已保存的完整 Web binding。该查询不能混用 doctor 或
+prewarm。短期进程只加载 `dsh-plugin-chatgpt/web-recovery` 公开文件读取 helper，
+不创建 SDK、浏览器会话、模型、工具或恢复采用事务。必须核对原 worker/SDK owner
+已退出、私有文件/目录无 symlink、原 home/profile/bin、identity/settings 摘要、
+同域 invocation 版本、原 connection/account/policy、所有调用和本地工具已结算。
+对于 profile 管理配置，helper 证明冻结原配置与原调用一致；不重新加载当前 profile。
+
+成功查询返回 `{protocol:1,type:"web-recovery",requestId,revision,frames:[ready,result]}`。
+revision 是所读原证据快照的摘要；ready/result 仍通过正常 protocol 2 严格校验。
+插件 disposition 不是业务成功：`not-dispatched` 只能生成 failed；`retired` 只能
+生成 failed 且要求原 SDK 正常关闭与实际观察过的原 turnId；缺 turnId 仍阻断，不得构造。
+`committed` 还须存在相同 prompt 的原
+wait/terminal/completed、原关闭记录与相同主回答，才允许 completed。
+纯 final/tool/summary adopt 缺少这些业务证据继续阻断，未知 remote/tool/cleanup
+也不能解除。原已知 SDK failed 加同一已结算插件失败可恢复为 failed。
+
+worker 查询不写任何原证据。Go 另行核对原 terminal receipt 的 candidate/role
+guard，并原子更新自身 receipt/state；已派发调用缺失该原检查点继续阻断。
+仅正面证明未派发的调用可在当前 candidate/guard 等于原 before 时结算失败。
+usage/cost 保持 null/unknown；完成对账不新增模型调用，也不重复预算记账。
+
+原 Go candidate/guard 在覆盖主结果前写入独立 `role/scope/web-original` receipt
+槽，其摘要先通过 `recovery.checkpoint-digest` 的 state CAS 确认。重启后严格按此
+digest 重读原证据，即使主结果已替换而最终 CAS 未完成也能幂等重做对账。
 
 ## 运行参数
 

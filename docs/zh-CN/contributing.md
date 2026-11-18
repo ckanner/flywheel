@@ -70,7 +70,7 @@ Worktree 隔离 checkout 文件和 index，不是安全沙箱。串行执行保�
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|DSHWebNodeWorkerOfflineBridge|DSHWebRecoveryNodeBridge)$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install

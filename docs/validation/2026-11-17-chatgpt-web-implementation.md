@@ -78,7 +78,10 @@ DSH 仍负责工具权限、执行、工作目录和权威历史。插件只在�
 
 真实宿主脚本为插件的 `scripts/verify-web-harness.mjs`，接收 DSH checkout 和可选 Flywheel checkout。六个场景是：默认插件组合；main→持久 ACK→工具→final；完整捕获后中断→采纳→工具仅一次；默认自动/手动压缩；always 硬否决；实际 `createWebPolicy` 准入及销毁后的持久终态回执。
 
-## 6. 与完整方案仍有距离的地方
+## 6. 2026-11-17 原始验收快照
+
+下表保留最初实现快照；后文按日期记录接续变更。表中的原缺口不代表当前图片上传
+与格式修正仍未实现。
 
 | 尚未验收或交付 | 当前行为 / 后续条件 |
 | --- | --- |
@@ -91,3 +94,65 @@ DSH 仍负责工具权限、执行、工作目录和权威历史。插件只在�
 | 安装与发行 | 已交付精确源码兼容补丁和候选包构建路径；未发布 patched SDK、桌面应用或 npm 正式包。 |
 
 因此两个 PR 保持 Draft。后续以真实环境补齐上述证据，并逐项更新方案验收矩阵，不能仅因离线测试绿色就宣布完整能力已经发布。
+
+## 7. 2026-11-18 接续：图片、格式修正与 Flywheel 对账
+
+配套 ChatGPT 插件现已实现有界持久图片上传，保留原 user/tool 位置、bytes/digest、
+已接受文件名和私有恢复 artifact。格式修正是已捕获回答的有界继续调用，保留不可变
+parent/child 身份，不允许改变工具参数或任务语义。显式丢弃绑定已检查的拒绝回答
+digest，独立记录 failed retirement，不伪造 host commit。这些源码路径已有离线
+回归证据。上传接受仍标记 `modelConsumption: unverified`；实际模型读图、账号限额
+和真实 LCU 视觉链路需要独立验收。
+
+Flywheel 在 prompt 前保存 `chatgpt-web/read-only-recovery/1` 锚点，并持久记录原
+SDK prompt/wait/terminal/shutdown 证据。对账在原 owner 退出后只读取插件及 worker
+证据，核对原 binding/domain/configuration、candidate/role guard，不启动 SDK、
+浏览器、模型或工具。[模型策略](../zh-CN/model-policy.md#对账中断的-web-调用)与
+[worker 协议](../../plugins/dsh/PROTOCOL.md#原调用只读恢复协议)逐项定义合法结果。
+SDK 中断后才 adopt 纯 final、采用工具/摘要，或原 candidate 检查点缺失，仍不能
+凭捕获回答变为任务成功；显式 retire 仅在原 SDK 关闭与 guard 证据满足时结算失败。
+
+本次 Flywheel 源码通过 `make quality-gate`，所有受测 Go 函数覆盖率 100%，DSH
+Node check（含 legacy host 加载）和启用的跨进程 worker bridge 测试。
+新增测试覆盖原完整终态、未派发/已知失败、retire、未完成 adoption、身份和 guard
+变化、不可变响应及修正链，并在最终回答来自修正 tail 时仍验证原图片接受证据。
+插件 helper 测试在独立已退出进程运行真实 host/transport，只替换浏览器页面。
+
+后续审查关闭了三个实际集成缺口：原 candidate receipt 在主 receipt 被替换前，
+先用独立摘要获得 state CAS 确认；retire 失败保留原 SDK 实际观察到的 turn ID；
+Go 查询关闭 stdin，并透传原先非凭证 SDK 选择。测试覆盖三个 checkpoint/CAS
+中断窗口，以及真实 Go parser 读取 Node completed、retired、未发送三种恢复结果。
+最终 Go 门禁所有受测函数 100%。发行模块后续修改前，DSH 源码测试 560 项加
+10 项 legacy-host 场景通过；之后独立 reader 与恢复定向测试 9 项、发行校验
+45 项通过。
+
+发行补充将候选公开的只读 reader 与 schema 验证器构建为 Flywheel 独立模块，
+限定外部导入为 Node filesystem、crypto、path、os。精确源码/输入/输出清单和
+所有原许可证同包交付，干净 consumer 不依赖另一个 SDK profile 的 provider
+搜索路径。最终根目录发行门禁必须对稳定源码运行：
+
+```sh
+npm test
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm \
+  FLYWHEEL_CLAUDE_CODE_PRO_TARBALL="$PWD/plugins/dsh/vendor/dsh-subagent-claude-code-pro-0.6.0.tgz" \
+  npm run test:install
+```
+
+这些门禁执行后的精确候选、安装包恢复结果与 CI 证据记录在 PR 中；本文不预先
+宣称尚未执行的发行门禁通过，也不为追加结果而重新生成不同字节的候选。
+
+精确 ChatGPT 候选源码为
+[`191a2cc11ded693970e0c77a8fd351dfa3aec9cf`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/191a2cc11ded693970e0c77a8fd351dfa3aec9cf)，
+tree `eff36fdf3756ac95856420e518abf50328f9aefc`。候选
+`dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` 含 199 文件、735161 bytes，SHA-256 为
+`e53a5ee4d8c6d5300f896ca680f362a453fcf1385e5eec227eeaa29b395b59d7`；
+完整 integrity 与构建工具链见 [vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json)。
+[CI run 44245907991](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44245907991)
+的 Node 22/24 与 Ubuntu/macOS 精确宿主矩阵全过。每个 OS 覆盖 391 项宿主测试、
+8 个真实跨层场景和 6 个真实 Chromium fixture 场景，包含媒体。macOS profile
+清理修复只改测试文件，重打包逐字节一致。
+
+这些是源码、浏览器 fixture 和真实 peer 安装验证，不代表发布 patched SDK/npm
+正式版本、把 provider 装入用户 SDK profile 或验证真实 ChatGPT 账号。真实账号/
+当前页面、完整 heavy Preset 任务与有歧义的项目创建定位仍是独立门槛。

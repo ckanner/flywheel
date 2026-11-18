@@ -545,7 +545,7 @@ These public extensions are delivered as an exact-source compatibility patch, no
 
 This is implementation order, not an indefinite deferral of long context, Execute, or recovery. Full acceptance uses the user's actual heavy-work Preset and real tasks. A capability that has not passed cannot be released based only on a boolean declaration.
 
-Implementation updates plugin contracts/settings, Flywheel architecture/protocol, schemas, bilingual installation/recovery guides and changelogs. This PR contains the Flywheel consumer; its companion plugin PR contains the implementation and compatibility patch. The [validation record](../validation/2026-11-17-chatgpt-web-implementation.en.md) explicitly retains media, format correction, ambiguous-project recovery and live-environment acceptance gaps. Offline results do not waive those requirements.
+Implementation updates plugin contracts/settings, Flywheel architecture/protocol, schemas, bilingual installation/recovery guides and changelogs. This PR contains the Flywheel consumer; its companion plugin PR contains the implementation and compatibility patch. The 2026-11-18 continuation implements bounded image upload, format-only correction and explicit rejected-response retirement with offline regression evidence. The [validation record](../validation/2026-11-17-chatgpt-web-implementation.en.md) preserves the earlier snapshot and the remaining ambiguous-project, real-account, and complete heavy-task acceptance requirements. Offline image upload does not prove that the model actually used an image, and offline results do not waive live acceptance.
 
 ## 14. Regression and acceptance matrix
 

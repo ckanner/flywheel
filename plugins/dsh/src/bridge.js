@@ -12,6 +12,7 @@ import { NativeTree } from './native.js';
 import { acquireGuiLease, settleGuiLease } from './native-resources.js';
 import { acceptDshActivity, DSH_ACTIVITY_METHOD } from './dsh-activity.js';
 import { validateWebBinding, validateWebFacts } from './web-policy.js';
+import { beginWebRecovery } from './web-recovery.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
   const native = request.native ? nativeOverlay(request, admission.runtimeProfile ?? 'sdk') : null;
@@ -218,7 +219,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
   let sessionId;
   let fold;
   let nativeTree, guiLease, nativeCleanup, nativeAdmission, policyIdentity;
-  let webBinding, webReceipt;
+  let webBinding, webReceipt, webRecovery, webBusiness;
   let nativeRuntimeEvents = [];
   let completionAtRootEnd;
   let nativeAttempted = false;
@@ -398,7 +399,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     }
     nativeAdmission = fold.policy.native;
     if (request.native && nativeAdmission?.matched !== true) throw new BridgeError('INVALID_REQUEST', 'native runtime did not attest its effective capabilities');
-    frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
+    const readyFrame = { protocol: request.protocol, requestId: request.requestId, type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
       ...(webBinding ? { web: webBinding } : {}),
@@ -406,7 +407,12 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,
         approvalPolicy: fold.policy.approvalPolicy, confinedShell: fold.policy.confinedShell,
         ...(fold.policy.enforcement === undefined ? {} : { enforcement: fold.policy.enforcement }) },
-      ...(request.protocol === 2 ? { persistent: true, resumed: resumeAccepted } : {}) });
+      ...(request.protocol === 2 ? { persistent: true, resumed: resumeAccepted } : {}) };
+    if (request.web?.recoveryDirectory) {
+      const receipt = await readPolicyReceipt(join(temp, 'web-checkpoint.json'), policyIdentity);
+      webRecovery = await beginWebRecovery(request, receipt.checkpoint, readyFrame, env);
+    }
+    frame(readyFrame);
     readySent = true;
     // v2 publishes only this invocation's events. Restoration/configuration
     // records are reflected in the checked ready receipt, never as new output.
@@ -418,6 +424,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       // The next prompt is the only invocation owned by this worker. Reset any
       // restoration facts before dispatch; historical usage must never be added.
       fold.beginCall();
+      await webRecovery?.intent();
       dispatch = 'unknown';
       const receipt = await runtime.request('session/prompt', {
         sessionId, contentBlocks: [{ type: 'text', text: request.prompt }],
@@ -427,6 +434,7 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       }
       promptId = receipt.messageId;
       dispatch = 'dispatched';
+      await webRecovery?.accepted(promptId);
       const completed = await runtime.request('session/wait', { sessionId });
       if (!record(completed) || Object.keys(completed).length !== 0) {
         throw new BridgeError('TRANSPORT', 'SDK wait did not confirm a quiescent session');
@@ -480,6 +488,13 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
         nativeRuntimeEvents = await readNativeEvents(temp, { ...policyIdentity, rootSessionId: sessionId }, nativeCleanup.journal);
         nativeTree.observeRuntime(nativeRuntimeEvents);
       } catch (error) { settled = false; failure ??= normalizedError(error); }
+    }
+    if (webRecovery) {
+      const terminalKnown = Boolean(waited && fold?.receipts.has(promptId) && fold?.terminal && !runtime?.protocolFailure);
+      webBusiness = { sdkCleanupConfirmed: settled, protocolIntact: !runtime?.protocolFailure, terminalKnown,
+        completed: Boolean(terminalKnown && fold.terminal.kind === 'completed' && !failure && !cancelled && !controller.signal.aborted),
+        outcome: terminalKnown && fold.terminal.kind === 'completed' ? 'completed' : terminalKnown ? 'failed' : 'unknown',
+        promptId, turnId: fold?.turnId ?? '', text: outcome?.text ?? fold?.text ?? '' };
     }
     if (temp && request?.web && readySent) {
       try {
@@ -542,6 +557,13 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       resumeAccepted, turnId: terminalKnown ? fold.turnId : '',
       usageStatus: result.usage === null ? 'unknown' : 'complete',
     };
+  }
+  if (webRecovery) {
+    try { await webRecovery.finish(webBusiness, result); }
+    catch (error) {
+      result.status = 'error'; result.settled = false; result.error = normalizedError(error);
+      if (result.lifecycle) { result.lifecycle.cleanupConfirmed = false; result.lifecycle.resumeCandidate = false; result.lifecycle.outcome = 'unknown'; }
+    }
   }
   frame(result);
   return result;

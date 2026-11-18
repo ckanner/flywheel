@@ -377,8 +377,11 @@ func validateSessions(raw json.RawMessage) error {
 			// dispatch/outcome before it reaches persistence.
 		}
 		if recovery := record.Last.Recovery; recovery != nil {
+			if recovery.Harness == "dsh" && (ledger.Version < 5 || recovery.AdapterVersion != "chatgpt-web/read-only-recovery/1" || recovery.Model != "gpt-6-pro-web" || recovery.Effort != "pro" || recovery.Sequence != 0) {
+				return fmt.Errorf("session %s Web recovery requires its version 5 original contract", key)
+			}
 			if !filepath.IsAbs(record.Task) || recovery.Directory != SessionRecoveryDirectory(record.Task, record.Last.ID) ||
-				(recovery.Sequence == 0 && (recovery.RunID != "" || recovery.Event != "" || recovery.CheckpointDigest != "")) ||
+				(recovery.Sequence == 0 && (recovery.RunID != "" || recovery.Event != "" || (recovery.Harness != "dsh" && recovery.CheckpointDigest != ""))) ||
 				(recovery.Sequence > 0 && (strings.TrimSpace(recovery.RunID) == "" || recovery.Event == "" || recovery.CheckpointDigest == "")) {
 				return fmt.Errorf("session %s recovery directory or checkpoint identity is invalid", key)
 			}

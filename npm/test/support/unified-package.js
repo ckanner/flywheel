@@ -25,6 +25,17 @@ function writeContents(directory, manifest) {
   }
   put('node_modules/dsh-subagent-codex-pro/package.json',JSON.stringify({name:'dsh-subagent-codex-pro',version:'0.10.2'}));
   put('node_modules/dsh-preset-generator/package.json',JSON.stringify({name:'dsh-preset-generator',version:'0.4.0'}));
+  const vendor = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../plugins/dsh/vendor/chatgpt.json'), 'utf8'));
+  put('plugins/dsh/vendor/chatgpt.json', JSON.stringify(vendor));
+  const reader = Buffer.from('export const readWebInvocationRecovery = () => { throw new Error("fixture"); };\n');
+  const licenses = Buffer.from('Fixture Web reader license inventory.\n');
+  const fingerprint = (file, bytes) => ({ file, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') });
+  put('dist/web-recovery-reader.mjs', reader);
+  put('dist/web-recovery-reader.LICENSES.md', licenses);
+  put('dist/web-recovery-reader.manifest.json', JSON.stringify({ version: 1, contract: 'chatgpt-web/read-only-recovery/1',
+    publicEntry: 'dsh-plugin-chatgpt/web-recovery', source: { package: vendor.package, version: vendor.version,
+      commit: vendor.sourceCommit, tree: vendor.sourceTree, archiveSHA256: vendor.sha256 }, imports: [],
+    ...fingerprint('web-recovery-reader.mjs', reader), licenses: fingerprint('web-recovery-reader.LICENSES.md', licenses) }));
   put('package.json',JSON.stringify(manifest));
 }
 module.exports={manifests,writeContents};

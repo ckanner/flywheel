@@ -84,6 +84,7 @@ func DSHPrewarmBinding(a DSHArgs) (string, error) {
 	if a.Web != nil {
 		copy := *a.Web
 		copy.ExpectedBinding = nil
+		copy.RecoveryDirectory = ""
 		a.Web = &copy
 	}
 	r, command, _, env, err := dshCall(a)
@@ -256,6 +257,7 @@ func PrepareDSH(a DSHArgs) *DSHPrewarm {
 	if preparedArgs.Web != nil {
 		web := *preparedArgs.Web
 		web.ExpectedBinding = nil
+		web.RecoveryDirectory = ""
 		preparedArgs.Web = &web
 	}
 	r, command, _, env, _ := dshCall(preparedArgs) // Binding validation already checked these arguments.

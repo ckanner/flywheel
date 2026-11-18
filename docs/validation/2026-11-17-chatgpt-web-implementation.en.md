@@ -78,7 +78,11 @@ Independent reviewers and minimal production-class reproductions found and fixed
 
 The plugin's `scripts/verify-web-harness.mjs` accepts a DSH checkout and optional Flywheel checkout. Cases cover default composition; main→durable ACK→tool→final; capture/disconnect→adoption→exactly-once tool; default automatic/manual compaction; always-policy veto; and actual `createWebPolicy` admission plus the durable terminal receipt after disposal.
 
-## 6. Remaining acceptance and implementation gaps
+## 6. Original 2026-11-17 acceptance snapshot
+
+This table preserves the first implementation snapshot. The dated continuation
+below records subsequent source changes; the original gaps are not current
+claims that image upload and format correction remain unimplemented.
 
 | Outstanding area | Current behavior / required evidence |
 | --- | --- |
@@ -91,3 +95,84 @@ The plugin's `scripts/verify-web-harness.mjs` accepts a DSH checkout and optiona
 | Deployment and release | Exact compatibility source and candidate build paths are delivered. No patched SDK, Desktop binary or official npm release was published. |
 
 Both PRs remain Draft. Complete the missing evidence in the real environment and update the design matrix item by item; offline green checks alone do not establish delivery of the complete capability.
+
+## 7. 2026-11-18 continuation: images, format correction and Flywheel reconciliation
+
+The companion ChatGPT plugin now implements bounded durable image upload with
+original user/tool occurrence metadata, byte and digest verification, accepted
+upload names, and private recovery artifacts. Format correction is a bounded
+continuation of the captured answer, with immutable parent/child identities;
+it cannot alter tool arguments or task meaning. Explicit discard binds the
+inspected rejected-response digest and records a failed retirement separately
+from a host commit. These source paths have offline regression coverage.
+Upload acceptance remains `modelConsumption: unverified`; live model attention,
+account-specific limits and actual LCU vision are separate acceptance evidence.
+
+Flywheel now records `chatgpt-web/read-only-recovery/1` checkpoints before the
+prompt and its original SDK prompt/wait/terminal/shutdown proof. Reconciliation
+reads original plugin and worker artifacts after their owners exit, verifies
+the original binding/domain/configuration and candidate/role guards, and sends
+no new SDK, browser, model or tool work. The outcome matrix is documented in
+the [model policy](../en/model-policy.md#reconcile-an-interrupted-web-invocation)
+and [worker protocol](../../plugins/dsh/PROTOCOL.md#原调用只读恢复协议).
+Pure final adoption after an interrupted SDK, adopted tools or summaries, and
+missing original candidate proof continue to block; they cannot become task
+completion merely because a response was captured. Explicit retirement can
+settle a known failure only with the required original shutdown and guard proof.
+
+The Flywheel source change passed `make quality-gate` with every measured Go
+function at 100% coverage, the DSH Node check (including legacy-host loading),
+and the enabled cross-process worker bridge tests. New tests cover the original
+successful terminal, known unsent and failed outcomes, retired responses,
+unresolved adoption, changed identities and guards, immutable response/repair
+artifacts, and image-root acceptance even when the final is a correction tail.
+The corresponding plugin helper tests run a real host and transport in an
+exited child process with only the browser page replaced.
+
+Follow-up review closed three concrete integration gaps: the original candidate
+receipt now has its own state-CAS-confirmed digest before the main receipt is
+replaced; failed retirement retains the SDK's actual observed turn ID; and the
+Go query closes stdin and forwards the original noncredential SDK selection.
+Tests cover all three checkpoint/CAS interruption windows and the real Go parser
+consuming Node recovery results for completed, retired and unsent invocations.
+The final Go gate reports 100% for every measured function. The source DSH suite
+passed 560 tests plus ten legacy-host cases before the subsequent packaging
+change; its independent reader and recovery checks then passed nine targeted
+tests, and release validation passed 45 tests.
+
+The packaging follow-up builds the candidate's public read-only reader into an
+independent Flywheel module, including its schema validators. Its checked
+external imports are limited to Node filesystem, crypto, path and OS helpers.
+The exact source/input/output manifest and all original licenses ship with the
+module. A clean consumer no longer depends on finding the provider in another
+SDK profile. The final root release gates must run against the stable source:
+
+```sh
+npm test
+npm run build:npm
+FLYWHEEL_NPM_PACKAGES_DIR=dist-npm \
+  FLYWHEEL_CLAUDE_CODE_PRO_TARBALL="$PWD/plugins/dsh/vendor/dsh-subagent-claude-code-pro-0.6.0.tgz" \
+  npm run test:install
+```
+
+Their final candidate identity, packed-install recovery results and CI evidence
+are recorded in the PR after execution; this source record does not predeclare
+those release-gate results or require repacking merely to append them here.
+
+The exact ChatGPT source candidate is
+[`191a2cc11ded693970e0c77a8fd351dfa3aec9cf`](https://github.com/ckanner/dsh-plugin-chatgpt/commit/191a2cc11ded693970e0c77a8fd351dfa3aec9cf),
+tree `eff36fdf3756ac95856420e518abf50328f9aefc`. Its 199-file, 735161-byte
+`dsh-plugin-chatgpt-0.2.0-alpha.1.tgz` has SHA-256
+`e53a5ee4d8c6d5300f896ca680f362a453fcf1385e5eec227eeaa29b395b59d7`;
+the full integrity and build toolchain are in
+[vendor/chatgpt.json](../../plugins/dsh/vendor/chatgpt.json).
+[CI run 44245907991](https://github.com/ckanner/dsh-plugin-chatgpt/actions/runs/44245907991)
+passed Node 22/24 and both Ubuntu/macOS exact-host jobs. Each OS exercised the
+391 host tests, eight real cross-layer cases and six real Chromium fixture
+cases, including media. The macOS profile-cleanup correction changed test
+files only; repacking produced identical candidate bytes.
+
+These are source, browser-fixture and installed-peer checks; they do not publish
+a patched SDK or npm release, install the provider in a user's SDK profile, or
+attest a real ChatGPT account. Real account/current-page acceptance, a complete
+heavy Preset task, and ambiguous project-creation discovery remain separate gates.
