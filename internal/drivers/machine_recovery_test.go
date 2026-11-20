@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +65,9 @@ func TestMachineRecoveryProcessFixture(t *testing.T) {
 		ReasoningEffort: q.Original.ReasoningEffort, PermissionMode: q.Original.PermissionMode, ThreadMode: q.Original.ThreadMode, ThreadID: q.Original.ThreadID}
 	receipt := codexProFixture(r)
 	if harness == "claude-code-pro" {
+		if scenario == "images" {
+			r.Images = []imageinput.Image{{MIMEType: "image/png", Data: []byte("original-image")}}
+		}
 		receipt = claudeCodeProFixture(claudeCodeProStart(r))
 	} else {
 		proObject(receipt, "outcome", "execution")["runId"] = q.RunID

@@ -5,7 +5,9 @@
 Flywheel separates reuse of a role’s conversation history from recovery of an
 interrupted invocation. Fresh and scoped histories both retain invocation safety
 checks. Durable public-journal recovery requires **Codex Pro 0.10.2** or
-**Claude Code Pro 0.6.0**; DSH and Kimi retain their own supported recovery paths.
+**Claude Code Pro 0.7.0** or **Antigravity 0.1.0**; DSH and Kimi retain their own supported recovery paths.
+
+Antigravity recovery reads the exact owned journal and frozen subscription/evidence-only binding. It never launches a replacement CLI or resumes a global latest conversation. Native child completion and conversation-level usage can remain unknown.
 
 ## Resume an existing task
 
@@ -37,7 +39,8 @@ The transport determines which progress can be observed:
 | Transport | Progress used by Flywheel | Time limits |
 |---|---|---|
 | DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
-| Codex Pro 0.10.2 / Claude Code Pro 0.6.0 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Codex Pro 0.10.2 / Claude Code Pro 0.7.0 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
+| Antigravity 0.1.0 | Validated native init/step/result metadata for the original invocation; no fabricated heartbeats | Configurable idle silence budget and wall deadline |
 | Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
 | Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
 

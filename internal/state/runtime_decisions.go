@@ -15,14 +15,15 @@ import (
 // RuntimeDecisions belongs to the task, not a worker or an individual run.
 // Reserved/unknown requests and imported investigation calls share its cap.
 type RuntimeDecisions struct {
-	Version       int                      `json:"version"`
-	Config        *config.JEVConfig        `json:"config,omitempty"`
-	Used          int                      `json:"used"`
-	ImportedCalls int                      `json:"imported-calls"`
-	Status        string                   `json:"status"`
-	Records       []*RuntimeDecisionRecord `json:"records"`
-	MaxCalls      int                      `json:"max-calls,omitempty"` // display projection
-	Omitted       int                      `json:"omitted-records,omitempty"`
+	Subscription  *decision.SubscriptionBinding `json:"subscription-binding,omitempty"`
+	Version       int                           `json:"version"`
+	Config        *config.JEVConfig             `json:"config,omitempty"`
+	Used          int                           `json:"used"`
+	ImportedCalls int                           `json:"imported-calls"`
+	Status        string                        `json:"status"`
+	Records       []*RuntimeDecisionRecord      `json:"records"`
+	MaxCalls      int                           `json:"max-calls,omitempty"` // display projection
+	Omitted       int                           `json:"omitted-records,omitempty"`
 }
 
 type RuntimeDecisionRecord struct {
@@ -60,6 +61,14 @@ func validateRuntimeDecisions(st *State) error {
 	_ = json.Unmarshal(raw, &value)
 	if err := schema.Properties["runtime-decisions"].Validate(value); err != nil {
 		return fmt.Errorf("runtime decisions: %w", err)
+	}
+	if ledger.Config.Backend == "subscription" {
+		if err := decision.ValidateSubscriptionBinding(ledger.Subscription); err != nil {
+			return err
+		}
+		if ledger.Subscription.Profile != ledger.Config.Profile {
+			return fmt.Errorf("runtime decision profile contradicts its frozen binding")
+		}
 	}
 	seen, used := map[string]*RuntimeDecisionRecord{}, ledger.ImportedCalls
 	for _, record := range ledger.Records {
@@ -137,6 +146,12 @@ func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *confi
 	}
 	options := decision.Options{Endpoint: j.Endpoint, Model: j.Model, ExpectedModel: j.Model, Timeout: time.Duration(j.TimeoutMS) * time.Millisecond,
 		AllowedKinds: []decision.ActionKind{decision.Diagnostic, decision.Repair, decision.Replan, decision.Model}}
+	if j.Backend == "subscription" {
+		options.Backend, options.Subscription = j.Backend, st.RuntimeDecisions.Subscription
+		if options.Subscription != nil {
+			options.Model, options.ExpectedModel = options.Subscription.Model, options.Subscription.Model
+		}
+	}
 	if err := decision.ValidateReceiptIdentity(*snapshot, j.DecisionPolicy(), options, *r.Receipt); err != nil {
 		return err
 	}

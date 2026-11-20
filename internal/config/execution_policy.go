@@ -83,6 +83,11 @@ func (c *Config) validateExecutionPolicy() error {
 		return err
 	}
 	for id, binding := range p.Bindings {
+		if binding.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(binding.Model, binding.Thinking); err != nil {
+				return fmt.Errorf("execution-policy.bindings.%s: %w", id, err)
+			}
+		}
 		if _, found := c.Channels[binding.Channel]; !found {
 			return fmt.Errorf("execution-policy.bindings.%s: channel is not configured", id)
 		}

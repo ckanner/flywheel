@@ -2,7 +2,7 @@
 // Copyright (c) 2026 ckanner. SPDX-License-Identifier: MIT
 "use strict";
 
-const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
+const { loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, loadAntigravityWorkerPath, assertSupportedNode, runChild } = require("./runtime.js");
 
 async function main() {
   const args = process.argv.slice(2);
@@ -30,6 +30,9 @@ async function main() {
   }
   if (env.FLYWHEEL_KIMI_NATIVE_WORKER === undefined) {
     env.FLYWHEEL_KIMI_NATIVE_WORKER = loadKimiNativeWorkerPath();
+  }
+  if (env.FLYWHEEL_ANTIGRAVITY_WORKER === undefined) {
+    env.FLYWHEEL_ANTIGRAVITY_WORKER = loadAntigravityWorkerPath();
   }
   return runChild(loadNativePath(), args, { env });
 }

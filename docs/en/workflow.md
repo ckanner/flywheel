@@ -40,8 +40,11 @@ concurrency, or unresolved design risks select Full. An explicit Quick request
 still has to qualify; file count alone is not a risk assessment.
 
 A first-success Quick implementation has two stage-agent calls: Execute and final
-Review. New reviewed-planning tasks also run compact initial design and Design
-Review; preparation, internal tool turns, retries and upgrades are additional work. Required
+Review. New qualifying compact tasks first generate the design and complete single
+packet together, then receive one independent joint review. This normally makes
+four logical role calls from brief to delivery; internal tool turns, investigation,
+retries and upgrades are additional work. Existing valid reviewed contracts remain
+reusable. Required
 tests, coverage, applicable L2/L3, defect sampling, budgets, and cleanup remain in
 force. Plan/Judge are marked not applicable with reasons. A newly discovered risk or
 verification gap saves a one-way Quick → Full upgrade, preserving work and budgets.
@@ -62,7 +65,7 @@ proposal review is requested. Plan / Exec / Verify / Review / Status / Stop rema
 Full reuses a confirmed, persisted Plan checkpoint when its inputs and baseline stay
 valid. Explicit Plan, verification gaps, changed contracts or untrusted baselines
 still replan. Targeted executor checks complement the complete Go gate and independent
-Review. Default model bindings remain; execution allowlists and verified incremental
+Review. Execution allowlists and verified incremental
 context are independent opt-ins described in [Configuration](configuration.md).
 
 Authorized investigations can include exact reproduction commands in private
@@ -80,7 +83,10 @@ to produce the complete architecture before New starts. Actual overall design us
 `loops.design-plan`; absent an override, it inherits the existing `loops.plan`
 backend. Independent Design Review and Plan Review use `loops.design-review` and
 `loops.plan-review`, defaulting to the `loops.review` backend. Roles and history stay
-independent. The existing model and effort defaults are unchanged.
+independent. A brief with explicit compact granularity, reason and evidence uses
+`planning.compact` profile references for design and its joint review; otherwise
+system design uses the ordinary loops. Auto is the deterministic implementation
+depth selector, not a third flow or a separate classifier call.
 
 Use `config inspect` to see `bindingSource` and the resolved backend, model and
 effort. The configuration view displays inherited planning roles and lets you make

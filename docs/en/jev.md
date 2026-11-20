@@ -5,25 +5,18 @@
 Flywheel has one JEV switch: **Enable JEV** (`jev.enabled`). It is off by default.
 Enabling it activates every supported JEV decision point automatically. There is
 no separate shadow, advice, adoption, or per-feature switch in the task workflow.
+The distributed configuration uses `backend: "subscription"` and the
+`hydrogen-local` profile: Gemini 4 Hydrogen at medium effort through the native
+Antigravity CLI. JEV remains the name of Flywheel's bounded decision mechanism;
+this backend does not call the separately billed System One API.
 
 ## Enable once, use the usual task entries
 
 In the desktop, open **Flywheel → Settings → JEV** and choose the intended global
-or project scope. Turn on **Enable JEV** to reveal the connection fields, fill or
-confirm the JEV API URL, Model ID and credential
-environment-variable name, then select **Save changes**. The switch edits a draft;
-activation takes effect when you save. Editing and saving do not test service
-connectivity. Tasks do not ask for the same approval again.
-
-The process running Flywheel must receive that environment variable. Configuration
-stores its name, never its value. Advanced fields bound timeout, call count,
-thresholds and shared data.
-
-`key-env` accepts 1–120 ASCII letters, digits and underscores, beginning with a
-letter or underscore. Uppercase, lowercase and mixed-case names retain their exact
-spelling when an investigation freezes its configuration and reloads its state.
-
-JEV API URL accepts a full System One-compatible `/v1/systemone` endpoint, whether from TypeSafe or a compatible gateway. Model ID is an editable prefilled value: choose a supported pinned `jev-x.y.z` version. Responses must still match that version; mutable latest/preview aliases are not accepted.
+or project scope. Turn on **Enable JEV**, confirm the subscription profile, then
+select **Save changes**. The switch edits a draft; activation takes effect when
+you save. Editing and saving do not call a model or prove account access.
+Advanced fields bound timeout, call count, thresholds and shared data.
 
 The equivalent configuration section is:
 
@@ -31,10 +24,9 @@ The equivalent configuration section is:
 {
   "jev": {
     "enabled": true,
-    "endpoint": "https://your-service.example/v1/systemone",
-    "model": "jev-1.14.0",
-    "key-env": "MEROUTER_API_KEY",
-    "timeout-ms": 5000,
+    "backend": "subscription",
+    "profile": "hydrogen-local",
+    "timeout-ms": 30000,
     "max-calls": 8,
     "min-applicability": 0.8,
     "min-choice": 0.6,
@@ -43,13 +35,23 @@ The equivalent configuration section is:
 }
 ```
 
-Replace the example endpoint with your service. The model must be a fixed
-`jev-x.y.z` version matching the response. The distributed template leaves the
-endpoint empty and JEV disabled. Enabled configurations with an invalid target
-fail validation. Missing credentials at execution keep the deterministic baseline.
-Existing decision/request records preserve their actual skip or failure reasons;
-an implementation task can fail a precondition before creating its first runtime
-decision ledger, so not every bypass has a receipt.
+`profile` resolves to a named model profile in the same configuration. Go freezes
+its profile name, harness, channel, exact model slug and effort. Only an Antigravity
+binding with no native child profile is accepted: the adapter must independently
+verify an empty native tool list before supplying the bounded answer. It runs a
+fresh conversation with evidence-only permissions, owned-process cleanup and the
+subscription-only policy, even if implementation stages have full access.
+The CLI's retained conversation history is not a promise of zero storage or an
+OS sandbox. The request exposes no tools for file access, diagnostic commands or
+execution of the chosen action.
+
+Do not include `endpoint`, `model` or `key-env` in the subscription JEV object.
+The model and effort belong to the named profile; subscription login and native
+extra-usage controls are checked by the adapter. No API or credits fallback is
+attempted. Proven non-dispatch keeps the deterministic baseline. A possible
+dispatch without confirmed cleanup blocks further work until reconciliation.
+Existing records preserve actual reasons; an implementation task can fail a
+precondition before creating its first decision ledger.
 
 Configuration selects **one complete file** in task → project → global → embedded
 order. A project configuration that leaves JEV off overrides a globally enabled
@@ -82,7 +84,8 @@ Use the normal entries after configuration:
 “All supported decision points” does not mean every task makes a JEV request.
 Single legal actions and deterministic choices execute directly. Missing data
 permission, hard budgets without an enforceable request ceiling, exhausted calls,
-low applicability, errors and invalid responses retain the baseline. Any decision
+low applicability, errors and invalid responses retain the baseline once native
+cleanup is known. Any decision
 or request records already created preserve their actual reasons; preconditions
 that fail before recording do not imply a new skip receipt.
 Auto still uses Go contract eligibility to choose Quick or Full. Entry routing does
@@ -146,8 +149,9 @@ change as proof that a new session ran successfully.
 
 ## Data, budgets and recovery
 
-For an investigation, Go freezes the effective JEV target, data categories,
-thresholds and call budget when preparation is created. Task-provided historical `decision` modes cannot turn
+For an investigation, Go freezes the effective JEV backend and complete resolved
+target, data categories, thresholds and call budget when each authorized round
+is created. Task-provided historical `decision` modes cannot turn
 JEV on while the effective master setting is off. The default enabled data set
 allows the task summary, diagnostic hypotheses, structured command/HTTP outcomes,
 and bounded excerpts of approved file evidence. `allowed-data` can narrow this set.
@@ -162,9 +166,9 @@ requests are reconciled using their frozen identity, and their known or unknown
 usage is retained. Unknown requests are not retried. Unknown **action** outcomes
 still block execution until reconciled.
 
-An investigation preparation created while JEV was off stays on its baseline;
-enabling JEV does not rewrite that preparation. A newly created preparation can
-freeze the enabled policy.
+An investigation round created while JEV was off stays on its baseline; enabling
+JEV does not rewrite it. An explicitly authorized new round can freeze the new
+policy, within the same remaining cumulative allowance.
 
 Implementation freezes its own runtime decision policy at the first eligible
 failure in an enabled run. If the current process started with JEV off and has no
@@ -177,11 +181,22 @@ further optional decisions rather than silently rewriting the policy. Check the
 reported JEV status and reason; do not copy ledgers or reset budgets to bypass it.
 
 `max-calls` is a task allowance that includes unknown dispatched requests. Calls
-used during investigation are imported into implementation's allowance. Multiple
+used in every investigation round are imported into implementation's allowance. Multiple
 packets, model switches, replanning and resume cannot reset it. This is a call cap,
 not a guaranteed token or currency ceiling. A configured hard budget skips JEV when
 the service cannot enforce a provable per-request bound. Requests record actual
-usage when available; missing usage remains unknown.
+usage when available; missing usage remains unknown. Native conversation totals
+are not per-call deltas and are not charged repeatedly. Subscription use is not
+recorded as zero cost. The returned probabilities and applicability are
+uncalibrated model estimates, not measured accuracy.
+
+The subscription adapter persists correlated lifecycle checkpoints before
+acknowledging dispatch. A crash, interruption or missing terminal cannot cause a
+new prompt. Recovery queries only the original native supervisor journal. If it
+proves cleanup, a separate `*.reconciled.json` record adds that fact while keeping
+the original unknown receipt, unknown usage and deterministic baseline; a late
+answer is not adopted. Without this proof, turning JEV off, submitting a report,
+starting another round or changing the model cannot bypass the cleanup block.
 
 Implementation's `runtime-decisions` record lives in `state.json` and retains the
 frozen policy, used/imported call counts, requests, selections and effects. It
@@ -199,7 +214,8 @@ journal or model switch bypassing an unknown outcome.
 ## Replay and explicit evaluation
 
 Normal tasks save frozen `*.input.json` documents and receipts in their private
-decision journal. Offline replay also accepts historical `*.snapshot.json` captures:
+decision journal. The existing offline System One response parser also accepts
+historical HTTP `*.snapshot.json` captures:
 
 ```bash
 flywheel decision replay --input frozen.input.json --response native-response.json \
@@ -217,8 +233,10 @@ flywheel decision evaluate --cwd "$repo_dir" --input frozen.input.json \
   --directory ./decision-evaluation --max-calls 5
 ```
 
-The endpoint, fixed model and credential variable come from the same configuration.
-Legacy explicit target flags must match it. Evaluation forces advisory behavior;
+The backend and complete target come from the same configuration. The subscription
+backend resolves the named profile without an API key; explicit model checks must
+match, and API endpoint/key flags are rejected. Legacy HTTP target flags must match
+their configured target. Evaluation forces advisory behavior;
 it never dispatches an action or changes task state. Its call cap, timeout,
 thresholds and data categories cannot loosen the configured bounds. Reusing an
 input and journal reads the original receipt; it does not resend an unknown call.
@@ -226,6 +244,19 @@ input and journal reads the original receipt; it does not resend an unknown call
 Both tools return `adopted: false`. Live failures and unknown outcomes return exit
 code 3, input/configuration errors return 1, and cancellation returns 143. Offline
 fixture success is not evidence of live model accuracy or lower task latency.
+
+## Explicit legacy HTTP configurations
+
+Existing files without a backend retain the historical HTTP contract. An explicit
+`backend: "http"` is also supported for configurations outside subscription-only
+mode. Use a credential-free HTTPS `/v1/systemone` endpoint, a fixed `jev-x.y.z`
+request/response version and a `key-env` variable name. The historical default
+timeout is 5000 ms; HTTP is permitted only on loopback for tests. `key-env` accepts
+1–120 ASCII letters, digits and underscores, starting with a letter or underscore,
+and retains case. The process receives the credential; configuration stores only
+its name. This is a separately billed integration, never an automatic fallback
+from a subscription. A global `subscription-only` policy rejects enabling it.
+Existing HTTP target hashes and frozen receipts remain readable.
 
 ## Migration from shadow evaluation
 

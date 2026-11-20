@@ -71,15 +71,18 @@ invocation 和原因，并提供退役表单：必须填写原因并勾选“不
 
 ## 实施前的调查
 
-任务只有准备记录、尚无实施状态时，显示调查面板，包括目标、动作预算、观察、截断
-片段、决策回执与证据报告。“继续调查”向 Go 提交当前 revision；存在 pending 调用时
-改为核对原回执。控制操作结果未知时，先用状态查询核对，再允许下一次修改。
-停止会等待运行者收束，不能把缺失的动作回执伪装成已确认取消。
+任务只有准备记录时显示调查面板，包含预算、观察、片段、动作实际结果、分析/决策回执
+及报告。Run 提交观测 revision，pending 调用只核对原回执。控制结果未知先查状态，
+停止等待运行者收束，不能把缺失回执变成确认取消。
 
-准备阶段不显示普通代码工作流启动按钮。`awaiting-report` 表示需要宿主助手提交
-基于证据的分析，不代表实施完成。只调查目标以报告结束；已获授权的修复在有支持
-结论并准备合法 Spec 后继续，保留原范围与用量。具体读取／搜索能力、命令协议及
-交接条件见[有界调查指南](investigation.md)。
+取证后由 `loops.investigate` 分析冻结证据；`awaiting-report` 的“生成调查报告”继续
+该阶段，`analysis-pending` 核对原调用。旧配置没有分析角色时保留手工报告。报告不代表
+代码完成；已授权且有支持结论的修复，在同任务登记薄 brief，将证据、范围和用量带入规划。
+
+报告已 settled、所有调用及清理均结算后，可补充证据并继续下一轮。完整契约草稿带剩余
+额度，填写真实新增 known-evidence，动作仍在原 goal/intent/修复范围内。提交绑定打开
+草稿时的 revision；刷新发现新版本会禁用过期提交，非法 JSON 不发请求。旧轮次及不可变
+digest 继续展示，不新建任务、重置预算或暗中重试。见[有界调查](investigation.md)。
 
 ## 配置
 
@@ -98,7 +101,11 @@ invocation 和原因，并提供退役表单：必须填写原因并勾选“不
 当前配置，结果未知的保存仍需核对。已明确确认的范围切换或重新读取继续加载所选
 文件，不恢复已经放弃的草稿；文件 revision 冲突仍阻止过期保存。
 
-支持的资源入口包括 ChatGPT · DSH、ChatGPT · Codex Pro、Kimi Code、DeepSeek Account（默认 Flash）及可选 Claude Code Pro。模型初值来自本版本模板，真实能力以 `config inspect`／`doctor` 为准。Claude 的可选适配器必须匹配公开 machine API；缺失或权限不支持会拒绝调用，不自动换后端。账号登录仍由各 Provider 自己完成。
+严格订阅配置提供 Antigravity、Claude Code Pro、Codex Pro 与 Kimi native 资源。
+无该策略的旧配置仍可选择 DSH ChatGPT/DeepSeek。Gemini 模型后缀与 effort 同步，
+选择 Kimi 仅在缺少时补最小 native profile。紧凑准备有独立的两个 profile 选择器，
+订阅 JEV 使用 profile 而非 HTTP endpoint/key 表单。所有修改共用同一草稿、revision
+和保存边界；选择资源不代登录或改变账号。
 
 `permissions.bindings` 可以覆盖 `loops.<role>`、`routes.<route>` 和 `judge-panel`；未覆盖项使用全局策略。会话策略按角色覆盖：执行 routes 共用 execute 的策略，各 packet 的历史仍隔离。scoped 只续接相同任务、角色、目标和绑定下可恢复的历史；fresh 也保留调用安全账本。
 

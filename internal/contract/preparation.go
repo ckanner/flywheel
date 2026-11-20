@@ -79,12 +79,14 @@ type InvestigationLimits struct {
 // KeyEnv stores a credential NAME only. Start freezes this record from the
 // unified JEV configuration; caller-provided historical modes cannot opt in.
 type InvestigationDecision struct {
-	Policy     decision.Policy `json:"policy"`
-	Endpoint   string          `json:"endpoint"`
-	Model      string          `json:"model"`
-	KeyEnv     string          `json:"key-env"`
-	TimeoutMS  int64           `json:"timeout-ms"`
-	HardBudget bool            `json:"hard-budget"`
+	Backend      string                        `json:"backend,omitempty"`
+	Subscription *decision.SubscriptionBinding `json:"subscription-binding,omitempty"`
+	Policy       decision.Policy               `json:"policy"`
+	Endpoint     string                        `json:"endpoint,omitempty"`
+	Model        string                        `json:"model"`
+	KeyEnv       string                        `json:"key-env,omitempty"`
+	TimeoutMS    int64                         `json:"timeout-ms"`
+	HardBudget   bool                          `json:"hard-budget"`
 }
 
 var preparationSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
@@ -128,6 +130,14 @@ func ValidatePreparation(raw []byte) (*Preparation, error) {
 	// contract when either representation is invalid.
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, err
+	}
+	if d := p.Decision; d != nil && d.Backend == "subscription" {
+		if err := decision.ValidateSubscriptionBinding(d.Subscription); err != nil {
+			return nil, err
+		}
+		if d.Model != d.Subscription.Model {
+			return nil, fmt.Errorf("preparation decision model contradicts its frozen subscription binding")
+		}
 	}
 	paths := map[string]bool{}
 	for _, path := range append(append([]string{}, p.ReadPaths...), p.ImplementationScope...) {

@@ -371,7 +371,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       const installedRequire = createRequire(path.join(installedRoot, "package.json"));
       const runtime = installedRequire("./bin/runtime.js");
       report.paths = { cli: path.join(installedRoot, "bin", "flywheel.js"), native: runtime.loadNativePath(), worker: runtime.loadWorkerPath(),
-        codexProWorker: runtime.loadCodexProWorkerPath(), kimiNativeWorker: runtime.loadKimiNativeWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath() };
+        codexProWorker: runtime.loadCodexProWorkerPath(), kimiNativeWorker: runtime.loadKimiNativeWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath(), antigravityWorker: runtime.loadAntigravityWorkerPath() };
       const probe = await run(process.execPath, [report.paths.codexProWorker, '--doctor']);
       requireSuccess(probe, 'installed Codex Pro dependency');
       const adapter = parseDocument(probe, 'installed Codex Pro dependency');
@@ -404,7 +404,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
           : summary.config.action === 'created'
             ? '新建全局默认配置；已有任务或项目配置仍优先。'
             : '配置初始化失败；已有文件未被迁移。',
-        migration: { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscriptions', '--cwd', options.project || cwd] },
+        migration: { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscription-cli', '--cwd', options.project || cwd] },
       };
       requireSuccess(result, "skills installation");
       if (summary.ok !== true || summary.results.some(skill => ["error", "stale", "conflict"].includes(skill.action))) throw new Error("some skills were preserved due to conflicts; inspect the results and retry");

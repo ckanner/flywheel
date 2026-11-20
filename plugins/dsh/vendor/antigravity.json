@@ -1,0 +1,16 @@
+{
+  "package": "dsh-subagent-antigravity",
+  "version": "0.1.0",
+  "sourceDirectory": "plugins/antigravity",
+  "sourceCommit": "aa6f396058d0c83eb8bb45ca9fd4c2b7d92a9717",
+  "sourceTree": "4c2f84f12df6b4fc8bf8ac9e45aad23c09fcdc32",
+  "tarball": "dsh-subagent-antigravity-0.1.0.tgz",
+  "sha256": "f798a4e13c32d885e45be46f27c05c800f7a86256d5055c42a35aaedd7d8cb0d",
+  "integrity": "sha512-NYqpHfhZNcUeFPPO99qffmtHy1uyrcZEryLRTKXZAO6oqpJXECEHVMh1kytgqtq0t6l37vvHny4gwE86qVfV8A==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "buildToolchain": {
+    "node": "24.22.3",
+    "npm": "11.19.1"
+  }
+}

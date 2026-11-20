@@ -36,7 +36,9 @@
         "status",
         "records"
       ],
+      "allOf": [{"if":{"properties":{"config":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}}}},"then":{"required":["subscription-binding"]},"else":{"not":{"required":["subscription-binding"]}}}],
       "properties": {
+        "subscription-binding":{"type":"object","additionalProperties":false,"required":["profile","harness","channel","model","effort"],"properties":{"profile":{"type":"string","minLength":1,"maxLength":120},"harness":{"const":"antigravity"},"channel":{"type":"string","minLength":1,"maxLength":120},"model":{"type":"string","minLength":1,"maxLength":256},"effort":{"enum":["low","medium","high","xhigh"]}}},
         "version": {
           "const": 1
         },
@@ -49,15 +51,13 @@
               "type": "object",
               "required": [
                 "enabled",
-                "endpoint",
-                "model",
-                "key-env",
                 "timeout-ms",
                 "max-calls",
                 "min-applicability",
                 "min-choice",
                 "allowed-data"
               ],
+              "allOf": [{"if":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}},"then":{"required":["profile"]},"else":{"required":["endpoint","model","key-env"]}}],
               "properties": {
                 "enabled": {
                   "const": true
@@ -278,7 +278,7 @@
                     "required": ["version", "harness", "adapter-version", "directory", "model", "effort", "permission-mode", "sequence"],
                     "properties": {
                       "version": { "const": 1 },
-                      "harness": { "enum": ["codex-pro", "claude-code-pro"] },
+                      "harness": { "enum": ["codex-pro", "claude-code-pro", "antigravity"] },
                       "adapter-version": { "type": "string", "minLength": 1 },
                       "directory": { "type": "string", "minLength": 1 },
                       "model": { "type": "string", "minLength": 1 },
@@ -769,6 +769,7 @@
         "accounted"
       ],
       "properties": {
+        "round": { "type": "integer", "minimum": 2, "maximum": 33 },
         "version": {
           "const": 1
         },
@@ -811,7 +812,22 @@
     }
   },
   "$defs": {
-    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
+    "input-image-manifest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "images"],
+      "properties": {
+        "version": {"const": 1},
+        "images": {"type": "array", "minItems": 1, "maxItems": 4,
+          "items": {"type": "object", "additionalProperties": false, "required": ["mimeType", "sha256", "bytes"],
+            "properties": {
+              "mimeType": {"enum": ["image/png", "image/jpeg", "image/gif", "image/webp"]},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "bytes": {"type": "integer", "minimum": 1, "maximum": 4194304}
+            }
+          }
+        }
+      }
+    },
+    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"inputImages":{"$ref":"#/$defs/input-image-manifest"}, "subscription": {"type":"object","additionalProperties":false,"required":["version","mode"],"properties":{"version":{"const":1},"mode":{"const":"subscription-only"}}}, "evidenceOnly":{"type":"boolean"}, "nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}, "allOf":[{"if":{"required":["inputImages"]},"then":{"properties":{"harness":{"const":"claude-code-pro"}}}}]},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,
       "required": ["applicable", "reason"],

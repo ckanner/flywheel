@@ -53,7 +53,10 @@ make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外
 make quality-gate         # vet + fmt-check + coverage —— Go 完整门禁
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check  # DSH 插件构建与离线行为测试
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge)$' -count=1
+npm --prefix plugins/antigravity ci --ignore-scripts
+npm --prefix plugins/antigravity run check # 独立 CLI 插件及真实候选消费
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative|Antigravity)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge)$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/machine -run '^TestPacketImagesClaudeSDKOfflineBridge$' -count=1
 npm test                 # npm 启动器、安装器、发行门禁的单元与协议测试
 make build
 FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions # 36 条真实引擎 / public adapter 离线配对场景
@@ -66,7 +69,7 @@ npm 发行修改须运行根目录 `npm test`，并构建一次单包候选，�
 安装测试。CI 在 Linux/macOS 验证同一个候选，并在 Linux 检查核心包 race。
 安装测试使用隔离 registry／用户目录和 DSH 协议桩；不改真实 profile。
 真实模型、桌面 UI 和账号冒烟不在默认门禁内；无凭证环境可以运行全部离线检查。
-Claude Code Pro 是 optional peer；验证该后端时先在 `plugins/dsh` 安装精确 0.6.0
+Claude Code Pro 是 optional peer；验证该后端时先在 `plugins/dsh` 安装精确 0.7.0
 公开接口（未发布时使用已审查源码的真实 npm tarball）。默认未安装的跳过不算该后端
 通过；记录实测 tarball 身份，不能改版本冒充兼容或虚构 registry 发行。
 Codex Pro 0.10.2 以 vendor 记录中的已审查源码包及实际 integrity 锁定，

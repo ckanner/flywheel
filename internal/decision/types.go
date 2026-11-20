@@ -98,6 +98,8 @@ type Usage struct {
 }
 
 type Receipt struct {
+	Backend          string             `json:"backend,omitempty"`
+	Native           *NativeExecution   `json:"native,omitempty"`
 	Version          int                `json:"version"`
 	DecisionID       string             `json:"decision-id"`
 	SnapshotHash     string             `json:"snapshot-hash"`
@@ -215,7 +217,7 @@ func Select(current Snapshot, receipt Receipt, p Policy, options Options) Select
 		selection.Reason = "stale-decision"
 		return selection
 	}
-	if receipt.Status != "ok" || receipt.HTTPStatus != 200 || receipt.ActionID == "" {
+	if receipt.Status != "ok" || !successfulTransport(receipt, options) || receipt.ActionID == "" {
 		selection.Reason = "decision-abstained"
 		return selection
 	}

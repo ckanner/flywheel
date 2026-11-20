@@ -34,8 +34,8 @@ func controlInvestigation(cmd *cobra.Command, taskDir, cwd string) (controlRespo
 	if request.Action != "start" && request.Action != "status" && request.Revision < 1 {
 		return reply, fmt.Errorf("investigation mutation requires the observed revision")
 	}
-	if (request.Action == "start") != (len(request.Contract) > 0) || (request.Action == "report") != (request.Report != nil) {
-		return reply, fmt.Errorf("contract is required only for start; report only for report")
+	if (request.Action == "start" || request.Action == "continue") != (len(request.Contract) > 0) || (request.Action == "report") != (request.Report != nil) {
+		return reply, fmt.Errorf("contract is required only for start/continue; report only for report")
 	}
 	opts := investigation.Options{ExpectedRevision: request.Revision}
 	if request.Action != "status" && request.Action != "run" {
@@ -48,6 +48,8 @@ func controlInvestigation(cmd *cobra.Command, taskDir, cwd string) (controlRespo
 	switch request.Action {
 	case "start":
 		reply.Preparation, err = investigation.Start(taskDir, cwd, request.Contract, opts)
+	case "continue":
+		reply.Preparation, err = investigation.Continue(taskDir, request.Contract, opts)
 	case "status":
 		return controlSnapshot(taskDir)
 	case "run":
@@ -57,7 +59,7 @@ func controlInvestigation(cmd *cobra.Command, taskDir, cwd string) (controlRespo
 	case "cancel":
 		reply.Preparation, err = investigation.Cancel(taskDir, opts)
 	default:
-		err = fmt.Errorf("investigation action must be start, run, status, report, or cancel")
+		err = fmt.Errorf("investigation action must be start, continue, run, status, report, or cancel")
 	}
 	return reply, err
 }

@@ -44,12 +44,18 @@ type machineLifecycleFrame struct {
 	Lifecycle json.RawMessage `json:"lifecycle"`
 }
 
-func machineAdapterMatches(a machineAdapter, harness string) bool {
-	version := CodexProPackageVersion
-	if harness == "claude-code-pro" {
-		version = ClaudeCodeProPackageVersion
+func machineAdapterVersion(harness string) string {
+	switch harness {
+	case "antigravity":
+		return AntigravityPackageVersion
+	case "claude-code-pro":
+		return ClaudeCodeProPackageVersion
+	default:
+		return CodexProPackageVersion
 	}
-	return a.Package == "dsh-subagent-"+harness && a.Version == version && a.Protocol == 1
+}
+func machineAdapterMatches(a machineAdapter, harness string) bool {
+	return a.Package == "dsh-subagent-"+harness && a.Version == machineAdapterVersion(harness) && a.Protocol == 1
 }
 
 func machineOpaqueID(id string) bool {
@@ -82,9 +88,9 @@ func (f *machineLifecycleFlow) accept(raw json.RawMessage) (MachineLifecycle, er
 	_ = json.Unmarshal(raw, &fields) // strict object decode above succeeded
 	if string(fields["persistent"]) == "null" || string(fields["cleanupConfirmed"]) == "null" ||
 		e.LifecycleVersion != 1 || e.Type != "lifecycle" || e.RequestID != f.request.RequestID || !machineOpaqueID(e.RunID) ||
-		e.Persistent != (f.request.ThreadMode == "persistent") || e.Sequence < 1 || e.Sequence > 64 ||
+		e.Persistent != (f.request.ThreadMode == "persistent" || f.harness == "antigravity") || e.Sequence < 1 || e.Sequence > 64 ||
 		(e.ThreadID != nil && (!machineOpaqueID(*e.ThreadID) || (f.request.ThreadID != "" && *e.ThreadID != f.request.ThreadID))) ||
-		(e.TurnID != nil && (!machineOpaqueID(*e.TurnID) || f.harness == "claude-code-pro")) ||
+		(e.TurnID != nil && (!machineOpaqueID(*e.TurnID) || f.harness == "claude-code-pro" || f.harness == "antigravity")) ||
 		(e.Dispatch != "not-dispatched" && e.Dispatch != "possible" && e.Dispatch != "accepted") ||
 		(e.Outcome != "unknown" && e.Outcome != "completed" && e.Outcome != "failed" && e.Outcome != "cancelled") {
 		return e, fmt.Errorf("machine lifecycle identity or facts contradict the invocation")
@@ -121,7 +127,7 @@ func (f *machineLifecycleFlow) accept(raw json.RawMessage) (MachineLifecycle, er
 		}
 	case "dispatch-intent":
 		ready := f.harness == "codex-pro" && previous == "thread-ready"
-		unobserved := f.harness == "claude-code-pro" && previous == "" && string(e.Configuration) == "null"
+		unobserved := (f.harness == "claude-code-pro" || f.harness == "antigravity") && previous == "" && string(e.Configuration) == "null"
 		if (!ready && !unobserved) || e.Dispatch != "not-dispatched" || e.TurnID != nil {
 			return e, fmt.Errorf("machine dispatch intent has no valid pre-dispatch checkpoint")
 		}

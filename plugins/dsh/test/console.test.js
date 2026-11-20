@@ -63,10 +63,11 @@ test('configuration scope is explicit, changed sections are saved and source con
   await ui.click('保存修改');
   const change = ui.requests.at(-1).editor.values;
   assert.equal(change.routes.default.harness, 'claude-code-pro');
-  assert.equal(change.routes.default.model, 'sonnet');
+  assert.equal(change.routes.default.model, 'claude-opus-5-5');
   assert.equal(change.routes.default.provider, undefined);
-  assert.equal(change.routes.default.channel, 'claude-api');
-  assert.deepEqual(change.channels['claude-api'], { 'env-key': 'ANTHROPIC_API_KEY' });
+  assert.equal(change.routes.default.channel, 'claude-native');
+  assert.deepEqual(change.channels['claude-native'], { 'env-key': null });
+  assert.equal(change.channels['claude-api'], undefined);
   assert.equal(change.channels['claude-subscription'], undefined);
 });
 
@@ -91,8 +92,9 @@ test('selecting Claude retains existing API and subscription channel definitions
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
   const change = ui.requests.at(-1).editor.values;
-  assert.equal(change.routes.default.channel, 'claude-api');
-  assert.equal(change.channels, undefined, 'existing channels must not be rewritten when selecting a resource');
+  assert.equal(change.routes.default.channel, 'claude-native');
+  assert.deepEqual(change.channels, { ...originalChannels, 'claude-native': { 'env-key': null } },
+    'the native default may be added without rewriting existing account definitions');
   assert.deepEqual(existing.channels, originalChannels);
 });
 

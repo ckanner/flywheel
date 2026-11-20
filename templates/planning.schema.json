@@ -229,6 +229,18 @@
             "quick",
             "full"
           ]
+        },
+        "design-granularity": {
+          "enum": [
+            "compact",
+            "system"
+          ]
+        },
+        "granularity-reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
         }
       },
       "required": [
@@ -468,6 +480,9 @@
         "planner-invocation": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$"
+        },
+        "preparation": {
+          "const": "compact-v1"
         }
       },
       "required": [
@@ -550,7 +565,8 @@
         "kind": {
           "enum": [
             "design",
-            "plan"
+            "plan",
+            "compact-v1"
           ]
         },
         "target": {
@@ -608,6 +624,23 @@
           },
           "minItems": 0,
           "maxItems": 256
+        },
+        "plan": {
+          "$ref": "#/$defs/ref"
+        },
+        "design-verdict": {
+          "enum": [
+            "valid",
+            "invalid",
+            "unclear"
+          ]
+        },
+        "coverage-verdict": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "unclear"
+          ]
         }
       },
       "required": [
@@ -720,10 +753,27 @@
     "request": {
       "type": "object",
       "additionalProperties": false,
-      "allOf": [{
-        "if": {"properties": {"scope": {"enum": ["milestone", "packet"]}}},
-        "then": {"properties": {"scope-id": {"minLength": 1}}}
-      }],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "milestone",
+                  "packet"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope-id": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -782,7 +832,12 @@
           ]
         },
         "role": {
-          "enum": ["design-plan", "design-review", "plan", "plan-review"]
+          "enum": [
+            "design-plan",
+            "design-review",
+            "plan",
+            "plan-review"
+          ]
         },
         "channel": {
           "type": "string",
@@ -794,6 +849,23 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "design-granularity": {
+          "enum": [
+            "compact",
+            "system"
+          ]
+        },
+        "binding-source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "binding-granularity": {
+          "enum": [
+            "compact",
+            "system"
+          ]
         }
       },
       "required": [

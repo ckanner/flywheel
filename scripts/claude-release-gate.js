@@ -10,7 +10,7 @@ const { parsePackOutput } = require("./release-build.js");
 const { readPackedManifest } = require("./release-candidate.js");
 
 const PACKAGE = "dsh-subagent-claude-code-pro";
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 const REGISTRY = "https://registry.npmjs.org/";
 const VENDOR = "plugins/dsh/vendor";
 const SOURCE_DIRECTORY = path.resolve(__dirname, "..");

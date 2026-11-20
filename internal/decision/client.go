@@ -19,6 +19,12 @@ const maxDocument = 64 << 10
 var fixedModel = regexp.MustCompile(`^jev-[0-9]+\.[0-9]+\.[0-9]+$`)
 
 type Options struct {
+	Backend          string
+	Subscription     *SubscriptionBinding
+	SubscriptionCall func(context.Context, string, string) SubscriptionResult
+	// SubscriptionRecover reads the original native journal only. It cannot
+	// create a turn or convert an uncertain answer into an adopted selection.
+	SubscriptionRecover func(string) SubscriptionResult
 	// AllowedKinds is the owner's implemented action family set. Nil retains diagnostic-only adoption.
 	AllowedKinds  []ActionKind
 	Endpoint      string
@@ -68,6 +74,13 @@ func request(s Snapshot, model string) []byte {
 }
 
 func targetHash(o Options) string {
+	if o.Backend == "subscription" {
+		return hash(struct {
+			Backend   string
+			Binding   *SubscriptionBinding
+			TimeoutMS int64
+		}{o.Backend, o.Subscription, o.Timeout.Milliseconds()})
+	}
 	return hash(struct {
 		Endpoint, Model, ExpectedModel string
 		TimeoutMS                      int64
@@ -75,6 +88,12 @@ func targetHash(o Options) string {
 }
 
 func validTarget(o Options) bool {
+	if o.Backend == "subscription" {
+		return o.Subscription != nil && o.Subscription.Valid() && o.Model == o.Subscription.Model && o.ExpectedModel == o.Model && o.Endpoint == "" && o.APIKey == "" && o.Timeout > 0 && o.Timeout <= 30*time.Second
+	}
+	if o.Backend != "" && o.Backend != "http" {
+		return false
+	}
 	u, err := url.Parse(o.Endpoint)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/v1/systemone" {
 		return false

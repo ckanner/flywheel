@@ -13,6 +13,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,10 +40,14 @@ func claudeCodeProFixture(r claudeCodeProStart) map[string]any {
 	if r.ThreadID != "" {
 		requestedSession, session = r.ThreadID, r.ThreadID
 	}
+	requested := map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort,
+		"permissionMode": "bypassPermissions", "sessionMode": mode, "sessionId": requestedSession, "settingSources": []string{"user", "project", "local"}}
+	if images := imageinput.Describe(r.Images); images != nil {
+		requested["inputImages"] = images
+	}
 	return map[string]any{
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "22222222-2222-4222-8222-222222222222", "ok": true,
-		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort,
-			"permissionMode": "bypassPermissions", "sessionMode": mode, "sessionId": requestedSession, "settingSources": []string{"user", "project", "local"}},
+		"requested": requested,
 		"execution": map[string]any{"pid": 123, "processGroupId": 123, "ownership": "process-group", "dispatch": "dispatched", "turnDispatch": "accepted",
 			"outcome": "completed", "terminalReceived": true, "exitCode": 0, "signal": nil,
 			"cancelled": false, "timedOut": false, "truncated": false},
@@ -484,6 +489,7 @@ func TestRunClaudeCodeProRejectsBeforeDispatch(t *testing.T) {
 		func(a *ClaudeCodeProArgs) { a.APIKeys = map[string]string{"WRONG_API_KEY": "secret"} },
 		func(a *ClaudeCodeProArgs) { a.Prompt = strings.Repeat("x", claudeCodeProRequestBytes) },
 		func(a *ClaudeCodeProArgs) { a.Prompt = strings.Repeat("&", claudeCodeProRequestBytes/6) },
+		func(a *ClaudeCodeProArgs) { a.Images = []imageinput.Image{{MIMEType: "image/png"}} },
 	} {
 		a := claudeCodeProRunArgs(t, "success")
 		edit(&a)
@@ -507,14 +513,22 @@ func TestRunClaudeCodeProRejectsBeforeDispatch(t *testing.T) {
 func TestClaudeCodeProRequestByteLimitIncludesEscapingAndNewline(t *testing.T) {
 	a := claudeCodeProRunArgs(t, "")
 	a.RequestID = "owned-byte-boundary"
+	// This fixture serializes/copies a full 16-MiB frame in both Go processes.
+	// Race instrumentation needs a bounded allowance beyond the small fixtures'
+	// three-second watchdog; production deadlines and admission stay unchanged.
+	a.Watchdog.WallTimeoutMs, a.Watchdog.IdleTimeoutMs = 30_000, 30_000
+	// Eight MiB of image bytes plus HTML-escaped text exercises the expanded
+	// Claude-only frame ceiling without increasing the one-MiB prompt limit.
+	a.Images = []imageinput.Image{{MIMEType: "image/png", Data: make([]byte, imageinput.MaxImageBytes)}, {MIMEType: "image/jpeg", Data: make([]byte, imageinput.MaxImageBytes)}}
 	cwd, err := filepath.EvalSymlinks(a.Cwd)
 	require.NoError(t, err)
-	request := claudeCodeProStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: cwd,
+	request := claudeCodeProStart{Images: a.Images, Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: cwd,
 		Model: a.Model, ReasoningEffort: "high", PermissionMode: a.PermissionMode, TimeoutMS: a.Watchdog.WallTimeoutMs, IdleTimeoutMS: a.Watchdog.IdleTimeoutMs}
 	empty, err := json.Marshal(request)
 	require.NoError(t, err)
 	available := claudeCodeProRequestBytes - len(empty) - 1
 	a.Prompt = strings.Repeat("&", available/6) + strings.Repeat("a", available%6)
+	require.LessOrEqual(t, len(a.Prompt), machineRequestBytes)
 	request.Prompt = a.Prompt
 	exact, err := json.Marshal(request)
 	require.NoError(t, err)
@@ -536,7 +550,7 @@ func TestClaudeCodeProRequestByteLimitIncludesEscapingAndNewline(t *testing.T) {
 	assert.Zero(t, *r.CostUSD)
 	assert.Empty(t, r.SpawnError)
 	assert.Empty(t, r.ClaudeCodeProReceipt)
-	assert.Contains(t, *r.ErrorMessage, "1 MiB JSONL limit")
+	assert.Contains(t, *r.ErrorMessage, "16 MiB JSONL limit")
 }
 
 func TestRunClaudeCodeProPhysicalFailuresAndNonDispatch(t *testing.T) {

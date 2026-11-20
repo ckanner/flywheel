@@ -5,6 +5,7 @@ const ACK_BYTES = 4096;
 const MAX_LIFECYCLE_EVENTS = 64;
 const ACTIVITY_FIELDS = new Set(['version', 'sequence', 'kind', 'source', 'scope', 'eventTypes', 'observedEvents']);
 const ACTIVITY_TYPES = Object.freeze({
+  antigravity: new Set(['init','step','result']),
   'codex-pro': new Set(['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta',
     'item/plan/delta', 'item/reasoning/summaryTextDelta', 'item/reasoning/summaryPartAdded', 'item/reasoning/textDelta',
     'item/commandExecution/outputDelta', 'item/mcpToolCall/progress', 'turn/plan/updated', 'turn/diff/updated', 'thread/tokenUsage/updated']),
@@ -56,7 +57,7 @@ export function validateNativeAdmission(value, requestId, WorkerError) {
 /** Recovery carries only the old non-secret binding, never a prompt. */
 export function recoveryRequest(value, WorkerError) {
   const keys = new Set(['type', 'protocol', 'requestId', 'runId', 'recoveryDirectory', 'original']);
-  const originalKeys = new Set(['cwd', 'model', 'reasoningEffort', 'permissionMode', 'threadMode', 'threadId', 'native', 'nativeOperation', 'managed']);
+  const originalKeys = new Set(['cwd', 'model', 'reasoningEffort', 'permissionMode', 'threadMode', 'threadId', 'native', 'nativeOperation', 'managed', 'subscription', 'evidenceOnly']);
   const o = value?.original;
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.type !== 'recover' || value.protocol !== 3 ||
       Object.keys(value).some(key => !keys.has(key)) || !identifier(value.requestId) || !identifier(value.runId) ||

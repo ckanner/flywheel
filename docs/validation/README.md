@@ -11,6 +11,7 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-20 | [四家订阅、Antigravity CLI、紧凑准备与连续调查：实施及复审](2026-11-20-subscription-cli-workflows.md) |
 | 2026-11-17 | [Claude 官方 Agent SDK 集成与复审](2026-11-17-claude-agent-sdk.md) |
 | 2026-11-17 | [原生会话持久化、客户端可见性与 Kimi 2.5.3 复审](2026-11-17-native-session-visibility.md) |
 | 2026-11-16 | [Codex 后续复审：子线程状态与命名准入修复](2026-11-16-codex-review-fixes.md) |

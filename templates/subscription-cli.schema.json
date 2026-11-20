@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flywheel.local/schemas/subscription-cli.schema.json",
+  "title": "Subscription access policy and compact planning bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "subscription": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "mode"],
+      "properties": {
+        "version": {"const": 1},
+        "mode": {"const": "subscription-only"}
+      }
+    },
+    "planning": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "compact": {
+          "type": "object", "additionalProperties": false,
+          "required": ["design-plan", "design-review"],
+          "properties": {
+            "design-plan": {"type": "string", "pattern": "\\S"},
+            "design-review": {"type": "string", "pattern": "\\S"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -86,7 +86,7 @@ Open the target repository in DSH, then describe a bounded change:
 
 The skill studies the repository and prepares a task contract under
 `docs/<task>/`. Go validates the contract and owns execution from that point.
-Use `/flywheel-new` to prepare a task without starting it, or
+Use `/flywheel-new` to run design and independent review, then stop for exact-version approval, or
 `/flywheel-run` to start or resume an existing task. In Kimi, use the
 `/skill:flywheel-task` form of the command.
 
@@ -127,33 +127,37 @@ continue as Full. See [workflow and delivery](docs/en/workflow.md).
 
 When the cause is still unknown, Task can first run a [bounded investigation](docs/en/investigation.md).
 Report-only goals stop at an evidence report; authorized repairs retain the original
-scope before entering Auto. New → review → Run and direct stage controls remain available.
+scope before entering Auto. Compact/system preparation, Quick/Full implementation and review-first/delegated authorization are separate choices. New and direct stage controls remain available.
 
 ## Models and configuration
 
-The shipped template uses the following editable bindings. These are
-defaults, not model rankings or promises of account availability.
+The default is a subscription-only configuration using four native clients:
 
-| Stage or route | Backend | Model | Reasoning |
-| --- | --- | --- | --- |
-| Plan; frontend execution; Garden | Kimi CLI | `kimi-code/k3.1-pro` | `high` |
-| Default execution | DSH / `deepseek-account` | `deepseek-flash` | `high` |
-| Hard execution | Codex Pro public machine API | `gpt-6.1-sol` | `high` |
-| Review | DSH / `chatgpt` | `gpt-6.1-sol` | `high` |
-| Judge | DSH / `chatgpt` | `gpt-6-astra` | `high` |
-| Intake | DSH / `deepseek-account` | `deepseek-flash` | `low` |
+| Work | Default models |
+| --- | --- |
+| System design and difficult analysis | Gemini Carbon high / Neon high through official `agy` |
+| Compact preparation, routine implementation and Intake | Gemini Hydrogen medium / high / low |
+| Plan refinement and interface work | Claude Opus 5.5 high / medium through Claude Code |
+| Backend implementation and independent reviews | Codex GPT-6.2 Sol; Astra for hard work and Judge |
+| Batch work and Garden | Kimi K3.1 Pro high through its native agent |
 
-[Claude Code Pro](docs/en/claude-code-pro.md) is an optional backend with no
-default stage assignment. Profiles let you reuse or override bindings by
-stage and route. The [configuration guide](docs/en/configuration.md) explains
-file precedence, providers, permissions, budgets, and migration; the
-[model policy](docs/en/model-policy.md) explains reasoning choices and limits.
+The [model policy](docs/en/model-policy.md) gives exact stage, route, profile and
+effort mappings. [Antigravity](docs/en/antigravity.md) is included as a bundled
+machine adapter and also has an independently installable DSH plugin. Claude
+requires the reviewed [0.7.0 companion](docs/en/claude-code-pro.md) in the worker's
+resolution tree. Model access still depends on native login and the actual account.
 
-The new inline default configuration selects scoped sessions, full-access permissions, automatic
-worktree management, and parallel scheduling with a maximum of two packets.
-Parallel eligibility still requires explicit dependencies and write scopes.
-Existing complete configurations keep their compatibility defaults when
-fields are absent; upgrades do not silently rewrite them.
+The preset has no API-key or credits fallback. JEV is off by default; when enabled
+it uses Gemini Hydrogen medium over the same evidence-only subscription path.
+Scoped sessions, full-access permissions, automatic worktrees and a maximum of two
+parallel packets are explicit defaults. Investigation analysis has a separate
+read-only/evidence-only binding. Required dependencies and write scopes still
+constrain parallel execution.
+
+Upgrades preserve existing configuration. Preview `flywheel config migrate
+--preset subscription-cli`, inspect its effective file and changes, then apply it
+explicitly. Migration retains permissions, budgets, verification and scheduling.
+See [Configuration](docs/en/configuration.md) for the complete procedure.
 
 ## Workspaces and recovery
 

@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { OwnedKimiRuntime, KimiSocket, inspectKimiSchemas, initializeKimiCreatedSession, digest, error, pause, checkAbort } from './kimi-native-runtime.js';
 import { createTowerCandidate, freezeTowerCandidate, transferTowerCandidate, towerCandidateReceipt, towerPrompt } from './kimi-tower-candidate.js';
 import { validateObservationRequest } from './machine-worker.js';
+import { inspectKimiRuntimeSubscription, inspectSubscriptionEnvironment, validateSubscriptionPolicy, KIMI_SUBSCRIPTION_DISABLED_TOOLS } from './subscription-controls.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const identifier = value => typeof value === 'string' && value.trim() && value.length <= 512 && !/[\0\r\n]/.test(value);
@@ -41,7 +42,7 @@ export function createKimiActivityReporter(idleTimeoutMs, emit, now = () => perf
 
 export function validateKimiNativeStart(input) {
   if (!object(input) || input.type !== 'start' || input.protocol !== 1 || !identifier(input.requestId)
-      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'sessionTitle', 'persistent', 'native', 'managed'].includes(key))
+      || Object.keys(input).some(key => !['type', 'protocol', 'requestId', 'cwd', 'workspaceCwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionId', 'sessionTitle', 'persistent', 'native', 'managed', 'subscription'].includes(key))
       || !identifier(input.cwd) || !isAbsolute(input.cwd) || !identifier(input.model) || !identifier(input.reasoningEffort)
       || (input.workspaceCwd !== undefined && (!identifier(input.workspaceCwd) || !isAbsolute(input.workspaceCwd)))
       || (input.persistent !== undefined && typeof input.persistent !== 'boolean')
@@ -65,6 +66,9 @@ export function validateKimiNativeStart(input) {
   if (native.agents?.maxConcurrent !== undefined) throw error('UNSUPPORTED_HARD_CAP', 'The current Kimi API has no enforceable whole-tree agents.maxConcurrent; native batch/Tower limits are not that guarantee');
   if (native.agents?.enabled === false && native.mode !== 'agent') throw error('INVALID_NATIVE_PROFILE', 'Swarm and Tower require native agents to be enabled');
   if (native.mode === 'tower' && input.sessionId !== undefined) throw error('TOWER_RESUME_UNSUPPORTED', 'Tower uses a fresh isolated repository and cannot resume an earlier source candidate');
+  if (validateSubscriptionPolicy(input.subscription) && (native.mode !== 'agent' || native.agents?.enabled !== false || native.agentProfile !== undefined)) {
+    throw error('INVALID_REQUEST', 'Subscription-only Kimi requires the built-in agent profile with agents.enabled=false; inherited service restrictions cannot be verified for native child agents');
+  }
   if (!object(managed) || managed.version !== 1 || typeof managed.runId !== 'string' || managed.runId.length > 512 || /[\0\r\n]/.test(managed.runId)
       || ['invocationId', 'role', 'scope', 'channel', 'taskDir'].some(key => !identifier(managed[key])) || managed.invocationId !== input.requestId
       || Object.keys(managed).some(key => !['version', 'runId', 'invocationId', 'role', 'scope', 'candidateId', 'channel', 'taskDir'].includes(key))
@@ -289,7 +293,7 @@ function sessionBinding(input) {
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
   return digest(canonical({ version: 1, cwd: input.cwd, workspaceCwd: input.workspaceCwd || input.cwd,
     model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode,
-    native: input.native, role, scope, channel, taskDir }));
+    native: input.native, ...(input.subscription ? { subscription: input.subscription } : {}), role, scope, channel, taskDir }));
 }
 
 /** Bridge emits only ready/event frames; the caller writes the returned final once. */
@@ -297,7 +301,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   let input = raw, runtime, socket, sessionId = '', ready = false, dispatch = 'not-dispatched', baseline = -1,
     resumed = false, ownsSession = false, candidate, transfer, failure, matched = false, schema, environment, effective = {}, observedUsage,
     cleanup = { confirmed: true, queueDrained: true, tasksStopped: true, remoteControlOff: true }, binding,
-    completion = { confirmed: false, pendingIds: [] }, lastQueue, promptMapping;
+    completion = { confirmed: false, pendingIds: [] }, lastQueue, promptMapping, subscription;
   let completed = false, promptId, requestedTurnId = '', acceptingEvents = false;
   const conversation = new KimiConversation(), subscribed = new Set(), subscribing = new Map();
   const controller = new AbortController();
@@ -351,6 +355,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
   };
   try {
     input = validateKimiNativeStart(raw);
+    if (input.subscription) inspectSubscriptionEnvironment(env, 'kimi');
     reportActivity = createKimiActivityReporter(input.idleTimeoutMs ?? 300_000, event => send('event', { event }));
     const declaredCwd = input.cwd;
     input = { ...input, cwd: await realpath(input.cwd), managed: { ...input.managed, taskDir: await realpath(input.managed.taskDir) } };
@@ -367,6 +372,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     ]);
     schema = inspectKimiSchemas(openapi, asyncapi, input.native.mode);
     if (remote.state !== 'off') throw error('REMOTE_CONTROL_ACTIVE', 'The owned Kimi runtime has remote control enabled');
+    if (input.subscription) subscription = await inspectKimiRuntimeSubscription(runtime, input.model, controller.signal);
     binding = sessionBinding(input);
     const cwd = candidate?.path || input.cwd;
     const agentConfig = { ...(input.native.agentProfile ? { profile: input.native.agentProfile } : {}), model: input.model,
@@ -421,12 +427,15 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
       reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, persistent: Boolean(input.persistent), resumed });
     promptId = 'flywheel-' + digest({ requestId: input.requestId, invocationId: input.managed.invocationId }).slice(0, 40);
     checkAbort(controller.signal);
+    // Re-read the same runtime immediately before dispatch. Do not accept an
+    // OAuth account probe from another process or a stale configuration cache.
+    if (input.subscription) subscription = await inspectKimiRuntimeSubscription(runtime, input.model, controller.signal);
     let submittedPrompt = input.prompt;
     if (candidate) { const mapped = towerPrompt(input, candidate, declaredCwd); submittedPrompt = mapped.prompt; promptMapping = mapped.mapping; }
     dispatch = 'unknown';
     const prompt = await runtime.request(sessionPath('/prompts'), { content: [{ type: 'text', text: submittedPrompt }], prompt_id: promptId,
       model: input.model, thinking: input.reasoningEffort, permission_mode: 'yolo', swarm_mode: input.native.mode === 'swarm',
-      disabled_tools: ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : [])],
+      disabled_tools: ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : []), ...(input.subscription ? KIMI_SUBSCRIPTION_DISABLED_TOOLS : [])],
       metadata: { flywheel_invocation_id: input.managed.invocationId } }, { signal: controller.signal, timeout: 30_000 });
     if (prompt.prompt_id !== promptId || !['running', 'queued'].includes(prompt.status)) {
       throw error('PROMPT_NOT_RUNNING', 'Kimi did not accept the correlated invocation as running or queued');
@@ -457,6 +466,7 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     }
     const turns = conversation.newTurns('main', baseline);
     if (!turns.length || turns.some(turn => turn.status !== 'ended' || turn.outcome !== 'completed')) throw error('TURN_FAILED', 'Kimi did not complete every root continuation successfully');
+    if (input.subscription) subscription = await inspectKimiRuntimeSubscription(runtime, input.model, controller.signal);
     completed = true;
   } catch (cause) {
     failure = controller.signal.aborted && typeof controller.signal.reason?.code === 'string' ? controller.signal.reason : cause;
@@ -546,7 +556,8 @@ export async function runKimiWorker(raw, { emit = () => {}, env = process.env, s
     observed: { server: runtime?.meta ? { id: runtime.meta.server_id, version: runtime.meta.server_version, backend: runtime.meta.backend,
       ownedPid: runtime.child.pid, authenticated: true, local: true, identity: runtime.identity ?? null } : null, schema: schema ?? null, environment: environment ?? null,
       binding: binding ?? null, managed: input?.managed ?? null, promptMapping: promptMapping ?? null, abortProbe: matched, usage: observedUsage, nativeLimits: { wholeTreeUpperBound: null, admission: 'native-runtime', hardMaxConcurrentSupported: false },
-      disabledTools: ready ? ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : [])] : [], inferenceTested: dispatch === 'dispatched' },
+      disabledTools: ready ? ['CronCreate', ...(input.native.agents?.enabled === false ? ['Agent', 'AgentSwarm'] : []), ...(input.subscription ? KIMI_SUBSCRIPTION_DISABLED_TOOLS : [])] : [],
+      ...(input?.subscription ? { subscription: subscription ?? { version: 1, mode: 'subscription-only', status: 'not-admitted' } } : {}), inferenceTested: dispatch === 'dispatched' },
     children: [...conversation.tasks.values()].map(task => ({ taskId: task.task_id, parentAgentId: task.agent_id, agentId: task.child_agent_id ?? null,
       kind: task.kind, status: task.status, outcome: task.outcome ?? null, model: task.model ?? null, thinking: task.thinking ?? null, swarmIndex: task.swarm_index ?? null })),
     completion, cleanup, ...(candidate ? { candidate: towerCandidateReceipt(candidate, transfer) } : {}) };

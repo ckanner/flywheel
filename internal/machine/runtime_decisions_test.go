@@ -69,13 +69,14 @@ func persistRuntimeConfig(t *testing.T, c *Context) {
 
 func enableRuntimeJEV(t *testing.T, c *Context, endpoint string) {
 	t.Helper()
+	c.Config.Subscription = nil // Explicit API fixture; production subscription policy remains strict.
 	for name, binding := range c.Config.Loops {
 		if c.Config.Channels[binding.Channel].Provider != "" {
 			binding.Harness = "dsh"
 			c.Config.Loops[name] = binding
 		}
 	}
-	c.Config.JEV = config.JEVConfig{Enabled: true, Endpoint: endpoint + "/v1/systemone", Model: "jev-1.14.0", KeyEnv: "TEST_JEV_KEY", TimeoutMS: 2000, MaxCalls: 8, MinApplicability: .8, MinChoice: .6, AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts}}
+	c.Config.JEV = config.JEVConfig{Backend: "http", Enabled: true, Endpoint: endpoint + "/v1/systemone", Model: "jev-1.14.0", KeyEnv: "TEST_JEV_KEY", TimeoutMS: 2000, MaxCalls: 8, MinApplicability: .8, MinChoice: .6, AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts}}
 	c.EnvLookup = func(key string) (string, bool) {
 		if key == "TEST_JEV_KEY" {
 			return "runtime-fixture-secret", true

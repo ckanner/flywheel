@@ -267,10 +267,10 @@ function configFieldErrors(values) {
     else {
       for (const key of Object.keys(values.jev))
         if (key !== '_note' && !key.startsWith('_note_') &&
-            !['enabled', 'endpoint', 'model', 'key-env', 'timeout-ms', 'max-calls', 'min-applicability', 'min-choice', 'allowed-data'].includes(key))
+            !['enabled', 'backend', 'profile', 'endpoint', 'model', 'key-env', 'timeout-ms', 'max-calls', 'min-applicability', 'min-choice', 'allowed-data'].includes(key))
           errors['jev.' + key] = 'cfgInvalid';
       for (const key of ['endpoint', 'model', 'key-env']) {
-        if (!Object.hasOwn(values.jev, key)) continue;
+        if (values.jev.backend === 'subscription' || !Object.hasOwn(values.jev, key)) continue;
         const error = jevTextError(key, values.jev[key]);
         if (error) errors['jev.' + key] = error;
       }
@@ -493,9 +493,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       if (group !== 'panel' && !Object.hasOwn(draft[group] ?? {}, key)) continue;
       const previous = group === 'panel' ? base?.['judge-panel'] : base?.[group]?.[key];
       if (JSON.stringify(value) !== JSON.stringify(previous) && value.channel && !values.channels?.[value.channel]) {
-        const fallback = { 'env-key': value.harness === 'claude-code-pro' && value.channel === 'claude-api' ? 'ANTHROPIC_API_KEY' : null };
+        const fallback = { 'env-key': null };
         values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? fallback };
       }
+    }
+    if (values.subscription?.mode === 'subscription-only' && rows.some(([, , value]) => value['native-profile'] === 'kimi-subscription-agent') && !values['native-profiles']?.['kimi-subscription-agent']) {
+      values['native-profiles'] = { ...values['native-profiles'], 'kimi-subscription-agent': { harness:'kimi',options:{version:1,mode:'agent',agents:{enabled:false}} } };
     }
     const sections = Object.keys({ ...base, ...values }).filter(key => JSON.stringify(values[key]) !== JSON.stringify(base?.[key]));
     void run('config-save', selection, false, {
@@ -637,14 +640,14 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const bindingOrder = [
     'loops.design-plan', 'loops.design-review', 'loops.plan-review',
     'loops.plan',
-    'routes.default',
+    'routes.default', 'routes.complex', 'routes.backend', 'routes.batch',
     'routes.frontend',
     'routes.hard',
     'routes.multimodal',
     'loops.review',
     'loops.judge',
     'loops.intake',
-    'loops.garden',
+    'loops.garden', 'loops.investigate',
   ];
   const rows = ['loops', 'routes']
     .flatMap((group) =>
@@ -664,34 +667,35 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       ? ['chatgpt', 'deepseek-account'].includes(value.provider || value.channel)
         ? value.provider || value.channel
         : 'custom'
-      : ['kimi', 'codex-pro', 'claude-code-pro'].includes(value.harness)
+      : ['kimi', 'codex-pro', 'claude-code-pro', 'antigravity'].includes(value.harness)
         ? value.harness
         : 'custom';
   const resourceNames = {
-    'deepseek-account': 'DeepSeek Account',
-    chatgpt: 'ChatGPT · DSH',
+    ...(draft?.subscription?.mode === 'subscription-only' ? {} : {
+      'deepseek-account': 'DeepSeek Account',
+      chatgpt: 'ChatGPT · DSH',
+    }),
+    antigravity: 'Google · Antigravity',
     kimi: 'Kimi Code',
     'codex-pro': 'ChatGPT · Codex Pro',
     'claude-code-pro': 'Claude Code Pro',
     custom: t('consoleCustom'),
   };
-  const preset = (resource) =>
-    ({
-      'deepseek-account': doc.defaults.routes?.default,
-      chatgpt: doc.defaults.loops?.[bindingEdit?.key === 'judge' ? 'judge' : 'review'],
-      kimi: doc.defaults.loops?.plan,
-      'codex-pro': doc.defaults.routes?.hard,
-      'claude-code-pro': {
-        harness: 'claude-code-pro',
-        model: 'sonnet',
-        channel: 'claude-api',
-        thinking: 'high',
-      },
-    })[resource];
+  // Provider choices own their model definitions; changing a stage default
+  // cannot silently redefine a different provider in the editor.
+  const preset = resource => ({
+    'deepseek-account': { harness:'dsh', provider:'deepseek-account', channel:'deepseek-account', model:'deepseek-flash', thinking:'high' },
+    chatgpt: { harness:'dsh', provider:'chatgpt', channel:'chatgpt', model:'gpt-6.2-sol', thinking:'high' },
+    kimi: { harness:'kimi', channel:'kimi-subscription', model:'kimi-code/k3.1-pro', thinking:'high', ...(draft?.subscription ? {'native-profile':'kimi-subscription-agent'} : {}) },
+    'codex-pro': { harness:'codex-pro', channel:'chatgpt-subscription', model:'gpt-6.2-sol', thinking:'high' },
+    'claude-code-pro': { harness:'claude-code-pro', channel:'claude-native', model:'claude-opus-5-5', thinking:'high' },
+    antigravity: { harness:'antigravity', channel:'google-subscription', model:'gemini-4-hydrogen-high', thinking:'high' },
+  })[resource];
   const roleName = (group, key) =>
     group === 'routes'
       ? {
           default: t('cfgRouteDefault'),
+          complex:t('cfgRouteComplex'),backend:t('cfgRouteBackend'),batch:t('cfgRouteBatch'),
           frontend: t('cfgRouteFrontend'),
           hard: t('cfgRouteHard'),
           multimodal: t('cfgRouteMultimodal'),
@@ -706,6 +710,17 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     high: t('cfgEffortHigh'),
     xhigh: t('cfgEffortXhigh'),
     max: t('cfgEffortMax'),
+  };
+  const bindingEfforts = value => value.harness === 'antigravity'
+    ? (/^gemini-4-(hydrogen|neon)-/.test(value.model ?? '') ? ['low','medium','high','xhigh'] : ['low','medium','high']).map(key => [key,efforts[key]])
+    : Object.entries(efforts);
+  const changeModelField = (binding, field, value) => {
+    const next = {...binding,[field]:value};
+    if(next.harness === 'antigravity') {
+      if(field === 'thinking' && ['low','medium','high','xhigh'].includes(value)) next.model = (next.model ?? '').replace(/-(low|medium|high|xhigh)$/, '-' + value);
+      if(field === 'model') { const match=/^gemini-4-(hydrogen|neon|carbon|argon)-(low|medium|high|xhigh)$/.exec(value);if(match)next.thinking=match[2]; }
+    }
+    return next;
   };
   const openBinding = (group, key) => setBindingSelection({ group, key });
   const bindingEdit = draft && bindingSelection && (() => {
@@ -738,8 +753,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const inlineBinding = (group, key, field, value) => {
     const next = cloneConfig(draft);
     if (field === 'session') applySessionRole(next, group === 'routes' ? 'execute' : key, value);
-    else if (group === 'panel') next['judge-panel'][field] = value;
-    else { next[group] ??= {}; next[group][key] = { ...effectiveBinding(group, key), [field]: value }; }
+    else if (group === 'panel') next['judge-panel']=changeModelField(next['judge-panel'],field,value);
+    else { next[group] ??= {}; next[group][key] = changeModelField(effectiveBinding(group,key),field,value); }
     replace(next);
   };
   const nativeChoices = value => {
@@ -779,7 +794,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     replace(next);
   };
   const patchBinding = (key, value) =>
-    setBindingEdit((old) => ({ ...old, value: { ...old.value, [key]: value } }));
+    setBindingEdit((old) => ({ ...old, value: changeModelField(old.value,key,value) }));
   const dispatchReasons = [];
   if ((draft?.scheduler?.mode ?? 'serial') !== 'parallel') dispatchReasons.push(t('cfgDispatchSerial'));
   if (numberErrors['scheduler.max-parallel'] || fieldErrors['scheduler.max-parallel']) dispatchReasons.push(t('cfgDispatchInvalid'));
@@ -893,6 +908,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   if (draft && section === 'models')
     fields = h(React.Fragment, null,
       h('p', { className: css.meta }, t('planningInheritedHelp')),
+      draft?.subscription?.mode==='subscription-only' && h('p',{className:css.configCallout},t('cfgSubscriptionOnly')),
+      draft.planning?.compact && h('section',{className:css.details},h('h4',null,t('cfgCompactPlanning')),
+        ...['design-plan','design-review'].map(role=>field('planning.compact.'+role,t(role==='design-plan'?'cfgCompactDesign':'cfgCompactReview'),null,
+          select('planning.compact.'+role,draft.planning.compact[role],Object.entries(draft.profiles??{}).map(([name,p])=>[name,name+' · '+p.model+' · '+p.thinking]),name=>replace({...draft,planning:{...draft.planning,compact:{...draft.planning.compact,[role]:name}}}))))),
       h('p', { className: css.meta }, t('cfgSessionDefault', { mode: t(draft.sessions?.mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') })),
       h('div', { className: css.stageTableScroll }, h('table', { className: css.stageTable, 'aria-label': t('cfgModels') },
         h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'cfgNative', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
@@ -905,7 +924,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('th', { scope: 'row' }, roleName(group, key), group === 'loops' && inheritedPlanningRoles[key] && !draft.loops?.[key] && h('p', { className: css.settingsHelp }, t('planningInherited', { source: 'loops.' + inheritedPlanningRoles[key] }))),
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
-            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
+            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...bindingEfforts(value).map(([effort,label]) => h('option', { key: effort, value: effort },label)))),
             h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
             h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
@@ -928,6 +947,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           React.Fragment,
           null,
           h('p', { className: css.configCallout }, t('cfgJevSend')),
+          draft.jev.backend === 'subscription'
+            ? field('jev.profile',t('cfgJevSubscriptionProfile'),t('cfgJevSubscriptionHelp'),
+                select('jev.profile',draft.jev.profile ?? 'hydrogen-local',Object.entries(draft.profiles ?? {}).filter(([,p])=>p.harness==='antigravity').map(([name,p])=>[name,name+' · '+p.model]),v=>update('jev','profile',v)))
+            : h(React.Fragment,null,
           field(
             'jev.endpoint',
             t('cfgJevEndpoint'),
@@ -947,7 +970,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             input('jev.key-env', draft.jev['key-env'] ?? 'MEROUTER_API_KEY', (v) =>
               update('jev', 'key-env', v), v => jevTextError('key-env', v),
             ),
-          ),
+          )),
           h(
             'section',
             { className: css.details },
@@ -998,7 +1021,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           select(
             'binding.thinking',
             bindingEdit.value.thinking ?? '',
-            Object.entries(efforts).concat(
+            bindingEfforts(bindingEdit.value).concat(
               bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
                 ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
                 : [],
@@ -1309,3 +1332,6 @@ Object.assign(en, {
 
 Object.assign(zh, { cfgBindingDone: '← 返回模型列表', cfgBindingSaveHelp: '修改后点击下方“保存修改”，统一保存到当前作用域。' });
 Object.assign(en, { cfgBindingDone: '← Back to model list', cfgBindingSaveHelp: 'Use Save changes below to save all edits to the selected scope.' });
+
+Object.assign(zh,{cfgRouteComplex:'复杂实现',cfgRouteBackend:'后端实现',cfgRouteBatch:'批量实现',cfgSubscriptionOnly:'仅使用订阅渠道；实际登录、额外计费开关与可用模型在调用前检查。',cfgCompactPlanning:'紧凑方案',cfgCompactDesign:'联合方案生成',cfgCompactReview:'联合方案审查',cfgJevSubscriptionProfile:'判断模型配置',cfgJevSubscriptionHelp:'使用订阅模型分析已收集的事实并从已有动作中选择；不授予文件或命令工具。'});
+Object.assign(en,{cfgRouteComplex:'Complex implementation',cfgRouteBackend:'Backend implementation',cfgRouteBatch:'Batch implementation',cfgSubscriptionOnly:'Subscription channels only. Native login, extra billing controls and model availability are checked before dispatch.',cfgCompactPlanning:'Compact planning',cfgCompactDesign:'Combined proposal',cfgCompactReview:'Combined review',cfgJevSubscriptionProfile:'Decision model profile',cfgJevSubscriptionHelp:'A subscription model analyzes collected facts and chooses an existing action without file or command tools.'});

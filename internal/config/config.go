@@ -158,6 +158,8 @@ type SchedulerConfig struct {
 }
 
 type Config struct {
+	Subscription    *SubscriptionPolicy      `json:"subscription,omitempty"`
+	Planning        PlanningConfig           `json:"planning,omitzero"`
 	NativeProfiles  map[string]NativeProfile `json:"native-profiles,omitempty"`
 	ExecutionPolicy *ExecutionPolicy         `json:"execution-policy,omitempty"`
 	JEV             JEVConfig                `json:"jev"`
@@ -320,7 +322,7 @@ func (c *Config) Normalize() {
 
 var watchdogRoles = map[string]bool{
 	"plan": true, "execute": true, "review": true, "judge": true, "judge-panel": true,
-	"design-plan": true, "design-review": true, "plan-review": true,
+	"design-plan": true, "design-review": true, "plan-review": true, "investigate": true,
 }
 
 // validateWatchdog keeps the per-role map machine-checkable. Zero values were
@@ -362,6 +364,9 @@ func (c *Config) validateWatchdog() error {
 
 // Validate 执行 §5 版本纪律与法定枚举校验（与 Node loadConfig 校验集一致）。
 func (c *Config) Validate() error {
+	if err := c.validateSubscriptionCLI(); err != nil {
+		return err
+	}
 	if err := c.validateNativeProfiles(); err != nil {
 		return err
 	}
@@ -372,6 +377,11 @@ func (c *Config) Validate() error {
 	}
 	if err := c.JEV.validateTarget(); err != nil {
 		return err
+	}
+	if c.JEV.Enabled && c.JEV.Backend == "subscription" {
+		if _, err := c.ResolveJEVSubscription(); err != nil {
+			return err
+		}
 	}
 	if c.Scheduler.Mode != "serial" && c.Scheduler.Mode != "parallel" || c.Scheduler.MaxParallel < 1 || c.Scheduler.MaxParallel > 8 {
 		return errors.New("scheduler requires serial|parallel and max-parallel between 1 and 8")
@@ -437,20 +447,25 @@ func (c *Config) Validate() error {
 	}
 	validateHarness := func(harness string) error {
 		switch harness {
-		case "", "pi", "omp", "kimi", "codex", "codex-pro", "claude-code-pro", "zcode", "dsh":
+		case "", "pi", "omp", "kimi", "codex", "codex-pro", "claude-code-pro", "antigravity", "zcode", "dsh":
 			return nil
 		default:
 			return fmt.Errorf("unsupported harness %q", harness)
 		}
 	}
 	for name, b := range c.Loops {
+		if b.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(b.Model, b.Thinking); err != nil {
+				return fmt.Errorf("loops.%s: %w", name, err)
+			}
+		}
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
-		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && b.ResidentSession {
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro" || b.Harness == "antigravity") && b.ResidentSession {
 			return fmt.Errorf("loops.%s: resident-session is unsupported for %s; use sessions.mode for scoped history", name, b.Harness)
 		}
-		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro" || b.Harness == "antigravity") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
 			return fmt.Errorf("loops.%s: %s requires explicit model and channel", name, b.Harness)
 		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
@@ -458,10 +473,15 @@ func (c *Config) Validate() error {
 		}
 	}
 	for name, b := range c.Routes {
+		if b.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(b.Model, b.Thinking); err != nil {
+				return fmt.Errorf("routes.%s: %w", name, err)
+			}
+		}
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
 		}
-		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
+		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro" || b.Harness == "antigravity") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
 			return fmt.Errorf("routes.%s: %s requires explicit model and channel", name, b.Harness)
 		}
 		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
@@ -480,6 +500,11 @@ func (c *Config) Validate() error {
 		}
 	}
 	for name, b := range c.Profiles {
+		if b.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(b.Model, b.Thinking); err != nil {
+				return fmt.Errorf("profiles.%s: %w", name, err)
+			}
+		}
 		if strings.TrimSpace(b.Harness) == "" || strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "" {
 			return fmt.Errorf("profiles.%s requires harness, model and channel", name)
 		}
@@ -491,7 +516,12 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.JudgePanel != nil {
-		if (c.JudgePanel.Harness == "codex-pro" || c.JudgePanel.Harness == "claude-code-pro") && c.JudgePanel.ResidentSession {
+		if c.JudgePanel.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(c.JudgePanel.Model, c.JudgePanel.Thinking); err != nil {
+				return fmt.Errorf("judge-panel: %w", err)
+			}
+		}
+		if (c.JudgePanel.Harness == "codex-pro" || c.JudgePanel.Harness == "claude-code-pro" || c.JudgePanel.Harness == "antigravity") && c.JudgePanel.ResidentSession {
 			return fmt.Errorf("judge-panel: resident-session is unsupported for %s; use sessions.mode for scoped history", c.JudgePanel.Harness)
 		}
 		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {

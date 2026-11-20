@@ -9,7 +9,11 @@ import (
 )
 
 func receiptFor(s Snapshot, p Policy, o Options) Receipt {
-	return Receipt{Version: 1, DecisionID: s.ID, SnapshotHash: hash(s), PolicyHash: hash(p), TargetHash: targetHash(o), QuestionHash: hash(questions(s)), Status: "unknown", Reason: "reserved-without-terminal"}
+	r := Receipt{Version: 1, DecisionID: s.ID, SnapshotHash: hash(s), PolicyHash: hash(p), TargetHash: targetHash(o), QuestionHash: hash(questions(s)), Status: "unknown", Reason: "reserved-without-terminal"}
+	if o.Backend == "subscription" {
+		r.Backend = o.Backend
+	}
+	return r
 }
 
 func skipped(r Receipt, reason string) Receipt {
@@ -33,14 +37,14 @@ func skipReason(s Snapshot, p Policy, o Options) string {
 	case !dataAllowed(s, p):
 		return "data-not-authorized"
 	case o.HardBudget:
-		// System One exposes no enforceable per-request usage ceiling. A byte
+		// Neither backend exposes an enforceable per-request usage ceiling. A byte
 		// limit or estimated token count is not an enforceable cost reservation.
 		return "hard-budget-without-enforceable-bound"
 	}
 	return ""
 }
 
-// Evaluate records a bounded snapshot and intent before its single HTTP call.
+// Evaluate records a bounded snapshot and intent before its single model call.
 // directory is a stable journal for this run, shared by its decision points:
 // exclusive call slots count every dispatched or unknown request toward MaxCalls.
 // Off/offline never contact the service; shadow only captures input. A later live
@@ -85,9 +89,12 @@ func Evaluate(ctx context.Context, directory string, s Snapshot, p Policy, o Opt
 		// A zero receipt would make its outer unknown-outcome ledger unloadable.
 		return r, err
 	} else if exists {
-		return previous, err
+		return recoverSubscription(root, key, previous, o)
 	}
-	if o.APIKey == "" {
+	if o.Backend == "subscription" && o.SubscriptionCall == nil {
+		return skipped(r, "missing-subscription-adapter"), nil
+	}
+	if o.Backend != "subscription" && o.APIKey == "" {
 		return skipped(r, "missing-api-key"), nil
 	}
 	if err := exclusive(root, key+".pending", raw(r)); os.IsExist(err) {
@@ -110,7 +117,11 @@ func Evaluate(ctx context.Context, directory string, s Snapshot, p Policy, o Opt
 			now = time.Now
 		}
 		started := now()
-		call(ctx, s, p, o, &r)
+		if o.Backend == "subscription" {
+			callSubscription(ctx, s, p, o, &r)
+		} else {
+			call(ctx, s, p, o, &r)
+		}
 		r.DurationMS = now().Sub(started).Milliseconds()
 	}
 	return r, publish(root, key+".json", raw(r))
@@ -119,8 +130,8 @@ func Evaluate(ctx context.Context, directory string, s Snapshot, p Policy, o Opt
 // Recover reads only the frozen request's existing terminal or intent. It never
 // creates the journal, reserves a call, or sends a request. If an outer engine
 // decision intent exists but this returns found=false, the owner must retain
-// that uncertainty and continue its baseline; recovery must not call Evaluate
-// to guess that dispatch never happened.
+// that uncertainty; native cleanup must be proven before continuing a baseline.
+// Subscription reconciliation only reads the original native journal.
 func Recover(directory string, s Snapshot, p Policy, o Options) (Receipt, bool, error) {
 	if err := Validate(s, p); err != nil {
 		return Receipt{}, false, err
@@ -135,7 +146,11 @@ func Recover(directory string, s Snapshot, p Policy, o Options) (Receipt, bool, 
 	}
 	defer root.Close()
 	key := hash(struct{ Task, Run, Decision string }{s.Identity.TaskID, s.Identity.RunID, s.ID})
-	return load(root, key, expected)
+	r, found, err := load(root, key, expected)
+	if err == nil && found {
+		r, err = recoverSubscription(root, key, r, o)
+	}
+	return r, found, err
 }
 
 // Replay evaluates a caller-supplied recorded/fixture native response without

@@ -170,10 +170,13 @@ func planningResultCode(r drivers.Result) errs.ErrorCode {
 }
 
 func (c *Context) planningBinding(role string, r *planning.Request) (fallback.Binding, error) {
-	b, err := fallback.ResolveBinding(c.Config, role, "")
-	if err != nil {
-		return b, err
+	granularity := planning.DesignGranularity(c.State.Planning, *r)
+	selected, source, ok := c.Config.PlanningBindingForRole(role, granularity)
+	if !ok {
+		return fallback.Binding{}, fmt.Errorf("no loop binding for %s in planning config", role)
 	}
+	r.BindingSource, r.BindingGranularity = source, granularity
+	b := fallback.Binding{Harness: selected.Harness, Model: selected.Model, Channel: selected.Channel, Thinking: selected.Thinking, NativeProfile: selected.NativeProfile, Provider: fallback.ResolveProvider(c.Config, selected.Harness, selected.Provider, selected.Channel)}
 	if r.Role != role {
 		r.Role, r.Channel = role, b.Channel
 	}
@@ -418,6 +421,10 @@ func (c *Context) adoptPlanningProposal(r *planning.Request, text, invocation st
 		if err := prompts.DecodePlanningOutput(text, &output); err != nil {
 			return err
 		}
+		if planning.DesignGranularity(p, *r) == "compact" && output.Compact == nil {
+			escalateCompact(p, r)
+			return nil
+		}
 		baseline, ok := verify.GetBaseRef(c.Cwd)
 		if !ok {
 			return fmt.Errorf("design research requires an inspectable Git baseline")
@@ -428,7 +435,20 @@ func (c *Context) adoptPlanningProposal(r *planning.Request, text, invocation st
 		if err != nil {
 			return err
 		}
-		if err := planning.RecordDesign(p, d); err != nil {
+		compact, err := c.prepareCompactProjection(*r, d, output.Compact)
+		if errors.Is(err, errCompactIneligible) {
+			escalateCompact(p, r)
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if compact != nil {
+			err = planning.RecordCompact(p, d, *compact)
+		} else {
+			err = planning.RecordDesign(p, d)
+		}
+		if err != nil {
 			return err
 		}
 	} else {
@@ -472,6 +492,10 @@ func (c *Context) adoptPlanningReview(r *planning.Request, text, role, invocatio
 	review := planning.Review{ID: "review-" + sessionHash([]any{r.ID, r.Rounds, r.Retries, invocation})[:32], Kind: "design", Target: *p.CurrentDesign,
 		InputRevision: p.InputRevision, Invocation: invocation, Role: role, Binding: sessionHash(b), Verdict: output.Verdict,
 		ScopeVerdict: output.ScopeVerdict, Summary: output.Summary, Findings: output.Findings}
+	if designRequest(*r) && planning.DesignGranularity(p, *r) == "compact" {
+		review.Kind, review.Plan = "compact-v1", p.CurrentPlan
+		review.DesignVerdict, review.CoverageVerdict = output.DesignVerdict, output.CoverageVerdict
+	}
 	if record := c.sessionRecord(role, "planning:"+r.ID); record != nil {
 		review.Binding = record.Binding
 	}
@@ -495,6 +519,9 @@ func (c *Context) adoptPlanningReview(r *planning.Request, text, role, invocatio
 		}
 	case "revise":
 		r.Stage = ""
+		if review.Kind == "compact-v1" && review.ScopeVerdict != "within-envelope" {
+			r.DesignGranularity, r.Role, r.Channel = "system", "", ""
+		}
 	case "needs-user-decision":
 		r.Status = "awaiting-input"
 		c.State.Status = "paused"

@@ -275,10 +275,12 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	var resultState any
 	var codexProReceipt any
 	var claudeCodeProReceipt any
+	var antigravityReceipt any
 	var nativeReceipt any
 	if a.result != nil {
 		codexProReceipt = a.result.CodexProReceipt
 		claudeCodeProReceipt = a.result.ClaudeCodeProReceipt
+		antigravityReceipt = a.result.AntigravityReceipt
 		nativeReceipt = a.result.NativeReceipt
 		resultState = map[string]any{
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
@@ -308,6 +310,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"result":                  resultState,
 		"codex-pro-receipt":       codexProReceipt,
 		"claude-code-pro-receipt": claudeCodeProReceipt,
+		"antigravity-receipt":     antigravityReceipt,
 		"native-receipt":          nativeReceipt,
 		"session":                 sessionMetrics(c.State.Sessions, invocationID),
 	}); err != nil && c.fatal == nil {

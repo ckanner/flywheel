@@ -5,6 +5,32 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased — Subscription CLI workflows
+
+- Add the independent Antigravity DSH plugin and bundled Flywheel machine worker,
+  using the official `agy` CLI without ACP. Preserve durable invocation receipts,
+  owned history, cancellation, explicit model/effort and evidence-only admission.
+- Adopt a single Gemini/Claude/Codex/Kimi subscription default table, with seven
+  execution routes, explicit system/compact planning bindings and native Kimi
+  agent access. Strict reachability and native preflight reject API/credits routes;
+  missing billing evidence stays unknown. Pin the reviewed Claude 0.7.0 candidate.
+- Carry frozen packet image inputs through Execute and the official Claude SDK.
+  Validate actual image bytes and bounded repository paths, retain input digests
+  in durable receipts, and reconcile recovery without replaying or replacing images.
+- Implement compact design plus one packet with one independent joint review.
+  Keep Quick/Full depth separate from review-first/delegated authority and retain
+  exact-version approval. Complex preparation can upgrade without resetting budgets.
+- Add managed Neon investigation analysis and explicit new-evidence rounds in the
+  same task, with immutable history, exact revision checks, original scope and
+  cumulative accounting. Unknown dispatch or cleanup blocks continuation.
+- Route optional JEV through a frozen evidence-only subscription profile; keep its
+  single switch off by default and retain explicit legacy HTTP compatibility.
+- Add preview/CAS/backup migration `subscription-cli`, preserving existing user
+  permissions, budgets, verification and scheduling. Freeze the historical preset.
+  Update the editor, embedded entry skills and paired guides with the same contracts.
+- This source change does not publish npm packages, migrate user settings, prove
+  real-account inference or claim an optimal model allocation.
+
 ## 0.37.3 — DSH 0.3 compatibility window
 
 - Accept DSH 0.2.1-rc.5 through 0.3 for the host engine and peers; capability

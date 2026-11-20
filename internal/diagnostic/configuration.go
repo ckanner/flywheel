@@ -36,6 +36,8 @@ type Binding struct {
 }
 
 type Configuration struct {
+	Subscription    *config.SubscriptionPolicy      `json:"subscription,omitempty"`
+	Planning        config.PlanningConfig           `json:"planning,omitzero"`
 	NativeProfiles  map[string]config.NativeProfile `json:"native-profiles,omitempty"`
 	ExecutionPolicy *config.ExecutionPolicy         `json:"execution-policy,omitempty"`
 	JEV             config.JEVConfig                `json:"jev"`
@@ -139,7 +141,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
 		scope = "project"
 	}
-	view := &Configuration{NativeProfiles: cfg.NativeProfiles, ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
+	view := &Configuration{Subscription: cfg.Subscription, Planning: cfg.Planning, NativeProfiles: cfg.NativeProfiles, ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		source := id
 		if strings.HasPrefix(id, "loops.") {
@@ -188,6 +190,15 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 		add("routes."+route, "execute", route, config.LoopBinding{
 			NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking,
 		})
+	}
+	for _, role := range []string{"design-plan", "design-review"} {
+		if name, ok := cfg.Planning.Compact[role]; ok {
+			b, source, found := cfg.PlanningBindingForRole(role, "compact")
+			if found {
+				add(source, role, "", b)
+				view.Bindings[len(view.Bindings)-1].Profile = name
+			}
+		}
 	}
 	if cfg.JudgePanel != nil {
 		add("judge-panel", "judge-panel", "", *cfg.JudgePanel)

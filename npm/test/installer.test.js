@@ -113,7 +113,7 @@ async function installation(t) {
   const packageMeta = { ...meta };
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify(packageMeta));
   await fs.copyFile(path.join(repository, "npm", "install.js"), path.join(root, "npm", "install.js"));
-  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js", "flywheel-kimi-native-worker.js"]) {
+  for (const name of ["flywheel.js", "runtime.js", "flywheel-dsh-worker.js", "flywheel-codex-pro-worker.js", "flywheel-claude-code-pro-worker.js", "flywheel-kimi-native-worker.js", "flywheel-antigravity-worker.js"]) {
     await fs.copyFile(path.join(repository, "bin", name), path.join(root, "bin", name));
   }
   const native = path.join(root, "native", platform);
@@ -128,6 +128,7 @@ async function installation(t) {
     console.log(JSON.stringify({ protocol: 1, type: 'doctor', package: 'dsh-subagent-codex-pro',
       version: process.env.TEST_ADAPTER_VERSION || '0.10.2', machineProtocol: 1, available: true, inferenceTested: false }));
   `);
+  await fs.writeFile(path.join(plugin, "dist", "antigravity-worker.mjs"), "throw new Error(\"unselected adapter must not be invoked\");\n");
   await fs.writeFile(path.join(plugin, "dist", "claude-code-pro-worker.mjs"), "throw new Error(\"unselected optional adapter must not be invoked\");\n");
   const dsh = path.join(commands, "dsh ' $(touch DSH_INJECTION)");
   await fs.writeFile(dsh, `#!/usr/bin/env node
@@ -223,7 +224,7 @@ test("installer executes special paths literally and repeat setup keeps a stable
   const second = resultDocument(await f.launch(f.args).exit, 0);
   assert.equal(second.configuration.preserved, true);
   assert.match(second.configuration.message, /升级不会替换旧模型、渠道或思考等级/);
-  assert.deepEqual(second.configuration.migration, { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscriptions', '--cwd', f.directory] });
+  assert.deepEqual(second.configuration.migration, { command: 'flywheel', args: ['config', 'migrate', '--preset', 'subscription-cli', '--cwd', f.directory] });
   assert.equal(second.paths.launcher, first.paths.launcher);
   assert.deepEqual(await readReceipt(path.join(f.home, ".config", "flywheel", "installation.json")), record);
   const records = await f.records();
@@ -259,7 +260,7 @@ test("human setup output retains diagnostic remedies and does not announce an un
   assert.match(result.stdout, /install the CLI and rerun doctor/);
   assert.doesNotMatch(result.stdout, /重载插件/);
   assert.match(result.stdout, /迁移预览:/);
-  assert.match(result.stdout, /subscriptions/);
+  assert.match(result.stdout, /subscription-cli/);
 });
 
 test('configuration initialization errors never claim that defaults were created or migrated', async t => {

@@ -1,4 +1,4 @@
-# Go ↔ DSH / Kimi / Codex Pro / Claude Code Pro worker 协议
+# Go ↔ DSH / Kimi / Codex / Claude / Antigravity worker 协议
 
 此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。Go与worker之间使用本地stdio；Kimi native worker内部使用其拥有的loopback Server，见本文件原生扩展和Kimi专属协议。
 
@@ -335,7 +335,7 @@ request／initialize／新 thread-start 等派发前阶段可证明 not-dispatch
 
 ### 共有的活动与名称扩展
 
-Codex Pro 0.10.2 和 Claude Code Pro 0.6.0 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
+Codex Pro 0.10.2 和 Claude Code Pro 0.7.0 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
 `MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}`。
 外层请求的可选 `idleTimeoutMs` 是 1–2,147,483,647 正整数；省略按 300000 计算
 观察合并间隔 `min(1000, max(1, floor(idleTimeoutMs/4)))`，不改变有效 wall 预算。
@@ -427,15 +427,46 @@ status 为 terminal/pending/unknown。只有 exact invocation 的完整 terminal
 
 cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report；恢复到 receipt 不自动获得该证明。缺少它时可信用量可对账，业务保持阻断。状态、metrics 与候选消费语义见[恢复指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/session-recovery.md)。
 
+## Antigravity worker
+
+`flywheel-antigravity-worker` 固定 `dsh-subagent-antigravity@0.1.0`，只调用公开
+machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
+均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
+readOnlyRecovery 及 evidenceOnly:verified-empty-init-tools，缺失即拒绝。
+
+Start 字段为 type/protocol/requestId/cwd/model/reasoningEffort/permissionMode/prompt/
+timeoutMs，以及可选 idleTimeoutMs/sessionTitle/threadMode/threadId/recoveryDirectory，
+另必需 subscription version 1；evidenceOnly 是可选布尔值。普通执行只接受
+permissionMode:danger-full-access，映射 accept-edits/always-proceed；evidenceOnly:true
+必须 read-only，映射 plan/request-review 并在提示词前核对实际空tools及独占agent身份。
+不接受 native overrides、images、任意 provider、API key或未识别字段。
+
+model必须是完整gemini-4家族/档位，后缀与reasoningEffort相同。官方init须确认实际
+cwd/model/permission/conversation，evidence-only另确认agent和tools。effort/config未暴露
+时不伪造observed。新调用保留独立原生history；resume必须精确本适配器拥有的已确认
+conversation，不使用latest。v3的Go ACK先持久化生命周期；非终态不提前报告cleanup，
+无原生terminal时本地terminal仍保留unknown。缺失/坏帧/取消/WAITING/软拒绝不算成功。
+
+终态envelope仍为 {protocol,type:"result",requestId,adapter,receipt,error}。receipt保留
+原生usage、configuration、subscription、execution、cleanup、providerWork和failure。
+subscription.status为verified-local-controls时只证明本地account route和credits后备
+控制已核对；权益/余额/额外费用可unknown。conversation usage不加总为本轮完整计量，
+成本unknown不填零。派发前错误可在准确证明下标not-dispatched，不能抹掉spawned PID。
+
+Recover只读原recoveryDirectory的精确requestId/runId journal，带冻结的subscription/
+evidenceOnly与模型权限核对；不得启动CLI或再次发送任务。doctor仅核对package/接口与
+可执行兼容性，不发推理或推定账户额度。完整原生协议见独立插件的
+[Machine contract](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/docs/MACHINE.md)。
+
 ## Claude Code Pro worker
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.6.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.7.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
 
-0.6.0 普通调用通过官方 Agent SDK 0.3.326 的 `query()`，由既有 guardian 的公开
+0.7.0 普通调用通过官方 Agent SDK 0.3.326 的 `query()`，由既有 guardian 的公开
 spawn hook 启动 `FLYWHEEL_CLAUDE_BIN` 指定的本地程序。SDK 负责请求／控制协议，
 插件保留逐帧 UTF-8／JSON／大小校验、真实活动、结果身份、物理退出和进程组清理。
 SDK 迭代结束不证明清理完成。machine／lifecycle version 仍为 1，真实原生
@@ -449,7 +480,9 @@ reasoningEffort、permissionMode、prompt、timeoutMs，以及可选 idleTimeout
 原生审批模式不等价于 OS read-only/workspace-write。命令来自
 FLYWHEEL_CLAUDE_BIN，权限、session、命令和输出上限不能通过额外 start 字段覆盖。
 
-Claude query 单帧上限为 16 MiB，最终答案按请求的 1 MiB 保留预算核验，图片数量／字节另有有界上限；中间文本只保留展示 tail，不按累计 raw 流量终止任务。
+Claude start 输入单帧上限为 16 MiB，业务 prompt 独立限制为 1 MiB；其他 worker 的输入帧仍为 1 MiB。`images` 接受最多四项 `{mimeType,data}`，`data` 为规范 Base64，类型为 PNG/JPEG/GIF/WebP；解码后每张最多 4 MiB、合计 8 MiB。路径和 data URL 不代替原生附件。Go 的 packet `input-images` 生产链另行检查仓库相对路径、无符号链接、摘要、真实图像解码、8192 边长与 1600 万像素上限，再把真实字节交给此接口。Claude query 输出单帧上限也为 16 MiB，最终答案按请求的 1 MiB 保留预算核验；中间文本只保留展示 tail，不按累计 raw 流量终止任务。
+
+图片身份保存在回执的 `requested.inputImages:{version:1,images:[{mimeType,sha256,bytes}]}`，顺序和摘要均由实际解码字节计算；durable journal 从首次派发前就保存同一 `context.inputImages`，不保存图片内容。无图请求保留原回执结构。Go 将该 manifest 冻结到 invocation，并对成功及恢复证据核对；恢复请求只读原身份和 journal，禁止携带新图片或 prompt，不能以新附件替换待对账的调用。
 
 Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --help` 检查
 `--include-partial-messages`、`--forward-subagent-text` 与新会话命名所需的 `--name`。
@@ -458,16 +491,25 @@ Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --
 能力不自动试发 prompt，也不切换后端。短暂 partial 事件不进入最终答案文本。
 SDK 同一进程的 initialize 响应还须提供稳定的 `claude_code_version >= 2.1.325`，
 之后才放行用户任务。这是最低已验证版本；缺失、过旧或预发布版拒绝。该拒绝保留
-已经观察到的原生 PID／dispatch 与独立 cleanup，当前契约保守记录 unknown／possible，
-不因尚未发送 prompt 而伪造进程从未启动。新会话标题、Agent 定义与子级文本转发
+已经观察到的原生 PID 与独立 cleanup；只有明确尚未写入 user prompt 的准入失败
+才可报告 not-dispatched，CLI 已 spawned 仍如实保留。没有该证明时保持 unknown/possible。新会话标题、Agent 定义与子级文本转发
 通过 SDK initialize 发送；根 effort、权限与显式持久化通过 SDK 正式选项传递。
 
 native v1 的 `agents.definitions.<name>.effort` 可选，枚举为
 low/medium/high/xhigh/max。Go 配置 schema 在加载时检查，worker 将 native 对象完整
 交给公开 parser，插件原样传入 SDK `agents`（交互 Team 使用 `--agents`）；省略时不注入子 effort。父调用的
 reasoningEffort 仍独立映射到 `--effort`。此扩展不升级 machine/native protocol，
-但需要精确 0.6.0；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
+但需要精确 0.7.0；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
 requested 证明请求参数，tools-only effective 不证明子模型实际 effort。
+
+严格订阅 start 带 `subscription:{version:1,mode:"subscription-only"}`，普通请求还可带
+公开 machine 类型化 images。worker 核对 0.7.0 的 MACHINE_SUBSCRIPTION_CAPABILITIES
+和 inspectSubscription；同一官方 CLI 初始化进程在提示词前调用 accountInfo 与
+usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({skipBehaviors:true})，
+要求支持的 first-party subscription 与 extra_usage.is_enabled:false。拒绝 API/gateway、
+helper、fast mode、自动模型fallback等冲突。原始subscription回执保留source/status/time、
+provider/plan/extra usage，root model必须来自当前 assistant.message.model；累计
+modelUsage 不证明根模型。预检快照不是全过程计费锁，独立 native Review/Team strict请求拒绝。
 
 terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
 adapter 是精确 package/version/protocol；receipt 原样保存 Claude machine v1 的
@@ -489,7 +531,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.6.0",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.7.0",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 
@@ -741,7 +783,7 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 
 | action | 额外输入 | 结果 |
 |---|---|---|
-| investigate | task-dir、cwd 与 stdin JSON：start/run/status/report/cancel 及所需 contract/revision | 由 Go 拥有的准备记录与有界调查结果 |
+| investigate | task-dir、cwd 与 stdin JSON：start/run/status/report/continue/cancel 及所需 contract/revision | 由 Go 拥有的准备记录与有界调查结果 |
 | runs | cwd | 最近 100 条登记，运行状态另查 status |
 | metrics | task-dir，可选 run-id | 对账后的分组与有界调用明细；未知／部分数据不置零 |
 | node | task-dir、packet | 当前 packet 完整证据及相同 revision 的状态 |
@@ -749,6 +791,12 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 | session | stdin JSON：action、key、revision；claim 的 reason 或 send 的 prompt | 受管 claim/send/reconcile/return/release；后台结果写入 control 回执 |
 | delivery | stdin JSON：action=inspect，可选 headBranch | 仓库、当前 HEAD、PR 与检查状态 |
 | deliver | stdin JSON：create/merge、revision、expectedHead、expectedRepo、confirmed=true、base 等 | 明确授权的远端动作与回执 |
+
+`continue` 是显式补证新轮：完整 contract 和观测 revision 必填，旧报告必须 settled，
+所有动作/分析/JEV调用及cleanup均已结算。保留ID、goal、intent、implementation-scope，
+known-evidence必须有新增依据，limits不得超过累计剩余额度；同task/runId归档旧轮及digest。
+`run`在取证后使用loops.investigate分析，awaiting-report可继续分析，analysis-pending只能
+先读原回执；UI不能通过报告提交或新轮绕过unknown。跨轮用量和来源只导入一次。
 
 调查响应的 `preparation` 保持 version 1。可选 `jev-status` 是最近一次准备／运行
 记录的有效状态（enabled、disabled、config-unavailable、not-configured、policy-changed），UI 不从

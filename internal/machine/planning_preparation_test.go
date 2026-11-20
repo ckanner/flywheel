@@ -94,8 +94,7 @@ func TestPlanningReportOnlyAllowsExactHumanRepairGrantWithoutChangingOriginalInt
 	require.NoError(t, err)
 	require.Equal(t, before, c.State.Revision, "already imported research must not add a CAS or charge")
 	prepared.Report.Summary = "Revised investigation report must require a new explicit handoff."
-	_, err = state.SavePreparation(opts.TaskDir, prepared)
-	require.NoError(t, err)
+	overwritePreparationFixture(t, opts.TaskDir, prepared)
 	_, err = c.planningResearchContext()
 	require.ErrorContains(t, err, "provenance changed")
 	approve.Revision, approve.RequestID = st.Revision, "changed-report"
@@ -185,8 +184,7 @@ func TestPlanningPreparationRejectsImplicitReportRepairAndInvalidEvidence(t *tes
 	require.False(t, c.planningRepairApproved(prepared))
 	require.Equal(t, c.State.PreparationSource.ImplementationScope, c.effectivePreparationScope())
 	prepared.Cwd = t.TempDir()
-	_, err = state.SavePreparation(opts.TaskDir, prepared)
-	require.NoError(t, err)
+	overwritePreparationFixture(t, opts.TaskDir, prepared)
 	_, err = planningPreparation(opts.TaskDir, opts.Cwd)
 	require.ErrorContains(t, err, "settled investigation report")
 	_, err = planningRepairAuthority(opts, st, PlanningCommand{Start: new(true)})

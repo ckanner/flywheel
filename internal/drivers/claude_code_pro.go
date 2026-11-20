@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -15,18 +16,19 @@ import (
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 const (
 	ClaudeCodeProWorkerEnv      = "FLYWHEEL_CLAUDE_CODE_PRO_WORKER"
 	ClaudeCodeProBinaryEnv      = "FLYWHEEL_CLAUDE_BIN"
-	ClaudeCodeProPackageVersion = "0.6.0"
+	ClaudeCodeProPackageVersion = "0.7.0"
 	claudeCodeProCleanupMS      = int64(10_000)
-	claudeCodeProRequestBytes   = 1 << 20 // worker LIMITS.requestBytes, including the JSONL newline
+	claudeCodeProRequestBytes   = 16 << 20 // worker LIMITS.requestBytes, including the JSONL newline
 )
 
-var claudeCodeProModelPattern = regexp.MustCompile(`^claude-(sonnet|opus|haiku)-[a-z0-9][a-z0-9.-]*(?:\[1m\])?$`)
+var claudeCodeProModelPattern = regexp.MustCompile(`^claude-(sonnet|opus|haiku|fable)-[a-z0-9][a-z0-9.-]*(?:\[1m\])?$`)
 
 // Match only the aliases understood by the pinned public API. Exact custom
 // model IDs remain valid; no static catalog invents a newer model or fallback.
@@ -53,6 +55,9 @@ func ClaudeCodeProBinary() string {
 }
 
 type ClaudeCodeProArgs struct {
+	Subscription      *config.SubscriptionPolicy
+	EvidenceOnly      bool
+	Images            []imageinput.Image
 	Native            json.RawMessage
 	Managed           *NativeAdmission
 	Prompt            string
@@ -72,24 +77,7 @@ type ClaudeCodeProArgs struct {
 	OnLifecycle       func(MachineLifecycle) error
 }
 
-type claudeCodeProStart struct {
-	Native            json.RawMessage  `json:"native,omitempty"`
-	Managed           *NativeAdmission `json:"managed,omitempty"`
-	Type              string           `json:"type"`
-	Protocol          int              `json:"protocol"`
-	RequestID         string           `json:"requestId"`
-	Cwd               string           `json:"cwd"`
-	Model             string           `json:"model"`
-	ReasoningEffort   string           `json:"reasoningEffort"`
-	PermissionMode    string           `json:"permissionMode"`
-	Prompt            string           `json:"prompt"`
-	TimeoutMS         int64            `json:"timeoutMs"`
-	IdleTimeoutMS     int64            `json:"idleTimeoutMs,omitempty"`
-	SessionTitle      string           `json:"sessionTitle,omitempty"`
-	ThreadMode        string           `json:"threadMode,omitempty"`
-	ThreadID          string           `json:"threadId,omitempty"`
-	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
-}
+type claudeCodeProStart = codexProStart
 
 type claudeCodeProParsed struct {
 	NativeReceipt    json.RawMessage
@@ -137,6 +125,18 @@ func (e *claudeCodeProExecution) UnmarshalJSON(raw []byte) error {
 }
 
 type claudeCodeProReceipt struct {
+	Subscription *struct {
+		Version           int     `json:"version"`
+		Mode              string  `json:"mode"`
+		Status            string  `json:"status"`
+		Source            string  `json:"source"`
+		CheckedAt         *string `json:"checkedAt"`
+		APIProvider       string  `json:"apiProvider"`
+		SubscriptionType  string  `json:"subscriptionType"`
+		ExtraUsageEnabled *bool   `json:"extraUsageEnabled"`
+		ResolvedModel     string  `json:"resolvedModel"`
+		Scope             string  `json:"scope"`
+	} `json:"subscription"`
 	Native    json.RawMessage `json:"native"`
 	Protocol  int             `json:"protocol"`
 	Type      string          `json:"type"`
@@ -144,13 +144,14 @@ type claudeCodeProReceipt struct {
 	RunID     string          `json:"runId"`
 	OK        *bool           `json:"ok"`
 	Requested struct {
-		Cwd            string          `json:"cwd"`
-		Model          string          `json:"model"`
-		Effort         string          `json:"effort"`
-		PermissionMode string          `json:"permissionMode"`
-		SessionMode    string          `json:"sessionMode"`
-		SessionID      json.RawMessage `json:"sessionId"`
-		SettingSources []string        `json:"settingSources"`
+		InputImages    *imageinput.Manifest `json:"inputImages,omitempty"`
+		Cwd            string               `json:"cwd"`
+		Model          string               `json:"model"`
+		Effort         string               `json:"effort"`
+		PermissionMode string               `json:"permissionMode"`
+		SessionMode    string               `json:"sessionMode"`
+		SessionID      json.RawMessage      `json:"sessionId"`
+		SettingSources []string             `json:"settingSources"`
 	} `json:"requested"`
 	Execution *claudeCodeProExecution `json:"execution"`
 	Cleanup   *struct {
@@ -164,7 +165,13 @@ type claudeCodeProReceipt struct {
 		Resumable *bool           `json:"resumable"`
 	} `json:"session"`
 	Configuration *struct {
-		Source   string `json:"source"`
+		Source        string `json:"source"`
+		ModelEvidence *struct {
+			Version     int      `json:"version"`
+			RootMatched *bool    `json:"rootMatched"`
+			RootModels  []string `json:"rootModels"`
+			Source      string   `json:"source"`
+		} `json:"modelEvidence"`
 		Observed *struct {
 			Cwd            string `json:"cwd"`
 			Model          string `json:"model"`
@@ -196,113 +203,7 @@ func claudeCodeProUnknownSession(request claudeCodeProStart) *SessionOutcome {
 // A display progress frame cannot authorize continuation. An intact final
 // envelope is correlated twice: by the worker and by the plugin receipt.
 func parseClaudeCodeProStream(stdout string, request claudeCodeProStart) claudeCodeProParsed {
-	parsed := claudeCodeProParsed{Session: claudeCodeProUnknownSession(request)}
-	lifecycle := machineLifecycleFlow{harness: "claude-code-pro", request: codexProStart(request)}
-	terminal, trusted := false, true
-	var nativeSequence, activitySequence int64
-	for _, line := range strings.Split(stdout, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var frame struct {
-			Protocol  int     `json:"protocol"`
-			Type      string  `json:"type"`
-			RequestID string  `json:"requestId"`
-			Text      *string `json:"text"`
-			Adapter   struct {
-				Package  string `json:"package"`
-				Version  string `json:"version"`
-				Protocol int    `json:"protocol"`
-			} `json:"adapter"`
-			Receipt json.RawMessage `json:"receipt"`
-			Error   *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-			Admission *struct {
-				Dispatched       *bool `json:"dispatched"`
-				CleanupConfirmed *bool `json:"cleanupConfirmed"`
-			} `json:"admission"`
-		}
-		if err := json.Unmarshal([]byte(line), &frame); err != nil || frame.Protocol != request.Protocol ||
-			frame.RequestID != request.RequestID || terminal {
-			trusted = false
-			parsed.Error = "invalid request: Claude Code Pro worker emitted malformed, mismatched or post-terminal data"
-			break
-		}
-		switch frame.Type {
-		case "activity":
-			if err := validateProActivityEvent(json.RawMessage(line), "claude-code-pro", codexProStart(request), &activitySequence); err != nil {
-				trusted = false
-				parsed.Error = err.Error()
-			}
-		case "native-event":
-			if err := validateProNativeEvent(json.RawMessage(line), "claude-code-pro", codexProStart(request), &nativeSequence); err != nil {
-				trusted = false
-				parsed.Error = err.Error()
-			}
-		case "lifecycle":
-			if _, err := lifecycle.frame([]byte(line)); err != nil || request.Protocol != 3 {
-				trusted = false
-				parsed.Error = "invalid request: Claude Code Pro lifecycle evidence is invalid"
-			}
-		case "progress":
-			if frame.Text == nil {
-				trusted = false
-				parsed.Error = "invalid request: Claude Code Pro progress omitted text"
-			}
-		case "result":
-			terminal = true
-			parsed = parseClaudeCodeProReceipt(frame.Receipt, request)
-			if request.Protocol == 3 && parsed.Settled && !machineLifecycleProvesResult(lifecycle.last, parsed.Session) {
-				trusted = false
-				parsed.Error = "invalid request: Claude Code Pro result omitted durable lifecycle evidence"
-			}
-			if !receiptHasFields(json.RawMessage(line), "receipt", "error") || frame.Adapter.Package != "dsh-subagent-claude-code-pro" ||
-				frame.Adapter.Version != ClaudeCodeProPackageVersion || frame.Adapter.Protocol != 1 {
-				trusted = false
-				parsed.Error = "invalid request: Claude Code Pro terminal envelope does not match the pinned adapter contract"
-			} else if frame.Admission != nil {
-				if string(frame.Receipt) != "null" || frame.Error == nil || frame.Admission.Dispatched == nil || *frame.Admission.Dispatched ||
-					frame.Admission.CleanupConfirmed == nil || !*frame.Admission.CleanupConfirmed || !claudeCodeProAdmissionError(frame.Error.Code) {
-					trusted = false
-					parsed.Error = "invalid request: Claude Code Pro admission contradicts its terminal envelope"
-				} else {
-					parsed.CleanupConfirmed = true
-					parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "not-dispatched", "failed", "complete"
-					parsed.Session.SessionID, parsed.Usage = request.ThreadID, &Usage{}
-					parsed.Error, parsed.ErrorCode = "Claude Code Pro worker admission failed: "+frame.Error.Message, errs.INVALID_REQUEST
-				}
-			} else if frame.Error != nil {
-				if !machineWorkerObservationError(frame.Error.Code) {
-					trusted = false
-				}
-				// The error report and the independently validated cleanup
-				// receipt answer different questions. Neither grants a checkpoint.
-				parsed.Cancelled, parsed.TimedOut, parsed.Truncated, parsed.Settled = false, false, false, false
-				parsed.Session.Outcome, parsed.Session.ResumeCandidate = "unknown", false
-				parsed.ErrorCode = errs.TRANSPORT
-				parsed.Error = "Claude Code Pro worker failed without a trusted invocation result: " + frame.Error.Message
-			}
-		default:
-			trusted = false
-			parsed.Error = "invalid request: Claude Code Pro worker emitted an unknown frame"
-		}
-		if !trusted {
-			break
-		}
-	}
-	if !terminal && parsed.Error == "" {
-		parsed.Error = "Claude Code Pro worker ended without a terminal receipt"
-	}
-	if !trusted {
-		parsed.StreamFailed = true
-		parsed.CleanupConfirmed, parsed.Settled, parsed.Usage, parsed.ErrorCode = false, false, nil, ""
-		parsed.Cancelled, parsed.TimedOut, parsed.Truncated = false, false, false
-		parsed.Session = claudeCodeProUnknownSession(request)
-	}
-	parsed.Session.CleanupConfirmed = parsed.CleanupConfirmed
-	return parsed
+	return parseOwnedCLIStream(stdout, request, "claude-code-pro", "Claude Code Pro", parseClaudeCodeProReceipt)
 }
 
 // Only errors that the worker can raise before entering runMachine carry its
@@ -352,6 +253,24 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 		string(receipt.CostUSD) != "null" || receipt.CostStatus != "unknown" || (receipt.ReportedCostUSD != nil && *receipt.ReportedCostUSD < 0) {
 		parsed.Error = "invalid request: Claude Code Pro receipt identity or requested configuration mismatch"
 		return parsed
+	}
+	if err := imageinput.ValidateManifest(receipt.Requested.InputImages); err != nil || !reflect.DeepEqual(receipt.Requested.InputImages, request.InputImageManifest) {
+		parsed.Error = "invalid request: Claude Code Pro receipt input image manifest mismatch"
+		return parsed
+	}
+	if request.Subscription != nil && *receipt.OK {
+		sub := receipt.Subscription
+		model := receipt.Configuration
+		if sub == nil || sub.Version != 1 || sub.Mode != "subscription-only" || sub.Status != "verified" || sub.Source != "sdk-usage-0.3.326" || sub.CheckedAt == nil || *sub.CheckedAt == "" || sub.APIProvider != "firstParty" || !slices.Contains([]string{"pro", "max", "team", "enterprise"}, sub.SubscriptionType) || sub.ExtraUsageEnabled == nil || *sub.ExtraUsageEnabled || !claudeCodeProModelMatches(request.Model, sub.ResolvedModel) || sub.Scope != "pre-prompt-snapshot" || model == nil || model.ModelEvidence == nil || model.ModelEvidence.Version != 1 || model.ModelEvidence.RootMatched == nil || !*model.ModelEvidence.RootMatched || model.ModelEvidence.Source != "assistant.message.model" || len(model.ModelEvidence.RootModels) == 0 {
+			parsed.Error = "invalid request: Claude Code Pro omitted verified native subscription and root model evidence"
+			return parsed
+		}
+		for _, observed := range model.ModelEvidence.RootModels {
+			if !claudeCodeProModelMatches(request.Model, observed) {
+				parsed.Error = "invalid request: Claude Code Pro root model changed during subscription execution"
+				return parsed
+			}
+		}
 	}
 	e, s, c := receipt.Execution, receipt.Session, receipt.Cleanup
 	if e == nil || e.TerminalReceived == nil || e.Cancelled == nil || e.TimedOut == nil || e.Truncated == nil ||
@@ -408,6 +327,12 @@ func parseClaudeCodeProReceipt(raw json.RawMessage, request claudeCodeProStart) 
 			return parsed
 		}
 		parsed.CleanupConfirmed, parsed.Session.Dispatch = *c.Confirmed, "dispatched"
+		if e.TurnDispatch == "not-dispatched" && !*receipt.OK && *c.Confirmed && !*e.TerminalReceived && len(*receipt.Output) == 0 && usageStatus == "unknown" {
+			parsed.Session.Dispatch, parsed.Session.Outcome, parsed.Session.UsageStatus = "not-dispatched", "failed", "complete"
+			parsed.Session.SessionID = request.ThreadID
+			parsed.Usage = &Usage{}
+		}
+
 		configuration := receipt.Configuration
 		matched := *configuration.Matched && configuration.Source == "cli-init" && configuration.Observed != nil &&
 			samePhysicalDirectory(configuration.Observed.Cwd, request.Cwd) && configuration.Observed.PermissionMode == "bypassPermissions" &&
@@ -509,7 +434,7 @@ func claudeCodeProFailureCode(category string) errs.ErrorCode {
 }
 
 func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
-	request := claudeCodeProStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
+	request := claudeCodeProStart{Subscription: a.Subscription, Images: a.Images, InputImageManifest: imageinput.Describe(a.Images), Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
 	if request.RequestID == "" {
 		request.RequestID = rand.Text()
 	}
@@ -529,6 +454,12 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	}
 	if request.Protocol == 3 && (a.OnLifecycle == nil || !filepath.IsAbs(a.RecoveryDirectory) || strings.ContainsRune(a.RecoveryDirectory, 0)) {
 		return reject("durable lifecycle requires an absolute recovery directory and acknowledgement callback")
+	}
+	if len(a.Prompt) > machineRequestBytes {
+		return reject("Claude Code Pro prompt exceeds the unchanged 1 MiB text limit")
+	}
+	if err := imageinput.ValidateManifest(request.InputImageManifest); err != nil {
+		return reject(err.Error())
 	}
 	if strings.TrimSpace(a.Model) == "" || strings.TrimSpace(a.Prompt) == "" || a.PermissionMode != "danger-full-access" ||
 		(a.SessionID != "" && (!a.PersistentSession || strings.TrimSpace(a.SessionID) == "" || strings.ContainsRune(a.SessionID, 0))) ||
@@ -575,7 +506,7 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 	}
 	payload = append(payload, '\n')
 	if len(payload) > claudeCodeProRequestBytes {
-		return reject("Claude Code Pro start request exceeds the worker's 1 MiB JSONL limit")
+		return reject("Claude Code Pro start request exceeds the worker's 16 MiB JSONL limit")
 	}
 	command := a.Command
 	if command == "" {
@@ -587,65 +518,5 @@ func RunClaudeCodePro(a ClaudeCodeProArgs) Result {
 			env[key] = value
 		}
 	}
-	result, interactionErr := runMachineWorker(command, "claude-code-pro", codexProStart(request), payload, watchdog.Opts{
-		Context: a.Watchdog.Context, Cwd: cwd, Env: childenv.EnvSlice(env),
-		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: wallMS,
-		KillGraceMs: max(a.Watchdog.KillGraceMs, claudeCodeProCleanupMS),
-	}, a.OnLifecycle, a.OnEvent)
-	parsed := parseClaudeCodeProStream(result.Stdout, request)
-	if interactionErr != nil {
-		parsed.StreamFailed = true
-		parsed.Error = "Claude Code Pro worker transport failed: " + interactionErr.Error()
-		parsed.Session, parsed.Usage, parsed.CleanupConfirmed = claudeCodeProUnknownSession(request), nil, false
-	}
-	out := fromWatchdog(result, "claude-code-pro", "", a.Model)
-	out.NativeReceipt = parsed.NativeReceipt
-	out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = parsed.Receipt, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
-	// Preserve a real caller cancellation, but do not relabel a known worker
-	// protocol/ACK failure as a user stop just because cleanup used abort.
-	providerFactsTrusted := !parsed.StreamFailed && !result.Truncated
-	parsed.CleanupConfirmed = parsed.CleanupConfirmed && providerFactsTrusted
-	mergeWorkerTermination(&out, parsed.Cancelled && providerFactsTrusted, parsed.TimedOut && providerFactsTrusted, parsed.Truncated && providerFactsTrusted)
-	if result.Truncated {
-		out.Usage, out.Session.UsageStatus = nil, "unknown"
-	}
-	if (result.ExitCode != nil || result.Signal != "") && !parsed.CleanupConfirmed && out.CleanupError == "" {
-		out.CleanupError = "Claude Code Pro process cleanup unconfirmed: no trustworthy owned-group receipt"
-	}
-	out.Settled = parsed.Settled && parsed.Error == "" && !out.Cancelled && !out.TimedOut && !out.Truncated && out.Signal == "" &&
-		out.SpawnError == "" && out.CleanupError == "" && out.ExitCode != nil && *out.ExitCode == 0
-	if result.SpawnError != "" || (result.Cancelled && result.ExitCode == nil && result.Signal == "") {
-		out.Session.Dispatch, out.Session.Outcome, out.Session.CleanupConfirmed, out.Session.UsageStatus = "not-dispatched", "failed", true, "complete"
-		out.Usage = &Usage{}
-	} else {
-		out.Session.CleanupConfirmed = parsed.CleanupConfirmed && out.CleanupError == ""
-		if result.Cancelled || result.TimedOut || result.Truncated || result.Signal != "" || result.CleanupError != "" ||
-			result.ExitCode == nil || (*result.ExitCode != 0 && out.Session.Outcome == "completed") {
-			out.Session.Outcome, out.Session.ResumeCandidate = "unknown", false
-		}
-	}
-	if out.Session.Dispatch == "not-dispatched" && out.Session.CleanupConfirmed {
-		out.CostUSD = new(float64) // positive proof no backend process accepted work
-	}
-	if !out.Settled && !out.Cancelled {
-		message := parsed.Error
-		switch {
-		case out.TimedOut:
-			message = timeoutMessage("Claude Code Pro worker", out)
-			out.ErrorCode = errs.TIMEOUT
-		case out.SpawnError != "":
-			message = out.SpawnError
-		case out.CleanupError != "":
-			message = strings.TrimPrefix(message+"; "+out.CleanupError, "; ")
-		case out.Truncated:
-			message = "Claude Code Pro worker output was truncated"
-		case message == "":
-			message = "Claude Code Pro worker exited without successful process completion"
-		}
-		out.ErrorMessage = &message
-		if !out.TimedOut && !out.Truncated && out.SpawnError == "" && out.CleanupError == "" && out.Signal == "" && out.ExitCode != nil && *out.ExitCode == 1 {
-			out.ErrorCode = parsed.ErrorCode
-		}
-	}
-	return out
+	return runOwnedCLIWorker(a, request, command, env, "claude-code-pro", "Claude Code Pro", parseClaudeCodeProReceipt)
 }

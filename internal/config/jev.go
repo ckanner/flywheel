@@ -17,10 +17,12 @@ import (
 // JEVConfig is the single authority for optional live JEV decisions. Enabling it
 // authorizes the declared bounded data categories, not new executor permissions.
 type JEVConfig struct {
+	Backend          string              `json:"backend,omitempty"`
+	Profile          string              `json:"profile,omitempty"`
 	Enabled          bool                `json:"enabled"`
-	Endpoint         string              `json:"endpoint"`
-	Model            string              `json:"model"`
-	KeyEnv           string              `json:"key-env"`
+	Endpoint         string              `json:"endpoint,omitempty"`
+	Model            string              `json:"model,omitempty"`
+	KeyEnv           string              `json:"key-env,omitempty"`
 	TimeoutMS        int64               `json:"timeout-ms"`
 	MaxCalls         int                 `json:"max-calls"`
 	MinApplicability float64             `json:"min-applicability"`
@@ -109,14 +111,23 @@ func prepareJEV(root map[string]json.RawMessage) error {
 }
 
 func (j *JEVConfig) normalize() {
-	if j.Model == "" {
+	if j.Backend == "" {
+		j.Backend = "http"
+	} // Existing explicit files retain their HTTP contract.
+	if j.Backend == "subscription" && j.Profile == "" {
+		j.Profile = "hydrogen-local"
+	}
+	if j.Model == "" && j.Backend != "subscription" {
 		j.Model = "jev-1.14.0"
 	}
-	if j.KeyEnv == "" {
+	if j.KeyEnv == "" && j.Backend != "subscription" {
 		j.KeyEnv = "MEROUTER_API_KEY"
 	}
 	if j.TimeoutMS == 0 {
 		j.TimeoutMS = 5000
+		if j.Backend == "subscription" {
+			j.TimeoutMS = 30000
+		}
 	}
 	if j.MaxCalls == 0 {
 		j.MaxCalls = 8
@@ -136,6 +147,9 @@ func (j JEVConfig) validateTarget() error {
 	if !j.Enabled {
 		return nil
 	}
+	if j.Backend == "subscription" {
+		return nil
+	}
 	u, err := url.Parse(j.Endpoint)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/v1/systemone" {
 		return fmt.Errorf("jev.enabled requires a credential-free System One endpoint ending in /v1/systemone")
@@ -145,6 +159,23 @@ func (j JEVConfig) validateTarget() error {
 		return fmt.Errorf("jev.endpoint requires HTTPS; HTTP is allowed only for loopback testing")
 	}
 	return nil
+}
+
+// ResolveJEVSubscription freezes only the explicitly named, tool-free native
+// profile. No provider fallback or model-selected command is available here.
+func (c *Config) ResolveJEVSubscription() (*decision.SubscriptionBinding, error) {
+	p, ok := c.Profiles[c.JEV.Profile]
+	if !ok || p.Harness != "antigravity" || p.Provider != "" || p.NativeProfile != "" {
+		return nil, fmt.Errorf("jev subscription profile must name a tool-free Antigravity binding without native children")
+	}
+	if err := ValidateAntigravityBinding(p.Model, p.Thinking); err != nil {
+		return nil, err
+	}
+	if err := c.validateSubscriptionBinding(LoopBinding{Harness: p.Harness, Channel: p.Channel, Model: p.Model}, "jev.profile"); err != nil {
+		return nil, err
+	}
+	b := &decision.SubscriptionBinding{Profile: c.JEV.Profile, Harness: p.Harness, Channel: p.Channel, Model: p.Model, Effort: p.Thinking}
+	return b, decision.ValidateSubscriptionBinding(b)
 }
 
 // DecisionPolicy freezes one effective policy for every supported decision

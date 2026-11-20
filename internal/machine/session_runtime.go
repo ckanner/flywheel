@@ -16,6 +16,9 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	case "codex-pro":
 		keys = append(keys, "CODEX_HOME", drivers.CodexProBinaryEnv, drivers.CodexProWorkerEnv)
 		adapter = drivers.CodexProPackageVersion + "/lifecycle-v1"
+	case "antigravity":
+		keys = append(keys, drivers.AntigravityBinaryEnv, drivers.AntigravityWorkerEnv)
+		adapter = drivers.AntigravityPackageVersion + "/lifecycle-v1"
 	case "claude-code-pro":
 		keys = append(keys, "CLAUDE_CONFIG_DIR", drivers.ClaudeCodeProBinaryEnv, drivers.ClaudeCodeProWorkerEnv)
 		adapter = drivers.ClaudeCodeProPackageVersion + "/lifecycle-v1"
@@ -40,6 +43,9 @@ func sessionRuntimeIdentity(a drivers.CallArgs) string {
 	}
 	sort.Strings(credentials)
 	identity := []any{references, credentials}
+	if a.Subscription != nil || a.EvidenceOnly {
+		identity = append(identity, a.Subscription, a.EvidenceOnly)
+	}
 	if a.WorkspaceCwd != "" {
 		identity = append(identity, "project-workspace-v1", a.WorkspaceCwd)
 	}

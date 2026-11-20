@@ -90,13 +90,11 @@ func TestReviewedReportOnlyMayPlanButCannotActivateBeforeExactRepairGrant(t *tes
 	require.NotNil(t, c.State.Planning.PendingActivation)
 	original := *prepared.Report
 	prepared.Report.Summary = "The evidence changed after the original exact repair grant."
-	prepared, err = state.SavePreparation(opts.TaskDir, prepared)
-	require.NoError(t, err)
+	overwritePreparationFixture(t, opts.TaskDir, prepared)
 	require.ErrorContains(t, c.resumePlanningActivation(), "provenance changed")
 	require.NoFileExists(t, filepath.Join(opts.TaskDir, "spec.md"), "recovery checks report authority before writing any executable contract")
 	prepared.Report = &original
-	_, err = state.SavePreparation(opts.TaskDir, prepared)
-	require.NoError(t, err)
+	overwritePreparationFixture(t, opts.TaskDir, prepared)
 	require.NoError(t, c.resumePlanningActivation())
 	require.NotNil(t, c.State.Planning.Active)
 	require.NoError(t, c.admitReviewedExecution())

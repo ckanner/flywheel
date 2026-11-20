@@ -32,6 +32,11 @@ func (d *Drivers) ForRole(role string) Driver {
 		return d.Intake
 	case "garden":
 		return d.Garden
+	case "investigate":
+		if d.Investigate != nil {
+			return d.Investigate
+		}
+		return d.Plan
 	default:
 		return nil
 	}

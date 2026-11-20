@@ -25,6 +25,7 @@ let history = historyPath && existsSync(historyPath) ? JSON.parse(readFileSync(h
 let persistent = false;
 const saveHistory = () => { if (persistent && historyPath) writeFileSync(historyPath, JSON.stringify(history)); };
 let stopping = false;
+let subscriptionAccountReads = 0;
 // Keep the process alive even when its protocol input closes, so this case
 // really requires escalation rather than falling out of the Node event loop.
 if (scenario === 'stubborn') setInterval(() => {}, 1000);
@@ -128,8 +129,19 @@ createInterface({ input: process.stdin }).on('line', line => {
   log(request);
   if (request.method === 'initialize') {
     if (scenario !== 'initialize-hang') reply(request.id, { userAgent: 'offline-fixture' });
+  } else if (request.method === 'account/read') {
+    subscriptionAccountReads++;
+    if (scenario === 'subscription-hang') return;
+    if (scenario === 'subscription-no-account-api') { send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'method unavailable' } }); return; }
+    const api = scenario === 'subscription-api' || (scenario === 'subscription-drift' && subscriptionAccountReads > 1);
+    reply(request.id, { account: scenario === 'subscription-logged-out' ? null : api ? { type: 'apiKey' } : { type: 'chatgpt', email: 'never-copy-account@example.invalid', planType: 'pro' }, requiresOpenaiAuth: true });
   } else if (request.method === 'config/read') {
-    reply(request.id, { config: scenario === 'native-mismatch' ? { ...config, 'agents.enabled': !config['agents.enabled'] } : config });
+    const observed = scenario === 'native-mismatch' ? { ...config, 'agents.enabled': !config['agents.enabled'] } : { ...config };
+    if (String(request.id).startsWith('flywheel-subscription-')) {
+      observed.model_provider = scenario === 'subscription-custom-provider' ? 'pay-api' : 'openai';
+      if (scenario === 'subscription-custom-endpoint') observed.chatgpt_base_url = 'https://api.example.invalid/v1';
+    }
+    reply(request.id, { config: observed });
   } else if (request.method === 'thread/start' || request.method === 'thread/resume') {
     const { cwd, model, sandbox, approvalPolicy, ephemeral } = request.params;
     const resumed = request.method === 'thread/resume';
@@ -149,7 +161,8 @@ createInterface({ input: process.stdin }).on('line', line => {
       ? { type: 'readOnly', networkAccess: false }
       : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
     if (scenario === 'broad-policy') policy.writableRoots = ['/'];
-    reply(request.id, { thread: { id: scenario === 'wrong-resume-thread' ? 'another-thread' : threadId, ephemeral: !persistent }, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
+    const modelProvider = scenario === 'subscription-thread-provider' ? 'pay-api' : 'openai';
+    reply(request.id, { thread: { id: scenario === 'wrong-resume-thread' ? 'another-thread' : threadId, ephemeral: !persistent, modelProvider }, modelProvider, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
       model: scenario === 'wrong-model' ? 'unexpected-model' : model,
       approvalPolicy: scenario === 'wrong-approval' ? 'on-request' : approvalPolicy,
       sandbox: scenario === 'wrong-sandbox'

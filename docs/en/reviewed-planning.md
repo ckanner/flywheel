@@ -113,6 +113,39 @@ an invitation to change the approved intent: root and child references, independ
 Plan Review and activation checks remain separate. A pending activation keeps
 implementation blocked until Go resolves the original transaction.
 
+## Compact preparation for a qualified local task
+
+A brief may select `design-granularity:compact` with a concrete
+`granularity-reason` and repository evidence. This selects the compact design
+profiles; `mode:quick` alone does not select them or establish eligibility.
+The planner returns one versioned proposal containing the root design and the
+complete `spec.md` plus one packet. Go validates the requirements, write scope,
+executable checks and deterministic Quick criteria before adopting either artifact.
+If the task cannot qualify, the request escalates to system design while retaining
+its rounds, usage and history.
+
+The independent `design-review` invocation reviews both artifacts together. One
+`compact-v1` record binds the exact design and plan references and separately
+confirms design validity, complete coverage and implementation within the design
+scope. It is not duplicated into a fabricated Plan Review. A qualifying task can
+therefore proceed from this joint review to activation without another milestone
+planner/reviewer pair. Normal first-success preparation and implementation use four
+logical role calls: compact design, joint review, Execute and task-final Review.
+Investigation, internal tool turns, failed attempts and repairs remain additional.
+
+Review-first still waits for approval of that exact design and its reviewed
+projection. Approval and permission to start are separate records; New and explicit
+Plan still stop at their intended boundaries. Delegated Task uses the original
+implementation authority. Activation rechecks the current input revision,
+artifact digests, independent reviewer, repository/dependency identity and scope.
+Changed contract bytes or missing coverage cannot reuse the old joint review
+for activation.
+If a console excerpt omits the compact plan files, approval controls are disabled
+until the complete authoritative artifacts are available.
+
+Existing valid plans and their original reviews remain reusable. An old Quick task
+does not need a new compact proposal to resume.
+
 ## Progressive planning during execution
 
 Do not try to freeze every detail of a large project on day one. Approve the root's
@@ -146,7 +179,8 @@ The current DSH conversation organizes the brief and your feedback. Choosing a
 stronger host model does not change these engine bindings. Inspect the effective
 configuration; `bindingSource` explains an inherited binding. The configuration
 view displays inherited planning roles, and editing one creates its own override.
-Existing model/effort defaults stay in place. There is no benchmark claim that
+`planning.compact` references the two compact design profiles; system design uses
+the ordinary loop bindings. There is no benchmark claim that
 one model or thinking level is best for every design.
 
 Backend/profile/native settings inherit; role session identities and permission

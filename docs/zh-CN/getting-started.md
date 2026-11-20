@@ -21,9 +21,10 @@
 | Git，已配置提交身份 | Worktree 与本地交付提交 |
 | Node.js 22.18.0 或更高，npm | 安装器、启动器及 JavaScript worker |
 | DSH Mac 及桌面附带的 `dsh` 命令 | 桌面插件管理与 DSH SDK 执行 |
-| 已登录的 Kimi CLI | 默认 Full Plan、frontend 执行及可选 Garden |
-| Codex 程序及已有登录 | hard 执行路由通过 Codex Pro 运行 Codex app-server |
-| DSH SDK profile 中的 DeepSeek 和 ChatGPT provider | 默认执行、独立 Review 与 Judge |
+| Antigravity `agy` CLI 及原生账号登录 | Gemini 设计、日常／复杂执行、调查分析和 Intake |
+| Claude CLI 及原生订阅登录 | 通过 Claude Code Pro 细化实施计划、执行 frontend／multimodal 路由 |
+| Codex 程序及 ChatGPT 账号登录 | 通过 Codex app-server 执行 backend／hard 路由、独立审查和 Judge |
+| 已登录的 Kimi CLI | native agent 批量执行及可选 Garden |
 | Go 1.27 或更高 | 仅本文 Go 示例与源码构建需要，npm 二进制安装不需要 |
 
 插件使用 DSH `>=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0` 范围，包含 0.3 系列及其预发布版本。
@@ -39,15 +40,19 @@ command -v dsh
 dsh --version
 kimi --version
 codex --version
+claude --version
+agy --version
 ```
 
 各后端沿用自己的安装和登录流程。Flywheel 不替用户登录、复制凭证或替换桌面程序。
-Full 需要所配置的 Plan／Execute／Review／Judge 后端；合格 Quick 需要实际执行路由
-和独立最终 Review，升级为 Full 后才需要额外阶段。未使用的执行路由不成为该任务的
-运行前提。
+Full 需要所配置的设计／规划、执行、审查与 Judge 后端；新 compact 任务还要先运行
+联合设计与独立联合审查，再进入 Quick 执行和最终 Review，升级为 Full 后才需要
+额外阶段。未使用的执行路由不成为该任务的运行前提。
 
-Claude 为可选后端。选择 `claude-code-pro` 时，还需在 worker 能解析的依赖树中安装
-匹配的 0.6.0 配套包，并准备兼容的本地 Claude 程序与获准使用的认证，详见[Claude Code Pro](claude-code-pro.md)。
+Claude 在打包上仍是 optional peer，但默认实施规划和 frontend 绑定使用它；这些阶段
+需要 worker 依赖树中的精确 0.7.0 配套包、兼容的 Claude CLI 和受支持原生订阅。
+详见[Claude Code Pro](claude-code-pro.md)。Gemini 使用锁定的 Antigravity adapter 与官方
+`agy` CLI，不使用 ACP，详见[Antigravity](antigravity.md)。
 
 ## 2. 安装
 
@@ -105,29 +110,21 @@ flywheel version
 和运行记录，DSH 继续保留对话、轨迹、输入区与侧栏。
 
 桌面插件注册默认使用桌面附带的命令和 `desktop` profile。独立 npm 安装的 DSH CLI
-不能管理该保留 profile。Worker 通常运行在独立的 **`sdk` profile**，不会继承对话
-当前模型或全部桌面插件。
+不能管理该保留 profile。显式选择的 DSH worker 运行在独立 **`sdk` profile**，不会
+继承对话当前模型或全部桌面插件。默认订阅 workers 直接调用各自原生客户端。
 
 ### 账号选择
 
-默认 DeepSeek 路由明确选择 `deepseek-account`／`deepseek-flash`。标准 SDK `base`
-包含账号 adapter；标准桌面与 SDK 使用相同 `DSH_HOME` 时共享已有账号授权存储。
-自定义 home、profile 或凭证存储须另外核对。`deepseek-official` 是显式配置的 API Key
-替代路径，账号预设没有通往它的自动付费后备。
+默认配置声明 `subscription-only`，使用 Gemini、Claude、Codex 与 Kimi 原生客户端，
+没有 DeepSeek 路由、API Key 后备或自动付费点数后备。各客户端保留自己的正常登录；
+DSH 对话选择模型不会替独立 worker 登录。完整阶段／profile 表与准入限制统一维护在
+[模型策略](model-policy.md)。
 
-默认 GPT Review／Judge 绑定使用 SDK profile 中的 ChatGPT adapter。缺失或需要更新时，
-安装已核对的 0.1.20 配套包：
-
-```sh
-dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
-```
-
-改动已有 profile 前先核对已安装版本。账号授权和真实模型可用性仍通过该 adapter 的
-正常流程确认，保持 `DSH_HOME` 一致，不把凭证放进任务文件或 Git。
-
-hard 路由直接导入精确锁定的 Codex Pro 0.10.2 公开 machine API，需要本机 Codex 程序
-与登录，不需要父模型通过 `subagent_codex` 工具二次委派。可选 Claude 有独立的
-依赖与登录。
+Codex Pro 0.10.2 直接使用官方 app-server 并核对 ChatGPT 账号路由；Claude Code Pro
+0.7.0 在任务发送前核对原生订阅及 extra usage 关闭。Antigravity 拒绝 API／自定义
+provider 和启用 credits fallback 的配置；Kimi 使用 Kimi Code OAuth 的受管原生
+agent 模式。这些控制不证明剩余额度或整个账号绝无额外费用。不把凭证写入任务文件
+或 Git。旧的显式 DSH 配置在迁移前仍是独立兼容选择，不成为新预设的后备渠道。
 
 未选择 `native-profile` 时，DSH worker 的临时策略禁用委派与 Web 工具。显式 profile
 可启用受管 PTC Agent、Team、Workflow、Web 与可选 LCU；辅助模型压缩仍关闭。
@@ -154,15 +151,16 @@ flywheel template flywheel.config.example.json
 flywheel template flywheel.profiles.example.json
 ```
 
-升级保留已有模型、权限、历史和调度设置。采用订阅模型预设时先预览，确认账号与完全
-权限策略符合预期后再应用：
+升级保留已有模型、权限、历史和调度设置。采用新订阅 CLI 预设时先预览，确认账号与
+保留的权限符合预期后再应用：
 
 ```sh
-flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --json
-flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --apply --json
+flywheel config migrate --preset subscription-cli --cwd /absolute/path/to/repo --json
+flywheel config migrate --preset subscription-cli --cwd /absolute/path/to/repo --apply --json
 ```
 
-任务级配置需加 `--task-dir`。迁移先备份所选文件，保留无关设置，不会自动让旧配置
+任务级配置需加 `--task-dir`。迁移先备份所选文件，保留无关设置与权限；历史
+`subscriptions` 预设不选择这份新的四客户端策略。迁移不会自动让旧配置
 启用 scoped 历史或并行调度。完整采用安装版本模板时，在全局／项目配置编辑器载入
 默认值、审阅并保存。优先级、权限和迁移规则见[配置指南](configuration.md)。
 
@@ -197,6 +195,10 @@ Codex Pro 诊断导入锁定 API，检查 lifecycle／recovery 导出及本机�
 授权、某条已保存历史的恢复或实际推理强度。正式 Codex 调用另外在 `thread-ready`
 核对完整策略，再由 Go ACK 放行；这不使无推理诊断等同于真实账号验收。
 
+Antigravity 诊断检查已安装 CLI 和订阅控制，不发送业务任务；Claude 诊断核对配套包
+与本地 CLI，发送 prompt 前的订阅检查仍由实际运行执行。两者都不能替代另行授权的
+真实账号验收。
+
 结果分为 `pass`、`fail`、`warn`、`unknown`、`skipped`，fail 退出码为 1。
 按任务预检会读取 Spec 或持久化策略，仅检查适用绑定，不提前应用随后启动时的
 `--mode` 覆盖：
@@ -227,6 +229,16 @@ flywheel doctor --cwd "$PWD" --task-dir "$PWD/docs/my-feature" --probe --json
 位于 linked worktree，其契约放在 `docs/<slug>`。准备结果应报告真实路径。后续
 packet 执行目录由引擎管理或登记，`state.json` 也由引擎维护，详见
 [选择任务执行目录](workflow.md#2-选择任务执行目录)。
+
+### 调查故障或补充证据
+
+在 Task 中明确只要报告，还是排查并修好。Go 执行有界取证，由配置的 Gemini 分析角色
+形成报告。`awaiting-report` 接续分析；未知 pending 调用只核对原回执。报告有支持结论
+后，已有修复授权的任务在原目录进入薄 brief 准备，保留原范围和累计用量。
+
+报告后收到新日志时，在原对话要求使用新证据继续原任务。宿主通过 `control investigate`
+提交 `action:continue`、当前 revision 与完整下一轮契约，再运行一次。目标、意图和
+修复范围不变；旧报告与已消耗预算继续保留。详见[调查续轮](investigation.md#同一任务补充证据继续新一轮)。
 
 ### 独立的首次运行示例
 

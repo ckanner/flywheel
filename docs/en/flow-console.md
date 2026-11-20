@@ -83,20 +83,27 @@ Continue workflow is directly visible when applicable. New-task launch options a
 
 ## Investigation before implementation
 
-A task with a preparation record and no implementation state opens the investigation
-panel. It shows the goal, action budget, collected observations, truncated excerpts,
-decision receipts, and the evidence report. Continue investigation submits the current
-revision to Go; a pending invocation instead offers reconciliation of the original
-receipt. Unknown control results require status reconciliation before another mutation.
-Stop waits for the running owner to settle; it cannot turn a missing action receipt
-into a confirmed cancellation.
+A preparation record opens the investigation panel before implementation state
+exists. It shows budgets, observations, excerpts, physical action results, analysis
+and decision receipts, and the evidence report. Run submits the observed revision;
+a pending call offers read-only reconciliation. Unknown control results require
+status reconciliation before another mutation. Stop waits for the owner and never
+turns a missing receipt into confirmed cancellation.
 
-The panel does not offer ordinary code-workflow launch while the task is in preparation.
-`awaiting-report` asks the host assistant to submit an evidence-based analysis; it is
-not implementation completion. A report-only goal ends with that report. An already
-authorized repair can proceed after a supported report and a valid Spec are prepared,
-retaining the original scope and usage. See [bounded investigation](investigation.md)
-for the supported read/search actions, command protocol, and handoff requirements.
+After collection, the configured `loops.investigate` role analyzes frozen evidence.
+At `awaiting-report`, **Analyze investigation evidence** resumes that stage;
+`analysis-pending` reconciles the original invocation. Legacy configurations without
+an analyst retain manual report submission. A report is not code-task completion.
+An authorized supported repair registers a thin brief in the same task and carries
+its evidence, scope and usage into planning.
+
+Once a report is settled and all calls/cleanup are known, **Add evidence and continue**
+opens a new-round contract draft with the remaining allowance. Supply actual new
+`known-evidence` and actions within the original goal/intent/repair scope. Submitting
+uses the revision captured when the draft opened; a refreshed newer version disables
+that stale submission. Invalid JSON sends no request. Prior rounds remain visible
+with their immutable digest. No new task, budget reset or hidden retry is created.
+See [Investigation](investigation.md) for the engine contract.
 
 ## Configuration
 
@@ -118,7 +125,7 @@ while an unknown save still requires reconciliation. An explicitly accepted scop
 change or reload continues loading the chosen file without reviving the discarded
 draft. File revision conflicts still prevent a stale save.
 
-Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
+Strict subscription settings offer Antigravity, Claude Code Pro, Codex Pro and Kimi native resources. DSH ChatGPT and DeepSeek remain available in legacy configurations without this policy. Gemini suffix and effort move together; Kimi selection creates a minimal native profile only if absent. Compact preparation has two profile selectors, and subscription JEV selects a profile instead of HTTP credentials. These changes share the existing draft, revision and Save boundary; resource selection does not log in or alter an account.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 

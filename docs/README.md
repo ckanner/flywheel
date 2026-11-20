@@ -19,7 +19,9 @@ guides are maintained in English and Simplified Chinese.
 | Resolve configuration, profiles, permissions, and scheduling | [Configuration](en/configuration.md) | [配置参考](zh-CN/configuration.md) |
 | Understand the default models and reasoning settings | [Model policy](en/model-policy.md) | [模型策略](zh-CN/model-policy.md) |
 | Use native Agents, Teams, Swarm, Tower and LCU | [Native capabilities](en/native-capabilities.md) | [原生能力](zh-CN/native-capabilities.md) |
-| Enable the optional Claude machine backend | [Claude Code Pro](en/claude-code-pro.md) | [Claude Code Pro](zh-CN/claude-code-pro.md) |
+| Use the native Claude subscription backend | [Claude Code Pro](en/claude-code-pro.md) | [Claude Code Pro](zh-CN/claude-code-pro.md) |
+| Send frozen reference images through task execution | [Image inputs](en/image-inputs.md) | [图片输入](zh-CN/image-inputs.md) |
+| Use native Gemini through the official CLI and standalone DSH plugin | [Antigravity](en/antigravity.md) | [Antigravity](zh-CN/antigravity.md) |
 | Resume roles and reconcile interrupted calls | [Recovery and context quality](en/session-recovery.md) | [恢复与上下文质量](zh-CN/session-recovery.md) |
 | Compare session policies with fixed tasks and evidence | [Session evaluation](en/session-evaluation.md) | [会话评估](zh-CN/session-evaluation.md) |
 | Enable bounded JEV decisions with one switch | [JEV decisions](en/jev.md) | [JEV 决策](zh-CN/jev.md) |
@@ -50,15 +52,14 @@ claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
-([中文](plans/2026-11-19-subscription-cli-workflows.md); proposed, documentation only)
-combines the original research with Google's model-selection guide and defines
-one final configuration for Gemini, Claude, Kimi, and Codex. Implementation starts
-with the Antigravity CLI DSH plugin, then DSH usage and Flywheel integration.
-The proposal defines Auto as the selector for Quick/Full, compact preparation,
-progressive milestones, and shared entry points for investigation, repair,
-additional evidence, and complex engineering. It also covers model/effort rules,
-native Claude login, migration, and acceptance. It does not change currently
-shipped behavior or establish account entitlement.
+([中文](plans/2026-11-19-subscription-cli-workflows.md)) preserves the approved design.
+Current source implements its four-subscription defaults, official Antigravity CLI
+plugin, compact preparation, explicit approval policy and cumulative investigation
+rounds. Use [model policy](en/model-policy.md), [reviewed planning](en/reviewed-planning.md)
+and [investigation](en/investigation.md) for current behavior. Source and candidate
+acceptance remain separate from registry publication and live account entitlement.
+See the [implementation and review record](validation/2026-11-20-subscription-cli-workflows.md)
+(Chinese) for source validation, candidate identities and verification limits.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
 (Chinese; original proposal) records the design for genuine Plan work, independent

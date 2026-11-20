@@ -1,92 +1,266 @@
 {
+  "jev": {
+    "enabled": false,
+    "backend": "subscription",
+    "profile": "hydrogen-local"
+  },
   "version": 1,
   "sessions": {
     "mode": "scoped",
-    "policy-version": 1,
-    "_note": "会话策略独立于模型 profile；只复用同角色、同作用域且正常终态已确认的历史。旧文件缺省 fresh，显式 Plan resident-session:false 继续生效。"
+    "policy-version": 1
   },
-  "_note": "可选的具名模型配置示例；原 inline 配置继续支持。profile 在加载时展开，阶段字段按是否显式出现覆盖。只选择第一个完整配置文件，不跨任务/项目/全局合并 profiles。",
+  "drivers": {
+    "plan": "real",
+    "execute": "real",
+    "review": "real",
+    "judge": "real",
+    "intake": "real",
+    "garden": "real"
+  },
+  "loops": {
+    "design-plan": {
+      "profile": "carbon"
+    },
+    "design-review": {
+      "profile": "astra"
+    },
+    "plan": {
+      "profile": "opus-plan"
+    },
+    "plan-review": {
+      "profile": "sol-plan"
+    },
+    "review": {
+      "profile": "sol"
+    },
+    "judge": {
+      "profile": "astra"
+    },
+    "intake": {
+      "profile": "hydrogen-summary"
+    },
+    "garden": {
+      "profile": "kimi"
+    },
+    "investigate": {
+      "profile": "neon"
+    }
+  },
+  "routes": {
+    "default": {
+      "profile": "hydrogen"
+    },
+    "complex": {
+      "profile": "neon"
+    },
+    "frontend": {
+      "profile": "opus-ui"
+    },
+    "multimodal": {
+      "profile": "opus-ui"
+    },
+    "backend": {
+      "profile": "sol"
+    },
+    "batch": {
+      "profile": "kimi"
+    },
+    "hard": {
+      "profile": "astra"
+    }
+  },
+  "channels": {
+    "google-subscription": {
+      "harness": "antigravity",
+      "env-key": null
+    },
+    "claude-native": {
+      "harness": "claude-code-pro",
+      "env-key": null
+    },
+    "chatgpt-subscription": {
+      "harness": "codex-pro",
+      "env-key": null
+    },
+    "kimi-subscription": {
+      "harness": "kimi",
+      "env-key": null
+    }
+  },
+  "budget": {
+    "enforce": "soft",
+    "daily-token-limit": 2000000
+  },
+  "watchdog": {
+    "idle-timeout-ms": 300000,
+    "wall-timeout-ms": 3600000,
+    "kill-grace-ms": 5000,
+    "roles": {
+      "design-plan": {
+        "idle-timeout-ms": 900000
+      },
+      "design-review": {
+        "idle-timeout-ms": 900000
+      },
+      "plan": {
+        "idle-timeout-ms": 900000
+      },
+      "plan-review": {
+        "idle-timeout-ms": 900000
+      }
+    }
+  },
+  "retry": {
+    "base-delay-ms": 500,
+    "max-delay-ms": 10000,
+    "jitter": 0.1,
+    "max-transport-retries": 5
+  },
+  "credentials": {
+    "poll-interval-ms": 30000,
+    "timeout-ms": 86400000
+  },
+  "intake": {
+    "sources": []
+  },
+  "defect-injection": {
+    "every-n-units": 5,
+    "test-file-ratio-boost": 0.5,
+    "patch": "",
+    "test-cmd": ""
+  },
+  "verify": {
+    "command-timeout-ms": 300000,
+    "env-allowlist": [],
+    "test-file-patterns": [
+      "(^|/)(tests?|__tests__|spec)/",
+      "\\.(test|spec)\\.[cm]?[jt]sx?$",
+      "_test\\.go$",
+      "(^|/)test_[^/]+\\.py$"
+    ],
+    "protected-test-patterns": [],
+    "_note": "test-file-patterns 仅用于抽样识别；普通单测可随实现修改。冻结验收必须由 packet.boundaries.must-not-touch 或 protected-test-patterns 显式保护。100% 覆盖率仍由验收命令执行。"
+  },
+  "scheduler": {
+    "mode": "parallel",
+    "max-parallel": 2,
+    "dispatch": "batch",
+    "prewarm": false
+  },
+  "worktree": {
+    "enabled": true
+  },
+  "pricing": {},
+  "permissions": {
+    "mode": "full-access",
+    "_note": "明确授权全部阶段完全权限与非交互运行；DSH/Codex approval=never，Kimi print=auto。角色职责、契约边界和验收身份仍由Go校验。已有配置未声明时保持role-based，采用本预设需显式迁移。",
+    "bindings": {
+      "loops.investigate": "read-only"
+    }
+  },
+  "subscription": {
+    "version": 1,
+    "mode": "subscription-only"
+  },
   "profiles": {
-    "flash": {
-      "harness": "dsh",
-      "model": "deepseek-flash",
-      "channel": "deepseek-account-sdk",
-      "provider": "deepseek-account",
+    "hydrogen": {
+      "harness": "antigravity",
+      "model": "gemini-4-hydrogen-high",
+      "channel": "google-subscription",
+      "thinking": "high"
+    },
+    "hydrogen-local": {
+      "harness": "antigravity",
+      "model": "gemini-4-hydrogen-medium",
+      "channel": "google-subscription",
+      "thinking": "medium"
+    },
+    "hydrogen-summary": {
+      "harness": "antigravity",
+      "model": "gemini-4-hydrogen-low",
+      "channel": "google-subscription",
+      "thinking": "low"
+    },
+    "neon": {
+      "harness": "antigravity",
+      "model": "gemini-4-neon-high",
+      "channel": "google-subscription",
+      "thinking": "high"
+    },
+    "carbon": {
+      "harness": "antigravity",
+      "model": "gemini-4-carbon-high",
+      "channel": "google-subscription",
+      "thinking": "high"
+    },
+    "carbon-explore": {
+      "harness": "antigravity",
+      "model": "gemini-4-carbon-medium",
+      "channel": "google-subscription",
+      "thinking": "medium"
+    },
+    "opus-plan": {
+      "harness": "claude-code-pro",
+      "model": "claude-opus-5-5",
+      "channel": "claude-native",
+      "thinking": "high"
+    },
+    "opus-ui": {
+      "harness": "claude-code-pro",
+      "model": "claude-opus-5-5",
+      "channel": "claude-native",
+      "thinking": "medium"
+    },
+    "fable": {
+      "harness": "claude-code-pro",
+      "model": "claude-fable-5-2",
+      "channel": "claude-native",
+      "thinking": "high"
+    },
+    "sol": {
+      "harness": "codex-pro",
+      "model": "gpt-6.2-sol",
+      "channel": "chatgpt-subscription",
+      "thinking": "high"
+    },
+    "sol-plan": {
+      "harness": "codex-pro",
+      "model": "gpt-6.2-sol",
+      "channel": "chatgpt-subscription",
+      "thinking": "medium"
+    },
+    "astra": {
+      "harness": "codex-pro",
+      "model": "gpt-6.2-astra",
+      "channel": "chatgpt-subscription",
       "thinking": "high"
     },
     "kimi": {
       "harness": "kimi",
       "model": "kimi-code/k3.1-pro",
       "channel": "kimi-subscription",
-      "thinking": "high"
-    },
-    "gpt-review": {
-      "harness": "dsh",
-      "model": "gpt-6.1-sol",
-      "channel": "chatgpt-sdk",
-      "provider": "chatgpt",
-      "thinking": "high"
-    },
-    "gpt-judge": {
-      "harness": "dsh",
-      "model": "gpt-6-astra",
-      "channel": "chatgpt-sdk",
-      "provider": "chatgpt",
-      "thinking": "high"
-    },
-    "codex-pro": {
-      "harness": "codex-pro",
-      "model": "gpt-6.1-sol",
-      "channel": "chatgpt-subscription",
-      "thinking": "high"
-    },
-    "claude-sonnet": {
-      "harness": "claude-code-pro",
-      "model": "sonnet",
-      "channel": "claude-api",
-      "thinking": "high"
+      "thinking": "high",
+      "native-profile": "kimi-subscription-agent"
     }
   },
-  "loops": {
-    "plan": { "profile": "kimi", "resident-session": true },
-    "review": { "profile": "gpt-review" },
-    "judge": { "profile": "gpt-judge" },
-    "intake": { "profile": "flash", "thinking": "low" },
-    "garden": { "profile": "kimi", "resident-session": false }
-  },
-  "routes": {
-    "default": { "profile": "flash" },
-    "frontend": { "profile": "kimi" },
-    "hard": { "profile": "codex-pro" }
-  },
-  "channels": {
-    "deepseek-account-sdk": {
-      "harness": "dsh",
-      "provider": "deepseek-account",
-      "env-key": null,
-      "_note": "channel 是本配置的渠道别名，provider=deepseek-account 使用 DSH 已登录的 DeepSeek 账号。标准桌面与 SDK 在同一 DSH_HOME 下默认共用账号授权；别名不选择另一账号，也不改用 deepseek-official API key。"
-    },
-    "chatgpt-sdk": {
-      "harness": "dsh",
-      "provider": "chatgpt",
-      "env-key": null,
-      "_note": "SDK profile 需安装并授权 ChatGPT provider；桌面端已登录不等于 SDK 已登录。"
-    },
-    "kimi-subscription": { "env-key": null },
-    "chatgpt-subscription": { "env-key": null },
-    "claude-api": {
-      "env-key": "ANTHROPIC_API_KEY",
-      "_note": "显式可选的 Claude Code Pro 机器接口；需要同一 Node 解析树可见的 dsh-subagent-claude-code-pro@0.6.0（官方 Agent SDK 0.3.326）、兼容的本地 claude 程序与明确的 API 认证。本地登录态可用性不代表第三方产品已获准使用订阅额度，另行批准的账号渠道由用户显式配置。此 profile 不绑定默认阶段；原生审批模式不提供 OS 沙箱，需 permissions.mode=full-access。"
+  "planning": {
+    "compact": {
+      "design-plan": "hydrogen-local",
+      "design-review": "sol-plan"
     }
   },
   "judge-panel": null,
-  "budget": { "enforce": "soft", "daily-token-limit": 2000000 },
-  "retry": { "jitter": 0.1 },
-  "worktree": { "enabled": true },
-  "pricing": {},
-  "_note_policy": "resident-session 只能写在阶段绑定，不属于模型 profile；sessions 控制同角色历史复用，执行者与评审者始终隔离。thinking 显式空字符串选择 harness 默认值。未知引用、拼错字段、provider 冲突在加载时失败。不自动跨渠道付费降级。",
-  "permissions": {
-    "mode": "full-access",
-    "_note": "全部阶段完全权限、无需逐步审批；旧文件缺省保持 role-based，采用此预设需显式迁移。"
+  "_note": "One subscription CLI configuration. Native login, model availability and extra-usage controls are checked by each adapter. No API or credits fallback. Existing user permissions are preserved by subscription-cli migration.",
+  "native-profiles": {
+    "kimi-subscription-agent": {
+      "harness": "kimi",
+      "options": {
+        "version": 1,
+        "mode": "agent",
+        "agents": {
+          "enabled": false
+        }
+      }
+    }
   }
 }

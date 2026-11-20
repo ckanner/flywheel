@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
@@ -19,7 +21,7 @@ var recoverSessionMachine = drivers.RecoverMachine
 // without claiming an unimplemented live recovery contract.
 func (c *Context) prepareSessionLifecycle(r *state.SessionRecord, args *drivers.CallArgs) error {
 	harness := args.Binding.Harness
-	if harness != "codex-pro" && harness != "claude-code-pro" {
+	if harness != "codex-pro" && harness != "claude-code-pro" && harness != "antigravity" {
 		return nil
 	}
 	model := args.Model
@@ -44,6 +46,9 @@ func (c *Context) prepareSessionLifecycle(r *state.SessionRecord, args *drivers.
 	version := drivers.CodexProPackageVersion
 	if harness == "claude-code-pro" {
 		version = drivers.ClaudeCodeProPackageVersion
+	}
+	if harness == "antigravity" {
+		version = drivers.AntigravityPackageVersion
 	}
 	r.Last.Recovery = &state.SessionRecovery{Version: 1, Harness: harness, AdapterVersion: version, Directory: directory, Model: model, Effort: effort, PermissionMode: permission}
 	args.RecoveryDirectory = directory
@@ -113,6 +118,9 @@ func (c *Context) loadSessionLifecycle(r *state.SessionRecord) (*state.SessionRe
 	if recovery.Harness == "claude-code-pro" {
 		version = drivers.ClaudeCodeProPackageVersion
 	}
+	if recovery.Harness == "antigravity" {
+		version = drivers.AntigravityPackageVersion
+	}
 	if recovery.AdapterVersion != version || recovery.Directory != state.SessionRecoveryDirectory(c.TaskDir, r.Last.ID) || r.Task != c.TaskDir {
 		return nil, drivers.MachineLifecycle{}, fmt.Errorf("recovery directory does not belong to this task invocation")
 	}
@@ -143,7 +151,15 @@ func (c *Context) recoverSessionReceipt(key string, r *state.SessionRecord) erro
 	if r.Configuration != nil {
 		native = r.Configuration.NativeOptions
 	}
-	result, err := recoverSessionMachine(drivers.MachineRecoveryArgs{Native: native, Harness: recovery.Harness, RequestID: r.Last.ID, RunID: event.RunID,
+	var subscription *config.SubscriptionPolicy
+	var inputImages *imageinput.Manifest
+	evidenceOnly := false
+	if r.Configuration != nil {
+		subscription = r.Configuration.Subscription
+		evidenceOnly = r.Configuration.EvidenceOnly
+		inputImages = r.Configuration.InputImages
+	}
+	result, err := recoverSessionMachine(drivers.MachineRecoveryArgs{InputImages: inputImages, Subscription: subscription, EvidenceOnly: evidenceOnly, Native: native, Harness: recovery.Harness, RequestID: r.Last.ID, RunID: event.RunID,
 		RecoveryDirectory: recovery.Directory, Cwd: sessionNativeCwd(r), Model: recovery.Model, ReasoningEffort: recovery.Effort, PermissionMode: recovery.PermissionMode,
 		PersistentSession: r.Last.Persistent, SessionID: r.Last.RequestedThread, Watchdog: watchdog.Opts{Context: c.RunContext}})
 	if err != nil {

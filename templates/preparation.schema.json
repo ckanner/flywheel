@@ -354,6 +354,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "backend": {"enum":["http","subscription"]},
+        "subscription-binding": {"type":"object","additionalProperties":false,"required":["profile","harness","channel","model","effort"],"properties":{"profile":{"type":"string","minLength":1,"maxLength":120},"harness":{"const":"antigravity"},"channel":{"type":"string","minLength":1,"maxLength":120},"model":{"type":"string","minLength":1,"maxLength":256},"effort":{"enum":["low","medium","high","xhigh"]}}},
         "policy": {
           "type": "object",
           "additionalProperties": false,
@@ -418,7 +420,7 @@
         },
         "model": {
           "type": "string",
-          "pattern": "^jev-[0-9]+\\.[0-9]+\\.[0-9]+$"
+          "minLength":1,"maxLength":256
         },
         "key-env": {
           "type": "string",
@@ -436,12 +438,11 @@
       },
       "required": [
         "policy",
-        "endpoint",
         "model",
-        "key-env",
         "timeout-ms",
         "hard-budget"
-      ]
+      ],
+      "allOf":[{"if":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}},"then":{"required":["subscription-binding"],"not":{"anyOf":[{"required":["endpoint"]},{"required":["key-env"]}]}},"else":{"required":["endpoint","key-env"],"properties":{"model":{"pattern":"^jev-[0-9]+\\.[0-9]+\\.[0-9]+$"}},"not":{"required":["subscription-binding"]}}}]
     }
   },
   "required": [

@@ -13,6 +13,7 @@ import (
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/state"
 )
 
@@ -74,6 +75,9 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 	contractInput := []any{c.Spec}
 	if p := c.Packets[strings.TrimPrefix(scope, "final:")]; p != nil {
 		goal = append(goal, p.Goal, p.Requirements, p.Boundaries, p.Body)
+		if p.InputImages != nil {
+			goal = append(goal, p.InputImages)
+		}
 		contractInput = append(contractInput, p, p.Body)
 	} else {
 		for _, milestone := range c.Spec.Milestones {
@@ -87,6 +91,9 @@ func (c *Context) sessionIdentities(scope string, a drivers.CallArgs) (string, s
 				// Plan/Judge history belongs to this milestone's declared packet
 				// goals, not merely its ID. Acceptance-only revisions stay compatible.
 				goal = append(goal, []any{p.PacketID, p.Goal, p.Requirements, p.Boundaries, p.Body})
+				if p.InputImages != nil {
+					goal = append(goal, p.InputImages)
+				}
 				contractInput = append(contractInput, p, p.Body)
 			}
 		}
@@ -148,6 +155,8 @@ func (c *Context) sessionGuard(role, scope string) (string, error) {
 		return c.planningGuard()
 	}
 	switch role {
+	case "execute":
+		return c.inputImageGuard(c.Packets[scope])
 	case "plan":
 		return c.planScopeIdentity()
 	case "review":
@@ -167,7 +176,7 @@ func (c *Context) sessionGuard(role, scope string) (string, error) {
 			return "", err
 		}
 		return sessionHash([]any{candidate, c.State.Milestones[scope].Gate}), nil
-	default: // Execute may change its candidate.
+	default: // Other stage roles have no image or verification input guard.
 		return "", nil
 	}
 }
@@ -398,6 +407,7 @@ func (c *Context) resolveInvocationNative(role string, args *drivers.CallArgs) e
 // together. requestId correlates evidence; it is not a backend idempotency key.
 func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call func(drivers.CallArgs) drivers.Result) (out drivers.Result, callErr error) {
 	defer c.measureManagedInvocation(role, scope)()
+	args.Subscription = c.Config.Subscription
 	if c.State.Planning != nil && !planningRole(role) && role != "plan" {
 		if err := c.admitReviewedExecution(); err != nil {
 			return drivers.Result{}, err
@@ -440,6 +450,9 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	}
 	r := c.sessionRecord(role, scope)
 	if err := c.checkPendingSessionRole(key, role, scope); err != nil {
+		return drivers.Result{}, err
+	}
+	if err := c.resolveInvocationImages(role, scope, &args); err != nil {
 		return drivers.Result{}, err
 	}
 	var scopeErr error
@@ -558,8 +571,8 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 	// Fresh governs input history, not whether a native client can inspect the
 	// completed session. These machine adapters otherwise delete fresh history.
 	// Record the exact request for lifecycle matching and later read-only recovery.
-	persistent := scoped || args.Binding.Harness == "codex-pro" || args.Binding.Harness == "claude-code-pro"
-	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{NativeOptions: args.Native, NativeProfile: args.Binding.NativeProfile, Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
+	persistent := scoped || args.Binding.Harness == "codex-pro" || args.Binding.Harness == "claude-code-pro" || args.Binding.Harness == "antigravity"
+	r = &state.SessionRecord{Context: contextCheckpoint, Configuration: &state.SessionConfiguration{InputImages: imageinput.Describe(args.Images), Subscription: args.Subscription, EvidenceOnly: args.EvidenceOnly, NativeOptions: args.Native, NativeProfile: args.Binding.NativeProfile, Harness: args.Binding.Harness, Model: args.Model, Provider: args.Binding.Provider, Channel: args.Binding.Channel, Thinking: args.Binding.Thinking, Permission: args.PermissionMode, SessionMode: historyMode}, Task: c.TaskDir, Role: role, Scope: scope, Cwd: cwd, WorkspaceCwd: args.WorkspaceCwd, CandidateScope: args.CandidateScope, Binding: binding, Goal: goal, Contract: contractIdentity,
 		Generation: generation, Action: action, Reason: reason, ThreadID: thread,
 		Quality: nextSessionQuality(previous, action, reason),
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,

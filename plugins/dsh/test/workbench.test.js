@@ -763,6 +763,32 @@ test('native profile selection retains explicit off and limits choices to the cu
   assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], '');
 });
 
+test('subscription resource choices exclude DSH providers while legacy choices remain available', async t => {
+  for (const strict of [true, false]) await t.test(strict ? 'subscription-only' : 'legacy', async t => {
+    const ui = await mountPanel(t, editorResponder(strict ? {
+      subscription: { version: 1, mode: 'subscription-only' },
+      loops: { review: { harness: 'codex-pro', channel: 'chatgpt-subscription', model: 'gpt-6.2-sol', thinking: 'high' } },
+      routes: { default: { harness: 'antigravity', channel: 'google-subscription', model: 'gemini-4-hydrogen-high', thinking: 'high' } },
+      channels: { 'google-subscription': { harness: 'antigravity', 'env-key': null } },
+    } : {}));
+    await ui.click('设置');
+    await ui.click('模型与会话');
+    await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+    const resources = [...field(ui, 'Provider').options].map(option => option.value);
+    assert.equal(resources.includes('deepseek-account'), !strict);
+    assert.equal(resources.includes('chatgpt'), !strict);
+    for (const native of ['antigravity', 'kimi', 'codex-pro', 'claude-code-pro']) assert.ok(resources.includes(native));
+    if (strict) {
+      await input(ui, 'Provider', 'codex-pro');
+      await ui.click('保存修改');
+      assert.deepEqual(ui.requests.at(-1).editor.values.routes.default, {
+        harness: 'codex-pro', channel: 'chatgpt-subscription', model: 'gpt-6.2-sol', thinking: 'high',
+      });
+      assert.equal(ui.requests.at(-1).editor.values.channels['chatgpt-subscription']['env-key'], null);
+    }
+  });
+});
+
 test('node dialogs freeze revision and a newer snapshot cannot silently reuse a confirmation', async (t) => {
   let revision = 7;
   const ui = await mountPanel(t, (r) =>

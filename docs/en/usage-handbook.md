@@ -87,10 +87,11 @@ levels; execution and Review sessions stay isolated by task and role. See the
 [console guide](flow-console.md).
 
 
-The current DSH model organizes the brief and feedback. `loops.design-plan` owns
-actual overall design; `loops.design-review` and `loops.plan-review` own independent
-reviews. Missing bindings inherit the existing Plan/Review backends. Changing the
-conversation model does not change those bindings. See [Reviewed planning](reviewed-planning.md).
+The current DSH model organizes the brief and feedback. System preparation uses
+`loops.design-plan`, `loops.design-review`, `loops.plan` and `loops.plan-review`;
+compact preparation uses the two named profiles in `planning.compact`. Missing
+bindings retain the documented Plan/Review inheritance. Changing the conversation
+model does not change these bindings. See [Reviewed planning](reviewed-planning.md).
 
 ## 2. Choose the entry and workflow mode
 
@@ -127,6 +128,11 @@ Authentication, permission, payment, migration, concurrency or unresolved design
 risks call for Full. File count alone does not establish eligibility.
 
 Quick retains tests, applicable coverage and integration checks, budgets and cleanup.
+Preparation granularity is separate: a fresh compact task produces one combined
+design/packet proposal and one independent joint review before Execute and final
+Review. Its first successful path has four logical model calls. Scope or risk that
+cannot justify compact preparation escalates to system preparation without clearing
+the task or granting extra authority.
 Plan/Judge marked not applicable are not passing stages. New risks can cause a
 one-way Quick-to-Full upgrade without resetting work or budget. Existing Full tasks
 do not become Quick when resumed with Auto. See [Workflow](workflow.md).
@@ -151,16 +157,19 @@ bounded contract. Reproduction commands or external GET/HEAD requests require
 appropriate task authority. They do not authorize production changes; a diagnostic
 input copy is not an operating-system sandbox.
 
-When status becomes `awaiting-report`, the current host assistant must analyze the
-observations and submit the evidence report through investigation control. Repeating
-Run at this point does not replace the report or restart collection. The report
+The default `loops.investigate` binding analyzes recorded observations with Gemini
+Neon. `awaiting-report` can resume this analysis through Run without collecting the
+same evidence again. `analysis-pending` first reconciles the original invocation and
+never submits another prompt while its outcome or cleanup is unknown. Existing
+configurations without an investigate binding retain host report submission. The report
 covers all hypotheses, uses real observation IDs, and separates facts, inference,
 counter-evidence and unknowns.
 
 Terminal report states include `supported`, `inconclusive` and `access-blocked`.
 `supported` passes the evidence-reference contract; Go does not independently prove
-semantic causality. Report-only work ends with the report. Its frozen intent cannot
-be rewritten to authorize a repair; choose repair intent from the start when intended.
+semantic causality. Report-only work ends with the report. A later repair request uses
+the same task and report, with a separately recorded exact design/scope approval;
+it does not rewrite the original investigation intent.
 
 ### Authorize investigation and repair together
 
@@ -172,9 +181,12 @@ scope, add a regression, run required verification and independent review, and
 submit a PR. Report the cause, changes, test results and rollback method. mode=auto
 ```
 
-After a supported report and resolution of all action receipts, the host prepares
-Spec/packets in the **same task directory and workspace**, within that authorized
-implementation scope, and launches the normal workflow. Provenance, elapsed time
+After a supported report and resolution of all receipts and cleanup, register a thin
+brief in the **same task directory and workspace** through `control planning`
+with `action:prepare`.
+Go generates the design and implementation contracts and obtains independent review,
+within the original implementation scope. Existing thin briefs are reused; existing
+legacy contracts retain their compatibility path. Provenance, elapsed time
 and applicable usage/budgets carry forward. Inconclusive evidence calls for an honest
 report or a decision about new scope, not an unsupported repair. Login/session work
 can carry permission or concurrency risks; Auto may choose Full even for a small diff.
@@ -182,6 +194,16 @@ can carry permission or concurrency risks; Auto may choose Full even for a small
 The [investigation guide](investigation.md) explains evidence actions, reports and
 the handoff. JEV can help select approved evidence actions when enabled; it cannot
 turn a collection shortcut into proof of the root cause.
+
+### Continue after receiving new evidence
+
+In the original conversation, ask to continue the same task with the new logs or
+environment facts. The host reads its current revision and remaining budget and
+submits `action:continue` with a complete new-round contract through investigation
+control, followed by one Run. The task ID, goal, intent and implementation scope stay
+unchanged. Earlier inputs, observations and reports remain immutable; the new report
+can cite them. Unresolved calls block a new round, and budgets are not replenished.
+Repeating Run on a settled report alone does not start a new investigation round.
 
 ## 4. Fix issue #123 and open a PR
 
@@ -277,26 +299,24 @@ Use `--task-dir` with `config inspect` for an existing task. In the desktop, ope
 **Flywheel → Settings**, select Global or Project, review the draft and save.
 The next engine start reads changes; existing configuration is preserved on upgrade.
 
-These are the embedded 0.34 installation bindings, not a claim about your setup:
+The [model policy's complete table](model-policy.md#default-bindings) owns the current
+model/profile/effort mapping. Gemini handles system design, compact preparation,
+ordinary/complex execution and evidence analysis; Claude handles implementation
+planning and frontend work; Codex handles independent review, backend/hard execution
+and Judge; Kimi handles batch work and Garden. Fable is an explicit alternative
+profile. The new preset declares subscription-only with no DeepSeek or API fallback.
+This is an editable baseline, not a live-account or model-ranking guarantee.
 
-| Work | Harness / account path | Model | Thinking |
-| --- | --- | --- | --- |
-| Plan, frontend Execute, Garden | Kimi CLI / subscription | `kimi-code/k3.1-pro` | `high` |
-| Ordinary Execute | DSH / DeepSeek account | `deepseek-flash` | `high` |
-| Hard Execute | Codex Pro machine / Codex login | `gpt-6.1-sol` | `high` |
-| Review | DSH / ChatGPT provider | `gpt-6.1-sol` | `high` |
-| Judge | DSH / ChatGPT provider | `gpt-6-astra` | `high` |
-| Intake | DSH / DeepSeek account | `deepseek-flash` | `low` |
+Read the installed template with `flywheel template flywheel.config.example.json`
+and inspect `bindingSource`. Compact roles use `planning.compact`; system roles use
+their `loops` bindings. Permissions and session identity remain independent. Quick
+does not change execution or review models. Claude's package is optional for users
+who do not select it, but the default planning/frontend stages require it.
 
-Read the installed template with `flywheel template flywheel.config.example.json`.
-Quick uses its applicable Execute/Review bindings without changing their models.
-New tasks also perform initial design and Design Review. `design-plan` inherits
-Plan; `design-review` and `plan-review` inherit Review unless explicitly configured.
-Inspect `bindingSource`; role permissions and session identity remain independent.
-The second Judge opinion is off; optional Claude has no default stage binding.
-Selecting ChatGPT in DSH does not authenticate Codex CLI. To use the hard route,
-ask preparation/planning to assign appropriate packets to it. See
-[model/account configuration](configuration.md#fields-and-identities).
+To adopt the new table, preview `flywheel config migrate --preset subscription-cli
+--cwd /absolute/path/to/repo --json`, then add `--apply` when the preview matches the
+intended configuration. The historical `subscriptions` preset remains separate.
+See [model/account configuration](configuration.md#fields-and-identities).
 
 The new template selects scoped history, full access, automatic worktrees and
 parallel scheduling with a maximum of two. Existing files that omit `sessions`,
@@ -308,7 +328,8 @@ security sandboxes. Inspect these policies rather than assuming an upgrade chang
 
 ### Distinguish desktop delegation from Flywheel workers
 
-DSH uses PTC to call `subagent_codex` and `subagent_claude_code`; inside, Codex/Claude
+DSH uses PTC to call `subagent_codex`, `subagent_claude_code` and
+`subagent_antigravity`; inside, the selected native clients
 retain their native tools and children. An omitted `native` reads plugin defaults,
 or preserves CLI behavior if none exist. An object replaces the entire default;
 `null` explicitly turns ordinary native collaboration off. Independent Review and
@@ -321,7 +342,8 @@ You do not need to regenerate desktop daily/heavy presets or separately install 
 generator just to use that worker composition. Desktop preset customization remains
 a separate operation.
 
-The default template binds no `native-profile` to a stage. To enable Codex agents,
+The default Kimi bindings already select the restricted native agent profile;
+other native collaboration remains explicit. To enable Codex agents,
 merge this **fragment into the effective complete configuration**, retaining its
 other sections, profiles and bindings:
 
@@ -350,21 +372,24 @@ add this field to its existing `routes.hard` object, preserving the other fields
 Edit profile definitions under **Settings → Diagnostics and config → Advanced JSON**.
 Only packets routed there use that selection.
 Inspect the saved file before the next start. Codex needs its logged-in CLI;
-optional Claude/LCU peers must resolve in the worker's own dependency tree. Claude's
+the pinned Claude 0.7.0 companion and optional LCU peers must resolve in the worker's
+own dependency tree when selected. Claude's
 direct worker requires full access. See [native capabilities](native-capabilities.md).
 
-### Enable JEV only when you have its service configured
+### Enable bounded JEV decisions when needed
 
 Static model and native profiles work with JEV off. The single `jev.enabled` switch
-defaults to false. To use it, open **Settings → JEV**, enter an actual System One
-`endpoint`, a fixed `model` such as `jev-1.14.0`, and the credential variable name in
-`key-env`, then save. The Flywheel process must receive that variable; configuration
-stores its name, not the secret. A terminal export does not update a running desktop.
+defaults to false. The new preset uses `backend:subscription` and the named
+`hydrogen-local` profile; it needs no System One endpoint or API key. Inspect the
+profile, allowed evidence categories and call/time limits under **Settings → JEV**,
+then enable the existing switch if desired. HTTP remains an explicit compatibility
+backend and is not available under subscription-only policy.
 
 JEV can choose among approved evidence actions and legal failure responses,
 including configured execution bindings. It cannot invent an account, weaken final
 acceptance or decide Quick eligibility in place of Go. Invalid/missing prerequisites
-retain the documented baseline or fail validation; saving does not test connectivity.
+retain the documented baseline or fail validation; unresolved native cleanup blocks
+further work until read-only reconciliation. Saving does not test connectivity.
 Use the normal Task/New/Run entries afterward. See [JEV](jev.md) for frozen policies,
 data scope, budgets and recovery; enabling it is not evidence of a measured speedup.
 

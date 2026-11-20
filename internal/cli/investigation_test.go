@@ -293,3 +293,13 @@ func TestInvestigationStatusAndStopRejectCorruptPreparation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "invalid preparation JSON", string(raw), "stop cannot replace untrusted provenance with a cancelled claim")
 }
+
+func TestInvestigationContinueControlKeepsOneTaskAndRejectsAStaleRevision(t *testing.T) {
+	taskDir, cwd, p := investigationCLIFixture(t)
+	st := startInvestigationCLI(t, taskDir, cwd, p)
+	_, err := investigationControl(t, taskDir, cwd, investigationRequest{Action: "continue", Revision: st.Revision, Contract: json.RawMessage(mustJSONT(t, p))})
+	require.Error(t, err, "a round must first settle, even with correct revision")
+	_, err = investigationControl(t, taskDir, cwd, investigationRequest{Action: "continue", Revision: st.Revision})
+	require.Error(t, err, "continue requires an explicit evidence-linked contract")
+	require.False(t, state.Exists(taskDir), "a request for another diagnostic round never starts implementation")
+}

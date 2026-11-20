@@ -26,16 +26,18 @@ function validInvestigationExecution(value) {
     ['signal', 'workspace', 'input-hash'].every(key => value[key] == null || typeof value[key] === 'string');
 }
 
-function validPreparationSnapshot(p) {
+function validPreparationSnapshot(p, archived = false) {
   const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
   const stringArray = value => Array.isArray(value) && value.every(item => typeof item === 'string');
   return record(p) && p.version === 1 && Number.isSafeInteger(p.revision) && p.revision > 0 &&
+    (!archived || p.report != null) &&
     ['ready', 'running', 'awaiting-report', 'blocked', 'supported', 'inconclusive', 'access-blocked', 'cancelled'].includes(p.status) &&
     typeof p.reason === 'string' &&
     strings(p.contract, ['id', 'goal', 'intent']) && ['investigate', 'investigate-and-fix'].includes(p.contract.intent) &&
     record(p.contract.limits) && Number.isSafeInteger(p.contract.limits['max-actions']) &&
     Array.isArray(p.observations) && p.observations.every(observation => record(observation) && strings(observation.invocation, ['id', 'action-id']) &&
       ['output', 'error'].every(key => observation[key] == null || typeof observation[key] === 'string') && validInvestigationExecution(observation.execution)) &&
+    (p.history == null || !archived && Array.isArray(p.history) && p.history.length <= 100 && p.history.every(round => record(round) && Number.isSafeInteger(round.number) && typeof round.digest === 'string' && validPreparationSnapshot(round.snapshot, true))) &&
     (p.decisions == null || Array.isArray(p.decisions) && p.decisions.every(record)) &&
     (p['jev-status'] == null || typeof p['jev-status'] === 'string') &&
     (p['decision-effects'] == null || Array.isArray(p['decision-effects']) && p['decision-effects'].every(effect =>
@@ -61,13 +63,28 @@ function InvestigationExecution({ value, t }) {
 }
 
 function InvestigationPanel({ control, selection, run, t }) {
+  const [roundEditor,setRoundEditor] = React.useState(null);
+  const [roundError,setRoundError] = React.useState('');
   const preparation = control.status?.preparation;
   if (!preparation) return null;
   const busy = control.pending !== null || control.uncertainty !== null || control.stale;
   const ended = !!preparation.report || preparation.status === 'cancelled';
   const mutate = action => run('investigate', selection, false, { investigation: { action, revision: preparation.revision } });
+  const pending = preparation.pending || preparation['decision-pending'] || preparation['analysis-pending'];
+  const remaining = {...preparation.contract.limits,
+    'max-actions':preparation.contract.limits['max-actions']-(preparation['actions-used']??0),
+    'max-seconds':(preparation.contract.limits['max-seconds']??0)-Math.ceil((preparation['elapsed-ms']??0)/1000),
+    'max-output-bytes':(preparation.contract.limits['max-output-bytes']??0)-(preparation['output-bytes']??0)};
+  const openRound = () => { setRoundError('');setRoundEditor({revision:preparation.revision,text:JSON.stringify({...preparation.contract,decision:undefined,limits:remaining,'known-evidence':[]},null,2)}); };
+  const saveRound = () => {
+    let contract; try {contract=JSON.parse(roundEditor.text);if(!record(contract))throw Error();}catch {setRoundError(t('investigationRoundInvalid'));return;}
+    void run('investigate',selection,false,{investigation:{action:'continue',revision:roundEditor.revision,contract}});
+    setRoundEditor(null);setRoundError('');
+  };
+
   return h('section', { className: css.section, 'aria-label': t('investigationTitle') },
     h('h3', { className: css.heading }, t('investigationTitle') + ' · ' + preparation.contract.id),
+    h('p',{className:css.meta},t('investigationRound',{round:(preparation.history?.length??0)+1,remaining:remaining['max-actions']})),
     h('p', { className: css.meta }, t('investigationHelp')),
     h('p', null, preparation.contract.goal),
     h('p', { role: 'status' }, t('investigationState_' + preparation.status)),
@@ -75,10 +92,20 @@ function InvestigationPanel({ control, selection, run, t }) {
     h('p', { className: css.meta }, preparation.reason),
     preparation['jev-status'] && h('p', { className: css.meta }, t('investigationJEVObserved') + ': ' + t('investigationJEV_' + preparation['jev-status'])),
     h('div', { className: css.actions },
-      h(Button, { disabled: busy || control.status.running || ended || preparation.status === 'awaiting-report', onClick: () => mutate('run') }, t(preparation.pending || preparation['decision-pending'] ? 'investigationReconcile' : 'investigationRun')),
-      h(Button, { disabled: busy || ended || !control.status.running && !!preparation.pending, onClick: () => control.status.running ? run('stop', selection) : mutate('cancel') }, t('stop')),
+      h(Button, { disabled: busy || control.status.running || ended, onClick: () => mutate('run') }, t(pending ? 'investigationReconcile' : preparation.status==='awaiting-report' ? 'investigationAnalyze' : 'investigationRun')),
+      h(Button, { disabled: busy || ended || !control.status.running && (!!preparation.pending || !!preparation['analysis-pending']), onClick: () => control.status.running ? run('stop', selection) : mutate('cancel') }, t('stop')),
+      h(Button,{disabled:busy || control.status.running || !preparation.report || !!pending || remaining['max-actions']<1,onClick:openRound},t('investigationNewRound')),
       h(Button, { disabled: control.pending !== null, onClick: () => run('status', selection) }, t('status'))),
     h('p', { className: css.notice }, t(preparation.contract.intent === 'investigate-and-fix' ? 'investigationRepair' : 'investigationReportOnly')),
+    roundEditor && h('section',{className:css.details,'aria-label':t('investigationNewRound')},
+      h('p',{className:css.meta},t('investigationRoundHelp')),
+      h('textarea',{'aria-label':t('investigationRoundContract'),className:css.editorInput,rows:12,value:roundEditor.text,disabled:busy,onChange:e=>setRoundEditor({...roundEditor,text:e.target.value})}),
+      roundError && h('p',{role:'alert'},roundError),
+      roundEditor.revision!==preparation.revision && h('p',{role:'alert'},t('investigationRoundStale')),
+      h(Button,{disabled:busy || roundEditor.revision!==preparation.revision,onClick:saveRound},t('investigationRoundSave')),
+      h(Button,{disabled:busy,onClick:()=>setRoundEditor(null)},t('cancel'))),
+    (preparation.history?.length>0) && h('section',{className:css.details},h('h4',null,t('investigationHistory')),
+      ...preparation.history.map(round=>h('article',{key:round.number},h('h5',null,t('investigationRound',{round:round.number,remaining:round.snapshot.contract.limits['max-actions']-round.snapshot['actions-used']})),h('p',null,round.snapshot.report.summary),h('p',{className:css.meta},round.digest)))),
     preparation.report && h('article', null, h('h4', null, t('investigationReport')), h('p', null, preparation.report.summary),
       ...preparation.report.findings.map(finding => h('p', { key: finding.hypothesis }, finding.hypothesis + ' · ' + finding.status + ': ' + finding.reason)),
       h('p', null, preparation.report['counter-evidence']),
@@ -1367,3 +1394,9 @@ Object.assign(zh, { consoleDiagnostics: '环境检查' });
 Object.assign(en, { consoleDiagnostics: 'Environment checks' });
 Object.assign(zh, { wbBackToNode: '← 返回节点', wbTakeover: '进入会话', wbRetry: '修复并重试', wbBlocked: '处理失败任务', taskThisSession: '当前会话', consoleRuns: '记录', status: '刷新', start: '继续流程', wbEvidence: '查看证据', wbNoSessions: '尚无会话记录' });
 Object.assign(en, { wbBackToNode: '← Back to node', wbTakeover: 'Open session', wbRetry: 'Repair and retry', wbBlocked: 'Resolve failure', taskThisSession: 'Current conversation', consoleRuns: 'History', status: 'Refresh', start: 'Continue workflow', wbEvidence: 'Inspect evidence', wbNoSessions: 'No session recorded yet' });
+
+Object.assign(zh,{investigationNewRound:'追加调查轮',investigationRound:'第 {round} 轮 · 剩余动作 {remaining}',investigationRoundHelp:'填写新增证据和下一轮取证动作。既有报告保留，下一轮上限不得超过剩余预算。保存后可启动本轮调查。',investigationRoundContract:'新调查轮契约 JSON',investigationRoundSave:'保存新调查轮',investigationRoundInvalid:'请输入有效的调查契约 JSON 对象。',investigationRoundStale:'调查版本已变化，请重新打开追加调查轮。',investigationHistory:'此前调查轮'});
+Object.assign(en,{investigationNewRound:'Add investigation round',investigationRound:'Round {round} · {remaining} actions remaining',investigationRoundHelp:'Add new evidence and the next bounded actions. Existing reports remain intact; limits cannot exceed the remaining budget. Start the round after saving.',investigationRoundContract:'New investigation contract JSON',investigationRoundSave:'Save new round',investigationRoundInvalid:'Enter a valid investigation contract JSON object.',investigationRoundStale:'The investigation revision changed. Reopen the new-round editor.',investigationHistory:'Previous investigation rounds'});
+
+Object.assign(zh,{investigationAnalyze:'生成调查报告'});
+Object.assign(en,{investigationAnalyze:'Analyze investigation evidence'});
