@@ -39,7 +39,7 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
-[订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)（[English](plans/2026-11-19-subscription-cli-workflows.en.md)；提案，仅文档）定义只用订阅的默认配置、Claude 原生登录、无需 ACP 的 Antigravity CLI DSH 插件，以及开发和排障流程的迁移与验收工作。它不改变当前已交付的默认值，也不证明账号权益或第三方自动编排的支持资格。
+[订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)（[English](plans/2026-11-19-subscription-cli-workflows.en.md)；提案，仅文档）对照原调研说明模型职责，区分四家订阅的完整目标与接入过渡配置，并定义 Claude 原生登录、无需 ACP 的 Antigravity CLI DSH 插件，以及开发和排障流程的迁移与验收工作。它不改变当前已交付的默认值，也不证明账号权益或第三方自动编排的支持资格。
 
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 

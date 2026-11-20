@@ -51,9 +51,10 @@ to its named source, platform, and checks.
 
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md); proposed, documentation only)
-defines subscription-only defaults, native Claude login, an Antigravity CLI DSH
-plugin without ACP, and the migration and acceptance work across development and
-incident workflows. It does not change the currently shipped defaults or establish
+compares the original research with the proposed model roles, separates the full
+four-subscription target from transitional bindings, and defines native Claude
+login, an Antigravity CLI DSH plugin without ACP, and migration and acceptance
+work across development and incident workflows. It does not change the currently shipped defaults or establish
 account entitlement and third-party orchestration support.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
