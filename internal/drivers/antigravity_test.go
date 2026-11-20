@@ -219,10 +219,15 @@ const args=`, 1))
 	require.NoError(t, os.WriteFile(fixture, source, 0o755))
 	t.Setenv(AntigravityBinaryEnv, fixture)
 	t.Setenv(AntigravityWorkerEnv, worker)
-	t.Setenv("HOME", t.TempDir())
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	t.Setenv("HOME", home)
 	for _, scenario := range []string{"success", "wrong-model", "quota", "duplicate", "waiting", "missing-agent", "tools-inherited"} {
 		t.Run(scenario, func(t *testing.T) {
 			a := agyRunArgs(t)
+			cwd, err := filepath.EvalSymlinks(a.Cwd)
+			require.NoError(t, err)
+			a.Cwd = cwd
 			a.Command = worker
 			a.RequestID = "bridge-" + scenario
 			a.RecoveryDirectory = filepath.Join(a.Cwd, "recovery")
@@ -265,6 +270,9 @@ const args=`, 1))
 	}
 	t.Run("cancellation waits for physical cleanup", func(t *testing.T) {
 		a := agyRunArgs(t)
+		cwd, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		a.Cwd = cwd
 		a.Command = worker
 		require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), []byte(`{"scenario":"hang"}`), 0o600))
 		ctx, cancel := context.WithCancel(context.Background())

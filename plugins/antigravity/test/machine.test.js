@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runMachine, recoverMachine, parseMachineRequest, doctor } from '../lib/machine.js'
 
 const command=resolve('test/fixtures/fake-agy.js')
 function fixture(scenario='success') {
-  const home=mkdtempSync(join(tmpdir(),'agy-test-')),cwd=join(home,'work'),journals=join(home,'journals');mkdirSync(cwd);mkdirSync(journals,{mode:0o700});mkdirSync(join(home,'.gemini','antigravity-cli'),{recursive:true})
+  const home=realpathSync(mkdtempSync(join(tmpdir(),'agy-test-'))),cwd=join(home,'work'),journals=join(home,'journals');mkdirSync(cwd);mkdirSync(journals,{mode:0o700});mkdirSync(join(home,'.gemini','antigravity-cli'),{recursive:true})
   const env={PATH:process.env.PATH,HOME:home,FIXTURE_SCENARIO:scenario,FIXTURE_CALLS:join(home,'calls'),FIXTURE_INPUT:join(home,'input'),FIXTURE_PID:join(home,'pid'),FIXTURE_CHILD_PID:join(home,'child-pid')}
   const request={protocol:1,requestId:'task-1',cwd,command,prompt:'hello',model:'gemini-4-hydrogen-high',effort:'high',executionMode:'default',permissionMode:'request-review',sandbox:false,sessionMode:'new',timeoutMs:10000,disposeGraceMs:50,subscriptionPolicy:{version:1,mode:'subscription-only'}}
   return {home,cwd,env,request,runtime:{env,recoveryDirectory:join(journals,'run')}}

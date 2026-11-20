@@ -1,14 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runMachine, recoverMachine } from '../lib/machine.js'
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 async function until(check){for(let i=0;i<300;i++){if(check())return;await delay(20)}throw new Error('timed out waiting for lifecycle evidence')}
 function fixture(scenario='hang'){
-  const home=mkdtempSync(join(tmpdir(),'agy-life-')),cwd=join(home,'work'),root=join(home,'journal');mkdirSync(cwd);mkdirSync(root,{mode:0o700})
+  const home=realpathSync(mkdtempSync(join(tmpdir(),'agy-life-'))),cwd=join(home,'work'),root=join(home,'journal');mkdirSync(cwd);mkdirSync(root,{mode:0o700})
   const env={PATH:process.env.PATH,HOME:home,FIXTURE_SCENARIO:scenario,FIXTURE_INPUT:join(home,'input'),FIXTURE_PID:join(home,'pid'),FIXTURE_CHILD_PID:join(home,'child')}
   const request={protocol:1,requestId:'lifecycle',cwd,command:resolve('test/fixtures/fake-agy.js'),prompt:'complete task',model:'gemini-4-hydrogen-high',effort:'high',executionMode:'default',permissionMode:'request-review',sandbox:false,sessionMode:'new',timeoutMs:10000,disposeGraceMs:50,subscriptionPolicy:{version:1,mode:'subscription-only'}}
   return {home,request,runtime:{env,recoveryDirectory:join(root,'run')},env}

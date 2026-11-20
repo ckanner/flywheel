@@ -130,7 +130,8 @@ async function registry(directory) {
 }
 
 async function environment(registryURL, version) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel npm $() '));
+  // Native journals bind physical roots; macOS tmpdir may contain a /var alias.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel npm $() ')));
   const home = path.join(root, 'user home');
   const prefix = path.join(root, 'global prefix');
   const project = path.join(root, 'target project');

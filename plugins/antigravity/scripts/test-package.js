@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync,mkdirSync,writeFileSync,copyFileSync,chmodSync,readFileSync } from 'node:fs'
+import { mkdtempSync,mkdirSync,writeFileSync,copyFileSync,chmodSync,readFileSync,realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join,resolve } from 'node:path'
 import { parsePackOutput } from './pack-output.js'
-const root=resolve('.'),temp=mkdtempSync(join(tmpdir(),'antigravity-package-')),installed=join(temp,'installed'),home=join(temp,'home')
+const root=resolve('.'),temp=realpathSync(mkdtempSync(join(tmpdir(),'antigravity-package-'))),installed=join(temp,'installed'),home=join(temp,'home')
 mkdirSync(installed);mkdirSync(home,{mode:0o700})
 function run(command,args,options={}){const r=spawnSync(command,args,{encoding:'utf8',cwd:root,timeout:60000,maxBuffer:8*1024*1024,...options});assert.equal(r.status,0,(r.error?.message??'')+'\n'+r.stderr+'\n'+r.stdout);return r.stdout}
 const manifest=JSON.parse(readFileSync(join(root,'package.json'),'utf8'))
