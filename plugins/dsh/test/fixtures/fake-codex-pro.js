@@ -205,11 +205,24 @@ createInterface({ input: process.stdin }).on('line', line => {
       return;
     }
     if (scenario === 'progress-limit') {
-      // Cross the 1 MiB display bound deterministically. One-character frames
-      // can take long enough on loaded macOS runners that the task deadline
-      // fires before the worker reaches the omission marker.
-      for (let count = 0; count < 5000; count++) notify('item/completed', { threadId, turnId,
-        item: { type: 'agentMessage', phase: 'commentary', text: 'x'.repeat(256) } });
+      // The public supervisor caps each progress message at 16 KiB. A bounded
+      // 2 MiB burst crosses the worker's display budget without thousands of
+      // IPC notifications competing with the actual task deadline. Let both
+      // pipes drain between small batches: the worker may omit optional text
+      // while its stdout is backpressured, without charging its display budget.
+      void (async () => {
+        const count = 128, text = 'x'.repeat(16 * 1024);
+        for (let offset = 0; offset < count; offset += 4) {
+          for (let item = 0; item < 4; item++) {
+            if (stopping) return;
+            if (!notify('item/completed', { threadId, turnId,
+              item: { type: 'agentMessage', phase: 'commentary', text } })) await once(process.stdout, 'drain');
+          }
+          await new Promise(resolve => setTimeout(resolve, 4));
+        }
+        log({ event: 'progress-burst-complete', count, bytes: count * Buffer.byteLength(text) });
+        // No turn completion: only the real adapter deadline ends this task.
+      })().catch(() => process.exit(92));
       return;
     }
     if (['hang', 'stubborn', 'descendant'].includes(scenario)) return;

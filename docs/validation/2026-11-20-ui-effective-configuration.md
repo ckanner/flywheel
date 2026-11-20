@@ -6,7 +6,8 @@
 
 本记录对应 [PR #60](https://github.com/ckanner/flywheel/pull/60) 中用户批准的 UI 增补。
 中英文方案 §14.3 先提交于 `d91860c3e89a44af03f406a133a85ee50d9ee958`，
-随后在本记录所在提交实现、复审并执行下述检查。上一轮
+主体实现与初版记录提交于 `6b897618f3dc3e25e6cfcf092ff2d216cea25ff7`，
+已复审并执行下述本地检查；后续 CI 修正另记于下节。上一轮
 [编排与 JEV 验收](2026-11-20-orchestration-adaptive-selection.md) 的结果保留原来源，
 不能代替本轮新增代码的验证。
 
@@ -109,6 +110,32 @@ Linux，Go 1.27.3、Node 24.22.3、npm 11.19.1；公开 DSH 0.2.2-rc.3，
 PR 最终验收区记录其源码 commit、tree、snapshot、归档字节数、SHA-256 和 integrity。
 Linux/macOS CI 使用 CI 构建的一份候选；其运行链接和最终 head 一并记录在 PR，
 本地归档与 CI 归档不混用。提交前源代码测试不能提前算作候选或 CI 通过。
+
+## macOS CI 后续修正
+
+首轮 [CI 44826561500](https://github.com/ckanner/flywheel/actions/runs/44826561500)
+的候选构建通过，macOS 在 DSH 检查中得到 628/629、0 skipped；唯一失败是既有
+Codex worker 的 `full display progress preserves the actual task deadline and cleanup receipt`。
+该 case 要求 1.5 秒内累计显示触发 1 MiB 省略标记，但 fixture 使用 5,000 条
+256 字符通知，每条都经过真实公开 adapter 与 supervisor IPC。macOS 实际只输出
+约 432 KiB 就到达截止时间，尚未满足该断言的前置条件。
+
+日志中的 resultFrame 和 error 检查已经通过；位于失败断言之后的 timedOut、
+truncated 与 cleanup 断言当时没有执行，不能据此宣称这些检查已通过。
+修正保持真实公开 adapter、生产展示上限和超时／清理语义，只改测试的数据生成与
+调度余量：128 条不超过公开 16 KiB 单条限制的通知，总量 2 MiB；按小批等待 drain
+并让出事件循环，随后挂起到真实 3 秒任务截止时间。保留原全部断言，并增加 burst
+完成、实际显示距离 1 MiB 不足一帧、非 cancelled 及持续到真实 deadline 的检查。
+
+按每条 2 ms 的相同受控通知速率复现：旧 fixture 只输出 368,012 bytes，640 条
+progress，没有省略标记；新 fixture 保留 1,035,979 bytes 的展示输出，在约 404 ms
+观察到省略标记，随后仍存活约 2,768 ms，直到真实截止时间后取得 timedOut、非
+truncated／cancelled、cleanup confirmed 且无残留进程的回执。这是本地受控复验，
+不回填为首次 macOS 失败时已经执行的断言。
+
+修后目标 case 1/1、完整 Codex worker 文件 49/49、共享 fixture 的两个大流量 activity
+场景 2/2 均通过，无跳过。不同作者独立核对真实公开接口与原断言保留情况；完整候选
+及新提交的 Linux/macOS CI 终态记录在 PR 最终验收区。
 
 ## 验证边界
 

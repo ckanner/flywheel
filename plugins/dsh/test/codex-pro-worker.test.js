@@ -327,12 +327,24 @@ test('a broken stdout waits for the app-server and guardian to disappear', { tim
 
 test('full display progress preserves the actual task deadline and cleanup receipt', { timeout: 10000 }, async t => {
   const f = await setup(t, 'progress-limit');
-  const result = await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256), timeoutMs: 1500 } }).done;
+  // Keep room for the real app-server/guardian startup on loaded CI runners;
+  // the bounded display burst must finish before this original task deadline.
+  const timeoutMs = 3000;
+  const result = await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256), timeoutMs } }).done;
   const frame = resultFrame(result, 1);
   assert.equal(frame.error, null);
-  assert.match(result.stdout, /progress omitted/i);
+  const burst = (await f.records()).find(record => record.event === 'progress-burst-complete');
+  assert.deepEqual(burst, { event: 'progress-burst-complete', count: 128, bytes: 2 * LIMITS.progressBytes });
+  const progress = result.stdout.trim().split('\n').map(line => JSON.parse(line)).filter(value => value.type === 'progress');
+  assert.match(progress.at(-1)?.text ?? '', /progress omitted/i);
+  const displaySizes = progress.slice(0, -1).map(value => Buffer.byteLength(JSON.stringify(value) + '\n'));
+  const displayedBytes = displaySizes.reduce((sum, bytes) => sum + bytes, 0);
+  assert.ok(displayedBytes <= LIMITS.progressBytes && displayedBytes + Math.max(...displaySizes) > LIMITS.progressBytes,
+    `display budget was actually filled: ${displayedBytes} retained bytes`);
   assert.equal(frame.receipt.ok, false);
   assert.equal(frame.receipt.outcome.execution.timedOut, true);
+  assert.equal(frame.receipt.outcome.execution.cancelled, false);
+  assert.ok(frame.receipt.outcome.execution.durationMs >= timeoutMs, 'display saturation did not end the task before its deadline');
   assert.equal(frame.receipt.outcome.execution.truncated, false);
   assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
   absentGroup(frame.receipt.outcome.execution);
