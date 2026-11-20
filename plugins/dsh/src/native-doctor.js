@@ -25,7 +25,7 @@ export async function nativeDoctor({ load = loadModule } = {}) {
     const api = await load('dsh-plugin-lcu/managed');
     const manifest = (await load('dsh-plugin-lcu/package.json')).default;
     lcu.version = manifest.version;
-    if (manifest.name !== lcu.package || manifest.version !== '0.5.0'
+    if (manifest.name !== lcu.package || !['0.5.0', '0.5.1'].includes(manifest.version)
         || typeof api.attachManagedLcu !== 'function' || typeof api.ManagedLcuError !== 'function') throw new Error();
     lcu.managedProtocol = 1;
     lcu.available = true;

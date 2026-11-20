@@ -29,9 +29,9 @@ func (r *Report) nativeProfile(ctx context.Context, cfg *config.Config, b Bindin
 			available = false
 		} else if options.LCU.Enabled {
 			if cache["dsh-native-import:"+drivers.DSHCommand()+":lcu"] {
-				r.add(b.ID+".native.lcu", "pass", "已导入 LCU 0.5.0 managed 接口；未启动桌面、获取资源租约或执行 GUI 操作", "", "")
+				r.add(b.ID+".native.lcu", "pass", "已导入 LCU 0.5.0／0.5.1 managed 接口；未启动桌面、获取资源租约或执行 GUI 操作", "", "")
 			} else {
-				r.add(b.ID+".native.lcu", "fail", "原生 profile 要求 LCU，但固定版本的 managed 接口不可用", "INVALID_REQUEST", "安装与当前 Flywheel 配套的 LCU 0.5.0；安装成功仍须运行时租约与桌面能力准入")
+				r.add(b.ID+".native.lcu", "fail", "原生 profile 要求 LCU，但固定版本的 managed 接口不可用", "INVALID_REQUEST", "安装与当前 Flywheel 配套的 LCU 0.5.0／0.5.1；安装成功仍须运行时租约与桌面能力准入")
 				available = false
 			}
 		}
@@ -96,7 +96,7 @@ func (r *Report) dshNative(ctx context.Context, cache map[string]bool) bool {
 		probe.Composition.Available && probe.Composition.Executor == "ptc" && probe.Composition.NamedPresetMounted != nil && !*probe.Composition.NamedPresetMounted &&
 		len(probe.Composition.Presets) == 2 && probe.Composition.Presets[0] == "daily" && probe.Composition.Presets[1] == "heavy"
 	cache[key] = valid
-	cache[key+":lcu"] = valid && probe.LCU.Package == "dsh-plugin-lcu" && probe.LCU.Version == "0.5.0" && probe.LCU.ManagedProtocol == 1 && probe.LCU.Available
+	cache[key+":lcu"] = valid && probe.LCU.Package == "dsh-plugin-lcu" && (probe.LCU.Version == "0.5.0" || probe.LCU.Version == "0.5.1") && probe.LCU.ManagedProtocol == 1 && probe.LCU.Available
 	return valid
 }
 

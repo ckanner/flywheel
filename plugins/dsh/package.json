@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.37.1",
+  "version": "0.37.3",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -62,9 +62,9 @@
     "@deepseek-ai/dsh-commands": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "@deepseek-ai/dsh-session-projection": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "@deepseek-ai/dsh-tools": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
-    "dsh-subagent-claude-code-pro": "0.6.0",
+    "dsh-subagent-claude-code-pro": "0.6.0 || 0.6.1",
     "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
-    "dsh-plugin-lcu": "0.5.0"
+    "dsh-plugin-lcu": "0.5.0 || 0.5.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
