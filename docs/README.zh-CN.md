@@ -39,6 +39,8 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
+[订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)（[English](plans/2026-11-19-subscription-cli-workflows.en.md)；提案，仅文档）定义只用订阅的默认配置、Claude 原生登录、无需 ACP 的 Antigravity CLI DSH 插件，以及开发和排障流程的迁移与验收工作。它不改变当前已交付的默认值，也不证明账号权益或第三方自动编排的支持资格。
+
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 
 [反馈驱动工作流与 JEV 方案](plans/2026-11-12-feedback-driven-workflows.md)（中文，历史提案）系统讨论 Auto／Quick／Full、故障调查、短反馈闭环、模型策略和有界语义决策；当前支持的行为见[调查指南](zh-CN/investigation.md)与 [JEV 指南](zh-CN/jev.md)。[P5 实施计划](plans/2026-11-13-p5-ready-queue-prewarm.md)记录可选调度与运行时准备，真实性能和默认采用策略另需证据。
@@ -69,3 +71,4 @@
 按[文档维护规范](zh-CN/contributing.md#保持文档结构清晰)确定本次改动需要同步的文档，并在 PR 前核对清单。AI agent 还须遵循 [AGENTS.md 操作规则](https://github.com/ckanner/flywheel/blob/main/AGENTS.md)。
 
 本仓库的项目文档与 Flywheel 在**目标仓库**中生成的 `docs/<task>/` 任务契约、运行账本是两类内容。
+

@@ -9,6 +9,7 @@ was staged. Proposed work is not automatically shipped work. The
 
 | Date | Proposal | Focus |
 | --- | --- | --- |
+| 2026-11-19 | [Subscription models, CLI plugins and workflows](2026-11-19-subscription-cli-workflows.en.md) / [中文](2026-11-19-subscription-cli-workflows.md) (proposed; documentation only) | Subscription-only defaults and migration, native Claude login, a new Antigravity CLI DSH plugin without ACP, stage/effort policy, investigation, Quick/Full, lifecycle and acceptance boundaries |
 | 2026-11-16 | [Reviewed design and progressive planning](2026-11-16-reviewed-planning.md) (Chinese; original proposal, current behavior in the [user guide](../en/reviewed-planning.md)) | New / Plan semantics, independent design review, version-specific approval, rolling execution plans, and reuse of native Provider capabilities |
 | 2026-11-13 (revised 2026-11-14) | [Native harness, PTC and LCU integration](2026-11-13-native-harness-capabilities.en.md) / [中文](2026-11-13-native-harness-capabilities.md) | Implemented six-repository design: native profiles, PTC/LCU, Agent/Team/Swarm/Workflow, Tower candidates, independent jobs, ownership, accounting and recovery |
 | 2026-11-13 | [P5 ready queues and bounded runtime preparation](2026-11-13-p5-ready-queue-prewarm.md) (Chinese) | Optional admission queues, DSH initialization alongside verification, preserved delivery barriers, and existing-candidate assessment |
@@ -25,3 +26,4 @@ was staged. Proposed work is not automatically shipped work. The
 | 2026-11-01 | [npm installation](2026-11-01-npm-installation.md) | One-command setup and six-package distribution |
 | 2026-11-01 | [Model profiles and preflight](2026-11-01-model-profiles-preflight.md) | Bindings, configuration inspection, and local diagnostics |
 | 2026-11-01 | [DSH integration](2026-11-01-dsh-integration.md) | Desktop control plane and independent workers |
+

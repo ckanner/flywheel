@@ -49,6 +49,13 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
+The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
+([中文](plans/2026-11-19-subscription-cli-workflows.md); proposed, documentation only)
+defines subscription-only defaults, native Claude login, an Antigravity CLI DSH
+plugin without ACP, and the migration and acceptance work across development and
+incident workflows. It does not change the currently shipped defaults or establish
+account entitlement and third-party orchestration support.
+
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
 (Chinese; original proposal) records the design for genuine Plan work, independent
 review, exact-version user approval and progressive refinement. The current
@@ -101,3 +108,4 @@ follow the [repository operating rules](https://github.com/ckanner/flywheel/blob
 
 This repository's documentation is distinct from the `docs/<task>/` contract
 and runtime ledger that Flywheel creates in a **target repository**.
+
