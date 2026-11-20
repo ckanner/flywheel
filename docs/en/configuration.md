@@ -94,6 +94,71 @@ After login, the desktop can choose the first account model when no provider API
 
 Explicit API-key configurations remain supported. Select `deepseek-official` consistently in the relevant binding and its channel, and configure credentials through DSH's API-provider flow. Renaming a channel does not override a conflicting explicit provider. Account access does not need an additional API key.
 
+### ChatGPT Web (opt-in)
+
+Keep the existing complete configuration and explicitly assign the Web model to
+the intended stage or allowed execution binding. For example, merge these entries
+into their existing maps; this fragment is not a complete configuration:
+
+```json
+{
+  "profiles": {
+    "web-pro": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "channel": "chatgpt-sdk",
+      "model": "gpt-6-pro-web",
+      "thinking": "pro"
+    }
+  },
+  "loops": { "review": { "profile": "web-pro" } }
+}
+```
+
+The existing `chatgpt-sdk` channel must resolve to provider `chatgpt`; use the
+actual configured channel name if it differs. `pro` belongs only to this exact
+Web binding. Omitting its effort selects `pro`; other explicit effort values,
+another provider or another harness are rejected. The workbench offers Pro for
+this model without changing other stage bindings or the subscription preset.
+
+Configure the separate **DSH SDK profile** with a Web-enabled ChatGPT plugin and
+its verified local browser bridge. In the ChatGPT plugin configuration, set an
+explicit local input budget through `modelContextWindowLimits.gpt-6-pro-web` or
+`contextWindowLimit`; this is not a claim about the website's context capacity.
+Keep automatic compaction enabled and configure headroom and retention that fit
+this budget. In that profile's existing `compaction-basic`
+configuration, explicitly set `summarizationProvider` and `summarizationModel`
+to a supported non-Web model, or add the exact Web entry to `modelPolicies`:
+
+```json
+{
+  "provider": "chatgpt",
+  "model": "gpt-6-pro-web",
+  "summarizationProvider": "chatgpt",
+  "summarizationModel": "gpt-6.2-sol"
+}
+```
+
+This entry belongs inside the existing `modelPolicies` array, not Flywheel's
+configuration. Select a summary pair that your installed adapter actually
+supports and retain the other compaction settings. The exact matching entry
+takes precedence over the top-level pair. Flywheel keeps this plugin enabled
+only for the explicit Web route and checks the effective public
+`compaction.config` and `llm.resolveModelInfo` results before `session/prompt`.
+Missing services, an implicit summary model, Web as its own summary model or a
+non-ready Web adapter blocks dispatch. There is no automatic account or paid
+model substitution. Model-generated titles stay disabled; the existing
+deterministic session naming service handles titles.
+
+Web does not accept output-token, temperature or stop controls. Its absent usage
+is recorded as unknown, so an explicit daily token hard limit stops subsequent
+calls after such a result. The exact Web route uses only the configured wall
+deadline and user cancellation, including prewarming and safe cold fallback;
+`watchdog.idle-timeout-ms` remains applicable to other observable transports.
+Bridge health does not extend the wall deadline. See
+[model policy](model-policy.md#explicit-chatgpt-web-model) and
+[Web interruption handling](session-recovery.md#chatgpt-web-uncertainty).
+
 ## Native capability profiles
 
 `native-profiles` defines versioned harness options; a binding selects one with

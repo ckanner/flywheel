@@ -32,6 +32,10 @@ func dshFixtureFrames(r dshStart) (map[string]any, map[string]any) {
 		"type": "result", "protocol": r.Protocol, "requestId": r.RequestID, "sessionId": sessionID,
 		"status": "ok", "settled": true, "text": "verified response", "usage": nil, "costUsd": nil,
 	}
+	if dshWeb(r.Provider, r.Model) {
+		ready["web"] = map[string]any{"version": 1, "provider": r.Provider, "model": r.Model, "reasoningEffort": "pro", "ready": true,
+			"usage": "unknown", "idle": "wall-only", "title": "deterministic", "summary": map[string]string{"provider": "chatgpt", "model": "gpt-6.2-sol"}}
+	}
 	if r.Protocol == 2 {
 		ready["persistent"], ready["resumed"] = true, r.SessionID != ""
 		result["lifecycle"] = map[string]any{"protocol": DSHSessionProtocol, "requestId": r.RequestID,

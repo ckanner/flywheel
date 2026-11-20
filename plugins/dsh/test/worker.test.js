@@ -40,6 +40,42 @@ test('full worker handshake, durable result, usage and SDK shutdown agree with t
   assert.deepEqual(await methods(), ['initialize', 'session/working-directory/get', 'session/prompt', 'session/wait', 'shutdown']);
 });
 
+for (const code of ['WEB_UNCERTAIN', 'WEB_DELIVERY_CLAIMED', 'WEB_CONNECTION_LOST', 'WEB_PROTOCOL_ERROR']) {
+  test(`${code}: SDK termination cannot authorize a new session or repeat tool delivery`, async t => {
+    const { request, options, methods } = await setup(t, code.toLowerCase().replaceAll('_', '-'));
+    const result = await runWorker({ ...request, protocol: 2, persistent: true,
+      provider: 'chatgpt', model: 'gpt-6-pro-web', reasoningEffort: 'pro' }, options);
+    assert.equal(result.error.code, code);
+    assert.equal(result.settled, true, 'SDK shutdown is separate from website outcome');
+    assert.equal(result.lifecycle.dispatch, 'dispatched');
+    assert.equal(result.lifecycle.outcome, 'unknown');
+    assert.equal(result.lifecycle.resumeCandidate, false);
+    assert.equal(result.usage, null);
+    assert.equal(result.lifecycle.usageStatus, 'unknown');
+    assert.equal((await methods()).filter(method => method === 'session/prompt').length, 1);
+  });
+}
+
+test('Web readiness must be attested before the SDK receives a task prompt', async t => {
+  const { request, options, methods } = await setup(t, 'web-not-ready');
+  const result = await runWorker({ ...request, protocol: 2, persistent: true,
+    provider: 'chatgpt', model: 'gpt-6-pro-web', reasoningEffort: 'pro' }, options);
+  assert.equal(result.error.code, 'INVALID_REQUEST');
+  assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+  assert.equal((await methods()).includes('session/prompt'), false);
+});
+
+test('Web durability failure after SDK dispatch stays unknown even without a dedicated Flywheel code', async t => {
+  const { request, options, methods } = await setup(t, 'web-journal-write');
+  const result = await runWorker({ ...request, protocol: 2, persistent: true,
+    provider: 'chatgpt', model: 'gpt-6-pro-web', reasoningEffort: 'pro' }, options);
+  assert.equal(result.error.code, 'SERVER');
+  assert.equal(result.lifecycle.dispatch, 'dispatched');
+  assert.equal(result.lifecycle.outcome, 'unknown');
+  assert.equal(result.lifecycle.resumeCandidate, false);
+  assert.equal((await methods()).filter(method => method === 'session/prompt').length, 1);
+});
+
 for (const scenario of ['activity-valid', 'activity-duplicate', 'activity-foreign']) {
   test(`${scenario}: worker forwards only admitted, current activity without interpreting it as output or usage`, async t => {
     const { request, options, frames } = await setup(t, scenario);
@@ -294,6 +330,24 @@ test('external cancellation settles a stalled turn through SDK shutdown', async 
   const result = await runWorker(request, { ...options, signal: controller.signal });
   assert.equal(result.status, 'cancelled');
   assert.ok((await methods()).includes('shutdown'));
+});
+
+test('Web cancellation retains SDK cleanup but cannot authorize replay from a committed terminal', async t => {
+  const { request, options, methods } = await setup(t, 'wait-hang');
+  const controller = new AbortController();
+  const original = options.emit;
+  options.emit = frame => {
+    original(frame);
+    if (frame.type === 'ready') setTimeout(() => controller.abort(), 75);
+  };
+  const result = await runWorker({ ...request, protocol: 2, persistent: true,
+    provider: 'chatgpt', model: 'gpt-6-pro-web', reasoningEffort: 'pro' }, { ...options, signal: controller.signal });
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.lifecycle.dispatch, 'dispatched');
+  assert.equal(result.lifecycle.outcome, 'unknown');
+  assert.equal(result.lifecycle.resumeCandidate, false);
+  assert.equal(result.lifecycle.cleanupConfirmed, true);
+  assert.equal((await methods()).filter(method => method === 'session/prompt').length, 1);
 });
 
 test('forced SDK shutdown cannot claim successful settlement of native managed ranges', async t => {

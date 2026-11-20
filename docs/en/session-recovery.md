@@ -36,7 +36,8 @@ The transport determines which progress can be observed:
 
 | Transport | Progress used by Flywheel | Time limits |
 |---|---|---|
-| DSH SDK, including one-use prewarming | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
+| DSH SDK, including one-use prewarming, except the exact Web route below | Public assistant-stream events from the admitted root and owned local children; validated callbacks from integrated external Codex/Claude providers | Configurable idle silence budget and wall deadline |
+| DSH `chatgpt/gpt-6-pro-web` | Complete buffered model output; bridge health is not model progress | Wall deadline and user cancellation; no output-idle termination |
 | Codex Pro 0.10.2 / Claude Code Pro 0.6.0 | Allowlisted native streaming/tool activity from the current root and owned children, summarized as bounded metadata | Configurable idle silence budget and wall deadline |
 | Kimi native | Supported native events associated with the admitted invocation and agent tree | Configurable idle silence budget and wall deadline |
 | Kimi print / legacy `codex exec` | No continuous progress contract that can support an idle inference | Wall deadline; no idle termination based on print silence |
@@ -85,6 +86,38 @@ quota is different from a damaged stream. Its complete, correlated cleanup
 receipt can preserve independently verified identity, usage and cleanup, while
 the business outcome remains unknown and no continuation checkpoint is granted.
 Cleanup cancellation cannot replace that initiating worker error.
+
+## ChatGPT Web uncertainty
+
+For the exact Web model, Flywheel preserves `WEB_UNCERTAIN`,
+`WEB_DELIVERY_CLAIMED`, `WEB_CONNECTION_LOST` and `WEB_PROTOCOL_ERROR` as distinct
+wire errors. They do not permit automatic retry or channel fallback. Every
+unsuccessful Web invocation after SDK dispatch keeps `outcome:unknown`, including
+another provider error such as a journal failure mapped to `SERVER`. A normal SDK
+shutdown can independently establish `cleanupConfirmed:true`; it does not prove
+the website never accepted Send or that the complete agent/tool task has a known
+outcome. No continuation checkpoint is granted from that failure.
+
+The durable invocation ledger blocks a new call even after a restart, switching
+to fresh history or selecting a different backend. Preserve the original ledger,
+SDK session and bridge journal for inspection. When supplied by the adapter, the
+browser turn identifier is retained as `result.errorRequestId` in driver results
+and `result.error-request-id` in metrics. It is distinct from the Flywheel
+invocation/request ID and SDK turn ID.
+
+The bridge's inspection or recovery can establish browser-level Send, completion
+or delivery ownership. It cannot by itself establish whether the SDK executed a
+returned tool, persisted a tool result, or completed the full Flywheel task.
+Flywheel does not automatically call bridge recovery or replay the whole SDK
+invocation. Resolve the original evidence at each layer; a health response,
+browser completion receipt, or local process exit alone cannot unblock an unknown
+task. Existing manual retirement controls retain their explicit evidence and
+scope requirements.
+
+An unknown Web usage result remains unknown even when the task completes. An
+explicit daily token hard limit stops subsequent work; it does not retrospectively
+turn the missing bill into zero. The wall timeout, cancellation and SDK cleanup
+remain separate from both usage and bridge health.
 
 ## Readable native session names
 

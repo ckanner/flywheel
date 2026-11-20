@@ -32,6 +32,45 @@ Claude Code Pro is available as an [optional backend](claude-code-pro.md), with
 no default stage or route assigned. Its profile uses an explicit native model
 and effort rather than an implicit replacement for another subscription.
 
+## Explicit ChatGPT Web model
+
+`dsh` with provider `chatgpt`, model `gpt-6-pro-web` and effort `pro` selects
+the local browser bridge supplied by a compatible ChatGPT plugin. This is an
+opt-in binding; installing or upgrading Flywheel does not change any stage,
+execution route or existing model. Other ChatGPT models keep their own adapter
+path and effort vocabulary. An omitted effort on this exact Web binding resolves
+to `pro`; an explicit different effort is rejected. The configuration editor
+offers Pro when this model is explicitly selected.
+
+The worker checks the actual loaded adapter through the public
+`llm.resolveModelInfo` interface before submitting the task. The adapter must
+resolve this exact model with only `pro`, no output-token default, and a verified
+ready local bridge. A static catalog entry, package version or echoed request
+does not establish readiness. A missing, disabled or incompatible adapter or
+bridge blocks the call with an upgrade/setup diagnostic.
+
+Web generation does not support `maxTokens`, `temperature` or `stop`. The SDK
+profile must explicitly select a supported non-Web compaction summary
+provider/model; the worker checks the effective exact `modelPolicies` override
+and then the top-level summary pair. Flywheel preserves this host configuration
+and verifies both resolved model identities. Session names continue to use the
+deterministic title service, with model-generated titles disabled. See
+[configuration](configuration.md#chatgpt-web-opt-in) for the two configuration
+layers.
+
+Web token usage remains unknown unless the provider supplies verifiable usage.
+A missing bill is not zero. With an explicit hard daily token limit, the existing
+budget gate stops subsequent work after unknown usage; call and wall-time budgets
+still apply. Buffered Web output cannot support an output-idle inference, so this
+exact route uses the wall deadline and user cancellation in both cold and
+prewarmed calls. Bridge health and heartbeat events do not count as token or
+model progress. See [interruption handling](session-recovery.md#chatgpt-web-uncertainty)
+for the separate SDK, browser and tool-execution responsibilities.
+
+These checks establish integration behavior, not live account entitlement,
+answer quality or user-machine acceptance. The Web-enabled ChatGPT plugin and
+verified local browser setup are separate prerequisites.
+
 ## Planning roles and the current conversation
 
 New/Task register a thin brief. The host conversation handles facts and discussion;

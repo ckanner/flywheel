@@ -86,7 +86,7 @@ func (c *Config) validateExecutionPolicy() error {
 		if _, found := c.Channels[binding.Channel]; !found {
 			return fmt.Errorf("execution-policy.bindings.%s: channel is not configured", id)
 		}
-		if err := c.validateBindingProvider(binding.Harness, binding.Channel, binding.Provider); err != nil {
+		if err := c.validateBindingProvider(binding.Harness, binding.Channel, binding.Provider, binding.Model, binding.Thinking); err != nil {
 			return fmt.Errorf("execution-policy.bindings.%s: %w", id, err)
 		}
 		if binding.Harness == "dsh" && strings.TrimSpace(binding.Provider) == "" {
@@ -135,6 +135,9 @@ func (c *Config) validateExecutionPolicy() error {
 // These are the documented adapter request vocabularies. Backends still verify
 // model availability and actual admission; these values are not quality ranks.
 func executionEffortSupported(b ExecutionBinding) bool {
+	if b.Harness == "dsh" && b.Provider == "chatgpt" && b.Model == "gpt-6-pro-web" {
+		return b.Thinking == "pro"
+	}
 	values := []string{"low", "medium", "high", "xhigh", "max"}
 	if b.Harness == "kimi" {
 		values = []string{"low", "high", "max"}

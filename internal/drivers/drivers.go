@@ -65,8 +65,9 @@ type Result struct {
 	Settled        bool            `json:"settled"`
 	Text           string          `json:"text,omitempty"`
 	ErrorMessage   *string         `json:"errorMessage,omitempty"`
-	ErrorCode      errs.ErrorCode  `json:"errorCode,omitempty"` // structured wire code; process facts still take priority
-	SessionID      string          `json:"sessionId,omitempty"` // kimi 长驻会话句柄
+	ErrorCode      errs.ErrorCode  `json:"errorCode,omitempty"`      // structured wire code; process facts still take priority
+	ErrorRequestID string          `json:"errorRequestId,omitempty"` // provider request, distinct from the Flywheel invocation and SDK turn
+	SessionID      string          `json:"sessionId,omitempty"`      // kimi 长驻会话句柄
 	Session        *SessionOutcome `json:"session,omitempty"`
 	Recovered      bool            `json:"recovered,omitempty"` // public read-only terminal recovery, not a new model call
 	// Preserve the exact public machine receipt, including partial usage and

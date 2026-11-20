@@ -284,7 +284,8 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 			"settled": a.result.Settled, "cancelled": a.result.Cancelled,
 			"truncated": a.result.Truncated, "signal": a.result.Signal,
 			"cleanup-error": a.result.CleanupError, "session-id": a.result.SessionID,
-			"recovered": a.result.Recovered,
+			"recovered":        a.result.Recovered,
+			"error-request-id": a.result.ErrorRequestID,
 		}
 	}
 	if err := metrics.AppendOnce(c.metricsFile, invocationID, receiptDigest, map[string]any{

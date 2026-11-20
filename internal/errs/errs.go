@@ -32,10 +32,14 @@ const (
 	EMPTY_RESPONSE          ErrorCode = "EMPTY_RESPONSE"
 	INVALID_REQUEST         ErrorCode = "INVALID_REQUEST"
 	CONTEXT_WINDOW_EXCEEDED ErrorCode = "CONTEXT_WINDOW_EXCEEDED"
+	WEB_UNCERTAIN           ErrorCode = "WEB_UNCERTAIN"
+	WEB_DELIVERY_CLAIMED    ErrorCode = "WEB_DELIVERY_CLAIMED"
+	WEB_CONNECTION_LOST     ErrorCode = "WEB_CONNECTION_LOST"
+	WEB_PROTOCOL_ERROR      ErrorCode = "WEB_PROTOCOL_ERROR"
 )
 
 // AllCodes 全部错误码（保持 §6 顺序）。
-var AllCodes = []ErrorCode{AUTH, QUOTA, RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, EMPTY_RESPONSE, INVALID_REQUEST, CONTEXT_WINDOW_EXCEEDED}
+var AllCodes = []ErrorCode{AUTH, QUOTA, RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, EMPTY_RESPONSE, INVALID_REQUEST, CONTEXT_WINDOW_EXCEEDED, WEB_UNCERTAIN, WEB_DELIVERY_CLAIMED, WEB_CONNECTION_LOST, WEB_PROTOCOL_ERROR}
 
 // RetryableCodes — 默认只重试这些（§6）。
 var RetryableCodes = map[ErrorCode]bool{
@@ -61,6 +65,12 @@ func ShouldFallback(code ErrorCode) bool { return FallbackCodes[code] }
 
 // IsKnownCode checks the closed wire vocabulary before a driver trusts a code.
 func IsKnownCode(code ErrorCode) bool { return slices.Contains(AllCodes, code) }
+
+// RequiresReconciliation keeps a potentially submitted or delivered Web turn
+// outside ordinary retry, even when its SDK process has a terminal receipt.
+func RequiresReconciliation(code ErrorCode) bool {
+	return code == WEB_UNCERTAIN || code == WEB_DELIVERY_CLAIMED || code == WEB_CONNECTION_LOST || code == WEB_PROTOCOL_ERROR
+}
 
 // SpawnResult 一次 spawn 的可观察结果，用于错误分类。
 type SpawnResult struct {

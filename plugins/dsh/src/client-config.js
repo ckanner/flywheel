@@ -15,6 +15,8 @@ Object.assign(zh, {
   cfgEffortHigh: '高',
   cfgEffortXhigh: '更高',
   cfgEffortMax: '最高',
+  cfgEffortPro: 'Pro（网页模型）',
+  cfgWebModelHint: 'Web 需要已验证的本地 bridge 与 SDK 摘要模型；仅支持 Pro，用量未知。等待只受整体时限约束，心跳不代表模型进展。',
   consoleInvalid: '请输入合法的完整配置 JSON，并保留已有顶层字段',
   cfgStrategy: '工作方式',
   cfgModels: '模型分配',
@@ -126,6 +128,8 @@ Object.assign(en, {
   cfgEffortHigh: 'High',
   cfgEffortXhigh: 'Extra high',
   cfgEffortMax: 'Maximum',
+  cfgEffortPro: 'Pro (Web model)',
+  cfgWebModelHint: 'Web requires a verified local bridge and an SDK summary model. It supports Pro only and usage remains unknown. The wall deadline applies; health heartbeats are not model progress.',
   consoleInvalid: 'Enter a valid complete configuration JSON object and retain existing top-level fields',
   cfgStrategy: 'Workflow policy',
   cfgModels: 'Model assignments',
@@ -706,6 +710,16 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     high: t('cfgEffortHigh'),
     xhigh: t('cfgEffortXhigh'),
     max: t('cfgEffortMax'),
+    pro: t('cfgEffortPro'),
+  };
+  const isWebBinding = value => value.harness === 'dsh' &&
+    (value.provider || draft.channels?.[value.channel]?.provider || value.channel) === 'chatgpt' && value.model === 'gpt-6-pro-web';
+  const bindingEfforts = value => Object.fromEntries(Object.entries(efforts)
+    .filter(([id]) => isWebBinding(value) ? id === '' || id === 'pro' : id !== 'pro'));
+  const changedBinding = (value, field, nextValue) => {
+    const next = { ...value, [field]: nextValue };
+    if (field === 'model' && isWebBinding(next)) next.thinking = 'pro';
+    return next;
   };
   const openBinding = (group, key) => setBindingSelection({ group, key });
   const bindingEdit = draft && bindingSelection && (() => {
@@ -738,8 +752,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const inlineBinding = (group, key, field, value) => {
     const next = cloneConfig(draft);
     if (field === 'session') applySessionRole(next, group === 'routes' ? 'execute' : key, value);
-    else if (group === 'panel') next['judge-panel'][field] = value;
-    else { next[group] ??= {}; next[group][key] = { ...effectiveBinding(group, key), [field]: value }; }
+    else if (group === 'panel') next['judge-panel'] = changedBinding(next['judge-panel'], field, value);
+    else { next[group] ??= {}; next[group][key] = changedBinding(effectiveBinding(group, key), field, value); }
     replace(next);
   };
   const nativeChoices = value => {
@@ -779,7 +793,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     replace(next);
   };
   const patchBinding = (key, value) =>
-    setBindingEdit((old) => ({ ...old, value: { ...old.value, [key]: value } }));
+    setBindingEdit((old) => ({ ...old, value: changedBinding(old.value, key, value) }));
   const dispatchReasons = [];
   if ((draft?.scheduler?.mode ?? 'serial') !== 'parallel') dispatchReasons.push(t('cfgDispatchSerial'));
   if (numberErrors['scheduler.max-parallel'] || fieldErrors['scheduler.max-parallel']) dispatchReasons.push(t('cfgDispatchInvalid'));
@@ -905,7 +919,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('th', { scope: 'row' }, roleName(group, key), group === 'loops' && inheritedPlanningRoles[key] && !draft.loops?.[key] && h('p', { className: css.settingsHelp }, t('planningInherited', { source: 'loops.' + inheritedPlanningRoles[key] }))),
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
-            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(efforts), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
+            h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...[...new Set([...Object.keys(bindingEfforts(value)), value.thinking ?? ''])].map(effort => h('option', { key: effort, value: effort }, efforts[effort] ?? effort)))),
             h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
             h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
@@ -988,7 +1002,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         field(
           'binding.model',
           t('consoleModel'),
-          t('cfgModelHint'),
+          isWebBinding(bindingEdit.value) ? t('cfgWebModelHint') : t('cfgModelHint'),
           input('binding.model', bindingEdit.value.model, (v) => patchBinding('model', v)),
         ),
         field(
@@ -998,8 +1012,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           select(
             'binding.thinking',
             bindingEdit.value.thinking ?? '',
-            Object.entries(efforts).concat(
-              bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
+            Object.entries(bindingEfforts(bindingEdit.value)).concat(
+              bindingEdit.value.thinking && !Object.hasOwn(bindingEfforts(bindingEdit.value), bindingEdit.value.thinking)
                 ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
                 : [],
             ),

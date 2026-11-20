@@ -219,7 +219,7 @@ func (c *Context) sessionBlock(key, detail string) error {
 
 func safeSessionOutcome(r drivers.Result, id string) bool {
 	s := r.Session
-	return s != nil && s.RequestID == id && s.CleanupConfirmed && r.CleanupError == "" &&
+	return !errs.RequiresReconciliation(r.ErrorCode) && s != nil && s.RequestID == id && s.CleanupConfirmed && r.CleanupError == "" &&
 		(s.Dispatch == "dispatched" || s.Dispatch == "not-dispatched") &&
 		(s.Outcome == "completed" || s.Outcome == "failed" || s.Outcome == "cancelled")
 }

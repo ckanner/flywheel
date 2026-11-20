@@ -30,7 +30,8 @@ idle timeout 表示在配置的静默预算内没有收到可观察活动，不�
 
 | 调用方式 | Flywheel 观察的进展 | 时限 |
 |---|---|---|
-| DSH SDK，包括一次性预热 | 已接纳根 Agent 和 owned local children 的公开 assistant-stream；已集成外部 Codex／Claude Provider 的有效回调 | 可配置的 idle 静默预算与 wall 总期限 |
+| DSH SDK，包括一次性预热，但不含下一行的精确 Web 路由 | 已接纳根 Agent 和 owned local children 的公开 assistant-stream；已集成外部 Codex／Claude Provider 的有效回调 | 可配置的 idle 静默预算与 wall 总期限 |
+| DSH `chatgpt/gpt-6-pro-web` | 完整缓冲的模型输出；bridge 健康不代表模型进展 | wall 总期限与用户取消，不按输出静默终止 |
 | Codex Pro 0.10.2 / Claude Code Pro 0.6.0 | 本次 root 和 owned children 的白名单原生流式／工具活动，合并为有界元数据 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi native | 归属于已接纳调用及 Agent 树的受支持原生事件 | 可配置的 idle 静默预算与 wall 总期限 |
 | Kimi print / 旧 `codex exec` | 没有足以持续判断进展的输出契约 | 保留 wall 总期限，不因 print 静默执行 idle 终止 |
@@ -66,6 +67,30 @@ Go 自身观察到的超时和调用方取消不因此失效。
 合法的 worker 进度／native 元数据校验错误或观察配额错误，与传输损坏不同。
 其完整且身份匹配的清理回执可以保留独立核验的身份、usage 和 cleanup；业务结果
 仍为 unknown，不能据此授予续跑 checkpoint，也不把清理所用的取消当作首因。
+
+## ChatGPT Web 不确定结果
+
+对于精确 Web 模型，Flywheel 保留 `WEB_UNCERTAIN`、`WEB_DELIVERY_CLAIMED`、
+`WEB_CONNECTION_LOST` 和 `WEB_PROTOCOL_ERROR` 四种 wire 错误，不允许自动重试
+或换渠道后备。SDK 派发后任何未成功的 Web 调用都保持 `outcome:unknown`，包括
+映射为 `SERVER` 的 journal 失败等其他 provider 错误。正常 SDK shutdown 可以
+独立证明 `cleanupConfirmed:true`，却不能证明网页没有接受 Send，也不能证明完整
+Agent／工具任务的结果已知；该失败不授予续跑 checkpoint。
+
+持久调用账本会阻止新调用，重启、改为 fresh 历史或选择其他后端均不能绕过。保留
+原账本、SDK Session 和 bridge journal 供检查。适配器提供浏览器 turn 标识时，
+driver 结果保留 `result.errorRequestId`，metrics 保留 `result.error-request-id`。
+它与 Flywheel invocation/request ID、SDK turn ID 分别记录，不混为同一身份。
+
+bridge 的 inspection／recovery 可以核对浏览器层的 Send、完成或 delivery owner，
+却不能单独证明 SDK 是否已执行返回的工具、保存工具结果或完成整个 Flywheel 任务。
+Flywheel 不自动调用 bridge recovery，也不重放整个 SDK invocation。须逐层核对
+原始证据；健康响应、浏览器完成回执或本地进程退出，都不能单独解除未知任务的阻断。
+既有人工退役入口继续遵守明确的证据和作用域要求。
+
+任务即使完成，未知 Web usage 仍是未知。显式每日 token 硬上限会停止后续工作，
+不会把缺失账单补成零。wall timeout、用户取消和 SDK 清理也与用量、bridge 健康
+分别判断。
 
 ## 可读的原生会话名称
 

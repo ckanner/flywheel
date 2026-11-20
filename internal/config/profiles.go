@@ -297,8 +297,11 @@ func prepareConfigSections(root map[string]json.RawMessage) error {
 	return nil
 }
 
-func (c *Config) validateBindingProvider(harness, channel, provider string) error {
+func (c *Config) validateBindingProvider(harness, channel, provider, model, thinking string) error {
 	channelProvider := c.Channels[channel].Provider
+	if model == "gpt-6-pro-web" && (harness != "dsh" || (provider != "chatgpt" && channelProvider != "chatgpt") || (thinking != "" && thinking != "pro")) {
+		return fmt.Errorf("gpt-6-pro-web requires harness dsh, provider chatgpt and thinking pro (or omitted)")
+	}
 	if key := c.Channels[channel].EnvKey; harness == "claude-code-pro" && key != nil && !ClaudeCodeProCredentialAllowed(*key) {
 		return fmt.Errorf("claude-code-pro channel env-key is not supported by its public machine API")
 	}

@@ -9,7 +9,11 @@ export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const ERROR_CODES = new Set([
   'AUTH', 'QUOTA', 'RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT',
   'EMPTY_RESPONSE', 'INVALID_REQUEST', 'CONTEXT_WINDOW_EXCEEDED',
+  'WEB_UNCERTAIN', 'WEB_DELIVERY_CLAIMED', 'WEB_CONNECTION_LOST', 'WEB_PROTOCOL_ERROR',
 ]);
+
+export const requiresWebReconciliation = code => ['WEB_UNCERTAIN', 'WEB_DELIVERY_CLAIMED', 'WEB_CONNECTION_LOST', 'WEB_PROTOCOL_ERROR'].includes(code);
+export const isChatGPTWeb = value => value?.provider === 'chatgpt' && value?.model === 'gpt-6-pro-web';
 
 export class BridgeError extends Error {
   constructor(code, message) {
@@ -80,11 +84,17 @@ export async function validateStart(value) {
     throw new BridgeError('INVALID_REQUEST', 'permissionMode must be read-only, workspace-write or danger-full-access');
   }
   if (value.reasoningEffort !== undefined) nonempty(value.reasoningEffort, 'reasoningEffort', 64);
+  if (isChatGPTWeb(value) && value.reasoningEffort !== 'pro') {
+    throw new BridgeError('INVALID_REQUEST', 'ChatGPT Web requires reasoningEffort pro');
+  }
   if (value.idleTimeoutMs !== undefined && (!Number.isSafeInteger(value.idleTimeoutMs) || value.idleTimeoutMs < 1 || value.idleTimeoutMs > 86400000)) {
     throw new BridgeError('INVALID_REQUEST', 'idleTimeoutMs must be between 1 and 86400000');
   }
   if (value.maxTokens !== undefined && (!Number.isSafeInteger(value.maxTokens) || value.maxTokens < 1)) {
     throw new BridgeError('INVALID_REQUEST', 'maxTokens must be a positive integer');
+  }
+  if (isChatGPTWeb(value) && value.maxTokens !== undefined) {
+    throw new BridgeError('INVALID_REQUEST', 'ChatGPT Web does not support maxTokens; use an explicit supported auxiliary model');
   }
   const timeoutMs = value.timeoutMs ?? 30 * 60 * 1000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 24 * 60 * 60 * 1000) {
@@ -131,6 +141,7 @@ export function normalizedError(error) {
   return {
     code: ERROR_CODES.has(error?.code) ? error.code : 'TRANSPORT',
     message: error instanceof Error ? error.message : String(error),
+    ...(/^turn-[a-f0-9]{64}$/.test(error?.requestId ?? '') ? { requestId: error.requestId } : {}),
   };
 }
 
@@ -140,6 +151,7 @@ export function modelErrorCode(code) {
       code === 'ACCOUNT_SIGN_IN_REQUIRED' || code === 'ACCOUNT_TOKEN_INVALID') return 'AUTH';
   if (code === 'ACCOUNT_QUOTA') return 'QUOTA';
   if (code === 'NO_ADAPTER' || code === 'UNSUPPORTED_REASONING_EFFORT') return 'INVALID_REQUEST';
+  if (['WEB_SETUP_REQUIRED', 'WEB_BINDING_MISMATCH', 'WEB_INVALID_REQUEST', 'WEB_UNSUPPORTED_CONTROL'].includes(code)) return 'INVALID_REQUEST';
   return 'SERVER';
 }
 
@@ -259,8 +271,10 @@ export class SessionFold {
         throw new BridgeError('AUTH', 'DeepSeek account signed out (deepseek-account/signed-out). Sign in again in DSH and ensure the SDK runtime can access that account before retrying.');
       }
       const detail = this.terminal.error;
-      throw new BridgeError(modelErrorCode(detail?.code),
+      const error = new BridgeError(modelErrorCode(detail?.code),
         modelErrorMessage(detail, `DSH turn ended as ${this.terminal.kind}`));
+      if (/^WEB_/.test(detail?.code ?? '') && /^turn-[a-f0-9]{64}$/.test(detail?.requestId ?? '')) error.requestId = detail.requestId;
+      throw error;
     }
     if (!this.assistantCount || this.text.trim() === '') {
       throw new BridgeError('EMPTY_RESPONSE', 'DSH completed without assistant text');
