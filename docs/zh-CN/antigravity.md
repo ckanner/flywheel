@@ -89,6 +89,12 @@ worker doctor 检查精确插件及公开 machine、lifecycle、evidence-only �
 `always-proceed` 与 `sandbox:false`。显式订阅迁移保留既有用户权限；保留的权限不兼容
 时给出准入错误，不静默扩大权限。该后端契约不接受原生图片附件；多模态实现走配置中的 Claude 路由。
 
+### 图片与自动化输入边界
+
+**使用 Gemini 或 Swarm 不要求有图片。** 只有 packet 明确要求输入原始图片字节时，才受当前通道能力限制。官方[交互式 CLI](https://antigravity.google/docs/cli/prompting/)支持粘贴媒体，但当前[headless stream-json 输入](https://antigravity.google/docs/cli/headless/)只接受文本。交互式支持不能证明本适配器已实现自动化原图传递或子代理消费。
+
+Flywheel 任务表单可检查并预览用户明确选择的仓库图片，把路径与 SHA-256 作为未审证据加入简报；文本路径不会自动变成附件，各阶段也不会因此获得原图。经审查的原始图片 packet 继续使用已验证的 Claude SDK 通道；文本工程任务与排障任务可正常使用 Gemini 及符合资格的原生协作。
+
 ## Orchestrator、子代理和 Swarm
 
 Orchestrator 是模型选择，由官方 CLI 在同一个会话中把工作交给指定规划模型和 Hydrogen。

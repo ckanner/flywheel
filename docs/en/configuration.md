@@ -79,6 +79,27 @@ The result includes `source`, `scope`, resolved physical paths, `sessions`, and 
 
 The Global / project configuration view first reads an explicit scope and file revision. Edit model bindings, role history policies, budget, timeouts, retries or the global permission policy, then review changes and save beside the form. Concurrent edits reject replacement; reread an unconfirmed save before proceeding. New project files use the current version's complete default template. A higher-priority task file can still hide the project/global file being edited. Files do not merge.
 
+**Models and sessions → Execution candidates** edits the actual
+`execution-policy.routes.<route>.initial`, the allowed candidate set and the
+0–32 switch limit. Each option identifies its model, effort, native mode,
+permission and session policy. Selecting an initial candidate preserves that
+complete binding; editing its model in the stage table creates or updates a
+route-specific candidate instead of rewriting a binding shared by other routes.
+The graphical editor does not change candidate permissions or sessions. A
+different authority requires an explicit review in advanced JSON. Remove an
+initial candidate only after choosing another, and edit quality/fallback rules
+before removing a candidate they reference. Existing quality-order and channel
+fallback rules remain available in advanced JSON.
+
+**JEV** displays the file being edited separately from the file actually selected
+for the current task, including its scope, enabled state and resolved subscription
+model/effort. A read-only configuration inspection follows each confirmed editor
+read or save. If that inspection fails, the effective configuration is shown as
+unconfirmed; a confirmed save remains a confirmed save. Saving a global switch
+does not override a task or project file, and an unknown save is not retried by
+the interface. The five permitted-data categories are also selectable in this
+section; they do not grant tools or execution permission.
+
 Advanced callers send JSON on stdin to `flywheel control config-edit --cwd /absolute/repo`, with `{"scope":"project"}`. Save through `control config-save` using scope, the returned revision and values containing changed sections only. With reset=true, replacement starts from the full embedded default template. Saving creates a backup and publishes atomically; the next engine start loads the file.
 
 ## Fields and identities
@@ -155,7 +176,22 @@ Explicit API-key configurations remain supported. Select `deepseek-official` con
 execution-policy bindings support this reference. The harness must match.
 Omission inherits model-profile settings; an explicit empty string disables an
 inherited capability profile. Static profiles work with JEV off. The workbench
-selects profiles for the current harness; edit definitions in advanced JSON.
+selects profiles for the current harness and actual role. Antigravity Swarm is
+disabled for Plan, Review, Judge and compact-planning roles; configuration loading
+rejects those invalid references as well. Execute displays the remaining runtime
+requirements: Full, an approved 2–8-task collaboration declaration with independent
+write scopes, and no native image inputs. Configuring a Swarm candidate does not
+establish a particular packet's eligibility. Tasks without images can use
+Antigravity; its Flywheel integration currently has no native image-input channel.
+
+The stage binding editor exposes Antigravity `native`, `subagents`, and `swarm`
+options, plus optional `maxObservedAgents` from 1 to 8. Edits create a dedicated
+profile when the current definition is shared, preserving other roles, candidates,
+permissions and sessions. The limit counts observed child IDs, including verifier
+or monitor agents, and requests a stop when exceeded; it is not hard concurrency
+enforcement or evidence that every child finished. Requested mode and observed
+collaboration remain separate runtime facts. Other detailed native definitions
+are editable in advanced JSON.
 Native options participate in history and frozen policy identity, and actual
 admission/usage/cleanup remain runtime facts. See [Native capabilities](native-capabilities.md)
 for complete examples, LCU, Tower, independent Review/Team commands and limits.

@@ -45,7 +45,7 @@ approved in the contract:
 | `run_command` | Run exact argv against a temporary copy of approved inputs for reproduction or diagnosis | Explicit `host-process` authority, action timeout, controlled environment, process-group cancellation and cleanup |
 | `http_read` | GET or HEAD against an exact approved URL | HTTPS (loopback HTTP for tests), no redirects/environment proxy, bounded response and output |
 
-File paths must be clean repository-relative paths, and file actions reference an
+File paths must be clean paths relative to the investigation’s working directory, and file actions reference an
 approved path. Every action references existing hypotheses. The opened inode must
 match the inspected inode; `os.Root` confines traversal. A directory grant permits
 names only, not its descendants' contents. Command and HTTP arguments belong to the
@@ -121,6 +121,12 @@ included as a bounded excerpt only when `logs` is explicitly allowed. Otherwise
 the snapshot records that missing content, and JEV can still choose from structured
 facts. File evidence uses `source`. Action approval does not add raw-log sharing
 permission, and a permitted category does not remove the need to protect secrets.
+
+## Desktop report-only entry
+
+The empty task canvas offers a small investigation form. The user supplies the goal, expected behavior, one hypothesis and its falsifier, and one to eight exact text-file paths. The generated contract contains only `read_file` actions for those paths, empty implementation scope, a 60-second limit, 256 KiB per file, and 16 KiB of cumulative output. **Create and start investigation** sends `action:start` with `run:true`; Go registers the contract, releases the registration lease, and starts the owned background run at the recorded preparation revision. It never treats the report as permission to implement a fix.
+
+Omitting `run` preserves registration-only behavior. This boolean is valid only on `start`; status, continue, and subsequent run operations keep their existing revision requirements. A new directory is allowed only for creation. Failed creation/dispatch or unknown outcomes follow the existing persistent reconciliation rules, without automatic retries. Advanced commands, HTTP queries, alternative hypotheses and larger bounded collections remain available through an explicit preparation contract. Additional evidence continues in the same task.
 
 ## CLI and desktop controls
 

@@ -18,7 +18,8 @@ test('opening discovers registered runs without starting a task and never render
  assert.equal(ui.container.querySelectorAll('input').length, 0);
  assert.doesNotMatch(ui.container.textContent, /手动指定|Users\/me/);
  assert.match(ui.container.textContent, /加载 Skill 本身不会启动引擎/);
- assert.equal(ui.container.querySelector('details'), null);
+ assert.equal(ui.container.querySelector('[aria-label="环境检查"]').querySelectorAll('details').length, 0);
+ assert.equal(ui.container.querySelectorAll('form details').length, 1, 'the only initial disclosure belongs to explicit new-task input');
  assert.doesNotMatch(ui.container.textContent, /切换任务|选择任务|刷新任务列表/);
 });
 

@@ -65,7 +65,7 @@ Object.assign(zh, {
   cfgToggleOn: '开启',
   cfgToggleOff: '关闭',
   cfgNextStart: '运行方式、模型、会话与预算修改在下次启动生效',
-  cfgAdvancedTiming: '常规设置在下次启动生效；JEV 总开关的关闭也会阻止已有任务的后续请求与采用',
+  cfgAdvancedTiming: '常规设置在下次启动生效；JEV 后续请求与采用会核对当前任务实际选中的配置文件',
   cfgStructuredInvalid: '高级配置中有无效字段，请修正后保存',
   cfgFixJSON: '修正高级配置',
   cfgRequiredNumber: '此项需要填写数值',
@@ -87,7 +87,7 @@ Object.assign(zh, {
   cfgBindingDone: '返回模型列表',
   cfgBindingAdvanced: '后端与账号渠道',
   cfgModelHint: '使用此 Provider 支持的模型标识；预设不代表当前账号已授权',
-  cfgJevHelp: '一个开关控制调查与执行中的 JEV 决策，包括取证、失败后下一步及批准的模型选择。关闭后停止后续 JEV 请求与采用，沿用原路径，也不采集影子快照',
+  cfgJevHelp: '一个开关控制调查与执行中的 JEV 决策，包括取证、首轮执行选择及失败后的下一步。任务采用哪个配置文件，由任务 → 项目 → 全局 → 安装默认的优先级决定',
   cfgJevSend: '保存开启配置后，符合条件的决策会发送允许范围内的任务与证据片段，并采用通过校验的选择。预算、验收与权限仍由 Go 执行；不需要逐任务再次开启',
   cfgJevEndpoint: 'JEV API 地址',
   cfgJevEndpointHelp: '填写兼容 System One 协议的完整接口地址，以 /v1/systemone 结尾。',
@@ -100,13 +100,13 @@ Object.assign(zh, {
   cfgJevChoice: '最低选择概率',
   cfgJevProbability: '请输入大于 0 且不超过 1 的概率',
   cfgJevData: '允许发送的数据类别',
-  cfgJevDataHelp: '可在高级配置 JSON 中调整；类别不包含的数据不会获得发送许可',
+  cfgJevDataHelp: '仅发送已勾选类别中符合范围与预算的事实；勾选不会扩大工具或执行权限',
   cfgJevNoData: '未授权任何数据类别',
   cfgJevModelInvalid: '请输入固定模型版本，例如 jev-1.14.0，最多 120 个字符',
   cfgJevKeyInvalid: '变量名须以英文字母或下划线开头，只能包含字母、数字和下划线，最多 120 个字符',
   cfgJevEndpointInvalid: '地址最多 2000 个字符',
   cfgJevDraftDiscarded: '已放弃无效的 JEV 输入，保留上次有效值',
-  cfgJevChanges: '关闭也会禁止已有任务的后续 JEV 请求与采用；已记录的策略、回执和预算保留。调查创建时冻结策略，开启不会改写此前关闭时创建的调查',
+  cfgJevChanges: '修改并保存当前范围的开关。只有当前任务实际采用的配置关闭，才会阻止其后续 JEV 请求与采用；全局修改不会覆盖项目或任务文件。已记录的策略、回执和预算保留',
   cfgLocation: '配置文件与来源',
   cfgRawDiff: '查看保存差异',
   cfgModelRole: '阶段',
@@ -180,7 +180,7 @@ Object.assign(en, {
   cfgToggleOn: 'On',
   cfgToggleOff: 'Off',
   cfgNextStart: 'Execution, model, session and budget changes apply to the next start',
-  cfgAdvancedTiming: 'Regular settings apply to the next start. Turning JEV off also blocks subsequent requests and adoption in existing tasks',
+  cfgAdvancedTiming: 'Regular settings apply on the next launch. Subsequent JEV requests and adoption check the configuration file selected for the current task',
   cfgStructuredInvalid: 'Advanced configuration contains invalid fields. Correct them before saving',
   cfgFixJSON: 'Fix advanced configuration',
   cfgRequiredNumber: 'A numeric value is required',
@@ -204,7 +204,7 @@ Object.assign(en, {
   cfgBindingAdvanced: 'Backend and account channel',
   cfgModelHint: 'Use a supported Provider model identifier. A preset does not prove account authorization',
   cfgJevHelp:
-    'One switch controls JEV decisions during investigation and execution, including evidence collection, next steps after failure and approved model selection. Turning it off stops subsequent requests and adoption, keeps the original paths and disables shadow capture',
+    'One switch controls JEV decisions during investigation and execution, including evidence collection, initial execution selection and next steps after failure. The selected file follows task → project → global → installed defaults precedence',
   cfgJevSend:
     'Saving an enabled configuration allows eligible decisions to send permitted task and evidence excerpts and adopt validated choices. Go retains budget, acceptance and permission checks; no per-task enable step is needed',
   cfgJevEndpoint: 'JEV API URL',
@@ -218,13 +218,13 @@ Object.assign(en, {
   cfgJevChoice: 'Minimum choice probability',
   cfgJevProbability: 'Enter a probability greater than 0 and at most 1',
   cfgJevData: 'Permitted data categories',
-  cfgJevDataHelp: 'Edit in Advanced configuration JSON. Other categories do not gain permission to be sent',
+  cfgJevDataHelp: 'Only selected data categories within the approved scope and budget may be sent. Selecting a category does not grant tools or execution permission',
   cfgJevNoData: 'No data categories permitted',
   cfgJevModelInvalid: 'Enter a pinned model version such as jev-1.14.0, up to 120 characters',
   cfgJevKeyInvalid: 'Use up to 120 letters, digits or underscores, starting with a letter or underscore',
   cfgJevEndpointInvalid: 'The endpoint must be at most 2000 characters',
   cfgJevDraftDiscarded: 'Invalid JEV inputs were discarded; the last valid values remain',
-  cfgJevChanges: 'Turning it off also blocks further JEV requests and adoption in existing tasks; recorded policies, receipts and budgets remain. Investigations freeze their policy at creation; enabling does not rewrite preparations created while off',
+  cfgJevChanges: 'Edit and save the switch in this scope. Subsequent JEV requests and adoption stop only when the file actually selected for the task is off. A global edit does not override project or task files. Recorded policies, receipts and budgets remain',
   cfgLocation: 'Configuration file and source',
   cfgRawDiff: 'Review changes',
   cfgModelRole: 'Stage',
@@ -281,12 +281,73 @@ function configFieldErrors(values) {
       if (data !== undefined && (!Array.isArray(data) || new Set(data).size !== data.length ||
           data.some(value => !['task-summary', 'diagnostic-facts', 'logs', 'source', 'diff'].includes(value))))
         errors['jev.allowed-data'] = 'cfgInvalid';
+      if (values.jev.enabled === true && values.jev.backend === 'subscription') {
+        const profile = values.profiles?.[values.jev.profile];
+        if (!record(profile) || profile.harness !== 'antigravity' || profile.provider || profile['native-profile'] || fixedAntigravityEffort(profile))
+          errors['jev.profile'] = 'cfgJevUnresolved';
+      }
     }
+  }
+  for (const [role, binding] of Object.entries(values?.loops ?? {}))
+    if (antigravitySwarmUnavailable(values, binding, role)) errors['loops.' + role + '.native-profile'] = 'cfgSwarmRole';
+  if (antigravitySwarmUnavailable(values, values?.['judge-panel'], 'judge-panel')) errors['judge-panel.native-profile'] = 'cfgSwarmRole';
+  for (const [role, profile] of Object.entries(values?.planning?.compact ?? {}))
+    if (antigravitySwarmUnavailable(values, values?.profiles?.[profile], role)) errors['planning.compact.' + role] = 'cfgSwarmRole';
+  for (const [route, policy] of Object.entries(values?.['execution-policy']?.routes ?? {})) {
+    if (!record(policy)) { errors['execution-policy.routes.' + route] = 'cfgExecutionAdvanced'; continue; }
+    if (!Number.isSafeInteger(policy['max-switches']) || policy['max-switches'] < 0 || policy['max-switches'] > 32)
+      errors['execution-policy.routes.' + route + '.max-switches'] = 'cfgExecutionSwitchRange';
   }
   return errors;
 }
 function fixedAntigravityEffort(binding) {
   return binding?.harness === 'antigravity' && ['gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon'].includes(binding.model);
+}
+
+function resolvedEditorBinding(values, binding) {
+  if (!record(binding)) return null;
+  return { ...values?.profiles?.[binding.profile], ...binding };
+}
+
+function antigravitySwarmUnavailable(values, binding, role) {
+  const resolved = resolvedEditorBinding(values, binding);
+  return role !== 'execute' && resolved?.harness === 'antigravity' &&
+    values?.['native-profiles']?.[resolved['native-profile']]?.options?.mode === 'swarm';
+}
+
+function completeExecutionBinding(binding) {
+  return record(binding) && ['dsh', 'kimi', 'codex-pro', 'claude-code-pro', 'antigravity'].includes(binding.harness) &&
+    ['channel', 'model'].every(key => typeof binding[key] === 'string' && binding[key].trim()) &&
+    typeof binding.provider === 'string' && typeof binding.thinking === 'string' &&
+    (binding.thinking !== '' || fixedAntigravityEffort(binding)) &&
+    ['read-only', 'workspace-write', 'danger-full-access'].includes(binding.permission) &&
+    ['fresh', 'scoped'].includes(binding['session-mode']);
+}
+
+// Keep profiles shared by other roles/candidates immutable. A dedicated profile
+// may be edited again only while every reference belongs to this same target.
+function assignAntigravityOptions(values, group, key, binding, options) {
+  const current = resolvedEditorBinding(values, binding)?.['native-profile'];
+  const profiles = values['native-profiles'] ?? {};
+  const prefix = ('ui-' + group + '-' + key + '-native').slice(0, 55);
+  const initialID = group === 'routes' ? values['execution-policy']?.routes?.[key]?.initial : null;
+  const sharedInitial = initialID && Object.entries(values['execution-policy']?.routes ?? {}).some(([name, route]) => name !== key && route.allowed?.includes(initialID));
+  const references = [
+    ...Object.entries(values.loops ?? {}).map(([name, value]) => ['loops.' + name, value]),
+    ...Object.entries(values.routes ?? {}).map(([name, value]) => ['routes.' + name, value]),
+    ...Object.entries(values.profiles ?? {}).map(([name, value]) => ['profiles.' + name, value]),
+    ...Object.entries(values['execution-policy']?.bindings ?? {}).map(([name, value]) => ['candidate.' + name, value]),
+    ['panel.judge-panel', values['judge-panel']],
+  ];
+  const own = new Set([group + '.' + key, ...(initialID && !sharedInitial ? ['candidate.' + initialID] : [])]);
+  const shared = references.some(([location, value]) => !own.has(location) && value?.['native-profile'] === current);
+  let name = current && (current === prefix || current.startsWith(prefix + '-')) && !shared ? current : prefix;
+  if (name !== current || shared) {
+    let suffix = 1;
+    while (Object.hasOwn(profiles, name)) name = prefix + '-' + ++suffix;
+  }
+  values['native-profiles'] = { ...profiles, [name]: { harness: 'antigravity', options } };
+  return { ...binding, 'native-profile': name };
 }
 
 function executionInitial(values, route) {
@@ -350,6 +411,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     [saved, setSaved] = React.useState(false),
     [dialog, setDialog] = React.useState(null),
     [bindingSelection, setBindingSelection] = React.useState(null);
+  const [effectiveRead, setEffectiveRead] = React.useState({ status: 'unknown', value: null });
+  const effectiveAttempt = React.useRef(null), effectiveRequest = React.useRef(0), editorMounted = React.useRef(true);
+  const observedConfiguration = React.useRef(control.configuration);
+  const currentEditor = React.useRef(null);
   // Preserve an attempted replacement read while the accepted draft is empty.
   // A clean loaded document still receives a fresh read on a later remount.
   const attempt = React.useRef(cached.current?.draft ? null : cached.current?.readAttempt ?? null),
@@ -357,6 +422,39 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     id = React.useId();
   const doc = control.editor,
     busy = control.pending !== null;
+  currentEditor.current = { contextKey, scope, doc };
+  React.useEffect(() => {
+    editorMounted.current = true;
+    return () => { editorMounted.current = false; };
+  }, []);
+  // Explicit configuration/doctor reads in Diagnostics use the same task-bound
+  // controller. Adopt each new result without reviving the pre-save snapshot
+  // when an unrelated action changes the controller's pending/error state.
+  React.useEffect(() => {
+    const changed = control.configuration !== observedConfiguration.current;
+    observedConfiguration.current = control.configuration;
+    if (control.configUncertainty || ['config', 'doctor'].includes(control.error?.action)) {
+      setEffectiveRead({ status: 'unknown', value: null });
+    } else if (changed) {
+      setEffectiveRead(control.configuration
+        ? { status: 'confirmed', value: control.configuration }
+        : { status: 'unknown', value: null });
+    }
+  }, [control.configuration, control.error, control.configUncertainty]);
+  const refreshEffective = () => {
+    if (busy || !active || !doc || doc.scope !== scope) return;
+    effectiveAttempt.current = doc;
+    const request = ++effectiveRequest.current, target = currentEditor.current;
+    setEffectiveRead({ status: 'loading', value: null });
+    void run('config', selection).then(value => {
+      const current = currentEditor.current;
+      if (!editorMounted.current || request !== effectiveRequest.current || current.contextKey !== target.contextKey ||
+          current.scope !== target.scope || current.doc !== target.doc) return;
+      setEffectiveRead(value?.configuration
+        ? { status: 'confirmed', value: value.configuration }
+        : { status: 'unknown', value: null });
+    });
+  };
   const clearDraft = (nextScope = scope) => {
     // Persist the accepted discard and destination before an asynchronous read
     // can outlive this component; a missing draft is also meaningful state.
@@ -434,6 +532,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     setReset(false);
     setSaved(doc.applied === true);
   }, [doc, scope]);
+  // A confirmed editor read/save is separate from the effective task config.
+  // Follow it through the existing read queue once; never retry an unknown save
+  // or use an old global draft as evidence of the task's current JEV switch.
+  React.useEffect(() => {
+    if (!active || busy || control.configUncertainty || !draft || !doc || adopted.current !== doc || doc.scope !== scope || effectiveAttempt.current === doc) return;
+    refreshEffective();
+  }, [active, busy, doc, !!draft, scope, run, selection.taskDir, selection.cwd, control.configUncertainty]);
   const replace = (values) => {
     setDraft(values);
     setRaw(JSON.stringify(values, null, 2));
@@ -525,6 +630,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     });
   };
   const save = () => {
+    // The previous inspection predates this write. Until a confirmed save is
+    // followed by a new read, it cannot establish the current effective switch.
+    setEffectiveRead({ status: 'unknown', value: null });
     const values = cloneConfig(draft);
     // Register only the final channel of an edited binding. Typing a channel
     // must not leave a configuration entry for every partial input string.
@@ -585,7 +693,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         'aria-describedby': inputID(key) + '-help',
         onChange: (e) => onChange(e.target.value),
       },
-      ...choices.map(([value, label]) => h('option', { key: value, value }, label)),
+      ...choices.map(([value, label, disabled]) => h('option', { key: value, value, disabled: disabled === true }, label)),
     );
   const toggle = (key, checked, onChange, unavailable = false) =>
     h('label', { className: css.configSwitch, htmlFor: inputID(key) },
@@ -667,6 +775,25 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       error && h('p', { id: inputID(path) + '-error', role: 'alert', className: css.errorText },
         t(error, bounds ? { min: bounds.min / factor, max: bounds.max / factor } : undefined)),
     );
+  };
+  const boundedInteger = (path, current, min, max, onChange, optional = false) => {
+    const error = numberErrors[path] || fieldErrors[path];
+    return h(React.Fragment, null, h('input', {
+      id: inputID(path), className: css.editorInput, inputMode: 'numeric', disabled: busy,
+      value: numbers[path] ?? (current == null ? '' : String(current)),
+      'aria-invalid': !!error,
+      'aria-describedby': inputID(path) + '-help' + (error ? ' ' + inputID(path) + '-error' : ''),
+      onChange: event => {
+        const text = event.target.value, value = Number(text);
+        const invalidNumber = optional && !text.trim() ? null
+          : !/^\d+$/.test(text.trim()) || !Number.isSafeInteger(value) ? 'cfgNumber'
+          : value < min || value > max ? 'cfgNumberRange' : null;
+        setNumbers(old => ({ ...old, [path]: text }));
+        setNumberErrors(old => ({ ...old, [path]: invalidNumber }));
+        setSaved(false);
+        if (!invalidNumber) onChange(optional && !text.trim() ? undefined : value);
+      },
+    }), error && h('p', { id: inputID(path) + '-error', role: 'alert', className: css.errorText }, t(error, { min, max })));
   };
   const inheritedPlanningRoles = { 'design-plan': 'plan', 'design-review': 'review', 'plan-review': 'review' };
   const inheritedPlanningBinding = key => {
@@ -807,11 +934,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const error = synchronizeExecutionInitial(next, key, next.routes[key]) ? null : 'cfgExecutionAdvanced';
     setTextErrors(previous => ({ ...previous, ['execution-policy.routes.' + key]: error }));
   };
-  const nativeChoices = value => {
+  const nativeChoices = (value, role) => {
     const inherited = draft.profiles?.[value.profile]?.['native-profile'];
     const harness = value.harness || draft.profiles?.[value.profile]?.harness;
-    const choices = [['__inherit__', t('consoleInherit') + (inherited ? ' · ' + inherited : '')], ['', t('cfgNativeNone')],
-      ...Object.entries(draft['native-profiles'] ?? {}).filter(([, definition]) => definition.harness === harness).map(([name]) => [name, name])];
+    const unavailable = name => antigravitySwarmUnavailable(draft, { harness, 'native-profile': name }, role);
+    const choices = [['__inherit__', t('consoleInherit') + (inherited ? ' · ' + inherited : '') + (unavailable(inherited) ? ' · ' + t('cfgSwarmRole') : ''), unavailable(inherited)], ['', t('cfgNativeNone')],
+      ...Object.entries(draft['native-profiles'] ?? {}).filter(([, definition]) => definition.harness === harness)
+        .map(([name]) => [name, name + (unavailable(name) ? ' · ' + t('cfgSwarmRole') : ''), unavailable(name)])];
     const selected = value['native-profile'];
     if (selected && !choices.some(([name]) => name === selected)) choices.push([selected, selected]);
     return choices;
@@ -824,8 +953,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   };
   const inlineNativeProfile = (group, key, name) => {
     const next = cloneConfig(draft);
-    if (group === 'panel') next['judge-panel'] = setNativeProfile(next['judge-panel'], name);
-    else { next[group] ??= {}; next[group][key] = setNativeProfile(effectiveBinding(group, key), name); }
+    const value = setNativeProfile(group === 'panel' ? next['judge-panel'] : effectiveBinding(group, key), name);
+    if (antigravitySwarmUnavailable(next, value, group === 'routes' ? 'execute' : key)) return;
+    clearNumberDrafts(path => path === bindingID(group, key) + '.maxObservedAgents');
+    if (group === 'panel') next['judge-panel'] = value;
+    else { next[group] ??= {}; next[group][key] = value; }
     if (group === 'routes') syncRouteDraft(next, key);
     replace(next);
   };
@@ -833,6 +965,9 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     if (update === null) { setBindingSelection(null); return; }
     const { group, key, role, value, permission, session } = update(bindingEdit),
       next = cloneConfig(draft);
+    if (antigravitySwarmUnavailable(next, value, role)) return;
+    if (value.harness !== bindingEdit.value.harness || value['native-profile'] !== bindingEdit.value['native-profile'])
+      clearNumberDrafts(path => path === bindingID(group, key) + '.maxObservedAgents');
     if (group === 'panel') next['judge-panel'] = value;
     else { next[group] ??= {}; next[group][key] = value; }
     if (permission !== (next.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit')) {
@@ -847,6 +982,69 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   };
   const patchBinding = (key, value) =>
     setBindingEdit((old) => ({ ...old, value: changeModelField(old.value,key,value) }));
+  const bindingSummary = binding => {
+    if (!binding) return t('notConfigured');
+    const native = draft?.['native-profiles']?.[binding['native-profile']]?.options;
+    return [binding.model || t('notConfigured'), fixedAntigravityEffort(binding) ? t('cfgEffortFixed') : binding.thinking || t('cfgEffortDefault'),
+      ...(native?.mode ? [native.mode] : []), ...(binding.permission ? [binding.permission] : []),
+      ...(binding['session-mode'] ? [t(binding['session-mode'] === 'scoped' ? 'cfgReuse' : 'cfgFresh')] : [])].join(' · ');
+  };
+  const jevProfileChoices = () => {
+    const choices = Object.entries(draft.profiles ?? {}).filter(([, p]) => record(p) && p.harness === 'antigravity' &&
+      !p.provider && !p['native-profile'] && !fixedAntigravityEffort(p)).map(([name, profile]) => [name, name + ' · ' + bindingSummary(profile)]);
+    const selected = draft.jev?.profile ?? 'hydrogen-local';
+    if (!choices.some(([name]) => name === selected)) choices.push([selected, selected + ' · ' + t('cfgJevUnresolved'), true]);
+    return choices;
+  };
+  const candidateUnavailable = (route, id, removing = false) => {
+    const policy = draft['execution-policy']?.routes?.[route], binding = draft['execution-policy']?.bindings?.[id];
+    const initial = executionInitial(draft, route);
+    if (!Array.isArray(policy?.allowed) || !Array.isArray(policy?.['quality-order']) || !completeExecutionBinding(binding) || !completeExecutionBinding(initial)) return 'cfgExecutionAdvanced';
+    if (binding.permission !== initial.permission || binding['session-mode'] !== initial['session-mode']) return 'cfgExecutionAuthorityMismatch';
+    if (removing && id === policy.initial) return 'cfgExecutionKeepInitial';
+    if (removing && (policy['quality-order']?.includes(id) || Object.entries(policy['channel-fallbacks'] ?? {}).some(([from, to]) => from === id || to === id)))
+      return 'cfgExecutionRuleReference';
+    return null;
+  };
+  const editRoutePolicy = (route, key, value) => {
+    const next = cloneConfig(draft), policy = next['execution-policy']?.routes?.[route];
+    if (!policy) return;
+    if (key === 'initial' && (!policy.allowed?.includes(value) || candidateUnavailable(route, value))) return;
+    policy[key] = value;
+    replace(next);
+  };
+  const allowCandidate = (route, id, enabled) => {
+    const policy = draft['execution-policy']?.routes?.[route];
+    if (!Array.isArray(policy?.allowed) || candidateUnavailable(route, id, !enabled)) return;
+    editRoutePolicy(route, 'allowed', enabled ? [...new Set([...policy.allowed, id])] : policy.allowed.filter(value => value !== id));
+  };
+  const nativeEdit = bindingEdit && (() => {
+    const binding = resolvedEditorBinding(draft, bindingEdit.value);
+    if (binding?.harness !== 'antigravity') return null;
+    const profile = binding['native-profile'], definition = profile ? draft['native-profiles']?.[profile] : null;
+    const options = definition?.options;
+    const valid = !profile || definition?.harness === 'antigravity' && record(options) && options.version === 1 &&
+      ['native', 'subagents', 'swarm'].includes(options.mode) && Object.keys(options).every(key => ['version', 'mode', 'maxObservedAgents'].includes(key)) &&
+      (options.maxObservedAgents === undefined || Number.isSafeInteger(options.maxObservedAgents) && options.maxObservedAgents >= 1 && options.maxObservedAgents <= 8);
+    return { binding, options, valid, path: bindingID(bindingEdit.group, bindingEdit.key) + '.maxObservedAgents' };
+  })();
+  const editNativeOptions = (key, value) => {
+    if (!nativeEdit?.valid || key === 'mode' && value === 'swarm' && bindingEdit.role !== 'execute') return;
+    const { group, key: target, value: binding } = bindingEdit, next = cloneConfig(draft);
+    let updated;
+    if (key === 'mode' && value === '') {
+      updated = { ...binding, 'native-profile': '' };
+      clearNumberDrafts(path => path === nativeEdit.path);
+    } else {
+      const options = { version: 1, mode: 'native', ...nativeEdit.options };
+      if (value === undefined) delete options[key]; else options[key] = value;
+      updated = assignAntigravityOptions(next, group, target, binding, options);
+    }
+    if (group === 'panel') next['judge-panel'] = updated;
+    else { next[group] ??= {}; next[group][target] = updated; }
+    if (group === 'routes') syncRouteDraft(next, target);
+    replace(next);
+  };
   const dispatchReasons = [];
   if ((draft?.scheduler?.mode ?? 'serial') !== 'parallel') dispatchReasons.push(t('cfgDispatchSerial'));
   if (numberErrors['scheduler.max-parallel'] || fieldErrors['scheduler.max-parallel']) dispatchReasons.push(t('cfgDispatchInvalid'));
@@ -964,13 +1162,36 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       Object.entries(textErrors).some(([key,error]) => key.startsWith('execution-policy.') && error) && h('p',{className:css.configCallout,role:'alert'},t('cfgExecutionAdvanced')),
       record(draft['execution-policy']?.routes) && h('section',{className:css.details,'data-execution-candidates':true},
         h('h4',null,t('cfgExecutionCandidates')), h('p',{className:css.meta},t('cfgExecutionCandidatesHelp')),
-        ...Object.entries(draft['execution-policy'].routes).map(([route,policy])=>h('article',{key:route},
+        ...Object.entries(draft['execution-policy'].routes).filter(([,policy]) => record(policy)).map(([route,policy])=>h('article',{key:route,'data-policy-route':route},
           h('h4',null,roleName('routes',route)),
-          ...(Array.isArray(policy.allowed)?policy.allowed:[]).map(id=>{const b=draft['execution-policy'].bindings?.[id],native=draft['native-profiles']?.[b?.['native-profile']]?.options;
-            return h('p',{key:id},id===policy.initial?t('cfgExecutionInitial')+' · ':'',id+' · '+(b?.model??t('notConfigured'))+' · '+(fixedAntigravityEffort(b)?t('cfgEffortFixed'):b?.thinking??'—'),native?.mode?' · '+native.mode:'');})))),
+          field('execution-policy.routes.' + route + '.initial', roleName('routes', route) + ' · ' + t('cfgExecutionInitial'), t('cfgExecutionInitialHelp'),
+            select('execution-policy.routes.' + route + '.initial', policy.initial ?? '',
+              (Array.isArray(policy.allowed) ? policy.allowed : []).map(id => [id, id + ' · ' + bindingSummary(draft['execution-policy'].bindings?.[id]), !!candidateUnavailable(route, id)]),
+              value => editRoutePolicy(route, 'initial', value))),
+          field('execution-policy.routes.' + route + '.max-switches', roleName('routes', route) + ' · ' + t('cfgExecutionSwitches'), t('cfgExecutionSwitchHelp'),
+            boundedInteger('execution-policy.routes.' + route + '.max-switches', policy['max-switches'], 0, 32, value => editRoutePolicy(route, 'max-switches', value))),
+          h('details', null, h('summary', null, t('cfgExecutionAllowed') + ' · ' + (policy.allowed?.length ?? 0)),
+            ...Object.entries(draft['execution-policy'].bindings ?? {}).filter(([,binding]) => record(binding)).map(([id, binding]) => {
+              const allowed = Array.isArray(policy.allowed) && policy.allowed.includes(id), reason = candidateUnavailable(route, id, allowed);
+              const native = draft['native-profiles']?.[binding['native-profile']]?.options;
+              return h('div', {key: id, className: css.configField},
+                h('label', null, h('input', { type: 'checkbox', checked: allowed, disabled: busy || !!reason,
+                  'aria-label': roleName('routes', route) + ' · ' + t('cfgExecutionAllowed') + ' · ' + id,
+                  onChange: event => allowCandidate(route, id, event.target.checked) }),
+                  ' ' + id + ' · ' + bindingSummary(binding)),
+                reason && h('p', { className: css.settingsHelp }, t(reason)),
+                binding.harness === 'antigravity' && native?.mode === 'swarm' && h('p', { className: css.settingsHelp }, t('cfgSwarmEligibility')));
+            })),
+          ((policy['quality-order']?.length ?? 0) > 0 || Object.keys(policy['channel-fallbacks'] ?? {}).length > 0) &&
+            h('p', { className: css.settingsHelp }, t('cfgExecutionAdvancedRules')),
+          draft['execution-policy'].bindings?.[policy.initial]?.harness === 'antigravity' &&
+            draft['native-profiles']?.[draft['execution-policy'].bindings[policy.initial]['native-profile']]?.options?.mode === 'swarm' &&
+            h('p', { className: css.configCallout }, t('cfgSwarmEligibility'))))),
       draft.planning?.compact && h('section',{className:css.details},h('h4',null,t('cfgCompactPlanning')),
         ...['design-plan','design-review'].map(role=>field('planning.compact.'+role,t(role==='design-plan'?'cfgCompactDesign':'cfgCompactReview'),null,
-          select('planning.compact.'+role,draft.planning.compact[role],Object.entries(draft.profiles??{}).map(([name,p])=>[name,name+' · '+p.model+' · '+p.thinking]),name=>replace({...draft,planning:{...draft.planning,compact:{...draft.planning.compact,[role]:name}}}))))),
+          select('planning.compact.'+role,draft.planning.compact[role],Object.entries(draft.profiles??{}).map(([name,p])=>[name,name+' · '+bindingSummary(p)+(antigravitySwarmUnavailable(draft,p,role)?' · '+t('cfgSwarmRole'):''),antigravitySwarmUnavailable(draft,p,role)]),name=>{
+            if (!antigravitySwarmUnavailable(draft,draft.profiles?.[name],role)) replace({...draft,planning:{...draft.planning,compact:{...draft.planning.compact,[role]:name}}});
+          })))),
       h('p', { className: css.meta }, t('cfgSessionDefault', { mode: t(draft.sessions?.mode === 'scoped' ? 'cfgReuse' : 'cfgFresh') })),
       h('div', { className: css.stageTableScroll }, h('table', { className: css.stageTable, 'aria-label': t('cfgModels') },
         h('thead', null, h('tr', null, ...['cfgModelRole', 'consoleResource', 'consoleModel', 'consoleThinking', 'cfgNative', 'consoleSession'].map(key => h('th', { key, scope: 'col' }, t(key))))),
@@ -984,7 +1205,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('td', null, h(Button, { disabled: busy, onClick: () => openBinding(group, key, value), 'aria-label': t('cfgEdit') + ' ' + roleName(group, key) }, resourceNames[resourceOf(value)])),
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
             h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...bindingEfforts(value).map(([effort,label]) => h('option', { key: effort, value: effort },label)))),
-            h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
+            h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value, role).map(([name, label, unavailable]) => h('option', { key: name, value: name, disabled: unavailable === true }, label))),
+              resolvedEditorBinding(draft,value)?.harness === 'antigravity' && h('p', { className: css.settingsHelp }, t(role === 'execute' ? 'cfgSwarmConditionsShort' : 'cfgSwarmRole'))),
             h('td', null, group === 'routes' && executionInitial(draft,key) ? t(executionInitial(draft,key)['session-mode']==='scoped'?'cfgReuse':'cfgFresh') : ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
       h('p', { className: css.settingsHelp }, t('consoleRouteSession')),
@@ -994,6 +1216,23 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       React.Fragment,
       null,
       h('p', { className: css.meta }, t('cfgJevHelp')),
+      h('section', { className: css.details, 'data-jev-scope': true },
+        h('h4', null, t('cfgEditingSource')),
+        h('p', null, t(scope === 'global' ? 'consoleGlobal' : 'consoleProject') + ' · ' + t(draft.jev?.enabled === true ? 'cfgToggleOn' : 'cfgToggleOff')),
+        h('code', { className: css.path }, doc?.target ?? t('cfgEffectiveUnknown')),
+        h('h4', null, t('cfgEffectiveSource')),
+        !control.configUncertainty && effectiveRead.status === 'confirmed' && typeof effectiveRead.value?.source === 'string' && ['task', 'project', 'global', 'embedded'].includes(effectiveRead.value?.scope)
+          ? h(React.Fragment, null,
+            h('p', null, t({ task: 'cfgScopeTask', project: 'consoleProject', global: 'consoleGlobal', embedded: 'cfgScopeEmbedded' }[effectiveRead.value.scope]) + ' · ' +
+              (typeof effectiveRead.value.jev?.enabled === 'boolean' ? t(effectiveRead.value.jev.enabled ? 'cfgToggleOn' : 'cfgToggleOff') : t('cfgEffectiveUnknown'))),
+            h('code', { className: css.path }, effectiveRead.value.source),
+            h('p', { className: css.meta }, t('cfgJevSubscriptionProfile') + ' · ' +
+              (effectiveRead.value.jev?.backend === 'subscription'
+                ? effectiveRead.value.jevBinding ? bindingSummary(effectiveRead.value.jevBinding) : t('cfgJevUnresolved')
+                : effectiveRead.value.jev?.model || t('cfgJevUnresolved'))),
+            (effectiveRead.value.source !== doc?.target || effectiveRead.value.scope !== scope) && h('p', { className: css.configCallout }, t('cfgEffectiveOtherScope')))
+          : h('p', { className: css.configCallout, role: 'status' }, t(!control.configUncertainty && effectiveRead.status === 'loading' ? 'cfgEffectiveLoading' : 'cfgEffectiveUnknown')),
+        h(Button, { disabled: busy, onClick: refreshEffective }, t('cfgEffectiveReload'))),
       field(
         'jev.enabled',
         t('consoleJEV'),
@@ -1008,7 +1247,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           h('p', { className: css.configCallout }, t('cfgJevSend')),
           draft.jev.backend === 'subscription'
             ? field('jev.profile',t('cfgJevSubscriptionProfile'),t('cfgJevSubscriptionHelp'),
-                select('jev.profile',draft.jev.profile ?? 'hydrogen-local',Object.entries(draft.profiles ?? {}).filter(([,p])=>p.harness==='antigravity'&&!p.provider&&!p['native-profile']&&!fixedAntigravityEffort(p)).map(([name,p])=>[name,name+' · '+p.model]),v=>update('jev','profile',v)))
+                select('jev.profile',draft.jev.profile ?? 'hydrogen-local',jevProfileChoices(),v=>update('jev','profile',v)))
             : h(React.Fragment,null,
           field(
             'jev.endpoint',
@@ -1038,7 +1277,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             field('jev.max-calls', t('cfgJevMaxCalls'), null, number('jev', 'max-calls', 1, t('cfgTimes'))),
             field('jev.min-applicability', t('cfgJevApplicability'), null, number('jev', 'min-applicability', 1, '', false, true)),
             field('jev.min-choice', t('cfgJevChoice'), null, number('jev', 'min-choice', 1, '', false, true)),
-            h('p', { className: css.meta }, t('cfgJevData') + ': ' + (Array.isArray(draft.jev['allowed-data']) ? draft.jev['allowed-data'].length ? draft.jev['allowed-data'].join(', ') : t('cfgJevNoData') : t('notConfigured'))),
+            (draft.jev['allowed-data'] === undefined || Array.isArray(draft.jev['allowed-data']) && draft.jev['allowed-data'].length === 0) && h('p', { className: css.meta }, t('cfgJevNoData')),
+            h('fieldset', { className: css.details }, h('legend', null, t('cfgJevData')),
+              ...['task-summary', 'diagnostic-facts', 'logs', 'source', 'diff'].map(category => h('label', { key: category },
+                h('input', { type: 'checkbox', disabled: busy || draft.jev['allowed-data'] !== undefined && !Array.isArray(draft.jev['allowed-data']), checked: Array.isArray(draft.jev['allowed-data']) && draft.jev['allowed-data'].includes(category),
+                  'aria-label': t('cfgJevData') + ' · ' + category,
+                  onChange: event => update('jev', 'allowed-data', event.target.checked ? [...(draft.jev['allowed-data'] ?? []), category] : (draft.jev['allowed-data'] ?? []).filter(value => value !== category)) }), ' ' + category + ' '))),
             h('p', { className: css.meta }, t('cfgJevDataHelp')),
           ),
         ),
@@ -1098,8 +1342,21 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           ),
         ),
         field('binding.native-profile', t('cfgNative'), t('cfgNativeHelp'),
-          select('binding.native-profile', bindingEdit.value['native-profile'] ?? '__inherit__', nativeChoices(bindingEdit.value),
+          select('binding.native-profile', bindingEdit.value['native-profile'] ?? '__inherit__', nativeChoices(bindingEdit.value, bindingEdit.role),
             name => setBindingEdit(old => ({ ...old, value: setNativeProfile(old.value, name) })))),
+        nativeEdit && h('section', { className: css.details, 'data-antigravity-options': true },
+          h('h4', null, t('cfgAgyOptions')),
+          h('p', { className: css.settingsHelp }, t('cfgAgyOptionsHelp')),
+          h('p', { className: css.configCallout }, t(bindingEdit.role === 'execute' ? 'cfgSwarmEligibility' : 'cfgSwarmRole')),
+          nativeEdit.valid ? h(React.Fragment, null,
+            field('binding.native-mode', t('cfgAgyMode'), t('cfgAgyModeHelp'),
+              select('binding.native-mode', nativeEdit.options?.mode ?? '', [
+                ['', t('cfgNativeNone')], ['native', t('cfgAgyNative')], ['subagents', t('cfgAgySubagents')],
+                ['swarm', t('cfgAgySwarm') + (bindingEdit.role !== 'execute' ? ' · ' + t('cfgSwarmRole') : ''), bindingEdit.role !== 'execute'],
+              ], value => editNativeOptions('mode', value))),
+            nativeEdit.options && field(nativeEdit.path, t('cfgAgyObservedLimit'), t('cfgAgyObservedHelp'),
+              boundedInteger(nativeEdit.path, nativeEdit.options.maxObservedAgents, 1, 8, value => editNativeOptions('maxObservedAgents', value), true)))
+            : h('p', { className: css.errorText }, t('cfgAgyAdvanced'))),
         field(
           'binding.permission',
           t('permission'),
@@ -1385,7 +1642,7 @@ Object.assign(zh, {
   cfgNative: '原生能力', cfgNativeNone: '不启用原生能力配置',
   cfgNativeHelp: '选择与当前后端匹配的能力配置；在高级 JSON 中编辑 native-profiles。JEV 关闭时仍生效，实际可用性以运行回执为准。',
   cfgExecutionCandidates: '执行候选', cfgExecutionInitial: '初始配置',
-  cfgExecutionCandidatesHelp: '模型列表显示实际初始配置；编辑路线会同步该路线的独立初始候选。JEV 只能在列出的合法候选中选择。完整候选与切换规则在高级 JSON 中编辑。',
+  cfgExecutionCandidatesHelp: '选择实际初始候选、允许集合和切换次数。模型列表显示实际初始配置；编辑路线会创建或更新该路线的独立初始候选。JEV 只在允许集合中经运行时资格筛选的候选之间选择。',
   cfgExecutionAuthority: '此路线的执行策略显式固定权限与会话。请在高级 JSON 中编辑完整候选，模型编辑不会扩大权限。',
   cfgExecutionAdvanced: '无法从当前编辑确定完整执行候选。请补全模型与思考等级，或在高级 JSON 中审查 execution-policy；尚未保存。',
 });
@@ -1393,7 +1650,7 @@ Object.assign(en, {
   cfgNative: 'Native capabilities', cfgNativeNone: 'No native capability profile',
   cfgNativeHelp: 'Select a profile for this backend; edit native-profiles in advanced JSON. Profiles work with JEV off. Runtime receipts establish actual availability.',
   cfgExecutionCandidates: 'Execution candidates', cfgExecutionInitial: 'Initial configuration',
-  cfgExecutionCandidatesHelp: 'The model table shows the actual initial binding. Editing a route updates its own initial candidate. JEV selects only from legal listed candidates. Edit complete candidates and switch rules in advanced JSON.',
+  cfgExecutionCandidatesHelp: 'Choose the actual initial candidate, allowed set and switch limit. The model table shows that initial binding; editing a route creates or updates its own initial candidate. JEV selects only allowed candidates that pass runtime eligibility checks.',
   cfgExecutionAuthority: 'This execution policy explicitly fixes permissions and sessions. Edit complete candidates in advanced JSON; changing a model does not expand permissions.',
   cfgExecutionAdvanced: 'This edit does not determine a complete execution candidate. Complete the model and effort or review execution-policy in advanced JSON. Nothing was saved.',
 });
@@ -1403,3 +1660,56 @@ Object.assign(en, { cfgBindingDone: '← Back to model list', cfgBindingSaveHelp
 
 Object.assign(zh,{cfgRouteComplex:'复杂实现',cfgRouteBackend:'后端实现',cfgRouteBatch:'批量实现',cfgSubscriptionOnly:'仅使用订阅渠道；实际登录、额外计费开关与可用模型在调用前检查。',cfgCompactPlanning:'紧凑方案',cfgCompactDesign:'联合方案生成',cfgCompactReview:'联合方案审查',cfgJevSubscriptionProfile:'判断模型配置',cfgJevSubscriptionHelp:'使用订阅模型分析已收集的事实并从已有动作中选择；不授予文件或命令工具。'});
 Object.assign(en,{cfgRouteComplex:'Complex implementation',cfgRouteBackend:'Backend implementation',cfgRouteBatch:'Batch implementation',cfgSubscriptionOnly:'Subscription channels only. Native login, extra billing controls and model availability are checked before dispatch.',cfgCompactPlanning:'Compact planning',cfgCompactDesign:'Combined proposal',cfgCompactReview:'Combined review',cfgJevSubscriptionProfile:'Decision model profile',cfgJevSubscriptionHelp:'A subscription model analyzes collected facts and chooses an existing action without file or command tools.'});
+
+Object.assign(zh, {
+  cfgExecutionInitialHelp: '选择已有的完整绑定；它的权限、会话和原生配置保持原值。当前任务已冻结的配置不会被改写。',
+  cfgExecutionAllowed: '允许的候选', cfgExecutionSwitches: '最多切换次数',
+  cfgExecutionSwitchHelp: '0–32 次；首轮改选与失败调整共用此路线的切换预算。设为 0 会保留初始候选。',
+  cfgExecutionSwitchRange: '切换次数须为 0 到 32 的整数',
+  cfgExecutionAuthorityMismatch: '此完整绑定的权限或会话与当前初始候选不同；请在高级 JSON 中明确审查配置。',
+  cfgExecutionKeepInitial: '先选择另一个初始候选，才能从允许集合移除此项。',
+  cfgExecutionRuleReference: '质量次序或渠道后备仍引用此项；请先在高级 JSON 中调整规则。',
+  cfgExecutionAdvancedRules: '已有质量次序或跨渠道后备规则保留；在高级 JSON 中查看和编辑。',
+  cfgSwarmRole: 'Antigravity Swarm 仅用于 Execute；此角色可选择 native 或 subagents。',
+  cfgSwarmConditionsShort: 'Swarm：Full、已审分工、无原生图片；运行时复核资格。',
+  cfgSwarmEligibility: 'Antigravity Swarm 仅适用于 Full，并需要已审批的 2–8 项独立写入分工及无原生图片输入的 packet。没有图片的任务可以使用；当前 Antigravity 没有 Flywheel 原生图片输入通道。此处配置不代表当前任务已满足条件。',
+  cfgAgyOptions: 'Antigravity 原生选项',
+  cfgAgyOptionsHelp: '编辑会为此阶段或路线保留专属原生配置；共享配置、其它候选、权限与会话保持原值。完整定义仍可在高级 JSON 中编辑。',
+  cfgAgyMode: '原生协作方式', cfgAgyNative: 'native · 原生工具自主运行', cfgAgySubagents: 'subagents · 请求委派', cfgAgySwarm: 'swarm · 官方 /swarm',
+  cfgAgyModeHelp: '这是请求的方式；实际子代理是否出现及完成证据，以运行回执为准。native 不代表强制单智能体。',
+  cfgAgyObservedLimit: '观察到的子代理总数上限',
+  cfgAgyObservedHelp: '留空不设置，或填写 1–8。包含观察到的 verifier/monitor；超过后请求停止，不是硬并发上限，也不能证明所有子代理已结束。',
+  cfgAgyAdvanced: '当前原生定义无法安全地用这些控件编辑，请在高级 JSON 中修正。',
+  cfgEditingSource: '正在编辑的文件', cfgEffectiveSource: '当前任务实际采用的配置',
+  cfgScopeTask: '任务', cfgScopeEmbedded: '安装默认',
+  cfgEffectiveOtherScope: '当前任务采用另一个范围的文件。保存此处的开关不会越过配置优先级；请以保存后重新读取的实际配置为准。',
+  cfgEffectiveLoading: '正在重新读取当前任务的有效配置…',
+  cfgEffectiveUnknown: '当前有效配置尚未确认；不能据此判断 JEV 已开启或关闭。',
+  cfgEffectiveReload: '重新核对当前生效配置', cfgJevUnresolved: '判断模型未解析',
+});
+Object.assign(en, {
+  cfgExecutionInitialHelp: 'Select an existing complete binding with its permissions, session and native options intact. Already frozen task configurations do not change.',
+  cfgExecutionAllowed: 'Allowed candidates', cfgExecutionSwitches: 'Maximum switches',
+  cfgExecutionSwitchHelp: '0–32 switches. Initial selection and failure adaptation share this route budget. Zero retains the initial candidate.',
+  cfgExecutionSwitchRange: 'The switch limit must be an integer from 0 to 32',
+  cfgExecutionAuthorityMismatch: 'This complete binding has different permissions or a different session policy. Review the change explicitly in advanced JSON.',
+  cfgExecutionKeepInitial: 'Choose another initial candidate before removing this one from the allowed set.',
+  cfgExecutionRuleReference: 'A quality-order or channel-fallback rule still references this candidate. Edit that rule in advanced JSON first.',
+  cfgExecutionAdvancedRules: 'Existing quality-order and channel-fallback rules are preserved. Inspect and edit them in advanced JSON.',
+  cfgSwarmRole: 'Antigravity Swarm is available only for Execute. This role can use native or subagents.',
+  cfgSwarmConditionsShort: 'Swarm: Full, reviewed assignments, no native images; eligibility is checked at runtime.',
+  cfgSwarmEligibility: 'Antigravity Swarm requires Full, an approved packet with 2–8 independent write assignments, and no native image inputs. Tasks without images can use it; Antigravity currently has no Flywheel native image-input channel. This configuration does not establish the current task’s eligibility.',
+  cfgAgyOptions: 'Antigravity native options',
+  cfgAgyOptionsHelp: 'Edits keep a dedicated profile for this stage or route. Shared profiles, other candidates, permissions and sessions remain intact. Advanced JSON keeps the complete definitions available.',
+  cfgAgyMode: 'Native collaboration mode', cfgAgyNative: 'native · autonomous native tools', cfgAgySubagents: 'subagents · request delegation', cfgAgySwarm: 'swarm · official /swarm',
+  cfgAgyModeHelp: 'This is the requested mode. Runtime receipts establish whether children appeared and what completion evidence exists. Native does not force a single agent.',
+  cfgAgyObservedLimit: 'Observed total child limit',
+  cfgAgyObservedHelp: 'Leave blank or enter 1–8. Includes observed verifier/monitor children; exceeding it requests a stop. It is not a hard concurrency limit or evidence that every child ended.',
+  cfgAgyAdvanced: 'These controls cannot safely edit the current native definition. Correct it in advanced JSON.',
+  cfgEditingSource: 'File being edited', cfgEffectiveSource: 'Configuration actually selected for this task',
+  cfgScopeTask: 'Task', cfgScopeEmbedded: 'Installed defaults',
+  cfgEffectiveOtherScope: 'The current task selects a file from another scope. Saving this switch does not bypass configuration precedence. Check the effective configuration reread after saving.',
+  cfgEffectiveLoading: 'Rereading the effective task configuration…',
+  cfgEffectiveUnknown: 'The effective configuration is unconfirmed. Its JEV switch cannot be reported as on or off.',
+  cfgEffectiveReload: 'Recheck effective configuration', cfgJevUnresolved: 'Decision model unresolved',
+});

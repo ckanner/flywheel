@@ -13,10 +13,12 @@ this backend does not call the separately billed System One API.
 ## Enable once, use the usual task entries
 
 In the desktop, open **Flywheel → Settings → JEV** and choose the intended global
-or project scope. Turn on **Enable JEV**, confirm the subscription profile, then
-select **Save changes**. The switch edits a draft; activation takes effect when
-you save. Editing and saving do not call a model or prove account access.
-Advanced fields bound timeout, call count, thresholds and shared data.
+or project scope. Turn on **Enable JEV**, confirm the subscription profile and its
+model/effort, then select **Save changes**. The switch edits a draft; saving changes
+that scope's file. The interface rereads the configuration actually selected for
+the current task and displays its source, scope and switch separately. Editing
+and saving do not call a model or prove account access. Controls bound timeout,
+call count and thresholds, and select the five permitted-data categories.
 
 The equivalent configuration section is:
 
@@ -55,7 +57,10 @@ precondition before creating its first decision ledger.
 
 Configuration selects **one complete file** in task → project → global → embedded
 order. A project configuration that leaves JEV off overrides a globally enabled
-configuration; fields are not merged across files. Use `config inspect --cwd
+configuration; likewise, globally disabling JEV does not turn off a task file
+that keeps it enabled. Fields are not merged across files. The settings page
+labels an effective-read failure as unconfirmed and offers an explicit retry;
+it does not substitute the edited global value or retry an unknown save. Use `config inspect --cwd
 <project> --task-dir <task> --json` to inspect the actual source. See
 [configuration](configuration.md) for discovery and editing.
 
@@ -102,6 +107,15 @@ review and verification flow. See [investigation](investigation.md).
 ## Initial execution model and collaboration
 
 The subscription defaults include `execution-policy` candidates for each route while preserving the original initial models in [model policy](model-policy.md). Defaults use `quality-order:[]` and `max-switches:2`: JEV off keeps the initial binding; JEV on can select another candidate before the first business invocation. Existing custom configurations without an execution policy retain fixed routes; the switch cannot invent models.
+
+In **Settings → Models and sessions → Execution candidates**, select the initial
+binding, allowed candidates and switch limit without editing JSON. Options keep
+their complete model, effort, permission, session and native profile; the editor
+does not alter shared definitions or broaden authority. Initial removal and
+quality/fallback references are guarded. Advanced JSON remains available for
+complete definitions and the less common switching rules. The configuration
+page describes Swarm eligibility; only the runtime can establish whether an
+approved packet meets it.
 
 Go first reconciles unresolved invocations, authorization, budget, and the reviewed contract, then filters candidates. Image packets retain bindings with actual image transport. Swarm requires Full, no images, and a valid reviewed `collaboration` declaration; a local Quick task does not automatically expand. Orchestrator uses fixed `thinking:""`, without fictitious high/xhigh settings. Candidate descriptions include model, effort, native profile, collaboration mode, and known limits.
 
@@ -171,7 +185,7 @@ the snapshot records that missing content and uses structured facts. Permission 
 not automatic redaction: any remaining unauthorized category skips the complete
 request, and summarization cannot bypass the original data policy.
 
-Disabling the setting stops subsequent JEV dispatches and adoption in existing
+Disabling the setting in the file actually selected for the task stops subsequent JEV dispatches and adoption in existing
 runs, including a result returned after the switch was disabled. Already dispatched
 requests are reconciled using their frozen identity, and their known or unknown
 usage is retained. Unknown requests are not retried. Unknown **action** outcomes

@@ -223,14 +223,18 @@ type Delivery struct {
 }
 
 type RunIdentity struct {
-	Bindings   map[string]SessionConfiguration `json:"bindings,omitempty"`
-	Drivers    map[string]string               `json:"drivers,omitempty"`
-	ID         string                          `json:"id"`
-	Kind       string                          `json:"kind"`
-	Head       string                          `json:"head,omitempty"`
-	Branch     string                          `json:"branch,omitempty"`
-	Conditions string                          `json:"conditions"`
-	StartedAt  string                          `json:"startedAt"`
+	InitialBindings        map[string]BindingSnapshot      `json:"initialBindings,omitempty"`
+	InitialBindingsOmitted int                             `json:"initialBindingsOmitted,omitempty"` // display projection only
+	ConfigurationSource    string                          `json:"configurationSource,omitempty"`
+	ConfigurationScope     string                          `json:"configurationScope,omitempty"`
+	Bindings               map[string]SessionConfiguration `json:"bindings,omitempty"`
+	Drivers                map[string]string               `json:"drivers,omitempty"`
+	ID                     string                          `json:"id"`
+	Kind                   string                          `json:"kind"`
+	Head                   string                          `json:"head,omitempty"`
+	Branch                 string                          `json:"branch,omitempty"`
+	Conditions             string                          `json:"conditions"`
+	StartedAt              string                          `json:"startedAt"`
 }
 
 type ControlResult struct {

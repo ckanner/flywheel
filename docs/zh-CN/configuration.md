@@ -65,6 +65,20 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 
 DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，再编辑模型绑定、角色会话策略、预算、超时、重试或全局权限。在表单旁审阅改动并保存。目标文件被其他编辑器修改时拒绝覆盖，保存结果未确认时先重新读取核对。新项目文件以当前版本默认模板创建完整配置，项目文件优先于全局，任务文件优先于项目，不按字段合并。
 
+**模型与会话 → 执行候选**可以编辑实际的
+`execution-policy.routes.<route>.initial`、允许的候选集合和 0–32 次切换上限。
+选项显示模型、effort、原生方式、权限和会话策略。选择初始项时保留它的完整绑定；
+在阶段表中修改模型，会创建或更新此路线专属的初始候选，不重写其它路线共享的
+binding。图形编辑不修改候选权限或会话，不同权限／会话的变更需在高级 JSON 中明确
+审阅。移除初始项前须先选择另一项；质量次序或渠道后备仍引用的项，须先在高级 JSON
+中调整规则。已有 quality-order 和 channel-fallbacks 保留。
+
+**JEV** 分别显示「正在编辑的文件」和「当前任务实际采用的配置」，包括作用域、
+开关与解析后的订阅模型／effort。每次确认读取编辑文件或保存成功后，界面会通过
+独立只读请求重新核对有效配置；核对失败显示「尚未确认」，不把已确认的保存改报为
+失败。修改全局开关不会越过项目或任务配置，结果未知的保存也不会自动重试。
+五类允许发送的数据可以在此勾选，勾选本身不授予工具或执行权限。
+
 高级调用通过 stdin 传入 JSON。读取示例使用 `flywheel control config-edit --cwd /absolute/repo`，输入为 `{"scope":"project"}`。保存使用 `control config-save`，输入包含 scope、读取返回的 revision，以及仅包含改动章节的 values。reset=true 从内嵌默认完整模板开始替换。配置保存创建备份并原子发布，下一次引擎启动时加载。
 
 ## 字段与身份
@@ -133,7 +147,18 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 `native-profiles` 定义版本化 harness options，绑定使用 `native-profile` 引用。
 模型 profiles、loops、routes、judge-panel 和 execution-policy 的允许绑定均支持，
 引用必须与实际 harness 匹配。省略可继承模型 profile，显式空字符串关闭继承。
-静态能力不依赖 JEV 开关；工作台按当前 harness 选择配置，高级 JSON 编辑定义。
+静态能力不依赖 JEV 开关；工作台按实际 harness 和逻辑角色选择配置。Antigravity
+Swarm 在 Plan、Review、Judge 和紧凑方案角色中禁选，配置加载也拒绝这些不合法的
+引用。Execute 显示运行时仍须核对的条件：Full、已审批且有 2–8 项独立写入分工的
+collaboration 契约，以及没有原生图片输入。配置 Swarm 候选不代表当前 packet 已
+满足资格。没有图片的任务可以使用 Antigravity；当前 Flywheel 接入尚无它的原生
+图片输入通道。
+
+阶段绑定详情提供 Antigravity 的 `native`、`subagents`、`swarm` 和可选的
+`maxObservedAgents`（1–8）控件。原定义被共享时，编辑会创建此目标专属的 profile，
+保留其它角色、候选、权限和会话。该上限统计观察到的 child ID，包含 verifier／
+monitor；超过后请求停止，不是硬并发限制，也不证明全部子代理已经结束。请求的方式
+与实际观察到的协作仍是两种运行事实。其它复杂原生定义继续通过高级 JSON 编辑。
 实际 options 进入历史及冻结策略身份，准入、用量和清理仍取决于运行回执。
 完整示例、LCU、Tower 和独立 Review/Team 入口见[原生能力](native-capabilities.md)。
 

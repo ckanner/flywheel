@@ -93,6 +93,7 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'metrics', runId: 'run-1' }, { action: 'history', sessionKey: 'task:review' },
     { action: 'node', packet: 'M01-T01' }, { action: 'delivery', delivery: { action: 'inspect', headBranch: 'feature/example' } },
     { action: 'doctor', probe: false },
+    { action: 'images', images: { paths: ['design/screen.png'] } },
     { action: 'planning', planning: { action: 'status' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'feedback-1' } },
   ]) assert.deepEqual(JSON.parse(JSON.stringify(inputSchema.parse(input))), input);
   for (const input of [null, [], {}, { action: 'start' }, { action: 'runs', unknown: true },
@@ -105,6 +106,8 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'planning', planning: { action: 'approve' } }, { action: 'planning', planning: { action: 'status', start: true } },
     { action: 'planning', planning: { action: 'status', 'request-id': '' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'a'.repeat(121) } },
     { action: 'status', planning: { action: 'status' } }, { action: 'planning' },
+    { action: 'images', images: { paths: [] } }, { action: 'images', images: { paths: ['../private.png'] } },
+    { action: 'images', images: { paths: ['screen.png'], automatic: true } }, { action: 'config', images: { paths: ['screen.png'] } },
   ]) assert.throws(() => inputSchema.parse(input), JSON.stringify(input));
   for (const kind of ['success', 'error']) assert.equal(resultSchema.parse({ result: { kind, text: '{}' } }).result.kind, kind);
   for (const value of [null, {}, { result: { kind: 'unknown', text: '{}' } }, { result: { kind: 'success', text: 1 } }]) {
@@ -121,6 +124,8 @@ test('published Client and Host Gateway reads are session-bound and append no co
   }
   assert.equal((await read({ action:'status', taskDir:cwd, cwd })).result.kind,'success');
   assert.equal((await read({ action:'planning', taskDir:cwd, cwd, planning: { action: 'status', 'request-id': 'feedback-1' } })).result.kind,'success');
+  assert.equal((await read({ action: 'images', images: { paths: ['design/screen.png'] } })).result.kind, 'success');
+  assert.equal((await read({ action: 'images', cwd: unrelatedTask, images: { paths: ['design/screen.png'] } })).result.kind, 'error');
   const count = calls.length;
   for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');

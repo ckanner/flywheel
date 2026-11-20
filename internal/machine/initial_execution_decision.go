@@ -162,7 +162,7 @@ func (c *Context) initialExecutionDecision(packet *contract.Packet) error {
 	if len(snapshot.Actions) < 2 || decision.Validate(snapshot, j.DecisionPolicy()) != nil {
 		return nil
 	}
-	record := &state.RuntimeDecisionRecord{ID: snapshot.ID, Packet: packet.PacketID, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record := &state.RuntimeDecisionRecord{ModelBindings: c.runtimeModelBindings(packet, snapshot.Actions), ID: snapshot.ID, Packet: packet.PacketID, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
 	ledger.Records = append(ledger.Records, record)
 	ledger.Used++
 	ps.PendingStrategy = record.ID

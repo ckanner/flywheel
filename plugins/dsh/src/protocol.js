@@ -26,7 +26,8 @@ export function record(value) {
 // envelope before dispatch so an invalid command cannot become an unknown run.
 export function validInvestigationCommand(value) {
   if (!record(value) || !['start', 'continue', 'run', 'status', 'report', 'cancel'].includes(value.action) ||
-      Object.keys(value).some(key => !['action', 'revision', 'contract', 'report'].includes(key))) return false;
+      Object.keys(value).some(key => !['action', 'revision', 'contract', 'report', 'run'].includes(key))) return false;
+  if ('run' in value && (value.action !== 'start' || typeof value.run !== 'boolean')) return false;
   if ('revision' in value && (!Number.isSafeInteger(value.revision) || value.revision < 0)) return false;
   if (!['start', 'status'].includes(value.action) && !(value.revision > 0)) return false;
   if ((['start','continue'].includes(value.action)) !== ('contract' in value) ||

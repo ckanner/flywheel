@@ -96,6 +96,11 @@
               "accounted"
             ],
             "properties": {
+              "model-bindings": {
+                "type": "object", "maxProperties": 16,
+                "propertyNames": {"pattern": "^model-[0-9]+$"},
+                "additionalProperties": {"allOf": [{"$ref": "#/$defs/binding-snapshot"}, {"required": ["bindingId"]}]}
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
@@ -160,7 +165,7 @@
     "shared-execution": {"type":"object","additionalProperties":false,"required":["cwd","base-ref","packets"],"properties":{"last-error":{"type":"string","maxLength":2000},"cwd":{"type":"string","minLength":1},"base-ref":{"type":"string","minLength":1},"packets":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string","pattern":"^M[0-9]+-T[0-9]+$"}}}},
     "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"workspace-cwd":{"type":"string","minLength":1},"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
     "control":{"type":"object","additionalProperties":false,"required":["kind","status","message","started-at"],"properties":{"kind":{"type":"string","minLength":1},"packet":{"type":"string"},"status":{"enum":["running","passed","failed","cancelled"]},"message":{"type":"string","maxLength":2000},"started-at":{"type":"string"},"finished-at":{"type":"string"}}},
-    "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
+    "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"initialBindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/binding-snapshot"}},"configurationSource":{"type":"string"},"configurationScope":{"enum":["task","project","global","embedded"]},"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
     "delivery":{"type":"object","additionalProperties":false,"required":["action","repo","head","branch","status","at"],"properties":{"base":{"type":"string","minLength":1},"action":{"enum":["create","merge"]},"repo":{"type":"string","minLength":1},"head":{"type":"string","minLength":1},"branch":{"type":"string","minLength":1},"status":{"enum":["pending","confirmed","unknown"]},"at":{"type":"string"},"url":{"type":"string"},"number":{"type":"integer","minimum":1},"merge-sha":{"type":"string"},"error":{"type":"string"}}},
     "scheduler": {"$ref":"scheduler-policy.schema.json","required":["mode","max-parallel"]},
     "handoff": {
@@ -812,6 +817,13 @@
     }
   },
   "$defs": {
+    "binding-snapshot": {
+      "type": "object", "additionalProperties": false, "required": ["binding"],
+      "properties": {
+        "bindingId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "binding": {"$ref": "#/$defs/session-configuration"}
+      }
+    },
     "input-image-manifest": {
       "type": "object", "additionalProperties": false, "required": ["version", "images"],
       "properties": {

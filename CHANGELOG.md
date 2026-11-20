@@ -7,6 +7,19 @@ their original language.
 
 ## Unreleased — Subscription CLI workflows
 
+- Resolve effective route initial bindings consistently across diagnostics and run
+  snapshots; distinguish initial, selected-next and actual invocation facts. Keep
+  fixed Orchestrator effort empty and preserve unknown legacy history.
+- Reject Antigravity Swarm for non-Execute roles. Add common candidate/native
+  controls without rewriting shared authority; show JEV's resolved subscription
+  binding and the task's effective configuration source after settings saves.
+- Freeze display bindings for JEV decisions, explain suggestions and adoption,
+  and link reviewed collaboration scopes to invocation-matched native observations.
+- Add desktop goal intake with Auto/review-first defaults and explicit delegation,
+  bounded report-only investigation, and repository image inspection/PNG previews.
+  New task directories are created by Go; images remain unreviewed brief evidence
+  until packet approval and do not imply Antigravity headless image transport.
+
 - Add the independent Antigravity DSH plugin and bundled Flywheel machine worker,
   using the official `agy` CLI without ACP. Preserve durable invocation receipts,
   owned history, cancellation, explicit model/effort and evidence-only admission.

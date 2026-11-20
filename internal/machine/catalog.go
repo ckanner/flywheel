@@ -13,6 +13,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
@@ -29,29 +30,33 @@ type RunQuality struct {
 	FirstAttemptCompletions int `json:"firstAttemptCompletions"`
 }
 type RunRecord struct {
-	WorkspaceCwd  string                         `json:"workspaceCwd,omitempty"`
-	HostSessionID string                         `json:"hostSessionId,omitempty"`
-	Quality       RunQuality                     `json:"quality"`
-	Head          string                         `json:"head,omitempty"`
-	Branch        string                         `json:"branch,omitempty"`
-	ElapsedMs     *int64                         `json:"elapsedMs,omitempty"`
-	Kind          string                         `json:"kind"`
-	Version       int                            `json:"version"`
-	ID            string                         `json:"id"`
-	TaskDir       string                         `json:"taskDir"`
-	Cwd           string                         `json:"cwd"`
-	StartedAt     string                         `json:"startedAt"`
-	FinishedAt    string                         `json:"finishedAt,omitempty"`
-	Conditions    string                         `json:"conditions"`
-	ConfigHash    string                         `json:"configHash"`
-	ContractHash  string                         `json:"contractHash"`
-	Workflow      string                         `json:"workflow"`
-	Bindings      map[string]config.LoopBinding  `json:"bindings"`
-	Routes        map[string]config.RouteBinding `json:"routes"`
-	Sessions      config.SessionsConfig          `json:"sessions"`
-	Permissions   config.PermissionsConfig       `json:"permissions"`
-	Summary       TaskSummary                    `json:"summary"`
-	Error         string                         `json:"error,omitempty"`
+	InitialBindings        map[string]state.BindingSnapshot `json:"initialBindings,omitempty"`
+	InitialBindingsOmitted int                              `json:"initialBindingsOmitted,omitempty"` // display projection only
+	ConfigurationSource    string                           `json:"configurationSource,omitempty"`
+	ConfigurationScope     string                           `json:"configurationScope,omitempty"`
+	WorkspaceCwd           string                           `json:"workspaceCwd,omitempty"`
+	HostSessionID          string                           `json:"hostSessionId,omitempty"`
+	Quality                RunQuality                       `json:"quality"`
+	Head                   string                           `json:"head,omitempty"`
+	Branch                 string                           `json:"branch,omitempty"`
+	ElapsedMs              *int64                           `json:"elapsedMs,omitempty"`
+	Kind                   string                           `json:"kind"`
+	Version                int                              `json:"version"`
+	ID                     string                           `json:"id"`
+	TaskDir                string                           `json:"taskDir"`
+	Cwd                    string                           `json:"cwd"`
+	StartedAt              string                           `json:"startedAt"`
+	FinishedAt             string                           `json:"finishedAt,omitempty"`
+	Conditions             string                           `json:"conditions"`
+	ConfigHash             string                           `json:"configHash"`
+	ContractHash           string                           `json:"contractHash"`
+	Workflow               string                           `json:"workflow"`
+	Bindings               map[string]config.LoopBinding    `json:"bindings"`
+	Routes                 map[string]config.RouteBinding   `json:"routes"`
+	Sessions               config.SessionsConfig            `json:"sessions"`
+	Permissions            config.PermissionsConfig         `json:"permissions"`
+	Summary                TaskSummary                      `json:"summary"`
+	Error                  string                           `json:"error,omitempty"`
 }
 
 func RunIndexDirectory() (string, error) {
@@ -137,7 +142,12 @@ func ListRuns(directory string) ([]RunRecord, error) {
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].StartedAt > records[j].StartedAt })
-	return records[:min(len(records), 100)], nil
+	records = records[:min(len(records), 100)]
+	budget := displayBindingBudget
+	for i := range records {
+		records[i].InitialBindings, records[i].InitialBindingsOmitted = compactBindingSnapshots(records[i].InitialBindings, &budget)
+	}
+	return records, nil
 }
 
 var hostSessionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
@@ -162,6 +172,7 @@ func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error
 		workflow = c.State.Workflow.Effective
 	}
 	record := &RunRecord{HostSessionID: hostSession, Version: 1, ID: c.runID, TaskDir: c.TaskDir, Cwd: c.Cwd, WorkspaceCwd: c.WorkspaceCwd, StartedAt: c.nowISO(),
+		InitialBindings: c.initialRunBindings(), ConfigurationSource: c.Config.File, ConfigurationScope: c.Config.ConfigurationScope(c.Cwd, c.TaskDir),
 		ConfigHash: sessionHash(c.Config), ContractHash: sessionHash(c.State.ContractFingerprints),
 		Bindings: c.Config.Loops, Routes: c.Config.Routes, Sessions: c.Config.Sessions, Permissions: c.Config.Permissions,
 		Workflow: workflow, Summary: c.summary()}
@@ -191,7 +202,8 @@ func (c *Context) beginRunRecord(directory string, kinds ...string) (func(*error
 		c.State.Sessions = &state.SessionLedger{Version: 2, Records: map[string]*state.SessionRecord{}}
 	}
 	c.State.Sessions.Version = max(2, c.State.Sessions.Version)
-	c.State.Run = &state.RunIdentity{Bindings: c.runBindings(), Drivers: c.Config.Drivers, ID: record.ID, Kind: record.Kind, Head: record.Head, Branch: record.Branch, Conditions: record.Conditions, StartedAt: record.StartedAt}
+	c.State.Run = &state.RunIdentity{InitialBindings: record.InitialBindings, ConfigurationSource: record.ConfigurationSource, ConfigurationScope: record.ConfigurationScope,
+		Bindings: c.runBindings(), Drivers: c.Config.Drivers, ID: record.ID, Kind: record.Kind, Head: record.Head, Branch: record.Branch, Conditions: record.Conditions, StartedAt: record.StartedAt}
 	c.save()
 	if err := c.err(); err != nil {
 		return nil, err
@@ -248,5 +260,25 @@ func (c *Context) runBindings() map[string]state.SessionConfiguration {
 	if c.Config.JudgePanel != nil {
 		add("judge-panel", "judge-panel", *c.Config.JudgePanel)
 	}
+	return result
+}
+
+// The existing bindings/routes fields are historical declarations. This new
+// projection explicitly identifies the resolved first executor for this run.
+func (c *Context) initialRunBindings() map[string]state.BindingSnapshot {
+	result := map[string]state.BindingSnapshot{}
+	for _, b := range diagnostic.ProjectConfiguration(c.Config, c.Cwd, c.TaskDir).Bindings {
+		binding := state.SessionConfiguration{NativeProfile: b.NativeProfile, Harness: b.Harness, Model: b.Model,
+			Provider: b.Provider, Channel: b.Channel, Thinking: b.Thinking, Permission: b.PermissionMode, SessionMode: b.Session.Mode,
+			NativeOptions: append(json.RawMessage(nil), c.Config.NativeProfiles[b.NativeProfile].Options...)}
+		result[b.ID] = state.BindingSnapshot{BindingID: b.CandidateID, Binding: binding}
+	}
+	return result
+}
+
+func (c *Context) executionBindingSnapshot(binding config.ExecutionBinding) state.SessionConfiguration {
+	result := executionConfiguration(binding)
+	result.Provider = fallback.ResolveProvider(c.Config, binding.Harness, binding.Provider, binding.Channel)
+	result.NativeOptions = append(json.RawMessage(nil), c.Config.NativeProfiles[binding.NativeProfile].Options...)
 	return result
 }

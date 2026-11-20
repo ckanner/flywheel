@@ -285,7 +285,7 @@ func (c *Context) failureDecision(packet *contract.Packet, code errs.ErrorCode, 
 	if err != nil || len(snapshot.Actions) < 2 || decision.Validate(snapshot, j.DecisionPolicy()) != nil {
 		return ""
 	}
-	record := &state.RuntimeDecisionRecord{ID: id, Packet: packet.PacketID, Attempt: ps.Attempts, PlanRevisions: ps.PlanRevisions, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record := &state.RuntimeDecisionRecord{ModelBindings: c.runtimeModelBindings(packet, snapshot.Actions), ID: id, Packet: packet.PacketID, Attempt: ps.Attempts, PlanRevisions: ps.PlanRevisions, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
 	ledger.Records = append(ledger.Records, record)
 	ledger.Used++
 	ps.PendingStrategy = id

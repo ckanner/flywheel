@@ -139,6 +139,160 @@ Object.assign(en, {
   runtimeDecisionReplanRunning: 'Replanning unsettled · reconcile original session before resuming', runtimeDecisionUnapplied: 'JEV choice not applied', runtimeModelHistory: 'Execution configuration changes', runtimeModelHistoryHelp: 'These are applied configuration changes. Actual model dispatch and sessions remain in the node session records.', runtimeModelFrom: 'Before', runtimeModelTo: 'After', runtimeModelJev: 'JEV model selection applied', runtimeModelInitialJev: 'JEV initial configuration applied',
 });
 
+Object.assign(zh, {
+  runtimeDecisionInitial: '首次执行前的选择', runtimeDecisionFailure: '失败后的调整', runtimeDecisionPhaseUnknown: '决策阶段未记录',
+  runtimeDecisionSuggested: 'JEV 建议', runtimeDecisionChosen: '引擎已选动作', runtimeDecisionInitialBaseline: '初始基线',
+  runtimeDecisionRecordedAction: '记录的控制动作 · 尚未应用', runtimeDecisionBaselineChoice: '本次决策基线',
+  runtimeDecisionUnknownAction: '已记录其他动作，详见原始证据', runtimeModelQuality: '按已配置规则升级模型', runtimeModelChannel: '切换已授权账号渠道', runtimeModelOther: '已记录配置变更',
+  runtimeDecisionNoSuggestion: '没有可用的模型建议', runtimeDecisionBindingUnknown: '此历史记录没有保存完整模型配置',
+  runtimeDecisionBindingsOmitted: '本视图省略了 {count} 项候选配置；完整记录保留在任务账本。', runtimeDecisionBindingUnshown: '本视图未包含该候选的完整配置。',
+  runtimeDecisionKeptBaseline: '保留初始基线 · 没有切换模型', runtimeDecisionNotDispatched: '配置选择不代表模型已经启动',
+  runtimeBindingID: '候选配置', runtimeDecisionEvidence: '展开原始决策证据', runtimeBindingEvidence: '展开原始配置证据',
+  runtimeDecisionReasonOther: '引擎记录了其他原因，详见原始证据',
+  decisionReason_masterDisabled: 'JEV 总开关已关闭', decisionReason_baseline: '沿用确定的原路径',
+  decisionReason_model: '建议满足模型选择的采用条件', decisionReason_repair: '建议继续原范围内修复',
+  decisionReason_replan: '建议在原目标内重新规划', decisionReason_diagnostic: '建议执行已批准的反馈检查',
+  decisionReason_stale: '决策所依据的输入已变化', decisionReason_ineligible: '本次不满足建议采用条件',
+  decisionReason_abstained: '决策没有返回可采用的建议', decisionReason_lowConfidence: '建议未达到适用性或选择阈值',
+  decisionReason_family: '该类动作未获授权', decisionReason_unknown: '原执行结果尚未确认',
+  decisionReason_evaluated: '已收到决策结果', decisionReason_cancelled: '请求已取消，原结果需核对',
+  decisionReason_notSent: '请求在派发前取消', decisionReason_budget: '已达到决策请求上限',
+  decisionReason_data: '证据类别未获授权', decisionReason_hardBudget: '当前预算约束无法证明满足',
+  decisionReason_oneAction: '只有一项合法动作，无需模型选择', decisionReason_deterministic: '可直接确定后续动作',
+  decisionReason_offline: '仅记录离线证据', decisionReason_missingAdapter: '订阅决策适配器不可用',
+  decisionReason_missingKey: '所配置的 API 凭据不可用',
+  decisionReason_progress: '当前执行进展不足',
+  runtimeLedger_enabled: '已开启', runtimeLedger_disabled: '已关闭', 'runtimeLedger_not-configured': '未配置',
+  'runtimeLedger_config-unavailable': '配置暂不可用', 'runtimeLedger_policy-changed': '配置已变化，沿用原路径',
+  'runtimeLedger_native-cleanup-unconfirmed': '订阅调用收尾尚未确认', runtimeLedger_unknown: '状态未识别，详见原始证据',
+  wbBindingInitial: '运行初始配置', wbBindingSelected: '下一次已选配置', wbBindingActual: '最近实际调用',
+  wbBindingRecorded: '最近调用记录 · 派发未确认', wbBindingNotSent: '最近调用记录 · 未派发',
+  wbBindingInitialUnknown: '此运行没有保存可确认的初始模型配置', wbBindingSelectedUnknown: '尚无可确认的后续模型选择',
+  wbBindingNoCall: '尚无已记录的模型调用', wbBindingMissing: '此记录没有保存完整模型配置',
+  wbBindingModelUnspecified: '未指定具体模型',
+  wbBindingNativeOmitted: '原生配置正文已从本视图省略；原生配置仍保留在任务账本。', wbBindingNativeHash: '原生配置 SHA256',
+  wbBindingsOmitted: '本视图省略了 {count} 项初始配置；完整记录保留在任务账本。', wbBindingUnshown: '本视图未包含当前阶段的完整配置。',
+  wbBindingHelp: '初始配置、后续选择与调用事实分别记录。设置修改不会重写旧会话。',
+  wbBindingDeclared: '旧版运行声明 · 不作为实际模型证明', wbConfigurationSource: '本次运行的配置来源',
+  wbBindingDispatch: '派发状态', wbBindingOutcome: '调用结果', wbBindingInvocation: '调用标识',
+  wbDispatchAccepted: '已确认派发', wbDispatchNotSent: '未派发', wbDispatchUnknown: '派发未确认',
+  wbOutcomeCompleted: '已完成', wbOutcomeFailed: '失败', wbOutcomeCancelled: '已取消', wbOutcomeUnknown: '结果未知',
+  wbCollaboration: '已审协作分工', wbCollaborationHelp: '这是已批准的任务和写入范围；实际子智能体观察另列。',
+  wbCollaborationWrites: '允许写入范围', wbCollaborationUnknown: '协作契约身份尚未验证',
+  wbCollaborationUnshown: '协作分工超出本视图的显示范围；此处无法核对完整的已审分工。',
+  wbCollaborationNone: '此节点没有已审协作分工', wbCollaborationRead: '读取节点协作证据',
+  wbCollaborationEvidence: '展开原始协作契约证据',
+  wbNativeRead: '读取本次调用原生观察', wbNativeMissing: '本次调用尚无可用的原生观察，不能据此推断没有子智能体。',
+  wbNativeUnrequested: '尚无可关联的 Antigravity 调用', wbNativeOlder: '当前指标没有包含这次调用；较早记录可能超出显示窗口。',
+});
+Object.assign(en, {
+  runtimeDecisionInitial: 'Choice before first execution', runtimeDecisionFailure: 'Adjustment after a failure', runtimeDecisionPhaseUnknown: 'Decision phase not recorded',
+  runtimeDecisionSuggested: 'JEV recommendation', runtimeDecisionChosen: 'Action selected by the engine', runtimeDecisionInitialBaseline: 'Initial baseline',
+  runtimeDecisionRecordedAction: 'Recorded control action · not applied', runtimeDecisionBaselineChoice: 'Baseline for this decision',
+  runtimeDecisionUnknownAction: 'Another action was recorded; see original evidence', runtimeModelQuality: 'Model upgraded by configured policy', runtimeModelChannel: 'Authorized account channel changed', runtimeModelOther: 'Recorded binding change',
+  runtimeDecisionNoSuggestion: 'No usable model recommendation', runtimeDecisionBindingUnknown: 'This history did not retain a complete model binding',
+  runtimeDecisionBindingsOmitted: '{count} candidate bindings were omitted from this view; complete records remain in the task ledger.', runtimeDecisionBindingUnshown: 'This view does not include the complete binding for this candidate.',
+  runtimeDecisionKeptBaseline: 'Initial baseline retained · no model switch', runtimeDecisionNotDispatched: 'Selecting a binding does not establish model dispatch',
+  runtimeBindingID: 'Candidate binding', runtimeDecisionEvidence: 'Expand original decision evidence', runtimeBindingEvidence: 'Expand original binding evidence',
+  runtimeDecisionReasonOther: 'The engine recorded another reason; see original evidence',
+  decisionReason_masterDisabled: 'The JEV master switch is off', decisionReason_baseline: 'The deterministic original path was retained',
+  decisionReason_model: 'The recommendation met model-selection adoption checks', decisionReason_repair: 'Continue repair within the approved scope',
+  decisionReason_replan: 'Replan within the original goal', decisionReason_diagnostic: 'Run an approved feedback check',
+  decisionReason_stale: 'The inputs used by this decision changed', decisionReason_ineligible: 'Adoption conditions were not met',
+  decisionReason_abstained: 'No usable recommendation was returned', decisionReason_lowConfidence: 'Applicability or choice thresholds were not met',
+  decisionReason_family: 'This action family is not authorized', decisionReason_unknown: 'The original execution outcome is unconfirmed',
+  decisionReason_evaluated: 'A decision result was received', decisionReason_cancelled: 'The request was cancelled; reconcile its original outcome',
+  decisionReason_notSent: 'The request was cancelled before dispatch', decisionReason_budget: 'The decision request limit was reached',
+  decisionReason_data: 'The evidence category is not authorized', decisionReason_hardBudget: 'The current budget bound cannot be established',
+  decisionReason_oneAction: 'Only one legal action remains; no model choice is needed', decisionReason_deterministic: 'The next action can be determined directly',
+  decisionReason_offline: 'Offline evidence recorded only', decisionReason_missingAdapter: 'The subscription decision adapter is unavailable',
+  decisionReason_missingKey: 'The configured API credential is unavailable',
+  decisionReason_progress: 'The current execution made insufficient progress',
+  runtimeLedger_enabled: 'Enabled', runtimeLedger_disabled: 'Disabled', 'runtimeLedger_not-configured': 'Not configured',
+  'runtimeLedger_config-unavailable': 'Configuration unavailable', 'runtimeLedger_policy-changed': 'Configuration changed; original path retained',
+  'runtimeLedger_native-cleanup-unconfirmed': 'Subscription invocation cleanup is unconfirmed', runtimeLedger_unknown: 'Unrecognized status; see original evidence',
+  wbBindingInitial: 'Initial run binding', wbBindingSelected: 'Binding selected for the next execution', wbBindingActual: 'Latest confirmed dispatch',
+  wbBindingRecorded: 'Latest invocation record · dispatch unconfirmed', wbBindingNotSent: 'Latest invocation record · not dispatched',
+  wbBindingInitialUnknown: 'This run did not retain a confirmed initial model binding', wbBindingSelectedUnknown: 'No confirmed next binding has been recorded',
+  wbBindingNoCall: 'No model invocation has been recorded', wbBindingMissing: 'This record did not retain a complete model binding',
+  wbBindingModelUnspecified: 'No specific model was selected',
+  wbBindingNativeOmitted: 'The native options body was omitted from this view; the native configuration remains in the task ledger.', wbBindingNativeHash: 'Native options SHA256',
+  wbBindingsOmitted: '{count} initial bindings were omitted from this view; complete records remain in the task ledger.', wbBindingUnshown: 'This view does not include the complete binding for this stage.',
+  wbBindingHelp: 'Initial bindings, subsequent choices and invocation facts are separate. Settings changes do not rewrite old sessions.',
+  wbBindingDeclared: 'Legacy run declaration · not proof of the actual model', wbConfigurationSource: 'Configuration source for this run',
+  wbBindingDispatch: 'Dispatch', wbBindingOutcome: 'Invocation outcome', wbBindingInvocation: 'Invocation ID',
+  wbDispatchAccepted: 'Dispatch confirmed', wbDispatchNotSent: 'Not dispatched', wbDispatchUnknown: 'Dispatch unconfirmed',
+  wbOutcomeCompleted: 'Completed', wbOutcomeFailed: 'Failed', wbOutcomeCancelled: 'Cancelled', wbOutcomeUnknown: 'Unknown outcome',
+  wbCollaboration: 'Reviewed collaboration tasks', wbCollaborationHelp: 'These are approved tasks and write scopes. Actual child observations are shown separately.',
+  wbCollaborationWrites: 'Allowed write scope', wbCollaborationUnknown: 'The collaboration contract identity has not been verified',
+  wbCollaborationUnshown: 'The collaboration tasks exceed this view\'s display limit; the complete reviewed tasks cannot be verified here.',
+  wbCollaborationNone: 'No reviewed collaboration tasks are recorded for this node', wbCollaborationRead: 'Read node collaboration evidence',
+  wbCollaborationEvidence: 'Expand original collaboration contract evidence',
+  wbNativeRead: 'Read native observations for this invocation', wbNativeMissing: 'No native observation is available for this invocation. This does not prove that it had no children.',
+  wbNativeUnrequested: 'No Antigravity invocation is available to match', wbNativeOlder: 'The current metrics do not include this invocation. Older records may be outside the displayed window.',
+});
+
+function validDisplayBinding(value) {
+  return record(value) && typeof value.harness === 'string' && value.harness.length > 0 && typeof value.model === 'string' &&
+    ['provider', 'channel', 'thinking', 'nativeProfile', 'permission', 'permissionMode', 'sessionMode', 'profile']
+      .every(key => value[key] == null || typeof value[key] === 'string');
+}
+
+function validBindingChoices(value, omitted) {
+  return (omitted == null || Number.isSafeInteger(omitted) && omitted >= 0) &&
+    (value == null || record(value) && Object.values(value).every(choice => record(choice) &&
+      (choice.bindingId == null || typeof choice.bindingId === 'string') && validDisplayBinding(choice.binding) &&
+      (choice.nativeOptionsOmitted == null && choice.nativeOptionsHash == null || choice.nativeOptionsOmitted === true &&
+        typeof choice.nativeOptionsHash === 'string' && /^[0-9a-f]{64}$/.test(choice.nativeOptionsHash) && choice.binding.nativeOptions == null)));
+}
+
+function bindingEffortLabel(binding, t) {
+  if (binding?.thinking == null) return t('unknown');
+  if (fixedAntigravityEffort(binding) && binding.thinking === '') return t('cfgEffortFixed');
+  const key = { off: 'cfgEffortOff', minimal: 'cfgEffortMinimal', low: 'cfgEffortLow', medium: 'cfgEffortMedium', high: 'cfgEffortHigh', xhigh: 'cfgEffortXhigh', max: 'cfgEffortMax' }[binding?.thinking];
+  return key ? t(key) : binding?.thinking || t('default');
+}
+
+function BindingProperties({ binding, bindingId, nativeOptionsOmitted, nativeOptionsHash, t }) {
+  if (!binding) return h('p', { className: css.meta }, t('wbBindingMissing'));
+  const property = (label, value) => h(React.Fragment, { key: label }, h('dt', null, label), h('dd', null, textValue(value)));
+  const permission = binding.permission ?? binding.permissionMode;
+  return h('dl', { className: css.consoleProperties },
+    bindingId && property(t('runtimeBindingID'), bindingId),
+    property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })),
+    property(t('consoleModel'), binding.model === '' ? t('wbBindingModelUnspecified') : binding.model),
+    binding.profile && property(t('profile'), binding.profile),
+    binding.channel && property(t('channel'), binding.channel),
+    property(t('consoleThinking'), bindingEffortLabel(binding, t)),
+    (binding.nativeProfile || binding['native-profile']) && property(t('cfgNative'), binding.nativeProfile || binding['native-profile']),
+    nativeOptionsOmitted && h(React.Fragment, null,
+      h('dt', null, t('cfgNative')), h('dd', { 'data-native-options-omitted': true }, t('wbBindingNativeOmitted')),
+      h('dt', null, t('wbBindingNativeHash')), h('dd', { className: css.path }, nativeOptionsHash)),
+    permission && property(t('permission'), permissionLabels[permission] ? t(permissionLabels[permission]) : permission),
+    (binding.sessionMode || binding.session?.mode) && property(t('session'), sessionModeLabel({ session: { mode: binding.sessionMode || binding.session?.mode } }, t)));
+}
+
+function RawEvidence({ value, label, t }) {
+  return h('details', { className: css.details + ' ' + css.evidenceToggle, 'data-raw-evidence': true },
+    h('summary', null, t(label)), h('pre', { className: css.raw }, JSON.stringify(value, null, 2)));
+}
+
+function runtimeDecisionReason(reason, t) {
+  const code = typeof reason === 'string' ? reason.split('; decision ')[0] : '';
+  const key = {
+    'master-disabled': 'masterDisabled', 'deterministic-baseline': 'baseline', 'approved-model-choice': 'model',
+    'approved-repair-choice': 'repair', 'approved-replan-choice': 'replan', 'approved-diagnostic-choice': 'diagnostic',
+    'stale-decision': 'stale', 'adoption-not-eligible': 'ineligible', 'decision-abstained': 'abstained',
+    'decision-not-applicable': 'lowConfidence', 'action-family-not-enabled': 'family',
+    'invalid-or-unknown-execution': 'unknown', 'executor-outcome-unknown': 'unknown', 'reserved-without-terminal': 'unknown',
+    evaluated: 'evaluated', 'cancelled-after-dispatch': 'cancelled', 'cancelled-before-dispatch': 'notSent',
+    'decision-call-budget': 'budget', 'data-not-authorized': 'data', 'hard-budget-without-enforceable-bound': 'hardBudget',
+    'one-legal-action': 'oneAction', 'deterministic-choice': 'deterministic', 'offline-no-network': 'offline',
+    'snapshot-captured': 'offline', 'offline-recorded-response': 'evaluated', 'missing-subscription-adapter': 'missingAdapter', 'missing-api-key': 'missingKey', 'insufficient-progress': 'progress',
+  }[code];
+  return key ? t('decisionReason_' + key) : /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(code) ? t('runtimeDecisionReasonOther') : textValue(reason);
+}
+
 function validRuntimeDecisions(value) {
   const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
   const optionalStrings = (object, keys) => keys.every(key => object[key] == null || typeof object[key] === 'string');
@@ -154,13 +308,26 @@ function validRuntimeDecisions(value) {
       strings(entry, ['id', 'packet', 'action', 'status', 'started-at']) && count(entry.attempt) &&
       (entry['plan-revisions'] == null || count(entry['plan-revisions'])) && (entry.accounted == null || typeof entry.accounted === 'boolean') &&
       (entry.selection == null || strings(entry.selection, ['action-id', 'reason']) && typeof entry.selection.adopted === 'boolean') &&
-      (entry.receipt == null || strings(entry.receipt, ['status', 'reason']) && optionalStrings(entry.receipt, ['model'])) && feedback(entry.feedback));
+      (entry.receipt == null || strings(entry.receipt, ['status', 'reason']) && optionalStrings(entry.receipt, ['model', 'action-id'])) &&
+      (entry.phase == null || ['initial-execution', 'after-failure'].includes(entry.phase)) &&
+      optionalStrings(entry, ['baseline-action-id']) && validBindingChoices(entry['model-bindings'], entry['model-bindings-omitted']) &&
+      (entry.actions == null || Array.isArray(entry.actions) && entry.actions.length <= 16 && entry.actions.every(action => strings(action, ['id', 'kind', 'description']))) && feedback(entry.feedback));
 }
 
 function runtimeDecisionAction(action, t) {
   const kind = action.match(/^(model|feedback|recheck)-\d+$/)?.[1] ?? action;
   const label = { repair: 'runtimeDecisionRepair', replan: 'runtimeDecisionReplan', model: 'runtimeDecisionModel', feedback: 'runtimeDecisionFeedback', recheck: 'runtimeDecisionRecheck' }[kind];
-  return label ? t(label) + (kind !== action ? ' · ' + action : '') : action;
+  return label ? t(label) : t('runtimeDecisionUnknownAction');
+}
+
+function DecisionActionDetails({ entry, action, title, t }) {
+  const choice = action && entry['model-bindings']?.[action];
+  return h('section', { className: css.observationBlock, 'data-decision-choice': title },
+    h('h5', null, t(title)),
+    !action ? h('p', { className: css.meta }, t('runtimeDecisionNoSuggestion')) : choice
+      ? h(BindingProperties, { ...choice, t })
+      : h(React.Fragment, null, h('p', null, runtimeDecisionAction(action, t)),
+        /^model-\d+$/.test(action) && h('p', { className: css.meta }, t(entry['model-bindings-omitted'] > 0 ? 'runtimeDecisionBindingUnshown' : 'runtimeDecisionBindingUnknown'))));
 }
 
 function RuntimeDecisionPanel({ ledger, packetID, t }) {
@@ -173,15 +340,22 @@ function RuntimeDecisionPanel({ ledger, packetID, t }) {
     h('h4', null, t('runtimeDecisionTitle')),
     h('p', { className: css.meta }, t('runtimeDecisionHelp')),
     h('p', { className: css.meta }, t('runtimeDecisionUsage', { used: ledger.used, limit: ledger['max-calls'] ?? '—', imported: ledger['imported-calls'] })),
-    h('p', { className: css.meta }, t('runtimeDecisionStatus') + ': ' + ledger.status),
+    h('p', { className: css.meta }, t('runtimeDecisionStatus') + ': ' + t(['enabled', 'disabled', 'not-configured', 'config-unavailable', 'policy-changed', 'native-cleanup-unconfirmed'].includes(ledger.status) ? 'runtimeLedger_' + ledger.status : 'runtimeLedger_unknown')),
     !packetID && total > entries.length && h('p', { className: css.meta }, t('runtimeDecisionOmitted', { shown: entries.length, total })),
     ...entries.map(entry => h('article', { key: entry.id, 'data-decision-id': entry.id },
-      h('h4', null, entry.packet + ' · ' + runtimeDecisionAction(entry.action, t)),
+      h('h4', null, entry.packet + ' · ' + t(entry.phase === 'initial-execution' ? 'runtimeDecisionInitial' : entry.phase === 'after-failure' ? 'runtimeDecisionFailure' : 'runtimeDecisionPhaseUnknown')),
       h('p', { className: css.meta }, entry.id + ' · ' + t('runtimeDecisionAttempt') + ' ' + entry.attempt + ' · ' + entry['started-at']),
-      h('p', { className: ['pending', 'replan-running', 'feedback-running', 'feedback-unknown', 'feedback-stale'].includes(entry.status) ? css.warningText : css.meta }, statuses[entry.status] ? t(statuses[entry.status]) : entry.status),
-      entry.selection && h('p', null, t(!entry.selection.adopted ? 'runtimeDecisionBaseline' : ['stale', 'baseline', 'pending'].includes(entry.status) ? 'runtimeDecisionUnapplied' : 'runtimeDecisionAdopted') + ' · ' + entry.selection.reason),
-      entry.receipt && h('p', { className: css.meta }, t('runtimeDecisionCall') + ': ' + entry.receipt.status + ' · ' + entry.receipt.reason),
+      h('p', { className: ['pending', 'replan-running', 'feedback-running', 'feedback-unknown', 'feedback-stale'].includes(entry.status) ? css.warningText : css.meta }, statuses[entry.status] ? t(statuses[entry.status]) : t('runtimeDecisionUnknown')),
+      entry.selection && h('p', { 'data-decision-adoption': true }, t(!entry.selection.adopted ? 'runtimeDecisionBaseline' : ['stale', 'baseline', 'pending'].includes(entry.status) ? 'runtimeDecisionUnapplied' : 'runtimeDecisionAdopted') + ' · ' + runtimeDecisionReason(entry.selection.reason, t)),
+      entry.receipt && h('p', { className: css.meta }, t('runtimeDecisionCall') + ': ' + runtimeDecisionReason(entry.receipt.reason, t)),
       entry.receipt?.status === 'unknown' && h('p', { className: css.warningText }, t('runtimeDecisionUnknown')),
+      entry['model-bindings-omitted'] > 0 && h('p', { className: css.meta, 'data-model-bindings-omitted': true }, t('runtimeDecisionBindingsOmitted', { count: entry['model-bindings-omitted'] })),
+      entry['baseline-action-id'] && h(DecisionActionDetails, { entry, action: entry['baseline-action-id'], title: entry.phase === 'initial-execution' ? 'runtimeDecisionInitialBaseline' : 'runtimeDecisionBaselineChoice', t }),
+      h(DecisionActionDetails, { entry, action: entry.receipt?.['action-id'], title: 'runtimeDecisionSuggested', t }),
+      h(DecisionActionDetails, { entry, action: entry.action, title: ['pending', 'stale'].includes(entry.status) ? 'runtimeDecisionRecordedAction' : 'runtimeDecisionChosen', t }),
+      entry.phase === 'initial-execution' && entry.action === entry['baseline-action-id'] && ['baseline', 'applied'].includes(entry.status) && h('p', { className: css.meta, 'data-baseline-retained': true }, t('runtimeDecisionKeptBaseline')),
+      h('p', { className: css.meta }, t('runtimeDecisionNotDispatched')),
+      h(RawEvidence, { value: entry, label: 'runtimeDecisionEvidence', t }),
       entry.feedback && h('div', { 'data-decision-feedback': entry.id },
         h('p', { className: css.meta }, t('runtimeDecisionFeedbackHelp')),
         ...entry.feedback.results.map((result, index) => result['omitted-items'] != null
@@ -212,20 +386,19 @@ function ExecutionPolicyChanges({ packets, packetID, t }) {
   const changes = Object.entries(packets ?? {}).flatMap(([id, packet]) => !packetID || id === packetID
     ? (packet['execution-policy']?.history ?? []).map(change => ({ id, change })) : []);
   if (!changes.length) return null;
-  const fields = ['harness', 'provider', 'channel', 'model', 'thinking', 'nativeProfile', 'permission', 'sessionMode'];
   const bindingDetails = (binding, label) => h('div', null,
     h('p', null, t(label)),
-    h('dl', { className: css.consoleProperties }, ...fields.filter(field => binding[field] || field === 'thinking' && fixedAntigravityEffort(binding)).map(field =>
-      h(React.Fragment, { key: field }, h('dt', null, field), h('dd', null, field === 'thinking' && fixedAntigravityEffort(binding) ? t('cfgEffortFixed') : binding[field])))));
+    h(BindingProperties, { binding, t }));
   return h('section', { className: css.details, 'data-execution-switches': packetID ?? 'task' },
     h('h4', null, t('runtimeModelHistory')),
     h('p', { className: css.meta }, t('runtimeModelHistoryHelp')),
     ...changes.map(({ id, change }, index) => h('article', { key: index },
       h('h4', null, id + ' · ' + change.from + ' → ' + change.to),
-      h('p', { className: css.meta }, (change.kind === 'jev-model-selection' ? t('runtimeModelJev') : change.kind === 'jev-initial-selection' ? t('runtimeModelInitialJev') : change.kind) + ' · ' + t('runtimeDecisionAttempt') + ' ' + change.attempt + ' · ' + change.at),
-      h('p', null, t('runtimeDecisionReason') + ': ' + change.reason),
+      h('p', { className: css.meta }, t({ 'jev-model-selection': 'runtimeModelJev', 'jev-initial-selection': 'runtimeModelInitialJev', 'quality-upgrade': 'runtimeModelQuality', 'channel-fallback': 'runtimeModelChannel' }[change.kind] || 'runtimeModelOther') + ' · ' + t('runtimeDecisionAttempt') + ' ' + change.attempt + ' · ' + change.at),
+      h('p', null, t('runtimeDecisionReason') + ': ' + runtimeDecisionReason(change.reason, t)),
       bindingDetails(change.before, 'runtimeModelFrom'),
-      bindingDetails(change.after, 'runtimeModelTo'))));
+      bindingDetails(change.after, 'runtimeModelTo'),
+      h(RawEvidence, { value: change, label: 'runtimeBindingEvidence', t }))));
 }
 
 Object.assign(zh, { sharedBatch: '共享目录批次 · 统一验收与提交', sharedBatchError: '上次批次错误' });
@@ -627,7 +800,7 @@ function canvasModel(control, scope, page, whole, t) {
   };
 }
 
-function nodeBinding(node, state, quick, t) {
+function nodeBindingFacts(node, state, quick) {
   const id = node.packet ? node.id.split('/')[0] : null;
   const role =
     node.stage === 'review'
@@ -642,13 +815,44 @@ function nodeBinding(node, state, quick, t) {
   if (!role) return null;
   const scope = id || state['current-milestone'];
   const actual = Object.values(state.sessions?.records ?? {})
-    .filter((s) => s.role === role && (!scope || s.scope === scope || s.scope === 'final:' + scope))
+    .filter((s) => record(s) && s.role === role && (!scope || s.scope === scope || s.scope === 'final:' + scope))
     .sort((a, b) => (b.last?.['started-at'] || '').localeCompare(a.last?.['started-at'] || ''))[0];
-  if (state.run?.drivers?.[role] === 'mock')
-    return { harness: 'mock', model: t('consoleMockModel'), sessionMode: 'fresh' };
-  return actual
-    ? (actual.configuration ?? null)
-    : state.run?.bindings?.[role === 'execute' ? 'routes.' + node.packet.route : 'loops.' + role];
+  const stageID = role === 'execute' ? 'routes.' + node.packet.route : 'loops.' + role;
+  // Legacy `bindings` recorded declarations, not resolved policy candidates.
+  // Never fill a missing historical fact from the currently edited settings.
+  const initial = state.run?.initialBindings?.[stageID] ?? null;
+  const policy = role === 'execute' ? node.packet?.['execution-policy'] : null;
+  let selected = initial;
+  if (policy?.current) {
+    const last = policy.history?.at(-1);
+    selected = last?.to === policy.current ? { bindingId: last.to, binding: last.after } :
+      initial?.bindingId === policy.current ? initial : null;
+    if (!selected) {
+      for (const decision of [...(state['runtime-decisions']?.records ?? [])].reverse()) {
+        const choice = decision['model-bindings']?.[decision.action];
+        if (decision.packet === id && ['applied', 'baseline'].includes(decision.status) && choice?.bindingId === policy.current) {
+          selected = choice;
+          break;
+        }
+      }
+    }
+  }
+  return { role, initial, selected, selectedId: policy?.current, actual,
+    declared: state.run?.bindings?.[stageID], mock: state.run?.drivers?.[role] === 'mock' };
+}
+
+function recordedInvocationLabel(value) {
+  return value?.last?.dispatch === 'accepted' ? 'wbBindingActual' : value?.last?.dispatch === 'not-dispatched' ? 'wbBindingNotSent' : 'wbBindingRecorded';
+}
+
+function bindingFactCaption(facts, t) {
+  if (!facts) return null;
+  if (facts.actual?.configuration) return t(recordedInvocationLabel(facts.actual)) + ' · ' + bindingCaption(facts.actual.configuration);
+  if (facts.mock) return t('consoleMockModel');
+  if (facts.selected) return t('wbBindingSelected') + ' · ' + bindingCaption(facts.selected.binding);
+  if (facts.initial) return t('wbBindingInitial') + ' · ' + bindingCaption(facts.initial.binding);
+  if (facts.declared) return t('wbBindingDeclared') + ' · ' + bindingCaption(facts.declared);
+  return null;
 }
 
 function bindingCaption(binding) {
@@ -658,12 +862,92 @@ function bindingCaption(binding) {
       'deepseek-account': 'DeepSeek',
       chatgpt: 'ChatGPT',
       kimi: 'Kimi Code',
+      antigravity: 'Antigravity',
       'codex-pro': 'Codex Pro',
       'claude-code-pro': 'Claude Code Pro',
     }[provider] || provider;
   const model =
     { 'deepseek-flash': 'Flash', 'kimi-code/k3.1-pro': 'K3.1 Pro' }[binding.model] || binding.model;
   return [label, model].filter(Boolean).join(' · ');
+}
+
+Object.assign(zh, { wbInputImagesSent: '已派发调用的图片身份', wbInputImagesRecorded: '记录的图片输入配置 · 未确认派发', wbInputImagesClaude: '图片按这次调用的冻结身份传给 Claude SDK；此处不重新读取文件。', wbInputImageSize: '字节数', wbInputImageDigest: 'SHA-256' });
+Object.assign(en, { wbInputImagesSent: 'Image identities for the confirmed dispatch', wbInputImagesRecorded: 'Recorded image input configuration · dispatch unconfirmed', wbInputImagesClaude: 'Images use this invocation’s frozen identity in Claude SDK. This view does not reread files.', wbInputImageSize: 'Bytes', wbInputImageDigest: 'SHA-256' });
+
+function validInputImageManifest(value) {
+  return value == null || record(value) && value.version === 1 && Array.isArray(value.images) && value.images.length > 0 && value.images.length <= 4 &&
+    value.images.every(item => record(item) && ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(item.mimeType) &&
+      typeof item.sha256 === 'string' && /^[0-9a-f]{64}$/.test(item.sha256) && Number.isSafeInteger(item.bytes) && item.bytes > 0);
+}
+
+function InvocationImages({ value, t }) {
+  const manifest = value?.configuration?.inputImages;
+  if (!manifest || !validInputImageManifest(manifest)) return null;
+  const dispatched = value.last?.dispatch === 'accepted';
+  return h('section', { className: css.inspectorSection, 'data-invocation-images': value.last?.id || '' },
+    h('h5', null, t(dispatched ? 'wbInputImagesSent' : 'wbInputImagesRecorded')),
+    dispatched && value.configuration.harness === 'claude-code-pro' && h('p', { className: css.meta }, t('wbInputImagesClaude')),
+    ...manifest.images.map((item, index) => h('dl', { key: index, className: css.consoleProperties },
+      h('dt', null, 'MIME'), h('dd', null, item.mimeType), h('dt', null, t('wbInputImageDigest')), h('dd', { className: css.path }, item.sha256),
+      h('dt', null, t('wbInputImageSize')), h('dd', null, String(item.bytes)))));
+}
+
+function NodeBindingHistory({ facts, state, t }) {
+  if (!facts) return null;
+  const actual = facts.actual;
+  return h('section', { className: css.inspectorSection + ' ' + css.observationFacts, 'data-node-bindings': true },
+    h('h4', null, t('wbConfiguration')), h('p', { className: css.meta }, t('wbBindingHelp')),
+    state.run?.configurationSource != null && h('p', { className: css.path }, t('wbConfigurationSource') + ': ' + (state.run.configurationSource || t('embedded'))),
+    state.run?.initialBindingsOmitted > 0 && h('p', { className: css.meta, 'data-initial-bindings-omitted': true }, t('wbBindingsOmitted', { count: state.run.initialBindingsOmitted })),
+    h('article', { className: css.observationBlock, 'data-binding-fact': 'initial' }, h('h5', null, t('wbBindingInitial')),
+      facts.initial ? h(BindingProperties, { ...facts.initial, t }) : h('p', { className: css.meta }, t(state.run?.initialBindingsOmitted > 0 ? 'wbBindingUnshown' : 'wbBindingInitialUnknown'))),
+    facts.role === 'execute' && h('article', { className: css.observationBlock, 'data-binding-fact': 'selected' }, h('h5', null, t('wbBindingSelected')),
+      facts.selected ? h(BindingProperties, { ...facts.selected, t }) : h('p', { className: css.meta },
+        (facts.selectedId ? t('runtimeBindingID') + ': ' + facts.selectedId + ' · ' : '') + t(state.run?.initialBindingsOmitted > 0 ? 'wbBindingUnshown' : 'wbBindingSelectedUnknown'))),
+    h('article', { className: css.observationBlock, 'data-binding-fact': 'actual' }, h('h5', null, t(actual ? recordedInvocationLabel(actual) : 'wbBindingActual')),
+      actual ? h(React.Fragment, null, h(BindingProperties, { binding: actual.configuration, t }),
+        h('dl', { className: css.consoleProperties },
+          h('dt', null, t('wbBindingInvocation')), h('dd', { className: css.path }, textValue(actual.last?.id)),
+          h('dt', null, t('wbBindingDispatch')), h('dd', null, t(actual.last?.dispatch === 'accepted' ? 'wbDispatchAccepted' : actual.last?.dispatch === 'not-dispatched' ? 'wbDispatchNotSent' : 'wbDispatchUnknown')),
+          h('dt', null, t('wbBindingOutcome')), h('dd', null, t({ completed: 'wbOutcomeCompleted', failed: 'wbOutcomeFailed', cancelled: 'wbOutcomeCancelled' }[actual.last?.outcome] || 'wbOutcomeUnknown'))),
+        h(InvocationImages, { value: actual, t })) : h('p', { className: css.meta }, t('wbBindingNoCall'))),
+    !facts.initial && facts.declared && h(RawEvidence, { value: facts.declared, label: 'wbBindingDeclared', t }));
+}
+
+function validCollaborationView(value) {
+  return value == null || record(value) && ['verified', 'unverified', 'absent'].includes(value.status) && typeof value.reason === 'string' &&
+    (value.contractFingerprint == null || typeof value.contractFingerprint === 'string') && (value.status === 'verified'
+      ? typeof value.contractFingerprint === 'string' && /^[0-9a-f]{64}$/.test(value.contractFingerprint) &&
+        record(value.value) && value.value.version === 1 && Array.isArray(value.value.tasks) && value.value.tasks.length >= 2 && value.value.tasks.length <= 8 &&
+        value.value.tasks.every(task => record(task) && typeof task.goal === 'string' && task.goal.trim() && Array.isArray(task.writes) && task.writes.length > 0 && task.writes.length <= 64 && task.writes.every(path => typeof path === 'string' && path.length > 0))
+      : value.value == null);
+}
+
+function NodeCollaboration({ packetID, state, control, selection, run, t }) {
+  if (!packetID) return null;
+  const view = control.node?.id === packetID && control.node.revision === state.revision ? control.node.collaboration : null;
+  return h('section', { className: css.inspectorSection, 'data-node-collaboration': packetID },
+    h('h4', null, t('wbCollaboration')),
+    h('p', { className: css.meta }, t('wbCollaborationHelp')),
+    view?.status === 'verified' ? h('ol', null, ...view.value.tasks.map((task, index) => h('li', { key: index },
+      h('p', null, task.goal), h('p', { className: css.meta }, t('wbCollaborationWrites') + ': ' + task.writes.join(', ')))))
+      : h('p', { className: css.meta }, t(view?.status === 'absent' ? 'wbCollaborationNone' : view?.reason === 'display-limit-exceeded' ? 'wbCollaborationUnshown' : 'wbCollaborationUnknown')),
+    h(Button, { disabled: !!control.pending, onClick: () => run('node', selection, false, { packet: packetID }) }, t('wbCollaborationRead')),
+    view && h(RawEvidence, { value: view, label: 'wbCollaborationEvidence', t }));
+}
+
+function NodeNativeObservations({ facts, control, selection, run, t }) {
+  const actual = facts?.actual;
+  const [requested, setRequested] = React.useState('');
+  const id = actual?.last?.id;
+  if (!id || actual.configuration?.harness !== 'antigravity') return null;
+  const calls = (control.metrics?.calls ?? []).filter(call => call['invocation-id'] === id && call.harness === 'antigravity');
+  const observed = calls.filter(call => validNativeObservation(call.native));
+  return h('section', { className: css.inspectorSection, 'data-node-native': id },
+    h('h4', null, t('runsNative')),
+    h('p', { className: css.path }, t('wbBindingInvocation') + ': ' + id),
+    h(Button, { disabled: !!control.pending, onClick: () => { setRequested(id); return run('metrics', selection, false, { runId: actual.last['engine-run-id'] }); } }, t('wbNativeRead')),
+    observed.length ? h(NativeObservations, { calls: observed, t, compact: true }) : h('p', { className: css.meta }, t(requested === id && calls.length === 0 ? 'wbNativeOlder' : 'wbNativeMissing')));
 }
 
 function stageBlockReason(control, node, state) {
@@ -814,7 +1098,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
     });
   };
   const nodeButton = (node) => {
-    const binding = nodeBinding(node, state, quick, t);
+    const caption = bindingFactCaption(nodeBindingFacts(node, state, quick), t);
     return h(
       'button',
       {
@@ -836,8 +1120,8 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
       h(
         'span',
         { className: css.nodeProvider },
-        binding
-          ? bindingCaption(binding)
+        caption
+          ? caption
           : node.packet?.route ||
               (node.stage && ['execute', 'review', 'plan', 'final'].includes(node.stage)
                 ? t('consoleUnknown')
@@ -1197,7 +1481,7 @@ function WorkbenchNodeInspector({
     packetID && control.node?.id === packetID && control.node.revision === state.revision
       ? control.node.packet
       : chosen.packet;
-  const binding = nodeBinding(chosen, state, quick, t),
+  const bindingFacts = nodeBindingFacts({ ...chosen, packet }, state, quick),
     blocked = stageBlockReason(control, chosen, state);
   const sessions = Object.entries(state.sessions?.records ?? {})
     .filter(([, s]) => record(s))
@@ -1242,8 +1526,9 @@ function WorkbenchNodeInspector({
         chosen.packet && !chosen.stage && h('ol', { className: css.stageTimeline }, ...packetStages(packet, quick, t).map(([stage, title, status]) => h('li', { key: stage, 'data-tone': consoleTone(status) }, h('span', null, title), h('span', { className: css.meta }, canvasStatus(status, t))))),
         ((chosen.packet && !chosen.stage) || chosen.group) && h(Button, { onClick: () => expand(chosen) }, t(chosen.packet ? 'wbExpand' : 'wbExpandGroup')),
         ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
-        binding && h('section', { className: css.inspectorSection }, h('h4', null, t('wbConfiguration')),
-          h('dl', { className: css.consoleProperties }, property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })), property(t('consoleModel'), binding.model), property(t('cfgNative'), binding['native-profile'] || binding.nativeProfile), property(t('consoleThinking'), fixedAntigravityEffort(binding) ? t('cfgEffortFixed') : ({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking] ? t(({off:'cfgEffortOff',minimal:'cfgEffortMinimal',low:'cfgEffortLow',medium:'cfgEffortMedium',high:'cfgEffortHigh',xhigh:'cfgEffortXhigh',max:'cfgEffortMax'})[binding.thinking]) : binding.thinking), property(t('permission'), permissionLabels[binding.permission] ? t(permissionLabels[binding.permission]) : binding.permission))),
+        h(NodeBindingHistory, { facts: bindingFacts, state, t }),
+        h(NodeCollaboration, { packetID, state, control, selection, run, t }),
+        h(NodeNativeObservations, { facts: bindingFacts, control, selection, run, t }),
         h('section', { className: css.inspectorSection }, h('h4', null, t('wbSession')),
           sessions.length ? sessions.map(([key, value]) => h('article', { key, className: css.sessionSummary },
             h('h4', null, (roleLabels[value.role] ? t(roleLabels[value.role]) : value.role) + ' · ' + value.scope),
@@ -1267,6 +1552,7 @@ function WorkbenchNodeInspector({
 function TaskView({
   hostSessionID,
   configDrafts,
+  intakeStore,
   useStore,
   useProjection,
   actions,
@@ -1324,6 +1610,7 @@ function TaskView({
     preparation = control.status?.preparation;
   const invalid = !!pathProblem(selection.taskDir) || !!pathProblem(selection.cwd),
     hasTask = !!selection.taskDir.trim();
+  const recoveringIntake = hasTask && intakeStore?.target?.taskDir === selection.taskDir && intakeStore.target.cwd === selection.cwd;
   const button = (action, label, needsTask, probe = false, variant = 'outline') =>
     h(
       Button,
@@ -1374,14 +1661,14 @@ function TaskView({
       !(page === 'config' && (control.pending?.action === 'config-edit' || control.error?.action === 'config-edit') && !control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
     h('div', { className: css.workflowPage, hidden: page !== 'canvas' },
       state?.['shared-execution'] && h('section', { className: css.notice, role: 'status' }, h('strong', null, t('sharedBatch')), h('p', null, state['shared-execution'].packets.join(' · ')), state['shared-execution']['last-error'] && h('p', { role: 'alert' }, state['shared-execution']['last-error'])),
-      hasTask && control.status && !state && !preparation && !busy && !control.uncertainty && h('div', { className: css.launchOptionsBody },
+      hasTask && !recoveringIntake && control.status && !state && !preparation && !busy && !control.uncertainty && h('div', { className: css.launchOptionsBody },
         h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
         button('launch', 'launch', true, false, 'primary')),
       preparation && h(InvestigationPanel, { control, selection, run, t }),
       state?.planning && h(PlanningPanel, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
       state && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], t }),
       state && h(ExecutionPolicyChanges, { packets: state.packets, t }),
-      !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), !hasTask && h('code', null, '/flywheel-task <goal>')),
+      !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(recoveringIntake ? 'intakeResume' : hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(recoveringIntake ? 'intakeResumeHelp' : hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), (!hasTask || recoveringIntake) && h(TaskIntake, { key: hostSessionID, control, selection, intakeStore, changeSelection, run, t })),
       !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
       h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),

@@ -40,6 +40,15 @@ type SessionConfiguration struct {
 	SessionMode   string                     `json:"sessionMode"`
 }
 
+// BindingSnapshot is display metadata frozen by the engine. A candidate ID is
+// present only for an execution-policy binding; it does not prove dispatch.
+type BindingSnapshot struct {
+	BindingID            string               `json:"bindingId,omitempty"`
+	Binding              SessionConfiguration `json:"binding"`
+	NativeOptionsHash    string               `json:"nativeOptionsHash,omitempty"`    // display projection only
+	NativeOptionsOmitted bool                 `json:"nativeOptionsOmitted,omitempty"` // display projection only
+}
+
 type SessionRecord struct {
 	Context         *SessionContext       `json:"context,omitempty"`
 	Configuration   *SessionConfiguration `json:"configuration,omitempty"`

@@ -66,7 +66,9 @@ test('native Flywheel view discovers tasks read-only and ships its scoped styles
   assert.match(ui.container.textContent, /还没有关联任务/);
   assert.deepEqual(ui.discoveryRequests, [{ action: 'runs' }]);
   assert.equal(ui.container.querySelector('[aria-label="环境检查"]').tagName, 'SECTION');
-  assert.equal(ui.container.querySelector('details'), null);
+  assert.equal(ui.container.querySelector('[aria-label="环境检查"]').querySelectorAll('details').length, 0,
+    'environment checks stay directly available');
+  assert.equal(ui.container.querySelectorAll('form details').length, 1, 'new-task depth is an explicit advanced intake option');
   for (const name of ['刷新', '继续流程']) assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === name), false);
   assert.equal([...ui.container.querySelectorAll('button')].some(button => button.textContent === '停止'), false);
   for (const name of ['查看模型配置', '检查安装与配置', '检查 DSH 接入']) assert.equal(ui.button(name).disabled, false);
@@ -215,7 +217,10 @@ test('effective models can be inspected without a task and every binding remains
   for (const value of ['deepseek-flash', 'deepseek-official', 'deepseek-account', '项目内写入',
     '只读', '完全权限（无需逐步确认）', 'future-access', 'constructor',
     'Profile', 'fast', 'kimi-code/k3.1-pro', '会话策略', '已启用', '未用于本次检查',
-    '由原生运行时管理', '规划', '执行', 'high']) assert.ok(report.textContent.includes(value), value);
+    '由原生运行时管理', '规划', '执行']) assert.ok(report.textContent.includes(value), value);
+  const efforts = [...report.querySelectorAll('dt')].filter(node => node.textContent === '推理');
+  assert.equal(efforts.length, configured.bindings.length);
+  assert.ok(efforts.every(node => node.nextElementSibling?.textContent === '高'), 'every configured high effort uses its readable localized label');
   const raw = detail(ui, '引擎原始结果（JSON）');
   assert.deepEqual(JSON.parse(raw.querySelector('pre').textContent).configuration, configured,
     'readable permission labels do not rewrite the engine configuration or unknown future values');

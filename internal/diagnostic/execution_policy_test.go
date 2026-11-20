@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigurationInspectionExposesExecutionAllowlistWithoutChangingBaseline(t *testing.T) {
+func TestConfigurationInspectionExposesActualInitialAndKeepsDeclaration(t *testing.T) {
 	cfg := config.Default()
 	cfg.Routes = map[string]config.RouteBinding{"default": {Harness: "dsh", Provider: "deepseek-account", Channel: "account", Model: "flash", Thinking: "high"}}
 	cfg.Channels = map[string]config.Channel{"account": {Harness: "dsh", Provider: "deepseek-account"}}
@@ -19,7 +19,12 @@ func TestConfigurationInspectionExposesExecutionAllowlistWithoutChangingBaseline
 	view := configurationView(&cfg, "/work", "")
 	require.Equal(t, cfg.ExecutionPolicy, view.ExecutionPolicy)
 	require.Len(t, view.Bindings, 1)
-	require.Equal(t, "high", view.Bindings[0].Thinking, "the regular routes view remains the named compatibility baseline")
+	require.Equal(t, "low", view.Bindings[0].Thinking)
+	require.Equal(t, "trial-low", view.Bindings[0].CandidateID)
+	require.Equal(t, "execution-policy.bindings.trial-low", view.Bindings[0].BindingSource)
+	require.Equal(t, "scoped", view.Bindings[0].Session.Mode)
+	require.Equal(t, "workspace-write", view.Bindings[0].PermissionMode)
+	require.Equal(t, "high", cfg.Routes["default"].Thinking, "inspection must not edit the original declaration")
 	raw, err := json.Marshal(view)
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"execution-policy"`)

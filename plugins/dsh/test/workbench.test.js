@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { act, mountPanel, closeClientHarness, deferred } from './support/client-harness.js';
+import { act, mountPanel as mountClientPanel, closeClientHarness, deferred } from './support/client-harness.js';
 
 after(closeClientHarness);
 const reply = (r, fields) => ({
@@ -50,6 +50,24 @@ const template = {
     'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
   },
 };
+// These tests isolate editor writes and navigation. The effective-configuration
+// read is a distinct read-only operation; config-model-policy.test.js asserts
+// its full request order, task overrides, read failures and stale-save handling.
+const editorOperations = ui => ui.requests.filter(request => request.action !== 'config');
+const lastEditorRequest = ui => ui.requests.filter(request => ['config-edit', 'config-save'].includes(request.action)).at(-1);
+async function mountPanel(t, respond, options) {
+  let editor;
+  return mountClientPanel(t, async (request, ...args) => {
+    if (request.action === 'config') {
+      const values = editor?.values ?? template;
+      return reply(request, { configuration: { source: editor?.source ?? editor?.target ?? '/global/flywheel.config.json',
+        scope: editor?.scope ?? 'global', bindings: [], ...(values.jev ? { jev: { ...values.jev, model: values.jev.model ?? '' } } : {}) } });
+    }
+    const result = await respond(request, ...args);
+    try { editor = JSON.parse(result?.value?.result?.text)?.editor ?? editor; } catch { /* Preserve malformed reply fixtures. */ }
+    return result;
+  }, options);
+}
 function editorResponder(overrides = {}) {
   const stored = {
     global: { ...structuredClone(template), ...structuredClone(overrides) },
@@ -116,7 +134,7 @@ test('view page and config draft survive leaving and returning to the conversati
   assert.equal(page.getAttribute('data-conversation-composer-overlay'), '');
   await ui.setVisible(false);
   await ui.setVisible(true);
-  assert.equal(ui.requests.length, 0, 'an empty inactive editor has not attempted a read');
+  assert.equal(editorOperations(ui).length, 0, 'an empty inactive editor has not attempted a read');
   await ui.click('设置');
   assert.equal(ui.container.querySelector('[data-page]').getAttribute('data-page'), 'config');
   await ui.click('预算与重试');
@@ -164,7 +182,7 @@ for (const replyBeforeRemount of [true, false]) {
     assert.match(ui.container.querySelector('footer').textContent, /配置已保存/);
     assert.equal(ui.button('保存修改').disabled, true);
     assert.equal(ui.button('撤销').disabled, true);
-    assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-save']);
+    assert.deepEqual(editorOperations(ui).map(request => request.action), ['config-edit', 'config-save']);
 
     await input(ui, '会话策略', 'scoped');
     await ui.setVisible(false);
@@ -172,7 +190,7 @@ for (const replyBeforeRemount of [true, false]) {
     assert.equal(field(ui, '会话策略').value, 'scoped', 'the old applied document is not a new save receipt');
     assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'true');
     assert.equal(ui.button('保存修改').disabled, false);
-    assert.equal(ui.requests.length, 2, 'restoring a later dirty draft neither reloads nor replays the save');
+    assert.equal(editorOperations(ui).length, 2, 'restoring a later dirty draft neither reloads nor replays the save');
   });
 }
 
@@ -190,9 +208,9 @@ test('an unconfirmed save while hidden retains its draft and requires explicit r
   assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'true');
   assert.equal(ui.button('保存修改').disabled, true);
   assert.equal(ui.button('重新读取配置').disabled, false);
-  assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-save']);
+  assert.deepEqual(editorOperations(ui).map(request => request.action), ['config-edit', 'config-save']);
   await ui.click('保存修改');
-  assert.equal(ui.requests.length, 2, 'an unknown save cannot be replayed or silently reconciled on remount');
+  assert.equal(editorOperations(ui).length, 2, 'an unknown save cannot be replayed or silently reconciled on remount');
 });
 
 for (const replyBeforeRemount of [true, false]) {
@@ -219,7 +237,7 @@ for (const replyBeforeRemount of [true, false]) {
     assert.equal(field(ui, '传输重试上限').value, '5');
     assert.equal(field(ui, '传输重试上限').getAttribute('aria-invalid'), 'false');
     assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
-    assert.deepEqual(ui.requests.map(request => [request.action, request.editor.scope]), [
+    assert.deepEqual(editorOperations(ui).map(request => [request.action, request.editor.scope]), [
       ['config-edit', 'global'], ['config-edit', 'project'],
     ]);
     await ui.click('运行方式');
@@ -253,7 +271,7 @@ for (const replyBeforeRemount of [true, false]) {
     assert.equal(raw.getAttribute('aria-invalid'), 'false');
     assert.deepEqual(JSON.parse(raw.value), template);
     assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
-    assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config-edit']);
+    assert.deepEqual(editorOperations(ui).map(request => request.action), ['config-edit', 'config-edit']);
   });
 }
 
@@ -270,14 +288,14 @@ test('a reload failure after remount retains the accepted discard and offers an 
   await ui.setVisible(false);
   await ui.setVisible(true);
   await act(async () => pending.reject(new Error('reload unavailable')));
-  assert.equal(ui.requests.length, 2, 'remount must not automatically retry the pending read after it fails');
+  assert.equal(editorOperations(ui).length, 2, 'remount must not automatically retry the pending read after it fails');
   assert.equal(ui.button('诊断与配置文件').getAttribute('aria-pressed'), 'true');
   assert.equal(ui.container.textContent.includes('{discarded invalid JSON'), false);
   assert.equal(ui.container.textContent.includes('配置读取失败'), true);
   assert.equal(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]'), null);
   assert.equal(ui.container.querySelector('footer').getAttribute('data-dirty'), 'false');
   await ui.click('重新读取配置');
-  assert.equal(ui.requests.length, 3);
+  assert.equal(editorOperations(ui).length, 3);
   assert.deepEqual(JSON.parse(ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]').value), template);
 });
 
@@ -292,7 +310,7 @@ test('returning to a task retries an abandoned read instead of retaining an empt
   await ui.selectPath(0, '/repo/docs/b');
   await ui.selectPath(0, '/repo/docs/a');
   await act(async () => pending.resolve(respond(abandoned)));
-  assert.equal(ui.requests.length, 2, 'the old reply is ignored after task selection changes');
+  assert.equal(editorOperations(ui).length, 2, 'the old reply is ignored after task selection changes');
   assert.equal(ui.requests[1].taskDir, '/repo/docs/a');
   assert.equal(ui.requests[1].action, 'config-edit');
   assert.equal(field(ui, '会话策略').value, 'scoped');
@@ -301,9 +319,9 @@ test('returning to a task retries an abandoned read instead of retaining an empt
 
 test('configuration opens with one read, retains a draft across tabs, and requires an explicit scope discard', async (t) => {
   const ui = await mountPanel(t, editorResponder());
-  assert.equal(ui.requests.length, 0);
+  assert.equal(editorOperations(ui).length, 0);
   await ui.click('设置');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   assert.equal(ui.requests[0].action, 'config-edit');
   assert.equal(ui.button('全局').getAttribute('aria-pressed'), 'true');
   assert.equal(ui.button('项目').getAttribute('aria-pressed'), 'false');
@@ -316,15 +334,15 @@ test('configuration opens with one read, retains a draft across tabs, and requir
   await input(ui, '会话策略', 'fresh');
   await ui.click('流程');
   await ui.click('设置');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   assert.equal(field(ui, '会话策略').value, 'fresh');
   await ui.click('项目');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   await ui.click('取消');
   assert.equal(field(ui, '会话策略').value, 'fresh');
   await ui.click('项目');
   await ui.click('放弃草稿并继续');
-  assert.equal(ui.requests.at(-1).editor.scope, 'project');
+  assert.equal(lastEditorRequest(ui).editor.scope, 'project');
   assert.equal(ui.button('项目').getAttribute('aria-pressed'), 'true');
   assert.equal(ui.button('全局').getAttribute('aria-pressed'), 'false');
   assert.equal(ui.requests.filter((r) => r.action === 'config-save').length, 0);
@@ -336,13 +354,13 @@ test('a failed automatic read does not loop or hide its retry, and retry does no
   const respond = editorResponder();
   const ui = await mountPanel(t, (r) => (failure ? Promise.reject(new Error('unavailable')) : respond(r)));
   await ui.click('设置');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   assert.match(ui.container.textContent, /配置读取失败/);
   await ui.click('预算与重试');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   failure = false;
   await ui.click('重新读取配置');
-  assert.equal(ui.requests.length, 2);
+  assert.equal(editorOperations(ui).length, 2);
   assert.equal(ui.requests[1].action, 'config-edit');
   assert.equal(field(ui, '单次运行时限').value, '60');
 });
@@ -375,9 +393,9 @@ test('task navigation preserves unsaved drafts but a changed file revision canno
   assert.equal(field(ui, '会话策略').value, 'fresh');
   assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /文件已被外部修改；草稿已保留/);
-  const count = ui.requests.length;
+  const count = editorOperations(ui).length;
   await ui.click('保存修改');
-  assert.equal(ui.requests.length, count);
+  assert.equal(editorOperations(ui).length, count);
   await ui.click('撤销');
   assert.equal(field(ui, '会话策略').value, 'scoped');
 });
@@ -389,16 +407,16 @@ test('minute conversion preserves unedited watchdog fields and invalid numeric d
   assert.equal(field(ui, '单次运行时限').value, '60');
   await input(ui, '单次运行时限', '0.5');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, {
     watchdog: { 'wall-timeout-ms': 30000, 'idle-timeout-ms': 300000 },
   });
-  assert.equal(ui.requests.at(-1).editor.reset, false);
+  assert.equal(lastEditorRequest(ui).editor.reset, false);
   await input(ui, '传输重试上限', 'oops');
   assert.equal(ui.button('保存修改').disabled, true);
   assert.equal(field(ui, '传输重试上限').value, 'oops');
-  const count = ui.requests.length;
+  const count = editorOperations(ui).length;
   await ui.click('保存修改');
-  assert.equal(ui.requests.length, count);
+  assert.equal(editorOperations(ui).length, count);
   await ui.click('撤销');
   assert.equal(field(ui, '传输重试上限').value, '5');
 });
@@ -409,11 +427,11 @@ test('automatic Worktree management defaults on and saves an explicit off switch
   assert.equal(field(ui, '自动管理任务 Worktree').checked, true);
   await input(ui, '自动管理任务 Worktree', false);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: false } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { worktree: { enabled: false } });
   assert.equal(field(ui, '会话策略').value, 'scoped');
   await input(ui, '自动管理任务 Worktree', true);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { worktree: { enabled: true } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { worktree: { enabled: true } });
 });
 
 test('serial scheduling omits concurrency and toggling parallel preserves the saved limit', async (t) => {
@@ -426,7 +444,7 @@ test('serial scheduling omits concurrency and toggling parallel preserves the sa
   await input(ui, '调度策略', 'parallel');
   await input(ui, '最大并发任务', '3');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { scheduler: { mode: 'parallel', 'max-parallel': 3 } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { scheduler: { mode: 'parallel', 'max-parallel': 3 } });
   await input(ui, '调度策略', 'serial');
   await input(ui, '调度策略', 'parallel');
   assert.equal(field(ui, '最大并发任务').value, '3');
@@ -443,12 +461,12 @@ test('optional dispatch and prewarm settings preserve the scheduler and the sing
   await input(ui, '并行任务派发方式', 'ready-queue');
   await input(ui, '提前启动评审运行环境', 'true');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, {
     scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
   });
   await input(ui, '调度策略', 'serial');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, {
     scheduler: { mode: 'serial', 'max-parallel': 3, dispatch: 'ready-queue', prewarm: true },
   });
   await input(ui, '提前启动评审运行环境', 'false');
@@ -456,7 +474,7 @@ test('optional dispatch and prewarm settings preserve the scheduler and the sing
   assert.equal(field(ui, '并行任务派发方式').value, 'ready-queue');
   await input(ui, '并行任务派发方式', 'batch');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, {
     scheduler: { mode: 'parallel', 'max-parallel': 3, dispatch: 'batch', prewarm: false },
   });
 });
@@ -484,7 +502,7 @@ test('native switches have associated labels and visible states and cannot chang
   const jev = field(ui, '启用 JEV');
   await act(async () => jev.click());
   assert.equal(jev.checked, true);
-  assert.equal(ui.requests.length, 1, 'editing a switch only changes the draft');
+  assert.equal(editorOperations(ui).length, 1, 'editing a switch only changes the draft');
   await ui.click('保存修改');
   assert.equal(jev.disabled, true);
   await act(async () => jev.click());
@@ -520,7 +538,7 @@ test('ready queue eligibility explains unmet conditions without changing saved d
   assert.match(notice().textContent, /仍须核对 Full 任务/);
   await input(ui, '提前启动评审运行环境', true);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, {
     scheduler: { mode: 'parallel', 'max-parallel': 3, providers, dispatch: 'ready-queue', prewarm: true },
     worktree: { enabled: true },
   });
@@ -550,7 +568,7 @@ test('hiding numeric fields clears only their rejected drafts and preserves the 
   assert.equal(field(ui, '传输重试上限').value, 'not a number');
   await input(ui, '传输重试上限', '5');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { scheduler: { mode: 'serial', 'max-parallel': 4 } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { scheduler: { mode: 'serial', 'max-parallel': 4 } });
 });
 
 test('JEV off discards rejected text and numbers while preserving valid connection edits and an empty data policy', async t => {
@@ -581,7 +599,7 @@ test('JEV off discards rejected text and numbers while preserving valid connecti
   await ui.click('JEV');
   assert.equal(ui.button('保存修改').disabled, false);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { jev: {
     ...template.jev, enabled: false, endpoint, model: 'jev-1.15.0', 'key-env': 'account_jev_key', 'max-calls': 6, 'allowed-data': [],
   } });
   assert.equal(ui.container.querySelector('footer').textContent.includes('下次启动'), false);
@@ -614,9 +632,9 @@ test('visible numeric controls enforce the scheduler and JEV schema boundaries b
   await input(ui, '请求超时', '30');
   await input(ui, '每项任务最多 JEV 请求次数', '100');
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.scheduler['max-parallel'], 8);
-  assert.equal(ui.requests.at(-1).editor.values.jev['timeout-ms'], 30000);
-  assert.equal(ui.requests.at(-1).editor.values.jev['max-calls'], 100);
+  assert.equal(lastEditorRequest(ui).editor.values.scheduler['max-parallel'], 8);
+  assert.equal(lastEditorRequest(ui).editor.values.jev['timeout-ms'], 30000);
+  assert.equal(lastEditorRequest(ui).editor.values.jev['max-calls'], 100);
 });
 
 test('invalid JEV text survives task navigation and scope cancellation and is cleared by an explicit reset', async t => {
@@ -638,8 +656,8 @@ test('invalid JEV text survives task navigation and scope cancellation and is cl
   assert.equal(field(ui, '启用 JEV').checked, false);
   assert.equal(ui.button('保存修改').disabled, false);
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.reset, true);
-  assert.equal(ui.requests.at(-1).editor.values.jev.model, template.jev.model);
+  assert.equal(lastEditorRequest(ui).editor.reset, true);
+  assert.equal(lastEditorRequest(ui).editor.values.jev.model, template.jev.model);
 });
 
 test('invalid advanced JEV fields remain visible and repairable after off without silently changing the JSON intent', async t => {
@@ -669,7 +687,7 @@ test('invalid advanced JEV fields remain visible and repairable after off withou
   await rawInput(ui, JSON.stringify(retained));
   assert.equal(ui.button('保存修改').disabled, false, 'valid annotation keys and an empty data list remain accepted');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: retained.jev, retry: retained.retry });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { jev: retained.jev, retry: retained.retry });
 });
 
 test('unfinished advanced JSON disables structured edits while retaining the whole draft and repair actions', async t => {
@@ -693,22 +711,22 @@ test('unfinished advanced JSON disables structured edits while retaining the who
   await rawInput(ui, JSON.stringify(value));
   assert.equal(ui.button('保存修改').disabled, false);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { retry: { 'max-transport-retries': 7 } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { retry: { 'max-transport-retries': 7 } });
 });
 
 test('restoring defaults previews a full replacement and only save sends reset=true', async (t) => {
   const ui = await mountPanel(t, editorResponder());
   await ui.click('设置');
   await ui.click('恢复默认');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   await ui.click('取消');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   await ui.click('恢复默认');
   await ui.click('载入默认配置');
-  assert.equal(ui.requests.length, 1);
+  assert.equal(editorOperations(ui).length, 1);
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.reset, true);
-  assert.deepEqual(ui.requests.at(-1).editor.values, template);
+  assert.equal(lastEditorRequest(ui).editor.reset, true);
+  assert.deepEqual(lastEditorRequest(ui).editor.values, template);
 });
 
 test('stage edits share one save boundary and can be discarded without unrelated overrides', async (t) => {
@@ -738,7 +756,7 @@ test('stage edits share one save boundary and can be discarded without unrelated
   await input(ui, '模型', 'deepseek-custom');
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
-  assert.deepEqual(Object.keys(ui.requests.at(-1).editor.values), ['routes']);
+  assert.deepEqual(Object.keys(lastEditorRequest(ui).editor.values), ['routes']);
 });
 
 test('native profile selection retains explicit off and limits choices to the current harness', async t => {
@@ -754,13 +772,13 @@ test('native profile selection retains explicit off and limits choices to the cu
   await input(ui, '原生能力', 'dsh-heavy');
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], 'dsh-heavy');
-  assert.equal(ui.requests.at(-1).editor.values.routes.default.model, 'deepseek-flash');
+  assert.equal(lastEditorRequest(ui).editor.values.routes.default['native-profile'], 'dsh-heavy');
+  assert.equal(lastEditorRequest(ui).editor.values.routes.default.model, 'deepseek-flash');
   await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   await input(ui, '原生能力', '');
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.routes.default['native-profile'], '');
+  assert.equal(lastEditorRequest(ui).editor.values.routes.default['native-profile'], '');
 });
 
 test('subscription resource choices exclude DSH providers while legacy choices remain available', async t => {
@@ -781,10 +799,10 @@ test('subscription resource choices exclude DSH providers while legacy choices r
     if (strict) {
       await input(ui, 'Provider', 'codex-pro');
       await ui.click('保存修改');
-      assert.deepEqual(ui.requests.at(-1).editor.values.routes.default, {
+      assert.deepEqual(lastEditorRequest(ui).editor.values.routes.default, {
         harness: 'codex-pro', channel: 'chatgpt-subscription', model: 'gpt-6.2-sol', thinking: 'high',
       });
-      assert.equal(ui.requests.at(-1).editor.values.channels['chatgpt-subscription']['env-key'], null);
+      assert.equal(lastEditorRequest(ui).editor.values.channels['chatgpt-subscription']['env-key'], null);
     }
   });
 });
@@ -796,13 +814,13 @@ test('Orchestrator edits update the actual route initial candidate without chang
   const ui = await mountPanel(t,editorResponder({subscription:{version:1,mode:'subscription-only'},routes:{default:baseline,complex:baseline},channels:{'google-subscription':{harness:'antigravity','env-key':null}},'execution-policy':policy,
     'native-profiles':{'agy-native':{harness:'antigravity',options:{version:1,mode:'native',maxObservedAgents:4}}}}));
   await ui.click('设置'); await ui.click('模型与会话');
-  assert.match(ui.container.querySelector('[data-execution-candidates]').textContent,/初始配置 · shared/);
+  assert.equal(field(ui, '普通执行 · 初始配置').value, 'shared');
   await act(async()=>ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   await input(ui,'模型','gemini-pro-orchestrator-neon');
   assert.deepEqual([...field(ui,'推理等级').options].map(option=>[option.value,option.textContent]),[['','原生固定']]);
   await input(ui,'原生能力','agy-native');
   await ui.click('保存修改');
-  const values=ui.requests.at(-1).editor.values;
+  const values=lastEditorRequest(ui).editor.values;
   assert.equal(values.routes.default.model,'gemini-pro-orchestrator-neon');
   const actual=values['execution-policy'].bindings[values['execution-policy'].routes.default.initial];
   assert.equal(actual.model,values.routes.default.model);
@@ -1062,7 +1080,7 @@ test('JEV request limits and fractional confidence thresholds survive the unifie
   assert.equal(ui.button('保存修改').disabled, true);
   await input(ui, '最低选择概率', '0.65');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: {
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { jev: {
     enabled: true, endpoint: 'https://jev.example/v1/systemone', model: 'jev-1.15.0', 'key-env': 'JEV_TEST_API_KEY',
     'timeout-ms': 2500, 'max-calls': 6, 'min-applicability': 0.85, 'min-choice': 0.65,
     'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
@@ -1080,7 +1098,7 @@ test('optional budget hides its threshold, retains accounting settings, and clea
   assert.equal([...ui.container.querySelectorAll('label')].some(l => l.textContent === '单任务每日 Token 额度'), false);
   assert.equal(ui.button('保存修改').disabled, false);
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { budget: { enforce:'off', 'daily-token-limit':2000000 } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { budget: { enforce:'off', 'daily-token-limit':2000000 } });
   assert.equal(field(ui, '单次运行时限').value,'60');
   assert.equal(field(ui, '传输重试上限').value,'5');
   await input(ui, '用量预算', 'soft');
@@ -1103,7 +1121,7 @@ test('inline role policy overrides are shared by Execute routes and preserve unr
   assert.equal(ui.container.querySelector('[data-binding-id="routes.frontend"] select[aria-label$="会话策略"]').value,'fresh');
   assert.equal(ui.container.querySelector('[data-binding-id="loops.review"] select[aria-label$="会话策略"]').value,'inherit');
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values,{sessions:{mode:'scoped','policy-version':1,roles:{execute:'fresh'}}});
+  assert.deepEqual(lastEditorRequest(ui).editor.values,{sessions:{mode:'scoped','policy-version':1,roles:{execute:'fresh'}}});
 });
 
 test('explicit Plan role choices reconcile the Kimi legacy history flag rather than displaying a false Fresh policy', async t => {
@@ -1119,12 +1137,12 @@ test('explicit Plan role choices reconcile the Kimi legacy history flag rather t
   assert.match(select().selectedOptions[0].textContent,/复用/,'legacy Plan still resumes when the general default is Fresh');
   await act(async()=>{select().value='fresh';select().dispatchEvent(new ui.document.defaultView.Event('change',{bubbles:true}));});
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.loops.plan['resident-session'],false);
-  assert.equal(ui.requests.at(-1).editor.values.sessions.roles.plan,'fresh');
+  assert.equal(lastEditorRequest(ui).editor.values.loops.plan['resident-session'],false);
+  assert.equal(lastEditorRequest(ui).editor.values.sessions.roles.plan,'fresh');
   await act(async()=>{select().value='scoped';select().dispatchEvent(new ui.document.defaultView.Event('change',{bubbles:true}));});
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.loops.plan['resident-session'],true);
-  assert.equal(ui.requests.at(-1).editor.values.sessions.roles.plan,'scoped');
+  assert.equal(lastEditorRequest(ui).editor.values.loops.plan['resident-session'],true);
+  assert.equal(lastEditorRequest(ui).editor.values.sessions.roles.plan,'scoped');
 });
 
 test('leaving settings protects unsaved changes without saving or resetting live task state', async t => {
@@ -1162,9 +1180,9 @@ test('existing conflicting Plan flags require an explicit reconciliation and sec
   const panel=ui.container.querySelector('[data-binding-id="judge-panel"] select[aria-label$="会话策略"]');
   await act(async()=>{panel.value='scoped';panel.dispatchEvent(new ui.document.defaultView.Event('change',{bubbles:true}));});
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.loops.plan['resident-session'],false);
-  assert.deepEqual(ui.requests.at(-1).editor.values.sessions.roles,{plan:'fresh','judge-panel':'scoped'});
-  assert.equal(ui.requests.at(-1).editor.values['judge-panel'],undefined,'a session choice does not rewrite its model');
+  assert.equal(lastEditorRequest(ui).editor.values.loops.plan['resident-session'],false);
+  assert.deepEqual(lastEditorRequest(ui).editor.values.sessions.roles,{plan:'fresh','judge-panel':'scoped'});
+  assert.equal(lastEditorRequest(ui).editor.values['judge-panel'],undefined,'a session choice does not rewrite its model');
 });
 
 test('refreshing a valid canvas keeps its layout and data while uncertain operations remain separately visible', async t => {
@@ -1225,7 +1243,7 @@ test('typing a channel saves only the final account channel and preserves unrela
   await act(async () => ui.container.querySelector('[data-binding-id="routes.default"] button').click());
   for (const value of ['n', 'ne', 'new-account']) await input(ui, '账号渠道', value);
   await ui.click('保存修改');
-  const values = ui.requests.at(-1).editor.values;
+  const values = lastEditorRequest(ui).editor.values;
   assert.deepEqual(Object.keys(values.channels).sort(), ['deepseek-account','new-account']);
   assert.equal(values.routes.default.channel,'new-account');
   assert.equal(values.sessions,undefined);

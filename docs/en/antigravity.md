@@ -103,6 +103,12 @@ error; the adapter does not silently expand it. Native image attachments are not
 supported by this backend contract. Multimodal implementation uses the configured
 Claude route.
 
+### Images and the automated input boundary
+
+**An image is not required to use Gemini or Swarm.** The restriction applies when the packet explicitly requires original image bytes. The official [interactive CLI](https://antigravity.google/docs/cli/prompting/) accepts pasted media, while the [headless stream-json input](https://antigravity.google/docs/cli/headless/) currently accepts text content. Interactive media support does not establish automated image delivery or child-agent consumption in this adapter.
+
+The Flywheel task form can inspect and preview explicitly selected repository images, retaining paths and SHA-256 as unreviewed brief evidence. It does not turn a text path into an attachment or give every stage the original image. Reviewed original-image packets continue to use the verified Claude SDK transport; text-only engineering and investigation tasks can use Gemini, including eligible native collaboration.
+
 ## Orchestrator, subagents and Swarm
 
 Orchestrator is a model choice. The official CLI hands work between its named

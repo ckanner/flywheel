@@ -11,6 +11,16 @@ Use this guide for an existing repository. For installation and a disposable fir
 run, start with [Getting started](getting-started.md).
 For incidents, issue fixes, and complex projects, use the [Usage handbook](usage-handbook.md).
 
+## Create a task from the Flywheel view
+
+When the current conversation has no associated task, the canvas offers **Engineering task**, **Fix a problem**, and **Investigate the cause**. Enter the goal; the workspace comes from the current conversation and the engine creates the task ledger under its `docs` directory. You do not need to create a directory first. Merely opening the form performs no inference.
+
+Engineering and repair requests default to **Auto** and **Wait for my approval after review**. The button starts design and independent review through `planning prepare`; it does not approve the resulting design. Full and Quick are advanced depth requests. Delegated execution requires both choosing that policy and explicitly checking the implementation authorization. The reviewed contract still determines eligibility.
+
+The investigation form asks for the expected behavior, a hypothesis and its falsifier, and up to eight exact text-file paths relative to the current conversation’s working directory. It creates a report-only contract and starts the Go investigation owner, with at most 60 seconds and 256 KiB per file. This entry grants no commands, service access, or implementation scope. More complex diagnostics continue to use the task skill and a reviewed bounded preparation contract. See [Investigation](investigation.md).
+
+For repair or engineering work that requires original images, enter up to four explicit repository-relative image paths and choose **Inspect and preview selected images**. The read-only preview checks real PNG/JPEG/GIF/WebP bytes, excludes symlinks and paths outside the repository, and shows MIME type, dimensions, size, and SHA-256. Limits are 4 MiB per image and 8 MiB total. Changing paths invalidates the selection. The brief receives selected references marked **unreviewed**; only a subsequently reviewed packet becomes an execution input. Planning receives paths and digests, not an automatic image attachment. Execute must still validate the frozen original bytes and use the supported Claude SDK transport. Chat attachments are never added automatically. Gemini remains available for tasks without original images.
+
 ## 0. Normal entry: describe a goal and launch
 
 In DSH Chat, describe the requirement with the task skill:

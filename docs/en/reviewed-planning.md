@@ -13,6 +13,12 @@ tasks retain their previous behavior until explicitly migrated. Use the
 [usage handbook](usage-handbook.md) for incident and delivery examples, and
 [configuration](configuration.md) for effective model bindings.
 
+## Desktop goal entry
+
+The empty Flywheel canvas can create a thin brief directly. Engineering and repair goals default to Auto with review-first authorization. **Start design and review** invokes the Go planning engine and stops at the same exact-version approval gate as the task skill. Selecting delegated policy alone is insufficient in this form: the user must also check the explicit implementation authorization. Quick/Full are advanced depth requests and do not change approval policy.
+
+Optional image inspection adds repository-relative paths, MIME types and byte digests as unreviewed evidence. It does not attach original images to the planner or change an approved packet. Review the resulting packet's `input-images` and compatible execution binding before approval. Image changes are detected again before actual execution. See [the task-entry workflow](workflow.md#create-a-task-from-the-flywheel-view).
+
 ## Choose the entry
 
 | Entry | What happens | Where it stops |

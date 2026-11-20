@@ -39,14 +39,7 @@ func (c *Context) reconcileContractRevisions() error {
 		if err != nil {
 			return err
 		}
-		raw, _ := json.Marshal(struct {
-			Spec            any
-			Packet          string
-			Verify          any
-			DefectInjection any `json:"DefectInjection,omitempty"`
-		}{c.packetSpecIdentity(p, spec), string(packet), c.Config.Verify, c.workflowDefectPolicy()})
-		h := sha256.Sum256(raw)
-		fresh[p.PacketID] = hex.EncodeToString(h[:])
+		fresh[p.PacketID] = c.packetContractFingerprint(p, spec, packet)
 	}
 	for _, m := range c.Spec.Milestones {
 		if _, ok := c.State.Milestones[m.ID]; !ok {
@@ -107,6 +100,19 @@ func (c *Context) reconcileContractRevisions() error {
 	}
 	c.State.ContractFingerprints = fresh
 	return nil
+}
+
+// Read-only displays use the same identity as execution, including its exact
+// verification policy. A packet-only digest cannot establish reviewed scope.
+func (c *Context) packetContractFingerprint(packet *contract.Packet, spec, rawPacket []byte) string {
+	raw, _ := json.Marshal(struct {
+		Spec            any
+		Packet          string
+		Verify          any
+		DefectInjection any `json:"DefectInjection,omitempty"`
+	}{c.packetSpecIdentity(packet, spec), string(rawPacket), c.Config.Verify, c.workflowDefectPolicy()})
+	h := sha256.Sum256(raw)
+	return hex.EncodeToString(h[:])
 }
 
 // A progressive child plan changes the Spec projection without revising an

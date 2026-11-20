@@ -35,7 +35,7 @@ func TestAntigravityNativeSchemaRejectsUnsupportedControls(t *testing.T) {
 			require.NoError(t, ValidateAntigravityNative(raw))
 			c := Default()
 			c.NativeProfiles = map[string]NativeProfile{"native": {Harness: "antigravity", Options: raw}}
-			c.Loops = map[string]LoopBinding{"plan": {Harness: "antigravity", NativeProfile: "native"}}
+			c.Routes = map[string]RouteBinding{"default": {Harness: "antigravity", NativeProfile: "native"}}
 			require.NoError(t, c.validateNativeProfiles())
 		}
 	}

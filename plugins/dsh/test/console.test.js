@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { act, mountPanel, closeClientHarness } from './support/client-harness.js';
+import { act, mountPanel as mountClientPanel, closeClientHarness } from './support/client-harness.js';
 import { runControl, ControlNotDispatchedError } from '../src/control.js';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +9,21 @@ import { join } from 'node:path';
 after(closeClientHarness);
 const reply = (r, fields) => ({ ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir: r.taskDir ?? '', state: null, ...fields }) } } });
 const values = { loops: { review: { harness: 'dsh', model: 'gpt-6.1-sol', channel: 'chatgpt', thinking: 'high' } }, routes: { default: { harness: 'dsh', model: 'deepseek-flash', channel: 'deepseek-account', thinking: 'high' } }, sessions: { mode: 'scoped', 'policy-version': 1 }, permissions: { mode: 'full-access' } };
+const lastEditorRequest = ui => ui.requests.filter(request => ['config-edit', 'config-save'].includes(request.action)).at(-1);
+// Supply the new read-only follow-up separately from these existing command
+// fixtures. The model-policy suite verifies its complete protocol and failures.
+async function mountPanel(t, respond, options) {
+  let editor;
+  return mountClientPanel(t, async (request, ...args) => {
+    if (request.action === 'config') return reply(request, { configuration: {
+      source: editor?.source ?? editor?.target ?? '/global/config.json', scope: editor?.scope ?? 'global', bindings: [],
+      ...(editor?.values?.jev ? { jev: { ...editor.values.jev, model: editor.values.jev.model ?? '' } } : {}),
+    } });
+    const result = await respond(request, ...args);
+    try { editor = JSON.parse(result?.value?.result?.text)?.editor ?? editor; } catch { /* Preserve malformed reply fixtures. */ }
+    return result;
+  }, options);
+}
 
 test('console draws real packet branches and forwards one revision-bound stage command', async t => {
   const ui = await mountPanel(t, request => reply(request, { state: { slug: 'checkout', revision: 7, status: 'stopped', packets: { 'M01-T01': { status: 'l1-failed', route: 'default', attempts: 2, evidence: { l1: { pass: false } } } } } }));
@@ -34,8 +49,8 @@ test('configuration scope is explicit, changed sections are saved and source con
     return reply(request, { editor: { scope: request.editor.scope, target: '/global/config.json', revision: 'version-one', values, defaults: values, applied: request.action === 'config-save' } });
   });
   await ui.click('设置');
-  assert.equal(ui.requests.at(-1).editor.scope, 'global');
-  const area = ui.container.querySelector('textarea');
+  assert.equal(lastEditorRequest(ui).editor.scope, 'global');
+  const area = ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]');
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set;
     setter.call(area, JSON.stringify({ ...values, sessions: { mode: 'fresh', 'policy-version': 1 } }));
@@ -43,7 +58,7 @@ test('configuration scope is explicit, changed sections are saved and source con
   });
   reject = true;
   await ui.click('保存修改');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { sessions: { mode: 'fresh', 'policy-version': 1 } });
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { sessions: { mode: 'fresh', 'policy-version': 1 } });
   assert.equal(ui.button('保存修改').disabled, true);
   assert.match(ui.container.textContent, /保存结果未确认/);
   reject = false;
@@ -61,7 +76,7 @@ test('configuration scope is explicit, changed sections are saved and source con
   });
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
-  const change = ui.requests.at(-1).editor.values;
+  const change = lastEditorRequest(ui).editor.values;
   assert.equal(change.routes.default.harness, 'claude-code-pro');
   assert.equal(change.routes.default.model, 'claude-opus-5-5');
   assert.equal(change.routes.default.provider, undefined);
@@ -91,7 +106,7 @@ test('selecting Claude retains existing API and subscription channel definitions
   });
   await ui.click('← 返回模型列表');
   await ui.click('保存修改');
-  const change = ui.requests.at(-1).editor.values;
+  const change = lastEditorRequest(ui).editor.values;
   assert.equal(change.routes.default.channel, 'claude-native');
   assert.deepEqual(change.channels, { ...originalChannels, 'claude-native': { 'env-key': null } },
     'the native default may be added without rewriting existing account definitions');
@@ -113,7 +128,7 @@ test('editing an existing Claude binding preserves its explicit account channel'
     input.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
   });
   await ui.click('保存修改');
-  const change = ui.requests.at(-1).editor.values;
+  const change = lastEditorRequest(ui).editor.values;
   assert.equal(change.routes.default.model, 'opus');
   assert.equal(change.routes.default.channel, 'claude-subscription');
   assert.equal(change.channels, undefined, 'an existing account selection must not be migrated implicitly');
@@ -186,16 +201,18 @@ test('native collaboration metrics separate requested mode from observed childre
  const ui=await mountPanel(t,request=>reply(request,request.action==='metrics'?{metrics:{groups:[],calls:[{harness:'antigravity',role:'execute',model:'gemini-4-neon-high',native}]}}:{runs:[run]}),{catalog:request=>reply(request,{runs:[run]})});
  await ui.click('记录'); await ui.click('读取所选运行指标');
  const panel=ui.container.querySelector('[data-native-observations]');
- assert.match(panel.textContent,/请求模式swarm/);
+ assert.match(panel.textContent,/请求模式Swarm 蜂群/);
  assert.match(panel.textContent,/实际观察到的子智能体1/);
- assert.match(panel.textContent,/CLI 调用完成状态completed/);
- assert.match(panel.textContent,/子智能体完成状态unknown/);
- assert.match(panel.textContent,/原生协作累计用量unknown/);
+ assert.match(panel.textContent,/CLI 调用完成状态已完成/);
+ assert.match(panel.textContent,/子智能体完成状态未知 · 未确认/);
+ assert.match(panel.textContent,/原生协作累计用量未报告/);
+ assert.match(panel.querySelector('[data-raw-evidence]').textContent,/"childCompletion": "unknown"/);
+ assert.equal(panel.querySelectorAll('[data-native-child]').length,1);
  assert.match(panel.textContent,/非硬并发限制/);
  native={...native,childCompletion:'completed'};
  await ui.click('读取所选运行指标');
  assert.match(ui.container.textContent,/Malformed run metrics/);
- assert.match(ui.container.querySelector('[data-native-observations]').textContent,/子智能体完成状态unknown/);
+ assert.match(ui.container.querySelector('[data-native-observations]').textContent,/子智能体完成状态未知 · 未确认/);
 });
 
 test('session handoff keeps exact identity, sends prompts via stdin contract and locks automatic execution', async t => {
@@ -337,22 +354,22 @@ test('one JEV master switch saves actual adoption settings without a second enab
   assert.match(ui.container.textContent, /一个开关控制调查与执行中的 JEV 决策/);
   assert.equal(ui.container.querySelector('[id$="jev.model"]'), null, 'disabled JEV does not require connection fields');
   await act(async () => toggle.click());
-  assert.equal(ui.requests.length, 1, 'editing does not dispatch or save');
+  assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config'], 'editing does not dispatch or save');
   assert.match(ui.container.textContent, /采用通过校验的选择/);
   assert.equal(ui.container.querySelectorAll('[id$="jev.enabled"]').length, 1);
   assert.equal(ui.container.querySelector('[id$="jev.expected-model"]'), null);
   assert.equal(ui.container.querySelector('[id$="jev.mode"]'), null);
   assert.equal(ui.container.querySelector('input[type="password"]'), null, 'the editor never collects the API key');
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).action, 'config-save');
-  assert.deepEqual(ui.requests.at(-1).editor.values, { jev: { ...stored.jev, enabled: true } });
+  assert.equal(lastEditorRequest(ui).action, 'config-save');
+  assert.deepEqual(lastEditorRequest(ui).editor.values, { jev: { ...stored.jev, enabled: true } });
   assert.equal(ui.container.querySelector('dialog'), null, 'Save is the explicit enable operation');
-  assert.match(ui.container.textContent, /关闭也会禁止已有任务的后续 JEV 请求与采用/);
+  assert.match(ui.container.textContent, /全局修改不会覆盖项目或任务文件/);
   await act(async () => toggle.click());
   await ui.click('保存修改');
-  assert.equal(ui.requests.at(-1).editor.values.jev.enabled, false);
+  assert.equal(lastEditorRequest(ui).editor.values.jev.enabled, false);
   assert.equal(ui.requests.filter(r => r.action === 'config-save').length, 2);
-  assert.equal(ui.requests.some(r => !['config-edit', 'config-save'].includes(r.action)), false, 'switch changes never launch an investigation or a provider call');
+  assert.equal(ui.requests.some(r => !['config-edit', 'config-save', 'config'].includes(r.action)), false, 'switch changes never launch an investigation or a provider call');
 });
 
 test('a legacy shadow flag does not appear as a second switch or enable JEV', async t => {

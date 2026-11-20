@@ -19,6 +19,10 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 	source := *st
 	source.Planning = nil
 	view := jsonClone(&source)
+	bindingBudget := displayBindingBudget
+	if view.Run != nil {
+		view.Run.InitialBindings, view.Run.InitialBindingsOmitted = compactBindingSnapshots(view.Run.InitialBindings, &bindingBudget)
+	}
 	if st.Planning != nil {
 		var err error
 		view.Planning, err = consolePlanningProjection(st.Planning, 512<<10)
@@ -37,9 +41,18 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 			if record == nil {
 				return nil, fmt.Errorf("state contains a null runtime decision")
 			}
+			record.ModelBindings, record.ModelBindingsOmitted = compactBindingSnapshots(record.ModelBindings, &bindingBudget)
+			if record.Snapshot != nil {
+				record.Phase = "after-failure"
+				if record.Snapshot.Version == 3 {
+					record.Phase = "initial-execution"
+				}
+				record.BaselineActionID = record.Snapshot.BaselineID
+				record.Actions = record.Snapshot.Actions
+			}
 			record.Snapshot = nil
 			if receipt := record.Receipt; receipt != nil {
-				record.Receipt = &decision.Receipt{Status: receipt.Status, Reason: receipt.Reason, Model: receipt.Model, Usage: receipt.Usage, DurationMS: receipt.DurationMS}
+				record.Receipt = &decision.Receipt{ActionID: receipt.ActionID, Status: receipt.Status, Reason: receipt.Reason, Model: receipt.Model, Usage: receipt.Usage, DurationMS: receipt.DurationMS}
 			}
 			record.Feedback = compactDiagnostic(record.Feedback)
 		}
@@ -104,16 +117,17 @@ func compactDiagnostic(value any) any {
 }
 
 type NodeDetail struct {
-	ID       string             `json:"id"`
-	Revision int64              `json:"revision"`
-	Packet   *state.PacketState `json:"packet"`
+	Collaboration *CollaborationProjection `json:"collaboration,omitempty"`
+	ID            string                   `json:"id"`
+	Revision      int64                    `json:"revision"`
+	Packet        *state.PacketState       `json:"packet"`
 }
 
-func ReadNode(st *state.State, id string) (*NodeDetail, error) {
+func ReadNode(st *state.State, id string, location ...string) (*NodeDetail, error) {
 	if st == nil || st.Packets[id] == nil {
 		return nil, fmt.Errorf("packet not found")
 	}
-	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id]}, nil
+	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location)}, nil
 }
 
 func evidenceSummary(value any, keys ...string) any {

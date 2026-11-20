@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import { directory, nonempty, record, validInvestigationCommand } from './protocol.js';
 import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
 import { validSessionUserAction } from './session-control.js';
+import { preparationDirectory } from './task-directory.js';
+import { validImageSelection, validImageInspection } from './image-contract.js';
 
-const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node'];
+const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'images'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
 
 // This marker is issued only where the host can prove that no control process
@@ -19,11 +21,12 @@ export async function validateControl(input, defaultCwd) {
   if (!record(input) || !actions.includes(input.action)) {
     throw new Error('action must be launch, start, step, status, stop, config, config-edit, config-save, or doctor');
   }
-  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe', 'mode', 'only', 'packet', 'revision', 'retryReason', 'editor', 'session', 'sessionKey', 'delivery', 'runId', 'investigation', 'planning'].includes(key))) {
+  if (Object.keys(input).some(key => !['action', 'taskDir', 'cwd', 'probe', 'mode', 'only', 'packet', 'revision', 'retryReason', 'editor', 'session', 'sessionKey', 'delivery', 'runId', 'investigation', 'planning', 'images'].includes(key))) {
     throw new Error('unknown Flywheel control argument');
   }
   if (input.action === 'investigate' ? !validInvestigationCommand(input.investigation) : 'investigation' in input) throw new Error('investigate requires a typed, revision-bound preparation command');
   if (input.action === 'planning' ? !validPlanningCommand(input.planning) : 'planning' in input) throw new Error('planning requires a typed, version-bound planning command');
+  if (input.action === 'images' ? !validImageSelection(input.images) : 'images' in input) throw new Error('images requires one to four explicit repository-relative image paths');
   if (input.planning && Buffer.byteLength(JSON.stringify(input.planning)) > 131072) throw new Error('planning input exceeds 128 KiB');
   if (input.investigation && Buffer.byteLength(JSON.stringify(input.investigation)) > 131072) throw new Error('investigation input exceeds 128 KiB');
   if ('probe' in input && (input.action !== 'doctor' || typeof input.probe !== 'boolean')) {
@@ -66,17 +69,19 @@ export async function validateControl(input, defaultCwd) {
   }
   if ('retryReason' in input && (input.action !== 'step' || input.only !== 'execute' || typeof input.retryReason !== 'string' || !input.retryReason.trim() || Buffer.byteLength(input.retryReason) > 1000)) throw new Error('retryReason requires Execute and a bounded explanation');
   if (editing && Buffer.byteLength(JSON.stringify(input.editor)) > 1024 * 1024) throw new Error('configuration exceeds 1 MiB');
-  const needsTask = !['config', 'doctor', 'config-edit', 'config-save', 'runs'].includes(input.action);
+  const needsTask = !['config', 'doctor', 'config-edit', 'config-save', 'runs', 'images'].includes(input.action);
+  const createsTask = input.action === 'planning' && input.planning.action === 'prepare' || input.action === 'investigate' && input.investigation.action === 'start';
   return {
     action: input.action,
     ...(input.planning ? { planning: input.planning } : {}),
+    ...(input.images ? { images: input.images } : {}),
     ...(input.investigation ? { investigation: input.investigation } : {}),
     ...(input.action === 'node' ? { packet: input.packet } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.session ? { session: input.session } : {}),
     ...(input.sessionKey ? { sessionKey: input.sessionKey } : {}),
-    taskDir: needsTask || 'taskDir' in input ? await directory(input.taskDir, 'taskDir') : '',
+    taskDir: needsTask || 'taskDir' in input ? createsTask ? await preparationDirectory(input.taskDir) : await directory(input.taskDir, 'taskDir') : '',
     cwd: await directory(input.cwd ?? defaultCwd, 'cwd'),
     ...(input.action === 'doctor' ? { probe: input.probe ?? false } : {}),
     ...(input.action === 'launch' || 'mode' in input ? { mode: input.mode ?? 'auto' } : {}),
@@ -154,7 +159,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     let child;
     try {
       child = spawn(binary, args, {
-        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery || request.investigation || request.planning ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery || request.investigation || request.planning || request.images ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
       reject(new ControlNotDispatchedError(error));
@@ -175,9 +180,9 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     };
     const cancel = () => stop(new Error('Flywheel control request cancelled'));
     const timer = setTimeout(() => stop(new Error('Flywheel control request timed out')), timeoutMs);
-    if (request.editor || request.session || request.delivery || request.investigation || request.planning) {
+    if (request.editor || request.session || request.delivery || request.investigation || request.planning || request.images) {
       child.stdin.on('error', error => stop(error));
-      child.stdin.end(JSON.stringify(request.editor ?? request.session ?? request.delivery ?? request.investigation ?? request.planning));
+      child.stdin.end(JSON.stringify(request.editor ?? request.session ?? request.delivery ?? request.investigation ?? request.planning ?? request.images));
     }
     signal?.addEventListener('abort', cancel, { once: true });
     // Decode across chunks so a split UTF-8 code point is not replaced in a
@@ -232,6 +237,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
         record(response.state) && Number.isSafeInteger(response.state.revision) && response.state.revision > 0 &&
         typeof response.state.status === 'string' && response.state.status !== '' && record(response.state.packets);
       if ((request.action === 'investigate' && !investigationStatusAfterHandoff && (!record(response.preparation) || response.preparation.version !== 1 || !Number.isSafeInteger(response.preparation.revision) || response.preparation.revision < 1 || !record(response.preparation.contract) || !Array.isArray(response.preparation.observations))) ||
+          (request.action === 'images' && !validImageInspection(response.inputImages, request.images.paths)) ||
           (request.action === 'planning' && (!record(response.state?.planning) || response.state.planning.version !== 1 || !Number.isSafeInteger(response.state.revision) || response.state.revision < 1)) ||
           (request.action === 'node' && (!record(response.node) || response.node.id !== request.packet || !record(response.node.packet))) ||
           (['delivery','deliver'].includes(request.action) && (!record(response.delivery) || !Array.isArray(response.delivery.pulls))) ||

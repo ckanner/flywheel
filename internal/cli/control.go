@@ -15,6 +15,7 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/diagnostic"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/metrics"
 	"github.com/ckanner/flywheel/internal/state"
@@ -22,6 +23,7 @@ import (
 )
 
 type controlResponse struct {
+	InputImages     *imageinput.Inspection          `json:"inputImages,omitempty"`
 	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
 	SessionControl  *SessionControlReceipt          `json:"session-control,omitempty"`
 	TaskTitle       string                          `json:"taskTitle,omitempty"`
@@ -170,7 +172,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor>",
+		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor|images>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -194,8 +196,8 @@ func controlCmd() *cobra.Command {
 				err = fmt.Errorf("--mode only supports auto, quick, or full")
 			} else if cmd.Flags().Changed("probe") && action != "doctor" {
 				err = fmt.Errorf("--probe is only valid for control doctor")
-			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs") {
-				if action == "planning" {
+			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs" && action != "images") {
+				if action == "planning" || action == "investigate" {
 					resolvedTask, err = planningControlDirectory(taskDir)
 				} else {
 					resolvedTask, err = controlDirectory(taskDir)
@@ -207,6 +209,8 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
+				case "images":
+					reply.InputImages, err = controlImages(cmd, resolvedCwd)
 				case "planning":
 					reply, err = controlPlanning(cmd, resolvedTask, resolvedCwd)
 				case "investigate":
@@ -281,7 +285,7 @@ func controlCmd() *cobra.Command {
 				case "node":
 					reply, err = controlSnapshot(resolvedTask)
 					if err == nil {
-						reply.Node, err = machine.ReadNode(reply.State, packet)
+						reply.Node, err = machine.ReadNode(reply.State, packet, resolvedTask, resolvedCwd)
 					}
 				case "status":
 					reply, err = controlSnapshot(resolvedTask)

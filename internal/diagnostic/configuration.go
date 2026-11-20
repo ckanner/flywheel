@@ -19,6 +19,7 @@ import (
 // Binding is a resolved stage, not a promise that an account can serve its model.
 type Binding struct {
 	BindingSource   string        `json:"bindingSource"`
+	CandidateID     string        `json:"candidateId,omitempty"`
 	NativeProfile   string        `json:"nativeProfile,omitempty"`
 	ID              string        `json:"id"`
 	Role            string        `json:"role"`
@@ -41,6 +42,7 @@ type Configuration struct {
 	NativeProfiles  map[string]config.NativeProfile `json:"native-profiles,omitempty"`
 	ExecutionPolicy *config.ExecutionPolicy         `json:"execution-policy,omitempty"`
 	JEV             config.JEVConfig                `json:"jev"`
+	JEVBinding      *Binding                        `json:"jevBinding,omitempty"`
 	Scheduler       config.SchedulerConfig          `json:"scheduler"`
 	Source          string                          `json:"source"`
 	Scope           string                          `json:"scope"`
@@ -126,21 +128,19 @@ func inspect(ctx context.Context, cwd, taskDir string) (*Configuration, *config.
 		// contain a misplaced credential; never echo its contents to diagnostics.
 		return nil, nil, errors.New("effective configuration is invalid or unreadable; check JSON fields, profile references and harness/provider bindings in the selected task/project/global file")
 	}
-	return configurationView(cfg, resolvedCwd, taskDir), cfg, nil
+	return ProjectConfiguration(cfg, resolvedCwd, taskDir), cfg, nil
+}
+
+// ProjectConfiguration describes an already loaded configuration without I/O.
+// Run snapshots and read-only inspection share this resolution contract.
+func ProjectConfiguration(cfg *config.Config, cwd, taskDir string) *Configuration {
+	return configurationView(cfg, cwd, taskDir)
 }
 
 // configurationView is shared by read-only inspection and an explicit migration
 // preview so both show the exact model defaults, providers and permission policy.
 func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configuration {
-	scope := "global"
-	switch {
-	case cfg.File == "(embedded legal table)":
-		scope = "embedded"
-	case taskDir != "" && cfg.File == filepath.Join(taskDir, "flywheel.config.json"):
-		scope = "task"
-	case cfg.File == filepath.Join(resolvedCwd, "flywheel.config.json"):
-		scope = "project"
-	}
+	scope := cfg.ConfigurationScope(resolvedCwd, taskDir)
 	view := &Configuration{Subscription: cfg.Subscription, Planning: cfg.Planning, NativeProfiles: cfg.NativeProfiles, ExecutionPolicy: cfg.ExecutionPolicy, JEV: cfg.JEV, Scheduler: cfg.Scheduler, Source: cfg.File, Scope: scope, Cwd: resolvedCwd, TaskDir: taskDir, Bindings: []Binding{}, Sessions: cfg.Sessions}
 	add := func(id, role, route string, b config.LoopBinding) {
 		source := id
@@ -163,7 +163,7 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 				model = drivers.ZcodeDefaultModel
 			}
 		}
-		if thinking == "" {
+		if thinking == "" && !(harness == "antigravity" && config.AntigravityOrchestrator(model)) {
 			thinking = "high"
 			if harness == "pi" || harness == "omp" || harness == "zcode" {
 				thinking = "max"
@@ -186,10 +186,19 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 			add("loops."+role, role, "", b)
 		}
 	}
-	for route, b := range cfg.Routes {
+	for route := range cfg.Routes {
+		b, candidateID := cfg.InitialExecutionBinding(route)
 		add("routes."+route, "execute", route, config.LoopBinding{
 			NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking,
 		})
+		if candidateID != "" {
+			binding := &view.Bindings[len(view.Bindings)-1]
+			binding.CandidateID, binding.BindingSource, binding.Profile = candidateID, "execution-policy.bindings."+candidateID, ""
+			binding.PermissionMode, binding.Session.Mode = b.Permission, b.SessionMode
+			if binding.Session.Supported {
+				binding.Session.Reason = "execution-policy-session-mode"
+			}
+		}
 	}
 	for _, role := range []string{"design-plan", "design-review"} {
 		if name, ok := cfg.Planning.Compact[role]; ok {
@@ -202,6 +211,13 @@ func configurationView(cfg *config.Config, resolvedCwd, taskDir string) *Configu
 	}
 	if cfg.JudgePanel != nil {
 		add("judge-panel", "judge-panel", "", *cfg.JudgePanel)
+	}
+	if cfg.JEV.Backend == "subscription" {
+		if b, err := cfg.ResolveJEVSubscription(); err == nil {
+			view.JEVBinding = &Binding{ID: "jev", Role: "jev", BindingSource: "profiles." + b.Profile, Profile: b.Profile,
+				Harness: b.Harness, Channel: b.Channel, Model: b.Model, Thinking: b.Effort, PermissionMode: "read-only", InScope: cfg.JEV.Enabled,
+				Session: SessionPolicy{Mode: "fresh", Supported: true, Reason: "evidence-only-fresh", DurableJournal: true, ReadOnlyRecovery: true}}
+		}
 	}
 	sort.Slice(view.Bindings, func(i, j int) bool { return strings.Compare(view.Bindings[i].ID, view.Bindings[j].ID) < 0 })
 	return view

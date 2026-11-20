@@ -27,19 +27,24 @@ type RuntimeDecisions struct {
 }
 
 type RuntimeDecisionRecord struct {
-	ID                   string              `json:"id"`
-	Packet               string              `json:"packet"`
-	Attempt              int                 `json:"attempt"`
-	PlanRevisions        int                 `json:"plan-revisions"`
-	StartedAt            string              `json:"started-at"`
-	Snapshot             *decision.Snapshot  `json:"snapshot,omitempty"`
-	Receipt              *decision.Receipt   `json:"receipt,omitempty"`
-	Selection            *decision.Selection `json:"selection,omitempty"`
-	Action               string              `json:"action"`
-	Status               string              `json:"status"`
-	Accounted            bool                `json:"accounted"`
-	Feedback             any                 `json:"feedback,omitempty"`
-	PlanInvocationBefore string              `json:"plan-invocation-before,omitempty"`
+	ModelBindings        map[string]BindingSnapshot `json:"model-bindings,omitempty"`
+	ModelBindingsOmitted int                        `json:"model-bindings-omitted,omitempty"` // display projection only
+	Phase                string                     `json:"phase,omitempty"`                  // display projection only
+	BaselineActionID     string                     `json:"baseline-action-id,omitempty"`
+	Actions              []decision.Action          `json:"actions,omitempty"`
+	ID                   string                     `json:"id"`
+	Packet               string                     `json:"packet"`
+	Attempt              int                        `json:"attempt"`
+	PlanRevisions        int                        `json:"plan-revisions"`
+	StartedAt            string                     `json:"started-at"`
+	Snapshot             *decision.Snapshot         `json:"snapshot,omitempty"`
+	Receipt              *decision.Receipt          `json:"receipt,omitempty"`
+	Selection            *decision.Selection        `json:"selection,omitempty"`
+	Action               string                     `json:"action"`
+	Status               string                     `json:"status"`
+	Accounted            bool                       `json:"accounted"`
+	Feedback             any                        `json:"feedback,omitempty"`
+	PlanInvocationBefore string                     `json:"plan-invocation-before,omitempty"`
 }
 
 var runtimeStateSchema = contract.StateSchema
@@ -123,6 +128,15 @@ func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *confi
 		}
 		if action.ID == r.Action {
 			selected = action
+		}
+	}
+	for id := range r.ModelBindings {
+		found := false
+		for _, action := range snapshot.Actions {
+			found = found || action.ID == id && action.Kind == decision.Model
+		}
+		if !found {
+			return fmt.Errorf("runtime model binding is absent from its frozen actions")
 		}
 	}
 	if selected.ID == "" {

@@ -452,14 +452,21 @@ function readReply(reply, request) {
     throw new Error(typeof value.error === 'string' ? value.error : 'Flywheel control failed');
   }
   const state = value.state;
+  if (request.action === 'images' && !validImageInspection(value.inputImages, request.images.paths)) throw new Error('Flywheel returned an invalid image preview');
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
-      typeof report.jev.enabled === 'boolean' && typeof report.jev.model === 'string' &&
-      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0);
+      typeof report.jev.enabled === 'boolean' && (report.jev.model == null || typeof report.jev.model === 'string') &&
+      (report.jev.backend == null || ['http', 'subscription'].includes(report.jev.backend)) &&
+      (report.jev.profile == null || typeof report.jev.profile === 'string') &&
+      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0) &&
+    (report.jevBinding == null || report.jev?.backend === 'subscription' && validDisplayBinding(report.jevBinding));
   if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && (!record(state.packets) || !Object.values(state.packets).every(validExecutionPolicyHistory))) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
+       !validBindingChoices(state?.run?.initialBindings, state?.run?.initialBindingsOmitted) ||
+       (state?.sessions?.records != null && (!record(state.sessions.records) || Object.values(state.sessions.records).some(session =>
+         !record(session) || !validInputImageManifest(session.configuration?.inputImages)))) ||
        !validRuntimeDecisions(state?.['runtime-decisions']) ||
        (state?.budget != null && (!record(state.budget) ||
         (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
@@ -478,9 +485,9 @@ function readReply(reply, request) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
   if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
-  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet))) throw new Error('Malformed node detail');
+  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet) || !validCollaborationView(value.node.collaboration))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
-  if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(record))) throw new Error('Malformed run index');
+  if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(run => record(run) && validBindingChoices(run.initialBindings, run.initialBindingsOmitted)))) throw new Error('Malformed run index');
   if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups) ||
       (value.metrics.calls != null && (!Array.isArray(value.metrics.calls) || value.metrics.calls.length > 200 || value.metrics.calls.some(call => !record(call) ||
         (call.native != null && (call.harness !== 'antigravity' || !validNativeObservation(call.native)))))))) throw new Error('Malformed run metrics');
@@ -503,7 +510,7 @@ function initialControl() {
 
 // Transport state belongs to this apply-owned controller, not a component or
 // the draft store. Its observable reaches React only through slot injection.
-function createControl(execute, pendingOperations, isDisposed) {
+function createControl(execute, pendingOperations, isDisposed, intakeStore, setIntakeSelection) {
   const source = createSnapshot(initialControl());
   let selected = null;
   let epoch = 0;
@@ -512,6 +519,16 @@ function createControl(execute, pendingOperations, isDisposed) {
   let associatedKey = null;
   let deferredAssociation = null;
   let discovering = false;
+  const remapIntake = (value, requestedTaskDir, requestedCwd, created = false) => {
+    if (!intakeStore.target || intakeStore.target.taskDir !== requestedTaskDir || intakeStore.target.cwd !== requestedCwd ||
+        typeof value.cwd !== 'string' || !value.cwd.startsWith('/') || pathProblem(value.cwd)) return false;
+    // Only a validated response to this exact request, or the host projection's
+    // same-operation request proof, may map an alias to its physical location.
+    intakeStore.cwd = value.cwd;
+    intakeStore.target = created ? null : { taskDir: value.taskDir, cwd: value.cwd };
+    if (created) intakeStore.draft = null;
+    return true;
+  };
   // Discovery is a separate read lane: it cannot select a task, clear a pending
   // mutation, or invalidate an in-flight status/configuration response.
   const discover = async () => {
@@ -549,7 +566,7 @@ function createControl(execute, pendingOperations, isDisposed) {
   };
   const run = async (action, selection, probe = false, extra = {}) => {
     if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning', 'images'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
@@ -566,6 +583,7 @@ function createControl(execute, pendingOperations, isDisposed) {
       ...(['config-edit', 'config-save'].includes(action) ? { editor: extra.editor } : {}),
       ...(['delivery','deliver'].includes(action) ? { delivery: extra.delivery } : {}),
       ...(action === 'node' ? { packet: extra.packet } : {}),
+      ...(action === 'images' ? { images: extra.images } : {}),
       ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
@@ -585,6 +603,11 @@ function createControl(execute, pendingOperations, isDisposed) {
       });
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
+      if (remapIntake(value, request.taskDir, request.cwd, !!value.state || !!value.preparation)) {
+        const canonical = { taskDir: value.taskDir, cwd: value.cwd };
+        setIntakeSelection(canonical);
+        select(canonical);
+      }
       source.update(draft => {
         if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(action)) {
           // A remote snapshot is bound to the previously observed candidate.
@@ -641,6 +664,7 @@ function createControl(execute, pendingOperations, isDisposed) {
         (value.operationId === lastAssociation.operationId && value.outcome === lastAssociation.outcome &&
          value.taskDir === lastAssociation.taskDir && value.cwd === lastAssociation.cwd))) return;
     if (active) { deferredAssociation = [value, setSelection]; return; }
+    const remappedIntake = value.outcome === 'confirmed' && remapIntake(value, value.requestedTaskDir, value.requestedCwd);
     const next = { taskDir: value.taskDir, cwd: value.cwd };
     const sameOperation = lastAssociation?.operationId === value.operationId;
     const shouldSelect = !lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
@@ -656,6 +680,10 @@ function createControl(execute, pendingOperations, isDisposed) {
         draft.uncertainty = { ...next, action: value.action, operationId: value.operationId,
           key: selectionKey(next), detail: value.message || '' };
         draft.stale = true;
+      } else if (remappedIntake && draft.uncertainty?.taskDir === value.requestedTaskDir && draft.uncertainty.cwd === value.requestedCwd) {
+        // Carry the original barrier to the proven canonical identity. Only
+        // the following successful live status read releases this uncertainty.
+        draft.uncertainty = { ...draft.uncertainty, ...next, key: selectionKey(next) };
       } else if (draft.uncertainty && (draft.uncertainty.operationId === value.operationId ||
           draft.uncertainty.key === selectionKey(next))) {
         draft.uncertainty = null;
@@ -682,8 +710,11 @@ function Configuration({ value, t }) {
       h('h4', { className: css.bindingTitle }, t('cfgJev')),
       h('p', null, t(value.jev.enabled === true ? 'consoleJEVConfiguredOn' : 'consoleJEVConfiguredOff')),
       value.jev.enabled === true && h('dl', { className: css.properties },
-        field('consoleJEVVersion', textValue(value.jev.model), true),
-        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown')))),
+        value.jev.backend !== 'subscription' && field('consoleJEVVersion', textValue(value.jev.model), true),
+        value.jev.backend === 'subscription' && field('profile', textValue(value.jevBinding?.profile || value.jev.profile), true),
+        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown'))),
+      value.jev.enabled === true && value.jev.backend === 'subscription' &&
+        h('div', { 'data-jev-binding': true }, value.jevBinding ? h(BindingProperties, { binding: value.jevBinding, t }) : h('p', { className: css.meta }, t('wbBindingMissing')))),
     h('div', { className: css.bindings }, ...(value.bindings ?? []).map((binding, index) =>
       h('article', { className: css.binding, key: textValue(binding?.id, String(index)) },
         h('div', { className: css.bindingHeader },
@@ -697,7 +728,7 @@ function Configuration({ value, t }) {
           field('harness', textValue(binding?.harness), true),
           field('provider', textValue(binding?.provider, '') || (binding?.harness === 'dsh' ? t('notConfigured') : t('nativeProvider'))),
           field('channel', textValue(binding?.channel, '') || t('notConfigured')),
-          field('thinking', textValue(binding?.thinking, '') || t('default')),
+          field('thinking', bindingEffortLabel(binding, t)),
           field('permission', Object.hasOwn(permissionLabels, binding?.permissionMode) ?
             t(permissionLabels[binding.permissionMode]) : textValue(binding?.permissionMode, '') || t('undeclared')),
           field('session', sessionModeLabel(binding, t)))))));
@@ -850,9 +881,13 @@ function consoleReadString(value, label) {
   return value;
 }
 function consoleReadInput(value) {
-  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning'], 'console read request');
-  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning', 'images'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning', 'images'].includes(value.action)) throw new Error('Console Remote accepts reads only');
   const output = { action: value.action };
+  if (value.action === 'images') {
+    if (!validImageSelection(value.images)) throw new Error('Invalid repository image selection');
+    output.images = { paths: [...value.images.paths] };
+  } else if (value.images !== undefined) throw new Error('Image paths require images');
   for (const key of ['taskDir', 'cwd', 'packet', 'runId', 'sessionKey']) {
     if (value[key] !== undefined) output[key] = consoleReadString(value[key], key);
   }
@@ -941,19 +976,21 @@ exports.apply = function apply(ctx) {
       let binding = bindings.get(actions);
       let control = binding?.control;
       if (!control) {
+        const intakeStore = { draft: null, target: null, cwd: '' };
         control = createControl(async request => {
           const value = readReply(await (mutates(request.action) && !(request.action === 'planning' && request.planning?.action === 'status') || request.action === 'status' && control?.source.getSnapshot().uncertainty
             ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
             : readsReady.then(readConsole => readConsole(sessionId, request))), request);
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
-        }, pendingOperations, () => disposed);
-        binding = { control, configDrafts: new Map() };
+        }, pendingOperations, () => disposed, intakeStore, actions.setSelection);
+        binding = { control, configDrafts: new Map(), intakeStore };
         bindings.set(actions, binding);
       }
       return {
         hostSessionID: sessionId,
         configDrafts: binding.configDrafts,
+        intakeStore: binding.intakeStore,
         hooks: { control: control.source },
         changeSelection: (next, requireIdle = false) => {
           const current = control.source.getSnapshot();
