@@ -2,16 +2,16 @@
 
 English · [简体中文](2026-11-19-subscription-cli-workflows.md) · [Design proposals](README.md) · [Current architecture](../design.md)
 
-**Date: 2026-11-19. Status: Proposed; documentation PR; not implemented.** This document specifies the goals, interfaces, migration, and acceptance criteria for subsequent work. It does not change runtime code, released versions, user configuration, or account settings. New presets, fields, packages, and commands described here are proposed interfaces and cannot be loaded by the current release. Implementation must update the maintained architecture, schemas, protocols, and paired user guides, then record source, package, and real-account validation separately.
+**Created: 2026-11-19; revised: 2026-11-20. Status: Proposed; documentation PR; not implemented.** This document specifies the goals, interfaces, migration, and acceptance criteria for subsequent work. It does not change runtime code, released versions, user configuration, or account settings. New presets, fields, packages, and commands described here are proposed interfaces and cannot be loaded by the current release. Implementation must update the maintained architecture, schemas, protocols, and paired user guides, then record source, package, and real-account validation separately.
 
-**Model-assignment revision:** §4–5 now compare the original shared research, which has been read in full, and replace the initial target matrix that favored Kimi/Codex. The complete target retains major roles for Gemini and Claude, with integration transitions described separately. There is currently no evidence that the initial assignment is better than the original research recommendation.
+**Design premise: complete the Antigravity DSH plugin first, then deliver one default configuration that includes Gemini.** §4–5 combine the original shared research with Google's official model-selection guide to define the final responsibilities and thinking levels across the four subscriptions.
 
 ## 1. Agreed goals and scope
 
 The user has established the following constraints. This proposal follows those decisions rather than reopening the choice of integration:
 
 1. Use the existing Kimi, ChatGPT, Claude, and Google subscriptions. Remove DeepSeek prepaid balances and all additional paid APIs from this default configuration.
-2. **Invoke the official Antigravity `agy` CLI directly, without ACP.** Add an independent `dsh-subagent-antigravity` plugin for DSH Desktop, with a public machine interface for Flywheel.
+2. **Invoke the official Antigravity `agy` CLI directly, without ACP.** First complete the independent `dsh-subagent-antigravity` plugin for use in DSH Desktop, then integrate it with Flywheel through its public machine interface and deliver the unified model configuration.
 3. Use Claude through the personal subscription only. Preserve the existing official Agent SDK → local, unmodified Claude Code path. The SDK is the library controlling the CLI; the CLI requirement does not call for rewriting the existing runner.
 4. Keep Kimi on its native CLI and Codex on the official Codex CLI/app-server controlled by the existing plugin. Preserve structured protocols, sessions, recovery, and native capabilities.
 5. Configure model, access channel, reasoning effort, permissions, and session independently. Start ordinary tasks with an economical combination and escalate difficult tasks within an explicit allowlist. Do not default every model to `max`.
@@ -43,7 +43,7 @@ A source version does not establish that a package has been published to npm, in
 | Area | Current fact | Work in this proposal |
 | --- | --- | --- |
 | Default Execute and Intake | Still use DSH `deepseek-account` / DeepSeek Flash | Remove from the target preset and every reachable fallback |
-| Plan / Review / Judge | Kimi K3.1 Pro / DSH GPT-6.1 Sol / DSH GPT-6 Astra | Record capability targets for the four subscriptions separately from transitional integration bindings, and verify the actual runtime model catalog |
+| Plan / Review / Judge | Kimi K3.1 Pro / DSH GPT-6.1 Sol / DSH GPT-6 Astra | Configure the final stage assignment across the four subscriptions and verify the actual model catalog |
 | Design roles | `design-plan` inherits Plan; both planning Review roles inherit Review | Define every role explicitly and preserve separate histories |
 | Claude runner | Already supports the Agent SDK launching a local CLI | Preserve it; adjust the native login channel, model matching, and doctor |
 | Claude UI preset | `claude-api` automatically declares `ANTHROPIC_API_KEY` | Add a clear personal-subscription entry to avoid incorrect rejection before launch |
@@ -65,7 +65,6 @@ An absent API key, successful OAuth login, selectable model, or successful invoc
 - **Authentication path:** native personal-account login, without copying, refreshing, or proxying subscription tokens.
 - **Model eligibility:** the models and parameters available to the account.
 - **Billing eligibility:** whether the selection can use the plan's included allowance and whether additional credits or prepaid balances can act as a fallback.
-- **Supported use:** for example, Google's distinction between direct scripts and orchestration by a third-party agent.
 
 Implementation will add versioned subscription-policy metadata. These are concepts to be designed into the schema, not existing configuration fields. Evidence must distinguish `verified`, `user-declared`, and `unknown`, with a source, timestamp, and CLI/config fingerprint. A user declaration must not be relabeled as vendor confirmation. Preflight must not read or output raw keys, tokens, or private account data.
 
@@ -77,7 +76,7 @@ Subscription mode must not automatically switch to an API, cloud ADC, third-part
 
 The parent DSH agent also consumes its own model allowance. Using an Antigravity or Claude subagent tool does not automatically make the parent a subscription model. Provide two explicit entry points:
 
-1. The existing DSH ChatGPT subscription Provider handles ordinary conversations and uses native tools within their supported scope. Check the actual Desktop/SDK profile and authentication.
+1. The existing DSH ChatGPT subscription Provider handles ordinary conversations and invokes native tools. Check the actual Desktop/SDK profile and authentication.
 2. The user starts a CLI task directly from the plugin panel or a command, without an additional parent-model call in DSH.
 
 Keep DSH as the host and deterministic control plane when removing paid DeepSeek inference.
@@ -94,7 +93,7 @@ Credits included with a plan must also be distinguished from credits purchased s
 
 ### 4.1 Start from the original research and explain departures
 
-For this revision, the user-provided [Gemini shared conversation](https://share.gemini.google/lbGhBwv80PEP) was actually read in a browser. Search snippets and earlier assistant summaries do not substitute for that source. The first draft presented the more readily integrated Kimi/Codex transition as the complete target without explaining its differences from the original recommendation. **No comparison on the same tasks establishes that this combination is better.** This section corrects that omission and separates capability targets, integration status, and hypotheses awaiting evaluation.
+The user-provided [Gemini shared conversation](https://share.gemini.google/lbGhBwv80PEP) has been read in full in a browser. This revision also checks [Google's official model-selection guide](https://aistudio.google.com/docs/choosing-a-model). The shared research provides the starting assignment across vendors; the official guide adds Gemini model tiers and thinking levels. The following defines the final design after the plugin is completed, gives a basis for each responsibility, and does not claim an optimum established through comparisons on the same tasks.
 
 The following table briefly paraphrases the original assignment. The right column adapts it to this subscription constraint; neither the original nor this proposal has been validated through Flywheel task comparisons.
 
@@ -116,7 +115,8 @@ The source is model-generated research drawing on vendor material and secondary 
 | --- | --- | --- |
 | Gemini 4 Carbon | Top-level architecture, root causes across subsystems, and high-risk analysis; Google explicitly positions it for architecture, coordination, and adversarial verification | Supports role suitability, not superiority to Claude/Astra on every project; [official description](https://antigravity.google/blog/gemini-4-carbon-in-google-antigravity) |
 | Gemini 4 Hydrogen | Everyday coding, micro-specs, tests, and UI iteration from reference designs; Google emphasizes fast execution and interactive application development | Actual speed and quota benefits require evaluation on this task set; [official description](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-hydrogen/) |
-| Gemini 4 Neon / Argon | Comparison candidates for broad investigation, debugging, refactoring, and routine complex engineering | Neon was introduced on November 18 and is positioned between Carbon's depth and Hydrogen's speed. Compare first; being newer does not justify replacing Carbon; [Neon description](https://antigravity.google/blog/gemini-4-neon-in-google-antigravity) |
+| Gemini 4 Neon | Frequent complex engineering, multi-file changes, debugging, refactoring, and routine cross-module investigation | Google positions it between Hydrogen and Carbon; assign explicit responsibilities based on that task profile; [model documentation](https://aistudio.google.com/docs/models/gemini-4-neon), [Antigravity description](https://antigravity.google/blog/gemini-4-neon-in-google-antigravity) |
+| Gemini 4 Argon | A manually selectable model in the catalog | The unified defaults use the Hydrogen/Neon/Carbon tiers; do not add a default stage solely to allocate work to Argon |
 | Claude Opus / Sonnet / Fable | Requirements convergence, specification synthesis, milestones, commercial UI, and business-completeness review | Adopts the original research's role hypothesis. Exact models depend on the account catalog and subscription entitlements; see §6 for Fable. Claude is not relegated to second opinions only |
 | GPT-6.2 Sol / Astra | Sol for well-defined backend implementation and routine review; Astra for difficult reasoning, architecture challenges, and high-risk adjudication | Official positioning supports candidate eligibility, not a claim that these models should take over all planning or review; [release notes](https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol) |
 | Kimi Code K3.1 Pro | Long tool-heavy tasks, bulk implementation against clear specifications, planning capacity, and organization | Annual payment and existing integration provide capacity/engineering reasons; frontend aesthetics and planning performance still need comparison. Annual payment does not imply unlimited quota |
@@ -130,64 +130,67 @@ The official Orchestrator already uses Carbon/Neon/Argon for planning and Hydrog
 
 For every recommendation, distinguish at least the shared research's recommendation, official capability facts, engineering/capacity choices, and Flywheel measurements. The first three are available; the fourth is not. The listed effort levels are starting points for comparison, not proven optima. Identical effort names are not a common scale across vendors.
 
-Record model suitability separately from whether DSH/Flywheel can currently invoke it. An unimplemented plugin, unvalidated account, or unresolved supported-use scope changes enablement status; it does not remove Gemini's target responsibilities. Claude Pro quota affects call frequency and alternatives; it does not imply that Claude is unsuitable for a primary stage.
+The model assignment assumes all four subscription paths are completed; see §15 for implementation order. Claude Pro quota and Kimi's annual plan affect task allocation and call frequency. Every stage still has an explicit primary model and initial effort, without requiring a separate configuration for integration status in daily use.
 
 Confirm GPT-6.2 in the native account catalog before use. Older 6.1/6 models remain explicit compatibility candidates and must not silently replace a request. The target uses Standard. Recheck model/speed entitlements after a plan downgrade; do not assume API list prices can be converted into subscription quota or treat Fast/Ultrafast as default quota-saving measures.
 
-## 5. Complete target assignment and transitional integration configuration
+## 5. Unified default assignment and Gemini thinking levels
 
 ### 5.1 Complete capability target: preserve the recommendation, then adapt it to subscriptions
 
-The following assignment across four subscriptions is a proposal for discussion and comparison, not an implemented or proven optimum. Gemini has explicit primary responsibilities in architecture, routine implementation, testing, and investigation; Claude has primary roles in planning and frontend work; Kimi shares tool-heavy and bulk engineering tasks; Codex handles backend work, independent review, and difficult problems. Every dispatch must resolve to one explicit binding. Multiple candidates do not mean every model always runs at the same stage.
+The following is the unified default assignment across the four subscriptions. Within Gemini, Hydrogen handles routine execution, Neon handles complex daily engineering, and Carbon handles architecture and the hardest problems. Claude handles planning and commercial UI, Kimi handles tool-heavy and bulk tasks, and Codex handles backend work, independent review, and difficult problems. Each dispatch resolves to one explicit model and effort; it does not always invoke every model. This is the initial implementation policy, with real-task evaluation informing subsequent tuning.
 
 | Stage / work type | Primary target | Initial effort | Selection condition or explicit alternative |
 | --- | --- | --- | --- |
 | `intake`: open-ended requirements analysis | Gemini 4 Carbon | medium | Kimi low for collecting clear fields; explicitly select Claude Opus high for requirements convergence/specification synthesis |
-| `design-plan`: top-level design | Gemini 4 Carbon | high | Claude Opus high for dense business specifications, or Fable high with subscription eligibility; Neon high is a comparison candidate |
-| `design-review`: architecture review | Codex / GPT-6.2 Astra, separate session | high | xhigh for high risk; lighter designs use Sol medium/high from Quick coding |
+| `design-plan`: top-level design | Gemini 4 Carbon | high | Explicitly select Claude Opus high for dense business specifications, or Fable high with subscription eligibility |
+| `design-review`: architecture review | Codex / GPT-6.2 Astra, separate session | high | Escalate to xhigh only for high-risk issues |
 | `plan`: milestones and dependency breakdown | Claude Opus 5.5 | high | Kimi high as an explicit capacity alternative; Fable high for complex plans when eligible |
-| Micro-Spec (a responsibility within Plan/packets) | Gemini 4 Hydrogen | high | Claude Sonnet medium; use only when refinement is needed, without creating a mandatory new stage for every packet |
+| Micro-Spec (a responsibility within Plan/packets) | Gemini 4 Hydrogen | high | Use Neon high for complex cross-file constraints; refine only when needed, without creating a mandatory new stage for every packet |
 | `plan-review` | Codex / GPT-6.2 Sol, separate session | medium | high for significant interfaces, migrations, or concurrency constraints |
-| Execute `default`: routine implementation | Gemini 4 Hydrogen | high | medium for clear, small transformations; Kimi high for explicitly assigned tool-heavy/bulk repository tasks |
-| Execute `frontend`: commercial UI | Claude Opus 5.5 | medium | high for complex constraints; explicitly select Hydrogen high for fast iteration from reference images/design systems; Kimi high is a comparison candidate |
-| Backend, algorithms, data pipelines (task category) | Codex / GPT-6.2 Sol | high | Hydrogen high is a candidate; difficult mathematical/low-level problems enter hard |
+| Execute `default`: routine implementation | Gemini 4 Hydrogen | high | medium for small local changes and simple transformations |
+| Multi-file engineering / complex refactoring (task category) | Gemini 4 Neon | high | Escalate to xhigh if multi-step constraints still cannot be met; send architectural problems to Carbon high |
+| Execute `frontend`: commercial UI | Claude Opus 5.5 | medium | high for complex constraints; explicitly select Hydrogen medium for quick local iterations within an existing design system |
+| Backend, algorithms, data pipelines (task category) | Codex / GPT-6.2 Sol | high | Difficult mathematical/low-level problems enter hard |
+| Tool-heavy / bulk repository changes (task category) | Kimi K3.1 Pro | high | Constrain scope with an explicit specification, tool results, and regression verification |
 | Execute `hard` | Codex / GPT-6.2 Astra | high | xhigh for evidenced difficult cases; max only as a bounded choice or evaluation candidate |
 | Routine test additions / defect reproduction (task responsibility) | Gemini 4 Hydrogen | medium | Sol high for exception/concurrency edge cases; use existing deterministic verification first, without always launching a separate testing agent |
 | `review` | Codex / GPT-6.2 Sol | high | Explicitly use Astra high/xhigh for security/complex concurrency risks; preserve independent history |
 | `judge` (Full) | Codex / GPT-6.2 Astra | high | xhigh for complex disputes; select a business-completeness second opinion through judge-panel below |
-| Investigation analysis (proposed role) | Gemini 4 Carbon across modules; Hydrogen within a module | high | Neon high is a broad-investigation comparison candidate; Astra high for difficult algorithms; analyze authorized evidence only |
-| `garden` / delivery-copy responsibility | Gemini 4 Hydrogen | low | Explicit alternatives: Sonnet low/medium or Kimi low; existing delivery rules still control merge/release authority |
+| Investigation analysis (proposed role) | Gemini 4 Neon | high | Hydrogen high for simple local issues; Carbon high for difficult cross-repository root causes or architectural issues; analyze authorized evidence only |
+| `garden` / delivery-copy responsibility | Gemini 4 Hydrogen | low | high for substantive reasoning across tasks; existing delivery rules still control merge/release authority |
 | JEV decisions (proposed backend) | Codex / GPT-6.2 Sol | medium | Master switch remains off by default; use only for bounded decisions in later implementation |
 | `judge-panel` | Off by default; Fable 5.2 is the primary high-risk second-opinion candidate | high (when enabled) | Use only with subscription eligibility; otherwise explicitly select Opus high and record the substitution. Enable once for an explicit question, without fixed double review |
 
-Micro-specs, backend work, tests, and copy are task responsibilities, not claims that loops/routes with these names already exist. The current Execute default/frontend/hard routes cannot directly encode every category. The first implementation may use explicit task bindings/preset selection; any automatic task-category routing requires its own versioning, visible rationale, and frozen actual binding. This table cannot be pasted into the current schema, and models must not choose hidden providers.
+Micro-specs, multi-file engineering, backend work, bulk changes, tests, and copy are task responsibilities, not claims that loops/routes with these names already exist. Implementation will extend the execution-routing policy to represent these categories and update the schema, configuration UI, migration, and tests together. Before dispatch, display the task category, selected model, and rationale, and freeze the actual binding. Users can explicitly override the task category; models must not choose hidden providers. This design table cannot be pasted directly into the current schema.
+
+Assign one primary category to each task, with explicit task bindings taking precedence. Automatic classification follows the main acceptance objective, not file count alone: repetitive bulk operations with clear specifications go to Kimi; refactoring that requires reasoning across files goes to Neon; core algorithms and backend logic go to Sol; and tasks already classified as difficult use hard. Resolve ambiguous categories during planning, without implicit switches after dispatch.
 
 `loops.investigate` is not an existing field. The analysis role's name, schema, scope, and permissions must be implemented together. Until then, the host configured with a subscription model submits reports. The new JEV backend is likewise a proposed capability, not an existing default. Normal tests belong to the Executor and deterministic verification; create a separate explicit task only when additional analysis is needed.
 
-### 5.2 Integration transition: retain the target and show unmet conditions
+### 5.2 Gemini model tiers and thinking levels
 
-This table describes what to do when a target cannot yet run. It is not a capability ranking or a better alternative target. Templates on main still contain DeepSeek. The transitional configurations below also require explicit selection and migration; they are not already effective.
+Following [Google's selection guide](https://aistudio.google.com/docs/choosing-a-model), choose a model directly according to task complexity. Tasks do not need to progress through all three tiers:
 
-| Target binding | Integration and validation conditions | Transitional choice while conditions are unmet |
-| --- | --- | --- |
-| Carbon architecture / investigation | Antigravity plugin, role receipts, account catalog, and the applicable supported-use scope in §7 | Complete that role in the supported official CLI and return its artifacts. For fully automatic execution, explicitly select a Claude or Codex candidate and record the departure; do not silently downgrade |
-| Hydrogen implementation / tests / organization | The same conditions; frontend visuals also require browser-path validation under §9.3 | Explicitly select Kimi or Sol for the task while retaining Hydrogen in the target matrix |
-| Claude planning / UI | Native subscription channel, doctor in the execution environment, exact model, and billing eligibility | When quota is limited, explicitly choose Kimi high or another validated target candidate. Limited Pro quota does not permanently remove Claude's primary role |
-| Kimi / Codex bindings | Existing CLI paths and actual version, account, model, and stage validation | The original Kimi/Codex combination can serve as a migration candidate; do not call it the complete optimal configuration without comparisons of all four subscriptions on the same tasks |
+| Model | Available effort | Default in the guide | Use in this proposal |
+| --- | --- | --- | --- |
+| Hydrogen | low / medium / high / xhigh | high | high for routine execution; medium for local interaction, UI iteration, and routine tests; low for organization and summaries |
+| Neon | low / medium / high / xhigh | high | high for frequent complex engineering, multi-file refactoring, and routine cross-module investigation; xhigh only for explicit difficult cases |
+| Carbon | low / medium / high | medium | medium for open-ended requirements exploration; high for top-level architecture, cross-repository root causes, and deep verification |
 
-When returning official CLI artifacts to Flywheel, freeze the document/candidate digest and apply existing design-approval, independent Review, and verification rules. Manual artifacts must not masquerade as machine receipts generated by the plugin. This transitional choice does not remove the implementation targets for the new DSH plugin and Flywheel driver.
+See the thinking-level definitions for [Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen), [Neon](https://aistudio.google.com/docs/models/gemini-4-neon), and [Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon). Flywheel explicitly sets effort for every invocation, rather than relying on the CLI's previous selection. Do not configure xhigh/max for Carbon or minimal for Gemini 4. Retain Argon in the optional catalog without creating another default stage for it.
 
-### 5.3 Three target presets and capacity choices
+Use the lowest level that meets the quality requirement: medium for local, interactive tasks; high for multi-step engineering; and Neon/Hydrogen xhigh only for difficult cases with a clear benefit. When a task is known to be architectural from the outset, select Carbon directly instead of first making every other model fail. Use the real-task evaluation in §16 to tune the effects of models and levels on elapsed time, revisions, and quota.
 
-Implementation will provide three complete, previewable target configurations. This proposal defines responsibilities; exact model IDs, task-classification policy, and each invocation's binding will be frozen against the catalog during implementation:
+The AI Studio guide describes an API. This proposal adopts its model responsibilities and levels while executing through official `agy`. Do not directly transfer API `thinking_level`, `previous_interaction_id`, output limits, pricing, cache discounts, or Batch/Flex parameters to the CLI. The plugin uses native model slugs, `--effort`, and conversation IDs. Record actual context windows for Antigravity rather than treating the API's advertised 1M as a CLI guarantee.
 
-- **Balanced:** use the matrix above as a starting point. Carbon handles overall design; Claude handles planning and commercial UI; Hydrogen handles everyday implementation/tests; Kimi shares specified bulk/tool-heavy tasks; Sol handles regular review; Astra challenges architecture and adjudicates high-risk work. Small tasks do not have to invoke all four subscriptions in sequence.
-- **Quick coding:** prefer Hydrogen medium/high for clear, small fixes, or explicitly select Sol medium. Compact design uses Hydrogen high / Sol medium; final independent Review uses Sol high. Other roles in the complete target remain defined, and valid existing designs can be reused.
-- **Deep engineering:** Carbon high for complex architecture; Claude Opus/Fable high for specifications and complex plans; Astra high/xhigh for difficult implementation and adversarial review. Enable a second opinion according to risk. Add Neon high/xhigh to the comparison set without automatically replacing Carbon because it is newer.
+### 5.3 One default configuration and task selection
 
-Kimi's annual-plan capacity and Claude Pro quota can inform explicit capacity adaptations: for example, moving planning/bulk execution to Kimi high while retaining Carbon for architecture and Codex for review. The preview must show replaced roles and reasons. This is a candidate under the user's budget constraints, not a capability advantage discovered in this iteration. Do not promise fixed workload shares or savings without quota measurements.
+Implementation delivers one complete, previewable `subscription-cli` default configuration containing the stage bindings and task-category selection rules in §5.1. Freeze exact model IDs and the configuration version during implementation. Saving configuration changes only the scope selected by the user.
 
-Keep presets separate from Auto/Quick/Full. Auto currently selects the workflow, and the first implementation must not silently change models based on mode names. Show a target configuration lacking Google enablement conditions as not ready, with explicit transitional bindings available. Do not label a transition with Gemini removed as the completed target across four subscriptions.
+Auto/Quick/Full continue to select only the workflow. Task category and risk determine the model choices and escalations above; workflow-mode names must not silently change providers. Quick omits unnecessary stages and reuses valid designs, while Full plans, integrates, and adjudicates under the existing rules. Both use the same model policy.
+
+Use Kimi's annual-plan capacity for explicitly identified bulk/tool-heavy tasks. Claude Pro planning calls reuse valid checkpoints, and second opinions depend on risk. When quota is exhausted, follow the existing explicit-selection and waiting rules without automatically switching to paid APIs. Users adjust capacity allocation within this configuration rather than selecting another product mode. Do not promise fixed workload shares or savings without actual measurement.
 
 ### 5.4 Effort, escalation, and model changes
 
@@ -221,24 +224,15 @@ Also check `CLAUDE_CODE_EFFORT_LEVEL`, native settings, and subagent effort over
 
 Non-interactive Fable calls may directly consume credits, as [model-config](https://code.claude.com/docs/en/model-config) explicitly documents. Dollar figures in `/usage` or results are calculated accounting values, not proof of an additional bill. `--max-budget-usd` is not a zero-dollar extra-charge control. References: [usage-credit settings](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans) and [cost accounting](https://code.claude.com/docs/en/costs).
 
-## 7. Antigravity CLI plugin and supported subscription use
+## 7. The agreed Antigravity integration path
 
-**The integration path is the CLI. This proposal does not provide an ACP implementation. A different protocol or plugin name does not change the nature of the use.**
+**First complete the DSH plugin for the official `agy` CLI, then use it for Gemini stages in Flywheel; do not use ACP.** The plugin reuses official CLI authentication, agent execution, and native sessions. It manages processes, structured events, task state, cancellation, and result packaging.
 
-This section only constrains whether a specific path can be enabled. Carbon/Hydrogen and other models retain explicit target responsibilities in §5. Unresolved integration conditions are not a model-capability ranking, and a transition with Gemini removed is not the complete target.
+Direct DSH panel tasks, the `subagent_antigravity` tool, and Flywheel machine calls share one runner. Define all three entry points together during plugin implementation and validate them separately. DSH supports both direct Gemini use and task delegation by an agent. See §8–11 for the interfaces.
 
-Google's official headless documentation provides programmatic invocation, structured output, and multi-turn input. Its FAQ also distinguishes supported direct scripts/CI on consumer plans from wrapping `agy` in a third-party coding agent or application, which it does not support. Record technical integration capability separately from supported use under a particular subscription. References: [headless](https://antigravity.google/docs/cli/headless/) and [FAQ](https://antigravity.google/docs/faq).
+Implementation follows the official [headless documentation](https://antigravity.google/docs/cli/headless/) and [CLI reference](https://antigravity.google/docs/cli/reference/). The original CLI retains its official login and account settings. The plugin does not copy or proxy tokens, emulate private backends, or fall back to paid APIs or credits. This specifies an engineering integration target; the proposal does not replace vendor account terms or authentication permissions.
 
-| Scenario | Treatment in this proposal |
-| --- | --- |
-| User directly runs the official CLI or their own direct script | Implement and validate the official native path |
-| User directly starts one CLI task from a DSH panel | Design the complete UI and runner; eligibility for this third-party GUI still requires confirmation. A user click and the absence of a parent model do not establish that it qualifies as a supported direct script |
-| A DSH agent automatically calls `subagent_antigravity` | Include the technical interface in the design; a consumer subscription does not establish default eligibility for automatic delegation |
-| Flywheel combines Kimi/Codex/Claude and Antigravity in a pipeline | The driver and stage bindings can be implemented, but Ultra stays out of baseline automatic routing and fallbacks; supported eligibility for this use must be resolved separately |
-
-A November 17 [forum discussion](https://discuss.ai.google.dev/t/tos-clarification-human-initiated-python-workflow-using-official-agy-cli/201524) directly addresses a personal GUI, deterministic Python, and stages using multiple models. Replies distinguish direct scripts from multi-vendor pipelines, while a follow-up about human confirmation at every stage remains unanswered clearly. The speakers' identities have not been independently verified, and forum interpretations do not replace formal documentation. Neither an added confirmation button nor a successful call establishes vendor authorization.
-
-The confirmed native baseline is the official CLI and supported direct scripts. Technical implementation of both the manual DSH panel and automatic delegation can proceed offline, with real consumer-subscription eligibility recorded separately for each. **Do not expose automatic delegation to an autonomous agent's default preset or automatically select Antigravity for a Flywheel stage.** Retain the complete machine/tool integration design and capability flags. Enabling a use depends on its supported eligibility; an ignore-restrictions switch cannot replace it. Purchasing API access is not the default resolution in this proposal.
+Flywheel's model configuration directly includes Carbon, Neon, and Hydrogen. After completing the plugin and its DSH use, deliver the Flywheel driver, task routing, and unified default configuration.
 
 ## 8. Product and package structure for the new DSH plugin
 
@@ -249,7 +243,7 @@ Propose a new `ckanner/dsh-subagent-antigravity` repository and `dsh-subagent-an
 | Entry point | Responsibility |
 | --- | --- |
 | DSH Desktop plugin panel / direct command | Let the user select working directory, model, effort, permissions, and task, then start the CLI directly without an implicit parent-model call |
-| `subagent_antigravity` tool | Integrate DSH Agent/PTC and jobs for supported uses; registration follows §7 and is not enabled by default in autonomous consumer presets |
+| `subagent_antigravity` tool | Integrate fully with DSH Agent/PTC and jobs, and register it in the corresponding presets |
 | `dsh-subagent-antigravity/machine` | Public ESM API for deterministic callers such as Flywheel, without creating a parent DSH agent |
 
 The package will expose the root plugin, `./machine`, and `./client`, plus an independent `antigravity-machine` wrapper command. `--capabilities`, `--doctor`, and `--json` are proposed wrapper arguments, not claims that `agy` already has those flags.
@@ -303,7 +297,7 @@ Stage success requires at least a complete native terminal result, a successful 
 
 ### 9.3 Model, permission, and input boundaries
 
-Build a catalog with source attribution from actual `agy models` output and CLI capabilities. It is not evidence of remaining quota or supported-use eligibility. Expose effort per model; do not force a separate effort setting onto a native Orchestrator with fixed configuration. Separate UI labels from CLI slugs, and fail clearly on conflicts or unsupported values. See the [model documentation](https://antigravity.google/docs/models).
+Build a sourced catalog from actual `agy models` output and CLI capabilities; a model list does not establish remaining quota. Expose effort per model and do not force an independent effort setting onto the fixed native Orchestrator configuration. Keep UI labels separate from CLI slugs and fail explicitly on conflicts or unsupported choices. [Model documentation](https://antigravity.google/docs/models)
 
 Headless mode cannot receive interactive approval-control messages. Use native permission settings approved in advance by the user, and do not expand permissions after a tool denial. Record native execution mode, tool-approval policy, and sandbox state separately. Flywheel full-access is a normalized policy whose corresponding combination must be constructed from verified capabilities. `--dangerously-skip-permissions` means skipping tool approval as defined by the official CLI; it does not establish that the sandbox is disabled or arbitrary paths are writable. Reject permission combinations that cannot be expressed exactly before dispatch. When an approved action cannot run, return observable blocking or partial-execution evidence. Do not temporarily loosen global settings. cwd, plan mode, and prompts do not provide OS isolation.
 
@@ -439,9 +433,9 @@ Handle explicit `design-plan/design-review/plan-review`, route fallbacks, execut
 
 Generate Provider/model choices from an independent capability catalog, rather than showing a provider only when a current stage happens to use it. Otherwise, removing the DeepSeek default or changing Review can unintentionally change resource selectors.
 
-For every stage, show the harness, actual Provider where applicable, channel, model, effort, configuration source, subscription eligibility, and real-validation status. Clearly distinguish inherited rows from explicit overrides. Creating or changing a selection affects only its selected scope. Claude gets a native subscription-login entry; Antigravity shows the official CLI and currently supported uses, with no ACP option.
+For every stage, show the harness, actual Provider where applicable, channel, model, effort, configuration source, and subscription-check results. Clearly distinguish inherited rows from explicit overrides. Creating or changing a selection affects only its selected scope. Claude gets a native subscription-login entry; Antigravity gets an official-CLI entry, with no ACP option.
 
-Show capability targets separately from currently effective bindings. Disabled Gemini targets display their specific missing requirements; transitional replacements display the selection reason and departure. Saving or migrating must not automatically fill unready targets with Kimi/Codex or label a transitional configuration as the complete four-subscription proposal.
+The UI maintains this single configuration of stages and task categories and displays the model and effort actually selected. Missing CLI, expired login, unsupported model, exhausted quota, and unconfirmed cancellation use ordinary runtime diagnostics; they do not create duplicate configuration pages or silently switch providers.
 
 Environment inspection and model invocation are separate actions. A doctor that performs no inference consumes no model tokens and cannot establish task quality or remaining allowance. A real smoke test is an explicit, separate action that records the model and observed usage. Installation, opening settings, and model enumeration must not silently send inference requests by default.
 
@@ -450,14 +444,14 @@ Environment inspection and model invocation are separate actions. A doctor that 
 | Phase | Repository / scope | Completion criteria |
 | --- | --- | --- |
 | P0 | This Flywheel documentation PR | Chinese and English proposals, indexes, sources, and self-review; no runtime behavior changes |
-| P1 | Claude plugin + Flywheel | Native subscription channel, Fable ID/alias handling, doctor in the execution environment, and no paid fallback; public API remains compatible |
-| P2 | New Antigravity plugin | CLI runner, public machine API, guardian, read-only recovery, directory/model/permission/billing checks, and independent package tests |
-| P3 | New plugin's Desktop integration | Native task panel, direct launch, DSH tools/PTC/jobs, version checks, package and host validation; enabled uses follow §7 |
-| P4 | Flywheel integration | Go driver, Node bridge, schema/protocol, all role configurations, preset migration, and UI; automatic subscription defaults exclude unresolved Google orchestration uses |
+| P1 | New Antigravity plugin | CLI runner, public machine API, guardian, read-only recovery, directory/model/permission/billing checks, and independent package tests |
+| P2 | New plugin's Desktop integration | Native task panel, direct launch, DSH tools/PTC/jobs, version checks, package and host validation; Gemini usable within DSH |
+| P3 | Claude plugin + Flywheel | Native subscription channel, Fable ID/alias handling, doctor in the execution environment, and no paid fallback; public API remains compatible |
+| P4 | Flywheel integration | Go driver, Node bridge, schema/protocol, task-category routing, unified defaults across four subscriptions, migration, and UI |
 | P5 | Investigation analysis and JEV | Configurable subscription analysis role, JEV subscription backend, one master switch, and the legal-action baseline |
 | P6 | Real evaluation and release | Tasks on the actual Mac/accounts, baseline comparisons, candidate tarball installation, CI, exact-version release, and final explicit migration |
 
-P1 and P2 can proceed independently; P3 depends on P2. P4 can first deliver an explicitly selected transitional configuration without Google automatic routing, but this does not complete the target assignment across four subscriptions. P5 does not block the baseline whose optional functions remain off, but it must not be omitted from a claim that the overall objective is complete. #57/#9 retain independent implementation and validation; merging them is not a prerequisite for the baseline in this proposal.
+Delivery follows P1 → P2 → P4: complete the plugin and make it usable in DSH, then integrate it with Flywheel and the unified configuration. Claude corrections in P3 can run alongside plugin development and complete the subscription paths with P4. Investigation analysis and JEV in P5 remain within the same objective. P6 validates the complete design before release and migration. #57/#9 retain independent implementation and validation; their merge is not a prerequisite for basic usability in this proposal.
 
 Implementation must update the owning documentation: execution, error, model, usage, permission, and configuration sections of `docs/design.md`; schemas in `templates`; DSH `PROTOCOL.md`; paired configuration/model-policy/Claude/native/recovery/workflow/investigation/JEV guides; and the new plugin's Chinese/English README, machine documentation, installation, and release procedures. Only implemented behavior enters CHANGELOG. A dated proposal does not replace the current user guides.
 
@@ -468,7 +462,7 @@ Leave unrelated LCU/preset/ChatGPT code unchanged. If the new tool needs explici
 | Layer | Required validation | What it does not establish |
 | --- | --- | --- |
 | Documentation | Links/anchors, code fences, language parity, distinction between current facts and proposals, final diff | Implementation or release |
-| Model policy | Item-by-item comparison with the shared research, separation of official capabilities and hypotheses, target/transitional bindings, Gemini's primary responsibilities and enablement conditions | Proven superiority to the original recommendation or a fixed ranking across vendors |
+| Model policy | Basis in the shared research and official guide, responsibilities across four subscriptions, Hydrogen/Neon/Carbon tiers, explicit effort and task routing | Proven superiority to the original recommendation or a fixed ranking across vendors |
 | Offline protocol | init/events/result, partial JSON, duplicate/missing terminal results, incorrect configuration, soft denial, schema, and long streams | Account availability, model quality, or actual billing |
 | Sessions | Exact resume, isolation of two parallel tasks, invalid IDs, changed bindings, recovery without replay | Guaranteed absence of persisted native history |
 | Lifecycle | Cancellation, outer timeout, CLI timeout, parent death, process groups, remaining descendants, and unknown provider work | Local exit being equivalent to remote completion |
@@ -476,20 +470,20 @@ Leave unrelated LCU/preset/ChatGPT code unchanged. If the new tool needs explici
 | Installable package | Public exports/types/client/patch/guardian from an actual tarball, installed outside the source directory | A package name or source version proving npm publication |
 | DSH Desktop | Direct invocation without a parent model, tool registration and preset switching, PTC, jobs, settings, cancellation | An offline host fixture being equivalent to the user's Mac |
 | Flywheel | Go → real Node → fake CLI; all roles, worktrees, Quick/Full/investigation, migration, JEV switch | Argument-only tests proving end-to-end delivery |
-| Real account | Subscription authentication, billing settings, model/effort, a normal task, revision, cancellation, and quota boundaries | One successful call proving long-term quota or supported-use eligibility |
+| Real account | Subscription authentication, billing settings, model/effort, a normal task, revision, cancellation, and quota boundaries | One successful call guaranteeing long-term quota |
 
 Future Go changes must run the repository quality gate, retaining the existing requirement of 100% statement coverage per function. DSH/plugin changes require build, offline-host, cross-process, and installation-candidate checks. Tests assert observable outcomes and failure boundaries. This documentation-only PR does not require unrelated full engineering suites.
 
 Model evaluation fixes real tasks, acceptance oracles, the code baseline, permissions, context, and workspace. Compare first-pass acceptance, total elapsed time including revisions, omissions/false positives, human intervention, quota, and known/unknown usage. Samples include a small issue, frontend states, a cross-module fault, regression tests, concurrency/data-consistency review, and a complex plan. Compare the actual benefit of medium/high/xhigh/max. A single benchmark or positive community feedback does not establish the optimal default.
 
-Comparison candidates explicitly include the original shared assignment adapted to subscriptions (removing DeepSeek and other additional APIs), the initial Kimi/Codex transition, this revision's complete four-subscription target, and targeted Carbon/Neon and Hydrogen/Kimi/Sol substitutions. Record different CLI/native orchestration paths separately; results for a model alone or native Orchestrator cannot be transferred to the entire Flywheel workflow. The main questions are which tasks justify changing models, which effort levels reduce revisions, and how to allocate Claude/Google quota. This experiment set has not yet been run.
+Evaluate this unified default configuration with targeted Carbon/Neon, Hydrogen/Kimi/Sol, and medium/high/xhigh substitutions. Record different CLI/native orchestration paths separately; results for a model alone or native Orchestrator cannot be transferred to the entire Flywheel workflow. The main questions are which tasks need escalation, which effort levels reduce revisions, and how actual capacity is allocated across subscriptions. This experiment set has not yet been run. Evaluation adjusts the same model policy without adding product modes.
 
-## 17. Explicit items still requiring verification before implementation
+## 17. Implementation acceptance checklist
 
 - Each account's actual model catalog, entitlements after the planned downgrade, and extra-spending settings; account-specific billing eligibility for Fable 5.2.
 - The minimum supported official `agy` version, machine-readable catalog/authentication capabilities, native titles, and task state after shutdown. Promise only verified behavior.
 - The current DSH Desktop's direct panel actions, PTC/jobs, and plugin peer capabilities. No implicit parent-model invocation.
-- Supported eligibility for using Google consumer subscriptions in automatic DSH tool delegation and Flywheel pipelines spanning providers. A successful CLI call does not remove this limitation.
+- Direct Gemini tasks and tool delegation in DSH, Carbon/Neon/Hydrogen role invocations in Flywheel, and the independent review cycle.
 - Independent host, plugin, page, and real-account validation for ChatGPT Web Pro, continuing under #57/#9.
 
-These items do not block this proposal PR or offline implementation work. They determine which configurations can be enabled and when real subscription use across the complete workflow can be reported as validated. Record subsequent findings as new acceptance evidence; do not rewrite this proposal's open work as checks that had already passed.
+Include these items in their implementation phases and record actual evidence. Final delivery completes the plugin, DSH use, Flywheel integration, and the same subscription configuration as one working system. This documentation iteration does not claim completed software or account validation.

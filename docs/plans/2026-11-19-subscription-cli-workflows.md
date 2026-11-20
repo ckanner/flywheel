@@ -2,16 +2,16 @@
 
 简体中文 · [English](2026-11-19-subscription-cli-workflows.en.md) · [方案目录](README.md) · [当前架构](../design.md)
 
-**日期：2026-11-19。状态：Proposed，文档 PR，尚未实现。** 本文规定后续改动的目标、接口、迁移与验收，不改变当前运行代码、发行版本、用户配置或账号设置。文中的新预设、字段、包和命令均为拟议接口；当前版本不能据此直接加载。实现时应同步当前架构、schema、协议和双语用户指南，再分别记录源码、安装包和真实账号验收。
+**创建：2026-11-19；修订：2026-11-20。状态：Proposed，文档 PR，尚未实现。** 本文规定后续改动的目标、接口、迁移与验收，不改变当前运行代码、发行版本、用户配置或账号设置。文中的新预设、字段、包和命令均为拟议接口；当前版本不能据此直接加载。实现时应同步当前架构、schema、协议和双语用户指南，再分别记录源码、安装包和真实账号验收。
 
-**模型分工修订：** §4–5 已依据实际读到的原分享补充逐项对照，并替换初稿中偏向 Kimi/Codex 的目标表。完整目标保留 Gemini/Claude 的主要职责，接入过渡另表说明；当前没有证据证明初稿分工优于原调研建议。
+**设计前提：先完成 Antigravity DSH 插件，再交付包含 Gemini 的统一默认配置。** §4–5 结合原分享与 Google 官方模型选择指南，直接规定四家订阅的最终分工和思考等级。
 
 ## 1. 已确定的目标与范围
 
 用户已确定以下约束，本方案据此收敛，不再重新选择接入路线：
 
 1. 使用现有 Kimi、ChatGPT、Claude、Google 订阅；停止在这套默认配置中使用 DeepSeek 充值余额或任何额外付费 API。
-2. **Antigravity 直接调用官方 `agy` CLI，不使用 ACP。** 新增独立的 `dsh-subagent-antigravity` 插件，使其能在 DSH Desktop 中使用，并向 Flywheel 提供公开机器接口。
+2. **Antigravity 直接调用官方 `agy` CLI，不使用 ACP。** 先完成独立的 `dsh-subagent-antigravity` 插件，使其能在 DSH Desktop 中使用，再通过公开机器接口接入 Flywheel，交付统一模型配置。
 3. Claude 只走个人订阅。保留已有的官方 Agent SDK → 本机原版 Claude Code 路线；SDK 是控制 CLI 的库，不因为“只用 CLI”而重写已有执行器。
 4. Kimi 继续使用原生 CLI；Codex 继续使用现有插件控制的官方 Codex CLI/app-server。这里不要求退回文本抓取，也不移除已有会话、恢复和原生能力。
 5. 模型、访问渠道、思考等级、权限和会话分别配置。普通任务使用经济的初始组合，困难任务在显式允许集内升级，不默认全部 `max`。
@@ -43,7 +43,7 @@ Kimi 年付已经支出，不能再把月付标价当成每月新增现金支出
 | 事项 | 当前事实 | 本方案的工作 |
 | --- | --- | --- |
 | 默认执行与 Intake | 仍为 DSH `deepseek-account` / DeepSeek Flash | 从目标预设及所有可达后备中移除 |
-| Plan / Review / Judge | Kimi K3.1 Pro / DSH GPT-6.1 Sol / DSH GPT-6 Astra | 分别记录四家订阅的能力目标与接入过渡绑定，验证运行时实际模型目录 |
+| Plan / Review / Judge | Kimi K3.1 Pro / DSH GPT-6.1 Sol / DSH GPT-6 Astra | 按四家订阅的最终阶段表配置，验证实际模型目录 |
 | 设计角色 | `design-plan` 继承 Plan；两类规划 Review 继承 Review | 显式覆盖完整角色，保持历史独立 |
 | Claude 执行器 | 已支持 Agent SDK 启动本机 CLI | 保留；修订原生登录通道、模型匹配和 doctor |
 | Claude UI 预设 | `claude-api` 自动声明 `ANTHROPIC_API_KEY` | 新增清楚的个人订阅入口，避免启动前错误拦截 |
@@ -65,7 +65,6 @@ Kimi 年付已经支出，不能再把月付标价当成每月新增现金支出
 - **认证路径**：原生个人账号登录；不复制、刷新或代理订阅令牌。
 - **模型资格**：账号可访问的模型和支持的参数。
 - **计费资格**：该次选择是否可消耗计划包含额度，是否存在额外 credits/充值后备。
-- **使用方式支持范围**：例如 Google 对直接脚本和第三方 Agent 编排的区分。
 
 实现时新增版本化的订阅策略元数据；以上是待设计进 schema 的概念，不是当前已有配置字段。证据区分 `verified`、`user-declared`、`unknown`，包含来源、时间、CLI/config 指纹；用户声明不能改写为厂商确认。预检不得读取或输出原始密钥、token 或账户隐私。
 
@@ -77,7 +76,7 @@ Kimi 年付已经支出，不能再把月付标价当成每月新增现金支出
 
 DSH 的父 Agent 也会消耗自身模型额度。使用 Antigravity/Claude 子工具不会自动把父 Agent 变成订阅模型。应提供两种明确入口：
 
-1. 现有 DSH ChatGPT 订阅 Provider 驱动普通对话，再按支持范围使用原生工具；检查 Desktop/SDK 实际 profile 和认证。
+1. 现有 DSH ChatGPT 订阅 Provider 驱动普通对话，再调用原生工具；检查 Desktop/SDK 实际 profile 和认证。
 2. 用户直接从插件面板或命令启动 CLI 任务，不额外创建 DSH 父模型调用。
 
 保留 DSH 作为宿主和确定性控制面，不因为停用 DeepSeek 付费推理而删除 DSH 集成。
@@ -94,7 +93,7 @@ CLI 本地配置可确认的冲突应在派发前阻止。账户侧额外用量�
 
 ### 4.1 原调研是讨论起点，偏离必须说明
 
-本次修订已在浏览器中实际读取用户提供的 [Gemini 分享正文](https://share.gemini.google/lbGhBwv80PEP)，不以搜索摘要或此前助手的概括代替原文。本文初稿把接入较成熟的 Kimi/Codex 过渡组合写成完整目标，没有说明与原建议的差异；**没有同任务比较证据证明那套组合更优**。本节修正这一点，并把能力目标、接入状态和待测假设分开。
+用户提供的 [Gemini 分享正文](https://share.gemini.google/lbGhBwv80PEP)已在浏览器中完整读取；本次又核对了 [Google 官方模型选择指南](https://aistudio.google.com/docs/choosing-a-model)。原分享给出跨厂商分工起点，官方指南补充 Gemini 的模型层次和思考等级。以下直接定义插件完成后的最终方案，所有职责选择都给出依据，不宣称已通过同任务实测证明最优。
 
 下表为原文分工的简要转述；右栏是按本次订阅约束的处理，不代表原文或本方案已得到 Flywheel 实测验证。
 
@@ -116,7 +115,8 @@ CLI 本地配置可确认的冲突应在派发前阻止。账户侧额外用量�
 | --- | --- | --- |
 | Gemini 4 Carbon | 顶层架构、跨子系统根因与高风险分析；Google 明确将其定位于架构、协调和对抗验证 | 支持角色适配，不证明比 Claude/Astra 在所有项目都好；[官方说明](https://antigravity.google/blog/gemini-4-carbon-in-google-antigravity) |
 | Gemini 4 Hydrogen | 日常代码、微型方案、测试与参考设计驱动的 UI 迭代；官方强调快速执行和交互应用开发 | 实际速度与配额收益须在本任务集验证；[官方说明](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-hydrogen/) |
-| Gemini 4 Neon / Argon | 大范围调查、调试、重构与日常复杂工程的比较候选 | Neon 于 11 月 18 日新增，官方将其置于 Carbon 深度与 Hydrogen 速度之间；先比较，不凭“最新”替换 Carbon；[Neon 说明](https://antigravity.google/blog/gemini-4-neon-in-google-antigravity) |
+| Gemini 4 Neon | 高频复杂工程、多文件修改、调试、重构和常规跨模块调查 | 官方将其置于 Hydrogen 与 Carbon 之间，按该任务定位安排明确职责；[模型说明](https://aistudio.google.com/docs/models/gemini-4-neon)、[Antigravity 说明](https://antigravity.google/blog/gemini-4-neon-in-google-antigravity) |
+| Gemini 4 Argon | 模型目录中的手动可选项 | 统一默认采用 Hydrogen/Neon/Carbon 三层，不额外增加一个默认阶段来分配 Argon |
 | Claude Opus / Sonnet / Fable | 需求收敛、规范统稿、里程碑、商业 UI 与业务完整性审查 | 采用原调研的角色假设；具体模型依账号目录和订阅权益，Fable 条件见 §6，不把 Claude 降为只有第二意见 |
 | GPT-6.2 Sol / Astra | Sol 做明确后端实现与日常审查；Astra 做困难推理、架构挑刺和高风险裁决 | 官方定位支持候选资格；不能据此断言应接管所有规划或所有审查；[发布说明](https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol) |
 | Kimi Code K3.1 Pro | 重工具长任务、明确 Spec 的批量实施、计划容量分担与整理 | 年付和现有集成是容量/工程依据，前端审美与规划优劣仍需比较；年付不等于无限额度 |
@@ -130,64 +130,67 @@ CLI 本地配置可确认的冲突应在派发前阻止。账户侧额外用量�
 
 每个推荐至少区分：原分享建议、官方能力事实、工程/容量选择和 Flywheel 实测结果。当前拥有前三类，尚无第四类。表中的 effort 是待比较的起点，不是已证明最优档位；同名 effort 也不是跨厂商统一量尺。
 
-模型适合什么职责与当前能否由 DSH/Flywheel 调用分别记录。插件未实现、真实账号未验收或使用范围待确认，只改变启用状态，不能据此删除 Gemini 的目标职责。Claude 的 Pro 额度影响调用频率与替代方案，不能据此推导它不适合主阶段。
+模型分工以四家订阅路径均完成为设计前提，实施顺序见 §15。Claude Pro 额度和 Kimi 年付影响任务分配与调用频率；每个阶段仍有一个明确主模型和初始档位，日常使用不需要选择另一套接入状态配置。
 
 GPT-6.2 使用前仍需原生账号目录确认。旧 6.1/6 系列只作为显式兼容候选，不能静默替代。目标使用 Standard；套餐降档后重新核验模型/速度权益，不假设 API 标价能换算订阅配额，也不把 Fast/Ultrafast 当成默认省配额手段。
 
-## 5. 完整目标分工与接入过渡配置
+## 5. 统一默认分工与 Gemini 档位
 
 ### 5.1 完整能力目标：保留原建议，再做订阅适配
 
-以下是供讨论与比较的四家订阅目标分工，尚未实施或证明最优。Gemini 在架构、日常实施、测试与调查中有明确主职责；Claude 在规划和前端有主职责；Kimi 分担重工具及批量工程任务；Codex 承担后端、独立审查与难题。每次派发只能解析为一个明确绑定，候选不表示同阶段固定调用所有模型。
+以下是四家订阅的统一默认分工。Gemini 内部由 Hydrogen 负责日常执行、Neon 负责复杂日常工程、Carbon 负责架构与最难问题；Claude 负责规划和商业 UI，Kimi 负责重工具及批量任务，Codex 负责后端、独立审查与难题。每次派发解析为一个明确模型和 effort，不固定同时调用所有模型。这是实施采用的初始策略，实际任务评估用于后续调优。
 
 | 阶段 / 工作类型 | 目标主选 | 初始 effort | 选择条件或明确替代 |
 | --- | --- | --- | --- |
 | `intake` 开放需求分析 | Gemini 4 Carbon | medium | 明确字段收集可选 Kimi low；需求收敛/规范统稿可显式选 Claude Opus high |
-| `design-plan` 顶层设计 | Gemini 4 Carbon | high | 业务规范密集用 Claude Opus high，或具备订阅资格的 Fable high；Neon high 为比较候选 |
-| `design-review` 架构审查 | Codex / GPT-6.2 Astra，独立会话 | high | 高风险 xhigh；轻量设计采用 Quick coding 的 Sol medium/high |
+| `design-plan` 顶层设计 | Gemini 4 Carbon | high | 业务规范密集时显式选 Claude Opus high，或具备订阅资格的 Fable high |
+| `design-review` 架构审查 | Codex / GPT-6.2 Astra，独立会话 | high | 高风险问题才升 xhigh |
 | `plan` 里程碑与依赖拆解 | Claude Opus 5.5 | high | Kimi high 为明确的容量替代；复杂规划可选具备资格的 Fable high |
-| Micro-Spec（Plan/packet 内职责） | Gemini 4 Hydrogen | high | Claude Sonnet medium；只在细化有必要时使用，不制造每个 packet 必跑的新阶段 |
+| Micro-Spec（Plan/packet 内职责） | Gemini 4 Hydrogen | high | 涉及复杂跨文件约束时用 Neon high；只在细化有必要时使用，不制造每个 packet 必跑的新阶段 |
 | `plan-review` | Codex / GPT-6.2 Sol，独立会话 | medium | 重要接口、迁移、并发约束采用 high |
-| Execute `default`：常规实施 | Gemini 4 Hydrogen | high | 明确的小转换可 medium；Kimi high 用于已指定的重工具/批量仓库任务 |
-| Execute `frontend`：商业 UI | Claude Opus 5.5 | medium | 复杂约束 high；有参考图/设计系统的快速迭代可显式选 Hydrogen high；Kimi high 是待比较候选 |
-| 后端、算法、数据管道（任务类别） | Codex / GPT-6.2 Sol | high | Hydrogen high 为候选；困难数学/底层问题进入 hard |
+| Execute `default`：常规实施 | Gemini 4 Hydrogen | high | 局部小改动、简单转换用 medium |
+| 多文件工程 / 复杂重构（任务类别） | Gemini 4 Neon | high | 多步约束仍无法满足时可升 xhigh；架构级难题交 Carbon high |
+| Execute `frontend`：商业 UI | Claude Opus 5.5 | medium | 复杂约束用 high；已有设计系统的局部快速迭代可显式选 Hydrogen medium |
+| 后端、算法、数据管道（任务类别） | Codex / GPT-6.2 Sol | high | 困难数学/底层问题进入 hard |
+| 重工具 / 批量仓库改造（任务类别） | Kimi K3.1 Pro | high | 以明确 Spec、工具结果和回归验证约束任务范围 |
 | Execute `hard` | Codex / GPT-6.2 Astra | high | 有证据的难例 xhigh；max 只作有界选择或评估候选 |
 | 常规测试补充 / 缺陷复现（任务职责） | Gemini 4 Hydrogen | medium | Sol high 补异常/并发边界；先使用现有确定性验证，不额外固定启动测试 Agent |
 | `review` | Codex / GPT-6.2 Sol | high | 安全/复杂并发风险显式采用 Astra high/xhigh；保持独立历史 |
 | `judge`（Full） | Codex / GPT-6.2 Astra | high | 争议复杂时 xhigh；业务完整性第二意见按下方 judge-panel 选择 |
-| 调查分析（拟议角色） | 跨模块用 Gemini 4 Carbon；单模块用 Hydrogen | high | Neon high 为广域调查比较候选；困难算法用 Astra high；只分析获准证据 |
-| `garden` / 交付文案职责 | Gemini 4 Hydrogen | low | Sonnet low/medium 或 Kimi low 可显式替代；合并、发布权限仍由现有交付规则控制 |
+| 调查分析（拟议角色） | Gemini 4 Neon | high | 简单局部问题用 Hydrogen high；跨仓难根因/架构问题用 Carbon high；只分析获准证据 |
+| `garden` / 交付文案职责 | Gemini 4 Hydrogen | low | 涉及实质性跨任务推理时用 high；合并、发布权限仍由现有交付规则控制 |
 | JEV 决策（拟议后端） | Codex / GPT-6.2 Sol | medium | 总开关默认关闭；后续仅用于有界决策 |
 | `judge-panel` | 默认关闭；高风险第二意见主选 Fable 5.2 | high（启用时） | 仅在订阅资格满足时使用；否则显式选 Opus high 并记录替代。只针对明确问题启用一次，不固定双审 |
 
-“微型方案、后端、测试、文案”表示任务职责，不宣称当前已经存在同名 loop/route。现有 Execute 的 default/frontend/hard 不足以直接编码全部细分类别：首版可通过显式任务绑定/预设选择实现；若增加自动任务类别路由，应另行版本化、显示理由并冻结实际绑定。不能把这一表直接贴进当前 schema，也不能让模型自行选择隐藏的供应商。
+“微型方案、多文件工程、后端、批量改造、测试、文案”表示任务职责，不宣称当前已经存在同名 loop/route。实施时扩展现有执行路由策略以表达这些类别，并一起更新 schema、配置界面、迁移和测试；在派发前显示任务类别、所选模型和原因，冻结实际绑定。用户可以显式覆盖任务类别；模型不能自行选择隐藏的供应商。这张设计表不能直接贴进当前 schema。
+
+每个任务只指定一个主类别，显式任务绑定优先。自动分类按主要验收目标选择，不只按文件数量：重复且 Spec 明确的批量操作归 Kimi，需要跨文件推理协调的重构归 Neon，核心算法与后端逻辑归 Sol，已判定的困难任务走 hard。类别仍有歧义时由规划阶段收敛；派发后不隐式切换。
 
 不把 `loops.investigate` 当成现有字段。新增调查分析角色的命名、schema、作用域与权限应在实现 PR 中一起落地；此前由已配置订阅模型的宿主提交报告。JEV 新后端同样不是当前默认已具备的功能。正常测试由 Executor 与确定性验证完成；需要补充分析时才创建明确任务。
 
-### 5.2 接入过渡：保留目标，显示尚未满足的条件
+### 5.2 Gemini 三层选择与思考等级
 
-这张表回答“目标尚不能执行时如何处理”，不是能力排名，也不是另一份更优目标。目前 main 的模板仍含 DeepSeek；下表的替代配置同样需要显式选择和迁移，不是声称已经生效。
+依据 [Google 选择指南](https://aistudio.google.com/docs/choosing-a-model)，按任务复杂度直接选择模型，不要求每个任务依次经过三档：
 
-| 目标绑定 | 接入与验收条件 | 条件未满足时的过渡选择 |
-| --- | --- | --- |
-| Carbon 架构 / 调查 | Antigravity 插件、角色回执、账号目录和 §7 对应使用范围 | 在受支持的官方 CLI 中完成该角色并交回产物；需要全自动时显式选择 Claude 或 Codex 候选，记录偏离，不自动降级 |
-| Hydrogen 实施 / 测试 / 整理 | 同上；前端视觉还需 §9.3 的浏览器链路验收 | 明确选 Kimi 或 Sol 承担对应任务；目标表仍保留 Hydrogen |
-| Claude 规划 / UI | 原生订阅 channel、同环境 doctor、具体模型与费用资格 | 额度有限时显式选 Kimi high 或已验收的其他目标候选；不因 Pro 配额小永久删去 Claude 主角色 |
-| Kimi / Codex 绑定 | 已有 CLI 路径及实际版本、账号、模型与阶段验收 | 原 Kimi/Codex 组合可以作为迁移过渡候选；未取得四家同任务比较前不称“完整最优配置” |
+| 模型 | 可用 effort | 指南中的默认值 | 本方案采用方式 |
+| --- | --- | --- | --- |
+| Hydrogen | low / medium / high / xhigh | high | 日常执行 high；局部交互、UI 迭代和常规测试 medium；整理摘要 low |
+| Neon | low / medium / high / xhigh | high | 高频复杂工程、多文件重构和常规跨模块排障 high；明确难例才升 xhigh |
+| Carbon | low / medium / high | medium | 开放需求探索 medium；顶层架构、跨仓根因和深入验证 high |
 
-官方 CLI 产物交回 Flywheel 时，应冻结文档/候选摘要并经过现有设计批准、独立 Review 和验证规则；手工产物不伪装成插件生成的机器回执。此过渡选择不取消新 DSH 插件和 Flywheel driver 的实施目标。
+档位定义另见 [Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen)、[Neon](https://aistudio.google.com/docs/models/gemini-4-neon)、[Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)。Flywheel 显式设定每次调用的 effort，不依赖 CLI 记住的上次选择；Carbon 不配置 xhigh/max，Gemini 4 不配置 minimal。Argon 保留在可选目录，不为它再造一个默认阶段。
 
-### 5.3 三档目标预设与容量选择
+采用能通过质量要求的最低档位：局部、交互任务先用 medium，多步工程用 high，Neon/Hydrogen 的 xhigh 只处理有明确收益的难例。任务一开始就已知是架构级问题时直接选 Carbon，不先让其他模型各失败一次。模型和档位带来的耗时、返修及配额变化通过 §16 的真实任务评估调整。
 
-实现时提供三份完整、可预览的目标配置；本提案规定职责，具体模型 ID、任务分类策略及每次调用绑定在实施中按目录冻结：
+AI Studio 指南描述 API；本方案借鉴模型职责与档位，执行仍走官方 `agy`。不把 API 的 `thinking_level`、`previous_interaction_id`、输出上限、价格、缓存折扣或 Batch/Flex 参数直接移植到 CLI。插件使用原生 model slug、`--effort` 和 conversation ID；实际窗口按 Antigravity 记录，不能把 API 的 1M 宣传当成 CLI 保证。
 
-- **Balanced**：以上表为参考起点。Carbon 做全局设计，Claude 做规划与商业 UI，Hydrogen 做日常实施/测试，Kimi 分担指定的批量/重工具任务，Sol 做常规审查，Astra 做架构挑刺与高风险裁决。不要求小任务依次调用四家。
-- **Quick coding**：明确的小修复优先 Hydrogen medium/high，或显式选择 Sol medium；紧凑设计采用 Hydrogen high / Sol medium，最终独立 Review 为 Sol high。完整目标的其他角色仍有定义，已有有效设计可复用。
-- **Deep engineering**：Carbon high 做复杂架构，Claude Opus/Fable high 做规范与复杂计划，Astra high/xhigh 做困难实现和对抗审查；第二意见按风险启用。Neon high/xhigh 加入比较集，不因为更新就自动替代 Carbon。
+### 5.3 一套默认配置与任务选择
 
-Kimi 年付容量与 Claude Pro 配额可以形成明确的容量适配选择：例如将计划/批量执行切到 Kimi high，保留 Carbon 架构与 Codex 审查。预览必须展示被替换角色和原因；这一选择是用户预算条件下的候选，不是本轮发现的能力优势。没有配额实测时不预先承诺固定工作占比或节省比例。
+实现时交付一份完整、可预览的 `subscription-cli` 默认配置，包含 §5.1 的阶段绑定和任务类别选择规则。具体模型 ID 与配置版本在实施中冻结；保存配置只调整用户选择的范围。
 
-预设与 Auto/Quick/Full 保持分开：当前 Auto 只决定流程，首版不凭模式名字暗中更换模型。一个目标配置缺少 Google 启用条件时显示未就绪，允许显式选过渡绑定；不把去掉 Gemini 的过渡配置继续标作已完成的四家目标。
+Auto/Quick/Full 继续只决定工作流，任务类别和风险决定上述模型选择与升级；不凭流程模式名字暗中改供应商。Quick 省略不需要的阶段并复用有效设计，Full 按现有规则规划、集成和裁决。两者使用同一套模型策略。
+
+Kimi 年付容量用于已明确的批量/重工具任务；Claude Pro 的计划调用复用有效检查点，第二意见按风险启用。额度不足时按已有明确选择和等待规则处理，不自动转付费 API；用户需要调整容量分工时，修改这份配置即可，不增加另一套产品模式。没有真实测量时不承诺固定工作占比或节省比例。
 
 ### 5.4 effort、升级与跨模型切换
 
@@ -221,24 +224,15 @@ doctor 与真实执行共用同一 command、cwd、HOME、CLAUDE_CONFIG_DIR 和�
 
 Fable 的非交互调用可能直接使用 credits；这是 [model-config](https://code.claude.com/docs/en/model-config) 明示的情况。`/usage` 或结果里的美元值是计算口径，不证明新增账单；`--max-budget-usd` 也不能冒充“额外扣费零美元”控制。参考 [usage credits 设置](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans)、[成本说明](https://code.claude.com/docs/en/costs)。
 
-## 7. Antigravity CLI 插件与订阅支持范围
+## 7. Antigravity 的确定接入路线
 
-**接入路线已确定为 CLI。本方案不提供 ACP 实现，也不通过换协议或插件名称改变使用方式的性质。**
+**先完成官方 `agy` CLI 的 DSH 插件，再把它用于 Flywheel 的 Gemini 阶段；不使用 ACP。** 插件复用官方 CLI 的认证、Agent 执行和原生会话，负责进程管理、结构化事件、任务状态、取消与结果封装。
 
-本节只约束具体路径是否可以启用。Carbon/Hydrogen 等模型在 §5 的目标职责保持明确；未解决的接入条件不作为模型能力排名，也不把删除 Gemini 后的过渡配置视为完整目标。
+DSH 面板直接任务、`subagent_antigravity` 工具和 Flywheel machine 调用共用同一 runner。三种入口在插件实施中一起定义，分别验收；DSH 中既可以直接使用 Gemini，也可以由 Agent 委派任务。具体接口见 §8–11。
 
-Google 官方 headless 文档提供程序调用、结构化输出和多轮输入能力；FAQ 同时说明消费者计划支持直接脚本/CI，但不支持把 `agy` 包入第三方 coding agent/application。技术可集成与特定订阅支持范围必须分别记录。参考 [headless](https://antigravity.google/docs/cli/headless/)、[FAQ](https://antigravity.google/docs/faq)。
+实现依据是官方 [headless](https://antigravity.google/docs/cli/headless/)与 [CLI 参考](https://antigravity.google/docs/cli/reference/)。原版 CLI 保持官方登录与账号设置；插件不复制或代理 token，不模拟私有后端，不以付费 API 或 credits 回退。这里规定工程集成目标，不声称本提案替代厂商的账号条款或认证权限。
 
-| 场景 | 方案处理 |
-| --- | --- |
-| 用户直接运行官方 CLI / 自己的直接脚本 | 实现并验收官方原生路径 |
-| DSH 面板由用户直接发起单个 CLI 任务 | 完整设计界面与 runner；该第三方 GUI 的使用资格仍需确认，用户点击和没有父模型并不自动证明它属于获准的直接脚本 |
-| DSH Agent 自动调用 `subagent_antigravity` | 技术接口列入设计；消费者订阅不作为默认自动委派资格 |
-| Flywheel 串联 Kimi/Codex/Claude 与 Antigravity | driver 和阶段绑定可实现，但 Ultra 不进入基线自动路由或 fallback；此使用方式的支持资格需独立解决 |
-
-11 月 17 日的[论坛讨论](https://discuss.ai.google.dev/t/tos-clarification-human-initiated-python-workflow-using-official-agy-cli/201524)恰好涉及个人 GUI、确定性 Python 和多模型阶段。已出现区分直接脚本与多厂商流水线的回复，逐阶段人工确认的追问仍未获明确回答。发言者身份未独立核实，论坛解释不能替代正式文档。增加确认按钮或调用成功都不当作厂商授权证据。
-
-已确认的原生基线是官方 CLI 与受支持的直接脚本；DSH 手工面板和自动委派的技术实现均可先离线完成，真实消费者订阅使用资格分别记录。**不向自主 Agent 的默认 preset 暴露自动委派，也不自动选为 Flywheel 阶段**。保留完整 machine/工具集成设计及能力标记；启用适用场景依赖其支持资格，不能由一个“忽略限制”的开关代替。这里不以购买 API 为默认解决办法。
+Flywheel 的模型配置直接包含 Carbon、Neon、Hydrogen。插件与 DSH 使用完成后，再交付 Flywheel driver、任务路由和统一默认配置。
 
 ## 8. 新 DSH 插件的产品与包结构
 
@@ -249,7 +243,7 @@ Google 官方 headless 文档提供程序调用、结构化输出和多轮输入
 | 入口 | 职责 |
 | --- | --- |
 | DSH Desktop 插件面板 / 直接命令 | 用户选择工作目录、模型、effort、权限和任务，直接启动 CLI，不隐式调用父模型 |
-| `subagent_antigravity` 工具 | 接入获准使用方式下的 DSH Agent/PTC 与 jobs；注册遵循 §7，不默认暴露给消费者自主 preset |
+| `subagent_antigravity` 工具 | 正式接入 DSH Agent/PTC 与 jobs，并在对应 preset 中注册 |
 | `dsh-subagent-antigravity/machine` | Flywheel 等确定性调用方的公开 ESM API，不创建 DSH parent Agent |
 
 新包的目标出口为根插件、`./machine`、`./client`，并提供独立 `antigravity-machine` 包装命令。`--capabilities`、`--doctor`、`--json` 是该包装命令的拟议参数，不是声称 `agy` 已有这些参数。
@@ -303,7 +297,7 @@ DSH 手工入口和 Agent 工具复用同一执行服务。若当前 Desktop 不
 
 ### 9.3 模型、权限与输入边界
 
-从实际 `agy models` 和 CLI 能力构建带来源的目录；不能把它当作剩余额度或厂商支持资格证明。按模型暴露 effort，固定配置的原生 Orchestrator 不强塞独立 effort。UI label 与 CLI slug 分开，冲突/不支持明确失败。[模型文档](https://antigravity.google/docs/models)
+从实际 `agy models` 和 CLI 能力构建带来源的目录；模型列表不代表剩余额度。按模型暴露 effort，固定配置的原生 Orchestrator 不强塞独立 effort。UI label 与 CLI slug 分开，冲突/不支持明确失败。[模型文档](https://antigravity.google/docs/models)
 
 Headless 不能接收交互式审批控制消息。采用用户预先批准的原生权限配置，不因工具被拒绝而自行扩大权限。分别记录原生 execution mode、工具审批策略和 sandbox 状态；Flywheel 的 full-access 是归一化策略，必须依据已验证能力构造对应组合。`--dangerously-skip-permissions` 只按官方定义表示跳过工具审批，不能由此声称 sandbox 已关闭或任意路径可写。无法精确表达的权限组合在派发前拒绝。无法执行获批动作时返回可观察阻塞/部分执行证据；不修改全局 settings 来临时放权。cwd、plan mode 和提示词都不冒充 OS 隔离。
 
@@ -439,9 +433,9 @@ Antigravity 原生 Orchestrator、Swarm 和 browser 子 Agent 也适用这些边
 
 Provider/模型选项从独立能力目录生成，不再依赖“当前哪个阶段恰好绑定它”来显示供应商。否则删除 DeepSeek 默认或改 Review 会意外影响资源选择器。
 
-每阶段显示 harness、实际 Provider（适用时）、channel、model、effort、配置来源、订阅资格、是否真实验收；继承行与显式覆盖清楚区分。新建或修改只改变当前选择范围。Claude 用“本机订阅登录”入口；Antigravity 显示“官方 CLI”及当前可使用场景，不出现 ACP 选项。
+每阶段显示 harness、实际 Provider（适用时）、channel、model、effort、配置来源和订阅检查结果；继承行与显式覆盖清楚区分。新建或修改只改变当前选择范围。Claude 用“本机订阅登录”入口；Antigravity 用“官方 CLI”入口，不出现 ACP 选项。
 
-能力目标与当前生效绑定分别展示；未启用的 Gemini 目标显示具体缺项，过渡替代显示选择原因和偏离。保存或迁移不自动用 Kimi/Codex 填掉未就绪目标，也不把过渡配置标签伪装成完整四家方案。
+界面只维护这一套阶段和任务类别配置，显示实际选中的模型与档位。CLI 缺失、登录失效、模型不支持、额度耗尽和取消未确认沿用普通运行诊断；不为它们复制配置页面或静默改成其他供应商。
 
 检查环境和调用模型分别操作：无推理 doctor 不消耗模型 token，不能证明任务质量或可用余额；真实冒烟是明确独立操作，记录模型与消耗事实。默认不在安装、打开设置或枚举模型时偷偷发送推理请求。
 
@@ -450,14 +444,14 @@ Provider/模型选项从独立能力目录生成，不再依赖“当前哪个�
 | 阶段 | 仓库 / 范围 | 完成条件 |
 | --- | --- | --- |
 | P0 | 本 Flywheel 文档 PR | 中英方案、索引、来源与自审；不改运行行为 |
-| P1 | Claude 插件 + Flywheel | 原生订阅 channel、Fable ID/alias、同环境 doctor、无付费回退；公开 API 保持兼容 |
-| P2 | 新 Antigravity 插件 | CLI runner、公开 machine、guardian、只读 recovery、目录/模型/权限/计费检查及独立包测试 |
-| P3 | 新插件 Desktop 集成 | 原生任务面板、直接启动、DSH 工具/PTC/jobs、版本检查、安装包和宿主验收；启用范围遵循 §7 |
-| P4 | Flywheel 集成 | Go driver、Node bridge、schema/协议、全角色配置、预设迁移和 UI；自动订阅默认不含未解决的 Google 编排场景 |
+| P1 | 新 Antigravity 插件 | CLI runner、公开 machine、guardian、只读 recovery、目录/模型/权限/计费检查及独立包测试 |
+| P2 | 新插件 Desktop 集成 | 原生任务面板、直接启动、DSH 工具/PTC/jobs、版本检查、安装包和宿主验收；Gemini 在 DSH 内可用 |
+| P3 | Claude 插件 + Flywheel | 原生订阅 channel、Fable ID/alias、同环境 doctor、无付费回退；公开 API 保持兼容 |
+| P4 | Flywheel 集成 | Go driver、Node bridge、schema/协议、任务类别路由、四家统一默认配置、迁移和 UI |
 | P5 | 调查分析与 JEV | 可配订阅分析角色、JEV 订阅后端、唯一总开关和合法动作基线 |
 | P6 | 实际评估与发布 | 真实 Mac/账号任务、对比基线、候选 tarball 安装、CI、精确发布与最后显式迁移 |
 
-P1 和 P2 可独立推进；P3 依赖 P2；P4 可先交付不含 Google 自动路由的显式过渡配置，但这不代表四家目标分工已经完成。P5 不阻塞默认关闭的基础路径，但不能在总目标完成声明中遗漏。#57/#9 维持独立实现与验收，当前方案不以它们合并为基本可用前提。
+交付顺序为 P1 → P2 → P4：先把插件做好并在 DSH 中使用，再接入 Flywheel 和统一配置。P3 的 Claude 修正可以与插件开发并行，随 P4 一起完成订阅路径；P5 的调查分析和 JEV 在同一目标内实施。P6 验收整个方案后发布并迁移。#57/#9 维持独立实现与验收，当前方案不以它们合并为基本可用前提。
 
 实施时更新 owning docs：`docs/design.md` 对应执行、错误、模型、用量、权限、配置章节；`templates` schema；DSH `PROTOCOL.md`；成对 configuration/model-policy/Claude/native/recovery/workflow/investigation/JEV 指南；新插件 README 中英文、machine 文档、安装与发布流程。只有真正实现的行为进入 CHANGELOG；日期方案不替代当前使用指南。
 
@@ -468,7 +462,7 @@ P1 和 P2 可独立推进；P3 依赖 P2；P4 可先交付不含 Google 自动�
 | 层次 | 必须验证的行为 | 不能由此宣称 |
 | --- | --- | --- |
 | 文档 | 链接/锚点、代码围栏、语言一致、现状与提案区分、最终 diff | 已实现或已发布 |
-| 模型策略 | 原分享逐项对照、官方能力与假设区分、目标/过渡绑定、Gemini 主要职责和启用条件 | 已证明优于原建议或厂商间固定排名 |
+| 模型策略 | 原分享与官方指南依据、四家职责、Hydrogen/Neon/Carbon 分层、明确档位和任务路由 | 已证明优于原建议或厂商间固定排名 |
 | 离线协议 | init/事件/result、半截 JSON、重复/缺失终态、错误配置、soft denial、schema、长流 | 账号可用、模型质量或实际账单 |
 | 会话 | 精确 resume、两个并行任务不串线、无效 ID、绑定变化、恢复不重放 | 原生历史必定不持久化 |
 | 生命周期 | 取消、外层 timeout、CLI timeout、父死亡、进程组、后代残留、未知 provider work | 本地退出等同远端完成 |
@@ -476,20 +470,20 @@ P1 和 P2 可独立推进；P3 依赖 P2；P4 可先交付不含 Google 自动�
 | 安装包 | 真实 tarball 的公开出口/类型/client/patch/guardian，源码目录外安装 | 包名/源码版本等同 npm 发行 |
 | DSH Desktop | 无父模型直接调用、工具注册与 preset 切换、PTC、jobs、设置、取消 | 离线 host fixture 等同用户 Mac |
 | Flywheel | Go→真实 Node→fake CLI；全部角色、worktree、Quick/Full/调查、迁移、JEV开关 | 纯参数测试等同端到端交付 |
-| 真实账号 | 订阅认证、计费设置、模型/effort、一次正常任务、返修、取消、额度边界 | 一次成功等同长期配额与官方使用资格 |
+| 真实账号 | 订阅认证、计费设置、模型/effort、一次正常任务、返修、取消、额度边界 | 一次成功等同长期配额保证 |
 
 未来 Go 改动执行仓库 quality-gate（现有每函数 100% statement coverage 要求保持）；DSH/插件运行构建、离线宿主、跨进程和安装候选检查。测试断言可观察结果与失败边界，不为纯文档 PR运行无关完整工程套件。
 
 模型评估固定真实任务、验收 oracle、代码基线、权限、上下文和工作区，比较首轮通过、包含返修的总耗时、遗漏/误报、人工介入、额度和已知/未知用量。样本包含：小 Issue、前端状态、跨模块故障、回归测试、并发/数据一致性审查和复杂计划。比较 medium/high/xhigh/max 的实际收益，不把单次 benchmark 或社区好评写成默认最优依据。
 
-比较对象明确包含：原分享的订阅适配组合（去除 DeepSeek 等额外 API）、初稿 Kimi/Codex 过渡组合、本版四家目标组合，以及 Carbon/Neon、Hydrogen/Kimi/Sol 的针对性替换。不同 CLI/原生编排路径分别记录，不能把纯模型或原生 Orchestrator 的成绩移植成 Flywheel 全链路结论。重点回答哪种任务值得换模型、哪种 effort 能减少返修，以及 Claude/Google 配额如何分配；本轮尚未进行这组实验。
+评估这份统一默认配置，并对 Carbon/Neon、Hydrogen/Kimi/Sol 和 medium/high/xhigh 做针对性替换比较。不同 CLI/原生编排路径分别记录，不能把纯模型或原生 Orchestrator 的成绩移植成 Flywheel 全链路结论。重点回答哪些任务需要升级、哪些 effort 能减少返修，以及各订阅的实际容量分配；本轮尚未进行这组实验。评估只调整同一套模型策略，不增加额外产品模式。
 
-## 17. 实施前仍需验证的明确事项
+## 17. 实施验收确认项
 
 - 各账号实际模型目录、套餐降档后的权益及额外消费设置；Fable 5.2 的具体账户计费资格。
 - 官方 `agy` 的最低支持版本、机器可读目录/认证能力、原生标题与关闭后任务状态；只按验证过的行为承诺。
 - DSH 当前 Desktop 的面板直接 action、PTC/jobs 和插件 peer 能力；父模型不得被隐式触发。
-- Google 消费者订阅用于 DSH 自动工具委派及 Flywheel 多供应商流水线的适用支持资格；CLI 调用成功不能消除该限制。
+- DSH 中的 Gemini 直接任务与工具委派、Flywheel 中的 Carbon/Neon/Hydrogen 角色调用和独立审查闭环。
 - ChatGPT Web Pro 的独立宿主、插件、页面及真实账号验收；继续由 #57/#9 负责。
 
-这些事项不阻塞本方案 PR 或离线工程实现；会限制可以启用的配置以及何时能宣称真实订阅全链路已验收。后续结果记录为新验收证据，不把本提案的待办改写成曾经已经通过。
+这些事项纳入对应实施阶段并记录实际证据。最终交付为插件、DSH 使用、Flywheel 集成和同一份订阅配置的完整闭环；本轮文档不冒充已完成的软件或账号验收。

@@ -51,11 +51,12 @@ to its named source, platform, and checks.
 
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md); proposed, documentation only)
-compares the original research with the proposed model roles, separates the full
-four-subscription target from transitional bindings, and defines native Claude
-login, an Antigravity CLI DSH plugin without ACP, and migration and acceptance
-work across development and incident workflows. It does not change the currently shipped defaults or establish
-account entitlement and third-party orchestration support.
+combines the original research with Google's model-selection guide and defines
+one final configuration for Gemini, Claude, Kimi, and Codex. Implementation starts
+with the Antigravity CLI DSH plugin, then DSH usage and Flywheel integration, with
+explicit model/effort rules, native Claude login, and migration and acceptance
+work across development and incident workflows. This remains a design proposal;
+it does not change currently shipped behavior or establish account entitlement.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)
 (Chinese; original proposal) records the design for genuine Plan work, independent
