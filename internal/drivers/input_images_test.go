@@ -54,6 +54,10 @@ func TestClaudeReceiptBindsActualImageBytesAndOrder(t *testing.T) {
 
 func TestRecoveryImageManifestRemainsLocalAndMustMatchOriginal(t *testing.T) {
 	a := MachineRecoveryArgs{Harness: "claude-code-pro", RequestID: "image-recover", RunID: "original-run", Cwd: t.TempDir(), RecoveryDirectory: t.TempDir(), Model: "sonnet", ReasoningEffort: "high", PermissionMode: "danger-full-access"}
+	// The original request records a physical cwd, not a temporary-root alias.
+	cwd, err := filepath.EvalSymlinks(a.Cwd)
+	require.NoError(t, err)
+	a.Cwd = cwd
 	a.InputImages = imageinput.Describe([]imageinput.Image{{MIMEType: "image/png", Data: []byte("original-image")}})
 	command := kimiScript(t, "FLYWHEEL_TEST_MACHINE_RECOVERY=claude-code-pro/images exec "+shQuote(os.Args[0])+" -test.run '^TestMachineRecoveryProcessFixture$'\n")
 	t.Setenv(ClaudeCodeProWorkerEnv, command)

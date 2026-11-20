@@ -42,6 +42,11 @@ process.on('SIGTERM', () => {
   log({ event: 'SIGTERM' });
   if (scenario === 'stubborn' || stopping) return;
   stopping = true;
+  if (scenario === 'subscription-stop-exit-nonzero') process.exit(23);
+  if (scenario === 'subscription-stop-signal' || scenario === 'subscription-stop-unexpected-signal') {
+    const signal = scenario === 'subscription-stop-signal' ? 'SIGTERM' : 'SIGHUP';
+    process.removeAllListeners(signal); process.kill(process.pid, signal); return;
+  }
   Promise.resolve(descendantExit).then(() => setTimeout(() => { log({ event: 'cleanup' }); process.exit(0); }, 50));
 });
 process.stdout.on('error', () => process.exit(1));
@@ -222,6 +227,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     notify('item/completed', { threadId, turnId, item: request.method === 'review/start' ? { type: 'exitedReviewMode', review: 'fixture native review' }
       : { type: 'agentMessage', phase: 'final_answer', text: 'fixture complete\n' } });
     notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
+    if (scenario === 'subscription-truncated-json-tail') process.stdout.write('{"jsonrpc":"2.0"');
+    if (scenario === 'subscription-truncated-utf8-tail') process.stdout.write(Buffer.from([0xe4, 0xb8]));
   } else if (request.method === 'turn/interrupt') {
     reply(request.id, {});
     notify('turn/completed', { threadId: request.params.threadId, turn: { id: request.params.turnId, status: 'interrupted' } });

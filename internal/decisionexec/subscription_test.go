@@ -39,7 +39,9 @@ func testNative(t *testing.T, call func(drivers.CallArgs, string) drivers.Result
 }
 
 func TestOptionsUseOnlyFrozenToolFreeSubscriptionAndDurableACK(t *testing.T) {
-	dir := t.TempDir()
+	// Durable task identities use physical paths, including macOS /var aliases.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	b := binding()
 	seen := ""
 	testNative(t, func(args drivers.CallArgs, model string) drivers.Result {
@@ -85,7 +87,8 @@ func TestOptionsUseOnlyFrozenToolFreeSubscriptionAndDurableACK(t *testing.T) {
 
 func TestOptionsRejectStorageAndCheckpointFailuresBeforeAcknowledging(t *testing.T) {
 	require.Nil(t, Options(context.Background(), nil, "", "", time.Second).SubscriptionCall)
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	testNative(t, func(args drivers.CallArgs, _ string) drivers.Result {
 		require.Error(t, args.OnLifecycle(event("wrong", 1)))
 		require.Error(t, args.OnLifecycle(event(args.RequestID, 2)))
@@ -126,7 +129,8 @@ func TestOptionsRejectStorageAndCheckpointFailuresBeforeAcknowledging(t *testing
 }
 
 func TestReadOnlyRecoveryUsesOriginalRunAndNeverDispatches(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	calls, queries := 0, 0
 	testNative(t, func(args drivers.CallArgs, _ string) drivers.Result {
 		calls++
@@ -162,7 +166,8 @@ func TestReadOnlyRecoveryUsesOriginalRunAndNeverDispatches(t *testing.T) {
 }
 
 func TestRecoveryRejectsMissingOrChangedCheckpoint(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	id := requestIdentity("one")
 	o := Options(context.Background(), binding(), dir, dir, time.Second)
 	saved := recoverMachine

@@ -66,6 +66,10 @@ review-first 在受审查方案后等待批准；已明确授权的 delegated �
 | 新默认迁移会遗漏只读分析权限或旧 HTTP JEV | 只在缺失时加 investigate 只读绑定，保留显式权限；关闭的旧 HTTP JEV 可迁移，已开启的路径先给 blocker |
 | 安装测试仍假定只有两个、且都无依赖的 bundle | 严格核验三个顶层 bundle 及 AGY/AJV 完整八包依赖图、实际 tar 内容和 source lock；隔离测试宿主的凭据/路由覆盖 |
 | 16 MiB 请求沿用 3 秒 fixture 时限，在 race 检测下超时 | 仅该测试改用 30 秒有界预算，保留帧边界、拒绝、清理和结果断言；普通测试、专项 race 与 drivers 整包 race 复验通过 |
+| 真实候选安装中的 Codex 完成后收尾被代理报告为异常退出 | stop 幂等、收尾后停止派发、只忽略已开始收尾时预期的管道关闭错误；普通终止信号在输出排空后交给公开 adapter 判断，真实非零与异常信号仍失败；55 项专项及实际 Go/Node 桥接通过 |
+| Codex 流在完整 turn 后追加半截 JSON 或 UTF-8 时可能遗漏 EOF 校验 | 两个输入流均使用 fatal decoder 完成 EOF 刷新；原生和父输入的坏尾明确失败，保留完成前提前关闭输入的失败断言 |
+| npm 12 的 pack JSON 改为以包名为键的对象，AGY 验收仍只接受数组 | 严格兼容 npm 11 单元素数组和 npm 12 单包对象，绑定准确 name/version/filename，拒绝多包和路径逃逸；实际 npm 11/12 pack/install 均通过且归档字节不变 |
+| macOS 临时目录别名使三个新测试混用 `/var` 与 `/private/var` | 仅对测试原始任务根和调用 cwd 做物理路径规范化；Linux 的 symlink TMPDIR 原样复现并关闭三个失败，错误目录/坏 checkpoint 拒绝断言及生产身份规则不变 |
 
 上述确定问题已修复。审查没有以降低覆盖率、删除有效防御、跳过 Claude optional peer
 或把错误变成默认通过来解除门禁。
@@ -83,7 +87,10 @@ review-first 在受审查方案后等待批准；已明确授权的 delegated �
 
 SHA-512 与构建工具链见 [Claude 记录](../../plugins/dsh/vendor/claude-code-pro.json)及
 [AGY 记录](../../plugins/dsh/vendor/antigravity.json)。两个源码 lock 绑定同一归档实际
-integrity。独立 AGY checkout 的 34 个 tracked 文件与主仓内副本逐字节一致；Claude
+integrity。AGY 的 npm 11/12 验收补丁另记为 verification source
+`26287c352b75a2ea5834757c147d4d0f1fca6003` / tree
+`45b7b877501ec45bd44f5d902569793a2d11284b`；两个实际 pack/install 检查重现上述
+归档字节，不改写原归档源码身份。独立 AGY checkout 的 36 个 tracked 文件与主仓内副本逐字节一致；Claude
 安装后的五个新增/变动 machine library 文件也已与审查源码核对。
 
 ## 已执行验证
@@ -97,14 +104,16 @@ integrity。独立 AGY checkout 的 34 个 tracked 文件与主仓内副本逐�
 | `make quality-gate` | vet、格式、全部 Go 测试通过；每个测量函数 statement coverage 均为 100% |
 | Race 检查 | 核心生命周期七包检查通过；图片增量后 machine/drivers/state/contract/imageinput/prompts 再次通过，无数据竞争报告 |
 | Flywheel `npm test` | 167 通过；运行时、安装器、发行与协议单测 |
-| DSH `npm run check` | 572 通过，0 失败、0 跳过；包含构建与旧宿主兼容检查 |
+| DSH `npm run check` | 收尾修复后 583 项测试及 10 项发布宿主兼容检查通过，0 失败、0 跳过；包含实际插件构建 |
 | Claude companion `npm test` | 222 通过 |
 | Claude 真正 pack/install consumer | 通过；公开 machine、官方 SDK、真实 PNG 内容、durable identity 和只读恢复 |
 | Claude worker 专项 | 39 通过；16 MiB 帧边界、8 MiB 图片合计、同进程订阅预检及原有生命周期 |
-| AGY 独立功能与候选消费 | 16 项功能回归通过；repository 元数据修订后的真实 pack/install、ESM/types/wrapper/supervisor/journal/evidence-only 再验通过 |
+| AGY 独立功能与候选消费 | 20 项回归通过；npm 11.19.1 与 npm 12.2.1 的真实 pack/install、ESM/types/wrapper/supervisor/journal/evidence-only 均通过，归档 SHA-256/SHA-512 不变 |
 | AGY 真实 DSH 安装 | `0.2.2-rc.3` 的隔离 profile 安装通过；没有修改用户桌面配置 |
 | `TestPacketImagesClaudeSDKOfflineBridge` | 正式 Execute + L1、真实 SDK 图片、原终态恢复、源图变化、无重派及 22 tokens 只归账一次均通过 |
 | 全组 Go → Node 跨进程桥接 | DSH、Codex、Claude、Kimi、AGY 及 Provider 活性、Kimi print 标题/身份失败检查均通过 |
+| Codex 收尾专项 | 55/55 通过，包含实际打包代理与公开 worker；7 MiB 背压/EOF/进程组 TERM 回归能使旧代理错误退出、新代理正确结束；Go → Node Codex 协议/活性/订阅策略再次通过 |
+| macOS 路径别名回归 | symlink TMPDIR 下三个原失败及两项负向检查通过；受影响 decisionexec/drivers 两包完整测试通过，逐函数覆盖率均为 100% |
 | 嵌入技能 | `internal/skillsembed` 通过，frontmatter 与实际技能契约保持一致 |
 | 文档静态复核 | 61 个变动/新增 Markdown、823 个相对链接及适用锚点、91 个完整 JSON 围栏通过；中英图片/配置/工作流指南同步 |
 | 36 条真实引擎会话演练 | 36/36 完成，96 次离线调用；首轮、L1 返修、Review 返修、长上下文、停止恢复和配置变化全覆盖 |

@@ -3,10 +3,12 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync,mkdirSync,writeFileSync,copyFileSync,chmodSync,readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join,resolve } from 'node:path'
+import { parsePackOutput } from './pack-output.js'
 const root=resolve('.'),temp=mkdtempSync(join(tmpdir(),'antigravity-package-')),installed=join(temp,'installed'),home=join(temp,'home')
 mkdirSync(installed);mkdirSync(home,{mode:0o700})
 function run(command,args,options={}){const r=spawnSync(command,args,{encoding:'utf8',cwd:root,timeout:60000,maxBuffer:8*1024*1024,...options});assert.equal(r.status,0,(r.error?.message??'')+'\n'+r.stderr+'\n'+r.stdout);return r.stdout}
-const packed=JSON.parse(run('npm',['pack','--ignore-scripts','--json','--pack-destination',temp]))[0],tarball=join(temp,packed.filename)
+const manifest=JSON.parse(readFileSync(join(root,'package.json'),'utf8'))
+const packed=parsePackOutput(run('npm',['pack','--ignore-scripts','--json','--pack-destination',temp]),manifest.name,manifest.version),tarball=join(temp,packed.filename)
 for(const file of ['lib/machine.js','lib/machine.d.ts','lib/worker.js','lib/evidence-agent.js','lib/index.js','assets/client.js','bin/antigravity-machine.js','cordis.patch.yml','README.md','README.zh-CN.md','docs/MACHINE.md'])assert.ok(packed.files.some(f=>f.path===file),'missing packed '+file)
 writeFileSync(join(installed,'package.json'),JSON.stringify({type:'module',private:true}))
 run('npm',['install','--ignore-scripts','--no-audit','--no-fund','--omit=dev','--prefix',installed,tarball])

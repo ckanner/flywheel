@@ -28,6 +28,13 @@ archive identity in the records above. A test-only follow-up can have a differen
 preserving the packaged bytes; such a check does not rewrite the archive's
 original source identity.
 
+Antigravity's test-only npm 11/12 packaging follow-up is recorded separately as
+verification source `26287c352b75a2ea5834757c147d4d0f1fca6003` (tree
+`45b7b877501ec45bd44f5d902569793a2d11284b`). Both real pack/install checks
+reproduced the original archive SHA-256 and SHA-512. Its packaging helpers and
+tests are excluded from the published file set; the archive source above remains
+unchanged.
+
 Earlier published versions and reviewed candidates remain identified in dated
 validation records. In particular, the former Codex 0.10.0 and Claude 0.5.1
 archives are not relabeled as the new activity/naming candidates. ChatGPT 0.1.20

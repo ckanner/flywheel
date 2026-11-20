@@ -163,6 +163,26 @@ test('subscription-only probes the actual app-server before both thread and turn
   absentGroup(frame.receipt.outcome.execution);
 });
 
+for (const scenario of ['subscription-stop-signal', 'subscription-stop-exit-nonzero', 'subscription-stop-unexpected-signal',
+  'subscription-truncated-json-tail', 'subscription-truncated-utf8-tail']) {
+  test(`${scenario}: strict proxy preserves native shutdown and malformed-tail evidence after turn completion`, { timeout: 15000 }, async t => {
+    const f = await setup(t, scenario);
+    const succeeds = scenario === 'subscription-stop-signal';
+    const frame = resultFrame(await f.launch({ input: { ...f.request,
+      subscription: { version: 1, mode: 'subscription-only' } } }).done, succeeds ? 0 : 1);
+    assert.equal(frame.receipt.ok, succeeds);
+    assert.equal(frame.receipt.outcome.output[0].text, 'fixture complete\n');
+    assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
+    const execution = frame.receipt.outcome.execution;
+    if (succeeds) { assert.equal(execution.exitCode, null); assert.equal(execution.signal, 'SIGTERM'); }
+    else if (scenario === 'subscription-stop-exit-nonzero') assert.equal(execution.exitCode, 23);
+    else if (scenario === 'subscription-stop-unexpected-signal') assert.equal(execution.signal, 'SIGHUP');
+    else assert.equal(execution.exitCode, 1, 'a partial native frame is a transport failure even after valid terminal output');
+    assert.equal((await f.records()).filter(row => row.method === 'turn/start').length, 1);
+    absentGroup(execution);
+  });
+}
+
 for (const scenario of ['subscription-api', 'subscription-logged-out', 'subscription-custom-provider', 'subscription-custom-endpoint', 'subscription-no-account-api', 'subscription-thread-provider', 'subscription-drift']) {
 test(`${scenario} refuses the task before any inference and still settles the public adapter cleanup`, { timeout: 15000 }, async t => {
   const f = await setup(t, scenario);
