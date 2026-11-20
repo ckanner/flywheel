@@ -71,6 +71,11 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
 9. **文档与时序一致。** 普通 Antigravity（含 Orchestrator）在 spawn 后发送任务，之后
    核对 init；只有 evidence-only、显式 subagents／Swarm 等待 init 后派发。中英文指南
    已删除“所有调用均有派发前 init 闸门”的泛化表述，并明确 AGY Plan 不运行 Swarm。
+10. **干净 CI 的公开包依赖。** 首次完整 CI 在 Linux/macOS 均暴露桥接测试直接导入
+    相邻 AGY 源码，因 DSH 步骤尚未安装兄弟包的 ajv 而失败。测试改为导入 DSH 锁定的
+    `dsh-subagent-antigravity/machine` 公开入口，保留全部三个测试及断言。
+    仅安装 DSH 依赖、root/独立 AGY 均无 node_modules 的隔离目录中，旧导入复现
+    `ERR_MODULE_NOT_FOUND`，改后 3/3 通过；没有靠调整 CI 顺序或跳过检查解决。
 
 ### 独立插件的冻结身份
 
@@ -80,10 +85,59 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
 - SHA-256：`fa5ef71121749cef2d0217fd545d1a15a250ed3534342ea8d362e5bde9d751f4`。
 - npm integrity：`sha512-HNgyzdul4+v5f4ep4E2HKcZSrjRFPWwp6eqOr4deO1LXX9bHDes7IJc1w99qdn/T602W+5QC3OKv+advTeRAyQ==`。
 
-35/35 插件测试、实际包在源码目录外的 ESM/types/bin/guardian/journal/evidence-only/
-Orchestrator/Swarm 消费，以及真实 DSH 0.2.2-rc.3 隔离 profile 安装都使用该归档。
+冻结源码的插件测试 35/35 通过。该源码生成的上述归档随后用于源码目录外的
+ESM/types/bin/guardian/journal/evidence-only/Orchestrator/Swarm 消费，
+以及真实 DSH 0.2.2-rc.3 隔离 profile 安装；源码测试与归档消费分别核验。
 Flywheel 桥接修复没有改动该插件或重打此包。两个消费树的 lockfile 均记录相同 integrity，
 实际 `npm ci` 后确认安装的是 0.2.0；仅看 lockfile 或 npm 的“up to date”不作为版本证明。
+
+## 本次实际验证结果
+
+以下本地结果对应完整生产实现提交
+[`48086f91d14f`](https://github.com/ckanner/flywheel/commit/48086f91d14fbc74d406832d0a1febe987f7632f)。
+最后的活动桥接修复仅影响 Node 桥接；Go 代码与已通过完整 Go 门禁的实现相同，
+桥接修复后重新运行完整跨进程组合，并从该干净提交构建和安装完整候选。
+本地工具链为 Go 1.27.3、Node 24.22.3、npm 11.19.1。
+
+| 验证 | 命令或入口 | 实际结果 |
+| --- | --- | --- |
+| Go 完整门禁 | `make quality-gate` | vet、格式、全部包测试通过；1,123 个被测函数各自 100.0% 语句覆盖 |
+| 独立 AGY 插件 | `npm --prefix plugins/antigravity run check` | 35/35；随后真实归档消费通过 |
+| 独立 DSH 安装 | 插件的真实 DSH 0.2.2-rc.3 隔离 profile 安装 | 通过，使用上述相同 0.2.0 归档 |
+| 完整 DSH | `npm --prefix plugins/dsh run check` | 主测试 590/590；发布宿主/客户端 10/10；0 skipped |
+| 根 Node | `npm test` | 167/167；0 skipped |
+| Go→Node Provider 桥接 | `FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers` 的 AGENTS.md 指定组合 | 9 项主测试组合全部通过，含 AGY 的 14 个子场景；101.750 秒、exit 0 |
+| 实际 Claude SDK 图片与恢复 | `TestPacketImagesClaudeSDKOfflineBridge` | 通过，使用公开 SDK 和离线 CLI fixture |
+| 原生构建与会话演练 | `make build`；`FLYWHEEL_EVAL_BINARY="$PWD/flywheel" npm run test:sessions` | 36/36 trials、96 次调用；六类场景的 oracle 全通过，0 unknown / unobserved |
+| 四平台完整候选 | `npm run build:npm` | 干净源码隔离构建成功，四个平台引擎包含在同一包中 |
+| 同一完整候选的真实安装 | `FLYWHEEL_NPM_PACKAGES_DIR=dist-npm FLYWHEEL_CLAUDE_CODE_PRO_TARBALL=… npm run test:install` | 发布宿主 10/10；安装 16/16；全部 0 skipped，含已审 Claude 0.7.0 归档 |
+
+安装检查第一次未提供 Claude 可选归档时为 15 passed / 1 skipped；之后针对同一完整候选，
+显式提供已审归档并取得 16 passed / 0 skipped。表中使用后一次完整结果。
+CI 的 Provider 桥接组合另包含 Kimi print identity failure 测试，不与本地 9 项计数混用。
+
+### 完整 Flywheel 本地候选身份
+
+| 项目 | 值 |
+| --- | --- |
+| Source commit | `48086f91d14fbc74d406832d0a1febe987f7632f` |
+| Source tree | `27d780aa5ace521ab8405f56bd04e54131fff7b6`，clean |
+| Source snapshot SHA-256 | `638fdef309bb3f5b0369db91faee7ac338a08cca46a43128fb6017fea1e504a0` |
+| Archive | `ckanner-flywheel-0.37.3.tgz`，21,687,212 bytes |
+| Archive SHA-256 | `26d9b949a682b06ef9da4a3ef73c46a2813841dd6dc8eb3e2bbcc8c4fd3cdb3c` |
+| Archive integrity | `sha512-TnWbgQnAFBeqIeA+YwqYm7flDeBdWj7/5zl0udRfUsadgZ/WHQgQ4ZkPyr3mYGXm6GI1zm64Bq3LE+AqWzXgog==` |
+
+0.37.3 是此次源码版本的未发行候选，不表示已经更新 registry 中的同名版本。
+CI 使用固定 Node 24.22.1 / npm 12.2.1 构建另一份候选，Linux 和 macOS 消费该份
+相同归档；其身份及通过状态以对应提交的 workflow 为准，不与本地归档混用。
+
+### CI 与后续审查证据
+
+提交 `48086f91d14f` 的 [run 44778917310](https://github.com/ckanner/flywheel/actions/runs/44778917310)
+完整候选构建成功，两 OS 的 DSH 测试因上述公开包导入问题失败，该 run 不计为通过。
+随后的修正只涉及这项测试和本验收文档；生产代码、Go 代码、插件归档均未改变。
+最新提交的完整 CI 结果与 run 链接统一记录在 [PR #60](https://github.com/ckanner/flywheel/pull/60)，
+必须按 PR 的 head SHA 核对，不引用本次增补前的旧绿灯。
 
 ## 验证范围与限制
 
