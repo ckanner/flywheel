@@ -615,6 +615,24 @@ The task entry focuses on the goal and delivery endpoint, with Auto as the defau
 
 Environment inspection and model invocation are separate actions. A doctor that performs no inference consumes no model tokens and cannot establish task quality or remaining allowance. A real smoke test is an explicit, separate action that records the model and observed usage. Installation, opening settings, and model enumeration must not silently send inference requests by default.
 
+### 14.3 Approved UI consistency and task-evidence follow-up (2026-11-20)
+
+This addendum uses `2858c4347a12` as its audit baseline. Its acceptance remains historical evidence, not proof that the following changes are complete. Commit this section and update the PR status first, then implement, independently cross-review, and repeat acceptance.
+
+| Area | Implementation requirement |
+| --- | --- |
+| Effective models and history | Configuration diagnostics, the run catalog, and the workbench consistently resolve `execution-policy.routes.<route>.initial`, preserving candidate permissions, sessions, and native configuration. Preserve the fixed empty Orchestrator thinking value. Distinguish initial run configuration, selected next configuration, and latest actual invocation; missing historical facts remain unknown. |
+| Swarm eligibility | Configuration loading and the editor reject Swarm for non-Execute roles, retaining the final driver check. Execute explains Full, 2–8 reviewed tasks with disjoint write scopes, and no original-image requirement in the current packet. A configuration draft does not establish a particular task's eligibility. |
+| JEV switch and source | Keep the single `jev.enabled` switch. Resolve the subscription profile, model, and effort for display. Distinguish the edited global/project file from the complete configuration file actually selected for the task. Re-read effective configuration after saving; a failed read cannot establish that the task changed. |
+| JEV explanations | Freeze the complete display binding of available candidates at decision time. Distinguish initial and post-failure decisions, proposals and adoption, baseline and switches, and their reasons. Preserve recovery and v1/v2/v3 snapshot hashing; do not reconstruct history from subsequently edited configuration. |
+| Common settings | Provide graphical route initial, candidate allowlist, switch-limit, and AGY native-mode controls without modifying shared bindings, permissions, or session policies. Keep advanced JSON for the full configuration. |
+| Collaboration and task entry | Show collaboration tasks and write scopes matched to the approved contract identity, alongside actual native observations from the same invocation. Goal entry distinguishes investigation, repair, and engineering intent, defaults to Auto, and makes review-first/delegated explicit. Use the existing Go control path; loading a skill or generating a command is not a started task. |
+| Image evidence | Explain that tasks without images work normally. Original images are explicitly selected, repository-bounded task evidence with a preview, format, digest/frozen identity, and supported transport. Chat attachments and text paths do not automatically become reviewed image inputs; the UI cannot silently rewrite approved contracts. |
+
+The official interactive Antigravity CLI accepts pasted media; the current machine `stream-json` input accepts text only. This limits the implemented automated transport and verifiable consumption, not the model's vision capability or Gemini eligibility for text tasks. This follow-up does not advertise headless image or worker-image delivery based on interactive support, and does not introduce ACP or a paid API workaround. Original-image execution retains the verified Claude SDK path; text tasks, investigations, and engineering work without original images can use Gemini and eligible Swarm.
+
+Acceptance covers incorrect source projections, fixed effort, invalid-role rejection, shared-binding isolation, task-level JEV overrides, read failures after saving, historical compatibility, unadopted proposals and baseline choices, invocation-matched collaboration evidence, task input, and image boundaries. Retain per-function 100% Go coverage, DSH/host regressions, actual installation of the complete candidate, and Linux/macOS CI. Check narrow screens, long content, focus, loading/errors, and session changes. Offline fixtures do not establish user Mac desktop or real-account inference acceptance.
+
 ## 15. Implementation phases and documentation ownership
 
 | Phase | Repository / scope | Completion criteria |
