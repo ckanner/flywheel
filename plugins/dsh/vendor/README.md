@@ -16,7 +16,7 @@ Version, source tree, archive and installed content remain separate identities.
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.6.0` | Optional official Agent SDK machine/native-jobs candidate | [25754c3b4144](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/25754c3b41446c1f1225e7d7c6c12905aa67e33a) | `7ffd8deef680661c5b36890b459ce61ad468deea` | [claude-code-pro.json](claude-code-pro.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
-| `dsh-plugin-chatgpt@0.2.0-alpha.1` | Independent read-only recovery build source and SDK compatibility fixture | [3e881ab88a05](https://github.com/ckanner/dsh-plugin-chatgpt/commit/4b9618220a291afa6b5c8fa6ec7cc9e62711eda2) | `1bc9843d00c9874a8d8d1b546f349b19a88faa66` | [chatgpt.json](chatgpt.json) |
+| `dsh-plugin-chatgpt@0.2.0-alpha.1` | Independent read-only recovery build source and SDK compatibility fixture | [3e881ab88a05](https://github.com/ckanner/dsh-plugin-chatgpt/commit/81f740f4ff2373addfdeb23287f8339855522304) | `0abcded12a8068cc7efe1e5964f62f0463da20e1` | [chatgpt.json](chatgpt.json) |
 
 Published-package records include the registry URL, exact integrity, SHA-256 and
 verification timestamp. Their verification toolchain does not claim how the
