@@ -516,7 +516,7 @@ Full 先形成整体设计并独立审查，随后由 Claude 细化当前里程�
 
 ### 13.1 JEV 只保留一个总开关
 
-基线 `jev.enabled=false`，不调用当前外部付费决策 endpoint。后续增加与阶段绑定一致的订阅 harness 后端，采用已有完整允许候选集、结构化输出、时间/调用/用量预算与原子采用规则。不能用关闭 JEV 的方式删掉已实现功能，也不恢复影子读取或增加第二套启用开关。
+基线 `jev.enabled=false`。截至 `a90aff4`，订阅后端已实现为 Antigravity Hydrogen medium 的无工具决策请求；JEV 在这里是有界决策机制的历史名称，实际不调用旧 System One／`jev-1.14.0` 付费接口。保留唯一总开关、完整允许候选集、结构化输出、累计时间/调用/用量预算与原子采用规则，不恢复影子读取或增加分功能开关。
 
 启用后检查决策后端符合订阅策略；若旧配置只剩外部 key endpoint，应在运行前报清楚的配置问题。决策失败使用已有确定性合法动作基线或保留阻断，不悄悄调用付费 API。结果未知的决策请求同样需要生命周期对账。当前 5 秒外部请求 timeout 不能原样当作 CLI 推理截止时间，须按新后端启动/执行契约配置并验证。
 
@@ -527,6 +527,57 @@ DSH Team/PTC/LCU、Kimi Swarm/Tower、Claude/Codex 原生子 Agent 继续沿用�
 当前 scheduler 控制根调用并发，不等于硬限制整个原生 Agent 树。子 Agent、Advisor、压缩或 Tower 用量只有真实 receipt 能归属时才计入，缺少时整树总量保持 unknown；现有 Claude observed guard 和 Kimi 能力不能写成整树硬预算。若某任务要求整树硬上限，而后端不能证明执行该限制，应禁用该任务的相应原生展开或拒绝组合。账号配额通常不是按插件实例独立分配，所有原生模型覆盖、外部工具和费用路径仍纳入订阅审计。原生任务完成、GUI lease 归还、子工作清理与父进程退出分别验证，保留已有 unknown 约束。现状参见[原生能力指南](../zh-CN/native-capabilities.md)。
 
 Antigravity 原生 Orchestrator、Swarm 和 browser 子 Agent 也适用这些边界。它们可以作为明确的原生任务策略，但不能隐去内部模型切换、把内部 verifier 算作 Flywheel 的外部独立审查，或让多个外层 worker 无界展开原生团队。
+
+### 13.2.1 2026-11-20 已批准的编排与自适应增补
+
+本增补来自用户对 CLI Spawn／编排和既有 JEV 开关的进一步确认，并已授权在同一 PR 完整实施。`a90aff4` 是补充实施前的已验证源码基线：普通 CLI 调用与部分子任务元数据已接入，Orchestrator、显式 Swarm 与默认执行候选尚未接通；已有 JEV 模型选择仅在确认失败后运行。本节定义要完成的行为，不把此前 CI 结果算作新增行为的验收。
+
+#### 官方能力与接入契约
+
+- **原生子任务**：官方 `invoke_subagent` 可产生独立并行会话。插件的普通 `native` 模式保留原生语义，不声称禁止子任务；显式 `subagents` 模式要求在本次调用内归集委派结果。
+- **Orchestrator**：支持 `gemini-pro-orchestrator-neon`、`gemini-pro-orchestrator`、`gemini-pro-orchestrator-argon`，分别以 Neon／Carbon／Argon 规划和复核，Hydrogen 实施。它在同一会话内交接模型，不等同多成员 Swarm。Flywheel 使用 `thinking:""` 表示其固定配置，插件不传 `--effort`，非空 effort 明确拒绝。仍以 `agy models` 的实际目录与初始化身份准入。
+- **Swarm**：通过官方 headless CLI 执行，原生配置使用 `version:1`、`mode:"swarm"`。只由适配器生成固定的 `/swarm` 控制入口，业务任务作为转义后的数据，避免任务文本链入其他 slash 控制命令。普通请求仍禁用 slash 展开；不得改用 ACP、私有端点或 token 代理。
+- **观察与限制**：可选 `maxObservedAgents` 是已观察唯一子会话总数的停止守卫，包含 worker、verifier、monitor，明确 `hard:false`，不是原生整树并发硬上限。子模型、状态、用量只填写协议实际提供的事实；缺失保持 unknown。正常 CLI invocation 完成、每个子任务终态和远程工作停止分别记录。非空 `finished_reason`、超时、异常退出、缺失终态或清理失败不得接受为成功。
+- **会话与证据**：模型、固定/可调 effort 和完整 native 配置进入冻结身份。取消与恢复继续管理自有进程和原 journal，不重发未知调用。evidence-only 调查分析与 JEV 禁止工具、子任务和 Orchestrator；它们继续只分析已提供证据。
+
+官方依据（核查于 2026-11-20）：[模型与 Orchestrator](https://antigravity.google/docs/models)、[headless 协议](https://antigravity.google/docs/cli/headless/)、[自定义子智能体](https://antigravity.google/docs/subagents)、[Swarm](https://antigravity.google/docs/swarm)、[CLI 发布记录](https://antigravity.google/docs/changelog?tab=cli)。CLI 1.5.5 引入 Swarm，1.5.6 明确记录 headless Swarm 修正；模型能力不由版本号或原生模型目录单独证明账号权益。
+
+#### 经审查的并行任务范围
+
+Flywheel packet 增加可选 `collaboration:{version:1,tasks:[{goal,writes}]}`。声明 2–8 个有界子任务，各自的规范化写入范围不得重叠，并必须属于 packet 已批准的 `schedule.writes`。它随完整方案和契约共同审查、冻结，不是第二个功能开关，也不声称文件路径本身证明任务质量。
+
+自动 Swarm 候选必须同时满足 Full、有效 collaboration、无原生图片输入、允许的订阅与 native 绑定。此类 packet 不满足 Quick 资格；单点任务不会仅因 route 名称或两个文件路径就自动展开 Swarm。Flywheel 静态 Execute 显式选择 Swarm 也需要同一分工契约。独立 DSH 的显式 Swarm 任务可以直接按用户提交的目标运行，不依赖 Flywheel packet。规划阶段可前台归集只读子任务，不能启动执行型 Swarm 越过方案批准。
+
+#### 首次选择、失败调整与唯一总开关
+
+在首轮 Execute 已确认没有未决调用、权限和凭据通过而业务执行尚未派发时，Go 从该 route 的完整 `execution-policy` 允许集中筛选候选。图片任务只接受有实际图片传输能力的绑定；Swarm 按上述分工条件筛选。单一合法选项直接执行；多项且具有选择余地时，由已启用 JEV 根据目标、route、已审范围、验收、分工和预算事实选择一个 action ID。
+
+首轮决策与已有失败决策共用任务 ledger、订阅后端、30 秒默认超时、8 次累计调用上限和默认 0.8／0.6 采用门槛。概率仅是未校准估计。候选必须包含完整模型、effort、native 模式与已知限制的说明。JEV 不能发明模型、命令、权限或新预算，也不读取未经声明的实时额度或虚构模型成功率。
+
+派发前持久化决策意图；返回后复核候选、契约、配置与总开关。首轮选择每 packet 只发生一次，恢复只读取原 journal，不借重启或换模式重复调用。选择改变完整绑定时冷启动，记录原因与前后配置，计入切换上限。首次请求失败且清理确认时沿用初始基线；未知清理继续阻断。后续 L1／Review 已确认失败仍可选择有限修复、补证、重规划或允许的执行配置；认证、配额和传输异常保留各自规则。
+
+#### 默认候选与用户界面
+
+所有 route 的初始绑定保留 §5 的原分工。默认 `quality-order:[]`、每 packet `max-switches:2`：JEV 关闭时使用固定初始配置；开启后才产生可选模型/effort/协作选择。用户仍可自行配置已有确定性升级顺序。初始候选策略为：
+
+| Route | 允许候选（初始项列首） |
+| --- | --- |
+| default | Hydrogen high、Hydrogen medium、Orchestrator Neon |
+| complex | Neon high、Orchestrator Neon、Neon high Swarm（分工资格成立时） |
+| frontend / multimodal | Opus medium、Opus high |
+| backend | Sol high、Sol medium、Astra high |
+| batch | Kimi high、Kimi max、Neon high Swarm（分工资格成立时） |
+| hard | Astra high、Carbon high、Orchestrator Carbon |
+
+这些是有明确用途差异的工程候选，不是经过 A/B 证明的全局能力排名。三个 Orchestrator 均可显式选择，Argon 无需新增默认阶段。单一 JEV 开关只控制可选模型决策；用户手工选择的原生执行策略在 JEV 关闭时仍可运行。
+
+迁移保留用户已有的 execution-policy；缺失时只为已明确 full-access 的路由补默认候选，其他路由保留固定绑定并说明原因，不扩大原有权限。
+
+DSH 插件设置、直接任务面板、PTC 参数和公开 machine API 同步提供模式选择、固定 effort 状态、观察守卫和子任务摘要。Flywheel 配置编辑器与工作台展示候选、实际绑定、首次/失败选择原因和实际协作元数据；不把所有子任务已完成或用量已聚合显示为默认事实。Auto／Quick／Full 保持工作流职责，方案精确批准、独立 Review 与验收继续由 Go 控制。
+
+#### 本增补验收
+
+必须覆盖独立插件真实 pack/install、Orchestrator 固定参数、所有公开 DSH 入口、Swarm 控制文本隔离、子事件与观察越限、finished_reason、取消／恢复／unknown；覆盖 Go→Node→实际公开包、native profile 与 schema/UI 往返、collaboration 范围和 Quick 排除、首轮选择与失败选择、开关中途关闭、图片候选排除、共享预算、崩溃恢复不重发、默认 OFF 固定绑定。执行既有 Go 逐函数 100% 门禁与相关回归、统一候选安装、Linux/macOS CI，并对最终 diff 独立 review。真实账号推理、套餐额度与模型分工质量仍单独记录，不由离线 fixture 代替。
 
 ### 13.3 调度保持可解释
 

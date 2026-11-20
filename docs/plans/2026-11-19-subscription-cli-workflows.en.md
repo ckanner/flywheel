@@ -514,6 +514,55 @@ Reviews bind to the same candidate and verification evidence. The Executor's pri
 
 ## 13. JEV, native capabilities, and scheduling
 
+### Approved orchestration and adaptive-selection addendum — 2026-11-20
+
+The user authorized this addendum and its complete implementation in the same PR after reviewing native CLI collaboration and the existing JEV switch. Commit `a90aff4` is the verified **pre-addendum** baseline: it supports ordinary CLI calls and partial child metadata, but not selectable Orchestrator/Swarm or default execution candidates. Its JEV execution selection runs only after confirmed failures. Earlier CI results do not validate the additions below. This addendum supersedes the original future-tense description of the subscription JEV backend: that backend already uses tool-free Hydrogen medium; “JEV” names the bounded decision mechanism, not a request to the legacy paid System One/JEV model.
+
+#### Official capabilities and integration contract
+
+- **Native subagents:** `invoke_subagent` starts independent child conversations. The ordinary `native` mode preserves native behavior and does not claim to disable children. Explicit `subagents` mode requires collecting delegated results within the owned invocation.
+- **Orchestrator:** support `gemini-pro-orchestrator-neon`, `gemini-pro-orchestrator`, and `gemini-pro-orchestrator-argon`, pairing the named planner/reviewer with Hydrogen implementation. This is model handoff in one conversation. Use `thinking:""` for its fixed configuration, omit `--effort`, and reject a nonempty effort. Admission still checks the actual `agy models` catalog and initialization identity.
+- **Swarm:** use the official headless CLI with native options `version:1, mode:"swarm"`. Only the adapter synthesizes the fixed `/swarm` entry; the task is escaped data, preventing task text from chaining other slash controls. Ordinary requests continue to disable slash expansion. Do not use ACP, private endpoints, or token proxies.
+- **Observation and limits:** optional `maxObservedAgents` stops an invocation after observing too many distinct child conversations, including workers, verifiers, and monitors. It is explicitly `hard:false`, not a native concurrent-agent or whole-tree hard cap. Record child models, lifecycle, and usage only when actually exposed. CLI-invocation completion, individual child completion, and remote-work termination remain separate facts. A nonempty `finished_reason`, timeout, abnormal exit, missing terminal event, or unconfirmed cleanup must not become success.
+- **Sessions and evidence:** freeze model, fixed/adjustable effort, and complete native options in session identity. Cancellation and read-only recovery keep owned-process and original-journal semantics. Evidence-only investigation analysis and JEV reject tools, children, and Orchestrator and continue to consume only supplied evidence.
+
+Official sources checked on 2026-11-20: [models/Orchestrator](https://antigravity.google/docs/models), [headless protocol](https://antigravity.google/docs/cli/headless/), [subagents](https://antigravity.google/docs/subagents), [Swarm](https://antigravity.google/docs/swarm), and [CLI changelog](https://antigravity.google/docs/changelog?tab=cli). CLI 1.5.5 introduced Swarm; 1.5.6 explicitly records headless Swarm fixes. Version/catalog facts alone do not establish account entitlement.
+
+#### Reviewed parallel-work boundaries
+
+Add optional packet `collaboration:{version:1,tasks:[{goal,writes}]}` with 2–8 bounded tasks. Normalize write scopes, reject overlap between tasks, and require every scope to belong to approved `schedule.writes`. The declaration is reviewed and frozen with the whole contract. It is not a second feature toggle, nor proof of quality from path counts alone.
+
+Automatic Swarm candidates require Full, valid collaboration, no native image input, and an allowed subscription/native binding. Such a packet is not Quick-eligible. Route names or two file paths alone never enable Swarm. A statically selected Flywheel Execute Swarm uses the same collaboration requirement. A directly requested DSH Swarm can operate on the user's submitted task without a Flywheel packet. Planning may collect foreground read-only subagent results but cannot launch an execution Swarm before design approval.
+
+#### Initial selection, failure adaptation, and one switch
+
+Before the first Execute dispatch, after reconciliation and permission/credential checks, Go filters the route's complete `execution-policy` candidates. Image packets retain only bindings with actual image transport; Swarm must meet the collaboration conditions above. Execute a sole legal option directly. With multiple meaningful options and JEV enabled, ask the subscription decision backend to select an action ID using the approved goal, route, scope, acceptance, collaboration, and budget facts.
+
+Initial and existing failure decisions share the task ledger, subscription backend, default 30-second timeout, cumulative eight-call limit, and 0.8/0.6 adoption thresholds. Probabilities remain uncalibrated estimates. Candidate descriptions include the complete model, effort, native mode, and known limits. JEV cannot invent models, commands, permissions, or budgets and does not assume undisclosed live quotas or model success rates.
+
+Persist intent before dispatch and revalidate contract, candidates, configuration, and the switch before adoption. Initial selection occurs once per packet; recovery reads the original journal without repeating the prompt. Binding changes require a cold start, record the reason and before/after configuration, and consume the switch allowance. A failed decision with confirmed cleanup uses the initial baseline; unknown cleanup blocks. Existing confirmed L1/Review failures may still select repair, evidence, replan, or another approved binding. Authentication, quota, and transport errors keep their own rules.
+
+#### Default candidates and interface
+
+Preserve every route's original initial binding. Default `quality-order:[]` and `max-switches:2` keep JEV-off execution fixed, while JEV-on can select model/effort/collaboration candidates. Users may still configure the existing deterministic upgrade order. The initial candidate policy is:
+
+| Route | Allowed candidates, initial first |
+| --- | --- |
+| default | Hydrogen high, Hydrogen medium, Orchestrator Neon |
+| complex | Neon high, Orchestrator Neon, Neon high Swarm when eligible |
+| frontend / multimodal | Opus medium, Opus high |
+| backend | Sol high, Sol medium, Astra high |
+| batch | Kimi high, Kimi max, Neon high Swarm when eligible |
+| hard | Astra high, Carbon high, Orchestrator Carbon |
+
+These are engineering alternatives with different purposes, not a measured global model ranking. All three Orchestrator options are explicitly selectable; Argon needs no new default stage. The one JEV switch controls optional model decisions; manually selected native strategies remain usable with JEV off. Migration preserves an existing execution policy; when adding missing defaults it does so only for routes already authorized for full access, reporting other routes that retain fixed bindings without widening permissions.
+
+DSH settings, direct tasks, PTC arguments, and the public machine API expose mode selection, fixed-effort status, observation guards, and child summaries. Flywheel configuration/workbench surfaces candidates, actual binding, initial/failure-selection reasons, and observed collaboration metadata. It does not default unknown child completion or aggregate usage to success. Auto/Quick/Full retain workflow responsibilities; exact design approval, independent Review, and final acceptance remain controlled by Go.
+
+#### Acceptance for this addendum
+
+Verify the independent package through real pack/install; Orchestrator parameters; every public DSH entry; Swarm control-text isolation; child events and observation limits; `finished_reason`; cancellation/recovery/unknown outcomes; Go → Node → actual public package; native-profile/schema/UI round trips; collaboration boundaries and Quick exclusion; initial and failure selections; switch-off during a request; image-candidate exclusion; shared budgets; no redispatch after crashes; and fixed defaults with JEV off. Run the existing per-function 100% Go gate, affected regressions, unified candidate installation, Linux/macOS CI, and independent review of the final diff. Record real-account inference, subscription quotas, and model-allocation quality separately from offline fixtures.
+
 ### 13.1 One JEV master switch
 
 The baseline is `jev.enabled=false`, with no call to the current external paid decision endpoint. Add a subscription harness backend consistent with stage bindings in later implementation, using the existing complete candidate allowlist, structured output, time/call/usage budgets, and atomic adoption rules. Keeping JEV off must not remove implemented functionality. Do not restore shadow reads or introduce a second enable switch.
