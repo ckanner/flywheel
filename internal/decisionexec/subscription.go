@@ -21,6 +21,7 @@ import (
 var invoke = drivers.InvokeHarness
 var recoverMachine = drivers.RecoverMachine
 var writeCheckpoint = state.WriteSessionReceipt
+var absolutePath = filepath.Abs
 
 func Options(ctx context.Context, binding *decision.SubscriptionBinding, cwd, taskDir string, timeout time.Duration) decision.Options {
 	o := decision.Options{Backend: "subscription", Subscription: binding, Timeout: timeout}
@@ -96,7 +97,7 @@ func requestIdentity(id string) string {
 }
 
 func canonical(path string) (string, error) {
-	abs, err := filepath.Abs(path)
+	abs, err := absolutePath(path)
 	if err != nil {
 		return "", err
 	}

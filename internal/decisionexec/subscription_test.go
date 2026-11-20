@@ -118,14 +118,46 @@ func TestOptionsRejectStorageAndCheckpointFailuresBeforeAcknowledging(t *testing
 		require.Equal(t, "not-dispatched", r.Native.Dispatch)
 		require.True(t, r.Native.CleanupConfirmed)
 	}
-	old, err := os.Getwd()
+}
+
+func TestCanonicalPathFailurePreventsDispatchAndRecovery(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	removed := t.TempDir()
-	require.NoError(t, os.Chdir(removed))
-	require.NoError(t, os.Remove(removed))
-	_, err = canonical("")
-	require.NoError(t, os.Chdir(old))
-	require.Error(t, err)
+	id := requestIdentity("path-failure")
+	raw, err := json.Marshal(event(id, 1))
+	require.NoError(t, err)
+	_, err = state.WriteSessionReceipt(dir, id, state.SessionReceipt{Version: 1, InvocationID: id, Key: id,
+		Task: dir, Cwd: dir, Binding: state.PreparationHash(binding()), Result: raw})
+	require.NoError(t, err)
+
+	calls, queries := 0, 0
+	testNative(t, func(drivers.CallArgs, string) drivers.Result {
+		calls++
+		return nativeResult(id)
+	})
+	savedRecover, savedAbsolute := recoverMachine, absolutePath
+	t.Cleanup(func() { recoverMachine, absolutePath = savedRecover, savedAbsolute })
+	recoverMachine = func(drivers.MachineRecoveryArgs) (drivers.Result, error) {
+		queries++
+		return nativeResult(id), nil
+	}
+	wantErr := errors.New("absolute task path unavailable")
+	absolutePath = func(path string) (string, error) {
+		require.Equal(t, dir, path)
+		// A usable path must never override the failed resolution.
+		return dir, wantErr
+	}
+	root, err := canonical(dir)
+	require.Empty(t, root)
+	require.Same(t, wantErr, err)
+
+	o := Options(context.Background(), binding(), dir, dir, time.Second)
+	r := o.SubscriptionCall(context.Background(), "prompt", "path-failure")
+	require.Equal(t, decision.NativeExecution{RequestID: id, Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true}, r.Native)
+	r = o.SubscriptionRecover("path-failure")
+	require.Equal(t, decision.NativeExecution{RequestID: id, Dispatch: "unknown", Outcome: "unknown"}, r.Native)
+	require.Zero(t, calls, "a failed task path must not dispatch a native invocation")
+	require.Zero(t, queries, "even a valid checkpoint cannot authorize recovery without a physical task path")
 }
 
 func TestReadOnlyRecoveryUsesOriginalRunAndNeverDispatches(t *testing.T) {
