@@ -5,6 +5,13 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.37.3 — DSH 0.3 compatibility window
+
+- Accept DSH 0.2.1-rc.5 through 0.3 for the host engine and peers; capability
+  admission remains fail-closed.
+- Align the optional Claude Code Pro and LCU peers with the compatible 0.6.1 and
+  0.5.1 releases.
+
 ## 0.37.2 — DSH 0.3 compatibility window
 
 - Widen the DSH engine and peer ranges from the 0.2 series to
