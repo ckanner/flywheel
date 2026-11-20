@@ -16,7 +16,7 @@ the desktop plugin and configures the launcher.
 
 Requirements are **Node.js 22.18.0 or later**, npm, and a compatible DSH desktop
 with its desktop-supplied `dsh` command. This package declares DSH
-**`>=0.2.1-rc.5 <0.3.0-0`** and the corresponding Cordis 4.0/4.1 interfaces.
+**`>=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0`** and the corresponding Cordis 4.0/4.1 interfaces.
 DSH includes prereleases when checking this range: later 0.2 rc/patch releases do
 not need an exact-version exemption or a new Flywheel release. The next minor,
 including 0.3 alpha/beta/rc releases, remains outside this contract.
