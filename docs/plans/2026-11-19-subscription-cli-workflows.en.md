@@ -15,7 +15,7 @@ The user has established the following constraints. This proposal follows those 
 3. Use Claude through the personal subscription only. Preserve the existing official Agent SDK → local, unmodified Claude Code path. The SDK is the library controlling the CLI; the CLI requirement does not call for rewriting the existing runner.
 4. Keep Kimi on its native CLI and Codex on the official Codex CLI/app-server controlled by the existing plugin. Preserve structured protocols, sessions, recovery, and native capabilities.
 5. Configure model, access channel, reasoning effort, permissions, and session independently. Start ordinary tasks with an economical combination and escalate difficult tasks within an explicit allowlist. Do not default every model to `max`.
-6. Retain Task, New, Plan, Run, and Auto / Quick / Full. Troubleshooting, issue fixes, and complex development share verification and delivery rules instead of duplicating three state machines.
+6. Retain Task, New, Plan, and Run. Auto selects between the Quick and Full implementation depths by default. Investigation-only tasks deliver reports, planning-only tasks deliver designs, and troubleshooting fixes and complex development share verification and delivery rules.
 7. Deliver the complete proposal PR in this iteration. Creating the plugin repository, implementation, merging, publishing, and migrating local configuration belong to later delivery phases.
 
 ### 1.1 Reference subscriptions and cost accounting
@@ -50,6 +50,8 @@ A source version does not establish that a package has been published to npm, in
 | Kimi arguments | Already use the correct model, print, and stream-json arguments | Preserve them; do not relist the fixed argument issue as a defect |
 | Antigravity | No such harness or DSH plugin on main | New package, machine API, worker, Go driver, configuration, and UI |
 | Investigation analysis | The host submits reports; no `loops.investigate` exists | Add a configurable analysis role while retaining the investigation and evidence state machine |
+| Quick preparation for new tasks | The root design and its independent review are still followed by the first milestone plan and Plan Review | Generate the compact design and single-packet contract together, review the combined artifact independently, and activate the exact reviewed version |
+| Intake / Garden responsibilities | Task-source triage / retrospective knowledge maintenance | Keep them separate from requirements design and delivery copy to avoid binding the wrong roles |
 | JEV | Master switch is off by default; the decision backend still uses an external endpoint/key | Keep the baseline off; implement a subscription harness decision backend separately |
 | Migration | Existing `subscriptions` still copies a template containing DeepSeek | Add versioned `subscription-cli` migration semantics |
 
@@ -142,15 +144,18 @@ The following is the unified default assignment across the four subscriptions. W
 
 | Stage / work type | Primary target | Initial effort | Selection condition or explicit alternative |
 | --- | --- | --- | --- |
-| `intake`: open-ended requirements analysis | Gemini 4 Carbon | medium | Kimi low for collecting clear fields; explicitly select Claude Opus high for requirements convergence/specification synthesis |
-| `design-plan`: top-level design | Gemini 4 Carbon | high | Explicitly select Claude Opus high for dense business specifications, or Fable high with subscription eligibility |
-| `design-review`: architecture review | Codex / GPT-6.2 Astra, separate session | high | Escalate to xhigh only for high-risk issues |
+| Requirements exploration (a design-preparation responsibility) | Gemini 4 Carbon | medium | Part of design preparation, not task-source `intake`; explicitly select Claude Opus high for requirements convergence/specification synthesis |
+| `design-plan`: compact local design | Gemini 4 Hydrogen | medium | Produce the design and single-packet implementation contract together; only for tasks with clear scope, implementation method, and verification |
+| `design-review`: compact local preliminary review | Codex / GPT-6.2 Sol, separate session | medium | Jointly review the design, contract, and acceptance criteria; switch to full preparation if risks emerge |
+| `design-plan`: system design | Gemini 4 Carbon | high | Explicitly select Claude Opus high for dense business specifications, or Fable high with subscription eligibility |
+| `design-review`: system-design review | Codex / GPT-6.2 Astra, separate session | high | Escalate to xhigh only for high-risk issues |
 | `plan`: milestones and dependency breakdown | Claude Opus 5.5 | high | Kimi high as an explicit capacity alternative; Fable high for complex plans when eligible |
 | Micro-Spec (a responsibility within Plan/packets) | Gemini 4 Hydrogen | high | Use Neon high for complex cross-file constraints; refine only when needed, without creating a mandatory new stage for every packet |
 | `plan-review` | Codex / GPT-6.2 Sol, separate session | medium | high for significant interfaces, migrations, or concurrency constraints |
 | Execute `default`: routine implementation | Gemini 4 Hydrogen | high | medium for small local changes and simple transformations |
 | Multi-file engineering / complex refactoring (task category) | Gemini 4 Neon | high | Escalate to xhigh if multi-step constraints still cannot be met; send architectural problems to Carbon high |
 | Execute `frontend`: commercial UI | Claude Opus 5.5 | medium | high for complex constraints; explicitly select Hydrogen medium for quick local iterations within an existing design system |
+| Execute `multimodal`: image / visual input | Claude Opus 5.5 | medium | Reuse the existing route; complete and validate image transmission from Flywheel to the public machine interface during implementation. A path is not a native attachment |
 | Backend, algorithms, data pipelines (task category) | Codex / GPT-6.2 Sol | high | Difficult mathematical/low-level problems enter hard |
 | Tool-heavy / bulk repository changes (task category) | Kimi K3.1 Pro | high | Constrain scope with an explicit specification, tool results, and regression verification |
 | Execute `hard` | Codex / GPT-6.2 Astra | high | xhigh for evidenced difficult cases; max only as a bounded choice or evaluation candidate |
@@ -158,15 +163,21 @@ The following is the unified default assignment across the four subscriptions. W
 | `review` | Codex / GPT-6.2 Sol | high | Explicitly use Astra high/xhigh for security/complex concurrency risks; preserve independent history |
 | `judge` (Full) | Codex / GPT-6.2 Astra | high | xhigh for complex disputes; select a business-completeness second opinion through judge-panel below |
 | Investigation analysis (proposed role) | Gemini 4 Neon | high | Hydrogen high for simple local issues; Carbon high for difficult cross-repository root causes or architectural issues; analyze authorized evidence only |
-| `garden` / delivery-copy responsibility | Gemini 4 Hydrogen | low | high for substantive reasoning across tasks; existing delivery rules still control merge/release authority |
+| `intake`: task-source collection and triage | Gemini 4 Hydrogen | low | `intake.sources` is empty by default; scan and triage candidates when needed, without replacing requirements design |
+| `garden`: retrospective and knowledge-maintenance proposals | Kimi K3.1 Pro | high | Infrequently synthesize recurring failures and propose skill or acceptance improvements; this is not PR-copy generation |
+| Delivery-copy responsibility | Gemini 4 Hydrogen | low | Summarize verified results without adding a mandatory loop; delivery authority comes from the original task |
 | JEV decisions (proposed backend) | Codex / GPT-6.2 Sol | medium | Master switch remains off by default; use only for bounded decisions in later implementation |
 | `judge-panel` | Off by default; Fable 5.2 is the primary high-risk second-opinion candidate | high (when enabled) | Use only with subscription eligibility; otherwise explicitly select Opus high and record the substitution. Enable once for an explicit question, without fixed double review |
 
-Micro-specs, multi-file engineering, backend work, bulk changes, tests, and copy are task responsibilities, not claims that loops/routes with these names already exist. Implementation will extend the execution-routing policy to represent these categories and update the schema, configuration UI, migration, and tests together. Before dispatch, display the task category, selected model, and rationale, and freeze the actual binding. Users can explicitly override the task category; models must not choose hidden providers. This design table cannot be pasted directly into the current schema.
+The same `design-plan/design-review` roles select bindings according to design granularity: use the compact combination for local tasks with sufficient evidence and Carbon/Astra for system-level work or significant risks. Task facts determine design granularity; freeze the rationale and specific binding before dispatch. A mode=quick label alone must not lower the model or bypass eligibility checks. Implement this selection rule with the combined preparation in §12.4, without duplicating the model configuration.
+
+Micro-specs, multi-file engineering, backend work, bulk changes, tests, and copy are task responsibilities. The existing packet/execution-policy route enums contain default/frontend/hard/multimodal. This proposal adds `complex`, `backend`, and `batch` routes for Neon, Sol, and Kimi, respectively. Update the packet and execution-policy schemas, selectors, configuration UI, migration, and tests together; adding names to the routes map alone does not complete the integration. Users can explicitly override the task category. Before dispatch, display the rationale and freeze the actual binding; models must not choose hidden providers. This design table cannot be pasted directly into the current schema.
 
 Assign one primary category to each task, with explicit task bindings taking precedence. Automatic classification follows the main acceptance objective, not file count alone: repetitive bulk operations with clear specifications go to Kimi; refactoring that requires reasoning across files goes to Neon; core algorithms and backend logic go to Sol; and tasks already classified as difficult use hard. Resolve ambiguous categories during planning, without implicit switches after dispatch.
 
-`loops.investigate` is not an existing field. The analysis role's name, schema, scope, and permissions must be implemented together. Until then, the host configured with a subscription model submits reports. The new JEV backend is likewise a proposed capability, not an existing default. Normal tests belong to the Executor and deterministic verification; create a separate explicit task only when additional analysis is needed.
+`loops.investigate` is not an existing field. The analysis role's name, schema, scope, and permissions must be implemented together. In the current implementation, the host submits reports. The new JEV backend is likewise a proposed capability, not an existing default. Normal tests belong to the Executor and deterministic verification; create a separate explicit task only when additional analysis is needed.
+
+Keep role semantics consistent with the current source: [Intake](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/modules/intake.go) scans, deduplicates, and triages task sources without freezing requirements; [Garden](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/modules/garden.go) turns retrospectives into knowledge-maintenance proposals rather than writing release copy. Map requirements exploration, formal design, task-source triage, and delivery summaries separately. Changing Intake/Garden bindings alone does not change Task's design workflow.
 
 ### 5.2 Gemini model tiers and thinking levels
 
@@ -188,7 +199,7 @@ The AI Studio guide describes an API. This proposal adopts its model responsibil
 
 Implementation delivers one complete, previewable `subscription-cli` default configuration containing the stage bindings and task-category selection rules in §5.1. Freeze exact model IDs and the configuration version during implementation. Saving configuration changes only the scope selected by the user.
 
-Auto/Quick/Full continue to select only the workflow. Task category and risk determine the model choices and escalations above; workflow-mode names must not silently change providers. Quick omits unnecessary stages and reuses valid designs, while Full plans, integrates, and adjudicates under the existing rules. Both use the same model policy.
+Auto is the default selection policy; Quick/Full are the actual implementation depths. Task category, design granularity, and risk determine the model choices and escalations above; mode names must not silently change providers. Quick combines compact preparation as described in §12.4 and reuses valid contracts, while Full plans, integrates, and adjudicates progressively for the current milestone. Both use the same model policy.
 
 Use Kimi's annual-plan capacity for explicitly identified bulk/tool-heavy tasks. Claude Pro planning calls reuse valid checkpoints, and second opinions depend on risk. When quota is exhausted, follow the existing explicit-selection and waiting rules without automatically switching to paid APIs. Users adjust capacity allocation within this configuration rather than selecting another product mode. Do not promise fixed workload shares or savings without actual measurement.
 
@@ -197,6 +208,39 @@ Use Kimi's annual-plan capacity for explicitly identified bulk/tool-heavy tasks.
 Kimi uses its supported low/high/max levels; Codex and Claude depend on the specific model; Antigravity is checked against its model catalog, and native Orchestrator's fixed configuration must not be forced to accept an effort setting. Do not display max for every model, add `ultra` to the current execution-policy schema, or translate web Pro mode into xhigh/max.
 
 Escalation proceeds in this order: obtain missing evidence → narrow the task → improve context quality → raise effort or change models within the allowlist. When tests were not run or files were overlooked, first inspect tools, permissions, context, and workflow gaps; a higher effort setting is not a promised fix. A new attempt may start only after a failed invocation has confirmed terminal and cleanup states. AUTH, QUOTA, configuration errors, and unknown outcomes are not resolved by more reasoning. Escalation retains the total attempt, time, and usage budgets and allows no more switches than the frozen policy permits.
+
+### 5.5 Final configuration and field ownership
+
+One `subscription-cli` configuration holds the model and execution settings. Each task separately records its delivery intent, scope, acceptance criteria, and workflow selection. Users normally describe the goal and desired delivery endpoint without manually selecting models or completing four sets of options each time.
+
+| Configuration layer | Final choice | Actual location |
+| --- | --- | --- |
+| Normal entry point | Task, with Auto as the default | Entry point/task brief and the Spec workflow; not a top-level global `workflow.mode` |
+| Delivery intent | Investigation only, design first, development, or repair, as determined by the original request | Task record; investigations use `investigate` / `investigate-and-fix` |
+| Design and planning | Explicit design-plan, design-review, plan, and plan-review assignments above | `loops`, `profiles`, and the new design-granularity selection rules; do not rely on default inheritance |
+| Implementation | default→Hydrogen, complex→Neon, frontend/multimodal→Claude, backend→Sol, batch→Kimi, hard→Astra | `routes` and the corresponding extended packet/execution-policy enums; no `loops.execute` exists |
+| Investigation analysis | Neon high; Hydrogen high for local issues; Carbon high for difficult cases | New analysis binding that reuses preparation; no separate troubleshooting workflow |
+| Thinking level | Set the values above explicitly | Flywheel's field is `thinking`; the driver maps it to each CLI's native parameters |
+| Sessions | scoped, policy-version 1 | `sessions`; design, execution, and review have separate histories |
+| Scheduling | parallel, at most 2 root execution units, batch, prewarm false | `scheduler`; parallelize only when independence and dependencies permit |
+| Workspace | Isolated worktrees | `worktree.enabled=true` |
+| Optional decisions and second opinions | JEV off by default; judge-panel off by default | Preserve their separate purposes; Auto eligibility does not depend on JEV |
+| Automatic task sources | Empty by default; configured when needed | `intake.sources=[]`; do not scan task sources before every Task |
+| Permissions and delivery | Preserve the original task authorization and existing permissions | Mode or model escalation does not grant implementation, merge, or release authority |
+
+The existing runtime settings are shown below. Generate the model/routing portion with §5.1 and the new schemas. This is a configuration fragment, not a complete importable file:
+
+```json
+{
+  "sessions": {"mode": "scoped", "policy-version": 1},
+  "scheduler": {"mode": "parallel", "max-parallel": 2, "dispatch": "batch", "prewarm": false},
+  "worktree": {"enabled": true},
+  "jev": {"enabled": false},
+  "intake": {"sources": []}
+}
+```
+
+Field references: [current configuration template](../../templates/flywheel.config.example.json), [workflow selector](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/contract/workflow.go). Configuration generation/validation resolves and freezes display names to exact CLI model IDs. An Antigravity tool name is not an ordinary DSH provider. When moving Plan from Kimi to Claude, remove the old `resident-session:true` and use the role-scoped sessions above.
 
 ## 6. Specific changes to the Claude subscription path
 
@@ -349,51 +393,124 @@ If a new global error code is required, the implementation PR must first update 
 
 Record observable input/output/thinking/cache tokens, elapsed time, and retries; missing values remain unknown. Identify the accounting scope as turn/conversation/unknown. Compute differences between cumulative counters only when their source and lifecycle match; do not guess after a reset or when the source is unknown. Recovery must not double-count usage. Represent consumption of included allowance, list-price estimates, and actual extra charges separately. Do not turn `costUSD:null` into 0 or convert token counts into an exact remaining plan allowance.
 
-## 12. Development and troubleshooting workflows
+## 12. Unified task workflows, modes, and usage scenarios
 
-### 12.1 Entry points and authorization
+### 12.1 Keep two implementation depths, selected automatically by default
 
-| Entry point | Preserved behavior |
-| --- | --- |
-| Task | Start from the task goal; retain the given scope and implementation authorization, and continue within that scope |
-| New | Register the brief, perform real design and independent Design Review, then wait for approval of the exact version |
-| Plan | Plan only and stop afterward; historical implementation authorization does not automatically start execution |
-| Run | Continue the same task, budget, and evidence without bypassing unknown-state blocks |
+The final design retains Quick and Full. Quick serves a local task that can be accepted independently; Full handles dependencies, milestones, integration, and significant risks. Auto is the selection policy, not a third execution path. In normal use, users describe their goal and the UI shows the actual choice and rationale. Explicit Quick/Full overrides belong in advanced settings.
 
-Auto determines Quick/Full eligibility. Models may advise on boundaries, while Go remains the deterministic state owner. Planning approval binds to a specific design version. Reuse valid approvals and checkpoints instead of repeatedly asking the user to approve the same scope. Handle new risks and material scope changes under the existing contract.
+| Concept | Question it answers | How it is determined |
+| --- | --- | --- |
+| Delivery intent | Is the output a report, a design, or completed changes? | The original request and existing authorization; Auto does not expand it |
+| Task-control entry point | Start, plan only, continue, or stop? | Existing Task/New/Plan/Run/Stop semantics |
+| Implementation depth | One complete unit or a staged process? | Auto selects Quick/Full by default, with explicit preferences allowed |
+| Model binding | Which model performs this particular work? | Roles, design granularity, task category, and effort in the same configuration |
 
-### 12.2 Investigation is a preceding stage
+The host and engine record these concepts without making users complete four sets of forms each time. Investigation-only tasks deliver reports, and planning-only tasks deliver designs; neither needs to be forced into a Quick/Full implementation cycle. Complex tasks do not always need to start with New. When the user has explicitly requested delivery, they can use Task Full directly.
+
+### 12.2 Entry points, authorization, and the overall workflow
+
+| Entry point | User expression | Preserved behavior and stopping point |
+| --- | --- | --- |
+| Task | “Find the cause,” “fix it and open a PR,” or “implement this feature” | Identify the delivery endpoint and proceed within the existing scope authorization; both investigation and implementation can start here |
+| New | “Prepare a design first; we will discuss it before implementation” | Perform real design and independent Design Review, then stop for approval of the exact version |
+| Plan | “Revise the design” or “refine this milestone” | Plan and review only in this invocation; stop after planning even if implementation was authorized earlier |
+| Run | “Continue this task” | Reuse the task, budget, evidence, and valid approvals; do not recreate the task or replay invocations with unknown outcomes |
+
+Task's delegated path continues within the original request's authorization. New's review-first path retains an explicit approval point. Refinement within scope reuses valid approvals; material changes to requirements, fixed decisions, constraints, or acceptance commitments require handling the new design decision. Approval and the start of implementation remain separate records. Reference: [existing design and review guide](../en/reviewed-planning.md).
 
 ```mermaid
 flowchart TD
-    A[Task entry] --> B{Delivery intent}
+    A[Describe the task goal] --> B{Delivery intent}
     B -->|Investigation only| C[Collect and analyze evidence]
-    C --> D[Report conclusions and uncertainty]
-    B -->|Authorized development or repair| E{"Is the basis for implementation clear?"}
-    E -->|No| F[Bounded investigation]
-    F --> G{"Sufficient evidence and resolved receipts?"}
-    G -->|No| H[Continue investigation or retain the block]
-    G -->|Yes| I[Freeze scope and acceptance]
-    E -->|Yes| I
-    I --> J{Auto eligibility}
-    J -->|Small and verifiable| K[Quick]
-    J -->|Complex or high risk| L[Full]
-    K --> M[Verification and independent review]
-    L --> M
-    M --> N[Git delivery of the same candidate]
+    C --> D[Report conclusions or evidence gaps]
+    B -->|Design first| E[Design and independent review]
+    E --> F[Discuss the design and decide whether to implement]
+    B -->|Authorized development or repair| G[Necessary investigation and implementation contract]
+    G --> H{Auto eligibility}
+    H -->|One complete task| I[Quick compact implementation]
+    H -->|Complex dependencies or significant risk| J[Full staged implementation]
+    I --> K[Applicable verification and independent final review]
+    J --> L[Unit review and integration verification]
+    L --> M[Overall Judge]
+    K --> N[Authorized delivery]
+    M --> N
 ```
 
-`investigate` ends after evidence collection, analysis, and a report. `investigate-and-fix` enters Auto when evidence is sufficient, the original scope is authorized, and all invocation states are resolved. An unknown root cause must not trigger repeated speculative code changes. Production mitigation, deletion, and data repair require explicit authorization in the original task; troubleshooting alone does not grant new permissions for external actions.
+Entering implementation in this diagram requires a sufficient basis, the necessary authorization, and resolved invocation states. When evidence is insufficient, report the gap or continue investigating within the currently approved scope; do not start modifying code directly from an uncertain report.
 
-Reuse preparation's read/search/list/command/http evidence and structured hypotheses. Do not create a separate issue state machine disconnected from tests and Review. The new analysis role consumes approved evidence and proposes testable hypotheses and candidate next steps. Go determines legal evidence-collection actions and validates evidence references. A valid structured report does not prove a root cause.
+### 12.3 Auto eligibility and the two depths
 
-### 12.3 Quick and Full
+Preserve the existing deterministic Go selector. Quick requires clear scope, a known implementation method, a complete executable verification plan, and sufficient independent final review, supported by reason/evidence. There must be no declared risks, exactly one milestone and one packet, coverage of every requirement, executable L1 checks, and L2/L3 checks or explicit N/A reasons. If any condition is missing, use Full; an explicit Quick selection cannot bypass the checks. No threshold makes a task Quick solely because it changes a certain number of files or lines. Reference: [selector source](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/contract/workflow.go).
 
-**Quick:** compact design and Design Review → Execute → L1 and applicable L2/L3 → independent task-final Review → Git delivery. A normal first-pass success in the implementation phase uses two agent calls, Execute and Review. A new task also has preceding design work, so the whole task must not be advertised as requiring only two model calls. Plan/Judge are N/A. New risk or a verification gap causes a durable, one-way escalation to Full while retaining cumulative budgets and artifacts.
+| Dimension | Quick | Full |
+| --- | --- | --- |
+| Suitable tasks | A single local change that can be completed and accepted independently | Dependencies across units, architectural changes, migrations, or significant risks |
+| Design and planning | Prepare the compact design and single-packet contract together, with independent review of the combined artifact | Independently review the root design, then refine and review subplans for the current milestone |
+| Implementation organization | One execution unit | Packets organized by dependencies; independent units may run in parallel |
+| Verification | L1 and applicable L2/L3, regressions, and project quality gates | Unit and integration verification, applicable regressions, and project quality gates |
+| Final acceptance | One independent task-final Review covering all requirements | Packet Review plus an overall Judge after integration |
+| Inapplicable stages | Separate runtime Plan and Judge explicitly marked N/A | Follow actual milestones without producing unnecessary future detail |
 
-**Full:** overall design and independent review → subplan and Plan Review for the current milestone → packet Execute/L1/Review → integration → L2/L3 → Judge → delivery. Reuse valid Plan checkpoints, and replan when contracts change or evidence is missing. Small tasks do not need to repeat the entire design process.
+Quick reduces duplicate planning and separate adjudication calls without reducing required verification. A single-line change to authentication, billing, concurrency, or persistence behavior may still require Full. Auto does not depend on JEV or launch an additional “Auto model” to maintain a third workflow.
 
-Shared rules: deterministic verification precedes LLM Review. A fix must include an applicable regression check that catches the original defect. Review examines the same candidate, identifies issues independently, and returns revisions to the original Executor. Correct verification-configuration gaps and verify again; a written Judge conclusion cannot waive them. Final delivery checks the actual commit/merge identity. A CLI saying it is finished does not establish successful delivery.
+Recovery reuses the persisted selection. When new risks or acceptance gaps emerge, Quick durably upgrades to Full before continuing, preserving artifacts, budgets, and history. Running the task again does not downgrade Full to Quick. Reference: [state resolution](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/state/workflow.go).
+
+### 12.4 Make Quick preparation lightweight as well
+
+In the current reviewed-planning implementation, an approved root design without an Active plan still creates a plan request for the first milestone and activates it after Plan Review. A normal Quick path from a new brief therefore usually includes six types of calls: design-plan, design-review, plan, plan-review, execute, and task-final review. Only the implementation phase has two calls; the complete new task must not be described as taking two or four. Reference: [prepareReviewedExecution](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/machine/planning_engine.go).
+
+This proposal adds a specific preparation optimization:
+
+1. For a local task, Hydrogen medium produces the compact design and executable single-packet contract in one call, including scope, the basis for the change, and mappings for every requirement and acceptance criterion.
+2. Sol medium reviews the same complete artifact in an independent session, covering the design, implementation contract, executable checks, and Quick eligibility together. High risk or insufficient information leads to full preparation; a preference for lightweight work does not establish eligibility.
+3. After obtaining the required authorization, Go checks the current task-input version, design reference/digest, digest of the complete single-packet projection, independent review identity, and approval/delegation scope, then atomically activates that unit contract. The joint review must separately confirm design validity, implementation within the authorized scope, and requirement/acceptance coverage. Another milestone plan/plan-review round is no longer mandatory.
+4. Execute completes the changes and applicable verification, then an independent task-final Review examines the same candidate. Revisions return to the original execution context; rerun affected checks before reviewing again.
+
+This requires versioned extensions to planning outputs, joint-review records, schemas, and the activation protocol. Do not copy one Design Review to fabricate a second Plan Review or bypass current checks with a switch. Activating planning artifacts does not start implementation: New/Plan still honor the current entry point's stopping point, and execution separately checks start authorization. Changes to the contract, acceptance criteria, or design digest after approval require rechecking the corresponding review and authorization. Changes to repository/dependency assumptions or projected-file digests also require rechecking the affected parts.
+
+After the optimization, a newly created, eligible small task normally completes on its first attempt with four logical role calls. An existing valid and eligible single-packet contract, whether from the old workflow or the new compact protocol, may leave only the two implementation calls, Execute/Review. Reuse old reviews under their original types and digests; do not regenerate compact documents merely to use Quick or fabricate joint-review records. Investigation, revisions, native tools/subagents, failures, and recovery are additional; these counts are neither fixed costs nor total-call limits. Formal system design still uses Carbon high and Astra high. Model differences follow design granularity, without a separate Quick model configuration.
+
+### 12.5 Advance Full through the current milestone
+
+Full starts with an overall design and independent review, then Claude refines the current milestone and Sol reviews its subplan. Packets select Hydrogen/Neon/Claude/Sol/Kimi/Astra according to their main acceptance objective and complete changes, unit verification, and independent Review. When dependencies are ready and write scopes are independent, run them in parallel in isolated worktrees, with a root concurrency limit of 2.
+
+After milestone integration, run applicable L2/L3 checks, then use Astra Judge to examine requirement coverage, consistency across units, and verification sufficiency. Return problems to the relevant execution units while preserving completed work that remains valid; a single failure does not restart the entire project. Refine later milestones when needed, without requiring the initial plan to freeze every future packet.
+
+Reuse existing valid designs, subplans, and reviews. Parameter-only or model changes do not automatically invalidate all artifacts. When evidence, contracts, or scope change, recheck the affected parts against their exact identities.
+
+### 12.6 Keep investigation, repair, and additional evidence in one task
+
+`investigate` ends after evidence collection, analysis, and a report. `investigate-and-fix` records the original `implementation-scope`; once conclusions are supported by evidence, the scope is authorized, and invocation states are resolved, prepare the implementation contract and let Auto determine the depth. An unknown root cause must not lead to repeated speculative code changes. A difficult investigation does not necessarily require a Full repair: a local, complete fix established by the investigation may still qualify for Quick.
+
+Reuse preparation's read/search/list/command/http evidence and structured hypotheses. Go executes specifically approved evidence-collection actions. Analysis roles such as Neon consume actual observations and propose falsifiable hypotheses and candidate next steps, without generating arbitrary unauthorized commands or URLs. `supported` means that the report has structurally valid evidence references; it does not mean Go has proved causation. After implementation, rerun the original reproduction and applicable regression checks. Reference: [investigation guide](../en/investigation.md).
+
+The current implementation ends an investigation round when its report is submitted. Repeating Run after `inconclusive` or `access-blocked` does not collect evidence again. The final product supports appending a new versioned investigation round within the same task after the user supplies more evidence. Preserve previous reports and sources; freeze the added evidence, scope, and remaining budget for the new round; and bind implementation to the specific round and report digest. Cumulative usage does not reset, and unresolved invocations must be reconciled first. A new round must not replay actions with unknown outcomes. Implement this extension with the analysis binding, without creating a separate troubleshooting state machine or overwriting the old report to claim that the cause has been established.
+
+If the user originally requested investigation only and later explicitly requests a repair, preserve the report, record the corresponding repair scope and design authorization, and continue the same task. An existing instruction to investigate and fix does not require repeated authorization for the same scope. Production mitigation uses the specific scope and success criteria in the original request, retaining its results as evidence. Root-cause repair and code delivery continue through the same engineering cycle.
+
+### 12.7 Scenarios and practical usage
+
+The following examples describe the final workflow. Task/New/Plan/Run retain their existing entry-point names. The host prepares records from natural language; users do not fill in contract JSON.
+
+| Scenario and example request | Entry point and workflow | Delivery endpoint |
+| --- | --- | --- |
+| “First find out why the API is slow; do not change code” | Task; investigate, reproduce/analyze evidence with Neon high, or Carbon high for difficult root causes | Evidence-backed conclusions or a clear gap report; no implementation |
+| “Find the timeout cause, fix it within this module, add a regression check, and open a PR” | Task; freeze the basis for the fix after investigation, let Auto choose Quick/Full, rerun the original reproduction, then independently review | A repair PR within the authorized scope |
+| “The null check is already identified; fix it and add a test” | Task Auto; when eligible, use compact preparation, unit implementation, verification, and independent final review | Verified code and the requested deliverables |
+| “Change just one line of authentication/concurrency logic” | Task Auto; use Full because of the risk, not a lightweight classification based on line count | Changes with risk and regression checks |
+| “Implement multi-tenant scheduling, preserve interface compatibility, and open a PR” | Task Full; root design, progressive milestones, assigned implementation work, integration verification, and Judge | The complete engineering result requested |
+| “Design this complex system first; we will discuss it before implementation” | New Full; stop after design and independent review, then use Run after approval of the exact version and authorization to start | A design for discussion first, followed by implementation within the same task |
+| “Continue investigating with these new logs” | Append an investigation round to the same task; preserve previous reports, budget, and evidence | Supplemented or corrected conclusions; no new task that resets accounting |
+| “Mitigate the production incident using the steps already specified, then fix the root cause” | Record mitigation results and subsequent evidence, then enter the same repair cycle | Separate acceptance of operational results and the permanent fix |
+
+Use Task Auto by default. Use New when the user explicitly wants discussion first, Plan to change or refine a design, and Run to continue an existing task. Explicit Full is a conservative choice; explicit Quick still requires eligibility. There are no additional debug/issue/incident completion modes.
+
+### 12.8 Shared verification, review, and delivery rules
+
+Deterministic verification precedes LLM Review. Changes must pass applicable project checks. Defect fixes add regression verification that catches the original defect; simple copy or style changes do not need ineffective tests added merely for formality. L2/L3 require reasons when inapplicable. Correct verification gaps and verify again; a written Judge conclusion cannot waive them.
+
+Reviews bind to the same candidate and verification evidence. The Executor's private history does not replace independent review. Unknown outcomes, unconfirmed cancellation, and exhausted budgets preserve the original task state; Run neither resets it nor resubmits blindly. Completed investigation, completed design, verified code, an opened PR, merge, and release each require actual evidence and the corresponding authorization from the original request. Quick/Full do not expand the delivery endpoint themselves.
 
 ## 13. JEV, native capabilities, and scheduling
 
@@ -437,6 +554,8 @@ For every stage, show the harness, actual Provider where applicable, channel, mo
 
 The UI maintains this single configuration of stages and task categories and displays the model and effort actually selected. Missing CLI, expired login, unsupported model, exhausted quota, and unconfirmed cancellation use ordinary runtime diagnostics; they do not create duplicate configuration pages or silently switch providers.
 
+The task entry focuses on the goal and delivery endpoint, with Auto as the default. Put Quick/Full in advanced options and show the actual choice and rationale, rather than presenting three parallel workflows users must understand. Investigation-only tasks show investigation progress and reports; planning-only tasks show design and review. Display implementation depth only when entering implementation. Continue investigations with additional evidence in the same task, showing the round and report sources without requiring a new task. Keep the existing underlying parameters compatible.
+
 Environment inspection and model invocation are separate actions. A doctor that performs no inference consumes no model tokens and cannot establish task quality or remaining allowance. A real smoke test is an explicit, separate action that records the model and observed usage. Installation, opening settings, and model enumeration must not silently send inference requests by default.
 
 ## 15. Implementation phases and documentation ownership
@@ -447,13 +566,13 @@ Environment inspection and model invocation are separate actions. A doctor that 
 | P1 | New Antigravity plugin | CLI runner, public machine API, guardian, read-only recovery, directory/model/permission/billing checks, and independent package tests |
 | P2 | New plugin's Desktop integration | Native task panel, direct launch, DSH tools/PTC/jobs, version checks, package and host validation; Gemini usable within DSH |
 | P3 | Claude plugin + Flywheel | Native subscription channel, Fable ID/alias handling, doctor in the execution environment, and no paid fallback; public API remains compatible |
-| P4 | Flywheel integration | Go driver, Node bridge, schema/protocol, task-category routing, unified defaults across four subscriptions, migration, and UI |
-| P5 | Investigation analysis and JEV | Configurable subscription analysis role, JEV subscription backend, one master switch, and the legal-action baseline |
+| P4 | Flywheel integration and compact preparation | Go driver, Node bridge, schema/protocol, design-granularity bindings, task-category and image-input routing, Quick combined preparation/review and activation of the exact contract, unified configuration, migration, and UI |
+| P5 | Investigation analysis and JEV | Configurable subscription analysis role, versioned investigation rounds within the same task, evidence/budget continuity; JEV subscription backend, one master switch, and the legal-action baseline |
 | P6 | Real evaluation and release | Tasks on the actual Mac/accounts, baseline comparisons, candidate tarball installation, CI, exact-version release, and final explicit migration |
 
 Delivery follows P1 → P2 → P4: complete the plugin and make it usable in DSH, then integrate it with Flywheel and the unified configuration. Claude corrections in P3 can run alongside plugin development and complete the subscription paths with P4. Investigation analysis and JEV in P5 remain within the same objective. P6 validates the complete design before release and migration. #57/#9 retain independent implementation and validation; their merge is not a prerequisite for basic usability in this proposal.
 
-Implementation must update the owning documentation: execution, error, model, usage, permission, and configuration sections of `docs/design.md`; schemas in `templates`; DSH `PROTOCOL.md`; paired configuration/model-policy/Claude/native/recovery/workflow/investigation/JEV guides; and the new plugin's Chinese/English README, machine documentation, installation, and release procedures. Only implemented behavior enters CHANGELOG. A dated proposal does not replace the current user guides.
+Implementation must update the owning documentation: execution, error, model, usage, permission, and configuration sections of `docs/design.md`; schemas in `templates`; DSH `PROTOCOL.md`; paired configuration/model-policy/Claude/native/recovery/workflow/reviewed-planning/investigation/JEV guides and usage-handbook; Task/New/Plan/Run skill instructions; and the new plugin's Chinese/English README, machine documentation, installation, and release procedures. Only implemented behavior enters CHANGELOG. A dated proposal does not replace the current user guides.
 
 Leave unrelated LCU/preset/ChatGPT code unchanged. If the new tool needs explicit preset registration, make the smallest compatible change in `dsh-preset-generator` and validate it independently. Replacing a version string is not a complete compatibility test.
 
@@ -463,6 +582,8 @@ Leave unrelated LCU/preset/ChatGPT code unchanged. If the new tool needs explici
 | --- | --- | --- |
 | Documentation | Links/anchors, code fences, language parity, distinction between current facts and proposals, final diff | Implementation or release |
 | Model policy | Basis in the shared research and official guide, responsibilities across four subscriptions, Hydrogen/Neon/Carbon tiers, explicit effort and task routing | Proven superiority to the original recommendation or a fixed ranking across vendors |
+| Modes and compact preparation | Auto selection rationale, every Quick eligibility condition, independent review of the combined artifact, activation of the exact version/contract, invalidation after changes, and state preservation during Quick→Full | Auto being a third workflow, or compact preparation bypassing verification/review |
+| Scenarios and investigation rounds | Stopping points for investigation-only/planning-only tasks, authorized repairs, additional evidence in the same task, immutable previous reports, cumulative budgets, and protection for unknown invocations | A supported report proving causation, or current Run already restarting a completed investigation round |
 | Offline protocol | init/events/result, partial JSON, duplicate/missing terminal results, incorrect configuration, soft denial, schema, and long streams | Account availability, model quality, or actual billing |
 | Sessions | Exact resume, isolation of two parallel tasks, invalid IDs, changed bindings, recovery without replay | Guaranteed absence of persisted native history |
 | Lifecycle | Cancellation, outer timeout, CLI timeout, parent death, process groups, remaining descendants, and unknown provider work | Local exit being equivalent to remote completion |

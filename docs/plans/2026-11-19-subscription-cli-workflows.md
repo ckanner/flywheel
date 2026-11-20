@@ -15,7 +15,7 @@
 3. Claude 只走个人订阅。保留已有的官方 Agent SDK → 本机原版 Claude Code 路线；SDK 是控制 CLI 的库，不因为“只用 CLI”而重写已有执行器。
 4. Kimi 继续使用原生 CLI；Codex 继续使用现有插件控制的官方 Codex CLI/app-server。这里不要求退回文本抓取，也不移除已有会话、恢复和原生能力。
 5. 模型、访问渠道、思考等级、权限和会话分别配置。普通任务使用经济的初始组合，困难任务在显式允许集内升级，不默认全部 `max`。
-6. 保留 Task、New、Plan、Run 和 Auto／Quick／Full。排障、修复 Issue、复杂开发共用验证与交付规则，避免复制三套状态机。
+6. 保留 Task、New、Plan、Run；Auto 默认选择 Quick/Full 两种实施深度。纯调查交付报告，纯规划交付方案；排障修复与复杂开发共用验证和交付规则。
 7. 本轮交付完整方案 PR。创建插件仓库、实现、合并、发布和本机配置迁移属于后续交付阶段。
 
 ### 1.1 参考订阅组合与成本口径
@@ -50,6 +50,8 @@ Kimi 年付已经支出，不能再把月付标价当成每月新增现金支出
 | Kimi 参数 | 已正确使用模型、print 和 stream-json 参数 | 保留，不把已修复参数问题再列为缺陷 |
 | Antigravity | main 尚无该 harness / DSH 插件 | 新包、machine API、worker、Go driver、配置与 UI |
 | 调查分析 | 宿主提交报告；没有 `loops.investigate` | 增加可配置分析角色，保留现有调查与证据状态机 |
+| 新任务 Quick 准备 | 根设计及独审后，仍生成首里程碑计划及 Plan Review | 增加紧凑设计与单 packet 契约的一体生成、联合独审及精确激活 |
+| Intake / Garden 职责 | 任务源初筛 / 复盘知识维护 | 与需求设计、交付文案分开，避免绑定错误角色 |
 | JEV | 总开关默认关闭，决策后端仍是外部 endpoint/key | 基线关闭；另实现订阅 harness 决策后端 |
 | 迁移 | 现有 `subscriptions` 仍复制含 DeepSeek 的模板 | 新增有版本的 `subscription-cli` 迁移语义 |
 
@@ -142,15 +144,18 @@ GPT-6.2 使用前仍需原生账号目录确认。旧 6.1/6 系列只作为显�
 
 | 阶段 / 工作类型 | 目标主选 | 初始 effort | 选择条件或明确替代 |
 | --- | --- | --- | --- |
-| `intake` 开放需求分析 | Gemini 4 Carbon | medium | 明确字段收集可选 Kimi low；需求收敛/规范统稿可显式选 Claude Opus high |
-| `design-plan` 顶层设计 | Gemini 4 Carbon | high | 业务规范密集时显式选 Claude Opus high，或具备订阅资格的 Fable high |
-| `design-review` 架构审查 | Codex / GPT-6.2 Astra，独立会话 | high | 高风险问题才升 xhigh |
+| 需求探索（设计准备职责） | Gemini 4 Carbon | medium | 属于设计准备，不是任务源 `intake`；需求收敛/规范统稿可显式选 Claude Opus high |
+| `design-plan`：紧凑局部设计 | Gemini 4 Hydrogen | medium | 一次产出设计和单 packet 实施契约；仅限范围、实现方法与验证明确的任务 |
+| `design-review`：紧凑局部前审 | Codex / GPT-6.2 Sol，独立会话 | medium | 联合审查设计、契约和验收；发现风险转完整准备 |
+| `design-plan`：系统设计 | Gemini 4 Carbon | high | 业务规范密集时显式选 Claude Opus high，或具备订阅资格的 Fable high |
+| `design-review`：系统设计审查 | Codex / GPT-6.2 Astra，独立会话 | high | 高风险问题才升 xhigh |
 | `plan` 里程碑与依赖拆解 | Claude Opus 5.5 | high | Kimi high 为明确的容量替代；复杂规划可选具备资格的 Fable high |
 | Micro-Spec（Plan/packet 内职责） | Gemini 4 Hydrogen | high | 涉及复杂跨文件约束时用 Neon high；只在细化有必要时使用，不制造每个 packet 必跑的新阶段 |
 | `plan-review` | Codex / GPT-6.2 Sol，独立会话 | medium | 重要接口、迁移、并发约束采用 high |
 | Execute `default`：常规实施 | Gemini 4 Hydrogen | high | 局部小改动、简单转换用 medium |
 | 多文件工程 / 复杂重构（任务类别） | Gemini 4 Neon | high | 多步约束仍无法满足时可升 xhigh；架构级难题交 Carbon high |
 | Execute `frontend`：商业 UI | Claude Opus 5.5 | medium | 复杂约束用 high；已有设计系统的局部快速迭代可显式选 Hydrogen medium |
+| Execute `multimodal`：图片 / 视觉输入 | Claude Opus 5.5 | medium | 复用既有 route；实施中贯通 Flywheel→公开 machine 的图片传输并验收，路径不冒充原生附件 |
 | 后端、算法、数据管道（任务类别） | Codex / GPT-6.2 Sol | high | 困难数学/底层问题进入 hard |
 | 重工具 / 批量仓库改造（任务类别） | Kimi K3.1 Pro | high | 以明确 Spec、工具结果和回归验证约束任务范围 |
 | Execute `hard` | Codex / GPT-6.2 Astra | high | 有证据的难例 xhigh；max 只作有界选择或评估候选 |
@@ -158,15 +163,21 @@ GPT-6.2 使用前仍需原生账号目录确认。旧 6.1/6 系列只作为显�
 | `review` | Codex / GPT-6.2 Sol | high | 安全/复杂并发风险显式采用 Astra high/xhigh；保持独立历史 |
 | `judge`（Full） | Codex / GPT-6.2 Astra | high | 争议复杂时 xhigh；业务完整性第二意见按下方 judge-panel 选择 |
 | 调查分析（拟议角色） | Gemini 4 Neon | high | 简单局部问题用 Hydrogen high；跨仓难根因/架构问题用 Carbon high；只分析获准证据 |
-| `garden` / 交付文案职责 | Gemini 4 Hydrogen | low | 涉及实质性跨任务推理时用 high；合并、发布权限仍由现有交付规则控制 |
+| `intake`：任务源归集与初筛 | Gemini 4 Hydrogen | low | 默认 `intake.sources` 为空，按需扫描和分拣候选；不代替需求设计 |
+| `garden`：复盘与知识维护提案 | Kimi K3.1 Pro | high | 低频归纳失败模式、技能与验收改进提案；不是 PR 文案生成 |
+| 交付文案职责 | Gemini 4 Hydrogen | low | 根据已验证结果生成摘要；不另加每次必跑的 loop，交付权限沿用原任务 |
 | JEV 决策（拟议后端） | Codex / GPT-6.2 Sol | medium | 总开关默认关闭；后续仅用于有界决策 |
 | `judge-panel` | 默认关闭；高风险第二意见主选 Fable 5.2 | high（启用时） | 仅在订阅资格满足时使用；否则显式选 Opus high 并记录替代。只针对明确问题启用一次，不固定双审 |
 
-“微型方案、多文件工程、后端、批量改造、测试、文案”表示任务职责，不宣称当前已经存在同名 loop/route。实施时扩展现有执行路由策略以表达这些类别，并一起更新 schema、配置界面、迁移和测试；在派发前显示任务类别、所选模型和原因，冻结实际绑定。用户可以显式覆盖任务类别；模型不能自行选择隐藏的供应商。这张设计表不能直接贴进当前 schema。
+同一 `design-plan/design-review` 角色按设计粒度选择绑定：局部且有充分依据时使用紧凑组合，系统级或存在重要风险时使用 Carbon/Astra。设计粒度由任务事实决定，选择理由和具体绑定在派发前冻结；不能仅看到 mode=quick 就降低模型或跳过资格检查。这项选择规则与 §12.4 的联合准备一起实现，不复制第二套模型配置。
+
+“微型方案、多文件工程、后端、批量改造、测试、文案”表示任务职责。现有 packet/执行策略 route 枚举包含 default/frontend/hard/multimodal；本方案新增 `complex`、`backend`、`batch` 三个 route 名，分别用于 Neon、Sol、Kimi。实施时一起更新 packet 与 execution-policy schema、选择器、配置界面、迁移和测试；只往 routes map 加名字不足以完成接入。用户可以显式覆盖任务类别，派发前显示原因并冻结实际绑定，模型不能自行选择隐藏供应商。这张设计表不能直接贴进当前 schema。
 
 每个任务只指定一个主类别，显式任务绑定优先。自动分类按主要验收目标选择，不只按文件数量：重复且 Spec 明确的批量操作归 Kimi，需要跨文件推理协调的重构归 Neon，核心算法与后端逻辑归 Sol，已判定的困难任务走 hard。类别仍有歧义时由规划阶段收敛；派发后不隐式切换。
 
-不把 `loops.investigate` 当成现有字段。新增调查分析角色的命名、schema、作用域与权限应在实现 PR 中一起落地；此前由已配置订阅模型的宿主提交报告。JEV 新后端同样不是当前默认已具备的功能。正常测试由 Executor 与确定性验证完成；需要补充分析时才创建明确任务。
+不把 `loops.investigate` 当成现有字段。新增调查分析角色的命名、schema、作用域与权限应在实现 PR 中一起落地；当前实现由宿主提交报告。JEV 新后端同样不是当前默认已具备的功能。正常测试由 Executor 与确定性验证完成；需要补充分析时才创建明确任务。
+
+角色语义按现有源码保持准确：[Intake](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/modules/intake.go)扫描任务源、去重与分拣，不冻结需求；[Garden](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/modules/garden.go)从复盘产生知识维护提案，不直接写发布文案。需求探索、正式设计、任务来源初筛和交付摘要分别映射，不能只改 Intake/Garden 绑定便声称改变了 Task 的设计流程。
 
 ### 5.2 Gemini 三层选择与思考等级
 
@@ -188,7 +199,7 @@ AI Studio 指南描述 API；本方案借鉴模型职责与档位，执行仍走
 
 实现时交付一份完整、可预览的 `subscription-cli` 默认配置，包含 §5.1 的阶段绑定和任务类别选择规则。具体模型 ID 与配置版本在实施中冻结；保存配置只调整用户选择的范围。
 
-Auto/Quick/Full 继续只决定工作流，任务类别和风险决定上述模型选择与升级；不凭流程模式名字暗中改供应商。Quick 省略不需要的阶段并复用有效设计，Full 按现有规则规划、集成和裁决。两者使用同一套模型策略。
+Auto 是默认选择策略，Quick/Full 是实际实施深度。任务类别、设计粒度和风险决定上述模型选择与升级，不凭模式名字暗中改供应商。Quick 按 §12.4 合并紧凑准备并复用有效契约，Full 按当前里程碑逐步规划、集成和裁决。两者使用同一套模型策略。
 
 Kimi 年付容量用于已明确的批量/重工具任务；Claude Pro 的计划调用复用有效检查点，第二意见按风险启用。额度不足时按已有明确选择和等待规则处理，不自动转付费 API；用户需要调整容量分工时，修改这份配置即可，不增加另一套产品模式。没有真实测量时不承诺固定工作占比或节省比例。
 
@@ -197,6 +208,39 @@ Kimi 年付容量用于已明确的批量/重工具任务；Claude Pro 的计划
 Kimi 使用其支持的 low/high/max；Codex 和 Claude 以具体模型为准；Antigravity 按模型目录验证，原生 Orchestrator 的固定配置不强塞 effort。不能给所有模型一律显示 max，不能把 `ultra` 写进当前 execution-policy schema，也不能把网页 Pro 模式映射成 xhigh/max。
 
 升级顺序是：补齐缺失证据 → 收紧任务范围 → 解决上下文质量问题 → 在允许集中提高 effort 或换模型。没有跑测试或漏看文件时，先查工具、权限、上下文与流程缺口，不承诺单纯升档即可修复。只有已确认终态/清理的失败才能开始新实验；AUTH、QUOTA、配置错误和结果未知不通过“多想一点”解决。升级保留总尝试/时间/用量预算，最多使用冻结策略允许的切换次数。
+
+### 5.5 最终配置清单与字段归属
+
+一份 `subscription-cli` 配置承载模型与执行参数；每个任务另外保存交付意图、范围、验收和流程选择。用户通常只描述目标和希望的交付终点，不需要每次手填模型或四套选项。
+
+| 配置层面 | 最终选择 | 实际归属 |
+| --- | --- | --- |
+| 常规入口 | Task，默认 Auto | 入口/任务 brief 与 Spec 的 workflow；不是全局配置顶层 `workflow.mode` |
+| 交付意图 | 只调查、先方案、开发或修复，由原请求决定 | 任务记录；调查使用 `investigate` / `investigate-and-fix` |
+| 设计与规划 | 上表明确写 design-plan、design-review、plan、plan-review | `loops`、`profiles` 及新增的设计粒度选择规则；不依赖默认继承 |
+| 实现 | default→Hydrogen，complex→Neon，frontend/multimodal→Claude，backend→Sol，batch→Kimi，hard→Astra | `routes` 与同步扩展的 packet/执行策略枚举；不存在 `loops.execute` |
+| 调查分析 | Neon high；局部 Hydrogen high；困难 Carbon high | 新增的分析绑定，复用 preparation；不另造排障工作流 |
+| 模型档位 | 显式填写上表值 | Flywheel 字段叫 `thinking`，driver 转为各 CLI 的原生参数 |
+| 会话 | scoped，policy-version 1 | `sessions`；设计、执行、审查各自隔离历史 |
+| 调度 | parallel，最多 2 个根执行单元，batch，prewarm false | `scheduler`；独立性和依赖满足后才并发 |
+| 工作区 | 隔离 worktree | `worktree.enabled=true` |
+| 可选决策与第二意见 | JEV 默认关闭，judge-panel 默认关闭 | 保留独立用途，Auto 资格判断不依赖 JEV |
+| 自动任务源 | 默认空，用户需要时配置 | `intake.sources=[]`；不在每次 Task 前扫描任务源 |
+| 权限与交付 | 沿用原任务授权和现有权限 | 模式、模型升级不增加实施、合并或发布授权 |
+
+当前已有的运行参数部分如下，模型/路由部分按 §5.1 和新增 schema 一并生成。这是配置片段，不是完整可导入文件：
+
+```json
+{
+  "sessions": {"mode": "scoped", "policy-version": 1},
+  "scheduler": {"mode": "parallel", "max-parallel": 2, "dispatch": "batch", "prewarm": false},
+  "worktree": {"enabled": true},
+  "jev": {"enabled": false},
+  "intake": {"sources": []}
+}
+```
+
+字段依据：[当前配置模板](../../templates/flywheel.config.example.json)、[工作流选择器](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/contract/workflow.go)。模型显示名与 CLI 精确 ID 由配置生成/校验解析并冻结；Antigravity 工具名不能当成普通 DSH provider。Plan 从 Kimi 改为 Claude 时移除旧 `resident-session:true`，使用上述角色作用域会话。
 
 ## 6. Claude 订阅路径的具体调整
 
@@ -349,51 +393,124 @@ Antigravity 原生登录使用已有官方凭据。检查生效的 provider、�
 
 用量按可观测输入/输出/思考/缓存 token、耗时与重试记录；缺失保持 unknown。标明 turn/conversation/unknown 统计范围；只有计数来源和生命周期一致时才对累计计数取差值，计数重置或来源不明不猜测。恢复不能重复求和。订阅的计划包含消耗、按标价估算金额和真实额外账单分别表示；`costUSD:null` 不写成 0，token 数不换算为精确套餐剩余额度。
 
-## 12. 开发链路与排障链路
+## 12. 统一任务流程、模式与使用场景
 
-### 12.1 入口与授权
+### 12.1 保留两种实施深度，默认自动选择
 
-| 入口 | 保留的行为 |
-| --- | --- |
-| Task | 从任务目标进入；保留已给的范围与实施授权，在原范围内继续 |
-| New | 登记 brief，执行真实设计与独立 Design Review，等待精确版本批准 |
-| Plan | 仅规划；完成后停下，不因历史实施授权自动开始执行 |
-| Run | 继续原任务/原预算/原证据，不绕过 unknown 阻断 |
+最终保留 Quick 与 Full。Quick 服务于一个可以独立验收的局部任务；Full 处理依赖、里程碑、集成及重要风险。Auto 是选择策略，不是第三条执行链路。日常用户描述目标即可，界面显示实际选择和原因，高级设置才提供显式 Quick/Full 覆盖。
 
-Auto 决定 Quick/Full 资格；模型只提供边界建议，Go 保持确定性状态所有者。规划批准绑定具体设计版本；复用已有效的批准和检查点，不重复要求用户批准同一范围。新风险或实质范围改变按现有契约处理。
+| 概念 | 回答的问题 | 如何确定 |
+| --- | --- | --- |
+| 交付意图 | 要报告、方案，还是完成修改？ | 原请求及已有授权；Auto 不扩大它 |
+| 任务控制入口 | 开始、仅规划、继续，还是停止？ | Task/New/Plan/Run/Stop 的现有语义 |
+| 实施深度 | 一个闭合单元，还是分层推进？ | Auto 默认选择 Quick/Full，允许显式偏好 |
+| 模型绑定 | 本次具体工作由谁完成？ | 同一配置中的角色、设计粒度、任务类别与 effort |
 
-### 12.2 调查是前置阶段
+这些概念由宿主和引擎记录，不要求用户每次完成四组表单。纯调查交付报告，纯规划交付方案，都不需要硬套 Quick/Full 的实施闭环。复杂任务也不必一律先 New；用户已明确要求交付时可以直接 Task Full。
+
+### 12.2 入口、授权与总体流程
+
+| 入口 | 用户表达 | 保留的行为与终点 |
+| --- | --- | --- |
+| Task | “查一下原因”“修好并提 PR”“实现这个功能” | 识别交付终点；沿用原范围授权推进，调查与实施都可从这里进入 |
+| New | “先出方案，我们讨论后再做” | 真实设计与独立 Design Review 后停下，等待批准精确版本 |
+| Plan | “修改方案”“细化这个里程碑” | 本次只规划和审查；即使历史上授权了实施，仍在规划后停下 |
+| Run | “接着这个任务继续” | 复用原任务、预算、证据和有效批准，不重建任务、不重跑未知调用 |
+
+Task 的 delegated 路线在原请求授权内继续；New 的 review-first 路线保留明确批准点。范围内细化复用有效批准；实质改变需求、固定决定、约束或验收承诺时处理新设计决定。批准与开始实施仍分别记录。依据：[现有设计与审查指南](../zh-CN/reviewed-planning.md)。
 
 ```mermaid
 flowchart TD
-    A[任务入口] --> B{交付意图}
+    A[描述任务目标] --> B{交付意图}
     B -->|只调查| C[取证与分析]
-    C --> D[报告结论与不确定性]
-    B -->|已授权开发或修复| E{实施依据是否清楚}
-    E -->|否| F[有界调查]
-    F --> G{证据充分且回执已解决}
-    G -->|否| H[继续调查或保留阻断]
-    G -->|是| I[冻结范围与验收]
-    E -->|是| I
-    I --> J{Auto 资格判断}
-    J -->|小范围且可验证| K[Quick]
-    J -->|复杂或高风险| L[Full]
-    K --> M[验证与独立评审]
-    L --> M
-    M --> N[同一候选的 Git 交付]
+    C --> D[报告结论或证据缺口]
+    B -->|先看方案| E[设计与独立审查]
+    E --> F[讨论方案后决定是否实施]
+    B -->|已授权开发或修复| G[必要调查与实施契约准备]
+    G --> H{Auto 资格判断}
+    H -->|单一闭合任务| I[Quick 紧凑实施]
+    H -->|依赖复杂或重要风险| J[Full 分层实施]
+    I --> K[适用验证与独立最终审查]
+    J --> L[单元审查与集成验证]
+    L --> M[整体 Judge]
+    K --> N[按授权交付]
+    M --> N
 ```
 
-`investigate` 取证、分析、报告后结束；`investigate-and-fix` 在证据充分、原范围已授权、所有调用状态解决后进入 Auto。未知根因不能立即反复修改代码。生产止损、删除、数据修复等动作只有原任务明确授权才执行；方案不从“排障”推导新的外部操作权限。
+图中进入实施的前提是依据充分、所需授权已存在、调用状态已解决。证据不足时交付缺口或在当前批准范围内继续调查，不从不确定报告直接开始修改。
 
-沿用 preparation 的 read/search/list/command/http 证据与结构化假设，不另建一条与测试/Review脱节的 Issue 状态机。新增分析角色只消费批准的证据、提出可验证假设与下一步候选；Go 决定合法取证并校验证据引用。结构化报告有效不等于根因已经证明。
+### 12.3 Auto 的判定与两种深度
 
-### 12.3 Quick 与 Full
+保留现有 Go 确定性选择器。Quick 需要明确范围、已知实现方法、完整可执行的验证计划和足够的独立最终审查，并有 reason/evidence；无声明风险，恰好一个 milestone 与一个 packet，全部需求被覆盖，L1 可执行，L2/L3 有检查或明确 N/A 理由。缺一项便采用 Full；显式 Quick 也不能绕过。没有“改几个文件或几行就一定 Quick”的阈值。依据：[选择器源码](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/contract/workflow.go)。
 
-**Quick**：紧凑设计与 Design Review → Execute → L1 和适用 L2/L3 → 独立 task-final Review → Git 交付。实施阶段正常首次成功是 Execute、Review 两次 Agent 调用；新任务还有前置设计，不宣传整单只需两次模型调用。Plan/Judge 标为 N/A；新风险或验证缺口使 Quick 持久化单向升级 Full，保留累计预算和产物。
+| 维度 | Quick | Full |
+| --- | --- | --- |
+| 适用任务 | 单个可闭合、可独立验收的局部变更 | 多单元依赖、架构变化、迁移或重要风险 |
+| 设计与计划 | 紧凑设计和单 packet 契约一体准备、联合独审 | 根设计独审后，按当前里程碑细化并审查子计划 |
+| 实现组织 | 一个执行单元 | 按依赖组织多个 packet，独立单元可并行 |
+| 验证 | L1 与适用 L2/L3、适用回归和项目质量门槛 | 单元验证及集成层验证、适用回归和项目质量门槛 |
+| 终验 | 一次独立 task-final Review 覆盖全部需求 | packet Review，加集成后的整体 Judge |
+| 不适用阶段 | 独立运行期 Plan 和 Judge 明确 N/A | 按实际里程碑执行，不生成无用的未来细节 |
 
-**Full**：整体设计与独立审查 → 当前里程碑子计划与 Plan Review → packet Execute/L1/Review → 集成 → L2/L3 → Judge → 交付。已有有效 Plan 检查点可复用，契约变化或证据缺口才重新规划；不能让每个小任务都重复全套设计。
+Quick 减少重复规划和独立裁决调用，不减少应有的验证。单行鉴权、计费、并发或持久化行为修改仍可需要 Full。Auto 不依赖 JEV，不额外启动一个“Auto 模型”来维持第三套流程。
 
-共同规则：确定性验证先于 LLM Review；修复必须含能捕捉原缺陷的适用回归；审查针对同一候选，独立指出问题并回到原 Executor 返修。验证配置缺口先修订并复验，不能用 Judge 的文字结论放行。最终检查实际提交/合并身份，不把 CLI 说“完成”直接等同交付成功。
+恢复复用已经持久化的选择。出现新风险或验收缺口时，Quick 先持久化升级 Full，再继续；保留成果、预算和历史。Full 不因重新 Run 而降回 Quick。依据：[状态解析](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/state/workflow.go)。
+
+### 12.4 让 Quick 的准备也真正轻量
+
+当前 reviewed-planning 实现中，根设计获准但尚无 Active plan 时，仍会创建首个 milestone 计划请求，再经 Plan Review 激活。因此全新 brief 的正常 Quick 路径通常包含 design-plan、design-review、plan、plan-review、execute、task-final review 六类调用；只有实施段是两次，不能把整单说成两次或四次。依据：[prepareReviewedExecution](https://github.com/ckanner/flywheel/blob/f016015a884351d081e066a4031a6814299f25e5/internal/machine/planning_engine.go)。
+
+本方案增加明确的准备优化：
+
+1. 局部任务由 Hydrogen medium 一次生成紧凑设计和可执行的单 packet 契约，包含范围、改动依据、全部需求与验收映射。
+2. Sol medium 在独立会话中审查同一份完整产物，同时覆盖设计、实施契约、检查可执行性和 Quick 资格。高风险或信息不足就进入完整准备，不把轻量偏好当作资格。
+3. Go 在取得所需授权后，校验本轮任务输入版本、设计引用/摘要、完整单 packet 投影摘要、独立审查身份及批准/委派范围，原子激活这份单元契约；联合审查需分别确认设计有效、实施处于授权范围内及需求/验收覆盖，不再固定生成另一轮 milestone plan/plan-review。
+4. Execute 完成修改和适用验证，再由独立 task-final Review 检查同一候选。返修仍回到原执行上下文，重跑受影响检查后再审。
+
+这需要版本化扩展规划输出、联合审查记录、schema 与激活协议；不能复制一次 Design Review 伪造第二次 Plan Review，也不能用一个开关跳过当前检查。激活规划产物不等于开始实施：New/Plan 仍遵守本次入口的停止点，进入执行前单独检查开始授权。批准后改变契约、验收或设计摘要必须重新核验对应审查与授权；仓库/依赖前提与投影文件摘要变化时也重新核验受影响部分。
+
+优化后，全新合格小任务首次正常完成通常是四个逻辑角色调用；已有有效且资格成立的单 packet 契约（旧流程或新紧凑协议）则可只剩 Execute/Review 两个实施调用。旧审查按原类型和摘要复用，不为使用 Quick 重生成紧凑文档，也不伪造联合审查记录。调查、返修、原生工具/子 Agent、失败与恢复均另计，不把这些数字作为固定费用或总调用上限。正式系统设计仍使用 Carbon high 与 Astra high；模型差异来自设计粒度，未另建一套 Quick 模型配置。
+
+### 12.5 Full 按当前里程碑逐步推进
+
+Full 先形成整体设计并独立审查，随后由 Claude 细化当前里程碑、Sol 审查子计划。packet 根据主要验收目标选择 Hydrogen/Neon/Claude/Sol/Kimi/Astra，分别完成修改、单元验证和独立 Review；依赖就绪且写入范围独立时在隔离 worktree 中并行，根并发上限为 2。
+
+里程碑集成后执行适用 L2/L3，再由 Astra Judge 检查需求覆盖、跨单元一致性及验证充分性。发现问题回到相关执行单元，保留已完成且仍有效的工作；不因一次失败重做整个项目。后续里程碑在需要时细化，不要求首次规划冻结全部未来 packet。
+
+既有有效设计、子计划和审查可以复用。纯参数或模型调整不自动废弃所有成果；证据、契约或范围改变时按精确身份重新核验所受影响的部分。
+
+### 12.6 调查、修复和补证共用一个任务
+
+`investigate` 在取证、分析、报告后结束；`investigate-and-fix` 记录原有 `implementation-scope`，在有证据支持结论、范围已授权、调用状态解决后准备实施契约，再由 Auto 决定深度。未知根因不能通过反复改代码试运气。调查困难不意味着修复一定 Full，调查后确认的局部闭合修复仍可 Quick。
+
+沿用 preparation 的 read/search/list/command/http 证据与结构化假设。Go 执行具体批准的取证动作，Neon 等分析角色消费真实观察、提出可证伪假设和下一步候选，不生成未授权的任意命令或 URL。`supported` 表示报告有结构合法的证据引用，不等于 Go 已证明因果；实施后仍需重跑原复现和适用回归。依据：[调查指南](../zh-CN/investigation.md)。
+
+现有实现一旦提交报告便结束该轮，`inconclusive` 或 `access-blocked` 后重复 Run 不会重新取证。最终产品支持用户补充证据后在同一任务中追加有版本的新调查轮：旧报告和来源保留，新轮冻结新增证据、范围与剩余预算，实施引用具体轮次及报告摘要。累计用量不清零，未解决调用先核对，不能靠新轮重放未知动作。这项扩展与分析绑定一起实施，不另建排障状态机，也不把旧报告覆盖成“已经查明”。
+
+用户原来只要求调查，之后明确要求修复时，保留原报告并记录对应修复范围与设计授权，再继续同一任务。已明确要求“排查并修好”时不重复索要相同范围授权。生产止损操作使用原请求给出的具体范围和成功标准，止损结果作为证据保留；根因修复和代码交付继续使用同一工程闭环。
+
+### 12.7 场景与实际使用方式
+
+以下示例说明最终流程；Task/New/Plan/Run 的入口保留现有名称。宿主从自然语言准备记录，用户不用填写契约 JSON。
+
+| 场景与示例表达 | 入口与流程 | 交付终点 |
+| --- | --- | --- |
+| “先查接口为什么变慢，不要改代码” | Task；调查、复现/证据分析，Neon high，难根因 Carbon high | 有证据的结论或明确缺口报告；不进入实施 |
+| “定位超时原因并在这个模块内修好，补回归、提 PR” | Task；调查后冻结修复依据，Auto 选择 Quick/Full，重跑原复现再独审 | 已授权范围内的修复 PR |
+| “空值判断已定位，修一下并补测试” | Task Auto；资格成立时紧凑准备、单元实施、验证、独立最终审查 | 经过验证的代码与要求的交付物 |
+| “只改一行鉴权/并发逻辑” | Task Auto；因风险采用 Full，不能按行数判轻量 | 风险与回归得到检查的修改 |
+| “实现多租户调度，保持接口兼容并提 PR” | Task Full；根设计、逐步里程碑、分工实施、集成验证、Judge | 按要求交付的完整工程结果 |
+| “先设计这个复杂系统，我们讨论后再做” | New Full；设计和独立审查后停止；批准具体版本并开始后 Run | 先交付可讨论方案，之后沿原任务实施 |
+| “根据新日志继续排查” | 原任务追加调查轮；保留旧报告、预算与证据 | 补充或修正结论；不重建任务清零 |
+| “线上故障先按已说明步骤止损，再修根因” | 记录止损结果和后续取证，再进入同一修复闭环 | 操作结果和永久修复分别验收 |
+
+默认使用 Task Auto；只在明确希望先讨论时用 New，需要修改或细化方案时用 Plan，继续已有任务时用 Run。显式 Full 是保守选择，显式 Quick 仍须资格通过。不存在额外的 debug/issue/incident 完成模式。
+
+### 12.8 验证、审查与交付的共同规则
+
+确定性验证先于 LLM Review。修改应通过适用的项目检查；缺陷修复增加能捕捉原缺陷的回归验证，不为了形式给简单文案或样式调整堆砌无效测试。L2/L3 不适用必须有理由，验证缺口先修订并复验，不能用 Judge 的文字结论放行。
+
+审查绑定同一候选和验证证据，Executor 的私有历史不替代独立审查。结果未知、取消未确认和预算耗尽保留原任务状态，Run 不重置或盲目重发。调查结束、方案完成、代码验证通过、PR 已建立、合并、发布分别有实际证据和原请求对应的授权；Quick/Full 不自行增加交付终点。
 
 ## 13. JEV、原生能力与调度
 
@@ -437,6 +554,8 @@ Provider/模型选项从独立能力目录生成，不再依赖“当前哪个�
 
 界面只维护这一套阶段和任务类别配置，显示实际选中的模型与档位。CLI 缺失、登录失效、模型不支持、额度耗尽和取消未确认沿用普通运行诊断；不为它们复制配置页面或静默改成其他供应商。
 
+任务入口以目标和交付终点为主，默认 Auto；Quick/Full 放入高级选项，界面显示实际选择及原因，不摆成三个要求用户理解的并列工作流。纯调查显示调查进展和报告，纯规划显示设计与审查；只有进入实施时显示执行深度。补充证据继续调查时沿用原任务，显示轮次与报告来源，不要求用户重新创建任务。底层已有参数保持兼容。
+
 检查环境和调用模型分别操作：无推理 doctor 不消耗模型 token，不能证明任务质量或可用余额；真实冒烟是明确独立操作，记录模型与消耗事实。默认不在安装、打开设置或枚举模型时偷偷发送推理请求。
 
 ## 15. 实施拆分与文档归属
@@ -447,13 +566,13 @@ Provider/模型选项从独立能力目录生成，不再依赖“当前哪个�
 | P1 | 新 Antigravity 插件 | CLI runner、公开 machine、guardian、只读 recovery、目录/模型/权限/计费检查及独立包测试 |
 | P2 | 新插件 Desktop 集成 | 原生任务面板、直接启动、DSH 工具/PTC/jobs、版本检查、安装包和宿主验收；Gemini 在 DSH 内可用 |
 | P3 | Claude 插件 + Flywheel | 原生订阅 channel、Fable ID/alias、同环境 doctor、无付费回退；公开 API 保持兼容 |
-| P4 | Flywheel 集成 | Go driver、Node bridge、schema/协议、任务类别路由、四家统一默认配置、迁移和 UI |
-| P5 | 调查分析与 JEV | 可配订阅分析角色、JEV 订阅后端、唯一总开关和合法动作基线 |
+| P4 | Flywheel 集成与紧凑准备 | Go driver、Node bridge、schema/协议、设计粒度绑定、任务类别与图片输入路由、Quick 联合准备/审查与精确激活、统一配置、迁移和 UI |
+| P5 | 调查分析与 JEV | 可配订阅分析角色、同任务版本化调查轮、证据/预算连续性；JEV 订阅后端、唯一总开关和合法动作基线 |
 | P6 | 实际评估与发布 | 真实 Mac/账号任务、对比基线、候选 tarball 安装、CI、精确发布与最后显式迁移 |
 
 交付顺序为 P1 → P2 → P4：先把插件做好并在 DSH 中使用，再接入 Flywheel 和统一配置。P3 的 Claude 修正可以与插件开发并行，随 P4 一起完成订阅路径；P5 的调查分析和 JEV 在同一目标内实施。P6 验收整个方案后发布并迁移。#57/#9 维持独立实现与验收，当前方案不以它们合并为基本可用前提。
 
-实施时更新 owning docs：`docs/design.md` 对应执行、错误、模型、用量、权限、配置章节；`templates` schema；DSH `PROTOCOL.md`；成对 configuration/model-policy/Claude/native/recovery/workflow/investigation/JEV 指南；新插件 README 中英文、machine 文档、安装与发布流程。只有真正实现的行为进入 CHANGELOG；日期方案不替代当前使用指南。
+实施时更新 owning docs：`docs/design.md` 对应执行、错误、模型、用量、权限、配置章节；`templates` schema；DSH `PROTOCOL.md`；成对 configuration/model-policy/Claude/native/recovery/workflow/reviewed-planning/investigation/JEV 指南与 usage-handbook；Task/New/Plan/Run 相关技能说明；新插件 README 中英文、machine 文档、安装与发布流程。只有真正实现的行为进入 CHANGELOG；日期方案不替代当前使用指南。
 
 不修改无关 LCU/preset/ChatGPT 代码。若新工具需要 preset 显式注册，仅对 `dsh-preset-generator` 提最小兼容变更并独立验收；不把完整兼容测试简化为版本字符串替换。
 
@@ -463,6 +582,8 @@ Provider/模型选项从独立能力目录生成，不再依赖“当前哪个�
 | --- | --- | --- |
 | 文档 | 链接/锚点、代码围栏、语言一致、现状与提案区分、最终 diff | 已实现或已发布 |
 | 模型策略 | 原分享与官方指南依据、四家职责、Hydrogen/Neon/Carbon 分层、明确档位和任务路由 | 已证明优于原建议或厂商间固定排名 |
+| 模式与紧凑准备 | Auto 选择理由、Quick 全部资格、联合产物独审、精确版本/契约激活、变更后失效、Quick→Full 保留状态 | Auto 是第三条流程，或紧凑准备可以跳过验证/审查 |
+| 场景与调查轮 | 只调查/只规划的停止点、已授权修复、同任务补证、旧报告不可覆盖、累计预算和未知调用保护 | 报告 supported 已证明因果，或当前 Run 已能重启结束的调查轮 |
 | 离线协议 | init/事件/result、半截 JSON、重复/缺失终态、错误配置、soft denial、schema、长流 | 账号可用、模型质量或实际账单 |
 | 会话 | 精确 resume、两个并行任务不串线、无效 ID、绑定变化、恢复不重放 | 原生历史必定不持久化 |
 | 生命周期 | 取消、外层 timeout、CLI timeout、父死亡、进程组、后代残留、未知 provider work | 本地退出等同远端完成 |
