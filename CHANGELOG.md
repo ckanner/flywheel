@@ -5,6 +5,15 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.37.2 — DSH 0.3 compatibility window
+
+- Widen the DSH engine and peer ranges from the 0.2 series to
+  `>=0.2.1-rc.5 <0.4.0-0` with explicit tested prerelease peer lines. Routine
+  0.2/0.3 upgrades no longer require a manifest change; capability admission
+  remains fail-closed and incompatible releases are fixed in code.
+- Cover the 0.3 host decision in the compatibility regression test and update
+  the paired user guides, protocol, and design contract.
+
 ## 0.37.1 — Full-page workbench
 
 - Give the Session-scoped Flywheel workbench the complete conversation content
