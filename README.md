@@ -46,7 +46,7 @@ remain available for historical installations.
 For the desktop path, install Node.js **22.18.0 or later**, npm, Git, and a
 supported DSH desktop with its `dsh` command available. The plugin currently
 accepts the DSH **0.2 through 0.3 series**, starting at **0.2.1-rc.5** and ending before
-**0.4.0** (including the tested 0.2.2 and 0.3.0 prerelease lines). Routine upgrades within
+**0.4.0** (including the tested 0.2.2/0.2.3 and 0.3.0 prerelease lines). Routine upgrades within
 that range do not require a Flywheel release. This is a best-effort compatibility window: required host services and
 SDK checks still fail closed if a release is incompatible, and the failure is fixed in code. Prepare the accounts
 and CLI tools required by the model routes you choose. DSH itself may require
