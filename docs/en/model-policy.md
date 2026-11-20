@@ -39,6 +39,23 @@ Routine implementation and short decisions use a smaller Gemini profile, Carbon 
 
 `multimodal` selects the Claude route. A packet's versioned `input-images` contract supplies actual PNG/JPEG/GIF/WebP bytes through Execute → worker → Claude's public machine API → Agent SDK. Each repository-relative reference binds its MIME type and SHA-256; the engine validates the file, decoding and bounds before dispatch and retains its identity for verification and recovery. Up to four images are allowed, at most 4 MiB each and 8 MiB combined. Text filenames and DSH chat attachments are not imported automatically. The independent default Review checks code, acceptance and frozen references; it does not claim to see those images. Antigravity's first adapter accepts text only. See [image inputs](image-inputs.md), [Claude](claude-code-pro.md) and [Antigravity](antigravity.md).
 
+## Initial selection and failure adaptation
+
+The defaults also provide complete execution candidates while retaining the initial bindings above. `jev.enabled` remains off. Each route uses an empty `quality-order` and `max-switches:2`, so JEV-off defaults do not automatically walk the candidate list. With JEV enabled, the first Execute and confirmed failure boundaries can select among candidates admitted by Go; this is not reclassification before every stage.
+
+| Route | Initial binding and allowed alternatives |
+| --- | --- |
+| default | Hydrogen high / Hydrogen medium / Orchestrator Neon |
+| complex | Neon high / Orchestrator Neon / Neon high Swarm |
+| frontend, multimodal | Opus medium / Opus high |
+| backend | Sol high / Sol medium / Astra high |
+| batch | Kimi high / Kimi max / Neon high Swarm |
+| hard | Astra high / Carbon high / Orchestrator Carbon |
+
+Swarm is eligible only with Full, no images, and a reviewed packet `collaboration` split whose child write scopes are disjoint and remain within approved scope. Ordinary subagents, fixed two-model Orchestrator, and Swarm are different strategies. All three Orchestrator options are manually selectable; see [Antigravity](antigravity.md) for exact identifiers. Their fixed `thinking:""` omits `--effort`; a selector cannot add high/xhigh. Image candidates retain only Claude bindings with actual image transport.
+
+Changing model, effort, or native configuration freezes the complete binding, cold-starts, and records the reason while sharing existing attempt, switch, and decision budgets. JEV does not inspect live plan balances or assume measured candidate quality or speed. These alternatives are not a global model ranking. A sole legal option uses the initial baseline; unknown execution or cleanup reconciles first. See [JEV](jev.md).
+
 ## Planning roles and the current conversation
 
 New/Task record a brief with repository facts. The engine owns design and review. `design-granularity:compact` requires concrete evidence, a reason and no explicit Full request. It creates one design plus one packet together, followed by one independent joint review of their exact versions. Uncertain scope, architecture, migrations and multi-part work use `system`; the engine may upgrade compact preparation without resetting authority or budgets.
@@ -70,6 +87,7 @@ Preview and explicitly apply `flywheel config migrate --preset subscription-cli`
 | --- | --- | --- |
 | Gemini Hydrogen / Neon | `low`, `medium`, `high`, `xhigh` | Exact model suffix must agree with `thinking` |
 | Gemini Carbon / Argon | `low`, `medium`, `high` | `xhigh` is rejected, not remapped |
+| Orchestrator Neon / Carbon / Argon | Fixed, `thinking:""` | Named planner and Hydrogen hand off in one conversation; no `--effort` |
 | Codex Pro | `low`, `medium`, `high`, `xhigh`, `max` | Specific model and native-client support still govern acceptance |
 | Claude Code Pro | `low`, `medium`, `high`, `xhigh`, `max` | Explicit native model/effort; no automatic model fallback |
 | Kimi K3.1 Pro | Native `low`, `high`, `max` | Compatibility aliases do not form a cross-provider scale |

@@ -241,6 +241,48 @@
       "channel": "kimi-subscription",
       "thinking": "high",
       "native-profile": "kimi-subscription-agent"
+    },
+    "orchestrator-neon": {
+      "harness": "antigravity",
+      "model": "gemini-pro-orchestrator-neon",
+      "channel": "google-subscription",
+      "thinking": "",
+      "native-profile": "antigravity-native"
+    },
+    "orchestrator-carbon": {
+      "harness": "antigravity",
+      "model": "gemini-pro-orchestrator",
+      "channel": "google-subscription",
+      "thinking": "",
+      "native-profile": "antigravity-native"
+    },
+    "orchestrator-argon": {
+      "harness": "antigravity",
+      "model": "gemini-pro-orchestrator-argon",
+      "channel": "google-subscription",
+      "thinking": "",
+      "native-profile": "antigravity-native"
+    },
+    "neon-subagents": {
+      "harness": "antigravity",
+      "model": "gemini-4-neon-high",
+      "channel": "google-subscription",
+      "thinking": "high",
+      "native-profile": "antigravity-subagents"
+    },
+    "neon-swarm": {
+      "harness": "antigravity",
+      "model": "gemini-4-neon-high",
+      "channel": "google-subscription",
+      "thinking": "high",
+      "native-profile": "antigravity-swarm"
+    },
+    "kimi-max": {
+      "harness": "kimi",
+      "model": "kimi-code/k3.1-pro",
+      "channel": "kimi-subscription",
+      "thinking": "max",
+      "native-profile": "kimi-subscription-agent"
     }
   },
   "planning": {
@@ -260,6 +302,243 @@
         "agents": {
           "enabled": false
         }
+      }
+    },
+    "antigravity-native": {
+      "harness": "antigravity",
+      "options": {
+        "version": 1,
+        "mode": "native",
+        "maxObservedAgents": 4
+      }
+    },
+    "antigravity-subagents": {
+      "harness": "antigravity",
+      "options": {
+        "version": 1,
+        "mode": "subagents",
+        "maxObservedAgents": 4
+      }
+    },
+    "antigravity-swarm": {
+      "harness": "antigravity",
+      "options": {
+        "version": 1,
+        "mode": "swarm",
+        "maxObservedAgents": 4
+      }
+    }
+  },
+  "execution-policy": {
+    "version": 1,
+    "bindings": {
+      "hydrogen": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-4-hydrogen-high",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "hydrogen-local": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-4-hydrogen-medium",
+        "thinking": "medium",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "orchestrator-neon": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-pro-orchestrator-neon",
+        "thinking": "",
+        "permission": "danger-full-access",
+        "session-mode": "scoped",
+        "native-profile": "antigravity-native"
+      },
+      "neon": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-4-neon-high",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "neon-swarm": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-4-neon-high",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped",
+        "native-profile": "antigravity-swarm"
+      },
+      "opus-ui": {
+        "harness": "claude-code-pro",
+        "provider": "",
+        "channel": "claude-native",
+        "model": "claude-opus-5-5",
+        "thinking": "medium",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "opus-plan": {
+        "harness": "claude-code-pro",
+        "provider": "",
+        "channel": "claude-native",
+        "model": "claude-opus-5-5",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "sol": {
+        "harness": "codex-pro",
+        "provider": "",
+        "channel": "chatgpt-subscription",
+        "model": "gpt-6.2-sol",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "sol-plan": {
+        "harness": "codex-pro",
+        "provider": "",
+        "channel": "chatgpt-subscription",
+        "model": "gpt-6.2-sol",
+        "thinking": "medium",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "astra": {
+        "harness": "codex-pro",
+        "provider": "",
+        "channel": "chatgpt-subscription",
+        "model": "gpt-6.2-astra",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "kimi": {
+        "harness": "kimi",
+        "provider": "",
+        "channel": "kimi-subscription",
+        "model": "kimi-code/k3.1-pro",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped",
+        "native-profile": "kimi-subscription-agent"
+      },
+      "kimi-max": {
+        "harness": "kimi",
+        "provider": "",
+        "channel": "kimi-subscription",
+        "model": "kimi-code/k3.1-pro",
+        "thinking": "max",
+        "permission": "danger-full-access",
+        "session-mode": "scoped",
+        "native-profile": "kimi-subscription-agent"
+      },
+      "carbon": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-4-carbon-high",
+        "thinking": "high",
+        "permission": "danger-full-access",
+        "session-mode": "scoped"
+      },
+      "orchestrator-carbon": {
+        "harness": "antigravity",
+        "provider": "",
+        "channel": "google-subscription",
+        "model": "gemini-pro-orchestrator",
+        "thinking": "",
+        "permission": "danger-full-access",
+        "session-mode": "scoped",
+        "native-profile": "antigravity-native"
+      }
+    },
+    "routes": {
+      "default": {
+        "initial": "hydrogen",
+        "allowed": [
+          "hydrogen",
+          "hydrogen-local",
+          "orchestrator-neon"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "complex": {
+        "initial": "neon",
+        "allowed": [
+          "neon",
+          "orchestrator-neon",
+          "neon-swarm"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "frontend": {
+        "initial": "opus-ui",
+        "allowed": [
+          "opus-ui",
+          "opus-plan"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "multimodal": {
+        "initial": "opus-ui",
+        "allowed": [
+          "opus-ui",
+          "opus-plan"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "backend": {
+        "initial": "sol",
+        "allowed": [
+          "sol",
+          "sol-plan",
+          "astra"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "batch": {
+        "initial": "kimi",
+        "allowed": [
+          "kimi",
+          "kimi-max",
+          "neon-swarm"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
+      },
+      "hard": {
+        "initial": "astra",
+        "allowed": [
+          "astra",
+          "carbon",
+          "orchestrator-carbon"
+        ],
+        "quality-order": [],
+        "after-stalled-attempts": 1,
+        "max-switches": 2
       }
     }
   }

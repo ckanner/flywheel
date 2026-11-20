@@ -19,6 +19,21 @@
     "done-report-format"
   ],
   "properties": {
+    "collaboration": {
+      "type": "object", "additionalProperties": false, "required": ["version", "tasks"],
+      "description": "Reviewed parallel task split. Task write scopes must be disjoint across tasks and contained in schedule.writes. Requires the Full workflow; does not prove native child completion.",
+      "properties": {
+        "version": {"const": 1},
+        "tasks": {"type": "array", "minItems": 2, "maxItems": 8,
+          "items": {"type": "object", "additionalProperties": false, "required": ["goal", "writes"],
+            "properties": {
+              "goal": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+              "writes": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        }
+      }
+    },
     "schedule": {
       "type": "object", "additionalProperties": false, "required": ["after", "writes"],
       "properties": {

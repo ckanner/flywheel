@@ -62,6 +62,7 @@ func TestSubscriptionCLIMigrationRejectsMalformedSourceAndEmbeddedContract(t *te
 		{"bad permission bindings", func(r, _ map[string]json.RawMessage) {
 			r["permissions"] = json.RawMessage(`{"bindings":[]}`)
 		}},
+		{"enabled HTTP JEV", func(r, _ map[string]json.RawMessage) { r["jev"] = json.RawMessage(`{"enabled":true,"backend":"http"}`) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, preset := fresh(), fresh()

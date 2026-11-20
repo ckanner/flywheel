@@ -101,6 +101,7 @@ type PacketSchedule struct {
 type Packet struct {
 	InputImages          *imageinput.References `json:"input-images,omitempty"`
 	Schedule             *PacketSchedule        `json:"schedule,omitempty"`
+	Collaboration        *PacketCollaboration   `json:"collaboration,omitempty"`
 	PacketID             string                 `json:"packet-id"`
 	ContractVersion      int                    `json:"contract-version"`
 	Goal                 string                 `json:"goal"`
@@ -370,6 +371,9 @@ func ParsePacket(content []byte, file string) (*Packet, error) {
 		return nil, errf(file, "%v", err)
 	}
 	if err := imageinput.Validate(p.InputImages); err != nil {
+		return nil, errf(file, "%v", err)
+	}
+	if err := ValidateCollaboration(&p); err != nil {
 		return nil, errf(file, "%v", err)
 	}
 	return &p, nil

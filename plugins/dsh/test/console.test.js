@@ -180,6 +180,24 @@ test('run metrics distinguish parallel elapsed time from cumulative durations an
  assert.doesNotMatch(ui.container.textContent, /已观测经过时间0\.000 s/);
 });
 
+test('native collaboration metrics separate requested mode from observed children and reject invented completion',async t=>{
+ const run={id:'native-run',hostSessionId:'desktop-session',taskDir:'/repo/docs/native',cwd:'/repo',startedAt:'2026-11-20',summary:{status:'paused'}};
+ let native={version:1,requestedMode:'swarm',dispatchMethod:'slash-command',observedAgents:1,collaborationObserved:true,metadataTruncated:false,maxObservedAgents:4,hardLimit:false,guardExceeded:false,completionScope:'cli-invocation',invocationCompletion:'completed',childCompletion:'unknown',aggregateUsageStatus:'unknown',childIds:['00000000-0000-4000-8000-000000000001'],omittedChildren:0};
+ const ui=await mountPanel(t,request=>reply(request,request.action==='metrics'?{metrics:{groups:[],calls:[{harness:'antigravity',role:'execute',model:'gemini-4-neon-high',native}]}}:{runs:[run]}),{catalog:request=>reply(request,{runs:[run]})});
+ await ui.click('记录'); await ui.click('读取所选运行指标');
+ const panel=ui.container.querySelector('[data-native-observations]');
+ assert.match(panel.textContent,/请求模式swarm/);
+ assert.match(panel.textContent,/实际观察到的子智能体1/);
+ assert.match(panel.textContent,/CLI 调用完成状态completed/);
+ assert.match(panel.textContent,/子智能体完成状态unknown/);
+ assert.match(panel.textContent,/原生协作累计用量unknown/);
+ assert.match(panel.textContent,/非硬并发限制/);
+ native={...native,childCompletion:'completed'};
+ await ui.click('读取所选运行指标');
+ assert.match(ui.container.textContent,/Malformed run metrics/);
+ assert.match(ui.container.querySelector('[data-native-observations]').textContent,/子智能体完成状态unknown/);
+});
+
 test('session handoff keeps exact identity, sends prompts via stdin contract and locks automatic execution', async t => {
  let held = false;
  const key = 'execute/M01-T01';

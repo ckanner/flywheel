@@ -19,7 +19,7 @@
           "provider": {"type": "string"},
           "channel": {"type": "string", "pattern": "\\S"},
           "model": {"type": "string", "pattern": "\\S"},
-          "thinking": {"enum": ["off", "low", "medium", "high", "xhigh", "max"]},
+          "thinking": {"enum": ["", "off", "low", "medium", "high", "xhigh", "max"]},
           "permission": {"enum": ["read-only", "workspace-write", "danger-full-access"]},
           "session-mode": {"enum": ["fresh", "scoped"]}
         }

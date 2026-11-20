@@ -109,7 +109,12 @@ func TestRuntimeJEVActuallySelectsRepairFeedbackModelAndReplan(t *testing.T) {
 			fx, c := sessionFixture(t)
 			enableExecutionPolicy(c)
 			c.Packets["M01-T01"].FeedbackChecks = []contract.GateEntry{{Purpose: "Check whether the generated build artifact exists", Cmd: "test -f build/M01-T01.txt", Expect: "exit 0"}}
-			server, count := runtimeServer(t, func(map[string]string) string { return choice }, nil)
+			server, count := runtimeServer(t, func(choices map[string]string) string {
+				if _, failed := choices["repair"]; !failed {
+					return "model-0" // First choose the configured binding, then handle the real failure.
+				}
+				return choice
+			}, nil)
 			enableRuntimeJEV(t, c, server.URL)
 			sd := failingFirstDriver(t)
 			c.Drivers = sessionDriverSet(sd)
@@ -130,12 +135,14 @@ func TestRuntimeJEVActuallySelectsRepairFeedbackModelAndReplan(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.True(t, out.Green, "out=%+v feedback=%+v", out, c.State.Packets["M01-T01"].LastFeedback)
-			require.Equal(t, int32(1), count.Load())
+			require.Equal(t, int32(2), count.Load())
 			ledger := c.State.RuntimeDecisions
 			require.NotNil(t, ledger)
-			require.Equal(t, 1, ledger.Used)
-			require.Len(t, ledger.Records, 1)
-			r := ledger.Records[0]
+			require.Equal(t, 2, ledger.Used)
+			require.Len(t, ledger.Records, 2)
+			require.Equal(t, 3, ledger.Records[0].Snapshot.Version)
+			require.Equal(t, "model-0", ledger.Records[0].Action)
+			r := ledger.Records[1]
 			require.Equal(t, choice, r.Action)
 			require.True(t, r.Selection.Adopted)
 			require.True(t, r.Accounted)
@@ -152,7 +159,7 @@ func TestRuntimeJEVActuallySelectsRepairFeedbackModelAndReplan(t *testing.T) {
 			}
 			loaded := loadFixtureState(t, fx)
 			require.Equal(t, ledger.Used, loaded.RuntimeDecisions.Used)
-			require.Equal(t, choice, loaded.RuntimeDecisions.Records[0].Action)
+			require.Equal(t, choice, loaded.RuntimeDecisions.Records[1].Action)
 		})
 	}
 }
@@ -180,13 +187,14 @@ func TestRuntimeJEVOffAndLateDisableKeepBaseline(t *testing.T) {
 			sd := failingFirstDriver(t)
 			c.Drivers = sessionDriverSet(sd)
 			out, err := c.runExecuteLoop(c.Packets["M01-T01"])
-			require.NoError(t, err)
 			if !late {
+				require.NoError(t, err)
 				require.True(t, out.Green)
+				require.Equal(t, "low", sd.log.exec[1].Binding.Thinking)
 			} else {
-				require.True(t, out.Spun)
+				require.ErrorContains(t, err, "initial execution inputs changed")
+				require.Empty(t, sd.log.exec, "a changed repository must be reloaded before executing")
 			}
-			require.Equal(t, "low", sd.log.exec[1].Binding.Thinking)
 			if late {
 				require.Equal(t, int32(1), count.Load())
 				require.False(t, c.State.RuntimeDecisions.Records[0].Selection.Adopted)
@@ -209,10 +217,10 @@ func TestRuntimeJEVInterruptedIntentRecoversWithoutResending(t *testing.T) {
 		require.NoError(t, err)
 	})
 	enableRuntimeJEV(t, c, server.URL)
-	sd := failingFirstDriver(t)
-	c.Drivers = sessionDriverSet(sd)
-	_, err := c.runExecuteLoop(c.Packets["M01-T01"])
-	require.Error(t, err)
+	p := c.Packets["M01-T01"]
+	facts := runtimeFailureFacts(t, c, p)
+	c.failureDecision(p, errL1Failed, facts, false)
+	require.Error(t, c.err())
 	loaded := loadFixtureState(t, fx)
 	require.Equal(t, "pending", loaded.RuntimeDecisions.Records[0].Status)
 	c.State, c.revision, c.fatal = loaded, loaded.Revision, nil
@@ -221,7 +229,7 @@ func TestRuntimeJEVInterruptedIntentRecoversWithoutResending(t *testing.T) {
 	require.True(t, out.Green, "out=%+v feedback=%+v", out, c.State.Packets["M01-T01"].LastFeedback)
 	require.Equal(t, int32(1), count.Load())
 	require.False(t, c.State.RuntimeDecisions.Records[0].Selection.Adopted)
-	require.Equal(t, "low", sd.log.exec[1].Binding.Thinking)
+	require.Equal(t, "low", c.State.Packets[p.PacketID].ExecutionPolicy.Current)
 	require.Equal(t, 1, c.State.RuntimeDecisions.Used)
 	before := c.State.Budget.Totals.Tokens
 	require.Equal(t, "", c.resumeRuntimeDecision(c.Packets["M01-T01"]))

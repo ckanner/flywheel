@@ -76,6 +76,46 @@ repair, an approved feedback check, replanning, or an already allowed execution
 binding. Go retains workflow eligibility and the complete final gates; a successful
 feedback experiment does not complete the implementation.
 
+## 0.2 When native collaboration is used
+
+Auto still selects implementation depth; the single optional JEV switch selects
+only legal execution candidates. With JEV off, the configured initial model runs.
+With JEV on, Go may ask once before the first Execute and again after confirmed
+failure. Decisions share the existing ledger and budgets. A model, effort or
+native-strategy change cold-starts the executor; it cannot bypass plan approval,
+verification, independent Review or unknown-invocation reconciliation.
+
+Swarm is useful for work that has already been split into independent components.
+The reviewed packet can declare the following optional contract:
+
+```yaml
+schedule:
+  after: []
+  writes: ["src/parser/", "src/formatter/"]
+collaboration:
+  version: 1
+  tasks:
+    - goal: "Implement and test the parser"
+      writes: ["src/parser/"]
+    - goal: "Implement and test the formatter"
+      writes: ["src/formatter/"]
+```
+
+The declaration requires 2–8 tasks with disjoint scopes inside `schedule.writes`,
+is reviewed with the packet and makes Quick ineligible. Full, no image inputs and
+this valid declaration are required even for a statically selected Antigravity
+Swarm binding. Merely choosing `complex`/`batch` or listing multiple files does not
+trigger Swarm. Shared mutable files or a sequential design dependency should be
+resolved in the plan before admitting parallel work. The adapter requests native
+collaboration; only observed native events establish that it occurred.
+
+Read-only foreground research may use explicit subagents without the execution
+split. Evidence-only incident analysis remains tool-free and cannot spawn agents;
+an authorized repair later enters the ordinary reviewed execution workflow.
+Orchestrator can handle a complex sequential task through its fixed native model
+handoff without a Swarm split. See [Antigravity](antigravity.md) and [JEV](jev.md)
+for configuration, observed-member limits and recovery.
+
 ## 1. Choose conversation and planning models separately
 
 The current DSH conversation organizes the brief and user feedback. It does not need

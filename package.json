@@ -56,7 +56,7 @@
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.md",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md",
     "plugins/dsh/vendor/antigravity.json",
-    "plugins/dsh/vendor/dsh-subagent-antigravity-0.1.0.tgz"
+    "plugins/dsh/vendor/dsh-subagent-antigravity-0.2.0.tgz"
   ],
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
@@ -69,7 +69,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "dsh-subagent-antigravity": "file:plugins/dsh/vendor/dsh-subagent-antigravity-0.1.0.tgz",
+    "dsh-subagent-antigravity": "file:plugins/dsh/vendor/dsh-subagent-antigravity-0.2.0.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },

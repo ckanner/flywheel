@@ -57,6 +57,39 @@ deadline、输出上限和回执写入调查契约。开启 JEV 后，确认结�
 返修、已批准反馈检查、重规划或已有允许执行绑定中选择；流程资格和最终完整门禁
 仍由 Go 负责。一次反馈实验成功不等于实现完成。
 
+## 0.2 何时使用原生协作
+
+Auto 仍决定实现深度；唯一可选的 JEV 开关只在合法执行候选中做选择。JEV 关闭时运行
+配置的初始模型，开启后可在首次 Execute 前选择一次，并在确认失败后再次决策。
+决策共用既有账本和预算。更换模型、effort 或原生策略会冷启动执行器，不能跳过方案
+审批、验证、独立 Review 或 unknown 调用对账。
+
+Swarm 适合已经拆成独立组件的工作。已审查 packet 可附带以下可选契约：
+
+```yaml
+schedule:
+  after: []
+  writes: ["src/parser/", "src/formatter/"]
+collaboration:
+  version: 1
+  tasks:
+    - goal: "实现 parser 并测试"
+      writes: ["src/parser/"]
+    - goal: "实现 formatter 并测试"
+      writes: ["src/formatter/"]
+```
+
+声明要求 2–8 个子任务，写入范围互不重叠且位于 `schedule.writes` 内，与 packet 一起
+审查，并使该任务不符合 Quick 资格。即使静态指定 Antigravity Swarm，也必须 Full、无
+图片且已有合法声明。只选 complex／batch 路由或列出多个文件不会触发 Swarm。共享
+可变文件或顺序设计依赖应先在方案中处理。适配器负责请求原生协作，只有真实原生事件
+才能证明协作确实发生。
+
+只读前台调查可以使用显式子代理，不要求执行拆分；evidence-only 故障分析仍无工具且
+不能生成子代理，之后获准的修复再进入普通的已审查执行流程。复杂顺序任务可以选择
+Orchestrator 的固定原生模型交接，无需为了它制造 Swarm 拆分。配置、观察数量限制与
+恢复见 [Antigravity](antigravity.md) 和 [JEV](jev.md)。
+
 ## 1. 分开选择对话模型与规划模型
 
 当前 DSH 对话整理 brief 和用户反馈，不必在 New 之前完成整套架构。整体设计使用

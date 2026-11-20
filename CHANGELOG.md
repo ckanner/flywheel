@@ -25,6 +25,21 @@ their original language.
   cumulative accounting. Unknown dispatch or cleanup blocks continuation.
 - Route optional JEV through a frozen evidence-only subscription profile; keep its
   single switch off by default and retain explicit legacy HTTP compatibility.
+- Extend the Antigravity companion to 0.2.0 with the three fixed-effort
+  Orchestrator models, explicit subagents and controlled official CLI Swarm.
+  Record actual child observations separately from requested collaboration,
+  enforce the observed-member threshold, and reject truncated or unobserved
+  explicit collaboration. Preserve unknown remote-child lifecycle and usage.
+  Classify collaboration-policy failures and native cutoffs as non-retryable
+  requests without changing invocation outcome or cleanup evidence.
+- Add reviewed, disjoint packet collaboration scopes and require Full without
+  images before Flywheel admits Swarm. Planning gathers Antigravity subagents
+  in the foreground; native verification does not replace independent Review.
+- Supply complete execution candidates for all seven subscription routes while
+  preserving initial models and default-off JEV. When enabled, the same JEV
+  switch may choose once before first Execute and after confirmed failure,
+  sharing durable decision/switch budgets and refusing unsafe replay. Initial
+  snapshots use version 3; existing investigation/failure identities remain valid.
 - Add preview/CAS/backup migration `subscription-cli`, preserving existing user
   permissions, budgets, verification and scheduling. Freeze the historical preset.
   Update the editor, embedded entry skills and paired guides with the same contracts.

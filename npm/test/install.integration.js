@@ -141,7 +141,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     const facts = JSON.parse(doctor.stdout);
     assert.equal(facts.package, 'dsh-subagent-antigravity');
-    assert.equal(facts.version, '0.1.0');
+    assert.equal(facts.version, '0.2.0');
     assert.equal(facts.inferenceTested, false);
     assert.equal(facts.accountEntitlement, 'unknown');
     const fixture = path.join(context.fixtures, 'offline-agy.mjs');
@@ -163,7 +163,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: 'dsh-subagent-antigravity', version: '0.1.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-antigravity', version: '0.2.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');

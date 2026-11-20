@@ -861,7 +861,10 @@
             "default",
             "frontend",
             "hard",
-            "multimodal"
+            "multimodal",
+            "complex",
+            "backend",
+            "batch"
           ]
         },
         "current": {
@@ -901,7 +904,9 @@
               "kind": {
                 "enum": [
                   "quality-upgrade",
-                  "channel-fallback"
+                  "channel-fallback",
+                  "jev-model-selection",
+                  "jev-initial-selection"
                 ]
               },
               "from": {

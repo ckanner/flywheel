@@ -3,14 +3,15 @@
 [文档目录](../README.zh-CN.md) · [English](../en/antigravity.md) · 简体中文
 
 通过 `harness:"antigravity"` 使用官方本地 **`agy` CLI** 运行 Gemini。
-Flywheel 调用 `dsh-subagent-antigravity@0.1.0` 的公开 machine API；插件负责原生
+Flywheel 调用 `dsh-subagent-antigravity@0.2.0` 的公开 machine API；插件负责原生
 Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审批、证据收集、验证和交付。
 同一个插件也提供 DSH 直接任务面板和 `subagent_antigravity`。不使用 ACP，也不另接模型 API。
 
 ## 安装与能力检查
 
 要求 macOS 或 Linux、Node.js 22.18+，以及已安装并通过原生流程登录的官方
-`agy` **1.5.7+**。插件不下载原生程序、不实现登录、不复制账户 token，也不修改
+`agy` **1.5.7+**；Orchestrator 和显式 subagents／Swarm 要求 **1.5.12+** 及相应公开能力。
+插件不下载原生程序、不实现登录、不复制账户 token，也不修改
 全局设置。本版本使用 POSIX 进程组守护，不支持 Windows 执行。
 
 Flywheel 包含 `flywheel-antigravity-worker` 与
@@ -18,7 +19,7 @@ Flywheel 包含 `flywheel-antigravity-worker` 与
 中的精确配套候选。完整源码位于
 [`plugins/antigravity`](https://github.com/ckanner/flywheel/tree/main/plugins/antigravity)，
 保留独立 npm 包结构，便于直接审查。源码身份、候选字节安装、公共 registry 可用性
-和真实账号验收分别核对；不能拿其他 machine 契约的旧版本替代 0.1.0。
+和真实账号验收分别核对；不能拿其他 machine 契约的旧版本替代 0.2.0。
 
 | 环境变量 | 用途 |
 | --- | --- |
@@ -79,15 +80,66 @@ worker doctor 检查精确插件及公开 machine、lifecycle、evidence-only �
 | `carbon` | `gemini-4-carbon-high`／high | 完整设计规划 |
 | `carbon-explore` | `gemini-4-carbon-medium`／medium | 显式探索覆盖 |
 
-模型 slug 与 `thinking` 必须一致，而且模型必须出现在实际 CLI 目录中。模型不可用或
+普通 Gemini 模型的 slug 后缀与 `thinking` 必须一致，而且模型必须出现在实际 CLI 目录中。模型不可用或
 档位不兼容时明确失败，不悄悄切换 provider。请求 effort 与原生观察值分别记录；init
 没有回显 effort 时，不能证明其实际生效档位。完整跨 provider 分工见[模型策略](model-policy.md)
 和[工作流](workflow.md)。
 
 普通 Antigravity 执行要求该绑定明确授权 full-access，映射为原生 `accept-edits`、
 `always-proceed` 与 `sandbox:false`。显式订阅迁移保留既有用户权限；保留的权限不兼容
-时给出准入错误，不静默扩大权限。该 Flywheel 后端契约暂不接受 `native-profile`、
-原生图片附件或替代原生传输选项；多模态实现走配置中的 Claude 路由。
+时给出准入错误，不静默扩大权限。该后端契约不接受原生图片附件；多模态实现走配置中的 Claude 路由。
+
+## Orchestrator、子代理和 Swarm
+
+Orchestrator 是模型选择，由官方 CLI 在同一个会话中把工作交给指定规划模型和 Hydrogen。
+三个固定档位都使用 `thinking:""`；适配器不传 `--effort`，非空 effort 会被拒绝：
+
+| 模型 | 原生规划模型 | effort |
+| --- | --- | --- |
+| `gemini-pro-orchestrator-neon` | Neon | 固定 |
+| `gemini-pro-orchestrator` | Carbon | 固定 |
+| `gemini-pro-orchestrator-argon` | Argon | 固定 |
+
+子代理和 Swarm 是与模型分开配置的原生执行方式。将下面片段加入完整 Flywheel 配置，
+在阶段或候选绑定中通过 `native-profile` 选择：
+
+```json
+{
+  "native-profiles": {
+    "antigravity-subagents": {
+      "harness": "antigravity",
+      "options": {"version":1,"mode":"subagents","maxObservedAgents":4}
+    },
+    "antigravity-swarm": {
+      "harness": "antigravity",
+      "options": {"version":1,"mode":"swarm","maxObservedAgents":4}
+    }
+  }
+}
+```
+
+`native` 保留 CLI 隐式行为，不表示关闭子代理。`subagents` 明确要求委派并在当前调用
+归集结果，准入时检查原生委派工具；`swarm` 使用官方 `/swarm` 入口。命令前缀只由
+适配器生成，用户内容置于转义斜杠的 JSON 负载，其他模式仍禁用 slash commands。
+显式协作只有实际流中出现子会话元数据才能成功；已发请求、选了 Orchestrator 或根调用
+成功终态，都不能充当观察到子代理的证明。
+
+`maxObservedAgents` 为 1–8，观察到超量的不同子会话后停止调用，计入已观察的
+verifier／monitor。它不是原生并发上限或整棵子树硬上限，回执明确 `hard:false`。
+未公开的成员角色、模型、状态和用量保留 unknown。UI 分开展示请求策略和实际观察成员，
+不会生成缺少事实依据的完整 Swarm task board。子成员元数据另有累计保留字节上限；
+越限保留已验证成员 ID，标记 `metadataTruncated:true` 并使调用失败，不将缩减过的记录
+静默报告为成功。
+
+Flywheel Execute 的 Swarm 候选，无论 JEV 选择还是静态指定，都必须满足 Full、无图片、
+已有审查过的 `collaboration` 契约。契约包含 2–8 个独立子任务，写入范围互不重叠且处于
+packet 获准的 `schedule.writes` 内。规划阶段可以用前台子代理收集只读调查，不运行执行
+Swarm。原生 verifier 不能代替独立 Flywheel Review 或方案精确版本审批。
+参见[工作流](workflow.md)和[模型策略](model-policy.md)。
+
+依据：[官方模型](https://antigravity.google/docs/models)、
+[CLI 子代理](https://antigravity.google/docs/subagents?tab=cli)及
+[Swarm](https://antigravity.google/docs/swarm)。
 
 ## 排障分析只消费获准证据
 
@@ -102,6 +154,7 @@ worker doctor 检查精确插件及公开 machine、lifecycle、evidence-only �
 
 - `init.agent` 必须等于本次生成的精确 agent 身份。
 - `init.tools` 必须存在且为空数组。
+- 此阶段拒绝 Orchestrator 模型和原生协作 profile。
 - 身份缺失、继承了工具、init 异常，以及之后出现工具／子代理事件，都会拒绝本次调用。
 
 [官方 headless 契约](https://antigravity.google/docs/cli/headless/)定义完整可用工具列表，
@@ -133,10 +186,11 @@ credits 或替代模型 fallback。原生运行时已授权的 hooks 与外部�
 将精确审查过的插件产物安装到目标 DSH profile：
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.1.0.tgz
+dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.2.0.tgz
 ```
 
-打开 **Antigravity** 会话视图，选择工作区、名称、完整任务、模型和 effort，然后启动任务。
+打开 **Antigravity** 会话视图，选择工作区、名称、完整任务、模型、effort 和原生策略，然后启动任务。
+固定档位 Orchestrator 使用空 effort。
 **刷新任务**、**查看结果**、**取消**作用于本会话拥有的调用；插件设置／面板中可以检查
 环境、保存默认配置。视图直接调用公开 DSH command，无需先让父模型调用委派工具。
 
@@ -144,6 +198,7 @@ dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.1.0
 
 ```text
 /antigravity {"version":1,"action":"start","label":"排查超时","prompt":"分析以下已收集证据…","model":"gemini-4-neon-high","effort":"high","toolPolicy":"evidence-only"}
+/antigravity {"version":1,"action":"start","label":"独立模块","prompt":"按两个互不重叠的写入范围实现模块，归集两个结果并验证。","model":"gemini-4-neon-high","effort":"high","native":{"version":1,"mode":"swarm","maxObservedAgents":4}}
 /antigravity {"version":1,"action":"list"}
 /antigravity {"version":1,"action":"result","invocationId":"<返回的 UUID>"}
 ```
@@ -160,7 +215,7 @@ DSH schema、公开 machine API 和 CLI 包装用法见独立
 ## 生命周期、历史与用量
 
 每次调用拥有一个 CLI 进程和一个文本轮次。原生会话保留历史：`fresh` 创建新会话，
-scoped 恢复只接受精确自有、已终态、已清理，且目录、模型、effort、权限、工具策略和
+scoped 恢复只接受精确自有、已终态、已清理，且目录、模型、effort、权限、工具策略、完整 native 选项和
 原生设置一致的 conversation。并发恢复和未决恢复会拒绝，不猜“最近会话”、不预热池、
 不隐式重放。面板保留可读本地名称和原生 conversation ID，不声称改写原生会话名称。
 
@@ -171,9 +226,10 @@ scoped 恢复只接受精确自有、已终态、已清理，且目录、模型�
 工作，但不会把未观察到的 provider 工作写成已完成。`recoverMachine` 只读原 journal，
 不启动 CLI 或重发输入。
 
-成功必须同时满足原生成功终态、输出／schema 有效、可观察配置一致以及清理确认。
+成功必须同时满足原生成功终态、没有非空 `finished_reason`、输出／schema 有效、可观察配置一致以及清理确认。
 exit zero、软权限拒绝或连接超时均不能证明成功。token 保留原生会话／部分／未知范围，
-实际成本为 `null` 而非零。本版本不宣称完整子任务用量、远程完成证明、图片／PDF 输入
+实际成本为 `null` 而非零。CLI 调用结束和已观察成员元数据不证明整棵远程子树都完成或
+已清理。本版本不宣称完整子任务用量、远程完成证明、图片／PDF 输入
 或产物返回通道。
 
 离线协议、取消、父进程退出、evidence-only、公开 API 和真实候选安装检查，与真实账号

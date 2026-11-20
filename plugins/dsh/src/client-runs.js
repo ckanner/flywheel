@@ -19,6 +19,10 @@ Object.assign(zh, {
   runsTimelineSpans: '已闭合 / 未知区间',
   runsTimelineUnmatched: '未关联时间区间的调用',
   runsTimelineHelp: '经过时间取已观测区间的并集；并行和嵌套阶段不能直接相加。未闭合区间保持未知，Provider 内部耗时尚不可见。',
+  runsNative: 'Antigravity 原生协作观察', runsNativeRequested: '请求模式', runsNativeObserved: '实际观察到的子智能体',
+  runsNativeLimit: '观察上限（非硬并发限制）', runsNativeGuardExceeded: '已超出观察上限', runsNativeTruncated: '子事件元数据已缩减；原始调用失败',
+  runsNativeInvocation: 'CLI 调用完成状态', runsNativeChildren: '子智能体完成状态', runsNativeUsage: '原生协作累计用量',
+  runsNativeHelp: '请求协作模式不证明协作已发生。CLI 调用结束不代表所有子智能体已经结束；未知用量不记为 0。仅显示最多 20 个子智能体 ID。',
 });
 Object.assign(en, {
   runsDetails: 'Run details',
@@ -41,7 +45,44 @@ Object.assign(en, {
   runsTimelineSpans: 'Closed / unknown intervals',
   runsTimelineUnmatched: 'Calls without a matched interval',
   runsTimelineHelp: 'Elapsed time is the union of observed intervals; parallel and nested phases cannot be added together. Open intervals remain unknown. Provider-internal timing is not observed.',
+  runsNative: 'Antigravity native collaboration observations', runsNativeRequested: 'Requested mode', runsNativeObserved: 'Observed child agents',
+  runsNativeLimit: 'Observation limit (not hard concurrency)', runsNativeGuardExceeded: 'Observation limit exceeded', runsNativeTruncated: 'Child metadata was reduced; the original invocation failed',
+  runsNativeInvocation: 'CLI invocation completion', runsNativeChildren: 'Child completion', runsNativeUsage: 'Aggregate native usage',
+  runsNativeHelp: 'A requested mode does not prove collaboration occurred. CLI completion does not establish completion of every child; unknown usage is not zero. At most 20 child IDs are shown.',
 });
+
+function validNativeObservation(value) {
+  if (!record(value) || value.version !== 1 || !['native','subagents','swarm'].includes(value.requestedMode) ||
+      value.dispatchMethod !== {native:'prompt',subagents:'subagent-instruction',swarm:'slash-command'}[value.requestedMode] ||
+      !Number.isSafeInteger(value.observedAgents) || value.observedAgents < 0 || value.observedAgents > 1000 && !(value.observedAgents === 1001 && value.metadataTruncated === true) ||
+      value.collaborationObserved !== (value.observedAgents > 0) || typeof value.metadataTruncated !== 'boolean' ||
+      !(value.maxObservedAgents === null || Number.isSafeInteger(value.maxObservedAgents) && value.maxObservedAgents >= 1 && value.maxObservedAgents <= 8) ||
+      value.hardLimit !== false || value.guardExceeded !== (value.maxObservedAgents !== null && value.observedAgents > value.maxObservedAgents) ||
+      value.completionScope !== 'cli-invocation' || !['not-started','completed','failed','unknown'].includes(value.invocationCompletion) ||
+      value.childCompletion !== 'unknown' || value.aggregateUsageStatus !== 'unknown' ||
+      !Array.isArray(value.childIds) || value.childIds.length > 20 || value.childIds.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id)) ||
+      new Set(value.childIds).size !== value.childIds.length || !Number.isSafeInteger(value.omittedChildren) || value.omittedChildren < 0 ||
+      value.childIds.length + value.omittedChildren !== value.observedAgents) return false;
+  return true;
+}
+
+function NativeObservations({calls,t}) {
+  const observed = (calls ?? []).filter(call => call.harness === 'antigravity' && validNativeObservation(call.native));
+  if (!observed.length) return null;
+  return h('section',{className:css.details,'data-native-observations':true},h('h4',null,t('runsNative')),
+    h('p',{className:css.meta},t('runsNativeHelp')),
+    ...observed.map((call,index)=>{const value=call.native;return h('article',{key:call['invocation-id']||index},
+      h('h4',null,[call['packet-id'],call.role,call.model].filter(Boolean).join(' · ')),
+      h('dl',{className:css.consoleProperties},...[
+        ['runsNativeRequested',value.requestedMode],['runsNativeObserved',value.observedAgents],
+        ['runsNativeLimit',value.maxObservedAgents ?? '—'],['runsNativeInvocation',value.invocationCompletion],
+        ['runsNativeChildren',value.childCompletion],['runsNativeUsage',value.aggregateUsageStatus],
+      ].map(([label,text])=>h(React.Fragment,{key:label},h('dt',null,t(label)),h('dd',null,String(text))))),
+      value.guardExceeded&&h('p',{className:css.warningText},t('runsNativeGuardExceeded')),
+      value.metadataTruncated&&h('p',{className:css.warningText},t('runsNativeTruncated')),
+      value.childIds.length>0&&h('p',{className:css.meta},value.childIds.join(' · ')),
+      value.omittedChildren>0&&h('p',{className:css.meta},t('runtimeDecisionResultsOmitted',{count:value.omittedChildren})));}));
+}
 
 function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, active = false }) {
   const [selected, setSelected] = React.useState(''),
@@ -298,6 +339,7 @@ function RunExplorer({ control, selection, run, changeSelection, showCanvas, t, 
               ),
             ),
           ),
+          h(NativeObservations,{calls:control.metrics.calls,t}),
         )
       : h('p', { className: css.runMetricsHint }, t('runsNoMetrics')),
   );

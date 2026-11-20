@@ -8,6 +8,7 @@ Object.assign(zh, {
   cfgRouteHard: '复杂执行',
   cfgRouteMultimodal: '多模态执行',
   cfgEffortDefault: '后端默认',
+  cfgEffortFixed: '原生固定',
   cfgEffortOff: '关闭',
   cfgEffortMinimal: '最低',
   cfgEffortLow: '低',
@@ -119,6 +120,7 @@ Object.assign(en, {
   cfgRouteHard: 'Complex execution',
   cfgRouteMultimodal: 'Multimodal execution',
   cfgEffortDefault: 'Backend default',
+  cfgEffortFixed: 'Native fixed',
   cfgEffortOff: 'Off',
   cfgEffortMinimal: 'Minimal',
   cfgEffortLow: 'Low',
@@ -283,6 +285,43 @@ function configFieldErrors(values) {
   }
   return errors;
 }
+function fixedAntigravityEffort(binding) {
+  return binding?.harness === 'antigravity' && ['gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon'].includes(binding.model);
+}
+
+function executionInitial(values, route) {
+  const policy = values?.['execution-policy'];
+  const binding = policy?.bindings?.[policy?.routes?.[route]?.initial];
+  return record(binding) ? binding : null;
+}
+
+// A graphical route edit must change the actual initial executor, without
+// redefining a shared candidate or granting it any additional permission.
+function synchronizeExecutionInitial(values, route, binding) {
+  const policy = values['execution-policy'], selection = policy?.routes?.[route];
+  if (!selection) return true;
+  const previous = executionInitial(values, route), old = selection.initial;
+  if (!previous || !Array.isArray(selection.allowed) || !selection.allowed.includes(old) || !Array.isArray(selection['quality-order']) ||
+      !['harness', 'channel', 'model'].every(key => typeof binding[key] === 'string' && binding[key].trim()) ||
+      typeof binding.thinking !== 'string' || (!binding.thinking && !fixedAntigravityEffort(binding)) ||
+      !['read-only', 'workspace-write', 'danger-full-access'].includes(previous.permission) || !['fresh', 'scoped'].includes(previous['session-mode'])) return false;
+  const prefix = 'route-' + route + '-initial';
+  let candidate = prefix, suffix = 1;
+  const shared = id => Object.entries(policy.routes).some(([name, row]) => name !== route && row.allowed?.includes(id));
+  while (policy.bindings[candidate] && (candidate !== old || shared(candidate))) candidate = prefix + '-' + ++suffix;
+  if (!policy.bindings[candidate] && Object.keys(policy.bindings).length >= 32) return false;
+  const next = { ...previous, harness: binding.harness, provider: binding.provider ?? '', channel: binding.channel,
+    model: binding.model, thinking: binding.thinking };
+  if (binding['native-profile']) next['native-profile'] = binding['native-profile'];
+  else delete next['native-profile'];
+  policy.bindings[candidate] = next;
+  selection.initial = candidate;
+  selection.allowed = selection.allowed.map(id => id === old ? candidate : id);
+  selection['quality-order'] = selection['quality-order'].map(id => id === old ? candidate : id);
+  if (selection['channel-fallbacks']) selection['channel-fallbacks'] = Object.fromEntries(Object.entries(selection['channel-fallbacks']).map(([from, to]) => [from === old ? candidate : from, to === old ? candidate : to]));
+  return true;
+}
+
 function ConfigEditor({ control, selection, run, t, active = false, cache, contextKey, onClose, diagnostics }) {
   // Drafts survive task and view navigation in this live Session binding only.
   // A dirty cached draft is reused after remount; the engine's revision check
@@ -636,7 +675,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const { 'resident-session': _legacyPlanHistory, ...binding } = source;
     return binding;
   };
-  const effectiveBinding = (group, key) => draft?.[group]?.[key] ?? (group === 'loops' ? inheritedPlanningBinding(key) : undefined);
+  const effectiveBinding = (group, key) => {
+    const initial = group === 'routes' && executionInitial(draft, key);
+    if (initial) return Object.fromEntries(['harness', 'provider', 'channel', 'model', 'thinking', 'native-profile'].filter(field => Object.hasOwn(initial, field)).map(field => [field, initial[field]]));
+    return draft?.[group]?.[key] ?? (group === 'loops' ? inheritedPlanningBinding(key) : undefined);
+  };
   const bindingOrder = [
     'loops.design-plan', 'loops.design-review', 'loops.plan-review',
     'loops.plan',
@@ -653,7 +696,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     .flatMap((group) =>
       Object.entries(group === 'loops' ? { ...Object.fromEntries(Object.entries(inheritedPlanningRoles).filter(([, source]) => record(draft?.loops?.[source])).map(([role]) => [role, inheritedPlanningBinding(role)])), ...draft?.loops } : draft?.[group] ?? {})
         .filter(([, value]) => record(value))
-        .map(([key, value]) => [group, key, value]),
+        .map(([key, value]) => [group, key, group === 'routes' ? effectiveBinding(group, key) : value]),
     )
     .sort(
       (a, b) =>
@@ -712,11 +755,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     max: t('cfgEffortMax'),
   };
   const bindingEfforts = value => value.harness === 'antigravity'
-    ? (/^gemini-4-(hydrogen|neon)-/.test(value.model ?? '') ? ['low','medium','high','xhigh'] : ['low','medium','high']).map(key => [key,efforts[key]])
+    ? fixedAntigravityEffort(value) ? [['', t('cfgEffortFixed')]] : (/^gemini-4-(hydrogen|neon)-/.test(value.model ?? '') ? ['low','medium','high','xhigh'] : ['low','medium','high']).map(key => [key,efforts[key]])
     : Object.entries(efforts);
   const changeModelField = (binding, field, value) => {
     const next = {...binding,[field]:value};
     if(next.harness === 'antigravity') {
+      if(fixedAntigravityEffort(next)) { next.thinking = ''; return next; }
       if(field === 'thinking' && ['low','medium','high','xhigh'].includes(value)) next.model = (next.model ?? '').replace(/-(low|medium|high|xhigh)$/, '-' + value);
       if(field === 'model') { const match=/^gemini-4-(hydrogen|neon|carbon|argon)-(low|medium|high|xhigh)$/.exec(value);if(match)next.thinking=match[2]; }
     }
@@ -726,7 +770,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const bindingEdit = draft && bindingSelection && (() => {
     const { group, key } = bindingSelection, role = group === 'routes' ? 'execute' : key;
     const value = group === 'panel' ? draft['judge-panel'] : effectiveBinding(group, key);
-    return value ? { group, key, role, value, permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit', session: draft.sessions?.roles?.[role] ?? 'inherit' } : null;
+    const execution = group === 'routes' && executionInitial(draft, key);
+    return value ? { group, key, role, value, execution, permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit', session: draft.sessions?.roles?.[role] ?? 'inherit' } : null;
   })();
   const applySessionRole = (next, role, session) => {
     const roles = { ...next.sessions?.roles };
@@ -755,7 +800,12 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     if (field === 'session') applySessionRole(next, group === 'routes' ? 'execute' : key, value);
     else if (group === 'panel') next['judge-panel']=changeModelField(next['judge-panel'],field,value);
     else { next[group] ??= {}; next[group][key] = changeModelField(effectiveBinding(group,key),field,value); }
+    if (group === 'routes' && field !== 'session') syncRouteDraft(next, key);
     replace(next);
+  };
+  const syncRouteDraft = (next, key) => {
+    const error = synchronizeExecutionInitial(next, key, next.routes[key]) ? null : 'cfgExecutionAdvanced';
+    setTextErrors(previous => ({ ...previous, ['execution-policy.routes.' + key]: error }));
   };
   const nativeChoices = value => {
     const inherited = draft.profiles?.[value.profile]?.['native-profile'];
@@ -776,6 +826,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const next = cloneConfig(draft);
     if (group === 'panel') next['judge-panel'] = setNativeProfile(next['judge-panel'], name);
     else { next[group] ??= {}; next[group][key] = setNativeProfile(effectiveBinding(group, key), name); }
+    if (group === 'routes') syncRouteDraft(next, key);
     replace(next);
   };
   const setBindingEdit = (update) => {
@@ -791,6 +842,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       next.permissions = { ...next.permissions, bindings };
     }
     if (session !== (next.sessions?.roles?.[role] ?? 'inherit')) applySessionRole(next, role, session);
+    if (group === 'routes') syncRouteDraft(next, key);
     replace(next);
   };
   const patchBinding = (key, value) =>
@@ -909,6 +961,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     fields = h(React.Fragment, null,
       h('p', { className: css.meta }, t('planningInheritedHelp')),
       draft?.subscription?.mode==='subscription-only' && h('p',{className:css.configCallout},t('cfgSubscriptionOnly')),
+      Object.entries(textErrors).some(([key,error]) => key.startsWith('execution-policy.') && error) && h('p',{className:css.configCallout,role:'alert'},t('cfgExecutionAdvanced')),
+      record(draft['execution-policy']?.routes) && h('section',{className:css.details,'data-execution-candidates':true},
+        h('h4',null,t('cfgExecutionCandidates')), h('p',{className:css.meta},t('cfgExecutionCandidatesHelp')),
+        ...Object.entries(draft['execution-policy'].routes).map(([route,policy])=>h('article',{key:route},
+          h('h4',null,roleName('routes',route)),
+          ...(Array.isArray(policy.allowed)?policy.allowed:[]).map(id=>{const b=draft['execution-policy'].bindings?.[id],native=draft['native-profiles']?.[b?.['native-profile']]?.options;
+            return h('p',{key:id},id===policy.initial?t('cfgExecutionInitial')+' · ':'',id+' · '+(b?.model??t('notConfigured'))+' · '+(fixedAntigravityEffort(b)?t('cfgEffortFixed'):b?.thinking??'—'),native?.mode?' · '+native.mode:'');})))),
       draft.planning?.compact && h('section',{className:css.details},h('h4',null,t('cfgCompactPlanning')),
         ...['design-plan','design-review'].map(role=>field('planning.compact.'+role,t(role==='design-plan'?'cfgCompactDesign':'cfgCompactReview'),null,
           select('planning.compact.'+role,draft.planning.compact[role],Object.entries(draft.profiles??{}).map(([name,p])=>[name,name+' · '+p.model+' · '+p.thinking]),name=>replace({...draft,planning:{...draft.planning,compact:{...draft.planning.compact,[role]:name}}}))))),
@@ -926,7 +985,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             h('td', null, h('input', { className: css.editorInput, value: value.model ?? '', placeholder: value.profile || t('cfgEffortDefault'), disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleModel'), onChange: e => inlineBinding(group, key, 'model', e.target.value) })),
             h('td', null, h('select', { className: css.modeSelect, value: value.thinking ?? '', disabled: busy, 'aria-label': roleName(group, key) + ' · ' + t('consoleThinking'), onChange: e => inlineBinding(group, key, 'thinking', e.target.value) }, ...bindingEfforts(value).map(([effort,label]) => h('option', { key: effort, value: effort },label)))),
             h('td', null, h('select', { className: css.modeSelect, disabled: busy, value: value['native-profile'] ?? '__inherit__', 'aria-label': roleName(group, key) + ' · ' + t('cfgNative'), onChange: e => inlineNativeProfile(group, key, e.target.value) }, ...nativeChoices(value).map(([name, label]) => h('option', { key: name, value: name }, label)))),
-            h('td', null, ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
+            h('td', null, group === 'routes' && executionInitial(draft,key) ? t(executionInitial(draft,key)['session-mode']==='scoped'?'cfgReuse':'cfgFresh') : ['intake', 'garden'].includes(role) ? t('cfgIndependent') : h('select', { className: css.modeSelect, disabled: busy, value: draft.sessions?.roles?.[role] ?? 'inherit', 'aria-label': roleName(group, key) + ' · ' + t('consoleSession'), onChange: e => inlineBinding(group, key, 'session', e.target.value) }, ...sessionChoices.map(([v, label]) => h('option', { key: v, value: v }, label))), planConflict && h('div', { className: css.settingsHelp }, t('cfgPlanConflict'), h(Button, { disabled: busy, onClick: () => inlineBinding(group, key, 'session', policy) }, t('cfgApplyPolicy')))));
         })))),
       h('p', { className: css.settingsHelp }, t('consoleRouteSession')),
       h('p', { className: css.settingsHelp }, t('cfgNativeHelp')));
@@ -949,7 +1008,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           h('p', { className: css.configCallout }, t('cfgJevSend')),
           draft.jev.backend === 'subscription'
             ? field('jev.profile',t('cfgJevSubscriptionProfile'),t('cfgJevSubscriptionHelp'),
-                select('jev.profile',draft.jev.profile ?? 'hydrogen-local',Object.entries(draft.profiles ?? {}).filter(([,p])=>p.harness==='antigravity').map(([name,p])=>[name,name+' · '+p.model]),v=>update('jev','profile',v)))
+                select('jev.profile',draft.jev.profile ?? 'hydrogen-local',Object.entries(draft.profiles ?? {}).filter(([,p])=>p.harness==='antigravity'&&!p.provider&&!p['native-profile']&&!fixedAntigravityEffort(p)).map(([name,p])=>[name,name+' · '+p.model]),v=>update('jev','profile',v)))
             : h(React.Fragment,null,
           field(
             'jev.endpoint',
@@ -989,6 +1048,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       h(Button, { disabled: busy, onClick: () => setBindingSelection(null) }, t('cfgBindingDone')),
       h('h4', { className: css.heading }, roleName(bindingEdit.group, bindingEdit.key))),
     h('p', { className: css.settingsHelp }, t('cfgBindingSaveHelp')),
+    Object.entries(textErrors).some(([key,error]) => key.startsWith('execution-policy.') && error) && h('p',{className:css.configCallout,role:'alert'},t('cfgExecutionAdvanced')),
         field(
           'binding.resource',
           t('consoleResource'),
@@ -1027,7 +1087,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
                 : [],
             ),
             (v) => {
-              if (v) patchBinding('thinking', v);
+              if (v || fixedAntigravityEffort(bindingEdit.value)) patchBinding('thinking', v);
               else
                 setBindingEdit((old) => {
                   const value = { ...old.value };
@@ -1043,8 +1103,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         field(
           'binding.permission',
           t('permission'),
-          t('consolePermissionEffective'),
-          select(
+          bindingEdit.execution ? t('cfgExecutionAuthority') : t('consolePermissionEffective'),
+          bindingEdit.execution ? h('span',null,bindingEdit.execution.permission) : select(
             'binding.permission',
             bindingEdit.permission,
             [
@@ -1060,8 +1120,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           field(
             'binding.session',
             t('consoleSession'),
-            bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
-            select(
+            bindingEdit.execution ? t('cfgExecutionAuthority') : bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
+            bindingEdit.execution ? h('span',null,t(bindingEdit.execution['session-mode']==='scoped'?'cfgReuse':'cfgFresh')) : select(
               'binding.session',
               bindingEdit.session,
               [
@@ -1324,10 +1384,18 @@ Object.assign(en, { cfgPlanConflict: 'The legacy Plan history switch differs', c
 Object.assign(zh, {
   cfgNative: '原生能力', cfgNativeNone: '不启用原生能力配置',
   cfgNativeHelp: '选择与当前后端匹配的能力配置；在高级 JSON 中编辑 native-profiles。JEV 关闭时仍生效，实际可用性以运行回执为准。',
+  cfgExecutionCandidates: '执行候选', cfgExecutionInitial: '初始配置',
+  cfgExecutionCandidatesHelp: '模型列表显示实际初始配置；编辑路线会同步该路线的独立初始候选。JEV 只能在列出的合法候选中选择。完整候选与切换规则在高级 JSON 中编辑。',
+  cfgExecutionAuthority: '此路线的执行策略显式固定权限与会话。请在高级 JSON 中编辑完整候选，模型编辑不会扩大权限。',
+  cfgExecutionAdvanced: '无法从当前编辑确定完整执行候选。请补全模型与思考等级，或在高级 JSON 中审查 execution-policy；尚未保存。',
 });
 Object.assign(en, {
   cfgNative: 'Native capabilities', cfgNativeNone: 'No native capability profile',
   cfgNativeHelp: 'Select a profile for this backend; edit native-profiles in advanced JSON. Profiles work with JEV off. Runtime receipts establish actual availability.',
+  cfgExecutionCandidates: 'Execution candidates', cfgExecutionInitial: 'Initial configuration',
+  cfgExecutionCandidatesHelp: 'The model table shows the actual initial binding. Editing a route updates its own initial candidate. JEV selects only from legal listed candidates. Edit complete candidates and switch rules in advanced JSON.',
+  cfgExecutionAuthority: 'This execution policy explicitly fixes permissions and sessions. Edit complete candidates in advanced JSON; changing a model does not expand permissions.',
+  cfgExecutionAdvanced: 'This edit does not determine a complete execution candidate. Complete the model and effort or review execution-policy in advanced JSON. Nothing was saved.',
 });
 
 Object.assign(zh, { cfgBindingDone: '← 返回模型列表', cfgBindingSaveHelp: '修改后点击下方“保存修改”，统一保存到当前作用域。' });

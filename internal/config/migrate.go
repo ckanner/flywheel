@@ -251,6 +251,18 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 	if options.Preset == "subscription-cli" && report.Candidate.PermissionMode("investigate", "antigravity") != "read-only" {
 		report.Notes = append(report.Notes, "permissions.bindings.loops.investigate was preserved; evidence-only Antigravity analysis requires read-only, so review and change this explicit override before running investigation analysis")
 	}
+	if options.Preset == "subscription-cli" && report.Original.ExecutionPolicy == nil {
+		var fixed []string
+		for name, binding := range report.Candidate.Routes {
+			if report.Candidate.PermissionMode("execute", binding.Harness, "routes."+name) != "danger-full-access" {
+				fixed = append(fixed, name)
+			}
+		}
+		if len(fixed) > 0 {
+			slices.Sort(fixed)
+			report.Notes = append(report.Notes, "execution-policy candidates were not added for routes "+strings.Join(fixed, ", ")+": preserved permission is not danger-full-access; fixed route bindings remain unchanged")
+		}
+	}
 	report.Changed = info == nil || len(report.Changes) > 0
 	if !report.Changed {
 		candidate = raw // Never reformat a semantically unchanged user file.

@@ -55,8 +55,11 @@ func (c *Context) failureActions(packet *contract.Packet, code errs.ErrorCode, s
 				continue
 			}
 			b := c.Config.ExecutionPolicy.Bindings[id]
+			if c.executionCandidateError(packet, b) != nil {
+				continue
+			}
 			actionID := "model-" + strconv.Itoa(slices.Index(route.Allowed, id))
-			add(actionID, decision.Model, boundedDecisionText(fmt.Sprintf("Continue repair using approved binding %s: harness=%s provider=%s channel=%s model=%s effort=%s permission=%s session=%s. This requires a cold start and does not add attempts.", id, b.Harness, b.Provider, b.Channel, b.Model, b.Thinking, b.Permission, b.SessionMode), 1024), []any{id, b, record.Identity, record.Current, record.Switches})
+			add(actionID, decision.Model, c.executionChoiceDescription(id, b), []any{id, b, record.Identity, record.Current, record.Switches})
 			index := slices.Index(route.QualityOrder, record.Current)
 			if spin && code == errL1Failed && index >= 0 && index+1 < len(route.QualityOrder) && route.QualityOrder[index+1] == id {
 				baseline = actionID
@@ -138,7 +141,7 @@ func (c *Context) runtimeJEVConfig(frozen *config.JEVConfig) (*config.JEVConfig,
 	if cfg.Budget.Enforce == "hard" || c.Config.Budget.Enforce == "hard" {
 		return nil, "hard-budget-without-enforceable-bound"
 	}
-	if sessionHash(cfg.ExecutionPolicy) != sessionHash(c.Config.ExecutionPolicy) {
+	if executionChoiceConfigurationHash(cfg) != executionChoiceConfigurationHash(c.Config) {
 		return nil, "execution-policy-changed"
 	}
 	j := cfg.JEV
@@ -526,6 +529,9 @@ func (c *Context) resumeRuntimeDecision(packet *contract.Packet) string {
 	for _, record := range ledger.Records {
 		if record.ID != ps.PendingStrategy {
 			continue
+		}
+		if record.Snapshot.Version == 3 {
+			return c.resumeInitialExecutionDecision(packet, record)
 		}
 		if record.Status == "feedback-running" || record.Status == "feedback-unknown" || record.Status == "feedback-stale" {
 			c.fatal = fmt.Errorf("feedback action outcome requires reconciliation; refusing replay")

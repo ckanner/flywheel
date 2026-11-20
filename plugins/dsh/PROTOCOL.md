@@ -429,23 +429,37 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 ## Antigravity worker
 
-`flywheel-antigravity-worker` 固定 `dsh-subagent-antigravity@0.1.0`，只调用公开
+`flywheel-antigravity-worker` 固定 `dsh-subagent-antigravity@0.2.0`，只调用公开
 machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
 均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
 readOnlyRecovery 及 evidenceOnly:verified-empty-init-tools，缺失即拒绝。
 
 Start 字段为 type/protocol/requestId/cwd/model/reasoningEffort/permissionMode/prompt/
 timeoutMs，以及可选 idleTimeoutMs/sessionTitle/threadMode/threadId/recoveryDirectory，
-另必需 subscription version 1；evidenceOnly 是可选布尔值。普通执行只接受
+另必需 subscription version 1；evidenceOnly 是可选布尔值；native 可选
+`{version:1,mode:"native"|"subagents"|"swarm",maxObservedAgents?:1..8}`。普通执行只接受
 permissionMode:danger-full-access，映射 accept-edits/always-proceed；evidenceOnly:true
 必须 read-only，映射 plan/request-review 并在提示词前核对实际空tools及独占agent身份。
-不接受 native overrides、images、任意 provider、API key或未识别字段。
+evidence-only 拒绝 native overrides 和 Orchestrator。始终不接受 images、任意
+provider、API key或未识别字段。mode/native 选项完整进入会话与恢复身份。
 
-model必须是完整gemini-4家族/档位，后缀与reasoningEffort相同。官方init须确认实际
+普通 model 必须是完整 gemini-4 家族/档位，后缀与 reasoningEffort 相同。
+三个精确 Orchestrator slug（gemini-pro-orchestrator-neon、gemini-pro-orchestrator、
+gemini-pro-orchestrator-argon）固定空 effort，不传 --effort。官方init须确认实际
 cwd/model/permission/conversation，evidence-only另确认agent和tools。effort/config未暴露
 时不伪造observed。新调用保留独立原生history；resume必须精确本适配器拥有的已确认
 conversation，不使用latest。v3的Go ACK先持久化生命周期；非终态不提前报告cleanup，
-无原生terminal时本地terminal仍保留unknown。缺失/坏帧/取消/WAITING/软拒绝不算成功。
+无原生terminal时本地terminal仍保留unknown。缺失/坏帧/取消/WAITING/软拒绝或非空
+finished_reason 不算成功。显式 subagents/swarm 需要实际 child conversation 元数据；
+没有观察到成员返回 collaboration-not-observed，不伪造派发或工具日志。
+
+Swarm 入口只由适配器合成 /swarm，任务内容放入将所有斜杠转义的 JSON 负载；
+普通和 subagents 调用保持禁用 slash commands。maxObservedAgents 是不同已观察成员
+的停止阈值，包含观察到的 verifier/monitor，hard:false；不是原生并发或整树硬限额。
+native 回执将 requested mode、collaborationObserved、实际子成员与 CLI 调用完成分别
+记录；缺少的子成员模型/状态/用量/远程清理仍 unknown，不能套用完整子树生命周期。
+子成员元数据累计越限会保留可信成员 ID、标记 metadataTruncated 并失败。metrics 仅投影
+有界的请求/观察摘要，不将 root 完成转写为子树完成；原始 prompt/工具正文不进入摘要。
 
 终态envelope仍为 {protocol,type:"result",requestId,adapter,receipt,error}。receipt保留
 原生usage、configuration、subscription、execution、cleanup、providerWork和failure。
@@ -832,7 +846,10 @@ replan-running 表示重规划未收尾，恢复须核对原 Plan 会话，不�
 画布投影移除原始 snapshot／facts 和目标配置，最多保留末 10 条记录，
 `omitted-records` 是更早省略的条数。feedback.results 的 `omitted-items` 标记也会明确展示。
 实际模型切换来自 packet.execution-policy.history 的 from／to、before／after、kind、
-reason、attempt 与 at；jev-model-selection 标记已采用的 JEV 模型选择。UI 不从 model-N
+reason、attempt 与 at；jev-initial-selection 标记首轮，jev-model-selection 标记确认失败
+后的已采用选择。首轮 Snapshot v3 冻结完整 binding/native options、目标、验收和协作
+声明；调查 v1 与失败 v2 的历史身份保持兼容。两类决策共享 used/max-calls、切换预算和
+恢复规则；首次选择在业务派发前持久化，不因重启再次发问。UI 不从 model-N
 推测模型，不把配置变更覆盖成已启动的会话，节点模型仍来自实际会话或原始运行绑定。
 节点详情可查看所属 packet 的记录；客户端对新增结构做类型校验，畸形回执保留上次
 有效视图并要求刷新，禁止基于未确认状态直接 launch／start。

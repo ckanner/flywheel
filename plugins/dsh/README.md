@@ -62,7 +62,7 @@ Installing a desktop plugin does not change the parent conversation's provider.
 
 | Backend | Setup and execution path |
 | --- | --- |
-| Antigravity | Bundled `dsh-subagent-antigravity@0.1.0` machine API → official installed `agy` CLI and native Google login; no ACP |
+| Antigravity | Bundled `dsh-subagent-antigravity@0.2.0` machine API → official installed `agy` CLI and native Google login; no ACP |
 | Claude Code Pro | Exact optional peer `0.7.0` in the worker dependency tree → official Agent SDK → local Claude Code subscription |
 | Codex Pro | Bundled `0.10.2` machine API → official app-server with ChatGPT login |
 | Kimi | Minimal owned native agent profile with managed Kimi Code OAuth; strict subscription mode rejects print |

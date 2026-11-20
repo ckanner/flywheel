@@ -481,7 +481,9 @@ function readReply(reply, request) {
   if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
   if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(record))) throw new Error('Malformed run index');
-  if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups))) throw new Error('Malformed run metrics');
+  if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups) ||
+      (value.metrics.calls != null && (!Array.isArray(value.metrics.calls) || value.metrics.calls.length > 200 || value.metrics.calls.some(call => !record(call) ||
+        (call.native != null && (call.harness !== 'antigravity' || !validNativeObservation(call.native)))))))) throw new Error('Malformed run metrics');
   if (request.action === 'config' && !configurationValid(value.configuration)) {
     throw new Error('Flywheel control returned malformed model configuration');
   }

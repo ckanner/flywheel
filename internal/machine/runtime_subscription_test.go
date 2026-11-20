@@ -44,8 +44,12 @@ func runtimeSubscriptionReply(t *testing.T, prompt string) decision.Subscription
 	for id := range request.Questions["action"].Criteria {
 		probabilities[id] = 0
 	}
-	probabilities["repair"] = 1
-	raw, err := json.Marshal(map[string]any{"action-id": "repair", "applicability": 1, "choice-confidence": 1, "probabilities": probabilities})
+	selected := "repair"
+	if _, present := probabilities[selected]; !present {
+		selected = "model-1"
+	}
+	probabilities[selected] = 1
+	raw, err := json.Marshal(map[string]any{"action-id": selected, "applicability": 1, "choice-confidence": 1, "probabilities": probabilities})
 	require.NoError(t, err)
 	return decision.SubscriptionResult{Model: "gemini-4-hydrogen-low", Text: string(raw), Native: decision.NativeExecution{RequestID: "jev-runtime-one", Dispatch: "accepted", Outcome: "completed", CleanupConfirmed: true, ReceiptHash: strings.Repeat("a", 64)}}
 }

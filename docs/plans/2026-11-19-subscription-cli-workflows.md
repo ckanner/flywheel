@@ -530,6 +530,11 @@ Antigravity 原生 Orchestrator、Swarm 和 browser 子 Agent 也适用这些边
 
 ### 13.2.1 2026-11-20 已批准的编排与自适应增补
 
+实施记录：本增补已落实为 Antigravity 0.2.0、Flywheel 原生协作配置及 JEV 首轮选择。
+源码、独立复核、实际包安装与未验证边界见[增补验收记录](../validation/2026-11-20-orchestration-adaptive-selection.md)。
+现行参数以[Antigravity 指南](../zh-CN/antigravity.md)、[JEV 指南](../zh-CN/jev.md)和
+[完整模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)为准。
+
 本增补来自用户对 CLI Spawn／编排和既有 JEV 开关的进一步确认，并已授权在同一 PR 完整实施。`a90aff4` 是补充实施前的已验证源码基线：普通 CLI 调用与部分子任务元数据已接入，Orchestrator、显式 Swarm 与默认执行候选尚未接通；已有 JEV 模型选择仅在确认失败后运行。本节定义要完成的行为，不把此前 CI 结果算作新增行为的验收。
 
 #### 官方能力与接入契约

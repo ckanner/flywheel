@@ -58,10 +58,13 @@ func (c *Context) executionBinding(packet *contract.Packet) (fallback.Binding, s
 	}
 	if record == nil {
 		binding, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
+		if err == nil {
+			err = c.executionCandidateError(packet, config.ExecutionBinding{Harness: binding.Harness, NativeProfile: binding.NativeProfile})
+		}
 		return binding, c.Config.PermissionMode("execute", binding.Harness, "routes."+packet.Route), "", err
 	}
 	b := c.Config.ExecutionPolicy.Bindings[record.Current]
-	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, nil
+	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, c.executionCandidateError(packet, b)
 }
 
 func executionConfiguration(b config.ExecutionBinding) state.SessionConfiguration {
@@ -70,6 +73,9 @@ func executionConfiguration(b config.ExecutionBinding) state.SessionConfiguratio
 
 func (c *Context) switchExecutionPolicy(packet *contract.Packet, record *state.ExecutionPolicyRecord, route config.ExecutionRoute, next, kind, reason string) bool {
 	if next == "" || next == record.Current || !slices.Contains(route.Allowed, next) || record.Switches >= route.MaxSwitches {
+		return false
+	}
+	if c.executionCandidateError(packet, c.Config.ExecutionPolicy.Bindings[next]) != nil {
 		return false
 	}
 	// A new model cannot bypass an unconsumed or unknown invocation. The normal

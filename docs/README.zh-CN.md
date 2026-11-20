@@ -47,6 +47,9 @@
 调查轮次。当前行为见[模型策略](zh-CN/model-policy.md)、[方案设计与审查](zh-CN/reviewed-planning.md)
 和[有界调查](zh-CN/investigation.md)。源码及候选验收与 registry 发行、真实账号权益分别记录。
 源码检查、候选身份和验证边界见[实施及复审记录](validation/2026-11-20-subscription-cli-workflows.md)。
+[编排与首轮选择增补](validation/2026-11-20-orchestration-adaptive-selection.md)记录
+Antigravity 0.2.0 的 Orchestrator／子代理／Swarm、受审查协作范围、JEV 首轮选择、
+共享恢复预算和独立复核。
 
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 

@@ -27,13 +27,13 @@ import (
 // Delay the optional choice so each safety test controls the dispatch boundary.
 func runtimeFailureFacts(t *testing.T, c *Context, packet *contract.Packet) circuitbreaker.ProgressEvidence {
 	t.Helper()
+	enabled := c.Config.JEV.Enabled
+	c.Config.JEV.Enabled = false
 	c.Drivers = sessionDriverSet(failingFirstDriver(t))
 	out, err := c.executeStep(packet)
 	require.NoError(t, err)
 	require.True(t, out.Success)
 	require.False(t, c.l1Step(packet).Pass)
-	enabled := c.Config.JEV.Enabled
-	c.Config.JEV.Enabled = false
 	require.Equal(t, "failed", c.failAttempt(packet, errL1Failed, []string{packet.Acceptance.L1[0].Cmd}, nil))
 	c.Config.JEV.Enabled = enabled
 	require.NoError(t, c.err())
@@ -420,4 +420,47 @@ func TestRuntimePendingRecoveryRejectsStaleInputsAndNeverResends(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRuntimeLegacyV2ModelDescriptionsRecoverTheirOriginalJournal(t *testing.T) {
+	fx, c := sessionFixture(t)
+	enableExecutionPolicy(c)
+	server, calls := runtimeServer(t, func(map[string]string) string { return "model-1" }, nil)
+	enableRuntimeJEV(t, c, server.URL)
+	p := c.Packets["M01-T01"]
+	facts := runtimeFailureFacts(t, c, p)
+	r := pendingRuntimeFixture(t, c, p, facts, false)
+	for index, id := range c.Config.ExecutionPolicy.Routes[p.Route].Allowed {
+		b := c.Config.ExecutionPolicy.Bindings[id]
+		for i := range r.Snapshot.Actions {
+			if r.Snapshot.Actions[i].ID == fmt.Sprintf("model-%d", index) {
+				// Exact v2 model wording before initial-selection support.
+				r.Snapshot.Actions[i].Description = fmt.Sprintf("Continue repair using approved binding %s: harness=%s provider=%s channel=%s model=%s effort=%s permission=%s session=%s. This requires a cold start and does not add attempts.", id, b.Harness, b.Provider, b.Channel, b.Model, b.Thinking, b.Permission, b.SessionMode)
+			}
+		}
+	}
+	c.save()
+	require.NoError(t, c.err())
+	oldSnapshot := *r.Snapshot
+	receipt, err := decision.Evaluate(c.decisionContext(), filepath.Join(c.TaskDir, ".investigation", "runtime-decisions"), oldSnapshot, c.Config.JEV.DecisionPolicy(), c.decisionOptions(&c.Config.JEV))
+	require.NoError(t, err)
+	require.Equal(t, "ok", receipt.Status)
+	loaded := loadFixtureState(t, fx)
+	c.State, c.revision = loaded, loaded.Revision
+	before := c.State.Budget.Totals.Tokens
+	require.Equal(t, "failed", c.resumeRuntimeDecision(p))
+	require.NoError(t, c.err())
+	recovered := c.State.RuntimeDecisions.Records[0]
+	require.Equal(t, "ok", recovered.Receipt.Status)
+	require.Equal(t, receipt.QuestionHash, recovered.Receipt.QuestionHash)
+	require.Equal(t, receipt.SnapshotHash, recovered.Receipt.SnapshotHash)
+	require.Equal(t, "model-1", recovered.Receipt.ActionID)
+	require.False(t, recovered.Selection.Adopted, "new candidate wording cannot authorize an old proposal")
+	require.Equal(t, "repair", recovered.Action)
+	require.Equal(t, "stale", recovered.Status)
+	require.Equal(t, before+20, c.State.Budget.Totals.Tokens)
+	require.Empty(t, c.resumeRuntimeDecision(p))
+	require.Equal(t, before+20, c.State.Budget.Totals.Tokens)
+	require.Equal(t, int32(1), calls.Load(), "recovery must read the old journal without resending")
+	require.Empty(t, c.State.Packets[p.PacketID].ExecutionPolicy.History)
 }

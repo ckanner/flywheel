@@ -140,6 +140,9 @@ func (c *Config) validateExecutionPolicy() error {
 // These are the documented adapter request vocabularies. Backends still verify
 // model availability and actual admission; these values are not quality ranks.
 func executionEffortSupported(b ExecutionBinding) bool {
+	if b.Harness == "antigravity" {
+		return ValidateAntigravityBinding(b.Model, b.Thinking) == nil
+	}
 	values := []string{"low", "medium", "high", "xhigh", "max"}
 	if b.Harness == "kimi" {
 		values = []string{"low", "high", "max"}

@@ -2,7 +2,6 @@ package contract
 
 import (
 	"fmt"
-	"path"
 	"strings"
 )
 
@@ -18,8 +17,7 @@ func ValidateSchedules(packets []*Packet) error {
 				}
 			}
 			for _, scope := range schedule.Writes {
-				clean := strings.TrimSuffix(scope, "/")
-				if clean == "" || clean == "." || path.IsAbs(clean) || path.Clean(clean) != clean || strings.HasPrefix(clean, "../") || strings.ContainsAny(clean, "\\\x00\r\n*?[]") {
+				if !normalizedWriteScope(scope) {
 					return fmt.Errorf("%s: write scope must be a normalized relative path: %q", packet.PacketID, scope)
 				}
 			}

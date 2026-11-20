@@ -165,7 +165,7 @@ func (j JEVConfig) validateTarget() error {
 // profile. No provider fallback or model-selected command is available here.
 func (c *Config) ResolveJEVSubscription() (*decision.SubscriptionBinding, error) {
 	p, ok := c.Profiles[c.JEV.Profile]
-	if !ok || p.Harness != "antigravity" || p.Provider != "" || p.NativeProfile != "" {
+	if !ok || p.Harness != "antigravity" || p.Provider != "" || p.NativeProfile != "" || AntigravityOrchestrator(p.Model) {
 		return nil, fmt.Errorf("jev subscription profile must name a tool-free Antigravity binding without native children")
 	}
 	if err := ValidateAntigravityBinding(p.Model, p.Thinking); err != nil {

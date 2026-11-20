@@ -37,6 +37,23 @@ JEV **默认关闭**。额外的 `fable` profile 为 `claude-fable-5-2 / high`�
 
 `multimodal` 选择 Claude 路由。packet 的版本化 `input-images` 契约将真实 PNG/JPEG/GIF/WebP 字节经 Execute → worker → Claude 公开 machine API → Agent SDK 送入原生请求。每条仓库相对路径同时绑定 MIME 类型和 SHA-256；引擎派发前校验文件、解码和大小，并把输入身份保留到验证与恢复。最多四张，每张 4 MiB、合计 8 MiB。提示词中的文件名及 DSH 聊天附件不会自动导入。默认独立 Review 检查代码、验收与冻结引用，不声称已看到这些图片。Antigravity 首版接受文本。见[图片输入](image-inputs.md)、[Claude](claude-code-pro.md)与 [Antigravity](antigravity.md)。
 
+## 首次选择与失败调整
+
+默认配置同时提供以下完整执行候选，初始项保持上表；`jev.enabled` 仍默认关闭。每条 route 的 `quality-order` 为空，`max-switches` 为 2，所以默认关闭 JEV 时不自动遍历候选。开启后，在首轮 Execute 之前和已确认失败后，JEV 可从经过 Go 资格检查的允许集中选择；所有阶段不会每次都重新分类。
+
+| Route | 初始项与允许候选 |
+| --- | --- |
+| default | Hydrogen high / Hydrogen medium / Orchestrator Neon |
+| complex | Neon high / Orchestrator Neon / Neon high Swarm |
+| frontend、multimodal | Opus medium / Opus high |
+| backend | Sol high / Sol medium / Astra high |
+| batch | Kimi high / Kimi max / Neon high Swarm |
+| hard | Astra high / Carbon high / Orchestrator Carbon |
+
+Swarm 只在 Full、无图片且 packet 有已审 `collaboration` 分工时进入选择；各子任务写入范围必须互斥并属于原范围。原生普通子任务、固定双模型 Orchestrator 与 Swarm 是不同策略。三种 Orchestrator 均可手动选择，完整标识见 [Antigravity](antigravity.md)，`thinking:""` 表示原生固定配置；决策模型不能给它再设 high/xhigh。图片候选只保留实际支持图片传输的 Claude 绑定。
+
+每次实际改变模型、effort 或原生配置都冻结完整绑定、冷启动并记录原因，共用原尝试、切换和调用预算。JEV 不读取实时套餐余额，不声称已经测得候选质量或速度；候选不是固定能力排名。无合法备选时直接使用初始配置；未知执行或清理先核对。详见 [JEV](jev.md)。
+
 ## 规划角色与当前对话
 
 New/Task 登记带代码事实的 brief，设计和审查由引擎调用实际角色。`design-granularity:compact` 必须有具体证据、理由，且没有显式 Full 要求；一次产生设计与单 packet，独立角色对两个精确版本联合审查。范围不明、架构、迁移及多部分工程选 `system`；引擎可从 compact 升级，保留原授权和预算。
@@ -68,6 +85,7 @@ Kimi 使用 `kimi-subscription-agent`：native agent 模式、Agents 关闭。�
 | --- | --- | --- |
 | Gemini Hydrogen / Neon | `low`、`medium`、`high`、`xhigh` | 模型后缀必须与 thinking 一致 |
 | Gemini Carbon / Argon | `low`、`medium`、`high` | 拒绝 xhigh，不静默映射 |
+| Orchestrator Neon / Carbon / Argon | 固定，`thinking:""` | 同会话由指定规划模型和 Hydrogen 交接，不传 `--effort` |
 | Codex Pro | `low`、`medium`、`high`、`xhigh`、`max` | 仍受具体模型与本机客户端准入限制 |
 | Claude Code Pro | `low`、`medium`、`high`、`xhigh`、`max` | 显式原生模型与 effort，不自动换模型 |
 | Kimi K3.1 Pro | 原生 `low`、`high`、`max` | 兼容别名不代表跨 provider 同一尺度 |

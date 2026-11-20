@@ -789,6 +789,50 @@ test('subscription resource choices exclude DSH providers while legacy choices r
   });
 });
 
+test('Orchestrator edits update the actual route initial candidate without changing a shared binding', async t => {
+  const baseline = {harness:'antigravity',provider:'',channel:'google-subscription',model:'gemini-4-neon-high',thinking:'high'};
+  const initial = {...baseline,permission:'danger-full-access','session-mode':'scoped'};
+  const policy = {version:1,bindings:{shared:initial},routes:Object.fromEntries(['default','complex'].map(route=>[route,{initial:'shared',allowed:['shared'],'quality-order':[],'after-stalled-attempts':1,'max-switches':2}]))};
+  const ui = await mountPanel(t,editorResponder({subscription:{version:1,mode:'subscription-only'},routes:{default:baseline,complex:baseline},channels:{'google-subscription':{harness:'antigravity','env-key':null}},'execution-policy':policy,
+    'native-profiles':{'agy-native':{harness:'antigravity',options:{version:1,mode:'native',maxObservedAgents:4}}}}));
+  await ui.click('设置'); await ui.click('模型与会话');
+  assert.match(ui.container.querySelector('[data-execution-candidates]').textContent,/初始配置 · shared/);
+  await act(async()=>ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  await input(ui,'模型','gemini-pro-orchestrator-neon');
+  assert.deepEqual([...field(ui,'推理等级').options].map(option=>[option.value,option.textContent]),[['','原生固定']]);
+  await input(ui,'原生能力','agy-native');
+  await ui.click('保存修改');
+  const values=ui.requests.at(-1).editor.values;
+  assert.equal(values.routes.default.model,'gemini-pro-orchestrator-neon');
+  const actual=values['execution-policy'].bindings[values['execution-policy'].routes.default.initial];
+  assert.equal(actual.model,values.routes.default.model);
+  assert.equal(actual.thinking,'');
+  assert.equal(actual['native-profile'],'agy-native');
+  assert.equal(actual.permission,'danger-full-access');
+  assert.equal(actual['session-mode'],'scoped');
+  assert.deepEqual(values['execution-policy'].bindings.shared,initial);
+  assert.deepEqual(values['execution-policy'].routes.complex,policy.routes.complex);
+  assert.equal(Object.hasOwn(values,'permissions'),false);
+  assert.equal(Object.hasOwn(values,'sessions'),false);
+});
+
+test('incomplete execution candidate edits require review and JEV excludes native delegation profiles',async t=>{
+  const baseline={harness:'antigravity',provider:'',channel:'google-subscription',model:'gemini-4-neon-high',thinking:'high'};
+  const ui=await mountPanel(t,editorResponder({routes:{default:baseline},'execution-policy':{version:1,bindings:{initial:{...baseline,permission:'danger-full-access','session-mode':'scoped'}},routes:{default:{initial:'initial',allowed:['initial'],'quality-order':[],'after-stalled-attempts':1,'max-switches':2}}},
+    profiles:{ordinary:baseline,orchestrator:{...baseline,model:'gemini-pro-orchestrator-neon',thinking:''},native:{...baseline,'native-profile':'agy'}},
+    jev:{enabled:true,backend:'subscription',profile:'ordinary','max-calls':8}}));
+  await ui.click('设置'); await ui.click('模型与会话');
+  await act(async()=>ui.container.querySelector('[data-binding-id="routes.default"] button').click());
+  await input(ui,'模型','');
+  assert.equal(ui.button('保存修改').disabled,true);
+  assert.match(ui.container.textContent,/无法从当前编辑确定完整执行候选/);
+  assert.equal(ui.requests.filter(r=>r.action==='config-save').length,0);
+  await input(ui,'模型','gemini-4-neon-high');
+  await ui.click('← 返回模型列表');
+  await ui.click('JEV');
+  assert.deepEqual([...field(ui,'判断模型配置').options].map(option=>option.value),['ordinary']);
+});
+
 test('node dialogs freeze revision and a newer snapshot cannot silently reuse a confirmation', async (t) => {
   let revision = 7;
   const ui = await mountPanel(t, (r) =>

@@ -72,7 +72,7 @@ func validateRuntimeDecisions(st *State) error {
 	}
 	seen, used := map[string]*RuntimeDecisionRecord{}, ledger.ImportedCalls
 	for _, record := range ledger.Records {
-		if seen[record.ID] != nil || st.Packets[record.Packet] == nil || record.Snapshot == nil || record.Snapshot.ID != record.ID || record.Snapshot.Identity.TaskID != st.Slug || record.Snapshot.Version != 2 || record.Snapshot.Identity.Revision > st.Revision {
+		if seen[record.ID] != nil || st.Packets[record.Packet] == nil || record.Snapshot == nil || record.Snapshot.ID != record.ID || record.Snapshot.Identity.TaskID != st.Slug || (record.Snapshot.Version != 2 && record.Snapshot.Version != 3) || record.Snapshot.Identity.Revision > st.Revision {
 			return fmt.Errorf("runtime decision identity mismatch")
 		}
 		seen[record.ID] = record
@@ -109,6 +109,10 @@ func validatePendingStrategies(st *State, records map[string]*RuntimeDecisionRec
 
 func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *config.JEVConfig) error {
 	snapshot := r.Snapshot
+	if snapshot.Version == 3 && (r.Attempt != 0 || r.PlanRevisions != 0 || r.ID != "initial-"+r.Packet ||
+		(r.Status == "pending" && (st.Packets[r.Packet].Attempts != 0 || st.Packets[r.Packet].PlanRevisions != 0))) {
+		return fmt.Errorf("initial execution decision must identify the packet's first execution")
+	}
 	if !snapshot.SemanticUncertainty || snapshot.ExecutorUnknown || len(snapshot.Actions) < 2 {
 		return fmt.Errorf("runtime decision did not have eligible known evidence")
 	}

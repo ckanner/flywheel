@@ -3,7 +3,7 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/antigravity.md)
 
 Use `harness:"antigravity"` to run Gemini through the official local **`agy` CLI**.
-Flywheel calls `dsh-subagent-antigravity@0.1.0` through its public machine API;
+Flywheel calls `dsh-subagent-antigravity@0.2.0` through its public machine API;
 the plugin owns the native Agent loop, process group and durable receipt. Go owns
 workflow stages, approval gates, evidence collection, verification and delivery.
 The same plugin also provides a direct DSH task panel and `subagent_antigravity`.
@@ -12,7 +12,8 @@ There is no ACP or separate model API transport.
 ## Installation and capability checks
 
 Use Node.js 22.18+ on macOS or Linux, with official `agy` **1.5.7+** already
-installed and signed in through its normal native login. The plugin never
+installed and signed in through its normal native login. Orchestrator and explicit
+subagents/Swarm require **1.5.12+** and the needed public capabilities. The plugin never
 downloads the executable, implements login, copies account tokens or changes
 global settings. This release supervises POSIX process groups and rejects Windows.
 
@@ -23,7 +24,7 @@ The source is reviewable in
 [`plugins/antigravity`](https://github.com/ckanner/flywheel/tree/main/plugins/antigravity)
 as a standalone npm package. Package identity, installed candidate bytes, public
 registry availability and real-account acceptance are separate checks. An older
-package with another machine contract cannot substitute for 0.1.0.
+package with another machine contract cannot substitute for 0.2.0.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -87,7 +88,7 @@ merge into an existing complete configuration:
 | `carbon` | `gemini-4-carbon-high` / high | Full design planning |
 | `carbon-explore` | `gemini-4-carbon-medium` / medium | Explicit exploration override |
 
-The model slug and `thinking` must agree, and the selected model must appear in
+For ordinary Gemini models the suffix and `thinking` must agree, and the selected model must appear in
 the actual CLI catalog. An unavailable model or incompatible effort fails;
 Flywheel does not silently choose another provider. The requested effort remains
 separate from observed native configuration: an init that omits effort cannot
@@ -98,10 +99,71 @@ Ordinary Antigravity execution requires an explicitly authorized full-access
 binding. Flywheel maps it to native `accept-edits` plus `always-proceed` and
 `sandbox:false`. The opt-in subscription migration preserves existing user
 permissions. An incompatible preserved permission produces a visible admission
-error; the adapter does not silently expand it. `native-profile`, native image
-attachments and alternative native transport options are not supported by this
-Flywheel backend contract. Multimodal implementation uses the configured Claude
-route.
+error; the adapter does not silently expand it. Native image attachments are not
+supported by this backend contract. Multimodal implementation uses the configured
+Claude route.
+
+## Orchestrator, subagents and Swarm
+
+Orchestrator is a model choice. The official CLI hands work between its named
+planner and Hydrogen within a conversation. All three fixed-effort choices use
+`thinking:""`; the adapter omits `--effort` and rejects a nonempty effort:
+
+| Model | Native planner | Effort |
+| --- | --- | --- |
+| `gemini-pro-orchestrator-neon` | Neon | Fixed |
+| `gemini-pro-orchestrator` | Carbon | Fixed |
+| `gemini-pro-orchestrator-argon` | Argon | Fixed |
+
+Subagents and Swarm are native execution strategies, configured separately from
+the model. Add this fragment to a complete Flywheel configuration and select the
+profile through a stage or candidate binding's `native-profile`:
+
+```json
+{
+  "native-profiles": {
+    "antigravity-subagents": {
+      "harness": "antigravity",
+      "options": {"version":1,"mode":"subagents","maxObservedAgents":4}
+    },
+    "antigravity-swarm": {
+      "harness": "antigravity",
+      "options": {"version":1,"mode":"swarm","maxObservedAgents":4}
+    }
+  }
+}
+```
+
+`native` preserves implicit CLI behavior and does not mean “children disabled.”
+`subagents` requests delegation with results collected in the current invocation;
+admission checks the native delegation tool. `swarm` uses the official `/swarm`
+entry. Only the adapter supplies that command; user content is encoded as a JSON
+payload with slash characters escaped. Other modes keep slash commands disabled.
+Explicit collaboration succeeds only when the stream actually exposes child
+conversation metadata. A request, an Orchestrator model, or a successful root
+terminal alone is not child evidence.
+
+`maxObservedAgents` accepts 1–8. It stops the invocation after more distinct
+observed child conversations than permitted, including observed verifier/monitor
+members. It is **not** a native concurrency or whole-tree cap; receipts report
+`hard:false`. Child roles, models, states and usage remain unknown when the CLI
+does not expose them. The UI distinguishes requested collaboration from observed
+members. The plugin does not fabricate a complete Swarm task board. Retained
+child metadata has a cumulative size bound; overflow keeps verified member IDs,
+marks `metadataTruncated:true` and fails the invocation rather than silently
+reporting an incomplete successful result.
+
+Flywheel Execute requires Full, no images, and a reviewed `collaboration` contract
+before admitting a Swarm binding, whether selected by JEV or static configuration.
+The contract contains 2–8 independent tasks with disjoint write scopes inside the
+packet's approved `schedule.writes`. Planning may use foreground subagents to
+collect read-only research; it does not run execution Swarm. Native verification
+does not replace independent Flywheel Review or exact-version plan approval.
+See [workflow](workflow.md) and [model selection](model-policy.md).
+
+Sources: [official models](https://antigravity.google/docs/models),
+[CLI subagents](https://antigravity.google/docs/subagents?tab=cli) and
+[Swarm](https://antigravity.google/docs/swarm).
 
 ## Investigation uses approved evidence only
 
@@ -120,6 +182,7 @@ writing the task:
 
 - `init.agent` must match the exact generated agent identity.
 - `init.tools` must exist and be an empty array.
+- Orchestrator models and native collaboration profiles are rejected for this phase.
 - Missing identity, inherited tools, malformed init or later tool/subagent events
   reject the invocation.
 
@@ -161,11 +224,12 @@ Sources: [native login and API/ADC routing](https://antigravity.google/docs/inst
 Install the exact reviewed plugin artifact into the intended DSH profile:
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.1.0.tgz
+dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.2.0.tgz
 ```
 
 Open the **Antigravity** conversation view, select the workspace, label, complete
-task, model and effort, then **Start task**. **Refresh tasks**, **View result** and
+task, model, effort and native strategy, then **Start task**. Fixed-effort
+Orchestrator choices use an empty effort. **Refresh tasks**, **View result** and
 **Cancel** operate on the session's owned invocation. **Check environment** and
 saved defaults are available on the plugin's settings/panel. The view calls the
 public DSH command directly; it does not first ask a parent model to delegate.
@@ -175,6 +239,7 @@ The equivalent command supports versioned `start`, `list`, `status`, `result`,
 
 ```text
 /antigravity {"version":1,"action":"start","label":"Investigate timeout","prompt":"Analyze this collected evidence…","model":"gemini-4-neon-high","effort":"high","toolPolicy":"evidence-only"}
+/antigravity {"version":1,"action":"start","label":"Independent modules","prompt":"Implement the two modules with separate write scopes, collect both results and verify them.","model":"gemini-4-neon-high","effort":"high","native":{"version":1,"mode":"swarm","maxObservedAgents":4}}
 /antigravity {"version":1,"action":"list"}
 /antigravity {"version":1,"action":"result","invocationId":"<returned UUID>"}
 ```
@@ -197,7 +262,7 @@ for the DSH schemas, machine API and wrapper.
 Each call owns one CLI process and one text turn. Native conversations are
 retained: `fresh` starts a new conversation, while scoped resume requires the
 exact owned, clean, terminal conversation with matching directory, model, effort,
-permissions, tool policy and native settings. Concurrent and unresolved resumes
+permissions, tool policy, complete native options and native settings. Concurrent and unresolved resumes
 are rejected. There is no “latest session” discovery, prewarm pool or implicit
 replay. The panel preserves a readable local label and native conversation ID;
 it does not claim to rename the native conversation.
@@ -211,11 +276,12 @@ local process-group cleanup. Parent loss, cancellation and timeout terminate
 owned local work and preserve uncertainty about unobserved provider work.
 `recoverMachine` reads the original journal and never runs the CLI or resends input.
 
-Success requires a native successful terminal, valid output/schema, matching
+Success requires a native successful terminal without a nonempty `finished_reason`, valid output/schema, matching
 observable configuration and confirmed cleanup. Exit zero, a soft permission
 denial or a timed-out connection cannot establish success. Tokens retain the
 native conversation/partial/unknown scope; actual cost remains `null`, not zero.
-Unobserved child usage, remote completion, image/PDF input and artifact return
+CLI invocation completion and observed child metadata do not prove completion or
+cleanup of the entire remote child tree. Unobserved child usage, remote completion, image/PDF input and artifact return
 are not claimed by this release.
 
 Offline protocol, cancellation, parent-death, evidence-only, public API and actual

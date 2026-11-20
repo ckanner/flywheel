@@ -35,10 +35,10 @@ func agyReceipt(r codexProStart) map[string]any {
 	if r.EvidenceOnly {
 		execution, permission, tools, policy = "plan", "request-review", []string{}, "evidence-only"
 	}
-	return map[string]any{
+	receipt := map[string]any{
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "22222222-2222-4222-8222-222222222222", "ok": true,
 		"requested": map[string]any{"cwd": r.Cwd, "model": r.Model, "effort": r.ReasoningEffort, "executionMode": execution, "permissionMode": permission, "toolPolicy": policy, "sandbox": false, "sessionMode": mode, "sessionId": requestedSession, "subscriptionPolicy": r.Subscription},
-		"execution": map[string]any{"pid": 123, "processGroupId": 123, "ownership": "process-group", "dispatch": "dispatched", "turnDispatch": "accepted", "outcome": "completed", "terminalReceived": true, "exitCode": 0, "signal": nil, "cancelled": false, "timedOut": false, "truncated": false},
+		"execution": map[string]any{"pid": 123, "processGroupId": 123, "ownership": "process-group", "dispatch": "dispatched", "turnDispatch": "accepted", "outcome": "completed", "terminalReceived": true, "finishedReason": nil, "exitCode": 0, "signal": nil, "cancelled": false, "timedOut": false, "truncated": false},
 		"cleanup":   map[string]any{"confirmed": true, "method": "process-group"}, "providerWork": map[string]any{"state": "completed", "replaySafe": true},
 		"session":       map[string]any{"mode": mode, "id": id, "resumed": mode == "resume", "resumable": true},
 		"configuration": map[string]any{"source": "cli-init", "matched": true, "observed": map[string]any{"cwd": r.Cwd, "model": r.Model, "permissionMode": permission, "tools": tools}},
@@ -46,6 +46,26 @@ func agyReceipt(r codexProStart) map[string]any {
 		"output":        []any{map[string]any{"type": "text", "text": "verified answer"}}, "usage": map[string]any{"status": "complete", "scope": "conversation", "inputTokens": 100, "outputTokens": 20, "thinkingTokens": 3, "cacheReadTokens": 0, "totalTokens": 123},
 		"costUSD": nil, "costStatus": "unknown", "failure": nil,
 	}
+	native := config.AntigravityNative{Version: 1, Mode: "native"}
+	if len(r.Native) > 0 {
+		_ = json.Unmarshal(r.Native, &native)
+		proObject(receipt, "requested")["native"] = r.Native
+	}
+	var command any
+	children := []any{}
+	if native.Mode == "swarm" {
+		command = "/swarm"
+	}
+	if native.Mode != "native" {
+		children = append(children, map[string]any{"id": "33333333-3333-4333-8333-333333333333", "kind": "worker", "role": "worker", "state": "unknown", "model": nil, "logUri": nil, "workspaceUris": []string{}})
+	}
+	receipt["native"] = map[string]any{
+		"mode": native.Mode, "dispatch": map[string]any{"method": map[string]string{"native": "prompt", "subagents": "subagent-instruction", "swarm": "slash-command"}[native.Mode], "command": command},
+		"observedAgents": len(children), "collaborationObserved": len(children) > 0, "metadataTruncated": false, "limit": map[string]any{"maxObservedAgents": native.MaxObservedAgents, "hard": false, "exceeded": false},
+		"completion": map[string]any{"scope": "cli-invocation", "state": "completed", "source": "normal-result-and-cli-exit", "children": "unknown"},
+		"children":   children, "aggregateUsageStatus": "unknown", "artifacts": []any{},
+	}
+	return receipt
 }
 func agyFrame(r codexProStart, m map[string]any) map[string]any {
 	return map[string]any{"type": "result", "protocol": r.Protocol, "requestId": r.RequestID, "adapter": map[string]any{"package": "dsh-subagent-antigravity", "version": AntigravityPackageVersion, "protocol": 1}, "receipt": m, "error": nil}
@@ -125,9 +145,10 @@ func TestAntigravityRejectsUnprovenAndContradictoryReceipts(t *testing.T) {
 	m = agyReceipt(r)
 	m["ok"] = false
 	m["failure"] = map[string]any{"category": "invalid-request", "stage": "start", "detail": "no accepted prompt"}
-	m["execution"] = map[string]any{"pid": nil, "processGroupId": nil, "ownership": "none", "dispatch": "not-dispatched", "turnDispatch": "not-dispatched", "outcome": "not-started", "terminalReceived": false, "exitCode": nil, "signal": nil, "cancelled": false, "timedOut": false, "truncated": false}
+	m["execution"] = map[string]any{"pid": nil, "processGroupId": nil, "ownership": "none", "dispatch": "not-dispatched", "turnDispatch": "not-dispatched", "outcome": "not-started", "terminalReceived": false, "finishedReason": nil, "exitCode": nil, "signal": nil, "cancelled": false, "timedOut": false, "truncated": false}
 	m["cleanup"] = map[string]any{"confirmed": true, "method": "not-started"}
 	m["providerWork"] = map[string]any{"state": "not-dispatched", "replaySafe": true}
+	proObject(m, "native")["completion"] = map[string]any{"scope": "cli-invocation", "state": "not-started", "source": nil, "children": "unknown"}
 	p := parseAgyFixture(r, m)
 	assert.Equal(t, "not-dispatched", p.Session.Dispatch)
 	assert.Equal(t, &Usage{}, p.Usage)
@@ -214,6 +235,7 @@ func TestAntigravityNodeWorkerOfflineBridge(t *testing.T) {
 	source, err := os.ReadFile("../../plugins/antigravity/test/fixtures/fake-agy.js")
 	require.NoError(t, err)
 	source = []byte(strings.Replace(string(source), "const args=", `const fixtureConfig=JSON.parse(readFileSync('agy-fixture.json','utf8')); process.env.FIXTURE_SCENARIO=fixtureConfig.scenario; process.env.FIXTURE_CALLS='agy-calls.jsonl'; process.env.FIXTURE_INPUT='agy-input.jsonl';
+if(fixtureConfig.finishedReason)process.env.FIXTURE_FINISHED_REASON=fixtureConfig.finishedReason;
 const args=`, 1))
 	fixture := filepath.Join(t.TempDir(), "fake-agy.mjs")
 	require.NoError(t, os.WriteFile(fixture, source, 0o755))
@@ -265,6 +287,65 @@ const args=`, 1))
 			if scenario == "missing-agent" || scenario == "tools-inherited" {
 				assert.NoFileExists(t, filepath.Join(a.Cwd, "agy-input.jsonl"))
 				assert.Equal(t, "not-dispatched", r.Session.Dispatch)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name, scenario, model, mode, finishedReason string
+		limit                                       int
+		success                                     bool
+	}{
+		{"orchestrator-native", "success", "gemini-pro-orchestrator-neon", "native", "", 4, true},
+		{"subagents", "children", "gemini-4-neon-high", "subagents", "", 4, true},
+		{"swarm", "swarm-children", "gemini-4-neon-high", "swarm", "", 4, true},
+		{"collaboration-missing", "success", "gemini-4-neon-high", "swarm", "", 4, false},
+		{"observed-limit", "child-limit", "gemini-4-neon-high", "swarm", "", 2, false},
+		{"native-cutoff", "success", "gemini-pro-orchestrator", "native", "HARD_TURN_LIMIT", 4, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := agyRunArgs(t)
+			a.Cwd, err = filepath.EvalSymlinks(a.Cwd)
+			require.NoError(t, err)
+			a.Command, a.RequestID, a.Model = worker, "bridge-"+tc.name, tc.model
+			if config.AntigravityOrchestrator(tc.model) {
+				a.ReasoningEffort = ""
+			}
+			a.Native = json.RawMessage(fmt.Sprintf(`{"version":1,"mode":%q,"maxObservedAgents":%d}`, tc.mode, tc.limit))
+			a.Managed = &NativeAdmission{Version: 1, RunID: "bridge-run", InvocationID: a.RequestID, Role: "execute", Scope: "M01-T01", Channel: "google", TaskDir: a.Cwd}
+			a.RecoveryDirectory = filepath.Join(a.Cwd, "native-recovery")
+			a.PersistentSession = true
+			a.OnLifecycle = func(MachineLifecycle) error { return nil }
+			a.Watchdog = watchdog.Opts{WallTimeoutMs: 10000, IdleTimeoutMs: 8000}
+			settings, _ := json.Marshal(map[string]string{"scenario": tc.scenario, "finishedReason": tc.finishedReason})
+			require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), settings, 0600))
+			r := RunAntigravity(a)
+			require.Equal(t, tc.success, r.Settled, "%+v", r)
+			require.NotEmpty(t, r.AntigravityReceipt)
+			require.NotEmpty(t, r.NativeReceipt, "%+v", r)
+			assert.Nil(t, r.Usage, "child/conversation counters are not exclusive invocation usage")
+			assert.Contains(t, string(r.NativeReceipt), `"children":"unknown"`)
+			if !tc.success {
+				assert.Equal(t, errs.INVALID_REQUEST, r.ErrorCode)
+				expected := "unknown"
+				if tc.name == "native-cutoff" {
+					expected = "failed"
+				}
+				assert.Equal(t, expected, r.Session.Outcome, "error classification cannot invent a terminal provider outcome")
+			}
+			calls, err := os.ReadFile(filepath.Join(a.Cwd, "agy-calls.jsonl"))
+			require.NoError(t, err)
+			assert.Equal(t, !config.AntigravityOrchestrator(tc.model), strings.Contains(string(calls), `"--effort"`), string(calls))
+			if tc.name == "swarm" {
+				input, err := os.ReadFile(filepath.Join(a.Cwd, "agy-input.jsonl"))
+				require.NoError(t, err)
+				assert.Contains(t, string(input), "/swarm ")
+				recovered, err := RecoverMachine(MachineRecoveryArgs{Harness: "antigravity", RequestID: a.RequestID, RunID: r.Session.RunID, RecoveryDirectory: a.RecoveryDirectory, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, PersistentSession: true, Subscription: a.Subscription, Native: a.Native})
+				require.NoError(t, err)
+				require.True(t, recovered.Settled, "%+v", recovered)
+				require.JSONEq(t, string(r.NativeReceipt), string(recovered.NativeReceipt))
+				after, err := os.ReadFile(filepath.Join(a.Cwd, "agy-calls.jsonl"))
+				require.NoError(t, err)
+				require.Equal(t, calls, after, "native recovery reads the original journal without redispatch")
 			}
 		})
 	}

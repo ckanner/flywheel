@@ -146,3 +146,18 @@ test('malformed applied model history retains the last valid view and blocks sta
     await ui.click('刷新');
   }
 });
+
+test('snapshot v3 initial selection is visible with fixed native effort and an explicit initial reason',async t=>{
+  const value=state(ledger({used:1,records:[entry('initial-choice','model-1','applied',{attempt:0,snapshot:{version:3,point:'execution-initial-selection',task:{route:'complex'}}})]}));
+  value.packets['M01-T01']['execution-policy']={version:1,route:'complex',current:'orchestrator',history:[{kind:'jev-initial-selection',from:'neon',to:'orchestrator',attempt:0,at:'2026-11-20T10:00:00Z',reason:'approved decomposition needs orchestration',
+    before:{harness:'antigravity',model:'gemini-4-neon-high',thinking:'high'},after:{harness:'antigravity',model:'gemini-pro-orchestrator-neon',thinking:'',nativeProfile:'antigravity-native'}}]};
+  const ui=await mountPanel(t,request=>reply(request,value));
+  await ui.selectPath(0,'/repo/docs/task'); await ui.click('刷新');
+  const panel=ui.container.querySelector('[data-execution-switches="task"]');
+  assert.match(panel.textContent,/采用 JEV 首轮配置选择/);
+  assert.match(panel.textContent,/原生固定/);
+  assert.match(panel.textContent,/approved decomposition needs orchestration/);
+  await ui.setLocale('en');
+  assert.match(ui.container.textContent,/JEV initial configuration applied/);
+  assert.equal(ui.requests.length,1);
+});

@@ -22,7 +22,7 @@ binary on first use or resolve an old platform/worker package. `plugins/dsh` is 
 old platform packages and `@ckanner/dsh-plugin-flywheel` are historical releases;
 this flow neither uploads new versions of them nor unpublishes their existing bytes.
 
-Antigravity 0.1.0 is also bundled from its reviewed source tarball, with its exact metadata and standalone archive included in the package. `plugins/antigravity` is an independent companion source project; publishing that package is a separate authorized release, not part of this Flywheel release command.
+Antigravity 0.2.0 is also bundled from its reviewed source tarball, with its exact metadata and standalone archive included in the package. `plugins/antigravity` is an independent companion source project; publishing that package is a separate authorized release, not part of this Flywheel release command.
 
 Codex Pro 0.10.2 is bundled from its [reviewed source candidate](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 The root and source-harness locks retain that candidate tarball's actual integrity;

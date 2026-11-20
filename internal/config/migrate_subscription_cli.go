@@ -56,7 +56,53 @@ func migrateSubscriptionCLI(root, preset map[string]json.RawMessage, changes *[]
 	if err := migrateSubscriptionCLIAnalystPermission(root, changes); err != nil {
 		return err
 	}
-	return migrateSubscriptionCLIJEV(root, preset, changes)
+	if err := migrateSubscriptionCLIJEV(root, preset, changes); err != nil {
+		return err
+	}
+	return migrateSubscriptionCLICandidates(root, preset, changes)
+}
+
+// Existing policies remain authoritative. A newly supplied candidate table may
+// not increase the route's permission to meet a subscription adapter's needs.
+func migrateSubscriptionCLICandidates(root, preset map[string]json.RawMessage, changes *[]MigrationChange) error {
+	if _, exists := root["execution-policy"]; exists {
+		return nil
+	}
+	var policy ExecutionPolicy
+	if err := json.Unmarshal(preset["execution-policy"], &policy); err != nil {
+		return fmt.Errorf("embedded subscription-cli preset has invalid execution-policy: %w", err)
+	}
+	var value any
+	_ = json.Unmarshal(preset["execution-policy"], &value)
+	if err := validateExecutionPolicy(value); err != nil {
+		return err
+	}
+	cfg := Default()
+	if raw, exists := root["permissions"]; exists {
+		if err := json.Unmarshal(raw, &cfg.Permissions); err != nil {
+			return fmt.Errorf("invalid preserved permissions: %w", err)
+		}
+	}
+	used := map[string]bool{}
+	for name, route := range policy.Routes {
+		if cfg.PermissionMode("execute", policy.Bindings[route.Initial].Harness, "routes."+name) != "danger-full-access" {
+			delete(policy.Routes, name)
+			continue
+		}
+		for _, id := range route.Allowed {
+			used[id] = true
+		}
+	}
+	if len(policy.Routes) == 0 {
+		return nil
+	}
+	for id := range policy.Bindings {
+		if !used[id] {
+			delete(policy.Bindings, id)
+		}
+	}
+	migrationSet(root, "execution-policy", "execution-policy", configJSON(policy), changes)
+	return nil
 }
 
 func migrateSubscriptionCLIAnalystPermission(root map[string]json.RawMessage, changes *[]MigrationChange) error {

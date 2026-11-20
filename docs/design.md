@@ -32,7 +32,7 @@ Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 c
 
 默认以 DSH Mac 桌面为入口，通过 Antigravity `agy`、Claude Code、Codex 与 Kimi 原生客户端使用四家订阅，不使用 ACP。`subscription-only` 是可达绑定和原生派发的显式约束，默认不含 DeepSeek API／充值账号或付费后备。旧 DSH provider 与 API 配置继续作为无此策略时的显式兼容路径，不能绕过严格订阅准入。账号权益、额度和实际费用不因本地配置通过而被推定。
 
-具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.10.2` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联减少已明确小任务的重复规划与终验。有界并行按冻结依赖和写入范围调度；桌面控制台提供受管阶段操作、配置编辑、会话接管和明确授权的远端交付。原生能力通过 native-profiles 接入各 loop，支持 DSH Team、Kimi Agent/Swarm/Tower、Codex agents 与 Claude Workflow；各后端实际边界见 §3.3。开放式自动模型选型仍不属于现有实现；显式允许集合内的执行升级见 §13。
+具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.10.2` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联减少已明确小任务的重复规划与终验。有界并行按冻结依赖和写入范围调度；桌面控制台提供受管阶段操作、配置编辑、会话接管和明确授权的远端交付。原生能力通过 native-profiles 接入各 loop，支持 DSH Team、Kimi Agent/Swarm/Tower、Codex agents、Claude Workflow 及 Antigravity Orchestrator／子代理／Swarm；各后端实际边界见 §3.3 和 §7.3。开放式自动模型选型仍不属于现有实现；显式允许集合内的首次执行选择及失败调整见 §13。
 
 ## 2. 设计不变量
 
@@ -106,6 +106,11 @@ IPC lifeline，再由 guardian 内的官方 Agent SDK 0.3.326 派发配置指定
 `native-profile` 在模型／阶段／路由绑定中引用版本化 `native-profiles`；能力跟随实际 harness，不改变 provider、账号或模型的既有绑定。DSH 复用 `dsh-preset-generator@0.4.0` 的 SDK global PTC overlay，明确不是挂载 named Agent Preset。首个 prompt 前实际执行 canonical JSON、handle、多图、TypeScript 和输出协议 probe；同版本号不代替行为验证。各后代在公开 Agent 生命周期中按真实 registry 和 lineage 准入。
 
 每次 invocation 记录 requested／effective／observed、owned children、usage、completion 和 cleanup；默认值写入 effective，不改写原始 requested。native-event 只是观察，不充当 Pro durable lifecycle ACK。completion 在 root 结束、开始 cleanup 之前冻结；取消残留 child 不能倒推原任务已完成。SDK policy 的 bounded journal 按 requestId／nonce／rootSessionId／连续序号核对，最终 complete/events/bytes 不一致时保持失败与未知清理。
+
+Antigravity 的原生回执是单独的部分观察契约：requested mode／dispatch 与实际子会话
+分开，completion.scope 为 cli-invocation，children 和整树用量未公开时保持 unknown。
+它不使用完整 Pro 子树收尾证明，也不因 native-profile 非空取消规划前台归集要求。
+Orchestrator、subagents 与 Swarm 的准入、观察阈值及受审查协作范围见 §7.3。
 
 LCU 通过公开 managed API 挂载，root 与真实后代共享一个跨进程 `local-desktop` lease并顺序操作 GUI；每次操作核对 caller 与 epoch，未知 owner 不被自动接管。PTC tool 名为 `lcu_cua`，程序对象仍是 `cua`。取消必须区分 MCP 请求、turn cleanup 和 native 物理退出。图片从实际 AttachmentStore 读取并归档至 task 的 reports/native/invocation；capture 与 archive hash 分开，模型送达未验证时如实标注。
 
@@ -509,6 +514,11 @@ DSH 结构化 result.error.code 经协议身份、终态与既有码表校验，
 
 Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既有码；空答案使用明确的 `empty response` 诊断并归入 EMPTY_RESPONSE，不增加另一套重试或付费降级策略。
 
+Antigravity 的 collaboration-not-observed、observed-agent-limit 和 native-cutoff
+映射为非传输重试的 INVALID_REQUEST，保留原 category／reason。此映射不改变原生
+dispatch／outcome／providerWork／cleanup 事实；本地观察限额触发取消时，未观察到的
+provider 或子工作仍 unknown，不能因错误码确定而获得自动重放资格。
+
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
 
 DSH 预热承载的正式调用按最近可观察活动刷新 idle deadline。计时回调执行时必须重新核对当前期限与进程状态，已排队的旧回调不能取消期限已经刷新的调用。准备 TTL 在已接收 worker 终态或进程结束后均不得改写过期状态，不能把已确认的初始化失败变成允许冷启动的安全过期；终态已到但进程仍活着时，TTL 后的原关闭宽限继续生效。worker 明确报告的真实过期仍保留原回退条件，真正超时仍执行原有界收尾。
@@ -642,7 +652,7 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 
 ### 7.3 Antigravity CLI 接入契约
 
-`antigravity` 直接使用独立 `dsh-subagent-antigravity@0.1.0` 公开 machine API 与官方
+`antigravity` 直接使用独立 `dsh-subagent-antigravity@0.2.0` 公开 machine API 与官方
 `agy` CLI，无 ACP。源码在 plugins/antigravity，真实 npm 候选随 Flywheel bundle，
 也可经 DSH plugin add 安装独立使用。原生程序与登录由用户环境提供。
 
@@ -662,6 +672,26 @@ terminal 再确认 cleanup，业务 unknown 仍保留。新调用保留独立原
 费用仍可能 unknown。认证/额度错误不走 credits/API 后备。只接受原生 SUCCESS、
 完整配置和正常退出/清理，软权限拒绝、WAITING、坏帧、超时和取消均不算成功。
 原始 conversation usage 保留，不累加为 per-call 总量；未知 usage/cost 不补零。
+
+Orchestrator 的三个完整标识为 `gemini-pro-orchestrator-neon`、
+`gemini-pro-orchestrator`、`gemini-pro-orchestrator-argon`。对应 Neon／Carbon／Argon
+规划复核与 Hydrogen 实施的固定原生配置，`thinking:""` 且不传 `--effort`；非空
+effort 拒绝。普通 Gemini 模型仍要求 slug 后缀与 thinking 一致。evidence-only
+不接受 Orchestrator 或 native profile，JEV 决策自身不能委派。
+
+Antigravity native-profile options 为 version 1，mode 取 native/subagents/swarm。
+native 保留原生自主工具，不宣称禁止 children；subagents 要求委派结果在本次调用内
+归集；swarm 由适配器合成固定官方命令，任务内容是转义数据，普通请求继续关闭 slash
+展开。可选 maxObservedAgents 约束已观察唯一 child 总数，越限停止自有 invocation，
+含 verifier/monitor，明确 hard:false，不等于原生并发硬上限。实际 child 元数据与
+协作观察单独记录；未暴露的逐成员终态、模型、用量和远程清理保持 unknown。
+非空原生 finished_reason、缺失协作证据、异常退出／超时／清理失败不得算成功。
+
+Flywheel Execute 选择 Swarm 需要已审 packet 的 collaboration version 1：2–8 项
+{goal,writes}，每项规范化写入范围互不重叠且属于 schedule.writes；选择 Full，并且
+没有原生图片输入。此声明纳入契约身份与 prompt，不能以 route 名称推断可并行。
+设计和规划可使用前台归集的只读 subagents，不运行执行型 Swarm；独立 DSH 显式
+任务不依赖 Flywheel packet。所有原生自评仍只作证据，独立 Review 和验收不变。
 
 ## 8. 用量、成本与效率
 
@@ -696,7 +726,7 @@ Verify、Review、Judge、受管调用、重试等待、持久化和调查。宿
 ### 8.2 JEV 唯一总开关
 
 `jev.enabled` 是所有在线 JEV 路径的唯一启用设置，默认 false。开启后，在调查及
-确认失败后的执行决策点自动使用采用策略；正常任务没有独立 shadow／advisory／adopt 或分功能
+首次执行及确认失败后的决策点自动使用采用策略；正常任务没有独立 shadow／advisory／adopt 或分功能
 开关。关闭时没有 JEV 请求、自动采集或建议采用，沿用原确定性调查动作与实现流程。
 Task／New／Run 共用 Go 创建时的配置解析；宿主提供调查目标与动作，不手写决策模式。
 
@@ -744,8 +774,12 @@ adopt，offline／shadow／advisory 保留供旧记录读取和明确评估工�
 不重新开始取证，Finish 仍可提交分析报告。取证结束不标记假设为 supported／
 contradicted，不生成根因或代码完成结论；报告及后续验收仍负责其原有语义边界。
 
-执行决策只在确认结束的失败边界发生，不替代渠道错误重试，不在每次工具调用前
-固定增加选择。可选动作包括在原边界继续修复、运行已批准的反馈检查、请求原有
+执行决策在首轮业务派发前或确认结束的失败边界发生，不替代渠道错误重试，不在每次工具调用前
+固定增加选择。首轮先对账原调用，核对权限、预算与完整执行候选，过滤不支持图片和不满足
+collaboration／Full 条件的 Swarm；仅多个合法选项且存在选择余地时调用 JEV。首轮
+只允许选择完整绑定，沿用 initial 为基线，每 packet 最多一次记录；有持久记录则恢复
+原请求而不重新选择。采用消耗原 max-switches，切换不增加 Execute 尝试。
+失败后的可选动作包括在原边界继续修复、运行已批准的反馈检查、请求原有
 受限规划和选择 execution-policy 中的合法完整绑定。补充检查只增加反馈，最终
 完整 L1／适用 L2/L3 与独立评审不减少；Plan 仍遵守次数、范围、契约和持久化要求，
 Quick 请求重规划先保存 Full 升级。模型／effort 切换不重置尝试或预算，保持严格
@@ -776,7 +810,10 @@ lifecycle checkpoint 后才 ACK。它将原生回执哈希及请求／派发／�
 新调用的回执、决策原因、当前 guard 和 Plan checkpoint 均一致时复用结果；仅有
 旧的 consumed 标志不构成证明，无法确认时阻断而不重发。反馈动作的 running／
 unknown 或候选发生变化同样阻断，不能靠关闭 JEV 绕过未确认的真实动作。
-执行决策使用 Snapshot v2 的失败策略问题，历史调查 v1 的问题与身份哈希保持兼容。
+首次选择使用 Snapshot v3；失败决策使用 v2，历史调查 v1 的问题与身份哈希保持兼容。
+候选描述显示实际模型、effort、native profile 与协作模式，不能只哈希原生选项却让决策
+模型看不到差异。首轮、失败与调查导入共用累计 ledger 和调用预算，默认 8 次，
+并行 packet 不各自获得一份新额度。
 
 `decision replay` 保留历史 HTTP 冻结输入与 System One 响应解析，强制 offline，不读密钥、不联网、不写
 账本；关闭总开关仍可查看旧记录。`decision evaluate` 服从同一总开关和作用域解析，
@@ -963,7 +1000,7 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 顶层 `jev` 以 `templates/jev-config.schema.json` 为字段信源：新模板 enabled 默认 false，
 backend 为 subscription，profile 为 hydrogen-local；旧 HTTP model 固定版本，key-env 只存变量名；timeout-ms、max-calls、
 min-applicability、min-choice 和 allowed-data 限定请求。开启配置校验目标与格式，
-不探测实际密钥或网络。唯一开关同时约束调查、失败后的执行决策和显式在线评估。旧 `jev-shadow`
+不探测实际密钥或网络。唯一开关同时约束调查、首次/失败后的执行决策和显式在线评估。旧 `jev-shadow`
 仅用 `jev-policy.schema.json` 校验历史字段并做关闭状态迁移，不再是运行配置。
 
 可选的顶层 profiles 定义 harness/model/channel/thinking/provider；loops、routes 和顶层 judge-panel 通过 profile 引用，加载时展开为完整实际绑定。当前 binding 显式出现的字段覆盖 profile，省略才继承；不支持 profile 继承。必需字符串的 null、空白、错拼字段及未知引用在模型启动前失败。thinking 显式空字符串表示当前 harness 的既有默认，不重新继承；resident-session 仍属于阶段，显式 false 保留。judge-panel:null 继续关闭第二意见。旧 inline 配置保留已有缺省语义。
@@ -980,10 +1017,15 @@ min-applicability、min-choice 和 allowed-data 限定请求。开启配置校�
 进入绑定身份；原始适配器回执保留 requested／accepted／可得 effective 证据，
 缺失不填零、不臆造有效档位。
 
-开启 JEV 后，同一允许集也可为失败后的模型／effort 决策提供候选，仍消耗原
+开启 JEV 后，同一允许集为首次/失败后的模型／effort／原生协作选择提供候选，仍消耗原
 `max-switches`，记录实际选择及完整绑定。未配置该策略时继续固定路由；JEV 不会
 自动生成额外模型、provider、账号或付费渠道许可。渠道后备保留既有错误分类，
 不能把 AUTH／QUOTA 当作质量不足。真实模型与 effort 的优劣由后续配对验收决定。
+
+新订阅模板包含七个 route 的有界候选，initial 保持原有分工，quality-order 为空，
+max-switches 为 2；因此默认 JEV 关闭时仍固定初始模型。用户显式声明的确定性升级顺序
+继续有效。subscription-cli 迁移保留已有 execution-policy；没有时仅为原权限已是
+danger-full-access 的路由添加候选，其余路由保留固定绑定并报告，不扩大权限。
 
 顶层 `sessions` 的字段信源为 `templates/session-policy.schema.json`：mode 为
 fresh／scoped，policy-version 固定为 1。旧文件省略时保持 fresh；两份新模板显式
@@ -1014,7 +1056,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次完整单包候选（candidate format 2），Linux/macOS 安装测试消费同一个 tarball；候选验证同时核对四个平台二进制、公开入口、MIT 许可和内置 adapter。已存在版本必须核对 integrity；先发 candidate 标签，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.2`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.7.0与LCU 0.5.0维持可选peer。Codex 0.10.2、Antigravity 0.1.0 与 Claude 0.7.0 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 内置于完整包，核验其实际 bundle 字节。不能把源码验收当作插件独立发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.2`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.7.0与LCU 0.5.0维持可选peer。Codex 0.10.2、Antigravity 0.2.0 与 Claude 0.7.0 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 内置于完整包，核验其实际 bundle 字节。不能把源码验收当作插件独立发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

@@ -14,8 +14,22 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.2；已登录 Codex CLI；实际 sandbox/approval 回执 |
 | `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.7.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
+| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.2.0、通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
+
+### Antigravity 协作
+
+Antigravity 使用独立的 version 1 native 选项：`mode:"native"`、`"subagents"` 或
+`"swarm"`，可选 `maxObservedAgents`（1–8）。native 保留 CLI 隐式行为，不关闭子代理；
+显式 subagents／Swarm 必须观察到真实子会话元数据，观察数量阈值不等于原生并发硬限制。
+Orchestrator 则是单独的固定空 effort 模型选择。精确模型、Flywheel profile 与独立 DSH
+命令见 [Antigravity](antigravity.md)。
+
+静态 profile 不要求打开 JEV；JEV 只能选择配置中已声明且满足资格的执行绑定。
+Flywheel Swarm 要求 Full、无图片，以及审查过的 2–8 个独立子任务和互不重叠的获准写入
+范围。规划仍在前台归集；evidence-only 分析拒绝协作。回执报告真实已观察成员，不声称
+完整 task board、整树用量或远程子代理清理。独立 Review 保持必需。
 
 ### 对齐独立 worker 的依赖
 
@@ -132,11 +146,11 @@ Kimi 脱敏服务配置把 OAuth 与 API key 合并成一个凭据标志，因�
 
 ## 3. 用在不同阶段
 
-Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packets。Execute 可以使用原生 Agent、Workflow 或 Tower，结果仍要通过原有验证和独立 Review。Review 和 Judge 使用自己的角色历史与子任务，永远不继承 Executor 的历史。Intake/Garden 可以使用同样能力生成建议，不能据此修改状态文件。
+在支持这类规划能力的后端中，Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packets。Antigravity 规划只使用前台子代理，其 Swarm 仅准入已获批的 Execute 协作。Execute 可以使用原生 Agent、Workflow 或 Tower，结果仍要通过原有验证和独立 Review。Review 和 Judge 使用自己的角色历史与子任务，永远不继承 Executor 的历史。Intake/Garden 可以使用对应角色获准的能力生成建议，不能据此修改状态文件。
 
 开启 native profile 不新增第二个循环控制器：Go 继续决定是否重试、预算是否允许、哪个 candidate 被验收以及何时交付。原生 task board 的完成状态不是 Flywheel completed。
 
-规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
+对具备完整子生命周期契约的后端（不含 Antigravity），规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
 
 ## 4. LCU 与截图
 

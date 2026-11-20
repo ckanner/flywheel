@@ -45,7 +45,7 @@
     "KIMI_NATIVE_PROTOCOL.md",
     "KIMI_NATIVE_PROTOCOL.en.md",
     "vendor/antigravity.json",
-    "vendor/dsh-subagent-antigravity-0.1.0.tgz"
+    "vendor/dsh-subagent-antigravity-0.2.0.tgz"
   ],
   "dsh": {
     "bundle": {
@@ -101,7 +101,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "dsh-subagent-antigravity": "file:vendor/dsh-subagent-antigravity-0.1.0.tgz",
+    "dsh-subagent-antigravity": "file:vendor/dsh-subagent-antigravity-0.2.0.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },

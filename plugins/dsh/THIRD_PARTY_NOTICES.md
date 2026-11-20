@@ -47,7 +47,7 @@ This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 
 
 ## Bundled Antigravity CLI adapter
 
-This distribution bundles `dsh-subagent-antigravity@0.1.0`, Copyright (c) 2026
+This distribution bundles `dsh-subagent-antigravity@0.2.0`, Copyright (c) 2026
 ckanner, under the MIT License. Its license remains at
 `node_modules/dsh-subagent-antigravity/LICENSE`. Exact source and archive identities
 are in `vendor/antigravity.json`; the complete adapter source is in the repository's

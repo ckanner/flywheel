@@ -75,6 +75,7 @@ Use the normal entries after configuration:
 | Next evidence action | Choose among approved reads, searches, directory lists, diagnostic commands and HTTP queries when the choice is uncertain | Original deterministic action order |
 | Redundant evidence collection | May defer remaining actions for an already observed hypothesis through an evidence-bound control choice | Original action set remains |
 | Enough evidence for a report | May end collection early once the engine's evidence prerequisites are met | Collection ends at the original action, time or output limit |
+| Initial execution model and collaboration | Select once among eligible complete bindings before the first Execute dispatch | Use the route's initial or original fixed binding |
 | Next step after a confirmed failure | Choose among legal local repair, feedback-check and replanning candidates | Existing bounded repair and escalation rules |
 | Model / effort selection | Choose a complete approved execution binding and record the actual switch | Existing fixed binding and deterministic quality/channel fallback |
 | Feedback-check priority | Select an approved check to collect facts before continuing bounded execution | Existing feedback and acceptance order |
@@ -97,6 +98,16 @@ must still submit a report covering all hypotheses with actual observation
 references and any uncertainty. An inconclusive report remains inconclusive. A
 repair still needs its originally authorized scope and the ordinary implementation,
 review and verification flow. See [investigation](investigation.md).
+
+## Initial execution model and collaboration
+
+The subscription defaults include `execution-policy` candidates for each route while preserving the original initial models in [model policy](model-policy.md). Defaults use `quality-order:[]` and `max-switches:2`: JEV off keeps the initial binding; JEV on can select another candidate before the first business invocation. Existing custom configurations without an execution policy retain fixed routes; the switch cannot invent models.
+
+Go first reconciles unresolved invocations, authorization, budget, and the reviewed contract, then filters candidates. Image packets retain bindings with actual image transport. Swarm requires Full, no images, and a valid reviewed `collaboration` declaration; a local Quick task does not automatically expand. Orchestrator uses fixed `thinking:""`, without fictitious high/xhigh settings. Candidate descriptions include model, effort, native profile, collaboration mode, and known limits.
+
+Only multiple legal choices justify a JEV call. Its inputs are the goal, route, approved scope, acceptance, collaboration, and budget facts, not live subscription balances or invented model success rates. It returns one action ID. Go rechecks configuration, candidates, and the switch before recording the actual binding change; effort or native-mode changes also cold-start. Initial choices use Snapshot v3, preserving investigation v1 and failure v2 compatibility.
+
+Each packet records initial selection only once and shares the cumulative decision allowance with investigation and failure adaptation. Restarts, parallel packets, repairs, and binding switches do not reset it. Pending/unknown requests reconcile their original journal without redispatch. Failed decisions with confirmed cleanup retain the initial baseline; unknown cleanup blocks. Go starts any selected Swarm execution; the JEV evaluator itself remains tool-free and cannot spawn children.
 
 ## Next steps after failure and model selection
 
@@ -171,7 +182,7 @@ JEV does not rewrite it. An explicitly authorized new round can freeze the new
 policy, within the same remaining cumulative allowance.
 
 Implementation freezes its own runtime decision policy at the first eligible
-failure in an enabled run. If the current process started with JEV off and has no
+initial choice or failure in an enabled run. If the current process started with JEV off and has no
 runtime decision ledger, saving an enabled setting does not activate that process
 immediately: start or resume the task so it reads the enabled configuration. Once a
 runtime decision ledger exists, turning JEV off and back on retains its frozen

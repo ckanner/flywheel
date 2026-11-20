@@ -516,6 +516,14 @@ Reviews bind to the same candidate and verification evidence. The Executor's pri
 
 ### Approved orchestration and adaptive-selection addendum — 2026-11-20
 
+Implementation: this addendum is realized by Antigravity 0.2.0, Flywheel native
+collaboration configuration and initial JEV selection. The [follow-up validation
+record](../validation/2026-11-20-orchestration-adaptive-selection.md) (Chinese)
+records source, independent review, package installation and unverified boundaries.
+Current settings are documented in [Antigravity](../en/antigravity.md),
+[JEV](../en/jev.md) and the
+[complete template](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json).
+
 The user authorized this addendum and its complete implementation in the same PR after reviewing native CLI collaboration and the existing JEV switch. Commit `a90aff4` is the verified **pre-addendum** baseline: it supports ordinary CLI calls and partial child metadata, but not selectable Orchestrator/Swarm or default execution candidates. Its JEV execution selection runs only after confirmed failures. Earlier CI results do not validate the additions below. This addendum supersedes the original future-tense description of the subscription JEV backend: that backend already uses tool-free Hydrogen medium; “JEV” names the bounded decision mechanism, not a request to the legacy paid System One/JEV model.
 
 #### Official capabilities and integration contract

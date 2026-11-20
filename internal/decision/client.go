@@ -53,6 +53,9 @@ func questions(s Snapshot) map[string]question {
 	if s.Version == 2 {
 		instructions = "Which approved next action best advances this failed coding task within the supplied evidence, attempt limits, and budget? Prefer useful feedback over repeated ineffective work; do not treat a model change or replan as proof of success."
 	}
+	if s.Version == 3 {
+		instructions = "Which approved execution binding best fits this prepared coding task, its reviewed scope, acceptance requirements, collaboration authorization and budget? Prefer the configured baseline for clear small tasks. Select Swarm only for the explicit approved independent collaboration tasks; justify other native orchestration from task complexity. Model names and self-reported confidence do not prove quality or available account quota."
+	}
 	return map[string]question{
 		"action": {Type: "choice", Instructions: instructions + boundary, Criteria: criteria},
 		"applicable": {Type: "noul", Instructions: "Does at least one listed action fit this decision and have enough supplied evidence to recommend it?" + boundary, Criteria: map[string]string{

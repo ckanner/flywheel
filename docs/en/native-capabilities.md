@@ -14,8 +14,26 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.2, logged-in Codex CLI and matching sandbox/approval receipts |
 | `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.7.0, compatible local Claude runtime, authorized authentication and explicit full access |
+| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.2.0, admitted official CLI and explicit full access; partial child evidence |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
+
+### Antigravity collaboration
+
+Antigravity has its own version 1 native options: `mode:"native"`, `"subagents"`
+or `"swarm"`, with optional `maxObservedAgents` (1–8). Native preserves the CLI's
+implicit behavior; it does not disable children. Explicit subagents/Swarm require
+actual child metadata, and the observed-member threshold is not a native hard
+concurrency limit. Orchestrator is a separate model selection with fixed empty
+effort. See [Antigravity](antigravity.md) for exact models, Flywheel profiles and
+standalone DSH commands.
+
+Static profiles do not require JEV. JEV can choose only configured, eligible
+execution bindings. Flywheel Swarm requires a reviewed Full packet with 2–8
+independent collaboration tasks, disjoint approved write scopes and no images.
+Planning remains foreground, and evidence-only analysis rejects collaboration.
+Receipts report real observed members without claiming a complete task board,
+whole-tree usage or remote child cleanup. Independent Review stays mandatory.
 
 ### Desktop plugin defaults and PTC calls
 
@@ -132,11 +150,11 @@ The desktop Models and sessions form includes a Native capabilities selector, sh
 
 ## 3. Apply capabilities to a stage
 
-Plan can use Team or Swarm to investigate, while its root produces formal Spec and packets. Execute can use agents, Workflow or Tower, with results subject to the existing verification and independent Review. Review and Judge use their own role histories and children, never Executor history. Intake/Garden can use the same capabilities for advice without writing state.
+Where the backend supports planning with Team or Swarm, Plan may use them for investigation while its root produces formal Spec and packets. Antigravity planning uses foreground subagents; its Swarm is admitted only for approved Execute collaboration. Execute can use agents, Workflow or Tower, with results subject to the existing verification and independent Review. Review and Judge use their own role histories and children, never Executor history. Intake/Garden can use the capabilities admitted for their role to provide advice without writing state.
 
 Native scheduling does not replace Go's decisions about retries, budgets, accepted candidates and delivery. A completed native task board is not a completed Flywheel task.
 
-A native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
+For backends with a complete child-lifecycle contract (Antigravity is excluded), a native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
 
 ## 4. LCU and screenshots
 

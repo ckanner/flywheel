@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"slices"
 )
 
 func (r *Report) antigravity(ctx context.Context, b Binding, cache map[string]bool) {
@@ -15,16 +16,23 @@ func (r *Report) antigravity(ctx context.Context, b Binding, cache map[string]bo
 	if _, checked := cache[key]; ready && !checked && ctx.Err() == nil {
 		result := runCommand(worker, []string{"--doctor"}, commandOptions(ctx, r.Cwd))
 		var probe struct {
-			Protocol        int    `json:"protocol"`
-			Type            string `json:"type"`
-			Package         string `json:"package"`
-			Version         string `json:"version"`
-			MachineProtocol int    `json:"machineProtocol"`
-			Available       bool   `json:"available"`
-			InferenceTested *bool  `json:"inferenceTested"`
-			EvidenceOnly    string `json:"evidenceOnly"`
+			Protocol              int      `json:"protocol"`
+			Type                  string   `json:"type"`
+			Package               string   `json:"package"`
+			Version               string   `json:"version"`
+			MachineProtocol       int      `json:"machineProtocol"`
+			Available             bool     `json:"available"`
+			InferenceTested       *bool    `json:"inferenceTested"`
+			EvidenceOnly          string   `json:"evidenceOnly"`
+			NativeVersion         int      `json:"nativeVersion"`
+			NativeOrchestrator    bool     `json:"nativeOrchestrator"`
+			NativeModes           []string `json:"nativeModes"`
+			NativeAgentLimit      string   `json:"nativeAgentLimit"`
+			HardNativeAgentLimit  *bool    `json:"hardNativeAgentLimit"`
+			NativeCompletionScope string   `json:"nativeCompletionScope"`
 		}
-		ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil && probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "dsh-subagent-antigravity" && probe.Version == drivers.AntigravityPackageVersion && probe.MachineProtocol == 1 && probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested && probe.EvidenceOnly == "verified-empty-init-tools"
+		ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil && probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "dsh-subagent-antigravity" && probe.Version == drivers.AntigravityPackageVersion && probe.MachineProtocol == 1 && probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested && probe.EvidenceOnly == "verified-empty-init-tools" &&
+			probe.NativeVersion == 1 && probe.NativeOrchestrator && slices.Equal(probe.NativeModes, []string{"native", "subagents", "swarm"}) && probe.NativeAgentLimit == "observed-total-children-guard" && probe.HardNativeAgentLimit != nil && !*probe.HardNativeAgentLimit && probe.NativeCompletionScope == "cli-invocation"
 		cache[key] = ok
 		if ok {
 			r.add("antigravity.api", "pass", "Antigravity 官方 CLI 插件公开 machine/lifecycle 入口可用；未发送推理请求", "", "")

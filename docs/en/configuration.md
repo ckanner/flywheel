@@ -171,8 +171,10 @@ policy, the worker checks native routing and disables service tools whose
 credential source cannot be distinguished; the old print path, Swarm, Tower and
 custom child-agent configurations are not substitutes. This profile applies to
 Garden and batch execution. Existing configurations without the policy retain
-their legacy paths. The Antigravity backend does not accept `native-profile`;
-its evidence-only analyst contract is selected by the engine.
+their legacy paths. Antigravity accepts version 1 `native`, `subagents` and `swarm`
+profiles with optional `maxObservedAgents`; its evidence-only analyst contract
+rejects native collaboration and is selected by the engine. See
+[Antigravity](antigravity.md) for fixed-effort Orchestrator and collaboration.
 
 ## Start from a complete template
 
@@ -519,7 +521,7 @@ Completed but unconsumed receipts have stricter rules: Review and Judge must mat
 
 The single-slot limit applies only to Flywheel's recovery receipt. Native thread and Session histories follow the backend's retention rules. Rebuilding a role history or shutting down its worker does not automatically delete earlier backend histories.
 
-An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.1.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity checks its native init before task input. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity waits for native init before task input for evidence-only and explicit subagents/Swarm calls. Its ordinary native path (including Orchestrator) sends input after spawn and validates init afterward; it does not provide a universal pre-dispatch thread-ready gate. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
 
 `status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
@@ -634,17 +636,40 @@ dispatch; `state.packets[*].execution-policy.history` records separate
 `quality-upgrade` and `channel-fallback` events with full before/after bindings,
 attempt and reason. Parallel packets retain independent records.
 
-With `jev.enabled`, confirmed failures can also select a legal binding through
-JEV. These switches are recorded as `jev-model-selection`, use the same
-`max-switches` and cold-start rules, and do not alter channel-error handling.
+With `jev.enabled`, JEV may select a legal binding before the first Execute and
+after confirmed failures. These switches are recorded as `jev-initial-selection`
+and `jev-model-selection`, use the same `max-switches` and cold-start rules, and
+do not alter channel-error handling. The first selection runs before business
+dispatch and shares the existing task decision ledger/budget with investigation
+and failure decisions. It is recorded once per packet; resume never reruns it to
+obtain a different choice. Unknown dispatch/cleanup must reconcile first.
 The allowed bindings remain an explicit resource/permission declaration; the
 JEV switch does not add a provider, account or model to that set.
+
+The subscription defaults include candidates for all seven routes, preserving
+their original initial models and using `quality-order:[]` and `max-switches:2`.
+JEV remains off by default, so those defaults keep fixed initial execution.
+The table is in [model policy](model-policy.md#initial-selection-and-failure-adaptation).
+Go filters candidates before asking JEV: images require the actual Claude image
+transport; Swarm requires Full and a valid reviewed collaboration declaration.
+No eligible alternative, a disabled selector or exhausted decision budget uses
+the current baseline. Fixed-effort Orchestrator uses `thinking:""`.
+
+Migration preserves an existing execution policy. When none exists, it adds
+default candidates only to routes already authorized for full access, and records
+notes for routes left fixed. It does not broaden preserved permissions.
 
 `config inspect --json` exposes the complete declaration under
 `execution-policy`; the ordinary bindings table remains the configured baseline.
 Current choices belong to packet/session state. Doctor's existing binding probes
 do not establish admission of every allowed experimental binding; actual dispatch
 still requires the adapter's configuration and permission checks.
+
+The model editor shows each route's actual initial candidate and its alternatives.
+Editing a route updates a candidate owned by that route, preserving shared
+bindings used elsewhere, permissions and session policy. Incomplete edits cannot
+be saved as if they changed the executor. Advanced JSON includes the complete
+`execution-policy` section for reviewing the allowed set and switch rules.
 
 Every switch cold-starts Execute, even an effort-only change; effort remains in
 the session binding. Unknown or unconsumed invocations reconcile first. Removing
@@ -816,7 +841,7 @@ fallback, current-turn tokens or a subscription charge.
 ## Antigravity and Gemini
 
 The `antigravity` harness invokes the official local `agy` CLI through the
-`dsh-subagent-antigravity@0.1.0` public machine API. The same companion supports
+`dsh-subagent-antigravity@0.2.0` public machine API. The same companion supports
 direct use in DSH. No ACP bridge or separate Gemini API credential is involved.
 The native catalog must contain the exact selected model, and `thinking` must
 match the model slug. The plugin verifies its local subscription/credit controls,
@@ -868,7 +893,7 @@ Local checks cover commands, versions, directories, configuration, and declared 
 DSH's `ready.reasoningEffort` echoes the requested value after SDK configuration acceptance; it is not an independent server attestation of effective reasoning effort. A no-inference probe cannot demonstrate quality gains from a higher effort. Gemini, Claude, GPT and Kimi have different native effort contracts; see [Reasoning effort](model-policy.md).
 
 Native worker checks import their public APIs and verify the pinned companion
-contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.1.0, including
+contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.0, including
 their required lifecycle/recovery exports, Node compatibility and native command.
 Binding fields `durableJournal`, `readOnlyRecovery` and
 `threadReadyBeforeDispatch` describe adapter capabilities; Claude's last field

@@ -250,7 +250,9 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 	if c.State.Planning.Active != nil {
 		files = c.planFiles(c.State.Planning.Active.Plans)
 	}
-	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files, prompts.PlanningPromptOptions{NativeAgents: b.NativeProfile != ""})
+	// Antigravity exposes observed child metadata, not a complete background-child
+	// lifecycle. Keep its research and result collection in this foreground call.
+	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files, prompts.PlanningPromptOptions{NativeAgents: b.NativeProfile != "" && b.Harness != "antigravity"})
 	before, err := c.planningGuard()
 	if err != nil {
 		return drivers.Result{}, role, "", err

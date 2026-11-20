@@ -146,7 +146,9 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 它使用原生 Agent 路径，并关闭子 agent。订阅策略下，worker 检查实际路由，并关闭
 无法区分凭证来源的服务工具；旧 print、Swarm、Tower 和自定义子 agent 配置不能
 替代这条路径。Garden 和 batch 执行共用该 profile。无订阅策略的旧配置保留原路径。
-Antigravity 不接受 `native-profile`；仅分析证据的契约由引擎选择。
+Antigravity 支持 version 1 的 `native`、`subagents`、`swarm` profile，以及可选
+`maxObservedAgents`；仅分析证据的契约由引擎选择并拒绝原生协作。固定档位 Orchestrator
+和协作设置见 [Antigravity](antigravity.md)。
 
 ## 从完整模板开始
 
@@ -484,12 +486,14 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.1.0 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.2.0 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 在任务前
 检查 SDK initialize／版本和要求的订阅证据，但原生 `system/init` 配置消息仍发生在
-prompt 之后，不能提供同等的派发前权限检查点。Antigravity 在 task 输入前检查
-原生 init。各后端对缺少证据的事实都保留未知窗口，
+prompt 之后，不能提供同等的派发前权限检查点。Antigravity 的 evidence-only 和显式
+subagents／Swarm 会等待原生 init 再输入任务；普通 native 路径（含 Orchestrator）在
+spawn 后输入任务，之后仍核对 init，但不能宣称统一的派发前 thread-ready 闸门。
+各后端对缺少证据的事实都保留未知窗口，
 不会从 PID 消失或报告存在推断任务完成。详见[中断核对](session-recovery.md)。
 
 `status` 及 `control status` 展示角色、作用域、代次、动作／原因、最新调用状态、
@@ -607,13 +611,29 @@ token 预算继续生效；切换不清零失败、不增加尝试、不削减�
 `state.packets[*].execution-policy.history` 分别保存 `quality-upgrade` 和
 `channel-fallback` 的完整前后绑定、尝试与原因。并行 packet 各自持有记录。
 
-开启 `jev.enabled` 后，确认结束的失败也可由 JEV 选择合法绑定，切换记录为
-`jev-model-selection`，共用原 `max-switches` 与冷启动规则，不改变渠道错误处理。
+开启 `jev.enabled` 后，首次 Execute 前和确认结束的失败都可由 JEV 选择合法绑定，
+切换分别记录为 `jev-initial-selection` 与 `jev-model-selection`，共用原 `max-switches`
+与冷启动规则，不改变渠道错误处理。首次选择发生在业务派发前，与调查、失败决策共享
+任务决策账本和预算；每个 packet 只记录一次，恢复时不能为了换一个选择而重新发问。
+派发或清理 unknown 必须先对账。
 允许绑定仍是明确的资源／权限声明，JEV 开关不会把新 provider、账号或模型加入集合。
+
+订阅默认配置包含七条 route 的候选，保留原初始模型，使用 `quality-order:[]` 和
+`max-switches:2`。JEV 默认仍关闭，因此默认执行保持固定初始绑定。完整表见
+[模型策略](model-policy.md#首次选择与失败调整)。Go 先筛选资格再让 JEV 选择：图片要求
+实际 Claude 图片传输；Swarm 要求 Full 和合法的已审查 collaboration 声明。没有合法
+替代项、关闭选择器或决策预算耗尽时保留当前基线。固定档位 Orchestrator 使用 `thinking:""`。
+
+迁移保留既有 execution-policy；只有原来未配置策略时，才给已授权 full-access 的 route
+补入默认候选，其余 route 保持固定并附说明。不会因此扩大保留的权限。
 
 `config inspect --json` 在 `execution-policy` 下展示完整声明，普通绑定表仍是
 配置基线，当前选择由 packet／session 状态记录。Doctor 既有绑定探测不证明每个
 允许的实验绑定均已通过接纳；实际派发仍须通过适配器配置与权限检查。
+
+模型编辑页显示每条 route 实际的初始候选与允许集合。图形编辑路线时更新该路线独有的
+初始候选，保留其他路线使用的共享绑定、权限和会话策略；无法确定完整绑定的输入不能
+当作已生效修改保存。高级 JSON 包含完整 `execution-policy`，用于审查候选和切换规则。
 
 每次切换均冷启动 Execute，仅改变 effort 也不例外；effort 保留在会话身份中。
 unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被拒绝：恢复原配置，
@@ -805,7 +825,7 @@ frontend／multimodal 执行。`fable` 供显式替换，canonical model 是
 
 ## Antigravity 与 Gemini
 
-`antigravity` harness 通过 `dsh-subagent-antigravity@0.1.0` 的公开 machine API
+`antigravity` harness 通过 `dsh-subagent-antigravity@0.2.0` 的公开 machine API
 调用官方本机 `agy` CLI，同一插件也能在 DSH 中直接使用。不经过 ACP，不需要另一个
 Gemini API 凭证。实际原生目录必须包含选定的精确模型，thinking 必须与 slug 一致。
 插件验证本机订阅／credits 控制、原生生命周期、请求配置和清理；账号访问或模型
@@ -859,7 +879,7 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；Gemini、Claude、GPT、Kimi 也不共用同一套原生 effort 契约，详见[推理等级说明](model-policy.md)。
 
 原生 worker 检查实际导入公开 API，并核对精确 companion 契约：Codex Pro 0.10.2、
-Claude Code Pro 0.7.0、Antigravity 0.1.0，及要求的 lifecycle／recovery 导出、
+Claude Code Pro 0.7.0、Antigravity 0.2.0，及要求的 lifecycle／recovery 导出、
 Node 兼容性和原生命令。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。

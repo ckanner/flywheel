@@ -98,6 +98,11 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		stable = append(stable, "", "## Frozen image attachments",
 			"Native image content blocks are supplied in the order below. Use those attached bytes as reference; the path and checksum identify the frozen source. Do not modify or replace the reference files.", string(images))
 	}
+	if packet.Collaboration != nil {
+		collaboration, _ := json.MarshalIndent(packet.Collaboration, "", "  ")
+		stable = append(stable, "", "## Reviewed collaboration tasks",
+			"These tasks and their disjoint write scopes are approved contract data. Delegate only within each task's declared scope and the packet boundaries; do not invent new work. Collect the results of every delegated task before returning. The native verifier's report does not replace Flywheel's independent Review or final acceptance. Do not modify the collaboration contract or leave background work unaccounted for.", string(collaboration))
+	}
 	reportKeys := "requirements-covered, changed-files, commands-run, failures"
 	if _, declared := packet.DoneReportFormat["workflow-risks"]; declared {
 		reportKeys += ", workflow-risks"
