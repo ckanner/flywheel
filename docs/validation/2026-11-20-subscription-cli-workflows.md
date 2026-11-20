@@ -72,6 +72,7 @@ review-first 在受审查方案后等待批准；已明确授权的 delegated �
 | macOS 临时目录别名使三个新测试混用 `/var` 与 `/private/var` | 仅对测试原始任务根和调用 cwd 做物理路径规范化；Linux 的 symlink TMPDIR 原样复现并关闭三个失败，错误目录/坏 checkpoint 拒绝断言及生产身份规则不变 |
 | 主动复查发现 AGY 跨进程、独立插件和完整安装也沿用未规范化的有效临时根 | 同一 symlink TMPDIR 复现 Go bridge、独立包 journal 和实际安装失败；在测试创建根目录后、派生 HOME/恢复目录与冻结调用前规范化，三层完整复验通过，生产 physical-directory 防御保持原规则 |
 | macOS 全部 Go 测试通过，但删当前目录的测试没有命中 `filepath.Abs` 错误分支，`canonical` 覆盖率为 75% | 按包内既有 I/O seam 风格注入路径解析失败，明确验证原错误及空根、已有合法 checkpoint 时仍不派发/不查询；正常和 symlink TMPDIR 下六项测试通过，五个函数全部 100%，保留原物理路径与错误处理规则 |
+| macOS DSH 的 EPIPE 夹具在 payload 之前提前结束，旧夹具混用 Node stdin 与底层 fd 关闭 | 夹具先握手，由单一 raw read/close 所有者在首块读取结束后物理关闭 fd 0；实际复用 0 并验证清理后仍可写，原生 exit 0 仍不能掩盖代理 exit 1；55 项专项通过，生产代理不变，握手诊断补充退出码与原生记录 |
 
 上述确定问题已修复。审查没有以降低覆盖率、删除有效防御、跳过 Claude optional peer
 或把错误变成默认通过来解除门禁。
@@ -115,6 +116,7 @@ integrity。AGY 的 npm 11/12 与临时目录别名验收补丁另记为 verific
 | `TestPacketImagesClaudeSDKOfflineBridge` | 正式 Execute + L1、真实 SDK 图片、原终态恢复、源图变化、无重派及 22 tokens 只归账一次均通过 |
 | 全组 Go → Node 跨进程桥接 | DSH、Codex、Claude、Kimi、AGY 及 Provider 活性、Kimi print 标题/身份失败检查均通过 |
 | Codex 收尾专项 | 55/55 通过，包含实际打包代理与公开 worker；7 MiB 背压/EOF/进程组 TERM 回归能使旧代理错误退出、新代理正确结束；Go → Node Codex 协议/活性/订阅策略再次通过 |
+| Codex 物理输入关闭的可移植夹具 | 55/55 专项再次通过，无跳过；明确证明在途写、单次物理关闭、fd 0 复用仍可写、原生正常退出、代理失败及进程组清理，不用 stream close 事件推断物理关闭 |
 | macOS 路径别名回归 | symlink TMPDIR 下三个原失败及两项负向检查通过；受影响 decisionexec/drivers 两包完整测试通过，逐函数覆盖率均为 100% |
 | AGY 跨层路径别名回归 | 同一 symlink TMPDIR 下 Go bridge 8 子例及 strict subscription 2 子例、独立插件 20 项和实际 pack/install、真实 DSH 隔离安装、主候选宿主 10/10 与安装 16/16 均通过；修改只涉及测试/验收脚本的有效目录 setup |
 | 路径解析失败的可移植覆盖 | `decisionexec` 六项测试在正常与别名环境通过；准确验证路径失败阻止派发和恢复查询，全部函数含 `canonical` 均为 100% |
@@ -122,6 +124,10 @@ integrity。AGY 的 npm 11/12 与临时目录别名验收补丁另记为 verific
 | 文档静态复核 | 61 个变动/新增 Markdown、823 个相对链接及适用锚点、91 个完整 JSON 围栏通过；中英图片/配置/工作流指南同步 |
 | 36 条真实引擎会话演练 | 36/36 完成，96 次离线调用；首轮、L1 返修、Review 返修、长上下文、停止恢复和配置变化全覆盖 |
 | Claude PR CI | [run 44733802702](https://github.com/ckanner/dsh-subagent-claude-code-pro/actions/runs/44733802702) 四个 Linux/macOS × Node 22/24 job 全通过，包含公开包消费和真实 DSH schemas/PTC bindings |
+
+CI 将 DSH、独立插件、原生桥接与实际候选安装放在较慢的完整 Go 门禁之前，以便先
+反馈已发现的平台兼容问题。所有原命令、job、超时、逐函数覆盖率门禁、Linux race
+检查和真实引擎会话演练保持完整；只移动 `make quality-gate` 的执行顺序。
 
 ## 仍需单独认定的证据
 

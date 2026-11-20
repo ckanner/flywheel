@@ -18,20 +18,39 @@ printf '%s\\n' '{"jsonrpc":"2.0","method":"fixture/ready","params":{}}'
 kill -${mode.slice('signal-'.length)} "$$"
 exit 24
 ` : `#!/usr/bin/env node
-import {appendFileSync,closeSync} from 'node:fs';
+import {close,openSync,read,writeSync} from 'node:fs';
 const mode=process.env.TEST_PROXY_MODE;
-const log=value=>appendFileSync(process.env.TEST_PROXY_LOG,JSON.stringify(value)+'\\n');
+const logFD=openSync(process.env.TEST_PROXY_LOG,'a');
+const log=value=>writeSync(logFD,JSON.stringify(value)+'\\n');
 const notify=method=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',method,params:{pid:process.pid}})+'\\n');
-let stopping=false;
+let stopping=false,closePromise,replacement,readDone;
 setInterval(()=>{},1000);
-const closeInput=()=>{process.stdin.destroy();try{closeSync(0);}catch{}};
-process.on('SIGTERM',()=>{log({event:'stop'});if(stopping)return;stopping=true;closeInput();setTimeout(()=>process.exit(0),50);});
-if(mode==='closed-input') {
-  closeInput();notify('fixture/ready');
-} else {
-  process.stdin.on('data',chunk=>{log({event:'input',bytes:chunk.length});if(mode==='backpressure'){process.stdin.pause();notify('fixture/backpressured');}});
-  notify('fixture/ready');
-}
+const readSettled=new Promise(resolve=>{readDone=resolve;});
+// Own fd 0 directly, and finish its single read before the asynchronous close.
+const closeInput=()=>closePromise??=readSettled.then(()=>new Promise((resolve,reject)=>{
+  close(0,error=>{if(error){reject(error);return;}log({event:'input-closed'});resolve();});
+}));
+process.on('exit',code=>log({event:'exit',code}));
+process.on('SIGTERM',()=>{
+  log({event:'stop'});if(stopping)return;stopping=true;
+  void closeInput().then(()=>{
+    if(replacement!==undefined){writeSync(replacement,'still open');log({event:'replacement-open',fd:replacement});}
+    setTimeout(()=>process.exit(0),50);
+  });
+});
+read(0,Buffer.alloc(65536),0,65536,null,(error,bytes)=>{
+  if(error)throw error;
+  if(bytes>0)log({event:'input',bytes});
+  readDone();
+  if(mode==='backpressure'&&bytes>0)notify('fixture/backpressured');
+  if(mode==='closed-input'&&bytes>0){
+    void closeInput().then(()=>{
+      replacement=openSync(process.env.TEST_PROXY_LOG+'.replacement','w');
+      log({event:'replacement',fd:replacement});
+    });
+  }
+});
+notify('fixture/ready');
 `);
   await chmod(command, 0o755);
   const child = spawn(process.execPath, [proxy, 'app-server', '--stdio'], { cwd, detached: true,
@@ -50,12 +69,13 @@ if(mode==='closed-input') {
   child.stdin.on('error', () => {});
   run.done = new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.once('close', (code, signal) => { run.closed = true; resolve({ code, signal }); });
+    child.once('close', (code, signal) => { run.closed = true; run.terminal = { code, signal }; resolve(run.terminal); });
   });
   run.wait = async method => {
     const until = Date.now() + 5000;
     while (!run.frames.some(frame => frame.method === method)) {
-      assert.equal(run.closed, false, 'proxy exited before ' + method + ': ' + run.stderr);
+      assert.equal(run.closed, false, 'proxy exited before ' + method + ': ' + run.stderr +
+        (run.closed ? JSON.stringify({ terminal: run.terminal, native: await run.records() }) : ''));
       assert.ok(Date.now() < until, 'proxy did not observe ' + method);
       await delay(10);
     }
@@ -89,7 +109,14 @@ test('native EPIPE before any shutdown remains a transport failure even when cle
   const run = await fixture(t, 'closed-input');
   run.child.stdin.write(payload);
   assert.deepEqual(await run.done, { code: 1, signal: null }, run.stderr);
-  assert.ok((await run.records()).some(record => record.event === 'stop'));
+  const records = await run.records();
+  assert.ok(records.some(record => record.event === 'stop'));
+  const readBytes = records.filter(record => record.event === 'input').reduce((sum, record) => sum + record.bytes, 0);
+  assert.ok(readBytes > 0 && readBytes < Buffer.byteLength(payload), 'native must close stdin with a genuinely pending write before any requested shutdown');
+  assert.equal(records.filter(record => record.event === 'input-closed').length, 1, 'stdin has one asynchronous close owner');
+  assert.deepEqual(records.find(record => record.event === 'replacement'), { event: 'replacement', fd: 0 });
+  assert.deepEqual(records.find(record => record.event === 'replacement-open'), { event: 'replacement-open', fd: 0 }, 'cleanup must leave the reused descriptor open');
+  assert.deepEqual(records.filter(record => record.event === 'exit'), [{ event: 'exit', code: 0 }], 'native cleanup exit 0 cannot hide the earlier transport failure');
   assert.throws(() => process.kill(-run.child.pid, 0), { code: 'ESRCH' });
 });
 

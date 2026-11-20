@@ -112,7 +112,6 @@ jobs:
         run: |
           git config --global user.email "ci@flywheel.local"
           git config --global user.name "flywheel-ci"
-      - run: make quality-gate
       - name: Build and test the DSH plugin (offline)
         working-directory: plugins/dsh
         run: |
@@ -148,6 +147,7 @@ jobs:
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
         run: npm run test:install
+      - run: make quality-gate
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1
