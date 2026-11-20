@@ -31,10 +31,24 @@ export function command(value = 'agy') {
   if (/\s/.test(value) && !isAbsolute(value) || value.startsWith('-')) throw new MachineInputError('command must be a program name or absolute path, never a shell command')
   return value
 }
+export const ORCHESTRATOR_MODELS = Object.freeze(['gemini-pro-orchestrator-neon','gemini-pro-orchestrator','gemini-pro-orchestrator-argon'])
+export const isOrchestratorModel = model => ORCHESTRATOR_MODELS.includes(model)
+/** Used by interactive defaults only; the machine boundary validates explicit bindings. */
+export const modelEffort = model => isOrchestratorModel(model) ? '' : /-(low|medium|high|xhigh)$/.exec(model)?.[1]
 export function modelBinding(model, effort) {
+  if (isOrchestratorModel(model)) {
+    if (effort !== undefined && effort !== '') throw new MachineInputError('Orchestrator models have fixed effort; use an empty effort and no native --effort flag')
+    return {model,effort:''}
+  }
   const match = /^gemini-4-(hydrogen|neon|carbon|argon)-(low|medium|high|xhigh)$/.exec(text(model, 'model', 256))
   if (!match || !['low', 'medium', 'high', 'xhigh'].includes(effort) || match[2] !== effort || ['carbon', 'argon'].includes(match[1]) && effort === 'xhigh') throw new MachineInputError('select an explicit Gemini 4 model slug with a supported matching effort')
   return { model, effort }
+}
+export function nativeOptions(value) {
+  if (value === undefined) return undefined
+  fields(value,['version','mode','maxObservedAgents'],'native')
+  if (value.version !== 1 || !['native','subagents','swarm'].includes(value.mode)) throw new MachineInputError('native must select version 1 and native, subagents or swarm mode')
+  return Object.freeze({version:1,mode:value.mode,...(value.maxObservedAgents===undefined?{}:{maxObservedAgents:integer(value.maxObservedAgents,'native.maxObservedAgents',undefined,1,8)})})
 }
 const ajv = new Ajv({ strict: true, allErrors: true, validateFormats: false })
 export function schemaValidator(schema) {
@@ -46,12 +60,14 @@ function freeze(value) {
   return value
 }
 export function parseMachineRequest(input) {
-  fields(input, ['protocol','requestId','cwd','prompt','command','model','effort','executionMode','permissionMode','sandbox','toolPolicy','sessionMode','sessionId','sessionName','timeoutMs','disposeGraceMs','maxOutputBytes','maxFrameBytes','outputSchema','subscriptionPolicy'], 'request')
+  fields(input, ['protocol','requestId','cwd','prompt','command','model','effort','executionMode','permissionMode','sandbox','toolPolicy','native','sessionMode','sessionId','sessionName','timeoutMs','disposeGraceMs','maxOutputBytes','maxFrameBytes','outputSchema','subscriptionPolicy'], 'request')
   if (input.protocol !== 1) throw new MachineInputError('protocol must be 1')
   const { model, effort } = modelBinding(input.model, input.effort)
   if (!['default','accept-edits','plan'].includes(input.executionMode)) throw new MachineInputError('executionMode must be explicit: default, accept-edits or plan')
   if (!['request-review','always-proceed'].includes(input.permissionMode) || typeof input.sandbox !== 'boolean') throw new MachineInputError('permissionMode and sandbox must be explicit')
   if(input.toolPolicy!==undefined&&!['native','evidence-only'].includes(input.toolPolicy))throw new MachineInputError('toolPolicy must be native or evidence-only')
+  const native=nativeOptions(input.native)
+  if(input.toolPolicy==='evidence-only'&&(isOrchestratorModel(model)||native&&native.mode!=='native'))throw new MachineInputError('evidence-only forbids Orchestrator models and subagents or swarm collaboration')
   if (!['new','resume'].includes(input.sessionMode)) throw new MachineInputError('sessionMode must be new or resume')
   if (input.sessionMode === 'resume' ? !UUID.test(input.sessionId) : input.sessionId !== undefined) throw new MachineInputError('resume requires an exact conversation UUID; new must not specify sessionId')
   if (input.sessionName !== undefined && /[\u0000-\u001f\u007f]/.test(text(input.sessionName, 'sessionName', 512))) throw new MachineInputError('sessionName must be a single line')
@@ -60,6 +76,7 @@ export function parseMachineRequest(input) {
   if (input.outputSchema !== undefined) schemaValidator(input.outputSchema)
   return freeze({ protocol:1, requestId:text(input.requestId,'requestId',256), cwd:directory(input.cwd), prompt:text(input.prompt,'prompt',1024*1024),
     command:command(input.command), model, effort, executionMode:input.executionMode, permissionMode:input.permissionMode, sandbox:input.sandbox,toolPolicy:input.toolPolicy??'native',
+    ...(native===undefined?{}:{native}),
     sessionMode:input.sessionMode, ...(input.sessionId ? {sessionId:input.sessionId.toLowerCase()} : {}), ...(input.sessionName ? {sessionName:input.sessionName} : {}),
     timeoutMs:integer(input.timeoutMs,'timeoutMs',600000,0), disposeGraceMs:integer(input.disposeGraceMs,'disposeGraceMs',2000,10,30000),
     maxOutputBytes:integer(input.maxOutputBytes,'maxOutputBytes',1024*1024,1,16*1024*1024), maxFrameBytes:integer(input.maxFrameBytes,'maxFrameBytes',4*1024*1024,1024,32*1024*1024),

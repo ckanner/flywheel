@@ -17,7 +17,8 @@ export const MACHINE_ACTIVITY_CAPABILITIES=Object.freeze({version:1,metadataOnly
 export const MACHINE_CAPABILITIES=Object.freeze({protocol:1,provider:'antigravity',transport:'official-cli-stream-json',minimumCLIVersion:'1.5.7',subscriptionOnly:true,
   platforms:['darwin','linux'],input:'text',structuredOutput:true,preciseResume:true,concurrentResume:false,parentDeathCleanup:true,processGroupCleanup:true,
   durableRecovery:true,providerWorkQuery:false,providerWorkCancel:false,prewarm:false,nativeRename:false,evidenceOnly:'verified-empty-init-tools',nativeAttachments:false,
-  nativeOrchestrator:false,aggregateNativeUsage:false,observedBinding:['cwd','model','permissionMode'],unobservedBinding:['effort','executionMode','sandbox']})
+  nativeOrchestrator:true,minimumOrchestratorCLIVersion:'1.5.12',minimumCollaborationCLIVersion:'1.5.12',nativeModes:['native','subagents','swarm'],nativeAgentLimit:'observed-total-children-guard',hardNativeAgentLimit:false,
+  nativeCompletionScope:'cli-invocation',aggregateNativeUsage:false,observedBinding:['cwd','model','permissionMode'],unobservedBinding:['effort','executionMode','sandbox']})
 
 /** One isolated supervisor and one official CLI turn. No model calls during validation. */
 export async function runMachine(input,runtime={}) {
@@ -41,6 +42,7 @@ export async function runMachine(input,runtime={}) {
         const possible=lifecycle?.dispatch!=='not-dispatched'&&lifecycle!==null
         receipt.execution.dispatch=possible?'dispatched':'not-dispatched';receipt.execution.turnDispatch=possible?'possible':'not-dispatched'
         receipt.execution.outcome=possible?'unknown':'not-started';receipt.cleanup.confirmed=!possible
+        receipt.native.completion.state=possible?'unknown':'not-started'
         receipt.providerWork={...receipt.providerWork,state:possible?'unknown':'not-dispatched',replaySafe:!possible}
         receipt.failure={stage:'supervisor',category:'unknown',detail:'Supervisor exited without a verified receipt. '+stderr.slice(-2000)}
       }

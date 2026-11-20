@@ -11,7 +11,7 @@ function storage(env) {
   return path
 }
 export function sessionBinding(request,fingerprint) {
-  return hash({cwd:request.cwd,command:request.command,model:request.model,effort:request.effort,permissionMode:request.permissionMode,executionMode:request.executionMode,sandbox:request.sandbox,toolPolicy:request.toolPolicy,configuration:fingerprint})
+  return hash({cwd:request.cwd,command:request.command,model:request.model,effort:request.effort,permissionMode:request.permissionMode,executionMode:request.executionMode,sandbox:request.sandbox,toolPolicy:request.toolPolicy,...(request.native===undefined?{}:{native:request.native}),configuration:fingerprint})
 }
 export function claimSession(env,id,binding,runId,{resume=false}={}) {
   const directory=storage(env),key=hash(id.toLowerCase()),lock=join(directory,key+'.lock')

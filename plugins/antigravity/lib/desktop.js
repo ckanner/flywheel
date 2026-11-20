@@ -2,15 +2,18 @@ import { mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { runMachine, recoverMachine, doctor } from './machine.js'
-import { directory, fields, hash, UUID, parseMachineRequest, text } from './input.js'
+import { directory, fields, hash, UUID, parseMachineRequest, modelEffort, text } from './input.js'
 import { readRecord, writeRecord } from './journal.js'
 import { runtimeEnvironment } from './environment.js'
+import { nativeReceipt } from './native.js'
 
 function taskSummary(record) {
   return {version:1,invocationId:record.invocationId,label:record.label,owner:record.owner,workspace:record.workspace,status:record.status,requested:record.requested,
     progress:record.progress,session:record.receipt?.session??null,configuration:record.receipt?.configuration??null,failure:record.receipt?.failure??record.error??null,
-    cleanup:record.receipt?.cleanup??null,providerWork:record.receipt?.providerWork??null,output:record.receipt?.output??[],updatedAt:record.updatedAt}
+    cleanup:record.receipt?.cleanup??null,providerWork:record.receipt?.providerWork??null,native:record.receipt?.native??record.native??null,output:record.receipt?.output??[],updatedAt:record.updatedAt}
 }
+const selectedEffort=(input,config)=>input.effort??(input.model!==undefined&&input.model!==config.model?modelEffort(input.model):config.effort)
+const selectedNative=(input,config)=>input.native===undefined?config.native:input.native
 const activeKey=record=>hash({owner:record.owner,workspace:record.workspace,invocationId:record.invocationId})
 /** Owner-bound direct actions. A manual task never constructs or calls a parent model. */
 export class DesktopTasks {
@@ -33,12 +36,12 @@ export class DesktopTasks {
   }
   persist(scope,record) {record.updatedAt=new Date().toISOString();writeRecord(scope.path,record.invocationId+'.json',record)}
   async action(context,input,{direct=true,signal,onProgress}={}) {
-    fields(input,['version','action','invocationId','prompt','label','cwd','model','effort','executionMode','permissionMode','sandbox','toolPolicy','sessionId','timeoutMs','outputSchema'],'desktop action')
+    fields(input,['version','action','invocationId','prompt','label','cwd','model','effort','native','executionMode','permissionMode','sandbox','toolPolicy','sessionId','timeoutMs','outputSchema'],'desktop action')
     if(input.version!==1||!['start','list','status','cancel','result','doctor','defaults'].includes(input.action))throw new Error('unsupported Antigravity action version or name')
     if(input.action==='defaults')return {version:1,defaults:this.getConfig()}
     if(input.action==='doctor'){
       const config=this.getConfig()
-      return doctor({command:config.command,cwd:input.cwd??config.defaultCwd??context.workspace,model:input.model??config.model,effort:input.effort??config.effort},{env:this.env,signal})
+      return doctor({command:config.command,cwd:input.cwd??config.defaultCwd??context.workspace,model:input.model??config.model,effort:selectedEffort(input,config),native:selectedNative(input,config)},{env:this.env,signal})
     }
     if(input.action==='start')return this.start(context,input,{direct,signal,onProgress})
     if(input.action==='list'){
@@ -65,25 +68,33 @@ export class DesktopTasks {
     if(!direct&&['permissionMode','executionMode','sandbox','cwd'].some(k=>input[k]!==undefined))throw new Error('tool delegations cannot expand configured permissions or change their owner workspace')
     const config=this.getConfig(),scope=this.scope(context),invocationId=input.invocationId??randomUUID()
     if(!UUID.test(invocationId))throw new Error('invocationId must be an exact UUID')
+    let resumeOwner
     if(input.sessionId){
-      const owned=readdirSync(scope.path).filter(n=>/^[0-9a-f-]{36}\.json$/.test(n)).some(file=>{const prior=readRecord(scope.path,file);return prior.owner===scope.owner&&prior.workspace===scope.workspace&&prior.receipt?.session?.id===input.sessionId&&prior.receipt.session.resumable})
-      if(!owned)throw new Error('resume requires a confirmed conversation owned by this Desktop session and workspace')
+      for(const file of readdirSync(scope.path).filter(n=>/^[0-9a-f-]{36}\.json$/.test(n))){
+        const prior=readRecord(scope.path,file)
+        if(prior.owner===scope.owner&&prior.workspace===scope.workspace&&prior.receipt?.session?.id===input.sessionId&&prior.receipt.session.resumable){resumeOwner=prior;break}
+      }
+      if(!resumeOwner)throw new Error('resume requires a confirmed conversation owned by this Desktop session and workspace')
     }
+    // An absent native field is itself part of the exact session binding. Saved
+    // defaults must not replace that absence when the owner resumes old work.
+    const native=input.native===undefined&&resumeOwner?resumeOwner.requested.native:selectedNative(input,config)
     const request=parseMachineRequest({protocol:1,requestId:invocationId,command:config.command,cwd:direct?(input.cwd??config.defaultCwd??scope.workspace):scope.workspace,prompt:input.prompt,
-      model:input.model??config.model,effort:input.effort??config.effort,executionMode:input.executionMode??config.executionMode,permissionMode:input.permissionMode??config.permissionMode,sandbox:input.sandbox??config.sandbox,
+      model:input.model??config.model,effort:selectedEffort(input,config),...(native===undefined?{}:{native}),executionMode:input.executionMode??config.executionMode,permissionMode:input.permissionMode??config.permissionMode,sandbox:input.sandbox??config.sandbox,
       toolPolicy:input.toolPolicy??'native',sessionMode:input.sessionId?'resume':'new',...(input.sessionId?{sessionId:input.sessionId}:{}),sessionName:input.label??'Antigravity task',
       timeoutMs:input.timeoutMs??config.timeoutMs,disposeGraceMs:config.disposeGraceMs,...(input.outputSchema?{outputSchema:input.outputSchema}:{}),subscriptionPolicy:{version:1,mode:'subscription-only'}})
     const digest=hash(request)
     try{const existing=readRecord(scope.path,invocationId+'.json');if(existing.digest!==digest)throw new Error('invocation identity conflicts with a previous task');return taskSummary(existing)}catch(error){if(error.code!=='ENOENT')throw error}
     // Durable identity is recorded before invoking machine; retries of the same action ID are reads.
     const {prompt,outputSchema,...requested}=request
-    const record={version:1,invocationId,owner:scope.owner,workspace:scope.workspace,label:request.sessionName,requested,digest,status:'running',progress:'',runId:null,recoveryDirectory:join(scope.path,invocationId+'.journal'),receipt:null}
+    const record={version:1,invocationId,owner:scope.owner,workspace:scope.workspace,label:request.sessionName,requested,digest,status:'running',progress:'',native:nativeReceipt(request),runId:null,recoveryDirectory:join(scope.path,invocationId+'.journal'),receipt:null}
     this.persist(scope,record)
     const controller=new AbortController(),abort=()=>controller.abort()
     signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort()
     const active={controller,record,done:null};this.active.set(activeKey(record),active)
     active.done=this.run(request,{env:this.env,signal:controller.signal,recoveryDirectory:record.recoveryDirectory,
-      onLifecycle:event=>{record.runId=event.runId;record.lifecycle=event;this.persist(scope,record)},
+      onLifecycle:event=>{record.runId=event.runId;record.lifecycle=event;if(event.event==='dispatch-possible')record.native.completion.state='unknown';this.persist(scope,record)},
+      onActivity:event=>{if(event.native)record.native=structuredClone(event.native)},
       onProgress:value=>{record.progress=(record.progress+value).slice(-4096);try{onProgress?.(value)}catch{}},
     }).then(receipt=>{record.receipt=receipt;record.status=receipt.ok?'completed':receipt.providerWork.state==='unknown'?'unknown':'failed';return receipt},error=>{record.status='unknown';record.error={category:'unknown',detail:error.message};return null}).finally(()=>{
       signal?.removeEventListener('abort',abort);this.active.delete(activeKey(record));this.persist(scope,record)

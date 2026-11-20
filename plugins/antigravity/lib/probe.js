@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { command, directory, modelBinding } from './input.js'
+import { command, directory, modelBinding, nativeOptions, isOrchestratorModel } from './input.js'
 import { runtimeEnvironment, inspectSubscription, redact } from './environment.js'
 
 export async function probeCommand(program,args,{cwd,env,signal,timeoutMs=10000}={}) {
@@ -23,9 +23,11 @@ export async function probeCommand(program,args,{cwd,env,signal,timeoutMs=10000}
 export async function inspectCLI(request,env,signal) {
   const v=await probeCommand(request.command,['--version'],{cwd:request.cwd,env,signal})
   const match=/\b(\d+)\.(\d+)\.(\d+)\b/.exec(v.output)
-  if(!v.ok||!match||Number(match[1])<1||Number(match[1])===1&&(Number(match[2])<5||Number(match[2])===5&&Number(match[3])<7))throw new Error('agy 1.5.7 or newer is required; --version was not confirmed')
+  const minimum=isOrchestratorModel(request.model)||request.native&&request.native.mode!=='native'?12:7
+  if(!v.ok||!match||Number(match[1])<1||Number(match[1])===1&&(Number(match[2])<5||Number(match[2])===5&&Number(match[3])<minimum))throw new Error(`agy 1.5.${minimum} or newer is required; --version was not confirmed`)
   const help=await probeCommand(request.command,['--help'],{cwd:request.cwd,env,signal})
-  const required=['--input-format','--output-format','--model','--effort','--conversation','--mode','--print-timeout','--disable-slash-commands','--dangerously-skip-permissions']
+  const required=['--input-format','--output-format','--model','--conversation','--mode','--print-timeout','--disable-slash-commands','--dangerously-skip-permissions']
+  if(request.effort!=='')required.push('--effort')
   if(request.outputSchema)required.push('--json-schema')
   if(request.toolPolicy==='evidence-only')required.push('--agent')
   if(request.sandbox)required.push('--sandbox')
@@ -38,8 +40,8 @@ export async function inspectCLI(request,env,signal) {
 }
 export async function doctor(input,runtime={}) {
   try {
-    const request={command:command(input.command),cwd:directory(input.cwd),...(input.model?modelBinding(input.model,input.effort):{model:'gemini-4-hydrogen-high',effort:'high'})}
-    const env=runtimeEnvironment(runtime),subscription=inspectSubscription(env)
+    const request={command:command(input.command),cwd:directory(input.cwd),...(input.model?modelBinding(input.model,input.effort):{model:'gemini-4-hydrogen-high',effort:'high'}),native:nativeOptions(input.native)}
+    const env=runtimeEnvironment(runtime),subscription=inspectSubscription(env,{...request,sandbox:true})
     const cli=await inspectCLI(request,env,runtime.signal)
     return {protocol:1,type:'doctor',ok:true,cli,subscription,authentication:'unknown',remainingQuota:'unknown',inferencePerformed:false}
   } catch(error){return {protocol:1,type:'doctor',ok:false,error:redact(error.message),inferencePerformed:false}}

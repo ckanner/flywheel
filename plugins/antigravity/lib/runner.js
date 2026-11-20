@@ -6,19 +6,22 @@ import { inspectCLI } from './probe.js'
 import { sessionBinding, claimSession } from './sessions.js'
 import { prepareEvidenceAgent } from './evidence-agent.js'
 import { writeRecord } from './journal.js'
+import { nativeReceipt, observeChildren, promptFor } from './native.js'
 
 export function baseReceipt(request,runId) {
   const {prompt,outputSchema,...requested}=request
   return {protocol:1,type:'result',requestId:request.requestId,runId,ok:false,requested,
-    execution:{pid:null,processGroupId:null,ownership:'none',dispatch:'not-dispatched',turnDispatch:'not-dispatched',outcome:'not-started',terminalReceived:false,exitCode:null,signal:null,cancelled:false,timedOut:false,truncated:false},
+    execution:{pid:null,processGroupId:null,ownership:'none',dispatch:'not-dispatched',turnDispatch:'not-dispatched',outcome:'not-started',terminalReceived:false,finishedReason:null,exitCode:null,signal:null,cancelled:false,timedOut:false,truncated:false},
     cleanup:{confirmed:true,method:'not-started'},providerWork:{state:'not-dispatched',querySupported:false,cancelSupported:false,replaySafe:true},
     session:{mode:request.sessionMode,id:null,resumed:request.sessionMode==='resume',resumable:false,name:request.sessionName??null,nativeNameStatus:'unknown'},
     configuration:{source:null,observed:null,matched:false,fingerprint:null},
     subscription:{mode:'subscription-only',status:'unknown',authentication:'native-account-unverified',creditsFallback:false,extraBilling:'unknown',configFingerprint:null},
-    output:[],usage:usageOf(null),native:{children:[],aggregateUsageStatus:'unknown',artifacts:[]},reportedCostUSD:null,costUSD:null,costStatus:'unknown',failure:null}
+    output:[],usage:usageOf(null),native:nativeReceipt(request),reportedCostUSD:null,costUSD:null,costStatus:'unknown',failure:null}
 }
 export function argumentsFor(r,agent) {
-  const args=['--input-format','stream-json','--output-format','stream-json','--model',r.model,'--effort',r.effort,'--mode',r.executionMode==='default'?'':r.executionMode,'--print-timeout',r.timeoutMs+'ms','--disable-slash-commands']
+  const args=['--input-format','stream-json','--output-format','stream-json','--model',r.model,'--mode',r.executionMode==='default'?'':r.executionMode,'--print-timeout',r.timeoutMs+'ms']
+  if(r.effort!=='')args.push('--effort',r.effort)
+  if(r.native?.mode!=='swarm')args.push('--disable-slash-commands')
   if(r.permissionMode==='always-proceed')args.push('--dangerously-skip-permissions')
   if(r.sandbox)args.push('--sandbox')
   if(r.sessionMode==='resume')args.push('--conversation',r.sessionId)
@@ -63,7 +66,7 @@ export async function runLocal(request,runtime,runId,emit) {
   if(signal.aborted||request.timeoutMs>0&&Date.now()-started>=request.timeoutMs){receipt.execution.cancelled=signal.aborted;receipt.execution.timedOut=!signal.aborted;fail('start',signal.aborted?'cancelled':'timeout','stopped during preflight')}
   if(receipt.failure){try{lease?.finish(receipt);evidenceAgent?.dispose();if(evidenceAgent)receipt.native.managedAgent.cleanup='confirmed'}catch(error){fail('cleanup','cleanup-unconfirmed',error.message);receipt.cleanup.confirmed=false}return receipt}
   const parser=new EventParser({...request,evidenceAgent:evidenceAgent?.name}),decoder=new StringDecoder('utf8')
-  let buffer='',stderr='',closed=false,stopPromise=null,child,closeResolve,promptSent=false,dispatching=false,activitySequence=0
+  let buffer='',stderr='',closed=false,stopPromise=null,child,closeResolve,promptSent=false,dispatching=false,activitySequence=0,protocolFailed=false
   const closePromise=new Promise(resolve=>{closeResolve=resolve})
   const stop=()=>stopPromise??=(async()=>{
     const clean=await stopGroup(child?.pid,request.disposeGraceMs)
@@ -80,9 +83,9 @@ export async function runLocal(request,runtime,runId,emit) {
       // Durable possible-dispatch evidence and caller acknowledgement precede stdin.
       await emit('dispatch-possible',receipt)
       if(signal.aborted||receipt.failure||closed)return
-      receipt.execution.dispatch='dispatched';receipt.execution.turnDispatch='possible';receipt.providerWork={...receipt.providerWork,state:'unknown',replaySafe:false}
+      receipt.execution.dispatch='dispatched';receipt.execution.turnDispatch='possible';receipt.providerWork={...receipt.providerWork,state:'unknown',replaySafe:false};receipt.native.completion.state='unknown'
       promptSent=true
-      child.stdin.end(JSON.stringify({event:'user',message:{content:request.prompt}})+'\n')
+      child.stdin.end(JSON.stringify({event:'user',message:{content:promptFor(request)}})+'\n')
     }catch(error){fail('start','lifecycle',error.message);void stop()}
   }
   const handleLine=line=>{
@@ -94,10 +97,12 @@ export async function runLocal(request,runtime,runId,emit) {
       receipt.session.id=parser.sessionId
       if(inspectSubscription(runtime.env,request).fingerprint!==subscription.fingerprint)throw new Error('native settings changed before accepted init')
       if(!lease)lease=claimSession(runtime.env,parser.sessionId,binding,runId)
-      if(evidenceAgent)void dispatchPrompt()
+      if(evidenceAgent||request.native&&request.native.mode!=='native')void dispatchPrompt()
     }
     if(event.accepted){if(!promptSent)throw new Error('native work appeared before prompt dispatch');receipt.execution.turnDispatch='accepted'}
-    try{runtime.onActivity?.({version:1,sequence:++activitySequence,kind:'provider-progress',source:'antigravity',scope:event.child?'child':'root',eventTypes:[event.kind],observedEvents:1})}catch{}
+    if(event.child)observeChildren(receipt.native,parser.children,parser.childMetadataTruncated)
+    try{runtime.onActivity?.({version:1,sequence:++activitySequence,kind:'provider-progress',source:'antigravity',scope:event.child?'child':'root',eventTypes:[event.kind],observedEvents:1,...(event.child?{native:structuredClone(receipt.native)}:{})})}catch{}
+    if(receipt.native.limit.exceeded){fail('run','observed-agent-limit','observed unique child count exceeded native.maxObservedAgents; this is not a native concurrency cap');void stop()}
     if(event.text)try{runtime.onProgress?.(event.text)}catch{}
   }
   try {
@@ -105,16 +110,17 @@ export async function runLocal(request,runtime,runId,emit) {
     receipt.execution.pid=child.pid??null;receipt.execution.processGroupId=child.pid??null
     receipt.execution.ownership=child.pid?'process-group':'none';receipt.cleanup={confirmed:false,method:'process-group'}
     child.once('spawn',()=>{
-      if(!evidenceAgent)void dispatchPrompt()
+      if(!evidenceAgent&&(!request.native||request.native.mode==='native'))void dispatchPrompt()
     })
     child.stdin.on('error',error=>{fail('run','transport',error.message);void stop()})
     child.stdout.on('data',chunk=>{
+      if(protocolFailed)return
       try {
         buffer+=decoder.write(chunk)
         let at
         while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);handleLine(line)}
         if(Buffer.byteLength(buffer)>request.maxFrameBytes)throw new Error('incomplete NDJSON frame exceeds maxFrameBytes')
-      }catch(error){receipt.execution.truncated=/exceeds/.test(error.message);fail('run','protocol',error.message);void stop()}
+      }catch(error){protocolFailed=true;receipt.execution.truncated=/exceeds/.test(error.message);fail('run','protocol',error.message);void stop()}
     })
     child.stderr.on('data',chunk=>{
       stderr=(stderr+redact(chunk.toString('utf8'))).slice(-65536)
@@ -130,15 +136,18 @@ export async function runLocal(request,runtime,runId,emit) {
     if(stopPromise)await stopPromise
     else receipt.cleanup.confirmed=await stopGroup(child.pid,request.disposeGraceMs)
     if(!receipt.failure){buffer+=decoder.end();if(buffer.trim())handleLine(buffer)}
-  }catch(error){fail('run','protocol',error.message);await stop()}
+  }catch(error){protocolFailed=true;fail('run','protocol',error.message);await stop()}
   finally{signal.removeEventListener('abort',abort)}
   const result=parser.result
-  receipt.native.children=parser.children
+  observeChildren(receipt.native,parser.children,parser.childMetadataTruncated)
   if(result){
     receipt.execution.terminalReceived=!['WAITING','RUNNING'].includes(result.status)
+    receipt.execution.finishedReason=result.finished_reason||null
     receipt.output=[{type:'text',text:result.response}];receipt.usage=usageOf(result.usage)
     if(Object.hasOwn(result,'structured_output'))receipt.structured=result.structured_output
-    if(receipt.execution.terminalReceived)receipt.providerWork={...receipt.providerWork,state:result.status==='SUCCESS'?'completed':'failed',replaySafe:true}
+    const completedNormally=result.status==='SUCCESS'&&!result.finished_reason
+    if(receipt.execution.terminalReceived)receipt.providerWork={...receipt.providerWork,state:completedNormally?'completed':'failed',replaySafe:true}
+    if(result.finished_reason)fail('run','native-cutoff','native invocation ended with finished_reason: '+result.finished_reason)
     if(result.status!=='SUCCESS'){
       const error=result.error??result.status
       const category=/auth|sign.?in|log.?in/i.test(error)?'auth':/quota|exhaust/i.test(error)?'quota':/rate.limit|too many requests/i.test(error)?'rate-limit':/model.*invalid|invalid.*model/i.test(error)?'invalid-request':'product-error'
@@ -150,6 +159,9 @@ export async function runLocal(request,runtime,runId,emit) {
   if(!receipt.configuration.matched)fail('configuration','configuration-mismatch','native configuration was not confirmed')
   try{if(inspectSubscription(runtime.env,request).fingerprint!==subscription.fingerprint)fail('configuration','configuration-mismatch','native settings changed during the invocation')}catch(error){fail('configuration','configuration-mismatch',error.message)}
   if(!receipt.cleanup.confirmed)fail('cleanup','cleanup-unconfirmed','local process group cleanup is not confirmed')
+  const nativeCompleted=promptSent&&!protocolFailed&&receipt.execution.terminalReceived&&result?.status==='SUCCESS'&&!result.finished_reason&&receipt.execution.exitCode===0
+  receipt.native.completion={scope:'cli-invocation',state:nativeCompleted?'completed':!promptSent?'not-started':receipt.execution.terminalReceived?'failed':'unknown',source:nativeCompleted?'normal-result-and-cli-exit':null,children:'unknown'}
+  if(nativeCompleted&&request.native&&request.native.mode!=='native'&&!receipt.native.collaborationObserved)fail('run','collaboration-not-observed','requested '+request.native.mode+' completed without child metadata; native collaboration was not verified')
   try{lease?.finish(receipt);evidenceAgent?.dispose();if(evidenceAgent)receipt.native.managedAgent.cleanup='confirmed'}catch(error){fail('cleanup','cleanup-unconfirmed',error.message);receipt.cleanup.confirmed=false}
   receipt.ok=!receipt.failure&&promptSent&&result?.status==='SUCCESS'&&receipt.execution.terminalReceived&&receipt.cleanup.confirmed
   receipt.execution.outcome=receipt.ok?'completed':receipt.execution.dispatch==='not-dispatched'?'not-started':receipt.execution.terminalReceived?'failed':'unknown'

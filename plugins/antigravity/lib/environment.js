@@ -38,10 +38,11 @@ export function inspectSubscription(env, request) {
   if (request) {
     if (!request.sandbox && settings.enableTerminalSandbox === true) throw new MachineInputError('native terminal sandbox is enabled; the requested false value cannot override it safely')
     if (request.permissionMode === 'request-review' && (settings.toolPermission ?? 'request-review') !== 'request-review') throw new MachineInputError('native toolPermission does not match request-review; configure it in the official CLI')
+    if (request.native?.mode === 'swarm' && settings.disableSlashCommands === true) throw new MachineInputError('native disableSlashCommands blocks the requested Swarm command; configure it in the official CLI')
   }
   const facts = { modelProvider:settings.modelProvider ?? '',useG1Credits:settings.useG1Credits ?? false,gcp:settings.gcp ?? null,customModelsConfig:settings.customModelsConfig ?? null,
     enableAdc:shared.userSettings?.enableAdc ?? false,toolPermission:settings.toolPermission ?? 'request-review',enableTerminalSandbox:settings.enableTerminalSandbox ?? false,
-    permissions:settings.permissions ?? null,allowNonWorkspaceAccess:settings.allowNonWorkspaceAccess ?? false }
+    permissions:settings.permissions ?? null,allowNonWorkspaceAccess:settings.allowNonWorkspaceAccess ?? false,disableSlashCommands:settings.disableSlashCommands ?? false }
   return {fingerprint:hash(facts),status:'verified-local-controls',authentication:'native-account-unverified',creditsFallback:false,extraBilling:'unknown'}
 }
 export function redact(value) {

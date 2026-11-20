@@ -43,10 +43,62 @@ test('published DSH schema/PTC contracts, direct command, committed preset and j
     apply(ctx,f.config);events.get('agent/created')({agent});const tool=tools.get('subagent_antigravity');assert.ok(tool)
     assertSupportedJsonSchema(tool.parameters);assertSupportedJsonSchema(tool.output.schema)
     assert.match(jsonSchemaToTs(tool.parameters),/prompt: string/);assert.match(jsonSchemaToTs(tool.output.schema),/jobId: string/)
+    assert.match(jsonSchemaToTs(tool.parameters),/maxObservedAgents/);assert.match(jsonSchemaToTs(tool.parameters),/"swarm"/)
     assert.match(renderToolsSdk([{name:tool.name,description:tool.description,parameters:tool.parameters,output:tool.output.schema}]),/subagent_antigravity/)
     const start=await commands.get('antigravity').handler({agent,rawInput:JSON.stringify({version:1,action:'start',prompt:'direct'})});assert.equal(start.kind,'success')
     const result=await tool.execute({prompt:'background',run_in_background:true},{});assert.equal(result.kind,'background');assert.equal((await jobs.get(result.jobId).done).status,'completed')
     preset='other';await assert.rejects(()=>tool.execute({prompt:'forbidden'},{}),/current committed preset/)
     preset='heavy';events.get('agent-preset/selected')(f.context.owner);assert.ok(tools.get('subagent_antigravity'))
   }finally{await events.get('dispose')?.();process.env.HOME=oldHome}
+})
+test('DSH defaults and per-call selections preserve native profiles and derive fixed effort from the selected model',async()=>{
+  const f=fixture();f.env.FIXTURE_SCENARIO='children'
+  let config=resolveConfig({...f.config,model:'gemini-pro-orchestrator-neon',effort:'',native:{version:1,mode:'swarm',maxObservedAgents:3}})
+  const tasks=new DesktopTasks({getConfig:()=>config,env:f.env})
+  try{
+    const first=await tasks.action(f.context,{version:1,action:'start',prompt:'configured swarm'})
+    config=resolveConfig({...f.config,native:{version:1,mode:'native'}})
+    const second=await tasks.action(f.context,{version:1,action:'start',prompt:'explicit subagents',model:'gemini-pro-orchestrator',native:{version:1,mode:'subagents',maxObservedAgents:2}},{direct:false})
+    const [a,b]=await Promise.all([tasks.wait(f.context,first.invocationId),tasks.wait(f.context,second.invocationId)])
+    assert.equal(a.status,'completed',JSON.stringify(a.failure));assert.equal(a.requested.native.mode,'swarm');assert.equal(a.requested.effort,'')
+    assert.equal(b.status,'completed',JSON.stringify(b.failure));assert.equal(b.requested.native.mode,'subagents');assert.equal(b.requested.effort,'')
+    assert.equal(b.native.observedAgents,2);assert.equal(b.native.children[1].state,'unknown')
+    await assert.rejects(()=>tasks.action(f.context,{version:1,action:'start',prompt:'invalid',native:null}),/unsupported fields/)
+    assert.equal(resolveConfig({model:'gemini-pro-orchestrator-argon'}).effort,'')
+    assert.throws(()=>resolveConfig({model:'gemini-pro-orchestrator',effort:'high'}),/fixed effort/)
+  }finally{await tasks.dispose()}
+})
+test('DSH status exposes live child observations and cancel remains bound to its invocation',async()=>{
+  const f=fixture();f.env.FIXTURE_SCENARIO='children-hang'
+  const tasks=new DesktopTasks({getConfig:()=>f.config,env:f.env})
+  try{
+    const started=await tasks.action(f.context,{version:1,action:'start',prompt:'observe children',native:{version:1,mode:'subagents'}})
+    let live
+    for(let i=0;i<200;i++){
+      live=await tasks.action(f.context,{version:1,action:'status',invocationId:started.invocationId})
+      if(live.native.observedAgents===2)break
+      await new Promise(resolve=>setTimeout(resolve,20))
+    }
+    assert.equal(live.status,'running');assert.equal(live.native.observedAgents,2);assert.equal(live.native.completion.state,'unknown')
+    await tasks.action(f.context,{version:1,action:'cancel',invocationId:started.invocationId})
+    const finished=await tasks.wait(f.context,started.invocationId)
+    assert.equal(finished.status,'unknown');assert.equal(finished.receipt.execution.cancelled,true);assert.equal(finished.native.children[0].state,'unknown')
+    assert.equal(finished.cleanup.confirmed,true)
+  }finally{await tasks.dispose()}
+})
+test('resuming an omitted native binding does not inherit a newly saved Swarm default',async()=>{
+  const f=fixture();let config=f.config
+  const tasks=new DesktopTasks({getConfig:()=>config,env:f.env})
+  try{
+    const first=await tasks.action(f.context,{version:1,action:'start',prompt:'original ordinary task'})
+    const original=await tasks.wait(f.context,first.invocationId);assert.equal(original.status,'completed')
+    assert.equal(Object.hasOwn(original.requested,'native'),false)
+    config=resolveConfig({...f.config,native:{version:1,mode:'swarm'}})
+    const next=await tasks.action(f.context,{version:1,action:'start',prompt:'same conversation follow-up',sessionId:original.session.id})
+    const resumed=await tasks.wait(f.context,next.invocationId)
+    assert.equal(resumed.status,'completed',JSON.stringify(resumed.failure));assert.equal(Object.hasOwn(resumed.requested,'native'),false)
+    const changed=await tasks.action(f.context,{version:1,action:'start',prompt:'changed exact profile',sessionId:original.session.id,native:{version:1,mode:'native'}})
+    const rejected=await tasks.wait(f.context,changed.invocationId)
+    assert.equal(rejected.receipt.execution.dispatch,'not-dispatched');assert.match(rejected.failure.detail,/identical/)
+  }finally{await tasks.dispose()}
 })

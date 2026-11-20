@@ -4,7 +4,8 @@ export { Config, resolveConfig }
 export const name='antigravity'
 export const inject=['commands','workingDirectory']
 const toolOutput={oneOf:[{type:'object',properties:{content:{type:'array',items:{type:'object',properties:{type:{type:'string',const:'text'},text:{type:'string'}},required:['type','text'],additionalProperties:false}}},required:['content'],additionalProperties:false},{type:'object',properties:{kind:{type:'string',const:'background'},jobId:{type:'string'}},required:['kind','jobId'],additionalProperties:false}]}
-const summary=result=>JSON.stringify({invocationId:result.invocationId,status:result.status,session:result.session,output:result.output,failure:result.failure,cleanup:result.cleanup,providerWork:result.providerWork})
+const summary=result=>JSON.stringify({invocationId:result.invocationId,status:result.status,session:result.session,output:result.output,failure:result.failure,cleanup:result.cleanup,providerWork:result.providerWork,native:result.native})
+const nativeSchema={type:'object',additionalProperties:false,properties:{version:{type:'integer',const:1},mode:{type:'string',enum:['native','subagents','swarm']},maxObservedAgents:{type:'integer',enum:[1,2,3,4,5,6,7,8],description:'Stop when the observed total of unique child IDs exceeds this value, including verifier and monitor. Not a hard native concurrency limit.'}},required:['version','mode']}
 
 export function apply(ctx,rawConfig={}) {
   resolveConfig(rawConfig)
@@ -19,8 +20,8 @@ export function apply(ctx,rawConfig={}) {
   }
   const serve=agent=>{
     if(!agent||!allowed(agent)||typeof agent.ctx?.tools?.register!=='function')return
-    agent.ctx.tools.register({name:'subagent_antigravity',description:'Delegate a complete text task to the official Antigravity CLI using its native subscription. The child has its own context and tools. Model slug and effort must match. Read the returned receipt; unknown results must not be replayed. Background jobs use job_output and job_kill. An exact sessionId resumes only a confirmed matching conversation.',
-      parameters:{type:'object',additionalProperties:false,properties:{prompt:{type:'string'},label:{type:'string'},model:{type:'string'},effort:{type:'string',enum:['low','medium','high','xhigh']},sessionId:{type:'string'},toolPolicy:{type:'string',enum:['native','evidence-only']},timeoutMs:{type:'integer',description:'Total deadline in milliseconds; 0 is unlimited.'},outputSchema:{type:'object'},run_in_background:{type:'boolean'}},required:['prompt']},
+    agent.ctx.tools.register({name:'subagent_antigravity',description:'Delegate a complete text task to the official Antigravity CLI using its native subscription. Choose native behavior, explicit subagents, or Swarm with native.version 1. An Orchestrator model uses empty effort; adjustable model slug and effort must match. Native collaboration completion covers the CLI invocation; child states and aggregate usage can remain unknown. Read the receipt; unknown results must not be replayed. Background jobs use job_output and job_kill. An exact sessionId resumes only a confirmed matching conversation.',
+      parameters:{type:'object',additionalProperties:false,properties:{prompt:{type:'string'},label:{type:'string'},model:{type:'string'},effort:{type:'string',enum:['','low','medium','high','xhigh']},native:nativeSchema,sessionId:{type:'string'},toolPolicy:{type:'string',enum:['native','evidence-only']},timeoutMs:{type:'integer',description:'Total deadline in milliseconds; 0 is unlimited.'},outputSchema:{type:'object'},run_in_background:{type:'boolean'}},required:['prompt']},
       output:{schema:toolOutput,render:(_args,value)=>value.content??[{type:'text',text:'Antigravity background job '+value.jobId}]},
       async execute(args,execution){
         if(!allowed(agent))throw new Error('Antigravity is not enabled for the current committed preset')
