@@ -9,6 +9,11 @@ const accountFailure = {
   'account-sign-in-required': { code: 'ACCOUNT_SIGN_IN_REQUIRED', message: 'Account route requires sign-in or an eligible request destination.' },
   'account-token-invalid': { code: 'ACCOUNT_TOKEN_INVALID', message: 'Native provider rejected the request.' },
   'account-quota': { code: 'ACCOUNT_QUOTA', message: 'Native provider quota is exhausted.' },
+  'web-uncertain': { code: 'WEB_UNCERTAIN', message: 'Reconcile the original browser submission.' },
+  'web-delivery-claimed': { code: 'WEB_DELIVERY_CLAIMED', message: 'The tool response was already claimed.' },
+  'web-connection-lost': { code: 'WEB_CONNECTION_LOST', message: 'The original delivery connection was lost.' },
+  'web-protocol-error': { code: 'WEB_PROTOCOL_ERROR', message: 'The complete response could not be verified.' },
+  'web-journal-write': { code: 'WEB_JOURNAL_WRITE', message: 'The journal could not establish post-Send durability.' },
 }[failureScenario];
 const corruptShutdownTail = scenario !== 'corrupt-tail' && scenario.includes('-corrupt-tail');
 const incompleteShutdownTail = scenario.includes('-incomplete-tail');
@@ -79,6 +84,8 @@ for await (const line of createInterface({ input: process.stdin })) {
       ...(scenario === 'forged-confinement' ? { confinedShell: true, enforcement: 'full' } : {}),
       ...(scenario === 'unexpected-enforcement' ? { enforcement: 'partial' } : {}),
       ...(scenario.startsWith('activity-') && scenario !== 'activity-unattested' ? { activity: { version: 1, observation: 'events-only' } } : {}),
+      ...(admission.web && scenario !== 'web-not-ready' ? { web: { ...admission.web, ready: true, usage: 'unknown', idle: 'wall-only',
+        summary: { provider: 'chatgpt', model: 'gpt-6.2-sol' }, title: 'deterministic' } } : {}),
     }), { mode: 0o600, flag: 'wx' });
     if (scenario === 'activity-before-ready') activity(params.sessionId);
     reply(id, { cwd: scenario === 'wrong-cwd' ? '/' : initialized.cwd });

@@ -99,6 +99,17 @@ IPC lifeline，再由 guardian 内的官方 Agent SDK 0.3.326 派发配置指定
 收束原生工作。正常结果等待 native 与 guardian 退出。清理与任务结果独立：外层被
 强杀导致回执丢失时，不能因为 guardian 清理了进程就推断任务成功或安全重放。
 
+显式 `dsh/chatgpt/gpt-6-pro-web/pro` 通过未修改的 stock DSH LLM／AgentLoop 使用
+兼容 ChatGPT 插件的本地浏览器 bridge，不向宿主注入 Web retry／错误策略。worker
+在根 Agent 准入时通过实际 `llm.resolveModelInfo` 核对精确 Web/pro 元数据和 bridge
+就绪，并读取公开 `compaction.config` 的实际摘要 pair：精确 modelPolicies 覆盖优先，
+再取顶层 summarizationProvider／summarizationModel。auto 须为 true，拒绝畸形或重复
+精确 modelPolicies。两者须显式且摘要 model 不能是 gpt-6-pro-web，即使 provider 改名；
+摘要模型也须经公开解析核对。该路由的 overlay 保留 compaction-basic 已有配置并启用，
+其他路由维持原禁用行为。session-title-llm 仍关闭，由已有确定性服务命名。私有准入
+回执携带 Web ready 事实，worker 在 session/prompt 前检查，Go 另外校验最终收到的
+matching ready.web；静态目录、包版本或请求回显不能替代实际适配器就绪。
+
 ### 3.3 原生能力、任务树和独立任务
 
 `native-profile` 在模型／阶段／路由绑定中引用版本化 `native-profiles`；能力跟随实际 harness，不改变 provider、账号或模型的既有绑定。DSH 复用 `dsh-preset-generator@0.4.0` 的 SDK global PTC overlay，明确不是挂载 named Agent Preset。首个 prompt 前实际执行 canonical JSON、handle、多图、TypeScript 和输出协议 probe；同版本号不代替行为验证。各后代在公开 Agent 生命周期中按真实 registry 和 lineage 准入。
@@ -461,7 +472,15 @@ Go 检查证据引用结构，不把语义结论当作已由代码独立证明�
 
 ## 6. 重试、取消和错误
 
-稳定 provider 错误码保持：AUTH、QUOTA、RATE_LIMIT、SERVER、TRANSPORT、TIMEOUT、EMPTY_RESPONSE、INVALID_REQUEST、CONTEXT_WINDOW_EXCEEDED。L1_FAILED、REVIEW_RETURNED、SPIN 属于编排层失败分类。
+稳定 provider 错误码为：AUTH、QUOTA、RATE_LIMIT、SERVER、TRANSPORT、TIMEOUT、EMPTY_RESPONSE、INVALID_REQUEST、CONTEXT_WINDOW_EXCEEDED、WEB_UNCERTAIN、WEB_DELIVERY_CLAIMED、WEB_CONNECTION_LOST、WEB_PROTOCOL_ERROR。L1_FAILED、REVIEW_RETURNED、SPIN 属于编排层失败分类。
+
+`WEB_UNCERTAIN` 表示 Web 提交结果尚未确认，`WEB_DELIVERY_CLAIMED` 表示工具响应已被其他或先前交付领取；这两类结果及不能证明请求未发送的 `WEB_CONNECTION_LOST`／`WEB_PROTOCOL_ERROR` 保持独立的结构化错误码，不自动重试或切换渠道。即使 SDK 已写入 `turn/end`、worker 正常退出且清理确认，也只能记录该 Flywheel 调用的 outcome 为 unknown、禁止复用或新建会话重放。Go 的会话准入同时检查错误码和独立 lifecycle 事实；模式、模型或 provider 变化不能清除这个调用责任。桥接层只读恢复证明的是原 Web 请求，不能替代完整 SDK 工具执行、任务候选和 Flywheel 回执。人工核对仍需同时处理桥接 profile fence 与原任务记录。
+
+精确 Web 路由在 SDK dispatch 之后的其他非成功结果同样保持 unknown，包括可能发生在
+Send 之后、映射为 SERVER 的 journal 持久化错误。SDK dispatch 与网页 Send 是两个
+事实，不能用已确认 SDK turn/end 冒充 Web 未发送；正常 cleanup 可以独立保留。合法
+provider `turn-<64 hex>` requestId 保留于 driver ErrorRequestID 和 metrics 的
+result.error-request-id，仅供原请求核对，不替代引擎 invocation ID 或 SDK turnId。
 
 DSH 的 `ACCOUNT_SIGN_IN_REQUIRED`、`ACCOUNT_TOKEN_INVALID` 精确映射为 AUTH；账号退出引发的 `turn/end` 仅在 `kind:aborted` 且 hook reason 精确为 `deepseek-account/signed-out` 时也归 AUTH。`ACCOUNT_QUOTA` 保持 QUOTA。保留原始诊断并提示恢复同一账号的登录／额度，不误归 SERVER 后重试。默认账号配置不提供 API Key 后备；用户明确配置的后备链仍按既有策略处理。未知 ACCOUNT 前缀、其他 aborted/hook、通用 JSON-RPC 传输失败保持原有分类；调用方取消仍优先保留 cancelled 语义。依据为 rc.5 的账号 adapter 与账号退出任务取消契约，不增加新的 wire 错误类别。
 
@@ -473,7 +492,7 @@ Codex Pro 的结构化 stage/category/HTTP 状态由 driver 映射到这组既�
 
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
 
-DSH 预热承载的正式调用按最近可观察活动刷新 idle deadline。计时回调执行时必须重新核对当前期限与进程状态，已排队的旧回调不能取消期限已经刷新的调用。准备 TTL 在已接收 worker 终态或进程结束后均不得改写过期状态，不能把已确认的初始化失败变成允许冷启动的安全过期；终态已到但进程仍活着时，TTL 后的原关闭宽限继续生效。worker 明确报告的真实过期仍保留原回退条件，真正超时仍执行原有界收尾。
+DSH 预热承载的正式调用（精确 Web 路由除外）按最近可观察活动刷新 idle deadline。计时回调执行时必须重新核对当前期限与进程状态，已排队的旧回调不能取消期限已经刷新的调用。准备 TTL 在已接收 worker 终态或进程结束后均不得改写过期状态，不能把已确认的初始化失败变成允许冷启动的安全过期；终态已到但进程仍活着时，TTL 后的原关闭宽限继续生效。worker 明确报告的真实过期仍保留原回退条件，真正超时仍执行原有界收尾。
 
 清理是否已确认另于 provider 错误码判断。已启动的 Codex Pro worker 丢失可信清理回执时，外层 worker 的退出不证明独立 guardian／app-server 进程组已经静止；driver 必须记录 `CleanupError`。所有模型阶段在记录回执和计量后遇到该字段即保存升级记录、保留工作区并停止本次运行，禁止传输重试、渠道降级、Plan 冷启动和下一任务。支持的主任务适配器还独立判断 dispatch/outcome：清理已确认也不能使未知派发或未知结果变为可重试。只有可信调用事实允许时才执行既有错误重试策略。恢复前确认遗留进程已停止只解决清理事实；没有可信结果回执仍阻断，固定等待也不能冒充证明。
 
@@ -490,6 +509,11 @@ SIGKILL 后的进程组探测必须确认 `ESRCH` 才算清理成功。探测的
 停止控制方等待本次引擎退出受管调用栈、释放任务 lease，并取得 lease 后才 CAS 保存 stopped。lease 释放不证明任意逃逸子进程已经清理；管理范围仍是本次拥有的进程组。已观测的 `CleanupError` 保留在 driver/Gate 证据与 metrics 中并阻止交付，需按错误记录人工处理。45 秒内不能确认停止则返回失败、保持状态，不强杀仍在恢复的引擎；GUI 超时应留足 60 秒。只读 status 以运行 lease 判断活动状态，PID 只作为辅助展示。
 
 ### 6.1 规划调用的活性、未知结果与人工退役
+
+精确 `chatgpt/gpt-6-pro-web` 模型的完整回复在 bridge 校验结束前不会流向 SDK，
+因此冷启动、预热正式调用和安全过期后的同 invocation 冷回退均使用 wall-only。
+不因没有 token 增量而 idle 终止，也不用 bridge 健康或人工心跳补造模型进展。
+生效 wall 期限、显式取消、原 SDK 关闭及进程组清理全部保留，不被健康事件续期。
 
 watchdog 的 idle 期限只适用于能暴露实际进展的传输。旧 codex exec JSONL 不保证持续暴露思考／工具进度，因此与 Kimi print 一样使用 wall-only；不会借这项兼容策略关闭整体时限或用户取消。Kimi print 只订阅主代理事件，会缓存 assistant delta、不输出 thinking delta，后台子代理进展也不可见；前台研究同样可能正常静默。因此 print driver 不启动输出 idle 计时器，所有角色均保留生效的 wall 期限、用户取消与原进程组清理。模型提示词不能补造活性证据；非 native 前台调查约束仅用于在当前调用内完成并收集结果。Kimi native worker 将实际观察到的主／子代理 item、step 和生命周期事件以元信息转发给 Go，不转发思考或工具正文，不用定时器或 WS ping/pong 伪造进展。
 
@@ -516,6 +540,11 @@ Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 
 控制信封的 `ok:true` 只表示控制请求被处理；异步 session 动作另返回 `session-control.applied/status/message/invocation`。只有操作前后 invocation 证据完整且匹配才确认本次变更；前态不可读时保留后态并说明效果无法验证，不能把既有终态当作本次成功，也不能推断命令必定未执行。工作台“核对”仍只刷新插件自己的未确认控制动作，不是引擎未知调用的退役入口。
 
 ## 7. 模型与 harness 默认表
+
+Web 仅以显式 `harness:dsh`、`provider:chatgpt`、`model:gpt-6-pro-web` 选择，
+不修改下表、已有配置或订阅预设。其 effort 只接受 `pro`，该精确绑定省略时默认
+`pro`；其他模型保持原词表和默认值。配置、执行策略 schema 及编辑器均支持这项
+精确绑定，静态合法不等于运行时就绪，后者遵守 §3.2 的实际适配器和辅助路由准入。
 
 | 阶段 | Harness | Provider/渠道 | 模型 | Thinking |
 |---|---|---|---|---|
@@ -586,6 +615,10 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 再对互不相交的桶各计一次；相同口径适用于 DSH 与 Codex Pro。原始 token 账本不改写。
 
 ## 8. 用量、成本与效率
+
+Web 缺失可验证 token／价格信息时保持 unknown，不用文本长度、请求次数或本地
+估算补造零用量。每次已派发调用继续计入次数；配置显式 daily token 硬上限时，
+未知用量按既有预算门阻止后续调用。wall-only 不改变预算和清理责任。
 
 优先通过明确小任务、缓存稳定前缀、低频规划、故障反馈复用、独立短评审降低重试与上下文膨胀。默认不使用所有模型串行互相复核，也不强制 max/ultra。
 

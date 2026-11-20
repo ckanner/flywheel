@@ -372,10 +372,11 @@ func (h *DSHPrewarm) runProcess() {
 	events := jsonLines{onLine: h.line, limit: watchdog.MaxBuffer}
 	result := watchdog.Run(h.command, []string{"--prewarm"}, watchdog.Opts{
 		Context: h.ctx, Cwd: h.prepare.Cwd, Env: childenv.EnvSlice(h.env), KillGraceMs: dshCleanupGrace(h.args),
-		WallTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
-		IdleTimeoutMs: DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
-		OnActivity:    func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },
-		InteractStdin: h.interact,
+		WallTimeoutMs:      DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs).Milliseconds(),
+		IdleTimeoutMs:      DSHPrewarmTTL.Milliseconds() + dshTimeout(h.args.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs).Milliseconds(),
+		DisableIdleTimeout: dshWeb(h.args.Provider, h.args.Model),
+		OnActivity:         func(chunk, stream string) { h.activity(chunk, stream); events.feed(chunk, stream) },
+		InteractStdin:      h.interact,
 		StdoutCapture: newDSHActivityCapture(func() dshStart {
 			h.mu.Lock()
 			defer h.mu.Unlock()
@@ -538,7 +539,9 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 	h.formal = &a
 	h.lastActivity = started
 	h.formalRequest = request
-	h.idleTimer = time.AfterFunc(dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs), func() { h.expire(true) })
+	if !dshWeb(a.Provider, a.Model) {
+		h.idleTimer = time.AfterFunc(dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs), func() { h.expire(true) })
+	}
 	h.wallTimer = time.AfterFunc(dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs), func() { h.expire(false) })
 	h.mu.Unlock()
 	stop := func() bool { return false }
@@ -549,7 +552,9 @@ func (h *DSHPrewarm) Run(a DSHArgs) Result {
 	<-h.done
 	stop()
 	h.mu.Lock()
-	h.idleTimer.Stop()
+	if h.idleTimer != nil {
+		h.idleTimer.Stop()
+	}
 	h.wallTimer.Stop()
 	result, writeError, streamError := h.result, h.writeError, h.streamError
 	warmErrorCode, warmErrorText := h.warmErrorCode, h.warmErrorText
@@ -608,9 +613,12 @@ func (h *DSHPrewarm) coldAfterExpiry(a DSHArgs, started time.Time, unused Result
 	}
 	wall := dshTimeout(a.Watchdog.WallTimeoutMs, watchdog.DefaultWallTimeoutMs) - time.Since(started)
 	idle := dshTimeout(a.Watchdog.IdleTimeoutMs, watchdog.DefaultIdleTimeoutMs) - time.Since(h.lastActivity)
+	if dshWeb(a.Provider, a.Model) {
+		idle = wall // The buffered Web response has no observable idle-progress contract.
+	}
 	if wall < time.Millisecond || idle < time.Millisecond {
 		h.mu.Unlock()
-		unused.TimedOut, unused.WallTimedOut, unused.IdleTimedOut = true, wall < time.Millisecond, idle < time.Millisecond
+		unused.TimedOut, unused.WallTimedOut, unused.IdleTimedOut = true, wall < time.Millisecond, !dshWeb(a.Provider, a.Model) && idle < time.Millisecond
 		unused.ErrorCode = errs.TIMEOUT
 		message := timeoutMessage("DSH worker", unused)
 		unused.ErrorMessage = &message

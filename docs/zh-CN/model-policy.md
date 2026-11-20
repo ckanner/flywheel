@@ -27,6 +27,35 @@ Harness 负责智能体与工具循环；DSH 的 `provider` 选择原生 LLM 适
 Claude Code Pro 是[可选后端](claude-code-pro.md)，默认未分配任何阶段或路由。
 使用时明确指定原生模型与推理等级，不会隐式替换其他订阅渠道。
 
+## 显式选择 ChatGPT Web 模型
+
+`dsh` 配合 provider `chatgpt`、model `gpt-6-pro-web` 与 effort `pro`，选择兼容
+ChatGPT 插件提供的本地浏览器 bridge。这是显式绑定：安装或升级 Flywheel 不会修改
+任何阶段、执行路由或已有模型。其他 ChatGPT 模型保持各自适配器路径和 effort 词表。
+仅此 Web 绑定省略 effort 时使用 `pro`，显式配置其他值会拒绝；配置编辑器在明确选择
+该模型后提供 Pro。
+
+worker 在提交任务前通过公开 `llm.resolveModelInfo` 检查实际加载的适配器。它必须
+解析出此精确模型、唯一 `pro` 档位、不带输出 token 默认上限，并确认本地 bridge 已
+验证就绪。静态模型目录、包版本号或请求回显都不能证明就绪。适配器或 bridge 缺失、
+未启用或不兼容时阻止调用，给出升级／配置诊断。
+
+Web 生成不支持 `maxTokens`、`temperature` 和 `stop`。SDK profile 必须显式指定
+支持辅助生成的非 Web 摘要 provider/model；worker 先读取实际生效的精确
+`modelPolicies` 覆盖，再回退到顶层摘要 pair。Flywheel 保留宿主的这些配置，并核对
+两个实际解析的模型身份。会话名称继续使用确定性 title 服务，模型生成标题保持关闭。
+两个配置层的操作见[配置指南](configuration.md#chatgpt-web-显式启用)。
+
+没有 provider 可验证的 usage 时，Web token 用量保持 unknown，缺失账单不计为零。
+若显式配置每日 token 硬上限，既有预算门会在出现未知用量后停止后续工作；调用次数与
+wall 时间预算仍生效。Web 输出缓冲至完整回复，不能凭输出静默判断模型停止，因此
+精确 Web 路由在冷调用和预热调用中使用 wall 期限与用户取消。bridge 健康和心跳不算
+token 或模型进展。[中断恢复](session-recovery.md#chatgpt-web-不确定结果)说明 SDK、
+浏览器及工具执行之间的责任边界。
+
+这些检查证明集成行为，不证明账号实时权限、回答质量或用户机器验收。带 Web 能力的
+ChatGPT 插件及已验证的本地浏览器配置仍是独立前提。
+
 ## 规划角色与当前对话模型
 
 New/Task 登记薄 brief，宿主对话整理事实并讨论，真正设计由引擎执行。未显式配置时，

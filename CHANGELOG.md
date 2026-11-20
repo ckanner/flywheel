@@ -5,6 +5,20 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## Unreleased — Explicit ChatGPT Web bridge integration
+
+- Accept the explicit `chatgpt/gpt-6-pro-web` binding with `pro` effort without
+  changing existing model or stage defaults.
+- Require the actual loaded adapter to resolve the Web model and an explicit
+  supported SDK summary route before dispatch. Session titles stay deterministic.
+- Preserve `WEB_UNCERTAIN`, `WEB_DELIVERY_CLAIMED`, `WEB_CONNECTION_LOST` and
+  `WEB_PROTOCOL_ERROR` across the SDK worker and Go error contract, retaining
+  provider turn IDs for inspection. Any unsuccessful Web call after SDK dispatch
+  keeps an unknown outcome and cannot authorize automatic replay or a fresh session.
+- Preserve absent Web usage as unknown and keep bridge health separate from
+  observed model progress and confirmed SDK cleanup. Exact Web calls use the wall
+  deadline and cancellation during cold, prewarmed and safe fallback execution.
+
 ## 0.37.3 — DSH 0.3 compatibility window
 
 - Accept DSH 0.2.1-rc.5 through 0.3 for the host engine and peers; capability

@@ -39,6 +39,22 @@ v2 拒绝缺失或 false 的 persistent；v1 不接受这些 v2 字段。版本�
 
 `provider` 明确选择认证路径：`deepseek-account` 使用 DSH 账号服务，`deepseek-official` 使用 API Key；不省略 provider 来猜桌面默认，worker 不在账号失败时自行换用 API。默认预设没有后备渠道，Go 仍可按用户显式配置的后备链执行原有策略。标准 SDK 与桌面在相同 DSH home 下默认共用账号授权存储，无需复制凭证。
 
+### 显式 ChatGPT Web 绑定
+
+精确 `provider:chatgpt`、`model:gpt-6-pro-web` 要求 `reasoningEffort:pro`，
+拒绝 `maxTokens`。Go 对仅此绑定省略的 effort 补 `pro`，其他模型继续使用原默认。
+worker 不修改 DSH，也不注册第二个 provider。它在实际根 Agent 的公开生命周期中
+读取 `ctx.get('compaction').config`，按精确 `modelPolicies` 覆盖再到顶层配置解析
+显式 summarizationProvider／summarizationModel；摘要不得隐式落回 Web。实际
+`ctx.get('llm').resolveModelInfo` 必须接受摘要 pair，并返回精确 Web/pro 元数据与
+适配器就绪证明。缺失服务、未知模型、未启用或未验证 bridge 均阻止 session/prompt。
+静态 capabilities export 不代替实际加载的适配器。
+
+仅此路由的临时 overlay 保留用户 SDK profile 的 compaction-basic 配置并启用它；
+session-title-llm 仍禁用，已有公开确定性 title 服务负责命名。其他路由继续禁用辅助
+模型调用。SDK 摘要配置不添加为 Flywheel 的秘密字段，也不自动替换为付费模型。
+Web 本身还拒绝 temperature／stop，辅助摘要必须使用支持所需控件的模型。
+
 ## 运行参数
 
 | 环境变量 | 默认值 | 用途 |
@@ -73,6 +89,16 @@ worker 用 `dsh --profile <profile> --patch <临时覆盖文件>` 启动 DSH。�
 5. worker 限定大小读取普通非链接的回执文件，核对 nonce、requestId、sessionId、完整 cwd／mode／never 和权限证据。目录／文件权限为 0700／0600；非阻塞读取拒绝 FIFO，回执在本次运行后移除。
 
 任一项缺失，不发送 `session/prompt`。`never` 控制交互审批，不单独扩大访问范围；必须同时显式选择 `danger-full-access` 才请求完全权限。既有静态拒绝或外部权限不足仍按真实失败处理。
+
+精确 Web 绑定还须有同一私有准入回执中的 `web`，并在 ready 中原样输出，例如：
+
+```json
+{"version":1,"provider":"chatgpt","model":"gpt-6-pro-web","reasoningEffort":"pro","ready":true,"usage":"unknown","idle":"wall-only","summary":{"provider":"chatgpt","model":"gpt-6.2-sol"},"title":"deterministic"}
+```
+
+worker 在发送 prompt 前核验这份实际服务回执；Go 另外校验收到的 `ready.web`。
+这不是网页 Send ACK 或账号额度证明，Go 的解析也不向 worker 发放第二次 dispatch ACK。
+Web adapter 负责已验证 binding 的 live readiness，过期 binding／不可用 bridge 明确失败。
 
 `initialize` 返回 serverInfo，并通过 SDK 配置校验。ready 中的 provider/model/reasoningEffort 是配置被接受后的 worker 请求回显；尤其 reasoningEffort 不是模型服务独立返回的实际强度证明，也不证明账号额度或回答质量。
 
@@ -146,6 +172,11 @@ eventTypes、observedEvents 元数据；`invocationId` 是插件为本次调用�
 DSH 的 idle 是可配置的静默资源预算，不是模型死锁证明；独立 wall deadline、取消和
 进程清理仍然生效。不能靠增大发送频率、重复元数据或人工心跳掩盖这些阶段。
 
+精确 ChatGPT Web 的输出在完整校验前缓冲，不能由沉默推断停止。Go 冷调用、预热正式
+调用及安全 TTL 过期后的冷回退均使用 wall-only；idle 参数不用于该模型的强杀。
+实际 wall deadline、用户取消、SDK shutdown 与进程组清理仍独立生效。bridge
+健康／心跳不记为 token 或模型活动，也不延长 wall 期限。
+
 ### result：关闭后的唯一结果
 
 ```json
@@ -154,7 +185,12 @@ DSH 的 idle 是可配置的静默资源预算，不是模型死锁证明；独�
 
 成功必须同时具有：对应 messageId 的持久 inbox receipt、`session/wait` 返回、根 `turn/end.reason.kind:completed`、非空已提交 assistant text、SDK shutdown 确认及退出码 0。idle、超出输出 token 上限、半截文本或仅成功退出都不足以证明成功。
 
-`status` 是 `ok`、`error` 或 `cancelled`。失败提供 `error:{code,message}`；code 仅使用 Go 已有分类。`settled` 只描述 SDK 关闭证据；Go watchdog 对整个拥有的进程组做最终判定。强制终止 SDK 或未获得正常 shutdown 确认时，不能返回成功，也不能声称其原生托管进程已全部清理。
+`status` 是 `ok`、`error` 或 `cancelled`。失败提供 `error:{code,message,requestId?}`；
+code 使用 Go 稳定分类，包括 WEB_UNCERTAIN／WEB_DELIVERY_CLAIMED／
+WEB_CONNECTION_LOST／WEB_PROTOCOL_ERROR。可选 requestId 仅保留 provider 的
+`turn-<64 hex>` 原 Web turn 身份，不是外层请求或 SDK turn ID。`settled` 只描述 SDK
+关闭证据；Go watchdog 对整个拥有的进程组做最终判定。强制终止 SDK 或未获得正常
+shutdown 确认时，不能返回成功，也不能声称其原生托管进程已全部清理。
 
 v2 result 增加 `lifecycle`，不替代物理终态或原有字段。例如正常恢复后的结果包含：
 
@@ -166,6 +202,13 @@ dispatch 为 not-dispatched／dispatched／unknown，outcome 为
 completed／failed／cancelled／unknown；cleanup 独立判断。DSH 不暴露独立 runId。
 未知原生 turn kind、无效 resume/wait 响应和无法确认的失败保持 unknown，不能靠
 settled 或错误文本补出可信 outcome。恢复失败即使确认本轮未派发，也不证明旧结果。
+精确 Web 在 SDK dispatch 之后的任意非成功结果保持 outcome:unknown，不能因 SDK
+已经 turn/end 或正常 shutdown 就补造已知失败、取消或 resumeCandidate。四种 Web
+安全错误码原样保留；其他 Web 错误按原分类映射，同时仍保留合法 turn requestId。
+Send 后 journal 写入失败映射 SERVER 也不能开启新会话重试。SDK dispatch 与网页
+Send 分别判断；bridge reader 只证明原网页请求，不证明 SDK 是否执行过返回的工具。
+Go 验证这一 lifecycle 约束，持久阻止新会话／切后端绕过未知结果。
+
 v1 wire 不增加 lifecycle；Go 在收到完整、身份匹配、物理成功的普通 v1 调用时生成
 `dsh-sdk/worker-v1` 标准化事实并回显引擎 requestId，resumeCandidate 恒 false；
 任意通用失败保持 unknown。

@@ -741,6 +741,25 @@ test('stage edits share one save boundary and can be discarded without unrelated
   assert.deepEqual(Object.keys(ui.requests.at(-1).editor.values), ['routes']);
 });
 
+test('explicit Web model selection offers Pro and preserves every unrelated stage binding', async t => {
+  const ui = await mountPanel(t, editorResponder({ loops: { review: { harness: 'dsh', provider: 'chatgpt',
+    model: 'gpt-6.2-sol', channel: 'chatgpt', thinking: 'high' } } }));
+  await ui.click('设置');
+  await ui.click('模型与会话');
+  await act(async () => ui.container.querySelector('[data-binding-id="loops.review"] button').click());
+  await input(ui, '模型', 'gpt-6-pro-web');
+  const effort = field(ui, '推理等级');
+  assert.equal(effort.value, 'pro');
+  assert.deepEqual([...effort.options].map(option => option.value), ['', 'pro']);
+  assert.match(ui.container.textContent, /已验证的本地 bridge/);
+  await ui.click('保存修改');
+  const saved = ui.requests.at(-1).editor.values;
+  assert.equal(saved.loops.review.model, 'gpt-6-pro-web');
+  assert.equal(saved.loops.review.thinking, 'pro');
+  assert.equal(saved.routes, undefined, 'selecting Web never changes unrelated Execute routes');
+  assert.ok(ui.requests.every(request => ['config-edit', 'config-save'].includes(request.action)), 'editing never sends inference');
+});
+
 test('native profile selection retains explicit off and limits choices to the current harness', async t => {
   const nativeProfiles = {
     'dsh-heavy': { harness: 'dsh', options: { version: 1, preset: 'heavy', agents: { enabled: true } } },

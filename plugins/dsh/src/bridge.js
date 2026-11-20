@@ -6,11 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatePrepare, matchWarmStart, writeWarmReceipt } from './prewarm.js';
-import { BridgeError, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
+import { BridgeError, isChatGPTWeb, MAX_FRAME_BYTES, normalizedError, readPolicyReceipt, record, requiresWebReconciliation, SESSION_PROTOCOL, SessionFold, validateStart } from './protocol.js';
 import { nativeOverlay } from './native-policy.js';
 import { NativeTree } from './native.js';
 import { acquireGuiLease, settleGuiLease } from './native-resources.js';
 import { acceptDshActivity, DSH_ACTIVITY_METHOD } from './dsh-activity.js';
+import { verifyChatGPTWebAdmission } from './web-policy.js';
 
 export function makeOverlay(request, policyPath = fileURLToPath(new URL('./policy.js', import.meta.url)), admission = {}, historyRoot) {
   const native = request.native ? nativeOverlay(request, admission.runtimeProfile ?? 'sdk') : null;
@@ -22,7 +23,8 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     'tool-goal', 'goal-round-driver', 'schedule', 'tool-schedule',
     'session-title-llm', 'tool-web', 'compaction-basic', 'command-compact', 'hmr'];
   return [
-    ...disable.map(id => ({ id, disabled: true })),
+    ...disable.filter(id => id !== 'compaction-basic' || !isChatGPTWeb(request)).map(id => ({ id, disabled: true })),
+    ...(isChatGPTWeb(request) ? [{ id: 'compaction-basic', disabled: false }] : []),
     ...(native?.overlay ?? []),
     ...(historyRoot ? [{ id: 'session-persistence-jsonl', config: { root: historyRoot } }] : []),
     { id: 'sandbox', name: '@deepseek-ai/dsh-sandbox-local', disabled: false, config: {} },
@@ -35,6 +37,7 @@ export function makeOverlay(request, policyPath = fileURLToPath(new URL('./polic
     { id: 'sdk-jsonrpc-server', config: { maxTokensAsSuccess: false } },
     { insert: [{ id: 'flywheel-worker-policy', name: policyPath,
       config: { permissionMode: request.permissionMode, cwd: request.cwd,
+        ...(isChatGPTWeb(request) ? { web: { version: 1, provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort } } : {}),
         activity: { version: 1, idleTimeoutMs: request.idleTimeoutMs ?? 300000 },
         ...(native ? { native: request.native, managed: request.managed, composition: native.composition,
           provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort, resuming: Boolean(request.sessionId) } : {}),
@@ -382,11 +385,13 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
       throw new BridgeError('INVALID_REQUEST', 'DSH session project workspace differs from the requested project');
     }
     fold.verifiedPolicy(request);
+    verifyChatGPTWebAdmission(fold.policy, request);
     nativeAdmission = fold.policy.native;
     if (request.native && nativeAdmission?.matched !== true) throw new BridgeError('INVALID_REQUEST', 'native runtime did not attest its effective capabilities');
     frame({ type: 'ready', sessionId, cwd: request.cwd, ...(request.workspaceCwd ? { workspaceCwd: request.workspaceCwd } : {}), provider: request.provider, model: request.model,
       ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
       permissionMode: request.permissionMode, approvalPolicy: 'never',
+      ...(fold.policy.web ? { web: fold.policy.web } : {}),
       activity: fold.policy.activity ?? { version: 1, observation: 'durable-events-only', opaquePhases: ['streaming', 'external-providers', 'silent-tool', 'startup'] },
       policy: { protocol: fold.policy.protocol, cwd: fold.policy.cwd, permissionMode: fold.policy.permissionMode,
         approvalPolicy: fold.policy.approvalPolicy, confinedShell: fold.policy.confinedShell,
@@ -501,7 +506,9 @@ export async function runWorker(input, { emit, env = process.env, signal, doctor
     // own context. Disconnects, damaged frames and ambiguous restore failures
     // never become a confirmed failure merely because the process has exited.
     const terminalKnown = waited && fold?.receipts.has(promptId) && fold?.terminal && !runtime?.protocolFailure;
-    const terminal = terminalKnown ? fold.terminal.kind === 'completed' ? 'completed'
+    const webUnknown = requiresWebReconciliation(fold?.terminal?.error?.code) || requiresWebReconciliation(failure?.code) ||
+      isChatGPTWeb(request) && dispatch !== 'not-dispatched' && result.status !== 'ok';
+    const terminal = webUnknown ? 'unknown' : terminalKnown ? fold.terminal.kind === 'completed' ? 'completed'
       : fold.terminal.kind === 'aborted' ? 'cancelled' : 'failed'
       : dispatch === 'not-dispatched' && !resumeUnconfirmed ? 'failed' : 'unknown';
     result.lifecycle = {

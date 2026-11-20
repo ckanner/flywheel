@@ -671,7 +671,7 @@
                 "scope": { "type": "string", "enum": ["transport", "attempt", "fallback"] },
                 "error-code": {
                   "type": "string",
-                  "enum": ["AUTH", "QUOTA", "RATE_LIMIT", "SERVER", "TRANSPORT", "TIMEOUT", "EMPTY_RESPONSE", "INVALID_REQUEST", "CONTEXT_WINDOW_EXCEEDED", "L1_FAILED", "REVIEW_RETURNED", "SPIN"]
+                  "enum": ["AUTH", "QUOTA", "RATE_LIMIT", "SERVER", "TRANSPORT", "TIMEOUT", "EMPTY_RESPONSE", "INVALID_REQUEST", "CONTEXT_WINDOW_EXCEEDED", "WEB_UNCERTAIN", "WEB_DELIVERY_CLAIMED", "WEB_CONNECTION_LOST", "WEB_PROTOCOL_ERROR", "L1_FAILED", "REVIEW_RETURNED", "SPIN"]
                 },
                 "policy": { "type": "string" },
                 "planned-delay-ms": { "type": "integer", "minimum": 0 }

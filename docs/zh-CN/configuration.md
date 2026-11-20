@@ -81,6 +81,61 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 
 需要继续用 API Key 的自定义配置仍受支持：在完整配置的相关绑定及其 channel 中一致选择 `deepseek-official`，按 DSH API provider 的正常方式配置凭证。不要仅改 channel 名却保留冲突的显式 provider；也不必为账号路径额外添加 API key。
 
+### ChatGPT Web 显式启用
+
+保留已有完整配置，明确把 Web 模型分配给目标阶段或允许的执行绑定。以下条目应合并
+到已有 map，片段本身不是完整配置：
+
+```json
+{
+  "profiles": {
+    "web-pro": {
+      "harness": "dsh",
+      "provider": "chatgpt",
+      "channel": "chatgpt-sdk",
+      "model": "gpt-6-pro-web",
+      "thinking": "pro"
+    }
+  },
+  "loops": { "review": { "profile": "web-pro" } }
+}
+```
+
+已有 `chatgpt-sdk` channel 须解析到 `chatgpt` provider；若名称不同，使用实际配置的
+channel。`pro` 只属于这个精确 Web 绑定，省略 effort 时使用 `pro`，显式填写其他
+effort、其他 provider 或其他 harness 均会拒绝。工作台对该模型提供 Pro，不改变
+其他阶段绑定或订阅预设。
+
+另在 **DSH SDK profile** 中配置带 Web 能力的 ChatGPT 插件及已验证的本地浏览器
+bridge。在 ChatGPT 插件配置中，通过 `modelContextWindowLimits.gpt-6-pro-web` 或
+`contextWindowLimit` 设置显式本地输入预算；这不表示已知网页的上下文容量。保留
+自动压缩启用状态，并把 headroom 和 retention 设在此预算可容纳的范围内。
+在该 profile 已有的 `compaction-basic` 配置中，显式把
+`summarizationProvider` 和 `summarizationModel` 设为支持辅助生成的非 Web 模型；
+也可在 `modelPolicies` 内添加精确 Web 条目：
+
+```json
+{
+  "provider": "chatgpt",
+  "model": "gpt-6-pro-web",
+  "summarizationProvider": "chatgpt",
+  "summarizationModel": "gpt-6.2-sol"
+}
+```
+
+此条目放入已有 `modelPolicies` 数组，不属于 Flywheel 配置。选择实际安装适配器
+支持的摘要 pair，并保留其他压缩设置。精确匹配条目优先于顶层 pair。Flywheel 仅对
+显式 Web 路由保留启用此插件，在 `session/prompt` 前核对公开 `compaction.config`
+的实际生效配置及 `llm.resolveModelInfo` 返回值。服务缺失、隐式摘要模型、用 Web
+给自身做摘要或 Web 适配器未就绪都会阻止派发，不自动替换账号或付费模型。模型生成
+标题保持关闭，标题由已有确定性命名服务处理。
+
+Web 不接受输出 token、temperature 或 stop 控件。缺失 usage 记为 unknown；显式
+每日 token 硬上限会在这样的结果后阻止后续调用。精确 Web 路由只使用配置的 wall
+期限和用户取消，包括预热与安全冷回退；`watchdog.idle-timeout-ms` 对其他可观察
+传输仍生效。bridge 健康不会延长 wall 期限。详见[模型策略](model-policy.md#显式选择-chatgpt-web-模型)
+和 [Web 中断恢复](session-recovery.md#chatgpt-web-不确定结果)。
+
 ## 原生能力配置
 
 `native-profiles` 定义版本化 harness options，绑定使用 `native-profile` 引用。

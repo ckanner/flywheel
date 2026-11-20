@@ -5,6 +5,7 @@ import { dirname, isAbsolute } from 'node:path';
 import { readPolicyReceipt, nonempty } from './protocol.js';
 import { createNativePolicy } from './native-policy.js';
 import { createDshActivityPublisher } from './dsh-activity.js';
+import { admitChatGPTWeb } from './web-policy.js';
 
 export const inject = ['sandboxPolicy', 'approval', 'shell', 'workingDirectory'];
 
@@ -91,6 +92,7 @@ export async function apply(ctx, config) {
     session.append('sandbox/mode', { mode: permissionMode });
     session.append('approval/policy', { policy: 'never' });
     const native = await nativePolicy?.admit(agent, root);
+    const web = root && config.web ? await admitChatGPTWeb(ctx, config.web) : undefined;
     activity?.admit(agent, root);
     if (!root) return;
     const policy = ctx.sandboxPolicy.resolve({ session });
@@ -98,6 +100,7 @@ export async function apply(ctx, config) {
       protocol: 1,
       requestId, sessionId, nonce,
       ...(native ? { native } : {}),
+      ...(web ? { web } : {}),
       ...(activity ? { activity: activity.capabilities } : {}),
       ...(workspaceCwd === undefined ? {} : { workspaceCwd: session.header.cwd }),
       cwd: policy.workspaceRoot,

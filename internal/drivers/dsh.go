@@ -18,6 +18,10 @@ import (
 
 const DSHWorkerEnv = "FLYWHEEL_DSH_WORKER"
 
+func dshWeb(provider, model string) bool {
+	return provider == "chatgpt" && model == "gpt-6-pro-web"
+}
+
 // DSHArgs binds one SDK worker to one provider/model and permission scope.
 type DSHArgs struct {
 	Native            json.RawMessage
@@ -81,9 +85,31 @@ type dshParsed struct {
 	Cancelled        bool
 	Error            string
 	ErrorCode        errs.ErrorCode
+	ErrorRequestID   string
 	CleanupError     string
 	CleanupConfirmed bool
 	Session          *SessionOutcome
+}
+
+type dshWebAdmission struct {
+	Version         int    `json:"version"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	ReasoningEffort string `json:"reasoningEffort"`
+	Ready           bool   `json:"ready"`
+	Usage           string `json:"usage"`
+	Idle            string `json:"idle"`
+	Title           string `json:"title"`
+	Summary         struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	} `json:"summary"`
+}
+
+func validDSHWebAdmission(value *dshWebAdmission, request dshStart) bool {
+	return value != nil && value.Version == 1 && value.Provider == request.Provider && value.Model == request.Model &&
+		value.ReasoningEffort == "pro" && value.Ready && value.Usage == "unknown" && value.Idle == "wall-only" && value.Title == "deterministic" &&
+		strings.TrimSpace(value.Summary.Provider) != "" && strings.TrimSpace(value.Summary.Model) != "" && value.Summary.Model != "gpt-6-pro-web"
 }
 
 const DSHSessionProtocol = "dsh-sdk/session-resume/worker-v2"
@@ -127,30 +153,32 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 			continue
 		}
 		var frame struct {
-			Native          json.RawMessage `json:"native"`
-			Type            string          `json:"type"`
-			Protocol        int             `json:"protocol"`
-			RequestID       string          `json:"requestId"`
-			SessionID       string          `json:"sessionId"`
-			Cwd             string          `json:"cwd"`
-			WorkspaceCwd    string          `json:"workspaceCwd"`
-			Provider        string          `json:"provider"`
-			Model           string          `json:"model"`
-			ReasoningEffort string          `json:"reasoningEffort"`
-			PermissionMode  string          `json:"permissionMode"`
-			ApprovalPolicy  string          `json:"approvalPolicy"`
-			Status          string          `json:"status"`
-			Settled         bool            `json:"settled"`
-			Text            string          `json:"text"`
-			Usage           json.RawMessage `json:"usage"`
-			CostUSD         *float64        `json:"costUsd"`
-			Event           json.RawMessage `json:"event"`
-			Persistent      *bool           `json:"persistent"`
-			Resumed         *bool           `json:"resumed"`
-			Lifecycle       *SessionOutcome `json:"lifecycle"`
+			Native          json.RawMessage  `json:"native"`
+			Type            string           `json:"type"`
+			Protocol        int              `json:"protocol"`
+			RequestID       string           `json:"requestId"`
+			SessionID       string           `json:"sessionId"`
+			Cwd             string           `json:"cwd"`
+			WorkspaceCwd    string           `json:"workspaceCwd"`
+			Provider        string           `json:"provider"`
+			Model           string           `json:"model"`
+			ReasoningEffort string           `json:"reasoningEffort"`
+			PermissionMode  string           `json:"permissionMode"`
+			ApprovalPolicy  string           `json:"approvalPolicy"`
+			Status          string           `json:"status"`
+			Settled         bool             `json:"settled"`
+			Text            string           `json:"text"`
+			Usage           json.RawMessage  `json:"usage"`
+			CostUSD         *float64         `json:"costUsd"`
+			Event           json.RawMessage  `json:"event"`
+			Persistent      *bool            `json:"persistent"`
+			Resumed         *bool            `json:"resumed"`
+			Lifecycle       *SessionOutcome  `json:"lifecycle"`
+			Web             *dshWebAdmission `json:"web"`
 			Error           *struct {
-				Code    errs.ErrorCode `json:"code"`
-				Message string         `json:"message"`
+				Code      errs.ErrorCode `json:"code"`
+				Message   string         `json:"message"`
+				RequestID string         `json:"requestId"`
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(line), &frame); err != nil {
@@ -175,6 +203,10 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 				break
 			}
 			ready = true
+			if dshWeb(request.Provider, request.Model) && !validDSHWebAdmission(frame.Web, request) {
+				parsed.Error = "DSH worker did not attest verified Web readiness and its explicit auxiliary route"
+				break
+			}
 			parsed.SessionID = frame.SessionID
 		case "event":
 			if !ready || frame.SessionID != parsed.SessionID || len(frame.Event) == 0 || string(frame.Event) == "null" {
@@ -220,6 +252,12 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 				}
 				parsed.Usage, parsed.CostUSD = usage, frame.CostUSD
 			}
+			if parsed.Session != nil && (frame.Error != nil && errs.RequiresReconciliation(frame.Error.Code) ||
+				dshWeb(request.Provider, request.Model) && frame.Status != "ok" && parsed.Session.Dispatch != "not-dispatched") &&
+				(parsed.Session.Outcome != "unknown" || parsed.Session.ResumeCandidate) {
+				parsed.Error = "Web outcome requires reconciliation; the SDK terminal cannot authorize replay"
+				break
+			}
 			// Startup failures may precede ready. Success always requires the receipt.
 			if frame.Status == "error" && frame.Error != nil {
 				if !errs.IsKnownCode(frame.Error.Code) {
@@ -227,6 +265,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 					break
 				}
 				parsed.ErrorCode = frame.Error.Code
+				parsed.ErrorRequestID = frame.Error.RequestID
 				providerError = string(frame.Error.Code) + ": " + frame.Error.Message
 				// Keep checking the stream: a later frame cannot leave a trusted
 				// provider code behind after violating terminal ordering.
@@ -268,6 +307,7 @@ func parseDSHStream(stdout string, request dshStart) dshParsed {
 	if parsed.Error != "" {
 		parsed.Cancelled = false // an untrusted prior terminal cannot establish the cancellation cause
 		parsed.ErrorCode = errs.TRANSPORT
+		parsed.ErrorRequestID = ""
 		parsed.Session = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	} else if providerError != "" {
@@ -339,6 +379,12 @@ func dshCall(a DSHArgs) (dshStart, string, []string, map[string]string, error) {
 	effort := a.Thinking
 	if effort == "" {
 		effort = "high"
+		if dshWeb(a.Provider, a.Model) {
+			effort = "pro"
+		}
+	}
+	if dshWeb(a.Provider, a.Model) && effort != "pro" {
+		return dshStart{}, "", nil, nil, fmt.Errorf("ChatGPT Web requires reasoning effort pro")
 	}
 	request := dshStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: rand.Text(), Cwd: cwd,
 		Provider: a.Provider, Model: a.Model, ReasoningEffort: effort,
@@ -389,7 +435,8 @@ func RunDSH(a DSHArgs) Result {
 	result := watchdog.Run(command, argv, watchdog.Opts{
 		Context: a.Watchdog.Context, Cwd: request.Cwd, Env: childenv.EnvSlice(env),
 		IdleTimeoutMs: a.Watchdog.IdleTimeoutMs, WallTimeoutMs: a.Watchdog.WallTimeoutMs,
-		KillGraceMs: dshCleanupGrace(a), OnActivity: onActivity,
+		DisableIdleTimeout: dshWeb(a.Provider, a.Model),
+		KillGraceMs:        dshCleanupGrace(a), OnActivity: onActivity,
 		StdoutCapture: newDSHActivityCapture(func() dshStart { return request }),
 		InteractStdin: func(stdin io.WriteCloser, finish func()) {
 			err := json.NewEncoder(stdin).Encode(request)
@@ -418,6 +465,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		parsed.CleanupConfirmed = false
 		parsed.Error = "DSH worker request write failed: " + writeError.Error()
 		parsed.ErrorCode = errs.TRANSPORT
+		parsed.ErrorRequestID = ""
 		parsed.Session = nil
 		parsed.Usage, parsed.CostUSD = nil, nil
 	}
@@ -427,6 +475,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 	out := fromWatchdog(result, "dsh", a.Provider, a.Model)
 	out.NativeReceipt = parsed.NativeReceipt
 	out.ErrorCode = parsed.ErrorCode
+	out.ErrorRequestID = parsed.ErrorRequestID
 	if out.CleanupError == "" {
 		out.CleanupError = parsed.CleanupError
 	}
@@ -441,6 +490,7 @@ func finishDSH(a DSHArgs, request dshStart, result watchdog.Result, writeError e
 		// only stderr exceeded the capture bound. Its charge is unconfirmed.
 		out.Usage, out.CostUSD = nil, nil
 		out.ErrorCode = errs.TRANSPORT
+		out.ErrorRequestID = ""
 	}
 	mergeWorkerTermination(&out, parsed.Cancelled, parsed.ErrorCode == errs.TIMEOUT && !result.Truncated, false)
 	if out.TimedOut {

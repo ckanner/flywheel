@@ -453,7 +453,7 @@ func (c *Config) Validate() error {
 		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
 			return fmt.Errorf("loops.%s: %s requires explicit model and channel", name, b.Harness)
 		}
-		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider, b.Model, b.Thinking); err != nil {
 			return fmt.Errorf("loops.%s: %w", name, err)
 		}
 	}
@@ -464,7 +464,7 @@ func (c *Config) Validate() error {
 		if (b.Harness == "codex-pro" || b.Harness == "claude-code-pro") && (strings.TrimSpace(b.Model) == "" || strings.TrimSpace(b.Channel) == "") {
 			return fmt.Errorf("routes.%s: %s requires explicit model and channel", name, b.Harness)
 		}
-		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider, b.Model, b.Thinking); err != nil {
 			return fmt.Errorf("routes.%s: %w", name, err)
 		}
 	}
@@ -486,7 +486,7 @@ func (c *Config) Validate() error {
 		if err := validateHarness(b.Harness); err != nil {
 			return fmt.Errorf("profiles.%s: %w", name, err)
 		}
-		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider); err != nil {
+		if err := c.validateBindingProvider(b.Harness, b.Channel, b.Provider, b.Model, b.Thinking); err != nil {
 			return fmt.Errorf("profiles.%s: %w", name, err)
 		}
 	}
@@ -494,7 +494,7 @@ func (c *Config) Validate() error {
 		if (c.JudgePanel.Harness == "codex-pro" || c.JudgePanel.Harness == "claude-code-pro") && c.JudgePanel.ResidentSession {
 			return fmt.Errorf("judge-panel: resident-session is unsupported for %s; use sessions.mode for scoped history", c.JudgePanel.Harness)
 		}
-		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider); err != nil {
+		if err := c.validateBindingProvider(c.JudgePanel.Harness, c.JudgePanel.Channel, c.JudgePanel.Provider, c.JudgePanel.Model, c.JudgePanel.Thinking); err != nil {
 			return fmt.Errorf("judge-panel: %w", err)
 		}
 		return validateHarness(c.JudgePanel.Harness)

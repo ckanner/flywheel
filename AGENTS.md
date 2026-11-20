@@ -82,7 +82,8 @@ P4 fixture 验证真实引擎与实验工具，不代表真实模型质量、缓
   truth; validation happens at LOAD time via jsonschema (internal/contract) —
   a malformed acceptance must fail fast, never crash mid-run after a spawn.
 - **Error taxonomy**: `internal/errs` codes (AUTH/QUOTA/RATE_LIMIT/SERVER/
-  TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED)
+  TRANSPORT/TIMEOUT/EMPTY_RESPONSE/INVALID_REQUEST/CONTEXT_WINDOW_EXCEEDED/
+  WEB_UNCERTAIN/WEB_DELIVERY_CLAIMED/WEB_CONNECTION_LOST/WEB_PROTOCOL_ERROR)
   are a wire contract. Changes are design changes: define the change in
   docs/design.md §6 before implementing it, then update code, tests, and
   CHANGELOG.md in the same PR.
