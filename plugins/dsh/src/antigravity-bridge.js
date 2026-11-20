@@ -63,6 +63,23 @@ export function machineRequest(value, api, env) {
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }), maxOutputBytes: LIMITS.machineOutputBytes });
   } catch (error) { throw new WorkerError('INVALID_REQUEST', error instanceof api.MachineInputError ? error.message : 'Invalid Antigravity machine request'); }
 }
+
+export function invokeAdapter(api, request, options) {
+  return api.runMachine(request, { ...options, onActivity(event) {
+    // Antigravity may attach its current native snapshot to child activity.
+    // The shared activity wire carries only bounded liveness metadata; the
+    // complete snapshot is validated separately in the terminal receipt.
+    // Strip only that documented extension, leaving all other unexpected
+    // fields for the shared strict activity validator to reject.
+    let activity = event;
+    if (event && typeof event === 'object' && !Array.isArray(event)) {
+      activity = { ...event };
+      delete activity.native;
+    }
+    options.onActivity?.(activity);
+  } });
+}
+
 export function doctorResult() {
   return { protocol: 1, type: 'doctor', package: ADAPTER.package, version: ADAPTER.version, machineProtocol: 1,
     available: true, inferenceTested: false, accountEntitlement: 'unknown', quota: 'unknown', evidenceOnly: 'verified-empty-init-tools',

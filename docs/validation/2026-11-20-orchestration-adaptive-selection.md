@@ -63,6 +63,27 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
 7. **遥测保留与展示。** 同行包含公共回执和原生摘要时，合法记录可能大于旧 2 MiB 上限；
    单行读取对齐既有 8 MiB 公共回执边界，保留 64 MiB 文件上限。UI 最多显示 20 个成员 ID，
    明确其余省略数量，不输出原工具正文，也不把 unknown 用量填成零。
+8. **真实跨进程活动桥接。** 完整 Go→Node 验收复现了 child activity 的公开 native 快照
+   被通用严格活动协议拒绝，导致 subagents／Swarm 被中止，并把观察越限分类改为 TRANSPORT。
+   AGY 专用 bridge 现在只从活动流投影中移除该已公开扩展，完整 native 仍由最终回执核验；
+   其他未知字段、乱序和畸形活动继续拒绝。未改写原事件、失败回执或 unknown/cleanup 语义。
+   修复后 AGY 的 14 个真实跨进程子场景和 3 个 Node 桥接测试均通过。
+9. **文档与时序一致。** 普通 Antigravity（含 Orchestrator）在 spawn 后发送任务，之后
+   核对 init；只有 evidence-only、显式 subagents／Swarm 等待 init 后派发。中英文指南
+   已删除“所有调用均有派发前 init 闸门”的泛化表述，并明确 AGY Plan 不运行 Swarm。
+
+### 独立插件的冻结身份
+
+- 源码提交：[`2f9b5f255e89`](https://github.com/ckanner/flywheel/commit/2f9b5f255e89d0ad51688b48c109c0ec493b7fe5)。
+- 源码目录树：`f89a71e097ce5143b6489737b07eeb8f3b4db173`。
+- 归档：`dsh-subagent-antigravity-0.2.0.tgz`，59,355 bytes。
+- SHA-256：`fa5ef71121749cef2d0217fd545d1a15a250ed3534342ea8d362e5bde9d751f4`。
+- npm integrity：`sha512-HNgyzdul4+v5f4ep4E2HKcZSrjRFPWwp6eqOr4deO1LXX9bHDes7IJc1w99qdn/T602W+5QC3OKv+advTeRAyQ==`。
+
+35/35 插件测试、实际包在源码目录外的 ESM/types/bin/guardian/journal/evidence-only/
+Orchestrator/Swarm 消费，以及真实 DSH 0.2.2-rc.3 隔离 profile 安装都使用该归档。
+Flywheel 桥接修复没有改动该插件或重打此包。两个消费树的 lockfile 均记录相同 integrity，
+实际 `npm ci` 后确认安装的是 0.2.0；仅看 lockfile 或 npm 的“up to date”不作为版本证明。
 
 ## 验证范围与限制
 
