@@ -126,7 +126,7 @@ type Feedback struct {
 type Request struct {
 	DesignGranularity  string `json:"design-granularity,omitempty"`
 	ID                 string `json:"id"`
-	Origin             string `json:"origin,omitempty"` // collaboration-edit; empty for an ordinary plan request
+	Origin             string `json:"origin,omitempty"` // collaboration-edit | input-images-edit; empty for an ordinary plan request
 	Scope              string `json:"scope"`
 	ScopeID            string `json:"scope-id"`
 	InputRevision      int    `json:"input-revision"`

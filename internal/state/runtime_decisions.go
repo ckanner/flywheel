@@ -27,24 +27,51 @@ type RuntimeDecisions struct {
 }
 
 type RuntimeDecisionRecord struct {
-	ModelBindings        map[string]BindingSnapshot `json:"model-bindings,omitempty"`
-	ModelBindingsOmitted int                        `json:"model-bindings-omitted,omitempty"` // display projection only
-	Phase                string                     `json:"phase,omitempty"`                  // display projection only
-	BaselineActionID     string                     `json:"baseline-action-id,omitempty"`
-	Actions              []decision.Action          `json:"actions,omitempty"`
-	ID                   string                     `json:"id"`
-	Packet               string                     `json:"packet"`
-	Attempt              int                        `json:"attempt"`
-	PlanRevisions        int                        `json:"plan-revisions"`
-	StartedAt            string                     `json:"started-at"`
-	Snapshot             *decision.Snapshot         `json:"snapshot,omitempty"`
-	Receipt              *decision.Receipt          `json:"receipt,omitempty"`
-	Selection            *decision.Selection        `json:"selection,omitempty"`
-	Action               string                     `json:"action"`
-	Status               string                     `json:"status"`
-	Accounted            bool                       `json:"accounted"`
-	Feedback             any                        `json:"feedback,omitempty"`
-	PlanInvocationBefore string                     `json:"plan-invocation-before,omitempty"`
+	Execution            *RuntimeDecisionExecution     `json:"execution,omitempty"`
+	ExecutionView        *RuntimeDecisionExecutionView `json:"execution-view,omitempty"` // console projection only
+	ModelBindings        map[string]BindingSnapshot    `json:"model-bindings,omitempty"`
+	ModelBindingsOmitted int                           `json:"model-bindings-omitted,omitempty"` // display projection only
+	Phase                string                        `json:"phase,omitempty"`                  // display projection only
+	BaselineActionID     string                        `json:"baseline-action-id,omitempty"`
+	Actions              []decision.Action             `json:"actions,omitempty"`
+	ID                   string                        `json:"id"`
+	Packet               string                        `json:"packet"`
+	Attempt              int                           `json:"attempt"`
+	PlanRevisions        int                           `json:"plan-revisions"`
+	StartedAt            string                        `json:"started-at"`
+	Snapshot             *decision.Snapshot            `json:"snapshot,omitempty"`
+	Receipt              *decision.Receipt             `json:"receipt,omitempty"`
+	Selection            *decision.Selection           `json:"selection,omitempty"`
+	Action               string                        `json:"action"`
+	Status               string                        `json:"status"`
+	Accounted            bool                          `json:"accounted"`
+	Feedback             any                           `json:"feedback,omitempty"`
+	PlanInvocationBefore string                        `json:"plan-invocation-before,omitempty"`
+}
+
+// Execution records an explicit link created before dispatch. It is display
+// evidence only; neither the link nor the view grants execution authority.
+type RuntimeDecisionExecution struct {
+	ContractFingerprint string                     `json:"contract-fingerprint"`
+	Invocation          *RuntimeDecisionInvocation `json:"invocation,omitempty"`
+}
+
+type RuntimeDecisionInvocation struct {
+	ID               string `json:"id"`
+	DispatchObserved bool   `json:"dispatch-observed,omitempty"`
+	EngineRunID      string `json:"engine-run-id,omitempty"`
+	StartedAt        string `json:"started-at"`
+	Attempt          int    `json:"attempt"`
+	Status           string `json:"status"`
+	Dispatch         string `json:"dispatch"`
+	Outcome          string `json:"outcome"`
+	CleanupConfirmed bool   `json:"cleanup-confirmed"`
+}
+
+type RuntimeDecisionExecutionView struct {
+	Status     string                     `json:"status"`
+	Reason     string                     `json:"reason"`
+	Invocation *RuntimeDecisionInvocation `json:"invocation,omitempty"`
 }
 
 var runtimeStateSchema = contract.StateSchema
@@ -52,6 +79,9 @@ var runtimeStateSchema = contract.StateSchema
 func validateRuntimeDecisions(st *State) error {
 	ledger := st.RuntimeDecisions
 	if ledger == nil {
+		if err := validateRuntimeExecutionLinks(st, nil); err != nil {
+			return err
+		}
 		return validatePendingStrategies(st, nil)
 	}
 	schema, err := runtimeStateSchema()
@@ -96,6 +126,9 @@ func validateRuntimeDecisions(st *State) error {
 	}
 	if used != ledger.Used {
 		return fmt.Errorf("runtime decision call count mismatch")
+	}
+	if err := validateRuntimeExecutionLinks(st, seen); err != nil {
+		return err
 	}
 	return validatePendingStrategies(st, seen)
 }

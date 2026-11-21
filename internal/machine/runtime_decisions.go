@@ -286,6 +286,7 @@ func (c *Context) failureDecision(packet *contract.Packet, code errs.ErrorCode, 
 		return ""
 	}
 	record := &state.RuntimeDecisionRecord{ModelBindings: c.runtimeModelBindings(packet, snapshot.Actions), ID: id, Packet: packet.PacketID, Attempt: ps.Attempts, PlanRevisions: ps.PlanRevisions, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record.Execution = runtimeExecutionCheckpoint(c.State, packet.PacketID)
 	ledger.Records = append(ledger.Records, record)
 	ledger.Used++
 	ps.PendingStrategy = id

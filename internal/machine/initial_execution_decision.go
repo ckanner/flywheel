@@ -163,6 +163,7 @@ func (c *Context) initialExecutionDecision(packet *contract.Packet) error {
 		return nil
 	}
 	record := &state.RuntimeDecisionRecord{ModelBindings: c.runtimeModelBindings(packet, snapshot.Actions), ID: snapshot.ID, Packet: packet.PacketID, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record.Execution = runtimeExecutionCheckpoint(c.State, packet.PacketID)
 	ledger.Records = append(ledger.Records, record)
 	ledger.Used++
 	ps.PendingStrategy = record.ID

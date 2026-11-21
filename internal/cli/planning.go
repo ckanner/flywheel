@@ -21,6 +21,7 @@ import (
 
 var planningFields = map[string][]string{
 	"collaboration": {"action", "revision", "request-id", "collaboration", "start"},
+	"input-images":  {"action", "revision", "request-id", "input-images", "start"},
 	"prepare":       {"action", "request-id", "brief", "start"},
 	"plan":          {"action", "revision", "request-id", "scope", "scope-id", "text", "start"},
 	"feedback":      {"action", "revision", "request-id", "design", "text", "policy", "start"},
@@ -165,7 +166,7 @@ func controlPlanning(cmd *cobra.Command, taskDir, cwd string) (controlResponse, 
 		return reply, nil
 	}
 	extra := []string{}
-	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" {
+	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" {
 		extra = []string{"--planning-only"}
 	}
 	reply, err = startControlledRun(taskDir, cwd, "", extra)

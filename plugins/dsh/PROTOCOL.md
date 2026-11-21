@@ -647,9 +647,9 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 错误输出仅计数不回传。目录读取不发送 prompt、不创建 Codex thread/turn、不登录、不
 改变任务配置；Kimi／DSH 未验证的目录通道返回 unsupported，用户可继续输入精确模型 ID。
 
-### Packet 资格与分工修订
+### Packet 资格、分工与图片输入修订
 
-`control node --packet M01-T01` 追加两个只读字段：
+`control node --packet M01-T01` 追加以下只读字段：
 
 - `node.eligibility:{packet,revision,status,reason,source,route?,candidates}`，status 为
   verified／unknown，source 为 configuration／frozen。候选为
@@ -658,6 +658,13 @@ config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watch
 - `node.collaborationEditor:{packet,revision,contractFingerprint?,plan?,editable,reason,writes,value?}`。
   value 使用既有 packet collaboration 契约，plan 为 `{revision,digest}`；未审新版本与已审
   `node.collaboration` 分开展示。编辑快照超限时不可编辑，写入范围不被截断。
+- `node.imageInputEditor:{packet,revision,contractFingerprint?,plan?,editable,status,reason,value}`。
+  value 必须存在，为 null 或 `{version:1,images:[{path,sha256,"media-type"}]}`；它来自当前
+  完整 plan 的声明，未审版本不能称为已激活或模型已接收。node 不读取原图、不生成预览。
+  status 为 known／unknown，表示是否读到了对应 packet／plan 的完整声明；unknown
+  必须 editable:false、value:null，不能把该 null 显示为“没有图片”。最新计划缺失或无法
+  解析时不借用活动契约中的旧值。无规划但已读取冻结 packet 的 known 值仅为已读取声明。
+  两类编辑器共用精确批准、完整活动投影和不可变导出检查；图片编辑不要求分工写入范围。
 
 保存使用 `planning` 的 `action:"collaboration"`，额外字段为 revision、request-id、
 `collaboration:{packet,contractFingerprint,plan,value}` 和可选 start。整个 collaboration
@@ -675,6 +682,19 @@ planning-only 请求。start:true 仅启动该独立评审，不批准新设计�
 面板草稿与未决 ID 保存在当前 host Session 绑定，跨面板／任务切换后仍可按原身份核对；
 不会将另一会话的授权或草稿带入当前会话。
 
+图片保存使用 `planning` 的 `action:"input-images"`，额外字段为 revision、request-id、
+`"input-images":{packet,contractFingerprint,plan,value}` 和可选 start。编辑对象最多
+32 KiB；value 缺失拒绝，明确 null 表示申请移除全部图片且仍需新计划和独立评审。
+非 null 使用现有 packet 图片契约，最多四张，path 为干净的仓库相对路径，SHA-256
+为完整小写摘要，media-type 为 PNG/JPEG/GIF/WebP；不接受 data 或 dataUrl。显式
+预览沿 `control images`，保存时 Go 重读原始字节并重新检查无 symlink、摘要、真实
+解码、每张 4 MiB／合计 8 MiB、8192 边长与 1600 万像素上限。清空不会读取被移除的
+原图，也不会直接改活动契约。新请求 origin 为 `input-images-edit`，producer 为
+`control:input-images:<request-id的SHA256>`。start:true 只启动 planning-only 独立
+plan-review；确切计划审查通过前不更新活动输入，不授予实施 Start。回执 action 必须为
+input-images，复用同 action／request-id 的对账与未知锁；拒绝审计 kind 为
+`planning-input-images-rejected`，仅成功 CAS 后返回 rejected 且不启动进程。
+
 ### Reviewed planning 控制与可信批准
 
 新增 `control planning --task-dir <绝对目录> --cwd <绝对目录> --compact`。stdin 是一个
@@ -684,6 +704,7 @@ JSON 对象，host 外层工具/command 请求为 `{action:"planning",taskDir,cw
 | 内层 action | 字段与含义 |
 |---|---|
 | collaboration | revision、request-id、collaboration、可选 start；保存精确分工修订并准备独立 plan-review，始终 planning-only |
+| input-images | revision、request-id、input-images、可选 start；新增/替换冻结图片引用或显式 value:null 清空，产生新 plan 并独立评审，始终 planning-only |
 | prepare | brief、可选 request-id/start；brief 服从 planning.schema.json 的 $defs.brief，缺省启动设计；start:false 只登记 |
 | plan | revision、request-id、scope、可选 scope-id/text/start；text 是该 request 不可变的局部规划说明，供 planner/reviewer 使用，不增加全局 input-revision；design / milestone / packet / replan；显式 Plan 运行 planning-only，已有启动授权也不顺带执行 |
 | feedback | revision、request-id、text，可选 design/policy/start；输入绑定观测版本，运行中的 owner 可排队采用 |
@@ -910,6 +931,21 @@ absent 状态由 Go 比较当前契约与冻结指纹，并核对独立审查及
 pending、failed 与成功查询为空是独立事实。
 collaboration 显示证据超过 32 KiB 时整体省略 value，返回
 `unverified/display-limit-exceeded`，不显示被截断的范围，也不改变引擎执行资格。
+
+新的 model 决策可带持久 `execution:{contract-fingerprint,invocation?}` 展示元数据。
+执行 intent 的可选 `session.last.decision-id` 在派发前按准确 packet、下一 attempt、
+plan-revisions、当前候选 ID、冻结契约和完整绑定匹配；同 ID 调用摘要随正常 owner CAS
+保存，后续 session 替换不抹掉已记录的旧结果。原始 metadata 不参与 Snapshot/hash，
+控制投影省略它，改为 `execution-view:{status,reason,invocation?}`。status 为
+`not-selected|selected|not-started|started|completed|failed|cancelled|unknown`。
+invocation 仅含 id、可选 engine-run-id、started-at、attempt、status、dispatch、outcome、
+cleanup-confirmed 和可选 dispatch-observed，保留原回执的 `dispatched` 派发词汇。
+
+`dispatch-observed:true` 只来自已持久化、身份匹配的原生 turn-accepted 事件，可证明
+调用已启动但不改变真实 session Dispatch/Outcome 或恢复准入。完成/失败/取消的视图
+要求明确 dispatched、相同 outcome、cleanup-confirmed 和 received/consumed；其它
+部分事实保留 started/unknown。缺少旧调用关联时不根据相同模型、时间或新配置猜测。
+决策卡的调用结果与任务验收、实际子成员结果保持独立。
 
 `continue` 是显式补证新轮：完整 contract 和观测 revision 必填，旧报告必须 settled，
 所有动作/分析/JEV调用及cleanup均已结算。保留ID、goal、intent、implementation-scope，

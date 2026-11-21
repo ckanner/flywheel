@@ -247,11 +247,13 @@ func (c *Context) finishPlanningFeedback(root *os.Root, name string, entry plann
 
 func rejectedPlanningReceipt(st *state.State, id string) *PlanningControlReceipt {
 	for _, value := range st.Inbox {
-		if item, ok := value.(map[string]any); ok && (item["kind"] == "planning-feedback-rejected" || item["kind"] == "planning-collaboration-rejected") && item["request-id"] == id {
+		if item, ok := value.(map[string]any); ok && (item["kind"] == "planning-feedback-rejected" || item["kind"] == "planning-collaboration-rejected" || item["kind"] == "planning-input-images-rejected") && item["request-id"] == id {
 			message, _ := item["message"].(string)
 			action := "feedback"
 			if item["kind"] == "planning-collaboration-rejected" {
 				action = "collaboration"
+			} else if item["kind"] == "planning-input-images-rejected" {
+				action = "input-images"
 			}
 			return &PlanningControlReceipt{RequestID: id, Action: action, Status: "rejected", Revision: st.Revision, Message: message}
 		}
@@ -314,6 +316,8 @@ func readPlanningControlReceipt(taskDir, id string, st *state.State) (*PlanningC
 			action = "plan"
 			if request.Origin == "collaboration-edit" {
 				action = "collaboration"
+			} else if request.Origin == "input-images-edit" {
+				action = "input-images"
 			}
 		}
 	}

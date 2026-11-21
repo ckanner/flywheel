@@ -132,6 +132,7 @@ func (c *Context) save() {
 	if c.fatal != nil {
 		return
 	}
+	syncRuntimeDecisionExecutions(c.State)
 	st, err := state.Save(c.TaskDir, c.State, &c.revision)
 	if err != nil {
 		c.fatal = err

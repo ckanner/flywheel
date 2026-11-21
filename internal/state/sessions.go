@@ -127,6 +127,8 @@ type SessionUsage struct {
 }
 
 type SessionInvocation struct {
+	DecisionID       string             `json:"decision-id,omitempty"`
+	DispatchObserved bool               `json:"dispatch-observed,omitempty"` // positive lifecycle observation; never replay authority
 	EngineRunID      string             `json:"engine-run-id,omitempty"`
 	ID               string             `json:"id"`
 	Status           string             `json:"status"` // intent | received | consumed | blocked | abandoned

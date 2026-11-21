@@ -9,6 +9,59 @@ public machine API and official Agent SDK. The default `multimodal` route select
 Claude. A path in `context-files` or ordinary prompt text does not create an image
 attachment.
 
+## Edit images on an existing packet
+
+In the Flywheel workflow, open the packet or its Execute node and select
+**Edit image inputs**. The view reads the exact current plan and displays its image
+paths, media types and SHA-256 digests. These are immutable plan references;
+reading them does not read the original files or establish that the plan is active
+or that a model has received an image. A plan awaiting review is labelled with its
+reason and cannot be edited as though it had already been adopted.
+
+An unreadable packet or plan is shown as **unconfirmed**, with the read failure
+reason; it is never presented as having no images. Only a confirmed empty
+declaration means that no image inputs are declared. A legacy packet without a
+plan is labelled **Image references read from the contract**, and remains
+read-only rather than being presented as the current plan.
+
+Enter repository-relative paths in the image rows. Use **Add image path** to add
+another original, change a row to replace one, or **Remove image** to remove a row
+from a multi-image draft. Then choose **Inspect and preview image draft**. The
+explicit read validates the files and shows thumbnails together with the original
+format, dimensions, byte count and digest. Changing any path invalidates the
+preview. An empty path cannot clear the packet's image declaration.
+
+To remove the entire declaration, choose **Explicitly clear all image references**
+and confirm that this step no longer requires those originals. This is a separate
+reviewed contract change. Do not clear image requirements to make an incompatible
+execution channel pass admission; retain the requirement and select a channel
+that can satisfy it.
+
+**Save image draft for review** sends only references, the exact state revision,
+contract fingerprint, plan revision/digest and a new request ID. The engine checks
+the original bytes again, copies the complete current plan, changes only this
+packet's `input-images`, and records a new immutable plan for independent review.
+The old plan's review does not cover that revision. Active contract files remain
+under the normal activation checks, and saving does not grant implementation
+start authority. The requested review is planning-only. Original-image execution
+still requires a compatible Claude SDK binding.
+
+Closing the node or leaving the view retains paths, reference metadata and an
+unresolved save's exact request ID in the same live conversation binding.
+Thumbnail bytes are not retained in that cache; inspect again after reopening
+before saving a replacement. A new plugin or host Session binding starts with a
+new in-memory cache. A rejected or failed read preserves the draft. **Refresh
+revision and keep image draft** can adopt a newer audit revision only while the
+contract fingerprint, exact plan and original references remain identical;
+**Reread and replace image draft** explicitly discards the local changes.
+
+If adoption is queued or unknown, use **Reconcile image revision** to read the
+original request. Only a matching `input-images` action and request ID can confirm
+its result; the view does not replay the mutation. A confirmed pre-dispatch
+rejection leaves the draft correctable without requiring a receipt that cannot
+exist. The actual invocation's frozen image manifest is displayed separately
+under the node's run configuration, using its recorded dispatch and outcome.
+
 ## Declare the actual files
 
 Save the authorized reference as a regular file in the task's repository checkout,

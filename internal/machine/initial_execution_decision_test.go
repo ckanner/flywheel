@@ -53,7 +53,12 @@ func TestInitialSelectionAndFailureSwitchShareAttemptsUsageAndSwitchCap(t *testi
 	for _, record := range ledger.Records {
 		require.True(t, record.Accounted)
 		require.True(t, record.Selection.Adopted)
+		require.NotNil(t, record.Execution)
+		require.NotNil(t, record.Execution.Invocation, "each selected model keeps its own exact subsequent call")
+		require.Equal(t, record.Attempt+1, record.Execution.Invocation.Attempt)
+		require.Equal(t, "dispatched", record.Execution.Invocation.Dispatch)
 	}
+	require.NotEqual(t, ledger.Records[0].Execution.Invocation.ID, ledger.Records[1].Execution.Invocation.ID)
 	require.Equal(t, ledger.Used, loadFixtureState(t, fx).RuntimeDecisions.Used)
 	before := c.State.Budget.Totals.Tokens
 	require.NoError(t, c.runtimeInitialExecutionDecision(p))

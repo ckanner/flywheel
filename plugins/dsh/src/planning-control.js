@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validImageReferences } from './image-contract.js';
 
 // The engine owns planning semantics. This boundary rejects malformed requests
 // and separates a recorded human command from model-provided JSON.
@@ -14,6 +15,7 @@ const fields = {
   status: ['action', 'request-id'],
   migrate: ['action', 'revision', 'request-id', 'policy', 'text', 'start'],
   collaboration: ['action', 'revision', 'request-id', 'collaboration', 'start'],
+  'input-images': ['action', 'revision', 'request-id', 'input-images', 'start'],
 };
 
 const collaborationEdit = value => record(value) && Object.keys(value).every(key => ['packet', 'contractFingerprint', 'plan', 'value'].includes(key)) &&
@@ -24,6 +26,12 @@ const collaborationEdit = value => record(value) && Object.keys(value).every(key
     record(task) && Object.keys(task).every(key => ['goal', 'writes'].includes(key)) &&
     typeof task.goal === 'string' && task.goal.trim() !== '' && !task.goal.includes('\0') && Array.from(task.goal).length <= 512 &&
     Array.isArray(task.writes) && task.writes.length >= 1 && task.writes.length <= 64 && task.writes.every(path => text(path))) &&
+  Buffer.byteLength(JSON.stringify(value)) <= (32 << 10);
+
+const inputImageEdit = value => record(value) && Object.keys(value).every(key => ['packet', 'contractFingerprint', 'plan', 'value'].includes(key)) &&
+  typeof value.packet === 'string' && /^M\d+-T\d+$/.test(value.packet) &&
+  typeof value.contractFingerprint === 'string' && /^[a-f0-9]{64}$/.test(value.contractFingerprint) && ref(value.plan) &&
+  Object.hasOwn(value, 'value') && (value.value === null || validImageReferences(value.value)) &&
   Buffer.byteLength(JSON.stringify(value)) <= (32 << 10);
 
 export function validPlanningCommand(value) {
@@ -38,6 +46,7 @@ export function validPlanningCommand(value) {
   if (value.action === 'approve' && !ref(value.design)) return false;
   if (value.action === 'feedback' && !text(value.text)) return false;
   if (value.action === 'collaboration' && !collaborationEdit(value.collaboration)) return false;
+  if (value.action === 'input-images' && !inputImageEdit(value['input-images'])) return false;
   if (value.action === 'plan' && (!['design', 'milestone', 'packet', 'replan'].includes(value.scope) ||
       ('scope-id' in value && (!text(value['scope-id'], 120) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value['scope-id']))) ||
       (['milestone', 'packet'].includes(value.scope) && !value['scope-id']))) return false;

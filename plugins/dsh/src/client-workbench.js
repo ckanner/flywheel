@@ -302,6 +302,51 @@ function runtimeDecisionReason(reason, t) {
   return key ? t('decisionReason_' + key) : /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(code) ? t('runtimeDecisionReasonOther') : textValue(reason);
 }
 
+Object.assign(zh, {
+  runtimeExecutionTitle: '对应执行的状态', runtimeExecution_selected: '已选择，尚未启动执行调用',
+  'runtimeExecution_not-selected': '此选择尚未采用', 'runtimeExecution_not-started': '已确认未派发，执行调用未启动',
+  runtimeExecution_started: '已启动，执行结果或收尾仍待确认', runtimeExecution_completed: '对应执行调用已完成',
+  runtimeExecution_failed: '对应执行调用失败', runtimeExecution_cancelled: '对应执行调用已取消',
+  runtimeExecution_unknown: '执行状态未知，缺少可核对的调用关联或回执',
+  runtimeExecutionBoundary: '这是关联调用的状态；任务验收和实际子智能体结果另行记录。',
+});
+Object.assign(en, {
+  runtimeExecutionTitle: 'Linked execution status', runtimeExecution_selected: 'Selected; execution has not started',
+  'runtimeExecution_not-selected': 'This selection has not been applied', 'runtimeExecution_not-started': 'Confirmed not dispatched; execution did not start',
+  runtimeExecution_started: 'Started; execution outcome or cleanup is unconfirmed', runtimeExecution_completed: 'Linked execution call completed',
+  runtimeExecution_failed: 'Linked execution call failed', runtimeExecution_cancelled: 'Linked execution call cancelled',
+  runtimeExecution_unknown: 'Execution status unknown; a matching call or receipt is unavailable',
+  runtimeExecutionBoundary: 'This is the linked call status. Task acceptance and observed child-agent outcomes are recorded separately.',
+});
+
+function validDecisionExecutionView(value) {
+  if (value == null) return true;
+  if (!record(value) || !['not-selected', 'selected', 'not-started', 'started', 'completed', 'failed', 'cancelled', 'unknown'].includes(value.status) ||
+      typeof value.reason !== 'string' || value.reason.length > 256) return false;
+  const call = value.invocation;
+  if (call != null && (!record(call) || typeof call.id !== 'string' || !/^call-[A-Za-z0-9]+$/.test(call.id) || call.id.length > 160 ||
+      typeof call['started-at'] !== 'string' || !Number.isSafeInteger(call.attempt) || call.attempt < 1 ||
+      !['intent', 'received', 'consumed', 'blocked', 'abandoned'].includes(call.status) ||
+      !['not-dispatched', 'dispatched', 'unknown'].includes(call.dispatch) || !['completed', 'failed', 'cancelled', 'unknown'].includes(call.outcome) ||
+      typeof call['cleanup-confirmed'] !== 'boolean' || call['dispatch-observed'] != null && typeof call['dispatch-observed'] !== 'boolean' ||
+      call['engine-run-id'] != null && typeof call['engine-run-id'] !== 'string')) return false;
+  if (['completed', 'failed', 'cancelled'].includes(value.status)) return call?.dispatch === 'dispatched' && call.outcome === value.status && call['cleanup-confirmed'] && ['received', 'consumed'].includes(call.status);
+  if (value.status === 'not-started') return call?.dispatch === 'not-dispatched' && call['dispatch-observed'] !== true;
+  if (value.status === 'started') return call?.dispatch === 'dispatched' || call?.dispatch === 'unknown' && call['dispatch-observed'] === true;
+  return value.status === 'unknown' || call == null;
+}
+
+function DecisionExecutionStatus({ entry, t }) {
+  if (!/^model-\d+$/.test(entry.action)) return null;
+  const view = entry['execution-view'];
+  const status = view?.status ?? 'unknown';
+  const call = view?.invocation;
+  return h('section', { className: css.observationBlock, 'data-decision-execution': status },
+    h('h5', null, t('runtimeExecutionTitle')), h('p', null, t('runtimeExecution_' + status)),
+    call && h('p', { className: css.path }, t('wbBindingInvocation') + ': ' + call.id + ' · ' + t('runtimeDecisionAttempt') + ' ' + call.attempt),
+    h('p', { className: css.meta }, t('runtimeExecutionBoundary')));
+}
+
 function validRuntimeDecisions(value) {
   const strings = (object, keys) => record(object) && keys.every(key => typeof object[key] === 'string');
   const optionalStrings = (object, keys) => keys.every(key => object[key] == null || typeof object[key] === 'string');
@@ -319,7 +364,7 @@ function validRuntimeDecisions(value) {
       (entry.selection == null || strings(entry.selection, ['action-id', 'reason']) && typeof entry.selection.adopted === 'boolean') &&
       (entry.receipt == null || strings(entry.receipt, ['status', 'reason']) && optionalStrings(entry.receipt, ['model', 'action-id'])) &&
       (entry.phase == null || ['initial-execution', 'after-failure'].includes(entry.phase)) &&
-      optionalStrings(entry, ['baseline-action-id']) && validBindingChoices(entry['model-bindings'], entry['model-bindings-omitted']) &&
+      optionalStrings(entry, ['baseline-action-id']) && validBindingChoices(entry['model-bindings'], entry['model-bindings-omitted']) && validDecisionExecutionView(entry['execution-view']) &&
       (entry.actions == null || Array.isArray(entry.actions) && entry.actions.length <= 16 && entry.actions.every(action => strings(action, ['id', 'kind', 'description']))) && feedback(entry.feedback));
 }
 
@@ -363,6 +408,7 @@ function RuntimeDecisionPanel({ ledger, packetID, t }) {
       h(DecisionActionDetails, { entry, action: entry.receipt?.['action-id'], title: 'runtimeDecisionSuggested', t }),
       h(DecisionActionDetails, { entry, action: entry.action, title: ['pending', 'stale'].includes(entry.status) ? 'runtimeDecisionRecordedAction' : 'runtimeDecisionChosen', t }),
       entry.phase === 'initial-execution' && entry.action === entry['baseline-action-id'] && ['baseline', 'applied'].includes(entry.status) && h('p', { className: css.meta, 'data-baseline-retained': true }, t('runtimeDecisionKeptBaseline')),
+      h(DecisionExecutionStatus, { entry, t }),
       h('p', { className: css.meta }, t('runtimeDecisionNotDispatched')),
       h(RawEvidence, { value: entry, label: 'runtimeDecisionEvidence', t }),
       entry.feedback && h('div', { 'data-decision-feedback': entry.id },
@@ -859,8 +905,12 @@ function nodeBindingFacts(node, state, quick) {
     declared: state.run?.bindings?.[stageID], mock: state.run?.drivers?.[role] === 'mock' };
 }
 
+function invocationDispatched(value) {
+  return value?.last?.dispatch === 'dispatched' || value?.last?.dispatch === 'unknown' && value.last['dispatch-observed'] === true;
+}
+
 function recordedInvocationLabel(value) {
-  return value?.last?.dispatch === 'accepted' ? 'wbBindingActual' : value?.last?.dispatch === 'not-dispatched' ? 'wbBindingNotSent' : 'wbBindingRecorded';
+  return invocationDispatched(value) ? 'wbBindingActual' : value?.last?.dispatch === 'not-dispatched' && value.last['dispatch-observed'] !== true ? 'wbBindingNotSent' : 'wbBindingRecorded';
 }
 
 function bindingFactCaption(facts, t) {
@@ -901,7 +951,7 @@ function validInputImageManifest(value) {
 function InvocationImages({ value, t }) {
   const manifest = value?.configuration?.inputImages;
   if (!manifest || !validInputImageManifest(manifest)) return null;
-  const dispatched = value.last?.dispatch === 'accepted';
+  const dispatched = invocationDispatched(value);
   return h('section', { className: css.inspectorSection, 'data-invocation-images': value.last?.id || '' },
     h('h5', null, t(dispatched ? 'wbInputImagesSent' : 'wbInputImagesRecorded')),
     dispatched && value.configuration.harness === 'claude-code-pro' && h('p', { className: css.meta }, t('wbInputImagesClaude')),
@@ -926,7 +976,7 @@ function NodeBindingHistory({ facts, state, t }) {
       actual ? h(React.Fragment, null, h(BindingProperties, { binding: actual.configuration, t }),
         h('dl', { className: css.consoleProperties },
           h('dt', null, t('wbBindingInvocation')), h('dd', { className: css.path }, textValue(actual.last?.id)),
-          h('dt', null, t('wbBindingDispatch')), h('dd', null, t(actual.last?.dispatch === 'accepted' ? 'wbDispatchAccepted' : actual.last?.dispatch === 'not-dispatched' ? 'wbDispatchNotSent' : 'wbDispatchUnknown')),
+          h('dt', null, t('wbBindingDispatch')), h('dd', null, t(invocationDispatched(actual) ? 'wbDispatchAccepted' : actual.last?.dispatch === 'not-dispatched' && actual.last['dispatch-observed'] !== true ? 'wbDispatchNotSent' : 'wbDispatchUnknown')),
           h('dt', null, t('wbBindingOutcome')), h('dd', null, t({ completed: 'wbOutcomeCompleted', failed: 'wbOutcomeFailed', cancelled: 'wbOutcomeCancelled' }[actual.last?.outcome] || 'wbOutcomeUnknown'))),
         h(InvocationImages, { value: actual, t })) : h('p', { className: css.meta }, t('wbBindingNoCall'))),
     !facts.initial && facts.declared && h(RawEvidence, { value: facts.declared, label: 'wbBindingDeclared', t }));
@@ -1227,6 +1277,197 @@ function NodeCollaborationEditor({ packetID, state, control, selection, run, pac
     notice && notice.kind !== 'pending' && h('p', { role: notice.kind === 'saved' ? 'status' : 'alert', 'data-collaboration-result': notice.kind, className: notice.kind === 'saved' ? css.meta : css.warningText },
       t({ saved: 'wbCollaborationSaved', rejected: 'wbCollaborationRejected', queued: 'wbCollaborationQueued', unknown: 'wbCollaborationSaveFailed', 'read-failed': 'wbCollaborationLoadFailed', 'rebase-failed': 'wbCollaborationRebaseFailed' }[notice.kind]) + (notice.message ? ' ' + notice.message : '')),
     unresolved && h(Button, { disabled: busy, onClick: reconcile }, t('wbCollaborationReconcile')));
+}
+
+Object.assign(zh, {
+  packetImages: '图片输入', packetImagesHelp: '这里显示已读取契约中固定的路径、格式与摘要；读取声明不会读取原图，也不表示模型已经收到图片。',
+  packetImagesCurrent: '当前计划的图片声明', packetImagesRead: '已读取的图片声明', packetImagesNone: '此契约没有声明图片输入', packetImagesUnknown: '图片声明尚未确认，请读取准确快照。',
+  packetImagesEdit: '编辑图片输入', packetImagesDraft: '图片输入草案', packetImagesPath: '仓库图片路径 {index}',
+  packetImagesAdd: '添加图片路径', packetImagesRemove: '移除图片 {index}', packetImagesPreview: '检查并预览图片草案',
+  packetImagesPreviewHelp: '只读取你明确填写的仓库相对路径。最多 4 张 PNG/JPEG/GIF/WebP，每张 4 MiB、合计 8 MiB；不自动导入聊天附件。',
+  packetImagesNeedPreview: '路径和摘要可以保留；预览不会缓存。修改路径或重新打开页面后，请重新检查预览再保存。',
+  packetImagesPreviewFailed: '图片检查未确认；草案已保留，不能据此冻结图片。',
+  packetImagesReview: '保存会校验原始字节、生成新的不可变计划并请求独立审查。旧计划的审查不覆盖此草案；不会修改活动契约或授予实施授权。原图执行仍需支持图片的 Claude SDK 通道。',
+  packetImagesClear: '明确清空全部图片声明', packetImagesClearConfirm: '我确认此步骤不再需要这些原图；清空也必须经过独立计划审查，不能用于绕过图片输入要求。',
+  packetImagesKeep: '返回图片路径编辑', packetImagesSave: '保存图片草案并重新审查', packetImagesReload: '重新读取并替换图片草案',
+  packetImagesRebase: '刷新版本并保留图片草案', packetImagesRebaseFailed: '契约、准确计划或原图片声明已变化，或当前阶段不可编辑。草案已保留，不能自动移到新版本。',
+  packetImagesStale: '图片草案基于旧快照，当前不能保存。', packetImagesReadFailed: '未能读取准确的图片编辑快照；原草案已保留。',
+  packetImagesClose: '放弃并关闭图片草案', packetImagesUneditable: '当前阶段不可编辑图片输入', packetImagesPending: '正在读取或保存图片输入',
+  packetImagesSaved: '图片修订已保存并请求独立审查；实施仍受原有批准与启动条件约束。', packetImagesRejected: '图片修订未被采用',
+  packetImagesQueued: '图片修订已排队，尚未确认采用，请核对原请求。', packetImagesUnconfirmed: '图片修订结果未知，草案及请求编号已保留；请核对原请求，勿重复保存。',
+  packetImagesReconcile: '核对图片修订结果', packetImagesSnapshot: '展开图片声明原始快照', packetImagesPreviewAlt: '图片草案缩略图：{path}',
+});
+Object.assign(en, {
+  packetImages: 'Image inputs', packetImagesHelp: 'These are fixed paths, formats and digests from the contract that was read. Reading references does not read originals or establish that a model received them.',
+  packetImagesCurrent: 'Image references in the current plan', packetImagesRead: 'Image references read from the contract', packetImagesNone: 'This contract declares no image inputs', packetImagesUnknown: 'Image references are unconfirmed. Read the exact snapshot.',
+  packetImagesEdit: 'Edit image inputs', packetImagesDraft: 'Image input draft', packetImagesPath: 'Repository image path {index}',
+  packetImagesAdd: 'Add image path', packetImagesRemove: 'Remove image {index}', packetImagesPreview: 'Inspect and preview image draft',
+  packetImagesPreviewHelp: 'Read only the repository-relative paths you explicitly enter. Up to 4 PNG/JPEG/GIF/WebP images, 4 MiB each and 8 MiB combined. Chat attachments are not imported automatically.',
+  packetImagesNeedPreview: 'Paths and digests can be retained; previews are not cached. Inspect again after changing paths or reopening the view before saving.',
+  packetImagesPreviewFailed: 'Image inspection is unconfirmed. Your draft is retained and cannot freeze inputs from this result.',
+  packetImagesReview: 'Saving verifies original bytes, creates a new immutable plan and requests independent review. The old plan review does not cover this draft. It does not change active contracts or grant implementation authority. Original image execution still requires the supported Claude SDK transport.',
+  packetImagesClear: 'Explicitly clear all image references', packetImagesClearConfirm: 'I confirm this step no longer requires these originals. Clearing still requires independent plan review and must not bypass image input requirements.',
+  packetImagesKeep: 'Return to image paths', packetImagesSave: 'Save image draft for review', packetImagesReload: 'Reread and replace image draft',
+  packetImagesRebase: 'Refresh revision and keep image draft', packetImagesRebaseFailed: 'The contract, exact plan or original image references changed, or editing is unavailable. Your draft is retained and cannot move automatically to the new revision.',
+  packetImagesStale: 'This image draft uses an older snapshot and cannot be saved.', packetImagesReadFailed: 'The exact image editor snapshot could not be read. Your original draft is retained.',
+  packetImagesClose: 'Discard and close image draft', packetImagesUneditable: 'Image inputs cannot be edited at this stage', packetImagesPending: 'Reading or saving image inputs',
+  packetImagesSaved: 'The image revision was saved for independent review. Existing approval and start requirements still govern implementation.', packetImagesRejected: 'The image revision was not adopted',
+  packetImagesQueued: 'The image revision is queued and adoption is unconfirmed. Reconcile the original request.', packetImagesUnconfirmed: 'The image revision outcome is unknown. Your draft and request ID are retained; reconcile the original request before another save.',
+  packetImagesReconcile: 'Reconcile image revision', packetImagesSnapshot: 'Expand original image reference snapshot', packetImagesPreviewAlt: 'Image draft thumbnail: {path}',
+});
+
+function PacketImageReferences({ value, t }) {
+  return value ? h('ol', { 'data-packet-image-references': true }, ...value.images.map((ref, index) =>
+    h('li', { key: index }, h('p', { className: css.path }, ref.path), h('p', { className: css.meta }, ref['media-type']), h('code', { className: css.path }, 'SHA-256 ' + ref.sha256))))
+    : h('p', { className: css.meta }, t('packetImagesNone'));
+}
+
+function NodeImageInputEditor({ packetID, state, control, selection, run, packetDrafts, t }) {
+  const cacheKey = JSON.stringify([selection.cwd ?? '', selection.taskDir ?? '', packetID, 'input-images']);
+  const draft = React.useMemo(() => {
+    let value = packetDrafts?.get(cacheKey);
+    if (!value) {
+      value = createSnapshot({ open: false, snapshot: null, rows: [], references: null, mode: 'replace', clearConfirmed: false, notice: null, pending: false, sequence: 0 });
+      packetDrafts?.set(cacheKey, value);
+    }
+    return value;
+  }, [packetDrafts, cacheKey]);
+  const { open, snapshot, rows, references, mode, clearConfirmed, notice, pending: localPending } = React.useSyncExternalStore(draft.subscribe, draft.getSnapshot, draft.getSnapshot);
+  const [preview, setPreview] = React.useState(null);
+  const generation = React.useRef(0), live = React.useRef(true);
+  React.useEffect(() => {
+    live.current = true; setPreview(null);
+    return () => { live.current = false; generation.current++; };
+  }, [draft]);
+  React.useEffect(() => { if (!open) setPreview(null); }, [open]);
+  const latest = control.node?.id === packetID ? control.node.imageInputEditor : null;
+  const current = latest && validImageInputEditor(latest) && latest.revision === state.revision && !control.stale ? latest : null;
+  const stale = !!snapshot && (snapshot.revision !== state.revision || control.stale || !current ||
+    current.contractFingerprint !== snapshot.contractFingerprint || !(current.plan == null && snapshot.plan == null || samePlanningRef(current.plan, snapshot.plan)));
+  const busy = !!control.pending || !!localPending, unresolved = ['pending', 'unknown', 'queued'].includes(notice?.kind);
+  const blocked = busy || stale || unresolved || ['read-failed', 'rebase-failed'].includes(notice?.kind) || control.uncertainty || control.status?.running || state.handoff || !snapshot?.editable || !current?.editable;
+  const paths = rows.map(row => row.path);
+  const previewCurrent = mode === 'replace' && preview?.owner === draft && validImageInspection(preview.value, paths) && JSON.stringify(references) === JSON.stringify(preview.value.references);
+  const value = mode === 'clear' ? null : references;
+  const edit = snapshot && { packet: packetID, contractFingerprint: snapshot.contractFingerprint, plan: snapshot.plan, value };
+  const validDraft = mode === 'clear' ? clearConfirmed && snapshot?.value !== null : previewCurrent;
+  const dirty = !!snapshot && (mode === 'clear' || references !== null) && JSON.stringify(value) !== JSON.stringify(snapshot.value);
+  const invalidatePreview = () => { generation.current++; setPreview(null); };
+  const read = async (preserve = false) => {
+    if (busy || unresolved || draft.getSnapshot().pending) return;
+    invalidatePreview();
+    draft.update(next => { next.pending = 'read'; next.notice = null; next.open = true; });
+    try {
+      const result = await run('node', selection, false, { packet: packetID }), next = result?.node?.imageInputEditor;
+      if (!next || !validImageInputEditor(next) || result.node.id !== packetID || next.packet !== packetID || result.node.revision !== next.revision || result.state?.revision !== next.revision) {
+        draft.update(value => { value.notice = { kind: 'read-failed' }; }); return;
+      }
+      if (preserve && (!snapshot || !next.editable || next.contractFingerprint !== snapshot.contractFingerprint || !samePlanningRef(next.plan, snapshot.plan) || JSON.stringify(next.value) !== JSON.stringify(snapshot.value))) {
+        draft.update(value => { value.notice = { kind: 'rebase-failed' }; }); return;
+      }
+      draft.update(value => {
+        value.snapshot = next;
+        if (!preserve) {
+          value.rows = (next.value?.images.map(image => image.path) ?? ['']).map(path => ({ key: ++value.sequence, path }));
+          value.references = null; value.mode = 'replace'; value.clearConfirmed = false;
+        }
+      });
+    } finally { draft.update(next => { next.pending = false; }); }
+  };
+  const inspect = async () => {
+    if (blocked || mode !== 'replace' || !validImageSelection({ paths }) || draft.getSnapshot().pending) return;
+    invalidatePreview(); const token = generation.current;
+    draft.update(next => { next.pending = 'preview'; next.references = null; next.notice = null; });
+    try {
+      const result = await run('images', selection, false, { images: { paths } });
+      if (!live.current || token !== generation.current) return;
+      if (!result || !validImageInspection(result.inputImages, paths)) { draft.update(next => { next.notice = { kind: 'preview-failed' }; }); return; }
+      // Only references enter the retained store. Thumbnail data stays local
+      // and a remounted view must inspect again before saving a replacement.
+      draft.update(next => { next.references = result.inputImages.references; });
+      setPreview({ owner: draft, value: result.inputImages });
+    } finally { draft.update(next => { next.pending = false; }); }
+  };
+  const acceptReceipt = (result, requestID) => {
+    const receipt = result?.['planning-control'], failure = result?.controlFailure;
+    draft.update(next => {
+      if (next.notice?.requestID !== requestID) return;
+      if (result?.ok === undefined && failure?.dispatch === 'not-dispatched' && failure.action === 'planning' && failure.planningAction === 'input-images' &&
+          failure.planningRequestID === requestID && failure.key === selectionKey(selectionOf(selection))) {
+        next.notice = { kind: 'rejected', message: failure.detail }; return;
+      }
+      if (receipt?.action !== 'input-images' || receipt['request-id'] !== requestID || !['applied', 'unchanged', 'rejected', 'queued'].includes(receipt.status)) {
+        next.notice = { kind: 'unknown', requestID }; return;
+      }
+      if (receipt.status === 'queued') { next.notice = { kind: 'queued', requestID }; return; }
+      if (receipt.status === 'rejected') { next.notice = { kind: 'rejected', message: receipt.message }; return; }
+      next.notice = { kind: 'saved', message: receipt.message }; next.open = false; next.snapshot = null; next.rows = []; next.references = null; next.clearConfirmed = false;
+    });
+  };
+  React.useEffect(() => {
+    const receipt = control.planningReceipt;
+    if (!localPending && ['unknown', 'queued'].includes(notice?.kind) && receipt?.action === 'input-images' && receipt['request-id'] === notice.requestID &&
+        ['applied', 'unchanged', 'rejected'].includes(receipt.status)) acceptReceipt({ 'planning-control': receipt }, notice.requestID);
+  }, [control.planningReceipt, localPending, notice, draft]);
+  const save = async () => {
+    if (blocked || !validDraft || !dirty || !edit || collaborationEditBytes(edit) > (32 << 10) || draft.getSnapshot().pending) return;
+    const requestID = planningRequestID();
+    draft.update(next => { next.pending = 'save'; next.notice = { kind: 'pending', requestID }; });
+    try {
+      const result = await run('planning', selection, false, { planning: { action: 'input-images', revision: snapshot.revision, 'request-id': requestID, start: true, 'input-images': edit } });
+      acceptReceipt(result, requestID);
+    } finally { draft.update(next => { next.pending = false; }); }
+  };
+  const reconcile = async () => {
+    if (busy || !unresolved || draft.getSnapshot().pending) return;
+    draft.update(next => { next.pending = 'reconcile'; });
+    try { acceptReceipt(await run('planning', selection, false, { planning: { action: 'status', 'request-id': notice.requestID } }), notice.requestID); }
+    finally { draft.update(next => { next.pending = false; }); }
+  };
+  const changePaths = change => {
+    if (blocked) return;
+    invalidatePreview(); draft.update(next => { change(next); next.references = null; next.notice = null; });
+  };
+  return h('section', { className: css.inspectorSection, 'data-packet-image-editor': packetID },
+    h('h4', null, t('packetImages')), h('p', { className: css.meta }, t('packetImagesHelp')),
+    current ? h('section', { 'data-packet-image-current': true, 'data-image-reference-status': current.status },
+      current.status === 'known' ? h(React.Fragment, null, h('h5', null, t(current.plan ? 'packetImagesCurrent' : 'packetImagesRead')),
+        h(PlanningReference, { value: current.plan, t }), h(PacketImageReferences, { value: current.value, t }))
+        : h('p', { className: css.meta }, t('packetImagesUnknown')),
+      !current.editable && h('p', { className: css.meta }, current.reason))
+      : h('p', { className: css.meta }, t('packetImagesUnknown')),
+    !open && h(Button, { disabled: busy, onClick: () => read() }, t('packetImagesEdit')),
+    open && h(React.Fragment, null, h('h5', null, t('packetImagesDraft')), h('p', { className: css.meta }, t('packetImagesReview')),
+      snapshot && h(React.Fragment, null,
+        !snapshot.editable && h('p', { className: css.warningText, 'data-image-uneditable': true }, t('packetImagesUneditable') + ': ' + snapshot.reason),
+        snapshot.editable && (mode === 'clear' ? h('section', { className: css.configCallout, 'data-image-clear': true },
+          h('label', { className: css.intakeCheck }, h('input', { type: 'checkbox', disabled: !!blocked, checked: clearConfirmed,
+            onChange: event => draft.update(next => { next.clearConfirmed = event.target.checked; }) }), t('packetImagesClearConfirm')),
+          h(Button, { disabled: !!blocked, onClick: () => changePaths(next => { next.mode = 'replace'; next.clearConfirmed = false; }) }, t('packetImagesKeep')))
+          : h(React.Fragment, null, h('p', { className: css.meta }, t('packetImagesPreviewHelp')),
+            ...rows.map((row, index) => h('div', { key: row.key, className: css.editorField, 'data-image-path-row': index },
+              h('label', null, t('packetImagesPath', { index: index + 1 }), h('input', { className: css.editorInput, value: row.path, maxLength: 512, disabled: !!blocked,
+                'aria-label': t('packetImagesPath', { index: index + 1 }), onChange: event => changePaths(next => { next.rows = next.rows.map((value, n) => n === index ? { ...value, path: event.target.value } : value); }) })),
+              h(Button, { disabled: !!blocked || rows.length <= 1, onClick: () => changePaths(next => { next.rows = next.rows.filter((_, n) => n !== index); }) }, t('packetImagesRemove', { index: index + 1 })))),
+            h(Button, { disabled: !!blocked || rows.length >= 4, onClick: () => changePaths(next => { next.rows = [...next.rows, { key: ++next.sequence, path: '' }]; }) }, t('packetImagesAdd')),
+            h(Button, { disabled: !!blocked || !validImageSelection({ paths }), onClick: inspect }, t('packetImagesPreview')),
+            !previewCurrent && h('p', { className: css.meta, 'data-image-preview-needed': true }, t('packetImagesNeedPreview')),
+            previewCurrent && h('div', { className: css.intakePreviews, 'data-image-draft-preview': true }, ...preview.value.previews.map(item => h('figure', { key: item.path, className: css.intakePreview },
+              h('img', { src: item.dataUrl, alt: t('packetImagesPreviewAlt', { path: item.path }) }),
+              h('figcaption', null, h('code', null, item.path), h('span', null, item.mimeType + ' · ' + t('intakeImageDimensions', item)), h('code', null, 'SHA-256 ' + item.sha256))))),
+            snapshot.value !== null && h(Button, { disabled: !!blocked, onClick: () => changePaths(next => { next.mode = 'clear'; next.clearConfirmed = false; }) }, t('packetImagesClear')))),
+        stale && h('p', { role: 'alert', className: css.warningText, 'data-image-stale': true }, t('packetImagesStale')),
+        !stale && (control.uncertainty || control.status?.running || state.handoff) && h('p', { className: css.warningText }, t(control.uncertainty ? 'wbUnknown' : control.status?.running ? 'wbRunning' : 'wbHeld')),
+        h(Button, { variant: 'primary', disabled: !!blocked || !validDraft || !dirty, onClick: save }, t('packetImagesSave')),
+        h(RawEvidence, { value: snapshot, label: 'packetImagesSnapshot', t })),
+      h('div', { className: css.actions },
+        snapshot && (stale || ['rejected', 'read-failed', 'rebase-failed'].includes(notice?.kind)) && h(Button, { disabled: busy || unresolved, onClick: () => read(true) }, t('packetImagesRebase')),
+        h(Button, { disabled: busy || unresolved, onClick: () => read() }, t('packetImagesReload')),
+        h(Button, { disabled: busy || unresolved, onClick: () => { invalidatePreview(); draft.update(next => { next.open = false; next.snapshot = null; next.rows = []; next.references = null; next.notice = null; }); } }, t('packetImagesClose')))),
+    localPending && h('p', { role: 'status', className: css.meta }, t('packetImagesPending')),
+    notice && notice.kind !== 'pending' && h('p', { role: notice.kind === 'saved' ? 'status' : 'alert', 'data-image-edit-result': notice.kind, className: notice.kind === 'saved' ? css.meta : css.warningText },
+      t({ saved: 'packetImagesSaved', rejected: 'packetImagesRejected', queued: 'packetImagesQueued', unknown: 'packetImagesUnconfirmed', 'read-failed': 'packetImagesReadFailed', 'rebase-failed': 'packetImagesRebaseFailed', 'preview-failed': 'packetImagesPreviewFailed' }[notice.kind]) + (notice.message ? ' ' + notice.message : '')),
+    unresolved && h(Button, { disabled: busy, onClick: reconcile }, t('packetImagesReconcile')));
 }
 
 function NodeCollaboration({ packetID, state, control, selection, run, packetDrafts, t }) {
@@ -1842,6 +2083,7 @@ function WorkbenchNodeInspector({
         h(NodeBindingHistory, { facts: bindingFacts, state, t }),
         h(NodeExecutionEligibility, { key: selection.taskDir + '/' + packetID, packetID, state, control, selection, run, t }),
         h(NodeCollaboration, { packetID, state, control, selection, run, packetDrafts, t }),
+        packetID && h(NodeImageInputEditor, { key: 'images:' + selection.taskDir + '/' + packetID, packetID, state, control, selection, run, packetDrafts, t }),
         h(NodeNativeObservations, { facts: bindingFacts, control, selection, run, t }),
         h('section', { className: css.inspectorSection }, h('h4', null, t('wbSession')),
           sessions.length ? sessions.map(([key, value]) => h('article', { key, className: css.sessionSummary },
@@ -1886,6 +2128,7 @@ function TaskView({
   const setPage = actions.setPage;
   const [focusRequest, setFocusRequest] = React.useState(0);
   const [inspecting, setInspecting] = React.useState(false);
+  const [, refreshIntake] = React.useState(0);
   React.useEffect(() => {
     associate(association);
   }, [association, associate]);
@@ -1926,6 +2169,24 @@ function TaskView({
   const invalid = !!pathProblem(selection.taskDir) || !!pathProblem(selection.cwd),
     hasTask = !!selection.taskDir.trim();
   const recoveringIntake = hasTask && intakeStore?.target?.taskDir === selection.taskDir && intakeStore.target.cwd === selection.cwd;
+  const newIntake = hasTask && !!intakeStore?.open;
+  const intakeLocked = busy || !!control.uncertainty || !!control.configUncertainty || !!control.stale || control.planningReceipt?.status === 'queued';
+  const intakeWorkspaceReady = typeof control.runsCwd === 'string' && control.runsCwd.startsWith('/') && !pathProblem(control.runsCwd) && !control.runsError;
+  const openIntake = () => {
+    if (!hasTask || recoveringIntake || intakeLocked || !intakeWorkspaceReady || association && association.outcome !== 'confirmed') return;
+    // Discovery identifies the conversation workspace; the selected task can
+    // belong to another worktree. A later catalog refresh cannot retarget an
+    // already opened draft or erase its user-provided goal and authorization.
+    intakeStore.draftWorkspace ||= control.runsCwd;
+    intakeStore.origin = selectionOf(selection); intakeStore.open = true;
+    refreshIntake(value => value + 1); setPage('canvas');
+  };
+  const closeIntake = discard => {
+    if (intakeLocked) return;
+    intakeStore.open = false;
+    if (discard) { intakeStore.draft = null; intakeStore.target = null; intakeStore.origin = null; intakeStore.draftWorkspace = null; }
+    refreshIntake(value => value + 1);
+  };
   const button = (action, label, needsTask, probe = false, variant = 'outline') =>
     h(
       Button,
@@ -1958,7 +2219,11 @@ function TaskView({
   return h('section', { className: css.page, 'aria-label': t('consoleTitle'), 'data-page': page, 'data-conversation-composer-overlay': '', 'data-flywheel-page': '' },
     h('style', { 'data-plugin': '@ckanner/flywheel', 'data-plugin-css': '@ckanner/flywheel/client.module.css' }, stylesheet),
     h('header', { className: css.workbenchHeader, hidden: page === 'config' },
-      h('div', { className: css.taskIdentity }, h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }), h(TaskLocations, { control, selection, association, t })),
+      h('div', { className: css.taskIdentity }, h(TaskChooser, { control, selection, hostSessionID, association, changeSelection, run, discover, t }), h(TaskLocations, { control, selection, association, t }),
+        hasTask && !recoveringIntake && h(React.Fragment, null,
+          h('div', { className: css.actions }, h(Button, { disabled: intakeLocked || !intakeWorkspaceReady || newIntake || !!association && association.outcome !== 'confirmed', 'aria-expanded': newIntake, onClick: openIntake }, t('intakeAnother'))),
+          !newIntake && !intakeWorkspaceReady && h('p', { className: css.settingsHelp, role: 'status' },
+            t(control.runsError ? 'intakeWorkspaceFailed' : 'intakeNoWorkspace') + (control.runsError ? ' ' + control.runsError : '')))),
       h('div', { className: css.repositoryLinks },
         state?.project?.url && h('a', { href: state.project.url, target: '_blank', rel: 'noopener noreferrer' }, state.project.repo),
         h('a', { href: 'https://github.com/ckanner/flywheel', target: '_blank', rel: 'noopener noreferrer' }, 'Flywheel · GitHub ↗'),
@@ -1975,6 +2240,13 @@ function TaskView({
     (control.error || control.uncertainty || control.status?.workspaceWarnings?.length || control.pending && !(control.pending.action === 'status' && control.status)) &&
       !(page === 'config' && (control.pending?.action === 'config-edit' || control.error?.action === 'config-edit') && !control.uncertainty) && h(Feedback, { control, selection, reconcile, t }),
     h('div', { className: css.workflowPage, hidden: page !== 'canvas' },
+      newIntake && h('section', { className: css.intake, 'aria-label': t('intakeAnother') },
+        h('p', { className: css.settingsHelp }, t('intakeAnotherHelp')),
+        h(TaskIntake, { key: hostSessionID, control, selection, intakeStore, changeSelection, run, newTask: true, t }),
+        h('p', { className: css.settingsHelp }, t('intakeDraftHelp')),
+        h('div', { className: css.actions },
+          h(Button, { disabled: intakeLocked, onClick: () => closeIntake(false) }, t('intakeHide')),
+          h(Button, { disabled: intakeLocked, onClick: () => closeIntake(true) }, t('intakeDiscard')))),
       state?.['shared-execution'] && h('section', { className: css.notice, role: 'status' }, h('strong', null, t('sharedBatch')), h('p', null, state['shared-execution'].packets.join(' · ')), state['shared-execution']['last-error'] && h('p', { role: 'alert' }, state['shared-execution']['last-error'])),
       hasTask && !recoveringIntake && control.status && !state && !preparation && !busy && !control.uncertainty && h('div', { className: css.launchOptionsBody },
         h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
@@ -1983,7 +2255,7 @@ function TaskView({
       state?.planning && h(PlanningPanel, { key: 'planning:' + selectionKey(selectionOf(selection)), control, selection, run, t }),
       state && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], t }),
       state && h(ExecutionPolicyChanges, { packets: state.packets, t }),
-      !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(recoveringIntake ? 'intakeResume' : hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(recoveringIntake ? 'intakeResumeHelp' : hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), (!hasTask || recoveringIntake) && h(TaskIntake, { key: hostSessionID, control, selection, intakeStore, changeSelection, run, t })),
+      !state && !preparation && !newIntake && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(recoveringIntake ? 'intakeResume' : hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(recoveringIntake ? 'intakeResumeHelp' : hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), (!hasTask || recoveringIntake) && h(TaskIntake, { key: hostSessionID, control, selection, intakeStore, changeSelection, run, t })),
       !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: 'canvas:' + selectionKey(selectionOf(selection)), control, selection, run, packetDrafts, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
       h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),

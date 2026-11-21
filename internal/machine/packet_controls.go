@@ -55,15 +55,23 @@ func packetControlContext(st *state.State, id string, location []string) (*Conte
 	if _, err := contract.MilestoneOfPacket(id); err != nil {
 		return nil, nil, "", err
 	}
-	cfg, err := config.LoadReadOnly(location[0], location[1])
+	taskDir, err := canonicalDirectory(location[0])
 	if err != nil {
 		return nil, nil, "", err
 	}
-	specRaw, err := readContractRevision(filepath.Join(location[0], "spec.md"))
+	cwd, err := canonicalDirectory(ProjectRoot(location[1]))
 	if err != nil {
 		return nil, nil, "", err
 	}
-	packetRaw, err := readContractRevision(filepath.Join(location[0], "task-packet-"+id+".md"))
+	cfg, err := config.LoadReadOnly(taskDir, cwd)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	specRaw, err := readContractRevision(filepath.Join(taskDir, "spec.md"))
+	if err != nil {
+		return nil, nil, "", err
+	}
+	packetRaw, err := readContractRevision(filepath.Join(taskDir, "task-packet-"+id+".md"))
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -78,7 +86,7 @@ func packetControlContext(st *state.State, id string, location []string) (*Conte
 	if packet.PacketID != id {
 		return nil, nil, "", fmt.Errorf("packet identity differs from the selected node")
 	}
-	c := &Context{Config: cfg, State: jsonClone(st), Spec: spec, TaskDir: location[0], Cwd: location[1]}
+	c := &Context{Config: cfg, State: jsonClone(st), Spec: spec, TaskDir: taskDir, Cwd: cwd}
 	fingerprint := c.packetContractFingerprint(packet, specRaw, packetRaw)
 	if fingerprint != st.ContractFingerprints[id] {
 		return nil, nil, "", fmt.Errorf("contract-changed-or-unfrozen")
@@ -86,11 +94,13 @@ func packetControlContext(st *state.State, id string, location []string) (*Conte
 	return c, packet, fingerprint, nil
 }
 
-func packetControlViews(st *state.State, id string, location []string) (*PacketEligibility, *CollaborationEditor) {
+func packetControlViews(st *state.State, id string, location []string) (*PacketEligibility, *CollaborationEditor, *ImageInputEditor) {
 	eligibility := &PacketEligibility{Packet: id, Revision: st.Revision, Status: "unknown", Source: "configuration", Candidates: []EligibleExecutionCandidate{}}
 	editor := &CollaborationEditor{Packet: id, Revision: st.Revision, Writes: []string{}}
+	images := &ImageInputEditor{Packet: id, Revision: st.Revision, Status: "unknown"}
 	defer func() {
 		eligibility.Reason, editor.Reason = boundedDecisionText(eligibility.Reason, 1024), boundedDecisionText(editor.Reason, 1024)
+		images.Reason = boundedDecisionText(images.Reason, 1024)
 		if raw, _ := json.Marshal(eligibility); len(raw) > 48<<10 {
 			eligibility.Status, eligibility.Reason, eligibility.Candidates = "unknown", "Execution candidate details exceed the console display limit; inspect the effective configuration.", []EligibleExecutionCandidate{}
 		}
@@ -100,10 +110,11 @@ func packetControlViews(st *state.State, id string, location []string) (*PacketE
 	}()
 	c, packet, fingerprint, err := packetControlContext(st, id, location)
 	if err != nil {
-		eligibility.Reason, editor.Reason = err.Error(), err.Error()
-		return eligibility, editor
+		eligibility.Reason, editor.Reason, images.Reason = err.Error(), err.Error(), err.Error()
+		return eligibility, editor, images
 	}
 	editor = c.collaborationEditor(packet, fingerprint)
+	images = c.imageInputEditor(packet, fingerprint)
 	eligibility.Route = packet.Route
 	if c.State.Packets[id].ExecutionPolicy != nil {
 		eligibility.Source = "frozen"
@@ -111,25 +122,25 @@ func packetControlViews(st *state.State, id string, location []string) (*PacketE
 	if c.State.Planning != nil {
 		if c.Spec.PlanningRef == nil {
 			eligibility.Reason = "reviewed planning reference is missing"
-			return eligibility, editor
+			return eligibility, editor, images
 		}
 		if err := planning.Admit(c.State.Planning, *c.Spec.PlanningRef); err != nil {
 			eligibility.Reason = err.Error()
-			return eligibility, editor
+			return eligibility, editor, images
 		}
 		if err := c.verifyPlanningProjection(c.State.Planning.Active); err != nil {
 			eligibility.Reason = err.Error()
-			return eligibility, editor
+			return eligibility, editor, images
 		}
 		if err := c.verifyPlanningArtifacts(); err != nil {
 			eligibility.Reason = err.Error()
-			return eligibility, editor
+			return eligibility, editor, images
 		}
 	}
 	record, route, err := c.executionPolicy(packet)
 	if err != nil {
 		eligibility.Reason = err.Error()
-		return eligibility, editor
+		return eligibility, editor, images
 	}
 	bindings := map[string]config.ExecutionBinding{}
 	ids := route.Allowed
@@ -139,7 +150,7 @@ func packetControlViews(st *state.State, id string, location []string) (*PacketE
 		b, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
 		if err != nil {
 			eligibility.Reason = err.Error()
-			return eligibility, editor
+			return eligibility, editor, images
 		}
 		ids = []string{"route:" + packet.Route}
 		bindings[ids[0]] = config.ExecutionBinding{Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking, NativeProfile: b.NativeProfile,
@@ -154,17 +165,37 @@ func packetControlViews(st *state.State, id string, location []string) (*PacketE
 		eligibility.Candidates = append(eligibility.Candidates, candidate)
 	}
 	eligibility.Status, eligibility.Reason = "verified", "Current packet and effective execution configuration checked; account entitlement and model execution were not tested."
-	return eligibility, editor
+	return eligibility, editor, images
 }
 
 func (c *Context) collaborationEditor(packet *contract.Packet, fingerprint string) *CollaborationEditor {
-	v := &CollaborationEditor{Packet: packet.PacketID, Revision: c.State.Revision, ContractFingerprint: fingerprint, Writes: []string{}, Value: packet.Collaboration, Reason: "reviewed planning is required before editing a collaboration"}
+	v := &CollaborationEditor{Packet: packet.PacketID, Revision: c.State.Revision, ContractFingerprint: fingerprint, Writes: []string{}, Value: packet.Collaboration}
 	if packet.Schedule != nil {
 		v.Writes = append(v.Writes, packet.Schedule.Writes...)
 	}
+	latest, draft, reason := c.packetEditPlan(packet)
+	if latest != nil {
+		v.Plan = &latest.Ref
+	}
+	if draft != nil {
+		v.Value = draft.Collaboration
+	}
+	v.Editable, v.Reason = reason == "", reason
+	if v.Editable && len(v.Writes) == 0 {
+		v.Editable, v.Reason = false, "the reviewed packet must declare schedule.writes first"
+	}
+	if v.Editable {
+		v.Reason = "Saving creates an immutable plan revision for independent review; implementation is not started."
+	}
+	return v
+}
+
+// Both packet editors use the same exact reviewed planning authority. This
+// checks contracts and immutable exports only; it never opens image inputs.
+func (c *Context) packetEditPlan(packet *contract.Packet) (*planning.ExecutionPlan, *contract.Packet, string) {
 	p := c.State.Planning
 	if p == nil {
-		return v
+		return nil, nil, "reviewed planning is required before editing a packet"
 	}
 	var latest *planning.ExecutionPlan
 	for _, ref := range p.CurrentPlans {
@@ -174,43 +205,41 @@ func (c *Context) collaborationEditor(packet *contract.Packet, fingerprint strin
 		}
 	}
 	if latest == nil {
-		return v
+		return nil, nil, "a current complete planning projection is required before editing a packet"
 	}
-	v.Plan = &latest.Ref
-	if latest.Files["task-packet-"+packet.PacketID+".md"] == "" {
-		v.Reason = "the packet is absent from the current complete planning projection"
-		return v
+	raw := latest.Files["task-packet-"+packet.PacketID+".md"]
+	if raw == "" {
+		return latest, nil, "the packet is absent from the current complete planning projection"
 	}
-	if raw := latest.Files["task-packet-"+packet.PacketID+".md"]; raw != "" {
-		if draft, err := contract.ParsePacket([]byte(raw), "collaboration draft"); err == nil {
-			v.Value = draft.Collaboration
-		}
+	draft, err := contract.ParsePacket([]byte(raw), "packet edit draft")
+	if err != nil {
+		return latest, nil, "the current planning packet cannot be decoded: " + err.Error()
+	}
+	if draft.PacketID != packet.PacketID {
+		return latest, nil, "the current planning packet identity differs from the selected packet"
 	}
 	if c.Spec.PlanningRef == nil {
-		return v
+		return latest, draft, "reviewed planning reference is missing"
 	}
 	if err := planning.AdmitPlanRevision(p, *c.Spec.PlanningRef); err != nil {
-		v.Reason = err.Error()
-		return v
+		return latest, draft, err.Error()
+	}
+	if err := c.verifyPlanningProjection(p.Active); err != nil {
+		return latest, draft, err.Error()
+	}
+	if err := c.verifyPlanningArtifacts(); err != nil {
+		return latest, draft, err.Error()
 	}
 	if c.State.Handoff != nil || planningHasPendingReceipt(c.State) {
-		v.Reason = "return human session control and settle outstanding invocations first"
-		return v
+		return latest, draft, "return human session control and settle outstanding invocations first"
 	}
 	for _, request := range p.Requests {
 		if request.InputRevision == p.InputRevision && (request.Status == "pending" || request.Status == "running") {
-			v.Reason = "finish the outstanding planning request before editing the collaboration"
-			return v
+			return latest, draft, "finish the outstanding planning request before editing the packet"
 		}
 	}
-	if c.State.Packets[packet.PacketID].Status == "completed" {
-		v.Reason = "completed packets require an explicit new plan before changing their contract"
-		return v
+	if current := c.State.Packets[packet.PacketID]; current == nil || current.Status == "completed" {
+		return latest, draft, "completed or untracked packets require an explicit new plan before changing their contract"
 	}
-	if len(v.Writes) == 0 {
-		v.Reason = "the reviewed packet must declare schedule.writes first"
-		return v
-	}
-	v.Editable, v.Reason = true, "Saving creates an immutable plan revision for independent review; implementation is not started."
-	return v
+	return latest, draft, ""
 }

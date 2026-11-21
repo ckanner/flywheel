@@ -124,7 +124,7 @@ func TestRecordPlanForReviewRollsBackEveryFailedAdmission(t *testing.T) {
 }
 
 func TestRequestOriginIsOptionalButCannotBeReusedOrRewritten(t *testing.T) {
-	for _, original := range []string{"", "collaboration-edit"} {
+	for _, original := range []string{"", "collaboration-edit", "input-images-edit"} {
 		t.Run("origin-"+original, func(t *testing.T) {
 			s := testState(t)
 			request := Request{ID: "same-text", Origin: original, Scope: "packet", ScopeID: "M01-T01", InputRevision: s.InputRevision, PlanningOnly: true,
@@ -133,9 +133,9 @@ func TestRequestOriginIsOptionalButCannotBeReusedOrRewritten(t *testing.T) {
 			require.NoError(t, BeginRequest(s, request))
 			require.NoError(t, Validate(s))
 			changed := request
-			changed.Origin = "collaboration-edit"
-			if original != "" {
-				changed.Origin = ""
+			changed.Origin = "input-images-edit"
+			if original == "input-images-edit" {
+				changed.Origin = "collaboration-edit"
 			}
 			before := Clone(s)
 			require.ErrorContains(t, BeginRequest(s, changed), "identity was reused")
@@ -144,6 +144,10 @@ func TestRequestOriginIsOptionalButCannotBeReusedOrRewritten(t *testing.T) {
 			next.Requests[0].Origin = changed.Origin
 			require.NoError(t, Validate(next), "both origins are valid shapes; changing recorded provenance is the forbidden operation")
 			require.ErrorContains(t, ValidateTransition(s, next), "identity")
+			if original != "" {
+				next.Requests[0].Origin = ""
+				require.ErrorContains(t, ValidateTransition(s, next), "identity", "recorded edit provenance cannot be erased")
+			}
 			next.Requests[0].Origin = "unknown"
 			require.Error(t, Validate(next))
 		})

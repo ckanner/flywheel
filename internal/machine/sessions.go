@@ -578,6 +578,7 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		Last: &state.SessionInvocation{EngineRunID: c.runID, ID: "call-" + rand.Text(), Status: "intent", StartedAt: c.nowISO(), Attempt: attempt,
 			Persistent: persistent, RequestedThread: thread, CandidateBefore: candidate, GuardBefore: guardBefore,
 			Dispatch: "unknown", Outcome: "unknown", UsageStatus: "unknown"}}
+	r.Last.DecisionID = c.executionDecisionForInvocation(r)
 	if !persistent {
 		r.ThreadID = ""
 	}

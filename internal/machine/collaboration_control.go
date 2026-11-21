@@ -65,34 +65,37 @@ func applyCollaborationEdit(opts RunOpts, st *state.State, r PlanningCommand) er
 	if err := contract.ValidateCollaboration(packet); err != nil {
 		return err
 	}
-	if err := c.verifyPlanningProjection(c.State.Planning.Active); err != nil {
-		return err
-	}
-	if err := c.verifyPlanningArtifacts(); err != nil {
-		return err
-	}
 	return c.stageCollaborationEdit(st, *planning.FindPlan(c.State.Planning, *view.Plan), edit, r.RequestID)
 }
 
 // stageCollaborationEdit validates the complete replacement projection on a
 // private context before publishing the atomic planning transition to st.
 func (c *Context) stageCollaborationEdit(st *state.State, previous planning.ExecutionPlan, edit *CollaborationEdit, requestID string) error {
+	request := planning.Request{ID: requestID, Origin: "collaboration-edit", Scope: "packet", ScopeID: edit.Packet, InputRevision: c.State.Planning.InputRevision, PlanningOnly: true, Feedback: collaborationRequestIdentity(edit)}
+	return c.stagePacketFieldEdit(st, previous, edit.Packet, "collaboration", edit.Value, request,
+		"control:collaboration:", "Manual collaboration revision saved; the exact plan requires independent review. Implementation has not started.")
+}
+
+func (c *Context) stagePacketFieldEdit(st *state.State, previous planning.ExecutionPlan, packetID, field string, proposed any, request planning.Request, producer, reason string) error {
 	// Work only on the private clone. A validation failure must not leak an
 	// unpersisted plan through the control response or alter an approved artifact.
 	p := c.State.Planning
 	files := jsonClone(previous.Files)
-	name := "task-packet-" + edit.Packet + ".md"
+	name := "task-packet-" + packetID + ".md"
 	data, body, err := contract.ParseFrontmatter([]byte(files[name]), name)
 	if err != nil {
 		return err
 	}
-	raw, _ := json.Marshal(edit.Value)
+	raw, _ := json.Marshal(proposed) // only validated typed collaboration or image references reach this boundary
 	var value any
 	_ = json.Unmarshal(raw, &value)
-	data["collaboration"] = value
+	if value == nil {
+		delete(data, field) // only an explicit image-input null requests a reviewed removal
+	} else {
+		data[field] = value
+	}
 	frontmatter, _ := yaml.Marshal(data) // parsed YAML plus JSON data has no custom marshalers
 	files[name] = "---\n" + string(frontmatter) + "---\n" + body
-	request := planning.Request{ID: requestID, Origin: "collaboration-edit", Scope: "packet", ScopeID: edit.Packet, InputRevision: p.InputRevision, PlanningOnly: true, Feedback: collaborationRequestIdentity(edit)}
 	if err := c.validatePlanningFiles(files, request); err != nil {
 		return err
 	}
@@ -101,9 +104,9 @@ func (c *Context) stageCollaborationEdit(st *state.State, previous planning.Exec
 		return err
 	}
 	err = planning.RecordPlanForReview(p, planning.ExecutionPlan{Ref: planning.Ref{Revision: len(p.Plans) + 1}, Design: *p.CurrentDesign, InputRevision: p.InputRevision,
-		Scope: request.Scope, ScopeID: request.ScopeID, Files: files, Dependencies: dependencies, ScopeVerdict: "within-envelope", PlannerInvocation: "control:collaboration:" + sessionHash(requestID)}, request)
+		Scope: request.Scope, ScopeID: request.ScopeID, Files: files, Dependencies: dependencies, ScopeVerdict: "within-envelope", PlannerInvocation: producer + sessionHash(request.ID)}, request)
 	if err == nil {
-		p.Reason = "Manual collaboration revision saved; the exact plan requires independent review. Implementation has not started."
+		p.Reason = reason
 		*st = *c.State
 	}
 	return err

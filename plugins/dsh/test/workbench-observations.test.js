@@ -21,7 +21,7 @@ const taskState = () => ({ revision: 7, status: 'paused', 'current-milestone': '
   initialBindings: { 'routes.default': { bindingId: 'neon', binding: initial } },
   bindings: { 'routes.default': { ...initial, model: 'legacy-declaration-must-not-replace-facts' } } },
 sessions: { records: { executor: { role: 'execute', scope: packetID, configuration: previous, last: {
-  id: 'original-call', 'engine-run-id': 'original-run', 'started-at': '2026-11-20T10:00:00Z', status: 'consumed', dispatch: 'accepted', outcome: 'failed',
+  id: 'original-call', 'engine-run-id': 'original-run', 'started-at': '2026-11-20T10:00:00Z', status: 'consumed', dispatch: 'dispatched', outcome: 'failed',
 } } } } });
 const reply = (request, fields) => ({ ok: true, value: { result: { kind: 'success', text: JSON.stringify({
   protocol: 1, ok: true, running: false, taskDir: request.taskDir ?? '', cwd: '/repo', state: null, ...fields,
@@ -232,6 +232,14 @@ test('image identities come from the exact session manifest and uncertain dispat
   assert.match(images().textContent, /记录的图片输入配置 · 未确认派发/);
   assert.doesNotMatch(images().textContent, /已派发调用的图片身份|传给 Claude SDK/);
   assert.match(ui.container.querySelector('[data-binding-fact="actual"]').textContent, /派发未确认/);
+  invocation.last['dispatch-observed'] = true;
+  await ui.click('刷新');
+  assert.match(images().textContent, /已派发调用的图片身份/);
+  assert.match(ui.container.querySelector('[data-binding-fact="actual"]').textContent, /已确认派发/);
+  invocation.last['dispatch-observed'] = false;
+  invocation.last.dispatch = 'accepted';
+  await ui.click('刷新');
+  assert.match(images().textContent, /未确认派发/, 'native lifecycle vocabulary is not an engine receipt dispatch value');
   invocation.last.dispatch = 'not-dispatched';
   await ui.click('刷新');
   assert.match(ui.container.querySelector('[data-binding-fact="actual"]').textContent, /最近调用记录 · 未派发/);

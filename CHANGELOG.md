@@ -7,6 +7,13 @@ their original language.
 
 ## 0.38.0 candidate — Subscription CLI workflows
 
+- Complete existing-packet image input editing through inspected original bytes,
+  frozen references and independent plan review; retain explicit removal and
+  unknown-result recovery. Add task creation while keeping an existing task open.
+- Link decision cards to exact subsequent invocations and retain their confirmed
+  outcomes. Distinguish live accepted lifecycle evidence from terminal engine
+  dispatch receipts without changing replay authority or inventing old history.
+
 - Add explicit read-only native model catalogs for Antigravity, Codex Pro and
   Claude Code Pro, with provider-bound responses, manual exact model IDs, bounded
   cleanup and no inference or account-entitlement claims. Unsupported catalog

@@ -41,6 +41,8 @@ func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, err
 			if record == nil {
 				return nil, fmt.Errorf("state contains a null runtime decision")
 			}
+			record.ExecutionView = runtimeDecisionExecutionView(st, record)
+			record.Execution = nil
 			record.ModelBindings, record.ModelBindingsOmitted = compactBindingSnapshots(record.ModelBindings, &bindingBudget)
 			if record.Snapshot != nil {
 				record.Phase = "after-failure"
@@ -135,6 +137,7 @@ func compactDiagnostic(value any) any {
 
 type NodeDetail struct {
 	Eligibility         *PacketEligibility       `json:"eligibility,omitempty"`
+	ImageInputEditor    *ImageInputEditor        `json:"imageInputEditor,omitempty"`
 	CollaborationEditor *CollaborationEditor     `json:"collaborationEditor,omitempty"`
 	Collaboration       *CollaborationProjection `json:"collaboration,omitempty"`
 	ID                  string                   `json:"id"`
@@ -146,8 +149,8 @@ func ReadNode(st *state.State, id string, location ...string) (*NodeDetail, erro
 	if st == nil || st.Packets[id] == nil {
 		return nil, fmt.Errorf("packet not found")
 	}
-	eligibility, editor := packetControlViews(st, id, location)
-	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location), Eligibility: eligibility, CollaborationEditor: editor}, nil
+	eligibility, editor, images := packetControlViews(st, id, location)
+	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location), Eligibility: eligibility, CollaborationEditor: editor, ImageInputEditor: images}, nil
 }
 
 func evidenceSummary(value any, keys ...string) any {

@@ -159,7 +159,7 @@ test('published Client and Host Gateway reads are session-bound and append no co
   for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');
   }
-  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate', 'collaboration']) {
+  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate', 'collaboration', 'input-images']) {
     assert.equal((await read({ action: 'planning', taskDir:cwd, cwd, planning: { action } })).result.kind, 'error');
   }
   assert.equal(calls.length,count,'read endpoint never dispatches a mutation');

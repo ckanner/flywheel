@@ -922,6 +922,9 @@ doctor 的状态为 pass/fail/warn/unknown/skipped，必需检查 fail 才使 ok
 
 空任务画布允许用户提交工程／修复的简短需求或只报告的有界调查。默认 Auto 和
 review-first，Quick／Full 为高级深度选项；delegated 必须明确选择并勾选实施授权。
+已有任务的工作台也提供明确的新建入口；新任务创建及其规范位置得到确认前，保留当前任务的
+选择和画布。创建结果未知时核对原请求，不重复创建；收起可保留本次草稿与授权选择，
+放弃或创建成功后清除，两者不会流入下一份新任务。
 工作目录来自当前会话，不提供任意目标路径输入；生成的账本由 Go 在该目录的 docs 下
 创建。Host 对 planning prepare／investigate start 只规范化可能尚不存在的路径，
 不 mkdir 或写 state。调查表单只能创建用户明确列出的最多八个 read_file 动作，
@@ -948,18 +951,55 @@ JEV 的 model-bindings 冻结决策候选的展示身份，receipt.action-id 与
 旧记录缺失的模型或来源保持未知。任务的 source/scope 与编辑文件分开展示，保存后
 重读实际有效配置，task 覆盖仍存在或读取失败时不得声称总开关已对任务改变。
 
+新运行决策还保存 `execution.contract-fingerprint`，执行 intent 只能在 packet、
+下一 attempt、plan-revisions、当前候选 ID、冻结输入和完整绑定全部匹配时附加
+`session.last.decision-id`。owner 在正常 CAS 保存前，从同 ID 的 session 更新有界
+调用摘要；并行 worker 先合并自己的准确 session，不覆盖 owner 的决策账本。后续
+调用替换 session 槽时，不抹掉旧决策已保留的调用结果。此关联和摘要仅用于展示，
+不进入决策 Snapshot/hash，不授权派发、重放或批准。
+
+决策卡使用只读 `execution-view` 显示已选择、未启动、已启动、完成、失败、取消或
+未知。旧记录没有显式关联时保持未知；未启动只能由未推进的准确契约/计划/尝试或
+明确 not-dispatched 回执证明。原生 `turn-accepted` 事件在准确生命周期回执持久化后
+仅设置 `dispatch-observed` 展示事实，不改变 session 的 Dispatch、Outcome 或恢复
+权限。引擎终态派发值是 `dispatched`，不能把原生事件的 `accepted` 当作该 wire 值。
+完成显示要求已派发、明确结果、cleanup-confirmed 和 received/consumed 回执；
+调用完成不等于 packet 验收通过，也不证明 Swarm 子成员全部完成。
+
 协作节点只有在 Go 核对冻结契约指纹及 planning 精确批准后才标已审分工；原生观察
 按同 invocation ID 读取，不构造未经观察的完整任务树。AGY Swarm 非 Execute 绑定
 在配置加载时拒绝，编辑器禁选并解释；Execute 的实际 Full／分工／图片资格仍由引擎
 和 driver 最终校验。常用候选和 native 操作只修改目标私有引用，保留共享权限与会话。
 
-`control node` 同时投影当前 packet 的 `eligibility` 与 `collaborationEditor`。
+`control node` 同时投影当前 packet 的 `eligibility`、`collaborationEditor` 与
+`imageInputEditor`。
 资格候选复用实际 executionCandidateConditions：原图传输、native-profile、Full、
 2–8 项分工及不重叠写入范围使用同一判断。读取先核对冻结契约指纹、有效配置及已冻结
 execution-policy 身份；reviewed task 还核对确切设计批准、计划评审、活动投影和不可变
 规划导出。缺失或变化时显示 unknown，不从旧 ID 拼接现配置。候选元数据限制 48 KiB，
 编辑快照限制 32 KiB，超限整体省略并给出原因，不截短路径或冒充完整分工。
 这些结果说明当前契约的输入资格，不证明账号权益、剩余额度、客户端在线或模型已执行。
+
+已有 packet 的图片入口显示当前完整 plan 中的冻结路径、SHA-256 和 MIME 声明，
+不在 node 读取时打开原图，也不把尚未审查的新版本称为活动输入。
+`imageInputEditor.status` 用 known／unknown 区分已读声明与未确认输入；读取失败或
+最新计划中的 packet 无法解析时返回 unknown、不可编辑及 value:null，不把未知值
+显示成无图，也不把旧活动值挂到新 plan 身份。预览与保存统一从会话的实际项目根解析
+仓库相对路径，子目录会话不改变输入来源。显式预览通过
+`control images`；保存采用 `planning/input-images`，携带 state revision、request-id、
+packet 指纹、精确 plan ref 和 `input-images:{packet,contractFingerprint,plan,value}`。
+value 必须明确存在：新增或替换使用现有 `input-images` version 1 契约，移除全部图片
+只能明确提交 `value:null`，遗漏字段或空图片数组不是删除指令。整个编辑对象最多 32 KiB，
+不接受原图字节或 data URL。保存时在同一 run lease 下用 imageinput.Load 重读并核对
+源 checkout 的真实字节、类型、摘要、路径及大小，追加完整不可变 plan，进入独立
+plan-review；旧活动契约与批准保持不变。清空同样必须审查，不能直接去掉声明绕过输入
+资格。图片编辑不要求 collaboration 的 schedule.writes 分工；精确设计批准、活动投影、
+不可变导出、未完成 packet 和未决调用屏障仍与分工编辑相同。
+新请求记录不可变 `origin:input-images-edit`，producer 为
+`control:input-images:<request-id摘要>`；start:true 仅启动 planning-only 独立评审，
+不授予实施 Start。重复命令、未知结果对账和已确认拒绝沿同一持久回执机制，拒绝审计
+kind 为 `planning-input-images-rejected`。执行时仍再次验证原始输入；保存或评审通过
+不证明模型已经接收图片，也不升级未接通原图传输的 harness。
 
 分工编辑仅接受既有 `collaboration:{version:1,tasks:[{goal,writes}]}`，不扩大 packet 的
 schedule.writes。保存通过 `planning/collaboration`，绑定 state revision、request-id、

@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 // the verified host command or a terminal confirmation, never by request JSON.
 type PlanningCommand struct {
 	Collaboration *CollaborationEdit `json:"collaboration,omitempty"`
+	InputImages   *InputImagesEdit   `json:"input-images,omitempty"`
 	Action        string             `json:"action"`
 	Revision      int64              `json:"revision,omitempty"`
 	RequestID     string             `json:"request-id,omitempty"`
@@ -68,7 +70,7 @@ func (r PlanningCommand) StartRequested(defaultValue bool) bool {
 }
 
 func ValidatePlanningCommand(r PlanningCommand) error {
-	if r.Collaboration != nil && r.Action != "collaboration" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "") && r.Action != "plan" ||
+	if r.Collaboration != nil && r.Action != "collaboration" || r.InputImages != nil && r.Action != "input-images" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "") && r.Action != "plan" ||
 		r.Design != nil && r.Action != "approve" && r.Action != "feedback" ||
 		r.Text != "" && r.Action != "feedback" && r.Action != "migrate" && r.Action != "plan" ||
 		r.Policy != "" && r.Action != "feedback" && r.Action != "migrate" ||
@@ -103,6 +105,9 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 	switch r.Action {
 	case "collaboration":
 		return validateCollaborationEdit(r.Collaboration)
+	case "input-images":
+		_, err := imageInputReferences(r.InputImages)
+		return err
 	case "plan":
 		if r.Scope != "design" && r.Scope != "milestone" && r.Scope != "packet" && r.Scope != "replan" {
 			return fmt.Errorf("planning scope must be design, milestone, packet, or replan")
@@ -122,7 +127,7 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		}
 	case "migrate":
 	default:
-		return fmt.Errorf("planning action must be prepare, plan, feedback, approve, status, migrate, or collaboration")
+		return fmt.Errorf("planning action must be prepare, plan, feedback, approve, status, migrate, collaboration, or input-images")
 	}
 	return nil
 }
@@ -134,6 +139,12 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 		return nil, nil, err
 	}
 	request, _ = normalizePlanningScope(request) // checked by ValidatePlanningCommand
+	if request.InputImages != nil {
+		edit := *request.InputImages
+		refs, _ := imageInputReferences(&edit)
+		edit.Value, _ = json.Marshal(refs) // canonical frozen references make reordered JSON the same command
+		request.InputImages = &edit
+	}
 	if request.Action == "approve" && ((!strings.HasPrefix(trustedSource, "dsh:") && !strings.HasPrefix(trustedSource, "tty:")) || len(trustedSource) <= 4 ||
 		len(trustedSource) > 1024 || strings.ContainsAny(trustedSource, "\x00\r\n")) {
 		return nil, nil, fmt.Errorf("design approval requires a verified human command or controlling terminal")
@@ -178,10 +189,10 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 		return st, nil, err
 	}
 	if rejected := rejectedPlanningReceipt(st, request.RequestID); rejected != nil {
-		if request.Action == "collaboration" && rejected.Action == "collaboration" {
+		if (request.Action == "collaboration" || request.Action == "input-images") && rejected.Action == request.Action {
 			digest := ""
 			for _, value := range st.Inbox {
-				if item, ok := value.(map[string]any); ok && item["kind"] == "planning-collaboration-rejected" && item["request-id"] == request.RequestID {
+				if item, ok := value.(map[string]any); ok && item["kind"] == "planning-"+request.Action+"-rejected" && item["request-id"] == request.RequestID {
 					digest, _ = item["command-digest"].(string)
 				}
 			}
@@ -219,11 +230,11 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 // unknown model invocation. Persist only the bounded refusal identity; contracts,
 // approvals and execution requests are unchanged. A failed CAS stays unknown.
 func rejectPlanningCollaboration(opts RunOpts, st *state.State, r PlanningCommand, rejection error) (*state.State, *PlanningControlReceipt, error) {
-	if r.Action != "collaboration" {
+	if r.Action != "collaboration" && r.Action != "input-images" {
 		return st, nil, rejection
 	}
 	staged := jsonClone(st)
-	staged.Inbox = append(staged.Inbox, map[string]any{"kind": "planning-collaboration-rejected", "request-id": r.RequestID, "command-digest": sessionHash(r), "message": boundedDecisionText(rejection.Error(), 1024)})
+	staged.Inbox = append(staged.Inbox, map[string]any{"kind": "planning-" + r.Action + "-rejected", "request-id": r.RequestID, "command-digest": sessionHash(r), "message": boundedDecisionText(rejection.Error(), 1024)})
 	saved, err := state.Save(opts.TaskDir, staged, &st.Revision)
 	if err != nil {
 		return st, nil, err
@@ -295,7 +306,8 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 		if old.ID == r.RequestID {
 			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text
 			matchesEdit := r.Action == "collaboration" && r.Collaboration != nil && old.Origin == "collaboration-edit" && old.Scope == "packet" && old.ScopeID == r.Collaboration.Packet && old.Feedback == collaborationRequestIdentity(r.Collaboration)
-			matched, same = true, same && (matchesPlan || matchesEdit) && old.PlanningOnly
+			matchesImages := r.Action == "input-images" && r.InputImages != nil && old.Origin == "input-images-edit" && old.Scope == "packet" && old.ScopeID == r.InputImages.Packet && old.Feedback == inputImagesRequestIdentity(r.InputImages)
+			matched, same = true, same && (matchesPlan || matchesEdit || matchesImages) && old.PlanningOnly
 		}
 	}
 	for _, old := range p.Feedback {
@@ -317,6 +329,10 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 func applyPlanningCommand(opts RunOpts, st *state.State, r PlanningCommand, source string) error {
 	p := st.Planning
 	switch r.Action {
+	case "input-images":
+		if err := applyInputImagesEdit(opts, st, r); err != nil {
+			return err
+		}
 	case "collaboration":
 		if err := applyCollaborationEdit(opts, st, r); err != nil {
 			return err

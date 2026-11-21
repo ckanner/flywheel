@@ -9,8 +9,13 @@ Object.assign(zh, {
   intakeQuick: 'Quick · 局部任务', intakeFull: 'Full · 完整工程流程',
   intakeCreate: '开始设计与审查', intakeCreateInvestigation: '创建并开始调查',
   intakeResume: '继续创建任务', intakeResumeHelp: '创建尚未完成。核对状态后，可在原任务继续；已输入的内容会保留。',
+  intakeAnother: '创建另一个任务', intakeAnotherHelp: '当前任务保持选中；引擎确认创建后才切换到新任务。新任务使用独立目录和本次明确选择的方案授权。',
+  intakeHide: '收起并保留草稿', intakeDiscard: '放弃新任务草稿',
+  intakeDraftHelp: '收起后，本会话保留草稿和本次授权选择；放弃草稿会同时清除内容与授权。创建成功后，新任务表单恢复为等待方案批准。图片预览在重新打开时需要再次检查。',
   intakeNoWorkspace: '正在取得当前会话的项目目录；取得后即可创建任务。',
+  intakeWorkspaceFailed: '暂时无法确认当前会话的项目目录；请点击上方“重试”重新读取。',
   intakeLocation: '任务记录将由引擎在当前会话目录的 docs 下创建。',
+  intakeLocationAt: '此草稿的任务记录将由引擎在 {path} 创建。',
   intakeExpected: '预期行为', intakeHypothesis: '待验证的假设', intakeFalsifier: '什么证据能推翻假设',
   intakeReadPaths: '允许读取的文件（相对会话工作目录，每行一个，最多 8 个）',
   intakeInvestigationHelp: '本入口只读取你列出的文件，最多 8 次、60 秒，每个文件最多 256 KiB；不运行命令或访问服务。报告完成后停止。更复杂的诊断可通过 /flywheel-task 准备有界调查契约。',
@@ -34,8 +39,13 @@ Object.assign(en, {
   intakeQuick: 'Quick · localized task', intakeFull: 'Full · complete engineering workflow',
   intakeCreate: 'Start design and review', intakeCreateInvestigation: 'Create and start investigation',
   intakeResume: 'Continue task creation', intakeResumeHelp: 'Creation has not completed. Reconcile status, then continue in the original task; your draft is retained.',
+  intakeAnother: 'Create another task', intakeAnotherHelp: 'The current task stays selected until the engine confirms the new task. The new task has its own directory and the design authorization you select for it.',
+  intakeHide: 'Hide and keep draft', intakeDiscard: 'Discard new task draft',
+  intakeDraftHelp: 'Hiding retains this conversation’s draft and its authorization selection. Discarding clears both. After successful creation, the next form defaults to waiting for design approval. Inspect image previews again when reopening.',
   intakeNoWorkspace: 'Reading this conversation’s workspace. Task creation becomes available when it is known.',
+  intakeWorkspaceFailed: 'Could not confirm this conversation’s workspace. Choose Retry above to read it again.',
   intakeLocation: 'The engine will create task records under docs in this conversation’s working directory.',
+  intakeLocationAt: 'The engine will create this draft’s task records under {path}.',
   intakeExpected: 'Expected behavior', intakeHypothesis: 'Hypothesis to test', intakeFalsifier: 'Evidence that would disprove it',
   intakeReadPaths: 'Files to read (relative to the conversation’s working directory, one per line, up to 8)',
   intakeInvestigationHelp: 'Read only the files you list: up to 8 actions, 60 seconds, and 256 KiB per file. No commands or service access. Stop after the report. Use /flywheel-task to prepare a bounded contract for more complex diagnostics.',
@@ -54,10 +64,15 @@ function intakeLocalPaths(paths, maximum) {
   return paths.length > 0 && paths.length <= maximum && new Set(paths).size === paths.length &&
     paths.every(path => path.length <= 512 && !path.startsWith('/') && !/[\\:\p{C}]/u.test(path) && path.split('/').every(part => part && !['.', '..', '.git'].includes(part)));
 }
-function TaskIntake({ control, selection, intakeStore, changeSelection, run, t }) {
-  const project = selection.cwd || control.runsCwd || '';
+function TaskIntake({ control, selection, intakeStore, changeSelection, run, newTask = false, t }) {
+  const project = newTask ? intakeStore.target?.cwd || intakeStore.draftWorkspace || '' : selection.cwd || control.runsCwd || '';
   const createDraft = () => ({ id: 'task-' + planningRequestID(), kind: 'engineering', goal: '', constraints: '', evidence: '', policy: 'review-first', delegated: false, mode: 'auto', expected: '', hypothesis: '', falsifier: '', readPaths: '', imagePaths: '' });
-  const [draft, setDraft] = React.useState(() => intakeStore.cwd === project && intakeStore.draft || createDraft());
+  const [draft, setDraft] = React.useState(() => {
+    const next = intakeStore.cwd === project && intakeStore.draft || createDraft();
+    if (intakeStore.cwd !== project) intakeStore.target = null;
+    intakeStore.cwd = project; intakeStore.draft = next;
+    return next;
+  });
   const [images, setImages] = React.useState(null), [error, setError] = React.useState('');
   const [inspectingImages, setInspectingImages] = React.useState(false);
   const generation = React.useRef(0);
@@ -70,7 +85,8 @@ function TaskIntake({ control, selection, intakeStore, changeSelection, run, t }
   }, [project]);
   const confirmedEmpty = control.status?.taskDir === selection.taskDir && control.status?.running === false && control.status.state === null && !control.status.preparation;
   const notDispatched = ['planning', 'investigate'].includes(control.error?.action) && control.error.dispatch === 'not-dispatched';
-  const busy = !!control.pending || !!control.uncertainty || !!control.configUncertainty || !!control.stale || inspectingImages || !!selection.taskDir && !confirmedEmpty && !notDispatched;
+  const busy = !!control.pending || !!control.uncertainty || !!control.configUncertainty || !!control.stale || inspectingImages ||
+    control.planningReceipt?.status === 'queued' || !newTask && !!selection.taskDir && !confirmedEmpty && !notDispatched;
   const workspaceReady = typeof project === 'string' && project.startsWith('/') && !pathProblem(project);
   const update = (key, value) => { setError(''); if (key === 'imagePaths' || key === 'kind') { generation.current++; setImages(null); } setDraft(previous => { const next = { ...previous, [key]: value }; intakeStore.draft = next; return next; }); };
   const field = (label, key, maximum = 4096, rows = 2) => h('label', { className: css.intakeField }, h('span', null, t(label)),
@@ -84,7 +100,7 @@ function TaskIntake({ control, selection, intakeStore, changeSelection, run, t }
     const token = ++generation.current;
     setError(''); setImages(null); setInspectingImages(true);
     try {
-      const result = await run('images', { taskDir: selection.taskDir || '', cwd: project }, false, { images: { paths } });
+      const result = await run('images', { taskDir: newTask ? '' : selection.taskDir || '', cwd: project }, false, { images: { paths }, ...(newTask ? { intake: true } : {}) });
       if (token !== generation.current) return;
       if (result && validImageInspection(result.inputImages, paths)) setImages(result.inputImages);
       else setError('intakeImageFailed');
@@ -121,13 +137,13 @@ function TaskIntake({ control, selection, intakeStore, changeSelection, run, t }
     }
     // Never claim that a new task exists before a confirmed Go receipt. Unknown
     // outcomes retain the controller's original-task reconciliation barrier.
-    if (result) {
-      intakeStore.target = null; intakeStore.draft = null;
+    if (result && (result.state || result.preparation)) {
+      intakeStore.target = null; intakeStore.draft = null; intakeStore.origin = null; intakeStore.open = false; intakeStore.draftWorkspace = null;
       changeSelection({ taskDir: result.taskDir, cwd: result.cwd || next.cwd });
     }
   };
-  return h('form', { className: css.intake, onSubmit: submit, 'aria-label': t('intakeTitle') },
-    h('h3', { className: css.heading }, t('intakeTitle')),
+  return h('form', { className: css.intake, onSubmit: submit, 'aria-label': t(newTask ? 'intakeAnother' : 'intakeTitle') },
+    h('h3', { className: css.heading }, t(newTask ? 'intakeAnother' : 'intakeTitle')),
     select('intakeKind', 'kind', [['engineering', 'intakeEngineering'], ['repair', 'intakeRepair'], ['investigate', 'intakeInvestigate']]),
     field('intakeGoal', 'goal', 4096, 3),
     isInvestigation ? h(React.Fragment, null, field('intakeExpected', 'expected'), field('intakeHypothesis', 'hypothesis', 2048), field('intakeFalsifier', 'falsifier', 2048), field('intakeReadPaths', 'readPaths', 4096),
@@ -149,6 +165,6 @@ function TaskIntake({ control, selection, intakeStore, changeSelection, run, t }
           h('figcaption', null, h('code', null, item.path), h('span', null, item.mimeType + ' · ' + t('intakeImageDimensions', item)), h('code', null, 'SHA-256 ' + item.sha256))))))),
     error && h('p', { role: 'alert', className: css.errorText }, t(error)),
     !workspaceReady && h('p', { role: 'status', className: css.settingsHelp }, t('intakeNoWorkspace')),
-    h('p', { className: css.settingsHelp }, t('intakeLocation')),
+    h('p', { className: css.settingsHelp }, newTask && workspaceReady ? t('intakeLocationAt', { path: project.replace(/\/$/, '') + '/docs' }) : t('intakeLocation')),
     h(Button, { type: 'submit', variant: 'primary', disabled: busy || !workspaceReady || !draft.goal.trim() || !isInvestigation && draft.policy === 'delegated' && !draft.delegated }, t(isInvestigation ? 'intakeCreateInvestigation' : 'intakeCreate')));
 }

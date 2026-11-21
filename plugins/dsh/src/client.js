@@ -396,6 +396,7 @@ const textValue = (value, fallback = '—') => typeof value === 'string' || type
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
 const mutates = (action, extra = {}) => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action) && !(action === 'planning' && extra.planning?.action === 'status');
+const packetEditAction = action => ['collaboration', 'input-images'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -482,14 +483,15 @@ function readReply(reply, request) {
       (request.action === 'planning' && !state?.planning) ||
       (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control'])) ||
       (value['session-control'] !== undefined && !validSessionControl(value['session-control']))) throw new Error('Flywheel control returned malformed planning or session status');
-  if (request.planning?.action === 'collaboration' && (value['planning-control']?.['request-id'] !== request.planning['request-id'] || value['planning-control']?.action !== 'collaboration')) throw new Error('Collaboration revision receipt does not match this exact request');
+  if (packetEditAction(request.planning?.action) && (value['planning-control']?.['request-id'] !== request.planning['request-id'] || value['planning-control']?.action !== request.planning.action)) throw new Error('Packet revision receipt does not match this exact action and request');
+  if (request.planning?.action === 'status' && request.planning['request-id'] && value['planning-control']?.['request-id'] !== request.planning['request-id']) throw new Error('Planning status receipt does not match this exact request');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
   if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
   if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet) || !validCollaborationView(value.node.collaboration) ||
-      !validNodeEligibility(value.node.eligibility) || !validCollaborationEditor(value.node.collaborationEditor) ||
-      [value.node.eligibility, value.node.collaborationEditor].some(view => view != null && (view.packet !== value.node.id || view.revision !== value.node.revision)))) throw new Error('Malformed node detail');
+      !validNodeEligibility(value.node.eligibility) || !validCollaborationEditor(value.node.collaborationEditor) || !validImageInputEditor(value.node.imageInputEditor) ||
+      [value.node.eligibility, value.node.collaborationEditor, value.node.imageInputEditor].some(view => view != null && (view.packet !== value.node.id || view.revision !== value.node.revision)))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
   if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(run => record(run) && validBindingChoices(run.initialBindings, run.initialBindingsOmitted)))) throw new Error('Malformed run index');
   if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups) ||
@@ -528,10 +530,13 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
         typeof value.cwd !== 'string' || !value.cwd.startsWith('/') || pathProblem(value.cwd)) return false;
     // Only a validated response to this exact request, or the host projection's
     // same-operation request proof, may map an alias to its physical location.
+    const provisional = !!intakeStore.origin;
     intakeStore.cwd = value.cwd;
     intakeStore.target = created ? null : { taskDir: value.taskDir, cwd: value.cwd };
-    if (created) intakeStore.draft = null;
-    return true;
+    if (created) { intakeStore.draft = null; intakeStore.origin = null; intakeStore.open = false; intakeStore.draftWorkspace = null; }
+    // A confirmed empty directory is useful retry evidence, but does not
+    // replace an existing task with a task that has not been created yet.
+    return !provisional || created;
   };
   // Discovery is a separate read lane: it cannot select a task, clear a pending
   // mutation, or invalidate an in-flight status/configuration response.
@@ -575,12 +580,16 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
     if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action) && !target.taskDir) return;
-    select(selection);
+    const provisionalIntake = !!intakeStore.origin && (
+      intakeStore.target?.taskDir === target.taskDir && intakeStore.target.cwd === target.cwd &&
+        (action === 'status' || action === 'planning' && extra.planning?.action === 'prepare' || action === 'investigate' && extra.investigation?.action === 'start') ||
+      action === 'images' && extra.intake === true);
+    if (!provisionalIntake) select(selection);
     if (['launch', 'start', 'planning'].includes(action) && mutates(action, extra) && source.getSnapshot().stale) return;
     const requestEpoch = epoch;
-    const requestKey = selected;
+    const requestKey = provisionalIntake ? selectionKey(target) : selected;
     const previousUncertainty = source.getSnapshot().uncertainty;
-    const queuedReceipt = action === 'status' && (previousUncertainty?.planningAction === 'collaboration' ? previousUncertainty.planningRequestID :
+    const queuedReceipt = action === 'status' && !provisionalIntake && (packetEditAction(previousUncertainty?.planningAction) ? previousUncertainty.planningRequestID :
       source.getSnapshot().planningReceipt?.status === 'queued' && source.getSnapshot().planningReceipt?.['request-id']);
     const request = { action: queuedReceipt ? 'planning' : action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
       ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
@@ -611,11 +620,15 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
       const uncertain = source.getSnapshot().uncertainty;
-      const matchingCollaborationRead = uncertain?.planningAction === 'collaboration' && request.planning?.action === 'status' && request.planning['request-id'] === uncertain.planningRequestID;
-      if (matchingCollaborationRead && (value['planning-control']?.action !== 'collaboration' || value['planning-control']?.['request-id'] !== uncertain.planningRequestID)) {
-        throw new Error('Collaboration reconciliation receipt does not match the original action and request ID');
+      const queued = source.getSnapshot().planningReceipt;
+      const expectedEdit = packetEditAction(uncertain?.planningAction) ? { action: uncertain.planningAction, id: uncertain.planningRequestID }
+        : packetEditAction(queued?.action) && queued.status === 'queued' ? { action: queued.action, id: queued['request-id'] } : null;
+      const matchingPacketEditRead = !!expectedEdit && request.planning?.action === 'status' && request.planning['request-id'] === expectedEdit.id;
+      if (matchingPacketEditRead && (value['planning-control']?.action !== expectedEdit.action || value['planning-control']?.['request-id'] !== expectedEdit.id)) {
+        throw new Error('Packet reconciliation receipt does not match the original action and request ID');
       }
-      if (remapIntake(value, request.taskDir, request.cwd, !!value.state || !!value.preparation)) {
+      const remappedIntake = remapIntake(value, request.taskDir, request.cwd, !!value.state || !!value.preparation);
+      if (remappedIntake) {
         const canonical = { taskDir: value.taskDir, cwd: value.cwd };
         setIntakeSelection(canonical);
         select(canonical);
@@ -625,10 +638,12 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
           // A remote snapshot is bound to the previously observed candidate.
           // A new engine revision requires another explicit remote inspection.
           if (draft.delivery && value.state?.revision !== draft.status?.state?.revision) draft.deliveryStale = true;
-          draft.status = value;
-          draft.checkedAt = Date.now();
+          if (!provisionalIntake || remappedIntake) {
+            draft.status = value;
+            draft.checkedAt = Date.now();
+          }
           draft.stale = false;
-          if (action !== 'node' && draft.uncertainty?.key === requestKey && (draft.uncertainty.planningAction !== 'collaboration' || matchingCollaborationRead && ['applied', 'unchanged', 'rejected'].includes(value['planning-control']?.status))) draft.uncertainty = null;
+          if (action !== 'node' && draft.uncertainty?.key === requestKey && (!packetEditAction(draft.uncertainty.planningAction) || matchingPacketEditRead && ['applied', 'unchanged', 'rejected'].includes(value['planning-control']?.status))) draft.uncertainty = null;
         }
         if (['config', 'doctor'].includes(action)) {
           draft.configuration = value.configuration ?? value.diagnostic?.configuration ?? null;
@@ -642,7 +657,9 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
         if (action === 'runs') draft.runs = value.runs;
         if (action === 'metrics') draft.metrics = value.metrics;
         if (value['planning-control']) draft.planningReceipt = value['planning-control'];
-        draft.raw = value;
+        // Preview bytes belong only to the requesting mounted component.
+        // The retained conversation controller stores reference metadata only.
+        draft.raw = action === 'images' ? { ...value, inputImages: { references: value.inputImages.references } } : value;
       });
       return value;
     } catch (error) {
@@ -651,7 +668,7 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
       // This local outcome lets the originating retained draft settle even if
       // its view has unmounted. It cannot be confused with an engine envelope,
       // and only a typed, confirmed pre-dispatch rejection carries it.
-      const outcome = action === 'planning' && extra.planning?.action === 'collaboration' && dispatch === 'not-dispatched'
+      const outcome = action === 'planning' && packetEditAction(extra.planning?.action) && dispatch === 'not-dispatched'
         ? { controlFailure: { ...operation, detail, dispatch } } : undefined;
       if (isDisposed() || requestEpoch !== epoch) return outcome;
       source.update(draft => {
@@ -683,11 +700,16 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
         (value.operationId === lastAssociation.operationId && value.outcome === lastAssociation.outcome &&
          value.taskDir === lastAssociation.taskDir && value.cwd === lastAssociation.cwd))) return;
     if (active) { deferredAssociation = [value, setSelection]; return; }
+    const provisionalIntake = !!intakeStore.origin && !!intakeStore.target && (
+      value.taskDir === intakeStore.target.taskDir && value.cwd === intakeStore.target.cwd ||
+      value.requestedTaskDir === intakeStore.target.taskDir && value.requestedCwd === intakeStore.target.cwd);
+    const confirmedIntakeIdentity = provisionalIntake && value.outcome === 'confirmed' &&
+      value.requestedTaskDir === intakeStore.target.taskDir && value.requestedCwd === intakeStore.target.cwd;
     const remappedIntake = value.outcome === 'confirmed' && remapIntake(value, value.requestedTaskDir, value.requestedCwd);
     const next = { taskDir: value.taskDir, cwd: value.cwd };
     const sameOperation = lastAssociation?.operationId === value.operationId;
-    const shouldSelect = !lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
-      (sameOperation && selected === associatedKey);
+    const shouldSelect = !provisionalIntake && (!lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
+      (sameOperation && selected === associatedKey));
     lastAssociation = value;
     if (shouldSelect) {
       setSelection(next);
@@ -696,10 +718,11 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
     }
     source.update(draft => {
       if (value.outcome !== 'confirmed' && mutates(value.action)) {
-        draft.uncertainty = { ...next, action: value.action, operationId: value.operationId,
+        const original = provisionalIntake && draft.uncertainty?.key === selectionKey(next) ? draft.uncertainty : {};
+        draft.uncertainty = { ...original, ...next, action: value.action, operationId: value.operationId,
           key: selectionKey(next), detail: value.message || '' };
         draft.stale = true;
-      } else if (remappedIntake && draft.uncertainty?.taskDir === value.requestedTaskDir && draft.uncertainty.cwd === value.requestedCwd) {
+      } else if ((remappedIntake || confirmedIntakeIdentity) && draft.uncertainty?.taskDir === value.requestedTaskDir && draft.uncertainty.cwd === value.requestedCwd) {
         // Carry the original barrier to the proven canonical identity. Only
         // the following successful live status read releases this uncertainty.
         draft.uncertainty = { ...draft.uncertainty, ...next, key: selectionKey(next) };
@@ -710,7 +733,7 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
     });
     // Logs recover identity, never a live running state. A confirmed association
     // gets one fresh read; pending/unknown mutations require explicit reconcile.
-    if (shouldSelect && value.outcome === 'confirmed' &&
+    if ((shouldSelect || confirmedIntakeIdentity) && value.outcome === 'confirmed' &&
         (mutates(value.action) || !source.getSnapshot().status)) void run('status', next);
   };
   return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action, { planning: { action: active.planningAction } }) };
@@ -1030,7 +1053,9 @@ exports.apply = function apply(ctx) {
           const outcome = control.source.getSnapshot().uncertainty;
           if (!outcome || control.source.getSnapshot().pending) return;
           const next = { taskDir: outcome.taskDir, cwd: outcome.cwd };
-          actions.setSelection(next);
+          // A separate task's lost create receipt is reconciled without
+          // abandoning the currently selected task before Go confirms it.
+          if (!(binding.intakeStore.origin && binding.intakeStore.target?.taskDir === next.taskDir && binding.intakeStore.target.cwd === next.cwd)) actions.setSelection(next);
           return control.run('status', next);
         },
       };

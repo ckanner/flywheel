@@ -105,6 +105,9 @@ func (c *Context) persistSessionLifecycle(r *state.SessionRecord, event drivers.
 		return fmt.Errorf("cannot save durable lifecycle checkpoint: %w", err)
 	}
 	recovery.RunID, recovery.Sequence, recovery.Event, recovery.CheckpointDigest = event.RunID, event.Sequence, event.Event, digest
+	if event.Event == "turn-accepted" && event.Dispatch == "accepted" {
+		r.Last.DispatchObserved = true
+	}
 	c.save()
 	return c.err()
 }

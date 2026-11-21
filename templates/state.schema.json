@@ -96,6 +96,28 @@
               "accounted"
             ],
             "properties": {
+              "execution": {
+                "type": "object", "additionalProperties": false,
+                "required": ["contract-fingerprint"],
+                "properties": {
+                  "contract-fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "invocation": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["id", "started-at", "attempt", "status", "dispatch", "outcome", "cleanup-confirmed"],
+                    "properties": {
+                      "id": {"type": "string", "pattern": "^call-[A-Za-z0-9]+$"},
+                      "engine-run-id": {"type": "string", "minLength": 1, "maxLength": 256},
+                      "started-at": {"type": "string", "minLength": 1, "maxLength": 64},
+                      "attempt": {"type": "integer", "minimum": 1},
+                      "status": {"enum": ["intent", "received", "consumed", "blocked", "abandoned"]},
+                      "dispatch": {"enum": ["not-dispatched", "dispatched", "unknown"]},
+                      "dispatch-observed": {"type": "boolean"},
+                      "outcome": {"enum": ["completed", "failed", "cancelled", "unknown"]},
+                      "cleanup-confirmed": {"type": "boolean"}
+                    }
+                  }
+                }
+              },
               "model-bindings": {
                 "type": "object", "maxProperties": 16,
                 "propertyNames": {"pattern": "^model-[0-9]+$"},
@@ -228,6 +250,8 @@
                 "properties": {
                   "id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
                   "engine-run-id": {"type":"string","minLength":1},
+                  "decision-id": {"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"},
+                  "dispatch-observed": {"type":"boolean"},
                   "status": { "enum": ["intent", "received", "consumed", "blocked", "abandoned"] },
                   "started-at": { "type": "string", "minLength": 1 },
                   "attempt": { "type": "integer", "minimum": 0 },

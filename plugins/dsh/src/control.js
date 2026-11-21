@@ -4,7 +4,7 @@ import { directory, nonempty, record, validInvestigationCommand } from './protoc
 import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
 import { validSessionUserAction } from './session-control.js';
 import { preparationDirectory } from './task-directory.js';
-import { validImageSelection, validImageInspection } from './image-contract.js';
+import { validImageSelection, validImageInspection, validImageInputEditor } from './image-contract.js';
 
 const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'images', 'models'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
@@ -242,9 +242,11 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
       if ((request.action === 'investigate' && !investigationStatusAfterHandoff && (!record(response.preparation) || response.preparation.version !== 1 || !Number.isSafeInteger(response.preparation.revision) || response.preparation.revision < 1 || !record(response.preparation.contract) || !Array.isArray(response.preparation.observations))) ||
           (request.action === 'images' && !validImageInspection(response.inputImages, request.images.paths)) ||
           (request.action === 'models' && !validModelCatalogReport(response.modelCatalog, request.models)) ||
-          (request.planning?.action === 'collaboration' && (response['planning-control']?.['request-id'] !== request.planning['request-id'] || response['planning-control']?.action !== 'collaboration')) ||
+          (['collaboration', 'input-images'].includes(request.planning?.action) && (response['planning-control']?.['request-id'] !== request.planning['request-id'] || response['planning-control']?.action !== request.planning.action)) ||
+          (request.planning?.action === 'status' && request.planning['request-id'] && response['planning-control']?.['request-id'] !== request.planning['request-id']) ||
           (request.action === 'planning' && (!record(response.state?.planning) || response.state.planning.version !== 1 || !Number.isSafeInteger(response.state.revision) || response.state.revision < 1)) ||
-          (request.action === 'node' && (!record(response.node) || response.node.id !== request.packet || !record(response.node.packet))) ||
+          (request.action === 'node' && (!record(response.node) || response.node.id !== request.packet || !record(response.node.packet) || !validImageInputEditor(response.node.imageInputEditor) ||
+            response.node.imageInputEditor != null && (response.node.imageInputEditor.packet !== request.packet || response.node.imageInputEditor.revision !== response.node.revision))) ||
           (['delivery','deliver'].includes(request.action) && (!record(response.delivery) || !Array.isArray(response.delivery.pulls))) ||
           (request.action === 'history' && (!record(response.history) || response.history.key !== request.sessionKey)) ||
           (request.action === 'runs' && !Array.isArray(response.runs)) ||

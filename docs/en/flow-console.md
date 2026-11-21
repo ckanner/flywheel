@@ -17,6 +17,37 @@ Switching is disabled during pending reads or mutations, unknown task outcomes a
 
 The project, task folder, execution directory and branch appear directly when known. Use `flywheel_control status` in the intended conversation to associate a prepared or standalone terminal task. Old UI-generated status command records do not establish a new association.
 
+### Create another task in this conversation
+
+With a task selected, choose **Create another task** to open the goal form beside
+the existing workflow. Opening the form sends no model request and keeps the
+current task selected. The same form is available when the conversation has no
+task. Choose an engineering task, repair, or report-only investigation; engineering
+and repair default to Auto depth and waiting for approval after independent design
+review. Implementation after review requires its own explicit authorization.
+
+The entry waits for the conversation's workspace to be confirmed; the selected
+task's worktree is not a substitute. A failed lookup shows a reason and **Retry**.
+Opening a draft fixes its workspace and displays the task-record directory. Later
+catalog refreshes cannot change that directory or erase the draft. Successful
+creation or explicit discard releases this choice for the next draft.
+
+Submitting creates a separate task directory through the existing engine intake.
+The view selects the new task only after Go confirms its state or investigation
+record. A lost response retains the original request target and draft; status
+reconciliation does not replay creation. If reconciliation finds an empty
+directory, the current task remains selected and an explicit retry uses the same
+target. Pending control requests, unknown mutations and unconfirmed configuration
+saves block the new-task entry and prevent hiding or discarding an active request.
+
+**Hide and keep draft** retains this conversation's text and authorization
+selection. **Discard new task draft** clears both. Another conversation does not
+inherit them, and successful creation retires the old draft so the next task starts
+with review-first authorization. Image previews must be inspected again after
+reopening a retained draft.
+
+### Task locations and conversation commands
+
 DSH keeps the original repository in the Session header and switches the current execution directory through its public API. The desktop Host periodically attaches Flywheel SDK sessions to matching existing projects; task status also ensures the original project is registered. It does not create a desktop workspace for every packet Worktree or rewrite old Session headers. Probes use temporary persistence, leaving no new user sessions. Native Providers start sessions in the project; task prompts name the actual execution directory for every shell/file operation. Backends unable to separate a `workspace-write` sandbox root reject that combination before dispatch instead of widening permissions. Full access and supported read-only modes retain their actual semantics.
 
 Loading a skill does not start the engine. `flywheel-task` prepares a thin brief and invokes `planning prepare` for design/review and authorized implementation; investigation goals retain their bounded investigation control. Existing prepared-contract tasks still use launch/start. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
@@ -49,6 +80,16 @@ the selected model, effort, permissions, session policy and native options befor
 the next invocation starts. Changing settings does not rewrite those facts. Old
 records without a complete snapshot remain unknown; display limits are stated
 explicitly and do not replace the full task ledger.
+
+Each model decision card also shows its **linked execution status**: selected
+before dispatch, confirmed not started, started with an unconfirmed outcome,
+completed, failed, cancelled or unknown. New invocations explicitly name the
+decision they follow after matching the exact packet, attempt and frozen binding;
+the card keeps its call ID when a later invocation replaces the current session.
+A durable native acceptance event can show that a call started while its terminal
+receipt is still pending. Completion requires a confirmed terminal receipt and
+cleanup. Older decisions without this link remain unknown. These statuses describe
+the model call; packet acceptance and observed Swarm children have their own results.
 
 For Antigravity, the selected binding names the requested **native**, **subagents**
 or **Swarm** mode when that fact was retained. A profile name alone does not prove
@@ -117,6 +158,38 @@ the draft editable without requiring a nonexistent receipt. A queued receipt rem
 adopted. Approved assignments and observed native children continue to be shown
 as separate facts.
 
+
+### Edit an existing packet's image inputs
+
+Open a packet or Execute node and select **Edit image inputs**. The current plan's
+paths, MIME types and SHA-256 references are read separately from the actual
+invocation's image manifest. Reading these references does not load originals or
+claim that an unreviewed plan is active.
+An unreadable declaration remains **unconfirmed**, with its reason, rather than
+being shown as empty. Legacy packet references without a plan are labelled as
+contract references and remain read-only.
+
+Add, replace or remove repository-relative image paths, then explicitly choose
+**Inspect and preview image draft**. The preview shows original format, dimensions,
+bytes and digest; editing a path invalidates it. The last image is removed through
+**Explicitly clear all image references** and a separate confirmation that the
+step no longer requires the originals. An empty field never silently removes a
+declared input or bypasses the transport requirement.
+
+**Save image draft for review** submits the exact state revision, packet
+fingerprint and plan reference. Go revalidates the original bytes and records a
+new immutable plan for independent review. Saving preserves the active contract
+until normal activation and does not grant implementation start authority.
+Read the packet's execution eligibility again after the reviewed revision is
+active; original-image execution requires the supported Claude SDK transport.
+
+Paths, reference metadata and unresolved request IDs survive navigation within
+the live conversation binding. Previews remain local to the mounted editor and
+must be explicitly reread after reopening. Rejected drafts can refresh an audit
+revision while their contract, plan and original references remain unchanged.
+Unknown or queued saves reconcile the exact action and request ID without
+repeating the mutation. See [Image inputs](image-inputs.md#edit-images-on-an-existing-packet)
+for the full editing and recovery behavior.
 
 ## Design and approval in the same view
 
