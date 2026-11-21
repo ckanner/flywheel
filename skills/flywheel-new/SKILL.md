@@ -1,7 +1,7 @@
 ---
 name: flywheel-new
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 description: >-
   Register a thin Flywheel brief and start bounded design plus independent design review,
   then stop for human approval of the exact version. Use for "/flywheel-new <goal>" in DSH,
@@ -29,8 +29,9 @@ DSH 使用 `/flywheel-new <目标> [mode=auto|quick|full]`，Kimi 使用
 - Intake 来源只接受已经标为 approved 的候选。用户当前的直接请求本身是输入，
   不要求再次批准同一需求。New 的设计停止点是用户选择的工作方式。
 - 用 `flywheel config inspect --cwd <原仓库绝对路径> --json` 查看现有配置。
-  当前 DSH 对话只整理 brief；实际设计模型来自 `loops.design-plan`，未配置时
-  继承 `loops.plan` 后端。复杂设计不要求宿主先完成整套架构或所有 packet。
+  当前 DSH 对话只整理 brief；system 设计来自 `loops.design-plan`，未配置时继承
+  `loops.plan`。compact 使用 `planning.compact` 对应角色的具名 profile，未配置才
+  回退普通绑定。复杂设计不要求宿主先完成整套架构或所有 packet。
 - 检查 `git status --short`、分支、基线和 `git worktree list --porcelain`。
   复用明确属于本需求的任务集成 checkout。自动 worktree 管理开启而没有任务 checkout
   时，从核实基线创建独立任务分支/worktree；关闭时沿用所选目录，不自动另建。
@@ -61,6 +62,12 @@ task_branch="$(git -C "$repo_dir" branch --show-current)"
 已知约束和证据即可；暂不生成完整 Spec、全部 packets、审查通过或审批记录。
 框架中的固定决定、可委派细节和未决问题由实际方案输出区分。
 
+同时明确 `design-granularity` 与 `granularity-reason`：有真实代码证据、局部边界、
+已有模式和可运行验收，且没有明确 Full 要求时可以选 compact；否则选 system。
+compact 由引擎联合生成设计和单 packet，独立联合审查后仍停在精确版本人工批准点。
+跨模块设计、迁移、范围不明或显式 Full 使用 system。填写选择依据；mode=quick
+不能代替资格证据。引擎可因复杂性将 compact 升级 system，不重置授权或预算。
+
 DSH 的 `flywheel_control` 参数示例（路径与内容替换为本任务事实）：
 
 ```json
@@ -81,7 +88,9 @@ DSH 的 `flywheel_control` 参数示例（路径与内容替换为本任务事�
       "evidence": ["已读取的真实代码位置与约束；没有证据时用空数组"],
       "policy": "review-first",
       "implementation-authorized": false,
-      "mode": "auto"
+      "mode": "auto",
+      "design-granularity": "system",
+      "granularity-reason": "恢复流程涉及系统边界、失败语义和跨阶段验收"
     }
   }
 }
@@ -89,6 +98,7 @@ DSH 的 `flywheel_control` 参数示例（路径与内容替换为本任务事�
 
 只调用一次；`start:true` 在这里启动规划。用户明确只登记输入、连设计模型也先不运行时，
 可用 `start:false`，清楚说明尚未开始设计。不能把这个选择默认加到普通 New 上。
+局部任务按上述条件改为 compact 并填实际 evidence／reason；省略粒度仍采用 system。
 没有 DSH 工具时，将 `planning` 内层对象写入私有 JSON 文件，再交给 CLI：
 
 ```bash

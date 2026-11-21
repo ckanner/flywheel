@@ -61,6 +61,15 @@ func supportedPreparationReport(st *state.PreparationState) state.InvestigationR
 		CounterEvidence: "Runtime and production overrides were not checked.", Limitations: []string{"Local files only."}, Recommendation: "Repair within the granted scope.", Regression: "Run the frozen regression.", Rollback: "Restore the prior implementation if required."}
 }
 
+// Deliberately bypass the CAS writer to exercise admission against external
+// tampering. SavePreparation itself now rejects rewriting a settled report.
+func overwritePreparationFixture(t *testing.T, dir string, st *state.PreparationState) {
+	t.Helper()
+	raw, err := json.MarshalIndent(st, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(state.PreparationFile(dir), raw, 0o600))
+}
+
 func finishManagedPreparation(t *testing.T, fx fixture, opts investigation.Options) *state.PreparationState {
 	t.Helper()
 	st, err := investigation.Run(context.Background(), fx.taskDir, opts)
@@ -112,8 +121,7 @@ func TestPreparationHandoffImportsKnownAndUnknownUsageOnceOnOriginalDays(t *test
 	require.NoError(t, resumed.attachPreparation())
 	require.Equal(t, before, resumed.State.Budget)
 	prepared.Report.Summary = "A revised report changes the admitted source identity."
-	_, err := state.SavePreparation(fx.taskDir, prepared)
-	require.NoError(t, err)
+	overwritePreparationFixture(t, fx.taskDir, prepared)
 	require.ErrorContains(t, resumed.attachPreparation(), "provenance changed")
 	require.NoError(t, os.Remove(state.PreparationFile(fx.taskDir)))
 	require.ErrorContains(t, resumed.attachPreparation(), "load investigation provenance")
@@ -161,8 +169,7 @@ func TestPreparationHandoffRequiresSettledRepairAuthority(t *testing.T) {
 				prepared := finishManagedPreparation(t, fx, investigation.Options{})
 				if scenario == "different-workspace" {
 					prepared.Cwd = t.TempDir()
-					_, err := state.SavePreparation(fx.taskDir, prepared)
-					require.NoError(t, err)
+					overwritePreparationFixture(t, fx.taskDir, prepared)
 				}
 			}
 			if scenario == "corrupt" {

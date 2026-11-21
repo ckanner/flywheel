@@ -38,7 +38,12 @@ func TestRuntimeQuickReplanUsesTheExistingOneWayFullUpgrade(t *testing.T) {
 	c := quickContext(t, fx, quickDrivers())
 	enableSessionPolicy(c)
 	enableExecutionPolicy(c)
-	server, count := runtimeServer(t, func(map[string]string) string { return "replan" }, nil)
+	server, count := runtimeServer(t, func(choices map[string]string) string {
+		if _, failed := choices["replan"]; failed {
+			return "replan"
+		}
+		return "model-0"
+	}, nil)
 	enableRuntimeJEV(t, c, server.URL)
 	c.Drivers = sessionDriverSet(failingFirstDriver(t))
 	p := c.Packets["M01-T01"]
@@ -51,9 +56,9 @@ func TestRuntimeQuickReplanUsesTheExistingOneWayFullUpgrade(t *testing.T) {
 	require.Equal(t, "workflow-upgraded", status)
 	require.False(t, c.quick())
 	require.Equal(t, "full", c.State.Workflow.Effective)
-	require.Equal(t, int32(1), count.Load())
+	require.Equal(t, int32(2), count.Load())
 	require.Empty(t, c.State.Packets[p.PacketID].PendingStrategy)
-	require.Equal(t, "completed", c.State.RuntimeDecisions.Records[0].Status)
+	require.Equal(t, "completed", c.State.RuntimeDecisions.Records[1].Status)
 	require.Equal(t, fx.slug, c.State.Slug)
 	require.NoError(t, c.err())
 	require.Equal(t, "full", loadFixtureState(t, fx).Workflow.Effective)

@@ -279,6 +279,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		visited[channel] = true
 		permission := m.Config.PermissionMode(o.Role, current.Harness)
 		args := drivers.CallArgs{
+			Subscription:   m.Config.Subscription,
 			Prompt:         o.Prompt,
 			TaskDir:        m.TaskDir,
 			Cwd:            m.Cwd,
@@ -292,7 +293,7 @@ func CallAgent(m *Ctx, o CallOptions) CallResult {
 		}
 		// Advice stays fresh: preserve inspectable native history without
 		// remembering or feeding a returned session ID into another attempt.
-		args.PersistentSession = current.Harness == "codex-pro" || current.Harness == "claude-code-pro"
+		args.PersistentSession = current.Harness == "codex-pro" || current.Harness == "claude-code-pro" || current.Harness == "antigravity"
 		if config.SupportsScopedSessions(current.Harness) {
 			args.SessionTitle = m.sessionTitle(o.Role)
 		}

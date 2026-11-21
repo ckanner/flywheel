@@ -16,6 +16,7 @@ import (
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
 	"github.com/ckanner/flywheel/internal/decision"
+	"github.com/ckanner/flywheel/internal/decisionexec"
 	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/state"
@@ -34,7 +35,7 @@ func (c *Context) failureActions(packet *contract.Packet, code errs.ErrorCode, s
 	}
 	baseline := "repair"
 	if !spin {
-		add("repair", decision.Repair, "Continue one bounded repair attempt with the current executor and the recorded failure feedback.", []any{packet, ps.Attempts, ps.FailedAttempts, ps.ExecutionPolicy})
+		add("repair", decision.Repair, "Continue one bounded repair attempt with the current executor and the recorded failure feedback.", []any{packet, ps.Attempts, ps.FailedAttempts, executionPolicyDecisionFacts(ps.ExecutionPolicy)})
 	}
 	canPlan := c.quick() || packet.Escalation.OnFail == "return-to-planner" && ps.PlanRevisions < 1
 	if canPlan {
@@ -54,8 +55,11 @@ func (c *Context) failureActions(packet *contract.Packet, code errs.ErrorCode, s
 				continue
 			}
 			b := c.Config.ExecutionPolicy.Bindings[id]
+			if c.executionCandidateError(packet, b) != nil {
+				continue
+			}
 			actionID := "model-" + strconv.Itoa(slices.Index(route.Allowed, id))
-			add(actionID, decision.Model, boundedDecisionText(fmt.Sprintf("Continue repair using approved binding %s: harness=%s provider=%s channel=%s model=%s effort=%s permission=%s session=%s. This requires a cold start and does not add attempts.", id, b.Harness, b.Provider, b.Channel, b.Model, b.Thinking, b.Permission, b.SessionMode), 1024), []any{id, b, record.Identity, record.Current, record.Switches})
+			add(actionID, decision.Model, c.executionChoiceDescription(id, b), []any{id, b, record.Identity, record.Current, record.Switches})
 			index := slices.Index(route.QualityOrder, record.Current)
 			if spin && code == errL1Failed && index >= 0 && index+1 < len(route.QualityOrder) && route.QualityOrder[index+1] == id {
 				baseline = actionID
@@ -137,12 +141,22 @@ func (c *Context) runtimeJEVConfig(frozen *config.JEVConfig) (*config.JEVConfig,
 	if cfg.Budget.Enforce == "hard" || c.Config.Budget.Enforce == "hard" {
 		return nil, "hard-budget-without-enforceable-bound"
 	}
-	if sessionHash(cfg.ExecutionPolicy) != sessionHash(c.Config.ExecutionPolicy) {
+	if executionChoiceConfigurationHash(cfg) != executionChoiceConfigurationHash(c.Config) {
 		return nil, "execution-policy-changed"
 	}
 	j := cfg.JEV
+	if j.Backend == "subscription" {
+		current, err := cfg.ResolveJEVSubscription()
+		expected, initialErr := c.Config.ResolveJEVSubscription()
+		if c.State.RuntimeDecisions != nil {
+			expected = c.State.RuntimeDecisions.Subscription
+		}
+		if err != nil || initialErr != nil || sessionHash(current) != sessionHash(expected) {
+			return nil, "subscription-binding-changed"
+		}
+	}
 	if frozen != nil {
-		if j.Endpoint != frozen.Endpoint || j.Model != frozen.Model || j.KeyEnv != frozen.KeyEnv || j.TimeoutMS != frozen.TimeoutMS || j.MaxCalls < frozen.MaxCalls || j.MinApplicability > frozen.MinApplicability || j.MinChoice > frozen.MinChoice {
+		if (j.Backend == "subscription") != (frozen.Backend == "subscription") || j.Profile != frozen.Profile || j.Endpoint != frozen.Endpoint || j.Model != frozen.Model || j.KeyEnv != frozen.KeyEnv || j.TimeoutMS != frozen.TimeoutMS || j.MaxCalls < frozen.MaxCalls || j.MinApplicability > frozen.MinApplicability || j.MinChoice > frozen.MinChoice {
 			return nil, "policy-changed"
 		}
 		for _, category := range frozen.AllowedData {
@@ -155,7 +169,18 @@ func (c *Context) runtimeJEVConfig(frozen *config.JEVConfig) (*config.JEVConfig,
 	return &j, "enabled"
 }
 
+var subscriptionDecisionOptions = decisionexec.Options
+
 func (c *Context) decisionOptions(j *config.JEVConfig) decision.Options {
+	if j.Backend == "subscription" {
+		binding, _ := c.Config.ResolveJEVSubscription()
+		if c.State.RuntimeDecisions != nil {
+			binding = c.State.RuntimeDecisions.Subscription
+		}
+		options := subscriptionDecisionOptions(c.decisionContext(), binding, c.Cwd, c.TaskDir, time.Duration(j.TimeoutMS)*time.Millisecond)
+		options.AllowedKinds = []decision.ActionKind{decision.Diagnostic, decision.Repair, decision.Replan, decision.Model}
+		return options
+	}
 	lookup := c.EnvLookup
 	if lookup == nil {
 		lookup = os.LookupEnv
@@ -172,13 +197,18 @@ func (c *Context) initializeRuntimeDecisions(j *config.JEVConfig) *state.Runtime
 		if err != nil || preparation.RunID != source.RunID || preparation.ContractHash != source.ContractHash {
 			return nil
 		}
-		for _, receipt := range preparation.Decisions {
-			if receipt.Status != "skipped" {
-				imported++
+		for _, round := range state.PreparationRounds(preparation) {
+			for _, receipt := range round.Decisions {
+				if receipt.Status != "skipped" {
+					imported++
+				}
 			}
 		}
 	}
 	ledger := &state.RuntimeDecisions{Version: 1, Config: j, Used: imported, ImportedCalls: imported, Status: "enabled", Records: []*state.RuntimeDecisionRecord{}}
+	if j.Backend == "subscription" {
+		ledger.Subscription, _ = c.Config.ResolveJEVSubscription()
+	}
 	c.State.RuntimeDecisions = ledger
 	return ledger
 }
@@ -241,7 +271,7 @@ func (c *Context) failureDecision(packet *contract.Packet, code errs.ErrorCode, 
 	if ledger != nil {
 		ledger.Status = status
 	}
-	if j == nil || !slices.Contains(j.AllowedData, decision.TaskSummary) || !slices.Contains(j.AllowedData, decision.DiagnosticFacts) || c.decisionOptions(j).APIKey == "" || c.budgetGate() == "stop" {
+	if j == nil || !slices.Contains(j.AllowedData, decision.TaskSummary) || !slices.Contains(j.AllowedData, decision.DiagnosticFacts) || j.Backend != "subscription" && c.decisionOptions(j).APIKey == "" || c.budgetGate() == "stop" {
 		return ""
 	}
 	if ledger == nil {
@@ -255,7 +285,8 @@ func (c *Context) failureDecision(packet *contract.Packet, code errs.ErrorCode, 
 	if err != nil || len(snapshot.Actions) < 2 || decision.Validate(snapshot, j.DecisionPolicy()) != nil {
 		return ""
 	}
-	record := &state.RuntimeDecisionRecord{ID: id, Packet: packet.PacketID, Attempt: ps.Attempts, PlanRevisions: ps.PlanRevisions, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record := &state.RuntimeDecisionRecord{ModelBindings: c.runtimeModelBindings(packet, snapshot.Actions), ID: id, Packet: packet.PacketID, Attempt: ps.Attempts, PlanRevisions: ps.PlanRevisions, StartedAt: c.nowISO(), Snapshot: &snapshot, Action: snapshot.BaselineID, Status: "pending"}
+	record.Execution = runtimeExecutionCheckpoint(c.State, packet.PacketID)
 	ledger.Records = append(ledger.Records, record)
 	ledger.Used++
 	ps.PendingStrategy = id
@@ -278,6 +309,12 @@ func (c *Context) failureDecision(packet *contract.Packet, code errs.ErrorCode, 
 		selection = decision.Select(current, receipt, j.DecisionPolicy(), options)
 	}
 	record.Selection, record.Action = &selection, selection.ActionID
+	if decision.CleanupUnknown(receipt) {
+		ledger.Status = "native-cleanup-unconfirmed"
+		c.save()
+		c.fatal = fmt.Errorf("subscription decision cleanup requires reconciliation; refusing another action")
+		return ""
+	}
 	if currentErr != nil || sessionHash(snapshot) != sessionHash(current) {
 		record.Status, ps.PendingStrategy = "stale", ""
 		c.save()
@@ -494,6 +531,9 @@ func (c *Context) resumeRuntimeDecision(packet *contract.Packet) string {
 		if record.ID != ps.PendingStrategy {
 			continue
 		}
+		if record.Snapshot.Version == 3 {
+			return c.resumeInitialExecutionDecision(packet, record)
+		}
 		if record.Status == "feedback-running" || record.Status == "feedback-unknown" || record.Status == "feedback-stale" {
 			c.fatal = fmt.Errorf("feedback action outcome requires reconciliation; refusing replay")
 			return ""
@@ -524,6 +564,12 @@ func (c *Context) resumeRuntimeDecision(packet *contract.Packet) string {
 		// model proposal. Resume the frozen deterministic baseline instead.
 		record.Selection = &decision.Selection{ActionID: record.Snapshot.BaselineID, Reason: "recovered-without-adoption"}
 		record.Action = record.Snapshot.BaselineID
+		if decision.CleanupUnknown(receipt) {
+			ledger.Status = "native-cleanup-unconfirmed"
+			c.save()
+			c.fatal = fmt.Errorf("subscription decision cleanup requires reconciliation; refusing another action")
+			return ""
+		}
 		active, status := c.runtimeJEVConfig(ledger.Config)
 		ledger.Status = status
 		if c.err() != nil || active == nil || c.budgetGate() == "stop" || !c.runtimeRecordCurrent(packet, record) {

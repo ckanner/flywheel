@@ -70,6 +70,22 @@ func TestBuildPlanningPromptKeepsNonNativeHarnessForeground(t *testing.T) {
 	assert.NotContains(t, BuildPlanningPrompt(st, request, false, nil, PlanningPromptOptions{NativeAgents: true}), note)
 }
 
+func TestCompactPlannerAndReviewerReceiveTheCompleteJointContract(t *testing.T) {
+	ref := planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)}
+	p := &planning.State{Brief: planning.Brief{DesignGranularity: "compact"}, CurrentPlan: &ref,
+		Plans: []planning.ExecutionPlan{{Ref: ref, Preparation: "compact-v1", Files: map[string]string{"spec.md": "complete scope", "task-packet-M01-T01.md": "executable checks"}}}}
+	request := planning.Request{Scope: "design"}
+	planner := BuildPlanningPrompt(p, request, false, nil)
+	require.Contains(t, planner, "compact:{version:1")
+	require.Contains(t, planner, "Spec schema:")
+	reviewer := BuildPlanningPrompt(p, request, true, nil)
+	require.Contains(t, reviewer, "coverage-verdict:complete")
+	input := planningPromptInput(t, reviewer)
+	require.Contains(t, string(input["compact-execution-plan"]), "executable checks")
+	request.DesignGranularity = "system"
+	require.NotContains(t, BuildPlanningPrompt(p, request, false, nil), "本轮选择了有事实依据的局部紧凑准备")
+}
+
 func TestBuildPlanningPromptSeparatesRolesAndTreatsExternalMaterialAsData(t *testing.T) {
 	root := planning.Ref{Revision: 2, Digest: strings.Repeat("a", 64)}
 	child := planning.Ref{Revision: 3, Digest: strings.Repeat("b", 64)}

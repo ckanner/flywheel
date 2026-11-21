@@ -1,7 +1,7 @@
 ---
 name: flywheel-run
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 description: Start or resume an authorized, prepared Flywheel task through the Go control interface, retaining its persisted Quick or Full strategy; optionally choose a mode or pause before review in the foreground. Use for "/flywheel-run docs/<slug>" in DSH, "/skill:flywheel-run docs/<slug>" in Kimi, or a request to resume an existing task. Use flywheel-task to prepare a new goal and launch it.
 whenToUse: 用户要启动或恢复已准备且范围已获授权的 Flywheel 任务时使用；保留原任务身份与策略，可选在 Review 前暂停。
 compatibility: "Requires the Flywheel CLI with control, config inspect and doctor commands, plus the harnesses selected by the task configuration."
@@ -31,8 +31,10 @@ DSH 在对话中使用 `/flywheel-run <任务资料目录>`；Kimi 使用
 - 用户在 Flywheel 视图选择“批准此版本”仅批准；“批准此版本并开始”同时授权启动。
   已批准但 `start-authorized:false` 时，使用真实用户按钮“开始已批准方案”。
   模型不得调用 approve、伪造用户 actor/审批环境或代输入终端 digest。
-- 已获启动授权且无阻断时，按下面相同 `control start` 恢复。Go 会先完成当前所需
-  子计划与独立 Plan Review，核对根方案范围，再进入实现，不需要一次细化全部远期任务。
+- 已获启动授权且无阻断时，按下面相同 `control start` 恢复。Go 复用有效设计、计划
+  与审查；已通过 `compact-v1` 联合审查的单 packet 直接核对并激活，不另造 Plan Review。
+  system 准备仍细化当前所需子计划并独立审查，核对根方案范围后进入实现，
+  不需要一次细化全部远期任务。
 - 显式 Plan 只做规划且会停下，即使先前有启动授权。接下来 Run 是一次新的继续动作。
 - pending-activation、过期引用、未知调用、清理未确认和预算停止必须先由原账本核对；
   不能复制任务或切模式绕过。反馈改变输入后，要先 Plan，不把新文字当旧批准的延伸。
@@ -50,9 +52,19 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
 调查终态 supported / inconclusive / access-blocked / cancelled 不等于代码 completed。
 若用户要求仅看方案而尚未授权运行，继续保留原停止点。JEV 服从有效配置的唯一
 `jev.enabled` 开关与原准备策略；关闭会停止后续请求及采用，不重置原回执／预算。
-`awaiting-report` 后形成报告，不重复启动取证，也不手工改准备状态来开启 JEV。
+`awaiting-report` 表示取证已结束；配置了 `loops.investigate` 时，同一 Run 入口继续
+受管证据分析并生成报告，不重复取证。`analysis-pending` 只能先核对原调用；不得
+重发 prompt、手工提交报告或另开新轮绕过未知结果／清理。旧配置未绑定分析角色时
+沿用宿主提交报告的兼容路径，不手工改准备状态来开启 JEV。
 复现命令与 HTTP 查询同样使用原动作回执；超时、取消、截断或清理未确认不能
 翻译为成功。引擎记录保留副本或未知动作时先核对现场，不另起命令代替恢复。
+
+已有报告后，普通 Run 不重新取证。用户补充证据并要求继续排查时，按
+[调查入口说明](../flywheel-task/references/investigation.md#以新证据继续同一调查)
+准备同任务完整新轮契约，保留原 ID、goal、intent、implementation-scope 与剩余预算。
+向 Go 提交一次 `investigation: {action: continue, revision: <最新版本>, contract: <新契约>}`，
+成功后按原授权调用一次 Run；旧报告和累计用量保留。未决动作／分析／JEV 清理、预算
+耗尽或已经采用的实施来源不能靠新轮绕过；revision 冲突先重读，不循环重提旧请求。
 
 ## 步骤
 
@@ -96,8 +108,8 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
    `codex exec` 或父 agent 委派。旧配置保留原后端，要迁移先让用户审阅实际配置差异。
    用户要求 SDK 检查时可加 `--probe`，只初始化并验证目录／权限／关闭，不推理。
    Codex Pro 只做本地包／命令检查；其完整策略事后检查警告不能翻译成运行前隔离保证。
-   可选 `claude-code-pro` 同样由独立 worker 调用公开 machine API；先核对配套
-   0.6.0 插件与 CLI。首版只支持明确 full-access，不把原生审批模式当作 OS 沙箱。
+   `claude-code-pro` 同样由独立 worker 调用公开 machine API；先核对配套
+   0.7.0 插件与 CLI。普通执行只支持明确 full-access，不把原生审批模式当作 OS 沙箱。
    不主动改变 loop 绑定，也不在 skill 内扫描或选择 Claude session。
    `ok:true` 不等于账号、额度或模型能力已验证，unknown 不得翻译为通过。
 
@@ -158,7 +170,7 @@ pause=review；这些参数属于已有合法 Spec 的实现阶段。不要补�
 确认 worker／guardian／app-server 已结束只解决清理问题，不证明调用结果已知；
 Go 仍须核对可信终态回执。不要切换 fresh、换任务目录、删除回执或重置 state 来绕过阻断。
 外层退出或等待几秒不算证明，skill 不自行选择会话 ID 或实现恢复循环。
-配套 Codex 0.10.2／Claude 0.6.0 支持由 Go 只读核对原调用 journal；pending 不证明
+配套 Codex 0.10.2／Claude 0.7.0／Antigravity 0.1.0 支持由 Go 只读核对原调用 journal；pending 不证明
 进程仍活着，找到成功回执也须有原候选检查点。只从原路径调用一次正常恢复入口，
 不删除 `.sessions`，不直接调用插件重发 prompt。按角色覆盖与质量阈值由 Go 解释，
 阈值默认关闭，重建不会重置预算或解除 unknown；不在 skill 中另做压缩。

@@ -51,6 +51,58 @@ test('Agent and Swarm use the actual owned REST/WS session, preserve account/mod
   }
 });
 
+test('subscription-only native Kimi validates the owned account/config and disables ambiguous service routes per prompt', async () => {
+  const f = await fixture();
+  f.input.subscription = { version: 1, mode: 'subscription-only' };
+  f.input.native.agents = { enabled: false };
+  const result = await runKimiWorker(f.input, f.options);
+  assert.equal(result.status, 'ok', JSON.stringify(result.error));
+  assert.equal(result.native.observed.subscription.authentication, 'native-oauth');
+  assert.equal(result.native.observed.subscription.extraUsage, 'unknown');
+  const calls = await f.log();
+  const prompt = calls.find(row => row.method === 'POST' && row.path.endsWith('/prompts'));
+  assert.deepEqual(prompt.body.disabled_tools, ['CronCreate', 'Agent', 'AgentSwarm', 'WebSearch', 'FetchURL']);
+  assert.equal(calls.filter(row => row.path === '/api/v1/providers').length, 3);
+  assert.ok(calls.findIndex(row => row.path === '/api/v1/providers') < calls.indexOf(prompt));
+  assert.ok(calls.findIndex(row => row.path === '/api/v1/config') < calls.indexOf(prompt));
+  assert.doesNotMatch(JSON.stringify(result), /fixture-secret/);
+});
+
+for (const fixtureCase of ['subscription-api', 'subscription-endpoint', 'subscription-model-key', 'subscription-drift']) {
+test(`${fixtureCase} blocks Kimi before prompt and confirms owned runtime cleanup`, async () => {
+  const f = await fixture('agent', fixtureCase);
+  f.input.subscription = { version: 1, mode: 'subscription-only' };
+  f.input.native.agents = { enabled: false };
+  const result = await runKimiWorker(f.input, f.options);
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'AUTH');
+  assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+  assert.equal(result.lifecycle.cleanupConfirmed, true);
+  assert.ok(!(await f.log()).some(row => row.method === 'POST' && row.path.endsWith('/prompts')));
+});
+}
+
+test('subscription-only cannot silently admit Swarm, Tower or unrestricted native children', async () => {
+  const f = await fixture();
+  f.input.subscription = { version: 1, mode: 'subscription-only' };
+  for (const native of [{ version: 1, mode: 'swarm' }, { version: 1, mode: 'agent' }, { version: 1, mode: 'tower' },
+    { version: 1, mode: 'agent', agents: { enabled: false }, agentProfile: 'custom' }]) {
+    assert.throws(() => validateKimiNativeStart({ ...f.input, native }), { code: 'INVALID_REQUEST' });
+  }
+});
+
+test('cancelled subscription lookup stops the actual owned Kimi runtime without sending a prompt', async () => {
+  const f = await fixture('agent', 'subscription-hang');
+  f.input.subscription = { version: 1, mode: 'subscription-only' };
+  f.input.native.agents = { enabled: false };
+  f.input.timeoutMs = 500;
+  const result = await runKimiWorker(f.input, f.options);
+  assert.equal(result.error.code, 'TIMEOUT');
+  assert.equal(result.lifecycle.dispatch, 'not-dispatched');
+  assert.equal(result.lifecycle.cleanupConfirmed, true);
+  assert.ok(!(await f.log()).some(row => row.method === 'POST' && row.path.endsWith('/prompts')));
+});
+
 test('native child identity and complete step usage are reconciled before success', async () => {
   const f = await fixture('swarm', 'child');
   const result = await runKimiWorker(f.input, f.options);

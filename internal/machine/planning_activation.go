@@ -182,9 +182,17 @@ func (c *Context) checkPlanningExports(create bool) error {
 			return err
 		}
 	}
-	root, err := planningRoot(c.TaskDir, true)
+	root, err := planningRoot(c.TaskDir, create)
 	if err != nil {
 		return err
+	}
+	if !create {
+		parent := root
+		root, err = parent.OpenRoot("planning")
+		parent.Close()
+		if err != nil {
+			return err
+		}
 	}
 	defer root.Close()
 	expected := planningExports(c.State.Planning)

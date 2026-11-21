@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
@@ -31,6 +32,7 @@ const KimiDefaultModel = "kimi-code/k3.1-pro"
 const KimiCommandEnv = "FLYWHEEL_KIMI_BIN"
 
 type KimiArgs struct {
+	Subscription      *config.SubscriptionPolicy
 	Native            json.RawMessage
 	Managed           *NativeAdmission
 	WorkspaceCwd      string
@@ -166,6 +168,13 @@ func parseKimiUsage(raw json.RawMessage) *Usage {
 func RunKimi(a KimiArgs) Result {
 	if len(a.Native) != 0 {
 		return runKimiNative(a)
+	}
+	if a.Subscription != nil {
+		out := invalidHarnessResult("kimi", a.Model, "subscription-only Kimi requires an explicit native-profile with mode=agent and agents.enabled=false; print cannot verify the account and disable separately billed service tools in the same process")
+		out.ErrorCode = errs.INVALID_REQUEST
+		out.Session = &SessionOutcome{Protocol: "kimi-print/v1", RequestID: a.RequestID,
+			Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "unknown"}
+		return out
 	}
 	tracked := a.PersistentSession || a.RequestID != ""
 	if tracked && (strings.TrimSpace(a.RequestID) == "" || strings.ContainsAny(a.RequestID+a.SessionID, "\x00\r\n")) {

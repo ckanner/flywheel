@@ -51,6 +51,7 @@ func p3Invocation(t *testing.T, role, scope, lastEvent string, loseReceipt bool)
 				e.Outcome, e.CleanupConfirmed = "completed", true
 			}
 			require.NoError(t, call.OnLifecycle(e))
+			require.Equal(t, i >= 3, c.sessionRecord(role, scope).Last.DispatchObserved, "only the exact durable turn-accepted event proves live dispatch")
 			if stage == lastEvent {
 				break
 			}

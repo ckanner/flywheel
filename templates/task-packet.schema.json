@@ -19,6 +19,21 @@
     "done-report-format"
   ],
   "properties": {
+    "collaboration": {
+      "type": "object", "additionalProperties": false, "required": ["version", "tasks"],
+      "description": "Reviewed parallel task split. Task write scopes must be disjoint across tasks and contained in schedule.writes. Requires the Full workflow; does not prove native child completion.",
+      "properties": {
+        "version": {"const": 1},
+        "tasks": {"type": "array", "minItems": 2, "maxItems": 8,
+          "items": {"type": "object", "additionalProperties": false, "required": ["goal", "writes"],
+            "properties": {
+              "goal": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+              "writes": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        }
+      }
+    },
     "schedule": {
       "type": "object", "additionalProperties": false, "required": ["after", "writes"],
       "properties": {
@@ -49,7 +64,7 @@
     },
     "route": {
       "type": "string",
-      "enum": ["frontend", "default", "multimodal", "hard"],
+      "enum": ["frontend", "default", "complex", "backend", "batch", "multimodal", "hard"],
       "description": "Execution route, resolved via the route table in flywheel.config.json (DESIGN.md §4.2)."
     },
     "needs-live-credentials": {
@@ -66,6 +81,22 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Files placed in the stable prompt prefix (DESIGN.md §8)."
+    },
+    "input-images": {
+      "type": "object", "additionalProperties": false, "required": ["version", "images"],
+      "description": "Frozen image attachments for Execute through Claude Code Pro. Paths are relative to the task repository checkout, never URLs or automatic text substitutions. Files must be regular, symlink-free, SHA-256 matched and valid PNG/JPEG/GIF/WebP, at most 4 MiB each and 8 MiB combined; 8192 pixels per dimension and 16 million pixels per image.",
+      "properties": {
+        "version": {"const": 1},
+        "images": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true,
+          "items": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "media-type"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1, "maxLength": 512},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "media-type": {"enum": ["image/png", "image/jpeg", "image/gif", "image/webp"]}
+            }
+          }
+        }
+      }
     },
     "boundaries": {
       "type": "object",

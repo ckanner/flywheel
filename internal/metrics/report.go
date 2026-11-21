@@ -22,6 +22,7 @@ type Report struct {
 	Groups        []Group  `json:"groups"`
 }
 type Call struct {
+	Native  *NativeObservation `json:"native,omitempty"`
 	Session *struct {
 		Last struct {
 			UsageStatus string `json:"usage-status"`
@@ -86,7 +87,10 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 		return nil, fmt.Errorf("metrics exceed 64 MiB; archive older telemetry")
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 4096), 2<<20)
+	// A native receipt and its bounded native projection may both be retained
+	// in one invocation record. Match the public receipt-frame ceiling without
+	// changing the whole-file or displayed-call limits.
+	scanner.Buffer(make([]byte, 4096), 8<<20)
 	scanner.Split(func(data []byte, eof bool) (int, []byte, error) {
 		if eof && len(data) > 0 && !bytes.Contains(data, []byte{'\n'}) {
 			return 0, nil, fmt.Errorf("unterminated metrics record")
@@ -106,6 +110,16 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 				return nil, err
 			}
 			continue
+		}
+		nativeHarness := call.Harness
+		if nativeHarness == "" && call.Kind == "reconciliation" {
+			if index, known := identities[call.Reconciles]; known {
+				nativeHarness = calls[index].Harness
+			}
+		}
+		call.Native, err = projectAntigravityNative(scanner.Bytes(), nativeHarness)
+		if err != nil {
+			return nil, err
 		}
 		if call.Cost != nil && *call.Cost < 0 || call.Duration != nil && *call.Duration < 0 || call.Usage != nil && (call.Usage.Input < 0 || call.Usage.Output < 0 || call.Usage.Total < 0) {
 			return nil, fmt.Errorf("negative metrics observation")
@@ -131,6 +145,9 @@ func parseReport(input io.Reader, runIDs ...string) (*Report, error) {
 			original.Receipt = call.Receipt
 			if call.Session != nil {
 				original.Session = call.Session
+			}
+			if call.Native != nil {
+				original.Native = call.Native
 			}
 			continue
 		}

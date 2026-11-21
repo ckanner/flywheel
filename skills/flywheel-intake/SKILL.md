@@ -1,10 +1,10 @@
 ---
 name: flywheel-intake
 metadata:
-  version: "1.6.0"
+  version: "1.7.0"
 description: Scan task sources (GitHub issues / custom commands) into the triage inbox and get LLM triage advice — candidates never become tasks without human approval. Use for "/flywheel-intake" in DSH, "/skill:flywheel-intake" in Kimi, or a request to discover new flywheel task candidates.
 whenToUse: 当用户想扫描任务源（issue/CI 失败/依赖升级）发现候选任务、或刷新 triage 分诊建议时使用。
-compatibility: "Requires the Flywheel CLI and configured Intake harness; default DSH DeepSeek Flash. GitHub issue sources also need gh."
+compatibility: "Requires the matching Flywheel CLI and configured Intake harness; the subscription default uses Gemini Hydrogen low through official Antigravity CLI. GitHub issue sources also need gh."
 arguments: slug source
 
 ---

@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ADAPTER, loadAdapter, machineRequest, invokeAdapter, recoverAdapter, runtimeOptions } from '../src/claude-code-pro-bridge.js';
+import { ADAPTER, LIMITS, loadAdapter, machineRequest, invokeAdapter, recoverAdapter, runtimeOptions } from '../src/claude-code-pro-bridge.js';
 
 const require = createRequire(import.meta.url);
 let installed = false;
 try { require.resolve('dsh-subagent-claude-code-pro/package.json'); installed = true; }
 catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.6.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
+const liveContract = { skip: installed ? false : 'optional Claude Code Pro 0.7.0 not installed; install the source candidate to run this public-API integration', timeout: 15000 };
 const worker = fileURLToPath(new URL('../dist/claude-code-pro-worker.js', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-code-pro.js', import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -33,11 +34,21 @@ async function setup(t, scenario = 'ok') {
   for (const key of ['NODE_OPTIONS', 'NODE_PATH', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[key];
   const request = { type: 'start', protocol: 1, requestId: 'claude-attempt-1', cwd, model: 'fixture-model',
     reasoningEffort: 'high', permissionMode: 'danger-full-access', prompt: 'offline task', timeoutMs: 5000 };
-  const launch = ({ input = request, args = [], binary = worker, environment = env } = {}) => {
+  const launch = ({ input = request, args = [], binary = worker, environment = env, onFrame } = {}) => {
     const child = spawn(process.execPath, [binary, ...args], { cwd, env: environment, stdio: ['pipe', 'pipe', 'pipe'] });
     const run = { child, stdout: '', stderr: '', closed: false };
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-    child.stdout.on('data', text => { run.stdout += text; });
+    let frameBuffer = '';
+    child.stdout.on('data', text => {
+      run.stdout += text;
+      if (onFrame) {
+        frameBuffer += text;
+        for (let newline; (newline = frameBuffer.indexOf('\n')) >= 0;) {
+          const line = frameBuffer.slice(0, newline); frameBuffer = frameBuffer.slice(newline + 1);
+          onFrame(JSON.parse(line), run);
+        }
+      }
+    });
     child.stderr.on('data', text => { run.stderr += text; });
     child.stdin.on('error', () => {});
     run.done = new Promise((resolve, reject) => {
@@ -104,6 +115,30 @@ test('request translation preserves explicit native choices and rejects unsuppor
     { credentialEnv: { ANTHROPIC_API_KEY: 'explicit-test-only' } });
 });
 
+test('Claude image admission bounds prompt bytes, count, per-image bytes, total bytes and canonical base64 before parsing', () => {
+  class MachineInputError extends Error {}
+  const calls = [];
+  const api = { MachineInputError, parseMachineRequest: value => { calls.push(value); return value; } };
+  const request = { type: 'start', protocol: 1, requestId: 'media-bounds', cwd: '/tmp', prompt: 'task',
+    model: 'claude-fable-5-2', reasoningEffort: 'high', permissionMode: 'danger-full-access' };
+  const image = { mimeType: 'image/png', data: 'AA==' };
+  const maximum = { ...image, data: Buffer.alloc(LIMITS.imageBytes, 37).toString('base64') };
+  const oversize = { ...image, data: Buffer.alloc(LIMITS.imageBytes + 1).toString('base64') };
+  for (const change of [
+    { prompt: 'x'.repeat(LIMITS.promptBytes + 1) }, { prompt: '界'.repeat(Math.ceil(LIMITS.promptBytes / 3)) },
+    { prompt: '' }, { prompt: '\0' }, { images: null }, { images: {} }, { images: [null] },
+    { images: Array(5).fill(image) }, { images: [{ ...image, mimeType: 'image/svg+xml' }] },
+    { images: [{ ...image, path: '/untrusted/file.png' }] }, { images: [oversize] },
+    { images: [maximum, maximum, image] },
+    ...['', 'A', 'AA=A', 'AB==', 'AAB=', 'AA==\n', 'AAAA==='].map(data => ({ images: [{ ...image, data }] })),
+  ]) assert.throws(() => machineRequest({ ...request, ...change }, api, {}), { code: 'INVALID_REQUEST' });
+  assert.equal(calls.length, 0, 'invalid media never reaches even the public adapter parser');
+  assert.equal(machineRequest({ ...request, prompt: 'x'.repeat(LIMITS.promptBytes) }, api, {}).prompt.length, LIMITS.promptBytes);
+  assert.deepEqual(machineRequest({ ...request, images: [maximum, maximum] }, api, {}).images, [maximum, maximum]);
+  const formats = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].map(mimeType => ({ ...image, mimeType }));
+  assert.deepEqual(machineRequest({ ...request, images: formats }, api, {}).images, formats);
+});
+
 test('missing, stale and incompatible optional peers prove non-dispatch without breaking other adapters', async t => {
   const f = await setup(t);
   const directory = join(f.cwd, 'isolated-worker');
@@ -125,7 +160,7 @@ test('missing, stale and incompatible optional peers prove non-dispatch without 
   await writeFile(join(peer, 'package.json'), JSON.stringify({ ...manifest, version: ADAPTER.version }));
   await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=999;');
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_MISMATCH');
-  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_ACTIVITY_VERSION=1; export const MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export const MACHINE_NATIVE_VERSION=1; export const MACHINE_NATIVE_CAPABILITIES={version:1,agents:true,workflows:true}; export const validateNativeReviewRequest=()=>{}; export const validateInteractiveTeamRequest=()=>{}; export const runNativeReview=()=>{}; export const runInteractiveTeam=()=>{}; export const recoverNativeJob=()=>{}; export const controlInteractiveTeam=()=>{}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
+  await writeFile(join(peer, 'machine.js'), 'export const MACHINE_SUBSCRIPTION_CAPABILITIES={version:1,sameProcessBeforePrompt:true,nativePreflight:true,extraUsageEvidence: "sdk-usage-0.3.326"}; export const inspectSubscription=()=>{}; export const MACHINE_PROTOCOL_VERSION=1; export const MACHINE_ACTIVITY_VERSION=1; export const MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}; export const MACHINE_LIFECYCLE_VERSION=1; export const MACHINE_LIFECYCLE_CAPABILITIES={durableJournal:true,readOnlyRecovery:true,threadReadyBeforeDispatch:false}; export const MACHINE_NATIVE_VERSION=1; export const MACHINE_NATIVE_CAPABILITIES={version:1,agents:true,workflows:true}; export const validateNativeReviewRequest=()=>{}; export const validateInteractiveTeamRequest=()=>{}; export const runNativeReview=()=>{}; export const runInteractiveTeam=()=>{}; export const recoverNativeJob=()=>{}; export const controlInteractiveTeam=()=>{}; export async function recoverMachine(){}; export class MachineInputError extends Error{}; export const parseMachineRequest=x=>x; export async function runMachine(){throw new Error("unknown after invocation")}');
   const unknown = resultFrame(await f.launch(options).done, 1);
   assert.equal(unknown.admission, undefined);
   assert.equal(unknown.error.code, 'WORKER_ERROR');
@@ -247,13 +282,82 @@ test(`${role}: native Agent metadata stays separate from root output and managed
 
 test('machine schema and image requests reach the CLI through the pinned public parser', liveContract, async t => {
   const f = await setup(t);
+  const bytes = await readFile(new URL('./fixtures/multimodal-reference.png', import.meta.url));
+  const image = { mimeType: 'image/png', data: bytes.toString('base64') };
   const frame = resultFrame(await f.launch({ input: { ...f.request, native: { version: 1 }, maxBudgetUsd: 2,
-    images: [{ mimeType: 'image/png', data: 'aGVsbG8=' }],
+    images: [image],
     outputSchema: { type: 'object', properties: { answer: { type: 'integer' } }, required: ['answer'] } } }).done);
   assert.deepEqual(frame.receipt.structured, { answer: 42 });
   const [call] = await f.records();
-  assert.equal(call.userContent[1].type, 'image');
+  assert.deepEqual(call.userContent, [{ type: 'text', text: f.request.prompt },
+    { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } }]);
+  assert.deepEqual(frame.receipt.requested.inputImages, { version: 1, images: [{ mimeType: image.mimeType,
+    sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }] });
   assert.equal(option(call, '--max-budget-usd'), '2');
+});
+
+test('a 16 MiB Claude frame carries 8 MiB attachments through the real SDK while one extra wire byte blocks dispatch', liveContract, async t => {
+  const f = await setup(t);
+  const bytes = Buffer.alloc(LIMITS.imageBytes, 37);
+  const image = { mimeType: 'image/png', data: bytes.toString('base64') };
+  const input = JSON.stringify({ ...f.request, images: [image, image] });
+  const frame = input + ' '.repeat(LIMITS.requestBytes - Buffer.byteLength(input) - 1) + '\n';
+  assert.equal(Buffer.byteLength(frame), 16 * 1024 * 1024);
+  const result = resultFrame(await f.launch({ input: frame }).done);
+  assert.equal(result.receipt.ok, true, JSON.stringify(result.receipt.failure));
+  const [call] = await f.records();
+  assert.equal(call.userContent.length, 3);
+  for (const content of call.userContent.slice(1)) assert.deepEqual(content,
+    { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } });
+  const identity = { mimeType: image.mimeType, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+  assert.deepEqual(result.receipt.requested.inputImages, { version: 1, images: [identity, identity] });
+  const rejected = resultFrame(await f.launch({ input: frame.slice(0, -1) + ' \n' }).done, 1);
+  assert.equal(rejected.error.code, 'INPUT_LIMIT');
+  assert.deepEqual(rejected.admission, { dispatched: false, cleanupConfirmed: true });
+  assert.equal((await f.records()).length, 1);
+});
+
+test('durable subscription image calls retain metadata and recover without reading or dispatching another attachment', liveContract, async t => {
+  const f = await setup(t);
+  const bytes = await readFile(new URL('./fixtures/multimodal-reference.png', import.meta.url));
+  const image = { mimeType: 'image/png', data: bytes.toString('base64') };
+  const manifest = { version: 1, images: [{ mimeType: image.mimeType,
+    sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }] };
+  const input = { ...f.request, protocol: 3, threadMode: 'persistent', model: 'claude-fable-5-2',
+    subscription: { version: 1, mode: 'subscription-only' }, recoveryDirectory: join(f.cwd, 'image-journal'), images: [image] };
+  const events = [];
+  const result = await f.launch({ input, onFrame(frame, run) {
+    if (frame.type !== 'lifecycle') return;
+    const event = frame.lifecycle; events.push(event);
+    run.child.stdin.write(JSON.stringify({ type: 'ack', protocol: 3, requestId: input.requestId,
+      runId: event.runId, sequence: event.sequence }) + '\n');
+  } }).done;
+  assert.equal(result.code, 0, result.stderr + result.stdout);
+  const receipt = JSON.parse(result.stdout.trim().split('\n').at(-1)).receipt;
+  assert.equal(receipt.ok, true, JSON.stringify(receipt.failure));
+  assert.deepEqual(receipt.requested.inputImages, manifest);
+  assert.deepEqual(events.map(event => event.event), ['dispatch-intent', 'dispatch-possible', 'terminal', 'cleanup-confirmed']);
+  const [call] = await f.records();
+  assert.deepEqual(call.userContent[1], { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data } });
+  const [probe] = (await readFile(join(f.cwd, 'claude-preflight.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(probe.pid, call.pid, 'billing admission and attachment use the same native CLI');
+  const recovery = { type: 'recover', protocol: 3, requestId: input.requestId, runId: receipt.runId,
+    recoveryDirectory: input.recoveryDirectory, original: { cwd: f.cwd, model: input.model,
+      reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, threadMode: input.threadMode,
+      subscription: input.subscription } };
+  const recovered = await f.launch({ input: recovery }).done;
+  assert.equal(recovered.code, 0, recovered.stderr + recovered.stdout);
+  const evidence = JSON.parse(recovered.stdout).recovery;
+  assert.deepEqual(evidence.context, { inputImages: manifest });
+  assert.deepEqual(evidence.receipt, receipt);
+  const journal = await readFile(join(input.recoveryDirectory, 'machine-journal.json'), 'utf8');
+  assert.equal(journal.includes(image.data), false, 'persistent evidence contains only input image identity');
+  const rejectedRun = await f.launch({ input: { ...recovery, images: [image] } }).done;
+  assert.equal(rejectedRun.code, 1, rejectedRun.stderr + rejectedRun.stdout);
+  const rejected = JSON.parse(rejectedRun.stdout);
+  assert.equal(rejected.type, 'recovery');
+  assert.equal(rejected.error.code, 'INVALID_REQUEST');
+  assert.equal((await f.records()).length, 1, 'read-only recovery and rejected media substitution never replay');
 });
 
 test('dedicated jobs preflight once and route through their independent public interfaces', async () => {
@@ -416,4 +520,20 @@ test('SIGKILL of the worker closes its guardian lifeline and stops native work',
     assert.ok(Date.now() < deadline, 'native Claude process group survived loss of its worker');
     await delay(20);
   }
+});
+
+test('subscription-only checks actual SDK billing before one prompt and rejects extra usage or root substitution', liveContract, async t => {
+ for(const scenario of ['ok','extra-usage-enabled','root-model-switch']) {
+  const f=await setup(t,scenario);
+  const input={...f.request,model:'claude-fable-5-2',subscription:{version:1,mode:'subscription-only'}};
+  const frame=resultFrame(await f.launch({input}).done,scenario==='ok'?0:1);
+  assert.equal(frame.receipt.subscription.extraUsageEnabled,scenario==='extra-usage-enabled');
+  const log=await f.records();
+  assert.equal(log.length,scenario==='extra-usage-enabled'?0:1);
+  const probes=(await readFile(join(f.cwd,'claude-preflight.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(probes.length,1);assert.equal(probes[0].skipBehaviors,true);
+  if(log.length)assert.equal(probes[0].pid,log[0].pid,'the same initialized CLI must observe billing and receive the prompt');
+  if(scenario==='extra-usage-enabled') {assert.equal(frame.receipt.execution.turnDispatch,'not-dispatched');assert.equal(frame.receipt.cleanup.confirmed,true)}
+  if(scenario==='ok') {assert.equal(frame.receipt.configuration.modelEvidence.rootMatched,true);assert.equal(frame.receipt.costUSD,null)}
+ }
 });

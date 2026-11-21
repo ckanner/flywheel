@@ -25,11 +25,12 @@ export function record(value) {
 // The engine validates contract/report contents. The host validates the typed
 // envelope before dispatch so an invalid command cannot become an unknown run.
 export function validInvestigationCommand(value) {
-  if (!record(value) || !['start', 'run', 'status', 'report', 'cancel'].includes(value.action) ||
-      Object.keys(value).some(key => !['action', 'revision', 'contract', 'report'].includes(key))) return false;
+  if (!record(value) || !['start', 'continue', 'run', 'status', 'report', 'cancel'].includes(value.action) ||
+      Object.keys(value).some(key => !['action', 'revision', 'contract', 'report', 'run'].includes(key))) return false;
+  if ('run' in value && (value.action !== 'start' || typeof value.run !== 'boolean')) return false;
   if ('revision' in value && (!Number.isSafeInteger(value.revision) || value.revision < 0)) return false;
   if (!['start', 'status'].includes(value.action) && !(value.revision > 0)) return false;
-  if ((value.action === 'start') !== ('contract' in value) ||
+  if ((['start','continue'].includes(value.action)) !== ('contract' in value) ||
       (value.action === 'report') !== ('report' in value)) return false;
   return (!('contract' in value) || record(value.contract)) && (!('report' in value) || record(value.report));
 }

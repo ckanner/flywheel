@@ -106,6 +106,8 @@ test("one package must own the native platforms, plugin exports and pinned adapt
     (values) => { values[PLUGIN].bundledDependencies.push('unreviewed-package'); },
     (values) => { delete values[PLUGIN].exports['./codex-pro-worker']; },
     (values) => { delete values[META].bin['flywheel-codex-pro-worker']; },
+    (values) => { delete values[PLUGIN].exports['./model-catalog-worker']; },
+    (values) => { delete values[META].bin['flywheel-model-catalog']; },
     (values) => { values[PLUGIN].peerDependencies['dsh-subagent-claude-code-pro'] = '^0.6.0'; },
     (values) => { values[PLUGIN].peerDependenciesMeta['dsh-subagent-claude-code-pro'].optional = false; },
     (values) => { values[PLUGIN].dependencies['dsh-subagent-claude-code-pro'] = '0.6.0'; },

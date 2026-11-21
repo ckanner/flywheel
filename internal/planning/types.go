@@ -9,6 +9,8 @@ type Ref struct {
 }
 
 type Brief struct {
+	DesignGranularity        string   `json:"design-granularity,omitempty"`
+	GranularityReason        string   `json:"granularity-reason,omitempty"`
 	Version                  int      `json:"version"`
 	ID                       string   `json:"id"`
 	Goal                     string   `json:"goal"`
@@ -56,6 +58,7 @@ type Design struct {
 // Files holds the unprojected contracts. The engine adds planning-ref only after
 // sealing, avoiding a digest that recursively contains itself.
 type ExecutionPlan struct {
+	Preparation       string            `json:"preparation,omitempty"`
 	Ref               Ref               `json:"ref"`
 	Design            Ref               `json:"design"`
 	InputRevision     int               `json:"input-revision"`
@@ -80,18 +83,21 @@ type Finding struct {
 // Invocation, Role and Binding are supplied by the engine from a settled
 // independent call, never trusted from a model's output.
 type Review struct {
-	ID            string    `json:"id"`
-	Kind          string    `json:"kind"` // design | plan
-	Target        Ref       `json:"target"`
-	Design        *Ref      `json:"design,omitempty"`
-	InputRevision int       `json:"input-revision"`
-	Invocation    string    `json:"invocation"`
-	Role          string    `json:"role"`
-	Binding       string    `json:"binding"`
-	Verdict       string    `json:"verdict"`
-	ScopeVerdict  string    `json:"scope-verdict,omitempty"`
-	Summary       string    `json:"summary"`
-	Findings      []Finding `json:"findings"`
+	DesignVerdict   string    `json:"design-verdict,omitempty"`
+	CoverageVerdict string    `json:"coverage-verdict,omitempty"`
+	Plan            *Ref      `json:"plan,omitempty"`
+	ID              string    `json:"id"`
+	Kind            string    `json:"kind"` // design | plan
+	Target          Ref       `json:"target"`
+	Design          *Ref      `json:"design,omitempty"`
+	InputRevision   int       `json:"input-revision"`
+	Invocation      string    `json:"invocation"`
+	Role            string    `json:"role"`
+	Binding         string    `json:"binding"`
+	Verdict         string    `json:"verdict"`
+	ScopeVerdict    string    `json:"scope-verdict,omitempty"`
+	Summary         string    `json:"summary"`
+	Findings        []Finding `json:"findings"`
 }
 
 // Source is a receipt from the trusted user control boundary. The engine must
@@ -118,19 +124,23 @@ type Feedback struct {
 
 // Request bounds a single planning scope, while State.Rounds is cumulative.
 type Request struct {
-	ID            string `json:"id"`
-	Scope         string `json:"scope"`
-	ScopeID       string `json:"scope-id"`
-	InputRevision int    `json:"input-revision"`
-	Rounds        int    `json:"rounds"`
-	Retries       int    `json:"retries"`
-	MaxRounds     int    `json:"max-rounds"`
-	Status        string `json:"status"`
-	PlanningOnly  bool   `json:"planning-only"`
-	Feedback      string `json:"feedback,omitempty"`
-	Stage         string `json:"stage,omitempty"`
-	Role          string `json:"role,omitempty"`
-	Channel       string `json:"channel,omitempty"`
+	DesignGranularity  string `json:"design-granularity,omitempty"`
+	ID                 string `json:"id"`
+	Origin             string `json:"origin,omitempty"` // collaboration-edit | input-images-edit; empty for an ordinary plan request
+	Scope              string `json:"scope"`
+	ScopeID            string `json:"scope-id"`
+	InputRevision      int    `json:"input-revision"`
+	Rounds             int    `json:"rounds"`
+	Retries            int    `json:"retries"`
+	MaxRounds          int    `json:"max-rounds"`
+	Status             string `json:"status"`
+	PlanningOnly       bool   `json:"planning-only"`
+	Feedback           string `json:"feedback,omitempty"`
+	Stage              string `json:"stage,omitempty"`
+	Role               string `json:"role,omitempty"`
+	Channel            string `json:"channel,omitempty"`
+	BindingSource      string `json:"binding-source,omitempty"`
+	BindingGranularity string `json:"binding-granularity,omitempty"`
 }
 
 type ActivationRef struct {

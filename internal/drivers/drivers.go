@@ -9,6 +9,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -73,11 +74,15 @@ type Result struct {
 	// physical cleanup facts, independently of the normalized success fields.
 	CodexProReceipt      json.RawMessage `json:"codexProReceipt,omitempty"`
 	ClaudeCodeProReceipt json.RawMessage `json:"claudeCodeProReceipt,omitempty"`
+	AntigravityReceipt   json.RawMessage `json:"antigravityReceipt,omitempty"`
 }
 
 // CallArgs 六角色统一入参：prompt 由 prompts 包组装；binding 来自 §13 绑定表
 // （可能被降级链改写过 harness/channel）。
 type CallArgs struct {
+	Subscription           *config.SubscriptionPolicy
+	EvidenceOnly           bool
+	Images                 []imageinput.Image
 	Native                 json.RawMessage // explicit, validated harness-native options; absent preserves legacy behavior
 	Managed                *NativeAdmission
 	Prewarm                PreparedDSH // optional one-use DSH SDK startup, bound to this invocation
@@ -131,6 +136,7 @@ type Drivers struct {
 	Judge        Driver
 	Intake       Driver
 	Garden       Driver
+	Investigate  Driver
 }
 
 // InvokeHarness 通用 harness 分发（Node invokeHarness）：harness 取自绑定表，
@@ -141,9 +147,12 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 		harness = "pi"
 	}
 	switch harness {
-	case "kimi", "zcode", "codex", "codex-pro", "claude-code-pro", "omp", "pi", "dsh":
+	case "kimi", "zcode", "codex", "codex-pro", "claude-code-pro", "antigravity", "omp", "pi", "dsh":
 	default:
 		return rejectedHarnessCall(a, harness, fmt.Sprintf("unknown harness %q", harness))
+	}
+	if len(a.Images) != 0 && harness != "claude-code-pro" {
+		return rejectedHarnessCall(a, harness, "image attachments require the Claude Code Pro machine contract; this backend cannot silently discard them")
 	}
 	if a.WorkspaceCwd != "" && !samePhysicalDirectory(a.WorkspaceCwd, a.Cwd) {
 		if a.PermissionMode == "workspace-write" {
@@ -162,13 +171,23 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	if harness == "claude-code-pro" && a.PermissionMode != "danger-full-access" {
 		return rejectedHarnessCall(a, harness, "claude-code-pro requires explicit full-access; native approval modes do not enforce a read-only or workspace sandbox")
 	}
-	if a.PermissionMode == "danger-full-access" && harness != "codex" && harness != "codex-pro" && harness != "claude-code-pro" && harness != "dsh" && harness != "kimi" {
+	if a.PermissionMode == "danger-full-access" && harness != "codex" && harness != "codex-pro" && harness != "claude-code-pro" && harness != "dsh" && harness != "kimi" && harness != "antigravity" {
 		return rejectedHarnessCall(a, harness, fmt.Sprintf("harness %q has no verified full-access permission mapping", harness))
 	}
 	// Legacy adapters have no verified read-only sandbox mapping. workspace-write
 	// remains their historical host-isolation contract, not an OS sandbox promise.
-	if a.PermissionMode == "read-only" && harness != "codex" && harness != "codex-pro" && harness != "dsh" {
+	if a.PermissionMode == "read-only" && !(harness == "antigravity" && a.EvidenceOnly) && harness != "codex" && harness != "codex-pro" && harness != "dsh" {
 		return rejectedHarnessCall(a, harness, fmt.Sprintf("harness %q cannot enforce read-only permissions", harness))
+	}
+	if a.EvidenceOnly && harness != "antigravity" {
+		return rejectedHarnessCall(a, harness, "evidence-only analysis requires a verified tool-free Antigravity adapter")
+	}
+	if harness == "antigravity" {
+		model := a.Model
+		if model == "" {
+			model = a.Binding.Model
+		}
+		return RunAntigravity(AntigravityArgs{Subscription: a.Subscription, EvidenceOnly: a.EvidenceOnly, Images: a.Images, Native: a.Native, Managed: a.Managed, Prompt: a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking, PermissionMode: a.PermissionMode, SessionID: a.SessionID, SessionTitle: a.SessionTitle, PersistentSession: a.PersistentSession, RequestID: a.RequestID, Cwd: a.Cwd, APIKeys: a.APIKeys, Watchdog: a.Watchdog, OnEvent: a.OnEvent, RecoveryDirectory: a.RecoveryDirectory, OnLifecycle: a.OnLifecycle})
 	}
 	if harness == "dsh" {
 		model := a.Model
@@ -198,7 +217,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = KimiDefaultModel
 		}
 		return RunKimi(KimiArgs{
-			Native: a.Native, Managed: a.Managed,
+			Subscription: a.Subscription, Native: a.Native, Managed: a.Managed,
 			SessionTitle: a.SessionTitle,
 			WorkspaceCwd: a.WorkspaceCwd, PermissionMode: a.PermissionMode,
 			Prompt:            a.Prompt,
@@ -249,7 +268,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = a.Binding.Model
 		}
 		return RunCodexPro(CodexProArgs{
-			Native: a.Native, Managed: a.Managed,
+			Subscription: a.Subscription, Native: a.Native, Managed: a.Managed,
 			SessionTitle: a.SessionTitle,
 			Prompt:       a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
 			PermissionMode: a.PermissionMode, SessionID: a.SessionID, Cwd: a.Cwd,
@@ -264,6 +283,7 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 			model = a.Binding.Model
 		}
 		return RunClaudeCodePro(ClaudeCodeProArgs{
+			Subscription: a.Subscription, Images: a.Images,
 			Native: a.Native, Managed: a.Managed,
 			SessionTitle: a.SessionTitle,
 			Prompt:       a.Prompt, Model: model, ReasoningEffort: a.Binding.Thinking,
@@ -337,11 +357,8 @@ func rejectedHarnessCall(a CallArgs, harness, detail string) Result {
 		if a.PersistentSession {
 			protocol = DSHSessionProtocol
 		}
-	} else if harness == "codex-pro" || harness == "claude-code-pro" {
-		version := CodexProPackageVersion
-		if harness == "claude-code-pro" {
-			version = ClaudeCodeProPackageVersion
-		}
+	} else if harness == "codex-pro" || harness == "claude-code-pro" || harness == "antigravity" {
+		version := machineAdapterVersion(harness)
 		worker := 1
 		if a.PersistentSession {
 			worker = 2
@@ -407,5 +424,6 @@ func CreateDrivers(cfg *config.Config) *Drivers {
 		Judge:        pick("judge"),
 		Intake:       pick("intake"),
 		Garden:       pick("garden"),
+		Investigate:  pick("investigate"),
 	}
 }

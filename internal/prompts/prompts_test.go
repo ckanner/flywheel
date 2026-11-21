@@ -132,6 +132,25 @@ func TestBuildExecutePromptMaxFilesUnset(t *testing.T) {
 	assert.Contains(t, BuildExecutePrompt(pkt, testSpec(), "/t", "", 1), "boundaries.max-files: unset")
 }
 
+func TestExecutePromptCarriesReviewedCollaboration(t *testing.T) {
+	pkt := testPacket()
+	ordinary := BuildExecutePrompt(pkt, testSpec(), "/task", "", 1)
+	assert.NotContains(t, ordinary, "## Reviewed collaboration tasks")
+	pkt.Collaboration = &contract.PacketCollaboration{Version: 1, Tasks: []contract.CollaborationTask{
+		{Goal: "Repair the parser", Writes: []string{"src/parser/"}},
+		{Goal: "Update independent CLI help", Writes: []string{"src/help/"}},
+	}}
+	initial := BuildExecutePrompt(pkt, testSpec(), "/task", "", 1)
+	retry := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2, "repair the failed parser check")
+	for _, fact := range []string{"Repair the parser", "src/parser/", "Update independent CLI help", "src/help/", "every delegated task", "independent Review"} {
+		assert.Contains(t, initial, fact)
+	}
+	assert.Equal(t, strings.Split(initial, "## Runtime")[0], strings.Split(retry, "## Runtime")[0])
+	pkt.Collaboration.Tasks[0].Writes = []string{"src/revised-parser/"}
+	revised := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2)
+	assert.NotEqual(t, strings.Split(initial, "## Runtime")[0], strings.Split(revised, "## Runtime")[0], "a revised scope must change the stable authority supplied to the executor")
+}
+
 func TestBuildReviewPromptSections(t *testing.T) {
 	pkt := testPacket()
 	l1 := map[string]any{"pass": true, "at": "2026-08-22T00:00:00.000Z"}

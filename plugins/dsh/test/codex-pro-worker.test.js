@@ -145,6 +145,66 @@ test('doctor imports the exact dependency without starting any Codex process', a
   assert.deepEqual(await f.records(), []);
 });
 
+test('subscription-only probes the actual app-server before both thread and turn, preserving Unicode input and native receipt', { timeout: 15000 }, async t => {
+  const f = await setup(t);
+  const request = { ...f.request, prompt: '修复中文问题。🚀', subscription: { version: 1, mode: 'subscription-only' }, timeoutMs: 10_000 };
+  const frame = resultFrame(await f.launch({ input: request }).done);
+  assert.equal(frame.receipt.subscription.authentication, 'chatgpt');
+  assert.equal(frame.receipt.subscription.extraUsage, 'unknown');
+  const records = await f.records();
+  const auth = records.filter(row => row.method === 'account/read');
+  assert.equal(auth.length, 2);
+  assert.ok(auth.every(row => row.params.refreshToken === false));
+  const methods = records.map(row => row.method);
+  assert.ok(methods.indexOf('account/read') < methods.indexOf('thread/start'));
+  assert.ok(methods.lastIndexOf('account/read') < methods.indexOf('turn/start'));
+  assert.equal(records.find(row => row.method === 'turn/start').params.input[0].text, request.prompt);
+  assert.doesNotMatch(JSON.stringify(frame), /never-copy-account|private.*token/);
+  absentGroup(frame.receipt.outcome.execution);
+});
+
+for (const scenario of ['subscription-stop-signal', 'subscription-stop-exit-nonzero', 'subscription-stop-unexpected-signal',
+  'subscription-truncated-json-tail', 'subscription-truncated-utf8-tail']) {
+  test(`${scenario}: strict proxy preserves native shutdown and malformed-tail evidence after turn completion`, { timeout: 15000 }, async t => {
+    const f = await setup(t, scenario);
+    const succeeds = scenario === 'subscription-stop-signal';
+    const frame = resultFrame(await f.launch({ input: { ...f.request,
+      subscription: { version: 1, mode: 'subscription-only' } } }).done, succeeds ? 0 : 1);
+    assert.equal(frame.receipt.ok, succeeds);
+    assert.equal(frame.receipt.outcome.output[0].text, 'fixture complete\n');
+    assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
+    const execution = frame.receipt.outcome.execution;
+    if (succeeds) { assert.equal(execution.exitCode, null); assert.equal(execution.signal, 'SIGTERM'); }
+    else if (scenario === 'subscription-stop-exit-nonzero') assert.equal(execution.exitCode, 23);
+    else if (scenario === 'subscription-stop-unexpected-signal') assert.equal(execution.signal, 'SIGHUP');
+    else assert.equal(execution.exitCode, 1, 'a partial native frame is a transport failure even after valid terminal output');
+    assert.equal((await f.records()).filter(row => row.method === 'turn/start').length, 1);
+    absentGroup(execution);
+  });
+}
+
+for (const scenario of ['subscription-api', 'subscription-logged-out', 'subscription-custom-provider', 'subscription-custom-endpoint', 'subscription-no-account-api', 'subscription-thread-provider', 'subscription-drift']) {
+test(`${scenario} refuses the task before any inference and still settles the public adapter cleanup`, { timeout: 15000 }, async t => {
+  const f = await setup(t, scenario);
+  const frame = resultFrame(await f.launch({ input: { ...f.request, subscription: { version: 1, mode: 'subscription-only' }, timeoutMs: 10_000 } }).done, 1);
+  assert.equal(frame.receipt.ok, false);
+  assert.equal((frame.receipt.failure ?? frame.receipt.outcome).cleanup.confirmed, true);
+  assert.equal(frame.receipt.subscription.status, 'not-admitted-or-run-failed');
+  assert.ok(!(await f.records()).some(row => ['turn/start', 'review/start'].includes(row.method)));
+  assert.doesNotMatch(JSON.stringify(frame), /never-copy-account/);
+});
+}
+
+test('subscription inspection inherits cancellation and deadline rather than hanging the CLI', { timeout: 15000 }, async t => {
+  const f = await setup(t, 'subscription-hang');
+  const started = Date.now();
+  const frame = resultFrame(await f.launch({ input: { ...f.request, subscription: { version: 1, mode: 'subscription-only' }, timeoutMs: 600 } }).done, 1);
+  assert.equal(frame.receipt.ok, false);
+  assert.equal(frame.receipt.failure.cleanup.confirmed, true);
+  assert.ok(Date.now() - started < 8000);
+  assert.ok(!(await f.records()).some(row => row.method === 'turn/start'));
+});
+
 for (const role of ['execute', 'design-plan', 'design-review', 'plan-review']) {
 test(`${role}: native controls, managed attribution and owned child evidence survive the installed worker`, async t => {
   const f = await setup(t, 'native-child');
@@ -267,12 +327,24 @@ test('a broken stdout waits for the app-server and guardian to disappear', { tim
 
 test('full display progress preserves the actual task deadline and cleanup receipt', { timeout: 10000 }, async t => {
   const f = await setup(t, 'progress-limit');
-  const result = await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256), timeoutMs: 1500 } }).done;
+  // Keep room for the real app-server/guardian startup on loaded CI runners;
+  // the bounded display burst must finish before this original task deadline.
+  const timeoutMs = 3000;
+  const result = await f.launch({ input: { ...f.request, requestId: 'r'.repeat(256), timeoutMs } }).done;
   const frame = resultFrame(result, 1);
   assert.equal(frame.error, null);
-  assert.match(result.stdout, /progress omitted/i);
+  const burst = (await f.records()).find(record => record.event === 'progress-burst-complete');
+  assert.deepEqual(burst, { event: 'progress-burst-complete', count: 128, bytes: 2 * LIMITS.progressBytes });
+  const progress = result.stdout.trim().split('\n').map(line => JSON.parse(line)).filter(value => value.type === 'progress');
+  assert.match(progress.at(-1)?.text ?? '', /progress omitted/i);
+  const displaySizes = progress.slice(0, -1).map(value => Buffer.byteLength(JSON.stringify(value) + '\n'));
+  const displayedBytes = displaySizes.reduce((sum, bytes) => sum + bytes, 0);
+  assert.ok(displayedBytes <= LIMITS.progressBytes && displayedBytes + Math.max(...displaySizes) > LIMITS.progressBytes,
+    `display budget was actually filled: ${displayedBytes} retained bytes`);
   assert.equal(frame.receipt.ok, false);
   assert.equal(frame.receipt.outcome.execution.timedOut, true);
+  assert.equal(frame.receipt.outcome.execution.cancelled, false);
+  assert.ok(frame.receipt.outcome.execution.durationMs >= timeoutMs, 'display saturation did not end the task before its deadline');
   assert.equal(frame.receipt.outcome.execution.truncated, false);
   assert.equal(frame.receipt.outcome.cleanup.confirmed, true);
   absentGroup(frame.receipt.outcome.execution);
@@ -467,7 +539,7 @@ test('missing and mismatched installed dependencies fail locally without fallbac
   const packageRoot = join(f.cwd, 'isolated-worker');
   await mkdir(packageRoot);
   await writeFile(join(packageRoot, 'package.json'), '{"type":"module"}');
-  for (const file of ['codex-pro-worker.js', 'codex-pro-bridge.js', 'machine-worker.js']) await copyFile(new URL('../src/' + file, import.meta.url), join(packageRoot, file));
+  for (const file of ['codex-pro-worker.js', 'codex-pro-bridge.js', 'machine-worker.js', 'subscription-controls.js', 'codex-subscription-proxy.js']) await copyFile(new URL('../src/' + file, import.meta.url), join(packageRoot, file));
   const options = { binary: join(packageRoot, 'codex-pro-worker.js'), args: ['--doctor'], input: null };
   assert.equal(resultFrame(await f.launch(options).done, 1).error.code, 'ADAPTER_UNAVAILABLE');
   const failedRun = resultFrame(await f.launch({ ...options, args: [], input: f.request }).done, 1);

@@ -11,6 +11,11 @@ Historical records retain their original language and findings.
 
 | Date | Record |
 | --- | --- |
+| 2026-11-21 | [0.38.0：模型选择、分工编辑与执行资格补齐](2026-11-21-complete-controls.md) |
+| 2026-11-20 | [Flywheel UI 后续复审：已选配置、协作观察与无效草稿](2026-11-20-ui-follow-up-review.md) |
+| 2026-11-20 | [Flywheel UI：有效配置、任务入口与恢复一致性验收](2026-11-20-ui-effective-configuration.md) |
+| 2026-11-20 | [Antigravity 编排与 JEV 首轮选择：实施、审查与验收](2026-11-20-orchestration-adaptive-selection.md) |
+| 2026-11-20 | [四家订阅、Antigravity CLI、紧凑准备与连续调查：实施及复审](2026-11-20-subscription-cli-workflows.md) |
 | 2026-11-17 | [Claude 官方 Agent SDK 集成与复审](2026-11-17-claude-agent-sdk.md) |
 | 2026-11-17 | [原生会话持久化、客户端可见性与 Kimi 2.5.3 复审](2026-11-17-native-session-visibility.md) |
 | 2026-11-16 | [Codex 后续复审：子线程状态与命名准入修复](2026-11-16-codex-review-fixes.md) |

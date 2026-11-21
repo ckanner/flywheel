@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { assertFlashAccountProfile } = require('./support/installed-profiles.js');
+const { createHash } = require('node:crypto');
+const { assertSubscriptionCLIProfiles } = require('./support/installed-profiles.js');
 const { spawn, execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { shellQuote } = require('../install.js');
@@ -58,28 +59,32 @@ test('the complete npm candidate install and run from a clean agent environment'
   await fs.access(claudeCodeProWorker, 1);
   const kimiNativeWorker = path.join(context.prefix, 'bin', 'flywheel-kimi-native-worker');
   await fs.access(kimiNativeWorker, 1);
+  const antigravityWorker = path.join(context.prefix, 'bin', 'flywheel-antigravity-worker');
+  await fs.access(antigravityWorker, 1);
+  const modelCatalogWorker = path.join(context.prefix, 'bin', 'flywheel-model-catalog');
+  await fs.access(modelCatalogWorker, 1);
   assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.2', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
   assert.equal(template.code, 0, template.stderr);
-  assertFlashAccountProfile(JSON.parse(template.stdout));
+  assertSubscriptionCLIProfiles(JSON.parse(template.stdout));
   const config = await run(report.paths.launcher, ['config', 'inspect', '--cwd', context.project, '--json'], context.env, context.project);
   assert.equal(config.code, 0, config.stderr);
   const bindings = JSON.parse(config.stdout).bindings;
-  assert.equal(bindings.length, 11);
+  assert.equal(bindings.length, 18);
   for (const id of ['loops.design-plan', 'loops.design-review', 'loops.plan-review']) {
-    assert.ok(bindings.some(binding => binding.id === id), `effective configuration must expose implicit ${id}`);
+    assert.ok(bindings.some(binding => binding.id === id), `effective configuration must expose ${id}`);
   }
   for (const [id, thinking] of [['loops.intake', 'low'], ['routes.default', 'high']]) {
     const binding = bindings.find(value => value.id === id);
     assert.ok(binding, `installed configuration must include ${id}`);
-    assert.equal(binding.provider, 'deepseek-account');
-    assert.equal(binding.channel, 'deepseek-account');
-    assert.equal(binding.model, 'deepseek-flash');
+    assert.equal(binding.harness, 'antigravity');
+    assert.equal(binding.channel, 'google-subscription');
+    assert.equal(binding.model, 'gemini-4-hydrogen-' + thinking);
     assert.equal(binding.thinking, thinking);
     assert.equal(binding.permissionMode, 'danger-full-access');
   }
-  for (const document of ['LICENSE', 'README.md', 'README.zh-CN.md', 'docs/README.md', 'docs/README.zh-CN.md', 'docs/zh-CN/model-policy.md', 'docs/en/model-policy.md', 'docs/zh-CN/claude-code-pro.md', 'docs/en/claude-code-pro.md']) {
+  for (const document of ['LICENSE', 'README.md', 'README.zh-CN.md', 'docs/README.md', 'docs/README.zh-CN.md', 'docs/zh-CN/model-policy.md', 'docs/en/model-policy.md', 'docs/zh-CN/claude-code-pro.md', 'docs/en/claude-code-pro.md', 'docs/en/antigravity.md', 'docs/zh-CN/antigravity.md', 'docs/en/image-inputs.md', 'docs/zh-CN/image-inputs.md']) {
     await fs.access(path.join(root, document));
   }
   const demo = path.join(context.root, 'packaged tutorial demo');
@@ -99,6 +104,9 @@ test('the complete npm candidate install and run from a clean agent environment'
   const workerPath = installedRequire.resolve('@ckanner/flywheel/worker');
   assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/flywheel/claude-code-pro-worker'));
   assert.equal(report.paths.kimiNativeWorker, installedRequire.resolve('@ckanner/flywheel/kimi-native-worker'));
+  assert.equal(report.paths.antigravityWorker, installedRequire.resolve('@ckanner/flywheel/antigravity-worker'));
+  assert.equal(report.paths.modelCatalogWorker, installedRequire.resolve('@ckanner/flywheel/model-catalog-worker'));
+  await fs.access(report.paths.modelCatalogWorker, 1);
   await fs.access(report.paths.kimiNativeWorker);
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
@@ -108,6 +116,39 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
+
+  await t.test('the installed model catalog reads native metadata without inference, settings writes or task state', async () => {
+    const kimi = await run(report.paths.launcher, ['control', 'models', '--cwd', context.project], context.env, context.project, 20000,
+      JSON.stringify({ version: 1, harness: 'kimi', channel: 'kimi-subscription' }));
+    assert.equal(kimi.code, 0, kimi.stderr);
+    const unsupported = JSON.parse(kimi.stdout).modelCatalog;
+    assert.equal(unsupported.status, 'unsupported');
+    assert.deepEqual(unsupported.models, []);
+    assert.equal(unsupported.inferencePerformed, false);
+    assert.equal(unsupported.accountEntitlement, 'unknown');
+
+    const fixture = path.join(context.fixtures, 'catalog agy');
+    const observed = path.join(context.root, 'catalog-argv.json');
+    await fs.writeFile(fixture, `#!${process.execPath}\nconst fs = require('node:fs');\n` +
+      `const args = process.argv.slice(2); fs.writeFileSync(${JSON.stringify(observed)}, JSON.stringify(args));\n` +
+      `if (args.length !== 1 || args[0] !== 'models') throw new Error('catalog must never dispatch a prompt');\n` +
+      `console.log('gemini-4-hydrogen-medium\\ngemini-pro-orchestrator-neon');\n`, { mode: 0o755 });
+    const agy = await run(report.paths.launcher, ['control', 'models', '--cwd', context.project],
+      { ...context.env, FLYWHEEL_AGY_BIN: fixture }, context.project, 20000,
+      JSON.stringify({ version: 1, harness: 'antigravity', channel: 'google-subscription' }));
+    assert.equal(agy.code, 0, agy.stderr);
+    const catalog = JSON.parse(agy.stdout).modelCatalog;
+    assert.equal(catalog.status, 'available');
+    assert.equal(catalog.source, 'agy models');
+    assert.equal(catalog.scope, 'native-client-catalog');
+    assert.deepEqual(catalog.models.map(model => model.id), ['gemini-4-hydrogen-medium', 'gemini-pro-orchestrator-neon']);
+    assert.equal(catalog.models[1].defaultEffort, '');
+    assert.equal(catalog.inferencePerformed, false);
+    assert.equal(catalog.accountEntitlement, 'unknown');
+    assert.deepEqual(JSON.parse(await fs.readFile(observed, 'utf8')), ['models']);
+    assert.deepEqual(await fs.readFile(globalConfig), before);
+    await assert.rejects(fs.access(path.join(context.project, 'state.json')), { code: 'ENOENT' });
+  });
 
   await t.test('the bundled generator imports its public composition API without fetching a registry release', async () => {
     const compositionPath = installedRequire.resolve('dsh-preset-generator/composition');
@@ -130,6 +171,43 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.deepEqual(JSON.parse(doctor.stdout), { type: 'doctor', protocol: 1, available: false, cliVersion: null,
       backendProtocol: 'kimi-server/v1', inferenceTested: false,
       nativeAdmission: 'requires-actual-server-schema-and-effective-session-probe', recoverySupported: false });
+  });
+
+  await t.test('the bundled Antigravity worker executes the official CLI protocol from the installed package', async () => {
+    const doctor = await run(antigravityWorker, ['--doctor'], context.env, context.project);
+    assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
+    const facts = JSON.parse(doctor.stdout);
+    assert.equal(facts.package, 'dsh-subagent-antigravity');
+    assert.equal(facts.version, '0.2.0');
+    assert.equal(facts.inferenceTested, false);
+    assert.equal(facts.accountEntitlement, 'unknown');
+    const fixture = path.join(context.fixtures, 'offline-agy.mjs');
+    await fs.copyFile(path.resolve(__dirname, '../../plugins/antigravity/test/fixtures/fake-agy.js'), fixture);
+    await fs.chmod(fixture, 0o755);
+    const child = spawn(antigravityWorker, [], { cwd: context.project,
+      env: { ...context.env, FLYWHEEL_AGY_BIN: fixture }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', value => { stdout += value; }); child.stderr.on('data', value => { stderr += value; });
+    child.stdin.on('error', () => {});
+    const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
+    const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
+    child.stdin.write(JSON.stringify({ protocol: 1, type: 'start', requestId: 'installed-antigravity', cwd: await fs.realpath(context.project),
+      model: 'gemini-4-hydrogen-high', reasoningEffort: 'high', permissionMode: 'danger-full-access',
+      subscription: { version: 1, mode: 'subscription-only' }, prompt: 'Offline installed subscription validation.', timeoutMs: 5000 }) + '\n');
+    let exit;
+    try { exit = await done; } finally { clearTimeout(timeout); }
+    assert.equal(exit.code, 0, stderr + stdout);
+    assert.equal(exit.signal, null);
+    const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
+    assert.deepEqual(result.adapter, { package: 'dsh-subagent-antigravity', version: '0.2.0', protocol: 1 });
+    assert.equal(result.receipt.ok, true);
+    assert.equal(result.receipt.cleanup.confirmed, true);
+    assert.equal(result.receipt.subscription.status, 'verified-local-controls');
+    assert.equal(result.receipt.costStatus, 'unknown');
+    assert.equal(result.receipt.costUSD, null);
+    assert.throws(() => process.kill(result.receipt.execution.pid, 0), { code: 'ESRCH' });
+    assert.ok(!server.requests.some(value => value.includes('dsh-subagent-antigravity')), 'the bundled adapter must not require a registry publication');
   });
 
   await t.test('a direct DSH installation resolves its own bundled CLI without a global record', async () => {
@@ -188,7 +266,9 @@ test('the complete npm candidate install and run from a clean agent environment'
     const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
     const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
     child.stdin.write(JSON.stringify({ protocol: 1, type: 'start', requestId: 'actual-npm-install', cwd: await fs.realpath(context.project),
-      model: 'fixture-model', reasoningEffort: 'high', permissionMode: 'workspace-write', prompt: 'Offline installed package validation.', timeoutMs: 5000 }) + '\n');
+      model: 'gpt-6.2-sol', reasoningEffort: 'high', permissionMode: 'workspace-write',
+      subscription: { version: 1, mode: 'subscription-only' },
+      prompt: 'Offline installed package validation.', timeoutMs: 5000 }) + '\n');
     let exit;
     try { exit = await done; } finally { clearTimeout(timeout); }
     assert.equal(exit.code, 0, stderr + stdout);
@@ -208,18 +288,26 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(result.receipt.outcome.usage.status, 'complete');
     assert.equal(result.receipt.costStatus, 'unknown');
     assert.equal(result.receipt.costUSD, null);
+    assert.equal(result.receipt.subscription.status, 'verified-native-controls');
+    assert.equal(result.receipt.subscription.authentication, 'chatgpt');
     const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(calls[0].argv, ['app-server', '--stdio']);
     assert.equal(calls.find(call => call.method === 'turn/start').params.effort, 'high');
+    const turnIndex = calls.findIndex(call => call.method === 'turn/start');
+    for (const method of ['account/read', 'config/read']) {
+      const admissionIndex = calls.findIndex(call => call.method === method);
+      assert.ok(admissionIndex >= 0 && admissionIndex < turnIndex, method + ' must precede prompt dispatch');
+    }
+    assert.equal(JSON.stringify(result).includes('never-copy-account@example.invalid'), false);
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.6.0 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.7.0 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.6.0');
+    assert.equal(manifest.version, '0.7.0');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
     assert.deepEqual(manifest.dependencies, { '@anthropic-ai/claude-agent-sdk': '0.3.326' },
       'the candidate must use the pinned official SDK as a runtime dependency');
@@ -243,9 +331,12 @@ test('the complete npm candidate install and run from a clean agent environment'
     child.stdin.on('error', () => {});
     const done = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
     const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
-    const definitions = { scout: { description: 'Inspect the candidate', prompt: 'Report findings', model: 'sonnet', effort: 'xhigh' } };
+    const definitions = { scout: { description: 'Inspect the candidate', prompt: 'Report findings', model: 'claude-sonnet-5-5', effort: 'xhigh' } };
+    const imageBytes = await fs.readFile(path.resolve(__dirname, '../../plugins/dsh/test/fixtures/multimodal-reference.png'));
+    const image = { mimeType: 'image/png', data: imageBytes.toString('base64') };
     child.stdin.write(JSON.stringify({ protocol: 2, type: 'start', requestId: 'actual-claude-install', cwd: await fs.realpath(context.project),
-      model: 'fixture-model', reasoningEffort: 'high', permissionMode: 'danger-full-access', threadMode: 'persistent',
+      model: 'claude-opus-5-5', reasoningEffort: 'high', permissionMode: 'danger-full-access', threadMode: 'persistent',
+      subscription: { version: 1, mode: 'subscription-only' }, images: [image],
       native: { version: 1, agents: { enabled: true, definitions } },
       prompt: 'Offline installed Claude package validation.', timeoutMs: 5000 }) + '\n');
     let exit;
@@ -257,8 +348,12 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.deepEqual(result.adapter, { package: manifest.name, version: manifest.version, protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.configuration.observed.cwd, await fs.realpath(context.project));
-    assert.equal(result.receipt.requested.model, 'fixture-model');
+    assert.equal(result.receipt.requested.model, 'claude-opus-5-5');
     assert.equal(result.receipt.requested.effort, 'high');
+    assert.deepEqual(result.receipt.requested.inputImages, { version: 1, images: [{ mimeType: image.mimeType,
+      sha256: createHash('sha256').update(imageBytes).digest('hex'), bytes: imageBytes.length }] });
+    assert.equal(result.receipt.subscription.extraUsageEnabled, false);
+    assert.equal(result.receipt.configuration.modelEvidence.rootMatched, true);
     assert.equal(result.receipt.session.resumable, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.usage.totalTokens, 22);
@@ -272,6 +367,11 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.deepEqual(calls[0].initialize.agents, definitions);
     assert.ok(calls[0].argv.includes('--effort=high'));
     assert.deepEqual(result.receipt.native.requested.agents.definitions, definitions);
+    assert.deepEqual(calls[0].userContent[1], { type: 'image', source: {
+      type: 'base64', media_type: image.mimeType, data: image.data } });
+    const probes = (await fs.readFile(path.join(context.project, 'claude-preflight.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(probes.length, 1);
+    assert.equal(probes[0].pid, calls[0].pid, 'installed subscription probe and image prompt use the same owned CLI');
     assert.deepEqual(await fs.readFile(globalConfig), before, 'opting into an adapter must not select or rewrite any loop');
   });
 
@@ -300,7 +400,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(result.configuration.preserved, true);
     assert.equal(result.configuration.path, globalConfig);
     assert.match(result.configuration.message, /升级不会替换旧模型/);
-    assert.deepEqual(result.configuration.migration.args.slice(0, 4), ['config', 'migrate', '--preset', 'subscriptions']);
+    assert.deepEqual(result.configuration.migration.args.slice(0, 4), ['config', 'migrate', '--preset', 'subscription-cli']);
     assert.equal(await fs.readFile(path.join(context.home, '.agents', 'skills', 'flywheel-run', 'SKILL.md'), 'utf8').then(v => v.includes('flywheel run')), true);
   });
 
@@ -362,7 +462,7 @@ test('the complete npm candidate install and run from a clean agent environment'
   const calls = (await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG, 'utf8')).trim().split('\n').map(JSON.parse);
   assert.ok(calls.some(args => args[3] === 'add' && args.at(-1) === `@ckanner/flywheel@${server.candidate.version}`));
   assert.ok(!server.requests.some(request => /flywheel-(darwin|linux)-/.test(request)), 'native engines must come from the single tarball');
-  for (const bundled of ['dsh-subagent-codex-pro', 'dsh-preset-generator']) {
+  for (const bundled of ['dsh-subagent-codex-pro', 'dsh-preset-generator', 'dsh-subagent-antigravity']) {
     assert.ok(!server.requests.some(request => request.includes(bundled)),
       `${bundled} must install from the reviewed bundle without fetching a registry release`);
   }

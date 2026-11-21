@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/ckanner/flywheel/templates"
 )
 
 // MigrationOptions selects the same complete file as LoadReadOnly. Cwd and
@@ -60,12 +62,13 @@ type migrationFile interface {
 
 // Narrow seams exercise disk/close/publication failures against real files.
 var (
-	createMigrationTemp = func(dir, pattern string) (migrationFile, error) { return os.CreateTemp(dir, pattern) }
-	renameMigrationFile = os.Rename
-	linkMigrationFile   = os.Link
-	removeMigrationFile = os.Remove
-	readMigrationFile   = os.ReadFile
-	absMigrationPath    = filepath.Abs
+	createMigrationTemp      = func(dir, pattern string) (migrationFile, error) { return os.CreateTemp(dir, pattern) }
+	renameMigrationFile      = os.Rename
+	linkMigrationFile        = os.Link
+	removeMigrationFile      = os.Remove
+	readMigrationFile        = os.ReadFile
+	absMigrationPath         = filepath.Abs
+	legacySubscriptionsTable = func() ([]byte, error) { return templates.FS.ReadFile("flywheel.legacy-subscriptions.json") }
 )
 
 func migrationHash(raw []byte) string {
@@ -131,8 +134,13 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 			"配置在下次引擎启动时加载；不会停止或重启正在运行的任务。",
 			"未被新绑定引用的自定义 profiles/channels 保留，但不会作为自动后备渠道。",
 		}}
-	if options.Preset != "subscriptions" {
-		return report, errors.New("--preset must be subscriptions")
+	if options.Preset != "subscriptions" && options.Preset != "subscription-cli" {
+		return report, errors.New("--preset must be subscriptions or subscription-cli")
+	}
+	presetTable := legacySubscriptionsTable
+	if options.Preset == "subscription-cli" {
+		presetTable = embeddedTable
+		report.Notes[0] = "更新最终订阅 CLI 模型分工；保留已有权限、验证、预算和调度策略。账号权益与余额仍须由原生客户端确认。"
 	}
 	if options.ExpectSHA256 != "" {
 		decoded, err := hex.DecodeString(options.ExpectSHA256)
@@ -161,7 +169,7 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 	}
 	if info == nil {
 		report.Source = "(embedded legal table)"
-		raw, err = embeddedTable()
+		raw, err = presetTable()
 		if err != nil {
 			return report, err
 		}
@@ -183,6 +191,9 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 		}
 	}
 	routeNames := []string{"default", "frontend", "hard"}
+	if options.Preset == "subscription-cli" {
+		routeNames = append(routeNames, "complex", "backend", "batch")
+	}
 	for _, section := range []string{"loops", "routes"} {
 		allowed := loopRoles
 		if section == "routes" {
@@ -202,7 +213,11 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 	if err != nil {
 		return report, errors.New("effective configuration is invalid; fix its fields before migrating (contents were not changed)")
 	}
-	presetRaw, err := embeddedTable()
+	if options.Preset == "subscription-cli" && report.Original.JEV.Enabled && report.Original.JEV.Backend != "subscription" {
+		report.Blockers = append(report.Blockers, "jev: enabled HTTP backend conflicts with subscription-only access; disable it before migrating, then review the new subscription target before enabling JEV again")
+		return report, nil
+	}
+	presetRaw, err := presetTable()
 	if err != nil {
 		return report, err
 	}
@@ -210,22 +225,43 @@ func Migrate(options MigrationOptions) (report *Migration, resultErr error) {
 	if err != nil {
 		return report, err
 	}
-	if err = migrateSubscriptions(sections, preset, &report.Changes); err != nil {
-		return report, err
+	if options.Preset == "subscription-cli" {
+		if err = migrateSubscriptionCLI(root, preset, &report.Changes); err != nil {
+			return report, err
+		}
+	} else {
+		if err = migrateSubscriptions(sections, preset, &report.Changes); err != nil {
+			return report, err
+		}
+		if _, exists := sections["routes"]["multimodal"]; exists {
+			migrationSet(sections["routes"], "multimodal", "routes.multimodal", nil, &report.Changes)
+			report.Notes = append(report.Notes, "停用旧 multimodal 路由；不会把未经验证的附件任务改派给普通 Flash，仍引用该路由的任务需先重新规划。")
+		}
+		for _, section := range []string{"loops", "routes", "channels", "permissions"} {
+			root[section] = configJSON(sections[section])
+		}
+		migrationSet(root, "judge-panel", "judge-panel", json.RawMessage("null"), &report.Changes)
 	}
-	if _, exists := sections["routes"]["multimodal"]; exists {
-		migrationSet(sections["routes"], "multimodal", "routes.multimodal", nil, &report.Changes)
-		report.Notes = append(report.Notes, "停用旧 multimodal 路由；不会把未经验证的附件任务改派给普通 Flash，仍引用该路由的任务需先重新规划。")
-	}
-	for _, section := range []string{"loops", "routes", "channels", "permissions"} {
-		root[section] = configJSON(sections[section])
-	}
-	migrationSet(root, "judge-panel", "judge-panel", json.RawMessage("null"), &report.Changes)
 	candidate, _ := json.MarshalIndent(root, "", "  ") // RawMessages came from valid JSON only.
 	candidate = append(candidate, '\n')
 	report.Candidate, err = parseConfig(candidate, target)
 	if err != nil {
 		return report, errors.New("migration candidate is invalid; original configuration was preserved")
+	}
+	if options.Preset == "subscription-cli" && report.Candidate.PermissionMode("investigate", "antigravity") != "read-only" {
+		report.Notes = append(report.Notes, "permissions.bindings.loops.investigate was preserved; evidence-only Antigravity analysis requires read-only, so review and change this explicit override before running investigation analysis")
+	}
+	if options.Preset == "subscription-cli" && report.Original.ExecutionPolicy == nil {
+		var fixed []string
+		for name, binding := range report.Candidate.Routes {
+			if report.Candidate.PermissionMode("execute", binding.Harness, "routes."+name) != "danger-full-access" {
+				fixed = append(fixed, name)
+			}
+		}
+		if len(fixed) > 0 {
+			slices.Sort(fixed)
+			report.Notes = append(report.Notes, "execution-policy candidates were not added for routes "+strings.Join(fixed, ", ")+": preserved permission is not danger-full-access; fixed route bindings remain unchanged")
+		}
 	}
 	report.Changed = info == nil || len(report.Changes) > 0
 	if !report.Changed {

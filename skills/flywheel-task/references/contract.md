@@ -62,6 +62,22 @@ Full，不通过修改契约抢回 Quick。模型建议只是声明，执行与�
 - 将试跑事实、需求授权、交付范围和非目标写入 Spec 正文；不把这些说明伪装成
   schema 未声明的机器字段。凭证只记录变量名与所需能力，不保存值。
 
+## 图片参考输入
+
+需要截图或图表指导实现时，先将已授权的原始图片保存为选定任务仓库中的普通文件，
+计算真实 SHA-256，并在 packet 声明 `input-images: {version: 1, images: [...]}`。
+每项必须是 `path`（仓库相对路径）、`sha256`（64 位小写十六进制）和 `media-type`
+（`image/png`、`image/jpeg`、`image/gif` 或 `image/webp`）。最多 4 张，每张最多
+4 MiB，合计最多 8 MiB；禁止符号链接和路径逃逸。不能只写路径文本、猜校验和或
+把聊天中的附件当成已经落地的文件。没有取得真实文件时明确保留这一缺口。
+
+选择 `multimodal` 或明确的 `claude-code-pro` route；Go 在 Execute 中从原任务
+checkout 校验、读取并发送真正的图片内容块。其他后端不接受该字段的图片需求，
+不能回退为只发文本。Plan／Review／Judge 不自动收到原图；视觉要求另有必要验收，
+不得以普通代码评审声称看过图片。源文件保持冻结到结果应用和验收完成，修订图片沿用
+正常契约修订；不要改 state 或重发 prompt 绕过未决调用。详细边界见项目文档的
+[图片输入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/image-inputs.md)。
+
 ## 独立任务与调度声明
 
 需要并行时，先读取当前二进制的 packet schema 与 `config inspect`；只使用已实现的
@@ -81,11 +97,12 @@ Full，不通过修改契约抢回 Quick。模型建议只是声明，执行与�
 这些运行状态文件由引擎生成与管理，不由 skill 预填。
 
 配置发现按任务 → 项目 → 全局 → 内嵌默认，取首个完整文件，不做深度合并。
-默认复用已有 ChatGPT、Kimi Code K3.1 Pro 与 DeepSeek Flash 资源；实际模型和
-权限以 `config inspect` 为准，不因流程模式覆盖用户绑定或恢复智谱等旧后备渠道。
-可选 `claude-code-pro` 是独立 harness；用户决定用途后才绑定 profile，不把
+新默认使用 Antigravity、Claude Code、Codex 与 Kimi 四家原生订阅客户端；旧完整
+配置保留原绑定，实际模型和权限以 `config inspect` 为准。不要因流程模式覆盖用户
+绑定或恢复付费后备；DeepSeek／通用 DSH 仅为未声明 subscription-only 的兼容选择。
+`claude-code-pro` 是独立 harness，新默认用于实施计划和 frontend／multimodal；不把
 `subagent_claude_code` 视为 DSH provider，也不增加父模型委派。启动前由 doctor
-核对配套 0.6.0 machine/lifecycle/recovery API 与 full-access，角色续接、只读恢复和
+核对配套 0.7.0 machine/lifecycle/recovery API 与 full-access，角色续接、只读恢复和
 质量重建由 Go 管理；保留原调用证据，不另写恢复状态或因配置变化重置预算。
 需要 live 凭证时如实声明 `needs-live-credentials`，沿用实际凭证授权机制，不能
 凭 full-access 或 Quick 名称跳过它。

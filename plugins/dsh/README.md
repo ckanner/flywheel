@@ -18,8 +18,7 @@ Requirements are **Node.js 22.18.0 or later**, npm, and a compatible DSH desktop
 with its desktop-supplied `dsh` command. This package declares DSH
 **`>=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0`** and the corresponding Cordis 4.0/4.1 interfaces.
 DSH includes prereleases when checking this range: later 0.2 rc/patch releases do
-not need an exact-version exemption or a new Flywheel release. The next minor,
-including 0.3 alpha/beta/rc releases, remains outside this contract.
+not need an exact-version exemption or a new Flywheel release. The next minor, 0.4 including its prereleases, remains outside this contract.
 The selected host may have a higher Node requirement; use its supported runtime.
 
 The range is an API compatibility policy, not evidence that every future host
@@ -58,37 +57,27 @@ See [Getting started](https://github.com/ckanner/flywheel/blob/main/docs/en/gett
 
 ## Prepare the selected backends
 
-The DSH worker uses an independent `sdk` profile by default. Standard desktop
-and SDK profiles under the same `DSH_HOME` can reuse the DeepSeek account
-credential store. A custom profile must load the selected account service,
-provider, and tools. The reserved `desktop` profile cannot be used as a worker.
+The default uses native subscription clients; the DSH view is the control plane.
+Installing a desktop plugin does not change the parent conversation's provider.
 
 | Backend | Setup and execution path |
-|---|---|
-| DeepSeek Flash | DSH `deepseek-account` and explicit `deepseek-flash`; no additional API key is required for the standard shared account store |
-| DSH ChatGPT | Install and authorize the selected ChatGPT adapter in the SDK profile; changing the desktop chat model does not configure a worker |
-| Codex Pro | The worker imports `dsh-subagent-codex-pro/machine` from the pinned 0.10.2 package and uses the installed Codex CLI/login |
-| Kimi | Go uses the Kimi CLI by default, or its owned local Server worker for native Agent/Swarm/Tower; the same Kimi login applies |
-| Claude Code Pro | Optional 0.6.0 peer and compatible local Claude runtime with authorized authentication; no default loop selects it; follow the [adapter guide](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md) |
+| --- | --- |
+| Antigravity | Bundled `dsh-subagent-antigravity@0.2.0` machine API → official installed `agy` CLI and native Google login; no ACP |
+| Claude Code Pro | Exact optional peer `0.7.0` in the worker dependency tree → official Agent SDK → local Claude Code subscription |
+| Codex Pro | Bundled `0.10.2` machine API → official app-server with ChatGPT login |
+| Kimi | Minimal owned native agent profile with managed Kimi Code OAuth; strict subscription mode rejects print |
 
-The checked ChatGPT companion is 0.1.20. If the SDK profile is missing it or needs
-updating, use:
+The strict preset checks native routing and supported subscription evidence before
+admission; unknown quota remains unknown. Auth/quota failures never enable API keys,
+credits or extra-usage fallback. See [model policy](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md),
+[Antigravity](https://github.com/ckanner/flywheel/blob/main/docs/en/antigravity.md), and
+[Claude](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md).
 
-```sh
-dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
-```
-
-That versioned example does not establish current account entitlements.
-Authentication and live model availability must be checked through each
-backend's supported flow. Flywheel does not install native model CLIs, copy
-credentials, or provide subscription access.
-
-The default Flash route does not fall back to `deepseek-official` after an
-account failure. That API-key provider is an explicit alternative. The default
-hard route uses `codex-pro`, not a DSH provider called `subagent_codex_pro`, and
-does not silently fall back to `codex exec`. See
-[Configuration](https://github.com/ckanner/flywheel/blob/main/docs/en/configuration.md) and
-[Models and reasoning effort](https://github.com/ckanner/flywheel/blob/main/docs/en/model-policy.md).
+Existing non-strict configurations can still explicitly use a DSH `sdk` profile,
+DeepSeek account/API providers or DSH ChatGPT. They are not reachable alternatives
+inside `subscription-only`. SDK and Desktop profiles are separate; native CLI
+login remains the user's supported flow. Flywheel does not copy credentials or
+install model-client executables.
 
 ### Executable and environment overrides
 
@@ -102,6 +91,7 @@ does not silently fall back to `codex exec`. See
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | Explicit optional Claude worker override |
 | `FLYWHEEL_CODEX_BIN` / `CODEX_HOME` | Native Codex executable and existing configuration/login root |
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | Native Claude executable and existing configuration/login root |
+| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | Official agy executable / explicit Antigravity worker override |
 | `FLYWHEEL_KIMI_BIN` | Native Kimi executable; default `kimi` |
 
 The npm launcher normally resolves workers from its own installed package.
@@ -110,12 +100,12 @@ the engine; a shell export does not update an already running desktop.
 
 ## Start a task and use the workbench
 
-In DSH's composer, enter `/flywheel-task <goal>`. The host assistant prepares
-and checks the task contracts, then calls `flywheel_launch`. Preparation uses
-the conversation model; execution stages use Flywheel's configured bindings.
-Use `/flywheel-new` to prepare a proposal without starting, and `/flywheel-run`
-to continue an existing task. An explicit request to review a proposal first
-remains part of the task's authorization.
+In DSH's composer, enter `/flywheel-task <goal>`. The host records facts and a
+thin brief, then uses `flywheel_control planning`. Go invokes the selected design
+and independent review roles, using compact or system preparation. Review-first
+stops for exact-version user approval; delegated work continues under existing
+implementation authority. `/flywheel-new` defaults to review-first; `/flywheel-run`
+continues the original task and ledger.
 
 Open **Flywheel** alongside the built-in conversation views, or in their overflow
 menu. The workbench has three pages:

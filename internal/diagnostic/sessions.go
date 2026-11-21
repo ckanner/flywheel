@@ -23,7 +23,7 @@ type SessionPolicy struct {
 
 func sessionPolicy(cfg *config.Config, role, harness string, binding config.LoopBinding) SessionPolicy {
 	policy := SessionPolicy{Mode: "fresh", Supported: config.SupportsScopedSessions(harness), Reason: "fresh-policy",
-		DurableJournal: harness == "codex-pro" || harness == "claude-code-pro", ReadOnlyRecovery: harness == "codex-pro" || harness == "claude-code-pro",
+		DurableJournal: harness == "codex-pro" || harness == "claude-code-pro" || harness == "antigravity", ReadOnlyRecovery: harness == "codex-pro" || harness == "claude-code-pro" || harness == "antigravity",
 		ThreadReadyBeforeDispatch: harness == "codex-pro"}
 	nativeKimi := harness == "kimi" && binding.NativeProfile != ""
 	if nativeKimi {

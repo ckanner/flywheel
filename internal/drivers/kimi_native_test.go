@@ -138,7 +138,7 @@ func TestKimiNativeAdmissionFailuresNeverDispatch(t *testing.T) {
 	base := KimiArgs{Native: json.RawMessage(`{"version":1,"mode":"agent"}`), Cwd: t.TempDir(), Prompt: "p", PermissionMode: "danger-full-access"}
 	for _, mutate := range []func(*KimiArgs){
 		func(a *KimiArgs) { a.PermissionMode = "workspace-write" }, func(a *KimiArgs) { a.Prompt = " " }, func(a *KimiArgs) { a.SessionID = "foreign" },
-		func(a *KimiArgs) { a.Cwd = filepath.Join(a.Cwd, "missing") }, func(a *KimiArgs) { a.Native = json.RawMessage(`{`) }, func(a *KimiArgs) { a.Prompt = strings.Repeat("x", claudeCodeProRequestBytes) },
+		func(a *KimiArgs) { a.Cwd = filepath.Join(a.Cwd, "missing") }, func(a *KimiArgs) { a.Native = json.RawMessage(`{`) }, func(a *KimiArgs) { a.Prompt = strings.Repeat("x", machineRequestBytes) },
 	} {
 		a := base
 		mutate(&a)

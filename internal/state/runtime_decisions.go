@@ -15,30 +15,63 @@ import (
 // RuntimeDecisions belongs to the task, not a worker or an individual run.
 // Reserved/unknown requests and imported investigation calls share its cap.
 type RuntimeDecisions struct {
-	Version       int                      `json:"version"`
-	Config        *config.JEVConfig        `json:"config,omitempty"`
-	Used          int                      `json:"used"`
-	ImportedCalls int                      `json:"imported-calls"`
-	Status        string                   `json:"status"`
-	Records       []*RuntimeDecisionRecord `json:"records"`
-	MaxCalls      int                      `json:"max-calls,omitempty"` // display projection
-	Omitted       int                      `json:"omitted-records,omitempty"`
+	Subscription  *decision.SubscriptionBinding `json:"subscription-binding,omitempty"`
+	Version       int                           `json:"version"`
+	Config        *config.JEVConfig             `json:"config,omitempty"`
+	Used          int                           `json:"used"`
+	ImportedCalls int                           `json:"imported-calls"`
+	Status        string                        `json:"status"`
+	Records       []*RuntimeDecisionRecord      `json:"records"`
+	MaxCalls      int                           `json:"max-calls,omitempty"` // display projection
+	Omitted       int                           `json:"omitted-records,omitempty"`
 }
 
 type RuntimeDecisionRecord struct {
-	ID                   string              `json:"id"`
-	Packet               string              `json:"packet"`
-	Attempt              int                 `json:"attempt"`
-	PlanRevisions        int                 `json:"plan-revisions"`
-	StartedAt            string              `json:"started-at"`
-	Snapshot             *decision.Snapshot  `json:"snapshot,omitempty"`
-	Receipt              *decision.Receipt   `json:"receipt,omitempty"`
-	Selection            *decision.Selection `json:"selection,omitempty"`
-	Action               string              `json:"action"`
-	Status               string              `json:"status"`
-	Accounted            bool                `json:"accounted"`
-	Feedback             any                 `json:"feedback,omitempty"`
-	PlanInvocationBefore string              `json:"plan-invocation-before,omitempty"`
+	Execution            *RuntimeDecisionExecution     `json:"execution,omitempty"`
+	ExecutionView        *RuntimeDecisionExecutionView `json:"execution-view,omitempty"` // console projection only
+	ModelBindings        map[string]BindingSnapshot    `json:"model-bindings,omitempty"`
+	ModelBindingsOmitted int                           `json:"model-bindings-omitted,omitempty"` // display projection only
+	Phase                string                        `json:"phase,omitempty"`                  // display projection only
+	BaselineActionID     string                        `json:"baseline-action-id,omitempty"`
+	Actions              []decision.Action             `json:"actions,omitempty"`
+	ID                   string                        `json:"id"`
+	Packet               string                        `json:"packet"`
+	Attempt              int                           `json:"attempt"`
+	PlanRevisions        int                           `json:"plan-revisions"`
+	StartedAt            string                        `json:"started-at"`
+	Snapshot             *decision.Snapshot            `json:"snapshot,omitempty"`
+	Receipt              *decision.Receipt             `json:"receipt,omitempty"`
+	Selection            *decision.Selection           `json:"selection,omitempty"`
+	Action               string                        `json:"action"`
+	Status               string                        `json:"status"`
+	Accounted            bool                          `json:"accounted"`
+	Feedback             any                           `json:"feedback,omitempty"`
+	PlanInvocationBefore string                        `json:"plan-invocation-before,omitempty"`
+}
+
+// Execution records an explicit link created before dispatch. It is display
+// evidence only; neither the link nor the view grants execution authority.
+type RuntimeDecisionExecution struct {
+	ContractFingerprint string                     `json:"contract-fingerprint"`
+	Invocation          *RuntimeDecisionInvocation `json:"invocation,omitempty"`
+}
+
+type RuntimeDecisionInvocation struct {
+	ID               string `json:"id"`
+	DispatchObserved bool   `json:"dispatch-observed,omitempty"`
+	EngineRunID      string `json:"engine-run-id,omitempty"`
+	StartedAt        string `json:"started-at"`
+	Attempt          int    `json:"attempt"`
+	Status           string `json:"status"`
+	Dispatch         string `json:"dispatch"`
+	Outcome          string `json:"outcome"`
+	CleanupConfirmed bool   `json:"cleanup-confirmed"`
+}
+
+type RuntimeDecisionExecutionView struct {
+	Status     string                     `json:"status"`
+	Reason     string                     `json:"reason"`
+	Invocation *RuntimeDecisionInvocation `json:"invocation,omitempty"`
 }
 
 var runtimeStateSchema = contract.StateSchema
@@ -46,6 +79,9 @@ var runtimeStateSchema = contract.StateSchema
 func validateRuntimeDecisions(st *State) error {
 	ledger := st.RuntimeDecisions
 	if ledger == nil {
+		if err := validateRuntimeExecutionLinks(st, nil); err != nil {
+			return err
+		}
 		return validatePendingStrategies(st, nil)
 	}
 	schema, err := runtimeStateSchema()
@@ -61,9 +97,17 @@ func validateRuntimeDecisions(st *State) error {
 	if err := schema.Properties["runtime-decisions"].Validate(value); err != nil {
 		return fmt.Errorf("runtime decisions: %w", err)
 	}
+	if ledger.Config.Backend == "subscription" {
+		if err := decision.ValidateSubscriptionBinding(ledger.Subscription); err != nil {
+			return err
+		}
+		if ledger.Subscription.Profile != ledger.Config.Profile {
+			return fmt.Errorf("runtime decision profile contradicts its frozen binding")
+		}
+	}
 	seen, used := map[string]*RuntimeDecisionRecord{}, ledger.ImportedCalls
 	for _, record := range ledger.Records {
-		if seen[record.ID] != nil || st.Packets[record.Packet] == nil || record.Snapshot == nil || record.Snapshot.ID != record.ID || record.Snapshot.Identity.TaskID != st.Slug || record.Snapshot.Version != 2 || record.Snapshot.Identity.Revision > st.Revision {
+		if seen[record.ID] != nil || st.Packets[record.Packet] == nil || record.Snapshot == nil || record.Snapshot.ID != record.ID || record.Snapshot.Identity.TaskID != st.Slug || (record.Snapshot.Version != 2 && record.Snapshot.Version != 3) || record.Snapshot.Identity.Revision > st.Revision {
 			return fmt.Errorf("runtime decision identity mismatch")
 		}
 		seen[record.ID] = record
@@ -83,6 +127,9 @@ func validateRuntimeDecisions(st *State) error {
 	if used != ledger.Used {
 		return fmt.Errorf("runtime decision call count mismatch")
 	}
+	if err := validateRuntimeExecutionLinks(st, seen); err != nil {
+		return err
+	}
 	return validatePendingStrategies(st, seen)
 }
 
@@ -100,6 +147,10 @@ func validatePendingStrategies(st *State, records map[string]*RuntimeDecisionRec
 
 func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *config.JEVConfig) error {
 	snapshot := r.Snapshot
+	if snapshot.Version == 3 && (r.Attempt != 0 || r.PlanRevisions != 0 || r.ID != "initial-"+r.Packet ||
+		(r.Status == "pending" && (st.Packets[r.Packet].Attempts != 0 || st.Packets[r.Packet].PlanRevisions != 0))) {
+		return fmt.Errorf("initial execution decision must identify the packet's first execution")
+	}
 	if !snapshot.SemanticUncertainty || snapshot.ExecutorUnknown || len(snapshot.Actions) < 2 {
 		return fmt.Errorf("runtime decision did not have eligible known evidence")
 	}
@@ -110,6 +161,15 @@ func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *confi
 		}
 		if action.ID == r.Action {
 			selected = action
+		}
+	}
+	for id := range r.ModelBindings {
+		found := false
+		for _, action := range snapshot.Actions {
+			found = found || action.ID == id && action.Kind == decision.Model
+		}
+		if !found {
+			return fmt.Errorf("runtime model binding is absent from its frozen actions")
 		}
 	}
 	if selected.ID == "" {
@@ -137,6 +197,12 @@ func validateRuntimeDecisionRecord(st *State, r *RuntimeDecisionRecord, j *confi
 	}
 	options := decision.Options{Endpoint: j.Endpoint, Model: j.Model, ExpectedModel: j.Model, Timeout: time.Duration(j.TimeoutMS) * time.Millisecond,
 		AllowedKinds: []decision.ActionKind{decision.Diagnostic, decision.Repair, decision.Replan, decision.Model}}
+	if j.Backend == "subscription" {
+		options.Backend, options.Subscription = j.Backend, st.RuntimeDecisions.Subscription
+		if options.Subscription != nil {
+			options.Model, options.ExpectedModel = options.Subscription.Model, options.Subscription.Model
+		}
+	}
 	if err := decision.ValidateReceiptIdentity(*snapshot, j.DecisionPolicy(), options, *r.Receipt); err != nil {
 		return err
 	}

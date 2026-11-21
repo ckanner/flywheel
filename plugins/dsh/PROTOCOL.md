@@ -1,4 +1,4 @@
-# Go ↔ DSH / Kimi / Codex Pro / Claude Code Pro worker 协议
+# Go ↔ DSH / Kimi / Codex / Claude / Antigravity worker 协议
 
 此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。Go与worker之间使用本地stdio；Kimi native worker内部使用其拥有的loopback Server，见本文件原生扩展和Kimi专属协议。
 
@@ -335,7 +335,7 @@ request／initialize／新 thread-start 等派发前阶段可证明 not-dispatch
 
 ### 共有的活动与名称扩展
 
-Codex Pro 0.10.2 和 Claude Code Pro 0.6.0 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
+Codex Pro 0.10.2 和 Claude Code Pro 0.7.0 必须公开 `MACHINE_ACTIVITY_VERSION=1` 与
 `MACHINE_ACTIVITY_CAPABILITIES={version:1,metadataOnly:true,coalesced:true,rootAndChildren:true}`。
 外层请求的可选 `idleTimeoutMs` 是 1–2,147,483,647 正整数；省略按 300000 计算
 观察合并间隔 `min(1000, max(1, floor(idleTimeoutMs/4)))`，不改变有效 wall 预算。
@@ -427,15 +427,60 @@ status 为 terminal/pending/unknown。只有 exact invocation 的完整 terminal
 
 cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report；恢复到 receipt 不自动获得该证明。缺少它时可信用量可对账，业务保持阻断。状态、metrics 与候选消费语义见[恢复指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/session-recovery.md)。
 
+## Antigravity worker
+
+`flywheel-antigravity-worker` 固定 `dsh-subagent-antigravity@0.2.0`，只调用公开
+machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
+均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
+readOnlyRecovery 及 evidenceOnly:verified-empty-init-tools，缺失即拒绝。
+
+Start 字段为 type/protocol/requestId/cwd/model/reasoningEffort/permissionMode/prompt/
+timeoutMs，以及可选 idleTimeoutMs/sessionTitle/threadMode/threadId/recoveryDirectory，
+另必需 subscription version 1；evidenceOnly 是可选布尔值；native 可选
+`{version:1,mode:"native"|"subagents"|"swarm",maxObservedAgents?:1..8}`。普通执行只接受
+permissionMode:danger-full-access，映射 accept-edits/always-proceed；evidenceOnly:true
+必须 read-only，映射 plan/request-review 并在提示词前核对实际空tools及独占agent身份。
+evidence-only 拒绝 native overrides 和 Orchestrator。始终不接受 images、任意
+provider、API key或未识别字段。mode/native 选项完整进入会话与恢复身份。
+
+普通 model 必须是完整 gemini-4 家族/档位，后缀与 reasoningEffort 相同。
+三个精确 Orchestrator slug（gemini-pro-orchestrator-neon、gemini-pro-orchestrator、
+gemini-pro-orchestrator-argon）固定空 effort，不传 --effort。官方init须确认实际
+cwd/model/permission/conversation，evidence-only另确认agent和tools。effort/config未暴露
+时不伪造observed。新调用保留独立原生history；resume必须精确本适配器拥有的已确认
+conversation，不使用latest。v3的Go ACK先持久化生命周期；非终态不提前报告cleanup，
+无原生terminal时本地terminal仍保留unknown。缺失/坏帧/取消/WAITING/软拒绝或非空
+finished_reason 不算成功。显式 subagents/swarm 需要实际 child conversation 元数据；
+没有观察到成员返回 collaboration-not-observed，不伪造派发或工具日志。
+
+Swarm 入口只由适配器合成 /swarm，任务内容放入将所有斜杠转义的 JSON 负载；
+普通和 subagents 调用保持禁用 slash commands。maxObservedAgents 是不同已观察成员
+的停止阈值，包含观察到的 verifier/monitor，hard:false；不是原生并发或整树硬限额。
+native 回执将 requested mode、collaborationObserved、实际子成员与 CLI 调用完成分别
+记录；缺少的子成员模型/状态/用量/远程清理仍 unknown，不能套用完整子树生命周期。
+子成员元数据累计越限会保留可信成员 ID、标记 metadataTruncated 并失败。metrics 仅投影
+有界的请求/观察摘要，不将 root 完成转写为子树完成；原始 prompt/工具正文不进入摘要。
+
+终态envelope仍为 {protocol,type:"result",requestId,adapter,receipt,error}。receipt保留
+原生usage、configuration、subscription、execution、cleanup、providerWork和failure。
+subscription.status为verified-local-controls时只证明本地account route和credits后备
+控制已核对；权益/余额/额外费用可unknown。conversation usage不加总为本轮完整计量，
+成本unknown不填零。派发前错误可在准确证明下标not-dispatched，不能抹掉spawned PID。
+
+Recover只读原recoveryDirectory的精确requestId/runId journal，带冻结的subscription/
+evidenceOnly与模型权限核对；不得启动CLI或再次发送任务。doctor仅核对package/接口与
+可执行兼容性，不发推理或推定账户额度。完整原生协议见独立插件的
+[Machine contract](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/docs/MACHINE.md)。
+
 ## Claude Code Pro worker
 
 `flywheel-claude-code-pro-worker` 与 Codex 共用父 stdin lifeline、单请求、大小上限、
 信号转发与等待收尾的 transport，适配器及回执保持独立。optional peer 精确为
-`dsh-subagent-claude-code-pro@0.6.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
+`dsh-subagent-claude-code-pro@0.7.0`，公开导出 `MACHINE_PROTOCOL_VERSION=1`、
 `parseMachineRequest`、`MachineInputError`、`runMachine`、`recoverMachine` 和 lifecycle version/capabilities。缺 peer 不影响未选择 Claude
 的流程；选中时在 machine 调用前报错，绝不改调 DSH、Codex 或另一版 CLI wrapper。
 
-0.6.0 普通调用通过官方 Agent SDK 0.3.326 的 `query()`，由既有 guardian 的公开
+0.7.0 普通调用通过官方 Agent SDK 0.3.326 的 `query()`，由既有 guardian 的公开
 spawn hook 启动 `FLYWHEEL_CLAUDE_BIN` 指定的本地程序。SDK 负责请求／控制协议，
 插件保留逐帧 UTF-8／JSON／大小校验、真实活动、结果身份、物理退出和进程组清理。
 SDK 迭代结束不证明清理完成。machine／lifecycle version 仍为 1，真实原生
@@ -449,7 +494,9 @@ reasoningEffort、permissionMode、prompt、timeoutMs，以及可选 idleTimeout
 原生审批模式不等价于 OS read-only/workspace-write。命令来自
 FLYWHEEL_CLAUDE_BIN，权限、session、命令和输出上限不能通过额外 start 字段覆盖。
 
-Claude query 单帧上限为 16 MiB，最终答案按请求的 1 MiB 保留预算核验，图片数量／字节另有有界上限；中间文本只保留展示 tail，不按累计 raw 流量终止任务。
+Claude start 输入单帧上限为 16 MiB，业务 prompt 独立限制为 1 MiB；其他 worker 的输入帧仍为 1 MiB。`images` 接受最多四项 `{mimeType,data}`，`data` 为规范 Base64，类型为 PNG/JPEG/GIF/WebP；解码后每张最多 4 MiB、合计 8 MiB。路径和 data URL 不代替原生附件。Go 的 packet `input-images` 生产链另行检查仓库相对路径、无符号链接、摘要、真实图像解码、8192 边长与 1600 万像素上限，再把真实字节交给此接口。Claude query 输出单帧上限也为 16 MiB，最终答案按请求的 1 MiB 保留预算核验；中间文本只保留展示 tail，不按累计 raw 流量终止任务。
+
+图片身份保存在回执的 `requested.inputImages:{version:1,images:[{mimeType,sha256,bytes}]}`，顺序和摘要均由实际解码字节计算；durable journal 从首次派发前就保存同一 `context.inputImages`，不保存图片内容。无图请求保留原回执结构。Go 将该 manifest 冻结到 invocation，并对成功及恢复证据核对；恢复请求只读原身份和 journal，禁止携带新图片或 prompt，不能以新附件替换待对账的调用。
 
 Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --help` 检查
 `--include-partial-messages`、`--forward-subagent-text` 与新会话命名所需的 `--name`。
@@ -458,16 +505,25 @@ Claude query 在发送业务 prompt 前，通过受管、无推理的 `claude --
 能力不自动试发 prompt，也不切换后端。短暂 partial 事件不进入最终答案文本。
 SDK 同一进程的 initialize 响应还须提供稳定的 `claude_code_version >= 2.1.325`，
 之后才放行用户任务。这是最低已验证版本；缺失、过旧或预发布版拒绝。该拒绝保留
-已经观察到的原生 PID／dispatch 与独立 cleanup，当前契约保守记录 unknown／possible，
-不因尚未发送 prompt 而伪造进程从未启动。新会话标题、Agent 定义与子级文本转发
+已经观察到的原生 PID 与独立 cleanup；只有明确尚未写入 user prompt 的准入失败
+才可报告 not-dispatched，CLI 已 spawned 仍如实保留。没有该证明时保持 unknown/possible。新会话标题、Agent 定义与子级文本转发
 通过 SDK initialize 发送；根 effort、权限与显式持久化通过 SDK 正式选项传递。
 
 native v1 的 `agents.definitions.<name>.effort` 可选，枚举为
 low/medium/high/xhigh/max。Go 配置 schema 在加载时检查，worker 将 native 对象完整
 交给公开 parser，插件原样传入 SDK `agents`（交互 Team 使用 `--agents`）；省略时不注入子 effort。父调用的
 reasoningEffort 仍独立映射到 `--effort`。此扩展不升级 machine/native protocol，
-但需要精确 0.6.0；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
+但需要精确 0.7.0；0.5.0 的 parser 不接受该字段，不能改写包身份放行。回执中的
 requested 证明请求参数，tools-only effective 不证明子模型实际 effort。
+
+严格订阅 start 带 `subscription:{version:1,mode:"subscription-only"}`，普通请求还可带
+公开 machine 类型化 images。worker 核对 0.7.0 的 MACHINE_SUBSCRIPTION_CAPABILITIES
+和 inspectSubscription；同一官方 CLI 初始化进程在提示词前调用 accountInfo 与
+usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({skipBehaviors:true})，
+要求支持的 first-party subscription 与 extra_usage.is_enabled:false。拒绝 API/gateway、
+helper、fast mode、自动模型fallback等冲突。原始subscription回执保留source/status/time、
+provider/plan/extra usage，root model必须来自当前 assistant.message.model；累计
+modelUsage 不证明根模型。预检快照不是全过程计费锁，独立 native Review/Team strict请求拒绝。
 
 terminal envelope 为 `{protocol,type:"result",requestId,adapter,receipt,error}`。
 adapter 是精确 package/version/protocol；receipt 原样保存 Claude machine v1 的
@@ -489,7 +545,7 @@ envelope 可额外带 `admission:{dispatched:false,cleanupConfirmed:true}`。Go 
 进入调用后的缺失结果则保持 unknown，即使工作进程随后退出也不允许自动重放。
 
 `--doctor` 仅核验精确 peer 与导出，返回
-`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.6.0",machineProtocol:1,available:true,inferenceTested:false}`。
+`{protocol:1,type:"doctor",package:"dsh-subagent-claude-code-pro",version:"0.7.0",machineProtocol:1,available:true,inferenceTested:false}`。
 不启动 Claude，不测试账号。完整用户入口见[中文](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)／
 [English](https://github.com/ckanner/flywheel/blob/main/docs/en/claude-code-pro.md)。
 
@@ -528,6 +584,8 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 | `launch` | 必需 taskDir／cwd；可选 `--mode`（auto、quick、full），缺省 auto；校验已准备契约并启动 |
 | `start` | 必需 taskDir／cwd；可选 `--mode`，省略时保留契约或持久化策略；旧任务仍 Full |
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
+| `images` | 必需 cwd，可省 taskDir；stdin 为 `{ "paths": ["repo-relative.png"] }`，返回只读 `inputImages` 选择与 PNG 缩略图 |
+| `models` | 必需 cwd，可省 taskDir；stdin 为 `{ "version":1,"harness":"antigravity","provider":"可选","channel":"可选" }`，返回 `modelCatalog` 元数据，不调用模型 |
 | `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
 | `session` | 必需 taskDir／cwd；stdin 接收 revision-bound session 命令；可选 `abandon` 只用于规划角色未知调用，要求人工证明；返回 `session-control` |
 
@@ -536,6 +594,20 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 工作流事实来自 Spec，最终策略由 Go 保存到 `state.workflow`：version、requested、effective、reason、evidence、risks、selected-at、stages 和 upgrades。`stages.plan/judge` 各有 applicable 与 reason，不使用伪造 pass。launch 默认 Auto 只是请求，不是承诺一定 Quick；显式 Quick 也必须通过资格校验。未知版本或非法模式在模型启动前失败。已有策略恢复时不重分类，Full 不降为 Quick；upgrade 先持久化再进入 Full。status／stop／config／doctor 不接受 `--mode`。
 
 `configuration` 含 source、scope、cwd、taskDir、sessions、bindings 和 jev。jev 使用统一配置字段，enabled 是唯一总开关；它表示配置状态，不代表已请求或采用。sessions 含 mode／policy-version、可选 roles 与 quality 配置；每个 binding 包括 id、role、route、profile、bindingSource、harness、provider、channel、model、thinking、residentSession、permissionMode、inScope 及 session。session 含 mode、supported、reason、historyRecoveryTested:false，仅报告选择与适配器能力，不证明具体历史存在。账号渠道与实际 adapter 分开；未给出的旧配置值不得由 UI 猜成已验证。
+
+路线 binding 的 ID 保持 `routes.<route>`；配置了 execution-policy 时，显示值解析其
+`initial`，并携带 `candidateId` 与 `bindingSource:execution-policy.bindings.<id>`。
+候选的权限、会话和 native options 不被路线旧声明覆盖，Orchestrator 的固定空 thinking
+原样保留。`jevBinding` 是可选的、解析后的订阅 JEV Binding；不能用空的 `jev.model`
+代替它，也不能从 profile 名猜实际模型。`source/scope` 是任务实际选择的完整文件，
+编辑器的 global/project 目标不是 task 覆盖已经改变的证明。
+
+`images` 只处理显式一至四个仓库相对路径。Go 复用执行通道的路径约束、无符号链接、
+真实图像解码和大小限制，返回 `inputImages:{references:{version:1,images:[{path,
+sha256,media-type}]},previews:[{path,mimeType,sha256,bytes,width,height,dataUrl}]}`。
+`dataUrl` 只含最长边不超过 160 像素的 PNG 缩略图，尺寸字段描述原图；控制响应不包含原始
+图像字节。它不创建任务、不改写契约、不发送模型请求，也不证明已经批准或消费。
+桌面请求使用外层 `images:{paths:[...]}`，由 host 作为 stdin 原样交给 Go。
 
 有会话记录的状态快照另含紧凑 `sessions` 数组：role、scope、generation、action、reason、
 resumeCandidate，以及 last 的 status、persistent、dispatch、outcome、cleanupConfirmed、
@@ -562,6 +634,67 @@ revision、reason 和准确 invocation，并要求 `FLYWHEEL_SESSION_USER_ACTION
 
 config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。launch/start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
 
+### 模型目录只读查询
+
+模型目录另用独立 metadata worker `flywheel-model-catalog`，host 安装解析为随包的
+`dist/model-catalog-worker.mjs`（可显式覆盖 `FLYWHEEL_MODEL_CATALOG_WORKER`）。输入是
+版本 1 的 harness/provider/channel 加物理 cwd；单次 stdout 返回一个 JSON 报告。
+`modelCatalog` 回显绑定身份并提供 `status:available|unavailable|unsupported`、`source`、
+`scope:native-client-catalog`、`models:[{id,label,description?,efforts?,defaultEffort?}]`、
+`truncated`、`inferencePerformed:false`、`accountEntitlement:unknown`、`limitations` 和可选
+`error:{code,message}`。身份、枚举、计数或推理／授权声明不符时拒绝整份报告。
+目录最多 256 项、Codex 最多八页；原生进程 10 秒，Go watchdog 15 秒，累计输出 1 MiB，
+错误输出仅计数不回传。目录读取不发送 prompt、不创建 Codex thread/turn、不登录、不
+改变任务配置；Kimi／DSH 未验证的目录通道返回 unsupported，用户可继续输入精确模型 ID。
+
+### Packet 资格、分工与图片输入修订
+
+`control node --packet M01-T01` 追加以下只读字段：
+
+- `node.eligibility:{packet,revision,status,reason,source,route?,candidates}`，status 为
+  verified／unknown，source 为 configuration／frozen。候选为
+  `{id,binding,eligible,conditions:[{code,passed,message}]}`，binding 使用配置的连字符字段。
+  相同条件供引擎实际执行准入使用；当前任务契约或冻结配置身份无法核对时不返回肯定资格。
+- `node.collaborationEditor:{packet,revision,contractFingerprint?,plan?,editable,reason,writes,value?}`。
+  value 使用既有 packet collaboration 契约，plan 为 `{revision,digest}`；未审新版本与已审
+  `node.collaboration` 分开展示。编辑快照超限时不可编辑，写入范围不被截断。
+- `node.imageInputEditor:{packet,revision,contractFingerprint?,plan?,editable,status,reason,value}`。
+  value 必须存在，为 null 或 `{version:1,images:[{path,sha256,"media-type"}]}`；它来自当前
+  完整 plan 的声明，未审版本不能称为已激活或模型已接收。node 不读取原图、不生成预览。
+  status 为 known／unknown，表示是否读到了对应 packet／plan 的完整声明；unknown
+  必须 editable:false、value:null，不能把该 null 显示为“没有图片”。最新计划缺失或无法
+  解析时不借用活动契约中的旧值。无规划但已读取冻结 packet 的 known 值仅为已读取声明。
+  两类编辑器共用精确批准、完整活动投影和不可变导出检查；图片编辑不要求分工写入范围。
+
+保存使用 `planning` 的 `action:"collaboration"`，额外字段为 revision、request-id、
+`collaboration:{packet,contractFingerprint,plan,value}` 和可选 start。整个 collaboration
+值最多 32 KiB，未知字段拒绝。Go 在 run lease 与 CAS 内核对指纹、确切活动计划、设计批准、
+未完成 packet、待对账和写入范围；产生完整不可变 plan 版本及直接进入 reviewer 的
+planning-only 请求。start:true 仅启动该独立评审，不批准新设计或启动实施；省略 start
+只保存待审版本。producer ID 为 `control:collaboration:<request-id的SHA256>`。
+前端必须核对返回 planning-control 的 action 和 request-id；回执缺失或不匹配保留未知
+结果，不能重发。可用只读 planning/status 加同一 request-id 对账。
+新规划请求保存不可变 `origin:"collaboration-edit"`；普通 plan 的自由 Feedback 不能伪装
+成此 action。在已拿到 lease 后确认未采用的拒绝追加 `state.inbox` 审计项
+`{kind:"planning-collaboration-rejected",request-id,command-digest,message}`，成功 CAS 后
+返回 `ok:true` 和 status rejected。该回执表示拒绝已确定，不表示分工已保存；start:true
+也不启动进程。同 ID 不同命令摘要拒绝复用，保存失败仍按未知结果处理。
+面板草稿与未决 ID 保存在当前 host Session 绑定，跨面板／任务切换后仍可按原身份核对；
+不会将另一会话的授权或草稿带入当前会话。
+
+图片保存使用 `planning` 的 `action:"input-images"`，额外字段为 revision、request-id、
+`"input-images":{packet,contractFingerprint,plan,value}` 和可选 start。编辑对象最多
+32 KiB；value 缺失拒绝，明确 null 表示申请移除全部图片且仍需新计划和独立评审。
+非 null 使用现有 packet 图片契约，最多四张，path 为干净的仓库相对路径，SHA-256
+为完整小写摘要，media-type 为 PNG/JPEG/GIF/WebP；不接受 data 或 dataUrl。显式
+预览沿 `control images`，保存时 Go 重读原始字节并重新检查无 symlink、摘要、真实
+解码、每张 4 MiB／合计 8 MiB、8192 边长与 1600 万像素上限。清空不会读取被移除的
+原图，也不会直接改活动契约。新请求 origin 为 `input-images-edit`，producer 为
+`control:input-images:<request-id的SHA256>`。start:true 只启动 planning-only 独立
+plan-review；确切计划审查通过前不更新活动输入，不授予实施 Start。回执 action 必须为
+input-images，复用同 action／request-id 的对账与未知锁；拒绝审计 kind 为
+`planning-input-images-rejected`，仅成功 CAS 后返回 rejected 且不启动进程。
+
 ### Reviewed planning 控制与可信批准
 
 新增 `control planning --task-dir <绝对目录> --cwd <绝对目录> --compact`。stdin 是一个
@@ -570,6 +703,8 @@ JSON 对象，host 外层工具/command 请求为 `{action:"planning",taskDir,cw
 
 | 内层 action | 字段与含义 |
 |---|---|
+| collaboration | revision、request-id、collaboration、可选 start；保存精确分工修订并准备独立 plan-review，始终 planning-only |
+| input-images | revision、request-id、input-images、可选 start；新增/替换冻结图片引用或显式 value:null 清空，产生新 plan 并独立评审，始终 planning-only |
 | prepare | brief、可选 request-id/start；brief 服从 planning.schema.json 的 $defs.brief，缺省启动设计；start:false 只登记 |
 | plan | revision、request-id、scope、可选 scope-id/text/start；text 是该 request 不可变的局部规划说明，供 planner/reviewer 使用，不增加全局 input-revision；design / milestone / packet / replan；显式 Plan 运行 planning-only，已有启动授权也不顺带执行 |
 | feedback | revision、request-id、text，可选 design/policy/start；输入绑定观测版本，运行中的 owner 可排队采用 |
@@ -626,6 +761,13 @@ approve-only 不获得 StartAuthorized；之后普通 Run 不补权限。已经�
 会话重载可从保留记录重建关联；fork 不继承父会话关联。投影记录是控制交接信息，
 恢复后仍查询 Go 取得最新状态，不把历史 running 值当成实时事实。
 
+成功关联可附带 `requestedTaskDir/requestedCwd`，二者只取同一已记录 command/tool/PTC
+请求的原始值，不能由返回体填写。`taskDir/cwd` 仍是 host 核验的物理目录。
+字段可选且投影版本保持 3，旧记录不猜测回填。创建表单只在同一请求的受验证响应，
+或上述成对来源精确匹配时，将草稿及未知结果屏障映射到规范目录；后续状态核对成功
+才解除屏障。表单关闭再打开仍保留原目标，不自动重发；核对确认 state/preparation
+已经创建后清除草稿和旧授权。会话结束后不会将草稿带入另一个会话绑定。
+
 launch/start 的在途或未知结果保留原 taskDir/cwd 并阻止重复变更，直到 status
 成功核对原任务。确认新关联时可自动查询一次状态，不自动启动或周期轮询。
 旧会话、旧绑定的迟到回复不覆盖当前选择。手动路径草稿与控制快照仍是查看缓存，
@@ -664,9 +806,11 @@ host 在调用 Go 前把任务和仓库目录规范化为真实路径，并校�
 
 `flywheelConsole/read` 是公开 Typert Remote，参数为宿主解析的 `agent`、控制请求 `input`
 和取消信号 `signal`。客户端显式挂载描述符，只有 React 是运行时共享模块。
-宿主只接受 runs/status/config/config-edit/metrics/history/node/delivery/doctor；其他 action
+宿主只接受 runs/status/config/config-edit/metrics/history/node/delivery/doctor/images，以及
+planning 的 status；其他 action
 在派发前拒绝。runs 仅返回当前会话的 hostSessionId；带任务的查询必须匹配当前投影或
-精确会话归属的运行记录，taskless 配置限定当前会话目录。返回 CommandResult 形状的
+精确会话归属的运行记录，taskless 配置与图片读取限定当前会话目录。图片路径必须明确
+提供，不能通过此入口扫描或自动吸收聊天附件。返回 CommandResult 形状的
 `result`，复用成功 JSON 与结构化失败验证，但不经过 Commands execute、不追加会话事件。
 
 UI 写操作仍经过 `/flywheel`；结果未知时的显式 status 也保留日志以解除持久投影的锁。
@@ -741,7 +885,7 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 
 | action | 额外输入 | 结果 |
 |---|---|---|
-| investigate | task-dir、cwd 与 stdin JSON：start/run/status/report/cancel 及所需 contract/revision | 由 Go 拥有的准备记录与有界调查结果 |
+| investigate | task-dir、cwd 与 stdin JSON：start/run/status/report/continue/cancel 及所需 contract/revision；start 可选 `run:true` | 由 Go 拥有的准备记录与有界调查结果 |
 | runs | cwd | 最近 100 条登记，运行状态另查 status |
 | metrics | task-dir，可选 run-id | 对账后的分组与有界调用明细；未知／部分数据不置零 |
 | node | task-dir、packet | 当前 packet 完整证据及相同 revision 的状态 |
@@ -749,6 +893,65 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 | session | stdin JSON：action、key、revision；claim 的 reason 或 send 的 prompt | 受管 claim/send/reconcile/return/release；后台结果写入 control 回执 |
 | delivery | stdin JSON：action=inspect，可选 headBranch | 仓库、当前 HEAD、PR 与检查状态 |
 | deliver | stdin JSON：create/merge、revision、expectedHead、expectedRepo、confirmed=true、base 等 | 明确授权的远端动作与回执 |
+
+新任务的 `planning prepare` 与 `investigate start` 允许尚不存在的绝对账本路径；Host
+只规范化已有父目录，不创建文件。创建仍由 Go 完成，其他动作必须使用已存在的目录。
+调查 start 的可选 `run` 只允许布尔值；省略时保持只登记。`run:true` 在登记成功后释放
+短期锁，以刚保存的 preparation revision 启动受管后台进程，避免另发一次 UI 启动请求。
+后台失败或未知结果沿用持久化对账；它不授予实施权限。
+
+新运行在 state.run 和 RunRecord 增加可选 `initialBindings`，键为角色／路线 ID，值为
+`{bindingId?,binding:SessionConfiguration}`，以及 `configurationSource/configurationScope`。
+原 `bindings/routes` 保留旧声明和兼容含义；旧记录无新字段时不得标为已记录的有效初始值。
+下一次选择来自 packet 已冻结 execution-policy，最近实际调用来自 session.configuration
+与 last 的派发事实。选择、尝试、接受派发和完成是不同状态。
+
+`packet.execution-policy.currentBinding` 是可选的完整 BindingSnapshot，包含必须与
+`current` 相同的 bindingId 及冻结的 nativeOptions。只在新策略创建或实际切换时写入，
+旧记录不回填。它是显示元数据，不改变策略准入、repair action 哈希或决策 Snapshot
+v1/v2/v3 恢复协议。客户端优先使用该快照；原生方式只取已保留的 options.mode，
+不从 nativeProfile 名称推测，缺失方式保持未知。
+
+这些新增显示绑定映射在一次控制响应中共用 64 KiB 预算，包括运行列表的全部行，
+不会为每行另开预算。单条 nativeOptions 超过 1 KiB 时保留完整身份及
+`nativeOptionsHash/nativeOptionsOmitted`，省略其正文；完整绑定本身放不下时整体省略，
+通过 `initialBindingsOmitted` 或 `model-bindings-omitted` 记录数量；currentBinding
+整体省略时返回只读投影字段 `currentBindingOmitted:true`，不得回退到不完整的旧历史
+冒充完整快照。state.packets 与 node.packet 的该元数据也共用整次响应预算。不截断模型、权限
+或会话字段，不删除原运行记录。此限制只影响显示，磁盘中的完整冻结记录保持不变。
+
+新 JEV record 的 `model-bindings` 在决策时冻结 action ID 对应完整 BindingSnapshot。
+只读投影另保留 `phase`、`baseline-action-id`、有界 `actions` 和 receipt 的 `action-id`，
+分别解释原建议与实际选择；它们不改变 Snapshot v1/v2/v3 的哈希或恢复协议。旧记录无
+绑定时显示未记录，不从最新配置重建历史。`node.collaboration` 的 verified/unverified/
+absent 状态由 Go 比较当前契约与冻结指纹，并核对独立审查及精确批准；只有 verified
+返回可标为已审的任务／写范围。native 观察必须按同一 invocation ID 关联，未观察子成员
+或完成状态保持未知。
+客户端只有在 metrics 读取成功且未返回匹配 invocation 时才说明该次查询未找到记录；
+pending、failed 与成功查询为空是独立事实。
+collaboration 显示证据超过 32 KiB 时整体省略 value，返回
+`unverified/display-limit-exceeded`，不显示被截断的范围，也不改变引擎执行资格。
+
+新的 model 决策可带持久 `execution:{contract-fingerprint,invocation?}` 展示元数据。
+执行 intent 的可选 `session.last.decision-id` 在派发前按准确 packet、下一 attempt、
+plan-revisions、当前候选 ID、冻结契约和完整绑定匹配；同 ID 调用摘要随正常 owner CAS
+保存，后续 session 替换不抹掉已记录的旧结果。原始 metadata 不参与 Snapshot/hash，
+控制投影省略它，改为 `execution-view:{status,reason,invocation?}`。status 为
+`not-selected|selected|not-started|started|completed|failed|cancelled|unknown`。
+invocation 仅含 id、可选 engine-run-id、started-at、attempt、status、dispatch、outcome、
+cleanup-confirmed 和可选 dispatch-observed，保留原回执的 `dispatched` 派发词汇。
+
+`dispatch-observed:true` 只来自已持久化、身份匹配的原生 turn-accepted 事件，可证明
+调用已启动但不改变真实 session Dispatch/Outcome 或恢复准入。完成/失败/取消的视图
+要求明确 dispatched、相同 outcome、cleanup-confirmed 和 received/consumed；其它
+部分事实保留 started/unknown。缺少旧调用关联时不根据相同模型、时间或新配置猜测。
+决策卡的调用结果与任务验收、实际子成员结果保持独立。
+
+`continue` 是显式补证新轮：完整 contract 和观测 revision 必填，旧报告必须 settled，
+所有动作/分析/JEV调用及cleanup均已结算。保留ID、goal、intent、implementation-scope，
+known-evidence必须有新增依据，limits不得超过累计剩余额度；同task/runId归档旧轮及digest。
+`run`在取证后使用loops.investigate分析，awaiting-report可继续分析，analysis-pending只能
+先读原回执；UI不能通过报告提交或新轮绕过unknown。跨轮用量和来源只导入一次。
 
 调查响应的 `preparation` 保持 version 1。可选 `jev-status` 是最近一次准备／运行
 记录的有效状态（enabled、disabled、config-unavailable、not-configured、policy-changed），UI 不从
@@ -784,7 +987,10 @@ replan-running 表示重规划未收尾，恢复须核对原 Plan 会话，不�
 画布投影移除原始 snapshot／facts 和目标配置，最多保留末 10 条记录，
 `omitted-records` 是更早省略的条数。feedback.results 的 `omitted-items` 标记也会明确展示。
 实际模型切换来自 packet.execution-policy.history 的 from／to、before／after、kind、
-reason、attempt 与 at；jev-model-selection 标记已采用的 JEV 模型选择。UI 不从 model-N
+reason、attempt 与 at；jev-initial-selection 标记首轮，jev-model-selection 标记确认失败
+后的已采用选择。首轮 Snapshot v3 冻结完整 binding/native options、目标、验收和协作
+声明；调查 v1 与失败 v2 的历史身份保持兼容。两类决策共享 used/max-calls、切换预算和
+恢复规则；首次选择在业务派发前持久化，不因重启再次发问。UI 不从 model-N
 推测模型，不把配置变更覆盖成已启动的会话，节点模型仍来自实际会话或原始运行绑定。
 节点详情可查看所属 packet 的记录；客户端对新增结构做类型校验，畸形回执保留上次
 有效视图并要求刷新，禁止基于未确认状态直接 launch／start。

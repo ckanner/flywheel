@@ -64,6 +64,9 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			credentialEnv = approval.Injected
 		}
 	}
+	if err := c.runtimeInitialExecutionDecision(packet); err != nil {
+		return execOutcome{}, err
+	}
 
 	if ps.Status == "completed" && ps.Worktree == nil {
 		ps.BaseRef = nil // 手动重新执行已交付单元，从当前主分支开始新的候选。

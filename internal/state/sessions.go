@@ -12,7 +12,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/contract"
+	"github.com/ckanner/flywheel/internal/imageinput"
 )
 
 // SessionLedger is owned by the task's run lease. History is role scoped; a
@@ -24,15 +26,27 @@ type SessionLedger struct {
 }
 
 type SessionConfiguration struct {
-	NativeProfile string          `json:"nativeProfile,omitempty"`
-	NativeOptions json.RawMessage `json:"nativeOptions,omitempty"`
-	Harness       string          `json:"harness"`
-	Model         string          `json:"model"`
-	Provider      string          `json:"provider"`
-	Channel       string          `json:"channel"`
-	Thinking      string          `json:"thinking"`
-	Permission    string          `json:"permission"`
-	SessionMode   string          `json:"sessionMode"`
+	InputImages   *imageinput.Manifest       `json:"inputImages,omitempty"`
+	Subscription  *config.SubscriptionPolicy `json:"subscription,omitempty"`
+	EvidenceOnly  bool                       `json:"evidenceOnly,omitempty"`
+	NativeProfile string                     `json:"nativeProfile,omitempty"`
+	NativeOptions json.RawMessage            `json:"nativeOptions,omitempty"`
+	Harness       string                     `json:"harness"`
+	Model         string                     `json:"model"`
+	Provider      string                     `json:"provider"`
+	Channel       string                     `json:"channel"`
+	Thinking      string                     `json:"thinking"`
+	Permission    string                     `json:"permission"`
+	SessionMode   string                     `json:"sessionMode"`
+}
+
+// BindingSnapshot is display metadata frozen by the engine. A candidate ID is
+// present only for an execution-policy binding; it does not prove dispatch.
+type BindingSnapshot struct {
+	BindingID            string               `json:"bindingId,omitempty"`
+	Binding              SessionConfiguration `json:"binding"`
+	NativeOptionsHash    string               `json:"nativeOptionsHash,omitempty"`    // display projection only
+	NativeOptionsOmitted bool                 `json:"nativeOptionsOmitted,omitempty"` // display projection only
 }
 
 type SessionRecord struct {
@@ -113,6 +127,8 @@ type SessionUsage struct {
 }
 
 type SessionInvocation struct {
+	DecisionID       string             `json:"decision-id,omitempty"`
+	DispatchObserved bool               `json:"dispatch-observed,omitempty"` // positive lifecycle observation; never replay authority
 	EngineRunID      string             `json:"engine-run-id,omitempty"`
 	ID               string             `json:"id"`
 	Status           string             `json:"status"` // intent | received | consumed | blocked | abandoned
@@ -354,6 +370,11 @@ func validateSessions(raw json.RawMessage) error {
 	}
 	threads := map[[2]string]string{}
 	for key, record := range ledger.Records {
+		if record.Configuration != nil {
+			if err := imageinput.ValidateManifest(record.Configuration.InputImages); err != nil {
+				return fmt.Errorf("session %s image evidence: %w", key, err)
+			}
+		}
 		if key != record.Role+"/"+record.Scope {
 			return fmt.Errorf("session key %q does not match its role and scope", key)
 		}

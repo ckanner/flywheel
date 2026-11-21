@@ -131,6 +131,9 @@ func (c *Context) verificationIdentity(packet *contract.Packet) (string, error) 
 // feedback can compare code without a second filesystem walk or a done-report
 // timestamp making an unchanged implementation appear different.
 func (c *Context) verificationSnapshot(packet *contract.Packet) (string, string, error) {
+	if _, err := c.inputImageGuard(packet); err != nil {
+		return "", "", err
+	}
 	candidate, err := c.candidateFingerprint(c.unitCwd(packet))
 	if err != nil {
 		return "", "", err

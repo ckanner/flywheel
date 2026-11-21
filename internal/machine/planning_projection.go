@@ -95,7 +95,7 @@ func consolePlanningProjection(source *planning.State, limit int) (*planning.Sta
 	omitted["plan-history"] = len(source.Plans) - len(p.Plans)
 	latest := map[string]int{}
 	for i, r := range source.Reviews {
-		if r.Kind == "design" && designRefs[r.Target] || r.Kind == "plan" && planRefs[r.Target] {
+		if (r.Kind == "design" || r.Kind == "compact-v1") && designRefs[r.Target] || r.Kind == "plan" && planRefs[r.Target] {
 			latest[fmt.Sprintf("%s/%d/%s", r.Kind, r.Target.Revision, r.Target.Digest)] = i
 		}
 	}
@@ -125,6 +125,9 @@ func consolePlanningProjection(source *planning.State, limit int) (*planning.Sta
 	// whole secondary payloads before omitting any current approval material.
 	for i := range p.Plans {
 		if size > target {
+			if currentReview != nil && currentReview.Kind == "compact-v1" && currentReview.Plan != nil && *currentReview.Plan == p.Plans[i].Ref {
+				p.Projection.ApprovalComplete = false
+			}
 			before := planningProjectionSize(p.Plans[i])
 			omitted["plan-files"] += len(p.Plans[i].Files)
 			p.Plans[i].Files = map[string]string{}

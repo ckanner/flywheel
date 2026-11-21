@@ -10,6 +10,7 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 
 - [配置来源](#配置来源)与[完整模板](#从完整模板开始)
 - [模型字段](#字段与身份)与[订阅预设迁移](#将已有配置迁移到订阅预设)
+- [仅订阅渠道策略](#仅订阅渠道策略)与[默认模型分工](#默认模型分工)
 - [权限](#完全权限与无需逐步确认)与[调度](#调度与-worktree)
 - [会话历史](#会话策略历史复用与调用安全)与[工作流策略](#工作流策略与恢复)
 - [后端接入](#codex-pro-与旧配置迁移)、[预算](#后备渠道与预算)和[预检](#无推理诊断)
@@ -32,6 +33,19 @@ full-access，或分别给 `permissions.bindings` 中 `loops.design-review` 和
 继承不扩大原来的付费渠道和模型授权。审批与作用域 Plan 见
 [方案设计与审查](reviewed-planning.md)。
 
+最终预设显式绑定这些角色，并提供紧凑方案的两项 profile 引用：
+
+```json
+{"planning":{"compact":{"design-plan":"hydrogen-local","design-review":"sol-plan"}}}
+```
+
+值必须是 `profiles` 中的名称，不能写内联绑定。方案 brief 的
+`design-granularity:"compact"` 选择这组方案起草／方案审查绑定；system 仍使用
+`loops.design-plan` 与 `loops.design-review`。紧凑方案仍产出可审阅的设计，经过相同
+审批门，不会因此自动选择 Quick、跳过作用域 Plan 或取得实现授权。旧配置没有
+`planning.compact` 时继续使用原角色绑定。方案粒度、Auto／Quick／Full 执行流程、
+review-first／delegated 审批策略是三个独立维度。
+
 
 ## 配置来源
 
@@ -51,33 +65,101 @@ flywheel config inspect --cwd /repo --task-dir /repo/docs/task --json
 
 DSH 的「全局 / 项目配置」先读取显式作用域和文件 revision，再编辑模型绑定、角色会话策略、预算、超时、重试或全局权限。在表单旁审阅改动并保存。目标文件被其他编辑器修改时拒绝覆盖，保存结果未确认时先重新读取核对。新项目文件以当前版本默认模板创建完整配置，项目文件优先于全局，任务文件优先于项目，不按字段合并。
 
+**模型与会话 → 完整执行绑定**可以新建、复制、编辑和移除候选，包括 Provider、精确
+模型、effort、原生能力、权限和会话策略。界面列出所有引用路线；直接编辑共享候选
+影响这些路线，复制出的新候选则要明确加入路线允许集合后才参与执行。有引用的候选
+不能直接删除，完整绑定总数仍最多 32 项。
+
+**执行候选**可以编辑实际的 `execution-policy.routes.<route>.initial`、允许集合、
+路线授权和 0–32 次切换上限。选择初始项保留完整绑定；阶段表中编辑路线模型会隔离
+其它路线共享的初始候选。明确更改路线授权会更新该路线全部允许候选，先复制其它
+路线共享的候选，再同步本路线引用；其它路线权限不变。直接编辑候选权限后如果与
+引用路线授权不符，必须明确同步授权或恢复候选权限后才能保存；允许候选可以分别
+选择会话策略。旧路线可使用当前完整配置启用执行策略，初始切换次数为 0。
+
+**质量调整次序**提供加入、移除和上移／下移，不把用户指定顺序当作模型能力排名。
+版本 1 在首次确认停滞比较后调整。**渠道后备规则**选择另一个渠道的允许候选，并
+展示必须配套的共享渠道链、后端和路线模型映射。应用映射是单独的显式草稿操作；
+映射未匹配、循环或其它规则冲突会阻止保存。移除规则会保留共享渠道后备链，所有
+规则引用解除后可再显式移除渠道链。保存前审阅差异中的共享影响。初始、质量和后备
+引用都需先移除，才能从允许集合中移除相应候选。
+
+阶段或候选编辑器中的 **读取模型目录** 按需读取当前原生客户端的精确模型 ID。
+现有来源包括 `agy models`、Codex app-server 的 `model/list` 和 Claude SDK 初始化
+元数据。不支持的后端或不可用的客户端仍保留手动输入。界面显示来源、原生客户端
+范围、局限和未知账号资格；读取不启动推理。只有目录明确返回时才使用其 effort
+选项／默认值，当前受支持的 effort 保留；目录未列出的模型仍按精确手动 ID 保存。
+Provider、渠道、任务或配置范围改变后，过时返回不会应用到新的选择。
+
+上述控件共用有 revision 检查的草稿和「保存修改」，不改写当前任务的冻结配置。
+高级 JSON 保留完整配置及尚不支持图形编辑的后端专属原生 schema。
+
+**JEV** 分别显示「正在编辑的文件」和「当前任务实际采用的配置」，包括作用域、
+开关与解析后的订阅模型／effort。每次确认读取编辑文件或保存成功后，界面会通过
+独立只读请求重新核对有效配置；核对失败显示「尚未确认」，不把已确认的保存改报为
+失败。修改全局开关不会越过项目或任务配置，结果未知的保存也不会自动重试。
+五类允许发送的数据可以在此勾选，勾选本身不授予工具或执行权限。
+
 高级调用通过 stdin 传入 JSON。读取示例使用 `flywheel control config-edit --cwd /absolute/repo`，输入为 `{"scope":"project"}`。保存使用 `control config-save`，输入包含 scope、读取返回的 revision，以及仅包含改动章节的 values。reset=true 从内嵌默认完整模板开始替换。配置保存创建备份并原子发布，下一次引擎启动时加载。
 
 ## 字段与身份
 
 | 字段 | 含义 | 示例 |
 |---|---|---|
-| `harness` | 实际工具循环与进程后端 | `dsh`、`kimi`、`codex-pro`、`claude-code-pro`；`codex` 为显式旧 CLI 路径 |
-| `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-account`、`chatgpt` |
-| `channel` | 配置中的凭证／后备／计量渠道名称 | `deepseek-account-sdk`、`chatgpt-sdk`、`kimi-subscription` |
-| `model` | 传给后端的精确模型标识 | `deepseek-flash`、`kimi-code/k3.1-pro`、`gpt-6.1-sol` |
+| `harness` | 实际工具循环与进程后端 | `antigravity`、`kimi`、`codex-pro`、`claude-code-pro`；旧配置仍可显式选择 `dsh`、`codex` 等兼容 driver |
+| `provider` | DSH SDK 已注册的 LLM adapter ID；仅 DSH 使用 | `deepseek-account`、`chatgpt`；原生订阅绑定省略此字段 |
+| `channel` | 配置中的凭证／后备／计量渠道名称 | `google-subscription`、`claude-native`、`chatgpt-subscription`、`kimi-subscription` |
+| `model` | 传给后端的精确模型标识 | `gemini-4-hydrogen-high`、`claude-opus-5-5`、`gpt-6.2-sol`、`kimi-code/k3.1-pro` |
 | `thinking` | 请求的推理等级 | `high` |
-| `profile` | 当前 Flywheel 配置内的一组模型字段引用 | `flash`、`gpt-review`、`kimi` |
+| `profile` | 当前 Flywheel 配置内的一组模型字段引用 | `hydrogen`、`opus-plan`、`sol`、`kimi` |
 
 Flywheel 的 model profile 与 DSH 的 `sdk`／`desktop` profile 是两件事。前者复用模型定义，后者决定宿主实际加载的插件和授权配置。channel 别名本身不会切换 DSH 账号；给同一个 provider 起两个 channel 名称不等于拥有两份独立订阅或额度。
 
-DSH 的实际 provider 按 `binding.provider` → `channels[channel].provider` → 旧 `channel` 名解析。前两者都明确配置而不相等时拒绝加载。兼容旧内联配置的最后一项只适用于 DSH；Codex Pro／旧 Codex CLI 和 Kimi 使用自己的登录状态，不接受一个会被静默忽略的 provider。
+旧 DSH 绑定的实际 provider 按 `binding.provider` → `channels[channel].provider` → `channel` 名解析。前两者都明确配置而不相等时拒绝加载。原生订阅后端使用各自登录状态，不接受一个会被静默忽略的 DSH provider。
+
+thinking 必须符合后端实际枚举。Antigravity 的 slug 和 effort 必须一致，例如
+`gemini-4-hydrogen-medium` 配 `thinking:"medium"`。配置名称表示请求的绑定，
+不证明账号权益，也不证明该模型已经通过项目质量评估。
+
+## 仅订阅渠道策略
+
+新完整模板包含：
+
+```json
+{"subscription":{"version":1,"mode":"subscription-only"}}
+```
+
+此策略检查所有可达 loops、routes、已启用第二意见、紧凑方案 profiles、
+execution-policy 绑定和后备渠道。仅允许 `antigravity`、`kimi`、`codex-pro`、
+`claude-code-pro`，绑定及可达 channel 均不得设置 DSH provider 或非空 `env-key`。
+循环后备链、未声明渠道和冲突的 harness 在加载时拒绝。启用的 JEV 必须选择
+subscription 后端。未引用的自定义定义可以保留，但不会因此成为后备渠道。
+
+worker 在提交任务前继续检查实际原生路由和配置。不支持的接口、冲突的 API 路径、
+不可用的选定模型都会明确失败，不自动增加 API Key、credits、其他模型或 provider
+后备。这项策略不会登录账号、修改账号设置、证明剩余额度或锁定调用之外的计费。
+各后端可验证的证据不同：Claude 要求同一 CLI 进程的 usage 回应明确额外用量已关闭；
+Antigravity 检查本机 credits 后备控制；Codex、Kimi 在官方接口未暴露账号级额外
+用量状态时保留 unknown。具体边界见 [Claude 准入](claude-code-pro.md)、
+[Antigravity 控制](antigravity.md)和 [Codex／Kimi 准入](native-capabilities.md)。
+
+已有完整文件省略 `subscription` 时保留显式选择的旧 DSH／API／CLI 行为。DSH
+ChatGPT provider 仍在这条兼容路径上受支持，但不能在 `subscription-only` 下
+替代 Codex Pro 的原生准入契约。普通升级不会偷偷开启这项策略。
 
 ### DeepSeek 账号与 API Key 是两个 provider
 
 | 方式 | Provider | 凭证来源 | 选择方式 |
 |---|---|---|---|
-| DSH 已登录、已充值的 DeepSeek 账号 | `deepseek-account` | DSH 的 `deepseekAccount` 服务 | 当前源码默认；不要求 `DEEPSEEK_API_KEY` |
-| DeepSeek API Key | `deepseek-official` | DSH credentials／启动环境中的 API key，默认引用 `DEEPSEEK_API_KEY` | 仅在用户明确选择 API 路径时配置 |
+| DSH 已登录、已充值的 DeepSeek 账号 | `deepseek-account` | DSH 的 `deepseekAccount` 服务 | 未启用 `subscription-only` 的显式旧配置；不要求 `DEEPSEEK_API_KEY` |
+| DeepSeek API Key | `deepseek-official` | DSH credentials／启动环境中的 API key，默认引用 `DEEPSEEK_API_KEY` | 未启用 `subscription-only` 的显式 API 配置 |
+
+这两条路径都不属于当前默认分工。本节说明已有配置及旧 `subscriptions` 迁移预设
+的兼容背景；账号充值余额不等于订阅额度。
 
 标准 SDK profile 叠加的 [base](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/bundle/base/cordis.patch.yml) 包含账号服务和这两种 adapter。标准桌面与 SDK 使用同一 `DSH_HOME` 时，默认共享该 home 下的[账号授权存储](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/credentials/credentials-local/src/index.ts)；profile 隔离插件配置，不要求把 token 复制到 `sdk` 或改用 `desktop` profile。自定义 home、凭证存储或 SDK 插件集时，须核对它们指向同一授权来源。这里不读取或展示凭证值。
 
-DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择账号目录里的第一个模型。该桌面默认不决定独立 SDK 会话的 provider/model，且“第一个模型”不保证是 Flash。Flywheel 因此明确传入 `deepseek-account`／`deepseek-flash`；账号未登录、授权失效或额度不足时保留失败。默认预设没有 API Key 后备；用户显式配置的后备链仍按既有规则处理。已核对的[官方账号 adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-account/src/index.ts)、[API adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-api-key/src/index.ts)及[默认选择逻辑](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/api/session-controller/src/index.ts)是这一边界的依据。
+DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择账号目录里的第一个模型。该桌面默认不决定独立 SDK 会话的 provider/model，且“第一个模型”不保证是 Flash。显式配置的 Flywheel DSH 调用会传入所选 provider 和 model；旧预设曾选择 `deepseek-account`／`deepseek-flash`，没有 API Key 后备。用户显式配置的旧后备链仍按其原有策略处理。已核对的[官方账号 adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-account/src/index.ts)、[API adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek-api-key/src/index.ts)及[默认选择逻辑](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/api/session-controller/src/index.ts)是这一边界的依据。
 
 需要继续用 API Key 的自定义配置仍受支持：在完整配置的相关绑定及其 channel 中一致选择 `deepseek-official`，按 DSH API provider 的正常方式配置凭证。不要仅改 channel 名却保留冲突的显式 provider；也不必为账号路径额外添加 API key。
 
@@ -86,13 +168,37 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 `native-profiles` 定义版本化 harness options，绑定使用 `native-profile` 引用。
 模型 profiles、loops、routes、judge-panel 和 execution-policy 的允许绑定均支持，
 引用必须与实际 harness 匹配。省略可继承模型 profile，显式空字符串关闭继承。
-静态能力不依赖 JEV 开关；工作台按当前 harness 选择配置，高级 JSON 编辑定义。
+静态能力不依赖 JEV 开关；工作台按实际 harness 和逻辑角色选择配置。Antigravity
+Swarm 在 Plan、Review、Judge 和紧凑方案角色中禁选，配置加载也拒绝这些不合法的
+引用。Execute 显示运行时仍须核对的条件：Full、已审批且有 2–8 项独立写入分工的
+collaboration 契约，以及没有原生图片输入。配置 Swarm 候选不代表当前 packet 已
+满足资格。没有图片的任务可以使用 Antigravity；当前 Flywheel 接入尚无它的原生
+图片输入通道。
+
+阶段绑定详情提供 Antigravity 的 `native`、`subagents`、`swarm` 和可选的
+`maxObservedAgents`（1–8）控件。原定义被共享时，编辑会创建此目标专属的 profile，
+保留其它角色、候选、权限和会话。该上限统计观察到的 child ID，包含 verifier／
+monitor；超过后请求停止，不是硬并发限制，也不证明全部子代理已经结束。请求的方式
+与实际观察到的协作仍是两种运行事实。其它复杂原生定义继续通过高级 JSON 编辑。
 实际 options 进入历史及冻结策略身份，准入、用量和清理仍取决于运行回执。
 完整示例、LCU、Tower 和独立 Review/Team 入口见[原生能力](native-capabilities.md)。
 
+默认 `kimi` 模型 profile 引用 `kimi-subscription-agent`：
+
+```json
+{"native-profiles":{"kimi-subscription-agent":{"harness":"kimi","options":{"version":1,"mode":"agent","agents":{"enabled":false}}}}}
+```
+
+它使用原生 Agent 路径，并关闭子 agent。订阅策略下，worker 检查实际路由，并关闭
+无法区分凭证来源的服务工具；旧 print、Swarm、Tower 和自定义子 agent 配置不能
+替代这条路径。Garden 和 batch 执行共用该 profile。无订阅策略的旧配置保留原路径。
+Antigravity 支持 version 1 的 `native`、`subagents`、`swarm` profile，以及可选
+`maxObservedAgents`；仅分析证据的契约由引擎选择并拒绝原生协作。固定档位 Orchestrator
+和协作设置见 [Antigravity](antigravity.md)。
+
 ## 从完整模板开始
 
-查看默认内联表或可复用 profiles 表：
+两个模板名称都提供包含可复用 profiles 的当前完整订阅 CLI 配置：
 
 ```sh
 flywheel template flywheel.config.example.json
@@ -105,42 +211,60 @@ flywheel template flywheel.profiles.example.json
 (set -C; flywheel template flywheel.profiles.example.json > flywheel.config.json)
 ```
 
-不要只写几个 profiles 后期待继承另一个文件的内容。下面只是解释结构的片段；完整可用起点在第二份模板中：
+不要只写几个 profiles 后期待继承另一个文件的内容。下面只是解释结构的片段，需并入完整配置；两份模板均可作为完整起点：
 
 ```json
 {
   "profiles": {
-    "flash": {
-      "harness": "dsh",
-      "provider": "deepseek-account",
-      "channel": "deepseek-account-sdk",
-      "model": "deepseek-flash",
-      "thinking": "high"
-    },
-    "gpt": {
-      "harness": "dsh",
-      "provider": "chatgpt",
-      "channel": "chatgpt-sdk",
-      "model": "gpt-6.1-sol",
+    "hydrogen": {
+      "harness": "antigravity",
+      "channel": "google-subscription",
+      "model": "gemini-4-hydrogen-high",
       "thinking": "high"
     }
   },
   "loops": {
-    "review": { "profile": "gpt" },
-    "judge": { "profile": "gpt", "model": "gpt-6-astra" },
-    "intake": { "profile": "flash", "thinking": "low" }
+    "intake": { "profile": "hydrogen", "model": "gemini-4-hydrogen-low", "thinking": "low" }
   },
   "routes": {
-    "default": { "profile": "flash" }
+    "default": { "profile": "hydrogen" }
   },
   "channels": {
-    "deepseek-account-sdk": { "harness": "dsh", "provider": "deepseek-account", "env-key": null },
-    "chatgpt-sdk": { "harness": "dsh", "provider": "chatgpt", "env-key": null }
+    "google-subscription": { "harness": "antigravity", "env-key": null }
   }
 }
 ```
 
-这些模型名沿用本仓库的初始绑定，能否使用仍由实际账号和 adapter 决定。读取配置、看到模型名称、adapter 接受参数都不等于账号已获授权。DeepSeek 默认仅 Flash；profiles 不引入自动跨渠道付费回退。
+`loops` 绑定方案规划、Plan、Review、Judge、Intake、Garden 和调查分析；`routes`
+选择 packet 的 Execute 后端。`drivers` 选择 real／mock driver，不是 provider 映射。
+
+### 默认模型分工
+
+| 阶段或路由 | Profile | 精确模型 | Effort | Harness |
+|---|---|---|---|---|
+| 系统方案 | `carbon` | `gemini-4-carbon-high` | high | `antigravity` |
+| 系统方案审查 | `astra` | `gpt-6.2-astra` | high | `codex-pro` |
+| 紧凑方案 | `hydrogen-local` | `gemini-4-hydrogen-medium` | medium | `antigravity` |
+| 紧凑方案审查 | `sol-plan` | `gpt-6.2-sol` | medium | `codex-pro` |
+| 作用域 Plan | `opus-plan` | `claude-opus-5-5` | high | `claude-code-pro` |
+| Plan 审查 | `sol-plan` | `gpt-6.2-sol` | medium | `codex-pro` |
+| Execute `default` | `hydrogen` | `gemini-4-hydrogen-high` | high | `antigravity` |
+| Execute `complex` | `neon` | `gemini-4-neon-high` | high | `antigravity` |
+| Execute `frontend`／`multimodal` | `opus-ui` | `claude-opus-5-5` | medium | `claude-code-pro` |
+| Execute `backend` | `sol` | `gpt-6.2-sol` | high | `codex-pro` |
+| Execute `batch` | `kimi` | `kimi-code/k3.1-pro` | high | `kimi` 原生 Agent |
+| Execute `hard` | `astra` | `gpt-6.2-astra` | high | `codex-pro` |
+| Review | `sol` | `gpt-6.2-sol` | high | `codex-pro` |
+| Judge | `astra` | `gpt-6.2-astra` | high | `codex-pro` |
+| Intake | `hydrogen-summary` | `gemini-4-hydrogen-low` | low | `antigravity` |
+| Garden | `kimi` | `kimi-code/k3.1-pro` | high | `kimi` 原生 Agent |
+| 调查证据分析 | `neon` | `gemini-4-neon-high` | high | `antigravity`，仅分析证据 |
+| 可选 JEV 选择器，默认关闭 | `hydrogen-local` | `gemini-4-hydrogen-medium` | medium | `antigravity`，仅分析证据 |
+
+`fable`（`claude-fable-5-2`，high）和 `carbon-explore`
+（`gemini-4-carbon-medium`，medium）供显式覆盖使用。模板不启用第二意见、渠道后备
+或付费 API 绑定。四个原生渠道均为 `env-key:null`，不设置 `provider`。此表描述配置
+分工，不代表项目质量已测或账号权益已确认；依据与验收边界见[模型策略](model-policy.md)。
 
 ### 覆盖与错误规则
 
@@ -148,7 +272,7 @@ flywheel template flywheel.profiles.example.json
 |---|---|
 | 阶段省略某字段 | 继承所引用 profile 的字段 |
 | 阶段显式写 `model`／`channel`／`thinking` 等 | 只覆盖该阶段，不修改共享 profile 或其他阶段 |
-| `thinking: ""` | 使用对应 harness 的现有默认 effort，不重新继承 profile |
+| `thinking: ""` | 仅在后端允许省略时使用其默认 effort；Antigravity 要求显式填写并与 slug 一致 |
 | Plan `resident-session: false` | 明确关闭 Plan 历史复用；加载、profile 展开和配置导出均保留其显式存在 |
 | `judge-panel: null` | 关闭第二意见，保持默认行为 |
 | profile 定义缺 `harness/model/channel`，或这些字段为空／null／纯空白 | 加载失败 |
@@ -164,21 +288,46 @@ flywheel template flywheel.profiles.example.json
 
 ## 将已有配置迁移到订阅预设
 
-当前的 `subscriptions` 预设只使用 ChatGPT 订阅、Kimi Code 订阅和 DSH 已登录并充值的 DeepSeek 账号（仅 Flash，`provider:deepseek-account`）。普通安装／升级仍保留已有配置；所以旧文件里的 Z.AI／GLM、Kimi K3、API provider 和旧 thinking 不会因升级 UI 自动消失。
+当前 Gemini、Claude、Codex 和 Kimi 分工使用 `subscription-cli` 预设。普通安装／
+升级仍保留已有文件。旧名称 `subscriptions` 保留其原来的 DeepSeek 账号／DSH
+映射，用于兼容已有配置，不会启用新的原生订阅策略。
 
-先用已安装的二进制执行 `flywheel template flywheel.config.example.json`，确认它实际包含所需预设。当前预设选择 `deepseek-account`；旧二进制可能仍包含旧默认值。版本变化见[变更日志](../../CHANGELOG.md)。
+先用已安装的二进制执行 `flywheel template flywheel.config.example.json`，确认它实际包含所需预设；旧二进制可能仍包含旧默认值。版本变化见[变更日志](../../CHANGELOG.md)。
 
 在实际项目目录运行以下命令；若任务目录有单独配置，再加 `--task-dir /repo/docs/my-task`：
 
 ```sh
-flywheel config migrate --preset subscriptions --cwd /repo --json
-flywheel config migrate --preset subscriptions --cwd /repo --apply --json
+flywheel config migrate --preset subscription-cli --cwd /repo --json
+flywheel config migrate --preset subscription-cli --cwd /repo --apply --expect-sha256 PREVIEW_SHA256 --json
 flywheel config inspect --cwd /repo --json
 ```
 
-第一条只预览。`--apply` 明确应用到当前实际命中的任务／项目／全局文件，并先备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。可以用 `--expect-sha256` 绑定之前预览的摘要；文件已经变化时拒绝陈旧应用。预算、worktree、验证、重试、价格和用户说明等非模型设置保留，Plan 明确设置的 `resident-session:false` 以及现有 `sessions` 策略或其缺省状态也保留；模型迁移不会让旧文件自动启用 scoped。配置损坏、额外自定义路由／阶段或不支持的文件身份会明确阻断，不猜测替代。
+第一条只预览。把 `PREVIEW_SHA256` 换成返回的摘要；`--expect-sha256` 可选，用于
+将应用绑定到这份精确源文件。`--apply` 更新实际命中的任务／项目／全局文件，并先
+备份原始字节。没有文件时写全局配置，不创建意外的项目覆盖。源文件变化、配置损坏、
+额外自定义路由／阶段或不支持的文件身份会明确阻断。预算、worktree、验证、重试、
+价格、说明及已有权限／会话策略保留；已有文件没有 `sessions` 时，这次显式迁移会
+补入当前 scoped 默认值。
 
-迁移写入完整的阶段模型、thinking 和渠道，去掉被替换绑定的旧 profile 引用，清除所选渠道的旧 fallback／模型映射，使旧付费渠道不再自动可达；未引用的自定义 profiles／channels 仍保留。包括旧版留下的 API channel，也可以作为未引用配置保留，但不会成为账号路由的自动后备。默认关闭第二意见，并明确报告旧多模态路由被停用。默认分配仍是 Kimi K3.1 Pro high 负责 Plan／frontend／Garden，DeepSeek Flash high 负责普通执行、low 负责 Intake，GPT-6.1 Sol high 负责 hard／Review，GPT-6 Astra high 负责 Judge。hard 通过 Codex Pro 插件，Review／Judge 通过 DSH ChatGPT provider。Kimi 缺省模型为 `kimi-code/k3.1-pro`；显式写入的自选模型不会被仅修改 driver 缺省值覆盖。档位依据与尚未完成的对照评估见[推理等级与账号选择](model-policy.md)。
+预设将其命名 loops、routes、profiles、channels、native-profiles 替换为上表的完整
+绑定，包含 Claude 多模态路由；保留说明文字，清除被替换绑定的旧覆盖及所选渠道的
+fallback，并写入 `subscription` 与 `planning.compact`。未引用的自定义定义保留。
+已有第二意见、execution-policy 和其他可达路径必须通过订阅图检查；冲突的付费绑定
+会阻断候选，不会被悄悄删除。
+
+已关闭的旧 HTTP JEV 转为
+`{"enabled":false,"backend":"subscription","profile":"hydrogen-local"}`，
+保留 timeout、调用预算、阈值和允许数据类别。报告逐字段列出 HTTP 专用的
+`endpoint`、`key-env`、`model` 删除项。已开启的 HTTP JEV 在任何写入前阻断迁移；
+先明确关闭，再迁移、核对新目标，需要时重新开启。已有 subscription JEV 保留；
+缺少 JEV 时补入新的关闭状态默认值。对未变化文件重复迁移不会再次写入。
+
+迁移不会扩大已有 `role-based` 权限。完成后运行 doctor；普通 Antigravity 执行和
+Claude 需要明确授权的完全权限绑定。若符合使用意图，应另外审阅并显式修改权限。
+权限冲突不会通过偷偷换 provider、移除订阅策略或提升 worker 权限来解决。
+只有缺少 `loops.investigate` 权限覆盖时，迁移才为新分析角色补入 `read-only`，
+并逐字段报告这一新增限制。原全局 mode 和其他角色不变；已有调查角色覆盖也保留，
+若它不是 read-only，报告会要求在运行分析前审阅并手工调整。
 
 迁移不登录账号，也不发模型请求。当前运行中的任务继续使用启动时已加载的配置；新配置在下一次启动生效。检查迁移后的 source／scope／bindings，再按需要停止和恢复任务。
 
@@ -190,7 +339,12 @@ flywheel config inspect --cwd /repo --json
 {"permissions":{"mode":"full-access"}}
 ```
 
-新安装模板和显式 `subscriptions` 迁移都写入这一全局设置；已有逐绑定覆盖仍优先。未覆盖阶段使用完全权限：DSH／Codex 请求 `danger-full-access` 与 `approval=never`，Codex Pro 通过其公开 machine API 映射，Kimi print 沿用原生 auto。它表示这些 worker 可以访问当前操作系统用户本来能够访问的文件和命令，并不从 DSH 对话框的权限下拉菜单继承。
+新安装模板使用这一全局设置，并显式将 `loops.investigate` 绑定为 `read-only`。
+`subscription-cli` 迁移保留已有权限策略，不自动升权。已有逐绑定覆盖仍优先。
+Codex Pro 通过公开 machine API 映射完全权限；Claude 使用已授权的 bypass 模式；
+Antigravity 使用无沙箱的原生 `accept-edits`／`always-proceed`；Kimi 原生 Agent
+使用 `yolo`。旧 DSH／Codex 和 Kimi print 保留各自映射。完全权限表示 worker
+可以访问当前操作系统用户本来有权访问的文件和命令，不继承 DSH 对话框的权限菜单。
 
 旧文件没有 `permissions` 时保持 `role-based`：Plan／Execute 为项目内写入，Review／Judge 为只读。两种策略都不等待交互审批；只读／项目限制下的 `never` 可能直接拒绝动作，不能把它等同于完全权限。`permissions.mode` 的拼写、类型和枚举都会在启动前校验。
 
@@ -213,7 +367,8 @@ flywheel config inspect --cwd /repo --json
 
 字段以[权限 schema](https://github.com/ckanner/flywheel/blob/main/templates/permission-policy.schema.json)为准。各后端必须
 支持选定能力；Claude Code Pro 要求完全权限，原生审批设置不提供 OS 只读沙箱。
-实际权限变化也会改变会话复用资格。
+实际权限变化也会改变会话复用资格。调查分析和订阅 JEV 使用另行验证的空工具
+Antigravity agent；这个仅分析证据的契约不宣称提供 OS 沙箱。
 
 ## 调度与 Worktree
 
@@ -228,7 +383,7 @@ Quick／Full 流程，也不启用 JEV。
   "scheduler": {
     "mode": "parallel",
     "max-parallel": 2,
-    "providers": {"deepseek-account": 1},
+    "providers": {"google-subscription": 1},
     "dispatch": "batch",
     "prewarm": false
   },
@@ -237,8 +392,7 @@ Quick／Full 流程，也不启用 JEV。
 ```
 
 虽然字段名为 `providers`，其键仍是**实际配置渠道名**，并非 DSH provider ID。
-内联模板使用 `deepseek-account`；如果绑定的 channel 是 `deepseek-account-sdk`，
-就应使用后者作为限制键。
+原生 Gemini 绑定使用 `google-subscription`；自定义 channel 别名应填写其实际名称。
 
 并行资格来自 packet 的冻结声明：
 
@@ -324,12 +478,13 @@ harness 保持普通启动。会话历史续用与运行时准备相互独立，
 null、错拼字段和不完整对象在模型启动前拒绝。字段信源为
 [会话策略 schema](https://github.com/ckanner/flywheel/blob/main/templates/session-policy.schema.json)。
 
-`sessions.mode` 控制历史复用，不关闭调用安全记录。Codex Pro、Claude Code Pro、DSH 和 Kimi 的主任务
+`sessions.mode` 控制历史复用，不关闭调用安全记录。Antigravity、Codex Pro、Claude Code Pro、DSH 和 Kimi 的主任务
 Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图，再保存可信终态回执。
 `fresh` 不复用通用的角色历史，保持后端原有的新调用方式；仅未配置 `native-profile` 的
 旧 Kimi CLI 路径保留 Plan `resident-session` 行为。原生 Agent/Swarm 历史使用 scoped
 角色账本，Tower 始终 fresh；`scoped` 在身份兼容且终态满足条件时延续同角色历史。
 其他适配器及 mock 仍使用原有调用路径；Intake／Garden 不在该角色会话策略内。
+调查分析使用独立的轮次账本，JEV 使用独立决策 journal，二者都不借用执行者历史。
 
 | 角色 | 历史作用域与责任 |
 |---|---|
@@ -339,7 +494,8 @@ Plan／Execute／Review／Judge 调用在两种模式下都先记录调用意图
 | Judge／第二意见 | 同任务、同里程碑，各自独立；不能共享主判和第二意见历史 |
 
 Quick 最终 Review 与 Full 单元 Review 的完成要求不同，不能互用旧历史或裁决。
-Quick 的正常首次成功路径仍只有 Execute 和最终 Review 两次阶段调用。Go 负责所有
+方案审查和审批之后，Quick 执行段的正常首次成功路径只有 Execute 和最终 Review
+两次阶段调用。Go 负责所有
 会话选择、恢复、重建和计量；技能、模型与桌面控制面不扫描后端历史来猜测会话。
 
 Plan 显式 `resident-session:false` 在 scoped 下仍关闭该角色的历史复用；省略该字段
@@ -376,11 +532,14 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.2 与 Claude Code Pro 0.6.0 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.2.0 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
-recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 原生 `system/init`
-配置消息发生在 prompt 已派发之后。任务前的 SDK initialize／版本检查不能提供同等的
-派发前配置证明。两个后端都保留未知窗口，
+recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 在任务前
+检查 SDK initialize／版本和要求的订阅证据，但原生 `system/init` 配置消息仍发生在
+prompt 之后，不能提供同等的派发前权限检查点。Antigravity 的 evidence-only 和显式
+subagents／Swarm 会等待原生 init 再输入任务；普通 native 路径（含 Orchestrator）在
+spawn 后输入任务，之后仍核对 init，但不能宣称统一的派发前 thread-ready 闸门。
+各后端对缺少证据的事实都保留未知窗口，
 不会从 PID 消失或报告存在推断任务完成。详见[中断核对](session-recovery.md)。
 
 `status` 及 `control status` 展示角色、作用域、代次、动作／原因、最新调用状态、
@@ -455,23 +614,23 @@ partial／unknown 用量不补零，也不能单凭缺失用量触发输入阈�
   "execution-policy": {
     "version": 1,
     "bindings": {
-      "flash-low": {
-        "harness": "dsh", "provider": "deepseek-account",
-        "channel": "deepseek-account", "model": "deepseek-flash",
-        "thinking": "low", "permission": "danger-full-access",
+      "hydrogen-medium": {
+        "harness": "antigravity", "provider": "",
+        "channel": "google-subscription", "model": "gemini-4-hydrogen-medium",
+        "thinking": "medium", "permission": "danger-full-access",
         "session-mode": "scoped"
       },
-      "flash-high": {
-        "harness": "dsh", "provider": "deepseek-account",
-        "channel": "deepseek-account", "model": "deepseek-flash",
+      "hydrogen-high": {
+        "harness": "antigravity", "provider": "",
+        "channel": "google-subscription", "model": "gemini-4-hydrogen-high",
         "thinking": "high", "permission": "danger-full-access",
         "session-mode": "scoped"
       }
     },
     "routes": {
       "default": {
-        "initial": "flash-low", "allowed": ["flash-low", "flash-high"],
-        "quality-order": ["flash-low", "flash-high"],
+        "initial": "hydrogen-medium", "allowed": ["hydrogen-medium", "hydrogen-high"],
+        "quality-order": ["hydrogen-medium", "hydrogen-high"],
         "after-stalled-attempts": 1, "max-switches": 1
       }
     }
@@ -481,7 +640,8 @@ partial／unknown 用量不补零，也不能单凭缺失用量触发输入阈�
 
 绑定必须完整声明 harness／provider／channel／model／thinking、permission 和
 session-mode，非 DSH 的 provider 写为 `""`。版本 1 支持已有持久调用记录的
-DSH、Kimi、Codex Pro、Claude Code Pro。每个绑定权限必须等于该路由已有授权，
+Antigravity、Kimi、Codex Pro、Claude Code Pro 及旧 DSH。全局订阅策略会排除 DSH
+和付费 API 路径。每个绑定权限必须等于该路由已有授权，
 所以示例假设路由本来就使用 `danger-full-access`；后端仍须验证模型实际可用性
 及公开配置／权限能力。
 
@@ -497,13 +657,30 @@ token 预算继续生效；切换不清零失败、不增加尝试、不削减�
 `state.packets[*].execution-policy.history` 分别保存 `quality-upgrade` 和
 `channel-fallback` 的完整前后绑定、尝试与原因。并行 packet 各自持有记录。
 
-开启 `jev.enabled` 后，确认结束的失败也可由 JEV 选择合法绑定，切换记录为
-`jev-model-selection`，共用原 `max-switches` 与冷启动规则，不改变渠道错误处理。
+开启 `jev.enabled` 后，首次 Execute 前和确认结束的失败都可由 JEV 选择合法绑定，
+切换分别记录为 `jev-initial-selection` 与 `jev-model-selection`，共用原 `max-switches`
+与冷启动规则，不改变渠道错误处理。首次选择发生在业务派发前，与调查、失败决策共享
+任务决策账本和预算；每个 packet 只记录一次，恢复时不能为了换一个选择而重新发问。
+派发或清理 unknown 必须先对账。
 允许绑定仍是明确的资源／权限声明，JEV 开关不会把新 provider、账号或模型加入集合。
+
+订阅默认配置包含七条 route 的候选，保留原初始模型，使用 `quality-order:[]` 和
+`max-switches:2`。JEV 默认仍关闭，因此默认执行保持固定初始绑定。完整表见
+[模型策略](model-policy.md#首次选择与失败调整)。Go 先筛选资格再让 JEV 选择：图片要求
+实际 Claude 图片传输；Swarm 要求 Full 和合法的已审查 collaboration 声明。没有合法
+替代项、关闭选择器或决策预算耗尽时保留当前基线。固定档位 Orchestrator 使用 `thinking:""`。
+
+迁移保留既有 execution-policy；只有原来未配置策略时，才给已授权 full-access 的 route
+补入默认候选，其余 route 保持固定并附说明。不会因此扩大保留的权限。
 
 `config inspect --json` 在 `execution-policy` 下展示完整声明，普通绑定表仍是
 配置基线，当前选择由 packet／session 状态记录。Doctor 既有绑定探测不证明每个
 允许的实验绑定均已通过接纳；实际派发仍须通过适配器配置与权限检查。
+
+模型编辑页显示每条 route 实际的初始候选与允许集合。上面的结构化控件可以编辑完整
+候选、显式授权、质量次序和渠道后备。修改路线模型保留共享绑定，不改变权限和会话
+策略；绑定不完整或授权未匹配不能当作已生效修改保存。高级 JSON 保留完整
+`execution-policy` 供核对。
 
 每次切换均冷启动 Execute，仅改变 effort 也不例外；effort 保留在会话身份中。
 unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被拒绝：恢复原配置，
@@ -518,13 +695,15 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 `watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；在适用输出 idle 检测的传输上，规划角色默认 900 秒，执行和评审保持 300 秒。这是策略上限，不能证明静默模型已经挂起。示例：
 
 ```json
-"watchdog": {
-  "idle-timeout-ms": 300000,
-  "wall-timeout-ms": 3600000,
-  "kill-grace-ms": 5000,
-  "roles": {
-    "design-plan": { "idle-timeout-ms": 900000 },
-    "plan": { "idle-timeout-ms": 900000 }
+{
+  "watchdog": {
+    "idle-timeout-ms": 300000,
+    "wall-timeout-ms": 3600000,
+    "kill-grace-ms": 5000,
+    "roles": {
+      "design-plan": { "idle-timeout-ms": 900000 },
+      "plan": { "idle-timeout-ms": 900000 }
+    }
   }
 }
 ```
@@ -590,7 +769,8 @@ flywheel control status --task-dir /repo/docs/task --cwd /repo
 
 Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户、后备渠道或
 全访问设置。全部必需验证仍运行，适用 L2/L3 必须在实际候选中、最终 Review 前完成。
-完整最终 Review 逐项核对需求，正常首次成功只调用 Execute 与最终 Review 两个阶段。
+完整最终 Review 逐项核对需求，执行段正常首次成功只调用 Execute 与最终 Review
+两个阶段；方案审查和审批门发生在这一执行段之前。
 字段信源为 [Spec schema](https://github.com/ckanner/flywheel/blob/main/templates/spec.schema.json) 与
 [state schema](https://github.com/ckanner/flywheel/blob/main/templates/state.schema.json)，运行流程见[工作流指南](workflow.md)。
 
@@ -603,7 +783,7 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
   "routes": {
     "hard": {
       "harness": "codex-pro",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6.2-astra",
       "channel": "chatgpt-subscription",
       "thinking": "high"
     }
@@ -611,14 +791,21 @@ Quick 复用现有 Execute 与 Review 绑定，不自动改变 thinking、账户
 }
 ```
 
-完整 profiles 模板使用 `profiles.codex-pro`，hard 路由引用它。插件精确消费
+完整 profiles 模板的 hard 路由引用 `profiles.astra`，其他 Codex 职责使用 `sol`／
+`sol-plan`。插件精确消费
 `dsh-subagent-codex-pro@0.10.2` 的公开 `dsh-subagent-codex-pro/machine` API。
 精确依赖由插件 package 和 lockfile 锁定；生命周期开发时使用的源码包见
 [vendor 来源记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。内部仍使用 Codex app-server 和用户已有登录，不需要父模型二次委派；缺包、
-版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.6.0` optional peer，
-未选择该后端时无需安装。
+版本或回执不符会失败，不自动回退 `codex exec`。Claude 另为精确 `0.7.0` optional peer，
+使用默认 Claude 阶段时需要安装，没有选用该后端时则不需要。接口检查不证明 npm
+registry 已发布，也不代表真实账号验收已经通过。
 
-已有配置不自动改写。要从旧路径迁移，在 `config inspect` 显示的有效文件中修改 inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。保留 `harness: "codex"` 则明确继续使用旧 CLI。`codex-pro` 必须提供 model 和 channel，不沿用旧 Codex driver 的隐式模型；`resident-session: true` 会在加载时拒绝。thinking 省略时为 high。
+已有配置不自动改写。若只迁移一项旧绑定，在 `config inspect` 显示的有效文件中修改
+inline harness 或其 profile，保留所选 model／thinking／channel，然后重启引擎。
+未启用新订阅策略的兼容配置仍可显式保留 `harness:"codex"` 旧 CLI；完整模型分工及
+可达图验证使用前述 `--preset subscription-cli`。`codex-pro` 必须提供 model 和
+channel，不沿用旧 driver 隐式模型；`resident-session:true` 在加载时拒绝。
+thinking 省略时为 high。
 
 主任务在 fresh 与 scoped 两种模式下均使用外层 worker 协议 3，并保留 persistent 原生历史。
 fresh 每次不传旧 thread ID，创建独立的具名会话；scoped 仅在确认可续用时提供精确 ID。
@@ -651,16 +838,22 @@ full-access 核对 `danger-full-access`／`dangerFullAccess`，不将其称为�
 | `FLYWHEEL_CODEX_PRO_WORKER` | 可选 Codex Pro worker 路径，通常由 npm 解析 |
 | `FLYWHEEL_CODEX_BIN` | 插件使用的 Codex 程序，默认 PATH 中的 `codex` |
 | `CODEX_HOME` | Codex 自身解释的已有配置／登录目录 |
+| `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | 可选的配套 Claude Code Pro worker 路径 |
+| `FLYWHEEL_CLAUDE_BIN` | 原生 Claude 程序，默认 PATH 中的 `claude` |
+| `CLAUDE_CONFIG_DIR` | Claude 自身解释的已有配置／登录目录 |
+| `FLYWHEEL_ANTIGRAVITY_WORKER` | 可选的配套 Antigravity worker 路径 |
+| `FLYWHEEL_AGY_BIN` | 官方原生 CLI 程序，默认 PATH 中的 `agy` |
 
 这些设置须对启动引擎的进程可见，安装器不复制凭证。GUI 启动器记录安装时的工具
 路径；终端中的临时 export 不会改变已运行的桌面进程。
 
 ### 权限与清理边界
 
-Claude 在任务前核对 SDK initialize／版本，但原生 `system/init` 配置消息发生在
-prompt 之后，不提供 Codex 同等的预派发 `thread-ready` 保证。
-Claude 要求显式完全权限；Kimi CLI 同样不提供 OS 沙箱保证。须分别判断实际
-后端能力与生命周期证据。
+Claude 在任务前核对 SDK initialize／版本；订阅策略下还核对同一进程的账号／usage
+证据。但原生 `system/init` 配置消息发生在 prompt 之后，不提供 Codex 同等的预派发
+`thread-ready` 权限保证。Claude 要求显式完全权限；Kimi 原生 Agent 同样不提供
+OS 沙箱保证。Antigravity 普通执行要求完全权限，独立的证据分析路径则核验生成的
+agent 身份和空工具列表。须分别判断实际后端能力与生命周期证据。
 
 worker 异常退出不能证明插件的独立管理进程已停止。启动后无法确认清理时，引擎记录
 证据并结束运行，不自动重试或换渠道。恢复前核对本任务的 app-server／guardian 进程，
@@ -668,11 +861,35 @@ worker 异常退出不能证明插件的独立管理进程已停止。启动后�
 
 ## 可选 Claude Code Pro
 
-新增 `harness:claude-code-pro` 与未绑定的 `claude-sonnet` profile，可用于任意已配置 loop 或 Execute route。模型、thinking、optional peer 安装、full-access-only 权限及正常续接边界见 [Claude Code Pro 指南](claude-code-pro.md)。`provider` 仍只用于 DSH 原生 adapter；默认阶段分配不变。
+默认 `opus-plan`、`opus-ui` profiles 通过 `claude-code-pro` 负责作用域 Plan 和
+frontend／multimodal 执行。`fable` 供显式替换，canonical model 是
+`claude-fable-5-2`。插件使用官方 Agent SDK 0.3.326 调用所选本机 Claude CLI，
+沿用原生登录。订阅策略要求同一进程的 usage 查询使用 `skipBehaviors:true`，并在
+释放任务 prompt 前明确确认额外用量已关闭；不支持、超时或未知证据都阻止派发，
+不转 API。精确版本要求、别名、effort 冲突、optional peer 安装、完全权限及恢复
+见 [Claude Code Pro 指南](claude-code-pro.md)。累计 `modelUsage` 是整轮原生运行／
+历史的观测，不单独证明 root 模型回退、本 turn token 或订阅账单费用。
+
+## Antigravity 与 Gemini
+
+`antigravity` harness 通过 `dsh-subagent-antigravity@0.2.0` 的公开 machine API
+调用官方本机 `agy` CLI，同一插件也能在 DSH 中直接使用。不经过 ACP，不需要另一个
+Gemini API 凭证。实际原生目录必须包含选定的精确模型，thinking 必须与 slug 一致。
+插件验证本机订阅／credits 控制、原生生命周期、请求配置和清理；账号访问或模型
+不可用时明确失败，不悄悄换模型、开启 credits 或转用云 API。安装、原生 CLI 版本、
+环境检查、DSH 入口、仅分析证据的模式，以及本机控制与账号计费证据的区别，见
+[Antigravity 指南](antigravity.md)。
 
 ## 后备渠道与预算
 
-`channels[channel].fallback` 仍是人工配置的有界后备链，只有既有错误分类／重试策略允许时才使用。切换后依据新渠道重新选择 provider 和模型；不会继续沿用原渠道的 provider。后备渠道省略 harness 时继承当前 harness，不回到链起点的后端。
+默认 profiles 没有渠道后备。`channels[channel].fallback` 是人工配置的有界后备链，
+只有既有错误分类／重试策略允许时才使用；每个可达后备也必须通过 subscription-only
+检查。切换使用目标 channel 的显式角色／路由模型及 harness，再重新解析 provider；
+缺少模型映射就停止，不猜测替代。后备省略 harness 时继承当前 harness。
+
+普通渠道后备不会替另一后端翻译已有 thinking 或 native-profile。跨 harness 的
+effort、能力或权限不兼容时，由准入拒绝。需要不同 effort／原生配置时，使用完整
+显式的 `execution-policy` 绑定。任何后备都不能绕过未知派发或未确认清理。
 
 指标分别保存 `harness`、`provider`、`channel`、`model`。provider 来自 driver 可确认的结果，未知时为 null；channel 继续描述配置渠道。usage 和美元成本未报告时保持 unknown，订阅不会被当成已知零成本。profiles 不改变计费规则，也不会绕过 hard budget。
 
@@ -706,13 +923,15 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 
 本地检查确认命令可用、版本响应可靠，以及声明的环境变量存在且非空，不显示变量值。`--probe` 才启动 DSH worker 验证 adapter 接受配置、cwd、完整沙箱、approval policy 和 SDK 正常关闭。相同 provider、channel、model、effort、cwd 和权限的探测去重；不同账号别名或读写权限不能相互代替。整体验证预算 40 秒，另留进程清理窗口。
 
-DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；GPT、Kimi 和 Flash 也不共用同一套档位枚举，详见[推理等级说明](model-policy.md)。
+DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；Gemini、Claude、GPT、Kimi 也不共用同一套原生 effort 契约，详见[推理等级说明](model-policy.md)。
 
-Codex Pro 本地检查额外实际导入公开 machine API，核对精确 0.10.2／协议 1、typed
-lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 worker 只查一次。
+原生 worker 检查实际导入公开 API，并核对精确 companion 契约：Codex Pro 0.10.2、
+Claude Code Pro 0.7.0、Antigravity 0.2.0，及要求的 lifecycle／recovery 导出、
+Node 兼容性和原生命令。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。
 `--probe` 不发送模型任务，不把导入成功解释为账号、权限或某段历史恢复已经验证。
+调用前仍须实际订阅准入，未观测的额度与计费状态继续保持 unknown。
 
 `sessions.policy` 检查只确认配置模式及版本；每个适用真实绑定的 `.session` 检查
 显示所选模式、原因和适配器支持，历史恢复仍为 unknown。Doctor 不尝试恢复用户
@@ -738,10 +957,27 @@ lifecycle／recovery 导出、Node >=22.18.0 与 Codex 命令版本；同一 wor
 执行绑定。Task／New／Run 共用引擎拥有的同一策略。关闭后停止后续请求及采用，
 保留已有回执与预算。
 
+完整默认配置为：
+
+```json
+{"jev":{"enabled":false,"backend":"subscription","profile":"hydrogen-local"}}
+```
+
+开启后使用 Antigravity 原生订阅路径调用 Gemini Hydrogen／medium，在新建且
+已核验的空工具 agent 中选择动作。JEV 只接收有界的已批准证据，并从既有枚举里
+选择，不能增加命令、URL、工具或模型绑定。缺省每次最多 30 秒、累计 8 次调用，
+applicability 下限 0.8、choice confidence 下限 0.6。完整解析的 profile 冻结进
+决策目标，之后修改 profile 会使旧决策失效。派发前持久化调用意图和生命周期检查点；
+清理未知时保留 pending 调用并阻断后续模型工作，直到只读 recovery 取得清理证据。
+恢复不会重发 prompt，也不会采用迟到答案。
+
 正常任务没有独立影子／建议开关。旧 `jev-shadow` 只用于把连接信息迁移到关闭的
 统一配置，编辑器保存时移除旧 key；明确的新 `jev` 优先。配置仍按任务／项目／
-全局／内嵌表选择一份完整文件，不深合并。目标地址、固定模型、密钥变量、限制、
-数据类别和恢复规则见 [JEV 指南](jev.md)。
+全局／内嵌表选择一份完整文件，不深合并。旧文件省略 backend 时保留原 HTTP 契约；
+未启用 subscription-only 时仍可显式使用 `backend:"http"`。subscription 后端
+不接受 HTTP 专用 endpoint／model／key 字段。两类契约、数据授权、跨调查与执行
+共用预算、弃权及恢复规则见 [JEV 指南](jev.md)。`loops.investigate` 的调查分析
+是独立阶段，不需要开启 JEV。
 
 Packet 可选声明最多八项 `feedback-checks`，使用与验收命令相同的 `cmd`／`script`
 和 `expect` 结构。这些是已批准的短诊断候选，不替代 `acceptance.L1/L2/L3`。
@@ -753,7 +989,7 @@ JEV 的定向检查候选。用途不得包含凭据、原始日志或命令正�
 
 ## 参考文件
 
-- [内联默认配置](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)
+- [完整默认配置](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)
 - [完整 profiles 示例](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)
 - [系统设计](../design.md)
 - [Worker 协议](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/PROTOCOL.md)

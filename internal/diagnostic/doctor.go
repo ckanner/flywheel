@@ -119,11 +119,11 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			r.add(b.ID+".permission", "fail", "Claude Code Pro 仅支持显式 full-access；原生审批模式不等于 OS 只读或工作区沙箱", "INVALID_REQUEST", "需要受限权限时选择 DSH 或 Codex；选择 Claude 时须明确配置 permissions.bindings."+b.ID+"=danger-full-access 或 permissions.mode=full-access")
 			continue
 		}
-		if b.PermissionMode == "read-only" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
+		if b.PermissionMode == "read-only" && !(b.Harness == "antigravity" && b.Role == "investigate") && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" {
 			r.add(b.ID+".permission", "fail", "所选 harness 无法实施本阶段要求的只读权限", "INVALID_REQUEST", "为评审选择支持 read-only 的 DSH 或 Codex 路径")
 			continue
 		}
-		if b.PermissionMode == "danger-full-access" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" && b.Harness != "claude-code-pro" && b.Harness != "kimi" {
+		if b.PermissionMode == "danger-full-access" && b.Harness != "dsh" && b.Harness != "codex" && b.Harness != "codex-pro" && b.Harness != "claude-code-pro" && b.Harness != "kimi" && b.Harness != "antigravity" {
 			r.add(b.ID+".permission", "fail", "所选 harness 没有经过验证的完全权限映射", "INVALID_REQUEST", "选择支持完全权限的 DSH、Codex 或 Kimi 路径；不会静默降低或忽略权限要求")
 			continue
 		}
@@ -147,6 +147,8 @@ func Doctor(parent context.Context, cwd, taskDir string, probe bool) Report {
 			} else {
 				r.add(b.ID+".sdk", "skipped", "未运行 SDK 探测；必须显式请求且本地配置、契约和工作目录检查通过", "", "修复本地问题后使用 --probe；探测不会发送推理请求")
 			}
+		} else if b.Harness == "antigravity" {
+			r.antigravity(ctx, *b, commands)
 		} else if b.Harness == "codex-pro" {
 			r.codexPro(ctx, *b, commands)
 		} else if b.Harness == "claude-code-pro" {

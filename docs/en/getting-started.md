@@ -24,9 +24,10 @@ remain available for historical installations.
 | Git with a configured commit identity | Worktrees and local delivery commits |
 | Node.js 22.18.0 or later and npm | Installer, launchers, and JavaScript workers |
 | DSH Mac and its desktop-supplied `dsh` command | Desktop plugin management and DSH SDK execution |
-| Authenticated Kimi CLI | Default Full Plan, frontend execution, and optional Garden |
-| Codex executable and existing login | The hard execution route uses Codex Pro and Codex app-server |
-| DeepSeek and ChatGPT providers in the DSH SDK profile | Default execution, independent Review, and Judge |
+| Antigravity `agy` CLI and native account login | Gemini design, ordinary/complex execution, investigation analysis and Intake |
+| Claude CLI and native subscription login | Implementation planning and frontend/multimodal routes through Claude Code Pro |
+| Codex executable and ChatGPT account login | Backend/hard execution, independent reviews and Judge through Codex app-server |
+| Authenticated Kimi CLI | Native-agent batch execution and optional Garden |
 | Go 1.27 or later | Only the disposable Go example and source builds; not npm binary installation |
 
 The plugin admits DSH `>=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0`, including the 0.3 series and its
@@ -44,17 +45,22 @@ command -v dsh
 dsh --version
 kimi --version
 codex --version
+claude --version
+agy --version
 ```
 
 Use each backend's normal installation and login flow. Flywheel does not sign in,
 copy credentials, or replace the desktop application. Full needs its configured
-Plan/Execute/Review/Judge backends. A qualified Quick task needs its actual execution
-route and independent final Review; an upgrade to Full requires the additional stages.
+design/planning, execution, review and Judge backends. A new compact task also needs
+its combined-design and joint-review bindings before Quick execution and final Review;
+an upgrade to Full requires the additional stages.
 Unused execution routes do not become task runtime requirements.
 
-Claude is optional. Selecting `claude-code-pro` additionally requires the matching
-0.6.0 companion package in the worker's dependency tree and an installed,
-compatible Claude executable with authorized authentication. See [Claude Code Pro](claude-code-pro.md).
+Claude remains an optional package peer, but the default planning and frontend
+bindings use it. Those stages require the pinned 0.7.0 companion in the worker's
+dependency tree and a compatible Claude CLI with a supported native subscription.
+See [Claude Code Pro](claude-code-pro.md). Gemini uses the pinned Antigravity adapter
+and official `agy` CLI, without ACP; see [Antigravity](antigravity.md).
 
 ## 2. Install
 
@@ -118,32 +124,26 @@ its conversation, trajectory, composer, and sidebar.
 
 Desktop plugin registration uses the desktop-supplied command and the `desktop`
 profile by default. An independent npm DSH CLI cannot manage that reserved profile.
-The worker normally runs in a separate **`sdk` profile** and does not inherit the
-conversation's selected model or every desktop plugin.
+An explicitly selected DSH worker runs in a separate **`sdk` profile** and does not
+inherit the conversation's selected model or every desktop plugin. The default
+subscription workers invoke their native clients directly.
 
 ### Account selection
 
-The default DeepSeek route explicitly selects `deepseek-account` / `deepseek-flash`.
-The standard SDK `base` profile includes the account adapter. With the same
-`DSH_HOME`, standard desktop and SDK setups share the existing account credential
-store. Custom homes, profiles, or credential stores need separate checking.
-`deepseek-official` is an explicitly configured API-key alternative, with no automatic
-paid fallback from the account preset.
+The default declares `subscription-only` and uses native Gemini, Claude, Codex and
+Kimi clients. It has no DeepSeek route, API-key fallback or automatic paid-credit
+fallback. Each native client keeps its own normal login; selecting a model in a DSH
+conversation does not authenticate the independent worker. The exact stage/profile
+table and admission limits are maintained in [Model policy](model-policy.md).
 
-The default GPT Review/Judge bindings use the ChatGPT adapter in the SDK profile.
-Install the checked 0.1.20 companion if it is missing or needs updating:
-
-```sh
-dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
-```
-
-Check the installed version before changing an existing profile. Account authorization
-and live model availability still use the adapter's normal flow; keep `DSH_HOME`
-consistent and credentials out of task files and Git.
-
-The hard route directly imports the pinned Codex Pro 0.10.2 public machine API.
-It needs the local Codex command/login, not a parent model delegating through the
-`subagent_codex` tool. Optional Claude has its own dependency and login.
+Codex Pro 0.10.2 directly uses the official app-server and checks the ChatGPT account
+route. Claude Code Pro 0.7.0 checks a supported native subscription with extra usage
+disabled before sending the task. Antigravity rejects API/custom-provider routes and
+enabled credits fallback; Kimi uses managed native agent mode with Kimi Code OAuth.
+These controls do not prove remaining quota or promise account-wide zero extra costs.
+Keep credentials out of task files and Git. Older explicit DSH configurations remain
+separate compatibility choices until migration; they do not become fallbacks for the
+new preset.
 
 Without a selected `native-profile`, the DSH worker's temporary policy disables
 delegation and the Web tool. An explicit profile can enable owned PTC Agents, Team,
@@ -178,15 +178,16 @@ flywheel template flywheel.profiles.example.json
 
 Upgrades preserve existing configuration, including old model, permission, history,
 and scheduling choices. To adopt the subscription model preset, preview first and
-then apply if it matches the intended accounts and full-access policy:
+then apply if it matches the intended accounts and retained permissions:
 
 ```sh
-flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --json
-flywheel config migrate --preset subscriptions --cwd /absolute/path/to/repo --apply --json
+flywheel config migrate --preset subscription-cli --cwd /absolute/path/to/repo --json
+flywheel config migrate --preset subscription-cli --cwd /absolute/path/to/repo --apply --json
 ```
 
 Add `--task-dir` for a task-level override. Migration backs up the selected file and
-preserves unrelated settings. It does not automatically opt an old configuration
+preserves unrelated settings and permissions. The historical `subscriptions` preset
+does not select this new four-client policy. Migration does not automatically opt an old configuration
 into scoped history or parallel scheduling. To adopt a full installed template, use
 the console's global/project configuration editor, load defaults, review, and save.
 [Configuration](configuration.md) explains precedence, permissions, and migration.
@@ -226,6 +227,11 @@ recovery, or effective reasoning effort. Runtime Codex calls separately validate
 full policy at `thread-ready` before Go acknowledges dispatch. This does not turn a
 no-inference diagnostic into real account validation.
 
+Antigravity diagnostics check the installed CLI and subscription controls without
+sending a task. Claude diagnostics check the matching package and local CLI;
+the pre-prompt subscription check remains a runtime boundary. Neither replaces a
+separately authorized live account test.
+
 Results are `pass`, `fail`, `warn`, `unknown`, or `skipped`; a fail gives exit code 1.
 A task-specific preflight checks the Spec or persisted policy and only applicable
 bindings. It does not apply a later runtime `--mode` override:
@@ -260,6 +266,20 @@ separate. The project is the stable repository identity; task execution may use 
 linked worktree, with its contracts at `docs/<slug>`. Preparation reports actual
 paths. The engine later manages or registers packet execution directories, and owns
 `state.json`. See [Workflow](workflow.md#2-choose-the-task-execution-directory).
+
+### Investigate or continue an existing incident
+
+Use Task with an explicit report-only or investigate-and-fix goal. Go performs bounded
+evidence collection; the configured Gemini analysis role prepares the report.
+`awaiting-report` resumes analysis, while an unknown pending call only reconciles its
+original receipt. After a supported report, an already authorized repair enters thin
+brief preparation in the same task and retains its scope and cumulative accounting.
+
+When new logs arrive after a report, ask to continue the original task with that
+evidence. The host submits `control investigate` with `action:continue`, the current
+revision and a complete next-round contract, then runs it once. Goal, intent and repair
+scope remain unchanged; earlier reports and spent budgets remain recorded. See
+[Investigation](investigation.md#continue-with-new-evidence-in-the-same-task).
 
 ### Disposable first-run example
 

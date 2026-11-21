@@ -490,6 +490,45 @@
           "harness",
           "options"
         ]
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "harness": {
+            "const": "antigravity"
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "const": 1
+              },
+              "mode": {
+                "enum": [
+                  "native",
+                  "subagents",
+                  "swarm"
+                ]
+              },
+              "maxObservedAgents": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8,
+                "description": "Observed total child-ID guard; not a hard concurrency limit."
+              }
+            },
+            "required": [
+              "version",
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "harness",
+          "options"
+        ]
       }
     ]
   }

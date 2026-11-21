@@ -17,7 +17,9 @@
 | 配置优先级、profiles、权限和调度 | [配置参考](zh-CN/configuration.md) | [Configuration](en/configuration.md) |
 | 默认模型与推理等级的依据 | [模型策略](zh-CN/model-policy.md) | [Model policy](en/model-policy.md) |
 | 使用原生 Agent、Team、Swarm、Tower 与 LCU | [原生能力](zh-CN/native-capabilities.md) | [Native capabilities](en/native-capabilities.md) |
-| 接入可选 Claude machine 后端 | [Claude Code Pro](zh-CN/claude-code-pro.md) | [Claude Code Pro](en/claude-code-pro.md) |
+| 使用 Claude 原生订阅后端 | [Claude Code Pro](zh-CN/claude-code-pro.md) | [Claude Code Pro](en/claude-code-pro.md) |
+| 在任务执行中传入冻结的参考图片 | [图片输入](zh-CN/image-inputs.md) | [Image inputs](en/image-inputs.md) |
+| 官方 CLI 的 Gemini 与独立 DSH 插件 | [Antigravity](zh-CN/antigravity.md) | [Antigravity](en/antigravity.md) |
 | 角色续接、调用中断与对账 | [恢复与上下文质量](zh-CN/session-recovery.md) | [Recovery and context quality](en/session-recovery.md) |
 | 使用固定任务和证据比较会话策略 | [会话评估](zh-CN/session-evaluation.md) | [Session evaluation](en/session-evaluation.md) |
 | 通过一个开关启用有界 JEV 决策 | [JEV 决策](zh-CN/jev.md) | [JEV decisions](en/jev.md) |
@@ -38,6 +40,16 @@
 ## 设计决策与证据
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
+
+[订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)
+（[English](plans/2026-11-19-subscription-cli-workflows.en.md)）保留已批准设计。
+当前源码实现四订阅默认表、官方 Antigravity CLI 插件、紧凑准备、明确批准策略及累计
+调查轮次。当前行为见[模型策略](zh-CN/model-policy.md)、[方案设计与审查](zh-CN/reviewed-planning.md)
+和[有界调查](zh-CN/investigation.md)。源码及候选验收与 registry 发行、真实账号权益分别记录。
+源码检查、候选身份和验证边界见[实施及复审记录](validation/2026-11-20-subscription-cli-workflows.md)。
+[编排与首轮选择增补](validation/2026-11-20-orchestration-adaptive-selection.md)记录
+Antigravity 0.2.0 的 Orchestrator／子代理／Swarm、受审查协作范围、JEV 首轮选择、
+共享恢复预算和独立复核。
 
 [真实设计、独立评审与分层规划方案](plans/2026-11-16-reviewed-planning.md)（中文，原始提案）记录 Plan 设计、独立审查、精确版本批准与逐步细化的方案。当前控制入口与兼容边界见[方案设计与审查](zh-CN/reviewed-planning.md)；真实 Provider 验收与源码测试分别记录。
 
@@ -69,3 +81,4 @@
 按[文档维护规范](zh-CN/contributing.md#保持文档结构清晰)确定本次改动需要同步的文档，并在 PR 前核对清单。AI agent 还须遵循 [AGENTS.md 操作规则](https://github.com/ckanner/flywheel/blob/main/AGENTS.md)。
 
 本仓库的项目文档与 Flywheel 在**目标仓库**中生成的 `docs/<task>/` 任务契约、运行账本是两类内容。
+

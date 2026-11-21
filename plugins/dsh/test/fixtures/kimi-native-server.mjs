@@ -33,6 +33,7 @@ const metaServerID = idMismatch ? 'meta-' + process.pid : 'owned-' + process.pid
 const registryHostVersion = fixtureCase === 'id-mismatch-no-version' ? undefined : kimi253 ? '2.5.3' : 'fixture-9.8.7';
 const metaServerVersion = ['id-mismatch-version', 'id-mismatch-remote-on'].includes(fixtureCase) ? 'fixture-9.8.8' : registryHostVersion || 'fixture-9.8.7';
 let remoteControlEnabled = fixtureCase === 'id-mismatch-remote-on';
+let subscriptionReads = 0;
 await mkdir(registry, { recursive: true });
 await writeFile(join(root, 'server.token'), token);
 const log = async value => { if (process.env.KIMI_FIXTURE_LOG) await appendFile(process.env.KIMI_FIXTURE_LOG, JSON.stringify(value) + '\n'); };
@@ -98,6 +99,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST') { let data = ''; for await (const chunk of req) data += chunk; body = data ? JSON.parse(data) : {}; }
     await log({ method: req.method, path, ...(body ? { body } : {}) });
     const send = (data, code = 0) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ code, data })); };
+    if (path === '/api/v1/providers') {
+      subscriptionReads++;
+      if (fixtureCase === 'subscription-hang') return;
+      return send({ items: [{ id: 'managed:kimi-code', type: 'kimi', status: 'connected',
+        base_url: fixtureCase === 'subscription-endpoint' ? 'https://api.example.invalid/v1' : 'https://api.kimi.com/coding/v1',
+        has_api_key: fixtureCase === 'subscription-api' || (fixtureCase === 'subscription-drift' && subscriptionReads > 1) }] });
+    }
+    if (path === '/api/v1/config') return send({ models: { 'kimi-for-coding': {
+      provider: 'managed:kimi-code', model: 'k3.1-pro', has_api_key: fixtureCase === 'subscription-model-key' } },
+      services: { moonshotSearch: { has_api_key: true }, moonshotFetch: { has_api_key: true } } });
     if (path === '/openapi.json' || path === '/asyncapi.json') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(path === '/openapi.json' ? openapi : asyncapi)); return; }
     if (path === '/api/v1/meta') {
       if (fixtureCase === 'null-meta-envelope') { res.setHeader('Content-Type', 'application/json'); res.end('null'); return; }

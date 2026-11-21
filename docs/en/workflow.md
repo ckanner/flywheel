@@ -11,6 +11,16 @@ Use this guide for an existing repository. For installation and a disposable fir
 run, start with [Getting started](getting-started.md).
 For incidents, issue fixes, and complex projects, use the [Usage handbook](usage-handbook.md).
 
+## Create a task from the Flywheel view
+
+When the current conversation has no associated task, the canvas offers **Engineering task**, **Fix a problem**, and **Investigate the cause**. Enter the goal; the workspace comes from the current conversation and the engine creates the task ledger under its `docs` directory. You do not need to create a directory first. Merely opening the form performs no inference.
+
+Engineering and repair requests default to **Auto** and **Wait for my approval after review**. The button starts design and independent review through `planning prepare`; it does not approve the resulting design. Full and Quick are advanced depth requests. Delegated execution requires both choosing that policy and explicitly checking the implementation authorization. The reviewed contract still determines eligibility.
+
+The investigation form asks for the expected behavior, a hypothesis and its falsifier, and up to eight exact text-file paths relative to the current conversation’s working directory. It creates a report-only contract and starts the Go investigation owner, with at most 60 seconds and 256 KiB per file. This entry grants no commands, service access, or implementation scope. More complex diagnostics continue to use the task skill and a reviewed bounded preparation contract. See [Investigation](investigation.md).
+
+For repair or engineering work that requires original images, enter up to four explicit repository-relative image paths and choose **Inspect and preview selected images**. The read-only preview checks real PNG/JPEG/GIF/WebP bytes, excludes symlinks and paths outside the repository, and shows MIME type, dimensions, size, and SHA-256. Limits are 4 MiB per image and 8 MiB total. Changing paths invalidates the selection. The brief receives selected references marked **unreviewed**; only a subsequently reviewed packet becomes an execution input. Planning receives paths and digests, not an automatic image attachment. Execute must still validate the frozen original bytes and use the supported Claude SDK transport. Chat attachments are never added automatically. Gemini remains available for tasks without original images.
+
 ## 0. Normal entry: describe a goal and launch
 
 In DSH Chat, describe the requirement with the task skill:
@@ -40,8 +50,11 @@ concurrency, or unresolved design risks select Full. An explicit Quick request
 still has to qualify; file count alone is not a risk assessment.
 
 A first-success Quick implementation has two stage-agent calls: Execute and final
-Review. New reviewed-planning tasks also run compact initial design and Design
-Review; preparation, internal tool turns, retries and upgrades are additional work. Required
+Review. New qualifying compact tasks first generate the design and complete single
+packet together, then receive one independent joint review. This normally makes
+four logical role calls from brief to delivery; internal tool turns, investigation,
+retries and upgrades are additional work. Existing valid reviewed contracts remain
+reusable. Required
 tests, coverage, applicable L2/L3, defect sampling, budgets, and cleanup remain in
 force. Plan/Judge are marked not applicable with reasons. A newly discovered risk or
 verification gap saves a one-way Quick → Full upgrade, preserving work and budgets.
@@ -62,7 +75,7 @@ proposal review is requested. Plan / Exec / Verify / Review / Status / Stop rema
 Full reuses a confirmed, persisted Plan checkpoint when its inputs and baseline stay
 valid. Explicit Plan, verification gaps, changed contracts or untrusted baselines
 still replan. Targeted executor checks complement the complete Go gate and independent
-Review. Default model bindings remain; execution allowlists and verified incremental
+Review. Execution allowlists and verified incremental
 context are independent opt-ins described in [Configuration](configuration.md).
 
 Authorized investigations can include exact reproduction commands in private
@@ -73,6 +86,46 @@ repair, an approved feedback check, replanning, or an already allowed execution
 binding. Go retains workflow eligibility and the complete final gates; a successful
 feedback experiment does not complete the implementation.
 
+## 0.2 When native collaboration is used
+
+Auto still selects implementation depth; the single optional JEV switch selects
+only legal execution candidates. With JEV off, the configured initial model runs.
+With JEV on, Go may ask once before the first Execute and again after confirmed
+failure. Decisions share the existing ledger and budgets. A model, effort or
+native-strategy change cold-starts the executor; it cannot bypass plan approval,
+verification, independent Review or unknown-invocation reconciliation.
+
+Swarm is useful for work that has already been split into independent components.
+The reviewed packet can declare the following optional contract:
+
+```yaml
+schedule:
+  after: []
+  writes: ["src/parser/", "src/formatter/"]
+collaboration:
+  version: 1
+  tasks:
+    - goal: "Implement and test the parser"
+      writes: ["src/parser/"]
+    - goal: "Implement and test the formatter"
+      writes: ["src/formatter/"]
+```
+
+The declaration requires 2–8 tasks with disjoint scopes inside `schedule.writes`,
+is reviewed with the packet and makes Quick ineligible. Full, no image inputs and
+this valid declaration are required even for a statically selected Antigravity
+Swarm binding. Merely choosing `complex`/`batch` or listing multiple files does not
+trigger Swarm. Shared mutable files or a sequential design dependency should be
+resolved in the plan before admitting parallel work. The adapter requests native
+collaboration; only observed native events establish that it occurred.
+
+Read-only foreground research may use explicit subagents without the execution
+split. Evidence-only incident analysis remains tool-free and cannot spawn agents;
+an authorized repair later enters the ordinary reviewed execution workflow.
+Orchestrator can handle a complex sequential task through its fixed native model
+handoff without a Swarm split. See [Antigravity](antigravity.md) and [JEV](jev.md)
+for configuration, observed-member limits and recovery.
+
 ## 1. Choose conversation and planning models separately
 
 The current DSH conversation organizes the brief and user feedback. It does not need
@@ -80,7 +133,10 @@ to produce the complete architecture before New starts. Actual overall design us
 `loops.design-plan`; absent an override, it inherits the existing `loops.plan`
 backend. Independent Design Review and Plan Review use `loops.design-review` and
 `loops.plan-review`, defaulting to the `loops.review` backend. Roles and history stay
-independent. The existing model and effort defaults are unchanged.
+independent. A brief with explicit compact granularity, reason and evidence uses
+`planning.compact` profile references for design and its joint review; otherwise
+system design uses the ordinary loops. Auto is the deterministic implementation
+depth selector, not a third flow or a separate classifier call.
 
 Use `config inspect` to see `bindingSource` and the resolved backend, model and
 effort. The configuration view displays inherited planning roles and lets you make

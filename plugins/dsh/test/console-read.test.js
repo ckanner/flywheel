@@ -43,11 +43,17 @@ test('published Client and Host Gateway reads are session-bound and append no co
   const before = session.snapshotEvents();
   ctx.provide('workingDirectory', { get: () => cwd });
   const calls = [];
+  const modelRequest = { version: 1, harness: 'antigravity', channel: 'google-native' };
+  const catalog = patch => ({ ...modelRequest, status: 'available', source: 'agy models', scope: 'native-client-catalog',
+    models: [{ id: 'gemini-pro-orchestrator-neon', label: 'Orchestrator Neon', efforts: [''], defaultEffort: '' }],
+    truncated: false, inferencePerformed: false, accountEntitlement: 'unknown', limitations: ['Catalog presence does not establish account entitlement.'], ...patch });
+  let modelReport = catalog();
   const control = async (input, actual, signal) => {
     assert.equal(actual, agent); assert.ok(signal instanceof AbortSignal);
     calls.push(input);
     return { protocol: 1, ok: true, running: false, state: null, taskDir: input.taskDir ?? '', cwd,
       ...(input.action === 'config-edit' ? { editor: { scope: input.editor.scope, revision: 'fixture-revision', values: {}, defaults: {} } } : {}),
+      ...(input.action === 'models' ? { modelCatalog: modelReport } : {}),
       ...(input.action === 'runs' ? { runs: [ { hostSessionId: 'foreign', taskDir: cwd, cwd }, { hostSessionId: 'mine', taskDir: cwd, cwd } ] } : {}) };
   };
   new ConsoleReadService(ctx, control, (input, error) => ({ protocol: 1, type: 'flywheel-control-error', action: input?.action, dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown', message: error.message }));
@@ -81,6 +87,19 @@ test('published Client and Host Gateway reads are session-bound and append no co
   await clientView.run('config-edit', { taskDir: '', cwd }, false, { editor: { scope: 'global' } });
   assert.equal(clientView.hooks.control.getSnapshot().error, null);
   assert.equal(clientView.hooks.control.getSnapshot().editor.scope, 'global');
+  const modelResult = await clientView.run('models', { taskDir: '', cwd }, false, { models: modelRequest });
+  assert.equal(clientView.hooks.control.getSnapshot().error, null);
+  assert.equal(modelResult.modelCatalog.models[0].id, 'gemini-pro-orchestrator-neon');
+  assert.equal(modelResult.modelCatalog.models[0].defaultEffort, '', 'the Remote preserves fixed native effort without choosing another level');
+  assert.deepEqual(calls.at(-1), { action: 'models', cwd, models: modelRequest });
+  for (const patch of [{ harness: 'codex-pro' }, { channel: 'another-account' }, { inferencePerformed: true }, { accountEntitlement: 'confirmed' },
+    { models: [{ id: 'invented-model', label: 'Invented', extraAuthority: true }] }]) {
+    modelReport = catalog(patch);
+    assert.equal(await clientView.run('models', { taskDir: '', cwd }, false, { models: modelRequest }), undefined);
+    assert.match(clientView.hooks.control.getSnapshot().error.detail, /invalid model catalog/);
+    assert.equal(clientView.hooks.control.getSnapshot().uncertainty, null, 'a failed passive read never becomes an uncertain mutation');
+  }
+  modelReport = catalog();
   const descriptor = clientCtx.typert.remotes.get('flywheelConsole/read');
   assert.equal(descriptor.parameters[0].wire, ctx.typert.lookups.get('agent').wire);
   const sessionSchema = descriptor.parameters[0].codec.create();
@@ -93,6 +112,9 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'metrics', runId: 'run-1' }, { action: 'history', sessionKey: 'task:review' },
     { action: 'node', packet: 'M01-T01' }, { action: 'delivery', delivery: { action: 'inspect', headBranch: 'feature/example' } },
     { action: 'doctor', probe: false },
+    { action: 'images', images: { paths: ['design/screen.png'] } },
+    { action: 'models', models: modelRequest },
+    { action: 'models', models: { version: 1, harness: 'custom-provider', provider: 'custom' } },
     { action: 'planning', planning: { action: 'status' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'feedback-1' } },
   ]) assert.deepEqual(JSON.parse(JSON.stringify(inputSchema.parse(input))), input);
   for (const input of [null, [], {}, { action: 'start' }, { action: 'runs', unknown: true },
@@ -105,6 +127,14 @@ test('published Client and Host Gateway reads are session-bound and append no co
     { action: 'planning', planning: { action: 'approve' } }, { action: 'planning', planning: { action: 'status', start: true } },
     { action: 'planning', planning: { action: 'status', 'request-id': '' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'a'.repeat(121) } },
     { action: 'status', planning: { action: 'status' } }, { action: 'planning' },
+    { action: 'images', images: { paths: [] } }, { action: 'images', images: { paths: ['../private.png'] } },
+    { action: 'images', images: { paths: ['screen.png'], automatic: true } }, { action: 'config', images: { paths: ['screen.png'] } },
+    { action: 'models' }, { action: 'models', models: { version: 2, harness: 'antigravity' } },
+    { action: 'models', models: { ...modelRequest, prompt: 'make a call' } },
+    { action: 'models', models: { ...modelRequest, profile: 'native-profile' } },
+    { action: 'models', models: { ...modelRequest, channel: '' } },
+    { action: 'models', models: { ...modelRequest, model: 'gemini-pro-orchestrator-neon' } },
+    { action: 'config', models: modelRequest }, { action: 'planning', planning: { action: 'collaboration' } },
   ]) assert.throws(() => inputSchema.parse(input), JSON.stringify(input));
   for (const kind of ['success', 'error']) assert.equal(resultSchema.parse({ result: { kind, text: '{}' } }).result.kind, kind);
   for (const value of [null, {}, { result: { kind: 'unknown', text: '{}' } }, { result: { kind: 'success', text: 1 } }]) {
@@ -121,11 +151,15 @@ test('published Client and Host Gateway reads are session-bound and append no co
   }
   assert.equal((await read({ action:'status', taskDir:cwd, cwd })).result.kind,'success');
   assert.equal((await read({ action:'planning', taskDir:cwd, cwd, planning: { action: 'status', 'request-id': 'feedback-1' } })).result.kind,'success');
+  assert.equal((await read({ action: 'images', images: { paths: ['design/screen.png'] } })).result.kind, 'success');
+  assert.equal((await read({ action: 'images', cwd: unrelatedTask, images: { paths: ['design/screen.png'] } })).result.kind, 'error');
+  assert.equal((await read({ action: 'models', models: modelRequest })).result.kind, 'success');
+  assert.equal((await read({ action: 'models', cwd: unrelatedTask, models: modelRequest })).result.kind, 'error', 'model inspection is bounded to this session’s execution root');
   const count = calls.length;
   for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
     assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');
   }
-  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate']) {
+  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate', 'collaboration', 'input-images']) {
     assert.equal((await read({ action: 'planning', taskDir:cwd, cwd, planning: { action } })).result.kind, 'error');
   }
   assert.equal(calls.length,count,'read endpoint never dispatches a mutation');

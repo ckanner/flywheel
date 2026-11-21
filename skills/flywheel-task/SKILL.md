@@ -1,7 +1,7 @@
 ---
 name: flywheel-task
 metadata:
-  version: "2.0.0"
+  version: "2.2.0"
 description: >-
   Register a thin brief and launch an authorized Flywheel task through Go-owned design,
   independent review, progressive planning and verified implementation. Use for
@@ -20,7 +20,9 @@ arguments: requirement mode
 不在宿主对话中提前生成完整系统方案，不自行循环调用规划或审查 Agent。
 
 DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skill:flywheel-task`。
-默认 Auto 不更换模型、provider、渠道或权限；Quick 的实现快路径仍需全部必需验收。
+默认 Auto 根据已经审查的契约选择 Quick／Full。准备粒度另由 brief 的
+`design-granularity` 明确选择；授权由 `policy` 明确选择，三者不能互相代替。
+模式不自动更换 provider、渠道或权限；Quick 的实现快路径仍需全部必需验收。
 
 ## 1. 目标、既有任务与授权
 
@@ -41,8 +43,10 @@ DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skil
 使用现有 preparation / `control investigate` 路径。report-only 停在证据报告；已授权
 修复只在有证据的结论和原范围内继续。调查动作、复现命令、外部读取、JEV 选择、
 预算和恢复由 Go 执行，技能不循环。不要用空 Spec 掩盖缺失根因。
-调查的旧实现交接保留原路径；不能未经明确迁移就将已有任务转换为新规划协议。
-以下步骤用于没有现存调查／实现账本的新实现目标。
+新调查在报告支持结论、回执已解决后，在同一 taskDir/cwd 登记下面的薄 brief；Go
+绑定该轮报告、累计用量与原修复范围，再执行方案准备和独立审查。已经存在完整旧
+Spec/packet 的任务保留原兼容交接；不能未经明确迁移就改写既有实施账本。
+以下步骤用于新实现目标，以及尚未进入实施的新调查交接。
 
 ## 3. 工作区与薄 brief
 
@@ -55,12 +59,19 @@ DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skil
    解析为 `task_dir`。必须属于同一任务位置。保留原仓库的 Provider 项目身份；
    shell 的 cd 不等于变更 DSH 当前目录，控制调用始终显式传这两个路径。
 3. 读足以定位目标的代码、指令和验收入口，记录真实证据、约束、成功标准与未决问题。
-   当前宿主模型只准备这些输入。实际设计使用 `loops.design-plan`（默认继承
-   `loops.plan`），独立审查使用 `loops.design-review`（默认继承 `loops.review`）。
+   当前宿主模型只准备这些输入。system 设计使用 `loops.design-plan`（默认继承
+   `loops.plan`），独立审查使用 `loops.design-review`（默认继承 `loops.review`）；
+   compact 使用 `planning.compact` 中对应角色的具名 profile，未配置才回退普通绑定。
    不要求宿主先写完整 Spec、所有 packets 或自报审查结果。
 4. 依据当前 `planning.schema.json` 的 `$defs.brief` 生成下述输入。
    `flywheel.config.json` 只在任务确实需要独立完整覆盖时创建；不要用少数字段
    意外遮住项目/全局配置，也不自动新增账号、费用渠道或 full-access。
+5. 选择并填写 `design-granularity` 和 `granularity-reason`。已有确切位置、局部边界、
+   成熟实现模式和可运行验收，且用户未指定 Full 时可选 `compact`；必须在 evidence
+   中记录支撑事实，不能填“应该很简单”。跨模块架构、迁移、未决接口、风险或范围不清
+   选 `system`，用户明确 Full 也选 system。Quick 本身不是紧凑准备的证据。
+   compact 由引擎一次生成设计与单 packet，再由独立角色联合审查两个精确版本；
+   引擎发现复杂性时可升级 system，保留原任务、授权与累计预算。
 
 ## 4. 调用一次
 
@@ -85,7 +96,9 @@ DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skil
       "policy": "delegated",
       "authorization": "用户确实已给出的原范围实施授权，不是模型自己的批准声明",
       "implementation-authorized": true,
-      "mode": "auto"
+      "mode": "auto",
+      "design-granularity": "system",
+      "granularity-reason": "需要明确跨模块边界、固定决策与分阶段验收"
     }
   }
 }
@@ -94,6 +107,8 @@ DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skil
 只请求先审方案时，改为 `policy:review-first`、`implementation-authorized:false`，
 省略 authorization；沿用明确的停止点。delegated 必须有实际已有授权，
 不能因为模板有该字段就编造。可把 mode 换成用户明确指定的 quick/full。
+上例是系统设计；符合第 3 节局部条件时改为 compact，并用实际证据说明选择理由。
+省略粒度的兼容请求采用 system，不会仅凭 mode=quick 跳过完整准备。
 
 没有 DSH 工具时，把 `planning` 内层 JSON 存入私有 `request_file` 后调用：
 
@@ -114,8 +129,9 @@ DSH 提供工具时不绕过其关联机制。缺少 PATH 可使用用户指定 
   不代点批准按钮、不设置审批来源变量、不自报 `actor:user`。
 - Plan / 子计划审查使用独立角色与作用域。已批准根方案内细化由引擎继续；发现固定
   决策、需求、约束或验收改变时返回根方案讨论，不用小任务名绕过批准。
-- Quick 新协议包含紧凑设计和设计审查；其实现阶段仍是 Execute、必需验收与独立
-  最终 Review。Full 使用逐步细化和完整门禁。不要宣称整个新任务只有两次模型调用。
+- compact 准备包含一次联合产物与一次独立联合审查。Quick 实现仍包含 Execute、
+  必需验收与独立最终 Review；system 准备与 Full 实现保留逐步细化和完整门禁。
+  不要宣称整个新任务只有两次模型调用，也不把 review-first 当作模型自审。
 - 结果未知、超时或断连时，先对原 taskDir/cwd 调用 `status` 核对，不能重复 prepare
   或 launch。后续通过 Run 继续原任务；预算、工作区、恢复和计量都保留。
   规划角色的 blocked unknown 只能由用户在视图或 `flywheel session ... --abandon`
@@ -124,5 +140,5 @@ DSH 提供工具时不绕过其关联机制。缺少 PATH 可使用用户指定 
   证据，不能代替正式审查／批准。新 role 的 backend 继承不表示权限随同继承。
 - 本入口不新增远端 push、PR、合并或发布授权；相关交付按已给出的实际范围执行。
 
-旧版完整 Spec/packet 的手工准备与调查修复交接仍见[契约参考](references/contract.md)。
-这条兼容路径不要求已有用户重新创建任务；新目标默认使用上面的 brief。
+已有旧版完整 Spec/packet 的手工兼容路径见[契约参考](references/contract.md)。
+已有用户不重新创建任务；新目标与新调查修复交接使用上面的 brief。

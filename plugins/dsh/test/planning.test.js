@@ -288,13 +288,16 @@ test('root approval and reviewed child activation remain separate records', asyn
 
 test('inherited planning settings do not silently save channels and editing creates only a new role binding', async t => {
   const values = { loops: { plan: { harness: 'kimi', model: 'k3', channel: 'kimi-subscription', thinking: 'high', 'resident-session': true }, review: { harness: 'dsh', model: 'review-model', provider: 'chatgpt', channel: 'chatgpt', thinking: 'high' } }, channels: { 'kimi-subscription': { 'env-key': null }, chatgpt: { 'env-key': null } }, sessions: { mode: 'scoped', 'policy-version': 1 } };
-  const ui = await mountPanel(t, request => reply(request, { state: null, editor: { scope: request.editor.scope, revision: 'config-one', target: '/config', values, defaults: values } }));
+  const ui = await mountPanel(t, request => request.action === 'config'
+    ? reply(request, { state: null, configuration: { source: '/config', scope: 'global', bindings: [] } })
+    : reply(request, { state: null, editor: { scope: request.editor.scope, revision: 'config-one', target: '/config', values, defaults: values } }));
   await ui.click('设置'); await ui.click('模型与会话');
   assert.match(ui.container.textContent, /继承 loops.plan/);
   const input = ui.container.querySelector('[data-binding-id="loops.design-plan"] input');
   await act(async () => { Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLInputElement.prototype, 'value').set.call(input, 'design-model'); input.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true })); });
   await ui.click('保存修改');
-  const saved = ui.requests.at(-1).editor.values;
+  assert.deepEqual(ui.requests.map(request => request.action), ['config-edit', 'config', 'config-save', 'config']);
+  const saved = ui.requests.find(request => request.action === 'config-save').editor.values;
   assert.deepEqual(Object.keys(saved), ['loops']);
   assert.deepEqual(saved.loops.plan, values.loops.plan); assert.deepEqual(saved.loops.review, values.loops.review);
   assert.equal(saved.loops['design-plan'].model, 'design-model'); assert.equal(saved.loops['design-plan']['resident-session'], undefined);

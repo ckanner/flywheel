@@ -67,7 +67,7 @@ func configMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&options.Preset, "preset", "", "迁移预设：subscriptions（ChatGPT、Kimi Code、DeepSeek Flash）")
+	cmd.Flags().StringVar(&options.Preset, "preset", "", "迁移预设：subscription-cli（Gemini、Claude、Codex、Kimi）；subscriptions 保留旧版本兼容语义")
 	cmd.Flags().StringVar(&options.Cwd, "cwd", ".", "工作目录；沿用 config inspect 的 Git 根目录发现规则")
 	cmd.Flags().StringVar(&options.TaskDir, "task-dir", "", "可选任务目录；相对路径按 --cwd 解析")
 	cmd.Flags().BoolVar(&options.Apply, "apply", false, "明确应用；默认仅预览，已有文件先备份")

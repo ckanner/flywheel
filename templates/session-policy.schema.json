@@ -15,6 +15,7 @@
         "design-plan": { "$ref": "#/$defs/mode" },
         "design-review": { "$ref": "#/$defs/mode" },
         "plan-review": { "$ref": "#/$defs/mode" },
+        "investigate": { "$ref": "#/$defs/mode" },
         "execute": { "$ref": "#/$defs/mode" },
         "review": { "$ref": "#/$defs/mode" },
         "judge": { "$ref": "#/$defs/mode" },

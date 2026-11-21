@@ -90,7 +90,8 @@ Run the applicable checks from the repository root:
 make quality-gate
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check
-FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test(DSH|CodexPro|ClaudeCodePro|KimiNative|Antigravity)NodeWorkerOfflineBridge$' -count=1
+FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/machine -run '^TestPacketImagesClaudeSDKOfflineBridge$' -count=1
 npm test
 npm run build:npm
 FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
@@ -105,7 +106,7 @@ FLYWHEEL_NPM_PACKAGES_DIR=dist-npm npm run test:install
 | npm installation or release | Root npm tests, a complete single-package candidate build, and installation of that tarball |
 | Documentation | Links, anchors, fences, runnable examples, translation consistency, and affected embedding/package contents |
 
-The Claude bridge needs the exact optional 0.6.0 machine API in the worker's
+The Claude bridge needs the exact optional 0.7.0 machine API in the worker's
 dependency tree. An absent-peer skip does not verify that backend. Preserve the
 reviewed source/tarball identity when using a source candidate. Codex Pro's
 bundled 0.10.2 source package is likewise pinned by its actual integrity and

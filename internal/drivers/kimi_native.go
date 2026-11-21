@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
@@ -24,22 +25,23 @@ func KimiNativeCommand() string {
 }
 
 type kimiNativeStart struct {
-	Type            string           `json:"type"`
-	Protocol        int              `json:"protocol"`
-	RequestID       string           `json:"requestId"`
-	Cwd             string           `json:"cwd"`
-	WorkspaceCwd    string           `json:"workspaceCwd,omitempty"`
-	Model           string           `json:"model"`
-	ReasoningEffort string           `json:"reasoningEffort"`
-	PermissionMode  string           `json:"permissionMode"`
-	Prompt          string           `json:"prompt"`
-	TimeoutMS       int64            `json:"timeoutMs"`
-	IdleTimeoutMS   int64            `json:"idleTimeoutMs,omitempty"`
-	SessionID       string           `json:"sessionId,omitempty"`
-	SessionTitle    string           `json:"sessionTitle,omitempty"`
-	Persistent      bool             `json:"persistent,omitempty"`
-	Native          json.RawMessage  `json:"native"`
-	Managed         *NativeAdmission `json:"managed,omitempty"`
+	Subscription    *config.SubscriptionPolicy `json:"subscription,omitempty"`
+	Type            string                     `json:"type"`
+	Protocol        int                        `json:"protocol"`
+	RequestID       string                     `json:"requestId"`
+	Cwd             string                     `json:"cwd"`
+	WorkspaceCwd    string                     `json:"workspaceCwd,omitempty"`
+	Model           string                     `json:"model"`
+	ReasoningEffort string                     `json:"reasoningEffort"`
+	PermissionMode  string                     `json:"permissionMode"`
+	Prompt          string                     `json:"prompt"`
+	TimeoutMS       int64                      `json:"timeoutMs"`
+	IdleTimeoutMS   int64                      `json:"idleTimeoutMs,omitempty"`
+	SessionID       string                     `json:"sessionId,omitempty"`
+	SessionTitle    string                     `json:"sessionTitle,omitempty"`
+	Persistent      bool                       `json:"persistent,omitempty"`
+	Native          json.RawMessage            `json:"native"`
+	Managed         *NativeAdmission           `json:"managed,omitempty"`
 }
 
 // The native server worker owns one authenticated local runtime. Its whole
@@ -124,7 +126,7 @@ func parseKimiNativeStream(stdout string, request kimiNativeStart) (Result, erro
 }
 
 func runKimiNative(a KimiArgs) Result {
-	r := kimiNativeStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd,
+	r := kimiNativeStart{Subscription: a.Subscription, Type: "start", Protocol: 1, RequestID: a.RequestID, Cwd: a.Cwd, WorkspaceCwd: a.WorkspaceCwd,
 		Model: a.Model, ReasoningEffort: a.Thinking, PermissionMode: a.PermissionMode, Prompt: a.Prompt,
 		SessionID: a.SessionID, Persistent: a.PersistentSession, Native: a.Native, Managed: a.Managed,
 		SessionTitle: a.SessionTitle,
@@ -162,7 +164,7 @@ func runKimiNative(a KimiArgs) Result {
 	}
 	r.Cwd = cwd
 	payload, err := json.Marshal(r)
-	if err != nil || len(payload) >= claudeCodeProRequestBytes {
+	if err != nil || len(payload) >= machineRequestBytes {
 		return reject("Kimi native request is invalid or exceeds the 1 MiB limit")
 	}
 	payload = append(payload, '\n')

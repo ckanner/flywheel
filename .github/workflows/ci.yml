@@ -67,7 +67,9 @@ jobs:
 
   test:
     needs: npm-candidate
-    timeout-minutes: 30
+    # Match release verification: macOS quality-gate and paired sessions can
+    # exceed 30 minutes together; individual test deadlines remain unchanged.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -112,7 +114,6 @@ jobs:
         run: |
           git config --global user.email "ci@flywheel.local"
           git config --global user.name "flywheel-ci"
-      - run: make quality-gate
       - name: Build and test the DSH plugin (offline)
         working-directory: plugins/dsh
         run: |
@@ -131,16 +132,24 @@ jobs:
           # Missing optional peer must fail this backend gate, never count as a skip.
           node dist/codex-pro-worker.js --doctor
           node dist/claude-code-pro-worker.js --doctor
-      - name: Verify Go to Node to SDK, Codex Pro and Claude protocol boundaries (offline)
+          node dist/antigravity-worker.js --doctor
+      - name: Verify the independent Antigravity CLI plugin
+        run: npm --prefix plugins/antigravity ci --ignore-scripts && npm --prefix plugins/antigravity run check
+      - name: Verify Go to Node to SDK, Codex Pro, Claude and Antigravity protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge|KimiPrintIdentityFailureIsNotRetryableOfflineBridge)$' -count=1 -v
+        run: go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative|Antigravity)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge|KimiPrintIdentityFailureIsNotRetryableOfflineBridge)$' -count=1 -v
+      - name: Verify packet images through the real Claude SDK and read-only recovery (offline)
+        env:
+          FLYWHEEL_TEST_NODE_BRIDGE: "1"
+        run: go test ./internal/machine -run '^TestPacketImagesClaudeSDKOfflineBridge$' -count=1 -v
       - name: Verify npm runtime, installer and release contracts
         run: npm test
       - name: Install and exercise the actual npm candidate
         env:
           FLYWHEEL_NPM_PACKAGES_DIR: dist-npm
         run: npm run test:install
+      - run: make quality-gate
       - name: Check concurrent lifecycle and state code
         if: runner.os == 'Linux'
         run: go test -race ./internal/machine ./internal/verify ./internal/watchdog ./internal/drivers ./internal/cli ./internal/modules ./internal/diagnostic -count=1

@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var legacySubscriptionsTableOriginal = legacySubscriptionsTable
+
 const legacyMigrationConfig = `{
   "version": 1,
   "_note_user": "Preserve my setup and acceptance policy",
@@ -64,9 +66,9 @@ func migrationFixture(t *testing.T, raw string) (MigrationOptions, string) {
 
 func migrationHooks(t *testing.T) {
 	t.Helper()
-	create, rename, link, remove, read, abs, embedded := createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, embeddedTable
+	create, rename, link, remove, read, abs, embedded := createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, legacySubscriptionsTable
 	t.Cleanup(func() {
-		createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, embeddedTable = create, rename, link, remove, read, abs, embedded
+		createMigrationTemp, renameMigrationFile, linkMigrationFile, removeMigrationFile, readMigrationFile, absMigrationPath, legacySubscriptionsTable = create, rename, link, remove, read, abs, embedded
 	})
 }
 
@@ -508,11 +510,11 @@ func TestMigrationIOAndEmbeddedFailuresAreExplicit(t *testing.T) {
 	assert.ErrorContains(t, err, "read denied")
 	readMigrationFile = os.ReadFile
 	for _, raw := range []string{"{", `{}`, `{"loops":[]}`, `{"loops":{"plan":[]}}`} {
-		embeddedTable = func() ([]byte, error) { return []byte(raw), nil }
+		legacySubscriptionsTable = func() ([]byte, error) { return []byte(raw), nil }
 		_, err = Migrate(options)
 		assert.Error(t, err)
 	}
-	embeddedTable = func() ([]byte, error) { return nil, errors.New("embedded table unavailable") }
+	legacySubscriptionsTable = func() ([]byte, error) { return nil, errors.New("embedded table unavailable") }
 	_, err = Migrate(options)
 	assert.ErrorContains(t, err, "embedded table unavailable")
 	require.NoError(t, os.Remove(path))
@@ -523,11 +525,11 @@ func TestMigrationIOAndEmbeddedFailuresAreExplicit(t *testing.T) {
 func TestMigrationCandidateValidationPreservesSource(t *testing.T) {
 	migrationHooks(t)
 	options, path := migrationFixture(t, legacyMigrationConfig)
-	raw, err := EmbeddedTable()
+	raw, err := legacySubscriptionsTableOriginal()
 	require.NoError(t, err)
 	corrupt := bytes.Replace(raw, []byte(`"full-access"`), []byte(`"unsupported"`), 1)
 	require.NotEqual(t, raw, corrupt)
-	embeddedTable = func() ([]byte, error) { return corrupt, nil }
+	legacySubscriptionsTable = func() ([]byte, error) { return corrupt, nil }
 	options.Apply = true
 	_, err = Migrate(options)
 	assert.ErrorContains(t, err, "candidate is invalid")
@@ -562,7 +564,7 @@ func TestMigrationDestinationErrorsAndEarlyConcurrentEdits(t *testing.T) {
 			migrationHooks(t)
 			options, path := migrationFixture(t, legacyMigrationConfig)
 			options.Apply = true
-			embeddedTable = func() ([]byte, error) {
+			legacySubscriptionsTable = func() ([]byte, error) {
 				switch mode {
 				case "read failure":
 					readMigrationFile = func(string) ([]byte, error) { return nil, errors.New("file became unreadable") }
@@ -573,7 +575,7 @@ func TestMigrationDestinationErrorsAndEarlyConcurrentEdits(t *testing.T) {
 					require.NoError(t, os.Remove(filepath.Dir(path)))
 					require.NoError(t, os.WriteFile(filepath.Dir(path), []byte("user replaced directory"), 0o600))
 				}
-				return EmbeddedTable()
+				return legacySubscriptionsTableOriginal()
 			}
 			report, err := Migrate(options)
 			require.Error(t, err)

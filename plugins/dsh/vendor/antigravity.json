@@ -1,0 +1,19 @@
+{
+  "package": "dsh-subagent-antigravity",
+  "version": "0.2.0",
+  "sourceRepository": "https://github.com/ckanner/flywheel",
+  "sourceDirectory": "plugins/antigravity",
+  "sourceCommit": "2f9b5f255e89d0ad51688b48c109c0ec493b7fe5",
+  "sourceTree": "1115929f7be44035ccdc560b81e204b9c1697393",
+  "sourceDirectoryTree": "f89a71e097ce5143b6489737b07eeb8f3b4db173",
+  "verificationNote": "Source tests, external public ESM/types/bin and Orchestrator/Swarm consumption, and real isolated DSH host installation used the same 0.2.0 archive bytes. No registry release or real-account inference is claimed.",
+  "tarball": "dsh-subagent-antigravity-0.2.0.tgz",
+  "sha256": "fa5ef71121749cef2d0217fd545d1a15a250ed3534342ea8d362e5bde9d751f4",
+  "integrity": "sha512-HNgyzdul4+v5f4ep4E2HKcZSrjRFPWwp6eqOr4deO1LXX9bHDes7IJc1w99qdn/T602W+5QC3OKv+advTeRAyQ==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "buildToolchain": {
+    "node": "24.22.3",
+    "npm": "11.19.1"
+  }
+}

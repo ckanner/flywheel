@@ -18,6 +18,7 @@ const operationSchema = z.object({
 });
 const taskViewSchema = operationSchema.extend({
   outcome: z.enum(['pending', 'confirmed', 'unknown']), message: z.string(),
+  requestedTaskDir: z.string().optional(), requestedCwd: z.string().optional(),
 });
 const viewSchema = taskViewSchema.extend({ tasks: z.array(taskViewSchema).optional() }).nullable();
 const stateSchema = z.object({
@@ -62,7 +63,11 @@ function settle(state, id, value, failed, error) {
   const successful = !failed && record(value) && value.protocol === 1 && value.ok === true &&
     path(value.taskDir) && (value.cwd === undefined || path(value.cwd)) && typeof value.running === 'boolean';
   if (successful && !(operation.action === 'status' && id.startsWith('command:') && (!view || !sameTask(operation, view)))) {
-    const task = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
+    // Keep the same public operation's original identity beside the host's
+    // canonical response, including when the UI never observed its pending
+    // event. These fields come from our recorded request, never the response.
+    const task = { ...operation, requestedTaskDir: operation.taskDir, requestedCwd: operation.cwd,
+      taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
     const key = JSON.stringify([task.taskDir, task.cwd]);
     if (!tasks[key] || tasks[key].sequence < operation.sequence) {
       tasks = Object.fromEntries(Object.entries({ ...tasks, [key]: task }).sort((a,b) => b[1].sequence - a[1].sequence).slice(0,100));
@@ -72,7 +77,7 @@ function settle(state, id, value, failed, error) {
     const reconciles = operation.action === 'status' && view && sameTask(operation, view) && operation.sequence > view.sequence;
     if (owns || reconciles || (!view && operation.action === 'status') ||
         (view?.outcome === 'confirmed' && operation.sequence > view.sequence && (['planning', 'launch', 'start', 'investigate'].includes(operation.action) || operation.action === 'status' && id.startsWith('tool:')))) {
-      view = { ...operation, taskDir: value.taskDir, cwd: value.cwd ?? operation.cwd, outcome: 'confirmed', message: '' };
+      view = task;
     }
   } else if (owns) {
     const typed = record(value) && value.protocol === 1 && value.type === 'flywheel-control-error' &&

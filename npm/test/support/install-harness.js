@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { spawn, execFileSync } = require('node:child_process');
 const { capture } = require('../../install.js');
 const { claudeSdkDependencies } = require('./claude-sdk-registry.js');
@@ -54,15 +55,32 @@ async function registry(directory) {
     tarballs.set('/tarballs/' + entry.filename, data);
   }
   const plugin = packages.get('@ckanner/flywheel');
-  const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.2'], ['dsh-preset-generator', '0.4.0']];
-  if (bundledDependencies.some(([name, version]) => plugin?.manifest.dependencies?.[name] !== version) ||
+  const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.2'], ['dsh-preset-generator', '0.4.0'],
+    ['dsh-subagent-antigravity', 'file:plugins/dsh/vendor/dsh-subagent-antigravity-0.2.0.tgz']];
+  if (bundledDependencies.some(([name, spec]) => plugin?.manifest.dependencies?.[name] !== spec) ||
       JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(bundledDependencies.map(([name]) => name))) {
-    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2 and preset generator 0.4.0 source dependencies');
+    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2, preset generator 0.4.0 and Antigravity 0.2.0 source dependencies');
   }
-  for (const [name, version] of bundledDependencies) {
+  // Verify the actual packed dependency closure. Antigravity has a pinned
+  // validator dependency; the two existing bundles remain dependency-free.
+  const bundleGraph = [
+    ['dsh-subagent-codex-pro', '0.10.2', {}],
+    ['dsh-preset-generator', '0.4.0', {}],
+    ['dsh-subagent-antigravity', '0.2.0', { ajv: '8.17.1' }],
+    ['ajv', '8.17.1', { 'fast-deep-equal': '^3.1.3', 'fast-uri': '^3.0.1',
+      'json-schema-traverse': '^1.0.0', 'require-from-string': '^2.0.2' }],
+    ['fast-deep-equal', '3.1.3', {}], ['fast-uri', '3.1.9', {}],
+    ['json-schema-traverse', '1.0.0', {}], ['require-from-string', '2.0.2', {}],
+  ];
+  const sourceLock = JSON.parse(await fs.readFile(path.resolve(__dirname, '../../../package-lock.json'), 'utf8'));
+  for (const [name, version, dependencies] of bundleGraph) {
+    const locked = sourceLock.packages?.[`node_modules/${name}`];
+    if (locked?.version !== version || locked.inBundle !== true || !isDeepStrictEqual(locked.dependencies ?? {}, dependencies)) {
+      throw new Error(`the reviewed bundled ${name} source lock identity or dependency graph changed`);
+    }
     const bundled = JSON.parse(execFileSync('tar', ['-xOf', path.join(directory, plugin.entry.filename),
-      `package/node_modules/${name}/package.json`], { encoding: 'utf8' }));
-    if (bundled.name !== name || bundled.version !== version || Object.keys(bundled.dependencies || {}).length) {
+      `package/node_modules/${name}/package.json`], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 }));
+    if (bundled.name !== name || bundled.version !== version || !isDeepStrictEqual(bundled.dependencies ?? {}, dependencies)) {
       throw new Error(`the bundled ${name} identity or runtime dependency graph changed`);
     }
   }
@@ -112,7 +130,8 @@ async function registry(directory) {
 }
 
 async function environment(registryURL, version) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel npm $() '));
+  // Native journals bind physical roots; macOS tmpdir may contain a /var alias.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flywheel npm $() ')));
   const home = path.join(root, 'user home');
   const prefix = path.join(root, 'global prefix');
   const project = path.join(root, 'target project');
@@ -124,10 +143,21 @@ async function environment(registryURL, version) {
     npm_config_registry: registryURL, npm_config_cache: path.join(root, 'npm cache'), npm_config_userconfig: npmrc,
     npm_config_prefix: prefix, npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false',
     FLYWHEEL_DSH_FIXTURE_LOG: path.join(root, 'dsh-calls.jsonl'), FLYWHEEL_DSH_FIXTURE_VERSION: version, FLYWHEEL_DSH_FIXTURE_STATE: path.join(root, 'desktop-state.json') };
-  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|INSTALLATION)|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
+  // Isolate only this test child's native routes and settings. Match the
+  // subscription controls' provider/credential families, including Claude's
+  // model, effort, fast/fallback and persistence overrides. TEST_*, FAKE_* and
+  // FLYWHEEL_*_FIXTURE_* controls remain available to the offline peers.
+  const subscriptionEnvironment = [
+    /^(?:OPENAI_(?:API_KEY|BASE_URL|API_BASE|ORGANIZATION|PROJECT)|CODEX_(?:API_KEY|BASE_URL|OSS_BASE_URL|AUTH_TOKEN|ACCESS_TOKEN)|AZURE_OPENAI_.*|AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN|PROFILE|BEARER_TOKEN_BEDROCK))$/,
+    /^(?:KIMI_(?:API_KEY|BASE_URL|CODE_BASE_URL|CODE_OAUTH_HOST|OAUTH_HOST|CODE_CUSTOM_HEADERS|WEB_(?:SEARCH|FETCH)_(?:API_KEY|BASE_URL))|MOONSHOT_API_KEY|GOOGLE_(?:API_KEY|APPLICATION_CREDENTIALS)|GEMINI_API_KEY)$/,
+    /^(?:ANTHROPIC_|CLAUDE_CODE_)/,
+  ];
+  for (const name of Object.keys(env)) if (subscriptionEnvironment.some(pattern => pattern.test(name))) delete env[name];
+  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|KIMI_NATIVE_WORKER|AGY_BIN|ANTIGRAVITY_WORKER|MODEL_CATALOG_WORKER|INSTALLATION)|AGY_ADC_AUTH|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
   env.FLYWHEEL_KIMI_BIN = path.join(root, 'intentionally missing kimi');
   env.FLYWHEEL_CODEX_BIN = path.join(root, 'intentionally missing codex');
   env.FLYWHEEL_CLAUDE_BIN = path.join(root, 'intentionally missing claude');
+  env.FLYWHEEL_AGY_BIN = path.join(root, 'intentionally missing agy');
   env.CODEX_HOME = path.join(home, 'isolated codex');
   env.CLAUDE_CONFIG_DIR = path.join(home, 'isolated claude');
   const dsh = path.join(fixtures, 'desktop dsh');
@@ -155,9 +185,9 @@ process.exit(25);
   return { root, home, prefix, project, fixtures, dsh, env, clean: () => fs.rm(root, { recursive: true, force: true }) };
 }
 
-function run(command, args, env, cwd, timeoutMs = 180000) {
+function run(command, args, env, cwd, timeoutMs = 180000, input) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { env, cwd, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', value => { stdout += value; });
@@ -165,6 +195,10 @@ function run(command, args, env, cwd, timeoutMs = 180000) {
     const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error(`command timed out: ${command}\n${stderr}`)); }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+    if (input !== undefined) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+    }
   });
 }
 

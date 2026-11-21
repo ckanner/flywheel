@@ -51,6 +51,22 @@ func RecordPlan(s *State, plan ExecutionPlan) error {
 	return nil
 }
 
+// A compact proposal has one planner invocation and is adopted as one unit.
+// Preserve request pointers while staging the artifact collections separately.
+func RecordCompact(s *State, design Design, plan ExecutionPlan) error {
+	next := *s
+	next.Designs = append([]Design{}, s.Designs...)
+	next.Plans = append([]ExecutionPlan{}, s.Plans...)
+	if err := RecordDesign(&next, design); err != nil {
+		return err
+	}
+	if err := RecordPlan(&next, plan); err != nil {
+		return err
+	}
+	*s = next
+	return nil
+}
+
 func RecordReview(s *State, review Review) error {
 	if err := validateReview(s, review); err != nil {
 		return err
@@ -75,6 +91,9 @@ func RecordReview(s *State, review Review) error {
 	if current == nil || *current != review.Target || review.InputRevision != s.InputRevision {
 		return fmt.Errorf("review result belongs to stale planning input")
 	}
+	if review.Kind == "compact-v1" && (s.CurrentPlan == nil || *s.CurrentPlan != *review.Plan) {
+		return fmt.Errorf("compact review execution projection is stale")
+	}
 	if err := validateFindingClosure(s, review); err != nil {
 		return err
 	}
@@ -82,7 +101,7 @@ func RecordReview(s *State, review Review) error {
 	s.Reason = review.Summary
 	switch review.Verdict {
 	case "pass":
-		if review.Kind == "design" {
+		if review.Kind == "design" || review.Kind == "compact-v1" {
 			s.Phase = "awaiting-design-approval"
 		} else {
 			s.Phase = "approved"
@@ -107,7 +126,7 @@ func validateApproval(s *State, approval Approval, current bool) error {
 	}
 	found := false
 	for _, r := range s.Reviews {
-		if r.ID == approval.ReviewID && r.Kind == "design" && r.Target == approval.Design && r.Verdict == "pass" {
+		if r.ID == approval.ReviewID && reviewTarget(r, "design", approval.Design) && r.Verdict == "pass" {
 			found = true
 		}
 	}
@@ -206,13 +225,13 @@ func BeginRequest(s *State, request Request) error {
 	}
 	for _, old := range s.Requests {
 		if old.ID == request.ID {
-			if old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback {
+			if old.Origin == request.Origin && old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback {
 				return nil // resume preserves the recorded limits and used rounds
 			}
 			return fmt.Errorf("planning request identity was reused for different input")
 		}
 	}
-	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.Status != "pending" || request.MaxRounds > s.MaxRounds {
+	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.Status != "pending" || request.Stage != "" || request.MaxRounds > s.MaxRounds {
 		return fmt.Errorf("new planning request must preserve current input and round limits")
 	}
 	s.Requests = append(s.Requests, request)
@@ -273,7 +292,10 @@ func ValidateTransition(previous, next *State) error {
 			return fmt.Errorf("planning request ledger cannot shrink")
 		}
 		r := next.Requests[i]
-		if old.ID != r.ID || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries {
+		if old.DesignGranularity != r.DesignGranularity && (old.DesignGranularity == "system" || r.DesignGranularity != "system") {
+			return fmt.Errorf("planning granularity can only upgrade to system preparation")
+		}
+		if old.ID != r.ID || old.Origin != r.Origin || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries {
 			return fmt.Errorf("planning request identity and spent rounds are immutable")
 		}
 	}

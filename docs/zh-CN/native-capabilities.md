@@ -13,16 +13,30 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | `dsh` | PTC、子 Agent、Team、Workflow、显式 Web、LCU | 本机 DSH；实际 PTC probe；LCU 另需 0.5.0 peer 和 full-access |
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.2；已登录 Codex CLI；实际 sandbox/approval 回执 |
-| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.6.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
+| `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.7.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
+| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.2.0、通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
+### Antigravity 协作
+
+Antigravity 使用独立的 version 1 native 选项：`mode:"native"`、`"subagents"` 或
+`"swarm"`，可选 `maxObservedAgents`（1–8）。native 保留 CLI 隐式行为，不关闭子代理；
+显式 subagents／Swarm 必须观察到真实子会话元数据，观察数量阈值不等于原生并发硬限制。
+Orchestrator 则是单独的固定空 effort 模型选择。精确模型、Flywheel profile 与独立 DSH
+命令见 [Antigravity](antigravity.md)。
+
+静态 profile 不要求打开 JEV；JEV 只能选择配置中已声明且满足资格的执行绑定。
+Flywheel Swarm 要求 Full、无图片，以及审查过的 2–8 个独立子任务和互不重叠的获准写入
+范围。规划仍在前台归集；evidence-only 分析拒绝协作。回执报告真实已观察成员，不声称
+完整 task board、整树用量或远程子代理清理。独立 Review 保持必需。
+
 ### 对齐独立 worker 的依赖
 
-桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.6.0 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
+桌面、全局 CLI worker 和选中的 SDK profile 是不同的 Node 解析树。只更新桌面不会更新其他位置。先从受管安装记录（`~/.config/flywheel/installation.json`）确认 Flywheel 的实际 prefix；需要可选 Claude 或 LCU 后端时，将精确 peer 安装到同一 prefix。以下 registry 命令须等 Claude 0.7.0 正式发行；此前仅验证[已审查的源码候选](claude-code-pro.md#准备依赖)：
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.6.0 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.7.0 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
@@ -43,6 +57,35 @@ Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认
 这里的 `native` 指 Codex/Claude 内部的能力，DSH 仍然可以用 PTC 编排这些工具。独立原生 Review 和真正的交互 Team 使用专门入口；保存普通 Agent 默认值不会启动这些任务。
 
 这些桌面默认值只属于桌面插件。Flywheel 的直接 `codex-pro` / `claude-code-pro` worker 使用所选 `native-profile` 的确定快照，不读取另一份 DSH profile 的动态设置；独立 `/machine` 入口也不会为此加载桌面 UI 或 DSH 服务。正常重生成 daily/heavy preset 会保留单独保存的插件配置。
+
+### 仅订阅模式下的 Codex 与 Kimi 准入
+
+`subscription-policy` 为 `{"version":1,"mode":"subscription-only"}` 时，Flywheel 正式 worker 在发送任务 prompt 前核对原生账号和路由。这是一项本地路由策略：不让 Flywheel 选择 API key／云平台 provider 或增加付费 fallback；它不锁定账号计费设置，也不保证余额充足或关闭用户在服务端另外启用的收费。权益、额度和 extra usage 没有真实原生证据时仍为 `unknown`。
+
+**Codex Pro** 仍由公开 machine adapter 管理 turn、journal 和进程清理。随包提供的 CLI 传输守卫在同一个原生 app-server 进程内使用官方 JSON-RPC：创建／恢复 thread 前，以及派发任务 turn 前，调用 `account/read`（`refreshToken:false`）和带真实 cwd 的 `config/read`。账号必须是 `type:"chatgpt"`，有效 provider 必须是内置 `openai`，创建／恢复后的 thread 也须回显这个 provider。API 登录、自定义／云 provider、路由／header／凭据覆盖、未知检查能力，以及子代理独立加载的 provider 配置文件都会被拒绝。观察到账号切离 ChatGPT 时终止受管传输。不调用登录、登出、配置写入、购买 credits 或 API fallback。只检查 `forced_login_method`，不设置它；官方 CLI 在修改该设置时可能登出不匹配的账号。
+
+**Kimi** 使用受管的本地 Server API，最小 profile 为：
+
+```json
+{
+  "native-profiles": {
+    "kimi-subscription-agent": {
+      "harness": "kimi",
+      "options": {"version":1,"mode":"agent","agents":{"enabled":false}}
+    }
+  }
+}
+```
+
+在所选 Kimi 模型 profile 或阶段中引用 `"native-profile":"kimi-subscription-agent"`。现有原生权限契约仍需显式 `danger-full-access`，对应原生 `yolo`；这不是只读沙箱，也不等同于旧 print 的 `auto` 模式。Garden、batch 和其他具有 Managed 归属的角色都能使用。显式启用 subscription policy 后，旧 print 在创建命名会话／发送 prompt 前明确拒绝并提示选择原生 profile；没有该策略的旧配置保持原行为。
+
+Kimi 准入只读取官方脱敏 `GET /api/v1/providers` 与 `GET /api/v1/config`：要求 `managed:kimi-code` OAuth provider 已连接、`has_api_key:false`、官方 coding endpoint，以及已知模型别名，没有 provider／endpoint／凭据覆盖；secondary pool 的别名同样必须属于已准入模型。发送前与接受完成前再次检查同一 runtime。Provider catalog 的 key 标志也涵盖配置在 provider.env 里的 key。回执仅报告这些已经观察到的事实。
+
+Kimi 脱敏服务配置把 OAuth 与 API key 合并成一个凭据标志，因此每次订阅任务都会通过原生参数明确禁用 `WebSearch`、`FetchURL`，并保留 `Agent`／`AgentSwarm` 与计划任务限制。该策略拒绝 Swarm、Tower、自定义 agent profile 和启用子代理，因为原生契约没有暴露这些服务限制如何可靠继承到整个子树。脱敏接口也不公开所有手工设置的 provider header，回执不声称已经验证这些隐藏字段。不读取账号凭据文件，也不导出原始 provider key。服务能力限制和 `extraUsage:"unknown"` 均保留在回执。
+
+这些守卫只作用于 **Flywheel 正式 worker**。从独立运行的 DSH 父模型调用其他插件的普通 `subagent_codex`／`subagent_claude_code` 工具，不会自动继承 Flywheel 的 subscription policy；已经运行的 DSH 父模型也可能先消耗自己的额度。需要这项策略时使用 Flywheel 的直接任务／工作台入口；独立桌面父模型需另行配置。
+
+2026-11-20 核对的原生契约：[Codex app-server 认证与配置](https://developers.openai.com/codex/app-server/)、[Codex 认证](https://developers.openai.com/codex/auth/)、[Kimi provider catalog 与凭据标志](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/agent-core-v2/src/llm-adapter/model/catalog.ts)、[Kimi 凭据解析](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/agent-core-v2/src/llm-adapter/model/catalog-service.ts)、[Kimi 脱敏配置](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/kap-server/src/routes/config.ts)。离线原生协议 fixture 验证守卫行为和清理，不代表真实账号、计费或模型质量验收。
 
 ## 2. 定义与绑定
 
@@ -83,7 +126,7 @@ Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认
 }
 ```
 
-在当前阶段绑定上加入 `native-profile`，保留它原来的其他字段。例如默认 Execute 仍然是 DeepSeek account + DSH：
+在当前阶段绑定上加入 `native-profile`，保留它原来的其他字段。下面是保留显式 DeepSeek account + DSH 路由的兼容示例，仅适用于未声明 `subscription-only` 的配置；当前订阅默认的 `routes.default` 使用 Antigravity，严格策略会拒绝这个付费 DSH 路由：
 
 ```json
 {
@@ -103,11 +146,11 @@ Codex 的设置包括 Agent 启用状态、并发子线程数、子 Agent 默认
 
 ## 3. 用在不同阶段
 
-Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packets。Execute 可以使用原生 Agent、Workflow 或 Tower，结果仍要通过原有验证和独立 Review。Review 和 Judge 使用自己的角色历史与子任务，永远不继承 Executor 的历史。Intake/Garden 可以使用同样能力生成建议，不能据此修改状态文件。
+在支持这类规划能力的后端中，Plan 可以让 Team/Swarm 并行调查，root 最后输出正式 Spec 和 packets。Antigravity 规划只使用前台子代理，其 Swarm 仅准入已获批的 Execute 协作。Execute 可以使用原生 Agent、Workflow 或 Tower，结果仍要通过原有验证和独立 Review。Review 和 Judge 使用自己的角色历史与子任务，永远不继承 Executor 的历史。Intake/Garden 可以使用对应角色获准的能力生成建议，不能据此修改状态文件。
 
 开启 native profile 不新增第二个循环控制器：Go 继续决定是否重试、预算是否允许、哪个 candidate 被验收以及何时交付。原生 task board 的完成状态不是 Flywheel completed。
 
-规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
+对具备完整子生命周期契约的后端（不含 Antigravity），规划阶段使用 native profile 时，worker 会观察子任务和 WS 生命周期，并把主代理／子代理的 item、step 进展作为元信息转发给 Go，不传思考或工具正文。普通 Kimi print 会缓存 assistant 输出、不输出 thinking delta，也不暴露后台子代理进展；driver 因此仅使用有界 wall 期限和显式取消，不启动输出 idle 计时器。非 native 规划的前台调查约束用于当前调用内的结果归集，不能证明活性。需要观察子任务生命周期时优先使用 native profile；无论哪种路径，unknown 规划调用都必须在清理已确认后受控退役，不能换后端或重放。传输 ping/pong 不被报告为模型进展。
 
 ## 4. LCU 与截图
 

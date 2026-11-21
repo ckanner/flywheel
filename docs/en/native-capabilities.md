@@ -13,9 +13,27 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `dsh` | PTC, subagents, Team, Workflow, explicit Web and LCU | Local DSH and an actual PTC probe; LCU additionally needs the 0.5.0 peer and full access |
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.2, logged-in Codex CLI and matching sandbox/approval receipts |
-| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.6.0, compatible local Claude runtime, authorized authentication and explicit full access |
+| `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.7.0, compatible local Claude runtime, authorized authentication and explicit full access |
+| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.2.0, admitted official CLI and explicit full access; partial child evidence |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
+
+### Antigravity collaboration
+
+Antigravity has its own version 1 native options: `mode:"native"`, `"subagents"`
+or `"swarm"`, with optional `maxObservedAgents` (1–8). Native preserves the CLI's
+implicit behavior; it does not disable children. Explicit subagents/Swarm require
+actual child metadata, and the observed-member threshold is not a native hard
+concurrency limit. Orchestrator is a separate model selection with fixed empty
+effort. See [Antigravity](antigravity.md) for exact models, Flywheel profiles and
+standalone DSH commands.
+
+Static profiles do not require JEV. JEV can choose only configured, eligible
+execution bindings. Flywheel Swarm requires a reviewed Full packet with 2–8
+independent collaboration tasks, disjoint approved write scopes and no images.
+Planning remains foreground, and evidence-only analysis rejects collaboration.
+Receipts report real observed members without claiming a complete task board,
+whole-tree usage or remote child cleanup. Independent Review stays mandatory.
 
 ### Desktop plugin defaults and PTC calls
 
@@ -35,14 +53,43 @@ These desktop defaults belong to the desktop plugins. A direct Flywheel `codex-p
 
 ### Align independent worker dependencies
 
-Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.6.0 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
+Desktop, global CLI workers and the selected SDK profile are separate Node resolution trees. Updating only the desktop does not update the others. Check the managed installation record (`~/.config/flywheel/installation.json`) for the actual Flywheel prefix; when using the optional Claude or LCU backend, install its exact peer in that same prefix. The following registry command requires Claude 0.7.0 to be published; until then, validate only the [reviewed source candidate](claude-code-pro.md#prepare-the-optional-dependency):
 
 ```sh
-npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.6.0 dsh-plugin-lcu@0.5.0
+npm install --global --prefix /absolute/flywheel-node-prefix --ignore-scripts dsh-subagent-claude-code-pro@0.7.0 dsh-plugin-lcu@0.5.0
 dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
 ```
 
 Replace `sdk` with the chosen `FLYWHEEL_DSH_PROFILE` if customized. Keep it separate from `desktop`. These commands align software dependencies, not model credentials, permissions or native-profile enablement. Run `flywheel doctor --json` afterward; import availability does not prove live native admission or model vision.
+
+### Subscription-only Codex and Kimi admission
+
+When `subscription-policy` is `{"version":1,"mode":"subscription-only"}`, the formal Flywheel workers inspect the native route before sending a task prompt. This is a local routing policy: it prevents Flywheel from selecting API-key/cloud providers or adding a paid fallback. It does not lock the account's billing settings, guarantee a remaining balance, or disable charges configured independently at the provider. Entitlement, quota and extra usage remain `unknown` unless an actual native observation establishes them.
+
+**Codex Pro** keeps the published machine adapter as the owner of turns, journals and cleanup. A packaged CLI transport guard uses the official app-server JSON-RPC protocol in that same native process. Before thread start/resume and before a task turn, it calls `account/read` with `refreshToken:false` and `config/read` with the actual workspace. The account must report `type:"chatgpt"`, the effective provider must be built-in `openai`, and the new/resumed thread must confirm that provider. API login, custom/cloud providers, route/header/credential overrides, unknown inspection capabilities, and separately configured child-agent provider files are refused. Account changes away from ChatGPT terminate the owned transport. No login, logout, config write, credit purchase or API fallback is issued. `forced_login_method` is inspected, never set; the native CLI may log an incompatible account out when that setting is changed.
+
+**Kimi** uses its owned local Server API and the following minimal profile:
+
+```json
+{
+  "native-profiles": {
+    "kimi-subscription-agent": {
+      "harness": "kimi",
+      "options": {"version":1,"mode":"agent","agents":{"enabled":false}}
+    }
+  }
+}
+```
+
+Reference `"native-profile":"kimi-subscription-agent"` from the selected Kimi model profile or stage. The existing native permission contract still requires explicit `danger-full-access` and uses native `yolo`; it is not a read-only sandbox or the legacy print command's `auto` mode. Garden, batch and other managed roles can use the same profile. Under an explicit subscription policy, legacy print fails before session preparation or prompt dispatch and asks for a native profile; existing configurations without the policy keep their original behavior.
+
+Kimi admission reads only the official redacted `GET /api/v1/providers` and `GET /api/v1/config` interfaces. It requires the connected `managed:kimi-code` OAuth provider, `has_api_key:false`, an official coding endpoint, and known model aliases without provider, endpoint or credential overrides; configured secondary aliases must also resolve to admitted models. It rechecks the same runtime before dispatch and before accepting completion. The provider catalog's key flag includes configured provider environment keys. The receipt states exactly these observed facts.
+
+Kimi's redacted service configuration combines OAuth and API keys in one credential flag. Therefore every subscription task explicitly disables `WebSearch` and `FetchURL`, in addition to the native `Agent`/`AgentSwarm` and scheduled-work restrictions. Swarm, Tower, custom agent profiles and enabled child agents are refused for this policy because inheritance of these service restrictions is not exposed by the native contract. The redacted API does not expose every manually configured provider header; those hidden fields are not claimed as verified. No account credential file or raw provider-key export is read. The receipt preserves the service limitation and `extraUsage:"unknown"`.
+
+These guards apply to **Flywheel's formal workers**. Calling another plugin's ordinary `subagent_codex`/`subagent_claude_code` tool from an independently running DSH parent does not inherit Flywheel's subscription policy, and an existing DSH parent may already have consumed its own model. Use the direct Flywheel task/workbench entry for this policy and configure any independent desktop parent separately.
+
+Native contract references, checked 2026-11-20: [Codex app-server authentication and configuration](https://developers.openai.com/codex/app-server/), [Codex authentication](https://developers.openai.com/codex/auth/), [Kimi provider catalog and credential flags](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/agent-core-v2/src/llm-adapter/model/catalog.ts), [Kimi credential resolution](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/agent-core-v2/src/llm-adapter/model/catalog-service.ts), and [Kimi redacted configuration](https://github.com/MoonshotAI/kimi-code/blob/1ef139e6c32a01c7ac51a89fea6ae279c91bc276/packages/kap-server/src/routes/config.ts). Offline native-protocol fixtures establish guard behavior and cleanup; they are not live account, billing or model-quality acceptance.
 
 ## 2. Define profiles and bind them
 
@@ -83,7 +130,7 @@ Incorporate this **fragment** into that complete file, choosing the definitions 
 }
 ```
 
-Add a `native-profile` reference to the selected stage while keeping its other settings. For example, the default Execute route can retain DeepSeek account access through DSH:
+Add a `native-profile` reference to the selected stage while keeping its other settings. The following compatibility example retains an explicitly configured DeepSeek account route through DSH. It applies only without `subscription-only`; the current subscription default uses Antigravity for `routes.default` and rejects this paid DSH route:
 
 ```json
 {
@@ -103,11 +150,11 @@ The desktop Models and sessions form includes a Native capabilities selector, sh
 
 ## 3. Apply capabilities to a stage
 
-Plan can use Team or Swarm to investigate, while its root produces formal Spec and packets. Execute can use agents, Workflow or Tower, with results subject to the existing verification and independent Review. Review and Judge use their own role histories and children, never Executor history. Intake/Garden can use the same capabilities for advice without writing state.
+Where the backend supports planning with Team or Swarm, Plan may use them for investigation while its root produces formal Spec and packets. Antigravity planning uses foreground subagents; its Swarm is admitted only for approved Execute collaboration. Execute can use agents, Workflow or Tower, with results subject to the existing verification and independent Review. Review and Judge use their own role histories and children, never Executor history. Intake/Garden can use the capabilities admitted for their role to provide advice without writing state.
 
 Native scheduling does not replace Go's decisions about retries, budgets, accepted candidates and delivery. A completed native task board is not a completed Flywheel task.
 
-A native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
+For backends with a complete child-lifecycle contract (Antigravity is excluded), a native planning profile lets the worker observe child tasks and WS lifecycle; root/child item and step progress is forwarded to Go as metadata without reasoning or tool payloads. Plain Kimi print buffers assistant output, omits thinking deltas and does not expose background child progress. Its driver therefore uses the finite wall deadline and explicit cancellation without an output-idle timer. Foreground investigation keeps results within the non-native planning call but cannot prove liveness. Prefer native profiles when child lifecycle observation is needed; on either path, an unknown planning invocation can only be retired after cleanup is confirmed, not by switching backends or replaying. Transport ping/pong is not reported as model progress.
 
 ## 4. LCU and screenshots
 

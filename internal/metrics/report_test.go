@@ -56,7 +56,7 @@ func TestReportRejectsTornUnknownAndContradictoryTelemetry(t *testing.T) {
 	for _, input := range []string{"{", "null\n", "{\"role\":\"plan\"}", "{\"role\":\"plan\",\"record-kind\":\"future\"}\n", original + original,
 		"{\"role\":\"plan\",\"record-kind\":\"reconciliation\",\"reconciles-invocation\":\"missing\"}\n",
 		original + "{\"role\":\"plan\",\"record-kind\":\"reconciliation\",\"reconciles-invocation\":\"one\",\"supersedes-receipt\":\"r\",\"cost-usd\":2}\n",
-		strings.Repeat("x", 2<<20) + "\n", "bad\n"} {
+		strings.Repeat("x", 8<<20) + "\n", "bad\n"} {
 		_, err := parseReport(strings.NewReader(input))
 		require.Error(t, err)
 	}

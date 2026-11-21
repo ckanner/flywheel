@@ -19,6 +19,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/templates"
 )
@@ -98,21 +99,23 @@ type PacketSchedule struct {
 }
 
 type Packet struct {
-	Schedule             *PacketSchedule     `json:"schedule,omitempty"`
-	PacketID             string              `json:"packet-id"`
-	ContractVersion      int                 `json:"contract-version"`
-	Goal                 string              `json:"goal"`
-	Requirements         []string            `json:"requirements"`
-	Route                string              `json:"route"`
-	NeedsLiveCredentials bool                `json:"needs-live-credentials"`
-	ContextFiles         []string            `json:"context-files"`
-	CacheScope           []string            `json:"cache-scope"`
-	Boundaries           Boundaries          `json:"boundaries"`
-	Acceptance           Acceptance          `json:"acceptance"`
-	FeedbackChecks       []GateEntry         `json:"feedback-checks,omitempty"`
-	ReviewRubric         string              `json:"review-rubric"`
-	Escalation           Escalation          `json:"escalation"`
-	DoneReportFormat     map[string][]string `json:"done-report-format"`
+	InputImages          *imageinput.References `json:"input-images,omitempty"`
+	Schedule             *PacketSchedule        `json:"schedule,omitempty"`
+	Collaboration        *PacketCollaboration   `json:"collaboration,omitempty"`
+	PacketID             string                 `json:"packet-id"`
+	ContractVersion      int                    `json:"contract-version"`
+	Goal                 string                 `json:"goal"`
+	Requirements         []string               `json:"requirements"`
+	Route                string                 `json:"route"`
+	NeedsLiveCredentials bool                   `json:"needs-live-credentials"`
+	ContextFiles         []string               `json:"context-files"`
+	CacheScope           []string               `json:"cache-scope"`
+	Boundaries           Boundaries             `json:"boundaries"`
+	Acceptance           Acceptance             `json:"acceptance"`
+	FeedbackChecks       []GateEntry            `json:"feedback-checks,omitempty"`
+	ReviewRubric         string                 `json:"review-rubric"`
+	Escalation           Escalation             `json:"escalation"`
+	DoneReportFormat     map[string][]string    `json:"done-report-format"`
 
 	File string `json:"-"`
 	Body string `json:"-"`
@@ -365,6 +368,12 @@ func ParsePacket(content []byte, file string) (*Packet, error) {
 	p.File = file
 	p.Body = strings.TrimSpace(body)
 	if _, err := deriveMilestone(p.PacketID); err != nil {
+		return nil, errf(file, "%v", err)
+	}
+	if err := imageinput.Validate(p.InputImages); err != nil {
+		return nil, errf(file, "%v", err)
+	}
+	if err := ValidateCollaboration(&p); err != nil {
 		return nil, errf(file, "%v", err)
 	}
 	return &p, nil

@@ -52,7 +52,7 @@ npx -y @ckanner/flywheel@latest install --prefix "$HOME/.local"
 /flywheel-task 修复列表空状态，补齐回归测试并完成变更。mode=auto
 ```
 
-技能先研究仓库，在 `docs/<task>/` 准备任务契约，再由 Go 校验并接管执行。只准备任务而不启动时使用 `/flywheel-new`；启动或恢复已有任务使用 `/flywheel-run`。在 Kimi 中，对应命令形式为 `/skill:flywheel-task`。
+技能先研究仓库，在 `docs/<task>/` 登记薄 brief，由 Go 进行设计、独立审查及授权范围内实施。`/flywheel-new` 运行方案设计与审查，再停在精确版本人工批准点；启动或恢复已有任务使用 `/flywheel-run`。在 Kimi 中，对应命令形式为 `/skill:flywheel-task`。
 
 打开原生会话中的 **Flywheel** 视图，即可查看关联任务的画布、运行记录和配置。任务位置来自会话与运行索引，无需手工输入路径。
 
@@ -86,20 +86,28 @@ Quick 保留仓库必需检查和交付检查。首次成功路径有两次阶�
 
 ## 模型与配置
 
-内嵌模板提供以下可编辑绑定。这些是初始配置，不是模型排名，也不承诺具体账号可用。
+默认配置通过四家原生客户端使用订阅：
 
-| 阶段或路由 | 后端 | 模型 | 推理等级 |
-| --- | --- | --- | --- |
-| Plan、前端执行、Garden | Kimi CLI | `kimi-code/k3.1-pro` | `high` |
-| 默认执行 | DSH / `deepseek-account` | `deepseek-flash` | `high` |
-| 高难度执行 | Codex Pro 公开 machine API | `gpt-6.1-sol` | `high` |
-| Review | DSH / `chatgpt` | `gpt-6.1-sol` | `high` |
-| Judge | DSH / `chatgpt` | `gpt-6-astra` | `high` |
-| Intake | DSH / `deepseek-account` | `deepseek-flash` | `low` |
+| 工作 | 默认模型 |
+| --- | --- |
+| 系统设计、复杂分析 | 官方 `agy` 的 Gemini Carbon high / Neon high |
+| 紧凑准备、常规实现、Intake | Gemini Hydrogen medium / high / low |
+| 计划细化、界面工作 | Claude Code 的 Opus 5.5 high / medium |
+| 后端实现、独立审查 | Codex GPT-6.2 Sol；难题与 Judge 使用 Astra |
+| 批量任务、Garden | Kimi native agent 的 K3.1 Pro high |
 
-[Claude Code Pro](docs/zh-CN/claude-code-pro.md) 是可选后端，目前没有默认分配阶段。Profiles 支持在各阶段和路由间复用或覆盖绑定。[配置指南](docs/zh-CN/configuration.md)说明文件优先级、provider、权限、预算和迁移；[模型策略](docs/zh-CN/model-policy.md)说明推理等级的选择依据与限制。
+完整阶段、路由、profile 与 effort 见[模型策略](docs/zh-CN/model-policy.md)。
+[Antigravity](docs/zh-CN/antigravity.md)作为 machine adapter 随整包内置，也提供可独立
+安装的 DSH 插件。Claude 需要 worker 可解析的[0.7.0 配套插件](docs/zh-CN/claude-code-pro.md)。
+模型可用性仍取决于原生登录和实际账号。
 
-新的内嵌默认配置选择 scoped 会话、full-access 权限、自动管理 worktree，以及最大并发数为 2 的并行调度。并行资格仍要求显式声明依赖和写入范围。已有完整配置缺少字段时保留兼容默认值，升级不会自动改写配置。
+预设没有 API Key 或 credits 后备。JEV 默认关闭，开启后使用同一订阅证据分析路径的
+Gemini Hydrogen medium。scoped 会话、full-access 权限、自动 worktree、最大两项
+并行是显式默认；调查分析另用 read-only/evidence-only 绑定。并行仍受依赖和写范围约束。
+
+升级保留已有配置。先用 `flywheel config migrate --preset subscription-cli` 预览实际
+文件与变更，再显式应用；迁移保留权限、预算、验证和调度。完整流程见
+[配置指南](docs/zh-CN/configuration.md)。
 
 ## 工作区与恢复
 

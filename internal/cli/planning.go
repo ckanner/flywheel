@@ -20,12 +20,14 @@ import (
 )
 
 var planningFields = map[string][]string{
-	"prepare":  {"action", "request-id", "brief", "start"},
-	"plan":     {"action", "revision", "request-id", "scope", "scope-id", "text", "start"},
-	"feedback": {"action", "revision", "request-id", "design", "text", "policy", "start"},
-	"approve":  {"action", "revision", "request-id", "design", "start"},
-	"status":   {"action", "request-id"},
-	"migrate":  {"action", "revision", "request-id", "policy", "text", "start"},
+	"collaboration": {"action", "revision", "request-id", "collaboration", "start"},
+	"input-images":  {"action", "revision", "request-id", "input-images", "start"},
+	"prepare":       {"action", "request-id", "brief", "start"},
+	"plan":          {"action", "revision", "request-id", "scope", "scope-id", "text", "start"},
+	"feedback":      {"action", "revision", "request-id", "design", "text", "policy", "start"},
+	"approve":       {"action", "revision", "request-id", "design", "start"},
+	"status":        {"action", "request-id"},
+	"migrate":       {"action", "revision", "request-id", "policy", "text", "start"},
 }
 
 func readPlanningCommand(input io.Reader) (machine.PlanningCommand, error) {
@@ -160,11 +162,11 @@ func controlPlanning(cmd *cobra.Command, taskDir, cwd string) (controlResponse, 
 		return reply, err
 	}
 	start := request.StartRequested(request.Action == "prepare" || request.Action == "plan" || request.Action == "migrate")
-	if !start || receipt != nil && receipt.Status == "queued" {
+	if !start || receipt != nil && (receipt.Status == "queued" || receipt.Status == "rejected") {
 		return reply, nil
 	}
 	extra := []string{}
-	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" {
+	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" {
 		extra = []string{"--planning-only"}
 	}
 	reply, err = startControlledRun(taskDir, cwd, "", extra)

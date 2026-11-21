@@ -83,6 +83,11 @@ func (c *Config) validateExecutionPolicy() error {
 		return err
 	}
 	for id, binding := range p.Bindings {
+		if binding.Harness == "antigravity" {
+			if err := ValidateAntigravityBinding(binding.Model, binding.Thinking); err != nil {
+				return fmt.Errorf("execution-policy.bindings.%s: %w", id, err)
+			}
+		}
 		if _, found := c.Channels[binding.Channel]; !found {
 			return fmt.Errorf("execution-policy.bindings.%s: channel is not configured", id)
 		}
@@ -135,6 +140,9 @@ func (c *Config) validateExecutionPolicy() error {
 // These are the documented adapter request vocabularies. Backends still verify
 // model availability and actual admission; these values are not quality ranks.
 func executionEffortSupported(b ExecutionBinding) bool {
+	if b.Harness == "antigravity" {
+		return ValidateAntigravityBinding(b.Model, b.Thinking) == nil
+	}
 	values := []string{"low", "medium", "high", "xhigh", "max"}
 	if b.Harness == "kimi" {
 		values = []string{"low", "high", "max"}
