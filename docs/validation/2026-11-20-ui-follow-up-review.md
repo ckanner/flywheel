@@ -70,6 +70,18 @@ options 不会被 JavaScript 对象的继承属性误当作已知模式。
 SHA-256 仍为 `03e8cdc04f1488a45e8ce52025f1cbd99ef9ca36e097d3868199663c5d94baf4`；
 Antigravity 0.2.0 归档也保持既有身份。
 
+### CI 总时限复核
+
+源码提交 `7259d0d8b12c` 的 [CI #294](https://github.com/ckanner/flywheel/actions/runs/44848747129)
+中，候选构建和 Linux 全部通过；macOS 的实际候选安装、Provider/图片桥接、Go
+逐函数 100% 门禁及本机 CLI 检查也通过。macOS 随后的配对会话演练完成 21/36
+个试验，已完成试验的独立 oracle 全部通过，随后整项任务达到 30 分钟总时限而
+取消，不能把这一轮 macOS 整体验收记作通过。
+
+为让完整检查有时间结束，CI 的 test job 总时限与已有发布验证对齐为 45 分钟。
+检查命令、平台矩阵、Go 每包 15 分钟超时、独立试验保护、覆盖率门槛与实际候选
+安装要求保持原样；不改产品代码。后续提交和完整新 CI 结果继续记录在 PR 中。
+
 ## 验证边界
 
 本轮重新尝试运行实际构建客户端的 Chromium/Playwright 视觉检查；Chromium 在

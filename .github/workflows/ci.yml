@@ -67,7 +67,9 @@ jobs:
 
   test:
     needs: npm-candidate
-    timeout-minutes: 30
+    # Match release verification: macOS quality-gate and paired sessions can
+    # exceed 30 minutes together; individual test deadlines remain unchanged.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
