@@ -92,7 +92,24 @@ Preview and explicitly apply `flywheel config migrate --preset subscription-cli`
 | Claude Code Pro | `low`, `medium`, `high`, `xhigh`, `max` | Explicit native model/effort; no automatic model fallback |
 | Kimi K3.1 Pro | Native `low`, `high`, `max` | Compatibility aliases do not form a cross-provider scale |
 
-Gemini choices follow the approved research, Google's [model-selection guide](https://aistudio.google.com/docs/choosing-a-model) and [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/). The installed catalog establishes current invocation availability. Parameter acceptance is separate from independent server evidence of effective reasoning strength; receipts preserve that distinction.
+Gemini choices follow the approved research, Google's [model-selection guide](https://aistudio.google.com/docs/choosing-a-model) and [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/). The installed native catalog identifies the client's reported model IDs; it does not establish account entitlement or remaining quota. Parameter acceptance is separate from independent server evidence of effective reasoning strength; receipts preserve that distinction.
+
+In **Settings → Models and sessions**, open a stage or complete candidate,
+choose its Provider and use **Read model catalog** for an explicit metadata-only
+read. Antigravity, Codex Pro and Claude Code Pro expose their native catalog
+sources. A missing or unsupported catalog leaves manual exact IDs available.
+The view displays source and scope, retains account entitlement as unknown, and
+only uses effort choices/defaults reported by the catalog. Fixed Orchestrator
+entries retain empty effort. Changing Provider or channel invalidates the
+displayed catalog; a late result from another task is ignored.
+
+Complete execution candidates and their route allowlists, quality order, switch
+budget and channel fallback mappings also have structured controls. Permission
+changes require explicit route authorization and isolate shared candidates;
+session policy is an explicit field on each candidate. These are configuration
+edits for future starts, not changes to already frozen running bindings. See
+[configuration editing](configuration.md#editing-configuration-in-the-workflow-console)
+for shared-reference and fallback safeguards.
 
 ## Choose and evaluate a baseline
 

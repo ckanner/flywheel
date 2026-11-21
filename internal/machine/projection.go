@@ -134,17 +134,20 @@ func compactDiagnostic(value any) any {
 }
 
 type NodeDetail struct {
-	Collaboration *CollaborationProjection `json:"collaboration,omitempty"`
-	ID            string                   `json:"id"`
-	Revision      int64                    `json:"revision"`
-	Packet        *state.PacketState       `json:"packet"`
+	Eligibility         *PacketEligibility       `json:"eligibility,omitempty"`
+	CollaborationEditor *CollaborationEditor     `json:"collaborationEditor,omitempty"`
+	Collaboration       *CollaborationProjection `json:"collaboration,omitempty"`
+	ID                  string                   `json:"id"`
+	Revision            int64                    `json:"revision"`
+	Packet              *state.PacketState       `json:"packet"`
 }
 
 func ReadNode(st *state.State, id string, location ...string) (*NodeDetail, error) {
 	if st == nil || st.Packets[id] == nil {
 		return nil, fmt.Errorf("packet not found")
 	}
-	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location)}, nil
+	eligibility, editor := packetControlViews(st, id, location)
+	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location), Eligibility: eligibility, CollaborationEditor: editor}, nil
 }
 
 func evidenceSummary(value any, keys ...string) any {

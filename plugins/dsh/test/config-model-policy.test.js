@@ -56,6 +56,7 @@ function fixture(initial = configuration(), options = {}) {
     };
   };
   const respond = async request => {
+    if (request.action === 'models' && options.models) return options.models(request);
     if (request.action === 'config') {
       if (options.config) return options.config(request, report(request));
       return reply(request, { configuration: report(request) });
@@ -90,6 +91,16 @@ async function change(ui, element, value) {
 }
 const bindingNative = (ui, id) => ui.container.querySelector(`[data-binding-id="${id}"] select[aria-label$="原生能力"]`);
 const candidateCheck = (ui, route, id) => ui.container.querySelector(`[data-policy-route="${route}"] input[aria-label$=" · ${id}"]`);
+const labelledButton = (ui, label) => [...ui.container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === label);
+const clickLabel = async (ui, label) => act(async () => {
+  const button = labelledButton(ui, label);
+  assert.ok(button, label);
+  button.click();
+});
+const modelReport = (request, models, extra = {}) => reply(request, { modelCatalog: {
+  ...request.models, status: 'available', source: 'agy models', scope: 'native-client-catalog', models,
+  inferencePerformed: false, accountEntitlement: 'unknown', limitations: [], truncated: false, ...extra,
+} });
 
 test('Antigravity Swarm choices enforce actual roles, including inherited and compact planning roles', async t => {
   const source = fixture();
@@ -346,4 +357,267 @@ test('an effective read completing after task navigation cannot replace the newl
   assert.deepEqual(ui.requests.map(request => [request.action, request.taskDir]), [
     ['config-edit', '/repo/docs/a'], ['config', '/repo/docs/a'], ['config-edit', '/repo/docs/b'], ['config', '/repo/docs/b'],
   ]);
+});
+
+test('a copied candidate edits every explicit field without changing its source or automatically authorizing it', async t => {
+  const original = configuration(), source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  assert.equal(labelledButton(ui, '删除候选 shared').disabled, true);
+  await clickLabel(ui, '复制候选 shared');
+  await change(ui, field(ui, 'Provider'), 'claude-code-pro');
+  await change(ui, field(ui, '模型'), 'claude-opus-5-5');
+  await change(ui, field(ui, '推理等级'), 'low');
+  await change(ui, field(ui, '原生能力'), '');
+  await change(ui, field(ui, '阶段权限要求'), 'workspace-write');
+  await change(ui, field(ui, '会话策略'), 'fresh');
+  await change(ui, field(ui, '账号渠道'), 'new');
+  await change(ui, field(ui, '账号渠道'), 'new-claude-subscription');
+  await ui.click('保存修改');
+  assert.deepEqual(source.stored['execution-policy'].bindings['shared-copy'], {
+    harness: 'claude-code-pro', provider: '', channel: 'new-claude-subscription', model: 'claude-opus-5-5', thinking: 'low',
+    permission: 'workspace-write', 'session-mode': 'fresh',
+  });
+  assert.deepEqual(source.stored['execution-policy'].bindings.shared, original['execution-policy'].bindings.shared);
+  assert.deepEqual(source.stored['execution-policy'].routes, original['execution-policy'].routes);
+  assert.deepEqual(source.stored['native-profiles'], original['native-profiles']);
+  assert.deepEqual(source.stored.channels['new-claude-subscription'], { 'env-key': null });
+  assert.equal(source.stored.channels.new, undefined, 'partial typed channels never become persisted credentials or providers');
+  await ui.click('← 返回模型列表');
+  assert.equal(labelledButton(ui, '删除候选 shared-copy').disabled, false);
+  await clickLabel(ui, '删除候选 shared-copy');
+  assert.equal(draft(ui)['execution-policy'].bindings['shared-copy'], undefined);
+});
+
+test('explicit route authorization isolates shared candidates and remaps every reference while preserving other routes', async t => {
+  const original = configuration();
+  original['execution-policy'].routes.default['quality-order'] = ['shared', 'rule'];
+  original['execution-policy'].routes.default['channel-fallbacks'] = { shared: 'claude' };
+  original.channels['google-subscription'].fallback = 'claude-native';
+  Object.assign(original.channels['claude-native'], { harness: 'claude-code-pro', models: { default: 'claude-opus-5-5' } });
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await change(ui, field(ui, '普通执行 · 路线授权权限'), 'read-only');
+  const next = draft(ui), route = next['execution-policy'].routes.default;
+  assert.notEqual(route.initial, 'shared');
+  assert.equal(route.allowed.includes('shared'), false);
+  assert.deepEqual(route['quality-order'], [route.initial, 'rule']);
+  assert.deepEqual(route['channel-fallbacks'], { [route.initial]: 'claude' });
+  assert.ok(route.allowed.every(id => next['execution-policy'].bindings[id].permission === 'read-only'));
+  assert.deepEqual(next['execution-policy'].bindings.shared, original['execution-policy'].bindings.shared);
+  assert.deepEqual(next['execution-policy'].routes.hard, original['execution-policy'].routes.hard);
+  assert.equal(next.permissions.bindings['routes.default'], 'read-only');
+  assert.equal(next.permissions.bindings['routes.hard'], undefined);
+  assert.deepEqual(next.routes, original.routes);
+  await ui.click('保存修改');
+  assert.equal(source.stored['execution-policy'].bindings.shared.permission, 'danger-full-access');
+});
+
+test('candidate permission mismatches require explicit route reconciliation while session differences stay selectable', async t => {
+  const original = configuration();
+  original['execution-policy'].bindings.local['session-mode'] = 'fresh';
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  assert.equal(candidateCheck(ui, 'default', 'local').disabled, false);
+  await change(ui, candidateCheck(ui, 'default', 'local'), true);
+  await clickLabel(ui, '编辑执行候选 local');
+  await change(ui, field(ui, '阶段权限要求'), 'read-only');
+  assert.equal(ui.button('保存修改').disabled, true);
+  await ui.click('← 返回模型列表');
+  assert.match(ui.container.textContent, /候选权限与路线授权不符/);
+  await ui.click('按此路线授权同步候选');
+  assert.equal(draft(ui)['execution-policy'].bindings.local.permission, 'danger-full-access');
+  assert.equal(draft(ui)['execution-policy'].bindings.local['session-mode'], 'fresh');
+  assert.equal(ui.button('保存修改').disabled, false);
+  await ui.click('保存修改');
+});
+
+test('quality order and channel fallback rules are editable without JSON and require explicit channel mapping changes', async t => {
+  const source = fixture(), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await clickLabel(ui, '移出质量次序 rule');
+  assert.equal(candidateCheck(ui, 'default', 'rule').disabled, false);
+  await change(ui, candidateCheck(ui, 'default', 'rule'), false);
+  const quality = ui.container.querySelector('[data-quality-route="default"] select');
+  await change(ui, quality, 'shared');
+  await change(ui, quality, 'claude');
+  await clickLabel(ui, '上移 claude');
+  assert.deepEqual(draft(ui)['execution-policy'].routes.default['quality-order'], ['claude', 'shared']);
+  await change(ui, ui.container.querySelector('[data-policy-route="default"] [data-fallback-from="shared"] select'), 'claude');
+  assert.equal(draft(ui).channels['google-subscription'].fallback, undefined);
+  assert.equal(ui.button('保存修改').disabled, true, 'a rule cannot silently grant a different channel path');
+  assert.match(ui.container.textContent, /目标模型 claude-opus-5-5/);
+  await ui.click('应用所列渠道映射');
+  assert.equal(draft(ui).channels['google-subscription'].fallback, 'claude-native');
+  assert.deepEqual(draft(ui).channels['claude-native'].models, { default: 'claude-opus-5-5' });
+  assert.equal(ui.button('保存修改').disabled, false);
+  assert.equal(candidateCheck(ui, 'default', 'claude').disabled, true, 'quality and fallback references protect the allowed set');
+  await ui.click('保存修改');
+  assert.deepEqual(source.stored['execution-policy'].routes.default['channel-fallbacks'], { shared: 'claude' });
+  await change(ui, ui.container.querySelector('[data-policy-route="default"] [data-fallback-from="shared"] select'), '');
+  assert.equal(draft(ui).channels['google-subscription'].fallback, 'claude-native', 'removing the rule preserves the shared chain until an explicit edit');
+  await clickLabel(ui, '移除渠道后备链 google-subscription');
+  assert.equal(draft(ui).channels['google-subscription'].fallback, undefined);
+});
+
+test('fallback mapping refuses cycles and conflicting rules without changing the shared channel graph', async t => {
+  const original = configuration();
+  original.channels['claude-native'].fallback = 'google-subscription';
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await change(ui, ui.container.querySelector('[data-policy-route="default"] [data-fallback-from="shared"] select'), 'claude');
+  assert.match(ui.container.textContent, /此后备链会形成循环/);
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.deepEqual(draft(ui).channels, original.channels);
+  await clickLabel(ui, '移除渠道后备链 claude-native');
+  await ui.click('应用所列渠道映射');
+  assert.equal(ui.button('保存修改').disabled, false);
+  await ui.click('保存修改');
+  assert.equal(source.stored.channels['claude-native'].fallback, undefined);
+});
+
+test('a legacy route can opt into a complete policy with its exact model and zero automatic switches', async t => {
+  const original = configuration();
+  delete original['execution-policy'];
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await change(ui, field(ui, '启用路线执行策略'), 'default');
+  const policy = draft(ui)['execution-policy'], route = policy.routes.default;
+  assert.deepEqual(policy.bindings[route.initial], complete(original.routes.default));
+  assert.deepEqual(route.allowed, [route.initial]);
+  assert.equal(route['max-switches'], 0);
+  await ui.click('新建执行候选');
+  assert.equal(Object.keys(draft(ui)['execution-policy'].bindings).length, 2);
+  assert.deepEqual(draft(ui)['execution-policy'].routes.default, route);
+  await ui.click('保存修改');
+});
+
+test('catalog selection is user-triggered, exact, bounded by verified efforts and separate from account entitlement', async t => {
+  const source = fixture(configuration(), { models: request => modelReport(request, [
+    { id: 'gemini-pro-orchestrator-neon', label: 'Orchestrator Neon', efforts: [''], defaultEffort: '' },
+    { id: 'gemini-4-hydrogen-medium', label: 'Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
+  ]) });
+  const ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 shared');
+  assert.equal(ui.requests.some(request => request.action === 'models'), false);
+  await ui.click('读取模型目录');
+  const request = ui.requests.find(request => request.action === 'models');
+  assert.deepEqual(request.models, { version: 1, harness: 'antigravity', channel: 'google-subscription' });
+  assert.match(ui.container.querySelector('[data-model-catalog]').textContent, /agy models.*native-client-catalog/);
+  assert.match(ui.container.querySelector('[data-model-catalog]').textContent, /账号资格仍为未知/);
+  await change(ui, field(ui, '从目录选择模型'), 'gemini-pro-orchestrator-neon');
+  assert.equal(field(ui, '模型').value, 'gemini-pro-orchestrator-neon');
+  assert.equal(draft(ui)['execution-policy'].bindings.shared.thinking, '');
+  assert.equal(field(ui, '推理等级').options.length, 1);
+  await change(ui, field(ui, '模型'), 'gemini-4-carbon-high');
+  assert.equal(field(ui, '从目录选择模型').value, '', 'unlisted exact IDs stay manual rather than silently picking the first catalog model');
+  assert.equal(draft(ui)['execution-policy'].bindings.shared.model, 'gemini-4-carbon-high');
+});
+
+test('unsupported and failed model catalog reads preserve the manual binding and never trigger automatic retries', async t => {
+  let reads = 0;
+  const source = fixture(configuration(), { models: request => {
+    if (++reads === 1) throw new Error('native client unavailable');
+    return modelReport(request, [], { status: 'unavailable', error: { code: 'missing-client', message: 'Install the native client' } });
+  } });
+  const ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 local');
+  await change(ui, field(ui, '模型'), 'gemini-4-carbon-high');
+  const before = draft(ui);
+  await ui.click('读取模型目录');
+  assert.match(ui.container.querySelector('[data-model-catalog]').textContent, /手动模型和其它草稿均已保留/);
+  assert.deepEqual(draft(ui), before);
+  assert.equal(reads, 1);
+  await ui.click('读取模型目录');
+  assert.match(ui.container.querySelector('[data-model-catalog]').textContent, /Install the native client/);
+  assert.deepEqual(draft(ui), before);
+  assert.equal(reads, 2);
+});
+
+test('a model catalog completing after task navigation cannot populate the new task binding', async t => {
+  const pending = deferred(); let requested;
+  const source = fixture(configuration(), { models: request => { requested = request; return pending.promise; } });
+  const ui = await mountPanel(t, source.respond);
+  await ui.selectPath(0, '/repo/docs/a'); await ui.click('设置'); await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 shared');
+  await ui.click('读取模型目录');
+  await ui.selectPath(0, '/repo/docs/b');
+  await act(async () => pending.resolve(modelReport(requested, [{ id: 'old-task-model', label: 'Old task only' }])));
+  await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 shared');
+  assert.doesNotMatch(ui.container.querySelector('[data-model-catalog]').textContent, /old-task-model|Old task only/);
+  assert.equal(field(ui, '模型').value, agy.model);
+  assert.equal(ui.requests.filter(request => request.action === 'models').length, 1);
+});
+
+test('a candidate provider change clears only obsolete native numeric errors and preserves explicit authority', async t => {
+  const source = fixture(), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 shared');
+  await change(ui, field(ui, '观察到的子代理总数上限'), '9');
+  assert.equal(ui.button('保存修改').disabled, true);
+  await change(ui, field(ui, 'Provider'), 'claude-code-pro');
+  assert.equal(ui.button('保存修改').disabled, false);
+  assert.equal(draft(ui)['execution-policy'].bindings.shared.permission, 'danger-full-access');
+  assert.equal(draft(ui)['execution-policy'].bindings.shared['session-mode'], 'scoped');
+  assert.deepEqual(draft(ui)['native-profiles']['shared-native'].options, { version: 1, mode: 'native', maxObservedAgents: 4 });
+});
+
+test('catalog efforts do not silently widen the execution-policy adapter vocabulary', async t => {
+  const source = fixture(configuration(), { models: request => modelReport(request, [
+    { id: 'gpt-6.2-sol', label: 'Native model', efforts: ['none', 'minimal', 'low'], defaultEffort: 'none' },
+  ], { source: 'codex app-server model/list' }) });
+  const ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话'); await clickLabel(ui, '编辑执行候选 local');
+  await change(ui, field(ui, 'Provider'), 'codex-pro');
+  await ui.click('读取模型目录');
+  await change(ui, field(ui, '从目录选择模型'), 'gpt-6.2-sol');
+  const choices = [...field(ui, '推理等级').options].map(option => option.value);
+  assert.equal(choices.includes('none'), false);
+  assert.equal(choices.includes('minimal'), false);
+  assert.equal(choices.includes('low'), true);
+  assert.equal(draft(ui)['execution-policy'].bindings.local.thinking, 'high', 'an unsupported catalog default cannot silently replace the explicit effort');
+  assert.match(ui.container.textContent, /额外列出的档位不会自动写入/);
+});
+
+test('route authorization refuses the binding limit without partially mutating permissions or shared references', async t => {
+  const original = configuration();
+  for (let index = 0; Object.keys(original['execution-policy'].bindings).length < 32; index += 1)
+    original['execution-policy'].bindings['unused-' + index] = complete(agy);
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await change(ui, field(ui, '普通执行 · 路线授权权限'), 'read-only');
+  assert.deepEqual(draft(ui), original);
+  assert.match(ui.container.textContent, /请先移除未使用候选/);
+  assert.equal(ui.button('保存修改').disabled, true);
+  await clickLabel(ui, '删除候选 unused-0');
+  await change(ui, field(ui, '普通执行 · 路线授权权限'), 'read-only');
+  assert.equal(Object.keys(draft(ui)['execution-policy'].bindings).length, 32);
+  assert.equal(ui.button('保存修改').disabled, false);
+});
+
+test('fallback editing rejects an incompatible shared channel consumer instead of silently remapping its backend', async t => {
+  const original = configuration();
+  original['execution-policy'].bindings.otherBackend = complete({ harness: 'codex-pro', provider: '', channel: 'claude-native', model: 'gpt-6.2-sol', thinking: 'high' });
+  const source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('模型与会话');
+  await change(ui, ui.container.querySelector('[data-policy-route="default"] [data-fallback-from="shared"] select'), 'claude');
+  assert.match(ui.container.textContent, /现有其它规则或渠道后端与此映射冲突/);
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.deepEqual(draft(ui).channels, original.channels);
+});
+
+test('malformed execution policy drafts remain repairable and never crash structured settings', async t => {
+  const original = configuration(), source = fixture(original), ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('诊断与配置文件');
+  const malformed = structuredClone(original);
+  malformed['execution-policy'].bindings.local = null;
+  malformed['execution-policy'].routes.default.allowed = 1;
+  malformed['execution-policy'].routes.default['channel-fallbacks'] = { shared: 'claude' };
+  await act(async () => {
+    const area = ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]');
+    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(area, JSON.stringify(malformed));
+    area.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
+  });
+  await ui.click('模型与会话');
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.deepEqual(draft(ui), malformed);
+  await ui.click('撤销');
+  assert.deepEqual(draft(ui), original);
 });

@@ -58,6 +58,65 @@ to the actual invocation. Reading observations distinguishes a pending request,
 a failed request, and a successful query with no matching record. None of those
 states proves that an unobserved child completed.
 
+### Check a packet's execution eligibility
+
+Open a packet node and select **Check execution eligibility**. Go reads the exact
+packet and evaluates its execution candidates with the same input and native
+collaboration checks used before dispatch. The view shows each candidate's model,
+effort, channel and native profile, with the conditions that passed or failed.
+It identifies whether the check used the run's frozen configuration or the current
+effective configuration. Reading this report does not invoke a model or verify
+account entitlement.
+
+For Antigravity Swarm, the report identifies missing Full execution depth,
+an undeclared independent task split, invalid write scopes, or an incompatible
+image input transport. Ordinary code packets can use Antigravity without images;
+a Full packet with a reviewed independent split can use Swarm without images.
+Repository PNGs, icons and other assets do not by themselves declare model image
+input. A packet that explicitly requires the original image must use a verified
+image transport; removing its declaration does not satisfy that requirement.
+
+Pending reads, failed reads, unknown contract identity and a confirmed report with
+no candidates have separate messages. A changed task revision makes an old check
+stale. Saving configuration or changing planning also clears the previous node
+check, so a previous eligible result is not presented as a new decision. Read the
+node again before using the updated information. Eligibility does not claim that
+a candidate has been selected, dispatched or completed.
+
+### Edit a collaboration draft and review the new plan
+
+**Edit collaboration draft** reads a revision-bound snapshot beside the approved
+task split. Enter **2–8** task goals and one relative write scope per line for each
+task. Goals are limited to 512 Unicode characters, each task to 1–64 write
+scopes, and the complete edit to 32 KiB. The parent packet's approved `schedule.writes` remains visible. Go checks
+that child paths are normalized, stay inside that parent scope, and do not overlap
+another task; the form does not expand the parent's scope.
+
+**Save draft for review** submits the original state revision, contract fingerprint
+and exact plan revision/digest together with the edited split. The engine creates
+a new immutable plan revision and requests independent plan review. This action
+does not start implementation or edit an active contract in place. The previous
+plan review does not cover the new revision. Root design approval remains usable
+only while the design and its approved scope are unchanged; changes to goals or
+scope belong in **Design feedback**. Execution remains gated by the new plan's
+review and the normal activation checks.
+
+Running tasks, unresolved invocations, a human handoff, a stale contract, or a
+planning phase that cannot accept the edit disable saving and explain why. An
+unchanged split also does not start another review. Local text survives a failed
+read, rejected edit or unknown save result. Closing the node, changing tabs or
+tasks, and reopening the view retain drafts and pending request identities within
+the same live conversation binding. Recreating the plugin or its host Session
+binding starts with a new in-memory cache. **Refresh revision and keep draft** can
+adopt a newer audit revision only when the contract fingerprint, exact plan,
+parent scopes and original split are unchanged. **Reread and replace draft**
+explicitly replaces unsaved edits with a new snapshot. If the save result is unknown,
+use **Refresh task and reconcile outcome** to read that exact request's receipt;
+the form does not replay the mutation. A confirmed pre-dispatch failure leaves
+the draft editable without requiring a nonexistent receipt. A queued receipt remains unconfirmed until
+adopted. Approved assignments and observed native children continue to be shown
+as separate facts.
+
 
 ## Design and approval in the same view
 

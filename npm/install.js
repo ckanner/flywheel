@@ -228,7 +228,7 @@ function launcherContent({ cli, prefix, dshBin, environment = process.env }) {
   return lines.join("\n");
 }
 
-async function writeLauncher({ directory, previous, cli, prefix, worker, codexProWorker, claudeCodeProWorker, adapter, dshBin, environment }) {
+async function writeLauncher({ directory, previous, cli, prefix, worker, codexProWorker, claudeCodeProWorker, modelCatalogWorker, adapter, dshBin, environment }) {
   await fsp.mkdir(directory, { recursive: true });
   const launcher = path.join(directory, "npm-launcher");
   const content = launcherContent({ cli, prefix, dshBin, environment });
@@ -241,7 +241,7 @@ async function writeLauncher({ directory, previous, cli, prefix, worker, codexPr
     }
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   await atomicWrite(launcher, content, 0o755);
-  const receipt = { protocol: 1, owner: OWNER, version: meta.version, prefix, cli, worker, codexProWorker, claudeCodeProWorker, adapter,
+  const receipt = { protocol: 1, owner: OWNER, version: meta.version, prefix, cli, worker, codexProWorker, claudeCodeProWorker, modelCatalogWorker, adapter,
     node: process.execPath, launcher: { path: launcher, sha256: digest(content) } };
   await atomicWrite(path.join(directory, "installation.json"), JSON.stringify(receipt, null, 2) + "\n", 0o600);
   return receipt;
@@ -371,7 +371,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
       const installedRequire = createRequire(path.join(installedRoot, "package.json"));
       const runtime = installedRequire("./bin/runtime.js");
       report.paths = { cli: path.join(installedRoot, "bin", "flywheel.js"), native: runtime.loadNativePath(), worker: runtime.loadWorkerPath(),
-        codexProWorker: runtime.loadCodexProWorkerPath(), kimiNativeWorker: runtime.loadKimiNativeWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath(), antigravityWorker: runtime.loadAntigravityWorkerPath() };
+        codexProWorker: runtime.loadCodexProWorkerPath(), kimiNativeWorker: runtime.loadKimiNativeWorkerPath(), claudeCodeProWorker: runtime.loadClaudeCodeProWorkerPath(), antigravityWorker: runtime.loadAntigravityWorkerPath(), modelCatalogWorker: runtime.loadModelCatalogWorkerPath() };
       const probe = await run(process.execPath, [report.paths.codexProWorker, '--doctor']);
       requireSuccess(probe, 'installed Codex Pro dependency');
       const adapter = parseDocument(probe, 'installed Codex Pro dependency');
@@ -414,7 +414,7 @@ async function install(options, { environment = process.env, cwd = process.cwd()
     const dshBin = findExecutable(requestedDsh, environment);
     await step("desktop-launcher", async item => {
       const receipt = await writeLauncher({ directory, previous, cli: report.paths.cli, prefix, worker: report.paths.worker,
-        codexProWorker: report.paths.codexProWorker, claudeCodeProWorker: report.paths.claudeCodeProWorker, adapter: report.adapter, dshBin, environment });
+        codexProWorker: report.paths.codexProWorker, claudeCodeProWorker: report.paths.claudeCodeProWorker, modelCatalogWorker: report.paths.modelCatalogWorker, adapter: report.adapter, dshBin, environment });
       report.paths.launcher = receipt.launcher.path;
       item.path = receipt.launcher.path;
     });

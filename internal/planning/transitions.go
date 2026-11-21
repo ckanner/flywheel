@@ -225,13 +225,13 @@ func BeginRequest(s *State, request Request) error {
 	}
 	for _, old := range s.Requests {
 		if old.ID == request.ID {
-			if old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback {
+			if old.Origin == request.Origin && old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback {
 				return nil // resume preserves the recorded limits and used rounds
 			}
 			return fmt.Errorf("planning request identity was reused for different input")
 		}
 	}
-	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.Status != "pending" || request.MaxRounds > s.MaxRounds {
+	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.Status != "pending" || request.Stage != "" || request.MaxRounds > s.MaxRounds {
 		return fmt.Errorf("new planning request must preserve current input and round limits")
 	}
 	s.Requests = append(s.Requests, request)
@@ -295,7 +295,7 @@ func ValidateTransition(previous, next *State) error {
 		if old.DesignGranularity != r.DesignGranularity && (old.DesignGranularity == "system" || r.DesignGranularity != "system") {
 			return fmt.Errorf("planning granularity can only upgrade to system preparation")
 		}
-		if old.ID != r.ID || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries {
+		if old.ID != r.ID || old.Origin != r.Origin || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries {
 			return fmt.Errorf("planning request identity and spent rounds are immutable")
 		}
 	}

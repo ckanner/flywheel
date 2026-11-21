@@ -79,17 +79,47 @@ The result includes `source`, `scope`, resolved physical paths, `sessions`, and 
 
 The Global / project configuration view first reads an explicit scope and file revision. Edit model bindings, role history policies, budget, timeouts, retries or the global permission policy, then review changes and save beside the form. Concurrent edits reject replacement; reread an unconfirmed save before proceeding. New project files use the current version's complete default template. A higher-priority task file can still hide the project/global file being edited. Files do not merge.
 
-**Models and sessions → Execution candidates** edits the actual
-`execution-policy.routes.<route>.initial`, the allowed candidate set and the
-0–32 switch limit. Each option identifies its model, effort, native mode,
-permission and session policy. Selecting an initial candidate preserves that
-complete binding; editing its model in the stage table creates or updates a
-route-specific candidate instead of rewriting a binding shared by other routes.
-The graphical editor does not change candidate permissions or sessions. A
-different authority requires an explicit review in advanced JSON. Remove an
-initial candidate only after choosing another, and edit quality/fallback rules
-before removing a candidate they reference. Existing quality-order and channel
-fallback rules remain available in advanced JSON.
+**Models and sessions → Complete execution bindings** creates, copies, edits and
+removes complete candidates, including Provider, exact model, effort, native
+profile, permission and session policy. The editor lists every referencing route;
+editing a shared candidate affects those routes, while copying creates an unused
+candidate until it is explicitly added to a route. Referenced candidates cannot
+be deleted. The maximum remains 32 bindings.
+
+**Execution candidates** edits the actual
+`execution-policy.routes.<route>.initial`, allowed set, route authorization and
+0–32 switch limit. Selecting an initial candidate preserves its complete binding.
+Editing the initial model in the stage table isolates a candidate shared by other
+routes. Changing route authorization explicitly updates all its allowed candidates,
+copying candidates shared with other routes before remapping this route's references.
+Other routes retain their permissions. A direct candidate permission edit that
+conflicts with a referencing route blocks saving until authorization is explicitly
+reconciled; session policies may differ between allowed candidates. A legacy route
+can opt into a policy using its existing complete binding and zero switches.
+
+The **Quality adaptation order** controls add, remove and reorder allowed
+candidates without assigning a model quality ranking. Version 1 acts after the
+first confirmed stalled comparison. **Channel fallback rules** select a different
+channel's allowed candidate and show the required shared channel chain, backend
+and route model mapping. Applying that mapping is a separate explicit draft edit;
+unmatched mappings, cycles and conflicting rules block saving. Removing a rule
+retains the shared channel link until it is explicitly removed after all rule
+references are gone. Review the shared effects in the diff. Initial, quality and
+fallback references must be removed before a candidate leaves the allowed set.
+
+Inside a stage or candidate editor, **Read model catalog** requests exact IDs
+from the selected native client on demand. Supported sources are `agy models`,
+Codex app-server `model/list`, and Claude SDK initialization metadata. Unsupported
+backends or unavailable clients leave manual model entry usable. The view shows
+the source, native-client scope, limitations and account entitlement as unknown;
+the read performs no inference. Catalog effort choices/defaults are used only
+when explicitly reported. A current supported effort is retained. An unlisted
+model remains an exact manual ID, and changing Provider, channel, task or scope
+cannot apply a stale catalog response to the new selection.
+
+All these controls use the same revision-checked draft and Save changes action.
+Already frozen task configurations remain unchanged. Advanced JSON retains the
+complete document and unsupported provider-specific native schemas.
 
 **JEV** displays the file being edited separately from the file actually selected
 for the current task, including its scope, enabled state and resolved subscription
@@ -702,10 +732,11 @@ do not establish admission of every allowed experimental binding; actual dispatc
 still requires the adapter's configuration and permission checks.
 
 The model editor shows each route's actual initial candidate and its alternatives.
-Editing a route updates a candidate owned by that route, preserving shared
-bindings used elsewhere, permissions and session policy. Incomplete edits cannot
-be saved as if they changed the executor. Advanced JSON includes the complete
-`execution-policy` section for reviewing the allowed set and switch rules.
+The structured controls above edit complete candidates, explicit authorization,
+quality order and channel fallbacks. Editing a route's model preserves shared
+bindings and does not change permission or session policy. Incomplete bindings or
+unmatched route authorization cannot be saved as if they changed the executor.
+Advanced JSON retains the complete execution policy for inspection.
 
 Every switch cold-starts Execute, even an effort-only change; effort remains in
 the session binding. Unknown or unconsumed invocations reconcile first. Removing

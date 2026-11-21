@@ -61,6 +61,8 @@ test('the complete npm candidate install and run from a clean agent environment'
   await fs.access(kimiNativeWorker, 1);
   const antigravityWorker = path.join(context.prefix, 'bin', 'flywheel-antigravity-worker');
   await fs.access(antigravityWorker, 1);
+  const modelCatalogWorker = path.join(context.prefix, 'bin', 'flywheel-model-catalog');
+  await fs.access(modelCatalogWorker, 1);
   assert.deepEqual(report.adapter, { package: 'dsh-subagent-codex-pro', version: '0.10.2', protocol: 1, inferenceTested: false });
   assert.equal((await run(process.execPath, [cli, 'version'], context.env, context.project)).stdout.includes(server.candidate.version), true);
   const template = await run(process.execPath, [cli, 'template', 'flywheel.profiles.example.json'], context.env, context.project);
@@ -103,6 +105,8 @@ test('the complete npm candidate install and run from a clean agent environment'
   assert.equal(report.paths.claudeCodeProWorker, installedRequire.resolve('@ckanner/flywheel/claude-code-pro-worker'));
   assert.equal(report.paths.kimiNativeWorker, installedRequire.resolve('@ckanner/flywheel/kimi-native-worker'));
   assert.equal(report.paths.antigravityWorker, installedRequire.resolve('@ckanner/flywheel/antigravity-worker'));
+  assert.equal(report.paths.modelCatalogWorker, installedRequire.resolve('@ckanner/flywheel/model-catalog-worker'));
+  await fs.access(report.paths.modelCatalogWorker, 1);
   await fs.access(report.paths.kimiNativeWorker);
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
@@ -112,6 +116,39 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
+
+  await t.test('the installed model catalog reads native metadata without inference, settings writes or task state', async () => {
+    const kimi = await run(report.paths.launcher, ['control', 'models', '--cwd', context.project], context.env, context.project, 20000,
+      JSON.stringify({ version: 1, harness: 'kimi', channel: 'kimi-subscription' }));
+    assert.equal(kimi.code, 0, kimi.stderr);
+    const unsupported = JSON.parse(kimi.stdout).modelCatalog;
+    assert.equal(unsupported.status, 'unsupported');
+    assert.deepEqual(unsupported.models, []);
+    assert.equal(unsupported.inferencePerformed, false);
+    assert.equal(unsupported.accountEntitlement, 'unknown');
+
+    const fixture = path.join(context.fixtures, 'catalog agy');
+    const observed = path.join(context.root, 'catalog-argv.json');
+    await fs.writeFile(fixture, `#!${process.execPath}\nconst fs = require('node:fs');\n` +
+      `const args = process.argv.slice(2); fs.writeFileSync(${JSON.stringify(observed)}, JSON.stringify(args));\n` +
+      `if (args.length !== 1 || args[0] !== 'models') throw new Error('catalog must never dispatch a prompt');\n` +
+      `console.log('gemini-4-hydrogen-medium\\ngemini-pro-orchestrator-neon');\n`, { mode: 0o755 });
+    const agy = await run(report.paths.launcher, ['control', 'models', '--cwd', context.project],
+      { ...context.env, FLYWHEEL_AGY_BIN: fixture }, context.project, 20000,
+      JSON.stringify({ version: 1, harness: 'antigravity', channel: 'google-subscription' }));
+    assert.equal(agy.code, 0, agy.stderr);
+    const catalog = JSON.parse(agy.stdout).modelCatalog;
+    assert.equal(catalog.status, 'available');
+    assert.equal(catalog.source, 'agy models');
+    assert.equal(catalog.scope, 'native-client-catalog');
+    assert.deepEqual(catalog.models.map(model => model.id), ['gemini-4-hydrogen-medium', 'gemini-pro-orchestrator-neon']);
+    assert.equal(catalog.models[1].defaultEffort, '');
+    assert.equal(catalog.inferencePerformed, false);
+    assert.equal(catalog.accountEntitlement, 'unknown');
+    assert.deepEqual(JSON.parse(await fs.readFile(observed, 'utf8')), ['models']);
+    assert.deepEqual(await fs.readFile(globalConfig), before);
+    await assert.rejects(fs.access(path.join(context.project, 'state.json')), { code: 'ENOENT' });
+  });
 
   await t.test('the bundled generator imports its public composition API without fetching a registry release', async () => {
     const compositionPath = installedRequire.resolve('dsh-preset-generator/composition');

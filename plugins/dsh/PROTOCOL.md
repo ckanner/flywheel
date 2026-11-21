@@ -585,6 +585,7 @@ Codex／Claude 的 v3 另提供精确 journal 的只读恢复，不扫描后端�
 | `start` | 必需 taskDir／cwd；可选 `--mode`，省略时保留契约或持久化策略；旧任务仍 Full |
 | `config` | 必需 cwd，可省 taskDir；返回 `configuration` |
 | `images` | 必需 cwd，可省 taskDir；stdin 为 `{ "paths": ["repo-relative.png"] }`，返回只读 `inputImages` 选择与 PNG 缩略图 |
+| `models` | 必需 cwd，可省 taskDir；stdin 为 `{ "version":1,"harness":"antigravity","provider":"可选","channel":"可选" }`，返回 `modelCatalog` 元数据，不调用模型 |
 | `doctor` | 必需 cwd，可省 taskDir；可选 `--probe`；返回 `diagnostic` |
 | `session` | 必需 taskDir／cwd；stdin 接收 revision-bound session 命令；可选 `abandon` 只用于规划角色未知调用，要求人工证明；返回 `session-control` |
 
@@ -633,6 +634,47 @@ revision、reason 和准确 invocation，并要求 `FLYWHEEL_SESSION_USER_ACTION
 
 config/doctor 的 Go CLI 将 SIGTERM/SIGINT 转为 context 取消，等待 watchdog 收尾后才退出。控制调用取消或超过窗口时，host 先发 SIGTERM，诊断动作再留 20 秒让 Go 完成分阶段清理，仍未退出才 SIGKILL；取消始终报告控制失败，即使迟到结果成功也不覆盖它。launch/start/status/stop 保持原控制进程的 500ms 收尾，后台引擎停止仍走独立 stop 协议。
 
+### 模型目录只读查询
+
+模型目录另用独立 metadata worker `flywheel-model-catalog`，host 安装解析为随包的
+`dist/model-catalog-worker.mjs`（可显式覆盖 `FLYWHEEL_MODEL_CATALOG_WORKER`）。输入是
+版本 1 的 harness/provider/channel 加物理 cwd；单次 stdout 返回一个 JSON 报告。
+`modelCatalog` 回显绑定身份并提供 `status:available|unavailable|unsupported`、`source`、
+`scope:native-client-catalog`、`models:[{id,label,description?,efforts?,defaultEffort?}]`、
+`truncated`、`inferencePerformed:false`、`accountEntitlement:unknown`、`limitations` 和可选
+`error:{code,message}`。身份、枚举、计数或推理／授权声明不符时拒绝整份报告。
+目录最多 256 项、Codex 最多八页；原生进程 10 秒，Go watchdog 15 秒，累计输出 1 MiB，
+错误输出仅计数不回传。目录读取不发送 prompt、不创建 Codex thread/turn、不登录、不
+改变任务配置；Kimi／DSH 未验证的目录通道返回 unsupported，用户可继续输入精确模型 ID。
+
+### Packet 资格与分工修订
+
+`control node --packet M01-T01` 追加两个只读字段：
+
+- `node.eligibility:{packet,revision,status,reason,source,route?,candidates}`，status 为
+  verified／unknown，source 为 configuration／frozen。候选为
+  `{id,binding,eligible,conditions:[{code,passed,message}]}`，binding 使用配置的连字符字段。
+  相同条件供引擎实际执行准入使用；当前任务契约或冻结配置身份无法核对时不返回肯定资格。
+- `node.collaborationEditor:{packet,revision,contractFingerprint?,plan?,editable,reason,writes,value?}`。
+  value 使用既有 packet collaboration 契约，plan 为 `{revision,digest}`；未审新版本与已审
+  `node.collaboration` 分开展示。编辑快照超限时不可编辑，写入范围不被截断。
+
+保存使用 `planning` 的 `action:"collaboration"`，额外字段为 revision、request-id、
+`collaboration:{packet,contractFingerprint,plan,value}` 和可选 start。整个 collaboration
+值最多 32 KiB，未知字段拒绝。Go 在 run lease 与 CAS 内核对指纹、确切活动计划、设计批准、
+未完成 packet、待对账和写入范围；产生完整不可变 plan 版本及直接进入 reviewer 的
+planning-only 请求。start:true 仅启动该独立评审，不批准新设计或启动实施；省略 start
+只保存待审版本。producer ID 为 `control:collaboration:<request-id的SHA256>`。
+前端必须核对返回 planning-control 的 action 和 request-id；回执缺失或不匹配保留未知
+结果，不能重发。可用只读 planning/status 加同一 request-id 对账。
+新规划请求保存不可变 `origin:"collaboration-edit"`；普通 plan 的自由 Feedback 不能伪装
+成此 action。在已拿到 lease 后确认未采用的拒绝追加 `state.inbox` 审计项
+`{kind:"planning-collaboration-rejected",request-id,command-digest,message}`，成功 CAS 后
+返回 `ok:true` 和 status rejected。该回执表示拒绝已确定，不表示分工已保存；start:true
+也不启动进程。同 ID 不同命令摘要拒绝复用，保存失败仍按未知结果处理。
+面板草稿与未决 ID 保存在当前 host Session 绑定，跨面板／任务切换后仍可按原身份核对；
+不会将另一会话的授权或草稿带入当前会话。
+
 ### Reviewed planning 控制与可信批准
 
 新增 `control planning --task-dir <绝对目录> --cwd <绝对目录> --compact`。stdin 是一个
@@ -641,6 +683,7 @@ JSON 对象，host 外层工具/command 请求为 `{action:"planning",taskDir,cw
 
 | 内层 action | 字段与含义 |
 |---|---|
+| collaboration | revision、request-id、collaboration、可选 start；保存精确分工修订并准备独立 plan-review，始终 planning-only |
 | prepare | brief、可选 request-id/start；brief 服从 planning.schema.json 的 $defs.brief，缺省启动设计；start:false 只登记 |
 | plan | revision、request-id、scope、可选 scope-id/text/start；text 是该 request 不可变的局部规划说明，供 planner/reviewer 使用，不增加全局 input-revision；design / milestone / packet / replan；显式 Plan 运行 planning-only，已有启动授权也不顺带执行 |
 | feedback | revision、request-id、text，可选 design/policy/start；输入绑定观测版本，运行中的 owner 可排队采用 |

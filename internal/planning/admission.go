@@ -47,6 +47,16 @@ func StartAllowed(s *State, design Ref) bool {
 // bytes, dependency snapshots and native lifecycle are additionally checked by
 // the engine against this exact transaction before every implementation call.
 func Admit(s *State, ref ActivationRef) error {
+	return admitActivePlan(s, ref, true)
+}
+
+// AdmitPlanRevision permits a bounded change to an already reviewed active
+// plan under its approved design. It does not grant implementation Start.
+func AdmitPlanRevision(s *State, ref ActivationRef) error {
+	return admitActivePlan(s, ref, false)
+}
+
+func admitActivePlan(s *State, ref ActivationRef, requireStart bool) error {
 	if err := Validate(s); err != nil {
 		return err
 	}
@@ -56,7 +66,7 @@ func Admit(s *State, ref ActivationRef) error {
 	if s.PendingActivation != nil || s.Phase != "ready" || s.Active == nil || s.CurrentDesign == nil || *s.CurrentDesign != ref.Design || s.Active.Design != ref.Design || !Authorized(s, ref.Design) {
 		return fmt.Errorf("design approval or completed activation is required before implementation")
 	}
-	if !StartAllowed(s, ref.Design) {
+	if requireStart && !StartAllowed(s, ref.Design) {
 		return fmt.Errorf("design approval does not by itself authorize starting implementation")
 	}
 	if len(ref.Plans) != len(s.Active.Plans) {

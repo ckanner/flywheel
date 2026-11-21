@@ -90,7 +90,18 @@ Kimi 使用 `kimi-subscription-agent`：native agent 模式、Agents 关闭。�
 | Claude Code Pro | `low`、`medium`、`high`、`xhigh`、`max` | 显式原生模型与 effort，不自动换模型 |
 | Kimi K3.1 Pro | 原生 `low`、`high`、`max` | 兼容别名不代表跨 provider 同一尺度 |
 
-Gemini 选择参考已批准调研、Google 的[模型选择指南](https://aistudio.google.com/docs/choosing-a-model)与 [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)。具体调用以已安装模型目录为准。参数被接受与服务端实际推理强度的独立证据分别记录，不混为一谈。
+Gemini 选择参考已批准调研、Google 的[模型选择指南](https://aistudio.google.com/docs/choosing-a-model)与 [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)。已安装原生目录提供客户端报告的模型 ID，不证明账号资格或剩余额度。参数被接受与服务端实际推理强度的独立证据分别记录，不混为一谈。
+
+在 **设置 → 模型与会话** 中打开阶段或完整候选，选择 Provider，再点击 **读取模型
+目录** 发起显式的元数据读取。Antigravity、Codex Pro 和 Claude Code Pro 显示各自
+原生目录来源。目录缺失或后端不支持时仍可手动输入精确 ID。界面显示来源和范围，
+账号资格保持未知，只采用目录明确返回的 effort 选项／默认值；固定 Orchestrator
+保持空 effort。切换 Provider 或渠道后原目录失效，其他任务的延迟结果不会覆盖当前选择。
+
+完整执行候选、路线允许集合、质量次序、切换预算和渠道后备映射都有结构化控件。
+权限变更要求明确的路线授权，并隔离共享候选；会话策略是候选的显式字段。这些是
+供后续启动采用的配置修改，不改变已冻结的运行绑定。共享引用和渠道后备的保护规则
+见[配置编辑](configuration.md#在控制台编辑配置)。
 
 ## 基线与评估
 

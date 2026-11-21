@@ -395,7 +395,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
+const mutates = (action, extra = {}) => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action) && !(action === 'planning' && extra.planning?.action === 'status');
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -453,6 +453,7 @@ function readReply(reply, request) {
   }
   const state = value.state;
   if (request.action === 'images' && !validImageInspection(value.inputImages, request.images.paths)) throw new Error('Flywheel returned an invalid image preview');
+  if (request.action === 'models' && !validModelCatalogReport(value.modelCatalog, request.models)) throw new Error('Flywheel returned an invalid model catalog');
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
       typeof report.jev.enabled === 'boolean' && (report.jev.model == null || typeof report.jev.model === 'string') &&
@@ -481,11 +482,14 @@ function readReply(reply, request) {
       (request.action === 'planning' && !state?.planning) ||
       (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control'])) ||
       (value['session-control'] !== undefined && !validSessionControl(value['session-control']))) throw new Error('Flywheel control returned malformed planning or session status');
+  if (request.planning?.action === 'collaboration' && (value['planning-control']?.['request-id'] !== request.planning['request-id'] || value['planning-control']?.action !== 'collaboration')) throw new Error('Collaboration revision receipt does not match this exact request');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
   if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
-  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet) || !validCollaborationView(value.node.collaboration))) throw new Error('Malformed node detail');
+  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet) || !validCollaborationView(value.node.collaboration) ||
+      !validNodeEligibility(value.node.eligibility) || !validCollaborationEditor(value.node.collaborationEditor) ||
+      [value.node.eligibility, value.node.collaborationEditor].some(view => view != null && (view.packet !== value.node.id || view.revision !== value.node.revision)))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
   if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(run => record(run) && validBindingChoices(run.initialBindings, run.initialBindingsOmitted)))) throw new Error('Malformed run index');
   if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups) ||
@@ -565,18 +569,19 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
     });
   };
   const run = async (action, selection, probe = false, extra = {}) => {
-    if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning', 'images'].includes(action)) return;
+    if (isDisposed() || active || (mutates(action, extra) && source.getSnapshot().uncertainty)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning', 'images', 'models'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
     if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action) && !target.taskDir) return;
     select(selection);
-    if (['launch', 'start', 'planning'].includes(action) && source.getSnapshot().stale) return;
+    if (['launch', 'start', 'planning'].includes(action) && mutates(action, extra) && source.getSnapshot().stale) return;
     const requestEpoch = epoch;
     const requestKey = selected;
-    const queuedReceipt = action === 'status' && source.getSnapshot().planningReceipt?.status === 'queued' &&
-      source.getSnapshot().planningReceipt?.['request-id'];
+    const previousUncertainty = source.getSnapshot().uncertainty;
+    const queuedReceipt = action === 'status' && (previousUncertainty?.planningAction === 'collaboration' ? previousUncertainty.planningRequestID :
+      source.getSnapshot().planningReceipt?.status === 'queued' && source.getSnapshot().planningReceipt?.['request-id']);
     const request = { action: queuedReceipt ? 'planning' : action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
       ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
       ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}),
@@ -584,13 +589,15 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
       ...(['delivery','deliver'].includes(action) ? { delivery: extra.delivery } : {}),
       ...(action === 'node' ? { packet: extra.packet } : {}),
       ...(action === 'images' ? { images: extra.images } : {}),
+      ...(action === 'models' ? { models: extra.models } : {}),
       ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
       ...(action === 'investigate' ? { investigation: extra.investigation } : {}),
       ...(queuedReceipt ? { planning: { action: 'status', 'request-id': queuedReceipt } } : action === 'planning' ? { planning: extra.planning } : {}),
       ...(action === 'step' ? { only: extra.only, packet: extra.packet, revision: extra.revision, ...(extra.retryReason ? { retryReason: extra.retryReason } : {}) } : {}) };
-    const operation = { action, probe, ...target, key: requestKey };
+    const operation = { action, probe, ...target, key: requestKey,
+      ...(extra.planning ? { planningAction: extra.planning.action, planningRequestID: extra.planning['request-id'] } : {}) };
     active = operation;
     source.update(draft => { draft.pending = operation; draft.error = null; });
     let timer;
@@ -603,6 +610,11 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
       });
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
+      const uncertain = source.getSnapshot().uncertainty;
+      const matchingCollaborationRead = uncertain?.planningAction === 'collaboration' && request.planning?.action === 'status' && request.planning['request-id'] === uncertain.planningRequestID;
+      if (matchingCollaborationRead && (value['planning-control']?.action !== 'collaboration' || value['planning-control']?.['request-id'] !== uncertain.planningRequestID)) {
+        throw new Error('Collaboration reconciliation receipt does not match the original action and request ID');
+      }
       if (remapIntake(value, request.taskDir, request.cwd, !!value.state || !!value.preparation)) {
         const canonical = { taskDir: value.taskDir, cwd: value.cwd };
         setIntakeSelection(canonical);
@@ -616,7 +628,7 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
           draft.status = value;
           draft.checkedAt = Date.now();
           draft.stale = false;
-          if (action !== 'node' && draft.uncertainty?.key === requestKey) draft.uncertainty = null;
+          if (action !== 'node' && draft.uncertainty?.key === requestKey && (draft.uncertainty.planningAction !== 'collaboration' || matchingCollaborationRead && ['applied', 'unchanged', 'rejected'].includes(value['planning-control']?.status))) draft.uncertainty = null;
         }
         if (['config', 'doctor'].includes(action)) {
           draft.configuration = value.configuration ?? value.diagnostic?.configuration ?? null;
@@ -625,6 +637,7 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
         if (['config-edit', 'config-save'].includes(action)) { draft.editor = value.editor; draft.configUncertainty = false; }
         if (['delivery','deliver'].includes(action)) { draft.delivery = value.delivery; draft.deliveryStale = false; }
         if (action === 'node') draft.node = value.node;
+        if (action === 'config-save' || action === 'planning' && mutates(action, extra)) draft.node = null;
         if (action === 'history') draft.history = value.history;
         if (action === 'runs') draft.runs = value.runs;
         if (action === 'metrics') draft.metrics = value.metrics;
@@ -633,16 +646,22 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
       });
       return value;
     } catch (error) {
-      if (isDisposed() || requestEpoch !== epoch) return;
+      const detail = error instanceof Error ? error.message : String(error);
+      const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
+      // This local outcome lets the originating retained draft settle even if
+      // its view has unmounted. It cannot be confused with an engine envelope,
+      // and only a typed, confirmed pre-dispatch rejection carries it.
+      const outcome = action === 'planning' && extra.planning?.action === 'collaboration' && dispatch === 'not-dispatched'
+        ? { controlFailure: { ...operation, detail, dispatch } } : undefined;
+      if (isDisposed() || requestEpoch !== epoch) return outcome;
       source.update(draft => {
-        const detail = error instanceof Error ? error.message : String(error);
-        const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
-        draft.error = { action, probe, detail, dispatch };
+        draft.error = { ...operation, detail, dispatch };
         if (['delivery','deliver'].includes(action)) draft.deliveryStale = true;
-        if (action === 'status' || (mutates(action) && dispatch === 'unknown')) draft.stale = true;
+        if (action === 'status' || (mutates(action, extra) && dispatch === 'unknown')) draft.stale = true;
         if (action === 'config-save' && dispatch === 'unknown') draft.configUncertainty = true;
-        else if (mutates(action) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
+        else if (mutates(action, extra) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
       });
+      return outcome;
     } finally {
       clearTimeout(timer);
       pendingOperations.delete(disposeWait);
@@ -694,7 +713,7 @@ function createControl(execute, pendingOperations, isDisposed, intakeStore, setI
     if (shouldSelect && value.outcome === 'confirmed' &&
         (mutates(value.action) || !source.getSnapshot().status)) void run('status', next);
   };
-  return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action) };
+  return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action, { planning: { action: active.planningAction } }) };
 }
 
 function Configuration({ value, t }) {
@@ -832,10 +851,10 @@ function TaskStatus({ control, selection, t }) {
 function Feedback({ control, selection, reconcile, t }) {
   const busy = control.pending !== null;
   const error = control.error &&
-    (!mutates(control.error.action) || control.error.dispatch === 'not-dispatched') ? control.error : null;
+    (!mutates(control.error.action, { planning: { action: control.error.planningAction } }) || control.error.dispatch === 'not-dispatched') ? control.error : null;
   const mode = control.uncertainty ? 'uncertain' : error ? 'error' : busy ? 'loading' : 'idle';
   const otherSelection = busy && control.pending.key !== selectionKey(selectionOf(selection));
-  const locked = busy && mutates(control.pending.action);
+  const locked = busy && mutates(control.pending.action, { planning: { action: control.pending.planningAction } });
   const pendingLabel = busy ? t(otherSelection ? 'busyOther' : 'busy', {
     action: t(actionKey(control.pending)),
   }) : '';
@@ -881,9 +900,13 @@ function consoleReadString(value, label) {
   return value;
 }
 function consoleReadInput(value) {
-  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning', 'images'], 'console read request');
-  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning', 'images'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning', 'images', 'models'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning', 'images', 'models'].includes(value.action)) throw new Error('Console Remote accepts reads only');
   const output = { action: value.action };
+  if (value.action === 'models') {
+    if (!validModelCatalogRequest(value.models)) throw new Error('Invalid model catalog request');
+    output.models = { ...value.models };
+  } else if (value.models !== undefined) throw new Error('Model selectors require models');
   if (value.action === 'images') {
     if (!validImageSelection(value.images)) throw new Error('Invalid repository image selection');
     output.images = { paths: [...value.images.paths] };
@@ -984,12 +1007,13 @@ exports.apply = function apply(ctx) {
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
         }, pendingOperations, () => disposed, intakeStore, actions.setSelection);
-        binding = { control, configDrafts: new Map(), intakeStore };
+        binding = { control, configDrafts: new Map(), packetDrafts: new Map(), intakeStore };
         bindings.set(actions, binding);
       }
       return {
         hostSessionID: sessionId,
         configDrafts: binding.configDrafts,
+        packetDrafts: binding.packetDrafts,
         intakeStore: binding.intakeStore,
         hooks: { control: control.source },
         changeSelection: (next, requireIdle = false) => {

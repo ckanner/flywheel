@@ -20,16 +20,17 @@ import (
 // PlanningCommand contains data only. Human identity is supplied separately by
 // the verified host command or a terminal confirmation, never by request JSON.
 type PlanningCommand struct {
-	Action    string          `json:"action"`
-	Revision  int64           `json:"revision,omitempty"`
-	RequestID string          `json:"request-id,omitempty"`
-	Brief     *planning.Brief `json:"brief,omitempty"`
-	Scope     string          `json:"scope,omitempty"`
-	ScopeID   string          `json:"scope-id,omitempty"`
-	Design    *planning.Ref   `json:"design,omitempty"`
-	Text      string          `json:"text,omitempty"`
-	Policy    string          `json:"policy,omitempty"`
-	Start     *bool           `json:"start,omitempty"`
+	Collaboration *CollaborationEdit `json:"collaboration,omitempty"`
+	Action        string             `json:"action"`
+	Revision      int64              `json:"revision,omitempty"`
+	RequestID     string             `json:"request-id,omitempty"`
+	Brief         *planning.Brief    `json:"brief,omitempty"`
+	Scope         string             `json:"scope,omitempty"`
+	ScopeID       string             `json:"scope-id,omitempty"`
+	Design        *planning.Ref      `json:"design,omitempty"`
+	Text          string             `json:"text,omitempty"`
+	Policy        string             `json:"policy,omitempty"`
+	Start         *bool              `json:"start,omitempty"`
 }
 
 type PlanningControlReceipt struct {
@@ -67,7 +68,7 @@ func (r PlanningCommand) StartRequested(defaultValue bool) bool {
 }
 
 func ValidatePlanningCommand(r PlanningCommand) error {
-	if r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "") && r.Action != "plan" ||
+	if r.Collaboration != nil && r.Action != "collaboration" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "") && r.Action != "plan" ||
 		r.Design != nil && r.Action != "approve" && r.Action != "feedback" ||
 		r.Text != "" && r.Action != "feedback" && r.Action != "migrate" && r.Action != "plan" ||
 		r.Policy != "" && r.Action != "feedback" && r.Action != "migrate" ||
@@ -100,6 +101,8 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		return fmt.Errorf("planning feedback must be at most 8192 bytes without NUL")
 	}
 	switch r.Action {
+	case "collaboration":
+		return validateCollaborationEdit(r.Collaboration)
 	case "plan":
 		if r.Scope != "design" && r.Scope != "milestone" && r.Scope != "packet" && r.Scope != "replan" {
 			return fmt.Errorf("planning scope must be design, milestone, packet, or replan")
@@ -119,7 +122,7 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		}
 	case "migrate":
 	default:
-		return fmt.Errorf("planning action must be prepare, plan, feedback, approve, status, or migrate")
+		return fmt.Errorf("planning action must be prepare, plan, feedback, approve, status, migrate, or collaboration")
 	}
 	return nil
 }
@@ -175,6 +178,18 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 		return st, nil, err
 	}
 	if rejected := rejectedPlanningReceipt(st, request.RequestID); rejected != nil {
+		if request.Action == "collaboration" && rejected.Action == "collaboration" {
+			digest := ""
+			for _, value := range st.Inbox {
+				if item, ok := value.(map[string]any); ok && item["kind"] == "planning-collaboration-rejected" && item["request-id"] == request.RequestID {
+					digest, _ = item["command-digest"].(string)
+				}
+			}
+			if digest != sessionHash(request) {
+				return st, rejected, fmt.Errorf("rejected planning request-id was reused for different content; submit a new request-id")
+			}
+			return st, rejected, nil
+		}
 		return st, rejected, fmt.Errorf("planning request-id was already rejected; submit refreshed input with a new request-id")
 	}
 	already, err := planningCommandApplied(st.Planning, request, trustedSource)
@@ -182,22 +197,38 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 		return st, planningControlResult(st, request, already, "This exact planning action is already recorded."), err
 	}
 	if st.Revision != request.Revision {
-		return st, nil, fmt.Errorf("planning state revision changed; refresh before submitting this action")
+		return rejectPlanningCollaboration(opts, st, request, fmt.Errorf("planning state revision changed; refresh before submitting this action"))
 	}
 	if st.Planning.PendingActivation != nil || st.Handoff != nil {
-		return st, nil, fmt.Errorf("planning control requires completed activation and returned human session control")
+		return rejectPlanningCollaboration(opts, st, request, fmt.Errorf("planning control requires completed activation and returned human session control"))
 	}
 	if planningHasPendingReceipt(st) {
 		if request.Action == "feedback" {
 			return queuePlanningFeedback(opts, request)
 		}
-		return st, nil, fmt.Errorf("consume or reconcile the original invocation receipt before changing planning authority")
+		return rejectPlanningCollaboration(opts, st, request, fmt.Errorf("consume or reconcile the original invocation receipt before changing planning authority"))
 	}
 	if err := applyPlanningCommand(opts, st, request, trustedSource); err != nil {
-		return st, nil, err
+		return rejectPlanningCollaboration(opts, st, request, err)
 	}
 	st, err = state.Save(opts.TaskDir, st, &request.Revision)
 	return st, planningControlResult(st, request, false, "Planning action recorded for the exact current input."), err
+}
+
+// A confirmed pre-adoption refusal is an auditable terminal result, not an
+// unknown model invocation. Persist only the bounded refusal identity; contracts,
+// approvals and execution requests are unchanged. A failed CAS stays unknown.
+func rejectPlanningCollaboration(opts RunOpts, st *state.State, r PlanningCommand, rejection error) (*state.State, *PlanningControlReceipt, error) {
+	if r.Action != "collaboration" {
+		return st, nil, rejection
+	}
+	staged := jsonClone(st)
+	staged.Inbox = append(staged.Inbox, map[string]any{"kind": "planning-collaboration-rejected", "request-id": r.RequestID, "command-digest": sessionHash(r), "message": boundedDecisionText(rejection.Error(), 1024)})
+	saved, err := state.Save(opts.TaskDir, staged, &st.Revision)
+	if err != nil {
+		return st, nil, err
+	}
+	return saved, rejectedPlanningReceipt(saved, r.RequestID), nil
 }
 
 func planningControlResult(st *state.State, r PlanningCommand, unchanged bool, message string) *PlanningControlReceipt {
@@ -262,7 +293,9 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 	matched, same := false, true
 	for _, old := range p.Requests {
 		if old.ID == r.RequestID {
-			matched, same = true, same && r.Action == "plan" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.PlanningOnly && old.Feedback == r.Text
+			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text
+			matchesEdit := r.Action == "collaboration" && r.Collaboration != nil && old.Origin == "collaboration-edit" && old.Scope == "packet" && old.ScopeID == r.Collaboration.Packet && old.Feedback == collaborationRequestIdentity(r.Collaboration)
+			matched, same = true, same && (matchesPlan || matchesEdit) && old.PlanningOnly
 		}
 	}
 	for _, old := range p.Feedback {
@@ -284,6 +317,10 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 func applyPlanningCommand(opts RunOpts, st *state.State, r PlanningCommand, source string) error {
 	p := st.Planning
 	switch r.Action {
+	case "collaboration":
+		if err := applyCollaborationEdit(opts, st, r); err != nil {
+			return err
+		}
 	case "plan":
 		if err := planning.BeginRequest(p, planning.Request{ID: r.RequestID, Scope: r.Scope, ScopeID: r.ScopeID, InputRevision: p.InputRevision, PlanningOnly: true, Feedback: r.Text}); err != nil {
 			return err

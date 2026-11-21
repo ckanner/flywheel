@@ -53,6 +53,10 @@ function loadAntigravityWorkerPath() {
   return packageFile('dist/antigravity-worker.mjs');
 }
 
+function loadModelCatalogWorkerPath() {
+  return packageFile('dist/model-catalog-worker.mjs');
+}
+
 function loadClaudeCodeProWorkerPath() {
   return packageFile('dist/claude-code-pro-worker.mjs');
 }
@@ -105,4 +109,4 @@ function runChild(command, args, { env = process.env, cwd, label = "flywheel" } 
   });
 }
 
-module.exports = { loadAntigravityWorkerPath, loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, assertSupportedNode, runChild };
+module.exports = { loadModelCatalogWorkerPath, loadAntigravityWorkerPath, loadNativePath, loadWorkerPath, loadCodexProWorkerPath, loadClaudeCodeProWorkerPath, loadKimiNativeWorkerPath, assertSupportedNode, runChild };

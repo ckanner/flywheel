@@ -941,7 +941,295 @@ function validCollaborationView(value) {
       : value.value == null);
 }
 
-function NodeCollaboration({ packetID, state, control, selection, run, t }) {
+Object.assign(zh, {
+  wbEligibility: '当前执行资格', wbEligibilityHelp: '由引擎按当前 packet、执行深度和配置检查。资格检查不会启动模型调用；状态变化后需要重新检查。',
+  wbEligibilityRead: '检查执行资格', wbEligibilityUnrequested: '尚未检查当前执行候选', wbEligibilityEligible: '满足当前输入与协作要求',
+  wbEligibilityIneligible: '当前不可用', wbEligibilityUnknown: '无法确认当前执行资格', wbEligibilityStale: '检查结果已过期，请重新检查',
+  wbEligibilityNoCandidates: '引擎未返回可检查的执行候选', wbEligibilityEvidence: '展开执行资格原始依据',
+  wbEligibilityChecking: '正在检查当前执行资格',
+  wbEligibilityFrozen: '检查依据：当前运行已冻结的配置', wbEligibilityConfiguration: '检查依据：当前生效配置',
+  wbEligibilityImagePass: '当前通道满足这个步骤声明的图片输入要求', wbEligibilityImageFail: '这个步骤需要原图；所选通道尚未接通图片传输',
+  wbEligibilityNativePass: '原生配置与执行后端匹配', wbEligibilityNativeFail: '原生配置无效或不匹配当前执行后端',
+  wbEligibilityFullPass: '当前执行深度为 Full', wbEligibilityFullFail: 'Swarm 需要 Full 执行深度',
+  wbEligibilitySplitPass: '已声明协作分工', wbEligibilitySplitFail: '尚未准备可并行的独立分工',
+  wbEligibilityWritesPass: '独立分工通过写入范围检查', wbEligibilityWritesFail: '分工未通过写入范围检查',
+  wbCollaborationEdit: '编辑分工草案', wbCollaborationEditor: '分工草案',
+  wbCollaborationEditHelp: '填写 2–8 个独立子任务。每项写入范围必须位于父任务允许范围内，且不能与其他子任务重叠。',
+  wbCollaborationReviewHelp: '保存会生成新的计划版本并重新进行独立审查，原版本的审查不适用于新草案。原设计批准只在目标与范围不变时保留。此操作不会启动实施。',
+  wbCollaborationParentWrites: '父任务允许写入范围', wbCollaborationGoal: '子任务目标', wbCollaborationWriteLines: '写入范围（每行一项）',
+  wbCollaborationTask: '子任务 {index}', wbCollaborationAdd: '添加子任务', wbCollaborationRemove: '移除此子任务',
+  wbCollaborationDraftInvalid: '需要 2–8 个子任务；每项目标为 1–512 字，每项写入范围为 1–64 条。',
+  wbCollaborationDraftTooLarge: '分工草案超过 32 KiB，请缩短目标或写入范围后再保存。',
+  wbCollaborationSave: '保存草案并重新审查', wbCollaborationReload: '重新读取并替换草案', wbCollaborationClose: '关闭分工草案',
+  wbCollaborationRebase: '刷新版本并保留草案', wbCollaborationRebaseFailed: '契约、计划或父范围已变化，或当前阶段不可编辑；原草案已保留，不能自动移到新版本。',
+  wbCollaborationSnapshotStale: '草案基于旧版本，不能保存。当前内容已保留；重新读取会替换这些未保存的内容。',
+  wbCollaborationLoadFailed: '未能读取可编辑的分工快照，当前草案没有改变。', wbCollaborationSaveFailed: '没有收到可确认的保存结果。草案已保留，请刷新任务状态并核对结果后再操作。',
+  wbCollaborationSaved: '新的分工计划已保存并请求独立审查；只有新计划通过审查后才能执行。', wbCollaborationNotEditable: '当前阶段不可编辑分工',
+  wbCollaborationRejected: '分工草案未被采用', wbCollaborationReconcile: '刷新任务并核对结果',
+  wbCollaborationQueued: '分工草案请求已排队，尚未确认采用；请核对这一请求的回执。',
+  wbCollaborationSnapshot: '展开分工草案原始快照', wbCollaborationPending: '正在读取或保存分工草案',
+});
+Object.assign(en, {
+  wbEligibility: 'Current execution eligibility', wbEligibilityHelp: 'The engine checks this packet, execution depth and configuration. This check does not start a model invocation; check again after the state changes.',
+  wbEligibilityRead: 'Check execution eligibility', wbEligibilityUnrequested: 'Current execution candidates have not been checked', wbEligibilityEligible: 'Meets current input and collaboration requirements',
+  wbEligibilityIneligible: 'Currently unavailable', wbEligibilityUnknown: 'Current execution eligibility could not be confirmed', wbEligibilityStale: 'This check is out of date; check again',
+  wbEligibilityNoCandidates: 'The engine returned no execution candidates to check', wbEligibilityEvidence: 'Expand original execution eligibility evidence',
+  wbEligibilityChecking: 'Checking current execution eligibility',
+  wbEligibilityFrozen: 'Checked against the frozen configuration for this run', wbEligibilityConfiguration: 'Checked against the current effective configuration',
+  wbEligibilityImagePass: 'The channel meets this step’s declared image input requirements', wbEligibilityImageFail: 'This step requires original images; the selected channel has no connected image transport',
+  wbEligibilityNativePass: 'The native profile matches the execution backend', wbEligibilityNativeFail: 'The native profile is invalid or does not match the execution backend',
+  wbEligibilityFullPass: 'The execution depth is Full', wbEligibilityFullFail: 'Swarm requires Full execution depth',
+  wbEligibilitySplitPass: 'A collaboration task split is declared', wbEligibilitySplitFail: 'An independent parallel task split has not been prepared',
+  wbEligibilityWritesPass: 'Independent task write scopes passed validation', wbEligibilityWritesFail: 'The collaboration write scopes failed validation',
+  wbCollaborationEdit: 'Edit collaboration draft', wbCollaborationEditor: 'Collaboration draft',
+  wbCollaborationEditHelp: 'Define 2–8 independent tasks. Each write scope must stay within the parent task scope and must not overlap another task.',
+  wbCollaborationReviewHelp: 'Saving creates a new plan revision for independent review; the old plan review does not cover this draft. Design approval is retained only while its goal and scope remain unchanged. This action does not start implementation.',
+  wbCollaborationParentWrites: 'Parent task write scope', wbCollaborationGoal: 'Task goal', wbCollaborationWriteLines: 'Write scopes (one per line)',
+  wbCollaborationTask: 'Task {index}', wbCollaborationAdd: 'Add task', wbCollaborationRemove: 'Remove this task',
+  wbCollaborationDraftInvalid: 'Define 2–8 tasks, each with a 1–512 character goal and 1–64 write scopes.',
+  wbCollaborationDraftTooLarge: 'The collaboration draft exceeds 32 KiB. Shorten the goals or write scopes before saving.',
+  wbCollaborationSave: 'Save draft for review', wbCollaborationReload: 'Reread and replace draft', wbCollaborationClose: 'Close collaboration draft',
+  wbCollaborationRebase: 'Refresh revision and keep draft', wbCollaborationRebaseFailed: 'The contract, plan or parent scope changed, or this stage is not editable. Your original draft is retained and cannot be moved to the new revision automatically.',
+  wbCollaborationSnapshotStale: 'This draft is based on an older revision and cannot be saved. Your changes are retained; rereading will replace these unsaved changes.',
+  wbCollaborationLoadFailed: 'An editable collaboration snapshot could not be read. Your draft is unchanged.', wbCollaborationSaveFailed: 'A confirmed save result was not received. Your draft is retained; refresh the task and reconcile the outcome before continuing.',
+  wbCollaborationSaved: 'The new collaboration plan was saved for independent review. It must pass review before execution.', wbCollaborationNotEditable: 'Collaboration cannot be edited at this stage',
+  wbCollaborationRejected: 'The collaboration draft was not adopted', wbCollaborationReconcile: 'Refresh task and reconcile outcome',
+  wbCollaborationQueued: 'The collaboration request is queued and adoption is unconfirmed. Reconcile the receipt for this request.',
+  wbCollaborationSnapshot: 'Expand original collaboration draft snapshot', wbCollaborationPending: 'Reading or saving the collaboration draft',
+});
+
+function collaborationDraftValue(rows) {
+  return { version: 1, tasks: rows.map(row => ({ goal: row.goal, writes: row.writes.split(/\r?\n/).map(path => path.trim()).filter(Boolean) })) };
+}
+
+function collaborationDraftValid(rows) {
+  const value = collaborationDraftValue(rows);
+  return value.tasks.length >= 2 && value.tasks.length <= 8 && value.tasks.every(task => task.goal.trim() && !task.goal.includes('\0') && Array.from(task.goal).length <= 512 &&
+    task.writes.length >= 1 && task.writes.length <= 64 && task.writes.every(path => path.length <= 8192 && !path.includes('\0')));
+}
+
+function collaborationEditBytes(value) {
+  let bytes = 0;
+  for (const character of JSON.stringify(value)) {
+    const point = character.codePointAt(0);
+    bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+    if (bytes > (32 << 10)) break;
+  }
+  return bytes;
+}
+
+function CollaborationTaskFields({ rows, disabled, change, add, remove, t }) {
+  return h(React.Fragment, null,
+    ...rows.map((row, index) => h('fieldset', { key: row.key, className: css.editorBinding, disabled, 'data-collaboration-task': index },
+      h('legend', null, t('wbCollaborationTask', { index: index + 1 })),
+      h('label', { className: css.editorField }, t('wbCollaborationGoal'),
+        h('textarea', { className: css.planningInput, value: row.goal, 'aria-label': t('wbCollaborationTask', { index: index + 1 }) + ' · ' + t('wbCollaborationGoal'),
+          onInput: event => change(index, 'goal', event.target.value) })),
+      h('label', { className: css.editorField }, t('wbCollaborationWriteLines'),
+        h('textarea', { className: css.planningInput, value: row.writes, 'aria-label': t('wbCollaborationTask', { index: index + 1 }) + ' · ' + t('wbCollaborationWriteLines'),
+          onInput: event => change(index, 'writes', event.target.value) })),
+      h(Button, { disabled: disabled || rows.length <= 2, onClick: () => remove(index) }, t('wbCollaborationRemove')))),
+    h(Button, { disabled: disabled || rows.length >= 8, onClick: add }, t('wbCollaborationAdd')));
+}
+
+function validCollaborationEditor(value) {
+  const fingerprint = digest => typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest);
+  return value == null || record(value) && typeof value.packet === 'string' && /^M\d+-T\d+$/.test(value.packet) &&
+    Number.isSafeInteger(value.revision) && value.revision > 0 && typeof value.editable === 'boolean' && typeof value.reason === 'string' &&
+    Array.isArray(value.writes) && value.writes.every(path => typeof path === 'string' && path.length > 0) &&
+    (value.editable ? fingerprint(value.contractFingerprint) && planningRef(value.plan) :
+      (value.contractFingerprint == null || value.contractFingerprint === '' || fingerprint(value.contractFingerprint)) && (value.plan == null || planningRef(value.plan))) &&
+    (value.value == null || record(value.value) && value.value.version === 1 && Array.isArray(value.value.tasks) &&
+      value.value.tasks.length >= 2 && value.value.tasks.length <= 8 && value.value.tasks.every(task => record(task) && typeof task.goal === 'string' &&
+        task.goal.trim() && Array.from(task.goal).length <= 512 && Array.isArray(task.writes) && task.writes.length > 0 && task.writes.length <= 64 &&
+        task.writes.every(path => typeof path === 'string' && path.length > 0)));
+}
+
+function validNodeEligibility(value) {
+  return value == null || record(value) && typeof value.packet === 'string' && /^M\d+-T\d+$/.test(value.packet) &&
+    Number.isSafeInteger(value.revision) && value.revision > 0 && ['verified', 'unknown'].includes(value.status) && typeof value.reason === 'string' &&
+    ['frozen', 'configuration'].includes(value.source) && (value.route == null || typeof value.route === 'string') &&
+    Array.isArray(value.candidates) && value.candidates.every(candidate => record(candidate) && typeof candidate.id === 'string' &&
+      record(candidate.binding) && typeof candidate.binding.harness === 'string' && candidate.binding.harness.length > 0 &&
+      (candidate.binding.model == null || typeof candidate.binding.model === 'string') &&
+      ['provider', 'channel', 'thinking', 'native-profile', 'permission', 'session-mode'].every(key => candidate.binding[key] == null || typeof candidate.binding[key] === 'string') &&
+      typeof candidate.eligible === 'boolean' && Array.isArray(candidate.conditions) && candidate.conditions.every(condition => record(condition) &&
+        typeof condition.code === 'string' && typeof condition.passed === 'boolean' && typeof condition.message === 'string'));
+}
+
+function eligibilityConditionLabel(condition, t) {
+  const labels = { 'image-input': 'wbEligibilityImage', 'native-profile': 'wbEligibilityNative', 'full-workflow': 'wbEligibilityFull',
+    'collaboration-declared': 'wbEligibilitySplit', 'independent-writes': 'wbEligibilityWrites' };
+  if (!Object.hasOwn(labels, condition.code)) return condition.message;
+  return t(labels[condition.code] + (condition.passed ? 'Pass' : 'Fail')) +
+    (condition.code === 'independent-writes' && !condition.passed && condition.message ? ': ' + condition.message : '');
+}
+
+function NodeExecutionEligibility({ packetID, state, control, selection, run, t }) {
+  const [failed, setFailed] = React.useState(false);
+  if (!packetID) return null;
+  const view = control.node?.id === packetID ? control.node.eligibility : null;
+  const valid = view && validNodeEligibility(view) && view.packet === packetID;
+  const stale = valid && (control.stale || control.node.revision !== state.revision || view.revision !== state.revision);
+  const checking = control.pending?.action === 'node', readFailed = failed || control.error?.action === 'node';
+  const verified = valid && !stale && !readFailed && !checking && view.status === 'verified';
+  const inspect = async () => {
+    setFailed(false);
+    const result = await run('node', selection, false, { packet: packetID });
+    if (!result?.node?.eligibility) setFailed(true);
+  };
+  return h('section', { className: css.inspectorSection, 'data-node-eligibility': packetID },
+    h('h4', null, t('wbEligibility')), h('p', { className: css.meta }, t('wbEligibilityHelp')),
+    h(Button, { disabled: !!control.pending, onClick: inspect }, t('wbEligibilityRead')),
+    !verified && h('p', { className: css.meta, 'data-eligibility-status': checking ? 'pending' : stale ? 'stale' : readFailed || view ? 'unknown' : 'unrequested' },
+      t(checking ? 'wbEligibilityChecking' : stale ? 'wbEligibilityStale' : readFailed || view ? 'wbEligibilityUnknown' : 'wbEligibilityUnrequested')),
+    valid && !stale && !readFailed && !checking && h('p', { className: css.meta }, t(view.source === 'frozen' ? 'wbEligibilityFrozen' : 'wbEligibilityConfiguration')),
+    valid && !stale && !readFailed && !checking && view.reason && h('p', { className: css.meta }, view.reason),
+    verified && (view.candidates.length ? view.candidates.map((candidate, index) => {
+      const binding = candidate.binding;
+      const property = (label, content) => h(React.Fragment, { key: label }, h('dt', null, label), h('dd', null, content));
+      return h('article', { key: candidate.id + ':' + index, className: css.observationBlock, 'data-eligibility-candidate': candidate.id, 'data-eligible': String(candidate.eligible) },
+        h('h5', null, bindingCaption(binding) || candidate.id),
+        h('p', { className: candidate.eligible ? css.meta : css.warningText }, t(candidate.eligible ? 'wbEligibilityEligible' : 'wbEligibilityIneligible')),
+        h('dl', { className: css.consoleProperties },
+          property(t('runtimeBindingID'), candidate.id), property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })),
+          property(t('consoleModel'), binding.model || t('wbBindingModelUnspecified')), property(t('consoleThinking'), bindingEffortLabel(binding, t)),
+          binding.channel && property(t('channel'), binding.channel), binding['native-profile'] && property(t('cfgNative'), binding['native-profile'])),
+        h('ul', null, ...candidate.conditions.map((condition, conditionIndex) => h('li', { key: conditionIndex, 'data-eligibility-condition': condition.code, 'data-passed': String(condition.passed), className: condition.passed ? css.meta : css.warningText }, eligibilityConditionLabel(condition, t)))));
+    }) : h('p', { className: css.meta }, t('wbEligibilityNoCandidates'))),
+    valid && h(RawEvidence, { value: view, label: 'wbEligibilityEvidence', t }));
+}
+
+function NodeCollaborationEditor({ packetID, state, control, selection, run, packetDrafts, t }) {
+  const cacheKey = JSON.stringify([selection.cwd ?? '', selection.taskDir ?? '', packetID]);
+  const draft = React.useMemo(() => {
+    let value = packetDrafts?.get(cacheKey);
+    if (!value) {
+      value = createSnapshot({ open: false, snapshot: null, rows: [], notice: null, pending: false, sequence: 0 });
+      packetDrafts?.set(cacheKey, value);
+    }
+    return value;
+  }, [packetDrafts, cacheKey]);
+  // The Session binding owns this observable, so closing a node or remounting a
+  // view retains both edits and the exact receipt needed after a lost reply.
+  const { open, snapshot, rows, notice, pending: localPending } = React.useSyncExternalStore(draft.subscribe, draft.getSnapshot, draft.getSnapshot);
+  React.useEffect(() => {
+    const error = control.error;
+    if (notice?.kind !== 'unknown' || error?.action !== 'planning' || error.dispatch !== 'not-dispatched' ||
+        error.planningAction !== 'collaboration' || error.planningRequestID !== notice.requestID) return;
+    draft.update(next => {
+      if (next.notice?.kind === 'unknown' && next.notice.requestID === error.planningRequestID)
+        next.notice = { kind: 'rejected', message: error.detail };
+    });
+  }, [control.error, notice, draft]);
+  const busy = !!control.pending || localPending;
+  const latest = control.node?.id === packetID ? control.node.collaborationEditor : null;
+  const stale = !!snapshot && (snapshot.revision !== state.revision || control.stale || !latest ||
+    latest.contractFingerprint !== snapshot.contractFingerprint || !(latest.plan == null && snapshot.plan == null || samePlanningRef(latest.plan, snapshot.plan)));
+  const unresolved = ['pending', 'unknown', 'queued'].includes(notice?.kind);
+  const blocked = busy || stale || unresolved || ['read-failed', 'rebase-failed'].includes(notice?.kind) || control.uncertainty || control.status?.running || state.handoff || !snapshot?.editable || !latest?.editable;
+  const value = collaborationDraftValue(rows);
+  const edit = snapshot && { packet: packetID, contractFingerprint: snapshot.contractFingerprint, plan: snapshot.plan, value };
+  const dirty = !!snapshot && JSON.stringify(value) !== JSON.stringify(snapshot.value ?? null);
+  const fieldsValid = collaborationDraftValid(rows), bounded = !!edit && collaborationEditBytes(edit) <= (32 << 10);
+  const validDraft = fieldsValid && bounded;
+  const read = async (preserve = false) => {
+    if (busy || unresolved) return;
+    draft.update(next => { next.pending = true; next.notice = null; next.open = true; });
+    try {
+      const result = await run('node', selection, false, { packet: packetID });
+      const next = result?.node?.collaborationEditor;
+      if (!next || !validCollaborationEditor(next) || result.node.id !== packetID || next.packet !== packetID ||
+          result.node.revision !== next.revision || result.state?.revision !== next.revision) {
+        draft.update(value => { value.notice = { kind: 'read-failed' }; }); return;
+      }
+      if (preserve && (!snapshot || !next.editable || next.contractFingerprint !== snapshot.contractFingerprint || !samePlanningRef(next.plan, snapshot.plan) ||
+          JSON.stringify(next.writes) !== JSON.stringify(snapshot.writes) || JSON.stringify(next.value ?? null) !== JSON.stringify(snapshot.value ?? null))) {
+        draft.update(value => { value.notice = { kind: 'rebase-failed' }; }); return;
+      }
+      draft.update(value => {
+        value.snapshot = next;
+        if (!preserve) value.rows = (next.value?.tasks ?? [{ goal: '', writes: [] }, { goal: '', writes: [] }]).map(task =>
+          ({ key: ++value.sequence, goal: task.goal, writes: task.writes.join('\n') }));
+      });
+    } finally { draft.update(value => { value.pending = false; }); }
+  };
+  const acceptReceipt = (result, requestID) => {
+    const receipt = result?.['planning-control'];
+    const failure = result?.controlFailure;
+    draft.update(next => {
+      if (next.notice?.requestID !== requestID) return;
+      if (result?.ok === undefined && failure?.dispatch === 'not-dispatched' && failure.action === 'planning' &&
+          failure.planningAction === 'collaboration' && failure.planningRequestID === requestID &&
+          failure.key === selectionKey(selectionOf(selection))) {
+        next.notice = { kind: 'rejected', message: failure.detail }; return;
+      }
+      if (receipt?.action !== 'collaboration' || receipt['request-id'] !== requestID || !['applied', 'unchanged', 'rejected', 'queued'].includes(receipt.status)) {
+        next.notice = { kind: 'unknown', requestID }; return;
+      }
+      if (receipt.status === 'queued') { next.notice = { kind: 'queued', requestID }; return; }
+      if (receipt.status === 'rejected') { next.notice = { kind: 'rejected', message: receipt.message }; return; }
+      next.notice = { kind: 'saved', message: receipt.message }; next.open = false; next.snapshot = null; next.rows = [];
+    });
+  };
+  React.useEffect(() => {
+    const receipt = control.planningReceipt;
+    if (!localPending && ['unknown', 'queued'].includes(notice?.kind) && receipt?.action === 'collaboration' && receipt['request-id'] === notice.requestID &&
+        ['applied', 'unchanged', 'rejected'].includes(receipt.status)) acceptReceipt({ 'planning-control': receipt }, notice.requestID);
+  }, [control.planningReceipt, localPending, notice, draft]);
+  const save = async () => {
+    if (blocked || !dirty || !validDraft) return;
+    const requestID = planningRequestID();
+    // Persist this identity before dispatch. The same cached draft can settle
+    // after its component unmounts without changing another packet's editor.
+    draft.update(next => { next.pending = true; next.notice = { kind: 'pending', requestID }; });
+    try {
+      const result = await run('planning', selection, false, { planning: {
+        action: 'collaboration', revision: snapshot.revision, 'request-id': requestID, start: true,
+        collaboration: edit,
+      } });
+      acceptReceipt(result, requestID);
+    } finally { draft.update(next => { next.pending = false; }); }
+  };
+  const reconcile = async () => {
+    if (busy || !unresolved) return;
+    draft.update(next => { next.pending = true; });
+    try {
+      const result = await run('planning', selection, false, { planning: { action: 'status', 'request-id': notice.requestID } });
+      acceptReceipt(result, notice.requestID);
+    } finally { draft.update(next => { next.pending = false; }); }
+  };
+  const change = (index, field, value) => draft.update(next => { next.rows = next.rows.map((row, n) => n === index ? { ...row, [field]: value } : row); });
+  return h('section', { className: css.inspectorSection, 'data-collaboration-editor': packetID },
+    !open && h(Button, { disabled: busy, onClick: () => read() }, t('wbCollaborationEdit')),
+    open && h(React.Fragment, null,
+      h('h4', null, t('wbCollaborationEditor')), h('p', { className: css.meta }, t('wbCollaborationEditHelp')),
+      h('p', { className: css.meta }, t('wbCollaborationReviewHelp')),
+      snapshot && h(React.Fragment, null,
+        h('p', { className: css.path }, t('wbCollaborationParentWrites') + ': ' + (snapshot.writes.join(', ') || '—')),
+        h(PlanningReference, { value: snapshot.plan, t }),
+        !snapshot.editable && h('p', { className: css.warningText, 'data-collaboration-uneditable': true }, t('wbCollaborationNotEditable') + (snapshot.reason ? ': ' + snapshot.reason : '')),
+        snapshot.editable && h(CollaborationTaskFields, { rows, disabled: !!blocked, change,
+          add: () => draft.update(next => { next.rows = [...next.rows, { key: ++next.sequence, goal: '', writes: '' }]; }),
+          remove: index => draft.update(next => { next.rows = next.rows.filter((_, n) => n !== index); }), t }),
+        snapshot.editable && !fieldsValid && h('p', { className: css.meta }, t('wbCollaborationDraftInvalid')),
+        snapshot.editable && !bounded && h('p', { className: css.meta, 'data-collaboration-too-large': true }, t('wbCollaborationDraftTooLarge')),
+        stale && h('p', { role: 'alert', className: css.warningText, 'data-collaboration-stale': true }, t('wbCollaborationSnapshotStale')),
+        !stale && (control.uncertainty || control.status?.running || state.handoff) && h('p', { className: css.warningText },
+          t(control.uncertainty ? 'wbUnknown' : control.status?.running ? 'wbRunning' : 'wbHeld')),
+        h(Button, { variant: 'primary', disabled: !!blocked || !dirty || !validDraft, onClick: save }, t('wbCollaborationSave')),
+        h(RawEvidence, { value: snapshot, label: 'wbCollaborationSnapshot', t })),
+      h('div', { className: css.actions },
+        snapshot && (stale || ['rejected', 'read-failed', 'rebase-failed'].includes(notice?.kind)) && h(Button, { disabled: busy || unresolved, onClick: () => read(true) }, t('wbCollaborationRebase')),
+        h(Button, { disabled: busy || unresolved, onClick: () => read() }, t('wbCollaborationReload')),
+        h(Button, { disabled: busy || unresolved, onClick: () => draft.update(next => { next.open = false; next.snapshot = null; next.rows = []; next.notice = null; }) }, t('wbCollaborationClose')))),
+    localPending && h('p', { role: 'status', className: css.meta }, t('wbCollaborationPending')),
+    notice && notice.kind !== 'pending' && h('p', { role: notice.kind === 'saved' ? 'status' : 'alert', 'data-collaboration-result': notice.kind, className: notice.kind === 'saved' ? css.meta : css.warningText },
+      t({ saved: 'wbCollaborationSaved', rejected: 'wbCollaborationRejected', queued: 'wbCollaborationQueued', unknown: 'wbCollaborationSaveFailed', 'read-failed': 'wbCollaborationLoadFailed', 'rebase-failed': 'wbCollaborationRebaseFailed' }[notice.kind]) + (notice.message ? ' ' + notice.message : '')),
+    unresolved && h(Button, { disabled: busy, onClick: reconcile }, t('wbCollaborationReconcile')));
+}
+
+function NodeCollaboration({ packetID, state, control, selection, run, packetDrafts, t }) {
   if (!packetID) return null;
   const view = control.node?.id === packetID && control.node.revision === state.revision ? control.node.collaboration : null;
   return h('section', { className: css.inspectorSection, 'data-node-collaboration': packetID },
@@ -951,7 +1239,8 @@ function NodeCollaboration({ packetID, state, control, selection, run, t }) {
       h('p', null, task.goal), h('p', { className: css.meta }, t('wbCollaborationWrites') + ': ' + task.writes.join(', ')))))
       : h('p', { className: css.meta }, t(view?.status === 'absent' ? 'wbCollaborationNone' : view?.reason === 'display-limit-exceeded' ? 'wbCollaborationUnshown' : 'wbCollaborationUnknown')),
     h(Button, { disabled: !!control.pending, onClick: () => run('node', selection, false, { packet: packetID }) }, t('wbCollaborationRead')),
-    view && h(RawEvidence, { value: view, label: 'wbCollaborationEvidence', t }));
+    view && h(RawEvidence, { value: view, label: 'wbCollaborationEvidence', t }),
+    h(NodeCollaborationEditor, { key: selection.taskDir + '/' + packetID, packetID, state, control, selection, run, packetDrafts, t }));
 }
 
 function NodeNativeObservations({ facts, control, selection, run, t }) {
@@ -993,7 +1282,7 @@ function stageBlockReason(control, node, state) {
   return null;
 }
 
-function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect }) {
+function ConsoleCanvas({ control, selection, run, packetDrafts, t, focusRequest = 0, onInspect }) {
   const [scope, setScope] = React.useState(null),
     [selected, setSelected] = React.useState(null);
   const [page, setPage] = React.useState(0),
@@ -1428,6 +1717,7 @@ function ConsoleCanvas({ control, selection, run, t, focusRequest = 0, onInspect
           control,
           selection,
           run,
+          packetDrafts,
           t,
           tab,
           setTab,
@@ -1490,6 +1780,7 @@ function WorkbenchNodeInspector({
   control,
   selection,
   run,
+  packetDrafts,
   t,
   tab,
   setTab,
@@ -1549,7 +1840,8 @@ function WorkbenchNodeInspector({
         ((chosen.packet && !chosen.stage) || chosen.group) && h(Button, { onClick: () => expand(chosen) }, t(chosen.packet ? 'wbExpand' : 'wbExpandGroup')),
         ['delivery', 'merge'].includes(chosen.id) && h(DeliveryPanel, { control, selection, run, t }),
         h(NodeBindingHistory, { facts: bindingFacts, state, t }),
-        h(NodeCollaboration, { packetID, state, control, selection, run, t }),
+        h(NodeExecutionEligibility, { key: selection.taskDir + '/' + packetID, packetID, state, control, selection, run, t }),
+        h(NodeCollaboration, { packetID, state, control, selection, run, packetDrafts, t }),
         h(NodeNativeObservations, { facts: bindingFacts, control, selection, run, t }),
         h('section', { className: css.inspectorSection }, h('h4', null, t('wbSession')),
           sessions.length ? sessions.map(([key, value]) => h('article', { key, className: css.sessionSummary },
@@ -1574,6 +1866,7 @@ function WorkbenchNodeInspector({
 function TaskView({
   hostSessionID,
   configDrafts,
+  packetDrafts,
   intakeStore,
   useStore,
   useProjection,
@@ -1687,11 +1980,11 @@ function TaskView({
         h('label', { className: css.editorField }, t('launchMode'), h('select', { className: css.modeSelect, value: selection.mode, onChange: e => actions.setMode(e.target.value) }, ...['auto','quick','full'].map(mode => h('option', { key: mode, value: mode }, mode === 'auto' ? 'Auto' : mode === 'quick' ? 'ultraWork / Quick' : 'Full')))),
         button('launch', 'launch', true, false, 'primary')),
       preparation && h(InvestigationPanel, { control, selection, run, t }),
-      state?.planning && h(PlanningPanel, { key: selectionKey(selectionOf(selection)), control, selection, run, t }),
+      state?.planning && h(PlanningPanel, { key: 'planning:' + selectionKey(selectionOf(selection)), control, selection, run, t }),
       state && h(RuntimeDecisionPanel, { ledger: state['runtime-decisions'], t }),
       state && h(ExecutionPolicyChanges, { packets: state.packets, t }),
       !state && !preparation && h('div', { className: css.workbenchEmpty }, h('h2', { className: css.title }, t(recoveringIntake ? 'intakeResume' : hasTask ? 'wbReadFirst' : 'taskNoSelection')), h('p', null, t(recoveringIntake ? 'intakeResumeHelp' : hasTask ? 'wbStartHelp' : 'taskEmptyHelp')), (!hasTask || recoveringIntake) && h(TaskIntake, { key: hostSessionID, control, selection, intakeStore, changeSelection, run, t })),
-      !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: selectionKey(selectionOf(selection)), control, selection, run, t, focusRequest, onInspect: setInspecting })),
+      !preparation && (!state?.planning || state.planning.active) && h(ConsoleCanvas, { key: 'canvas:' + selectionKey(selectionOf(selection)), control, selection, run, packetDrafts, t, focusRequest, onInspect: setInspecting })),
     h('div', { className: css.settingsPage, hidden: page !== 'config' },
       h(ConfigEditor, { key: selectionKey(selectionOf(selection)), contextKey: selectionKey(selectionOf(selection)), cache: configDrafts, control, selection, run, t, active: page === 'config', onClose: () => setPage('canvas'), diagnostics })),
     h('div', { className: css.historyPage, hidden: page !== 'runs' },

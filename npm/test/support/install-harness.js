@@ -153,7 +153,7 @@ async function environment(registryURL, version) {
     /^(?:ANTHROPIC_|CLAUDE_CODE_)/,
   ];
   for (const name of Object.keys(env)) if (subscriptionEnvironment.some(pattern => pattern.test(name))) delete env[name];
-  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|KIMI_NATIVE_WORKER|AGY_BIN|ANTIGRAVITY_WORKER|INSTALLATION)|AGY_ADC_AUTH|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
+  for (const name of Object.keys(env)) if (/^(FLYWHEEL_(CONFIG|DSH_BIN|DSH_WORKER|CODEX_BIN|CODEX_PRO_WORKER|CLAUDE_BIN|CLAUDE_CODE_PRO_WORKER|KIMI_BIN|KIMI_NATIVE_WORKER|AGY_BIN|ANTIGRAVITY_WORKER|MODEL_CATALOG_WORKER|INSTALLATION)|AGY_ADC_AUTH|CODEX_SUBAGENT_LIVE|CODEX_HOME|CLAUDE_CONFIG_DIR|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|CLAUDE_CODE_OAUTH_TOKEN|NODE_OPTIONS|NODE_PATH)$/.test(name)) delete env[name];
   env.FLYWHEEL_KIMI_BIN = path.join(root, 'intentionally missing kimi');
   env.FLYWHEEL_CODEX_BIN = path.join(root, 'intentionally missing codex');
   env.FLYWHEEL_CLAUDE_BIN = path.join(root, 'intentionally missing claude');
@@ -185,9 +185,9 @@ process.exit(25);
   return { root, home, prefix, project, fixtures, dsh, env, clean: () => fs.rm(root, { recursive: true, force: true }) };
 }
 
-function run(command, args, env, cwd, timeoutMs = 180000) {
+function run(command, args, env, cwd, timeoutMs = 180000, input) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { env, cwd, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', value => { stdout += value; });
@@ -195,6 +195,10 @@ function run(command, args, env, cwd, timeoutMs = 180000) {
     const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error(`command timed out: ${command}\n${stderr}`)); }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+    if (input !== undefined) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+    }
   });
 }
 

@@ -5,7 +5,19 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased — Subscription CLI workflows
+## 0.38.0 candidate — Subscription CLI workflows
+
+- Add explicit read-only native model catalogs for Antigravity, Codex Pro and
+  Claude Code Pro, with provider-bound responses, manual exact model IDs, bounded
+  cleanup and no inference or account-entitlement claims. Unsupported catalog
+  transports remain explicit instead of returning an invented static list.
+- Complete structured execution candidate, per-route quality order and channel
+  fallback editing. Shared references and permissions require explicit changes.
+- Show per-packet eligibility using the execution engine's input checks and exact
+  current contract/configuration evidence. Add a version-bound collaboration
+  editor that saves an immutable plan revision and starts independent review only.
+- Prepare a new package version because npm 0.37.3 already identifies previously
+  published bytes; candidate validation does not establish registry publication.
 
 - Retain a bounded frozen snapshot of the next execution binding after model
   switches and display its requested Antigravity native/subagents/Swarm mode.

@@ -18,11 +18,13 @@ import (
 	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/machine"
 	"github.com/ckanner/flywheel/internal/metrics"
+	"github.com/ckanner/flywheel/internal/modelcatalog"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/spf13/cobra"
 )
 
 type controlResponse struct {
+	ModelCatalog    *modelcatalog.Report            `json:"modelCatalog,omitempty"`
 	InputImages     *imageinput.Inspection          `json:"inputImages,omitempty"`
 	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
 	SessionControl  *SessionControlReceipt          `json:"session-control,omitempty"`
@@ -172,7 +174,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor|images>",
+		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor|images|models>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -196,7 +198,7 @@ func controlCmd() *cobra.Command {
 				err = fmt.Errorf("--mode only supports auto, quick, or full")
 			} else if cmd.Flags().Changed("probe") && action != "doctor" {
 				err = fmt.Errorf("--probe is only valid for control doctor")
-			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs" && action != "images") {
+			} else if taskDir != "" || (action != "config" && action != "doctor" && action != "config-edit" && action != "config-save" && action != "runs" && action != "images" && action != "models") {
 				if action == "planning" || action == "investigate" {
 					resolvedTask, err = planningControlDirectory(taskDir)
 				} else {
@@ -209,6 +211,8 @@ func controlCmd() *cobra.Command {
 			}
 			if err == nil {
 				switch action {
+				case "models":
+					reply.ModelCatalog, err = controlModels(cmd, resolvedCwd)
 				case "images":
 					reply.InputImages, err = controlImages(cmd, resolvedCwd)
 				case "planning":

@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.37.3",
+  "version": "0.38.0",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -18,14 +18,16 @@
     "./claude-code-pro-worker": "./dist/claude-code-pro-worker.js",
     "./kimi-native-worker": "./dist/kimi-native-worker.js",
     "./native-jobs": "./dist/native-jobs.js",
-    "./antigravity-worker": "./dist/antigravity-worker.js"
+    "./antigravity-worker": "./dist/antigravity-worker.js",
+    "./model-catalog-worker": "./dist/model-catalog-worker.js"
   },
   "bin": {
     "flywheel-dsh-worker": "./dist/worker.js",
     "flywheel-codex-pro-worker": "./dist/codex-pro-worker.js",
     "flywheel-claude-code-pro-worker": "./dist/claude-code-pro-worker.js",
     "flywheel-kimi-native-worker": "./dist/kimi-native-worker.js",
-    "flywheel-antigravity-worker": "./dist/antigravity-worker.js"
+    "flywheel-antigravity-worker": "./dist/antigravity-worker.js",
+    "flywheel-model-catalog": "./dist/model-catalog-worker.js"
   },
   "files": [
     "dist",

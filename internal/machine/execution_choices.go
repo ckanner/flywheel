@@ -12,8 +12,20 @@ import (
 // Selection does not grant capabilities. The same admission rule applies to
 // configured initial bindings, optional decisions and deterministic upgrades.
 func (c *Context) executionCandidateError(packet *contract.Packet, b config.ExecutionBinding) error {
-	if packet.InputImages != nil && b.Harness != "claude-code-pro" {
-		return fmt.Errorf("packet %s requires a Claude image-capable execution binding", packet.PacketID)
+	for _, condition := range c.executionCandidateConditions(packet, b) {
+		if !condition.Passed {
+			return fmt.Errorf("%s", condition.Message)
+		}
+	}
+	return nil
+}
+
+// Execution and the console consume the same deterministic input checks. These
+// checks do not probe account entitlement or imply that a model has run.
+func (c *Context) executionCandidateConditions(packet *contract.Packet, b config.ExecutionBinding) []EligibilityCondition {
+	checks := []EligibilityCondition{{Code: "image-input", Passed: packet.InputImages == nil || b.Harness == "claude-code-pro", Message: "No original image input is required, or the selected Claude transport can receive it."}}
+	if !checks[0].Passed {
+		checks[0].Message = fmt.Sprintf("packet %s requires a Claude image-capable execution binding", packet.PacketID)
 	}
 	mode := ""
 	if b.NativeProfile != "" {
@@ -21,18 +33,27 @@ func (c *Context) executionCandidateError(packet *contract.Packet, b config.Exec
 		var options struct {
 			Mode string `json:"mode"`
 		}
-		if !exists || profile.Harness != b.Harness || json.Unmarshal(profile.Options, &options) != nil {
-			return fmt.Errorf("packet %s has an invalid native profile for execution", packet.PacketID)
+		valid := exists && profile.Harness == b.Harness && json.Unmarshal(profile.Options, &options) == nil
+		checks = append(checks, EligibilityCondition{Code: "native-profile", Passed: valid, Message: "The selected native profile matches the execution backend."})
+		if !valid {
+			checks[len(checks)-1].Message = fmt.Sprintf("packet %s has an invalid native profile for execution", packet.PacketID)
+			return checks
 		}
 		mode = options.Mode
 	}
 	if b.Harness == "antigravity" && mode == "swarm" {
-		if c.quick() || packet.Collaboration == nil || packet.InputImages != nil {
-			return fmt.Errorf("Antigravity Swarm requires Full and an approved collaboration contract without images")
+		checks = append(checks,
+			EligibilityCondition{Code: "full-workflow", Passed: !c.quick(), Message: "Antigravity Swarm requires Full and an approved collaboration contract without images"},
+			EligibilityCondition{Code: "collaboration-declared", Passed: packet.Collaboration != nil, Message: "Antigravity Swarm requires Full and an approved collaboration contract without images"})
+		if packet.Collaboration != nil {
+			check := EligibilityCondition{Code: "independent-writes", Passed: true, Message: "The collaboration contains 2–8 independent assignments within the packet write scopes."}
+			if err := contract.ValidateCollaboration(packet); err != nil {
+				check.Passed, check.Message = false, err.Error()
+			}
+			checks = append(checks, check)
 		}
-		return contract.ValidateCollaboration(packet)
 	}
-	return nil
+	return checks
 }
 
 // The public candidate explains the execution strategy without disclosing

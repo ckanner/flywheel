@@ -298,8 +298,37 @@ function configFieldErrors(values) {
   if (antigravitySwarmUnavailable(values, values?.['judge-panel'], 'judge-panel')) errors['judge-panel.native-profile'] = 'cfgSwarmRole';
   for (const [role, profile] of Object.entries(values?.planning?.compact ?? {}))
     if (antigravitySwarmUnavailable(values, values?.profiles?.[profile], role)) errors['planning.compact.' + role] = 'cfgSwarmRole';
-  for (const [route, policy] of Object.entries(values?.['execution-policy']?.routes ?? {})) {
+  const execution = values?.['execution-policy'];
+  if (execution !== undefined && (!record(execution) || execution.version !== 1 || !record(execution.bindings) || !record(execution.routes)))
+    errors['execution-policy'] = 'cfgExecutionAdvanced';
+  for (const [id, binding] of Object.entries(execution?.bindings ?? {})) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id) || !completeExecutionBinding(binding) ||
+        binding['native-profile'] !== undefined && (typeof binding['native-profile'] !== 'string' || !binding['native-profile']))
+      errors['execution-policy.bindings.' + id] = 'cfgExecutionAdvanced';
+  }
+  if (record(execution?.bindings) && (Object.keys(execution.bindings).length < 1 || Object.keys(execution.bindings).length > 32))
+    errors['execution-policy.bindings'] = 'cfgCandidateLimit';
+  for (const [route, policy] of Object.entries(execution?.routes ?? {})) {
     if (!record(policy)) { errors['execution-policy.routes.' + route] = 'cfgExecutionAdvanced'; continue; }
+    if (!Array.isArray(policy.allowed) || !policy.allowed.length || new Set(policy.allowed).size !== policy.allowed.length ||
+        !policy.allowed.includes(policy.initial) || !Array.isArray(policy['quality-order']) ||
+        new Set(policy['quality-order']).size !== policy['quality-order'].length ||
+        policy['quality-order'].some(id => !policy.allowed.includes(id)) || policy['after-stalled-attempts'] !== 1)
+      errors['execution-policy.routes.' + route] = 'cfgExecutionAdvanced';
+    if (Array.isArray(policy.allowed) && policy.allowed.some(id => !record(execution.bindings?.[id]) ||
+        execution.bindings[id].permission !== executionRoutePermission(values, route)))
+      errors['execution-policy.routes.' + route + '.permission'] = 'cfgExecutionAuthorityMismatch';
+    if (policy['channel-fallbacks'] !== undefined && !record(policy['channel-fallbacks']))
+      errors['execution-policy.routes.' + route + '.channel-fallbacks'] = 'cfgFallbackEndpoints';
+    else for (const [from, to] of Object.entries(policy['channel-fallbacks'] ?? {})) {
+      const a = execution.bindings?.[from], b = execution.bindings?.[to];
+      if (from === to || !Array.isArray(policy.allowed) || !policy.allowed.includes(from) || !policy.allowed.includes(to) || !a || !b ||
+          values.channels?.[a.channel]?.fallback !== b.channel || values.channels?.[b.channel]?.harness !== b.harness ||
+          values.channels?.[b.channel]?.models?.[route] !== b.model)
+        errors['execution-policy.routes.' + route + '.channel-fallbacks.' + from] = 'cfgFallbackMapping';
+      const plan = executionFallbackPlan(values, route, from, to);
+      if (plan.error) errors['execution-policy.routes.' + route + '.channel-fallbacks.' + from] = plan.error;
+    }
     if (!Number.isSafeInteger(policy['max-switches']) || policy['max-switches'] < 0 || policy['max-switches'] > 32)
       errors['execution-policy.routes.' + route + '.max-switches'] = 'cfgExecutionSwitchRange';
   }
@@ -323,10 +352,105 @@ function antigravitySwarmUnavailable(values, binding, role) {
 function completeExecutionBinding(binding) {
   return record(binding) && ['dsh', 'kimi', 'codex-pro', 'claude-code-pro', 'antigravity'].includes(binding.harness) &&
     ['channel', 'model'].every(key => typeof binding[key] === 'string' && binding[key].trim()) &&
-    typeof binding.provider === 'string' && typeof binding.thinking === 'string' &&
-    (binding.thinking !== '' || fixedAntigravityEffort(binding)) &&
+    typeof binding.provider === 'string' && (binding.harness !== 'dsh' || binding.provider.trim()) &&
+    typeof binding.thinking === 'string' && executionEffortNames(binding).includes(binding.thinking) &&
     ['read-only', 'workspace-write', 'danger-full-access'].includes(binding.permission) &&
     ['fresh', 'scoped'].includes(binding['session-mode']);
+}
+
+function executionEffortNames(binding) {
+  if (binding.harness === 'antigravity') return fixedAntigravityEffort(binding) ? [''] :
+    /^gemini-4-(hydrogen|neon)-/.test(binding.model ?? '') ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
+  if (binding.harness === 'kimi') return ['low', 'high', 'max'];
+  return binding.harness === 'dsh' && binding.provider?.startsWith('deepseek') ? ['off', 'low', 'high', 'max'] : ['low', 'medium', 'high', 'xhigh', 'max'];
+}
+
+function executionBindingReferences(values, id) {
+  return Object.entries(values?.['execution-policy']?.routes ?? {}).filter(([, route]) => record(route) &&
+    (route.initial === id || Array.isArray(route.allowed) && route.allowed.includes(id) || Array.isArray(route['quality-order']) && route['quality-order'].includes(id) ||
+      Object.entries(route['channel-fallbacks'] ?? {}).some(([from, to]) => from === id || to === id))).map(([name]) => name);
+}
+
+function unusedExecutionID(bindings, prefix) {
+  const stem = prefix.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/^[^a-zA-Z0-9]+/, '').slice(0, 55) || 'candidate';
+  let id = stem, suffix = 1;
+  while (Object.hasOwn(bindings, id)) id = stem + '-' + ++suffix;
+  return id;
+}
+
+function executionRoutePermission(values, route) {
+  return values.permissions?.bindings?.['routes.' + route] ??
+    (values.permissions?.mode === 'full-access' ? 'danger-full-access' : 'workspace-write');
+}
+
+function remapExecutionReferences(policy, replacements) {
+  const id = value => Object.hasOwn(replacements, value) ? replacements[value] : value;
+  policy.initial = id(policy.initial);
+  policy.allowed = policy.allowed.map(id);
+  policy['quality-order'] = policy['quality-order'].map(id);
+  if (policy['channel-fallbacks']) policy['channel-fallbacks'] = Object.fromEntries(
+    Object.entries(policy['channel-fallbacks']).map(([from, to]) => [id(from), id(to)]));
+}
+
+// Route authorization is an explicit edit. A candidate used by another route
+// is copied before its permission changes; no other route gains authority.
+function authorizeExecutionRoute(values, name, permission) {
+  const execution = values['execution-policy'], route = execution?.routes?.[name];
+  if (!record(route) || !Array.isArray(route.allowed) || !Array.isArray(route['quality-order']) ||
+      !['read-only', 'workspace-write', 'danger-full-access'].includes(permission)) return false;
+  const bindings = execution.bindings, replacements = {};
+  if (!record(bindings)) return false;
+  const shared = route.allowed.filter(id => record(bindings[id]) && bindings[id].permission !== permission &&
+    executionBindingReferences(values, id).some(other => other !== name));
+  if (Object.keys(bindings).length + shared.length > 32 || route.allowed.some(id => !record(bindings[id]))) return false;
+  for (const id of route.allowed) {
+    if (bindings[id].permission === permission) continue;
+    if (shared.includes(id)) {
+      const nextID = unusedExecutionID(bindings, name + '-' + id);
+      bindings[nextID] = { ...bindings[id], permission };
+      replacements[id] = nextID;
+    } else bindings[id] = { ...bindings[id], permission };
+  }
+  remapExecutionReferences(route, replacements);
+  values.permissions = { ...values.permissions, bindings: { ...values.permissions?.bindings, ['routes.' + name]: permission } };
+  return true;
+}
+
+// A fallback edits shared channel configuration as well as the route rule.
+// Compute those exact changes first; conflicting rules and cycles stay blocked.
+function executionFallbackPlan(values, route, from, to) {
+  const policy = values['execution-policy']?.routes?.[route], bindings = values['execution-policy']?.bindings ?? {};
+  const a = bindings[from], b = bindings[to];
+  if (!Array.isArray(policy?.allowed) || !policy.allowed.includes(from) || !policy.allowed.includes(to) || from === to ||
+      !completeExecutionBinding(a) || !completeExecutionBinding(b) || a.channel === b.channel)
+    return { error: 'cfgFallbackEndpoints' };
+  const channels = values.channels ?? {}, source = channels[a.channel] ?? {}, target = channels[b.channel] ?? {};
+  if ((target.harness && target.harness !== b.harness) || (target.provider && target.provider !== b.provider))
+    return { error: 'cfgFallbackConflict' };
+  const consumers = [...Object.values(values.loops ?? {}), ...Object.values(values.routes ?? {}), ...Object.values(values.profiles ?? {}),
+    ...Object.values(bindings), values['judge-panel']].map(binding => resolvedEditorBinding(values, binding));
+  if (consumers.some(binding => binding?.channel === b.channel &&
+      (binding.harness && binding.harness !== b.harness || binding.provider && binding.provider !== b.provider)))
+    return { error: 'cfgFallbackConflict' };
+  const seen = new Set([a.channel]);
+  for (let channel = b.channel; channel; channel = channels[channel]?.fallback) {
+    if (seen.has(channel)) return { error: 'cfgFallbackCycle' };
+    seen.add(channel);
+  }
+  for (const [otherName, other] of Object.entries(values['execution-policy'].routes)) {
+    for (const [otherFrom, otherTo] of Object.entries(other?.['channel-fallbacks'] ?? {})) {
+      if (otherName === route && otherFrom === from) continue;
+      const otherA = bindings[otherFrom], otherB = bindings[otherTo];
+      if (otherA?.channel === a.channel && otherB?.channel !== b.channel ||
+          otherName === route && otherB?.channel === b.channel && otherB?.model !== b.model)
+        return { error: 'cfgFallbackConflict' };
+    }
+  }
+  return { fromChannel: a.channel, toChannel: b.channel, previous: source.fallback,
+    harness: b.harness, provider: b.provider, model: b.model,
+    changes: { [a.channel]: { ...source, 'env-key': source['env-key'] ?? null, fallback: b.channel },
+      [b.channel]: { ...target, 'env-key': target['env-key'] ?? null, harness: b.harness,
+        ...(b.provider ? { provider: b.provider } : {}), models: { ...target.models, [route]: b.model } } } };
 }
 
 // Keep profiles shared by other roles/candidates immutable. A dedicated profile
@@ -417,6 +541,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     [dialog, setDialog] = React.useState(null),
     [bindingSelection, setBindingSelection] = React.useState(null);
   const [effectiveRead, setEffectiveRead] = React.useState({ status: 'unknown', value: null });
+  const [modelRead, setModelRead] = React.useState({ status: 'idle', key: '', value: null });
+  const modelRequest = React.useRef(0), currentModelTarget = React.useRef('');
   const effectiveAttempt = React.useRef(null), effectiveRequest = React.useRef(0), editorMounted = React.useRef(true);
   const observedConfiguration = React.useRef(control.configuration);
   const currentEditor = React.useRef(null);
@@ -473,6 +599,8 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     setNumberErrors({});
     setTexts({});
     setTextErrors({});
+    setModelRead({ status: 'idle', key: '', value: null });
+    setBindingSelection(null);
     setDiscardedJevInputs(false);
     setReset(false);
     setSaved(false);
@@ -641,7 +769,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const values = cloneConfig(draft);
     // Register only the final channel of an edited binding. Typing a channel
     // must not leave a configuration entry for every partial input string.
-    for (const [group, key, value] of rows) {
+    const channelRows = [...rows, ...Object.entries(draft['execution-policy']?.bindings ?? {}).filter(([, binding]) => record(binding)).map(([key, value]) => ['candidate', key, value])];
+    for (const [group, key, value] of channelRows) {
+      if (group === 'candidate') {
+        if (JSON.stringify(value) !== JSON.stringify(base?.['execution-policy']?.bindings?.[key]) && value.channel && !values.channels?.[value.channel])
+          values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? { 'env-key': null } };
+        continue;
+      }
       if (group !== 'panel' && !Object.hasOwn(draft[group] ?? {}, key)) continue;
       const previous = group === 'panel' ? base?.['judge-panel'] : base?.[group]?.[key];
       if (JSON.stringify(value) !== JSON.stringify(previous) && value.channel && !values.channels?.[value.channel]) {
@@ -649,7 +783,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         values.channels = { ...values.channels, [value.channel]: doc.defaults.channels?.[value.channel] ?? fallback };
       }
     }
-    if (values.subscription?.mode === 'subscription-only' && rows.some(([, , value]) => value['native-profile'] === 'kimi-subscription-agent') && !values['native-profiles']?.['kimi-subscription-agent']) {
+    if (values.subscription?.mode === 'subscription-only' && channelRows.some(([, , value]) => value['native-profile'] === 'kimi-subscription-agent') && !values['native-profiles']?.['kimi-subscription-agent']) {
       values['native-profiles'] = { ...values['native-profiles'], 'kimi-subscription-agent': { harness:'kimi',options:{version:1,mode:'agent',agents:{enabled:false}} } };
     }
     const sections = Object.keys({ ...base, ...values }).filter(key => JSON.stringify(values[key]) !== JSON.stringify(base?.[key]));
@@ -867,7 +1001,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     antigravity: { harness:'antigravity', channel:'google-subscription', model:'gemini-4-hydrogen-high', thinking:'high' },
   })[resource];
   const roleName = (group, key) =>
-    group === 'routes'
+    group === 'candidate' ? t('cfgCandidate') + ' · ' + key : group === 'routes'
       ? {
           default: t('cfgRouteDefault'),
           complex:t('cfgRouteComplex'),backend:t('cfgRouteBackend'),batch:t('cfgRouteBatch'),
@@ -886,9 +1020,17 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     xhigh: t('cfgEffortXhigh'),
     max: t('cfgEffortMax'),
   };
-  const bindingEfforts = value => value.harness === 'antigravity'
-    ? fixedAntigravityEffort(value) ? [['', t('cfgEffortFixed')]] : (/^gemini-4-(hydrogen|neon)-/.test(value.model ?? '') ? ['low','medium','high','xhigh'] : ['low','medium','high']).map(key => [key,efforts[key]])
-    : Object.entries(efforts);
+  const bindingEfforts = value => {
+    const listed = modelRead.key === currentModelTarget.current && modelRead.value?.models?.find(model => model.id === value.model);
+    const explicit = value.permission || bindingEdit?.execution && value === bindingEdit.value;
+    const permitted = explicit ? executionEffortNames(value) : null;
+    const listedEfforts = listed?.efforts?.filter(key => !permitted || permitted.includes(key));
+    if (listedEfforts?.length) return listedEfforts.map(key => [key, key === '' && fixedAntigravityEffort(value) ? t('cfgEffortFixed') : efforts[key] ?? key]);
+    if (value.harness === 'antigravity') return fixedAntigravityEffort(value) ? [['', t('cfgEffortFixed')]] :
+      (/^gemini-4-(hydrogen|neon)-/.test(value.model ?? '') ? ['low','medium','high','xhigh'] : ['low','medium','high']).map(key => [key,efforts[key]]);
+    if (permitted) return permitted.map(key => [key, efforts[key]]);
+    return Object.entries(efforts);
+  };
   const changeModelField = (binding, field, value) => {
     const next = {...binding,[field]:value};
     if(next.harness === 'antigravity') {
@@ -900,11 +1042,39 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   };
   const openBinding = (group, key) => setBindingSelection({ group, key });
   const bindingEdit = draft && bindingSelection && (() => {
-    const { group, key } = bindingSelection, role = group === 'routes' ? 'execute' : key;
-    const value = group === 'panel' ? draft['judge-panel'] : effectiveBinding(group, key);
-    const execution = group === 'routes' && executionInitial(draft, key);
+    const { group, key } = bindingSelection, role = ['routes', 'candidate'].includes(group) ? 'execute' : key;
+    const value = group === 'candidate' ? draft['execution-policy']?.bindings?.[key] : group === 'panel' ? draft['judge-panel'] : effectiveBinding(group, key);
+    const execution = group === 'candidate' ? value : group === 'routes' && executionInitial(draft, key);
     return value ? { group, key, role, value, execution, permission: draft.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit', session: draft.sessions?.roles?.[role] ?? 'inherit' } : null;
   })();
+  const catalogBinding = bindingEdit && resolvedEditorBinding(draft, bindingEdit.value);
+  const catalogRequest = catalogBinding && { version: 1, harness: catalogBinding.harness,
+    ...(catalogBinding.provider ? { provider: catalogBinding.provider } : {}), ...(catalogBinding.channel ? { channel: catalogBinding.channel } : {}) };
+  const modelTarget = bindingEdit && JSON.stringify([contextKey, scope, revision, bindingEdit.group, bindingEdit.key,
+    catalogBinding.harness, catalogBinding.provider ?? '', catalogBinding.channel ?? '']);
+  currentModelTarget.current = modelTarget;
+  const modelCatalog = modelRead.key === modelTarget ? modelRead : { status: 'idle', value: null };
+  const refreshModels = () => {
+    if (busy || !bindingEdit || !active) return;
+    const key = modelTarget, request = ++modelRequest.current;
+    setModelRead({ status: 'loading', key, value: null });
+    void run('models', selection, false, { models: catalogRequest }).then(value => {
+      if (!editorMounted.current || currentModelTarget.current !== key || modelRequest.current !== request) return;
+      const catalog = value?.modelCatalog;
+      setModelRead({ status: catalog ? 'confirmed' : 'error', key, value: catalog ?? null });
+    });
+  };
+  const selectCatalogModel = id => {
+    const model = modelCatalog.value?.models?.find(entry => entry.id === id);
+    if (!model) return;
+    setBindingEdit(old => {
+      const value = changeModelField(old.value, 'model', id);
+      if (Object.hasOwn(model, 'defaultEffort') && model.efforts?.length && !model.efforts.includes(value.thinking) &&
+          (!old.execution || executionEffortNames(value).includes(model.defaultEffort)))
+        value.thinking = model.defaultEffort;
+      return { ...old, value };
+    });
+  };
   const applySessionRole = (next, role, session) => {
     const roles = { ...next.sessions?.roles };
     if (session === 'inherit') delete roles[role];
@@ -973,6 +1143,14 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     if (antigravitySwarmUnavailable(next, value, role)) return;
     if (value.harness !== bindingEdit.value.harness || value['native-profile'] !== bindingEdit.value['native-profile'])
       clearNumberDrafts(path => path === bindingID(group, key) + '.maxObservedAgents');
+    if (group === 'candidate') {
+      const candidate = { ...value, provider: value.provider ?? '', permission: value.permission ?? bindingEdit.execution.permission,
+        'session-mode': value['session-mode'] ?? bindingEdit.execution['session-mode'] };
+      if (!candidate['native-profile']) delete candidate['native-profile'];
+      next['execution-policy'].bindings[key] = candidate;
+      replace(next);
+      return;
+    }
     if (group === 'panel') next['judge-panel'] = value;
     else { next[group] ??= {}; next[group][key] = value; }
     if (permission !== (next.permissions?.bindings?.[bindingID(group, key)] ?? 'inherit')) {
@@ -1004,11 +1182,13 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
   const candidateUnavailable = (route, id, removing = false) => {
     const policy = draft['execution-policy']?.routes?.[route], binding = draft['execution-policy']?.bindings?.[id];
     const initial = executionInitial(draft, route);
-    if (!Array.isArray(policy?.allowed) || !Array.isArray(policy?.['quality-order']) || !completeExecutionBinding(binding) || !completeExecutionBinding(initial)) return 'cfgExecutionAdvanced';
-    if (binding.permission !== initial.permission || binding['session-mode'] !== initial['session-mode']) return 'cfgExecutionAuthorityMismatch';
+    if (!Array.isArray(policy?.allowed) || !Array.isArray(policy?.['quality-order'])) return 'cfgExecutionAdvanced';
     if (removing && id === policy.initial) return 'cfgExecutionKeepInitial';
     if (removing && (policy['quality-order']?.includes(id) || Object.entries(policy['channel-fallbacks'] ?? {}).some(([from, to]) => from === id || to === id)))
       return 'cfgExecutionRuleReference';
+    if (removing) return null;
+    if (!completeExecutionBinding(binding) || !completeExecutionBinding(initial)) return 'cfgExecutionAdvanced';
+    if (binding.permission !== executionRoutePermission(draft, route)) return 'cfgExecutionAuthorityMismatch';
     return null;
   };
   const editRoutePolicy = (route, key, value) => {
@@ -1022,6 +1202,91 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const policy = draft['execution-policy']?.routes?.[route];
     if (!Array.isArray(policy?.allowed) || candidateUnavailable(route, id, !enabled)) return;
     editRoutePolicy(route, 'allowed', enabled ? [...new Set([...policy.allowed, id])] : policy.allowed.filter(value => value !== id));
+  };
+  const createCandidate = (sourceID) => {
+    const next = cloneConfig(draft), execution = next['execution-policy'];
+    if (!record(execution?.bindings) || Object.keys(execution.bindings).length >= 32) return;
+    const source = sourceID ? execution.bindings[sourceID] : execution.bindings[Object.values(execution.routes ?? {})[0]?.initial];
+    const id = unusedExecutionID(execution.bindings, sourceID ? sourceID + '-copy' : 'candidate');
+    execution.bindings[id] = source ? cloneConfig(source) : {
+      harness: 'antigravity', provider: '', channel: 'google-subscription', model: '', thinking: 'high',
+      permission: 'workspace-write', 'session-mode': 'fresh',
+    };
+    replace(next);
+    setBindingSelection({ group: 'candidate', key: id });
+  };
+  const removeCandidate = id => {
+    const next = cloneConfig(draft), bindings = next['execution-policy']?.bindings;
+    if (!record(bindings) || Object.keys(bindings).length <= 1 || executionBindingReferences(next, id).length) return;
+    delete bindings[id];
+    clearNumberDrafts(path => path.startsWith('candidate.' + id + '.'));
+    replace(next);
+    if (bindingSelection?.group === 'candidate' && bindingSelection.key === id) setBindingSelection(null);
+  };
+  const authorizeRoute = (route, permission) => {
+    const next = cloneConfig(draft);
+    const valid = authorizeExecutionRoute(next, route, permission);
+    setTextErrors(previous => ({ ...previous, ['execution-policy.routes.' + route + '.permission']: valid ? null : 'cfgCandidateLimit' }));
+    if (!valid) return;
+    replace(next);
+  };
+  const editExecutionSession = value => {
+    if (!['fresh', 'scoped'].includes(value)) return;
+    if (bindingEdit.group === 'candidate') { patchBinding('session-mode', value); return; }
+    const next = cloneConfig(draft), route = bindingEdit.key;
+    if (!synchronizeExecutionInitial(next, route, effectiveBinding('routes', route))) return;
+    next['execution-policy'].bindings[next['execution-policy'].routes[route].initial]['session-mode'] = value;
+    replace(next);
+  };
+  const enableExecutionRoute = route => {
+    const next = cloneConfig(draft), resolved = resolvedEditorBinding(next, next.routes?.[route]);
+    if (!resolved) return;
+    const binding = Object.fromEntries(['harness', 'provider', 'channel', 'model', 'thinking', 'native-profile']
+      .filter(key => Object.hasOwn(resolved, key)).map(key => [key, resolved[key]]));
+    binding.provider ??= '';
+    binding.permission = executionRoutePermission(next, route);
+    binding['session-mode'] = next.sessions?.roles?.execute ?? next.sessions?.mode ?? 'fresh';
+    if (!binding['native-profile']) delete binding['native-profile'];
+    if (!completeExecutionBinding(binding)) return;
+    const execution = next['execution-policy'] ?? { version: 1, bindings: {}, routes: {} };
+    if (!record(execution.bindings) || !record(execution.routes) || execution.routes[route] || Object.keys(execution.bindings).length >= 32) return;
+    const id = unusedExecutionID(execution.bindings, route + '-initial');
+    execution.bindings[id] = binding;
+    execution.routes[route] = { initial: id, allowed: [id], 'quality-order': [], 'after-stalled-attempts': 1, 'max-switches': 0 };
+    next['execution-policy'] = execution;
+    replace(next);
+  };
+  const editQualityOrder = (route, id, movement) => {
+    const policy = draft['execution-policy']?.routes?.[route], order = policy?.['quality-order'];
+    if (!Array.isArray(order) || !policy.allowed?.includes(id)) return;
+    const next = [...order], index = next.indexOf(id);
+    if (movement === 'add' && index === -1) next.push(id);
+    else if (movement === 'remove' && index !== -1) next.splice(index, 1);
+    else if (Number.isInteger(movement) && index !== -1 && next[index + movement])
+      [next[index], next[index + movement]] = [next[index + movement], next[index]];
+    else return;
+    editRoutePolicy(route, 'quality-order', next);
+  };
+  const editFallback = (route, from, to) => {
+    const policy = draft['execution-policy']?.routes?.[route];
+    if (!Array.isArray(policy?.allowed) || !policy.allowed.includes(from) || to && (!policy.allowed.includes(to) || to === from)) return;
+    const fallbacks = { ...policy['channel-fallbacks'] };
+    if (to) fallbacks[from] = to; else delete fallbacks[from];
+    editRoutePolicy(route, 'channel-fallbacks', fallbacks);
+  };
+  const applyFallbackChannels = (route, from, to) => {
+    const plan = executionFallbackPlan(draft, route, from, to);
+    if (plan.error) return;
+    replace({ ...draft, channels: { ...draft.channels, ...plan.changes } });
+  };
+  const channelRuleReferences = channel => Object.entries(draft['execution-policy']?.routes ?? {}).flatMap(([route, policy]) =>
+    Object.keys(policy?.['channel-fallbacks'] ?? {}).filter(id => draft['execution-policy']?.bindings?.[id]?.channel === channel).map(id => route + ' · ' + id));
+  const removeChannelFallback = channel => {
+    if (channelRuleReferences(channel).length) return;
+    const next = cloneConfig(draft);
+    if (!record(next.channels?.[channel])) return;
+    delete next.channels[channel].fallback;
+    replace(next);
   };
   const nativeEdit = bindingEdit && (() => {
     const binding = resolvedEditorBinding(draft, bindingEdit.value);
@@ -1045,10 +1310,69 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       if (value === undefined) delete options[key]; else options[key] = value;
       updated = assignAntigravityOptions(next, group, target, binding, options);
     }
-    if (group === 'panel') next['judge-panel'] = updated;
+    if (group === 'candidate') {
+      if (!updated['native-profile']) delete updated['native-profile'];
+      next['execution-policy'].bindings[target] = updated;
+    } else if (group === 'panel') next['judge-panel'] = updated;
     else { next[group] ??= {}; next[group][target] = updated; }
     if (group === 'routes') syncRouteDraft(next, target);
     replace(next);
+  };
+  const executionRouteFields = (route, policy) => {
+    const allowed = Array.isArray(policy.allowed) ? policy.allowed : [], order = Array.isArray(policy['quality-order']) ? policy['quality-order'] : [];
+    const bindings = draft['execution-policy'].bindings ?? {}, prefix = 'execution-policy.routes.' + route;
+    const permissionError = textErrors[prefix + '.permission'] || fieldErrors[prefix + '.permission'];
+    return h('article', { key: route, 'data-policy-route': route },
+      h('h4', null, roleName('routes', route)),
+      field(prefix + '.initial', roleName('routes', route) + ' · ' + t('cfgExecutionInitial'), t('cfgExecutionInitialHelp'),
+        select(prefix + '.initial', policy.initial ?? '', allowed.map(id => [id, id + ' · ' + bindingSummary(bindings[id]), !!candidateUnavailable(route, id)]),
+          value => editRoutePolicy(route, 'initial', value))),
+      field(prefix + '.permission', roleName('routes', route) + ' · ' + t('cfgRoutePermission'), t('cfgRoutePermissionHelp'),
+        h(React.Fragment, null, select(prefix + '.permission', executionRoutePermission(draft, route), [
+          ['read-only', t('permissionReadOnly')], ['workspace-write', t('permissionWorkspace')], ['danger-full-access', t('permissionFull')],
+        ], value => authorizeRoute(route, value)),
+        permissionError && h('p', { className: css.errorText, role: 'alert' }, t(permissionError)),
+        permissionError && h(Button, { disabled: busy, onClick: () => authorizeRoute(route, executionRoutePermission(draft, route)) }, t('cfgAlignAuthority')))),
+      field(prefix + '.max-switches', roleName('routes', route) + ' · ' + t('cfgExecutionSwitches'), t('cfgExecutionSwitchHelp'),
+        boundedInteger(prefix + '.max-switches', policy['max-switches'], 0, 32, value => editRoutePolicy(route, 'max-switches', value))),
+      h('details', null, h('summary', null, t('cfgExecutionAllowed') + ' · ' + allowed.length),
+        ...Object.entries(bindings).filter(([, binding]) => record(binding)).map(([id, binding]) => {
+          const enabled = allowed.includes(id), reason = candidateUnavailable(route, id, enabled);
+          return h('div', { key: id, className: css.configField },
+            h('label', null, h('input', { type: 'checkbox', checked: enabled, disabled: busy || !!reason,
+              'aria-label': roleName('routes', route) + ' · ' + t('cfgExecutionAllowed') + ' · ' + id,
+              onChange: event => allowCandidate(route, id, event.target.checked) }), ' ' + id + ' · ' + bindingSummary(binding)),
+            reason && h('p', { className: css.settingsHelp }, t(reason)));
+        })),
+      h('details', { 'data-quality-route': route }, h('summary', null, t('cfgQualityOrder') + ' · ' + order.length),
+        h('p', { className: css.settingsHelp }, t('cfgQualityHelp')),
+        ...order.map((id, index) => h('div', { key: id, className: css.configField },
+          h('span', null, (index + 1) + '. ' + id + ' · ' + bindingSummary(bindings[id])),
+          h('div', null,
+            h(Button, { disabled: busy || index === 0, 'aria-label': t('cfgMoveUp') + ' ' + id, onClick: () => editQualityOrder(route, id, -1) }, t('cfgMoveUp')),
+            h(Button, { disabled: busy || index === order.length - 1, 'aria-label': t('cfgMoveDown') + ' ' + id, onClick: () => editQualityOrder(route, id, 1) }, t('cfgMoveDown')),
+            h(Button, { disabled: busy, 'aria-label': t('cfgRemoveQuality') + ' ' + id, onClick: () => editQualityOrder(route, id, 'remove') }, t('cfgRemove'))))),
+        field(prefix + '.quality-add', t('cfgAddQuality'), null,
+          select(prefix + '.quality-add', '', [['', t('cfgChooseCandidate')], ...allowed.filter(id => !order.includes(id)).map(id => [id, id + ' · ' + bindingSummary(bindings[id])])],
+            id => editQualityOrder(route, id, 'add')))),
+      h('details', { 'data-fallback-route': route }, h('summary', null, t('cfgChannelFallbacks')),
+        h('p', { className: css.settingsHelp }, t('cfgFallbackHelp')),
+        ...allowed.map(from => {
+          const to = record(policy['channel-fallbacks']) && Object.hasOwn(policy['channel-fallbacks'], from) ? policy['channel-fallbacks'][from] : '';
+          const plan = to ? executionFallbackPlan(draft, route, from, to) : null;
+          const mismatch = fieldErrors[prefix + '.channel-fallbacks.' + from];
+          return h('section', { key: from, 'data-fallback-from': from },
+            field(prefix + '.fallback.' + from, t('cfgFallbackFrom', { id: from }), null,
+              select(prefix + '.fallback.' + from, to, [['', t('cfgFallbackNone')], ...allowed.filter(id => id !== from).map(id =>
+                [id, id + ' · ' + bindingSummary(bindings[id]), !bindings[from] || !bindings[id] || bindings[id].channel === bindings[from].channel])],
+              target => editFallback(route, from, target))),
+            plan && (plan.error ? h('p', { className: css.errorText, role: 'alert' }, t(plan.error)) : h(React.Fragment, null,
+              h('p', { className: css.settingsHelp }, t('cfgFallbackPreview', { from: plan.fromChannel, to: plan.toChannel, route, model: plan.model, harness: plan.harness })),
+              h('p', { className: css.settingsHelp }, t('cfgFallbackShared')),
+              mismatch ? h(Button, { disabled: busy, onClick: () => applyFallbackChannels(route, from, to) }, t('cfgApplyFallback')) : h('p', { className: css.meta }, t('cfgFallbackAligned')))));
+        })),
+      bindings[policy.initial]?.harness === 'antigravity' && draft['native-profiles']?.[bindings[policy.initial]['native-profile']]?.options?.mode === 'swarm' &&
+        h('p', { className: css.configCallout }, t('cfgSwarmEligibility')));
   };
   const dispatchReasons = [];
   if ((draft?.scheduler?.mode ?? 'serial') !== 'parallel') dispatchReasons.push(t('cfgDispatchSerial'));
@@ -1165,33 +1489,34 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       h('p', { className: css.meta }, t('planningInheritedHelp')),
       draft?.subscription?.mode==='subscription-only' && h('p',{className:css.configCallout},t('cfgSubscriptionOnly')),
       Object.entries(textErrors).some(([key,error]) => key.startsWith('execution-policy.') && error) && h('p',{className:css.configCallout,role:'alert'},t('cfgExecutionAdvanced')),
+      h('section', { className: css.details, 'data-candidate-library': true },
+        h('h4', null, t('cfgCandidateLibrary')), h('p', { className: css.settingsHelp }, t('cfgCandidateLibraryHelp')),
+        ...Object.entries(draft['execution-policy']?.bindings ?? {}).filter(([, binding]) => record(binding)).map(([id, binding]) => {
+          const references = executionBindingReferences(draft, id);
+          return h('div', { key: id, className: css.configField, 'data-candidate-id': id },
+            h('div', null, h('strong', null, id), h('p', { className: css.settingsHelp }, bindingSummary(binding)),
+              h('p', { className: css.settingsHelp }, references.length ? t('cfgCandidateReferences', { routes: references.join(', ') }) : t('cfgCandidateUnused'))),
+            h('div', null,
+              h(Button, { disabled: busy, onClick: () => openBinding('candidate', id), 'aria-label': t('cfgEditCandidate') + ' ' + id }, t('cfgEdit')),
+              h(Button, { disabled: busy || Object.keys(draft['execution-policy'].bindings).length >= 32, onClick: () => createCandidate(id), 'aria-label': t('cfgCopyCandidate') + ' ' + id }, t('cfgCopyCandidate')),
+              h(Button, { disabled: busy || references.length > 0 || Object.keys(draft['execution-policy'].bindings).length <= 1,
+                onClick: () => removeCandidate(id), 'aria-label': t('cfgDeleteCandidate') + ' ' + id }, t('cfgRemove'))));
+        }),
+        record(draft['execution-policy']?.bindings) && h(Button, { disabled: busy || Object.keys(draft['execution-policy'].bindings).length >= 32, onClick: () => createCandidate() }, t('cfgCreateCandidate')),
+        Object.entries(draft.routes ?? {}).some(([route]) => !draft['execution-policy']?.routes?.[route]) &&
+          field('execution-policy.enable', t('cfgEnableExecutionRoute'), t('cfgEnableExecutionHelp'),
+            select('execution-policy.enable', '', [['', t('cfgChooseRoute')], ...Object.keys(draft.routes ?? {}).filter(route => !draft['execution-policy']?.routes?.[route]).map(route => [route, roleName('routes', route)])], enableExecutionRoute))),
       record(draft['execution-policy']?.routes) && h('section',{className:css.details,'data-execution-candidates':true},
         h('h4',null,t('cfgExecutionCandidates')), h('p',{className:css.meta},t('cfgExecutionCandidatesHelp')),
-        ...Object.entries(draft['execution-policy'].routes).filter(([,policy]) => record(policy)).map(([route,policy])=>h('article',{key:route,'data-policy-route':route},
-          h('h4',null,roleName('routes',route)),
-          field('execution-policy.routes.' + route + '.initial', roleName('routes', route) + ' · ' + t('cfgExecutionInitial'), t('cfgExecutionInitialHelp'),
-            select('execution-policy.routes.' + route + '.initial', policy.initial ?? '',
-              (Array.isArray(policy.allowed) ? policy.allowed : []).map(id => [id, id + ' · ' + bindingSummary(draft['execution-policy'].bindings?.[id]), !!candidateUnavailable(route, id)]),
-              value => editRoutePolicy(route, 'initial', value))),
-          field('execution-policy.routes.' + route + '.max-switches', roleName('routes', route) + ' · ' + t('cfgExecutionSwitches'), t('cfgExecutionSwitchHelp'),
-            boundedInteger('execution-policy.routes.' + route + '.max-switches', policy['max-switches'], 0, 32, value => editRoutePolicy(route, 'max-switches', value))),
-          h('details', null, h('summary', null, t('cfgExecutionAllowed') + ' · ' + (policy.allowed?.length ?? 0)),
-            ...Object.entries(draft['execution-policy'].bindings ?? {}).filter(([,binding]) => record(binding)).map(([id, binding]) => {
-              const allowed = Array.isArray(policy.allowed) && policy.allowed.includes(id), reason = candidateUnavailable(route, id, allowed);
-              const native = draft['native-profiles']?.[binding['native-profile']]?.options;
-              return h('div', {key: id, className: css.configField},
-                h('label', null, h('input', { type: 'checkbox', checked: allowed, disabled: busy || !!reason,
-                  'aria-label': roleName('routes', route) + ' · ' + t('cfgExecutionAllowed') + ' · ' + id,
-                  onChange: event => allowCandidate(route, id, event.target.checked) }),
-                  ' ' + id + ' · ' + bindingSummary(binding)),
-                reason && h('p', { className: css.settingsHelp }, t(reason)),
-                binding.harness === 'antigravity' && native?.mode === 'swarm' && h('p', { className: css.settingsHelp }, t('cfgSwarmEligibility')));
-            })),
-          ((policy['quality-order']?.length ?? 0) > 0 || Object.keys(policy['channel-fallbacks'] ?? {}).length > 0) &&
-            h('p', { className: css.settingsHelp }, t('cfgExecutionAdvancedRules')),
-          draft['execution-policy'].bindings?.[policy.initial]?.harness === 'antigravity' &&
-            draft['native-profiles']?.[draft['execution-policy'].bindings[policy.initial]['native-profile']]?.options?.mode === 'swarm' &&
-            h('p', { className: css.configCallout }, t('cfgSwarmEligibility'))))),
+        ...Object.entries(draft['execution-policy'].routes).filter(([, policy]) => record(policy)).map(([route, policy]) => executionRouteFields(route, policy))),
+      Object.values(draft.channels ?? {}).some(channel => channel?.fallback) && h('details', { 'data-channel-fallback-links': true },
+        h('summary', null, t('cfgSharedChannelLinks')), h('p', { className: css.settingsHelp }, t('cfgRemoveChannelHelp')),
+        ...Object.entries(draft.channels ?? {}).filter(([, channel]) => channel?.fallback).map(([name, channel]) => {
+          const references = channelRuleReferences(name);
+          return h('div', { key: name, className: css.configField }, h('span', null, name + ' → ' + channel.fallback),
+            h(Button, { disabled: busy || references.length > 0, 'aria-label': t('cfgRemoveChannelLink') + ' ' + name, onClick: () => removeChannelFallback(name) }, t('cfgRemoveChannelLink')),
+            references.length > 0 && h('p', { className: css.settingsHelp }, t('cfgChannelRuleReferences', { routes: references.join(', ') })));
+        })),
       draft.planning?.compact && h('section',{className:css.details},h('h4',null,t('cfgCompactPlanning')),
         ...['design-plan','design-review'].map(role=>field('planning.compact.'+role,t(role==='design-plan'?'cfgCompactDesign':'cfgCompactReview'),null,
           select('planning.compact.'+role,draft.planning.compact[role],Object.entries(draft.profiles??{}).map(([name,p])=>[name,name+' · '+bindingSummary(p)+(antigravitySwarmUnavailable(draft,p,role)?' · '+t('cfgSwarmRole'):''),antigravitySwarmUnavailable(draft,p,role)]),name=>{
@@ -1297,6 +1622,11 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
       h(Button, { disabled: busy, onClick: () => setBindingSelection(null) }, t('cfgBindingDone')),
       h('h4', { className: css.heading }, roleName(bindingEdit.group, bindingEdit.key))),
     h('p', { className: css.settingsHelp }, t('cfgBindingSaveHelp')),
+    bindingEdit.group === 'candidate' && h('section', { className: css.configCallout },
+      h('p', null, executionBindingReferences(draft, bindingEdit.key).length
+        ? t('cfgCandidateEditShared', { routes: executionBindingReferences(draft, bindingEdit.key).join(', ') }) : t('cfgCandidateUnused')),
+      h(Button, { disabled: busy || Object.keys(draft['execution-policy'].bindings).length >= 32, onClick: () => createCandidate(bindingEdit.key) }, t('cfgCopyCandidate')),
+      fieldErrors['execution-policy.bindings.' + bindingEdit.key] && h('p', { className: css.errorText, role: 'alert' }, t('cfgExecutionAdvanced'))),
     Object.entries(textErrors).some(([key,error]) => key.startsWith('execution-policy.') && error) && h('p',{className:css.configCallout,role:'alert'},t('cfgExecutionAdvanced')),
         field(
           'binding.resource',
@@ -1323,6 +1653,24 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           t('cfgModelHint'),
           input('binding.model', bindingEdit.value.model, (v) => patchBinding('model', v)),
         ),
+        h('section', { className: css.details, 'data-model-catalog': true },
+          h('h4', null, t('cfgModelCatalog')),
+          h('p', { className: css.settingsHelp }, t('cfgModelCatalogHelp')),
+          h(Button, { disabled: busy || !validModelCatalogRequest(catalogRequest), onClick: refreshModels },
+            t(modelCatalog.status === 'loading' ? 'cfgCatalogLoading' : 'cfgLoadModels')),
+          modelCatalog.status === 'error' && h('p', { className: css.errorText, role: 'alert' }, t('cfgCatalogError')),
+          modelCatalog.value && h(React.Fragment, null,
+            h('p', { className: css.settingsHelp }, t('cfgCatalogSource', { source: modelCatalog.value.source, scope: modelCatalog.value.scope })),
+            h('p', { className: css.settingsHelp }, t('cfgCatalogEntitlement')),
+            bindingEdit.execution && h('p', { className: css.settingsHelp }, t('cfgCatalogPolicyEfforts')),
+            modelCatalog.value.status === 'available' && modelCatalog.value.models.length > 0
+              ? field('binding.catalog-model', t('cfgCatalogChoose'), t('cfgCatalogEffort'),
+                select('binding.catalog-model', modelCatalog.value.models.some(model => model.id === bindingEdit.value.model) ? bindingEdit.value.model : '',
+                  [['', t('cfgCatalogManual')], ...modelCatalog.value.models.map(model => [model.id, model.label === model.id ? model.id : model.label + ' · ' + model.id])], selectCatalogModel))
+              : h('p', { className: css.meta }, t('cfgCatalogUnavailable')),
+            modelCatalog.value.error?.message && h('p', { className: css.errorText }, modelCatalog.value.error.message),
+            ...(modelCatalog.value.limitations ?? []).map((value, index) => h('p', { key: index, className: css.settingsHelp }, value)),
+            modelCatalog.value.truncated && h('p', { className: css.settingsHelp }, t('cfgCatalogTruncated')))),
         field(
           'binding.thinking',
           t('consoleThinking'),
@@ -1331,7 +1679,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
             'binding.thinking',
             bindingEdit.value.thinking ?? '',
             bindingEfforts(bindingEdit.value).concat(
-              bindingEdit.value.thinking && !Object.hasOwn(efforts, bindingEdit.value.thinking)
+              bindingEdit.value.thinking && !bindingEfforts(bindingEdit.value).some(([effort]) => effort === bindingEdit.value.thinking)
                 ? [[bindingEdit.value.thinking, bindingEdit.value.thinking]]
                 : [],
             ),
@@ -1365,8 +1713,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
         field(
           'binding.permission',
           t('permission'),
-          bindingEdit.execution ? t('cfgExecutionAuthority') : t('consolePermissionEffective'),
-          bindingEdit.execution ? h('span',null,bindingEdit.execution.permission) : select(
+          bindingEdit.execution ? t(bindingEdit.group === 'candidate' ? 'cfgCandidatePermissionHelp' : 'cfgRoutePermissionHelp') : t('consolePermissionEffective'),
+          bindingEdit.execution ? select('binding.permission', bindingEdit.execution.permission, [
+            ['read-only', t('permissionReadOnly')], ['workspace-write', t('permissionWorkspace')], ['danger-full-access', t('permissionFull')],
+          ], value => bindingEdit.group === 'candidate' ? patchBinding('permission', value) : authorizeRoute(bindingEdit.key, value)) : select(
             'binding.permission',
             bindingEdit.permission,
             [
@@ -1382,8 +1732,10 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
           field(
             'binding.session',
             t('consoleSession'),
-            bindingEdit.execution ? t('cfgExecutionAuthority') : bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
-            bindingEdit.execution ? h('span',null,t(bindingEdit.execution['session-mode']==='scoped'?'cfgReuse':'cfgFresh')) : select(
+            bindingEdit.execution ? t('cfgCandidateSessionHelp') : bindingEdit.group === 'routes' ? t('consoleRouteSession') : t('consoleScopeReason'),
+            bindingEdit.execution ? select('binding.session', bindingEdit.execution['session-mode'], [
+              ['scoped', t('consoleScoped')], ['fresh', t('consoleFresh')],
+            ], editExecutionSession) : select(
               'binding.session',
               bindingEdit.session,
               [
@@ -1717,4 +2069,69 @@ Object.assign(en, {
   cfgEffectiveLoading: 'Rereading the effective task configuration…',
   cfgEffectiveUnknown: 'The effective configuration is unconfirmed. Its JEV switch cannot be reported as on or off.',
   cfgEffectiveReload: 'Recheck effective configuration', cfgJevUnresolved: 'Decision model unresolved',
+});
+
+Object.assign(zh, {
+  cfgCandidate: '执行候选', cfgCandidateLibrary: '完整执行绑定',
+  cfgCandidateLibraryHelp: '在这里新建、复制、编辑 Provider、模型、思考等级、原生能力、权限和会话。候选可供多条路线使用；有引用的候选不能直接删除。最多 32 项。',
+  cfgCreateCandidate: '新建执行候选', cfgEditCandidate: '编辑执行候选', cfgCopyCandidate: '复制候选', cfgDeleteCandidate: '删除候选', cfgRemove: '移除',
+  cfgCandidateReferences: '引用路线：{routes}', cfgCandidateUnused: '尚未被路线引用；保存不会自动让它参与执行。',
+  cfgCandidateEditShared: '正在编辑完整绑定；保存后使用它的路线将采用此修改：{routes}。需要独立调整时先复制，再在目标路线的允许集合中选择副本。当前任务的冻结配置不变。',
+  cfgCandidateLimit: '执行绑定必须保留 1–32 项；请先移除未使用候选。',
+  cfgCandidatePermissionHelp: '这是候选的显式权限。所有引用路线的授权必须相符；不符时返回路线设置明确修改授权或恢复候选权限，才能保存。',
+  cfgCandidateSessionHelp: '此完整绑定显式决定会话策略；切换候选后按新绑定重新核对会话身份。已运行的冻结配置不受影响。',
+  cfgRoutePermission: '路线授权权限', cfgRoutePermissionHelp: '明确更改此路线及其全部允许候选的权限。与其它路线共享的候选会先复制，其它路线权限不变。模型与 Provider 编辑不会自动改变权限。',
+  cfgAlignAuthority: '按此路线授权同步候选',
+  cfgExecutionAuthorityMismatch: '候选权限与路线授权不符。请先明确设置路线授权，或调整候选权限；会话策略可以独立选择。',
+  cfgExecutionRuleReference: '质量次序或渠道后备仍引用此项；先在下方规则中移除引用。',
+  cfgExecutionCandidatesHelp: '设置初始候选、允许集合、路线授权、质量次序和渠道后备。JEV 只在允许集合中经运行时资格筛选的候选之间选择。编辑路线模型会隔离共享初始候选。',
+  cfgEnableExecutionRoute: '启用路线执行策略', cfgEnableExecutionHelp: '从该路线当前完整配置创建初始候选，切换次数设为 0。之后可以明确增加候选及切换预算。', cfgChooseRoute: '选择路线…',
+  cfgQualityOrder: '质量调整次序', cfgQualityHelp: '在首次确认停滞后按这个用户指定次序尝试后续候选；这不是系统对模型质量的排名，也不会改变初始配置。仍受切换预算和执行资格限制。',
+  cfgAddQuality: '加入质量次序', cfgChooseCandidate: '选择候选…', cfgMoveUp: '上移', cfgMoveDown: '下移', cfgRemoveQuality: '移出质量次序',
+  cfgChannelFallbacks: '渠道后备规则', cfgFallbackFrom: '{id} 的后备候选', cfgFallbackNone: '不设置后备',
+  cfgFallbackHelp: '选择另一个渠道的允许候选，并明确应用所列渠道映射。移除规则不会删除共享渠道的配置；如需调整其它使用者，请审查其设置。',
+  cfgFallbackPreview: '渠道 {from} → {to}；目标后端 {harness}；{route} 的目标模型 {model}。',
+  cfgFallbackShared: '应用会同步修改共享 channels 的后备链和此路线模型映射，可能影响也使用这些渠道的阶段；保存前可以在差异中审查。',
+  cfgApplyFallback: '应用所列渠道映射', cfgFallbackAligned: '渠道链与模型映射已匹配此规则。',
+  cfgSharedChannelLinks: '共享渠道后备链', cfgRemoveChannelLink: '移除渠道后备链', cfgRemoveChannelHelp: '移除已没有规则引用的共享后备链。此操作影响使用该渠道的所有阶段，需随配置一并保存。', cfgChannelRuleReferences: '先移除这些规则的引用：{routes}',
+  cfgFallbackEndpoints: '后备必须连接两个不同渠道的完整允许候选。', cfgFallbackCycle: '此后备链会形成循环；请先移除相反方向的渠道配置。',
+  cfgFallbackConflict: '现有其它规则或渠道后端与此映射冲突。先调整冲突规则，或为候选指定独立渠道。', cfgFallbackMapping: '后备规则尚未匹配渠道配置；请审查并应用所列映射后保存。',
+  cfgModelCatalog: '模型目录', cfgModelCatalogHelp: '按当前 Provider 和渠道读取客户端或配置中的精确模型列表；仅在点击时读取，不启动模型推理。也可继续手动输入模型 ID。',
+  cfgLoadModels: '读取模型目录', cfgCatalogLoading: '正在读取模型目录…', cfgCatalogError: '模型目录读取未确认；手动模型和其它草稿均已保留，可重试。',
+  cfgCatalogSource: '目录来源：{source} · 范围：{scope}', cfgCatalogEntitlement: '目录不证明当前账号有权调用；账号资格仍为未知，实际调用前由后端验证。',
+  cfgCatalogChoose: '从目录选择模型', cfgCatalogEffort: '保留受支持的当前思考等级；不兼容时仅采用目录明确给出的默认等级。',
+  cfgCatalogPolicyEfforts: '执行候选仅显示 Flywheel 当前适配器也接受的目录等级；原生目录额外列出的档位不会自动写入执行策略。',
+  cfgCatalogManual: '保留手动模型 ID', cfgCatalogUnavailable: '此通道暂未返回可选目录；可保留精确模型 ID 或重试。', cfgCatalogTruncated: '目录超过显示上限；未列出的精确模型仍可手动输入。',
+});
+Object.assign(en, {
+  cfgCandidate: 'Execution candidate', cfgCandidateLibrary: 'Complete execution bindings',
+  cfgCandidateLibraryHelp: 'Create, copy and edit Provider, model, effort, native capabilities, permissions and sessions. Multiple routes may share a candidate; referenced candidates cannot be deleted. Maximum: 32.',
+  cfgCreateCandidate: 'Create execution candidate', cfgEditCandidate: 'Edit execution candidate', cfgCopyCandidate: 'Copy candidate', cfgDeleteCandidate: 'Delete candidate', cfgRemove: 'Remove',
+  cfgCandidateReferences: 'Referenced by routes: {routes}', cfgCandidateUnused: 'No route references this candidate. Saving does not automatically allow it to execute.',
+  cfgCandidateEditShared: 'You are editing the complete binding used by these routes: {routes}. Copy it first and select the copy in the target route for an independent edit. Frozen configurations in existing tasks remain unchanged.',
+  cfgCandidateLimit: 'Keep 1–32 execution bindings. Remove unused candidates first.',
+  cfgCandidatePermissionHelp: 'This candidate has explicit permissions. Referencing routes must authorize the same permission; return to their controls to explicitly change authorization or restore this value before saving.',
+  cfgCandidateSessionHelp: 'This complete binding determines its session policy. A switch rechecks session identity against the selected binding. Existing frozen configurations remain unchanged.',
+  cfgRoutePermission: 'Authorized route permission', cfgRoutePermissionHelp: 'Explicitly change this route and all its allowed candidates. Candidates shared with other routes are copied first, preserving those routes. Editing a model or Provider never changes authority automatically.',
+  cfgAlignAuthority: 'Align candidates with this authorization',
+  cfgExecutionAuthorityMismatch: 'Candidate permission differs from route authorization. Explicitly set route authorization or edit the candidate first. Session policies may differ.',
+  cfgExecutionRuleReference: 'A quality-order or channel-fallback rule still references this candidate. Remove that reference in the rule controls below first.',
+  cfgExecutionCandidatesHelp: 'Set the initial candidate, allowed set, route authorization, quality order and channel fallbacks. JEV selects only allowed candidates that pass runtime eligibility. Editing a route model isolates its shared initial candidate.',
+  cfgEnableExecutionRoute: 'Enable a route execution policy', cfgEnableExecutionHelp: 'Create an initial candidate from the route’s current complete configuration with zero switches. You can then explicitly add candidates and a switch budget.', cfgChooseRoute: 'Choose a route…',
+  cfgQualityOrder: 'Quality adaptation order', cfgQualityHelp: 'After the first confirmed stalled comparison, try subsequent candidates in this user-defined order. It is not a model quality ranking and does not change the initial binding. Switch budgets and eligibility still apply.',
+  cfgAddQuality: 'Add to quality order', cfgChooseCandidate: 'Choose a candidate…', cfgMoveUp: 'Move up', cfgMoveDown: 'Move down', cfgRemoveQuality: 'Remove from quality order',
+  cfgChannelFallbacks: 'Channel fallback rules', cfgFallbackFrom: 'Fallback for {id}', cfgFallbackNone: 'No fallback',
+  cfgFallbackHelp: 'Select an allowed candidate on another channel, then explicitly apply the displayed channel mapping. Removing a rule preserves shared channel configuration; inspect other users before changing it.',
+  cfgFallbackPreview: 'Channel {from} → {to}; target backend {harness}; target model for {route}: {model}.',
+  cfgFallbackShared: 'Applying changes the shared channels fallback chain and this route’s model map. Stages using these channels may also be affected. Review the configuration diff before saving.',
+  cfgApplyFallback: 'Apply displayed channel mapping', cfgFallbackAligned: 'The channel chain and model mapping match this rule.',
+  cfgSharedChannelLinks: 'Shared channel fallback links', cfgRemoveChannelLink: 'Remove channel fallback link', cfgRemoveChannelHelp: 'Remove shared links after their rules have been removed. This affects every stage using the channel and is saved with the configuration.', cfgChannelRuleReferences: 'Remove these rule references first: {routes}',
+  cfgFallbackEndpoints: 'A fallback must connect complete allowed candidates on two different channels.', cfgFallbackCycle: 'This channel chain would form a cycle. Remove the conflicting channel configuration first.',
+  cfgFallbackConflict: 'Another rule or existing channel backend conflicts with this mapping. Adjust the conflicting rule or give this candidate its own channel first.', cfgFallbackMapping: 'The fallback rule does not yet match channel configuration. Review and apply the displayed mapping before saving.',
+  cfgModelCatalog: 'Model catalog', cfgModelCatalogHelp: 'Read exact model IDs from the selected Provider’s native client or configuration. Runs only when requested and performs no inference. Manual model IDs remain available.',
+  cfgLoadModels: 'Read model catalog', cfgCatalogLoading: 'Reading model catalog…', cfgCatalogError: 'The catalog read is unconfirmed. Your manual model and other edits are intact; you can retry.',
+  cfgCatalogSource: 'Catalog source: {source} · scope: {scope}', cfgCatalogEntitlement: 'A catalog entry does not establish account access. Account entitlement remains unknown and is checked by the backend before dispatch.',
+  cfgCatalogChoose: 'Choose a catalog model', cfgCatalogEffort: 'Keep the current supported effort; otherwise use a default only when the catalog explicitly supplies one.',
+  cfgCatalogPolicyEfforts: 'Execution candidates show catalog efforts accepted by the current Flywheel adapter. Additional native effort values are not automatically written into the execution policy.',
+  cfgCatalogManual: 'Keep manual model ID', cfgCatalogUnavailable: 'This channel returned no selectable catalog. Keep an exact model ID or retry.', cfgCatalogTruncated: 'The catalog exceeds the display limit. Exact IDs not listed can still be entered manually.',
 });

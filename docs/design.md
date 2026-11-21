@@ -952,6 +952,30 @@ JEV 的 model-bindings 冻结决策候选的展示身份，receipt.action-id 与
 按同 invocation ID 读取，不构造未经观察的完整任务树。AGY Swarm 非 Execute 绑定
 在配置加载时拒绝，编辑器禁选并解释；Execute 的实际 Full／分工／图片资格仍由引擎
 和 driver 最终校验。常用候选和 native 操作只修改目标私有引用，保留共享权限与会话。
+
+`control node` 同时投影当前 packet 的 `eligibility` 与 `collaborationEditor`。
+资格候选复用实际 executionCandidateConditions：原图传输、native-profile、Full、
+2–8 项分工及不重叠写入范围使用同一判断。读取先核对冻结契约指纹、有效配置及已冻结
+execution-policy 身份；reviewed task 还核对确切设计批准、计划评审、活动投影和不可变
+规划导出。缺失或变化时显示 unknown，不从旧 ID 拼接现配置。候选元数据限制 48 KiB，
+编辑快照限制 32 KiB，超限整体省略并给出原因，不截短路径或冒充完整分工。
+这些结果说明当前契约的输入资格，不证明账号权益、剩余额度、客户端在线或模型已执行。
+
+分工编辑仅接受既有 `collaboration:{version:1,tasks:[{goal,writes}]}`，不扩大 packet 的
+schedule.writes。保存通过 `planning/collaboration`，绑定 state revision、request-id、
+packet 指纹和完整当前 plan ref，在同一 run lease 下重新核对。引擎复制当前完整计划，
+仅改选中 packet 的分工，追加不可变 plan 并进入独立 plan-review，旧活动文件、已完成
+packet、设计批准和历史评审不被重写。producer 使用 `control:collaboration:<request-id摘要>`，
+明确是人工控制修订而非虚构模型调用；原 request ID 仍在规划请求账本中。
+保存不授予 Start，不增加执行次数；显式保存并审查只运行 planning-only。相同 request ID
+和内容幂等，不同内容拒绝；正在执行、待对账、待激活或旧快照不能覆盖当前计划。
+经批准但尚未授权 Start 的活动设计可修订分工，后续实施仍需原有 Start 检查。
+新请求记录不可变 `origin:collaboration-edit`，因此状态对账能恢复真实 action，不靠自由
+Feedback 文本猜测操作。lease 内确认尚未采用的无效分工，以 request-id、完整命令摘要和
+有界原因追加拒绝审计；CAS 成功后返回 rejected，不启动 review 或实施。响应丢失后可查
+同 ID 的持久回执；审计保存失败仍保持未知。前端保留绑定当前会话／任务／packet 的草稿和
+未决 ID，关闭面板或切页不丢失；只有匹配 action、ID 和终态才能解除未知状态。
+
 原生观察的“已查询但未找到”仅在读取成功且返回无匹配调用时显示；请求中及失败
 不构成无记录证据。高级 JSON 的非对象 native profile 定义保留为可修正草稿，阻止保存，
 不使图形模型页崩溃或静默改写无效值。
@@ -991,6 +1015,21 @@ JEV 只有一个总开关；关闭时仅放弃该组无效字段草稿，保留�
 错误。切为 serial 同样移除被隐藏的无效并发数草稿，不能因此清空 Provider 额度。
 高级 JSON 中检测出的非法字段不静默重置；关闭后仍给出可见的高级修正入口并阻止
 保存，完整配置的 schema 和语义检查继续由 Go 负责。
+
+执行候选表支持创建、复制、编辑和删除；被其他路由引用的候选不能直接删除。每个
+候选的后端、模型、thinking、native-profile、permission 与 session-mode 都是显式值。
+修改某一路由权限时复制共享候选并更新该路由的 initial／allowed／quality-order／fallback
+引用，其他路由保留原权限。质量顺序和渠道后备有结构化控件；后备更新需预览并明确采用
+对应 channel chain 与模型映射，共享冲突和循环不静默覆盖。所有控件共用原草稿和 CAS 保存。
+
+模型目录通过显式 `control models` 只读调用独立 metadata worker，不随下拉展开或键入自动
+启动。Antigravity 读取官方 `agy models`，Codex Pro 只用 app-server initialize／model/list，
+Claude 只读取 SDK initialization.models，禁用 hooks/MCP/plugins、关闭持久化且不发送用户
+消息。返回最多 256 项，分别标明来源、原生客户端目录范围、截断和 unavailable／unsupported。
+Kimi 和 DSH 暂无已验证的无会话目录通道时明确 unsupported，保留精确模型 ID 输入。
+返回必须匹配所查询的 harness/provider/channel；切换任务、作用域或绑定后的旧响应不能
+覆盖草稿。目录的原生思考选项还需与 Flywheel 执行绑定规则相交，不能因目录出现某值就
+扩大执行协议。目录成员资格不等于账号已授权；失败不更换模型，不登录，也不发推理请求。
 自动 Worktree 开关明确是引擎管理策略，不表示关闭后删除目录或禁用外部 Worktree。
 JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短状态，不笼统声称所有修改
 都只在下次启动生效。数据许可的显式空数组和合法连接配置不能由 UI 重置。
