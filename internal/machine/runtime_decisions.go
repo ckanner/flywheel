@@ -35,7 +35,7 @@ func (c *Context) failureActions(packet *contract.Packet, code errs.ErrorCode, s
 	}
 	baseline := "repair"
 	if !spin {
-		add("repair", decision.Repair, "Continue one bounded repair attempt with the current executor and the recorded failure feedback.", []any{packet, ps.Attempts, ps.FailedAttempts, ps.ExecutionPolicy})
+		add("repair", decision.Repair, "Continue one bounded repair attempt with the current executor and the recorded failure feedback.", []any{packet, ps.Attempts, ps.FailedAttempts, executionPolicyDecisionFacts(ps.ExecutionPolicy)})
 	}
 	canPlan := c.quick() || packet.Escalation.OnFail == "return-to-planner" && ps.PlanRevisions < 1
 	if canPlan {

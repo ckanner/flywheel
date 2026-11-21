@@ -78,13 +78,18 @@ func TestInitialChoiceExplainsReviewedScopeAcceptanceAndNativeLimits(t *testing.
 	ps := c.State.Packets[p.PacketID]
 	require.Zero(t, ps.Attempts, "selecting an executor is not an execution attempt")
 	require.Equal(t, "swarm", ps.ExecutionPolicy.Current)
+	require.NotNil(t, ps.ExecutionPolicy.CurrentBinding)
+	require.Equal(t, "swarm", ps.ExecutionPolicy.CurrentBinding.BindingID)
+	require.JSONEq(t, string(c.Config.NativeProfiles["swarm"].Options), string(ps.ExecutionPolicy.CurrentBinding.Binding.NativeOptions), "the selected native mode is frozen before an execution session exists")
 	r := c.State.RuntimeDecisions.Records[0]
 	raw, err := json.Marshal(r.Snapshot.Facts)
 	require.NoError(t, err)
 	for _, fact := range []string{p.Goal, `route`, `workflow`, `full`, `schedule`, `acceptance`, p.Acceptance.L1[0].Cmd, `decision-calls-used`, `decision-call-limit`, `budget-policy`, p.Collaboration.Tasks[0].Goal} {
 		require.Contains(t, string(raw), fact)
 	}
-	require.Equal(t, "swarm", loadFixtureState(t, fx).Packets[p.PacketID].ExecutionPolicy.Current)
+	reloaded := loadFixtureState(t, fx).Packets[p.PacketID].ExecutionPolicy
+	require.Equal(t, "swarm", reloaded.Current)
+	require.Equal(t, ps.ExecutionPolicy.CurrentBinding, jsonClone(reloaded.CurrentBinding))
 	require.NoError(t, c.runtimeInitialExecutionDecision(p))
 	require.Equal(t, int32(1), calls.Load(), "a selected but undispatched executor must not be selected again")
 	ps.ExecutionPolicy = nil

@@ -315,7 +315,7 @@ func controlCmd() *cobra.Command {
 			}
 			if compact && reply.State != nil {
 				var projectionErr error
-				reply.State, projectionErr = machine.ConsoleProjection(reply.State)
+				reply.State, projectionErr = machine.ConsoleProjection(reply.State, reply.Node)
 				err = errors.Join(err, projectionErr)
 				reply.Projection = "console-excerpt"
 			}

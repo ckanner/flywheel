@@ -170,6 +170,8 @@ Object.assign(zh, {
   wbBindingInitialUnknown: '此运行没有保存可确认的初始模型配置', wbBindingSelectedUnknown: '尚无可确认的后续模型选择',
   wbBindingNoCall: '尚无已记录的模型调用', wbBindingMissing: '此记录没有保存完整模型配置',
   wbBindingModelUnspecified: '未指定具体模型',
+  wbBindingNativeMode: '请求的协作方式', wbBindingNativeModeUnknown: '此记录未保留可确认的协作方式',
+  wbBindingModeNative: '普通原生编排（native）', wbBindingModeSubagents: '子智能体编排（subagents）', wbBindingModeSwarm: '蜂群协作（swarm）',
   wbBindingNativeOmitted: '原生配置正文已从本视图省略；原生配置仍保留在任务账本。', wbBindingNativeHash: '原生配置 SHA256',
   wbBindingsOmitted: '本视图省略了 {count} 项初始配置；完整记录保留在任务账本。', wbBindingUnshown: '本视图未包含当前阶段的完整配置。',
   wbBindingHelp: '初始配置、后续选择与调用事实分别记录。设置修改不会重写旧会话。',
@@ -216,6 +218,8 @@ Object.assign(en, {
   wbBindingInitialUnknown: 'This run did not retain a confirmed initial model binding', wbBindingSelectedUnknown: 'No confirmed next binding has been recorded',
   wbBindingNoCall: 'No model invocation has been recorded', wbBindingMissing: 'This record did not retain a complete model binding',
   wbBindingModelUnspecified: 'No specific model was selected',
+  wbBindingNativeMode: 'Requested collaboration mode', wbBindingNativeModeUnknown: 'This record did not retain a confirmed collaboration mode',
+  wbBindingModeNative: 'Native orchestration (native)', wbBindingModeSubagents: 'Subagent orchestration (subagents)', wbBindingModeSwarm: 'Swarm collaboration (swarm)',
   wbBindingNativeOmitted: 'The native options body was omitted from this view; the native configuration remains in the task ledger.', wbBindingNativeHash: 'Native options SHA256',
   wbBindingsOmitted: '{count} initial bindings were omitted from this view; complete records remain in the task ledger.', wbBindingUnshown: 'This view does not include the complete binding for this stage.',
   wbBindingHelp: 'Initial bindings, subsequent choices and invocation facts are separate. Settings changes do not rewrite old sessions.',
@@ -257,6 +261,10 @@ function BindingProperties({ binding, bindingId, nativeOptionsOmitted, nativeOpt
   if (!binding) return h('p', { className: css.meta }, t('wbBindingMissing'));
   const property = (label, value) => h(React.Fragment, { key: label }, h('dt', null, label), h('dd', null, textValue(value)));
   const permission = binding.permission ?? binding.permissionMode;
+  const nativeMode = binding.nativeOptions?.mode;
+  const nativeModeLabel = ['native', 'subagents', 'swarm'].includes(nativeMode)
+    ? { native: 'wbBindingModeNative', subagents: 'wbBindingModeSubagents', swarm: 'wbBindingModeSwarm' }[nativeMode]
+    : 'wbBindingNativeModeUnknown';
   return h('dl', { className: css.consoleProperties },
     bindingId && property(t('runtimeBindingID'), bindingId),
     property(t('consoleProvider'), bindingCaption({ ...binding, model: '' })),
@@ -265,6 +273,7 @@ function BindingProperties({ binding, bindingId, nativeOptionsOmitted, nativeOpt
     binding.channel && property(t('channel'), binding.channel),
     property(t('consoleThinking'), bindingEffortLabel(binding, t)),
     (binding.nativeProfile || binding['native-profile']) && property(t('cfgNative'), binding.nativeProfile || binding['native-profile']),
+    binding.harness === 'antigravity' && property(t('wbBindingNativeMode'), t(nativeModeLabel)),
     nativeOptionsOmitted && h(React.Fragment, null,
       h('dt', null, t('cfgNative')), h('dd', { 'data-native-options-omitted': true }, t('wbBindingNativeOmitted')),
       h('dt', null, t('wbBindingNativeHash')), h('dd', { className: css.path }, nativeOptionsHash)),
@@ -377,6 +386,10 @@ function validExecutionPolicyHistory(packet) {
   const binding = value => record(value) && ['harness', 'provider', 'channel', 'model', 'thinking', 'nativeProfile', 'permission', 'sessionMode']
     .every(key => value[key] == null || typeof value[key] === 'string');
   return record(packet) && (policy == null || record(policy) &&
+    (policy.currentBindingOmitted == null || typeof policy.currentBindingOmitted === 'boolean' &&
+      (!policy.currentBindingOmitted || typeof policy.current === 'string' && policy.current.length > 0)) &&
+    (policy.currentBinding == null || policy.currentBindingOmitted !== true &&
+      validBindingChoices({ current: policy.currentBinding }) && typeof policy.current === 'string' && policy.current.length > 0 && policy.currentBinding.bindingId === policy.current) &&
     (policy.history == null || Array.isArray(policy.history) && policy.history.every(change =>
       record(change) && ['kind', 'from', 'to', 'reason', 'at'].every(key => typeof change[key] === 'string') &&
       Number.isSafeInteger(change.attempt) && change.attempt >= 0 && binding(change.before) && binding(change.after))));
@@ -823,21 +836,26 @@ function nodeBindingFacts(node, state, quick) {
   const initial = state.run?.initialBindings?.[stageID] ?? null;
   const policy = role === 'execute' ? node.packet?.['execution-policy'] : null;
   let selected = initial;
-  if (policy?.current) {
-    const last = policy.history?.at(-1);
-    selected = last?.to === policy.current ? { bindingId: last.to, binding: last.after } :
-      initial?.bindingId === policy.current ? initial : null;
-    if (!selected) {
-      for (const decision of [...(state['runtime-decisions']?.records ?? [])].reverse()) {
-        const choice = decision['model-bindings']?.[decision.action];
-        if (decision.packet === id && ['applied', 'baseline'].includes(decision.status) && choice?.bindingId === policy.current) {
-          selected = choice;
-          break;
+  if (policy) {
+    // New records freeze the exact selected configuration independently of a
+    // later run's defaults. A display omission must not be filled from history.
+    if (policy.currentBinding) selected = policy.currentBinding;
+    else if (policy.currentBindingOmitted) selected = null;
+    else {
+      const last = policy.history?.at(-1);
+      selected = last?.to === policy.current ? { bindingId: last.to, binding: last.after } : null;
+      if (!selected) {
+        for (const decision of [...(state['runtime-decisions']?.records ?? [])].reverse()) {
+          const choice = decision['model-bindings']?.[decision.action];
+          if (decision.packet === id && ['applied', 'baseline'].includes(decision.status) && choice?.bindingId === policy.current) {
+            selected = choice;
+            break;
+          }
         }
       }
     }
   }
-  return { role, initial, selected, selectedId: policy?.current, actual,
+  return { role, initial, selected, selectedId: policy?.current, selectedOmitted: policy?.currentBindingOmitted === true, actual,
     declared: state.run?.bindings?.[stageID], mock: state.run?.drivers?.[role] === 'mock' };
 }
 
@@ -903,7 +921,7 @@ function NodeBindingHistory({ facts, state, t }) {
       facts.initial ? h(BindingProperties, { ...facts.initial, t }) : h('p', { className: css.meta }, t(state.run?.initialBindingsOmitted > 0 ? 'wbBindingUnshown' : 'wbBindingInitialUnknown'))),
     facts.role === 'execute' && h('article', { className: css.observationBlock, 'data-binding-fact': 'selected' }, h('h5', null, t('wbBindingSelected')),
       facts.selected ? h(BindingProperties, { ...facts.selected, t }) : h('p', { className: css.meta },
-        (facts.selectedId ? t('runtimeBindingID') + ': ' + facts.selectedId + ' · ' : '') + t(state.run?.initialBindingsOmitted > 0 ? 'wbBindingUnshown' : 'wbBindingSelectedUnknown'))),
+        (facts.selectedId ? t('runtimeBindingID') + ': ' + facts.selectedId + ' · ' : '') + t(facts.selectedOmitted || state.run?.initialBindingsOmitted > 0 ? 'wbBindingUnshown' : 'wbBindingSelectedUnknown'))),
     h('article', { className: css.observationBlock, 'data-binding-fact': 'actual' }, h('h5', null, t(actual ? recordedInvocationLabel(actual) : 'wbBindingActual')),
       actual ? h(React.Fragment, null, h(BindingProperties, { binding: actual.configuration, t }),
         h('dl', { className: css.consoleProperties },
@@ -946,7 +964,11 @@ function NodeNativeObservations({ facts, control, selection, run, t }) {
   return h('section', { className: css.inspectorSection, 'data-node-native': id },
     h('h4', null, t('runsNative')),
     h('p', { className: css.path }, t('wbBindingInvocation') + ': ' + id),
-    h(Button, { disabled: !!control.pending, onClick: () => { setRequested(id); return run('metrics', selection, false, { runId: actual.last['engine-run-id'] }); } }, t('wbNativeRead')),
+    h(Button, { disabled: !!control.pending, onClick: async () => {
+      setRequested('');
+      const value = await run('metrics', selection, false, { runId: actual.last['engine-run-id'] });
+      if (value?.metrics) setRequested(id);
+    } }, t('wbNativeRead')),
     observed.length ? h(NativeObservations, { calls: observed, t, compact: true }) : h('p', { className: css.meta }, t(requested === id && calls.length === 0 ? 'wbNativeOlder' : 'wbNativeMissing')));
 }
 

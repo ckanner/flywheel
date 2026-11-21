@@ -264,6 +264,11 @@ function configFieldErrors(values) {
     }
   }
   if (values?.scheduler !== undefined && !record(values.scheduler)) errors.scheduler = 'cfgInvalid';
+  if (values?.['native-profiles'] !== undefined) {
+    if (!record(values['native-profiles'])) errors['native-profiles'] = 'cfgInvalid';
+    else for (const [name, definition] of Object.entries(values['native-profiles']))
+      if (!record(definition)) errors['native-profiles.' + name] = 'cfgInvalid';
+  }
   if (values?.jev !== undefined) {
     if (!record(values.jev)) errors.jev = 'cfgInvalid';
     else {
@@ -939,7 +944,7 @@ function ConfigEditor({ control, selection, run, t, active = false, cache, conte
     const harness = value.harness || draft.profiles?.[value.profile]?.harness;
     const unavailable = name => antigravitySwarmUnavailable(draft, { harness, 'native-profile': name }, role);
     const choices = [['__inherit__', t('consoleInherit') + (inherited ? ' · ' + inherited : '') + (unavailable(inherited) ? ' · ' + t('cfgSwarmRole') : ''), unavailable(inherited)], ['', t('cfgNativeNone')],
-      ...Object.entries(draft['native-profiles'] ?? {}).filter(([, definition]) => definition.harness === harness)
+      ...Object.entries(draft['native-profiles'] ?? {}).filter(([, definition]) => record(definition) && definition.harness === harness)
         .map(([name]) => [name, name + (unavailable(name) ? ' · ' + t('cfgSwarmRole') : ''), unavailable(name)])];
     const selected = value['native-profile'];
     if (selected && !choices.some(([name]) => name === selected)) choices.push([selected, selected]);

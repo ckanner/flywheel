@@ -10,7 +10,7 @@ import (
 
 // Display-only projection. Identity, revision, verdicts and counters are intact;
 // bounded diagnostic excerpts keep large task graphs inside the control frame.
-func ConsoleProjection(st *state.State) (*state.State, error) {
+func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, error) {
 	if st == nil {
 		return nil, nil
 	}
@@ -57,7 +57,13 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 			record.Feedback = compactDiagnostic(record.Feedback)
 		}
 	}
-	for id, packet := range view.Packets {
+	packetIDs := make([]string, 0, len(view.Packets))
+	for id := range view.Packets {
+		packetIDs = append(packetIDs, id)
+	}
+	sort.Strings(packetIDs)
+	for _, id := range packetIDs {
+		packet := view.Packets[id]
 		if packet == nil {
 			return nil, fmt.Errorf("state contains a null packet %s", id)
 		}
@@ -65,6 +71,7 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 			delete(view.Packets, id)
 			continue
 		}
+		compactCurrentExecutionBinding(packet.ExecutionPolicy, &bindingBudget)
 		packet.Evidence.Executor = evidenceSummary(packet.Evidence.Executor, "source", "report-sha256", "identity", "at")
 		packet.Evidence.L1 = evidenceSummary(packet.Evidence.L1, "pass", "identity", "identity-error", "at", "attribution")
 		packet.Evidence.Review = evidenceSummary(packet.Evidence.Review, "verdict", "identity", "scope", "score", "quick-eligible", "at")
@@ -74,6 +81,16 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 		packet.Commit = compactDiagnostic(packet.Commit)
 		packet.EvidenceHistory = historySummary(packet.EvidenceHistory)
 		packet.RetryHistory = historySummary(packet.RetryHistory)
+	}
+	// A node response also carries the selected packet's full evidence. Keep
+	// those details, but bound its new display metadata within this same reply.
+	for _, node := range nodes {
+		if node != nil && node.Packet != nil && node.Packet.ExecutionPolicy != nil {
+			packet := *node.Packet
+			policy := *packet.ExecutionPolicy
+			packet.ExecutionPolicy, node.Packet = &policy, &packet
+			compactCurrentExecutionBinding(&policy, &bindingBudget)
+		}
 	}
 	view.Inbox = compactDiagnostic(view.Inbox).([]any)
 	return view, nil

@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { act, mountPanel, closeClientHarness } from './support/client-harness.js';
+import { act, mountPanel, closeClientHarness, deferred } from './support/client-harness.js';
 
 after(closeClientHarness);
 
@@ -79,9 +79,9 @@ test('legacy declarations and changed driver defaults do not become historical i
   assert.equal(declaration.open, false);
 });
 
-test('the frozen initial candidate is also the next choice before any JEV decision or model invocation', async t => {
+test('a new policy freezes its initial candidate as the next choice before any JEV decision or model invocation', async t => {
   const state = taskState();
-  state.packets[packetID]['execution-policy'] = { version: 1, current: 'neon', history: [] };
+  state.packets[packetID]['execution-policy'] = { version: 1, current: 'neon', currentBinding: { bindingId: 'neon', binding: initial }, history: [] };
   state.sessions.records = {};
   const ui = await mountPanel(t, request => reply(request, { state }));
   const view = await inspect(ui);
@@ -89,6 +89,70 @@ test('the frozen initial candidate is also the next choice before any JEV decisi
   assert.match(view.querySelector('[data-binding-fact="actual"]').textContent, /尚无已记录的模型调用/);
   assert.equal(ui.container.querySelector('[data-node-native]'), null);
   assert.match(ui.container.querySelector('[data-node-id="M01-T01"]').textContent, /下一次已选配置/);
+});
+
+test('legacy policies do not adopt a later run initial merely because the candidate ID was reused', async t => {
+  const state = taskState();
+  state.packets[packetID]['execution-policy'] = { version: 1, current: 'neon', history: [] };
+  state.run.initialBindings['routes.default'].binding = { ...initial, model: 'later-run-model', nativeOptions: { version: 1, mode: 'swarm' } };
+  const ui = await mountPanel(t, request => reply(request, { state }));
+  const view = await inspect(ui);
+  assert.match(view.querySelector('[data-binding-fact="initial"]').textContent, /later-run-model/);
+  const next = view.querySelector('[data-binding-fact="selected"]');
+  assert.match(next.textContent, /neon.*尚无可确认的后续模型选择/);
+  assert.doesNotMatch(next.textContent, /later-run-model|swarm|gemini-4-hydrogen-high/);
+  assert.match(view.querySelector('[data-binding-fact="actual"]').textContent, /gemini-4-hydrogen-high/);
+});
+
+test('requested collaboration modes use each frozen binding rather than profile names or another invocation', async t => {
+  const state = taskState();
+  state.run.initialBindings['routes.default'].binding = { ...initial, nativeProfile: 'shared-name', nativeOptions: { version: 1, mode: 'native' } };
+  state.packets[packetID]['execution-policy'].history[0].after = { ...selected, nativeProfile: 'shared-name', nativeOptions: { version: 1, mode: 'swarm' } };
+  state.sessions.records.executor.configuration = { ...previous, nativeProfile: 'shared-name', nativeOptions: { version: 1, mode: 'subagents' } };
+  const ui = await mountPanel(t, request => reply(request, { state }));
+  const view = await inspect(ui);
+  assert.match(view.querySelector('[data-binding-fact="initial"]').textContent, /请求的协作方式普通原生编排（native）/);
+  assert.match(view.querySelector('[data-binding-fact="selected"]').textContent, /请求的协作方式蜂群协作（swarm）/);
+  assert.match(view.querySelector('[data-binding-fact="actual"]').textContent, /请求的协作方式子智能体编排（subagents）/);
+  assert.equal(ui.container.querySelector('[data-native-child]'), null, 'a requested mode never invents observed children');
+  await ui.setLocale('en');
+  assert.match(view.querySelector('[data-binding-fact="selected"]').textContent, /Requested collaboration modeSwarm collaboration \(swarm\)/);
+  for (const nativeOptions of [undefined, null, 'swarm', { version: 1, mode: 'toString' }, { version: 1, mode: '__proto__' }, { version: 1, mode: 'future' }]) {
+    state.packets[packetID]['execution-policy'].history[0].after.nativeOptions = nativeOptions;
+    await ui.click('Refresh');
+    assert.match(view.querySelector('[data-binding-fact="selected"]').textContent, /did not retain a confirmed collaboration mode/);
+    assert.doesNotMatch(view.querySelector('[data-binding-fact="selected"]').textContent, /Swarm collaboration|Native orchestration|function toString|\[object Object\]/);
+  }
+  assert.equal(ui.requests.length, 7, 'displaying a mode does not start or query a provider');
+});
+
+test('the frozen current binding outranks switch history and changed run defaults without filling display omissions', async t => {
+  const state = taskState();
+  const policy = state.packets[packetID]['execution-policy'];
+  policy.currentBinding = { bindingId: policy.current, binding: { ...selected, nativeOptions: { version: 1, mode: 'swarm' } } };
+  policy.history[0].after = { ...previous, nativeOptions: { version: 1, mode: 'native' } };
+  state.run.initialBindings['routes.default'] = { bindingId: policy.current, binding: { ...initial, model: 'new-run-default' } };
+  const ui = await mountPanel(t, request => reply(request, { state }));
+  const view = await inspect(ui);
+  const next = () => view.querySelector('[data-binding-fact="selected"]');
+  assert.match(next().textContent, /gemini-pro-orchestrator-neon/);
+  assert.match(next().textContent, /蜂群协作（swarm）/);
+  assert.doesNotMatch(next().textContent, /new-run-default|gemini-4-hydrogen-high/);
+  delete policy.currentBinding.binding.nativeOptions;
+  policy.currentBinding.nativeOptionsOmitted = true;
+  policy.currentBinding.nativeOptionsHash = 'd'.repeat(64);
+  await ui.click('刷新');
+  assert.match(next().textContent, /原生配置正文已从本视图省略/);
+  assert.match(next().textContent, new RegExp('d'.repeat(64)));
+  assert.match(next().textContent, /此记录未保留可确认的协作方式/);
+  delete policy.currentBinding;
+  policy.currentBindingOmitted = true;
+  await ui.click('刷新');
+  assert.match(next().textContent, /本视图未包含当前阶段的完整配置/);
+  assert.doesNotMatch(next().textContent, /new-run-default|gemini-4-hydrogen-high|gemini-pro-orchestrator-neon/);
+  delete policy.currentBindingOmitted;
+  await ui.click('刷新');
+  assert.match(next().textContent, /gemini-4-hydrogen-high/, 'legacy records may retain their historical selection evidence');
 });
 
 test('legacy pi and omp bindings may omit an explicit model without invalidating status or run history', async t => {
@@ -116,7 +180,7 @@ test('bounded binding views retain native identity and distinguish omitted snaps
   const state = taskState();
   const snapshot = { bindingId: 'orchestrator', binding: selected, nativeOptionsOmitted: true, nativeOptionsHash: 'b'.repeat(64) };
   state.run.initialBindings = { 'routes.default': snapshot };
-  state.packets[packetID]['execution-policy'] = { version: 1, current: 'orchestrator', history: [] };
+  state.packets[packetID]['execution-policy'] = { version: 1, current: 'orchestrator', currentBinding: snapshot, history: [] };
   const run = { id: 'bounded-run', hostSessionId: 'desktop-session', taskDir: '/repo/docs/task', cwd: '/repo', startedAt: '2026-11-20', summary: { status: 'paused' }, initialBindings: {}, initialBindingsOmitted: 3 };
   const ui = await mountPanel(t, request => reply(request, { state }), { catalog: request => reply(request, { runs: [run] }) });
   const view = await inspect(ui);
@@ -129,6 +193,8 @@ test('bounded binding views retain native identity and distinguish omitted snaps
   }
   state.run.initialBindings = {};
   state.run.initialBindingsOmitted = 2;
+  delete state.packets[packetID]['execution-policy'].currentBinding;
+  state.packets[packetID]['execution-policy'].currentBindingOmitted = true;
   await ui.click('刷新');
   assert.match(view.querySelector('[data-initial-bindings-omitted]').textContent, /省略了 2 项初始配置/);
   for (const kind of ['initial', 'selected']) {
@@ -213,6 +279,52 @@ test('reviewed tasks and native observations stay separate and observations matc
   assert.match(plan().textContent, /超出本视图的显示范围/);
   assert.doesNotMatch(plan().textContent, /Implement parsing|此节点没有已审协作分工/);
   assert.ok(ui.requests.every(request => ['status', 'node', 'metrics'].includes(request.action)));
+});
+
+test('pending or failed native observation reads do not claim a completed lookup with missing invocation data', async t => {
+  const state = taskState();
+  const pending = deferred();
+  let metricsCalls = 0;
+  const ui = await mountPanel(t, request => request.action === 'metrics' ? ++metricsCalls === 1 ? pending.promise
+    : reply(request, { metrics: { groups: [], calls: [] } }) : reply(request, { state }));
+  await inspect(ui);
+  const observed = () => ui.container.querySelector('[data-node-native="original-call"]');
+  await ui.click('读取本次调用原生观察');
+  assert.match(observed().textContent, /本次调用尚无可用的原生观察/);
+  assert.doesNotMatch(observed().textContent, /当前指标没有包含这次调用/);
+  await act(async () => pending.resolve({ ok: false, error: { message: 'The observation lookup failed' } }));
+  assert.match(ui.container.textContent, /The observation lookup failed/);
+  assert.match(observed().textContent, /本次调用尚无可用的原生观察/);
+  assert.doesNotMatch(observed().textContent, /当前指标没有包含这次调用/);
+  await ui.click('读取本次调用原生观察');
+  assert.match(observed().textContent, /当前指标没有包含这次调用/);
+  assert.equal(metricsCalls, 2);
+});
+
+test('invalid current binding identities retain the last verified selection and block starting', async t => {
+  const state = taskState();
+  const policy = state.packets[packetID]['execution-policy'];
+  policy.currentBinding = { bindingId: policy.current, binding: selected };
+  const ui = await mountPanel(t, request => reply(request, { state }));
+  const view = await inspect(ui);
+  for (const invalid of [
+    { currentBinding: { bindingId: 'foreign-candidate', binding: previous } },
+    { currentBinding: { bindingId: policy.current, binding: { model: {} } } },
+    { currentBinding: { bindingId: policy.current, binding: selected }, currentBindingOmitted: true },
+    { currentBindingOmitted: 'true' },
+    { current: '', currentBinding: { bindingId: '', binding: selected } },
+    { current: '', currentBinding: null, currentBindingOmitted: true },
+  ]) {
+    const original = structuredClone(policy);
+    Object.assign(policy, invalid);
+    await ui.click('刷新');
+    assert.match(ui.container.textContent, /malformed task status/);
+    assert.match(view.querySelector('[data-binding-fact="selected"]').textContent, /gemini-pro-orchestrator-neon/);
+    assert.equal(ui.button('修复并重试').disabled, true);
+    for (const key of Object.keys(policy)) delete policy[key];
+    Object.assign(policy, original);
+    await ui.click('刷新');
+  }
 });
 
 test('malformed new binding and collaboration facts retain the last verified view', async t => {

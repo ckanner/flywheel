@@ -12,6 +12,17 @@ import (
 const displayBindingBudget = 64 << 10
 const displayNativeOptionsLimit = 1 << 10
 
+func compactCurrentExecutionBinding(policy *state.ExecutionPolicyRecord, budget *int) {
+	if policy == nil || policy.CurrentBinding == nil {
+		return
+	}
+	bindings, omitted := compactBindingSnapshots(map[string]state.BindingSnapshot{"currentBinding": *policy.CurrentBinding}, budget)
+	policy.CurrentBinding, policy.CurrentBindingOmitted = nil, omitted > 0
+	if binding, ok := bindings["currentBinding"]; ok {
+		policy.CurrentBinding = &binding
+	}
+}
+
 // These maps are display metadata, not the execution or recovery contract.
 // Bound their combined contribution to one reply, including the 100-run list.
 // Original frozen records remain intact on disk; no identity or scope string

@@ -938,6 +938,12 @@ review-first，Quick／Full 为高级深度选项；delegated 必须明确选择
 配置诊断统一解析 execution-policy.initial，原生固定空 effort 不补默认高档。
 新运行的 initialBindings 保存完整有效初始值并与旧 bindings/routes 声明分开；显示
 下一次已选配置和最近实际调用须各用对应冻结事实，不能把历史会话当下一次配置。
+packet 的 execution-policy 在首次创建及真实切换时保存 currentBinding，包含当时的
+完整原生选项；旧策略记录不从现配置补填。该字段仅用于展示，不进入旧版失败决策的
+repair action 哈希，不改变 Snapshot v1/v2/v3 的恢复身份。控制响应中的 state 与
+node.packet 共用既有 64 KiB 展示预算；完整项放不下时显示 currentBindingOmitted，
+原生选项正文过大时保留摘要和省略标记。界面从冻结 options 明示 native／subagents／
+Swarm 请求方式；缺失、旧记录或省略的方式保留未知，不从 profile 名称猜测。
 JEV 的 model-bindings 冻结决策候选的展示身份，receipt.action-id 与实际选择分开，
 旧记录缺失的模型或来源保持未知。任务的 source/scope 与编辑文件分开展示，保存后
 重读实际有效配置，task 覆盖仍存在或读取失败时不得声称总开关已对任务改变。
@@ -946,6 +952,9 @@ JEV 的 model-bindings 冻结决策候选的展示身份，receipt.action-id 与
 按同 invocation ID 读取，不构造未经观察的完整任务树。AGY Swarm 非 Execute 绑定
 在配置加载时拒绝，编辑器禁选并解释；Execute 的实际 Full／分工／图片资格仍由引擎
 和 driver 最终校验。常用候选和 native 操作只修改目标私有引用，保留共享权限与会话。
+原生观察的“已查询但未找到”仅在读取成功且返回无匹配调用时显示；请求中及失败
+不构成无记录证据。高级 JSON 的非对象 native profile 定义保留为可修正草稿，阻止保存，
+不使图形模型页崩溃或静默改写无效值。
 
 桌面控制面通过 `ctx.slots.inject()` 在 `conversation.view` 列表注册独立的 `flywheel` 条目，排在内置“对话／轨迹／统计”之后。空白新会话首页尚未显示这排视图。插件提供运行画布、全局／项目配置和运行记录；不替换内置条目，不接管输入框、模型选择器或右侧栏，不另建浮动侧栏或底部弹层。
 

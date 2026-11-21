@@ -8,6 +8,17 @@ import (
 	"github.com/ckanner/flywheel/internal/state"
 )
 
+// Display additions must not change the existing v2 repair action hash. In
+// particular, a legacy pending decision is recovered from its original facts.
+func executionPolicyDecisionFacts(policy *state.ExecutionPolicyRecord) *state.ExecutionPolicyRecord {
+	if policy == nil {
+		return nil
+	}
+	facts := *policy
+	facts.CurrentBinding, facts.CurrentBindingOmitted = nil, false
+	return &facts
+}
+
 // Persist display metadata alongside the original decision. Historical action
 // IDs must never be reinterpreted through a newer configuration or allowlist.
 // The evaluator and recovery still use the unchanged Snapshot/hash contract.

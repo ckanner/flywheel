@@ -41,6 +41,23 @@ Task titles are separate from DSH conversation names. The title comes from valid
 
 Navigation uses compact rounded hover targets with a separate selected underline. Hover and selection do not resize the controls; keyboard focus remains visible and touch targets are larger.
 
+## Models, choices and observed collaboration
+
+Node configuration separates the **initial run binding**, **binding selected for
+the next execution**, and **latest recorded invocation**. A model switch retains
+the selected model, effort, permissions, session policy and native options before
+the next invocation starts. Changing settings does not rewrite those facts. Old
+records without a complete snapshot remain unknown; display limits are stated
+explicitly and do not replace the full task ledger.
+
+For Antigravity, the selected binding names the requested **native**, **subagents**
+or **Swarm** mode when that fact was retained. A profile name alone does not prove
+the mode. These requested settings do not establish that children ran: approved
+collaboration tasks and write scopes appear separately from observations matched
+to the actual invocation. Reading observations distinguishes a pending request,
+a failed request, and a successful query with no matching record. None of those
+states proves that an unobserved child completed.
+
 
 ## Design and approval in the same view
 
@@ -127,10 +144,14 @@ draft. File revision conflicts still prevent a stale save.
 
 Strict subscription settings offer Antigravity, Claude Code Pro, Codex Pro and Kimi native resources. DSH ChatGPT and DeepSeek remain available in legacy configurations without this policy. Gemini suffix and effort move together; Kimi selection creates a minimal native profile only if absent. Compact preparation has two profile selectors, and subscription JEV selects a profile instead of HTTP credentials. These changes share the existing draft, revision and Save boundary; resource selection does not log in or alter an account.
 
+Native profiles with a non-object definition, such as `null`, disable Save in an
+advanced JSON draft and remain available for correction. Switching back to the
+model form preserves that draft without crashing or silently replacing its values.
+
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
 [JEV decisions](jev.md) use one default-off master switch. Enabling it activates
-supported investigation and failure-action decisions automatically, including approved
+supported investigation, initial-execution and failure-action decisions automatically, including approved
 execution-model choices. Configuration inspection is read
 only; it is not another switch. The investigation view shows the last observed JEV
 state, adopted versus baseline actions, and evidence-referenced deferral or early

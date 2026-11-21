@@ -169,8 +169,8 @@ test('snapshot v3 initial selection is visible with fixed native effort and an e
 });
 
 test('first-turn recommendations show frozen bindings separately from the baseline actually retained', async t => {
-  const before = { harness: 'antigravity', model: 'gemini-4-neon-high', thinking: 'high', channel: 'google-subscription' };
-  const after = { ...before, model: 'gemini-pro-orchestrator-neon', thinking: '', nativeProfile: 'approved-orchestrator' };
+  const before = { harness: 'antigravity', model: 'gemini-4-neon-high', thinking: 'high', channel: 'google-subscription', nativeOptions: { version: 1, mode: 'native' } };
+  const after = { ...before, model: 'gemini-pro-orchestrator-neon', thinking: '', nativeProfile: 'approved-orchestrator', nativeOptions: { version: 1, mode: 'swarm' } };
   const record = entry('initial-not-adopted', 'model-0', 'baseline', { attempt: 0, phase: 'initial-execution', 'baseline-action-id': 'model-0',
     'model-bindings': { 'model-0': { bindingId: 'neon', binding: before }, 'model-1': { bindingId: 'orchestrator', binding: after } },
     actions: [{ id: 'model-0', kind: 'model', description: 'Frozen ordinary baseline' }, { id: 'model-1', kind: 'model', description: 'Frozen approved orchestration' }],
@@ -184,9 +184,11 @@ test('first-turn recommendations show frozen bindings separately from the baseli
   const suggested = panel.querySelector('[data-decision-choice="runtimeDecisionSuggested"]');
   assert.match(suggested.textContent, /gemini-pro-orchestrator-neon/);
   assert.match(suggested.textContent, /原生固定/);
+  assert.match(suggested.textContent, /请求的协作方式蜂群协作（swarm）/);
   const chosen = panel.querySelector('[data-decision-choice="runtimeDecisionChosen"]');
   assert.match(chosen.textContent, /gemini-4-neon-high/);
   assert.doesNotMatch(chosen.textContent, /gemini-pro-orchestrator/);
+  assert.match(chosen.textContent, /请求的协作方式普通原生编排（native）/);
   assert.match(panel.querySelector('[data-decision-adoption]').textContent, /未达到适用性或选择阈值/);
   assert.match(panel.querySelector('[data-baseline-retained]').textContent, /没有切换模型/);
   assert.match(panel.textContent, /配置选择不代表模型已经启动/);

@@ -136,6 +136,29 @@ test('an existing illegal non-Execute Swarm remains visible and must be repaired
   assert.equal(saveRequest(ui).editor.values.loops.review['native-profile'], 'shared-subagents');
 });
 
+test('an invalid native-profile draft stays repairable when reopening graphical model settings', async t => {
+  const original = configuration(), source = fixture(original);
+  const ui = await mountPanel(t, source.respond);
+  await ui.click('设置'); await ui.click('诊断与配置文件');
+  const value = structuredClone(original);
+  value['native-profiles']['shared-native'] = null;
+  const area = ui.container.querySelector('textarea[aria-label="配置字段（JSON）"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype, 'value').set.call(area, JSON.stringify(value));
+    area.dispatchEvent(new ui.document.defaultView.Event('input', { bubbles: true }));
+  });
+  await ui.click('模型与会话');
+  assert.equal(ui.button('保存修改').disabled, true);
+  assert.match(ui.container.textContent, /native-profiles.shared-native/);
+  await ui.click('诊断与配置文件');
+  assert.equal(draft(ui)['native-profiles']['shared-native'], null, 'invalid JSON intent is retained for an explicit repair');
+  await ui.click('撤销');
+  await ui.click('模型与会话');
+  assert.equal(bindingNative(ui, 'loops.plan').value, 'shared-native');
+  assert.deepEqual(source.stored, original);
+  assert.equal(ui.requests.some(request => request.action === 'config-save'), false);
+});
+
 test('graphical initial, allowlist and switch-limit controls preserve complete and shared bindings', async t => {
   const original = configuration(), source = fixture(original);
   const ui = await mountPanel(t, source.respond);

@@ -842,10 +842,18 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 下一次选择来自 packet 已冻结 execution-policy，最近实际调用来自 session.configuration
 与 last 的派发事实。选择、尝试、接受派发和完成是不同状态。
 
+`packet.execution-policy.currentBinding` 是可选的完整 BindingSnapshot，包含必须与
+`current` 相同的 bindingId 及冻结的 nativeOptions。只在新策略创建或实际切换时写入，
+旧记录不回填。它是显示元数据，不改变策略准入、repair action 哈希或决策 Snapshot
+v1/v2/v3 恢复协议。客户端优先使用该快照；原生方式只取已保留的 options.mode，
+不从 nativeProfile 名称推测，缺失方式保持未知。
+
 这些新增显示绑定映射在一次控制响应中共用 64 KiB 预算，包括运行列表的全部行，
 不会为每行另开预算。单条 nativeOptions 超过 1 KiB 时保留完整身份及
 `nativeOptionsHash/nativeOptionsOmitted`，省略其正文；完整绑定本身放不下时整体省略，
-通过 `initialBindingsOmitted` 或 `model-bindings-omitted` 记录数量，不截断模型、权限
+通过 `initialBindingsOmitted` 或 `model-bindings-omitted` 记录数量；currentBinding
+整体省略时返回只读投影字段 `currentBindingOmitted:true`，不得回退到不完整的旧历史
+冒充完整快照。state.packets 与 node.packet 的该元数据也共用整次响应预算。不截断模型、权限
 或会话字段，不删除原运行记录。此限制只影响显示，磁盘中的完整冻结记录保持不变。
 
 新 JEV record 的 `model-bindings` 在决策时冻结 action ID 对应完整 BindingSnapshot。
@@ -855,6 +863,8 @@ Step optionally accepts `retryReason` for Execute only, translated to `--retry-r
 absent 状态由 Go 比较当前契约与冻结指纹，并核对独立审查及精确批准；只有 verified
 返回可标为已审的任务／写范围。native 观察必须按同一 invocation ID 关联，未观察子成员
 或完成状态保持未知。
+客户端只有在 metrics 读取成功且未返回匹配 invocation 时才说明该次查询未找到记录；
+pending、failed 与成功查询为空是独立事实。
 collaboration 显示证据超过 32 KiB 时整体省略 value，返回
 `unverified/display-limit-exceeded`，不显示被截断的范围，也不改变引擎执行资格。
 

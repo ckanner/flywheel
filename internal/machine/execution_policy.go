@@ -42,7 +42,8 @@ func (c *Context) executionPolicy(packet *contract.Packet) (*state.ExecutionPoli
 	}
 	identity := sessionHash(identityInput)
 	if record == nil {
-		record = &state.ExecutionPolicyRecord{Version: 1, Identity: identity, Route: packet.Route, Current: route.Initial}
+		record = &state.ExecutionPolicyRecord{Version: 1, Identity: identity, Route: packet.Route, Current: route.Initial,
+			CurrentBinding: &state.BindingSnapshot{BindingID: route.Initial, Binding: c.executionBindingSnapshot(p.Bindings[route.Initial])}}
 		c.State.Packets[packet.PacketID].ExecutionPolicy = record
 	}
 	if record.Version != 1 || record.Identity != identity || record.Route != packet.Route || !slices.Contains(route.Allowed, record.Current) || record.Switches != len(record.History) {
@@ -88,6 +89,7 @@ func (c *Context) switchExecutionPolicy(packet *contract.Packet, record *state.E
 		Before: executionConfiguration(p.Bindings[record.Current]), After: executionConfiguration(p.Bindings[next]),
 		Reason: reason, At: c.nowISO(), Attempt: c.State.Packets[packet.PacketID].Attempts})
 	record.Current, record.Switches, record.StalledAttempts = next, record.Switches+1, 0
+	record.CurrentBinding = &state.BindingSnapshot{BindingID: next, Binding: c.executionBindingSnapshot(p.Bindings[next])}
 	c.retireSession("execute", packet.PacketID, kind+": "+reason+"; selected binding requires a cold start")
 	c.Log(fmt.Sprintf("execution %s: %s -> %s (%s)", packet.PacketID, kind, next, reason))
 	return true

@@ -861,6 +861,9 @@
         "last-observed-attempt"
       ],
       "properties": {
+        "currentBinding": {
+          "allOf": [{"$ref": "#/$defs/binding-snapshot"}, {"required": ["bindingId"]}]
+        },
         "version": {
           "const": 1
         },

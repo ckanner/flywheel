@@ -7,6 +7,12 @@ their original language.
 
 ## Unreleased — Subscription CLI workflows
 
+- Retain a bounded frozen snapshot of the next execution binding after model
+  switches and display its requested Antigravity native/subagents/Swarm mode.
+  Preserve legacy decision recovery hashes and unknown historical metadata.
+- Keep malformed native-profile JSON drafts editable without crashing the model
+  form. Show a missing native observation only after a successful matching query,
+  preserving pending and failed reads as separate states.
 - Resolve effective route initial bindings consistently across diagnostics and run
   snapshots; distinguish initial, selected-next and actual invocation facts. Keep
   fixed Orchestrator effort empty and preserve unknown legacy history.
