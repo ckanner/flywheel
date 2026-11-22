@@ -31,7 +31,7 @@ JEV is **off by default**. The additional `fable` profile provides `claude-fable
 
 The approved proposal initially assigned JEV to Sol medium. This implementation
 uses Hydrogen medium because the Antigravity adapter can verify an empty native
-tool list before dispatch. The current Codex adapter does not expose an equivalent
+managed custom agent and tool catalog before dispatch. The current Codex adapter does not expose an equivalent
 evidence-only admission contract. This is a capability constraint, not a claim
 that Hydrogen makes better decisions; JEV remains off unless explicitly enabled.
 

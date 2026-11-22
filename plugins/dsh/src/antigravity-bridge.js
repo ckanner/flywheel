@@ -17,7 +17,7 @@ export async function loadAdapter() {
       api.MACHINE_LIFECYCLE_VERSION !== 1 || api.MACHINE_ACTIVITY_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.threadReadyBeforeDispatch !== false ||
-      api.MACHINE_CAPABILITIES?.evidenceOnly !== 'verified-empty-init-tools' ||
+      api.MACHINE_CAPABILITIES?.evidenceOnly !== 'verified-managed-agent' ||
       api.MACHINE_CAPABILITIES?.nativeOrchestrator !== true ||
       !['native', 'subagents', 'swarm'].every(mode => api.MACHINE_CAPABILITIES?.nativeModes?.includes(mode)) ||
       api.MACHINE_CAPABILITIES?.nativeAgentLimit !== 'observed-total-children-guard' ||
@@ -82,7 +82,7 @@ export function invokeAdapter(api, request, options) {
 
 export function doctorResult() {
   return { protocol: 1, type: 'doctor', package: ADAPTER.package, version: ADAPTER.version, machineProtocol: 1,
-    available: true, inferenceTested: false, accountEntitlement: 'unknown', quota: 'unknown', evidenceOnly: 'verified-empty-init-tools',
+    available: true, inferenceTested: false, accountEntitlement: 'unknown', quota: 'unknown', evidenceOnly: 'verified-managed-agent',
     nativeVersion: 1, nativeOrchestrator: true, nativeModes: ['native', 'subagents', 'swarm'],
     nativeAgentLimit: 'observed-total-children-guard', hardNativeAgentLimit: false, nativeCompletionScope: 'cli-invocation' };
 }

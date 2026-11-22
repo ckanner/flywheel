@@ -734,7 +734,7 @@ Task／New／Run 共用 Go 创建时的配置解析；宿主提供调查目标�
 开启后解析同文件具名 profile，使用 Antigravity CLI 的 Gemini 4 Hydrogen medium；
 不因缺登录、额度不足或未知状态自动切到独立付费 API／credits。订阅目标不允许
 endpoint/model/key-env 混入，模型与 effort 只取 profile；只有支持经原生初始化
-证明工具集为空的 Antigravity binding 可用，拒绝 native child profile。每次决策使用
+证明受管自定义 agent 与工具目录、且无工具 step 的 Antigravity binding 可用，拒绝 native child profile。每次决策使用
 新会话和 evidence-only 权限；原生保留历史不等于 OS sandbox 或零存储。
 旧文件未声明 backend 时保留 HTTP 目标／哈希；明确 backend:http 也保留兼容，但
 全局 subscription-only 不允许启用该独立计费路径。

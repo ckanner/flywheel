@@ -853,7 +853,7 @@ Claude 在任务前核对 SDK initialize／版本；订阅策略下还核对同�
 证据。但原生 `system/init` 配置消息发生在 prompt 之后，不提供 Codex 同等的预派发
 `thread-ready` 权限保证。Claude 要求显式完全权限；Kimi 原生 Agent 同样不提供
 OS 沙箱保证。Antigravity 普通执行要求完全权限，独立的证据分析路径则核验生成的
-agent 身份和空工具列表。须分别判断实际后端能力与生命周期证据。
+agent 身份和工具目录，并拒绝工具/子 Agent step。须分别判断实际后端能力与生命周期证据。
 
 worker 异常退出不能证明插件的独立管理进程已停止。启动后无法确认清理时，引擎记录
 证据并结束运行，不自动重试或换渠道。恢复前核对本任务的 app-server／guardian 进程，

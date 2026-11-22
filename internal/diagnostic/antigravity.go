@@ -31,7 +31,7 @@ func (r *Report) antigravity(ctx context.Context, b Binding, cache map[string]bo
 			HardNativeAgentLimit  *bool    `json:"hardNativeAgentLimit"`
 			NativeCompletionScope string   `json:"nativeCompletionScope"`
 		}
-		ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil && probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "@ckanner/dsh-subagent-antigravity" && probe.Version == drivers.AntigravityPackageVersion && probe.MachineProtocol == 1 && probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested && probe.EvidenceOnly == "verified-empty-init-tools" &&
+		ok := cleanCommand(result) && json.Unmarshal([]byte(result.Stdout), &probe) == nil && probe.Protocol == 1 && probe.Type == "doctor" && probe.Package == "@ckanner/dsh-subagent-antigravity" && probe.Version == drivers.AntigravityPackageVersion && probe.MachineProtocol == 1 && probe.Available && probe.InferenceTested != nil && !*probe.InferenceTested && probe.EvidenceOnly == "verified-managed-agent" &&
 			probe.NativeVersion == 1 && probe.NativeOrchestrator && slices.Equal(probe.NativeModes, []string{"native", "subagents", "swarm"}) && probe.NativeAgentLimit == "observed-total-children-guard" && probe.HardNativeAgentLimit != nil && !*probe.HardNativeAgentLimit && probe.NativeCompletionScope == "cli-invocation"
 		cache[key] = ok
 		if ok {
@@ -41,5 +41,5 @@ func (r *Report) antigravity(ctx context.Context, b Binding, cache map[string]bo
 		}
 	}
 	r.add(b.ID+".subscription", "unknown", "调用前核对本机 API/ADC/customModels 与 credits 设置；账号权益和剩余额度未验证", "", "额度耗尽或配置冲突时停止，不自动启用额外计费")
-	r.add(b.ID+".configuration", "unknown", "模型与权限由真实 init 回执核对；effort、execution mode 和 OS sandbox 没有独立生效回显", "", "调查分析要求原生自定义 agent 与真实空工具列表；这不构成 OS 沙箱")
+	r.add(b.ID+".configuration", "unknown", "模型与权限由真实 init 回执核对；effort、execution mode 和 OS sandbox 没有独立生效回显", "", "调查分析要求受管 custom agent、真实 init 工具目录且无工具/子 Agent step；这不构成 OS 沙箱")
 }

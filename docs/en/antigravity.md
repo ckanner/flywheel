@@ -187,16 +187,18 @@ through the official `--agent` option and waits for real native init before
 writing the task:
 
 - `init.agent` must match the exact generated agent identity.
-- `init.tools` must exist and be an empty array.
+- `init.tools` must exist as the native tool catalog, and `init.agent` must be the exact managed agent.
+- The catalog may contain registry tools; the managed custom agent file carries the empty allowlist, and every observed tool or subagent step rejects the invocation.
 - Orchestrator models and native collaboration profiles are rejected for this phase.
-- Missing identity, inherited tools, malformed init or later tool/subagent events
-  reject the invocation.
+- Missing agent identity, absent catalog, malformed init or later tool/subagent events reject the invocation.
 
 The [official headless contract](https://antigravity.google/docs/cli/headless/)
-defines the complete available-tool list and the agent/model fields when their
-flags are selected. The [custom-agent contract](https://antigravity.google/docs/subagents/)
-defines the tool allowlist. A CLI that cannot expose the required evidence is not
-admitted. Plain plan mode or a prompt instruction is insufficient.
+defines the tool catalog and the agent/model fields when their flags are selected.
+The [custom-agent contract](https://antigravity.google/docs/subagents/) defines the
+managed allowlist and workspace discovery. A CLI that cannot identify the managed
+agent or catalog is not admitted. Plain plan mode or a prompt instruction is
+insufficient. A live `agy` 1.5.14 check confirmed the managed empty allowlist refuses
+a requested shell command.
 
 Creation uses an exclusive path, invocation ownership and content identity;
 cleanup removes only that unchanged invocation-owned file. Existing user agents

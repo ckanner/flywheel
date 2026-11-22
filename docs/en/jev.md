@@ -40,7 +40,8 @@ The equivalent configuration section is:
 `profile` resolves to a named model profile in the same configuration. Go freezes
 its profile name, harness, channel, exact model slug and effort. Only an Antigravity
 binding with no native child profile is accepted: the adapter must independently
-verify an empty native tool list before supplying the bounded answer. It runs a
+verify the managed custom agent and its tool catalog before supplying the bounded
+answer, and reject any tool or subagent step. It runs a
 fresh conversation with evidence-only permissions, owned-process cleanup and the
 subscription-only policy, even if implementation stages have full access.
 The CLI's retained conversation history is not a promise of zero storage or an

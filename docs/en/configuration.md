@@ -883,7 +883,9 @@ permission guarantee. Claude requires explicitly configured full access; native
 approval modes cannot stand in for an OS sandbox. Kimi's native Agent path also
 provides no OS-level sandbox guarantee. Antigravity ordinary execution requires
 full access; the separate evidence-only path verifies its generated agent and
-empty tool list. Adapter capabilities and actual lifecycle evidence must be
+tool catalog, then rejects every tool or subagent step. The catalog can be
+nonempty because it is the native registry; the managed custom agent file carries
+the empty allowlist. Adapter capabilities and actual lifecycle evidence must be
 evaluated separately.
 
 The `codex-pro-receipt` metric preserves the complete machine receipt, including requested and actual configuration, thread/turn IDs, process outcomes, cleanup, usage, and failures. An accepted effort request is not proof of effective server reasoning effort; `effectiveEffort` remains null.

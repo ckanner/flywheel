@@ -30,7 +30,7 @@
 JEV **默认关闭**。额外的 `fable` profile 为 `claude-fable-5-2 / high`，`carbon-explore` 为 `gemini-4-carbon-medium / medium`；它们不是自动后备，需要显式改绑定。原生模型不可用时失败，不会换到另一条付费路径。
 
 已批准方案最初把 JEV 分给 Sol medium。本实现改用 Hydrogen medium，因为 Antigravity
-适配器能在派发前核验原生空工具列表，当前 Codex 适配器尚无等价的 evidence-only
+适配器能在派发前核验受管自定义 agent 和工具目录，当前 Codex 适配器尚无等价的 evidence-only
 准入契约。这是能力约束，不是声称 Hydrogen 决策更好；JEV 仍须显式开启。
 
 常规实现和短决策用较轻的 Gemini profile，Carbon 承担系统设计，Neon 承担复杂实现和证据分析。独立审查用 Codex，Claude 承担计划细化和界面工作，Kimi 承担声明为 batch 的批量任务及整理。这些分工尚未经过真实 Flywheel 任务的最优性 A/B 验证。

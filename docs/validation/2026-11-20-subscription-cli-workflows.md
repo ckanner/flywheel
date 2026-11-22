@@ -34,7 +34,7 @@ review-first 在受审查方案后等待批准；已明确授权的 delegated �
 ## 相对提案的明确调整
 
 1. **JEV 使用 Hydrogen medium，仍默认关闭。** 提案的初始选择为 Sol medium。
-   本轮只有 Antigravity 路径完成了由原生初始化证明工具集为空的 evidence-only 准入，
+   本轮只有 Antigravity 路径完成了由原生 init 证明受管 agent 与工具目录、且运行时无工具 step 的 evidence-only 准入；2026-11-21 的 agy 1.5.14 真实 native/evidence-only 冒烟通过，
    因此默认 subscription profile 使用 `hydrogen-local`。这是可验证执行能力的选择，
    不表示已证明 Hydrogen 的决策质量优于 Sol；非受支持的 JEV harness 会明确拒绝。
 2. **独立 AGY 包的源码维护在 `dsh-subagent-antigravity`。** 包名、machine、CLI、DSH
