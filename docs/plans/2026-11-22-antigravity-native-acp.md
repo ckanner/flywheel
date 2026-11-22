@@ -56,7 +56,7 @@ M0 核对这项已合并前置条件和既有验收记录；本次文档修订�
 
 Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入 [S1、S4、S18]。两种官方发行物都符合“客户端展示官方 agent”的产品形态。条款 §4 包含受监督/自主 agent，§6 与 FAQ 约束第三方使用个人登录；FAQ 同时支持直接脚本/CI [S20、S21]，不能由此笼统禁止 MCP、自定义 agent 或官方原生协作。
 
-2026-10-08 的 Google-flair moderator chunduriv 回复区分直接脚本/CI、ACP 编辑器与第三方 coding agent 包装消费者登录，并说明不是正式法律解释 [S22]。账号数据确认其 moderator/Google 标识；Rebbanpalli_Naveen 与 Ambati_Rajendra 则没有这两个标识 [S33]。后两者关于 T3/OpenBot/DSH 的回复是社区说法，不是 Google 保证。依据优先采用正式产品文档与身份已核验的解释。外层自动化绑定仍需自己的用途/认证依据；从 Registry 改选 CLI 不改变这条边界。
+2026-10-08 的 Google-flair moderator chunduriv 回复区分直接脚本/CI、ACP 编辑器与第三方 coding agent 包装消费者登录，并说明不是正式法律解释 [S22]。公开账号数据确认其 moderator/Google 标识；取得的 Rebbanpalli_Naveen 与 Ambati_Rajendra 资料未显示这两个标识 [S33]。后两者的工作人员身份尚未独立核验，缺少标识本身也不能证明他们不是工作人员。T3/OpenBot/DSH 回复可作具体语境的解释，不能代替正式条款或产品文档。外层自动化绑定仍需自己的用途/认证依据；从 Registry 改选 CLI 不改变这条边界。
 
 **按版本判断模型范围。** CLI 1.5.1 release notes 表示向每个 ACP 客户端提供账号可用模型，编辑器指南却仍保留非 Gemini 客户端名单 [S4、S28]。记录这个差异，以真实 client identity 和所选 CLI Session 返回的实际选项/接受结果准入；不承诺必有 Claude 或所有目录模型，不冒用编辑器，也不把 CLI 版本结论延伸到独立 ACP。ACP v1 可选能力需要协商 [S5–S8]，v2 preview 不在首期范围。
 
@@ -112,6 +112,23 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 首期路径为 `用户 → DSH/Flywheel 外部 agent 会话 UI → 独立插件 ACP client → 官方 agy acp`。插件拥有连接、进程组、事件关联、session record 和取消；Google agent 拥有模型、工具与内部编排。UI 发出用户操作并展示事实，不运行一个父 agent 来重新决定或委派同一任务。
 
+### 系统指令与 Zed 的对照
+
+这里采用 Zed 文档所述的同类**外部 agent 客户端架构**，由我们自己实现并使用真实客户端身份；不是 Zed 源码、Zed 内置模型 provider，也不宣称能力或条款待遇完全相同 [S4、S35]。Zed 文档将外部 agent 配置与其内置 agent profiles 分开，同时允许部分 MCP 转发和客户端权限处理；仅凭这些机制，不能判断谁拥有推理循环或某种用途是否受支持。
+
+| 输入或职责 | 首期 ACP 契约 |
+| --- | --- |
+| 官方基础系统指令 | 保留；宿主不通过 CLI flags、ACP metadata 或隐藏 prompt 前缀覆盖、追加系统指令。 |
+| DSH Preset/PTC 角色及 machine 指令 | 不作为系统文本、生成的 rules/agent 文件或伪装的用户输入注入；不为该会话选择宿主生成的受管 agent。 |
+| 用户任务、所选代码和附件 | 通过受支持的 ACP prompt/context 字段发送明确的用户输入和相关内容，不静默附加宿主控制指令。 |
+| 既有项目规则与原生配置 | 由官方 runtime 按文档机制读取用户管理的配置；它可能将 `AGENTS.md` 等规则合入 system prompt [S36]，所以不承诺最终提示词字节不变。客户端不改写或生成这些文件；原生定制与宿主注入控制指令分开。 |
+| 工具与权限 | 官方 agent 决定工作；客户端展示、关联权限请求及用户选择，首期没有 DSH 工具桥接。受授权的协议 I/O 本身不等于第二层模型循环。 |
+| 迭代与 machine 完成 | 用户对话驱动官方 agent 内部循环；客户端不加入 DSH 父 agent，不自动调度 Plan/Execute/Review/JEV，也不把会话当作 machine 回执。 |
+
+上一修订版保留了含糊的项目指令扩展入口；本表明确首期不由宿主替换或追加系统提示词。这不表示 Google 禁止所有原生 rules、skills 或受支持的 MCP 接入。§2 的既有自动化 headless 路径仍是另一种架构，本 ACP 方案不为它的用途/认证上下文作支持保证。
+
+### 进程与工作区所有权
+
 **每个交互会话拥有一个独立进程/连接，至多一个 pending prompt。** 多轮用户交互可以复用该进程；这不是跨用户/任务的共享 daemon。本轮 prompt 完成、已知子工作收敛和会话进程退出是不同事实。关闭会话才执行有界停止与清理；不能要求每轮都有退出码，也不能用 root response 宣称整树完成。
 
 写入前必须遵守物理 workspace 的所有权与 lease。交互 UI 不得与活动 Flywheel writer 重叠，也不能绕过人工接管门禁；使用明确可用的工作区，或完成现有接管流程。后续若将产物交给 task，仍走已审产物与正常验证交接；交互完成不改任务状态。
@@ -122,7 +139,7 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 `clientInfo` 使用真实名称，不冒用编辑器。仅在我们启动的 CLI 探测、登录助手和会话子进程环境中设置官方 `AGY_CLI_DISABLE_AUTO_UPDATE=true` [S32]，不修改全局 shell。它阻止这些进程发起更新，但不能阻止其他 CLI/用户替换程序。新业务派发/重连前检测变化，保留活动 turn 身份及未知结果，重新验收而不重放；不在会话中途升级，不静默接受变化的字节。身份记录不包含凭据。
 
-未来 DSH 工具 MCP bridge 单独实现。官方指南要求 CLI 客户端提供的 HTTP MCP 使用 `--process-per-session`，启用前验证子进程归属和关闭清理 [S4]，不能套用独立 server 的参数。项目指令只使用已经验证、实际公布的机制：独立版 changelog 有 `systemPrompt.append`，但不证明 CLI 有同一个扩展。保留官方 agent 的系统指令与内部循环，不承诺现有 DSH Preset 可以原样注入 [S3]。
+未来宿主指令扩展或 DSH 工具 MCP bridge，需另立设计、运行时验收和受支持的用途/认证依据，不能继承首期个人交互客户端的批准。独立版 changelog 的 `systemPrompt.append` 既不证明 CLI 支持，也不证明适合宿主控制的 harness；初版不发送该扩展 [S3]。后续若实现 CLI 客户端提供的 HTTP MCP bridge，官方指南要求使用 `--process-per-session`，启用前验证子进程归属和关闭清理 [S4]，不能套用独立 server 的参数。
 
 ### 首期接口示意
 
@@ -275,6 +292,7 @@ UI 必须：
 | 范围 | 首期必须验证 | 未来 machine 的附加验证 |
 | --- | --- | --- |
 | 来源/协议 | CLI 来源/版本/程序摘要/参数及漂移；Registry 另需 manifest/发行包身份。协议/选项拒绝、有界 Unicode/JSON frame、能力差异。 | 身份进入冻结绑定、回执、恢复；旧 reader 明确拒绝。 |
+| 指令/agent 所有权 | 检查启动参数、ACP metadata、prompt/context 与文件写入：无宿主系统提示词覆盖/追加、Preset/PTC 或受管 agent 注入、DSH 工具桥接、自动外层循环；保留明确用户输入及 runtime 管理的项目配置。 | 单独明确受支持的用途/认证，审查发生变化的指令/工具/循环所有权。 |
 | 登录/权限 | 实际 `authMethods`、ACP `oauth-personal` 或单独启动的官方 CLI `agy acp --login` 助手、相同已验证程序/profile 上下文、登录成功/取消/过期/失败、无凭据提取/敏感日志、共享缓存；错会话/迟到/拒绝 approval。 | 认证/用途受支持，已有授权不足时不无限等待；订阅控制可验证。 |
 | 生命周期 | turn 与会话退出分离；工具/权限/child 中取消、失联、超时、宿主死亡、SIGKILL、坏/重复/迟到终态、进程组清理，以及收敛前不启动下一轮。 | Go ACK 各崩溃点、合法回执一次消费、unknown blocked、预算不重置、完整 required-work 证明。 |
 | 历史/计量 | 精确 session load、无自动 replay、压缩保留要求、累计量不当逐轮相加、缺失/负值/不一致差值 unknown。 | 角色隔离、full/incremental、独立 reviewer、任务/packet/目标身份。 |
@@ -322,7 +340,7 @@ UI 必须：
 
 ## 来源与验证边界
 
-资料核对日期为 2026-11-22。官方文档与 Registry 说明公开路径，固定源码说明具体实现，issue/社区帖子只证明特定反馈；项目存在不等于全部用途获官方许可。Google-flair moderator 与普通论坛账号不可混为一谈；本稿不把身份未验证的 T3/OpenBot/OMP 回复作为官方裁定。本次文档 PR 未运行真实 ACP 推理、登录、质量基准、图片传递或用户机器安装。
+资料核对日期为 2026-11-22。官方文档与 Registry 说明公开路径，固定源码说明具体实现，issue/论坛帖子只证明特定反馈；项目存在不等于全部用途获官方许可。已验证的账号标识与未验证的所属身份分开记录；缺少标识不能单独证明不是工作人员，论坛解释也不能代替正式产品文档或条款。本次文档 PR 未运行真实 ACP 推理、登录、质量基准、图片传递或用户机器安装。
 
 | ID | 来源 | 用途 |
 | --- | --- | --- |
@@ -358,8 +376,10 @@ UI 必须：
 | S30 | [T3 已合并登录修复 #38953](https://github.com/pingdotgg/t3code/pull/38953)、[登录反馈 #36034](https://github.com/pingdotgg/t3code/issues/36034) | 显式官方 CLI 登录助手，以及截获浏览器环境变量的局限。 |
 | S31 | [T3 已合并生命周期修复 #38916](https://github.com/pingdotgg/t3code/pull/38916)、[后台会话反馈 #36105](https://github.com/pingdotgg/t3code/issues/36105) | 客户端处理 root 后活动、权限及停止；上游修复不能代替本客户端验收。 |
 | S32 | [Google：CLI troubleshooting](https://antigravity.google/docs/cli/troubleshooting) | 官方记录 `AGY_CLI_DISABLE_AUTO_UPDATE=true`；其他进程仍可能替换共享程序。 |
-| S33 | [chunduriv 账号](https://discuss.ai.google.dev/u/chunduriv.json)、[Rebbanpalli_Naveen 账号](https://discuss.ai.google.dev/u/Rebbanpalli_Naveen.json)、[Ambati_Rajendra 账号](https://discuss.ai.google.dev/u/Ambati_Rajendra.json) | 2026-11-22 观察到的 moderator/Google-flair 身份；普通回复不因此具有官方权威。 |
+| S33 | [chunduriv 账号](https://discuss.ai.google.dev/u/chunduriv.json)、[Rebbanpalli_Naveen 账号](https://discuss.ai.google.dev/u/Rebbanpalli_Naveen.json)、[Ambati_Rajendra 账号](https://discuss.ai.google.dev/u/Ambati_Rajendra.json) | 2026-11-22 观察到的公开 moderator/Google-flair 标识及身份核验限制；无标识不证明非工作人员。 |
 | S34 | [Pi provider.ts](https://github.com/zacbemis/pi-antigravity-acp-provider/blob/6d6135d888cb50e2cb1c18bc2520a94ac7d26392/src/provider.ts)、[认证健康检查源码](https://github.com/zacbemis/pi-antigravity-acp-provider/blob/6d6135d888cb50e2cb1c18bc2520a94ac7d26392/src/acp/antigravity.ts) | 区分配置认证标记与原生凭据文件健康探测；不宣称该扩展完全不读凭据文件。 |
+| S35 | [Zed：External Agents](https://zed.dev/docs/ai/external-agents) | 外部 agent 与内置 profile/配置的职责、可选 MCP 转发及客户端/原生权限；用于架构对照，不证明实现相同或保证合规。 |
+| S36 | [Google：Rules](https://antigravity.google/docs/rules) | 原生发现、规则累加及 `always_on` 进入 system prompt；宿主不注入不等于 runtime 最终提示词永远不变。 |
 
 [C1]: https://github.com/ckanner/flywheel/blob/291c0a02f9042d522d3e0f3c62977f63149465cd/internal/drivers/antigravity.go
 [C2]: https://github.com/ckanner/flywheel/blob/291c0a02f9042d522d3e0f3c62977f63149465cd/plugins/dsh/src/antigravity-bridge.js
