@@ -37,10 +37,6 @@ func TestAntigravityNativeReceiptsKeepInvocationAndChildEvidenceSeparate(t *test
 		"altered observed count":         func(m map[string]any) { proObject(m, "native")["observedAgents"] = 9 },
 		"wrong dispatch":                 func(m map[string]any) { proObject(m, "native", "dispatch")["command"] = "/model" },
 		"unknown source":                 func(m map[string]any) { proObject(m, "native", "completion")["source"] = "parent-summary" },
-		"no native child observed": func(m map[string]any) {
-			n := proObject(m, "native")
-			n["children"], n["observedAgents"], n["collaborationObserved"] = []any{}, 0, false
-		},
 		"invented child completion": func(m map[string]any) {
 			proObject(m, "native")["children"].([]any)[0].(map[string]any)["state"] = "completed"
 		},
@@ -69,6 +65,16 @@ func TestAntigravityNativeReceiptsKeepInvocationAndChildEvidenceSeparate(t *test
 			require.NotEmpty(t, p.Error)
 		})
 	}
+	// Swarm may complete with unknown children; no child evidence is required for its root invocation.
+	sr := agyRequest(t)
+	sr.Native = json.RawMessage(`{"version":1,"mode":"swarm","maxObservedAgents":1}`)
+	sm := agyReceipt(sr)
+	sn := proObject(sm, "native")
+	sn["children"], sn["observedAgents"], sn["collaborationObserved"] = []any{}, 0, false
+	sp := parseAgyFixture(sr, sm)
+	require.True(t, sp.Settled, "%+v", sp)
+	require.Contains(t, string(sp.NativeReceipt), `"children":"unknown"`)
+
 	// A duplicate child cannot be disguised as additional observed workers.
 	r.Native = json.RawMessage(`{"version":1,"mode":"subagents"}`)
 	m := agyReceipt(r)
