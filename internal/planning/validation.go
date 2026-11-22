@@ -92,6 +92,9 @@ func ValidateBrief(b Brief) error {
 	if (b.Policy == "delegated" || b.ImplementationAuthorized) && b.Authorization == "" {
 		return fmt.Errorf("delegation or implementation authorization requires its original source")
 	}
+	if b.DesignGranularity == "compact" && (b.Mode == "full" || strings.TrimSpace(b.GranularityReason) == "" || len(b.Evidence) == 0) {
+		return fmt.Errorf("compact preparation requires evidence, a selection reason, and no explicit Full request")
+	}
 	return nil
 }
 
@@ -144,6 +147,9 @@ func validatePlan(p ExecutionPlan) error {
 	if p.Ref.Digest != planDigest(p) {
 		return fmt.Errorf("execution plan %d digest does not match its immutable contents", p.Ref.Revision)
 	}
+	if p.Preparation == "compact-v1" && (p.Scope != "milestone" || len(p.Files) != 2 || p.Files["spec.md"] == "") {
+		return fmt.Errorf("compact preparation requires one complete single-packet projection")
+	}
 	return nil
 }
 
@@ -172,11 +178,31 @@ func FindPlan(s *State, ref Ref) *ExecutionPlan {
 
 func LatestReview(s *State, kind string, ref Ref) *Review {
 	for i := len(s.Reviews) - 1; i >= 0; i-- {
-		if r := &s.Reviews[i]; r.Kind == kind && r.Target == ref {
+		if r := &s.Reviews[i]; reviewTarget(*r, kind, ref) {
 			return r
 		}
 	}
 	return nil
+}
+
+// A compact review is one actual independent record, covering both immutable
+// artifacts. It is never copied into fictitious design and plan reviews.
+func reviewTarget(r Review, kind string, ref Ref) bool {
+	if r.Kind == kind && r.Target == ref {
+		return true
+	}
+	if r.Kind != "compact-v1" {
+		return false
+	}
+	return kind == "design" && r.Target == ref || kind == "plan" && r.Plan != nil && *r.Plan == ref
+}
+
+func DesignGranularity(s *State, r Request) string {
+	scope, _ := CanonicalScope(r.Scope, r.ScopeID)
+	if scope == "design" && r.DesignGranularity != "system" && s.Brief.DesignGranularity == "compact" {
+		return "compact"
+	}
+	return "system"
 }
 
 var milestoneScopePattern = regexp.MustCompile(`^M-[0-9]{2,}$`)
@@ -209,12 +235,26 @@ func validateReview(s *State, r Review) error {
 		return err
 	}
 	planner, input := "", 0
-	if r.Kind == "design" {
+	if r.Kind == "design" || r.Kind == "compact-v1" {
 		d := FindDesign(s, r.Target)
 		if d == nil || r.Role != "design-review" || r.Design != nil {
 			return fmt.Errorf("design review target or independent role is invalid")
 		}
 		planner, input = d.PlannerInvocation, d.InputRevision
+		if r.Kind == "compact-v1" {
+			if r.Plan == nil {
+				return fmt.Errorf("compact review requires its exact execution plan")
+			}
+			p := FindPlan(s, *r.Plan)
+			if p == nil || p.Preparation != "compact-v1" || p.Design != r.Target || p.InputRevision != input || p.PlannerInvocation != planner {
+				return fmt.Errorf("compact review must cover the design and plan from one preparation")
+			}
+			if r.Verdict == "pass" && (p.ScopeVerdict != "within-envelope" || r.ScopeVerdict != "within-envelope" || r.DesignVerdict != "valid" || r.CoverageVerdict != "complete") {
+				return fmt.Errorf("compact review requires explicit valid design, complete coverage, and within-envelope verdicts")
+			}
+		} else if r.Plan != nil {
+			return fmt.Errorf("ordinary design review cannot claim compact plan coverage")
+		}
 		if r.Verdict == "pass" {
 			for _, decision := range d.Decisions {
 				if decision.Kind == "unresolved" {
@@ -224,7 +264,7 @@ func validateReview(s *State, r Review) error {
 		}
 	} else {
 		p := FindPlan(s, r.Target)
-		if p == nil || r.Role != "plan-review" || r.Design == nil || *r.Design != p.Design {
+		if p == nil || r.Role != "plan-review" || r.Design == nil || *r.Design != p.Design || r.Plan != nil {
 			return fmt.Errorf("plan review target or independent role is invalid")
 		}
 		planner, input = p.PlannerInvocation, p.InputRevision

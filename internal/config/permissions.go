@@ -26,7 +26,7 @@ func (c *Config) PermissionMode(role, harness string, bindingIDs ...string) stri
 		return "danger-full-access"
 	}
 	switch role {
-	case "review", "judge", "judge-panel", "design-review", "plan-review":
+	case "review", "judge", "judge-panel", "design-review", "plan-review", "investigate":
 		return "read-only"
 	case "intake", "garden":
 		if harness == "dsh" || harness == "codex" || harness == "codex-pro" || harness == "claude-code-pro" {

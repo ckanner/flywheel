@@ -17,6 +17,37 @@ Switching is disabled during pending reads or mutations, unknown task outcomes a
 
 The project, task folder, execution directory and branch appear directly when known. Use `flywheel_control status` in the intended conversation to associate a prepared or standalone terminal task. Old UI-generated status command records do not establish a new association.
 
+### Create another task in this conversation
+
+With a task selected, choose **Create another task** to open the goal form beside
+the existing workflow. Opening the form sends no model request and keeps the
+current task selected. The same form is available when the conversation has no
+task. Choose an engineering task, repair, or report-only investigation; engineering
+and repair default to Auto depth and waiting for approval after independent design
+review. Implementation after review requires its own explicit authorization.
+
+The entry waits for the conversation's workspace to be confirmed; the selected
+task's worktree is not a substitute. A failed lookup shows a reason and **Retry**.
+Opening a draft fixes its workspace and displays the task-record directory. Later
+catalog refreshes cannot change that directory or erase the draft. Successful
+creation or explicit discard releases this choice for the next draft.
+
+Submitting creates a separate task directory through the existing engine intake.
+The view selects the new task only after Go confirms its state or investigation
+record. A lost response retains the original request target and draft; status
+reconciliation does not replay creation. If reconciliation finds an empty
+directory, the current task remains selected and an explicit retry uses the same
+target. Pending control requests, unknown mutations and unconfirmed configuration
+saves block the new-task entry and prevent hiding or discarding an active request.
+
+**Hide and keep draft** retains this conversation's text and authorization
+selection. **Discard new task draft** clears both. Another conversation does not
+inherit them, and successful creation retires the old draft so the next task starts
+with review-first authorization. Image previews must be inspected again after
+reopening a retained draft.
+
+### Task locations and conversation commands
+
 DSH keeps the original repository in the Session header and switches the current execution directory through its public API. The desktop Host periodically attaches Flywheel SDK sessions to matching existing projects; task status also ensures the original project is registered. It does not create a desktop workspace for every packet Worktree or rewrite old Session headers. Probes use temporary persistence, leaving no new user sessions. Native Providers start sessions in the project; task prompts name the actual execution directory for every shell/file operation. Backends unable to separate a `workspace-write` sandbox root reject that combination before dispatch instead of widening permissions. Full access and supported read-only modes retain their actual semantics.
 
 Loading a skill does not start the engine. `flywheel-task` prepares a thin brief and invokes `planning prepare` for design/review and authorized implementation; investigation goals retain their bounded investigation control. Existing prepared-contract tasks still use launch/start. A preparation/proposal-only response must explicitly say execution was not started. Single-stage skills query `flywheel_control status` afterward to associate their canvas, or disclose the exact path when that tool is absent rather than claiming association.
@@ -41,6 +72,124 @@ Task titles are separate from DSH conversation names. The title comes from valid
 
 Navigation uses compact rounded hover targets with a separate selected underline. Hover and selection do not resize the controls; keyboard focus remains visible and touch targets are larger.
 
+## Models, choices and observed collaboration
+
+Node configuration separates the **initial run binding**, **binding selected for
+the next execution**, and **latest recorded invocation**. A model switch retains
+the selected model, effort, permissions, session policy and native options before
+the next invocation starts. Changing settings does not rewrite those facts. Old
+records without a complete snapshot remain unknown; display limits are stated
+explicitly and do not replace the full task ledger.
+
+Each model decision card also shows its **linked execution status**: selected
+before dispatch, confirmed not started, started with an unconfirmed outcome,
+completed, failed, cancelled or unknown. New invocations explicitly name the
+decision they follow after matching the exact packet, attempt and frozen binding;
+the card keeps its call ID when a later invocation replaces the current session.
+A durable native acceptance event can show that a call started while its terminal
+receipt is still pending. Completion requires a confirmed terminal receipt and
+cleanup. Older decisions without this link remain unknown. These statuses describe
+the model call; packet acceptance and observed Swarm children have their own results.
+
+For Antigravity, the selected binding names the requested **native**, **subagents**
+or **Swarm** mode when that fact was retained. A profile name alone does not prove
+the mode. These requested settings do not establish that children ran: approved
+collaboration tasks and write scopes appear separately from observations matched
+to the actual invocation. Reading observations distinguishes a pending request,
+a failed request, and a successful query with no matching record. None of those
+states proves that an unobserved child completed.
+
+### Check a packet's execution eligibility
+
+Open a packet node and select **Check execution eligibility**. Go reads the exact
+packet and evaluates its execution candidates with the same input and native
+collaboration checks used before dispatch. The view shows each candidate's model,
+effort, channel and native profile, with the conditions that passed or failed.
+It identifies whether the check used the run's frozen configuration or the current
+effective configuration. Reading this report does not invoke a model or verify
+account entitlement.
+
+For Antigravity Swarm, the report identifies missing Full execution depth,
+an undeclared independent task split, invalid write scopes, or an incompatible
+image input transport. Ordinary code packets can use Antigravity without images;
+a Full packet with a reviewed independent split can use Swarm without images.
+Repository PNGs, icons and other assets do not by themselves declare model image
+input. A packet that explicitly requires the original image must use a verified
+image transport; removing its declaration does not satisfy that requirement.
+
+Pending reads, failed reads, unknown contract identity and a confirmed report with
+no candidates have separate messages. A changed task revision makes an old check
+stale. Saving configuration or changing planning also clears the previous node
+check, so a previous eligible result is not presented as a new decision. Read the
+node again before using the updated information. Eligibility does not claim that
+a candidate has been selected, dispatched or completed.
+
+### Edit a collaboration draft and review the new plan
+
+**Edit collaboration draft** reads a revision-bound snapshot beside the approved
+task split. Enter **2–8** task goals and one relative write scope per line for each
+task. Goals are limited to 512 Unicode characters, each task to 1–64 write
+scopes, and the complete edit to 32 KiB. The parent packet's approved `schedule.writes` remains visible. Go checks
+that child paths are normalized, stay inside that parent scope, and do not overlap
+another task; the form does not expand the parent's scope.
+
+**Save draft for review** submits the original state revision, contract fingerprint
+and exact plan revision/digest together with the edited split. The engine creates
+a new immutable plan revision and requests independent plan review. This action
+does not start implementation or edit an active contract in place. The previous
+plan review does not cover the new revision. Root design approval remains usable
+only while the design and its approved scope are unchanged; changes to goals or
+scope belong in **Design feedback**. Execution remains gated by the new plan's
+review and the normal activation checks.
+
+Running tasks, unresolved invocations, a human handoff, a stale contract, or a
+planning phase that cannot accept the edit disable saving and explain why. An
+unchanged split also does not start another review. Local text survives a failed
+read, rejected edit or unknown save result. Closing the node, changing tabs or
+tasks, and reopening the view retain drafts and pending request identities within
+the same live conversation binding. Recreating the plugin or its host Session
+binding starts with a new in-memory cache. **Refresh revision and keep draft** can
+adopt a newer audit revision only when the contract fingerprint, exact plan,
+parent scopes and original split are unchanged. **Reread and replace draft**
+explicitly replaces unsaved edits with a new snapshot. If the save result is unknown,
+use **Refresh task and reconcile outcome** to read that exact request's receipt;
+the form does not replay the mutation. A confirmed pre-dispatch failure leaves
+the draft editable without requiring a nonexistent receipt. A queued receipt remains unconfirmed until
+adopted. Approved assignments and observed native children continue to be shown
+as separate facts.
+
+
+### Edit an existing packet's image inputs
+
+Open a packet or Execute node and select **Edit image inputs**. The current plan's
+paths, MIME types and SHA-256 references are read separately from the actual
+invocation's image manifest. Reading these references does not load originals or
+claim that an unreviewed plan is active.
+An unreadable declaration remains **unconfirmed**, with its reason, rather than
+being shown as empty. Legacy packet references without a plan are labelled as
+contract references and remain read-only.
+
+Add, replace or remove repository-relative image paths, then explicitly choose
+**Inspect and preview image draft**. The preview shows original format, dimensions,
+bytes and digest; editing a path invalidates it. The last image is removed through
+**Explicitly clear all image references** and a separate confirmation that the
+step no longer requires the originals. An empty field never silently removes a
+declared input or bypasses the transport requirement.
+
+**Save image draft for review** submits the exact state revision, packet
+fingerprint and plan reference. Go revalidates the original bytes and records a
+new immutable plan for independent review. Saving preserves the active contract
+until normal activation and does not grant implementation start authority.
+Read the packet's execution eligibility again after the reviewed revision is
+active; original-image execution requires the supported Claude SDK transport.
+
+Paths, reference metadata and unresolved request IDs survive navigation within
+the live conversation binding. Previews remain local to the mounted editor and
+must be explicitly reread after reopening. Rejected drafts can refresh an audit
+revision while their contract, plan and original references remain unchanged.
+Unknown or queued saves reconcile the exact action and request ID without
+repeating the mutation. See [Image inputs](image-inputs.md#edit-images-on-an-existing-packet)
+for the full editing and recovery behavior.
 
 ## Design and approval in the same view
 
@@ -83,20 +232,27 @@ Continue workflow is directly visible when applicable. New-task launch options a
 
 ## Investigation before implementation
 
-A task with a preparation record and no implementation state opens the investigation
-panel. It shows the goal, action budget, collected observations, truncated excerpts,
-decision receipts, and the evidence report. Continue investigation submits the current
-revision to Go; a pending invocation instead offers reconciliation of the original
-receipt. Unknown control results require status reconciliation before another mutation.
-Stop waits for the running owner to settle; it cannot turn a missing action receipt
-into a confirmed cancellation.
+A preparation record opens the investigation panel before implementation state
+exists. It shows budgets, observations, excerpts, physical action results, analysis
+and decision receipts, and the evidence report. Run submits the observed revision;
+a pending call offers read-only reconciliation. Unknown control results require
+status reconciliation before another mutation. Stop waits for the owner and never
+turns a missing receipt into confirmed cancellation.
 
-The panel does not offer ordinary code-workflow launch while the task is in preparation.
-`awaiting-report` asks the host assistant to submit an evidence-based analysis; it is
-not implementation completion. A report-only goal ends with that report. An already
-authorized repair can proceed after a supported report and a valid Spec are prepared,
-retaining the original scope and usage. See [bounded investigation](investigation.md)
-for the supported read/search actions, command protocol, and handoff requirements.
+After collection, the configured `loops.investigate` role analyzes frozen evidence.
+At `awaiting-report`, **Analyze investigation evidence** resumes that stage;
+`analysis-pending` reconciles the original invocation. Legacy configurations without
+an analyst retain manual report submission. A report is not code-task completion.
+An authorized supported repair registers a thin brief in the same task and carries
+its evidence, scope and usage into planning.
+
+Once a report is settled and all calls/cleanup are known, **Add evidence and continue**
+opens a new-round contract draft with the remaining allowance. Supply actual new
+`known-evidence` and actions within the original goal/intent/repair scope. Submitting
+uses the revision captured when the draft opened; a refreshed newer version disables
+that stale submission. Invalid JSON sends no request. Prior rounds remain visible
+with their immutable digest. No new task, budget reset or hidden retry is created.
+See [Investigation](investigation.md) for the engine contract.
 
 ## Configuration
 
@@ -118,12 +274,16 @@ while an unknown save still requires reconciliation. An explicitly accepted scop
 change or reload continues loading the chosen file without reviving the discarded
 draft. File revision conflicts still prevent a stale save.
 
-Resources include ChatGPT through DSH or Codex Pro, Kimi Code, DeepSeek Account (Flash by default), and optional Claude Code Pro. Defaults come from the embedded template. Use config inspect and doctor for actual backend capabilities. An absent peer or unsupported permission fails explicitly. Provider sign-in stays with its normal account flow.
+Strict subscription settings offer Antigravity, Claude Code Pro, Codex Pro and Kimi native resources. DSH ChatGPT and DeepSeek remain available in legacy configurations without this policy. Gemini suffix and effort move together; Kimi selection creates a minimal native profile only if absent. Compact preparation has two profile selectors, and subscription JEV selects a profile instead of HTTP credentials. These changes share the existing draft, revision and Save boundary; resource selection does not log in or alter an account.
+
+Native profiles with a non-object definition, such as `null`, disable Save in an
+advanced JSON draft and remain available for correction. Switching back to the
+model form preserves that draft without crashing or silently replacing its values.
 
 `permissions.bindings` overrides `loops.<role>`, `routes.<route>` or `judge-panel`. Unspecified bindings use the global policy. History overrides are role-based: execution routes share the execute policy while each packet keeps its own session. Scoped continuation requires the same task, role, goal and eligible binding; fresh also retains invocation-safety records.
 
 [JEV decisions](jev.md) use one default-off master switch. Enabling it activates
-supported investigation and failure-action decisions automatically, including approved
+supported investigation, initial-execution and failure-action decisions automatically, including approved
 execution-model choices. Configuration inspection is read
 only; it is not another switch. The investigation view shows the last observed JEV
 state, adopted versus baseline actions, and evidence-referenced deferral or early

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Offline Claude CLI peer. The real public plugin drives this process.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, normalize } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const argv = process.argv.slice(2);
@@ -15,7 +15,7 @@ const settingsPath = join(process.cwd(), 'claude-fixture.json');
 const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {};
 const scenario = settings.scenario || 'ok';
 if (argv.includes('--version')) { process.stdout.write('2.1.326 (Claude Code)\n'); process.exit(0); }
-// The real 0.6.0 public API probes capabilities in a separate owned process
+// The real 0.7.0 public API probes capabilities in a separate owned process
 // before it sends any prompt. A probe must not appear as an inference in logs.
 if (argv.includes('--help')) {
   process.stdout.write('--include-partial-messages\n--name\n-n\n' +
@@ -31,10 +31,16 @@ const message = await new Promise((resolve, reject) => {
     let frame;
     try { frame = JSON.parse(line); } catch (error) { reject(error); return; }
     if (frame.type === 'control_request') {
+      if (frame.request?.subtype === 'get_usage') {
+        const response={session:{total_cost_usd:0,total_api_duration_ms:0,total_duration_ms:0,total_lines_added:0,total_lines_removed:0,model_usage:{}},subscription_type:'pro',rate_limits_available:true,rate_limits:{extra_usage:{is_enabled:scenario==='extra-usage-enabled',monthly_limit:null,used_credits:null,utilization:null}},behaviors:null};
+        appendFileSync(join(process.cwd(),'claude-preflight.jsonl'),JSON.stringify({subtype:'get_usage',skipBehaviors:frame.request.skip_behaviors,pid:process.pid})+'\n');
+        process.stdout.write(JSON.stringify({type:'control_response',response:{subtype:'success',request_id:frame.request_id,response}})+'\n');
+        return;
+      }
       if (frame.request?.subtype === 'initialize') initialize = frame.request;
       process.stdout.write(JSON.stringify({ type: 'control_response', response: {
         subtype: 'success', request_id: frame.request_id,
-        response: { commands: [], agents: [], models: [], account: {},
+        response: { commands: [], agents: [], models: [], account: {apiProvider:'firstParty',subscriptionType:'pro'},
           claude_code_version: scenario === 'unsupported-sdk-init' ? '2.1.324' : '2.1.326',
           output_style: 'default', available_output_styles: ['default'] },
       } }) + '\n');
@@ -79,7 +85,7 @@ if (scenario === 'oversized-frame') {
   await pause(60000);
 }
 if (scenario === 'native-child') {
-  emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'tool_use', id: 'spawn-1', name: 'Agent', input: {} }] } });
+  emit({ type: 'assistant', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'tool_use', id: 'spawn-1', name: 'Agent', input: {} }] } });
   emit({ type: 'system', subtype: 'task_started', session_id: id, task_id: 'child', run_id: 'run-child', task_type: 'local_agent', tool_use_id: 'spawn-1' });
   for (let i = 0; i < 2; i++) emit({ type: 'system', subtype: 'task_progress', session_id: id, task_id: 'child', run_id: 'run-child', usage: { total_tokens: 10, tool_uses: 1, duration_ms: 20 } });
   emit({ type: 'system', subtype: 'task_notification', session_id: id, task_id: 'child', run_id: 'run-child', status: 'completed' });
@@ -90,12 +96,12 @@ if (scenario.startsWith('activity-')) {
   const intervalMs = settings.intervalMs ?? 60;
   const privateText = 'PRIVATE_PROVIDER_BODY_MUST_NOT_ENTER_ACTIVITY';
   if (scenario === 'activity-native-progress') {
-    emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'tool_use', id: 'spawn-activity', name: 'Agent', input: {} }] } });
+    emit({ type: 'assistant', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'tool_use', id: 'spawn-activity', name: 'Agent', input: {} }] } });
     emit({ type: 'system', subtype: 'task_started', session_id: id, task_id: 'child-activity', run_id: 'run-activity', task_type: 'local_agent', tool_use_id: 'spawn-activity' });
   }
   if (scenario === 'activity-display-overflow') {
     for (let i = 0; i < 96; i++) emit({ type: 'assistant', session_id: id,
-      message: { content: [{ type: 'text', text: 'x'.repeat(65536) }] } });
+      message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'text', text: 'x'.repeat(65536) }] } });
   }
   let count = 0;
   while (performance.now() - start < durationMs) {
@@ -109,8 +115,8 @@ if (scenario.startsWith('activity-')) {
       emit({ type: 'system', subtype: 'task_progress', session_id: id, task_id: 'child-activity', run_id: 'run-activity',
         usage: { total_tokens: count * 10, tool_uses: count, duration_ms: Math.round(performance.now() - start) } });
     } else {
-      emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'tool_use', id: 'read-' + count, name: 'Read', input: { path: privateText } }] } });
-      emit({ type: 'user', session_id: id, message: { content: [{ type: 'tool_result', tool_use_id: 'read-' + count, content: privateText }] } });
+      emit({ type: 'assistant', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'tool_use', id: 'read-' + count, name: 'Read', input: { path: privateText } }] } });
+      emit({ type: 'user', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'tool_result', tool_use_id: 'read-' + count, content: privateText }] } });
     }
     appendFileSync(activityLog, JSON.stringify({ count, elapsedMs: Math.round(performance.now() - start) }) + '\n');
     await pause(intervalMs);
@@ -121,17 +127,34 @@ if (scenario.startsWith('activity-')) {
 }
 if (['hang', 'stubborn', 'progress-hang', 'activity-then-silent'].includes(scenario)) {
   if (scenario === 'stubborn') process.on('SIGTERM', () => {});
-  emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'text', text: 'fixture running' }] } });
+  emit({ type: 'assistant', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'text', text: 'fixture running' }] } });
   if (scenario === 'progress-hang') {
     for (let i = 0; i < 20; i++) emit({ type: 'assistant', session_id: id,
-      message: { content: [{ type: 'text', text: 'x'.repeat(65536) }] } });
+      message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'text', text: 'x'.repeat(65536) }] } });
   }
   setInterval(() => {}, 1000);
 } else {
+  if (scenario === 'image-execute') {
+    if (!userContent.some(block => block.type === 'image' && block.source?.type === 'base64')) {
+      throw new Error('image-execute requires an actual native image content block');
+    }
+    const fixturePath = value => {
+      if (typeof value !== 'string' || !value || isAbsolute(value) || normalize(value) !== value ||
+          value.split('/').includes('..') || value.includes('\\')) throw new Error('image-execute requires explicit relative fixture paths');
+      return join(process.cwd(), value);
+    };
+    const artifact = fixturePath(settings.executeArtifact), report = fixturePath(settings.executeReport);
+    if (!settings.executeReportBody || typeof settings.executeReportBody !== 'object' || Array.isArray(settings.executeReportBody)) {
+      throw new Error('image-execute requires an explicit test-owned report body');
+    }
+    mkdirSync(dirname(artifact), { recursive: true }); mkdirSync(dirname(report), { recursive: true });
+    writeFileSync(artifact, settings.executeArtifactText ?? 'image-backed fixture artifact\n');
+    writeFileSync(report, JSON.stringify(settings.executeReportBody) + '\n');
+  }
   const answer = prior ? 'prior:' + prior + '|echo:' + prompt : 'echo:' + prompt;
   if (!argv.includes('--no-session-persistence')) writeFileSync(history, JSON.stringify({ prompt,
     name: initialize?.title ?? flag('-n') ?? stored.name ?? null }));
-  emit({ type: 'assistant', session_id: id, message: { content: [{ type: 'text', text: answer }] } });
+  emit({ type: 'assistant', session_id: id, message: { model: scenario==='root-model-switch' ? 'claude-opus-5-5' : flag('--model'), content: [{ type: 'text', text: answer }] } });
   if (scenario !== 'missing-result') {
     const result = { type: 'result', subtype: 'success', is_error: false, uuid: randomUUID(),
       session_id: scenario === 'wrong-session' ? randomUUID() : id, result: answer,

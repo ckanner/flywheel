@@ -8,6 +8,7 @@ import (
 )
 
 var providerActivityTypes = map[string][]string{
+	"antigravity": {"init", "step", "result"},
 	"codex-pro": {"turn/started", "turn/completed", "item/started", "item/completed", "item/agentMessage/delta",
 		"item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta",
 		"item/commandExecution/outputDelta", "item/mcpToolCall/progress", "turn/plan/updated", "turn/diff/updated", "thread/tokenUsage/updated"},
@@ -40,12 +41,9 @@ func validateProActivityEvent(raw json.RawMessage, harness string, request codex
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
-	version := CodexProPackageVersion
-	if harness == "claude-code-pro" {
-		version = ClaudeCodeProPackageVersion
-	}
+	version := machineAdapterVersion(harness)
 	if len(raw) > 4096 || d.Decode(&frame) != nil || frame.Type != "activity" || frame.Protocol != request.Protocol || frame.RequestID != request.RequestID ||
-		frame.Adapter.Package != "dsh-subagent-"+harness || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 {
+		frame.Adapter.Package != adapterPackageFor(harness) || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 {
 		return fmt.Errorf("invalid request: uncorrelated or damaged %s activity frame", harness)
 	}
 	a := frame.Activity

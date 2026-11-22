@@ -1,0 +1,19 @@
+{
+  "package": "@ckanner/dsh-subagent-antigravity",
+  "version": "0.2.1",
+  "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
+  "sourceDirectory": ".",
+  "sourceCommit": "a20eb63bbfa2849df63043595475957bf4a4f04d",
+  "sourceTree": "01bbc8964c37e40106b3b4be9aaf97d9a5df36dd",
+  "sourceDirectoryTree": "01bbc8964c37e40106b3b4be9aaf97d9a5df36dd",
+  "verificationNote": "Extracted from Flywheel plugins/antigravity into ckanner/dsh-subagent-antigravity at a20eb63; the 0.2.1 archive passed the standalone npm pack, package-consumption, live native/evidence-only/subagent/Swarm smoke and disposable DSH profile checks. npm and the v0.2.1 GitHub release are separately published; account entitlement remains unknown.",
+  "tarball": "ckanner-dsh-subagent-antigravity-0.2.1.tgz",
+  "sha256": "b0bf6d3524e0e1833a027bc40f5e68de7d8fddacc3dc04b5103f0966161c86bd",
+  "integrity": "sha512-9HiHshU2nlB2fduPX8klHvB68NzA4QN5xjxcYeQD/P4zjjrVHur5rzue1AttH7DXhj6B6sLgH1ysN7/3FV+98A==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "buildToolchain": {
+    "node": "24.22.3",
+    "npm": "11.19.1"
+  }
+}

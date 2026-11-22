@@ -15,11 +15,11 @@
         "required": ["harness", "provider", "channel", "model", "thinking", "permission", "session-mode"],
         "properties": {
           "native-profile": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "harness": {"enum": ["dsh", "kimi", "codex-pro", "claude-code-pro"]},
+        "harness": {"enum": ["dsh", "kimi", "codex-pro", "claude-code-pro", "antigravity"]},
           "provider": {"type": "string"},
           "channel": {"type": "string", "pattern": "\\S"},
           "model": {"type": "string", "pattern": "\\S"},
-          "thinking": {"enum": ["off", "low", "medium", "high", "xhigh", "max"]},
+          "thinking": {"enum": ["", "off", "low", "medium", "high", "xhigh", "max"]},
           "permission": {"enum": ["read-only", "workspace-write", "danger-full-access"]},
           "session-mode": {"enum": ["fresh", "scoped"]}
         }
@@ -27,7 +27,7 @@
     },
     "routes": {
       "type": "object", "minProperties": 1,
-      "propertyNames": {"enum": ["default", "frontend", "hard", "multimodal"]},
+      "propertyNames": {"enum": ["default", "frontend", "hard", "multimodal", "complex", "backend", "batch"]},
       "additionalProperties": {
         "type": "object", "additionalProperties": false,
         "required": ["initial", "allowed", "quality-order", "after-stalled-attempts", "max-switches"],

@@ -42,7 +42,8 @@ func (c *Context) executionPolicy(packet *contract.Packet) (*state.ExecutionPoli
 	}
 	identity := sessionHash(identityInput)
 	if record == nil {
-		record = &state.ExecutionPolicyRecord{Version: 1, Identity: identity, Route: packet.Route, Current: route.Initial}
+		record = &state.ExecutionPolicyRecord{Version: 1, Identity: identity, Route: packet.Route, Current: route.Initial,
+			CurrentBinding: &state.BindingSnapshot{BindingID: route.Initial, Binding: c.executionBindingSnapshot(p.Bindings[route.Initial])}}
 		c.State.Packets[packet.PacketID].ExecutionPolicy = record
 	}
 	if record.Version != 1 || record.Identity != identity || record.Route != packet.Route || !slices.Contains(route.Allowed, record.Current) || record.Switches != len(record.History) {
@@ -58,10 +59,13 @@ func (c *Context) executionBinding(packet *contract.Packet) (fallback.Binding, s
 	}
 	if record == nil {
 		binding, err := fallback.ResolveBinding(c.Config, "execute", packet.Route)
+		if err == nil {
+			err = c.executionCandidateError(packet, config.ExecutionBinding{Harness: binding.Harness, NativeProfile: binding.NativeProfile})
+		}
 		return binding, c.Config.PermissionMode("execute", binding.Harness, "routes."+packet.Route), "", err
 	}
 	b := c.Config.ExecutionPolicy.Bindings[record.Current]
-	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, nil
+	return fallback.Binding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Channel: b.Channel, Model: b.Model, Thinking: b.Thinking}, b.Permission, b.SessionMode, c.executionCandidateError(packet, b)
 }
 
 func executionConfiguration(b config.ExecutionBinding) state.SessionConfiguration {
@@ -70,6 +74,9 @@ func executionConfiguration(b config.ExecutionBinding) state.SessionConfiguratio
 
 func (c *Context) switchExecutionPolicy(packet *contract.Packet, record *state.ExecutionPolicyRecord, route config.ExecutionRoute, next, kind, reason string) bool {
 	if next == "" || next == record.Current || !slices.Contains(route.Allowed, next) || record.Switches >= route.MaxSwitches {
+		return false
+	}
+	if c.executionCandidateError(packet, c.Config.ExecutionPolicy.Bindings[next]) != nil {
 		return false
 	}
 	// A new model cannot bypass an unconsumed or unknown invocation. The normal
@@ -82,6 +89,7 @@ func (c *Context) switchExecutionPolicy(packet *contract.Packet, record *state.E
 		Before: executionConfiguration(p.Bindings[record.Current]), After: executionConfiguration(p.Bindings[next]),
 		Reason: reason, At: c.nowISO(), Attempt: c.State.Packets[packet.PacketID].Attempts})
 	record.Current, record.Switches, record.StalledAttempts = next, record.Switches+1, 0
+	record.CurrentBinding = &state.BindingSnapshot{BindingID: next, Binding: c.executionBindingSnapshot(p.Bindings[next])}
 	c.retireSession("execute", packet.PacketID, kind+": "+reason+"; selected binding requires a cold start")
 	c.Log(fmt.Sprintf("execution %s: %s -> %s (%s)", packet.PacketID, kind, next, reason))
 	return true

@@ -1,140 +1,118 @@
-# 模型、推理等级与账号
+# 模型、思考等级与订阅
 
-[文档目录](../README.zh-CN.md) · [English](../en/model-policy.md) · 简体中文
+[文档首页](../README.zh-CN.md) · [English](../en/model-policy.md) · 简体中文
 
-Flywheel 通过阶段或执行路由的绑定选择模型。[默认模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)
-是新配置的依据；已有安装继续使用自己的配置。下面的默认值是可调整的初始基线，
-仓库尚未证明它是代表性任务上的最优组合，也没有证明提高推理等级能改善每次交付。
+[默认模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json)通过原生订阅客户端使用 Gemini、Claude、Codex 与 Kimi。这是可编辑的工程起点，不是实测能力排名或账号权益保证。已有配置只在显式迁移后采用新绑定。[已批准方案](../plans/2026-11-19-subscription-cli-workflows.md)记录调研与分工依据，本页说明当前实现。
 
-## 默认绑定
+## 默认模型分工
 
-| 阶段或路由 | Harness | 模型 | 访问方式 | 推理等级 |
-|---|---|---|---|---|
-| Plan | `kimi` | `kimi-code/k3.1-pro` | 原生 CLI 使用 Kimi Code 订阅 | `high` |
-| Execute：default | `dsh` | `deepseek-flash` | DSH `deepseek-account` | `high` |
-| Execute：frontend | `kimi` | `kimi-code/k3.1-pro` | 原生 CLI 使用 Kimi Code 订阅 | `high` |
-| Execute：hard | `codex-pro` | `gpt-6.1-sol` | 公开 machine API 使用 Codex 登录 | `high` |
-| Review | `dsh` | `gpt-6.1-sol` | DSH `chatgpt` provider | `high` |
-| Judge | `dsh` | `gpt-6-astra` | DSH `chatgpt` provider | `high` |
-| Intake | `dsh` | `deepseek-flash` | DSH `deepseek-account` | `low` |
-| Garden | `kimi` | `kimi-code/k3.1-pro` | 原生 CLI 使用 Kimi Code 订阅 | `high` |
+| 阶段或路由 | Profile | Harness | 完整模型 ID | 思考等级 |
+| --- | --- | --- | --- | --- |
+| 系统设计 | `carbon` | `antigravity` | `gemini-4-carbon-high` | `high` |
+| 系统设计审查 | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| 里程碑／实施计划 | `opus-plan` | `claude-code-pro` | `claude-opus-5-5` | `high` |
+| 计划审查 | `sol-plan` | `codex-pro` | `gpt-6.2-sol` | `medium` |
+| 紧凑设计与单 packet 计划 | `hydrogen-local` | `antigravity` | `gemini-4-hydrogen-medium` | `medium` |
+| 紧凑产物独立联合审查 | `sol-plan` | `codex-pro` | `gpt-6.2-sol` | `medium` |
+| Execute：default | `hydrogen` | `antigravity` | `gemini-4-hydrogen-high` | `high` |
+| Execute：complex | `neon` | `antigravity` | `gemini-4-neon-high` | `high` |
+| Execute：frontend / multimodal | `opus-ui` | `claude-code-pro` | `claude-opus-5-5` | `medium` |
+| Execute：backend | `sol` | `codex-pro` | `gpt-6.2-sol` | `high` |
+| Execute：batch | `kimi` | `kimi` native agent | `kimi-code/k3.1-pro` | `high` |
+| Execute：hard | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| 代码 Review | `sol` | `codex-pro` | `gpt-6.2-sol` | `high` |
+| 里程碑 Judge | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| Intake | `hydrogen-summary` | `antigravity` | `gemini-4-hydrogen-low` | `low` |
+| 调查分析 | `neon` | `antigravity`，仅分析证据 | `gemini-4-neon-high` | `high` |
+| Garden | `kimi` | `kimi` native agent | `kimi-code/k3.1-pro` | `high` |
+| 可选 JEV 决策 | `hydrogen-local` | `antigravity`，仅分析证据 | `gemini-4-hydrogen-medium` | `medium` |
 
-Harness 负责智能体与工具循环；DSH 的 `provider` 选择原生 LLM 适配器；`channel`
-是配置中的账号或凭证渠道名称。`codex-pro` harness 不是名为 `subagent_codex_pro`
-的 DSH provider。Kimi 使用原生 CLI，不使用 ACP。Auto、Quick、Full 不会自动改变
-这些绑定或提高推理等级；具体配置方式见[配置指南](configuration.md)。
+JEV **默认关闭**。额外的 `fable` profile 为 `claude-fable-5-2 / high`，`carbon-explore` 为 `gemini-4-carbon-medium / medium`；它们不是自动后备，需要显式改绑定。原生模型不可用时失败，不会换到另一条付费路径。
 
-Claude Code Pro 是[可选后端](claude-code-pro.md)，默认未分配任何阶段或路由。
-使用时明确指定原生模型与推理等级，不会隐式替换其他订阅渠道。
+已批准方案最初把 JEV 分给 Sol medium。本实现改用 Hydrogen medium，因为 Antigravity
+适配器能在派发前核验受管自定义 agent 和工具目录，当前 Codex 适配器尚无等价的 evidence-only
+准入契约。这是能力约束，不是声称 Hydrogen 决策更好；JEV 仍须显式开启。
 
-## 规划角色与当前对话模型
+常规实现和短决策用较轻的 Gemini profile，Carbon 承担系统设计，Neon 承担复杂实现和证据分析。独立审查用 Codex，Claude 承担计划细化和界面工作，Kimi 承担声明为 batch 的批量任务及整理。这些分工尚未经过真实 Flywheel 任务的最优性 A/B 验证。
 
-New/Task 登记薄 brief，宿主对话整理事实并讨论，真正设计由引擎执行。未显式配置时，
-`loops.design-plan` 继承 `loops.plan`，`loops.design-review` 和 `loops.plan-review`
-继承 `loops.review`。可以给新角色独立设置支持的模型、思考等级和 native profile，
-不改变来源角色。config inspect 的 `bindingSource` 显示实际来源；配置视图展示这些
-继承行，只有编辑后才新增独立配置。角色作用域、历史和权限覆盖继续独立。
+`multimodal` 选择 Claude 路由。packet 的版本化 `input-images` 契约将真实 PNG/JPEG/GIF/WebP 字节经 Execute → worker → Claude 公开 machine API → Agent SDK 送入原生请求。每条仓库相对路径同时绑定 MIME 类型和 SHA-256；引擎派发前校验文件、解码和大小，并把输入身份保留到验证与恢复。最多四张，每张 4 MiB、合计 8 MiB。提示词中的文件名及 DSH 聊天附件不会自动导入。默认独立 Review 检查代码、验收与冻结引用，不声称已看到这些图片。Antigravity 首版接受文本。见[图片输入](image-inputs.md)、[Claude](claude-code-pro.md)与 [Antigravity](antigravity.md)。
 
-复杂设计的模型选择应落在 design/review 绑定，不要求每次 New 前先切换宿主模型。
-现有模型和思考等级默认值保持不变，选择仍是工程起点而非已测最优。完整交互见
-[方案设计与审查](reviewed-planning.md)。
+## 首次选择与失败调整
+
+默认配置同时提供以下完整执行候选，初始项保持上表；`jev.enabled` 仍默认关闭。每条 route 的 `quality-order` 为空，`max-switches` 为 2，所以默认关闭 JEV 时不自动遍历候选。开启后，在首轮 Execute 之前和已确认失败后，JEV 可从经过 Go 资格检查的允许集中选择；所有阶段不会每次都重新分类。
+
+| Route | 初始项与允许候选 |
+| --- | --- |
+| default | Hydrogen high / Hydrogen medium / Orchestrator Neon |
+| complex | Neon high / Orchestrator Neon / Neon high Swarm |
+| frontend、multimodal | Opus medium / Opus high |
+| backend | Sol high / Sol medium / Astra high |
+| batch | Kimi high / Kimi max / Neon high Swarm |
+| hard | Astra high / Carbon high / Orchestrator Carbon |
+
+Swarm 只在 Full、无图片且 packet 有已审 `collaboration` 分工时进入选择；各子任务写入范围必须互斥并属于原范围。原生普通子任务、固定双模型 Orchestrator 与 Swarm 是不同策略。三种 Orchestrator 均可手动选择，完整标识见 [Antigravity](antigravity.md)，`thinking:""` 表示原生固定配置；决策模型不能给它再设 high/xhigh。图片候选只保留实际支持图片传输的 Claude 绑定。
+
+每次实际改变模型、effort 或原生配置都冻结完整绑定、冷启动并记录原因，共用原尝试、切换和调用预算。JEV 不读取实时套餐余额，不声称已经测得候选质量或速度；候选不是固定能力排名。无合法备选时直接使用初始配置；未知执行或清理先核对。详见 [JEV](jev.md)。
+
+## 规划角色与当前对话
+
+New/Task 登记带代码事实的 brief，设计和审查由引擎调用实际角色。`design-granularity:compact` 必须有具体证据、理由，且没有显式 Full 要求；一次产生设计与单 packet，独立角色对两个精确版本联合审查。范围不明、架构、迁移及多部分工程选 `system`；引擎可从 compact 升级，保留原授权和预算。
+
+`planning.compact` 选择两个紧凑准备绑定；系统准备使用 `loops.design-plan`、`loops.design-review`、`loops.plan` 与 `loops.plan-review`。旧配置省略角色时保留已有继承规则，`config inspect` 展示实际绑定来源。原角色仍拥有自己的权限与会话作用域。
+
+Auto 从已审契约选择 Quick／Full 实施，不是第三条执行链或批准策略。`review-first` 停在精确已审方案的人工批准点；`delegated` 在保留的实施授权范围内继续。紧凑任务也可先审方案。见[方案设计与审查](reviewed-planning.md)和[工作流](workflow.md)。
 
 ## 账号选择
 
-默认配置和 `subscriptions` 预设使用 `deepseek-account` 与 `deepseek-flash`。
-标准 DSH 桌面与 SDK 在同一 DSH home 下可以共享账号授权，无需额外 API key。
-自定义 profile 仍须加载账号服务和适配器。独立 SDK 调用会明确传递 provider/model；
-修改桌面对话模型不会更新 Flywheel 的阶段绑定。
+预设声明 `subscription:{version:1,mode:"subscription-only"}`。可达阶段、路由、紧凑绑定、Judge panel、执行候选与后备渠道只能使用四种已准入原生 harness。用户文件可保留未使用的自定义定义，它们不会成为后备。默认没有 fallback，也没有 DeepSeek API 或充值账号绑定。
 
-`deepseek-official` 是单独的 API-key provider，需要明确配置。默认预设不会在
-认证失败或额度不足后更换付费渠道；用户自定义后备链继续遵循其配置。
-ChatGPT 与 Kimi 订阅同样需要相应适配器或 CLI，以及其支持的登录流程。
+| Harness | 准入证据 | 证据边界 |
+| --- | --- | --- |
+| Antigravity | 原生账号；拒绝 API/ADC/GCP/自定义模型；credits 后备关闭；核对实际模型和本地控制 | 不证明账号权益、额度、外部工具费用或全过程计费锁 |
+| Claude Code Pro 0.7.0 | 同一官方 CLI 进程在提示词前确认支持的 first-party 订阅及 extra usage 关闭；拒绝 API/网关路径 | 提示词前快照，不是原子计费锁；成功还需实际主模型证据 |
+| Codex Pro | 同一官方 app-server 的 `account/read`、`config/read`；要求 ChatGPT 登录与原生 OpenAI 路由 | 不证明剩余额度或实际订阅费用 |
+| Kimi native agent | 官方脱敏 providers/config API 确认 managed Kimi Code OAuth，无 API Key 路由；关闭独立搜索/抓取和子代理 | 未暴露的字段（包括 custom headers）不作核验声明；不保证整个账号的计费状态 |
 
-升级会保留已有用户文件。采用订阅预设时，先检查实际生效的完整配置、预览迁移，
-再按[配置指南](configuration.md)显式应用。之后重新启动引擎；安装包或修改桌面
-对话模型都不会迁移运行中的任务。
+Kimi 使用 `kimi-subscription-agent`：native agent 模式、Agents 关闭。严格订阅调用禁用 `WebSearch` 与 `FetchURL`，因为公开账号 API 无法核对它们独立凭据的计费。Kimi print 会在严格订阅派发前拒绝；未声明该策略的旧配置保留原行为。
 
-## 推理等级取决于后端
+适配器使用本机原生程序及其支持的登录，不复制 token、不建立 API 账号。认证或额度错误会停止，不自动开启 credits、extra usage 或 API 后备。Doctor 无推理检查本地兼容性，真实账号可用性须独立验收。
 
-下表是 **2026-11-05** 对所列集成的能力核对，属于相应快照的兼容性依据，
-不是当前服务端模型目录或账号权限检查。
+按[配置指南](configuration.md)预览并显式应用 `flywheel config migrate --preset subscription-cli`。迁移保留权限、验证、预算和调度；保留的 role-based 策略可能需要明确授权后修改，原生 full-access 绑定才能运行。历史 `subscriptions` 预设仅为兼容迁移，不代表这张新表。
 
-| 已核对的集成 | 可请求的值 | 说明 |
-|---|---|---|
-| GPT-6.1 Sol／Codex Pro 0.10.2 | `low`、`medium`、`high`、`xhigh`、`max` | machine API 传递指定 effort |
-| Sol、Astra／DSH ChatGPT provider | `low`、`medium`、`high`、`xhigh`、`max` | provider 序列化为 `reasoning.effort` |
-| Kimi K3.1 Pro／原生 CLI | `low`、`high`、`max` | 不能关闭 thinking；兼容别名 `xhigh`、`max`、`ultra` 都映射到原生 `max` |
-| DeepSeek Flash／已核对的 DSH adapter | `off`、`low`、`high`、`max` | 此适配器拒绝 `medium` 和 `xhigh` |
+## 思考等级按后端解释
 
-不同 provider 的同名档位不是统一量尺。通用 API 的兼容映射也不能绕过 DSH
-适配器自身的参数校验。在这条路径比较 Flash 的更高档位时使用 `max`，不填
-`xhigh`。后端不支持某项选择时应明确拒绝，不能静默替换模型或推理等级。
+| 集成 | 适配器可选档位 | 解释 |
+| --- | --- | --- |
+| Gemini Hydrogen / Neon | `low`、`medium`、`high`、`xhigh` | 模型后缀必须与 thinking 一致 |
+| Gemini Carbon / Argon | `low`、`medium`、`high` | 拒绝 xhigh，不静默映射 |
+| Orchestrator Neon / Carbon / Argon | 固定，`thinking:""` | 同会话由指定规划模型和 Hydrogen 交接，不传 `--effort` |
+| Codex Pro | `low`、`medium`、`high`、`xhigh`、`max` | 仍受具体模型与本机客户端准入限制 |
+| Claude Code Pro | `low`、`medium`、`high`、`xhigh`、`max` | 显式原生模型与 effort，不自动换模型 |
+| Kimi K3.1 Pro | 原生 `low`、`high`、`max` | 兼容别名不代表跨 provider 同一尺度 |
 
-兼容性参考：[Kimi 模型文档](https://www.kimi.com/code/docs/en/kimi-code/models)、
-[DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/)、
-[Sol 模型参考](https://developers.openai.com/api/docs/models/gpt-6.1-sol)、
-[Astra 模型参考](https://developers.openai.com/api/docs/models/gpt-6-astra)、
-[DSH DeepSeek 配置](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek/src/config.ts)
-与[序列化校验](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek/src/serialize.ts)。
-ChatGPT provider 的核对快照为 0.1.17、`388868f91bcdc05795fb94d21b868ded6d7219c9`：
-[模型目录](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/models/served.ts)
-与[请求序列化](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/convert/request.ts)。
+Gemini 选择参考已批准调研、Google 的[模型选择指南](https://aistudio.google.com/docs/choosing-a-model)与 [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)。已安装原生目录提供客户端报告的模型 ID，不证明账号资格或剩余额度。参数被接受与服务端实际推理强度的独立证据分别记录，不混为一谈。
 
-## 选择并评估基线
+在 **设置 → 模型与会话** 中打开阶段或完整候选，选择 Provider，再点击 **读取模型
+目录** 发起显式的元数据读取。Antigravity、Codex Pro 和 Claude Code Pro 显示各自
+原生目录来源。目录缺失或后端不支持时仍可手动输入精确 ID。界面显示来源和范围，
+账号资格保持未知，只采用目录明确返回的 effort 选项／默认值；固定 Orchestrator
+保持空 effort。切换 Provider 或渠道后原目录失效，其他任务的延迟结果不会覆盖当前选择。
 
-八个默认阶段／路由中七个使用 `high`，Intake 使用 `low`。稳定的初始设置方便
-把比较结果归因到具体阶段。以下比较方向来自阶段职责的工程判断，**不是已实测的
-Flywheel 质量结论**。
+完整执行候选、路线允许集合、质量次序、切换预算和渠道后备映射都有结构化控件。
+权限变更要求明确的路线授权，并隔离共享候选；会话策略是候选的显式字段。这些是
+供后续启动采用的配置修改，不改变已冻结的运行绑定。共享引用和渠道后备的保护规则
+见[配置编辑](configuration.md#在控制台编辑配置)。
 
-| 阶段 | 可比较的设置 |
-|---|---|
-| Intake | 对有歧义的输入、合并或分类比较 `high` |
-| Plan | 对困难架构、依赖关系或验收设计比较 `max` |
-| Execute：default | 对困难实现或根因分析比较 Flash `max` |
-| Execute：frontend | 对复杂交互状态或跨组件一致性比较 Kimi `max` |
-| Execute：hard | 先比较 Sol `xhigh`，再在最难任务上评估 `max` |
-| Review | 对并发、一致性或权限审查比较 `xhigh` |
-| Judge | 对高影响里程碑终验比较 Astra `xhigh`，有依据时再评估 `max` |
-| Garden | 常规整理比较 `low`，困难跨任务归纳比较 `max` |
+## 基线与评估
 
-在实际生效的完整配置中修改 `thinking`。例如，`routes.hard.thinking` 只影响
-hard 执行，`loops.judge.thinking` 只影响 Judge。阶段覆盖可以避免改变共享 profile
-的所有使用者。不要创建只包含这两个字段的不完整任务配置：配置发现选择一个文件，
-不会跨文件合并。
+比较 effort 时固定模型、harness、任务、上下文、权限与验收。测量首次通过、漏检、误报、含返工总耗时及已知／未知用量。订阅价格不能推导逐任务容量，API 等价估算不是实际订阅账单。Antigravity conversation 计数不能安全累加为逐调用用量，因此标准化总量保留 unknown。
 
-固定模型、harness、上下文、任务、权限和验收条件，再比较交付成功率、首轮通过、
-漏检与误报、包含返工的总耗时，以及输入／输出／reasoning／缓存用量。可观察的
-订阅额度另记，缺失值保留 unknown。API 单价不能直接换算成订阅可完成任务数。
-[会话评估指南](session-evaluation.md)介绍仓库的配对实验工具；推理等级比较也需要
-明确自己的固定条件。
+只改变一个阶段时改阶段绑定，共享 profile 影响所有引用者。配置选择首个完整文件，不深度合并；不要为一个 effort 字段创建不完整任务配置。
 
 ## 有界模型与 effort 实验
 
-可选[执行策略](configuration.md#有界执行策略显式启用)逐路由声明完整允许绑定，
-包括账号、effort、权限和历史模式。Auto／Quick／Full 不会启用它。确认重复 L1
-空转后，可在原尝试／token 预算及显式切换上限内前进实验顺序；这条确定性规则
-不证明后一个模型更好。渠道错误使用单独声明的后备，两种机制都不能选择未声明
-的模型或费用渠道。
+可选[执行策略](configuration.md#有界执行策略显式启用)声明每个 route 的完整候选与有限切换预算。确认的重复 L1 空转可按声明顺序推进，仍受原尝试次数和 token 限额约束。JEV 开启时也只在同一个冻结允许集中选择。两者都不生成权限、扩大范围、重置计数或启用未声明账号；结果未知须先对账。
 
-开启唯一 [JEV 总开关](jev.md) 后，确认结束的失败也可把已有允许绑定作为决策
-候选。采用前核对冻结允许集、权限、剩余尝试与切换预算，不再设置 JEV 模型路由
-开关。没有合法备选时继续当前绑定。语义选择只记录为实际选择，不代表已经测得
-该模型更快或更好。
+## 如何解释证据
 
-effort 改变会冷启动角色，并记录完整前后绑定。对照必须计入重读、启动及实际
-已知／未知用量与成本。离线测试以受控 driver 结果运行真实引擎返修和恢复路径，
-不能证明实际模型质量或速度；改变默认值或宣称节省前仍须使用配对真实任务与
-冻结 oracle。
-
-## 解释配置证据与质量证据
-
-源码和离线协议测试能够证明字段传递与错误处理。SDK 或 machine API 接受请求，
-能够证明接口接纳。服务端实际采用的 effort 和交付质量提升，则需要后端证据或
-真实任务测量。
-
-DSH `initialize` 校验配置，但回复只包含 server 信息。Flywheel 的
-`ready.reasoningEffort` 是初始化成功后的请求回显，不是模型服务独立证明。
-Codex Pro 区分 `requestedEffort`、`accepted` 和未知的 `effectiveEffort:null`。
-依据见 [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)
-与 [Codex Pro machine 协议](https://github.com/ckanner/dsh-subagent-codex-pro/blob/9c7d724cb19dc29457a56f4a4269c24278595d2f/docs/machine.md)。
-无推理 doctor 不能证明账号余额、真实调用或更高档位的收益。
+源码测试证明字段传递和错误行为，候选安装证明真实分发边界；二者不证明真实模型质量、额度或账号可用。CLI 接受参数、独立观察到的设置和交付质量改善分别记录。缺少 usage 或价格不填零。[会话评估](session-evaluation.md)说明成对离线引擎实验及其局限。

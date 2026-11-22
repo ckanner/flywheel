@@ -47,31 +47,23 @@ Mac 桌面或 Seatbelt 行为。
 
 ## 准备所选后端
 
-DSH worker 默认使用独立 `sdk` profile。标准桌面与 SDK 在同一 `DSH_HOME` 下
-可以复用 DeepSeek 账号授权存储；自定义 profile 需要加载所选账号服务、provider
-和工具。保留的 `desktop` profile 不能作为 worker profile。
+默认通过原生订阅客户端执行，DSH 视图是控制面。安装桌面插件不会改变父对话 provider。
 
-| 后端 | 准备与执行方式 |
-|---|---|
-| DeepSeek Flash | DSH `deepseek-account`，明确指定 `deepseek-flash`；标准共享账号存储不需要额外 API key |
-| DSH ChatGPT | 在 SDK profile 安装并授权所选 ChatGPT 适配器；桌面对话模型不决定 worker 配置 |
-| Codex Pro | worker 导入固定 0.10.2 包的 `dsh-subagent-codex-pro/machine`，使用已安装 Codex CLI 和登录 |
-| Kimi | Go 默认调用 Kimi CLI，也可使用受管本地 Server worker 的原生 Agent／Swarm／Tower；沿用同一 Kimi 登录 |
-| Claude Code Pro | 可选 0.6.0 peer 和兼容本地 Claude 程序与获准使用的认证；默认无阶段选它，详见[接入指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md) |
+| 后端 | 安装与执行路径 |
+| --- | --- |
+| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → 官方本机 `agy` CLI 及 Google 原生登录；无 ACP |
+| Claude Code Pro | worker 依赖树中的精确 optional peer `0.7.0` → 官方 Agent SDK → 本地 Claude Code 订阅 |
+| Codex Pro | 内置 `0.10.2` machine API → 官方 app-server 与 ChatGPT 登录 |
+| Kimi | 最小 owned native agent profile，managed Kimi Code OAuth；严格订阅模式拒绝 print |
 
-已核对的 ChatGPT 配套版本为 0.1.20。SDK profile 缺失或需要更新时执行：
+严格预设在准入时核对原生路径与受支持订阅证据，额度未知仍保留未知。认证/额度失败不
+开启 API Key、credits 或 extra usage 后备。见[模型策略](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/model-policy.md)、
+[Antigravity](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/antigravity.md)和
+[Claude](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/claude-code-pro.md)。
 
-```sh
-dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.1.20
-```
-
-此固定版本示例不代表当前账号拥有某模型权限。认证和真实模型可用性需要通过
-各后端支持的流程检查。Flywheel 不安装原生模型 CLI、不复制凭证，也不提供订阅额度。
-
-默认 Flash 路由不会在账号失败后回退到 `deepseek-official`；后者是需要明确选择
-的 API-key provider。默认 hard 使用 `codex-pro`，不是名为 `subagent_codex_pro`
-的 DSH provider，也不静默回退到 `codex exec`。详细说明见
-[配置指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/configuration.md)和[模型与推理等级](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/model-policy.md)。
+旧的非严格配置仍可显式使用 DSH sdk profile、DeepSeek 账号/API 或 DSH ChatGPT；
+它们不能作为 subscription-only 的可达替代。SDK 和 Desktop profile 分开，登录仍由
+原生客户端支持的流程完成；Flywheel 不复制凭据或安装模型客户端程序。
 
 ### 可执行文件与环境变量
 
@@ -85,6 +77,7 @@ dsh plugin --profile sdk add --save-exact --ignore-scripts dsh-plugin-chatgpt@0.
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | 显式覆盖可选 Claude worker |
 | `FLYWHEEL_CODEX_BIN` / `CODEX_HOME` | 原生 Codex 可执行文件及已有配置／登录根目录 |
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | 原生 Claude 可执行文件及已有配置／登录根目录 |
+| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | 官方 agy 程序／显式 Antigravity worker 覆盖 |
 | `FLYWHEEL_KIMI_BIN` | 原生 Kimi 可执行文件，默认 `kimi` |
 
 npm 启动器直接解析当前完整包内的 worker。启动引擎的进程必须能看到相关
@@ -92,10 +85,10 @@ npm 启动器直接解析当前完整包内的 worker。启动引擎的进程必
 
 ## 启动任务与使用工作台
 
-在 DSH 输入框输入 `/flywheel-task <目标>`。宿主助手先准备并检查任务契约，
-再调用 `flywheel_launch`。准备阶段使用当前对话模型，执行阶段使用 Flywheel
-配置中的绑定。`/flywheel-new` 只准备方案，`/flywheel-run` 继续已有任务。
-用户明确要求先审阅方案时，这仍是任务授权的一部分。
+在 DSH 输入框输入 `/flywheel-task <目标>`。宿主登记事实和薄 brief，经
+`flywheel_control planning` 交给 Go，实际设计和独立审查采用 compact 或 system 准备。
+review-first 停在精确版本人工批准；delegated 保留原实施授权继续。`/flywheel-new`
+默认先审方案，`/flywheel-run` 继续原任务和原账本。
 
 在内置会话视图旁或其溢出菜单中打开 **Flywheel**。工作台分为三个页面：
 

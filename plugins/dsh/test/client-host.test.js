@@ -79,7 +79,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   const pending = deferred(), replacementPending = deferred();
   let requestsFromA = 0;
   const requests = [], discoveries = [];
-  const configRequests = [];
+  const configRequests = [], effectiveRequests = [];
   const configValues = { sessions: { mode: 'scoped', 'policy-version': 1 } };
   const sessions = [];
   const reply = (request, slug) => ({ ok: true, value: { result: { kind: 'success', text: JSON.stringify({
@@ -100,6 +100,13 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
         editor: { scope: request.editor.scope, target: '/global/flywheel.config.json',
           source: '/global/flywheel.config.json', revision: 'global-one',
           values: configValues, defaults: configValues, applied: false },
+      }) } } };
+    }
+    if (request.action === 'config') {
+      effectiveRequests.push({ sessionId, request });
+      return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({
+        protocol: 1, ok: true, taskDir: request.taskDir, cwd: request.cwd, running: false, state: null,
+        configuration: { source: '/global/flywheel.config.json', scope: 'global', bindings: [], sessions: configValues.sessions },
       }) } } };
     }
     requests.push(request);
@@ -256,6 +263,10 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   assert.match(container.textContent, /Native conversation/);
   assert.deepEqual(requests.map(request => request.action), ['status', 'status', 'status', 'status', 'status', 'status', 'status']);
   assert.deepEqual(sessions, ['session-a', 'session-b', 'session-a', 'session-b', 'session-b', 'session-b', 'session-b']);
+  assert.equal(effectiveRequests.length, 5, 'settings reads effective config once per mounted editor without repeating a mutation or task status read');
+  assert.ok(effectiveRequests.every(({ sessionId, request }) => sessionId === 'session-b' &&
+    request.action === 'config' && request.taskDir === '/repo/auto-bound' && request.cwd === '/repo'),
+  'each read remains bound to the active task and host session, including replacement Contexts');
   assert.deepEqual(crashes, [], 'the real renderer reported no crashed or abdicated plugin entry');
   assert.equal(clientDocument.head.innerHTML, headBefore);
   assert.equal(clientDocument.body.childElementCount, bodyChildrenBefore);

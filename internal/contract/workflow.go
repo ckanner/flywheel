@@ -112,6 +112,9 @@ func quickIneligibility(spec *Spec, packets []*Packet) []string {
 		return append(reasons, "Quick requires exactly one milestone and one independently verifiable packet")
 	}
 	p := packets[0]
+	if p.Collaboration != nil {
+		reasons = append(reasons, "Declared parallel collaboration requires Full")
+	}
 	milestone, err := MilestoneOfPacket(p.PacketID)
 	if err != nil || milestone != spec.Milestones[0].ID {
 		reasons = append(reasons, "Quick packet must belong to the sole milestone")

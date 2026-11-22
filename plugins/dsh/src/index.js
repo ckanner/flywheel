@@ -196,6 +196,7 @@ export function apply(ctx, config = {}) {
         }, required: ['action'] },
         investigation: { type: 'object', additionalProperties: false, properties: {
           action: { type: 'string', enum: ['start', 'run', 'status', 'report', 'cancel'] },
+          run: { type: 'boolean', description: 'Start only: register the bounded contract and start its Go investigation owner; defaults to false.' },
           revision: { type: 'integer', minimum: 1 },
           contract: { type: 'object', description: 'Exact version-1 preparation.schema.json contract; use flywheel template to read the installed schema. Store no credentials.' },
           report: { type: 'object', description: 'Evidence-cited investigation report; references must name recorded invocation IDs. This never marks code completed.' },

@@ -1,12 +1,15 @@
 // Public machine API consumer. Go remains the owner of scheduling and acceptance.
 import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
+import { inspectSubscriptionEnvironment, validateSubscriptionPolicy } from './subscription-controls.js';
 
 export const ADAPTER = Object.freeze({ package: 'dsh-subagent-codex-pro', version: '0.10.2', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
+const subscriptionCommands = new WeakMap();
 
 export class WorkerError extends Error {
   constructor(code, message) { super(message); this.name = 'WorkerError'; this.code = code; }
@@ -49,7 +52,7 @@ export async function loadAdapter() {
 export function machineRequest(value, api, env) {
   const lifecycle = value?.protocol === 3;
   const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema',
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema', 'subscription',
     ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' || ![1, 2, 3].includes(value.protocol) ||
       Object.keys(value).some(key => !keys.has(key)) || typeof value.requestId !== 'string' || value.requestId.length > 256 ||
@@ -67,7 +70,11 @@ export function machineRequest(value, api, env) {
   validateNativeAdmission(value.managed, value.requestId, WorkerError);
   validateObservationRequest(value, WorkerError);
   try {
-    return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, model: value.model,
+    const subscription = validateSubscriptionPolicy(value.subscription);
+    if (subscription) inspectSubscriptionEnvironment(env, 'codex-pro');
+    const command = env.FLYWHEEL_CODEX_BIN || 'codex';
+    const extension = import.meta.url.endsWith('.mjs') ? '.mjs' : '.js';
+    const request = api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, model: value.model,
       effort: value.reasoningEffort,
       permissionMode: value.permissionMode === 'danger-full-access' ? 'dangerously-bypass-approvals-and-sandbox' : value.permissionMode,
       prompt: value.prompt,
@@ -76,11 +83,28 @@ export function machineRequest(value, api, env) {
       ...(value.outputSchema === undefined ? {} : { outputSchema: value.outputSchema }),
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
       ...(persistent && value.threadId === undefined && value.sessionTitle !== undefined ? { threadName: value.sessionTitle } : {}),
-      command: env.FLYWHEEL_CODEX_BIN || 'codex', threadMode: persistent ? 'persistent' : 'ephemeral',
+      command: subscription ? fileURLToPath(new URL('./codex-subscription-proxy' + extension, import.meta.url)) : command,
+      threadMode: persistent ? 'persistent' : 'ephemeral',
       ...(persistent && value.threadId !== undefined ? { threadId: value.threadId } : {}), maxOutputBytes: LIMITS.machineOutputBytes });
+    if (subscription) subscriptionCommands.set(request, command);
+    return request;
   } catch (error) {
+    if (error?.name === 'SubscriptionError') throw new WorkerError(error.code, error.message);
     throw new WorkerError('INVALID_REQUEST', error instanceof api.MachineInputError ? error.message : 'Invalid Codex Pro machine request');
   }
+}
+
+export async function invokeAdapter(api, request, options) {
+  const command = subscriptionCommands.get(request);
+  const receipt = await api.runMachine(request, command === undefined ? options : { ...options,
+    env: { ...options.env, FLYWHEEL_CODEX_SUBSCRIPTION_COMMAND: command } });
+  // These facts follow from the guarded native transport. Failed runs retain
+  // their original receipt and do not manufacture a successful account probe.
+  return command === undefined ? receipt : { ...receipt, subscription: {
+    version: 1, mode: 'subscription-only', status: receipt.ok ? 'verified-native-controls' : 'not-admitted-or-run-failed',
+    evidence: 'same-process-account-read-config-read-and-thread-provider',
+    authentication: receipt.ok ? 'chatgpt' : 'unknown', entitlement: 'unknown', quota: 'unknown', extraUsage: 'unknown',
+  } };
 }
 
 export function doctorResult() {

@@ -3,6 +3,8 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "backend": {"enum": ["http", "subscription"]},
+    "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"},
     "enabled": {"type": "boolean"},
     "endpoint": {"type": "string", "maxLength": 2000},
     "model": {"type": "string", "maxLength": 120, "pattern": "^jev-[0-9]+\\.[0-9]+\\.[0-9]+$"},
@@ -16,5 +18,8 @@
       "uniqueItems": true,
       "items": {"enum": ["task-summary", "diagnostic-facts", "logs", "source", "diff"]}
     }
-  }
+  },
+  "allOf": [{"if": {"required": ["backend"], "properties": {"backend": {"const": "subscription"}}},
+    "then": {"not": {"anyOf": [{"required": ["endpoint"]}, {"required": ["model"]}, {"required": ["key-env"]}]}},
+    "else": {"not": {"required": ["profile"]}}}]
 }

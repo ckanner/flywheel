@@ -21,6 +21,15 @@ func validatePreparationState(st *PreparationState) error {
 	if err := contract.ValidatePreparationStateValue(value); err != nil {
 		return err
 	}
+	if err := validatePreparationRounds(st); err != nil {
+		return err
+	}
+	return validatePreparationCurrent(st)
+}
+
+// Schema and flat history are checked once by validatePreparationState. The
+// same semantic checks apply to each archived round with its prior evidence.
+func validatePreparationCurrent(st *PreparationState) error {
 	if !filepath.IsAbs(st.Cwd) || st.ActionsUsed > st.Contract.Limits.MaxActions || st.OutputBytes > st.Contract.Limits.MaxOutputBytes {
 		return fmt.Errorf("invalid preparation identity or budget")
 	}
@@ -91,6 +100,9 @@ func validatePreparationState(st *PreparationState) error {
 		return err
 	}
 	if err := validatePreparationEffects(st, started); err != nil {
+		return err
+	}
+	if err := validatePreparationAnalysis(st); err != nil {
 		return err
 	}
 	terminalReport := st.Status == "supported" || st.Status == "inconclusive" || st.Status == "access-blocked"
@@ -176,6 +188,9 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 			return fmt.Errorf("duplicate investigation decision")
 		}
 		seen[receipt.DecisionID] = true
+		if st.Contract.Decision != nil && (receipt.Backend == "subscription") != (st.Contract.Decision.Backend == "subscription") {
+			return fmt.Errorf("investigation receipt backend contradicts its frozen target")
+		}
 		if receipt.Status == "ok" {
 			if st.Contract.Decision == nil || receipt.Model != st.Contract.Decision.Model ||
 				receipt.PolicyHash != PreparationHash(st.Contract.Decision.Policy) || receipt.SnapshotHash == "" || receipt.TargetHash == "" || receipt.QuestionHash == "" {
@@ -241,6 +256,9 @@ func validatePreparationDecisions(st *PreparationState, started time.Time, usedA
 }
 
 func validatePreparationReport(st *PreparationState) error {
+	if PreparationCleanupUnknown(st) {
+		return fmt.Errorf("report cannot discard unknown native decision cleanup")
+	}
 	report := st.Report
 	if strings.TrimSpace(report.Summary) == "" || len(report.Findings) != len(st.Contract.Hypotheses) {
 		return fmt.Errorf("report must cover the declared hypotheses")
@@ -249,8 +267,10 @@ func validatePreparationReport(st *PreparationState) error {
 	for _, h := range st.Contract.Hypotheses {
 		hypotheses[h.ID] = true
 	}
-	for _, o := range st.Observations {
-		observations[o.Invocation.ID] = o
+	for _, round := range PreparationRounds(st) {
+		for _, o := range round.Observations {
+			observations[o.Invocation.ID] = o
+		}
 	}
 	supported := false
 	for _, finding := range report.Findings {

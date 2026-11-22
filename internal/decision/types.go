@@ -98,6 +98,8 @@ type Usage struct {
 }
 
 type Receipt struct {
+	Backend          string             `json:"backend,omitempty"`
+	Native           *NativeExecution   `json:"native,omitempty"`
 	Version          int                `json:"version"`
 	DecisionID       string             `json:"decision-id"`
 	SnapshotHash     string             `json:"snapshot-hash"`
@@ -142,7 +144,7 @@ func validCategory(c Category) bool {
 }
 
 func Validate(s Snapshot, p Policy) error {
-	if (s.Version != 1 && s.Version != 2) || !token.MatchString(s.ID) || s.Identity.Revision < 0 || !validText(s.Identity.TaskID, 512) || !validText(s.Identity.RunID, 256) || !validText(s.Identity.ContractHash, 128) || !validText(s.Identity.CandidateHash, 128) || !validText(s.Identity.ObservationHash, 128) {
+	if (s.Version != 1 && s.Version != 2 && s.Version != 3) || !token.MatchString(s.ID) || s.Identity.Revision < 0 || !validText(s.Identity.TaskID, 512) || !validText(s.Identity.RunID, 256) || !validText(s.Identity.ContractHash, 128) || !validText(s.Identity.CandidateHash, 128) || !validText(s.Identity.ObservationHash, 128) {
 		return fmt.Errorf("invalid decision identity")
 	}
 	if !token.MatchString(p.Version) || (p.Mode != Off && p.Mode != Offline && p.Mode != Shadow && p.Mode != Advisory && p.Mode != Adopt) || p.MaxCalls < 1 || p.MaxCalls > 100 || !probability(p.MinApplicability) || p.MinApplicability <= 0 || !probability(p.MinChoice) || p.MinChoice <= 0 {
@@ -168,6 +170,9 @@ func Validate(s Snapshot, p Policy) error {
 	}
 	seen := map[string]bool{}
 	for _, action := range s.Actions {
+		if s.Version == 3 && action.Kind != Model {
+			return fmt.Errorf("initial execution decisions may only select a model binding")
+		}
 		if !token.MatchString(action.ID) || seen[action.ID] || !validText(action.Description, 1024) || !validText(action.BindingHash, 128) || (action.Kind != Diagnostic && action.Kind != Repair && action.Kind != Replan && action.Kind != Model) {
 			return fmt.Errorf("invalid or duplicate decision action")
 		}
@@ -215,7 +220,7 @@ func Select(current Snapshot, receipt Receipt, p Policy, options Options) Select
 		selection.Reason = "stale-decision"
 		return selection
 	}
-	if receipt.Status != "ok" || receipt.HTTPStatus != 200 || receipt.ActionID == "" {
+	if receipt.Status != "ok" || !successfulTransport(receipt, options) || receipt.ActionID == "" {
 		selection.Reason = "decision-abstained"
 		return selection
 	}

@@ -36,7 +36,9 @@
         "status",
         "records"
       ],
+      "allOf": [{"if":{"properties":{"config":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}}}},"then":{"required":["subscription-binding"]},"else":{"not":{"required":["subscription-binding"]}}}],
       "properties": {
+        "subscription-binding":{"type":"object","additionalProperties":false,"required":["profile","harness","channel","model","effort"],"properties":{"profile":{"type":"string","minLength":1,"maxLength":120},"harness":{"const":"antigravity"},"channel":{"type":"string","minLength":1,"maxLength":120},"model":{"type":"string","minLength":1,"maxLength":256},"effort":{"enum":["low","medium","high","xhigh"]}}},
         "version": {
           "const": 1
         },
@@ -49,15 +51,13 @@
               "type": "object",
               "required": [
                 "enabled",
-                "endpoint",
-                "model",
-                "key-env",
                 "timeout-ms",
                 "max-calls",
                 "min-applicability",
                 "min-choice",
                 "allowed-data"
               ],
+              "allOf": [{"if":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}},"then":{"required":["profile"]},"else":{"required":["endpoint","model","key-env"]}}],
               "properties": {
                 "enabled": {
                   "const": true
@@ -96,6 +96,33 @@
               "accounted"
             ],
             "properties": {
+              "execution": {
+                "type": "object", "additionalProperties": false,
+                "required": ["contract-fingerprint"],
+                "properties": {
+                  "contract-fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "invocation": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["id", "started-at", "attempt", "status", "dispatch", "outcome", "cleanup-confirmed"],
+                    "properties": {
+                      "id": {"type": "string", "pattern": "^call-[A-Za-z0-9]+$"},
+                      "engine-run-id": {"type": "string", "minLength": 1, "maxLength": 256},
+                      "started-at": {"type": "string", "minLength": 1, "maxLength": 64},
+                      "attempt": {"type": "integer", "minimum": 1},
+                      "status": {"enum": ["intent", "received", "consumed", "blocked", "abandoned"]},
+                      "dispatch": {"enum": ["not-dispatched", "dispatched", "unknown"]},
+                      "dispatch-observed": {"type": "boolean"},
+                      "outcome": {"enum": ["completed", "failed", "cancelled", "unknown"]},
+                      "cleanup-confirmed": {"type": "boolean"}
+                    }
+                  }
+                }
+              },
+              "model-bindings": {
+                "type": "object", "maxProperties": 16,
+                "propertyNames": {"pattern": "^model-[0-9]+$"},
+                "additionalProperties": {"allOf": [{"$ref": "#/$defs/binding-snapshot"}, {"required": ["bindingId"]}]}
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"
@@ -160,7 +187,7 @@
     "shared-execution": {"type":"object","additionalProperties":false,"required":["cwd","base-ref","packets"],"properties":{"last-error":{"type":"string","maxLength":2000},"cwd":{"type":"string","minLength":1},"base-ref":{"type":"string","minLength":1},"packets":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string","pattern":"^M[0-9]+-T[0-9]+$"}}}},
     "project":{"type":"object","additionalProperties":false,"required":["cwd"],"properties":{"workspace-cwd":{"type":"string","minLength":1},"cwd":{"type":"string","minLength":1},"repo":{"type":"string"},"url":{"type":"string"}}},
     "control":{"type":"object","additionalProperties":false,"required":["kind","status","message","started-at"],"properties":{"kind":{"type":"string","minLength":1},"packet":{"type":"string"},"status":{"enum":["running","passed","failed","cancelled"]},"message":{"type":"string","maxLength":2000},"started-at":{"type":"string"},"finished-at":{"type":"string"}}},
-    "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
+    "run":{"type":"object","additionalProperties":false,"required":["id","kind","conditions","startedAt"],"properties":{"initialBindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/binding-snapshot"}},"configurationSource":{"type":"string"},"configurationScope":{"enum":["task","project","global","embedded"]},"bindings":{"type":"object","additionalProperties":{"$ref":"#/$defs/session-configuration"}},"drivers":{"type":"object","additionalProperties":{"type":"string"}},"id":{"type":"string","minLength":1},"kind":{"type":"string"},"conditions":{"type":"string","pattern":"^[0-9a-f]{64}$"},"startedAt":{"type":"string"},"head":{"type":"string"},"branch":{"type":"string"}}},
     "delivery":{"type":"object","additionalProperties":false,"required":["action","repo","head","branch","status","at"],"properties":{"base":{"type":"string","minLength":1},"action":{"enum":["create","merge"]},"repo":{"type":"string","minLength":1},"head":{"type":"string","minLength":1},"branch":{"type":"string","minLength":1},"status":{"enum":["pending","confirmed","unknown"]},"at":{"type":"string"},"url":{"type":"string"},"number":{"type":"integer","minimum":1},"merge-sha":{"type":"string"},"error":{"type":"string"}}},
     "scheduler": {"$ref":"scheduler-policy.schema.json","required":["mode","max-parallel"]},
     "handoff": {
@@ -223,6 +250,8 @@
                 "properties": {
                   "id": { "type": "string", "pattern": "^call-[A-Za-z0-9]+$" },
                   "engine-run-id": {"type":"string","minLength":1},
+                  "decision-id": {"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$"},
+                  "dispatch-observed": {"type":"boolean"},
                   "status": { "enum": ["intent", "received", "consumed", "blocked", "abandoned"] },
                   "started-at": { "type": "string", "minLength": 1 },
                   "attempt": { "type": "integer", "minimum": 0 },
@@ -278,7 +307,7 @@
                     "required": ["version", "harness", "adapter-version", "directory", "model", "effort", "permission-mode", "sequence"],
                     "properties": {
                       "version": { "const": 1 },
-                      "harness": { "enum": ["codex-pro", "claude-code-pro"] },
+                      "harness": { "enum": ["codex-pro", "claude-code-pro", "antigravity"] },
                       "adapter-version": { "type": "string", "minLength": 1 },
                       "directory": { "type": "string", "minLength": 1 },
                       "model": { "type": "string", "minLength": 1 },
@@ -769,6 +798,7 @@
         "accounted"
       ],
       "properties": {
+        "round": { "type": "integer", "minimum": 2, "maximum": 33 },
         "version": {
           "const": 1
         },
@@ -811,7 +841,29 @@
     }
   },
   "$defs": {
-    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}},
+    "binding-snapshot": {
+      "type": "object", "additionalProperties": false, "required": ["binding"],
+      "properties": {
+        "bindingId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "binding": {"$ref": "#/$defs/session-configuration"}
+      }
+    },
+    "input-image-manifest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "images"],
+      "properties": {
+        "version": {"const": 1},
+        "images": {"type": "array", "minItems": 1, "maxItems": 4,
+          "items": {"type": "object", "additionalProperties": false, "required": ["mimeType", "sha256", "bytes"],
+            "properties": {
+              "mimeType": {"enum": ["image/png", "image/jpeg", "image/gif", "image/webp"]},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "bytes": {"type": "integer", "minimum": 1, "maximum": 4194304}
+            }
+          }
+        }
+      }
+    },
+    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"inputImages":{"$ref":"#/$defs/input-image-manifest"}, "subscription": {"type":"object","additionalProperties":false,"required":["version","mode"],"properties":{"version":{"const":1},"mode":{"const":"subscription-only"}}}, "evidenceOnly":{"type":"boolean"}, "nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}, "allOf":[{"if":{"required":["inputImages"]},"then":{"properties":{"harness":{"const":"claude-code-pro"}}}}]},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,
       "required": ["applicable", "reason"],
@@ -833,6 +885,9 @@
         "last-observed-attempt"
       ],
       "properties": {
+        "currentBinding": {
+          "allOf": [{"$ref": "#/$defs/binding-snapshot"}, {"required": ["bindingId"]}]
+        },
         "version": {
           "const": 1
         },
@@ -845,7 +900,10 @@
             "default",
             "frontend",
             "hard",
-            "multimodal"
+            "multimodal",
+            "complex",
+            "backend",
+            "batch"
           ]
         },
         "current": {
@@ -885,7 +943,9 @@
               "kind": {
                 "enum": [
                   "quality-upgrade",
-                  "channel-fallback"
+                  "channel-fallback",
+                  "jev-model-selection",
+                  "jev-initial-selection"
                 ]
               },
               "from": {

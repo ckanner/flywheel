@@ -4,8 +4,25 @@ const assert = require('node:assert/strict');
 
 // Candidate and public-registry installs enforce the same release expectation.
 // Keeping it here makes an outdated smoke expectation fail before publication.
-function assertFlashAccountProfile(template) {
-  assert.equal(template.profiles.flash.provider, 'deepseek-account');
+function assertSubscriptionCLIProfiles(template) {
+  assert.deepEqual(template.subscription, { version: 1, mode: 'subscription-only' });
+  assert.equal(template.profiles.hydrogen.harness, 'antigravity');
+  assert.equal(template.profiles.hydrogen.model, 'gemini-4-hydrogen-high');
+  assert.equal(template.routes.default.profile, 'hydrogen');
+  assert.equal(template.loops.plan.profile, 'opus-plan');
+  assert.equal(template.loops.investigate.profile, 'neon');
+  assert.equal(template.routes.backend.profile, 'sol');
+  assert.equal(template.routes.batch.profile, 'kimi');
+  assert.equal(template.profiles.kimi['native-profile'], 'kimi-subscription-agent');
+  assert.equal(template['native-profiles']['kimi-subscription-agent'].options.mode, 'agent');
+  assert.deepEqual(template.planning.compact, { 'design-plan': 'hydrogen-local', 'design-review': 'sol-plan' });
+  assert.equal(template.jev.enabled, false);
+  assert.equal(template.jev.backend, 'subscription');
+  for (const channel of Object.values(template.channels)) {
+    if (!channel || typeof channel !== 'object') continue;
+    assert.equal(channel['env-key'] ?? null, null);
+    assert.ok(!channel.fallback);
+  }
 }
 
-module.exports = { assertFlashAccountProfile };
+module.exports = { assertSubscriptionCLIProfiles };

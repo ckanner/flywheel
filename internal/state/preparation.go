@@ -73,6 +73,9 @@ type InvestigationReport struct {
 }
 
 type PreparationState struct {
+	AnalysisPending   *PreparationAnalysisPending   `json:"analysis-pending,omitempty"`
+	Analysis          *PreparationAnalysisResult    `json:"analysis,omitempty"`
+	History           []PreparationRound            `json:"history,omitempty"`
 	Version           int                           `json:"version"`
 	Revision          int64                         `json:"revision"`
 	RunID             string                        `json:"run-id"`
@@ -97,6 +100,7 @@ type PreparationState struct {
 }
 
 type PreparationSource struct {
+	Round               int      `json:"round,omitempty"`
 	Version             int      `json:"version"`
 	ID                  string   `json:"id"`
 	RunID               string   `json:"run-id"`
@@ -166,6 +170,9 @@ func SavePreparation(dir string, st *PreparationState) (*PreparationState, error
 	}
 	if found != st.Revision || (onDisk != nil && st.Revision == 0) {
 		return nil, &CasConflictError{File: PreparationFile(dir), Expected: st.Revision, Found: found}
+	}
+	if err := validatePreparationTransition(onDisk, &next); err != nil {
+		return nil, err
 	}
 	// validatePreparationState already marshalled and checked this exact value;
 	// no fields are changed while holding the CAS lock.

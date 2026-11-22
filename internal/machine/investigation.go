@@ -6,9 +6,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ckanner/flywheel/internal/diagnostic"
+	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/investigation"
 	"github.com/ckanner/flywheel/internal/state"
 )
+
+var investigationDrivers = drivers.CreateDrivers
+var investigationConfiguration = diagnostic.LoadConfigurationContext
 
 // RunInvestigation shares the implementation engine's lifetime lease and
 // token-bound cancellation. It never creates a Spec, packet or completed task.
@@ -40,5 +45,16 @@ func RunInvestigation(parent context.Context, dir string, revision int64) (resul
 	defer clearPid(dir)
 	stop := watchStopRequests(ctx, dir, c.controlToken, cancel)
 	defer stop()
-	return investigation.Run(ctx, dir, investigation.Options{ExpectedRevision: revision})
+	result, err = investigation.Run(ctx, dir, investigation.Options{ExpectedRevision: revision})
+	if err != nil || result.Status != "awaiting-report" && result.AnalysisPending == nil || result.Report != nil {
+		return result, err
+	}
+	cfg, err := investigationConfiguration(ctx, result.Cwd, dir)
+	if err != nil {
+		return result, err
+	}
+	if _, _, configured := cfg.LoopBindingForRole("investigate"); !configured && result.AnalysisPending == nil {
+		return result, nil // Existing configurations retain the host-supplied report path.
+	}
+	return AnalyzeInvestigation(ctx, dir, *cfg, *investigationDrivers(cfg))
 }

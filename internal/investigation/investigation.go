@@ -3,6 +3,7 @@ package investigation
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func Start(dir, cwd string, raw []byte, o Options) (*state.PreparationState, err
 	p.Decision = nil
 	jevStatus := "disabled"
 	if j := global.JEV; j.Enabled {
-		p.Decision = &contract.InvestigationDecision{Policy: j.DecisionPolicy(), Endpoint: j.Endpoint, Model: j.Model, KeyEnv: j.KeyEnv, TimeoutMS: j.TimeoutMS, HardBudget: global.Budget.Enforce == "hard"}
+		p.Decision = freezeDecision(global, j.DecisionPolicy())
 		jevStatus = "enabled"
 	}
 	now := o.now()
@@ -140,7 +141,10 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		return nil, err
 	}
 	defer release()
-	if terminal(st) || (st.Status == "awaiting-report" && st.Reason == "jev-evidence-ready-for-report") {
+	if state.PreparationCleanupUnknown(st) {
+		return st, blockDecision(dir, &st, o)
+	}
+	if terminal(st) || st.AnalysisPending != nil || st.Analysis != nil || (st.Status == "awaiting-report" && st.Reason == "jev-evidence-ready-for-report") {
 		return st, nil
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, st.Deadline)
@@ -164,7 +168,9 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 	}
 	for {
 		if ctx.Err() != nil {
-			abandonDecision(dir, st)
+			if abandonDecision(dir, st) {
+				return st, blockDecision(dir, &st, o)
+			}
 			st.Status, st.Reason = "awaiting-report", "time-budget-exhausted"
 			if ctx.Err() == context.Canceled {
 				st.Status, st.Reason = "cancelled", "cancelled"
@@ -173,7 +179,9 @@ func Run(ctx context.Context, dir string, o Options) (*state.PreparationState, e
 		}
 		legal := remainingActions(st)
 		if len(legal) == 0 || st.ActionsUsed >= st.Contract.Limits.MaxActions || st.OutputBytes >= st.Contract.Limits.MaxOutputBytes {
-			abandonDecision(dir, st)
+			if abandonDecision(dir, st) {
+				return st, blockDecision(dir, &st, o)
+			}
 			st.Status, st.Reason = "awaiting-report", "actions-complete-or-budget-exhausted"
 			return st, persist(dir, &st, o)
 		}
@@ -385,7 +393,7 @@ func activePolicy(ctx context.Context, dir string, st *state.PreparationState) (
 	}
 	frozen, current := st.Contract.Decision, global.JEV
 	st.JEVStatus = "policy-changed"
-	if frozen.Endpoint != current.Endpoint || frozen.Model != current.Model || frozen.KeyEnv != current.KeyEnv || frozen.TimeoutMS != current.TimeoutMS || frozen.Policy.MaxCalls > current.MaxCalls || frozen.Policy.MinApplicability < current.MinApplicability || frozen.Policy.MinChoice < current.MinChoice {
+	if !subscriptionDecisionCurrent(ctx, global, frozen) || frozen.Endpoint != current.Endpoint || frozen.Backend != "subscription" && frozen.Model != current.Model || frozen.KeyEnv != current.KeyEnv || frozen.TimeoutMS != current.TimeoutMS || frozen.Policy.MaxCalls > current.MaxCalls || frozen.Policy.MinApplicability < current.MinApplicability || frozen.Policy.MinChoice < current.MinChoice {
 		return false, global.Budget.Enforce == "hard"
 	}
 	for _, category := range frozen.Policy.AllowedData {
@@ -417,7 +425,8 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 		baseline.Reason = "decision-call-budget"
 		return legal[0], baseline, nil
 	}
-	options := decision.Options{Endpoint: cfg.Endpoint, Model: cfg.Model, ExpectedModel: cfg.Model, Timeout: time.Duration(cfg.TimeoutMS) * time.Millisecond, HardBudget: cfg.HardBudget || hard, Now: o.Now}
+	options := investigationDecisionOptions(ctx, *st, dir)
+	options.HardBudget, options.Now = cfg.HardBudget || hard, o.Now
 	recovering := (*st).DecisionPending != nil
 	journal := filepath.Join(dir, ".investigation", "decisions", (*st).RunID)
 	var receipt decision.Receipt
@@ -428,7 +437,7 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 		var found bool
 		receipt, found, err = decision.Recover(journal, *(*st).DecisionPending, cfg.Policy, options)
 		if !found && err == nil {
-			receipt = decision.Receipt{Version: 1, DecisionID: (*st).DecisionPending.ID, Status: "unknown", Reason: "reserved-without-terminal"}
+			receipt = decision.Receipt{Version: 1, Backend: options.Backend, DecisionID: (*st).DecisionPending.ID, Status: "unknown", Reason: "reserved-without-terminal"}
 		}
 	}
 	if !recovering {
@@ -443,7 +452,9 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 		if lookup == nil {
 			lookup = os.LookupEnv
 		}
-		options.APIKey, _ = lookup(cfg.KeyEnv)
+		if options.Backend != "subscription" {
+			options.APIKey, _ = lookup(cfg.KeyEnv)
+		}
 		(*st).DecisionPending = &s
 		if (*st).DecisionStartedAt == nil {
 			(*st).DecisionStartedAt = map[string]string{}
@@ -458,6 +469,9 @@ func choose(ctx context.Context, dir string, st **state.PreparationState, legal 
 	if err != nil {
 		// Optional advice failure must not reset or repeat a dispatched request.
 		receipt.Version, receipt.DecisionID, receipt.Status, receipt.Reason = 1, s.ID, "unknown", "decision-unavailable: "+err.Error()
+	}
+	if decision.CleanupUnknown(receipt) {
+		return legal[0], baseline, blockDecision(dir, st, o)
 	}
 	current := s
 	current.Identity.Revision = (*st).Revision
@@ -494,13 +508,15 @@ func Finish(dir string, report state.InvestigationReport, o Options) (*state.Pre
 		return nil, err
 	}
 	defer release()
-	if terminal(st) || st.Pending != nil {
+	if terminal(st) || st.Pending != nil || st.AnalysisPending != nil || state.PreparationCleanupUnknown(st) {
 		return st, fmt.Errorf("terminal or unresolved investigation cannot accept a new report")
 	}
 	if err := validateReport(st, report); err != nil {
 		return st, err
 	}
-	abandonDecision(dir, st)
+	if abandonDecision(dir, st) {
+		return st, blockDecision(dir, &st, o)
+	}
 	st.Report, st.Status, st.Reason = &report, report.Status, "analyst-report-with-checked-evidence-references"
 	err = persist(dir, &st, o)
 	return st, err
@@ -511,8 +527,10 @@ func validateReport(st *state.PreparationState, report state.InvestigationReport
 		return fmt.Errorf("report requires conclusion, all hypotheses, counter-evidence, limitations, recommendation, regression, and rollback")
 	}
 	observations := map[string]state.InvestigationObservation{}
-	for _, observation := range st.Observations {
-		observations[observation.Invocation.ID] = observation
+	for _, round := range state.PreparationRounds(st) {
+		for _, observation := range round.Observations {
+			observations[observation.Invocation.ID] = observation
+		}
 	}
 	hypotheses := map[string]bool{}
 	for _, hypothesis := range st.Contract.Hypotheses {
@@ -547,11 +565,13 @@ func Cancel(dir string, o Options) (*state.PreparationState, error) {
 		return nil, err
 	}
 	defer release()
-	if st.Pending != nil {
+	if st.Pending != nil || st.AnalysisPending != nil {
 		return st, fmt.Errorf("unresolved invocation must be reconciled before cancellation")
 	}
 	if !terminal(st) {
-		abandonDecision(dir, st)
+		if abandonDecision(dir, st) {
+			return st, blockDecision(dir, &st, o)
+		}
 		st.Status, st.Reason = "cancelled", "user-cancelled"
 		err = persist(dir, &st, o)
 	}
@@ -560,17 +580,27 @@ func Cancel(dir string, o Options) (*state.PreparationState, error) {
 
 // Cancelling, timing out, or exhausting the action budget still reconciles an
 // optional request. A missing journal is unknown, never permission to resend.
-func abandonDecision(dir string, st *state.PreparationState) {
+func abandonDecision(dir string, st *state.PreparationState) bool {
 	if st.DecisionPending == nil {
-		return
+		return false
 	}
 	snapshot := *st.DecisionPending
 	cfg := st.Contract.Decision // validated whenever a pending decision is loaded
-	options := decision.Options{Endpoint: cfg.Endpoint, Model: cfg.Model, ExpectedModel: cfg.Model, Timeout: time.Duration(cfg.TimeoutMS) * time.Millisecond, HardBudget: cfg.HardBudget}
+	options := investigationDecisionOptions(context.Background(), st, dir)
+	options.HardBudget = cfg.HardBudget
 	receipt, found, err := decision.Recover(filepath.Join(dir, ".investigation", "decisions", st.RunID), snapshot, cfg.Policy, options)
 	if !found || err != nil {
-		receipt = decision.Receipt{Version: 1, DecisionID: snapshot.ID, Status: "unknown", Reason: "abandoned-request-without-trustworthy-terminal"}
+		receipt = decision.Receipt{Version: 1, Backend: options.Backend, DecisionID: snapshot.ID, Status: "unknown", Reason: "abandoned-request-without-trustworthy-terminal"}
+	}
+	if decision.CleanupUnknown(receipt) {
+		return true // Keep the exact frozen snapshot for subsequent read-only recovery.
 	}
 	st.Decisions = append(st.Decisions, receipt)
 	st.DecisionPending = nil
+	return false
+}
+
+func blockDecision(dir string, st **state.PreparationState, o Options) error {
+	(*st).Status, (*st).Reason = "blocked", "decision-native-cleanup-unconfirmed"
+	return errors.Join(persist(dir, st, o), fmt.Errorf("subscription decision cleanup requires reconciliation; refusing another action or report"))
 }

@@ -8,12 +8,17 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/config"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 // MachineRecoveryArgs describes an existing invocation. There is intentionally
 // no prompt, credential, new session option or retry callback on this interface.
 type MachineRecoveryArgs struct {
+	InputImages       *imageinput.Manifest // original evidence only; no image bytes or new task input
+	Subscription      *config.SubscriptionPolicy
+	EvidenceOnly      bool
 	Native            json.RawMessage
 	Harness           string
 	RequestID         string
@@ -29,13 +34,15 @@ type MachineRecoveryArgs struct {
 }
 
 type machineRecoveryOriginal struct {
-	Native          json.RawMessage `json:"native,omitempty"`
-	Cwd             string          `json:"cwd"`
-	Model           string          `json:"model"`
-	ReasoningEffort string          `json:"reasoningEffort"`
-	PermissionMode  string          `json:"permissionMode"`
-	ThreadMode      string          `json:"threadMode"`
-	ThreadID        string          `json:"threadId,omitempty"`
+	Subscription    *config.SubscriptionPolicy `json:"subscription,omitempty"`
+	EvidenceOnly    bool                       `json:"evidenceOnly,omitempty"`
+	Native          json.RawMessage            `json:"native,omitempty"`
+	Cwd             string                     `json:"cwd"`
+	Model           string                     `json:"model"`
+	ReasoningEffort string                     `json:"reasoningEffort"`
+	PermissionMode  string                     `json:"permissionMode"`
+	ThreadMode      string                     `json:"threadMode"`
+	ThreadID        string                     `json:"threadId,omitempty"`
 }
 
 type machineRecoveryRequest struct {
@@ -88,8 +95,16 @@ func recoveredMachineResult(harness string, raw json.RawMessage, request codexPr
 		out.Session.CleanupConfirmed, out.CleanupError, message = parsed.CleanupConfirmed, parsed.CleanupError, parsed.Error
 	} else {
 		parsed := parseClaudeCodeProReceipt(raw, claudeCodeProStart(request))
+		if harness == "antigravity" {
+			parsed = parseAntigravityReceipt(raw, request)
+		}
 		out.NativeReceipt = parsed.NativeReceipt
-		out.ClaudeCodeProReceipt, out.Session, out.SessionID, out.Text, out.Usage = raw, parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
+		out.Session, out.SessionID, out.Text, out.Usage = parsed.Session, parsed.Session.SessionID, parsed.Text, parsed.Usage
+		if harness == "antigravity" {
+			out.AntigravityReceipt = raw
+		} else {
+			out.ClaudeCodeProReceipt = raw
+		}
 		out.Settled, out.Cancelled, out.TimedOut, out.Truncated = parsed.Settled, parsed.Cancelled, parsed.TimedOut, parsed.Truncated
 		out.Session.CleanupConfirmed, out.ErrorCode, message = parsed.CleanupConfirmed, parsed.ErrorCode, parsed.Error
 	}
@@ -106,7 +121,10 @@ func recoveredMachineResult(harness string, raw json.RawMessage, request codexPr
 // runMachine, starts a CLI or sends a turn. Native cleanup must be proven by the
 // stored public receipt, not by this short-lived query process exiting.
 func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
-	if (a.Harness != "codex-pro" && a.Harness != "claude-code-pro") || !machineOpaqueID(a.RequestID) || !machineOpaqueID(a.RunID) ||
+	if err := imageinput.ValidateManifest(a.InputImages); err != nil || (a.InputImages != nil && a.Harness != "claude-code-pro") {
+		return Result{}, fmt.Errorf("invalid original image evidence for read-only recovery")
+	}
+	if (a.Harness != "codex-pro" && a.Harness != "claude-code-pro" && a.Harness != "antigravity") || !machineOpaqueID(a.RequestID) || !machineOpaqueID(a.RunID) ||
 		!filepath.IsAbs(a.RecoveryDirectory) || strings.ContainsRune(a.RecoveryDirectory, 0) || !filepath.IsAbs(a.Cwd) ||
 		!machineOpaqueID(a.Model) || !machineOpaqueID(a.ReasoningEffort) ||
 		(a.PermissionMode != "read-only" && a.PermissionMode != "workspace-write" && a.PermissionMode != "danger-full-access") ||
@@ -120,8 +138,11 @@ func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
 	if a.Harness == "claude-code-pro" {
 		command = ClaudeCodeProCommand()
 	}
+	if a.Harness == "antigravity" {
+		command = AntigravityCommand()
+	}
 	request := machineRecoveryRequest{Type: "recover", Protocol: 3, RequestID: a.RequestID, RunID: a.RunID, RecoveryDirectory: a.RecoveryDirectory,
-		Original: machineRecoveryOriginal{Native: a.Native, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}}
+		Original: machineRecoveryOriginal{Subscription: a.Subscription, EvidenceOnly: a.EvidenceOnly, Native: a.Native, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}}
 	written := make(chan error, 1)
 	result := watchdog.Run(command, nil, watchdog.Opts{
 		Context: a.Watchdog.Context, Env: childenv.EnvSlice(childenv.BuildChildEnv(childenv.OSLookupEnv, nil)),
@@ -149,7 +170,7 @@ func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	original := codexProStart{Native: a.Native, Type: "start", Protocol: 3, RequestID: a.RequestID, Cwd: a.Cwd, Model: a.Model,
+	original := codexProStart{Subscription: a.Subscription, EvidenceOnly: a.EvidenceOnly, Native: a.Native, InputImageManifest: a.InputImages, Type: "start", Protocol: 3, RequestID: a.RequestID, Cwd: a.Cwd, Model: a.Model,
 		ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, ThreadMode: mode, ThreadID: a.SessionID}
 	out := recoveredMachineResult(a.Harness, raw, original)
 	if out.Session.RunID != a.RunID {

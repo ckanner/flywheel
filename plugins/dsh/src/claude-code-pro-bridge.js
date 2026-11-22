@@ -3,14 +3,44 @@ import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.6.0', protocol: 1 });
-export const COMPATIBLE_ADAPTER_VERSIONS = Object.freeze(new Set(['0.6.0', '0.6.1']));
-export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
-  progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.7.0', protocol: 1 });
+export const COMPATIBLE_ADAPTER_VERSIONS = Object.freeze(new Set(['0.7.0']));
+export const LIMITS = Object.freeze({ requestBytes: 16 * 1024 * 1024, promptBytes: 1024 * 1024,
+  maxImages: 4, imageBytes: 4 * 1024 * 1024, imageTotalBytes: 8 * 1024 * 1024,
+  machineOutputBytes: 1024 * 1024, progressBytes: 1024 * 1024,
+  receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
 
 export class WorkerError extends Error {
   constructor(code, message) { super(message); this.name = 'WorkerError'; this.code = code; }
+}
+
+// The media envelope has a larger wire limit than text-only backends. Keep its
+// independent prompt and decoded attachment budgets before the public parser.
+function validateQueryInput(value) {
+  if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.includes('\0') ||
+      Buffer.byteLength(value.prompt) > LIMITS.promptBytes) {
+    throw new WorkerError('INVALID_REQUEST', 'Claude prompt must be nonempty text of at most 1 MiB without NUL');
+  }
+  if (value.images === undefined) return;
+  if (!Array.isArray(value.images) || value.images.length > LIMITS.maxImages) {
+    throw new WorkerError('INVALID_REQUEST', 'Claude accepts at most four input images');
+  }
+  let total = 0;
+  for (const image of value.images) {
+    if (!image || typeof image !== 'object' || Array.isArray(image) ||
+        Object.keys(image).some(key => !['data', 'mimeType'].includes(key)) ||
+        !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(image.mimeType) ||
+        typeof image.data !== 'string' || !image.data.length || image.data.length % 4 !== 0 ||
+        image.data.length > Math.ceil(LIMITS.imageBytes / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) {
+      throw new WorkerError('INVALID_REQUEST', 'Claude input image must use a supported MIME type and canonical base64 within 4 MiB decoded');
+    }
+    const bytes = Buffer.from(image.data, 'base64');
+    total += bytes.length;
+    if (bytes.length > LIMITS.imageBytes || bytes.toString('base64') !== image.data || total > LIMITS.imageTotalBytes) {
+      throw new WorkerError('INVALID_REQUEST', 'Claude images exceed 4 MiB each / 8 MiB total or use noncanonical base64');
+    }
+  }
 }
 
 /** Optional dependency: importing a different adapter never requires Claude. */
@@ -21,13 +51,14 @@ export async function loadAdapter() {
   }
   let manifest, api;
   try { manifest = require('dsh-subagent-claude-code-pro/package.json'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.6.0 alongside @ckanner/flywheel; the optional adapter is not installed'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.7.0 alongside @ckanner/flywheel; the optional adapter is not installed'); }
   if (manifest.name !== ADAPTER.package || !COMPATIBLE_ADAPTER_VERSIONS.has(manifest.version)) {
-    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.6.0/0.6.1 machine contract');
+    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.7.0 machine contract');
   }
   try { api = await import('dsh-subagent-claude-code-pro/machine'); }
   catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'The pinned Claude Code Pro public machine API could not be imported'); }
-  if (api.MACHINE_PROTOCOL_VERSION !== ADAPTER.protocol || typeof api.parseMachineRequest !== 'function' ||
+  if (api.MACHINE_SUBSCRIPTION_CAPABILITIES?.version !== 1 || api.MACHINE_SUBSCRIPTION_CAPABILITIES?.sameProcessBeforePrompt !== true || typeof api.inspectSubscription !== 'function' ||
+      api.MACHINE_PROTOCOL_VERSION !== ADAPTER.protocol || typeof api.parseMachineRequest !== 'function' ||
       typeof api.runMachine !== 'function' || typeof api.MachineInputError !== 'function' ||
       api.MACHINE_LIFECYCLE_VERSION !== 1 || typeof api.recoverMachine !== 'function' ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
@@ -51,7 +82,7 @@ export async function loadAdapter() {
 export function machineRequest(value, api, env) {
   const lifecycle = value?.protocol === 3;
   const persistent = value?.protocol === 2 || (lifecycle && value.threadMode === 'persistent');
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema', 'maxBudgetUsd',
+  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'native', 'managed', 'images', 'outputSchema', 'maxBudgetUsd', 'subscription',
     ...(persistent || lifecycle ? ['threadMode', 'threadId'] : []), ...(lifecycle ? ['recoveryDirectory'] : [])]);
   if (lifecycle) keys.add('nativeOperation');
   if (value === null || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' ||
@@ -71,8 +102,12 @@ export function machineRequest(value, api, env) {
   }
   validateNativeAdmission(value.managed, value.requestId, WorkerError);
   validateObservationRequest(value, WorkerError);
+  if (value.nativeOperation === undefined) validateQueryInput(value);
   try {
-    if (value.nativeOperation !== undefined) return nativeJobRequest(value, api, env);
+    if (value.nativeOperation !== undefined) {
+      if (value.subscription !== undefined) throw new WorkerError('INVALID_REQUEST', 'Independent native operations cannot honor subscription-only admission');
+      return nativeJobRequest(value, api, env);
+    }
     return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, prompt: value.prompt,
       model: value.model, effort: value.reasoningEffort, permissionMode: 'bypassPermissions',
       sessionMode: persistent ? 'persistent' : 'ephemeral',
@@ -80,6 +115,7 @@ export function machineRequest(value, api, env) {
       ...(persistent && value.threadId !== undefined ? { sessionId: value.threadId } : {}),
       ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }),
       ...(value.native === undefined ? {} : { native: value.native }),
+      ...(value.subscription === undefined ? {} : { subscription: value.subscription }),
       ...(value.images === undefined ? {} : { images: value.images }),
       ...(value.outputSchema === undefined ? {} : { outputSchema: value.outputSchema }),
       ...(value.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: value.maxBudgetUsd }),

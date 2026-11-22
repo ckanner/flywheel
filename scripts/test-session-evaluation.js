@@ -25,7 +25,7 @@ async function main() {
   const workerRoot = path.join(output, "frozen-worker");
   await fs.mkdir(workerRoot, { mode: 0o700 });
   await fs.writeFile(path.join(workerRoot, "package.json"), JSON.stringify({ type: "module", private: true }));
-  for (const file of ["codex-pro-worker.js", "codex-pro-bridge.js", "machine-worker.js"]) await fs.copyFile(path.join(root, "plugins/dsh/dist", file), path.join(workerRoot, file));
+  for (const file of ["codex-pro-worker.js", "codex-pro-bridge.js", "machine-worker.js", "subscription-controls.js", "codex-subscription-proxy.js"]) await fs.copyFile(path.join(root, "plugins/dsh/dist", file), path.join(workerRoot, file));
   const worker = path.join(workerRoot, "codex-pro-worker.js"); await fs.chmod(worker, 0o755);
   await fs.mkdir(path.join(workerRoot, "node_modules"));
   await fs.cp(path.join(root, "plugins/dsh/node_modules/dsh-subagent-codex-pro"), path.join(workerRoot, "node_modules/dsh-subagent-codex-pro"), { recursive: true, dereference: true });

@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
+	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
@@ -21,6 +23,7 @@ const (
 	CodexProBinaryEnv      = "FLYWHEEL_CODEX_BIN"
 	CodexProPackageVersion = "0.10.2"
 	codexProCleanupMS      = int64(10_000)
+	machineRequestBytes    = 1 << 20 // non-Claude worker JSONL frame limit
 )
 
 // CodexProCommand is shared with the local installation diagnostics.
@@ -42,6 +45,7 @@ func CodexProBinary() string {
 // CodexProArgs admits one explicitly configured public machine run. Scoped
 // calls request persistent history; SessionID resumes only that exact thread.
 type CodexProArgs struct {
+	Subscription      *config.SubscriptionPolicy
 	Native            json.RawMessage
 	Managed           *NativeAdmission
 	Prompt            string
@@ -62,22 +66,26 @@ type CodexProArgs struct {
 }
 
 type codexProStart struct {
-	Native            json.RawMessage  `json:"native,omitempty"`
-	Managed           *NativeAdmission `json:"managed,omitempty"`
-	Type              string           `json:"type"`
-	Protocol          int              `json:"protocol"`
-	RequestID         string           `json:"requestId"`
-	Cwd               string           `json:"cwd"`
-	Model             string           `json:"model"`
-	ReasoningEffort   string           `json:"reasoningEffort"`
-	PermissionMode    string           `json:"permissionMode"`
-	Prompt            string           `json:"prompt"`
-	TimeoutMS         int64            `json:"timeoutMs"`
-	IdleTimeoutMS     int64            `json:"idleTimeoutMs,omitempty"`
-	SessionTitle      string           `json:"sessionTitle,omitempty"`
-	ThreadMode        string           `json:"threadMode,omitempty"`
-	ThreadID          string           `json:"threadId,omitempty"`
-	RecoveryDirectory string           `json:"recoveryDirectory,omitempty"`
+	Subscription       *config.SubscriptionPolicy `json:"subscription,omitempty"`
+	EvidenceOnly       bool                       `json:"evidenceOnly,omitempty"`
+	Images             []imageinput.Image         `json:"images,omitempty"`
+	InputImageManifest *imageinput.Manifest       `json:"-"` // receipt verification only; never a recovery prompt
+	Native             json.RawMessage            `json:"native,omitempty"`
+	Managed            *NativeAdmission           `json:"managed,omitempty"`
+	Type               string                     `json:"type"`
+	Protocol           int                        `json:"protocol"`
+	RequestID          string                     `json:"requestId"`
+	Cwd                string                     `json:"cwd"`
+	Model              string                     `json:"model"`
+	ReasoningEffort    string                     `json:"reasoningEffort"`
+	PermissionMode     string                     `json:"permissionMode"`
+	Prompt             string                     `json:"prompt"`
+	TimeoutMS          int64                      `json:"timeoutMs"`
+	IdleTimeoutMS      int64                      `json:"idleTimeoutMs,omitempty"`
+	SessionTitle       string                     `json:"sessionTitle,omitempty"`
+	ThreadMode         string                     `json:"threadMode,omitempty"`
+	ThreadID           string                     `json:"threadId,omitempty"`
+	RecoveryDirectory  string                     `json:"recoveryDirectory,omitempty"`
 }
 
 type codexProParsed struct {
@@ -664,7 +672,7 @@ func codexProFailureMessage(category, diagnostic, stopReason string, execution *
 // connection. Parent death closes the pipe and makes the worker abort/await the
 // plugin, while the plugin's own guardian handles worker death independently.
 func RunCodexPro(a CodexProArgs) Result {
-	request := codexProStart{Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
+	request := codexProStart{Subscription: a.Subscription, Native: a.Native, Managed: a.Managed, Type: "start", Protocol: 1, RequestID: a.RequestID}
 	if request.RequestID == "" {
 		request.RequestID = rand.Text()
 	}
@@ -723,7 +731,7 @@ func RunCodexPro(a CodexProArgs) Result {
 		return reject(err.Error())
 	}
 	payload = append(payload, '\n')
-	if len(payload) > claudeCodeProRequestBytes {
+	if len(payload) > machineRequestBytes {
 		return reject("Codex Pro start request exceeds the worker's 1 MiB JSONL limit")
 	}
 	command := a.Command

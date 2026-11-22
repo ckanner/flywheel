@@ -123,6 +123,23 @@ test('malformed preparation responses remain a visible transport failure, withou
   assert.ok(ui.container.querySelector('[aria-label="有界调查"]'));
 });
 
+test('archived investigation rounds require a report before the UI accepts the snapshot', async t => {
+  let archived = preparation({ status: 'supported', report });
+  const ui = await mountPanel(t, request => reply(request, { preparation: preparation({
+    history: [{ version: 1, number: 1, digest: 'immutable-report', snapshot: archived }],
+  }) }));
+  await ui.selectPath(0, '/repo/docs/failure');
+  await ui.click('刷新');
+  assert.match(ui.container.textContent, /The log supports the timeout hypothesis/);
+  archived = preparation();
+  await ui.click('刷新');
+  assert.match(ui.container.textContent, /malformed investigation status/);
+  assert.match(ui.container.textContent, /The log supports the timeout hypothesis/,
+    'a malformed archived round preserves the last accepted report');
+  assert.equal(ui.button('继续调查').disabled, true);
+  assert.equal(ui.requests.every(request => request.action === 'status'), true);
+});
+
 test('untrusted response text must be text before entering the report renderer', async t => {
   let fields = {};
   const ui = await mountPanel(t, request => reply(request, { preparation: preparation(fields) }));
@@ -148,7 +165,7 @@ test('typed investigation transport uses bounded stdin and rejects invalid envel
   const base = { action: 'investigate', taskDir: dir, cwd: dir };
   const bodies = [
     { action: 'start', contract: { goal: 'Inspect literal $(never-execute) content' } },
-    { action: 'run', revision: 7 }, { action: 'status' }, { action: 'cancel', revision: 8 },
+    { action: 'continue',revision:7,contract:{goal:'Follow up with new evidence'} }, { action: 'run', revision: 7 }, { action: 'status' }, { action: 'cancel', revision: 8 },
     { action: 'report', revision: 9, report },
   ];
   for (const body of bodies) {
@@ -226,7 +243,7 @@ test('JEV runtime status, actual adoption and evidence-backed stop remain distin
   assert.match(panel().textContent, /跳过动作: read-duplicate/);
   assert.match(panel().textContent, /依据观察: original-action/);
   assert.doesNotMatch(panel().textContent, /报告有证据支持/);
-  assert.equal(ui.button('继续调查').disabled, true, 'awaiting-report cannot restart evidence collection from the UI');
+  assert.equal(ui.button('生成调查报告').disabled,false,'the engine can analyze existing evidence without repeating collection');
   assert.equal(ui.requests.some(r => ['start', 'launch', 'investigate'].includes(r.action)), false);
   p = { ...p, revision: 8, 'jev-status': 'disabled' };
   await ui.click('刷新');
@@ -303,4 +320,17 @@ test('malformed diagnostic execution details retain the last valid receipt and d
     await ui.click('刷新');
     assert.equal(ui.button('继续调查').disabled, false);
   }
+});
+
+test('new evidence round preserves the observed revision and never starts an implementation or a second run', async t=>{
+ let p=preparation({status:'supported',report,'actions-used':1,contract:{...preparation().contract,limits:{'max-actions':5,'max-seconds':60,'max-output-bytes':5000}},'elapsed-ms':1000,'output-bytes':20});
+ const ui=await mountPanel(t,request=>reply(request,{preparation:p}));
+ await ui.selectPath(0,'/repo/docs/failure');await ui.click('刷新');await ui.click('追加调查轮');
+ const area=ui.container.querySelector('textarea[aria-label="新调查轮契约 JSON"]');assert.ok(area);
+ const initial=JSON.parse(area.value);assert.equal(initial.limits['max-actions'],4);assert.equal(initial.limits['max-seconds'],59);assert.equal(initial.limits['max-output-bytes'],4980);
+ const edit=async value=>act(async()=>{Object.getOwnPropertyDescriptor(ui.document.defaultView.HTMLTextAreaElement.prototype,'value').set.call(area,value);area.dispatchEvent(new ui.document.defaultView.Event('input',{bubbles:true}))});
+ await edit('{');await ui.click('保存新调查轮');assert.match(ui.container.textContent,/有效的调查契约/);assert.equal(ui.requests.length,1);
+ const contract={...initial,'known-evidence':['A fresh trace contradicts the first hypothesis']};await edit(JSON.stringify(contract));await ui.click('保存新调查轮');
+ assert.deepEqual(ui.requests.at(-1).investigation,{action:'continue',revision:7,contract});assert.equal(ui.requests.some(x=>x.action==='launch'||x.investigation?.action==='run'),false);
+ await ui.click('追加调查轮');p={...p,revision:8};await ui.click('刷新');assert.equal(ui.button('保存新调查轮').disabled,true);assert.match(ui.container.textContent,/调查版本已变化/);
 });

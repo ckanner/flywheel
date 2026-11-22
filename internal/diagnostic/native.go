@@ -41,6 +41,8 @@ func (r *Report) nativeProfile(ctx context.Context, cfg *config.Config, b Bindin
 		available = cache["codex-pro-import:"+drivers.CodexProCommand()+":native"]
 	case "claude-code-pro":
 		available = cache["claude-code-pro-import:"+drivers.ClaudeCodeProCommand()+":native"]
+	case "antigravity":
+		available = cache["antigravity-import:"+drivers.AntigravityCommand()]
 	}
 	if available {
 		r.add(b.ID+".native.manifest", "pass", "已检查原生 profile "+b.NativeProfile+" 的本地 worker 与版本化接口（未推理）", "", "")

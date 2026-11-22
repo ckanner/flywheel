@@ -22,6 +22,7 @@ func TestConfiguredJEVKeyNamesFreezeAndReloadUnchanged(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, cwd, p := preparationFixture(t)
 			changeRuntimeConfig(t, dir, func(values map[string]any) {
+				delete(values, "subscription")
 				values["jev"] = map[string]any{"enabled": true, "endpoint": "https://example.org/v1/systemone", "key-env": keyEnv}
 			})
 			cfg, err := config.LoadReadOnly(dir, cwd)
@@ -59,6 +60,7 @@ func TestConfiguredJEVKeyNamesKeepThe120CharacterLimit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, cwd, p := preparationFixture(t)
 			changeRuntimeConfig(t, dir, func(values map[string]any) {
+				delete(values, "subscription")
 				values["jev"] = map[string]any{"enabled": true, "endpoint": "https://example.org/v1/systemone", "key-env": keyEnv}
 			})
 			_, err := config.LoadReadOnly(dir, cwd)

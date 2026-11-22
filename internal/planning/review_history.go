@@ -6,6 +6,9 @@ import "fmt"
 // scope, up to the exact known target revision. Child histories never cross the
 // root design, milestone or packet boundary. Callers must not mutate evidence.
 func ReviewHistory(s *State, kind string, target Ref) []Review {
+	if kind == "compact-v1" {
+		kind = "design"
+	}
 	result := []Review{}
 	var targetPlan *ExecutionPlan
 	switch kind {
@@ -28,11 +31,15 @@ func ReviewHistory(s *State, kind string, target Ref) []Review {
 		}
 	}
 	for _, review := range s.Reviews {
-		if review.Kind != kind || review.Target.Revision > target.Revision {
+		ref := review.Target
+		if kind == "plan" && review.Kind == "compact-v1" && review.Plan != nil {
+			ref = *review.Plan
+		}
+		if !reviewTarget(review, kind, ref) || ref.Revision > target.Revision {
 			continue
 		}
 		if targetPlan != nil {
-			p := plans[review.Target]
+			p := plans[ref]
 			if p == nil || p.Design != targetPlan.Design || PlanKey(p.Scope, p.ScopeID) != PlanKey(targetPlan.Scope, targetPlan.ScopeID) {
 				continue
 			}

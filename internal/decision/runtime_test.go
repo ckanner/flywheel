@@ -57,6 +57,27 @@ func TestRuntimeQuestionsDoNotReinterpretVersionOneReceipts(t *testing.T) {
 	require.NoError(t, ValidateReceiptIdentity(s, p, o, changed))
 }
 
+func TestFirstExecutionQuestionCanOnlyChooseApprovedModelActions(t *testing.T) {
+	s, p, o := fixture()
+	s.Version = 2
+	legacy := successfulReceipt(t, s, p, o)
+	s.Version = 3
+	for i := range s.Actions {
+		s.Actions[i].Kind = Model
+	}
+	require.NoError(t, Validate(s, p))
+	require.Contains(t, questions(s)["action"].Instructions, "prepared coding task")
+	require.Contains(t, questions(s)["action"].Instructions, "configured baseline")
+	require.Contains(t, questions(s)["action"].Instructions, "collaboration authorization")
+	require.NotEqual(t, legacy.QuestionHash, receiptFor(s, p, o).QuestionHash)
+	require.Error(t, ValidateReceiptIdentity(s, p, o, legacy), "a failure answer cannot authorize first execution")
+	o.AllowedKinds = []ActionKind{Model}
+	r := successfulReceipt(t, s, p, o)
+	require.True(t, Select(s, r, p, o).Adopted)
+	s.Actions[0].Kind = Repair
+	require.ErrorContains(t, Validate(s, p), "only select a model binding")
+}
+
 func TestStoredReceiptIdentityRejectsCorruptionBeforeOuterStateLoadsIt(t *testing.T) {
 	for name, mutate := range map[string]func(*Snapshot, *Policy, *Options, *Receipt){
 		"snapshot": func(s *Snapshot, _ *Policy, _ *Options, _ *Receipt) { s.Version = 99 },

@@ -25,6 +25,7 @@ let history = historyPath && existsSync(historyPath) ? JSON.parse(readFileSync(h
 let persistent = false;
 const saveHistory = () => { if (persistent && historyPath) writeFileSync(historyPath, JSON.stringify(history)); };
 let stopping = false;
+let subscriptionAccountReads = 0;
 // Keep the process alive even when its protocol input closes, so this case
 // really requires escalation rather than falling out of the Node event loop.
 if (scenario === 'stubborn') setInterval(() => {}, 1000);
@@ -41,6 +42,11 @@ process.on('SIGTERM', () => {
   log({ event: 'SIGTERM' });
   if (scenario === 'stubborn' || stopping) return;
   stopping = true;
+  if (scenario === 'subscription-stop-exit-nonzero') process.exit(23);
+  if (scenario === 'subscription-stop-signal' || scenario === 'subscription-stop-unexpected-signal') {
+    const signal = scenario === 'subscription-stop-signal' ? 'SIGTERM' : 'SIGHUP';
+    process.removeAllListeners(signal); process.kill(process.pid, signal); return;
+  }
   Promise.resolve(descendantExit).then(() => setTimeout(() => { log({ event: 'cleanup' }); process.exit(0); }, 50));
 });
 process.stdout.on('error', () => process.exit(1));
@@ -128,8 +134,19 @@ createInterface({ input: process.stdin }).on('line', line => {
   log(request);
   if (request.method === 'initialize') {
     if (scenario !== 'initialize-hang') reply(request.id, { userAgent: 'offline-fixture' });
+  } else if (request.method === 'account/read') {
+    subscriptionAccountReads++;
+    if (scenario === 'subscription-hang') return;
+    if (scenario === 'subscription-no-account-api') { send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'method unavailable' } }); return; }
+    const api = scenario === 'subscription-api' || (scenario === 'subscription-drift' && subscriptionAccountReads > 1);
+    reply(request.id, { account: scenario === 'subscription-logged-out' ? null : api ? { type: 'apiKey' } : { type: 'chatgpt', email: 'never-copy-account@example.invalid', planType: 'pro' }, requiresOpenaiAuth: true });
   } else if (request.method === 'config/read') {
-    reply(request.id, { config: scenario === 'native-mismatch' ? { ...config, 'agents.enabled': !config['agents.enabled'] } : config });
+    const observed = scenario === 'native-mismatch' ? { ...config, 'agents.enabled': !config['agents.enabled'] } : { ...config };
+    if (String(request.id).startsWith('flywheel-subscription-')) {
+      observed.model_provider = scenario === 'subscription-custom-provider' ? 'pay-api' : 'openai';
+      if (scenario === 'subscription-custom-endpoint') observed.chatgpt_base_url = 'https://api.example.invalid/v1';
+    }
+    reply(request.id, { config: observed });
   } else if (request.method === 'thread/start' || request.method === 'thread/resume') {
     const { cwd, model, sandbox, approvalPolicy, ephemeral } = request.params;
     const resumed = request.method === 'thread/resume';
@@ -149,7 +166,8 @@ createInterface({ input: process.stdin }).on('line', line => {
       ? { type: 'readOnly', networkAccess: false }
       : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
     if (scenario === 'broad-policy') policy.writableRoots = ['/'];
-    reply(request.id, { thread: { id: scenario === 'wrong-resume-thread' ? 'another-thread' : threadId, ephemeral: !persistent }, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
+    const modelProvider = scenario === 'subscription-thread-provider' ? 'pay-api' : 'openai';
+    reply(request.id, { thread: { id: scenario === 'wrong-resume-thread' ? 'another-thread' : threadId, ephemeral: !persistent, modelProvider }, modelProvider, cwd: scenario === 'wrong-cwd' ? '/' : cwd,
       model: scenario === 'wrong-model' ? 'unexpected-model' : model,
       approvalPolicy: scenario === 'wrong-approval' ? 'on-request' : approvalPolicy,
       sandbox: scenario === 'wrong-sandbox'
@@ -187,11 +205,24 @@ createInterface({ input: process.stdin }).on('line', line => {
       return;
     }
     if (scenario === 'progress-limit') {
-      // Cross the 1 MiB display bound deterministically. One-character frames
-      // can take long enough on loaded macOS runners that the task deadline
-      // fires before the worker reaches the omission marker.
-      for (let count = 0; count < 5000; count++) notify('item/completed', { threadId, turnId,
-        item: { type: 'agentMessage', phase: 'commentary', text: 'x'.repeat(256) } });
+      // The public supervisor caps each progress message at 16 KiB. A bounded
+      // 2 MiB burst crosses the worker's display budget without thousands of
+      // IPC notifications competing with the actual task deadline. Let both
+      // pipes drain between small batches: the worker may omit optional text
+      // while its stdout is backpressured, without charging its display budget.
+      void (async () => {
+        const count = 128, text = 'x'.repeat(16 * 1024);
+        for (let offset = 0; offset < count; offset += 4) {
+          for (let item = 0; item < 4; item++) {
+            if (stopping) return;
+            if (!notify('item/completed', { threadId, turnId,
+              item: { type: 'agentMessage', phase: 'commentary', text } })) await once(process.stdout, 'drain');
+          }
+          await new Promise(resolve => setTimeout(resolve, 4));
+        }
+        log({ event: 'progress-burst-complete', count, bytes: count * Buffer.byteLength(text) });
+        // No turn completion: only the real adapter deadline ends this task.
+      })().catch(() => process.exit(92));
       return;
     }
     if (['hang', 'stubborn', 'descendant'].includes(scenario)) return;
@@ -209,6 +240,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     notify('item/completed', { threadId, turnId, item: request.method === 'review/start' ? { type: 'exitedReviewMode', review: 'fixture native review' }
       : { type: 'agentMessage', phase: 'final_answer', text: 'fixture complete\n' } });
     notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed' } });
+    if (scenario === 'subscription-truncated-json-tail') process.stdout.write('{"jsonrpc":"2.0"');
+    if (scenario === 'subscription-truncated-utf8-tail') process.stdout.write(Buffer.from([0xe4, 0xb8]));
   } else if (request.method === 'turn/interrupt') {
     reply(request.id, {});
     notify('turn/completed', { threadId: request.params.threadId, turn: { id: request.params.turnId, status: 'interrupted' } });

@@ -51,7 +51,7 @@ func (c *Config) validateNativeProfiles() error {
 			return err
 		}
 	}
-	check := func(location, harness, name string) error {
+	check := func(location, harness, name string, execute bool) error {
 		if name == "" {
 			return nil
 		}
@@ -59,31 +59,45 @@ func (c *Config) validateNativeProfiles() error {
 		if !exists || profile.Harness != harness {
 			return fmt.Errorf("%s.native-profile: %q must name a profile for harness %s", location, name, harness)
 		}
+		if harness == "antigravity" && !execute {
+			var native AntigravityNative
+			_ = json.Unmarshal(profile.Options, &native) // options were schema-validated above
+			if native.Mode == "swarm" {
+				return fmt.Errorf("%s.native-profile: Antigravity Swarm is restricted to approved Execute collaboration", location)
+			}
+		}
 		return nil
 	}
 	for name, b := range c.Loops {
-		if err := check("loops."+name, b.Harness, b.NativeProfile); err != nil {
+		if err := check("loops."+name, b.Harness, b.NativeProfile, name == "execute"); err != nil {
 			return err
 		}
 	}
 	for name, b := range c.Routes {
-		if err := check("routes."+name, b.Harness, b.NativeProfile); err != nil {
+		if err := check("routes."+name, b.Harness, b.NativeProfile, true); err != nil {
 			return err
 		}
 	}
 	for name, b := range c.Profiles {
-		if err := check("profiles."+name, b.Harness, b.NativeProfile); err != nil {
+		if err := check("profiles."+name, b.Harness, b.NativeProfile, true); err != nil {
 			return err
 		}
 	}
 	if b := c.JudgePanel; b != nil {
-		if err := check("judge-panel", b.Harness, b.NativeProfile); err != nil {
+		if err := check("judge-panel", b.Harness, b.NativeProfile, false); err != nil {
 			return err
 		}
 	}
 	if c.ExecutionPolicy != nil {
 		for name, b := range c.ExecutionPolicy.Bindings {
-			if err := check("execution-policy.bindings."+name, b.Harness, b.NativeProfile); err != nil {
+			if err := check("execution-policy.bindings."+name, b.Harness, b.NativeProfile, true); err != nil {
+				return err
+			}
+		}
+	}
+	for role, name := range c.Planning.Compact {
+		if b, exists := c.Profiles[name]; exists {
+			if err := check("planning.compact."+role, b.Harness, b.NativeProfile, false); err != nil {
 				return err
 			}
 		}

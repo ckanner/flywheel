@@ -93,6 +93,16 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 	if packet.Boundaries.MaxFiles != nil {
 		maxFiles = fmt.Sprintf("%d", *packet.Boundaries.MaxFiles)
 	}
+	if packet.InputImages != nil {
+		images, _ := json.MarshalIndent(packet.InputImages, "", "  ")
+		stable = append(stable, "", "## Frozen image attachments",
+			"Native image content blocks are supplied in the order below. Use those attached bytes as reference; the path and checksum identify the frozen source. Do not modify or replace the reference files.", string(images))
+	}
+	if packet.Collaboration != nil {
+		collaboration, _ := json.MarshalIndent(packet.Collaboration, "", "  ")
+		stable = append(stable, "", "## Reviewed collaboration tasks",
+			"These tasks and their disjoint write scopes are approved contract data. Delegate only within each task's declared scope and the packet boundaries; do not invent new work. Collect the results of every delegated task before returning. The native verifier's report does not replace Flywheel's independent Review or final acceptance. Do not modify the collaboration contract or leave background work unaccounted for.", string(collaboration))
+	}
 	reportKeys := "requirements-covered, changed-files, commands-run, failures"
 	if _, declared := packet.DoneReportFormat["workflow-risks"]; declared {
 		reportKeys += ", workflow-risks"
@@ -184,6 +194,11 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"",
 		"## L1 deterministic test results (ground truth, already green)",
 		string(l1JSON),
+	}
+	if p.InputImages != nil {
+		images, _ := json.MarshalIndent(p.InputImages, "", "  ")
+		sections = append(sections, "", "## Frozen image references",
+			"These native image attachments were supplied to Execute. This independent Review receives their frozen references and code/test evidence, not native image content blocks. Do not claim to have visually inspected an attachment. Return verification-gap if a required visual property lacks verifiable evidence.", string(images))
 	}
 	if a.DefectInjection != nil {
 		diJSON, _ := json.MarshalIndent(a.DefectInjection, "", "  ")

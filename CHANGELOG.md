@@ -5,6 +5,85 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.38.0 candidate — Subscription CLI workflows
+
+- Complete existing-packet image input editing through inspected original bytes,
+  frozen references and independent plan review; retain explicit removal and
+  unknown-result recovery. Add task creation while keeping an existing task open.
+- Link decision cards to exact subsequent invocations and retain their confirmed
+  outcomes. Distinguish live accepted lifecycle evidence from terminal engine
+  dispatch receipts without changing replay authority or inventing old history.
+
+- Add explicit read-only native model catalogs for Antigravity, Codex Pro and
+  Claude Code Pro, with provider-bound responses, manual exact model IDs, bounded
+  cleanup and no inference or account-entitlement claims. Unsupported catalog
+  transports remain explicit instead of returning an invented static list.
+- Complete structured execution candidate, per-route quality order and channel
+  fallback editing. Shared references and permissions require explicit changes.
+- Show per-packet eligibility using the execution engine's input checks and exact
+  current contract/configuration evidence. Add a version-bound collaboration
+  editor that saves an immutable plan revision and starts independent review only.
+- Prepare a new package version because npm 0.37.3 already identifies previously
+  published bytes; candidate validation does not establish registry publication.
+
+- Retain a bounded frozen snapshot of the next execution binding after model
+  switches and display its requested Antigravity native/subagents/Swarm mode.
+  Preserve legacy decision recovery hashes and unknown historical metadata.
+- Keep malformed native-profile JSON drafts editable without crashing the model
+  form. Show a missing native observation only after a successful matching query,
+  preserving pending and failed reads as separate states.
+- Resolve effective route initial bindings consistently across diagnostics and run
+  snapshots; distinguish initial, selected-next and actual invocation facts. Keep
+  fixed Orchestrator effort empty and preserve unknown legacy history.
+- Reject Antigravity Swarm for non-Execute roles. Add common candidate/native
+  controls without rewriting shared authority; show JEV's resolved subscription
+  binding and the task's effective configuration source after settings saves.
+- Freeze display bindings for JEV decisions, explain suggestions and adoption,
+  and link reviewed collaboration scopes to invocation-matched native observations.
+- Add desktop goal intake with Auto/review-first defaults and explicit delegation,
+  bounded report-only investigation, and repository image inspection/PNG previews.
+  New task directories are created by Go; images remain unreviewed brief evidence
+  until packet approval and do not imply Antigravity headless image transport.
+
+- Add the independent Antigravity DSH plugin and bundled Flywheel machine worker,
+  using the official `agy` CLI without ACP. Preserve durable invocation receipts,
+  owned history, cancellation, explicit model/effort and evidence-only admission.
+- Adopt a single Gemini/Claude/Codex/Kimi subscription default table, with seven
+  execution routes, explicit system/compact planning bindings and native Kimi
+  agent access. Strict reachability and native preflight reject API/credits routes;
+  missing billing evidence stays unknown. Pin the reviewed Claude 0.7.0 candidate.
+- Carry frozen packet image inputs through Execute and the official Claude SDK.
+  Validate actual image bytes and bounded repository paths, retain input digests
+  in durable receipts, and reconcile recovery without replaying or replacing images.
+- Implement compact design plus one packet with one independent joint review.
+  Keep Quick/Full depth separate from review-first/delegated authority and retain
+  exact-version approval. Complex preparation can upgrade without resetting budgets.
+- Add managed Neon investigation analysis and explicit new-evidence rounds in the
+  same task, with immutable history, exact revision checks, original scope and
+  cumulative accounting. Unknown dispatch or cleanup blocks continuation.
+- Route optional JEV through a frozen evidence-only subscription profile; keep its
+  single switch off by default and retain explicit legacy HTTP compatibility.
+- Extend the Antigravity companion to 0.2.0 with the three fixed-effort
+  Orchestrator models, explicit subagents and controlled official CLI Swarm.
+  Record actual child observations separately from requested collaboration,
+  enforce the observed-member threshold, and reject truncated or unobserved
+  explicit collaboration. Preserve unknown remote-child lifecycle and usage.
+  Classify collaboration-policy failures and native cutoffs as non-retryable
+  requests without changing invocation outcome or cleanup evidence.
+- Add reviewed, disjoint packet collaboration scopes and require Full without
+  images before Flywheel admits Swarm. Planning gathers Antigravity subagents
+  in the foreground; native verification does not replace independent Review.
+- Supply complete execution candidates for all seven subscription routes while
+  preserving initial models and default-off JEV. When enabled, the same JEV
+  switch may choose once before first Execute and after confirmed failure,
+  sharing durable decision/switch budgets and refusing unsafe replay. Initial
+  snapshots use version 3; existing investigation/failure identities remain valid.
+- Add preview/CAS/backup migration `subscription-cli`, preserving existing user
+  permissions, budgets, verification and scheduling. Freeze the historical preset.
+  Update the editor, embedded entry skills and paired guides with the same contracts.
+- This source change does not publish npm packages, migrate user settings, prove
+  real-account inference or claim an optimal model allocation.
+
 ## 0.37.3 — DSH 0.3 compatibility window
 
 - Accept DSH 0.2.1-rc.5 through 0.3 for the host engine and peers; capability

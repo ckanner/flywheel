@@ -10,7 +10,7 @@ import (
 
 // Display-only projection. Identity, revision, verdicts and counters are intact;
 // bounded diagnostic excerpts keep large task graphs inside the control frame.
-func ConsoleProjection(st *state.State) (*state.State, error) {
+func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, error) {
 	if st == nil {
 		return nil, nil
 	}
@@ -19,6 +19,10 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 	source := *st
 	source.Planning = nil
 	view := jsonClone(&source)
+	bindingBudget := displayBindingBudget
+	if view.Run != nil {
+		view.Run.InitialBindings, view.Run.InitialBindingsOmitted = compactBindingSnapshots(view.Run.InitialBindings, &bindingBudget)
+	}
 	if st.Planning != nil {
 		var err error
 		view.Planning, err = consolePlanningProjection(st.Planning, 512<<10)
@@ -37,14 +41,31 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 			if record == nil {
 				return nil, fmt.Errorf("state contains a null runtime decision")
 			}
+			record.ExecutionView = runtimeDecisionExecutionView(st, record)
+			record.Execution = nil
+			record.ModelBindings, record.ModelBindingsOmitted = compactBindingSnapshots(record.ModelBindings, &bindingBudget)
+			if record.Snapshot != nil {
+				record.Phase = "after-failure"
+				if record.Snapshot.Version == 3 {
+					record.Phase = "initial-execution"
+				}
+				record.BaselineActionID = record.Snapshot.BaselineID
+				record.Actions = record.Snapshot.Actions
+			}
 			record.Snapshot = nil
 			if receipt := record.Receipt; receipt != nil {
-				record.Receipt = &decision.Receipt{Status: receipt.Status, Reason: receipt.Reason, Model: receipt.Model, Usage: receipt.Usage, DurationMS: receipt.DurationMS}
+				record.Receipt = &decision.Receipt{ActionID: receipt.ActionID, Status: receipt.Status, Reason: receipt.Reason, Model: receipt.Model, Usage: receipt.Usage, DurationMS: receipt.DurationMS}
 			}
 			record.Feedback = compactDiagnostic(record.Feedback)
 		}
 	}
-	for id, packet := range view.Packets {
+	packetIDs := make([]string, 0, len(view.Packets))
+	for id := range view.Packets {
+		packetIDs = append(packetIDs, id)
+	}
+	sort.Strings(packetIDs)
+	for _, id := range packetIDs {
+		packet := view.Packets[id]
 		if packet == nil {
 			return nil, fmt.Errorf("state contains a null packet %s", id)
 		}
@@ -52,6 +73,7 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 			delete(view.Packets, id)
 			continue
 		}
+		compactCurrentExecutionBinding(packet.ExecutionPolicy, &bindingBudget)
 		packet.Evidence.Executor = evidenceSummary(packet.Evidence.Executor, "source", "report-sha256", "identity", "at")
 		packet.Evidence.L1 = evidenceSummary(packet.Evidence.L1, "pass", "identity", "identity-error", "at", "attribution")
 		packet.Evidence.Review = evidenceSummary(packet.Evidence.Review, "verdict", "identity", "scope", "score", "quick-eligible", "at")
@@ -61,6 +83,16 @@ func ConsoleProjection(st *state.State) (*state.State, error) {
 		packet.Commit = compactDiagnostic(packet.Commit)
 		packet.EvidenceHistory = historySummary(packet.EvidenceHistory)
 		packet.RetryHistory = historySummary(packet.RetryHistory)
+	}
+	// A node response also carries the selected packet's full evidence. Keep
+	// those details, but bound its new display metadata within this same reply.
+	for _, node := range nodes {
+		if node != nil && node.Packet != nil && node.Packet.ExecutionPolicy != nil {
+			packet := *node.Packet
+			policy := *packet.ExecutionPolicy
+			packet.ExecutionPolicy, node.Packet = &policy, &packet
+			compactCurrentExecutionBinding(&policy, &bindingBudget)
+		}
 	}
 	view.Inbox = compactDiagnostic(view.Inbox).([]any)
 	return view, nil
@@ -104,16 +136,21 @@ func compactDiagnostic(value any) any {
 }
 
 type NodeDetail struct {
-	ID       string             `json:"id"`
-	Revision int64              `json:"revision"`
-	Packet   *state.PacketState `json:"packet"`
+	Eligibility         *PacketEligibility       `json:"eligibility,omitempty"`
+	ImageInputEditor    *ImageInputEditor        `json:"imageInputEditor,omitempty"`
+	CollaborationEditor *CollaborationEditor     `json:"collaborationEditor,omitempty"`
+	Collaboration       *CollaborationProjection `json:"collaboration,omitempty"`
+	ID                  string                   `json:"id"`
+	Revision            int64                    `json:"revision"`
+	Packet              *state.PacketState       `json:"packet"`
 }
 
-func ReadNode(st *state.State, id string) (*NodeDetail, error) {
+func ReadNode(st *state.State, id string, location ...string) (*NodeDetail, error) {
 	if st == nil || st.Packets[id] == nil {
 		return nil, fmt.Errorf("packet not found")
 	}
-	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id]}, nil
+	eligibility, editor, images := packetControlViews(st, id, location)
+	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location), Eligibility: eligibility, CollaborationEditor: editor, ImageInputEditor: images}, nil
 }
 
 func evidenceSummary(value any, keys ...string) any {

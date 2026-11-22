@@ -7,7 +7,7 @@ import { validPlanningCommand } from './planning-control.js';
 
 // A read-only Remote, separate from logged human commands. Never add mutations
 // here: their durable command/tool receipts own replay and uncertain outcomes.
-export const consoleReadActions = new Set(['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning']);
+export const consoleReadActions = new Set(['models', 'images', 'runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning']);
 const initializers = [];
 export class ConsoleReadService extends Service {
   constructor(ctx, control, failure) {

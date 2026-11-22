@@ -31,6 +31,52 @@ func runtimeLedgerFixture(t *testing.T) *State {
 	return st
 }
 
+func initialLedgerFixture(t *testing.T) *State {
+	t.Helper()
+	st := runtimeLedgerFixture(t)
+	r := st.RuntimeDecisions.Records[0]
+	r.ID, r.Attempt = "initial-"+r.Packet, 0
+	r.Snapshot.ID, r.Snapshot.Version = r.ID, 3
+	r.Snapshot.Actions = []decision.Action{
+		{ID: "model-0", Kind: decision.Model, Description: "Configured baseline", BindingHash: PreparationHash("initial binding")},
+		{ID: "model-1", Kind: decision.Model, Description: "Approved alternative", BindingHash: PreparationHash("alternate binding")},
+	}
+	r.Action, r.Snapshot.BaselineID = "model-0", "model-0"
+	ps := st.Packets[r.Packet]
+	ps.PendingStrategy, ps.Attempts, ps.FailedAttempts = r.ID, 0, 0
+	require.NoError(t, validateRuntimeDecisions(st))
+	return st
+}
+
+func TestInitialDecisionLedgerRequiresFirstExecutionAndRoundTripsEffects(t *testing.T) {
+	for _, adopted := range []bool{false, true} {
+		st := initialLedgerFixture(t)
+		action, status := "model-0", "baseline"
+		if adopted {
+			action, status = "model-1", "applied"
+		}
+		settleRuntimeRecord(t, st, action, status, adopted)
+		st.Packets["M01-T01"].Attempts = 1
+		require.NoError(t, validateRuntimeDecisions(st), "a settled first choice remains valid after executing")
+	}
+	for name, mutate := range map[string]func(*State){
+		"non-initial id": func(st *State) {
+			r := st.RuntimeDecisions.Records[0]
+			r.ID, r.Snapshot.ID, st.Packets[r.Packet].PendingStrategy = "another-id", "another-id", "another-id"
+		},
+		"after an attempt":            func(st *State) { st.RuntimeDecisions.Records[0].Attempt = 1 },
+		"after a replan":              func(st *State) { st.RuntimeDecisions.Records[0].PlanRevisions = 1 },
+		"executor already dispatched": func(st *State) { st.Packets["M01-T01"].Attempts = 1 },
+		"plan already revised":        func(st *State) { st.Packets["M01-T01"].PlanRevisions = 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := initialLedgerFixture(t)
+			mutate(st)
+			require.ErrorContains(t, validateRuntimeDecisions(st), "first execution")
+		})
+	}
+}
+
 func settleRuntimeRecord(t *testing.T, st *State, action, status string, adopted bool) {
 	t.Helper()
 	ledger := st.RuntimeDecisions

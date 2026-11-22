@@ -59,6 +59,7 @@ func configureDecision(t *testing.T, dir string, d *contract.InvestigationDecisi
 	require.NoError(t, err)
 	var cfg map[string]any
 	require.NoError(t, json.Unmarshal(raw, &cfg))
+	delete(cfg, "subscription") // This fixture deliberately tests the explicit legacy HTTP backend.
 	cfg["jev"] = map[string]any{"enabled": enabled, "endpoint": d.Endpoint, "model": d.Model, "key-env": d.KeyEnv, "timeout-ms": d.TimeoutMS, "max-calls": d.Policy.MaxCalls, "min-applicability": d.Policy.MinApplicability, "min-choice": d.Policy.MinChoice, "allowed-data": d.Policy.AllowedData}
 	raw, err = json.Marshal(cfg)
 	require.NoError(t, err)

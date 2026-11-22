@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/decision"
+	"github.com/ckanner/flywheel/internal/decisionexec"
 	"github.com/ckanner/flywheel/internal/diagnostic"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +26,10 @@ var decisionOpenFile = func(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 }
 var decisionReadAll = io.ReadAll
+var subscriptionDecisionOptions = decisionexec.Options
+var loadDecisionConfiguration = diagnostic.LoadConfigurationContext
+var decisionAbsolutePath = filepath.Abs
+var decisionPhysicalPath = filepath.EvalSymlinks
 var decisionKeyName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,199}$`)
 
 type decisionCapture struct {
@@ -53,7 +59,7 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 	options := decision.Options{}
 	name, description := "replay", "离线读取原生响应或 fixture；不发送 HTTP 请求"
 	if live {
-		name, description = "evaluate", "显式付费 advisory 评估；独立私有账本，不自动重试未知调用"
+		name, description = "evaluate", "显式有界 advisory 评估；使用配置的订阅或旧 HTTP 后端，不重试未知调用"
 	}
 	cmd := &cobra.Command{Use: name, Short: description, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -70,11 +76,11 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 					return err
 				}
 			}
-			if input == "" || options.Endpoint == "" || options.Model == "" || options.ExpectedModel == "" {
-				return fmt.Errorf("decision requires --input, --endpoint, --model and --expected-model")
+			if input == "" || options.Backend != "subscription" && options.Endpoint == "" || options.Model == "" || options.ExpectedModel == "" {
+				return fmt.Errorf("decision requires --input and a configured fixed target; HTTP replay also requires --endpoint, --model and --expected-model")
 			}
-			if live && (directory == "" || !decisionKeyName.MatchString(keyEnv) || maxCalls < 1 || maxCalls > 100) {
-				return fmt.Errorf("evaluate requires --directory, --key-env and explicit --max-calls (1..100)")
+			if live && (directory == "" || options.Backend != "subscription" && !decisionKeyName.MatchString(keyEnv) || maxCalls < 1 || maxCalls > 100) {
+				return fmt.Errorf("evaluate requires --directory and explicit --max-calls (1..100); HTTP also requires a configured --key-env")
 			}
 			capture, err := loadDecisionInput(input, policyFile)
 			if err != nil {
@@ -84,9 +90,26 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 			var receipt decision.Receipt
 			if live {
 				capture.Policy = boundEvaluationPolicy(capture.Policy, effective.JEV, maxCalls)
-				options.APIKey = os.Getenv(keyEnv)
-				if options.APIKey == "" {
-					return fmt.Errorf("decision key environment variable is empty: %s", keyEnv)
+				if options.Backend == "subscription" {
+					if !cmd.Flags().Changed("timeout") {
+						options.Timeout = time.Duration(effective.JEV.TimeoutMS) * time.Millisecond
+					}
+					root, err := decisionAbsolutePath(cwd)
+					if err != nil {
+						return err
+					}
+					root, err = decisionPhysicalPath(root)
+					if err != nil {
+						return err
+					}
+					hard := options.HardBudget
+					options = subscriptionDecisionOptions(ctx, options.Subscription, root, directory, options.Timeout)
+					options.HardBudget = hard
+				} else {
+					options.APIKey = os.Getenv(keyEnv)
+					if options.APIKey == "" {
+						return fmt.Errorf("decision key environment variable is empty: %s", keyEnv)
+					}
 				}
 				receipt, err = decision.Evaluate(ctx, directory, capture.Snapshot, capture.Policy, options)
 			} else {
@@ -113,14 +136,14 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 	cmd.Flags().StringVar(&cwd, "cwd", "", "项目目录；显式评估也遵循此范围的 JEV 配置")
 	cmd.Flags().StringVar(&policyFile, "policy", "", "可选独立策略 JSON；裸 Snapshot 必需，mode 由子命令强制限定")
 	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "", "明确的 HTTPS /v1/systemone 地址；replay 仅记录身份")
-	cmd.Flags().StringVar(&options.Model, "model", "", "固定版本 jev-x.y.z；不允许可变别名")
+	cmd.Flags().StringVar(&options.Model, "model", "", "可选核对配置的固定模型；HTTP replay 必须提供 jev-x.y.z")
 	cmd.Flags().StringVar(&options.ExpectedModel, "expected-model", "", "必须与请求模型及响应版本完全相同")
 	cmd.Flags().DurationVar(&options.Timeout, "timeout", 5*time.Second, "单次调用时限，不自动重试，最大 30s")
 	if live {
 		cmd.Flags().StringVar(&directory, "directory", "", "独立私有评估账本；保留原未知回执与调用预算")
-		cmd.Flags().StringVar(&keyEnv, "key-env", "", "明确的密钥环境变量名；不要传密钥值")
+		cmd.Flags().StringVar(&keyEnv, "key-env", "", "仅旧 HTTP 后端：配置的密钥环境变量名；不要传密钥值")
 		cmd.Flags().IntVar(&maxCalls, "max-calls", 0, "显式累计调用上限 1..100，包含未知调用")
-		cmd.Flags().BoolVar(&options.HardBudget, "hard-budget", false, "要求可证明请求上限；原生 API 无此能力时跳过调用")
+		cmd.Flags().BoolVar(&options.HardBudget, "hard-budget", false, "要求可证明请求费用上限；后端无此能力时跳过调用")
 	} else {
 		cmd.Flags().StringVar(&response, "response", "", "原生 System One 响应或离线 fixture JSON")
 	}
@@ -131,12 +154,25 @@ func decisionEvaluationCmd(live bool) *cobra.Command {
 // decisions. Old explicit flags are accepted only when they match that config.
 // Replay never calls this helper and remains a local reader of existing records.
 func configureDecisionEvaluation(ctx context.Context, taskDir, cwd string, keyEnv *string, options *decision.Options) (*config.Config, error) {
-	cfg, err := diagnostic.LoadConfigurationContext(ctx, cwd, taskDir)
+	cfg, err := loadDecisionConfiguration(ctx, cwd, taskDir)
 	if err != nil {
 		return cfg, err
 	}
 	if !cfg.JEV.Enabled {
 		return cfg, fmt.Errorf("JEV is disabled in the effective configuration; enable jev.enabled to evaluate online")
+	}
+	if cfg.JEV.Backend == "subscription" {
+		binding, err := cfg.ResolveJEVSubscription()
+		if err != nil {
+			return cfg, err
+		}
+		if options.Endpoint != "" || *keyEnv != "" || options.Model != "" && options.Model != binding.Model || options.ExpectedModel != "" && options.ExpectedModel != binding.Model {
+			return cfg, fmt.Errorf("explicit decision flags conflict with the effective subscription profile")
+		}
+		options.Backend, options.Subscription, options.Model, options.ExpectedModel = "subscription", binding, binding.Model, binding.Model
+		options.Timeout = min(options.Timeout, time.Duration(cfg.JEV.TimeoutMS)*time.Millisecond)
+		options.HardBudget = options.HardBudget || cfg.Budget.Enforce == "hard"
+		return cfg, nil
 	}
 	for _, field := range []struct {
 		name  string

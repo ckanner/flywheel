@@ -10,7 +10,7 @@ it is not a third implementation completion mode.
 | Daily request | Entry | Engine behavior and endpoint |
 | --- | --- | --- |
 | Diagnose and explain | `/flywheel-task` | Managed evidence collection, approved diagnostic experiments and a report; no implementation |
-| Diagnose and repair within scope | `/flywheel-task` | Supported report, then Spec and Auto; retain provenance, usage and scope |
+| Diagnose and repair within scope | `/flywheel-task` | Supported report, then a thin brief and independent design review; retain provenance, usage and scope before Auto |
 | Repair an identified issue | Task Auto or explicit Quick | Qualification, mandatory checks, independent final Review and Git delivery |
 | Propose a complex change for review | `/flywheel-new` | Stop after preparation; Run Full after implementation authorization |
 | Continue an existing task | `/flywheel-run` | Resume its original preparation or implementation ledger |
@@ -45,15 +45,16 @@ approved in the contract:
 | `run_command` | Run exact argv against a temporary copy of approved inputs for reproduction or diagnosis | Explicit `host-process` authority, action timeout, controlled environment, process-group cancellation and cleanup |
 | `http_read` | GET or HEAD against an exact approved URL | HTTPS (loopback HTTP for tests), no redirects/environment proxy, bounded response and output |
 
-File paths must be clean repository-relative paths, and file actions reference an
+File paths must be clean paths relative to the investigation’s working directory, and file actions reference an
 approved path. Every action references existing hypotheses. The opened inode must
 match the inspected inode; `os.Root` confines traversal. A directory grant permits
 names only, not its descendants' contents. Command and HTTP arguments belong to the
 frozen contract. JEV cannot generate another command, URL or credential variable.
 
 `limits` freezes action count, overall deadline, per-file bytes and total output
-bytes. Resume does not reset them. The deadline starts at preparation, including
-paused time. Bounded UTF-8 excerpts retain a content digest; `truncated` means the
+bytes. Resume does not reset them. Each explicitly approved round gets a deadline
+from its remaining cumulative allowance; paused time inside that round counts.
+Bounded UTF-8 excerpts retain a content digest; `truncated` means the
 display is incomplete, not that an entire log or test inventory was observed.
 
 ### Reproduction tests and diagnostic commands
@@ -121,6 +122,12 @@ the snapshot records that missing content, and JEV can still choose from structu
 facts. File evidence uses `source`. Action approval does not add raw-log sharing
 permission, and a permitted category does not remove the need to protect secrets.
 
+## Desktop report-only entry
+
+The empty task canvas offers a small investigation form. The user supplies the goal, expected behavior, one hypothesis and its falsifier, and one to eight exact text-file paths. The generated contract contains only `read_file` actions for those paths, empty implementation scope, a 60-second limit, 256 KiB per file, and 16 KiB of cumulative output. **Create and start investigation** sends `action:start` with `run:true`; Go registers the contract, releases the registration lease, and starts the owned background run at the recorded preparation revision. It never treats the report as permission to implement a fix.
+
+Omitting `run` preserves registration-only behavior. This boolean is valid only on `start`; status, continue, and subsequent run operations keep their existing revision requirements. A new directory is allowed only for creation. Failed creation/dispatch or unknown outcomes follow the existing persistent reconciliation rules, without automatic retries. Advanced commands, HTTP queries, alternative hypotheses and larger bounded collections remain available through an explicit preparation contract. Additional evidence continues in the same task.
+
 ## CLI and desktop controls
 
 Create the actual task directory, then submit a complete preparation request:
@@ -153,25 +160,44 @@ An investigation-only response contains `preparation`, not a fabricated code-tas
 
 ## Report and repair handoff
 
-`awaiting-report` means observations are available. The current host model submits
-one evidence-based report; Go checks fields, hypothesis coverage and references.
-Separate facts from inference, classify each hypothesis as supported, contradicted
-or unknown, and include counter-evidence, limitations, recommendation, regression
-checks and rollback conditions. References are real observation `invocation.id`
-values; missing or failed observations cannot be cited as successful evidence.
+`awaiting-report` means the approved observations are available. When
+`loops.investigate` is configured, the managed run invokes that analysis role and
+validates its versioned report. The default analysis uses the Gemini subscription
+binding. Its prompt contains the current hypotheses, observed evidence and earlier
+round reports. The adapter must confirm the evidence-only tool policy before any
+prompt is dispatched; the analyst cannot run additional commands, query URLs or
+edit code. This verified tool restriction does not claim an operating-system
+sandbox.
 
-Submit `action: report`, the observed `revision` and `report` through
-`control investigate`. Terminal report states are `supported`, `inconclusive` and
-`access-blocked`; cancellation produces `cancelled`. Supported means the analyst's
-conclusion has structurally valid evidence references. Go does not independently
-prove semantic causality. Uncertainty produces a report with limitations, not an
-automatic expansion of investigation or implementation authority.
+The analysis intent freezes the task, round, input revision, contract/evidence
+hashes, actual model/effort binding and subscription policy before dispatch.
+Lifecycle acknowledgements and immutable receipts allow read-only native recovery.
+A missing result, wrong invocation or unconfirmed cleanup remains blocked; Run,
+manual report submission and a new round cannot silently resend or discard it.
+Once a trustworthy result is settled, Go checks report fields, every hypothesis
+and the exact successful observation IDs. A known failed or invalid report leaves
+the host report path available; it does not start an automatic paid retry.
+
+Report-only configurations without an `investigate` binding retain the existing
+host submission path: submit `action:report`, the observed revision and report via
+`control investigate`. Terminal report states remain `supported`, `inconclusive`
+and `access-blocked`; cancellation yields `cancelled`. Reports separate facts from
+inference and include counter-evidence, limitations, recommendations, regression
+checks and rollback conditions. Supported means structurally valid evidence
+references, not independently proven causality or completed implementation.
 
 When the original request authorized repair and the investigation is supported
-with all receipts resolved, prepare Spec/packets in the same workspace and task
-directory, then launch normally. `preparation-source` records provenance, the report
-digest, authorized implementation scope, actions and elapsed time. Known JEV usage
-is imported once on its original dispatch day; missing usage and cost remain
+with all receipts and cleanup resolved, register a thin brief with `control planning`
+`action:prepare` in the same workspace and task directory. Choose compact or system
+preparation from the actual evidence; Go generates the design and implementation
+contracts and obtains independent review. The host does not prewrite Spec/packets.
+Reuse an existing thin brief. Only tasks that already have complete legacy contracts
+keep the legacy launch path, unless explicitly migrated.
+
+`preparation-source` records provenance, the report
+digest, exact round (for subsequent rounds), authorized implementation scope,
+cumulative actions and elapsed time. JEV and analysis usage from every round is
+imported once on its original dispatch day; missing usage and cost remain
 unknown. Resume never double-counts. Actual implementation changes are checked
 against the original scope, including after a Quick-to-Full or model upgrade.
 
@@ -180,6 +206,40 @@ runtime records excluded from automatic Git delivery. Do not publish credentials
 or source excerpts from logs automatically. Write a separately reviewed report when
 publication is part of the user's goal. Once admitted, deleting or changing the
 preparation source cannot bypass scope or accounting.
+
+## Continue with new evidence in the same task
+
+Repeating Run on a settled report does not gather evidence again. To add logs,
+revise hypotheses or approve further exact reads, the host submits
+`action:continue`, the current revision and a complete new-round `contract` using
+the same `control investigate` endpoint. The task ID stays the same;
+`known-evidence` states the new evidence or investigation basis. Start remains the
+first-round operation and cannot overwrite existing preparation.
+
+Continue appends a versioned, digest-bound snapshot of the settled prior round and
+starts a new active round with its own approved actions. Earlier reports,
+observations, dispatch IDs and usage remain immutable. A new report may cite
+successful observations from any earlier round. The state revision and run ID
+continue, while each new action gets a distinct dispatch identity.
+
+The original goal, investigation/repair intent and implementation scope must remain
+identical. Both Continue and state validation enforce this boundary. Additional
+evidence cannot turn report-only authority into repair authority or broaden an
+existing repair grant; the existing exact planning approval handles a later repair
+request separately.
+
+The next contract must fit the remaining action, time, output and per-file limits.
+JEV calls already used or uncertain remain spent even if an intermediate round
+had JEV disabled. Running out of budget stops new collection. Unresolved actions,
+analysis or native decision cleanup must be reconciled first. The history is
+bounded to 32 archived rounds plus the current round.
+
+New rounds are available for an investigation-only task or a thin brief before
+design/implementation admission. They cannot replace a report already frozen into
+approved implementation inputs. After a report-only task, explicit repair scope
+and design authorization can continue the same task using that report; an earlier
+request to diagnose and repair retains its original authority. A later report never
+silently rewrites an implementation's existing source reference.
 
 ## Feedback, progress and Plan
 
@@ -217,6 +277,12 @@ original action order and collection limits. Enabled decisions may choose the
 next action, defer redundant evidence collection, or stop collection for a report
 when Go's evidence prerequisites are met.
 
+The distributed backend is `subscription` with `hydrogen-local`. It asks a fresh,
+tool-free Antigravity conversation to choose among frozen actions. The same native
+subscription checks apply as elsewhere; it cannot add commands, make API/credits
+fallbacks or reuse the analyst's conversation. This optional selector is separate
+from the investigation analysis stage.
+
 Deferred actions and early completion of collection are persisted with decision
 and observation references. They do not classify a hypothesis as proven or
 contradicted. The analyst still writes the evidence-grounded report, and repair
@@ -235,8 +301,11 @@ The effective target, model, data categories, thresholds and budget are frozen a
 preparation time. Current OFF, incompatible target changes or tightened policy
 stop further optional decisions. In-flight results are rechecked before adoption;
 known/unknown receipts are reconciled without resending. A preparation initially
-created with JEV off keeps its baseline policy; a new preparation receives a newly
-enabled policy. The desktop labels its stored status as last observed.
+created with JEV off keeps its baseline policy; an explicitly authorized new round
+can freeze the newly enabled policy while retaining cumulative spent calls. Native
+cleanup uncertainty blocks collection, reports and new rounds until the original
+receipt proves cleanup; recovery never sends a new prompt or adopts a late answer.
+The desktop labels its stored status as last observed.
 
 The [JEV guide](jev.md#replay-and-explicit-evaluation) documents local replay and
 explicit online evaluation. Replay stays available without JEV. Online evaluation
@@ -254,7 +323,7 @@ the same phase API; unobserved host-preparation time is never filled with zero.
 
 Offline checks do not establish fewer tokens, lower cost or equal final quality.
 JEV remains off by default; enabling the master switch activates the supported
-decisions. Default models and concurrency are unchanged. The
+decisions. Model choices are configured separately from workflow depth. The
 [ready queue and bounded DSH runtime preparation](configuration.md#ready-queues-and-runtime-preparation)
 are now available as explicit scheduler settings, with batch dispatch and no
 prewarming remaining the defaults. Real performance and any default change still

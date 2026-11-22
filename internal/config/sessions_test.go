@@ -27,8 +27,8 @@ func TestSessionPolicyDefaultsAndExplicitSelection(t *testing.T) {
 		cfg, err := parseConfig(raw, file)
 		require.NoError(t, err)
 		assert.Equal(t, SessionsConfig{Mode: "scoped", PolicyVersion: 1}, cfg.Sessions)
-		assert.True(t, cfg.Loops["plan"].ResidentSession)
-		assert.True(t, cfg.Loops["plan"].ResidentSessionSet)
+		assert.False(t, cfg.Loops["plan"].ResidentSession)
+		assert.False(t, cfg.Loops["plan"].ResidentSessionSet)
 		var object map[string]any
 		require.NoError(t, json.Unmarshal(raw, &object))
 		assert.NoError(t, validateSessionPolicy(object["sessions"]), "editor schema accepts the shipped annotations too")

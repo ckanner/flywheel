@@ -19,6 +19,12 @@ const maxDocument = 64 << 10
 var fixedModel = regexp.MustCompile(`^jev-[0-9]+\.[0-9]+\.[0-9]+$`)
 
 type Options struct {
+	Backend          string
+	Subscription     *SubscriptionBinding
+	SubscriptionCall func(context.Context, string, string) SubscriptionResult
+	// SubscriptionRecover reads the original native journal only. It cannot
+	// create a turn or convert an uncertain answer into an adopted selection.
+	SubscriptionRecover func(string) SubscriptionResult
 	// AllowedKinds is the owner's implemented action family set. Nil retains diagnostic-only adoption.
 	AllowedKinds  []ActionKind
 	Endpoint      string
@@ -47,6 +53,9 @@ func questions(s Snapshot) map[string]question {
 	if s.Version == 2 {
 		instructions = "Which approved next action best advances this failed coding task within the supplied evidence, attempt limits, and budget? Prefer useful feedback over repeated ineffective work; do not treat a model change or replan as proof of success."
 	}
+	if s.Version == 3 {
+		instructions = "Which approved execution binding best fits this prepared coding task, its reviewed scope, acceptance requirements, collaboration authorization and budget? Prefer the configured baseline for clear small tasks. Select Swarm only for the explicit approved independent collaboration tasks; justify other native orchestration from task complexity. Model names and self-reported confidence do not prove quality or available account quota."
+	}
 	return map[string]question{
 		"action": {Type: "choice", Instructions: instructions + boundary, Criteria: criteria},
 		"applicable": {Type: "noul", Instructions: "Does at least one listed action fit this decision and have enough supplied evidence to recommend it?" + boundary, Criteria: map[string]string{
@@ -68,6 +77,13 @@ func request(s Snapshot, model string) []byte {
 }
 
 func targetHash(o Options) string {
+	if o.Backend == "subscription" {
+		return hash(struct {
+			Backend   string
+			Binding   *SubscriptionBinding
+			TimeoutMS int64
+		}{o.Backend, o.Subscription, o.Timeout.Milliseconds()})
+	}
 	return hash(struct {
 		Endpoint, Model, ExpectedModel string
 		TimeoutMS                      int64
@@ -75,6 +91,12 @@ func targetHash(o Options) string {
 }
 
 func validTarget(o Options) bool {
+	if o.Backend == "subscription" {
+		return o.Subscription != nil && o.Subscription.Valid() && o.Model == o.Subscription.Model && o.ExpectedModel == o.Model && o.Endpoint == "" && o.APIKey == "" && o.Timeout > 0 && o.Timeout <= 30*time.Second
+	}
+	if o.Backend != "" && o.Backend != "http" {
+		return false
+	}
 	u, err := url.Parse(o.Endpoint)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/v1/systemone" {
 		return false

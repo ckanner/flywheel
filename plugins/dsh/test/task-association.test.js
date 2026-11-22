@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runControl } from '../src/control.js';
 import { taskAssociationProjection as definition, taskProjectionKey } from '../src/task-association.js';
 
 function log(cwd = '/repo', inheritedEventCount = 0) {
@@ -34,6 +38,8 @@ test('exact launch association folds public tool events and current-directory ev
   done(l, 'launch-1', result('/physical/task', '/physical/project'));
   assert.equal(l.view.taskDir, '/physical/task');
   assert.equal(l.view.cwd, '/physical/project');
+  assert.equal(l.view.requestedTaskDir, '/worktree/docs/fix');
+  assert.equal(l.view.requestedCwd, '/worktree');
   assert.equal(l.view.outcome, 'confirmed');
   const stableState = l.state;
   const stableView = l.view;
@@ -60,6 +66,8 @@ test('an unknown or missing mutation response keeps its original task until that
   commandDone(l, 'status', result('/physical/first', '/physical/repo'));
   assert.equal(l.view.outcome, 'confirmed');
   assert.equal(l.view.taskDir, '/physical/first', 'a confirmed status adopts the host-validated realpath');
+  assert.equal(l.view.requestedTaskDir, '/repo/docs/first');
+  assert.equal(l.view.requestedCwd, '/repo');
   tool(l, 'next', { taskDir: '/repo/docs/second', cwd: '/repo', mode: 'quick' });
   assert.equal(l.view.taskDir, '/repo/docs/second');
   assert.equal(l.view.outcome, 'pending', 'a new launch may bind after reconciliation');
@@ -93,6 +101,36 @@ test('nested PTC dispatches use the public durable start/result vocabulary', () 
   l.append('tool/ptc-dispatch', { ...dispatch, content: content(result('/repo/docs/nested')), isError: false });
   assert.equal(l.view.outcome, 'confirmed');
   assert.equal(l.view.operationId, 'tool:parent:ptc:1');
+  assert.equal(l.view.requestedTaskDir, '/repo/docs/nested');
+  assert.equal(l.view.requestedCwd, '/repo');
+});
+
+test('canonical command settlement retains its recorded alias and accepts older snapshots without origin fields', async t => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-association-alias-')));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const physicalCwd = join(directory, 'project'), physicalTask = join(physicalCwd, 'docs', 'task');
+  await mkdir(physicalTask, { recursive: true });
+  const requestedCwd = join(directory, 'project-alias');
+  await symlink(physicalCwd, requestedCwd);
+  const requestedTaskDir = join(requestedCwd, 'docs', 'task');
+  const binary = join(directory, 'control-fixture.mjs');
+  await writeFile(binary, `#!/usr/bin/env node\nconst args=process.argv;process.stdout.write(JSON.stringify({protocol:1,ok:true,running:false,taskDir:args[args.indexOf('--task-dir')+1],cwd:args[args.indexOf('--cwd')+1],state:null,requestedTaskDir:'/forged',requestedCwd:'/forged'}));\n`, { mode: 0o755 });
+  const args = { action: 'launch', taskDir: requestedTaskDir, cwd: requestedCwd, mode: 'auto' };
+  const l = log();
+  command(l, 'alias-create', args);
+  const response = await runControl(args, { binary, defaultCwd: requestedCwd });
+  assert.equal(response.taskDir, physicalTask);
+  assert.equal(response.cwd, physicalCwd);
+  commandDone(l, 'alias-create', response);
+  assert.equal(l.view.taskDir, physicalTask);
+  assert.equal(l.view.cwd, physicalCwd);
+  assert.equal(l.view.requestedTaskDir, requestedTaskDir, 'the public command request owns the original identity, not response fields');
+  assert.equal(l.view.requestedCwd, requestedCwd);
+  assert.equal(l.view.tasks[0].requestedTaskDir, requestedTaskDir);
+  assert.equal(l.view.tasks[0].requestedCwd, requestedCwd);
+  const legacy = JSON.parse(JSON.stringify(l.state, (key, value) => ['requestedTaskDir', 'requestedCwd'].includes(key) ? undefined : value));
+  assert.deepEqual(definition.stateSchema.parse(legacy), legacy, 'optional display evidence does not invalidate existing projection snapshots');
+  assert.deepEqual(definition.wire.viewSchema.parse(legacy.view), legacy.view);
 });
 
 test('invalid arguments, unrelated tool results and earlier reads cannot change the current task', () => {

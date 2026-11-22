@@ -395,7 +395,8 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const textValue = (value, fallback = '—') => typeof value === 'string' || typeof value === 'number' ? String(value) : fallback;
 const selectionOf = value => ({ taskDir: value.taskDir.trim(), cwd: value.cwd.trim() });
 const selectionKey = value => JSON.stringify([value.taskDir, value.cwd]);
-const mutates = action => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action);
+const mutates = (action, extra = {}) => ['planning', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(action) && !(action === 'planning' && extra.planning?.action === 'status');
+const packetEditAction = action => ['collaboration', 'input-images'].includes(action);
 const actionKey = value => value.probe ? 'probe' : value.action;
 class NotDispatchedControlReply extends Error {}
 
@@ -452,14 +453,22 @@ function readReply(reply, request) {
     throw new Error(typeof value.error === 'string' ? value.error : 'Flywheel control failed');
   }
   const state = value.state;
+  if (request.action === 'images' && !validImageInspection(value.inputImages, request.images.paths)) throw new Error('Flywheel returned an invalid image preview');
+  if (request.action === 'models' && !validModelCatalogReport(value.modelCatalog, request.models)) throw new Error('Flywheel returned an invalid model catalog');
   const configurationValid = report => record(report) && Array.isArray(report.bindings) &&
     report.bindings.every(record) && (report.jev === undefined || record(report.jev) &&
-      typeof report.jev.enabled === 'boolean' && typeof report.jev.model === 'string' &&
-      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0);
+      typeof report.jev.enabled === 'boolean' && (report.jev.model == null || typeof report.jev.model === 'string') &&
+      (report.jev.backend == null || ['http', 'subscription'].includes(report.jev.backend)) &&
+      (report.jev.profile == null || typeof report.jev.profile === 'string') &&
+      Number.isSafeInteger(report.jev['max-calls']) && report.jev['max-calls'] > 0) &&
+    (report.jevBinding == null || report.jev?.backend === 'subscription' && validDisplayBinding(report.jevBinding));
   if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(request.action) &&
       (typeof value.running !== 'boolean' || (state !== null && !record(state)) ||
        (state?.packets != null && (!record(state.packets) || !Object.values(state.packets).every(validExecutionPolicyHistory))) ||
        (state?.inbox != null && !Array.isArray(state.inbox)) ||
+       !validBindingChoices(state?.run?.initialBindings, state?.run?.initialBindingsOmitted) ||
+       (state?.sessions?.records != null && (!record(state.sessions.records) || Object.values(state.sessions.records).some(session =>
+         !record(session) || !validInputImageManifest(session.configuration?.inputImages)))) ||
        !validRuntimeDecisions(state?.['runtime-decisions']) ||
        (state?.budget != null && (!record(state.budget) ||
         (state.budget.warnings != null && !Array.isArray(state.budget.warnings)))))) {
@@ -474,14 +483,20 @@ function readReply(reply, request) {
       (request.action === 'planning' && !state?.planning) ||
       (value['planning-control'] !== undefined && !validPlanningReceipt(value['planning-control'])) ||
       (value['session-control'] !== undefined && !validSessionControl(value['session-control']))) throw new Error('Flywheel control returned malformed planning or session status');
+  if (packetEditAction(request.planning?.action) && (value['planning-control']?.['request-id'] !== request.planning['request-id'] || value['planning-control']?.action !== request.planning.action)) throw new Error('Packet revision receipt does not match this exact action and request');
+  if (request.planning?.action === 'status' && request.planning['request-id'] && value['planning-control']?.['request-id'] !== request.planning['request-id']) throw new Error('Planning status receipt does not match this exact request');
   if (['config-edit', 'config-save'].includes(request.action) && (!record(value.editor) || !record(value.editor.values) || !record(value.editor.defaults) || value.editor.scope !== request.editor.scope || typeof value.editor.revision !== 'string')) {
     throw new Error('Flywheel configuration editor returned a malformed report');
   }
   if (['delivery','deliver'].includes(request.action) && (!record(value.delivery) || !Array.isArray(value.delivery.pulls))) throw new Error('Malformed delivery snapshot');
-  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet))) throw new Error('Malformed node detail');
+  if (request.action === 'node' && (!record(value.node) || value.node.id !== request.packet || !validExecutionPolicyHistory(value.node.packet) || !validCollaborationView(value.node.collaboration) ||
+      !validNodeEligibility(value.node.eligibility) || !validCollaborationEditor(value.node.collaborationEditor) || !validImageInputEditor(value.node.imageInputEditor) ||
+      [value.node.eligibility, value.node.collaborationEditor, value.node.imageInputEditor].some(view => view != null && (view.packet !== value.node.id || view.revision !== value.node.revision)))) throw new Error('Malformed node detail');
   if (request.action === 'history' && (!record(value.history) || value.history.key !== request.sessionKey)) throw new Error('Malformed session history');
-  if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(record))) throw new Error('Malformed run index');
-  if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups))) throw new Error('Malformed run metrics');
+  if (request.action === 'runs' && (!Array.isArray(value.runs) || !value.runs.every(run => record(run) && validBindingChoices(run.initialBindings, run.initialBindingsOmitted)))) throw new Error('Malformed run index');
+  if (request.action === 'metrics' && (!record(value.metrics) || !Array.isArray(value.metrics.groups) ||
+      (value.metrics.calls != null && (!Array.isArray(value.metrics.calls) || value.metrics.calls.length > 200 || value.metrics.calls.some(call => !record(call) ||
+        (call.native != null && (call.harness !== 'antigravity' || !validNativeObservation(call.native)))))))) throw new Error('Malformed run metrics');
   if (request.action === 'config' && !configurationValid(value.configuration)) {
     throw new Error('Flywheel control returned malformed model configuration');
   }
@@ -501,7 +516,7 @@ function initialControl() {
 
 // Transport state belongs to this apply-owned controller, not a component or
 // the draft store. Its observable reaches React only through slot injection.
-function createControl(execute, pendingOperations, isDisposed) {
+function createControl(execute, pendingOperations, isDisposed, intakeStore, setIntakeSelection) {
   const source = createSnapshot(initialControl());
   let selected = null;
   let epoch = 0;
@@ -510,6 +525,19 @@ function createControl(execute, pendingOperations, isDisposed) {
   let associatedKey = null;
   let deferredAssociation = null;
   let discovering = false;
+  const remapIntake = (value, requestedTaskDir, requestedCwd, created = false) => {
+    if (!intakeStore.target || intakeStore.target.taskDir !== requestedTaskDir || intakeStore.target.cwd !== requestedCwd ||
+        typeof value.cwd !== 'string' || !value.cwd.startsWith('/') || pathProblem(value.cwd)) return false;
+    // Only a validated response to this exact request, or the host projection's
+    // same-operation request proof, may map an alias to its physical location.
+    const provisional = !!intakeStore.origin;
+    intakeStore.cwd = value.cwd;
+    intakeStore.target = created ? null : { taskDir: value.taskDir, cwd: value.cwd };
+    if (created) { intakeStore.draft = null; intakeStore.origin = null; intakeStore.open = false; intakeStore.draftWorkspace = null; }
+    // A confirmed empty directory is useful retry evidence, but does not
+    // replace an existing task with a task that has not been created yet.
+    return !provisional || created;
+  };
   // Discovery is a separate read lane: it cannot select a task, clear a pending
   // mutation, or invalidate an in-flight status/configuration response.
   const discover = async () => {
@@ -546,31 +574,39 @@ function createControl(execute, pendingOperations, isDisposed) {
     });
   };
   const run = async (action, selection, probe = false, extra = {}) => {
-    if (isDisposed() || active || (mutates(action) && source.getSnapshot().uncertainty)) return;
-    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action)) return;
+    if (isDisposed() || active || (mutates(action, extra) && source.getSnapshot().uncertainty)) return;
+    if (!['status', 'launch', 'start', 'stop', 'step', 'config', 'doctor', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'investigate', 'planning', 'images', 'models'].includes(action)) return;
     if (action === 'config-save' && source.getSnapshot().configUncertainty) return;
     if (pathProblem(selection.taskDir) || pathProblem(selection.cwd)) return;
     const target = selectionOf(selection);
     if (['status', 'launch', 'start', 'stop', 'step', 'session', 'history', 'metrics', 'delivery', 'deliver', 'node', 'investigate', 'planning'].includes(action) && !target.taskDir) return;
-    select(selection);
-    if (['launch', 'start', 'planning'].includes(action) && source.getSnapshot().stale) return;
+    const provisionalIntake = !!intakeStore.origin && (
+      intakeStore.target?.taskDir === target.taskDir && intakeStore.target.cwd === target.cwd &&
+        (action === 'status' || action === 'planning' && extra.planning?.action === 'prepare' || action === 'investigate' && extra.investigation?.action === 'start') ||
+      action === 'images' && extra.intake === true);
+    if (!provisionalIntake) select(selection);
+    if (['launch', 'start', 'planning'].includes(action) && mutates(action, extra) && source.getSnapshot().stale) return;
     const requestEpoch = epoch;
-    const requestKey = selected;
-    const queuedReceipt = action === 'status' && source.getSnapshot().planningReceipt?.status === 'queued' &&
-      source.getSnapshot().planningReceipt?.['request-id'];
+    const requestKey = provisionalIntake ? selectionKey(target) : selected;
+    const previousUncertainty = source.getSnapshot().uncertainty;
+    const queuedReceipt = action === 'status' && !provisionalIntake && (packetEditAction(previousUncertainty?.planningAction) ? previousUncertainty.planningRequestID :
+      source.getSnapshot().planningReceipt?.status === 'queued' && source.getSnapshot().planningReceipt?.['request-id']);
     const request = { action: queuedReceipt ? 'planning' : action, ...(target.taskDir ? { taskDir: target.taskDir } : {}),
       ...(target.cwd ? { cwd: target.cwd } : {}), ...(probe ? { probe: true } : {}),
       ...(action === 'launch' ? { mode: selection.mode ?? 'auto' } : {}),
       ...(['config-edit', 'config-save'].includes(action) ? { editor: extra.editor } : {}),
       ...(['delivery','deliver'].includes(action) ? { delivery: extra.delivery } : {}),
       ...(action === 'node' ? { packet: extra.packet } : {}),
+      ...(action === 'images' ? { images: extra.images } : {}),
+      ...(action === 'models' ? { models: extra.models } : {}),
       ...(action === 'metrics' && extra.runId ? { runId: extra.runId } : {}),
       ...(action === 'history' ? { sessionKey: extra.sessionKey } : {}),
       ...(action === 'session' ? { session: extra.session } : {}),
       ...(action === 'investigate' ? { investigation: extra.investigation } : {}),
       ...(queuedReceipt ? { planning: { action: 'status', 'request-id': queuedReceipt } } : action === 'planning' ? { planning: extra.planning } : {}),
       ...(action === 'step' ? { only: extra.only, packet: extra.packet, revision: extra.revision, ...(extra.retryReason ? { retryReason: extra.retryReason } : {}) } : {}) };
-    const operation = { action, probe, ...target, key: requestKey };
+    const operation = { action, probe, ...target, key: requestKey,
+      ...(extra.planning ? { planningAction: extra.planning.action, planningRequestID: extra.planning['request-id'] } : {}) };
     active = operation;
     source.update(draft => { draft.pending = operation; draft.error = null; });
     let timer;
@@ -583,15 +619,31 @@ function createControl(execute, pendingOperations, isDisposed) {
       });
       const value = await Promise.race([execute(request), deadline]);
       if (isDisposed() || requestEpoch !== epoch) return;
+      const uncertain = source.getSnapshot().uncertainty;
+      const queued = source.getSnapshot().planningReceipt;
+      const expectedEdit = packetEditAction(uncertain?.planningAction) ? { action: uncertain.planningAction, id: uncertain.planningRequestID }
+        : packetEditAction(queued?.action) && queued.status === 'queued' ? { action: queued.action, id: queued['request-id'] } : null;
+      const matchingPacketEditRead = !!expectedEdit && request.planning?.action === 'status' && request.planning['request-id'] === expectedEdit.id;
+      if (matchingPacketEditRead && (value['planning-control']?.action !== expectedEdit.action || value['planning-control']?.['request-id'] !== expectedEdit.id)) {
+        throw new Error('Packet reconciliation receipt does not match the original action and request ID');
+      }
+      const remappedIntake = remapIntake(value, request.taskDir, request.cwd, !!value.state || !!value.preparation);
+      if (remappedIntake) {
+        const canonical = { taskDir: value.taskDir, cwd: value.cwd };
+        setIntakeSelection(canonical);
+        select(canonical);
+      }
       source.update(draft => {
         if (['status', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'node', 'investigate', 'planning'].includes(action)) {
           // A remote snapshot is bound to the previously observed candidate.
           // A new engine revision requires another explicit remote inspection.
           if (draft.delivery && value.state?.revision !== draft.status?.state?.revision) draft.deliveryStale = true;
-          draft.status = value;
-          draft.checkedAt = Date.now();
+          if (!provisionalIntake || remappedIntake) {
+            draft.status = value;
+            draft.checkedAt = Date.now();
+          }
           draft.stale = false;
-          if (action !== 'node' && draft.uncertainty?.key === requestKey) draft.uncertainty = null;
+          if (action !== 'node' && draft.uncertainty?.key === requestKey && (!packetEditAction(draft.uncertainty.planningAction) || matchingPacketEditRead && ['applied', 'unchanged', 'rejected'].includes(value['planning-control']?.status))) draft.uncertainty = null;
         }
         if (['config', 'doctor'].includes(action)) {
           draft.configuration = value.configuration ?? value.diagnostic?.configuration ?? null;
@@ -600,24 +652,33 @@ function createControl(execute, pendingOperations, isDisposed) {
         if (['config-edit', 'config-save'].includes(action)) { draft.editor = value.editor; draft.configUncertainty = false; }
         if (['delivery','deliver'].includes(action)) { draft.delivery = value.delivery; draft.deliveryStale = false; }
         if (action === 'node') draft.node = value.node;
+        if (action === 'config-save' || action === 'planning' && mutates(action, extra)) draft.node = null;
         if (action === 'history') draft.history = value.history;
         if (action === 'runs') draft.runs = value.runs;
         if (action === 'metrics') draft.metrics = value.metrics;
         if (value['planning-control']) draft.planningReceipt = value['planning-control'];
-        draft.raw = value;
+        // Preview bytes belong only to the requesting mounted component.
+        // The retained conversation controller stores reference metadata only.
+        draft.raw = action === 'images' ? { ...value, inputImages: { references: value.inputImages.references } } : value;
       });
       return value;
     } catch (error) {
-      if (isDisposed() || requestEpoch !== epoch) return;
+      const detail = error instanceof Error ? error.message : String(error);
+      const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
+      // This local outcome lets the originating retained draft settle even if
+      // its view has unmounted. It cannot be confused with an engine envelope,
+      // and only a typed, confirmed pre-dispatch rejection carries it.
+      const outcome = action === 'planning' && packetEditAction(extra.planning?.action) && dispatch === 'not-dispatched'
+        ? { controlFailure: { ...operation, detail, dispatch } } : undefined;
+      if (isDisposed() || requestEpoch !== epoch) return outcome;
       source.update(draft => {
-        const detail = error instanceof Error ? error.message : String(error);
-        const dispatch = error instanceof NotDispatchedControlReply ? 'not-dispatched' : 'unknown';
-        draft.error = { action, probe, detail, dispatch };
+        draft.error = { ...operation, detail, dispatch };
         if (['delivery','deliver'].includes(action)) draft.deliveryStale = true;
-        if (action === 'status' || (mutates(action) && dispatch === 'unknown')) draft.stale = true;
+        if (action === 'status' || (mutates(action, extra) && dispatch === 'unknown')) draft.stale = true;
         if (action === 'config-save' && dispatch === 'unknown') draft.configUncertainty = true;
-        else if (mutates(action) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
+        else if (mutates(action, extra) && dispatch === 'unknown') draft.uncertainty = { ...operation, detail };
       });
+      return outcome;
     } finally {
       clearTimeout(timer);
       pendingOperations.delete(disposeWait);
@@ -639,10 +700,16 @@ function createControl(execute, pendingOperations, isDisposed) {
         (value.operationId === lastAssociation.operationId && value.outcome === lastAssociation.outcome &&
          value.taskDir === lastAssociation.taskDir && value.cwd === lastAssociation.cwd))) return;
     if (active) { deferredAssociation = [value, setSelection]; return; }
+    const provisionalIntake = !!intakeStore.origin && !!intakeStore.target && (
+      value.taskDir === intakeStore.target.taskDir && value.cwd === intakeStore.target.cwd ||
+      value.requestedTaskDir === intakeStore.target.taskDir && value.requestedCwd === intakeStore.target.cwd);
+    const confirmedIntakeIdentity = provisionalIntake && value.outcome === 'confirmed' &&
+      value.requestedTaskDir === intakeStore.target.taskDir && value.requestedCwd === intakeStore.target.cwd;
+    const remappedIntake = value.outcome === 'confirmed' && remapIntake(value, value.requestedTaskDir, value.requestedCwd);
     const next = { taskDir: value.taskDir, cwd: value.cwd };
     const sameOperation = lastAssociation?.operationId === value.operationId;
-    const shouldSelect = !lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
-      (sameOperation && selected === associatedKey);
+    const shouldSelect = !provisionalIntake && (!lastAssociation || (!sameOperation && (mutates(value.action) || value.action === 'status' && value.operationId.startsWith('tool:'))) ||
+      (sameOperation && selected === associatedKey));
     lastAssociation = value;
     if (shouldSelect) {
       setSelection(next);
@@ -651,9 +718,14 @@ function createControl(execute, pendingOperations, isDisposed) {
     }
     source.update(draft => {
       if (value.outcome !== 'confirmed' && mutates(value.action)) {
-        draft.uncertainty = { ...next, action: value.action, operationId: value.operationId,
+        const original = provisionalIntake && draft.uncertainty?.key === selectionKey(next) ? draft.uncertainty : {};
+        draft.uncertainty = { ...original, ...next, action: value.action, operationId: value.operationId,
           key: selectionKey(next), detail: value.message || '' };
         draft.stale = true;
+      } else if ((remappedIntake || confirmedIntakeIdentity) && draft.uncertainty?.taskDir === value.requestedTaskDir && draft.uncertainty.cwd === value.requestedCwd) {
+        // Carry the original barrier to the proven canonical identity. Only
+        // the following successful live status read releases this uncertainty.
+        draft.uncertainty = { ...draft.uncertainty, ...next, key: selectionKey(next) };
       } else if (draft.uncertainty && (draft.uncertainty.operationId === value.operationId ||
           draft.uncertainty.key === selectionKey(next))) {
         draft.uncertainty = null;
@@ -661,10 +733,10 @@ function createControl(execute, pendingOperations, isDisposed) {
     });
     // Logs recover identity, never a live running state. A confirmed association
     // gets one fresh read; pending/unknown mutations require explicit reconcile.
-    if (shouldSelect && value.outcome === 'confirmed' &&
+    if ((shouldSelect || confirmedIntakeIdentity) && value.outcome === 'confirmed' &&
         (mutates(value.action) || !source.getSnapshot().status)) void run('status', next);
   };
-  return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action) };
+  return { source, select, run, discover, associate, isMutating: () => active !== null && mutates(active.action, { planning: { action: active.planningAction } }) };
 }
 
 function Configuration({ value, t }) {
@@ -680,8 +752,11 @@ function Configuration({ value, t }) {
       h('h4', { className: css.bindingTitle }, t('cfgJev')),
       h('p', null, t(value.jev.enabled === true ? 'consoleJEVConfiguredOn' : 'consoleJEVConfiguredOff')),
       value.jev.enabled === true && h('dl', { className: css.properties },
-        field('consoleJEVVersion', textValue(value.jev.model), true),
-        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown')))),
+        value.jev.backend !== 'subscription' && field('consoleJEVVersion', textValue(value.jev.model), true),
+        value.jev.backend === 'subscription' && field('profile', textValue(value.jevBinding?.profile || value.jev.profile), true),
+        field('cfgJevMaxCalls', value.jev['max-calls'] ?? t('unknown'))),
+      value.jev.enabled === true && value.jev.backend === 'subscription' &&
+        h('div', { 'data-jev-binding': true }, value.jevBinding ? h(BindingProperties, { binding: value.jevBinding, t }) : h('p', { className: css.meta }, t('wbBindingMissing')))),
     h('div', { className: css.bindings }, ...(value.bindings ?? []).map((binding, index) =>
       h('article', { className: css.binding, key: textValue(binding?.id, String(index)) },
         h('div', { className: css.bindingHeader },
@@ -695,7 +770,7 @@ function Configuration({ value, t }) {
           field('harness', textValue(binding?.harness), true),
           field('provider', textValue(binding?.provider, '') || (binding?.harness === 'dsh' ? t('notConfigured') : t('nativeProvider'))),
           field('channel', textValue(binding?.channel, '') || t('notConfigured')),
-          field('thinking', textValue(binding?.thinking, '') || t('default')),
+          field('thinking', bindingEffortLabel(binding, t)),
           field('permission', Object.hasOwn(permissionLabels, binding?.permissionMode) ?
             t(permissionLabels[binding.permissionMode]) : textValue(binding?.permissionMode, '') || t('undeclared')),
           field('session', sessionModeLabel(binding, t)))))));
@@ -799,10 +874,10 @@ function TaskStatus({ control, selection, t }) {
 function Feedback({ control, selection, reconcile, t }) {
   const busy = control.pending !== null;
   const error = control.error &&
-    (!mutates(control.error.action) || control.error.dispatch === 'not-dispatched') ? control.error : null;
+    (!mutates(control.error.action, { planning: { action: control.error.planningAction } }) || control.error.dispatch === 'not-dispatched') ? control.error : null;
   const mode = control.uncertainty ? 'uncertain' : error ? 'error' : busy ? 'loading' : 'idle';
   const otherSelection = busy && control.pending.key !== selectionKey(selectionOf(selection));
-  const locked = busy && mutates(control.pending.action);
+  const locked = busy && mutates(control.pending.action, { planning: { action: control.pending.planningAction } });
   const pendingLabel = busy ? t(otherSelection ? 'busyOther' : 'busy', {
     action: t(actionKey(control.pending)),
   }) : '';
@@ -848,9 +923,17 @@ function consoleReadString(value, label) {
   return value;
 }
 function consoleReadInput(value) {
-  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning'], 'console read request');
-  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning'].includes(value.action)) throw new Error('Console Remote accepts reads only');
+  consoleReadObject(value, ['action', 'taskDir', 'cwd', 'probe', 'editor', 'packet', 'runId', 'sessionKey', 'delivery', 'planning', 'images', 'models'], 'console read request');
+  if (!['runs', 'status', 'config', 'config-edit', 'metrics', 'history', 'node', 'delivery', 'doctor', 'planning', 'images', 'models'].includes(value.action)) throw new Error('Console Remote accepts reads only');
   const output = { action: value.action };
+  if (value.action === 'models') {
+    if (!validModelCatalogRequest(value.models)) throw new Error('Invalid model catalog request');
+    output.models = { ...value.models };
+  } else if (value.models !== undefined) throw new Error('Model selectors require models');
+  if (value.action === 'images') {
+    if (!validImageSelection(value.images)) throw new Error('Invalid repository image selection');
+    output.images = { paths: [...value.images.paths] };
+  } else if (value.images !== undefined) throw new Error('Image paths require images');
   for (const key of ['taskDir', 'cwd', 'packet', 'runId', 'sessionKey']) {
     if (value[key] !== undefined) output[key] = consoleReadString(value[key], key);
   }
@@ -939,19 +1022,22 @@ exports.apply = function apply(ctx) {
       let binding = bindings.get(actions);
       let control = binding?.control;
       if (!control) {
+        const intakeStore = { draft: null, target: null, cwd: '' };
         control = createControl(async request => {
           const value = readReply(await (mutates(request.action) && !(request.action === 'planning' && request.planning?.action === 'status') || request.action === 'status' && control?.source.getSnapshot().uncertainty
             ? ctx.remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), [])
             : readsReady.then(readConsole => readConsole(sessionId, request))), request);
           if (Array.isArray(value.runs)) value.runs = value.runs.filter(item => item.hostSessionId === sessionId);
           return value;
-        }, pendingOperations, () => disposed);
-        binding = { control, configDrafts: new Map() };
+        }, pendingOperations, () => disposed, intakeStore, actions.setSelection);
+        binding = { control, configDrafts: new Map(), packetDrafts: new Map(), intakeStore };
         bindings.set(actions, binding);
       }
       return {
         hostSessionID: sessionId,
         configDrafts: binding.configDrafts,
+        packetDrafts: binding.packetDrafts,
+        intakeStore: binding.intakeStore,
         hooks: { control: control.source },
         changeSelection: (next, requireIdle = false) => {
           const current = control.source.getSnapshot();
@@ -967,7 +1053,9 @@ exports.apply = function apply(ctx) {
           const outcome = control.source.getSnapshot().uncertainty;
           if (!outcome || control.source.getSnapshot().pending) return;
           const next = { taskDir: outcome.taskDir, cwd: outcome.cwd };
-          actions.setSelection(next);
+          // A separate task's lost create receipt is reconciled without
+          // abandoning the currently selected task before Go confirms it.
+          if (!(binding.intakeStore.origin && binding.intakeStore.target?.taskDir === next.taskDir && binding.intakeStore.target.cwd === next.cwd)) actions.setSelection(next);
           return control.run('status', next);
         },
       };

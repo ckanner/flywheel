@@ -1,170 +1,126 @@
-# Models, reasoning effort, and accounts
+# Models, reasoning effort, and subscriptions
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/model-policy.md)
 
-Flywheel selects a model through a stage or execution-route binding. The
-[default template](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json) is the source
-of truth for new configurations; an existing installation keeps its own
-configuration. These defaults are an editable baseline. The repository does not
-establish that they are the optimum for representative tasks, or that increasing
-reasoning effort improves every delivery.
+The [default template](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.config.example.json) uses Gemini, Claude, Codex and Kimi through native subscription clients. It is an editable engineering baseline, not a measured ranking or an account-entitlement guarantee. Existing configurations retain their bindings until explicit migration. The [approved proposal](../plans/2026-11-19-subscription-cli-workflows.en.md) records the research and rationale; this guide describes the implementation.
 
 ## Default bindings
 
-| Stage or route | Harness | Model | Access path | Effort |
-|---|---|---|---|---|
-| Plan | `kimi` | `kimi-code/k3.1-pro` | Kimi Code subscription through the native CLI | `high` |
-| Execute: default | `dsh` | `deepseek-flash` | DSH `deepseek-account` | `high` |
-| Execute: frontend | `kimi` | `kimi-code/k3.1-pro` | Kimi Code subscription through the native CLI | `high` |
-| Execute: hard | `codex-pro` | `gpt-6.1-sol` | Codex login through the public machine API | `high` |
-| Review | `dsh` | `gpt-6.1-sol` | DSH `chatgpt` provider | `high` |
-| Judge | `dsh` | `gpt-6-astra` | DSH `chatgpt` provider | `high` |
-| Intake | `dsh` | `deepseek-flash` | DSH `deepseek-account` | `low` |
-| Garden | `kimi` | `kimi-code/k3.1-pro` | Kimi Code subscription through the native CLI | `high` |
+| Stage or route | Profile | Harness | Exact model | Effort |
+| --- | --- | --- | --- | --- |
+| System design | `carbon` | `antigravity` | `gemini-4-carbon-high` | `high` |
+| System design review | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| Milestone / implementation planning | `opus-plan` | `claude-code-pro` | `claude-opus-5-5` | `high` |
+| Plan review | `sol-plan` | `codex-pro` | `gpt-6.2-sol` | `medium` |
+| Compact design and single-packet plan | `hydrogen-local` | `antigravity` | `gemini-4-hydrogen-medium` | `medium` |
+| Independent compact joint review | `sol-plan` | `codex-pro` | `gpt-6.2-sol` | `medium` |
+| Execute: default | `hydrogen` | `antigravity` | `gemini-4-hydrogen-high` | `high` |
+| Execute: complex | `neon` | `antigravity` | `gemini-4-neon-high` | `high` |
+| Execute: frontend / multimodal | `opus-ui` | `claude-code-pro` | `claude-opus-5-5` | `medium` |
+| Execute: backend | `sol` | `codex-pro` | `gpt-6.2-sol` | `high` |
+| Execute: batch | `kimi` | `kimi` native agent | `kimi-code/k3.1-pro` | `high` |
+| Execute: hard | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| Code Review | `sol` | `codex-pro` | `gpt-6.2-sol` | `high` |
+| Milestone Judge | `astra` | `codex-pro` | `gpt-6.2-astra` | `high` |
+| Intake | `hydrogen-summary` | `antigravity` | `gemini-4-hydrogen-low` | `low` |
+| Investigation analysis | `neon` | `antigravity`, evidence-only | `gemini-4-neon-high` | `high` |
+| Garden | `kimi` | `kimi` native agent | `kimi-code/k3.1-pro` | `high` |
+| Optional JEV decisions | `hydrogen-local` | `antigravity`, evidence-only | `gemini-4-hydrogen-medium` | `medium` |
 
-The harness owns the agent/tool loop. A DSH `provider` selects its native LLM
-adapter, while a `channel` names the configured account/credential path. A
-`codex-pro` harness is not a DSH provider called `subagent_codex_pro`. Kimi uses
-its native CLI, not ACP. Auto, Quick, and Full do not change these bindings or
-increase effort automatically; see [Configuration](configuration.md).
+JEV is **off by default**. The additional `fable` profile provides `claude-fable-5-2 / high`, and `carbon-explore` provides `gemini-4-carbon-medium / medium`. Neither is an automatic fallback. Select them through an explicit binding. Native model unavailability fails visibly rather than selecting another paid route.
 
-Claude Code Pro is available as an [optional backend](claude-code-pro.md), with
-no default stage or route assigned. Its profile uses an explicit native model
-and effort rather than an implicit replacement for another subscription.
+The approved proposal initially assigned JEV to Sol medium. This implementation
+uses Hydrogen medium because the Antigravity adapter can verify an empty native
+managed custom agent and tool catalog before dispatch. The current Codex adapter does not expose an equivalent
+evidence-only admission contract. This is a capability constraint, not a claim
+that Hydrogen makes better decisions; JEV remains off unless explicitly enabled.
+
+Routine implementation and short decisions use a smaller Gemini profile, Carbon handles system design, and Neon handles difficult implementation and evidence analysis. Independent review uses Codex; Claude handles plan refinement and interface work; Kimi handles declared batch work and task synthesis. These stage-specific choices have not been proven optimal in live Flywheel A/B tests.
+
+`multimodal` selects the Claude route. A packet's versioned `input-images` contract supplies actual PNG/JPEG/GIF/WebP bytes through Execute → worker → Claude's public machine API → Agent SDK. Each repository-relative reference binds its MIME type and SHA-256; the engine validates the file, decoding and bounds before dispatch and retains its identity for verification and recovery. Up to four images are allowed, at most 4 MiB each and 8 MiB combined. Text filenames and DSH chat attachments are not imported automatically. The independent default Review checks code, acceptance and frozen references; it does not claim to see those images. Antigravity's first adapter accepts text only. See [image inputs](image-inputs.md), [Claude](claude-code-pro.md) and [Antigravity](antigravity.md).
+
+## Initial selection and failure adaptation
+
+The defaults also provide complete execution candidates while retaining the initial bindings above. `jev.enabled` remains off. Each route uses an empty `quality-order` and `max-switches:2`, so JEV-off defaults do not automatically walk the candidate list. With JEV enabled, the first Execute and confirmed failure boundaries can select among candidates admitted by Go; this is not reclassification before every stage.
+
+| Route | Initial binding and allowed alternatives |
+| --- | --- |
+| default | Hydrogen high / Hydrogen medium / Orchestrator Neon |
+| complex | Neon high / Orchestrator Neon / Neon high Swarm |
+| frontend, multimodal | Opus medium / Opus high |
+| backend | Sol high / Sol medium / Astra high |
+| batch | Kimi high / Kimi max / Neon high Swarm |
+| hard | Astra high / Carbon high / Orchestrator Carbon |
+
+Swarm is eligible only with Full, no images, and a reviewed packet `collaboration` split whose child write scopes are disjoint and remain within approved scope. Ordinary subagents, fixed two-model Orchestrator, and Swarm are different strategies. All three Orchestrator options are manually selectable; see [Antigravity](antigravity.md) for exact identifiers. Their fixed `thinking:""` omits `--effort`; a selector cannot add high/xhigh. Image candidates retain only Claude bindings with actual image transport.
+
+Changing model, effort, or native configuration freezes the complete binding, cold-starts, and records the reason while sharing existing attempt, switch, and decision budgets. JEV does not inspect live plan balances or assume measured candidate quality or speed. These alternatives are not a global model ranking. A sole legal option uses the initial baseline; unknown execution or cleanup reconciles first. See [JEV](jev.md).
 
 ## Planning roles and the current conversation
 
-New/Task register a thin brief. The host conversation handles facts and discussion;
-the engine performs actual design. `loops.design-plan` inherits `loops.plan` when
-absent; `loops.design-review` and `loops.plan-review` inherit `loops.review`. Explicit
-overrides can choose a different supported model, effort or native profile without
-changing the source role. `config inspect` reports the resolved `bindingSource`.
-The configuration view shows these inherited rows without adding them to saved
-configuration until edited. Session scope and permission overrides remain separate.
+New/Task record a brief with repository facts. The engine owns design and review. `design-granularity:compact` requires concrete evidence, a reason and no explicit Full request. It creates one design plus one packet together, followed by one independent joint review of their exact versions. Uncertain scope, architecture, migrations and multi-part work use `system`; the engine may upgrade compact preparation without resetting authority or budgets.
 
-Complex design quality should be evaluated at the design/review bindings, not by
-requiring the user to switch the host conversation before every New. Existing
-model and effort defaults remain unchanged; model choice is still an engineering
-starting point, not measured optimality. See [Reviewed planning](reviewed-planning.md).
+`planning.compact` selects its two preparation bindings. System preparation uses `loops.design-plan`, `loops.design-review`, `loops.plan` and `loops.plan-review`. Legacy omissions retain the documented inheritance; `config inspect` reports the binding source. Source roles retain their own permissions and session scopes.
+
+Auto chooses Quick or Full implementation from the reviewed contract. It is not a third execution chain or an approval policy. `review-first` stops for exact-version approval; `delegated` continues under retained implementation authority within its envelope. Compact tasks can also be review-first. See [Reviewed planning](reviewed-planning.md) and [Workflow](workflow.md).
 
 ## Account selection
 
-The default and `subscriptions` preset use `deepseek-account` with
-`deepseek-flash`. Standard DSH desktop and SDK profiles under the same DSH home
-can share account authorization without an additional API key. Custom profiles
-must load the account service and adapter. Independent SDK calls still supply
-an explicit provider/model; changing the desktop chat model does not update
-Flywheel's bindings.
+The preset declares `subscription:{version:1,mode:"subscription-only"}`. Reachable loops, routes, compact bindings, Judge panel, execution alternatives and fallback channels must use the four admitted native harnesses. Unused custom definitions can remain in a file without becoming fallbacks. The default has no fallback and no DeepSeek API or account route.
 
-`deepseek-official` is a separate API-key provider, selected only by explicit
-configuration. The default preset does not switch payment channels after an
-authentication or quota failure. User-configured fallback chains retain their
-own policy. ChatGPT and Kimi subscriptions likewise require the corresponding
-installed adapter or CLI and its supported login flow.
+| Harness | Admission evidence | Evidence limit |
+| --- | --- | --- |
+| Antigravity | Native account route; API/ADC/GCP/custom models rejected; credits fallback disabled; observed model and local controls checked | Does not attest entitlement, quota, external-tool charges or a whole-run billing lock |
+| Claude Code Pro 0.7.0 | Same official CLI process confirms a supported first-party subscription and extra usage disabled before the prompt; alternate API/gateway routes rejected | Pre-prompt snapshot, not an atomic billing lock; success also requires the observed root model |
+| Codex Pro | Same official app-server checked with `account/read` and `config/read`; ChatGPT login and native OpenAI routing required | Does not establish remaining quota or actual subscription charges |
+| Kimi native agent | Official redacted providers/config APIs confirm managed Kimi Code OAuth and no API-key route; separate search/fetch and subagents disabled | Unexposed fields, including custom headers, are not attested; no whole-account billing guarantee |
 
-Upgrades preserve existing user files. To adopt the subscription preset, inspect
-the effective complete configuration, preview the migration, then explicitly
-apply it as described in [Configuration](configuration.md). Restart the engine
-afterward; neither installing packages nor changing a desktop chat model
-migrates a running task.
+Kimi uses `kimi-subscription-agent`: native agent mode, Agents disabled. Strict calls disable `WebSearch` and `FetchURL`, whose separate credential billing cannot be verified with the public account API. Kimi print is rejected before strict subscription dispatch; configurations without this policy retain legacy behavior.
+
+Adapters use installed native clients and supported login. They do not copy tokens or create API accounts. Auth/quota errors stop the call without enabling credits, extra usage or API fallback. Doctor checks local compatibility without inference; live account access remains separate acceptance.
+
+Preview and explicitly apply `flywheel config migrate --preset subscription-cli` as described in [Configuration](configuration.md). Migration preserves permissions, verification, budgets and scheduling. A retained role-based policy may need an explicit authorized change before full-access native bindings can run. The historical `subscriptions` preset remains a compatibility migration; it does not select this new table.
 
 ## Reasoning effort is backend-specific
 
-The following capabilities were checked for the documented integrations on
-**2026-11-05**. They are compatibility evidence for those snapshots, not a live
-catalog or an account-entitlement check.
+| Integration | Adapter selections | Interpretation |
+| --- | --- | --- |
+| Gemini Hydrogen / Neon | `low`, `medium`, `high`, `xhigh` | Exact model suffix must agree with `thinking` |
+| Gemini Carbon / Argon | `low`, `medium`, `high` | `xhigh` is rejected, not remapped |
+| Orchestrator Neon / Carbon / Argon | Fixed, `thinking:""` | Named planner and Hydrogen hand off in one conversation; no `--effort` |
+| Codex Pro | `low`, `medium`, `high`, `xhigh`, `max` | Specific model and native-client support still govern acceptance |
+| Claude Code Pro | `low`, `medium`, `high`, `xhigh`, `max` | Explicit native model/effort; no automatic model fallback |
+| Kimi K3.1 Pro | Native `low`, `high`, `max` | Compatibility aliases do not form a cross-provider scale |
 
-| Checked integration | Accepted request values | Notes |
-|---|---|---|
-| GPT-6.1 Sol / Codex Pro 0.10.2 | `low`, `medium`, `high`, `xhigh`, `max` | The machine API forwards the selected effort |
-| Sol and Astra / DSH ChatGPT provider | `low`, `medium`, `high`, `xhigh`, `max` | The provider serializes `reasoning.effort` |
-| Kimi K3.1 Pro / native CLI | `low`, `high`, `max` | Thinking cannot be disabled; compatibility aliases `xhigh`, `max`, and `ultra` resolve to native `max` |
-| DeepSeek Flash / checked DSH adapter | `off`, `low`, `high`, `max` | This adapter rejects `medium` and `xhigh` |
+Gemini choices follow the approved research, Google's [model-selection guide](https://aistudio.google.com/docs/choosing-a-model) and [Antigravity CLI reference](https://antigravity.google/docs/cli/reference/). The installed native catalog identifies the client's reported model IDs; it does not establish account entitlement or remaining quota. Parameter acceptance is separate from independent server evidence of effective reasoning strength; receipts preserve that distinction.
 
-Names do not form a common scale across providers. In particular, a generic
-API's compatibility mapping does not override the DSH adapter's own input
-validation. Use `max`, not `xhigh`, when evaluating Flash's higher supported
-level on this path. The adapter must reject an unsupported selection rather
-than silently choose another model or effort.
+In **Settings → Models and sessions**, open a stage or complete candidate,
+choose its Provider and use **Read model catalog** for an explicit metadata-only
+read. Antigravity, Codex Pro and Claude Code Pro expose their native catalog
+sources. A missing or unsupported catalog leaves manual exact IDs available.
+The view displays source and scope, retains account entitlement as unknown, and
+only uses effort choices/defaults reported by the catalog. Fixed Orchestrator
+entries retain empty effort. Changing Provider or channel invalidates the
+displayed catalog; a late result from another task is ignored.
 
-Compatibility references: [Kimi model documentation](https://www.kimi.com/code/docs/en/kimi-code/models),
-[DeepSeek thinking](https://api-docs.deepseek.com/guides/thinking_mode/),
-[Sol model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
-[Astra model reference](https://developers.openai.com/api/docs/models/gpt-6-astra),
-[DSH DeepSeek configuration](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek/src/config.ts),
-and [serialization](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/llm-deepseek/src/serialize.ts).
-The checked ChatGPT provider is 0.1.17 at `388868f91bcdc05795fb94d21b868ded6d7219c9`:
-[model catalog](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/models/served.ts)
-and [request serialization](https://github.com/ckanner/dsh-plugin-chatgpt/blob/388868f91bcdc05795fb94d21b868ded6d7219c9/src/convert/request.ts).
+Complete execution candidates and their route allowlists, quality order, switch
+budget and channel fallback mappings also have structured controls. Permission
+changes require explicit route authorization and isolate shared candidates;
+session policy is an explicit field on each candidate. These are configuration
+edits for future starts, not changes to already frozen running bindings. See
+[configuration editing](configuration.md#editing-configuration-in-the-workflow-console)
+for shared-reference and fallback safeguards.
 
 ## Choose and evaluate a baseline
 
-Seven of the eight default bindings use `high`; Intake uses `low`. Keeping a
-stable starting point makes comparisons attributable to a particular stage.
-The following candidates are engineering judgments based on stage
-responsibilities, not measured Flywheel quality results.
+Hold model, harness, task, context, permission and acceptance fixed when comparing effort. Measure first-pass acceptance, missed defects, false alarms, total time including rework and known/unknown usage. Subscription prices do not determine per-task capacity; API-equivalent estimates are not subscription charges. Antigravity conversation counters cannot safely be summed as per-call usage, so normalized totals remain unknown.
 
-| Stage | Candidate comparison |
-|---|---|
-| Intake | Compare `high` for ambiguous input, merging, or classification |
-| Plan | Compare `max` for difficult architecture, dependencies, or acceptance design |
-| Execute: default | Compare Flash `max` for difficult implementation or root-cause analysis |
-| Execute: frontend | Compare Kimi `max` for complex interaction state or cross-component consistency |
-| Execute: hard | Compare Sol `xhigh` first; evaluate `max` on the hardest tasks |
-| Review | Compare `xhigh` for concurrency, consistency, or permission reviews |
-| Judge | Compare Astra `xhigh` for high-impact milestone acceptance, then `max` where justified |
-| Garden | Compare `low` for routine organization and `max` for difficult cross-task synthesis |
-
-Change `thinking` in the effective complete configuration. For example, change
-`routes.hard.thinking` to affect only hard execution, or
-`loops.judge.thinking` to affect only Judge. A stage override avoids changing all
-consumers of a shared profile. Do not create an incomplete task configuration
-containing only these fields: configuration discovery selects one file rather
-than merging files.
-
-Hold the model, harness, context, task, permissions, and acceptance conditions
-fixed. Measure delivery success, first-pass acceptance, missed defects and false
-alarms, total time including rework, and input/output/reasoning/cache usage.
-Record observable subscription quota separately and preserve unknown values.
-API prices do not directly determine subscription task capacity. The
-[session evaluation guide](session-evaluation.md) describes the repository's
-paired experiment tooling; effort comparisons need their own fixed conditions.
+Change a stage binding to affect only that stage; a shared profile affects all consumers. Configuration selects one complete file without deep merging. Do not create a partial task file to change one effort field.
 
 ## Bounded model and effort experiments
 
-The optional [execution policy](configuration.md#bounded-execution-policy-opt-in)
-declares complete allowed bindings per route, including account, effort,
-permission and history mode. Auto/Quick/Full do not enable it. A confirmed
-repeated L1 stall may advance the declared experiment order within existing
-attempt/token budgets and an explicit switch limit. This deterministic rule
-does not prove the next model is better. Channel errors use separately declared
-fallbacks; neither mechanism may select an undeclared model or payment channel.
-
-When the single [JEV switch](jev.md) is enabled, a confirmed failure can also
-offer the already allowed bindings as decision candidates. The engine checks
-the frozen allowlist, permission, remaining attempts and switch budget before
-adoption. No extra JEV model-routing switch is required. Without an allowed
-alternative, the configured binding stays in use. A semantic choice is recorded
-as a choice, not as measured proof that the selected model is faster or better.
-
-Effort changes cold-start the role and record complete before/after bindings.
-Comparisons must include rereading, startup and actual known/unknown usage and
-cost. Offline tests run real engine repair and recovery paths with controlled
-driver results; they do not establish live model quality or speed. Use matched
-real tasks with frozen oracles before changing defaults or claiming savings.
+The opt-in [execution policy](configuration.md#bounded-execution-policy-opt-in) declares complete allowed bindings per route and a finite switch budget. Confirmed repeated L1 stalls may advance the declared order within original attempt/token limits. JEV, when enabled, selects only from that same frozen allowlist. Neither mechanism creates permissions, expands scope, resets counters or enables undeclared accounts. Unknown calls must settle before switching.
 
 ## Interpret configuration and quality evidence
 
-Source and offline protocol tests establish field transmission and error
-behavior. SDK or machine-API acceptance establishes acceptance at that interface.
-Independent effective-effort evidence and better delivery quality require
-backend evidence or actual task measurements.
-
-DSH `initialize` validates configuration but returns only server information.
-Flywheel's `ready.reasoningEffort` echoes the request after initialization;
-it is not independent model-server attestation. Codex Pro separates
-`requestedEffort`, `accepted`, and an unknown `effectiveEffort:null`.
-See the [DSH SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/sdk/server/src/server.ts)
-and [Codex Pro machine protocol](https://github.com/ckanner/dsh-subagent-codex-pro/blob/9c7d724cb19dc29457a56f4a4269c24278595d2f/docs/machine.md).
-A no-inference doctor cannot prove account balance, live inference, or the
-benefit of a higher effort setting.
+Source tests establish field transmission and error behavior; candidate installation establishes the packaged boundary. Neither proves live model quality, quota or account access. CLI acceptance, independently observed settings and improved delivery quality are separate evidence. Missing usage or price never means zero. The [session evaluation guide](session-evaluation.md) describes paired offline engine experiments and their limits.

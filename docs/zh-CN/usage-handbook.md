@@ -56,13 +56,13 @@ npx -y @ckanner/flywheel@latest install
 已有完整安装不必为每个任务重复安装。按[升级说明](getting-started.md)退出和重载
 DSH，并保留原 prefix、profile 和定制设置。CLI、内置引擎和桌面插件需要同版本；
 普通 `npm install` 只放置包文件，完整设置由显式 `install`／`setup` 完成。
-所选后端的登录仍由 DSH、Kimi、Codex 或 Claude 自己提供。
+所选后端的登录仍由 DSH、Antigravity、Kimi、Codex 或 Claude 自己提供。
 
 ### 打开项目并发起任务
 
-1. 在 DSH 打开目标仓库并进入对话。当前模型整理 brief 和反馈；真正设计使用
-   `loops.design-plan`，独立方案/子计划审查用 `loops.design-review` / `loops.plan-review`。
-   缺省绑定继承原 Plan/Review 后端，不要求宿主先完成架构。
+1. 在 DSH 打开目标仓库并进入对话。当前模型整理 brief 和反馈；system 准备使用
+   `loops.design-plan/design-review/plan/plan-review`，compact 使用 `planning.compact`
+   的两个具名 profile。缺省绑定保留原 Plan/Review 继承，不要求宿主先完成架构。
 2. 在对话输入 `/flywheel-task` 加上目标和验收要求。先审方案时改用 `/flywheel-new`。
 3. 助手选择或复用任务分支和执行目录，在其中创建 `docs/<任务名>/`，登记 brief 并启动 Go 规划。
 4. 查看真实启动回执，并打开“统计”之后的 **Flywheel** 会话视图；窄窗口可检查更多菜单。
@@ -139,8 +139,10 @@ flywheel skills read flywheel-run
 | Quick | 一个里程碑、一个可独立验收的 packet，设计与检查充分 | Execute → 必需验证 → 独立最终 Review → 本地 Git 交付 |
 | Full | 多个 packet、未决设计，或权限、迁移、并发等风险 | Plan → 分项执行／验证／Review／交付 → 集成验证与 Judge |
 
-Quick 保留适用的 L1／L2／L3 和仓库必需检查。首次成功路径有 Execute 与最终 Review
-两次实现阶段模型调用；新任务还有初始设计与 Design Review，宿主准备、工具轮次、重试另计。显式 Quick 仍要满足资格；发现新风险
+Quick 保留适用的 L1／L2／L3 和仓库必需检查。准备粒度单独决定：新 compact 任务先
+生成一次设计＋单 packet 联合产物，再做一次独立联合审查，随后 Execute 与最终 Review，
+首次成功路径共四次逻辑模型调用，工具轮次和重试另计。范围或风险不支持 compact 时
+升级 system，保留原任务和授权。显式 Quick 仍要满足资格；发现新风险
 时可以单向升级为 Full。没有工作流元数据的旧任务继续使用 Full。
 
 Auto 选择工作流，模型由执行路由和配置决定。`--only execute` 是单阶段操作，
@@ -185,8 +187,10 @@ Auto 选择工作流，模型由执行路由和配置决定。`--only execute` �
 
 ### 读懂调查状态
 
-`start` 保存调查契约，`run` 才执行 Go 受管取证。收集结束后可能显示
-`awaiting-report`：当前 DSH 助手需要根据观察提交报告，而不是继续重复启动取证。
+`start` 保存调查契约，`run` 才执行 Go 受管取证。默认 `loops.investigate` 使用 Gemini
+Neon 分析已记录观察；`awaiting-report` 可以通过 Run 接续分析，不重复取证。
+`analysis-pending` 先只读核对原调用，结果或清理未知时不再提交 prompt。
+未配置 investigate 绑定的旧配置仍允许宿主提交报告。
 可以在原对话说：
 
 ```text
@@ -194,9 +198,19 @@ Auto 选择工作流，模型由执行路由和配置决定。`--only execute` �
 如果结论有支持且符合此前授权，就在原任务目录继续修复。
 ```
 
-只有原目标为“调查并修复”、结论有支持且待核回执已解决时，才在同一任务执行目录
-准备 Spec／packets 并启动实施，保留原范围、来源和用量。只调查的任务以报告结束；
-结论不足或访问受阻时，应交付局限和缺失证据。JEV 默认关闭也能调查；JEV 不代写报告。
+原目标为“调查并修复”、结论有支持且回执与清理均已解决时，在同一任务执行目录通过
+`control planning` 的 `action:prepare` 登记薄 brief，由 Go 生成设计／实施契约并安排
+独立审查，保留原范围、来源和用量。已有薄 brief 复用，已有旧完整契约保留兼容路径。
+只调查的任务以报告结束；后来明确要求修复时，保留同一报告并单独记录精确设计／范围
+批准，不改写原调查意图。结论不足或访问受阻时交付局限和缺失证据。
+JEV 默认关闭也能调查；它选择合法下一步，不代写报告。
+
+### 收到新证据后继续
+
+在原对话说明“使用这份新日志继续原任务”，由宿主读取当前 revision 和剩余预算，
+通过调查控制提交 `action:continue` 与完整新轮契约，再调一次 Run。task ID、目标、
+意图和修复范围保持不变；旧输入、观察和报告不可覆盖，新报告可引用历轮证据。
+未知调用阻断新轮，预算不补回。对已经结束的报告重复 Run，本身不会新建调查轮。
 
 精确动作、预算与恢复规则见[有界调查](investigation.md)。
 
@@ -312,36 +326,33 @@ New 登记目标并自动跑首轮设计/审查；Plan 默认做真正整体设�
 
 ### 当前模板的模型分工
 
-| 阶段或执行路由 | 后端 | 模型 | 推理等级 |
-| --- | --- | --- | --- |
-| Plan、frontend 执行、Garden | Kimi CLI | `kimi-code/k3.1-pro` | `high` |
-| 默认 Execute | DSH／`deepseek-account` | `deepseek-flash` | `high` |
-| hard Execute | Codex Pro machine API | `gpt-6.1-sol` | `high` |
-| Review | DSH／`chatgpt` | `gpt-6.1-sol` | `high` |
-| Judge | DSH／`chatgpt` | `gpt-6-astra` | `high` |
-| Intake | DSH／`deepseek-account` | `deepseek-flash` | `low` |
+完整模型／profile／effort 映射统一维护在[模型策略默认表](model-policy.md#默认模型分工)。
+Gemini 承担系统设计、紧凑准备、日常／复杂执行和证据分析；Claude 承担实施规划与
+前端工作；Codex 承担独立审查、backend／hard 执行与 Judge；Kimi 承担批量任务和
+Garden。Fable 是显式可选 profile。新预设声明 subscription-only，没有 DeepSeek 或
+API 后备。它是可编辑的工程起点，不保证账号可用性或模型排名。
 
-Claude Code Pro 是可选后端，默认未分配阶段。以上是可编辑的模板绑定，不是账号可用性
-或模型排名的保证。DSH 的 ChatGPT provider 与 Codex CLI 的登录分别管理；桌面当前
-模型不会决定独立 SDK worker 的模型。需要 hard 路由时，可在需求中明确要求对应
-packet 使用该路由，由准备／规划阶段写入契约。详见[模型策略](model-policy.md)。
+通过 `flywheel template flywheel.config.example.json` 读取安装版本模板，用
+`config inspect` 的 `bindingSource` 核对来源。compact 使用 `planning.compact`，
+system 使用 loops；角色会话和权限保持独立。Quick 不改动执行和审查模型。
+Claude 对不选择它的用户仍是 optional peer，但默认规划／前端阶段需要匹配配套包。
 
-新增 `design-plan` 默认继承 Plan，`design-review` 与 `plan-review` 默认继承 Review。
-config inspect 的 `bindingSource` 显示来源；后端绑定继承不复用角色会话或权限覆盖，
-也不自动新增跨渠道 fallback 授权。当前对话只整理 brief/反馈，实际设计模型由上述
-引擎绑定决定，详见[方案设计与审查](reviewed-planning.md)。
+采用新表先预览 `flywheel config migrate --preset subscription-cli --cwd
+/absolute/path/to/repo --json`，确认符合预期后加 `--apply`。历史 `subscriptions`
+预设保持独立。账户与权限规则见[配置指南](configuration.md)。
 
 ### 区分三层配置
 
 | 位置 | 控制什么 |
 | --- | --- |
 | DSH 当前会话与 Agent Preset | 准备任务的模型、当前会话的 PTC 工具组合 |
-| DSH Codex／Claude 插件配置页 | 普通插件工具调用使用的 native 默认值 |
+| DSH Codex／Claude／Antigravity 插件配置页 | 普通插件工具调用的各自配置，不覆盖 Flywheel 的冻结绑定 |
 | Flywheel 有效配置 | 各阶段后端、模型、native profile、权限、调度和会话策略 |
 
 PTC 是 DSH 的工具编排方式；native 指实际 harness 内的 Agent、Team、Workflow 等
 能力，二者可以同时使用。Flywheel 的 DSH native worker 使用共享的 PTC 组合并验证
-真实执行入口；Codex／Claude worker 直接使用公开 machine API。
+真实执行入口；Codex／Claude／Antigravity worker 直接使用公开 machine API，
+Antigravity 通过官方 CLI 运行，不使用 ACP。
 
 普通 DSH Pro 工具省略 `native` 时读取插件默认值；插件也未设置时保留 CLI 的原有
 行为。单次对象完整替换默认值，`null` 明确关闭。Flywheel 的直接 worker 使用自身
@@ -353,8 +364,8 @@ Flywheel 内置 preset generator 的组合 API，使用它不要求重新生成�
 
 ### 为一个阶段启用原生 Agent
 
-当前默认模板没有为阶段绑定 `native-profile`。安装配套包或仅添加 profile 定义
-不会让阶段自动采用它，还需要为对应绑定选择这个 profile。
+默认 Kimi 绑定已选择受限制的 native agent profile，其他原生协作按需显式配置。
+安装配套包或仅添加 profile 定义不会让其他阶段自动采用它，还需要为对应绑定选择。
 
 先用 `config inspect` 确认实际生效文件。下面是需要合入该**完整配置**的片段，
 不是可以单独覆盖保存的配置文件；保留已有模型、渠道、其他 profile 和权限。
@@ -383,17 +394,20 @@ Flywheel 内置 preset generator 的组合 API，使用它不要求重新生成�
 定义在 **设置 → 诊断与配置文件 → 高级配置 JSON** 中编辑；保存后下次启动采用。配置解析成功只证明字段和绑定合法，
 实际 Agent 能力仍由运行准入与回执确认。DSH Team、Kimi Swarm／Tower、Claude
 Workflow 和 LCU 的具体定义、依赖、权限及限制见[原生能力](native-capabilities.md)。
+使用 Claude 的阶段需要 worker 自己依赖树中的精确 0.7.0 配套包。
 独立 `flywheel native` Review／Team 作业有自己的回执，不自动成为正式 Review／Judge verdict。
 
 ### JEV 与速度设置
 
-JEV 默认关闭，endpoint 为空。需要时在 **Flywheel → 设置 → JEV** 填写真实
-System One 地址、固定 `jev-x.y.z` 模型版本和密钥环境变量名称，开启并保存。
-实际 Flywheel 进程需要能读取该变量；配置只存变量名。静态 native profiles 不依赖 JEV。
+JEV 唯一开关 `jev.enabled` 默认关闭。新预设使用 `backend:subscription` 与
+`hydrogen-local` 具名 profile，无需 System One endpoint 或 API Key。需要时在
+**Flywheel → 设置 → JEV** 中开启草稿，核对 profile、允许数据类别和调用／时限预算后
+保存。HTTP 是显式兼容后端，在 subscription-only 策略下不可用。静态 profiles 不依赖 JEV。
 
 JEV 在已批准候选中选择取证或失败后的下一步，也可在允许的执行绑定中选择模型／effort。
 它不代替报告、确定性验证和独立评审。既有调查的冻结策略不会因后来打开开关而被
-重新创建；沿用原任务恢复规则。连接、数据与预算限制见[JEV 指南](jev.md)。
+重新创建；原生清理未知时阻断后续工作，先只读核对原调用。连接、数据与预算限制见
+[JEV 指南](jev.md)。
 
 当前新安装模板还使用 scoped 会话、full-access、自动管理 worktree、parallel 最大
 并发 2、batch 派发和关闭预热。已有配置升级时保留，任务／项目完整配置也可能覆盖
