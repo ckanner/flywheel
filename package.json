@@ -66,7 +66,7 @@
     "test": "node --test npm/test/*.test.js",
     "test:install": "node scripts/test-packed-host.js && node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.38.0 dist-npm",
+    "build:npm": "bash scripts/build-npm.sh \"$npm_package_version\" dist-npm",
     "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {
