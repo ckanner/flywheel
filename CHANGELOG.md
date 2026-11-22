@@ -5,7 +5,7 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased
+## 0.38.1 — 2026-11-22
 
 - Accept Antigravity evidence-only results with a nonempty CLI tool catalog when
   the pinned adapter proves the exact managed agent, invocation, workspace and
