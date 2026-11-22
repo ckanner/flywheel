@@ -218,6 +218,7 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
   }
 
   let lifeline;
+  const adapterHarness = ADAPTER.package.split('/').pop().replace(/^dsh-subagent-/, '');
   try {
     const args = process.argv.slice(2);
     if (args.length > 1 || (args.length === 1 && args[0] !== '--doctor')) throw new WorkerError('INVALID_REQUEST', 'Use ' + commandName + ' [--doctor]');
@@ -256,7 +257,7 @@ export async function runMachineWorker({ ADAPTER, LIMITS, WorkerError, loadAdapt
           ...(protocol === 3 ? { recoveryDirectory: value.recoveryDirectory, onLifecycle } : {}),
           onActivity(event) {
             if (controller.signal.aborted) return;
-            if (!validProviderActivity(event, ADAPTER.package.replace(/^dsh-subagent-/, ''), activitySequence)) {
+            if (!validProviderActivity(event, adapterHarness, activitySequence)) {
               outputFailure ??= new WorkerError('INVALID_ACTIVITY', 'The adapter emitted invalid or out-of-order provider activity metadata');
               controller.abort(); return;
             }
