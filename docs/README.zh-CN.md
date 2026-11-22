@@ -41,10 +41,11 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
-[Antigravity 原生 ACP 可选通道方案](plans/2026-11-22-antigravity-native-acp.md)
-（[English](plans/2026-11-22-antigravity-native-acp.en.md)）保留 headless 默认通道，
-明确后续实现所需的传输协议、进程归属、输入能力及性能证据。这是纯文档提案，
-不代表已经交付 ACP 配置或运行能力。
+[Antigravity 官方 ACP 交互式接入方案](plans/2026-11-22-antigravity-native-acp.md)
+（[English](plans/2026-11-22-antigravity-native-acp.en.md)）先接官方 Registry 原版 agent、
+其自身的个人 Google 登录与用户直接操作的外部会话，保留既有 headless 行为和默认值。
+CLI ACP 与未来自动化 Flywheel 绑定需另行验证并明确范围。这是纯文档提案，
+不代表已经交付 ACP 配置、登录或运行能力。
 
 [订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)
 （[English](plans/2026-11-19-subscription-cli-workflows.en.md)）保留已批准设计。
