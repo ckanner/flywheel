@@ -33,7 +33,7 @@ func agyReceipt(r codexProStart) map[string]any {
 	execution, permission, tools := "accept-edits", "always-proceed", []string{"run_command"}
 	policy := "native"
 	if r.EvidenceOnly {
-		execution, permission, tools, policy = "plan", "request-review", []string{}, "evidence-only"
+		execution, permission, policy = "plan", "request-review", "evidence-only"
 	}
 	receipt := map[string]any{
 		"protocol": 1, "type": "result", "requestId": r.RequestID, "runId": "22222222-2222-4222-8222-222222222222", "ok": true,
@@ -64,6 +64,15 @@ func agyReceipt(r codexProStart) map[string]any {
 		"observedAgents": len(children), "collaborationObserved": len(children) > 0, "metadataTruncated": false, "limit": map[string]any{"maxObservedAgents": native.MaxObservedAgents, "hard": false, "exceeded": false},
 		"completion": map[string]any{"scope": "cli-invocation", "state": "completed", "source": "normal-result-and-cli-exit", "children": "unknown"},
 		"children":   children, "aggregateUsageStatus": "unknown", "artifacts": []any{},
+	}
+	if r.EvidenceOnly {
+		runID := receipt["runId"].(string)
+		name := "dsh-evidence-" + runID
+		proObject(receipt, "configuration", "observed")["agent"] = name
+		proObject(receipt, "native")["managedAgent"] = map[string]any{
+			"name": name, "path": filepath.Join(r.Cwd, ".agents", "agents", name+".md"),
+			"digest": strings.Repeat("a", 64), "ownerRunId": runID, "cleanup": "confirmed",
+		}
 	}
 	return receipt
 }
@@ -129,7 +138,7 @@ func TestAntigravityRejectsUnprovenAndContradictoryReceipts(t *testing.T) {
 	r.EvidenceOnly = true
 	r.PermissionMode = "read-only"
 	m := agyReceipt(r)
-	proObject(m, "configuration", "observed")["tools"] = []string{"shell"}
+	delete(proObject(m, "configuration", "observed"), "tools")
 	require.False(t, parseAgyFixture(r, m).Settled)
 	for _, category := range []string{"quota", "rate-limit", "auth"} {
 		m := agyReceipt(r)
@@ -244,7 +253,7 @@ const args=`, 1))
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	t.Setenv("HOME", home)
-	for _, scenario := range []string{"success", "wrong-model", "quota", "duplicate", "waiting", "missing-agent"} {
+	for _, scenario := range []string{"success", "tools-inherited", "wrong-model", "quota", "duplicate", "waiting", "missing-agent", "wrong-agent", "illegal-tool"} {
 		t.Run(scenario, func(t *testing.T) {
 			a := agyRunArgs(t)
 			cwd, err := filepath.EvalSymlinks(a.Cwd)
@@ -256,16 +265,17 @@ const args=`, 1))
 			a.PersistentSession = true
 			a.Watchdog = watchdog.Opts{WallTimeoutMs: 10000, IdleTimeoutMs: 8000}
 			a.OnLifecycle = func(MachineLifecycle) error { return nil }
-			a.EvidenceOnly = scenario == "missing-agent" || scenario == "success"
+			a.EvidenceOnly = scenario == "missing-agent" || scenario == "wrong-agent" || scenario == "illegal-tool" || scenario == "success" || scenario == "tools-inherited"
 			if a.EvidenceOnly {
 				a.PermissionMode = "read-only"
 			}
 			settings, _ := json.Marshal(map[string]string{"scenario": scenario})
 			require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), settings, 0o600))
 			r := RunAntigravity(a)
-			require.Equal(t, scenario == "success", r.Settled, "%+v", r)
+			success := scenario == "success" || scenario == "tools-inherited"
+			require.Equal(t, success, r.Settled, "%+v", r)
 			require.NotEmpty(t, r.AntigravityReceipt)
-			if scenario == "success" {
+			if success {
 				assert.Nil(t, r.Usage)
 				assert.Equal(t, "unknown", r.Session.UsageStatus)
 				assert.True(t, r.Session.ResumeCandidate)
@@ -284,9 +294,14 @@ const args=`, 1))
 				require.True(t, r.Settled, "%+v", r)
 				assert.True(t, r.Session.ResumeAccepted)
 			}
-			if scenario == "missing-agent" {
+			if scenario == "missing-agent" || scenario == "wrong-agent" {
 				assert.NoFileExists(t, filepath.Join(a.Cwd, "agy-input.jsonl"))
 				assert.Equal(t, "not-dispatched", r.Session.Dispatch)
+			}
+			if scenario == "illegal-tool" {
+				assert.Equal(t, "unknown", r.Session.Outcome)
+				assert.Empty(t, r.Text)
+				assert.False(t, r.Session.ResumeCandidate)
 			}
 		})
 	}

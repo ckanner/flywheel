@@ -196,6 +196,7 @@ type antigravityReceipt struct {
 			Cwd            string    `json:"cwd"`
 			Model          string    `json:"model"`
 			PermissionMode string    `json:"permissionMode"`
+			Agent          string    `json:"agent"`
 			Tools          *[]string `json:"tools"`
 		} `json:"observed"`
 	} `json:"configuration"`
@@ -305,7 +306,7 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 		observed := r.Configuration.Observed
 		if e.Dispatch != "dispatched" || e.TurnDispatch != "accepted" || e.Outcome != "completed" || !*e.TerminalReceived || e.ExitCode == nil || *e.ExitCode != 0 || e.Signal != nil || *e.Cancelled || *e.TimedOut || *e.Truncated || !*c.Confirmed || w.State != "completed" || !*w.ReplaySafe || s.ID == nil || !*s.Resumable ||
 			!*r.Configuration.Matched || r.Configuration.Source != "cli-init" || observed == nil || !samePhysicalDirectory(observed.Cwd, request.Cwd) || observed.Model != request.Model || observed.PermissionMode != permission ||
-			request.EvidenceOnly && (observed.Tools == nil || len(*observed.Tools) != 0) || r.Subscription.Mode != "subscription-only" || r.Subscription.Status != "verified-local-controls" || *r.Subscription.CreditsFallback || r.Subscription.ConfigFingerprint == "" {
+			request.EvidenceOnly && (observed.Tools == nil || !validAntigravityEvidenceAgent(r.Native, request.Cwd, r.RunID, observed.Agent)) || r.Subscription.Mode != "subscription-only" || r.Subscription.Status != "verified-local-controls" || *r.Subscription.CreditsFallback || r.Subscription.ConfigFingerprint == "" {
 			p.Error = "Antigravity receipt does not prove successful completion, subscription controls, configuration and cleanup"
 			return
 		}

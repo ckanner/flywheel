@@ -16,10 +16,11 @@ Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审�
 
 Flywheel 包含 `flywheel-antigravity-worker` 与
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json)
-中的精确配套候选。完整源码位于
+中的精确配套归档。完整源码位于
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)，
 保留独立 npm 包结构，便于直接审查。源码身份、候选字节安装、公共 registry 可用性
-和真实账号验收分别核对；不能拿其他 machine 契约的旧版本替代 0.2.0。
+和真实账号验收分别核对。[2026-11-22 registry 验证](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
+确认发布的 0.2.1 归档与已审字节一致；不能拿其他 machine 契约的旧版本替代 0.2.1。
 
 | 环境变量 | 用途 |
 | --- | --- |
@@ -137,7 +138,7 @@ verifier／monitor。它不是原生并发上限或整棵子树硬上限，回�
 越限保留已验证成员 ID，标记 `metadataTruncated:true` 并使调用失败，不将缩减过的记录
 静默报告为成功。
 
-Flywheel Execute 的 Swarm 候选，无论 JEV 选择还是静态指定，都必须满足 Full、无图片、
+Flywheel Execute 的 Swarm 候选，无论 JEV 选择还是静态指定，都必须满足 Full、无明确声明的模型图片输入、
 已有审查过的 `collaboration` 契约。契约包含 2–8 个独立子任务，写入范围互不重叠且处于
 packet 获准的 `schedule.writes` 内。规划阶段可以用前台子代理收集只读调查，不运行执行
 Swarm。原生 verifier 不能代替独立 Flywheel Review 或方案精确版本审批。
@@ -159,13 +160,27 @@ Swarm。原生 verifier 不能代替独立 Flywheel Review 或方案精确版本
 `--agent` 选择它，在写入任务前等待真实 init：
 
 - `init.agent` 必须等于本次生成的精确 agent 身份。
-- `init.tools` 必须存在且为空数组。
+- `init.tools` 必须存在且为数组，表示原生工具目录。
+- 该目录可以非空；空工具允许列表由托管自定义 agent 文件表达，实际出现工具／子代理事件仍会拒绝调用。
 - 此阶段拒绝 Orchestrator 模型和原生协作 profile。
-- 身份缺失、继承了工具、init 异常，以及之后出现工具／子代理事件，都会拒绝本次调用。
+- 身份缺失、工具目录缺失、init 异常，以及之后出现工具／子代理事件，都会拒绝本次调用。
 
 [官方 headless 契约](https://antigravity.google/docs/cli/headless/)定义完整可用工具列表，
 以及指定 model／agent 参数后的对应字段；[自定义 agent 契约](https://antigravity.google/docs/subagents/)
 定义工具允许列表。CLI 无法提供这些证据就不准入，不能只靠 plan mode 或提示词限制。
+此前真实 `agy` 1.5.14 验证确认托管空允许列表会拒绝执行请求中的 shell 命令；该历史
+验证与本次新增的 Flywheel 回执准入离线回归分别记录。
+
+Flywheel 只有在 `observed.agent` 和 adapter 的 `native.managedAgent` 记录绑定本次
+run ID、精确工作区路径、合法内容摘要及已确认文件清理时，才接受结果。固定 adapter
+在派发和删除前核验策略文件内容与归属；Go 核对这份证明的调用绑定，不通过摘要
+独立重建策略，也不重新打开已删除文件。只读恢复使用相同检查；订阅 JEV 决策同样
+使用这一 evidence-only 契约。
+
+成功的 Antigravity 回执及正常进程／会话终态通过验证后，Flywheel 不再用诊断关键词
+扫描其原始 stdout 来重新分类。例如 `extraBilling:"unknown"` 是订阅元数据，不是额度
+失败。原始回执保持不变；结构化错误、stderr 检查、超时／取消／清理检查继续生效。
+报告与裁决内容仍须独立通过 schema 和证据校验。
 
 临时文件通过独占创建、调用 owner 和内容身份管理，只清理本次创建且未被更改的文件；
 用户已有 agent 与全局设置都不会覆盖。这是原生工具排除，不是 OS 文件系统沙箱；

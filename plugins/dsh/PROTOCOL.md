@@ -439,19 +439,33 @@ timeoutMs，以及可选 idleTimeoutMs/sessionTitle/threadMode/threadId/recovery
 另必需 subscription version 1；evidenceOnly 是可选布尔值；native 可选
 `{version:1,mode:"native"|"subagents"|"swarm",maxObservedAgents?:1..8}`。普通执行只接受
 permissionMode:danger-full-access，映射 accept-edits/always-proceed；evidenceOnly:true
-必须 read-only，映射 plan/request-review 并在提示词前核对实际空tools及独占agent身份。
+必须 read-only，映射 plan/request-review。固定 adapter 创建 tools/MCP/skills/plugins
+允许列表为空且禁止 subagent 的独占自定义 agent，在提示词前核对文件身份与
+init.agent，并要求 init.tools 为数组。init.tools 是 CLI 工具目录，允许非空，
+不等于该 agent 的工具允许列表；实际 tool/subagent 事件仍拒绝调用。
 evidence-only 拒绝 native overrides 和 Orchestrator。始终不接受 images、任意
 provider、API key或未识别字段。mode/native 选项完整进入会话与恢复身份。
 
 普通 model 必须是完整 gemini-4 家族/档位，后缀与 reasoningEffort 相同。
 三个精确 Orchestrator slug（gemini-pro-orchestrator-neon、gemini-pro-orchestrator、
 gemini-pro-orchestrator-argon）固定空 effort，不传 --effort。官方init须确认实际
-cwd/model/permission/conversation，evidence-only另确认agent和tools。effort/config未暴露
+cwd/model/permission/conversation，evidence-only另确认agent和工具目录。Go 同时核对
+native.managedAgent 的 name、ownerRunId、工作区内精确 path、合法内容 digest 与
+cleanup:confirmed，并要求 observed.agent 与本次 runId 绑定。策略文件内容由固定
+adapter 在派发与清理前核验；Go 不重建已删除文件，也不将摘要当作独立策略证明。
+只读恢复使用相同回执准入。effort/config未暴露
 时不伪造observed。新调用保留独立原生history；resume必须精确本适配器拥有的已确认
 conversation，不使用latest。v3的Go ACK先持久化生命周期；非终态不提前报告cleanup，
 无原生terminal时本地terminal仍保留unknown。缺失/坏帧/取消/WAITING/软拒绝或非空
-finished_reason 不算成功。显式 subagents/swarm 需要实际 child conversation 元数据；
-没有观察到成员返回 collaboration-not-observed，不伪造派发或工具日志。
+finished_reason 不算成功。显式 subagents 需要实际 child conversation 元数据；
+没有观察到成员返回 collaboration-not-observed。adapter 发起的 /swarm 根调用正常
+成功时，即使 CLI 不公开子成员元数据，也可接受根结果，但必须保留
+collaborationObserved:false 与 children:"unknown"，不伪造派发或工具日志。
+
+完整原生成功回执与正常物理／会话终态、已确认清理均成立后，Go 不再把 raw stdout
+中的订阅字段或答案文字当作旧文本错误诊断；extraBilling:"unknown" 不表示 QUOTA。
+原始回执不改写，stderr、结构化失败及物理异常仍按现有规则检查。报告／裁决有效性
+另行判断；这项规则不使无效输出成为成功，也不赋予未知结果重放资格。
 
 Swarm 入口只由适配器合成 /swarm，任务内容放入将所有斜杠转义的 JSON 负载；
 普通和 subagents 调用保持禁用 slash commands。maxObservedAgents 是不同已观察成员
