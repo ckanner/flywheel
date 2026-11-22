@@ -3,7 +3,7 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/antigravity.md)
 
 Use `harness:"antigravity"` to run Gemini through the official local **`agy` CLI**.
-Flywheel calls `dsh-subagent-antigravity@0.2.0` through its public machine API;
+Flywheel calls `@ckanner/dsh-subagent-antigravity@0.2.0` through its public machine API;
 the plugin owns the native Agent loop, process group and durable receipt. Go owns
 workflow stages, approval gates, evidence collection, verification and delivery.
 The same plugin also provides a direct DSH task panel and `subagent_antigravity`.
@@ -21,7 +21,7 @@ Flywheel includes `flywheel-antigravity-worker` and the reviewed companion
 candidate recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json).
 The source is reviewable in
-[`plugins/antigravity`](https://github.com/ckanner/flywheel/tree/main/plugins/antigravity)
+[`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)
 as a standalone npm package. Package identity, installed candidate bytes, public
 registry availability and real-account acceptance are separate checks. An older
 package with another machine contract cannot substitute for 0.2.0.
@@ -230,7 +230,7 @@ Sources: [native login and API/ADC routing](https://antigravity.google/docs/inst
 Install the exact reviewed plugin artifact into the intended DSH profile:
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.2.0.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.0.tgz
 ```
 
 Open the **Antigravity** conversation view, select the workspace, label, complete
@@ -260,7 +260,7 @@ Calling a subagent from an existing DSH conversation still leaves that parent
 conversation on its configured provider. The direct panel/command avoids a
 parent model call. This package is an Agent transport, so do not register it as a
 conventional DSH LLM provider. See the standalone
-[plugin guide](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/README.md)
+[plugin guide](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/README.md)
 for the DSH schemas, machine API and wrapper.
 
 ## Lifecycle, history and usage
@@ -293,4 +293,4 @@ are not claimed by this release.
 Offline protocol, cancellation, parent-death, evidence-only, public API and actual
 candidate-install tests are separate from a live account or macOS acceptance.
 See [recovery](session-recovery.md), [release validation](releasing.md) and the
-plugin's [validation record](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/docs/VALIDATION.md).
+plugin's [validation record](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/VALIDATION.md).

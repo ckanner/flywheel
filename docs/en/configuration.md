@@ -908,7 +908,7 @@ fallback, current-turn tokens or a subscription charge.
 ## Antigravity and Gemini
 
 The `antigravity` harness invokes the official local `agy` CLI through the
-`dsh-subagent-antigravity@0.2.0` public machine API. The same companion supports
+`@ckanner/dsh-subagent-antigravity@0.2.0` public machine API. The same companion supports
 direct use in DSH. No ACP bridge or separate Gemini API credential is involved.
 The native catalog must contain the exact selected model, and `thinking` must
 match the model slug. The plugin verifies its local subscription/credit controls,

@@ -56,7 +56,7 @@ async function registry(directory) {
   }
   const plugin = packages.get('@ckanner/flywheel');
   const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.2'], ['dsh-preset-generator', '0.4.0'],
-    ['dsh-subagent-antigravity', 'file:plugins/dsh/vendor/dsh-subagent-antigravity-0.2.0.tgz']];
+    ['@ckanner/dsh-subagent-antigravity', 'file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.2.0.tgz']];
   if (bundledDependencies.some(([name, spec]) => plugin?.manifest.dependencies?.[name] !== spec) ||
       JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(bundledDependencies.map(([name]) => name))) {
     throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2, preset generator 0.4.0 and Antigravity 0.2.0 source dependencies');
@@ -66,7 +66,7 @@ async function registry(directory) {
   const bundleGraph = [
     ['dsh-subagent-codex-pro', '0.10.2', {}],
     ['dsh-preset-generator', '0.4.0', {}],
-    ['dsh-subagent-antigravity', '0.2.0', { ajv: '8.17.1' }],
+    ['@ckanner/dsh-subagent-antigravity', '0.2.0', { ajv: '8.17.1' }],
     ['ajv', '8.17.1', { 'fast-deep-equal': '^3.1.3', 'fast-uri': '^3.0.1',
       'json-schema-traverse': '^1.0.0', 'require-from-string': '^2.0.2' }],
     ['fast-deep-equal', '3.1.3', {}], ['fast-uri', '3.1.9', {}],

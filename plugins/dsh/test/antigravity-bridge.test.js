@@ -4,7 +4,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Use DSH's locked public adapter without requiring sibling source dependencies.
-import * as api from 'dsh-subagent-antigravity/machine';
+import * as api from '@ckanner/dsh-subagent-antigravity/machine';
 import { ADAPTER, doctorResult, invokeAdapter, machineRequest } from '../src/antigravity-bridge.js';
 import { validProviderActivity } from '../src/machine-worker.js';
 

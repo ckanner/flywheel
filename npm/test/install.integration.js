@@ -177,12 +177,12 @@ test('the complete npm candidate install and run from a clean agent environment'
     const doctor = await run(antigravityWorker, ['--doctor'], context.env, context.project);
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     const facts = JSON.parse(doctor.stdout);
-    assert.equal(facts.package, 'dsh-subagent-antigravity');
+    assert.equal(facts.package, '@ckanner/dsh-subagent-antigravity');
     assert.equal(facts.version, '0.2.0');
     assert.equal(facts.inferenceTested, false);
     assert.equal(facts.accountEntitlement, 'unknown');
     const fixture = path.join(context.fixtures, 'offline-agy.mjs');
-    await fs.copyFile(path.resolve(__dirname, '../../plugins/antigravity/test/fixtures/fake-agy.js'), fixture);
+    await fs.copyFile(path.resolve(__dirname, '../../internal/drivers/testdata/fake-agy.js'), fixture);
     await fs.chmod(fixture, 0o755);
     const child = spawn(antigravityWorker, [], { cwd: context.project,
       env: { ...context.env, FLYWHEEL_AGY_BIN: fixture }, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -200,14 +200,14 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: 'dsh-subagent-antigravity', version: '0.2.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.2.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');
     assert.equal(result.receipt.costStatus, 'unknown');
     assert.equal(result.receipt.costUSD, null);
     assert.throws(() => process.kill(result.receipt.execution.pid, 0), { code: 'ESRCH' });
-    assert.ok(!server.requests.some(value => value.includes('dsh-subagent-antigravity')), 'the bundled adapter must not require a registry publication');
+    assert.ok(!server.requests.some(value => value.includes('@ckanner/dsh-subagent-antigravity')), 'the bundled adapter must not require a registry publication');
   });
 
   await t.test('a direct DSH installation resolves its own bundled CLI without a global record', async () => {
@@ -462,7 +462,7 @@ test('the complete npm candidate install and run from a clean agent environment'
   const calls = (await fs.readFile(context.env.FLYWHEEL_DSH_FIXTURE_LOG, 'utf8')).trim().split('\n').map(JSON.parse);
   assert.ok(calls.some(args => args[3] === 'add' && args.at(-1) === `@ckanner/flywheel@${server.candidate.version}`));
   assert.ok(!server.requests.some(request => /flywheel-(darwin|linux)-/.test(request)), 'native engines must come from the single tarball');
-  for (const bundled of ['dsh-subagent-codex-pro', 'dsh-preset-generator', 'dsh-subagent-antigravity']) {
+  for (const bundled of ['dsh-subagent-codex-pro', 'dsh-preset-generator', '@ckanner/dsh-subagent-antigravity']) {
     assert.ok(!server.requests.some(request => request.includes(bundled)),
       `${bundled} must install from the reviewed bundle without fetching a registry release`);
   }

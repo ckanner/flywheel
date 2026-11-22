@@ -872,7 +872,7 @@ frontend／multimodal 执行。`fable` 供显式替换，canonical model 是
 
 ## Antigravity 与 Gemini
 
-`antigravity` harness 通过 `dsh-subagent-antigravity@0.2.0` 的公开 machine API
+`antigravity` harness 通过 `@ckanner/dsh-subagent-antigravity@0.2.0` 的公开 machine API
 调用官方本机 `agy` CLI，同一插件也能在 DSH 中直接使用。不经过 ACP，不需要另一个
 Gemini API 凭证。实际原生目录必须包含选定的精确模型，thinking 必须与 slug 一致。
 插件验证本机订阅／credits 控制、原生生命周期、请求配置和清理；账号访问或模型

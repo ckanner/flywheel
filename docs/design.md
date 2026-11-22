@@ -652,8 +652,8 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 
 ### 7.3 Antigravity CLI 接入契约
 
-`antigravity` 直接使用独立 `dsh-subagent-antigravity@0.2.0` 公开 machine API 与官方
-`agy` CLI，无 ACP。源码在 plugins/antigravity，真实 npm 候选随 Flywheel bundle，
+`antigravity` 直接使用独立 `@ckanner/dsh-subagent-antigravity@0.2.0` 公开 machine API 与官方
+`agy` CLI，无 ACP。源码在 dsh-subagent-antigravity，真实 npm 候选随 Flywheel bundle，
 也可经 DSH plugin add 安装独立使用。原生程序与登录由用户环境提供。
 
 严格接纳完整模型/effort、cwd、权限、调用身份与清理。普通执行要求明确 full-access，

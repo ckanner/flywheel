@@ -95,7 +95,7 @@ func validateProNativeEvent(raw json.RawMessage, harness string, request codexPr
 		frame.Native.Sequence != *previous+1 || frame.Native.Sequence > 4096 || !machineOpaqueID(frame.Native.ID) ||
 		!machineOpaqueID(frame.Native.Kind) || !machineOpaqueID(frame.Native.State) ||
 		(frame.Native.ParentID != nil && !machineOpaqueID(*frame.Native.ParentID)) ||
-		frame.Adapter.Package != "dsh-subagent-"+harness || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 ||
+		frame.Adapter.Package != adapterPackageFor(harness) || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 ||
 		!reflect.DeepEqual(frame.Managed, request.Managed) {
 		return fmt.Errorf("invalid request: native child event identity or sequence mismatch")
 	}

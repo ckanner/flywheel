@@ -11,7 +11,7 @@ English · [简体中文](2026-11-19-subscription-cli-workflows.md) · [Design p
 The user has established the following constraints. This proposal follows those decisions rather than reopening the choice of integration:
 
 1. Use the existing Kimi, ChatGPT, Claude, and Google subscriptions. Remove DeepSeek prepaid balances and all additional paid APIs from this default configuration.
-2. **Invoke the official Antigravity `agy` CLI directly, without ACP.** First complete the independent `dsh-subagent-antigravity` plugin for use in DSH Desktop, then integrate it with Flywheel through its public machine interface and deliver the unified model configuration.
+2. **Invoke the official Antigravity `agy` CLI directly, without ACP.** First complete the independent `@ckanner/dsh-subagent-antigravity` plugin for use in DSH Desktop, then integrate it with Flywheel through its public machine interface and deliver the unified model configuration.
 3. Use Claude through the personal subscription only. Preserve the existing official Agent SDK → local, unmodified Claude Code path. The SDK is the library controlling the CLI; the CLI requirement does not call for rewriting the existing runner.
 4. Keep Kimi on its native CLI and Codex on the official Codex CLI/app-server controlled by the existing plugin. Preserve structured protocols, sessions, recovery, and native capabilities.
 5. Configure model, access channel, reasoning effort, permissions, and session independently. Start ordinary tasks with an economical combination and escalate difficult tasks within an explicit allowlist. Do not default every model to `max`.
@@ -282,13 +282,13 @@ Flywheel's model configuration directly includes Carbon, Neon, and Hydrogen. Aft
 
 ### 8.1 One runner, three entry points
 
-Propose a new `ckanner/dsh-subagent-antigravity` repository and `dsh-subagent-antigravity` npm package. These names are proposals, not claims that either resource already exists.
+Propose a new `ckanner/dsh-subagent-antigravity` repository and `@ckanner/dsh-subagent-antigravity` npm package. These names are proposals, not claims that either resource already exists.
 
 | Entry point | Responsibility |
 | --- | --- |
 | DSH Desktop plugin panel / direct command | Let the user select working directory, model, effort, permissions, and task, then start the CLI directly without an implicit parent-model call |
 | `subagent_antigravity` tool | Integrate fully with DSH Agent/PTC and jobs, and register it in the corresponding presets |
-| `dsh-subagent-antigravity/machine` | Public ESM API for deterministic callers such as Flywheel, without creating a parent DSH agent |
+| `@ckanner/dsh-subagent-antigravity/machine` | Public ESM API for deterministic callers such as Flywheel, without creating a parent DSH agent |
 
 The package will expose the root plugin, `./machine`, and `./client`, plus an independent `antigravity-machine` wrapper command. `--capabilities`, `--doctor`, and `--json` are proposed wrapper arguments, not claims that `agy` already has those flags.
 

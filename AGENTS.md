@@ -53,8 +53,6 @@ make coverage             # 覆盖率 100% 门禁（cmd/flywheel 单行桩除外
 make quality-gate         # vet + fmt-check + coverage —— Go 完整门禁
 npm --prefix plugins/dsh ci --ignore-scripts
 npm --prefix plugins/dsh run check  # DSH 插件构建与离线行为测试
-npm --prefix plugins/antigravity ci --ignore-scripts
-npm --prefix plugins/antigravity run check # 独立 CLI 插件及真实候选消费
 FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative|Antigravity)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge)$' -count=1
 FLYWHEEL_TEST_NODE_BRIDGE=1 go test ./internal/machine -run '^TestPacketImagesClaudeSDKOfflineBridge$' -count=1
 npm test                 # npm 启动器、安装器、发行门禁的单元与协议测试

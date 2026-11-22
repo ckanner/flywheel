@@ -17,9 +17,17 @@ import (
 
 const (
 	AntigravityPackageVersion = "0.2.0"
+	AntigravityPackage        = "@ckanner/dsh-subagent-antigravity"
 	AntigravityWorkerEnv      = "FLYWHEEL_ANTIGRAVITY_WORKER"
 	AntigravityBinaryEnv      = "FLYWHEEL_AGY_BIN"
 )
+
+func adapterPackageFor(harness string) string {
+	if harness == "antigravity" {
+		return AntigravityPackage
+	}
+	return "dsh-subagent-" + harness
+}
 
 type AntigravityArgs = ClaudeCodeProArgs
 

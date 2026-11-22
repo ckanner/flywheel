@@ -68,7 +68,7 @@ func agyReceipt(r codexProStart) map[string]any {
 	return receipt
 }
 func agyFrame(r codexProStart, m map[string]any) map[string]any {
-	return map[string]any{"type": "result", "protocol": r.Protocol, "requestId": r.RequestID, "adapter": map[string]any{"package": "dsh-subagent-antigravity", "version": AntigravityPackageVersion, "protocol": 1}, "receipt": m, "error": nil}
+	return map[string]any{"type": "result", "protocol": r.Protocol, "requestId": r.RequestID, "adapter": map[string]any{"package": "@ckanner/dsh-subagent-antigravity", "version": AntigravityPackageVersion, "protocol": 1}, "receipt": m, "error": nil}
 }
 func parseAgyFixture(r codexProStart, m map[string]any) claudeCodeProParsed {
 	return parseOwnedCLIStream(dshJSONL(agyFrame(r, m)), r, "antigravity", "Antigravity", parseAntigravityReceipt)
@@ -232,7 +232,7 @@ func TestAntigravityNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, err)
 	worker, err := filepath.Abs("../../plugins/dsh/dist/antigravity-worker.js")
 	require.NoError(t, err)
-	source, err := os.ReadFile("../../plugins/antigravity/test/fixtures/fake-agy.js")
+	source, err := os.ReadFile("testdata/fake-agy.js")
 	require.NoError(t, err)
 	source = []byte(strings.Replace(string(source), "const args=", `const fixtureConfig=JSON.parse(readFileSync('agy-fixture.json','utf8')); process.env.FIXTURE_SCENARIO=fixtureConfig.scenario; process.env.FIXTURE_CALLS='agy-calls.jsonl'; process.env.FIXTURE_INPUT='agy-input.jsonl';
 if(fixtureConfig.finishedReason)process.env.FIXTURE_FINISHED_REASON=fixtureConfig.finishedReason;

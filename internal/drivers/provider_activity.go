@@ -43,7 +43,7 @@ func validateProActivityEvent(raw json.RawMessage, harness string, request codex
 	d.DisallowUnknownFields()
 	version := machineAdapterVersion(harness)
 	if len(raw) > 4096 || d.Decode(&frame) != nil || frame.Type != "activity" || frame.Protocol != request.Protocol || frame.RequestID != request.RequestID ||
-		frame.Adapter.Package != "dsh-subagent-"+harness || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 {
+		frame.Adapter.Package != adapterPackageFor(harness) || frame.Adapter.Version != version || frame.Adapter.Protocol != 1 {
 		return fmt.Errorf("invalid request: uncorrelated or damaged %s activity frame", harness)
 	}
 	a := frame.Activity

@@ -14,7 +14,7 @@ commit、archive integrity 与安装结果另随 PR 记录；源码版本仍为 
 
 | 方案阶段 | 已实现的源码边界 | 依据 |
 |---|---|---|
-| P1 / P2 | 独立 `dsh-subagent-antigravity` npm 包、官方 `agy` runner、machine/lifecycle/recovery、DSH 直接任务、工具/PTC/jobs 与 client 设置 | [Antigravity 指南](../zh-CN/antigravity.md)、[独立插件](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/README.zh-CN.md) |
+| P1 / P2 | 独立 `@ckanner/dsh-subagent-antigravity` npm 包、官方 `agy` runner、machine/lifecycle/recovery、DSH 直接任务、工具/PTC/jobs 与 client 设置 | [Antigravity 指南](../zh-CN/antigravity.md)、[独立插件](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/README.zh-CN.md) |
 | P3 | 官方 Claude Agent SDK → 指定的官方本机 CLI；同进程订阅预检、Fable/Opus 模型绑定与无自动付费后备 | [Claude 指南](../zh-CN/claude-code-pro.md)、Claude PR #12 |
 | P4 | 四家订阅默认表、AGY driver/worker、严格可达配置、compact 联合准备与前审、精确批准、路由、迁移、UI、真实图片传输 | [模型策略](../zh-CN/model-policy.md)、[审查规划](../zh-CN/reviewed-planning.md)、[图片输入](../zh-CN/image-inputs.md) |
 | P5 | 可配置调查分析、同任务多轮补证、原范围与累计预算、默认关闭的订阅 JEV | [调查](../zh-CN/investigation.md)、[JEV](../zh-CN/jev.md) |
@@ -37,7 +37,7 @@ review-first 在受审查方案后等待批准；已明确授权的 delegated �
    本轮只有 Antigravity 路径完成了由原生初始化证明工具集为空的 evidence-only 准入，
    因此默认 subscription profile 使用 `hydrogen-local`。这是可验证执行能力的选择，
    不表示已证明 Hydrogen 的决策质量优于 Sol；非受支持的 JEV harness 会明确拒绝。
-2. **独立 AGY 包的源码维护在 `plugins/antigravity`。** 包名、machine、CLI、DSH
+2. **独立 AGY 包的源码维护在 `dsh-subagent-antigravity`。** 包名、machine、CLI、DSH
    client 与独立安装入口保持独立 npm 插件结构。候选内的 repository 元数据指向真实
    Flywheel 仓库及该子目录；没有依赖一个尚未创建的单独 GitHub 仓库来完成安装。
 3. **图片以冻结 packet 契约接入。** `input-images` 声明真实仓库文件、SHA-256 与

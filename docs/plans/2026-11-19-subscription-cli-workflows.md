@@ -11,7 +11,7 @@
 用户已确定以下约束，本方案据此收敛，不再重新选择接入路线：
 
 1. 使用现有 Kimi、ChatGPT、Claude、Google 订阅；停止在这套默认配置中使用 DeepSeek 充值余额或任何额外付费 API。
-2. **Antigravity 直接调用官方 `agy` CLI，不使用 ACP。** 先完成独立的 `dsh-subagent-antigravity` 插件，使其能在 DSH Desktop 中使用，再通过公开机器接口接入 Flywheel，交付统一模型配置。
+2. **Antigravity 直接调用官方 `agy` CLI，不使用 ACP。** 先完成独立的 `@ckanner/dsh-subagent-antigravity` 插件，使其能在 DSH Desktop 中使用，再通过公开机器接口接入 Flywheel，交付统一模型配置。
 3. Claude 只走个人订阅。保留已有的官方 Agent SDK → 本机原版 Claude Code 路线；SDK 是控制 CLI 的库，不因为“只用 CLI”而重写已有执行器。
 4. Kimi 继续使用原生 CLI；Codex 继续使用现有插件控制的官方 Codex CLI/app-server。这里不要求退回文本抓取，也不移除已有会话、恢复和原生能力。
 5. 模型、访问渠道、思考等级、权限和会话分别配置。普通任务使用经济的初始组合，困难任务在显式允许集内升级，不默认全部 `max`。
@@ -282,13 +282,13 @@ Flywheel 的模型配置直接包含 Carbon、Neon、Hydrogen。插件与 DSH �
 
 ### 8.1 单一 runner，三个入口
 
-拟新建仓库 `ckanner/dsh-subagent-antigravity`、npm 包 `dsh-subagent-antigravity`。名称是提案，不表示仓库或 npm 包已创建。
+拟新建仓库 `ckanner/dsh-subagent-antigravity`、npm 包 `@ckanner/dsh-subagent-antigravity`。名称是提案，不表示仓库或 npm 包已创建。
 
 | 入口 | 职责 |
 | --- | --- |
 | DSH Desktop 插件面板 / 直接命令 | 用户选择工作目录、模型、effort、权限和任务，直接启动 CLI，不隐式调用父模型 |
 | `subagent_antigravity` 工具 | 正式接入 DSH Agent/PTC 与 jobs，并在对应 preset 中注册 |
-| `dsh-subagent-antigravity/machine` | Flywheel 等确定性调用方的公开 ESM API，不创建 DSH parent Agent |
+| `@ckanner/dsh-subagent-antigravity/machine` | Flywheel 等确定性调用方的公开 ESM API，不创建 DSH parent Agent |
 
 新包的目标出口为根插件、`./machine`、`./client`，并提供独立 `antigravity-machine` 包装命令。`--capabilities`、`--doctor`、`--json` 是该包装命令的拟议参数，不是声称 `agy` 已有这些参数。
 

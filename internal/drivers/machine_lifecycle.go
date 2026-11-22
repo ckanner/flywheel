@@ -55,7 +55,7 @@ func machineAdapterVersion(harness string) string {
 	}
 }
 func machineAdapterMatches(a machineAdapter, harness string) bool {
-	return a.Package == "dsh-subagent-"+harness && a.Version == machineAdapterVersion(harness) && a.Protocol == 1
+	return a.Package == adapterPackageFor(harness) && a.Version == machineAdapterVersion(harness) && a.Protocol == 1
 }
 
 func machineOpaqueID(id string) bool {

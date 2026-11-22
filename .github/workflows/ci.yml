@@ -133,8 +133,6 @@ jobs:
           node dist/codex-pro-worker.js --doctor
           node dist/claude-code-pro-worker.js --doctor
           node dist/antigravity-worker.js --doctor
-      - name: Verify the independent Antigravity CLI plugin
-        run: npm --prefix plugins/antigravity ci --ignore-scripts && npm --prefix plugins/antigravity run check
       - name: Verify Go to Node to SDK, Codex Pro, Claude and Antigravity protocol boundaries (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"

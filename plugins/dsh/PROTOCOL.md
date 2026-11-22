@@ -429,7 +429,7 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 ## Antigravity worker
 
-`flywheel-antigravity-worker` 固定 `dsh-subagent-antigravity@0.2.0`，只调用公开
+`flywheel-antigravity-worker` 固定 `@ckanner/dsh-subagent-antigravity@0.2.0`，只调用公开
 machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
 均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
 readOnlyRecovery 及 evidenceOnly:verified-empty-init-tools，缺失即拒绝。
@@ -470,7 +470,7 @@ subscription.status为verified-local-controls时只证明本地account route和c
 Recover只读原recoveryDirectory的精确requestId/runId journal，带冻结的subscription/
 evidenceOnly与模型权限核对；不得启动CLI或再次发送任务。doctor仅核对package/接口与
 可执行兼容性，不发推理或推定账户额度。完整原生协议见独立插件的
-[Machine contract](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/docs/MACHINE.md)。
+[Machine contract](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/MACHINE.md)。
 
 ## Claude Code Pro worker
 

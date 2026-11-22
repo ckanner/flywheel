@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/antigravity.md) · 简体中文
 
 通过 `harness:"antigravity"` 使用官方本地 **`agy` CLI** 运行 Gemini。
-Flywheel 调用 `dsh-subagent-antigravity@0.2.0` 的公开 machine API；插件负责原生
+Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.2.0` 的公开 machine API；插件负责原生
 Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审批、证据收集、验证和交付。
 同一个插件也提供 DSH 直接任务面板和 `subagent_antigravity`。不使用 ACP，也不另接模型 API。
 
@@ -17,7 +17,7 @@ Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审�
 Flywheel 包含 `flywheel-antigravity-worker` 与
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json)
 中的精确配套候选。完整源码位于
-[`plugins/antigravity`](https://github.com/ckanner/flywheel/tree/main/plugins/antigravity)，
+[`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)，
 保留独立 npm 包结构，便于直接审查。源码身份、候选字节安装、公共 registry 可用性
 和真实账号验收分别核对；不能拿其他 machine 契约的旧版本替代 0.2.0。
 
@@ -192,7 +192,7 @@ credits 或替代模型 fallback。原生运行时已授权的 hooks 与外部�
 将精确审查过的插件产物安装到目标 DSH profile：
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/dsh-subagent-antigravity-0.2.0.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.0.tgz
 ```
 
 打开 **Antigravity** 会话视图，选择工作区、名称、完整任务、模型、effort 和原生策略，然后启动任务。
@@ -216,7 +216,7 @@ Agent 委派需要 preset 明确注册 `subagent_antigravity`，并满足插件 
 在已有 DSH 对话中调用 subagent，父对话仍使用自己的 provider；直接面板／命令不会
 先调用父模型。本包承担完整 Agent 传输，不要注册成普通 DSH LLM provider。
 DSH schema、公开 machine API 和 CLI 包装用法见独立
-[插件指南](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/README.zh-CN.md)。
+[插件指南](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/README.zh-CN.md)。
 
 ## 生命周期、历史与用量
 
@@ -240,4 +240,4 @@ exit zero、软权限拒绝或连接超时均不能证明成功。token 保留�
 
 离线协议、取消、父进程退出、evidence-only、公开 API 和真实候选安装检查，与真实账号
 或 macOS 验收分别记录。详见[恢复](session-recovery.md)、[发布验证](releasing.md)以及
-插件的[验证记录](https://github.com/ckanner/flywheel/blob/main/plugins/antigravity/docs/VALIDATION.md)。
+插件的[验证记录](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/VALIDATION.md)。

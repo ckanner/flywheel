@@ -47,11 +47,11 @@ This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 
 
 ## Bundled Antigravity CLI adapter
 
-This distribution bundles `dsh-subagent-antigravity@0.2.0`, Copyright (c) 2026
+This distribution bundles `@ckanner/dsh-subagent-antigravity@0.2.0`, Copyright (c) 2026
 ckanner, under the MIT License. Its license remains at
-`node_modules/dsh-subagent-antigravity/LICENSE`. Exact source and archive identities
+`node_modules/@ckanner/dsh-subagent-antigravity/LICENSE`. Exact source and archive identities
 are in `vendor/antigravity.json`; the complete adapter source is in the repository's
-`plugins/antigravity` directory. Its pinned `ajv@8.17.1` schema validator and transitive
+the standalone `dsh-subagent-antigravity` repository. Its pinned `ajv@8.17.1` schema validator and transitive
 runtime dependencies retain their licenses in the bundled dependency tree. No native
 agy executable, account credentials or private Google application resources are included.
 

@@ -73,17 +73,17 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
    已删除“所有调用均有派发前 init 闸门”的泛化表述，并明确 AGY Plan 不运行 Swarm。
 10. **干净 CI 的公开包依赖。** 首次完整 CI 在 Linux/macOS 均暴露桥接测试直接导入
     相邻 AGY 源码，因 DSH 步骤尚未安装兄弟包的 ajv 而失败。测试改为导入 DSH 锁定的
-    `dsh-subagent-antigravity/machine` 公开入口，保留全部三个测试及断言。
+    `@ckanner/dsh-subagent-antigravity/machine` 公开入口，保留全部三个测试及断言。
     仅安装 DSH 依赖、root/独立 AGY 均无 node_modules 的隔离目录中，旧导入复现
     `ERR_MODULE_NOT_FOUND`，改后 3/3 通过；没有靠调整 CI 顺序或跳过检查解决。
 
 ### 独立插件的冻结身份
 
-- 源码提交：[`2f9b5f255e89`](https://github.com/ckanner/flywheel/commit/2f9b5f255e89d0ad51688b48c109c0ec493b7fe5)。
-- 源码目录树：`f89a71e097ce5143b6489737b07eeb8f3b4db173`。
-- 归档：`dsh-subagent-antigravity-0.2.0.tgz`，59,355 bytes。
-- SHA-256：`fa5ef71121749cef2d0217fd545d1a15a250ed3534342ea8d362e5bde9d751f4`。
-- npm integrity：`sha512-HNgyzdul4+v5f4ep4E2HKcZSrjRFPWwp6eqOr4deO1LXX9bHDes7IJc1w99qdn/T602W+5QC3OKv+advTeRAyQ==`。
+- 源码提交：[`6e12df1cf858`](https://github.com/ckanner/dsh-subagent-antigravity/commit/6e12df1cf8585ed82b25dc19e0d07c5d8a9d1114)。
+- 源码树：`4a2f43990f19b57af75795eb7d5fb7c9dc71ea05`。
+- 归档：`ckanner-dsh-subagent-antigravity-0.2.0.tgz`，59,407 bytes。
+- SHA-256：`88a0ce5604d0fb5ded979b63596e632ae8930c059371e816dd65388eb1161917`。
+- npm integrity：`sha512-GeS3sQITl00kegH++wL8mdUtO0TweyZ+I+YoZcSdGPE4cdHc1FCABrrZTHjUqisv7+iblm9IWcWC+RH83rcIFg==`。
 
 冻结源码的插件测试 35/35 通过。该源码生成的上述归档随后用于源码目录外的
 ESM/types/bin/guardian/journal/evidence-only/Orchestrator/Swarm 消费，
@@ -102,7 +102,7 @@ Flywheel 桥接修复没有改动该插件或重打此包。两个消费树的 l
 | 验证 | 命令或入口 | 实际结果 |
 | --- | --- | --- |
 | Go 完整门禁 | `make quality-gate` | vet、格式、全部包测试通过；1,123 个被测函数各自 100.0% 语句覆盖 |
-| 独立 AGY 插件 | `npm --prefix plugins/antigravity run check` | 35/35；随后真实归档消费通过 |
+| 独立 AGY 插件 | 独立仓库 `ckanner/dsh-subagent-antigravity` 的 `npm run check` | 35/35；随后真实归档消费通过 |
 | 独立 DSH 安装 | 插件的真实 DSH 0.2.2-rc.3 隔离 profile 安装 | 通过，使用上述相同 0.2.0 归档 |
 | 完整 DSH | `npm --prefix plugins/dsh run check` | 主测试 590/590；发布宿主/客户端 10/10；0 skipped |
 | 根 Node | `npm test` | 167/167；0 skipped |

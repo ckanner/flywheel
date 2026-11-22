@@ -75,7 +75,7 @@ func parseOwnedCLIStream(stdout string, request codexProStart, harness, label st
 				trusted = false
 				parsed.Error = "invalid request: " + label + " result omitted durable lifecycle evidence"
 			}
-			if !receiptHasFields(json.RawMessage(line), "receipt", "error") || frame.Adapter.Package != "dsh-subagent-"+harness ||
+			if !receiptHasFields(json.RawMessage(line), "receipt", "error") || frame.Adapter.Package != adapterPackageFor(harness) ||
 				frame.Adapter.Version != machineAdapterVersion(harness) || frame.Adapter.Protocol != 1 {
 				trusted = false
 				parsed.Error = "invalid request: " + label + " terminal envelope does not match the pinned adapter contract"
