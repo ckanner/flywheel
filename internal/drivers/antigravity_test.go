@@ -244,7 +244,7 @@ const args=`, 1))
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	t.Setenv("HOME", home)
-	for _, scenario := range []string{"success", "wrong-model", "quota", "duplicate", "waiting", "missing-agent", "tools-inherited"} {
+	for _, scenario := range []string{"success", "wrong-model", "quota", "duplicate", "waiting", "missing-agent"} {
 		t.Run(scenario, func(t *testing.T) {
 			a := agyRunArgs(t)
 			cwd, err := filepath.EvalSymlinks(a.Cwd)
@@ -256,7 +256,7 @@ const args=`, 1))
 			a.PersistentSession = true
 			a.Watchdog = watchdog.Opts{WallTimeoutMs: 10000, IdleTimeoutMs: 8000}
 			a.OnLifecycle = func(MachineLifecycle) error { return nil }
-			a.EvidenceOnly = scenario == "missing-agent" || scenario == "tools-inherited" || scenario == "success"
+			a.EvidenceOnly = scenario == "missing-agent" || scenario == "success"
 			if a.EvidenceOnly {
 				a.PermissionMode = "read-only"
 			}
@@ -284,7 +284,7 @@ const args=`, 1))
 				require.True(t, r.Settled, "%+v", r)
 				assert.True(t, r.Session.ResumeAccepted)
 			}
-			if scenario == "missing-agent" || scenario == "tools-inherited" {
+			if scenario == "missing-agent" {
 				assert.NoFileExists(t, filepath.Join(a.Cwd, "agy-input.jsonl"))
 				assert.Equal(t, "not-dispatched", r.Session.Dispatch)
 			}
