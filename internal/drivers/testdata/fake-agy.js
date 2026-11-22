@@ -61,7 +61,7 @@ process.stdin.on('end',async()=>{
   }
   const count=scenario==='long-stream'?2000:1
   for(let i=0;i<count;i++)emit({event:'step_update',step_update:{conversation_id:id,step_index:1,state:'ACTIVE',step_type:scenario==='illegal-tool'?'tool':'agent_response',text_delta:'progress '.repeat(scenario==='long-stream'?100:1)}})
-  const result={event:'result',result:{conversation_id:id,status:scenario==='waiting'?'WAITING':scenario==='quota'?'ERROR':'SUCCESS',response:scenario==='quota'?'':'done',...(scenario==='quota'?{error:'quota exhausted'}:{}),duration_seconds:1,num_turns:1,usage:{input_tokens:100,output_tokens:20,thinking_tokens:3,cache_read_tokens:0,total_tokens:123}}}
+  const result={event:'result',result:{conversation_id:id,status:scenario==='waiting'?'WAITING':scenario==='quota'?'ERROR':'SUCCESS',response:scenario==='quota'?'':process.env.FIXTURE_RESPONSE??'done',...(scenario==='quota'?{error:'quota exhausted'}:{}),duration_seconds:1,num_turns:1,usage:{input_tokens:100,output_tokens:20,thinking_tokens:3,cache_read_tokens:0,total_tokens:123}}}
   if(process.env.FIXTURE_FINISHED_REASON)result.result.finished_reason=process.env.FIXTURE_FINISHED_REASON
   if(args.includes('--json-schema'))result.result.structured_output=scenario==='schema-bad'?{wrong:true}:{answer:'done'}
   emit(result)

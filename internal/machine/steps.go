@@ -44,6 +44,15 @@ func toSpawnResult(r drivers.Result) errs.SpawnResult {
 		(r.ErrorCode != "" && *r.ExitCode != 1)) {
 		sr.SpawnError = errors.New("harness did not reach a confirmed terminal result")
 	}
+	// Antigravity's validated success receipt contains diagnostic metadata such
+	// as extraBilling:unknown and may discuss quota errors in its answer. Keep
+	// that wire evidence in Result, but do not classify it as process stderr.
+	if r.Harness == "antigravity" && len(r.AntigravityReceipt) != 0 && r.Settled &&
+		sr.SpawnError == nil && sr.ExitCode == 0 && sr.Signal == "" && !sr.TimedOut && sr.ErrorCode == "" &&
+		(r.ErrorMessage == nil || *r.ErrorMessage == "") && r.Session != nil &&
+		r.Session.Dispatch == "dispatched" && r.Session.Outcome == "completed" && r.Session.CleanupConfirmed {
+		sr.Stdout = ""
+	}
 	return sr
 }
 

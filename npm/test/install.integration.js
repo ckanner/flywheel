@@ -87,6 +87,25 @@ test('the complete npm candidate install and run from a clean agent environment'
   for (const document of ['LICENSE', 'README.md', 'README.zh-CN.md', 'docs/README.md', 'docs/README.zh-CN.md', 'docs/zh-CN/model-policy.md', 'docs/en/model-policy.md', 'docs/zh-CN/claude-code-pro.md', 'docs/en/claude-code-pro.md', 'docs/en/antigravity.md', 'docs/zh-CN/antigravity.md', 'docs/en/image-inputs.md', 'docs/zh-CN/image-inputs.md']) {
     await fs.access(path.join(root, document));
   }
+  await t.test('the installed Antigravity archive retains its source and later registry provenance', async () => {
+    const vendor = path.join(root, 'plugins/dsh/vendor');
+    const source = JSON.parse(await fs.readFile(path.join(vendor, 'antigravity.json'), 'utf8'));
+    const bytes = await fs.readFile(path.join(vendor, source.tarball));
+    assert.equal(source.package, '@ckanner/dsh-subagent-antigravity');
+    assert.equal(source.version, '0.2.1');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), source.sha256);
+    assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), source.integrity);
+    const verification = JSON.parse(await fs.readFile(path.join(vendor, 'registry-verification-2026-11-22.json'), 'utf8'));
+    assert.equal(verification.scope, 'published-archive-identity');
+    for (const published of verification.packages) {
+      const reviewed = JSON.parse(await fs.readFile(path.join(vendor, published.sourceRecord), 'utf8'));
+      assert.equal(published.package, reviewed.package);
+      assert.equal(published.version, reviewed.version);
+      assert.equal(published.sha256, reviewed.sha256);
+      assert.equal(published.integrity, reviewed.integrity);
+      assert.equal(published.matchesReviewedArchive, true);
+    }
+  });
   const demo = path.join(context.root, 'packaged tutorial demo');
   const example = await run('bash', [path.join(root, 'docs', 'examples', 'create-first-task.sh'), demo],
     { ...context.env, FLYWHEEL_BIN: report.paths.launcher }, context.project);

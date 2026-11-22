@@ -54,6 +54,8 @@
     "plugins/dsh/vendor/claude-code-pro.json",
     "plugins/dsh/vendor/lcu.json",
     "plugins/dsh/vendor/chatgpt.json",
+    "plugins/dsh/vendor/antigravity.json",
+    "plugins/dsh/vendor/registry-verification-2026-11-22.json",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.md",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md",
     "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"

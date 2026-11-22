@@ -22,12 +22,18 @@ binary on first use or resolve an old platform/worker package. `plugins/dsh` is 
 old platform packages and `@ckanner/dsh-plugin-flywheel` are historical releases;
 this flow neither uploads new versions of them nor unpublishes their existing bytes.
 
-Antigravity 0.2.1 is also bundled from its reviewed source tarball, with its exact metadata and standalone archive included in the package. `dsh-subagent-antigravity` is an independent companion source project; publishing that package is a separate authorized release, not part of this Flywheel release command.
+Antigravity 0.2.1 is bundled from its reviewed source tarball, with its exact
+metadata and standalone archive included in the package.
+`@ckanner/dsh-subagent-antigravity` is an independent companion package;
+publishing it is a separate authorized release, not part of this Flywheel command.
 
-Codex Pro 0.10.2 is bundled from its [reviewed source candidate](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
-The root and source-harness locks retain that candidate tarball's actual integrity;
-this does not claim the companion has been published. Claude Code
-Pro 0.7.0 is an optional external peer. Provider CLIs and account credentials are
+Codex Pro 0.10.2 is bundled from its [reviewed archive](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
+The root and source-harness locks retain that tarball's actual integrity.
+Codex 0.10.2, Antigravity 0.2.1 and Claude 0.7.0 were verified in the official
+registry on 2026-11-22 with bytes matching the original vendor records; the
+[dated verification](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
+is separate from their unchanged source-build provenance. Claude Code Pro 0.7.0
+is an optional external peer. Provider CLIs and account credentials are
 not included. Ordinary npm installation only places files; `install`/`setup` owns
 user setup, with no profile or credential changes hidden in postinstall.
 
