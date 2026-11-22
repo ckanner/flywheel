@@ -79,7 +79,7 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
 
 ### 独立插件的冻结身份
 
-- 源码提交：[`6e12df1cf858`](https://github.com/ckanner/dsh-subagent-antigravity/commit/52ecae8796faa1cdb501b5b59c170916cf6ec490)。
+- 源码提交：[`52ecae8796fa`](https://github.com/ckanner/dsh-subagent-antigravity/commit/52ecae8796faa1cdb501b5b59c170916cf6ec490)。
 - 源码树：`d0f0e13f8f2ad0874f88476a5de04c220a90ca82`。
 - 归档：`ckanner-dsh-subagent-antigravity-0.2.0.tgz`，59,411 bytes。
 - SHA-256：`e78a6ab1ff283c7666f18ddbcece53eb8cadd9455c333e05d5fbbb4966c5485d`。
