@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	AntigravityPackageVersion = "0.2.0"
+	AntigravityPackageVersion = "0.2.1"
 	AntigravityPackage        = "@ckanner/dsh-subagent-antigravity"
 	AntigravityWorkerEnv      = "FLYWHEEL_ANTIGRAVITY_WORKER"
 	AntigravityBinaryEnv      = "FLYWHEEL_AGY_BIN"

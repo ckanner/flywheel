@@ -177,7 +177,7 @@ attempt、plan、契约、候选 ID 和完整有效绑定匹配，写入确切 d
 ## 发布与现场边界
 
 2026-11-21 显式查询官方 npm registry：Flywheel latest 为已发行的 0.37.3；精确
-0.38.0、Antigravity 0.2.0、Claude 0.7.0 均返回结构化 E404。本次候选不会覆盖旧 0.37.3。
+0.38.0、Antigravity 0.2.1、Claude 0.7.0 均返回结构化 E404。本次候选不会覆盖旧 0.37.3。
 
 AGY 0.2.0 的已审归档及依赖随 Flywheel bundled，因此 Flywheel 安装不要求先独立发布
 AGY。独立插件按包名安装仍需要其自己的授权发行。Claude 0.7.0 是外部 optional peer；

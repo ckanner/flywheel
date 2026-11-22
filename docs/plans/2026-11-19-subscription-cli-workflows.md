@@ -530,7 +530,7 @@ Antigravity 原生 Orchestrator、Swarm 和 browser 子 Agent 也适用这些边
 
 ### 13.2.1 2026-11-20 已批准的编排与自适应增补
 
-实施记录：本增补已落实为 Antigravity 0.2.0、Flywheel 原生协作配置及 JEV 首轮选择。
+实施记录：本增补已落实为 Antigravity 0.2.1、Flywheel 原生协作配置及 JEV 首轮选择。
 源码、独立复核、实际包安装与未验证边界见[增补验收记录](../validation/2026-11-20-orchestration-adaptive-selection.md)。
 现行参数以[Antigravity 指南](../zh-CN/antigravity.md)、[JEV 指南](../zh-CN/jev.md)和
 [完整模板](https://github.com/ckanner/flywheel/blob/main/templates/flywheel.profiles.example.json)为准。

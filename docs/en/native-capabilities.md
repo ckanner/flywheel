@@ -14,7 +14,7 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.2, logged-in Codex CLI and matching sandbox/approval receipts |
 | `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.7.0, compatible local Claude runtime, authorized authentication and explicit full access |
-| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.2.0, admitted official CLI and explicit full access; partial child evidence |
+| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.2.1, admitted official CLI and explicit full access; partial child evidence |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 

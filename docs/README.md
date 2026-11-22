@@ -62,7 +62,7 @@ See the [implementation and review record](validation/2026-11-20-subscription-cl
 (Chinese) for source validation, candidate identities and verification limits.
 
 The [orchestration and adaptive-selection follow-up](validation/2026-11-20-orchestration-adaptive-selection.md)
-(Chinese) records Antigravity 0.2.0 Orchestrator/subagents/Swarm, reviewed collaboration
+(Chinese) records Antigravity 0.2.1 Orchestrator/subagents/Swarm, reviewed collaboration
 scopes, initial JEV selection, shared recovery budgets and their independent review.
 
 The [reviewed design and progressive planning proposal](plans/2026-11-16-reviewed-planning.md)

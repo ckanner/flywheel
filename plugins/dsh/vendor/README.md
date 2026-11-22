@@ -3,7 +3,7 @@
 Flywheel keeps exact reviewed package bytes. Codex Pro 0.10.2 and Claude Code
 Pro 0.7.0 are reviewed source candidates; the Claude subscription change is
 [PR #12](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/12).
-Antigravity 0.2.0 is an independent npm plugin whose complete source is maintained
+Antigravity 0.2.1 is an independent npm plugin whose complete source is maintained
 at [dsh-subagent-antigravity](https://github.com/ckanner/dsh-subagent-antigravity)
 and bundled from its reviewed tarball. These records do not claim registry release.
 LCU and ChatGPT below retain their previously verified registry identities. The
@@ -14,7 +14,7 @@ private preset generator remains bundled from reviewed source.
 | `dsh-subagent-codex-pro@0.10.2` | Bundled machine API source candidate | [18079d8b8c75](https://github.com/ckanner/dsh-subagent-codex-pro/commit/18079d8b8c751f5b50375473a96960eeb68b61be) | `b7c2e312c66dffb9b4aff6ce8c1b523cf5a3e7fe` | [codex-pro.json](codex-pro.json) |
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.7.0` | Optional Agent SDK subscription machine candidate | [ae3af4d752e4](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/ae3af4d752e4a974d41c848301472f4bb5d46d0f) | `501e99df8e626ef71568faefbafc974803e401bf` | [claude-code-pro.json](claude-code-pro.json) |
-| `@ckanner/dsh-subagent-antigravity@0.2.0` | Bundled official agy CLI, Orchestrator/subagents/Swarm and standalone DSH plugin | [dbca47e5f2d7](https://github.com/ckanner/dsh-subagent-antigravity/commit/dbca47e5f2d78ff16cfa11405801e7e35a803158) | `49693382380970aeaea15a38ca06847647157fee` | [antigravity.json](antigravity.json) |
+| `@ckanner/dsh-subagent-antigravity@0.2.1` | Bundled official agy CLI, Orchestrator/subagents/Swarm and standalone DSH plugin | [a20eb63bbfa2](https://github.com/ckanner/dsh-subagent-antigravity/commit/a20eb63bbfa2849df63043595475957bf4a4f04d) | `01bbc8964c37e40106b3b4be9aaf97d9a5df36dd` | [antigravity.json](antigravity.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
 | `dsh-plugin-chatgpt@0.1.20` | DSH provider compatibility fixture | [40d8f885e7a3](https://github.com/ckanner/dsh-plugin-chatgpt/commit/40d8f885e7a386af5f441b356b9c68496a47b0e3) | `c8c4f4829a00b1917fd1aef8c4254e083a5b6180` | [chatgpt.json](chatgpt.json) |
 

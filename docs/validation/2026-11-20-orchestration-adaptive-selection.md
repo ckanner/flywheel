@@ -79,11 +79,11 @@ Orchestrator 的 native 固定档位使用空 thinking 并省略 CLI effort 参�
 
 ### 独立插件的冻结身份
 
-- 源码提交：[`dbca47e5f2d7`](https://github.com/ckanner/dsh-subagent-antigravity/commit/dbca47e5f2d78ff16cfa11405801e7e35a803158)。
-- 源码树：`49693382380970aeaea15a38ca06847647157fee`。
-- 归档：`ckanner-dsh-subagent-antigravity-0.2.0.tgz`，59,864 bytes。
-- SHA-256：`b048a28089028a45992d3f2532cd21d2820894092225841b24ef52b97bd83b88`。
-- npm integrity：`sha512-0/zh7GtJL6YmOp5JYtXooB13OhsZhFnNoZKFpljj0v5taOOlo6MJW0JX0McUZZec6TDtaFui8Yi9cRPWk9lWXg==`。
+- 源码提交：[`a20eb63bbfa2`](https://github.com/ckanner/dsh-subagent-antigravity/commit/a20eb63bbfa2849df63043595475957bf4a4f04d)。
+- 源码树：`01bbc8964c37e40106b3b4be9aaf97d9a5df36dd`。
+- 归档：`ckanner-dsh-subagent-antigravity-0.2.1.tgz`，60,340 bytes。
+- SHA-256：`b0bf6d3524e0e1833a027bc40f5e68de7d8fddacc3dc04b5103f0966161c86bd`。
+- npm integrity：`sha512-9HiHshU2nlB2fduPX8klHvB68NzA4QN5xjxcYeQD/P4zjjrVHur5rzue1AttH7DXhj6B6sLgH1ysN7/3FV+98A==`。
 
 冻结源码的插件测试 35/35 通过。该源码生成的上述归档随后用于源码目录外的
 ESM/types/bin/guardian/journal/evidence-only/Orchestrator/Swarm 消费，

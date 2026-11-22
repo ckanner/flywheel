@@ -3,7 +3,7 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/antigravity.md)
 
 Use `harness:"antigravity"` to run Gemini through the official local **`agy` CLI**.
-Flywheel calls `@ckanner/dsh-subagent-antigravity@0.2.0` through its public machine API;
+Flywheel calls `@ckanner/dsh-subagent-antigravity@0.2.1` through its public machine API;
 the plugin owns the native Agent loop, process group and durable receipt. Go owns
 workflow stages, approval gates, evidence collection, verification and delivery.
 The same plugin also provides a direct DSH task panel and `subagent_antigravity`.
@@ -145,8 +145,11 @@ profile through a stage or candidate binding's `native-profile`:
 admission checks the native delegation tool. `swarm` uses the official `/swarm`
 entry. Only the adapter supplies that command; user content is encoded as a JSON
 payload with slash characters escaped. Other modes keep slash commands disabled.
-Explicit collaboration succeeds only when the stream actually exposes child
-conversation metadata. A request, an Orchestrator model, or a successful root
+Explicit `subagents` succeeds only when the stream actually exposes child
+conversation metadata. `swarm` is accepted when the adapter-owned `/swarm` root
+invocation returns a normal successful terminal even if `agy` 1.5.14 exposes no
+child metadata; the receipt records `collaborationObserved:false` and
+`children:"unknown"`. A request, an Orchestrator model, or a successful root
 terminal alone is not child evidence.
 
 `maxObservedAgents` accepts 1–8. It stops the invocation after more distinct
@@ -232,7 +235,7 @@ Sources: [native login and API/ADC routing](https://antigravity.google/docs/inst
 Install the exact reviewed plugin artifact into the intended DSH profile:
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.0.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.1.tgz
 ```
 
 Open the **Antigravity** conversation view, select the workspace, label, complete

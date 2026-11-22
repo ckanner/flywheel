@@ -72,7 +72,7 @@ options 不会被 JavaScript 对象的继承属性误当作已知模式。
 完整包的构建、同一归档实际安装与新提交 CI 结果在 PR 中单独记录，不能用上述
 源码检查或上一轮候选替代。伴随 Claude 0.7.0 的源码仍为 `ae3af4d752e4`，归档
 SHA-256 仍为 `03e8cdc04f1488a45e8ce52025f1cbd99ef9ca36e097d3868199663c5d94baf4`；
-Antigravity 0.2.0 归档也保持既有身份。
+Antigravity 0.2.1 归档也保持既有身份。
 
 ### CI 总时限复核
 

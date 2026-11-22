@@ -14,7 +14,7 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.2；已登录 Codex CLI；实际 sandbox/approval 回执 |
 | `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.7.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
-| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.2.0、通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
+| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.2.1、通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 

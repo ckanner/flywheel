@@ -3,7 +3,7 @@
 [文档目录](../README.zh-CN.md) · [English](../en/antigravity.md) · 简体中文
 
 通过 `harness:"antigravity"` 使用官方本地 **`agy` CLI** 运行 Gemini。
-Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.2.0` 的公开 machine API；插件负责原生
+Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.2.1` 的公开 machine API；插件负责原生
 Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审批、证据收集、验证和交付。
 同一个插件也提供 DSH 直接任务面板和 `subagent_antigravity`。不使用 ACP，也不另接模型 API。
 
@@ -127,7 +127,7 @@ Orchestrator 是模型选择，由官方 CLI 在同一个会话中把工作交�
 `native` 保留 CLI 隐式行为，不表示关闭子代理。`subagents` 明确要求委派并在当前调用
 归集结果，准入时检查原生委派工具；`swarm` 使用官方 `/swarm` 入口。命令前缀只由
 适配器生成，用户内容置于转义斜杠的 JSON 负载，其他模式仍禁用 slash commands。
-显式协作只有实际流中出现子会话元数据才能成功；已发请求、选了 Orchestrator 或根调用
+显式 `subagents` 只有实际流中出现子会话元数据才能成功；`swarm` 在 adapter 请求的 `/swarm` 根调用正常成功时接受，即使 `agy` 1.5.14 没有返回成员元数据，回执明确 `collaborationObserved:false`、`children:"unknown"`。已发请求、选了 Orchestrator 或根调用
 成功终态，都不能充当观察到子代理的证明。
 
 `maxObservedAgents` 为 1–8，观察到超量的不同子会话后停止调用，计入已观察的
@@ -192,7 +192,7 @@ credits 或替代模型 fallback。原生运行时已授权的 hooks 与外部�
 将精确审查过的插件产物安装到目标 DSH profile：
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.0.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.1.tgz
 ```
 
 打开 **Antigravity** 会话视图，选择工作区、名称、完整任务、模型、effort 和原生策略，然后启动任务。

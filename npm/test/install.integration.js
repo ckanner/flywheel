@@ -200,7 +200,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.2.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.2.1', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');

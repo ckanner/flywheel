@@ -587,7 +587,7 @@ Completed but unconsumed receipts have stricter rules: Review and Judge must mat
 
 The single-slot limit applies only to Flywheel's recovery receipt. Native thread and Session histories follow the backend's retention rules. Rebuilding a role history or shutting down its worker does not automatically delete earlier backend histories.
 
-An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity waits for native init before task input for evidence-only and explicit subagents/Swarm calls. Its ordinary native path (including Orchestrator) sends input after spawn and validates init afterward; it does not provide a universal pre-dispatch thread-ready gate. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.1 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity waits for native init before task input for evidence-only and explicit subagents/Swarm calls. Its ordinary native path (including Orchestrator) sends input after spawn and validates init afterward; it does not provide a universal pre-dispatch thread-ready gate. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
 
 `status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
@@ -910,7 +910,7 @@ fallback, current-turn tokens or a subscription charge.
 ## Antigravity and Gemini
 
 The `antigravity` harness invokes the official local `agy` CLI through the
-`@ckanner/dsh-subagent-antigravity@0.2.0` public machine API. The same companion supports
+`@ckanner/dsh-subagent-antigravity@0.2.1` public machine API. The same companion supports
 direct use in DSH. No ACP bridge or separate Gemini API credential is involved.
 The native catalog must contain the exact selected model, and `thinking` must
 match the model slug. The plugin verifies its local subscription/credit controls,
@@ -962,7 +962,7 @@ Local checks cover commands, versions, directories, configuration, and declared 
 DSH's `ready.reasoningEffort` echoes the requested value after SDK configuration acceptance; it is not an independent server attestation of effective reasoning effort. A no-inference probe cannot demonstrate quality gains from a higher effort. Gemini, Claude, GPT and Kimi have different native effort contracts; see [Reasoning effort](model-policy.md).
 
 Native worker checks import their public APIs and verify the pinned companion
-contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.0, including
+contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.1, including
 their required lifecycle/recovery exports, Node compatibility and native command.
 Binding fields `durableJournal`, `readOnlyRecovery` and
 `threadReadyBeforeDispatch` describe adapter capabilities; Claude's last field

@@ -21,7 +21,7 @@ worker 包。`plugins/dsh` 是 **private 源码／构建／测试区**，不是�
 新版本，也不撤销其已发布字节。
 
 Codex Pro 0.10.2 内置[已核对的源码候选包](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
-Antigravity 0.2.0 也按已审查源码 tarball 内置，整包包含精确 metadata 和可独立安装的归档。dsh-subagent-antigravity 是独立配套插件源码；发布它须另行授权，不属于本 Flywheel 发行命令。
+Antigravity 0.2.1 也按已审查源码 tarball 内置，整包包含精确 metadata 和可独立安装的归档。dsh-subagent-antigravity 是独立配套插件源码；发布它须另行授权，不属于本 Flywheel 发行命令。
 
 根目录与源码构建区锁文件保持该候选的真实 tarball integrity；这不表示配套插件已发行。Claude Code Pro 0.7.0 是外部
 可选 peer。Provider CLI 和账号凭据不在包内。普通 npm 安装只放置文件，`install`／

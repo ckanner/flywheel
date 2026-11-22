@@ -516,7 +516,7 @@ Reviews bind to the same candidate and verification evidence. The Executor's pri
 
 ### Approved orchestration and adaptive-selection addendum — 2026-11-20
 
-Implementation: this addendum is realized by Antigravity 0.2.0, Flywheel native
+Implementation: this addendum is realized by Antigravity 0.2.1, Flywheel native
 collaboration configuration and initial JEV selection. The [follow-up validation
 record](../validation/2026-11-20-orchestration-adaptive-selection.md) (Chinese)
 records source, independent review, package installation and unverified boundaries.

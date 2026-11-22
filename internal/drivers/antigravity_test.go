@@ -298,7 +298,7 @@ const args=`, 1))
 		{"orchestrator-native", "success", "gemini-pro-orchestrator-neon", "native", "", 4, true},
 		{"subagents", "children", "gemini-4-neon-high", "subagents", "", 4, true},
 		{"swarm", "swarm-children", "gemini-4-neon-high", "swarm", "", 4, true},
-		{"collaboration-missing", "success", "gemini-4-neon-high", "swarm", "", 4, false},
+		{"collaboration-missing", "success", "gemini-4-neon-high", "swarm", "", 4, true},
 		{"observed-limit", "child-limit", "gemini-4-neon-high", "swarm", "", 2, false},
 		{"native-cutoff", "success", "gemini-pro-orchestrator", "native", "HARD_TURN_LIMIT", 4, false},
 	} {

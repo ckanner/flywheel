@@ -532,7 +532,7 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.2.0 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.2.1 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 在任务前
 检查 SDK initialize／版本和要求的订阅证据，但原生 `system/init` 配置消息仍发生在
@@ -872,7 +872,7 @@ frontend／multimodal 执行。`fable` 供显式替换，canonical model 是
 
 ## Antigravity 与 Gemini
 
-`antigravity` harness 通过 `@ckanner/dsh-subagent-antigravity@0.2.0` 的公开 machine API
+`antigravity` harness 通过 `@ckanner/dsh-subagent-antigravity@0.2.1` 的公开 machine API
 调用官方本机 `agy` CLI，同一插件也能在 DSH 中直接使用。不经过 ACP，不需要另一个
 Gemini API 凭证。实际原生目录必须包含选定的精确模型，thinking 必须与 slug 一致。
 插件验证本机订阅／credits 控制、原生生命周期、请求配置和清理；账号访问或模型
@@ -926,7 +926,7 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；Gemini、Claude、GPT、Kimi 也不共用同一套原生 effort 契约，详见[推理等级说明](model-policy.md)。
 
 原生 worker 检查实际导入公开 API，并核对精确 companion 契约：Codex Pro 0.10.2、
-Claude Code Pro 0.7.0、Antigravity 0.2.0，及要求的 lifecycle／recovery 导出、
+Claude Code Pro 0.7.0、Antigravity 0.2.1，及要求的 lifecycle／recovery 导出、
 Node 兼容性和原生命令。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。

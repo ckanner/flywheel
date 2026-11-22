@@ -67,7 +67,7 @@ func validateAntigravityNativeReceipt(raw json.RawMessage, request codexProStart
 		(n.Completion.State == "completed") != (n.Completion.Source != nil && *n.Completion.Source == "normal-result-and-cli-exit") ||
 		n.Completion.Source != nil && *n.Completion.Source != "normal-result-and-cli-exit" ||
 		n.Completion.State == "completed" && (execution.Dispatch != "dispatched" || !*execution.TerminalReceived || execution.ExitCode == nil || *execution.ExitCode != 0 || execution.FinishedReason != nil) ||
-		success && (n.Completion.State != "completed" || exceeded || *n.MetadataTruncated || wanted.Mode != "native" && count == 0) {
+		success && (n.Completion.State != "completed" || exceeded || *n.MetadataTruncated || wanted.Mode == "subagents" && count == 0) {
 		return fmt.Errorf("invalid request: Antigravity native dispatch, observation guard or invocation completion mismatch")
 	}
 	seen := map[string]bool{}

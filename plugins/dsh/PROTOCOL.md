@@ -429,7 +429,7 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 ## Antigravity worker
 
-`flywheel-antigravity-worker` 固定 `@ckanner/dsh-subagent-antigravity@0.2.0`，只调用公开
+`flywheel-antigravity-worker` 固定 `@ckanner/dsh-subagent-antigravity@0.2.1`，只调用公开
 machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
 均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
 readOnlyRecovery 及 evidenceOnly:verified-managed-agent，缺失即拒绝。

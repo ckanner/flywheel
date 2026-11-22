@@ -51,7 +51,7 @@ Mac 桌面或 Seatbelt 行为。
 
 | 后端 | 安装与执行路径 |
 | --- | --- |
-| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.2.0` machine API → 官方本机 `agy` CLI 及 Google 原生登录；无 ACP |
+| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → 官方本机 `agy` CLI 及 Google 原生登录；无 ACP |
 | Claude Code Pro | worker 依赖树中的精确 optional peer `0.7.0` → 官方 Agent SDK → 本地 Claude Code 订阅 |
 | Codex Pro | 内置 `0.10.2` machine API → 官方 app-server 与 ChatGPT 登录 |
 | Kimi | 最小 owned native agent profile，managed Kimi Code OAuth；严格订阅模式拒绝 print |

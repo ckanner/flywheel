@@ -46,8 +46,7 @@
     "vendor/chatgpt.json",
     "KIMI_NATIVE_PROTOCOL.md",
     "KIMI_NATIVE_PROTOCOL.en.md",
-    "vendor/antigravity.json",
-    "vendor/ckanner-dsh-subagent-antigravity-0.2.0.tgz"
+    "vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"
   ],
   "dsh": {
     "bundle": {
@@ -103,7 +102,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.2.0.tgz",
+    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },
