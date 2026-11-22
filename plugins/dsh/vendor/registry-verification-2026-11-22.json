@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "registry": "https://registry.npmjs.org/",
+  "scope": "published-archive-identity",
+  "method": "Read exact-version registry metadata, then npm pack each exact version with scripts disabled and a fresh cache. Compare registry integrity and the downloaded archive SHA-256 and SHA-512 against the original reviewed vendor record.",
+  "verificationToolchain": {
+    "node": "24.22.3",
+    "npm": "11.19.1"
+  },
+  "packages": [
+    {
+      "package": "@ckanner/dsh-subagent-antigravity",
+      "version": "0.2.1",
+      "sourceRecord": "antigravity.json",
+      "publishedGitHead": "a20eb63bbfa2849df63043595475957bf4a4f04d",
+      "publishedAt": "2026-11-22T03:42:59.794Z",
+      "verifiedAt": "2026-11-22T13:51:12.019Z",
+      "tarball": "https://registry.npmjs.org/@ckanner/dsh-subagent-antigravity/-/dsh-subagent-antigravity-0.2.1.tgz",
+      "sha256": "b0bf6d3524e0e1833a027bc40f5e68de7d8fddacc3dc04b5103f0966161c86bd",
+      "integrity": "sha512-9HiHshU2nlB2fduPX8klHvB68NzA4QN5xjxcYeQD/P4zjjrVHur5rzue1AttH7DXhj6B6sLgH1ysN7/3FV+98A==",
+      "matchesReviewedArchive": true
+    },
+    {
+      "package": "dsh-subagent-claude-code-pro",
+      "version": "0.7.0",
+      "sourceRecord": "claude-code-pro.json",
+      "publishedGitHead": "e8dcd1428a10572dbffb85bd199718b85a51c29a",
+      "publishedAt": "2026-11-22T06:33:02.374Z",
+      "verifiedAt": "2026-11-22T13:51:17.948Z",
+      "tarball": "https://registry.npmjs.org/dsh-subagent-claude-code-pro/-/dsh-subagent-claude-code-pro-0.7.0.tgz",
+      "sha256": "03e8cdc04f1488a45e8ce52025f1cbd99ef9ca36e097d3868199663c5d94baf4",
+      "integrity": "sha512-npT2lkTDtX5qBPqeEvnWYFD32zwHAL9T11VZzMH58i2O7JvHs7Hbur33u8U4nILiHZk+NynDSO7XqowX+TeeGQ==",
+      "matchesReviewedArchive": true
+    },
+    {
+      "package": "dsh-subagent-codex-pro",
+      "version": "0.10.2",
+      "sourceRecord": "codex-pro.json",
+      "publishedGitHead": "69e180ad74adff80a270c7f1ca44030ca6f33246",
+      "publishedAt": "2026-11-17T11:14:45.357Z",
+      "verifiedAt": "2026-11-22T13:51:23.401Z",
+      "tarball": "https://registry.npmjs.org/dsh-subagent-codex-pro/-/dsh-subagent-codex-pro-0.10.2.tgz",
+      "sha256": "bd66d165ff314c3259af12aaba85e97bec407bff16efcc1109c0b49bd4baa04a",
+      "integrity": "sha512-r8ip9u2YVau1yNHtG4od4frfcyFWHZDqJ9+FvCNYr/P8UBzoGePBRPboWid7VsrzPJ5jGMnxc3hizT6aoynbvg==",
+      "matchesReviewedArchive": true
+    }
+  ],
+  "limitations": [
+    "This dated read-only observation does not replace the fresh registry check required for each Flywheel publication or promotion.",
+    "Original source records, including their registryReleaseVerified value and source identities, remain unchanged; publishedGitHead is recorded separately.",
+    "No account entitlement, model inference, billing or user-machine installation was tested. The private preset generator is outside this registry verification."
+  ]
+}

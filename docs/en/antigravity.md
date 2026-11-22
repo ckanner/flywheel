@@ -17,14 +17,16 @@ subagents/Swarm require **1.5.12+** and the needed public capabilities. The plug
 downloads the executable, implements login, copies account tokens or changes
 global settings. This release supervises POSIX process groups and rejects Windows.
 
-Flywheel includes `flywheel-antigravity-worker` and the reviewed companion
-candidate recorded in
+Flywheel includes `flywheel-antigravity-worker` and the exact reviewed companion
+archive recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json).
 The source is reviewable in
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)
 as a standalone npm package. Package identity, installed candidate bytes, public
-registry availability and real-account acceptance are separate checks. An older
-package with another machine contract cannot substitute for 0.2.0.
+registry availability and real-account acceptance are separate checks. The
+[2026-11-22 registry verification](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
+confirms that the published 0.2.1 archive matches the reviewed bytes. An older
+package with another machine contract cannot substitute for 0.2.1.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -162,7 +164,7 @@ child metadata has a cumulative size bound; overflow keeps verified member IDs,
 marks `metadataTruncated:true` and fails the invocation rather than silently
 reporting an incomplete successful result.
 
-Flywheel Execute requires Full, no images, and a reviewed `collaboration` contract
+Flywheel Execute requires Full, no declared model image inputs, and a reviewed `collaboration` contract
 before admitting a Swarm binding, whether selected by JEV or static configuration.
 The contract contains 2–8 independent tasks with disjoint write scopes inside the
 packet's approved `schedule.writes`. Planning may use foreground subagents to
@@ -190,8 +192,9 @@ through the official `--agent` option and waits for real native init before
 writing the task:
 
 - `init.agent` must match the exact generated agent identity.
-- `init.tools` must exist as the native tool catalog, and `init.agent` must be the exact managed agent.
-- The catalog may contain registry tools; the managed custom agent file carries the empty allowlist, and every observed tool or subagent step rejects the invocation.
+- `init.tools` must exist as an array containing the native tool catalog.
+- The catalog may be nonempty; the managed custom agent file carries the empty
+  allowlist, and every observed tool or subagent step rejects the invocation.
 - Orchestrator models and native collaboration profiles are rejected for this phase.
 - Missing agent identity, absent catalog, malformed init or later tool/subagent events reject the invocation.
 
@@ -201,7 +204,24 @@ The [custom-agent contract](https://antigravity.google/docs/subagents/) defines 
 managed allowlist and workspace discovery. A CLI that cannot identify the managed
 agent or catalog is not admitted. Plain plan mode or a prompt instruction is
 insufficient. A live `agy` 1.5.14 check confirmed the managed empty allowlist refuses
-a requested shell command.
+a requested shell command; that recorded check is separate from the offline
+regressions added for Flywheel's receipt acceptance.
+
+Flywheel accepts the result only when `observed.agent` and the adapter's
+`native.managedAgent` record match this invocation's run ID and exact workspace
+path, contain a valid content digest, and confirm managed-file cleanup. The
+pinned adapter verifies the policy file's content and ownership before dispatch
+and removal. Go verifies that attestation's binding, without independently
+reconstructing the policy from its digest or reopening the already removed file.
+Read-only recovery uses the same checks. Subscription-backed JEV decisions use
+this evidence-only contract as well.
+
+After a successful Antigravity receipt and clean process/session completion have
+been verified, Flywheel does not reclassify its raw stdout by diagnostic words.
+For example, `extraBilling:"unknown"` is subscription metadata, not a quota
+failure. The original receipt stays intact; typed failures, stderr checks and
+physical timeout/cancellation/cleanup guards still apply. Report and verdict
+contents must independently satisfy their schemas and evidence requirements.
 
 Creation uses an exclusive path, invocation ownership and content identity;
 cleanup removes only that unchanged invocation-owned file. Existing user agents

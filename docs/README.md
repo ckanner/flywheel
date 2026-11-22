@@ -52,11 +52,13 @@ claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
 The [official Antigravity ACP interactive proposal](plans/2026-11-22-antigravity-native-acp.en.md)
-([中文](plans/2026-11-22-antigravity-native-acp.md)) starts with the unmodified official
-Registry agent, its own personal Google login and directly operated external-agent
-sessions. Existing headless behavior and defaults remain. CLI ACP and any automated
-Flywheel binding require separate validation and scope; this documentation-only
-proposal ships no ACP configuration, login or runtime capability.
+([中文](plans/2026-11-22-antigravity-native-acp.md)) prefers the unmodified official
+CLI (`agy acp`), its own personal Google login and directly operated external-agent
+sessions. CLI 1.5.14 is the first qualification candidate, with a proposed 1.5.13
+minimum baseline and exact-build acceptance. Existing headless behavior and defaults
+remain. The official standalone Registry agent and any automated Flywheel binding
+need separate qualification and scope; this documentation-only proposal ships no
+ACP configuration, login or runtime capability.
 
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md)) preserves the approved design.

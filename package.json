@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.38.0",
+  "version": "0.38.1",
   "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",
@@ -54,6 +54,8 @@
     "plugins/dsh/vendor/claude-code-pro.json",
     "plugins/dsh/vendor/lcu.json",
     "plugins/dsh/vendor/chatgpt.json",
+    "plugins/dsh/vendor/antigravity.json",
+    "plugins/dsh/vendor/registry-verification-2026-11-22.json",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.md",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md",
     "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"
@@ -64,7 +66,7 @@
     "test": "node --test npm/test/*.test.js",
     "test:install": "node scripts/test-packed-host.js && node --test npm/test/install.integration.js",
     "test:registry": "node npm/test/registry-smoke.js",
-    "build:npm": "bash scripts/build-npm.sh 0.38.0 dist-npm",
+    "build:npm": "bash scripts/build-npm.sh \"$npm_package_version\" dist-npm",
     "test:sessions": "node scripts/test-session-evaluation.js"
   },
   "dependencies": {

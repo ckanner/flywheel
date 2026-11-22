@@ -137,10 +137,10 @@ jobs:
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
         run: go test ./internal/drivers -run '^Test((DSH|CodexPro|ClaudeCodePro|KimiNative|Antigravity)NodeWorkerOfflineBridge|(DSH|CodexPro|ClaudeCodePro)ProviderActivityOfflineBridge|KimiPrintSessionTitleOfflineBridge|KimiPrintIdentityFailureIsNotRetryableOfflineBridge)$' -count=1 -v
-      - name: Verify packet images through the real Claude SDK and read-only recovery (offline)
+      - name: Verify packet images and evidence-only decisions through real adapters (offline)
         env:
           FLYWHEEL_TEST_NODE_BRIDGE: "1"
-        run: go test ./internal/machine -run '^TestPacketImagesClaudeSDKOfflineBridge$' -count=1 -v
+        run: go test ./internal/machine -run '^Test(PacketImagesClaudeSDKOfflineBridge|AntigravityEvidence(JEV|Investigation)OfflineBridge)$' -count=1 -v
       - name: Verify npm runtime, installer and release contracts
         run: npm test
       - name: Install and exercise the actual npm candidate

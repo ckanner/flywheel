@@ -5,7 +5,34 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## 0.38.0 candidate — Subscription CLI workflows
+## 0.38.1 — 2026-11-22
+
+- Accept Antigravity evidence-only results with a nonempty CLI tool catalog when
+  the pinned adapter proves the exact managed agent, invocation, workspace and
+  confirmed cleanup. Keep actual tool/subagent activity and missing or conflicting
+  proof rejected. Apply the same checks to read-only recovery so subscription JEV
+  decisions and investigation reports can consume legitimate completed results.
+- Keep a verified successful Antigravity receipt's raw stdout out of legacy text
+  error matching. Subscription metadata such as `extraBilling:"unknown"` and
+  quoted evidence no longer turn an accepted analysis into QUOTA or hide an
+  invalid review verdict's EMPTY_RESPONSE. Physical failures, typed errors and
+  stderr checks retain their existing behavior.
+- Add real adapter/worker regression coverage for nonempty catalogs and malformed
+  agent identities, without making model calls or widening evidence permissions.
+- Include Antigravity provenance and a dated companion registry verification in
+  both package file lists; verify their presence in actual packed and installed
+  artifacts. Preserve the original source-build metadata.
+- Correct current release descriptions, notice links and bilingual Antigravity
+  guidance, including catalog versus allowlist semantics and unknown Swarm member
+  observations.
+
+## 0.38.0 — Subscription CLI workflows
+
+Publication follow-up (2026-11-22): the official npm registry reports this version
+published at `2026-11-22T07:47:48.081Z`. This later registry observation does not
+change the scope of the original candidate-validation notes below or establish
+which version is installed in a user's environment. Verify with
+`npm view @ckanner/flywheel time --json --registry=https://registry.npmjs.org`.
 
 - Complete existing-packet image input editing through inspected original bytes,
   frozen references and independent plan review; retain explicit removal and

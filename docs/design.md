@@ -478,8 +478,13 @@ Go 检查证据引用结构，不把语义结论当作已由代码独立证明�
 
 配置 `loops.investigate` 后，受管 Run 在 awaiting-report 自动调用证据分析角色。
 独立 `analysis-pending` 冻结 round、revision、RunID、contract/evidence hash、实际
-binding/subscription 和 evidence-only 请求；adapter 必须核验无工具暴露后才发 prompt，
-不把工具限制描述成 OS 沙箱。分析只消费批准的真实观察与旧报告，输出带 version:1 的
+binding/subscription 和 evidence-only 请求；固定 Antigravity adapter 必须核验独占
+自定义 agent 的空工具／MCP／skills／plugins 策略、禁止 subagent 的配置与原生
+init.agent 后才发 prompt，并拒绝实际工具／子代理事件。init.tools 是 CLI 工具目录，
+必须存在但允许非空；Go 采用回执时绑定 observed.agent、managedAgent 的名称、owner、
+工作区内精确路径、合法内容摘要与已确认清理，恢复沿用同一验证，不重建已删除文件。
+摘要不构成 Go 对策略内容的独立证明，也不把工具限制描述成 OS 沙箱。
+分析只消费批准的真实观察与旧报告，输出带 version:1 的
 报告 JSON；字段、全部假设和成功观察引用通过后，才将 settled receipt 与报告一同
 CAS 采用。原始与只读恢复回执分别不可覆盖，原生 lifecycle ACK 先持久化；丢失结果
 或未知清理保留 pending，Run 只读核对原 journal，不重发。已知失败/无效输出不自动
@@ -518,6 +523,13 @@ Antigravity 的 collaboration-not-observed、observed-agent-limit 和 native-cut
 映射为非传输重试的 INVALID_REQUEST，保留原 category／reason。此映射不改变原生
 dispatch／outcome／providerWork／cleanup 事实；本地观察限额触发取消时，未观察到的
 provider 或子工作仍 unknown，不能因错误码确定而获得自动重放资格。
+
+只有已验证 Antigravity 原生成功回执、settled、正常物理退出、completed 会话与
+已确认清理同时成立时，错误分类不再扫描该回执的原始 stdout。订阅元数据中的
+extraBilling:"unknown" 或答案引用的 quota/billing 文字不构成 provider 失败。
+原始回执仍保留，stderr 检查、结构化错误、取消／超时／截断与清理检查保持有效；
+缺少原生成功证明或旧文本 driver 不适用此规则。调查报告和 review 裁决仍独立
+验证结构与证据，成功调用中的无效裁决保持 EMPTY_RESPONSE，不误触发额度后备。
 
 退避、渠道降级、尝试次数和空转检测仍由配置/状态决定。默认没有跨渠道付费降级。driver 的 settled 与 exit code 是两个独立条件；缺终态、丢尾帧、输出截断不能变成成功。
 
@@ -1171,7 +1183,7 @@ skills 继续从同一 Go 二进制内嵌资源安装。每个受管快照保存
 
 发布以精确 HEAD 标签与干净候选为依据。构建一次完整单包候选（candidate format 2），Linux/macOS 安装测试消费同一个 tarball；候选验证同时核对四个平台二进制、公开入口、MIT 许可和内置 adapter。已存在版本必须核对 integrity；先发 candidate 标签，精确版本从 registry 安装验证后才推进 latest，防止倒退。源码 PR CI 通过、npm pack 成功、registry 安装通过与用户 Mac 实机验收是不同证据，分别记录。
 
-历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.2`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.7.0与LCU 0.5.0维持可选peer。Codex 0.10.2、Antigravity 0.2.1 与 Claude 0.7.0 在本次变更中是源码候选：CI 核验真实候选包，发行流程仍须从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 内置于完整包，核验其实际 bundle 字节。不能把源码验收当作插件独立发布。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
+历史 0.28.2 使用 DeepSeek API Key 默认，账号默认修复从 0.28.3 开始提供；这些版本差异保留在 changelog 和发行记录，升级仍须显式迁移已有配置，不重写已发布的包。DSH 插件精确依赖上游 `dsh-subagent-codex-pro@0.10.2`；该已审查源码候选按真实 npm tarball 与 integrity 锁定并 bundle 到完整包，来源、许可证和摘要见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)。generator 0.4.0的共享PTC composition同样固定并bundle；Claude 0.7.0与LCU 0.5.0维持可选peer。Codex 0.10.2、Antigravity 0.2.1 与 Claude 0.7.0 已于 2026-11-22 核实在官方 npm registry 发行，下载字节与原 vendor 记录相同；[后续发行核验](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)与原源码构建身份分开保存，原记录中的 registryReleaseVerified:false 不代表当前不可下载。CI 核验真实候选包，每次发行或提升标签仍须重新从 registry 取得 optional Claude 的精确版本并核对同一摘要；Codex 与 Antigravity 内置于完整包，核验实际 bundle 字节。日期记录不替代新的发行准入，也不证明真实账号能力。旧发行失败与重试记录保留在 [npm 验证记录](validation/2026-11-01-npm-installation.md)；源码、候选、CI、registry 和 Mac 实机证据分别记录，不混为一个“测试通过”。
 
 CI、候选构建、双平台验证和发布统一固定为 Node 24.22.1／npm 12.2.1，预检只需同版 Node。发行协议测试通过隔离的本地 registry 调用真实 `npm view`，覆盖 latest、integrity、缺失字段与错误响应。存在的字段必须返回字符串，兼容用单元素数组包裹；多结果拒绝，缺失 latest 单独处理，缺失 integrity 不能当成版本不存在。只有结构化 E404 表示版本不存在，取消、认证或网络错误仍阻止发布。npm 11／12 的 `pack --json` 兼容保持严格包身份检查。
 

@@ -9,7 +9,7 @@ const http = require("node:http");
 const { execFileSync, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { PACKAGES, META, PLUGIN, validatePackages, preflight, parseArgs: parsePreflight } = require("../../scripts/release-preflight.js");
-const { filenameFor, fileIntegrity, verifyCandidate } = require("../../scripts/release-candidate.js");
+const { filenameFor, fileIntegrity, readPackedFile, verifyCandidate } = require("../../scripts/release-candidate.js");
 const { parsePackOutput, snapshot } = require("../../scripts/release-build.js");
 const { compareVersions, isNotFound, readValue, publish, promote, verifyLatest, waitForPackage, parseArgs } = require("../../scripts/release-publish.js");
 
@@ -203,6 +203,35 @@ test("real offline npm pack output identifies the artifact whose bytes are verif
   assert.deepEqual(fs.readdirSync(destination), [filenameFor(name, VERSION)]);
   assert.equal(packed.size, fs.statSync(file).size);
   assert.equal(packed.integrity, fileIntegrity(file));
+});
+
+test("both package file lists ship the provenance records linked by their vendor index", (t) => {
+  const root = temporary(t), repository = path.resolve(__dirname, '../..');
+  const vendor = path.join(repository, 'plugins/dsh/vendor');
+  const index = fs.readFileSync(path.join(vendor, 'README.md'), 'utf8');
+  const records = [...index.matchAll(/\]\(([\w.-]+\.json)\)/g)].map(match => match[1]);
+  assert.ok(records.includes('antigravity.json'));
+  assert.ok(records.includes('registry-verification-2026-11-22.json'));
+  for (const relative of ['', 'plugins/dsh']) {
+    const source = path.join(root, relative || 'public'), destination = path.join(source, 'packed');
+    const prefix = relative ? 'vendor' : 'plugins/dsh/vendor';
+    fs.mkdirSync(path.join(source, prefix), { recursive: true });
+    fs.mkdirSync(destination);
+    const manifest = JSON.parse(fs.readFileSync(path.join(repository, relative, 'package.json'), 'utf8'));
+    fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify(manifest));
+    for (const name of ['README.md', ...records]) fs.copyFileSync(path.join(vendor, name), path.join(source, prefix, name));
+    const config = path.join(source, 'npmrc'), globalConfig = path.join(source, 'global-npmrc');
+    fs.writeFileSync(config, ''); fs.writeFileSync(globalConfig, '');
+    const raw = execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', destination,
+      '--userconfig', config, '--globalconfig', globalConfig, '--cache', path.join(root, 'cache')], {
+      cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000,
+    });
+    const packed = parsePackOutput(raw, manifest.name, manifest.version);
+    for (const name of ['README.md', ...records]) {
+      assert.deepEqual(readPackedFile(path.join(destination, packed.filename), `${prefix}/${name}`), fs.readFileSync(path.join(vendor, name)),
+        `${manifest.name} must retain the exact linked provenance record ${name}`);
+    }
+  }
 });
 
 test("candidate verifies actual tar manifests, exact source and clean source policy", (t) => {

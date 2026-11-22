@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.38.0",
+  "version": "0.38.1",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -44,6 +44,8 @@
     "vendor/claude-code-pro.json",
     "vendor/lcu.json",
     "vendor/chatgpt.json",
+    "vendor/antigravity.json",
+    "vendor/registry-verification-2026-11-22.json",
     "KIMI_NATIVE_PROTOCOL.md",
     "KIMI_NATIVE_PROTOCOL.en.md",
     "vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"

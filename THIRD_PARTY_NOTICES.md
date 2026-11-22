@@ -39,19 +39,19 @@ SOFTWARE.
 
 ## Bundled Codex Pro public package
 
-This distribution bundles `dsh-subagent-codex-pro@0.10.2`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the packed plugin. Source identity and tarball integrity are recorded in `vendor/README.md` and `vendor/codex-pro.json` in the source repository. The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
+This distribution bundles `dsh-subagent-codex-pro@0.10.2`, Copyright (c) 2026 ckanner, under the MIT License. Its complete license is retained at `node_modules/dsh-subagent-codex-pro/LICENSE` inside the package. Source identity and tarball integrity are recorded in the [vendor index](plugins/dsh/vendor/README.md) and [Codex record](plugins/dsh/vendor/codex-pro.json). The bundled package is the upstream public machine API implementation, including its compiled supervisor; it contains no native Codex executable or user credentials.
 
 ## Bundled PTC composition source
 
-This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 ckanner, under the MIT License. Its original license remains at `node_modules/dsh-preset-generator/LICENSE`. The public composition module shares the desktop daily/heavy policy with the owned SDK worker. Source identity and actual tarball integrity are recorded in `vendor/preset-generator.json`; no DSH application resources, native executable or credentials are bundled.
+This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 ckanner, under the MIT License. Its original license remains at `node_modules/dsh-preset-generator/LICENSE`. The public composition module shares the desktop daily/heavy policy with the owned SDK worker. Source identity and actual tarball integrity are recorded in the [generator record](plugins/dsh/vendor/preset-generator.json); no DSH application resources, native executable or credentials are bundled.
 
 ## Bundled Antigravity CLI adapter
 
 This distribution bundles `@ckanner/dsh-subagent-antigravity@0.2.1`, Copyright (c) 2026
 ckanner, under the MIT License. Its license remains at
 `node_modules/@ckanner/dsh-subagent-antigravity/LICENSE`. Exact source and archive identities
-are in `vendor/antigravity.json`; the complete adapter source is in the repository's
-the standalone `dsh-subagent-antigravity` repository. Its pinned `ajv@8.17.1` schema validator and transitive
+are in the [Antigravity record](plugins/dsh/vendor/antigravity.json); the complete adapter source is in
+the standalone [dsh-subagent-antigravity repository](https://github.com/ckanner/dsh-subagent-antigravity). Its pinned `ajv@8.17.1` schema validator and transitive
 runtime dependencies retain their licenses in the bundled dependency tree. No native
 agy executable, account credentials or private Google application resources are included.
 
