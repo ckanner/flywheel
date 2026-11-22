@@ -41,6 +41,11 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
+[Antigravity 原生 ACP 可选通道方案](plans/2026-11-22-antigravity-native-acp.md)
+（[English](plans/2026-11-22-antigravity-native-acp.en.md)）保留 headless 默认通道，
+明确后续实现所需的传输协议、进程归属、输入能力及性能证据。这是纯文档提案，
+不代表已经交付 ACP 配置或运行能力。
+
 [订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)
 （[English](plans/2026-11-19-subscription-cli-workflows.en.md)）保留已批准设计。
 当前源码实现四订阅默认表、官方 Antigravity CLI 插件、紧凑准备、明确批准策略及累计

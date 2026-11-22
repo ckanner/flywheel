@@ -51,6 +51,12 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
+The [optional native Antigravity ACP proposal](plans/2026-11-22-antigravity-native-acp.en.md)
+([中文](plans/2026-11-22-antigravity-native-acp.md)) retains headless as the default
+and defines the transport, ownership, input and performance evidence needed for
+a future implementation. It is a documentation-only proposal; ACP configuration
+and runtime capabilities are not shipped by this document.
+
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md)) preserves the approved design.
 Current source implements its four-subscription defaults, official Antigravity CLI
