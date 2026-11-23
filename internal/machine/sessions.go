@@ -611,7 +611,18 @@ func (c *Context) invokeScoped(role, scope string, args drivers.CallArgs, call f
 		if err := c.claimReviewPrewarm(role, scope, &args); err != nil {
 			return drivers.Result{}, err
 		}
+		liveTrace := openLiveTrace(c.TaskDir, key, role, scope, r, args, c.nowISO)
+		if liveTrace != nil {
+			prevOnEvent := args.OnEvent
+			args.OnEvent = func(line string) {
+				liveTrace.event(line)
+				if prevOnEvent != nil {
+					prevOnEvent(line)
+				}
+			}
+		}
 		result = call(args)
+		liveTrace.finish(result)
 		if args.Prewarm != nil {
 			if err := args.Prewarm.Close(); err != nil {
 				result.CleanupError = strings.TrimPrefix(result.CleanupError+"; "+err.Error(), "; ")

@@ -22,7 +22,7 @@ const moduleFiles = [
   'planning-control.js', 'session-control.js', 'native-doctor.js',
   'kimi-native-worker.js', 'kimi-native-bridge.js', 'kimi-native-runtime.js',
   'kimi-tower-candidate.js', 'native-jobs.js', 'managed-lcu.js', 'native.js',
-  'native-policy.js', 'native-resources.js', 'console-read.js', 'workspaces.js',
+  'native-policy.js', 'native-resources.js', 'console-read.js', 'trace-parser.js', 'workspaces.js',
   'index.js', 'control.js', 'task-association.js', 'worker.js', 'prewarm.js',
   'bridge.js', 'policy.js', 'protocol.js', 'installation.js',
   'codex-pro-worker.js', 'codex-pro-bridge.js', 'claude-code-pro-worker.js',

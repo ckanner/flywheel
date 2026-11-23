@@ -1,9 +1,9 @@
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 
-export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery' | 'settings';
+export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery' | 'traces' | 'settings';
 export type ExecutionViewMode = 'waves' | 'dag';
 export type DesignViewMode = 'synthesized' | 'side-by-side' | 'raw';
-export type InspectorTab = 'overview' | 'evidence' | 'timeline' | 'contract';
+export type InspectorTab = 'overview' | 'output' | 'evidence' | 'timeline' | 'contract';
 
 export interface RunSummary {
   taskDir: string;
@@ -394,6 +394,57 @@ export interface NodeDetailSnapshot {
   };
 }
 
+export interface TraceResumeInfo {
+  kind: 'dsh-native' | 'cli';
+  harness: string;
+  providerLabel: string;
+  sessionId: string;
+  cwd?: string;
+  command?: string;
+  secondaryCommand?: string;
+}
+
+export interface TraceBlock {
+  kind: 'thinking' | 'tool_call' | 'tool_result' | 'assistant' | 'progress' | 'error';
+  ts?: string;
+  title?: string;
+  text: string;
+}
+
+export interface TraceSummary {
+  id: string;
+  key: string;
+  role: string;
+  scope: string;
+  attempt?: number;
+  harness: string;
+  model: string;
+  thinking?: string;
+  cwd?: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked' | string;
+  running: boolean;
+  exitCode?: number | null;
+  signal?: string;
+  durationMs?: number | null;
+  startedAt?: string;
+  updatedAt?: string;
+  sessionId?: string;
+  resume?: TraceResumeInfo | null;
+  errorCode?: string;
+  errorSummary?: string;
+  usage?: Record<string, unknown> | null;
+  source?: 'live' | 'receipt' | 'state' | string;
+  eventCount?: number;
+}
+
+export interface TraceDetail extends TraceSummary {
+  blocks: TraceBlock[];
+  stderr?: string;
+  text?: string;
+  truncated?: boolean;
+  rawTail?: string[];
+}
+
 export interface ControlResponse {
   protocol: 1;
   ok: boolean;
@@ -418,6 +469,8 @@ export interface ControlResponse {
   history?: unknown[];
   revisions?: DesignCandidateRevision[];
   uxReview?: UXReviewReport | null;
+  traces?: TraceSummary[];
+  trace?: TraceDetail | null;
   files?: RepoImageEntry[];
   workspaceWarnings?: string[];
   [key: string]: unknown;

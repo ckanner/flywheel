@@ -1,26 +1,57 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { styles } from 'virtual:flywheel-styles';
+import type { ClientRuntime } from '../context.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { InspectorTab, PacketNode, Translate } from '../types.ts';
+import { TraceStreamPanel } from './TracesView.tsx';
 
 export function NodeInspector({
   packet,
   snap,
   store,
   t,
+  runtime,
 }: {
   packet: PacketNode;
   snap: FlywheelSnapshot;
   store: FlywheelStore;
   t: Translate;
+  runtime?: ClientRuntime;
 }) {
   const [retryReason, setRetryReason] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
 
   const detail = snap.nodeDetail;
   const uxReview = snap.uxReviews[packet.id] ?? null;
+  const packetTraces = useMemo(
+    () =>
+      snap.traces.filter(
+        tr => tr.scope === packet.id || tr.scope === `final:${packet.id}` || tr.key.endsWith(`/${packet.id}`),
+      ),
+    [snap.traces, packet.id],
+  );
+  const [activePacketTraceId, setActivePacketTraceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (snap.inspectorTab !== 'output') return;
+    const preferred =
+      (activePacketTraceId && packetTraces.some(tr => tr.id === activePacketTraceId) ? activePacketTraceId : null) ??
+      packetTraces[0]?.id ??
+      null;
+    if (preferred && preferred !== activePacketTraceId) {
+      setActivePacketTraceId(preferred);
+    }
+    if (preferred && snap.selectedTraceId !== preferred) {
+      store.selectTrace(preferred);
+    }
+  }, [snap.inspectorTab, packetTraces, activePacketTraceId, snap.selectedTraceId, store]);
+
+  const activeTraceDetail =
+    snap.traceDetail && packetTraces.some(tr => tr.id === snap.traceDetail!.id) ? snap.traceDetail : null;
+
   const tabs: Array<{ id: InspectorTab; label: string }> = [
     { id: 'overview', label: t('inspector.tab.overview') },
+    { id: 'output', label: `${t('inspector.tab.output')}${packetTraces.length > 0 ? ` (${packetTraces.length})` : ''}` },
     { id: 'evidence', label: t('inspector.tab.evidence') },
     { id: 'timeline', label: t('inspector.tab.timeline') },
     { id: 'contract', label: t('inspector.tab.contract') },
@@ -183,6 +214,52 @@ export function NodeInspector({
                   </div>
                 )}
               </div>
+            </>
+          )}
+
+          {snap.inspectorTab === 'output' && (
+            <>
+              {packetTraces.length === 0 ? (
+                <div className={styles.emptyState} style={{ padding: '28px 16px' }}>
+                  <div>{t('inspector.noTraces')}</div>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnSm}`}
+                    onClick={() => store.openTraceInWorkbench(null)}
+                  >
+                    {t('inspector.openTraces')}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {packetTraces.map(tr => {
+                      const active = (activePacketTraceId ?? packetTraces[0]?.id) === tr.id;
+                      return (
+                        <button
+                          key={tr.id}
+                          type="button"
+                          className={`${styles.btn} ${styles.btnSm} ${active ? styles.btnPrimary : ''}`}
+                          onClick={() => {
+                            setActivePacketTraceId(tr.id);
+                            store.selectTrace(tr.id);
+                          }}
+                        >
+                          {tr.role}{tr.attempt ? ` #${tr.attempt}` : ''} · {tr.running ? t('traces.liveBadge') : tr.status}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <TraceStreamPanel
+                    trace={activeTraceDetail}
+                    store={store}
+                    t={t}
+                    runtime={runtime}
+                    compact
+                    onOpenFull={() => store.openTraceInWorkbench(activePacketTraceId ?? packetTraces[0]?.id ?? null)}
+                  />
+                </>
+              )}
             </>
           )}
 

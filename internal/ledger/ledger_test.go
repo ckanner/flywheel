@@ -30,6 +30,8 @@ func TestVolatileSet(t *testing.T) {
 	assert.True(t, CommitVolatileFiles["orchestrator.pid"])
 	assert.True(t, CommitVolatileFiles[".stop-request"])
 	assert.True(t, CommitVolatileFiles[".control/"])
+	assert.True(t, CommitVolatileFiles[".traces/"])
+	assert.True(t, IsLedgerTaskPath(".traces/live-call-1.jsonl"))
 	assert.False(t, CommitVolatileFiles["state.json"], "state 必须留在已提交契约层")
 	assert.True(t, CommitVolatileFiles[".state.lock"], "flock 锁文件不入库（v0.18）")
 	assert.False(t, CommitVolatileFiles["retro.md"])

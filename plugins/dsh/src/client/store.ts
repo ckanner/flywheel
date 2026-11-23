@@ -17,6 +17,8 @@ import type {
   RepoImageEntry,
   RunSummary,
   TaskState,
+  TraceDetail,
+  TraceSummary,
   UXReviewReport,
 } from './types.ts';
 
@@ -50,6 +52,10 @@ export interface FlywheelSnapshot {
   nodeDetail: NodeDetailSnapshot | null;
   uxReviews: Record<string, UXReviewReport | null>;
   delivery: DeliverySnapshot | null;
+  traces: TraceSummary[];
+  tracesLoading: boolean;
+  selectedTraceId: string | null;
+  traceDetail: TraceDetail | null;
 
   // Settings & diagnostics
   configScope: 'global' | 'project';
@@ -90,6 +96,10 @@ function initialSnapshot(): FlywheelSnapshot {
     nodeDetail: null,
     uxReviews: {},
     delivery: null,
+    traces: [],
+    tracesLoading: false,
+    selectedTraceId: null,
+    traceDetail: null,
 
     configScope: 'global',
     configEditor: null,
@@ -267,7 +277,12 @@ export class FlywheelStore {
     if (!this.started || this.disposed) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     if (this.pollTimer) clearTimeout(this.pollTimer);
-    const delay = overrideMs ?? (this.snapshot.running ? 2500 : 12000);
+    const viewingLiveTraces =
+      this.snapshot.activeTab === 'traces' ||
+      (this.snapshot.selectedPacketId !== null && this.snapshot.inspectorTab === 'output');
+    const anyTraceRunning = this.snapshot.traces.some(tr => tr.running);
+    const liveActive = this.snapshot.running || anyTraceRunning;
+    const delay = overrideMs ?? (viewingLiveTraces && liveActive ? 1500 : liveActive ? 2500 : 12000);
     this.pollTimer = setTimeout(async () => {
       this.pollTimer = null;
       if (!this.started || this.disposed) return;
@@ -275,6 +290,12 @@ export class FlywheelStore {
       await this.refreshRuns(true);
       if (this.snapshot.selectedTaskDir) {
         await this.refreshSelectedTask(true);
+        if (viewingLiveTraces) {
+          await this.loadTraces(true);
+          if (this.snapshot.selectedTraceId) {
+            await this.loadTraceDetail(this.snapshot.selectedTraceId, true);
+          }
+        }
       }
       this.schedulePoll();
     }, delay);
@@ -296,8 +317,24 @@ export class FlywheelStore {
     if (tab === 'design' && this.snapshot.selectedTaskDir) {
       void this.loadDesignCandidates();
     }
+    if (tab === 'traces' && this.snapshot.selectedTaskDir) {
+      void this.loadTraces();
+    }
     if (tab === 'settings') {
       void this.loadConfig(this.snapshot.configScope);
+    }
+  }
+
+  openTraceInWorkbench(traceId?: string | null): void {
+    this.setState({
+      selectedPacketId: null,
+      activeTab: 'traces',
+      ...(traceId ? { selectedTraceId: traceId } : {}),
+    });
+    if (this.snapshot.selectedTaskDir) {
+      void this.loadTraces().then(() => {
+        if (traceId) void this.loadTraceDetail(traceId);
+      });
     }
   }
 
@@ -323,6 +360,9 @@ export class FlywheelStore {
 
   setInspectorTab(tab: InspectorTab): void {
     this.setState({ inspectorTab: tab });
+    if (tab === 'output' && this.snapshot.selectedTaskDir) {
+      void this.loadTraces(true);
+    }
   }
 
   selectPacket(packetId: string | null): void {
@@ -330,6 +370,7 @@ export class FlywheelStore {
     if (packetId && this.snapshot.selectedTaskDir) {
       void this.loadNodeDetail(packetId);
       void this.loadUXReview(packetId);
+      void this.loadTraces(true);
     }
   }
 
@@ -376,6 +417,9 @@ export class FlywheelStore {
       nodeDetail: null,
       designCandidates: [],
       delivery: null,
+      traces: [],
+      selectedTraceId: null,
+      traceDetail: null,
       error: null,
     });
     await this.refreshSelectedTask(false, true);
@@ -410,6 +454,9 @@ export class FlywheelStore {
       }
       if (nextTab === 'delivery') {
         void this.loadDelivery();
+      }
+      if (nextTab === 'traces') {
+        void this.loadTraces(silent);
       }
       return res;
     } catch (error) {
@@ -860,6 +907,77 @@ export class FlywheelStore {
     if (res) {
       this.setState({ notice: 'reset' });
       await this.loadConfig(editor.scope);
+    }
+    return res;
+  }
+
+  async loadTraces(silent = false): Promise<TraceSummary[]> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return [];
+    if (!silent) this.setState({ tracesLoading: true });
+    try {
+      const res = await this.remote.query({ action: 'traces', taskDir });
+      if (this.snapshot.selectedTaskDir !== taskDir) return [];
+      const traces = Array.isArray(res.traces) ? res.traces : [];
+      const current = this.snapshot.selectedTraceId;
+      const stillExists = current && traces.some(tr => tr.id === current);
+      const nextId = stillExists ? current : (traces[0]?.id ?? null);
+      this.setState({
+        traces,
+        tracesLoading: false,
+        selectedTraceId: nextId,
+      });
+      if (nextId && (!this.snapshot.traceDetail || this.snapshot.traceDetail.id !== nextId || traces.find(tr => tr.id === nextId)?.running)) {
+        void this.loadTraceDetail(nextId, silent);
+      }
+      return traces;
+    } catch {
+      if (this.snapshot.selectedTaskDir === taskDir) {
+        this.setState({ tracesLoading: false });
+      }
+      return this.snapshot.traces;
+    }
+  }
+
+  selectTrace(traceId: string | null): void {
+    this.setState({ selectedTraceId: traceId });
+    if (traceId && this.snapshot.selectedTaskDir) {
+      void this.loadTraceDetail(traceId);
+    }
+  }
+
+  async loadTraceDetail(traceId: string, silent = false): Promise<TraceDetail | null> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir || !traceId) return null;
+    try {
+      const res = await this.remote.query({ action: 'trace-detail', taskDir, traceId });
+      if (this.snapshot.selectedTaskDir !== taskDir) return null;
+      const trace = (res.trace ?? null) as TraceDetail | null;
+      if (trace && (this.snapshot.selectedTraceId === traceId || !this.snapshot.selectedTraceId)) {
+        this.setState({ traceDetail: trace });
+      }
+      return trace;
+    } catch (error) {
+      if (!silent) {
+        this.setState({ error: this.toStoreError(error, 'trace-detail') });
+      }
+      return null;
+    }
+  }
+
+  async openResumeTerminal(harness: string, sessionId: string, cwd?: string): Promise<ControlResponse | undefined> {
+    const res = await this.performAct(
+      'open-terminal',
+      {
+        action: 'open-terminal',
+        harness,
+        sessionId,
+        ...(cwd ? { cwd } : {}),
+      },
+      false,
+    );
+    if (res) {
+      this.setState({ notice: 'terminal-opened' });
     }
     return res;
   }

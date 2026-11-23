@@ -10,6 +10,7 @@ import { DesignStudio } from './DesignStudio.tsx';
 import { ExecutionBoard } from './ExecutionBoard.tsx';
 import { InvestigationBoard } from './InvestigationBoard.tsx';
 import { SettingsPage } from './SettingsPage.tsx';
+import { TracesView } from './TracesView.tsx';
 
 function runStatusPill(status?: string, running?: boolean): string {
   if (running) return styles.pillRunning;
@@ -72,6 +73,7 @@ function SettingsIcon() {
 export function WorkbenchPage({
   store,
   t,
+  runtime,
 }: {
   store: FlywheelStore;
   t: Translate;
@@ -202,6 +204,7 @@ export function WorkbenchPage({
     { id: 'execution', label: t('tab.execution') },
     { id: 'investigation', label: t('tab.investigation') },
     { id: 'delivery', label: t('tab.delivery') },
+    { id: 'traces', label: t('tab.traces') },
   ];
 
   return (
@@ -402,9 +405,11 @@ export function WorkbenchPage({
           ) : snap.activeTab === 'design' ? (
             <DesignStudio snap={snap} store={store} t={t} />
           ) : snap.activeTab === 'execution' ? (
-            <ExecutionBoard snap={snap} store={store} t={t} />
+            <ExecutionBoard snap={snap} store={store} t={t} runtime={runtime} />
           ) : snap.activeTab === 'investigation' ? (
             <InvestigationBoard snap={snap} store={store} t={t} />
+          ) : snap.activeTab === 'traces' ? (
+            <TracesView snap={snap} store={store} t={t} runtime={runtime} />
           ) : (
             <DeliveryTrack snap={snap} store={store} t={t} />
           )}

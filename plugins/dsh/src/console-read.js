@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
@@ -6,16 +7,17 @@ import { Remote, bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol';
 import { ControlNotDispatchedError } from './control.js';
 import { validPlanningCommand } from './planning-control.js';
 import { validSessionAbandonCommand } from './session-control.js';
+import { buildResumeInfo, readTaskTraceDetail, readTaskTraces } from './trace-parser.js';
 
 export const consoleReadActions = new Set([
   'models', 'images', 'runs', 'status', 'config', 'config-edit',
   'metrics', 'history', 'node', 'delivery', 'doctor', 'planning',
-  'design-candidates', 'ux-review',
+  'design-candidates', 'ux-review', 'traces', 'trace-detail',
 ]);
 
 export const consoleActActions = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'deliver',
+  'config-save', 'session', 'deliver', 'open-terminal',
 ]);
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -113,6 +115,40 @@ async function readUXReview(taskDir, packet) {
   return { protocol: 1, ok: true, taskDir: resolvedTask, packet, uxReview: parsed };
 }
 
+async function openResumeInTerminal(harness, sessionId, cwd) {
+  const info = buildResumeInfo(harness, sessionId, cwd);
+  if (!info || info.kind !== 'cli' || !info.command) {
+    throw new ControlNotDispatchedError('open-terminal requires a valid CLI harness and sessionId');
+  }
+  if (info.cwd) {
+    const resolvedCwd = await realpath(info.cwd).catch(() => null);
+    if (!resolvedCwd || !(await stat(resolvedCwd).catch(() => null))?.isDirectory()) {
+      throw new ControlNotDispatchedError('open-terminal cwd must be an existing directory');
+    }
+  }
+  if (process.platform !== 'darwin') {
+    return { protocol: 1, ok: true, launched: false, command: info.command, providerLabel: info.providerLabel };
+  }
+  await new Promise((resolve, reject) => {
+    execFile(
+      'osascript',
+      [
+        '-e', 'on run argv',
+        '-e', 'tell application "Terminal"',
+        '-e', 'do script (item 1 of argv)',
+        '-e', 'activate',
+        '-e', 'end tell',
+        '-e', 'end run',
+        '--',
+        info.command,
+      ],
+      { timeout: 10000 },
+      error => (error ? reject(error) : resolve()),
+    );
+  });
+  return { protocol: 1, ok: true, launched: true, command: info.command, providerLabel: info.providerLabel };
+}
+
 async function walkRepoImages(rootCwd, signal) {
   if (typeof rootCwd !== 'string' || !isAbsolute(rootCwd) || rootCwd.includes('\0')) {
     throw new ControlNotDispatchedError('listRepoImages requires an absolute directory path');
@@ -185,6 +221,14 @@ export class ConsoleReadService extends Service {
         const value = await readUXReview(input.taskDir, input.packet);
         return { result: { kind: 'success', text: JSON.stringify(value) } };
       }
+      if (input.action === 'traces') {
+        const value = await readTaskTraces(input.taskDir);
+        return { result: { kind: 'success', text: JSON.stringify(value) } };
+      }
+      if (input.action === 'trace-detail') {
+        const value = await readTaskTraceDetail(input.taskDir, input.traceId);
+        return { result: { kind: 'success', text: JSON.stringify(value) } };
+      }
       const { hostSessionId, ...payload } = input;
       if (payload.cwd == null) payload.cwd = this.defaultCwd ?? process.cwd();
       const value = await this.control(payload, undefined, this._signal(signal), undefined, undefined, undefined, validHostSessionId(hostSessionId));
@@ -198,6 +242,10 @@ export class ConsoleReadService extends Service {
     try {
       if (!input || typeof input !== 'object' || Array.isArray(input) || !consoleActActions.has(input.action)) {
         throw new ControlNotDispatchedError('Unsupported Flywheel console mutation action');
+      }
+      if (input.action === 'open-terminal') {
+        const value = await openResumeInTerminal(input.harness, input.sessionId, input.cwd);
+        return { result: { kind: 'success', text: JSON.stringify(value) } };
       }
       const { hostSessionId: rawSessionId, ...payload } = input;
       if (payload.cwd == null) payload.cwd = this.defaultCwd ?? process.cwd();

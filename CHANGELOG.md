@@ -5,6 +5,12 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.3 — 2026-11-23 (Live Traces & Provider Session Resume)
+
+- **Real-time invocation trace streaming**: Go engine appends bounded live NDJSON frames (`start` / `event` / `end` with thinking, tool events, stdout/stderr tails, exit code, and native session ID) into the commit-volatile `<taskDir>/.traces/live-<invocationId>.jsonl` zone while invocations are running, preserving every failed attempt without expanding the bounded per-scope `.sessions/` checkpoint slot.
+- **Live Traces Viewer & Node Inspector Output tab**: add a dedicated **Live Traces** (`运行记录`) tab and a **Model Output** (`模型输出`) tab inside `NodeInspector` that stream in-flight thinking, tool calls, tool results, Markdown replies, and highlighted failure diagnostics across all 5 provider wire formats (`antigravity` ACP, `claude-code-pro`, `codex-pro`, `kimi`, and `dsh`), with `All` / `Running` / `Failed` filters and raw-event inspection.
+- **Provider Native Session Jump & Resume**: surface each invocation's underlying provider session ID with one-click native DSH session jump (`uiWorkspace.openSession`) for `dsh` invocations, and verified shell-quoted CLI resume commands (`claude --resume`, `codex resume`, `kimi --session` / `kimi vis`, `agy --conversation`) with one-click copy and safe macOS Terminal launch (`open-terminal` RPC).
+
 ## 0.39.2 — 2026-11-23 (Flywheel Next UI Polish & Editable Settings)
 
 - **Native DSH Light/Dark Theme**: replace hardcoded dark CSS fallbacks and neon accents across all Flywheel views, Settings, and DAG SVG markers with native DSH `--dsw-alias-*` semantic tokens (`color-mix` derived tints, crisp borders, and restrained surfaces that match DSH Desktop light and dark modes automatically).

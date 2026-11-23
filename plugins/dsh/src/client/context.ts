@@ -64,6 +64,10 @@ export interface LayoutService {
   openPanel?: (id: string) => void;
 }
 
+export interface UIWorkspaceService {
+  openSession?: (sessionId: string) => void;
+}
+
 export interface ClientContext {
   slots: SlotService;
   locale: LocaleService;

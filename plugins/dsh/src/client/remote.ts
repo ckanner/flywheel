@@ -9,12 +9,12 @@ const RESULT_CODEC = { mode: 'src-json' as const };
 const QUERY_ACTIONS = new Set([
   'models', 'images', 'runs', 'status', 'config', 'config-edit',
   'metrics', 'history', 'node', 'delivery', 'doctor', 'planning',
-  'design-candidates', 'ux-review',
+  'design-candidates', 'ux-review', 'traces', 'trace-detail',
 ]);
 
 const ACT_ACTIONS = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'deliver',
+  'config-save', 'session', 'deliver', 'open-terminal',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

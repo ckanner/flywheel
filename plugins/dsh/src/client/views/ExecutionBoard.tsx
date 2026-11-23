@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { styles } from 'virtual:flywheel-styles';
+import type { ClientRuntime } from '../context.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { PacketNode, Translate } from '../types.ts';
 import { DagCanvas } from './DagCanvas.tsx';
@@ -79,10 +80,12 @@ export function ExecutionBoard({
   snap,
   store,
   t,
+  runtime,
 }: {
   snap: FlywheelSnapshot;
   store: FlywheelStore;
   t: Translate;
+  runtime?: ClientRuntime;
 }) {
   const packets = useMemo<PacketNode[]>(() => {
     const record = snap.state?.packets;
@@ -216,7 +219,7 @@ export function ExecutionBoard({
       )}
 
       {selectedPacket && (
-        <NodeInspector packet={selectedPacket} snap={snap} store={store} t={t} />
+        <NodeInspector packet={selectedPacket} snap={snap} store={store} t={t} runtime={runtime} />
       )}
     </div>
   );

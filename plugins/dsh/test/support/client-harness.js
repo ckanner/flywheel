@@ -95,7 +95,7 @@ export function envelope(payload, kind = 'success') {
 export async function mountWorkbench(
   t,
   handlers = {},
-  { locale = 'zh', slot = 'main', timers, extraProps = {}, mountError } = {},
+  { locale = 'zh', slot = 'main', timers, extraProps = {}, mountError, services: extraServices = {} } = {},
 ) {
   const client = loadClient(timers);
   const slots = new Map();
@@ -162,6 +162,7 @@ export async function mountWorkbench(
   const services = new Map([
     ['remote.flywheelConsole', remoteNamespace],
     ['layout', { selectPanel: id => selectedPanels.push(id) }],
+    ...Object.entries(extraServices),
   ]);
 
   const ctx = {
