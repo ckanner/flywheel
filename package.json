@@ -58,7 +58,7 @@
     "plugins/dsh/vendor/registry-verification-2026-11-22.json",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.md",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md",
-    "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"
+    "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz"
   ],
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "@ckanner/dsh-subagent-antigravity": "file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz",
+    "@ckanner/dsh-subagent-antigravity": "file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },
@@ -120,6 +120,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale"
       ],

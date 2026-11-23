@@ -21,6 +21,25 @@ func TestAntigravityEvidenceUsesManagedAgentProofInsteadOfCatalogEmptiness(t *te
 		require.True(t, p.Session.CleanupConfirmed)
 		require.NoDirExists(t, filepath.Join(r.Cwd, ".agents"), "recovery verifies the receipt, not a removed agent file")
 	}
+	t.Run("acp-init isolated evidence workspace", func(t *testing.T) {
+		isolated := filepath.Join(t.TempDir(), "agy-evidence-xyz")
+		m := agyReceipt(r)
+		proObject(m, "configuration")["source"] = "acp-init"
+		proObject(m, "configuration", "observed")["cwd"] = isolated
+		proObject(m, "configuration", "observed")["tools"] = nil
+		name := "dsh-evidence-" + m["runId"].(string)
+		proObject(m, "native", "managedAgent")["path"] = filepath.Join(isolated, ".agents", "agents", name+".md")
+		p := parseAgyFixture(r, m)
+		require.True(t, p.Settled, "%+v", p)
+		require.Equal(t, "completed", p.Session.Outcome)
+	})
+	t.Run("acp-init relative cwd rejected", func(t *testing.T) {
+		m := agyReceipt(r)
+		proObject(m, "configuration")["source"] = "acp-init"
+		proObject(m, "configuration", "observed")["cwd"] = "relative/evidence"
+		p := parseAgyFixture(r, m)
+		require.False(t, p.Settled)
+	})
 	for name, edit := range map[string]func(map[string]any){
 		"missing catalog":          func(m map[string]any) { delete(proObject(m, "configuration", "observed"), "tools") },
 		"null catalog":             func(m map[string]any) { proObject(m, "configuration", "observed")["tools"] = nil },

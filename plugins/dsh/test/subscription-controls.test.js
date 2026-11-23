@@ -35,10 +35,10 @@ test('native Codex route and auth must both agree without exposing identity or i
   assert.equal(inspectCodexSubscription(account, { config: { ...config.config, model_providers: { unused: { env_key: 'UNUSED' } }, profiles: { api: { model_provider: 'api' } } } }).status, 'verified-native-controls');
 });
 
-test('Kimi checks native OAuth, active and secondary model routes; ambiguous service credentials are disabled explicitly', () => {
+test('Kimi checks native OAuth, active and secondary model routes while keeping native subscription services unlocked', () => {
   const observed = inspectKimiSubscription(providers, kimiConfig, 'kimi-code/k3.1-pro');
   assert.equal(observed.authentication, 'native-oauth');
-  assert.deepEqual(observed.disabledTools, ['WebSearch', 'FetchURL']);
+  assert.deepEqual(observed.disabledTools, []);
   assert.equal(observed.extraUsage, 'unknown');
   for (const patch of [{ has_api_key: true }, { api_key_env: 'BILLING_KEY' }, { status: 'unconfigured' }, { type: 'bedrock' }, { base_url: 'https://api.kimi.com.evil.invalid/coding/v1' }]) {
     assert.throws(() => inspectKimiSubscription({ items: [{ ...providers.items[0], ...patch }] }, kimiConfig, 'kimi-code/k3.1-pro'), { code: 'AUTH' });

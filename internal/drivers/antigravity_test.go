@@ -12,6 +12,7 @@ import (
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,6 +51,9 @@ func agyReceipt(r codexProStart) map[string]any {
 	if len(r.Native) > 0 {
 		_ = json.Unmarshal(r.Native, &native)
 		proObject(receipt, "requested")["native"] = r.Native
+	}
+	if r.InputImageManifest != nil {
+		proObject(receipt, "requested")["inputImages"] = r.InputImageManifest
 	}
 	var command any
 	children := []any{}
@@ -178,6 +182,7 @@ func TestAntigravityWorkerProcessFixture(t *testing.T) {
 	if json.NewDecoder(os.Stdin).Decode(&r) != nil {
 		os.Exit(2)
 	}
+	r.InputImageManifest = imageinput.Describe(r.Images)
 	raw, _ := json.Marshal(map[string]any{"request": r, "env": os.Environ()})
 	_ = os.WriteFile(filepath.Join(r.Cwd, "captured-agy.json"), raw, 0o600)
 	_ = json.NewEncoder(os.Stdout).Encode(agyFrame(r, agyReceipt(r)))
@@ -197,6 +202,9 @@ func TestRunAntigravityAdmissionAndEnvironment(t *testing.T) {
 		"effort": func(a *AntigravityArgs) { a.ReasoningEffort = "medium" }, "cwd": func(a *AntigravityArgs) { a.Cwd = filepath.Join(a.Cwd, "missing") },
 		"deadline": func(a *AntigravityArgs) { a.Watchdog.WallTimeoutMs = 2147483648 }, "size": func(a *AntigravityArgs) { a.Prompt = strings.Repeat("&", machineRequestBytes/6) },
 		"lifecycle": func(a *AntigravityArgs) { a.RecoveryDirectory = "relative" },
+		"invalid image": func(a *AntigravityArgs) {
+			a.Images = []imageinput.Image{{MIMEType: "image/svg+xml", Data: []byte("<svg/>")}}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := agyRunArgs(t)
@@ -211,7 +219,9 @@ func TestRunAntigravityAdmissionAndEnvironment(t *testing.T) {
 	a := agyRunArgs(t)
 	t.Setenv(AntigravityWorkerEnv, a.Command)
 	t.Setenv(AntigravityBinaryEnv, "/trusted/agy")
+	t.Setenv(AntigravityTransportEnv, "acp")
 	a.Command = ""
+	a.Images = []imageinput.Image{{MIMEType: "image/png", Data: []byte("png-bytes")}}
 	a.Watchdog.WallTimeoutMs = 0
 	a.APIKeys = map[string]string{"EMPTY": ""}
 	r := RunAntigravity(a)
@@ -221,15 +231,29 @@ func TestRunAntigravityAdmissionAndEnvironment(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(a.Cwd, "captured-agy.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), AntigravityBinaryEnv+"=/trusted/agy")
+	assert.Contains(t, string(raw), AntigravityTransportEnv+"=acp")
 	assert.Equal(t, "/trusted/agy", AntigravityBinary())
+	a.Images = nil
 	a.PersistentSession = true
 	r = RunAntigravity(a)
 	require.True(t, r.Settled)
 	a.SessionID = r.SessionID
 	r = RunAntigravity(a)
 	assert.True(t, r.Session.ResumeAccepted)
+	t.Run("input image manifest mismatch rejected", func(t *testing.T) {
+		imgReq := agyRequest(t)
+		imgReq.Images = []imageinput.Image{{MIMEType: "image/png", Data: []byte("img")}}
+		imgReq.InputImageManifest = imageinput.Describe(imgReq.Images)
+		m := agyReceipt(imgReq)
+		require.True(t, parseAgyFixture(imgReq, m).Settled)
+		delete(proObject(m, "requested"), "inputImages")
+		bad := parseAgyFixture(imgReq, m)
+		require.False(t, bad.Settled)
+		require.Contains(t, bad.Error, "input image manifest mismatch")
+	})
 	t.Setenv(AntigravityWorkerEnv, "")
 	t.Setenv(AntigravityBinaryEnv, "")
+	t.Setenv(AntigravityTransportEnv, "")
 	assert.Equal(t, "flywheel-antigravity-worker", AntigravityCommand())
 	assert.Equal(t, "agy", AntigravityBinary())
 }
@@ -243,13 +267,14 @@ func TestAntigravityNodeWorkerOfflineBridge(t *testing.T) {
 	require.NoError(t, err)
 	source, err := os.ReadFile("testdata/fake-agy.js")
 	require.NoError(t, err)
-	source = []byte(strings.Replace(string(source), "const args=", `const fixtureConfig=JSON.parse(readFileSync('agy-fixture.json','utf8')); process.env.FIXTURE_SCENARIO=fixtureConfig.scenario; process.env.FIXTURE_CALLS='agy-calls.jsonl'; process.env.FIXTURE_INPUT='agy-input.jsonl';
+	source = []byte(strings.Replace(string(source), "const args=", `const cfgPath=process.env.HOME+'/agy-fixture.json'; const fixtureConfig=JSON.parse(readFileSync(cfgPath,'utf8')); process.env.FIXTURE_SCENARIO=fixtureConfig.scenario; process.env.FIXTURE_CALLS=fixtureConfig.callsFile; process.env.FIXTURE_INPUT=fixtureConfig.inputFile;
 if(fixtureConfig.finishedReason)process.env.FIXTURE_FINISHED_REASON=fixtureConfig.finishedReason;
 const args=`, 1))
 	fixture := filepath.Join(t.TempDir(), "fake-agy.mjs")
 	require.NoError(t, os.WriteFile(fixture, source, 0o755))
 	t.Setenv(AntigravityBinaryEnv, fixture)
 	t.Setenv(AntigravityWorkerEnv, worker)
+	t.Setenv(AntigravityTransportEnv, "headless")
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	t.Setenv("HOME", home)
@@ -269,9 +294,10 @@ const args=`, 1))
 			if a.EvidenceOnly {
 				a.PermissionMode = "read-only"
 			}
-			settings, _ := json.Marshal(map[string]string{"scenario": scenario})
-			require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), settings, 0o600))
+			settings, _ := json.Marshal(map[string]string{"scenario": scenario, "callsFile": filepath.Join(a.Cwd, "agy-calls.jsonl"), "inputFile": filepath.Join(a.Cwd, "agy-input.jsonl")})
+			require.NoError(t, os.WriteFile(filepath.Join(home, "agy-fixture.json"), settings, 0o600))
 			r := RunAntigravity(a)
+			assert.NoDirExists(t, filepath.Join(a.Cwd, ".agents"), "evidence-only must never write .agents inside user repo")
 			success := scenario == "success" || scenario == "tools-inherited"
 			require.Equal(t, success, r.Settled, "%+v", r)
 			require.NotEmpty(t, r.AntigravityReceipt)
@@ -331,8 +357,8 @@ const args=`, 1))
 			a.PersistentSession = true
 			a.OnLifecycle = func(MachineLifecycle) error { return nil }
 			a.Watchdog = watchdog.Opts{WallTimeoutMs: 10000, IdleTimeoutMs: 8000}
-			settings, _ := json.Marshal(map[string]string{"scenario": tc.scenario, "finishedReason": tc.finishedReason})
-			require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), settings, 0600))
+			settings, _ := json.Marshal(map[string]string{"scenario": tc.scenario, "finishedReason": tc.finishedReason, "callsFile": filepath.Join(a.Cwd, "agy-calls.jsonl"), "inputFile": filepath.Join(a.Cwd, "agy-input.jsonl")})
+			require.NoError(t, os.WriteFile(filepath.Join(home, "agy-fixture.json"), settings, 0600))
 			r := RunAntigravity(a)
 			require.Equal(t, tc.success, r.Settled, "%+v", r)
 			require.NotEmpty(t, r.AntigravityReceipt)
@@ -364,13 +390,41 @@ const args=`, 1))
 			}
 		})
 	}
+	t.Run("acp default with images", func(t *testing.T) {
+		acpFixture, err := filepath.Abs("../../../dsh-subagent-antigravity/test/fixtures/acp/fake-acp-machine.js")
+		require.NoError(t, err)
+		a := agyRunArgs(t)
+		cwd, err := filepath.EvalSymlinks(a.Cwd)
+		require.NoError(t, err)
+		a.Cwd = cwd
+		a.Command = worker
+		a.RequestID = "bridge-acp-images"
+		a.Model = "gemini-4-neon-high"
+		a.RecoveryDirectory = filepath.Join(a.Cwd, "acp-recovery")
+		a.PersistentSession = true
+		a.Watchdog = watchdog.Opts{WallTimeoutMs: 10000, IdleTimeoutMs: 8000}
+		a.OnLifecycle = func(MachineLifecycle) error { return nil }
+		a.Images = []imageinput.Image{{MIMEType: "image/png", Data: []byte("png-bytes")}}
+		t.Setenv(AntigravityBinaryEnv, acpFixture)
+		t.Setenv(AntigravityTransportEnv, "")
+		t.Setenv("FIXTURE_SCENARIO", "success")
+		r := RunAntigravity(a)
+		require.True(t, r.Settled, "%+v", r)
+		require.Contains(t, r.Text, "images=1")
+		require.NotEmpty(t, r.AntigravityReceipt)
+		require.NotContains(t, string(r.AntigravityReceipt), "cG5nLWJ5dGVz", "raw image base64 must be stripped into manifest")
+		recovered, err := RecoverMachine(MachineRecoveryArgs{Harness: "antigravity", InputImages: imageinput.Describe(a.Images), RequestID: a.RequestID, RunID: r.Session.RunID, RecoveryDirectory: a.RecoveryDirectory, Cwd: a.Cwd, Model: a.Model, ReasoningEffort: a.ReasoningEffort, PermissionMode: a.PermissionMode, PersistentSession: true, Subscription: a.Subscription})
+		require.NoError(t, err)
+		require.True(t, recovered.Settled, "%+v", recovered)
+	})
 	t.Run("cancellation waits for physical cleanup", func(t *testing.T) {
 		a := agyRunArgs(t)
 		cwd, err := filepath.EvalSymlinks(a.Cwd)
 		require.NoError(t, err)
 		a.Cwd = cwd
 		a.Command = worker
-		require.NoError(t, os.WriteFile(filepath.Join(a.Cwd, "agy-fixture.json"), []byte(`{"scenario":"hang"}`), 0o600))
+		settings, _ := json.Marshal(map[string]string{"scenario": "hang", "callsFile": filepath.Join(a.Cwd, "agy-calls.jsonl"), "inputFile": filepath.Join(a.Cwd, "agy-input.jsonl")})
+		require.NoError(t, os.WriteFile(filepath.Join(home, "agy-fixture.json"), settings, 0o600))
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		a.Watchdog.Context = ctx

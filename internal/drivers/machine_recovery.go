@@ -121,7 +121,7 @@ func recoveredMachineResult(harness string, raw json.RawMessage, request codexPr
 // runMachine, starts a CLI or sends a turn. Native cleanup must be proven by the
 // stored public receipt, not by this short-lived query process exiting.
 func RecoverMachine(a MachineRecoveryArgs) (Result, error) {
-	if err := imageinput.ValidateManifest(a.InputImages); err != nil || (a.InputImages != nil && a.Harness != "claude-code-pro") {
+	if err := imageinput.ValidateManifest(a.InputImages); err != nil || (a.InputImages != nil && a.Harness != "claude-code-pro" && a.Harness != "antigravity") {
 		return Result{}, fmt.Errorf("invalid original image evidence for read-only recovery")
 	}
 	if (a.Harness != "codex-pro" && a.Harness != "claude-code-pro" && a.Harness != "antigravity") || !machineOpaqueID(a.RequestID) || !machineOpaqueID(a.RunID) ||

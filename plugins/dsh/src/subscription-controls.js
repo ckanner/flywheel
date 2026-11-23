@@ -74,7 +74,11 @@ export function inspectCodexSubscription(account, response) {
     provider: 'openai', authentication: 'chatgpt', entitlement: 'unknown', quota: 'unknown', extraUsage: 'unknown' };
 }
 
-export const KIMI_SUBSCRIPTION_DISABLED_TOOLS = Object.freeze(['WebSearch', 'FetchURL']);
+// Verified against kimi-code official documentation: managed:kimi-code OAuth
+// natively includes WebSearch, FetchURL, Agent, and AgentSwarm on the coding
+// plan. External API key overrides (KIMI_WEB_SEARCH_API_KEY / KIMI_API_KEY /
+// MOONSHOT_API_KEY) remain refused by inspectSubscriptionEnvironment.
+export const KIMI_SUBSCRIPTION_DISABLED_TOOLS = Object.freeze([]);
 const kimiBases = new Set(['https://api.kimi.com/coding/v1', 'https://api.kimi.ai/coding/v1']);
 const kimiEndpoint = value => typeof value === 'string' && kimiBases.has(value.replace(/\/+$/, ''));
 
@@ -112,7 +116,7 @@ export function inspectKimiSubscription(providers, config, model) {
     provider: provider.id, authentication: 'native-oauth', endpoint: provider.base_url.replace(/\/+$/, ''),
     entitlement: 'unknown', quota: 'unknown', extraUsage: 'unknown',
     disabledTools: [...KIMI_SUBSCRIPTION_DISABLED_TOOLS],
-    serviceCredentialObservation: 'redacted-ambiguous-disabled-per-prompt' };
+    serviceCredentialObservation: 'managed-kimi-code-oauth-native-services' };
 }
 
 export async function inspectKimiRuntimeSubscription(runtime, model, signal) {
