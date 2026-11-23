@@ -1,190 +1,229 @@
 import test, { after } from 'node:test';
-import { loadClient, closeClientHarness } from './support/client-harness.js';
-after(closeClientHarness);
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-const hostRequire = createRequire(process.env.FLYWHEEL_TEST_DSH_HOST_DIR
-  ? resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, 'package.json') : new URL('../package.json', import.meta.url));
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { loadClient, closeClientHarness } from './support/client-harness.js';
+
+after(closeClientHarness);
+
+const hostRequire = createRequire(
+  process.env.FLYWHEEL_TEST_DSH_HOST_DIR
+    ? resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, 'package.json')
+    : new URL('../package.json', import.meta.url),
+);
 const load = name => import(pathToFileURL(hostRequire.resolve(name)));
 const { Context } = await load('@deepseek-ai/cordis');
 const { default: TypertRegistry } = await load('@deepseek-ai/dsh-typert-registry');
 const { default: Gateway } = await load('@deepseek-ai/dsh-api-gateway');
 const GatewayClient = await load('@deepseek-ai/dsh-api-gateway/client');
-const { SessionStore } = await load('@deepseek-ai/dsh-session');
-const { default: AgentRegistry } = await load('@deepseek-ai/dsh-agent');
-const { SessionProjectionRegistry } = await load('@deepseek-ai/dsh-session-projection');
-const source = name => process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR
-  ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR, 'dist', name.replace(/\.js$/, '.mjs'))) : process.env.FLYWHEEL_TEST_DSH_HOST_DIR
-  ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, name)) : new URL('../src/' + name, import.meta.url);
-const { ConsoleReadService } = await import(source('console-read.js'));
-const { taskAssociationProjection } = await import(source('task-association.js'));
-const { ControlNotDispatchedError } = await import(source('control.js'));
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
-test('published Client and Host Gateway reads are session-bound and append no conversation events', async t => {
+const source = name =>
+  process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR
+    ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR, 'dist', name.replace(/\.js$/, '.mjs')))
+    : process.env.FLYWHEEL_TEST_DSH_HOST_DIR
+      ? pathToFileURL(resolve(process.env.FLYWHEEL_TEST_DSH_HOST_DIR, name))
+      : new URL('../src/' + name, import.meta.url);
+
+const { ConsoleReadService } = await import(source('console-read.js'));
+const { ControlNotDispatchedError } = await import(source('control.js'));
+
+test('Direct Typert Remote flywheelConsole serves query, act, design-candidates, ux-review, and listRepoImages without an active agent session', async t => {
   const ctx = new Context();
   t.after(() => ctx.fiber.dispose());
   await ctx.plugin(TypertRegistry);
-  ctx.provide('remoteAccess', { decide: () => ({ kind:'deny', reason:'fixture-deny' }) });
+  ctx.provide('remoteAccess', { decide: () => ({ kind: 'allow' }) });
   await ctx.plugin(Gateway);
-  await ctx.plugin(SessionStore);
-  await ctx.plugin(SessionProjectionRegistry);
-  await ctx.sessionProjections.register(taskAssociationProjection);
-  const cwd = await realpath(process.cwd());
-  const unrelatedTask = await realpath(await mkdtemp(resolve(tmpdir(), 'flywheel-unassociated-')));
-  t.after(() => rm(unrelatedTask, { recursive: true, force: true }));
-  const session = ctx.sessions.create('mine', { meta: { cwd } });
-  const agent = { id: session.id, session, ctx, status: 'idle', options: {}, whenIdle: () => Promise.resolve() };
-  await ctx.plugin(AgentRegistry);
-  await ctx.agents.register(agent);
-  const before = session.snapshotEvents();
-  ctx.provide('workingDirectory', { get: () => cwd });
+
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'flywheel-direct-rpc-')));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const taskDir = join(cwd, 'docs', 'demo-task');
+  await mkdir(join(taskDir, 'design-candidates'), { recursive: true });
+  await mkdir(join(taskDir, 'reports'), { recursive: true });
+  await mkdir(join(cwd, 'assets'), { recursive: true });
+  await writeFile(join(taskDir, 'design-candidates', 'rev-000001-primary.md'), '# Carbon Draft\n');
+  await writeFile(join(taskDir, 'design-candidates', 'rev-000001-secondary.md'), '# Opus Draft\n');
+  await writeFile(join(taskDir, 'design-candidates', 'rev-000001-meta.json'), JSON.stringify({ revision: 1, primaryProfile: 'carbon' }));
+  await writeFile(join(taskDir, 'reports', 'M01-T01.ux-review.json'), JSON.stringify({ verdict: 'pass', summary: 'Crisp microcopy', findings: [] }));
+  await writeFile(join(cwd, 'assets', 'wireframe.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
   const calls = [];
   const modelRequest = { version: 1, harness: 'antigravity', channel: 'google-native' };
-  const catalog = patch => ({ ...modelRequest, status: 'available', source: 'agy models', scope: 'native-client-catalog',
+  const catalog = patch => ({
+    ...modelRequest,
+    status: 'available',
+    source: 'agy models',
+    scope: 'native-client-catalog',
     models: [{ id: 'gemini-pro-orchestrator-neon', label: 'Orchestrator Neon', efforts: [''], defaultEffort: '' }],
-    truncated: false, inferencePerformed: false, accountEntitlement: 'unknown', limitations: ['Catalog presence does not establish account entitlement.'], ...patch });
+    truncated: false,
+    inferencePerformed: false,
+    accountEntitlement: 'unknown',
+    limitations: ['Catalog presence does not establish account entitlement.'],
+    ...patch,
+  });
   let modelReport = catalog();
-  const control = async (input, actual, signal) => {
-    assert.equal(actual, agent); assert.ok(signal instanceof AbortSignal);
-    calls.push(input);
-    return { protocol: 1, ok: true, running: false, state: null, taskDir: input.taskDir ?? '', cwd,
-      ...(input.action === 'config-edit' ? { editor: { scope: input.editor.scope, revision: 'fixture-revision', values: {}, defaults: {} } } : {}),
+
+  const control = async (input, agent, signal, opId, humanPlanningAction, humanSessionAction, overrideHostSessionID) => {
+    assert.equal(agent, undefined, 'Direct UI RPC must not require an LLM agent');
+    assert.ok(signal instanceof AbortSignal);
+    calls.push({ input, opId, humanPlanningAction, humanSessionAction, overrideHostSessionID });
+    return {
+      protocol: 1,
+      ok: true,
+      running: false,
+      state: null,
+      taskDir: input.taskDir ?? '',
+      cwd: input.cwd ?? cwd,
+      ...(input.action === 'config-edit' ? { editor: { scope: input.editor.scope, revision: 'rev-1', values: {}, defaults: {} } } : {}),
       ...(input.action === 'models' ? { modelCatalog: modelReport } : {}),
-      ...(input.action === 'runs' ? { runs: [ { hostSessionId: 'foreign', taskDir: cwd, cwd }, { hostSessionId: 'mine', taskDir: cwd, cwd } ] } : {}) };
+      ...(input.action === 'runs' ? { runs: [{ taskDir, cwd, slug: 'demo-task', status: 'ready' }] } : {}),
+    };
   };
-  new ConsoleReadService(ctx, control, (input, error) => ({ protocol: 1, type: 'flywheel-control-error', action: input?.action, dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown', message: error.message }));
-  const peer = { id:'test', ctx, principal: { kind: 'owner' }, signal:new AbortController().signal, dispose:async()=>{} };
-  // Exercise the shipped Client descriptor through the real public Client
-  // mount, not a mock $mount that accepts unsupported src-json inputs.
+
+  new ConsoleReadService(
+    ctx,
+    control,
+    (input, error) => ({
+      protocol: 1,
+      type: 'flywheel-control-error',
+      action: input?.action ?? null,
+      dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
+      message: error.message,
+    }),
+    cwd,
+  );
+
+  const peer = { id: 'ui-peer', ctx, principal: { kind: 'owner' }, signal: new AbortController().signal, dispose: async () => {} };
+
   const clientCtx = new Context();
   t.after(() => clientCtx.fiber.dispose());
   await clientCtx.plugin(TypertRegistry);
   clientCtx.provide('connection', {
     rpc: {
       call: async (route, endpoint, payload, signal) => {
-        assert.equal(route, '/api'); assert.equal(endpoint, 'flywheelConsole/read');
-        // The browser carrier crosses a JSON boundary between Client/Host realms.
-        return { ok: true, value: await ctx.typertGateway.invoke({ namespace: 'flywheelConsole', method: 'read', args: JSON.parse(JSON.stringify(payload.args)), peer: { ...peer, signal } }) };
+        assert.equal(route, '/api');
+        const [namespace, method] = endpoint.split('/');
+        assert.equal(namespace, 'flywheelConsole');
+        return {
+          ok: true,
+          value: await ctx.typertGateway.invoke({
+            namespace,
+            method,
+            args: JSON.parse(JSON.stringify(payload.args)),
+            peer: { ...peer, signal },
+          }),
+        };
       },
       open: async function* () {},
     },
-    start: () => ({ stop() {} }), registerGenerationSource: () => () => {},
+    start: () => ({ stop() {} }),
+    registerGenerationSource: () => () => {},
   });
   await clientCtx.plugin(GatewayClient);
-  let definition;
+
+  const registered = new Map();
   clientCtx.provide('locale', { register: () => () => {}, bind: () => key => key });
-  clientCtx.provide('slots', { inject: (_name, register) => register(), register: value => { definition = value; return () => {}; } });
-  clientCtx.provide('remote.commands', { execute() { throw new Error('Passive reads must never execute chat commands'); } });
-  const clientFiber = clientCtx.plugin(loadClient());
-  await clientFiber;
-  const clientView = definition.inject('mine', { setSelection() {} });
-  await clientView.discover();
-  assert.equal(clientView.hooks.control.getSnapshot().runsError, null, 'the actual plugin context can read its mounted Remote namespace');
-  await clientView.run('config-edit', { taskDir: '', cwd }, false, { editor: { scope: 'global' } });
-  assert.equal(clientView.hooks.control.getSnapshot().error, null);
-  assert.equal(clientView.hooks.control.getSnapshot().editor.scope, 'global');
-  const modelResult = await clientView.run('models', { taskDir: '', cwd }, false, { models: modelRequest });
-  assert.equal(clientView.hooks.control.getSnapshot().error, null);
-  assert.equal(modelResult.modelCatalog.models[0].id, 'gemini-pro-orchestrator-neon');
-  assert.equal(modelResult.modelCatalog.models[0].defaultEffort, '', 'the Remote preserves fixed native effort without choosing another level');
-  assert.deepEqual(calls.at(-1), { action: 'models', cwd, models: modelRequest });
-  for (const patch of [{ harness: 'codex-pro' }, { channel: 'another-account' }, { inferencePerformed: true }, { accountEntitlement: 'confirmed' },
-    { models: [{ id: 'invented-model', label: 'Invented', extraAuthority: true }] }]) {
+  clientCtx.provide('slots', {
+    inject: (_name, register) => register(),
+    register: (def, Component) => {
+      registered.set(def.name, { def, Component });
+      return () => registered.delete(def.name);
+    },
+  });
+
+  await clientCtx.plugin(loadClient());
+  assert.ok(registered.has('main'));
+  const { store } = registered.get('main').def.inject();
+
+  // 1. Direct query: runs + design-candidates + ux-review + listRepoImages
+  const runs = await store.refreshRuns();
+  assert.equal(store.getSnapshot().runsError, null, 'refreshRuns should succeed through real GatewayClient');
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].taskDir, taskDir);
+
+  await store.loadDesignCandidates();
+  assert.equal(store.getSnapshot().designCandidates.length, 1);
+  assert.match(store.getSnapshot().designCandidates[0].primary, /Carbon Draft/);
+  assert.match(store.getSnapshot().designCandidates[0].secondary, /Opus Draft/);
+
+  await store.loadUXReview('M01-T01');
+  assert.equal(store.getSnapshot().uxReviews['M01-T01'].verdict, 'pass');
+
+  const images = await store.loadRepoImages(cwd);
+  assert.deepEqual(Array.from(images, f => f.path), ['assets/wireframe.png']);
+
+  // 2. Model catalog validation rejects tampered/invented metadata
+  const okCatalog = await store.loadModelCatalog(modelRequest);
+  assert.equal(okCatalog.models[0].id, 'gemini-pro-orchestrator-neon');
+  for (const patch of [
+    { harness: 'codex-pro' },
+    { channel: 'other' },
+    { inferencePerformed: true },
+    { accountEntitlement: 'confirmed' },
+    { models: [{ id: 'invented', extraAuthority: true }] },
+  ]) {
     modelReport = catalog(patch);
-    assert.equal(await clientView.run('models', { taskDir: '', cwd }, false, { models: modelRequest }), undefined);
-    assert.match(clientView.hooks.control.getSnapshot().error.detail, /invalid model catalog/);
-    assert.equal(clientView.hooks.control.getSnapshot().uncertainty, null, 'a failed passive read never becomes an uncertain mutation');
+    const bad = await store.loadModelCatalog(modelRequest);
+    assert.equal(bad, undefined);
+    assert.match(store.getSnapshot().error.message, /invalid model catalog/);
   }
   modelReport = catalog();
-  const descriptor = clientCtx.typert.remotes.get('flywheelConsole/read');
-  assert.equal(descriptor.parameters[0].wire, ctx.typert.lookups.get('agent').wire);
-  const sessionSchema = descriptor.parameters[0].codec.create();
-  const inputSchema = descriptor.parameters[1].codec.create();
-  const resultSchema = descriptor.result.create();
-  for (const value of ['', '  ', null, 1, []]) assert.throws(() => sessionSchema.parse(value));
-  for (const input of [
-    { action: 'runs' }, { action: 'status', taskDir: cwd, cwd }, { action: 'config' },
-    { action: 'config-edit', editor: { scope: 'global' } }, { action: 'config-edit', editor: { scope: 'project' } },
-    { action: 'metrics', runId: 'run-1' }, { action: 'history', sessionKey: 'task:review' },
-    { action: 'node', packet: 'M01-T01' }, { action: 'delivery', delivery: { action: 'inspect', headBranch: 'feature/example' } },
-    { action: 'doctor', probe: false },
-    { action: 'images', images: { paths: ['design/screen.png'] } },
-    { action: 'models', models: modelRequest },
-    { action: 'models', models: { version: 1, harness: 'custom-provider', provider: 'custom' } },
-    { action: 'planning', planning: { action: 'status' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'feedback-1' } },
-  ]) assert.deepEqual(JSON.parse(JSON.stringify(inputSchema.parse(input))), input);
-  for (const input of [null, [], {}, { action: 'start' }, { action: 'runs', unknown: true },
-    { action: 'runs', cwd: null }, { action: 'runs', probe: true }, { action: 'doctor', probe: 'yes' },
-    { action: 'config-edit', editor: {} }, { action: 'config-edit', editor: { scope: 'global', values: {} } },
-    { action: 'runs', editor: { scope: 'global' } }, { action: 'delivery', delivery: { action: 'merge' } },
-    { action: 'runs', delivery: { action: 'inspect' } }, { action: 'node', packet: '../foreign' },
-    { action: 'runs', packet: 'M01-T01' }, { action: 'history' }, { action: 'runs', sessionKey: 'foreign' },
-    { action: 'metrics', runId: 'bad\nID' }, { action: 'runs', runId: 'run-1' },
-    { action: 'planning', planning: { action: 'approve' } }, { action: 'planning', planning: { action: 'status', start: true } },
-    { action: 'planning', planning: { action: 'status', 'request-id': '' } }, { action: 'planning', planning: { action: 'status', 'request-id': 'a'.repeat(121) } },
-    { action: 'status', planning: { action: 'status' } }, { action: 'planning' },
-    { action: 'images', images: { paths: [] } }, { action: 'images', images: { paths: ['../private.png'] } },
-    { action: 'images', images: { paths: ['screen.png'], automatic: true } }, { action: 'config', images: { paths: ['screen.png'] } },
-    { action: 'models' }, { action: 'models', models: { version: 2, harness: 'antigravity' } },
-    { action: 'models', models: { ...modelRequest, prompt: 'make a call' } },
-    { action: 'models', models: { ...modelRequest, profile: 'native-profile' } },
-    { action: 'models', models: { ...modelRequest, channel: '' } },
-    { action: 'models', models: { ...modelRequest, model: 'gemini-pro-orchestrator-neon' } },
-    { action: 'config', models: modelRequest }, { action: 'planning', planning: { action: 'collaboration' } },
-  ]) assert.throws(() => inputSchema.parse(input), JSON.stringify(input));
-  for (const kind of ['success', 'error']) assert.equal(resultSchema.parse({ result: { kind, text: '{}' } }).result.kind, kind);
-  for (const value of [null, {}, { result: { kind: 'unknown', text: '{}' } }, { result: { kind: 'success', text: 1 } }]) {
-    assert.throws(() => resultSchema.parse(value)); assert.throws(() => descriptor.result.decode(value));
-  }
-  const read = async input => {
-    const result = await clientCtx.remote.flywheelConsole.read('mine', input);
-    if (!result.ok) throw result.error;
-    return result.value;
-  };
-  for (let i=0; i<3; i++) {
-    const result = await read({ action:'runs' });
-    assert.deepEqual(JSON.parse(result.result.text).runs.map(r => r.hostSessionId), ['mine']);
-  }
-  assert.equal((await read({ action:'status', taskDir:cwd, cwd })).result.kind,'success');
-  assert.equal((await read({ action:'planning', taskDir:cwd, cwd, planning: { action: 'status', 'request-id': 'feedback-1' } })).result.kind,'success');
-  assert.equal((await read({ action: 'images', images: { paths: ['design/screen.png'] } })).result.kind, 'success');
-  assert.equal((await read({ action: 'images', cwd: unrelatedTask, images: { paths: ['design/screen.png'] } })).result.kind, 'error');
-  assert.equal((await read({ action: 'models', models: modelRequest })).result.kind, 'success');
-  assert.equal((await read({ action: 'models', cwd: unrelatedTask, models: modelRequest })).result.kind, 'error', 'model inspection is bounded to this session’s execution root');
-  const count = calls.length;
-  for (const action of ['start', 'launch', 'stop', 'step', 'session', 'deliver', 'config-save', 'investigate']) {
-    assert.equal((await read({ action, taskDir:cwd, cwd })).result.kind,'error');
-  }
-  for (const action of ['prepare', 'plan', 'feedback', 'approve', 'migrate', 'collaboration', 'input-images']) {
-    assert.equal((await read({ action: 'planning', taskDir:cwd, cwd, planning: { action } })).result.kind, 'error');
-  }
-  assert.equal(calls.length,count,'read endpoint never dispatches a mutation');
-  const denied = await read({ action:'status', taskDir:unrelatedTask, cwd });
-  assert.match(denied.result.text,/not associated/);
-  assert.equal(calls.at(-1).action,'runs','unrelated task status never reaches Go');
-  await assert.rejects(ctx.typertGateway.invoke({ namespace:'flywheelConsole', method:'read', args:{agentId:'wrong',input:{action:'runs'}},peer }));
-  assert.deepEqual(session.snapshotEvents(),before,'all passive reads leave session log untouched');
-  const historicalTask = await realpath(await mkdtemp(resolve(tmpdir(), 'flywheel-history-')));
-  t.after(() => rm(historicalTask, { recursive: true, force: true }));
-  for (const [id, taskDir] of [['history', historicalTask], ['current', cwd]]) {
-    session.append('command/run', { commandId: id, name: 'flywheel', args: JSON.stringify({ action: 'launch', taskDir, cwd }), source: { kind: 'user' } });
-    session.append('command/done', { commandId: id, kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir, cwd, state: null }) });
-  }
-  const historyBefore = session.snapshotEvents();
-  assert.equal((await read({ action: 'status', taskDir: historicalTask, cwd })).result.kind, 'success', 'confirmed preparation history does not require a run index');
-  assert.equal((await read({ action: 'status', taskDir: historicalTask, cwd: unrelatedTask })).result.kind, 'error', 'history authorizes the exact task and execution root pair');
-  assert.deepEqual(session.snapshotEvents(), historyBefore, 'browsing history does not rebind the conversation or append messages');
-  session.append('command/run', { commandId: 'fixture-pending', name: 'flywheel', args: JSON.stringify({ action: 'launch', taskDir: unrelatedTask, cwd }), source: { kind: 'user' } });
-  const pendingBefore = session.snapshotEvents();
-  assert.equal((await read({ action:'status',taskDir:unrelatedTask,cwd })).result.kind,'success','original pending target remains readable');
-  assert.deepEqual(session.snapshotEvents(), pendingBefore);
-  const countBeforeDispose = calls.length;
-  await clientFiber.dispose();
-  await clientView.discover();
-  assert.equal(calls.length, countBeforeDispose, 'a disposed plugin cannot keep its read scope alive');
-  assert.equal(clientCtx.typert.remotes.get('flywheelConsole/read'), undefined);
+
+  // 3. Direct human-only act() mints host-owned dsh approval proof & session abandon proof
+  const digest = 'a'.repeat(64);
+  await store.remote.act({
+    action: 'planning',
+    taskDir,
+    cwd,
+    planning: {
+      action: 'approve',
+      'request-id': 'approve-ui-1',
+      revision: 3,
+      design: { revision: 1, digest },
+      start: true,
+    },
+  });
+  const approveCall = calls.at(-1);
+  assert.equal(approveCall.humanPlanningAction.kind, 'dsh');
+  assert.equal(approveCall.humanPlanningAction.start, true);
+  assert.equal(approveCall.humanPlanningAction.design.digest, digest);
+  assert.ok(approveCall.opId.startsWith('ui:ui-'));
+
+  await store.remote.act({
+    action: 'session',
+    taskDir,
+    cwd,
+    session: {
+      action: 'abandon',
+      key: 'task:M01-T01',
+      invocation: 'inv-42',
+      revision: 4,
+      reason: 'Operator confirmed stuck worker',
+    },
+  });
+  const abandonCall = calls.at(-1);
+  assert.equal(abandonCall.humanSessionAction.kind, 'dsh');
+  assert.equal(abandonCall.humanSessionAction.invocation, 'inv-42');
+
+  // 4. Rejects unsupported query / act actions cleanly before dispatch
+  await assert.rejects(
+    store.remote.query({ action: 'start', taskDir }),
+    /Invalid flywheelConsole\.query|Unsupported/,
+  );
+  await assert.rejects(
+    store.remote.act({ action: 'runs' }),
+    /Invalid flywheelConsole\.act|Unsupported/,
+  );
+
+  // 5. Verify registered Direct Typert descriptors have no agent lookup
+  const queryDesc = clientCtx.typert.remotes.get('flywheelConsole/query');
+  const actDesc = clientCtx.typert.remotes.get('flywheelConsole/act');
+  const imgDesc = clientCtx.typert.remotes.get('flywheelConsole/listRepoImages');
+  assert.equal(queryDesc.invocation.kind, 'direct');
+  assert.equal(actDesc.invocation.kind, 'direct');
+  assert.equal(imgDesc.invocation.kind, 'direct');
+  assert.equal(queryDesc.parameters[0].wire, 'input');
+  assert.equal(imgDesc.parameters[0].acceptsUndefined, true);
 });

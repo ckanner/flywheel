@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { ControlNotDispatchedError, runControl, validateControl } from '../src/control.js';
 import { apply, inject } from '../src/index.js';
 import { apply as applyPolicy } from '../src/policy.js';
-import { act, closeClientHarness, mountPanel } from './support/client-harness.js';
+import { act, closeClientHarness, envelope, mountWorkbench } from './support/client-harness.js';
 
 after(closeClientHarness);
 
@@ -402,37 +402,26 @@ test('full-access shell readiness records the absence of confinement and rejects
   assert.equal(registrations, 1, 'a failed readiness probe cannot register session policy evidence');
 });
 
-test('explicit UI mutations retain the registered command and durable session identity', async t => {
+test('explicit UI mutations dispatch via Direct Typert Remote act without chat command tunneling', async t => {
   const cwd = await mkdtemp(join(tmpdir(), 'flywheel-view-remote-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const registrations = {};
-  apply({
-    on: (name, callback) => { registrations[name] = callback; },
-    commands: { register: definition => { registrations.command = definition; } },
-    tools: { register: definition => { registrations.tool = definition; } },
-    sessionProjections: { register() {}, stateOf: session => ({ view: null, cwd: session.header.cwd }) },
-    workingDirectory: { get: () => cwd },
-  }, { flywheelBinary: binary });
-  t.after(() => registrations.dispose());
-  const agent = { session: { header: { cwd } } };
-  let completion;
-  let invocation;
-  const ui = await mountPanel(t, (request, sessionId, command) => {
-    invocation = { sessionId, command };
-    completion = registrations.command.handler({
-      rawInput: command.slice('/flywheel'.length), agent, signal: new AbortController().signal,
-    }).then(result => ({ ok: true, value: { result } }));
-    return completion;
+  const ui = await mountWorkbench(t, {
+    query: async input => {
+      if (input.action === 'runs') {
+        return envelope({ protocol: 1, ok: true, cwd, runs: [{ taskDir: cwd, cwd, slug: 'example', status: 'pending' }] });
+      }
+      if (input.action === 'status') {
+        return envelope({ protocol: 1, ok: true, cwd, taskDir: cwd, running: false, state: { slug: 'example', status: 'pending', packets: {} } });
+      }
+      return envelope({ protocol: 1, ok: true, cwd, revisions: [] });
+    },
+    act: async input => envelope({ protocol: 1, ok: true, cwd, taskDir: input.taskDir, running: true, state: { slug: 'example', status: 'running', packets: {} } }),
   });
-  assert.equal(ui.definition.name, 'conversation.view');
-  await ui.selectPath(0, cwd);
-  await ui.click('继续流程');
-  await act(async () => { await completion; });
-  assert.deepEqual(invocation, { sessionId: 'desktop-session',
-    command: `/flywheel ${JSON.stringify({ action: 'start', taskDir: cwd })}` });
-  assert.match(ui.container.querySelector('[aria-label="任务状态"]').textContent, /example/);
+  assert.equal(ui.slots.has('conversation.view'), false);
+  await ui.click('启动执行');
   assert.equal(ui.container.querySelector('[role="alert"]'), null);
-  assert.deepEqual(ui.requests.map(request => request.action), ['start']);
+  assert.deepEqual(ui.actCalls.map(r => r.action), ['start']);
+  assert.equal(ui.actCalls[0].taskDir, cwd);
 });
 
 test('the control process receives only its explicit host session identity', async t => {

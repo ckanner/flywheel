@@ -3,27 +3,34 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 
-// This adapter exercises the built plugin with its own controls and StoreHandle.
-// It supplies the renderer-owned hook bridge and session binding generations;
-// jsdom does not verify native host rendering or geometry.
-// An assembled-browser/Mac check is a separate verification gate.
 const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'http://localhost/' });
-const globals = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'];
+const globals = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT', 'HTMLElement', 'Element', 'Node'];
 const previousGlobals = globals.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
-for (const name of ['window', 'document', 'navigator']) {
+for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node']) {
   Object.defineProperty(globalThis, name, {
-    configurable: true, writable: true, value: name === 'window' ? dom.window : dom.window[name],
+    configurable: true,
+    writable: true,
+    value: name === 'window' ? dom.window : dom.window[name],
   });
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 export const { act } = React;
 export const clientDocument = dom.window.document;
-const h = React.createElement;
-const source = await readFile(process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR ? process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR + '/dist/client.js' : new URL('../../dist/client.js', import.meta.url), 'utf8');
-const bundleImports = [...source.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)].map(match => match[2]);
-assert.deepEqual([...new Set(bundleImports)], ['react'], 'the shipped plain-JS bundle depends on React alone');
+export const h = React.createElement;
+
+export const clientSource = await readFile(
+  process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR
+    ? process.env.FLYWHEEL_TEST_DSH_PACKAGE_DIR + '/dist/client.js'
+    : new URL('../../dist/client.js', import.meta.url),
+  'utf8',
+);
+
+const bundleImports = [...clientSource.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)].map(match => match[2]);
+assert.deepEqual([...new Set(bundleImports)], ['react'], 'the shipped v2 client bundle depends on React alone');
+assert.equal(clientSource.includes(':has([data-composer-seat])'), false, 'v2 bundle must not contain legacy :has() layout hack');
 
 export function closeClientHarness() {
   dom.window.close();
@@ -33,28 +40,35 @@ export function closeClientHarness() {
   });
 }
 
-function snapshotHook(source) {
-  return function useSnapshot(selector = value => value) {
-    const snapshot = React.useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot);
-    return selector(snapshot);
-  };
-}
-
 export function loadClient(timers) {
   let client;
   const modules = { react: React };
-  vm.runInNewContext(source, {
-    document: dom.window.document, console, Error, AbortController,
+  vm.runInNewContext(clientSource, {
+    document: dom.window.document,
+    window: {
+      __ModuleLoader__: {
+        load(definition) {
+          assert.equal(definition.id, '@ckanner/flywheel');
+          client = definition.factory(name => {
+            assert.ok(name in modules, `external client may load only React, not ${name}`);
+            return modules[name];
+          });
+        },
+      },
+      document: dom.window.document,
+      Node: dom.window.Node,
+      NodeFilter: dom.window.NodeFilter,
+      DocumentFragment: dom.window.DocumentFragment,
+      Element: dom.window.Element,
+      HTMLElement: dom.window.HTMLElement,
+      DOMParser: dom.window.DOMParser,
+    },
+    console,
+    Error,
+    AbortController,
     setTimeout: timers?.setTimeout ?? ((...args) => setTimeout(...args)),
     clearTimeout: timers?.clearTimeout ?? ((...args) => clearTimeout(...args)),
     queueMicrotask,
-    window: { __ModuleLoader__: { load(definition) {
-      assert.equal(definition.id, '@ckanner/flywheel');
-      client = definition.factory(name => {
-        assert.ok(name in modules, `the external plain-JS client may load only React, not ${name}`);
-        return modules[name];
-      });
-    } } },
   });
   assert.equal(typeof client?.apply, 'function');
   return client;
@@ -62,45 +76,48 @@ export function loadClient(timers) {
 
 export function deferred() {
   let resolve, reject;
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
 
-export function deadlineClock() {
-  let nextId = 0;
-  const pending = new Map();
-  return {
-    setTimeout: (callback, delay) => {
-      const id = ++nextId;
-      pending.set(id, { callback, delay });
-      return id;
-    },
-    clearTimeout: id => pending.delete(id),
-    expire: async () => {
-      const deadlines = [...pending.values()];
-      pending.clear();
-      await act(async () => { for (const { callback } of deadlines) callback(); });
-    },
-    pending,
-  };
+export function envelope(payload, kind = 'success') {
+  return { ok: true, value: { result: { kind, text: JSON.stringify(payload) } } };
 }
 
-export async function mountPanel(t, respond, { timers, locale = 'zh', association, catalog, mountError } = {}) {
+/**
+ * Mounts the v2 4-slot DSH client in jsdom with Direct Typert Remote (`query`, `act`, `listRepoImages`)
+ * and returns helpers to render any of the 4 registered slots (`main`, `sidebar.panellist`,
+ * `sidebar.right.pane.tab`, `conversation.chat.commandview`, `settings.section`).
+ */
+export async function mountWorkbench(
+  t,
+  handlers = {},
+  { locale = 'zh', slot = 'main', timers, extraProps = {}, mountError } = {},
+) {
   const client = loadClient(timers);
-  const definitions = new Map();
+  const slots = new Map();
+  const sidebarTabs = [];
   const effects = [];
   const dictionaries = new Map();
-  // The new passive catalog has its own read lane. Existing task protocol
-  // fixtures stay scoped to their commands; discovery scenarios exercise both.
-  const requests = [], discoveryRequests = [], allRequests = [];
-  const sessions = [], discoverySessions = [];
+  const queryCalls = [];
+  const actCalls = [];
+  const imageCalls = [];
+  const selectedPanels = [];
+  let mountedContribution = null;
   let activeLocale = locale;
   let disposed = false;
+
   const translate = namespace => (key, params) => {
     const values = dictionaries.get(namespace);
     const value = values?.[activeLocale]?.[key] ?? values?.en?.[key] ?? key;
-    return String(value).replace(/\{(\w+)\}/g, (match, name) => name in (params ?? {}) ? String(params[name]) : match);
+    return String(value).replace(/\{(\w+)\}/g, (match, name) =>
+      name in (params ?? {}) ? String(params[name]) : match,
+    );
   };
+
   const trackEffect = factory => {
     const cleanup = factory();
     let live = true;
@@ -112,174 +129,176 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
     effects.push(dispose);
     return dispose;
   };
-  let readRemote;
-  client.apply({
-    inject: (dependencies, callback) => {
-      assert.deepEqual([...dependencies], ['remote.flywheelConsole']);
-      const fiber = Promise.resolve().then(() => callback({ remote: readRemote }));
-      fiber.dispose = async () => {};
-      return fiber;
+
+  const remoteNamespace = {
+    query: async input => {
+      const cloned = JSON.parse(JSON.stringify(input));
+      queryCalls.push(cloned);
+      if (handlers.query) return handlers.query(cloned);
+      if (cloned.action === 'runs') {
+        return envelope({ protocol: 1, ok: true, running: false, taskDir: '', cwd: '/repo', state: null, runs: [] });
+      }
+      if (cloned.action === 'design-candidates') {
+        return envelope({ protocol: 1, ok: true, taskDir: cloned.taskDir ?? '', revisions: [] });
+      }
+      if (cloned.action === 'ux-review') {
+        return envelope({ protocol: 1, ok: true, taskDir: cloned.taskDir ?? '', packet: cloned.packet, uxReview: null });
+      }
+      return envelope({ protocol: 1, ok: true, running: false, taskDir: cloned.taskDir ?? '', cwd: '/repo', state: null });
     },
+    act: async input => {
+      const cloned = JSON.parse(JSON.stringify(input));
+      actCalls.push(cloned);
+      if (handlers.act) return handlers.act(cloned);
+      return envelope({ protocol: 1, ok: true, running: false, taskDir: cloned.taskDir ?? '', cwd: cloned.cwd ?? '/repo', state: null });
+    },
+    listRepoImages: async cwd => {
+      imageCalls.push(cwd);
+      if (handlers.listRepoImages) return handlers.listRepoImages(cwd);
+      return envelope({ protocol: 1, ok: true, cwd: cwd ?? '/repo', files: [] });
+    },
+  };
+
+  const services = new Map([
+    ['remote.flywheelConsole', remoteNamespace],
+    ['layout', { selectPanel: id => selectedPanels.push(id) }],
+  ]);
+
+  const ctx = {
     effect: trackEffect,
-    on: (event, callback) => {
-      assert.equal(event, 'dispose');
-      return trackEffect(() => callback);
-    },
+    get: name => services.get(name),
     locale: {
       register: (namespace, values) => {
-        assert.ok(!dictionaries.has(namespace), 'each locale namespace has one owner');
         dictionaries.set(namespace, values);
         return () => dictionaries.delete(namespace);
       },
       bind: translate,
     },
-    slots: {
-      inject: (name, activate) => {
-        assert.equal(name, 'conversation.view', 'Flywheel adds a native view without replacing host chrome');
-        return trackEffect(activate);
+    remote: {
+      $mount: async contribution => {
+        if (mountError) throw mountError;
+        mountedContribution = contribution;
+        return () => {};
       },
+      flywheelConsole: remoteNamespace,
+    },
+    slots: {
+      inject: (_name, register) => trackEffect(register),
       register: (definition, Component) => {
-        assert.equal(definition.name, 'conversation.view');
-        assert.equal(definition.id, 'flywheel');
-        assert.ok(!definitions.has(definition.name));
-        definitions.set(definition.name, { definition, Component });
-        return () => definitions.delete(definition.name);
+        assert.notEqual(definition.name, 'conversation.view', 'legacy conversation.view slot must be deleted');
+        slots.set(definition.name, { definition, Component });
+        return () => slots.delete(definition.name);
       },
     },
-    remote: readRemote = { $mount: async () => { if (mountError) throw mountError; return () => {}; }, flywheelConsole: { read: async (sessionId, wireRequest) => {
-      const request = JSON.parse(JSON.stringify(wireRequest));
-      allRequests.push(request);
-      if (request.action === 'runs') {
-        discoveryRequests.push(request); discoverySessions.push(sessionId);
-        if (catalog) return catalog(request, sessionId);
-        return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir: '', cwd: '/repo', state: null, runs: [] }) } } };
+    inject: (deps, callback) => {
+      if (deps.includes('sidebarRightTabs')) {
+        callback({
+          ...ctx,
+          sidebarRightTabs: {
+            register: spec => {
+              sidebarTabs.push(spec);
+              return () => {};
+            },
+          },
+        });
       }
-      requests.push(request); sessions.push(sessionId);
-      return respond(request, sessionId);
-    } }, commands: { execute: async (sessionId, command, attachments) => {
-      assert.equal(attachments.length, 0);
-      assert.ok(command.startsWith('/flywheel '));
-      const request = JSON.parse(command.slice('/flywheel '.length));
-      assert.ok(['planning', 'status', 'investigate', 'launch', 'start', 'stop', 'step', 'session', 'deliver', 'config-save'].includes(request.action), 'reads must never append chat commands');
-      allRequests.push(request);
-      if (request.action === 'runs') {
-        discoveryRequests.push(request); discoverySessions.push(sessionId);
-        if (catalog) return catalog(request, sessionId);
-        return { ok: true, value: { result: { kind: 'success', text: JSON.stringify({ protocol: 1, ok: true, running: false, taskDir: '', cwd: '/repo', state: null, runs: [] }) } } };
-      }
-      requests.push(request);
-      sessions.push(sessionId);
-      return respond(request, sessionId, command);
-    } } },
-  });
-  assert.equal(definitions.size, 1, 'one additive native view is registered');
-  const { definition, Component } = definitions.get('conversation.view');
-  assert.equal(typeof definition.store?.create, 'function', 'view state implements the public StoreHandle contract');
-  assert.equal(typeof definition.store?.spec?.init, 'function');
-  assert.equal(typeof definition.store?.spec?.actions, 'object');
-  const bindings = new Map();
-  const projections = new Map();
-  const projectionSource = sessionId => {
-    if (!projections.has(sessionId)) {
-      let value = sessionId === 'desktop-session' ? association : undefined;
-      const listeners = new Set();
-      projections.set(sessionId, { getSnapshot: () => value,
-        subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
-        set: next => { value = next; for (const listener of [...listeners]) listener(); } });
-    }
-    return projections.get(sessionId);
+    },
   };
-  let currentSession = 'desktop-session';
-  let generation = 0;
-  let visible = true;
-  const getBinding = (sessionId, version) => {
-    const key = `${sessionId}:${version}`;
-    if (!bindings.has(key)) {
-      const instance = definition.store.create(sessionId);
-      const injected = definition.inject?.(sessionId, instance.actions) ?? {};
-      const { hooks = {}, ...face } = injected;
-      const sessionSnapshot = Object.freeze({ cwd: '/repo', running: false });
-      const sessionSource = { getSnapshot: () => sessionSnapshot, subscribe: () => () => {} };
-      const props = {
-        ...face, sessionId, actions: instance.actions,
-        useStore: snapshotHook(instance),
-        useSession: snapshotHook(sessionSource),
-        useProjection: (key, selector = value => value) => {
-          assert.equal(key, 'flywheelTask');
-          return snapshotHook(projectionSource(sessionId))(selector);
-        },
-        t: translate(definition.locale),
-      };
-      for (const [name, value] of Object.entries(hooks)) {
-        assert.equal(typeof value.getSnapshot, 'function', `${name} is a bare observable`);
-        props[`use${name[0].toUpperCase()}${name.slice(1)}`] = snapshotHook(value);
-      }
-      bindings.set(key, { props, instance });
-    }
-    return bindings.get(key);
-  };
+
+  client.apply(ctx);
+  assert.equal(slots.has('conversation.view'), false, 'conversation.view must not be registered');
+  assert.ok(slots.has('main'), 'main workbench slot must be registered');
+  assert.ok(slots.has('sidebar.panellist'), 'sidebar.panellist rail slot must be registered');
+  assert.ok(slots.has('sidebar.right.pane.tab'), 'sidebar.right.pane.tab slot must be registered');
+  assert.ok(slots.has('conversation.chat.commandview'), 'conversation.chat.commandview slot must be registered');
+  assert.ok(slots.has('settings.section'), 'settings.section slot must be registered');
+
   const container = dom.window.document.createElement('div');
   dom.window.document.body.appendChild(container);
   const root = createRoot(container);
-  const render = () => root.render(visible && !disposed ? h(Component, {
-    ...getBinding(currentSession, generation).props, key: `${currentSession}:${generation}`,
-  }) : null);
-  await act(async () => render());
+
+  let activeSlot = slot;
+  let currentExtraProps = extraProps;
+
+  const renderSlot = (slotName = activeSlot, propsOverride = currentExtraProps) => {
+    activeSlot = slotName;
+    currentExtraProps = propsOverride;
+    const entry = slots.get(slotName);
+    assert.ok(entry, `slot ${slotName} must be registered`);
+    const injected = entry.definition.inject ? entry.definition.inject() : {};
+    root.render(!disposed ? h(entry.Component, { ...injected, ...propsOverride }) : null);
+    return injected;
+  };
+
+  let injectedProps;
+  await act(async () => {
+    injectedProps = renderSlot(activeSlot, currentExtraProps);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
   const unload = async () => {
     await act(async () => {
       for (const cleanup of [...effects].reverse()) cleanup();
       disposed = true;
-      render();
+      root.render(null);
     });
   };
+
   t.after(async () => {
     if (!disposed) await unload();
     await act(async () => root.unmount());
     container.remove();
   });
+
   const button = name => {
     const found = [...container.querySelectorAll('button')].find(item =>
-      typeof name === 'string' ? item.textContent === name : name.test(item.textContent));
-    assert.ok(found, `button ${name} exists; visible: ${[...container.querySelectorAll('button')].map(x => x.textContent).join(', ')}`);
+      typeof name === 'string' ? item.textContent.trim() === name : name.test(item.textContent),
+    );
+    assert.ok(
+      found,
+      `button ${name} exists; visible: ${[...container.querySelectorAll('button')].map(x => x.textContent.trim()).join(' | ')}`,
+    );
     return found;
   };
-  const reveal = element => {
-    const ancestors = [];
-    for (let node = element.parentElement; node; node = node.parentElement) {
-      if (node.tagName === 'DETAILS' && !node.open) ancestors.push(node);
-    }
-    for (const details of ancestors.reverse()) details.querySelector(':scope > summary').click();
+
+  const click = async name => {
+    await act(async () => {
+      button(name).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   };
-  const click = async name => { await act(async () => {
-    const target = button(name);
-    reveal(target);
-    target.click();
-  }); };
-  // Seed the public selection binding for controller/protocol scenarios.
-  // DOM task picking is exercised separately in task-discovery.test.js.
-  const selection = () => getBinding(currentSession, generation).instance.getSnapshot();
-  const selectPath = async (index, value) => act(async () => {
-    const binding = getBinding(currentSession, generation);
-    binding.props.changeSelection({ taskDir: selection().taskDir, cwd: selection().cwd, [index === 0 ? 'taskDir' : 'cwd']: value });
-  });
-  const switchSession = async (sessionId, version = 0) => {
-    currentSession = sessionId;
-    generation = version;
-    await act(async () => render());
+
+  const setLocale = async next => {
+    activeLocale = next;
+    await act(async () => {
+      renderSlot(activeSlot, currentExtraProps);
+    });
   };
-  const setVisible = async value => {
-    visible = value;
-    await act(async () => render());
+
+  const switchSlot = async (nextSlot, nextExtra = {}) => {
+    await act(async () => {
+      renderSlot(nextSlot, nextExtra);
+      await Promise.resolve();
+    });
   };
-  const setLocale = async value => {
-    activeLocale = value;
-    await act(async () => render());
+
+  return {
+    container,
+    slots,
+    sidebarTabs,
+    mountedContribution,
+    store: injectedProps?.store,
+    queryCalls,
+    actCalls,
+    imageCalls,
+    selectedPanels,
+    button,
+    click,
+    setLocale,
+    switchSlot,
+    unload,
+    document: dom.window.document,
   };
-  const setAssociation = async (value, sessionId = currentSession) => {
-    await act(async () => projectionSource(sessionId).set(value));
-  };
-  const refreshDiscovery = async () => act(async () => { await getBinding(currentSession, generation).props.discover(); });
-  return { refreshDiscovery, container, root, definition, requests, discoveryRequests, allRequests, sessions, discoverySessions, button, click, selectPath, selection,
-    switchSession, setVisible, setLocale, setAssociation, unload, bindings, document: dom.window.document,
-    translate: translate(definition.locale) };
 }

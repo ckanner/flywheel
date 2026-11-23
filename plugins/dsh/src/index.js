@@ -24,7 +24,7 @@ export function apply(ctx, config = {}) {
     dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
     message: error instanceof Error ? error.message : String(error),
   });
-  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction) => {
+  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction, overrideHostSessionID) => {
     const session = agent?.session;
     const planningRead = input?.action === 'planning' && input.planning?.action === 'status';
     const mutation = mutatesTask(input?.action) && !planningRead;
@@ -69,7 +69,7 @@ export function apply(ctx, config = {}) {
       const response = await runControl(input, {
         binary,
         defaultCwd,
-        hostSessionID: session?.id,
+        hostSessionID: session?.id ?? overrideHostSessionID,
         planningUserAction: humanPlanningAction,
         sessionUserAction: humanSessionAction,
         timeoutMs: config.controlTimeoutMs ?? 60000,
@@ -92,7 +92,7 @@ export function apply(ctx, config = {}) {
   ctx.inject?.(['typert'], async scope => {
     // Host peers remain optional for CLI-only imports and native workers.
     const { ConsoleReadService } = await import('./console-read.js');
-    new ConsoleReadService(scope, control, failure);
+    new ConsoleReadService(scope, control, failure, config.defaultCwd);
   });
   ctx.commands.register({
     name: 'flywheel',
@@ -199,6 +199,9 @@ export function apply(ctx, config = {}) {
           run: { type: 'boolean', description: 'Start only: register the bounded contract and start its Go investigation owner; defaults to false.' },
           revision: { type: 'integer', minimum: 1 },
           contract: { type: 'object', description: 'Exact version-1 preparation.schema.json contract; use flywheel template to read the installed schema. Store no credentials.' },
+          goal: { type: 'string', description: 'Start only (alternative to contract): one-sentence investigation goal synthesized into a bounded read-only contract by the Go engine.' },
+          intent: { type: 'string', enum: ['investigate'] },
+          'read-paths': { type: 'array', items: { type: 'string' }, description: 'Optional clean repository-relative paths paired with goal.' },
           report: { type: 'object', description: 'Evidence-cited investigation report; references must name recorded invocation IDs. This never marks code completed.' },
         }, required: ['action'] },
         probe: { type: 'boolean', description: 'Doctor only: explicitly enable SDK checks without inference; defaults to false' },
