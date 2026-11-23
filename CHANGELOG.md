@@ -5,10 +5,9 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
-## Unreleased — Flywheel Next
+## 0.39.0 — 2026-11-23 (Flywheel Next)
 
-This entry records source changes on branch `feat/flywheel-next`. It does not
-claim npm registry publication or live-account inference acceptance.
+This entry records the Flywheel Next release prepared for `v0.39.0`.
 
 - **Antigravity ACP default & native image support**: bundle
   `@ckanner/dsh-subagent-antigravity@0.3.0` (`transport: "acp"` default, native

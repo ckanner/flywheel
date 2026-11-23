@@ -3,17 +3,18 @@
   "version": "0.3.0",
   "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
   "sourceDirectory": ".",
-  "sourceCommit": "0abb4930dc980ec5251a0d9ebda044879cea06ed",
+  "sourceCommit": "0bb178739b4a9fae5f164864b24d964e535814d2",
   "sourceTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
   "sourceDirectoryTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
   "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport (with image blocks, ajv schema validation, semver >= 1.5.13 preflight, isolated evidence-only temp workspace, graceful stdin EOF exit + PGID cleanup, and hardened client/session guards) built from ckanner/dsh-subagent-antigravity@0abb493; passed 96/96 tests and npm run test:package.",
   "tarball": "ckanner-dsh-subagent-antigravity-0.3.0.tgz",
-  "sha256": "c5aac9791a03288ed26cec6b0f174767743004e42a3ab5704e1f5728e1243e40",
-  "integrity": "sha512-HkgbBNBOjh3W58w8Dc2VuSPOu9GVBMc/Hh/zt5Pl/loePDjQJdNFVyc/n54Haj/nresbOJlysEIwcH1ytA6AGg==",
+  "sha256": "77145d7865e695b4abf757ceb5762867692081a572cbd6b587d2cd9c44f48a4b",
+  "integrity": "sha512-h8e3lZCf0rBUItDtCcXO5s/K+YCczX/kHiM/Unv+IbtFR6CXlvFJwBMD4OSnCc3qwVNL59zofSMKPU6xA6DbFw==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "buildToolchain": {
     "node": "26.12.1",
     "npm": "11.19.1"
-  }
+  },
+  "bytes": 118272
 }
