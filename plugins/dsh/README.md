@@ -62,10 +62,10 @@ Installing a desktop plugin does not change the parent conversation's provider.
 
 | Backend | Setup and execution path |
 | --- | --- |
-| Antigravity | Bundled `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → official installed `agy` CLI and native Google login; no ACP |
+| Antigravity | Bundled `@ckanner/dsh-subagent-antigravity@0.3.0` machine API → official installed `agy` CLI (`transport: "acp"` default, native images, isolated `evidence-only`) |
 | Claude Code Pro | Exact optional peer `0.7.0` in the worker dependency tree → official Agent SDK → local Claude Code subscription |
 | Codex Pro | Bundled `0.10.2` machine API → official app-server with ChatGPT login |
-| Kimi | Minimal owned native agent profile with managed Kimi Code OAuth; strict subscription mode rejects print |
+| Kimi | Minimal owned native agent profile with managed Kimi Code OAuth (`WebSearch`/`FetchURL`/`Agent`/`AgentSwarm` enabled by default); strict subscription mode rejects print |
 
 The strict preset checks native routing and supported subscription evidence before
 admission; unknown quota remains unknown. Auth/quota failures never enable API keys,

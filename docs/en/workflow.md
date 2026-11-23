@@ -11,6 +11,24 @@ Use this guide for an existing repository. For installation and a disposable fir
 run, start with [Getting started](getting-started.md).
 For incidents, issue fixes, and complex projects, use the [Usage handbook](usage-handbook.md).
 
+## Execution safeguards, Frontend UX Audit, Tiered Review & Delivery Endpoint
+
+- **Run Guardrails (replacing default dollar budgets)**: `budget.enforce` defaults to `"off"`
+  for subscription workflows. Instead, deterministic **Run Guardrails** prevent runaway loops:
+  `max-packet-attempts: 3`, `max-review-rounds: 2`, and `max-task-calls: 60` (tracked in
+  `state.budget.totals.calls`). Users can still opt in to `budget.enforce: "soft" | "hard"`.
+- **Default Frontend UX & Microcopy Audit**: On `frontend` route packets, after L1 passes and
+  before independent Codex Review, read-only `Gemini 4 Neon` audits interaction states and
+  microcopy (`reports/<id>.ux-review.json`). When the verdict is `needs_polish`, Claude performs
+  at most one refinement pass and re-runs L1.
+- **Tiered Review (`blocking` vs `advisory`) & Regression Tests**: Review verdicts separate
+  `blocking` defects (which trigger a return, capped at `max-review-rounds`) from `advisory`
+  notes (recorded and displayed without forcing rework). Any `REVIEW_RETURNED` retry requires a
+  matching regression or guard test.
+- **Configurable Delivery Endpoint (`delivery.endpoint`)**: Choose `local` (default), `draft-pr`
+  (passes `--draft`), `pr-review`, or `auto-merge` (retaining explicit confirmation and
+  `--match-head-commit`).
+
 ## Create a task from the Flywheel view
 
 When the current conversation has no associated task, the canvas offers **Engineering task**, **Fix a problem**, and **Investigate the cause**. Enter the goal; the workspace comes from the current conversation and the engine creates the task ledger under its `docs` directory. You do not need to create a directory first. Merely opening the form performs no inference.

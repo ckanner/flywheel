@@ -51,10 +51,10 @@ Mac 桌面或 Seatbelt 行为。
 
 | 后端 | 安装与执行路径 |
 | --- | --- |
-| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → 官方本机 `agy` CLI 及 Google 原生登录；无 ACP |
+| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.3.0` machine API → 官方本机 `agy` CLI（默认 `transport: "acp"`、原生图片输入、独立 `evidence-only` 隔离） |
 | Claude Code Pro | worker 依赖树中的精确 optional peer `0.7.0` → 官方 Agent SDK → 本地 Claude Code 订阅 |
 | Codex Pro | 内置 `0.10.2` machine API → 官方 app-server 与 ChatGPT 登录 |
-| Kimi | 最小 owned native agent profile，managed Kimi Code OAuth；严格订阅模式拒绝 print |
+| Kimi | 最小 owned native agent profile，managed Kimi Code OAuth（默认放开 `WebSearch`/`FetchURL`/`Agent`/`AgentSwarm`）；严格订阅模式拒绝 print |
 
 严格预设在准入时核对原生路径与受支持订阅证据，额度未知仍保留未知。认证/额度失败不
 开启 API Key、credits 或 extra usage 后备。见[模型策略](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/model-policy.md)、

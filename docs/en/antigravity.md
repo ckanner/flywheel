@@ -3,11 +3,12 @@
 [Documentation](../README.md) · English · [简体中文](../zh-CN/antigravity.md)
 
 Use `harness:"antigravity"` to run Gemini through the official local **`agy` CLI**.
-Flywheel calls `@ckanner/dsh-subagent-antigravity@0.2.1` through its public machine API;
-the plugin owns the native Agent loop, process group and durable receipt. Go owns
-workflow stages, approval gates, evidence collection, verification and delivery.
-The same plugin also provides a direct DSH task panel and `subagent_antigravity`.
-There is no ACP or separate model API transport.
+Flywheel calls `@ckanner/dsh-subagent-antigravity@0.3.0` through its public machine API,
+defaulting to the official **ACP transport** (`transport: "acp"`) with native image input
+and isolated `evidence-only` temporary workspaces. The plugin owns the native Agent loop,
+process group and durable receipt; Go owns workflow stages, approval gates, evidence
+collection, verification and delivery. The same plugin also provides a direct DSH task
+panel and `subagent_antigravity`. There is no separate model API key transport.
 
 ## Installation and capability checks
 
@@ -18,15 +19,15 @@ downloads the executable, implements login, copies account tokens or changes
 global settings. This release supervises POSIX process groups and rejects Windows.
 
 Flywheel includes `flywheel-antigravity-worker` and the exact reviewed companion
-archive recorded in
+archive (`0.3.0`, ACP default) recorded in
 [vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json).
 The source is reviewable in
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)
 as a standalone npm package. Package identity, installed candidate bytes, public
-registry availability and real-account acceptance are separate checks. The
+registry availability and real-account acceptance are separate checks. The historical
 [2026-11-22 registry verification](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
-confirms that the published 0.2.1 archive matches the reviewed bytes. An older
-package with another machine contract cannot substitute for 0.2.1.
+recorded the earlier 0.2.1 archive; the current source bundles the reviewed 0.3.0
+ACP tarball and rejects older packages with mismatched machine contracts.
 
 | Environment variable | Purpose |
 | --- | --- |

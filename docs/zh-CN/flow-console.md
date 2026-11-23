@@ -2,8 +2,22 @@
 
 [文档首页](../README.zh-CN.md) · [English](../en/flow-console.md) · 简体中文
 
-DSH 的 Flywheel 视图集中提供当前任务、流程阶段、配置、会话交互与交付。
+DSH Flywheel v2 插件采用零债务原生 4 槽位架构，通过 Direct Typert Remote（`flywheelConsole`：
+`query`、`act`、`listRepoImages`）直连 Go 引擎，已彻底移除旧版 `conversation.view`、
+`:has([data-composer-seat])` 布局 hack 及经由聊天框透传 `/flywheel {...}` JSON 的机制。
 CLI、内置引擎和 DSH 插件应保持同一版本。安装步骤见[快速开始](getting-started.md)。
+
+## 原生 4 槽位工程工作台（v2）
+
+| DSH 槽位 | 承载视图 | 核心能力 |
+| --- | --- | --- |
+| `main` + `sidebar.panellist` | 全页工程工作台 | 可折叠 240px 任务栏、52px 单行顶栏与生命周期主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 \| 双稿并排对比 \| 原始独立草稿`、Markdown 来源对照表、Astra 独立审查与悬浮拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（全量节点无 6 节点分页、244×96 语义卡片、贝塞尔流动连线、悬停血缘高亮、缩放平移与缩略图）、**520px 四标签节点详情抽屉**（概览 / 证据与 UX / 时间线与协作 / 契约）、**30 秒建单弹窗**（三意图卡片、可视化图片选择、一句话只读调查）、**根因调查板**与**交付追踪页** |
+| `sidebar.right.pane.tab` | 右侧边栏实时进度 | 当前运行任务进度条、活跃节点预览、一键跳转工作台与停止控制 |
+| `conversation.chat.commandview` | `/flywheel` 指令卡 | 对话内只读控制摘要卡片，一键跳转主工作台 |
+| `settings.section` | 三层渐进式设置页 | 配置优先级栏（任务 > 项目 > 全局 > 默认）、4 订阅健康条与无推理自检、Tier 1 预设与运行护栏、Tier 2 带只读锁定徽章的角色路由表、Tier 3 可折叠美元预算开关与原始 JSON 预览 |
+
+人类专属操作（`planning.approve` 与 `session.abandon`）由宿主 `flywheelConsole.act`
+直接签发宿主侧 `dsh` 人工证明；模型工具（`flywheel_launch` / `flywheel_control`）始终严禁调用。
 
 ## 找到任务，不必填写路径
 
