@@ -14,7 +14,7 @@ var configFields = []string{
 	"subscription", "planning",
 	"native-profiles",
 	"execution-policy",
-	"jev", "jev-shadow", "version", "drivers", "loops", "routes", "channels", "profiles", "budget", "watchdog",
+	"jev", "jev-shadow", "version", "drivers", "loops", "routes", "channels", "profiles", "budget", "guardrails", "frontend-ux-review", "delivery", "watchdog",
 	"retry", "credentials", "verify", "defect-injection", "worktree", "scheduler", "permissions", "sessions", "judge-panel", "intake", "pricing", "mock-behaviors",
 }
 var channelFields = []string{"env-key", "fallback", "harness", "provider", "models", "cache-hit-rate-min"}
@@ -231,7 +231,7 @@ func prepareConfigSections(root map[string]json.RawMessage) error {
 	if err := preparePermissions(root); err != nil {
 		return err
 	}
-	for _, section := range []string{"budget", "watchdog", "retry", "credentials", "verify", "defect-injection", "worktree", "intake"} {
+	for _, section := range []string{"budget", "guardrails", "frontend-ux-review", "delivery", "watchdog", "retry", "credentials", "verify", "defect-injection", "worktree", "intake"} {
 		raw, present := root[section]
 		if !present || string(raw) == "null" {
 			continue

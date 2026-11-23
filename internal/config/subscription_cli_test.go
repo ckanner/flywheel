@@ -42,6 +42,19 @@ func TestSubscriptionPlanningResolvesProfilesAndRetainsRole(t *testing.T) {
 	require.ErrorContains(t, c.Validate(), "unknown profile")
 	c.Planning.Compact = map[string]string{"plan": "local"}
 	require.Error(t, c.validatePlanningConfig())
+
+	c = subscriptionFixture()
+	c.Planning.DualDraft = &DualDraftConfig{Enabled: true, SecondaryProfile: "local", SynthesizerProfile: "review"}
+	c.FrontendUXReview = FrontendUXReviewConfig{Enabled: true, Profile: "local"}
+	require.NoError(t, c.Validate())
+
+	c.Planning.DualDraft.SecondaryProfile = "absent"
+	require.ErrorContains(t, c.Validate(), "planning.dual-draft.secondary-profile")
+	c.Planning.DualDraft.SecondaryProfile = "local"
+	c.Planning.DualDraft.SynthesizerProfile = "absent"
+	require.ErrorContains(t, c.Validate(), "planning.dual-draft.synthesizer-profile")
+	c.Planning.DualDraft.SynthesizerProfile = ""
+	require.NoError(t, c.Validate())
 }
 
 func TestSubscriptionPolicyRejectsReachablePaidPaths(t *testing.T) {
@@ -51,7 +64,15 @@ func TestSubscriptionPolicyRejectsReachablePaidPaths(t *testing.T) {
 		},
 		"route":   func(c *Config) { c.Routes["default"] = RouteBinding{Harness: "pi", Channel: "paid"} },
 		"compact": func(c *Config) { p := c.Profiles["local"]; p.Harness = "pi"; c.Profiles["local"] = p },
-		"panel":   func(c *Config) { c.JudgePanel = &LoopBinding{Harness: "pi", Channel: "paid"} },
+		"dual-draft": func(c *Config) {
+			c.Profiles["paid"] = ModelProfile{Harness: "pi", Model: "m", Channel: "paid"}
+			c.Planning.DualDraft = &DualDraftConfig{Enabled: true, SecondaryProfile: "paid"}
+		},
+		"ux-review": func(c *Config) {
+			c.Profiles["paid"] = ModelProfile{Harness: "pi", Model: "m", Channel: "paid"}
+			c.FrontendUXReview = FrontendUXReviewConfig{Enabled: true, Profile: "paid"}
+		},
+		"panel": func(c *Config) { c.JudgePanel = &LoopBinding{Harness: "pi", Channel: "paid"} },
 		"policy": func(c *Config) {
 			c.ExecutionPolicy = &ExecutionPolicy{Bindings: map[string]ExecutionBinding{"paid": {Harness: "pi"}}}
 		},

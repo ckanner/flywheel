@@ -95,6 +95,10 @@ func TestInvestigationControlRejectsInvalidOrUnownedRequests(t *testing.T) {
 		strings.NewReader(`{"action":"report","revision":1}`),
 		strings.NewReader(`{"action":"cancel","revision":1,"report":{}}`),
 		strings.NewReader(`{"action":"unsupported","revision":1}`),
+		strings.NewReader(`{"action":"status","goal":"investigate timeout"}`),
+		strings.NewReader(`{"action":"start","contract":{},"goal":"both"}`),
+		strings.NewReader(`{"action":"start","goal":"` + strings.Repeat("x", 2001) + `"}`),
+		strings.NewReader(`{"action":"start","goal":"fix","intent":"investigate-and-fix"}`),
 	} {
 		cmd := &cobra.Command{}
 		cmd.SetIn(input)
@@ -302,4 +306,27 @@ func TestInvestigationContinueControlKeepsOneTaskAndRejectsAStaleRevision(t *tes
 	_, err = investigationControl(t, taskDir, cwd, investigationRequest{Action: "continue", Revision: st.Revision})
 	require.Error(t, err, "continue requires an explicit evidence-linked contract")
 	require.False(t, state.Exists(taskDir), "a request for another diagnostic round never starts implementation")
+}
+
+func TestInvestigationGoalShorthandSynthesizesValidContract(t *testing.T) {
+	_, cwd, _ := investigationCLIFixture(t)
+	shorthandDir := filepath.Join(cwd, "docs", "my task---")
+	reply, err := investigationControl(t, shorthandDir, cwd, investigationRequest{Action: "start", Goal: "Find why timeout defaults to zero"})
+	require.NoError(t, err, reply.Error)
+	require.NotNil(t, reply.Preparation)
+	require.Equal(t, "my-task---", reply.Preparation.Contract.ID)
+
+	dotsDir := filepath.Join(cwd, "docs", "---")
+	reply, err = investigationControl(t, dotsDir, cwd, investigationRequest{Action: "start", Goal: "Find why timeout defaults to zero"})
+	require.NoError(t, err, reply.Error)
+	require.Equal(t, "investigation", reply.Preparation.Contract.ID)
+	require.Equal(t, "Find why timeout defaults to zero", reply.Preparation.Contract.Goal)
+	require.Equal(t, []string{"."}, reply.Preparation.Contract.ReadPaths)
+	require.Equal(t, "investigate", reply.Preparation.Contract.Intent)
+
+	longTask := filepath.Join(cwd, "docs", strings.Repeat("a", 130))
+	reply, err = investigationControl(t, longTask, cwd, investigationRequest{Action: "start", Goal: "Inspect settings loader", ReadPaths: []string{"settings.json"}})
+	require.NoError(t, err, reply.Error)
+	require.Len(t, reply.Preparation.Contract.ID, 120)
+	require.Equal(t, []string{"settings.json"}, reply.Preparation.Contract.ReadPaths)
 }

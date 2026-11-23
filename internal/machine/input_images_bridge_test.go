@@ -34,6 +34,13 @@ func TestPacketImagesClaudeSDKOfflineBridge(t *testing.T) {
 	for _, scenario := range []string{"execute", "recover-original", "recover-changed-source"} {
 		t.Run(scenario, func(t *testing.T) {
 			fx, c, original := imageExecutionFixture(t)
+			// Multimodal route now defaults to Antigravity 0.3.0 (ACP native images);
+			// bind this test route explicitly to the Claude Code Pro frontend route to
+			// exercise the Claude Agent SDK offline image bridge.
+			c.Config.Routes["multimodal"] = c.Config.Routes["frontend"]
+			if c.Config.ExecutionPolicy != nil {
+				c.Config.ExecutionPolicy.Routes["multimodal"] = c.Config.ExecutionPolicy.Routes["frontend"]
+			}
 			c.Drivers = drivers.CreateDrivers(c.Config)
 			require.Equal(t, "subscription-only", c.Config.Subscription.Mode)
 			require.Equal(t, "claude-code-pro", c.Config.Routes["multimodal"].Harness)

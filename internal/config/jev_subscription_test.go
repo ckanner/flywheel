@@ -16,7 +16,7 @@ func jevSubscriptionFixture(t *testing.T) Config {
 	require.NoError(t, err)
 	require.False(t, cfg.JEV.Enabled)
 	require.Equal(t, "subscription", cfg.JEV.Backend)
-	require.Equal(t, "hydrogen-local", cfg.JEV.Profile)
+	require.Equal(t, "hydrogen-summary", cfg.JEV.Profile)
 	cfg.JEV.Enabled = true
 	return *cfg
 }
@@ -26,10 +26,10 @@ func TestJEVSubscriptionResolvesExplicitNativeProfileWithoutAPIFields(t *testing
 	require.NoError(t, cfg.Validate())
 	b, err := cfg.ResolveJEVSubscription()
 	require.NoError(t, err)
-	require.Equal(t, "hydrogen-local", b.Profile)
+	require.Equal(t, "hydrogen-summary", b.Profile)
 	require.Equal(t, "antigravity", b.Harness)
-	require.Equal(t, "gemini-4-hydrogen-medium", b.Model)
-	require.Equal(t, "medium", b.Effort)
+	require.Equal(t, "gemini-4-hydrogen-low", b.Model)
+	require.Equal(t, "low", b.Effort)
 	require.Empty(t, cfg.JEV.Endpoint)
 	require.Empty(t, cfg.JEV.Model)
 	require.Empty(t, cfg.JEV.KeyEnv)
@@ -70,7 +70,7 @@ func TestJEVSubscriptionRejectsUnverifiedOrChangingExecutionAuthority(t *testing
 			p.NativeProfile = "child"
 			c.Profiles[c.JEV.Profile] = p
 		},
-		"effort conflict": func(c *Config) { p := c.Profiles[c.JEV.Profile]; p.Thinking = "low"; c.Profiles[c.JEV.Profile] = p },
+		"effort conflict": func(c *Config) { p := c.Profiles[c.JEV.Profile]; p.Thinking = "high"; c.Profiles[c.JEV.Profile] = p },
 		"credential": func(c *Config) {
 			p := c.Profiles[c.JEV.Profile]
 			ch := c.Channels[p.Channel]

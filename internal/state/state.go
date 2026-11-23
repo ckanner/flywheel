@@ -158,6 +158,7 @@ type BudgetTotals struct {
 	CacheRead  int64   `json:"cache-read"`
 	CacheWrite int64   `json:"cache-write"`
 	Tokens     int64   `json:"tokens"`
+	Calls      int64   `json:"calls,omitempty"`
 	CostUSD    float64 `json:"cost-usd"`
 }
 
@@ -580,7 +581,7 @@ func Init(slug string, spec *contract.Spec, packets []*contract.Packet, cfg *con
 	if len(spec.Milestones) > 0 {
 		current = &spec.Milestones[0].ID
 	}
-	enforce := "soft"
+	enforce := "off"
 	dailyLimit := (*int64)(nil)
 	if cfg != nil {
 		if cfg.Budget.Enforce != "" {

@@ -317,6 +317,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 	}); err != nil && c.fatal == nil {
 		c.fatal = fmt.Errorf("metrics could not be persisted: %w", err)
 	}
+	c.State.Budget.Totals.Calls++
 	bucket := c.State.Budget.Daily[day]
 	if usage == nil {
 		c.State.Budget.UnknownUsageCalls++
@@ -524,6 +525,12 @@ func (c *Context) budgetGate() string {
 			c.State.Budget.Warnings = append(c.State.Budget.Warnings, msg)
 		}
 		c.Log(msg)
+	}
+	if maxCalls := c.Config.Guardrails.MaxTaskCalls; maxCalls != nil && c.State.Budget.Totals.Calls >= int64(*maxCalls) {
+		c.Log(fmt.Sprintf("guardrail stop: task call limit %d reached (%d)", *maxCalls, c.State.Budget.Totals.Calls))
+		c.State.Status = "budget-stopped"
+		c.save()
+		return "stop"
 	}
 	return "ok"
 }

@@ -23,23 +23,32 @@ func (c *Context) executionCandidateError(packet *contract.Packet, b config.Exec
 // Execution and the console consume the same deterministic input checks. These
 // checks do not probe account entitlement or imply that a model has run.
 func (c *Context) executionCandidateConditions(packet *contract.Packet, b config.ExecutionBinding) []EligibilityCondition {
-	checks := []EligibilityCondition{{Code: "image-input", Passed: packet.InputImages == nil || b.Harness == "claude-code-pro", Message: "No original image input is required, or the selected Claude transport can receive it."}}
-	if !checks[0].Passed {
-		checks[0].Message = fmt.Sprintf("packet %s requires a Claude image-capable execution binding", packet.PacketID)
-	}
 	mode := ""
+	var nativeCheck *EligibilityCondition
 	if b.NativeProfile != "" {
 		profile, exists := c.Config.NativeProfiles[b.NativeProfile]
 		var options struct {
 			Mode string `json:"mode"`
 		}
 		valid := exists && profile.Harness == b.Harness && json.Unmarshal(profile.Options, &options) == nil
-		checks = append(checks, EligibilityCondition{Code: "native-profile", Passed: valid, Message: "The selected native profile matches the execution backend."})
+		check := EligibilityCondition{Code: "native-profile", Passed: valid, Message: "The selected native profile matches the execution backend."}
 		if !valid {
-			checks[len(checks)-1].Message = fmt.Sprintf("packet %s has an invalid native profile for execution", packet.PacketID)
+			check.Message = fmt.Sprintf("packet %s has an invalid native profile for execution", packet.PacketID)
+		} else {
+			mode = options.Mode
+		}
+		nativeCheck = &check
+	}
+	imageCapable := packet.InputImages == nil || b.Harness == "claude-code-pro" || (b.Harness == "antigravity" && mode != "swarm")
+	checks := []EligibilityCondition{{Code: "image-input", Passed: imageCapable, Message: "No original image input is required, or the selected transport can receive it."}}
+	if !checks[0].Passed {
+		checks[0].Message = fmt.Sprintf("packet %s requires a Claude or non-Swarm Antigravity image-capable execution binding", packet.PacketID)
+	}
+	if nativeCheck != nil {
+		checks = append(checks, *nativeCheck)
+		if !nativeCheck.Passed {
 			return checks
 		}
-		mode = options.Mode
 	}
 	if b.Harness == "antigravity" && mode == "swarm" {
 		checks = append(checks,

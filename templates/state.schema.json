@@ -747,6 +747,7 @@
             "cache-read": { "type": "integer", "minimum": 0 },
             "cache-write": { "type": "integer", "minimum": 0 },
             "tokens": { "type": "integer", "minimum": 0 },
+            "calls": { "type": "integer", "minimum": 0 },
             "cost-usd": { "type": "number", "minimum": 0 }
           }
         },
@@ -863,7 +864,7 @@
         }
       }
     },
-    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"inputImages":{"$ref":"#/$defs/input-image-manifest"}, "subscription": {"type":"object","additionalProperties":false,"required":["version","mode"],"properties":{"version":{"const":1},"mode":{"const":"subscription-only"}}}, "evidenceOnly":{"type":"boolean"}, "nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}, "allOf":[{"if":{"required":["inputImages"]},"then":{"properties":{"harness":{"const":"claude-code-pro"}}}}]},
+    "session-configuration": {"type": "object", "additionalProperties": false, "required": ["harness", "model", "provider", "channel", "thinking", "permission", "sessionMode"], "properties": {"inputImages":{"$ref":"#/$defs/input-image-manifest"}, "subscription": {"type":"object","additionalProperties":false,"required":["version","mode"],"properties":{"version":{"const":1},"mode":{"const":"subscription-only"}}}, "evidenceOnly":{"type":"boolean"}, "nativeProfile": {"type": "string"}, "nativeOptions": {"type": "object", "required": ["version"], "properties": {"version": {"const": 1}}}, "harness": {"type": "string"}, "model": {"type": "string"}, "provider": {"type": "string"}, "channel": {"type": "string"}, "thinking": {"type": "string"}, "permission": {"type": "string"}, "sessionMode": {"type": "string"}}, "allOf":[{"if":{"required":["inputImages"]},"then":{"properties":{"harness":{"enum":["claude-code-pro","antigravity"]}}}}]},
     "workflow-stage": {
       "type": "object", "additionalProperties": false,
       "required": ["applicable", "reason"],

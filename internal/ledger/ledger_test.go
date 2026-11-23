@@ -39,6 +39,8 @@ func TestVolatileSet(t *testing.T) {
 func TestLedgerDirsPrefixOnly(t *testing.T) {
 	// 目录前缀匹配：reports/ 前缀命中，但 "report" 裸文件名不命中。
 	assert.True(t, IsLedgerTaskPath("reports/a.json"))
+	assert.True(t, IsLedgerTaskPath("design-candidates/rev-000001-meta.json"))
+	assert.False(t, IsLedgerTaskPath("design-candidates"))
 	assert.False(t, IsLedgerTaskPath("report"))
 	assert.False(t, IsLedgerTaskPath("reports"))
 }

@@ -13,7 +13,7 @@ import (
 // frozen acceptance, and evidence identity remain independent of host access.
 func (c *Config) PermissionMode(role, harness string, bindingIDs ...string) string {
 	id := "loops." + role
-	if role == "judge-panel" {
+	if role == "judge-panel" || role == "frontend-ux-review" {
 		id = role
 	}
 	if len(bindingIDs) > 0 {
@@ -26,7 +26,7 @@ func (c *Config) PermissionMode(role, harness string, bindingIDs ...string) stri
 		return "danger-full-access"
 	}
 	switch role {
-	case "review", "judge", "judge-panel", "design-review", "plan-review", "investigate":
+	case "review", "judge", "judge-panel", "design-review", "plan-review", "investigate", "frontend-ux-review":
 		return "read-only"
 	case "intake", "garden":
 		if harness == "dsh" || harness == "codex" || harness == "codex-pro" || harness == "claude-code-pro" {

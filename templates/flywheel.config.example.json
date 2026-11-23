@@ -2,7 +2,7 @@
   "jev": {
     "enabled": false,
     "backend": "subscription",
-    "profile": "hydrogen-local"
+    "profile": "hydrogen-summary"
   },
   "version": 1,
   "sessions": {
@@ -25,7 +25,7 @@
       "profile": "astra"
     },
     "plan": {
-      "profile": "opus-plan"
+      "profile": "neon"
     },
     "plan-review": {
       "profile": "sol-plan"
@@ -48,16 +48,16 @@
   },
   "routes": {
     "default": {
-      "profile": "hydrogen"
+      "profile": "hydrogen-local"
     },
     "complex": {
-      "profile": "neon"
+      "profile": "orchestrator-neon"
     },
     "frontend": {
       "profile": "opus-ui"
     },
     "multimodal": {
-      "profile": "opus-ui"
+      "profile": "neon"
     },
     "backend": {
       "profile": "sol"
@@ -88,8 +88,20 @@
     }
   },
   "budget": {
-    "enforce": "soft",
-    "daily-token-limit": 2000000
+    "enforce": "off",
+    "daily-token-limit": null
+  },
+  "guardrails": {
+    "max-packet-attempts": 3,
+    "max-review-rounds": 2,
+    "max-task-calls": 60
+  },
+  "frontend-ux-review": {
+    "enabled": true,
+    "profile": "neon"
+  },
+  "delivery": {
+    "endpoint": "local"
   },
   "watchdog": {
     "idle-timeout-ms": 300000,
@@ -153,9 +165,14 @@
   "pricing": {},
   "permissions": {
     "mode": "full-access",
-    "_note": "明确授权全部阶段完全权限与非交互运行；DSH/Codex approval=never，Kimi print=auto。角色职责、契约边界和验收身份仍由Go校验。已有配置未声明时保持role-based，采用本预设需显式迁移。",
+    "_note": "明确授权执行阶段完全权限与非交互运行；DSH/Codex approval=never，Kimi print=auto。Design/Plan Review、Code Review、Judge、Investigate 与 Frontend UX Audit 显式锁定 read-only 只读沙箱；角色职责、契约边界和验收身份仍由 Go 校验。",
     "bindings": {
-      "loops.investigate": "read-only"
+      "loops.design-review": "read-only",
+      "loops.plan-review": "read-only",
+      "loops.review": "read-only",
+      "loops.judge": "read-only",
+      "loops.investigate": "read-only",
+      "frontend-ux-review": "read-only"
     }
   },
   "subscription": {
@@ -289,6 +306,11 @@
     "compact": {
       "design-plan": "hydrogen-local",
       "design-review": "sol-plan"
+    },
+    "dual-draft": {
+      "enabled": true,
+      "secondary-profile": "opus-plan",
+      "synthesizer-profile": "opus-plan"
     }
   },
   "judge-panel": null,
@@ -300,7 +322,17 @@
         "version": 1,
         "mode": "agent",
         "agents": {
-          "enabled": false
+          "enabled": true
+        }
+      }
+    },
+    "kimi-subscription-swarm": {
+      "harness": "kimi",
+      "options": {
+        "version": 1,
+        "mode": "swarm",
+        "agents": {
+          "enabled": true
         }
       }
     },
@@ -466,10 +498,10 @@
     },
     "routes": {
       "default": {
-        "initial": "hydrogen",
+        "initial": "hydrogen-local",
         "allowed": [
-          "hydrogen",
           "hydrogen-local",
+          "hydrogen",
           "orchestrator-neon"
         ],
         "quality-order": [],
@@ -477,10 +509,10 @@
         "max-switches": 2
       },
       "complex": {
-        "initial": "neon",
+        "initial": "orchestrator-neon",
         "allowed": [
-          "neon",
           "orchestrator-neon",
+          "neon",
           "neon-swarm"
         ],
         "quality-order": [],
@@ -498,10 +530,10 @@
         "max-switches": 2
       },
       "multimodal": {
-        "initial": "opus-ui",
+        "initial": "neon",
         "allowed": [
-          "opus-ui",
-          "opus-plan"
+          "neon",
+          "opus-ui"
         ],
         "quality-order": [],
         "after-stalled-attempts": 1,

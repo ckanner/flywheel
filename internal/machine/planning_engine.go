@@ -257,6 +257,9 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 	if err != nil {
 		return drivers.Result{}, role, "", err
 	}
+	if c.shouldDualDraftDesign(r, reviewer) {
+		return c.invokeDualDraftDesign(r, role, scope, research, b, driver, prompt, before)
+	}
 	res, err := c.invokeScoped(role, scope, drivers.CallArgs{Prompt: prompt, TaskDir: c.TaskDir, Cwd: c.Cwd,
 		MilestoneID: r.ScopeID, Model: b.Model, Binding: config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking},
 		PermissionMode: c.Config.PermissionMode(role, b.Harness), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdogFor(role)}, call)

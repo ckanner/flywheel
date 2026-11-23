@@ -87,10 +87,10 @@ func TestCheckBudgetSoftWarnHardStop(t *testing.T) {
 	assert.Contains(t, v.Reason, "5000 >= 1000")
 }
 
-func TestCheckBudgetNilConfigDefaultsSoftNoLimit(t *testing.T) {
+func TestCheckBudgetNilConfigDefaultsOffNoLimit(t *testing.T) {
 	v := CheckBudget(stWithDay(9999), nil, now)
 	assert.Equal(t, ActionOK, v.Action)
-	assert.Equal(t, "soft", v.Enforce)
+	assert.Equal(t, "off", v.Enforce)
 }
 
 func TestSignatureDeterministicAndOrderIndependent(t *testing.T) {

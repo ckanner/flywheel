@@ -48,6 +48,7 @@ type DeliverySnapshot struct {
 	Branch      string        `json:"branch"`
 	Head        string        `json:"head"`
 	DefaultBase string        `json:"defaultBase"`
+	Endpoint    string        `json:"endpoint,omitempty"`
 	Pulls       []PullRequest `json:"pulls"`
 }
 type DeliveryRequest struct {
@@ -238,10 +239,12 @@ func Deliver(opts RunOpts, request DeliveryRequest) (snapshot *DeliverySnapshot,
 	defer unregisterSigterm(signals)
 	stop := watchStopRequests(ctx, c.TaskDir, c.controlToken, cancel)
 	defer stop()
+	endpoint := firstNonEmpty(c.Config.Delivery.Endpoint, "local")
 	snapshot, err = InspectDelivery(ctx, c.Cwd, request.HeadBranch)
 	if err != nil {
 		return nil, err
 	}
+	snapshot.Endpoint = endpoint
 	if c.State.Project != nil && c.State.Project.Repo != "" && c.State.Project.Repo != snapshot.Repo {
 		return snapshot, fmt.Errorf("repository identity changed since this task was registered")
 	}
@@ -297,6 +300,7 @@ func Deliver(opts RunOpts, request DeliveryRequest) (snapshot *DeliverySnapshot,
 		if snapshot.Repo != operation.Repo || snapshot.Head != operation.Head {
 			return snapshot, fmt.Errorf("delivery target changed while pushing the approved commit")
 		}
+		snapshot.Endpoint = endpoint
 		for i := range snapshot.Pulls {
 			pr := &snapshot.Pulls[i]
 			if pr.Head == operation.Head && pr.Base == request.Base && pr.State == "OPEN" {
@@ -315,7 +319,11 @@ func Deliver(opts RunOpts, request DeliveryRequest) (snapshot *DeliverySnapshot,
 			if _, err = deliveryWriteBody(file, request.Body); err != nil {
 				return snapshot, err
 			}
-			if _, err = deliveryRun(ctx, c.Cwd, "gh", "pr", "create", "--repo", snapshot.Repo, "--head", snapshot.Branch, "--base", request.Base, "--title", request.Title, "--body-file", file.Name()); err != nil {
+			prArgs := []string{"pr", "create", "--repo", snapshot.Repo, "--head", snapshot.Branch, "--base", request.Base, "--title", request.Title, "--body-file", file.Name()}
+			if snapshot.Endpoint == "draft-pr" {
+				prArgs = append(prArgs, "--draft")
+			}
+			if _, err = deliveryRun(ctx, c.Cwd, "gh", prArgs...); err != nil {
 				return snapshot, err
 			}
 		}
@@ -328,6 +336,7 @@ func Deliver(opts RunOpts, request DeliveryRequest) (snapshot *DeliverySnapshot,
 	if err != nil {
 		return nil, err
 	}
+	snapshot.Endpoint = endpoint
 	if snapshot.Repo != operation.Repo {
 		return snapshot, fmt.Errorf("delivery repository changed during the operation")
 	}
