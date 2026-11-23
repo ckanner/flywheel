@@ -71,6 +71,11 @@ export function NodeInspector({
                 <div>{packet.goal || packet.title || packet.id}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--fw-text-muted)' }}>
                   <span>{t('inspector.route')}: {packet.route ?? 'default'} / {packet.model ?? packet.profile ?? 'auto'}</span>
+                  {packet.sessionKey && (
+                    <span>
+                      {t('inspector.sessionReuse')}: {packet.sessionStatus || 'scoped'} · <code>{packet.sessionKey}</code>
+                    </span>
+                  )}
                   {typeof packet.attempts === 'number' && <span>Attempts: {packet.attempts}</span>}
                   {typeof (packet.reviewRounds ?? packet.review_rounds) === 'number' && (
                     <span>Review rounds: {packet.reviewRounds ?? packet.review_rounds}</span>

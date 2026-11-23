@@ -334,10 +334,10 @@ export function DagCanvas({
         <svg className={styles.dagEdgesSvg} width={layout.width} height={layout.height}>
           <defs>
             <marker id="fw-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="rgba(152,161,181,0.6)" />
+              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--fw-text-subtle)" />
             </marker>
             <marker id="fw-arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#5b8cff" />
+              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--fw-accent)" />
             </marker>
           </defs>
           {layout.edges.map(edge => {
@@ -437,7 +437,7 @@ export function DagCanvas({
                 width={Math.max(6, NODE_W * miniScale)}
                 height={Math.max(4, NODE_H * miniScale)}
                 rx="2"
-                fill={active ? '#5b8cff' : 'rgba(152,161,181,0.55)'}
+                fill={active ? 'var(--fw-accent)' : 'var(--fw-border-strong)'}
               />
             );
           })}

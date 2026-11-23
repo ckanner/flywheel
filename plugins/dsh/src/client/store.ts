@@ -33,6 +33,7 @@ export interface FlywheelSnapshot {
   selectedTaskDir: string | null;
   selectedCwd: string;
   railCollapsed: boolean;
+  showTempRuns: boolean;
   activeTab: MainTab;
   executionView: ExecutionViewMode;
   designView: DesignViewMode;
@@ -73,6 +74,7 @@ function initialSnapshot(): FlywheelSnapshot {
     selectedTaskDir: null,
     selectedCwd: '',
     railCollapsed: false,
+    showTempRuns: false,
     activeTab: 'execution',
     executionView: 'waves',
     designView: 'synthesized',
@@ -101,6 +103,78 @@ function initialSnapshot(): FlywheelSnapshot {
     notice: null,
     lastUpdatedAt: null,
   };
+}
+
+function basenameOf(pathValue?: string): string {
+  if (!pathValue) return '';
+  const trimmed = pathValue.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function isTempPath(pathValue?: string): boolean {
+  if (!pathValue) return false;
+  return /^(\/private)?\/(tmp|var\/folders)\//.test(pathValue);
+}
+
+function runTimestampMs(run: RunSummary): number {
+  const raw = run.updatedAt || run.finishedAt || run.startedAt || '';
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Normalizes raw `flywheel control runs` entries (both nested Go `summary.*`
+ * records and flat mock summaries), deduplicates by `taskDir` keeping the
+ * freshest record + run count, and tags temporary `/tmp` runs cleanly.
+ */
+export function normalizeRuns(rawRuns: RunSummary[]): RunSummary[] {
+  const byTask = new Map<string, RunSummary>();
+  for (const raw of rawRuns) {
+    if (!raw || typeof raw.taskDir !== 'string' || !raw.taskDir) continue;
+    const slug = raw.slug || raw.summary?.slug || basenameOf(raw.taskDir);
+    const cwd = raw.workspaceCwd || raw.cwd || '';
+    const repoName = raw.repoName || basenameOf(cwd) || basenameOf(raw.taskDir.replace(/\/docs\/[^/]+$/, ''));
+    const status = raw.status || raw.summary?.status || 'pending';
+    const mode = raw.mode || raw.workflow || undefined;
+    const updatedAt = raw.updatedAt || raw.finishedAt || raw.startedAt || undefined;
+    const revision = raw.revision ?? raw.summary?.revision;
+    const planningStatus = raw.planningStatus ?? raw.summary?.['planning-phase'];
+    const isTemp = raw.isTemp ?? (isTempPath(raw.taskDir) || isTempPath(cwd));
+
+    const normalized: RunSummary = {
+      ...raw,
+      cwd,
+      slug,
+      title: raw.title || slug,
+      repoName,
+      status,
+      mode,
+      updatedAt,
+      revision,
+      planningStatus,
+      isTemp,
+      runCount: raw.runCount ?? 1,
+    };
+
+    const existing = byTask.get(raw.taskDir);
+    if (!existing) {
+      byTask.set(raw.taskDir, normalized);
+    } else {
+      const nextCount = (existing.runCount ?? 1) + 1;
+      const keepIncoming =
+        (Boolean(normalized.running) && !existing.running) ||
+        (Boolean(normalized.running) === Boolean(existing.running) && runTimestampMs(normalized) > runTimestampMs(existing));
+      const winner = keepIncoming ? normalized : existing;
+      byTask.set(raw.taskDir, { ...winner, runCount: nextCount });
+    }
+  }
+
+  return [...byTask.values()].sort((a, b) => {
+    if (Boolean(a.running) !== Boolean(b.running)) return a.running ? -1 : 1;
+    return runTimestampMs(b) - runTimestampMs(a);
+  });
 }
 
 function inferDefaultTab(state: TaskState | null, planning: PlanningState | null): MainTab {
@@ -210,6 +284,10 @@ export class FlywheelStore {
     this.setState({ railCollapsed: collapsed });
   }
 
+  setShowTempRuns(show: boolean): void {
+    this.setState({ showTempRuns: show });
+  }
+
   setActiveTab(tab: MainTab): void {
     this.setState({ activeTab: tab });
     if (tab === 'delivery' && this.snapshot.selectedTaskDir) {
@@ -217,6 +295,9 @@ export class FlywheelStore {
     }
     if (tab === 'design' && this.snapshot.selectedTaskDir) {
       void this.loadDesignCandidates();
+    }
+    if (tab === 'settings') {
+      void this.loadConfig(this.snapshot.configScope);
     }
   }
 
@@ -259,11 +340,12 @@ export class FlywheelStore {
         action: 'runs',
         ...(this.snapshot.selectedCwd ? { cwd: this.snapshot.selectedCwd } : {}),
       });
-      const runs = Array.isArray(res.runs) ? res.runs : [];
-      const nextCwd = res.cwd || this.snapshot.selectedCwd || runs[0]?.cwd || '';
+      const runs = normalizeRuns(Array.isArray(res.runs) ? res.runs : []);
+      const preferredRun = runs.find(r => !r.isTemp) ?? runs[0];
+      const nextCwd = res.cwd || this.snapshot.selectedCwd || preferredRun?.cwd || '';
       const currentSelected = this.snapshot.selectedTaskDir;
       const stillPresent = currentSelected && runs.some(r => r.taskDir === currentSelected);
-      const nextSelected = stillPresent ? currentSelected : (runs[0]?.taskDir ?? currentSelected);
+      const nextSelected = stillPresent ? currentSelected : (preferredRun?.taskDir ?? currentSelected);
 
       this.setState({
         runs,
@@ -455,7 +537,10 @@ export class FlywheelStore {
     }
   }
 
-  async loadModelCatalog(request: { version: number; harness: string; channel?: string; provider?: string }): Promise<ModelCatalogReport | undefined> {
+  async loadModelCatalog(
+    request: { version: number; harness: string; channel?: string; provider?: string },
+    options: { silent?: boolean } = {},
+  ): Promise<ModelCatalogReport | undefined> {
     try {
       const res = await this.remote.query({
         action: 'models',
@@ -471,7 +556,9 @@ export class FlywheelStore {
       }
       return undefined;
     } catch (error) {
-      this.setState({ error: this.toStoreError(error, 'models') });
+      if (!options.silent) {
+        this.setState({ error: this.toStoreError(error, 'models') });
+      }
       return undefined;
     }
   }
@@ -748,6 +835,30 @@ export class FlywheelStore {
     );
     if (res) {
       this.setState({ notice: 'saved' });
+      await this.loadConfig(editor.scope);
+    }
+    return res;
+  }
+
+  async resetConfig(): Promise<ControlResponse | undefined> {
+    const editor = this.snapshot.configEditor;
+    if (!editor) return undefined;
+    const res = await this.performAct(
+      'config-save',
+      {
+        action: 'config-save',
+        ...(this.snapshot.selectedCwd ? { cwd: this.snapshot.selectedCwd } : {}),
+        editor: {
+          scope: editor.scope,
+          revision: editor.revision,
+          reset: true,
+          values: {},
+        },
+      },
+      false,
+    );
+    if (res) {
+      this.setState({ notice: 'reset' });
       await this.loadConfig(editor.scope);
     }
     return res;

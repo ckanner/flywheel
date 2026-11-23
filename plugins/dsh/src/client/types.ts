@@ -1,6 +1,6 @@
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 
-export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery';
+export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery' | 'settings';
 export type ExecutionViewMode = 'waves' | 'dag';
 export type DesignViewMode = 'synthesized' | 'side-by-side' | 'raw';
 export type InspectorTab = 'overview' | 'evidence' | 'timeline' | 'contract';
@@ -8,17 +8,36 @@ export type InspectorTab = 'overview' | 'evidence' | 'timeline' | 'contract';
 export interface RunSummary {
   taskDir: string;
   cwd?: string;
+  workspaceCwd?: string;
+  repoName?: string;
   slug?: string;
   title?: string;
   status?: string;
   phase?: string;
   mode?: string;
+  workflow?: string;
+  branch?: string;
   running?: boolean;
   hostSessionId?: string;
+  startedAt?: string;
+  finishedAt?: string;
   updatedAt?: string;
   revision?: number;
   planningStatus?: string;
   investigationStatus?: string;
+  runCount?: number;
+  isTemp?: boolean;
+  summary?: {
+    slug?: string;
+    status?: string;
+    revision?: number;
+    'planning-phase'?: string;
+    'packets-completed'?: string;
+    'current-milestone'?: string | null;
+    'last-progress-at'?: string | null;
+    tokens?: number;
+    'cost-usd'?: number;
+  };
 }
 
 export interface PlanningFinding {
@@ -280,6 +299,11 @@ export interface ConfigBinding {
   permissionMode?: string;
   residentSession?: boolean;
   inScope?: boolean;
+  session?: {
+    mode?: string;
+    supported?: boolean;
+    reason?: string;
+  };
 }
 
 export interface ConfigSnapshot {

@@ -5,6 +5,12 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.2 — 2026-11-23 (Flywheel Next UI Polish & Editable Settings)
+
+- **Native DSH Light/Dark Theme**: replace hardcoded dark CSS fallbacks and neon accents across all Flywheel views, Settings, and DAG SVG markers with native DSH `--dsw-alias-*` semantic tokens (`color-mix` derived tints, crisp borders, and restrained surfaces that match DSH Desktop light and dark modes automatically).
+- **Single-Column Full-Bleed Workbench & Task Switcher Popover**: remove the redundant 240px left task sidebar that overlapped DSH's own navigation rail; move task switching into a searchable top-header popover that normalizes nested Go `runs` (`summary.slug`, `summary.status`), deduplicates repeated runs by `taskDir` with run count, and hides `/tmp` / `/private/tmp` demo records by default (with an opt-in toggle).
+- **Direct Inline Settings & Editable Model/Session Matrix**: add a dedicated **Settings** tab directly inside the Workbench (alongside `settings.section`), upgrade the role table into an interactive per-stage / per-route / dual-draft editor supporting Profile selection, Harness/Provider, Model (with live `models` catalog refresh), Thinking level, one-click Reset to Defaults, and explicit **Session Reuse (`scoped` / `fresh`)** controls synchronized with `execution-policy` bindings; display active session reuse metadata in `NodeInspector`.
+
 ## 0.39.1 — 2026-11-23 (Flywheel Next)
 
 Fixes lockfile integrity for the bundled settings-only `@ckanner/dsh-subagent-antigravity@0.3.0` tarball (`v0.39.0` failed CI pre-publish lockfile check and was never published to npm).
