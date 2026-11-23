@@ -18,6 +18,26 @@ that show selected fields are **fragments** to place in a complete configuration
 - [Backend integration](#codex-pro-and-migration), [budgets](#fallback-and-budgets), and [diagnostics](#diagnose-without-inference)
 
 
+## Flywheel Next default matrix, guardrails & feature switches
+
+The bundled templates (`templates/flywheel.config.example.json` and
+`templates/flywheel.profiles.example.json`) configure the 4-subscription defaults:
+
+- **Stage allocation**: `loops.plan -> neon`, `routes.default -> hydrogen-local`,
+  `routes.complex -> orchestrator-neon`, `routes.multimodal -> neon`,
+  `jev.profile -> hydrogen-summary`.
+- **Read-only sandbox locks**: `permissions.bindings` defaults `loops.design-review`,
+  `loops.plan-review`, `loops.review`, `loops.judge`, `loops.investigate`, and
+  `frontend-ux-review` to `read-only`.
+- **Native capabilities**: Antigravity defaults to `0.3.0` ACP with native image inputs;
+  Kimi native subscription profiles (`kimi-subscription-agent` / `kimi-subscription-swarm`)
+  enable `WebSearch`, `FetchURL`, `Agent`, and `AgentSwarm` by default.
+- **Guardrails & workflow toggles**: `budget.enforce: "off"`,
+  `guardrails: { "max-packet-attempts": 3, "max-review-rounds": 2, "max-task-calls": 60 }`,
+  `planning.dual-draft: { "enabled": true, "secondary-profile": "opus-plan", "synthesizer-profile": "opus-plan" }`,
+  `frontend-ux-review: { "enabled": true, "profile": "neon" }`, and
+  `delivery: { "endpoint": "local" }`.
+
 ## Reviewed-planning bindings
 
 New tasks have separate `design-plan`, `design-review` and `plan-review` roles.

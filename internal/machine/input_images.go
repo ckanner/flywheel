@@ -18,8 +18,8 @@ func (c *Context) resolveInvocationImages(role, scope string, args *drivers.Call
 	if role != "execute" || packet == nil || packet.InputImages == nil {
 		return nil
 	}
-	if args.Binding.Harness != "claude-code-pro" {
-		return fmt.Errorf("packet %s declares input-images but harness %q cannot accept them; select the Claude multimodal route", packet.PacketID, args.Binding.Harness)
+	if args.Binding.Harness != "claude-code-pro" && args.Binding.Harness != "antigravity" {
+		return fmt.Errorf("packet %s declares input-images but harness %q cannot accept them; select an Antigravity ACP or Claude multimodal route", packet.PacketID, args.Binding.Harness)
 	}
 	images, err := imageinput.Load(c.Cwd, packet.InputImages)
 	if err != nil {

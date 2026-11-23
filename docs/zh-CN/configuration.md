@@ -16,6 +16,25 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 - [后端接入](#codex-pro-与旧配置迁移)、[预算](#后备渠道与预算)和[预检](#无推理诊断)
 
 
+## Flywheel Next 默认矩阵、运行护栏与功能开关
+
+内置完整模板（`templates/flywheel.config.example.json` 与
+`templates/flywheel.profiles.example.json`）默认采用 4 订阅分工配置：
+
+- **阶段与路由绑定**：`loops.plan -> neon`、`routes.default -> hydrogen-local`、
+  `routes.complex -> orchestrator-neon`、`routes.multimodal -> neon`、
+  `jev.profile -> hydrogen-summary`。
+- **只读沙箱锁定**：`permissions.bindings` 将 `loops.design-review`、`loops.plan-review`、
+  `loops.review`、`loops.judge`、`loops.investigate` 与 `frontend-ux-review` 默认锁定为
+  `read-only`。
+- **原生能力**：Antigravity 默认启用 `0.3.0` ACP 与原生图片输入；Kimi 原生订阅配置
+  （`kimi-subscription-agent` / `kimi-subscription-swarm`）默认放开 `WebSearch`、`FetchURL`、
+  `Agent` 与 `AgentSwarm`。
+- **护栏与工作流开关**：`budget.enforce: "off"`、
+  `guardrails: { "max-packet-attempts": 3, "max-review-rounds": 2, "max-task-calls": 60 }`、
+  `planning.dual-draft: { "enabled": true, "secondary-profile": "opus-plan", "synthesizer-profile": "opus-plan" }`、
+  `frontend-ux-review: { "enabled": true, "profile": "neon" }`、`delivery: { "endpoint": "local" }`。
+
 ## 方案规划角色的绑定
 
 新任务使用独立 `design-plan`、`design-review`、`plan-review` 角色。缺省

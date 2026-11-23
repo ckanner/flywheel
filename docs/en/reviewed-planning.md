@@ -13,6 +13,18 @@ tasks retain their previous behavior until explicitly migrated. Use the
 [usage handbook](usage-handbook.md) for incident and delivery examples, and
 [configuration](configuration.md) for effective model bindings.
 
+## Full Dual-Draft Design & Synthesis (`planning.dual-draft`)
+
+On `Full` tasks when `planning.dual-draft.enabled` is `true` (default), the planning
+engine runs a blind parallel design pass using the primary designer (`Gemini 4 Carbon`)
+and an independent secondary designer (`Claude Opus 5.5`, `secondary-profile: "opus-plan"`).
+Raw drafts are persisted immutably under `design-candidates/rev-NNNNNN-{primary.md,secondary.md,meta.json}`
+inside the task ledger. The synthesizer (`synthesizer-profile: "opus-plan"`) merges them
+into a single authoritative `design.md` with a provenance table (`来源对照表`), which is
+then reviewed by read-only `Codex GPT-6.2 Astra` before one exact-version human approval.
+If the secondary draft fails, Flywheel records an explicit fallback note instead of hiding
+it; `Quick` and `compact` tasks skip dual-drafting automatically.
+
 ## Desktop goal entry
 
 The empty Flywheel canvas can create a thin brief directly. Engineering and repair goals default to Auto with review-first authorization. **Start design and review** invokes the Go planning engine and stops at the same exact-version approval gate as the task skill. Selecting delegated policy alone is insufficient in this form: the user must also check the explicit implementation authorization. Quick/Full are advanced depth requests and do not change approval policy.

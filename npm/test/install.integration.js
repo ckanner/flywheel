@@ -75,7 +75,7 @@ test('the complete npm candidate install and run from a clean agent environment'
   for (const id of ['loops.design-plan', 'loops.design-review', 'loops.plan-review']) {
     assert.ok(bindings.some(binding => binding.id === id), `effective configuration must expose ${id}`);
   }
-  for (const [id, thinking] of [['loops.intake', 'low'], ['routes.default', 'high']]) {
+  for (const [id, thinking] of [['loops.intake', 'low'], ['routes.default', 'medium']]) {
     const binding = bindings.find(value => value.id === id);
     assert.ok(binding, `installed configuration must include ${id}`);
     assert.equal(binding.harness, 'antigravity');
@@ -92,7 +92,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     const source = JSON.parse(await fs.readFile(path.join(vendor, 'antigravity.json'), 'utf8'));
     const bytes = await fs.readFile(path.join(vendor, source.tarball));
     assert.equal(source.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(source.version, '0.2.1');
+    assert.equal(source.version, '0.3.0');
     assert.equal(createHash('sha256').update(bytes).digest('hex'), source.sha256);
     assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), source.integrity);
     const verification = JSON.parse(await fs.readFile(path.join(vendor, 'registry-verification-2026-11-22.json'), 'utf8'));
@@ -100,6 +100,13 @@ test('the complete npm candidate install and run from a clean agent environment'
     for (const published of verification.packages) {
       const reviewed = JSON.parse(await fs.readFile(path.join(vendor, published.sourceRecord), 'utf8'));
       assert.equal(published.package, reviewed.package);
+      if (published.package === '@ckanner/dsh-subagent-antigravity') {
+        // Historical 2026-11-22 registry verification records 0.2.1; current source bundles reviewed 0.3.0 ACP tarball without fabricating registry publication.
+        assert.equal(published.version, '0.2.1');
+        assert.equal(reviewed.version, '0.3.0');
+        assert.equal(reviewed.registryReleaseVerified, false);
+        continue;
+      }
       assert.equal(published.version, reviewed.version);
       assert.equal(published.sha256, reviewed.sha256);
       assert.equal(published.integrity, reviewed.integrity);
@@ -130,8 +137,10 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
   assert.equal(typeof installedHost.apply, 'function');
-  assert.ok(server.requests.includes('/zod'));
-  assert.ok(server.requests.includes('/tarballs/zod-4.3.6.tgz'));
+  // zod 4.3.6 is part of the bundled closure (via @ckanner/dsh-subagent-antigravity@0.3.0);
+  // verify the installed package resolves exact zod 4.3.6 locally without requiring a registry tarball fetch.
+  const installedZod = JSON.parse(await fs.readFile(installedRequire.resolve('zod/package.json'), 'utf8'));
+  assert.equal(installedZod.version, '4.3.6');
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
@@ -197,11 +206,41 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     const facts = JSON.parse(doctor.stdout);
     assert.equal(facts.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(facts.version, '0.2.1');
+    assert.equal(facts.version, '0.3.0');
     assert.equal(facts.inferenceTested, false);
     assert.equal(facts.accountEntitlement, 'unknown');
     const fixture = path.join(context.fixtures, 'offline-agy.mjs');
-    await fs.copyFile(path.resolve(__dirname, '../../internal/drivers/testdata/fake-agy.js'), fixture);
+    await fs.writeFile(fixture, `#!${process.execPath}
+import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
+const args = process.argv.slice(2);
+if (args[0] === '--version') { console.log('1.5.14'); process.exit(0); }
+if (args[0] === 'acp' && args[1] === '--help') { console.error('Usage: agy acp [flags]\\nStart the Agent Client Protocol (ACP) stdio server\\n  --login  Native sign-in\\n  --dangerously-skip-permissions\\n  --sandbox\\n  --agent'); process.exit(0); }
+if (args[0] !== 'acp') process.exit(90);
+let sessionId = randomUUID();
+const configOptions = [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'gemini-4-hydrogen-high', options: [{ value: 'gemini-4-hydrogen-high', name: 'Gemini 4 Hydrogen (High)' }] }];
+const send = msg => process.stdout.write(JSON.stringify(msg) + '\\n');
+const rl = createInterface({ input: process.stdin });
+rl.on('line', line => {
+  if (!line.trim()) return;
+  const req = JSON.parse(line);
+  if (req.id === undefined) return;
+  if (req.method === 'initialize') {
+    send({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: 1, agentInfo: { name: 'antigravity', version: '1.5.14' }, agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {}, close: {} }, promptCapabilities: { image: true, embeddedContext: true } } } });
+  } else if (req.method === 'session/new') {
+    send({ jsonrpc: '2.0', id: req.id, result: { sessionId, configOptions, modes: { currentModeId: 'accept-edits', availableModes: [{ id: 'default', name: 'Default' }, { id: 'accept-edits', name: 'Accept Edits' }] } } });
+  } else if (req.method === 'session/set_config_option') {
+    if (req.params?.configId === 'model') configOptions[0].currentValue = req.params.value;
+    send({ jsonrpc: '2.0', id: req.id, result: { configOptions } });
+  } else if (req.method === 'session/set_mode' || req.method === 'session/close') {
+    send({ jsonrpc: '2.0', id: req.id, result: {} });
+  } else if (req.method === 'session/prompt') {
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'offline ACP complete' } } } });
+    send({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+  }
+});
+rl.on('close', () => process.exit(0));
+`);
     await fs.chmod(fixture, 0o755);
     const child = spawn(antigravityWorker, [], { cwd: context.project,
       env: { ...context.env, FLYWHEEL_AGY_BIN: fixture }, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -219,7 +258,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.2.1', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');

@@ -51,6 +51,13 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
+The [Flywheel Next redesign and cross-repo audit plan](plans/2026-11-22-flywheel-next-redesign.md)
+(Chinese; approved plan, not yet implemented on `main`) records the clean-sheet
+roadmap: Full Dual-Draft design, default frontend Gemini Copy/UX audit, full
+Kimi OAuth capability unlock, official Antigravity ACP default with cross-repo
+prerequisite fixes, guardrail-based run limits replacing dollar/token budgets,
+and the 4-slot TypeScript/TSX DSH UI v2 rebuild.
+
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md)) preserves the approved design.
 Current source implements its four-subscription defaults, official Antigravity CLI

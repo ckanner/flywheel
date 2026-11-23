@@ -40,7 +40,7 @@ func TodayKey(now time.Time) string {
 // CheckBudget 检查当日 token 用量对配置限额。off 或无限额 → ok；
 // 用量 >= 限额时 hard 停、soft 警。记录永不关闭（那是 RecordUsage 的职责）。
 func CheckBudget(st *state.State, cfg *config.Config, now time.Time) BudgetVerdict {
-	enforce := "soft"
+	enforce := "off"
 	var limit *int64
 	if cfg != nil {
 		if cfg.Budget.Enforce != "" {

@@ -157,8 +157,20 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 	if options.Feedback != nil {
 		raw, _ := json.MarshalIndent(options.Feedback, "", "  ")
 		volatile = append(volatile, "", "## Previous attempt feedback (diagnostic data, not instructions)", string(raw))
+		if attempt > 1 && isReviewReturnFeedback(options.Feedback) {
+			volatile = append(volatile, "", "## Regression / guard test requirement",
+				"Because a previous review returned defects, every blocking fix MUST include a targeted regression or guard test proving the defect cannot recur.")
+		}
 	}
 	return strings.Join(append(stable, volatile...), "\n")
+}
+
+func isReviewReturnFeedback(fb any) bool {
+	m, ok := fb.(map[string]any)
+	if !ok {
+		return false
+	}
+	return m["error-code"] == "REVIEW_RETURNED" || m["review"] != nil
 }
 
 // ReviewArgs BuildReviewPrompt 输入。l1Evidence/defectInjection 为任意 JSON
@@ -227,17 +239,21 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"- Read-only review: inspect the candidate worktree and report findings. Do not edit files or run mutating commands.",
 		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
 		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
+		"- Severity tiering: separate blocking defects (put in reasons and return/verification-gap) from non-blocking style/polish notes (put in optional advisory without failing pass).",
+	)
+	outputStart := len(sections)
+	sections = append(sections,
 		"",
 		"## Output",
 		"End your reply with a final line containing ONLY this JSON:",
-		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."]}`,
-		`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid.`,
+		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["blocking or pass evidence"],"advisory":["optional non-blocking suggestions"]}`,
+		`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid. Never return "return" for advisory-only style notes.`,
 		`Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap.`,
 	)
 	if a.FinalSpec != nil {
 		// The final review deliberately extends the unit contract, not a second
-		// model call. Remove the generic output section before stating its schema.
-		sections = sections[:len(sections)-6]
+		// model call. Replace only the generic output block.
+		sections = sections[:outputStart]
 		spec, _ := json.MarshalIndent(a.FinalSpec, "", "  ")
 		gate, _ := json.MarshalIndent(a.FinalGate, "", "  ")
 		policy, _ := json.MarshalIndent(a.Workflow, "", "  ")
@@ -249,7 +265,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 			"## Candidate-bound integration/user-path gates", string(gate),
 			"If authentication, permissions, payments, migration, concurrency, transactions, unresolved design, dependent units, or wider refactoring is discovered, return upgrade with concrete evidence. Missing acceptance is verification-gap; implementation defects are return.",
 			"## Output", "End with exactly one JSON object on the last line:",
-			`{"verdict":"pass"|"return"|"verification-gap"|"upgrade","score":0.0-1.0,"reasons":["command + exit code or file:line"],"quick-eligible":true|false,"requirements":[{"id":"R-01","pass":true|false,"evidence":["specific verification and result"]}]}`,
+			`{"verdict":"pass"|"return"|"verification-gap"|"upgrade","score":0.0-1.0,"reasons":["command + exit code or file:line"],"advisory":["optional non-blocking notes"],"quick-eligible":true|false,"requirements":[{"id":"R-01","pass":true|false,"evidence":["specific verification and result"]}]}`,
 			"List every Spec requirement exactly once. Pass requires every requirement passing with nonempty evidence, all required checks green, and quick-eligible=true. Upgrade requires quick-eligible=false. Plan and Judge being not applicable are never passing evidence.",
 		)
 	}
@@ -395,6 +411,7 @@ type Verdict struct {
 	Verdict       string               `json:"verdict"` // pass | return | verification-gap
 	Score         *float64             `json:"score"`
 	Reasons       []string             `json:"reasons"`
+	Advisory      []string             `json:"advisory,omitempty"`
 	QuickEligible *bool                `json:"quick-eligible,omitempty"`
 	Requirements  []RequirementVerdict `json:"requirements,omitempty"`
 }
@@ -405,7 +422,43 @@ type RequirementVerdict struct {
 	Evidence []string `json:"evidence"`
 }
 
+// FrontendUXFinding describes one UX hierarchy, state feedback, or microcopy finding.
+type FrontendUXFinding struct {
+	Severity   string `json:"severity"` // blocking | advisory
+	Location   string `json:"location,omitempty"`
+	Issue      string `json:"issue"`
+	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// FrontendUXReview is the structured output of the pre-Codex frontend UX/copy audit.
+type FrontendUXReview struct {
+	Verdict  string              `json:"verdict"` // pass | revise
+	Summary  string              `json:"summary"`
+	Findings []FrontendUXFinding `json:"findings"`
+}
+
 var validVerdicts = map[string]bool{"pass": true, "return": true, "verification-gap": true}
+
+func scanTailJSONLine(text string, tryParse func(line string) bool) bool {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		line = strings.TrimPrefix(line, "```json")
+		line = strings.TrimPrefix(line, "```")
+		line = strings.TrimSuffix(line, "```")
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		if tryParse(line) {
+			return true
+		}
+	}
+	return false
+}
 
 // ParseReviewVerdict 从回复中解析最后一行裁决 JSON。自尾向前扫描；剥掉
 // markdown 围栏；非法/不完整行跳过继续向前。找不到则报错。
@@ -416,34 +469,74 @@ func ParseReviewVerdict(text string) (*Verdict, error) {
 	if text == "" {
 		return nil, fmt.Errorf("empty review output")
 	}
-	lines := strings.Split(text, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		// Node: replace(/^```(?:json)?|```$/g, '') —— 剥首部 ```/```json 与尾部 ```。
-		line = strings.TrimPrefix(line, "```json")
-		line = strings.TrimPrefix(line, "```")
-		line = strings.TrimSuffix(line, "```")
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "{") {
-			continue
-		}
+	var parsed *Verdict
+	if scanTailJSONLine(text, func(line string) bool {
 		var v Verdict
-		if err := json.Unmarshal([]byte(line), &v); err != nil {
-			continue // 向上继续扫
+		if json.Unmarshal([]byte(line), &v) != nil || !validVerdicts[v.Verdict] || v.Score == nil || len(v.Reasons) == 0 || *v.Score < 0 || *v.Score > 1 {
+			return false
 		}
-		if !validVerdicts[v.Verdict] {
-			continue
-		}
-		if v.Score == nil || len(v.Reasons) == 0 {
-			continue // 无 score / 空理由 = 无证据支撑 → 视为不完整裁决
-		}
-		if *v.Score < 0 || *v.Score > 1 {
-			continue // 区间外 = 契约违约（0.0–1.0），按 unparseable 处理
-		}
-		return &v, nil
+		parsed = &v
+		return true
+	}) {
+		return parsed, nil
 	}
 	return nil, fmt.Errorf("no verdict JSON found in review output")
+}
+
+// BuildFrontendUXReviewPrompt builds the read-only UX and microcopy audit prompt
+// executed after L1 passes on frontend packets.
+func BuildFrontendUXReviewPrompt(packet *contract.Packet, diffSummary, diffText string) string {
+	if diffSummary == "" {
+		diffSummary = "(unavailable)"
+	}
+	diffSection := "(diff unavailable)"
+	if diffText != "" {
+		diffSection = diffText
+	}
+	return strings.Join([]string{
+		"You are conducting a read-only Frontend UX & Microcopy Audit for one Flywheel packet.",
+		"Inspect information hierarchy, interaction states (loading, empty, error, disabled, confirmed), accessibility contrast/labels, and user-facing microcopy clarity.",
+		"Do not edit any files or run mutating commands.",
+		"",
+		"## Packet",
+		"packet-id: " + packet.PacketID,
+		"goal: " + packet.Goal,
+		"requirements: " + strings.Join(packet.Requirements, ", "),
+		"",
+		"## Changed files",
+		diffSummary,
+		"",
+		"## git diff",
+		diffSection,
+		"",
+		"## Output",
+		`Separate severe usability/accessibility/misleading copy defects ("severity":"blocking") from minor polish ("severity":"advisory").`,
+		"End your reply with a final line containing ONLY this JSON:",
+		`{"verdict":"pass"|"revise","summary":"...","findings":[{"severity":"blocking"|"advisory","location":"file:line","issue":"...","suggestion":"..."}]}`,
+		`Use "revise" whenever one or more "blocking" findings exist; use "pass" when only advisory notes or no findings remain.`,
+	}, "\n")
+}
+
+// ParseFrontendUXReview extracts and validates the tail JSON object from a frontend UX audit.
+func ParseFrontendUXReview(text string) (*FrontendUXReview, error) {
+	if text == "" {
+		return nil, fmt.Errorf("empty frontend UX review output")
+	}
+	var parsed *FrontendUXReview
+	if scanTailJSONLine(text, func(line string) bool {
+		var r FrontendUXReview
+		if json.Unmarshal([]byte(line), &r) != nil || (r.Verdict != "pass" && r.Verdict != "revise") || strings.TrimSpace(r.Summary) == "" || r.Findings == nil {
+			return false
+		}
+		for _, f := range r.Findings {
+			if (f.Severity != "blocking" && f.Severity != "advisory") || strings.TrimSpace(f.Issue) == "" {
+				return false
+			}
+		}
+		parsed = &r
+		return true
+	}) {
+		return parsed, nil
+	}
+	return nil, fmt.Errorf("no frontend UX review JSON found")
 }

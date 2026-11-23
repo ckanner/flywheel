@@ -2,9 +2,49 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/flow-console.md)
 
-The DSH Flywheel view brings the current task, workflow stages, configuration, session
-interaction, and delivery into one place. Keep the CLI, bundled engines, and DSH
-plugin at the same version. For installation, see [Getting started](getting-started.md).
+The DSH Flywheel v2 plugin provides a zero-debt native 4-slot engineering workbench
+backed by Direct Typert Remote (`flywheelConsole`: `query`, `act`, `listRepoImages`).
+It removes the legacy `conversation.view` slot, `:has([data-composer-seat])` layout
+hack, and `/flywheel {...}` chat command tunneling. Keep the CLI, bundled engines,
+and DSH plugin at the same version. For installation, see
+[Getting started](getting-started.md).
+
+## Native 4-slot DSH workbench (v2)
+
+```mermaid
+flowchart LR
+  subgraph DSH["DSH Desktop (4 Native Slots, React-only External)"]
+    S1["main + sidebar.panellist\nFull-page Workbench"]
+    S2["sidebar.right.pane.tab\nLive Companion"]
+    S3["conversation.chat.commandview\n/flywheel Card"]
+    S4["settings.section\n3-Tier Settings"]
+  end
+
+  subgraph HOST["DSH Host (@ckanner/flywheel)"]
+    RPC["Direct Typert Remote\nflywheelConsole (query / act / listRepoImages)\nHuman-only dsh approval proof"]
+    TOOLS["LLM Tools\nflywheel_launch / flywheel_control\n(approve & abandon blocked)"]
+  end
+
+  GO["Flywheel Go Engine\n(sole writer of state.json)"]
+
+  S1 --> RPC
+  S2 --> RPC
+  S3 --> RPC
+  S4 --> RPC
+  RPC --> GO
+  TOOLS --> GO
+```
+
+| DSH slot | Surface | Key capabilities |
+| --- | --- | --- |
+| `main` + `sidebar.panellist` | Full-page Engineering Workbench | Collapsible 240px task rail, 52px single-row header with lifecycle Primary CTA, **Dual-Design & Review Studio** (`Synthesized \| Side-by-Side \| Raw Drafts`, Markdown GFM provenance table, `Astra` findings, sticky approval bar), **Wave Swimlanes (default) + Interactive DAG Canvas** (all nodes without 6-node pagination, 244×96 semantic cards, animated Bezier edges, hover lineage highlight, pan/zoom + Minimap), **520px 4-tab Node Inspector** (`Overview`, `Evidence & UX` with `ux-review.json`, `Timeline & Collab`, `Contract`), **30s Create Task Modal** (3 intent cards, visual image picker, 1-sentence investigation), **Investigation Board**, and **Delivery Track** |
+| `sidebar.right.pane.tab` | Compact Live Companion | Active task progress bar, running packet badge, one-click jump to Workbench (`layout.selectPanel('flywheel')`), and Stop control |
+| `conversation.chat.commandview` | `/flywheel` Command Card | Read-only command result summary with one-click jump to Workbench |
+| `settings.section` | 3-Tier Progressive Settings | Scope Precedence Bar (`Task > Project > Global > Default`), 4-Subscription Health Strip + offline Doctor preflight, Tier 1 presets & Run Guardrails, Tier 2 grouped Role Table with `read-only` lock badges, Tier 3 collapsible opt-in dollar budget & raw JSON preview |
+
+Human-only actions (`planning.approve` and `session.abandon`) mint host-owned `dsh`
+proofs directly inside `flywheelConsole.act`; LLM tools (`flywheel_launch` and
+`flywheel_control`) remain strictly blocked from invoking them.
 
 ## Find a task without entering paths
 

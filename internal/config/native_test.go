@@ -23,6 +23,8 @@ func TestNativeProfilesLoadAndReferences(t *testing.T) {
 		c.Loops = map[string]LoopBinding{"plan": {Harness: harness, NativeProfile: "native"}}
 		c.Routes = map[string]RouteBinding{"default": {Harness: harness, NativeProfile: "native"}}
 		c.Profiles = map[string]ModelProfile{"model": {Harness: harness, NativeProfile: "native"}}
+		c.Planning.DualDraft = &DualDraftConfig{Enabled: true, SecondaryProfile: "model", SynthesizerProfile: "model"}
+		c.FrontendUXReview = FrontendUXReviewConfig{Enabled: true, Profile: "model"}
 		c.JudgePanel = &LoopBinding{Harness: harness, NativeProfile: "native"}
 		c.ExecutionPolicy = &ExecutionPolicy{Bindings: map[string]ExecutionBinding{"native": {Harness: harness, NativeProfile: "native"}}}
 		require.NoError(t, c.validateNativeProfiles(), harness)
@@ -93,6 +95,21 @@ func TestNativeProfilesRejectUnsupportedContractsBeforeDispatch(t *testing.T) {
 		c.NativeProfiles = map[string]NativeProfile{"known": {Harness: "dsh", Options: json.RawMessage(`{"version":1,"preset":"daily"}`)}}
 		mutate(&c)
 		require.ErrorContains(t, c.validateNativeProfiles(), "native-profile")
+	}
+	for _, mutate := range []func(*Config){
+		func(c *Config) {
+			c.Profiles = map[string]ModelProfile{"dd": {Harness: "antigravity", NativeProfile: "swarm"}}
+			c.Planning.DualDraft = &DualDraftConfig{Enabled: true, SecondaryProfile: "dd"}
+		},
+		func(c *Config) {
+			c.Profiles = map[string]ModelProfile{"ux": {Harness: "antigravity", NativeProfile: "swarm"}}
+			c.FrontendUXReview = FrontendUXReviewConfig{Enabled: true, Profile: "ux"}
+		},
+	} {
+		c := Default()
+		c.NativeProfiles = map[string]NativeProfile{"swarm": {Harness: "antigravity", Options: json.RawMessage(`{"version":1,"mode":"swarm"}`)}}
+		mutate(&c)
+		require.ErrorContains(t, c.validateNativeProfiles(), "Antigravity Swarm")
 	}
 	c := Default()
 	c.NativeProfiles = map[string]NativeProfile{"broken": {Options: json.RawMessage(`{`)}}

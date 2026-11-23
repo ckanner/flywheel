@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.2.1', protocol: 1 });
-export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
+export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
+export const LIMITS = Object.freeze({ requestBytes: 12 * 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
 export class WorkerError extends Error {
@@ -12,28 +13,31 @@ export class WorkerError extends Error {
 export async function loadAdapter() {
   let manifest, api;
   try { manifest = require('@ckanner/dsh-subagent-antigravity/package.json'); api = await import('@ckanner/dsh-subagent-antigravity/machine'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.2.1 alongside Flywheel'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.3.0 alongside Flywheel'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version || api.MACHINE_PROTOCOL_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_VERSION !== 1 || api.MACHINE_ACTIVITY_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.threadReadyBeforeDispatch !== false ||
       api.MACHINE_CAPABILITIES?.evidenceOnly !== 'verified-managed-agent' ||
       api.MACHINE_CAPABILITIES?.nativeOrchestrator !== true ||
+      !api.MACHINE_CAPABILITIES?.supportedTransports?.includes('acp') ||
+      api.MACHINE_CAPABILITIES?.acpImages !== true ||
       !['native', 'subagents', 'swarm'].every(mode => api.MACHINE_CAPABILITIES?.nativeModes?.includes(mode)) ||
       api.MACHINE_CAPABILITIES?.nativeAgentLimit !== 'observed-total-children-guard' ||
       api.MACHINE_CAPABILITIES?.hardNativeAgentLimit !== false || api.MACHINE_CAPABILITIES?.nativeCompletionScope !== 'cli-invocation' ||
       !['parseMachineRequest', 'runMachine', 'recoverMachine', 'doctor', 'MachineInputError'].every(key => typeof api[key] === 'function')) {
-    throw new WorkerError('ADAPTER_MISMATCH', 'Antigravity does not expose the pinned machine, lifecycle and evidence-only contracts');
+    throw new WorkerError('ADAPTER_MISMATCH', 'Antigravity does not expose the pinned machine, ACP, lifecycle and evidence-only contracts');
   }
   return api;
 }
 export function machineRequest(value, api, env) {
-  const keys = new Set(['type', 'protocol', 'requestId', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt',
+  const keys = new Set(['type', 'protocol', 'requestId', 'transport', 'cwd', 'model', 'reasoningEffort', 'permissionMode', 'prompt', 'images',
     'timeoutMs', 'idleTimeoutMs', 'sessionTitle', 'threadMode', 'threadId', 'recoveryDirectory', 'subscription', 'evidenceOnly', 'native', 'managed']);
   const persistent = value?.threadMode === 'persistent', lifecycle = value?.protocol === 3;
   const evidence = value?.evidenceOnly === true;
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.type !== 'start' ||
       ![1, 2, 3].includes(value.protocol) || Object.keys(value).some(key => !keys.has(key)) ||
+      (value.transport !== undefined && !['acp', 'headless'].includes(value.transport)) ||
       typeof value.requestId !== 'string' || !value.requestId.trim() || value.requestId.length > 256 || value.requestId.includes('\0') ||
       (value.evidenceOnly !== undefined && typeof value.evidenceOnly !== 'boolean') ||
       !((evidence && value.permissionMode === 'read-only') || (!evidence && value.permissionMode === 'danger-full-access')) ||
@@ -51,8 +55,10 @@ export function machineRequest(value, api, env) {
       (value.native?.mode === 'swarm' && value.managed !== undefined && value.managed.role !== 'execute')) {
     throw new WorkerError('INVALID_REQUEST', 'Evidence-only calls cannot use native children; Flywheel Swarm belongs to approved Execute collaboration');
   }
+  const transport = value.transport ?? (env.FLYWHEEL_AGY_TRANSPORT === 'headless' ? 'headless' : 'acp');
   try {
-    return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, cwd: value.cwd, prompt: value.prompt,
+    return api.parseMachineRequest({ protocol: 1, requestId: value.requestId, transport, cwd: value.cwd, prompt: value.prompt,
+      ...(value.images === undefined ? {} : { images: value.images }),
       command: env.FLYWHEEL_AGY_BIN || 'agy', model: value.model, effort: value.reasoningEffort,
       executionMode: evidence ? 'plan' : 'accept-edits', permissionMode: evidence ? 'request-review' : 'always-proceed',
       sandbox: false, toolPolicy: evidence ? 'evidence-only' : 'native', subscriptionPolicy: value.subscription,
@@ -64,8 +70,22 @@ export function machineRequest(value, api, env) {
   } catch (error) { throw new WorkerError('INVALID_REQUEST', error instanceof api.MachineInputError ? error.message : 'Invalid Antigravity machine request'); }
 }
 
-export function invokeAdapter(api, request, options) {
-  return api.runMachine(request, { ...options, onActivity(event) {
+function redactReceiptImages(receipt) {
+  if (!receipt || typeof receipt !== 'object' || !Array.isArray(receipt.requested?.images)) return receipt;
+  const requested = { ...receipt.requested };
+  requested.inputImages = {
+    version: 1,
+    images: requested.images.map(img => {
+      const decoded = Buffer.from(img.data, 'base64');
+      return { mimeType: img.mimeType, sha256: createHash('sha256').update(decoded).digest('hex'), bytes: decoded.length };
+    }),
+  };
+  delete requested.images;
+  return { ...receipt, requested };
+}
+
+export async function invokeAdapter(api, request, options) {
+  const receipt = await api.runMachine(request, { ...options, onActivity(event) {
     // Antigravity may attach its current native snapshot to child activity.
     // The shared activity wire carries only bounded liveness metadata; the
     // complete snapshot is validated separately in the terminal receipt.
@@ -78,6 +98,15 @@ export function invokeAdapter(api, request, options) {
     }
     options.onActivity?.(activity);
   } });
+  return redactReceiptImages(receipt);
+}
+
+export async function recoverAdapter(api, request) {
+  const recovery = await api.recoverMachine(request);
+  if (recovery && typeof recovery === 'object' && recovery.receipt) {
+    return { ...recovery, receipt: redactReceiptImages(recovery.receipt) };
+  }
+  return recovery;
 }
 
 export function doctorResult() {

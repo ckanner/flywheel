@@ -11,7 +11,7 @@ import (
 )
 
 func TestImagesCannotBeSilentlyDroppedByOtherHarnesses(t *testing.T) {
-	for _, harness := range []string{"pi", "omp", "codex", "codex-pro", "dsh", "kimi", "antigravity"} {
+	for _, harness := range []string{"pi", "omp", "codex", "codex-pro", "dsh", "kimi"} {
 		t.Run(harness, func(t *testing.T) {
 			out := InvokeHarness(CallArgs{RequestID: "image-rejected", Binding: config.LoopBinding{Harness: harness}, Images: []imageinput.Image{{MIMEType: "image/png", Data: []byte("image")}}}, "")
 			require.False(t, out.Settled)

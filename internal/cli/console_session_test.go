@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -359,6 +360,33 @@ func TestControlConsoleQueriesAndWriteAdmissionHaveOneJSONBoundary(t *testing.T)
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	require.Error(t, cmd.Execute())
+
+	origInspect := inspectDeliveryFn
+	t.Cleanup(func() { inspectDeliveryFn = origInspect })
+	inspectDeliveryFn = func(context.Context, string, ...string) (*machine.DeliverySnapshot, error) {
+		return &machine.DeliverySnapshot{Repo: "owner/repo"}, nil
+	}
+	inspectCmd := controlCmd()
+	inspectCmd.SetArgs([]string{"delivery", "--task-dir", task, "--cwd", root})
+	inspectCmd.SetIn(strings.NewReader(`{"action":"inspect"}`))
+	var out bytes.Buffer
+	inspectCmd.SetOut(&out)
+	inspectCmd.SetErr(io.Discard)
+	require.NoError(t, inspectCmd.Execute())
+	var resp controlResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.Equal(t, "local", resp.Delivery.Endpoint)
+
+	writeFileCli(t, filepath.Join(task, "flywheel.config.json"), `{"delivery":{"endpoint":"pr-review"}}`)
+	out.Reset()
+	inspectCmd2 := controlCmd()
+	inspectCmd2.SetArgs([]string{"delivery", "--task-dir", task, "--cwd", root})
+	inspectCmd2.SetIn(strings.NewReader(`{"action":"inspect"}`))
+	inspectCmd2.SetOut(&out)
+	inspectCmd2.SetErr(io.Discard)
+	require.NoError(t, inspectCmd2.Execute())
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.Equal(t, "pr-review", resp.Delivery.Endpoint)
 }
 
 func TestInteractiveReleaseLeavesTheTaskPaused(t *testing.T) {

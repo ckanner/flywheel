@@ -14,7 +14,7 @@ func InitPlanning(brief planning.Brief, cfg *config.Config) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	enforce := "soft"
+	enforce := "off"
 	var limit *int64
 	if cfg != nil {
 		if cfg.Budget.Enforce != "" {

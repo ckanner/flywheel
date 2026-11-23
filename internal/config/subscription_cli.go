@@ -20,9 +20,17 @@ type SubscriptionPolicy struct {
 	Mode    string `json:"mode"`
 }
 
+// DualDraftConfig configures blind dual-model drafting plus synthesis for Full root designs.
+type DualDraftConfig struct {
+	Enabled            bool   `json:"enabled"`
+	SecondaryProfile   string `json:"secondary-profile,omitempty"`
+	SynthesizerProfile string `json:"synthesizer-profile,omitempty"`
+}
+
 // Compact planning reuses named profiles without introducing another loop.
 type PlanningConfig struct {
-	Compact map[string]string `json:"compact,omitempty"`
+	Compact   map[string]string `json:"compact,omitempty"`
+	DualDraft *DualDraftConfig  `json:"dual-draft,omitempty"`
 }
 
 var subscriptionCLISchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
@@ -42,27 +50,46 @@ func validateSubscriptionSections(sections map[string]json.RawMessage) error {
 	return nil
 }
 
+func profileAsLoopBinding(p ModelProfile) LoopBinding {
+	return LoopBinding{
+		Harness:       p.Harness,
+		Model:         p.Model,
+		Channel:       p.Channel,
+		Provider:      p.Provider,
+		Thinking:      p.Thinking,
+		NativeProfile: p.NativeProfile,
+	}
+}
+
 func (c *Config) PlanningBindingForRole(role, granularity string) (LoopBinding, string, bool) {
 	if granularity == "compact" {
 		if name, ok := c.Planning.Compact[role]; ok {
 			p, found := c.Profiles[name]
-			return LoopBinding{Harness: p.Harness, Model: p.Model, Channel: p.Channel,
-				Provider: p.Provider, Thinking: p.Thinking, NativeProfile: p.NativeProfile}, "planning.compact." + role, found
+			return profileAsLoopBinding(p), "planning.compact." + role, found
 		}
 	}
 	return c.LoopBindingForRole(role)
 }
 
 func (c *Config) validatePlanningConfig() error {
-	if len(c.Planning.Compact) == 0 {
-		return nil
+	if len(c.Planning.Compact) > 0 {
+		if len(c.Planning.Compact) != 2 || c.Planning.Compact["design-plan"] == "" || c.Planning.Compact["design-review"] == "" {
+			return fmt.Errorf("planning.compact requires exactly design-plan and design-review profile references")
+		}
+		for role, name := range c.Planning.Compact {
+			if _, ok := c.Profiles[name]; !ok {
+				return fmt.Errorf("planning.compact.%s references unknown profile %q", role, name)
+			}
+		}
 	}
-	if len(c.Planning.Compact) != 2 || c.Planning.Compact["design-plan"] == "" || c.Planning.Compact["design-review"] == "" {
-		return fmt.Errorf("planning.compact requires exactly design-plan and design-review profile references")
-	}
-	for role, name := range c.Planning.Compact {
-		if _, ok := c.Profiles[name]; !ok {
-			return fmt.Errorf("planning.compact.%s references unknown profile %q", role, name)
+	if d := c.Planning.DualDraft; d != nil && d.Enabled {
+		if _, ok := c.Profiles[d.SecondaryProfile]; !ok {
+			return fmt.Errorf("planning.dual-draft.secondary-profile references unknown profile %q", d.SecondaryProfile)
+		}
+		if d.SynthesizerProfile != "" {
+			if _, ok := c.Profiles[d.SynthesizerProfile]; !ok {
+				return fmt.Errorf("planning.dual-draft.synthesizer-profile references unknown profile %q", d.SynthesizerProfile)
+			}
 		}
 	}
 	return nil
@@ -81,7 +108,7 @@ func prepareSubscriptionCLI(root map[string]json.RawMessage) error {
 		}
 		fields := []string{"version", "mode"}
 		if section == "planning" {
-			fields = []string{"compact"}
+			fields = []string{"compact", "dual-draft"}
 		}
 		if err := checkConfigFields(object, section, fields); err != nil {
 			return err
@@ -126,6 +153,27 @@ func (c *Config) validateSubscriptionCLI() error {
 		b, source, _ := c.PlanningBindingForRole(role, "compact")
 		if err := c.validateSubscriptionBinding(b, source); err != nil {
 			return err
+		}
+	}
+	if d := c.Planning.DualDraft; d != nil && d.Enabled {
+		for _, pair := range [][2]string{
+			{"planning.dual-draft.secondary-profile", d.SecondaryProfile},
+			{"planning.dual-draft.synthesizer-profile", d.SynthesizerProfile},
+		} {
+			if pair[1] == "" {
+				continue
+			}
+			p := c.Profiles[pair[1]]
+			if err := c.validateSubscriptionBinding(profileAsLoopBinding(p), pair[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if c.FrontendUXReview.Enabled {
+		if p, ok := c.Profiles[c.FrontendUXReview.Profile]; ok {
+			if err := c.validateSubscriptionBinding(profileAsLoopBinding(p), "frontend-ux-review.profile"); err != nil {
+				return err
+			}
 		}
 	}
 	if c.JudgePanel != nil {

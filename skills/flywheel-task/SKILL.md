@@ -40,7 +40,9 @@ DSH 使用 `/flywheel-task <目标> [mode=auto|quick|full]`，Kimi 使用 `/skil
 ## 2. 调查目标
 
 “先排查，告诉我为什么”或“排查并修好”读取[调查准备与交付](references/investigation.md)，
-使用现有 preparation / `control investigate` 路径。report-only 停在证据报告；已授权
+使用现有 preparation / `control investigate` 路径（简单只读排查可直接通过 `investigate` 的
+`action:"start"` 传入一句话 `goal` 与可选 `read-paths`，由 Go 确定性合成 version-1 契约）。
+report-only 停在证据报告；已授权
 修复只在有证据的结论和原范围内继续。调查动作、复现命令、外部读取、JEV 选择、
 预算和恢复由 Go 执行，技能不循环。不要用空 Spec 掩盖缺失根因。
 新调查在报告支持结论、回执已解决后，在同一 taskDir/cwd 登记下面的薄 brief；Go

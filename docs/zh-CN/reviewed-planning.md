@@ -10,6 +10,16 @@ New 和 Plan 把真正的方案设计交给引擎管理。New 登记简短 brief
 只有明确迁移才进入新协议。故障与交付场景见[使用手册](usage-handbook.md)，实际模型
 绑定见[配置参考](configuration.md)。
 
+## Full 架构级双稿对撞与统稿（`planning.dual-draft`）
+
+在 `Full` 深度任务且启用 `planning.dual-draft.enabled: true`（默认开启）时，规划引擎
+盲态并行调用主设计师（`Gemini 4 Carbon`）与独立对照设计师（`Claude Opus 5.5`，默认
+`secondary-profile: "opus-plan"`）。原始草稿按版本不可变地持久化至任务账本目录
+`design-candidates/rev-NNNNNN-{primary.md,secondary.md,meta.json}`。随后统稿角色
+（`synthesizer-profile: "opus-plan"`）合成单一权威 `design.md` 并附带 `来源对照表`，
+交由只读 `Codex GPT-6.2 Astra` 独立审查，人类只需完成一次精确版本拍板。副稿失败时显式
+降级并记录原因；`Quick` 与 `compact` 任务自动跳过双稿。
+
 ## 桌面目标入口
 
 空白 Flywheel 画布可以直接创建简短需求。工程与修复默认 Auto 和 review-first。“开始设计与审查”调用 Go 规划引擎，与 Task 技能使用相同的精确版本批准门禁；必须等你批准才能进入实现。表单只选择 delegated 还不够，必须再明确勾选实施授权。Quick／Full 是高级深度选项，不改变批准方式。

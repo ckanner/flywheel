@@ -41,6 +41,9 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
+[Flywheel Next 架构、模型路由、跨仓库修复与 DSH UI v2 重构方案](plans/2026-11-22-flywheel-next-redesign.md)
+（中文；已拍板总方案，尚未在 `main` 实施）记录不背历史包袱的分阶段重构蓝图：Full 双重独立设计、前端默认 Gemini 文案/交互复审、Kimi 订阅完整能力解锁、Antigravity 官方 ACP 默认接入与跨仓库前置修复、安全熔断器替代美元/Token 硬预算，以及四插槽 TS/TSX DSH UI v2 彻底重构。
+
 [订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)
 （[English](plans/2026-11-19-subscription-cli-workflows.en.md)）保留已批准设计。
 当前源码实现四订阅默认表、官方 Antigravity CLI 插件、紧凑准备、明确批准策略及累计

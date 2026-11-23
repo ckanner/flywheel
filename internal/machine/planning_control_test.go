@@ -294,7 +294,7 @@ func TestPlanningPrepareFailureNeverCreatesImplementation(t *testing.T) {
 			st, _, err := ControlPlanning(input, PlanningCommand{Action: "prepare", Brief: &b}, "")
 			if scenario == "default-config" {
 				require.NoError(t, err)
-				require.Equal(t, "soft", st.Budget.Enforce)
+				require.Equal(t, "off", st.Budget.Enforce)
 			} else {
 				require.Error(t, err)
 			}

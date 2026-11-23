@@ -14,8 +14,13 @@ func TestDefaults(t *testing.T) {
 	d := Default()
 	assert.Equal(t, "real", d.Drivers["plan"])
 	assert.Equal(t, "real", d.Drivers["execute"])
-	assert.Equal(t, "soft", d.Budget.Enforce)
+	assert.Equal(t, "off", d.Budget.Enforce)
 	assert.Nil(t, d.Budget.DailyTokenLimit)
+	assert.Equal(t, 3, *d.Guardrails.MaxPacketAttempts)
+	assert.Equal(t, 2, *d.Guardrails.MaxReviewRounds)
+	assert.Equal(t, 60, *d.Guardrails.MaxTaskCalls)
+	assert.Equal(t, "local", d.Delivery.Endpoint)
+	assert.False(t, d.FrontendUXReview.Enabled)
 	assert.Equal(t, int64(300_000), d.Watchdog.IdleTimeoutMs)
 	assert.Equal(t, int64(5_000), d.Watchdog.KillGraceMs)
 	assert.Equal(t, 0.1, *d.Retry.Jitter)
@@ -30,7 +35,11 @@ func TestNormalizeFillsZeros(t *testing.T) {
 	c.Normalize()
 	d := Default()
 	assert.Equal(t, d.Drivers, c.Drivers)
-	assert.Equal(t, "soft", c.Budget.Enforce)
+	assert.Equal(t, "off", c.Budget.Enforce)
+	assert.Equal(t, 3, *c.Guardrails.MaxPacketAttempts)
+	assert.Equal(t, 2, *c.Guardrails.MaxReviewRounds)
+	assert.Equal(t, 60, *c.Guardrails.MaxTaskCalls)
+	assert.Equal(t, "local", c.Delivery.Endpoint)
 	assert.Equal(t, int64(300_000), c.Watchdog.IdleTimeoutMs)
 	assert.True(t, *c.Worktree.Enabled)
 	assert.Equal(t, 5, c.Retry.MaxTransportRetries)
@@ -57,6 +66,32 @@ func TestValidate(t *testing.T) {
 	bad4 := Default()
 	bad4.DefectInjection.EveryNUnits = new(0)
 	assert.Error(t, bad4.Validate())
+
+	badAttempts := Default()
+	badAttempts.Guardrails.MaxPacketAttempts = new(0)
+	assert.ErrorContains(t, badAttempts.Validate(), "guardrails.max-packet-attempts")
+
+	badRounds := Default()
+	badRounds.Guardrails.MaxReviewRounds = new(11)
+	assert.ErrorContains(t, badRounds.Validate(), "guardrails.max-review-rounds")
+
+	badCalls := Default()
+	badCalls.Guardrails.MaxTaskCalls = new(1001)
+	assert.ErrorContains(t, badCalls.Validate(), "guardrails.max-task-calls")
+
+	badDelivery := Default()
+	badDelivery.Delivery.Endpoint = "prod"
+	assert.ErrorContains(t, badDelivery.Validate(), "delivery.endpoint")
+
+	badUX := Default()
+	badUX.FrontendUXReview = FrontendUXReviewConfig{Enabled: true, Profile: "missing"}
+	assert.ErrorContains(t, badUX.Validate(), "frontend-ux-review.profile")
+
+	for _, ep := range []string{"", "local", "draft-pr", "pr-review", "auto-merge"} {
+		okDelivery := Default()
+		okDelivery.Delivery.Endpoint = ep
+		assert.NoError(t, okDelivery.Validate(), ep)
+	}
 }
 
 func TestLoadAndFind(t *testing.T) {

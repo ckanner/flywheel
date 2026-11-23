@@ -576,6 +576,9 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 			return execLoopOutcome{Stopped: true}, nil
 		}
 		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
+		if cap := c.Config.Guardrails.MaxPacketAttempts; cap != nil && *cap < maxRetries {
+			maxRetries = *cap
+		}
 		if manualUsed || (reason == "" && c.State.Packets[packet.PacketID].FailedAttempts >= maxRetries) {
 			return execLoopOutcome{Bounded: true}, nil
 		}
@@ -758,7 +761,18 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 				}
 				continue // 修订后契约 → 子环重入
 			}
-			// r.Green：L1 全绿，缺陷注入抽检在 L1 与 Review 之间（§4.3）。
+			// r.Green：L1 全绿。前端路由在进 Codex Review 前先做只读 UX 与微文案审计。
+			needsRefine, uxStopped, uxErr := c.frontendUXAuditStep(packet)
+			if uxErr != nil {
+				return "", uxErr
+			}
+			if uxStopped {
+				return "stop", nil
+			}
+			if needsRefine {
+				continue
+			}
+			// 缺陷注入抽检在 L1 与 Review 之间（§4.3）。
 			oi, err := c.unitReviewInjection(packet)
 			if err != nil {
 				return "", err
@@ -880,7 +894,8 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 			code = review.ErrorCode
 		}
 		outcome := c.failAttempt(packet, code, nil, nil)
-		if outcome == "spin" {
+		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds
+		if outcome == "spin" || reviewCapReached {
 			esc, err := c.escalatePacket(packet)
 			if err != nil {
 				return "", err
@@ -905,4 +920,21 @@ func l1PassTrue(ps *state.PacketState) bool {
 	}
 	pass, _ := l1["pass"].(bool)
 	return pass
+}
+
+func reviewReturnCount(ps *state.PacketState) int {
+	count := 0
+	for i := len(ps.RetryHistory) - 1; i >= 0; i-- {
+		entry, ok := ps.RetryHistory[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["policy"] == "return-to-planner" {
+			break
+		}
+		if entry["scope"] == "attempt" && entry["error-code"] == string(errReviewReturned) {
+			count++
+		}
+	}
+	return count
 }

@@ -151,8 +151,8 @@ func InvokeHarness(a CallArgs, fallbackModel string) Result {
 	default:
 		return rejectedHarnessCall(a, harness, fmt.Sprintf("unknown harness %q", harness))
 	}
-	if len(a.Images) != 0 && harness != "claude-code-pro" {
-		return rejectedHarnessCall(a, harness, "image attachments require the Claude Code Pro machine contract; this backend cannot silently discard them")
+	if len(a.Images) != 0 && harness != "claude-code-pro" && harness != "antigravity" {
+		return rejectedHarnessCall(a, harness, "image attachments require an Antigravity ACP or Claude Code Pro machine contract; this backend cannot silently discard them")
 	}
 	if a.WorkspaceCwd != "" && !samePhysicalDirectory(a.WorkspaceCwd, a.Cwd) {
 		if a.PermissionMode == "workspace-write" {

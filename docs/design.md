@@ -330,6 +330,50 @@ Quick 只有一个 packet；Full 仅对冻结契约中声明 `schedule.after` �
 
 Go 校验仓库、基线、分支、候选和独占归属后登记；下一次执行、测试、Review 和交付使用该目录。登记本身不算完成，调用消耗仍计入预算。不能仅在 prompt 声明目录、手改状态或在未登记目录先实现再让引擎猜测。外部 worktree 不由引擎自动删除。
 
+### 4.9 Flywheel Next 闭环增强：双稿对撞、前端 UX 审查、分级审查与交付终点
+
+为进一步提高架构方案质量、前端交互完成度与自动化交付吞吐，同时降低日常入口门槛，引擎在既有确定性状态机之上提供以下默认能力：
+
+```mermaid
+flowchart TD
+  U["1. 人类一句话提需求 (可附仓库图片 / 选意图)"] --> G{"Go 确定性状态机分流"}
+
+  G -->|"排查问题 (goal 简写)"| INV["有界只读调查引擎"]
+  INV --> INV_A["Gemini 4 Neon (evidence-only) 出证据报告"]
+  INV_A -->|"仅排查"| END_INV["交付调查报告 (不改代码)"]
+  INV_A -->|"转修复"| G
+
+  G -->|"Quick / compact"| Q_P["紧凑设计: Hydrogen-medium 出方案与单包契约"]
+  Q_P --> Q_R["独立前审: Codex Sol-medium (read-only)"]
+  Q_R --> Q_E["按路由执行 Execute"]
+  Q_E --> Q_V["Go L1/L2/L3 物理验收"]
+  Q_V --> Q_REV["独立终审: Codex Sol-high (read-only, 分级阻断 ≤2 轮)"]
+  Q_REV --> POST
+
+  G -->|"Full 架构级任务"| D_SPLIT["2. 双稿盲态并行 (planning.dual-draft)"]
+  D_SPLIT --> D1["主稿: Gemini 4 Carbon"]
+  D_SPLIT --> D2["对照稿: Claude Opus 5.5"]
+  D1 --> SYN["3. 持久化 design-candidates/ + 统稿 (含来源对照表)"]
+  D2 --> SYN
+  SYN --> DR["4. 独立对抗审查: Codex GPT-6.2 Astra (read-only)"]
+  DR --> GATE["5. 人类单次精确版本拍板"]
+  GATE --> PLAN["6. 波次拆分: Gemini 4 Neon 生成 Wave 依赖与写入边界"]
+  PLAN --> WAVE["7. 独立 Worktree 波次并发执行 (运行护栏 3/2/60)"]
+  WAVE --> UX{"frontend 路由?"}
+  UX -->|"是"| COPY["Gemini 4 Neon UX 与微文案审查 -> Claude ≤1 次取舍改稿"]
+  UX -->|"否"| L1["Go 确定性 L1 验收 (返修必补回归/防护测试)"]
+  COPY --> L1
+  L1 --> REV["Codex 独立审查 (blocking 退回 / advisory 记账, ≤2 轮)"]
+  REV --> INT["集成 L2/L3 + Codex Astra 只读终验 Judge"]
+  INT --> POST["8. 可配置交付终点: local / draft-pr / pr-review / auto-merge"]
+```
+
+1. **Full 架构级双稿对撞与统稿（`planning.dual-draft`）**：当任务为 `Full` 深度且启用 `planning.dual-draft`（默认 `enabled: true`，副稿与统稿默认绑定 `opus-plan`）时，设计阶段盲态并行生成主稿（`Gemini 4 Carbon`）与独立对照稿（`Claude Opus 5.5`），按版本持久化原始草稿至账本目录 `design-candidates/rev-%06d-{primary.md,secondary.md,meta.json}`（纳入 `internal/ledger` 账本区，不触发边界越界）。随后由统稿角色输出单一权威 `design.md` 并附带 `来源对照表`，交由只读 `Codex GPT-6.2 Astra` 独立审查，人类仍只做一次精确版本拍板。副稿失败时显式降级并记录原因；`Quick` / `compact` 模式跳过双稿。
+2. **Frontend 路由默认交互与微文案审查（`frontend-ux-review`）**：`frontend` 路由的 packet 在 L1 自动校验通过之后、进入独立 Codex Review 之前，默认由只读 `Gemini 4 Neon` 审查交互状态、空/错态与微文案，持久化结构化报告至 `reports/<id>.ux-review.json`。仅当 verdict 为 `needs_polish` 时允许主执行者（Claude）做至多 1 次取舍改稿并复跑 L1；任何异常或非 `frontend` 路由不阻断核心交付。
+3. **分级审查（`blocking` vs `advisory`）与回归测试门禁**：Review 结构化裁决区分 `blocking`（必须修复并退回）与 `advisory`（仅记账与界面展示、不触发返工）。返工轮次受 `guardrails.max-review-rounds`（默认 2）上限约束；当 packet 因 `REVIEW_RETURNED` 重试时，提示词强制要求补齐对应的回归或防护测试。
+4. **一句话根因调查简写（`investigate start`）**：`control investigate` 的 `start` 动作支持直接传入 `goal`（及可选 `intent: "investigate"` 与 `read-paths`），由 Go 引擎确定性合成 version-1 只读准备契约，消除用户手写 JSON 契约的门槛。
+5. **可配置交付终点（`delivery.endpoint`）**：支持 `local`（默认，停在本地已验提交）、`draft-pr`（显式 `--draft` 创建草稿 PR）、`pr-review` 与 `auto-merge`（严格保留 `--match-head-commit` 与人工显式确认门禁）。
+
 ## 5. 状态、持久化和恢复
 
 ### 5.1 状态所有权与角色账本
@@ -662,16 +706,16 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 用户显式配置价格时，成本估算先从包含缓存的总输入中扣除 cache-read/cache-create，
 再对互不相交的桶各计一次；相同口径适用于 DSH 与 Codex Pro。原始 token 账本不改写。
 
-### 7.3 Antigravity CLI 接入契约
+### 7.3 Antigravity CLI 接入契约与 4 订阅默认矩阵
 
-`antigravity` 直接使用独立 `@ckanner/dsh-subagent-antigravity@0.2.1` 公开 machine API 与官方
-`agy` CLI，无 ACP。源码在 dsh-subagent-antigravity，真实 npm 候选随 Flywheel bundle，
-也可经 DSH plugin add 安装独立使用。原生程序与登录由用户环境提供。
+`antigravity` 直接使用随包分发的独立 `@ckanner/dsh-subagent-antigravity@0.3.0` 公开 machine API 与官方 `agy` CLI，**默认采用官方 ACP 传输通道（`transport: "acp"`）**，并在适配器层原生支持多模态图片输入（`images` 经由既有冻结清单与 redacted receipt 传递，状态契约同时接纳 `claude-code-pro` 与 `antigravity`）。`evidence-only` 调用使用独立空临时目录隔离，确保不读取目标仓库外未授权状态。源码在 `dsh-subagent-antigravity`，原生程序与登录由用户环境提供。
 
 严格接纳完整模型/effort、cwd、权限、调用身份与清理。普通执行要求明确 full-access，
 映射 accept-edits/always-proceed；调查/JEV 的 read-only 请求必须同时 evidenceOnly，
 创建本次独占 agent 并在提示词前核对实际 init 的 agent 身份与空 tools。禁止额外 MCP、
-子代理或 command 工具，不把 tool allowlist 解释为 OS 沙箱。原生图片输入不支持。
+子代理或 command 工具，不把 tool allowlist 解释为 OS 沙箱。
+
+默认 4 订阅模板矩阵（`templates/flywheel.config.example.json`）按模型特长分工：规划/多模态默认 `neon`，常规执行默认 `hydrogen-local`（或按路由分配），复杂任务 `orchestrator-neon`，JEV 决策 `hydrogen-summary`；所有只读审校、裁决与调查角色（`loops.design-review`、`loops.plan-review`、`loops.review`、`loops.judge`、`loops.investigate`、`frontend-ux-review`）在 `permissions.bindings` 中默认锁定 `read-only` 沙箱。Kimi 原生订阅（`kimi-subscription-agent` / `kimi-subscription-swarm`）默认放开订阅自带的 `WebSearch`、`FetchURL`、`Agent` 与 `AgentSwarm` 能力；Codex 订阅代理在非零异常退出时输出经脱敏裁剪的有界 stderr 尾部诊断。
 
 外层 v3 使用 durable lifecycle ACK；内层 machine/lifecycle/activity 均独立 version 1。
 非终态 cleanup 必须 false；dispatch-intent 不伪造配置；即使缺少原生终态也先记录本地
@@ -711,7 +755,7 @@ Flywheel Execute 选择 Swarm 需要已审 packet 的 collaboration version 1：
 
 每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露 usage，按未知处理。
 
-`unknown-usage-calls` 和 `unknown-cost-calls` 与已知总数并存。hard token budget 遇当日未知 usage 停止，因为限额无法证明；soft 默认可继续并明确告警。配置为 off 只关闭熔断，不关闭计量。价格只接受 driver 真实值或用户显式提供的定价，不内置会过期的推测账单。
+`unknown-usage-calls` 和 `unknown-cost-calls` 与已知总数并存。订阅优先模式下，**美元预算门禁默认关闭（`budget.enforce: "off"`）**，由轻量确定性的 **运行护栏（`guardrails`）** 防止死循环与调用失控：`max-packet-attempts: 3`、`max-review-rounds: 2`、`max-task-calls: 60`（`state.budget.totals.calls` 持久化单任务累计调用次数）。仅当用户显式开启 `budget.enforce: "soft" | "hard"` 时才启用美元/Token 预算熔断；关闭美元熔断不会关闭计量、失败重试上限、运行时限或未知调用阻断。价格只接受 driver 真实值或用户显式提供的定价，不内置会过期的推测账单。
 
 计量只接纳与当前调用身份一致、可归属的增量。Codex Pro 不把 threadTotal 当作本轮
 增量，DSH 恢复后清空旧输出和 usage fold，受跟踪的 Kimi print 调用保持 usage
@@ -1101,6 +1145,56 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 原生轨迹由 DSH 管理，保留父会话已有命令／工具记录。独立 SDK、Kimi、Codex Pro 和 Claude Code Pro worker 的完整历史不会自动合并到该轨迹，也不向原生团队或后台任务列表登记虚构任务。后续若接入轨迹关联，必须采用宿主公开的身份、事件和生命周期契约。
 
 兼容性依据固定在声明版本为 `0.2.1-rc.5` 的源码 `b830ec950faba0a46dda564be3e2d854afed94f1`：[外部插件实践](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/preset/agent-preset/skills/cordis-plugin-development/references/practices.md)、[UI 规范](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/.agents/skills/dsh-client-ui-ux/SKILL.md)与[布局说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-layout/README.md)。具体注册与作用域同时核对[会话插槽源码](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/client/ui-conversation/src/client/contract/slots.ts)和[生命周期说明](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/docs/subsystems/slots.md)。`dsh.client.inject` 元数据不能代替运行时 service inject 或槽位声明屏障。390 CSS px、长内容、亮暗主题、焦点、加载、失败和会话切换须检验；组件夹具与源码核对不等于真实 Mac 桌面验收。`0.28.0` 仍是旧弹层，原生会话视图从 `0.28.1` 开始提供；CLI 与桌面插件须同版升级。
+
+### 12.1.1 DSH 原生 4 槽位工作台 v2 与 Direct Typert Remote
+
+Flywheel DSH 前端已彻底移除旧版 `conversation.view` 槽位、`:has([data-composer-seat])` 布局 hack 以及经由聊天框透传 `/flywheel {...}` JSON 的机制，采用 TypeScript + TSX + `esbuild` + `lightningcss` CSS Modules 零债重构，仅依赖外部 `react`（兼容 DSH `0.2.1-rc.5` 与 `0.2.2-rc.3+`），且模块加载期零 `document.head` / `document.body` 副作用。
+
+UI v2 注册 4 个原生 DSH 槽位，并通过 Direct Typert Remote 服务 `flywheelConsole`（`query`、`act`、`listRepoImages`，无需绑定活跃对话 Agent）直连 Go 引擎：
+
+```mermaid
+flowchart LR
+  subgraph DSH["DSH 桌面端 (原生 4 槽位 UI v2, 仅依赖 react)"]
+    S1["main + sidebar.panellist\n全页工程工作台\n(双稿评审 / 波次泳道 / 交互 DAG / 节点抽屉 / 建单 / 调查 / 交付)"]
+    S2["sidebar.right.pane.tab\n右侧实时进度伴侣"]
+    S3["conversation.chat.commandview\n/flywheel 只读指令卡"]
+    S4["settings.section\n三层渐进式设置页"]
+  end
+
+  subgraph HOST["DSH Host 插件进程 (@ckanner/flywheel)"]
+    RPC["Direct Typert Remote\nflywheelConsole (query / act / listRepoImages)\n签发宿主侧 dsh 人工证明"]
+    TOOLS["LLM 工具\nflywheel_launch / flywheel_control\n(严禁 approve / abandon)"]
+  end
+
+  subgraph GO["Flywheel Go 确定性引擎 (唯一写 state.json)"]
+    ENG["状态机 / 双稿 / UX 审查 / 护栏 / Worktree / 交付"]
+  end
+
+  subgraph WORKERS["4 订阅独立 Worker"]
+    W1["Antigravity 0.3.0\n(默认 ACP + 原生图片)"]
+    W2["Claude Code Pro 0.7.0\n(Agent SDK)"]
+    W3["Codex Pro 0.10.2\n(app-server + read-only 沙箱)"]
+    W4["Kimi Native\n(WebSearch / FetchURL / Swarm)"]
+  end
+
+  S1 --> RPC
+  S2 --> RPC
+  S3 --> RPC
+  S4 --> RPC
+  RPC --> ENG
+  TOOLS --> ENG
+  ENG --> W1
+  ENG --> W2
+  ENG --> W3
+  ENG --> W4
+```
+
+1. **`main` + `sidebar.panellist`**：全页工程工作台，包含可折叠 240px 任务栏、52px 单行顶栏与生命周期动态主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 | 双稿并排对比 | 原始独立草稿`、Markdown GFM 来源对照表、Astra 独立审查列表与底部悬浮人工拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（拓扑分层与重心排序、全量节点无 6 节点分页、244×96 语义卡片、贝塞尔有向连线、悬停上下游血缘高亮、缩放平移与缩略图）、**520px 四标签节点详情抽屉**（概览 / 证据与 UX / 时间线与协作 / 契约）、**30 秒三意图建单弹窗**（含可视化仓库图片选择器与一句话只读调查）、**根因调查板**与**交付追踪页**。
+2. **`sidebar.right.pane.tab`**：右侧边栏紧凑实时进度卡片，展示任务进度条与活跃节点，可一键跳转主工作台或停止运行。
+3. **`conversation.chat.commandview`**：对话内 `/flywheel` 指令的只读摘要卡片，一键跳转主工作台。
+4. **`settings.section`**：三层渐进式设置页（配置优先级栏、4 订阅健康条与无推理自检、Tier 1 工作流预设与运行护栏、Tier 2 带只读锁定徽章的角色路由表、Tier 3 可折叠高级/美元预算显式开关与原始 JSON 预览）。
+
+人类审批（`planning.approve`）与未知会话废弃（`session.abandon`）由宿主 `flywheelConsole.act` 签发宿主侧 `dsh` 人工证明；模型工具 `flywheel_launch` 与 `flywheel_control` 始终被严格禁止调用上述人工授权动作。
 
 ### 12.2 桌面内置能力与 worker 策略
 

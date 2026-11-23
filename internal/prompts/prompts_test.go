@@ -314,3 +314,50 @@ func TestBuildPlanPromptFeedback(t *testing.T) {
 	assert.Contains(t, out, "frontmatter parse error")
 	assert.Contains(t, out, "REJECTED")
 }
+
+func TestExecutePromptMandatesRegressionTestOnReviewReturnAndSupportsTieredVerdict(t *testing.T) {
+	pkt := testPacket()
+	l1Retry := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2, map[string]any{"error-code": "L1_FAILED"})
+	assert.NotContains(t, l1Retry, "## Regression / guard test requirement")
+
+	revRetry := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2, map[string]any{"error-code": "REVIEW_RETURNED", "review": map[string]any{"verdict": "return"}})
+	assert.Contains(t, revRetry, "## Regression / guard test requirement")
+	assert.Contains(t, revRetry, "targeted regression or guard test")
+
+	reviewPrompt := BuildReviewPrompt(ReviewArgs{Packet: pkt, L1Evidence: map[string]any{"pass": true}})
+	assert.Contains(t, reviewPrompt, "Severity tiering:")
+	v, err := ParseReviewVerdict("```json\n{\"verdict\":\"pass\",\"score\":0.95,\"reasons\":[\"cmd exit 0\"],\"advisory\":[\"rename helper\"]}\n```")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"rename helper"}, v.Advisory)
+}
+
+func TestFrontendUXReviewPromptAndParser(t *testing.T) {
+	pkt := testPacket()
+	promptEmpty := BuildFrontendUXReviewPrompt(pkt, "", "")
+	assert.Contains(t, promptEmpty, "(unavailable)")
+	assert.Contains(t, promptEmpty, "(diff unavailable)")
+	promptFull := BuildFrontendUXReviewPrompt(pkt, "- src/view.tsx", "+ <button>Save</button>")
+	assert.Contains(t, promptFull, "+ <button>Save</button>")
+
+	_, err := ParseFrontendUXReview("")
+	assert.EqualError(t, err, "empty frontend UX review output")
+
+	for _, bad := range []string{
+		"no json",
+		`{"verdict":"unknown","summary":"bad","findings":[]}`,
+		`{"verdict":"pass","summary":" ","findings":[]}`,
+		`{"verdict":"pass","summary":"ok"}`,
+		`{"verdict":"revise","summary":"bad","findings":[{"severity":"minor","issue":"x"}]}`,
+		`{"verdict":"revise","summary":"bad","findings":[{"severity":"blocking","issue":""}]}`,
+	} {
+		_, err = ParseFrontendUXReview(bad)
+		require.Error(t, err, bad)
+	}
+
+	ux, err := ParseFrontendUXReview("Audit complete\n```json\n{\"verdict\":\"revise\",\"summary\":\"Disabled button hides error\",\"findings\":[{\"severity\":\"blocking\",\"location\":\"src/view.tsx:12\",\"issue\":\"No error state\",\"suggestion\":\"Render inline alert\"},{\"severity\":\"advisory\",\"issue\":\"Tighten spacing\"}]}\n```")
+	require.NoError(t, err)
+	assert.Equal(t, "revise", ux.Verdict)
+	require.Len(t, ux.Findings, 2)
+	assert.Equal(t, "blocking", ux.Findings[0].Severity)
+	assert.Equal(t, "advisory", ux.Findings[1].Severity)
+}

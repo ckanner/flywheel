@@ -22,7 +22,12 @@ unresolved product decision needs a separate decision.
 
 ## Preparation contract
 
-The host prepares an input from the user's goal and repository facts. Go validates
+For quick read-only root-cause investigations, `control investigate` (`action: "start"`)
+accepts a one-sentence **`goal` shorthand** (`{"action":"start","goal":"...","intent":"investigate","read-paths":["src/"],"run":true}`).
+The Go engine deterministically synthesizes a valid version-1 read-only `preparation.json`
+contract without requiring the user to hand-author JSON.
+
+For advanced custom contracts, the host prepares an input from the user's goal and repository facts. Go validates
 it and owns `preparation.json`. Users do not need to fill another large form, and
 the host never edits preparation state or `state.json` directly. The installed CLI
 exposes `preparation.schema.json`, `preparation-state.schema.json` and

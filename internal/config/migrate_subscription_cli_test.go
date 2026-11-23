@@ -126,7 +126,7 @@ func TestSubscriptionCLIMigrationConvertsDisabledHTTPJEVWithoutChangingLimits(t 
 	require.NoError(t, err)
 	require.Empty(t, preview.Blockers)
 	require.Equal(t, "subscription", preview.Candidate.JEV.Backend)
-	require.Equal(t, "hydrogen-local", preview.Candidate.JEV.Profile)
+	require.Equal(t, "hydrogen-summary", preview.Candidate.JEV.Profile)
 	require.False(t, preview.Candidate.JEV.Enabled)
 	before, after := preview.Original.JEV, preview.Candidate.JEV
 	require.Equal(t, before.TimeoutMS, after.TimeoutMS)

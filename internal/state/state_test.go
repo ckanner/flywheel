@@ -229,7 +229,7 @@ func TestInitState(t *testing.T) {
 	assert.Len(t, st.Milestones, 2)
 	assert.Equal(t, "pending", st.Milestones["M-02"].Status)
 	assert.Len(t, st.Packets, 2)
-	assert.Equal(t, "soft", st.Budget.Enforce)
+	assert.Equal(t, "off", st.Budget.Enforce)
 	assert.Nil(t, st.Budget.DailyTokenLimit)
 	assert.Empty(t, st.Inbox)
 

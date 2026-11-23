@@ -5,6 +5,51 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.0 — 2026-11-23 (Flywheel Next)
+
+This entry records the Flywheel Next release prepared for `v0.39.0`.
+
+- **Antigravity ACP default & native image support**: bundle
+  `@ckanner/dsh-subagent-antigravity@0.3.0` (`transport: "acp"` default, native
+  image input redacted into manifest metadata on invoke/recover, isolated
+  `evidence-only` temp dir, and graceful stdin EOF shutdown). Allow `antigravity`
+  alongside `claude-code-pro` in `templates/state.schema.json` and Go driver
+  image admission.
+- **4-subscription default matrix & Kimi native tools**: update default config
+  and profile templates (`neon`, `hydrogen-local`, `orchestrator-neon`,
+  `hydrogen-summary`), lock read-only review/judge/investigate/UX bindings to
+  `read-only`, unlock Kimi native subscription tools (`WebSearch`, `FetchURL`,
+  `Agent`, `AgentSwarm`), and emit a bounded redacted stderr tail on unexpected
+  Codex subscription proxy exits.
+- **Run Guardrails & default-off dollar budget**: set default `budget.enforce`
+  to `"off"` and enforce lightweight deterministic run guardrails
+  (`max-packet-attempts: 3`, `max-review-rounds: 2`, `max-task-calls: 60`) with
+  persistent `budget.totals.calls`.
+- **Full Dual-Draft Design & Synthesis**: add `planning.dual-draft` blind
+  parallel drafting (`Gemini 4 Carbon` + `Claude Opus 5.5`), immutable ledger
+  persistence under `design-candidates/rev-NNNNNN-{primary.md,secondary.md,meta.json}`,
+  and single-document synthesis with a provenance table before independent
+  read-only review and single human approval (skipped on `Quick`/`compact`).
+- **Default Frontend UX & Microcopy Audit**: run read-only `Gemini 4 Neon` UX
+  and microcopy review (`frontend-ux-review`) after L1 on `frontend` route
+  packets, persisting `reports/<id>.ux-review.json` with at most one Claude
+  refinement pass before independent Codex review.
+- **Tiered Review, Investigation Shorthand & Delivery Endpoint**: split review
+  verdicts into `blocking` vs `advisory` with a 2-round return cap and mandatory
+  regression/guard tests on `REVIEW_RETURNED` retries; accept one-sentence `goal`
+  shorthand on `control investigate start`; add configurable `delivery.endpoint`
+  (`local` | `draft-pr` | `pr-review` | `auto-merge`) with `--draft` support.
+- **Zero-debt DSH UI Plugin v2**: delete legacy `conversation.view`, 9 legacy
+  UI files, `:has([data-composer-seat])`, and `/flywheel {...}` chat tunneling.
+  Upgrade `flywheelConsole` to Direct Typert Remote (`query`, `act`,
+  `listRepoImages`) with human-only host proof while keeping LLM tools blocked
+  from `planning.approve` and `session.abandon`. Rebuild in TypeScript + TSX +
+  esbuild + lightningcss across 4 native DSH slots (`main` + `sidebar.panellist`,
+  `sidebar.right.pane.tab`, `conversation.chat.commandview`, `settings.section`)
+  with Wave Swimlanes, full interactive DAG Canvas (no 6-node pagination),
+  Dual-Design Studio, 4-tab Node Inspector, 30s Create Task Modal, Investigation
+  Board, Delivery Track, and 3-tier Settings.
+
 ## 0.38.1 — 2026-11-22
 
 - Accept Antigravity evidence-only results with a nonempty CLI tool catalog when

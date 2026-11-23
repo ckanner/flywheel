@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const agyDoctorResponse = `{"protocol":1,"type":"doctor","package":"@ckanner/dsh-subagent-antigravity","version":"0.2.1","machineProtocol":1,"available":true,"inferenceTested":false,"evidenceOnly":"verified-managed-agent","nativeVersion":1,"nativeOrchestrator":true,"nativeModes":["native","subagents","swarm"],"nativeAgentLimit":"observed-total-children-guard","hardNativeAgentLimit":false,"nativeCompletionScope":"cli-invocation"}`
+const agyDoctorResponse = `{"protocol":1,"type":"doctor","package":"@ckanner/dsh-subagent-antigravity","version":"0.3.0","machineProtocol":1,"available":true,"inferenceTested":false,"evidenceOnly":"verified-managed-agent","nativeVersion":1,"nativeOrchestrator":true,"nativeModes":["native","subagents","swarm"],"nativeAgentLimit":"observed-total-children-guard","hardNativeAgentLimit":false,"nativeCompletionScope":"cli-invocation"}`
 
 func TestAntigravityDoctorReportsPublicCapabilitiesWithoutAccountClaims(t *testing.T) {
 	root, runtime := diagnosticFixture(t, `{"subscription":{"version":1,"mode":"subscription-only"},"permissions":{"mode":"full-access","bindings":{"loops.investigate":"read-only"}},"profiles":{"local":{"harness":"antigravity","channel":"g","model":"gemini-4-hydrogen-high","thinking":"high"}},"channels":{"g":{"harness":"antigravity","env-key":null}},"loops":{"investigate":{"profile":"local"}},"native-profiles":{"agy":{"harness":"antigravity","options":{"version":1,"mode":"native"}}},"routes":{"default":{"profile":"local","native-profile":"agy"}},"planning":{"compact":{"design-plan":"local","design-review":"local"}}}`)
@@ -28,7 +28,7 @@ func TestAntigravityDoctorReportsPublicCapabilitiesWithoutAccountClaims(t *testi
 	assert.Equal(t, "unknown", checkByID(t, r, "routes.default.native.admission").Status)
 	assert.Equal(t, "unknown", checkByID(t, r, "loops.investigate.subscription").Status)
 	assert.Empty(t, runtime.probes)
-	for _, body := range []string{"{", strings.Replace(agyDoctorResponse, "0.2.1", "0.0.1", 1), strings.Replace(agyDoctorResponse, `"inferenceTested":false`, `"inferenceTested":true`, 1)} {
+	for _, body := range []string{"{", strings.Replace(agyDoctorResponse, "0.3.0", "0.0.1", 1), strings.Replace(agyDoctorResponse, `"inferenceTested":false`, `"inferenceTested":true`, 1)} {
 		runtime.command = func(call commandCall) watchdog.Result {
 			if call.args[len(call.args)-1] == "--doctor" {
 				return watchdog.Result{ExitCode: new(0), Stdout: body}

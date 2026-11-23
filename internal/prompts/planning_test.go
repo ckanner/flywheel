@@ -187,3 +187,20 @@ func TestBuildPlanningPromptSeparatesRolesAndTreatsExternalMaterialAsData(t *tes
 		}
 	}
 }
+
+func TestBuildDesignSynthesisPromptIncludesBlindDraftsAndProvenanceRequirement(t *testing.T) {
+	st := &planning.State{
+		Version:       1,
+		InputRevision: 2,
+		Brief:         planning.Brief{Version: 1, ID: "sync", Goal: "Unify architecture", OriginalRequest: "Design sync"},
+	}
+	req := planning.Request{Scope: "design", Feedback: "Compare drafts fairly"}
+	primary := DesignDraftInput{Profile: "carbon", Harness: "antigravity", Model: "gemini-4-carbon-high", Text: `{"document":"Draft A"}`}
+	secondary := DesignDraftInput{Profile: "opus-plan", Harness: "claude-code-pro", Model: "claude-opus-5-5", Text: `{"document":"Draft B"}`}
+	prompt := BuildDesignSynthesisPrompt(st, req, primary, secondary, PlanningPromptOptions{NativeAgents: true})
+	assert.Contains(t, prompt, "来源对照表")
+	assert.Contains(t, prompt, "Full 模式双模型方案统稿 Planner")
+	input := planningPromptInput(t, prompt)
+	assert.Contains(t, string(input["draft-a"]), "gemini-4-carbon-high")
+	assert.Contains(t, string(input["draft-b"]), "claude-opus-5-5")
+}

@@ -19,7 +19,11 @@ Kimi 使用对应 `/skill:flywheel-*` 名称。Status、Stop 均可用于调查�
 
 ## 调查契约
 
-宿主助手从当前需求与仓库事实生成输入，Go 校验并写 `preparation.json`。不要求用户
+日常只读根因排查可直接使用 **一句话 `goal` 简写**：在 `control investigate`（`action: "start"`）
+或工作台建单弹窗中仅提供 `goal`（及可选 `intent: "investigate"` 与 `read-paths`），Go 引擎
+会自动确定性合成合规的 version-1 只读 `preparation.json` 契约，无需手写 JSON。
+
+需要定制高级契约时，宿主助手从当前需求与仓库事实生成输入，Go 校验并写 `preparation.json`。不要求用户
 手工填写表单，不允许宿主直接修改准备状态或 `state.json`。可读取已安装二进制的
 `preparation.schema.json`、`preparation-state.schema.json` 和 `preparation.example.json`。
 

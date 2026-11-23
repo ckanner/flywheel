@@ -23,6 +23,15 @@
             "design-plan": {"type": "string", "pattern": "\\S"},
             "design-review": {"type": "string", "pattern": "\\S"}
           }
+        },
+        "dual-draft": {
+          "type": "object", "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "secondary-profile": {"type": "string", "pattern": "\\S"},
+            "synthesizer-profile": {"type": "string", "pattern": "\\S"}
+          }
         }
       }
     }

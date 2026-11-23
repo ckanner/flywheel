@@ -14,6 +14,18 @@ const ended = { parent: false, native: false };
 const maxFrame = 8 * 1024 * 1024;
 const code = cause => cause instanceof SubscriptionError ? cause : new SubscriptionError('INVALID_REQUEST', 'Codex subscription admission could not verify the native account and effective provider');
 const line = value => JSON.stringify(value) + '\n';
+const maxStderrTail = 4096;
+let redactedStderrTail = '';
+function redactStderr(text) {
+  return String(text ?? '')
+    .replace(/https?:\/\/\S+/gi, '[url-redacted]')
+    .replace(/(Bearer\s+)[A-Za-z0-9_.~+/=-]+/gi, '$1[redacted]')
+    .replace(/((?:api[_-]?key|token|password|secret|authorization[_-]?code|cookie)\s*[=:]\s*)[^\s,;]+/gi, '$1[redacted]');
+}
+function recordNativeStderr(chunk) {
+  const sanitized = redactStderr(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+  redactedStderrTail = (redactedStderrTail + sanitized).slice(-maxStderrTail);
+}
 function send(value) {
   if (stopping || closed) return;
   if (child?.stdin.writableLength > maxFrame) { fail(new Error('native input queue limit')); return; }
@@ -149,9 +161,9 @@ try {
   });
   child.stdout.on('data', chunk => { try { frames(chunk, 'native'); } catch (cause) { fail(cause); } });
   child.stdout.on('end', () => { try { endFrames('native'); } catch (cause) { fail(cause); } });
-  // Native stderr may contain account URLs or diagnostic credentials. It is
-  // neither admission evidence nor provider activity, and is never copied.
-  child.stderr.on('data', () => {});
+  // Retain a bounded, redacted stderr tail so unexpected non-zero failures
+  // preserve safe diagnostics without ever exposing URLs or credentials.
+  child.stderr.on('data', chunk => { recordNativeStderr(chunk); });
   child.once('error', fail);
   child.once('close', (nativeCode, nativeSignal) => {
     try { endFrames('native'); endFrames('parent'); } catch (cause) { fail(cause); }
@@ -160,7 +172,11 @@ try {
     pending.clear();
     process.stdin.pause();
     if (failed || nativeSignal === null) {
-      process.exitCode = failed ? 1 : nativeCode ?? 1;
+      const codeOut = failed ? 1 : nativeCode ?? 1;
+      if (codeOut !== 0 && redactedStderrTail.trim()) {
+        process.stderr.write('[codex-proxy stderr tail] ' + redactedStderrTail.trim() + '\n');
+      }
+      process.exitCode = codeOut;
       return;
     }
     // Node ignores SIGPIPE and repurposes SIGUSR1 for its inspector. Those and

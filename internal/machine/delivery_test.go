@@ -45,10 +45,15 @@ func TestDeliveryUsesExactHeadAndReconcilesAlreadyCreatedOrMergedPR(t *testing.T
 			return "ok", nil
 		case name == "gh" && args[0] == "pr" && args[1] == "create":
 			creates++
-			body, err := os.ReadFile(args[len(args)-1])
+			bodyFile := args[len(args)-1]
+			if args[len(args)-1] == "--draft" {
+				bodyFile = args[len(args)-2]
+			}
+			body, err := os.ReadFile(bodyFile)
 			require.NoError(t, err)
 			require.Equal(t, "line one\n`literal $(no execution)`", string(body))
-			pulls = []PullRequest{{Number: 7, URL: "https://github.com/example/fixture/pull/7", State: "OPEN", Head: head, Base: "main", MergeState: "CLEAN"}}
+			draft := args[len(args)-1] == "--draft"
+			pulls = []PullRequest{{Number: 7, URL: "https://github.com/example/fixture/pull/7", State: "OPEN", Head: head, Base: "main", Draft: draft, MergeState: "CLEAN"}}
 			return pulls[0].URL, nil
 		case name == "gh" && args[0] == "pr" && args[1] == "merge":
 			merges++
@@ -89,6 +94,19 @@ func TestDeliveryUsesExactHeadAndReconcilesAlreadyCreatedOrMergedPR(t *testing.T
 	request.Revision = loadFixtureState(t, fx).Revision
 	_, err = Deliver(opts.RunOpts, request)
 	require.ErrorContains(t, err, "candidate changed")
+
+	// Draft endpoint passes --draft when creating a PR.
+	draftFx := newGitFixture(t)
+	draftOpts := runOpts(draftFx, happyDrivers().set())
+	draftOpts.Config.Delivery.Endpoint = "draft-pr"
+	_, err = RunTask(draftOpts)
+	require.NoError(t, err)
+	head = strings.TrimSpace(gitCmd(t, draftFx.root, "rev-parse", "HEAD"))
+	pulls = nil
+	draftSnap, err := Deliver(draftOpts.RunOpts, DeliveryRequest{Action: "create", Confirmed: true, Revision: loadFixtureState(t, draftFx).Revision, ExpectedHead: head, ExpectedRepo: "github.com/example/fixture", Base: "main", Title: "Draft PR", Body: "line one\n`literal $(no execution)`"})
+	require.NoError(t, err)
+	require.Equal(t, "draft-pr", draftSnap.Endpoint)
+	require.True(t, draftSnap.Pulls[0].Draft)
 }
 
 func TestDeliveryRemoteParsingDoesNotLeakCredentialsOrGuessRepositories(t *testing.T) {

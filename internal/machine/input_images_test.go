@@ -65,6 +65,13 @@ func TestPacketImagesUseFrozenSourceCheckoutAndExplicitExecuteScope(t *testing.T
 		require.Empty(t, a.Images)
 	}
 	a = imageExecutionArgs(c)
+	a.Binding.Harness = "antigravity"
+	a.Binding.Model = "gemini-4-neon-high"
+	a.Binding.Channel = "google-subscription"
+	a.Model = a.Binding.Model
+	require.NoError(t, c.resolveInvocationImages("execute", a.PacketID, &a))
+	require.Equal(t, []imageinput.Image{{MIMEType: "image/png", Data: original}}, a.Images)
+	a = imageExecutionArgs(c)
 	a.Binding.Harness = "codex-pro"
 	require.ErrorContains(t, c.resolveInvocationImages("execute", a.PacketID, &a), "cannot accept")
 	for _, p := range []*contract.Packet{nil, c.Packets["M01-T02"]} {

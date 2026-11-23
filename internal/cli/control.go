@@ -242,7 +242,10 @@ func controlCmd() *cobra.Command {
 						break
 					}
 					if request.Action == "inspect" {
-						reply.Delivery, err = machine.InspectDelivery(ctx, resolvedCwd, request.HeadBranch)
+						reply.Delivery, err = inspectDeliveryFn(ctx, resolvedCwd, request.HeadBranch)
+						if err == nil {
+							reply.Delivery.Endpoint = deliveryEndpoint(resolvedTask, resolvedCwd)
+						}
 					} else {
 						cfg, configErr := config.Load(resolvedTask, resolvedCwd)
 						if configErr != nil {
@@ -526,4 +529,14 @@ func startControlledRunWait(taskDir, cwd, mode string, extra []string, waitForEx
 			return reply, fmt.Errorf("orchestrator pid %d started but readiness was not confirmed; inspect orchestrator.log and refresh status", child.Process.Pid)
 		}
 	}
+}
+
+var inspectDeliveryFn = machine.InspectDelivery
+
+func deliveryEndpoint(taskDir, cwd string) string {
+	cfg, err := config.LoadReadOnly(taskDir, cwd)
+	if err != nil {
+		return "local"
+	}
+	return cfg.Delivery.Endpoint
 }

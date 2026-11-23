@@ -26,13 +26,23 @@ export function record(value) {
 // envelope before dispatch so an invalid command cannot become an unknown run.
 export function validInvestigationCommand(value) {
   if (!record(value) || !['start', 'continue', 'run', 'status', 'report', 'cancel'].includes(value.action) ||
-      Object.keys(value).some(key => !['action', 'revision', 'contract', 'report', 'run'].includes(key))) return false;
+      Object.keys(value).some(key => !['action', 'revision', 'contract', 'goal', 'intent', 'read-paths', 'report', 'run'].includes(key))) return false;
   if ('run' in value && (value.action !== 'start' || typeof value.run !== 'boolean')) return false;
   if ('revision' in value && (!Number.isSafeInteger(value.revision) || value.revision < 0)) return false;
   if (!['start', 'status'].includes(value.action) && !(value.revision > 0)) return false;
-  if ((['start','continue'].includes(value.action)) !== ('contract' in value) ||
-      (value.action === 'report') !== ('report' in value)) return false;
-  return (!('contract' in value) || record(value.contract)) && (!('report' in value) || record(value.report));
+  const hasContract = 'contract' in value;
+  const hasGoal = typeof value.goal === 'string' && value.goal.trim() !== '';
+  const hasShorthand = 'goal' in value || 'intent' in value || 'read-paths' in value;
+  if (hasShorthand && (value.action !== 'start' || hasContract || !hasGoal)) return false;
+  if ('goal' in value && (!hasGoal || Buffer.byteLength(value.goal) > 2000 || value.goal.includes('\0'))) return false;
+  if ('intent' in value && value.intent !== 'investigate') return false;
+  if ('read-paths' in value && (!Array.isArray(value['read-paths']) || value['read-paths'].length === 0 || value['read-paths'].length > 32 ||
+      value['read-paths'].some(p => typeof p !== 'string' || p.trim() === '' || p.length > 512 || p.includes('\0')))) return false;
+  if (value.action === 'start' && !hasContract && !hasGoal) return false;
+  if (value.action === 'continue' && !hasContract) return false;
+  if (!['start', 'continue'].includes(value.action) && hasContract) return false;
+  if ((value.action === 'report') !== ('report' in value)) return false;
+  return (!hasContract || record(value.contract)) && (!('report' in value) || record(value.report));
 }
 
 export function nonempty(value, label, max = 512) {

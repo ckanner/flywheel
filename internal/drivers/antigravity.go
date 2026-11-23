@@ -6,20 +6,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/childenv"
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/imageinput"
 	"github.com/ckanner/flywheel/internal/watchdog"
 )
 
 const (
-	AntigravityPackageVersion = "0.2.1"
+	AntigravityPackageVersion = "0.3.0"
 	AntigravityPackage        = "@ckanner/dsh-subagent-antigravity"
 	AntigravityWorkerEnv      = "FLYWHEEL_ANTIGRAVITY_WORKER"
 	AntigravityBinaryEnv      = "FLYWHEEL_AGY_BIN"
+	AntigravityTransportEnv   = "FLYWHEEL_AGY_TRANSPORT"
 )
 
 func adapterPackageFor(harness string) string {
@@ -48,7 +51,7 @@ func AntigravityBinary() string {
 // The native CLI always retains conversation history. "fresh" means a new
 // conversation, never a claim that the native account has no stored history.
 func RunAntigravity(a AntigravityArgs) Result {
-	request := codexProStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Subscription: a.Subscription, EvidenceOnly: a.EvidenceOnly, Native: a.Native, Managed: a.Managed}
+	request := codexProStart{Type: "start", Protocol: 1, RequestID: a.RequestID, Subscription: a.Subscription, EvidenceOnly: a.EvidenceOnly, Images: a.Images, InputImageManifest: imageinput.Describe(a.Images), Native: a.Native, Managed: a.Managed}
 	if request.RequestID == "" {
 		request.RequestID = rand.Text()
 	}
@@ -75,8 +78,8 @@ func RunAntigravity(a AntigravityArgs) Result {
 		!(a.PermissionMode == "danger-full-access" && !a.EvidenceOnly || a.PermissionMode == "read-only" && a.EvidenceOnly) {
 		return reject("Antigravity requires an explicit prompt, identity and full-access or verified evidence-only permissions")
 	}
-	if len(a.Images) != 0 {
-		return reject("Antigravity image transport is not part of this machine contract; use the configured Claude multimodal route")
+	if err := imageinput.ValidateManifest(request.InputImageManifest); err != nil {
+		return reject(err.Error())
 	}
 	if a.EvidenceOnly && (len(a.Native) != 0 || a.Managed != nil || config.AntigravityOrchestrator(a.Model)) {
 		return reject("Antigravity evidence-only calls require an ordinary model without native children")
@@ -118,8 +121,12 @@ func RunAntigravity(a AntigravityArgs) Result {
 	request.Prompt, request.PermissionMode, request.TimeoutMS = a.Prompt, a.PermissionMode, wall
 	request.SessionTitle, request.IdleTimeoutMS = a.SessionTitle, max(0, a.Watchdog.IdleTimeoutMs)
 	payload, _ := json.Marshal(request)
-	if len(payload)+1 > machineRequestBytes {
-		return reject("Antigravity start request exceeds the worker's 1 MiB JSONL limit")
+	maxBytes := machineRequestBytes
+	if len(a.Images) > 0 {
+		maxBytes = 12 << 20
+	}
+	if len(a.Prompt) > machineRequestBytes || len(payload)+1 > maxBytes {
+		return reject("Antigravity start request exceeds the worker's JSONL limit")
 	}
 	command := a.Command
 	if command == "" {
@@ -128,6 +135,9 @@ func RunAntigravity(a AntigravityArgs) Result {
 	env := childenv.BuildChildEnv(childenv.OSLookupEnv, nil)
 	if value, ok := os.LookupEnv(AntigravityBinaryEnv); ok {
 		env[AntigravityBinaryEnv] = value
+	}
+	if value, ok := os.LookupEnv(AntigravityTransportEnv); ok {
+		env[AntigravityTransportEnv] = value
 	}
 	return runOwnedCLIWorker(a, request, command, env, "antigravity", "Antigravity", parseAntigravityReceipt)
 }
@@ -161,6 +171,7 @@ type antigravityReceipt struct {
 	RunID     string `json:"runId"`
 	OK        *bool  `json:"ok"`
 	Requested struct {
+		InputImages    *imageinput.Manifest       `json:"inputImages,omitempty"`
 		Cwd            string                     `json:"cwd"`
 		Model          string                     `json:"model"`
 		Effort         string                     `json:"effort"`
@@ -261,6 +272,10 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 		p.Error = "invalid request: Antigravity receipt identity or requested configuration mismatch"
 		return
 	}
+	if err := imageinput.ValidateManifest(r.Requested.InputImages); err != nil || !reflect.DeepEqual(r.Requested.InputImages, request.InputImageManifest) {
+		p.Error = "invalid request: Antigravity receipt input image manifest mismatch"
+		return
+	}
 	e, c, s, w := r.Execution, r.Cleanup, r.Session, r.ProviderWork
 	if e == nil || e.TerminalReceived == nil || e.Cancelled == nil || e.TimedOut == nil || e.Truncated == nil || c == nil || c.Confirmed == nil || s == nil || s.Resumed == nil || s.Resumable == nil || w == nil || w.ReplaySafe == nil || r.Output == nil || r.Configuration == nil || r.Configuration.Matched == nil || r.Subscription == nil || r.Subscription.CreditsFallback == nil {
 		p.Error = "invalid request: Antigravity receipt omitted lifecycle or configuration facts"
@@ -304,9 +319,12 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 	}
 	if *r.OK {
 		observed := r.Configuration.Observed
+		sourceOK := r.Configuration.Source == "cli-init" || r.Configuration.Source == "acp-init"
+		cwdOK := observed != nil && (samePhysicalDirectory(observed.Cwd, request.Cwd) || request.EvidenceOnly && filepath.IsAbs(observed.Cwd))
+		evidenceOK := !request.EvidenceOnly || ((r.Configuration.Source == "acp-init" || observed.Tools != nil) && validAntigravityEvidenceAgent(r.Native, observed.Cwd, r.RunID, observed.Agent))
 		if e.Dispatch != "dispatched" || e.TurnDispatch != "accepted" || e.Outcome != "completed" || !*e.TerminalReceived || e.ExitCode == nil || *e.ExitCode != 0 || e.Signal != nil || *e.Cancelled || *e.TimedOut || *e.Truncated || !*c.Confirmed || w.State != "completed" || !*w.ReplaySafe || s.ID == nil || !*s.Resumable ||
-			!*r.Configuration.Matched || r.Configuration.Source != "cli-init" || observed == nil || !samePhysicalDirectory(observed.Cwd, request.Cwd) || observed.Model != request.Model || observed.PermissionMode != permission ||
-			request.EvidenceOnly && (observed.Tools == nil || !validAntigravityEvidenceAgent(r.Native, request.Cwd, r.RunID, observed.Agent)) || r.Subscription.Mode != "subscription-only" || r.Subscription.Status != "verified-local-controls" || *r.Subscription.CreditsFallback || r.Subscription.ConfigFingerprint == "" {
+			!*r.Configuration.Matched || !sourceOK || !cwdOK || observed.Model != request.Model || observed.PermissionMode != permission ||
+			!evidenceOK || r.Subscription.Mode != "subscription-only" || r.Subscription.Status != "verified-local-controls" || *r.Subscription.CreditsFallback || r.Subscription.ConfigFingerprint == "" {
 			p.Error = "Antigravity receipt does not prove successful completion, subscription controls, configuration and cleanup"
 			return
 		}

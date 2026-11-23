@@ -68,10 +68,28 @@ type Price struct {
 	CacheRead float64 `json:"cache-read"`
 }
 
-// BudgetConfig 预算熔断（铁律 9）：enforce off|soft|hard。
+// BudgetConfig 预算熔断（铁律 9）：enforce off|soft|hard（默认 off）。
 type BudgetConfig struct {
 	Enforce         string `json:"enforce"`
 	DailyTokenLimit *int64 `json:"daily-token-limit"`
+}
+
+// GuardrailsConfig bounds loop iterations without dollar/token throttling.
+type GuardrailsConfig struct {
+	MaxPacketAttempts *int `json:"max-packet-attempts"`
+	MaxReviewRounds   *int `json:"max-review-rounds"`
+	MaxTaskCalls      *int `json:"max-task-calls"`
+}
+
+// FrontendUXReviewConfig configures the UX and microcopy audit before Codex review.
+type FrontendUXReviewConfig struct {
+	Enabled bool   `json:"enabled"`
+	Profile string `json:"profile,omitempty"`
+}
+
+// DeliveryConfig selects the remote delivery target after local completion.
+type DeliveryConfig struct {
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // WatchdogConfig 双计时看门狗参数（§6）。Roles 只覆盖指定角色的
@@ -158,33 +176,36 @@ type SchedulerConfig struct {
 }
 
 type Config struct {
-	Subscription    *SubscriptionPolicy      `json:"subscription,omitempty"`
-	Planning        PlanningConfig           `json:"planning,omitzero"`
-	NativeProfiles  map[string]NativeProfile `json:"native-profiles,omitempty"`
-	ExecutionPolicy *ExecutionPolicy         `json:"execution-policy,omitempty"`
-	JEV             JEVConfig                `json:"jev"`
-	Scheduler       SchedulerConfig          `json:"scheduler"`
-	Version         *int                     `json:"version"`
-	Drivers         map[string]string        `json:"drivers"`
-	Loops           map[string]LoopBinding   `json:"loops"`
-	Routes          map[string]RouteBinding  `json:"routes"`
-	Channels        map[string]Channel       `json:"channels"`
-	Profiles        map[string]ModelProfile  `json:"profiles,omitempty"`
-	ProfileRefs     map[string]string        `json:"-"`
-	Budget          BudgetConfig             `json:"budget"`
-	Watchdog        WatchdogConfig           `json:"watchdog"`
-	Retry           RetryConfig              `json:"retry"`
-	Credentials     CredentialsConfig        `json:"credentials"`
-	Verify          VerifyConfig             `json:"verify"`
-	DefectInjection DefectInjectionConfig    `json:"defect-injection"`
-	Worktree        WorktreeConfig           `json:"worktree"`
-	Permissions     PermissionsConfig        `json:"permissions"`
-	Sessions        SessionsConfig           `json:"sessions"`
-	JudgePanel      *LoopBinding             `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
-	Intake          IntakeConfig             `json:"intake"`
-	Pricing         map[string]Price         `json:"pricing"`
-	MockBehaviors   map[string]any           `json:"mock-behaviors"`
-	File            string                   `json:"-"`
+	Subscription     *SubscriptionPolicy      `json:"subscription,omitempty"`
+	Planning         PlanningConfig           `json:"planning,omitzero"`
+	NativeProfiles   map[string]NativeProfile `json:"native-profiles,omitempty"`
+	ExecutionPolicy  *ExecutionPolicy         `json:"execution-policy,omitempty"`
+	JEV              JEVConfig                `json:"jev"`
+	Scheduler        SchedulerConfig          `json:"scheduler"`
+	Version          *int                     `json:"version"`
+	Drivers          map[string]string        `json:"drivers"`
+	Loops            map[string]LoopBinding   `json:"loops"`
+	Routes           map[string]RouteBinding  `json:"routes"`
+	Channels         map[string]Channel       `json:"channels"`
+	Profiles         map[string]ModelProfile  `json:"profiles,omitempty"`
+	ProfileRefs      map[string]string        `json:"-"`
+	Budget           BudgetConfig             `json:"budget"`
+	Guardrails       GuardrailsConfig         `json:"guardrails,omitzero"`
+	FrontendUXReview FrontendUXReviewConfig   `json:"frontend-ux-review,omitzero"`
+	Delivery         DeliveryConfig           `json:"delivery,omitzero"`
+	Watchdog         WatchdogConfig           `json:"watchdog"`
+	Retry            RetryConfig              `json:"retry"`
+	Credentials      CredentialsConfig        `json:"credentials"`
+	Verify           VerifyConfig             `json:"verify"`
+	DefectInjection  DefectInjectionConfig    `json:"defect-injection"`
+	Worktree         WorktreeConfig           `json:"worktree"`
+	Permissions      PermissionsConfig        `json:"permissions"`
+	Sessions         SessionsConfig           `json:"sessions"`
+	JudgePanel       *LoopBinding             `json:"judge-panel"` // v0.18 A3：里程碑终验第二意见（nil=关闭）；与 loops.judge 主判异厂商
+	Intake           IntakeConfig             `json:"intake"`
+	Pricing          map[string]Price         `json:"pricing"`
+	MockBehaviors    map[string]any           `json:"mock-behaviors"`
+	File             string                   `json:"-"`
 }
 
 // Default 返回 §13 法定默认值表（Go 迁移时与 Node CONFIG_DEFAULTS 逐字一致；
@@ -196,8 +217,10 @@ func Default() Config {
 			MinApplicability: 0.8, MinChoice: 0.6,
 			AllowedData: []decision.Category{decision.TaskSummary, decision.DiagnosticFacts, decision.Source},
 		},
-		Drivers: map[string]string{"plan": "real", "execute": "real", "review": "real"},
-		Budget:  BudgetConfig{Enforce: "soft", DailyTokenLimit: nil},
+		Drivers:    map[string]string{"plan": "real", "execute": "real", "review": "real"},
+		Budget:     BudgetConfig{Enforce: "off", DailyTokenLimit: nil},
+		Guardrails: GuardrailsConfig{MaxPacketAttempts: new(3), MaxReviewRounds: new(2), MaxTaskCalls: new(60)},
+		Delivery:   DeliveryConfig{Endpoint: "local"},
 		Watchdog: WatchdogConfig{
 			IdleTimeoutMs: 300_000,
 			WallTimeoutMs: 3_600_000,
@@ -253,7 +276,19 @@ func (c *Config) Normalize() {
 		c.Drivers = d.Drivers
 	}
 	if c.Budget.Enforce == "" {
-		c.Budget.Enforce = "soft"
+		c.Budget.Enforce = "off"
+	}
+	if c.Guardrails.MaxPacketAttempts == nil {
+		c.Guardrails.MaxPacketAttempts = new(3)
+	}
+	if c.Guardrails.MaxReviewRounds == nil {
+		c.Guardrails.MaxReviewRounds = new(2)
+	}
+	if c.Guardrails.MaxTaskCalls == nil {
+		c.Guardrails.MaxTaskCalls = new(60)
+	}
+	if c.Delivery.Endpoint == "" {
+		c.Delivery.Endpoint = "local"
 	}
 	if c.Watchdog.IdleTimeoutMs == 0 {
 		c.Watchdog.IdleTimeoutMs = d.Watchdog.IdleTimeoutMs
@@ -322,7 +357,7 @@ func (c *Config) Normalize() {
 
 var watchdogRoles = map[string]bool{
 	"plan": true, "execute": true, "review": true, "judge": true, "judge-panel": true,
-	"design-plan": true, "design-review": true, "plan-review": true, "investigate": true,
+	"design-plan": true, "design-review": true, "plan-review": true, "investigate": true, "frontend-ux-review": true,
 }
 
 // validateWatchdog keeps the per-role map machine-checkable. Zero values were
@@ -419,6 +454,25 @@ func (c *Config) Validate() error {
 	}
 	if c.Budget.DailyTokenLimit != nil && *c.Budget.DailyTokenLimit <= 0 {
 		return errors.New("budget.daily-token-limit must be a positive integer or null")
+	}
+	if c.Guardrails.MaxPacketAttempts != nil && (*c.Guardrails.MaxPacketAttempts < 1 || *c.Guardrails.MaxPacketAttempts > 20) {
+		return errors.New("guardrails.max-packet-attempts must be between 1 and 20")
+	}
+	if c.Guardrails.MaxReviewRounds != nil && (*c.Guardrails.MaxReviewRounds < 1 || *c.Guardrails.MaxReviewRounds > 10) {
+		return errors.New("guardrails.max-review-rounds must be between 1 and 10")
+	}
+	if c.Guardrails.MaxTaskCalls != nil && (*c.Guardrails.MaxTaskCalls < 1 || *c.Guardrails.MaxTaskCalls > 1000) {
+		return errors.New("guardrails.max-task-calls must be between 1 and 1000")
+	}
+	switch c.Delivery.Endpoint {
+	case "", "local", "draft-pr", "pr-review", "auto-merge":
+	default:
+		return errors.New("delivery.endpoint must be local|draft-pr|pr-review|auto-merge")
+	}
+	if c.FrontendUXReview.Enabled {
+		if _, ok := c.Profiles[c.FrontendUXReview.Profile]; !ok {
+			return fmt.Errorf("frontend-ux-review.profile references unknown profile %q", c.FrontendUXReview.Profile)
+		}
 	}
 	if c.Retry.Jitter != nil && *c.Retry.Jitter < 0 {
 		return errors.New("retry.jitter must be >= 0")

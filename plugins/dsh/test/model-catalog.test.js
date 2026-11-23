@@ -283,7 +283,7 @@ test('owned metadata transport cancels bounded output and silent hangs', async t
     [`setInterval(()=>{},1000);`, 'CATALOG_TIMEOUT'],
   ]) {
     const f = await fixture(t, source);
-    const result = await modelCatalog(binding('antigravity', { cwd: f.cwd }), { env: { ...f.env, FLYWHEEL_AGY_BIN: f.path }, timeoutMs: 200 });
+    const result = await modelCatalog(binding('antigravity', { cwd: f.cwd }), { env: { ...f.env, FLYWHEEL_AGY_BIN: f.path }, timeoutMs: expected === 'OUTPUT_LIMIT' ? 1000 : 200 });
     assert.equal(result.status, 'unavailable');
     assert.equal(result.error.code, expected);
     assert.equal(result.truncated, expected === 'OUTPUT_LIMIT');

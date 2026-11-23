@@ -66,9 +66,10 @@ export function validateKimiNativeStart(input) {
   if (native.agents?.maxConcurrent !== undefined) throw error('UNSUPPORTED_HARD_CAP', 'The current Kimi API has no enforceable whole-tree agents.maxConcurrent; native batch/Tower limits are not that guarantee');
   if (native.agents?.enabled === false && native.mode !== 'agent') throw error('INVALID_NATIVE_PROFILE', 'Swarm and Tower require native agents to be enabled');
   if (native.mode === 'tower' && input.sessionId !== undefined) throw error('TOWER_RESUME_UNSUPPORTED', 'Tower uses a fresh isolated repository and cannot resume an earlier source candidate');
-  if (validateSubscriptionPolicy(input.subscription) && (native.mode !== 'agent' || native.agents?.enabled !== false || native.agentProfile !== undefined)) {
-    throw error('INVALID_REQUEST', 'Subscription-only Kimi requires the built-in agent profile with agents.enabled=false; inherited service restrictions cannot be verified for native child agents');
-  }
+  // Subscription-only Kimi validates connected managed:kimi-code OAuth and zero
+  // API-key overrides across all configured model aliases; native Agent and
+  // Swarm capabilities included in the Kimi Code subscription remain unlocked.
+  validateSubscriptionPolicy(input.subscription);
   if (!object(managed) || managed.version !== 1 || typeof managed.runId !== 'string' || managed.runId.length > 512 || /[\0\r\n]/.test(managed.runId)
       || ['invocationId', 'role', 'scope', 'channel', 'taskDir'].some(key => !identifier(managed[key])) || managed.invocationId !== input.requestId
       || Object.keys(managed).some(key => !['version', 'runId', 'invocationId', 'role', 'scope', 'candidateId', 'channel', 'taskDir'].includes(key))

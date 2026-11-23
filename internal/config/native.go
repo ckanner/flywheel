@@ -102,5 +102,24 @@ func (c *Config) validateNativeProfiles() error {
 			}
 		}
 	}
+	if d := c.Planning.DualDraft; d != nil && d.Enabled {
+		for _, pair := range [][2]string{
+			{"planning.dual-draft.secondary-profile", d.SecondaryProfile},
+			{"planning.dual-draft.synthesizer-profile", d.SynthesizerProfile},
+		} {
+			if b, exists := c.Profiles[pair[1]]; pair[1] != "" && exists {
+				if err := check(pair[0], b.Harness, b.NativeProfile, false); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if c.FrontendUXReview.Enabled {
+		if b, exists := c.Profiles[c.FrontendUXReview.Profile]; exists {
+			if err := check("frontend-ux-review.profile", b.Harness, b.NativeProfile, false); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

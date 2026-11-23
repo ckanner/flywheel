@@ -5,7 +5,10 @@ const ACK_BYTES = 4096;
 const MAX_LIFECYCLE_EVENTS = 64;
 const ACTIVITY_FIELDS = new Set(['version', 'sequence', 'kind', 'source', 'scope', 'eventTypes', 'observedEvents']);
 const ACTIVITY_TYPES = Object.freeze({
-  antigravity: new Set(['init','step','result']),
+  antigravity: new Set(['init', 'step', 'result', 'agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk',
+    'tool_call', 'tool_call_update', 'subagent_update', 'config_option_update', 'current_mode_update',
+    'available_commands_update', 'plan', 'usage_update', 'session_info_update', 'session_message',
+    'session_message_chunk', 'compaction_update', 'compaction_summary_chunk', 'unknown']),
   'codex-pro': new Set(['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta',
     'item/plan/delta', 'item/reasoning/summaryTextDelta', 'item/reasoning/summaryPartAdded', 'item/reasoning/textDelta',
     'item/commandExecution/outputDelta', 'item/mcpToolCall/progress', 'turn/plan/updated', 'turn/diff/updated', 'thread/tokenUsage/updated']),
