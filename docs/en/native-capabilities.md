@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/native-capabilities.md) · [Complete design](../plans/2026-11-13-native-harness-capabilities.en.md)
 
-Flywheel can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history.
+Flywheel can use each harness's native collaboration inside formal loops. Define `native-profiles`, then select a profile for the intended stage. Static profiles work with JEV disabled; existing bindings still determine model, account channel, permissions and role history. The separate personal Antigravity ACP view uses the official agent's reported configuration, not these engine profiles.
 
 This guide describes the implemented version. [Vendor records](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md) identify the actual companion artifacts. Check user-machine installation separately; the [0.34.0 release record](../validation/2026-11-14-release-0.34.0.md) identifies the published artifact and completed checks.
 
@@ -14,19 +14,45 @@ This guide describes the implemented version. [Vendor records](https://github.co
 | `kimi` | Server Agent / Swarm / Tower | Logged-in Kimi, the current Server API and explicit full access |
 | `codex-pro` | Native agents and child threads | Bundled Codex Pro 0.10.2, logged-in Codex CLI and matching sandbox/approval receipts |
 | `claude-code-pro` | Agent definitions, Workflow and Advisor | Optional Claude Code Pro 0.7.0, compatible local Claude runtime, authorized authentication and explicit full access |
-| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.2.1, admitted official CLI and explicit full access; partial child evidence |
+| `antigravity` | Fixed-effort Orchestrator models, foreground subagents and official CLI Swarm | Bundled Antigravity 0.3.0 through its explicit version-1 machine API, admitted official CLI and explicit full access; partial child evidence |
 
 ChatGPT inside DSH still uses DSH's tool loop. It does not automatically acquire Codex app-server capabilities. The desktop `heavy` Agent Preset is not automatically inherited by an SDK worker; the worker uses the generator's shared PTC overlay policy and checks its actual runtime behavior.
 
-### Antigravity collaboration
+### Personal interactive ACP
 
-Antigravity has its own version 1 native options: `mode:"native"`, `"subagents"`
+The 0.39.0 source candidate defaults the desktop's **Antigravity** view to
+companion 0.3.0's official `agy acp` client. A person sends messages directly to
+that external agent. Its native loop, tools, permissions and user-rule loading
+remain owned by the official runtime. The client identifies itself as
+`dsh-antigravity` and sends no replacement or appended system prompt, managed
+custom agent, Preset/PTC schema or DSH tool bridge.
+
+Native model/mode options and actual tool/member events determine what this
+session can do. This entry supports only the runtime's reported Gemini models.
+It does not translate Flywheel `native-profiles`, machine collaboration wrappers,
+evidence-only custom agents or JEV selections into the human session. Image
+delivery is available only when advertised by the native session and does not
+change machine image eligibility.
+
+Known unfinished tools, permissions or children block another prompt and
+configuration changes. A completed root request is distinct from child completion
+and native session close; missing evidence remains unknown. Each new session has
+a separate Git worktree that is retained for deliberate review and integration.
+This workspace boundary is not an OS sandbox, and ACP responses never become
+automatic task receipts. See the [interactive view](flow-console.md#interactive-antigravity-view)
+and [current artifact record](../../plugins/dsh/vendor/antigravity-acp.json).
+
+### Antigravity machine collaboration
+
+The explicit machine API has its own version 1 native options: `mode:"native"`, `"subagents"`
 or `"swarm"`, with optional `maxObservedAgents` (1–8). Native preserves the CLI's
-implicit behavior; it does not disable children. Explicit subagents/Swarm require
-actual child metadata, and the observed-member threshold is not a native hard
-concurrency limit. Orchestrator is a separate model selection with fixed empty
+implicit behavior; it does not disable children. Explicit subagents require
+actual child metadata. A Swarm invocation can finish with its child state still
+unknown; a successful root receipt does not prove complete collaboration or
+child cleanup. The observed-member threshold is not a native hard concurrency
+limit. Orchestrator is a separate model selection with fixed empty
 effort. See [Antigravity](antigravity.md) for exact models, Flywheel profiles and
-standalone DSH commands.
+standalone headless DSH commands.
 
 Static profiles do not require JEV. JEV can choose only configured, eligible
 execution bindings. Flywheel Swarm requires a reviewed Full packet with 2–8

@@ -6,6 +6,10 @@
 Go 编排引擎，提供原生工作流视图、命令与模型工具入口，以及所选后端需要的 worker。
 任务状态、验收、预算、进程生命周期和 Git 交付由引擎管理。
 
+**0.39.0 源码候选**还提供独立的 **Antigravity** 视图，用于个人交互式开发，默认
+经内置配套插件 **0.3.0** 使用官方 `agy acp`。这不证明两个版本已经发布为 npm
+`latest`；当前来源与候选身份见 [ACP 包记录](vendor/antigravity-acp.json)。
+
 日常使用应通过完整 Flywheel 安装器安装。正式发布的 `@ckanner/flywheel` 包含 CLI、
 引擎、worker、skills 和桌面插件。普通 npm 安装放置这些文件；`install`／`setup`
 负责登记桌面插件并配置启动器。
@@ -15,11 +19,11 @@ Go 编排引擎，提供原生工作流视图、命令与模型工具入口，�
 需要 **Node.js 22.18.0 或更高版本**、npm，以及兼容的 DSH 桌面和桌面提供的
 `dsh` 命令。此包声明支持 **`>=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0`** 及相应 Cordis 4.0/4.1 接口。
 DSH 的范围判断包含预发布版本：0.2 系列内后续 rc／补丁升级无需精确版本豁免或
-重新发布 Flywheel；0.3 系列及其 alpha／beta／rc 仍在边界之外。宿主可能有更高的
+重新发布 Flywheel；0.4 系列及其 alpha／beta／rc 仍在边界之外。宿主可能有更高的
 Node 要求，请使用其支持的运行时。
 
 范围是公开 API 兼容策略，不代表所有未来宿主均已实测。锁定的集成夹具覆盖旧版
-0.2.1-rc.5 Host 和当前 0.2.2-rc.3 Host／SDK；运行时继续检查必需服务、会话身份、
+0.2.1-rc.5 Host 和锁定的 0.2.2-rc.3 Host／SDK；运行时继续检查必需服务、会话身份、
 权限回执与进程清理，服务缺失或回执无效仍明确失败。DSH peer 依赖由宿主提供且
 保持 optional，npm 范围覆盖两个既有预发布系列，不再逐个锁定 rc 版本。
 
@@ -47,11 +51,11 @@ Mac 桌面或 Seatbelt 行为。
 
 ## 准备所选后端
 
-默认通过原生订阅客户端执行，DSH 视图是控制面。安装桌面插件不会改变父对话 provider。
+正式 Flywheel 任务通过原生订阅客户端执行，Flywheel 视图是其控制面。安装桌面插件不会改变父对话 provider。
 
 | 后端 | 安装与执行路径 |
 | --- | --- |
-| Antigravity | 内置 `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → 官方本机 `agy` CLI 及 Google 原生登录；无 ACP |
+| Antigravity 机器任务 | 内置 `@ckanner/dsh-subagent-antigravity@0.3.0` 显式 version-1 machine API → 官方 `agy` stream-json；与默认交互 ACP 入口分开 |
 | Claude Code Pro | worker 依赖树中的精确 optional peer `0.7.0` → 官方 Agent SDK → 本地 Claude Code 订阅 |
 | Codex Pro | 内置 `0.10.2` machine API → 官方 app-server 与 ChatGPT 登录 |
 | Kimi | 最小 owned native agent profile，managed Kimi Code OAuth；严格订阅模式拒绝 print |
@@ -77,11 +81,48 @@ Mac 桌面或 Seatbelt 行为。
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | 显式覆盖可选 Claude worker |
 | `FLYWHEEL_CODEX_BIN` / `CODEX_HOME` | 原生 Codex 可执行文件及已有配置／登录根目录 |
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | 原生 Claude 可执行文件及已有配置／登录根目录 |
-| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | 官方 agy 程序／显式 Antigravity worker 覆盖 |
+| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | machine worker 的 agy 程序／worker 覆盖；交互 ACP 使用 DSH 插件的 `antigravity.command` |
 | `FLYWHEEL_KIMI_BIN` | 原生 Kimi 可执行文件，默认 `kimi` |
 
 npm 启动器直接解析当前完整包内的 worker。启动引擎的进程必须能看到相关
 可执行文件与环境设置；终端 export 不会更新已经启动的桌面进程。
+
+## 通过官方 Antigravity ACP 进行个人开发
+
+安装未经修改的官方 **Antigravity CLI 1.5.14**，在 DSH 中选择当前目录属于已有提交
+的 Git 仓库的会话，然后打开 Flywheel 旁的 **Antigravity** 视图。空会话没有视图
+页签时，先使用以下人类命令，再进入视图：
+
+```text
+/flywheel-antigravity
+```
+
+空命令只打开入口，不启动 CLI；进入视图后检查 CLI，再选择 **新建独立会话**。
+可选 JSON 控制使用 `{"version":2,"action":"connect"}`，或 `doctor`、`list`、
+`status`、`cancel`；`cancel` 必须提供精确记录 `id`。
+任务文本、代码、Google 登录响应和权限选项只走视图的认证 Remote，不进入命令日志
+或 DSH 父模型。需要登录时，视图启动同一已核验官方程序的 `agy acp --login`；完成
+Google 流程后恢复原记录会话。插件不读取或复制账号 token；登录辅助进程成功退出不
+等于账号权益或真实 Gemini 请求已验证。
+
+每个新会话在 `stateRoot/workspaces/<id>` 创建独立 Git worktree，分支为
+`antigravity/<id>`，起点是来源仓库当前提交。不复制来源目录的未提交改动；非 Git
+或没有提交的仓库会明确拒绝。视图显示来源、实际 worktree 和起始提交。断开后保留
+分支、目录和记录，修改须经正常 Git 流程审阅后主动集成。Host 会拒绝指向 ACP 所属
+worktree 及其物理别名的 Flywheel 机器修改。这是受管 Host 入口的防护，不是全局 cwd
+锁、OS 沙箱，也不拦截用户另行直接调用的 Go CLI。
+
+模型、工具、权限和内部循环由官方 agent 拥有。本入口不传 system prompt 替换／
+append、受管 agent、Preset、PTC 或 DSH 工具桥；官方用户／项目规则仍正常加载。
+视图使用原生返回的配置选项，只准入 Gemini，不猜测模型 ID。根 prompt 返回、未完
+工具／子成员、取消、原生 session close 和本地进程组清理各自保留真实状态。未知
+结果保留记录与锁，绝不自动重发；切换视图只断开显示，停止工作请用 **停止工作** 或
+**断开会话**。
+
+ACP 不替换自动 Plan／Execute／Review／JEV 绑定，也不制造机器成功回执；它们的
+显式 `./machine` 契约仍为 version 1。ACP 失败不静默退回 headless、Registry agent、
+其他账号或 API。详见[交互契约](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/ACP.zh-CN.md)
+及[控制台指南](https://github.com/ckanner/flywheel/blob/main/docs/zh-CN/flow-console.md#交互式-antigravity-视图)。
 
 ## 启动任务与使用工作台
 
@@ -242,6 +283,13 @@ prompt 之后，不能提供相同的预派发观察；Kimi print 模式也没�
 仅 private 源码测试区保留旧 PATH 后备。
 记录损坏或启动器改变会明确失败。`controlTimeoutMs` 默认 60,000，限制的是桌面
 控制请求，不是整个任务预算。
+
+交互设置属于 DSH 插件的 `config.antigravity`，默认 `{}`（即 `transport:"acp"`、
+`command:"agy"`、`disposeGraceMs:2000`），不是引擎 `flywheel.config.json` 的字段。
+通过 `antigravity.command` 指定官方程序的精确路径，版本与字节仍须通过核验。
+旧 model／effort／native／permission 配置不注入 ACP。显式 `transport:"headless"`
+会关闭此交互入口；独立配套插件在该明确配置下还保留旧任务面板／工具。修改此设置
+不会改道 Flywheel machine worker。
 
 已有受管启动记录必须与当前包同版。单独更新 DSH 副本后，应运行该版本的 setup
 刷新受管安装；旧记录会明确报错，不把新版界面与旧引擎混用。

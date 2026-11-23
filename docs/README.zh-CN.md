@@ -41,12 +41,13 @@
 
 以下记录保留原日期和语言。提案不代表其中所有能力都已交付；验收记录只对文中明确的源码、平台和检查负责。
 
-[Antigravity 官方 ACP 交互式接入方案](plans/2026-11-22-antigravity-native-acp.md)
-（[English](plans/2026-11-22-antigravity-native-acp.en.md)）优先使用官方原版 CLI
-（`agy acp`）、其自身的个人 Google 登录与用户直接操作的外部会话。CLI 1.5.14 是首个
-验收候选，1.5.13 是拟议最低基线，按精确 build 验收。保留既有 headless 行为和默认值。
-官方 Registry 独立 agent 与未来自动化 Flywheel 绑定需另行验证并明确范围。
-这是纯文档提案，不代表已经交付 ACP 配置、登录或运行能力。
+[Antigravity 官方 ACP 交互式方案](plans/2026-11-22-antigravity-native-acp.md)
+（[English](plans/2026-11-22-antigravity-native-acp.en.md)）已有首期实现：companion
+0.3.0 和 Flywheel 0.39.0 源码候选将桌面连接默认设为官方 `agy acp`、原生登录和
+独立 Git worktree，按官方可执行文件字节锁定 CLI 1.5.14。
+[当前指南](zh-CN/antigravity.md)与[实施证据](validation/2026-11-22-antigravity-acp.md)
+区分客户端测试、无认证探测、真实账号验收和发行。旧 machine API 保持显式独立；
+Registry ACP 和自动化 ACP 绑定仍需分别实现及验收。
 
 [订阅模型、CLI 插件与工作流方案](plans/2026-11-19-subscription-cli-workflows.md)
 （[English](plans/2026-11-19-subscription-cli-workflows.en.md)）保留已批准设计。

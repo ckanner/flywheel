@@ -115,8 +115,11 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
   let readRemote;
   client.apply({
     inject: (dependencies, callback) => {
-      assert.deepEqual([...dependencies], ['remote.flywheelConsole']);
-      const fiber = Promise.resolve().then(() => callback({ remote: readRemote }));
+      const entryTarget = dependencies.length === 2 && dependencies[0] === 'uiSession' && dependencies[1] === 'uiConversation';
+      assert.ok(entryTarget || dependencies.length === 1 && ['remote.flywheelConsole', 'remote.antigravityAcp'].includes(dependencies[0]));
+      // This task-view fixture has no conversation shell. The shared ACP client
+      // safely defers its first-use target until those public services exist.
+      const fiber = Promise.resolve().then(() => callback(entryTarget ? {} : { remote: readRemote }));
       fiber.dispose = async () => {};
       return fiber;
     },
@@ -140,13 +143,13 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
       },
       register: (definition, Component) => {
         assert.equal(definition.name, 'conversation.view');
-        assert.equal(definition.id, 'flywheel');
-        assert.ok(!definitions.has(definition.name));
-        definitions.set(definition.name, { definition, Component });
-        return () => definitions.delete(definition.name);
+        assert.ok(['flywheel', 'flywheel-antigravity'].includes(definition.id));
+        assert.ok(!definitions.has(definition.id));
+        definitions.set(definition.id, { definition, Component });
+        return () => definitions.delete(definition.id);
       },
     },
-    remote: readRemote = { $mount: async () => { if (mountError) throw mountError; return () => {}; }, flywheelConsole: { read: async (sessionId, wireRequest) => {
+    remote: readRemote = { $mount: async () => { if (mountError) throw mountError; return () => {}; }, antigravityAcp: { action: async () => { throw new Error('This task-view fixture does not dispatch ACP work'); } }, flywheelConsole: { read: async (sessionId, wireRequest) => {
       const request = JSON.parse(JSON.stringify(wireRequest));
       allRequests.push(request);
       if (request.action === 'runs') {
@@ -172,8 +175,8 @@ export async function mountPanel(t, respond, { timers, locale = 'zh', associatio
       return respond(request, sessionId, command);
     } } },
   });
-  assert.equal(definitions.size, 1, 'one additive native view is registered');
-  const { definition, Component } = definitions.get('conversation.view');
+  assert.equal(definitions.size, 2, 'task and external ACP views are registered independently');
+  const { definition, Component } = definitions.get('flywheel');
   assert.equal(typeof definition.store?.create, 'function', 'view state implements the public StoreHandle contract');
   assert.equal(typeof definition.store?.spec?.init, 'function');
   assert.equal(typeof definition.store?.spec?.actions, 'object');

@@ -6,6 +6,9 @@
 应核对所选 npm 版本与本机版本；源码合并不会更新已有安装。CLI、内置引擎和 DSH 插件
 须保持同一版本。
 
+0.39.0 源码候选通过配套包 0.3.0 增加默认的个人 Antigravity ACP 视图。这份源码说明
+不表示 npm `latest` 已经包含该功能；候选安装与发行核验见[发行手册](releasing.md)。
+
 任务分支、契约与 PR 审阅的完整流程见[工作流指南](workflow.md)。
 故障调查、Issue 修复和复杂项目的操作示例见[使用手册](usage-handbook.md)。
 
@@ -21,7 +24,7 @@
 | Git，已配置提交身份 | Worktree 与本地交付提交 |
 | Node.js 22.18.0 或更高，npm | 安装器、启动器及 JavaScript worker |
 | DSH Mac 及桌面附带的 `dsh` 命令 | 桌面插件管理与 DSH SDK 执行 |
-| Antigravity `agy` CLI 及原生账号登录 | Gemini 设计、日常／复杂执行、调查分析和 Intake |
+| 官方 Antigravity `agy` CLI 及原生账号登录 | 个人 ACP 使用 CLI 1.5.14；显式 machine harness 另外负责 Gemini 任务阶段 |
 | Claude CLI 及原生订阅登录 | 通过 Claude Code Pro 细化实施计划、执行 frontend／multimodal 路由 |
 | Codex 程序及 ChatGPT 账号登录 | 通过 Codex app-server 执行 backend／hard 路由、独立审查和 Judge |
 | 已登录的 Kimi CLI | native agent 批量执行及可选 Garden |
@@ -44,15 +47,17 @@ claude --version
 agy --version
 ```
 
-各后端沿用自己的安装和登录流程。Flywheel 不替用户登录、复制凭证或替换桌面程序。
+各后端沿用自己的安装和登录流程。个人 ACP 视图可以启动 Antigravity 官方登录助手，
+由用户完成认证；Flywheel 不复制凭证或替换桌面程序。
 Full 需要所配置的设计／规划、执行、审查与 Judge 后端；新 compact 任务还要先运行
 联合设计与独立联合审查，再进入 Quick 执行和最终 Review，升级为 Full 后才需要
 额外阶段。未使用的执行路由不成为该任务的运行前提。
 
 Claude 在打包上仍是 optional peer，但默认实施规划和 frontend 绑定使用它；这些阶段
 需要 worker 依赖树中的精确 0.7.0 配套包、兼容的 Claude CLI 和受支持原生订阅。
-详见[Claude Code Pro](claude-code-pro.md)。Gemini 使用锁定的 Antigravity adapter 与官方
-`agy` CLI，不使用 ACP，详见[Antigravity](antigravity.md)。
+详见[Claude Code Pro](claude-code-pro.md)。正式 Gemini 任务阶段使用锁定的 Antigravity
+machine adapter 与官方 `agy` stream-json；独立的个人桌面入口默认使用 ACP，详见
+[Antigravity](antigravity.md)。
 
 ## 2. 安装
 
@@ -113,7 +118,40 @@ flywheel version
 不能管理该保留 profile。显式选择的 DSH worker 运行在独立 **`sdk` profile**，不会
 继承对话当前模型或全部桌面插件。默认订阅 workers 直接调用各自原生客户端。
 
-### 账号选择
+### 开始个人 Antigravity 会话
+
+在已有提交的 Git 仓库中打开对话，选择独立的 **Antigravity** 视图。它使用官方 agent
+自己的循环，不启动 DSH 父模型或 Flywheel 自动任务。空白会话可以先用这个人工
+命令建立入口：
+
+```text
+/flywheel-antigravity
+```
+
+1. 安装官方 CLI **1.5.14**，在视图中执行 **检查 CLI**。未知版本、字节改变和包装
+   程序都会被拒绝，不自动替换。插件不下载 CLI。
+2. 选择 **新建独立会话**；空命令本身不启动 CLI。每次新建都根据来源仓库已提交的 HEAD
+   建立独立 `antigravity/<id>` 分支和 worktree；不复制未提交修改，不接受非 Git
+   目录或没有提交的仓库。
+3. 需要认证时选择 **官方 Google 登录**，完成已核验 CLI 自己的 `agy acp --login`
+   流程，将其授权码或回调 URL 输入视图的密码字段。助手退出后再连接或恢复会话
+   核对认证；助手本身成功不证明模型访问通过。
+4. 从原生会话报告的选项中选择 Gemini，在视图发送任务并回答原生工具权限请求。
+   只有会话声明支持图片输入时，才能选择或粘贴图片。
+5. **停止工作** 请求原生取消；**断开会话** 请求关闭会话并停止所拥有的进程组。
+   切换视图仅断开界面订阅，断开会话保留 worktree 修改，也不退出 Google 账号。
+
+任务、图片、登录码和权限答复只通过认证视图发送。人工命令仅接受 `doctor`、
+`connect`、`list`、`status` 和带精确会话 `id` 的 `cancel`，不要把代码或凭据放进去。
+发送或清理结果不明时保留原始记录，不重放。使用 Git 主动审阅并整合 worktree
+修改；Host 拒绝指向这些 ACP 所属工作区的 machine 变更，但不全局锁定其他编辑器或
+直接 Go CLI。
+
+视图、恢复和配置详见[交互视图](flow-console.md#交互式-antigravity-视图)及
+[独立插件设置](configuration.md#antigravity-与-gemini)。下面的自动任务示例继续使用
+正式 machine 后端；ACP 完成不会推进其 Plan、Execute、Review 或 JEV 状态。
+
+### 正式任务的账号选择
 
 默认配置声明 `subscription-only`，使用 Gemini、Claude、Codex 与 Kimi 原生客户端，
 没有 DeepSeek 路由、API Key 后备或自动付费点数后备。各客户端保留自己的正常登录；

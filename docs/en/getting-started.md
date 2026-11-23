@@ -7,6 +7,11 @@ This guide follows the current repository. Check the installed version and the n
 version you choose; a merged change does not update an existing installation.
 Keep the CLI, bundled engines, and DSH plugin at one version.
 
+The 0.39.0 source candidate adds a default personal Antigravity ACP view, using
+companion 0.3.0. These source instructions do not establish that npm `latest`
+already contains it; candidate installation and publication are separate checks
+in the [release guide](releasing.md).
+
 For the complete path through task branches and PR review, see [Workflow](workflow.md).
 For incidents, issue fixes, and complex projects, follow the [Usage handbook](usage-handbook.md).
 
@@ -24,7 +29,7 @@ remain available for historical installations.
 | Git with a configured commit identity | Worktrees and local delivery commits |
 | Node.js 22.18.0 or later and npm | Installer, launchers, and JavaScript workers |
 | DSH Mac and its desktop-supplied `dsh` command | Desktop plugin management and DSH SDK execution |
-| Antigravity `agy` CLI and native account login | Gemini design, ordinary/complex execution, investigation analysis and Intake |
+| Official Antigravity `agy` CLI and native account login | CLI 1.5.14 for personal ACP; the explicit machine harness separately serves Gemini task stages |
 | Claude CLI and native subscription login | Implementation planning and frontend/multimodal routes through Claude Code Pro |
 | Codex executable and ChatGPT account login | Backend/hard execution, independent reviews and Judge through Codex app-server |
 | Authenticated Kimi CLI | Native-agent batch execution and optional Garden |
@@ -49,8 +54,9 @@ claude --version
 agy --version
 ```
 
-Use each backend's normal installation and login flow. Flywheel does not sign in,
-copy credentials, or replace the desktop application. Full needs its configured
+Use each backend's normal installation and login flow. The personal ACP view can
+launch Antigravity's official login helper for you to complete; Flywheel does not
+copy credentials or replace the desktop application. Full needs its configured
 design/planning, execution, review and Judge backends. A new compact task also needs
 its combined-design and joint-review bindings before Quick execution and final Review;
 an upgrade to Full requires the additional stages.
@@ -59,8 +65,9 @@ Unused execution routes do not become task runtime requirements.
 Claude remains an optional package peer, but the default planning and frontend
 bindings use it. Those stages require the pinned 0.7.0 companion in the worker's
 dependency tree and a compatible Claude CLI with a supported native subscription.
-See [Claude Code Pro](claude-code-pro.md). Gemini uses the pinned Antigravity adapter
-and official `agy` CLI, without ACP; see [Antigravity](antigravity.md).
+See [Claude Code Pro](claude-code-pro.md). Formal Gemini task stages use the pinned
+Antigravity machine adapter and official `agy` stream-json. The separate personal
+desktop entry defaults to ACP; see [Antigravity](antigravity.md).
 
 ## 2. Install
 
@@ -128,7 +135,49 @@ An explicitly selected DSH worker runs in a separate **`sdk` profile** and does 
 inherit the conversation's selected model or every desktop plugin. The default
 subscription workers invoke their native clients directly.
 
-### Account selection
+### Start a personal Antigravity session
+
+Open a conversation in an existing Git repository with a commit, then select the
+separate **Antigravity** view. It uses the official agent's own loop without
+starting the DSH parent model or a Flywheel automatic task. On a blank
+conversation, use this human command to establish the entry:
+
+```text
+/flywheel-antigravity
+```
+
+1. Install official CLI **1.5.14** and use **Check CLI** in the view. Unknown
+   versions, changed executable bytes and wrappers are rejected rather than
+   substituted. The plugin does not download the CLI.
+2. Choose **New isolated session**; the empty command itself starts no CLI.
+   Each new session starts from committed source HEAD on its own
+   `antigravity/<id>` branch and worktree. Source changes that are not committed
+   are not copied; a non-Git directory or a repository without a commit is rejected.
+3. If authentication is required, use **Sign in with Google**. Complete the
+   verified CLI's own `agy acp --login` flow, and enter its code or callback URL
+   in the view's password field. After the helper exits, connect or resume to
+   verify authentication; the helper alone does not prove model access.
+4. Select a Gemini option reported by the native session, send your task in the
+   view, and answer native tool permission requests there. Image selection or
+   paste is available only when the session advertises image input.
+5. Use **Stop work** for native cancellation and **Disconnect session** to close
+   the connection and stop the owned process group. Switching views only detaches
+   the UI. Disconnect retains worktree changes and does not log out of Google.
+
+Only the authenticated view carries prompts, images, login codes and permission
+answers. The human command accepts only `doctor`, `connect`, `list`, `status` and
+`cancel` (with an exact session `id`); do not put code or credentials in it. Unknown
+send or cleanup outcomes retain their original record and are never replayed.
+Review and integrate worktree changes deliberately through Git. The Host refuses
+machine mutations directed at these owned worktrees; this is not a global lock
+on other editors or the direct Go CLI.
+
+See [interactive view and recovery](flow-console.md#interactive-antigravity-view)
+and [separate plugin settings](configuration.md#antigravity-and-gemini).
+The automatic task walkthrough below continues to use formal machine backends;
+ACP completion does not advance its Plan, Execute, Review or JEV state.
+
+### Account selection for formal tasks
 
 The default declares `subscription-only` and uses native Gemini, Claude, Codex and
 Kimi clients. It has no DeepSeek route, API-key fallback or automatic paid-credit

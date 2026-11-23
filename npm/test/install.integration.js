@@ -89,10 +89,10 @@ test('the complete npm candidate install and run from a clean agent environment'
   }
   await t.test('the installed Antigravity archive retains its source and later registry provenance', async () => {
     const vendor = path.join(root, 'plugins/dsh/vendor');
-    const source = JSON.parse(await fs.readFile(path.join(vendor, 'antigravity.json'), 'utf8'));
+    const source = JSON.parse(await fs.readFile(path.join(vendor, 'antigravity-acp.json'), 'utf8'));
     const bytes = await fs.readFile(path.join(vendor, source.tarball));
     assert.equal(source.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(source.version, '0.2.1');
+    assert.equal(source.version, '0.3.0');
     assert.equal(createHash('sha256').update(bytes).digest('hex'), source.sha256);
     assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), source.integrity);
     const verification = JSON.parse(await fs.readFile(path.join(vendor, 'registry-verification-2026-11-22.json'), 'utf8'));
@@ -130,8 +130,27 @@ test('the complete npm candidate install and run from a clean agent environment'
   const installedHost = await import(pathToFileURL(installedRequire.resolve('@ckanner/flywheel')));
   assert.ok(installedHost.inject.includes('sessionProjections'), 'the installed host imports its actual projection schema dependency');
   assert.equal(typeof installedHost.apply, 'function');
-  assert.ok(server.requests.includes('/zod'));
-  assert.ok(server.requests.includes('/tarballs/zod-4.3.6.tgz'));
+  assert.equal(installedRequire('zod/package.json').version, '4.3.6');
+  assert.equal(JSON.parse(await fs.readFile(path.join(root, 'node_modules/@agentclientprotocol/sdk/package.json'), 'utf8')).version, '2.9.1');
+  await t.test('the bundled ACP entry works without desktop peers and rejects harness prompt injection', async () => {
+    const manifest = installedRequire.resolve('@ckanner/dsh-subagent-antigravity/package.json');
+    assertNoDesktopPeers(manifest);
+    const { AcpSessions, CLIENT_INFO, CLIENT_CAPABILITIES } = await import(pathToFileURL(installedRequire.resolve('@ckanner/dsh-subagent-antigravity/acp')));
+    assert.equal(CLIENT_INFO.name, 'dsh-antigravity');
+    assert.equal(CLIENT_CAPABILITIES.terminal, false);
+    assert.equal(CLIENT_CAPABILITIES.fs.writeTextFile, false);
+    const manager = new AcpSessions({ stateRoot: path.join(context.root, 'installed-acp-state') });
+    const owner = { owner: 'installed-human-session', workspace: await fs.realpath(context.project) };
+    try {
+      const defaults = await manager.action(owner, { version: 2, action: 'defaults' });
+      assert.equal(defaults.transport, 'acp');
+      assert.equal(defaults.workspaceMode, 'isolated-git-worktree');
+      assert.deepEqual((await manager.action(owner, { version: 2, action: 'list' })).sessions, []);
+      await assert.rejects(manager.action(owner, { version: 2, action: 'connect', systemPrompt: 'harness override' }), /Unsupported/);
+      assert.equal(manager.isActive(owner.owner), false);
+      for (const entry of ['acp/host', 'acp/workspace', 'acp/client-source']) await fs.access(installedRequire.resolve('@ckanner/dsh-subagent-antigravity/' + entry));
+    } finally { await manager.dispose(); }
+  });
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));
   assert.equal(resolveFlywheelBinary({}, context.env), report.paths.launcher, 'desktop uses the installed launcher, not terminal PATH');
@@ -197,7 +216,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     const facts = JSON.parse(doctor.stdout);
     assert.equal(facts.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(facts.version, '0.2.1');
+    assert.equal(facts.version, '0.3.0');
     assert.equal(facts.inferenceTested, false);
     assert.equal(facts.accountEntitlement, 'unknown');
     const fixture = path.join(context.fixtures, 'offline-agy.mjs');
@@ -219,7 +238,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.2.1', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');

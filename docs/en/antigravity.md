@@ -2,12 +2,23 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/antigravity.md)
 
-Use `harness:"antigravity"` to run Gemini through the official local **`agy` CLI**.
-Flywheel calls `@ckanner/dsh-subagent-antigravity@0.2.1` through its public machine API;
-the plugin owns the native Agent loop, process group and durable receipt. Go owns
-workflow stages, approval gates, evidence collection, verification and delivery.
-The same plugin also provides a direct DSH task panel and `subagent_antigravity`.
-There is no ACP or separate model API transport.
+The default **Antigravity desktop connection is official CLI ACP** in the 0.39.0 source candidate. Flywheel bundles `@ckanner/dsh-subagent-antigravity@0.3.0` and automatically installs its human-operated ACP host and view. The official `agy` owns inference, tools, permissions and its internal loop. Flywheel does not send a replacement/append system prompt, Preset, PTC tools, managed agent or hidden control prefix through this path.
+
+## Default interactive ACP
+
+Install the official **agy 1.5.14**, then open the **Antigravity** tab in a DSH conversation attached to a committed Git repository. A blank conversation can use the human command `/flywheel-antigravity {"version":2,"action":"connect"}`. The page provides environment checks, native login, continuous messages, the actual runtime model/mode options, permission decisions, typed image attachments when advertised, Stop, Disconnect and exact Resume. It uses an authenticated Remote directly; the parent DSH model is not invoked. Prompts and login codes are not routed through command logs.
+
+The runtime is admitted by exact official executable hashes for macOS/Linux x64/arm64, not by a version banner alone. Connections disable CLI self-update and fail visibly on binary/profile drift. A login action launches the same `agy acp --login`; Google and the native helper own credential exchange/storage. Helper exit 0 is not an entitlement check: reconnect explicitly to establish the session. The client does not read token files or fall back to a different account, API route, headless adapter or Registry distribution. Personal interactive prompts require a Gemini model selected from native options. Native user rules remain active, and native permission/sandbox settings are not overwritten by legacy plugin defaults.
+
+Each new session uses a separate `antigravity/<record-id>` branch and Git worktree from the source **committed HEAD**. The path and starting commit are visible. Uncommitted source changes are not copied; the worktree and its changes remain after disconnect for deliberate review/integration. Flywheel's desktop mutation entry points reject these owned worktrees, including aliases and subdirectories. This guard is not a global filesystem lock on independently launched programs or the standalone Go CLI.
+
+A prompt operation is written durably before dispatch. Only one unresolved prompt is admitted; native post-root tool/child/permission events continue on the same connection. An interrupted or unconfirmed operation remains unknown and is never replayed. Disconnect requires the negotiated native close acknowledgement and owned process-group cleanup; root exit alone is insufficient. Exact resume preserves session/workspace/runtime identity. The activity/stop hooks keep outstanding work visible to DSH workspace archival. No ACP result writes Go `state.json` or proves a Flywheel task/Review complete.
+
+The full [ACP client contract](https://github.com/ckanner/dsh-subagent-antigravity/blob/7d5056c81688cc9408f3be32fc38ac7388b97377/docs/ACP.md) describes storage, authentication, recovery and remaining limits. This source candidate has offline client/host/package evidence and unauthenticated Linux x64 CLI probes; personal-login, inference, image delivery and native detached-work cleanup require separate live acceptance. See the [implementation record](../validation/2026-11-22-antigravity-acp.md).
+
+## Explicit legacy machine transport
+
+The rest of this guide describes the existing `harness:"antigravity"` **headless stream-json machine interface**, pinned to the companion 0.3.0 while retaining machine/lifecycle/activity protocol 1. Go still owns automated Plan/Execute/Review, JEV, gates and delivery. Those workflows are not silently converted to personal ACP and are not validated as permitted third-party personal-login uses by this change. The standalone old task panel and `subagent_antigravity` registration now require explicit `transport:"headless"`.
 
 ## Installation and capability checks
 
@@ -19,14 +30,14 @@ global settings. This release supervises POSIX process groups and rejects Window
 
 Flywheel includes `flywheel-antigravity-worker` and the exact reviewed companion
 archive recorded in
-[vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json).
+[vendor metadata](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity-acp.json).
 The source is reviewable in
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)
 as a standalone npm package. Package identity, installed candidate bytes, public
 registry availability and real-account acceptance are separate checks. The
 [2026-11-22 registry verification](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
 confirms that the published 0.2.1 archive matches the reviewed bytes. An older
-package with another machine contract cannot substitute for 0.2.1.
+package with another machine contract cannot substitute for 0.3.0.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -41,7 +52,7 @@ flywheel-antigravity-worker --doctor
 ```
 
 The worker doctor verifies the exact installed companion and public machine,
-lifecycle and evidence-only contracts. The companion's `doctor()` and DSH
+lifecycle and evidence-only contracts. The legacy companion's `doctor()` and headless panel
 **Check environment** additionally run bounded `--version`, `--help` and `models`
 probes using the execution environment. These checks do not submit model prompts
 and do not establish remaining quota, entitlement or model answer quality.
@@ -250,12 +261,12 @@ Sources: [native login and API/ADC routing](https://antigravity.google/docs/inst
 [CLI settings](https://antigravity.google/docs/cli/reference/) and
 [credit fallback](https://antigravity.google/docs/cli/commands/credits).
 
-## Direct use inside DSH
+## Explicit legacy headless use inside DSH
 
-Install the exact reviewed plugin artifact into the intended DSH profile:
+For legacy delegation, explicitly set the standalone plugin row to `transport:"headless"`. Its default is the interactive ACP view described above. Install the reviewed candidate into the intended DSH profile:
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.1.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.3.0.tgz
 ```
 
 Open the **Antigravity** conversation view, select the workspace, label, complete
@@ -288,7 +299,7 @@ conventional DSH LLM provider. See the standalone
 [plugin guide](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/README.md)
 for the DSH schemas, machine API and wrapper.
 
-## Lifecycle, history and usage
+## Legacy machine lifecycle, history and usage
 
 Each call owns one CLI process and one text turn. Native conversations are
 retained: `fresh` starts a new conversation, while scoped resume requires the

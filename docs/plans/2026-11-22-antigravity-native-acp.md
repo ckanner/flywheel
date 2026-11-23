@@ -3,29 +3,44 @@
 [English](2026-11-22-antigravity-native-acp.en.md) · 简体中文 · [方案索引](README.md) · [当前 Antigravity 指南](../zh-CN/antigravity.md)
 
 - 日期：2026-11-22；按用户要求重新比较两种官方运行时，个人交互接入优先采用 CLI ACP，独立 ACP 保留为另行验收的选项。
-- 状态：**待审方案，仅文档变更**。本文不交付 ACP 运行实现、配置字段、登录或图片能力，不更改现有默认值。
+- 状态：**按用户后续实现请求，首期交互客户端已进入 0.39.0 源码候选**。下文保留原始方案与来源观察；当前范围与证据见[实施记录](../validation/2026-11-22-antigravity-acp.md)。这不代表已经发布到 registry 或通过真实账号验收。
 - 原始基线：Flywheel `291c0a02f9042d522d3e0f3c62977f63149465cd` / 0.38.0；`@ckanner/dsh-subagent-antigravity` 0.2.1，源码 `a20eb63bbfa2849df63043595475957bf4a4f04d`。
 - 本次修订基线：main `4d83ad350504411e0d413638bc95a43eeffadb44`。[PR #62](https://github.com/ckanner/flywheel/pull/62) 已以 `bf780416136be7bfdd11101f34bbfa358c316394` 合并；回执/打包修复及验收与本方案分开。上面的原始基线保留为历史证据。
 
+## 批准后的实施范围
+
+用户随后要求实现并将 ACP 作为默认方式。companion 0.3.0 已提供稳定 v1
+客户端、鉴权 host／UI、原生登录 helper、运行时来源检查、typed 图片、权限和
+精确会话记录；Flywheel 0.39.0 直接挂载入口。个人入口只准入原生会话报告的
+Gemini 模型，未实现 Claude 或其他非 Gemini 选项。不替换或追加宿主系统提示词，
+不注入宿主工具桥；官方用户规则仍正常加载。
+新会话从 committed HEAD 创建并保留独立 Git worktree，不与活动自动任务共享
+工作目录。这是首期对原拟议“共享工作区 lease”的具体替代，不宣称对独立程序
+实现全局目录锁。
+
+当前使用指南和[验收记录](../validation/2026-11-22-antigravity-acp.md)负责描述已
+实现源码；下文后续 Registry 与 machine-binding 阶段仍为方案。离线 fixture
+和无认证探测不建立原生登录／推理、图片送达或 detached task 清理已验收的结论。
+
 ## 1. 决策、用途与阶段
 
-**首期优先采用未经修改的 Google 官方 Antigravity CLI，以 `agy acp` 在 DSH/Flywheel 提供个人交互式外部 agent 会话。** 同一个官方运行时负责 Google 登录、凭据、模型调用、工具与内部 agent loop。用户连接、发送开发任务、处理权限、审阅结果并中断工作；桌面宿主提供 ACP client 与界面。CLI 1.5.14 是首个待验候选，不是已经验收的运行时 [S28]。
+**首期优先采用未经修改的 Google 官方 Antigravity CLI，以 `agy acp` 在 DSH/Flywheel 提供个人交互式外部 agent 会话。** 同一个官方运行时负责 Google 登录、凭据、模型调用、工具与内部 agent loop。用户连接、发送开发任务、处理权限、审阅结果并中断工作；桌面宿主提供 ACP client 与界面。CLI 1.5.14 是当前实现精确锁定的目标 [S28]；已核四平台官方字节及 Linux 未认证初始化，真实账号和其他平台的执行验收分别记录。
 
-Registry 独立 `antigravity-acp` 仍是官方、有效的备选，采用自己的验收记录。两种运行时之间以及与 headless 之间都不静默替换。本纯文档 PR 不更改当前 headless stream-json 行为、默认值和既有任务。首期 ACP 不自动加入 JEV、Plan/Execute/Review 或其他 machine 候选集合；UI 会话不代表 Flywheel task 完成或通过独立 Review。
+Registry 独立 `antigravity-acp` 仍是官方、有效的备选，采用自己的验收记录。两种运行时之间以及与 headless 之间都不静默替换。桌面连接现默认 ACP，独立插件旧任务／工具入口需显式 `transport:"headless"`；machine stream-json 接口及既有自动化任务保持分离。首期 ACP 不自动加入 JEV、Plan/Execute/Review 或其他 machine 候选集合；UI 会话不代表 Flywheel task 完成或通过独立 Review。
 
 **决策沿革。** 原提案错误地把 Google 独立 `.par` 发行物与第三方 wrapper 混为一类；上一版纠正后，按指定发行物选择 Registry 优先。本次用户明确要求比较两种官方选项，依据官方接入文档、版本修复、T3 已合并迁移及减少重复维护的收益，调整为 CLI 优先（§3）。独立发行物的官方身份、原文件名与链接均保留。这是工程选型，不是认定只有 CLI ACP 获允许，也不是声称 Google 已停止独立 ACP。
 
-| 阶段 | 拟议范围与边界 |
+| 阶段 | 范围、实现状态与边界 |
 | --- | --- |
-| 首期：个人交互式外部 agent | macOS/Linux 上使用官方 `agy acp`：原生个人登录、文本对话、运行时提供的模型/effort/mode、权限、停止和精确历史恢复。图片与原生协作分别验收；上游有 Windows 包不代表本项目已验收 Windows。 |
+| 首期：个人交互式外部 agent | 源码候选已实现 macOS/Linux 官方 `agy acp`：原生登录助手、文本与类型化图片输入、原生 Gemini 模型／配置选项、权限、停止和精确历史恢复。真实账号登录、图片送达及原生协作仍须分别验收；上游有 Windows 包不代表本项目已验收 Windows。 |
 | 后续：独立 Registry runtime | 显式选择官方原版 `antigravity-acp`，单独验证来源/版本、平台命令、认证、历史与能力；不作为自动恢复通道。 |
 | 后续：Flywheel 自动化执行绑定 | 另立实现范围，先证明技术契约及所选用途、认证上下文受到支持，再讨论 machine API、角色准入和自动调度。首期会话不能据此自动升级为该绑定。 |
 
-ACP 指 **Agent Client Protocol**，连接客户端与完整 agent，不是模型名称。本次改变拟议实现优先级，不改 Auto/Quick/Full、计划批准、JEV 单一开关、当前模型/订阅默认值和独立验收。速度与质量收益需要测量；这个选型不对所有现有 Flywheel 用法作合规结论。
+ACP 指 **Agent Client Protocol**，连接客户端与完整 agent，不是模型名称。已实现的个人桌面入口现默认 ACP；Auto/Quick/Full、计划批准、JEV 单一开关、现有自动任务的模型／订阅默认值和独立验收不变。速度与质量收益需要测量；这个选型不对所有现有 Flywheel 用法作合规结论。
 
 ## 2. 当前架构与独立修复
 
-当前已实现的路径是：
+原方案基线已实现的 machine 路径是：
 
 `Flywheel Go owner → Antigravity worker → 插件公开 machine API → 自有 headless agy 进程`。
 
@@ -42,7 +57,7 @@ ACP 指 **Agent Client Protocol**，连接客户端与完整 agent，不是模�
 
 **历史基线缺陷与后续修复。** 在 `291c0a0`，0.2.1 adapter 经受管 agent 验证后允许非空 `init.tools` 目录，但 Go 仍要求空目录；有效回执可能变为 unknown，冻结 JEV 基线或阻塞调查。[PR #62](https://github.com/ckanner/flywheel/pull/62) 现已合并：准入绑定受管 agent 证明及存在的工具目录，并修复成功回执被关键词误分类的问题，记录了 adapter → worker → Go → 决策/调查/恢复检查。[修复后的 driver][C5] 与 [证明校验][C6] 是后续证据，不回写原始观察。
 
-M0 核对这项已合并前置条件和既有验收记录；本次文档修订不重跑或宣称完成那些实现测试。该修复并非由 ACP 完成；首期交互会话也不要求 Go lifecycle ACK，后者属于未来 machine 绑定。
+原始文档修订按已合并前置条件和既有验收记录核对 M0。后续 ACP 实现另记带日期的测试结果，不覆盖该历史证据；这项修复并非由 ACP 完成。首期交互会话也不要求 Go lifecycle ACK，后者属于未来 machine 绑定。
 
 ## 3. 依据与备选方案
 
@@ -58,7 +73,7 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 2026-10-08 的 Google-flair moderator chunduriv 回复区分直接脚本/CI、ACP 编辑器与第三方 coding agent 包装消费者登录，并说明不是正式法律解释 [S22]。公开账号数据确认其 moderator/Google 标识；取得的 Rebbanpalli_Naveen 与 Ambati_Rajendra 资料未显示这两个标识 [S33]。后两者的工作人员身份尚未独立核验，缺少标识本身也不能证明他们不是工作人员。T3/OpenBot/DSH 回复可作具体语境的解释，不能代替正式条款或产品文档。外层自动化绑定仍需自己的用途/认证依据；从 Registry 改选 CLI 不改变这条边界。
 
-**按版本判断模型范围。** CLI 1.5.1 release notes 表示向每个 ACP 客户端提供账号可用模型，编辑器指南却仍保留非 Gemini 客户端名单 [S4、S28]。记录这个差异，以真实 client identity 和所选 CLI Session 返回的实际选项/接受结果准入；不承诺必有 Claude 或所有目录模型，不冒用编辑器，也不把 CLI 版本结论延伸到独立 ACP。ACP v1 可选能力需要协商 [S5–S8]，v2 preview 不在首期范围。
+**版本化模型证据与当前准入。** CLI 1.5.1 release notes 表示向每个 ACP 客户端提供账号可用模型，编辑器指南却仍保留非 Gemini 客户端名单 [S4、S28]。保留这一研究差异。当前个人入口使用真实 client identity，只准入原生会话报告的 Gemini 模型；缓存的非 Gemini 选择会阻止发送，不自动换模。更宽模型范围属于后续独立依据与验收，即使 runtime 公布选项也不自动开放。不承诺必有 Claude 或所有目录模型，不冒用编辑器，也不把 CLI 版本结论延伸到独立 ACP。ACP v1 可选能力需要协商 [S5–S8]，v2 preview 不在首期范围。
 
 ### 3.2 T3 与 Pi：实现证据
 
@@ -82,7 +97,7 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 | 性能/资源 | 历史样本的启动/RSS 较低（§3.3），当前端到端结果未知。 | 历史样本使用较旧独立版本。 | 主要按功能和维护证据选 CLI，不承诺固定提速或质量提升。 |
 | 适配成本 | 登录助手、mode、后台事件、取消和自更新需实际适配 [S30–S32]。 | 有独立兼容工作，仍适合明确选择 Registry 的编辑器环境。 | 先验收一种主运行时；有具体需求及独立测试后再加 Registry 选项。 |
 
-**拟议版本策略。** 以 **CLI 1.5.14** 开始验收；把 **1.5.13 作为拟议最低基线**，依据是其修复 Session cwd 与编辑器附带文件内容。1.5.10 修复 turn 后子代理/后台通知及 cancel/close 清理，1.5.1 扩大模型范围并修复会话取消 [S28]。这些是 release notes 事实，不是我们的 live 验收；不能只因 `>=1.5.0` 存在 `acp` 命令就接受，也不自动接受所有未来版本。记录精确已测版本/字节/平台与所需能力；未知或变化的 build 在业务派发前重新验收。该策略不更改现有 headless 的最低版本。
+**已实现准入与版本依据。** 源码候选只接受记录中的官方 **CLI 1.5.14** 版本及程序摘要。原提案把 **1.5.13 作为拟议最低基线**，依据是其修复 Session cwd 与编辑器附带文件内容；这个依据不表示当前已准入 1.5.13 或某个开放版本范围。1.5.10 修复 turn 后子代理/后台通知及 cancel/close 清理，1.5.1 扩大模型范围并修复会话取消 [S28]。这些是 release notes 事实，不是我们的 live 验收；不能只因 `>=1.5.0` 存在 `acp` 命令就接受，也不自动接受所有未来版本。记录精确已测版本/字节/平台与所需能力；未知或变化的 build 在业务派发前重新验收。该策略不更改现有 headless 的最低版本。
 
 ### 3.3 性能讨论能够证明什么
 
@@ -102,7 +117,7 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 | 方案 | 决定 |
 | --- | --- |
-| 保留现有 headless | 继续服务已实现的路径，不因本提案改变运行时或默认值。 |
+| 保留现有 headless | 保留显式 machine 接口与既有自动化行为；独立桌面插件默认改为 ACP，旧任务／工具需显式 headless。 |
 | 官方 CLI `agy acp` + 用户直接操作 | **首期建议。** 以 1.5.14 为首个候选，验证原生登录、能力、权限、生命周期和 UI。 |
 | 官方 Registry 独立 `antigravity-acp` | 保留为另行验收的显式选项，不静默替换或未经验证迁移历史。 |
 | 立刻加入所有 Flywheel 自动化候选 | 不在首期；技术门禁和用途/认证支持均需另行明确。 |
@@ -143,7 +158,8 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 ### 首期接口示意
 
-以下是**待设计的客户端设置示例，当前配置不接受**；不是 machine profile，也不是可直接安装的完整配置：
+以下保留为**待设计的客户端设置示例，当前配置不接受**。已实现入口使用 DSH
+`config.antigravity`，默认 `{}`／`transport:"acp"`，见[当前配置指南](../zh-CN/configuration.md#antigravity-与-gemini)。示例不是 machine profile，也不是可直接安装的完整配置；其中概括性的模型选择标签不会扩大当前 Gemini-only 入口：
 
 ```json
 {
@@ -165,7 +181,7 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 | 界面 | 首期契约 |
 | --- | --- |
-| 外部 agent 会话 | 显式连接/登录、选择工作目录、选择 runtime 提供的模型/effort、发任务、处理权限、审阅和停止。 |
+| 外部 agent 会话 | 显式连接／登录、选择来源目录并创建独立 worktree、原生 Gemini 模型／配置选项、发任务、处理权限、审阅和停止。 |
 | 插件公开交互 API | 独立版本化 connect/authenticate/new-or-load/prompt/cancel/close 与观察事件；UI 不再嵌入另一套 ACP parser。 |
 | 会话记录 | 自有 session/turn/connection 身份、输入 manifest、dispatch/terminal/活动/清理事实；不写 Flywheel task state，不构造 machine 成功回执。 |
 | 能力与运行配置 | 区分 advertised/local-verified/live-verified/unknown，以及 requested/accepted/observed；回显不等于独立后端观察。 |
@@ -179,10 +195,10 @@ Google 文档公开描述 Registry 安装及通用 ACP 编辑器/客户端接入
 
 1. 选择工作目录与官方 CLI 安装，在同一原生环境核验所有权/lease、程序来源/版本/摘要、平台参数及本地配置。完整发行物不证明账号权益或额度；采用 §3.2.1 的候选/版本策略，不把旧 headless 验收当成 ACP 验收。
 2. 启动自有 `agy acp`，用真实 `clientInfo` 与已实现能力发送 `initialize`，读取实际认证方法和能力；必要支持缺失时不派发业务任务。
-3. 显示“连接／使用 Google 登录”。CLI 可以复用原生缓存；需要认证时采用其支持的 `oauth-personal` 流程。具备浏览器能力的客户端可在验证后使用 ACP `authenticate`；官方 `agy acp --login` 是显式终端/code 登录通道。登录助手与会话使用相同解析后的程序、profile/settings 参数和环境。不能假定截获 `$BROWSER` 有效，T3 迁移后就需要显式登录助手 [S30]。
+3. 显示“连接／使用 Google 登录”。CLI 可以复用原生缓存；需要认证时，已实现客户端使用官方 `agy acp --login` 助手完成个人登录。直接 ACP `authenticate` 是需要单独验证的后续选项。登录助手与会话使用相同解析后的程序、profile/settings 参数和环境。不能假定截获 `$BROWSER` 有效，T3 迁移后就需要显式登录助手 [S30]。
 4. 若选择登录助手通道，将其作为单独、有界的认证进程运行，不把输出混入正在运行的 JSON-RPC stdout；同一次认证只走一条通道。展示官方 URL，将用户从官方页面取得的 code 交回该进程；CLI 完成 OAuth 交换、凭据保存/刷新。授权码、带敏感参数的 URL 和 token 都不进入持久日志/journal。正确处理成功、取消、超时、失败，不换账号、API key 或付费渠道。后续独立 `.par` 选项使用自己的认证方法，不能添加 CLI `--login`。
 5. 登录后在同一身份下重连/重验，新建 Session，或加载用户精确选择且匹配的会话。记录按 runtime/transport 隔离；共享原生存储不意味着可加载活动 headless conversation、选择 latest、迁移 Registry 历史或重发丢失 prompt。
-6. 读取会话实际的模型/effort/mode/权限选项，确认用户请求值被接受 [S7]。不硬编码 `thought_level`/`thinking_level`，不把独立版 `yolo`/`auto_edit` 直接映射到 CLI，不假定每个账号都公布 `auto`。必要选项缺失时明确不支持，不静默扩大权限。固定 effort 保持固定；如 runtime 暴露 planner/executor effort，分别记录，不补成 high。
+6. 读取会话实际的模型/effort/mode/权限选项，确认用户请求值被接受 [S7]。发送任务或选择模型前执行当前 Gemini-only 准入；被公布的非 Gemini 选项也不在支持范围。不硬编码 `thought_level`/`thinking_level`，不把独立版 `yolo`/`auto_edit` 直接映射到 CLI，不假定每个账号都公布 `auto`。必要选项缺失时明确不支持，不静默扩大权限。固定 effort 保持固定；如 runtime 暴露 planner/executor effort，分别记录，不补成 high。
 7. 冻结完整 prompt/附件身份，在写 `session/prompt` 前持久化可能派发记录。首期由交互客户端记录负责；未来 machine 路径另需 Go durable lifecycle ACK。
 
 Google 文档说明本地界面可以共享认证 [S19]。**不承诺每个 provider instance 有独立登录缓存。** 单独设置目录也需官方支持和验证，不代表账号隔离。不得模拟 SSH、复制 token、读取 keyring、注册自己的 OAuth client、代理私人配额端点或替换 client identity。原生 `/usage` 或 ACP usage 只在受到支持且已验证时采用；额度缺失保持 unknown。
@@ -246,11 +262,11 @@ ACP 是否提供该活动 agent 证据仍待验证；传入 `--agent` 或检查�
 
 ### 官方 agent 内部的 Orchestrator、subagents 与 Swarm
 
-这些是 runtime 自身的能力，与外部父 agent 把 Antigravity 当作模型/工具后端不同。首期只展示所选 CLI build/账号实际支持且已验证的模型/mode/命令；CLI 终端功能或 UI 标签本身不证明 ACP 交付。普通 native 模式不保证无 children。CLI 1.5.14 文档有本地 planner/executor effort 配置，只有 ACP Session 确实支持时才展示；现有 headless 固定 effort machine profiles 不变 [S28]。
+这些是 runtime 自身的能力，与外部父 agent 把 Antigravity 当作模型/工具后端不同。当前个人客户端只准入原生报告的 Gemini 模型，展示实际原生配置与活动；未实现通用 Orchestrator／Swarm 模型与启动矩阵。下表是后续分项验收要求，不表示每项已经开放或通过真实账号测试。CLI 终端功能或 UI 标签本身不证明 ACP 交付。普通 native 模式不保证无 children。CLI 1.5.14 文档有本地 planner/executor effort 配置，只有 ACP Session 确实支持时才展示；现有 headless 固定 effort machine profiles 不变 [S28]。
 
 | 能力 | 交互验收 | 未来 Flywheel machine 额外条件 |
 | --- | --- | --- |
-| Orchestrator | 精确模型、实际固定/可配置的 planner/executor effort、接受值及真实内部协作观察。 | 保持角色/模型资格，evidence-only 不能委派。 |
+| Orchestrator | 当前 Gemini-only 入口没有单独开放此能力；后续加入须验证精确模型准入、实际固定／可配置的 planner/executor effort、接受值及真实内部协作观察。 | 保持角色/模型资格，evidence-only 不能委派。 |
 | 显式 subagents | 验证真实委派及归属事件；无观测时明确未知，不画全部成功的树。 | 必要工作须满足归集与回执契约。 |
 | Swarm | 用户显式发起并采用已验证原生机制；1.5.13 修复未请求的 Swarm 启动 [S28]。不能把任意 slash 文本当成成功启动。 | 仍要求 Execute + Full + 已审独立 collaboration/writes + 输入条件；首期交互会话不自动具备该资格。 |
 
@@ -260,7 +276,7 @@ ACP child Session 展示是可选能力，agent 可能委派却不暴露 child [
 
 ## 9. UI、配置与诊断
 
-首期增加“Antigravity 外部会话”的明确入口，优先选择官方 CLI ACP、工作目录和个人登录；**不在现有执行 provider/model 下拉框中自动增加 ACP 候选**。ACP 是连接协议，Antigravity 是 agent 身份，模型来自已建立 Session 的真实选项。
+源码候选已增加独立“Antigravity 外部会话”入口，默认使用官方 CLI ACP、独立 worktree 和个人登录；**不在现有执行 provider/model 下拉框中增加 ACP 候选**。ACP 是连接协议，Antigravity 是 agent 身份，可选模型仅为已建立 Session 报告的 Gemini。下列 UI 要求仍是验收标准，实际已完成检查见验收记录。
 
 UI 必须：
 
@@ -276,11 +292,11 @@ UI 必须：
 
 ## 10. 实施、发行与回退
 
-1. 核对已合并 #62 的回执/打包修复与既有 headless 验收，保留原源码、registry 和 live 证据；本 PR 不重写历史结论，也不声称重跑实现验收。
-2. 在独立插件实现官方 CLI ACP client 及显式原生登录，验收精确程序、公开交互 API 和 §3.2.1 版本策略；首期不修改 machine 协议或自动化候选。
-3. 完成文本会话、权限、停止/恢复和官方登录的离线/必要 live 验收，再由 DSH/Flywheel UI 消费同一交互 API，记录真实能力和未知项。
-4. 另行授权发布已测插件版本并锁定精确包身份，验证同候选安装与配套文档。配置未启用此会话时仍使用原路径；不支持的 runtime/adapter 明确报错，不静默替代。
-5. 图片与原生协作分别验收开放；独立 Registry 选项另行验证；未来 machine 绑定另提用途/认证与技术方案，再更新必要 schema、bridge、Go owner、ledger、UI 和迁移。
+1. 保留 #62 已合并的回执／打包修复及原始 headless 源码、registry、live 证据。修复归属于 #62，不归本 ACP 实现；当前回归检查另记日期，不改写历史。
+2. 独立插件 0.3.0 源码现已实现官方 CLI ACP、原生登录助手、精确 1.5.14 准入及公开交互 API。machine 协议 version 1 和既有自动化候选不变。
+3. Flywheel 0.39.0 现已通过该 API 接入独立 Host／UI。文本／权限／生命周期／恢复的离线检查及候选安装结果，须与仍待完成的真实账号登录、Gemini 推理和原生后台清理验收分别记录。
+4. 另行授权发布已测插件版本并锁定精确包身份，验证同候选安装与配套文档。桌面会话默认 ACP，独立旧任务／工具需显式 headless；Flywheel 既有 machine 路径仍单独选择。不支持的 runtime/adapter 明确报错，不静默替代。
+5. 类型化图片输入已实现，真实视觉送达及原生协作仍须独立验收。Registry runtime、更宽模型范围和后续 machine 用途／认证／技术契约仍是独立方案，之后才讨论 schema、bridge、Go owner、ledger、UI 或迁移变更。
 6. 关闭/卸载交互入口前处理自有连接并保存未决记录；断开不等于退出账号或删除共享缓存。保留旧 journal reader，未知 ACP turn 不通过 headless/其他发行物重放。
 
 首期会话内多轮使用同一连接；跨会话共享 server、同 server 并行 Session 以及运行中 steering 仍需独立测试。未来自动化反馈继续遵守冻结输入与安全采用边界，不能借交互按钮绕过 Go 状态机。
@@ -292,15 +308,16 @@ UI 必须：
 | 范围 | 首期必须验证 | 未来 machine 的附加验证 |
 | --- | --- | --- |
 | 来源/协议 | CLI 来源/版本/程序摘要/参数及漂移；Registry 另需 manifest/发行包身份。协议/选项拒绝、有界 Unicode/JSON frame、能力差异。 | 身份进入冻结绑定、回执、恢复；旧 reader 明确拒绝。 |
+| 模型准入 | 当前个人入口仅接受原生报告的 Gemini；拒绝非 Gemini 配置，缓存非 Gemini 选择时阻止发送且不静默换模。更宽原生目录是研究证据，不等于已实现支持。 | 每个角色／模型及扩大后的支持范围分别准入。 |
 | 指令/agent 所有权 | 检查启动参数、ACP metadata、prompt/context 与文件写入：无宿主系统提示词覆盖/追加、Preset/PTC 或受管 agent 注入、DSH 工具桥接、自动外层循环；保留明确用户输入及 runtime 管理的项目配置。 | 单独明确受支持的用途/认证，审查发生变化的指令/工具/循环所有权。 |
-| 登录/权限 | 实际 `authMethods`、ACP `oauth-personal` 或单独启动的官方 CLI `agy acp --login` 助手、相同已验证程序/profile 上下文、登录成功/取消/过期/失败、无凭据提取/敏感日志、共享缓存；错会话/迟到/拒绝 approval。 | 认证/用途受支持，已有授权不足时不无限等待；订阅控制可验证。 |
+| 登录/权限 | 实际 `authMethods`、已实现的独立官方 `agy acp --login` 助手、相同已验证程序/profile 上下文、登录成功/取消/过期/失败、无凭据提取/敏感日志、共享缓存；错会话/迟到/拒绝 approval。直接 ACP 认证属于后续独立门禁。 | 认证/用途受支持，已有授权不足时不无限等待；订阅控制可验证。 |
 | 生命周期 | turn 与会话退出分离；工具/权限/child 中取消、失联、超时、宿主死亡、SIGKILL、坏/重复/迟到终态、进程组清理，以及收敛前不启动下一轮。 | Go ACK 各崩溃点、合法回执一次消费、unknown blocked、预算不重置、完整 required-work 证明。 |
 | 历史/计量 | 精确 session load、无自动 replay、压缩保留要求、累计量不当逐轮相加、缺失/负值/不一致差值 unknown。 | 角色隔离、full/incremental、独立 reviewer、任务/packet/目标身份。 |
 | 图片/协作 | 冻结字节、源变化拒绝、真实视觉测试、child 归属、Orchestrator effort、Swarm 实际机制与未知状态。 | 引擎/UI 共享图片准入、Full/审查分工/写范围、必须 worker 的图片送达。 |
 | Evidence-only | 不作为首期角色宣称。 | 活动受管 agent、禁工具/委派、不可变身份、实际步骤与非空目录区别。 |
 | 分发/UI | 干净公开包导入、版本拒绝、Linux/macOS 同候选安装、会话状态、权限、模型/登录异步关联、workspace lease/接管与文档。 | machine/ledger 迁移、有效配置来源、任务/角色准入一致。 |
 
-实现改动沿用仓库对应门禁：Go 改动需逐函数 100% measured statement coverage，插件/bridge 行为检查，发行需真实候选安装。文档 PR 只做静态检查；离线 fixture 不证明账号权限、登录成功、视觉质量或性能，live 验收另记准确 runtime、平台、账号上下文和范围。
+实现改动沿用仓库对应门禁：Go 改动需逐函数 100% measured statement coverage，插件/bridge 行为检查，发行需真实候选安装。原始仅文档修订完成静态检查；后续实现遵守对应门禁并单独记录实际结果。离线 fixture 不证明账号权限、登录成功、视觉质量或性能，live 验收另记准确 runtime、平台、账号上下文和范围。
 
 ### 11.2 比较设计与归因
 
@@ -315,32 +332,32 @@ UI 必须：
 - 确定性测试、正确性、约束保持、重复工作、遗漏工具及失败/unknown 结果。
 - 取消/恢复、进程数、峰值 RSS、冷启动与驻留成本；不以未显示 reasoning 推断模型能力。
 
-报告中位数、尾部、配对差异、不确定性、原始分布和失败数量。初次采用与后续扩展均需满足预先声明的正确性及资源界限；本文没有跑 benchmark，也不提出改变现有默认。常驻实验应包含热 headless stdin、热 ACP 与现有每次启动基线，避免把驻留效果全算成协议收益。
+报告中位数、尾部、配对差异、不确定性、原始分布和失败数量。目前没有运行质量或性能对照基准。用户授权的个人桌面默认值现已改为 ACP；这不改变自动任务的模型／订阅默认值，也不证明性能胜出。未来性能结论或范围扩展须满足预登记的正确性与资源界限。常驻实验应包含热 headless stdin、热 ACP 与现有每次启动基线，避免把驻留效果全算成协议收益。
 
 ## 12. 里程碑与待决项
 
-| 里程碑 | 交付与退出条件 |
+| 里程碑 | 实现状态与待完成验收 |
 | --- | --- |
-| M0 — 确认已合并前置条件 | 核对 #62 的既有回执/打包/跨层验收证据，不把本次文档修改当成重跑这些测试。 |
-| M1 — 官方 CLI ACP client | 精确 1.5.14 候选身份、拟议最低版本/准入策略、自更新控制、真实身份、原生个人登录、文本/权限/生命周期/恢复验收。 |
-| M2 — 交互 UI 与交付 | DSH/Flywheel 直接外部会话、模型/effort/权限/停止/未知状态、公开交互 API、精确包与候选安装。无新增自动化候选。 |
-| M3 — 分项能力 | 根图片及 runtime 内原生协作分别验收；worker 图像和完整子树状态未知时保留限制。Registry 独立 runtime 作为另一个选项评估。 |
+| M0 — 确认已合并前置条件 | #62 回执／打包／跨层修复已合并；其历史证据与本 ACP 实现的回归结果分开保留。 |
+| M1 — 官方 CLI ACP client | companion 0.3.0 源码已实现精确 1.5.14 身份、自更新控制、真实身份、官方登录助手及文本／权限／生命周期／恢复。已执行离线检查另记；真实账号登录／推理尚未测试。 |
+| M2 — 交互 UI 与交付 | Flywheel 0.39.0 源码已实现直接外部会话、原生 Gemini 选项、权限／停止／未知状态、公开 API 及所有权 worktree。精确包／候选安装证据另记，无新增自动化候选。 |
+| M3 — 分项能力 | 类型化根图片输入已实现；真实图片送达、原生协作和完整子成员清理仍需独立验收。Registry 与更宽模型范围属于后续工作。 |
 | M4 — 评估与后续决策 | 报告区分 runtime/协议/驻留成本；未来 machine 绑定另审用途/认证支持与完整技术契约，不能从 M2 自动启用。 |
 
-实现前必须明确：
+已确定的实现选择与仍待确认的事项：
 
-1. CLI 精确版本/来源/程序摘要/参数、支持的登录、可选方法及真实账号模型/effort/mode；Registry 另行验收。
-2. `oauth-personal` 的实际官方交互、共享缓存与退出影响，以及客户端可以提供且已验证的 browser/terminal bridge。
-3. 交互公开 API/session record 的版本、root/child 活动和本轮 quiescence 判据；闭会话清理与未知远程工作的限制。
-4. 根与必须看图 worker 的送达能力，以及哪些信息只在后来 packet 契约中表达。
+1. CLI 1.5.14 来源／摘要及调用参数已在实现中固定；真实个人账号的 Gemini／配置验收仍待完成，Registry 和更宽模型范围各需单独准入。
+2. 客户端已实现官方登录助手。真实登录、共享缓存／登出影响和未来直接 ACP 认证通道仍须各自验收。
+3. 人工 API／会话记录为 version 2，使用稳定 ACP v1；离线生命周期／unknown 结果检查，与仍未完成的原生真实后台／关闭保证分开取证。
+4. 类型化图片字节与身份记录已实现；真实根输入与必须 worker 的送达仍是不同验收问题，worker／packet 规则属于未来 machine 范围。
 5. 若拟自动化，单独证明用途/认证受支持、active-agent evidence-only、Go durable ACK/恢复、角色/Full/分工/输入准入，再确定 machine/ledger 版本。
 6. 预登记的质量与延迟/资源指标，以及实际收益是否值得支持第二种 runtime 或更广用途。
 
-批准本文是对上述首期交互方向及后续验证边界的评审，不是发布授权、运行实现、账号合规保证，或为现有任务自动开启 ACP。
+用户后续授权已落实为源码候选中的首期 ACP 实现及个人桌面默认入口。该授权本身不代表准许发布、账号层面的合规或真实验收已成立，也不为既有自动任务开启 ACP；这些边界仍保留各自的证据与决定。
 
 ## 来源与验证边界
 
-资料核对日期为 2026-11-22。官方文档与 Registry 说明公开路径，固定源码说明具体实现，issue/论坛帖子只证明特定反馈；项目存在不等于全部用途获官方许可。已验证的账号标识与未验证的所属身份分开记录；缺少标识不能单独证明不是工作人员，论坛解释也不能代替正式产品文档或条款。本次文档 PR 未运行真实 ACP 推理、登录、质量基准、图片传递或用户机器安装。
+研究资料核对日期为 2026-11-22，保留为历史观察。官方文档与 Registry 说明公开路径，固定源码说明具体实现，issue/论坛帖子只证明特定反馈；项目存在不等于全部用途获官方许可。已验证的账号标识与未验证的所属身份分开记录；缺少标识不能单独证明不是工作人员，论坛解释也不能代替正式产品文档或条款。后续实现的源码、离线与候选安装检查另行记录；真实账号 ACP 登录／Gemini 推理、真实图片传递、原生 detached task 清理、质量／性能对照及个人机器验收仍未测试。
 
 | ID | 来源 | 用途 |
 | --- | --- | --- |

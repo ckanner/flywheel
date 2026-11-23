@@ -45,7 +45,7 @@ function verifyPackedContents(file, manifest) {
   const composition = JSON.parse(readPackedFile(file, 'node_modules/dsh-preset-generator/package.json'));
   if (composition.name !== 'dsh-preset-generator' || composition.version !== '0.4.0' || Object.keys(composition.dependencies ?? {}).length) throw new Error('Packed PTC composition must match the reviewed 0.4.0 source');
   const antigravity = JSON.parse(readPackedFile(file, 'node_modules/@ckanner/dsh-subagent-antigravity/package.json'));
-  if (antigravity.name !== '@ckanner/dsh-subagent-antigravity' || antigravity.version !== '0.2.1' || JSON.stringify(antigravity.dependencies) !== JSON.stringify({ajv:'8.17.1'})) throw new Error('Packed Antigravity must match the reviewed 0.2.1 source and pinned schema validator');
+  if (antigravity.name !== '@ckanner/dsh-subagent-antigravity' || antigravity.version !== '0.3.0' || JSON.stringify(antigravity.dependencies) !== JSON.stringify({'@agentclientprotocol/sdk':'2.9.1',ajv:'8.17.1',zod:'4.3.6'})) throw new Error('Packed Antigravity must match the reviewed 0.3.0 source and pinned schema validator');
   const adapter = JSON.parse(readPackedFile(file, 'node_modules/dsh-subagent-codex-pro/package.json'));
   if (adapter.name !== 'dsh-subagent-codex-pro' || adapter.version !== '0.10.2' || Object.keys(adapter.dependencies ?? {}).length) {
     throw new Error('Packed Codex Pro must be the reviewed dependency-free 0.10.2 adapter');

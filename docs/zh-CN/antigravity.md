@@ -2,10 +2,23 @@
 
 [文档目录](../README.zh-CN.md) · [English](../en/antigravity.md) · 简体中文
 
-通过 `harness:"antigravity"` 使用官方本地 **`agy` CLI** 运行 Gemini。
-Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.2.1` 的公开 machine API；插件负责原生
-Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审批、证据收集、验证和交付。
-同一个插件也提供 DSH 直接任务面板和 `subagent_antigravity`。不使用 ACP，也不另接模型 API。
+0.39.0 源码候选将 **Antigravity 桌面的默认连接方式改为官方 CLI ACP**。Flywheel 内置 `@ckanner/dsh-subagent-antigravity@0.3.0`，自动挂载由人直接操作的 ACP 宿主和页面。推理、工具、权限和内部执行循环由官方 `agy` 管理；这条路径不发送替换／追加系统提示词、Preset、PTC 工具、受管自定义 agent 或隐藏控制前缀。
+
+## 默认交互式 ACP
+
+安装官方 **agy 1.5.14**，打开一个指向已有提交的 Git 仓库的 DSH 会话，进入 **Antigravity** 标签页。空白会话可以使用人类命令 `/flywheel-antigravity {"version":2,"action":"connect"}`。页面提供环境检查、原生登录、连续对话、实际运行时模型／模式选项、权限处理、能力声明允许时的 typed 图片附件、停止、断开与精确恢复。它直接使用鉴权 Remote，不调用 DSH 父模型；prompt 和登录码不经过命令日志。
+
+运行时按 macOS／Linux x64／arm64 官方可执行文件的精确摘要准入，不仅检查版本字符串。连接期间关闭 CLI 自动更新，程序或 profile 漂移会明确报错。登录动作启动同一个 `agy acp --login`，Google 与官方 helper 管理凭据交换和存储。helper exit 0 不证明账户权益；需要用户重新连接建立会话。客户端不读取 token 文件，不回退到其他账户、API、headless 或 Registry 发行物。个人交互 prompt 要求从原生选项中选择 Gemini 模型。官方仍加载用户自己的规则，旧插件默认值不会覆盖其原生权限或 sandbox 设置。
+
+每个新会话从源仓库的**已提交 HEAD**创建独立 Git worktree 与 `antigravity/<记录 ID>` 分支，路径及起点提交会显示出来。源目录未提交改动不自动复制；断开后保留 worktree 和改动，由用户审查并整合。Flywheel 桌面写入入口拒绝使用这些 ACP 专属工作区，包括别名和子目录；它不是对单独启动的程序或独立 Go CLI 的全局文件系统锁。
+
+prompt operation 在派发前持久化，同一会话只接纳一个未决 prompt，根回复结束后仍处理原生工具／子会话／权限事件。中断或未确认结果保留为 unknown，不自动重发。断开要求实际协商出的原生 close 回应和自有进程组清理；主进程退出本身不足以证明清理完成。精确恢复保留 session／workspace／runtime 身份。activity／stop hooks 让 DSH 归档时仍能看到未决工作。ACP 结果不会写入 Go `state.json`，也不充当 Flywheel task 或独立 Review 完成证明。
+
+完整存储、认证、恢复契约见[ACP 客户端说明](https://github.com/ckanner/dsh-subagent-antigravity/blob/7d5056c81688cc9408f3be32fc38ac7388b97377/docs/ACP.zh-CN.md)。当前源码候选有离线 client／host／安装包证据和 Linux x64 无认证 CLI 探测；个人登录、推理、图片送达和原生 detached work 清理仍需单独实机验收，见[实施记录](../validation/2026-11-22-antigravity-acp.md)。
+
+## 显式旧 machine 传输
+
+下文描述既有 `harness:"antigravity"` 的 **headless stream-json machine 接口**，配套包精确锁定 0.3.0，machine／lifecycle／activity 协议继续为 1。Go 仍负责自动化 Plan／Execute／Review、JEV、门禁和交付。这些流程不会静默改走个人 ACP；本次变更不为其第三方个人登录用途作合规证明。独立插件的旧任务面板和 `subagent_antigravity` 注册现在要求显式 `transport:"headless"`。
 
 ## 安装与能力检查
 
@@ -15,12 +28,12 @@ Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审�
 全局设置。本版本使用 POSIX 进程组守护，不支持 Windows 执行。
 
 Flywheel 包含 `flywheel-antigravity-worker` 与
-[vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json)
+[vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity-acp.json)
 中的精确配套归档。完整源码位于
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)，
 保留独立 npm 包结构，便于直接审查。源码身份、候选字节安装、公共 registry 可用性
 和真实账号验收分别核对。[2026-11-22 registry 验证](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
-确认发布的 0.2.1 归档与已审字节一致；不能拿其他 machine 契约的旧版本替代 0.2.1。
+确认发布的 0.2.1 归档与已审字节一致；不能拿其他 machine 契约的旧版本替代 0.3.0。
 
 | 环境变量 | 用途 |
 | --- | --- |
@@ -34,8 +47,8 @@ flywheel doctor --cwd /repo --json
 flywheel-antigravity-worker --doctor
 ```
 
-worker doctor 检查精确插件及公开 machine、lifecycle、evidence-only 契约。插件的
-`doctor()` 和 DSH **检查环境**还在执行所用环境中，对 `--version`、`--help`、`models`
+worker doctor 检查精确插件及公开 machine、lifecycle、evidence-only 契约。旧接口的
+`doctor()` 和 headless 面板**检查环境**还在执行所用环境中，对 `--version`、`--help`、`models`
 进行有界探测。这些检查不发模型 prompt，不证明剩余额度、账户权益或真实回答质量。
 
 ## 模型配置与阶段分工
@@ -202,12 +215,12 @@ credits 或替代模型 fallback。原生运行时已授权的 hooks 与外部�
 [CLI 设置](https://antigravity.google/docs/cli/reference/)和
 [credits fallback](https://antigravity.google/docs/cli/commands/credits)。
 
-## 在 DSH 中直接使用
+## 在 DSH 中显式使用旧 headless
 
-将精确审查过的插件产物安装到目标 DSH profile：
+旧委派功能需要将独立插件行显式设为 `transport:"headless"`；默认入口是上文的交互式 ACP。将已审查的候选产物安装到目标 DSH profile：
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.2.1.tgz
+dsh plugin --profile <profile> add /absolute/path/ckanner-dsh-subagent-antigravity-0.3.0.tgz
 ```
 
 打开 **Antigravity** 会话视图，选择工作区、名称、完整任务、模型、effort 和原生策略，然后启动任务。
@@ -233,7 +246,7 @@ Agent 委派需要 preset 明确注册 `subagent_antigravity`，并满足插件 
 DSH schema、公开 machine API 和 CLI 包装用法见独立
 [插件指南](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/README.zh-CN.md)。
 
-## 生命周期、历史与用量
+## 旧 machine 生命周期、历史与用量
 
 每次调用拥有一个 CLI 进程和一个文本轮次。原生会话保留历史：`fresh` 创建新会话，
 scoped 恢复只接受精确自有、已终态、已清理，且目录、模型、effort、权限、工具策略、完整 native 选项和

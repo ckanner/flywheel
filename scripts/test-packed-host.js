@@ -17,7 +17,7 @@ try {
     const target=path.join(installed,'node_modules',name);
     if(!fs.existsSync(target))fs.symlinkSync(path.join(peers,name),target,'dir');
   }
-  const tests=['console-read','client-host','host-association','tool-runtime'].map(name=>'test/'+name+'.test.js');
+  const tests=['console-read','client-host','host-association','tool-runtime','acp-integration'].map(name=>'test/'+name+'.test.js');
   const result=spawnSync(process.execPath,['--test','--test-concurrency=1',...tests],{
     cwd:path.resolve(__dirname,'../plugins/dsh'),stdio:'inherit',timeout:180000,
     env:{...process.env,FLYWHEEL_TEST_DSH_PACKAGE_DIR:installed},

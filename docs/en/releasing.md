@@ -22,10 +22,20 @@ binary on first use or resolve an old platform/worker package. `plugins/dsh` is 
 old platform packages and `@ckanner/dsh-plugin-flywheel` are historical releases;
 this flow neither uploads new versions of them nor unpublishes their existing bytes.
 
-Antigravity 0.2.1 is bundled from its reviewed source tarball, with its exact
-metadata and standalone archive included in the package.
+The 0.39.0 source candidate bundles Antigravity **0.3.0**, with its exact
+[current metadata](../../plugins/dsh/vendor/antigravity-acp.json) and standalone
+source archive included in the package. Its desktop entry defaults to personal
+ACP; explicit `./machine` consumers retain protocol/lifecycle version 1 and the
+legacy stream-json path. This candidate is not evidence of registry publication.
 `@ckanner/dsh-subagent-antigravity` is an independent companion package;
 publishing it is a separate authorized release, not part of this Flywheel command.
+
+Verify the exact companion bytes and the public `./acp`, `./acp/host`,
+`./acp/workspace` and `./acp/client-source` exports in the installed candidate.
+Both the automatic Host service and its independent conversation view must be
+reachable from a fresh complete Flywheel installation; updating only a machine
+worker dependency does not establish this. The official `agy` CLI remains a
+separate user installation and is not bundled or downloaded by the plugin.
 
 Codex Pro 0.10.2 is bundled from its [reviewed archive](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md).
 The root and source-harness locks retain that tarball's actual integrity.
@@ -60,6 +70,7 @@ Run applicable [contribution checks](contributing.md):
 | DSH and workers | Locked source-harness build/tests and real Go→Node offline bridges |
 | npm and release | `npm test`, one complete candidate build, and actual installation of that tarball |
 | Native/session changes | Native CLI checks and `npm run test:sessions` as applicable |
+| Personal ACP | Exact companion exports, automatic Host registration, both conversation views, authenticated Remote, owned-worktree mutation refusal and lifecycle tests |
 | Migration | Fresh install, split-package upgrade, failure/rollback/cancellation and repeat setup |
 | Documentation | Paired guides, valid links, packaged documents and licenses |
 
@@ -68,6 +79,13 @@ or a skipped optional peer does not count as a pass. Set
 `FLYWHEEL_CLAUDE_CODE_PRO_TARBALL` to that tarball before installation tests.
 Source tests use isolated homes/profiles and offline model fixtures. They do not
 prove live account access, model quality, or physical desktop behavior.
+
+Record unauthenticated official CLI digest/version/initialize probes separately
+from personal login, Gemini inference, native model changes, image delivery and
+native background-cleanup acceptance. The ACP source candidate and offline
+Host/UI/subprocess checks do not establish those live results. Preserve the
+historical Antigravity 0.2.1 vendor and registry records above; do not relabel
+their published bytes or dated verification as 0.3.0 evidence.
 
 ## 3. Build once and test the same artifact
 

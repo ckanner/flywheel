@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.38.1",
+  "version": "0.39.0",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -48,7 +48,8 @@
     "vendor/registry-verification-2026-11-22.json",
     "KIMI_NATIVE_PROTOCOL.md",
     "KIMI_NATIVE_PROTOCOL.en.md",
-    "vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz"
+    "vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz",
+    "vendor/antigravity-acp.json"
   ],
   "dsh": {
     "bundle": {
@@ -104,7 +105,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.2.1.tgz",
+    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },

@@ -27,7 +27,7 @@ test('Antigravity bridge forwards the complete native request and keeps host att
   assert.equal(Object.hasOwn(machineRequest(base,api,{}),'native'),false);
   const doctor=doctorResult();
   assert.equal(doctor.version,ADAPTER.version);
-  assert.equal(doctor.version,'0.2.1');
+  assert.equal(doctor.version,'0.3.0');
   assert.deepEqual(doctor.nativeModes,['native','subagents','swarm']);
   assert.equal(doctor.hardNativeAgentLimit,false);
   assert.equal(doctor.inferenceTested,false);

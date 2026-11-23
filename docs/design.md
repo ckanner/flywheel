@@ -30,7 +30,7 @@
 
 Flywheel 把明确需求变为一组有边界、有验收、有失败出口的 coding agent 任务。它负责确保“模型声称完成”与“可检查的交付完成”之间有可靠的验证与持久化过程。
 
-默认以 DSH Mac 桌面为入口，通过 Antigravity `agy`、Claude Code、Codex 与 Kimi 原生客户端使用四家订阅，不使用 ACP。`subscription-only` 是可达绑定和原生派发的显式约束，默认不含 DeepSeek API／充值账号或付费后备。旧 DSH provider 与 API 配置继续作为无此策略时的显式兼容路径，不能绕过严格订阅准入。账号权益、额度和实际费用不因本地配置通过而被推定。
+默认以 DSH Mac 桌面为入口。Antigravity 的人类交互会话默认走官方 `agy acp`（§7.3.1）；现有自动化任务继续通过明确的 headless machine 接口以及 Claude Code、Codex、Kimi 原生客户端运行，不把个人 ACP 自动加入机器循环。`subscription-only` 是可达绑定和原生派发的显式约束，默认不含 DeepSeek API／充值账号或付费后备。旧 DSH provider 与 API 配置继续作为无此策略时的显式兼容路径，不能绕过严格订阅准入。账号权益、额度和实际费用不因本地配置通过而被推定。
 
 具名模型 profiles、provider 与账号渠道的独立配置、有效配置查看和无推理安装预检已具备。`codex-pro` harness 直接消费 `dsh-subagent-codex-pro@0.10.2` 公开 machine API，作为默认 hard 路由；原 `codex` CLI driver 仅保留为用户明确选择的兼容路径，不作自动后备。统一准备启动入口、Auto／Quick／Full 和 DSH 会话任务关联减少已明确小任务的重复规划与终验。有界并行按冻结依赖和写入范围调度；桌面控制台提供受管阶段操作、配置编辑、会话接管和明确授权的远端交付。原生能力通过 native-profiles 接入各 loop，支持 DSH Team、Kimi Agent/Swarm/Tower、Codex agents、Claude Workflow 及 Antigravity Orchestrator／子代理／Swarm；各后端实际边界见 §3.3 和 §7.3。开放式自动模型选型仍不属于现有实现；显式允许集合内的首次执行选择及失败调整见 §13。
 
@@ -664,13 +664,61 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 
 ### 7.3 Antigravity CLI 接入契约
 
-`antigravity` 直接使用独立 `@ckanner/dsh-subagent-antigravity@0.2.1` 公开 machine API 与官方
-`agy` CLI，无 ACP。源码在 dsh-subagent-antigravity，真实 npm 候选随 Flywheel bundle，
+#### 7.3.1 默认个人交互式 ACP
+
+Flywheel 0.39.0 源码候选内置 companion 0.3.0 的公开 `./acp/host` 与 client source，
+自动提供独立 Antigravity 人类交互入口；插件默认 `transport:"acp"`。官方原版
+`agy acp` 是 Agent 主体；clientInfo 为真实 `dsh-antigravity`，不冒充 Zed。稳定
+ACP v1 客户端固定 SDK 2.9.1。没有 systemPrompt／append metadata、Preset、PTC、
+受管自定义 agent、隐藏控制前缀或宿主工具桥；mcpServers 为空，fs/terminal client
+capabilities 为 false。官方运行时照常加载用户原生 rules，并管理工具与权限。
+
+仅接受来源记录中官方 CLI 1.5.14 的精确四平台字节（macOS/Linux x64/arm64），
+先检查 executable digest、--version、acp --help，再真实 initialize 协商能力。
+设置 AGY_CLI_DISABLE_AUTO_UPDATE=true，profile／字节／订阅控制漂移不静默放行。
+原生登录使用同一程序／profile 的 acp --login；code 只写官方 helper stdin，不读取
+token 文件、不做 OAuth exchange、不将 code 或完整登录输出记入命令／session journal。
+helper 正常结束不自动发 prompt，用户重连后通过 native session/new 验证；个人路径
+只准入实际 options 中的 Gemini 模型。未选择符合模型时不静默替换。原生权限与
+sandbox 保留，旧 headless 默认值不注入此路径。
+
+每个新会话从源仓库 committed HEAD 创建独立 worktree 和 antigravity/<record-id>
+分支，页面展示来源／物理 cwd／分支／起点。未提交源改动不自动复制，不自动合并或
+删除 worktree。Git 私有元数据先 reservation 再创建，Host 自动化写入口拒绝这些
+路径及别名／子目录。它不是全局 OS 沙箱，也不声称独立 Go CLI 或外部编辑器遵守同一锁。
+
+鉴权 Typert Remote 从真实 Host Agent 得到 owner 和物理 workspace；前端不能改
+owner/cwd/env/command。私有 ACP record 和 operation journal 与 Go state.json
+分离；每个 prompt 的 UUID 和精确 typed bytes 在派发前持久化，同 ID 不重发。
+声明的 image/embeddedContext 能力分别门控相应输入，不改变 machine packet 图片准入。
+权限响应只回传 agent 提供的 optionId，取消清空待答权限；同会话只接纳一个未决请求。
+root prompt response、已知工具/child 活动、连接与清理分别记录，root 返回后继续接收
+更新。未知活动不被当成完成；不因缺少未暴露 child capability 永久拒绝普通会话。
+
+精确恢复仅使用原 session/cwd/runtime 的协商 resume/load；不重放本地 transcript。
+正常断开要求实际 close capability、native close 回应及自有进程组清理。子进程组
+可能活得比 leader 长，root exit 不证明 cleanup。丢失回应、宿主退出、未知 close
+保留 unknown 和锁，不自动重试、换模型、换账户或 headless/Registry/API 后备。
+真实 Cordis effect 生命周期和 workspace activity/stop hooks 等待 pending preparation
+及自有连接清理；页面卸载和 RPC 等待取消不代表 Agent 已停止。冷启动也读取原锁
+来显示未决活动，不能用宿主重启绕过归档检查。
+
+上述回执只表示直接交互会话状态，不写 Go task 成功，不跳过独立 Review，不自动
+加入 Plan/Execute/Review/JEV。源代码、离线 fixture、四平台摘要、Linux 未认证探测、
+真实账号验收与 npm 发行分别记录于[实施验收](validation/2026-11-22-antigravity-acp.md)。
+官方 CLI 与 Registry 均有官方身份；选择 CLI 及采用外部 Agent 架构不等于对所有
+消费者订阅用途作合规保证。后续自动化 ACP 绑定须另立用途／认证与技术契约。
+
+#### 7.3.2 显式 legacy machine
+
+`antigravity` 自动化 harness 继续直接使用独立 `@ckanner/dsh-subagent-antigravity@0.3.0` 的公开
+machine API 与官方 `agy` headless stream-json，协议仍为 1，和上述默认交互 ACP 分离。源码在 dsh-subagent-antigravity，真实 npm 候选随 Flywheel bundle，
 也可经 DSH plugin add 安装独立使用。原生程序与登录由用户环境提供。
 
 严格接纳完整模型/effort、cwd、权限、调用身份与清理。普通执行要求明确 full-access，
 映射 accept-edits/always-proceed；调查/JEV 的 read-only 请求必须同时 evidenceOnly，
-创建本次独占 agent 并在提示词前核对实际 init 的 agent 身份与空 tools。禁止额外 MCP、
+创建本次独占空 tools allowlist agent，并在提示词前核对实际 init 的 agent 身份与工具目录；
+目录可非空，实际工具／子 agent step 仍拒绝。禁止额外 MCP、
 子代理或 command 工具，不把 tool allowlist 解释为 OS 沙箱。原生图片输入不支持。
 
 外层 v3 使用 durable lifecycle ACK；内层 machine/lifecycle/activity 均独立 version 1。

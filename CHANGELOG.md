@@ -5,6 +5,32 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.0 — Official ACP interactive default (source candidate)
+
+- Make the Antigravity desktop connection default to the unmodified official
+  `agy acp`, bundled through companion 0.3.0 and a real authenticated DSH Remote.
+  Keep the native agent in charge of tools, permissions and its loop; send no
+  replacement/append system prompt, host tool bridge, Preset or PTC instructions.
+- Add native sign-in, negotiated Gemini/model/mode controls, continuous messages,
+  exact permissions, capability-gated typed images, cancellation and owned resume.
+  Keep login codes outside command events and durable session records.
+- Pin official CLI 1.5.14 executable hashes for four platforms and ACP SDK 2.9.1;
+  check native version/help/initialize, disable self-update and reject runtime drift
+  or silent transport/account fallback. Linux unauthenticated probes do not prove
+  live login, inference, image delivery or native detached-task cleanup.
+- Isolate each interactive session in a retained Git worktree from committed HEAD.
+  Guard Flywheel desktop mutations against owned ACP workspaces. Persist prompt
+  identities before dispatch, retain unknown work without replay, observe post-root
+  activity and supervise the complete owned process group.
+- Participate in real Cordis lifecycle and workspace archive/stop hooks, including
+  in-flight connection preparation and unresolved locks after a host restart.
+- Preserve the explicit machine API, its protocol-1 receipts and existing automated
+  workflow behavior with the pinned 0.3.0 package. ACP is not a new automated
+  Plan/Execute/Review or JEV backend. Standalone legacy delegation requires explicit
+  `transport:"headless"`. Preserve the historical 0.2.1 registry evidence separately.
+- This source change does not publish packages, merge the PR, change a user's DSH
+  profile or establish Google account entitlement or policy approval.
+
 ## 0.38.1 — 2026-11-22
 
 - Accept Antigravity evidence-only results with a nonempty CLI tool catalog when

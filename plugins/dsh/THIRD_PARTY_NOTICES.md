@@ -47,10 +47,10 @@ This distribution also bundles `dsh-preset-generator@0.4.0`, Copyright (c) 2026 
 
 ## Bundled Antigravity CLI adapter
 
-This distribution bundles `@ckanner/dsh-subagent-antigravity@0.2.1`, Copyright (c) 2026
+This distribution bundles `@ckanner/dsh-subagent-antigravity@0.3.0`, Copyright (c) 2026
 ckanner, under the MIT License. Its license remains at
 `node_modules/@ckanner/dsh-subagent-antigravity/LICENSE`. Exact source and archive identities
-are in the [Antigravity record](vendor/antigravity.json); the complete adapter source is in
+are in the [Antigravity record](vendor/antigravity-acp.json); the complete adapter source is in
 the standalone [dsh-subagent-antigravity repository](https://github.com/ckanner/dsh-subagent-antigravity). Its pinned `ajv@8.17.1` schema validator and transitive
 runtime dependencies retain their licenses in the bundled dependency tree. No native
 agy executable, account credentials or private Google application resources are included.
@@ -88,3 +88,13 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Bundled Agent Client Protocol SDK
+
+The Antigravity companion includes `@agentclientprotocol/sdk@2.9.1`, copyright
+Zed Industries, under Apache-2.0. Its source is
+[agentclientprotocol/typescript-sdk](https://github.com/agentclientprotocol/typescript-sdk/tree/v2.9.1).
+The complete upstream license is shipped in the installed SDK's `LICENSE` file.
+The companion also uses the pinned MIT-licensed Zod 4.3.6 schema library already
+used by Flywheel. Google Antigravity executable bytes are verified against the
+companion's provenance manifest and are not distributed inside this package.

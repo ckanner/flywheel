@@ -2,7 +2,7 @@
 
 [文档](../README.zh-CN.md) · 简体中文 · [English](../en/native-capabilities.md) · [完整设计](../plans/2026-11-13-native-harness-capabilities.md)
 
-Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。
+Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先定义 `native-profiles`，再把某个 profile 绑定到需要它的阶段。静态配置无需开启 JEV；模型、账号 channel、权限和角色历史仍由原有绑定决定。独立的个人 Antigravity ACP 视图使用官方 agent 报告的配置，不读取这些引擎 profile。
 
 本页描述该版本的实现。配套包身份和已核对的发行信息见 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，本机安装应单独核对；[0.34.0 发行记录](../validation/2026-11-14-release-0.34.0.md) 标明正式产物身份和已完成的检查。
 
@@ -14,17 +14,36 @@ Flywheel 可以在正式 loop 中调用各 harness 的原生协作能力。先�
 | `kimi` | Server Agent / Swarm / Tower | 已登录 Kimi；当前 Server API；显式 full-access |
 | `codex-pro` | 原生 agents 与子线程 | 内置 Codex Pro 0.10.2；已登录 Codex CLI；实际 sandbox/approval 回执 |
 | `claude-code-pro` | Agent 定义、Workflow、Advisor | 可选 Claude Code Pro 0.7.0；兼容本地 Claude 程序、获准使用的认证；显式 full-access |
-| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.2.1、通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
+| `antigravity` | 固定档位 Orchestrator、前台子代理、官方 CLI Swarm | 内置 Antigravity 0.3.0，显式调用 version-1 machine API；通过准入的官方 CLI 和显式 full-access；子成员证据为部分观察 |
 
 在 DSH 中选择 ChatGPT 模型仍然使用 DSH 的工具循环，不自动获得 Codex 的 app-server 能力。桌面的 `heavy` Agent Preset 也不自动成为独立 SDK worker 的组合；worker 使用与生成器共享策略的 PTC overlay，并验证实际运行结果。
 
-### Antigravity 协作
+### 个人交互 ACP
 
-Antigravity 使用独立的 version 1 native 选项：`mode:"native"`、`"subagents"` 或
+0.39.0 源码候选默认让桌面 **Antigravity** 视图使用配套包 0.3.0 的官方 `agy acp`
+客户端。用户直接向外部 agent 发送消息；原生循环、工具、权限和用户规则加载仍
+由官方 runtime 管理。客户端以 `dsh-antigravity` 标识自己，不替换或追加系统提示词，
+不注入受管自定义 agent、Preset／PTC schema 或 DSH 工具 bridge。
+
+原生模型／模式选项及实际工具／成员事件决定会话可用能力，此入口只支持 runtime
+报告的 Gemini 模型。Flywheel 的 `native-profiles`、machine 协作包装指令、仅分析
+证据的自定义 agent 或 JEV 选择不会转换到人工会话。只有原生会话声明支持时才能
+发送图片，也不改变 machine 图片准入。
+
+已知未完成工具、授权或子成员会阻止下一条 prompt 及配置变更。根请求完成、子成员
+结束和原生会话关闭分别记录，缺少证据时保持 unknown。每次新建使用独立 Git
+worktree，保留结果供主动审阅和整合；这不是 OS 沙箱，ACP 响应也不会成为自动任务
+回执。参阅[交互视图](flow-console.md#交互式-antigravity-视图)及
+[当前产物记录](../../plugins/dsh/vendor/antigravity-acp.json)。
+
+### Antigravity machine 协作
+
+显式 machine API 使用独立的 version 1 native 选项：`mode:"native"`、`"subagents"` 或
 `"swarm"`，可选 `maxObservedAgents`（1–8）。native 保留 CLI 隐式行为，不关闭子代理；
-显式 subagents／Swarm 必须观察到真实子会话元数据，观察数量阈值不等于原生并发硬限制。
-Orchestrator 则是单独的固定空 effort 模型选择。精确模型、Flywheel profile 与独立 DSH
-命令见 [Antigravity](antigravity.md)。
+显式 subagents 必须观察到真实子会话元数据。Swarm 调用可以在子成员状态仍 unknown
+时结束，根回执成功不证明完整协作或子成员清理。观察数量阈值不等于原生并发硬限制。
+Orchestrator 则是单独的固定空 effort 模型选择。精确模型、Flywheel profile 与独立
+headless DSH 命令见 [Antigravity](antigravity.md)。
 
 静态 profile 不要求打开 JEV；JEV 只能选择配置中已声明且满足资格的执行绑定。
 Flywheel Swarm 要求 Full、无图片，以及审查过的 2–8 个独立子任务和互不重叠的获准写入

@@ -51,14 +51,15 @@ These records preserve their original date and language. A proposal is not a
 claim that every proposed feature shipped; a validation record applies only
 to its named source, platform, and checks.
 
-The [official Antigravity ACP interactive proposal](plans/2026-11-22-antigravity-native-acp.en.md)
-([中文](plans/2026-11-22-antigravity-native-acp.md)) prefers the unmodified official
-CLI (`agy acp`), its own personal Google login and directly operated external-agent
-sessions. CLI 1.5.14 is the first qualification candidate, with a proposed 1.5.13
-minimum baseline and exact-build acceptance. Existing headless behavior and defaults
-remain. The official standalone Registry agent and any automated Flywheel binding
-need separate qualification and scope; this documentation-only proposal ships no
-ACP configuration, login or runtime capability.
+The [official Antigravity ACP interactive design](plans/2026-11-22-antigravity-native-acp.en.md)
+([中文](plans/2026-11-22-antigravity-native-acp.md)) now has an initial implementation:
+companion 0.3.0 and Flywheel 0.39.0 source candidates default the desktop connection
+to official `agy acp`, native login and isolated Git worktrees. CLI 1.5.14 is pinned
+by official executable bytes. The [current guide](en/antigravity.md) and
+[implementation evidence](validation/2026-11-22-antigravity-acp.md) distinguish
+client tests and unauthenticated probes from live-account acceptance and release.
+The legacy machine API remains explicit; Registry ACP and automated ACP bindings
+need separate implementation and qualification.
 
 The [subscription models, CLI plugins and workflows proposal](plans/2026-11-19-subscription-cli-workflows.en.md)
 ([中文](plans/2026-11-19-subscription-cli-workflows.md)) preserves the approved design.

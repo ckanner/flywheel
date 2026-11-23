@@ -26,9 +26,11 @@ let persistent = false;
 const saveHistory = () => { if (persistent && historyPath) writeFileSync(historyPath, JSON.stringify(history)); };
 let stopping = false;
 let subscriptionAccountReads = 0;
-// Keep the process alive even when its protocol input closes, so this case
-// really requires escalation rather than falling out of the Node event loop.
-if (scenario === 'stubborn') setInterval(() => {}, 1000);
+// Keep shutdown fixtures alive after protocol EOF until their intended signal
+// path runs. The owner closes stdin and sends TERM concurrently; otherwise a
+// signal-exit case can naturally exit 0 before its handler observes TERM.
+if (['stubborn', 'subscription-stop-signal', 'subscription-stop-exit-nonzero',
+  'subscription-stop-unexpected-signal'].includes(scenario)) setInterval(() => {}, 1000);
 let descendantExit;
 if (scenario === 'descendant') {
   const descendant = spawn(process.execPath, ['-e', `

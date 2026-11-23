@@ -6,6 +6,99 @@ The DSH Flywheel view brings the current task, workflow stages, configuration, s
 interaction, and delivery into one place. Keep the CLI, bundled engines, and DSH
 plugin at the same version. For installation, see [Getting started](getting-started.md).
 
+## Interactive Antigravity view
+
+The 0.39.0 source candidate installs a second conversation view, **Antigravity**,
+through companion 0.3.0. The two views have separate purposes:
+
+| View | Execution and state |
+| --- | --- |
+| **Flywheel** | Formal tasks, Go-owned stages, verification, independent review and machine receipts |
+| **Antigravity** | A person directly operates the official `agy acp` agent and its native tools in a persistent session |
+
+The personal view defaults to ACP and does not invoke the DSH parent model. It
+does not advance automatic Plan, Execute, Review or JEV, or turn an ACP response
+into a machine success receipt. The public machine path remains explicitly
+stream-json; connection errors never silently switch between these paths.
+
+### Connect and sign in
+
+Choose an existing Git repository with a commit as the conversation's current
+directory. Install official CLI **1.5.14**, open **Antigravity**, use **Check CLI**
+and then **New isolated session**. The official executable's version and digest
+must match. The blank new-conversation landing page has no view tabs; use the
+human bootstrap command there:
+
+```text
+/flywheel-antigravity
+```
+
+The empty command opens the entry without starting a CLI, login helper or task.
+Optional JSON controls use `version:2` and only `doctor`, `connect`, `list`, `status` and `cancel`; the
+last action requires the exact session `id`. It does not accept task text, code,
+login codes or permission answers. Those actions use the view's authenticated
+Remote and actual server-side conversation identity.
+
+If authentication is required, **Sign in with Google** starts the same verified
+`agy acp --login`. Open the official URL, enter its authorization code or callback
+URL in the password field, and connect or resume after the helper exits. A
+successful helper exit alone does not establish model access or account
+entitlement. Login is blocked while another managed session is active or
+unresolved; it does not switch accounts underneath that session.
+
+### Work and inspect native state
+
+The view shows the source directory, isolated working directory, branch and base
+commit. Every new session receives `stateRoot/workspaces/<id>` and branch
+`antigravity/<id>`, created from source HEAD. Uncommitted source changes are not
+copied, and a non-Git directory or a repository without commits fails clearly.
+The branch and worktree remain after disconnect; review and integrate changes
+using your usual Git workflow. They are not automatically adopted as a Flywheel
+task workspace. The Host refuses machine mutations directed at these owned
+paths or their physical aliases, but does not impose a global filesystem lock on
+other editors or the direct Go CLI.
+
+Select only Gemini model options reported by the official session. Native modes,
+tools and permission choices retain their own meaning; formal task profiles and
+automatic approval policies are not copied into this view. The client sends no
+replacement or appended system prompt, managed custom agent, Preset/PTC or host
+tool bridge. Native user rules still load through the official runtime.
+
+When image input is advertised, **Add images** or paste accepts PNG, JPEG, WebP
+and GIF up to 8 MiB per image, subject to the total content limit shown in the
+view. The client sends typed image bytes and retains their exact content for an
+unconfirmed operation; it does not substitute a local file path in the prompt.
+This capability does not enable image input in formal Antigravity machine tasks.
+
+Current-request completion, reported tools, native members, pending permissions
+and process/session cleanup are shown separately. A root response does not prove
+background members finished. Known unfinished work prevents another prompt or
+configuration change; absent child evidence remains unknown. Answer the exact
+native permission choices displayed. Display history can be truncated and is
+not a substitute for the native session's complete history.
+
+### Stop, disconnect and recover
+
+**Stop work** requests `session/cancel`; **Disconnect session** requests a native
+session close and stops the owned process group. Native close and local process
+cleanup require separate confirmation. Leaving the view detaches the display
+without cancelling the session. Disconnect is not Google logout; manage native
+authentication through the official CLI when needed.
+
+An unknown send outcome retains its operation ID and exact content. **Check send
+outcome** reads that original state without resending. A host restart, broken
+transport or unknown cleanup does not trigger transcript replay, lease takeover
+or a replacement session under the same ID. The worktree remains inspectable.
+Resume uses the negotiated native resume/load capability and the original
+runtime/worktree identity. If the conversation's current directory changed,
+return it to the original source context before operating that session.
+
+See [plugin configuration](configuration.md#antigravity-and-gemini) and the
+[current companion metadata](../../plugins/dsh/vendor/antigravity-acp.json).
+Offline client checks and unauthenticated CLI probes are separate from personal
+login, Gemini inference, image delivery and native background-cleanup acceptance.
+The following sections describe the **Flywheel** formal-task view.
+
 ## Find a task without entering paths
 
 The view follows the current conversation automatically, with no editable path fields. A conversation task navigator appears only when more than one task is associated; a single task opens directly. Its explicit tool association takes priority. Without one, the latest registered run with an exact matching host session ID opens. Foreign and ownerless runs are not shown. The index supplies identity only; Go status establishes progress. Unconfirmed operations retain their original target.

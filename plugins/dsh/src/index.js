@@ -4,6 +4,7 @@ import { resolveFlywheelBinary } from './installation.js';
 import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './task-association.js';
 import { planningUserAction, planningUserProjection, planningUserProjectionKey } from './planning-control.js';
 import { sessionUserAction, sessionUserProjection, sessionUserProjectionKey } from './session-control.js';
+import { installFlywheelAcp, protectAcpWorkspace } from './acp-host.js';
 
 export const inject = ['commands', 'tools', 'workingDirectory', 'sessionProjections'];
 
@@ -11,6 +12,7 @@ export function apply(ctx, config = {}) {
   // Loading the desktop package accidentally into the SDK profile must not
   // give a worker a tool that launches another orchestrator.
   if (process.env.FLYWHEEL_DSH_NATIVE_WORKER === '1') return;
+  const acpHost = installFlywheelAcp(ctx, () => config.antigravity ?? {});
   ctx.sessionProjections.register(taskAssociationProjection);
   ctx.sessionProjections.register(planningUserProjection);
   ctx.sessionProjections.register(sessionUserProjection);
@@ -55,18 +57,24 @@ export function apply(ctx, config = {}) {
     if (signal?.aborted) cancel();
     active.add(controller);
     try {
-      let defaultCwd;
+      let defaultCwd, dispatchInput = input;
       try {
         // The immutable session header records its original project. Read the
         // public current-directory projection without ensure() recovery effects.
         if (input?.cwd == null && agent?.session) {
           defaultCwd = ctx.workingDirectory.get(agent.session);
         }
+        // ACP sessions own isolated Git worktrees. Never adopt their files as a
+        // machine task or turn an interactive result into a Go success receipt.
+        if (mutation || input?.action === 'config-save') {
+          const cwd = await protectAcpWorkspace(input?.cwd ?? defaultCwd);
+          dispatchInput = { ...input, cwd };
+        }
       } catch (error) {
         // No control process has been launched if resolving the default fails.
         throw new ControlNotDispatchedError(error);
       }
-      const response = await runControl(input, {
+      const response = await runControl(dispatchInput, {
         binary,
         defaultCwd,
         hostSessionID: session?.id,
@@ -214,4 +222,5 @@ export function apply(ctx, config = {}) {
     execute: executeTool,
     finalizeContent,
   });
+  return acpHost?.ready;
 }

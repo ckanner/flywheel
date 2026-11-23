@@ -1,15 +1,19 @@
 # Verified companion packages
 
 Flywheel keeps exact reviewed package bytes. Codex Pro 0.10.2, Claude Code Pro
-0.7.0 and Antigravity 0.2.1 are published companion versions. The
+0.7.0 and historical Antigravity 0.2.1 are published companion versions. The
 [2026-11-22 registry verification](registry-verification-2026-11-22.json)
 records fresh downloads from the official npm registry: all three archives
 match their original reviewed vendor SHA-256 and integrity. The Claude
 subscription change, [PR #12](https://github.com/ckanner/dsh-subagent-claude-code-pro/pull/12), is merged.
-Antigravity 0.2.1 is an independent npm plugin whose complete source is maintained
-at [dsh-subagent-antigravity](https://github.com/ckanner/dsh-subagent-antigravity)
-and bundled from its reviewed tarball. Registry availability and the original
-source-build provenance are recorded separately.
+The current Antigravity bundle is the **unpublished 0.3.0 source candidate**,
+which defaults human desktop sessions to official CLI ACP and retains the explicit
+legacy machine API. Its complete source is maintained at
+[dsh-subagent-antigravity](https://github.com/ckanner/dsh-subagent-antigravity),
+with the change reviewed in [PR #1](https://github.com/ckanner/dsh-subagent-antigravity/pull/1).
+The exact archive is identified in [antigravity-acp.json](antigravity-acp.json).
+The older 0.2.1 registry record does not establish publication or live-account
+acceptance for 0.3.0. Registry availability and source-build provenance remain separate.
 LCU and ChatGPT below retain their previously verified registry identities. The
 private preset generator remains bundled from reviewed source.
 
@@ -18,9 +22,16 @@ private preset generator remains bundled from reviewed source.
 | `dsh-subagent-codex-pro@0.10.2` | Bundled published machine API | [18079d8b8c75](https://github.com/ckanner/dsh-subagent-codex-pro/commit/18079d8b8c751f5b50375473a96960eeb68b61be) | `b7c2e312c66dffb9b4aff6ce8c1b523cf5a3e7fe` | [codex-pro.json](codex-pro.json) |
 | `dsh-preset-generator@0.4.0` | Bundled private PTC composition | [3dc21791b1ef](https://github.com/ckanner/dsh-preset-generator/commit/3dc21791b1efe81bea9a26aa9e92ff2172b4f645) | `877ea728cad4d8ef4b21a691df2a03cfc9075efc` | [preset-generator.json](preset-generator.json) |
 | `dsh-subagent-claude-code-pro@0.7.0` | Optional published Agent SDK subscription machine peer | [ae3af4d752e4](https://github.com/ckanner/dsh-subagent-claude-code-pro/commit/ae3af4d752e4a974d41c848301472f4bb5d46d0f) | `501e99df8e626ef71568faefbafc974803e401bf` | [claude-code-pro.json](claude-code-pro.json) |
-| `@ckanner/dsh-subagent-antigravity@0.2.1` | Bundled adapter for official agy CLI, Orchestrator/subagents/Swarm and standalone DSH | [a20eb63bbfa2](https://github.com/ckanner/dsh-subagent-antigravity/commit/a20eb63bbfa2849df63043595475957bf4a4f04d) | `01bbc8964c37e40106b3b4be9aaf97d9a5df36dd` | [antigravity.json](antigravity.json) |
+| `@ckanner/dsh-subagent-antigravity@0.3.0` | Bundled ACP desktop default; explicit machine protocol 1 | [7d5056c81688](https://github.com/ckanner/dsh-subagent-antigravity/commit/7d5056c81688cc9408f3be32fc38ac7388b97377) | `1ed2fdc5cae8ee4b507b2bf461ec68a7f70c97f3` | [antigravity-acp.json](antigravity-acp.json) |
+| `@ckanner/dsh-subagent-antigravity@0.2.1` | Historical published adapter for official agy CLI, Orchestrator/subagents/Swarm and standalone DSH | [a20eb63bbfa2](https://github.com/ckanner/dsh-subagent-antigravity/commit/a20eb63bbfa2849df63043595475957bf4a4f04d) | `01bbc8964c37e40106b3b4be9aaf97d9a5df36dd` | [antigravity.json](antigravity.json) |
 | `dsh-plugin-lcu@0.5.0` | Optional managed desktop peer | [505e516cbc90](https://github.com/ckanner/dsh-plugin-lcu/commit/505e516cbc909556a7b9855a454202cc28b583a8) | `6256c2a947efec8812ae5e4e7e83c4d098ad1ee1` | [lcu.json](lcu.json) |
 | `dsh-plugin-chatgpt@0.1.20` | DSH provider compatibility fixture | [40d8f885e7a3](https://github.com/ckanner/dsh-plugin-chatgpt/commit/40d8f885e7a386af5f441b356b9c68496a47b0e3) | `c8c4f4829a00b1917fd1aef8c4254e083a5b6180` | [chatgpt.json](chatgpt.json) |
+
+The ACP candidate retains its original source-build identity above. The
+[test-only temporary-root follow-up](https://github.com/ckanner/dsh-subagent-antigravity/commit/dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd)
+(tree `05ecd07c88b81ebe1818312f69cd82c722c3799a`) canonicalizes macOS fixture paths.
+All 40 packaged files remain byte-identical; the existing tested tarball is reused.
+The metadata distinguishes this verification source from the archive source.
 
 Published-package verification includes the registry URL, exact integrity,
 SHA-256 and verification timestamp. Its verification toolchain does not claim how
@@ -49,7 +60,7 @@ The preceding 0.2.0 candidate was reviewed after adding fixed-effort Orchestrato
 explicit collaboration, bounded child observations and the DSH resume fix. The
 same archive bytes passed external installation/ESM/types/bin consumption and a
 real disposable DSH profile install. [Follow-up validation](https://github.com/ckanner/flywheel/blob/main/docs/validation/2026-11-20-orchestration-adaptive-selection.md)
-records the scope and limits of that earlier acceptance. The current 0.2.1
+records the scope and limits of that earlier acceptance. The historical 0.2.1
 archive and its later registry verification are identified separately above;
 package publication alone does not establish real-account model inference.
 

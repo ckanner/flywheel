@@ -77,7 +77,7 @@ test('published Client and Host Gateway reads are session-bound and append no co
   await clientCtx.plugin(GatewayClient);
   let definition;
   clientCtx.provide('locale', { register: () => () => {}, bind: () => key => key });
-  clientCtx.provide('slots', { inject: (_name, register) => register(), register: value => { definition = value; return () => {}; } });
+  clientCtx.provide('slots', { inject: (_name, register) => register(), register: value => { if (value.id === 'flywheel') definition = value; return () => {}; } });
   clientCtx.provide('remote.commands', { execute() { throw new Error('Passive reads must never execute chat commands'); } });
   const clientFiber = clientCtx.plugin(loadClient());
   await clientFiber;

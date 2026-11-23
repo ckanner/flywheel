@@ -115,6 +115,13 @@ Gemini Hydrogen medium。scoped 会话、full-access 权限、自动 worktree、
 
 会话历史复用和调用恢复是不同机制。派发、结果或清理未知时，即使请求新建会话也不能继续执行。各后端能力不同，具体边界见[中断恢复与上下文质量](docs/zh-CN/session-recovery.md)。离线评估可以验证协议行为，不能证明真实模型质量、缓存节省或性能收益。
 
+## 官方 Antigravity 交互
+
+0.39.0 源码候选将 Antigravity 桌面视图默认设为官方 `agy acp`，提供原生登录、
+运行时给出的 Gemini 选项、权限处理和独立 Git worktree 中的连续对话。提示词、
+工具和执行循环由官方 Agent 管理，使用方法及验收边界见
+[Antigravity](docs/zh-CN/antigravity.md)。既有自动化 machine 工作流保持独立接口。
+
 ## 文档与开发
 
 [文档索引](docs/README.zh-CN.md)提供中英文指南、架构规范和历史记录入口。

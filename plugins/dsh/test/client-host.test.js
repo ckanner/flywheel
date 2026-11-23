@@ -115,9 +115,11 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   } } };
   remote.$mount = async () => () => {};
   remote.flywheelConsole = { read: (sessionId, request) => remote.commands.execute(sessionId, '/flywheel ' + JSON.stringify(request), []) };
+  remote.antigravityAcp = { action: async () => { throw new Error('The task view must not dispatch ACP work'); } };
   ctx.provide('remote', remote);
   ctx.provide('remote.commands', remote.commands);
   ctx.provide('remote.flywheelConsole', remote.flywheelConsole);
+  ctx.provide('remote.antigravityAcp', remote.antigravityAcp);
 
   const sessionPlugin = { name: 'fixture-session', apply() {} };
   const sessionA = await ctx.plugin(sessionPlugin);
@@ -155,7 +157,7 @@ test('the published DSH renderer owns the external plugin lifecycle without Harn
   } };
   let owner = await ctx.plugin(ownerPlugin);
   assert.deepEqual(new Set(ctx.slots.entries('conversation.view').map(entry => entry.options.id)),
-    new Set(['flywheel', 'chat', 'trajectory']));
+    new Set(['flywheel', 'flywheel-antigravity', 'chat', 'trajectory']));
   await act(async () => { unmount = ctx.uiRenderer.mount(container); });
   assert.ok(container.querySelector('section[aria-label="Flywheel 流程工作台"]'));
   assert.equal(requests.length, 0);

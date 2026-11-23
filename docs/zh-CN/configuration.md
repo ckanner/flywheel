@@ -5,6 +5,9 @@
 Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析阶段绑定。模型分配、
 工作流选择、权限、调度和会话历史是独立策略。安装保留已有文件，修改配置后需重启引擎。
 
+这些引擎设置管理正式 Flywheel 任务。默认的个人 Antigravity ACP 视图使用独立的 DSH
+插件设置 `config.antigravity`，见[下文](#antigravity-与-gemini)；它不读取这里的角色绑定。
+
 编辑前先用 `config inspect` 查明生效文件。下文只展示部分字段的示例是需要并入完整
 配置的**片段**。
 
@@ -14,6 +17,7 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 - [权限](#完全权限与无需逐步确认)与[调度](#调度与-worktree)
 - [会话历史](#会话策略历史复用与调用安全)与[工作流策略](#工作流策略与恢复)
 - [后端接入](#codex-pro-与旧配置迁移)、[预算](#后备渠道与预算)和[预检](#无推理诊断)
+- [个人 Antigravity ACP 与独立的 machine harness](#antigravity-与-gemini)
 
 
 ## 方案规划角色的绑定
@@ -172,8 +176,9 @@ DSH 桌面在登录后且没有任何 provider API key 时，可以自动选择�
 Swarm 在 Plan、Review、Judge 和紧凑方案角色中禁选，配置加载也拒绝这些不合法的
 引用。Execute 显示运行时仍须核对的条件：Full、已审批且有 2–8 项独立写入分工的
 collaboration 契约，以及没有原生图片输入。配置 Swarm 候选不代表当前 packet 已
-满足资格。没有图片的任务可以使用 Antigravity；当前 Flywheel 接入尚无它的原生
-图片输入通道。
+满足资格。没有图片的任务可以使用 Antigravity；当前正式 machine harness 尚无它的
+原生图片输入通道。独立的人工 ACP 视图可在原生会话声明支持时发送图片；这不会给
+machine packet 或 Swarm profile 增加图片能力。
 
 阶段绑定详情提供 Antigravity 的 `native`、`subagents`、`swarm` 和可选的
 `maxObservedAgents`（1–8）控件。原定义被共享时，编辑会创建此目标专属的 profile，
@@ -532,7 +537,7 @@ thinking、权限及后端运行配置引用。home/profile、worker 和命令�
 派发、结果或清理有任何一项未知时，原调用阻止继续执行；换成 fresh、改变适配器或
 重启不能绕过。子进程退出只解决进程事实，不证明模型结果已知。`resume-candidate`
 只是允许适配器尝试正常续接，不是历史已持久化或任意崩溃后都可恢复的证明。
-Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.2.1 的主任务调用使用外层 worker v3，
+Codex Pro 0.10.2、Claude Code Pro 0.7.0 和 Antigravity 0.3.0 的主任务调用使用外层 worker v3，
 接通公开 typed lifecycle、等待 Go 持久化后返回的 ACK，以及不发送新 turn 的只读
 recovery。Codex 可以在配置核对后的 `thread-ready` 阻止新 turn；Claude 在任务前
 检查 SDK initialize／版本和要求的订阅证据，但原生 `system/init` 配置消息仍发生在
@@ -841,8 +846,8 @@ full-access 核对 `danger-full-access`／`dangerFullAccess`，不将其称为�
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | 可选的配套 Claude Code Pro worker 路径 |
 | `FLYWHEEL_CLAUDE_BIN` | 原生 Claude 程序，默认 PATH 中的 `claude` |
 | `CLAUDE_CONFIG_DIR` | Claude 自身解释的已有配置／登录目录 |
-| `FLYWHEEL_ANTIGRAVITY_WORKER` | 可选的配套 Antigravity worker 路径 |
-| `FLYWHEEL_AGY_BIN` | 官方原生 CLI 程序，默认 PATH 中的 `agy` |
+| `FLYWHEEL_ANTIGRAVITY_WORKER` | 可选的配套 Antigravity machine worker 路径 |
+| `FLYWHEEL_AGY_BIN` | machine worker 的官方 CLI，默认 PATH 中的 `agy`；个人 ACP 使用 DSH `config.antigravity.command` |
 
 这些设置须对启动引擎的进程可见，安装器不复制凭证。GUI 启动器记录安装时的工具
 路径；终端中的临时 export 不会改变已运行的桌面进程。
@@ -872,13 +877,49 @@ frontend／multimodal 执行。`fable` 供显式替换，canonical model 是
 
 ## Antigravity 与 Gemini
 
-`antigravity` harness 通过 `@ckanner/dsh-subagent-antigravity@0.2.1` 的公开 machine API
-调用官方本机 `agy` CLI，同一插件也能在 DSH 中直接使用。不经过 ACP，不需要另一个
-Gemini API 凭证。实际原生目录必须包含选定的精确模型，thinking 必须与 slug 一致。
-插件验证本机订阅／credits 控制、原生生命周期、请求配置和清理；账号访问或模型
-不可用时明确失败，不悄悄换模型、开启 credits 或转用云 API。安装、原生 CLI 版本、
-环境检查、DSH 入口、仅分析证据的模式，以及本机控制与账号计费证据的区别，见
+0.39.0 源码候选内置 `@ckanner/dsh-subagent-antigravity@0.3.0`，桌面独立的
+**Antigravity** 视图默认使用个人交互 ACP。以下是 **DSH Flywheel 插件配置片段**，
+不是 `flywheel.config.json` 片段：
+
+```json
+{
+  "antigravity": {
+    "transport": "acp",
+    "command": "agy",
+    "disposeGraceMs": 2000
+  }
+}
+```
+
+省略 `antigravity` 等于 `{}`，使用上述默认值。`command` 可以是已安装官方程序的
+名称或绝对路径。客户端要求记录的官方 CLI 1.5.14 版本及摘要；包装程序、字节改变或
+未支持的升级都会明确失败。`FLYWHEEL_AGY_BIN` 不配置这个入口。客户端不会回退到
+Registry agent、headless、API 凭证或另一个账号。
+
+需要认证时，视图可以启动已核验 CLI 自己的 `agy acp --login`，由用户在认证视图
+完成流程；凭据和授权码不复制到 Flywheel 配置或 slash 命令。模型、模式与权限选项
+来自原生会话，此个人入口仅准入它报告的 Gemini 模型。客户端保留原生用户规则，
+不替换或追加系统提示词，不注入受管自定义 agent、Preset／PTC schema 或 DSH 工具
+bridge。引擎的 `profiles`、`native-profiles`、model／effort 和自动权限设置不会转换
+到此会话。
+
+每个新 ACP 会话根据来源仓库已提交的 HEAD 创建独立 Git worktree，不复制来源中的
+未提交修改，断开后保留目录与分支。桌面 Host 拒绝指向 ACP 所属工作区的 machine
+变更和配置保存，物理别名也在检查范围；这不锁定其他编辑器或直接 Go CLI 调用。
+连接、原生权限、图片与恢复见[交互视图](flow-console.md#交互式-antigravity-视图)。
+[当前配套包记录](../../plugins/dsh/vendor/antigravity-acp.json) 分开标明源码／产物、
+发行和真实登录证据。
+
+正式 `antigravity` harness 显式导入配套包的 `./machine` API，请求／回执及 lifecycle
+契约仍为 version 1。Plan、Execute、Review、Intake 和 JEV 继续使用官方 `agy`
+stream-json；ACP 响应不会成为成功的 machine 回执。原生目录仍须包含选定的精确
+模型，`thinking` 必须与 slug 一致；machine adapter 继续验证其订阅／credits 控制、
+原生生命周期、请求配置和清理，访问或证据不足时明确失败。桌面默认值不改变现有
+machine 绑定。仅 machine 使用的 profile、证据分析和本机计费证据的限制见
 [Antigravity 指南](antigravity.md)。
+
+显式 `transport:"headless"` 会禁用 Flywheel 的个人 ACP 入口。独立配套插件在该设置
+下保留旧任务面板和工具；此设置不改变 Flywheel 显式 machine worker 的传输方式。
 
 ## 后备渠道与预算
 
@@ -926,7 +967,7 @@ doctor 不接收运行时的 `--mode` 覆盖，只反映 Spec／已保存状态�
 DSH 的 `ready.reasoningEffort` 是 SDK 接受配置之后的 worker 回显，不是模型服务独立证明的实际推理强度。没有模型请求的检查不能证明更高档位提高质量；Gemini、Claude、GPT、Kimi 也不共用同一套原生 effort 契约，详见[推理等级说明](model-policy.md)。
 
 原生 worker 检查实际导入公开 API，并核对精确 companion 契约：Codex Pro 0.10.2、
-Claude Code Pro 0.7.0、Antigravity 0.2.1，及要求的 lifecycle／recovery 导出、
+Claude Code Pro 0.7.0、Antigravity 0.3.0，及要求的 lifecycle／recovery 导出、
 Node 兼容性和原生命令。
 绑定的 `durableJournal`、`readOnlyRecovery`、`threadReadyBeforeDispatch` 表示锁定
 适配器的静态能力；Claude 最后一项为 false。`historyRecoveryTested` 保持 false。

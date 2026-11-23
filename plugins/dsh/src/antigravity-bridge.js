@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.2.1', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -12,7 +12,7 @@ export class WorkerError extends Error {
 export async function loadAdapter() {
   let manifest, api;
   try { manifest = require('@ckanner/dsh-subagent-antigravity/package.json'); api = await import('@ckanner/dsh-subagent-antigravity/machine'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.2.1 alongside Flywheel'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.3.0 alongside Flywheel'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version || api.MACHINE_PROTOCOL_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_VERSION !== 1 || api.MACHINE_ACTIVITY_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||

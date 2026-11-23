@@ -7,6 +7,12 @@ Go orchestration engine. It adds a native workflow view, command and model-tool
 controls, and the workers used by selected backends. The engine owns task state,
 verification, budgets, process lifecycles, and Git delivery.
 
+The **0.39.0 source candidate** also adds a separate **Antigravity** view for
+personal interactive development. It defaults to the official `agy acp` through
+the bundled companion **0.3.0**. This source/candidate change does not establish
+that either version is published under npm `latest`; current provenance is in
+[the ACP package record](vendor/antigravity-acp.json).
+
 Use the complete Flywheel installer for normal setup. The published
 `@ckanner/flywheel` package includes the CLI, engine, workers, skills and desktop
 plugin. Plain npm installation places those files; `install`/`setup` registers
@@ -23,7 +29,7 @@ The selected host may have a higher Node requirement; use its supported runtime.
 
 The range is an API compatibility policy, not evidence that every future host
 has been tested. Locked integration fixtures cover the legacy 0.2.1-rc.5 host
-and the current 0.2.2-rc.3 host/SDK. Required services, session identity,
+and the pinned 0.2.2-rc.3 host/SDK. Required services, session identity,
 permission receipts and process cleanup remain checked at runtime. A missing
 service or invalid receipt still fails visibly before unconfirmed work is accepted.
 DSH peers stay optional and are supplied by the host; their npm ranges also
@@ -57,12 +63,12 @@ See [Getting started](https://github.com/ckanner/flywheel/blob/main/docs/en/gett
 
 ## Prepare the selected backends
 
-The default uses native subscription clients; the DSH view is the control plane.
+Formal Flywheel tasks use native subscription clients; the Flywheel view is their control plane.
 Installing a desktop plugin does not change the parent conversation's provider.
 
 | Backend | Setup and execution path |
 | --- | --- |
-| Antigravity | Bundled `@ckanner/dsh-subagent-antigravity@0.2.1` machine API → official installed `agy` CLI and native Google login; no ACP |
+| Antigravity machine tasks | Bundled `@ckanner/dsh-subagent-antigravity@0.3.0` explicit version-1 machine API → official `agy` stream-json; separate from the default interactive ACP entry |
 | Claude Code Pro | Exact optional peer `0.7.0` in the worker dependency tree → official Agent SDK → local Claude Code subscription |
 | Codex Pro | Bundled `0.10.2` machine API → official app-server with ChatGPT login |
 | Kimi | Minimal owned native agent profile with managed Kimi Code OAuth; strict subscription mode rejects print |
@@ -91,12 +97,57 @@ install model-client executables.
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | Explicit optional Claude worker override |
 | `FLYWHEEL_CODEX_BIN` / `CODEX_HOME` | Native Codex executable and existing configuration/login root |
 | `FLYWHEEL_CLAUDE_BIN` / `CLAUDE_CONFIG_DIR` | Native Claude executable and existing configuration/login root |
-| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | Official agy executable / explicit Antigravity worker override |
+| `FLYWHEEL_AGY_BIN` / `FLYWHEEL_ANTIGRAVITY_WORKER` | Machine-worker agy executable / worker override; interactive ACP uses the DSH plugin's `antigravity.command` |
 | `FLYWHEEL_KIMI_BIN` | Native Kimi executable; default `kimi` |
 
 The npm launcher normally resolves workers from its own installed package.
 Executables and environment settings must be visible to the process that starts
 the engine; a shell export does not update an already running desktop.
+
+## Personal development with official Antigravity ACP
+
+Install the unmodified official **Antigravity CLI 1.5.14** and select a DSH
+conversation whose current directory is a committed Git repository. Open the
+**Antigravity** view next to Flywheel. If a blank conversation has no view tabs,
+use the human command below, then open the view:
+
+```text
+/flywheel-antigravity
+```
+
+The empty command opens the entry without starting the CLI. In the view, check
+the CLI and choose **New isolated session**. Optional JSON controls use
+`{"version":2,"action":"connect"}` or `doctor`, `list`, `status` and `cancel`;
+`cancel` needs the exact record `id`. Prompts, code, Google sign-in responses and permission
+choices are sent through the view's authenticated Remote, never the command log
+or a DSH parent model. When sign-in is required, the view starts the same verified
+official `agy acp --login`; complete its Google flow and resume the recorded
+session. The plugin does not read or copy account tokens. A successful login
+helper exit is not proof of account entitlement or a successful Gemini request.
+
+Every new session uses `stateRoot/workspaces/<id>` on branch `antigravity/<id>`,
+starting from the source repository's current commit. Source uncommitted edits
+are not copied; non-Git directories and repositories without commits are rejected. The view shows
+the source, actual worktree and starting commit. Disconnect preserves the branch,
+worktree and records; integrate reviewed changes through your normal Git workflow.
+The Host refuses Flywheel machine mutations targeting an ACP-owned worktree,
+including physical aliases. This guard is for the managed Host entry, not a
+global cwd lock, an OS sandbox, or a guard on separately invoked Go CLI commands.
+
+The official agent owns its model, tools, permissions and internal loop. This
+entry sends no system-prompt replacement/append, managed agent, Preset, PTC or
+DSH tool bridge. Official user/project rules still load normally. The view uses
+native configuration options and admits Gemini models; it invents no model IDs.
+Root prompt completion, outstanding tools/children, cancellation, native session
+close and local process-group cleanup remain separate states. Unknown results
+retain their records and lock and are never automatically replayed. Switching
+views only detaches the UI; use **Stop work** or **Disconnect session** for native work.
+
+ACP does not replace automatic Plan/Execute/Review/JEV bindings or create machine
+success receipts. Their explicit `./machine` contract remains version 1. ACP never
+silently falls back to headless, the Registry agent, another account or an API.
+See the [interactive contract](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/ACP.md)
+and [console guide](https://github.com/ckanner/flywheel/blob/main/docs/en/flow-console.md#interactive-antigravity-view).
 
 ## Start a task and use the workbench
 
@@ -303,6 +354,15 @@ under `~/.config/flywheel/`. Without a record, the installed package uses its ow
 `bin/flywheel.js`; only the private source harness retains the legacy PATH fallback.
 A damaged record or changed launcher fails visibly. `controlTimeoutMs` defaults
 to 60,000 and controls the desktop control request, not the task's total budget.
+
+Interactive settings live in the DSH plugin's `config.antigravity`, default `{}`
+(equivalent to `transport:"acp"`, `command:"agy"`, `disposeGraceMs:2000`). They are
+not fields in the engine's `flywheel.config.json`. Use `antigravity.command` for
+an exact official executable path; the verified bytes/version must still match.
+Legacy model/effort/native/permission settings are not injected into ACP. Explicit
+`transport:"headless"` disables this interactive entry; the standalone companion
+also retains its old task panel/tool under that explicit setting. Changing it
+does not reroute Flywheel's machine workers.
 
 An existing managed launcher must match the installed package version. After updating
 only the DSH copy, run setup for that version to refresh the managed installation;

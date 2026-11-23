@@ -3,29 +3,47 @@
 English · [简体中文](2026-11-22-antigravity-native-acp.md) · [Plans index](README.md) · [Current Antigravity guide](../en/antigravity.md)
 
 - Date: 2026-11-22; revised after the requested comparison of the two official runtimes. Prefer CLI ACP for personal interactive use; retain standalone ACP as a separately qualified option.
-- Status: **proposed, documentation only**. This document ships no ACP runtime, configuration field, login or image capability and changes no existing default.
+- Status: **initial interactive client implemented in the 0.39.0 source candidate**, following the user's subsequent implementation request. The original proposal and source observations remain below; current scope and evidence are recorded in [the implementation record](../validation/2026-11-22-antigravity-acp.md). No registry publication or real-account acceptance is implied.
 - Original baseline: Flywheel `291c0a02f9042d522d3e0f3c62977f63149465cd` / 0.38.0; `@ckanner/dsh-subagent-antigravity` 0.2.1, source `a20eb63bbfa2849df63043595475957bf4a4f04d`.
 - Revision baseline: main `4d83ad350504411e0d413638bc95a43eeffadb44`. [PR #62](https://github.com/ckanner/flywheel/pull/62) merged as `bf780416136be7bfdd11101f34bbfa358c316394`; its receipt/packaging fixes and validation are separate from this proposal. The original baseline above remains historical evidence.
 
+## Implementation scope after approval
+
+The user subsequently requested implementation and ACP as the default. Companion
+0.3.0 now supplies the stable v1 client, authenticated host/UI, official login
+helper, runtime provenance checks, typed images, permissions and exact session
+records. Flywheel 0.39.0 mounts it directly. The personal entry admits only
+Gemini models reported by the native session; Claude and other non-Gemini models
+are not implemented choices. No host system-prompt replacement/append or host
+tool bridge is injected; official user rules still load normally. New sessions use retained Git worktrees from committed HEAD rather
+than sharing a live automatic-task workspace. This implementation choice replaces
+the proposed shared-workspace lease for the initial direct path; it does not
+claim a global lock for independently launched tools.
+
+The current guide and [validation record](../validation/2026-11-22-antigravity-acp.md)
+own shipped-source behavior. The later Registry and machine-binding stages below
+remain proposals. Native login/inference, image delivery and detached-task cleanup
+have not been established by offline fixtures or unauthenticated probes.
+
 ## 1. Decision, use case and stages
 
-**Prefer Google's unmodified official Antigravity CLI, launched as `agy acp`, for the first personal interactive external-agent session in DSH/Flywheel.** The same official runtime owns Google sign-in, credentials, model calls, tools and the internal agent loop. The user connects, sends development tasks, handles permissions, reviews results and interrupts work; the desktop host provides the ACP client and interface. CLI 1.5.14 is the first qualification candidate, not an already accepted runtime [S28].
+**Prefer Google's unmodified official Antigravity CLI, launched as `agy acp`, for the first personal interactive external-agent session in DSH/Flywheel.** The same official runtime owns Google sign-in, credentials, model calls, tools and the internal agent loop. The user connects, sends development tasks, handles permissions, reviews results and interrupts work; the desktop host provides the ACP client and interface. CLI 1.5.14 is the exact implemented runtime target [S28]. Official bytes for four platforms and unauthenticated Linux initialization have now been checked; live-account and other-platform execution acceptance remain separate.
 
-The independent Registry `antigravity-acp` remains an official, valid alternative with its own qualification. Neither runtime silently substitutes for the other or for headless. Current headless stream-json behavior, defaults and tasks are unchanged by this documentation PR. Initial ACP sessions are not automatically added to JEV, Plan/Execute/Review or other machine candidate sets. A UI session does not establish Flywheel task completion or independent Review.
+The independent Registry `antigravity-acp` remains an official, valid alternative with its own qualification. Neither runtime silently substitutes for the other or for headless. The desktop connection now defaults to ACP; the standalone legacy task/tool interface requires explicit `transport:"headless"`. The machine stream-json API and existing automated task behavior remain separate. Initial ACP sessions are not automatically added to JEV, Plan/Execute/Review or other machine candidate sets. A UI session does not establish Flywheel task completion or independent Review.
 
 **Decision history.** The original proposal incorrectly grouped Google's independent `.par` distribution with third-party wrappers. The first revision corrected that and selected Registry-first to match the requested artifact. After the user's explicit request to compare both official choices, this revision recommends CLI-first based on official integration guidance, versioned fixes, T3's merged migration and reduced maintenance duplication (§3). It preserves the official status of the standalone distribution and the original filenames/links. This is an engineering preference, not a claim that only CLI ACP is permitted or that Google has retired standalone ACP.
 
-| Stage | Proposed scope and boundary |
+| Stage | Scope, implementation status and boundary |
 | --- | --- |
-| Initial: personal interactive external agent | Official `agy acp` on macOS/Linux: native personal sign-in, text turns, runtime-provided model/effort/mode selection, permissions, stop and exact history loading. Images and native collaboration receive separate capability acceptance. Upstream Windows packages do not establish this project's Windows acceptance. |
+| Initial: personal interactive external agent | Implemented in the source candidate using official `agy acp` on macOS/Linux: native login helper, text and typed-image input, native Gemini model/configuration options, permissions, stop and exact history loading. Real-account login, image delivery and native collaboration still need separate acceptance. Upstream Windows packages do not establish this project's Windows acceptance. |
 | Later: independent Registry runtime | Explicitly selected original `antigravity-acp`; independently validate source/version, platform command, auth, history and capabilities. It is not an automatic recovery route. |
 | Later: automated Flywheel binding | Establish a separate implementation scope with technical proof and support for the selected use/authentication context before machine APIs, role admission or automatic scheduling. An interactive session cannot upgrade itself into this binding. |
 
-ACP means **Agent Client Protocol**, connecting a client to a complete agent; it is not a model name. The proposed implementation preference changes, while Auto/Quick/Full, plan approval, JEV's single switch, current model/subscription defaults and independent acceptance do not. Speed and quality gains require measurement; the choice does not pronounce on every existing Flywheel use case.
+ACP means **Agent Client Protocol**, connecting a client to a complete agent; it is not a model name. The implemented personal desktop entry now defaults to ACP. Auto/Quick/Full, plan approval, JEV's single switch, existing automated-task model/subscription defaults and independent acceptance remain unchanged. Speed and quality gains require measurement; the choice does not pronounce on every existing Flywheel use case.
 
 ## 2. Existing system and separate repair
 
-The implemented path remains:
+The existing machine path remains:
 
 `Flywheel Go owner → Antigravity worker → public plugin machine API → owned headless agy process`.
 
@@ -42,7 +60,7 @@ The plugin owns process groups and durable recovery journals; Go validates termi
 
 **Historical baseline defect and subsequent repair.** At `291c0a0`, adapter 0.2.1 accepted a nonempty `init.tools` catalog after managed-agent validation, but Go still required an empty catalog. Valid receipts could become unknown, freezing JEV's baseline or blocking investigation. [PR #62](https://github.com/ckanner/flywheel/pull/62) has since merged; it binds acceptance to managed-agent proof and a present tool catalog, fixes successful-receipt keyword misclassification, and records adapter → worker → Go → decision/investigation/recovery checks. [The corrected driver][C5] and [proof validation][C6] are subsequent evidence, not a rewrite of the original observations.
 
-M0 checks this merged prerequisite and its existing acceptance record; this documentation revision does not rerun or claim those implementation tests. ACP did not perform the repair. Initial interactive sessions do not require Go lifecycle ACK machinery; that belongs to a later machine binding.
+The original documentation revision checked M0 against the merged prerequisite and its existing acceptance record. The later implementation has its own dated test record; it does not replace that historical evidence. ACP did not perform the repair. Initial interactive sessions do not require Go lifecycle ACK machinery; that belongs to a later machine binding.
 
 ## 3. Evidence and alternatives
 
@@ -58,7 +76,7 @@ Google documents Registry installation and arbitrary ACP editor/client integrati
 
 The 2026-10-08 reply by Google-flair moderator chunduriv distinguishes direct scripts/CI and ACP editors from third-party coding agents wrapping consumer sign-in, and disclaims formal legal interpretation [S22]. Public profile data verifies this author's moderator/Google flair; the fetched profiles for Rebbanpalli_Naveen and Ambati_Rajendra expose neither marker [S33]. Their staff affiliation was not independently verified; missing markers alone do not prove that they are not staff. Treat the T3/OpenBot/DSH replies as contextual interpretations, not a substitute for formal terms or product documentation. An outer automated binding still needs its own use/authentication basis; choosing CLI instead of Registry changes no such boundary.
 
-**Versioned model evidence.** CLI 1.5.1 release notes offer account-available models to every ACP client, whereas the editor guide retains a non-Gemini client allowlist [S4, S28]. Record the discrepancy and use the selected CLI session's actual options/accepted results with honest client identity. Do not guarantee Claude or every listed model, impersonate an editor, or extend the CLI release statement to standalone ACP. ACP v1 optional features require negotiation [S5–S8]; v2 preview is outside the initial client.
+**Versioned model evidence and current admission.** CLI 1.5.1 release notes offer account-available models to every ACP client, whereas the editor guide retains a non-Gemini client allowlist [S4, S28]. Preserve that research discrepancy. The implemented personal entry deliberately admits only native-session-reported Gemini models, with honest client identity; a cached non-Gemini selection blocks prompting rather than being silently replaced. Broader model support is a later decision requiring its own evidence and acceptance, even if the runtime advertises those options. Do not guarantee Claude or every listed model, impersonate an editor, or extend the CLI release statement to standalone ACP. ACP v1 optional features require negotiation [S5–S8]; v2 preview is outside the initial client.
 
 ### 3.2 T3 and Pi: implementation evidence
 
@@ -82,7 +100,7 @@ The 2026-10-08 reply by Google-flair moderator chunduriv distinguishes direct sc
 | Performance/resources | Historical samples favor startup/RSS (§3.3); no current end-to-end result. | Historical samples use older standalone versions. | Prefer CLI on functionality/maintenance evidence; promise no fixed speed or quality gain. |
 | Compatibility cost | Login helper, modes, background events, cancellation and self-update require real adaptation [S30–S32]. | Independent compatibility work; still useful for explicitly chosen Registry/editor environments. | Qualify one primary runtime first; add standalone only with a concrete need and its own tests. |
 
-**Proposed version policy.** Start qualification with **CLI 1.5.14**. Treat **1.5.13 as the proposed minimum baseline**, because it fixes session cwd and editor-supplied file contents. CLI 1.5.10 fixes post-turn child/background notifications and cancel/close cleanup; 1.5.1 broadens models and fixes session cancellation [S28]. These are release-note facts, not our live acceptance. Do not accept any `>=1.5.0` just because it has `acp`, or automatically admit every future version. Record exact tested version/bytes/platform and required capabilities; unknown or changed builds require requalification before business dispatch. This is not a minimum-version change to the existing headless integration.
+**Implemented admission and version rationale.** The source candidate accepts only the recorded official **CLI 1.5.14** version and binary digests. The original proposal identified **1.5.13 as a prospective minimum baseline** because it fixes session cwd and editor-supplied file contents; that rationale does not admit 1.5.13 or a general version range today. CLI 1.5.10 fixes post-turn child/background notifications and cancel/close cleanup; 1.5.1 broadens models and fixes session cancellation [S28]. These are release-note facts, not our live acceptance. Do not accept any `>=1.5.0` just because it has `acp`, or automatically admit every future version. Record exact tested version/bytes/platform and required capabilities; unknown or changed builds require requalification before business dispatch. This is not a minimum-version change to the existing headless integration.
 
 ### 3.3 What the performance reports establish
 
@@ -143,7 +161,7 @@ A future host-instruction extension or DSH-tool MCP bridge requires a separate d
 
 ### Initial interface example
 
-This is a **future client-settings design, not accepted configuration today**. It is neither a machine profile nor a complete installation configuration:
+This retained example is a **future client-settings design, not accepted configuration today**. The implemented entry uses DSH `config.antigravity`, defaulting to `{}`/`transport:"acp"`; see the [current configuration guide](../en/configuration.md#antigravity-and-gemini). The example is neither a machine profile nor a complete installation configuration, and its general model-selection label does not broaden the current Gemini-only entry:
 
 ```json
 {
@@ -165,7 +183,7 @@ This is a **future client-settings design, not accepted configuration today**. I
 
 | Surface | Initial contract |
 | --- | --- |
-| External-agent session | Explicit connect/login, workspace selection, runtime-provided model/effort, tasks, permissions, review and stop. |
+| External-agent session | Explicit connect/login, source-workspace selection and an isolated worktree, native Gemini model/configuration options, tasks, permissions, review and stop. |
 | Public interactive plugin API | Separately versioned connect/authenticate/new-or-load/prompt/cancel/close and observations; no second native ACP parser in the UI. |
 | Session record | Owned session/turn/connection identities, input manifest, dispatch/terminal/activity/cleanup facts; no task-state writes or machine-success receipts. |
 | Capabilities/configuration | Distinct advertised/local-verified/live-verified/unknown and requested/accepted/observed facts; an echo is not independent backend observation. |
@@ -179,10 +197,10 @@ The initial flow begins with explicit user actions:
 
 1. Choose workspace and the official CLI installation. Check ownership/lease, binary provenance/version/digest, platform arguments and local configuration under the same native environment. A valid artifact proves neither account entitlement nor quota. Use the §3.2.1 candidate/version policy; do not treat old headless qualification as ACP qualification.
 2. Launch the owned `agy acp` process, send `initialize` with honest `clientInfo` and implemented capabilities, and inspect actual authentication methods and capabilities. Missing required support prevents business dispatch.
-3. Present Connect / Sign in with Google. The CLI may reuse its native cached login. When authentication is needed, use its supported `oauth-personal` flow. A browser-capable client may use ACP `authenticate` when tested; the official `agy acp --login` helper is the explicit terminal/code-login route. Use the same resolved executable, profile/settings arguments and environment for helper and session. Do not assume `$BROWSER` interception works: T3's migrated login needed an explicit helper [S30].
+3. Present Connect / Sign in with Google. The CLI may reuse its native cached login. When authentication is needed, the implemented client uses the official `agy acp --login` helper for the personal flow. Direct ACP `authenticate` remains a possible later route requiring separate validation. Use the same resolved executable, profile/settings arguments and environment for helper and session. Do not assume `$BROWSER` interception works: T3's migrated login needed an explicit helper [S30].
 4. When the helper route is selected, run it as a separate, bounded authentication process, not on the active JSON-RPC stdout stream. Use only one authentication route per attempt. Present the official URL and pass the user's official code to that process; the CLI performs the OAuth exchange and credential storage/refresh. Neither authorization codes/URLs with sensitive parameters nor tokens enter durable logs/journals. Handle completion, cancellation, timeout and errors without changing accounts, API keys or billing paths. The standalone `.par` option must use its own advertised auth, not CLI `--login`.
 5. After login, reconnect/revalidate under the same identity and create a session, or load an exact matching session selected by the user. Use runtime/transport-scoped records: shared native storage does not authorize loading an active headless conversation, selecting latest, migrating Registry history or resending a lost prompt.
-6. Read the session's actual model/effort/mode/permission options and confirm the user's requested values were accepted [S7]. Do not hard-code `thought_level`/`thinking_level`, map standalone `yolo`/`auto_edit` onto CLI, or assume every account advertises `auto`. Absent required options produce an explained unsupported result rather than silent policy widening. Fixed effort remains fixed; if a runtime exposes planner/executor effort, record those values separately instead of filling in high.
+6. Read the session's actual model/effort/mode/permission options and confirm the user's requested values were accepted [S7]. Apply the current Gemini-only admission before prompting or selecting a model; an advertised non-Gemini choice is not eligible. Do not hard-code `thought_level`/`thinking_level`, map standalone `yolo`/`auto_edit` onto CLI, or assume every account advertises `auto`. Absent required options produce an explained unsupported result rather than silent policy widening. Fixed effort remains fixed; if a runtime exposes planner/executor effort, record those values separately instead of filling in high.
 7. Freeze the complete prompt/attachment identity and persist dispatch-possible before writing `session/prompt`. The interactive client's record owns this boundary; a future machine path additionally needs Go durable lifecycle ACK.
 
 Google documents shared authentication across local surfaces [S19]. **Do not promise independent login caches per provider instance.** Any separate settings directory needs official support and validation and does not establish account isolation. Do not simulate SSH, copy tokens, read keyrings, register our own OAuth client, proxy private quota endpoints or substitute client identity. Native `/usage` or ACP usage can be used only when supported/validated; missing quota remains unknown.
@@ -246,11 +264,11 @@ Record manifests/delivery evidence without base64 or credentials in progress log
 
 ### Orchestrator, subagents and Swarm inside the official agent
 
-These are native runtime capabilities, distinct from an external parent agent using Antigravity as its model/tool backend. Initially expose only models/modes/commands supported and verified for the selected CLI build/account. CLI terminal features and UI labels do not by themselves establish ACP delivery. Ordinary native mode does not promise zero children. CLI 1.5.14 documents local planner/executor effort configuration; expose it through ACP only when that session actually supports it. Existing headless fixed-effort machine profiles remain unchanged [S28].
+These are native runtime capabilities, distinct from an external parent agent using Antigravity as its model/tool backend. The current personal client admits native-reported Gemini models and presents actual native configuration and activity; it does not implement a general Orchestrator/Swarm model-and-launch matrix. The following rows are further qualification requirements, not claims that each capability is enabled or live-tested. CLI terminal features and UI labels do not by themselves establish ACP delivery. Ordinary native mode does not promise zero children. CLI 1.5.14 documents local planner/executor effort configuration; expose it through ACP only when that session actually supports it. Existing headless fixed-effort machine profiles remain unchanged [S28].
 
 | Capability | Interactive acceptance | Additional future Flywheel machine requirements |
 | --- | --- | --- |
-| Orchestrator | Exact model, actual fixed/configurable planner/executor effort, accepted values and honest internal-collaboration observations. | Preserve role/model eligibility; evidence-only cannot delegate. |
+| Orchestrator | Not independently enabled by the current Gemini-only entry. Any later addition needs exact-model admission, actual fixed/configurable planner/executor effort, accepted values and honest internal-collaboration observations. | Preserve role/model eligibility; evidence-only cannot delegate. |
 | Explicit subagents | Verify real delegation and ownership; missing observation stays unknown, not an all-successful tree. | Required work meets collection/receipt contracts. |
 | Swarm | Require explicit user initiation using the verified native mechanism; 1.5.13 fixes unrequested Swarm starts [S28]. Slash-looking text alone is insufficient. | Execute + Full + reviewed independent collaboration/writes + input eligibility. An initial interactive session does not acquire these qualifications. |
 
@@ -260,7 +278,7 @@ Retain the future Swarm packet image exclusion until reviewed contracts express 
 
 ## 9. UI, configuration and diagnostics
 
-Add an explicit Antigravity external-session entry, preferring official CLI ACP, workspace and personal login. **Do not automatically add ACP to existing execution provider/model candidates.** ACP is the connection protocol, Antigravity the agent identity, and model options come from the established session.
+The source candidate adds a dedicated Antigravity external-session entry, defaults to official CLI ACP, and uses an isolated worktree plus personal login. **It does not add ACP to existing execution provider/model candidates.** ACP is the connection protocol, Antigravity the agent identity, and eligible model options are the Gemini choices reported by the established session. The following UI requirements remain acceptance criteria; actual completed checks are in the validation record.
 
 The UI must:
 
@@ -276,11 +294,11 @@ A later machine configuration can add transport/distribution, effective task sco
 
 ## 10. Implementation, release and rollback
 
-1. Verify the merged #62 receipt/packaging prerequisite and its existing headless acceptance, preserving original source/registry/live evidence; this PR does not rewrite historical outcomes or rerun those tests.
-2. Implement official CLI ACP and explicit native login in the standalone plugin; qualify the exact executable, public interactive API and §3.2.1 version policy. Do not initially change machine protocols or automated candidates.
-3. Accept text sessions, permissions, stop/recovery and official login with offline and necessary live checks, then connect DSH/Flywheel UI through that API. Record real capabilities and unknowns.
-4. Publish a tested plugin only under separate release authorization, pin exact package identity, and verify the same candidate installation/documentation. Existing paths remain when this session is not enabled. Reject unsupported runtime/adapter combinations instead of substituting silently.
-5. Accept images/native collaboration independently; qualify the standalone Registry option separately. Propose later machine use/authentication and technical contracts before changing schemas, bridge, Go owner, ledger, UI and migration.
+1. Retain #62's merged receipt/packaging repair and its original headless source/registry/live evidence. Those fixes belong to #62, not this ACP implementation; current regression checks are separate dated results and do not rewrite that history.
+2. The standalone 0.3.0 source now implements official CLI ACP, the native login helper, exact 1.5.14 admission and the public interactive API. Machine protocol version 1 and existing automated candidates remain unchanged.
+3. Flywheel 0.39.0 now connects its independent Host/UI through that API. Record offline text/permission/lifecycle/recovery and candidate-installation checks separately from still-pending real-account login, Gemini inference and native background-cleanup acceptance.
+4. Publish a tested plugin only under separate release authorization, pin exact package identity, and verify the same candidate installation/documentation. Desktop sessions default to ACP; legacy standalone task/tool use requires explicit headless, while Flywheel's existing machine path remains separately selected. Reject unsupported runtime/adapter combinations instead of substituting silently.
+5. Typed-image input is implemented, but real visual delivery and native collaboration require independent acceptance. The Registry runtime, broader model support and later machine use/authentication/technical contracts remain separately scoped proposals before any schema, bridge, Go-owner, ledger, UI or migration change.
 6. Before closing/removing the interactive entry, handle owned connections and retain unresolved records. Disconnect does not log out or delete shared credentials. Keep old journal readers; do not replay unknown ACP turns through headless or another distribution.
 
 Initial human turns share their session connection. Cross-session server sharing, parallel sessions in one server and mid-turn steering still require independent tests. Future automated feedback respects frozen inputs and adoption boundaries; interactive buttons cannot bypass the Go state machine.
@@ -292,15 +310,16 @@ Initial human turns share their session connection. Cross-session server sharing
 | Area | Initial acceptance | Additional future machine acceptance |
 | --- | --- | --- |
 | Source/protocol | CLI provenance/version/binary digest/arguments and drift; Registry additionally needs manifest/artifact identity. Unsupported protocol/options, bounded Unicode/JSON framing and capability differences. | Identity in frozen bindings/receipts/recovery; strict old-reader rejection. |
+| Model admission | Accept only native-reported Gemini models in the current personal entry; reject non-Gemini configuration and block prompting on a cached non-Gemini selection without silent replacement. Broader runtime catalogs are research evidence, not implemented support. | Separately qualify each role/model and any expanded supported range. |
 | Instruction/agent ownership | Inspect launch arguments, ACP metadata, prompt/context and file writes: no host system-prompt replacement/append, Preset/PTC or managed-agent injection, DSH tool bridge or automatic outer loop. Preserve explicit user input and runtime-owned project configuration. | Separately establish the supported use/authentication context and review any changed instruction/tool/loop ownership. |
-| Auth/permissions | Actual `authMethods`, ACP `oauth-personal` or a separately launched official CLI `agy acp --login` helper, same verified binary/profile context, success/cancel/expiry/failure, no credential extraction or sensitive logs, shared-cache disclosure; wrong-session/late/denied approval. | Supported auth/use context, bounded handling of insufficient authority, verified subscription controls. |
+| Auth/permissions | Actual `authMethods`, the implemented separate official `agy acp --login` helper, same verified binary/profile context, success/cancel/expiry/failure, no credential extraction or sensitive logs, shared-cache disclosure; wrong-session/late/denied approval. Direct ACP authentication is a later independent gate. | Supported auth/use context, bounded handling of insufficient authority, verified subscription controls. |
 | Lifecycle | Turn versus process exit; cancel during tools/permissions/children, disconnect, timeout, host death, SIGKILL, malformed/duplicate/late terminals, owned-group cleanup and no next turn before settlement. | Go ACK crash windows, one-time valid consumption, unknown blocked, preserved budgets and required-work proof. |
 | History/accounting | Exact session load, no automatic replay, compaction retaining requirements, cumulative counters not summed per turn, unknown missing/negative/inconsistent deltas. | Role isolation, full/incremental input, independent reviewer and task/packet/target identity. |
 | Images/collaboration | Frozen bytes, changed-source rejection, real visual task, child ownership, Orchestrator effort, actual Swarm mechanism and unknowns. | Shared image admission, Full/reviewed work/write scopes and required worker image delivery. |
 | Evidence-only | No initial claim to these roles. | Active managed agent, no tools/delegation, immutable identity, actual steps versus catalog. |
 | Distribution/UI | Clean public import, version rejection, same Linux/macOS candidate, session/permission states, asynchronous auth/model correlation, workspace lease/takeover and docs. | Machine/ledger migration, effective-config sources and consistent task/role eligibility. |
 
-Implementation follows applicable repository gates: 100% measured Go statement coverage per function for Go changes, plugin/bridge behavior checks and actual candidate installation for release changes. This documentation PR runs static checks only. Offline fixtures prove neither account access, login, visual quality nor performance; live records must name runtime, platform, account context and tested scope.
+Implementation follows applicable repository gates: 100% measured Go statement coverage per function for Go changes, plugin/bridge behavior checks and actual candidate installation for release changes. The original documentation-only revision ran static checks. The subsequent implementation follows these gates and records actual results separately. Offline fixtures prove neither account access, login, visual quality nor performance; live records must name runtime, platform, account context and tested scope.
 
 ### 11.2 Comparison design and attribution
 
@@ -315,32 +334,32 @@ Cover text edits, deterministic tests, multi-file repair, long-context continuat
 - Deterministic tests, correctness, constraint retention, repeated work, missed tools and failed/unknown outcomes.
 - Cancellation/recovery, process count, peak RSS, cold/resident costs; missing displayed reasoning does not establish model ability.
 
-Report medians, tails, paired differences, uncertainty, raw distributions and failure counts. Initial adoption and expansion require predeclared correctness/resource margins; this proposal runs no benchmark and recommends no existing-default change. Residency experiments must include warm headless stdin, warm ACP and the current per-invocation baseline, avoiding attribution of all residency gains to the protocol.
+Report medians, tails, paired differences, uncertainty, raw distributions and failure counts. No comparative quality or performance benchmark has been run. The user-authorized personal desktop default is now ACP; this does not change automated-task model/subscription defaults or establish a performance win. Future performance claims or scope expansion need the predeclared correctness/resource margins. Residency experiments must include warm headless stdin, warm ACP and the current per-invocation baseline, avoiding attribution of all residency gains to the protocol.
 
 ## 12. Milestones and open decisions
 
-| Milestone | Deliverable and exit condition |
+| Milestone | Implementation status and remaining acceptance |
 | --- | --- |
-| M0 — confirm merged prerequisite | Verify #62 and its existing receipt/packaging/cross-layer acceptance evidence; do not claim these tests were rerun by this documentation change. |
-| M1 — official CLI ACP client | Exact 1.5.14 candidate identity, proposed minimum/version policy, updater control, honest identity, native personal login, text/permissions/lifecycle/recovery acceptance. |
-| M2 — interactive UI and delivery | Direct DSH/Flywheel external session, models/effort/permissions/stop/unknown states, public interactive API, exact package and candidate installation; no new automated candidates. |
-| M3 — individual capabilities | Separate root-image and native-collaboration acceptance; preserve limitations on worker images/whole-child-tree unknowns. Evaluate standalone Registry runtime independently. |
+| M0 — confirm merged prerequisite | #62's receipt/packaging/cross-layer repair is merged; preserve its historical evidence separately from this ACP implementation's regression results. |
+| M1 — official CLI ACP client | Implemented in companion 0.3.0 source with exact 1.5.14 identity, updater control, honest identity, official login helper and text/permissions/lifecycle/recovery. Actual offline checks are recorded separately; real-account login/inference remain untested. |
+| M2 — interactive UI and delivery | Implemented in Flywheel 0.39.0 source: direct external session, native Gemini options, permissions/stop/unknown states, public API and owned worktrees. Exact package/candidate-installation evidence is separate; no new automated candidates. |
+| M3 — individual capabilities | Typed root-image input is implemented. Live image delivery, native collaboration and complete child cleanup still need independent acceptance. Registry and broader model support remain future work. |
 | M4 — evaluation and later decisions | Distinguish runtime/protocol/residency costs. Review future machine use/auth support and complete technical contracts separately; M2 does not automatically enable it. |
 
-Resolve before implementation:
+Settled implementation choices and remaining decisions:
 
-1. Exact CLI release/provenance/binary digest/arguments, supported login, optional methods and actual account models/effort/modes; Registry qualification is independent.
-2. Actual official `oauth-personal` interaction, shared-cache/logout effects and the browser/terminal bridge the client can support and validate.
-3. Interactive API/session-record versions, root/child activity and per-turn quiescence, session-close cleanup and unknown remote-work limits.
-4. Original-image delivery to root and required workers, and which requirements belong only to a later packet contract.
+1. CLI 1.5.14 provenance/digests and invocation are fixed in the implementation. Live personal-account Gemini/configuration acceptance remains pending; Registry and any broader model range need independent qualification.
+2. The client implements the official login helper. Real login, shared-cache/logout effects and any future direct ACP authentication route still require the corresponding acceptance.
+3. Human API/session records use version 2 with stable ACP v1. Offline lifecycle/unknown-result checks and native live background/close guarantees are separate evidence; the latter remain pending.
+4. Typed image bytes and their identities are implemented. Live root delivery and required-worker delivery remain distinct acceptance questions; worker/packet rules are future machine scope.
 5. For proposed automation, separately prove supported use/authentication, active-agent evidence-only, Go durable ACK/recovery and role/Full/collaboration/input eligibility, then allocate machine/ledger versions.
 6. Preregistered quality/latency/resource measures and whether practical benefits justify another runtime or broader use.
 
-Approval reviews this initial interactive direction and later verification boundaries. It does not publish a package, ship implementation, guarantee account compliance or enable ACP for existing tasks.
+The user's subsequent authorization resulted in the initial ACP implementation and personal desktop default in this source candidate. It does not by itself authorize publication, establish account-level compliance or live acceptance, or enable ACP for existing automated tasks. Those boundaries retain their separate evidence and decisions.
 
 ## Sources and verification boundary
 
-Sources were checked on 2026-11-22. Official docs/Registry establish public paths; pinned source establishes implementations; issues/forum posts establish particular reports. A project's existence does not establish permission for every use. Record verified profile markers and unverified affiliations separately; missing markers alone do not identify someone as non-staff, and forum interpretations do not replace formal product documentation or terms. This documentation PR ran no live ACP inference, login, quality benchmark, image propagation test or user-machine installation.
+Research sources were checked on 2026-11-22 and remain historical observations. Official docs/Registry establish public paths; pinned source establishes implementations; issues/forum posts establish particular reports. A project's existence does not establish permission for every use. Record verified profile markers and unverified affiliations separately; missing markers alone do not identify someone as non-staff, and forum interpretations do not replace formal product documentation or terms. The subsequent implementation's source, offline and candidate-installation checks are recorded separately. Real-account ACP login/Gemini inference, live image propagation, native detached-task cleanup, comparative quality/performance and personal-machine acceptance remain untested.
 
 | ID | Source | Use |
 | --- | --- | --- |

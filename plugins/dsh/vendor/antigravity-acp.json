@@ -1,0 +1,25 @@
+{
+  "package": "@ckanner/dsh-subagent-antigravity",
+  "version": "0.3.0",
+  "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
+  "sourceDirectory": ".",
+  "sourceCommit": "7d5056c81688cc9408f3be32fc38ac7388b97377",
+  "sourceTree": "1ed2fdc5cae8ee4b507b2bf461ec68a7f70c97f3",
+  "sourceDirectoryTree": "1ed2fdc5cae8ee4b507b2bf461ec68a7f70c97f3",
+  "sourcePullRequest": "https://github.com/ckanner/dsh-subagent-antigravity/pull/1",
+  "verificationNote": "Reviewed official CLI ACP desktop implementation. Exact source passed 89/89 tests, real npm pack with clean external ACP/machine ESM and TypeScript consumption, and the real DSH 0.2.2-rc.3 CLI disposable-profile installation. Official CLI 1.5.14 archives/binaries were checked for four platforms; only Linux x64 version/help/unauthenticated initialize executed. No actual Google login, inference, image understanding, or native detached-task cleanup acceptance. This 0.3.0 candidate is not published; historical 0.2.1 registry evidence remains in antigravity.json and registry-verification-2026-11-22.json. A test-only follow-up canonicalizes three temporary fixture roots for macOS aliases; 19 focused and 89 full tests passed with a symlink TMPDIR. The 40 packaged files are unchanged from the original source commit.",
+  "tarball": "ckanner-dsh-subagent-antigravity-0.3.0.tgz",
+  "sha256": "7bb3c7277658c1932c26c1552d5515e1ed8e13fcdd4c7380b4c30e4441328447",
+  "integrity": "sha512-RmpcFTcrTUqZKWpqvMSz8y858ZQq+L8fXfpTi6QziQjeYKfonx1ZdtGBzUo50foJ8iAxYsAEWqODk5rengwz/Q==",
+  "license": "MIT",
+  "registryReleaseVerified": false,
+  "defaultDesktopTransport": "official-cli-acp",
+  "acpSdk": "2.9.1",
+  "officialCliVersion": "1.5.14",
+  "buildToolchain": {
+    "node": "24.22.3",
+    "npm": "11.19.1"
+  },
+  "verificationSourceCommit": "dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd",
+  "verificationSourceTree": "05ecd07c88b81ebe1818312f69cd82c722c3799a"
+}

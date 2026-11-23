@@ -7,6 +7,10 @@ stage bindings before starting. Model allocation, workflow selection, permission
 scheduling, and session history are separate policies. Restart the engine after
 changing configuration; installation preserves existing files.
 
+These engine settings govern formal Flywheel tasks. The default personal
+Antigravity ACP view has a separate DSH plugin setting, `config.antigravity`,
+described [below](#antigravity-and-gemini); it does not read these role bindings.
+
 Use `config inspect` to find the effective file before editing. The examples below
 that show selected fields are **fragments** to place in a complete configuration.
 
@@ -16,6 +20,7 @@ that show selected fields are **fragments** to place in a complete configuration
 - [Permissions](#full-access-without-per-action-approval) and [scheduling](#scheduling-and-worktrees)
 - [Session history](#session-policy-history-reuse-and-invocation-safety) and [workflow policy](#workflow-policy-and-recovery)
 - [Backend integration](#codex-pro-and-migration), [budgets](#fallback-and-budgets), and [diagnostics](#diagnose-without-inference)
+- [Personal Antigravity ACP and the separate machine harness](#antigravity-and-gemini)
 
 
 ## Reviewed-planning bindings
@@ -212,7 +217,9 @@ rejects those invalid references as well. Execute displays the remaining runtime
 requirements: Full, an approved 2–8-task collaboration declaration with independent
 write scopes, and no native image inputs. Configuring a Swarm candidate does not
 establish a particular packet's eligibility. Tasks without images can use
-Antigravity; its Flywheel integration currently has no native image-input channel.
+Antigravity; its formal machine harness currently has no native image-input channel.
+The separate human ACP view can send images when the native session advertises
+that capability; this does not enable images in machine packets or Swarm profiles.
 
 The stage binding editor exposes Antigravity `native`, `subagents`, and `swarm`
 options, plus optional `maxObservedAgents` from 1 to 8. Edits create a dedicated
@@ -587,7 +594,7 @@ Completed but unconsumed receipts have stricter rules: Review and Judge must mat
 
 The single-slot limit applies only to Flywheel's recovery receipt. Native thread and Session histories follow the backend's retention rules. Rebuilding a role history or shutting down its worker does not automatically delete earlier backend histories.
 
-An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.1 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity waits for native init before task input for evidence-only and explicit subagents/Swarm calls. Its ordinary native path (including Orchestrator) sends input after spawn and validates init afterward; it does not provide a universal pre-dispatch thread-ready gate. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
+An unknown dispatch, outcome, or cleanup state blocks further execution. Changing to fresh mode, changing adapters, or restarting cannot bypass it. Process exit alone does not establish a known model outcome. `resume-candidate` only permits an adapter to attempt normal continuation; it does not prove recovery after an arbitrary crash. Main-task calls through Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.3.0 use outer worker v3: public typed lifecycle events, ACKs that wait for Go's durable checkpoint, and a read-only recovery entry that never sends a new turn. Codex gates dispatch after verified `thread-ready`. Claude checks SDK initialize/version and its required subscription evidence before task input, while native `system/init` still follows prompt dispatch and cannot provide an equivalent pre-dispatch permission checkpoint. Antigravity waits for native init before task input for evidence-only and explicit subagents/Swarm calls. Its ordinary native path (including Orchestrator) sends input after spawn and validates init afterward; it does not provide a universal pre-dispatch thread-ready gate. Each adapter retains uncertainty when its evidence is insufficient. See [interrupted invocation reconciliation](session-recovery.md).
 
 `status` and `control status` expose role, scope, generation, action/reason, latest status, dispatch/outcome/cleanup, history-reuse selection, and usage status. The compact projection does not read receipt contents or conversation history and never changes the ledger. Legacy tasks without session records are not assumed to have recovery eligibility.
 
@@ -867,8 +874,8 @@ Main-task fresh and scoped calls both use outer worker protocol 3 and retain nat
 | `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` | Optional matching Claude Code Pro worker override |
 | `FLYWHEEL_CLAUDE_BIN` | Native Claude executable, otherwise `claude` on PATH |
 | `CLAUDE_CONFIG_DIR` | Existing Claude configuration/login directory, interpreted by Claude |
-| `FLYWHEEL_ANTIGRAVITY_WORKER` | Optional matching Antigravity worker override |
-| `FLYWHEEL_AGY_BIN` | Official native CLI executable, otherwise `agy` on PATH |
+| `FLYWHEEL_ANTIGRAVITY_WORKER` | Optional matching Antigravity machine worker override |
+| `FLYWHEEL_AGY_BIN` | Official CLI for the machine worker, otherwise `agy` on PATH; personal ACP uses DSH `config.antigravity.command` |
 
 These settings must be visible to the process starting the engine. The installer does not copy authentication data. The managed GUI launcher records executable paths and the installation-time tool PATH; a terminal export alone does not change an already running desktop process.
 
@@ -909,17 +916,60 @@ fallback, current-turn tokens or a subscription charge.
 
 ## Antigravity and Gemini
 
-The `antigravity` harness invokes the official local `agy` CLI through the
-`@ckanner/dsh-subagent-antigravity@0.2.1` public machine API. The same companion supports
-direct use in DSH. No ACP bridge or separate Gemini API credential is involved.
-The native catalog must contain the exact selected model, and `thinking` must
-match the model slug. The plugin verifies its local subscription/credit controls,
-native lifecycle, requested configuration and cleanup; unavailable account
-access or models produce explicit failures. It does not silently change the
-model, turn on credits or select a cloud API. See the [Antigravity guide](antigravity.md)
-for installation, supported native CLI versions, environment checks, DSH entry,
-evidence-only analysis and the distinction between local controls and account
-billing evidence.
+The 0.39.0 source candidate bundles `@ckanner/dsh-subagent-antigravity@0.3.0`
+and defaults the desktop's separate **Antigravity** view to personal interactive
+ACP. The following is a **DSH Flywheel plugin configuration fragment**, not a
+fragment for `flywheel.config.json`:
+
+```json
+{
+  "antigravity": {
+    "transport": "acp",
+    "command": "agy",
+    "disposeGraceMs": 2000
+  }
+}
+```
+
+Omitting `antigravity` is equivalent to `{}` and selects these defaults. `command`
+may name the installed official executable or its absolute path. The client
+requires the recorded official CLI 1.5.14 version and digest; a wrapper, changed
+executable or unsupported upgrade fails visibly. `FLYWHEEL_AGY_BIN` does not
+configure this entry. The client never falls back to the Registry agent, headless
+mode, an API credential or another account.
+
+The view can launch the verified CLI's own `agy acp --login` when needed. A person
+completes that flow in the authenticated view; credentials and authorization
+codes are not copied into Flywheel configuration or slash commands. Model, mode
+and permission options come from the native session. This personal entry admits
+its reported Gemini models, preserves native user rules, and sends no system
+prompt replacement or append, managed custom agent, Preset/PTC schema or DSH tool
+bridge. Engine `profiles`, `native-profiles`, model/effort fields and automatic
+permission settings are not translated into this session.
+
+Each new ACP session creates its own Git worktree from committed source HEAD.
+Source dirt is not copied, and disconnect retains the worktree and branch. The
+desktop Host refuses machine mutations and configuration saves aimed at owned
+ACP worktrees, including physical aliases. This guard does not lock other
+editors or direct Go CLI invocations. See the [interactive view](flow-console.md#interactive-antigravity-view)
+for connection, native permissions, images and recovery; the
+[current companion record](../../plugins/dsh/vendor/antigravity-acp.json)
+identifies source/artifact evidence separately from publication and live login.
+
+The formal `antigravity` harness explicitly imports the companion's `./machine`
+API, whose request/receipt and lifecycle contracts remain version 1. It still
+uses official `agy` stream-json for Plan, Execute, Review, Intake and JEV; an ACP
+response is not a successful machine receipt. Its native catalog must contain
+the exact selected model, and `thinking` must match the slug. The machine adapter
+continues to check its subscription/credit controls, native lifecycle, requested
+configuration and cleanup, with explicit failure when access or evidence is
+unavailable. Existing machine bindings are unchanged by the desktop default.
+See the [Antigravity guide](antigravity.md) for machine-only profiles,
+evidence-only analysis and the limits of local billing evidence.
+
+Explicit `transport:"headless"` disables Flywheel's personal ACP entry. The
+standalone companion retains its legacy task panel and tool under that setting;
+the setting does not reroute Flywheel's explicit machine workers.
 
 ## Fallback and budgets
 
@@ -962,7 +1012,7 @@ Local checks cover commands, versions, directories, configuration, and declared 
 DSH's `ready.reasoningEffort` echoes the requested value after SDK configuration acceptance; it is not an independent server attestation of effective reasoning effort. A no-inference probe cannot demonstrate quality gains from a higher effort. Gemini, Claude, GPT and Kimi have different native effort contracts; see [Reasoning effort](model-policy.md).
 
 Native worker checks import their public APIs and verify the pinned companion
-contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.2.1, including
+contracts: Codex Pro 0.10.2, Claude Code Pro 0.7.0 and Antigravity 0.3.0, including
 their required lifecycle/recovery exports, Node compatibility and native command.
 Binding fields `durableJournal`, `readOnlyRecovery` and
 `threadReadyBeforeDispatch` describe adapter capabilities; Claude's last field

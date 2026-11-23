@@ -2,6 +2,10 @@
 
 此文件记录独立 worker 协议。前半部分对应 `internal/drivers/dsh.go` 与官方 DSH SDK worker；[Codex Pro 部分](#codex-pro-worker协议)对应 `internal/drivers/codex_pro.go` 和插件 machine API worker。Go 负责状态机、验收、费用上限及最终进程判断；worker 仅执行一次有边界的调用。Go与worker之间使用本地stdio；Kimi native worker内部使用其拥有的loopback Server，见本文件原生扩展和Kimi专属协议。
 
+0.39.0 源码候选另提供[个人交互 ACP](#antigravity-个人交互-acp-控制面)。该入口不使用
+本文件的 machine 成功回执，也不接入自动 Plan／Execute／Review／JEV。两种协议版本
+与准入分别判断；默认桌面交互 ACP 不代表已有机器调用已迁移。
+
 ## 启动与输入
 
 Go 在工作目录启动 `flywheel-dsh-worker`，写入**一条** UTF-8 JSON 行并关闭 stdin。关闭 stdin 表示请求已完整发送，不表示取消任务。单条输入及 SDK 帧上限均为 8 MiB。stdout 只输出 JSONL，诊断走 stderr。
@@ -429,8 +433,8 @@ cleanup-confirmed 的 Go ACK 前保存原候选、role guard 和 Execute report�
 
 ## Antigravity worker
 
-`flywheel-antigravity-worker` 固定 `@ckanner/dsh-subagent-antigravity@0.2.1`，只调用公开
-machine API 与本地官方 agy；无 ACP、API SDK 或 token 复制。machine/lifecycle/activity
+`flywheel-antigravity-worker` 固定 `@ckanner/dsh-subagent-antigravity@0.3.0`，显式调用公开
+`./machine` 与官方 agy stream-json；此机器路径不使用 ACP、API SDK 或 token 复制。machine/lifecycle/activity
 均为 version 1；外层沿用 v1/v2/v3 transport。必需能力包括 durableJournal、
 readOnlyRecovery 及 evidenceOnly:verified-managed-agent，缺失即拒绝。
 
@@ -485,6 +489,50 @@ Recover只读原recoveryDirectory的精确requestId/runId journal，带冻结的
 evidenceOnly与模型权限核对；不得启动CLI或再次发送任务。doctor仅核对package/接口与
 可执行兼容性，不发推理或推定账户额度。完整原生协议见独立插件的
 [Machine contract](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/MACHINE.md)。
+
+## Antigravity 个人交互 ACP 控制面
+
+DSH Host 自动挂载同一配套包的 `./acp/host`，Client 打包复用 `./acp/client-source`，
+注册独立 `flywheel-antigravity` conversation view。默认 `config.antigravity:{}` 解析为
+`transport:"acp"`、`command:"agy"`、`disposeGraceMs:2000`。这些是 DSH 插件配置，不属于
+Go `flywheel.config.json`、native-profiles 或 machine worker 环境覆盖。
+
+认证 Remote `antigravityAcp.action(agent,input,signal)` 使用真实 Agent lookup；owner
+来自服务端 DSH Session ID，项目目录来自 workingDirectory 并规范化为物理路径。
+客户端不能提交 owner、cwd、env、command 或 system prompt。输入为 `version:2`，
+输出为 `protocol:2`；wire 内部使用官方稳定 ACP v1 与精确准入的原版 `agy acp`。
+公开动作、内容与能力协商见[独立 ACP 契约](https://github.com/ckanner/dsh-subagent-antigravity/blob/main/docs/ACP.zh-CN.md)。
+
+空会话可用 `/flywheel-antigravity` 打开人工入口，不启动 CLI 或发送任务；Client
+通过公开 uiSession／uiConversation target 展示此会话视图，不伪造 assistant turn。
+可选 version-2 JSON 控制仅接受 doctor/connect/list/status/cancel，不记录输入正文，
+结果只保留非敏感运行摘要。
+prompt、图片内容、权限响应、配置选择及登录响应只走认证 Remote，不形成 command/run
+中的任务正文。人类命令的 `kind:success` 只说明该控制请求返回，不是 Go 任务完成。
+
+每个新 ACP 记录创建 `stateRoot/workspaces/<id>` 与 `antigravity/<id>` 分支，从来源
+仓库当前提交开始；非 Git／无提交拒绝，未提交改动不复制。归属 reservation 和 marker
+写入 Git 私有目录；resume 校验相同物理 worktree、owner、分支和 runtime。Host 对
+指向此 worktree（含 symlink 别名、子目录）的机器修改与 config-save 在 Go 派发前
+返回 `not-dispatched`，不会把交互产物自动登记为 task workspace。该防护不是 Go CLI
+的全局目录锁或 OS 沙箱；独立 CLI／编辑器仍有各自的权限与行为。
+
+官方 agent 拥有内部 loop、工具、权限和用户／项目规则。Client 不发送 system prompt
+替换／append、受管 agent、Preset/PTC 或宿主工具桥；`mcpServers:[]`，客户端文件和
+terminal 能力均为 false。模型从原生 options 选择，只准入 Gemini；不改 native 权限
+为 always-proceed。登录交给相同已核验程序的 `agy acp --login`，授权码／回调 URL 不
+写入会话事件或持久 ACP 记录；凭证由原版程序管理，不读取或复制 token。
+
+持久记录位于 `~/.local/state/dsh-subagent-antigravity/acp`，与 Go 的 state.json 分离。
+每个 prompt 在发送前保存 operation UUID 和精确类型化内容；同 UUID 同内容只核对
+原结果，改内容则拒绝。根 prompt、工具／子成员、权限、cancel、session/close 与
+进程组收尾分别观察；未知结果或清理保留锁和 worktree，不重发、不伪造成功、不静默
+后备。切页／RPC 等待取消不等于停止原生会话，明确断开也不等于 Google 登出。
+Host 参与 workspace 活动／停止钩子，实际关闭必须由原生能力与受管进程组共同确认。
+
+来源与候选身份见 [antigravity-acp.json](vendor/antigravity-acp.json)。旧
+antigravity.json 和 2026-11-22 registry 核验保留 0.2.1 的历史证据；离线测试与未登录
+探测不代表 0.3.0 已发布、个人登录／推理通过或完整原生后台任务清理已验证。
 
 ## Claude Code Pro worker
 

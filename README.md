@@ -173,6 +173,14 @@ capabilities differ; [recovery and context quality](docs/en/session-recovery.md)
 documents those boundaries. Offline evaluations establish protocol behavior,
 not live model quality, cache savings, or performance.
 
+## Official Antigravity interaction
+
+The Antigravity desktop view defaults to the official `agy acp` in the 0.39.0
+source candidate: native login, runtime-provided Gemini options, permissions and
+continuous conversation in an isolated Git worktree. The official agent owns its
+prompt, tools and loop. See [Antigravity](docs/en/antigravity.md) for setup and
+acceptance limits. Existing automated machine workflows remain a separate interface.
+
 ## Documentation and development
 
 Start with the [documentation index](docs/README.md) for paired English and

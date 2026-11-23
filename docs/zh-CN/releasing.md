@@ -20,9 +20,17 @@ worker 包。`plugins/dsh` 是 **private 源码／构建／测试区**，不是�
 旧四个平台包及 `@ckanner/dsh-plugin-flywheel` 保留为历史版本；新流程不上传它们的
 新版本，也不撤销其已发布字节。
 
-Antigravity 0.2.1 按已审查源码 tarball 内置，整包包含精确 metadata 和可独立安装的归档。
+0.39.0 源码候选内置 Antigravity **0.3.0**，整包包含精确的
+[当前 metadata](../../plugins/dsh/vendor/antigravity-acp.json) 和可独立安装的源码
+归档。桌面入口默认个人 ACP；显式 `./machine` 使用方继续保留 protocol／lifecycle
+version 1 与旧 stream-json 路径。此候选不证明 registry 已经发行。
 `@ckanner/dsh-subagent-antigravity` 是独立配套插件；发布它须另行授权，
 不属于本 Flywheel 发行命令。
+
+在实际安装候选中核对精确配套包字节，以及公开 `./acp`、`./acp/host`、
+`./acp/workspace`、`./acp/client-source` 导出。完整 Flywheel 全新安装必须能到达
+自动注册的 Host 服务和独立会话视图，仅更新 machine worker 依赖不算完成此项。
+官方 `agy` CLI 仍由用户独立安装，插件不内置或下载它。
 
 Codex Pro 0.10.2 内置[已核对的归档](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/README.md)，
 根目录与源码构建区锁文件保持其真实 tarball integrity。2026-11-22 已从官方 registry
@@ -52,12 +60,18 @@ checkout 干净，`vX.Y.Z` 精确指向 HEAD。不能移动发行 tag、将 dirt
 | DSH／worker | 锁定源码依赖的完整检查及真实 Go→Node 离线桥接 |
 | npm／发行 | 根 npm 测试、完整单包构建、真实安装同一个 tarball |
 | 原生／会话改动 | 适用的 CLI 检查及 `npm run test:sessions` |
+| 个人 ACP | 精确配套包导出、Host 自动注册、两个会话视图、认证 Remote、ACP 所属 worktree 的变更拒绝及生命周期测试 |
 | 迁移 | 全新安装、旧拆包升级、失败／回退／取消与重复 setup |
 | 文档 | 双语指南、链接、包内文档和许可证 |
 
 Claude 后端测试使用已审查的精确源码 tarball；optional peer 缺失或跳过不算通过。
 安装测试前将 `FLYWHEEL_CLAUDE_CODE_PRO_TARBALL` 指向已核对的 tarball。
 源码测试使用隔离 home／profile 和离线模型，不证明真实账号、模型质量或桌面布局。
+
+未登录的官方 CLI 摘要／版本／initialize 探针，应与个人登录、Gemini 推理、原生
+模型切换、图片传递及原生后台清理验收分别记录。ACP 源码候选和离线 Host／UI／
+子进程检查不证明这些真实账号结果。保留前述 Antigravity 0.2.1 的历史 vendor 与
+registry 记录，不能把其已发布字节或当日核验改标为 0.3.0 证据。
 
 ## 3. 构建一次，测试同一个产物
 
