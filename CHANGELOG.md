@@ -5,6 +5,10 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.1 — 2026-11-23 (Flywheel Next)
+
+Fixes lockfile integrity for the bundled settings-only `@ckanner/dsh-subagent-antigravity@0.3.0` tarball (`v0.39.0` failed CI pre-publish lockfile check and was never published to npm).
+
 ## 0.39.0 — 2026-11-23 (Flywheel Next)
 
 This entry records the Flywheel Next release prepared for `v0.39.0`.
