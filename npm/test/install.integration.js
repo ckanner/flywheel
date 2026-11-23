@@ -135,21 +135,32 @@ test('the complete npm candidate install and run from a clean agent environment'
   await t.test('the bundled ACP entry works without desktop peers and rejects harness prompt injection', async () => {
     const manifest = installedRequire.resolve('@ckanner/dsh-subagent-antigravity/package.json');
     assertNoDesktopPeers(manifest);
-    const { AcpSessions, CLIENT_INFO, CLIENT_CAPABILITIES } = await import(pathToFileURL(installedRequire.resolve('@ckanner/dsh-subagent-antigravity/acp')));
-    assert.equal(CLIENT_INFO.name, 'dsh-antigravity');
-    assert.equal(CLIENT_CAPABILITIES.terminal, false);
-    assert.equal(CLIENT_CAPABILITIES.fs.writeTextFile, false);
-    const manager = new AcpSessions({ stateRoot: path.join(context.root, 'installed-acp-state') });
-    const owner = { owner: 'installed-human-session', workspace: await fs.realpath(context.project) };
-    try {
-      const defaults = await manager.action(owner, { version: 2, action: 'defaults' });
-      assert.equal(defaults.transport, 'acp');
-      assert.equal(defaults.workspaceMode, 'isolated-git-worktree');
-      assert.deepEqual((await manager.action(owner, { version: 2, action: 'list' })).sessions, []);
-      await assert.rejects(manager.action(owner, { version: 2, action: 'connect', systemPrompt: 'harness override' }), /Unsupported/);
-      assert.equal(manager.isActive(owner.owner), false);
-      for (const entry of ['acp/host', 'acp/workspace', 'acp/client-source']) await fs.access(installedRequire.resolve('@ckanner/dsh-subagent-antigravity/' + entry));
-    } finally { await manager.dispose(); }
+    // The public ACP API deliberately exposes an ESM import condition. Exercise
+    // that public import from the actual installed package, not CJS resolution
+    // of an import-only subpath or a private lib/ file.
+    const code = `import assert from 'node:assert/strict';
+      import { access } from 'node:fs/promises';
+      import { createRequire } from 'node:module';
+      import { AcpSessions, CLIENT_INFO, CLIENT_CAPABILITIES } from '@ckanner/dsh-subagent-antigravity/acp';
+      const require = createRequire(import.meta.url);
+      const [stateRoot, workspace] = process.argv.slice(1);
+      assert.equal(CLIENT_INFO.name, 'dsh-antigravity');
+      assert.equal(CLIENT_CAPABILITIES.terminal, false);
+      assert.equal(CLIENT_CAPABILITIES.fs.writeTextFile, false);
+      const manager = new AcpSessions({ stateRoot });
+      const owner = { owner: 'installed-human-session', workspace };
+      try {
+        const defaults = await manager.action(owner, { version: 2, action: 'defaults' });
+        assert.equal(defaults.transport, 'acp');
+        assert.equal(defaults.workspaceMode, 'isolated-git-worktree');
+        assert.deepEqual((await manager.action(owner, { version: 2, action: 'list' })).sessions, []);
+        await assert.rejects(manager.action(owner, { version: 2, action: 'connect', systemPrompt: 'harness override' }), /Unsupported/);
+        assert.equal(manager.isActive(owner.owner), false);
+        for (const entry of ['acp/host', 'acp/workspace', 'acp/client-source']) await access(require.resolve('@ckanner/dsh-subagent-antigravity/' + entry));
+      } finally { await manager.dispose(); }`;
+    const result = await run(process.execPath, ['--input-type=module', '--eval', code,
+      path.join(await fs.realpath(context.root), 'installed-acp-state'), await fs.realpath(context.project)], context.env, root);
+    assert.equal(result.code, 0, result.stderr + result.stdout);
   });
   const installationModule = path.join(path.dirname(workerPath), 'installation.mjs');
   const { resolveFlywheelBinary } = await import(pathToFileURL(installationModule));

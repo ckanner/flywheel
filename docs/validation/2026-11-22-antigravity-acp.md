@@ -65,15 +65,33 @@ Session 元数据、操作记录和锁保存在私有目录，目录 0700、文�
 | Go → Node → public companion 桥 | 最终依赖下 9 个顶层 driver/activity/title 桥通过，0 skipped；覆盖 DSH、Codex、Claude、Kimi、Antigravity。Claude 使用已核实的 optional 0.7.0 tarball，并非缺依赖跳过。 |
 | Go machine 跨进程检查 | `TestAntigravityEvidenceJEVOfflineBridge`、`TestAntigravityEvidenceInvestigationOfflineBridge`、`TestPacketImagesClaudeSDKOfflineBridge` 均通过，0 skipped；最后一项包含 execute、recover-original、recover-changed-source 三种情形。它们验证既有 machine 接口，不能作为 ACP 真实模型或图片理解证据。 |
 
-Flywheel 完整插件检查和完整候选包安装的最终结果记录在本记录后续验收段及 PR #63。候选由隔离快照构建，源码身份、打包身份、安装证据分别记录；源码测试不能代替候选消费。
+Flywheel 完整插件检查和完整候选包安装的最终结果见下文。候选由隔离快照构建，源码身份、打包身份、安装证据分别记录；源码测试不能代替候选消费。
 
 ### 完整回归发现的测试夹具问题
 
 首轮 Flywheel 完整插件检查执行 722 项，721 通过、1 失败、0 skipped；由于 `&&`，随后 legacy Host 检查当次没有执行。唯一失败为既有 Codex `subscription-stop-exit-nonzero`：预期进程在 SIGTERM handler 中退出 23，但 fixture 在 stdin EOF 后可能先自然退出 0，导致根本没有执行目标信号场景。窄复现记录了 `exitCode:0`、`signal:null`、`sigtermObserved:false`。
 
-修复仅让 fixture 的三种 `subscription-stop-*` 信号场景保持 event loop，直至真正收到预期信号；生产 proxy 与原断言均未改变。相关五种信号／malformed-tail 场景全部通过，随后对冻结源代码重新执行完整插件门禁，最终结果单独记录。
+修复仅让 fixture 的三种 `subscription-stop-*` 信号场景保持 event loop，直至真正收到预期信号；生产 proxy 与原断言均未改变。相关五种信号／malformed-tail 场景全部通过。对冻结产品源码重新执行完整门禁后，主测试 **722/722**、legacy Host **10/10** 均通过，0 失败／跳过／取消。
 
-Companion 首轮 CI 的 Linux Node 22/24 两组均通过；macOS 两组在新增 ACP fixtures 中遇到 `/var` 与 `/private/var` 临时目录别名，触发预期的物理路径检查。三份测试改为先 `realpathSync` 临时根，没有放宽生产目录／权限检查。修前在符号链接 TMPDIR 下实际复现，修后相关 19 项及全套 89 项均通过。仅测试文件变化，不重标原始 tarball 的源码或摘要；验证源码提交为 [`dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd`](https://github.com/ckanner/dsh-subagent-antigravity/commit/dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd)，tree `05ecd07c88b81ebe1818312f69cd82c722c3799a`。真实 macOS CI 结果以该后续提交为准。
+Companion 首轮 CI 的 Linux Node 22/24 两组均通过；macOS 两组在新增 ACP fixtures 中遇到 `/var` 与 `/private/var` 临时目录别名，触发预期的物理路径检查。三份测试改为先 `realpathSync` 临时根，没有放宽生产目录／权限检查。修前在符号链接 TMPDIR 下实际复现，修后相关 19 项及全套 89 项均通过。仅测试文件变化，不重标原始 tarball 的源码或摘要；验证源码提交为 [`dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd`](https://github.com/ckanner/dsh-subagent-antigravity/commit/dd11abd89e2d1693a89a815d4b0ae4b04fafa7fd)，tree `05ecd07c88b81ebe1818312f69cd82c722c3799a`。[后续 CI](https://github.com/ckanner/dsh-subagent-antigravity/actions/runs/45097346740) 的 Linux/macOS × Node 22/24 四组均通过，包含各组实际 npm 包消费；这是客户端与安装包的跨平台测试，不是官方 CLI／真实账号运行验收。
+
+## 最终 Flywheel 候选验收
+
+完整候选来自干净提交 `a906336cfbc59b0c1b82aad84c32094ff2efb234`，tree `536386a3609cf1439ec5b8967b1afa1f479c888f`，构建时 `dirty:false`。隔离快照 SHA-256 为 `5711dee26efabcaecc7234ad60fc6d8922d0af862af07f54fd0eb0febc01be82`。同一 tarball 包含 Linux/macOS × x64/arm64 四个平台引擎，构建器核验了各原生文件的大小与摘要。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| `npm run build:npm` | 通过，生成一个完整 0.39.0 候选包，没有发布。 |
+| 实际候选 Host／Client | **13/13** 通过，包含安装包导出的 ACP Host、独立页面、鉴权 session lookup 与 worktree 变更防护。 |
+| 真实 npm 安装集成 | **19/19** 通过，0 skipped；包含 ACP 公共 ESM 消费、拒绝 harness prompt 注入、旧 machine 接口、重复安装／迁移与取消。 |
+| Optional Claude 安装分支 | 显式提供已核验 `dsh-subagent-claude-code-pro@0.7.0` tarball，通过实际安装与 worker 消费，没有因缺依赖跳过。 |
+| Tarball | `ckanner-flywheel-0.39.0.tgz`，24,173,367 bytes |
+| SHA-256 | `79d31c1aaec716d65a080ba5e0b905b0ed6ada34248a5406129468bc110f604c` |
+| SHA-512 integrity | `sha512-PNbv+vbWix7TkJh2Hnqi6mSh9dIhQqoeiUzcsnXTWvmAM8alBvYBKnH08zlSXG7wmQHoT6wzOY3dIsuPa5qgSw==` |
+
+初次安装检查中的新增测试误用 CommonJS `require.resolve` 解析只导出 `import` 条件的 ACP 公共入口，产生 `ERR_PACKAGE_PATH_NOT_EXPORTED`。修复仅让测试子进程在实际安装目录使用公开 ESM `import`，不改 exports、产品源码或原断言。上述 13+19 结果来自修后测试对**原样保留的同一候选包**的验收；首轮错误记录没有被改写成成功。
+
+后续提交只修正消费测试并补充本验收记录与 [机器可读候选证据](evidence/2026-11-22-antigravity-acp-candidate.json)，不会重标已构建 tarball 的原始源码身份。Flywheel 远端 CI 首轮在同一消费测试处失败；最终提交重新触发的结果以 [PR #63 checks](https://github.com/ckanner/flywheel/pull/63/checks) 为准，本记录不把本地门禁等同于最新远端 CI。
 
 ## 官方 CLI 实际证据与未测范围
 
