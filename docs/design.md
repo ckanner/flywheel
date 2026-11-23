@@ -334,6 +334,40 @@ Go 校验仓库、基线、分支、候选和独占归属后登记；下一次�
 
 为进一步提高架构方案质量、前端交互完成度与自动化交付吞吐，同时降低日常入口门槛，引擎在既有确定性状态机之上提供以下默认能力：
 
+```mermaid
+flowchart TD
+  U["1. 人类一句话提需求 (可附仓库图片 / 选意图)"] --> G{"Go 确定性状态机分流"}
+
+  G -->|"排查问题 (goal 简写)"| INV["有界只读调查引擎"]
+  INV --> INV_A["Gemini 4 Neon (evidence-only) 出证据报告"]
+  INV_A -->|"仅排查"| END_INV["交付调查报告 (不改代码)"]
+  INV_A -->|"转修复"| G
+
+  G -->|"Quick / compact"| Q_P["紧凑设计: Hydrogen-medium 出方案与单包契约"]
+  Q_P --> Q_R["独立前审: Codex Sol-medium (read-only)"]
+  Q_R --> Q_E["按路由执行 Execute"]
+  Q_E --> Q_V["Go L1/L2/L3 物理验收"]
+  Q_V --> Q_REV["独立终审: Codex Sol-high (read-only, 分级阻断 ≤2 轮)"]
+  Q_REV --> POST
+
+  G -->|"Full 架构级任务"| D_SPLIT["2. 双稿盲态并行 (planning.dual-draft)"]
+  D_SPLIT --> D1["主稿: Gemini 4 Carbon"]
+  D_SPLIT --> D2["对照稿: Claude Opus 5.5"]
+  D1 --> SYN["3. 持久化 design-candidates/ + 统稿 (含来源对照表)"]
+  D2 --> SYN
+  SYN --> DR["4. 独立对抗审查: Codex GPT-6.2 Astra (read-only)"]
+  DR --> GATE["5. 人类单次精确版本拍板"]
+  GATE --> PLAN["6. 波次拆分: Gemini 4 Neon 生成 Wave 依赖与写入边界"]
+  PLAN --> WAVE["7. 独立 Worktree 波次并发执行 (运行护栏 3/2/60)"]
+  WAVE --> UX{"frontend 路由?"}
+  UX -->|"是"| COPY["Gemini 4 Neon UX 与微文案审查 -> Claude ≤1 次取舍改稿"]
+  UX -->|"否"| L1["Go 确定性 L1 验收 (返修必补回归/防护测试)"]
+  COPY --> L1
+  L1 --> REV["Codex 独立审查 (blocking 退回 / advisory 记账, ≤2 轮)"]
+  REV --> INT["集成 L2/L3 + Codex Astra 只读终验 Judge"]
+  INT --> POST["8. 可配置交付终点: local / draft-pr / pr-review / auto-merge"]
+```
+
 1. **Full 架构级双稿对撞与统稿（`planning.dual-draft`）**：当任务为 `Full` 深度且启用 `planning.dual-draft`（默认 `enabled: true`，副稿与统稿默认绑定 `opus-plan`）时，设计阶段盲态并行生成主稿（`Gemini 4 Carbon`）与独立对照稿（`Claude Opus 5.5`），按版本持久化原始草稿至账本目录 `design-candidates/rev-%06d-{primary.md,secondary.md,meta.json}`（纳入 `internal/ledger` 账本区，不触发边界越界）。随后由统稿角色输出单一权威 `design.md` 并附带 `来源对照表`，交由只读 `Codex GPT-6.2 Astra` 独立审查，人类仍只做一次精确版本拍板。副稿失败时显式降级并记录原因；`Quick` / `compact` 模式跳过双稿。
 2. **Frontend 路由默认交互与微文案审查（`frontend-ux-review`）**：`frontend` 路由的 packet 在 L1 自动校验通过之后、进入独立 Codex Review 之前，默认由只读 `Gemini 4 Neon` 审查交互状态、空/错态与微文案，持久化结构化报告至 `reports/<id>.ux-review.json`。仅当 verdict 为 `needs_polish` 时允许主执行者（Claude）做至多 1 次取舍改稿并复跑 L1；任何异常或非 `frontend` 路由不阻断核心交付。
 3. **分级审查（`blocking` vs `advisory`）与回归测试门禁**：Review 结构化裁决区分 `blocking`（必须修复并退回）与 `advisory`（仅记账与界面展示、不触发返工）。返工轮次受 `guardrails.max-review-rounds`（默认 2）上限约束；当 packet 因 `REVIEW_RETURNED` 重试时，提示词强制要求补齐对应的回归或防护测试。
@@ -1117,6 +1151,44 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 Flywheel DSH 前端已彻底移除旧版 `conversation.view` 槽位、`:has([data-composer-seat])` 布局 hack 以及经由聊天框透传 `/flywheel {...}` JSON 的机制，采用 TypeScript + TSX + `esbuild` + `lightningcss` CSS Modules 零债重构，仅依赖外部 `react`（兼容 DSH `0.2.1-rc.5` 与 `0.2.2-rc.3+`），且模块加载期零 `document.head` / `document.body` 副作用。
 
 UI v2 注册 4 个原生 DSH 槽位，并通过 Direct Typert Remote 服务 `flywheelConsole`（`query`、`act`、`listRepoImages`，无需绑定活跃对话 Agent）直连 Go 引擎：
+
+```mermaid
+flowchart LR
+  subgraph DSH["DSH 桌面端 (原生 4 槽位 UI v2, 仅依赖 react)"]
+    S1["main + sidebar.panellist\n全页工程工作台\n(双稿评审 / 波次泳道 / 交互 DAG / 节点抽屉 / 建单 / 调查 / 交付)"]
+    S2["sidebar.right.pane.tab\n右侧实时进度伴侣"]
+    S3["conversation.chat.commandview\n/flywheel 只读指令卡"]
+    S4["settings.section\n三层渐进式设置页"]
+  end
+
+  subgraph HOST["DSH Host 插件进程 (@ckanner/flywheel)"]
+    RPC["Direct Typert Remote\nflywheelConsole (query / act / listRepoImages)\n签发宿主侧 dsh 人工证明"]
+    TOOLS["LLM 工具\nflywheel_launch / flywheel_control\n(严禁 approve / abandon)"]
+  end
+
+  subgraph GO["Flywheel Go 确定性引擎 (唯一写 state.json)"]
+    ENG["状态机 / 双稿 / UX 审查 / 护栏 / Worktree / 交付"]
+  end
+
+  subgraph WORKERS["4 订阅独立 Worker"]
+    W1["Antigravity 0.3.0\n(默认 ACP + 原生图片)"]
+    W2["Claude Code Pro 0.7.0\n(Agent SDK)"]
+    W3["Codex Pro 0.10.2\n(app-server + read-only 沙箱)"]
+    W4["Kimi Native\n(WebSearch / FetchURL / Swarm)"]
+  end
+
+  S1 --> RPC
+  S2 --> RPC
+  S3 --> RPC
+  S4 --> RPC
+  RPC --> ENG
+  TOOLS --> ENG
+  ENG --> W1
+  ENG --> W2
+  ENG --> W3
+  ENG --> W4
+```
+
 1. **`main` + `sidebar.panellist`**：全页工程工作台，包含可折叠 240px 任务栏、52px 单行顶栏与生命周期动态主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 | 双稿并排对比 | 原始独立草稿`、Markdown GFM 来源对照表、Astra 独立审查列表与底部悬浮人工拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（拓扑分层与重心排序、全量节点无 6 节点分页、244×96 语义卡片、贝塞尔有向连线、悬停上下游血缘高亮、缩放平移与缩略图）、**520px 四标签节点详情抽屉**（概览 / 证据与 UX / 时间线与协作 / 契约）、**30 秒三意图建单弹窗**（含可视化仓库图片选择器与一句话只读调查）、**根因调查板**与**交付追踪页**。
 2. **`sidebar.right.pane.tab`**：右侧边栏紧凑实时进度卡片，展示任务进度条与活跃节点，可一键跳转主工作台或停止运行。
 3. **`conversation.chat.commandview`**：对话内 `/flywheel` 指令的只读摘要卡片，一键跳转主工作台。

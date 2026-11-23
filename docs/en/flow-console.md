@@ -11,6 +11,30 @@ and DSH plugin at the same version. For installation, see
 
 ## Native 4-slot DSH workbench (v2)
 
+```mermaid
+flowchart LR
+  subgraph DSH["DSH Desktop (4 Native Slots, React-only External)"]
+    S1["main + sidebar.panellist\nFull-page Workbench"]
+    S2["sidebar.right.pane.tab\nLive Companion"]
+    S3["conversation.chat.commandview\n/flywheel Card"]
+    S4["settings.section\n3-Tier Settings"]
+  end
+
+  subgraph HOST["DSH Host (@ckanner/flywheel)"]
+    RPC["Direct Typert Remote\nflywheelConsole (query / act / listRepoImages)\nHuman-only dsh approval proof"]
+    TOOLS["LLM Tools\nflywheel_launch / flywheel_control\n(approve & abandon blocked)"]
+  end
+
+  GO["Flywheel Go Engine\n(sole writer of state.json)"]
+
+  S1 --> RPC
+  S2 --> RPC
+  S3 --> RPC
+  S4 --> RPC
+  RPC --> GO
+  TOOLS --> GO
+```
+
 | DSH slot | Surface | Key capabilities |
 | --- | --- | --- |
 | `main` + `sidebar.panellist` | Full-page Engineering Workbench | Collapsible 240px task rail, 52px single-row header with lifecycle Primary CTA, **Dual-Design & Review Studio** (`Synthesized \| Side-by-Side \| Raw Drafts`, Markdown GFM provenance table, `Astra` findings, sticky approval bar), **Wave Swimlanes (default) + Interactive DAG Canvas** (all nodes without 6-node pagination, 244×96 semantic cards, animated Bezier edges, hover lineage highlight, pan/zoom + Minimap), **520px 4-tab Node Inspector** (`Overview`, `Evidence & UX` with `ux-review.json`, `Timeline & Collab`, `Contract`), **30s Create Task Modal** (3 intent cards, visual image picker, 1-sentence investigation), **Investigation Board**, and **Delivery Track** |

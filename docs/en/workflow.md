@@ -13,6 +13,39 @@ For incidents, issue fixes, and complex projects, use the [Usage handbook](usage
 
 ## Execution safeguards, Frontend UX Audit, Tiered Review & Delivery Endpoint
 
+```mermaid
+flowchart TD
+  U["1. User goal (optional repo images / intent)"] --> G{"Go deterministic router"}
+  G -->|"Investigate (goal shorthand)"| INV["Bounded read-only investigation"]
+  INV --> INV_A["Gemini 4 Neon (evidence-only) report"]
+  INV_A -->|"Report only"| END_INV["Deliver report (no edits)"]
+  INV_A -->|"Proceed to fix"| G
+
+  G -->|"Quick / compact"| Q_P["Compact design: Hydrogen-medium"]
+  Q_P --> Q_R["Independent review: Codex Sol-medium (read-only)"]
+  Q_R --> Q_E["Route-based Execute"]
+  Q_E --> Q_V["Go L1/L2/L3 verification"]
+  Q_V --> Q_REV["Final review: Codex Sol-high (read-only, max 2 rounds)"]
+  Q_REV --> POST
+
+  G -->|"Full architecture task"| D_SPLIT["2. Blind Dual-Draft (planning.dual-draft)"]
+  D_SPLIT --> D1["Primary: Gemini 4 Carbon"]
+  D_SPLIT --> D2["Secondary: Claude Opus 5.5"]
+  D1 --> SYN["3. Persist design-candidates/ + Synthesize (provenance table)"]
+  D2 --> SYN
+  SYN --> DR["4. Independent review: Codex GPT-6.2 Astra (read-only)"]
+  DR --> GATE["5. Single human exact-version approval"]
+  GATE --> PLAN["6. Wave planning: Gemini 4 Neon"]
+  PLAN --> WAVE["7. Parallel Worktree waves (Guardrails 3/2/60)"]
+  WAVE --> UX{"frontend route?"}
+  UX -->|"Yes"| COPY["Gemini 4 Neon UX & microcopy audit -> Claude <=1 polish"]
+  UX -->|"No"| L1["Go L1 verification (regression test required on retry)"]
+  COPY --> L1
+  L1 --> REV["Codex Review (blocking vs advisory, max 2 rounds)"]
+  REV --> INT["Integrate L2/L3 + Codex Astra read-only Judge"]
+  INT --> POST["8. Delivery endpoint: local / draft-pr / pr-review / auto-merge"]
+```
+
 - **Run Guardrails (replacing default dollar budgets)**: `budget.enforce` defaults to `"off"`
   for subscription workflows. Instead, deterministic **Run Guardrails** prevent runaway loops:
   `max-packet-attempts: 3`, `max-review-rounds: 2`, and `max-task-calls: 60` (tracked in

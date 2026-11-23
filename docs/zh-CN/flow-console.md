@@ -9,6 +9,30 @@ CLI、内置引擎和 DSH 插件应保持同一版本。安装步骤见[快速�
 
 ## 原生 4 槽位工程工作台（v2）
 
+```mermaid
+flowchart LR
+  subgraph DSH["DSH 桌面端 (原生 4 槽位, 仅依赖 react)"]
+    S1["main + sidebar.panellist\n全页工程工作台"]
+    S2["sidebar.right.pane.tab\n右侧实时进度伴侣"]
+    S3["conversation.chat.commandview\n/flywheel 只读指令卡"]
+    S4["settings.section\n三层渐进式设置页"]
+  end
+
+  subgraph HOST["DSH Host 插件 (@ckanner/flywheel)"]
+    RPC["Direct Typert Remote\nflywheelConsole (query / act / listRepoImages)\n签发宿主侧 dsh 人工证明"]
+    TOOLS["LLM 工具\nflywheel_launch / flywheel_control\n(严禁 approve / abandon)"]
+  end
+
+  GO["Flywheel Go 引擎\n(唯一写 state.json)"]
+
+  S1 --> RPC
+  S2 --> RPC
+  S3 --> RPC
+  S4 --> RPC
+  RPC --> GO
+  TOOLS --> GO
+```
+
 | DSH 槽位 | 承载视图 | 核心能力 |
 | --- | --- | --- |
 | `main` + `sidebar.panellist` | 全页工程工作台 | 可折叠 240px 任务栏、52px 单行顶栏与生命周期主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 \| 双稿并排对比 \| 原始独立草稿`、Markdown 来源对照表、Astra 独立审查与悬浮拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（全量节点无 6 节点分页、244×96 语义卡片、贝塞尔流动连线、悬停血缘高亮、缩放平移与缩略图）、**520px 四标签节点详情抽屉**（概览 / 证据与 UX / 时间线与协作 / 契约）、**30 秒建单弹窗**（三意图卡片、可视化图片选择、一句话只读调查）、**根因调查板**与**交付追踪页** |

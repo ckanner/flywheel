@@ -10,6 +10,39 @@ Go 引擎负责设计、独立审查、调度、验证、恢复和交付。流�
 
 ## 运行护栏、前端 UX 审查、分级审查与交付终点
 
+```mermaid
+flowchart TD
+  U["1. 人类一句话提需求 (可附仓库图片 / 选意图)"] --> G{"Go 确定性分流"}
+  G -->|"根因排查 (goal 简写)"| INV["有界只读调查引擎"]
+  INV --> INV_A["Gemini 4 Neon (evidence-only) 出证据报告"]
+  INV_A -->|"仅排查"| END_INV["交付调查报告 (不改代码)"]
+  INV_A -->|"转修复"| G
+
+  G -->|"Quick / compact"| Q_P["紧凑设计: Hydrogen-medium"]
+  Q_P --> Q_R["独立前审: Codex Sol-medium (read-only)"]
+  Q_R --> Q_E["按路由执行 Execute"]
+  Q_E --> Q_V["Go L1/L2/L3 物理验收"]
+  Q_V --> Q_REV["独立终审: Codex Sol-high (read-only, ≤2 轮)"]
+  Q_REV --> POST
+
+  G -->|"Full 架构级任务"| D_SPLIT["2. 双稿盲态并行 (planning.dual-draft)"]
+  D_SPLIT --> D1["主稿: Gemini 4 Carbon"]
+  D_SPLIT --> D2["对照稿: Claude Opus 5.5"]
+  D1 --> SYN["3. 持久化 design-candidates/ + 统稿 (含来源对照表)"]
+  D2 --> SYN
+  SYN --> DR["4. 独立对抗审查: Codex GPT-6.2 Astra (read-only)"]
+  DR --> GATE["5. 人类单次精确版本拍板"]
+  GATE --> PLAN["6. 波次拆分: Gemini 4 Neon"]
+  PLAN --> WAVE["7. 独立 Worktree 波次并发执行 (护栏 3/2/60)"]
+  WAVE --> UX{"frontend 路由?"}
+  UX -->|"是"| COPY["Gemini 4 Neon 交互与微文案审查 -> Claude ≤1 次改稿"]
+  UX -->|"否"| L1["Go L1 物理验收 (返修必补回归/防护测试)"]
+  COPY --> L1
+  L1 --> REV["Codex 分级审查 (blocking / advisory, ≤2 轮)"]
+  REV --> INT["集成 L2/L3 + Codex Astra 只读终验 Judge"]
+  INT --> POST["8. 交付终点: local / draft-pr / pr-review / auto-merge"]
+```
+
 - **运行护栏（替代默认美元预算）**：订阅优先模式下 `budget.enforce` 默认 `"off"`，改由确定性的
   **运行护栏**防止死循环与调用失控：`max-packet-attempts: 3`、`max-review-rounds: 2`、
   `max-task-calls: 60`（单任务调用计数持久化于 `state.budget.totals.calls`）。需要美元预算时
