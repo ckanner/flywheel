@@ -145,8 +145,9 @@ test('SettingsPage edits real Go-resolved inline loops, routes, planning refs, s
         return envelope({ protocol: 1, ok: true, cwd: '/repo' });
       },
     },
-    { slot: 'settings.section' },
+    { slot: 'main' },
   );
+  await ui.click('设置');
 
   // 1. Auto-matches Go-resolved inline loops to profiles and displays read-only badges
   const profileSel = ui.container.querySelector('[data-testid="role-profile-loops.design-plan"]');
@@ -293,8 +294,9 @@ test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets
         return envelope({ protocol: 1, ok: true, cwd: '/repo' });
       },
     },
-    { slot: 'settings.section' },
+    { slot: 'main' },
   );
+  await ui.click('设置');
 
   // 1. Effective JEV bar displays runtime state and profile dropdown filters to eligible tool-free Antigravity profiles
   const effectiveBar = ui.container.querySelector('[data-testid="jev-effective-bar"]');
@@ -398,4 +400,148 @@ test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets
   assert.equal(saveHttp.editor.values.jev.model, 'jev-1.14.0');
   assert.equal(saveHttp.editor.values.jev['key-env'], 'CUSTOM_JEV_KEY');
   assert.equal('profile' in saveHttp.editor.values.jev, false);
+});
+
+test('SettingsPage edits scheduler concurrency, worktree, watchdog timeouts, and transport retries with validation', async t => {
+  const baseValues = {
+    scheduler: { mode: 'parallel', 'max-parallel': 2, dispatch: 'batch' },
+    worktree: { enabled: true },
+    watchdog: {
+      'idle-timeout-ms': 300_000,
+      'wall-timeout-ms': 3_600_000,
+      'kill-grace-ms': 5_000,
+      roles: {
+        'design-plan': { 'idle-timeout-ms': 900_000 },
+        'design-review': { 'idle-timeout-ms': 900_000 },
+        plan: { 'idle-timeout-ms': 900_000 },
+        'plan-review': { 'idle-timeout-ms': 900_000 },
+      },
+    },
+    retry: {
+      'base-delay-ms': 500,
+      'max-delay-ms': 10_000,
+      jitter: 0.1,
+      'max-transport-retries': 5,
+    },
+  };
+
+  const ui = await mountWorkbench(
+    t,
+    {
+      query: async input => {
+        if (input.action === 'runs') {
+          return envelope({ protocol: 1, ok: true, cwd: '/repo', runs: [] });
+        }
+        if (input.action === 'config-edit') {
+          return envelope({
+            protocol: 1,
+            ok: true,
+            cwd: '/repo',
+            editor: {
+              scope: input.editor.scope,
+              target: '/home/.flywheel/config.json',
+              revision: 'rev-runtime',
+              values: structuredClone(baseValues),
+              defaults: {},
+            },
+          });
+        }
+        if (input.action === 'config') {
+          return envelope({
+            protocol: 1,
+            ok: true,
+            cwd: '/repo',
+            configuration: { source: '/home/.flywheel/config.json', scope: 'global', bindings: [] },
+          });
+        }
+        return envelope({ protocol: 1, ok: true, cwd: '/repo' });
+      },
+    },
+    { slot: 'main' },
+  );
+  await ui.click('设置');
+
+  const saveBtn = [...ui.container.querySelectorAll('button')].find(b => b.textContent.trim() === '保存配置');
+  const maxParallelInput = ui.container.querySelector('[data-testid="runtime-max-parallel-input"]');
+  const dispatchSelect = ui.container.querySelector('[data-testid="runtime-dispatch-select"]');
+  const idleInput = ui.container.querySelector('[data-testid="runtime-idle-timeout-input"]');
+  const planIdleInput = ui.container.querySelector('[data-testid="runtime-plan-idle-timeout-input"]');
+  const wallInput = ui.container.querySelector('[data-testid="runtime-wall-timeout-input"]');
+  const graceInput = ui.container.querySelector('[data-testid="runtime-kill-grace-input"]');
+
+  // Initial values converted from ms -> seconds cleanly
+  assert.equal(maxParallelInput.value, '2');
+  assert.equal(idleInput.value, '300');
+  assert.equal(planIdleInput.value, '900');
+  assert.equal(wallInput.value, '3600');
+  assert.equal(graceInput.value, '5');
+
+  // Out-of-range max-parallel blocks save
+  await act(async () => {
+    setControlValue(maxParallelInput, '12');
+  });
+  assert.equal(saveBtn.disabled, true);
+
+  // Edit valid concurrency, dispatch, prewarm, worktree, and watchdog timeouts
+  await act(async () => {
+    setControlValue(maxParallelInput, '4');
+    setControlValue(dispatchSelect, 'ready-queue');
+    ui.container.querySelector('[data-testid="runtime-prewarm-toggle"]').click();
+    ui.container.querySelector('[data-testid="runtime-worktree-toggle"]').click();
+    setControlValue(idleInput, '600');
+    setControlValue(planIdleInput, '1200');
+    setControlValue(wallInput, '7200');
+    setControlValue(graceInput, '10');
+  });
+
+  // Expand transport retries and verify validation + valid update
+  await act(async () => {
+    ui.container.querySelector('[data-testid="runtime-retry-toggle"]').click();
+  });
+  const retryMaxInput = ui.container.querySelector('[data-testid="runtime-retry-max-input"]');
+  const retryBaseInput = ui.container.querySelector('[data-testid="runtime-retry-base-input"]');
+  const retryMaxDelayInput = ui.container.querySelector('[data-testid="runtime-retry-max-delay-input"]');
+  const retryJitterInput = ui.container.querySelector('[data-testid="runtime-retry-jitter-input"]');
+
+  await act(async () => {
+    setControlValue(retryBaseInput, '2000');
+    setControlValue(retryMaxDelayInput, '1000');
+  });
+  assert.equal(saveBtn.disabled, true);
+
+  await act(async () => {
+    setControlValue(retryMaxInput, '8');
+    setControlValue(retryBaseInput, '1000');
+    setControlValue(retryMaxDelayInput, '20000');
+    setControlValue(retryJitterInput, '0.25');
+  });
+  assert.equal(saveBtn.disabled, false);
+
+  await ui.click('保存配置');
+  const saved = ui.actCalls.at(-1);
+  assert.equal(saved.action, 'config-save');
+  assert.deepEqual(saved.editor.values.scheduler, {
+    mode: 'parallel',
+    'max-parallel': 4,
+    dispatch: 'ready-queue',
+    prewarm: true,
+  });
+  assert.deepEqual(saved.editor.values.worktree, { enabled: false });
+  assert.deepEqual(saved.editor.values.watchdog, {
+    'idle-timeout-ms': 600_000,
+    'wall-timeout-ms': 7_200_000,
+    'kill-grace-ms': 10_000,
+    roles: {
+      'design-plan': { 'idle-timeout-ms': 1_200_000 },
+      'design-review': { 'idle-timeout-ms': 1_200_000 },
+      plan: { 'idle-timeout-ms': 1_200_000 },
+      'plan-review': { 'idle-timeout-ms': 1_200_000 },
+    },
+  });
+  assert.deepEqual(saved.editor.values.retry, {
+    'base-delay-ms': 1000,
+    'max-delay-ms': 20_000,
+    jitter: 0.25,
+    'max-transport-retries': 8,
+  });
 });

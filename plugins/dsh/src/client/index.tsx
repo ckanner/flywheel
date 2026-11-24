@@ -1,15 +1,15 @@
 /**
- * Flywheel Next v2 — Native 4-Slot DSH Client Entry
+ * Flywheel Next v2 — Native 3-Slot DSH Client Entry
  *
  * Registers Direct Typert Remote (`flywheelConsole`: query, act, listRepoImages)
- * and mounts 4 clean native DSH slots:
- *   1. `main` + `sidebar.panellist` (Full-page Engineering Workbench)
+ * and mounts 3 clean native DSH slots (with Settings integrated directly inside
+ * the Workbench header tab so DSH's global Settings sidebar stays uncluttered):
+ *   1. `main` + `sidebar.panellist` (Full-page Engineering Workbench + inline Settings)
  *   2. `sidebar.right.pane.tab`     (Compact Live Progress Companion)
  *   3. `conversation.chat.commandview` (Read-only `/flywheel` Command Card)
- *   4. `settings.section`           (3-Tier Progressive Settings)
  *
- * Zero `conversation.view` slot, zero `:has([data-composer-seat])` hack,
- * and zero import-time DOM mutations.
+ * Zero `conversation.view` slot, zero duplicate `settings.section` entry,
+ * zero `:has([data-composer-seat])` hack, and zero import-time DOM mutations.
  */
 
 import type { ComponentType } from 'react';
@@ -19,11 +19,9 @@ import { remoteContribution } from './remote.ts';
 import { FlywheelStore } from './store.ts';
 import { CommandCard } from './views/CommandCard.tsx';
 import { RightSidebarLive } from './views/RightSidebarLive.tsx';
-import { SettingsPage } from './views/SettingsPage.tsx';
 import { FlywheelRailIcon, WorkbenchPage } from './views/WorkbenchPage.tsx';
 
 export const PANEL_ID = 'flywheel';
-export const SETTINGS_ID = 'flywheel';
 export const SIDEBAR_KIND = 'flywheel';
 export const COMMAND_VIEW_ID = 'flywheel';
 
@@ -119,21 +117,6 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ store, t, runtime }),
       },
       CommandCard as unknown as ComponentType<never>,
-    ),
-  );
-
-  // Slot 4: 3-Tier Progressive Settings Page
-  ctx.slots.inject('settings.section', () =>
-    ctx.slots.register(
-      {
-        name: 'settings.section',
-        id: SETTINGS_ID,
-        order: 35,
-        locale: NS,
-        label: () => t('settings.title'),
-        inject: () => ({ store, t }),
-      },
-      SettingsPage as unknown as ComponentType<never>,
     ),
   );
 }

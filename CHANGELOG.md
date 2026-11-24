@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.5 — 2026-11-23 (Single Settings Entry + Concurrency, Timeouts & Retry Controls)
+
+- **Remove duplicate DSH global Settings entry**: unregister the redundant `settings.section` slot so DSH's global Settings sidebar stays clean; Flywheel configuration lives exclusively inside the Flywheel Workbench's inline **Settings** tab.
+- **Concurrency, Watchdog Timeouts & Transport Retries UI**: add a dedicated **Concurrency, Timeouts & Transport Retries** card in `SettingsPage` covering `scheduler` (`mode`: `parallel`/`serial`, `max-parallel` 1–8, `dispatch`: `batch`/`ready-queue`, `prewarm`), `worktree.enabled`, `watchdog` timeouts in human-friendly seconds with live minute/hour hints (`idle-timeout-ms`, planning-role `roles.*.idle-timeout-ms`, `wall-timeout-ms`, `kill-grace-ms`), and collapsible `retry` backoff controls (`max-transport-retries`, `base-delay-ms`, `max-delay-ms`, `jitter`) with Go-aligned pre-save validation.
+
 ## 0.39.4 — 2026-11-23 (JEV Settings Controls)
 
 - **JEV Bounded Decisions UI card in Settings**: restore dedicated visual controls for `jev` directly in `SettingsPage` (both inline in the Workbench **Settings** tab and DSH `settings.section`), including the single `jev.enabled` toggle switch, separate effective-runtime status bar (`effectiveConfig.jev` + `effectiveConfig.jevBinding` + scope), mutually exclusive `subscription` / `http` backend switching (strictly clearing incompatible schema fields), eligible tool-free Antigravity profile picker with resolved model/effort preview, `max-calls` / `timeout-ms` / `min-applicability` / `min-choice` inputs, 5-category `allowed-data` chips, and pre-save schema & `subscription-only` validation.

@@ -192,7 +192,7 @@ test('published DSH renderer owns the v2 4-slot plugin lifecycle without convers
   assert.equal(ctx.slots.entries('sidebar.panellist').length, 1, 'sidebar.panellist rail icon registered');
   assert.equal(ctx.slots.entries('sidebar.right.pane.tab').length, 1, 'sidebar.right.pane.tab companion registered');
   assert.equal(ctx.slots.entries('conversation.chat.commandview').length, 1, 'conversation.chat.commandview registered');
-  assert.equal(ctx.slots.entries('settings.section').length, 1, 'settings.section registered');
+  assert.equal(ctx.slots.entries('settings.section').length, 0, 'duplicate settings.section must not be registered');
   assert.equal(sidebarTabSpecs.length, 1);
 
   await act(async () => {

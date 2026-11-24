@@ -88,9 +88,9 @@ export function envelope(payload, kind = 'success') {
 }
 
 /**
- * Mounts the v2 4-slot DSH client in jsdom with Direct Typert Remote (`query`, `act`, `listRepoImages`)
- * and returns helpers to render any of the 4 registered slots (`main`, `sidebar.panellist`,
- * `sidebar.right.pane.tab`, `conversation.chat.commandview`, `settings.section`).
+ * Mounts the v2 3-slot DSH client in jsdom with Direct Typert Remote (`query`, `act`, `listRepoImages`)
+ * and returns helpers to render any of the registered slots (`main`, `sidebar.panellist`,
+ * `sidebar.right.pane.tab`, `conversation.chat.commandview`). Settings lives inline inside `main`.
  */
 export async function mountWorkbench(
   t,
@@ -212,7 +212,7 @@ export async function mountWorkbench(
   assert.ok(slots.has('sidebar.panellist'), 'sidebar.panellist rail slot must be registered');
   assert.ok(slots.has('sidebar.right.pane.tab'), 'sidebar.right.pane.tab slot must be registered');
   assert.ok(slots.has('conversation.chat.commandview'), 'conversation.chat.commandview slot must be registered');
-  assert.ok(slots.has('settings.section'), 'settings.section slot must be registered');
+  assert.equal(slots.has('settings.section'), false, 'duplicate settings.section slot must not be registered');
 
   const container = dom.window.document.createElement('div');
   dom.window.document.body.appendChild(container);

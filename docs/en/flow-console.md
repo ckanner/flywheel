@@ -2,22 +2,22 @@
 
 [Documentation](../README.md) · English · [简体中文](../zh-CN/flow-console.md)
 
-The DSH Flywheel v2 plugin provides a zero-debt native 4-slot engineering workbench
+The DSH Flywheel v2 plugin provides a zero-debt native 3-slot engineering workbench
 backed by Direct Typert Remote (`flywheelConsole`: `query`, `act`, `listRepoImages`).
-It removes the legacy `conversation.view` slot, `:has([data-composer-seat])` layout
-hack, and `/flywheel {...}` chat command tunneling. Keep the CLI, bundled engines,
-and DSH plugin at the same version. For installation, see
+It removes the legacy `conversation.view` slot, the duplicate global `settings.section`
+entry (Settings lives directly inside the Workbench **Settings** tab), the
+`:has([data-composer-seat])` layout hack, and `/flywheel {...}` chat command tunneling.
+Keep the CLI, bundled engines, and DSH plugin at the same version. For installation, see
 [Getting started](getting-started.md).
 
-## Native 4-slot DSH workbench (v2)
+## Native 3-slot DSH workbench (v2)
 
 ```mermaid
 flowchart LR
-  subgraph DSH["DSH Desktop (4 Native Slots, React-only External)"]
-    S1["main + sidebar.panellist\nFull-page Workbench"]
+  subgraph DSH["DSH Desktop (3 Native Slots, React-only External)"]
+    S1["main + sidebar.panellist\nFull-page Workbench + Inline Settings"]
     S2["sidebar.right.pane.tab\nLive Companion"]
     S3["conversation.chat.commandview\n/flywheel Card"]
-    S4["settings.section\n3-Tier Settings"]
   end
 
   subgraph HOST["DSH Host (@ckanner/flywheel)"]
@@ -30,17 +30,15 @@ flowchart LR
   S1 --> RPC
   S2 --> RPC
   S3 --> RPC
-  S4 --> RPC
   RPC --> GO
   TOOLS --> GO
 ```
 
 | DSH slot | Surface | Key capabilities |
 | --- | --- | --- |
-| `main` + `sidebar.panellist` | Full-page Engineering Workbench | Bound to native DSH `--dsw-alias-*` light/dark semantic tokens with a full-bleed single-column layout (removing the redundant second task sidebar). Features a 54px header with a searchable **Task Switcher popover** (deduplicated by `taskDir`, reading nested Go `summary.slug`/`summary.status`, hiding `/tmp` runs by default), `+ New Task`, lifecycle Primary CTA, and direct inline **Settings** tab; plus **Dual-Design & Review Studio** (`Synthesized \| Side-by-Side \| Raw Drafts`, Markdown GFM provenance table, `Astra` findings, sticky approval bar), **Wave Swimlanes (default) + Interactive DAG Canvas** (all nodes without 6-node pagination, 244×96 semantic cards, animated Bezier edges, hover lineage highlight, pan/zoom + Minimap), **520px 5-tab Node Inspector** (`Overview` with session-reuse info, **`Model Output`** with live reasoning & provider resume, `Evidence & UX` with `ux-review.json`, `Timeline & Collab`, `Contract`), **Live Traces & Model Reasoning (`Live Traces`)** (real-time streaming of every loop and packet's thinking, tool calls, replies, and failure stderr, plus one-click native DSH session jump or verified Claude / Codex / Kimi / Antigravity CLI `resume` copy & Terminal launch), **30s Create Task Modal**, **Investigation Board**, and **Delivery Track** |
+| `main` + `sidebar.panellist` | Full-page Engineering Workbench (with inline **Settings** tab) | Bound to native DSH `--dsw-alias-*` light/dark semantic tokens with a full-bleed single-column layout. Features a 54px header with a searchable **Task Switcher popover**, `+ New Task`, lifecycle Primary CTA, and direct inline **Settings** tab (Scope Precedence Bar, 4-Subscription Health Strip + Doctor + live model catalog refresh, **JEV Bounded Decisions card**, **editable Stage & Route Model Matrix**, **Session Reuse Policy & Run Guardrails**, **Concurrency / Worktree / Watchdog Timeouts / Transport Retries**, one-click Reset, and raw JSON); plus **Dual-Design & Review Studio**, **Wave Swimlanes (default) + Interactive DAG Canvas**, **520px 5-tab Node Inspector** (`Overview`, **`Model Output`**, `Evidence & UX`, `Timeline & Collab`, `Contract`), **Live Traces & Provider Session Resume**, **30s Create Task Modal**, **Investigation Board**, and **Delivery Track** |
 | `sidebar.right.pane.tab` | Compact Live Companion | Active task progress bar, running packet badge, one-click jump to Workbench (`layout.selectPanel('flywheel')`), and Stop control |
 | `conversation.chat.commandview` | `/flywheel` Command Card | Read-only command result summary with one-click jump to Workbench |
-| `settings.section` | Editable 3-Tier Settings (inline in Workbench + DSH Settings) | Scope Precedence Bar (`Task > Project > Global > Default`), 4-Subscription Health Strip + offline Doctor preflight + live model catalog refresh, **JEV Bounded Decisions card** (single `jev.enabled` toggle switch, `subscription` / `http` mutually exclusive backend selector, tool-free Antigravity profile filter with resolved binding preview, separate effective runtime status bar, max-calls/timeout/threshold budgets, 5-category `allowed-data` chips, and schema validation), **editable Stage & Route Model Matrix** (Loops / Routes / Dual-Draft & Compact editing Profile, Harness/Provider, Model, and Thinking level with `read-only` lock badges), **Session Reuse Policy (`scoped` / `fresh`)** & Run Guardrails, one-click Reset to Defaults, and collapsible raw JSON |
 
 Human-only actions (`planning.approve` and `session.abandon`) mint host-owned `dsh`
 proofs directly inside `flywheelConsole.act`; LLM tools (`flywheel_launch` and

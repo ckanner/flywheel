@@ -546,6 +546,153 @@ function validateJevDraft(
   return errors;
 }
 
+const WATCHDOG_PLANNING_ROLES = [
+  'design-plan',
+  'design-review',
+  'plan',
+  'plan-review',
+] as const;
+
+function formatSecondsHint(seconds: number, isZh: boolean): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return isZh ? `${seconds} 秒` : `${seconds}s`;
+  const mins = seconds / 60;
+  if (mins < 60) {
+    const label = Number.isInteger(mins) ? String(mins) : mins.toFixed(1);
+    return isZh ? `约 ${label} 分钟` : `~${label}m`;
+  }
+  const hrs = mins / 60;
+  const label = Number.isInteger(hrs) ? String(hrs) : hrs.toFixed(1);
+  return isZh ? `约 ${label} 小时` : `~${label}h`;
+}
+
+function patchScheduler(draft: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const prev = asRecord(draft.scheduler);
+  const next: Record<string, unknown> = {
+    mode: prev.mode === 'serial' ? 'serial' : 'parallel',
+    'max-parallel': typeof prev['max-parallel'] === 'number' ? prev['max-parallel'] : 2,
+    dispatch: prev.dispatch === 'ready-queue' ? 'ready-queue' : 'batch',
+    ...prev,
+    ...patch,
+  };
+  return setNested(draft, ['scheduler'], next);
+}
+
+function patchWatchdog(draft: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const prev = asRecord(draft.watchdog);
+  const next: Record<string, unknown> = {
+    'idle-timeout-ms': typeof prev['idle-timeout-ms'] === 'number' ? prev['idle-timeout-ms'] : 300_000,
+    'wall-timeout-ms': typeof prev['wall-timeout-ms'] === 'number' ? prev['wall-timeout-ms'] : 3_600_000,
+    'kill-grace-ms': typeof prev['kill-grace-ms'] === 'number' ? prev['kill-grace-ms'] : 5_000,
+    ...prev,
+    ...patch,
+  };
+  return setNested(draft, ['watchdog'], next);
+}
+
+function setPlanningIdleTimeoutMs(draft: Record<string, unknown>, ms: number): Record<string, unknown> {
+  const prevWatchdog = asRecord(draft.watchdog);
+  const prevRoles = asRecord(prevWatchdog.roles);
+  const nextRoles: Record<string, unknown> = { ...prevRoles };
+  for (const role of WATCHDOG_PLANNING_ROLES) {
+    nextRoles[role] = {
+      ...asRecord(prevRoles[role]),
+      'idle-timeout-ms': ms,
+    };
+  }
+  return patchWatchdog(draft, { roles: nextRoles });
+}
+
+function patchRetry(draft: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const prev = asRecord(draft.retry);
+  const next: Record<string, unknown> = {
+    'base-delay-ms': typeof prev['base-delay-ms'] === 'number' ? prev['base-delay-ms'] : 500,
+    'max-delay-ms': typeof prev['max-delay-ms'] === 'number' ? prev['max-delay-ms'] : 10_000,
+    jitter: typeof prev.jitter === 'number' ? prev.jitter : 0.1,
+    'max-transport-retries': typeof prev['max-transport-retries'] === 'number' ? prev['max-transport-retries'] : 5,
+    ...prev,
+    ...patch,
+  };
+  return setNested(draft, ['retry'], next);
+}
+
+function validateRuntimeDraft(draft: Record<string, unknown>, t: Translate): Record<string, string> {
+  const errors: Record<string, string> = {};
+
+  if (draft.scheduler !== undefined) {
+    const sched = asRecord(draft.scheduler);
+    if (sched['max-parallel'] !== undefined) {
+      const mp = Number(sched['max-parallel']);
+      if (!Number.isInteger(mp) || mp < 1 || mp > 8) {
+        errors.maxParallel = t('settings.runtime.errMaxParallel');
+      }
+    }
+  }
+
+  if (draft.watchdog !== undefined) {
+    const wd = asRecord(draft.watchdog);
+    if (wd['idle-timeout-ms'] !== undefined) {
+      const v = Number(wd['idle-timeout-ms']);
+      if (!Number.isInteger(v) || v < 1000 || v > 86_400_000) {
+        errors.idleTimeout = t('settings.runtime.errTimeoutSec');
+      }
+    }
+    if (wd['wall-timeout-ms'] !== undefined) {
+      const v = Number(wd['wall-timeout-ms']);
+      if (!Number.isInteger(v) || v < 1000 || v > 86_400_000) {
+        errors.wallTimeout = t('settings.runtime.errTimeoutSec');
+      }
+    }
+    if (wd['kill-grace-ms'] !== undefined) {
+      const v = Number(wd['kill-grace-ms']);
+      if (!Number.isInteger(v) || v < 1000 || v > 60_000) {
+        errors.killGrace = t('settings.runtime.errKillGraceSec');
+      }
+    }
+    const roles = asRecord(wd.roles);
+    for (const role of WATCHDOG_PLANNING_ROLES) {
+      const entry = asRecord(roles[role]);
+      if (entry['idle-timeout-ms'] !== undefined) {
+        const v = Number(entry['idle-timeout-ms']);
+        if (!Number.isInteger(v) || v < 1000 || v > 86_400_000) {
+          errors.planIdleTimeout = t('settings.runtime.errTimeoutSec');
+          break;
+        }
+      }
+    }
+  }
+
+  if (draft.retry !== undefined) {
+    const rt = asRecord(draft.retry);
+    const baseDelay = rt['base-delay-ms'] !== undefined ? Number(rt['base-delay-ms']) : 500;
+    const maxDelay = rt['max-delay-ms'] !== undefined ? Number(rt['max-delay-ms']) : 10_000;
+    if (rt['max-transport-retries'] !== undefined) {
+      const v = Number(rt['max-transport-retries']);
+      if (!Number.isInteger(v) || v < 0 || v > 20) {
+        errors.maxRetries = t('settings.runtime.errRetries');
+      }
+    }
+    if (rt['base-delay-ms'] !== undefined) {
+      if (!Number.isFinite(baseDelay) || baseDelay < 1 || baseDelay > 60_000) {
+        errors.baseDelay = t('settings.runtime.errBaseDelay');
+      }
+    }
+    if (rt['max-delay-ms'] !== undefined) {
+      if (!Number.isFinite(maxDelay) || maxDelay < baseDelay || maxDelay > 300_000) {
+        errors.maxDelay = t('settings.runtime.errMaxDelay');
+      }
+    }
+    if (rt.jitter !== undefined) {
+      const v = Number(rt.jitter);
+      if (!Number.isFinite(v) || v < 0 || v > 1) {
+        errors.jitter = t('settings.runtime.errJitter');
+      }
+    }
+  }
+
+  return errors;
+}
+
 export function SettingsPage({
   store,
   t,
@@ -560,6 +707,8 @@ export function SettingsPage({
   const [roleGroup, setRoleGroup] = useState<RoleGroup>('loops');
   const [jevAdvancedOpen, setJevAdvancedOpen] = useState(false);
   const [jevNumText, setJevNumText] = useState<Record<string, string>>({});
+  const [runtimeRetryOpen, setRuntimeRetryOpen] = useState(false);
+  const [runtimeNumText, setRuntimeNumText] = useState<Record<string, string>>({});
   const [tier3Open, setTier3Open] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
 
@@ -576,6 +725,7 @@ export function SettingsPage({
     if (snap.configEditor?.values) {
       setDraft(cloneRecord(snap.configEditor.values));
       setJevNumText({});
+      setRuntimeNumText({});
     }
   }, [snap.configEditor]);
 
@@ -620,7 +770,72 @@ export function SettingsPage({
     () => validateJevDraft(draft, profilesMap, t),
     [draft, profilesMap, t],
   );
+  const runtimeErrors = useMemo(
+    () => validateRuntimeDraft(draft, t),
+    [draft, t],
+  );
   const hasJevErrors = Object.keys(jevErrors).length > 0;
+  const hasRuntimeErrors = Object.keys(runtimeErrors).length > 0;
+  const hasValidationErrors = hasJevErrors || hasRuntimeErrors;
+
+  const schedulerDraft = asRecord(draft.scheduler);
+  const schedulerMode: 'parallel' | 'serial' = schedulerDraft.mode === 'serial' ? 'serial' : 'parallel';
+  const schedulerDispatch: 'batch' | 'ready-queue' =
+    schedulerDraft.dispatch === 'ready-queue' ? 'ready-queue' : 'batch';
+  const schedulerPrewarm = Boolean(schedulerDraft.prewarm ?? false);
+  const worktreeEnabled = getNested(draft, ['worktree', 'enabled']) === undefined
+    ? true
+    : Boolean(getNested(draft, ['worktree', 'enabled']));
+  const watchdogDraft = asRecord(draft.watchdog);
+  const watchdogRolesDraft = asRecord(watchdogDraft.roles);
+  const retryDraft = asRecord(draft.retry);
+
+  const idleTimeoutSecNum = Math.round(Number(watchdogDraft['idle-timeout-ms'] ?? 300_000) / 1000);
+  const planIdleTimeoutSecNum = Math.round(
+    Number(asRecord(watchdogRolesDraft['design-plan'])['idle-timeout-ms'] ?? 900_000) / 1000,
+  );
+  const wallTimeoutSecNum = Math.round(Number(watchdogDraft['wall-timeout-ms'] ?? 3_600_000) / 1000);
+  const killGraceSecNum = Math.round(Number(watchdogDraft['kill-grace-ms'] ?? 5_000) / 1000);
+
+  const runtimeInputVal = (key: string, fallback: number): string => {
+    if (Object.hasOwn(runtimeNumText, key)) return runtimeNumText[key];
+    return Number.isFinite(fallback) ? String(fallback) : '';
+  };
+
+  const handleRuntimeSecChange = (
+    key: 'idleTimeout' | 'planIdleTimeout' | 'wallTimeout' | 'killGrace',
+    raw: string,
+  ) => {
+    setRuntimeNumText(prev => ({ ...prev, [key]: raw }));
+    const parsed = Number(raw.trim());
+    const ms = raw.trim() && Number.isFinite(parsed) && Number.isInteger(parsed) ? parsed * 1000 : Number.NaN;
+    if (key === 'planIdleTimeout') {
+      setDraft(d => setPlanningIdleTimeoutMs(d, ms));
+    } else if (key === 'idleTimeout') {
+      setDraft(d => patchWatchdog(d, { 'idle-timeout-ms': ms }));
+    } else if (key === 'wallTimeout') {
+      setDraft(d => patchWatchdog(d, { 'wall-timeout-ms': ms }));
+    } else {
+      setDraft(d => patchWatchdog(d, { 'kill-grace-ms': ms }));
+    }
+  };
+
+  const handleSchedulerParallelChange = (raw: string) => {
+    setRuntimeNumText(prev => ({ ...prev, maxParallel: raw }));
+    const parsed = Number(raw.trim());
+    const val = raw.trim() && Number.isFinite(parsed) ? parsed : Number.NaN;
+    setDraft(d => patchScheduler(d, { 'max-parallel': val }));
+  };
+
+  const handleRetryNumChange = (
+    field: 'max-transport-retries' | 'base-delay-ms' | 'max-delay-ms' | 'jitter',
+    raw: string,
+  ) => {
+    setRuntimeNumText(prev => ({ ...prev, [field]: raw }));
+    const parsed = Number(raw.trim());
+    const val = raw.trim() && Number.isFinite(parsed) ? parsed : Number.NaN;
+    setDraft(d => patchRetry(d, { [field]: val }));
+  };
   const effectiveJev = snap.effectiveConfig?.jev;
   const effectiveJevBinding = snap.effectiveConfig?.jevBinding;
   const jevNumValue = (field: 'max-calls' | 'timeout-ms' | 'min-applicability' | 'min-choice', fallback: number): string => {
@@ -1381,6 +1596,312 @@ export function SettingsPage({
         </div>
       </section>
 
+      {/* Concurrency, Timeouts & Transport Retries */}
+      <section className={styles.card} data-testid="settings-runtime">
+        <div>
+          <h3 className={styles.cardTitle}>{t('settings.runtime.title')}</h3>
+          <div style={{ fontSize: 11.5, color: 'var(--fw-text-subtle)', marginTop: 2 }}>
+            {t('settings.runtime.subtitle')}
+          </div>
+        </div>
+
+        <div className={styles.settingRow} style={{ paddingTop: 4 }}>
+          <div className={styles.settingRowText}>
+            <span className={styles.settingRowTitle}>{t('settings.runtime.schedulerMode')}</span>
+            <span className={styles.settingRowDesc}>{t('settings.runtime.schedulerModeDesc')}</span>
+          </div>
+          <div className={styles.segmented} role="tablist" aria-label={t('settings.runtime.schedulerMode')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={schedulerMode === 'parallel'}
+              data-testid="runtime-mode-parallel"
+              className={`${styles.segmentedBtn} ${schedulerMode === 'parallel' ? styles.segmentedBtnActive : ''}`}
+              onClick={() => setDraft(d => patchScheduler(d, { mode: 'parallel' }))}
+            >
+              {t('settings.runtime.mode.parallel')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={schedulerMode === 'serial'}
+              data-testid="runtime-mode-serial"
+              className={`${styles.segmentedBtn} ${schedulerMode === 'serial' ? styles.segmentedBtnActive : ''}`}
+              onClick={() => setDraft(d => patchScheduler(d, { mode: 'serial' }))}
+            >
+              {t('settings.runtime.mode.serial')}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="fw-runtime-max-parallel">
+              {t('settings.runtime.maxParallel')}
+            </label>
+            <input
+              id="fw-runtime-max-parallel"
+              type="number"
+              min={1}
+              max={8}
+              step={1}
+              className={styles.input}
+              data-testid="runtime-max-parallel-input"
+              disabled={schedulerMode === 'serial'}
+              value={runtimeInputVal('maxParallel', Number(schedulerDraft['max-parallel'] ?? 2))}
+              onChange={e => handleSchedulerParallelChange(e.target.value)}
+            />
+            {runtimeErrors.maxParallel && (
+              <span className={styles.fieldError} role="alert">{runtimeErrors.maxParallel}</span>
+            )}
+          </div>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="fw-runtime-dispatch">
+              {t('settings.runtime.dispatch')}
+            </label>
+            <select
+              id="fw-runtime-dispatch"
+              className={styles.select}
+              data-testid="runtime-dispatch-select"
+              value={schedulerDispatch}
+              onChange={e => setDraft(d => patchScheduler(d, { dispatch: e.target.value }))}
+            >
+              <option value="batch">{t('settings.runtime.dispatch.batch')}</option>
+              <option value="ready-queue">{t('settings.runtime.dispatch.readyQueue')}</option>
+            </select>
+          </div>
+        </div>
+
+        <div className={styles.settingRow}>
+          <div className={styles.settingRowText}>
+            <span className={styles.settingRowTitle}>{t('settings.runtime.worktree')}</span>
+            <span className={styles.settingRowDesc}>{t('settings.runtime.worktreeDesc')}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={worktreeEnabled}
+            aria-label={t('settings.runtime.worktree')}
+            data-testid="runtime-worktree-toggle"
+            className={`${styles.switchBtn} ${worktreeEnabled ? styles.switchBtnOn : ''}`}
+            onClick={() => setDraft(d => setNested(d, ['worktree', 'enabled'], !worktreeEnabled))}
+          >
+            <span className={styles.switchThumb} />
+          </button>
+        </div>
+
+        <div className={styles.settingRow}>
+          <div className={styles.settingRowText}>
+            <span className={styles.settingRowTitle}>{t('settings.runtime.prewarm')}</span>
+            <span className={styles.settingRowDesc}>{t('settings.runtime.prewarmDesc')}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={schedulerPrewarm}
+            aria-label={t('settings.runtime.prewarm')}
+            data-testid="runtime-prewarm-toggle"
+            className={`${styles.switchBtn} ${schedulerPrewarm ? styles.switchBtnOn : ''}`}
+            onClick={() => setDraft(d => patchScheduler(d, { prewarm: !schedulerPrewarm }))}
+          >
+            <span className={styles.switchThumb} />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+          <span className={styles.settingRowTitle} style={{ fontSize: 12.5 }}>
+            {t('settings.runtime.watchdogTitle')}
+          </span>
+          <div className={styles.jevGrid}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-wd-idle">
+                {t('settings.runtime.idleTimeoutSec')}
+              </label>
+              <input
+                id="fw-wd-idle"
+                type="number"
+                min={1}
+                max={86400}
+                step={30}
+                className={styles.input}
+                data-testid="runtime-idle-timeout-input"
+                value={runtimeInputVal('idleTimeout', idleTimeoutSecNum)}
+                onChange={e => handleRuntimeSecChange('idleTimeout', e.target.value)}
+              />
+              {!runtimeErrors.idleTimeout && (
+                <span style={{ fontSize: 11, color: 'var(--fw-text-subtle)' }}>
+                  {formatSecondsHint(idleTimeoutSecNum, isZh)}
+                </span>
+              )}
+              {runtimeErrors.idleTimeout && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.idleTimeout}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-wd-plan-idle">
+                {t('settings.runtime.planIdleTimeoutSec')}
+              </label>
+              <input
+                id="fw-wd-plan-idle"
+                type="number"
+                min={1}
+                max={86400}
+                step={60}
+                className={styles.input}
+                data-testid="runtime-plan-idle-timeout-input"
+                value={runtimeInputVal('planIdleTimeout', planIdleTimeoutSecNum)}
+                onChange={e => handleRuntimeSecChange('planIdleTimeout', e.target.value)}
+              />
+              {!runtimeErrors.planIdleTimeout && (
+                <span style={{ fontSize: 11, color: 'var(--fw-text-subtle)' }}>
+                  {formatSecondsHint(planIdleTimeoutSecNum, isZh)}
+                </span>
+              )}
+              {runtimeErrors.planIdleTimeout && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.planIdleTimeout}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-wd-wall">
+                {t('settings.runtime.wallTimeoutSec')}
+              </label>
+              <input
+                id="fw-wd-wall"
+                type="number"
+                min={1}
+                max={86400}
+                step={60}
+                className={styles.input}
+                data-testid="runtime-wall-timeout-input"
+                value={runtimeInputVal('wallTimeout', wallTimeoutSecNum)}
+                onChange={e => handleRuntimeSecChange('wallTimeout', e.target.value)}
+              />
+              {!runtimeErrors.wallTimeout && (
+                <span style={{ fontSize: 11, color: 'var(--fw-text-subtle)' }}>
+                  {formatSecondsHint(wallTimeoutSecNum, isZh)}
+                </span>
+              )}
+              {runtimeErrors.wallTimeout && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.wallTimeout}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-wd-grace">
+                {t('settings.runtime.killGraceSec')}
+              </label>
+              <input
+                id="fw-wd-grace"
+                type="number"
+                min={1}
+                max={60}
+                step={1}
+                className={styles.input}
+                data-testid="runtime-kill-grace-input"
+                value={runtimeInputVal('killGrace', killGraceSecNum)}
+                onChange={e => handleRuntimeSecChange('killGrace', e.target.value)}
+              />
+              {runtimeErrors.killGrace && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.killGrace}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`}
+            data-testid="runtime-retry-toggle"
+            onClick={() => setRuntimeRetryOpen(v => !v)}
+          >
+            {runtimeRetryOpen ? t('settings.runtime.retryHide') : t('settings.runtime.retryShow')}
+            {' '}
+            {runtimeRetryOpen ? '▾' : '▸'}
+          </button>
+        </div>
+
+        {runtimeRetryOpen && (
+          <div className={styles.jevGrid} data-testid="runtime-retry-panel">
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-retry-max">
+                {t('settings.runtime.maxTransportRetries')}
+              </label>
+              <input
+                id="fw-retry-max"
+                type="number"
+                min={0}
+                max={20}
+                step={1}
+                className={styles.input}
+                data-testid="runtime-retry-max-input"
+                value={runtimeInputVal('max-transport-retries', Number(retryDraft['max-transport-retries'] ?? 5))}
+                onChange={e => handleRetryNumChange('max-transport-retries', e.target.value)}
+              />
+              {runtimeErrors.maxRetries && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.maxRetries}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-retry-base">
+                {t('settings.runtime.baseDelayMs')}
+              </label>
+              <input
+                id="fw-retry-base"
+                type="number"
+                min={1}
+                max={60000}
+                step={100}
+                className={styles.input}
+                data-testid="runtime-retry-base-input"
+                value={runtimeInputVal('base-delay-ms', Number(retryDraft['base-delay-ms'] ?? 500))}
+                onChange={e => handleRetryNumChange('base-delay-ms', e.target.value)}
+              />
+              {runtimeErrors.baseDelay && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.baseDelay}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-retry-max-delay">
+                {t('settings.runtime.maxDelayMs')}
+              </label>
+              <input
+                id="fw-retry-max-delay"
+                type="number"
+                min={1}
+                max={300000}
+                step={500}
+                className={styles.input}
+                data-testid="runtime-retry-max-delay-input"
+                value={runtimeInputVal('max-delay-ms', Number(retryDraft['max-delay-ms'] ?? 10_000))}
+                onChange={e => handleRetryNumChange('max-delay-ms', e.target.value)}
+              />
+              {runtimeErrors.maxDelay && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.maxDelay}</span>
+              )}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-retry-jitter">
+                {t('settings.runtime.jitter')}
+              </label>
+              <input
+                id="fw-retry-jitter"
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                className={styles.input}
+                data-testid="runtime-retry-jitter-input"
+                value={runtimeInputVal('jitter', Number(retryDraft.jitter ?? 0.1))}
+                onChange={e => handleRetryNumChange('jitter', e.target.value)}
+              />
+              {runtimeErrors.jitter && (
+                <span className={styles.fieldError} role="alert">{runtimeErrors.jitter}</span>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Tier 3: Collapsible Advanced & Raw JSON */}
       <section className={styles.card} data-testid="settings-tier3">
         <div className={styles.cardHeader}>
@@ -1410,14 +1931,16 @@ export function SettingsPage({
         <span
           style={{
             fontSize: 12,
-            color: hasJevErrors ? 'var(--fw-danger)' : dirty ? 'var(--fw-warn)' : 'var(--fw-text-subtle)',
+            color: hasValidationErrors ? 'var(--fw-danger)' : dirty ? 'var(--fw-warn)' : 'var(--fw-text-subtle)',
           }}
         >
           {hasJevErrors
             ? t('settings.jev.validationBlocked')
-            : dirty
-              ? t('settings.unsaved')
-              : t('settings.synced')}
+            : hasRuntimeErrors
+              ? t('settings.runtime.validationBlocked')
+              : dirty
+                ? t('settings.unsaved')
+                : t('settings.synced')}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -1431,7 +1954,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
-            disabled={snap.busyAction !== null || !snap.configEditor || hasJevErrors}
+            disabled={snap.busyAction !== null || !snap.configEditor || hasValidationErrors}
             onClick={() => void store.saveConfig(draft)}
           >
             {snap.busyAction === 'config-save' ? t('settings.saving') : t('settings.save')}

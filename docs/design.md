@@ -1150,15 +1150,14 @@ JEV 关闭对既有任务的影响在内容区说明，固定保存栏用简短�
 
 Flywheel DSH 前端已彻底移除旧版 `conversation.view` 槽位、`:has([data-composer-seat])` 布局 hack 以及经由聊天框透传 `/flywheel {...}` JSON 的机制，采用 TypeScript + TSX + `esbuild` + `lightningcss` CSS Modules 零债重构，仅依赖外部 `react`（兼容 DSH `0.2.1-rc.5` 与 `0.2.2-rc.3+`），且模块加载期零 `document.head` / `document.body` 副作用。
 
-UI v2 注册 4 个原生 DSH 槽位，并通过 Direct Typert Remote 服务 `flywheelConsole`（`query`、`act`、`listRepoImages`，无需绑定活跃对话 Agent）直连 Go 引擎：
+UI v2 注册 3 个原生 DSH 槽位（设置页已收敛到主工作台顶部 **设置** Tab，不再在 DSH 左下角全局设置里重复注册 `settings.section`），并通过 Direct Typert Remote 服务 `flywheelConsole`（`query`、`act`、`listRepoImages`，无需绑定活跃对话 Agent）直连 Go 引擎：
 
 ```mermaid
 flowchart LR
-  subgraph DSH["DSH 桌面端 (原生 4 槽位 UI v2, 仅依赖 react)"]
-    S1["main + sidebar.panellist\n全页工程工作台\n(双稿评审 / 波次泳道 / 交互 DAG / 节点抽屉 / 建单 / 调查 / 交付)"]
+  subgraph DSH["DSH 桌面端 (原生 3 槽位 UI v2, 仅依赖 react)"]
+    S1["main + sidebar.panellist\n全页工程工作台\n(双稿评审 / 波次泳道 / 交互 DAG / 运行记录 / 节点抽屉 / 建单 / 调查 / 交付 / 内置设置)"]
     S2["sidebar.right.pane.tab\n右侧实时进度伴侣"]
     S3["conversation.chat.commandview\n/flywheel 只读指令卡"]
-    S4["settings.section\n三层渐进式设置页"]
   end
 
   subgraph HOST["DSH Host 插件进程 (@ckanner/flywheel)"]
@@ -1180,7 +1179,6 @@ flowchart LR
   S1 --> RPC
   S2 --> RPC
   S3 --> RPC
-  S4 --> RPC
   RPC --> ENG
   TOOLS --> ENG
   ENG --> W1
@@ -1189,10 +1187,9 @@ flowchart LR
   ENG --> W4
 ```
 
-1. **`main` + `sidebar.panellist`**：全页工程工作台，包含可折叠 240px 任务栏、52px 单行顶栏与生命周期动态主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 | 双稿并排对比 | 原始独立草稿`、Markdown GFM 来源对照表、Astra 独立审查列表与底部悬浮人工拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（拓扑分层与重心排序、全量节点无 6 节点分页、244×96 语义卡片、贝塞尔有向连线、悬停上下游血缘高亮、缩放平移与缩略图）、**520px 四标签节点详情抽屉**（概览 / 证据与 UX / 时间线与协作 / 契约）、**30 秒三意图建单弹窗**（含可视化仓库图片选择器与一句话只读调查）、**根因调查板**与**交付追踪页**。
+1. **`main` + `sidebar.panellist`**：全页工程工作台，采用无冗余侧边栏的单栏布局，包含 54px 顶栏任务切换浮层与生命周期动态主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 | 双稿并排对比 | 原始独立草稿`、Markdown GFM 来源对照表、Astra 独立审查列表与底部悬浮人工拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（拓扑分层与重心排序、全量节点无 6 节点分页、244×96 语义卡片、贝塞尔有向连线、悬停上下游血缘高亮、缩放平移与缩略图）、**520px 五标签节点详情抽屉**（概览 / 模型输出 / 证据与 UX / 时间线与协作 / 契约）、**实时运行记录（Live Traces）与 Provider 原生 Session 跳转/Resume**、**30 秒三意图建单弹窗**、**根因调查板**、**交付追踪页**以及**内置设置 Tab**（配置优先级栏、4 订阅健康条、JEV 有界决策卡片、可编辑逐阶段/路由模型矩阵、会话复用策略与运行护栏、并行调度/Worktree/看门狗超时/传输重试配置及可折叠原始 JSON）。
 2. **`sidebar.right.pane.tab`**：右侧边栏紧凑实时进度卡片，展示任务进度条与活跃节点，可一键跳转主工作台或停止运行。
 3. **`conversation.chat.commandview`**：对话内 `/flywheel` 指令的只读摘要卡片，一键跳转主工作台。
-4. **`settings.section`**：三层渐进式设置页（配置优先级栏、4 订阅健康条与无推理自检、Tier 1 工作流预设与运行护栏、Tier 2 带只读锁定徽章的角色路由表、Tier 3 可折叠高级/美元预算显式开关与原始 JSON 预览）。
 
 人类审批（`planning.approve`）与未知会话废弃（`session.abandon`）由宿主 `flywheelConsole.act` 签发宿主侧 `dsh` 人工证明；模型工具 `flywheel_launch` 与 `flywheel_control` 始终被严格禁止调用上述人工授权动作。
 
