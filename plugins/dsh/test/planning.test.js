@@ -199,3 +199,318 @@ test('v2 DesignStudio renders synthesized Markdown table, Side-by-Side Carbon vs
   assert.equal(lastAct.planning.design.digest, designRef.digest);
   assert.equal(lastAct.planning.start, true);
 });
+
+test('v2 DesignStudio handles real Go planning.phase=drafting live state, keeps Design tab active, and syncs task switcher status', async t => {
+  const ui = await mountWorkbench(t, {
+    query: async input => {
+      if (input.action === 'runs') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          runs: [{
+            taskDir: '/repo/docs/aws-usage',
+            cwd: '/repo',
+            slug: 'aws-usage',
+            workflow: 'planning',
+            summary: { slug: 'aws-usage', status: 'pending', 'planning-phase': 'drafting', revision: 1 },
+          }],
+        });
+      }
+      if (input.action === 'status') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          taskDir: '/repo/docs/aws-usage',
+          running: true,
+          state: {
+            slug: 'aws-usage',
+            status: 'pending',
+            revision: 3,
+            packets: {},
+            planning: {
+              version: 1,
+              phase: 'drafting',
+              policy: 'review-first',
+              rounds: 1,
+              'max-rounds': 3,
+              brief: {
+                id: 'aws-usage',
+                goal: '新增 AWS 日本区每日用量统计并合并到现有云资源推送与多维表格',
+                'original-request': '新增 AWS 日本区每日用量统计并合并到现有云资源推送与多维表格',
+                policy: 'review-first',
+                mode: 'auto',
+              },
+              requests: [{
+                id: 'engine-1-1',
+                scope: 'design',
+                stage: 'planner',
+                role: 'design-plan',
+                channel: 'google-subscription',
+                status: 'running',
+                rounds: 1,
+                retries: 0,
+              }],
+              designs: [],
+              reviews: [],
+              approvals: [],
+            },
+          },
+        });
+      }
+      if (input.action === 'traces') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          taskDir: '/repo/docs/aws-usage',
+          traces: [
+            {
+              id: 'live-p1',
+              key: 'design-plan/planning:engine-1-1:primary',
+              role: 'design-plan',
+              scope: 'planning:engine-1-1:primary',
+              harness: 'antigravity',
+              model: 'gemini-4-carbon-high',
+              thinking: 'high',
+              status: 'running',
+              running: true,
+              preview: '正在扫描 ../loveops AWS 标签规范…',
+            },
+            {
+              id: 'live-p2',
+              key: 'design-plan/planning:engine-1-1:secondary',
+              role: 'design-plan',
+              scope: 'planning:engine-1-1:secondary',
+              harness: 'claude-code-pro',
+              model: 'claude-opus-5-5',
+              thinking: 'high',
+              status: 'running',
+              running: true,
+              preview: '正在分析 ../meclaw-apps CronJob 配置…',
+            },
+          ],
+        });
+      }
+      return envelope({ protocol: 1, ok: true, cwd: '/repo', revisions: [] });
+    },
+  });
+
+  // Stays on Design Studio instead of jumping to empty Execution Board
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-brief-card"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-stepper"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-live-cards"]'));
+  assert.match(ui.container.querySelector('[data-testid="design-live-cards"]').textContent, /gemini-4-carbon-high/);
+  assert.match(ui.container.querySelector('[data-testid="design-live-cards"]').textContent, /claude-opus-5-5/);
+
+  // Header status and Task Switcher popover item are synchronized to 规划中 (never stale 待开始)
+  assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '规划中');
+  await ui.click(/aws-usage/);
+  const popover = ui.container.querySelector('[data-testid="flywheel-task-popover"]');
+  assert.ok(popover);
+  assert.match(popover.textContent, /规划中/);
+  assert.doesNotMatch(popover.textContent, /待开始/);
+
+  // Manually switching to Execution tab shows clear pre-execution guidance back to Design Studio
+  await ui.click('执行流水线');
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-exec-empty"]'));
+  assert.match(ui.container.textContent, /尚未进入执行阶段/);
+  await ui.click('返回设计评审查看进度');
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
+});
+
+test('v2 DesignStudio surfaces real Go planning.phase=blocked diagnostics and dispatches valid retry planning.plan', async t => {
+  const ui = await mountWorkbench(t, {
+    query: async input => {
+      if (input.action === 'runs') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          runs: [{
+            taskDir: '/repo/docs/blocked-task',
+            cwd: '/repo',
+            slug: 'blocked-task',
+            workflow: 'planning',
+            summary: { slug: 'blocked-task', status: 'paused', 'planning-phase': 'blocked', revision: 19 },
+          }],
+        });
+      }
+      if (input.action === 'status') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          taskDir: '/repo/docs/blocked-task',
+          running: false,
+          state: {
+            slug: 'blocked-task',
+            status: 'paused',
+            revision: 19,
+            packets: {},
+            planning: {
+              version: 1,
+              phase: 'blocked',
+              policy: 'review-first',
+              reason: '规划调用/输出重试已耗尽：TRANSPORT invalid request: Antigravity requires subscription-only policy version 1',
+              brief: {
+                id: 'blocked-task',
+                goal: '测试阻塞诊断展示',
+                'original-request': '测试阻塞诊断展示',
+                policy: 'review-first',
+                mode: 'auto',
+              },
+              requests: [{
+                id: 'engine-1-1',
+                scope: 'design',
+                stage: 'planner',
+                role: 'design-plan',
+                channel: 'google-subscription',
+                status: 'blocked',
+                retries: 8,
+              }],
+              designs: [],
+              reviews: [],
+              approvals: [],
+            },
+          },
+        });
+      }
+      return envelope({ protocol: 1, ok: true, cwd: '/repo', revisions: [], traces: [] });
+    },
+  });
+
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
+  assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '规划阻塞');
+  const banner = ui.container.querySelector('[data-testid="design-blocked-banner"]');
+  assert.ok(banner);
+  assert.match(banner.textContent, /Antigravity requires subscription-only policy version 1/);
+  assert.match(banner.textContent, /已重试 8 次/);
+
+  await ui.click('重新尝试规划');
+  const lastAct = ui.actCalls.at(-1);
+  assert.equal(lastAct.action, 'planning');
+  assert.equal(lastAct.planning.action, 'plan');
+  assert.equal(lastAct.planning.scope, 'design');
+  assert.equal(lastAct.planning.revision, 19);
+  assert.equal(lastAct.planning.start, true);
+  assert.equal(validPlanningCommand(lastAct.planning), true);
+});
+
+test('v2 DesignStudio renders real Go designs[], reviews[], structured requirements/decisions, quote-finding feedback, and approval', async t => {
+  const ui = await mountWorkbench(t, {
+    query: async input => {
+      if (input.action === 'runs') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          runs: [{
+            taskDir: '/repo/docs/go-design',
+            cwd: '/repo',
+            slug: 'go-design',
+            workflow: 'planning',
+            summary: { slug: 'go-design', status: 'paused', 'planning-phase': 'awaiting-design-approval', revision: 9 },
+          }],
+        });
+      }
+      if (input.action === 'status') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          cwd: '/repo',
+          taskDir: '/repo/docs/go-design',
+          running: false,
+          state: {
+            slug: 'go-design',
+            status: 'paused',
+            revision: 9,
+            packets: {},
+            planning: {
+              version: 1,
+              phase: 'awaiting-design-approval',
+              policy: 'review-first',
+              brief: { id: 'go-design', goal: '合并 AWS 与火山引擎日报', 'original-request': '合并 AWS 与火山引擎日报', policy: 'review-first', mode: 'auto' },
+              'current-design': { revision: 1, digest: designRef.digest },
+              designs: [{
+                ref: { revision: 1, digest: designRef.digest },
+                document: '# 统一云资源日报架构\n\n抽象 `CloudUsageFetcher` 统一采集。',
+                requirements: [{ id: 'REQ-1', title: '拉取 AWS ap-northeast-1 费用', milestone: 'M01', verification: 'go test ./internal/cloud/...' }],
+                decisions: [{ id: 'DEC-1', kind: 'fixed', statement: '跨仓仅只读检查', rationale: '避免越界修改基础设施仓库' }],
+                milestones: [{ id: 'M01', title: 'AWS 采集与推送上线', gate: 'go test ./...' }],
+              }],
+              reviews: [{
+                id: 'rev-astra-1',
+                kind: 'design',
+                target: { revision: 1, digest: designRef.digest },
+                binding: 'gpt-6.2-astra / xhigh',
+                verdict: 'pass',
+                summary: '边界清晰，无阻断风险。',
+                findings: [{ id: 'F-ADV-1', severity: 'advisory', status: 'open', target: 'Cost Explorer 缓存', impact: '建议同日幂等缓存降低调用费用' }],
+              }],
+              approvals: [],
+              requests: [],
+            },
+          },
+        });
+      }
+      if (input.action === 'design-candidates') {
+        return envelope({
+          protocol: 1,
+          ok: true,
+          taskDir: '/repo/docs/go-design',
+          revisions: [{
+            revision: 1,
+            primary: '## Carbon Primary',
+            secondary: '## Opus Secondary',
+            meta: {
+              revision: 1,
+              primary: { profile: 'carbon', harness: 'antigravity', model: 'gemini-4-carbon-high' },
+              secondary: { profile: 'opus-plan', harness: 'claude-code-pro', model: 'claude-opus-5-5' },
+              synthesizer: { profile: 'opus-plan', harness: 'claude-code-pro', model: 'claude-opus-5-5' },
+            },
+          }],
+        });
+      }
+      return envelope({ protocol: 1, ok: true, cwd: '/repo', traces: [] });
+    },
+  });
+
+  assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '待你拍板');
+  assert.match(ui.container.textContent, /统一云资源日报架构/);
+  assert.match(ui.container.querySelector('[data-testid="design-review-panel"]').textContent, /边界清晰，无阻断风险/);
+  assert.match(ui.container.querySelector('[data-testid="design-review-panel"]').textContent, /Cost Explorer 缓存/);
+
+  // Structured view renders real Go requirements, decisions, and milestones
+  await ui.click('需求与决策表');
+  const structured = ui.container.querySelector('[data-testid="design-structured-view"]');
+  assert.ok(structured);
+  assert.match(structured.textContent, /REQ-1/);
+  assert.match(structured.textContent, /DEC-1/);
+  assert.match(structured.textContent, /M01/);
+
+  // Side-by-side renders nested Go meta.json primary/secondary models
+  await ui.click('双稿并排对比');
+  const split = ui.container.querySelector('[data-testid="design-side-by-side"]');
+  assert.match(split.textContent, /gemini-4-carbon-high/);
+  assert.match(split.textContent, /claude-opus-5-5/);
+
+  // Quote finding opens feedback textarea pre-populated with finding summary
+  await ui.click('引用提意见');
+  const ta = ui.container.querySelector('textarea');
+  assert.ok(ta);
+  assert.match(ta.value, /Cost Explorer 缓存/);
+  await ui.click('取消');
+
+  // Approve & Start uses real Go current-design revision + digest
+  await ui.click('批准设计并立即执行');
+  const lastAct = ui.actCalls.at(-1);
+  assert.equal(lastAct.action, 'planning');
+  assert.equal(lastAct.planning.action, 'approve');
+  assert.equal(lastAct.planning.revision, 9);
+  assert.equal(lastAct.planning.design.revision, 1);
+  assert.equal(lastAct.planning.design.digest, designRef.digest);
+  assert.equal(lastAct.planning.start, true);
+  assert.equal(validPlanningCommand(lastAct.planning), true);
+});

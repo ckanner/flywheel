@@ -254,7 +254,9 @@ export async function mountWorkbench(
 
   const button = name => {
     const found = [...container.querySelectorAll('button')].find(item =>
-      typeof name === 'string' ? item.textContent.trim() === name : name.test(item.textContent),
+      typeof name === 'string'
+        ? item.textContent.trim() === name || item.getAttribute('aria-label') === name
+        : name.test(item.textContent),
     );
     assert.ok(
       found,

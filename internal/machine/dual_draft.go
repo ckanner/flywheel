@@ -12,6 +12,7 @@ import (
 	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/prompts"
+	"github.com/ckanner/flywheel/internal/state"
 )
 
 var (
@@ -93,13 +94,16 @@ func (c *Context) persistDualDraftCandidates(meta dualDraftMeta, primaryText, se
 	return nil
 }
 
-func (c *Context) planningCallArgs(r *planning.Request, role string, b fallback.Binding, prompt string) drivers.CallArgs {
+func (c *Context) planningCallArgs(r *planning.Request, role, scope string, b fallback.Binding, prompt string) drivers.CallArgs {
 	return drivers.CallArgs{
-		Prompt:      prompt,
-		TaskDir:     c.TaskDir,
-		Cwd:         c.Cwd,
-		MilestoneID: r.ScopeID,
-		Model:       b.Model,
+		Subscription: c.Config.Subscription,
+		Prompt:       prompt,
+		TaskDir:      c.TaskDir,
+		Cwd:          c.Cwd,
+		WorkspaceCwd: c.WorkspaceCwd,
+		MilestoneID:  r.ScopeID,
+		Model:        b.Model,
+		SessionTitle: c.sessionTitle(role, scope),
 		Binding: config.LoopBinding{
 			NativeProfile: b.NativeProfile,
 			Harness:       b.Harness,
@@ -132,16 +136,41 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 			NativeAgents: secondaryBinding.NativeProfile != "" && secondaryBinding.Harness != "antigravity",
 		})
 
+	var clockMu sync.Mutex
+	safeNowISO := func() string {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return c.nowISO()
+	}
+	primaryScope := scope + ":primary"
+	secondaryScope := scope + ":secondary"
+	primaryArgs := c.planningCallArgs(r, role, primaryScope, primaryBinding, primaryPrompt)
+	secondaryArgs := c.planningCallArgs(r, role, secondaryScope, secondaryBinding, secondaryPrompt)
+	primaryInvID := "planning-" + sessionHash([]any{r.ID, r.Rounds, r.Retries, role, primaryScope})[:24]
+	secondaryInvID := "planning-" + sessionHash([]any{r.ID, r.Rounds, r.Retries, role, secondaryScope})[:24]
+	primaryTrace := openLiveTrace(c.TaskDir, sessionKey(role, primaryScope), role, primaryScope, &state.SessionRecord{
+		Action: "fresh",
+		Last:   &state.SessionInvocation{ID: primaryInvID, Attempt: r.Retries + 1},
+	}, primaryArgs, safeNowISO)
+	secondaryTrace := openLiveTrace(c.TaskDir, sessionKey(role, secondaryScope), role, secondaryScope, &state.SessionRecord{
+		Action: "fresh",
+		Last:   &state.SessionInvocation{ID: secondaryInvID, Attempt: r.Retries + 1},
+	}, secondaryArgs, safeNowISO)
+	primaryArgs.OnEvent = primaryTrace.event
+	secondaryArgs.OnEvent = secondaryTrace.event
+
 	var primaryRes, secondaryRes drivers.Result
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		primaryRes = driver.Plan(c.planningCallArgs(r, role, primaryBinding, primaryPrompt))
+		primaryRes = driver.Plan(primaryArgs)
+		primaryTrace.finish(primaryRes)
 	}()
 	go func() {
 		defer wg.Done()
-		secondaryRes = driver.Plan(c.planningCallArgs(r, role, secondaryBinding, secondaryPrompt))
+		secondaryRes = driver.Plan(secondaryArgs)
+		secondaryTrace.finish(secondaryRes)
 	}()
 	wg.Wait()
 
@@ -187,7 +216,7 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 			prompts.DesignDraftInput{Profile: secondaryName, Harness: secondaryBinding.Harness, Model: secondaryBinding.Model, Text: secondaryRes.Text},
 			prompts.PlanningPromptOptions{NativeAgents: synthBinding.NativeProfile != "" && synthBinding.Harness != "antigravity"},
 		)
-	synthRes, err := c.invokeScoped(role, scope, c.planningCallArgs(r, role, synthBinding, synthPrompt), driver.Plan)
+	synthRes, err := c.invokeScoped(role, scope, c.planningCallArgs(r, role, scope, synthBinding, synthPrompt), driver.Plan)
 	if err != nil {
 		return synthRes, role, "", err
 	}

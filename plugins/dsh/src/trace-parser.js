@@ -368,6 +368,18 @@ function inferStatus(info) {
   return 'completed';
 }
 
+function latestTracePreview(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return '';
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const b = blocks[i];
+    if (!b || !b.text) continue;
+    const prefix = b.kind === 'tool_call' && b.title ? `[${b.title}] ` : '';
+    const line = String(b.text).trim().replace(/\s+/g, ' ');
+    if (line) return truncateText(prefix + line, 220);
+  }
+  return '';
+}
+
 function parseLiveJsonlFile(rawText, fileMtimeMs) {
   const lines = rawText.split('\n').filter(Boolean);
   let start = null;
@@ -445,6 +457,7 @@ function parseLiveJsonlFile(rawText, fileMtimeMs) {
       usage: end?.usage || null,
       source: 'live',
       eventCount: events.length,
+      preview: latestTracePreview(blocks),
     },
     detail: {
       blocks,
@@ -532,6 +545,7 @@ function parseDurableReceiptFile(rawText, fileName, fileMtimeMs, stateRecords) {
       usage: result.usage || null,
       source: 'receipt',
       eventCount: stdoutLines.length,
+      preview: latestTracePreview(blocks),
     },
     detail: {
       blocks,

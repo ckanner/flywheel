@@ -5,6 +5,13 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.9 — 2026-11-24 (Fix Dual-Draft Subscription + Claude Peer Resolution + Planning Studio UI)
+
+- **Fix Dual-Draft missing `subscription-only` policy & add live traces**: populate `Subscription`, `WorkspaceCwd`, and `SessionTitle` in `planningCallArgs` (`internal/machine/dual_draft.go`), and wire race-free `.traces/live-*.jsonl` streaming for both parallel blind drafts so Antigravity subscription execution succeeds and live drafting progress is visible in real time.
+- **Resolve DSH profile `dsh-subagent-claude-code-pro@0.7.0` from host control boundary**: when `dsh-subagent-claude-code-pro@0.7.0` is installed alongside `@ckanner/flywheel` inside a DSH profile, `plugins/dsh/src/control.js` forwards its own sibling `claude-code-pro-worker.mjs` via `FLYWHEEL_CLAUDE_CODE_PRO_WORKER` unless explicitly overridden, so DSH Desktop tasks using `claude-code-pro` work seamlessly with a globally installed CLI launcher.
+- **Align Design Studio & Workbench routing with real Go `state.planning` schema**: add `plugins/dsh/src/client/planning.ts` normalizing Go `phase`, `brief`, `requests[]`, `designs[]`, `current-design`, `reviews[]`, `approvals[]`, `reason`, and nested `design-candidates` `meta.json`; keep planning tasks on the **Design Studio** tab until approved and packets exist; synchronize live `running`, `status`, and `planning.phase` between the header badge and Task Switcher list (`规划中` / `规划阻塞` / `待你拍板` / `运行中`).
+- **Modern Design Studio & Pre-Execution UX**: add expandable Task Brief card, 4-step Planning Stepper, Live Dual-Draft activity cards with trace previews from `trace-parser.js`, prominent Blocked Diagnostic Banner with one-click **Retry Planning** (`planning.plan`), **Requirements & Decisions** structured view, one-click **Quote in Feedback** on Astra review findings, tab status badges, and clear pre-execution guidance on the Execution Board.
+
 ## 0.39.8 — 2026-11-24 (Fix Create Task `planning prepare` Contract)
 
 - **Fix Create Task failing with `planning requires a typed, version-bound planning command`**: construct a schema-complete `planning.brief` (`version: 1`, sanitized `id`, `goal`, `original-request`, `constraints`, `evidence`, `policy`, `mode`, `implementation-authorized`, and explicit `authorization` for Quick/delegated mode) in `FlywheelStore.createBuildTask`, removing the invalid top-level `planning.policy` and `brief.images` keys (carrying selected image paths via `brief.evidence` + `brief.constraints` instead).

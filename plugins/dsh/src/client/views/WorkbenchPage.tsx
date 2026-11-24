@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { styles } from 'virtual:flywheel-styles';
 import { StyleScope } from '../components/StyleScope.tsx';
 import type { ClientRuntime } from '../context.ts';
+import { resolvePlanningView, resolveTaskDisplayStatus, type DisplayStatusTone } from '../planning.ts';
 import type { FlywheelStore } from '../store.ts';
 import type { MainTab, Translate } from '../types.ts';
 import { CreateTaskModal } from './CreateTaskModal.tsx';
@@ -12,31 +13,25 @@ import { InvestigationBoard } from './InvestigationBoard.tsx';
 import { SettingsPage } from './SettingsPage.tsx';
 import { TracesView } from './TracesView.tsx';
 
-function runStatusPill(status?: string, running?: boolean): string {
-  if (running) return styles.pillRunning;
-  const s = (status ?? '').toLowerCase();
-  if (['completed', 'done', 'passed'].includes(s)) return styles.pillSuccess;
-  if (['failed', 'blocked', 'escalated'].includes(s)) return styles.pillDanger;
-  if (['awaiting_approval', 'stopped', 'paused'].includes(s)) return styles.pillWarn;
+function tonePillClass(tone: DisplayStatusTone): string {
+  if (tone === 'running') return styles.pillRunning;
+  if (tone === 'success') return styles.pillSuccess;
+  if (tone === 'danger') return styles.pillDanger;
+  if (tone === 'warn') return styles.pillWarn;
   return '';
 }
 
-function statusDotClass(status?: string, running?: boolean): string {
-  if (running) return styles.statusDotRunning;
-  const s = (status ?? '').toLowerCase();
-  if (['completed', 'done', 'passed'].includes(s)) return styles.statusDotSuccess;
-  if (['failed', 'blocked', 'escalated'].includes(s)) return styles.statusDotDanger;
-  if (['awaiting_approval', 'stopped', 'paused'].includes(s)) return styles.statusDotWarn;
+function toneDotClass(tone: DisplayStatusTone): string {
+  if (tone === 'running') return styles.statusDotRunning;
+  if (tone === 'success') return styles.statusDotSuccess;
+  if (tone === 'danger') return styles.statusDotDanger;
+  if (tone === 'warn') return styles.statusDotWarn;
   return '';
 }
 
-function localizedStatus(t: Translate, status?: string, running?: boolean): string {
-  if (running) return t('header.running');
-  const key = (status ?? '').toLowerCase();
-  if (!key) return t('header.idle');
-  const lookup = `status.${key}`;
-  const translated = t(lookup);
-  return translated === lookup ? key : translated;
+function formatDisplayLabel(t: Translate, labelKey: string, fallback: string): string {
+  const translated = t(labelKey);
+  return translated === labelKey ? fallback : translated;
 }
 
 function formatShortTime(iso?: string): string {
@@ -96,10 +91,72 @@ export function WorkbenchPage({
   }, [switcherOpen]);
 
   const planning = snap.planning ?? snap.state?.planning ?? null;
-  const design = planning?.design;
-  const needsApproval = Boolean(design?.revision && design?.digest && !design?.approved);
+  const resolvedPlanning = useMemo(() => resolvePlanningView(planning), [planning]);
+  const needsApproval = Boolean(resolvedPlanning?.needsHumanApproval);
+  const planningBlocked = Boolean(resolvedPlanning?.isBlocked);
   const hasInvestigation = Boolean(snap.state?.investigation);
   const activeRun = snap.runs.find(r => r.taskDir === snap.selectedTaskDir) ?? null;
+
+  const packetEntries = useMemo(() => {
+    const rec = snap.state?.packets;
+    return rec && typeof rec === 'object' ? Object.values(rec) : [];
+  }, [snap.state?.packets]);
+  const donePackets = useMemo(
+    () => packetEntries.filter(p => ['done', 'completed', 'passed'].includes((p.status ?? '').toLowerCase())).length,
+    [packetEntries],
+  );
+
+  const currentDisplay = useMemo(
+    () =>
+      resolveTaskDisplayStatus({
+        status: snap.state?.status ?? activeRun?.status,
+        planningPhase: activeRun?.planningStatus,
+        planning,
+        state: snap.state,
+        running: snap.running,
+      }),
+    [snap.state, activeRun?.status, activeRun?.planningStatus, planning, snap.running],
+  );
+
+  const subphaseHint = useMemo(() => {
+    if (resolvedPlanning?.isBlocked && resolvedPlanning.activeRequest) {
+      const req = resolvedPlanning.activeRequest;
+      const role = req.role || req.stage || 'planning';
+      return typeof req.retries === 'number' && req.retries > 0
+        ? `${role} · ${t('design.blockedRetries', { count: req.retries })}`
+        : role;
+    }
+    if (resolvedPlanning?.needsHumanApproval && resolvedPlanning.design?.revision) {
+      return t('design.revision', { rev: resolvedPlanning.design.revision });
+    }
+    if (snap.running && resolvedPlanning && !resolvedPlanning.isApproved && packetEntries.length === 0) {
+      const req = resolvedPlanning.activeRequest;
+      return req?.role || resolvedPlanning.phase || '';
+    }
+    if (packetEntries.length > 0) {
+      return `${donePackets}/${packetEntries.length}`;
+    }
+    return '';
+  }, [resolvedPlanning, snap.running, packetEntries.length, donePackets, t]);
+
+  const designTabBadge = useMemo(() => {
+    if (!resolvedPlanning) return null;
+    if (snap.running && !resolvedPlanning.isApproved && packetEntries.length === 0) {
+      return { text: t('header.tabBadge.live'), cls: styles.pillRunning };
+    }
+    if (resolvedPlanning.isBlocked) {
+      return { text: t('header.tabBadge.blocked'), cls: styles.pillDanger };
+    }
+    if (resolvedPlanning.needsHumanApproval) {
+      return { text: t('header.tabBadge.awaiting'), cls: styles.pillWarn };
+    }
+    if (resolvedPlanning.isApproved) {
+      return { text: t('header.tabBadge.approved'), cls: styles.pillSuccess };
+    }
+    return null;
+  }, [resolvedPlanning, snap.running, packetEntries.length, t]);
+
+  const anyLiveTrace = snap.running || snap.traces.some(tr => tr.running);
 
   const tempCount = useMemo(() => snap.runs.filter(r => r.isTemp).length, [snap.runs]);
   const visibleRuns = useMemo(() => {
@@ -122,7 +179,6 @@ export function WorkbenchPage({
     t('header.noTask');
 
   const repoLabel = activeRun?.repoName || (snap.selectedCwd ? snap.selectedCwd.replace(/\/+$/, '').split('/').pop() : '');
-  const currentStatus = snap.state?.status ?? activeRun?.status;
 
   // Single dynamic Primary CTA driven by task lifecycle
   const renderPrimaryCta = () => {
@@ -161,6 +217,18 @@ export function WorkbenchPage({
           onClick={() => void store.approveDesign(true)}
         >
           {t('header.cta.approve')}
+        </button>
+      );
+    }
+    if (planningBlocked) {
+      return (
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          disabled={snap.busyAction !== null}
+          onClick={() => void store.retryPlanning()}
+        >
+          {t('header.cta.retryPlanning')}
         </button>
       );
     }
@@ -221,7 +289,7 @@ export function WorkbenchPage({
                 aria-expanded={switcherOpen}
                 onClick={() => setSwitcherOpen(v => !v)}
               >
-                <span className={`${styles.statusDot} ${statusDotClass(currentStatus, snap.running)}`} />
+                <span className={`${styles.statusDot} ${toneDotClass(currentDisplay.tone)}`} />
                 <span className={styles.taskSwitcherLabel}>{title}</span>
                 {repoLabel && <span className={styles.taskSwitcherRepo}>· {repoLabel}</span>}
                 <span className={styles.taskSwitcherCaret}>{switcherOpen ? '▴' : '▾'}</span>
@@ -255,6 +323,13 @@ export function WorkbenchPage({
                     ) : (
                       visibleRuns.map(run => {
                         const active = run.taskDir === snap.selectedTaskDir;
+                        const runDisplay = active
+                          ? currentDisplay
+                          : resolveTaskDisplayStatus({
+                              status: run.status,
+                              planningPhase: run.planningStatus,
+                              running: run.running,
+                            });
                         return (
                           <button
                             key={run.taskDir}
@@ -268,13 +343,13 @@ export function WorkbenchPage({
                           >
                             <div className={styles.taskSwitcherItemTop}>
                               <span className={styles.taskSwitcherItemName}>
-                                <span className={`${styles.statusDot} ${statusDotClass(run.status, run.running)}`} />
+                                <span className={`${styles.statusDot} ${toneDotClass(runDisplay.tone)}`} />
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {run.title || run.slug}
                                 </span>
                               </span>
-                              <span className={`${styles.pill} ${runStatusPill(run.status, run.running)}`}>
-                                {localizedStatus(t, run.status, run.running)}
+                              <span className={`${styles.pill} ${tonePillClass(runDisplay.tone)}`}>
+                                {formatDisplayLabel(t, runDisplay.labelKey, runDisplay.code)}
                               </span>
                             </div>
                             <div className={styles.taskSwitcherItemMeta}>
@@ -324,9 +399,12 @@ export function WorkbenchPage({
               </span>
             )}
             {snap.selectedTaskDir && (
-              <span className={`${styles.pill} ${runStatusPill(currentStatus, snap.running)}`}>
-                {localizedStatus(t, currentStatus, snap.running)}
+              <span className={`${styles.pill} ${tonePillClass(currentDisplay.tone)}`} data-testid="flywheel-header-status">
+                {formatDisplayLabel(t, currentDisplay.labelKey, currentDisplay.code)}
               </span>
+            )}
+            {snap.selectedTaskDir && subphaseHint && (
+              <span className={styles.headerSubphase}>{subphaseHint}</span>
             )}
           </div>
 
@@ -351,11 +429,21 @@ export function WorkbenchPage({
               key={tab.id}
               type="button"
               role="tab"
+              aria-label={tab.label}
               aria-selected={snap.activeTab === tab.id}
               className={`${styles.tabBtn} ${snap.activeTab === tab.id ? styles.tabBtnActive : ''}`}
               onClick={() => store.setActiveTab(tab.id)}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.id === 'design' && designTabBadge && (
+                <span className={`${styles.tabBadge} ${designTabBadge.cls}`}>{designTabBadge.text}</span>
+              )}
+              {tab.id === 'execution' && packetEntries.length > 0 && (
+                <span className={styles.tabBadge}>
+                  {donePackets}/{packetEntries.length}
+                </span>
+              )}
+              {tab.id === 'traces' && anyLiveTrace && <span className={styles.tabLiveDot} />}
             </button>
           ))}
           <span className={styles.tabBarSpacer} />

@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { validModelCatalogRequest, validModelCatalogReport } from './model-catalog-contract.js';
 import { directory, nonempty, record, validInvestigationCommand } from './protocol.js';
 import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
@@ -114,6 +117,29 @@ function validDiagnostic(value, request) {
       ['code', 'remedy'].every(key => check[key] === undefined || typeof check[key] === 'string'));
 }
 
+// When the optional Claude Code Pro 0.7.0 peer is installed inside the DSH
+// profile alongside this plugin package, prefer our own sibling worker so a
+// globally installed Flywheel launcher still resolves the profile's adapter.
+function resolveHostClaudeCodeProWorker() {
+  try {
+    const req = createRequire(import.meta.url);
+    const manifest = req('dsh-subagent-claude-code-pro/package.json');
+    if (manifest?.name !== 'dsh-subagent-claude-code-pro' || manifest?.version !== '0.7.0') return undefined;
+    for (const rel of ['./claude-code-pro-worker.mjs', './claude-code-pro-worker.js']) {
+      const candidate = fileURLToPath(new URL(rel, import.meta.url));
+      try {
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      } catch {
+        // Try next built filename variant.
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 /** Only the engine executable can mutate engine state. No shell interpolation. */
 export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, sessionUserAction, signal, timeoutMs = 60000 } = {}) {
   let request;
@@ -155,6 +181,10 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
   delete env.DSH_SESSION_ID;
   delete env.FLYWHEEL_PLANNING_USER_ACTION;
   delete env.FLYWHEEL_SESSION_USER_ACTION;
+  if (env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER === undefined) {
+    const hostWorker = resolveHostClaudeCodeProWorker();
+    if (hostWorker) env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER = hostWorker;
+  }
   if (typeof hostSessionID === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(hostSessionID)) env.DSH_SESSION_ID = hostSessionID;
   if (planningUserAction !== undefined) env.FLYWHEEL_PLANNING_USER_ACTION = JSON.stringify(planningUserAction);
   if (sessionUserAction !== undefined) env.FLYWHEEL_SESSION_USER_ACTION = JSON.stringify(sessionUserAction);

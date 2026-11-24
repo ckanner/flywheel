@@ -1,4 +1,5 @@
 import type { ClientContext } from './context.ts';
+import { resolvePlanningView } from './planning.ts';
 import { FlywheelRemoteClient, FlywheelRemoteError } from './remote.ts';
 import type {
   ConfigEditorSnapshot,
@@ -189,18 +190,55 @@ export function normalizeRuns(rawRuns: RunSummary[]): RunSummary[] {
 
 function inferDefaultTab(state: TaskState | null, planning: PlanningState | null): MainTab {
   if (!state) return 'execution';
-  if (state.investigation && (state.investigation.status || state.investigation.goal)) {
-    const packets = state.packets ? Object.keys(state.packets).length : 0;
-    if (packets === 0) return 'investigation';
+  const packetCount = state.packets ? Object.keys(state.packets).length : 0;
+  if (state.investigation && (state.investigation.status || state.investigation.goal) && packetCount === 0) {
+    return 'investigation';
   }
-  const planStatus = planning?.status ?? state.planning?.status ?? '';
-  const approved = planning?.design?.approved ?? state.planning?.design?.approved ?? false;
-  if (planStatus && !approved && ['drafting', 'reviewing', 'awaiting_approval', 'needs_revision', 'ready'].includes(planStatus)) {
+  const st = (state.status ?? '').toLowerCase();
+  if (st === 'completed' || st === 'done') return 'delivery';
+  const resolved = resolvePlanningView(planning ?? state.planning ?? null);
+  if (resolved && (packetCount === 0 || resolved.needsHumanApproval)) {
     return 'design';
   }
-  const st = state.status ?? '';
-  if (st === 'completed' || st === 'done') return 'delivery';
   return 'execution';
+}
+
+function reconcileSelectedRun(
+  runs: RunSummary[],
+  taskDir: string | null,
+  running: boolean,
+  state: TaskState | null,
+  planning: PlanningState | null,
+): RunSummary[] {
+  if (!taskDir) return runs;
+  const resolved = resolvePlanningView(planning ?? state?.planning ?? null);
+  const liveStatus = state?.status;
+  const livePhase = resolved?.phase || undefined;
+  const liveRevision = state?.revision;
+  let changed = false;
+  const next = runs.map(run => {
+    if (run.taskDir !== taskDir) return run;
+    const nextStatus = liveStatus || run.status;
+    const nextPhase = livePhase ?? run.planningStatus;
+    const nextRevision = liveRevision ?? run.revision;
+    if (
+      Boolean(run.running) === running &&
+      run.status === nextStatus &&
+      run.planningStatus === nextPhase &&
+      run.revision === nextRevision
+    ) {
+      return run;
+    }
+    changed = true;
+    return {
+      ...run,
+      running,
+      status: nextStatus,
+      planningStatus: nextPhase,
+      revision: nextRevision,
+    };
+  });
+  return changed ? next : runs;
 }
 
 export class FlywheelStore {
@@ -279,6 +317,7 @@ export class FlywheelStore {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     const viewingLiveTraces =
       this.snapshot.activeTab === 'traces' ||
+      this.snapshot.activeTab === 'design' ||
       (this.snapshot.selectedPacketId !== null && this.snapshot.inspectorTab === 'output');
     const anyTraceRunning = this.snapshot.traces.some(tr => tr.running);
     const liveActive = this.snapshot.running || anyTraceRunning;
@@ -292,7 +331,7 @@ export class FlywheelStore {
         await this.refreshSelectedTask(true);
         if (viewingLiveTraces) {
           await this.loadTraces(true);
-          if (this.snapshot.selectedTraceId) {
+          if (this.snapshot.activeTab !== 'design' && this.snapshot.selectedTraceId) {
             await this.loadTraceDetail(this.snapshot.selectedTraceId, true);
           }
         }
@@ -316,6 +355,7 @@ export class FlywheelStore {
     }
     if (tab === 'design' && this.snapshot.selectedTaskDir) {
       void this.loadDesignCandidates();
+      void this.loadTraces(true);
     }
     if (tab === 'traces' && this.snapshot.selectedTaskDir) {
       void this.loadTraces();
@@ -381,7 +421,14 @@ export class FlywheelStore {
         action: 'runs',
         ...(this.snapshot.selectedCwd ? { cwd: this.snapshot.selectedCwd } : {}),
       });
-      const runs = normalizeRuns(Array.isArray(res.runs) ? res.runs : []);
+      const normalizedRuns = normalizeRuns(Array.isArray(res.runs) ? res.runs : []);
+      const runs = reconcileSelectedRun(
+        normalizedRuns,
+        this.snapshot.selectedTaskDir,
+        this.snapshot.running,
+        this.snapshot.state,
+        this.snapshot.planning,
+      );
       const preferredRun = runs.find(r => !r.isTemp) ?? runs[0];
       const nextCwd = res.cwd || this.snapshot.selectedCwd || preferredRun?.cwd || '';
       const currentSelected = this.snapshot.selectedTaskDir;
@@ -439,18 +486,23 @@ export class FlywheelStore {
       if (seq !== this.taskRequestSeq) return undefined;
       const state = res.state ?? null;
       const planning = res.planning ?? state?.planning ?? null;
+      const running = Boolean(res.running);
+      const resolvedPlanning = resolvePlanningView(planning ?? state?.planning ?? null);
       const nextTab = autoSelectTab ? inferDefaultTab(state, planning) : this.snapshot.activeTab;
+      const runs = reconcileSelectedRun(this.snapshot.runs, taskDir, running, state, planning);
       this.setState({
+        runs,
         taskLoading: false,
-        running: Boolean(res.running),
+        running,
         state,
         planning,
         selectedCwd: res.cwd || this.snapshot.selectedCwd,
         activeTab: nextTab,
         lastUpdatedAt: Date.now(),
       });
-      if (nextTab === 'design' || planning?.design) {
+      if (nextTab === 'design' || resolvedPlanning?.design) {
         void this.loadDesignCandidates();
+        void this.loadTraces(true);
       }
       if (nextTab === 'delivery') {
         void this.loadDelivery();
@@ -733,7 +785,8 @@ export class FlywheelStore {
 
   async approveDesign(startExecution: boolean): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
-    const design = this.snapshot.planning?.design ?? this.snapshot.state?.planning?.design;
+    const resolved = resolvePlanningView(this.snapshot.planning ?? this.snapshot.state?.planning ?? null);
+    const design = resolved?.design;
     const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
     if (!taskDir || !design?.revision || !design?.digest) return undefined;
     return this.performAct('approve-design', {
@@ -746,6 +799,24 @@ export class FlywheelStore {
         revision: rev,
         design: { revision: design.revision, digest: design.digest },
         start: startExecution,
+      },
+    });
+  }
+
+  async retryPlanning(): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    if (!taskDir) return undefined;
+    return this.performAct('retry-planning', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'plan',
+        'request-id': `plan-retry-${Date.now()}`,
+        revision: rev,
+        scope: 'design',
+        start: true,
       },
     });
   }

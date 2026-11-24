@@ -2,7 +2,7 @@ export type Translate = (key: string, params?: Record<string, string | number>) 
 
 export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery' | 'traces' | 'settings';
 export type ExecutionViewMode = 'waves' | 'dag';
-export type DesignViewMode = 'synthesized' | 'side-by-side' | 'raw';
+export type DesignViewMode = 'synthesized' | 'side-by-side' | 'structured' | 'raw';
 export type InspectorTab = 'overview' | 'output' | 'evidence' | 'timeline' | 'contract';
 
 export interface RunSummary {
@@ -40,14 +40,100 @@ export interface RunSummary {
   };
 }
 
+export interface PlanningRef {
+  revision: number;
+  digest: string;
+}
+
+export interface PlanningRequirement {
+  id: string;
+  title: string;
+  milestone?: string;
+  verification?: string;
+}
+
+export interface PlanningDecision {
+  id: string;
+  kind?: 'fixed' | 'delegated' | 'unresolved' | string;
+  statement: string;
+  rationale?: string;
+}
+
+export interface PlanningMilestone {
+  id: string;
+  title: string;
+  gate?: string;
+}
+
+export interface PlanningDesignRecord {
+  ref: PlanningRef;
+  'input-revision'?: number;
+  document?: string;
+  requirements?: PlanningRequirement[];
+  decisions?: PlanningDecision[];
+  milestones?: PlanningMilestone[];
+  baseline?: string;
+  'planner-invocation'?: string;
+  'implementation-scope'?: string[];
+}
+
 export interface PlanningFinding {
   id?: string;
-  severity?: 'blocker' | 'major' | 'minor' | string;
+  severity?: 'blocker' | 'blocking' | 'major' | 'minor' | 'advisory' | string;
   status?: 'open' | 'resolved' | string;
   title?: string;
+  target?: string;
   summary?: string;
   detail?: string;
+  evidence?: string;
+  impact?: string;
+  resolution?: string;
   section?: string;
+}
+
+export interface PlanningReviewRecord {
+  id: string;
+  kind: string;
+  target: PlanningRef;
+  'input-revision'?: number;
+  invocation?: string;
+  role?: string;
+  binding?: string;
+  verdict: string;
+  'design-verdict'?: string;
+  'coverage-verdict'?: string;
+  'scope-verdict'?: string;
+  summary?: string;
+  findings?: PlanningFinding[];
+}
+
+export interface PlanningApprovalRecord {
+  kind: 'human' | 'delegated' | string;
+  design: PlanningRef;
+  'review-id'?: string;
+  'request-id'?: string;
+  source?: string;
+  at?: string;
+  start?: boolean;
+}
+
+export interface PlanningRequestRecord {
+  id: string;
+  scope: string;
+  'scope-id'?: string;
+  'input-revision'?: number;
+  rounds?: number;
+  retries?: number;
+  'max-rounds'?: number;
+  status?: string;
+  'planning-only'?: boolean;
+  feedback?: string;
+  stage?: string;
+  role?: string;
+  channel?: string;
+  'binding-source'?: string;
+  'binding-granularity'?: string;
+  'design-granularity'?: string;
 }
 
 export interface PlanningDesignSnapshot {
@@ -65,17 +151,35 @@ export interface PlanningDesignSnapshot {
 }
 
 export interface PlanningState {
+  version?: number;
+  phase?: string;
   status?: string;
   policy?: 'review-first' | 'delegated' | string;
   mode?: string;
   revision?: number;
+  'input-revision'?: number;
+  rounds?: number;
+  'max-rounds'?: number;
+  'start-authorized'?: boolean;
+  reason?: string;
+  requests?: PlanningRequestRecord[];
+  designs?: PlanningDesignRecord[];
+  'current-design'?: PlanningRef | null;
+  reviews?: PlanningReviewRecord[];
+  approvals?: PlanningApprovalRecord[];
   design?: PlanningDesignSnapshot;
   findings?: PlanningFinding[];
   brief?: {
+    id?: string;
     goal?: string;
+    'original-request'?: string;
     summary?: string;
     title?: string;
+    policy?: string;
+    mode?: string;
+    'design-granularity'?: string;
     constraints?: string[];
+    evidence?: string[];
   };
   pendingRequestId?: string;
   lastError?: string;
@@ -87,17 +191,28 @@ export interface PlanningState {
   };
 }
 
+export interface DesignCandidateModelMeta {
+  profile?: string;
+  harness?: string;
+  model?: string;
+}
+
 export interface DesignCandidateRevision {
   revision: number;
   primary: string;
   secondary: string;
   meta: {
     revision?: number;
+    inputRevision?: number;
+    primary?: DesignCandidateModelMeta;
+    secondary?: DesignCandidateModelMeta;
+    synthesizer?: DesignCandidateModelMeta;
     primaryProfile?: string;
     secondaryProfile?: string;
     synthesizerProfile?: string;
     primaryModel?: string;
     secondaryModel?: string;
+    createdAt?: string;
     generatedAt?: string;
     fallback?: boolean;
     fallbackReason?: string;
@@ -455,6 +570,7 @@ export interface TraceSummary {
   usage?: Record<string, unknown> | null;
   source?: 'live' | 'receipt' | 'state' | string;
   eventCount?: number;
+  preview?: string;
 }
 
 export interface TraceDetail extends TraceSummary {

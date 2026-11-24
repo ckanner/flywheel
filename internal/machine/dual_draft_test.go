@@ -27,6 +27,7 @@ func dualDraftFixture(t *testing.T) (fixture, RunTaskOpts) {
 	}
 	cfg.ProfileRefs = map[string]string{"loops.design-plan": "carbon"}
 	cfg.Loops["design-plan"] = config.LoopBinding{Harness: "antigravity", Model: "gemini-4-carbon-high", Channel: "kimi-subscription", Thinking: "high"}
+	cfg.Subscription = &config.SubscriptionPolicy{Version: 1, Mode: "subscription-only"}
 	cfg.Planning.DualDraft = &config.DualDraftConfig{
 		Enabled:            true,
 		SecondaryProfile:   "opus-plan",
@@ -45,6 +46,9 @@ func TestDualDraftDesignRunsBlindParallelDraftsPersistsCandidatesAndSynthesizes(
 	var draftCalls atomic.Int32
 	var synthCalls atomic.Int32
 	opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(a drivers.CallArgs) drivers.Result {
+		require.NotNil(t, a.Subscription, "dual-draft calls must preserve subscription-only policy")
+		require.Equal(t, config.SubscriptionPolicy{Version: 1, Mode: "subscription-only"}, *a.Subscription)
+		require.NotEmpty(t, a.SessionTitle)
 		if a.Model == "claude-opus-5-5" && len(a.Prompt) > 0 && containsAll(a.Prompt, "draft-a", "draft-b", "来源对照表") {
 			synthCalls.Add(1)
 			synth := designOut
@@ -52,6 +56,8 @@ func TestDualDraftDesignRunsBlindParallelDraftsPersistsCandidatesAndSynthesizes(
 			return planningJSONResult(t, synth)
 		}
 		draftCalls.Add(1)
+		require.NotNil(t, a.OnEvent, "parallel dual-draft calls must emit live trace events")
+		a.OnEvent(`{"type":"thinking","text":"drafting ` + a.Model + `"}`)
 		out := designOut
 		out.Document = "# Blind draft by " + a.Model
 		return planningJSONResult(t, out)
@@ -62,6 +68,10 @@ func TestDualDraftDesignRunsBlindParallelDraftsPersistsCandidatesAndSynthesizes(
 	require.Equal(t, "awaiting-design-approval", summary.PlanningPhase)
 	require.Equal(t, int32(2), draftCalls.Load())
 	require.Equal(t, int32(1), synthCalls.Load())
+
+	traceEntries, err := os.ReadDir(filepath.Join(fx.taskDir, ".traces"))
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(traceEntries), 2, "parallel dual-draft calls must persist live traces")
 
 	primaryMD, err := os.ReadFile(filepath.Join(fx.taskDir, "design-candidates", "rev-000001-primary.md"))
 	require.NoError(t, err)

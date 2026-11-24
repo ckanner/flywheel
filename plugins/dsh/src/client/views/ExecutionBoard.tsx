@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import type { ClientRuntime } from '../context.ts';
+import { resolvePlanningView } from '../planning.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { PacketNode, Translate } from '../types.ts';
 import { DagCanvas } from './DagCanvas.tsx';
@@ -105,6 +106,11 @@ export function ExecutionBoard({
 
   const budgetEnforce = snap.state?.budget?.enforce ?? 'off';
   const showBudgetBanner = budgetEnforce !== 'off' && budgetEnforce !== '';
+  const resolvedPlanning = useMemo(
+    () => resolvePlanningView(snap.planning ?? snap.state?.planning ?? null),
+    [snap.planning, snap.state?.planning],
+  );
+  const planningNotApproved = Boolean(resolvedPlanning && !resolvedPlanning.isApproved);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -150,8 +156,22 @@ export function ExecutionBoard({
       )}
 
       {packets.length === 0 ? (
-        <div className={styles.emptyState}>
-          <div>{t('exec.empty')}</div>
+        <div className={styles.emptyState} data-testid="flywheel-exec-empty">
+          {planningNotApproved ? (
+            <>
+              <strong style={{ fontSize: 14, color: 'var(--fw-text)' }}>{t('exec.planningPendingTitle')}</strong>
+              <div style={{ maxWidth: 480 }}>{t('exec.planningPendingDesc')}</div>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                onClick={() => store.setActiveTab('design')}
+              >
+                {t('exec.backToDesign')}
+              </button>
+            </>
+          ) : (
+            <div>{t('exec.empty')}</div>
+          )}
         </div>
       ) : snap.executionView === 'waves' ? (
         <div className={styles.waveGrid} data-testid="flywheel-wave-swimlanes">
