@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.8 — 2026-11-24 (Fix Create Task `planning prepare` Contract)
+
+- **Fix Create Task failing with `planning requires a typed, version-bound planning command`**: construct a schema-complete `planning.brief` (`version: 1`, sanitized `id`, `goal`, `original-request`, `constraints`, `evidence`, `policy`, `mode`, `implementation-authorized`, and explicit `authorization` for Quick/delegated mode) in `FlywheelStore.createBuildTask`, removing the invalid top-level `planning.policy` and `brief.images` keys (carrying selected image paths via `brief.evidence` + `brief.constraints` instead).
+- **Fix investigation continue key & modal UX**: use hyphenated `'read-paths'` in `continueInvestigation`, add a timestamp suffix to auto-generated task slugs to avoid same-day collisions, and display submission errors inline inside `CreateTaskModal`.
+
 ## 0.39.7 — 2026-11-24 (Per-Harness `xhigh` Thinking & Antigravity Slug Sync)
 
 - **Add `xhigh` thinking option & per-harness effort filtering in Settings**: expose `xhigh` for Codex Pro, Claude Code Pro, and Antigravity Gemini 4 Neon/Hydrogen in `SettingsPage`, constrain Carbon/Argon to `low`/`medium`/`high`, lock Antigravity Orchestrator models to native fixed effort (`""`), and constrain Kimi to `low`/`high`/`max`.

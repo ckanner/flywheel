@@ -11,7 +11,8 @@ function slugifyGoal(goal: string, intent: TaskIntent): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 28);
-  const stamp = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const stamp = `${now.toISOString().slice(0, 10)}-${now.toTimeString().slice(0, 8).replace(/:/g, '')}`;
   return ascii ? `${ascii}-${stamp}` : `${intent}-${stamp}`;
 }
 
@@ -96,6 +97,15 @@ export function CreateTaskModal({
             {t('inspector.close')}
           </button>
         </div>
+
+        {snap.error && (
+          <div className={styles.bannerError} role="alert" data-testid="create-modal-error">
+            <span>{snap.error.message}</span>
+            <button type="button" className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`} onClick={() => store.clearError()}>
+              ×
+            </button>
+          </div>
+        )}
 
         {/* 3 Intent Cards */}
         <div className={styles.intentGrid}>

@@ -649,22 +649,56 @@ export class FlywheelStore {
     mode: 'auto' | 'quick' | 'full';
     images?: string[];
   }): Promise<ControlResponse | undefined> {
-    const taskDir = `${opts.cwd.replace(/\/+$/, '')}/docs/${opts.slug}`;
+    const cleanCwd = opts.cwd.replace(/\/+$/, '');
+    const safeSlug =
+      opts.slug
+        .trim()
+        .replace(/[^A-Za-z0-9_.-]+/g, '-')
+        .replace(/^[^A-Za-z0-9]+|-+$/g, '')
+        .slice(0, 120) || `task-${Date.now()}`;
+    const taskDir = `${cleanCwd}/docs/${safeSlug}`;
     const requestId = `prepare-${Date.now()}`;
+    const policy = opts.mode === 'quick' ? 'delegated' : 'review-first';
+    const trimmedGoal = opts.goal.trim();
+    const constraints = [`Task intent: ${opts.mode === 'quick' ? 'quick' : 'engineering'}`];
+    const evidence: string[] = [];
+    if (opts.images && opts.images.length > 0) {
+      constraints.push(
+        'Carry the explicitly selected input-images references into the relevant reviewed packet. Original images require the supported Claude SDK transport. Do not claim planning or review consumed these images from this metadata.',
+      );
+      evidence.push(
+        JSON.stringify({
+          'selected-input-images': opts.images,
+          status: 'unreviewed-selection',
+          'planning-consumption': 'paths-and-digests-only',
+        }),
+      );
+    }
+    const brief = {
+      version: 1,
+      id: safeSlug,
+      goal: trimmedGoal,
+      'original-request': trimmedGoal,
+      constraints,
+      evidence,
+      policy,
+      mode: opts.mode,
+      'implementation-authorized': policy === 'delegated',
+      ...(policy === 'delegated'
+        ? {
+            authorization: `User selected Quick / delegated execution in the Flywheel Create Task form. Goal: ${trimmedGoal}`,
+          }
+        : {}),
+    };
     return this.performAct('create-build', {
       action: 'planning',
-      cwd: opts.cwd,
+      cwd: cleanCwd,
       taskDir,
       planning: {
         action: 'prepare',
         'request-id': requestId,
-        policy: opts.mode === 'quick' ? 'delegated' : 'review-first',
+        brief,
         start: true,
-        brief: {
-          goal: opts.goal,
-          mode: opts.mode,
-          ...(opts.images && opts.images.length > 0 ? { images: opts.images } : {}),
-        },
       },
     });
   }
@@ -675,14 +709,21 @@ export class FlywheelStore {
     goal: string;
     readPaths?: string[];
   }): Promise<ControlResponse | undefined> {
-    const taskDir = `${opts.cwd.replace(/\/+$/, '')}/docs/${opts.slug}`;
+    const cleanCwd = opts.cwd.replace(/\/+$/, '');
+    const safeSlug =
+      opts.slug
+        .trim()
+        .replace(/[^A-Za-z0-9_.-]+/g, '-')
+        .replace(/^[^A-Za-z0-9]+|-+$/g, '')
+        .slice(0, 120) || `investigate-${Date.now()}`;
+    const taskDir = `${cleanCwd}/docs/${safeSlug}`;
     return this.performAct('create-investigate', {
       action: 'investigate',
-      cwd: opts.cwd,
+      cwd: cleanCwd,
       taskDir,
       investigation: {
         action: 'start',
-        goal: opts.goal,
+        goal: opts.goal.trim(),
         intent: 'investigate',
         run: true,
         ...(opts.readPaths && opts.readPaths.length > 0 ? { 'read-paths': opts.readPaths } : {}),
@@ -803,7 +844,7 @@ export class FlywheelStore {
       version: 1,
       intent: 'investigate',
       goal: goal.trim(),
-      ...(readPaths.length > 0 ? { read_paths: readPaths } : {}),
+      ...(readPaths.length > 0 ? { 'read-paths': readPaths } : {}),
     };
     return this.performAct('inv-continue', {
       action: 'investigate',
