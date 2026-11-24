@@ -120,6 +120,34 @@ func TestNativeResponseRequiresCompleteValidDistribution(t *testing.T) {
 	}
 }
 
+func TestHTTPGatewayAliasModelResolvesConcreteVersion(t *testing.T) {
+	s, p, o := fixture()
+	o.Model, o.ExpectedModel = "jev", "jev"
+	calls := 0
+	o.Transport = transport(&calls)
+	r, err := Evaluate(context.Background(), t.TempDir()+"/journal", s, p, o)
+	if err != nil || r.Status != "ok" || r.Model != "jev-1.14.0" {
+		t.Fatalf("expected concrete jev-1.14.0 receipt for gateway alias jev, got r=%+v err=%v", r, err)
+	}
+	if err := ValidateReceiptIdentity(s, p, o, r); err != nil {
+		t.Fatalf("valid concrete version receipt rejected: %v", err)
+	}
+	sel := Select(s, r, p, o)
+	if !sel.Adopted || sel.ActionID != "inspect-config" {
+		t.Fatalf("expected adoption for gateway alias jev, got %+v", sel)
+	}
+	// Response must still carry a concrete jev-x.y.z version, never the bare alias.
+	var v map[string]any
+	if err := json.Unmarshal(native(), &v); err != nil {
+		t.Fatal(err)
+	}
+	v["model"] = "jev"
+	bad := receiptFor(s, p, o)
+	if err := parseResponse(raw(v), s, o.ExpectedModel, &bad); err == nil {
+		t.Fatal("bare alias model in response must be rejected")
+	}
+}
+
 func TestMeasuredDurationAndExplicitAdvisory(t *testing.T) {
 	s, p, o := fixture()
 	p.Mode = Advisory

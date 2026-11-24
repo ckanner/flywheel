@@ -86,7 +86,6 @@ func TestSubscriptionPolicyRejectsReachablePaidPaths(t *testing.T) {
 			c.Channels["google"] = Channel{Fallback: "paid"}
 			c.Channels["paid"] = Channel{EnvKey: new("API_KEY")}
 		},
-		"jev": func(c *Config) { c.JEV.Enabled = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := subscriptionFixture()
@@ -95,6 +94,8 @@ func TestSubscriptionPolicyRejectsReachablePaidPaths(t *testing.T) {
 		})
 	}
 	c := subscriptionFixture()
+	c.JEV = JEVConfig{Enabled: true, Backend: "http", Endpoint: "https://merouter.play.one2x.ai/v1/systemone", Model: "jev", KeyEnv: "MEROUTER_API_KEY"}
+	require.NoError(t, c.validateSubscriptionCLI(), "explicit HTTP JEV endpoint may coexist with subscription-only workflow bindings")
 	c.JudgePanel = &LoopBinding{Harness: "codex-pro", Channel: "chatgpt"}
 	c.ExecutionPolicy = &ExecutionPolicy{Bindings: map[string]ExecutionBinding{"allowed": {Harness: "codex-pro", Channel: "chatgpt"}}}
 	c.Channels["google"] = Channel{Fallback: "other-google"}

@@ -51,7 +51,12 @@ execution of the chosen action.
 Do not include `endpoint`, `model` or `key-env` in the subscription JEV object.
 The model and effort belong to the named profile; subscription login and native
 extra-usage controls are checked by the adapter. No API or credits fallback is
-attempted. Proven non-dispatch keeps the deterministic baseline. A possible
+attempted. When explicitly choosing `backend: "http"` (which may coexist with
+`subscription-only` workflow bindings for users operating their own System One
+endpoint such as MeRouter `/v1/systemone`), omit `profile` and set `model` to
+either the gateway route alias `"jev"` or a pinned `"jev-x.y.z"` version
+(responses must still report a concrete `"jev-x.y.z"` version in the receipt).
+Proven non-dispatch keeps the deterministic baseline. A possible
 dispatch without confirmed cleanup blocks further work until reconciliation.
 Existing records preserve actual reasons; an implementation task can fail a
 precondition before creating its first decision ledger.

@@ -442,7 +442,7 @@
         "timeout-ms",
         "hard-budget"
       ],
-      "allOf":[{"if":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}},"then":{"required":["subscription-binding"],"not":{"anyOf":[{"required":["endpoint"]},{"required":["key-env"]}]}},"else":{"required":["endpoint","key-env"],"properties":{"model":{"pattern":"^jev-[0-9]+\\.[0-9]+\\.[0-9]+$"}},"not":{"required":["subscription-binding"]}}}]
+      "allOf":[{"if":{"required":["backend"],"properties":{"backend":{"const":"subscription"}}},"then":{"required":["subscription-binding"],"not":{"anyOf":[{"required":["endpoint"]},{"required":["key-env"]}]}},"else":{"required":["endpoint","key-env"],"properties":{"model":{"pattern":"^jev(-[0-9]+\\.[0-9]+\\.[0-9]+)?$"}},"not":{"required":["subscription-binding"]}}}]
     }
   },
   "required": [

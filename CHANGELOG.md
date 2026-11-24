@@ -5,6 +5,12 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.6 — 2026-11-24 (JEV HTTP Independence + Gateway Alias + Switch Polish)
+
+- **Allow independent HTTP JEV under `subscription-only`**: decouple `jev.backend = "http"` from the workflow-stage `subscription-only` lock so users can keep all Plan/Execute/Review stages strictly on subscriptions while routing bounded JEV decisions to their own System One HTTP endpoint (e.g. `https://merouter.play.one2x.ai/v1/systemone`).
+- **Support gateway route alias `"jev"` alongside pinned `"jev-x.y.z"`**: update `templates/jev-config.schema.json`, `templates/preparation.schema.json`, `internal/decision`, and `SettingsPage` to accept `"jev"` as an HTTP request route alias while still enforcing a concrete `jev-x.y.z` version string in the server response and persisted receipt.
+- **Fix Switch toggle visibility & unify Settings switches**: replace the undefined `--fw-accent-contrast` CSS token that caused enabled Switch knobs to disappear into solid black pills, add balanced off/on track colors (`#2563eb` active track + crisp `#ffffff` thumb), soften selected `allowed-data` chip borders, and upgrade the remaining raw checkboxes in `SettingsPage` (Dual-Draft, UX Audit, Dollar Budget) to the unified Switch component.
+
 ## 0.39.5 — 2026-11-23 (Single Settings Entry + Concurrency, Timeouts & Retry Controls)
 
 - **Remove duplicate DSH global Settings entry**: unregister the redundant `settings.section` slot so DSH's global Settings sidebar stays clean; Flywheel configuration lives exclusively inside the Flywheel Workbench's inline **Settings** tab.

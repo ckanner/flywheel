@@ -216,7 +216,7 @@ func Select(current Snapshot, receipt Receipt, p Policy, options Options) Select
 		selection.Reason = "adoption-not-eligible"
 		return selection
 	}
-	if receipt.Version != 1 || receipt.DecisionID != current.ID || receipt.SnapshotHash != hash(current) || receipt.PolicyHash != hash(p) || receipt.QuestionHash != hash(questions(current)) || receipt.TargetHash != targetHash(options) || receipt.Model != options.ExpectedModel {
+	if receipt.Version != 1 || receipt.DecisionID != current.ID || receipt.SnapshotHash != hash(current) || receipt.PolicyHash != hash(p) || receipt.QuestionHash != hash(questions(current)) || receipt.TargetHash != targetHash(options) || !matchesExpectedModel(receipt.Model, options.ExpectedModel) {
 		selection.Reason = "stale-decision"
 		return selection
 	}

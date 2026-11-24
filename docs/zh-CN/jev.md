@@ -42,8 +42,11 @@ slug 和 effort。这里只接受不带 native child profile 的 Antigravity 绑
 诊断命令或执行所选动作的工具。
 
 订阅 JEV 对象不填写 `endpoint`、`model`、`key-env`。模型和 effort 来自具名配置；
-订阅登录及原生额外用量控制由适配器核对，不自动切 API 或 credits。确认未派发时
-沿用确定性基线；可能派发且尚未确认回收时，必须先核对，才能继续任务。已有记录保留
+订阅登录及原生额外用量控制由适配器核对，不自动切 API 或 credits。如果显式选择
+`backend: "http"`（可在主体工作流保持 `subscription-only` 时独立配置外部 System One
+端点，例如 MeRouter `/v1/systemone`），`model` 可填写网关路由名 `jev` 或精确版本
+`jev-x.y.z`（响应仍须返回合法的精确版本 `jev-x.y.z` 并记入回执），且不填写 `profile`。
+确认未派发时沿用确定性基线；可能派发且尚未确认回收时，必须先核对，才能继续任务。已有记录保留
 实际原因；实施任务可能在建立首个决策账本前就不满足前提。
 
 配置按**任务 → 项目 → 全局 → 内嵌表选择一份完整文件**，不跨文件深合并。项目

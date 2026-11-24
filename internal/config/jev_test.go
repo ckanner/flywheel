@@ -39,13 +39,16 @@ func TestJEVOptionalDefaultsAndSingleAdoptionPolicy(t *testing.T) {
 	require.Equal(t, decision.TaskSummary, policy.AllowedData[0], "frozen policy must not share mutable config data")
 	require.Contains(t, editorValues(cfg), "jev")
 	require.NotContains(t, editorValues(cfg), "jev-shadow")
+	cfg, err = parseConfig([]byte(`{"jev":{"enabled":true,"endpoint":"https://example.org/v1/systemone","model":"jev","key-env":"TEST_KEY"}}`), "test")
+	require.NoError(t, err)
+	require.Equal(t, "jev", cfg.JEV.Model, "gateway route alias jev must be accepted for HTTP JEV")
 	cfg, err = parseConfig([]byte(`{"jev":{"allowed-data":[]}}`), "test")
 	require.NoError(t, err)
 	require.Empty(t, cfg.JEV.AllowedData, "explicitly restricted data must not be widened by normalization")
 }
 
 func TestJEVStrictConfigurationAndEnabledTarget(t *testing.T) {
-	for _, raw := range []string{`null`, `false`, `{"enabled":"false"}`, `{"api-key":"secret"}`, `{"mode":"shadow"}`, `{"expected-model":"jev-1.14.0"}`, `{"timeout-ms":0}`, `{"timeout-ms":30001}`, `{"model":"jev"}`, `{"key-env":"a=b"}`, `{"max-calls":0}`, `{"max-calls":101}`, `{"min-choice":0}`, `{"min-applicability":1.1}`, `{"allowed-data":["secret"]}`, `{"allowed-data":["source","source"]}`} {
+	for _, raw := range []string{`null`, `false`, `{"enabled":"false"}`, `{"api-key":"secret"}`, `{"mode":"shadow"}`, `{"expected-model":"jev-1.14.0"}`, `{"timeout-ms":0}`, `{"timeout-ms":30001}`, `{"model":"jev-latest"}`, `{"key-env":"a=b"}`, `{"max-calls":0}`, `{"max-calls":101}`, `{"min-choice":0}`, `{"min-applicability":1.1}`, `{"allowed-data":["secret"]}`, `{"allowed-data":["source","source"]}`} {
 		t.Run(raw, func(t *testing.T) {
 			_, err := parseConfig([]byte(`{"jev":`+raw+`}`), "test")
 			require.Error(t, err)

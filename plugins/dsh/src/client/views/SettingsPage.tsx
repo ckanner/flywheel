@@ -84,7 +84,7 @@ const JEV_ALLOWED_DATA_CATEGORIES = [
   'diff',
 ] as const;
 
-const JEV_MODEL_RE = /^jev-[0-9]+\.[0-9]+\.[0-9]+$/;
+const JEV_MODEL_RE = /^jev(-[0-9]+\.[0-9]+\.[0-9]+)?$/;
 const JEV_KEY_ENV_RE = /^[A-Za-z_][A-Za-z0-9_]{0,119}$/;
 
 const SUBSCRIPTIONS = [
@@ -401,7 +401,7 @@ function isEligibleJevProfile(prof: Record<string, unknown>): boolean {
 function isValidJevHttpEndpoint(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 2000 || /\s/.test(trimmed)) return false;
-  const match = /^(https?):\/\/(\[[0-9a-fA-F:]+\]|[^/:?#]+)(?::(\d+))?(?:[/?#].*)?$/.exec(trimmed);
+  const match = /^(https?):\/\/(\[[0-9a-fA-F:]+\]|[^/:?#@]+)(?::(\d+))?(\/v1\/systemone)$/.exec(trimmed);
   if (!match) return false;
   const [, scheme, host, port] = match;
   if (port !== undefined) {
@@ -450,7 +450,7 @@ function buildJevSection(
   } else {
     delete nextJev.profile;
     if (typeof nextJev.endpoint !== 'string') nextJev.endpoint = '';
-    if (typeof nextJev.model !== 'string' || !nextJev.model) nextJev.model = 'jev-1.14.0';
+    if (typeof nextJev.model !== 'string' || !nextJev.model) nextJev.model = 'jev';
     if (typeof nextJev['key-env'] !== 'string' || !nextJev['key-env']) nextJev['key-env'] = 'MEROUTER_API_KEY';
   }
   return setNested(draft, ['jev'], nextJev);
@@ -482,11 +482,6 @@ function validateJevDraft(
   const jev = asRecord(draft.jev);
   const enabled = Boolean(jev.enabled);
   const backend = jev.backend === 'http' ? 'http' : 'subscription';
-  const subMode = String(getNested(draft, ['subscription', 'mode']) ?? '');
-
-  if (enabled && subMode === 'subscription-only' && backend !== 'subscription') {
-    errors.backend = t('settings.jev.errSubOnly');
-  }
 
   if (backend === 'subscription') {
     const profileName = typeof jev.profile === 'string' ? jev.profile.trim() : '';
@@ -1179,7 +1174,7 @@ export function SettingsPage({
                 id="fw-jev-model"
                 className={styles.input}
                 data-testid="jev-model-input"
-                placeholder="jev-1.14.0"
+                placeholder="jev / jev-1.14.0"
                 value={String(jevDraft.model ?? '')}
                 onChange={e =>
                   setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { model: e.target.value }))
@@ -1527,11 +1522,16 @@ export function SettingsPage({
             <span className={styles.settingRowTitle}>{t('settings.dualDraft')}</span>
             <span className={styles.settingRowDesc}>{t('settings.dualDraftDesc')}</span>
           </div>
-          <input
-            type="checkbox"
-            checked={dualDraftEnabled}
-            onChange={e => setDraft(d => setNested(d, ['planning', 'dual-draft', 'enabled'], e.target.checked))}
-          />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={dualDraftEnabled}
+            aria-label={t('settings.dualDraft')}
+            className={`${styles.switchBtn} ${dualDraftEnabled ? styles.switchBtnOn : ''}`}
+            onClick={() => setDraft(d => setNested(d, ['planning', 'dual-draft', 'enabled'], !dualDraftEnabled))}
+          >
+            <span className={styles.switchThumb} />
+          </button>
         </div>
 
         <div className={styles.settingRow}>
@@ -1539,11 +1539,16 @@ export function SettingsPage({
             <span className={styles.settingRowTitle}>{t('settings.uxAudit')}</span>
             <span className={styles.settingRowDesc}>{t('settings.uxAuditDesc')}</span>
           </div>
-          <input
-            type="checkbox"
-            checked={uxAuditEnabled}
-            onChange={e => setDraft(d => setNested(d, ['frontend-ux-review', 'enabled'], e.target.checked))}
-          />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={uxAuditEnabled}
+            aria-label={t('settings.uxAudit')}
+            className={`${styles.switchBtn} ${uxAuditEnabled ? styles.switchBtnOn : ''}`}
+            onClick={() => setDraft(d => setNested(d, ['frontend-ux-review', 'enabled'], !uxAuditEnabled))}
+          >
+            <span className={styles.switchThumb} />
+          </button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, paddingTop: 6 }}>
@@ -1913,14 +1918,19 @@ export function SettingsPage({
 
         {tier3Open && (
           <>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={budgetEnforce !== 'off'}
-                onChange={e => setDraft(d => setNested(d, ['budget', 'enforce'], e.target.checked ? 'hard' : 'off'))}
-              />
-              <span>{t('settings.budgetOptIn')}</span>
-            </label>
+            <div className={styles.settingRow} style={{ paddingTop: 0 }}>
+              <span className={styles.settingRowTitle}>{t('settings.budgetOptIn')}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={budgetEnforce !== 'off'}
+                aria-label={t('settings.budgetOptIn')}
+                className={`${styles.switchBtn} ${budgetEnforce !== 'off' ? styles.switchBtnOn : ''}`}
+                onClick={() => setDraft(d => setNested(d, ['budget', 'enforce'], budgetEnforce === 'off' ? 'hard' : 'off'))}
+              >
+                <span className={styles.switchThumb} />
+              </button>
+            </div>
             <pre className={styles.monoPre}>{JSON.stringify(draft, null, 2)}</pre>
           </>
         )}

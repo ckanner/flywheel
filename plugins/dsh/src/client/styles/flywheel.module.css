@@ -25,6 +25,12 @@
   --fw-primary-fill: var(--dsw-alias-button-primary-fill, #18181b);
   --fw-primary-fg: var(--dsw-alias-label-primary-foreground, #ffffff);
 
+  --fw-switch-off-bg: color-mix(in srgb, var(--fw-text) 18%, transparent);
+  --fw-switch-on-bg: #2563eb;
+  --fw-switch-thumb: #ffffff;
+  --fw-chip-active-bg: color-mix(in srgb, #2563eb 10%, transparent);
+  --fw-chip-active-border: color-mix(in srgb, #2563eb 40%, transparent);
+
   --fw-success: var(--dsw-alias-state-success-primary, #15803d);
   --fw-success-soft: color-mix(in srgb, var(--fw-success) 10%, transparent);
   --fw-success-border: color-mix(in srgb, var(--fw-success) 24%, transparent);
@@ -1327,35 +1333,44 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 40px;
+  width: 38px;
   height: 22px;
   padding: 2px;
   border-radius: 999px;
-  border: 1px solid var(--fw-border-strong);
-  background: var(--fw-bg-elevated);
+  border: 1px solid transparent;
+  background: var(--fw-switch-off-bg);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.switchBtn:hover {
+  filter: brightness(0.96);
+}
+
+.switchBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2563eb 32%, transparent);
 }
 
 .switchBtnOn {
-  background: var(--fw-accent);
-  border-color: var(--fw-accent);
+  background: var(--fw-switch-on-bg);
 }
 
 .switchThumb {
+  display: block;
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: var(--fw-bg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  background: var(--fw-switch-thumb);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.24);
   transform: translateX(0);
   transition: transform 140ms ease;
 }
 
 .switchBtnOn .switchThumb {
-  transform: translateX(18px);
-  background: var(--fw-accent-contrast);
+  transform: translateX(16px);
+  background: var(--fw-switch-thumb);
 }
 
 .jevEffectiveBar {
@@ -1426,14 +1441,14 @@
 }
 
 .jevDataChip:hover {
-  border-color: var(--fw-accent);
+  border-color: var(--fw-chip-active-border);
   color: var(--fw-text);
 }
 
 .jevDataChipActive {
-  border-color: var(--fw-accent);
-  background: var(--fw-accent-soft);
-  color: var(--fw-accent);
+  border-color: var(--fw-chip-active-border);
+  background: var(--fw-chip-active-bg);
+  color: var(--fw-text);
   font-weight: 500;
 }
 

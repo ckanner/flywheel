@@ -135,9 +135,6 @@ func (c *Config) validateSubscriptionCLI() error {
 	if c.Subscription == nil {
 		return nil
 	}
-	if c.JEV.Enabled && c.JEV.Backend != "subscription" {
-		return fmt.Errorf("subscription-only requires the subscription JEV backend when JEV is enabled")
-	}
 	for _, name := range slices.Sorted(maps.Keys(c.Loops)) {
 		if err := c.validateSubscriptionBinding(c.Loops[name], "loops."+name); err != nil {
 			return err

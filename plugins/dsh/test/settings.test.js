@@ -331,23 +331,20 @@ test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets
     ui.container.querySelector('[data-testid="jev-data-source"]').click();
   });
 
-  // 3. Switching to HTTP while subscription-only is active blocks save with clear error
+  // 3. Switching to HTTP while subscription-only is active is allowed once a valid /v1/systemone endpoint is entered
   await act(async () => {
     ui.container.querySelector('[data-testid="jev-backend-http"]').click();
   });
   const saveBtn = [...ui.container.querySelectorAll('button')].find(b => b.textContent.trim() === '保存配置');
+  // Empty endpoint still blocks save
   assert.equal(saveBtn.disabled, true);
-  assert.match(ui.container.querySelector('[data-testid="settings-jev"]').textContent, /subscription-only/);
+  assert.equal(ui.container.querySelector('[data-testid="jev-model-input"]').value, 'jev');
 
   // 4. Switching back to subscription clears HTTP fields and allows saving valid subscription JEV config
   await act(async () => {
     ui.container.querySelector('[data-testid="jev-backend-subscription"]').click();
   });
-  assert.equal(
-    saveBtn.disabled,
-    false,
-    `ep=${ui.container.querySelector('[data-testid="jev-endpoint-input"]')?.value} alerts=${[...ui.container.querySelectorAll('[role="alert"]')].map(n => n.textContent).join(' | ')}`,
-  );
+  assert.equal(saveBtn.disabled, false);
 
   await ui.click('保存配置');
   const saveSub = ui.actCalls.at(-1);
@@ -366,39 +363,34 @@ test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets
   assert.equal('model' in saveSub.editor.values.jev, false);
   assert.equal('key-env' in saveSub.editor.values.jev, false);
 
-  // 5. In a scope without subscription-only, HTTP backend validates model/endpoint and omits profile
-  currentScopeMode = '';
+  // 5. Even under subscription-only, HTTP backend accepts /v1/systemone + gateway route "jev" (or pinned "jev-1.14.0") and omits profile
   await ui.click('项目配置');
   await act(async () => {
     ui.container.querySelector('[data-testid="jev-enabled-toggle"]').click();
     ui.container.querySelector('[data-testid="jev-backend-http"]').click();
   });
-  // Empty endpoint blocks save
   assert.equal(saveBtn.disabled, true);
 
   await act(async () => {
-    setControlValue(ui.container.querySelector('[data-testid="jev-endpoint-input"]'), 'https://jev.example.test/v1/systemone');
-    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'bad-model');
+    setControlValue(ui.container.querySelector('[data-testid="jev-endpoint-input"]'), 'https://merouter.play.one2x.ai/v1/chat');
+    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'jev-latest');
   });
   assert.equal(saveBtn.disabled, true);
 
   await act(async () => {
-    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'jev-1.14.0');
-    setControlValue(ui.container.querySelector('[data-testid="jev-key-env-input"]'), 'CUSTOM_JEV_KEY');
+    setControlValue(ui.container.querySelector('[data-testid="jev-endpoint-input"]'), 'https://merouter.play.one2x.ai/v1/systemone');
+    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'jev');
+    setControlValue(ui.container.querySelector('[data-testid="jev-key-env-input"]'), 'MEROUTER_API_KEY');
   });
-  assert.equal(
-    saveBtn.disabled,
-    false,
-    `ep=${ui.container.querySelector('[data-testid="jev-endpoint-input"]')?.value} alerts=${[...ui.container.querySelectorAll('[role="alert"]')].map(n => n.textContent).join(' | ')}`,
-  );
+  assert.equal(saveBtn.disabled, false);
 
   await ui.click('保存配置');
   const saveHttp = ui.actCalls.at(-1);
   assert.equal(saveHttp.editor.values.jev.enabled, true);
   assert.equal(saveHttp.editor.values.jev.backend, 'http');
-  assert.equal(saveHttp.editor.values.jev.endpoint, 'https://jev.example.test/v1/systemone');
-  assert.equal(saveHttp.editor.values.jev.model, 'jev-1.14.0');
-  assert.equal(saveHttp.editor.values.jev['key-env'], 'CUSTOM_JEV_KEY');
+  assert.equal(saveHttp.editor.values.jev.endpoint, 'https://merouter.play.one2x.ai/v1/systemone');
+  assert.equal(saveHttp.editor.values.jev.model, 'jev');
+  assert.equal(saveHttp.editor.values.jev['key-env'], 'MEROUTER_API_KEY');
   assert.equal('profile' in saveHttp.editor.values.jev, false);
 });
 

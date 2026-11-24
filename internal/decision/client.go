@@ -90,6 +90,17 @@ func targetHash(o Options) string {
 	}{o.Endpoint, o.Model, o.ExpectedModel, o.Timeout.Milliseconds()})
 }
 
+func validHTTPRequestModel(model string) bool {
+	return len(model) <= 120 && (model == "jev" || fixedModel.MatchString(model))
+}
+
+func matchesExpectedModel(actual, expected string) bool {
+	if expected == "jev" {
+		return len(actual) <= 120 && fixedModel.MatchString(actual)
+	}
+	return actual == expected
+}
+
 func validTarget(o Options) bool {
 	if o.Backend == "subscription" {
 		return o.Subscription != nil && o.Subscription.Valid() && o.Model == o.Subscription.Model && o.ExpectedModel == o.Model && o.Endpoint == "" && o.APIKey == "" && o.Timeout > 0 && o.Timeout <= 30*time.Second
@@ -102,8 +113,9 @@ func validTarget(o Options) bool {
 		return false
 	}
 	local := u.Hostname() == "localhost" || net.ParseIP(u.Hostname()).IsLoopback()
-	// Requests use the fixed version itself, not a mutable alias.
-	return (u.Scheme == "https" || u.Scheme == "http" && local) && o.Model == o.ExpectedModel && fixedModel.MatchString(o.ExpectedModel) && len(o.ExpectedModel) <= 120 && o.Timeout > 0 && o.Timeout <= 30*time.Second
+	// Requests use either the pinned version (jev-x.y.z) or the gateway route
+	// alias "jev"; responses still require a concrete jev-x.y.z version string.
+	return (u.Scheme == "https" || u.Scheme == "http" && local) && o.Model == o.ExpectedModel && validHTTPRequestModel(o.ExpectedModel) && o.Timeout > 0 && o.Timeout <= 30*time.Second
 }
 
 type answer struct {
@@ -143,7 +155,7 @@ func parseResponse(data []byte, s Snapshot, expected string, r *Receipt) error {
 		return fmt.Errorf("invalid-response")
 	}
 	r.Model, r.Usage = decoded.Model, decoded.Usage
-	if decoded.Model != expected {
+	if !matchesExpectedModel(decoded.Model, expected) {
 		return fmt.Errorf("model-version-mismatch")
 	}
 	action := decoded.Answers["action"]
