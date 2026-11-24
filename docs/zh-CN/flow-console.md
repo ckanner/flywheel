@@ -38,7 +38,7 @@ flowchart LR
 | `main` + `sidebar.panellist` | 全页工程工作台 | 全面接入 DSH 原生 `--dsw-alias-*` 浅色/深色主题变量，取消与 DSH 侧边栏重叠的二层任务列表，改为 54px 单行顶栏中的**任务切换浮层**（按 `taskDir` 去重、读取 `summary.slug` / `summary.status` 真实状态、默认隐藏 `/tmp` 临时记录）+ `+ 新建任务` + 生命周期主按钮（Primary CTA）+ 标签栏右侧直达**设置**；内置**双模型设计评审室**（`统稿方案 \| 双稿并排对比 \| 原始独立草稿`、Markdown 来源对照表、Astra 独立审查与悬浮拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（全量节点无 6 节点分页、244×96 语义卡片、贝塞尔流动连线、悬停血缘高亮、缩放平移与缩略图）、**520px 五标签节点详情抽屉**（概览含会话复用状态 / **模型输出与实时思考** / 证据与 UX / 时间线与协作 / 契约）、**实时运行记录与模型思考流 (`运行记录`)**（实时流式展示各 Loop 与节点的思考过程、工具调用、模型回复与失败 stderr，并支持 DSH 原生一键跳转会话或 Claude / Codex / Kimi / Antigravity 精确 CLI `resume` 命令复制与终端一键打开）、**30 秒建单弹窗**、**根因调查板**与**交付追踪页** |
 | `sidebar.right.pane.tab` | 右侧边栏实时进度 | 当前运行任务进度条、活跃节点预览、一键跳转工作台与停止控制 |
 | `conversation.chat.commandview` | `/flywheel` 指令卡 | 对话内只读控制摘要卡片，一键跳转主工作台 |
-| `settings.section` | 可编辑三层设置页（工作台内直达 + DSH 设置） | 配置优先级栏（任务 > 项目 > 全局 > 默认）、4 订阅健康条 + 无推理自检 + 实时模型目录刷新、**逐阶段/逐路由可编辑模型矩阵**（支持工作流阶段 / 执行路由 / 双稿与紧凑规划分组编辑 Profile、Harness/Provider、模型、思考等级，评审类保留只读锁定徽章）、**Session 复用策略（`scoped` / `fresh`）**与运行护栏、一键恢复默认及可折叠原始 JSON |
+| `settings.section` | 可编辑三层设置页（工作台内直达 + DSH 设置） | 配置优先级栏（任务 > 项目 > 全局 > 默认）、4 订阅健康条 + 无推理自检 + 实时模型目录刷新、**JEV 有界决策配置卡片**（唯一 `jev.enabled` 开关、`subscription` / `http` 后端互斥切换、无工具 Antigravity 订阅 Profile 筛选与解析绑定展示、当前实际生效状态条、调用次数/超时/阈值预算、`allowed-data` 五类多选与 schema 前端校验）、**逐阶段/逐路由可编辑模型矩阵**（支持工作流阶段 / 执行路由 / 双稿与紧凑规划分组编辑 Profile、Harness/Provider、模型、思考等级，评审类保留只读锁定徽章）、**Session 复用策略（`scoped` / `fresh`）**与运行护栏、一键恢复默认及可折叠原始 JSON |
 
 人类专属操作（`planning.approve` 与 `session.abandon`）由宿主 `flywheelConsole.act`
 直接签发宿主侧 `dsh` 人工证明；模型工具（`flywheel_launch` / `flywheel_control`）始终严禁调用。

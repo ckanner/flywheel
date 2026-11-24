@@ -554,9 +554,10 @@ export class FlywheelStore {
     this.setState({ configScope: scope, error: null });
     try {
       const cwdArg = this.snapshot.selectedCwd ? { cwd: this.snapshot.selectedCwd } : {};
+      const taskArg = this.snapshot.selectedTaskDir ? { taskDir: this.snapshot.selectedTaskDir } : {};
       const [editRes, effectiveRes] = await Promise.all([
         this.remote.query({ action: 'config-edit', ...cwdArg, editor: { scope } }),
-        this.remote.query({ action: 'config', ...cwdArg }),
+        this.remote.query({ action: 'config', ...cwdArg, ...taskArg }),
       ]);
       this.setState({
         configEditor: editRes.editor ?? null,

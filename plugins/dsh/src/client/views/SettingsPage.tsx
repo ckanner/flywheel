@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import { StyleScope } from '../components/StyleScope.tsx';
 import type { FlywheelStore } from '../store.ts';
@@ -75,6 +75,17 @@ const CANONICAL_MODELS: Record<string, string[]> = {
 };
 
 const THINKING_OPTIONS = ['', 'low', 'medium', 'high', 'max'] as const;
+
+const JEV_ALLOWED_DATA_CATEGORIES = [
+  'task-summary',
+  'diagnostic-facts',
+  'logs',
+  'source',
+  'diff',
+] as const;
+
+const JEV_MODEL_RE = /^jev-[0-9]+\.[0-9]+\.[0-9]+$/;
+const JEV_KEY_ENV_RE = /^[A-Za-z_][A-Za-z0-9_]{0,119}$/;
 
 const SUBSCRIPTIONS = [
   { id: 'antigravity', name: 'Antigravity (ACP)', channel: 'google-subscription', desc: 'Gemini 4 Carbon / Neon / Hydrogen' },
@@ -376,6 +387,165 @@ function syncSessionMode(draft: Record<string, unknown>, mode: 'scoped' | 'fresh
   return next;
 }
 
+function isEligibleJevProfile(prof: Record<string, unknown>): boolean {
+  const model = typeof prof.model === 'string' ? prof.model : '';
+  return (
+    prof.harness === 'antigravity' &&
+    !prof.provider &&
+    !prof['native-profile'] &&
+    model.length > 0 &&
+    !model.startsWith('gemini-pro-orchestrator')
+  );
+}
+
+function isValidJevHttpEndpoint(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 2000 || /\s/.test(trimmed)) return false;
+  const match = /^(https?):\/\/(\[[0-9a-fA-F:]+\]|[^/:?#]+)(?::(\d+))?(?:[/?#].*)?$/.exec(trimmed);
+  if (!match) return false;
+  const [, scheme, host, port] = match;
+  if (port !== undefined) {
+    const portNum = Number(port);
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) return false;
+  }
+  if (scheme === 'https') return Boolean(host);
+  const lower = host.toLowerCase();
+  return lower === 'localhost' || lower === '127.0.0.1' || lower === '[::1]';
+}
+
+function defaultJevProfileName(
+  draft: Record<string, unknown>,
+  defaults: Record<string, unknown> | undefined,
+): string {
+  const profiles = asRecord(draft.profiles);
+  const defJev = asRecord(defaults?.jev);
+  if (typeof defJev.profile === 'string' && defJev.profile && isEligibleJevProfile(asRecord(profiles[defJev.profile]))) {
+    return defJev.profile;
+  }
+  if (isEligibleJevProfile(asRecord(profiles['hydrogen-summary']))) return 'hydrogen-summary';
+  if (isEligibleJevProfile(asRecord(profiles['hydrogen-local']))) return 'hydrogen-local';
+  const eligible = Object.keys(profiles).sort().find(name => isEligibleJevProfile(asRecord(profiles[name])));
+  return eligible ?? (typeof defJev.profile === 'string' && defJev.profile ? defJev.profile : 'hydrogen-summary');
+}
+
+function buildJevSection(
+  draft: Record<string, unknown>,
+  defaults: Record<string, unknown> | undefined,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const prev = asRecord(draft.jev);
+  const nextJev: Record<string, unknown> = { ...prev, ...patch };
+  for (const [k, v] of Object.entries(nextJev)) {
+    if (v === undefined) delete nextJev[k];
+  }
+  const backend = nextJev.backend === 'http' ? 'http' : 'subscription';
+  nextJev.backend = backend;
+  if (backend === 'subscription') {
+    delete nextJev.endpoint;
+    delete nextJev.model;
+    delete nextJev['key-env'];
+    if (typeof nextJev.profile !== 'string' || !nextJev.profile) {
+      nextJev.profile = defaultJevProfileName(draft, defaults);
+    }
+  } else {
+    delete nextJev.profile;
+    if (typeof nextJev.endpoint !== 'string') nextJev.endpoint = '';
+    if (typeof nextJev.model !== 'string' || !nextJev.model) nextJev.model = 'jev-1.14.0';
+    if (typeof nextJev['key-env'] !== 'string' || !nextJev['key-env']) nextJev['key-env'] = 'MEROUTER_API_KEY';
+  }
+  return setNested(draft, ['jev'], nextJev);
+}
+
+function toggleJevAllowedData(
+  draft: Record<string, unknown>,
+  defaults: Record<string, unknown> | undefined,
+  category: string,
+): Record<string, unknown> {
+  const prev = asRecord(draft.jev);
+  const raw = Array.isArray(prev['allowed-data'])
+    ? (prev['allowed-data'] as unknown[]).map(String)
+    : ['task-summary', 'diagnostic-facts', 'source'];
+  const set = new Set(raw);
+  if (set.has(category)) set.delete(category);
+  else set.add(category);
+  const ordered = JEV_ALLOWED_DATA_CATEGORIES.filter(item => set.has(item));
+  return buildJevSection(draft, defaults, { 'allowed-data': ordered });
+}
+
+function validateJevDraft(
+  draft: Record<string, unknown>,
+  profilesMap: Record<string, unknown>,
+  t: Translate,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (draft.jev === undefined) return errors;
+  const jev = asRecord(draft.jev);
+  const enabled = Boolean(jev.enabled);
+  const backend = jev.backend === 'http' ? 'http' : 'subscription';
+  const subMode = String(getNested(draft, ['subscription', 'mode']) ?? '');
+
+  if (enabled && subMode === 'subscription-only' && backend !== 'subscription') {
+    errors.backend = t('settings.jev.errSubOnly');
+  }
+
+  if (backend === 'subscription') {
+    const profileName = typeof jev.profile === 'string' ? jev.profile.trim() : '';
+    const hasProfiles = Object.keys(profilesMap).length > 0;
+    if (enabled || (hasProfiles && profileName)) {
+      const targetProf = asRecord(profilesMap[profileName]);
+      if (!profileName || (hasProfiles && !isEligibleJevProfile(targetProf))) {
+        errors.profile = t('settings.jev.errProfile');
+      }
+    }
+  } else {
+    const endpoint = typeof jev.endpoint === 'string' ? jev.endpoint : '';
+    const model = typeof jev.model === 'string' ? jev.model : '';
+    const keyEnv = typeof jev['key-env'] === 'string' ? jev['key-env'] : '';
+    if (enabled && !isValidJevHttpEndpoint(endpoint)) {
+      errors.endpoint = t('settings.jev.errEndpoint');
+    } else if (endpoint.trim() && !isValidJevHttpEndpoint(endpoint)) {
+      errors.endpoint = t('settings.jev.errEndpoint');
+    }
+    if (model && (model.length > 120 || !JEV_MODEL_RE.test(model))) {
+      errors.model = t('settings.jev.errModel');
+    } else if (enabled && !model) {
+      errors.model = t('settings.jev.errModel');
+    }
+    if (keyEnv && !JEV_KEY_ENV_RE.test(keyEnv)) {
+      errors.keyEnv = t('settings.jev.errKeyEnv');
+    } else if (enabled && !keyEnv) {
+      errors.keyEnv = t('settings.jev.errKeyEnv');
+    }
+  }
+
+  if (jev['timeout-ms'] !== undefined) {
+    const v = Number(jev['timeout-ms']);
+    if (!Number.isInteger(v) || v < 1 || v > 30000) {
+      errors.timeoutMs = t('settings.jev.errTimeout');
+    }
+  }
+  if (jev['max-calls'] !== undefined) {
+    const v = Number(jev['max-calls']);
+    if (!Number.isInteger(v) || v < 1 || v > 100) {
+      errors.maxCalls = t('settings.jev.errMaxCalls');
+    }
+  }
+  if (jev['min-applicability'] !== undefined) {
+    const v = Number(jev['min-applicability']);
+    if (!Number.isFinite(v) || v <= 0 || v > 1) {
+      errors.minApplicability = t('settings.jev.errThreshold');
+    }
+  }
+  if (jev['min-choice'] !== undefined) {
+    const v = Number(jev['min-choice']);
+    if (!Number.isFinite(v) || v <= 0 || v > 1) {
+      errors.minChoice = t('settings.jev.errThreshold');
+    }
+  }
+
+  return errors;
+}
+
 export function SettingsPage({
   store,
   t,
@@ -388,18 +558,24 @@ export function SettingsPage({
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [roleGroup, setRoleGroup] = useState<RoleGroup>('loops');
+  const [jevAdvancedOpen, setJevAdvancedOpen] = useState(false);
+  const [jevNumText, setJevNumText] = useState<Record<string, string>>({});
   const [tier3Open, setTier3Open] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
 
   const isZh = t('settings.scope.global') === '全局配置';
 
+  const initialLoadedRef = useRef(false);
   useEffect(() => {
+    if (initialLoadedRef.current) return;
+    initialLoadedRef.current = true;
     void store.loadConfig(snap.configScope);
   }, [store, snap.configScope]);
 
   useEffect(() => {
     if (snap.configEditor?.values) {
       setDraft(cloneRecord(snap.configEditor.values));
+      setJevNumText({});
     }
   }, [snap.configEditor]);
 
@@ -419,6 +595,58 @@ export function SettingsPage({
 
   const profilesMap = useMemo(() => asRecord(draft.profiles), [draft.profiles]);
   const profileNames = useMemo(() => Object.keys(profilesMap).sort(), [profilesMap]);
+  const eligibleJevProfiles = useMemo(
+    () => profileNames.filter(name => isEligibleJevProfile(asRecord(profilesMap[name]))),
+    [profileNames, profilesMap],
+  );
+  const jevDraft = asRecord(draft.jev);
+  const jevDefaults = asRecord(snap.configEditor?.defaults?.jev);
+  const jevEnabled = Boolean(jevDraft.enabled);
+  const jevBackend: 'subscription' | 'http' = jevDraft.backend === 'http' ? 'http' : 'subscription';
+  const jevProfile = typeof jevDraft.profile === 'string' && jevDraft.profile
+    ? jevDraft.profile
+    : defaultJevProfileName(draft, snap.configEditor?.defaults);
+  const jevResolvedProfile = asRecord(profilesMap[jevProfile]);
+  const jevAllowedData = useMemo(() => {
+    if (Array.isArray(jevDraft['allowed-data'])) {
+      return new Set((jevDraft['allowed-data'] as unknown[]).map(String));
+    }
+    if (Array.isArray(jevDefaults['allowed-data'])) {
+      return new Set((jevDefaults['allowed-data'] as unknown[]).map(String));
+    }
+    return new Set(['task-summary', 'diagnostic-facts', 'source']);
+  }, [jevDraft, jevDefaults]);
+  const jevErrors = useMemo(
+    () => validateJevDraft(draft, profilesMap, t),
+    [draft, profilesMap, t],
+  );
+  const hasJevErrors = Object.keys(jevErrors).length > 0;
+  const effectiveJev = snap.effectiveConfig?.jev;
+  const effectiveJevBinding = snap.effectiveConfig?.jevBinding;
+  const jevNumValue = (field: 'max-calls' | 'timeout-ms' | 'min-applicability' | 'min-choice', fallback: number): string => {
+    if (Object.hasOwn(jevNumText, field)) return jevNumText[field];
+    const v = jevDraft[field] ?? jevDefaults[field];
+    return v === undefined || v === null ? String(fallback) : String(v);
+  };
+  const handleJevNumChange = (
+    field: 'max-calls' | 'timeout-ms' | 'min-applicability' | 'min-choice',
+    raw: string,
+    integer: boolean,
+  ) => {
+    setJevNumText(prev => ({ ...prev, [field]: raw }));
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { [field]: undefined }));
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { [field]: Number.NaN }));
+      return;
+    }
+    const val = integer ? (Number.isInteger(parsed) ? parsed : parsed) : parsed;
+    setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { [field]: val }));
+  };
   const bindings = snap.effectiveConfig?.bindings ?? [];
   const checks = snap.doctor?.checks ?? [];
 
@@ -570,6 +798,303 @@ export function SettingsPage({
             );
           })}
         </div>
+      </section>
+
+      {/* JEV Bounded Decision Settings */}
+      <section className={styles.card} data-testid="settings-jev">
+        <div className={styles.cardHeader} style={{ alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3 className={styles.cardTitle}>{t('settings.jev.title')}</h3>
+              <span
+                className={`${styles.pill} ${jevEnabled ? styles.pillSuccess : ''}`}
+                data-testid="jev-status-pill"
+              >
+                {jevEnabled ? t('settings.jev.on') : t('settings.jev.off')}
+              </span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--fw-text-subtle)', marginTop: 2 }}>
+              {t('settings.jev.subtitle')}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--fw-text)' }}>
+              {t('settings.jev.enable')}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={jevEnabled}
+              aria-label={t('settings.jev.enable')}
+              data-testid="jev-enabled-toggle"
+              className={`${styles.switchBtn} ${jevEnabled ? styles.switchBtnOn : ''}`}
+              onClick={() => {
+                const nextEnabled = !jevEnabled;
+                if (nextEnabled) setJevAdvancedOpen(true);
+                setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { enabled: nextEnabled }));
+              }}
+            >
+              <span className={styles.switchThumb} />
+            </button>
+          </div>
+        </div>
+
+        {/* Effective runtime JEV status bar (separate from editing draft) */}
+        {effectiveJev && (
+          <div className={styles.jevEffectiveBar} data-testid="jev-effective-bar">
+            <span>
+              <strong>{t('settings.jev.effective')}:</strong>{' '}
+              <span className={`${styles.pill} ${effectiveJev.enabled ? styles.pillSuccess : ''}`}>
+                {effectiveJev.enabled ? t('settings.jev.on') : t('settings.jev.off')}
+              </span>
+            </span>
+            <span>
+              {t('settings.jev.effectiveScope')}: <code>{snap.effectiveConfig?.scope || '—'}</code>
+            </span>
+            {effectiveJevBinding && (
+              <span>
+                {t('settings.jev.resolvedBinding')}:{' '}
+                <code>
+                  {effectiveJevBinding.profile || effectiveJev.profile || '—'}
+                  {effectiveJevBinding.model ? ` · ${effectiveJevBinding.model}` : ''}
+                  {effectiveJevBinding.thinking ? ` (${effectiveJevBinding.thinking})` : ''}
+                </code>
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className={styles.settingRow} style={{ paddingTop: 4 }}>
+          <div className={styles.settingRowText}>
+            <span className={styles.settingRowTitle}>{t('settings.jev.backend')}</span>
+            <span className={styles.settingRowDesc}>{t('settings.jev.enableDesc')}</span>
+            {jevErrors.backend && <span className={styles.fieldError} role="alert">{jevErrors.backend}</span>}
+          </div>
+          <div className={styles.segmented} role="tablist" aria-label={t('settings.jev.backend')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={jevBackend === 'subscription'}
+              data-testid="jev-backend-subscription"
+              className={`${styles.segmentedBtn} ${jevBackend === 'subscription' ? styles.segmentedBtnActive : ''}`}
+              onClick={() =>
+                setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { backend: 'subscription' }))
+              }
+            >
+              {t('settings.jev.backendSub')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={jevBackend === 'http'}
+              data-testid="jev-backend-http"
+              className={`${styles.segmentedBtn} ${jevBackend === 'http' ? styles.segmentedBtnActive : ''}`}
+              onClick={() =>
+                setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { backend: 'http' }))
+              }
+            >
+              {t('settings.jev.backendHttp')}
+            </button>
+          </div>
+        </div>
+
+        {jevBackend === 'subscription' ? (
+          <div className={styles.jevProfileRow}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-jev-profile">{t('settings.jev.profile')}</label>
+              <select
+                id="fw-jev-profile"
+                className={styles.select}
+                data-testid="jev-profile-select"
+                value={jevProfile}
+                onChange={e =>
+                  setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { profile: e.target.value }))
+                }
+              >
+                {jevProfile && !eligibleJevProfiles.includes(jevProfile) && (
+                  <option value={jevProfile}>{jevProfile}</option>
+                )}
+                {eligibleJevProfiles.map(name => {
+                  const p = asRecord(profilesMap[name]);
+                  const summary = [p.model, p.thinking].filter(Boolean).join(' · ');
+                  return (
+                    <option key={name} value={name}>
+                      {summary ? `${name} (${summary})` : name}
+                    </option>
+                  );
+                })}
+              </select>
+              {jevErrors.profile && <span className={styles.fieldError} role="alert">{jevErrors.profile}</span>}
+            </div>
+            <div className={styles.jevResolvedBox} data-testid="jev-resolved-preview">
+              <span>{t('settings.jev.resolvedBinding')}:</span>
+              {Object.keys(jevResolvedProfile).length > 0 ? (
+                <>
+                  <code>{String(jevResolvedProfile.harness ?? 'antigravity')}</code>
+                  <code>{String(jevResolvedProfile.model ?? '—')}</code>
+                  {jevResolvedProfile.thinking ? (
+                    <span className={styles.pill}>{String(jevResolvedProfile.thinking)}</span>
+                  ) : null}
+                  <span className={`${styles.pill} ${styles.pillSuccess}`}>{t('settings.readOnlyBadge')}</span>
+                </>
+              ) : (
+                <span>{t('settings.jev.profileHint')}</span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className={styles.jevHttpGrid}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-jev-endpoint">{t('settings.jev.endpoint')}</label>
+              <input
+                id="fw-jev-endpoint"
+                className={styles.input}
+                data-testid="jev-endpoint-input"
+                placeholder="https://example.com/v1/systemone"
+                value={String(jevDraft.endpoint ?? '')}
+                onChange={e =>
+                  setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { endpoint: e.target.value }))
+                }
+              />
+              {jevErrors.endpoint && <span className={styles.fieldError} role="alert">{jevErrors.endpoint}</span>}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-jev-model">{t('settings.jev.model')}</label>
+              <input
+                id="fw-jev-model"
+                className={styles.input}
+                data-testid="jev-model-input"
+                placeholder="jev-1.14.0"
+                value={String(jevDraft.model ?? '')}
+                onChange={e =>
+                  setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { model: e.target.value }))
+                }
+              />
+              {jevErrors.model && <span className={styles.fieldError} role="alert">{jevErrors.model}</span>}
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="fw-jev-key-env">{t('settings.jev.keyEnv')}</label>
+              <input
+                id="fw-jev-key-env"
+                className={styles.input}
+                data-testid="jev-key-env-input"
+                placeholder="MEROUTER_API_KEY"
+                value={String(jevDraft['key-env'] ?? '')}
+                onChange={e =>
+                  setDraft(d => buildJevSection(d, snap.configEditor?.defaults, { 'key-env': e.target.value }))
+                }
+              />
+              {jevErrors.keyEnv && <span className={styles.fieldError} role="alert">{jevErrors.keyEnv}</span>}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--fw-text-subtle)' }}>
+            {jevBackend === 'subscription' ? t('settings.jev.profileHint') : ''}
+          </span>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGhost} ${styles.btnSm}`}
+            data-testid="jev-advanced-toggle"
+            onClick={() => setJevAdvancedOpen(v => !v)}
+          >
+            {jevAdvancedOpen ? t('settings.jev.advancedHide') : t('settings.jev.advancedShow')}
+            {' '}
+            {jevAdvancedOpen ? '▾' : '▸'}
+          </button>
+        </div>
+
+        {jevAdvancedOpen && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }} data-testid="jev-advanced-panel">
+            <div className={styles.jevGrid}>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="fw-jev-max-calls">{t('settings.jev.maxCalls')}</label>
+                <input
+                  id="fw-jev-max-calls"
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  className={styles.input}
+                  data-testid="jev-max-calls-input"
+                  value={jevNumValue('max-calls', 8)}
+                  onChange={e => handleJevNumChange('max-calls', e.target.value, true)}
+                />
+                {jevErrors.maxCalls && <span className={styles.fieldError} role="alert">{jevErrors.maxCalls}</span>}
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="fw-jev-timeout-ms">{t('settings.jev.timeoutMs')}</label>
+                <input
+                  id="fw-jev-timeout-ms"
+                  type="number"
+                  min={1}
+                  max={30000}
+                  step={500}
+                  className={styles.input}
+                  data-testid="jev-timeout-ms-input"
+                  value={jevNumValue('timeout-ms', 30000)}
+                  onChange={e => handleJevNumChange('timeout-ms', e.target.value, true)}
+                />
+                {jevErrors.timeoutMs && <span className={styles.fieldError} role="alert">{jevErrors.timeoutMs}</span>}
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="fw-jev-min-app">{t('settings.jev.minApplicability')}</label>
+                <input
+                  id="fw-jev-min-app"
+                  type="number"
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  className={styles.input}
+                  data-testid="jev-min-applicability-input"
+                  value={jevNumValue('min-applicability', 0.8)}
+                  onChange={e => handleJevNumChange('min-applicability', e.target.value, false)}
+                />
+                {jevErrors.minApplicability && <span className={styles.fieldError} role="alert">{jevErrors.minApplicability}</span>}
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="fw-jev-min-choice">{t('settings.jev.minChoice')}</label>
+                <input
+                  id="fw-jev-min-choice"
+                  type="number"
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  className={styles.input}
+                  data-testid="jev-min-choice-input"
+                  value={jevNumValue('min-choice', 0.6)}
+                  onChange={e => handleJevNumChange('min-choice', e.target.value, false)}
+                />
+                {jevErrors.minChoice && <span className={styles.fieldError} role="alert">{jevErrors.minChoice}</span>}
+              </div>
+            </div>
+
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>{t('settings.jev.allowedData')}</span>
+              <div className={styles.jevDataChips}>
+                {JEV_ALLOWED_DATA_CATEGORIES.map(category => {
+                  const active = jevAllowedData.has(category);
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      aria-pressed={active}
+                      data-testid={`jev-data-${category}`}
+                      className={`${styles.jevDataChip} ${active ? styles.jevDataChipActive : ''}`}
+                      onClick={() =>
+                        setDraft(d => toggleJevAllowedData(d, snap.configEditor?.defaults, category))
+                      }
+                    >
+                      <span>{active ? '✓' : '+'}</span>
+                      <span>{t(`settings.jev.data.${category}`)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Tier 2: Editable Per-Stage & Per-Route Model Matrix */}
@@ -882,8 +1407,17 @@ export function SettingsPage({
 
       {/* Sticky Save & Reset Bar */}
       <div className={styles.settingsFooter}>
-        <span style={{ fontSize: 12, color: dirty ? 'var(--fw-warn)' : 'var(--fw-text-subtle)' }}>
-          {dirty ? t('settings.unsaved') : t('settings.synced')}
+        <span
+          style={{
+            fontSize: 12,
+            color: hasJevErrors ? 'var(--fw-danger)' : dirty ? 'var(--fw-warn)' : 'var(--fw-text-subtle)',
+          }}
+        >
+          {hasJevErrors
+            ? t('settings.jev.validationBlocked')
+            : dirty
+              ? t('settings.unsaved')
+              : t('settings.synced')}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -897,7 +1431,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
-            disabled={snap.busyAction !== null || !snap.configEditor}
+            disabled={snap.busyAction !== null || !snap.configEditor || hasJevErrors}
             onClick={() => void store.saveConfig(draft)}
           >
             {snap.busyAction === 'config-save' ? t('settings.saving') : t('settings.save')}

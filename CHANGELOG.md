@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.4 — 2026-11-23 (JEV Settings Controls)
+
+- **JEV Bounded Decisions UI card in Settings**: restore dedicated visual controls for `jev` directly in `SettingsPage` (both inline in the Workbench **Settings** tab and DSH `settings.section`), including the single `jev.enabled` toggle switch, separate effective-runtime status bar (`effectiveConfig.jev` + `effectiveConfig.jevBinding` + scope), mutually exclusive `subscription` / `http` backend switching (strictly clearing incompatible schema fields), eligible tool-free Antigravity profile picker with resolved model/effort preview, `max-calls` / `timeout-ms` / `min-applicability` / `min-choice` inputs, 5-category `allowed-data` chips, and pre-save schema & `subscription-only` validation.
+- **Settings scope switch deduplication**: load configuration once on initial mount in `SettingsPage` instead of re-fetching on every `configScope` transition so switching between Global and Project scopes does not issue a duplicate concurrent `config-edit` fetch that can overwrite in-flight edits; pass selected `taskDir` to `config` inspection so the effective JEV bar reflects task-level overrides accurately.
+
 ## 0.39.3 — 2026-11-23 (Live Traces & Provider Session Resume)
 
 - **Real-time invocation trace streaming**: Go engine appends bounded live NDJSON frames (`start` / `event` / `end` with thinking, tool events, stdout/stderr tails, exit code, and native session ID) into the commit-volatile `<taskDir>/.traces/live-<invocationId>.jsonl` zone while invocations are running, preserving every failed attempt without expanding the bounded per-scope `.sessions/` checkpoint slot.

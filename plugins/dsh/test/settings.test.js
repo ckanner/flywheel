@@ -219,3 +219,183 @@ test('SettingsPage edits real Go-resolved inline loops, routes, planning refs, s
   assert.equal(resetAct.editor.scope, 'project');
   assert.equal(resetAct.editor.reset, true);
 });
+
+test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets, allowed-data, and validation', async t => {
+  const baseValues = {
+    subscription: { version: 1, mode: 'subscription-only' },
+    jev: {
+      enabled: false,
+      backend: 'subscription',
+      profile: 'hydrogen-summary',
+      'timeout-ms': 30000,
+      'max-calls': 8,
+      'min-applicability': 0.8,
+      'min-choice': 0.6,
+      'allowed-data': ['task-summary', 'diagnostic-facts', 'source'],
+    },
+    profiles: {
+      'hydrogen-summary': { harness: 'antigravity', channel: 'google-subscription', model: 'gemini-4-hydrogen-low', thinking: 'low' },
+      'hydrogen-local': { harness: 'antigravity', channel: 'google-subscription', model: 'gemini-4-hydrogen-medium', thinking: 'medium' },
+      'orchestrator-neon': { harness: 'antigravity', channel: 'google-subscription', model: 'gemini-pro-orchestrator-neon', thinking: '' },
+      'ag-with-child': { harness: 'antigravity', channel: 'google-subscription', model: 'gemini-4-neon-high', thinking: 'high', 'native-profile': 'antigravity-subagents' },
+      sol: { harness: 'codex-pro', channel: 'chatgpt-subscription', model: 'gpt-6.2-sol', thinking: 'high' },
+    },
+  };
+
+  let currentScopeMode = 'subscription-only';
+
+  const ui = await mountWorkbench(
+    t,
+    {
+      query: async input => {
+        if (input.action === 'runs') {
+          return envelope({ protocol: 1, ok: true, cwd: '/repo', runs: [] });
+        }
+        if (input.action === 'config-edit') {
+          const vals = structuredClone(baseValues);
+          vals.subscription = currentScopeMode ? { version: 1, mode: currentScopeMode } : undefined;
+          if (!currentScopeMode) delete vals.subscription;
+          return envelope({
+            protocol: 1,
+            ok: true,
+            cwd: '/repo',
+            editor: {
+              scope: input.editor.scope,
+              target: input.editor.scope === 'global' ? '/home/.flywheel/config.json' : '/repo/flywheel.config.json',
+              revision: `rev-jev-${input.editor.scope}`,
+              values: vals,
+              defaults: { jev: baseValues.jev },
+            },
+          });
+        }
+        if (input.action === 'config') {
+          return envelope({
+            protocol: 1,
+            ok: true,
+            cwd: '/repo',
+            configuration: {
+              source: '/home/.flywheel/config.json',
+              scope: 'global',
+              bindings: [],
+              jev: { enabled: false, backend: 'subscription', profile: 'hydrogen-summary' },
+              jevBinding: {
+                id: 'jev',
+                role: 'jev',
+                harness: 'antigravity',
+                profile: 'hydrogen-summary',
+                model: 'gemini-4-hydrogen-low',
+                thinking: 'low',
+                permissionMode: 'read-only',
+              },
+            },
+          });
+        }
+        return envelope({ protocol: 1, ok: true, cwd: '/repo' });
+      },
+    },
+    { slot: 'settings.section' },
+  );
+
+  // 1. Effective JEV bar displays runtime state and profile dropdown filters to eligible tool-free Antigravity profiles
+  const effectiveBar = ui.container.querySelector('[data-testid="jev-effective-bar"]');
+  assert.ok(effectiveBar);
+  assert.match(effectiveBar.textContent, /已关闭/);
+  assert.match(effectiveBar.textContent, /gemini-4-hydrogen-low/);
+
+  const profileSel = ui.container.querySelector('[data-testid="jev-profile-select"]');
+  const optionValues = [...profileSel.querySelectorAll('option')].map(o => o.value);
+  assert.deepEqual(optionValues, ['hydrogen-local', 'hydrogen-summary']);
+
+  // 2. Toggle JEV ON -> auto-opens budgets & allowed-data panel, edit profile, limits, and data categories
+  const toggleBtn = ui.container.querySelector('[data-testid="jev-enabled-toggle"]');
+  assert.equal(toggleBtn.getAttribute('aria-checked'), 'false');
+  await act(async () => {
+    toggleBtn.click();
+  });
+  assert.equal(toggleBtn.getAttribute('aria-checked'), 'true');
+  assert.ok(ui.container.querySelector('[data-testid="jev-advanced-panel"]'));
+
+  await act(async () => {
+    setControlValue(profileSel, 'hydrogen-local');
+    setControlValue(ui.container.querySelector('[data-testid="jev-max-calls-input"]'), '12');
+    setControlValue(ui.container.querySelector('[data-testid="jev-timeout-ms-input"]'), '15000');
+    setControlValue(ui.container.querySelector('[data-testid="jev-min-applicability-input"]'), '0.85');
+    setControlValue(ui.container.querySelector('[data-testid="jev-min-choice-input"]'), '0.65');
+  });
+
+  // Toggle diff ON and source OFF
+  await act(async () => {
+    ui.container.querySelector('[data-testid="jev-data-diff"]').click();
+    ui.container.querySelector('[data-testid="jev-data-source"]').click();
+  });
+
+  // 3. Switching to HTTP while subscription-only is active blocks save with clear error
+  await act(async () => {
+    ui.container.querySelector('[data-testid="jev-backend-http"]').click();
+  });
+  const saveBtn = [...ui.container.querySelectorAll('button')].find(b => b.textContent.trim() === '保存配置');
+  assert.equal(saveBtn.disabled, true);
+  assert.match(ui.container.querySelector('[data-testid="settings-jev"]').textContent, /subscription-only/);
+
+  // 4. Switching back to subscription clears HTTP fields and allows saving valid subscription JEV config
+  await act(async () => {
+    ui.container.querySelector('[data-testid="jev-backend-subscription"]').click();
+  });
+  assert.equal(
+    saveBtn.disabled,
+    false,
+    `ep=${ui.container.querySelector('[data-testid="jev-endpoint-input"]')?.value} alerts=${[...ui.container.querySelectorAll('[role="alert"]')].map(n => n.textContent).join(' | ')}`,
+  );
+
+  await ui.click('保存配置');
+  const saveSub = ui.actCalls.at(-1);
+  assert.equal(saveSub.action, 'config-save');
+  assert.deepEqual(saveSub.editor.values.jev, {
+    enabled: true,
+    backend: 'subscription',
+    profile: 'hydrogen-summary',
+    'timeout-ms': 15000,
+    'max-calls': 12,
+    'min-applicability': 0.85,
+    'min-choice': 0.65,
+    'allowed-data': ['task-summary', 'diagnostic-facts', 'diff'],
+  });
+  assert.equal('endpoint' in saveSub.editor.values.jev, false);
+  assert.equal('model' in saveSub.editor.values.jev, false);
+  assert.equal('key-env' in saveSub.editor.values.jev, false);
+
+  // 5. In a scope without subscription-only, HTTP backend validates model/endpoint and omits profile
+  currentScopeMode = '';
+  await ui.click('项目配置');
+  await act(async () => {
+    ui.container.querySelector('[data-testid="jev-enabled-toggle"]').click();
+    ui.container.querySelector('[data-testid="jev-backend-http"]').click();
+  });
+  // Empty endpoint blocks save
+  assert.equal(saveBtn.disabled, true);
+
+  await act(async () => {
+    setControlValue(ui.container.querySelector('[data-testid="jev-endpoint-input"]'), 'https://jev.example.test/v1/systemone');
+    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'bad-model');
+  });
+  assert.equal(saveBtn.disabled, true);
+
+  await act(async () => {
+    setControlValue(ui.container.querySelector('[data-testid="jev-model-input"]'), 'jev-1.14.0');
+    setControlValue(ui.container.querySelector('[data-testid="jev-key-env-input"]'), 'CUSTOM_JEV_KEY');
+  });
+  assert.equal(
+    saveBtn.disabled,
+    false,
+    `ep=${ui.container.querySelector('[data-testid="jev-endpoint-input"]')?.value} alerts=${[...ui.container.querySelectorAll('[role="alert"]')].map(n => n.textContent).join(' | ')}`,
+  );
+
+  await ui.click('保存配置');
+  const saveHttp = ui.actCalls.at(-1);
+  assert.equal(saveHttp.editor.values.jev.enabled, true);
+  assert.equal(saveHttp.editor.values.jev.backend, 'http');
+  assert.equal(saveHttp.editor.values.jev.endpoint, 'https://jev.example.test/v1/systemone');
+  assert.equal(saveHttp.editor.values.jev.model, 'jev-1.14.0');
+  assert.equal(saveHttp.editor.values.jev['key-env'], 'CUSTOM_JEV_KEY');
+  assert.equal('profile' in saveHttp.editor.values.jev, false);
+});

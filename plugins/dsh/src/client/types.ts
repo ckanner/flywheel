@@ -306,11 +306,31 @@ export interface ConfigBinding {
   };
 }
 
+export interface JEVConfigSnapshot {
+  enabled?: boolean;
+  backend?: 'subscription' | 'http' | string;
+  profile?: string;
+  endpoint?: string;
+  model?: string;
+  'key-env'?: string;
+  'timeout-ms'?: number;
+  'max-calls'?: number;
+  'min-applicability'?: number;
+  'min-choice'?: number;
+  'allowed-data'?: string[];
+}
+
 export interface ConfigSnapshot {
   source: string;
   scope: string;
   bindings: ConfigBinding[];
   sessions?: Record<string, unknown>;
+  subscription?: {
+    version?: number;
+    mode?: string;
+  };
+  jev?: JEVConfigSnapshot;
+  jevBinding?: ConfigBinding & { bindingSource?: string };
 }
 
 export interface ConfigEditorSnapshot {
