@@ -52,7 +52,12 @@ const CANONICAL_MODELS: Record<string, string[]> = {
   antigravity: [
     'gemini-4-carbon-high',
     'gemini-4-carbon-medium',
+    'gemini-4-carbon-low',
+    'gemini-4-neon-xhigh',
     'gemini-4-neon-high',
+    'gemini-4-neon-medium',
+    'gemini-4-neon-low',
+    'gemini-4-hydrogen-xhigh',
     'gemini-4-hydrogen-high',
     'gemini-4-hydrogen-medium',
     'gemini-4-hydrogen-low',
@@ -74,7 +79,32 @@ const CANONICAL_MODELS: Record<string, string[]> = {
   ],
 };
 
-const THINKING_OPTIONS = ['', 'low', 'medium', 'high', 'max'] as const;
+const THINKING_OPTIONS = ['', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const ANTIGRAVITY_GEMINI4_RE = /^gemini-4-(hydrogen|neon|carbon|argon)-(low|medium|high|xhigh)$/;
+
+function thinkingOptionsFor(harness: string, model: string, currentValue: string): string[] {
+  let base: string[];
+  if (harness === 'antigravity') {
+    if (model.startsWith('gemini-pro-orchestrator')) {
+      base = [''];
+    } else {
+      const m = ANTIGRAVITY_GEMINI4_RE.exec(model);
+      if (m && (m[1] === 'carbon' || m[1] === 'argon')) {
+        base = ['low', 'medium', 'high'];
+      } else {
+        base = ['low', 'medium', 'high', 'xhigh'];
+      }
+    }
+  } else if (harness === 'kimi') {
+    base = ['', 'low', 'high', 'max'];
+  } else {
+    base = [...THINKING_OPTIONS];
+  }
+  if (currentValue && !base.includes(currentValue)) {
+    return [currentValue, ...base];
+  }
+  return base;
+}
 
 const JEV_ALLOWED_DATA_CATEGORIES = [
   'task-summary',
@@ -214,6 +244,25 @@ function applyPatchToInline(
       const npDef = asRecord(nativeProfiles[npName]);
       if (npDef.harness && npDef.harness !== patch.harness) {
         delete merged['native-profile'];
+      }
+    }
+  }
+  // Keep Antigravity Gemini 4 model suffix and thinking level synchronized with Go ValidateAntigravityBinding.
+  if (merged.harness === 'antigravity') {
+    const modelStr = typeof merged.model === 'string' ? merged.model : '';
+    if (modelStr.startsWith('gemini-pro-orchestrator')) {
+      merged.thinking = '';
+    } else if (patch.model !== undefined && patch.thinking === undefined) {
+      const m = ANTIGRAVITY_GEMINI4_RE.exec(modelStr);
+      if (m) merged.thinking = m[2];
+    } else if (patch.thinking !== undefined && patch.model === undefined) {
+      const m = ANTIGRAVITY_GEMINI4_RE.exec(modelStr);
+      const nextEffort = String(patch.thinking);
+      if (m && ['low', 'medium', 'high', 'xhigh'].includes(nextEffort)) {
+        const family = m[1];
+        if (!(nextEffort === 'xhigh' && (family === 'carbon' || family === 'argon'))) {
+          merged.model = `gemini-4-${family}-${nextEffort}`;
+        }
       }
     }
   }
@@ -1418,23 +1467,30 @@ export function SettingsPage({
                         </datalist>
                       </td>
                       <td>
-                        <select
-                          className={styles.matrixSelect}
-                          style={{ minWidth: 82 }}
-                          aria-label={`${spec.id} thinking`}
-                          data-testid={`role-thinking-${spec.id}`}
-                          value={resolved.thinking}
-                          disabled={fieldsDisabled}
-                          onChange={e =>
-                            setDraft(d => applyStageFieldChange(d, spec, { thinking: e.target.value }))
-                          }
-                        >
-                          {THINKING_OPTIONS.map(level => (
-                            <option key={level || 'default'} value={level}>
-                              {level || t('settings.thinking.default')}
-                            </option>
-                          ))}
-                        </select>
+                        {(() => {
+                          const thinkingChoices = thinkingOptionsFor(resolved.harness, resolved.model, resolved.thinking);
+                          const isOrchestratorFixed =
+                            resolved.harness === 'antigravity' && resolved.model.startsWith('gemini-pro-orchestrator');
+                          return (
+                            <select
+                              className={styles.matrixSelect}
+                              style={{ minWidth: 82 }}
+                              aria-label={`${spec.id} thinking`}
+                              data-testid={`role-thinking-${spec.id}`}
+                              value={resolved.thinking}
+                              disabled={fieldsDisabled || isOrchestratorFixed}
+                              onChange={e =>
+                                setDraft(d => applyStageFieldChange(d, spec, { thinking: e.target.value }))
+                              }
+                            >
+                              {thinkingChoices.map(level => (
+                                <option key={level || 'default'} value={level}>
+                                  {level || t('settings.thinking.default')}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </td>
                       <td>
                         {isReadOnly ? (

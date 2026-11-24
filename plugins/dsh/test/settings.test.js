@@ -173,6 +173,27 @@ test('SettingsPage edits real Go-resolved inline loops, routes, planning refs, s
   assert.match(health.textContent, /Ready/);
 
   // 3. Switch loops.design-plan profile -> opus-plan, then override model & thinking inline (without mutating other stages)
+  // Also verify per-harness thinking choices (carbon has no xhigh/max; codex-pro & claude-code-pro include xhigh; neon auto-syncs -xhigh suffix; kimi omits xhigh)
+  const carbonThinkingOpts = [...thinkingSel.querySelectorAll('option')].map(o => o.value);
+  assert.deepEqual(carbonThinkingOpts, ['low', 'medium', 'high']);
+
+  const designReviewThinking = ui.container.querySelector('[data-testid="role-thinking-loops.design-review"]');
+  assert.ok([...designReviewThinking.querySelectorAll('option')].map(o => o.value).includes('xhigh'));
+  await act(async () => {
+    setControlValue(designReviewThinking, 'xhigh');
+  });
+  assert.equal(designReviewThinking.value, 'xhigh');
+
+  const planThinking = ui.container.querySelector('[data-testid="role-thinking-loops.plan"]');
+  const planModel = ui.container.querySelector('[data-testid="role-model-loops.plan"]');
+  await act(async () => {
+    setControlValue(planThinking, 'xhigh');
+  });
+  assert.equal(planModel.value, 'gemini-4-neon-xhigh');
+
+  const gardenThinking = ui.container.querySelector('[data-testid="role-thinking-loops.garden"]');
+  assert.deepEqual([...gardenThinking.querySelectorAll('option')].map(o => o.value), ['', 'low', 'high', 'max']);
+
   await act(async () => {
     setControlValue(profileSel, 'opus-plan');
   });
@@ -205,6 +226,9 @@ test('SettingsPage edits real Go-resolved inline loops, routes, planning refs, s
   assert.equal(saveAct.editor.values.loops['design-plan'].channel, 'claude-native');
   assert.equal(saveAct.editor.values.loops['design-plan'].model, 'claude-opus-5-5-custom');
   assert.equal(saveAct.editor.values.loops['design-plan'].thinking, 'max');
+  assert.equal(saveAct.editor.values.loops['design-review'].thinking, 'xhigh');
+  assert.equal(saveAct.editor.values.loops.plan.model, 'gemini-4-neon-xhigh');
+  assert.equal(saveAct.editor.values.loops.plan.thinking, 'xhigh');
   assert.equal(saveAct.editor.values.routes.default.harness, 'codex-pro');
   assert.equal(saveAct.editor.values.routes.default.model, 'gpt-6.2-sol');
   assert.equal(saveAct.editor.values['execution-policy'].routes.default.initial, 'sol');

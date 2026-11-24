@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.39.7 — 2026-11-24 (Per-Harness `xhigh` Thinking & Antigravity Slug Sync)
+
+- **Add `xhigh` thinking option & per-harness effort filtering in Settings**: expose `xhigh` for Codex Pro, Claude Code Pro, and Antigravity Gemini 4 Neon/Hydrogen in `SettingsPage`, constrain Carbon/Argon to `low`/`medium`/`high`, lock Antigravity Orchestrator models to native fixed effort (`""`), and constrain Kimi to `low`/`high`/`max`.
+- **Automatic Antigravity model-suffix ↔ thinking sync**: changing thinking level on `gemini-4-(hydrogen|neon|carbon|argon)-*` automatically keeps the model slug suffix aligned with Go's `ValidateAntigravityBinding` contract (and vice versa), and adds `gemini-4-neon-xhigh` / `gemini-4-hydrogen-xhigh` to the model suggestions.
+
 ## 0.39.6 — 2026-11-24 (JEV HTTP Independence + Gateway Alias + Switch Polish)
 
 - **Allow independent HTTP JEV under `subscription-only`**: decouple `jev.backend = "http"` from the workflow-stage `subscription-only` lock so users can keep all Plan/Execute/Review stages strictly on subscriptions while routing bounded JEV decisions to their own System One HTTP endpoint (e.g. `https://merouter.play.one2x.ai/v1/systemone`).
