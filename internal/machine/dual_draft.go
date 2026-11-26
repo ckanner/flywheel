@@ -2,13 +2,16 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/ckanner/flywheel/internal/config"
 	"github.com/ckanner/flywheel/internal/drivers"
+	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/prompts"
@@ -16,8 +19,9 @@ import (
 )
 
 var (
-	mkdirDualDraftDir  = os.MkdirAll
-	writeDualDraftFile = os.WriteFile
+	mkdirDualDraftDir   = os.MkdirAll
+	writeDualDraftFile  = os.WriteFile
+	errDualDraftPartial = errors.New("dual-draft partial completion requires user decision")
 )
 
 type dualDraftModelMeta struct {
@@ -33,14 +37,28 @@ type dualDraftMeta struct {
 	Secondary     dualDraftModelMeta `json:"secondary"`
 	Synthesizer   dualDraftModelMeta `json:"synthesizer"`
 	CreatedAt     string             `json:"createdAt"`
+	Partial       bool               `json:"partial,omitempty"`
+	CompletedSide string             `json:"completedSide,omitempty"`
+	FailedSide    string             `json:"failedSide,omitempty"`
+	FailureCode   string             `json:"failureCode,omitempty"`
+	FailureError  string             `json:"failureError,omitempty"`
+}
+
+type dualDraftPartialPayload struct {
+	Revision      int    `json:"revision"`
+	InputRevision int    `json:"inputRevision"`
+	CompletedSide string `json:"completedSide"`
+	Invocation    string `json:"invocation"`
+	Text          string `json:"text"`
 }
 
 func (c *Context) shouldDualDraftDesign(r *planning.Request, reviewer bool) bool {
 	d := c.Config.Planning.DualDraft
 	return !reviewer && designRequest(*r) &&
+		r.DraftMode != "single" &&
 		planning.DesignGranularity(c.State.Planning, *r) != "compact" &&
 		r.Rounds == 1 && d != nil && d.Enabled &&
-		!c.sessionReplay("design-plan", "planning:"+r.ID)
+		!c.sessionReplay("design-plan", planningSessionScope(r))
 }
 
 func (c *Context) dualDraftProfileBinding(profileName string) (fallback.Binding, error) {
@@ -94,6 +112,32 @@ func (c *Context) persistDualDraftCandidates(meta dualDraftMeta, primaryText, se
 	return nil
 }
 
+func (c *Context) persistDualDraftPartial(payload dualDraftPartialPayload) error {
+	dir := filepath.Join(c.TaskDir, "design-candidates")
+	raw, _ := json.MarshalIndent(payload, "", "  ")
+	return writeDualDraftFile(filepath.Join(dir, fmt.Sprintf("rev-%06d-partial.json", payload.Revision)), raw, 0o600)
+}
+
+func (c *Context) loadMatchingDualDraftPartial(revision, inputRevision int) (dualDraftPartialPayload, bool) {
+	path := filepath.Join(c.TaskDir, "design-candidates", fmt.Sprintf("rev-%06d-partial.json", revision))
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return dualDraftPartialPayload{}, false
+	}
+	var payload dualDraftPartialPayload
+	if json.Unmarshal(raw, &payload) != nil || payload.Revision != revision || payload.InputRevision != inputRevision || strings.TrimSpace(payload.Text) == "" || payload.Invocation == "" {
+		return dualDraftPartialPayload{}, false
+	}
+	return payload, true
+}
+
+func dualDraftFailureDetail(code errs.ErrorCode, res drivers.Result) string {
+	if res.ErrorMessage != nil && strings.TrimSpace(*res.ErrorMessage) != "" {
+		return fmt.Sprintf("%s: %s", code, strings.TrimSpace(*res.ErrorMessage))
+	}
+	return string(code)
+}
+
 func (c *Context) planningCallArgs(r *planning.Request, role, scope string, b fallback.Binding, prompt string) drivers.CallArgs {
 	return drivers.CallArgs{
 		Subscription: c.Config.Subscription,
@@ -134,6 +178,7 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 	secondaryPrompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) +
 		prompts.BuildPlanningPrompt(c.State.Planning, *r, false, map[string]string{}, prompts.PlanningPromptOptions{
 			NativeAgents: secondaryBinding.NativeProfile != "" && secondaryBinding.Harness != "antigravity",
+			TaskDir:      c.TaskDir,
 		})
 
 	var clockMu sync.Mutex
@@ -189,11 +234,18 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 	if err != nil || beforeGuard != afterDrafts {
 		return drivers.Result{}, role, "", fmt.Errorf("planning invocation changed files outside its proposal; preserved for review: %v", err)
 	}
-	if planningResultCode(primaryRes) != "" || primaryRes.Cancelled {
+	if primaryRes.Cancelled {
 		return primaryRes, role, "", nil
 	}
-	if planningResultCode(secondaryRes) != "" || secondaryRes.Cancelled {
+	if secondaryRes.Cancelled {
 		return secondaryRes, role, "", nil
+	}
+	primaryCode := planningResultCode(primaryRes)
+	secondaryCode := planningResultCode(secondaryRes)
+	primaryOK := primaryCode == ""
+	secondaryOK := secondaryCode == ""
+	if !primaryOK && !secondaryOK {
+		return primaryRes, role, "", nil
 	}
 
 	primaryProfile := firstNonEmpty(c.Config.ProfileRefs["loops.design-plan"], "design-plan")
@@ -205,6 +257,33 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 		Synthesizer:   dualDraftModelMeta{Profile: synthName, Harness: synthBinding.Harness, Model: synthBinding.Model},
 		CreatedAt:     c.nowISO(),
 	}
+	if primaryOK != secondaryOK {
+		completedSide, failedSide, completedRes, failCode, failRes := "primary", "secondary", primaryRes, secondaryCode, secondaryRes
+		primaryMD, secondaryMD := primaryRes.Text, ""
+		if secondaryOK {
+			completedSide, failedSide, completedRes, failCode, failRes = "secondary", "primary", secondaryRes, primaryCode, primaryRes
+			primaryMD, secondaryMD = "", secondaryRes.Text
+		}
+		meta.Partial = true
+		meta.CompletedSide = completedSide
+		meta.FailedSide = failedSide
+		meta.FailureCode = string(failCode)
+		meta.FailureError = dualDraftFailureDetail(failCode, failRes)
+		if err := c.persistDualDraftCandidates(meta, primaryMD, secondaryMD); err != nil {
+			return drivers.Result{}, role, "", fmt.Errorf("persist partial design candidate: %w", err)
+		}
+		partialInv := "planning-partial-" + sessionHash([]any{r.ID, r.Rounds, r.Retries, completedSide})[:24]
+		if err := c.persistDualDraftPartial(dualDraftPartialPayload{
+			Revision:      meta.Revision,
+			InputRevision: meta.InputRevision,
+			CompletedSide: completedSide,
+			Invocation:    partialInv,
+			Text:          completedRes.Text,
+		}); err != nil {
+			return drivers.Result{}, role, "", fmt.Errorf("persist partial design payload: %w", err)
+		}
+		return drivers.Result{}, role, "", fmt.Errorf("%w: 已完成 %s 稿，%s 稿失败（%s）；请选择「重试完整双稿」或「仅用已完成单稿继续审查」。", errDualDraftPartial, completedSide, failedSide, meta.FailureError)
+	}
 	if err := c.persistDualDraftCandidates(meta, primaryRes.Text, secondaryRes.Text); err != nil {
 		return drivers.Result{}, role, "", fmt.Errorf("persist design candidates: %w", err)
 	}
@@ -214,9 +293,10 @@ func (c *Context) invokeDualDraftDesign(r *planning.Request, role, scope, resear
 			c.State.Planning, *r,
 			prompts.DesignDraftInput{Profile: primaryProfile, Harness: primaryBinding.Harness, Model: primaryBinding.Model, Text: primaryRes.Text},
 			prompts.DesignDraftInput{Profile: secondaryName, Harness: secondaryBinding.Harness, Model: secondaryBinding.Model, Text: secondaryRes.Text},
-			prompts.PlanningPromptOptions{NativeAgents: synthBinding.NativeProfile != "" && synthBinding.Harness != "antigravity"},
+			prompts.PlanningPromptOptions{NativeAgents: synthBinding.NativeProfile != "" && synthBinding.Harness != "antigravity", TaskDir: c.TaskDir},
 		)
-	synthRes, err := c.invokeScoped(role, scope, c.planningCallArgs(r, role, scope, synthBinding, synthPrompt), driver.Plan)
+	synthArgs := c.planningCallArgs(r, role, scope+":synthesize", synthBinding, synthPrompt)
+	synthRes, err := c.invokeScoped(role, scope, synthArgs, driver.Plan)
 	if err != nil {
 		return synthRes, role, "", err
 	}

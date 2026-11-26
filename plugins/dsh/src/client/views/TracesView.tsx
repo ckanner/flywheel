@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import { MarkdownView } from '../components/MarkdownView.tsx';
 import type { ClientRuntime, UIWorkspaceService } from '../context.ts';
+import { formatModelBadge } from '../planning.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { TraceDetail, TraceSummary, Translate } from '../types.ts';
 
@@ -143,8 +144,11 @@ export function TraceStreamPanel({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {trace.harness && <span className={styles.pill}>{trace.harness}</span>}
-            {trace.model && <span className={`${styles.pill} ${styles.pillPurple}`}>{trace.model}</span>}
-            {trace.thinking && <span className={styles.pill}>{trace.thinking}</span>}
+            {trace.model && (
+              <span className={`${styles.pill} ${styles.pillPurple}`} title={trace.model}>
+                {formatModelBadge(trace.model, trace.thinking, isZh)}
+              </span>
+            )}
             {durationText && <span className={styles.pill}>{durationText}</span>}
             {onOpenFull && (
               <button type="button" className={`${styles.btn} ${styles.btnSm}`} onClick={onOpenFull}>
@@ -478,8 +482,8 @@ export function TracesView({
                     </div>
                   )}
                   <div className={styles.traceItemMeta}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {tr.model || tr.harness || '—'}
+                    <span title={tr.model || undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {formatModelBadge(tr.model, tr.thinking, isZh) || tr.harness || '—'}
                     </span>
                     {tr.exitCode !== null && tr.exitCode !== undefined && tr.exitCode !== 0 && (
                       <span style={{ color: 'var(--fw-danger)', fontWeight: 600 }}>exit {tr.exitCode}</span>

@@ -1,9 +1,11 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, join, sep } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, isAbsolute, join, sep } from 'node:path';
 
 const MAX_SESSION_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_BLOCKS = 240;
-const MAX_BLOCK_CHARS = 12000;
+const MAX_BLOCK_CHARS = 262144;
+const MAX_TOOL_CHARS = 16000;
 const MAX_RAW_TAIL_LINES = 80;
 const SAFE_SESSION_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
 
@@ -99,16 +101,21 @@ export function buildResumeInfo(harness, sessionId, cwd) {
 function pushBlock(blocks, block) {
   if (!block || blocks.length >= MAX_BLOCKS) return;
   const text = typeof block.text === 'string' ? block.text : '';
+  const limit =
+    block.kind === 'assistant' || block.kind === 'thinking' || block.kind === 'user_prompt'
+      ? MAX_BLOCK_CHARS
+      : MAX_TOOL_CHARS;
   const prev = blocks[blocks.length - 1];
-  // Coalesce consecutive thinking or assistant chunks into readable blocks.
+  // Coalesce consecutive thinking or assistant chunks verbatim into continuous prose.
   if (
     prev &&
     prev.kind === block.kind &&
     (block.kind === 'thinking' || block.kind === 'assistant') &&
-    prev.title === block.title
+    prev.title === block.title &&
+    !block.separate
   ) {
-    const sepStr = prev.text.endsWith('\n') || text.startsWith('\n') || text.length < 40 ? '' : '\n';
-    prev.text = truncateText(prev.text + sepStr + text, MAX_BLOCK_CHARS);
+    const sepStr = block.joinNewline && prev.text && !prev.text.endsWith('\n') && !text.startsWith('\n') ? '\n' : '';
+    prev.text = truncateText(prev.text + sepStr + text, limit);
     if (block.ts) prev.ts = block.ts;
     return;
   }
@@ -119,8 +126,375 @@ function pushBlock(blocks, block) {
   }
   blocks.push({
     ...block,
-    text: truncateText(text, MAX_BLOCK_CHARS),
+    text: truncateText(text, limit),
   });
+}
+
+function recordActivityStep(steps, label) {
+  if (!label) return;
+  const prev = steps[steps.length - 1];
+  if (prev && prev.label === label) {
+    prev.count += 1;
+    return;
+  }
+  if (steps.length < 60) {
+    steps.push({ label, count: 1 });
+  }
+}
+
+/**
+ * Incrementally extracts a human-readable Markdown string from structured
+ * planning/review JSON output (e.g. `{"document": "# Title\n..."}`) even while
+ * the JSON is still streaming and not yet closed.
+ */
+export function unwrapStreamingContractMarkdown(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trimStart();
+
+  // Escape-free Multi-File Plan Protocol (`<<<FLYWHEEL_FILE path="...">>> ... <<<END_FLYWHEEL_FILE>>>`)
+  if (trimmed.includes('<<<FLYWHEEL_FILE path="') || trimmed.includes('<<<FLYWHEEL_PLAN_META>>>')) {
+    const firstTagIdx = trimmed.indexOf('<<<FLYWHEEL_');
+    const pre = firstTagIdx > 0 ? trimmed.slice(0, firstTagIdx).trim() : '';
+    const entries = [];
+    let streaming = false;
+    const fileStartTag = '<<<FLYWHEEL_FILE path="';
+    const fileEndTag = '<<<END_FLYWHEEL_FILE>>>';
+    let cursor = Math.max(0, firstTagIdx);
+    while (cursor < trimmed.length) {
+      const startIdx = trimmed.indexOf(fileStartTag, cursor);
+      if (startIdx < 0) break;
+      const pathStart = startIdx + fileStartTag.length;
+      const pathEnd = trimmed.indexOf('">>>', pathStart);
+      if (pathEnd < 0) {
+        streaming = true;
+        break;
+      }
+      const filePath = trimmed.slice(pathStart, pathEnd).trim();
+      let contentStart = pathEnd + 4;
+      if (trimmed[contentStart] === '\r') contentStart += 1;
+      if (trimmed[contentStart] === '\n') contentStart += 1;
+      const endIdx = trimmed.indexOf(fileEndTag, contentStart);
+      if (endIdx < 0) {
+        streaming = true;
+        const partialContent = trimmed.slice(contentStart);
+        if (filePath && partialContent.trim()) entries.push([filePath, partialContent]);
+        break;
+      }
+      const content = trimmed.slice(contentStart, endIdx).replace(/\r?\n$/, '');
+      if (filePath) entries.push([filePath, content]);
+      cursor = endIdx + fileEndTag.length;
+    }
+    if (entries.length > 0) {
+      const md = formatContractFilesMarkdown(entries, '', streaming);
+      return { markdown: pre ? `${pre}\n\n${md}` : md, rawJson: raw };
+    }
+  }
+
+  let preamble = '';
+  let body = trimmed;
+  if (body.startsWith('```')) {
+    const nl = body.indexOf('\n');
+    if (nl < 0) return null;
+    body = body.slice(nl + 1).trimStart();
+  }
+  if (!body.startsWith('{')) {
+    // Handle models that emit a brief natural-language preamble before the JSON contract.
+    const embed = /\{\s*"(document|summary)"\s*:/.exec(body);
+    if (!embed) return null;
+    preamble = body.slice(0, embed.index).replace(/```(?:json)?\s*$/i, '').trim();
+    body = body.slice(embed.index);
+  }
+  const withPreamble = md => (preamble ? `${preamble}\n\n${md}` : md);
+
+  // Fast path: complete valid JSON object.
+  try {
+    const clean = body.replace(/\n?```\s*$/, '');
+    const parsed = JSON.parse(clean);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (typeof parsed.document === 'string' && parsed.document.trim()) {
+        return { markdown: withPreamble(parsed.document), rawJson: raw };
+      }
+      // Stage 0 clarification contract JSON -> clean readable Markdown
+      if (typeof parsed['needs-clarification'] === 'boolean' && (typeof parsed.summary === 'string' || Array.isArray(parsed.questions))) {
+        const lines = [];
+        if (parsed.summary) lines.push(parsed.summary);
+        if (Array.isArray(parsed['suggested-gates']) && parsed['suggested-gates'].length > 0) {
+          lines.push('### 建议可量化质量门禁');
+          for (const g of parsed['suggested-gates']) {
+            if (typeof g === 'string' && g.trim()) lines.push(`- ${g.trim()}`);
+          }
+        }
+        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          lines.push('### 待澄清问题');
+          parsed.questions.forEach((q, idx) => {
+            if (!q || typeof q !== 'object') return;
+            lines.push(`#### ${idx + 1}. ${q.title || q.id || '问题'}`);
+            if (q.rationale) lines.push(q.rationale);
+            if (Array.isArray(q.options)) {
+              for (const opt of q.options) {
+                const isRec = q.recommended && opt === q.recommended;
+                lines.push(`- ${isRec ? '**[推荐]** ' : ''}${opt}`);
+              }
+            }
+          });
+        }
+        if (lines.length > 0) return { markdown: withPreamble(lines.join('\n\n')), rawJson: raw };
+      }
+      // Stage 1.5 UI/UX prototype contract JSON -> clean readable Markdown
+      if (typeof parsed.html === 'string' && parsed.html.trim()) {
+        const lines = [];
+        if (parsed.title) lines.push(`### ${parsed.title}`);
+        if (parsed.summary) lines.push(parsed.summary);
+        if (parsed['design-tokens'] && typeof parsed['design-tokens'] === 'object') {
+          lines.push('#### Design Tokens');
+          for (const [k, v] of Object.entries(parsed['design-tokens'])) {
+            lines.push(`- \`${k}\`: \`${v}\``);
+          }
+        }
+        lines.push(`*已生成完整自包含交互原型 HTML（${parsed.html.length} 字符），可在主流程卡片中直接预览并审批。*`);
+        return { markdown: withPreamble(lines.join('\n\n')), rawJson: raw };
+      }
+      if (typeof parsed.summary === 'string' && parsed.summary.trim() && (parsed.verdict || Array.isArray(parsed.findings))) {
+        const lines = [];
+        const metaParts = [];
+        if (parsed.verdict) metaParts.push(`**审查结论**: \`${parsed.verdict}\``);
+        if (parsed['scope-verdict']) metaParts.push(`**范围判定**: \`${parsed['scope-verdict']}\``);
+        if (metaParts.length > 0) lines.push(metaParts.join(' · '));
+        lines.push(parsed.summary);
+        if (Array.isArray(parsed.findings) && parsed.findings.length > 0) {
+          lines.push(`### 审查发现 (${parsed.findings.length} 项)`);
+          for (const f of parsed.findings) {
+            if (!f || typeof f !== 'object') continue;
+            const idPart = f.id ? `\`${f.id}\` ` : '';
+            const sev = f.severity ? `[${f.severity}] ` : '';
+            const locPart = f.location ? `(\`${f.location}\`) ` : '';
+            const head = f.title || f.target || f.category || f.id || '';
+            const detail = f.summary || f.impact || f.evidence || '';
+            const fix = f.recommendation || f.suggestion || f.fix || f['suggested-fix'] || '';
+            let bullet = `- ${idPart}${sev}${locPart}**${head}**${detail ? `：${detail}` : ''}`;
+            if (fix) bullet += `\n  - **建议修复**：${fix}`;
+            lines.push(bullet);
+          }
+        }
+        return { markdown: withPreamble(lines.join('\n\n')), rawJson: raw };
+      }
+      // Stage 3 packet code-review / judge verdict JSON (`{"verdict": "pass"|"return"|"verification-gap", "score": 0.94, "reasons": [...], "advisory": [...]}`)
+      if (typeof parsed.verdict === 'string' && Array.isArray(parsed.reasons)) {
+        const lines = [];
+        const scorePart = typeof parsed.score === 'number' ? ` · **评分**: \`${parsed.score}\`` : '';
+        lines.push(`**审查结论**: \`${parsed.verdict}\`${scorePart}`);
+        if (parsed.reasons.length > 0) {
+          lines.push(`### 审查意见 (${parsed.reasons.length} 项)`);
+          for (const r of parsed.reasons) {
+            if (typeof r === 'string' && r.trim()) lines.push(`- ${r.trim()}`);
+          }
+        }
+        if (Array.isArray(parsed.advisory) && parsed.advisory.length > 0) {
+          lines.push(`### 建议改进 (${parsed.advisory.length} 项)`);
+          for (const adv of parsed.advisory) {
+            if (typeof adv === 'string' && adv.trim()) lines.push(`- ${adv.trim()}`);
+          }
+        }
+        return { markdown: withPreamble(lines.join('\n\n')), rawJson: raw };
+      }
+      // Stage 2 milestone plan contract JSON (`{"files": {"spec.md": "...", "task-packet-*.md": "..."}}`)
+      if (parsed.files && typeof parsed.files === 'object' && !Array.isArray(parsed.files)) {
+        const fileEntries = Object.entries(parsed.files).filter(([, v]) => typeof v === 'string' && v.trim());
+        if (fileEntries.length > 0) {
+          return {
+            markdown: withPreamble(formatContractFilesMarkdown(fileEntries, parsed.summary, false)),
+            rawJson: raw,
+          };
+        }
+      }
+    }
+  } catch {
+    // Still streaming incomplete JSON — fall through to incremental string unescaper.
+  }
+
+  // Incremental / fault-tolerant unwrapper for `{"files": {"spec.md": "...", ...}}`
+  // so streaming or mildly malformed (e.g. unescaped inline quote) plan outputs still
+  // render cleanly as YAML + Markdown instead of a raw 100KB JSON blob.
+  const streamedFiles = extractStreamingContractFiles(body);
+  if (streamedFiles && streamedFiles.entries.length > 0) {
+    return {
+      markdown: withPreamble(formatContractFilesMarkdown(streamedFiles.entries, streamedFiles.summary, true)),
+      rawJson: raw,
+    };
+  }
+
+  const keyMatch = /"(document|summary)"\s*:\s*"/.exec(body);
+  if (!keyMatch) return null;
+  let i = keyMatch.index + keyMatch[0].length;
+  let out = '';
+  while (i < body.length) {
+    const ch = body[i];
+    if (ch === '"') break;
+    if (ch === '\\') {
+      if (i + 1 >= body.length) break;
+      const next = body[i + 1];
+      if (next === 'n') { out += '\n'; i += 2; continue; }
+      if (next === 'r') { out += '\r'; i += 2; continue; }
+      if (next === 't') { out += '\t'; i += 2; continue; }
+      if (next === '"' || next === '\\' || next === '/') { out += next; i += 2; continue; }
+      if (next === 'u' && i + 5 < body.length) {
+        const hex = body.slice(i + 2, i + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(Number.parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+      }
+      if (next === 'u') break; // incomplete \uXXXX at tail of stream
+      out += next;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  if (!out.trim()) return null;
+  return { markdown: withPreamble(out), rawJson: raw };
+}
+
+function formatContractFilesMarkdown(fileEntries, summary, streaming = false) {
+  const lines = [];
+  if (typeof summary === 'string' && summary.trim()) {
+    lines.push(summary.trim());
+  }
+  lines.push(
+    streaming
+      ? `### 实施计划拆解产物（已解析 ${fileEntries.length} 个文件 · 流式/容错视图）`
+      : `### 实施计划拆解产物（共 ${fileEntries.length} 个文件）`,
+  );
+  lines.push(fileEntries.map(([name]) => `- \`${name}\``).join('\n'));
+  for (const [name, content] of fileEntries) {
+    let formatted = String(content).trim();
+    if (/\.(?:mjs|cjs|js|ts|tsx)$/i.test(name)) {
+      formatted = `\`\`\`javascript\n${formatted}\n\`\`\``;
+    } else if (/\.sh$/i.test(name)) {
+      formatted = `\`\`\`bash\n${formatted}\n\`\`\``;
+    } else {
+      const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(formatted);
+      if (fm) {
+        formatted = `\`\`\`yaml\n${fm[1].trim()}\n\`\`\`\n\n${fm[2].trim()}`;
+      } else if (/^---\r?\n/.test(formatted)) {
+        formatted = `\`\`\`yaml\n${formatted.replace(/^---\r?\n/, '')}\n\`\`\``;
+      }
+    }
+    lines.push(`---\n\n#### \`${name}\`\n\n${formatted}`);
+  }
+  return lines.join('\n\n');
+}
+
+function extractStreamingContractFiles(body) {
+  const filesMatch = /"files"\s*:\s*\{/.exec(body);
+  if (!filesMatch) return null;
+  let pos = filesMatch.index + filesMatch[0].length;
+  const entries = [];
+  const nextEntryRe = /^\s*,\s*"([^"\r\n\\]{1,160}\.[A-Za-z0-9]{1,10})"\s*:\s*"/;
+  const firstEntryRe = /^\s*"([^"\r\n\\]{1,160})"\s*:\s*"/;
+  const endFilesRe = /^\s*\}\s*(?:$|\}|,\s*"[A-Za-z0-9_-]+"\s*:)/;
+
+  const first = firstEntryRe.exec(body.slice(pos));
+  if (!first) return null;
+  let currentKey = first[1];
+  const seenKeys = new Set([currentKey]);
+  pos += first[0].length;
+
+  while (pos <= body.length && entries.length < 64) {
+    let out = '';
+    let nextKey = null;
+    let doneFiles = false;
+    while (pos < body.length) {
+      const ch = body[pos];
+      if (ch === '"') {
+        const rest = body.slice(pos + 1);
+        const nextMatch = nextEntryRe.exec(rest);
+        if (nextMatch && !seenKeys.has(nextMatch[1])) {
+          nextKey = nextMatch[1];
+          seenKeys.add(nextKey);
+          pos = pos + 1 + nextMatch[0].length;
+          break;
+        }
+        if (endFilesRe.test(rest)) {
+          doneFiles = true;
+          pos += 1;
+          break;
+        }
+        // Unescaped literal quote inside malformed file content — preserve and continue scanning.
+        out += '"';
+        pos += 1;
+        continue;
+      }
+      if (ch === '\\') {
+        if (pos + 1 >= body.length) {
+          pos = body.length;
+          break;
+        }
+        const next = body[pos + 1];
+        if (next === 'n') { out += '\n'; pos += 2; continue; }
+        if (next === 'r') { out += '\r'; pos += 2; continue; }
+        if (next === 't') { out += '\t'; pos += 2; continue; }
+        if (next === '"' || next === '\\' || next === '/') { out += next; pos += 2; continue; }
+        if (next === 'u' && pos + 5 < body.length) {
+          const hex = body.slice(pos + 2, pos + 6);
+          if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+            out += String.fromCharCode(Number.parseInt(hex, 16));
+            pos += 6;
+            continue;
+          }
+        }
+        if (next === 'u') {
+          pos = body.length;
+          break;
+        }
+        out += next;
+        pos += 2;
+        continue;
+      }
+      out += ch;
+      pos += 1;
+    }
+    if (out.trim()) {
+      entries.push([currentKey, out]);
+    }
+    if (nextKey) {
+      currentKey = nextKey;
+      continue;
+    }
+    if (doneFiles || pos >= body.length) break;
+  }
+  return entries.length > 0 ? { entries, summary: '' } : null;
+}
+
+function finalizeParsedBlocks(blocks, activitySteps) {
+  const result = [];
+  const hasRichTrace = blocks.some(b => b.kind === 'thinking' || b.kind === 'tool_call' || b.kind === 'tool_result');
+  if (activitySteps.length > 0 && !hasRichTrace) {
+    const items = activitySteps.map(s => (s.count > 1 ? `${s.label} × ${s.count}` : s.label));
+    result.push({
+      kind: 'steps',
+      title: 'activity',
+      text: items.join(' · '),
+      items,
+    });
+  }
+  for (const b of blocks) {
+    if (b.kind === 'assistant') {
+      const unwrapped = unwrapStreamingContractMarkdown(b.text);
+      if (unwrapped) {
+        result.push({
+          ...b,
+          text: unwrapped.markdown,
+          rawJson: unwrapped.rawJson,
+        });
+        continue;
+      }
+    }
+    result.push(b);
+  }
+  return result;
 }
 
 function extractContentParts(content) {
@@ -129,7 +503,122 @@ function extractContentParts(content) {
   return content.filter(part => part && typeof part === 'object');
 }
 
-function parseJsonLine(rawLine, ts, blocks, sessionRef) {
+function unquoteJsonScalar(value) {
+  if (typeof value !== 'string') return value;
+  const t = value.trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function truncateInline(text, limit = 76) {
+  if (typeof text !== 'string') return '';
+  const single = text.replace(/\s+/g, ' ').trim();
+  if (single.length <= limit) return single;
+  return single.slice(0, limit - 1) + '…';
+}
+
+function formatToolCallTitle(name, rawArgs) {
+  const base = String(name || 'tool');
+  let args = rawArgs;
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      // Parse Codex JS REPL `exec` tool snippets into clean human-readable labels.
+      if (base === 'exec') {
+        const cmds = [];
+        for (const m of args.matchAll(/exec_command\s*\(\s*\{\s*cmd\s*:\s*"((?:\\.|[^"\\])+)"/g)) {
+          cmds.push(m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\s+/g, ' ').trim());
+        }
+        if (cmds.length === 1) return `Shell · ${truncateInline(cmds[0], 78)}`;
+        if (cmds.length > 1) return `Shell (×${cmds.length}) · ${truncateInline(cmds[0], 64)}`;
+        // Handle `Promise.allSettled(["git rev-parse...", ...].map(c => tools.exec_command({cmd: c})))`
+        if (/exec_command\b/.test(args)) {
+          const arrMatch = /\[\s*"((?:\\.|[^"\\])+)"/.exec(args);
+          if (arrMatch) {
+            const firstCmd = arrMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\s+/g, ' ').trim();
+            return `Shell (批量) · ${truncateInline(firstCmd, 66)}`;
+          }
+          return 'Shell · batch exec_command';
+        }
+        const webMatches = [...args.matchAll(/web__run\b[\s\S]*?q\s*:\s*"((?:\\.|[^"\\])+)"/g)];
+        if (webMatches.length > 0) {
+          const q = webMatches[0][1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+          return `Web Search · ${truncateInline(q, 72)}`;
+        }
+        if (/apply_patch\b/.test(args)) return 'Apply Patch';
+      }
+      const compact = truncateInline(args, 72);
+      return compact ? `${base} · ${compact}` : base;
+    }
+  }
+  if (!args || typeof args !== 'object') return base;
+  const pick = key => {
+    const v = unquoteJsonScalar(args[key]);
+    return typeof v === 'string' && v.trim() ? v.trim() : '';
+  };
+  const summary = pick('toolSummary') || pick('description');
+  if (summary) return `${base} · ${truncateInline(summary, 72)}`;
+  const filePath = pick('Path') || pick('file_path') || pick('path') || pick('AbsolutePath') || pick('TargetFile') || pick('SearchPath');
+  if (filePath) return `${base} · ${basename(filePath) || filePath}`;
+  const cmd = pick('CommandLine') || pick('command') || pick('cmd');
+  if (cmd) return `${base} · ${truncateInline(cmd, 72)}`;
+  const query = pick('Query') || pick('query') || pick('pattern') || pick('Pattern');
+  if (query) return `${base} · ${truncateInline(query, 64)}`;
+  return base;
+}
+
+function formatAntigravityToolArgs(rawArgs) {
+  if (!rawArgs || typeof rawArgs !== 'object') return stringifyCompact(rawArgs, 2400);
+  const cleaned = {};
+  for (const [k, v] of Object.entries(rawArgs)) {
+    cleaned[k] = unquoteJsonScalar(v);
+  }
+  return stringifyCompact(cleaned, 2400);
+}
+
+function cleanAntigravityToolOutput(raw) {
+  if (typeof raw !== 'string') return stringifyCompact(raw, 2400);
+  const lines = raw.split(/\r?\n/);
+  let start = 0;
+  while (start < lines.length && /^(?:Created At|Completed At):\s/.test(lines[start])) {
+    start += 1;
+  }
+  return lines.slice(start).join('\n').trim() || raw.trim();
+}
+
+function isWorkerStatusProgress(text) {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t) return false;
+  if (/^Further display progress omitted/i.test(t)) return true;
+  if (/^thread\s+\S+/i.test(t)) return true;
+  if (/^commandExecution\s+(?:started|completed|failed)\b/i.test(t)) return true;
+  if (/^(?:userMessage|reasoning|agentMessage|webSearch|fileChange|mcpToolCall|planUpdate)\s*$/i.test(t)) return true;
+  return false;
+}
+
+function isStructuredContractText(text) {
+  if (typeof text !== 'string') return false;
+  const t = text.trimStart();
+  return t.startsWith('{') || /^```(?:json)?\s*\n\s*\{/.test(t);
+}
+
+function cleanUserPromptText(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/^\s*<USER_REQUEST>\s*/i, '')
+    .replace(/\s*<\/USER_REQUEST>\s*$/i, '')
+    .trim();
+}
+
+function parseJsonLine(rawLine, ts, blocks, sessionRef, activitySteps = []) {
   let obj;
   try {
     obj = JSON.parse(rawLine);
@@ -138,12 +627,14 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
   }
   if (!obj || typeof obj !== 'object') return;
 
-  // Capture any session / thread ID emitted in stream frames.
+  // Capture any session / thread ID emitted in stream or lifecycle frames.
   const discoveredSession =
     (typeof obj.sessionId === 'string' && obj.sessionId) ||
     (typeof obj.session_id === 'string' && obj.session_id) ||
     (typeof obj.thread_id === 'string' && obj.thread_id) ||
     (typeof obj.threadId === 'string' && obj.threadId) ||
+    (typeof obj.lifecycle?.threadId === 'string' && obj.lifecycle.threadId) ||
+    (typeof obj.receipt?.session?.id === 'string' && obj.receipt.session.id) ||
     (typeof obj.receipt?.sessionId === 'string' && obj.receipt.sessionId) ||
     (typeof obj.receipt?.threadId === 'string' && obj.receipt.threadId) ||
     (typeof obj.receipt?.conversationId === 'string' && obj.receipt.conversationId) ||
@@ -153,7 +644,78 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     sessionRef.sessionId = discoveredSession;
   }
 
-  // 1. Kimi stream-json (`role: "assistant" | "tool"`)
+  // Capture context window occupancy from ACP usage_update or worker telemetry frames.
+  const usageUpdate =
+    (obj.type === 'usage_update' && obj) ||
+    (obj.update?.sessionUpdate === 'usage_update' && obj.update) ||
+    (obj.params?.update?.sessionUpdate === 'usage_update' && obj.params.update) ||
+    (obj.receipt?.contextUsage && typeof obj.receipt.contextUsage === 'object' && obj.receipt.contextUsage) ||
+    null;
+  if (usageUpdate && typeof usageUpdate.used === 'number' && typeof usageUpdate.size === 'number' && usageUpdate.size > 0) {
+    sessionRef.contextUsage = { used: usageUpdate.used, size: usageUpdate.size };
+  }
+
+  // 0. Antigravity CLI native transcript (`PLANNER_RESPONSE`, `GENERIC`, `ERROR_MESSAGE`)
+  if (obj.type === 'PLANNER_RESPONSE') {
+    const itemTs = obj.created_at || ts;
+    if (typeof obj.thinking === 'string' && obj.thinking.trim()) {
+      pushBlock(blocks, { kind: 'thinking', ts: itemTs, text: obj.thinking.trim(), separate: true });
+    }
+    if (Array.isArray(obj.tool_calls)) {
+      for (const call of obj.tool_calls) {
+        if (!call || typeof call !== 'object') continue;
+        const name = call.name || 'tool';
+        pushBlock(blocks, {
+          kind: 'tool_call',
+          ts: itemTs,
+          title: formatToolCallTitle(name, call.args),
+          text: formatAntigravityToolArgs(call.args),
+        });
+      }
+    }
+    if (typeof obj.content === 'string' && obj.content.trim()) {
+      pushBlock(blocks, { kind: 'assistant', ts: itemTs, text: obj.content });
+    }
+    if (typeof obj.error === 'string' && obj.error.trim()) {
+      pushBlock(blocks, { kind: 'progress', ts: itemTs, title: 'retry', text: obj.error.trim() });
+    }
+    return;
+  }
+  if (obj.type === 'GENERIC' && typeof obj.content === 'string' && obj.content.trim()) {
+    const itemTs = obj.created_at || ts;
+    pushBlock(blocks, {
+      kind: 'tool_result',
+      ts: itemTs,
+      title: '输出',
+      text: cleanAntigravityToolOutput(obj.content),
+    });
+    return;
+  }
+  if (obj.type === 'ERROR_MESSAGE' && typeof obj.error === 'string' && obj.error.trim()) {
+    pushBlock(blocks, { kind: 'progress', ts: obj.created_at || ts, title: 'retry', text: obj.error.trim() });
+    return;
+  }
+  if (obj.type === 'USER_INPUT') {
+    const promptText = cleanUserPromptText(typeof obj.content === 'string' ? obj.content : '');
+    if (promptText) {
+      pushBlock(blocks, { kind: 'user_prompt', ts: obj.created_at || ts, text: promptText, separate: true });
+    }
+    return;
+  }
+
+  // 1. Kimi stream-json (`role: "user" | "assistant" | "tool"`)
+  if (obj.role === 'user') {
+    const content = typeof obj.content === 'string'
+      ? obj.content
+      : Array.isArray(obj.content)
+        ? obj.content.filter(p => p?.type === 'text' && typeof p.text === 'string').map(p => p.text).join('\n')
+        : '';
+    const promptText = cleanUserPromptText(content);
+    if (promptText) {
+      pushBlock(blocks, { kind: 'user_prompt', ts, text: promptText, separate: true });
+    }
+    return;
+  }
   if (obj.role === 'assistant') {
     if (typeof obj.content === 'string' && obj.content.trim()) {
       pushBlock(blocks, { kind: 'assistant', ts, text: obj.content });
@@ -171,7 +733,7 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
       for (const call of obj.tool_calls) {
         const name = call?.function?.name || call?.name || 'tool';
         const args = call?.function?.arguments ?? call?.arguments ?? call?.input;
-        pushBlock(blocks, { kind: 'tool_call', ts, title: String(name), text: stringifyCompact(args, 2400) });
+        pushBlock(blocks, { kind: 'tool_call', ts, title: formatToolCallTitle(String(name), args), text: stringifyCompact(args, 2400) });
       }
     }
     return;
@@ -183,30 +745,65 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     return;
   }
 
-  // 2. Claude SDK stream-json (`type: "assistant" | "user"`)
+  // 2. Claude SDK stream-json & native `~/.claude/projects/*.jsonl` (`type: "assistant" | "user"`)
   if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
+    const itemTs = obj.timestamp || ts;
+    const hasToolUse = obj.message.content.some(p => p && typeof p === 'object' && p.type === 'tool_use');
     for (const part of obj.message.content) {
       if (!part || typeof part !== 'object') continue;
       if (part.type === 'thinking' && (part.thinking || part.text)) {
-        pushBlock(blocks, { kind: 'thinking', ts, text: String(part.thinking ?? part.text) });
+        pushBlock(blocks, { kind: 'thinking', ts: itemTs, text: String(part.thinking ?? part.text), separate: true });
+      } else if (part.type === 'redacted_thinking' || (part.type === 'thinking' && part.signature)) {
+        pushBlock(blocks, {
+          kind: 'thinking',
+          ts: itemTs,
+          title: 'encrypted',
+          text: '深度思考已由 Provider 加密（未返回明文）',
+          separate: true,
+        });
       } else if (part.type === 'text' && part.text) {
-        pushBlock(blocks, { kind: 'assistant', ts, text: String(part.text) });
+        const txt = String(part.text).trim();
+        // When Claude's internal CoT is signature-only encrypted, brief commentary
+        // emitted right before a tool_use (or short non-contract preamble) acts as
+        // visible thought narration; render it inside the ThoughtChain.
+        if (txt && (hasToolUse || (txt.length <= 240 && !isStructuredContractText(txt) && !txt.includes('\n\n#')))) {
+          pushBlock(blocks, { kind: 'thinking', ts: itemTs, text: txt, separate: true });
+        } else if (part.text) {
+          pushBlock(blocks, { kind: 'assistant', ts: itemTs, text: String(part.text) });
+        }
       } else if (part.type === 'tool_use') {
-        pushBlock(blocks, { kind: 'tool_call', ts, title: String(part.name || 'tool'), text: stringifyCompact(part.input, 2400) });
+        pushBlock(blocks, { kind: 'tool_call', ts: itemTs, title: formatToolCallTitle(part.name || 'tool', part.input), text: stringifyCompact(part.input, 2400) });
       }
     }
     return;
   }
 
-  if (obj.type === 'user' && Array.isArray(obj.message?.content)) {
-    for (const part of obj.message.content) {
-      if (part?.type === 'tool_result') {
-        pushBlock(blocks, {
-          kind: part.is_error ? 'error' : 'tool_result',
-          ts,
-          title: part.tool_use_id || 'tool_result',
-          text: stringifyCompact(part.content, 2400),
-        });
+  if (obj.type === 'user') {
+    const content = obj.message?.content;
+    if (typeof content === 'string') {
+      const promptText = cleanUserPromptText(content);
+      if (promptText) {
+        pushBlock(blocks, { kind: 'user_prompt', ts: obj.timestamp || ts, text: promptText, separate: true });
+      }
+      return;
+    }
+    if (Array.isArray(content)) {
+      const textParts = [];
+      for (const part of content) {
+        if (part?.type === 'tool_result') {
+          pushBlock(blocks, {
+            kind: part.is_error ? 'error' : 'tool_result',
+            ts: obj.timestamp || ts,
+            title: part.tool_use_id || 'tool_result',
+            text: stringifyCompact(part.content, 2400),
+          });
+        } else if (part?.type === 'text' && typeof part.text === 'string') {
+          textParts.push(part.text);
+        }
+      }
+      const promptText = cleanUserPromptText(textParts.join('\n'));
+      if (promptText) {
+        pushBlock(blocks, { kind: 'user_prompt', ts: obj.timestamp || ts, text: promptText, separate: true });
       }
     }
     return;
@@ -239,7 +836,66 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     return;
   }
 
-  // 4. Codex app-server / CLI items
+  // 4. Codex app-server / CLI items & Codex native rollout JSONL (`response_item`, `event_msg`)
+  if (obj.type === 'event_msg' && obj.payload?.type === 'item_completed' && obj.payload?.item?.type === 'UserMessage') {
+    const parts = extractContentParts(obj.payload.item.content);
+    const text = parts
+      .map(part => (typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n');
+    const promptText = cleanUserPromptText(text);
+    if (promptText) {
+      pushBlock(blocks, { kind: 'user_prompt', ts: obj.timestamp || ts, text: promptText, separate: true });
+    }
+    return;
+  }
+  if (obj.type === 'response_item' && obj.payload && typeof obj.payload === 'object') {
+    const p = obj.payload;
+    const itemTs = obj.timestamp || ts;
+    if (p.type === 'reasoning') {
+      const summaryParts = Array.isArray(p.summary)
+        ? p.summary.map(s => (typeof s === 'string' ? s : s?.text || '')).filter(Boolean)
+        : [];
+      const text = summaryParts.join('\n') || (typeof p.text === 'string' ? p.text : '');
+      if (text.trim()) {
+        pushBlock(blocks, { kind: 'thinking', ts: itemTs, text, separate: true });
+      } else if (p.encrypted_content) {
+        pushBlock(blocks, {
+          kind: 'thinking',
+          ts: itemTs,
+          title: 'encrypted',
+          text: '深度思考已由 Provider 加密（未返回明文）',
+          separate: true,
+        });
+      }
+    } else if (p.type === 'message' && p.role === 'assistant') {
+      const parts = extractContentParts(p.content);
+      const text = parts
+        .filter(part => part.type === 'output_text' || part.type === 'text')
+        .map(part => (typeof part.text === 'string' ? part.text : ''))
+        .join('\n')
+        .trim();
+      if (text) {
+        if (p.phase === 'commentary') {
+          pushBlock(blocks, { kind: 'thinking', ts: itemTs, text, separate: true });
+        } else if (p.phase === 'final_answer' || isStructuredContractText(text)) {
+          pushBlock(blocks, { kind: 'assistant', ts: itemTs, text, separate: true });
+        }
+      }
+    } else if (p.type === 'custom_tool_call' || p.type === 'function_call') {
+      const arg = p.input !== undefined ? p.input : p.arguments;
+      pushBlock(blocks, { kind: 'tool_call', ts: itemTs, title: formatToolCallTitle(p.name || 'tool', arg), text: stringifyCompact(arg, 2400) });
+    } else if (p.type === 'custom_tool_call_output' || p.type === 'function_call_output') {
+      let outText = '';
+      if (Array.isArray(p.output)) {
+        outText = p.output.map(item => (typeof item === 'string' ? item : item?.text || stringifyCompact(item, 1200))).join('\n');
+      } else {
+        outText = stringifyCompact(p.output, 2400);
+      }
+      pushBlock(blocks, { kind: 'tool_result', ts: itemTs, title: String(p.name || p.call_id || 'tool_result'), text: outText });
+    }
+    return;
+  }
   if ((obj.type === 'item.completed' || obj.type === 'item.started' || obj.type === 'item.updated') && obj.item) {
     const item = obj.item;
     if (item.type === 'reasoning' && (item.text || item.summary)) {
@@ -275,15 +931,54 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     pushBlock(blocks, { kind: 'assistant', ts, text: obj.text });
     return;
   }
-  if (obj.type === 'progress' && typeof obj.text === 'string' && obj.text.trim()) {
-    pushBlock(blocks, { kind: 'progress', ts, text: obj.text.trim() });
+  if (obj.type === 'progress' && typeof obj.text === 'string' && obj.text.length > 0) {
+    if (isWorkerStatusProgress(obj.text)) {
+      recordActivityStep(activitySteps, truncateText(obj.text.trim().replace(/\s+/g, ' '), 120));
+    } else if (sessionRef.harness === 'codex-pro' && !isStructuredContractText(obj.text)) {
+      // Codex worker emits brief natural-language commentary via `progress` frames
+      // before the final structured answer arrives in `result`/`end.text`.
+      pushBlock(blocks, { kind: 'thinking', ts, text: obj.text.trim(), separate: true });
+    } else {
+      // Workers stream model output deltas as `progress` frames; coalesce verbatim
+      // into continuous assistant markdown rather than emitting per-chunk bullets.
+      pushBlock(blocks, { kind: 'assistant', ts, text: obj.text });
+    }
     return;
   }
   if (obj.type === 'activity' && obj.activity) {
     const act = obj.activity;
     const parts = [act.phase, act.summary, act.detail, act.tool, act.target].filter(v => typeof v === 'string' && v.trim());
     if (parts.length > 0) {
-      pushBlock(blocks, { kind: 'progress', ts, title: act.source || 'activity', text: parts.join(' · ') });
+      recordActivityStep(activitySteps, `${act.source ? `[${act.source}] ` : ''}${parts.join(' · ')}`);
+      return;
+    }
+    if (Array.isArray(act.eventTypes) && act.eventTypes.length > 0) {
+      const EVENT_LABELS = {
+        agent_thought_chunk: '思考推理中',
+        agent_message_chunk: '生成回复中',
+        tool_call: '调用工具中',
+        tool_call_update: '工具执行更新',
+        session_info_update: '会话已就绪',
+        'item.started': '开始执行步骤',
+        'item.completed': '完成执行步骤',
+        'turn.started': '回合已启动',
+        'stream-delta': '流式输出中',
+        'tool-result': '工具返回结果',
+        'task-progress': '子任务推进中',
+      };
+      const meaningful = act.eventTypes.filter(
+        t =>
+          typeof t === 'string' &&
+          t !== 'usage_update' &&
+          t !== 'available_commands_update' &&
+          t !== 'config_option_update' &&
+          t !== 'current_mode_update',
+      );
+      if (meaningful.length > 0) {
+        const label = meaningful.map(t => EVENT_LABELS[t] || t).join(' · ');
+        const scopeSuffix = act.scope && act.scope !== 'root' ? ` (${act.scope})` : '';
+        recordActivityStep(activitySteps, `${act.source ? `[${act.source}] ` : ''}${label}${scopeSuffix}`);
+      }
     }
     return;
   }
@@ -291,7 +986,16 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     const ev = obj.event;
     const evType = String(ev.type || '');
     const data = ev.data && typeof ev.data === 'object' ? ev.data : ev;
-    if (evType === 'user/message' || evType === 'agent/inbox/spliced' || evType === 'request/header') {
+    if (evType === 'user/message') {
+      const parts = extractContentParts(data.message?.content ?? data.content ?? data.text);
+      const text = parts.map(p => (typeof p.text === 'string' ? p.text : '')).filter(Boolean).join('\n');
+      const promptText = cleanUserPromptText(text);
+      if (promptText) {
+        pushBlock(blocks, { kind: 'user_prompt', ts, text: promptText, separate: true });
+      }
+      return;
+    }
+    if (evType === 'agent/inbox/spliced' || evType === 'request/header') {
       return;
     }
     if (evType === 'assistant/message') {
@@ -337,12 +1041,18 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef) {
     return;
   }
   if (obj.type === 'result') {
-    const failMsg = obj.error?.message || obj.receipt?.failure?.message;
+    const failMsg = obj.error?.message || obj.receipt?.failure?.message || obj.receipt?.failure?.detail;
     if (failMsg) {
-      pushBlock(blocks, { kind: 'error', ts, title: obj.error?.code || 'failed', text: String(failMsg) });
+      pushBlock(blocks, {
+        kind: 'error',
+        ts,
+        title: obj.error?.code || obj.receipt?.failure?.category || 'failed',
+        text: String(failMsg),
+      });
     }
     const finalOut =
       (typeof obj.text === 'string' && obj.text) ||
+      (Array.isArray(obj.receipt?.output) && obj.receipt.output.map(o => (typeof o === 'string' ? o : o?.text || '')).join('\n')) ||
       (Array.isArray(obj.receipt?.outcome?.output) && obj.receipt.outcome.output.map(o => o?.text || '').join('\n')) ||
       '';
     if (finalOut.trim() && !blocks.some(b => b.kind === 'assistant' && b.text.includes(finalOut.trim().slice(0, 80)))) {
@@ -372,12 +1082,42 @@ function latestTracePreview(blocks) {
   if (!Array.isArray(blocks) || blocks.length === 0) return '';
   for (let i = blocks.length - 1; i >= 0; i -= 1) {
     const b = blocks[i];
-    if (!b || !b.text) continue;
+    if (!b || !b.text || b.kind === 'user_prompt') continue;
     const prefix = b.kind === 'tool_call' && b.title ? `[${b.title}] ` : '';
-    const line = String(b.text).trim().replace(/\s+/g, ' ');
+    const line = String(b.text)
+      .replace(/^…\s*\[truncated\]\s*/i, '')
+      .replace(/^#+\s*/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .trim()
+      .replace(/\s+/g, ' ');
     if (line) return truncateText(prefix + line, 220);
   }
   return '';
+}
+
+function appendFallbackAssistantText(rawBlocks, ts, endText) {
+  const text = typeof endText === 'string' ? endText : '';
+  if (!text.trim()) return;
+  const hasAssistant = rawBlocks.some(b => b.kind === 'assistant' && b.text.trim().length > 0);
+  const isTruncatedTail = text.trimStart().startsWith('… [truncated]');
+  // Never append Go's 16K tail-truncated end.text as a second raw block when
+  // streaming progress already delivered the full assistant response.
+  if (hasAssistant) return;
+  if (isTruncatedTail) {
+    const cleaned = text.replace(/^…\s*\[truncated\]\r?\n?/, '');
+    if (cleaned.trim()) {
+      pushBlock(rawBlocks, { kind: 'assistant', ts, text: cleaned, separate: true });
+    }
+    return;
+  }
+  pushBlock(rawBlocks, { kind: 'assistant', ts, text, separate: true });
+}
+
+function resolveSessionHomeCwd(harness, cwd, workspaceCwd) {
+  const h = typeof harness === 'string' ? harness.trim().toLowerCase() : '';
+  if (workspaceCwd && h !== 'dsh') return workspaceCwd;
+  return cwd || workspaceCwd || '';
 }
 
 function parseLiveJsonlFile(rawText, fileMtimeMs) {
@@ -403,25 +1143,27 @@ function parseLiveJsonlFile(rawText, fileMtimeMs) {
   }
   if (!start) return null;
 
-  const sessionRef = { sessionId: end?.sessionId || start.requestedThread || '' };
-  const blocks = [];
+  const sessionRef = { sessionId: end?.sessionId || start.requestedThread || '', harness: end?.harness || start.harness || '' };
+  const rawBlocks = [];
+  const activitySteps = [];
   for (const ev of events) {
-    parseJsonLine(ev.line, ev.ts, blocks, sessionRef);
+    parseJsonLine(ev.line, ev.ts, rawBlocks, sessionRef, activitySteps);
   }
-  if (end?.text && !blocks.some(b => b.kind === 'assistant' && b.text.trim() === String(end.text).trim())) {
-    pushBlock(blocks, { kind: 'assistant', ts: end.ts || '', text: String(end.text) });
-  }
+  appendFallbackAssistantText(rawBlocks, end?.ts || '', end?.text);
   if (end?.stderr && String(end.stderr).trim()) {
-    pushBlock(blocks, { kind: 'error', ts: end.ts || '', title: 'stderr', text: String(end.stderr) });
+    pushBlock(rawBlocks, { kind: 'error', ts: end.ts || '', title: 'stderr', text: String(end.stderr) });
   }
   if (end?.errorMessage) {
-    pushBlock(blocks, { kind: 'error', ts: end.ts || '', title: end.errorCode || 'error', text: String(end.errorMessage) });
+    pushBlock(rawBlocks, { kind: 'error', ts: end.ts || '', title: end.errorCode || 'error', text: String(end.errorMessage) });
   }
+  const blocks = finalizeParsedBlocks(rawBlocks, activitySteps);
 
   const running = !end;
   const harness = end?.harness || start.harness || '';
   const model = end?.model || start.model || '';
   const cwd = start.cwd || start.workspaceCwd || '';
+  const workspaceCwd = start.workspaceCwd || '';
+  const sessionCwd = resolveSessionHomeCwd(harness, cwd, workspaceCwd);
   const status = inferStatus({
     running,
     cancelled: end?.cancelled,
@@ -443,6 +1185,7 @@ function parseLiveJsonlFile(rawText, fileMtimeMs) {
       model,
       thinking: start.thinking || '',
       cwd,
+      workspaceCwd,
       status,
       running,
       exitCode: end?.exitCode ?? null,
@@ -451,12 +1194,16 @@ function parseLiveJsonlFile(rawText, fileMtimeMs) {
       startedAt: start.ts || '',
       updatedAt: end?.ts || events.at(-1)?.ts || new Date(fileMtimeMs).toISOString(),
       sessionId: sessionRef.sessionId || '',
-      resume: buildResumeInfo(harness, sessionRef.sessionId, cwd),
+      sessionTitle: typeof start.sessionTitle === 'string' ? start.sessionTitle : '',
+      resume: buildResumeInfo(harness, sessionRef.sessionId, sessionCwd),
       errorCode: end?.errorCode || '',
       errorSummary: end?.errorMessage || (status === 'failed' && end?.stderr ? truncateText(String(end.stderr), 220) : ''),
       usage: end?.usage || null,
+      contextUsage: sessionRef.contextUsage || null,
+      promptBytes: typeof start.promptBytes === 'number' ? start.promptBytes : null,
       source: 'live',
       eventCount: events.length,
+      byteSize: Buffer.byteLength(rawText, 'utf8'),
       preview: latestTracePreview(blocks),
     },
     detail: {
@@ -488,26 +1235,28 @@ function parseDurableReceiptFile(rawText, fileName, fileMtimeMs, stateRecords) {
       stateRec?.['thread-id'] ||
       '',
   };
-  const blocks = [];
+  const rawBlocks = [];
+  const activitySteps = [];
   const rawStdout = typeof result.stdout === 'string' ? result.stdout : '';
   const stdoutLines = rawStdout.split('\n').filter(Boolean);
   for (const line of stdoutLines) {
-    parseJsonLine(line, '', blocks, sessionRef);
+    parseJsonLine(line, '', rawBlocks, sessionRef, activitySteps);
   }
-  if (result.text && !blocks.some(b => b.kind === 'assistant' && b.text.trim() === String(result.text).trim())) {
-    pushBlock(blocks, { kind: 'assistant', ts: '', text: String(result.text) });
-  }
+  appendFallbackAssistantText(rawBlocks, '', result.text);
   if (result.stderr && String(result.stderr).trim()) {
-    pushBlock(blocks, { kind: 'error', ts: '', title: 'stderr', text: String(result.stderr) });
+    pushBlock(rawBlocks, { kind: 'error', ts: '', title: 'stderr', text: String(result.stderr) });
   }
   if (result.errorMessage) {
-    pushBlock(blocks, { kind: 'error', ts: '', title: result.errorCode || 'error', text: String(result.errorMessage) });
+    pushBlock(rawBlocks, { kind: 'error', ts: '', title: result.errorCode || 'error', text: String(result.errorMessage) });
   }
+  const blocks = finalizeParsedBlocks(rawBlocks, activitySteps);
 
   const harness = result.harness || stateRec?.configuration?.harness || '';
   const model = result.model || stateRec?.configuration?.model || '';
   const thinking = stateRec?.configuration?.thinking || '';
   const cwd = receipt.cwd || stateRec?.cwd || '';
+  const workspaceCwd = stateRec?.['workspace-cwd'] || '';
+  const sessionCwd = resolveSessionHomeCwd(harness, cwd, workspaceCwd);
   const id = receipt['invocation-id'] || fileName.replace(/\.json$/, '');
   const status = inferStatus({
     running: false,
@@ -531,6 +1280,7 @@ function parseDurableReceiptFile(rawText, fileName, fileMtimeMs, stateRecords) {
       model,
       thinking,
       cwd,
+      workspaceCwd,
       status,
       running: false,
       exitCode: result.exitCode ?? null,
@@ -539,10 +1289,12 @@ function parseDurableReceiptFile(rawText, fileName, fileMtimeMs, stateRecords) {
       startedAt: stateRec?.last?.['started-at'] || '',
       updatedAt: new Date(fileMtimeMs).toISOString(),
       sessionId: sessionRef.sessionId || '',
-      resume: buildResumeInfo(harness, sessionRef.sessionId, cwd),
+      resume: buildResumeInfo(harness, sessionRef.sessionId, sessionCwd),
       errorCode: result.errorCode || '',
       errorSummary: result.errorMessage || (status === 'failed' && result.stderr ? truncateText(String(result.stderr), 220) : ''),
       usage: result.usage || null,
+      contextUsage: sessionRef.contextUsage || null,
+      promptBytes: null,
       source: 'receipt',
       eventCount: stdoutLines.length,
       preview: latestTracePreview(blocks),
@@ -625,6 +1377,8 @@ async function collectTraces(resolvedTask, targetId) {
     const { role, scope } = splitRoleScope(key);
     const harness = rec.configuration?.harness || '';
     const cwd = rec.cwd || '';
+    const workspaceCwd = rec['workspace-cwd'] || '';
+    const sessionCwd = resolveSessionHomeCwd(harness, cwd, workspaceCwd);
     const sessionId = rec['thread-id'] || rec.last['requested-thread'] || '';
     byId.set(invId, {
       summary: {
@@ -637,6 +1391,7 @@ async function collectTraces(resolvedTask, targetId) {
         model: rec.configuration?.model || '',
         thinking: rec.configuration?.thinking || '',
         cwd,
+        workspaceCwd,
         status: rec.last.status === 'intent' ? 'running' : 'blocked',
         running: rec.last.status === 'intent',
         exitCode: null,
@@ -645,7 +1400,7 @@ async function collectTraces(resolvedTask, targetId) {
         startedAt: rec.last['started-at'] || '',
         updatedAt: rec.last['started-at'] || '',
         sessionId,
-        resume: buildResumeInfo(harness, sessionId, cwd),
+        resume: buildResumeInfo(harness, sessionId, sessionCwd),
         errorCode: '',
         errorSummary: rec.reason || '',
         usage: null,
@@ -685,6 +1440,198 @@ export async function readTaskTraces(taskDir) {
   return { protocol: 1, ok: true, taskDir: resolvedTask, traces: entries };
 }
 
+async function readFileHead(filePath, maxBytes = 8192) {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    return raw.length > maxBytes ? raw.slice(0, maxBytes) : raw;
+  } catch {
+    return '';
+  }
+}
+
+async function locateLiveAntigravityTranscript(home, taskDir, cwd, startedAt) {
+  const startedMs = Date.parse(startedAt || '') || 0;
+  const minMtimeMs = startedMs > 0 ? startedMs - 20_000 : Date.now() - 30 * 60_000;
+  const maxMtimeMs = startedMs > 0 ? startedMs + 4 * 3600_000 : Date.now() + 60_000;
+  const needles = [taskDir, cwd ? `"${cwd}"` : ''].filter(v => typeof v === 'string' && v.trim());
+  for (const brainDir of [join(home, '.gemini', 'antigravity-cli', 'brain'), join(home, '.gemini', 'antigravity', 'brain')]) {
+    const entries = await readdir(brainDir).catch(() => []);
+    const recent = [];
+    for (const name of entries) {
+      if (!/^[0-9a-f-]{8,}$/i.test(name)) continue;
+      const candidate = join(brainDir, name, '.system_generated', 'logs', 'transcript.jsonl');
+      const info = await stat(candidate).catch(() => null);
+      if (!info?.isFile() || info.size > MAX_SESSION_FILE_BYTES || info.mtimeMs < minMtimeMs || info.mtimeMs > maxMtimeMs) continue;
+      recent.push({ candidate, mtimeMs: info.mtimeMs, sessionId: name });
+    }
+    recent.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const item of recent.slice(0, 8)) {
+      const head = await readFileHead(item.candidate, 6144);
+      if (!head) continue;
+      if (needles.length === 0 || needles.some(n => head.includes(n))) {
+        return { path: item.candidate, sessionId: item.sessionId };
+      }
+    }
+  }
+  return null;
+}
+
+async function locateLiveClaudeTranscript(home, taskDir, cwd, startedAt) {
+  const projectsRoot = join(home, '.claude', 'projects');
+  if (typeof cwd !== 'string' || !isAbsolute(cwd)) return null;
+  const encoded = cwd.replace(/[^A-Za-z0-9-]/g, '-');
+  const projDir = join(projectsRoot, encoded);
+  const entries = await readdir(projDir).catch(() => []);
+  const startedMs = Date.parse(startedAt || '') || 0;
+  const minMtimeMs = startedMs > 0 ? startedMs - 20_000 : Date.now() - 30 * 60_000;
+  const recent = [];
+  for (const name of entries) {
+    if (!name.endsWith('.jsonl')) continue;
+    const candidate = join(projDir, name);
+    const info = await stat(candidate).catch(() => null);
+    if (!info?.isFile() || info.size > MAX_SESSION_FILE_BYTES || info.mtimeMs < minMtimeMs) continue;
+    recent.push({ candidate, mtimeMs: info.mtimeMs, sessionId: name.slice(0, -6) });
+  }
+  recent.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  for (const item of recent.slice(0, 6)) {
+    const head = await readFileHead(item.candidate, 8192);
+    if (!head) continue;
+    if (!taskDir || head.includes(taskDir) || head.includes(cwd)) {
+      return { path: item.candidate, sessionId: item.sessionId };
+    }
+  }
+  return null;
+}
+
+async function locateNativeTranscriptPath(selected, taskDir) {
+  const id = typeof selected?.sessionId === 'string' ? selected.sessionId.trim() : '';
+  const hasValidId = Boolean(id && SAFE_SESSION_ID.test(id) && !id.includes('/') && !id.includes('..'));
+  const h = typeof selected?.harness === 'string' ? selected.harness.trim().toLowerCase() : '';
+  const cwd = resolveSessionHomeCwd(h, selected?.cwd || '', selected?.workspaceCwd || '');
+  const home = homedir();
+
+  if (h === 'claude-code-pro') {
+    if (hasValidId) {
+      const projectsRoot = join(home, '.claude', 'projects');
+      const candidates = [];
+      if (typeof cwd === 'string' && isAbsolute(cwd)) {
+        const encoded = cwd.replace(/[^A-Za-z0-9-]/g, '-');
+        candidates.push(join(projectsRoot, encoded, `${id}.jsonl`));
+      }
+      for (const candidate of candidates) {
+        const info = await stat(candidate).catch(() => null);
+        if (info?.isFile() && info.size <= MAX_SESSION_FILE_BYTES) return { path: candidate, sessionId: id };
+      }
+      const dirs = await readdir(projectsRoot).catch(() => []);
+      for (const dir of dirs.slice(0, 64)) {
+        const candidate = join(projectsRoot, dir, `${id}.jsonl`);
+        const info = await stat(candidate).catch(() => null);
+        if (info?.isFile() && info.size <= MAX_SESSION_FILE_BYTES) return { path: candidate, sessionId: id };
+      }
+    }
+    if (selected?.running) {
+      return locateLiveClaudeTranscript(home, taskDir, cwd, selected.startedAt);
+    }
+    return null;
+  }
+
+  if (h === 'codex-pro' || h === 'codex') {
+    if (!hasValidId) return null;
+    const sessionsRoot = join(home, '.codex', 'sessions');
+    const suffix = `${id}.jsonl`;
+    const years = (await readdir(sessionsRoot).catch(() => [])).sort().reverse().slice(0, 2);
+    for (const year of years) {
+      const yearDir = join(sessionsRoot, year);
+      const months = (await readdir(yearDir).catch(() => [])).sort().reverse().slice(0, 3);
+      for (const month of months) {
+        const monthDir = join(yearDir, month);
+        const days = (await readdir(monthDir).catch(() => [])).sort().reverse().slice(0, 14);
+        for (const day of days) {
+          const dayDir = join(monthDir, day);
+          const files = await readdir(dayDir).catch(() => []);
+          const hit = files.find(f => f.endsWith(suffix));
+          if (hit) {
+            const candidate = join(dayDir, hit);
+            const info = await stat(candidate).catch(() => null);
+            if (info?.isFile() && info.size <= MAX_SESSION_FILE_BYTES) return { path: candidate, sessionId: id };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  if (h === 'antigravity') {
+    if (hasValidId) {
+      for (const root of [join(home, '.gemini', 'antigravity-cli', 'brain'), join(home, '.gemini', 'antigravity', 'brain')]) {
+        const candidate = join(root, id, '.system_generated', 'logs', 'transcript.jsonl');
+        const info = await stat(candidate).catch(() => null);
+        if (info?.isFile() && info.size <= MAX_SESSION_FILE_BYTES) return { path: candidate, sessionId: id };
+      }
+    }
+    if (selected?.running) {
+      return locateLiveAntigravityTranscript(home, taskDir, cwd, selected.startedAt);
+    }
+  }
+
+  return null;
+}
+
+async function enrichDetailWithNativeTranscript(selected, taskDir) {
+  if (!selected) return selected;
+  const existingBlocks = Array.isArray(selected.blocks) ? selected.blocks : [];
+  const alreadyHasTools = existingBlocks.some(b => b.kind === 'tool_call' || b.kind === 'tool_result');
+  if (alreadyHasTools) return selected;
+  const located = await locateNativeTranscriptPath(selected, taskDir);
+  if (!located?.path) return selected;
+  const raw = await readFile(located.path, 'utf8').catch(() => '');
+  if (!raw) return selected;
+  const nativeBlocks = [];
+  const nativeSteps = [];
+  const sessionRef = { sessionId: selected.sessionId || located.sessionId || '', harness: selected.harness || '' };
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    parseJsonLine(line, '', nativeBlocks, sessionRef, nativeSteps);
+  }
+  // When a persistent native session (e.g. Codex resume) spans multiple Flywheel
+  // invocations, scope blocks to this invocation's time window when timestamps match.
+  const startedMs = Date.parse(selected.startedAt || '') || 0;
+  const endedMs = !selected.running ? (Date.parse(selected.updatedAt || '') || 0) : 0;
+  let scopedBlocks = nativeBlocks;
+  if (startedMs > 0) {
+    const inWindow = nativeBlocks.filter(b => {
+      const t = Date.parse(b.ts || '') || 0;
+      if (!t) return false;
+      if (t < startedMs - 5_000) return false;
+      if (endedMs > 0 && t > endedMs + 15_000) return false;
+      return true;
+    });
+    if (inWindow.length > 0) scopedBlocks = inWindow;
+  }
+  const richChain = scopedBlocks.filter(
+    b => b.kind === 'user_prompt' || b.kind === 'thinking' || b.kind === 'tool_call' || b.kind === 'tool_result' || b.kind === 'progress',
+  );
+  const nativeAssistant = scopedBlocks.filter(b => b.kind === 'assistant');
+  if (richChain.length === 0 && nativeAssistant.length === 0) return selected;
+  // Drop live commentary thinking blocks when native transcript provides the exact ordered chain.
+  const hasNativeThinkingOrTools = richChain.some(b => b.kind === 'thinking' || b.kind === 'tool_call' || b.kind === 'tool_result');
+  const preservedOutputs = existingBlocks.filter(b => b.kind !== 'steps' && !(hasNativeThinkingOrTools && b.kind === 'thinking'));
+  const hasPreservedAssistant = preservedOutputs.some(b => b.kind === 'assistant');
+  const merged = hasPreservedAssistant
+    ? [...richChain, ...preservedOutputs]
+    : [...richChain, ...finalizeParsedBlocks(nativeAssistant, []), ...preservedOutputs];
+  const resolvedSessionId = selected.sessionId || located.sessionId || '';
+  // Native sessions for Codex/Claude/Antigravity/Kimi live under workspaceCwd (main repo root);
+  // mirror Go's sessionNativeCwd so CLI resume always points to the stable repo root.
+  const resumeCwd = resolveSessionHomeCwd(selected.harness, selected.cwd || '', selected.workspaceCwd || '');
+  return {
+    ...selected,
+    sessionId: resolvedSessionId,
+    resume: buildResumeInfo(selected.harness, resolvedSessionId, resumeCwd) || selected.resume,
+    blocks: merged,
+  };
+}
+
 export async function readTaskTraceDetail(taskDir, traceId) {
   if (typeof taskDir !== 'string' || !isAbsolute(taskDir) || taskDir.includes('\0')) {
     throw new Error('trace-detail requires an absolute taskDir');
@@ -697,5 +1644,6 @@ export async function readTaskTraceDetail(taskDir, traceId) {
     throw new Error('taskDir must be an existing directory');
   }
   const { selected } = await collectTraces(resolvedTask, traceId.trim());
-  return { protocol: 1, ok: true, taskDir: resolvedTask, trace: selected };
+  const enriched = await enrichDetailWithNativeTranscript(selected, resolvedTask);
+  return { protocol: 1, ok: true, taskDir: resolvedTask, trace: enriched };
 }

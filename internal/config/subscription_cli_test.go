@@ -153,3 +153,43 @@ func TestAntigravityModelEffortIsExplicitAndConsistent(t *testing.T) {
 		require.ErrorContains(t, err, "supported thinking", section)
 	}
 }
+
+func TestPlanningClarifyAndUIPrototypeConfigValidation(t *testing.T) {
+	base := func() Config {
+		c := subscriptionFixture()
+		c.Profiles["clarifier"] = ModelProfile{Harness: "antigravity", Channel: "google", Model: "gemini-4-carbon-high", Thinking: "high"}
+		c.Profiles["ux-proto"] = ModelProfile{Harness: "antigravity", Channel: "google", Model: "gemini-4-neon-high", Thinking: "high"}
+		c.Profiles["paid-api"] = ModelProfile{Harness: "dsh", Channel: "paid", Model: "m"}
+		return c
+	}
+
+	okCfg := base()
+	okCfg.Planning.Clarify = &ClarifyConfig{Mode: "auto", Profile: "clarifier"}
+	okCfg.Planning.UIPrototype = &UIPrototypeConfig{Mode: "auto", Profile: "ux-proto", ReviewProfile: "clarifier"}
+	require.NoError(t, okCfg.Validate())
+
+	badClarify := base()
+	badClarify.Planning.Clarify = &ClarifyConfig{Mode: "auto", Profile: "missing"}
+	require.ErrorContains(t, badClarify.Validate(), "planning.clarify.profile")
+
+	badClarifySub := base()
+	badClarifySub.Planning.Clarify = &ClarifyConfig{Mode: "auto", Profile: "paid-api"}
+	require.ErrorContains(t, badClarifySub.Validate(), "planning.clarify.profile")
+
+	badProto := base()
+	badProto.Planning.UIPrototype = &UIPrototypeConfig{Mode: "always", Profile: "missing"}
+	require.ErrorContains(t, badProto.Validate(), "planning.ui-prototype.profile")
+
+	badProtoRev := base()
+	badProtoRev.Planning.UIPrototype = &UIPrototypeConfig{Mode: "always", Profile: "ux-proto", ReviewProfile: "missing"}
+	require.ErrorContains(t, badProtoRev.Validate(), "planning.ui-prototype.review-profile")
+
+	badProtoSub := base()
+	badProtoSub.Planning.UIPrototype = &UIPrototypeConfig{Mode: "always", Profile: "paid-api"}
+	require.ErrorContains(t, badProtoSub.Validate(), "planning.ui-prototype.profile")
+
+	// Empty review-profile path inside subscription validation loop
+	okOnlyProto := base()
+	okOnlyProto.Planning.UIPrototype = &UIPrototypeConfig{Mode: "always", Profile: "ux-proto"}
+	require.NoError(t, okOnlyProto.Validate())
+}

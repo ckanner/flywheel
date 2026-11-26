@@ -56,17 +56,17 @@ async function registry(directory) {
   }
   const plugin = packages.get('@ckanner/flywheel');
   const bundledDependencies = [['dsh-subagent-codex-pro', '0.10.2'], ['dsh-preset-generator', '0.4.0'],
-    ['@ckanner/dsh-subagent-antigravity', 'file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz']];
+    ['@ckanner/dsh-subagent-antigravity', 'file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz']];
   if (bundledDependencies.some(([name, spec]) => plugin?.manifest.dependencies?.[name] !== spec) ||
       JSON.stringify(plugin.manifest.bundledDependencies) !== JSON.stringify(bundledDependencies.map(([name]) => name))) {
-    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2, preset generator 0.4.0 and Antigravity 0.3.0 source dependencies');
+    throw new Error('the candidate must bundle exactly the reviewed Codex Pro 0.10.2, preset generator 0.4.0 and Antigravity 0.3.1 source dependencies');
   }
   // Verify the actual packed dependency closure. Antigravity has pinned
   // ACP and schema validator dependencies; the two existing bundles remain dependency-free.
   const bundleGraph = [
     ['dsh-subagent-codex-pro', '0.10.2', {}],
     ['dsh-preset-generator', '0.4.0', {}],
-    ['@ckanner/dsh-subagent-antigravity', '0.3.0', { '@agentclientprotocol/sdk': '2.9.1', ajv: '8.17.1', zod: '4.3.6' }],
+    ['@ckanner/dsh-subagent-antigravity', '0.3.1', { '@agentclientprotocol/sdk': '2.9.1', ajv: '8.17.1', zod: '4.3.6' }],
     ['@agentclientprotocol/sdk', '2.9.1', {}],
     ['zod', '4.3.6', {}],
     ['ajv', '8.17.1', { 'fast-deep-equal': '^3.1.3', 'fast-uri': '^3.0.1',

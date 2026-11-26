@@ -2,6 +2,8 @@ package prompts
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -54,11 +56,34 @@ func TestDecodePlanningOutputStrictProposalBoundary(t *testing.T) {
 
 func planningPromptInput(t *testing.T, prompt string) map[string]json.RawMessage {
 	t.Helper()
-	index := strings.LastIndex(prompt, "\n输入：\n")
-	require.GreaterOrEqual(t, index, 0)
-	var input map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal([]byte(prompt[index+len("\n输入：\n"):]), &input))
-	return input
+	if idx := strings.LastIndex(prompt, "\n输入：\n"); idx >= 0 {
+		var input map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal([]byte(prompt[idx+len("\n输入：\n"):]), &input))
+		return input
+	}
+	l2Tag := "\n\n## 稳定背景（Layer 2）\n"
+	l2Idx := strings.Index(prompt, l2Tag)
+	require.GreaterOrEqual(t, l2Idx, 0, "expected Layer 2 section in planning prompt")
+	rest := prompt[l2Idx+len(l2Tag):]
+	l3Idx := strings.Index(rest, "\n\n## ")
+	require.GreaterOrEqual(t, l3Idx, 0, "expected Layer 3 section after Layer 2")
+	l2Raw := rest[:l3Idx]
+	l3Block := rest[l3Idx+2:]
+	nl := strings.IndexByte(l3Block, '\n')
+	require.Greater(t, nl, 0)
+	l3Raw := l3Block[nl+1:]
+
+	merged := map[string]json.RawMessage{}
+	var m2, m3 map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(l2Raw), &m2))
+	require.NoError(t, json.Unmarshal([]byte(l3Raw), &m3))
+	for k, v := range m2 {
+		merged[k] = v
+	}
+	for k, v := range m3 {
+		merged[k] = v
+	}
+	return merged
 }
 
 func TestBuildPlanningPromptKeepsNonNativeHarnessForeground(t *testing.T) {
@@ -193,6 +218,22 @@ func TestBuildDesignSynthesisPromptIncludesBlindDraftsAndProvenanceRequirement(t
 		Version:       1,
 		InputRevision: 2,
 		Brief:         planning.Brief{Version: 1, ID: "sync", Goal: "Unify architecture", OriginalRequest: "Design sync"},
+		Clarification: &planning.Clarification{
+			Status:             "confirmed",
+			NeedsClarification: true,
+			IsFrontendUI:       true,
+			SelectedGates:      []string{"Unit test coverage 100%"},
+			Answers:            map[string]string{"Q-1": "Classic pixel style"},
+		},
+		UIPrototype: &planning.UIPrototype{
+			Revision:     1,
+			Design:       planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+			Status:       "approved",
+			HTMLFile:     "planning/ui-prototype-000001.html",
+			Summary:      "Retro pixel board layout",
+			DesignTokens: map[string]string{"bg": "#0b1020"},
+			States:       []string{"start", "playing", "paused"},
+		},
 	}
 	req := planning.Request{Scope: "design", Feedback: "Compare drafts fairly"}
 	primary := DesignDraftInput{Profile: "carbon", Harness: "antigravity", Model: "gemini-4-carbon-high", Text: `{"document":"Draft A"}`}
@@ -203,4 +244,152 @@ func TestBuildDesignSynthesisPromptIncludesBlindDraftsAndProvenanceRequirement(t
 	input := planningPromptInput(t, prompt)
 	assert.Contains(t, string(input["draft-a"]), "gemini-4-carbon-high")
 	assert.Contains(t, string(input["draft-b"]), "claude-opus-5-5")
+	assert.Contains(t, string(input["clarification"]), "Unit test coverage 100%")
+
+	planPrompt := BuildPlanningPrompt(st, planning.Request{Scope: "milestone", ScopeID: "M-01"}, false, map[string]string{})
+	assert.Contains(t, planPrompt, "三层验收规范")
+	assert.Contains(t, planPrompt, "严禁将 Flywheel 编排器内部状态")
+	assert.Contains(t, planPrompt, "严禁在 YAML 内联超长")
+	assert.Contains(t, planPrompt, "<<<FLYWHEEL_FILE")
+	planInput := planningPromptInput(t, planPrompt)
+	assert.Contains(t, string(planInput["clarification"]), "Classic pixel style")
+	assert.Contains(t, string(planInput["approved-ui-prototype"]), "ui-prototype-000001.html")
+
+	planReviewPrompt := BuildPlanningPrompt(st, planning.Request{Scope: "milestone", ScopeID: "M-01"}, true, map[string]string{})
+	assert.Contains(t, planReviewPrompt, "审查任务包 acceptance.L1 时")
+	assert.Contains(t, planReviewPrompt, "state.json")
+	assert.Contains(t, planReviewPrompt, "YAML frontmatter 内联超长")
+
+	clarifyPrompt := BuildClarificationPrompt(st, PlanningPromptOptions{NativeAgents: false})
+	assert.Contains(t, clarifyPrompt, "Stage 0 需求澄清")
+	assert.Contains(t, clarifyPrompt, "suggested-gates")
+
+	design := &planning.Design{
+		Ref:          planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+		Document:     "# Design",
+		Requirements: []planning.Requirement{{ID: "R-01", Title: "Board", Milestone: "M-01", Verification: "tests"}},
+	}
+	protoPrompt := BuildUIPrototypePrompt(st, design)
+	assert.Contains(t, protoPrompt, "Stage 1.5 前端 UI/UX")
+	assert.Contains(t, protoPrompt, "previous-prototype")
+
+	protoReviewPrompt := BuildUIPrototypeReviewPrompt(st, design, st.UIPrototype, "<html><body>ok</body></html>")
+	assert.Contains(t, protoReviewPrompt, "独立 UI/UX 视觉与交互审查员")
+	reviewInput := planningPromptInput(t, protoReviewPrompt)
+	assert.Contains(t, string(reviewInput["html"]), "ok")
+}
+
+func TestDecodeUIPrototypeOutputSanitizesControlChars(t *testing.T) {
+	// Strict valid JSON succeeds directly.
+	strict, err := DecodeUIPrototypeOutput(`{"summary":"clean","design-tokens":{"bg":"#000"},"states":["menu"],"html":"<!DOCTYPE html><html></html>"}`)
+	require.NoError(t, err)
+	assert.Equal(t, "clean", strict.Summary)
+
+	// Literal raw newline, CR, tab, and low control char inside inline <script> are safely escaped.
+	raw := "{\"summary\":\"with\\nraw\",\"design-tokens\":{\"bg\":\"#111\"},\"states\":[\"play\"],\"html\":\"<script>var a = 'x';\n\r\t\x01var b = \\\"ok\\\";</script>\"}"
+	recovered, err := DecodeUIPrototypeOutput(raw)
+	require.NoError(t, err)
+	assert.Contains(t, recovered.HTML, "var a = 'x';\n\r\t\x01var b = \"ok\";")
+
+	// Still rejects genuinely malformed JSON or unknown fields.
+	_, err = DecodeUIPrototypeOutput(`{"summary":"bad","unknown":1,"html":"<html></html>"}`)
+	require.Error(t, err)
+	_, err = DecodeUIPrototypeOutput(`not-json`)
+	require.Error(t, err)
+}
+
+func TestDecodePlanOutputFencedMultiFileAndPatchMerge(t *testing.T) {
+	existing := map[string]string{
+		"spec.md":                "---\nversion: 1\n---\n# Spec",
+		"task-packet-M01-T01.md": "# Packet 1",
+		"task-packet-M01-T02.md": "# Old Packet 2",
+	}
+
+	// 1. Legacy JSON fallback still works cleanly.
+	legacy, err := DecodePlanOutput(`{"files":{"spec.md":"v1"}}`, existing)
+	require.NoError(t, err)
+	assert.Equal(t, "v1", legacy.Files["spec.md"])
+	_, err = DecodePlanOutput(`not-json`, existing)
+	require.Error(t, err)
+
+	// 2. Patch mode with explicit keep & remove + escape-free quotes/backslashes.
+	fencedPatch := "<<<FLYWHEEL_PLAN_META>>>\n{\"mode\":\"patch\",\"keep\":[\"spec.md\",\"task-packet-M01-T01.md\",\"task-packet-M01-T02.md\"],\"remove\":[\"task-packet-M01-T02.md\"]}\n<<<END_FLYWHEEL_PLAN_META>>>\n\n" +
+		"<<<FLYWHEEL_FILE path=\"task-packet-M01-T03.md\">>>\n---\npacket-id: M01-T03\n---\nRun `node -e \"console.log('ok\\n')\"`\n<<<END_FLYWHEEL_FILE>>>\n" +
+		"<<<FLYWHEEL_FILE path=\"oracles/verify-M01-T03.mjs\">>>\nconsole.log(\"oracle\");\n<<<END_FLYWHEEL_FILE>>>\n"
+	patched, err := DecodePlanOutput(fencedPatch, existing)
+	require.NoError(t, err)
+	assert.Equal(t, existing["spec.md"], patched.Files["spec.md"])
+	assert.Equal(t, existing["task-packet-M01-T01.md"], patched.Files["task-packet-M01-T01.md"])
+	assert.NotContains(t, patched.Files, "task-packet-M01-T02.md")
+	assert.Contains(t, patched.Files["task-packet-M01-T03.md"], `console.log('ok\n')`)
+	assert.Contains(t, patched.Files["oracles/verify-M01-T03.mjs"], `console.log("oracle")`)
+
+	// 3. Patch mode without keep inherits all existing minus remove.
+	fencedInherit := "<<<FLYWHEEL_PLAN_META>>>\n{\"mode\":\"patch\",\"remove\":[\"task-packet-M01-T02.md\"]}\n<<<END_FLYWHEEL_PLAN_META>>>\n" +
+		"<<<FLYWHEEL_FILE path=\"task-packet-M01-T02.md\">>>\n# New Packet 2\n<<<END_FLYWHEEL_FILE>>>"
+	inherited, err := DecodePlanOutput(fencedInherit, existing)
+	require.NoError(t, err)
+	assert.Equal(t, existing["spec.md"], inherited.Files["spec.md"])
+	assert.Equal(t, "# New Packet 2", inherited.Files["task-packet-M01-T02.md"])
+
+	// 4. Error paths: >1 MiB, unclosed meta, invalid meta, malformed header, invalid path, duplicate path, unclosed file.
+	_, err = DecodePlanOutput(planFilePrefixTag+"a.md\">>>\n"+strings.Repeat("x", 1<<20)+"\n"+planFileEndTag, nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_PLAN_META>>>\n{}\n<<<FLYWHEEL_FILE path=\"a.md\">>>\nx\n<<<END_FLYWHEEL_FILE>>>", nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_PLAN_META>>>\n{\"bad\":1}\n<<<END_FLYWHEEL_PLAN_META>>>\n<<<FLYWHEEL_FILE path=\"a.md\">>>\nx\n<<<END_FLYWHEEL_FILE>>>", nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_FILE path=\"a.md\nx\n<<<END_FLYWHEEL_FILE>>>", nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_FILE path=\"a\nb.md\">>>\nx\n<<<END_FLYWHEEL_FILE>>>", nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_FILE path=\"a.md\">>>\nx\n<<<END_FLYWHEEL_FILE>>>\n<<<FLYWHEEL_FILE path=\"a.md\">>>\ny\n<<<END_FLYWHEEL_FILE>>>", nil)
+	require.Error(t, err)
+	_, err = DecodePlanOutput("<<<FLYWHEEL_FILE path=\"a.md\">>>\nx", nil)
+	require.Error(t, err)
+}
+
+func TestPlanningPromptPointerFirstBudgetingAndProjectContext(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "planning"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "planning", "project-context.md"), []byte("# Stack\nVite + TS\n"), 0o644))
+
+	bigDoc := strings.Repeat("architecture detail line\n", 500)
+	ref := planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)}
+	planRef := planning.Ref{Revision: 2, Digest: strings.Repeat("b", 64)}
+	bigFiles := map[string]string{
+		"spec.md":                strings.Repeat("spec line\n", 1500),
+		"task-packet-M01-T01.md": strings.Repeat("pkt1 line\n", 1500),
+		"task-packet-M01-T02.md": "# Small target packet",
+	}
+	st := &planning.State{
+		Version:       1,
+		InputRevision: 1,
+		Brief:         planning.Brief{Version: 1, ID: "b1", Goal: "Build app"},
+		CurrentDesign: &ref,
+		CurrentPlans:  map[string]planning.Ref{planning.PlanKey("packet", "M01-T02"): planRef},
+		Designs:       []planning.Design{{Ref: ref, Document: bigDoc}},
+		Plans:         []planning.ExecutionPlan{{Ref: planRef, Design: ref, Scope: "packet", ScopeID: "M01-T02", Files: bigFiles}},
+	}
+	prompt := BuildPlanningPrompt(st, planning.Request{Scope: "packet", ScopeID: "M01-T02"}, false, nil, PlanningPromptOptions{TaskDir: dir})
+	data := planningPromptInput(t, prompt)
+	assert.Contains(t, string(data["design"]), "planning/design-000001.md")
+	assert.Contains(t, string(data["project-context"]), "Vite + TS")
+	assert.Contains(t, string(data["contracts-index"]), "spec.md")
+	assert.Contains(t, string(data["contracts"]), "Small target packet")
+	assert.NotContains(t, string(data["contracts"]), "pkt1 line")
+
+	synth := BuildDesignSynthesisPrompt(st, planning.Request{Scope: "design"},
+		DesignDraftInput{Text: strings.Repeat("a\n", 15000)},
+		DesignDraftInput{Text: "short"},
+		PlanningPromptOptions{TaskDir: dir})
+	assert.Contains(t, synth, "draft-a truncated at 24000 bytes")
+	assert.Contains(t, synth, "Vite + TS")
+
+	// Cover nil design branch cleanly.
+	assert.Nil(t, compactDesignForPrompt(nil))
+	// Cover empty project-context file branch.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "planning", "project-context.md"), []byte("   \n"), 0o644))
+	assert.Empty(t, readProjectContext(dir))
+	assert.Empty(t, readProjectContext(""))
 }

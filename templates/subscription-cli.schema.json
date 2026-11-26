@@ -32,6 +32,23 @@
             "secondary-profile": {"type": "string", "pattern": "\\S"},
             "synthesizer-profile": {"type": "string", "pattern": "\\S"}
           }
+        },
+        "clarify": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"enum": ["off", "auto", "always"]},
+            "profile": {"type": "string", "pattern": "\\S"}
+          }
+        },
+        "ui-prototype": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"enum": ["off", "auto", "always"]},
+            "profile": {"type": "string", "pattern": "\\S"},
+            "review-profile": {"type": "string", "pattern": "\\S"}
+          }
         }
       }
     }

@@ -313,3 +313,21 @@ func TestRepeatedDeliveryWithTrackedReportsCleansWorktree(t *testing.T) {
 		})
 	}
 }
+
+func TestCompleteUnitIgnoresSiblingFlywheelTaskLedgersButStillRejectsNonLedgerFiles(t *testing.T) {
+	fx, c, p := commitSafetyFixture(t, true)
+	// Seed a sibling Flywheel task directory with untracked ledger artifacts.
+	writeFile(t, filepath.Join(fx.root, "docs", "older-task", "state.json"), `{"slug":"older-task"}`)
+	writeFile(t, filepath.Join(fx.root, "docs", "older-task", ".traces", "live-1.jsonl"), "{}\n")
+	writeFile(t, filepath.Join(fx.root, "docs", "older-task", "metrics.jsonl"), "{}\n")
+	require.NoError(t, c.completeUnit(p))
+	assert.Equal(t, "completed", c.State.Packets[p.PacketID].Status)
+
+	// Non-directory entries and non-task subdirectories under docs/ are ignored,
+	// and a missing parent directory returns nil cleanly.
+	writeFile(t, filepath.Join(fx.root, "docs", "README.md"), "docs index")
+	writeFile(t, filepath.Join(fx.root, "docs", "notes", "design.txt"), "not a flywheel task")
+	assert.Equal(t, []string{"docs/older-task/"}, c.siblingTaskPrefixes())
+	missingCtx := &Context{Cwd: fx.root, TaskDir: filepath.Join(fx.root, "no-such-parent", "task")}
+	assert.Nil(t, missingCtx.siblingTaskPrefixes())
+}

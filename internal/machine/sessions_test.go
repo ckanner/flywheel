@@ -234,6 +234,37 @@ func TestSessionConfirmedUnsentResumePreservesPriorCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSessionConfirmedUnsentResumeRetiresOversizedThreadForRebuild(t *testing.T) {
+	_, c := sessionFixture(t)
+	a := sessionArgs(c)
+	result, err := c.invokeScoped("execute", a.PacketID, a, func(a drivers.CallArgs) drivers.Result { return sessionResult(a, drivers.MockResult(nil)) })
+	require.NoError(t, err)
+	applySessionResult(t, c, "execute", a.PacketID, result)
+	thread := c.sessionRecord("execute", a.PacketID).ThreadID
+
+	// Simulate codex-pro thread-resume failing with output-limit (>1 MiB protocol frame).
+	result, err = c.invokeScoped("execute", a.PacketID, a, func(a drivers.CallArgs) drivers.Result {
+		require.Equal(t, thread, a.SessionID)
+		return drivers.MockResult(func(r *drivers.Result) {
+			r.Truncated = true
+			r.Session = &drivers.SessionOutcome{Protocol: "test-worker/v2", RequestID: a.RequestID, SessionID: "",
+				Dispatch: "not-dispatched", Outcome: "failed", CleanupConfirmed: true, UsageStatus: "complete"}
+		})
+	})
+	require.NoError(t, err)
+	applySessionResult(t, c, "execute", a.PacketID, result)
+	record := c.sessionRecord("execute", a.PacketID)
+	require.False(t, record.ResumeCandidate, "truncated thread-resume must retire the oversized thread instead of looping resume")
+
+	// Next invocation automatically rebuilds a fresh session (empty SessionID).
+	_, err = c.invokeScoped("execute", a.PacketID, a, func(a drivers.CallArgs) drivers.Result {
+		require.Empty(t, a.SessionID)
+		return sessionResult(a, drivers.MockResult(nil))
+	})
+	require.NoError(t, err)
+	require.Equal(t, "rebuild", c.sessionRecord("execute", a.PacketID).Action)
+}
+
 func TestSessionDurableReceiptReplaysCASWithoutDispatchOrDoubleAccounting(t *testing.T) {
 	fx, c := sessionFixture(t)
 	a := sessionArgs(c)

@@ -30,7 +30,8 @@ func queueDuringChild(t *testing.T, fx fixture, opts RunOpts, role string, start
 	d.fn = func(a drivers.CallArgs) drivers.Result {
 		if invocation == "" {
 			before := loadFixtureState(t, fx)
-			record := before.Sessions.Records[sessionKey(role, "planning:"+before.Planning.Requests[len(before.Planning.Requests)-1].ID)]
+			lastReq := before.Planning.Requests[len(before.Planning.Requests)-1]
+			record := before.Sessions.Records[sessionKey(role, planningSessionScope(&lastReq))]
 			require.NotNil(t, record)
 			require.Equal(t, "intent", record.Last.Status)
 			require.Equal(t, a.RequestID, record.Last.ID)

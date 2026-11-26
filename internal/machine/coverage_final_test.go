@@ -660,26 +660,57 @@ func TestVerificationGapEscalateArms(t *testing.T) {
 
 // ---- review 返退 spin 升级臂 ----
 
-// TestReviewReturnSpinEscalationArms：评审恒返退 → 相同签名第二次即 spin：
-// 首轮修订、次轮 inbox 停机。
+// TestReviewReturnSpinEscalationArms：普通代码审查恒返退（REVIEW_RETURNED）
+// 触发 spin 时直接升级人工 inbox（不重写里程碑计划）；而评审传输/认证错误
+// 触发 spin 时仍走原有 escalatePacket 路径（首轮修订、次轮 inbox 停机）。
 func TestReviewReturnSpinEscalationArms(t *testing.T) {
-	fx := newGitFixture(t)
-	sd := happyDrivers()
-	sd.reviewFn = func(drivers.CallArgs) drivers.Result { return returnVerdict() }
+	t.Run("REVIEW_RETURNED spin escalates straight to inbox without plan revision", func(t *testing.T) {
+		fx := newGitFixture(t)
+		sd := happyDrivers()
+		sd.reviewFn = func(drivers.CallArgs) drivers.Result { return returnVerdict() }
 
-	summary, err := RunTask(runOpts(fx, sd.set()))
-	require.NoError(t, err)
-	assert.Equal(t, "escalated", summary.Status)
-	st := loadFixtureState(t, fx)
-	ps := st.Packets["M01-T01"]
-	assert.Equal(t, "inbox", ps.Status)
-	assert.GreaterOrEqual(t, ps.PlanRevisions, 1)
+		summary, err := RunTask(runOpts(fx, sd.set()))
+		require.NoError(t, err)
+		assert.Equal(t, "escalated", summary.Status)
+		st := loadFixtureState(t, fx)
+		ps := st.Packets["M01-T01"]
+		assert.Equal(t, "inbox", ps.Status)
+		assert.Equal(t, 0, ps.PlanRevisions)
+	})
+
+	t.Run("non-REVIEW_RETURNED review error spin still exercises escalatePacket", func(t *testing.T) {
+		fx := newGitFixture(t)
+		sd := happyDrivers()
+		sd.reviewFn = func(drivers.CallArgs) drivers.Result {
+			return drivers.MockResult(func(r *drivers.Result) {
+				code := 0
+				r.ExitCode = &code
+				msg := "401 unauthorized"
+				r.ErrorMessage = &msg
+			})
+		}
+
+		summary, err := RunTask(runOpts(fx, sd.set()))
+		require.NoError(t, err)
+		assert.Equal(t, "escalated", summary.Status)
+		st := loadFixtureState(t, fx)
+		ps := st.Packets["M01-T01"]
+		assert.Equal(t, "inbox", ps.Status)
+		assert.GreaterOrEqual(t, ps.PlanRevisions, 1)
+	})
 }
 
 func TestReviewReturnSpinEscalateErrorArm(t *testing.T) {
 	fx := newGitFixture(t)
 	sd := happyDrivers()
-	sd.reviewFn = func(drivers.CallArgs) drivers.Result { return returnVerdict() }
+	sd.reviewFn = func(drivers.CallArgs) drivers.Result {
+		return drivers.MockResult(func(r *drivers.Result) {
+			code := 0
+			r.ExitCode = &code
+			msg := "401 unauthorized"
+			r.ErrorMessage = &msg
+		})
+	}
 	ctx := verdictCtx(t, fx, sd)
 	ctx.State.Packets["M01-T01"].Milestone = "M-99"
 

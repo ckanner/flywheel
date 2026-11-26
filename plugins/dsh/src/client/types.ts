@@ -1,6 +1,8 @@
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 
 export type MainTab = 'design' | 'execution' | 'investigation' | 'delivery' | 'traces' | 'settings';
+export type WorkbenchView = 'new-task' | 'main' | 'sub';
+export type WorkbenchDrawer = 'design' | 'dag' | 'delivery' | 'settings' | null;
 export type ExecutionViewMode = 'waves' | 'dag';
 export type DesignViewMode = 'synthesized' | 'side-by-side' | 'structured' | 'raw';
 export type InspectorTab = 'overview' | 'output' | 'evidence' | 'timeline' | 'contract';
@@ -150,6 +152,58 @@ export interface PlanningDesignSnapshot {
   findings?: PlanningFinding[];
 }
 
+export interface PlanningClarificationQuestion {
+  id: string;
+  title: string;
+  kind: 'choice' | 'quality-gate' | 'text' | string;
+  options?: string[];
+  recommended?: string;
+  rationale?: string;
+  required?: boolean;
+}
+
+export interface PlanningClarification {
+  status: 'pending' | 'skipped' | 'awaiting-answers' | 'confirmed' | string;
+  'decided-by'?: string;
+  'needs-clarification': boolean;
+  'is-frontend-ui': boolean;
+  summary?: string;
+  'suggested-gates'?: string[];
+  questions?: PlanningClarificationQuestion[];
+  answers?: Record<string, string>;
+  'selected-gates'?: string[];
+  'freeform-note'?: string;
+  'ui-prototype-mode'?: 'off' | 'auto' | 'always' | string;
+  invocation?: string;
+  'answered-at'?: string;
+  'request-id'?: string;
+}
+
+export interface PlanningUIPrototypeReview {
+  verdict: 'pass' | 'revise' | string;
+  summary: string;
+  findings: PlanningFinding[];
+  model?: string;
+  at?: string;
+}
+
+export interface PlanningUIPrototype {
+  revision: number;
+  design: PlanningRef;
+  status: 'drafting' | 'reviewing' | 'awaiting-approval' | 'approved' | 'skipped' | string;
+  'html-file'?: string;
+  summary?: string;
+  'design-tokens'?: Record<string, string>;
+  states?: string[];
+  review?: PlanningUIPrototypeReview;
+  feedback?: string[];
+  'approved-at'?: string;
+  'approval-source'?: string;
+  'approval-request-id'?: string;
+  model?: string;
+  invocation?: string;
+}
+
 export interface PlanningState {
   version?: number;
   phase?: string;
@@ -167,6 +221,8 @@ export interface PlanningState {
   'current-design'?: PlanningRef | null;
   reviews?: PlanningReviewRecord[];
   approvals?: PlanningApprovalRecord[];
+  clarification?: PlanningClarification | null;
+  'ui-prototype'?: PlanningUIPrototype | null;
   design?: PlanningDesignSnapshot;
   findings?: PlanningFinding[];
   brief?: {
@@ -178,6 +234,9 @@ export interface PlanningState {
     policy?: string;
     mode?: string;
     'design-granularity'?: string;
+    'clarify-mode'?: 'off' | 'auto' | 'always' | string;
+    'ui-prototype-mode'?: 'off' | 'auto' | 'always' | string;
+    'quality-gates'?: string[];
     constraints?: string[];
     evidence?: string[];
   };
@@ -216,6 +275,11 @@ export interface DesignCandidateRevision {
     generatedAt?: string;
     fallback?: boolean;
     fallbackReason?: string;
+    partial?: boolean;
+    completedSide?: 'primary' | 'secondary' | string;
+    failedSide?: 'primary' | 'secondary' | string;
+    failureCode?: string;
+    failureError?: string;
     [key: string]: unknown;
   } | null;
 }
@@ -385,13 +449,28 @@ export interface DeliveryPullRequest {
   }>;
 }
 
+export interface DeliveryLocalCommit {
+  sha: string;
+  subject: string;
+  at?: string;
+}
+
 export interface DeliverySnapshot {
+  mode?: 'local' | 'github' | string;
+  remoteStatus?: 'ready' | 'no-origin' | 'non-github' | 'gh-unavailable' | string;
+  remoteMessage?: string;
   endpoint?: 'local' | 'draft-pr' | 'pr-review' | 'auto-merge' | string;
   repo?: string;
+  url?: string;
+  localBranch?: string;
   branch?: string;
   baseBranch?: string;
+  defaultBase?: string;
   head?: string;
   dirty?: boolean;
+  workingTreeClean?: boolean;
+  recentCommits?: DeliveryLocalCommit[];
+  changedFiles?: string[];
   ahead?: number;
   behind?: number;
   pulls?: DeliveryPullRequest[];
@@ -540,10 +619,12 @@ export interface TraceResumeInfo {
 }
 
 export interface TraceBlock {
-  kind: 'thinking' | 'tool_call' | 'tool_result' | 'assistant' | 'progress' | 'error';
+  kind: 'user_prompt' | 'thinking' | 'tool_call' | 'tool_result' | 'assistant' | 'progress' | 'steps' | 'error';
   ts?: string;
   title?: string;
   text: string;
+  items?: string[];
+  rawJson?: string;
 }
 
 export interface TraceSummary {
@@ -556,6 +637,7 @@ export interface TraceSummary {
   model: string;
   thinking?: string;
   cwd?: string;
+  workspaceCwd?: string;
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked' | string;
   running: boolean;
   exitCode?: number | null;
@@ -564,13 +646,29 @@ export interface TraceSummary {
   startedAt?: string;
   updatedAt?: string;
   sessionId?: string;
+  sessionTitle?: string;
   resume?: TraceResumeInfo | null;
   errorCode?: string;
   errorSummary?: string;
   usage?: Record<string, unknown> | null;
+  contextUsage?: { used: number; size: number } | null;
+  promptBytes?: number | null;
   source?: 'live' | 'receipt' | 'state' | string;
   eventCount?: number;
+  byteSize?: number;
   preview?: string;
+}
+
+export interface SessionHistoryTurn {
+  id?: string;
+  kind?: string;
+  role?: 'user' | 'assistant' | 'system' | string;
+  at?: string;
+  prompt?: string;
+  text?: string;
+  summary?: string;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export interface TraceDetail extends TraceSummary {
@@ -593,6 +691,8 @@ export interface ControlResponse {
   running?: boolean;
   state?: TaskState | null;
   runs?: RunSummary[];
+  html?: string;
+  htmlFile?: string;
   planning?: PlanningState;
   delivery?: DeliverySnapshot;
   configuration?: ConfigSnapshot;

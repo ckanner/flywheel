@@ -117,14 +117,14 @@ function validDiagnostic(value, request) {
       ['code', 'remedy'].every(key => check[key] === undefined || typeof check[key] === 'string'));
 }
 
-// When the optional Claude Code Pro 0.7.0 peer is installed inside the DSH
+// When the optional Claude Code Pro 0.7.1 peer is installed inside the DSH
 // profile alongside this plugin package, prefer our own sibling worker so a
 // globally installed Flywheel launcher still resolves the profile's adapter.
 function resolveHostClaudeCodeProWorker() {
   try {
     const req = createRequire(import.meta.url);
     const manifest = req('dsh-subagent-claude-code-pro/package.json');
-    if (manifest?.name !== 'dsh-subagent-claude-code-pro' || manifest?.version !== '0.7.0') return undefined;
+    if (manifest?.name !== 'dsh-subagent-claude-code-pro' || manifest?.version !== '0.7.1') return undefined;
     for (const rel of ['./claude-code-pro-worker.mjs', './claude-code-pro-worker.js']) {
       const candidate = fileURLToPath(new URL(rel, import.meta.url));
       try {

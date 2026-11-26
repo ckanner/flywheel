@@ -10,10 +10,14 @@
     },
     "phase": {
       "enum": [
+        "clarifying",
+        "awaiting-clarification",
         "drafting",
         "reviewing",
         "awaiting-input",
         "awaiting-design-approval",
+        "prototyping",
+        "awaiting-prototype-approval",
         "approved",
         "activating",
         "ready",
@@ -115,6 +119,12 @@
     },
     "pending-activation": {
       "$ref": "#/$defs/activation"
+    },
+    "clarification": {
+      "$ref": "#/$defs/clarification"
+    },
+    "ui-prototype": {
+      "$ref": "#/$defs/ui-prototype"
     },
     "start-authorized": {
       "type": "boolean"
@@ -241,6 +251,31 @@
           "minLength": 1,
           "maxLength": 8192,
           "pattern": "\\S"
+        },
+        "clarify-mode": {
+          "enum": [
+            "off",
+            "auto",
+            "always"
+          ]
+        },
+        "ui-prototype-mode": {
+          "enum": [
+            "off",
+            "auto",
+            "always"
+          ]
+        },
+        "quality-gates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "\\S"
+          },
+          "minItems": 0,
+          "maxItems": 32
         }
       },
       "required": [
@@ -455,7 +490,7 @@
           "minProperties": 1,
           "maxProperties": 256,
           "patternProperties": {
-            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md|oracles/verify-[A-Za-z0-9._-]+\\.(mjs|sh))$": {
               "type": "string",
               "minLength": 1,
               "maxLength": 131072,
@@ -872,6 +907,12 @@
             "compact",
             "system"
           ]
+        },
+        "draft-mode": {
+          "enum": [
+            "dual",
+            "single"
+          ]
         }
       },
       "required": [
@@ -931,7 +972,7 @@
           "minProperties": 1,
           "maxProperties": 256,
           "patternProperties": {
-            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md|oracles/verify-[A-Za-z0-9._-]+\\.(mjs|sh))$": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
             }
@@ -943,7 +984,7 @@
           "minProperties": 0,
           "maxProperties": 256,
           "patternProperties": {
-            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md)$": {
+            "^(spec\\.md|task-packet-M[0-9]{2,}-T[0-9]{2,}\\.md|oracles/verify-[A-Za-z0-9._-]+\\.(mjs|sh))$": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
             }
@@ -979,6 +1020,266 @@
         "old-files",
         "stage",
         "base"
+      ]
+    },
+    "clarification-question": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "\\S"
+        },
+        "kind": {
+          "enum": [
+            "choice",
+            "quality-gate",
+            "text"
+          ]
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "\\S"
+          },
+          "maxItems": 12
+        },
+        "recommended": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ]
+    },
+    "clarification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "skipped",
+            "awaiting-answers",
+            "confirmed"
+          ]
+        },
+        "decided-by": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "needs-clarification": {
+          "type": "boolean"
+        },
+        "is-frontend-ui": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "suggested-gates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "\\S"
+          },
+          "maxItems": 16
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/clarification-question"
+          },
+          "maxItems": 8
+        },
+        "answers": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "selected-gates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "\\S"
+          },
+          "maxItems": 32
+        },
+        "freeform-note": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "ui-prototype-mode": {
+          "enum": [
+            "off",
+            "auto",
+            "always"
+          ]
+        },
+        "invocation": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "answered-at": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "request-id": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "status",
+        "needs-clarification",
+        "is-frontend-ui"
+      ]
+    },
+    "ui-prototype-review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "enum": [
+            "pass",
+            "revise"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          },
+          "maxItems": 64
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "verdict",
+        "summary",
+        "findings"
+      ]
+    },
+    "ui-prototype": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "design": {
+          "$ref": "#/$defs/ref"
+        },
+        "status": {
+          "enum": [
+            "drafting",
+            "reviewing",
+            "awaiting-approval",
+            "approved",
+            "skipped"
+          ]
+        },
+        "html-file": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "design-tokens": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 32
+        },
+        "review": {
+          "$ref": "#/$defs/ui-prototype-review"
+        },
+        "feedback": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "maxItems": 64
+        },
+        "approved-at": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "approval-source": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "approval-request-id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "invocation": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "revision",
+        "design",
+        "status"
       ]
     }
   }

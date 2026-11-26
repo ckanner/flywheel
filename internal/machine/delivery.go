@@ -42,6 +42,7 @@ type PullRequest struct {
 }
 type DeliverySnapshot struct {
 	pushURL     string
+	Mode        string        `json:"mode,omitempty"`
 	LocalBranch string        `json:"localBranch"`
 	Repo        string        `json:"repo"`
 	URL         string        `json:"url"`
@@ -164,6 +165,7 @@ func InspectDelivery(ctx context.Context, cwd string, headBranches ...string) (*
 	if snapshot.Pulls == nil {
 		snapshot.Pulls = []PullRequest{}
 	}
+	snapshot.Mode = "github"
 	return snapshot, nil
 }
 

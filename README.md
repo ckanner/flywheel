@@ -144,7 +144,7 @@ The default is a subscription-only configuration using four native clients:
 The [model policy](docs/en/model-policy.md) gives exact stage, route, profile and
 effort mappings. [Antigravity](docs/en/antigravity.md) is included as a bundled
 machine adapter and also has an independently installable DSH plugin. Claude
-requires the reviewed [0.7.0 companion](docs/en/claude-code-pro.md) in the worker's
+requires the reviewed [0.7.1 companion](docs/en/claude-code-pro.md) in the worker's
 resolution tree. Model access still depends on native login and the actual account.
 
 The preset has no API-key or credits fallback. JEV is off by default; when enabled

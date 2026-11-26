@@ -316,16 +316,20 @@ A rebuild records its reason and generation and hands over current contracts, wo
 
 ### Verified incremental inputs
 
-Explicit `sessions.context:"verified-incremental"` permits Execute to reuse a
-confirmed same-role stable contract after Go verifies that the consumed receipt
-proves `dispatched` and `completed`, together with the prompt version, current
-contract and readable context/cache file digests. A safe admission rejection or
-failed/cancelled turn may preserve the old thread, but cannot prove delivery of
-that turn's newly prepared authority; the next call resends full input. New
-input carries feedback, candidate identities, attempt and references. Changed or
-unavailable authority, legacy missing checkpoints and invalid context receipts
-select full input. The decision and reason are saved on the role record. Review
-and Judge keep full current inputs and never inherit Executor private history.
+By default (when `sessions.context` is omitted or `"verified-incremental"`),
+Execute and planning roles (`design-plan`, `design-review`, `plan`, `plan-review`)
+may reuse a confirmed same-role stable contract (or planning Layer 1/2) after Go
+verifies that the consumed receipt proves `dispatched` and `completed`, together
+with the prompt version, current contract (or stable planning authority and
+`project-context.md`) and readable context/cache file digests. Set
+`sessions.context: "full"` to always resend full prompts. A safe admission
+rejection or failed/cancelled turn may preserve the old thread, but cannot prove
+delivery of that turn's newly prepared authority; the next call resends full
+input. New input carries feedback, candidate identities, attempt and references
+(or Layer 3 planning delta). Changed or unavailable authority, legacy missing
+checkpoints and invalid context receipts select full input. The decision and
+reason are saved on the role record. Review and Judge keep full current inputs
+and never inherit Executor private history.
 
 An opt-in [execution policy](configuration.md#bounded-execution-policy-opt-in)
 can select another complete allowed binding. Every switch starts a new history

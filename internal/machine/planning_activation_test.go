@@ -543,7 +543,7 @@ func TestPendingActivationRejectsDependencyReadAndFilesystemRaces(t *testing.T) 
 				calls := 0
 				openPlanningTask = func(path string) (*os.Root, error) {
 					calls++
-					if calls == 4 { // after two temporary-recovery roots and export verification
+					if calls == 5 { // after two temporary-recovery roots, export verification and project-context sync
 						return nil, os.ErrPermission
 					}
 					return open(path)
@@ -733,4 +733,111 @@ func TestPlanProjectionUsesNewestCompleteVersionAndRejectsMissingSpec(t *testing
 	files = jsonClone(first.Files)
 	files["task-packet-"+strings.Repeat("x", 300)+".md"] = "too long for a filesystem entry"
 	require.Error(t, c.validatePlanningFiles(files, planning.Request{Scope: "milestone", ScopeID: "M-01"}))
+}
+
+func TestPlanningProtectedOraclesAndProjectContextMemory(t *testing.T) {
+	fx, c := newReviewedFixture(t)
+	p := c.State.Planning
+	// Unit-test renderProjectContext across Brief constraints, quality gates, clarification, and design decisions.
+	rendered := string(renderProjectContext(&planning.State{
+		Brief:         planning.Brief{Goal: "Ship game", Constraints: []string{"Zero external deps"}, QualityGates: []string{"100% statement coverage"}},
+		Clarification: &planning.Clarification{Status: "confirmed", Answers: map[string]string{"stack": "Go + TS"}},
+		CurrentDesign: &planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+		Designs: []planning.Design{{
+			Ref:                 planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+			ImplementationScope: []string{"src"},
+			Decisions:           []planning.Decision{{ID: "D-1", Kind: "fixed", Statement: "Use atomic CAS"}},
+			Milestones:          []planning.Milestone{{ID: "M-01", Title: "Core", Gate: "go test"}},
+		}},
+	}))
+	require.Contains(t, rendered, "Zero external deps")
+	require.Contains(t, rendered, "100% statement coverage")
+	require.Contains(t, rendered, "stack: Go + TS")
+	require.Contains(t, rendered, "[D-1/fixed] Use atomic CAS")
+
+	// Updating clarification refreshes derived project-context.md in the task ledger root (excluded from candidate identity).
+	p.Clarification = &planning.Clarification{Status: "confirmed", Answers: map[string]string{"stack": "Go 1.27 + TS"}}
+	require.NoError(t, c.checkPlanningExports(true))
+	require.Contains(t, string(mustReadFile(t, filepath.Join(fx.taskDir, "project-context.md"))), "Go 1.27 + TS")
+	oldOpen := openPlanningTask
+	openCalls := 0
+	openPlanningTask = func(name string) (*os.Root, error) {
+		openCalls++
+		if openCalls == 4 {
+			return nil, os.ErrPermission
+		}
+		return oldOpen(name)
+	}
+	require.ErrorIs(t, c.checkPlanningExports(true), os.ErrPermission)
+	openPlanningTask = oldOpen
+	oldWrite := writePlanningBytes
+	writePlanningBytes = func(*os.Root, string, []byte) error { return os.ErrPermission }
+	p.Clarification.Answers["stack"] = "Go 1.28"
+	require.ErrorIs(t, c.checkPlanningExports(true), os.ErrPermission)
+	writePlanningBytes = oldWrite
+	require.NoError(t, c.checkPlanningExports(true))
+
+	// Valid standalone protected oracles (.mjs and .sh) pass validation and activate cleanly.
+	require.False(t, isOwnedOraclePath("oracles/nested/verify-x.mjs"))
+	require.False(t, isOwnedOraclePath("oracles/verify-../x.mjs"))
+	require.False(t, isOwnedOraclePath("oracles/verify-x.py"))
+	require.True(t, isOwnedOraclePath("oracles/verify-M01-T01.mjs"))
+	require.True(t, isOwnedOraclePath("oracles/verify-M01-T01.sh"))
+
+	files := jsonClone(p.Plans[0].Files)
+	files["oracles/verify-M01-T01.mjs"] = "console.log('ok');\n"
+	files["oracles/verify-M01-T01.sh"] = "#!/bin/sh\necho ok\n"
+	require.NoError(t, c.validatePlanningFiles(files, planning.Request{Scope: "milestone", ScopeID: "M-01"}))
+
+	// Syntax failures and oversize oracles are rejected mechanically before sealing.
+	badSh := jsonClone(files)
+	badSh["oracles/verify-M01-T01.sh"] = "if then fi (\n"
+	require.ErrorContains(t, c.validatePlanningFiles(badSh, planning.Request{Scope: "milestone", ScopeID: "M-01"}), "failed syntax check")
+
+	tooLongName := jsonClone(files)
+	tooLongName["oracles/verify-"+strings.Repeat("x", 300)+".mjs"] = "console.log(1);\n"
+	require.Error(t, c.validatePlanningFiles(tooLongName, planning.Request{Scope: "milestone", ScopeID: "M-01"}))
+
+	tooBig := jsonClone(files)
+	tooBig["oracles/verify-M01-T01.mjs"] = strings.Repeat("a", maxOracleBytes+1)
+	require.ErrorContains(t, c.validatePlanningFiles(tooBig, planning.Request{Scope: "milestone", ScopeID: "M-01"}), "byte limit")
+
+	// Missing node binary gracefully skips JS syntax check without failing.
+	oldLook := lookPathNode
+	lookPathNode = func(string) (string, error) { return "", os.ErrNotExist }
+	require.NoError(t, defaultCheckOracleSyntax("oracles/verify-M01-T01.mjs", "/nonexistent"))
+	lookPathNode = oldLook
+
+	// Activating a plan with an oracle creates oracles/ and verifies projection digest.
+	planWithOracle := p.Plans[0]
+	planWithOracle.Ref.Revision++
+	planWithOracle.Files = files
+	var err error
+	planWithOracle.Dependencies, err = c.planScopeIdentity()
+	require.NoError(t, err)
+	planWithOracle, err = planning.SealPlan(planWithOracle)
+	require.NoError(t, err)
+	require.NoError(t, planning.RecordPlan(p, planWithOracle))
+	require.NoError(t, planning.RecordReview(p, planning.Review{
+		ID: "oracle-review", Kind: "plan", Target: planWithOracle.Ref, Design: &planWithOracle.Design,
+		InputRevision: 1, Invocation: "oracle-rev", Role: "plan-review", Binding: "independent-reviewer",
+		Verdict: "pass", ScopeVerdict: "within-envelope", Summary: "Oracles verified", Findings: []planning.Finding{},
+	}))
+	oldMkdir := mkdirPlanningDirectory
+	mkdirPlanningDirectory = func(root *os.Root, name string, perm os.FileMode) error {
+		if name == "oracles" {
+			return os.ErrPermission
+		}
+		return oldMkdir(root, name, perm)
+	}
+	require.ErrorIs(t, c.activatePlanningPlans(), os.ErrPermission)
+	mkdirPlanningDirectory = oldMkdir
+	require.NoError(t, c.resumePlanningActivation())
+	require.FileExists(t, filepath.Join(fx.taskDir, "oracles", "verify-M01-T01.mjs"))
+	tracked := gitCmd(t, fx.root, "ls-files", "--", filepath.Join(c.taskDirPrefix(), "oracles/verify-M01-T01.mjs"))
+	require.Contains(t, tracked, "oracles/verify-M01-T01.mjs", "projected oracle must be committed into Git for worktree delivery")
+	_, violations := c.partitionChangedFiles([]string{c.taskDirPrefix() + "oracles/verify-M01-T01.mjs"})
+	require.Len(t, violations, 1, "executor edits to projected oracles must be blocked as contract-file violations")
+	require.Equal(t, "contract-file", violations[0].Type)
+	require.NoError(t, c.validatePlanningFiles(files, planning.Request{Scope: "milestone", ScopeID: "M-01"}))
 }

@@ -3,6 +3,7 @@ package machine
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,38 @@ var applyQueuedPlanning = (*Context).applyPlanningQueue
 func designRequest(r planning.Request) bool {
 	scope, _ := planning.CanonicalScope(r.Scope, r.ScopeID)
 	return scope == "design"
+}
+
+// planningSessionScope maps planning requests to a stable canonical scope so
+// multi-round revisions and follow-up requests reuse the warm provider session
+// instead of cold-restarting on every request ID.
+func planningSessionScope(r *planning.Request) string {
+	scope, scopeID := planning.CanonicalScope(r.Scope, r.ScopeID)
+	if scope == "design" {
+		return "planning:design"
+	}
+	return "planning:" + planning.PlanKey(scope, scopeID)
+}
+
+func unreviewedPlanScope(p *planning.State) (string, string, bool) {
+	keys := make([]string, 0, len(p.CurrentPlans))
+	for k := range p.CurrentPlans {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		ref := p.CurrentPlans[k]
+		r := planning.LatestReview(p, "plan", ref)
+		if r == nil || r.Verdict != "pass" || r.ScopeVerdict != "within-envelope" {
+			plan := planning.FindPlan(p, ref)
+			if plan != nil && plan.Scope != "" {
+				return plan.Scope, plan.ScopeID, true
+			}
+			scope, scopeID, _ := strings.Cut(k, ":")
+			return scope, scopeID, true
+		}
+	}
+	return "", "", false
 }
 
 func planningReason(text string) string {
@@ -83,6 +116,9 @@ func (c *Context) prepareReviewedExecution() (bool, error) {
 			}
 		}
 		if index < 0 && (p.CurrentDesign == nil || planning.FindDesign(p, *p.CurrentDesign).InputRevision != p.InputRevision) {
+			if ok, err := c.runClarificationStage(); err != nil || !ok {
+				return false, err
+			}
 			// A spent request stays spent across Run/restart. New user input, not
 			// another process, is what creates a new bounded design request.
 			for _, r := range p.Requests {
@@ -112,13 +148,25 @@ func (c *Context) prepareReviewedExecution() (bool, error) {
 			}
 			continue
 		}
-		if p.Phase == "blocked" || p.Phase == "budget-stopped" || p.Phase == "awaiting-input" {
+		if p.Phase == "blocked" || p.Phase == "budget-stopped" || p.Phase == "awaiting-input" || p.Phase == "awaiting-clarification" || p.Phase == "awaiting-prototype-approval" {
 			return c.pausePlanning(p.Reason)
 		}
 		if p.CurrentDesign == nil || !planning.Authorized(p, *p.CurrentDesign) {
 			return c.pausePlanning("设计及独立评审已保存；等待你审阅并批准当前版本。")
 		}
 		if len(p.CurrentPlans) > 0 {
+			if scope, scopeID, needsReview := unreviewedPlanScope(p); needsReview {
+				if c.planningOnly {
+					return c.pausePlanning("本次 Plan 已结束；当前执行计划尚未通过独立审查，未启动实施。")
+				}
+				if !planning.StartAllowed(p, *p.CurrentDesign) {
+					return c.pausePlanning("方案已批准；等待你明确开始实施。")
+				}
+				if _, err := c.newPlanningRequest(scope, scopeID, firstNonEmpty(p.Reason, "继续修订里程碑实施计划以通过独立审查"), false); err != nil {
+					return false, err
+				}
+				continue
+			}
 			if err := c.activatePlanningPlans(); err != nil {
 				return false, err
 			}
@@ -130,6 +178,9 @@ func (c *Context) prepareReviewedExecution() (bool, error) {
 			return c.pausePlanning("方案已批准；等待你明确开始实施。")
 		}
 		if p.Active == nil || p.Active.Design != *p.CurrentDesign {
+			if ok, err := c.runUIPrototypeStage(); err != nil || !ok {
+				return false, err
+			}
 			d := planning.FindDesign(p, *p.CurrentDesign)
 			if _, err := c.newPlanningRequest("milestone", d.Milestones[0].ID, "细化首个里程碑的实施计划", false); err != nil {
 				return false, err
@@ -225,7 +276,7 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 	if err != nil {
 		return drivers.Result{}, role, "", err
 	}
-	scope := "planning:" + r.ID
+	scope := planningSessionScope(r)
 	if !c.sessionReplay(role, scope) && c.budgetGate() == "stop" {
 		return drivers.Result{}, role, "", fmt.Errorf("planning budget exhausted")
 	}
@@ -252,16 +303,22 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 	}
 	// Antigravity exposes observed child metadata, not a complete background-child
 	// lifecycle. Keep its research and result collection in this foreground call.
-	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files, prompts.PlanningPromptOptions{NativeAgents: b.NativeProfile != "" && b.Harness != "antigravity"})
+	prompt := fmt.Sprintf("任务账本目录（只读研究）: %q\n%s\n", c.TaskDir, research) + prompts.BuildPlanningPrompt(c.State.Planning, *r, reviewer, files, prompts.PlanningPromptOptions{NativeAgents: b.NativeProfile != "" && b.Harness != "antigravity", TaskDir: c.TaskDir})
 	before, err := c.planningGuard()
 	if err != nil {
 		return drivers.Result{}, role, "", err
+	}
+	if !reviewer && designRequest(*r) && r.DraftMode == "single" {
+		if partial, ok := c.loadMatchingDualDraftPartial(len(c.State.Planning.Designs)+1, c.State.Planning.InputRevision); ok {
+			return drivers.Result{Text: partial.Text, Settled: true, ExitCode: new(0)}, role, partial.Invocation, nil
+		}
 	}
 	if c.shouldDualDraftDesign(r, reviewer) {
 		return c.invokeDualDraftDesign(r, role, scope, research, b, driver, prompt, before)
 	}
 	res, err := c.invokeScoped(role, scope, drivers.CallArgs{Prompt: prompt, TaskDir: c.TaskDir, Cwd: c.Cwd,
-		MilestoneID: r.ScopeID, Model: b.Model, Binding: config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking},
+		MilestoneID: r.ScopeID, Model: b.Model, ContextTemplateVersion: planningContextVersion,
+		Binding:        config.LoopBinding{NativeProfile: b.NativeProfile, Harness: b.Harness, Provider: b.Provider, Model: b.Model, Channel: b.Channel, Thinking: b.Thinking},
 		PermissionMode: c.Config.PermissionMode(role, b.Harness), APIKey: c.channelApiKey(b.Channel), APIKeys: c.apiKeysFor(b.Channel), Watchdog: c.wdogFor(role)}, call)
 	if err != nil {
 		return res, role, "", err
@@ -285,7 +342,7 @@ func (c *Context) invokePlanning(r *planning.Request, reviewer bool) (drivers.Re
 }
 
 func (c *Context) retryPlanning(r *planning.Request, role string, code errs.ErrorCode, reason string) (bool, error) {
-	c.consumeSession(role, "planning:"+r.ID)
+	c.consumeSession(role, planningSessionScope(r))
 	r.Retries++
 	c.State.Planning.Reason = planningReason(reason)
 	if r.Retries > c.Config.Retry.MaxTransportRetries+planValidationRetries {
@@ -339,7 +396,21 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 		}
 		if r.Stage == "" || r.Stage == "planner" {
 			if err := planning.BeginRound(p, r.ID); err != nil {
-				return c.planningRequestStop(r, "budget-stopped", err.Error())
+				diag := err.Error()
+				if designRequest(*r) && p.CurrentDesign != nil {
+					if latest := planning.LatestReview(p, "design", *p.CurrentDesign); latest != nil {
+						open := []string{}
+						for _, f := range latest.Findings {
+							if f.Status != "resolved" && (f.Severity == "blocker" || f.Severity == "major") {
+								open = append(open, fmt.Sprintf("%s(%s): %s", f.ID, f.Severity, f.Target))
+							}
+						}
+						if len(open) > 0 {
+							diag = fmt.Sprintf("%s — 收敛诊断：经过 %d 轮仍存在未闭合分歧 [%s]，建议由你直接裁决或补充约束。", diag, r.Rounds, strings.Join(open, "; "))
+						}
+					}
+				}
+				return c.planningRequestStop(r, "budget-stopped", diag)
 			}
 		}
 		reviewer := r.Stage == "reviewer"
@@ -350,6 +421,9 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 					return false, err
 				}
 				return c.pausePlanning("规划输入已变化；先检查反馈和当前设计，再继续 Plan。")
+			}
+			if errors.Is(err, errDualDraftPartial) {
+				return c.planningRequestStop(r, "awaiting-input", err.Error())
 			}
 			if c.err() != nil {
 				return false, err
@@ -362,7 +436,7 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 		}
 		code := planningResultCode(res)
 		if res.Cancelled {
-			c.consumeSession(role, "planning:"+r.ID)
+			c.consumeSession(role, planningSessionScope(r))
 			return c.planningRequestStop(r, "cancelled", "规划调用已取消；已保留用量与终态，不自动重试。")
 		}
 		if code == "" {
@@ -389,7 +463,7 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 			}
 			continue
 		}
-		c.consumeSession(role, "planning:"+r.ID)
+		c.consumeSession(role, planningSessionScope(r))
 		c.save() // proposal/review and consumed receipt are one atomic adoption.
 		if err := c.err(); err != nil {
 			return false, err
@@ -457,8 +531,19 @@ func (c *Context) adoptPlanningProposal(r *planning.Request, text, invocation st
 			return err
 		}
 	} else {
-		var output prompts.PlanOutput
-		if err := prompts.DecodePlanningOutput(text, &output); err != nil {
+		existing := map[string]string{}
+		if p.Active != nil {
+			existing = c.planFiles(p.Active.Plans)
+		}
+		if ref, ok := p.CurrentPlans[planning.PlanKey(r.Scope, r.ScopeID)]; ok {
+			if cur := planning.FindPlan(p, ref); cur != nil {
+				for k, v := range cur.Files {
+					existing[k] = v
+				}
+			}
+		}
+		output, err := prompts.DecodePlanOutput(text, existing)
+		if err != nil {
 			return err
 		}
 		if err := c.validatePlanningFiles(output.Files, *r); err != nil {
@@ -501,7 +586,7 @@ func (c *Context) adoptPlanningReview(r *planning.Request, text, role, invocatio
 		review.Kind, review.Plan = "compact-v1", p.CurrentPlan
 		review.DesignVerdict, review.CoverageVerdict = output.DesignVerdict, output.CoverageVerdict
 	}
-	if record := c.sessionRecord(role, "planning:"+r.ID); record != nil {
+	if record := c.sessionRecord(role, planningSessionScope(r)); record != nil {
 		review.Binding = record.Binding
 	}
 	if !designRequest(*r) {

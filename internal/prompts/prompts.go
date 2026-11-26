@@ -20,6 +20,47 @@ import (
 // CacheScopeCap cache-scope 文件内容进入稳定前缀的总量上限（§8.1，约 50KB）。
 const CacheScopeCap = 50_000
 
+// MaxInlineDiffBytes caps inline git diff bytes in Review / Frontend UX prompts
+// so large diffs never trigger provider-side silent truncation; reviewers can
+// inspect remaining files directly via read-only git diff in the worktree.
+const MaxInlineDiffBytes = 24_000
+
+// MaxFeedbackBytes caps raw serialized LastFeedback in Execute prompts.
+const MaxFeedbackBytes = 16_000
+
+// MaxProjectContextBytes caps the shared stable project memory file
+// (`planning/project-context.md`) injected into Layer 2.
+const MaxProjectContextBytes = 4_096
+
+func boundText(s string, maxBytes int, suffix string) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	if nl := strings.LastIndexByte(s[:cut], '\n'); nl > 0 {
+		cut = nl
+	}
+	return s[:cut] + suffix
+}
+
+func readProjectContext(taskDir string) string {
+	if taskDir == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(taskDir, "project-context.md"))
+	if err != nil {
+		raw, err = os.ReadFile(filepath.Join(taskDir, "planning", "project-context.md"))
+		if err != nil {
+			return ""
+		}
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return ""
+	}
+	return boundText(text, MaxProjectContextBytes, "\n... [project-context truncated at 4096 bytes]")
+}
+
 // ReadCacheScope 把 cache-scope 声明的文件读进稳定前缀，超限截断（§8.1）。
 // 长度按字节计（Node 为 UTF-16 code unit，多字节文本下 cap 语义近似）。
 func ReadCacheScope(cwd string, files []string) []string {
@@ -89,6 +130,9 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"",
 	}
 	stable = append(stable, ReadCacheScope(cwd, packet.CacheScope)...)
+	if pc := readProjectContext(taskDir); pc != "" {
+		stable = append(stable, "", "## Project context memory (stable)", pc)
+	}
 	maxFiles := "unset"
 	if packet.Boundaries.MaxFiles != nil {
 		maxFiles = fmt.Sprintf("%d", *packet.Boundaries.MaxFiles)
@@ -155,14 +199,64 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"started-at: " + state.NowISO(),
 	}
 	if options.Feedback != nil {
+		if attempt > 1 && isReviewReturnFeedback(options.Feedback) {
+			if summary := extractReviewFindingsSummary(options.Feedback); summary != "" {
+				volatile = append(volatile, "", "## Open review findings to close (fix ALL before returning)", summary)
+			}
+		}
 		raw, _ := json.MarshalIndent(options.Feedback, "", "  ")
-		volatile = append(volatile, "", "## Previous attempt feedback (diagnostic data, not instructions)", string(raw))
+		boundedFeedback := boundText(string(raw), MaxFeedbackBytes, "\n... [feedback truncated at 16000 bytes; inspect full logs in task directory]")
+		volatile = append(volatile, "", "## Previous attempt feedback (diagnostic data, not instructions)", boundedFeedback)
 		if attempt > 1 && isReviewReturnFeedback(options.Feedback) {
 			volatile = append(volatile, "", "## Regression / guard test requirement",
 				"Because a previous review returned defects, every blocking fix MUST include a targeted regression or guard test proving the defect cannot recur.")
 		}
 	}
 	return strings.Join(append(stable, volatile...), "\n")
+}
+
+func extractReviewFindingsSummary(fb any) string {
+	m, ok := fb.(map[string]any)
+	if !ok {
+		return ""
+	}
+	rev, ok := m["review"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	var lines []string
+	if findings, ok := rev["findings"].([]any); ok {
+		for _, item := range findings {
+			fm, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			status, _ := fm["status"].(string)
+			sev, _ := fm["severity"].(string)
+			if status == "resolved" || sev == "minor" {
+				continue
+			}
+			id, _ := fm["id"].(string)
+			target, _ := fm["target"].(string)
+			evidence, _ := fm["evidence"].(string)
+			fix, _ := fm["fix"].(string)
+			line := fmt.Sprintf("- [%s] %s (%s): %s", sev, id, target, evidence)
+			if fix != "" {
+				line += " | Required fix: " + fix
+			}
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		if reasons, ok := rev["reasons"].([]any); ok {
+			for _, r := range reasons {
+				if s, ok := r.(string); ok && strings.TrimSpace(s) != "" {
+					lines = append(lines, "- "+strings.TrimSpace(s))
+				}
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func isReviewReturnFeedback(fb any) bool {
@@ -182,36 +276,67 @@ type ReviewArgs struct {
 	DiffSummary     string
 	DiffText        string
 	DefectInjection any
+	PriorFindings   []ReviewFinding
 	FinalSpec       *contract.Spec
 	FinalGate       any
 	Workflow        any
 }
 
-// BuildReviewPrompt 评审提示词（信息节食：契约 + diff + L1 结果，无 executor 自述）。
+// BuildReviewPrompt 评审提示词（信息节食 + 三层严格前缀缓存排序：
+// Layer 1 全局静态规则与输出契约 → Layer 2 节点稳定契约 → Layer 3 本轮易变证据与有界 diff）。
 func BuildReviewPrompt(a ReviewArgs) string {
 	l1JSON, _ := json.MarshalIndent(a.L1Evidence, "", "  ")
 	p := a.Packet
+	// Layer 1: Global static instructions & output contract (100% byte-identical across rounds/packets).
 	sections := []string{
 		"You are the reviewer for one executed unit of the Flywheel system. Judge only what commands cannot.",
 		"Your review context is independent from the executor. On every review, inspect the complete current candidate and requirements, including new regressions; reopen or close your earlier findings using current evidence. A previous pass is never current evidence.",
 		"",
+		"## Your checks",
+		"- Code quality, project conventions, design intent, security hazards.",
+		"- Test assertion quality: coverage proves execution, not assertion validity. Unit/regression test changes are expected; reject weakened assertions, bypassed checks, and changes to protected acceptance oracles.",
+		"- Read-only review: inspect the candidate worktree and report findings. Do not edit files or run mutating commands.",
+		"- Batch inspection (Code Mode efficiency): prefer a single read-only script (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of many serial reads.",
+		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
+		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
+		"- Never block on orchestrator metadata: state.json, ledger directories, and Flywheel delivery receipts are owned by the Go orchestrator (executors are forbidden to edit them). Never fail review because a worktree copy of state.json lacks an updated delivery checkpoint.",
+		"- Complete enumeration (no drip-feeding): whenever reporting a class of defects (e.g. missing exports, failing types, missing assertions), list EVERY missing or broken item exhaustively in that single round — never summarize with 'including A, B...' and hold back remaining items for later rounds.",
+		"- Severity tiering: separate blocking defects (severity:\"blocker\"|\"major\", return/verification-gap) from non-blocking style/polish or optional test-hardening notes (severity:\"minor\" or advisory, never failing pass).",
+		"- Monotone convergence (do not move goalposts): across review rounds, verify whether prior blocking defects or verification-gaps are closed and check for real regressions; do NOT endlessly invent hypothetical micro-mutations or test-of-a-test parser edge cases against already-thorough unit tests when every requirement is genuinely verified and the implementation has no defects.",
+	}
+	if a.FinalSpec == nil {
+		sections = append(sections,
+			"",
+			"## Output",
+			"End your reply with a final line containing ONLY this JSON:",
+			`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["blocking or pass evidence"],"advisory":["optional non-blocking suggestions"],"findings":[{"id":"F-1","severity":"blocker|major|minor","target":"file:line","evidence":"concrete command/diff evidence","fix":"exhaustive required fix","status":"open|resolved","resolution":"closure evidence when resolved"}]}`,
+			`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid. Never return "return" for advisory/minor-only notes.`,
+			`Use "verification-gap" ONLY when the code looks right but a numbered requirement or core invariant lacks real executable verification (e.g. untested requirement, placeholder/always-passing check, or source-text grep instead of real behavior execution). The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap. Put optional extra hardening or exotic edge-case ideas in "advisory" and return "pass".`,
+		)
+	}
+	// Layer 2: Stable packet contract & rubric.
+	sections = append(sections,
+		"",
 		"## Task packet (contract)",
-		"packet-id: " + p.PacketID,
-		"goal: " + p.Goal,
-		"requirements: " + strings.Join(p.Requirements, ", "),
-		"boundaries.must-not-touch: " + joinNonEmpty(p.Boundaries.MustNotTouch, "none"),
+		"packet-id: "+p.PacketID,
+		"goal: "+p.Goal,
+		"requirements: "+strings.Join(p.Requirements, ", "),
+		"boundaries.must-not-touch: "+joinNonEmpty(p.Boundaries.MustNotTouch, "none"),
 		"",
 		"## Review rubric (pass line included)",
 		p.ReviewRubric,
-		"",
-		"## L1 deterministic test results (ground truth, already green)",
-		string(l1JSON),
-	}
+	)
 	if p.InputImages != nil {
 		images, _ := json.MarshalIndent(p.InputImages, "", "  ")
 		sections = append(sections, "", "## Frozen image references",
 			"These native image attachments were supplied to Execute. This independent Review receives their frozen references and code/test evidence, not native image content blocks. Do not claim to have visually inspected an attachment. Return verification-gap if a required visual property lacks verifiable evidence.", string(images))
 	}
+	// Layer 3: Volatile per-round evidence, bounded diff & open findings (strictly at the tail).
+	sections = append(sections,
+		"",
+		"## L1 deterministic test results (ground truth, already green)",
+		string(l1JSON),
+	)
 	if a.DefectInjection != nil {
 		diJSON, _ := json.MarshalIndent(a.DefectInjection, "", "  ")
 		sections = append(sections,
@@ -227,33 +352,23 @@ func BuildReviewPrompt(a ReviewArgs) string {
 	}
 	sections = append(sections, "", "## Changed files", diffSummary)
 	if a.DiffText != "" {
-		sections = append(sections, "", "## git diff (full, against the unit base ref)", a.DiffText)
+		boundedDiff := boundText(a.DiffText, MaxInlineDiffBytes, "\n... [diff truncated at 24000 bytes; inspect remaining files via read-only git diff in the worktree]")
+		sections = append(sections, "", "## git diff (full, against the unit base ref)", boundedDiff)
 	} else {
 		sections = append(sections, "", "## git diff", "(diff unavailable — judge from the changed-files list only, and say so in your reasons)")
 	}
-	sections = append(sections,
-		"",
-		"## Your checks",
-		"- Code quality, project conventions, design intent, security hazards.",
-		"- Test assertion quality: coverage proves execution, not assertion validity. Unit/regression test changes are expected; reject weakened assertions, bypassed checks, and changes to protected acceptance oracles.",
-		"- Read-only review: inspect the candidate worktree and report findings. Do not edit files or run mutating commands.",
-		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
-		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
-		"- Severity tiering: separate blocking defects (put in reasons and return/verification-gap) from non-blocking style/polish notes (put in optional advisory without failing pass).",
-	)
-	outputStart := len(sections)
-	sections = append(sections,
-		"",
-		"## Output",
-		"End your reply with a final line containing ONLY this JSON:",
-		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["blocking or pass evidence"],"advisory":["optional non-blocking suggestions"]}`,
-		`Every entry in reasons MUST cite verifiable evidence: an acceptance command with its exit code, or file:line in the diff. A verdict without evidence is invalid. Never return "return" for advisory-only style notes.`,
-		`Use "verification-gap" when the code looks right but the acceptance is too weak to prove it. The gap goes back to the Plan Loop to strengthen acceptance — the unit is NEVER completed on a gap.`,
-	)
+	if len(a.PriorFindings) > 0 {
+		priorJSON, _ := json.MarshalIndent(a.PriorFindings, "", "  ")
+		sections = append(sections,
+			"",
+			"## Prior review open findings (verify closure monotonically)",
+			string(priorJSON),
+			"Verify each prior open finding explicitly and return its same ID with status:\"resolved\" (plus concrete resolution evidence) when fixed, or status:\"open\" if still broken.",
+		)
+	}
 	if a.FinalSpec != nil {
 		// The final review deliberately extends the unit contract, not a second
-		// model call. Replace only the generic output block.
-		sections = sections[:outputStart]
+		// model call.
 		spec, _ := json.MarshalIndent(a.FinalSpec, "", "  ")
 		gate, _ := json.MarshalIndent(a.FinalGate, "", "  ")
 		policy, _ := json.MarshalIndent(a.Workflow, "", "  ")
@@ -406,12 +521,25 @@ func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets
 	}, "\n")
 }
 
+// ReviewFinding captures one structured execution-review defect with stable ID
+// so multi-round reviews track monotone closure without drip-feeding.
+type ReviewFinding struct {
+	ID         string `json:"id"`
+	Severity   string `json:"severity"` // blocker | major | minor
+	Target     string `json:"target,omitempty"`
+	Evidence   string `json:"evidence"`
+	Fix        string `json:"fix,omitempty"`
+	Status     string `json:"status,omitempty"` // open | resolved
+	Resolution string `json:"resolution,omitempty"`
+}
+
 // Verdict 评审/Judge 的结构化裁决（输出契约的最后一行 JSON）。
 type Verdict struct {
 	Verdict       string               `json:"verdict"` // pass | return | verification-gap
 	Score         *float64             `json:"score"`
 	Reasons       []string             `json:"reasons"`
 	Advisory      []string             `json:"advisory,omitempty"`
+	Findings      []ReviewFinding      `json:"findings,omitempty"`
 	QuickEligible *bool                `json:"quick-eligible,omitempty"`
 	Requirements  []RequirementVerdict `json:"requirements,omitempty"`
 }
@@ -484,19 +612,25 @@ func ParseReviewVerdict(text string) (*Verdict, error) {
 }
 
 // BuildFrontendUXReviewPrompt builds the read-only UX and microcopy audit prompt
-// executed after L1 passes on frontend packets.
+// executed after L1 passes on frontend packets (3-layer prefix cached + bounded diff).
 func BuildFrontendUXReviewPrompt(packet *contract.Packet, diffSummary, diffText string) string {
 	if diffSummary == "" {
 		diffSummary = "(unavailable)"
 	}
 	diffSection := "(diff unavailable)"
 	if diffText != "" {
-		diffSection = diffText
+		diffSection = boundText(diffText, MaxInlineDiffBytes, "\n... [diff truncated at 24000 bytes; inspect remaining files directly in worktree]")
 	}
 	return strings.Join([]string{
 		"You are conducting a read-only Frontend UX & Microcopy Audit for one Flywheel packet.",
 		"Inspect information hierarchy, interaction states (loading, empty, error, disabled, confirmed), accessibility contrast/labels, and user-facing microcopy clarity.",
 		"Do not edit any files or run mutating commands.",
+		"",
+		"## Output",
+		`Separate severe usability/accessibility/misleading copy defects ("severity":"blocking") from minor polish ("severity":"advisory").`,
+		"End your reply with a final line containing ONLY this JSON:",
+		`{"verdict":"pass"|"revise","summary":"...","findings":[{"severity":"blocking"|"advisory","location":"file:line","issue":"...","suggestion":"..."}]}`,
+		`Use "revise" whenever one or more "blocking" findings exist; use "pass" when only advisory notes or no findings remain.`,
 		"",
 		"## Packet",
 		"packet-id: " + packet.PacketID,
@@ -508,12 +642,6 @@ func BuildFrontendUXReviewPrompt(packet *contract.Packet, diffSummary, diffText 
 		"",
 		"## git diff",
 		diffSection,
-		"",
-		"## Output",
-		`Separate severe usability/accessibility/misleading copy defects ("severity":"blocking") from minor polish ("severity":"advisory").`,
-		"End your reply with a final line containing ONLY this JSON:",
-		`{"verdict":"pass"|"revise","summary":"...","findings":[{"severity":"blocking"|"advisory","location":"file:line","issue":"...","suggestion":"..."}]}`,
-		`Use "revise" whenever one or more "blocking" findings exist; use "pass" when only advisory notes or no findings remain.`,
 	}, "\n")
 }
 

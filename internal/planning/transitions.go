@@ -225,7 +225,7 @@ func BeginRequest(s *State, request Request) error {
 	}
 	for _, old := range s.Requests {
 		if old.ID == request.ID {
-			if old.Origin == request.Origin && old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback {
+			if old.Origin == request.Origin && old.Scope == request.Scope && old.ScopeID == request.ScopeID && old.InputRevision == request.InputRevision && old.PlanningOnly == request.PlanningOnly && old.Feedback == request.Feedback && old.DraftMode == request.DraftMode {
 				return nil // resume preserves the recorded limits and used rounds
 			}
 			return fmt.Errorf("planning request identity was reused for different input")

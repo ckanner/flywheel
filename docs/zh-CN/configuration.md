@@ -27,7 +27,7 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 - **只读沙箱锁定**：`permissions.bindings` 将 `loops.design-review`、`loops.plan-review`、
   `loops.review`、`loops.judge`、`loops.investigate` 与 `frontend-ux-review` 默认锁定为
   `read-only`。
-- **原生能力**：Antigravity 默认启用 `0.3.0` ACP 与原生图片输入；Kimi 原生订阅配置
+- **原生能力**：Antigravity 默认启用 `0.3.1` ACP 与原生图片输入；Kimi 原生订阅配置
   （`kimi-subscription-agent` / `kimi-subscription-swarm`）默认放开 `WebSearch`、`FetchURL`、
   `Agent` 与 `AgentSwarm`。
 - **护栏与工作流开关**：`budget.enforce: "off"`、
@@ -608,15 +608,16 @@ partial／unknown 用量不补零，也不能单凭缺失用量触发输入阈�
 
 ### 可信的执行者增量上下文
 
-可选 `sessions.context` 省略或为 `"full"` 时保留完整提示词；显式
-`"verified-incremental"` 开启仅针对 Execute 的优化。首轮与重建完整提供权威
+可选 `sessions.context` 省略或为 `"verified-incremental"` 时，默认对 Execute
+及规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）启用可信增量续用；
+显式配置 `"full"` 保留每次调用的完整提示词。首轮与重建完整提供权威
 上下文；后续同角色续用只有在 Go 复核已消费终态回执、精确绑定、提示词版本、
-契约及全部 context/cache 文件内容摘要后，才可省略稳定契约。引用必须在当前
+契约（或规划稳定权威与 `project-context.md`）及全部 context/cache 文件内容摘要后，才可省略稳定契约或规划 Layer 1/2。引用必须在当前
 执行目录内可读、为普通文件，每个文件最多 1 MiB。增量包含当前反馈、前后候选
-身份、尝试次数和权威引用。
+身份、尝试次数和权威引用（或规划 Layer 3 易变输入）。
 
 文件缺失或修订、契约变化、旧任务缺少检查点、上下文回执校验失败，均回到完整
-输入。模型、effort、权限或显式会话模式变化会重建历史。Plan、Review、Judge
+输入。模型、effort、权限或显式会话模式变化会重建历史。Review、Judge
 保持完整输入，Reviewer 每次仍检查完整当前候选与全部适用需求。
 `state.sessions.records[*].context` 保存模式、身份和原因。这是协议能力，不是
 已测得的 token 节省或模型等质量证据。

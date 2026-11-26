@@ -98,7 +98,7 @@ Quick 保留仓库必需检查和交付检查。首次成功路径有两次阶�
 
 完整阶段、路由、profile 与 effort 见[模型策略](docs/zh-CN/model-policy.md)。
 [Antigravity](docs/zh-CN/antigravity.md)作为 machine adapter 随整包内置，也提供可独立
-安装的 DSH 插件。Claude 需要 worker 可解析的[0.7.0 配套插件](docs/zh-CN/claude-code-pro.md)。
+安装的 DSH 插件。Claude 需要 worker 可解析的[0.7.1 配套插件](docs/zh-CN/claude-code-pro.md)。
 模型可用性仍取决于原生登录和实际账号。
 
 预设没有 API Key 或 credits 后备。JEV 默认关闭，开启后使用同一订阅证据分析路径的

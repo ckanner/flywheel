@@ -11,6 +11,9 @@ type Ref struct {
 type Brief struct {
 	DesignGranularity        string   `json:"design-granularity,omitempty"`
 	GranularityReason        string   `json:"granularity-reason,omitempty"`
+	ClarifyMode              string   `json:"clarify-mode,omitempty"`
+	UIPrototypeMode          string   `json:"ui-prototype-mode,omitempty"`
+	QualityGates             []string `json:"quality-gates,omitempty"`
 	Version                  int      `json:"version"`
 	ID                       string   `json:"id"`
 	Goal                     string   `json:"goal"`
@@ -21,6 +24,58 @@ type Brief struct {
 	Authorization            string   `json:"authorization,omitempty"`
 	ImplementationAuthorized bool     `json:"implementation-authorized"`
 	Mode                     string   `json:"mode,omitempty"`
+}
+
+type ClarificationQuestion struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Kind        string   `json:"kind"` // choice | quality-gate | text
+	Options     []string `json:"options,omitempty"`
+	Recommended string   `json:"recommended,omitempty"`
+	Rationale   string   `json:"rationale,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+}
+
+type Clarification struct {
+	Status             string                  `json:"status"` // pending | skipped | awaiting-answers | confirmed
+	DecidedBy          string                  `json:"decided-by,omitempty"`
+	NeedsClarification bool                    `json:"needs-clarification"`
+	IsFrontendUI       bool                    `json:"is-frontend-ui"`
+	Summary            string                  `json:"summary,omitempty"`
+	SuggestedGates     []string                `json:"suggested-gates,omitempty"`
+	Questions          []ClarificationQuestion `json:"questions,omitempty"`
+	Answers            map[string]string       `json:"answers,omitempty"`
+	SelectedGates      []string                `json:"selected-gates,omitempty"`
+	FreeformNote       string                  `json:"freeform-note,omitempty"`
+	UIPrototypeMode    string                  `json:"ui-prototype-mode,omitempty"`
+	Invocation         string                  `json:"invocation,omitempty"`
+	AnsweredAt         string                  `json:"answered-at,omitempty"`
+	RequestID          string                  `json:"request-id,omitempty"`
+}
+
+type UIPrototypeReview struct {
+	Verdict  string    `json:"verdict"` // pass | revise
+	Summary  string    `json:"summary"`
+	Findings []Finding `json:"findings"`
+	Model    string    `json:"model,omitempty"`
+	At       string    `json:"at,omitempty"`
+}
+
+type UIPrototype struct {
+	Revision       int                `json:"revision"`
+	Design         Ref                `json:"design"`
+	Status         string             `json:"status"` // drafting | reviewing | awaiting-approval | approved | skipped
+	HTMLFile       string             `json:"html-file,omitempty"`
+	Summary        string             `json:"summary,omitempty"`
+	DesignTokens   map[string]string  `json:"design-tokens,omitempty"`
+	States         []string           `json:"states,omitempty"`
+	Review         *UIPrototypeReview `json:"review,omitempty"`
+	Feedback       []string           `json:"feedback,omitempty"`
+	ApprovedAt     string             `json:"approved-at,omitempty"`
+	ApprovalSource string             `json:"approval-source,omitempty"`
+	ApprovalReqID  string             `json:"approval-request-id,omitempty"`
+	Model          string             `json:"model,omitempty"`
+	Invocation     string             `json:"invocation,omitempty"`
 }
 
 type Requirement struct {
@@ -141,6 +196,7 @@ type Request struct {
 	Channel            string `json:"channel,omitempty"`
 	BindingSource      string `json:"binding-source,omitempty"`
 	BindingGranularity string `json:"binding-granularity,omitempty"`
+	DraftMode          string `json:"draft-mode,omitempty"`
 }
 
 type ActivationRef struct {
@@ -184,6 +240,8 @@ type State struct {
 	CurrentPlans      map[string]Ref    `json:"current-plans"`
 	Active            *Activation       `json:"active,omitempty"`
 	PendingActivation *Activation       `json:"pending-activation,omitempty"`
+	Clarification     *Clarification    `json:"clarification,omitempty"`
+	UIPrototype       *UIPrototype      `json:"ui-prototype,omitempty"`
 	StartAuthorized   bool              `json:"start-authorized"`
 	Reason            string            `json:"reason,omitempty"`
 	LegacyFiles       map[string]string `json:"legacy-files,omitempty"`

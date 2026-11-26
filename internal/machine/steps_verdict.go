@@ -15,6 +15,7 @@ import (
 	"github.com/ckanner/flywheel/internal/errs"
 	"github.com/ckanner/flywheel/internal/fallback"
 	"github.com/ckanner/flywheel/internal/prompts"
+	"github.com/ckanner/flywheel/internal/state"
 	"github.com/ckanner/flywheel/internal/verify"
 )
 
@@ -274,12 +275,14 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 	if final && !diffOK {
 		return reviewOutcome{}, fmt.Errorf("final review requires an authoritative diff")
 	}
+	priorFindings := priorOpenReviewFindings(latestPriorReview(ps))
 	promptArgs := prompts.ReviewArgs{
 		Packet:          packet,
 		L1Evidence:      ps.Evidence.L1,
 		DiffSummary:     diffSummary,
 		DiffText:        diffText,
 		DefectInjection: defectInjection,
+		PriorFindings:   priorFindings,
 	}
 	if final {
 		promptArgs.FinalSpec, promptArgs.FinalGate, promptArgs.Workflow = c.Spec, ps.Evidence.FinalGate, c.State.Workflow
@@ -332,7 +335,65 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 		c.touchProgress()
 	}
 	c.save()
-	return reviewOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict}, nil
+	currOpen := countOpenReviewFindings(r.Verdict.Findings)
+	converging := len(priorFindings) > 0 && currOpen > 0 && currOpen < len(priorFindings)
+	return reviewOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict, Converging: converging}, nil
+}
+
+func latestPriorReview(ps *state.PacketState) any {
+	if ps.Evidence.Review != nil {
+		return ps.Evidence.Review
+	}
+	for i := len(ps.EvidenceHistory) - 1; i >= 0; i-- {
+		entry, ok := ps.EvidenceHistory[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		switch ev := entry["evidence"].(type) {
+		case state.Evidence:
+			if ev.Review != nil {
+				return ev.Review
+			}
+		case map[string]any:
+			if ev["review"] != nil {
+				return ev["review"]
+			}
+		}
+	}
+	return nil
+}
+
+func priorOpenReviewFindings(evidence any) []prompts.ReviewFinding {
+	m, ok := evidence.(map[string]any)
+	if !ok {
+		return nil
+	}
+	raw, ok := m["findings"]
+	if !ok || raw == nil {
+		return nil
+	}
+	b, _ := json.Marshal(raw)
+	var all []prompts.ReviewFinding
+	if json.Unmarshal(b, &all) != nil {
+		return nil
+	}
+	var open []prompts.ReviewFinding
+	for _, f := range all {
+		if f.Status != "resolved" && f.Severity != "minor" {
+			open = append(open, f)
+		}
+	}
+	return open
+}
+
+func countOpenReviewFindings(findings []prompts.ReviewFinding) int {
+	n := 0
+	for _, f := range findings {
+		if f.Status != "resolved" && f.Severity != "minor" {
+			n++
+		}
+	}
+	return n
 }
 
 // loopToBinding config.LoopBinding → fallback.Binding（judge-panel 复用

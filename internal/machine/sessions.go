@@ -253,8 +253,12 @@ func applySessionFacts(record *state.SessionRecord, result drivers.Result, diges
 		record.Last.Status = "received"
 		record.ResumeCandidate = reusable && s.ResumeCandidate && s.SessionID != ""
 		// A proven startup/admission failure did not touch the previously
-		// confirmed history. Keep that checkpoint for the existing bounded retry.
-		if reusable && record.Last.RequestedThread != "" && (s.SessionID == "" || s.SessionID == record.Last.RequestedThread) && s.Dispatch == "not-dispatched" && s.Outcome != "completed" {
+		// confirmed history. Keep that checkpoint for the existing bounded retry,
+		// unless the resume itself failed from output/frame truncation or context
+		// overflow (retrying the same oversized thread would fail deterministically).
+		if reusable && record.Last.RequestedThread != "" && (s.SessionID == "" || s.SessionID == record.Last.RequestedThread) &&
+			s.Dispatch == "not-dispatched" && s.Outcome != "completed" &&
+			!result.Truncated && result.ErrorCode != errs.CONTEXT_WINDOW_EXCEEDED {
 			record.ThreadID, record.ResumeCandidate = record.Last.RequestedThread, true
 		}
 	}

@@ -54,17 +54,26 @@ async function antigravity(request, runtime) {
   const process = runtime.process(command(runtime.env, 'FLYWHEEL_AGY_BIN', 'agy'), ['models'], runtime.options);
   try {
     const output = await process.text();
-    const values = output.split(/\r?\n/).map(line => line.trim().split(/\s+/)[0]).filter(value => /^[a-z][a-z0-9._-]+$/.test(value));
-    if (!values.length) throw new CatalogError('CATALOG_PROTOCOL');
-    const models = values.slice(0, MODEL_CATALOG_LIMIT).map(value => {
+    const entries = output
+      .split(/\r?\n/)
+      .map(line => {
+        const trimmed = line.trim();
+        const m = /^([a-z][a-z0-9._-]+)(?:\s+(.+))?$/.exec(trimmed);
+        if (!m) return null;
+        const rawLabel = m[2]?.trim() ?? '';
+        return { id: m[1], label: rawLabel && readable(rawLabel) ? rawLabel : m[1] };
+      })
+      .filter(Boolean);
+    if (!entries.length) throw new CatalogError('CATALOG_PROTOCOL');
+    const models = entries.slice(0, MODEL_CATALOG_LIMIT).map(({ id: value, label }) => {
       // These are observed CLI IDs, never a static fallback. Only the three
       // pinned Orchestrator IDs and valid adjustable slugs prove an effort.
       const match = /^gemini-4-(hydrogen|neon|carbon|argon)-(low|medium|high|xhigh)$/.exec(value);
       const effort = ['gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon'].includes(value) ? ''
         : match && !(match[2] === 'xhigh' && ['carbon', 'argon'].includes(match[1])) ? match[2] : undefined;
-      return { id: value, label: value, ...(effort === undefined ? {} : { efforts: [effort], defaultEffort: effort }) };
+      return { id: value, label, ...(effort === undefined ? {} : { efforts: [effort], defaultEffort: effort }) };
     });
-    return { models: rows(models), truncated: values.length > MODEL_CATALOG_LIMIT };
+    return { models: rows(models), truncated: entries.length > MODEL_CATALOG_LIMIT };
   } finally { await process.close(); }
 }
 
@@ -104,7 +113,7 @@ async function loadClaudeSDK() {
   const require = createRequire(import.meta.url);
   const manifestPath = require.resolve('dsh-subagent-claude-code-pro/package.json');
   const manifest = require(manifestPath);
-  if (manifest.version !== '0.7.0' || manifest.dependencies?.['@anthropic-ai/claude-agent-sdk'] !== '0.3.326') throw new CatalogError('CATALOG_UNAVAILABLE');
+  if (manifest.version !== '0.7.1' || manifest.dependencies?.['@anthropic-ai/claude-agent-sdk'] !== '0.3.326') throw new CatalogError('CATALOG_UNAVAILABLE');
   return import(pathToFileURL(createRequire(manifestPath).resolve('@anthropic-ai/claude-agent-sdk')).href);
 }
 

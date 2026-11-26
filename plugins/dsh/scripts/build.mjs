@@ -69,9 +69,43 @@ const stylesPlugin = {
   },
 };
 
-// Bundle TypeScript + TSX + marked + DOMPurify into a single classic DSH web bundle.
-// Use classic React.createElement transform so the bundle depends ONLY on `react`
-// (compatible with both DSH 0.2.1-rc.5 and 0.2.2-rc.3+ module loaders).
+const reactJsxShimPlugin = {
+  name: 'flywheel-react-jsx-shim',
+  setup(build) {
+    build.onResolve({ filter: /^react\/jsx-(dev-)?runtime$/ }, () => ({
+      path: 'react-jsx-runtime-shim',
+      namespace: 'flywheel-jsx-shim',
+    }));
+    build.onResolve({ filter: /^react-dom$/ }, () => ({
+      path: 'react-dom-shim',
+      namespace: 'flywheel-react-dom-shim',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'flywheel-jsx-shim' }, () => ({
+      contents: [
+        'import React from "react";',
+        'export const Fragment = React.Fragment;',
+        'export function jsx(type, props, key) {',
+        '  const nextProps = key !== undefined ? Object.assign({}, props, { key }) : props;',
+        '  return React.createElement(type, nextProps);',
+        '}',
+        'export const jsxs = jsx;',
+        'export const jsxDEV = jsx;',
+      ].join('\n'),
+      loader: 'js',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'flywheel-react-dom-shim' }, () => ({
+      contents: [
+        'export function createPortal(children) { return children; }',
+        'export default { createPortal };',
+      ].join('\n'),
+      loader: 'js',
+    }));
+  },
+};
+
+// Bundle TypeScript + TSX + Streamdown + highlight.js into a single classic DSH web bundle.
+// Use classic React.createElement transform + JSX runtime shim so the bundle depends ONLY
+// on `react` (compatible with both DSH 0.2.1-rc.5 and 0.2.2-rc.3+ module loaders).
 const bundled = await esbuild({
   entryPoints: [join(root, 'src', 'client', 'index.tsx')],
   bundle: true,
@@ -83,7 +117,7 @@ const bundled = await esbuild({
   jsxFragment: 'React.Fragment',
   banner: { js: 'var React = require("react");' },
   external: ['react'],
-  plugins: [stylesPlugin],
+  plugins: [stylesPlugin, reactJsxShimPlugin],
   write: false,
   logLevel: 'warning',
   legalComments: 'none',

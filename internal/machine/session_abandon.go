@@ -104,9 +104,7 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 
 	requestID := ""
 	if strings.HasPrefix(r.Scope, "planning:") {
-		requestID = strings.TrimPrefix(r.Scope, "planning:")
-	}
-	if requestID != "" {
+		suffix := strings.TrimPrefix(r.Scope, "planning:")
 		if c.State.Planning == nil {
 			return c.summary(), fmt.Errorf("session %s names a planning request but the task has no planning authority", request.Key)
 		}
@@ -115,15 +113,31 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 		}
 		index := -1
 		for i := range c.State.Planning.Requests {
-			if c.State.Planning.Requests[i].ID == requestID {
+			if c.State.Planning.Requests[i].ID == suffix {
 				index = i
 				break
 			}
 		}
 		if index < 0 {
-			return c.summary(), fmt.Errorf("planning request %s was not found for session %s", requestID, request.Key)
+			for i := len(c.State.Planning.Requests) - 1; i >= 0; i-- {
+				req := &c.State.Planning.Requests[i]
+				if planningSessionScope(req) != r.Scope {
+					continue
+				}
+				if req.Status == "pending" || req.Status == "running" {
+					index = i
+					break
+				}
+				if index < 0 {
+					index = i
+				}
+			}
+		}
+		if index < 0 {
+			return c.summary(), fmt.Errorf("planning request %s was not found for session %s", suffix, request.Key)
 		}
 		planningReq := &c.State.Planning.Requests[index]
+		requestID = planningReq.ID
 		if planningReq.Status != "pending" && planningReq.Status != "running" {
 			return c.summary(), fmt.Errorf("planning request %s is %s, not pending or running", requestID, planningReq.Status)
 		}

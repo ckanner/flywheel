@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.39.9",
+  "version": "0.40.0",
   "description": "Flywheel engine controls with owned DSH SDK, Codex Pro and optional Claude Code Pro machine workers",
   "type": "module",
   "license": "MIT",
@@ -48,7 +48,7 @@
     "vendor/registry-verification-2026-11-22.json",
     "KIMI_NATIVE_PROTOCOL.md",
     "KIMI_NATIVE_PROTOCOL.en.md",
-    "vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz"
+    "vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz"
   ],
   "dsh": {
     "bundle": {
@@ -72,7 +72,7 @@
     "@deepseek-ai/dsh-tools": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "dsh-plugin-lcu": "0.5.0 || 0.5.1",
-    "dsh-subagent-claude-code-pro": "0.7.0"
+    "dsh-subagent-claude-code-pro": "0.7.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -105,7 +105,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz",
+    "@ckanner/dsh-subagent-antigravity": "file:vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz",
     "dsh-preset-generator": "0.4.0",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
@@ -146,14 +146,16 @@
     "dompurify": "^3.5.0",
     "dsh-plugin-chatgpt": "file:vendor/dsh-plugin-chatgpt-0.1.20.tgz",
     "dsh-plugin-lcu": "file:vendor/dsh-plugin-lcu-0.5.0.tgz",
-    "dsh-subagent-claude-code-pro": "file:vendor/dsh-subagent-claude-code-pro-0.7.0.tgz",
+    "dsh-subagent-claude-code-pro": "file:vendor/dsh-subagent-claude-code-pro-0.7.1.tgz",
     "esbuild": "^0.28.2",
+    "highlight.js": "^11.12.0",
     "jsdom": "26.1.0",
     "lightningcss": "1.33.0",
     "marked": "^18.2.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "semver": "7.7.3",
+    "streamdown": "^2.8.1",
     "typescript": "^7.0.2"
   },
   "repository": {

@@ -9,9 +9,13 @@ const ref = value => record(value) && Object.keys(value).every(key => ['revision
   Number.isSafeInteger(value.revision) && value.revision > 0 && typeof value.digest === 'string' && /^[a-f0-9]{64}$/.test(value.digest);
 const fields = {
   prepare: ['action', 'request-id', 'brief', 'start'],
-  plan: ['action', 'revision', 'request-id', 'scope', 'scope-id', 'text', 'start'],
+  clarify: ['action', 'revision', 'request-id', 'clarify', 'start'],
+  plan: ['action', 'revision', 'request-id', 'scope', 'scope-id', 'text', 'draft-mode', 'start'],
   feedback: ['action', 'revision', 'request-id', 'design', 'text', 'policy', 'start'],
   approve: ['action', 'revision', 'request-id', 'design', 'start'],
+  'approve-prototype': ['action', 'revision', 'request-id', 'design', 'start'],
+  'prototype-feedback': ['action', 'revision', 'request-id', 'text', 'start'],
+  'skip-prototype': ['action', 'revision', 'request-id', 'start'],
   status: ['action', 'request-id'],
   migrate: ['action', 'revision', 'request-id', 'policy', 'text', 'start'],
   collaboration: ['action', 'revision', 'request-id', 'collaboration', 'start'],
@@ -43,10 +47,13 @@ export function validPlanningCommand(value) {
   if ('policy' in value && !['review-first', 'delegated'].includes(value.policy)) return false;
   if ('text' in value && (!text(value.text) || Buffer.byteLength(value.text) > 8192)) return false;
   if (value.action === 'prepare' && !record(value.brief)) return false;
+  if (value.action === 'clarify' && !record(value.clarify)) return false;
   if (value.action === 'approve' && !ref(value.design)) return false;
   if (value.action === 'feedback' && !text(value.text)) return false;
+  if (value.action === 'prototype-feedback' && !text(value.text)) return false;
   if (value.action === 'collaboration' && !collaborationEdit(value.collaboration)) return false;
   if (value.action === 'input-images' && !inputImageEdit(value['input-images'])) return false;
+  if ('draft-mode' in value && !['dual', 'single'].includes(value['draft-mode'])) return false;
   if (value.action === 'plan' && (!['design', 'milestone', 'packet', 'replan'].includes(value.scope) ||
       ('scope-id' in value && (!text(value['scope-id'], 120) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value['scope-id']))) ||
       (['milestone', 'packet'].includes(value.scope) && !value['scope-id']))) return false;

@@ -29,7 +29,7 @@ async function submitModal(modal) {
   });
 }
 
-test('CreateTaskModal produces valid host-validated planning prepare & investigate payloads for Build, Quick, and Investigate', async t => {
+test('New-Task Chat composer and CreateTaskModal produce valid host-validated planning prepare & investigate payloads', async t => {
   const repoDir = await mkdtemp(join(tmpdir(), 'fw-create-task-'));
   t.after(() => rm(repoDir, { recursive: true, force: true }));
 
@@ -48,7 +48,6 @@ test('CreateTaskModal produces valid host-validated planning prepare & investiga
         files: [{ path: 'docs/mockup.png', sizeBytes: 1234, mediaType: 'image/png' }],
       }),
     act: async input => {
-      // Feed the exact client act payload into the REAL host control validator
       const validated = await validateControl(input, repoDir);
       return envelope({
         protocol: 1,
@@ -59,25 +58,21 @@ test('CreateTaskModal produces valid host-validated planning prepare & investiga
     },
   });
 
-  // 1. Build (Auto, review-first) with image attachment
-  await ui.click('+ 新建任务');
-  let modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
-  assert.ok(modal);
-
-  const cwdInput = modal.querySelector('input[placeholder="/absolute/path/to/repo"]');
-  const goalInput = modal.querySelector('textarea');
-  const slugInput = modal.querySelector('input[placeholder="auto-generated"]');
-
-  await act(async () => {
-    setControlValue(cwdInput, repoDir);
-    setControlValue(goalInput, '重构告警聚合队列并补充回归测试');
-    setControlValue(slugInput, 'alert queue fix');
-  });
-
-  await ui.click('扫描仓库图片');
+  // 1. Empty state opens directly on the DSH New-Task Chat screen
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-new-task-chat"]'));
+  await ui.click('图片');
+  await ui.click(/从仓库已有图片选/);
   await ui.click('docs/mockup.png');
-
-  await submitModal(modal);
+  await act(async () => {
+    setControlValue(
+      ui.container.querySelector('[data-testid="flywheel-chat-input"]'),
+      '重构告警聚合队列并补充回归测试',
+    );
+  });
+  await act(async () => {
+    ui.container.querySelector('[data-testid="flywheel-chat-send"]').click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
 
   const buildAct = ui.actCalls.at(-1);
   assert.equal(buildAct.action, 'planning');
@@ -85,7 +80,6 @@ test('CreateTaskModal produces valid host-validated planning prepare & investiga
   assert.equal('policy' in buildAct.planning, false, 'policy must live inside brief, not top-level planning');
   assert.equal(buildAct.planning.start, true);
   assert.equal(buildAct.planning.brief.version, 1);
-  assert.equal(buildAct.planning.brief.id, 'alert-queue-fix');
   assert.equal(buildAct.planning.brief.goal, '重构告警聚合队列并补充回归测试');
   assert.equal(buildAct.planning.brief['original-request'], '重构告警聚合队列并补充回归测试');
   assert.equal(buildAct.planning.brief.policy, 'review-first');
@@ -93,11 +87,13 @@ test('CreateTaskModal produces valid host-validated planning prepare & investiga
   assert.equal(buildAct.planning.brief.mode, 'auto');
   assert.equal('images' in buildAct.planning.brief, false, 'brief must not carry raw images key');
   assert.ok(buildAct.planning.brief.evidence.some(entry => entry.includes('docs/mockup.png')));
-  assert.equal(ui.container.querySelector('[data-testid="flywheel-create-modal"]'), null, 'modal closes on success');
 
-  // 2. Quick Fix (delegated with explicit authorization)
-  await ui.click('+ 新建任务');
-  modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
+  // 2. Quick Fix via CreateTaskModal (still supported when triggered via store)
+  await act(async () => {
+    ui.store.setCreateModalOpen(true);
+  });
+  let modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
+  assert.ok(modal);
   await act(async () => {
     modal.querySelector('[data-intent="quick"]').click();
   });
@@ -113,9 +109,12 @@ test('CreateTaskModal produces valid host-validated planning prepare & investiga
   assert.equal(quickAct.planning.brief['implementation-authorized'], true);
   assert.equal(quickAct.planning.brief.mode, 'quick');
   assert.match(quickAct.planning.brief.authorization, /Fix nil pointer in config loader/);
+  assert.equal(ui.container.querySelector('[data-testid="flywheel-create-modal"]'), null, 'modal closes on success');
 
-  // 3. Investigate intent
-  await ui.click('+ 新建任务');
+  // 3. Investigate intent via modal with read-paths
+  await act(async () => {
+    ui.store.setCreateModalOpen(true);
+  });
   modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
   await act(async () => {
     modal.querySelector('[data-intent="investigate"]').click();
@@ -145,7 +144,9 @@ test('CreateTaskModal surfaces host errors inline inside the dialog', async t =>
     },
   });
 
-  await ui.click('+ 新建任务');
+  await act(async () => {
+    ui.store.setCreateModalOpen(true);
+  });
   const modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
   await act(async () => {
     setControlValue(modal.querySelector('input[placeholder="/absolute/path/to/repo"]'), repoDir);

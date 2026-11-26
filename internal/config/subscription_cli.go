@@ -27,10 +27,25 @@ type DualDraftConfig struct {
 	SynthesizerProfile string `json:"synthesizer-profile,omitempty"`
 }
 
+// ClarifyConfig configures Stage 0 requirements clarification and measurable quality-gate discovery.
+type ClarifyConfig struct {
+	Mode    string `json:"mode"` // off | auto | always
+	Profile string `json:"profile,omitempty"`
+}
+
+// UIPrototypeConfig configures the conditional Stage 1.5 interactive UI/UX prototype stage.
+type UIPrototypeConfig struct {
+	Mode          string `json:"mode"` // off | auto | always
+	Profile       string `json:"profile,omitempty"`
+	ReviewProfile string `json:"review-profile,omitempty"`
+}
+
 // Compact planning reuses named profiles without introducing another loop.
 type PlanningConfig struct {
-	Compact   map[string]string `json:"compact,omitempty"`
-	DualDraft *DualDraftConfig  `json:"dual-draft,omitempty"`
+	Compact     map[string]string  `json:"compact,omitempty"`
+	DualDraft   *DualDraftConfig   `json:"dual-draft,omitempty"`
+	Clarify     *ClarifyConfig     `json:"clarify,omitempty"`
+	UIPrototype *UIPrototypeConfig `json:"ui-prototype,omitempty"`
 }
 
 var subscriptionCLISchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
@@ -92,6 +107,24 @@ func (c *Config) validatePlanningConfig() error {
 			}
 		}
 	}
+	if cl := c.Planning.Clarify; cl != nil && cl.Profile != "" {
+		if _, ok := c.Profiles[cl.Profile]; !ok {
+			return fmt.Errorf("planning.clarify.profile references unknown profile %q", cl.Profile)
+		}
+	}
+	if ui := c.Planning.UIPrototype; ui != nil {
+		for _, pair := range [][2]string{
+			{"planning.ui-prototype.profile", ui.Profile},
+			{"planning.ui-prototype.review-profile", ui.ReviewProfile},
+		} {
+			if pair[1] == "" {
+				continue
+			}
+			if _, ok := c.Profiles[pair[1]]; !ok {
+				return fmt.Errorf("%s references unknown profile %q", pair[0], pair[1])
+			}
+		}
+	}
 	return nil
 }
 
@@ -108,7 +141,7 @@ func prepareSubscriptionCLI(root map[string]json.RawMessage) error {
 		}
 		fields := []string{"version", "mode"}
 		if section == "planning" {
-			fields = []string{"compact", "dual-draft"}
+			fields = []string{"compact", "dual-draft", "clarify", "ui-prototype"}
 		}
 		if err := checkConfigFields(object, section, fields); err != nil {
 			return err
@@ -162,6 +195,24 @@ func (c *Config) validateSubscriptionCLI() error {
 			}
 			p := c.Profiles[pair[1]]
 			if err := c.validateSubscriptionBinding(profileAsLoopBinding(p), pair[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if cl := c.Planning.Clarify; cl != nil && cl.Mode != "off" && cl.Profile != "" {
+		if err := c.validateSubscriptionBinding(profileAsLoopBinding(c.Profiles[cl.Profile]), "planning.clarify.profile"); err != nil {
+			return err
+		}
+	}
+	if ui := c.Planning.UIPrototype; ui != nil && ui.Mode != "off" {
+		for _, pair := range [][2]string{
+			{"planning.ui-prototype.profile", ui.Profile},
+			{"planning.ui-prototype.review-profile", ui.ReviewProfile},
+		} {
+			if pair[1] == "" {
+				continue
+			}
+			if err := c.validateSubscriptionBinding(profileAsLoopBinding(c.Profiles[pair[1]]), pair[0]); err != nil {
 				return err
 			}
 		}

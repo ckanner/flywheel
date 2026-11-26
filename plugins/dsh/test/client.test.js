@@ -122,7 +122,7 @@ test('v2 registers 4 native DSH slots, deduplicates nested Go runs in top Task S
   });
   assert.equal(ui.container.querySelector('[data-testid="flywheel-task-popover"]'), null);
 
-  // 3. Inline Settings tab works directly inside Workbench
+  // 3. Settings slide-over drawer works directly inside Workbench
   const settingsTab = ui.container.querySelector('[data-testid="flywheel-settings-tab"]');
   assert.ok(settingsTab);
   await act(async () => {
@@ -130,13 +130,17 @@ test('v2 registers 4 native DSH slots, deduplicates nested Go runs in top Task S
     await Promise.resolve();
     await Promise.resolve();
   });
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-side-drawer"]'));
   assert.ok(ui.container.querySelector('[data-testid="settings-health-strip"]'));
 
-  // Switch back to Execution tab & test English locale
-  await ui.click('执行流水线');
+  // Close drawer, verify DAG drawer trigger & English locale
+  await act(async () => {
+    ui.container.querySelector('[data-testid="flywheel-drawer-close"]').click();
+  });
   await ui.setLocale('en');
-  assert.ok(ui.button('Execution Board'));
-  assert.ok(ui.button('Settings'));
+  assert.ok(ui.container.querySelector('[data-testid="drawer-trigger-dag"]'));
+  assert.equal(ui.container.querySelector('[data-testid="drawer-trigger-dag"]').textContent.trim(), 'DAG');
+  assert.equal(ui.container.querySelector('[data-testid="flywheel-settings-tab"]').getAttribute('aria-label'), 'Settings');
 
   // 4. Right sidebar companion slot shows progress and navigates to workbench via layout.selectPanel
   await ui.switchSlot('sidebar.right.pane.tab');

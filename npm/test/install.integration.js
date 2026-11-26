@@ -92,7 +92,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     const source = JSON.parse(await fs.readFile(path.join(vendor, 'antigravity.json'), 'utf8'));
     const bytes = await fs.readFile(path.join(vendor, source.tarball));
     assert.equal(source.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(source.version, '0.3.0');
+    assert.equal(source.version, '0.3.1');
     assert.equal(createHash('sha256').update(bytes).digest('hex'), source.sha256);
     assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), source.integrity);
     const verification = JSON.parse(await fs.readFile(path.join(vendor, 'registry-verification-2026-11-22.json'), 'utf8'));
@@ -101,10 +101,17 @@ test('the complete npm candidate install and run from a clean agent environment'
       const reviewed = JSON.parse(await fs.readFile(path.join(vendor, published.sourceRecord), 'utf8'));
       assert.equal(published.package, reviewed.package);
       if (published.package === '@ckanner/dsh-subagent-antigravity') {
-        // Historical 2026-11-22 registry verification records 0.2.1; current source bundles reviewed 0.3.0 ACP tarball without fabricating registry publication.
+        // Historical 2026-11-22 registry verification records 0.2.1; current source bundles reviewed 0.3.1 ACP tarball without fabricating registry publication.
         assert.equal(published.version, '0.2.1');
-        assert.equal(reviewed.version, '0.3.0');
+        assert.equal(reviewed.version, '0.3.1');
         assert.equal(reviewed.registryReleaseVerified, false);
+        continue;
+      }
+      if (published.package === 'dsh-subagent-claude-code-pro') {
+        // Historical 2026-11-22 registry verification records 0.7.0; current source pins reviewed & published 0.7.1.
+        assert.equal(published.version, '0.7.0');
+        assert.equal(reviewed.version, '0.7.1');
+        assert.equal(reviewed.registryReleaseVerified, true);
         continue;
       }
       assert.equal(published.version, reviewed.version);
@@ -206,7 +213,7 @@ test('the complete npm candidate install and run from a clean agent environment'
     assert.equal(doctor.code, 0, doctor.stdout + doctor.stderr);
     const facts = JSON.parse(doctor.stdout);
     assert.equal(facts.package, '@ckanner/dsh-subagent-antigravity');
-    assert.equal(facts.version, '0.3.0');
+    assert.equal(facts.version, '0.3.1');
     assert.equal(facts.inferenceTested, false);
     assert.equal(facts.accountEntitlement, 'unknown');
     const fixture = path.join(context.fixtures, 'offline-agy.mjs');
@@ -258,7 +265,7 @@ rl.on('close', () => process.exit(0));
     assert.equal(exit.code, 0, stderr + stdout);
     assert.equal(exit.signal, null);
     const result = stdout.trim().split('\n').map(line => JSON.parse(line)).at(-1);
-    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
+    assert.deepEqual(result.adapter, { package: '@ckanner/dsh-subagent-antigravity', version: '0.3.1', protocol: 1 });
     assert.equal(result.receipt.ok, true);
     assert.equal(result.receipt.cleanup.confirmed, true);
     assert.equal(result.receipt.subscription.status, 'verified-local-controls');
@@ -360,12 +367,12 @@ rl.on('close', () => process.exit(0));
   });
 
   await t.test('the optional source tarball runs through the installed Claude worker', {
-    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.7.0 source candidate',
+    skip: process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL ? false : 'set FLYWHEEL_CLAUDE_CODE_PRO_TARBALL to the reviewed 0.7.1 source candidate',
   }, async () => {
     const tarball = path.resolve(process.env.FLYWHEEL_CLAUDE_CODE_PRO_TARBALL);
     const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
     assert.equal(manifest.name, 'dsh-subagent-claude-code-pro');
-    assert.equal(manifest.version, '0.7.0');
+    assert.equal(manifest.version, '0.7.1');
     assert.ok(manifest.exports?.['./machine'], 'the candidate must expose its public machine API');
     assert.deepEqual(manifest.dependencies, { '@anthropic-ai/claude-agent-sdk': '0.3.326' },
       'the candidate must use the pinned official SDK as a runtime dependency');

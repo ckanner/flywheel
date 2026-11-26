@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.3.0', protocol: 1 });
+export const ADAPTER = Object.freeze({ package: '@ckanner/dsh-subagent-antigravity', version: '0.3.1', protocol: 1 });
 export const LIMITS = Object.freeze({ requestBytes: 12 * 1024 * 1024, machineOutputBytes: 1024 * 1024,
   progressBytes: 1024 * 1024, receiptFrameBytes: 8 * 1024 * 1024, admissionMs: 10000 });
 const require = createRequire(import.meta.url);
@@ -13,7 +13,7 @@ export class WorkerError extends Error {
 export async function loadAdapter() {
   let manifest, api;
   try { manifest = require('@ckanner/dsh-subagent-antigravity/package.json'); api = await import('@ckanner/dsh-subagent-antigravity/machine'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.3.0 alongside Flywheel'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install @ckanner/dsh-subagent-antigravity@0.3.1 alongside Flywheel'); }
   if (manifest.name !== ADAPTER.package || manifest.version !== ADAPTER.version || api.MACHINE_PROTOCOL_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_VERSION !== 1 || api.MACHINE_ACTIVITY_VERSION !== 1 ||
       api.MACHINE_LIFECYCLE_CAPABILITIES?.durableJournal !== true || api.MACHINE_LIFECYCLE_CAPABILITIES?.readOnlyRecovery !== true ||
@@ -66,7 +66,7 @@ export function machineRequest(value, api, env) {
       ...(value.native === undefined ? {} : { native: value.native }),
       ...(value.threadId === undefined ? {} : { sessionId: value.threadId }),
       ...(value.sessionTitle === undefined ? {} : { sessionName: value.sessionTitle }),
-      ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }), maxOutputBytes: LIMITS.machineOutputBytes });
+      ...(value.timeoutMs === undefined ? {} : { timeoutMs: value.timeoutMs }), disposeGraceMs: 5000, maxOutputBytes: LIMITS.machineOutputBytes });
   } catch (error) { throw new WorkerError('INVALID_REQUEST', error instanceof api.MachineInputError ? error.message : 'Invalid Antigravity machine request'); }
 }
 

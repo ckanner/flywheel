@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	AntigravityPackageVersion = "0.3.0"
+	AntigravityPackageVersion = "0.3.1"
 	AntigravityPackage        = "@ckanner/dsh-subagent-antigravity"
 	AntigravityWorkerEnv      = "FLYWHEEL_ANTIGRAVITY_WORKER"
 	AntigravityBinaryEnv      = "FLYWHEEL_AGY_BIN"
@@ -206,6 +206,7 @@ type antigravityReceipt struct {
 		Observed *struct {
 			Cwd            string    `json:"cwd"`
 			Model          string    `json:"model"`
+			Effort         string    `json:"effort"`
 			PermissionMode string    `json:"permissionMode"`
 			Agent          string    `json:"agent"`
 			Tools          *[]string `json:"tools"`
@@ -252,6 +253,13 @@ func validateAntigravityUsage(raw json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+func antigravityObservedModelMatches(observedModel, observedEffort, requestedModel, requestedEffort string) bool {
+	if observedModel == requestedModel {
+		return observedEffort == "" || requestedEffort == "" || observedEffort == requestedEffort
+	}
+	return requestedEffort != "" && observedEffort == requestedEffort && requestedModel == observedModel+"-"+requestedEffort
 }
 
 func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p claudeCodeProParsed) {
@@ -323,7 +331,7 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 		cwdOK := observed != nil && (samePhysicalDirectory(observed.Cwd, request.Cwd) || request.EvidenceOnly && filepath.IsAbs(observed.Cwd))
 		evidenceOK := !request.EvidenceOnly || ((r.Configuration.Source == "acp-init" || observed.Tools != nil) && validAntigravityEvidenceAgent(r.Native, observed.Cwd, r.RunID, observed.Agent))
 		if e.Dispatch != "dispatched" || e.TurnDispatch != "accepted" || e.Outcome != "completed" || !*e.TerminalReceived || e.ExitCode == nil || *e.ExitCode != 0 || e.Signal != nil || *e.Cancelled || *e.TimedOut || *e.Truncated || !*c.Confirmed || w.State != "completed" || !*w.ReplaySafe || s.ID == nil || !*s.Resumable ||
-			!*r.Configuration.Matched || !sourceOK || !cwdOK || observed.Model != request.Model || observed.PermissionMode != permission ||
+			!*r.Configuration.Matched || !sourceOK || !cwdOK || !antigravityObservedModelMatches(observed.Model, observed.Effort, request.Model, request.ReasoningEffort) || observed.PermissionMode != permission ||
 			!evidenceOK || r.Subscription.Mode != "subscription-only" || r.Subscription.Status != "verified-local-controls" || *r.Subscription.CreditsFallback || r.Subscription.ConfigFingerprint == "" {
 			p.Error = "Antigravity receipt does not prove successful completion, subscription controls, configuration and cleanup"
 			return

@@ -3,8 +3,8 @@ import { createRequire } from 'node:module';
 import { isAbsolute } from 'node:path';
 import { validateNativeAdmission, validateObservationRequest } from './machine-worker.js';
 
-export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.7.0', protocol: 1 });
-export const COMPATIBLE_ADAPTER_VERSIONS = Object.freeze(new Set(['0.7.0']));
+export const ADAPTER = Object.freeze({ package: 'dsh-subagent-claude-code-pro', version: '0.7.1', protocol: 1 });
+export const COMPATIBLE_ADAPTER_VERSIONS = Object.freeze(new Set(['0.7.1']));
 export const LIMITS = Object.freeze({ requestBytes: 16 * 1024 * 1024, promptBytes: 1024 * 1024,
   maxImages: 4, imageBytes: 4 * 1024 * 1024, imageTotalBytes: 8 * 1024 * 1024,
   machineOutputBytes: 1024 * 1024, progressBytes: 1024 * 1024,
@@ -51,9 +51,9 @@ export async function loadAdapter() {
   }
   let manifest, api;
   try { manifest = require('dsh-subagent-claude-code-pro/package.json'); }
-  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.7.0 alongside @ckanner/flywheel; the optional adapter is not installed'); }
+  catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'Install dsh-subagent-claude-code-pro@0.7.1 alongside @ckanner/flywheel; the optional adapter is not installed'); }
   if (manifest.name !== ADAPTER.package || !COMPATIBLE_ADAPTER_VERSIONS.has(manifest.version)) {
-    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.7.0 machine contract');
+    throw new WorkerError('ADAPTER_MISMATCH', 'Claude Code Pro package identity or version does not match the pinned 0.7.1 machine contract');
   }
   try { api = await import('dsh-subagent-claude-code-pro/machine'); }
   catch { throw new WorkerError('ADAPTER_UNAVAILABLE', 'The pinned Claude Code Pro public machine API could not be imported'); }

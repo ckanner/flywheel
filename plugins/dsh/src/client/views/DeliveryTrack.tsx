@@ -19,57 +19,127 @@ export function DeliveryTrack({
   >(null);
 
   const delivery = snap.delivery;
+  const isZh = t('tab.traces') === '运行记录';
   const endpoint = delivery?.endpoint ?? snap.state?.delivery?.endpoint ?? 'local';
+  const isLocalOnly = delivery?.mode === 'local';
   const pulls = delivery?.pulls ?? [];
+  const commits = delivery?.recentCommits ?? [];
+  const changedFiles = delivery?.changedFiles ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="flywheel-delivery-track">
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <h3 className={styles.cardTitle}>{t('delivery.title')}</h3>
-            <span className={`${styles.pill} ${styles.pillPurple}`}>
-              {t('delivery.endpoint')}: {endpoint}
+            <span className={`${styles.pill} ${isLocalOnly ? styles.pillSuccess : styles.pillPurple}`}>
+              {isLocalOnly ? (isZh ? '本地仓库交付' : 'Local Delivery') : `${t('delivery.endpoint')}: ${endpoint}`}
             </span>
+            {delivery?.workingTreeClean !== undefined && (
+              <span className={`${styles.pill} ${delivery.workingTreeClean ? styles.pillSuccess : styles.pillWarn}`}>
+                {delivery.workingTreeClean
+                  ? (isZh ? '工作区干净' : 'Working Tree Clean')
+                  : (isZh ? `${changedFiles.length} 处未提交改动` : `${changedFiles.length} Uncommitted`)}
+              </span>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className={styles.btn} onClick={() => void store.loadDelivery()}>
               {t('delivery.refresh')}
             </button>
-            <button
-              type="button"
-              className={styles.btn}
-              disabled={snap.busyAction !== null}
-              onClick={() => setConfirmAction({ kind: 'create', draft: true })}
-            >
-              {t('delivery.createDraftPr')}
-            </button>
-            <button
-              type="button"
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={snap.busyAction !== null}
-              onClick={() => setConfirmAction({ kind: 'create', draft: false })}
-            >
-              {t('delivery.createPr')}
-            </button>
+            {!isLocalOnly && (
+              <>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  disabled={snap.busyAction !== null}
+                  onClick={() => setConfirmAction({ kind: 'create', draft: true })}
+                >
+                  {t('delivery.createDraftPr')}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  disabled={snap.busyAction !== null}
+                  onClick={() => setConfirmAction({ kind: 'create', draft: false })}
+                >
+                  {t('delivery.createPr')}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12, color: 'var(--fw-text-muted)' }}>
           <span>
-            {t('delivery.branch')}: <code>{delivery?.branch ?? snap.state?.delivery?.branch ?? '—'}</code>
+            {t('delivery.branch')}: <code>{delivery?.localBranch ?? delivery?.branch ?? snap.state?.delivery?.branch ?? '—'}</code>
           </span>
-          <span>
-            {t('delivery.base')}: <code>{delivery?.baseBranch ?? snap.state?.delivery?.baseBranch ?? 'main'}</code>
-          </span>
+          {!isLocalOnly && (
+            <span>
+              {t('delivery.base')}: <code>{delivery?.defaultBase ?? delivery?.baseBranch ?? snap.state?.delivery?.baseBranch ?? 'main'}</code>
+            </span>
+          )}
           <span>
             {t('delivery.head')}: <code>{delivery?.head ? delivery.head.slice(0, 10) : '—'}</code>
           </span>
+          {delivery?.repo && (
+            <span>
+              Repo: <code>{delivery.repo}</code>
+            </span>
+          )}
         </div>
+
+        {isLocalOnly && delivery?.remoteMessage && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: 'var(--fw-bg-subtle)',
+              border: '1px solid var(--fw-border)',
+              fontSize: 12,
+              color: 'var(--fw-text-muted)',
+              lineHeight: 1.55,
+            }}
+            data-testid="delivery-local-notice"
+          >
+            <div>{delivery.remoteMessage}</div>
+            <div style={{ marginTop: 4, fontSize: 11.5, color: 'var(--fw-text-subtle)' }}>
+              {isZh
+                ? '如需推送到 GitHub 创建 PR，只需在终端执行 git remote add origin <GitHub仓库地址> 并完成 gh auth login 后刷新即可。'
+                : 'To push and create a GitHub PR later, run `git remote add origin <url>` and `gh auth login`, then refresh.'}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className={styles.card}>
-        <h4 className={styles.cardTitle}>{t('delivery.pulls')}</h4>
+      {commits.length > 0 && (
+        <div className={styles.card} data-testid="delivery-local-commits">
+          <h4 className={styles.cardTitle}>{isZh ? '本地最近提交记录' : 'Recent Local Commits'}</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {commits.map(c => (
+              <div key={c.sha} className={styles.findingItem} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <code style={{ fontSize: 11.5, color: 'var(--fw-accent)' }}>{c.sha}</code>
+                  <span style={{ fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</span>
+                </div>
+                {c.at && <span style={{ fontSize: 11, color: 'var(--fw-text-subtle)', flexShrink: 0 }}>{c.at.slice(0, 19).replace('T', ' ')}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {changedFiles.length > 0 && (
+        <div className={styles.card}>
+          <h4 className={styles.cardTitle}>{isZh ? '工作区待提交变动' : 'Uncommitted Changes'}</h4>
+          <pre className={styles.monoPre}>{changedFiles.join('\n')}</pre>
+        </div>
+      )}
+
+      {!isLocalOnly && (
+        <div className={styles.card}>
+          <h4 className={styles.cardTitle}>{t('delivery.pulls')}</h4>
         {pulls.length === 0 ? (
           <div style={{ color: 'var(--fw-text-muted)', fontSize: 12 }}>{t('delivery.noPr')}</div>
         ) : (
@@ -116,6 +186,7 @@ export function DeliveryTrack({
           ))
         )}
       </div>
+      )}
 
       {/* Explicit human confirmation modal for PR creation / merge */}
       {confirmAction && (

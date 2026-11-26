@@ -219,7 +219,7 @@ func TestRunGuardrailsEnforceMaxPacketAttemptsMaxReviewRoundsAndMaxTaskCalls(t *
 		require.Equal(t, 1, st.Packets["M01-T01"].FailedAttempts)
 	})
 
-	t.Run("max-review-rounds escalates after 2 review returns", func(t *testing.T) {
+	t.Run("max-review-rounds escalates stagnating review returns straight to inbox", func(t *testing.T) {
 		fx := newGitFixture(t)
 		sd := happyDrivers()
 		reviewCalls := 0
@@ -236,7 +236,67 @@ func TestRunGuardrailsEnforceMaxPacketAttemptsMaxReviewRoundsAndMaxTaskCalls(t *
 		summary, err := RunTask(opts)
 		require.NoError(t, err)
 		require.Equal(t, "escalated", summary.Status)
-		require.Equal(t, 4, reviewCalls, "2 rounds before plan revision + 2 rounds after plan revision")
+		require.Equal(t, 2, reviewCalls, "stagnating REVIEW_RETURNED escalates directly to inbox without rewriting the milestone plan")
+		st := loadFixtureState(t, fx)
+		require.Equal(t, 0, st.Packets["M01-T01"].PlanRevisions)
+		require.Equal(t, "inbox", st.Packets["M01-T01"].Status)
+	})
+
+	t.Run("converging review findings continue past max-review-rounds and pass", func(t *testing.T) {
+		fx := newGitFixture(t)
+		sd := happyDrivers()
+		reviewCalls := 0
+		sd.reviewFn = func(a drivers.CallArgs) drivers.Result {
+			reviewCalls++
+			switch reviewCalls {
+			case 1:
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.Text = `{"verdict":"return","score":0.6,"reasons":["missing A and B"],"findings":[{"id":"F-1","severity":"blocker","target":"a.ts:1","evidence":"missing A","fix":"export A","status":"open"},{"id":"F-2","severity":"major","target":"b.ts:1","evidence":"missing B","fix":"export B","status":"open"},{"id":"F-3","severity":"minor","target":"c.ts:1","evidence":"style","status":"open"}]}`
+				})
+			case 2:
+				require.Contains(t, a.Prompt, "Prior review open findings")
+				require.Contains(t, a.Prompt, "F-1")
+				require.Contains(t, a.Prompt, "F-2")
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.Text = `{"verdict":"return","score":0.85,"reasons":["F-1 closed, F-2 open"],"findings":[{"id":"F-1","severity":"blocker","target":"a.ts:1","evidence":"ok","status":"resolved","resolution":"exported A"},{"id":"F-2","severity":"major","target":"b.ts:1","evidence":"still missing B","fix":"export B","status":"open"}]}`
+				})
+			case 3:
+				require.Contains(t, a.Prompt, "F-2")
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.Text = `{"verdict":"pass","score":0.97,"reasons":["all findings resolved"],"findings":[{"id":"F-2","severity":"major","target":"b.ts:1","evidence":"ok","status":"resolved","resolution":"exported B"}]}`
+				})
+			default:
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.Text = `{"verdict":"pass","score":0.99,"reasons":["clean packet"]}`
+				})
+			}
+		}
+		opts := runOpts(fx, sd.set())
+		opts.Config.Guardrails.MaxPacketAttempts = new(5)
+		opts.Config.Guardrails.MaxReviewRounds = new(2)
+		opts.Drivers = sd.set()
+		summary, err := RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "completed", summary.Status)
+		require.Equal(t, 4, reviewCalls, "M01-T01 converges across 3 review rounds (2 -> 1 -> 0 open blockers) and M01-T02 passes on 1")
+	})
+
+	t.Run("priorOpenReviewFindings and latestPriorReview handle all evidence shapes", func(t *testing.T) {
+		require.Nil(t, priorOpenReviewFindings(nil))
+		require.Nil(t, priorOpenReviewFindings(map[string]any{"verdict": "return"}))
+		require.Nil(t, priorOpenReviewFindings(map[string]any{"findings": "bad-shape"}))
+
+		direct := &state.PacketState{Evidence: state.Evidence{Review: map[string]any{"verdict": "return"}}}
+		require.Equal(t, direct.Evidence.Review, latestPriorReview(direct))
+
+		fromMapHistory := &state.PacketState{EvidenceHistory: []any{
+			map[string]any{"evidence": map[string]any{"review": map[string]any{"verdict": "return"}}},
+			"not-a-map",
+			map[string]any{"evidence": state.Evidence{}},
+		}}
+		require.Equal(t, map[string]any{"verdict": "return"}, latestPriorReview(fromMapHistory))
+
+		require.Nil(t, latestPriorReview(&state.PacketState{}))
 	})
 
 	t.Run("reviewReturnCount skips non-map history entries", func(t *testing.T) {

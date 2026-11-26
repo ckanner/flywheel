@@ -17,16 +17,30 @@ import type {
   PlanningState,
   RepoImageEntry,
   RunSummary,
+  SessionHistoryTurn,
   TaskState,
   TraceDetail,
   TraceSummary,
   UXReviewReport,
+  WorkbenchDrawer,
+  WorkbenchView,
 } from './types.ts';
 
 export interface StoreError {
   message: string;
   dispatch?: string;
   action?: string | null;
+}
+
+export interface PreviewArtifactState {
+  title: string;
+  relPath: string;
+  absPath: string;
+  kind: 'html' | 'markdown' | 'json' | 'code' | 'text';
+  content: string;
+  loading: boolean;
+  fullscreen: boolean;
+  error: string | null;
 }
 
 export interface FlywheelSnapshot {
@@ -38,6 +52,10 @@ export interface FlywheelSnapshot {
   railCollapsed: boolean;
   showTempRuns: boolean;
   activeTab: MainTab;
+  workbenchView: WorkbenchView;
+  activeNodeId: string | null;
+  activeSessionKey: string | null;
+  activeDrawer: WorkbenchDrawer;
   executionView: ExecutionViewMode;
   designView: DesignViewMode;
   selectedPacketId: string | null;
@@ -50,6 +68,9 @@ export interface FlywheelSnapshot {
   state: TaskState | null;
   planning: PlanningState | null;
   designCandidates: DesignCandidateRevision[];
+  uiPrototypeHtml: string;
+  uiPrototypeFile: string;
+  previewArtifact: PreviewArtifactState | null;
   nodeDetail: NodeDetailSnapshot | null;
   uxReviews: Record<string, UXReviewReport | null>;
   delivery: DeliverySnapshot | null;
@@ -57,6 +78,8 @@ export interface FlywheelSnapshot {
   tracesLoading: boolean;
   selectedTraceId: string | null;
   traceDetail: TraceDetail | null;
+  sessionHistories: Record<string, SessionHistoryTurn[]>;
+  claimedSessions: Record<string, boolean>;
 
   // Settings & diagnostics
   configScope: 'global' | 'project';
@@ -83,6 +106,10 @@ function initialSnapshot(): FlywheelSnapshot {
     railCollapsed: false,
     showTempRuns: false,
     activeTab: 'execution',
+    workbenchView: 'main',
+    activeNodeId: null,
+    activeSessionKey: null,
+    activeDrawer: null,
     executionView: 'waves',
     designView: 'synthesized',
     selectedPacketId: null,
@@ -94,6 +121,9 @@ function initialSnapshot(): FlywheelSnapshot {
     state: null,
     planning: null,
     designCandidates: [],
+    uiPrototypeHtml: '',
+    uiPrototypeFile: '',
+    previewArtifact: null,
     nodeDetail: null,
     uxReviews: {},
     delivery: null,
@@ -101,6 +131,8 @@ function initialSnapshot(): FlywheelSnapshot {
     tracesLoading: false,
     selectedTraceId: null,
     traceDetail: null,
+    sessionHistories: {},
+    claimedSessions: {},
 
     configScope: 'global',
     configEditor: null,
@@ -249,6 +281,7 @@ export class FlywheelStore {
   private started = false;
   private disposed = false;
   private taskRequestSeq = 0;
+  private liveStreamGen = 0;
   private visibilityHandler: (() => void) | null = null;
 
   constructor(ctx: ClientContext, ready: Promise<string | undefined>) {
@@ -301,6 +334,7 @@ export class FlywheelStore {
   stop(): void {
     this.started = false;
     this.disposed = true;
+    this.liveStreamGen += 1;
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -316,6 +350,8 @@ export class FlywheelStore {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     const viewingLiveTraces =
+      this.snapshot.workbenchView === 'main' ||
+      this.snapshot.workbenchView === 'sub' ||
       this.snapshot.activeTab === 'traces' ||
       this.snapshot.activeTab === 'design' ||
       (this.snapshot.selectedPacketId !== null && this.snapshot.inspectorTab === 'output');
@@ -331,13 +367,125 @@ export class FlywheelStore {
         await this.refreshSelectedTask(true);
         if (viewingLiveTraces) {
           await this.loadTraces(true);
-          if (this.snapshot.activeTab !== 'design' && this.snapshot.selectedTraceId) {
+          if (this.snapshot.workbenchView === 'sub' && this.snapshot.selectedTraceId) {
             await this.loadTraceDetail(this.snapshot.selectedTraceId, true);
           }
         }
       }
       this.schedulePoll();
     }, delay);
+  }
+
+  private pumpLiveTraceStream(taskDir: string, traceId: string): void {
+    const gen = ++this.liveStreamGen;
+    const step = async () => {
+      if (this.disposed || !this.started || gen !== this.liveStreamGen) return;
+      if (this.snapshot.selectedTaskDir !== taskDir || this.snapshot.workbenchView !== 'sub') return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const cur = this.snapshot.traceDetail;
+      const waitSinceBytes = cur && cur.id === traceId && cur.running && typeof cur.byteSize === 'number'
+        ? cur.byteSize
+        : undefined;
+      try {
+        const res = await this.remote.query({
+          action: 'trace-detail',
+          taskDir,
+          traceId,
+          ...(waitSinceBytes !== undefined ? { waitSinceBytes } : {}),
+        });
+        if (this.disposed || gen !== this.liveStreamGen || this.snapshot.selectedTaskDir !== taskDir) return;
+        const trace = (res.trace ?? null) as TraceDetail | null;
+        if (trace && this.snapshot.selectedTraceId === traceId) {
+          this.setState({ traceDetail: trace });
+          if (trace.running) {
+            setTimeout(() => void step(), 60);
+          }
+        }
+      } catch {
+        // Fallback polling continues cleanly.
+      }
+    };
+    void step();
+  }
+
+  startNewTaskChat(): void {
+    this.liveStreamGen += 1;
+    this.setState({
+      workbenchView: 'new-task',
+      activeNodeId: null,
+      activeSessionKey: null,
+      activeDrawer: null,
+      selectedPacketId: null,
+      error: null,
+    });
+  }
+
+  returnToMainStream(): void {
+    this.liveStreamGen += 1;
+    this.setState({
+      workbenchView: this.snapshot.selectedTaskDir ? 'main' : 'new-task',
+      activeNodeId: null,
+      activeSessionKey: null,
+      selectedPacketId: null,
+    });
+    if (this.snapshot.selectedTaskDir) {
+      void this.refreshSelectedTask(true, false);
+      void this.loadTraces(true);
+    }
+  }
+
+  drillIntoNode(
+    nodeId: string,
+    opts?: { traceId?: string | null; sessionKey?: string | null; packetId?: string | null },
+  ): void {
+    this.liveStreamGen += 1;
+    const matchedTrace =
+      (opts?.traceId ? this.snapshot.traces.find(tr => tr.id === opts.traceId) : undefined) ??
+      this.snapshot.traces.find(
+        tr => tr.id === nodeId || tr.scope === nodeId || tr.key === nodeId || tr.key.endsWith(`/${nodeId}`),
+      ) ??
+      null;
+    const nextTraceId = opts?.traceId ?? matchedTrace?.id ?? null;
+    const nextSessionKey = opts?.sessionKey ?? matchedTrace?.key ?? (opts?.packetId ? `execute/${opts.packetId}` : null);
+    this.setState({
+      workbenchView: 'sub',
+      activeNodeId: nodeId,
+      activeSessionKey: nextSessionKey,
+      activeDrawer: null,
+      selectedPacketId: opts?.packetId ?? null,
+      ...(nextTraceId ? { selectedTraceId: nextTraceId } : {}),
+    });
+    if (this.snapshot.selectedTaskDir) {
+      if (nextSessionKey) void this.loadSessionHistory(nextSessionKey);
+      if (opts?.packetId) void this.loadNodeDetail(opts.packetId);
+      if (nextTraceId) {
+        void this.loadTraceDetail(nextTraceId).then(detail => {
+          if (detail?.running && this.snapshot.selectedTaskDir) {
+            this.pumpLiveTraceStream(this.snapshot.selectedTaskDir, nextTraceId);
+          }
+        });
+      } else {
+        void this.loadTraces(true);
+      }
+    }
+  }
+
+  openDrawer(drawer: WorkbenchDrawer): void {
+    this.setState({ activeDrawer: drawer });
+    if (drawer === 'design' && this.snapshot.selectedTaskDir) {
+      void this.loadDesignCandidates();
+      void this.loadTraces(true);
+    }
+    if (drawer === 'delivery' && this.snapshot.selectedTaskDir) {
+      void this.loadDelivery();
+    }
+    if (drawer === 'settings') {
+      void this.loadConfig(this.snapshot.configScope);
+    }
+  }
+
+  closeDrawer(): void {
+    this.setState({ activeDrawer: null });
   }
 
   setRailCollapsed(collapsed: boolean): void {
@@ -350,32 +498,37 @@ export class FlywheelStore {
 
   setActiveTab(tab: MainTab): void {
     this.setState({ activeTab: tab });
-    if (tab === 'delivery' && this.snapshot.selectedTaskDir) {
-      void this.loadDelivery();
+    if (tab === 'design') {
+      this.openDrawer('design');
+      return;
     }
-    if (tab === 'design' && this.snapshot.selectedTaskDir) {
-      void this.loadDesignCandidates();
-      void this.loadTraces(true);
+    if (tab === 'execution') {
+      this.openDrawer('dag');
+      return;
     }
-    if (tab === 'traces' && this.snapshot.selectedTaskDir) {
-      void this.loadTraces();
+    if (tab === 'delivery') {
+      this.openDrawer('delivery');
+      return;
     }
     if (tab === 'settings') {
-      void this.loadConfig(this.snapshot.configScope);
+      this.openDrawer('settings');
+      return;
     }
+    if (tab === 'traces') {
+      const target = this.snapshot.selectedTraceId ?? this.snapshot.traces[0]?.id ?? null;
+      this.openTraceInWorkbench(target);
+      return;
+    }
+    this.closeDrawer();
   }
 
   openTraceInWorkbench(traceId?: string | null): void {
-    this.setState({
-      selectedPacketId: null,
-      activeTab: 'traces',
-      ...(traceId ? { selectedTraceId: traceId } : {}),
+    const matched = traceId ? this.snapshot.traces.find(tr => tr.id === traceId) : this.snapshot.traces[0];
+    const nodeId = matched?.scope || matched?.role || traceId || 'trace';
+    this.drillIntoNode(nodeId, {
+      traceId: traceId ?? matched?.id ?? null,
+      sessionKey: matched?.key ?? null,
     });
-    if (this.snapshot.selectedTaskDir) {
-      void this.loadTraces().then(() => {
-        if (traceId) void this.loadTraceDetail(traceId);
-      });
-    }
   }
 
   setExecutionView(mode: ExecutionViewMode): void {
@@ -456,20 +609,29 @@ export class FlywheelStore {
   }
 
   async selectTask(taskDir: string, cwd?: string): Promise<void> {
+    this.liveStreamGen += 1;
     const resolvedCwd = cwd || this.snapshot.runs.find(r => r.taskDir === taskDir)?.cwd || this.snapshot.selectedCwd;
     this.setState({
       selectedTaskDir: taskDir,
       selectedCwd: resolvedCwd,
+      workbenchView: 'main',
+      activeNodeId: null,
+      activeSessionKey: null,
+      activeDrawer: null,
       selectedPacketId: null,
       nodeDetail: null,
       designCandidates: [],
+      uiPrototypeHtml: '',
+      uiPrototypeFile: '',
       delivery: null,
       traces: [],
       selectedTraceId: null,
       traceDetail: null,
+      sessionHistories: {},
       error: null,
     });
     await this.refreshSelectedTask(false, true);
+    void this.loadTraces(true);
   }
 
   async refreshSelectedTask(silent = false, autoSelectTab = false): Promise<ControlResponse | undefined> {
@@ -500,9 +662,13 @@ export class FlywheelStore {
         activeTab: nextTab,
         lastUpdatedAt: Date.now(),
       });
-      if (nextTab === 'design' || resolvedPlanning?.design) {
+      if (nextTab === 'design' || resolvedPlanning?.design || resolvedPlanning?.phase === 'awaiting-input' || resolvedPlanning?.isBlocked) {
         void this.loadDesignCandidates();
         void this.loadTraces(true);
+      }
+      const protoFile = (planning ?? state?.planning)?.['ui-prototype']?.['html-file'];
+      if (protoFile && protoFile !== this.snapshot.uiPrototypeFile) {
+        void this.loadUIPrototype(protoFile);
       }
       if (nextTab === 'delivery') {
         void this.loadDelivery();
@@ -518,6 +684,25 @@ export class FlywheelStore {
         error: this.toStoreError(error, 'status'),
       });
       return undefined;
+    }
+  }
+
+  async loadUIPrototype(htmlFile?: string): Promise<void> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return;
+    try {
+      const res = await this.remote.query({
+        action: 'ui-prototype',
+        taskDir,
+        ...(htmlFile ? { htmlFile } : {}),
+      });
+      if (this.snapshot.selectedTaskDir !== taskDir) return;
+      this.setState({
+        uiPrototypeHtml: typeof res.html === 'string' ? res.html : '',
+        uiPrototypeFile: typeof res.htmlFile === 'string' ? res.htmlFile : (htmlFile ?? ''),
+      });
+    } catch {
+      // Optional artifact.
     }
   }
 
@@ -699,6 +884,9 @@ export class FlywheelStore {
     slug: string;
     goal: string;
     mode: 'auto' | 'quick' | 'full';
+    clarifyMode?: 'off' | 'auto' | 'always';
+    uiPrototypeMode?: 'off' | 'auto' | 'always';
+    qualityGates?: string[];
     images?: string[];
   }): Promise<ControlResponse | undefined> {
     const cleanCwd = opts.cwd.replace(/\/+$/, '');
@@ -735,6 +923,9 @@ export class FlywheelStore {
       evidence,
       policy,
       mode: opts.mode,
+      ...(opts.clarifyMode ? { 'clarify-mode': opts.clarifyMode } : {}),
+      ...(opts.uiPrototypeMode ? { 'ui-prototype-mode': opts.uiPrototypeMode } : {}),
+      ...(opts.qualityGates && opts.qualityGates.length > 0 ? { 'quality-gates': opts.qualityGates } : {}),
       'implementation-authorized': policy === 'delegated',
       ...(policy === 'delegated'
         ? {
@@ -750,6 +941,86 @@ export class FlywheelStore {
         action: 'prepare',
         'request-id': requestId,
         brief,
+        start: true,
+      },
+    });
+  }
+
+  async submitClarification(payload: {
+    answers: Record<string, string>;
+    selectedGates: string[];
+    freeformNote?: string;
+    uiPrototypeMode?: 'off' | 'auto' | 'always';
+  }): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return undefined;
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    return this.performAct('clarify', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'clarify',
+        'request-id': `clarify-${Date.now()}`,
+        revision: rev,
+        clarify: {
+          answers: payload.answers,
+          'selected-gates': payload.selectedGates,
+          ...(payload.freeformNote?.trim() ? { 'freeform-note': payload.freeformNote.trim() } : {}),
+          ...(payload.uiPrototypeMode ? { 'ui-prototype-mode': payload.uiPrototypeMode } : {}),
+        },
+        start: true,
+      },
+    });
+  }
+
+  async approveUIPrototype(): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return undefined;
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    return this.performAct('approve-prototype', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'approve-prototype',
+        'request-id': `approve-proto-${Date.now()}`,
+        revision: rev,
+        start: true,
+      },
+    });
+  }
+
+  async submitUIPrototypeFeedback(text: string): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir || !text.trim()) return undefined;
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    return this.performAct('prototype-feedback', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'prototype-feedback',
+        'request-id': `proto-fb-${Date.now()}`,
+        revision: rev,
+        text: text.trim(),
+        start: true,
+      },
+    });
+  }
+
+  async skipUIPrototype(): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return undefined;
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    return this.performAct('skip-prototype', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'skip-prototype',
+        'request-id': `skip-proto-${Date.now()}`,
+        revision: rev,
         start: true,
       },
     });
@@ -803,10 +1074,13 @@ export class FlywheelStore {
     });
   }
 
-  async retryPlanning(): Promise<ControlResponse | undefined> {
+  async retryPlanning(opts?: { draftMode?: 'dual' | 'single' }): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
-    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
     if (!taskDir) return undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      await this.refreshSelectedTask(true, false);
+    }
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
     return this.performAct('retry-planning', {
       action: 'planning',
       cwd: this.snapshot.selectedCwd || undefined,
@@ -816,15 +1090,46 @@ export class FlywheelStore {
         'request-id': `plan-retry-${Date.now()}`,
         revision: rev,
         scope: 'design',
+        ...(opts?.draftMode ? { 'draft-mode': opts.draftMode } : {}),
         start: true,
       },
     });
   }
 
+  async uploadAttachment(
+    cwd: string,
+    file: { name: string; mimeType: string; dataBase64: string },
+  ): Promise<{ path: string; bytes: number; mimeType: string } | null> {
+    if (!cwd || !file.dataBase64) return null;
+    try {
+      const res = await this.remote.act({
+        action: 'save-attachment',
+        cwd,
+        name: file.name,
+        mimeType: file.mimeType,
+        dataBase64: file.dataBase64,
+      });
+      if (typeof res.path === 'string' && res.path) {
+        return {
+          path: res.path,
+          bytes: typeof res.bytes === 'number' ? res.bytes : 0,
+          mimeType: typeof res.mimeType === 'string' ? res.mimeType : file.mimeType,
+        };
+      }
+      return null;
+    } catch (error) {
+      this.setState({ error: this.toStoreError(error, 'save-attachment') });
+      return null;
+    }
+  }
+
   async submitDesignFeedback(text: string): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
-    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
     if (!taskDir || !text.trim()) return undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      await this.refreshSelectedTask(true, false);
+    }
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
     return this.performAct('design-feedback', {
       action: 'planning',
       cwd: this.snapshot.selectedCwd || undefined,
@@ -875,10 +1180,110 @@ export class FlywheelStore {
     });
   }
 
-  async abandonSession(key: string, invocation: string, reason: string): Promise<ControlResponse | undefined> {
+  async loadSessionHistory(sessionKey: string): Promise<SessionHistoryTurn[]> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir || !sessionKey) return [];
+    try {
+      const res = await this.remote.query({
+        action: 'history',
+        taskDir,
+        sessionKey,
+        ...(this.snapshot.selectedCwd ? { cwd: this.snapshot.selectedCwd } : {}),
+      });
+      if (this.snapshot.selectedTaskDir !== taskDir) return [];
+      const raw = res.history as unknown;
+      let turns: SessionHistoryTurn[] = [];
+      if (Array.isArray(raw)) {
+        turns = raw as SessionHistoryTurn[];
+      } else if (raw && typeof raw === 'object' && Array.isArray((raw as { turns?: unknown[] }).turns)) {
+        turns = (raw as { turns: SessionHistoryTurn[] }).turns;
+      } else if (raw && typeof raw === 'object' && Array.isArray((raw as { entries?: unknown[] }).entries)) {
+        turns = (raw as { entries: SessionHistoryTurn[] }).entries;
+      }
+      this.setState({
+        sessionHistories: {
+          ...this.snapshot.sessionHistories,
+          [sessionKey]: turns,
+        },
+      });
+      return turns;
+    } catch {
+      return this.snapshot.sessionHistories[sessionKey] ?? [];
+    }
+  }
+
+  async claimSession(key: string): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
     const revision = this.snapshot.state?.revision ?? 1;
+    if (!taskDir || !key) return undefined;
+    const res = await this.performAct('claim-session', {
+      action: 'session',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      session: { action: 'claim', key, revision },
+    });
+    if (res) {
+      this.setState({
+        claimedSessions: { ...this.snapshot.claimedSessions, [key]: true },
+      });
+    }
+    return res;
+  }
+
+  async sendSessionMessage(key: string, prompt: string): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    const clean = prompt.trim();
+    if (!taskDir || !key || !clean) return undefined;
+    if (this.snapshot.running) {
+      const stopped = await this.stopRun();
+      if (!stopped) return undefined;
+    }
+    if (!this.snapshot.claimedSessions[key]) {
+      const claimed = await this.claimSession(key);
+      if (!claimed) return undefined;
+    }
+    const revision = this.snapshot.state?.revision ?? 1;
+    const res = await this.performAct('send-session', {
+      action: 'session',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      session: { action: 'send', key, revision, prompt: clean },
+    });
+    if (res) {
+      await this.loadSessionHistory(key);
+      await this.loadTraces(true);
+      if (this.snapshot.selectedTraceId) {
+        void this.loadTraceDetail(this.snapshot.selectedTraceId, true);
+      }
+    }
+    return res;
+  }
+
+  async returnSession(key: string): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    const revision = this.snapshot.state?.revision ?? 1;
+    if (!taskDir || !key) return undefined;
+    const res = await this.performAct('return-session', {
+      action: 'session',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      session: { action: 'return', key, revision },
+    });
+    if (res) {
+      const next = { ...this.snapshot.claimedSessions };
+      delete next[key];
+      this.setState({ claimedSessions: next });
+    }
+    return res;
+  }
+
+  async abandonSession(key: string, invocation: string, reason: string): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
     if (!taskDir) return undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      await this.refreshSelectedTask(true, false);
+    }
+    const revision = this.snapshot.state?.revision ?? 1;
     return this.performAct('abandon-session', {
       action: 'session',
       cwd: this.snapshot.selectedCwd || undefined,
@@ -1078,7 +1483,13 @@ export class FlywheelStore {
     }
   }
 
-  async openResumeTerminal(harness: string, sessionId: string, cwd?: string): Promise<ControlResponse | undefined> {
+  async openResumeTerminal(
+    harness: string,
+    sessionId: string,
+    cwd?: string,
+    sessionTitle?: string,
+    terminal?: 'warp' | 'terminal',
+  ): Promise<ControlResponse | undefined> {
     const res = await this.performAct(
       'open-terminal',
       {
@@ -1086,12 +1497,117 @@ export class FlywheelStore {
         harness,
         sessionId,
         ...(cwd ? { cwd } : {}),
+        ...(sessionTitle ? { sessionTitle } : {}),
+        ...(terminal ? { terminal } : {}),
       },
       false,
     );
     if (res) {
-      this.setState({ notice: 'terminal-opened' });
+      this.setState({ notice: res.terminal === 'warp' ? 'warp-opened' : 'terminal-opened' });
     }
     return res;
+  }
+
+  openInlineHtmlPreview(title: string, relPath: string, html: string, fullscreen = false): void {
+    const taskDir = this.snapshot.selectedTaskDir || '';
+    const absPath = taskDir && relPath ? `${taskDir.replace(/\/+$/, '')}/${relPath.replace(/^\/+/, '')}` : '';
+    this.setState({
+      activeDrawer: null,
+      previewArtifact: {
+        title: title || relPath || 'HTML Preview',
+        relPath,
+        absPath,
+        kind: 'html',
+        content: html,
+        loading: false,
+        fullscreen,
+        error: null,
+      },
+    });
+  }
+
+  async openArtifactPreview(relPath: string, opts?: { title?: string; fullscreen?: boolean }): Promise<void> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    const cwd = this.snapshot.selectedCwd;
+    if (!relPath || (!taskDir && !cwd)) return;
+    const title = opts?.title || basenameOf(relPath) || relPath;
+    this.setState({
+      activeDrawer: null,
+      previewArtifact: {
+        title,
+        relPath,
+        absPath: '',
+        kind: relPath.endsWith('.html') ? 'html' : relPath.endsWith('.md') ? 'markdown' : 'text',
+        content: '',
+        loading: true,
+        fullscreen: Boolean(opts?.fullscreen),
+        error: null,
+      },
+    });
+    try {
+      const res = await this.remote.query({
+        action: 'read-artifact',
+        ...(taskDir ? { taskDir } : {}),
+        ...(cwd ? { cwd } : {}),
+        relPath,
+      });
+      const content = typeof res.content === 'string' ? res.content : '';
+      const kind = (['html', 'markdown', 'json', 'code', 'text'].includes(String(res.kind))
+        ? String(res.kind)
+        : 'text') as PreviewArtifactState['kind'];
+      this.setState({
+        previewArtifact: {
+          title,
+          relPath: typeof res.relPath === 'string' ? res.relPath : relPath,
+          absPath: typeof res.absPath === 'string' ? res.absPath : '',
+          kind,
+          content,
+          loading: false,
+          fullscreen: Boolean(this.snapshot.previewArtifact?.fullscreen ?? opts?.fullscreen),
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.setState({
+        previewArtifact: {
+          title,
+          relPath,
+          absPath: '',
+          kind: 'text',
+          content: '',
+          loading: false,
+          fullscreen: Boolean(this.snapshot.previewArtifact?.fullscreen ?? opts?.fullscreen),
+          error: this.toStoreError(error, 'read-artifact').message,
+        },
+      });
+    }
+  }
+
+  togglePreviewFullscreen(): void {
+    const cur = this.snapshot.previewArtifact;
+    if (!cur) return;
+    this.setState({ previewArtifact: { ...cur, fullscreen: !cur.fullscreen } });
+  }
+
+  closeArtifactPreview(): void {
+    if (this.snapshot.previewArtifact) {
+      this.setState({ previewArtifact: null });
+    }
+  }
+
+  async openArtifactExternal(relPath: string): Promise<void> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    const cwd = this.snapshot.selectedCwd;
+    if (!relPath || (!taskDir && !cwd)) return;
+    await this.performAct(
+      'open-artifact',
+      {
+        action: 'open-artifact',
+        ...(taskDir ? { taskDir } : {}),
+        ...(cwd ? { cwd } : {}),
+        relPath,
+      },
+      false,
+    );
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.39.9",
+  "version": "0.40.0",
   "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",
@@ -58,7 +58,7 @@
     "plugins/dsh/vendor/registry-verification-2026-11-22.json",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.md",
     "plugins/dsh/KIMI_NATIVE_PROTOCOL.en.md",
-    "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz"
+    "plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz"
   ],
   "scripts": {
     "release:check": "node scripts/release-preflight.js",
@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "dsh-preset-generator": "0.4.0",
-    "@ckanner/dsh-subagent-antigravity": "file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz",
+    "@ckanner/dsh-subagent-antigravity": "file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz",
     "dsh-subagent-codex-pro": "0.10.2",
     "zod": "4.3.6"
   },
@@ -87,7 +87,7 @@
     "@deepseek-ai/dsh-tools": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.5 <0.4.0-0 || ^0.2.2-0 || ^0.2.3-0 || ^0.3.0-0",
     "dsh-plugin-lcu": "0.5.0 || 0.5.1",
-    "dsh-subagent-claude-code-pro": "0.7.0"
+    "dsh-subagent-claude-code-pro": "0.7.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -141,6 +141,6 @@
     "./model-catalog-worker": "./dist/model-catalog-worker.mjs"
   },
   "devDependencies": {
-    "dsh-subagent-claude-code-pro": "file:plugins/dsh/vendor/dsh-subagent-claude-code-pro-0.7.0.tgz"
+    "dsh-subagent-claude-code-pro": "file:plugins/dsh/vendor/dsh-subagent-claude-code-pro-0.7.1.tgz"
   }
 }

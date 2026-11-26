@@ -109,11 +109,11 @@ func TestPlanningReviewAdoptionPreservesVerdictAndReviewerIdentity(t *testing.T)
 		_, c := newReviewedFixture(t)
 		enableSessionPolicy(c)
 		request := planning.Request{ID: "tracked-review", Scope: "design", InputRevision: 1, Rounds: 1, Status: "running", Stage: "reviewer"}
-		result, err := c.invokeScoped("design-review", "planning:"+request.ID, sessionArgs(c), func(a drivers.CallArgs) drivers.Result {
+		result, err := c.invokeScoped("design-review", planningSessionScope(&request), sessionArgs(c), func(a drivers.CallArgs) drivers.Result {
 			return sessionResult(a, planningJSONResult(t, prompts.DesignReviewOutput{Verdict: "pass", Summary: "Reviewed through a separately tracked role."}))
 		})
 		require.NoError(t, err)
-		record := c.sessionRecord("design-review", "planning:"+request.ID)
+		record := c.sessionRecord("design-review", planningSessionScope(&request))
 		require.NotNil(t, record)
 		require.NoError(t, c.adoptPlanningReview(&request, result.Text, "design-review", result.Session.RequestID))
 		review := planning.LatestReview(c.State.Planning, "design", *c.State.Planning.CurrentDesign)

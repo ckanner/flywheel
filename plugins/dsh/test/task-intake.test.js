@@ -73,26 +73,28 @@ test('CreateTaskModal creates one-sentence Investigation tasks without raw JSON,
     listRepoImages: async () => envelope({ protocol: 1, ok: true, cwd: '/repo', files: [{ path: 'docs/ui.png', bytes: 1024, ext: 'png' }] }),
   });
 
-  // 1. InvestigationBoard renders hypotheses & evidence log automatically
-  assert.ok(ui.container.querySelector('[data-testid="flywheel-investigation-board"]'));
+  // 1. Main stream renders read-only Investigation stage with hypotheses
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-stage-investigation"]'));
   assert.match(ui.container.textContent, /Clock skew/);
-  assert.match(ui.container.textContent, /Checked auth\.go/);
 
-  // 2. Open 30s CreateTaskModal, scan images on Build, then create 1-sentence Investigation
+  // 2. Click "+ 新建任务" -> opens New-Task Chat, scan images, select Investigate intent, send 1-sentence goal
   await ui.click('+ 新建任务');
-  const modal = ui.container.querySelector('[data-testid="flywheel-create-modal"]');
-  assert.ok(modal);
-  await ui.click('扫描仓库图片');
-  assert.match(modal.textContent, /docs\/ui\.png/);
+  const newChat = ui.container.querySelector('[data-testid="flywheel-new-task-chat"]');
+  assert.ok(newChat);
+  await ui.click('图片');
+  await ui.click(/从仓库已有图片选/);
+  assert.match(newChat.textContent, /docs\/ui\.png/);
 
-  await act(async () => {
-    modal.querySelector('button[data-intent="investigate"]').click();
-  });
-  const textarea = modal.querySelector('textarea');
+  await ui.click(/根因调查/);
+  const textarea = newChat.querySelector('[data-testid="flywheel-chat-input"]');
   await act(async () => {
     setInputValue(textarea, 'Investigate why SSE drops after 30s');
   });
-  await ui.click('创建并启动');
+  await act(async () => {
+    newChat.querySelector('[data-testid="flywheel-chat-send"]').click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   const invAct = ui.actCalls.at(-1);
   assert.equal(invAct.action, 'investigate');
   assert.equal(invAct.investigation.action, 'start');
@@ -100,8 +102,12 @@ test('CreateTaskModal creates one-sentence Investigation tasks without raw JSON,
   assert.equal(invAct.investigation.intent, 'investigate');
   assert.equal(invAct.investigation.run, true);
 
-  // 3. Switch to Delivery tab and test explicit confirmation for Create Draft PR & Merge PR
-  await ui.click('交付追踪');
+  // 3. Open Delivery slide-over drawer and test explicit confirmation for Create Draft PR & Merge PR
+  await act(async () => {
+    ui.container.querySelector('[data-testid="drawer-trigger-delivery"]').click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   assert.ok(ui.container.querySelector('[data-testid="flywheel-delivery-track"]'));
   assert.match(ui.container.textContent, /draft-pr/);
   assert.match(ui.container.textContent, /#88/);

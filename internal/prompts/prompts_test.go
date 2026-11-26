@@ -157,7 +157,39 @@ func TestBuildReviewPromptSections(t *testing.T) {
 
 	base := BuildReviewPrompt(ReviewArgs{Packet: pkt, L1Evidence: l1, DiffSummary: "- src/a.go"})
 	assert.Contains(t, base, "## Review rubric (pass line included)\nPass line: score >= 0.8.")
+	assert.Contains(t, base, "Monotone convergence (do not move goalposts)")
+	assert.Contains(t, base, "Complete enumeration (no drip-feeding)")
+	assert.Contains(t, base, "Never block on orchestrator metadata")
+	assert.Contains(t, base, `Use "verification-gap" ONLY when`)
 	assert.Contains(t, base, `"pass": true`)
+
+	withPrior := BuildReviewPrompt(ReviewArgs{
+		Packet: pkt, L1Evidence: l1, DiffSummary: "- src/a.go",
+		PriorFindings: []ReviewFinding{{ID: "F-1", Severity: "blocker", Target: "a.go:10", Evidence: "missing export", Fix: "export Foo", Status: "open"}},
+	})
+	assert.Contains(t, withPrior, "## Prior review open findings (verify closure monotonically)")
+	assert.Contains(t, withPrior, `"id": "F-1"`)
+
+	execStructured := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2, map[string]any{
+		"error-code": "REVIEW_RETURNED",
+		"review": map[string]any{
+			"findings": []any{
+				"skip-non-map",
+				map[string]any{"id": "F-0", "severity": "blocker", "status": "resolved", "evidence": "closed"},
+				map[string]any{"id": "F-1", "severity": "blocker", "target": "a.go:10", "evidence": "missing Foo", "fix": "export Foo", "status": "open"},
+			},
+		},
+	})
+	assert.Contains(t, execStructured, "## Open review findings to close")
+	assert.Contains(t, execStructured, "Required fix: export Foo")
+
+	execReasons := BuildExecutePrompt(pkt, testSpec(), "/task", "", 2, map[string]any{
+		"error-code": "REVIEW_RETURNED",
+		"review":     map[string]any{"reasons": []any{"missing export Bar"}},
+	})
+	assert.Contains(t, execReasons, "- missing export Bar")
+	assert.Equal(t, "", extractReviewFindingsSummary("not-a-map"))
+	assert.Equal(t, "", extractReviewFindingsSummary(map[string]any{"error-code": "REVIEW_RETURNED"}))
 	assert.Contains(t, base, "## Changed files\n- src/a.go")
 	// 无 diffText → 降级说明分支。
 	assert.Contains(t, base, "(diff unavailable — judge from the changed-files list only")
@@ -360,4 +392,36 @@ func TestFrontendUXReviewPromptAndParser(t *testing.T) {
 	require.Len(t, ux.Findings, 2)
 	assert.Equal(t, "blocking", ux.Findings[0].Severity)
 	assert.Equal(t, "advisory", ux.Findings[1].Severity)
+
+	hugeDiff := strings.Repeat("+line\n", 5000)
+	boundedUX := BuildFrontendUXReviewPrompt(pkt, "- src/view.tsx", hugeDiff)
+	assert.Contains(t, boundedUX, "diff truncated at 24000 bytes")
+	assert.Less(t, strings.Index(boundedUX, "## Output"), strings.Index(boundedUX, "## git diff"))
+}
+
+func TestBoundTextProjectContextAndReviewThreeLayerOrdering(t *testing.T) {
+	assert.Equal(t, "short", boundText("short", 10, "..."))
+	assert.Equal(t, "line1...", boundText("line1\nline2\nline3", 10, "..."))
+	assert.Equal(t, "abcdefghij...", boundText("abcdefghijklmnop", 10, "..."))
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "planning"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "planning", "project-context.md"), []byte("# Stack\nGo 1.27\n"), 0o644))
+	pkt := testPacket()
+	execPrompt := BuildExecutePrompt(pkt, testSpec(), dir, "", 1, map[string]any{"output": strings.Repeat("err\n", 5000)})
+	assert.Contains(t, execPrompt, "## Project context memory (stable)\n# Stack\nGo 1.27")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "project-context.md"), []byte("# Stack\nGo Primary\n"), 0o644))
+	assert.Contains(t, BuildExecutePrompt(pkt, testSpec(), dir, "", 1), "# Stack\nGo Primary")
+	assert.Contains(t, execPrompt, "feedback truncated at 16000 bytes")
+	assert.Less(t, strings.Index(execPrompt, "## Project context memory"), strings.Index(execPrompt, "## Runtime (volatile)"))
+
+	revPrompt := BuildReviewPrompt(ReviewArgs{
+		Packet:      pkt,
+		L1Evidence:  map[string]any{"pass": true},
+		DiffSummary: "- src/a.go",
+		DiffText:    strings.Repeat("+code line\n", 4000),
+	})
+	assert.Contains(t, revPrompt, "diff truncated at 24000 bytes")
+	assert.Less(t, strings.Index(revPrompt, "## Output"), strings.Index(revPrompt, "## Task packet (contract)"))
+	assert.Less(t, strings.Index(revPrompt, "## Task packet (contract)"), strings.Index(revPrompt, "## L1 deterministic test results"))
 }

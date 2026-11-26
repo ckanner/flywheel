@@ -110,6 +110,18 @@ func TestAntigravityReceiptPreservesConversationAccountingAndExplicitHistory(t *
 			assert.True(t, p.Session.CleanupConfirmed)
 		})
 	}
+	t.Run("acp-split-model-effort", func(t *testing.T) {
+		r := agyRequest(t)
+		r.Model, r.ReasoningEffort = "gemini-4-carbon-high", "high"
+		m := agyReceipt(r)
+		proObject(m, "configuration")["source"] = "acp-init"
+		proObject(m, "configuration", "observed")["model"] = "gemini-4-carbon"
+		proObject(m, "configuration", "observed")["effort"] = "high"
+		p := parseAgyFixture(r, m)
+		require.True(t, p.Settled, "%+v", p)
+		proObject(m, "configuration", "observed")["effort"] = "low"
+		require.False(t, parseAgyFixture(r, m).Settled)
+	})
 }
 func TestAntigravityRejectsUnprovenAndContradictoryReceipts(t *testing.T) {
 	r := agyRequest(t)

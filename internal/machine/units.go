@@ -213,6 +213,15 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		}
 	}
 
+	reason := fmt.Sprintf("packet %s exhausted retries (%d per round, plan revisions: %d). Human needed.",
+		id, packet.Escalation.MaxRetries, ps.PlanRevisions)
+	c.escalateToInbox(packet, reason)
+	return "inbox", nil
+}
+
+func (c *Context) escalateToInbox(packet *contract.Packet, reason string) {
+	id := packet.PacketID
+	ps := c.State.Packets[id]
 	c.finishRuntimeReplan(packet)
 	ps.Status = "inbox"
 	at := c.nowISO()
@@ -220,15 +229,13 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 	entry := map[string]any{
 		"at":        c.nowISO(),
 		"packet-id": id,
-		"reason": fmt.Sprintf("packet %s exhausted retries (%d per round, plan revisions: %d). Human needed.",
-			id, packet.Escalation.MaxRetries, ps.PlanRevisions),
+		"reason":    reason,
 	}
 	c.State.Inbox = append(c.State.Inbox, entry)
 	c.State.Status = "escalated"
 	c.appendInbox(entry)
 	c.appendRetro(fmt.Sprintf("- %v packet %s: INBOX — %v", entry["at"], id, entry["reason"]))
 	c.save()
-	return "inbox", nil
 }
 
 // P2 修复（审计）：先完成提交、再置 completed 并保存——Node 先写 completed
@@ -723,18 +730,21 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 	for {
 		// escalate 裁决统一出口：review 退回累积 FailedAttempts 后回到循环顶，
 		// 子环入口的界检查触发这里（与 Bounded/Spun 同一条升级路径）。
-		escalate := func() (string, error) {
+		handleEscalate := func() (bool, string, error) {
 			esc, err := c.escalatePacket(packet)
 			if err != nil {
-				return "", err
+				return true, "", err
 			}
 			if esc == "inbox" {
-				return "inbox", nil
+				return true, "stop", nil
+			}
+			if esc == "workflow-upgraded" {
+				return true, "upgrade", nil
 			}
 			if p, ok := c.Packets[id]; ok { // P0-2：按修订后的契约跑
 				packet = p
 			}
-			return esc, nil
+			return false, "", nil
 		}
 		if stage == "execute" {
 			// v0.24：execute 子环闭环（runExecuteLoop）——大循环对出口裁决。
@@ -749,15 +759,8 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 				return "upgrade", nil
 			}
 			if r.Bounded || r.Spun {
-				esc, err := escalate()
-				if err != nil {
-					return "", err
-				}
-				if esc == "inbox" {
-					return "stop", nil
-				}
-				if esc == "workflow-upgraded" {
-					return "upgrade", nil
+				if done, out, err := handleEscalate(); done {
+					return out, err
 				}
 				continue // 修订后契约 → 子环重入
 			}
@@ -894,20 +897,17 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 			code = review.ErrorCode
 		}
 		outcome := c.failAttempt(packet, code, nil, nil)
-		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds
+		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds && !review.Converging
 		if outcome == "spin" || reviewCapReached {
-			esc, err := c.escalatePacket(packet)
-			if err != nil {
-				return "", err
-			}
-			if esc == "inbox" {
+			if code == errReviewReturned && !c.quick() {
+				// Ordinary code-review defects that failed to converge belong to
+				// human triage (inbox), not a full-milestone Plan Loop rewrite.
+				// Only verification-gap returns to Plan Loop automatically.
+				c.escalateToInbox(packet, fmt.Sprintf("packet %s code review did not converge (%d review returns). Human needed.", id, reviewReturnCount(ps)))
 				return "stop", nil
 			}
-			if esc == "workflow-upgraded" {
-				return "upgrade", nil
-			}
-			if p, ok := c.Packets[id]; ok {
-				packet = p
+			if done, out, err := handleEscalate(); done {
+				return out, err
 			}
 		}
 	}

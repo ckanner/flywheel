@@ -33,10 +33,10 @@ function validatePackages(manifests, requestedVersion) {
   }
   if (meta.dependencies?.['dsh-preset-generator'] !== '0.4.0') throw new Error('The shared PTC composition source must be pinned and bundled');
   if (!['0.5.0', '0.5.0 || 0.5.1'].includes(meta.peerDependencies?.['dsh-plugin-lcu']) || meta.peerDependenciesMeta?.['dsh-plugin-lcu']?.optional !== true) throw new Error('Managed LCU must remain an explicit optional peer');
-  if (meta.peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.7.0' || meta.peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true || meta.dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
-    throw new Error('Claude Code Pro must remain an optional peer pinned to subscription-capable 0.7.0');
+  if (meta.peerDependencies?.['dsh-subagent-claude-code-pro'] !== '0.7.1' || meta.peerDependenciesMeta?.['dsh-subagent-claude-code-pro']?.optional !== true || meta.dependencies?.['dsh-subagent-claude-code-pro'] !== undefined) {
+    throw new Error('Claude Code Pro must remain an optional peer pinned to subscription-capable 0.7.1');
   }
-  if (meta.dependencies?.['@ckanner/dsh-subagent-antigravity'] !== 'file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.0.tgz') throw new Error('The reviewed Antigravity source candidate must be pinned and bundled');
+  if (meta.dependencies?.['@ckanner/dsh-subagent-antigravity'] !== 'file:plugins/dsh/vendor/ckanner-dsh-subagent-antigravity-0.3.1.tgz') throw new Error('The reviewed Antigravity source candidate must be pinned and bundled');
   const exports = { '.': './dist/index.mjs', './client': './dist/client.js', './worker-policy': './dist/policy.mjs', './worker': './dist/worker.mjs', './codex-pro-worker': './dist/codex-pro-worker.mjs', './claude-code-pro-worker': './dist/claude-code-pro-worker.mjs', './kimi-native-worker': './dist/kimi-native-worker.mjs', './antigravity-worker': './dist/antigravity-worker.mjs', './model-catalog-worker': './dist/model-catalog-worker.mjs', './native-jobs': './dist/native-jobs.mjs', './package.json': './package.json' };
   for (const [key, value] of Object.entries(exports)) if (meta.exports?.[key] !== value) throw new Error(`Missing unified package export ${key}`);
   for (const name of ['flywheel', 'flywheel-dsh-worker', 'flywheel-codex-pro-worker', 'flywheel-claude-code-pro-worker', 'flywheel-kimi-native-worker', 'flywheel-antigravity-worker', 'flywheel-model-catalog']) {

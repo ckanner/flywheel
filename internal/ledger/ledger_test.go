@@ -26,6 +26,8 @@ func TestLedgerClassification(t *testing.T) {
 
 func TestVolatileSet(t *testing.T) {
 	assert.True(t, CommitVolatileFiles["metrics.jsonl"])
+	assert.True(t, CommitVolatileFiles["project-context.md"])
+	assert.True(t, IsLedgerTaskPath("project-context.md"))
 	assert.True(t, CommitVolatileFiles["orchestrator.log"])
 	assert.True(t, CommitVolatileFiles["orchestrator.pid"])
 	assert.True(t, CommitVolatileFiles[".stop-request"])
@@ -43,6 +45,8 @@ func TestLedgerDirsPrefixOnly(t *testing.T) {
 	assert.True(t, IsLedgerTaskPath("reports/a.json"))
 	assert.True(t, IsLedgerTaskPath("design-candidates/rev-000001-meta.json"))
 	assert.False(t, IsLedgerTaskPath("design-candidates"))
+	assert.True(t, IsLedgerTaskPath("ui-prototypes/ui-prototype-000001.html"))
+	assert.False(t, IsLedgerTaskPath("ui-prototypes"))
 	assert.False(t, IsLedgerTaskPath("report"))
 	assert.False(t, IsLedgerTaskPath("reports"))
 }

@@ -16,6 +16,7 @@ var LedgerFiles = map[string]bool{
 	".stop-request":       true,
 	"state.json":          true,
 	"retro.md":            true,
+	"project-context.md":  true,
 	"metrics.jsonl":       true,
 	"inbox.md":            true,
 	"orchestrator.pid":    true,
@@ -25,24 +26,25 @@ var LedgerFiles = map[string]bool{
 }
 
 // LedgerDirs 账本目录（带尾部斜杠，供前缀匹配）。
-var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", ".traces/", ".investigation/", "planning/", "design-candidates/"}
+var LedgerDirs = []string{"reports/", "approvals/", ".control/", ".sessions/", ".traces/", ".investigation/", "planning/", "design-candidates/", "ui-prototypes/"}
 
 // CommitVolatileFiles 纯运行时产物：不进单元提交（活日志绝不能进 git 历史；
 // metrics 是追加式遥测）。账本区其余（state/retro/inbox/reports/approvals）
 // 留在已提交契约层。
 var CommitVolatileFiles = map[string]bool{
-	"preparation.json":  true,
-	".preparation.lock": true,
-	".investigation/":   true,
-	"metrics.jsonl":     true,
-	"orchestrator.log":  true,
-	"orchestrator.pid":  true,
-	".state.lock":       true, // v0.18：flock 锁文件是运行时产物，不入库
-	".run.lock":         true,
-	".stop-request":     true,
-	".control/":         true,
-	".sessions/":        true,
-	".traces/":          true,
+	"preparation.json":   true,
+	".preparation.lock":  true,
+	".investigation/":    true,
+	"project-context.md": true,
+	"metrics.jsonl":      true,
+	"orchestrator.log":   true,
+	"orchestrator.pid":   true,
+	".state.lock":        true, // v0.18：flock 锁文件是运行时产物，不入库
+	".run.lock":          true,
+	".stop-request":      true,
+	".control/":          true,
+	".sessions/":         true,
+	".traces/":           true,
 }
 
 // IsLedgerTaskPath 判断任务目录相对路径（如 "reports/x.json"）是否为账本。

@@ -34,6 +34,10 @@ var snapshotLstat = os.Lstat
 var snapshotReadlink = os.Readlink
 
 func (c *Context) snapshotExcluded(rel string) bool {
+	return c.snapshotExcludedWithSiblings(rel, c.siblingTaskPrefixes())
+}
+
+func (c *Context) snapshotExcludedWithSiblings(rel string, sibPrefixes []string) bool {
 	prefix := filepath.ToSlash(c.taskDirPrefix())
 	if c.State != nil && c.State.Planning != nil && strings.HasPrefix(rel, prefix+"planning/") {
 		// Go-owned immutable exports are contracts even in a worker checkout.
@@ -41,7 +45,15 @@ func (c *Context) snapshotExcluded(rel string) bool {
 		// exclusion would otherwise hide from execute, review and shared scopes.
 		return false
 	}
-	return strings.HasPrefix(rel, prefix) && ledger.IsLedgerTaskPath(strings.TrimPrefix(rel, prefix))
+	if strings.HasPrefix(rel, prefix) && ledger.IsLedgerTaskPath(strings.TrimPrefix(rel, prefix)) {
+		return true
+	}
+	for _, sib := range sibPrefixes {
+		if strings.HasPrefix(rel, sib) && ledger.IsLedgerTaskPath(strings.TrimPrefix(rel, sib)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Context) candidateFingerprint(cwd string, extraExclude ...func(string) bool) (string, error) {
@@ -75,10 +87,11 @@ func (c *Context) candidateFingerprint(cwd string, extraExclude ...func(string) 
 		}
 	}
 	sort.Strings(paths)
+	sibPrefixes := c.siblingTaskPrefixes()
 	h := sha256.New()
 	previous := ""
 	for _, rel := range paths {
-		if rel == "" || rel == previous || c.snapshotExcluded(rel) {
+		if rel == "" || rel == previous || c.snapshotExcludedWithSiblings(rel, sibPrefixes) {
 			continue
 		}
 		previous = rel

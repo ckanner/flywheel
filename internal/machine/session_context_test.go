@@ -8,16 +8,21 @@ import (
 
 	"github.com/ckanner/flywheel/internal/drivers"
 	"github.com/ckanner/flywheel/internal/errs"
+	"github.com/ckanner/flywheel/internal/planning"
 	"github.com/ckanner/flywheel/internal/prompts"
 	"github.com/ckanner/flywheel/internal/state"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVerifiedContextIncrementRequiresReadableUnchangedAuthority(t *testing.T) {
-	for _, change := range []string{"none", "contract", "file", "missing", "legacy", "version", "receipt", "effort"} {
+	for _, change := range []string{"none", "default-empty", "contract", "file", "missing", "legacy", "version", "receipt", "effort"} {
 		t.Run(change, func(t *testing.T) {
 			fx, c := sessionFixture(t)
-			c.Config.Sessions.Context = "verified-incremental"
+			if change == "default-empty" {
+				c.Config.Sessions.Context = ""
+			} else {
+				c.Config.Sessions.Context = "verified-incremental"
+			}
 			p := c.Packets["M01-T01"]
 			p.ContextFiles, p.CacheScope = []string{"context.txt"}, []string{"context.txt"}
 			writeFile(t, filepath.Join(fx.root, "context.txt"), "stable authoritative reference")
@@ -57,7 +62,7 @@ func TestVerifiedContextIncrementRequiresReadableUnchangedAuthority(t *testing.T
 			applySessionResult(t, c, "execute", p.PacketID, second)
 			require.Len(t, prompts, 2)
 			current := c.sessionRecord("execute", p.PacketID)
-			if change == "none" {
+			if change == "none" || change == "default-empty" {
 				require.Equal(t, "incremental", current.Context.Mode)
 				require.Contains(t, prompts[1], "Verified context update")
 				require.Contains(t, prompts[1], "test current candidate")
@@ -238,4 +243,74 @@ func TestExecutionPolicyHumanTakeoverRetainsSelectedBindingAndPrompt(t *testing.
 	c.Config.ExecutionPolicy = nil
 	_, err = c.handoffArgs(c.sessionRecord("execute", p.PacketID))
 	require.ErrorContains(t, err, "no longer configured")
+}
+
+func TestPlanningVerifiedIncrementalContextReusesWarmSession(t *testing.T) {
+	_, c := newReviewedFixture(t)
+	enableSessionPolicy(c)
+
+	req1 := planning.Request{ID: "req-1", Scope: "milestone", ScopeID: "M-01", InputRevision: 1, Feedback: "DELTA-ROUND-1"}
+	req2 := planning.Request{ID: "req-2", Scope: "milestone", ScopeID: "M-01", InputRevision: 1, Feedback: "DELTA-ROUND-2"}
+	a := sessionArgs(c)
+	a.ContextTemplateVersion = planningContextVersion
+	a.Prompt = prompts.BuildPlanningPrompt(c.State.Planning, req1, false, nil, prompts.PlanningPromptOptions{TaskDir: c.TaskDir})
+
+	var seen []string
+	call := func(args drivers.CallArgs) drivers.Result {
+		seen = append(seen, args.Prompt)
+		return sessionResult(args, drivers.MockResult(nil))
+	}
+
+	first, err := c.invokeScoped("plan", "planning:milestone:M-01", a, call)
+	require.NoError(t, err)
+	applySessionResult(t, c, "plan", "planning:milestone:M-01", first)
+	rec := c.sessionRecord("plan", "planning:milestone:M-01")
+	require.Equal(t, "full", rec.Context.Mode)
+	require.Contains(t, seen[0], "Spec schema:")
+
+	// Second call using real BuildPlanningPrompt output with identical stable authority resumes incrementally with only Layer 3 delta.
+	a.Prompt = prompts.BuildPlanningPrompt(c.State.Planning, req2, false, nil, prompts.PlanningPromptOptions{TaskDir: c.TaskDir})
+	second, err := c.invokeScoped("plan", "planning:milestone:M-01", a, call)
+	require.NoError(t, err)
+	applySessionResult(t, c, "plan", "planning:milestone:M-01", second)
+	rec = c.sessionRecord("plan", "planning:milestone:M-01")
+	require.Equal(t, "incremental", rec.Context.Mode)
+	require.Contains(t, seen[1], "DELTA-ROUND-2")
+	require.NotContains(t, seen[1], "Spec schema:")
+
+	// Fallback branches: missing Layer 3 marker, failed prior delivery, corrupt receipt, and explicit full opt-out.
+	noMarker := a
+	noMarker.Prompt = "PLAIN PROMPT WITHOUT MARKER"
+	cp, out := c.sessionContextPrompt("plan", "planning:milestone:M-01", "resume", "cand", rec, noMarker)
+	require.Equal(t, "full", cp.Mode)
+	require.Equal(t, noMarker.Prompt, out)
+
+	failedCall := func(args drivers.CallArgs) drivers.Result {
+		r := sessionResult(args, drivers.MockResult(nil))
+		r.ExitCode, r.ErrorCode = new(1), errs.SERVER
+		r.Session.Outcome = "failed"
+		return r
+	}
+	third, err := c.invokeScoped("plan", "planning:milestone:M-01", a, failedCall)
+	require.NoError(t, err)
+	applySessionResult(t, c, "plan", "planning:milestone:M-01", third)
+	recFailed := c.sessionRecord("plan", "planning:milestone:M-01")
+	cp, out = c.sessionContextPrompt("plan", "planning:milestone:M-01", "resume", "cand", recFailed, a)
+	require.Equal(t, "full", cp.Mode)
+	require.Contains(t, cp.Reason, "did not confirm completed context delivery")
+	require.Equal(t, a.Prompt, out)
+
+	corrupt := *recFailed
+	corruptLast := *recFailed.Last
+	corruptLast.ReceiptDigest = strings.Repeat("0", 64)
+	corrupt.Last = &corruptLast
+	cp, out = c.sessionContextPrompt("plan", "planning:milestone:M-01", "resume", "cand", &corrupt, a)
+	require.Equal(t, "full", cp.Mode)
+	require.Contains(t, cp.Reason, "could not be revalidated")
+	require.Equal(t, a.Prompt, out)
+
+	c.Config.Sessions.Context = "full"
+	cp, out = c.sessionContextPrompt("plan", "planning:milestone:M-01", "resume", "cand", rec, a)
+	require.Nil(t, cp)
+	require.Equal(t, a.Prompt, out)
 }

@@ -250,7 +250,7 @@ func TestReviewedPlanningNativeReceiptRecoveryWithoutRedispatch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, invocation)
 	require.Equal(t, "design-plan", role)
-	record := c.sessionRecord(role, "planning:"+c.State.Planning.Requests[index].ID)
+	record := c.sessionRecord(role, planningSessionScope(&c.State.Planning.Requests[index]))
 	require.Equal(t, "received", record.Last.Status)
 	require.True(t, record.Last.Accounted)
 	originalBudget := c.State.Budget.Totals

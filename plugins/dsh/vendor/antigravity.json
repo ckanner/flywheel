@@ -1,20 +1,20 @@
 {
   "package": "@ckanner/dsh-subagent-antigravity",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
   "sourceDirectory": ".",
   "sourceCommit": "0bb178739b4a9fae5f164864b24d964e535814d2",
   "sourceTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
   "sourceDirectoryTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
-  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport (with image blocks, ajv schema validation, semver >= 1.5.13 preflight, isolated evidence-only temp workspace, graceful stdin EOF exit + PGID cleanup, and hardened client/session guards) built from ckanner/dsh-subagent-antigravity@0abb493; passed 96/96 tests and npm run test:package.",
-  "tarball": "ckanner-dsh-subagent-antigravity-0.3.0.tgz",
-  "sha256": "77145d7865e695b4abf757ceb5762867692081a572cbd6b587d2cd9c44f48a4b",
-  "integrity": "sha512-h8e3lZCf0rBUItDtCcXO5s/K+YCczX/kHiM/Unv+IbtFR6CXlvFJwBMD4OSnCc3qwVNL59zofSMKPU6xA6DbFw==",
+  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport; v0.3.1 fixes premature 500ms SIGKILL on slow SQLite flush by closing ACP connection and draining stdout before stdin EOF and honoring full disposeGraceMs; passed 96/96 tests and npm run test:package.",
+  "tarball": "ckanner-dsh-subagent-antigravity-0.3.1.tgz",
+  "sha256": "53f016030019cbc542664e8a494866b6775200622e3b2fe78316f5d798cb4926",
+  "integrity": "sha512-v5LXe3Pof/BYHBhIQE5+HooC3IM5x06Bm3yEV4eWh519X85+8/QgtDZGjQDNJoSnp97QjtKjBDaGCmZP9CyWkA==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "buildToolchain": {
     "node": "26.12.1",
-    "npm": "11.19.1"
+    "npm": "11.20.0"
   },
-  "bytes": 118272
+  "bytes": 118263
 }

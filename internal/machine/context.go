@@ -300,6 +300,7 @@ func (c *Context) recordSpawnMetrics(a spawnMetricsArgs) {
 		"provider":                effectiveProvider,
 		"channel":                 channel,
 		"prompt-hash":             promptHash,
+		"prompt-bytes":            len(a.prompt),
 		"usage":                   usageVal,
 		"cache-hit-rate":          cacheHitRate,
 		"reasoning-chars":         reasoningCharsOf(a.result),
@@ -411,7 +412,7 @@ func (c *Context) apiKeysFor(channel string) map[string]string {
 // CONTRACT_FILE_RE 边界判定针对的是 EXECUTOR 的 diff；任务目录里只有编排器
 // 自己的账本文件被排除（core/ledger.js 常量单一信源）——契约文件
 // （spec.md / task-packet-*.md / config）留在判定内：executor 篡改契约即违规。
-var contractFileRe = regexp.MustCompile(`^(spec\.md|task-packet-.*\.md|flywheel\.config\.json|planning/(brief\.json|design-[0-9]+\.(json|md)|plan-[0-9]+\.json|review-[0-9]+\.json))$`)
+var contractFileRe = regexp.MustCompile(`^(spec\.md|task-packet-.*\.md|flywheel\.config\.json|oracles/verify-[A-Za-z0-9._-]+\.(mjs|sh)|planning/(brief\.json|design-[0-9]+\.(json|md)|plan-[0-9]+\.json|review-[0-9]+\.json))$`)
 
 func (c *Context) taskDirPrefix() string {
 	rel, err := filepath.Rel(c.Cwd, c.TaskDir)
@@ -426,14 +427,45 @@ func (c *Context) taskDirPrefix() string {
 	return rel + "/"
 }
 
-func (c *Context) ledgerExcludes() []string {
-	prefix := c.taskDirPrefix()
-	out := make([]string, 0, len(ledger.LedgerFiles)+len(ledger.LedgerDirs))
-	for f := range ledger.LedgerFiles {
-		out = append(out, prefix+f)
+// siblingTaskPrefixes returns repo-relative slash-terminated prefixes for other
+// Flywheel task directories under the same parent (e.g. docs/<other-slug>/),
+// identified by a regular state.json file. Their ledger files (untracked traces,
+// sessions, logs, locks) must never block main-tree persistence of another task.
+func (c *Context) siblingTaskPrefixes() []string {
+	parent := filepath.Dir(c.TaskDir)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return nil
 	}
-	for _, d := range ledger.LedgerDirs {
-		out = append(out, prefix+d)
+	var prefixes []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		full := filepath.Join(parent, e.Name())
+		if full == c.TaskDir {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(full, "state.json")); err != nil || info.IsDir() {
+			continue
+		}
+		if rel, err := filepath.Rel(c.Cwd, full); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			prefixes = append(prefixes, filepath.ToSlash(rel)+"/")
+		}
+	}
+	return prefixes
+}
+
+func (c *Context) ledgerExcludes() []string {
+	prefixes := append([]string{c.taskDirPrefix()}, c.siblingTaskPrefixes()...)
+	out := make([]string, 0, len(prefixes)*(len(ledger.LedgerFiles)+len(ledger.LedgerDirs)))
+	for _, prefix := range prefixes {
+		for f := range ledger.LedgerFiles {
+			out = append(out, prefix+f)
+		}
+		for _, d := range ledger.LedgerDirs {
+			out = append(out, prefix+d)
+		}
 	}
 	return out
 }

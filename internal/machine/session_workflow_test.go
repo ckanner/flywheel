@@ -125,7 +125,8 @@ func TestSessionMalformedExecutorReportRepairsSameHistoryWithinBoundedAttempt(t 
 			writeFile(t, filepath.Join(a.TaskDir, "reports", a.PacketID+".done.json"), "not JSON")
 		} else {
 			require.NotEmpty(t, a.SessionID)
-			require.Contains(t, a.Prompt, "Previous attempt feedback")
+			require.Contains(t, a.Prompt, "Verified context update")
+			require.Contains(t, a.Prompt, "deliverable invalid")
 		}
 		return r
 	}

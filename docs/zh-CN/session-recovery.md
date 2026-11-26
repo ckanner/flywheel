@@ -262,11 +262,13 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 ### 可信的增量输入
 
-显式 `sessions.context:"verified-incremental"` 允许 Execute 复用可信同角色的
-稳定契约；Go 复核已消费回执明确证明 `dispatched` 且 `completed`，并检查提示词
-版本、当前契约及可读 context/cache 文件摘要。安全的启动拒绝或失败／取消调用
+默认情况下（`sessions.context` 省略或设为 `"verified-incremental"`），Execute
+与规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）均可复用可信同角色的
+稳定契约（或规划 Layer 1/2）；Go 复核已消费回执明确证明 `dispatched` 且 `completed`，并检查提示词
+版本、当前契约（或规划稳定权威与 `project-context.md`）及可读 context/cache 文件摘要。如需每轮完整重发，可显式配置
+`sessions.context: "full"`。安全的启动拒绝或失败／取消调用
 可以保留原线程，但不证明本轮新准备的权威内容已送达；下一次仍须完整重发。
-新输入携带反馈、候选身份、尝试和引用。权威内容变化或不可用、旧任务缺
+新输入携带反馈、候选身份、尝试和引用（或规划 Layer 3 易变增量）。权威内容变化或不可用、旧任务缺
 检查点、上下文回执无效时回到完整输入，角色记录保存选择与原因。Review、Judge
 保持完整当前输入，不继承 Executor 私有历史。
 

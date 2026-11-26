@@ -20,14 +20,18 @@ import (
 )
 
 var planningFields = map[string][]string{
-	"collaboration": {"action", "revision", "request-id", "collaboration", "start"},
-	"input-images":  {"action", "revision", "request-id", "input-images", "start"},
-	"prepare":       {"action", "request-id", "brief", "start"},
-	"plan":          {"action", "revision", "request-id", "scope", "scope-id", "text", "start"},
-	"feedback":      {"action", "revision", "request-id", "design", "text", "policy", "start"},
-	"approve":       {"action", "revision", "request-id", "design", "start"},
-	"status":        {"action", "request-id"},
-	"migrate":       {"action", "revision", "request-id", "policy", "text", "start"},
+	"collaboration":      {"action", "revision", "request-id", "collaboration", "start"},
+	"input-images":       {"action", "revision", "request-id", "input-images", "start"},
+	"prepare":            {"action", "request-id", "brief", "start"},
+	"clarify":            {"action", "revision", "request-id", "clarify", "start"},
+	"plan":               {"action", "revision", "request-id", "scope", "scope-id", "text", "draft-mode", "start"},
+	"feedback":           {"action", "revision", "request-id", "design", "text", "policy", "start"},
+	"approve":            {"action", "revision", "request-id", "design", "start"},
+	"approve-prototype":  {"action", "revision", "request-id", "design", "start"},
+	"prototype-feedback": {"action", "revision", "request-id", "text", "start"},
+	"skip-prototype":     {"action", "revision", "request-id", "start"},
+	"status":             {"action", "request-id"},
+	"migrate":            {"action", "revision", "request-id", "policy", "text", "start"},
 }
 
 func readPlanningCommand(input io.Reader) (machine.PlanningCommand, error) {
@@ -161,12 +165,12 @@ func controlPlanning(cmd *cobra.Command, taskDir, cwd string) (controlResponse, 
 	if err != nil {
 		return reply, err
 	}
-	start := request.StartRequested(request.Action == "prepare" || request.Action == "plan" || request.Action == "migrate")
+	start := request.StartRequested(request.Action == "prepare" || request.Action == "clarify" || request.Action == "plan" || request.Action == "migrate" || request.Action == "approve-prototype" || request.Action == "prototype-feedback" || request.Action == "skip-prototype")
 	if !start || receipt != nil && (receipt.Status == "queued" || receipt.Status == "rejected") {
 		return reply, nil
 	}
 	extra := []string{}
-	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" {
+	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" || request.Action == "clarify" {
 		extra = []string{"--planning-only"}
 	}
 	reply, err = startControlledRun(taskDir, cwd, "", extra)

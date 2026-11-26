@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -17,6 +18,81 @@ import (
 	"github.com/ckanner/flywheel/internal/verify"
 	"gopkg.in/yaml.v3"
 )
+
+const maxOracleBytes = 64 * 1024
+
+func isOwnedOraclePath(name string) bool {
+	if !strings.HasPrefix(name, "oracles/verify-") {
+		return false
+	}
+	base := strings.TrimPrefix(name, "oracles/")
+	if base == "" || strings.ContainsAny(base, `/\`) || strings.Contains(base, "..") {
+		return false
+	}
+	return strings.HasSuffix(base, ".mjs") || strings.HasSuffix(base, ".sh")
+}
+
+var lookPathNode = exec.LookPath
+var checkOracleSyntax = defaultCheckOracleSyntax
+
+func defaultCheckOracleSyntax(name, absPath string) error {
+	var cmd *exec.Cmd
+	if strings.HasSuffix(name, ".sh") {
+		cmd = exec.Command("sh", "-n", absPath)
+	} else {
+		node, err := lookPathNode("node")
+		if err != nil {
+			return nil
+		}
+		cmd = exec.Command(node, "--check", absPath)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("oracle %s failed syntax check: %s", name, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func renderProjectContext(p *planning.State) []byte {
+	var lines []string
+	lines = append(lines, "# Project Context Memory (Stable Authority)", "", "Goal: "+p.Brief.Goal)
+	if len(p.Brief.Constraints) > 0 {
+		lines = append(lines, "Constraints: "+strings.Join(p.Brief.Constraints, "; "))
+	}
+	if len(p.Brief.QualityGates) > 0 {
+		lines = append(lines, "Quality gates: "+strings.Join(p.Brief.QualityGates, "; "))
+	}
+	if p.Clarification != nil && len(p.Clarification.Answers) > 0 {
+		keys := make([]string, 0, len(p.Clarification.Answers))
+		for k := range p.Clarification.Answers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		lines = append(lines, "", "## Confirmed Clarifications")
+		for _, k := range keys {
+			lines = append(lines, fmt.Sprintf("- %s: %s", k, p.Clarification.Answers[k]))
+		}
+	}
+	if p.CurrentDesign != nil {
+		if d := planning.FindDesign(p, *p.CurrentDesign); d != nil {
+			if len(d.ImplementationScope) > 0 {
+				lines = append(lines, "", "## Implementation Scope", strings.Join(d.ImplementationScope, ", "))
+			}
+			if len(d.Decisions) > 0 {
+				lines = append(lines, "", "## Architecture Decisions")
+				for _, dec := range d.Decisions {
+					lines = append(lines, fmt.Sprintf("- [%s/%s] %s", dec.ID, dec.Kind, dec.Statement))
+				}
+			}
+			if len(d.Milestones) > 0 {
+				lines = append(lines, "", "## Milestones")
+				for _, m := range d.Milestones {
+					lines = append(lines, fmt.Sprintf("- %s %s (gate: %s)", m.ID, m.Title, m.Gate))
+				}
+			}
+		}
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
+}
 
 // Exports are reviewable copies, never an alternative source of authority.
 // Saving the state/consumption transaction precedes their creation, so a crash
@@ -220,6 +296,20 @@ func (c *Context) checkPlanningExports(create bool) error {
 			return fmt.Errorf("unowned planning export: %s", entry.Name())
 		}
 	}
+	if create && (c.State.Planning.CurrentDesign != nil || c.State.Planning.Clarification != nil) {
+		taskRoot, err := openPlanningTask(c.TaskDir)
+		if err != nil {
+			return err
+		}
+		defer taskRoot.Close()
+		raw := renderProjectContext(c.State.Planning)
+		actual, readErr := readPlanningBytes(taskRoot, "project-context.md")
+		if readErr != nil || !bytes.Equal(raw, actual) {
+			if err := writePlanningBytes(taskRoot, "project-context.md", raw); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -293,6 +383,20 @@ func (c *Context) validatePlanningFiles(files map[string]string, request plannin
 	}
 	defer os.RemoveAll(dir)
 	for name, raw := range files {
+		if isOwnedOraclePath(name) {
+			if len(raw) > maxOracleBytes {
+				return fmt.Errorf("oracle %s exceeds %d byte limit", name, maxOracleBytes)
+			}
+			_ = os.MkdirAll(filepath.Join(dir, "oracles"), 0700)
+			target := filepath.Join(dir, name)
+			if err := os.WriteFile(target, []byte(raw), 0600); err != nil {
+				return err
+			}
+			if err := checkOracleSyntax(name, target); err != nil {
+				return err
+			}
+			continue
+		}
 		if name != "spec.md" && (!strings.HasPrefix(name, "task-packet-") || !strings.HasSuffix(name, ".md") || filepath.Base(name) != name) {
 			return fmt.Errorf("unowned projected path %q", name)
 		}
@@ -366,7 +470,7 @@ func (c *Context) validatePlanningFiles(files map[string]string, request plannin
 	if active := c.State.Planning.Active; active != nil {
 		previous := c.planFiles(active.Plans)
 		for name, raw := range previous {
-			if name == "spec.md" {
+			if name == "spec.md" || isOwnedOraclePath(name) {
 				continue
 			}
 			id := strings.TrimSuffix(strings.TrimPrefix(name, "task-packet-"), ".md")
@@ -552,6 +656,11 @@ func (c *Context) resumePlanningActivation() error {
 			return fmt.Errorf("activation refuses an externally changed contract: %s", name)
 		}
 		if err != nil || digest != a.Files[name] {
+			if isOwnedOraclePath(name) {
+				if err := mkdirPlanningDirectory(root, "oracles", 0755); err != nil && !os.IsExist(err) {
+					return err
+				}
+			}
 			if err := writePlanningBytes(root, name, []byte(raw)); err != nil {
 				return err
 			}

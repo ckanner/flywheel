@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import type { ClientRuntime } from '../context.ts';
 import { resolvePlanningView } from '../planning.ts';
+import { normalizePackets } from '../planning.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { PacketNode, Translate } from '../types.ts';
 import { DagCanvas } from './DagCanvas.tsx';
@@ -88,11 +89,7 @@ export function ExecutionBoard({
   t: Translate;
   runtime?: ClientRuntime;
 }) {
-  const packets = useMemo<PacketNode[]>(() => {
-    const record = snap.state?.packets;
-    if (!record || typeof record !== 'object') return [];
-    return Object.entries(record).map(([id, p]) => ({ ...p, id: p.id || id }));
-  }, [snap.state?.packets]);
+  const packets = useMemo<PacketNode[]>(() => normalizePackets(snap.state?.packets), [snap.state?.packets]);
 
   const waves = useMemo(() => groupIntoWaves(packets, snap.state?.waves), [packets, snap.state?.waves]);
   const selectedPacket = snap.selectedPacketId

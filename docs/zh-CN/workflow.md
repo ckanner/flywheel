@@ -50,11 +50,11 @@ flowchart TD
 - **Frontend 路由默认交互与微文案审查**：`frontend` 路由节点在 L1 通过之后、独立 Codex Review 之前，
   默认由只读 `Gemini 4 Neon` 审查交互状态与微文案，结果写入 `reports/<id>.ux-review.json`。仅当
   裁决为 `needs_polish` 时允许主执行者（Claude）做至多 1 次取舍改稿并复跑 L1。
-- **分级审查（`blocking` vs `advisory`）与回归测试门禁**：Review 区分 `blocking`（阻塞退回，受
-  `max-review-rounds` 限制）与 `advisory`（仅展示不触发返工）。因 `REVIEW_RETURNED` 触发的重试
-  必须补齐对应回归或防护测试。
+- **分级审查（`blocking` vs `advisory`）、单调收敛与回归测试门禁**：Review 区分 `blocking`（带稳定 `id`/`severity`/`target`/`evidence`/`fix`/`status` 的结构化 `findings`）与 `advisory`（仅展示不触发返工）。未闭合的 `blocker`/`major` 缺陷会跨轮自动注入执行与复审提示词：未闭合项数量严格递减时允许继续收敛而不被 `max-review-rounds` 过早截断；普通代码缺陷若未收敛则直接转交人工 `inbox`，不再误触发整里程碑 Plan Loop 重写（自动退回规划层仅保留给 `verification-gap`）。因 `REVIEW_RETURNED` 触发的重试必须补齐对应回归或防护测试。
 - **可配置交付终点（`delivery.endpoint`）**：支持 `local`（默认）、`draft-pr`（传递 `--draft`）、
   `pr-review` 与 `auto-merge`（严格保留显式确认与 `--match-head-commit`）。
+- **上下文工程、前缀缓存优化与受保护独立验收脚本**：Plan / Review / Execute 提示词遵循严格三层前缀排布（静态规则与输出契约 → 稳定任务权威与自动派生的 `project-context.md` 项目记忆 → 本轮易变输入与有界 24 KB diff / 超大文件磁盘路径指针）。规划角色统一复用规范会话作用域（`planning:design`、`planning:milestone:<id>`、`planning:packet:<id>`）并启用已验证增量续跑与默认 `280,000` token 自动重建软护栏。里程碑拆包支持无 JSON 转义的 `<<<FLYWHEEL_FILE path="...">>>` 多文件协议（含 `patch` 局部更新）以及独立受保护验收脚本（`oracles/verify-*.mjs` / `oracles/verify-*.sh`，封版前自动执行 `node --check` / `sh -n` 语法预检）。
+- **DSH 工作台模型显示语法、3-Pill 底部遥测条与 `@` 智能补全**：全工作台统一以 `<模型显示名> <思考等级显示名>` 空格语法呈现模型与思考等级（悬停保留原始模型 ID）。主流程与子节点输入框下方均提供 1:1 DSH 风格的 3-Pill 遥测条及向上悬浮/点击详情卡片，分别展示整任务分 Provider 汇总与当前节点独立的模型、轮次、Token、缓存命中率与上下文窗口环形占比（Antigravity ACP 等未上报缓存读取的 Provider 如实显示 `缓存 —`）。主流程输入 `@` 或点击 `@` 自动弹出向上模糊搜索列表（涵盖执行节点与规划/审查会话），选中后生成原子蓝标胶囊，光标在行首按一次 `Backspace` 即可整块删除。
 
 ## 从 Flywheel 视图创建任务
 

@@ -135,7 +135,7 @@ test('SettingsPage edits real Go-resolved inline loops, routes, planning refs, s
               inferenceTested: false,
               checks: [
                 { id: 'antigravity-acp', status: 'pass', summary: 'ACP ready' },
-                { id: 'claude-code-pro', status: 'pass', summary: '0.7.0 ready' },
+                { id: 'claude-code-pro', status: 'pass', summary: '0.7.1 ready' },
                 { id: 'codex-pro', status: 'pass', summary: '0.10.2 ready' },
                 { id: 'kimi-native', status: 'pass', summary: 'Kimi ready' },
               ],
@@ -326,7 +326,8 @@ test('SettingsPage edits JEV switch, subscription/http mutual exclusion, budgets
   const effectiveBar = ui.container.querySelector('[data-testid="jev-effective-bar"]');
   assert.ok(effectiveBar);
   assert.match(effectiveBar.textContent, /已关闭/);
-  assert.match(effectiveBar.textContent, /gemini-4-hydrogen-low/);
+  assert.match(effectiveBar.textContent, /Gemini 4 Hydrogen 低/);
+  assert.match(effectiveBar.innerHTML, /gemini-4-hydrogen-low/);
 
   const profileSel = ui.container.querySelector('[data-testid="jev-profile-select"]');
   const optionValues = [...profileSel.querySelectorAll('option')].map(o => o.value);

@@ -177,7 +177,10 @@ test('v2 DesignStudio renders synthesized Markdown table, Side-by-Side Carbon vs
     },
   });
 
-  // Auto-selects Design Studio tab when awaiting_approval
+  // Main stream shows inline approval card & attention strip; opening Design drawer shows full DesignStudio
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-main-stream"]'));
+  assert.ok(ui.container.querySelector('[data-testid="main-approval-card"]'));
+  await ui.click('展开完整设计稿与双稿对比 →');
   assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
   assert.ok(ui.container.querySelector('table'), 'synthesized Markdown GFM table rendered');
   assert.match(ui.container.textContent, /Direct RPC/);
@@ -296,13 +299,14 @@ test('v2 DesignStudio handles real Go planning.phase=drafting live state, keeps 
     },
   });
 
-  // Stays on Design Studio instead of jumping to empty Execution Board
-  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
-  assert.ok(ui.container.querySelector('[data-testid="design-brief-card"]'));
-  assert.ok(ui.container.querySelector('[data-testid="design-stepper"]'));
-  assert.ok(ui.container.querySelector('[data-testid="design-live-cards"]'));
-  assert.match(ui.container.querySelector('[data-testid="design-live-cards"]').textContent, /gemini-4-carbon-high/);
-  assert.match(ui.container.querySelector('[data-testid="design-live-cards"]').textContent, /claude-opus-5-5/);
+  // Stays on Main Stream showing live dual-draft cards; opening Design drawer shows DesignStudio live view
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-main-stream"]'));
+  assert.ok(ui.container.querySelector('[data-testid="agent-card-live-p1"]'));
+  assert.ok(ui.container.querySelector('[data-testid="agent-card-live-p2"]'));
+  assert.match(ui.container.textContent, /Gemini 4 Carbon 高/);
+  assert.match(ui.container.textContent, /Claude Opus 5\.5/);
+  assert.match(ui.container.innerHTML, /gemini-4-carbon-high/);
+  assert.match(ui.container.innerHTML, /claude-opus-5-5/);
 
   // Header status and Task Switcher popover item are synchronized to 规划中 (never stale 待开始)
   assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '规划中');
@@ -312,8 +316,14 @@ test('v2 DesignStudio handles real Go planning.phase=drafting live state, keeps 
   assert.match(popover.textContent, /规划中/);
   assert.doesNotMatch(popover.textContent, /待开始/);
 
-  // Manually switching to Execution tab shows clear pre-execution guidance back to Design Studio
-  await ui.click('执行流水线');
+  // Opening Design drawer renders brief, stepper & live cards; DAG drawer shows pre-execution guidance back to Design
+  await ui.click('展开完整设计稿与双稿对比 →');
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-brief-card"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-stepper"]'));
+  assert.ok(ui.container.querySelector('[data-testid="design-live-cards"]'));
+
+  await ui.click('DAG 图谱');
   assert.ok(ui.container.querySelector('[data-testid="flywheel-exec-empty"]'));
   assert.match(ui.container.textContent, /尚未进入执行阶段/);
   await ui.click('返回设计评审查看进度');
@@ -381,8 +391,13 @@ test('v2 DesignStudio surfaces real Go planning.phase=blocked diagnostics and di
     },
   });
 
-  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
   assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '规划阻塞');
+  const mainBlocked = ui.container.querySelector('[data-testid="main-planning-blocked"]');
+  assert.ok(mainBlocked);
+  assert.match(mainBlocked.textContent, /Antigravity requires subscription-only policy version 1/);
+
+  await ui.click('展开完整设计稿与双稿对比 →');
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-design-studio"]'));
   const banner = ui.container.querySelector('[data-testid="design-blocked-banner"]');
   assert.ok(banner);
   assert.match(banner.textContent, /Antigravity requires subscription-only policy version 1/);
@@ -478,6 +493,7 @@ test('v2 DesignStudio renders real Go designs[], reviews[], structured requireme
   });
 
   assert.equal(ui.container.querySelector('[data-testid="flywheel-header-status"]').textContent, '待你拍板');
+  await ui.click('展开完整设计稿与双稿对比 →');
   assert.match(ui.container.textContent, /统一云资源日报架构/);
   assert.match(ui.container.querySelector('[data-testid="design-review-panel"]').textContent, /边界清晰，无阻断风险/);
   assert.match(ui.container.querySelector('[data-testid="design-review-panel"]').textContent, /Cost Explorer 缓存/);
@@ -498,7 +514,7 @@ test('v2 DesignStudio renders real Go designs[], reviews[], structured requireme
 
   // Quote finding opens feedback textarea pre-populated with finding summary
   await ui.click('引用提意见');
-  const ta = ui.container.querySelector('textarea');
+  const ta = ui.container.querySelector('[data-testid="flywheel-side-drawer"] textarea');
   assert.ok(ta);
   assert.match(ta.value, /Cost Explorer 缓存/);
   await ui.click('取消');

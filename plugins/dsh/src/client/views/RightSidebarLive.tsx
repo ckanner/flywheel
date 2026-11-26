@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import { StyleScope } from '../components/StyleScope.tsx';
 import type { ClientRuntime, LayoutService } from '../context.ts';
+import { normalizePackets } from '../planning.ts';
 import type { FlywheelStore } from '../store.ts';
 import type { Translate } from '../types.ts';
 
@@ -15,7 +16,7 @@ export function RightSidebarLive({
   runtime: ClientRuntime;
 }) {
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const packets = snap.state?.packets ? Object.values(snap.state.packets) : [];
+  const packets = normalizePackets(snap.state?.packets);
   const total = packets.length;
   const done = packets.filter(p => ['done', 'completed', 'passed'].includes((p.status ?? '').toLowerCase())).length;
   const activePacket = packets.find(p => ['running', 'executing', 'reviewing'].includes((p.status ?? '').toLowerCase()));

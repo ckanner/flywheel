@@ -29,7 +29,7 @@ The bundled templates (`templates/flywheel.config.example.json` and
 - **Read-only sandbox locks**: `permissions.bindings` defaults `loops.design-review`,
   `loops.plan-review`, `loops.review`, `loops.judge`, `loops.investigate`, and
   `frontend-ux-review` to `read-only`.
-- **Native capabilities**: Antigravity defaults to `0.3.0` ACP with native image inputs;
+- **Native capabilities**: Antigravity defaults to `0.3.1` ACP with native image inputs;
   Kimi native subscription profiles (`kimi-subscription-agent` / `kimi-subscription-swarm`)
   enable `WebSearch`, `FetchURL`, `Agent`, and `AgentSwarm` by default.
 - **Guardrails & workflow toggles**: `budget.enforce: "off"`,
@@ -644,18 +644,21 @@ A quality rebuild requires the previous result to be consumed, accounted, and kn
 
 ### Verified incremental executor context
 
-`sessions.context` is optional: omission or `"full"` retains the complete prompt;
-`"verified-incremental"` enables an Execute-only optimization. First calls and
-rebuilds receive full authority. Later same-role resumes may omit the stable
-contract only after Go rechecks the consumed terminal receipt, exact session
-binding, prompt version, contract and all context/cache file content digests.
+`sessions.context` is optional: omission or `"verified-incremental"` enables
+verified incremental resumes for Execute and planning roles (`design-plan`,
+`design-review`, `plan`, `plan-review`); set `"full"` explicitly to resend the
+complete prompt on every call. First calls and rebuilds receive full authority.
+Later same-role resumes may omit the stable contract (or planning Layer 1/2)
+only after Go rechecks the consumed terminal receipt, exact session binding,
+prompt version, contract (or stable planning authority and `project-context.md`),
+and all context/cache file content digests.
 References must be readable regular files within the current execution directory,
 bounded to 1 MiB per file. The update includes feedback, current/prior candidate
-identities, attempt and authoritative references.
+identities, attempt and authoritative references (or Layer 3 volatile planning input).
 
 Missing or revised references, contract changes, absent legacy checkpoints and
 invalid context receipts select full input. A changed model, effort, permission
-or explicit session mode rebuilds history. Plan, Review and Judge keep full
+or explicit session mode rebuilds history. Review and Judge keep full
 inputs; Review always examines the complete current candidate and requirements.
 `state.sessions.records[*].context` records mode, identity and reason. This is
 protocol behavior, not measured evidence of token savings or equal quality.

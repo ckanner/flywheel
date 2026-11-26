@@ -81,21 +81,30 @@ test('ExecutionBoard shows Wave Swimlanes (default), renders all 12 DAG nodes wi
     act: async input => envelope({ protocol: 1, ok: true, cwd: '/repo', taskDir: input.taskDir }),
   });
 
-  // 1. Default view is Wave Swimlanes; guardrails shown; dollar budget banner HIDDEN when enforce === 'off'
+  // 1. Open DAG / Execution drawer: default view is Wave Swimlanes; guardrails shown; dollar budget banner HIDDEN when enforce === 'off'
+  assert.ok(ui.container.querySelector('[data-testid="flywheel-main-stream"]'));
+  await ui.click('查看 DAG 依赖图 →');
   assert.ok(ui.container.querySelector('[data-testid="flywheel-wave-swimlanes"]'));
   assert.ok(ui.container.querySelector('[data-testid="flywheel-guardrails-strip"]'));
   assert.equal(ui.container.querySelector('[data-testid="flywheel-budget-banner"]'), null, 'dollar budget banner must stay hidden when budget.enforce is off');
   assert.match(ui.container.textContent, /14\/60/);
 
-  // 2. Switch to DAG Graph: ALL 12 nodes render simultaneously with ZERO 6-node pagination
-  await ui.click('DAG 图谱');
+  // 2. Switch to DAG Graph inside drawer: ALL 12 nodes render simultaneously with ZERO 6-node pagination
+  const drawer = ui.container.querySelector('[data-testid="flywheel-side-drawer"]');
+  const dagModeBtn = [...drawer.querySelectorAll('button')].find(b => b.textContent.trim() === 'DAG 图谱');
+  assert.ok(dagModeBtn);
+  await act(async () => {
+    dagModeBtn.click();
+  });
   const dag = ui.container.querySelector('[data-testid="flywheel-dag-canvas"]');
   assert.ok(dag);
   const renderedNodes = dag.querySelectorAll('button[data-packet-id]');
   assert.equal(renderedNodes.length, 12, 'DAG canvas must render all 12 packets without legacy 6-node pagination');
 
   // Zoom button updates zoom label
-  await ui.click('+');
+  await act(async () => {
+    [...drawer.querySelectorAll('button')].find(b => b.textContent.trim() === '+').click();
+  });
   assert.equal(ui.container.querySelector('[data-testid="dag-zoom-label"]').textContent, '115%');
   await ui.click('重置视图');
   assert.equal(ui.container.querySelector('[data-testid="dag-zoom-label"]').textContent, '100%');

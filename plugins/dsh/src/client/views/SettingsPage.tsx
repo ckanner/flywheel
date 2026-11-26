@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import { StyleScope } from '../components/StyleScope.tsx';
+import { formatEffortLabel, formatModelBadge } from '../planning.ts';
 import type { FlywheelStore } from '../store.ts';
 import type { Translate } from '../types.ts';
 
@@ -1113,10 +1114,11 @@ export function SettingsPage({
             {effectiveJevBinding && (
               <span>
                 {t('settings.jev.resolvedBinding')}:{' '}
-                <code>
+                <code title={effectiveJevBinding.model || undefined}>
                   {effectiveJevBinding.profile || effectiveJev.profile || '—'}
-                  {effectiveJevBinding.model ? ` · ${effectiveJevBinding.model}` : ''}
-                  {effectiveJevBinding.thinking ? ` (${effectiveJevBinding.thinking})` : ''}
+                  {effectiveJevBinding.model
+                    ? ` · ${formatModelBadge(effectiveJevBinding.model, effectiveJevBinding.thinking, t('tab.traces') === '运行记录')}`
+                    : ''}
                 </code>
               </span>
             )}
@@ -1175,7 +1177,11 @@ export function SettingsPage({
                 )}
                 {eligibleJevProfiles.map(name => {
                   const p = asRecord(profilesMap[name]);
-                  const summary = [p.model, p.thinking].filter(Boolean).join(' · ');
+                  const summary = formatModelBadge(
+                    typeof p.model === 'string' ? p.model : '',
+                    typeof p.thinking === 'string' ? p.thinking : '',
+                    t('tab.traces') === '运行记录',
+                  );
                   return (
                     <option key={name} value={name}>
                       {summary ? `${name} (${summary})` : name}
@@ -1190,10 +1196,13 @@ export function SettingsPage({
               {Object.keys(jevResolvedProfile).length > 0 ? (
                 <>
                   <code>{String(jevResolvedProfile.harness ?? 'antigravity')}</code>
-                  <code>{String(jevResolvedProfile.model ?? '—')}</code>
-                  {jevResolvedProfile.thinking ? (
-                    <span className={styles.pill}>{String(jevResolvedProfile.thinking)}</span>
-                  ) : null}
+                  <code title={typeof jevResolvedProfile.model === 'string' ? jevResolvedProfile.model : undefined}>
+                    {formatModelBadge(
+                      typeof jevResolvedProfile.model === 'string' ? jevResolvedProfile.model : '',
+                      typeof jevResolvedProfile.thinking === 'string' ? jevResolvedProfile.thinking : '',
+                      t('tab.traces') === '运行记录',
+                    ) || '—'}
+                  </code>
                   <span className={`${styles.pill} ${styles.pillSuccess}`}>{t('settings.readOnlyBadge')}</span>
                 </>
               ) : (
@@ -1485,7 +1494,7 @@ export function SettingsPage({
                             >
                               {thinkingChoices.map(level => (
                                 <option key={level || 'default'} value={level}>
-                                  {level || t('settings.thinking.default')}
+                                  {level ? formatEffortLabel(level, t('tab.traces') === '运行记录') : t('settings.thinking.default')}
                                 </option>
                               ))}
                             </select>
@@ -1525,7 +1534,9 @@ export function SettingsPage({
                     <tr key={b.id}>
                       <td><code>{b.id}</code></td>
                       <td>{b.profile || b.nativeProfile || '—'}</td>
-                      <td>{b.model || b.channel || b.harness}</td>
+                      <td title={b.model || undefined}>
+                        {formatModelBadge(b.model, (b as { thinking?: string }).thinking, t('tab.traces') === '运行记录') || b.channel || b.harness}
+                      </td>
                       <td>
                         {isReadOnly ? (
                           <span className={`${styles.pill} ${styles.pillSuccess}`}>{t('settings.readOnlyBadge')}</span>

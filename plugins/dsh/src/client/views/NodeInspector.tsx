@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { styles } from 'virtual:flywheel-styles';
 import type { ClientRuntime } from '../context.ts';
+import { formatModelBadge } from '../planning.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { InspectorTab, PacketNode, Translate } from '../types.ts';
 import { TraceStreamPanel } from './TracesView.tsx';
@@ -101,7 +102,9 @@ export function NodeInspector({
                 <h4 className={styles.cardTitle}>{t('inspector.goal')}</h4>
                 <div>{packet.goal || packet.title || packet.id}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--fw-text-muted)' }}>
-                  <span>{t('inspector.route')}: {packet.route ?? 'default'} / {packet.model ?? packet.profile ?? 'auto'}</span>
+                  <span title={packet.model || undefined}>
+                    {t('inspector.route')}: {packet.route ?? 'default'} / {formatModelBadge(packet.model, typeof packet.thinking === 'string' ? packet.thinking : '', t('tab.traces') === '运行记录') || packet.profile || 'auto'}
+                  </span>
                   {packet.sessionKey && (
                     <span>
                       {t('inspector.sessionReuse')}: {packet.sessionStatus || 'scoped'} · <code>{packet.sessionKey}</code>

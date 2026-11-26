@@ -115,6 +115,36 @@ func TestAbandonUnknownPlanningInvocationRetiresWithoutApplyingResult(t *testing
 	assert.False(t, next.sessionReplay("design-plan", "planning:engine-1-1"))
 }
 
+func TestAbandonCanonicalPlanningScopeMatchesActiveOrLatestRequest(t *testing.T) {
+	fx := abandonTaskFixture(t)
+	rec := fx.ctx.State.Sessions.Records[fx.key]
+	delete(fx.ctx.State.Sessions.Records, fx.key)
+	rec.Scope = "planning:design"
+	canonKey := "design-plan/planning:design"
+	fx.ctx.State.Sessions.Records[canonKey] = rec
+	fx.ctx.State.Planning.Requests = append(fx.ctx.State.Planning.Requests, planning.Request{
+		ID: "engine-1-2", Scope: "milestone", ScopeID: "M-01", InputRevision: 1, MaxRounds: 3, Status: "completed",
+	})
+	fx.ctx.save()
+	fx.revision = fx.ctx.State.Revision
+
+	summary, err := fx.ctx.abandonSession(abandonCommand(&fx, canonKey, "Abandon canonical design scope."))
+	require.NoError(t, err)
+	assert.True(t, summary.Step.OK)
+	assert.Equal(t, "cancelled", fx.ctx.State.Planning.Requests[0].Status)
+	assert.Equal(t, "engine-1-1", fx.ctx.State.Sessions.Records[canonKey].Last.Abandon.RequestID)
+
+	// When only a terminal request exists for the canonical scope, abandon reports its terminal status cleanly.
+	fx2 := abandonTaskFixture(t)
+	rec2 := fx2.ctx.State.Sessions.Records[fx2.key]
+	delete(fx2.ctx.State.Sessions.Records, fx2.key)
+	rec2.Scope = "planning:design"
+	fx2.ctx.State.Sessions.Records[canonKey] = rec2
+	fx2.ctx.State.Planning.Requests[0].Status = "completed"
+	_, err = fx2.ctx.abandonSession(abandonCommand(&fx2, canonKey, "Abandon completed design scope."))
+	require.ErrorContains(t, err, "not pending or running")
+}
+
 func TestSessionUserActionDshProofBindsTaskAndInvocation(t *testing.T) {
 	fx := abandonTaskFixture(t)
 	cmd := abandonCommand(&fx, fx.key, "retire")
@@ -423,8 +453,7 @@ func TestAbandonUnknownDesignThenExplicitPlanRetainsOriginalBoundary(t *testing.
 	require.Empty(t, st.Planning.Designs)
 	require.Empty(t, st.Planning.Reviews)
 	require.Len(t, st.Planning.Requests, 1)
-	originalRequest := st.Planning.Requests[0].ID
-	key := "design-plan/planning:" + originalRequest
+	key := "design-plan/planning:design"
 	invocation := st.Sessions.Records[key].Last.ID
 	_, err = RunTask(opts)
 	require.ErrorContains(t, err, "requires reconciliation")
@@ -441,6 +470,9 @@ func TestAbandonUnknownDesignThenExplicitPlanRetainsOriginalBoundary(t *testing.
 	require.Equal(t, "paused", summary.Status)
 	require.Equal(t, 1, calls["design-plan"], "abandonment itself does not authorize a replacement call")
 	st = loadFixtureState(t, fx)
+	require.Equal(t, "abandoned", st.Sessions.Records[key].Last.Status)
+	require.Equal(t, "unknown", st.Sessions.Records[key].Last.Outcome)
+	require.Equal(t, invocation, st.Sessions.Records[key].Last.ID)
 	_, _, err = ControlPlanning(opts.RunOpts, PlanningCommand{Action: "plan", Revision: st.Revision,
 		RequestID: "explicit-design-after-abandon", Scope: "design"}, "")
 	require.NoError(t, err)
@@ -454,8 +486,9 @@ func TestAbandonUnknownDesignThenExplicitPlanRetainsOriginalBoundary(t *testing.
 	require.Len(t, st.Planning.Reviews, 1)
 	require.Len(t, st.Planning.Requests, 2)
 	require.Equal(t, "cancelled", st.Planning.Requests[0].Status)
-	require.Equal(t, "abandoned", st.Sessions.Records[key].Last.Status)
-	require.Equal(t, "unknown", st.Sessions.Records[key].Last.Outcome)
-	require.Equal(t, invocation, st.Sessions.Records[key].Last.ID)
+	require.Equal(t, 2, st.Sessions.Records[key].Generation)
+	require.Equal(t, "rebuild", st.Sessions.Records[key].Action)
+	require.Equal(t, "consumed", st.Sessions.Records[key].Last.Status)
+	require.NotEmpty(t, st.Inbox)
 	require.NoDirExists(t, filepath.Join(fx.root, "build"))
 }

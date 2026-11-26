@@ -368,11 +368,14 @@ flowchart TD
   INT --> POST["8. 可配置交付终点: local / draft-pr / pr-review / auto-merge"]
 ```
 
-1. **Full 架构级双稿对撞与统稿（`planning.dual-draft`）**：当任务为 `Full` 深度且启用 `planning.dual-draft`（默认 `enabled: true`，副稿与统稿默认绑定 `opus-plan`）时，设计阶段盲态并行生成主稿（`Gemini 4 Carbon`）与独立对照稿（`Claude Opus 5.5`），按版本持久化原始草稿至账本目录 `design-candidates/rev-%06d-{primary.md,secondary.md,meta.json}`（纳入 `internal/ledger` 账本区，不触发边界越界）。随后由统稿角色输出单一权威 `design.md` 并附带 `来源对照表`，交由只读 `Codex GPT-6.2 Astra` 独立审查，人类仍只做一次精确版本拍板。副稿失败时显式降级并记录原因；`Quick` / `compact` 模式跳过双稿。
-2. **Frontend 路由默认交互与微文案审查（`frontend-ux-review`）**：`frontend` 路由的 packet 在 L1 自动校验通过之后、进入独立 Codex Review 之前，默认由只读 `Gemini 4 Neon` 审查交互状态、空/错态与微文案，持久化结构化报告至 `reports/<id>.ux-review.json`。仅当 verdict 为 `needs_polish` 时允许主执行者（Claude）做至多 1 次取舍改稿并复跑 L1；任何异常或非 `frontend` 路由不阻断核心交付。
-3. **分级审查（`blocking` vs `advisory`）与回归测试门禁**：Review 结构化裁决区分 `blocking`（必须修复并退回）与 `advisory`（仅记账与界面展示、不触发返工）。返工轮次受 `guardrails.max-review-rounds`（默认 2）上限约束；当 packet 因 `REVIEW_RETURNED` 重试时，提示词强制要求补齐对应的回归或防护测试。
-4. **一句话根因调查简写（`investigate start`）**：`control investigate` 的 `start` 动作支持直接传入 `goal`（及可选 `intent: "investigate"` 与 `read-paths`），由 Go 引擎确定性合成 version-1 只读准备契约，消除用户手写 JSON 契约的门槛。
-5. **可配置交付终点（`delivery.endpoint`）**：支持 `local`（默认，停在本地已验提交）、`draft-pr`（显式 `--draft` 创建草稿 PR）、`pr-review` 与 `auto-merge`（严格保留 `--match-head-commit` 与人工显式确认门禁）。
+1. **Full 架构级双稿对撞与统稿（`planning.dual-draft`）**：当任务为 `Full` 深度且启用 `planning.dual-draft`（默认 `enabled: true`，副稿与统稿默认绑定 `opus-plan`）时，设计阶段盲态并行生成主稿（`Gemini 4 Carbon`）与独立对照稿（`Claude Opus 5.5`），按版本持久化原始草稿至账本目录 `design-candidates/rev-%06d-{primary.md,secondary.md,meta.json}`（纳入 `internal/ledger` 账本区，不触发边界越界）。随后由统稿角色输出单一权威 `design.md` 并附带 `来源对照表`，交由只读 `Codex GPT-6.2 Astra` 独立审查，人类仍只做一次精确版本拍板。若仅一侧草稿完成而另一侧失败，**禁止静默降级**：引擎暂停在 `awaiting-input` 并持久化已完成草稿与失败原因，由用户显式决策「重试完整双稿」或「仅用已完成单稿继续审查」（`draft-mode: dual | single`）。统稿与审查提示词内置五条收敛原则（用户 Brief 与已确认质量门禁至上、设计期/实现期边界、严格 `blocker`/`major`/`minor` 严重度分层、第 2 轮起单调审查不挪球门、超轮次时输出未闭合分歧的收敛诊断），使方案自然在 1–3 轮内收敛；`Quick` / `compact` 模式跳过双稿。
+2. **Stage 0 需求澄清与可量化质量门禁（`planning.clarify` / `brief.clarify-mode`）**：支持 `off` / `auto` / `always` 开关。在 `auto` 模式下，优先由 JEV 评估 Brief 清晰度（需求明确时自动跳过不打扰用户）；当需要澄清或处于 `always` 模式时，只读分析员一次性产出 2–4 个带推荐选项的问题、前端 UI 识别标记，以及将主观诉求翻译为可机械验证的客观质量门禁（例如核心引擎单元测试覆盖率 100%、纯函数解耦等）。用户确认后冻结在 `state.planning.clarification` 中，不改写原始 `brief`，后续架构设计、统稿、审查与实施拆包均遵循同一套锁定门禁。
+3. **Stage 1.5 条件触发的独立 UI/UX 交互原型（`planning.ui-prototype` / `brief.ui-prototype-mode`）**：支持 `off` / `auto` / `always` 开关。架构设计获批后、进入里程碑实施拆包前，若任务涉及前端/视觉交互界面，独立产出零外部 CDN 依赖的单文件 HTML/CSS/SVG 高保真交互原型（持久化至账本区 `ui-prototypes/ui-prototype-%06d.html`）及 Design Tokens，并经 1 轮独立 UX 审查，在 DSH 界面内以沙箱 `iframe` 供用户肉眼实时预览、提交视觉调整意见、批准或跳过；批准后将视觉契约与 Design Tokens 注入后续实施计划与验收。
+4. **Frontend 路由默认交互与微文案审查（`frontend-ux-review`）**：`frontend` 路由的 packet 在 L1 自动校验通过之后、进入独立 Codex Review 之前，默认由只读 `Gemini 4 Neon` 审查交互状态、空/错态与微文案，持久化结构化报告至 `reports/<id>.ux-review.json`。仅当 verdict 为 `needs_polish` 时允许主执行者（Claude）做至多 1 次取舍改稿并复跑 L1；任何异常或非 `frontend` 路由不阻断核心交付。
+5. **分级审查（`blocking` vs `advisory`）、单调收敛门控与回归测试门禁**：Review 结构化裁决除 `reasons`/`advisory` 外支持结构化 `findings`（含稳定 `id`、`severity: blocker|major|minor`、`target`、`evidence`、`fix`、`status: open|resolved`、`resolution`），并要求同轮次全量列举同类缺陷、严禁对编排器独占元数据（`state.json`/账本回执）阻断。编排器自动从当前证据或 `evidence-history` 提取上轮未闭合的 `blocker`/`major` findings 注入执行提示词与下轮复审提示词；当每轮未闭合阻塞项数量严格递减（`0 < currOpen < priorOpen`）时允许继续收敛而不被 `guardrails.max-review-rounds`（默认 2）机械截断；当普通代码缺陷未收敛或触发空转时，**直接升级至人工 `inbox`** 交由人类裁决，不再误触发整里程碑 Plan Loop 重写——只有 `verification-gap` 自动退回 Plan Loop 补强验收契约。Planner 与 Plan Review 契约卫生同时禁止将 `state.json`/账本回执写入验收或将超过 10 行的脚本内联进 YAML `acceptance.L1`。当 packet 因 `REVIEW_RETURNED` 重试时，提示词强制要求补齐对应的回归或防护测试。
+   - **多任务并存账本隔离与超长会话自动重建**：同仓库存在其他 Flywheel 任务账本（`docs/<other-slug>/` 含 `state.json`/`spec.md`）时，单元交付与 `candidateFingerprint` 自动将其归入账本排除集而不触发脏工作区误报；`codex-pro` 复用超长历史线程在 `not-dispatched` 阶段撞上 `Truncated` 或 `CONTEXT_WINDOW_EXCEEDED`（如 >1 MiB frame）时自动淘汰 `resume-candidate` 并在下一轮干净重建会话。
+6. **一句话根因调查简写（`investigate start`）**：`control investigate` 的 `start` 动作支持直接传入 `goal`（及可选 `intent: "investigate"` 与 `read-paths`），由 Go 引擎确定性合成 version-1 只读准备契约，消除用户手写 JSON 契约的门槛。
+7. **可配置交付终点（`delivery.endpoint`）与本地优先检查**：支持 `local`（默认，停在本地已验提交）、`draft-pr`（显式 `--draft` 创建草稿 PR）、`pr-review` 与 `auto-merge`（严格保留 `--match-head-commit` 与人工显式确认门禁）。`InspectDelivery` 在无 GitHub `origin` 或 `gh` 未登录时返回 `mode: "local"` 与本地分支、提交列表及工作区干净状态（不再抛出误导性 git 错误），而远端写操作 `Deliver` 仍严格要求 `mode == "github"`。
 
 ## 5. 状态、持久化和恢复
 
@@ -460,13 +463,13 @@ Intake／Garden 的预算与清理升级记录若需更新已有主任务状态�
 
 同一调用的 unknown→known usage 以可审计 correction 对账，不重复增加调用数，保留原 provider／日期；已过期日桶不复活。metrics 文件与父目录同步后才返回成功。角色质量阈值默认关闭，只在安全终态已消费后影响下一次 create/resume/rebuild；保留原因、预算和工作区，详见[恢复指南](zh-CN/session-recovery.md)。
 
-`sessions.context` 可显式选择 `verified-incremental`，省略／full 保留完整输入。
-只有 Execute 的同角色可信续用可省略稳定契约：已消费终态回执重新校验，明确
-证明前次 `dispatched` 且 `completed`，提示词版本、契约、当前执行目录中全部
+`sessions.context` 省略时默认对 `execute` 及规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）启用 `verified-incremental`，显式配置 `"full"` 保留每轮完整输入。
+同角色可信续用可省略稳定契约（或规划 Layer 1/Layer 2）：已消费终态回执重新校验，明确
+证明前次 `dispatched` 且 `completed`，提示词版本、契约（或规划稳定权威 + `project-context.md`）、当前执行目录中全部
 context/cache 文件摘要相同。安全启动拒绝或失败／取消调用即使可续用原线程，
 也不能证明本轮新权威内容已送达，下一次完整重发。引用必须为受根
 目录约束的普通文件且不超过 1 MiB；缺失、版本／内容变化或回执异常退回全量。
-增量带入当前失败、前后候选身份、尝试和引用，记录模式与原因；Review、Judge
+增量带入当前失败（或规划 Layer 3 易变输入）、前后候选身份、尝试和引用，记录模式与原因；Review、Judge
 每次继续使用完整当前候选与全部适用需求，不读取 Executor 私有历史。
 
 ### 5.4 受管会话接管
@@ -708,7 +711,7 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 
 ### 7.3 Antigravity CLI 接入契约与 4 订阅默认矩阵
 
-`antigravity` 直接使用随包分发的独立 `@ckanner/dsh-subagent-antigravity@0.3.0` 公开 machine API 与官方 `agy` CLI，**默认采用官方 ACP 传输通道（`transport: "acp"`）**，并在适配器层原生支持多模态图片输入（`images` 经由既有冻结清单与 redacted receipt 传递，状态契约同时接纳 `claude-code-pro` 与 `antigravity`）。`evidence-only` 调用使用独立空临时目录隔离，确保不读取目标仓库外未授权状态。源码在 `dsh-subagent-antigravity`，原生程序与登录由用户环境提供。
+`antigravity` 直接使用随包分发的独立 `@ckanner/dsh-subagent-antigravity@0.3.1` 公开 machine API 与官方 `agy` CLI，**默认采用官方 ACP 传输通道（`transport: "acp"`）**，并在适配器层原生支持多模态图片输入（`images` 经由既有冻结清单与 redacted receipt 传递，状态契约同时接纳 `claude-code-pro` 与 `antigravity`）。`evidence-only` 调用使用独立空临时目录隔离，确保不读取目标仓库外未授权状态。源码在 `dsh-subagent-antigravity`，原生程序与登录由用户环境提供。
 
 严格接纳完整模型/effort、cwd、权限、调用身份与清理。普通执行要求明确 full-access，
 映射 accept-edits/always-proceed；调查/JEV 的 read-only 请求必须同时 evidenceOnly，
@@ -753,7 +756,12 @@ Flywheel Execute 选择 Swarm 需要已审 packet 的 collaboration version 1：
 
 优先通过明确小任务、缓存稳定前缀、低频规划、故障反馈复用、独立短评审降低重试与上下文膨胀。默认不使用所有模型串行互相复核，也不强制 max/ultra。
 
-每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露 usage，按未知处理。
+每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、`prompt-bytes`、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 与 Antigravity ACP 当前不暴露服务端 `cacheReadTokens`，按未知处理（后者可通过 `usage_update` 展示真实上下文窗口占用，绝不伪造缓存命中率）。
+
+- **三层前缀缓存与指针优先提示词纪律（`internal/prompts`）**：所有 Plan / Review / Execute / Synthesis / Prototype 提示词按严格三层排布（Layer 1 静态角色规则与输出契约 → Layer 2 稳定任务权威与自动生成的 `project-context.md` ≤4 KB 项目记忆 → Layer 3 本轮易变输入与有界摘要），避免易变字段污染前半段前缀。大文档（>8 KB 设计稿、>24 KB 契约集合或 git diff、>16 KB 原始失败反馈）自动切换为磁盘路径指针与有界片段，防止超长提示词触发上游静默截断。
+- **规范化规划会话作用域与跨轮增量续跑（`internal/machine`）**：规划调用统一复用规范作用域（`planning:design`、`planning:milestone:<id>`、`planning:packet:<id>`），不再按 `request.ID` 每轮冷启会话；在未显式配置 `sessions.context: "full"` 时，规划角色（`design-plan`/`design-review`/`plan`/`plan-review`）在确认上一轮已派发完成且稳定权威未变更时仅发送 Layer 3 增量更新。单会话未显式配置 `max-run-input-tokens` 时默认启用 `280,000` token 自动重建软护栏以防长会话上下文退化。
+- **零转义多文件拆包协议与三层独立验收脚本（`templates/planning.schema.json`、`planning_activation.go`、`context.go`）**：`plan` 角色支持无 JSON 转义的 `<<<FLYWHEEL_PLAN_META>>>` + `<<<FLYWHEEL_FILE path="...">>> ... <<<END_FLYWHEEL_FILE>>>` 协议（含 `mode: "patch"`/`keep`/`remove` 局部增量更新，并完整兼容旧 JSON）；受保护的独立验收脚本 `oracles/verify-*.mjs` / `oracles/verify-*.sh`（≤64 KB，单段文件名）在封版前由 Go 引擎执行语法预检（`node --check` / `sh -n`）、纳入激活投影与 SHA-256 校验，并加入 `contractFileRe` 受保护契约集合——既在激活时自动提交进 Git worktree 供独立验证运行，也在执行门禁中禁止 Executor 修改（触发 `contract-file` 违规拦截）。
+- **Claude Code Pro 0.7.1 缓存边界说明**：`dsh-subagent-claude-code-pro@0.7.1` 通过官方 `claude_code` 系统/工具预设与严格 `OPTION_KEYS` 白名单运行，暂未暴露自定义 Anthropic 缓存 TTL 开关；Flywheel 通过规范会话作用域续跑与三层前缀稳定化提升其真实前缀缓存命中率，而不篡改锁定 vendor 包。
 
 `unknown-usage-calls` 和 `unknown-cost-calls` 与已知总数并存。订阅优先模式下，**美元预算门禁默认关闭（`budget.enforce: "off"`）**，由轻量确定性的 **运行护栏（`guardrails`）** 防止死循环与调用失控：`max-packet-attempts: 3`、`max-review-rounds: 2`、`max-task-calls: 60`（`state.budget.totals.calls` 持久化单任务累计调用次数）。仅当用户显式开启 `budget.enforce: "soft" | "hard"` 时才启用美元/Token 预算熔断；关闭美元熔断不会关闭计量、失败重试上限、运行时限或未知调用阻断。价格只接受 driver 真实值或用户显式提供的定价，不内置会过期的推测账单。
 
@@ -1170,8 +1178,8 @@ flowchart LR
   end
 
   subgraph WORKERS["4 订阅独立 Worker"]
-    W1["Antigravity 0.3.0\n(默认 ACP + 原生图片)"]
-    W2["Claude Code Pro 0.7.0\n(Agent SDK)"]
+    W1["Antigravity 0.3.1\n(默认 ACP + 原生图片)"]
+    W2["Claude Code Pro 0.7.1\n(Agent SDK)"]
     W3["Codex Pro 0.10.2\n(app-server + read-only 沙箱)"]
     W4["Kimi Native\n(WebSearch / FetchURL / Swarm)"]
   end
@@ -1187,7 +1195,7 @@ flowchart LR
   ENG --> W4
 ```
 
-1. **`main` + `sidebar.panellist`**：全页工程工作台，采用无冗余侧边栏的单栏布局，包含 54px 顶栏任务切换浮层与生命周期动态主按钮（Primary CTA）、**双模型设计评审室**（`统稿方案 | 双稿并排对比 | 原始独立草稿`、Markdown GFM 来源对照表、Astra 独立审查列表与底部悬浮人工拍板条）、**波次泳道（默认）+ 交互式 DAG 画布**（拓扑分层与重心排序、全量节点无 6 节点分页、244×96 语义卡片、贝塞尔有向连线、悬停上下游血缘高亮、缩放平移与缩略图）、**520px 五标签节点详情抽屉**（概览 / 模型输出 / 证据与 UX / 时间线与协作 / 契约）、**实时运行记录（Live Traces）与 Provider 原生 Session 跳转/Resume**、**30 秒三意图建单弹窗**、**根因调查板**、**交付追踪页**以及**内置设置 Tab**（配置优先级栏、4 订阅健康条、JEV 有界决策卡片、可编辑逐阶段/路由模型矩阵、会话复用策略与运行护栏、并行调度/Worktree/看门狗超时/传输重试配置及可折叠原始 JSON）。
+1. **`main` + `sidebar.panellist`**：全页工程工作台，采用无冗余侧边栏的单栏布局，包含 50px 顶栏任务切换浮层、按阶段分组的节点切换器（需求与架构 / UI 交互原型 / 实施拆包规划 / Wave 执行与审查）与生命周期动态主按钮（Primary CTA）、统一 `<模型显示名> <思考等级显示名>` 空格显示语法（悬停保留原始模型 ID，`agy models` 同步保留第二列展示名）、主流程与子节点输入框下方 DSH 风格 3-Pill 遥测条（模型与轮次 / Token 与缓存命中率及分 Provider 向上浮层 / 14px SVG 上下文环形进度）、主输入框 `@` 向上模糊搜索浮层与原子蓝标胶囊（支持 `↑↓`/`Enter`/`Tab`/`Esc` 及单次 `Backspace` 整块删除）、**双模型设计评审室**、**波次泳道（默认）+ 交互式 DAG 画布**、**实时运行记录（Live Traces）与 Provider 原生 Session 跳转/Warp Resume**、**30 秒三意图建单**、**根因调查板**、**交付追踪页**以及**内置设置覆盖层**。
 2. **`sidebar.right.pane.tab`**：右侧边栏紧凑实时进度卡片，展示任务进度条与活跃节点，可一键跳转主工作台或停止运行。
 3. **`conversation.chat.commandview`**：对话内 `/flywheel` 指令的只读摘要卡片，一键跳转主工作台。
 

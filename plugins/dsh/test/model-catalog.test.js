@@ -101,8 +101,10 @@ test('Antigravity lists observed CLI IDs, preserves fixed effort, and closes the
       text: 'Available models:\n\ngemini-4-hydrogen-medium  Hydrogen Medium\ngemini-pro-orchestrator  Carbon\ngemini-new-future-id\n' }) });
   assert.equal(result.status, 'available');
   assert.equal(result.source, 'agy models');
-  assert.deepEqual(result.models.map(model => [model.id, model.efforts, model.defaultEffort]), [
-    ['gemini-4-hydrogen-medium', ['medium'], 'medium'], ['gemini-pro-orchestrator', [''], ''], ['gemini-new-future-id', undefined, undefined],
+  assert.deepEqual(result.models.map(model => [model.id, model.label, model.efforts, model.defaultEffort]), [
+    ['gemini-4-hydrogen-medium', 'Hydrogen Medium', ['medium'], 'medium'],
+    ['gemini-pro-orchestrator', 'Carbon', [''], ''],
+    ['gemini-new-future-id', 'gemini-new-future-id', undefined, undefined],
   ]);
   assert.equal(closed, true);
   assert.equal(requests[0].command, '/reviewed/agy');

@@ -56,7 +56,9 @@ func openLiveTrace(taskDir, key, role, scope string, r *state.SessionRecord, arg
 		"thinking":        args.Binding.Thinking,
 		"cwd":             args.Cwd,
 		"workspaceCwd":    args.WorkspaceCwd,
+		"sessionTitle":    args.SessionTitle,
 		"requestedThread": r.Last.RequestedThread,
+		"promptBytes":     len(args.Prompt),
 	})
 	return w
 }

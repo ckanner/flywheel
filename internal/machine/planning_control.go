@@ -18,11 +18,21 @@ import (
 	"github.com/ckanner/flywheel/internal/verify"
 )
 
+// ClarifyAnswer records user responses to Stage 0 clarifying questions and locked
+// objective quality gates (e.g., 100% unit test coverage).
+type ClarifyAnswer struct {
+	Answers         map[string]string `json:"answers,omitempty"`
+	SelectedGates   []string          `json:"selected-gates,omitempty"`
+	FreeformNote    string            `json:"freeform-note,omitempty"`
+	UIPrototypeMode string            `json:"ui-prototype-mode,omitempty"`
+}
+
 // PlanningCommand contains data only. Human identity is supplied separately by
 // the verified host command or a terminal confirmation, never by request JSON.
 type PlanningCommand struct {
 	Collaboration *CollaborationEdit `json:"collaboration,omitempty"`
 	InputImages   *InputImagesEdit   `json:"input-images,omitempty"`
+	Clarify       *ClarifyAnswer     `json:"clarify,omitempty"`
 	Action        string             `json:"action"`
 	Revision      int64              `json:"revision,omitempty"`
 	RequestID     string             `json:"request-id,omitempty"`
@@ -32,6 +42,7 @@ type PlanningCommand struct {
 	Design        *planning.Ref      `json:"design,omitempty"`
 	Text          string             `json:"text,omitempty"`
 	Policy        string             `json:"policy,omitempty"`
+	DraftMode     string             `json:"draft-mode,omitempty"`
 	Start         *bool              `json:"start,omitempty"`
 }
 
@@ -70,9 +81,9 @@ func (r PlanningCommand) StartRequested(defaultValue bool) bool {
 }
 
 func ValidatePlanningCommand(r PlanningCommand) error {
-	if r.Collaboration != nil && r.Action != "collaboration" || r.InputImages != nil && r.Action != "input-images" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "") && r.Action != "plan" ||
-		r.Design != nil && r.Action != "approve" && r.Action != "feedback" ||
-		r.Text != "" && r.Action != "feedback" && r.Action != "migrate" && r.Action != "plan" ||
+	if r.Collaboration != nil && r.Action != "collaboration" || r.InputImages != nil && r.Action != "input-images" || r.Clarify != nil && r.Action != "clarify" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "" || r.DraftMode != "") && r.Action != "plan" ||
+		r.Design != nil && r.Action != "approve" && r.Action != "feedback" && r.Action != "approve-prototype" ||
+		r.Text != "" && r.Action != "feedback" && r.Action != "migrate" && r.Action != "plan" && r.Action != "prototype-feedback" ||
 		r.Policy != "" && r.Action != "feedback" && r.Action != "migrate" ||
 		r.Action == "status" && (r.Revision != 0 || r.Start != nil) ||
 		r.Action == "prepare" && r.Revision != 0 {
@@ -108,12 +119,27 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 	case "input-images":
 		_, err := imageInputReferences(r.InputImages)
 		return err
+	case "clarify":
+		if r.Clarify == nil {
+			return fmt.Errorf("clarify action requires answers or quality gates")
+		}
+		if r.Clarify.UIPrototypeMode != "" && r.Clarify.UIPrototypeMode != "off" && r.Clarify.UIPrototypeMode != "auto" && r.Clarify.UIPrototypeMode != "always" {
+			return fmt.Errorf("clarify ui-prototype-mode must be off, auto, or always")
+		}
+	case "approve-prototype", "skip-prototype":
+	case "prototype-feedback":
+		if strings.TrimSpace(r.Text) == "" {
+			return fmt.Errorf("prototype-feedback requires nonempty text")
+		}
 	case "plan":
 		if r.Scope != "design" && r.Scope != "milestone" && r.Scope != "packet" && r.Scope != "replan" {
 			return fmt.Errorf("planning scope must be design, milestone, packet, or replan")
 		}
 		if r.ScopeID != "" && !planningControlID.MatchString(r.ScopeID) || (r.Scope == "milestone" || r.Scope == "packet") && r.ScopeID == "" {
 			return fmt.Errorf("scoped planning requires a bounded scope-id")
+		}
+		if r.DraftMode != "" && r.DraftMode != "dual" && r.DraftMode != "single" {
+			return fmt.Errorf("planning draft-mode must be dual or single")
 		}
 		_, err := normalizePlanningScope(r)
 		return err
@@ -127,7 +153,7 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		}
 	case "migrate":
 	default:
-		return fmt.Errorf("planning action must be prepare, plan, feedback, approve, status, migrate, collaboration, or input-images")
+		return fmt.Errorf("planning action must be prepare, clarify, plan, feedback, approve, approve-prototype, prototype-feedback, skip-prototype, status, migrate, collaboration, or input-images")
 	}
 	return nil
 }
@@ -304,7 +330,7 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 	matched, same := false, true
 	for _, old := range p.Requests {
 		if old.ID == r.RequestID {
-			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text
+			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text && old.DraftMode == r.DraftMode
 			matchesEdit := r.Action == "collaboration" && r.Collaboration != nil && old.Origin == "collaboration-edit" && old.Scope == "packet" && old.ScopeID == r.Collaboration.Packet && old.Feedback == collaborationRequestIdentity(r.Collaboration)
 			matchesImages := r.Action == "input-images" && r.InputImages != nil && old.Origin == "input-images-edit" && old.Scope == "packet" && old.ScopeID == r.InputImages.Packet && old.Feedback == inputImagesRequestIdentity(r.InputImages)
 			matched, same = true, same && (matchesPlan || matchesEdit || matchesImages) && old.PlanningOnly
@@ -320,6 +346,12 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 			matched, same = true, same && r.Action == "approve" && r.Design != nil && old.Design == *r.Design && old.Start == r.StartRequested(false) && old.Source == source
 		}
 	}
+	if p.Clarification != nil && p.Clarification.RequestID == r.RequestID && r.RequestID != "" {
+		matched, same = true, same && r.Action == "clarify" && p.Clarification.Status == "confirmed"
+	}
+	if p.UIPrototype != nil && p.UIPrototype.ApprovalReqID == r.RequestID && r.RequestID != "" {
+		matched, same = true, same && (r.Action == "approve-prototype" || r.Action == "skip-prototype")
+	}
 	if matched && !same {
 		return false, fmt.Errorf("planning request-id was already used for different content or authority")
 	}
@@ -329,6 +361,46 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 func applyPlanningCommand(opts RunOpts, st *state.State, r PlanningCommand, source string) error {
 	p := st.Planning
 	switch r.Action {
+	case "clarify":
+		if p.Clarification == nil {
+			p.Clarification = &planning.Clarification{Status: "confirmed", NeedsClarification: true, IsFrontendUI: inferFrontendUIBrief(p.Brief)}
+		}
+		p.Clarification.Status = "confirmed"
+		p.Clarification.Answers = r.Clarify.Answers
+		p.Clarification.SelectedGates = cleanStringSlice(r.Clarify.SelectedGates, 32)
+		p.Clarification.FreeformNote = strings.TrimSpace(r.Clarify.FreeformNote)
+		if r.Clarify.UIPrototypeMode != "" {
+			p.Clarification.UIPrototypeMode = r.Clarify.UIPrototypeMode
+		}
+		p.Clarification.AnsweredAt = planningControlTime(opts)
+		p.Clarification.RequestID = r.RequestID
+		p.Phase, p.Reason = "drafting", "需求澄清与可量化质量门禁已确认；准备开始架构设计。"
+	case "approve-prototype":
+		if p.UIPrototype == nil || p.CurrentDesign == nil || p.UIPrototype.Design != *p.CurrentDesign || p.UIPrototype.Status != "awaiting-approval" {
+			return fmt.Errorf("no pending UI prototype matches the current approved design")
+		}
+		p.UIPrototype.Status = "approved"
+		p.UIPrototype.ApprovedAt = planningControlTime(opts)
+		p.UIPrototype.ApprovalSource = firstNonEmpty(source, "control:"+r.RequestID)
+		p.UIPrototype.ApprovalReqID = r.RequestID
+		p.Phase, p.Reason = "approved", "UI/UX 视觉原型已批准；准备拆解实施计划并开始编码。"
+	case "prototype-feedback":
+		if p.UIPrototype == nil || p.CurrentDesign == nil || p.UIPrototype.Design != *p.CurrentDesign {
+			return fmt.Errorf("no UI prototype matches the current approved design")
+		}
+		p.UIPrototype.Feedback = append(p.UIPrototype.Feedback, strings.TrimSpace(r.Text))
+		p.UIPrototype.Status = "drafting"
+		p.Phase, p.Reason = "prototyping", "已收到 UI/UX 视觉调整意见；准备重新生成原型。"
+	case "skip-prototype":
+		if p.CurrentDesign == nil {
+			return fmt.Errorf("skip-prototype requires an approved design")
+		}
+		if p.UIPrototype == nil || p.UIPrototype.Design != *p.CurrentDesign {
+			p.UIPrototype = &planning.UIPrototype{Revision: 0, Design: *p.CurrentDesign}
+		}
+		p.UIPrototype.Status = "skipped"
+		p.UIPrototype.ApprovalReqID = r.RequestID
+		p.Phase, p.Reason = "approved", "已跳过 UI/UX 原型阶段；准备直接进入实施编码。"
 	case "input-images":
 		if err := applyInputImagesEdit(opts, st, r); err != nil {
 			return err
@@ -338,7 +410,7 @@ func applyPlanningCommand(opts RunOpts, st *state.State, r PlanningCommand, sour
 			return err
 		}
 	case "plan":
-		if err := planning.BeginRequest(p, planning.Request{ID: r.RequestID, Scope: r.Scope, ScopeID: r.ScopeID, InputRevision: p.InputRevision, PlanningOnly: true, Feedback: r.Text}); err != nil {
+		if err := planning.BeginRequest(p, planning.Request{ID: r.RequestID, Scope: r.Scope, ScopeID: r.ScopeID, InputRevision: p.InputRevision, PlanningOnly: true, Feedback: r.Text, DraftMode: r.DraftMode}); err != nil {
 			return err
 		}
 		p.Phase, p.Reason = "drafting", "Planning requested without starting implementation."

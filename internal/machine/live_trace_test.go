@@ -53,6 +53,7 @@ func TestLiveTraceWriterStreamsBoundedFramesAndHandlesGuards(t *testing.T) {
 		Cwd:          "/repo",
 		WorkspaceCwd: "/repo",
 		Model:        "gpt-6.2-astra",
+		SessionTitle: "Flywheel · execute/M01-T01 · live trace test",
 		Binding:      config.LoopBinding{Harness: "codex-pro", Channel: "chatgpt-subscription", Thinking: "high"},
 	}
 	w := openLiveTrace(taskDir, "execute/M01-T01", "execute", "M01-T01", recOK, args, now)
@@ -93,6 +94,7 @@ func TestLiveTraceWriterStreamsBoundedFramesAndHandlesGuards(t *testing.T) {
 
 	assert.Equal(t, "start", startFrame["kind"])
 	assert.Equal(t, "call-1", startFrame["invocationId"])
+	assert.Equal(t, "Flywheel · execute/M01-T01 · live trace test", startFrame["sessionTitle"])
 	assert.Equal(t, "event", eventFrame["kind"])
 	assert.Equal(t, "truncated", truncFrame["kind"])
 	assert.Equal(t, "end", endFrame["kind"])

@@ -54,13 +54,33 @@ flowchart TD
   before independent Codex Review, read-only `Gemini 4 Neon` audits interaction states and
   microcopy (`reports/<id>.ux-review.json`). When the verdict is `needs_polish`, Claude performs
   at most one refinement pass and re-runs L1.
-- **Tiered Review (`blocking` vs `advisory`) & Regression Tests**: Review verdicts separate
-  `blocking` defects (which trigger a return, capped at `max-review-rounds`) from `advisory`
-  notes (recorded and displayed without forcing rework). Any `REVIEW_RETURNED` retry requires a
+- **Tiered Review (`blocking` vs `advisory`), Monotone Convergence & Regression Tests**: Review verdicts separate
+  `blocking` defects (structured `findings` with stable `id`, `severity`, `target`, `evidence`, `fix`, and `status`) from `advisory`
+  notes (recorded and displayed without forcing rework). Open `blocker`/`major` findings carry across retry rounds:
+  strictly decreasing open counts are allowed to finish converging past `max-review-rounds`, while stagnating
+  `REVIEW_RETURNED` loops escalate directly to human `inbox` rather than rewriting the entire milestone plan
+  (automatic Plan Loop revision is reserved for `verification-gap`). Any `REVIEW_RETURNED` retry requires a
   matching regression or guard test.
 - **Configurable Delivery Endpoint (`delivery.endpoint`)**: Choose `local` (default), `draft-pr`
   (passes `--draft`), `pr-review`, or `auto-merge` (retaining explicit confirmation and
   `--match-head-commit`).
+- **Context Engineering, Prompt Caching & Protected Standalone Oracles**: Planning, review, and
+  execution prompts follow strict 3-layer prefix ordering (static instructions → stable contract &
+  derived `project-context.md` memory → volatile per-round inputs with bounded 24 KB diffs
+  and disk pointers for oversized artifacts). Planning roles reuse canonical scopes
+  (`planning:design`, `planning:milestone:<id>`, `planning:packet:<id>`) with verified incremental
+  delta resume and a default `280,000`-token auto-rebuild guardrail. Milestone plans support the
+  escape-free multi-file protocol (`<<<FLYWHEEL_FILE path="...">>>`) with incremental `patch` mode
+  and standalone protected acceptance scripts (`oracles/verify-*.mjs` / `oracles/verify-*.sh`,
+  syntax-checked with `node --check` / `sh -n` before sealing).
+- **DSH Workbench Model Display, 3-Pill Telemetry Dock & `@` Mention Routing**: All node badges
+  format models as `<Model Display Name> <Effort Display Name>` separated by a space (preserving raw
+  model IDs in tooltips). Both the Main Stream and Sub-Session composers render a right-aligned
+  3-Pill bottom telemetry dock with upward hover/click popovers showing per-node/per-provider cache
+  hit rates, token breakdowns, and context occupancy (reporting `—` truthfully when a provider such
+  as Antigravity ACP does not expose server cache-read counters). Typing `@` or clicking `@` in the
+  Main Stream opens an upward fuzzy-search popover across packets and active sessions, inserting an
+  atomic pill deleted with a single `Backspace`.
 
 ## Create a task from the Flywheel view
 

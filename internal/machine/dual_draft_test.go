@@ -272,3 +272,165 @@ func mustDualBinding(t *testing.T, c *Context, profile string) fallback.Binding 
 	require.NoError(t, err)
 	return b
 }
+
+func TestDualDraftPartialFailureAwaitsExplicitUserDecision(t *testing.T) {
+	t.Run("primary succeeds and secondary fails pauses for human choice then single-draft adopts saved draft", func(t *testing.T) {
+		fx, opts := dualDraftFixture(t)
+		var plannerCalls atomic.Int32
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(a drivers.CallArgs) drivers.Result {
+			plannerCalls.Add(1)
+			if a.Model == "claude-opus-5-5" {
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.ExitCode = new(1)
+					r.ErrorCode = "AUTH"
+					r.ErrorMessage = new("subscription check failed")
+				})
+			}
+			out := engineDesignOutput(t)
+			out.Document = "# Saved Carbon Draft"
+			return planningJSONResult(t, out)
+		}}
+
+		summary, err := RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "awaiting-input", summary.PlanningPhase)
+		require.Equal(t, int32(2), plannerCalls.Load())
+
+		metaRaw, err := os.ReadFile(filepath.Join(fx.taskDir, "design-candidates", "rev-000001-meta.json"))
+		require.NoError(t, err)
+		var meta dualDraftMeta
+		require.NoError(t, json.Unmarshal(metaRaw, &meta))
+		require.True(t, meta.Partial)
+		require.Equal(t, "primary", meta.CompletedSide)
+		require.Equal(t, "secondary", meta.FailedSide)
+		require.Equal(t, "AUTH", meta.FailureCode)
+		require.Contains(t, meta.FailureError, "subscription check failed")
+
+		primaryMD, err := os.ReadFile(filepath.Join(fx.taskDir, "design-candidates", "rev-000001-primary.md"))
+		require.NoError(t, err)
+		require.Contains(t, string(primaryMD), "Saved Carbon Draft")
+
+		// Invalid draft-mode is rejected.
+		st := loadFixtureState(t, fx)
+		_, _, err = ControlPlanning(RunOpts{TaskDir: fx.taskDir, Cwd: fx.root, Config: opts.Config}, PlanningCommand{
+			Action: "plan", Revision: st.Revision, RequestID: "bad-mode", Scope: "design", DraftMode: "invalid",
+		}, "")
+		require.ErrorContains(t, err, "draft-mode")
+
+		// Explicit user decision: proceed with completed single draft (no silent downgrade).
+		_, receipt, err := ControlPlanning(RunOpts{TaskDir: fx.taskDir, Cwd: fx.root, Config: opts.Config}, PlanningCommand{
+			Action: "plan", Revision: st.Revision, RequestID: "choose-single-1", Scope: "design", DraftMode: "single",
+		}, "")
+		require.NoError(t, err)
+		require.Equal(t, "applied", receipt.Status)
+
+		summary, err = RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "awaiting-design-approval", summary.PlanningPhase)
+		// Saved partial draft was adopted directly without re-invoking the planner.
+		require.Equal(t, int32(2), plannerCalls.Load())
+		st = loadFixtureState(t, fx)
+		require.Len(t, st.Planning.Designs, 1)
+		require.Contains(t, st.Planning.Designs[0].Document, "Saved Carbon Draft")
+	})
+
+	t.Run("secondary succeeds and primary fails without error message", func(t *testing.T) {
+		fx, opts := dualDraftFixture(t)
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(a drivers.CallArgs) drivers.Result {
+			if a.Model == "gemini-4-carbon-high" {
+				return drivers.MockResult(func(r *drivers.Result) {
+					r.ExitCode = new(1)
+					r.ErrorCode = "TIMEOUT"
+				})
+			}
+			out := engineDesignOutput(t)
+			out.Document = "# Saved Opus Draft"
+			return planningJSONResult(t, out)
+		}}
+
+		summary, err := RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "awaiting-input", summary.PlanningPhase)
+
+		metaRaw, err := os.ReadFile(filepath.Join(fx.taskDir, "design-candidates", "rev-000001-meta.json"))
+		require.NoError(t, err)
+		var meta dualDraftMeta
+		require.NoError(t, json.Unmarshal(metaRaw, &meta))
+		require.True(t, meta.Partial)
+		require.Equal(t, "secondary", meta.CompletedSide)
+		require.Equal(t, "primary", meta.FailedSide)
+		require.Equal(t, "TIMEOUT", meta.FailureError)
+
+		// Corrupt partial payload -> loadMatchingDualDraftPartial returns false and single-draft runs fresh.
+		require.NoError(t, os.WriteFile(filepath.Join(fx.taskDir, "design-candidates", "rev-000001-partial.json"), []byte("{bad"), 0o600))
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(drivers.CallArgs) drivers.Result {
+			return planningJSONResult(t, engineDesignOutput(t))
+		}}
+		st := loadFixtureState(t, fx)
+		_, _, err = ControlPlanning(RunOpts{TaskDir: fx.taskDir, Cwd: fx.root, Config: opts.Config}, PlanningCommand{
+			Action: "plan", Revision: st.Revision, RequestID: "choose-single-fresh", Scope: "design", DraftMode: "single",
+		}, "")
+		require.NoError(t, err)
+		summary, err = RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "awaiting-design-approval", summary.PlanningPhase)
+	})
+
+	t.Run("both fail retries normally and partial persist errors block", func(t *testing.T) {
+		_, opts := dualDraftFixture(t)
+		opts.Config.Retry.MaxTransportRetries = 0
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(drivers.CallArgs) drivers.Result {
+			return drivers.MockResult(func(r *drivers.Result) {
+				r.ExitCode = new(1)
+				r.ErrorCode = "AUTH"
+			})
+		}}
+		summary, err := RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "blocked", summary.PlanningPhase)
+
+		// Partial persist candidate error
+		_, opts = dualDraftFixture(t)
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(a drivers.CallArgs) drivers.Result {
+			if a.Model == "claude-opus-5-5" {
+				return drivers.MockResult(func(r *drivers.Result) { r.ExitCode = new(1); r.ErrorCode = "AUTH" })
+			}
+			return planningJSONResult(t, engineDesignOutput(t))
+		}}
+		origMkdir := mkdirDualDraftDir
+		mkdirDualDraftDir = func(string, os.FileMode) error { return errors.New("partial mkdir boom") }
+		t.Cleanup(func() { mkdirDualDraftDir = origMkdir })
+		summary, err = RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "blocked", summary.PlanningPhase)
+		mkdirDualDraftDir = origMkdir
+
+		// Partial persist payload error (after candidates succeed)
+		_, opts = dualDraftFixture(t)
+		opts.Drivers.DesignPlan = &fnDriver{role: "design-plan", base: drivers.CreateDrivers(opts.Config).DesignPlan, fn: func(a drivers.CallArgs) drivers.Result {
+			if a.Model == "claude-opus-5-5" {
+				return drivers.MockResult(func(r *drivers.Result) { r.ExitCode = new(1); r.ErrorCode = "AUTH" })
+			}
+			return planningJSONResult(t, engineDesignOutput(t))
+		}}
+		origWrite := writeDualDraftFile
+		writeDualDraftFile = func(name string, data []byte, perm os.FileMode) error {
+			if strings.HasSuffix(name, "-partial.json") {
+				return errors.New("partial payload boom")
+			}
+			return origWrite(name, data, perm)
+		}
+		t.Cleanup(func() { writeDualDraftFile = origWrite })
+		summary, err = RunTask(opts)
+		require.NoError(t, err)
+		require.Equal(t, "blocked", summary.PlanningPhase)
+		writeDualDraftFile = origWrite
+
+		// Missing partial file -> loadMatchingDualDraftPartial returns false
+		fx, opts := dualDraftFixture(t)
+		c, err := CreateContext(Opts{TaskDir: fx.taskDir, Cwd: fx.root, Config: opts.Config, Drivers: opts.Drivers, Log: func(string) {}})
+		require.NoError(t, err)
+		_, ok := c.loadMatchingDualDraftPartial(1, 1)
+		require.False(t, ok)
+	})
+}
