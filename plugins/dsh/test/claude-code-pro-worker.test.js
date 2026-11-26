@@ -440,10 +440,11 @@ test('an unavailable resume fails once without creating a replacement session', 
 
 test('the native deadline returns a failed receipt after cleanup', liveContract, async t => {
   const f = await setup(t, 'hang');
-  const receipt = resultFrame(await f.launch({ input: { ...f.request, timeoutMs: 350 } }).done, 1).receipt;
+  const receipt = resultFrame(await f.launch({ input: { ...f.request, timeoutMs: 900 } }).done, 1).receipt;
   assert.equal(receipt.execution.timedOut, true);
   assert.equal(receipt.cleanup.confirmed, true);
   assert.equal(receipt.session.resumable, false);
+  assert.ok(Number.isInteger(receipt.execution.processGroupId) && receipt.execution.processGroupId > 0);
   assert.throws(() => process.kill(-receipt.execution.processGroupId, 0), { code: 'ESRCH' });
 });
 

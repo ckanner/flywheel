@@ -5,6 +5,10 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.40.1 — 2026-11-26 (Raise macOS CI Go Test Package Deadline to 25m)
+
+- Raises `FLYWHEEL_TEST_TIMEOUT` from `15m` to `25m` in `Makefile` and extends the CI/publish verification job timeout to `55m` so the 800+ real-Git scenarios in `internal/machine` complete cleanly on GitHub-hosted `macos-latest` runners without cutting off at 99.3% (`v0.40.0` passed `ubuntu-latest` verification including `-race` and 36 paired scenarios, hit the 15m deadline on `macos-latest`, and was never published to npm).
+
 ## 0.40.0 — 2026-11-26 (DSH-Native Chat Stream, 3-Layer Context Engineering & Telemetry Workbench)
 
 - **DSH-native Chat Stream & New-Task Chat (`ChatStreamView`)**: redesign the Flywheel Workbench into a clean DeepSeek Harness–style chat stream. Empty or new tasks open on a centered welcome screen with intent cards (`Auto` / `Quick` / `Investigate`) and a floating bottom composer (editable workspace directory, mode toggle, repo image picker, and routing settings link) so sending the first message creates and starts the task immediately. Active tasks display the user's requirement bubble on the right and left-aligned orchestrator stage blocks (Planning with clickable sub-agent trace cards, inline blocked diagnostics, and inline human approval; Investigation; Wave parallel execution packet cards; and Delivery summary), with a main composer supporting design feedback, investigation follow-ups, and `@packetId` directed messaging.

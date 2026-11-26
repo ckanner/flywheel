@@ -5,8 +5,9 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 DATE := $(shell date +%Y-%m-%d)
 LDFLAGS := -s -w -X github.com/ckanner/flywheel/internal/build.Version=$(VERSION) -X github.com/ckanner/flywheel/internal/build.Date=$(DATE)
 # Hundreds of real Git/state scenarios share one package deadline. macOS CI
-# needs more than Go's default 10m; individual test guards still apply.
-FLYWHEEL_TEST_TIMEOUT ?= 15m
+# needs more than Go's default 10m (800+ real-Git machine tests exceed 15m on
+# loaded macOS arm64 runners); individual test guards still apply.
+FLYWHEEL_TEST_TIMEOUT ?= 25m
 
 .PHONY: build vet fmt-check test coverage quality-gate clean install
 
