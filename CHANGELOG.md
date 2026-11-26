@@ -5,6 +5,11 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.40.2 — 2026-11-26 (Allow Human Abandonment of Blocked Execution/Review Sessions & Surface Errors in UI)
+
+- **Support `session.abandon` for all managed session roles (`internal/machine/session_abandon.go`)**: extend explicit human-verified unknown-invocation abandonment (retaining all existing human-proof, `blocked`, `accounted`, `cleanup-confirmed`, unknown dispatch/outcome, and audit-trail invariants, plus clearing any incremental context checkpoint) from planning-only roles to `execute`, `review`, `judge`, and `judge-panel` so a truncated/crashed worker during execution or review no longer deadlocks a task permanently.
+- **Surface `session.abandon` rejections in `ChatStreamView`**: check `res?.sessionControl?.applied` before auto-starting the task and display any backend rejection message inline inside the blocked-session recovery card.
+
 ## 0.40.1 — 2026-11-26 (Raise macOS CI Go Test Package Deadline to 25m)
 
 - Raises `FLYWHEEL_TEST_TIMEOUT` from `15m` to `25m` in `Makefile` and extends the CI/publish verification job timeout to `55m` so the 800+ real-Git scenarios in `internal/machine` complete cleanly on GitHub-hosted `macos-latest` runners without cutting off at 99.3% (`v0.40.0` passed `ubuntu-latest` verification including `-race` and 36 paired scenarios, hit the 15m deadline on `macos-latest`, and was never published to npm).

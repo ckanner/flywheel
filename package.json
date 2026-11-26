@@ -1,6 +1,6 @@
 {
   "name": "@ckanner/flywheel",
-  "version": "0.40.1",
+  "version": "0.40.2",
   "description": "A deterministic Go orchestrator for coding-agent loops, with task contracts, verification gates, Git worktrees, and DSH desktop integration.",
   "bin": {
     "flywheel": "bin/flywheel.js",

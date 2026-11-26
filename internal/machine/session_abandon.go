@@ -54,11 +54,17 @@ func isSessionAbandon(request *SessionCommand) bool {
 	return request != nil && request.Action == "abandon"
 }
 
-func planningAbandonRole(role string) bool {
-	return role == "design-plan" || role == "design-review" || role == "plan" || role == "plan-review"
+func abandonableSessionRole(role string) bool {
+	switch role {
+	case "design-plan", "design-review", "plan", "plan-review",
+		"execute", "review", "judge", "judge-panel":
+		return true
+	default:
+		return false
+	}
 }
 
-// abandonSession retires an unresolved planning invocation after an explicit
+// abandonSession retires an unresolved managed-role invocation after an explicit
 // human decision. It never applies a stage result, never resumes the old
 // thread, and keeps the unknown dispatch/outcome facts in Last. The next role
 // invocation rebuilds a fresh generation under the normal binding checks.
@@ -82,8 +88,8 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	if request.Invocation != r.Last.ID {
 		return c.summary(), fmt.Errorf("session invocation %s does not match the recorded invocation %s", request.Invocation, r.Last.ID)
 	}
-	if !planningAbandonRole(r.Role) {
-		return c.summary(), fmt.Errorf("unknown invocation abandonment is limited to planning roles; use the packet reconciliation path for %s", r.Role)
+	if !abandonableSessionRole(r.Role) {
+		return c.summary(), fmt.Errorf("unknown invocation abandonment is not supported for role %s", r.Role)
 	}
 	if r.Last.Status != "blocked" {
 		return c.summary(), fmt.Errorf("session %s is %s, not blocked; only an unresolved invocation can be abandoned", request.Key, r.Last.Status)
@@ -173,6 +179,7 @@ func (c *Context) abandonSession(request SessionCommand) (TaskSummary, error) {
 	r.Reason = "human abandoned unknown invocation: " + request.Reason
 	r.ResumeCandidate = false
 	r.ThreadID = ""
+	r.Context = nil
 	c.State.Status = "paused"
 	entry := map[string]any{
 		"at": c.nowISO(), "action": "session-abandon", "session": request.Key,

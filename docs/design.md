@@ -398,7 +398,7 @@ policy-version 仍为 1，worker、lifecycle 和 recovery 协议分别版本化�
 Judge／里程碑和独立第二意见分开，保存实际任务与物理 cwd、绑定／目标／契约身份、
 generation、句柄、协议、resume-candidate、action/reason，以及最新调用的
 intent／received／consumed／blocked／abandoned、派发／结果／清理和用量事实。
-`abandoned` 是规划角色经人工确认后的终结状态，保留原 unknown 事实，见 §6.1。
+`abandoned` 是受管会话角色（规划、执行、审查与裁决）经人工确认后的终结状态，保留原 unknown 事实，见 §6.1。
 
 `state.worker-prewarm` 记录至多一个尚未交接或清理的准备意图，保存随机 ID、Review scope、运行身份和绑定摘要，不保存 prompt、凭证或可复用会话。先 CAS 保存意图，后启动 SDK；正式调用意图持久化后交接清理责任。未消费的终态回执在 `.control/prewarm/<id>/`，通过私有、有界文件与排他发布持久化，确认文件和目录同步，受现有 volatile 规则排除出 Git。恢复仅接受精确 ID／摘要、明确未发送 prompt、SDK 清理确认、外层 worker 及其原进程组均已退出；PID／进程组 ID 只用于检查退出，不能授权终止其他进程。没有可信证据、仍存活或标识被复用都保持阻断；重启不会续用预热实例，关闭优化也不能擦除旧责任。启动前 CAS 失败记录本地确定的 no-process 回执，不能为了补回执启动进程。
 
@@ -614,10 +614,10 @@ Codex 的保留预算包含答案、native 归属与 usage 证据。Kimi native 
 
 Kimi print 的失败调用没有持久化 dispatch/outcome 回执；被 SIGTERM 后 driver 只能记录 unknown。unknown 不能被换 fresh、换后端、删除账本或重新派发来“修复”，也不能由 status、绑定变更或工作台刷新自动变成已知。为规划角色增加受限的人工退役路径：
 
-- 仅 `design-plan`、`design-review`、`plan`、`plan-review` 的 `blocked` 调用可退役；记录必须已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown。
+- 受管会话角色（`design-plan`、`design-review`、`plan`、`plan-review`、`execute`、`review`、`judge`、`judge-panel`）的 `blocked` 调用可经人工退役；记录必须已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown。未识别角色仍拒绝。
 - 必须提供受限原因，并由验证过的 DSH 用户命令或控制终端证明这是人的决定；证明绑定 taskDir、key、revision、reason 和准确 invocation，不能跨任务或重复使用。模型工具不暴露该动作；宿主 env 证明会重新核对，不继承父进程伪造值。获得完整 shell 的模型进程已能直接改写账本，不属于本宿主证明边界，不宣称 OS 级防伪。
-- 状态变为 `abandoned`，保留原 unknown 事实、原因、时间、来源和旧 thread 证据；旧 thread 不再可恢复。不应用任何阶段结果，不再次派发模型。旧 Kimi resident Plan 的精确关联缓存在同一状态保存中同步退役，其他未知缓存保持阻断；线程和 unknown 事实另写入持久审计，后续代次不能覆盖证据。
-- 关联的规划 request 标为 `cancelled`；任务回到 `paused`，下一次显式 Plan 产生新 request/generation。`planningHasPendingReceipt` 把 `abandoned` 视作已终结的边界。
+- 状态变为 `abandoned`，保留原 unknown 事实、原因、时间、来源和旧 thread 证据；旧 thread 不再可恢复，增量上下文检查点一并清空。不应用任何阶段结果，不再次派发模型。旧 Kimi resident Plan 的精确关联缓存在同一状态保存中同步退役，其他未知缓存保持阻断；线程和 unknown 事实另写入持久审计，后续代次不能覆盖证据。
+- 关联的规划 request 标为 `cancelled`（执行／审查角色不影响既有规划 request）；任务回到 `paused`，下一次运行产生新 generation。`planningHasPendingReceipt` 把 `abandoned` 视作已终结的边界。
 - 不能把退役实现成“成功”或“未派发”；它只结束未知副作用，不伪造结果。
 
 控制信封的 `ok:true` 只表示控制请求被处理；异步 session 动作另返回 `session-control.applied/status/message/invocation`。只有操作前后 invocation 证据完整且匹配才确认本次变更；前态不可读时保留后态并说明效果无法验证，不能把既有终态当作本次成功，也不能推断命令必定未执行。工作台“核对”仍只刷新插件自己的未确认控制动作，不是引擎未知调用的退役入口。

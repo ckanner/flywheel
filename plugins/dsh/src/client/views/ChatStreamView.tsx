@@ -342,6 +342,7 @@ export function ChatStreamView({
   const [mentionActiveIdx, setMentionActiveIdx] = useState(0);
   const [mainAttachMenuOpen, setMainAttachMenuOpen] = useState(false);
   const [abandonReasons, setAbandonReasons] = useState<Record<string, string>>({});
+  const [abandonErrors, setAbandonErrors] = useState<Record<string, string>>({});
   const mainFileInputRef = useRef<HTMLInputElement | null>(null);
   const mainTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -1429,16 +1430,36 @@ export function ChatStreamView({
                                 const reason =
                                   val.trim() ||
                                   'Human confirmed workspace safe and cleared interrupted invocation to retry';
+                                setAbandonErrors(prev => {
+                                  const next = { ...prev };
+                                  delete next[item.key];
+                                  return next;
+                                });
                                 const res = await store.abandonSession(item.key, item.invocation, reason);
-                                if (res) {
+                                const ctrl = res?.sessionControl as { applied?: boolean; message?: string } | undefined;
+                                if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
                                   setAbandonReasons(prev => ({ ...prev, [item.key]: '' }));
                                   await store.startRun();
+                                } else {
+                                  const errMsg =
+                                    ctrl?.message ||
+                                    (typeof res?.error === 'string' ? res.error : '') ||
+                                    (isZh ? '未能清理阻塞会话，请查看引擎状态后重试。' : 'Failed to abandon blocked session.');
+                                  setAbandonErrors(prev => ({ ...prev, [item.key]: errMsg }));
                                 }
                               }}
                             >
                               {isZh ? '确认安全并重试' : 'Confirm Safe & Retry'}
                             </button>
                           </div>
+                          {abandonErrors[item.key] && (
+                            <div
+                              data-testid={`abandon-error-${item.invocation}`}
+                              style={{ marginTop: 6, fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                            >
+                              {abandonErrors[item.key]}
+                            </div>
+                          )}
                           <details className={styles.recoveryDetails}>
                             <summary>{isZh ? '查看技术详情' : 'Technical details'}</summary>
                             <div className={styles.recoveryDetailsBody}>

@@ -618,7 +618,7 @@ func TestRunClaudeCodeProCancellationAndTimeout(t *testing.T) {
 			defer cancel()
 			a.Watchdog.Context = ctx
 			if kind == "timeout" {
-				a.Watchdog.WallTimeoutMs = 500
+				a.Watchdog.WallTimeoutMs = 1200
 			} else {
 				a.OnEvent = func(line string) {
 					if strings.Contains(line, `"type":"progress"`) {

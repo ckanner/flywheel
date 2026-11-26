@@ -174,19 +174,19 @@ Go 将事件与原调用身份核对后，先原子保存并 `fsync` 检查点�
 
 只读查询可以重复。原生机器、历史文件或 journal 不可用时，不承诺跨机器恢复。supervisor 自身也被终止时可能只剩 pending；本实现没有 exactly-once 执行保证。
 
-### 人工退役未知的规划调用
+### 人工退役未知的受管调用
 
-规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）的调用如果没有可信 dispatch/outcome，且没有可恢复的 journal，可以明确退役，而不是让整个任务永久锁死。这个动作不是恢复或重放：它保留 unknown 事实，只结束该次调用的副作用范围。
+受管会话角色（`design-plan`、`design-review`、`plan`、`plan-review`、`execute`、`review`、`judge`、`judge-panel`）的调用如果没有可信 dispatch/outcome，且没有可恢复的 journal，可以明确退役，而不是让整个任务永久锁死。这个动作不是恢复或重放：它保留 unknown 事实，只结束该次调用的副作用范围。
 
 ```sh
 flywheel session /absolute/repo/docs/my-task \
-  --key design-plan/planning:engine-1-1 \
-  --abandon --reason "idle watchdog killed a live model call"
+  --key review/M01-T02 \
+  --abandon --reason "Confirmed read-only truncated review cleanup"
 ```
 
-要求：记录为 `blocked`、已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown；角色必须是规划角色。命令在控制终端显示准确调用 ID 并要求输入 `abandon <invocation>`；Flywheel 视图的同一动作只接受来源为真实用户的 `/flywheel` 命令。证明绑定 taskDir、key、revision、reason 和准确 invocation，不能跨任务或重复使用；模型工具不暴露该动作。有完整 shell 的模型进程已能直接改写 state.json，不属于本宿主证明边界。
+要求：记录为 `blocked`、已计量、清理已确认，且 dispatch 或 outcome 至少一个仍为 unknown；角色必须在受管白名单内。命令在控制终端显示准确调用 ID 并要求输入 `abandon <invocation>`；Flywheel 视图的同一动作只接受来源为真实用户的 `/flywheel` 命令。证明绑定 taskDir、key、revision、reason 和准确 invocation，不能跨任务或重复使用；模型工具不暴露该动作。有完整 shell 的模型进程已能直接改写 state.json，不属于本宿主证明边界。
 
-退役后记录变为 `abandoned`，保留原因、时间、来源和旧 thread 证据；旧 thread 永不续用。不应用任何阶段结果，也不再次调用模型。关联规划 request 标为 `cancelled`，任务回到 `paused`；之后显式运行 Plan 会创建新 request。`control session` 会返回 `session-control.applied/status/message`，不能用控制信封的 `ok:true` 推断退役成功。
+退役后记录变为 `abandoned`，保留原因、时间、来源和旧 thread 证据，并清空增量上下文检查点；旧 thread 永不续用。不应用任何阶段结果，也不再次调用模型。若关联规划 request 则标为 `cancelled`，任务回到 `paused`；之后再次运行会以全新代次继续。`control session` 会返回 `session-control.applied/status/message`，不能用控制信封的 `ok:true` 推断退役成功。
 
 旧 Kimi resident Plan 的精确关联续会话缓存，会在同一次状态保存中同步退役；其他线程和未知缓存仍保持阻断。原线程和 unknown dispatch/outcome 另保留在审计历史中，后续旧式调用覆盖 session 最新记录时不会丢失。DSH 先核对原始用户命令，再把引擎证明绑定到规范化任务路径；符号链接别名、尾斜线仍指向同一任务，但证明不能跨任务复用。
 

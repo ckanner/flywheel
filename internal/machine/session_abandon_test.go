@@ -219,13 +219,13 @@ func TestAbandonRejectsUnverifiedOrIneligibleCommands(t *testing.T) {
 			fx.ctx.State.Sessions.Records[fx.key].Last.Dispatch = "dispatched"
 			fx.ctx.State.Sessions.Records[fx.key].Last.Outcome = "completed"
 		}, "known dispatch and outcome"},
-		{"non-planning role", func(fx *abandonFixtureData, cmd *SessionCommand) {
+		{"unknown role", func(fx *abandonFixtureData, cmd *SessionCommand) {
 			record := fx.ctx.State.Sessions.Records[fx.key]
 			delete(fx.ctx.State.Sessions.Records, fx.key)
-			record.Role, record.Scope = "execute", "M01-T01"
-			fx.ctx.State.Sessions.Records["execute/M01-T01"] = record
-			cmd.Key = "execute/M01-T01"
-		}, "limited to planning roles"},
+			record.Role, record.Scope = "unsupported-role", "M01-T01"
+			fx.ctx.State.Sessions.Records["unsupported-role/M01-T01"] = record
+			cmd.Key = "unsupported-role/M01-T01"
+		}, "not supported for role"},
 		{"human control", func(fx *abandonFixtureData, _ *SessionCommand) {
 			fx.ctx.State.Handoff = &state.Handoff{Key: "execute/M01-T01"}
 		}, "human session control"},
@@ -291,6 +291,47 @@ func TestAbandonPlanRoleWithoutPlanningRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "abandoned", fx.ctx.State.Sessions.Records["plan/M-01"].Last.Status)
 	assert.Empty(t, fx.ctx.State.Sessions.Records["plan/M-01"].Last.Abandon.RequestID)
+}
+
+func TestAbandonUnknownExecutionAndReviewInvocations(t *testing.T) {
+	for _, tc := range []struct {
+		role  string
+		scope string
+	}{
+		{"review", "M01-T02"},
+		{"execute", "M01-T02"},
+		{"judge", "M-01"},
+		{"judge-panel", "M-01"},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			fx := abandonTaskFixture(t)
+			record := fx.ctx.State.Sessions.Records[fx.key]
+			delete(fx.ctx.State.Sessions.Records, fx.key)
+			key := sessionKey(tc.role, tc.scope)
+			record.Role, record.Scope = tc.role, tc.scope
+			record.Context = &state.SessionContext{Version: 1, Mode: "full", Identity: "ctx-id"}
+			fx.ctx.State.Sessions.Records[key] = record
+			origReqStatus := fx.ctx.State.Planning.Requests[0].Status
+
+			reason := "Human confirmed workspace safe after truncated " + tc.role + " worker."
+			cmd := abandonCommand(&fx, key, reason)
+			summary, err := fx.ctx.abandonSession(cmd)
+			require.NoError(t, err)
+			assert.Equal(t, "session-abandon", summary.Step.Name)
+			assert.Equal(t, "paused", fx.ctx.State.Status)
+			assert.Equal(t, origReqStatus, fx.ctx.State.Planning.Requests[0].Status, "non-planning abandon must not mutate planning requests")
+
+			updated := fx.ctx.State.Sessions.Records[key]
+			assert.Equal(t, "abandoned", updated.Last.Status)
+			assert.Empty(t, updated.ThreadID)
+			assert.False(t, updated.ResumeCandidate)
+			assert.Nil(t, updated.Context, "abandoned session must clear incremental context checkpoint")
+			require.NotNil(t, updated.Last.Abandon)
+			assert.Equal(t, "human", updated.Last.Abandon.Authority)
+			assert.Equal(t, abandonTestInvocation, updated.Last.Abandon.Invocation)
+			assert.Empty(t, updated.Last.Abandon.RequestID)
+		})
+	}
 }
 
 func TestAbandonReportsSaveFailureWithoutClaimingSuccess(t *testing.T) {

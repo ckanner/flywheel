@@ -216,19 +216,19 @@ Restarting the same task lets Go use the original adapter version, request/run I
 
 Queries may be repeated. Cross-machine recovery requires the original data and environment and is not promised. Killing the supervisor itself can leave pending evidence. This is not an exactly-once execution guarantee.
 
-### Explicitly retiring an unknown planning invocation
+### Explicitly retiring an unknown managed invocation
 
-A planning-role invocation (`design-plan`, `design-review`, `plan`, `plan-review`) whose dispatch or outcome is unproven and has no recoverable journal can be explicitly retired instead of blocking the task forever. This is not recovery or replay: it preserves the unknown facts and only ends the invocation's effect boundary.
+A managed-role invocation (`design-plan`, `design-review`, `plan`, `plan-review`, `execute`, `review`, `judge`, `judge-panel`) whose dispatch or outcome is unproven and has no recoverable journal can be explicitly retired instead of blocking the task forever. This is not recovery or replay: it preserves the unknown facts and only ends the invocation's effect boundary.
 
 ```sh
 flywheel session /absolute/repo/docs/my-task \
-  --key design-plan/planning:engine-1-1 \
-  --abandon --reason "idle watchdog killed a live model call"
+  --key review/M01-T02 \
+  --abandon --reason "Confirmed read-only truncated review cleanup"
 ```
 
-The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a planning role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The proof is bound to the task directory, key, revision, reason, and exact invocation and cannot be reused across tasks. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it. A model process with an unrestricted shell can already rewrite `state.json` and is outside this host-proof boundary.
+The record must be `blocked`, accounted, cleanup-confirmed, and have an unknown dispatch or outcome; the role must be a supported managed role. The command shows the exact invocation on a controlling terminal and requires `abandon <invocation>`. The proof is bound to the task directory, key, revision, reason, and exact invocation and cannot be reused across tasks. The Flywheel view uses the same action only for an exact user-sourced `/flywheel` command. Model tools do not expose it. A model process with an unrestricted shell can already rewrite `state.json` and is outside this host-proof boundary.
 
-The record becomes `abandoned` with its reason, time, source, and original thread evidence; the old thread is never resumed. No stage result is applied and no model is called again. The associated planning request becomes `cancelled`, the task returns to `paused`, and a later explicit Plan creates a new request. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
+The record becomes `abandoned` with its reason, time, source, and original thread evidence, and clears any incremental context checkpoint; the old thread is never resumed. No stage result is applied and no model is called again. Any associated planning request becomes `cancelled`, the task returns to `paused`, and the next run rebuilds a fresh generation. `control session` returns `session-control.applied/status/message`; the control envelope's `ok:true` does not prove abandonment succeeded.
 
 For a legacy Kimi resident Plan, the exact matching resume cache is retired in the same state write. Other threads and unknown caches remain blocked. The invocation's original thread and unknown dispatch/outcome are also retained in the audit history when a later legacy call replaces the session's latest record. DSH verifies the original user command before binding the engine proof to the canonical task path, so symlink aliases and trailing slashes identify the same task without allowing cross-task proof reuse.
 
