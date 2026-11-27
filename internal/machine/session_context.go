@@ -89,7 +89,11 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 		}
 		contents[ref] = sessionHash(raw)
 	}
-	checkpoint.Identity = sessionHash([]any{executeContextVersion, c.Spec, packet, packet.Body, c.Config.Verify.ProtectedTestPatterns, contents})
+	humanGuidance := ""
+	if ps := c.State.Packets[scope]; ps != nil {
+		humanGuidance = ps.HumanGuidance
+	}
+	checkpoint.Identity = sessionHash([]any{executeContextVersion, c.Spec, packet, packet.Body, c.Config.Verify.ProtectedTestPatterns, contents, humanGuidance})
 	if action != "resume" || previous == nil || previous.Context == nil || previous.Context.Version != executeContextVersion ||
 		previous.Context.Identity != checkpoint.Identity || previous.Last.Status != "consumed" {
 		return checkpoint, args.Prompt

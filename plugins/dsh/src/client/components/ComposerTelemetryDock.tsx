@@ -3,8 +3,6 @@ import { styles } from 'virtual:flywheel-styles';
 import { formatEffortLabel, formatModelBadge } from '../planning.ts';
 import type { TaskState, TraceDetail, TraceSummary } from '../types.ts';
 
-const DEFAULT_REBUILD_INPUT_TOKENS = 280_000;
-
 interface UsageNumbers {
   input: number;
   output: number;
@@ -282,26 +280,17 @@ export function SubSessionTelemetryDock({
           ? '缓存 —'
           : 'Cache —';
 
-  // Pill 3: Context window occupancy (exact ACP used/size when available; otherwise compare against
-  // 280K rebuild cap without misleadingly clamping multi-tool cumulative input to red 100%).
-  let ctxUsed: number | null = null;
-  let ctxWindow: number | null = null;
-  let ctxSource: 'acp' | 'rebuild-cap' | null = null;
-  if (trace.contextUsage && trace.contextUsage.size > 0) {
-    ctxUsed = trace.contextUsage.used;
-    ctxWindow = trace.contextUsage.size;
-    ctxSource = 'acp';
-  } else if (usage && usage.input > 0) {
-    ctxUsed = usage.input;
-    ctxWindow = DEFAULT_REBUILD_INPUT_TOKENS;
-    ctxSource = 'rebuild-cap';
-  }
+  // Pill 3: True single-turn provider context window occupancy (Codex token_count.last_token_usage,
+  // Claude assistant message.usage, or ACP usage_update). Never fabricate occupancy from cumulative
+  // multi-step billed input.
+  const ctxUsage = trace.contextUsage && trace.contextUsage.size > 0 ? trace.contextUsage : null;
+  const ctxUsed = ctxUsage ? ctxUsage.used : null;
+  const ctxWindow = ctxUsage ? ctxUsage.size : null;
+  const ctxSource = ctxUsage?.source ?? (ctxUsage ? 'acp' : null);
   const rawCtxPct = ctxUsed !== null && ctxWindow ? (ctxUsed / ctxWindow) * 100 : null;
-  const isCumulativeOverCap = ctxSource === 'rebuild-cap' && rawCtxPct !== null && rawCtxPct > 100;
   const ctxPct = rawCtxPct !== null ? Math.min(100, rawCtxPct) : null;
-  const ringTone: 'accent' | 'warn' | 'danger' | undefined = isCumulativeOverCap
-    ? 'warn'
-    : ctxPct !== null && ctxPct >= 85
+  const ringTone: 'accent' | 'warn' | 'danger' | undefined =
+    ctxPct !== null && ctxPct >= 85
       ? 'danger'
       : ctxPct !== null && ctxPct >= 65
         ? 'warn'
@@ -309,9 +298,22 @@ export function SubSessionTelemetryDock({
   const p3Label =
     ctxUsed === null || rawCtxPct === null
       ? '—'
-      : isCumulativeOverCap
-        ? formatCompactTokens(ctxUsed)
+      : rawCtxPct > 0 && rawCtxPct < 1
+        ? '<1%'
         : `${Math.round(ctxPct!)}%`;
+
+  const lastTurnHitRate =
+    ctxUsage && typeof ctxUsage.lastInput === 'number' && ctxUsage.lastInput > 0 && typeof ctxUsage.lastCacheRead === 'number'
+      ? (ctxUsage.lastCacheRead / ctxUsage.lastInput) * 100
+      : null;
+  const lastTurnHitTone: 'good' | 'warn' | 'danger' | undefined =
+    lastTurnHitRate === null ? undefined : lastTurnHitRate >= 90 ? 'good' : lastTurnHitRate >= 60 ? 'warn' : 'danger';
+  const ctxSourceLabel =
+    ctxSource === 'codex-last-turn'
+      ? (isZh ? 'Codex 末步窗口' : 'Codex last-turn window')
+      : ctxSource === 'claude-last-turn'
+        ? (isZh ? 'Claude 末步窗口' : 'Claude last-turn window')
+        : (isZh ? 'Provider 窗口 (ACP)' : 'Provider window (ACP)');
 
   const pills: PillConfig[] = [
     {
@@ -341,13 +343,23 @@ export function SubSessionTelemetryDock({
       rows: usage
         ? [
             {
-              label: isZh ? '缓存命中率' : 'Cache Hit Rate',
+              label: isZh ? '累计缓存命中率' : 'Cumulative Cache Hit',
               value: hitRate !== null ? `${hitRate.toFixed(1)}%` : (isZh ? '未上报' : 'Not reported'),
               mono: true,
               tone: hitTone === 'neutral' ? undefined : hitTone,
             },
+            ...(lastTurnHitRate !== null
+              ? [
+                  {
+                    label: isZh ? '末步缓存命中率' : 'Last-Turn Cache Hit',
+                    value: `${lastTurnHitRate.toFixed(1)}% (${formatCompactTokens(ctxUsage!.lastCacheRead!)}/${formatCompactTokens(ctxUsage!.lastInput!)})`,
+                    mono: true,
+                    tone: lastTurnHitTone,
+                  },
+                ]
+              : []),
             { label: isZh ? '总 Token' : 'Total Tokens', value: usage.total.toLocaleString(), mono: true },
-            { label: isZh ? '输入 Token' : 'Input Tokens', value: usage.input.toLocaleString(), mono: true },
+            { label: isZh ? '累计输入 Token' : 'Cumulative Input', value: usage.input.toLocaleString(), mono: true },
             { label: isZh ? '缓存读取 (Cache Read)' : 'Cache Read', value: usage.hasCacheRead ? usage.cacheRead.toLocaleString() : '—', mono: true },
             ...(usage.cacheWrite > 0 ? [{ label: isZh ? '缓存写入 (Cache Write)' : 'Cache Write', value: usage.cacheWrite.toLocaleString(), mono: true }] : []),
             { label: isZh ? '输出 Token' : 'Output Tokens', value: usage.output.toLocaleString(), mono: true },
@@ -362,37 +374,45 @@ export function SubSessionTelemetryDock({
       footnote:
         hitRate === null && trace.harness === 'antigravity'
           ? (isZh ? 'Antigravity ACP 当前仅上报上下文占用，未暴露服务端 cacheReadTokens。' : 'Antigravity ACP reports context occupancy but does not expose cacheReadTokens.')
-          : undefined,
+          : usage
+            ? (isZh
+                ? '单次调用包含多步工具交互时，总输入为各步累计计费 Token；单步真实上下文窗口占用见右侧圆环。'
+                : 'Cumulative input sums all tool steps in this call; see the ring pill on the right for single-turn window occupancy.')
+            : undefined,
     },
     {
       id: 'p3',
       testId: 'telemetry-sub-context',
       icon: <ContextRingIcon pct={ctxPct} tone={ringTone} />,
       label: p3Label,
-      popoverTitle: isZh ? '上下文窗口与防膨胀护栏' : 'Context Occupancy & Rebuild Cap',
+      popoverTitle: isZh ? '上下文窗口占用' : 'Context Window Occupancy',
       rows:
         ctxUsed !== null && ctxWindow
           ? [
               {
-                label:
-                  ctxSource === 'acp'
-                    ? (isZh ? '当前窗口占用' : 'Window Occupancy')
-                    : (isZh ? '本轮累计输入' : 'Cumulative Run Input'),
-                value:
-                  ctxSource === 'acp'
-                    ? `${formatCompactTokens(ctxUsed)} / ${formatCompactTokens(ctxWindow)} (${ctxPct!.toFixed(1)}%)`
-                    : `${formatCompactTokens(ctxUsed)} (护栏 ${formatCompactTokens(ctxWindow)})`,
+                label: isZh ? '当前窗口占用' : 'Window Occupancy',
+                value: `${formatCompactTokens(ctxUsed)} / ${formatCompactTokens(ctxWindow)} (${ctxPct!.toFixed(1)}%)`,
                 mono: true,
               },
               {
-                label: isZh ? '统计口径' : 'Source',
-                value:
-                  ctxSource === 'acp'
-                    ? (isZh ? 'Provider 上下文窗口 (ACP)' : 'Provider context window (ACP)')
-                    : (isZh ? '单次调用多工具步累计输入，超 280K 下轮自动重建' : 'Cumulative multi-step input; auto-rebuilds >280K'),
+                label: isZh ? '数据来源' : 'Source',
+                value: ctxSourceLabel,
               },
             ]
-          : [{ label: isZh ? '上下文占用' : 'Occupancy', value: isZh ? '等待首次用量上报' : 'Waiting for usage report' }],
+          : [
+              {
+                label: isZh ? '当前窗口占用' : 'Window Occupancy',
+                value: isZh ? 'Provider 未上报单步窗口' : 'Not reported by provider',
+              },
+            ],
+      footnote:
+        ctxUsed !== null && ctxWindow
+          ? (isZh
+              ? '反映 Provider 最后一次推理请求的单步真实上下文占用；若 Provider 发生上下文压缩，该占比会自动回落。'
+              : 'Shows true single-turn context occupancy on the latest request; drops automatically after provider compaction.')
+          : (isZh
+              ? '该运行时未暴露单步上下文窗口大小；多步累计计费输入见左侧缓存统计，避免将累计输入误算作窗口占用。'
+              : 'This runtime does not expose single-turn window size; cumulative multi-step tokens remain in the cache pill.'),
     },
   ];
 
@@ -540,11 +560,14 @@ export function MainStreamTelemetryDock({
       testId: 'telemetry-main-context',
       icon: <ContextRingIcon pct={guardrailPct} tone={guardrailTone} />,
       label: `${Math.round(guardrailPct)}%`,
-      popoverTitle: isZh ? '任务护栏与会话防膨胀策略' : 'Task Guardrail & Rebuild Policy',
+      popoverTitle: isZh ? '任务护栏与上下文管理' : 'Task Guardrail & Context Policy',
       rows: [
         { label: isZh ? '调用护栏使用' : 'Call Guardrail', value: guardrailDetail, mono: true },
-        { label: isZh ? '单会话重建阈值' : 'Auto-Rebuild Cap', value: '280K tokens', mono: true },
+        { label: isZh ? '上下文管理' : 'Context Compaction', value: isZh ? '由 Provider 自动压缩' : 'Provider auto-compact' },
       ],
+      footnote: isZh
+        ? '默认遵循各 Provider 自身上下文压缩与缓存复用；如需硬性上限，可在配置中显式设置 max-run-input-tokens。'
+        : 'Uses provider-native compaction and prompt caching by default; configure max-run-input-tokens explicitly to enforce a hard cap.',
     },
   ];
 

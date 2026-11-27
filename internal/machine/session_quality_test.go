@@ -148,12 +148,13 @@ func TestSessionQualityOnlyUsesSafeConfirmedEvidence(t *testing.T) {
 	}
 	assert.Empty(t, sessionQualityReason("execute", r, config.SessionQualityPolicy{}))
 	assert.Empty(t, sessionQualityReason("review", r, config.SessionQualityPolicy{MaxUnproductiveTurns: 1}))
-	hugeInput := defaultMaxRunInputTokens
+	hugeInput := int64(1_350_000)
 	overCap := *r
 	overQ := *r.Quality
 	overQ.LastInputTokens = &hugeInput
 	overCap.Quality = &overQ
-	assert.Contains(t, sessionQualityReason("execute", &overCap, config.SessionQualityPolicy{}), "measured run input limit reached")
+	assert.Empty(t, sessionQualityReason("execute", &overCap, config.SessionQualityPolicy{}), "cumulative multi-step run input must not trigger implicit rebuild when MaxRunInputTokens is unconfigured")
+	assert.Contains(t, sessionQualityReason("execute", &overCap, config.SessionQualityPolicy{MaxRunInputTokens: 280_000}), "measured run input limit reached")
 	assert.Empty(t, sessionRebuildHandoff(nil, "none"))
 
 	// Candidate progress resets only the bounded quality counter, not attempts.

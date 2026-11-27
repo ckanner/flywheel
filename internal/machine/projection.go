@@ -76,7 +76,11 @@ func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, err
 		compactCurrentExecutionBinding(packet.ExecutionPolicy, &bindingBudget)
 		packet.Evidence.Executor = evidenceSummary(packet.Evidence.Executor, "source", "report-sha256", "identity", "at")
 		packet.Evidence.L1 = evidenceSummary(packet.Evidence.L1, "pass", "identity", "identity-error", "at", "attribution")
-		packet.Evidence.Review = evidenceSummary(packet.Evidence.Review, "verdict", "identity", "scope", "score", "quick-eligible", "at")
+		reviewKeys := []string{"verdict", "identity", "scope", "score", "quick-eligible", "at"}
+		if packet.Status == "inbox" {
+			reviewKeys = append(reviewKeys, "findings", "reasons", "advisory")
+		}
+		packet.Evidence.Review = evidenceSummary(packet.Evidence.Review, reviewKeys...)
 		packet.Evidence.FinalGate = evidenceSummary(packet.Evidence.FinalGate, "pass", "identity", "at")
 		packet.Evidence.DefectInjection = evidenceSummary(packet.Evidence.DefectInjection, "outcome", "skipped", "detail", "at")
 		packet.LastFeedback = evidenceSummary(packet.LastFeedback, "error-code", "reason", "parallel-error", "at")

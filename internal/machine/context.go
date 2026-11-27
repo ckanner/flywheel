@@ -61,6 +61,7 @@ type Context struct {
 	prewarmReview      bool
 	parallel           *parallelLane
 	sessionCommand     *SessionCommand
+	packetCommand      *PacketCommand
 	runID              string
 	consoleRetryReason string
 	phaseParent        string

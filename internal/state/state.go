@@ -89,6 +89,15 @@ var osRename = os.Rename
 // osReadFile 可替换注入点（CAS 读盘竞态不可稳定复现，测试注入覆盖）。
 var osReadFile = os.ReadFile
 
+// PacketSignoff records an explicit human L1-green sign-off on an inbox packet.
+type PacketSignoff struct {
+	At        string `json:"at"`
+	Reason    string `json:"reason"`
+	Authority string `json:"authority"`
+	Source    string `json:"source"`
+	Candidate string `json:"candidate"`
+}
+
 // PacketState 单个 packet 的执行状态。
 type PacketState struct {
 	PendingStrategy      string                   `json:"pending-strategy,omitempty"`
@@ -107,6 +116,8 @@ type PacketState struct {
 	Exit                 *ExitInfo                `json:"exit"`
 	BaseRef              *string                  `json:"base-ref"`
 	ContractSyncPending  bool                     `json:"contract-sync-pending,omitempty"`
+	HumanGuidance        string                   `json:"human-guidance,omitempty"`
+	HumanSignoff         *PacketSignoff           `json:"human-signoff,omitempty"`
 	// Commit 编排器单元提交记录：对象 {sha,message,at,ledger-sha?,merge-error?}
 	// 或 {sha,message,at} / {skipped|error,...}（in-place 分支直接落 CommitOutcome
 	// 形状）。state.schema.json 声明为对象——machine 层写入，此处仅保证 JSON 往返。

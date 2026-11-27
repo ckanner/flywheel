@@ -154,7 +154,7 @@ func (c *Context) executeStep(packet *contract.Packet) (execOutcome, error) {
 			_ = os.Remove(filepath.Join(executionTaskDir, reportRel))
 		}
 		prompt := prompts.BuildExecutePrompt(packet, c.Spec, executionTaskDir, uCwd, ps.Attempts, prompts.ExecuteOptions{
-			Feedback: ps.LastFeedback, ProtectedTestPatterns: c.Config.Verify.ProtectedTestPatterns,
+			Feedback: ps.LastFeedback, ProtectedTestPatterns: c.Config.Verify.ProtectedTestPatterns, HumanGuidance: ps.HumanGuidance,
 		})
 		visited[channel] = true
 		apiKeys := c.apiKeysFor(channel)

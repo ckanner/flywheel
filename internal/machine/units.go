@@ -260,10 +260,13 @@ func (c *Context) completeUnit(packet *contract.Packet) error {
 	id := packet.PacketID
 	ps := c.State.Packets[id]
 	review, _ := ps.Evidence.Review.(map[string]any)
-	if c.quick() && (!c.currentFinalGate(packet) || !c.validFinalReview(packet)) {
+	l1Identity := evidenceIdentity(ps.Evidence.L1)
+	humanSignedOff := ps.HumanSignoff != nil && ps.HumanSignoff.Authority == "human" &&
+		l1Identity != "" && ps.HumanSignoff.Candidate == l1Identity
+	if c.quick() && (!c.currentFinalGate(packet) || (!c.validFinalReview(packet) && !humanSignedOff)) {
 		return fmt.Errorf("%w: Quick final verification or task review is stale", ErrCommitFailed)
 	}
-	if !c.currentL1Evidence(packet) || review["verdict"] != "pass" || evidenceIdentity(ps.Evidence.Review) != evidenceIdentity(ps.Evidence.L1) {
+	if !c.currentL1Evidence(packet) || (!humanSignedOff && (review["verdict"] != "pass" || evidenceIdentity(ps.Evidence.Review) != l1Identity)) {
 		return fmt.Errorf("%w: candidate changed or verification evidence is stale", ErrCommitFailed)
 	}
 	failPersistence := func(stage, message string) error {
@@ -929,7 +932,7 @@ func reviewReturnCount(ps *state.PacketState) int {
 		if !ok {
 			continue
 		}
-		if entry["policy"] == "return-to-planner" {
+		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
 			break
 		}
 		if entry["scope"] == "attempt" && entry["error-code"] == string(errReviewReturned) {

@@ -28,6 +28,7 @@ type controlResponse struct {
 	InputImages     *imageinput.Inspection          `json:"inputImages,omitempty"`
 	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
 	SessionControl  *SessionControlReceipt          `json:"session-control,omitempty"`
+	PacketControl   *PacketControlReceipt           `json:"packet-control,omitempty"`
 	TaskTitle       string                          `json:"taskTitle,omitempty"`
 	Preparation     *state.PreparationState         `json:"preparation,omitempty"`
 	Projection      string                          `json:"projection,omitempty"`
@@ -174,7 +175,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|delivery|deliver|config|config-edit|config-save|doctor|images|models>",
+		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|packet|delivery|deliver|config|config-edit|config-save|doctor|images|models>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -261,6 +262,8 @@ func controlCmd() *cobra.Command {
 					}
 				case "session":
 					reply, err = startSessionControl(cmd, resolvedTask, resolvedCwd)
+				case "packet":
+					reply, err = startPacketControl(cmd, resolvedTask, resolvedCwd)
 				case "history":
 					reply.History, err = machine.ReadSessionHistory(resolvedTask, sessionKey)
 				case "metrics":
@@ -314,7 +317,7 @@ func controlCmd() *cobra.Command {
 						err = fmt.Errorf("preflight found blocking checks; inspect diagnostic.checks")
 					}
 				default:
-					err = fmt.Errorf("control action must be planning, launch, start, step, status, stop, investigate, node, runs, metrics, history, session, delivery, deliver, config, config-edit, config-save, or doctor")
+					err = fmt.Errorf("control action must be planning, launch, start, step, status, stop, investigate, node, runs, metrics, history, session, packet, delivery, deliver, config, config-edit, config-save, or doctor")
 				}
 			}
 			if resolvedCwd != "" {

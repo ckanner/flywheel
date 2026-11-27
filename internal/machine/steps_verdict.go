@@ -283,6 +283,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 		DiffText:        diffText,
 		DefectInjection: defectInjection,
 		PriorFindings:   priorFindings,
+		HumanGuidance:   ps.HumanGuidance,
 	}
 	if final {
 		promptArgs.FinalSpec, promptArgs.FinalGate, promptArgs.Workflow = c.Spec, ps.Evidence.FinalGate, c.State.Workflow
@@ -336,7 +337,9 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 	}
 	c.save()
 	currOpen := countOpenReviewFindings(r.Verdict.Findings)
-	converging := len(priorFindings) > 0 && currOpen > 0 && currOpen < len(priorFindings)
+	resolvedCount := countResolvedReviewFindings(r.Verdict.Findings)
+	converging := (len(priorFindings) > 0 && currOpen > 0 && currOpen < len(priorFindings)) ||
+		(len(priorFindings) == 0 && resolvedCount > 0 && currOpen > 0)
 	return reviewOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict, Converging: converging}, nil
 }
 
@@ -390,6 +393,16 @@ func countOpenReviewFindings(findings []prompts.ReviewFinding) int {
 	n := 0
 	for _, f := range findings {
 		if f.Status != "resolved" && f.Severity != "minor" {
+			n++
+		}
+	}
+	return n
+}
+
+func countResolvedReviewFindings(findings []prompts.ReviewFinding) int {
+	n := 0
+	for _, f := range findings {
+		if f.Status == "resolved" {
 			n++
 		}
 	}

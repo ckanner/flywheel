@@ -256,7 +256,17 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 | `max-unproductive-turns` | Execute 连续完成调用但候选摘要未变化的次数 |
 | `max-run-input-tokens` | 最近一次可完整归属的实际输入 token 数；不是猜测的上下文窗口大小 |
 
-所有阈值默认关闭。只有原调用已安全终止、计量并消费后，阈值才可让下一次调用重建。unknown 或待消费结果优先处理，不能借重建绕过。
+所有阈值默认关闭。Flywheel 不再对多步累计计费输入启用隐式自动重建；默认交由 Provider 自身压缩管理单步上下文，仅当你显式设置 `max-run-input-tokens > 0` 时按该阈值重建。只有原调用已安全终止、计量并消费后，阈值才可让下一次调用重建。unknown 或待消费结果优先处理，不能借重建绕过。
+
+## 人工处置已升级到 `inbox` 的单元
+
+当单元因评审未收敛等原因升级到 `inbox` 时，严禁手改 `state.json`。可通过 DSH 桌面端主流程底部的**人工处置卡片**或交互式 CLI（`flywheel packet <taskDir> --id <packet-id> (--retry|--replan|--accept) --reason <text> [--guidance <text>]`）完成三项一等操作：
+
+- **带指导重试（`retry`）**：持久化可选的权威 `human-guidance`（同时注入 Execute 与 Review 提示词），重置 `failed-attempts` 与空转签名，在 `retry-history` 写入 `human-triage` 边界重置返修计数，将单元重新武装为 `pending`。
+- **发起单包契约修订（`replan`）**：授权 Plan Loop 结合人工理由与指导修订该单元契约，持久化契约、清除陈旧证据并重新武装为 `pending`。
+- **人工签核放行（`accept`）**：**仅当**确定性 L1 门禁（`currentL1Evidence`）在当前候选上全绿时允许执行；记录绑定该候选指纹的 `human-signoff` 并完成提交与合并。
+
+以上三项操作均要求经校验的人工证明（DSH 宿主命令边界生成的 `FLYWHEEL_PACKET_USER_ACTION` 或交互式控制终端确认），绝不暴露给 LLM 模型工具。
 
 重建保留明确原因与 generation，并用当前 Spec、packet、工作区、合法报告、验证与结构化反馈交接。它不读取另一个角色的私有 transcript，不以“压缩成功”伪造模型事实，也不另发未计量的模型压缩调用。Review 即使续用自己历史，仍须检查完整当前候选。
 

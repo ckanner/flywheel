@@ -15,13 +15,11 @@ func sessionQualityMode(role string, configured config.SessionsConfig) string {
 	return configured.ModeForRole(role)
 }
 
-// defaultMaxRunInputTokens prevents silent long-session context-rot/overflow
-// when no explicit max-run-input-tokens threshold is configured.
-const defaultMaxRunInputTokens int64 = 280_000
-
 // These are observed workload limits, not a guessed native context-window size
-// or a semantic judgement by Go. A rebuild never resolves an unknown invocation
-// or consumes an unapplied result.
+// or a semantic judgement by Go. Cumulative multi-step run input (Usage.Input)
+// can reach >1M tokens across tool calls while single-turn context occupancy is
+// still <20%, so max-run-input-tokens is enforced only when explicitly configured.
+// A rebuild never resolves an unknown invocation or consumes an unapplied result.
 func sessionQualityReason(role string, previous *state.SessionRecord, policy config.SessionQualityPolicy) string {
 	if previous == nil || previous.Quality == nil || !previous.ResumeCandidate || previous.Last == nil ||
 		previous.Last.Status != "consumed" || !previous.Last.Accounted || !previous.Last.CleanupConfirmed ||
@@ -36,12 +34,8 @@ func sessionQualityReason(role string, previous *state.SessionRecord, policy con
 	if role == "execute" && policy.MaxUnproductiveTurns > 0 && q.UnproductiveTurns >= policy.MaxUnproductiveTurns {
 		return fmt.Sprintf("context-quality: unchanged candidate limit reached (%d >= %d)", q.UnproductiveTurns, policy.MaxUnproductiveTurns)
 	}
-	maxInput := policy.MaxRunInputTokens
-	if maxInput <= 0 {
-		maxInput = defaultMaxRunInputTokens
-	}
-	if q.LastInputTokens != nil && *q.LastInputTokens >= maxInput {
-		return fmt.Sprintf("context-quality: measured run input limit reached (%d >= %d)", *q.LastInputTokens, maxInput)
+	if policy.MaxRunInputTokens > 0 && q.LastInputTokens != nil && *q.LastInputTokens >= policy.MaxRunInputTokens {
+		return fmt.Sprintf("context-quality: measured run input limit reached (%d >= %d)", *q.LastInputTokens, policy.MaxRunInputTokens)
 	}
 	return ""
 }

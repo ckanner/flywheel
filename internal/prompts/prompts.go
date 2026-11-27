@@ -104,10 +104,11 @@ func joinNonEmpty(items []string, empty string) string {
 	return strings.Join(items, ", ")
 }
 
-// ExecuteOptions 追加执行上下文；保护模式属于稳定契约，失败反馈只进易变尾部。
+// ExecuteOptions 追加执行上下文；保护模式属于稳定契约，失败反馈与人工指导只进易变尾部。
 type ExecuteOptions struct {
 	ProtectedTestPatterns []string
 	Feedback              any
+	HumanGuidance         string
 }
 
 // BuildExecutePrompt 执行单元提示词。stable 段字节稳定；volatile 段只在末尾。
@@ -198,6 +199,9 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"task directory: " + taskDir,
 		"started-at: " + state.NowISO(),
 	}
+	if guidance := strings.TrimSpace(options.HumanGuidance); guidance != "" {
+		volatile = append(volatile, "", "## Human triage guidance (authoritative scope decision)", guidance)
+	}
 	if options.Feedback != nil {
 		if attempt > 1 && isReviewReturnFeedback(options.Feedback) {
 			if summary := extractReviewFindingsSummary(options.Feedback); summary != "" {
@@ -277,6 +281,7 @@ type ReviewArgs struct {
 	DiffText        string
 	DefectInjection any
 	PriorFindings   []ReviewFinding
+	HumanGuidance   string
 	FinalSpec       *contract.Spec
 	FinalGate       any
 	Workflow        any
@@ -301,7 +306,10 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
 		"- Never block on orchestrator metadata: state.json, ledger directories, and Flywheel delivery receipts are owned by the Go orchestrator (executors are forbidden to edit them). Never fail review because a worktree copy of state.json lacks an updated delivery checkpoint.",
 		"- Complete enumeration (no drip-feeding): whenever reporting a class of defects (e.g. missing exports, failing types, missing assertions), list EVERY missing or broken item exhaustively in that single round — never summarize with 'including A, B...' and hold back remaining items for later rounds.",
+		"- Closed-world DoD: judge strictly against the packet's declared goal, numbered requirements, boundaries, and review rubric. Treat requirements, abstractions, or edge cases not stated in the contract as non-blocking advisory notes, not blockers.",
+		"- Test proportionality: unit tests must exercise real behavior and invariants for each requirement rather than tautological stubs; do NOT demand exhaustive meta-tests (tests of tests, mock/assertion-library internals, or speculative edge cases beyond the contract) once behavior and core invariants are genuinely verified.",
 		"- Severity tiering: separate blocking defects (severity:\"blocker\"|\"major\", return/verification-gap) from non-blocking style/polish or optional test-hardening notes (severity:\"minor\" or advisory, never failing pass).",
+		"- Round-2+ scope freeze (delta review): when prior open findings are listed below, focus on verifying closure of those findings and checking for concrete regressions introduced by the fix. Do NOT open new non-regression defects on untouched code that was already acceptable in prior rounds.",
 		"- Monotone convergence (do not move goalposts): across review rounds, verify whether prior blocking defects or verification-gaps are closed and check for real regressions; do NOT endlessly invent hypothetical micro-mutations or test-of-a-test parser edge cases against already-thorough unit tests when every requirement is genuinely verified and the implementation has no defects.",
 	}
 	if a.FinalSpec == nil {
@@ -364,6 +372,14 @@ func BuildReviewPrompt(a ReviewArgs) string {
 			"## Prior review open findings (verify closure monotonically)",
 			string(priorJSON),
 			"Verify each prior open finding explicitly and return its same ID with status:\"resolved\" (plus concrete resolution evidence) when fixed, or status:\"open\" if still broken.",
+		)
+	}
+	if guidance := strings.TrimSpace(a.HumanGuidance); guidance != "" {
+		sections = append(sections,
+			"",
+			"## Human triage guidance (authoritative scope decision)",
+			guidance,
+			"Honor this human scope decision when classifying blocking vs advisory items; do not block on items the human explicitly scoped out or deferred.",
 		)
 	}
 	if a.FinalSpec != nil {

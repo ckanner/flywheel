@@ -510,21 +510,21 @@ test("registry visibility has one deadline including query time and never starts
       queries.push({ at: elapsed, ...options });
       assert.equal(args[0], "view");
       assert.ok(Number.isInteger(options.timeout) && options.timeout > 0);
-      assert.ok(options.timeout <= Math.min(30000, 180000 - elapsed));
+      assert.ok(options.timeout <= Math.min(30000, 360000 - elapsed));
       const duration = Math.min(24000, options.timeout);
       queryTime += duration; elapsed += duration;
       return missing();
     },
     wait: async (milliseconds) => {
-      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 180000 - elapsed));
+      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 360000 - elapsed));
       waitTime += milliseconds; elapsed += milliseconds;
     },
-  }), /not visible within 180s/);
-  assert.equal(elapsed, 180000);
-  assert.equal(queryTime + waitTime, 180000);
+  }), /not visible within 360s/);
+  assert.equal(elapsed, 360000);
+  assert.equal(queryTime + waitTime, 360000);
   assert.ok(queryTime > 0 && waitTime > 0);
   assert.ok(queries.at(-1).timeout < 30000, "the last query is limited by the remaining budget");
-  assert.ok(queries.every((query) => query.at < 180000 && query.killSignal === "SIGKILL"));
+  assert.ok(queries.every((query) => query.at < 360000 && query.killSignal === "SIGKILL"));
 });
 
 test("registry visibility cannot succeed or start another query after the deadline", async (t) => {
@@ -536,11 +536,11 @@ test("registry visibility cannot succeed or start another query after the deadli
       now: () => elapsed,
       runNpm: () => {
         reads++;
-        if (overrun === "query") { elapsed = 180001; return ok(entry.integrity); }
+        if (overrun === "query") { elapsed = 360001; return ok(entry.integrity); }
         return missing();
       },
-      wait: async () => { elapsed = 180001; },
-    }), /not visible within 180s/);
+      wait: async () => { elapsed = 360001; },
+    }), /not visible within 360s/);
     assert.equal(reads, 1, overrun);
   }
 });
@@ -589,7 +589,7 @@ exit 91
   const source = `const { waitForPackage } = require(${JSON.stringify(script)});
 let ticks = 0;
 waitForPackage({ name: "@fixture/query", version: "1.0.0" }, {
-  now: () => ticks++ === 0 ? 0 : 179000,
+  now: () => ticks++ === 0 ? 0 : 359000,
 }).then(() => { process.exitCode = 1; }, (error) => console.log(JSON.stringify({ error: error.message })));
 `;
   const { stdout } = await promisify(execFile)(process.execPath, ["-e", source], {
@@ -610,8 +610,8 @@ test("a visibility timeout keeps the same candidate reusable without republishin
   const remote = registry(candidate);
   const first = candidate.packages[0];
   remote.override = (args) => args[0] === "view" && args[1] === `${first.name}@${first.version}` ? missing() : undefined;
-  await assert.rejects(publish(candidate, directory, remote.options), /not visible within 180s/);
-  assert.equal(remote.elapsed, 180000);
+  await assert.rejects(publish(candidate, directory, remote.options), /not visible within 360s/);
+  assert.equal(remote.elapsed, 360000);
   assert.deepEqual(remote.calls.filter((args) => args[0] === "publish").map((args) => path.basename(args[1])), [first.filename]);
   assert.equal(remote.versions.get(first.name), first.integrity, "upload succeeded even though the view endpoint lagged");
   assert.ok([...remote.latest.values()].every((value) => value === "0.22.1"));
@@ -724,18 +724,18 @@ test("latest and integrity queries share one deadline and stop before starting a
     now: () => elapsed,
     runNpm: (args, options) => {
       queries.push({ at: elapsed, field: args[2], ...options });
-      assert.ok(elapsed < 180000, "do not start the second view after the first consumes the budget");
+      assert.ok(elapsed < 360000, "do not start the second view after the first consumes the budget");
       assert.ok(Number.isInteger(options.timeout) && options.timeout > 0);
-      assert.ok(options.timeout <= Math.min(30000, 180000 - elapsed));
+      assert.ok(options.timeout <= Math.min(30000, 360000 - elapsed));
       elapsed += Math.min(24000, options.timeout);
       return args[2] === "dist-tags.latest" ? ok("0.22.1") : ok(candidate.packages[0].integrity);
     },
     wait: async (milliseconds) => {
-      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 180000 - elapsed));
+      assert.ok(milliseconds > 0 && milliseconds <= Math.min(15000, 360000 - elapsed));
       elapsed += milliseconds;
     },
-  }), /latest does not identify the verified version within 180s/);
-  assert.equal(elapsed, 180000);
+  }), /latest does not identify the verified version within 360s/);
+  assert.equal(elapsed, 360000);
   assert.ok(queries.some((query) => query.field === "dist.integrity"));
   assert.ok(queries.at(-1).timeout < 30000);
   assert.ok(queries.every((query) => query.killSignal === "SIGKILL"));
@@ -747,8 +747,8 @@ test("a latest visibility timeout resumes the same candidate without repeating c
   const delayed = candidate.packages[0];
   remote.override = (args) => args[0] === "view" && args[1] === delayed.name && args[2] === "dist-tags.latest"
     ? ok("0.22.1") : undefined;
-  await assert.rejects(promote(candidate, remote.options), /latest does not identify the verified version within 180s/);
-  assert.equal(remote.elapsed, 180000);
+  await assert.rejects(promote(candidate, remote.options), /latest does not identify the verified version within 360s/);
+  assert.equal(remote.elapsed, 360000);
   assert.deepEqual(remote.calls.filter((args) => args[0] === "dist-tag").map((args) => args[2]),
     candidate.packages.map((entry) => `${entry.name}@${VERSION}`));
   assert.ok([...remote.latest.values()].every((value) => value === VERSION), "mutations succeeded before delayed verification failed");

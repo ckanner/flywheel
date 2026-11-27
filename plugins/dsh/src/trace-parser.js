@@ -618,6 +618,14 @@ function cleanUserPromptText(raw) {
     .trim();
 }
 
+function inferModelContextWindow(model) {
+  if (typeof model !== 'string' || !model.trim()) return 0;
+  const m = model.toLowerCase();
+  if (m.includes('[1m]') || m.includes('1m-context')) return 1_000_000;
+  if (m.includes('claude')) return 200_000;
+  return 0;
+}
+
 function parseJsonLine(rawLine, ts, blocks, sessionRef, activitySteps = []) {
   let obj;
   try {
@@ -644,7 +652,8 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef, activitySteps = []) {
     sessionRef.sessionId = discoveredSession;
   }
 
-  // Capture context window occupancy from ACP usage_update or worker telemetry frames.
+  // Capture context window occupancy from ACP usage_update, Codex rollout token_count,
+  // Claude native assistant usage, or worker telemetry frames.
   const usageUpdate =
     (obj.type === 'usage_update' && obj) ||
     (obj.update?.sessionUpdate === 'usage_update' && obj.update) ||
@@ -652,7 +661,45 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef, activitySteps = []) {
     (obj.receipt?.contextUsage && typeof obj.receipt.contextUsage === 'object' && obj.receipt.contextUsage) ||
     null;
   if (usageUpdate && typeof usageUpdate.used === 'number' && typeof usageUpdate.size === 'number' && usageUpdate.size > 0) {
-    sessionRef.contextUsage = { used: usageUpdate.used, size: usageUpdate.size };
+    sessionRef.contextUsage = {
+      used: usageUpdate.used,
+      size: usageUpdate.size,
+      ...(typeof usageUpdate.source === 'string' && usageUpdate.source ? { source: usageUpdate.source } : {}),
+    };
+  }
+  if (obj.type === 'event_msg' && obj.payload?.type === 'token_count' && obj.payload?.info && typeof obj.payload.info === 'object') {
+    const info = obj.payload.info;
+    const last = info.last_token_usage;
+    const win = info.model_context_window;
+    if (last && typeof last === 'object' && typeof last.input_tokens === 'number' && last.input_tokens > 0 && typeof win === 'number' && win > 0) {
+      const out = typeof last.output_tokens === 'number' ? last.output_tokens : 0;
+      const cached = typeof last.cached_input_tokens === 'number' ? last.cached_input_tokens : 0;
+      sessionRef.contextUsage = {
+        used: last.input_tokens + out,
+        size: win,
+        source: 'codex-last-turn',
+        lastInput: last.input_tokens,
+        lastCacheRead: cached,
+      };
+    }
+  }
+  if (obj.type === 'assistant' && obj.message?.usage && typeof obj.message.usage === 'object') {
+    const u = obj.message.usage;
+    const inp =
+      (typeof u.input_tokens === 'number' ? u.input_tokens : 0) +
+      (typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : 0) +
+      (typeof u.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : 0);
+    const out = typeof u.output_tokens === 'number' ? u.output_tokens : 0;
+    const win = inferModelContextWindow(typeof obj.message.model === 'string' ? obj.message.model : sessionRef.model || '');
+    if (inp > 0 && win > 0) {
+      sessionRef.contextUsage = {
+        used: inp + out,
+        size: win,
+        source: 'claude-last-turn',
+        lastInput: inp,
+        lastCacheRead: typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : 0,
+      };
+    }
   }
 
   // 0. Antigravity CLI native transcript (`PLANNER_RESPONSE`, `GENERIC`, `ERROR_MESSAGE`)
@@ -1143,7 +1190,7 @@ function parseLiveJsonlFile(rawText, fileMtimeMs) {
   }
   if (!start) return null;
 
-  const sessionRef = { sessionId: end?.sessionId || start.requestedThread || '', harness: end?.harness || start.harness || '' };
+  const sessionRef = { sessionId: end?.sessionId || start.requestedThread || '', harness: end?.harness || start.harness || '', model: end?.model || start.model || '' };
   const rawBlocks = [];
   const activitySteps = [];
   for (const ev of events) {
@@ -1581,22 +1628,39 @@ async function enrichDetailWithNativeTranscript(selected, taskDir) {
   if (!selected) return selected;
   const existingBlocks = Array.isArray(selected.blocks) ? selected.blocks : [];
   const alreadyHasTools = existingBlocks.some(b => b.kind === 'tool_call' || b.kind === 'tool_result');
-  if (alreadyHasTools) return selected;
+  if (alreadyHasTools && selected.contextUsage) return selected;
   const located = await locateNativeTranscriptPath(selected, taskDir);
   if (!located?.path) return selected;
   const raw = await readFile(located.path, 'utf8').catch(() => '');
   if (!raw) return selected;
   const nativeBlocks = [];
   const nativeSteps = [];
-  const sessionRef = { sessionId: selected.sessionId || located.sessionId || '', harness: selected.harness || '' };
+  const startedMs = Date.parse(selected.startedAt || '') || 0;
+  const endedMs = !selected.running ? (Date.parse(selected.updatedAt || '') || 0) : 0;
+  const sessionRef = { sessionId: selected.sessionId || located.sessionId || '', harness: selected.harness || '', model: selected.model || '' };
+  let windowedContextUsage = null;
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
+    const prevCtx = sessionRef.contextUsage;
     parseJsonLine(line, '', nativeBlocks, sessionRef, nativeSteps);
+    if (sessionRef.contextUsage && sessionRef.contextUsage !== prevCtx && startedMs > 0) {
+      try {
+        const parsedLine = JSON.parse(line);
+        const lineMs = Date.parse(parsedLine?.timestamp || '') || 0;
+        if (lineMs >= startedMs - 5_000 && (!endedMs || lineMs <= endedMs + 15_000)) {
+          windowedContextUsage = sessionRef.contextUsage;
+        }
+      } catch {
+        // Ignore timestamp parsing issues; fallback to sessionRef.contextUsage.
+      }
+    }
+  }
+  const resolvedContextUsage = windowedContextUsage || sessionRef.contextUsage || selected.contextUsage || null;
+  if (alreadyHasTools) {
+    return resolvedContextUsage ? { ...selected, contextUsage: resolvedContextUsage } : selected;
   }
   // When a persistent native session (e.g. Codex resume) spans multiple Flywheel
   // invocations, scope blocks to this invocation's time window when timestamps match.
-  const startedMs = Date.parse(selected.startedAt || '') || 0;
-  const endedMs = !selected.running ? (Date.parse(selected.updatedAt || '') || 0) : 0;
   let scopedBlocks = nativeBlocks;
   if (startedMs > 0) {
     const inWindow = nativeBlocks.filter(b => {
@@ -1612,7 +1676,9 @@ async function enrichDetailWithNativeTranscript(selected, taskDir) {
     b => b.kind === 'user_prompt' || b.kind === 'thinking' || b.kind === 'tool_call' || b.kind === 'tool_result' || b.kind === 'progress',
   );
   const nativeAssistant = scopedBlocks.filter(b => b.kind === 'assistant');
-  if (richChain.length === 0 && nativeAssistant.length === 0) return selected;
+  if (richChain.length === 0 && nativeAssistant.length === 0) {
+    return resolvedContextUsage ? { ...selected, contextUsage: resolvedContextUsage } : selected;
+  }
   // Drop live commentary thinking blocks when native transcript provides the exact ordered chain.
   const hasNativeThinkingOrTools = richChain.some(b => b.kind === 'thinking' || b.kind === 'tool_call' || b.kind === 'tool_result');
   const preservedOutputs = existingBlocks.filter(b => b.kind !== 'steps' && !(hasNativeThinkingOrTools && b.kind === 'thinking'));
@@ -1628,6 +1694,7 @@ async function enrichDetailWithNativeTranscript(selected, taskDir) {
     ...selected,
     sessionId: resolvedSessionId,
     resume: buildResumeInfo(selected.harness, resolvedSessionId, resumeCwd) || selected.resume,
+    contextUsage: resolvedContextUsage,
     blocks: merged,
   };
 }

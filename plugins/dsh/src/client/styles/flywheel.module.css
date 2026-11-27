@@ -3528,13 +3528,15 @@
   color: var(--fw-text);
   font-weight: 500;
   text-align: right;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .telemetryMono {
   font-family: var(--fw-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .telemetryValGood {

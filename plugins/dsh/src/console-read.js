@@ -9,6 +9,7 @@ import { Remote, bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol';
 import { ControlNotDispatchedError } from './control.js';
 import { validPlanningCommand } from './planning-control.js';
 import { validSessionAbandonCommand } from './session-control.js';
+import { validPacketTriageCommand } from './packet-control.js';
 import { buildResumeInfo, readTaskTraceDetail, readTaskTraces, unwrapStreamingContractMarkdown } from './trace-parser.js';
 
 export const consoleReadActions = new Set([
@@ -19,7 +20,7 @@ export const consoleReadActions = new Set([
 
 export const consoleActActions = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
+  'config-save', 'session', 'packet', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
 ]);
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -586,6 +587,7 @@ export class ConsoleReadService extends Service {
       const commandId = 'ui-' + randomUUID();
       let humanPlanningAction;
       let humanSessionAction;
+      let humanPacketAction;
       if (payload.action === 'planning' && payload.planning?.action === 'approve') {
         if (!validPlanningCommand(payload.planning)) {
           throw new ControlNotDispatchedError('Design approval requires a valid planning command');
@@ -616,7 +618,23 @@ export class ConsoleReadService extends Service {
           reason: payload.session.reason,
         };
       }
-      const value = await this.control(payload, undefined, this._signal(signal), 'ui:' + commandId, humanPlanningAction, humanSessionAction, sessionId);
+      if (payload.action === 'packet') {
+        if (!validPacketTriageCommand(payload.packet) || typeof payload.taskDir !== 'string' || !payload.taskDir) {
+          throw new ControlNotDispatchedError('Packet triage requires a valid packet command and taskDir');
+        }
+        humanPacketAction = {
+          kind: 'dsh',
+          sessionId,
+          commandId,
+          taskDir: payload.taskDir,
+          packetId: payload.packet['packet-id'],
+          revision: payload.packet.revision,
+          action: payload.packet.action,
+          reason: payload.packet.reason,
+          ...(payload.packet.guidance ? { guidance: payload.packet.guidance } : {}),
+        };
+      }
+      const value = await this.control(payload, undefined, this._signal(signal), 'ui:' + commandId, humanPlanningAction, humanSessionAction, sessionId, humanPacketAction);
       return { result: { kind: 'success', text: JSON.stringify(value) } };
     } catch (error) {
       return { result: { kind: 'error', text: JSON.stringify(this.failure(input, error)) } };

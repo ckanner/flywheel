@@ -4,6 +4,7 @@ import { resolveFlywheelBinary } from './installation.js';
 import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './task-association.js';
 import { planningUserAction, planningUserProjection, planningUserProjectionKey } from './planning-control.js';
 import { sessionUserAction, sessionUserProjection, sessionUserProjectionKey } from './session-control.js';
+import { packetUserAction, packetUserProjection, packetUserProjectionKey } from './packet-control.js';
 
 export const inject = ['commands', 'tools', 'workingDirectory', 'sessionProjections'];
 
@@ -14,8 +15,15 @@ export function apply(ctx, config = {}) {
   ctx.sessionProjections.register(taskAssociationProjection);
   ctx.sessionProjections.register(planningUserProjection);
   ctx.sessionProjections.register(sessionUserProjection);
+  ctx.sessionProjections.register(packetUserProjection);
   watchWorkspaces(ctx);
-  const binary = resolveFlywheelBinary(config);
+  let binary = null;
+  let binaryError = null;
+  try {
+    binary = resolveFlywheelBinary(config);
+  } catch (error) {
+    binaryError = error instanceof Error ? error : new Error(String(error));
+  }
   const active = new Set();
   const sessionMutations = new WeakMap();
   const failure = (input, error) => ({
@@ -24,7 +32,13 @@ export function apply(ctx, config = {}) {
     dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
     message: error instanceof Error ? error.message : String(error),
   });
-  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction, overrideHostSessionID) => {
+  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction, overrideHostSessionID, humanPacketAction) => {
+    if (!binary) {
+      const detail = binaryError?.message || 'Flywheel engine binary could not be resolved.';
+      throw new ControlNotDispatchedError(
+        `${detail} Run "npx -y @ckanner/flywheel@latest install" to synchronize the DSH plugin and installation record, then reopen DSH Desktop.`,
+      );
+    }
     const session = agent?.session;
     const planningRead = input?.action === 'planning' && input.planning?.action === 'status';
     const mutation = mutatesTask(input?.action) && !planningRead;
@@ -72,6 +86,7 @@ export function apply(ctx, config = {}) {
         hostSessionID: session?.id ?? overrideHostSessionID,
         planningUserAction: humanPlanningAction,
         sessionUserAction: humanSessionAction,
+        packetUserAction: humanPacketAction,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
@@ -106,7 +121,7 @@ export function apply(ctx, config = {}) {
         } catch (error) {
           throw new ControlNotDispatchedError(error);
         }
-        let humanPlanningAction, humanSessionAction;
+        let humanPlanningAction, humanSessionAction, humanPacketAction;
         try { humanPlanningAction = planningUserAction(input, agent?.session, commandId, rawInput,
           input?.action === 'planning' && input.planning?.action === 'approve' && agent?.session
             ? ctx.sessionProjections.stateOf(agent.session, planningUserProjectionKey) : undefined); }
@@ -115,7 +130,11 @@ export function apply(ctx, config = {}) {
           input?.action === 'session' && input.session?.action === 'abandon' && agent?.session
             ? ctx.sessionProjections.stateOf(agent.session, sessionUserProjectionKey) : undefined); }
         catch (error) { throw new ControlNotDispatchedError(error); }
-        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction, humanSessionAction);
+        try { humanPacketAction = packetUserAction(input, agent?.session, commandId, rawInput,
+          input?.action === 'packet' && agent?.session
+            ? ctx.sessionProjections.stateOf(agent.session, packetUserProjectionKey) : undefined); }
+        catch (error) { throw new ControlNotDispatchedError(error); }
+        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction, humanSessionAction, undefined, humanPacketAction);
         return { kind: 'success', text: JSON.stringify(value, null, 2) };
       } catch (error) {
         // CommandResult preserves only kind/text. Wrap every failure, including
@@ -129,6 +148,7 @@ export function apply(ctx, config = {}) {
     try {
       if (args?.action === 'planning' && args.planning?.action === 'approve') throw new ControlNotDispatchedError('Use the human design approval control; model tools cannot approve a design');
       if (args?.action === 'session' && args.session?.action === 'abandon') throw new ControlNotDispatchedError('Use the human session abandonment control; model tools cannot retire an unknown invocation');
+      if (args?.action === 'packet') throw new ControlNotDispatchedError('Use the human packet triage control; model tools cannot triage escalated inbox packets');
       return JSON.stringify(await control(args, execution.agent, execution.signal, 'tool:' + execution.callId));
     } catch (error) {
       toolFailures.set(execution, failure(args, error));

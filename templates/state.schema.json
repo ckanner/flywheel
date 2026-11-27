@@ -708,6 +708,19 @@
             }
           },
           "updated-at": { "type": ["string", "null"] },
+          "human-guidance": { "type": "string", "maxLength": 2000, "description": "Explicit human triage scope guidance recorded on inbox retry/replan." },
+          "human-signoff": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "reason", "authority", "source", "candidate"],
+            "properties": {
+              "at": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+              "authority": { "const": "human" },
+              "source": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "candidate": { "type": "string", "minLength": 1 }
+            }
+          },
           "contract-sync-pending": { "type": "boolean", "description": "契约修订尚未同步到保留的工作区，恢复时必须完成同步。" },
           "pending-strategy": {"type":"string","minLength":1},
           "execution-policy": {

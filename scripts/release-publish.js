@@ -35,8 +35,9 @@ function defaultRunNpm(args, { timeout = 180000, killSignal = "SIGTERM" } = {}) 
 }
 
 function failure(operation, result) {
-  const detail = result.error?.message || result.signal || result.stderr?.trim() || result.stdout?.trim() || `exit ${result.status}`;
-  return new Error(`${operation} (exit ${result.status}): ${String(detail).slice(0, 4000)}`);
+  const raw = String(result.error?.message || result.signal || result.stderr?.trim() || result.stdout?.trim() || `exit ${result.status}`);
+  const detail = raw.length <= 4000 ? raw : `${raw.slice(0, 1000)}\n... [truncated ${raw.length - 4000} chars] ...\n${raw.slice(-3000)}`;
+  return new Error(`${operation} (exit ${result.status}): ${detail}`);
 }
 
 function readValue(args, runNpm = defaultRunNpm, { allowMissingValue = false } = {}) {
@@ -98,7 +99,7 @@ function assertLocalBytes(directory, entry) {
 
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const defaultNow = () => performance.now();
-const VISIBILITY_TIMEOUT_MS = 180000;
+const VISIBILITY_TIMEOUT_MS = 360000;
 
 async function waitForRegistry(check, timeoutMessage, { runNpm = defaultRunNpm, wait = defaultWait, now = defaultNow } = {}) {
   const deadline = now() + VISIBILITY_TIMEOUT_MS;

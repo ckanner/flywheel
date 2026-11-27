@@ -310,7 +310,17 @@ Optional `sessions.quality` supports:
 | `max-unproductive-turns` | Consecutive Execute calls leaving the candidate digest unchanged |
 | `max-run-input-tokens` | The last complete, attributable input token count, not an inferred context-window size |
 
-All thresholds default to disabled. They may rebuild only after the previous call has safely ended, been accounted, and been consumed. Unknown or pending results take precedence.
+All thresholds default to disabled. Flywheel does not implicitly rebuild scoped sessions from multi-step cumulative billed input; provider-native compaction manages single-turn context growth unless you explicitly configure `max-run-input-tokens > 0`. Thresholds may rebuild only after the previous call has safely ended, been accounted, and been consumed. Unknown or pending results take precedence.
+
+## Triaging escalated inbox packets
+
+When a packet escalates to `inbox` (for example after non-converging review rounds), never edit `state.json` by hand. Use the persistent bottom-of-stream **Human Triage** card in DSH Desktop or the interactive CLI (`flywheel packet <taskDir> --id <packet-id> (--retry|--replan|--accept) --reason <text> [--guidance <text>]`):
+
+- **Retry with guidance (`retry`)**: persists optional authoritative `human-guidance` (injected into both Execute and Review), clears `failed-attempts` and the spin signature, records a `human-triage` boundary in `retry-history`, and re-arms the packet as `pending`.
+- **Single-packet contract revision (`replan`)**: authorizes the Plan Loop to revise the packet contract with the human reason and optional guidance, persists contracts, invalidates stale evidence, and re-arms the packet as `pending`.
+- **Human sign-off (`accept`)**: permitted **only** when deterministic L1 verification (`currentL1Evidence`) is passing on the exact current candidate; records `human-signoff` bound to that candidate fingerprint and commits/merges the unit.
+
+All three actions require verified human proof (`FLYWHEEL_PACKET_USER_ACTION` from the DSH host command boundary or an interactive controlling TTY) and are never exposed to LLM model tools.
 
 A rebuild records its reason and generation and hands over current contracts, workspace, valid reports, verification, and structured feedback. It never imports another role's private transcript or issues an unmetered model-compression call. A returning Reviewer must still inspect the entire current candidate.
 

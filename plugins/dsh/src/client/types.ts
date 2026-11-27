@@ -651,7 +651,13 @@ export interface TraceSummary {
   errorCode?: string;
   errorSummary?: string;
   usage?: Record<string, unknown> | null;
-  contextUsage?: { used: number; size: number } | null;
+  contextUsage?: {
+    used: number;
+    size: number;
+    source?: string;
+    lastInput?: number;
+    lastCacheRead?: number;
+  } | null;
   promptBytes?: number | null;
   source?: 'live' | 'receipt' | 'state' | string;
   eventCount?: number;
@@ -679,6 +685,25 @@ export interface TraceDetail extends TraceSummary {
   rawTail?: string[];
 }
 
+export interface PacketReviewFinding {
+  id?: string;
+  severity?: 'blocker' | 'major' | 'minor' | string;
+  target?: string;
+  evidence?: string;
+  fix?: string;
+  status?: 'open' | 'resolved' | string;
+  resolution?: string;
+}
+
+export interface PacketControlReceipt {
+  'packet-id'?: string;
+  action?: string;
+  applied?: boolean;
+  revision?: number;
+  status?: string;
+  message?: string;
+}
+
 export interface ControlResponse {
   protocol: 1;
   ok: boolean;
@@ -686,6 +711,11 @@ export interface ControlResponse {
   action?: string | null;
   dispatch?: 'not-dispatched' | 'unknown' | string;
   message?: string;
+  error?: string;
+  'session-control'?: { key?: string; action?: string; applied?: boolean; message?: string };
+  sessionControl?: { key?: string; action?: string; applied?: boolean; message?: string };
+  'packet-control'?: PacketControlReceipt;
+  packetControl?: PacketControlReceipt;
   taskDir?: string;
   cwd?: string;
   running?: boolean;

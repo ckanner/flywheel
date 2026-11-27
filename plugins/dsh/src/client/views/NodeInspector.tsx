@@ -21,6 +21,7 @@ export function NodeInspector({
 }) {
   const [retryReason, setRetryReason] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
+  const [abandonError, setAbandonError] = useState('');
 
   const detail = snap.nodeDetail;
   const uxReview = snap.uxReviews[packet.id] ?? null;
@@ -207,13 +208,22 @@ export function NodeInspector({
                         className={`${styles.btn} ${styles.btnDanger}`}
                         disabled={snap.busyAction !== null || !abandonReason.trim()}
                         onClick={async () => {
-                          await store.abandonSession(packet.sessionKey!, packet.unknownInvocation!, abandonReason.trim());
-                          setAbandonReason('');
+                          setAbandonError('');
+                          const res = await store.abandonSession(packet.sessionKey!, packet.unknownInvocation!, abandonReason.trim());
+                          const ctrl = res?.['session-control'] ?? res?.sessionControl;
+                          if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                            setAbandonReason('');
+                          } else {
+                            setAbandonError(ctrl?.message || res?.error || 'Failed to abandon blocked session.');
+                          }
                         }}
                       >
                         {t('inspector.abandonSubmit')}
                       </button>
                     </div>
+                    {abandonError && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--fw-danger)' }}>{abandonError}</div>
+                    )}
                   </div>
                 )}
               </div>

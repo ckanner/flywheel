@@ -14,7 +14,7 @@ const QUERY_ACTIONS = new Set([
 
 const ACT_ACTIONS = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
+  'config-save', 'session', 'packet', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -6,10 +6,11 @@ import { validModelCatalogRequest, validModelCatalogReport } from './model-catal
 import { directory, nonempty, record, validInvestigationCommand } from './protocol.js';
 import { validPlanningCommand, validPlanningUserAction } from './planning-control.js';
 import { validSessionUserAction } from './session-control.js';
+import { validPacketTriageCommand, validPacketUserAction } from './packet-control.js';
 import { preparationDirectory } from './task-directory.js';
 import { validImageSelection, validImageInspection, validImageInputEditor } from './image-contract.js';
 
-const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'history', 'delivery', 'deliver', 'node', 'images', 'models'];
+const actions = ['planning', 'investigate', 'launch', 'start', 'status', 'stop', 'config', 'doctor', 'step', 'config-edit', 'config-save', 'runs', 'metrics', 'session', 'packet', 'history', 'delivery', 'deliver', 'node', 'images', 'models'];
 const checkStatuses = ['pass', 'fail', 'warn', 'unknown', 'skipped'];
 
 // This marker is issued only where the host can prove that no control process
@@ -69,6 +70,10 @@ export async function validateControl(input, defaultCwd) {
     }
   } else if (input.action === 'node') {
     if (typeof input.packet !== 'string' || !/^M\d+-T\d+$/.test(input.packet) || 'only' in input || 'revision' in input) throw new Error('node requires an exact packet ID');
+  } else if (input.action === 'packet') {
+    if (!validPacketTriageCommand(input.packet) || 'only' in input || 'revision' in input) {
+      throw new Error('packet requires a typed revision-bound triage command');
+    }
   } else if (['only', 'packet', 'revision'].some(key => key in input)) {
     throw new Error('stage arguments require step');
   }
@@ -83,6 +88,7 @@ export async function validateControl(input, defaultCwd) {
     ...(input.models ? { models: input.models } : {}),
     ...(input.investigation ? { investigation: input.investigation } : {}),
     ...(input.action === 'node' ? { packet: input.packet } : {}),
+    ...(input.action === 'packet' ? { packetCommand: input.packet } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.session ? { session: input.session } : {}),
@@ -141,7 +147,7 @@ function resolveHostClaudeCodeProWorker() {
 }
 
 /** Only the engine executable can mutate engine state. No shell interpolation. */
-export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, sessionUserAction, signal, timeoutMs = 60000 } = {}) {
+export async function runControl(input, { binary = 'flywheel', defaultCwd, hostSessionID, planningUserAction, sessionUserAction, packetUserAction, signal, timeoutMs = 60000 } = {}) {
   let request;
   try {
     nonempty(binary, 'flywheelBinary', 4096);
@@ -160,6 +166,11 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
       sessionUserAction = { ...sessionUserAction, taskDir: request.taskDir };
     }
     if (sessionUserAction !== undefined && request.session?.action !== 'abandon') throw new Error('Session abandonment proof is only valid for abandon');
+    if (request.action === 'packet') {
+      if (!validPacketUserAction(packetUserAction, request.packetCommand, input.taskDir)) throw new Error('Packet triage requires a verified human command');
+      packetUserAction = { ...packetUserAction, taskDir: request.taskDir };
+    }
+    if (packetUserAction !== undefined && request.action !== 'packet') throw new Error('Packet triage proof is only valid for packet');
     if (signal?.aborted) throw new Error('Flywheel control request cancelled');
   } catch (error) {
     throw new ControlNotDispatchedError(error);
@@ -181,6 +192,7 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
   delete env.DSH_SESSION_ID;
   delete env.FLYWHEEL_PLANNING_USER_ACTION;
   delete env.FLYWHEEL_SESSION_USER_ACTION;
+  delete env.FLYWHEEL_PACKET_USER_ACTION;
   if (env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER === undefined) {
     const hostWorker = resolveHostClaudeCodeProWorker();
     if (hostWorker) env.FLYWHEEL_CLAUDE_CODE_PRO_WORKER = hostWorker;
@@ -188,11 +200,13 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
   if (typeof hostSessionID === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(hostSessionID)) env.DSH_SESSION_ID = hostSessionID;
   if (planningUserAction !== undefined) env.FLYWHEEL_PLANNING_USER_ACTION = JSON.stringify(planningUserAction);
   if (sessionUserAction !== undefined) env.FLYWHEEL_SESSION_USER_ACTION = JSON.stringify(sessionUserAction);
+  if (packetUserAction !== undefined) env.FLYWHEEL_PACKET_USER_ACTION = JSON.stringify(packetUserAction);
+  const stdinPayload = request.editor ?? request.session ?? request.packetCommand ?? request.delivery ?? request.investigation ?? request.planning ?? request.images ?? request.models;
   return new Promise((resolve, reject) => {
     let child;
     try {
       child = spawn(binary, args, {
-        cwd: request.cwd, env, detached: false, stdio: [request.editor || request.session || request.delivery || request.investigation || request.planning || request.images || request.models ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+        cwd: request.cwd, env, detached: false, stdio: [stdinPayload ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
       reject(new ControlNotDispatchedError(error));
@@ -213,9 +227,9 @@ export async function runControl(input, { binary = 'flywheel', defaultCwd, hostS
     };
     const cancel = () => stop(new Error('Flywheel control request cancelled'));
     const timer = setTimeout(() => stop(new Error('Flywheel control request timed out')), timeoutMs);
-    if (request.editor || request.session || request.delivery || request.investigation || request.planning || request.images || request.models) {
+    if (stdinPayload) {
       child.stdin.on('error', error => stop(error));
-      child.stdin.end(JSON.stringify(request.editor ?? request.session ?? request.delivery ?? request.investigation ?? request.planning ?? request.images ?? request.models));
+      child.stdin.end(JSON.stringify(stdinPayload));
     }
     signal?.addEventListener('abort', cancel, { once: true });
     // Decode across chunks so a split UTF-8 code point is not replaced in a

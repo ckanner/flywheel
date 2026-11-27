@@ -343,6 +343,8 @@ export function ChatStreamView({
   const [mainAttachMenuOpen, setMainAttachMenuOpen] = useState(false);
   const [abandonReasons, setAbandonReasons] = useState<Record<string, string>>({});
   const [abandonErrors, setAbandonErrors] = useState<Record<string, string>>({});
+  const [triageGuidance, setTriageGuidance] = useState<Record<string, string>>({});
+  const [triageErrors, setTriageErrors] = useState<Record<string, string>>({});
   const mainFileInputRef = useRef<HTMLInputElement | null>(null);
   const mainTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -445,6 +447,52 @@ export function ChatStreamView({
   const investigation = snap.state?.investigation ?? null;
 
   const packets = useMemo<PacketNode[]>(() => normalizePackets(snap.state?.packets), [snap.state?.packets]);
+
+  const inboxTriagePackets = useMemo(() => {
+    const rawPackets = (snap.state?.packets ?? {}) as Record<string, Record<string, unknown>>;
+    const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
+      ? ((snap.state as { inbox?: Array<{ 'packet-id'?: string; reason?: string; at?: string; action?: string }> }).inbox ?? [])
+      : [];
+    return packets
+      .filter(p => (p.status ?? '').toLowerCase() === 'inbox')
+      .map(p => {
+        const raw = rawPackets[p.id] ?? {};
+        const evidence = (raw.evidence && typeof raw.evidence === 'object' ? raw.evidence : {}) as Record<string, unknown>;
+        const l1 = (evidence.l1 && typeof evidence.l1 === 'object' ? evidence.l1 : null) as Record<string, unknown> | null;
+        const review = (evidence.review && typeof evidence.review === 'object' ? evidence.review : null) as Record<string, unknown> | null;
+        const rawFindings = Array.isArray(review?.findings) ? (review!.findings as Array<Record<string, unknown>>) : [];
+        const openFindings = rawFindings.filter(f => f && f.status !== 'resolved' && f.severity !== 'minor');
+        const resolvedFindings = rawFindings.filter(f => f && f.status === 'resolved');
+        const reasons = Array.isArray(review?.reasons)
+          ? (review!.reasons as unknown[]).filter((r): r is string => typeof r === 'string' && r.trim() !== '')
+          : [];
+        const advisory = Array.isArray(review?.advisory)
+          ? (review!.advisory as unknown[]).filter((r): r is string => typeof r === 'string' && r.trim() !== '')
+          : [];
+        const latestInbox = [...inboxList].reverse().find(item => item?.['packet-id'] === p.id && !item.action) ?? null;
+        return {
+          packet: p,
+          reason:
+            (typeof latestInbox?.reason === 'string' && latestInbox.reason) ||
+            p.lastError ||
+            (isZh ? '该单元已升级到人工收件箱，等待人工处置决策。' : 'Packet escalated to human inbox.'),
+          l1Passed: l1?.pass === true,
+          existingGuidance: typeof raw['human-guidance'] === 'string' ? raw['human-guidance'] : '',
+          openFindings,
+          resolvedFindings,
+          reasons,
+          advisory,
+        };
+      });
+  }, [packets, snap.state, isZh]);
+
+  const latestGeneralInboxReason = useMemo(() => {
+    const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
+      ? ((snap.state as { inbox?: Array<{ reason?: string; action?: string }> }).inbox ?? [])
+      : [];
+    const hit = [...inboxList].reverse().find(item => typeof item?.reason === 'string' && item.reason.trim() !== '' && !item.action);
+    return hit?.reason ?? '';
+  }, [snap.state]);
 
   const mainScrollResetKey = isNewTaskMode ? 'new-task' : `main::${snap.selectedTaskDir || ''}`;
   const mainScrollContentKey = [
@@ -1436,7 +1484,7 @@ export function ChatStreamView({
                                   return next;
                                 });
                                 const res = await store.abandonSession(item.key, item.invocation, reason);
-                                const ctrl = res?.sessionControl as { applied?: boolean; message?: string } | undefined;
+                                const ctrl = (res?.['session-control'] ?? res?.sessionControl) as { applied?: boolean; message?: string } | undefined;
                                 if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
                                   setAbandonReasons(prev => ({ ...prev, [item.key]: '' }));
                                   await store.startRun();
@@ -2355,6 +2403,323 @@ export function ChatStreamView({
               </div>
             </section>
           )}
+
+          {/* Persistent Bottom-of-Stream Escalation & Human Triage Command Center */}
+          {!snap.running &&
+            (snap.state?.status === 'escalated' ||
+              snap.state?.status === 'budget-stopped' ||
+              inboxTriagePackets.length > 0 ||
+              blockedSessions.length > 0) && (
+              <section className={styles.orchBlock} data-testid="main-escalation-summary">
+                <div className={styles.orchBlockHead}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className={styles.orchAvatar}>!</span>
+                    <strong style={{ fontSize: 13.5 }}>
+                      {isZh ? '任务已暂停 · 需要人工处置' : 'Task Paused · Human Triage Required'}
+                    </strong>
+                    <span className={`${styles.pill} ${styles.pillWarn}`}>
+                      {inboxTriagePackets.length > 0
+                        ? (isZh ? `${inboxTriagePackets.length} 个单元待裁决` : `${inboxTriagePackets.length} inbox packet(s)`)
+                        : blockedSessions.length > 0
+                          ? (isZh ? `${blockedSessions.length} 个阻塞会话` : `${blockedSessions.length} blocked session(s)`)
+                          : snap.state?.status === 'budget-stopped'
+                            ? (isZh ? '预算护栏暂停' : 'Budget guardrail')
+                            : (isZh ? '已升级至人工' : 'Escalated')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className={styles.orchIndent} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {inboxTriagePackets.map(item => {
+                    const pid = item.packet.id;
+                    const guidanceVal = triageGuidance[pid] ?? item.existingGuidance;
+                    const errText = triageErrors[pid] ?? '';
+                    const pktTraces = packetTracesMap.get(pid) ?? [];
+                    const latestReview = [...pktTraces].reverse().find(tr => tr.role === 'review') ?? pktTraces[pktTraces.length - 1] ?? null;
+
+                    const runTriage = async (action: 'retry' | 'replan' | 'accept') => {
+                      const defaultReasons: Record<'retry' | 'replan' | 'accept', string> = {
+                        retry: isZh
+                          ? '人工审阅后重新武装该单元重试'
+                          : 'Human triaged inbox packet and re-armed for retry',
+                        replan: isZh
+                          ? '人工授权发起单包契约修订'
+                          : 'Human authorized single-packet contract revision',
+                        accept: isZh
+                          ? 'L1 确定性门禁已绿，人工签核放行并提交合并'
+                          : 'L1 deterministic gate green; human signed off to accept and merge',
+                      };
+                      const reasonText =
+                        action === 'accept'
+                          ? (guidanceVal.trim() || defaultReasons.accept)
+                          : defaultReasons[action];
+                      setTriageErrors(prev => {
+                        const next = { ...prev };
+                        delete next[pid];
+                        return next;
+                      });
+                      const res = await store.triagePacket(
+                        action,
+                        pid,
+                        reasonText,
+                        action === 'accept' ? undefined : guidanceVal,
+                      );
+                      const ctrl = res?.['packet-control'] ?? res?.packetControl;
+                      if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                        if (action === 'retry' || action === 'accept') {
+                          await store.startRun();
+                        }
+                      } else {
+                        const msg =
+                          ctrl?.message ||
+                          (typeof res?.error === 'string' ? res.error : '') ||
+                          (isZh ? '处置请求未生效，请刷新状态后重试。' : 'Triage action was not applied.');
+                        setTriageErrors(prev => ({ ...prev, [pid]: msg }));
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={pid}
+                        className={styles.decisionCard}
+                        data-testid={`triage-card-${pid}`}
+                        style={{ borderColor: 'var(--fw-warn-border)', background: 'var(--fw-warn-soft)', gap: 10 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span className={styles.packetId}>{pid}</span>
+                            <strong style={{ fontSize: 13 }}>
+                              {item.packet.title || item.packet.goal || pid}
+                            </strong>
+                            <span className={`${styles.pill} ${item.l1Passed ? styles.pillSuccess : styles.pillDanger}`}>
+                              {item.l1Passed
+                                ? (isZh ? 'L1 确定性门禁已绿' : 'L1 Gate Green')
+                                : (isZh ? 'L1 未通过' : 'L1 Not Green')}
+                            </span>
+                            {item.resolvedFindings.length > 0 && (
+                              <span className={`${styles.pill} ${styles.pillSuccess}`}>
+                                {isZh ? `已闭合 ${item.resolvedFindings.length} 项` : `${item.resolvedFindings.length} resolved`}
+                              </span>
+                            )}
+                          </div>
+                          {latestReview && (
+                            <button
+                              type="button"
+                              className={styles.linkBtn}
+                              onClick={() =>
+                                store.drillIntoNode(pid, {
+                                  traceId: latestReview.id,
+                                  sessionKey: latestReview.key,
+                                  packetId: pid,
+                                })
+                              }
+                            >
+                              {isZh ? '查看最近审查记录 →' : 'Inspect latest review →'}
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                          {item.reason}
+                        </div>
+
+                        {item.openFindings.length > 0 ? (
+                          <div
+                            data-testid={`triage-findings-${pid}`}
+                            style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
+                          >
+                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                              {isZh
+                                ? `未闭合审查缺陷 (${item.openFindings.length} 项)`
+                                : `Open review findings (${item.openFindings.length})`}
+                            </strong>
+                            {item.openFindings.map((f, idx) => (
+                              <div key={String(f.id ?? idx)} className={styles.findingItem}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <span className={`${styles.pill} ${f.severity === 'blocker' ? styles.pillDanger : styles.pillWarn}`}>
+                                    {String(f.severity || 'major')}
+                                  </span>
+                                  {Boolean(f.id) && <code>{String(f.id)}</code>}
+                                  {Boolean(f.target) && <code style={{ fontSize: 11 }}>{String(f.target)}</code>}
+                                </div>
+                                {Boolean(f.evidence) && (
+                                  <div style={{ color: 'var(--fw-text)', marginTop: 2 }}>{String(f.evidence)}</div>
+                                )}
+                                {Boolean(f.fix) && (
+                                  <div style={{ color: 'var(--fw-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+                                    {isZh ? '要求修复：' : 'Fix: '}
+                                    {String(f.fix)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : item.reasons.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                              {isZh ? '最近审查意见' : 'Latest review reasons'}
+                            </strong>
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                              {item.reasons.map((r, idx) => (
+                                <li key={idx}>{r}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {item.advisory.length > 0 && (
+                          <details className={styles.recoveryDetails}>
+                            <summary>
+                              {isZh ? `非阻塞建议 (${item.advisory.length} 项)` : `Non-blocking advisory (${item.advisory.length})`}
+                            </summary>
+                            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                              {item.advisory.map((a, idx) => (
+                                <li key={idx}>{a}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fw-text-muted)' }}>
+                            {isZh
+                              ? '人工范围裁决 / 指导（可选，将作为权威约束注入 Execute 与 Review）'
+                              : 'Human scope guidance / sign-off note (optional; injected into Execute & Review)'}
+                          </label>
+                          <textarea
+                            className={styles.input}
+                            rows={2}
+                            data-testid={`triage-guidance-${pid}`}
+                            value={guidanceVal}
+                            onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
+                            placeholder={
+                              isZh
+                                ? '例如：只修复真实契约缺陷（如 F-1/F-2），其余超出契约的测试增强项改为非阻塞建议…'
+                                : 'e.g. Fix only real contract defects (F-1/F-2); treat out-of-contract test hardening as advisory…'
+                            }
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                            data-testid={`triage-retry-${pid}`}
+                            disabled={snap.busyAction !== null}
+                            onClick={() => void runTriage('retry')}
+                          >
+                            {isZh ? '带指导重试' : 'Retry with Guidance'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnSm}`}
+                            data-testid={`triage-replan-${pid}`}
+                            disabled={snap.busyAction !== null}
+                            onClick={() => void runTriage('replan')}
+                          >
+                            {isZh ? '发起单包契约修订' : 'Revise Packet Contract'}
+                          </button>
+                          {item.l1Passed && (
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm}`}
+                              data-testid={`triage-accept-${pid}`}
+                              disabled={snap.busyAction !== null}
+                              onClick={() => void runTriage('accept')}
+                            >
+                              {isZh ? 'L1 已绿 · 人工签核放行' : 'L1 Green · Human Sign-Off'}
+                            </button>
+                          )}
+                        </div>
+
+                        {errText && (
+                          <div
+                            data-testid={`triage-error-${pid}`}
+                            style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                          >
+                            {errText}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {inboxTriagePackets.length === 0 && blockedSessions.length > 0 && (
+                    <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-danger-border)', gap: 8 }}>
+                      {blockedSessions.map(item => (
+                        <div key={`bottom-${item.key}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: 12.5 }}>
+                              {isZh
+                                ? `「${humanizeBlockedKey(item.key, isZh)}」意外中断`
+                                : `${humanizeBlockedKey(item.key, isZh)} interrupted`}
+                            </strong>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                              data-testid={`bottom-abandon-submit-${item.invocation}`}
+                              disabled={snap.busyAction !== null}
+                              onClick={async () => {
+                                const reason =
+                                  (abandonReasons[item.key] ?? '').trim() ||
+                                  'Human confirmed workspace safe and cleared interrupted invocation to retry';
+                                setAbandonErrors(prev => {
+                                  const next = { ...prev };
+                                  delete next[item.key];
+                                  return next;
+                                });
+                                const res = await store.abandonSession(item.key, item.invocation, reason);
+                                const ctrl = (res?.['session-control'] ?? res?.sessionControl) as { applied?: boolean; message?: string } | undefined;
+                                if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                                  await store.startRun();
+                                } else {
+                                  setAbandonErrors(prev => ({
+                                    ...prev,
+                                    [item.key]: ctrl?.message || (typeof res?.error === 'string' ? res.error : '') || 'Failed to abandon blocked session.',
+                                  }));
+                                }
+                              }}
+                            >
+                              {isZh ? '确认安全并重试' : 'Confirm Safe & Retry'}
+                            </button>
+                          </div>
+                          {abandonErrors[item.key] && (
+                            <div style={{ fontSize: 12, color: 'var(--fw-danger)' }}>{abandonErrors[item.key]}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(() => {
+                    const ctrl = (snap.state as { control?: { status?: string; message?: string } } | null)?.control;
+                    if (ctrl?.status === 'failed' && typeof ctrl.message === 'string' && ctrl.message.trim()) {
+                      return (
+                        <div
+                          data-testid="main-escalation-control-error"
+                          style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                        >
+                          {isZh ? '最近一次控制命令失败：' : 'Latest control failure: '}
+                          {ctrl.message}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {inboxTriagePackets.length === 0 && blockedSessions.length === 0 && (
+                    <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-warn-border)' }}>
+                      <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+                        {latestGeneralInboxReason ||
+                          (isZh
+                            ? '任务已按护栏暂停等待人工检查，查看上方阶段日志并确认后可继续运行。'
+                            : 'Task paused by escalation guardrail; inspect stage logs above before resuming.')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
         </div>
       </div>
 

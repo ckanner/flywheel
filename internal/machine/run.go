@@ -667,8 +667,9 @@ func (c *Context) milestoneSummaryLine(milestone contract.Milestone, startTokens
 // RunSingleStepOpts 手工单步模式入参。
 type RunSingleStepOpts struct {
 	Session *SessionCommand
+	Packet  *PacketCommand
 	RunOpts
-	Only             string // plan | execute | review | verify
+	Only             string // plan | execute | review | verify | session | packet
 	PacketID         string
 	ExpectedRevision *int64
 	RetryReason      string
@@ -686,6 +687,16 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 		}
 	} else if opts.Session != nil {
 		return TaskSummary{}, fmt.Errorf("session payload requires session stage")
+	}
+	if opts.Only == "packet" {
+		if opts.Packet == nil || opts.ExpectedRevision == nil || opts.Packet.Revision != *opts.ExpectedRevision {
+			return TaskSummary{}, fmt.Errorf("packet command requires matching revision-bound input")
+		}
+		if err := opts.Packet.Validate(); err != nil {
+			return TaskSummary{}, err
+		}
+	} else if opts.Packet != nil {
+		return TaskSummary{}, fmt.Errorf("packet payload requires packet stage")
 	}
 
 	if opts.RetryReason != "" && (opts.ExpectedRevision == nil || opts.Only != "execute" || strings.TrimSpace(opts.RetryReason) == "" || len(opts.RetryReason) > 1000) {
@@ -739,6 +750,10 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 		ctx.State.Control.Kind += "." + opts.Session.Action
 		ctx.State.Control.Packet = opts.Session.Key
 	}
+	if opts.Packet != nil {
+		ctx.State.Control.Kind += "." + opts.Packet.Action
+		ctx.State.Control.Packet = opts.Packet.PacketID
+	}
 	ctx.save()
 	var finishRecord func(*error)
 	defer func() {
@@ -758,6 +773,9 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	if opts.Session != nil {
 		kind += "." + opts.Session.Action
 	}
+	if opts.Packet != nil {
+		kind += "." + opts.Packet.Action
+	}
 	finishRecord, err = ctx.beginRunRecord(opts.IndexDir, kind)
 	if err != nil {
 		clearPid(ctx.TaskDir)
@@ -771,7 +789,8 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 
 	ctx.consoleRetryReason = opts.RetryReason
 	ctx.sessionCommand = opts.Session
-	if opts.ExpectedRevision != nil && opts.Only != "session" {
+	ctx.packetCommand = opts.Packet
+	if opts.ExpectedRevision != nil && opts.Only != "session" && opts.Only != "packet" {
 		if ctx.State.Planning != nil && opts.Only == "plan" && opts.PacketID != "" {
 			return ctx.summary(), fmt.Errorf("use control planning scope packet for packet-specific refinement")
 		}
@@ -837,6 +856,12 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 			return c.summary(), fmt.Errorf("missing session command")
 		}
 		return c.runSessionCommand(*c.sessionCommand)
+	}
+	if only == "packet" {
+		if c.packetCommand == nil {
+			return c.summary(), fmt.Errorf("missing packet command")
+		}
+		return c.triagePacket(*c.packetCommand)
 	}
 	interrupted := c.markInterruptedUnits()
 	if len(interrupted) > 0 {
