@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	AntigravityPackageVersion = "0.3.1"
+	AntigravityPackageVersion = "0.3.2"
 	AntigravityPackage        = "@ckanner/dsh-subagent-antigravity"
 	AntigravityWorkerEnv      = "FLYWHEEL_ANTIGRAVITY_WORKER"
 	AntigravityBinaryEnv      = "FLYWHEEL_AGY_BIN"
@@ -232,9 +232,10 @@ type antigravityReceipt struct {
 	} `json:"failure"`
 }
 
-// Conversation counters are retained in the raw receipt. They are not per-turn
-// deltas and must not be added to Flywheel's per-invocation budget accounting.
-func validateAntigravityUsage(raw json.RawMessage) error {
+// Conversation counters are retained in the raw receipt and never added to
+// per-invocation accounting. Per-turn ACP counters (scope == "turn", status ==
+// "complete") map into Flywheel's canonical Usage where Input includes CacheRead.
+func parseAntigravityUsage(raw json.RawMessage) (*Usage, string, error) {
 	var u struct {
 		Status   string `json:"status"`
 		Scope    string `json:"scope"`
@@ -244,15 +245,24 @@ func validateAntigravityUsage(raw json.RawMessage) error {
 		Cache    *int64 `json:"cacheReadTokens"`
 		Total    *int64 `json:"totalTokens"`
 	}
-	if json.Unmarshal(raw, &u) != nil || !receiptHasFields(raw, "inputTokens", "outputTokens", "thinkingTokens", "cacheReadTokens", "totalTokens") || !slices.Contains([]string{"unknown", "partial", "complete"}, u.Status) || !slices.Contains([]string{"unknown", "conversation"}, u.Scope) {
-		return fmt.Errorf("invalid request: Antigravity usage shape is invalid")
+	if json.Unmarshal(raw, &u) != nil || !receiptHasFields(raw, "inputTokens", "outputTokens", "thinkingTokens", "cacheReadTokens", "totalTokens") || !slices.Contains([]string{"unknown", "partial", "complete"}, u.Status) || !slices.Contains([]string{"unknown", "conversation", "turn"}, u.Scope) {
+		return nil, "unknown", fmt.Errorf("invalid request: Antigravity usage shape is invalid")
 	}
 	for _, v := range []*int64{u.Input, u.Output, u.Thinking, u.Cache, u.Total} {
 		if v != nil && (*v < 0 || *v > 1<<53-1) || u.Status == "complete" && v == nil {
-			return fmt.Errorf("invalid request: Antigravity usage contains unsafe or missing counters")
+			return nil, "unknown", fmt.Errorf("invalid request: Antigravity usage contains unsafe or missing counters")
 		}
 	}
-	return nil
+	if u.Scope != "turn" || u.Status != "complete" {
+		return nil, "unknown", nil
+	}
+	return &Usage{
+		Input:       *u.Input + *u.Cache,
+		Output:      *u.Output,
+		Reasoning:   *u.Thinking,
+		CacheRead:   *u.Cache,
+		TotalTokens: *u.Total,
+	}, "complete", nil
 }
 
 func antigravityObservedModelMatches(observedModel, observedEffort, requestedModel, requestedEffort string) bool {
@@ -295,7 +305,8 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 		p.Error = "invalid request: Antigravity physical or session facts contradict the request"
 		return
 	}
-	if err := validateAntigravityUsage(r.Usage); err != nil {
+	turnUsage, turnUsageStatus, err := parseAntigravityUsage(r.Usage)
+	if err != nil {
 		p.Error = err.Error()
 		return
 	}
@@ -349,6 +360,10 @@ func parseAntigravityReceipt(raw json.RawMessage, request codexProStart) (p clau
 		}
 		p.Settled = true
 		p.Session.Outcome = "completed"
+		if turnUsage != nil {
+			p.Usage = turnUsage
+			p.Session.UsageStatus = turnUsageStatus
+		}
 		p.Session.ResumeAccepted = *s.Resumed
 		p.Session.ResumeCandidate = request.ThreadMode == "persistent"
 		return

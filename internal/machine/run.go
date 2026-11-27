@@ -581,7 +581,7 @@ func (c *Context) run() (TaskSummary, error) {
 		}
 		c.appendRetro(fmt.Sprintf("- %s milestone %s: closed (gate pass, judge %s)", c.nowISO(), milestone.ID, judgeScore))
 		c.appendRetro(c.milestoneSummaryLine(milestone, budgetStartTokens, budgetStartCost))
-		c.appendDeliveredMilestoneMemory(milestone, fmt.Sprintf("gate pass, judge %s", judgeScore))
+		_ = c.syncProjectContext()
 		c.save()
 	}
 

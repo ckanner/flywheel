@@ -188,6 +188,7 @@ type Request struct {
 	Rounds             int    `json:"rounds"`
 	Retries            int    `json:"retries"`
 	MaxRounds          int    `json:"max-rounds"`
+	GraceRounds        int    `json:"grace-rounds,omitempty"`
 	Status             string `json:"status"`
 	PlanningOnly       bool   `json:"planning-only"`
 	Feedback           string `json:"feedback,omitempty"`
@@ -247,9 +248,18 @@ type State struct {
 	LegacyFiles       map[string]string `json:"legacy-files,omitempty"`
 }
 
+type RetryTarget struct {
+	Scope                string `json:"scope"`
+	ScopeID              string `json:"scope-id,omitempty"`
+	ContinueExecution    bool   `json:"continue-execution"`
+	FailedRequestID      string `json:"failed-request-id,omitempty"`
+	CancellableRequestID string `json:"cancellable-request-id,omitempty"`
+}
+
 type Projection struct {
 	Kind             string         `json:"kind"`
 	ApprovalComplete bool           `json:"approval-complete"`
 	Ledger           string         `json:"ledger"`
 	Omitted          map[string]int `json:"omitted"`
+	RetryTarget      *RetryTarget   `json:"retry-target,omitempty"`
 }

@@ -80,6 +80,6 @@ func TestCollaborationRefusalCASFailureDoesNotClaimARejectedOutcome(t *testing.T
 	// A legacy planning request with identical free text retains plan identity.
 	st := jsonClone(latest)
 	require.NoError(t, planning.BeginRequest(st.Planning, planning.Request{ID: "ordinary-plan", Scope: "packet", ScopeID: request.Collaboration.Packet, InputRevision: st.Planning.InputRevision, PlanningOnly: true, Feedback: collaborationRequestIdentity(request.Collaboration)}))
-	_, err = planningCommandApplied(st.Planning, PlanningCommand{Action: "collaboration", RequestID: "ordinary-plan", Collaboration: request.Collaboration}, "")
+	_, err = planningCommandApplied(st, PlanningCommand{Action: "collaboration", RequestID: "ordinary-plan", Collaboration: request.Collaboration}, "")
 	require.ErrorContains(t, err, "already used for different")
 }

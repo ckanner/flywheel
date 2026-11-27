@@ -3,6 +3,14 @@ import { styles } from 'virtual:flywheel-styles';
 import { StyleScope } from '../components/StyleScope.tsx';
 import type { ClientRuntime } from '../context.ts';
 import { buildTraceRoundLabels, formatModelBadge, normalizePackets, resolvePlanningView, resolveTaskDisplayStatus, type DisplayStatusTone } from '../planning.ts';
+import {
+  annotatePlanSteps,
+  compareMilestoneIds,
+  extractMilestoneIdFromPacket,
+  extractMilestoneIdFromScope,
+  formatRetryPlanningLabel,
+  resolveRetryPlanningTarget,
+} from '../workflowTimeline.ts';
 import type { FlywheelStore } from '../store.ts';
 import type { Translate } from '../types.ts';
 import { ChatStreamView } from './ChatStreamView.tsx';
@@ -106,7 +114,8 @@ function nodeStatusPill(status?: string, running?: boolean, isZh = true): { labe
 
 interface AgentSwitchItem {
   id: string;
-  group: 'design' | 'proto' | 'plan' | 'exec';
+  groupKey: string;
+  groupTitle: string;
   label: string;
   meta: string;
   timeText?: string;
@@ -114,6 +123,7 @@ interface AgentSwitchItem {
   statusLabel?: string;
   statusPillClass?: string;
   dotClass: string;
+  running?: boolean;
   traceId?: string | null;
   sessionKey?: string | null;
   packetId?: string | null;
@@ -148,6 +158,7 @@ export function WorkbenchPage({
 
   const planning = snap.planning ?? snap.state?.planning ?? null;
   const resolvedPlanning = useMemo(() => resolvePlanningView(planning), [planning]);
+  const retryTarget = useMemo(() => resolveRetryPlanningTarget(planning, snap.state), [planning, snap.state]);
   const needsApproval = Boolean(resolvedPlanning?.needsHumanApproval);
   const planningBlocked = Boolean(resolvedPlanning?.isBlocked);
   const activeRun = snap.runs.find(r => r.taskDir === snap.selectedTaskDir) ?? null;
@@ -166,100 +177,98 @@ export function WorkbenchPage({
     [snap.state, activeRun?.status, activeRun?.planningStatus, planning, snap.running],
   );
 
-  // Build unified Agent-Team node list in natural workflow chronological order:
-  // Stage 0 -> Stage 1 (Rounds 1..N) -> Stage 1.5 -> Stage 2 (Milestone Plan) -> Stage 3 (Wave 1..N).
+  // Build unified Agent-Team node list in true chronological milestone-nested order:
+  // Global Design -> UI Prototype -> Milestone M-01 (Plan -> Waves -> Local Revisions -> Judge) -> M-02 ...
   const isZh = t('tab.traces') === '运行记录';
   const agentItems = useMemo<AgentSwitchItem[]>(() => {
     const list: AgentSwitchItem[] = [];
     const roundLabels = buildTraceRoundLabels(snap.traces, isZh);
-
-    // Sort traces chronologically (oldest -> newest) so the dropdown matches Main Stream top-to-bottom.
     const chronological = [...snap.traces].sort((a, b) => {
       const ta = Date.parse(a.startedAt || a.updatedAt || '') || 0;
       const tb = Date.parse(b.startedAt || b.updatedAt || '') || 0;
       return ta - tb;
     });
 
-    // Group iterative planning traces by (role, roundLabel) so EVERY stage (Stage 0,
-    // Stage 1 Rounds 1..N, Stage 1.5 Rounds 1..N, Stage 2 Rounds 1..N) matches the Main Stream
-    // 1:1 chronologically even when Go reuses the same persistent sessionKey across rounds.
-    // Retries within the exact same round collapse into 1 card carrying the latest invocation's
-    // label/status/time/duration + attempt count (never mixing labels and timestamps across rounds).
-    const PLANNING_ROLES = new Set([
-      'clarify',
-      'design-plan',
-      'design-review',
-      'ui-prototype',
-      'ui-prototype-review',
-      'plan',
-      'plan-review',
-      'investigate',
-    ]);
+    const requests = Array.isArray(planning?.requests) ? planning.requests : [];
     const packetIdSet = new Set(packetEntries.map(p => p.id));
-    const grouped = new Map<
-      string,
-      { latest: (typeof snap.traces)[number]; label: string; count: number; orderTs: number }
-    >();
-    const postPacketGrouped = new Map<
-      string,
-      { latest: (typeof snap.traces)[number]; label: string; count: number; orderTs: number }
-    >();
+    const milestonesMap = (snap.state as { milestones?: Record<string, { status?: string }> } | null)?.milestones ?? null;
+    const milestoneIdsSet = new Set<string>();
+    for (const id of Object.keys(milestonesMap ?? {})) milestoneIdsSet.add(id.toUpperCase());
+    for (const p of packetEntries) {
+      const mid = extractMilestoneIdFromPacket(p.id);
+      if (mid) milestoneIdsSet.add(mid);
+    }
     for (const tr of chronological) {
-      const isPlanning = PLANNING_ROLES.has(tr.role);
-      const isMilestonePost =
-        tr.role === 'judge' || (tr.role === 'frontend-ux-review' && (!tr.scope || !packetIdSet.has(tr.scope)));
-      if (!isPlanning && !isMilestonePost) continue;
-      const targetMap = isPlanning ? grouped : postPacketGrouped;
+      if (tr.role === 'plan' || tr.role === 'plan-review' || tr.role === 'judge') {
+        const reqId = (tr.scope ?? '').replace(/^planning:/, '');
+        const req = requests.find(r => r.id === reqId || `planning:${r.id}` === tr.scope);
+        const mid = extractMilestoneIdFromScope(tr.scope, null, req);
+        if (mid) milestoneIdsSet.add(mid);
+      }
+    }
+    const orderedMilestones = [...milestoneIdsSet].sort(compareMilestoneIds);
+
+    const toneToDot = (tone: string) =>
+      tone === 'running'
+        ? styles.statusDotRunning
+        : tone === 'ok'
+          ? styles.statusDotSuccess
+          : tone === 'danger'
+            ? styles.statusDotDanger
+            : tone === 'warn'
+              ? styles.statusDotWarn
+              : '';
+    const toneToPill = (tone: string) =>
+      tone === 'running'
+        ? styles.pillRunning
+        : tone === 'ok'
+          ? styles.pillSuccess
+          : tone === 'danger'
+            ? styles.pillDanger
+            : tone === 'warn'
+              ? styles.pillWarn
+              : '';
+
+    // 1. Global Design & UI Prototype traces
+    const GLOBAL_ROLES = new Set(['clarify', 'design-plan', 'design-review', 'ui-prototype', 'ui-prototype-review', 'investigate']);
+    const globalGrouped = new Map<string, { latest: (typeof snap.traces)[number]; label: string; count: number; orderTs: number }>();
+    for (const tr of chronological) {
+      if (!GLOBAL_ROLES.has(tr.role)) continue;
       const label = roundLabels.get(tr.id) || `${tr.role}${tr.scope ? ` · ${tr.scope}` : ''}`;
-      const groupKey = `${tr.role}::${label}`;
+      const gk = `${tr.role}::${label}`;
       const ts = Date.parse(tr.startedAt || tr.updatedAt || '') || 0;
-      const prev = targetMap.get(groupKey);
-      if (!prev) {
-        targetMap.set(groupKey, { latest: tr, label, count: 1, orderTs: ts });
-      } else {
+      const prev = globalGrouped.get(gk);
+      if (!prev) globalGrouped.set(gk, { latest: tr, label, count: 1, orderTs: ts });
+      else {
         prev.count += 1;
         prev.latest = tr;
-        prev.label = label;
         prev.orderTs = ts || prev.orderTs;
       }
     }
+    for (const entry of [...globalGrouped.values()].sort((a, b) => a.orderTs - b.orderTs)) {
+      const { latest, label, count } = entry;
+      const pill = nodeStatusPill(latest.status, latest.running, isZh);
+      const modelMeta = formatModelBadge(latest.model, latest.thinking, isZh) || latest.harness || '';
+      const countMeta = count > 1 ? (isZh ? `共 ${count} 次` : `${count} runs`) : '';
+      const isProto = latest.role === 'ui-prototype' || latest.role === 'ui-prototype-review';
+      list.push({
+        id: latest.scope || latest.id,
+        groupKey: isProto ? 'global-proto' : 'global-design',
+        groupTitle: isProto ? (isZh ? 'UI 交互原型' : 'UI Prototype') : (isZh ? '需求与架构' : 'Requirements & Architecture'),
+        label,
+        meta: [modelMeta, countMeta].filter(Boolean).join(' · '),
+        timeText: formatShortTime(latest.startedAt || latest.updatedAt),
+        durationText: !latest.running ? formatNodeDuration(latest.durationMs) : '',
+        statusLabel: pill.label,
+        statusPillClass: pill.cls,
+        dotClass: statusDotForNode(latest.status, latest.running),
+        running: Boolean(latest.running),
+        traceId: latest.id,
+        sessionKey: latest.key,
+      });
+    }
 
-    const pushGroupedTraces = (
-      entries: Iterable<{ latest: (typeof snap.traces)[number]; label: string; count: number; orderTs: number }>,
-    ) => {
-      const ordered = [...entries].sort((a, b) => a.orderTs - b.orderTs);
-      for (const entry of ordered) {
-        const { latest, label, count } = entry;
-        const pill = nodeStatusPill(latest.status, latest.running, isZh);
-        const modelMeta = formatModelBadge(latest.model, latest.thinking, isZh) || latest.harness || '';
-        const countMeta = count > 1 ? (isZh ? `共 ${count} 次` : `${count} runs`) : '';
-        const group: AgentSwitchItem['group'] =
-          latest.role === 'ui-prototype' || latest.role === 'ui-prototype-review'
-            ? 'proto'
-            : latest.role === 'plan' || latest.role === 'plan-review'
-              ? 'plan'
-              : latest.role === 'judge' || latest.role === 'frontend-ux-review'
-                ? 'exec'
-                : 'design';
-        list.push({
-          id: latest.scope || latest.id,
-          group,
-          label,
-          meta: [modelMeta, countMeta].filter(Boolean).join(' · '),
-          timeText: formatShortTime(latest.startedAt || latest.updatedAt),
-          durationText: !latest.running ? formatNodeDuration(latest.durationMs) : '',
-          statusLabel: pill.label,
-          statusPillClass: pill.cls,
-          dotClass: statusDotForNode(latest.status, latest.running),
-          traceId: latest.id,
-          sessionKey: latest.key,
-        });
-      }
-    };
-
-    pushGroupedTraces(grouped.values());
-
-    // Execution packets follow Stage 2 in Wave 1 -> Wave N order.
+    // Helper: wave depth sort for packets
     const pktById = new Map(packetEntries.map(p => [p.id, p]));
     const depthCache = new Map<string, number>();
     const getDepth = (id: string, stack = new Set<string>()): number => {
@@ -275,14 +284,6 @@ export function WorkbenchPage({
       depthCache.set(id, d);
       return d;
     };
-
-    const sortedPackets = [...packetEntries].sort((a, b) => {
-      const da = getDepth(a.id);
-      const db = getDepth(b.id);
-      if (da !== db) return da - db;
-      return a.id.localeCompare(b.id);
-    });
-
     const packetStepLabel = (role?: string): string => {
       if (role === 'review') return isZh ? '代码审查' : 'Review';
       if (role === 'frontend-ux-review') return isZh ? 'UX 审查' : 'UX Review';
@@ -290,7 +291,7 @@ export function WorkbenchPage({
       return '';
     };
 
-    for (const p of sortedPackets) {
+    const pushPacketItem = (p: (typeof packetEntries)[number], groupKey: string, groupTitle: string) => {
       const pktTraces = chronological.filter(
         x => x.scope === p.id || x.key === `execute/${p.id}` || x.key === `review/${p.id}`,
       );
@@ -311,7 +312,8 @@ export function WorkbenchPage({
       const countMeta = pktTraces.length > 1 ? (isZh ? `共 ${pktTraces.length} 轮` : `${pktTraces.length} runs`) : '';
       list.push({
         id: p.id,
-        group: 'exec',
+        groupKey,
+        groupTitle,
         label: `Wave ${waveNum} · ${p.title ? `${p.id} ${p.title}` : p.id}`,
         meta: [stepTag, modelMeta, countMeta].filter(Boolean).join(' · '),
         timeText: formatShortTime(timeRaw),
@@ -319,16 +321,162 @@ export function WorkbenchPage({
         statusLabel: pill.label,
         statusPillClass: pill.cls,
         dotClass: statusDotForNode(p.status, latestTr?.running),
+        running: Boolean(latestTr?.running),
         traceId: latestTr?.id ?? null,
         sessionKey: latestTr?.key || p.sessionKey || `execute/${p.id}`,
         packetId: p.id,
       });
+    };
+
+    // Group plan/plan-review traces by scope
+    const planTracesByScope = new Map<string, (typeof snap.traces)[number][]>();
+    for (const tr of chronological) {
+      if (tr.role !== 'plan' && tr.role !== 'plan-review') continue;
+      const sk = tr.scope || tr.key || tr.id;
+      const arr = planTracesByScope.get(sk) ?? [];
+      arr.push(tr);
+      planTracesByScope.set(sk, arr);
     }
 
-    // Milestone-level Judge & Frontend UX Review appear after their milestone's execution packets.
-    pushGroupedTraces(postPacketGrouped.values());
+    const pushPlanScopeSteps = (scopeKey: string, tracesInScope: (typeof snap.traces)[number][], groupKey: string, groupTitle: string) => {
+      const steps = annotatePlanSteps(tracesInScope, isZh);
+      const tag = scopeKey.replace(/^planning:/, '');
+      for (const st of steps) {
+        const tr = st.trace;
+        const modelMeta = formatModelBadge(tr.model, tr.thinking, isZh) || tr.harness || '';
+        list.push({
+          id: tr.scope || tr.id,
+          groupKey,
+          groupTitle,
+          label: `${st.title}${tag && !tag.startsWith('milestone/') ? ` · ${tag}` : ''}`,
+          meta: modelMeta,
+          timeText: formatShortTime(tr.startedAt || tr.updatedAt),
+          durationText: !tr.running ? formatNodeDuration(tr.durationMs) : '',
+          statusLabel: st.statusLabel,
+          statusPillClass: toneToPill(st.tone),
+          dotClass: toneToDot(st.tone),
+          running: Boolean(tr.running),
+          traceId: tr.id,
+          sessionKey: tr.key,
+        });
+      }
+    };
+
+    const assignedScopes = new Set<string>();
+    const assignedPackets = new Set<string>();
+    const assignedPostTraceIds = new Set<string>();
+
+    // 2. Milestone-nested groups (chronological M-01 -> M-02 -> ... so active milestone is always at the bottom!)
+    for (const msId of orderedMilestones) {
+      const rawMsStatus = (milestonesMap?.[msId]?.status ?? milestonesMap?.[msId.toLowerCase()]?.status ?? '').toLowerCase();
+      const msPackets = packetEntries
+        .filter(p => extractMilestoneIdFromPacket(p.id) === msId)
+        .sort((a, b) => getDepth(a.id) - getDepth(b.id) || a.id.localeCompare(b.id));
+      const msScopes: Array<{ scopeKey: string; traces: (typeof snap.traces)[number][]; isMainPlan: boolean }> = [];
+      for (const [scopeKey, arr] of planTracesByScope.entries()) {
+        const reqId = scopeKey.replace(/^planning:/, '');
+        const req = requests.find(r => r.id === reqId || `planning:${r.id}` === scopeKey);
+        const mid = extractMilestoneIdFromScope(scopeKey, null, req);
+        if (mid === msId) {
+          msScopes.push({
+            scopeKey,
+            traces: arr,
+            isMainPlan: scopeKey.includes(`milestone/${msId}`) || req?.scope === 'milestone',
+          });
+          assignedScopes.add(scopeKey);
+        }
+      }
+      const msPostTraces = chronological.filter(
+        tr =>
+          (tr.role === 'judge' || (tr.role === 'frontend-ux-review' && (!tr.scope || !packetIdSet.has(tr.scope)))) &&
+          extractMilestoneIdFromScope(tr.scope) === msId,
+      );
+      if (msPackets.length === 0 && msScopes.length === 0 && msPostTraces.length === 0) continue;
+
+      const msRunning =
+        msScopes.some(s => s.traces.some(t => t.running)) ||
+        msPostTraces.some(t => t.running) ||
+        msPackets.some(p => chronological.some(t => t.running && (t.scope === p.id || t.key.endsWith(`/${p.id}`))));
+      const statusSuffix =
+        rawMsStatus === 'closed'
+          ? (isZh ? ' · 已完成' : ' · Closed')
+          : msRunning
+            ? (isZh ? ' · 进行中' : ' · Live')
+            : '';
+      const groupKey = `milestone:${msId}`;
+      const groupTitle = isZh ? `里程碑 ${msId}${statusSuffix}` : `Milestone ${msId}${statusSuffix}`;
+
+      // 2a. Milestone planning scopes first
+      for (const s of msScopes.filter(x => x.isMainPlan)) {
+        pushPlanScopeSteps(s.scopeKey, s.traces, groupKey, groupTitle);
+      }
+      // 2b. Milestone execution packets in wave order
+      for (const p of msPackets) {
+        assignedPackets.add(p.id);
+        pushPacketItem(p, groupKey, groupTitle);
+      }
+      // 2c. Local packet/mid-exec revisions within this milestone
+      for (const s of msScopes.filter(x => !x.isMainPlan)) {
+        pushPlanScopeSteps(s.scopeKey, s.traces, groupKey, groupTitle);
+      }
+      // 2d. Milestone verification (Judge / UX review)
+      for (const tr of msPostTraces) {
+        assignedPostTraceIds.add(tr.id);
+        const pill = nodeStatusPill(tr.status, tr.running, isZh);
+        const modelMeta = formatModelBadge(tr.model, tr.thinking, isZh) || tr.harness || '';
+        list.push({
+          id: tr.scope || tr.id,
+          groupKey,
+          groupTitle,
+          label: roundLabels.get(tr.id) || (isZh ? `里程碑裁决 · ${msId}` : `Milestone Judge · ${msId}`),
+          meta: modelMeta,
+          timeText: formatShortTime(tr.startedAt || tr.updatedAt),
+          durationText: !tr.running ? formatNodeDuration(tr.durationMs) : '',
+          statusLabel: pill.label,
+          statusPillClass: pill.cls,
+          dotClass: statusDotForNode(tr.status, tr.running),
+          running: Boolean(tr.running),
+          traceId: tr.id,
+          sessionKey: tr.key,
+        });
+      }
+    }
+
+    // 3. Fallback for any non-milestone plan scopes, packets, or post-packet traces
+    for (const [scopeKey, arr] of planTracesByScope.entries()) {
+      if (assignedScopes.has(scopeKey)) continue;
+      pushPlanScopeSteps(scopeKey, arr, 'fallback-plan', isZh ? '实施拆包规划' : 'Milestone Plan');
+    }
+    const remainingPackets = packetEntries
+      .filter(p => !assignedPackets.has(p.id))
+      .sort((a, b) => getDepth(a.id) - getDepth(b.id) || a.id.localeCompare(b.id));
+    for (const p of remainingPackets) {
+      pushPacketItem(p, 'fallback-exec', isZh ? 'Wave 执行与审查' : 'Wave Execution & Review');
+    }
+    for (const tr of chronological) {
+      if (assignedPostTraceIds.has(tr.id)) continue;
+      if (tr.role !== 'judge' && !(tr.role === 'frontend-ux-review' && (!tr.scope || !packetIdSet.has(tr.scope)))) continue;
+      const pill = nodeStatusPill(tr.status, tr.running, isZh);
+      const modelMeta = formatModelBadge(tr.model, tr.thinking, isZh) || tr.harness || '';
+      list.push({
+        id: tr.scope || tr.id,
+        groupKey: 'fallback-exec',
+        groupTitle: isZh ? 'Wave 执行与审查' : 'Wave Execution & Review',
+        label: roundLabels.get(tr.id) || `${tr.role}${tr.scope ? ` · ${tr.scope}` : ''}`,
+        meta: modelMeta,
+        timeText: formatShortTime(tr.startedAt || tr.updatedAt),
+        durationText: !tr.running ? formatNodeDuration(tr.durationMs) : '',
+        statusLabel: pill.label,
+        statusPillClass: pill.cls,
+        dotClass: statusDotForNode(tr.status, tr.running),
+        running: Boolean(tr.running),
+        traceId: tr.id,
+        sessionKey: tr.key,
+      });
+    }
+
     return list;
-  }, [snap.traces, packetEntries, isZh]);
+  }, [snap.traces, packetEntries, planning?.requests, snap.state, isZh]);
 
   const activeAgent = useMemo(
     () =>
@@ -582,16 +730,8 @@ export function WorkbenchPage({
                       </button>
 
                       {(() => {
-                        const groupTitles: Record<AgentSwitchItem['group'], string> = {
-                          design: isZh ? '需求与架构' : 'Requirements & Architecture',
-                          proto: isZh ? 'UI 交互原型' : 'UI Prototype',
-                          plan: isZh ? '实施拆包规划' : 'Milestone Plan',
-                          exec: isZh ? 'Wave 执行与审查' : 'Wave Execution & Review',
-                        };
-                        let lastGroup: AgentSwitchItem['group'] | null = null;
-                        return agentItems.map((item, idx) => {
-                          const showHeader = item.group !== lastGroup;
-                          lastGroup = item.group;
+                        const runningItems = agentItems.filter(it => it.running);
+                        const renderSwitcherRow = (item: AgentSwitchItem, key: string) => {
                           const active =
                             isSubView &&
                             (item.traceId && snap.selectedTraceId
@@ -599,47 +739,70 @@ export function WorkbenchPage({
                               : (item.sessionKey && item.sessionKey === snap.activeSessionKey) ||
                                 snap.activeNodeId === item.id);
                           return (
-                            <div key={`${item.sessionKey || item.id}-${idx}`}>
-                              {showHeader && (
-                                <div className={styles.switcherGroupHeader}>{groupTitles[item.group]}</div>
-                              )}
-                              <button
-                                type="button"
-                                className={`${styles.taskSwitcherItem} ${active ? styles.taskSwitcherItemActive : ''}`}
-                                onClick={() => {
-                                  setAgentSwitcherOpen(false);
-                                  store.drillIntoNode(item.id, {
-                                    traceId: item.traceId,
-                                    sessionKey: item.sessionKey,
-                                    packetId: item.packetId,
-                                  });
-                                }}
-                              >
-                                <div className={styles.taskSwitcherItemTop}>
-                                  <span className={styles.taskSwitcherItemName}>
-                                    <span className={`${styles.statusDot} ${item.dotClass}`} />
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                            <button
+                              key={key}
+                              type="button"
+                              className={`${styles.taskSwitcherItem} ${active ? styles.taskSwitcherItemActive : ''}`}
+                              onClick={() => {
+                                setAgentSwitcherOpen(false);
+                                store.drillIntoNode(item.id, {
+                                  traceId: item.traceId,
+                                  sessionKey: item.sessionKey,
+                                  packetId: item.packetId,
+                                });
+                              }}
+                            >
+                              <div className={styles.taskSwitcherItemTop}>
+                                <span className={styles.taskSwitcherItemName}>
+                                  <span className={`${styles.statusDot} ${item.dotClass}`} />
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                                </span>
+                                {item.statusLabel && (
+                                  <span className={`${styles.pill} ${item.statusPillClass || ''}`} style={{ flexShrink: 0 }}>
+                                    {item.statusLabel}
                                   </span>
-                                  {item.statusLabel && (
-                                    <span className={`${styles.pill} ${item.statusPillClass || ''}`} style={{ flexShrink: 0 }}>
-                                      {item.statusLabel}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className={styles.taskSwitcherItemMeta}>
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {item.meta || '—'}
-                                  </span>
-                                  <span style={{ flexShrink: 0, fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>
-                                    {item.timeText || ''}
-                                    {item.timeText && item.durationText ? ' · ' : ''}
-                                    {item.durationText ? (isZh ? `耗时 ${item.durationText}` : item.durationText) : ''}
-                                  </span>
-                                </div>
-                              </button>
-                            </div>
+                                )}
+                              </div>
+                              <div className={styles.taskSwitcherItemMeta}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {item.meta || '—'}
+                                </span>
+                                <span style={{ flexShrink: 0, fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>
+                                  {item.timeText || ''}
+                                  {item.timeText && item.durationText ? ' · ' : ''}
+                                  {item.durationText ? (isZh ? `耗时 ${item.durationText}` : item.durationText) : ''}
+                                </span>
+                              </div>
+                            </button>
                           );
-                        });
+                        };
+                        let lastGroupKey: string | null = null;
+                        return (
+                          <>
+                            {runningItems.length > 0 && (
+                              <div className={styles.switcherLiveSection} data-testid="switcher-live-quick-jump">
+                                <div className={styles.switcherGroupHeader}>
+                                  {isZh ? '⚡ 当前运行中' : '⚡ Running Now'}
+                                </div>
+                                {runningItems.map((item, idx) =>
+                                  renderSwitcherRow(item, `live-${item.sessionKey || item.id}-${idx}`),
+                                )}
+                              </div>
+                            )}
+                            {agentItems.map((item, idx) => {
+                              const showHeader = item.groupKey !== lastGroupKey;
+                              lastGroupKey = item.groupKey;
+                              return (
+                                <div key={`${item.groupKey}-${item.sessionKey || item.id}-${idx}`}>
+                                  {showHeader && (
+                                    <div className={styles.switcherGroupHeader}>{item.groupTitle}</div>
+                                  )}
+                                  {renderSwitcherRow(item, `row-${item.sessionKey || item.id}-${idx}`)}
+                                </div>
+                              );
+                            })}
+                          </>
+                        );
                       })()}
                     </div>
                   </div>
@@ -751,7 +914,7 @@ export function WorkbenchPage({
                     disabled={snap.busyAction !== null}
                     onClick={() => void store.retryPlanning()}
                   >
-                    {t('header.cta.retryPlanning')}
+                    {formatRetryPlanningLabel(retryTarget, isZh)}
                   </button>
                 )}
 

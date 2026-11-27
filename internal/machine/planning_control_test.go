@@ -229,7 +229,7 @@ func TestPlanningControlHelpersKeepErrorsAndAuthoritySeparate(t *testing.T) {
 	st.Sessions.Records["consumed"] = &state.SessionRecord{Last: &state.SessionInvocation{Status: "consumed"}}
 	require.False(t, planningHasPendingReceipt(st))
 	r := PlanningCommand{Action: "plan", RequestID: "bad", Scope: "replan", ScopeID: "foreign"}
-	_, err := planningCommandApplied(st.Planning, r, "")
+	_, err := planningCommandApplied(st, r, "")
 	require.Error(t, err)
 	r.Scope, r.ScopeID = "design", ""
 	st.Planning.MaxRounds = 0

@@ -10,7 +10,8 @@ const ref = value => record(value) && Object.keys(value).every(key => ['revision
 const fields = {
   prepare: ['action', 'request-id', 'brief', 'start'],
   clarify: ['action', 'revision', 'request-id', 'clarify', 'start'],
-  plan: ['action', 'revision', 'request-id', 'scope', 'scope-id', 'text', 'draft-mode', 'start'],
+  plan: ['action', 'revision', 'request-id', 'scope', 'scope-id', 'text', 'draft-mode', 'continue-execution', 'start'],
+  'cancel-plan': ['action', 'revision', 'request-id', 'target-request-id', 'start'],
   feedback: ['action', 'revision', 'request-id', 'design', 'text', 'policy', 'start'],
   approve: ['action', 'revision', 'request-id', 'design', 'start'],
   'approve-prototype': ['action', 'revision', 'request-id', 'design', 'start'],
@@ -54,9 +55,12 @@ export function validPlanningCommand(value) {
   if (value.action === 'collaboration' && !collaborationEdit(value.collaboration)) return false;
   if (value.action === 'input-images' && !inputImageEdit(value['input-images'])) return false;
   if ('draft-mode' in value && !['dual', 'single'].includes(value['draft-mode'])) return false;
+  if ('continue-execution' in value && typeof value['continue-execution'] !== 'boolean') return false;
+  if ('target-request-id' in value && (!text(value['target-request-id'], 120) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value['target-request-id']))) return false;
   if (value.action === 'plan' && (!['design', 'milestone', 'packet', 'replan'].includes(value.scope) ||
       ('scope-id' in value && (!text(value['scope-id'], 120) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value['scope-id']))) ||
-      (['milestone', 'packet'].includes(value.scope) && !value['scope-id']))) return false;
+      (['milestone', 'packet'].includes(value.scope) && !value['scope-id']) ||
+      (value['continue-execution'] === true && !['milestone', 'packet'].includes(value.scope)))) return false;
   return true;
 }
 

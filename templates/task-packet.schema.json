@@ -190,7 +190,7 @@
         "cmd": { "type": "string", "minLength": 1 },
         "script": { "type": "string", "minLength": 1 },
         "expect": { "type": "string", "pattern": "^exit \\d+$" },
-        "purpose": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S", "description": "Approved semantic purpose shared with JEV to compare targeted checks; omit secrets, raw commands and logs. Checks without a purpose remain executor guidance and are not JEV diagnostic candidates." }
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 320, "pattern": "\\S", "description": "Approved semantic purpose shared with JEV to compare targeted checks; omit secrets, raw commands and logs. Checks without a purpose remain executor guidance and are not JEV diagnostic candidates." }
       },
       "anyOf": [{ "required": ["cmd"] }, { "required": ["script"] }]
     },

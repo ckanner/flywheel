@@ -52,46 +52,166 @@ func defaultCheckOracleSyntax(name, absPath string) error {
 	return nil
 }
 
-func renderProjectContext(p *planning.State) []byte {
+func renderProjectContext(st *state.State, prepareCmd string) []byte {
 	var lines []string
-	lines = append(lines, "# Project Context Memory (Stable Authority)", "", "Goal: "+p.Brief.Goal)
-	if len(p.Brief.Constraints) > 0 {
-		lines = append(lines, "Constraints: "+strings.Join(p.Brief.Constraints, "; "))
-	}
-	if len(p.Brief.QualityGates) > 0 {
-		lines = append(lines, "Quality gates: "+strings.Join(p.Brief.QualityGates, "; "))
-	}
-	if p.Clarification != nil && len(p.Clarification.Answers) > 0 {
-		keys := make([]string, 0, len(p.Clarification.Answers))
-		for k := range p.Clarification.Answers {
-			keys = append(keys, k)
+	lines = append(lines, "# Project Context Memory (Stable Authority)")
+	milestoneTitles := map[string]string{}
+	if st != nil && st.Planning != nil {
+		p := st.Planning
+		lines = append(lines, "", "Goal: "+p.Brief.Goal)
+		if len(p.Brief.Constraints) > 0 {
+			lines = append(lines, "Constraints: "+strings.Join(p.Brief.Constraints, "; "))
 		}
-		sort.Strings(keys)
-		lines = append(lines, "", "## Confirmed Clarifications")
-		for _, k := range keys {
-			lines = append(lines, fmt.Sprintf("- %s: %s", k, p.Clarification.Answers[k]))
+		if len(p.Brief.QualityGates) > 0 {
+			lines = append(lines, "Quality gates: "+strings.Join(p.Brief.QualityGates, "; "))
 		}
-	}
-	if p.CurrentDesign != nil {
-		if d := planning.FindDesign(p, *p.CurrentDesign); d != nil {
-			if len(d.ImplementationScope) > 0 {
-				lines = append(lines, "", "## Implementation Scope", strings.Join(d.ImplementationScope, ", "))
+		if p.Clarification != nil && len(p.Clarification.Answers) > 0 {
+			keys := make([]string, 0, len(p.Clarification.Answers))
+			for k := range p.Clarification.Answers {
+				keys = append(keys, k)
 			}
-			if len(d.Decisions) > 0 {
-				lines = append(lines, "", "## Architecture Decisions")
-				for _, dec := range d.Decisions {
-					lines = append(lines, fmt.Sprintf("- [%s/%s] %s", dec.ID, dec.Kind, dec.Statement))
+			sort.Strings(keys)
+			lines = append(lines, "", "## Confirmed Clarifications")
+			for _, k := range keys {
+				lines = append(lines, fmt.Sprintf("- %s: %s", k, p.Clarification.Answers[k]))
+			}
+		}
+		if p.CurrentDesign != nil {
+			if d := planning.FindDesign(p, *p.CurrentDesign); d != nil {
+				if len(d.ImplementationScope) > 0 {
+					lines = append(lines, "", "## Implementation Scope", strings.Join(d.ImplementationScope, ", "))
+				}
+				if len(d.Decisions) > 0 {
+					lines = append(lines, "", "## Architecture Decisions")
+					for _, dec := range d.Decisions {
+						lines = append(lines, fmt.Sprintf("- [%s/%s] %s", dec.ID, dec.Kind, dec.Statement))
+					}
+				}
+				if len(d.Milestones) > 0 {
+					lines = append(lines, "", "## Milestones")
+					for _, m := range d.Milestones {
+						milestoneTitles[m.ID] = m.Title
+						lines = append(lines, fmt.Sprintf("- %s %s (gate: %s)", m.ID, m.Title, m.Gate))
+					}
 				}
 			}
-			if len(d.Milestones) > 0 {
-				lines = append(lines, "", "## Milestones")
-				for _, m := range d.Milestones {
-					lines = append(lines, fmt.Sprintf("- %s %s (gate: %s)", m.ID, m.Title, m.Gate))
-				}
-			}
+		}
+	}
+	if st != nil {
+		if delivered := deliveredMilestoneLines(st, milestoneTitles); len(delivered) > 0 {
+			lines = append(lines, "", "## Delivered Milestones")
+			lines = append(lines, delivered...)
+		}
+		if facts := verifiedToolchainFactLines(st, prepareCmd); len(facts) > 0 {
+			lines = append(lines, "", "## Verified Workspace & Toolchain Facts")
+			lines = append(lines, facts...)
 		}
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func deliveredMilestoneLines(st *state.State, titles map[string]string) []string {
+	ids := make([]string, 0, len(st.Milestones))
+	for id, ms := range st.Milestones {
+		if ms.Status == "closed" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	lines := make([]string, 0, len(ids))
+	for _, id := range ids {
+		ms := st.Milestones[id]
+		var packets []string
+		for pid, ps := range st.Packets {
+			if ps == nil || ps.Status != "completed" {
+				continue
+			}
+			if m, err := contract.MilestoneOfPacket(pid); err == nil && m == id {
+				packets = append(packets, pid)
+			}
+		}
+		sort.Strings(packets)
+		title := titles[id]
+		if title == "" {
+			title = id
+		}
+		outcome := milestoneDeliveryOutcome(ms)
+		lines = append(lines, fmt.Sprintf("- %s (%s): packets=[%s], outcome=%s", id, title, strings.Join(packets, ", "), outcome))
+	}
+	return lines
+}
+
+func milestoneDeliveryOutcome(ms state.MilestoneState) string {
+	if ms.HumanSignoff != nil {
+		return fmt.Sprintf("gate pass, human-accepted (%s)", ms.HumanSignoff.Reason)
+	}
+	if gmap, ok := ms.Gate.(map[string]any); ok {
+		if jmap, ok := gmap["judge"].(map[string]any); ok && jmap["score"] != nil {
+			return fmt.Sprintf("gate pass, judge %v", jmap["score"])
+		}
+	}
+	return "closed"
+}
+
+func verifiedToolchainFactLines(st *state.State, prepareCmd string) []string {
+	seen := map[string]bool{}
+	var cmds []string
+	addCmd := func(raw string) {
+		c := strings.TrimSpace(raw)
+		if c != "" && !seen[c] {
+			seen[c] = true
+			cmds = append(cmds, c)
+		}
+	}
+	for _, ps := range st.Packets {
+		if ps == nil || ps.Status != "completed" {
+			continue
+		}
+		if l1, ok := ps.Evidence.L1.(map[string]any); ok && l1["pass"] == true {
+			if results, ok := l1["commands"].([]any); ok {
+				for _, item := range results {
+					if m, ok := item.(map[string]any); ok && m["pass"] == true {
+						if cmd, ok := m["cmd"].(string); ok {
+							addCmd(cmd)
+						}
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(cmds)
+	var lines []string
+	if strings.TrimSpace(prepareCmd) != "" {
+		lines = append(lines, "- verify.prepare-cmd: "+strings.TrimSpace(prepareCmd))
+	}
+	if len(cmds) > 0 {
+		if len(cmds) > 12 {
+			cmds = cmds[:12]
+		}
+		lines = append(lines, "- Verified passing gate commands: "+strings.Join(cmds, " | "))
+	}
+	return lines
+}
+
+func (c *Context) verifyPrepareCmd() string {
+	if c.Config == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Config.Verify.PrepareCmd)
+}
+
+func (c *Context) syncProjectContext() error {
+	taskRoot, err := openPlanningTask(c.TaskDir)
+	if err != nil {
+		return err
+	}
+	defer taskRoot.Close()
+	raw := renderProjectContext(c.State, c.verifyPrepareCmd())
+	actual, readErr := readPlanningBytes(taskRoot, "project-context.md")
+	if readErr != nil || !bytes.Equal(raw, actual) {
+		return writePlanningBytes(taskRoot, "project-context.md", raw)
+	}
+	return nil
 }
 
 // Exports are reviewable copies, never an alternative source of authority.
@@ -297,17 +417,8 @@ func (c *Context) checkPlanningExports(create bool) error {
 		}
 	}
 	if create && (c.State.Planning.CurrentDesign != nil || c.State.Planning.Clarification != nil) {
-		taskRoot, err := openPlanningTask(c.TaskDir)
-		if err != nil {
+		if err := c.syncProjectContext(); err != nil {
 			return err
-		}
-		defer taskRoot.Close()
-		raw := renderProjectContext(c.State.Planning)
-		actual, readErr := readPlanningBytes(taskRoot, "project-context.md")
-		if readErr != nil || !bytes.Equal(raw, actual) {
-			if err := writePlanningBytes(taskRoot, "project-context.md", raw); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

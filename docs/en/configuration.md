@@ -29,7 +29,7 @@ The bundled templates (`templates/flywheel.config.example.json` and
 - **Read-only sandbox locks**: `permissions.bindings` defaults `loops.design-review`,
   `loops.plan-review`, `loops.review`, `loops.judge`, `loops.investigate`, and
   `frontend-ux-review` to `read-only`.
-- **Native capabilities**: Antigravity defaults to `0.3.1` ACP with native image inputs;
+- **Native capabilities**: Antigravity defaults to `0.3.2` ACP with per-turn usage accounting and native image inputs;
   Kimi native subscription profiles (`kimi-subscription-agent` / `kimi-subscription-swarm`)
   enable `WebSearch`, `FetchURL`, `Agent`, and `AgentSwarm` by default.
 - **Guardrails & workflow toggles**: `budget.enforce: "off"`,

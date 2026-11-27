@@ -100,7 +100,15 @@ A new design gets its own version and independent review.
 The review can pass, request revision, require a user decision, or block. A passing
 review is evidence about the design. Human approval is a separate record.
 The bounded loop can stop for a decision, exhausted rounds, budget, or an unknown
-Provider outcome; it does not silently turn those results into a pass.
+Provider outcome; it does not silently turn those results into a pass. When a planning
+request is strictly converging (open findings dropping monotonically with at most 2
+blockers remaining), the engine may grant up to 2 bounded convergence grace rounds
+(`grace-rounds`) without altering immutable `max-rounds`. If a planning request stops
+or is mistargeted, the engine projects the exact recovery target in
+`planning.projection.retry-target`; use `planning cancel-plan` to cancel an interrupted
+`pending`/`running` request cleanly and `planning plan` with `continue-execution: true`
+(permitted only for `milestone`/`packet` scopes after root start authorization) to
+resume planning and continue straight into execution.
 
 ## Approve the version you actually read
 

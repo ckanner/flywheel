@@ -24,7 +24,8 @@ var planningFields = map[string][]string{
 	"input-images":       {"action", "revision", "request-id", "input-images", "start"},
 	"prepare":            {"action", "request-id", "brief", "start"},
 	"clarify":            {"action", "revision", "request-id", "clarify", "start"},
-	"plan":               {"action", "revision", "request-id", "scope", "scope-id", "text", "draft-mode", "start"},
+	"plan":               {"action", "revision", "request-id", "scope", "scope-id", "text", "draft-mode", "continue-execution", "start"},
+	"cancel-plan":        {"action", "revision", "request-id", "target-request-id", "start"},
 	"feedback":           {"action", "revision", "request-id", "design", "text", "policy", "start"},
 	"approve":            {"action", "revision", "request-id", "design", "start"},
 	"approve-prototype":  {"action", "revision", "request-id", "design", "start"},
@@ -170,7 +171,7 @@ func controlPlanning(cmd *cobra.Command, taskDir, cwd string) (controlResponse, 
 		return reply, nil
 	}
 	extra := []string{}
-	if request.Action == "plan" || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" || request.Action == "clarify" {
+	if (request.Action == "plan" && !request.ContinueExecution) || request.Action == "migrate" || request.Action == "feedback" || request.Action == "collaboration" || request.Action == "input-images" || request.Action == "clarify" {
 		extra = []string{"--planning-only"}
 	}
 	reply, err = startControlledRun(taskDir, cwd, "", extra)

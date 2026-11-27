@@ -40,7 +40,7 @@ func TestFeedbackChecksRejectInvalidOrUnboundedDeclarations(t *testing.T) {
 		"empty-purpose":   " [{cmd: check, expect: 'exit 0', purpose: ''}]\n",
 		"blank-purpose":   " [{cmd: check, expect: 'exit 0', purpose: '  '}]\n",
 		"null-purpose":    " [{cmd: check, expect: 'exit 0', purpose: null}]\n",
-		"long-purpose":    fmt.Sprintf(" [{cmd: check, expect: 'exit 0', purpose: '%s'}]\n", strings.Repeat("x", 161)),
+		"long-purpose":    fmt.Sprintf(" [{cmd: check, expect: 'exit 0', purpose: '%s'}]\n", strings.Repeat("x", 321)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			input := strings.Replace(validPacket, "acceptance:", "feedback-checks:"+checks+"acceptance:", 1)

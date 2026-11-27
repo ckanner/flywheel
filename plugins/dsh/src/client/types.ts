@@ -127,6 +127,7 @@ export interface PlanningRequestRecord {
   rounds?: number;
   retries?: number;
   'max-rounds'?: number;
+  'grace-rounds'?: number;
   status?: string;
   'planning-only'?: boolean;
   feedback?: string;
@@ -204,7 +205,24 @@ export interface PlanningUIPrototype {
   invocation?: string;
 }
 
+export interface PlanningRetryTarget {
+  scope: 'design' | 'milestone' | 'packet' | string;
+  'scope-id'?: string;
+  'continue-execution'?: boolean;
+  'failed-request-id'?: string;
+  'cancellable-request-id'?: string;
+}
+
+export interface PlanningProjection {
+  kind?: string;
+  'approval-complete'?: boolean;
+  ledger?: string;
+  omitted?: Record<string, number>;
+  'retry-target'?: PlanningRetryTarget;
+}
+
 export interface PlanningState {
+  projection?: PlanningProjection | null;
   version?: number;
   phase?: string;
   status?: string;

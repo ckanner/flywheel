@@ -2,10 +2,7 @@ package machine
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ckanner/flywheel/internal/contract"
@@ -97,7 +94,7 @@ func (c *Context) triageMilestone(request MilestoneCommand) (TaskSummary, error)
 	if c.State.Handoff != nil {
 		return c.summary(), fmt.Errorf("the task is under human session control; return it before triaging a milestone")
 	}
-	milestone, found := c.milestoneByID(request.MilestoneID)
+	_, found := c.milestoneByID(request.MilestoneID)
 	ms, exists := c.State.Milestones[request.MilestoneID]
 	if !found || !exists {
 		return c.summary(), fmt.Errorf("milestone %s not found", request.MilestoneID)
@@ -195,58 +192,8 @@ func (c *Context) triageMilestone(request MilestoneCommand) (TaskSummary, error)
 		c.State.Inbox = append(c.State.Inbox, entry)
 		c.appendInbox(entry)
 		c.appendRetro(fmt.Sprintf("- %s milestone %s: human-triage accepted with L2/L3 gate green (%s)", at, request.MilestoneID, request.Reason))
-		c.appendDeliveredMilestoneMemory(milestone, fmt.Sprintf("gate pass, human-accepted (%s)", request.Reason))
+		_ = c.syncProjectContext()
 		c.Log(fmt.Sprintf("%s: human signed off and closed milestone (%s)", request.MilestoneID, request.Reason))
 		return c.finishTriage("milestone-accept")
 	}
-}
-
-// appendDeliveredMilestoneMemory records an objective, idempotent delivery line
-// under "## Delivered Milestones" in project-context.md whenever a milestone
-// closes (Judge pass or human milestone accept). Written deterministically by
-// Go — never by an LLM, and never caching volatile execution state.
-func (c *Context) appendDeliveredMilestoneMemory(milestone contract.Milestone, outcome string) {
-	path := filepath.Join(c.TaskDir, "project-context.md")
-	existing := ""
-	if raw, err := os.ReadFile(path); err == nil {
-		existing = string(raw)
-	}
-	marker := "- " + milestone.ID + " ("
-	if strings.Contains(existing, marker) {
-		return
-	}
-	packetIDs := []string{}
-	for _, p := range c.PacketList {
-		if m, err := contract.MilestoneOfPacket(p.PacketID); err == nil && m == milestone.ID {
-			if ps := c.State.Packets[p.PacketID]; ps != nil && ps.Status == "completed" {
-				packetIDs = append(packetIDs, p.PacketID)
-			}
-		}
-	}
-	sort.Strings(packetIDs)
-	head := shortHeadSHA(c.Cwd)
-	line := fmt.Sprintf("- %s (%s): packets=[%s], head=%s, outcome=%s\n",
-		milestone.ID, milestone.Title, strings.Join(packetIDs, ", "), head, outcome)
-
-	trimmed := strings.TrimRight(existing, "\n")
-	var next string
-	switch {
-	case trimmed == "":
-		next = "## Delivered Milestones\n" + line
-	case strings.Contains(trimmed, "## Delivered Milestones"):
-		next = trimmed + "\n" + line
-	default:
-		next = trimmed + "\n\n## Delivered Milestones\n" + line
-	}
-	_ = os.WriteFile(path, []byte(next), 0o644)
-}
-
-func shortHeadSHA(cwd string) string {
-	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
-	cmd.Dir = cwd
-	out, err := cmd.Output()
-	if err != nil {
-		return "n/a"
-	}
-	return strings.TrimSpace(string(out))
 }

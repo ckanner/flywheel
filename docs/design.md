@@ -711,7 +711,7 @@ reportedCostUSD（CLI 的 API 等价估算），订阅实际美元成本为 unkn
 
 ### 7.3 Antigravity CLI 接入契约与 4 订阅默认矩阵
 
-`antigravity` 直接使用随包分发的独立 `@ckanner/dsh-subagent-antigravity@0.3.1` 公开 machine API 与官方 `agy` CLI，**默认采用官方 ACP 传输通道（`transport: "acp"`）**，并在适配器层原生支持多模态图片输入（`images` 经由既有冻结清单与 redacted receipt 传递，状态契约同时接纳 `claude-code-pro` 与 `antigravity`）。`evidence-only` 调用使用独立空临时目录隔离，确保不读取目标仓库外未授权状态。源码在 `dsh-subagent-antigravity`，原生程序与登录由用户环境提供。
+`antigravity` 直接使用随包分发的独立 `@ckanner/dsh-subagent-antigravity@0.3.2` 公开 machine API 与官方 `agy` CLI，**默认采用官方 ACP 传输通道（`transport: "acp"`）**，并在适配器层原生支持多模态图片输入（`images` 经由既有冻结清单与 redacted receipt 传递，状态契约同时接纳 `claude-code-pro` 与 `antigravity`）、ACP 单轮用量标记（`usage.scope = "turn"`）以及经脱敏的实时 `[tool]` / 节流 `[thought]` 进度帧（不污染 `outputText`）。`evidence-only` 调用使用独立空临时目录隔离，确保不读取目标仓库外未授权状态。源码在 `dsh-subagent-antigravity`，原生程序与登录由用户环境提供。
 
 严格接纳完整模型/effort、cwd、权限、调用身份与清理。普通执行要求明确 full-access，
 映射 accept-edits/always-proceed；调查/JEV 的 read-only 请求必须同时 evidenceOnly，
@@ -730,7 +730,7 @@ terminal 再确认 cleanup，业务 unknown 仍保留。新调用保留独立原
 关闭与调用前后配置稳定。回执为 verified-local-controls；账号权益、额度、外部工具
 费用仍可能 unknown。认证/额度错误不走 credits/API 后备。只接受原生 SUCCESS、
 完整配置和正常退出/清理，软权限拒绝、WAITING、坏帧、超时和取消均不算成功。
-原始 conversation usage 保留，不累加为 per-call 总量；未知 usage/cost 不补零。
+原始 `conversation` 级 usage 继续保留且不累加为 per-call 总量；仅当 ACP 回执明确给出 `scope: "turn"` 且 `status: "complete"` 时，Go 提取精确单轮用量（`Input = inputTokens + cacheReadTokens`、`CacheRead`、`Output`、`Reasoning`、`TotalTokens`）记入账本；未知 usage/cost 仍不补零。
 
 Orchestrator 的三个完整标识为 `gemini-pro-orchestrator-neon`、
 `gemini-pro-orchestrator`、`gemini-pro-orchestrator-argon`。对应 Neon／Carbon／Argon
@@ -756,7 +756,9 @@ Flywheel Execute 选择 Swarm 需要已审 packet 的 collaboration version 1：
 
 优先通过明确小任务、缓存稳定前缀、低频规划、故障反馈复用、独立短评审降低重试与上下文膨胀。默认不使用所有模型串行互相复核，也不强制 max/ultra。
 
-每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、`prompt-bytes`、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 与 Antigravity ACP 当前不暴露服务端 `cacheReadTokens`，按未知处理（后者可通过 `usage_update` 展示真实上下文窗口占用，绝不伪造缓存命中率）。
+每次调用记录角色、模型、harness、实际 provider、账号 channel、prompt hash、`prompt-bytes`、时长、物理终态、会话 ID、usage 和可知成本。provider 来自 driver 可确认的结果，未知时保留 null，不能把渠道别名冒充 adapter 身份。订阅调用的美元成本不会因未上报而写成已知 0。没有价格表/真实 cost 时成本为 unknown；Kimi CLI 当前不暴露服务端 `cacheReadTokens`，按未知处理；Antigravity ACP（`0.3.2+`）在 `session/prompt` 回执提供 `scope: "turn"` 单轮 token 与缓存读取计数时由 Go 精确入账（旧 headless CLI 的 `scope: "conversation"` 仍保持未知不重复累加），并可通过 `usage_update` 展示真实上下文窗口占用，绝不伪造缓存命中率。
+
+- **声明式规划恢复、统一收敛内核与单一真源 `project-context.md`（`internal/machine/planning_control.go`、`convergence.go`、`planning_activation.go`）**：`control planning` 新增幂等 `cancel-plan`（记录 `planning-cancel` 审计项并确定性恢复 `planning.phase`）与 `plan` 的 `continue-execution: true`（严格门控于 `milestone`/`packet` 作用域及已生效的 `StartAllowed`）；Go 在 `planning.projection.retry-target` 投影精确重试目标，控制台绝不硬编码 `scope: "design"`。执行评审与规划评审共用纯函数收敛内核 `EvaluateConvergence`，对严格收敛（阻塞项单调下降且 `<= 2`）的规划请求授予有界宽限（`grace-rounds <= 2`，保持 `max-rounds` 不可变）。`project-context.md` 由单一纯函数 `renderProjectContext(st, prepareCmd)` 幂等合成（稳定规划权威 + `## Delivered Milestones` + `## Verified Workspace & Toolchain Facts`），彻底消除重新激活覆盖里程碑记忆的风险。
 
 - **三层前缀缓存与指针优先提示词纪律（`internal/prompts`）**：所有 Plan / Review / Execute / Synthesis / Prototype 提示词按严格三层排布（Layer 1 静态角色规则与输出契约 → Layer 2 稳定任务权威与自动生成的 `project-context.md` ≤4 KB 项目记忆 → Layer 3 本轮易变输入与有界摘要），避免易变字段污染前半段前缀。大文档（>8 KB 设计稿、>24 KB 契约集合或 git diff、>16 KB 原始失败反馈）自动切换为磁盘路径指针与有界片段，防止超长提示词触发上游静默截断。
 - **规范化规划会话作用域与跨轮增量续跑（`internal/machine`）**：规划调用统一复用规范作用域（`planning:design`、`planning:milestone:<id>`、`planning:packet:<id>`），不再按 `request.ID` 每轮冷启会话；在未显式配置 `sessions.context: "full"` 时，规划角色（`design-plan`/`design-review`/`plan`/`plan-review`）在确认上一轮已派发完成且稳定权威未变更时仅发送 Layer 3 增量更新。单会话不再对多工具步累计输入启用隐式 `280,000` token 自动重建（避免误把多步计费输入当作单步上下文窗口、打断 Provider 原生压缩与缓存复用）；仅当用户显式配置 `max-run-input-tokens > 0` 时按该阈值重建。
@@ -1179,7 +1181,7 @@ flowchart LR
   end
 
   subgraph WORKERS["4 订阅独立 Worker"]
-    W1["Antigravity 0.3.1\n(默认 ACP + 原生图片)"]
+    W1["Antigravity 0.3.2\n(默认 ACP + 单轮用量 + 原生图片)"]
     W2["Claude Code Pro 0.7.1\n(Agent SDK)"]
     W3["Codex Pro 0.10.2\n(app-server + read-only 沙箱)"]
     W4["Kimi Native\n(WebSearch / FetchURL / Swarm)"]

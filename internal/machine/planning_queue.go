@@ -94,7 +94,7 @@ func queuePlanningFeedback(opts RunOpts, command PlanningCommand) (*state.State,
 	if rejected := rejectedPlanningReceipt(st, command.RequestID); rejected != nil {
 		return st, rejected, fmt.Errorf("planning request-id was already rejected; submit refreshed input with a new request-id")
 	}
-	already, err := planningCommandApplied(st.Planning, command, "")
+	already, err := planningCommandApplied(st, command, "")
 	if err != nil || already {
 		return st, planningControlResult(st, command, already, "This exact feedback is already recorded."), err
 	}
@@ -189,7 +189,7 @@ func (c *Context) applyPlanningQueue() error {
 		if err != nil {
 			return err
 		}
-		already, err := planningCommandApplied(c.State.Planning, entry.Command, "")
+		already, err := planningCommandApplied(c.State, entry.Command, "")
 		if err != nil {
 			if err := c.finishPlanningFeedback(root, name, entry, false, err); err != nil {
 				return err
@@ -287,7 +287,7 @@ func readPlanningControlReceipt(taskDir, id string, st *state.State) (*PlanningC
 					return saved.Receipt, nil
 				}
 			} else if saved.Receipt.Status == "applied" || saved.Receipt.Status == "unchanged" {
-				if applied, err := planningCommandApplied(st.Planning, saved.Request.Command, ""); err == nil && applied {
+				if applied, err := planningCommandApplied(st, saved.Request.Command, ""); err == nil && applied {
 					return saved.Receipt, nil
 				}
 			}
@@ -298,7 +298,7 @@ func readPlanningControlReceipt(taskDir, id string, st *state.State) (*PlanningC
 		}
 		pending, err := readPlanningFeedback(root, "feedback-"+id+".json")
 		if err == nil {
-			if applied, err := planningCommandApplied(st.Planning, pending.Command, ""); err != nil {
+			if applied, err := planningCommandApplied(st, pending.Command, ""); err != nil {
 				return nil, err
 			} else if !applied && rejectedPlanningReceipt(st, id) == nil {
 				return &PlanningControlReceipt{RequestID: id, Action: "feedback", Status: "queued", Revision: st.Revision, Message: "Feedback is waiting for its owner boundary."}, nil

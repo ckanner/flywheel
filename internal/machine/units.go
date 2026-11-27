@@ -905,8 +905,7 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 		outcome := c.failAttempt(packet, code, nil, nil)
 		baseMax := c.packetMaxRetries(packet)
 		if code == errReviewReturned && !c.quick() && outcome != "spin" &&
-			review.Converging && review.OpenFindings > 0 && review.OpenFindings <= 2 &&
-			ps.FailedAttempts == baseMax && !convergenceGraceUsed(ps) {
+			evaluateExecutionConvergenceGrace(review.Converging, review.OpenFindings, ps.FailedAttempts, baseMax, convergenceGraceUsed(ps)) {
 			c.recordRetry(ps, "attempt", string(code), "convergence-grace")
 			c.Log(fmt.Sprintf("%s: granting bounded +1 convergence grace (%d open findings, converging)", id, review.OpenFindings))
 			c.save()

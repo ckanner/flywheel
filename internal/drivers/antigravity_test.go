@@ -134,7 +134,7 @@ func TestAntigravityRejectsUnprovenAndContradictoryReceipts(t *testing.T) {
 		"usage malformed":        func(m map[string]any) { m["usage"] = "not counters" },
 		"usage negative":         func(m map[string]any) { proObject(m, "usage")["inputTokens"] = -1 },
 		"usage absent complete":  func(m map[string]any) { proObject(m, "usage")["totalTokens"] = nil },
-		"usage wrong scope":      func(m map[string]any) { proObject(m, "usage")["scope"] = "turn" },
+		"usage wrong scope":      func(m map[string]any) { proObject(m, "usage")["scope"] = "session" },
 		"cleanup":                func(m map[string]any) { proObject(m, "cleanup")["confirmed"] = false },
 		"unknown model":          func(m map[string]any) { proObject(m, "configuration", "observed")["model"] = "auto" },
 		"credits":                func(m map[string]any) { proObject(m, "subscription")["creditsFallback"] = true },

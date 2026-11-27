@@ -30,20 +30,22 @@ type ClarifyAnswer struct {
 // PlanningCommand contains data only. Human identity is supplied separately by
 // the verified host command or a terminal confirmation, never by request JSON.
 type PlanningCommand struct {
-	Collaboration *CollaborationEdit `json:"collaboration,omitempty"`
-	InputImages   *InputImagesEdit   `json:"input-images,omitempty"`
-	Clarify       *ClarifyAnswer     `json:"clarify,omitempty"`
-	Action        string             `json:"action"`
-	Revision      int64              `json:"revision,omitempty"`
-	RequestID     string             `json:"request-id,omitempty"`
-	Brief         *planning.Brief    `json:"brief,omitempty"`
-	Scope         string             `json:"scope,omitempty"`
-	ScopeID       string             `json:"scope-id,omitempty"`
-	Design        *planning.Ref      `json:"design,omitempty"`
-	Text          string             `json:"text,omitempty"`
-	Policy        string             `json:"policy,omitempty"`
-	DraftMode     string             `json:"draft-mode,omitempty"`
-	Start         *bool              `json:"start,omitempty"`
+	Collaboration     *CollaborationEdit `json:"collaboration,omitempty"`
+	InputImages       *InputImagesEdit   `json:"input-images,omitempty"`
+	Clarify           *ClarifyAnswer     `json:"clarify,omitempty"`
+	Action            string             `json:"action"`
+	Revision          int64              `json:"revision,omitempty"`
+	RequestID         string             `json:"request-id,omitempty"`
+	TargetRequestID   string             `json:"target-request-id,omitempty"`
+	Brief             *planning.Brief    `json:"brief,omitempty"`
+	Scope             string             `json:"scope,omitempty"`
+	ScopeID           string             `json:"scope-id,omitempty"`
+	Design            *planning.Ref      `json:"design,omitempty"`
+	Text              string             `json:"text,omitempty"`
+	Policy            string             `json:"policy,omitempty"`
+	DraftMode         string             `json:"draft-mode,omitempty"`
+	ContinueExecution bool               `json:"continue-execution,omitempty"`
+	Start             *bool              `json:"start,omitempty"`
 }
 
 type PlanningControlReceipt struct {
@@ -81,7 +83,8 @@ func (r PlanningCommand) StartRequested(defaultValue bool) bool {
 }
 
 func ValidatePlanningCommand(r PlanningCommand) error {
-	if r.Collaboration != nil && r.Action != "collaboration" || r.InputImages != nil && r.Action != "input-images" || r.Clarify != nil && r.Action != "clarify" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "" || r.DraftMode != "") && r.Action != "plan" ||
+	if r.Collaboration != nil && r.Action != "collaboration" || r.InputImages != nil && r.Action != "input-images" || r.Clarify != nil && r.Action != "clarify" || r.Brief != nil && r.Action != "prepare" || (r.Scope != "" || r.ScopeID != "" || r.DraftMode != "" || r.ContinueExecution) && r.Action != "plan" ||
+		r.TargetRequestID != "" && r.Action != "cancel-plan" ||
 		r.Design != nil && r.Action != "approve" && r.Action != "feedback" && r.Action != "approve-prototype" ||
 		r.Text != "" && r.Action != "feedback" && r.Action != "migrate" && r.Action != "plan" && r.Action != "prototype-feedback" ||
 		r.Policy != "" && r.Action != "feedback" && r.Action != "migrate" ||
@@ -141,8 +144,18 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		if r.DraftMode != "" && r.DraftMode != "dual" && r.DraftMode != "single" {
 			return fmt.Errorf("planning draft-mode must be dual or single")
 		}
-		_, err := normalizePlanningScope(r)
-		return err
+		normalized, err := normalizePlanningScope(r)
+		if err != nil {
+			return err
+		}
+		if r.ContinueExecution && normalized.Scope != "milestone" && normalized.Scope != "packet" {
+			return fmt.Errorf("continue-execution requires milestone or packet scope")
+		}
+		return nil
+	case "cancel-plan":
+		if r.TargetRequestID != "" && !planningControlID.MatchString(r.TargetRequestID) {
+			return fmt.Errorf("target-request-id must be a stable bounded identifier")
+		}
 	case "feedback":
 		if strings.TrimSpace(r.Text) == "" {
 			return fmt.Errorf("feedback requires nonempty text")
@@ -153,7 +166,7 @@ func ValidatePlanningCommand(r PlanningCommand) error {
 		}
 	case "migrate":
 	default:
-		return fmt.Errorf("planning action must be prepare, clarify, plan, feedback, approve, approve-prototype, prototype-feedback, skip-prototype, status, migrate, collaboration, or input-images")
+		return fmt.Errorf("planning action must be prepare, clarify, plan, cancel-plan, feedback, approve, approve-prototype, prototype-feedback, skip-prototype, status, migrate, collaboration, or input-images")
 	}
 	return nil
 }
@@ -229,7 +242,7 @@ func ControlPlanning(opts RunOpts, request PlanningCommand, trustedSource string
 		}
 		return st, rejected, fmt.Errorf("planning request-id was already rejected; submit refreshed input with a new request-id")
 	}
-	already, err := planningCommandApplied(st.Planning, request, trustedSource)
+	already, err := planningCommandApplied(st, request, trustedSource)
 	if err != nil || already {
 		return st, planningControlResult(st, request, already, "This exact planning action is already recorded."), err
 	}
@@ -321,7 +334,8 @@ func planningControlTime(opts RunOpts) string {
 	return now().UTC().Format(time.RFC3339Nano)
 }
 
-func planningCommandApplied(p *planning.State, r PlanningCommand, source string) (bool, error) {
+func planningCommandApplied(st *state.State, r PlanningCommand, source string) (bool, error) {
+	p := st.Planning
 	var err error
 	r, err = normalizePlanningScope(r)
 	if err != nil {
@@ -330,10 +344,16 @@ func planningCommandApplied(p *planning.State, r PlanningCommand, source string)
 	matched, same := false, true
 	for _, old := range p.Requests {
 		if old.ID == r.RequestID {
-			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text && old.DraftMode == r.DraftMode
-			matchesEdit := r.Action == "collaboration" && r.Collaboration != nil && old.Origin == "collaboration-edit" && old.Scope == "packet" && old.ScopeID == r.Collaboration.Packet && old.Feedback == collaborationRequestIdentity(r.Collaboration)
-			matchesImages := r.Action == "input-images" && r.InputImages != nil && old.Origin == "input-images-edit" && old.Scope == "packet" && old.ScopeID == r.InputImages.Packet && old.Feedback == inputImagesRequestIdentity(r.InputImages)
-			matched, same = true, same && (matchesPlan || matchesEdit || matchesImages) && old.PlanningOnly
+			matchesPlan := r.Action == "plan" && old.Origin == "" && old.Scope == r.Scope && old.ScopeID == r.ScopeID && old.Feedback == r.Text && old.DraftMode == r.DraftMode && old.PlanningOnly == !r.ContinueExecution
+			matchesEdit := r.Action == "collaboration" && r.Collaboration != nil && old.Origin == "collaboration-edit" && old.Scope == "packet" && old.ScopeID == r.Collaboration.Packet && old.Feedback == collaborationRequestIdentity(r.Collaboration) && old.PlanningOnly
+			matchesImages := r.Action == "input-images" && r.InputImages != nil && old.Origin == "input-images-edit" && old.Scope == "packet" && old.ScopeID == r.InputImages.Packet && old.Feedback == inputImagesRequestIdentity(r.InputImages) && old.PlanningOnly
+			matched, same = true, same && (matchesPlan || matchesEdit || matchesImages)
+		}
+	}
+	for _, entry := range st.Inbox {
+		if item, ok := entry.(map[string]any); ok && item["kind"] == "planning-cancel" && item["request-id"] == r.RequestID {
+			prevTarget, _ := item["target-request-id"].(string)
+			matched, same = true, same && r.Action == "cancel-plan" && prevTarget == r.TargetRequestID
 		}
 	}
 	for _, old := range p.Feedback {
@@ -410,10 +430,55 @@ func applyPlanningCommand(opts RunOpts, st *state.State, r PlanningCommand, sour
 			return err
 		}
 	case "plan":
-		if err := planning.BeginRequest(p, planning.Request{ID: r.RequestID, Scope: r.Scope, ScopeID: r.ScopeID, InputRevision: p.InputRevision, PlanningOnly: true, Feedback: r.Text, DraftMode: r.DraftMode}); err != nil {
+		if r.ContinueExecution && (p.CurrentDesign == nil || !planning.StartAllowed(p, *p.CurrentDesign)) {
+			return fmt.Errorf("continue-execution requires an approved design with execution authorization")
+		}
+		if err := planning.BeginRequest(p, planning.Request{ID: r.RequestID, Scope: r.Scope, ScopeID: r.ScopeID, InputRevision: p.InputRevision, PlanningOnly: !r.ContinueExecution, Feedback: r.Text, DraftMode: r.DraftMode}); err != nil {
 			return err
 		}
-		p.Phase, p.Reason = "drafting", "Planning requested without starting implementation."
+		if r.ContinueExecution {
+			p.Phase, p.Reason = "drafting", "Scoped planning requested with automatic execution handoff."
+		} else {
+			p.Phase, p.Reason = "drafting", "Planning requested without starting implementation."
+		}
+	case "cancel-plan":
+		var cancelledIDs []string
+		for i := range p.Requests {
+			req := &p.Requests[i]
+			if req.Status != "pending" && req.Status != "running" {
+				continue
+			}
+			if r.TargetRequestID != "" && req.ID != r.TargetRequestID {
+				continue
+			}
+			if r.TargetRequestID == "" && req.InputRevision != p.InputRevision {
+				continue
+			}
+			req.Status = "cancelled"
+			cancelledIDs = append(cancelledIDs, req.ID)
+		}
+		if len(cancelledIDs) == 0 {
+			return fmt.Errorf("no pending or running planning request matched to cancel")
+		}
+		if p.CurrentDesign != nil && planning.StartAllowed(p, *p.CurrentDesign) {
+			if p.Active != nil || len(st.Milestones) > 0 {
+				p.Phase = "ready"
+			} else {
+				p.Phase = "approved"
+			}
+		} else if p.CurrentDesign != nil && planning.LatestReview(p, "design", *p.CurrentDesign) != nil {
+			p.Phase = "awaiting-design-approval"
+		} else {
+			p.Phase = "cancelled"
+		}
+		p.Reason = fmt.Sprintf("Cancelled planning request(s): %s", strings.Join(cancelledIDs, ", "))
+		st.Inbox = append(st.Inbox, map[string]any{
+			"kind":              "planning-cancel",
+			"request-id":        r.RequestID,
+			"target-request-id": r.TargetRequestID,
+			"cancelled-ids":     cancelledIDs,
+			"at":                planningControlTime(opts),
+		})
 	case "feedback":
 		if err := planning.ApplyFeedback(p, planning.Feedback{RequestID: r.RequestID, Target: r.Design, Source: "control:" + r.RequestID, Text: r.Text, Policy: r.Policy, At: planningControlTime(opts)}); err != nil {
 			return err

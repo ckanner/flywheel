@@ -3,8 +3,8 @@
 [文档目录](../README.zh-CN.md) · [English](../en/antigravity.md) · 简体中文
 
 通过 `harness:"antigravity"` 使用官方本地 **`agy` CLI** 运行 Gemini。
-Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.3.1` 的公开 machine API，**默认采用官方
-ACP 传输通道（`transport: "acp"`）**，支持原生多模态图片输入以及 `evidence-only` 独立空临时
+Flywheel 调用 `@ckanner/dsh-subagent-antigravity@0.3.2` 的公开 machine API，**默认采用官方
+ACP 传输通道（`transport: "acp"`）**，支持原生多模态图片输入、ACP 单轮用量与缓存计量（`usage.scope = "turn"`）、经脱敏的实时 `[tool]` / `[thought]` 进度流，以及 `evidence-only` 独立空临时
 目录隔离；插件负责原生 Agent 循环、进程组和持久化回执，Go 负责阶段调度、方案审批、证据收集、
 验证和交付。同一个插件也提供 DSH 直接任务面板和 `subagent_antigravity`，不另接模型 API Key。
 
@@ -17,11 +17,11 @@ ACP 传输通道（`transport: "acp"`）**，支持原生多模态图片输入�
 
 Flywheel 包含 `flywheel-antigravity-worker` 与
 [vendor 记录](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/antigravity.json)
-中的精确配套归档（`0.3.1`，默认 ACP）。完整源码位于
+中的精确配套归档（`0.3.2`，默认 ACP）。完整源码位于
 [`dsh-subagent-antigravity`](https://github.com/ckanner/dsh-subagent-antigravity)，
 保留独立 npm 包结构，便于直接审查。源码身份、候选字节安装、公共 registry 可用性
 和真实账号验收分别核对。历史记录 [2026-11-22 registry 验证](https://github.com/ckanner/flywheel/blob/main/plugins/dsh/vendor/registry-verification-2026-11-22.json)
-对应早先的 0.2.1 归档；当前源码内置已审查的 0.3.1 ACP 归档，不能拿其他 machine 契约的旧版本替代。
+对应早先的 0.2.1 归档；当前源码内置已审查的 0.3.2 ACP 归档，不能拿其他 machine 契约的旧版本替代。
 
 | 环境变量 | 用途 |
 | --- | --- |

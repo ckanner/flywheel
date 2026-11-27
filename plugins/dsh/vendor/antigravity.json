@@ -1,20 +1,20 @@
 {
   "package": "@ckanner/dsh-subagent-antigravity",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "sourceRepository": "https://github.com/ckanner/dsh-subagent-antigravity",
   "sourceDirectory": ".",
-  "sourceCommit": "0bb178739b4a9fae5f164864b24d964e535814d2",
-  "sourceTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
-  "sourceDirectoryTree": "419acb6d741d7dbf729efe32e4f6427d3e92a817",
-  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport; v0.3.1 fixes premature 500ms SIGKILL on slow SQLite flush by closing ACP connection and draining stdout before stdin EOF and honoring full disposeGraceMs; passed 96/96 tests and npm run test:package.",
-  "tarball": "ckanner-dsh-subagent-antigravity-0.3.1.tgz",
-  "sha256": "53f016030019cbc542664e8a494866b6775200622e3b2fe78316f5d798cb4926",
-  "integrity": "sha512-v5LXe3Pof/BYHBhIQE5+HooC3IM5x06Bm3yEV4eWh519X85+8/QgtDZGjQDNJoSnp97QjtKjBDaGCmZP9CyWkA==",
+  "sourceCommit": "4a5f2f207a33bbf37281ceb73b1ed6c0ae038b58",
+  "sourceTree": "e53b3bc5c28f68463579f3353d845b0f50a205a7",
+  "sourceDirectoryTree": "e53b3bc5c28f68463579f3353d845b0f50a205a7",
+  "verificationNote": "Official Antigravity ACP default + unattended ACP machine transport; v0.3.2 marks ACP per-turn session/prompt usage as scope='turn' (keeping legacy headless CLI scope='conversation') and forwards redacted single-line [tool] and throttled [thought] progress frames without polluting outputText; passed 97/97 tests and npm run test:package.",
+  "tarball": "ckanner-dsh-subagent-antigravity-0.3.2.tgz",
+  "sha256": "4d0fe0c40aac355b4140462ff4f82aaecb06be5de7121bfc5dd888d21cac66d0",
+  "integrity": "sha512-y3meEiW6RoYboGfJPzR5gCLf+5EtOVzhmO+Es7VzQM9sJOSb6PZsb4uSsACmzT5y75G9eiAChCc/doRJlje0ag==",
   "license": "MIT",
   "registryReleaseVerified": false,
   "buildToolchain": {
     "node": "26.12.1",
     "npm": "11.20.0"
   },
-  "bytes": 118263
+  "bytes": 119200
 }

@@ -23,7 +23,7 @@ function writeContents(directory, manifest) {
   for (const file of [...Object.values(real.bin),...Object.values(real.exports),'cordis.patch.yml','LICENSE','THIRD_PARTY_NOTICES.md']) {
     if(file.replace(/^\.\//,'')!=='package.json')put(file,'// packed fixture '+file+'\n');
   }
-  put('node_modules/@ckanner/dsh-subagent-antigravity/package.json',JSON.stringify({name:'@ckanner/dsh-subagent-antigravity',version:'0.3.1',dependencies:{'@agentclientprotocol/sdk':'2.9.1',ajv:'8.17.1',zod:'4.3.6'}}));
+  put('node_modules/@ckanner/dsh-subagent-antigravity/package.json',JSON.stringify({name:'@ckanner/dsh-subagent-antigravity',version:'0.3.2',dependencies:{'@agentclientprotocol/sdk':'2.9.1',ajv:'8.17.1',zod:'4.3.6'}}));
   put('node_modules/dsh-subagent-codex-pro/package.json',JSON.stringify({name:'dsh-subagent-codex-pro',version:'0.10.2'}));
   put('node_modules/dsh-preset-generator/package.json',JSON.stringify({name:'dsh-preset-generator',version:'0.4.0'}));
   put('package.json',JSON.stringify(manifest));

@@ -739,17 +739,19 @@ func TestPlanningProtectedOraclesAndProjectContextMemory(t *testing.T) {
 	fx, c := newReviewedFixture(t)
 	p := c.State.Planning
 	// Unit-test renderProjectContext across Brief constraints, quality gates, clarification, and design decisions.
-	rendered := string(renderProjectContext(&planning.State{
-		Brief:         planning.Brief{Goal: "Ship game", Constraints: []string{"Zero external deps"}, QualityGates: []string{"100% statement coverage"}},
-		Clarification: &planning.Clarification{Status: "confirmed", Answers: map[string]string{"stack": "Go + TS"}},
-		CurrentDesign: &planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
-		Designs: []planning.Design{{
-			Ref:                 planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
-			ImplementationScope: []string{"src"},
-			Decisions:           []planning.Decision{{ID: "D-1", Kind: "fixed", Statement: "Use atomic CAS"}},
-			Milestones:          []planning.Milestone{{ID: "M-01", Title: "Core", Gate: "go test"}},
-		}},
-	}))
+	rendered := string(renderProjectContext(&state.State{
+		Planning: &planning.State{
+			Brief:         planning.Brief{Goal: "Ship game", Constraints: []string{"Zero external deps"}, QualityGates: []string{"100% statement coverage"}},
+			Clarification: &planning.Clarification{Status: "confirmed", Answers: map[string]string{"stack": "Go + TS"}},
+			CurrentDesign: &planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+			Designs: []planning.Design{{
+				Ref:                 planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)},
+				ImplementationScope: []string{"src"},
+				Decisions:           []planning.Decision{{ID: "D-1", Kind: "fixed", Statement: "Use atomic CAS"}},
+				Milestones:          []planning.Milestone{{ID: "M-01", Title: "Core", Gate: "go test"}},
+			}},
+		},
+	}, ""))
 	require.Contains(t, rendered, "Zero external deps")
 	require.Contains(t, rendered, "100% statement coverage")
 	require.Contains(t, rendered, "stack: Go + TS")

@@ -27,7 +27,7 @@ Flywheel 启动时选择一份完整配置，展开模型 profiles，再解析�
 - **只读沙箱锁定**：`permissions.bindings` 将 `loops.design-review`、`loops.plan-review`、
   `loops.review`、`loops.judge`、`loops.investigate` 与 `frontend-ux-review` 默认锁定为
   `read-only`。
-- **原生能力**：Antigravity 默认启用 `0.3.1` ACP 与原生图片输入；Kimi 原生订阅配置
+- **原生能力**：Antigravity 默认启用 `0.3.2` ACP（含单轮用量计量）与原生图片输入；Kimi 原生订阅配置
   （`kimi-subscription-agent` / `kimi-subscription-swarm`）默认放开 `WebSearch`、`FetchURL`、
   `Agent` 与 `AgentSwarm`。
 - **护栏与工作流开关**：`budget.enforce: "off"`、

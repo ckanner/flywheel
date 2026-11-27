@@ -2,7 +2,19 @@ import { type ClipboardEvent, type DragEvent, useMemo, useRef, useState } from '
 import { styles } from 'virtual:flywheel-styles';
 import { MainStreamTelemetryDock } from '../components/ComposerTelemetryDock.tsx';
 import { HtmlPreviewFrame } from '../components/HtmlPreviewFrame.tsx';
+import { TriageCard } from '../components/TriageCard.tsx';
 import { formatModelBadge, normalizePackets, resolveCandidateLabels, resolvePlanningView } from '../planning.ts';
+import {
+  annotatePlanSteps,
+  buildMilestoneTimeline,
+  extractMilestoneIdFromScope,
+  formatLocalizedStepStatus,
+  formatRetryPlanningLabel,
+  type PlanScopeGroup,
+  resolvePlanGroupTone,
+  resolveRetryPlanningTarget,
+  type SemanticTone,
+} from '../workflowTimeline.ts';
 import { useSmartAutoScroll } from '../scroll.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { PacketNode, TraceSummary, Translate } from '../types.ts';
@@ -80,17 +92,6 @@ function humanizeBlockedKey(key: string, isZh: boolean): string {
 interface TimelineRound {
   round: number;
   label: string;
-  items: TraceSummary[];
-  running: boolean;
-  totalDurationMs: number;
-}
-
-interface MidExecPlanRevisionGroup {
-  scope: string;
-  requestId: string;
-  label: string;
-  triggerPacketId: string | null;
-  triggerSummary: string;
   items: TraceSummary[];
   running: boolean;
   totalDurationMs: number;
@@ -623,7 +624,7 @@ export function ChatStreamView({
         initial.push(tr);
       } else if (tr.role === 'plan' || tr.role === 'plan-review') {
         const ts = Date.parse(tr.startedAt || tr.updatedAt || '');
-        if (Number.isFinite(firstExecTs) && Number.isFinite(ts) && ts >= firstExecTs) {
+        if ((Number.isFinite(firstExecTs) && Number.isFinite(ts) && ts >= firstExecTs) || (tr.scope ?? '').includes('milestone/')) {
           midExec.push(tr);
         } else {
           initial.push(tr);
@@ -636,37 +637,78 @@ export function ChatStreamView({
       return ta - tb;
     });
     const requests = Array.isArray(planning?.requests) ? planning.requests : [];
-    const groups: MidExecPlanRevisionGroup[] = [];
-    const byScope = new Map<string, MidExecPlanRevisionGroup>();
+    const groups: PlanScopeGroup[] = [];
+    const byScope = new Map<string, { grp: PlanScopeGroup; reqStatus?: string }>();
     for (const tr of sortedMid) {
       const scopeKey = tr.scope || tr.key || tr.id;
-      let grp = byScope.get(scopeKey);
-      if (!grp) {
+      let entry = byScope.get(scopeKey);
+      if (!entry) {
         const requestId = scopeKey.replace(/^planning:/, '');
         const req = requests.find(r => r.id === requestId || `planning:${r.id}` === scopeKey);
         const { packetId, summary } = summarizePlanRevisionFeedback(req?.feedback, isZh);
         const scopePkt = packetId || (/\b(M\d+-T\d+)\b/i.exec(requestId)?.[1]?.toUpperCase() ?? null);
-        grp = {
+        const milestoneId = extractMilestoneIdFromScope(scopeKey, scopePkt, req);
+        const isMilestonePlan =
+          requestId.startsWith('milestone/') ||
+          (req?.scope === 'milestone' && Boolean(req?.['scope-id']) && !scopePkt);
+        const label = isMilestonePlan && milestoneId
+          ? (isZh ? `里程碑拆包规划 · ${milestoneId}` : `Milestone Plan · ${milestoneId}`)
+          : (isZh ? `计划修订 · ${requestId}` : `Plan Revision · ${requestId}`);
+        const grp: PlanScopeGroup = {
           scope: scopeKey,
           requestId,
-          label: isZh ? `计划修订 · ${requestId}` : `Plan Revision · ${requestId}`,
+          milestoneId,
+          isMilestonePlan,
+          label,
           triggerPacketId: scopePkt,
           triggerSummary: summary,
           items: [],
+          steps: [],
           running: false,
+          tone: 'ok',
+          statusLabel: isZh ? '已完成' : 'Completed',
           totalDurationMs: 0,
         };
-        byScope.set(scopeKey, grp);
+        entry = { grp, reqStatus: req?.status };
+        byScope.set(scopeKey, entry);
         groups.push(grp);
       }
-      grp.items.push(tr);
-      if (tr.running) grp.running = true;
+      entry.grp.items.push(tr);
+      if (tr.running) entry.grp.running = true;
       if (typeof tr.durationMs === 'number' && Number.isFinite(tr.durationMs)) {
-        grp.totalDurationMs += tr.durationMs;
+        entry.grp.totalDurationMs += tr.durationMs;
       }
+    }
+    for (const { grp, reqStatus } of byScope.values()) {
+      grp.steps = annotatePlanSteps(grp.items, isZh);
+      const resolved = resolvePlanGroupTone(grp.steps, reqStatus, grp.running, isZh);
+      grp.tone = resolved.tone;
+      grp.statusLabel = resolved.statusLabel;
     }
     return { initialPlanningTraces: initial, midExecPlanRevisions: groups };
   }, [snap.traces, firstExecTs, planning?.requests, isZh]);
+
+  const retryTarget = useMemo(() => resolveRetryPlanningTarget(planning, snap.state), [planning, snap.state]);
+
+  const milestoneTimeline = useMemo(() => {
+    const designMilestones = resolvedPlanning?.design?.milestones ?? null;
+    const rawMilestones = (snap.state as { milestones?: Record<string, { status?: string; gate?: unknown; 'human-signoff'?: unknown }> } | null)?.milestones ?? null;
+    const rawCurMs =
+      (snap.state as { 'current-milestone'?: unknown; currentMilestone?: unknown } | null)?.['current-milestone'] ??
+      (snap.state as { currentMilestone?: unknown } | null)?.currentMilestone ??
+      null;
+    const curMs = typeof rawCurMs === 'string' && rawCurMs.trim() ? rawCurMs : null;
+    return buildMilestoneTimeline({
+      milestonesMap: rawMilestones,
+      designMilestones,
+      currentMilestone: curMs,
+      packets,
+      planGroups: midExecPlanRevisions,
+      traces: snap.traces,
+      taskStatus: snap.state?.status ?? null,
+      planningPhase: planning?.phase ?? null,
+    });
+  }, [resolvedPlanning?.design?.milestones, snap.state, packets, midExecPlanRevisions, snap.traces, planning?.phase]);
 
   const timelineRounds = useMemo(
     () => groupPlanningTracesIntoRounds(initialPlanningTraces, isZh),
@@ -694,7 +736,7 @@ export function ChatStreamView({
   }, [snap.traces]);
 
   const revisionsByPacket = useMemo(() => {
-    const map = new Map<string, MidExecPlanRevisionGroup[]>();
+    const map = new Map<string, PlanScopeGroup[]>();
     for (const rev of midExecPlanRevisions) {
       if (!rev.triggerPacketId) continue;
       const list = map.get(rev.triggerPacketId) ?? [];
@@ -1719,26 +1761,44 @@ export function ChatStreamView({
                   </div>
                 )}
 
-                {/* Planning Blocked Diagnostic Card */}
-                {!isPartialDualDraft && resolvedPlanning?.isBlocked && (
+                {/* Planning Blocked or Interrupted Request Recovery Card */}
+                {!isPartialDualDraft && (resolvedPlanning?.isBlocked || (!snap.running && Boolean(retryTarget.cancellableRequestId))) && (
                   <div className={styles.blockedBanner} data-testid="main-planning-blocked">
                     <div className={styles.blockedHeader}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className={`${styles.pill} ${styles.pillDanger}`}>{t('design.blockedBadge')}</span>
-                        <strong style={{ fontSize: 13 }}>{t('design.blockedTitle')}</strong>
+                        <span className={`${styles.pill} ${styles.pillDanger}`}>
+                          {resolvedPlanning?.isBlocked ? t('design.blockedBadge') : (isZh ? '规划已中断' : 'Planning Interrupted')}
+                        </span>
+                        <strong style={{ fontSize: 13 }}>
+                          {resolvedPlanning?.isBlocked
+                            ? t('design.blockedTitle')
+                            : (isZh ? `检测到未完成的规划请求 (${retryTarget.cancellableRequestId})` : `Interrupted planning request (${retryTarget.cancellableRequestId})`)}
+                        </strong>
                       </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {retryTarget.cancellableRequestId && (
+                          <button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnSm}`}
+                            data-testid="main-planning-cancel-btn"
+                            disabled={snap.busyAction !== null}
+                            onClick={() => void store.cancelPlanningRequest(retryTarget.cancellableRequestId)}
+                          >
+                            {isZh ? '取消中断规划请求' : 'Cancel Interrupted Request'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                          data-testid="main-planning-retry-btn"
                           disabled={snap.busyAction !== null}
                           onClick={() => void store.retryPlanning()}
                         >
-                          {t('design.retryPlanning')}
+                          {formatRetryPlanningLabel(retryTarget, isZh)}
                         </button>
                       </div>
                     </div>
-                    {resolvedPlanning.reason && (
+                    {resolvedPlanning?.reason && (
                       <div className={styles.blockedReasonBox}>{resolvedPlanning.reason}</div>
                     )}
                   </div>
@@ -1753,8 +1813,8 @@ export function ChatStreamView({
                       return (
                         <details
                           key={`round-${group.round}-${group.label}`}
-                          className={styles.roundGroup}
-                          open={isLatest || group.running}
+                          className={`${styles.roundGroup} ${group.running ? styles.runningFlowCard : ''}`}
+                          open={group.running || (isLatest && milestoneTimeline.milestones.length === 0)}
                         >
                           <summary className={styles.roundGroupHead}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -1778,13 +1838,14 @@ export function ChatStreamView({
                           <div className={styles.roundStepsList}>
                             {group.items.map(tr => {
                               const tone = traceTone(tr.status, tr.running);
+                              const locStatus = formatLocalizedStepStatus(tr.status, tr.running, isZh);
                               const timeStr = formatClock(tr.startedAt || tr.updatedAt);
                               const stepDur = formatDurationShort(tr.durationMs);
                               return (
                                 <button
                                   key={tr.id}
                                   type="button"
-                                  className={styles.roundStepRow}
+                                  className={`${styles.roundStepRow} ${tr.running ? styles.runningFlowCard : ''}`}
                                   data-testid={`agent-card-${tr.id}`}
                                   onClick={() =>
                                     store.drillIntoNode(tr.scope || tr.role, {
@@ -1804,7 +1865,7 @@ export function ChatStreamView({
                                       )}
                                     </span>
                                     <span className={`${styles.pill} ${tone.pill}`}>
-                                      {tr.running ? t('traces.liveBadge') : tr.status}
+                                      {tr.running ? t('traces.liveBadge') : locStatus.label}
                                     </span>
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2165,317 +2226,521 @@ export function ChatStreamView({
             </section>
           )}
 
-          {/* Stage 2: Parallel Execution Wave Cards */}
-          {waves.map(wave => {
-            const doneCount = wave.items.filter(p =>
-              ['done', 'completed', 'passed'].includes((p.status ?? '').toLowerCase()),
-            ).length;
-            return (
-              <section key={wave.index} className={styles.orchBlock} data-testid={`flywheel-wave-${wave.index}`}>
-                <div className={styles.orchBlockHead}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className={styles.orchAvatar}>◎</span>
-                    <strong style={{ fontSize: 13.5 }}>{t('chat.stage.execution', { n: wave.index })}</strong>
-                    <span className={styles.pill}>{doneCount}/{wave.items.length}</span>
-                  </div>
-                  {wave.index === 1 && (
-                    <button
-                      type="button"
-                      className={styles.linkBtn}
-                      onClick={() => store.openDrawer('dag')}
-                    >
-                      {t('chat.openDagDrawer')}
-                    </button>
-                  )}
-                </div>
-
-                <div className={styles.orchIndent}>
-                  {wave.items.map(packet => {
-                    const tr = traceByPacket.get(packet.id) ?? null;
-                    const pktTraces = packetTracesMap.get(packet.id) ?? [];
-                    const hasRunningPacketTrace =
-                      Boolean(tr?.running) ||
-                      pktTraces.some(item => item.running && (item.role === 'review' || item.role === 'frontend-ux-review' || item.role === 'execute'));
-                    const tone = packetTone(packet.status, hasRunningPacketTrace);
-                    const needsAttention = ['failed', 'blocked', 'escalated', 'inbox'].includes((packet.status ?? '').toLowerCase());
-                    const pktThinking = typeof (packet as Record<string, unknown>).thinking === 'string'
-                      ? String((packet as Record<string, unknown>).thinking)
+          {/* Stage 2: Milestone-Nested Execution Timeline (or flat waves fallback for non-milestone tasks) */}
+          {(() => {
+            const semanticDotClass = (tone: SemanticTone) =>
+              tone === 'running'
+                ? styles.statusDotRunning
+                : tone === 'ok'
+                  ? styles.statusDotSuccess
+                  : tone === 'danger'
+                    ? styles.statusDotDanger
+                    : tone === 'warn'
+                      ? styles.statusDotWarn
                       : '';
-                    const pktModelLabel = formatModelBadge(packet.model || tr?.model, pktThinking || tr?.thinking, isZh) || packet.route;
-                    const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
-                      ? ((snap.state as { inbox?: Array<{ 'packet-id'?: string; reason?: string; at?: string }> }).inbox ?? [])
-                      : [];
-                    const inboxEntry = (packet.status ?? '').toLowerCase() === 'inbox'
-                      ? [...inboxList].reverse().find(item => item?.['packet-id'] === packet.id) ?? null
-                      : null;
-                    const pktRevisions = revisionsByPacket.get(packet.id) ?? [];
-                    const latestReviewTrace = [...pktTraces]
-                      .reverse()
-                      .find(item => item.role === 'review' || item.role === 'frontend-ux-review') ?? null;
-                    const isCompleted = ['done', 'completed', 'passed'].includes((packet.status ?? '').toLowerCase());
-                    const roleCounts: Record<string, number> = {};
-                    return (
-                      <div key={packet.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            const semanticPillClass = (tone: SemanticTone) =>
+              tone === 'running'
+                ? styles.pillRunning
+                : tone === 'ok'
+                  ? styles.pillSuccess
+                  : tone === 'danger'
+                    ? styles.pillDanger
+                    : tone === 'warn'
+                      ? styles.pillWarn
+                      : '';
+
+            const renderPlanScopeCard = (rev: PlanScopeGroup) => {
+              const durStr = formatDurationShort(rev.totalDurationMs);
+              const cardBorderClass = rev.running
+                ? styles.runningFlowCard
+                : rev.tone === 'danger'
+                  ? styles.planRevisionCardDanger
+                  : rev.tone === 'warn'
+                    ? styles.planRevisionCardWarn
+                    : '';
+              return (
+                <details
+                  key={rev.scope}
+                  className={`${styles.planRevisionCard} ${cardBorderClass}`}
+                  data-testid={`plan-revision-card-${rev.requestId}`}
+                  open={rev.running || rev.tone === 'danger'}
+                >
+                  <summary className={styles.roundGroupHead}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span className={`${styles.statusDot} ${semanticDotClass(rev.tone)}`} />
+                      <strong>{rev.label}</strong>
+                      {rev.triggerPacketId && (
+                        <span className={`${styles.pill} ${styles.pillWarn}`}>
+                          {isZh ? `触发源 · ${rev.triggerPacketId}` : `From ${rev.triggerPacketId}`}
+                        </span>
+                      )}
+                      <span className={styles.pill}>
+                        {isZh ? `${rev.steps.length} 个步骤` : `${rev.steps.length} steps`}
+                      </span>
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--fw-text-subtle)' }}>
+                      {durStr && <span>{isZh ? `用时 ${durStr}` : durStr}</span>}
+                      <span className={`${styles.pill} ${semanticPillClass(rev.tone)}`}>
+                        {rev.running ? t('traces.liveBadge') : rev.statusLabel}
+                      </span>
+                    </span>
+                  </summary>
+                  {rev.triggerSummary && (
+                    <div className={styles.planRevisionTrigger}>{rev.triggerSummary}</div>
+                  )}
+                  <div className={styles.roundStepsList}>
+                    {rev.steps.map(step => {
+                      const tr = step.trace;
+                      const timeStr = formatClock(tr.startedAt || tr.updatedAt);
+                      const stepDur = formatDurationShort(tr.durationMs);
+                      return (
                         <button
+                          key={tr.id}
                           type="button"
-                          className={`${styles.subAgentRowCard} ${tone.rowExtra}`}
-                          style={pktTraces.length > 0 ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}
-                          data-testid={`packet-card-${packet.id}`}
+                          className={`${styles.roundStepRow} ${tr.running ? styles.runningFlowCard : ''}`}
+                          data-testid={`agent-card-${tr.id}`}
                           onClick={() =>
-                            store.drillIntoNode(packet.id, {
-                              traceId: tr?.id ?? null,
-                              sessionKey: packet.sessionKey || tr?.key || `execute/${packet.id}`,
-                              packetId: packet.id,
+                            store.drillIntoNode(tr.scope || tr.role, {
+                              traceId: tr.id,
+                              sessionKey: tr.key,
                             })
                           }
                         >
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span className={`${styles.statusDot} ${tone.dot}`} />
-                              <span className={styles.packetId}>{packet.id}</span>
-                              <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {packet.title || packet.goal || packet.id}
-                              </strong>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
-                              {pktModelLabel && <span title={packet.model || tr?.model || undefined}>{pktModelLabel}</span>}
-                              {packet.lastError && (
-                                <span style={{ color: 'var(--fw-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {packet.lastError}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 12.5 }}>
+                              <span className={`${styles.statusDot} ${semanticDotClass(step.tone)}`} />
+                              <span>{step.title}</span>
+                              {tr.model && (
+                                <span className={styles.pill} title={tr.model}>
+                                  {formatModelBadge(tr.model, tr.thinking, isZh)}
                                 </span>
                               )}
-                              {!packet.lastError && (tr?.preview || packet.summary) && (
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {tr?.preview || packet.summary}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                            <span className={`${styles.pill} ${tone.pill}`}>
-                              {packet.status || 'pending'}
                             </span>
-                            <span style={{ fontSize: 12, fontWeight: 500, color: needsAttention ? 'var(--fw-danger)' : 'var(--fw-accent)' }}>
-                              {needsAttention ? t('chat.enterAction') : t('chat.enterSession')} →
+                            <span className={`${styles.pill} ${semanticPillClass(step.tone)}`}>
+                              {step.statusLabel}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {tr.preview || tr.errorSummary || (tr.running ? t('design.liveWaiting') : '—')}
+                          </div>
+                          <div className={styles.roundStepMeta}>
+                            <span>
+                              {timeStr ? `${timeStr}` : ''}
+                              {timeStr && stepDur ? ' · ' : ''}
+                              {stepDur ? (isZh ? `耗时 ${stepDur}` : stepDur) : ''}
+                            </span>
+                            <span style={{ color: 'var(--fw-accent)', fontWeight: 500 }}>
+                              {t('chat.enterSession')} →
                             </span>
                           </div>
                         </button>
-                        {pktTraces.length > 0 && (
-                          <div className={styles.packetTimelineRow} data-testid={`packet-timeline-${packet.id}`}>
-                            <div className={styles.packetTimelineStrip}>
-                              {pktTraces.map((stepTr, sIdx) => {
-                                roleCounts[stepTr.role] = (roleCounts[stepTr.role] ?? 0) + 1;
-                                const nth = roleCounts[stepTr.role];
-                                const shortRole =
-                                  stepTr.role === 'execute'
-                                    ? (isZh ? `执行 #${nth}` : `Exec #${nth}`)
-                                    : stepTr.role === 'frontend-ux-review'
-                                      ? (isZh ? `UX审 #${nth}` : `UX #${nth}`)
-                                      : (isZh ? `审查 #${nth}` : `Review #${nth}`);
-                                const sig = parseReviewStepSignal(stepTr);
-                                const chipTone =
-                                  sig.tone === 'pass'
-                                    ? styles.packetStepChipPass
-                                    : sig.tone === 'fail'
-                                      ? styles.packetStepChipFail
-                                      : sig.tone === 'warn'
-                                        ? styles.packetStepChipWarn
-                                        : sig.tone === 'running'
-                                          ? styles.packetStepChipRunning
-                                          : '';
-                                const dur = formatDurationShort(stepTr.durationMs);
-                                return (
-                                  <span key={stepTr.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    {sIdx > 0 && <span className={styles.packetStepArrow} aria-hidden="true">→</span>}
-                                    <button
-                                      type="button"
-                                      className={`${styles.packetStepChip} ${chipTone}`}
-                                      data-testid={`packet-step-${stepTr.id}`}
-                                      title={`${shortRole}${stepTr.model ? ` · ${formatModelBadge(stepTr.model, stepTr.thinking, isZh)}` : ''}${dur ? ` · ${dur}` : ''}`}
-                                      onClick={() =>
-                                        store.drillIntoNode(packet.id, {
-                                          traceId: stepTr.id,
-                                          sessionKey: stepTr.key,
-                                          packetId: packet.id,
-                                        })
-                                      }
-                                    >
-                                      <span>{sig.icon}</span>
-                                      <span>{shortRole}</span>
-                                      {sig.scoreLabel && <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>{sig.scoreLabel}</span>}
-                                      {dur && <span style={{ opacity: 0.72, fontSize: 10 }}>{dur}</span>}
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                              {pktRevisions.map(rev => {
-                                const latestRevTr = rev.items[rev.items.length - 1];
-                                return (
-                                  <span key={rev.scope} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <span className={styles.packetStepArrow} aria-hidden="true">→</span>
-                                    <button
-                                      type="button"
-                                      className={`${styles.packetStepChip} ${rev.running ? styles.packetStepChipRunning : styles.packetStepChipWarn}`}
-                                      data-testid={`packet-revision-link-${rev.requestId}`}
-                                      onClick={() => {
-                                        if (latestRevTr) {
-                                          store.drillIntoNode(latestRevTr.scope || latestRevTr.role, {
-                                            traceId: latestRevTr.id,
-                                            sessionKey: latestRevTr.key,
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      <span>🔄</span>
-                                      <span>{isZh ? '计划修订' : 'Plan Rev'}</span>
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                            {!isCompleted && latestReviewTrace && latestReviewTrace.preview && (
-                              <div className={styles.packetLatestReviewHint}>
-                                {latestReviewTrace.preview}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {inboxEntry && (
-                          <div className={styles.decisionCard} data-testid={`inbox-escalation-${packet.id}`} style={{ marginTop: 6, borderColor: 'var(--fw-warn-border)', background: 'var(--fw-warn-soft)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                              <strong style={{ fontSize: 12.5, color: 'var(--fw-warn)' }}>
-                                {isZh ? `已暂停并转交人工收件箱 · ${packet.id}` : `Escalated to Human Inbox · ${packet.id}`}
-                              </strong>
-                              <span className={`${styles.pill} ${styles.pillWarn}`}>{isZh ? '已达自动返修上限' : 'Auto-retry limit reached'}</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                              {inboxEntry.reason}
-                            </div>
-                            <div style={{ fontSize: 11.5, color: 'var(--fw-text-muted)', lineHeight: 1.5 }}>
-                              {isZh
-                                ? '系统按安全护栏自动停止（未强行放过未闭合的验证项）。请点击上方节点查看完整审查意见与工作区现场，修复或确认后重新启动。'
-                                : 'Paused safely by escalation guardrail. Open the packet above to inspect the full review verdict before resuming.'}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+                      );
+                    })}
+                  </div>
+                </details>
+              );
+            };
 
-          {/* Mid-Execution Plan Revisions (shown chronologically AFTER Stage 3 waves so flow jumps are immediately visible) */}
-          {midExecPlanRevisions.length > 0 && (
-            <section className={styles.orchBlock} data-testid="mid-exec-plan-revisions">
-              <div className={styles.orchBlockHead}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span className={styles.orchAvatar}>↻</span>
-                  <strong style={{ fontSize: 13.5 }}>
-                    {isZh ? '执行期计划修订与验收补强' : 'Mid-Execution Plan Revisions'}
-                  </strong>
-                  <span className={`${styles.pill} ${styles.pillWarn}`}>
-                    {isZh ? `共 ${midExecPlanRevisions.length} 次修订` : `${midExecPlanRevisions.length} revisions`}
-                  </span>
-                </div>
-              </div>
-
-              <div className={styles.orchIndent}>
-                <div className={styles.roundTimeline}>
-                  {midExecPlanRevisions.map(rev => {
-                    const durStr = formatDurationShort(rev.totalDurationMs);
-                    return (
-                      <details
-                        key={rev.scope}
-                        className={styles.planRevisionCard}
-                        data-testid={`plan-revision-card-${rev.requestId}`}
-                        open={rev.running}
+            const renderWaveSection = (wave: { index: number; items: PacketNode[] }, keyPrefix: string, showDagButton: boolean) => {
+              const doneCount = wave.items.filter(p =>
+                ['done', 'completed', 'passed'].includes((p.status ?? '').toLowerCase()),
+              ).length;
+              return (
+                <section key={`${keyPrefix}-wave-${wave.index}`} className={styles.orchBlock} data-testid={`flywheel-wave-${wave.index}`}>
+                  <div className={styles.orchBlockHead}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className={styles.orchAvatar}>◎</span>
+                      <strong style={{ fontSize: 13.5 }}>{t('chat.stage.execution', { n: wave.index })}</strong>
+                      <span className={styles.pill}>{doneCount}/{wave.items.length}</span>
+                    </div>
+                    {showDagButton && (
+                      <button
+                        type="button"
+                        className={styles.linkBtn}
+                        onClick={() => store.openDrawer('dag')}
                       >
-                        <summary className={styles.roundGroupHead}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span
-                              className={`${styles.statusDot} ${
-                                rev.running ? styles.statusDotRunning : styles.statusDotWarn
-                              }`}
-                            />
-                            <strong>{rev.label}</strong>
-                            {rev.triggerPacketId && (
-                              <span className={`${styles.pill} ${styles.pillWarn}`}>
-                                {isZh ? `触发源 · ${rev.triggerPacketId}` : `From ${rev.triggerPacketId}`}
+                        {t('chat.openDagDrawer')}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className={styles.orchIndent}>
+                    {wave.items.map(packet => {
+                      const tr = traceByPacket.get(packet.id) ?? null;
+                      const pktTraces = packetTracesMap.get(packet.id) ?? [];
+                      const hasRunningPacketTrace =
+                        Boolean(tr?.running) ||
+                        pktTraces.some(item => item.running && (item.role === 'review' || item.role === 'frontend-ux-review' || item.role === 'execute'));
+                      const tone = packetTone(packet.status, hasRunningPacketTrace);
+                      const locPktStatus = formatLocalizedStepStatus(packet.status, hasRunningPacketTrace, isZh);
+                      const needsAttention = ['failed', 'blocked', 'escalated', 'inbox'].includes((packet.status ?? '').toLowerCase());
+                      const pktThinking = typeof (packet as Record<string, unknown>).thinking === 'string'
+                        ? String((packet as Record<string, unknown>).thinking)
+                        : '';
+                      const pktModelLabel = formatModelBadge(packet.model || tr?.model, pktThinking || tr?.thinking, isZh) || packet.route;
+                      const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
+                        ? ((snap.state as { inbox?: Array<{ 'packet-id'?: string; reason?: string; at?: string }> }).inbox ?? [])
+                        : [];
+                      const inboxEntry = (packet.status ?? '').toLowerCase() === 'inbox'
+                        ? [...inboxList].reverse().find(item => item?.['packet-id'] === packet.id) ?? null
+                        : null;
+                      const pktRevisions = revisionsByPacket.get(packet.id) ?? [];
+                      const latestReviewTrace = [...pktTraces]
+                        .reverse()
+                        .find(item => item.role === 'review' || item.role === 'frontend-ux-review') ?? null;
+                      const isCompleted = ['done', 'completed', 'passed'].includes((packet.status ?? '').toLowerCase());
+                      const roleCounts: Record<string, number> = {};
+                      return (
+                        <div key={packet.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                          <button
+                            type="button"
+                            className={`${styles.subAgentRowCard} ${tone.rowExtra}`}
+                            style={pktTraces.length > 0 ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}
+                            data-testid={`packet-card-${packet.id}`}
+                            onClick={() =>
+                              store.drillIntoNode(packet.id, {
+                                traceId: tr?.id ?? null,
+                                sessionKey: packet.sessionKey || tr?.key || `execute/${packet.id}`,
+                                packetId: packet.id,
+                              })
+                            }
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span className={`${styles.statusDot} ${tone.dot}`} />
+                                <span className={styles.packetId}>{packet.id}</span>
+                                <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {packet.title || packet.goal || packet.id}
+                                </strong>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
+                                {pktModelLabel && <span title={packet.model || tr?.model || undefined}>{pktModelLabel}</span>}
+                                {packet.lastError && (
+                                  <span style={{ color: 'var(--fw-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {packet.lastError}
+                                  </span>
+                                )}
+                                {!packet.lastError && (tr?.preview || packet.summary) && (
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {tr?.preview || packet.summary}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                              <span className={`${styles.pill} ${tone.pill}`}>
+                                {locPktStatus.label}
                               </span>
-                            )}
-                            <span className={styles.pill}>
-                              {isZh ? `${rev.items.length} 个步骤` : `${rev.items.length} steps`}
-                            </span>
-                          </span>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--fw-text-subtle)' }}>
-                            {durStr && <span>{isZh ? `用时 ${durStr}` : durStr}</span>}
-                            {rev.running && (
-                              <span className={`${styles.pill} ${styles.pillRunning}`}>{t('traces.liveBadge')}</span>
-                            )}
-                          </span>
-                        </summary>
-                        {rev.triggerSummary && (
-                          <div className={styles.planRevisionTrigger}>{rev.triggerSummary}</div>
-                        )}
-                        <div className={styles.roundStepsList}>
-                          {rev.items.map(tr => {
-                            const tone = traceTone(tr.status, tr.running);
-                            const timeStr = formatClock(tr.startedAt || tr.updatedAt);
-                            const stepDur = formatDurationShort(tr.durationMs);
-                            return (
-                              <button
-                                key={tr.id}
-                                type="button"
-                                className={styles.roundStepRow}
-                                data-testid={`agent-card-${tr.id}`}
-                                onClick={() =>
-                                  store.drillIntoNode(tr.scope || tr.role, {
-                                    traceId: tr.id,
-                                    sessionKey: tr.key,
-                                  })
-                                }
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 12.5 }}>
-                                    <span className={`${styles.statusDot} ${tone.dot}`} />
-                                    <span>{roleLabel(tr.role, isZh, tr.scope, tr.sessionTitle)}</span>
-                                    {tr.model && (
-                                      <span className={styles.pill} title={tr.model}>
-                                        {formatModelBadge(tr.model, tr.thinking, isZh)}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className={`${styles.pill} ${tone.pill}`}>
-                                    {tr.running ? t('traces.liveBadge') : tr.status}
-                                  </span>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: needsAttention ? 'var(--fw-danger)' : 'var(--fw-accent)' }}>
+                                {needsAttention ? t('chat.enterAction') : t('chat.enterSession')} →
+                              </span>
+                            </div>
+                          </button>
+                          {pktTraces.length > 0 && (
+                            <div className={styles.packetTimelineRow} data-testid={`packet-timeline-${packet.id}`}>
+                              <div className={styles.packetTimelineStrip}>
+                                {pktTraces.map((stepTr, sIdx) => {
+                                  roleCounts[stepTr.role] = (roleCounts[stepTr.role] ?? 0) + 1;
+                                  const nth = roleCounts[stepTr.role];
+                                  const shortRole =
+                                    stepTr.role === 'execute'
+                                      ? (isZh ? `执行 #${nth}` : `Exec #${nth}`)
+                                      : stepTr.role === 'frontend-ux-review'
+                                        ? (isZh ? `UX审 #${nth}` : `UX #${nth}`)
+                                        : (isZh ? `审查 #${nth}` : `Review #${nth}`);
+                                  const sig = parseReviewStepSignal(stepTr);
+                                  const chipTone =
+                                    sig.tone === 'pass'
+                                      ? styles.packetStepChipPass
+                                      : sig.tone === 'fail'
+                                        ? styles.packetStepChipFail
+                                        : sig.tone === 'warn'
+                                          ? styles.packetStepChipWarn
+                                          : sig.tone === 'running'
+                                            ? styles.packetStepChipRunning
+                                            : '';
+                                  const dur = formatDurationShort(stepTr.durationMs);
+                                  return (
+                                    <span key={stepTr.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      {sIdx > 0 && <span className={styles.packetStepArrow} aria-hidden="true">→</span>}
+                                      <button
+                                        type="button"
+                                        className={`${styles.packetStepChip} ${chipTone}`}
+                                        data-testid={`packet-step-${stepTr.id}`}
+                                        title={`${shortRole}${stepTr.model ? ` · ${formatModelBadge(stepTr.model, stepTr.thinking, isZh)}` : ''}${dur ? ` · ${dur}` : ''}`}
+                                        onClick={() =>
+                                          store.drillIntoNode(packet.id, {
+                                            traceId: stepTr.id,
+                                            sessionKey: stepTr.key,
+                                            packetId: packet.id,
+                                          })
+                                        }
+                                      >
+                                        <span>{sig.icon}</span>
+                                        <span>{shortRole}</span>
+                                        {sig.scoreLabel && <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>{sig.scoreLabel}</span>}
+                                        {dur && <span style={{ opacity: 0.72, fontSize: 10 }}>{dur}</span>}
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                                {pktRevisions.map(rev => {
+                                  const latestRevTr = rev.items[rev.items.length - 1];
+                                  return (
+                                    <span key={rev.scope} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <span className={styles.packetStepArrow} aria-hidden="true">→</span>
+                                      <button
+                                        type="button"
+                                        className={`${styles.packetStepChip} ${rev.running ? styles.packetStepChipRunning : styles.packetStepChipWarn}`}
+                                        data-testid={`packet-revision-link-${rev.requestId}`}
+                                        onClick={() => {
+                                          if (latestRevTr) {
+                                            store.drillIntoNode(latestRevTr.scope || latestRevTr.role, {
+                                              traceId: latestRevTr.id,
+                                              sessionKey: latestRevTr.key,
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        <span>🔄</span>
+                                        <span>{isZh ? '计划修订' : 'Plan Rev'}</span>
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              {!isCompleted && latestReviewTrace && latestReviewTrace.preview && (
+                                <div className={styles.packetLatestReviewHint}>
+                                  {latestReviewTrace.preview}
                                 </div>
-                                <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {tr.preview || tr.errorSummary || (tr.running ? t('design.liveWaiting') : '—')}
-                                </div>
-                                <div className={styles.roundStepMeta}>
-                                  <span>
-                                    {timeStr ? `${timeStr}` : ''}
-                                    {timeStr && stepDur ? ' · ' : ''}
-                                    {stepDur ? (isZh ? `耗时 ${stepDur}` : stepDur) : ''}
-                                  </span>
-                                  <span style={{ color: 'var(--fw-accent)', fontWeight: 500 }}>
-                                    {t('chat.enterSession')} →
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
+                              )}
+                            </div>
+                          )}
+                          {inboxEntry && (
+                            <div className={`${styles.decisionCard} ${styles.decisionCardWarn}`} data-testid={`inbox-escalation-${packet.id}`} style={{ marginTop: 6 }}>
+                              <div className={styles.decisionCardHeader}>
+                                <strong style={{ fontSize: 12.5, color: 'var(--fw-warn)' }}>
+                                  {isZh ? `已暂停并转交人工收件箱 · ${packet.id}` : `Escalated to Human Inbox · ${packet.id}`}
+                                </strong>
+                                <span className={`${styles.pill} ${styles.pillWarn}`}>{isZh ? '已达自动返修上限' : 'Auto-retry limit reached'}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                                {inboxEntry.reason}
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--fw-text-muted)', lineHeight: 1.5 }}>
+                                {isZh
+                                  ? '系统按安全护栏自动停止（未强行放过未闭合的验证项）。请查看下方处置卡操作或点击上方节点检查完整现场。'
+                                  : 'Paused safely by escalation guardrail. Use the triage card below or open the packet above to inspect the full review.'}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </details>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            };
+
+            if (milestoneTimeline.milestones.length > 0) {
+              return (
+                <>
+                  {milestoneTimeline.milestones.map((ms, msIdx) => {
+                    const msWaves = groupIntoWaves(ms.packets, snap.state?.waves);
+                    const msDur = formatDurationShort(ms.totalDurationMs);
+                    const msTone: SemanticTone = ms.isRunning
+                      ? 'running'
+                      : ms.isClosed
+                        ? 'ok'
+                        : ms.isAttention
+                          ? 'warn'
+                          : 'neutral';
+                    const msStatusLabel = ms.isRunning
+                      ? (isZh ? '进行中' : 'Running')
+                      : ms.isClosed
+                        ? (isZh ? '已关闭' : 'Closed')
+                        : ms.status === 'budget-stopped'
+                          ? (isZh ? '已达轮次上限' : 'Round Limit')
+                          : ms.isAttention
+                            ? (isZh ? '待人工处置' : 'Needs Triage')
+                            : ms.isPending
+                              ? (isZh ? '待开始' : 'Pending')
+                              : (isZh ? '进行中' : 'In Progress');
+                    const msClass = [
+                      styles.milestoneBlock,
+                      ms.isRunning ? styles.runningFlowCard : '',
+                      ms.isClosed ? styles.milestoneBlockClosed : '',
+                      ms.isAttention && !ms.isRunning ? styles.milestoneBlockAttention : '',
+                      ms.isPending ? styles.milestoneBlockPending : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
+                    return (
+                      <section key={`milestone-sec-${ms.id}`} className={styles.orchBlock} data-testid={`milestone-block-${ms.id}`}>
+                        <details className={msClass} open={!ms.isClosed && !ms.isPending}>
+                          <summary className={styles.milestoneBlockHead}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span className={`${styles.statusDot} ${semanticDotClass(msTone)}`} />
+                              <span className={styles.packetId}>{ms.id}</span>
+                              <strong style={{ fontSize: 13.5 }}>{ms.title}</strong>
+                              {ms.totalPackets > 0 && (
+                                <span className={styles.pill}>
+                                  {isZh ? `${ms.completedPackets}/${ms.totalPackets} 任务包` : `${ms.completedPackets}/${ms.totalPackets} packets`}
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--fw-text-subtle)' }}>
+                              {msDur && <span>{isZh ? `用时 ${msDur}` : msDur}</span>}
+                              <span className={`${styles.pill} ${semanticPillClass(msTone)}`}>{msStatusLabel}</span>
+                            </span>
+                          </summary>
+                          {!ms.isPending && (
+                            <div className={styles.milestoneBlockBody}>
+                              {ms.planningGroups.length > 0 && (
+                                <div className={styles.milestoneSubSection}>
+                                  <div className={styles.milestoneSubTitle}>
+                                    {isZh ? '① 里程碑拆包规划与审查' : '1. Milestone Planning & Review'}
+                                  </div>
+                                  <div className={styles.roundTimeline}>
+                                    {ms.planningGroups.map(renderPlanScopeCard)}
+                                  </div>
+                                </div>
+                              )}
+                              {msWaves.length > 0 && (
+                                <div className={styles.milestoneSubSection}>
+                                  <div className={styles.milestoneSubTitle}>
+                                    {isZh ? '② 并行执行与代码审查' : '2. Parallel Execution & Review'}
+                                  </div>
+                                  {msWaves.map(w => renderWaveSection(w, ms.id, msIdx === 0 && w.index === 1))}
+                                </div>
+                              )}
+                              {ms.localRevisions.length > 0 && (
+                                <div className={styles.milestoneSubSection} data-testid="mid-exec-plan-revisions" data-milestone-revisions={ms.id}>
+                                  <div className={styles.milestoneSubTitle}>
+                                    {isZh ? '执行期局部修订与补强' : 'Local Plan Revisions'}
+                                  </div>
+                                  <div className={styles.roundTimeline}>
+                                    {ms.localRevisions.map(renderPlanScopeCard)}
+                                  </div>
+                                </div>
+                              )}
+                              {ms.verificationTraces.length > 0 && (
+                                <div className={styles.milestoneSubSection}>
+                                  <div className={styles.milestoneSubTitle}>
+                                    {isZh ? '③ 里程碑终验与裁决' : '3. Milestone Verification & Judge'}
+                                  </div>
+                                  <div className={styles.roundStepsList}>
+                                    {ms.verificationTraces.map(tr => {
+                                      const loc = formatLocalizedStepStatus(tr.status, tr.running, isZh);
+                                      const timeStr = formatClock(tr.startedAt || tr.updatedAt);
+                                      const stepDur = formatDurationShort(tr.durationMs);
+                                      return (
+                                        <button
+                                          key={tr.id}
+                                          type="button"
+                                          className={`${styles.roundStepRow} ${tr.running ? styles.runningFlowCard : ''}`}
+                                          data-testid={`agent-card-${tr.id}`}
+                                          onClick={() =>
+                                            store.drillIntoNode(tr.scope || ms.id, {
+                                              traceId: tr.id,
+                                              sessionKey: tr.key,
+                                            })
+                                          }
+                                        >
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 12.5 }}>
+                                              <span className={`${styles.statusDot} ${semanticDotClass(loc.tone)}`} />
+                                              <span>{roleLabel(tr.role, isZh, tr.scope, tr.sessionTitle)}</span>
+                                              {tr.model && (
+                                                <span className={styles.pill} title={tr.model}>
+                                                  {formatModelBadge(tr.model, tr.thinking, isZh)}
+                                                </span>
+                                              )}
+                                            </span>
+                                            <span className={`${styles.pill} ${semanticPillClass(loc.tone)}`}>
+                                              {tr.running ? t('traces.liveBadge') : loc.label}
+                                            </span>
+                                          </div>
+                                          <div style={{ fontSize: 12, color: 'var(--fw-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {tr.preview || tr.errorSummary || (tr.running ? t('design.liveWaiting') : '—')}
+                                          </div>
+                                          <div className={styles.roundStepMeta}>
+                                            <span>
+                                              {timeStr ? `${timeStr}` : ''}
+                                              {timeStr && stepDur ? ' · ' : ''}
+                                              {stepDur ? (isZh ? `耗时 ${stepDur}` : stepDur) : ''}
+                                            </span>
+                                            <span style={{ color: 'var(--fw-accent)', fontWeight: 500 }}>
+                                              {t('chat.enterSession')} →
+                                            </span>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </details>
+                      </section>
                     );
                   })}
-                </div>
-              </div>
-            </section>
-          )}
+                  {milestoneTimeline.unassignedPackets.length > 0 &&
+                    groupIntoWaves(milestoneTimeline.unassignedPackets, snap.state?.waves).map(w =>
+                      renderWaveSection(w, 'unassigned', false),
+                    )}
+                  {milestoneTimeline.unassignedRevisions.length > 0 && (
+                    <section className={styles.orchBlock} data-testid="mid-exec-plan-revisions">
+                      <div className={styles.orchBlockHead}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span className={styles.orchAvatar}>↻</span>
+                          <strong style={{ fontSize: 13.5 }}>
+                            {isZh ? '执行期计划修订与验收补强' : 'Mid-Execution Plan Revisions'}
+                          </strong>
+                          <span className={styles.pill}>
+                            {isZh ? `共 ${milestoneTimeline.unassignedRevisions.length} 次修订` : `${milestoneTimeline.unassignedRevisions.length} revisions`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={styles.orchIndent}>
+                        <div className={styles.roundTimeline}>
+                          {milestoneTimeline.unassignedRevisions.map(renderPlanScopeCard)}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+                </>
+              );
+            }
+
+            return (
+              <>
+                {waves.map(w => renderWaveSection(w, 'flat', w.index === 1))}
+                {midExecPlanRevisions.length > 0 && (
+                  <section className={styles.orchBlock} data-testid="mid-exec-plan-revisions">
+                    <div className={styles.orchBlockHead}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span className={styles.orchAvatar}>↻</span>
+                        <strong style={{ fontSize: 13.5 }}>
+                          {isZh ? '执行期计划修订与验收补强' : 'Mid-Execution Plan Revisions'}
+                        </strong>
+                        <span className={styles.pill}>
+                          {isZh ? `共 ${midExecPlanRevisions.length} 次修订` : `${midExecPlanRevisions.length} revisions`}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.orchIndent}>
+                      <div className={styles.roundTimeline}>
+                        {midExecPlanRevisions.map(renderPlanScopeCard)}
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </>
+            );
+          })()}
 
           {/* Stage 3: Delivery Summary Card */}
           {showDeliveryBlock && (
@@ -2575,14 +2840,12 @@ export function ChatStreamView({
                     };
 
                     return (
-                      <div
+                      <TriageCard
                         key={pid}
-                        className={styles.decisionCard}
-                        data-testid={`triage-card-${pid}`}
-                        style={{ borderColor: 'var(--fw-warn-border)', background: 'var(--fw-warn-soft)', gap: 10 }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        testId={`triage-card-${pid}`}
+                        tone="warn"
+                        headerLeft={
+                          <>
                             <span className={styles.packetId}>{pid}</span>
                             <strong style={{ fontSize: 13 }}>
                               {item.packet.title || item.packet.goal || pid}
@@ -2597,8 +2860,10 @@ export function ChatStreamView({
                                 {isZh ? `已闭合 ${item.resolvedFindings.length} 项` : `${item.resolvedFindings.length} resolved`}
                               </span>
                             )}
-                          </div>
-                          {latestReview && (
+                          </>
+                        }
+                        headerRight={
+                          latestReview ? (
                             <button
                               type="button"
                               className={styles.linkBtn}
@@ -2612,127 +2877,134 @@ export function ChatStreamView({
                             >
                               {isZh ? '查看最近审查记录 →' : 'Inspect latest review →'}
                             </button>
-                          )}
-                        </div>
+                          ) : null
+                        }
+                        body={
+                          <>
+                            <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                              {item.reason}
+                            </div>
 
-                        <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                          {item.reason}
-                        </div>
-
-                        {item.openFindings.length > 0 ? (
-                          <div
-                            data-testid={`triage-findings-${pid}`}
-                            style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
-                          >
-                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                              {isZh
-                                ? `未闭合审查缺陷 (${item.openFindings.length} 项)`
-                                : `Open review findings (${item.openFindings.length})`}
-                            </strong>
-                            {item.openFindings.map((f, idx) => (
-                              <div key={String(f.id ?? idx)} className={styles.findingItem}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                  <span className={`${styles.pill} ${f.severity === 'blocker' ? styles.pillDanger : styles.pillWarn}`}>
-                                    {String(f.severity || 'major')}
-                                  </span>
-                                  {Boolean(f.id) && <code>{String(f.id)}</code>}
-                                  {Boolean(f.target) && <code style={{ fontSize: 11 }}>{String(f.target)}</code>}
-                                </div>
-                                {Boolean(f.evidence) && (
-                                  <div style={{ color: 'var(--fw-text)', marginTop: 2 }}>{String(f.evidence)}</div>
-                                )}
-                                {Boolean(f.fix) && (
-                                  <div style={{ color: 'var(--fw-text-muted)', fontSize: 11.5, marginTop: 2 }}>
-                                    {isZh ? '要求修复：' : 'Fix: '}
-                                    {String(f.fix)}
+                            {item.openFindings.length > 0 ? (
+                              <div
+                                data-testid={`triage-findings-${pid}`}
+                                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
+                              >
+                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                                  {isZh
+                                    ? `未闭合审查缺陷 (${item.openFindings.length} 项)`
+                                    : `Open review findings (${item.openFindings.length})`}
+                                </strong>
+                                {item.openFindings.map((f, idx) => (
+                                  <div key={String(f.id ?? idx)} className={styles.findingItem}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      <span className={`${styles.pill} ${f.severity === 'blocker' ? styles.pillDanger : styles.pillWarn}`}>
+                                        {String(f.severity || 'major')}
+                                      </span>
+                                      {Boolean(f.id) && <code>{String(f.id)}</code>}
+                                      {Boolean(f.target) && <code style={{ fontSize: 11 }}>{String(f.target)}</code>}
+                                    </div>
+                                    {Boolean(f.evidence) && (
+                                      <div style={{ color: 'var(--fw-text)', marginTop: 2 }}>{String(f.evidence)}</div>
+                                    )}
+                                    {Boolean(f.fix) && (
+                                      <div style={{ color: 'var(--fw-text-muted)', fontSize: 11.5, marginTop: 2 }}>
+                                        {isZh ? '要求修复：' : 'Fix: '}
+                                        {String(f.fix)}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        ) : item.reasons.length > 0 ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
-                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                              {isZh ? '最近审查意见' : 'Latest review reasons'}
-                            </strong>
-                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-                              {item.reasons.map((r, idx) => (
-                                <li key={idx}>{r}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
+                            ) : item.reasons.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                                  {isZh ? '最近审查意见' : 'Latest review reasons'}
+                                </strong>
+                                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                                  {item.reasons.map((r, idx) => (
+                                    <li key={idx}>{r}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
 
-                        {item.advisory.length > 0 && (
-                          <details className={styles.recoveryDetails}>
-                            <summary>
-                              {isZh ? `非阻塞建议 (${item.advisory.length} 项)` : `Non-blocking advisory (${item.advisory.length})`}
-                            </summary>
-                            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
-                              {item.advisory.map((a, idx) => (
-                                <li key={idx}>{a}</li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
-                            data-testid={`triage-retry-${pid}`}
-                            title={isZh ? '重新修改代码并再次审查' : 'Re-run implementation and review'}
-                            disabled={snap.busyAction !== null}
-                            onClick={() => void runTriage('retry')}
-                          >
-                            {isZh ? '重新执行' : 'Retry'}
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles.btn} ${styles.btnSm}`}
-                            data-testid={`triage-replan-${pid}`}
-                            title={isZh ? '交由规划师调整本步需求或验收标准' : 'Ask planner to revise this packet spec'}
-                            disabled={snap.busyAction !== null}
-                            onClick={() => void runTriage('replan')}
-                          >
-                            {isZh ? '修改要求' : 'Revise Spec'}
-                          </button>
-                          {item.l1Passed && (
+                            {item.advisory.length > 0 && (
+                              <details className={styles.recoveryDetails}>
+                                <summary>
+                                  {isZh ? `非阻塞建议 (${item.advisory.length} 项)` : `Non-blocking advisory (${item.advisory.length})`}
+                                </summary>
+                                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                                  {item.advisory.map((a, idx) => (
+                                    <li key={idx}>{a}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </>
+                        }
+                        noteInput={
+                          <input
+                            type="text"
+                            className={styles.input}
+                            style={{ width: '100%' }}
+                            data-testid={`triage-guidance-${pid}`}
+                            value={guidanceVal}
+                            onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
+                            placeholder={
+                              isZh
+                                ? '可选：附一句给 AI 的说明或放行理由（不填可直接点下方按钮）'
+                                : 'Optional: add a note for AI or sign-off reason (leave blank to click below)'
+                            }
+                          />
+                        }
+                        actions={
+                          <>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                              data-testid={`triage-retry-${pid}`}
+                              title={isZh ? '重新修改代码并再次审查' : 'Re-run implementation and review'}
+                              disabled={snap.busyAction !== null}
+                              onClick={() => void runTriage('retry')}
+                            >
+                              {isZh ? '重新执行' : 'Retry'}
+                            </button>
                             <button
                               type="button"
                               className={`${styles.btn} ${styles.btnSm}`}
-                              data-testid={`triage-accept-${pid}`}
-                              title={isZh ? '测试已通过，跳过审查直接合并' : 'Tests passed — skip AI review and merge'}
+                              data-testid={`triage-replan-${pid}`}
+                              title={isZh ? '交由规划师调整本步需求或验收标准' : 'Ask planner to revise this packet spec'}
                               disabled={snap.busyAction !== null}
-                              onClick={() => void runTriage('accept')}
+                              onClick={() => void runTriage('replan')}
                             >
-                              {isZh ? '直接通过' : 'Accept'}
+                              {isZh ? '修改要求' : 'Revise Spec'}
                             </button>
-                          )}
-                        </div>
-
-                        <input
-                          type="text"
-                          className={styles.input}
-                          data-testid={`triage-guidance-${pid}`}
-                          value={guidanceVal}
-                          onChange={e => setTriageGuidance(prev => ({ ...prev, [pid]: e.target.value }))}
-                          placeholder={
-                            isZh
-                              ? '可选：附一句给 AI 的说明或放行理由（不填可直接点上方按钮）'
-                              : 'Optional: add a note for AI or sign-off reason (leave blank to click directly)'
-                          }
-                        />
-
-                        {errText && (
-                          <div
-                            data-testid={`triage-error-${pid}`}
-                            style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
-                          >
-                            {errText}
-                          </div>
-                        )}
-                      </div>
+                            {item.l1Passed && (
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm}`}
+                                data-testid={`triage-accept-${pid}`}
+                                title={isZh ? '测试已通过，跳过审查直接合并' : 'Tests passed — skip AI review and merge'}
+                                disabled={snap.busyAction !== null}
+                                onClick={() => void runTriage('accept')}
+                              >
+                                {isZh ? '直接通过' : 'Accept'}
+                              </button>
+                            )}
+                          </>
+                        }
+                        error={
+                          errText ? (
+                            <div
+                              data-testid={`triage-error-${pid}`}
+                              style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}
+                            >
+                              {errText}
+                            </div>
+                          ) : null
+                        }
+                      />
                     );
                   })}
 
@@ -2854,17 +3126,15 @@ export function ChatStreamView({
                     };
 
                     return (
-                      <div
+                      <TriageCard
                         key={`milestone-${ms.id}`}
-                        className={styles.decisionCard}
-                        data-testid={`milestone-triage-card-${ms.id}`}
-                        style={{ borderColor: 'var(--fw-warn-border)', background: 'var(--fw-warn-soft)', gap: 10 }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        testId={`milestone-triage-card-${ms.id}`}
+                        tone="warn"
+                        headerLeft={
+                          <>
                             <span className={styles.packetId}>{ms.id}</span>
                             <strong style={{ fontSize: 13 }}>
-                              {isZh ? `里程碑 ${ms.id} 终验待处置` : `Milestone ${ms.id} Verification Triage`}
+                              {isZh ? '里程碑终验待处置' : 'Milestone Verification Triage'}
                             </strong>
                             <span className={`${styles.pill} ${ms.gatePassed ? styles.pillSuccess : styles.pillDanger}`}>
                               {ms.gatePassed
@@ -2876,8 +3146,10 @@ export function ChatStreamView({
                                 {`Judge: ${ms.judgeVerdict}${ms.judgeScore !== null ? ` · ${ms.judgeScore.toFixed(2)}` : ''}`}
                               </span>
                             )}
-                          </div>
-                          {latestJudgeTrace && (
+                          </>
+                        }
+                        headerRight={
+                          latestJudgeTrace ? (
                             <button
                               type="button"
                               className={styles.linkBtn}
@@ -2890,72 +3162,89 @@ export function ChatStreamView({
                             >
                               {isZh ? '查看裁决记录 →' : 'Inspect Judge trace →'}
                             </button>
-                          )}
-                        </div>
-
-                        {ms.inboxReason && (
-                          <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
-                            {ms.inboxReason}
-                          </div>
-                        )}
-
-                        {ms.identityError && (
-                          <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
-                            {ms.identityError}
-                          </div>
-                        )}
-
-                        {ms.failedCommands.length > 0 && (
-                          <div data-testid={`milestone-failed-cmds-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {ms.failedCommands.map((fc, idx) => (
-                              <div key={`${fc.level}-${idx}`} className={styles.findingItem}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                  <span className={`${styles.pill} ${styles.pillDanger}`}>{fc.level}</span>
-                                  <code style={{ fontSize: 11 }}>{fc.cmd}</code>
-                                  {fc.exitCode !== null && (
-                                    <span style={{ fontSize: 11, color: 'var(--fw-danger)' }}>exit {fc.exitCode}</span>
-                                  )}
-                                </div>
-                                {fc.outputTail && (
-                                  <pre
-                                    style={{
-                                      margin: '4px 0 0',
-                                      fontSize: 11,
-                                      fontFamily: 'var(--fw-mono)',
-                                      whiteSpace: 'pre-wrap',
-                                      wordBreak: 'break-word',
-                                      color: 'var(--fw-text-muted)',
-                                    }}
-                                  >
-                                    {fc.outputTail}
-                                  </pre>
-                                )}
+                          ) : null
+                        }
+                        body={
+                          <>
+                            {ms.inboxReason && ms.judgeReasons.length === 0 && (
+                              <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                                {ms.inboxReason}
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            )}
 
-                        {ms.judgeError && ms.judgeReasons.length === 0 && (
-                          <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
-                            {isZh ? `Judge 错误：${ms.judgeError}` : `Judge error: ${ms.judgeError}`}
-                          </div>
-                        )}
-
-                        {ms.judgeReasons.length > 0 && (
-                          <div data-testid={`milestone-judge-reasons-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
-                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                              {isZh ? 'Judge 裁决理由' : 'Judge reasons'}
-                            </strong>
-                            {ms.judgeReasons.map((reason, idx) => (
-                              <div key={idx} className={styles.findingItem}>
-                                {reason}
+                            {ms.identityError && (
+                              <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                                {ms.identityError}
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            )}
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {ms.failedCommands.length > 0 && (
+                              <div data-testid={`milestone-failed-cmds-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {ms.failedCommands.map((fc, idx) => (
+                                  <div key={`${fc.level}-${idx}`} className={styles.findingItem}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      <span className={`${styles.pill} ${styles.pillDanger}`}>{fc.level}</span>
+                                      <code style={{ fontSize: 11 }}>{fc.cmd}</code>
+                                      {fc.exitCode !== null && (
+                                        <span style={{ fontSize: 11, color: 'var(--fw-danger)' }}>exit {fc.exitCode}</span>
+                                      )}
+                                    </div>
+                                    {fc.outputTail && (
+                                      <pre
+                                        style={{
+                                          margin: '4px 0 0',
+                                          fontSize: 11,
+                                          fontFamily: 'var(--fw-mono)',
+                                          whiteSpace: 'pre-wrap',
+                                          wordBreak: 'break-word',
+                                          color: 'var(--fw-text-muted)',
+                                        }}
+                                      >
+                                        {fc.outputTail}
+                                      </pre>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {ms.judgeError && ms.judgeReasons.length === 0 && (
+                              <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                                {isZh ? `Judge 错误：${ms.judgeError}` : `Judge error: ${ms.judgeError}`}
+                              </div>
+                            )}
+
+                            {ms.judgeReasons.length > 0 && (
+                              <div data-testid={`milestone-judge-reasons-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                                  {isZh ? 'Judge 裁决理由' : 'Judge reasons'}
+                                </strong>
+                                {ms.judgeReasons.map((reason, idx) => (
+                                  <div key={idx} className={styles.findingItem}>
+                                    {reason}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        }
+                        noteInput={
+                          <input
+                            type="text"
+                            className={styles.input}
+                            style={{ width: '100%' }}
+                            data-testid={`milestone-triage-guidance-${ms.id}`}
+                            value={guidanceVal}
+                            onChange={e => setMilestoneGuidance(prev => ({ ...prev, [ms.id]: e.target.value }))}
+                            placeholder={
+                              isZh
+                                ? '可选：补充给 Judge 的范围指导，或直接通过里程碑的签核说明…'
+                                : 'Optional: scope guidance for Judge re-verification or milestone sign-off note…'
+                            }
+                          />
+                        }
+                        actions={
+                          <>
                             <button
                               type="button"
                               className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
@@ -2976,28 +3265,16 @@ export function ChatStreamView({
                                 {isZh ? '直接通过里程碑' : 'Accept Milestone'}
                               </button>
                             )}
-                          </div>
-                          <input
-                            type="text"
-                            className={styles.input}
-                            style={{ width: '100%' }}
-                            data-testid={`milestone-triage-guidance-${ms.id}`}
-                            value={guidanceVal}
-                            onChange={e => setMilestoneGuidance(prev => ({ ...prev, [ms.id]: e.target.value }))}
-                            placeholder={
-                              isZh
-                                ? '可选：补充给 Judge 的范围指导，或直接通过里程碑的签核说明…'
-                                : 'Optional: scope guidance for Judge re-verification or milestone sign-off note…'
-                            }
-                          />
-                        </div>
-
-                        {errText && (
-                          <div data-testid={`milestone-triage-error-${ms.id}`} style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
-                            {errText}
-                          </div>
-                        )}
-                      </div>
+                          </>
+                        }
+                        error={
+                          errText ? (
+                            <div data-testid={`milestone-triage-error-${ms.id}`} style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                              {errText}
+                            </div>
+                          ) : null
+                        }
+                      />
                     );
                   })}
 

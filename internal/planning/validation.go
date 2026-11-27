@@ -357,7 +357,7 @@ func validateContents(s *State) error {
 	}
 	rounds := 0
 	for _, r := range s.Requests {
-		if ids["request/"+r.ID] || r.Rounds > r.MaxRounds || r.InputRevision > s.InputRevision {
+		if ids["request/"+r.ID] || r.Rounds > r.MaxRounds+r.GraceRounds || r.InputRevision > s.InputRevision {
 			return fmt.Errorf("planning request identity or counters are invalid")
 		}
 		ids["request/"+r.ID] = true

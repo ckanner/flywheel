@@ -213,6 +213,9 @@ func ApplyFeedback(s *State, feedback Feedback) error {
 	return nil
 }
 
+// MaxPlanningGraceRounds caps bounded convergence grace rounds per planning request.
+const MaxPlanningGraceRounds = 2
+
 func BeginRequest(s *State, request Request) error {
 	if request.MaxRounds == 0 {
 		request.MaxRounds = s.MaxRounds
@@ -231,7 +234,7 @@ func BeginRequest(s *State, request Request) error {
 			return fmt.Errorf("planning request identity was reused for different input")
 		}
 	}
-	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.Status != "pending" || request.Stage != "" || request.MaxRounds > s.MaxRounds {
+	if request.InputRevision != s.InputRevision || request.Rounds != 0 || request.Retries != 0 || request.GraceRounds != 0 || request.Status != "pending" || request.Stage != "" || request.MaxRounds > s.MaxRounds {
 		return fmt.Errorf("new planning request must preserve current input and round limits")
 	}
 	s.Requests = append(s.Requests, request)
@@ -253,7 +256,7 @@ func BeginRound(s *State, requestID string) error {
 		if r.Stage != "" {
 			return fmt.Errorf("planning round cannot restart while its review is pending")
 		}
-		if r.Rounds >= r.MaxRounds {
+		if r.Rounds >= r.MaxRounds+r.GraceRounds {
 			r.Status, s.Phase = "budget-stopped", "budget-stopped"
 			return fmt.Errorf("planning round limit reached; unresolved work is not approved")
 		}
@@ -295,7 +298,7 @@ func ValidateTransition(previous, next *State) error {
 		if old.DesignGranularity != r.DesignGranularity && (old.DesignGranularity == "system" || r.DesignGranularity != "system") {
 			return fmt.Errorf("planning granularity can only upgrade to system preparation")
 		}
-		if old.ID != r.ID || old.Origin != r.Origin || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries {
+		if old.ID != r.ID || old.Origin != r.Origin || old.Scope != r.Scope || old.ScopeID != r.ScopeID || old.InputRevision != r.InputRevision || old.MaxRounds != r.MaxRounds || old.PlanningOnly != r.PlanningOnly || old.Feedback != r.Feedback || r.Rounds < old.Rounds || r.Retries < old.Retries || r.GraceRounds < old.GraceRounds || r.GraceRounds > MaxPlanningGraceRounds {
 			return fmt.Errorf("planning request identity and spent rounds are immutable")
 		}
 	}

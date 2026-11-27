@@ -14,7 +14,7 @@ const QUERY_ACTIONS = new Set([
 
 const ACT_ACTIONS = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'packet', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
+  'config-save', 'session', 'packet', 'milestone', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -217,6 +217,17 @@ export function validateModelCatalog(
   return report as unknown as ModelCatalogReport;
 }
 
+function normalizeRemoteTransportError(error: unknown): Error {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  if (/flywheelConsole/i.test(raw) && /\bHTTP\s*404\b/i.test(raw)) {
+    return new FlywheelRemoteError(
+      '飞轮宿主服务未挂载（HTTP 404）：通常是本机 ~/.config/flywheel/installation.json 与插件版本不一致导致。请在终端运行 `npx -y @ckanner/flywheel@latest install` 后重启 DSH Desktop。 / Flywheel host service not mounted (HTTP 404): installation.json may be out of sync with the plugin version; run `npx -y @ckanner/flywheel@latest install` and restart DSH Desktop.',
+      { code: 'HOST_NOT_MOUNTED', dispatch: 'not-dispatched' },
+    );
+  }
+  return error instanceof Error ? error : new FlywheelRemoteError(raw || 'Remote call failed');
+}
+
 export class FlywheelRemoteClient {
   private readonly ctx: ClientContext;
   private readonly ready: Promise<string | undefined>;
@@ -254,7 +265,12 @@ export class FlywheelRemoteClient {
 
   async query(input: Record<string, unknown>): Promise<ControlResponse> {
     const ns = await this.getNamespace();
-    const res = await ns.query(input);
+    let res: RemoteEnvelope;
+    try {
+      res = await ns.query(input);
+    } catch (err) {
+      throw normalizeRemoteTransportError(err);
+    }
     const parsed = unwrapEnvelope(res);
     if (input.action === 'models' && isPlainObject(input.models)) {
       validateModelCatalog(
@@ -267,13 +283,23 @@ export class FlywheelRemoteClient {
 
   async act(input: Record<string, unknown>): Promise<ControlResponse> {
     const ns = await this.getNamespace();
-    const res = await ns.act(input);
+    let res: RemoteEnvelope;
+    try {
+      res = await ns.act(input);
+    } catch (err) {
+      throw normalizeRemoteTransportError(err);
+    }
     return unwrapEnvelope(res);
   }
 
   async listRepoImages(cwd?: string): Promise<ControlResponse> {
     const ns = await this.getNamespace();
-    const res = await ns.listRepoImages(cwd);
+    let res: RemoteEnvelope;
+    try {
+      res = await ns.listRepoImages(cwd);
+    } catch (err) {
+      throw normalizeRemoteTransportError(err);
+    }
     return unwrapEnvelope(res);
   }
 }

@@ -301,25 +301,19 @@ func TestSpec03MilestoneTriageAndDeliveredMemory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "completed", stepSum.Status)
 
-	// Delivered memory idempotency, existing section append, and non-git shortHeadSHA fallback.
+	// Single-source project-context.md rendering preserves delivered milestones across repeated syncs.
 	pcPath := filepath.Join(ctx.TaskDir, "project-context.md")
 	beforePC, err := os.ReadFile(pcPath)
 	require.NoError(t, err)
-	ctx.appendDeliveredMilestoneMemory(ctx.Spec.Milestones[0], "duplicate should be ignored")
+	assert.Contains(t, string(beforePC), "## Delivered Milestones")
+	assert.Contains(t, string(beforePC), "M-01")
+	reloaded, err := state.Load(fx.taskDir)
+	require.NoError(t, err)
+	ctx.State = reloaded
+	require.NoError(t, ctx.syncProjectContext())
 	afterPC, err := os.ReadFile(pcPath)
 	require.NoError(t, err)
 	assert.Equal(t, string(beforePC), string(afterPC))
-
-	// Existing project-context.md without "## Delivered Milestones" header.
-	require.NoError(t, os.WriteFile(pcPath, []byte("# Stack\nGo\n"), 0o644))
-	ctx.appendDeliveredMilestoneMemory(contract.Milestone{ID: "M-02", Title: "Second"}, "ok")
-	ctx.appendDeliveredMilestoneMemory(contract.Milestone{ID: "M-03", Title: "Third"}, "ok")
-	rawPC, err := os.ReadFile(pcPath)
-	require.NoError(t, err)
-	assert.Contains(t, string(rawPC), "## Delivered Milestones\n- M-02 (Second)")
-	assert.Contains(t, string(rawPC), "\n- M-03 (Third)")
-
-	assert.Equal(t, "n/a", shortHeadSHA(t.TempDir()))
 }
 
 func TestSpec03CompactMilestoneGateProjection(t *testing.T) {

@@ -395,20 +395,18 @@ func (c *Context) processPlanningRequest(index int) (bool, error) {
 			return true, c.err()
 		}
 		if r.Stage == "" || r.Stage == "planner" {
+			if r.Stage == "" && r.Rounds >= r.MaxRounds+r.GraceRounds && r.GraceRounds < planning.MaxPlanningGraceRounds {
+				history, _ := planningConvergenceHistory(p, *r)
+				if dec := EvaluateConvergence(history, r.GraceRounds, planning.MaxPlanningGraceRounds); dec.AllowGrace {
+					r.GraceRounds++
+					c.Log(fmt.Sprintf("planning %s: granting bounded convergence grace +%d/%d (%s)", r.ID, r.GraceRounds, planning.MaxPlanningGraceRounds, dec.Reason))
+				}
+			}
 			if err := planning.BeginRound(p, r.ID); err != nil {
 				diag := err.Error()
-				if designRequest(*r) && p.CurrentDesign != nil {
-					if latest := planning.LatestReview(p, "design", *p.CurrentDesign); latest != nil {
-						open := []string{}
-						for _, f := range latest.Findings {
-							if f.Status != "resolved" && (f.Severity == "blocker" || f.Severity == "major") {
-								open = append(open, fmt.Sprintf("%s(%s): %s", f.ID, f.Severity, f.Target))
-							}
-						}
-						if len(open) > 0 {
-							diag = fmt.Sprintf("%s — 收敛诊断：经过 %d 轮仍存在未闭合分歧 [%s]，建议由你直接裁决或补充约束。", diag, r.Rounds, strings.Join(open, "; "))
-						}
-					}
+				_, open := planningConvergenceHistory(p, *r)
+				if len(open) > 0 {
+					diag = fmt.Sprintf("%s — 收敛诊断：经过 %d 轮仍存在未闭合分歧 [%s]，建议由你直接裁决或补充约束。", diag, r.Rounds, strings.Join(open, "; "))
 				}
 				return c.planningRequestStop(r, "budget-stopped", diag)
 			}

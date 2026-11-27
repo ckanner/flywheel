@@ -1,5 +1,6 @@
 import type { ClientContext } from './context.ts';
 import { resolvePlanningView } from './planning.ts';
+import { resolveRetryPlanningTarget } from './workflowTimeline.ts';
 import { FlywheelRemoteClient, FlywheelRemoteError } from './remote.ts';
 import type {
   ConfigEditorSnapshot,
@@ -1074,13 +1075,23 @@ export class FlywheelStore {
     });
   }
 
-  async retryPlanning(opts?: { draftMode?: 'dual' | 'single' }): Promise<ControlResponse | undefined> {
+  async retryPlanning(opts?: {
+    draftMode?: 'dual' | 'single';
+    scope?: 'design' | 'milestone' | 'packet';
+    scopeId?: string;
+    continueExecution?: boolean;
+  }): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
     if (!taskDir) return undefined;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       await this.refreshSelectedTask(true, false);
     }
+    const planning = this.snapshot.planning ?? this.snapshot.state?.planning ?? null;
     const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    const target = resolveRetryPlanningTarget(planning, this.snapshot.state);
+    const scope = opts?.scope ?? target.scope;
+    const scopeId = opts?.scopeId ?? (scope === target.scope ? target.scopeId : '');
+    const continueExecution = opts?.continueExecution ?? (scope === target.scope ? target.continueExecution : false);
     return this.performAct('retry-planning', {
       action: 'planning',
       cwd: this.snapshot.selectedCwd || undefined,
@@ -1089,9 +1100,32 @@ export class FlywheelStore {
         action: 'plan',
         'request-id': `plan-retry-${Date.now()}`,
         revision: rev,
-        scope: 'design',
+        scope,
+        ...(scopeId ? { 'scope-id': scopeId } : {}),
+        ...(continueExecution ? { 'continue-execution': true } : {}),
         ...(opts?.draftMode ? { 'draft-mode': opts.draftMode } : {}),
         start: true,
+      },
+    });
+  }
+
+  async cancelPlanningRequest(targetRequestId?: string): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir) return undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      await this.refreshSelectedTask(true, false);
+    }
+    const rev = this.snapshot.state?.revision ?? this.snapshot.planning?.revision ?? 1;
+    return this.performAct('cancel-plan', {
+      action: 'planning',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      planning: {
+        action: 'cancel-plan',
+        'request-id': `cancel-plan-${Date.now()}`,
+        revision: rev,
+        ...(targetRequestId ? { 'target-request-id': targetRequestId } : {}),
+        start: false,
       },
     });
   }

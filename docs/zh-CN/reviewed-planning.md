@@ -86,7 +86,12 @@ brief 不是完整方案；尚未解决的决定继续留在方案中，宿主�
 
 审查可以通过、要求修订、需要用户决定或阻断。审查通过是对方案的评价，人工批准
 是另一份记录。有界循环可能因待决定问题、轮次、预算或 Provider 结果未知而停止，
-这些状态不会自动变成通过。
+这些状态不会自动变成通过。若某次规划请求呈严格收敛趋势（未闭合缺陷单调减少且剩余
+阻塞项 `<= 2`），引擎在不修改不可变 `max-rounds` 的前提下最多授予 2 轮有界收敛宽限
+（`grace-rounds`）。规划中断或目标偏差时，引擎会在 `planning.projection.retry-target`
+投影精确的恢复目标；可通过 `planning cancel-plan` 幂等取消中断中的 `pending`/`running`
+规划请求并恢复 `planning.phase`，或对已获启动授权的 `milestone`/`packet` 作用域发起
+带 `continue-execution: true` 的 `planning plan` 以在拆包通过后直接续跑执行。
 
 ## 批准你真正看过的版本
 

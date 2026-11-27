@@ -14,9 +14,18 @@ func planningProjectionSize(value any) int {
 	return len(raw)
 }
 
-func consolePlanningProjection(source *planning.State, limit int) (*planning.State, error) {
+func consolePlanningProjection(source *planning.State, limit int, currentMilestone ...string) (*planning.State, error) {
 	p := *source
-	p.Projection = &planning.Projection{Kind: "console-excerpt", Ledger: "state.json", Omitted: map[string]int{}}
+	activeMilestone := ""
+	if len(currentMilestone) > 0 {
+		activeMilestone = currentMilestone[0]
+	}
+	p.Projection = &planning.Projection{
+		Kind:        "console-excerpt",
+		Ledger:      "state.json",
+		Omitted:     map[string]int{},
+		RetryTarget: resolvePlanningRetryTarget(source, activeMilestone),
+	}
 	omitted := p.Projection.Omitted
 	designRefs, planRefs := map[planning.Ref]bool{}, map[planning.Ref]bool{}
 	var currentReview *planning.Review
@@ -198,6 +207,32 @@ func planningActivationProjection(source *planning.Activation) *planning.Activat
 	view := *source
 	view.Files, view.OldFiles = map[string]string{}, map[string]string{}
 	return &view
+}
+
+// resolvePlanningRetryTarget computes the single authoritative retry and cancel
+// targets from planning/task state so clients never guess or hardcode scope.
+func resolvePlanningRetryTarget(p *planning.State, currentMilestone string) *planning.RetryTarget {
+	startAllowed := p.CurrentDesign != nil && planning.StartAllowed(p, *p.CurrentDesign)
+	target := &planning.RetryTarget{Scope: "design"}
+	for i := len(p.Requests) - 1; i >= 0; i-- {
+		r := p.Requests[i]
+		if target.CancellableRequestID == "" && (r.Status == "pending" || r.Status == "running") {
+			target.CancellableRequestID = r.ID
+		}
+		if target.FailedRequestID == "" && (r.Status == "budget-stopped" || r.Status == "blocked" || r.Status == "cancelled" || r.Status == "awaiting-input") {
+			target.FailedRequestID = r.ID
+			scope, scopeID := planning.CanonicalScope(r.Scope, r.ScopeID)
+			target.Scope = scope
+			target.ScopeID = scopeID
+			target.ContinueExecution = startAllowed && (scope == "milestone" || scope == "packet")
+		}
+	}
+	if target.FailedRequestID == "" && startAllowed && currentMilestone != "" {
+		target.Scope = "milestone"
+		target.ScopeID = currentMilestone
+		target.ContinueExecution = true
+	}
+	return target
 }
 
 func omitPlanningDesign(d *planning.Design) {

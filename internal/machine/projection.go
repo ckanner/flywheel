@@ -25,7 +25,11 @@ func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, err
 	}
 	if st.Planning != nil {
 		var err error
-		view.Planning, err = consolePlanningProjection(st.Planning, 512<<10)
+		activeMilestone := ""
+		if st.CurrentMilestone != nil {
+			activeMilestone = *st.CurrentMilestone
+		}
+		view.Planning, err = consolePlanningProjection(st.Planning, 512<<10, activeMilestone)
 		if err != nil {
 			return nil, err
 		}

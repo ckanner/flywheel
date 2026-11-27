@@ -277,10 +277,10 @@ test('Bottom-of-stream Escalation Triage Card renders findings, all 3 actions, a
   assert.equal(replanBtn?.textContent?.trim(), '修改要求');
   assert.equal(acceptBtn?.textContent?.trim(), '直接通过');
   assert.equal(guidanceInput?.tagName, 'INPUT');
-  // Option B layout: action buttons appear above the optional single-line input.
+  // Unified TriageCard layout (PILLAR-5.2): optional guidance input sits above the action button row.
   assert.ok(
-    (retryBtn.compareDocumentPosition(guidanceInput) & 4) !== 0,
-    'expected action buttons above the optional single-line input',
+    (guidanceInput.compareDocumentPosition(retryBtn) & 4) !== 0,
+    'expected optional guidance input above the action buttons',
   );
 
   // Click Retry with Guidance -> sends action: 'packet' then calls startRun
