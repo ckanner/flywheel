@@ -155,6 +155,18 @@ func executorSelfChangedFiles(ps *state.PacketState) []string {
 	return out
 }
 
+func packetEscalationFeedback(ps *state.PacketState) string {
+	if ps != nil && ps.LastFeedback != nil {
+		raw, _ := json.Marshal(ps.LastFeedback)
+		return string(raw)
+	}
+	if ps != nil && ps.Evidence.Review != nil {
+		raw, _ := json.Marshal(map[string]any{"review": ps.Evidence.Review})
+		return string(raw)
+	}
+	return "{}"
+}
+
 // escalatePacket 重试耗尽后的升级（§4.2/§6）：return-to-planner 修订 packet
 // （多给一轮完整循环）；仍在失败 → inbox 叫人并停。
 func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
@@ -162,8 +174,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 	ps := c.State.Packets[id]
 	if c.quick() {
 		c.finishRuntimeReplan(packet)
-		feedback, _ := json.Marshal(ps.LastFeedback)
-		err := c.upgradeWorkflow("Quick repair or verification requires Full planning", []string{string(feedback)})
+		err := c.upgradeWorkflow("Quick repair or verification requires Full planning", []string{packetEscalationFeedback(ps)})
 		return "workflow-upgraded", err
 	}
 	onFail := packet.Escalation.OnFail
@@ -173,8 +184,7 @@ func (c *Context) escalatePacket(packet *contract.Packet) (string, error) {
 		if !found {
 			return "", fmt.Errorf("packet %s references unknown milestone %q", id, ps.Milestone)
 		}
-		feedback, _ := json.Marshal(ps.LastFeedback)
-		plan, err := c.runtimePlan(packet, milestone, "Returned packet "+id+": "+string(feedback))
+		plan, err := c.runtimePlan(packet, milestone, "Returned packet "+id+": "+packetEscalationFeedback(ps))
 		if err != nil {
 			return "", err
 		}

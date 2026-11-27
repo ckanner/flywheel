@@ -76,8 +76,11 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 		return checkpoint, args.Prompt
 	}
 	refs := []string{filepath.Join(c.taskDirPrefix(), "spec.md"), filepath.Join(c.taskDirPrefix(), filepath.Base(packet.File))}
-	refs = append(refs, packet.ContextFiles...)
-	refs = append(refs, packet.CacheScope...)
+	for _, rawRef := range append(append([]string(nil), packet.ContextFiles...), packet.CacheScope...) {
+		if clean := normalizeContextRef(rawRef); clean != "" {
+			refs = append(refs, clean)
+		}
+	}
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
 	contents := map[string]string{}
@@ -134,6 +137,13 @@ func (c *Context) sessionPrompt(role, scope string, args drivers.CallArgs) strin
 		prompt += executionDirectoryPrompt()
 	}
 	return prompt
+}
+
+// normalizeContextRef strips Markdown fragment anchors (e.g. "docs/slug/spec.md#M-02")
+// so context-file hashing resolves the actual file on disk cleanly.
+func normalizeContextRef(ref string) string {
+	pathPart, _, _ := strings.Cut(strings.TrimSpace(ref), "#")
+	return strings.TrimSpace(pathPart)
 }
 
 // isLedgerRef returns true only when ref resolves inside the task ledger

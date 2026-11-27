@@ -5,7 +5,11 @@ import { validPlanningCommand } from '../src/planning-control.js';
 import {
   annotatePlanSteps,
   buildMilestoneTimeline,
+  computeMilestoneStartTimestamps,
+  extractMilestoneIdFromScope,
   formatRetryPlanningLabel,
+  inferMilestoneByTimestamp,
+  isPacketEffectivelyRunning,
   resolvePlanGroupTone,
   resolveRetryPlanningTarget,
 } from '../src/client/workflowTimeline.ts';
@@ -201,4 +205,42 @@ test('PILLAR-1: host planning-control validates cancel-plan and plan continue-ex
     scope: 'design',
     'continue-execution': true,
   }), false);
+});
+
+test('v0.43.1 invariants: compact milestone IDs, chronological attribution, supersession retry target, and effective packet liveness', () => {
+  assert.equal(extractMilestoneIdFromScope('planning:strengthen-m01t01-l1'), 'M-01');
+  assert.equal(extractMilestoneIdFromScope('planning:resume-m01-after-budget-300'), 'M-01');
+
+  const starts = computeMilestoneStartTimestamps(
+    ['M-01', 'M-02'],
+    [
+      makeTrace({ id: 'm1', role: 'execute', scope: 'M01-T01', startedAt: '2026-11-25T12:00:00Z' }),
+      makeTrace({ id: 'm2', role: 'plan', scope: 'planning:milestone/M-02', startedAt: '2026-11-27T06:00:00Z' }),
+    ],
+  );
+  assert.equal(inferMilestoneByTimestamp(Date.parse('2026-11-25T10:00:00Z'), ['M-01', 'M-02'], starts), 'M-01');
+  assert.equal(inferMilestoneByTimestamp(Date.parse('2026-11-25T14:00:00Z'), ['M-01', 'M-02'], starts), 'M-01');
+  assert.equal(inferMilestoneByTimestamp(Date.parse('2026-11-27T07:00:00Z'), ['M-01', 'M-02'], starts), 'M-02');
+
+  // Cancelled design request + newer completed M-02 request must resolve to M-02, never cancelled design.
+  const superseded = resolveRetryPlanningTarget(
+    {
+      phase: 'ready',
+      'start-authorized': true,
+      requests: [
+        { id: 'engine-1-14', scope: 'milestone', 'scope-id': 'M-02', status: 'budget-stopped' },
+        { id: 'plan-retry-mistake', scope: 'design', status: 'cancelled' },
+        { id: 'retry-m02', scope: 'milestone', 'scope-id': 'M-02', status: 'completed' },
+      ],
+    },
+    { 'current-milestone': 'M-02' },
+  );
+  assert.equal(superseded.scope, 'milestone');
+  assert.equal(superseded.scopeId, 'M-02');
+  assert.equal(superseded.continueExecution, true);
+  assert.equal(superseded.failedRequestId, '');
+
+  // Packet in executing state during L1 check (no active model trace) still reports running when taskRunning=true.
+  assert.equal(isPacketEffectivelyRunning({ id: 'M02-T01', status: 'executing' }, [], true), true);
+  assert.equal(isPacketEffectivelyRunning({ id: 'M02-T01', status: 'executing' }, [], false), false);
 });

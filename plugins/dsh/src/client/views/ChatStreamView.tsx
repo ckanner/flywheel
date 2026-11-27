@@ -10,6 +10,7 @@ import {
   extractMilestoneIdFromScope,
   formatLocalizedStepStatus,
   formatRetryPlanningLabel,
+  isPacketEffectivelyRunning,
   type PlanScopeGroup,
   resolvePlanGroupTone,
   resolveRetryPlanningTarget,
@@ -490,6 +491,22 @@ export function ChatStreamView({
         const advisory = Array.isArray(review?.advisory)
           ? (review!.advisory as unknown[]).filter((r): r is string => typeof r === 'string' && r.trim() !== '')
           : [];
+        const rawLastFeedback = (raw['last-feedback'] && typeof raw['last-feedback'] === 'object'
+          ? raw['last-feedback']
+          : null) as Record<string, unknown> | null;
+        const failedCommands = Array.isArray(rawLastFeedback?.['failed-commands'])
+          ? (rawLastFeedback!['failed-commands'] as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+          : [];
+        const failedL1Details = Array.isArray(rawLastFeedback?.['failed-l1-details'])
+          ? (rawLastFeedback!['failed-l1-details'] as Array<Record<string, unknown>>)
+              .filter(item => item && typeof item === 'object')
+              .map(item => ({
+                cmd: typeof item.cmd === 'string' ? item.cmd : '',
+                exitCode: typeof item.exitCode === 'number' ? item.exitCode : null,
+                output: typeof item.output === 'string' ? item.output : '',
+              }))
+              .filter(item => item.cmd || item.output)
+          : [];
         const latestInbox = [...inboxList].reverse().find(item => item?.['packet-id'] === p.id && !item.action) ?? null;
         return {
           packet: p,
@@ -503,6 +520,8 @@ export function ChatStreamView({
           resolvedFindings,
           reasons,
           advisory,
+          failedCommands,
+          failedL1Details,
         };
       });
   }, [packets, snap.state, isZh]);
@@ -705,10 +724,12 @@ export function ChatStreamView({
       packets,
       planGroups: midExecPlanRevisions,
       traces: snap.traces,
+      requests: Array.isArray(planning?.requests) ? planning.requests : [],
       taskStatus: snap.state?.status ?? null,
+      taskRunning: snap.running,
       planningPhase: planning?.phase ?? null,
     });
-  }, [resolvedPlanning?.design?.milestones, snap.state, packets, midExecPlanRevisions, snap.traces, planning?.phase]);
+  }, [resolvedPlanning?.design?.milestones, snap.state, snap.running, packets, midExecPlanRevisions, snap.traces, planning?.requests, planning?.phase]);
 
   const timelineRounds = useMemo(
     () => groupPlanningTracesIntoRounds(initialPlanningTraces, isZh),
@@ -2263,7 +2284,7 @@ export function ChatStreamView({
                   key={rev.scope}
                   className={`${styles.planRevisionCard} ${cardBorderClass}`}
                   data-testid={`plan-revision-card-${rev.requestId}`}
-                  open={rev.running || rev.tone === 'danger'}
+                  open={rev.running}
                 >
                   <summary className={styles.roundGroupHead}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2368,9 +2389,7 @@ export function ChatStreamView({
                     {wave.items.map(packet => {
                       const tr = traceByPacket.get(packet.id) ?? null;
                       const pktTraces = packetTracesMap.get(packet.id) ?? [];
-                      const hasRunningPacketTrace =
-                        Boolean(tr?.running) ||
-                        pktTraces.some(item => item.running && (item.role === 'review' || item.role === 'frontend-ux-review' || item.role === 'execute'));
+                      const hasRunningPacketTrace = isPacketEffectivelyRunning(packet, pktTraces, snap.running);
                       const tone = packetTone(packet.status, hasRunningPacketTrace);
                       const locPktStatus = formatLocalizedStepStatus(packet.status, hasRunningPacketTrace, isZh);
                       const needsAttention = ['failed', 'blocked', 'escalated', 'inbox'].includes((packet.status ?? '').toLowerCase());
@@ -2409,9 +2428,11 @@ export function ChatStreamView({
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                 <span className={`${styles.statusDot} ${tone.dot}`} />
                                 <span className={styles.packetId}>{packet.id}</span>
-                                <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {packet.title || packet.goal || packet.id}
-                                </strong>
+                                {(packet.title || packet.goal) && (packet.title || packet.goal) !== packet.id && (
+                                  <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {packet.title || packet.goal}
+                                  </strong>
+                                )}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
                                 {pktModelLabel && <span title={packet.model || tr?.model || undefined}>{pktModelLabel}</span>}
@@ -2847,9 +2868,11 @@ export function ChatStreamView({
                         headerLeft={
                           <>
                             <span className={styles.packetId}>{pid}</span>
-                            <strong style={{ fontSize: 13 }}>
-                              {item.packet.title || item.packet.goal || pid}
-                            </strong>
+                            {(item.packet.title || item.packet.goal) && (item.packet.title || item.packet.goal) !== pid && (
+                              <strong style={{ fontSize: 13 }}>
+                                {item.packet.title || item.packet.goal}
+                              </strong>
+                            )}
                             <span className={`${styles.pill} ${item.l1Passed ? styles.pillSuccess : styles.pillDanger}`}>
                               {item.l1Passed
                                 ? (isZh ? '测试已通过' : 'Tests Passed')
@@ -2884,6 +2907,38 @@ export function ChatStreamView({
                             <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
                               {item.reason}
                             </div>
+
+                            {!item.l1Passed && (item.failedL1Details.length > 0 || item.failedCommands.length > 0) && (
+                              <div
+                                data-testid={`triage-l1-failures-${pid}`}
+                                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
+                              >
+                                <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                                  {isZh ? 'L1 验收失败明细' : 'L1 Gate Failures'}
+                                </strong>
+                                {item.failedL1Details.length > 0
+                                  ? item.failedL1Details.map((f, idx) => (
+                                      <div key={idx} className={styles.findingItem}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                          <code style={{ fontSize: 11.5 }}>{f.cmd || 'L1 check'}</code>
+                                          {f.exitCode !== null && (
+                                            <span className={`${styles.pill} ${styles.pillDanger}`}>exit {f.exitCode}</span>
+                                          )}
+                                        </div>
+                                        {f.output && (
+                                          <pre style={{ margin: '4px 0 0', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--fw-text-muted)' }}>
+                                            {f.output}
+                                          </pre>
+                                        )}
+                                      </div>
+                                    ))
+                                  : (
+                                      <div className={styles.findingItem}>
+                                        <code>{item.failedCommands.join(' · ')}</code>
+                                      </div>
+                                    )}
+                              </div>
+                            )}
 
                             {item.openFindings.length > 0 ? (
                               <div

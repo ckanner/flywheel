@@ -83,8 +83,75 @@ export function extractMilestoneIdFromScope(
   if (direct) return direct[1]!.toUpperCase();
   const fromPkt = /(M\d{2,}-T\d{2,})/i.exec(s);
   if (fromPkt) return extractMilestoneIdFromPacket(fromPkt[1]);
+  // Compact unhyphenated packet/milestone tokens inside slugged request IDs (e.g. "strengthen-m01t01-l1").
+  const compactPkt = /(?:^|[^a-z0-9])m(\d{1,2})t\d{1,2}(?:[^a-z0-9]|$)/i.exec(s);
+  if (compactPkt) return `M-${compactPkt[1]!.padStart(2, '0')}`;
+  const compactMs = /(?:^|[-_/:])m(\d{2})(?:[-_/:]|$)/i.exec(s);
+  if (compactMs) return `M-${compactMs[1]!.padStart(2, '0')}`;
   if (triggerPacketId) return extractMilestoneIdFromPacket(triggerPacketId);
   return null;
+}
+
+export function isPacketEffectivelyRunning(
+  packet: PacketNode,
+  traces: TraceSummary[],
+  taskRunning: boolean,
+): boolean {
+  const hasRunningTrace = traces.some(
+    t => t.running && (t.scope === packet.id || t.scope === `final:${packet.id}` || t.key.endsWith(`/${packet.id}`)),
+  );
+  if (hasRunningTrace) return true;
+  if (!taskRunning) return false;
+  const st = (packet.status ?? '').toLowerCase();
+  return ['running', 'executing', 'reviewing', 'verifying', 'in-progress', 'in_progress'].includes(st);
+}
+
+/**
+ * Attributes a legacy unscoped planning trace/group (e.g. `engine-1-6`) to the
+ * chronologically active milestone based on observed milestone start boundaries,
+ * preventing historical M-01 revisions from appearing after active M-02.
+ */
+export function inferMilestoneByTimestamp(
+  timestampMs: number,
+  orderedMilestones: string[],
+  milestoneStartTs: Map<string, number>,
+): string | null {
+  if (orderedMilestones.length === 0) return null;
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return orderedMilestones[0]!;
+  let chosen = orderedMilestones[0]!;
+  for (const msId of orderedMilestones) {
+    const startTs = milestoneStartTs.get(msId);
+    if (typeof startTs === 'number' && Number.isFinite(startTs) && startTs > 0 && timestampMs >= startTs) {
+      chosen = msId;
+    }
+  }
+  return chosen;
+}
+
+export function computeMilestoneStartTimestamps(
+  orderedMilestones: string[],
+  traces: TraceSummary[],
+  requests: PlanningRequestRecord[] = [],
+): Map<string, number> {
+  const starts = new Map<string, number>();
+  const record = (msId: string | null, iso?: string) => {
+    if (!msId || !orderedMilestones.includes(msId)) return;
+    const ts = Date.parse(iso || '') || 0;
+    if (ts <= 0) return;
+    const prev = starts.get(msId);
+    if (prev === undefined || ts < prev) starts.set(msId, ts);
+  };
+  for (const tr of traces) {
+    if (tr.role === 'plan' || tr.role === 'plan-review' || tr.role === 'judge') {
+      const reqId = (tr.scope ?? '').replace(/^planning:/, '');
+      const req = requests.find(r => r.id === reqId || `planning:${r.id}` === tr.scope);
+      record(extractMilestoneIdFromScope(tr.scope, null, req), tr.startedAt || tr.updatedAt);
+    } else if (tr.scope) {
+      const pktId = tr.scope.replace(/^final:/, '');
+      record(extractMilestoneIdFromPacket(pktId), tr.startedAt || tr.updatedAt);
+    }
+  }
+  return starts;
 }
 
 export function compareMilestoneIds(a: string, b: string): number {
@@ -122,13 +189,18 @@ export function resolveRetryPlanningTarget(
   let failedRequestId = '';
   let cancellableRequestId = '';
 
+  let superseded = false;
   for (let i = requests.length - 1; i >= 0; i -= 1) {
     const r = requests[i]!;
     const st = (r.status ?? '').toLowerCase();
     if (!cancellableRequestId && (st === 'pending' || st === 'running')) {
       cancellableRequestId = r.id;
     }
-    if (!failedRequestId && (st === 'budget-stopped' || st === 'blocked' || st === 'cancelled' || st === 'awaiting-input')) {
+    if (st === 'completed') {
+      superseded = true;
+      continue;
+    }
+    if (!superseded && !failedRequestId && (st === 'budget-stopped' || st === 'blocked' || st === 'awaiting-input')) {
       failedRequestId = r.id;
       const rawScope = r.scope === 'replan'
         ? (r['scope-id'] && /^M-\d{2,}$/i.test(r['scope-id'])
@@ -327,7 +399,9 @@ export function buildMilestoneTimeline(params: {
   packets: PacketNode[];
   planGroups: PlanScopeGroup[];
   traces: TraceSummary[];
+  requests?: PlanningRequestRecord[] | null;
   taskStatus?: string | null;
+  taskRunning?: boolean;
   planningPhase?: string | null;
 }): {
   milestones: MilestoneTimelineNode[];
@@ -341,7 +415,9 @@ export function buildMilestoneTimeline(params: {
     packets,
     planGroups,
     traces,
+    requests,
     taskStatus,
+    taskRunning = false,
     planningPhase,
   } = params;
 
@@ -383,19 +459,25 @@ export function buildMilestoneTimeline(params: {
     }
   }
 
+  const milestoneStarts = computeMilestoneStartTimestamps(orderedIds, traces, requests ?? []);
   const planByMs = new Map<string, PlanScopeGroup[]>();
   const revByMs = new Map<string, PlanScopeGroup[]>();
   const unassignedRevisions: PlanScopeGroup[] = [];
   for (const grp of planGroups) {
-    if (grp.milestoneId && idSet.has(grp.milestoneId)) {
+    let targetMs = grp.milestoneId && idSet.has(grp.milestoneId) ? grp.milestoneId : null;
+    if (!targetMs) {
+      const firstTs = Date.parse(grp.items[0]?.startedAt || grp.items[0]?.updatedAt || '') || 0;
+      targetMs = inferMilestoneByTimestamp(firstTs, orderedIds, milestoneStarts);
+    }
+    if (targetMs && idSet.has(targetMs)) {
       if (grp.isMilestonePlan) {
-        const list = planByMs.get(grp.milestoneId) ?? [];
+        const list = planByMs.get(targetMs) ?? [];
         list.push(grp);
-        planByMs.set(grp.milestoneId, list);
+        planByMs.set(targetMs, list);
       } else {
-        const list = revByMs.get(grp.milestoneId) ?? [];
+        const list = revByMs.get(targetMs) ?? [];
         list.push(grp);
-        revByMs.set(grp.milestoneId, list);
+        revByMs.set(targetMs, list);
       }
     } else {
       unassignedRevisions.push(grp);
@@ -439,10 +521,7 @@ export function buildMilestoneTimeline(params: {
       msPlanning.some(g => g.running) ||
       msRevisions.some(g => g.running) ||
       msVerify.some(t => t.running) ||
-      msPackets.some(p =>
-        ['running', 'executing', 'reviewing'].includes((p.status ?? '').toLowerCase()) ||
-        traces.some(t => t.running && (t.scope === p.id || t.scope === `final:${p.id}` || t.key.endsWith(`/${p.id}`))),
-      );
+      msPackets.some(p => isPacketEffectivelyRunning(p, traces, taskRunning));
 
     const isClosed = rawStatus === 'closed';
     const isCurrent = curMsUpper === id;

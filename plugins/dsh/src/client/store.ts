@@ -358,7 +358,7 @@ export class FlywheelStore {
       (this.snapshot.selectedPacketId !== null && this.snapshot.inspectorTab === 'output');
     const anyTraceRunning = this.snapshot.traces.some(tr => tr.running);
     const liveActive = this.snapshot.running || anyTraceRunning;
-    const delay = overrideMs ?? (viewingLiveTraces && liveActive ? 1500 : liveActive ? 2500 : 12000);
+    const delay = overrideMs ?? (viewingLiveTraces && liveActive ? 1500 : liveActive ? 2500 : 4000);
     this.pollTimer = setTimeout(async () => {
       this.pollTimer = null;
       if (!this.started || this.disposed) return;

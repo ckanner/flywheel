@@ -211,15 +211,22 @@ func planningActivationProjection(source *planning.Activation) *planning.Activat
 
 // resolvePlanningRetryTarget computes the single authoritative retry and cancel
 // targets from planning/task state so clients never guess or hardcode scope.
+// Explicitly cancelled requests are never resurrected as failed retry targets,
+// and any newer completed request supersedes earlier failures.
 func resolvePlanningRetryTarget(p *planning.State, currentMilestone string) *planning.RetryTarget {
 	startAllowed := p.CurrentDesign != nil && planning.StartAllowed(p, *p.CurrentDesign)
 	target := &planning.RetryTarget{Scope: "design"}
+	superseded := false
 	for i := len(p.Requests) - 1; i >= 0; i-- {
 		r := p.Requests[i]
 		if target.CancellableRequestID == "" && (r.Status == "pending" || r.Status == "running") {
 			target.CancellableRequestID = r.ID
 		}
-		if target.FailedRequestID == "" && (r.Status == "budget-stopped" || r.Status == "blocked" || r.Status == "cancelled" || r.Status == "awaiting-input") {
+		if r.Status == "completed" {
+			superseded = true
+			continue
+		}
+		if !superseded && target.FailedRequestID == "" && (r.Status == "budget-stopped" || r.Status == "blocked" || r.Status == "awaiting-input") {
 			target.FailedRequestID = r.ID
 			scope, scopeID := planning.CanonicalScope(r.Scope, r.ScopeID)
 			target.Scope = scope

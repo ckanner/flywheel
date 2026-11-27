@@ -6,9 +6,12 @@ import { buildTraceRoundLabels, formatModelBadge, normalizePackets, resolvePlann
 import {
   annotatePlanSteps,
   compareMilestoneIds,
+  computeMilestoneStartTimestamps,
   extractMilestoneIdFromPacket,
   extractMilestoneIdFromScope,
   formatRetryPlanningLabel,
+  inferMilestoneByTimestamp,
+  isPacketEffectivelyRunning,
   resolveRetryPlanningTarget,
 } from '../workflowTimeline.ts';
 import type { FlywheelStore } from '../store.ts';
@@ -245,7 +248,15 @@ export function WorkbenchPage({
         prev.orderTs = ts || prev.orderTs;
       }
     }
-    for (const entry of [...globalGrouped.values()].sort((a, b) => a.orderTs - b.orderTs)) {
+    // Sort global items by stage group first (Requirements & Architecture -> UI Prototype)
+    // so the same group header is never duplicated when later design traces occur after UI prototype.
+    const sortedGlobal = [...globalGrouped.values()].sort((a, b) => {
+      const aProto = a.latest.role === 'ui-prototype' || a.latest.role === 'ui-prototype-review' ? 1 : 0;
+      const bProto = b.latest.role === 'ui-prototype' || b.latest.role === 'ui-prototype-review' ? 1 : 0;
+      if (aProto !== bProto) return aProto - bProto;
+      return a.orderTs - b.orderTs;
+    });
+    for (const entry of sortedGlobal) {
       const { latest, label, count } = entry;
       const pill = nodeStatusPill(latest.status, latest.running, isZh);
       const modelMeta = formatModelBadge(latest.model, latest.thinking, isZh) || latest.harness || '';
@@ -296,8 +307,9 @@ export function WorkbenchPage({
         x => x.scope === p.id || x.key === `execute/${p.id}` || x.key === `review/${p.id}`,
       );
       const latestTr = pktTraces[pktTraces.length - 1] ?? null;
+      const pktRunning = isPacketEffectivelyRunning(p, pktTraces, snap.running);
       const waveNum = getDepth(p.id) + 1;
-      const pill = nodeStatusPill(p.status, latestTr?.running, isZh);
+      const pill = nodeStatusPill(p.status, pktRunning, isZh);
       const timeRaw = latestTr?.startedAt || latestTr?.updatedAt || p.startedAt;
       const modelMeta =
         formatModelBadge(
@@ -310,18 +322,19 @@ export function WorkbenchPage({
         '';
       const stepTag = packetStepLabel(latestTr?.role);
       const countMeta = pktTraces.length > 1 ? (isZh ? `共 ${pktTraces.length} 轮` : `${pktTraces.length} runs`) : '';
+      const cleanTitle = p.title && p.title !== p.id ? `${p.id} ${p.title}` : p.id;
       list.push({
         id: p.id,
         groupKey,
         groupTitle,
-        label: `Wave ${waveNum} · ${p.title ? `${p.id} ${p.title}` : p.id}`,
+        label: `Wave ${waveNum} · ${cleanTitle}`,
         meta: [stepTag, modelMeta, countMeta].filter(Boolean).join(' · '),
         timeText: formatShortTime(timeRaw),
-        durationText: !latestTr?.running ? formatNodeDuration(latestTr?.durationMs) : '',
+        durationText: !pktRunning ? formatNodeDuration(latestTr?.durationMs) : '',
         statusLabel: pill.label,
         statusPillClass: pill.cls,
-        dotClass: statusDotForNode(p.status, latestTr?.running),
-        running: Boolean(latestTr?.running),
+        dotClass: statusDotForNode(p.status, pktRunning),
+        running: pktRunning,
         traceId: latestTr?.id ?? null,
         sessionKey: latestTr?.key || p.sessionKey || `execute/${p.id}`,
         packetId: p.id,
@@ -366,6 +379,8 @@ export function WorkbenchPage({
     const assignedPackets = new Set<string>();
     const assignedPostTraceIds = new Set<string>();
 
+    const milestoneStarts = computeMilestoneStartTimestamps(orderedMilestones, chronological, requests);
+
     // 2. Milestone-nested groups (chronological M-01 -> M-02 -> ... so active milestone is always at the bottom!)
     for (const msId of orderedMilestones) {
       const rawMsStatus = (milestonesMap?.[msId]?.status ?? milestonesMap?.[msId.toLowerCase()]?.status ?? '').toLowerCase();
@@ -374,14 +389,19 @@ export function WorkbenchPage({
         .sort((a, b) => getDepth(a.id) - getDepth(b.id) || a.id.localeCompare(b.id));
       const msScopes: Array<{ scopeKey: string; traces: (typeof snap.traces)[number][]; isMainPlan: boolean }> = [];
       for (const [scopeKey, arr] of planTracesByScope.entries()) {
+        if (assignedScopes.has(scopeKey)) continue;
         const reqId = scopeKey.replace(/^planning:/, '');
         const req = requests.find(r => r.id === reqId || `planning:${r.id}` === scopeKey);
-        const mid = extractMilestoneIdFromScope(scopeKey, null, req);
+        let mid = extractMilestoneIdFromScope(scopeKey, null, req);
+        if (!mid) {
+          const firstTs = Date.parse(arr[0]?.startedAt || arr[0]?.updatedAt || '') || 0;
+          mid = inferMilestoneByTimestamp(firstTs, orderedMilestones, milestoneStarts);
+        }
         if (mid === msId) {
           msScopes.push({
             scopeKey,
             traces: arr,
-            isMainPlan: scopeKey.includes(`milestone/${msId}`) || req?.scope === 'milestone',
+            isMainPlan: scopeKey.includes(`milestone/${msId}`) || (req?.scope === 'milestone' && Boolean(req?.['scope-id'])),
           });
           assignedScopes.add(scopeKey);
         }
@@ -396,7 +416,7 @@ export function WorkbenchPage({
       const msRunning =
         msScopes.some(s => s.traces.some(t => t.running)) ||
         msPostTraces.some(t => t.running) ||
-        msPackets.some(p => chronological.some(t => t.running && (t.scope === p.id || t.key.endsWith(`/${p.id}`))));
+        msPackets.some(p => isPacketEffectivelyRunning(p, chronological, snap.running));
       const statusSuffix =
         rawMsStatus === 'closed'
           ? (isZh ? ' · 已完成' : ' · Closed')

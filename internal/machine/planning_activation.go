@@ -153,12 +153,25 @@ func milestoneDeliveryOutcome(ms state.MilestoneState) string {
 	return "closed"
 }
 
+func isConciseToolchainCommand(cmd string) bool {
+	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || len([]rune(cmd)) > 160 {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	for _, marker := range []string{" -e ", " -c ", "--eval "} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	return true
+}
+
 func verifiedToolchainFactLines(st *state.State, prepareCmd string) []string {
 	seen := map[string]bool{}
 	var cmds []string
 	addCmd := func(raw string) {
 		c := strings.TrimSpace(raw)
-		if c != "" && !seen[c] {
+		if isConciseToolchainCommand(c) && !seen[c] {
 			seen[c] = true
 			cmds = append(cmds, c)
 		}

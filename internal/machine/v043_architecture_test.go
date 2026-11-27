@@ -298,3 +298,75 @@ func TestPillar3SingleSourceProjectContextAndToolchainFacts(t *testing.T) {
 	// verifyPrepareCmd with nil config returns empty.
 	assert.Equal(t, "", (&Context{}).verifyPrepareCmd())
 }
+
+func TestV0431SystemInvariantsRetrySupersessionInboxL1AnchorContextAndConciseMemory(t *testing.T) {
+	// 1. resolvePlanningRetryTarget never resurrects cancelled requests or failures superseded by completed requests.
+	designRef := planning.Ref{Revision: 1, Digest: strings.Repeat("a", 64)}
+	p := &planning.State{
+		CurrentDesign:   &designRef,
+		StartAuthorized: true,
+		Approvals:       []planning.Approval{{Kind: "human", Design: designRef, Start: true}},
+		Requests: []planning.Request{
+			{ID: "engine-1-14", Scope: "milestone", ScopeID: "M-02", Status: "budget-stopped"},
+			{ID: "plan-retry-mistake", Scope: "design", Status: "cancelled"},
+			{ID: "retry-m02", Scope: "milestone", ScopeID: "M-02", Status: "completed"},
+		},
+	}
+	rt := resolvePlanningRetryTarget(p, "M-02")
+	assert.Equal(t, "milestone", rt.Scope)
+	assert.Equal(t, "M-02", rt.ScopeID)
+	assert.True(t, rt.ContinueExecution)
+	assert.Empty(t, rt.FailedRequestID)
+
+	// 2. compactInboxLastFeedback retains failed-commands & bounded failing L1 output (capped at 4), handles non-map values.
+	assert.Equal(t, "plain", compactInboxLastFeedback("plain"))
+	longOut := strings.Repeat("x", 500)
+	cmds := []any{
+		"non-map",
+		map[string]any{"cmd": "npm run typecheck", "pass": true, "exitCode": 0},
+		map[string]any{"cmd": "npm run test:coverage", "pass": false, "exitCode": 1, "output": longOut},
+		map[string]any{"cmd": "cmd2", "pass": false, "exitCode": 2, "output": "e2"},
+		map[string]any{"cmd": "cmd3", "pass": false, "exitCode": 3, "output": "e3"},
+		map[string]any{"cmd": "cmd4", "pass": false, "exitCode": 4, "output": "e4"},
+		map[string]any{"cmd": "cmd5", "pass": false, "exitCode": 5, "output": "e5"},
+	}
+	stInbox := &state.State{
+		Packets: map[string]*state.PacketState{
+			"M02-T01": {
+				Status: "inbox",
+				LastFeedback: map[string]any{
+					"error-code":      "L1_FAILED",
+					"failed-commands": []any{"npm run test:coverage"},
+					"l1":              map[string]any{"commands": cmds},
+				},
+			},
+		},
+	}
+	proj, err := ConsoleProjection(stInbox)
+	require.NoError(t, err)
+	lf := proj.Packets["M02-T01"].LastFeedback.(map[string]any)
+	assert.Equal(t, []any{"npm run test:coverage"}, lf["failed-commands"])
+	details := lf["failed-l1-details"].([]any)
+	require.Len(t, details, 4)
+	firstDetail := details[0].(map[string]any)
+	assert.Equal(t, "npm run test:coverage", firstDetail["cmd"])
+	assert.Contains(t, firstDetail["output"].(string), "[truncated]")
+
+	// 3. normalizeContextRef strips #anchor fragments.
+	assert.Equal(t, "docs/slug/spec.md", normalizeContextRef(" docs/slug/spec.md#M-02 "))
+	assert.Equal(t, "", normalizeContextRef("#only-anchor"))
+
+	// 4. isConciseToolchainCommand filters long/multiline/inline-eval commands.
+	assert.True(t, isConciseToolchainCommand("npm run test:coverage"))
+	assert.False(t, isConciseToolchainCommand(""))
+	assert.False(t, isConciseToolchainCommand("line1\nline2"))
+	assert.False(t, isConciseToolchainCommand(strings.Repeat("a", 161)))
+	assert.False(t, isConciseToolchainCommand("node -e 'console.log(1)'"))
+	assert.False(t, isConciseToolchainCommand("python3 -c 'print(1)'"))
+
+	// 5. packetEscalationFeedback never returns literal "null".
+	assert.Equal(t, "{}", packetEscalationFeedback(nil))
+	assert.Equal(t, "{}", packetEscalationFeedback(&state.PacketState{}))
+	assert.Contains(t, packetEscalationFeedback(&state.PacketState{Evidence: state.Evidence{Review: map[string]any{"verdict": "return"}}}), `"verdict":"return"`)
+	assert.Contains(t, packetEscalationFeedback(&state.PacketState{LastFeedback: map[string]any{"error-code": "L1_FAILED"}}), `"L1_FAILED"`)
+}

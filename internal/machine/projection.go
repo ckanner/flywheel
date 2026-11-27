@@ -3,6 +3,7 @@ package machine
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/ckanner/flywheel/internal/decision"
 	"github.com/ckanner/flywheel/internal/state"
@@ -87,7 +88,11 @@ func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, err
 		packet.Evidence.Review = evidenceSummary(packet.Evidence.Review, reviewKeys...)
 		packet.Evidence.FinalGate = evidenceSummary(packet.Evidence.FinalGate, "pass", "identity", "at")
 		packet.Evidence.DefectInjection = evidenceSummary(packet.Evidence.DefectInjection, "outcome", "skipped", "detail", "at")
-		packet.LastFeedback = evidenceSummary(packet.LastFeedback, "error-code", "reason", "parallel-error", "at")
+		if packet.Status == "inbox" {
+			packet.LastFeedback = compactInboxLastFeedback(packet.LastFeedback)
+		} else {
+			packet.LastFeedback = evidenceSummary(packet.LastFeedback, "error-code", "reason", "parallel-error", "at")
+		}
 		packet.Commit = compactDiagnostic(packet.Commit)
 		packet.EvidenceHistory = historySummary(packet.EvidenceHistory)
 		packet.RetryHistory = historySummary(packet.RetryHistory)
@@ -242,6 +247,43 @@ func ReadNode(st *state.State, id string, location ...string) (*NodeDetail, erro
 	}
 	eligibility, editor, images := packetControlViews(st, id, location)
 	return &NodeDetail{ID: id, Revision: st.Revision, Packet: st.Packets[id], Collaboration: reviewedCollaboration(st, id, location), Eligibility: eligibility, CollaborationEditor: editor, ImageInputEditor: images}, nil
+}
+
+func compactInboxLastFeedback(value any) any {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return compactDiagnostic(value)
+	}
+	summary := evidenceSummary(object, "error-code", "reason", "parallel-error", "failed-commands", "at").(map[string]any)
+	if l1, ok := object["l1"].(map[string]any); ok {
+		if cmds, ok := l1["commands"].([]any); ok {
+			var failed []any
+			for _, item := range cmds {
+				cm, ok := item.(map[string]any)
+				if !ok || cm["pass"] == true {
+					continue
+				}
+				entry := map[string]any{}
+				if cmd, ok := cm["cmd"].(string); ok {
+					entry["cmd"] = compactTail(cmd, 200)
+				}
+				if code, ok := cm["exitCode"]; ok {
+					entry["exitCode"] = code
+				}
+				if out, ok := cm["output"].(string); ok && strings.TrimSpace(out) != "" {
+					entry["output"] = compactTail(strings.TrimSpace(out), 420)
+				}
+				failed = append(failed, entry)
+				if len(failed) >= 4 {
+					break
+				}
+			}
+			if len(failed) > 0 {
+				summary["failed-l1-details"] = failed
+			}
+		}
+	}
+	return summary
 }
 
 func evidenceSummary(value any, keys ...string) any {
