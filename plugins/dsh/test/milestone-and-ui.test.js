@@ -261,10 +261,15 @@ test('SPEC-10 to SPEC-14: Stage 1 blocked separation, bottom Milestone triage & 
   assert.ok(revCard, 'expected completed plan revision card');
   assert.equal(revCard.hasAttribute('open'), false, 'completed plan revision must default to collapsed');
 
-  // SPEC-13: l1-passed packet with running review trace gets subAgentRowCardRunning class
+  // SPEC-13: l1-passed packet with running review trace wraps BOTH header and timeline inside unified runningFlowCard shell
+  const pktShell = ui.container.querySelector('[data-testid="packet-shell-M01-T02"]');
   const pktCard = ui.container.querySelector('[data-testid="packet-card-M01-T02"]');
+  const pktTimeline = ui.container.querySelector('[data-testid="packet-timeline-M01-T02"]');
+  assert.ok(pktShell, 'expected unified packet shell M01-T02');
   assert.ok(pktCard, 'expected packet card M01-T02');
-  assert.match(pktCard.className, /subAgentRowCardRunning/);
+  assert.ok(pktTimeline, 'expected packet timeline M01-T02');
+  assert.ok(pktShell.contains(pktCard) && pktShell.contains(pktTimeline), 'packet shell must wrap both header button and timeline strip');
+  assert.match(pktShell.className, /runningFlowCard/);
 
   // Click Accept Milestone and verify milestone act payload
   await act(async () => {
@@ -350,9 +355,11 @@ test('SPEC-14: running sub-session without confirmed-turns record shows Turn 1 (
     act: async () => envelope({ protocol: 1, ok: true, cwd: '/repo', taskDir }),
   });
 
+  const pktShell = ui.container.querySelector('[data-testid="packet-shell-M01-T01"]');
   const pktCard = ui.container.querySelector('[data-testid="packet-card-M01-T01"]');
+  assert.ok(pktShell);
   assert.ok(pktCard);
-  assert.match(pktCard.className, /subAgentRowCardRunning/);
+  assert.match(pktShell.className, /runningFlowCard/);
   await act(async () => {
     pktCard.click();
   });

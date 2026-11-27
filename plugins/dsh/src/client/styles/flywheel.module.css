@@ -822,16 +822,6 @@
   box-shadow: 0 0 0 2px var(--fw-accent-soft);
 }
 
-.packetCardRunning {
-  border: 2px solid transparent;
-  background:
-    linear-gradient(var(--fw-bg-surface), var(--fw-bg-surface)) padding-box,
-    linear-gradient(90deg, var(--fw-accent), #60a5fa, #38bdf8, #818cf8, var(--fw-accent)) border-box;
-  background-size: 100% 100%, 260% 100%;
-  animation: fwBorderFlow 2.6s ease-in-out infinite;
-  box-shadow: 0 0 0 1px var(--fw-accent-border), 0 4px 14px -4px rgba(37, 99, 235, 0.22);
-}
-
 .packetCardTop {
   display: flex;
   align-items: center;
@@ -2222,16 +2212,6 @@
   box-shadow: 0 2px 10px color-mix(in srgb, var(--fw-accent) 9%, transparent);
 }
 
-.subAgentRowCardRunning {
-  border: 2px solid transparent;
-  background:
-    linear-gradient(color-mix(in srgb, var(--fw-accent) 4%, var(--fw-bg)), color-mix(in srgb, var(--fw-accent) 4%, var(--fw-bg))) padding-box,
-    linear-gradient(90deg, var(--fw-accent), #60a5fa, #38bdf8, #818cf8, var(--fw-accent)) border-box;
-  background-size: 100% 100%, 260% 100%;
-  animation: fwBorderFlow 2.6s ease-in-out infinite;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fw-accent) 28%, transparent), 0 4px 16px -4px rgba(37, 99, 235, 0.22);
-}
-
 .subAgentRowCardWarn {
   border-color: var(--fw-warn-border);
   background: color-mix(in srgb, var(--fw-warn) 5%, var(--fw-bg));
@@ -2240,6 +2220,55 @@
 .subAgentRowCardDanger {
   border-color: var(--fw-danger-border);
   background: color-mix(in srgb, var(--fw-danger) 5%, var(--fw-bg));
+}
+
+/* Unified Packet Card Shell (wraps header button + micro-timeline inside ONE border/halo) */
+
+.packetCardShell {
+  --fw-ring-surface: var(--fw-bg);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--fw-border);
+  background: var(--fw-bg);
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.packetCardShell:hover {
+  border-color: var(--fw-accent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--fw-accent) 9%, transparent);
+}
+
+.packetCardShellWarn {
+  border-color: var(--fw-warn-border);
+  background: color-mix(in srgb, var(--fw-warn) 5%, var(--fw-bg));
+}
+
+.packetCardShellDanger {
+  border-color: var(--fw-danger-border);
+  background: color-mix(in srgb, var(--fw-danger) 5%, var(--fw-bg));
+}
+
+.packetCardHeadBtn {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fw-text);
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: background 120ms ease;
+}
+
+.packetCardHeadBtn:hover {
+  background: color-mix(in srgb, var(--fw-accent) 4%, transparent);
 }
 
 /* Model borderless document stream (left-aligned) */
@@ -3326,11 +3355,8 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 6px 10px 8px;
-  margin-top: -2px;
-  border-radius: 0 0 var(--fw-radius-sm) var(--fw-radius-sm);
-  border: 1px solid var(--fw-border);
-  border-top: none;
+  padding: 7px 12px 9px;
+  border-top: 1px solid var(--fw-border);
   background: var(--fw-bg-subtle);
 }
 
@@ -3388,10 +3414,11 @@
 }
 
 .packetStepChipRunning {
-  border-color: var(--fw-accent-border);
+  border-color: var(--fw-accent);
   background: var(--fw-accent-soft);
   color: var(--fw-accent);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fw-accent) 14%, transparent);
 }
 
 .packetLatestReviewHint {
@@ -3490,38 +3517,6 @@
   border-radius: var(--fw-radius-md);
   background: var(--fw-accent-soft);
   box-shadow: var(--fw-shadow-sm);
-}
-
-/* ---- Unified Animated Flowing Running Border ---- */
-
-@keyframes fwBorderFlow {
-  0% {
-    background-position: 0% 50%, 0% 50%;
-  }
-  50% {
-    background-position: 0% 50%, 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%, 0% 50%;
-  }
-}
-
-.runningFlowCard {
-  border: 2px solid transparent !important;
-  background:
-    linear-gradient(var(--fw-bg-surface), var(--fw-bg-surface)) padding-box,
-    linear-gradient(90deg, var(--fw-accent), #60a5fa, #38bdf8, #818cf8, var(--fw-accent)) border-box !important;
-  background-size: 100% 100%, 260% 100% !important;
-  animation: fwBorderFlow 2.6s ease-in-out infinite;
-  box-shadow: 0 0 0 1px var(--fw-accent-border), 0 4px 16px -4px rgba(37, 99, 235, 0.22);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .runningFlowCard {
-    animation: none;
-    border-color: var(--fw-accent) !important;
-    background: var(--fw-bg-surface) !important;
-  }
 }
 
 /* ---- Milestone-Nested Timeline Blocks ---- */
@@ -3943,4 +3938,59 @@
 
 .composerDock {
   background: linear-gradient(to bottom, transparent 0%, var(--fw-bg) 22%);
+}
+
+/* ---- Single-Source Animated Orbiting Light-Ring (placed last; zero !important) ---- */
+
+@property --fw-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes fwRingSpin {
+  0% {
+    --fw-ring-angle: 0deg;
+  }
+  100% {
+    --fw-ring-angle: 360deg;
+  }
+}
+
+.roundStepRow {
+  --fw-ring-surface: var(--fw-bg);
+}
+
+.runningFlowCard,
+.runningFlowCard:hover {
+  border-width: 2px;
+  border-style: solid;
+  border-color: transparent;
+  background-color: transparent;
+  background-image:
+    linear-gradient(var(--fw-ring-surface, var(--fw-bg-surface)), var(--fw-ring-surface, var(--fw-bg-surface))),
+    conic-gradient(
+      from var(--fw-ring-angle),
+      color-mix(in srgb, var(--fw-accent) 20%, var(--fw-border)) 0deg 210deg,
+      #38bdf8 272deg,
+      #2563eb 318deg,
+      #60a5fa 344deg,
+      #e0f2fe 355deg,
+      color-mix(in srgb, var(--fw-accent) 20%, var(--fw-border)) 360deg
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-repeat: no-repeat;
+  animation: fwRingSpin 2.2s linear infinite;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fw-accent) 16%, transparent), 0 6px 20px -6px rgba(37, 99, 235, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runningFlowCard,
+  .runningFlowCard:hover {
+    animation: none;
+    border-color: var(--fw-accent);
+    background-image: none;
+    background-color: var(--fw-ring-surface, var(--fw-bg-surface));
+  }
 }

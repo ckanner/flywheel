@@ -3,6 +3,7 @@ import { styles } from 'virtual:flywheel-styles';
 import type { ClientRuntime } from '../context.ts';
 import { resolvePlanningView } from '../planning.ts';
 import { normalizePackets } from '../planning.ts';
+import { isPacketEffectivelyRunning } from '../workflowTimeline.ts';
 import type { FlywheelSnapshot, FlywheelStore } from '../store.ts';
 import type { PacketNode, Translate } from '../types.ts';
 import { DagCanvas } from './DagCanvas.tsx';
@@ -179,11 +180,11 @@ export function ExecutionBoard({
                 <span>{wave.items.length}</span>
               </div>
               {wave.items.map(p => {
-                const isRunning = ['running', 'executing', 'reviewing'].includes((p.status ?? '').toLowerCase());
+                const isRunning = isPacketEffectivelyRunning(p, snap.traces, snap.running);
                 const cls = [
                   styles.packetCard,
                   snap.selectedPacketId === p.id ? styles.packetCardSelected : '',
-                  isRunning ? styles.packetCardRunning : '',
+                  isRunning ? styles.runningFlowCard : '',
                 ]
                   .filter(Boolean)
                   .join(' ');

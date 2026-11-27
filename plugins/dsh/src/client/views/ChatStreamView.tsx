@@ -215,21 +215,21 @@ function groupPlanningTracesIntoRounds(traces: TraceSummary[], isZh: boolean): T
   return rounds;
 }
 
-function packetTone(status?: string, hasRunningTrace?: boolean): { dot: string; pill: string; rowExtra: string } {
+function packetTone(status?: string, hasRunningTrace?: boolean): { dot: string; pill: string; shellExtra: string } {
   const s = (status ?? '').toLowerCase();
   if (['done', 'completed', 'passed'].includes(s)) {
-    return { dot: styles.statusDotSuccess, pill: styles.pillSuccess, rowExtra: '' };
+    return { dot: styles.statusDotSuccess, pill: styles.pillSuccess, shellExtra: '' };
   }
   if (['running', 'executing', 'reviewing'].includes(s) || (s === 'l1-passed' && hasRunningTrace)) {
-    return { dot: styles.statusDotRunning, pill: styles.pillRunning, rowExtra: styles.subAgentRowCardRunning };
+    return { dot: styles.statusDotRunning, pill: styles.pillRunning, shellExtra: styles.runningFlowCard };
   }
   if (['failed', 'blocked'].includes(s)) {
-    return { dot: styles.statusDotDanger, pill: styles.pillDanger, rowExtra: styles.subAgentRowCardDanger };
+    return { dot: styles.statusDotDanger, pill: styles.pillDanger, shellExtra: styles.packetCardShellDanger };
   }
   if (['escalated', 'inbox', 'stopped', 'awaiting_approval'].includes(s)) {
-    return { dot: styles.statusDotWarn, pill: styles.pillWarn, rowExtra: styles.subAgentRowCardWarn };
+    return { dot: styles.statusDotWarn, pill: styles.pillWarn, shellExtra: styles.packetCardShellWarn };
   }
-  return { dot: '', pill: '', rowExtra: '' };
+  return { dot: '', pill: '', shellExtra: '' };
 }
 
 function traceTone(status: string, running: boolean): { dot: string; pill: string } {
@@ -793,7 +793,8 @@ export function ChatStreamView({
         ? String((p as Record<string, unknown>).thinking)
         : '';
       const modelTxt = formatModelBadge(p.model || tr?.model, pktThinking || tr?.thinking, isZh);
-      const tone = packetTone(p.status);
+      const pktTraces = snap.traces.filter(item => item.scope === p.id);
+      const tone = packetTone(p.status, isPacketEffectivelyRunning(p, pktTraces, snap.running));
       const titleTxt = p.title || p.goal || '';
       targets.push({
         id: p.id,
@@ -2411,133 +2412,137 @@ export function ChatStreamView({
                       const roleCounts: Record<string, number> = {};
                       return (
                         <div key={packet.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                          <button
-                            type="button"
-                            className={`${styles.subAgentRowCard} ${tone.rowExtra}`}
-                            style={pktTraces.length > 0 ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}
-                            data-testid={`packet-card-${packet.id}`}
-                            onClick={() =>
-                              store.drillIntoNode(packet.id, {
-                                traceId: tr?.id ?? null,
-                                sessionKey: packet.sessionKey || tr?.key || `execute/${packet.id}`,
-                                packetId: packet.id,
-                              })
-                            }
+                          <div
+                            className={`${styles.packetCardShell} ${tone.shellExtra}`.trim()}
+                            data-testid={`packet-shell-${packet.id}`}
                           >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <span className={`${styles.statusDot} ${tone.dot}`} />
-                                <span className={styles.packetId}>{packet.id}</span>
-                                {(packet.title || packet.goal) && (packet.title || packet.goal) !== packet.id && (
-                                  <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {packet.title || packet.goal}
-                                  </strong>
-                                )}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
-                                {pktModelLabel && <span title={packet.model || tr?.model || undefined}>{pktModelLabel}</span>}
-                                {packet.lastError && (
-                                  <span style={{ color: 'var(--fw-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {packet.lastError}
-                                  </span>
-                                )}
-                                {!packet.lastError && (tr?.preview || packet.summary) && (
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {tr?.preview || packet.summary}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                              <span className={`${styles.pill} ${tone.pill}`}>
-                                {locPktStatus.label}
-                              </span>
-                              <span style={{ fontSize: 12, fontWeight: 500, color: needsAttention ? 'var(--fw-danger)' : 'var(--fw-accent)' }}>
-                                {needsAttention ? t('chat.enterAction') : t('chat.enterSession')} →
-                              </span>
-                            </div>
-                          </button>
-                          {pktTraces.length > 0 && (
-                            <div className={styles.packetTimelineRow} data-testid={`packet-timeline-${packet.id}`}>
-                              <div className={styles.packetTimelineStrip}>
-                                {pktTraces.map((stepTr, sIdx) => {
-                                  roleCounts[stepTr.role] = (roleCounts[stepTr.role] ?? 0) + 1;
-                                  const nth = roleCounts[stepTr.role];
-                                  const shortRole =
-                                    stepTr.role === 'execute'
-                                      ? (isZh ? `执行 #${nth}` : `Exec #${nth}`)
-                                      : stepTr.role === 'frontend-ux-review'
-                                        ? (isZh ? `UX审 #${nth}` : `UX #${nth}`)
-                                        : (isZh ? `审查 #${nth}` : `Review #${nth}`);
-                                  const sig = parseReviewStepSignal(stepTr);
-                                  const chipTone =
-                                    sig.tone === 'pass'
-                                      ? styles.packetStepChipPass
-                                      : sig.tone === 'fail'
-                                        ? styles.packetStepChipFail
-                                        : sig.tone === 'warn'
-                                          ? styles.packetStepChipWarn
-                                          : sig.tone === 'running'
-                                            ? styles.packetStepChipRunning
-                                            : '';
-                                  const dur = formatDurationShort(stepTr.durationMs);
-                                  return (
-                                    <span key={stepTr.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                      {sIdx > 0 && <span className={styles.packetStepArrow} aria-hidden="true">→</span>}
-                                      <button
-                                        type="button"
-                                        className={`${styles.packetStepChip} ${chipTone}`}
-                                        data-testid={`packet-step-${stepTr.id}`}
-                                        title={`${shortRole}${stepTr.model ? ` · ${formatModelBadge(stepTr.model, stepTr.thinking, isZh)}` : ''}${dur ? ` · ${dur}` : ''}`}
-                                        onClick={() =>
-                                          store.drillIntoNode(packet.id, {
-                                            traceId: stepTr.id,
-                                            sessionKey: stepTr.key,
-                                            packetId: packet.id,
-                                          })
-                                        }
-                                      >
-                                        <span>{sig.icon}</span>
-                                        <span>{shortRole}</span>
-                                        {sig.scoreLabel && <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>{sig.scoreLabel}</span>}
-                                        {dur && <span style={{ opacity: 0.72, fontSize: 10 }}>{dur}</span>}
-                                      </button>
-                                    </span>
-                                  );
-                                })}
-                                {pktRevisions.map(rev => {
-                                  const latestRevTr = rev.items[rev.items.length - 1];
-                                  return (
-                                    <span key={rev.scope} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                      <span className={styles.packetStepArrow} aria-hidden="true">→</span>
-                                      <button
-                                        type="button"
-                                        className={`${styles.packetStepChip} ${rev.running ? styles.packetStepChipRunning : styles.packetStepChipWarn}`}
-                                        data-testid={`packet-revision-link-${rev.requestId}`}
-                                        onClick={() => {
-                                          if (latestRevTr) {
-                                            store.drillIntoNode(latestRevTr.scope || latestRevTr.role, {
-                                              traceId: latestRevTr.id,
-                                              sessionKey: latestRevTr.key,
-                                            });
-                                          }
-                                        }}
-                                      >
-                                        <span>🔄</span>
-                                        <span>{isZh ? '计划修订' : 'Plan Rev'}</span>
-                                      </button>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                              {!isCompleted && latestReviewTrace && latestReviewTrace.preview && (
-                                <div className={styles.packetLatestReviewHint}>
-                                  {latestReviewTrace.preview}
+                            <button
+                              type="button"
+                              className={styles.packetCardHeadBtn}
+                              data-testid={`packet-card-${packet.id}`}
+                              onClick={() =>
+                                store.drillIntoNode(packet.id, {
+                                  traceId: tr?.id ?? null,
+                                  sessionKey: packet.sessionKey || tr?.key || `execute/${packet.id}`,
+                                  packetId: packet.id,
+                                })
+                              }
+                            >
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span className={`${styles.statusDot} ${tone.dot}`} />
+                                  <span className={styles.packetId}>{packet.id}</span>
+                                  {(packet.title || packet.goal) && (packet.title || packet.goal) !== packet.id && (
+                                    <strong style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {packet.title || packet.goal}
+                                    </strong>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
+                                  {pktModelLabel && <span title={packet.model || tr?.model || undefined}>{pktModelLabel}</span>}
+                                  {packet.lastError && (
+                                    <span style={{ color: 'var(--fw-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {packet.lastError}
+                                    </span>
+                                  )}
+                                  {!packet.lastError && (tr?.preview || packet.summary) && (
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {tr?.preview || packet.summary}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                <span className={`${styles.pill} ${tone.pill}`}>
+                                  {locPktStatus.label}
+                                </span>
+                                <span style={{ fontSize: 12, fontWeight: 500, color: needsAttention ? 'var(--fw-danger)' : 'var(--fw-accent)' }}>
+                                  {needsAttention ? t('chat.enterAction') : t('chat.enterSession')} →
+                                </span>
+                              </div>
+                            </button>
+                            {pktTraces.length > 0 && (
+                              <div className={styles.packetTimelineRow} data-testid={`packet-timeline-${packet.id}`}>
+                                <div className={styles.packetTimelineStrip}>
+                                  {pktTraces.map((stepTr, sIdx) => {
+                                    roleCounts[stepTr.role] = (roleCounts[stepTr.role] ?? 0) + 1;
+                                    const nth = roleCounts[stepTr.role];
+                                    const shortRole =
+                                      stepTr.role === 'execute'
+                                        ? (isZh ? `执行 #${nth}` : `Exec #${nth}`)
+                                        : stepTr.role === 'frontend-ux-review'
+                                          ? (isZh ? `UX审 #${nth}` : `UX #${nth}`)
+                                          : (isZh ? `审查 #${nth}` : `Review #${nth}`);
+                                    const sig = parseReviewStepSignal(stepTr);
+                                    const chipTone =
+                                      sig.tone === 'pass'
+                                        ? styles.packetStepChipPass
+                                        : sig.tone === 'fail'
+                                          ? styles.packetStepChipFail
+                                          : sig.tone === 'warn'
+                                            ? styles.packetStepChipWarn
+                                            : sig.tone === 'running'
+                                              ? styles.packetStepChipRunning
+                                              : '';
+                                    const dur = formatDurationShort(stepTr.durationMs);
+                                    return (
+                                      <span key={stepTr.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        {sIdx > 0 && <span className={styles.packetStepArrow} aria-hidden="true">→</span>}
+                                        <button
+                                          type="button"
+                                          className={`${styles.packetStepChip} ${chipTone}`}
+                                          data-testid={`packet-step-${stepTr.id}`}
+                                          title={`${shortRole}${stepTr.model ? ` · ${formatModelBadge(stepTr.model, stepTr.thinking, isZh)}` : ''}${dur ? ` · ${dur}` : ''}`}
+                                          onClick={() =>
+                                            store.drillIntoNode(packet.id, {
+                                              traceId: stepTr.id,
+                                              sessionKey: stepTr.key,
+                                              packetId: packet.id,
+                                            })
+                                          }
+                                        >
+                                          <span>{sig.icon}</span>
+                                          <span>{shortRole}</span>
+                                          {sig.scoreLabel && <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 10.5 }}>{sig.scoreLabel}</span>}
+                                          {dur && <span style={{ opacity: 0.72, fontSize: 10 }}>{dur}</span>}
+                                        </button>
+                                      </span>
+                                    );
+                                  })}
+                                  {pktRevisions.map(rev => {
+                                    const latestRevTr = rev.items[rev.items.length - 1];
+                                    return (
+                                      <span key={rev.scope} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        <span className={styles.packetStepArrow} aria-hidden="true">→</span>
+                                        <button
+                                          type="button"
+                                          className={`${styles.packetStepChip} ${rev.running ? styles.packetStepChipRunning : styles.packetStepChipWarn}`}
+                                          data-testid={`packet-revision-link-${rev.requestId}`}
+                                          onClick={() => {
+                                            if (latestRevTr) {
+                                              store.drillIntoNode(latestRevTr.scope || latestRevTr.role, {
+                                                traceId: latestRevTr.id,
+                                                sessionKey: latestRevTr.key,
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          <span>🔄</span>
+                                          <span>{isZh ? '计划修订' : 'Plan Rev'}</span>
+                                        </button>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                                {!isCompleted && latestReviewTrace && latestReviewTrace.preview && (
+                                  <div className={styles.packetLatestReviewHint}>
+                                    {latestReviewTrace.preview}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           {inboxEntry && (
                             <div className={`${styles.decisionCard} ${styles.decisionCardWarn}`} data-testid={`inbox-escalation-${packet.id}`} style={{ marginTop: 6 }}>
                               <div className={styles.decisionCardHeader}>

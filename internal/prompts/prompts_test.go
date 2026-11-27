@@ -162,6 +162,7 @@ func TestBuildReviewPromptSections(t *testing.T) {
 	assert.Contains(t, base, "Complete enumeration (no drip-feeding)")
 	assert.Contains(t, base, "Never block on orchestrator metadata")
 	assert.Contains(t, base, `Use "verification-gap" ONLY when`)
+	assert.Contains(t, base, `return "return" (NOT "verification-gap") so Execute fixes those tests directly`)
 	assert.Contains(t, base, `"pass": true`)
 
 	withPrior := BuildReviewPrompt(ReviewArgs{

@@ -5,6 +5,19 @@ results are recorded separately in the [release runbook](docs/en/releasing.md)
 and [validation index](docs/validation/README.md). Historical entries retain
 their original language.
 
+## 0.43.2 — 2026-11-27 (Unified 360° Orbiting Light-Ring, Seamless Packet Card Shell & Reviewer `verification-gap` Routing Discipline)
+
+- **True 360° orbiting light-ring & CSS Cascade fix (`plugins/dsh/src/client/styles/flywheel.module.css`, `StyleScope.tsx`)**:
+  - Replace the frozen `background: ... !important` horizontal gradient (`fwBorderFlow`, whose shorthand `!important` overrode `@keyframes` `background-position` per CSS Cascade) with a single-source `@property --fw-ring-angle` + `@keyframes fwRingSpin` (`2.2s linear infinite`) + high-contrast `conic-gradient(from var(--fw-ring-angle), ...)` placed at the end of `flywheel.module.css` with **zero `!important`** and preserved `:hover` / `prefers-reduced-motion` behavior.
+  - Register `--fw-ring-angle` idempotently on mount via `CSS.registerProperty` inside `StyleScope.tsx` (zero import-time side effects) for Shadow DOM safety.
+- **Unified packet card shell & consistent running-state liveness (`plugins/dsh/src/client/views/ChatStreamView.tsx`, `ExecutionBoard.tsx`)**:
+  - Wrap each packet's header button and `.packetTimelineRow` micro-timeline inside a single rounded `.packetCardShell` (`overflow: hidden`) so active packets render ONE continuous orbiting light-ring around the entire card instead of a top-half-blue / bottom-half-gray split.
+  - Share `isPacketEffectivelyRunning` in `ExecutionBoard.tsx` and `@mention` targets so `l1-passed` packets with an active Review trace stay visibly live everywhere.
+- **Compiled CSS animation & shell integrity guard (`plugins/dsh/test/styles-integrity.test.js`, `milestone-and-ui.test.js`)**:
+  - Enforce directly against compiled `dist/client.js` that `@property --fw-ring-angle`, `@keyframes flywheel_fwRingSpin_`, and `conic-gradient(from var(--fw-ring-angle)` survive bundling, forbid `background !important` on `.runningFlowCard`, forbid an outer border on `.packetTimelineRow`, and assert `.packetCardShell` wraps both packet header and timeline strip.
+- **Reviewer `verification-gap` vs `return` routing discipline (`internal/prompts/prompts.go`, `prompts_test.go`)**:
+  - Clarify in `BuildReviewPrompt` that `verification-gap` is strictly for missing/placeholder packet acceptance contracts or protected oracles requiring Plan Loop strengthening; when the contract already mandates real unit/regression tests and the executor only missed assertions in its writable test files, return `return` so Execute fixes them directly without an unnecessary Plan Loop detour.
+
 ## 0.43.1 — 2026-11-27 (Real-Data Multi-Milestone Audit Fixes: Retry Supersession, Inbox L1 Diagnostics, Fragment-Stripped Incremental Context, Concise Toolchain Memory & Chronological Switcher)
 
 - **Retry-target supersession (`internal/machine/planning_projection.go`, `plugins/dsh/src/client/workflowTimeline.ts`)**: exclude explicitly `cancelled` planning requests from failed retry targets and stop inheriting older failures once a newer `completed` planning request supersedes them, ensuring `planning.projection.retry-target` stays anchored on the active milestone (`milestone / <current>`, `continue-execution: true`).
