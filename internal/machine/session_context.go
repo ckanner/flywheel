@@ -81,8 +81,12 @@ func (c *Context) sessionContextPrompt(role, scope, action, candidate string, pr
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
 	contents := map[string]string{}
+	ledgerPrefix := filepath.ToSlash(filepath.Clean(c.taskDirPrefix()))
 	for _, ref := range refs {
 		raw, err := readUnitReport(args.Cwd, ref)
+		if err != nil && c.WorkspaceCwd != "" && c.WorkspaceCwd != args.Cwd && isLedgerRef(ref, ledgerPrefix) {
+			raw, err = readUnitReport(c.WorkspaceCwd, ref)
+		}
 		if err != nil {
 			checkpoint.Reason = "referenced authority is unavailable in the current execution directory"
 			return checkpoint, args.Prompt
@@ -130,4 +134,15 @@ func (c *Context) sessionPrompt(role, scope string, args drivers.CallArgs) strin
 		prompt += executionDirectoryPrompt()
 	}
 	return prompt
+}
+
+// isLedgerRef returns true only when ref resolves inside the task ledger
+// directory (docs/<slug>/...), allowing read-only fallback to WorkspaceCwd in
+// worktree mode without ever leaking source code across worktrees.
+func isLedgerRef(ref, ledgerPrefix string) bool {
+	if ledgerPrefix == "" || ledgerPrefix == "." || filepath.IsAbs(ref) {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(ref))
+	return clean == ledgerPrefix || strings.HasPrefix(clean, ledgerPrefix+"/")
 }

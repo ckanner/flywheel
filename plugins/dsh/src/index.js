@@ -5,6 +5,7 @@ import { mutatesTask, taskAssociationProjection, taskProjectionKey } from './tas
 import { planningUserAction, planningUserProjection, planningUserProjectionKey } from './planning-control.js';
 import { sessionUserAction, sessionUserProjection, sessionUserProjectionKey } from './session-control.js';
 import { packetUserAction, packetUserProjection, packetUserProjectionKey } from './packet-control.js';
+import { milestoneUserAction, milestoneUserProjection, milestoneUserProjectionKey } from './milestone-control.js';
 
 export const inject = ['commands', 'tools', 'workingDirectory', 'sessionProjections'];
 
@@ -16,6 +17,7 @@ export function apply(ctx, config = {}) {
   ctx.sessionProjections.register(planningUserProjection);
   ctx.sessionProjections.register(sessionUserProjection);
   ctx.sessionProjections.register(packetUserProjection);
+  ctx.sessionProjections.register(milestoneUserProjection);
   watchWorkspaces(ctx);
   let binary = null;
   let binaryError = null;
@@ -32,7 +34,7 @@ export function apply(ctx, config = {}) {
     dispatch: error instanceof ControlNotDispatchedError ? 'not-dispatched' : 'unknown',
     message: error instanceof Error ? error.message : String(error),
   });
-  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction, overrideHostSessionID, humanPacketAction) => {
+  const control = async (input, agent, signal, operationId, humanPlanningAction, humanSessionAction, overrideHostSessionID, humanPacketAction, humanMilestoneAction) => {
     if (!binary) {
       const detail = binaryError?.message || 'Flywheel engine binary could not be resolved.';
       throw new ControlNotDispatchedError(
@@ -87,6 +89,7 @@ export function apply(ctx, config = {}) {
         planningUserAction: humanPlanningAction,
         sessionUserAction: humanSessionAction,
         packetUserAction: humanPacketAction,
+        milestoneUserAction: humanMilestoneAction,
         timeoutMs: config.controlTimeoutMs ?? 60000,
         signal: controller.signal,
       });
@@ -121,7 +124,7 @@ export function apply(ctx, config = {}) {
         } catch (error) {
           throw new ControlNotDispatchedError(error);
         }
-        let humanPlanningAction, humanSessionAction, humanPacketAction;
+        let humanPlanningAction, humanSessionAction, humanPacketAction, humanMilestoneAction;
         try { humanPlanningAction = planningUserAction(input, agent?.session, commandId, rawInput,
           input?.action === 'planning' && input.planning?.action === 'approve' && agent?.session
             ? ctx.sessionProjections.stateOf(agent.session, planningUserProjectionKey) : undefined); }
@@ -134,7 +137,11 @@ export function apply(ctx, config = {}) {
           input?.action === 'packet' && agent?.session
             ? ctx.sessionProjections.stateOf(agent.session, packetUserProjectionKey) : undefined); }
         catch (error) { throw new ControlNotDispatchedError(error); }
-        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction, humanSessionAction, undefined, humanPacketAction);
+        try { humanMilestoneAction = milestoneUserAction(input, agent?.session, commandId, rawInput,
+          input?.action === 'milestone' && agent?.session
+            ? ctx.sessionProjections.stateOf(agent.session, milestoneUserProjectionKey) : undefined); }
+        catch (error) { throw new ControlNotDispatchedError(error); }
+        const value = await control(input, agent, signal, 'command:' + commandId, humanPlanningAction, humanSessionAction, undefined, humanPacketAction, humanMilestoneAction);
         return { kind: 'success', text: JSON.stringify(value, null, 2) };
       } catch (error) {
         // CommandResult preserves only kind/text. Wrap every failure, including
@@ -149,6 +156,7 @@ export function apply(ctx, config = {}) {
       if (args?.action === 'planning' && args.planning?.action === 'approve') throw new ControlNotDispatchedError('Use the human design approval control; model tools cannot approve a design');
       if (args?.action === 'session' && args.session?.action === 'abandon') throw new ControlNotDispatchedError('Use the human session abandonment control; model tools cannot retire an unknown invocation');
       if (args?.action === 'packet') throw new ControlNotDispatchedError('Use the human packet triage control; model tools cannot triage escalated inbox packets');
+      if (args?.action === 'milestone') throw new ControlNotDispatchedError('Use the human milestone triage control; model tools cannot triage escalated milestones');
       return JSON.stringify(await control(args, execution.agent, execution.signal, 'tool:' + execution.callId));
     } catch (error) {
       toolFailures.set(execution, failure(args, error));

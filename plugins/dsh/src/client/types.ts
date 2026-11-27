@@ -704,6 +704,15 @@ export interface PacketControlReceipt {
   message?: string;
 }
 
+export interface MilestoneControlReceipt {
+  'milestone-id'?: string;
+  action?: string;
+  applied?: boolean;
+  revision?: number;
+  status?: string;
+  message?: string;
+}
+
 export interface ControlResponse {
   protocol: 1;
   ok: boolean;
@@ -716,6 +725,8 @@ export interface ControlResponse {
   sessionControl?: { key?: string; action?: string; applied?: boolean; message?: string };
   'packet-control'?: PacketControlReceipt;
   packetControl?: PacketControlReceipt;
+  'milestone-control'?: MilestoneControlReceipt;
+  milestoneControl?: MilestoneControlReceipt;
   taskDir?: string;
   cwd?: string;
   running?: boolean;

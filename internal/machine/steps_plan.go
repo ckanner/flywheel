@@ -153,13 +153,41 @@ func (c *Context) milestoneGateStep(milestone contract.Milestone) gateOutcome {
 	timeoutMs := c.Config.Verify.CommandTimeoutMs
 	envAllowlist := c.Config.Verify.EnvAllowlist
 	levels := map[string]any{}
-	beforeIdentity, beforeErr := c.candidateFingerprint(c.Cwd)
-	pass := beforeErr == nil
+	levelCommands := map[string][]contract.GateEntry{}
+	hasMilestoneCommands := false
 	for _, level := range []string{"L2", "L3"} {
 		var commands []contract.GateEntry
 		for _, p := range packets {
 			commands = append(commands, p.Acceptance.Level(level)...)
 		}
+		levelCommands[level] = commands
+		if len(commands) > 0 {
+			hasMilestoneCommands = true
+		}
+	}
+	if hasMilestoneCommands && strings.TrimSpace(c.Config.Verify.PrepareCmd) != "" {
+		prepGate := verify.RunGateCommands([]contract.GateEntry{{
+			Cmd:    c.Config.Verify.PrepareCmd,
+			Expect: "exit 0",
+		}}, verify.GateOpts{
+			Context: c.RunContext,
+			Cwd:     c.Cwd, TimeoutMS: timeoutMs, EnvAllowlist: envAllowlist,
+		})
+		levels["prepare"] = prepGate
+		if !prepGate.Pass {
+			ms := c.State.Milestones[milestone.ID]
+			ms.Gate = map[string]any{
+				"pass": false, "levels": levels, "at": c.nowISO(),
+			}
+			c.State.Milestones[milestone.ID] = ms
+			c.save()
+			return gateOutcome{Pass: false, Levels: levels}
+		}
+	}
+	beforeIdentity, beforeErr := c.candidateFingerprint(c.Cwd)
+	pass := beforeErr == nil
+	for _, level := range []string{"L2", "L3"} {
+		commands := levelCommands[level]
 		if len(commands) == 0 {
 			levels[level] = map[string]any{"pass": true, "results": []any{}, "skipped": true}
 			continue

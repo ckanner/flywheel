@@ -1325,6 +1325,33 @@ export class FlywheelStore {
     });
   }
 
+  async triageMilestone(
+    action: 'retry' | 'accept',
+    milestoneId: string,
+    reason: string,
+    guidance?: string,
+  ): Promise<ControlResponse | undefined> {
+    const taskDir = this.snapshot.selectedTaskDir;
+    if (!taskDir || !milestoneId || !reason.trim()) return undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      await this.refreshSelectedTask(true, false);
+    }
+    const revision = this.snapshot.state?.revision ?? 1;
+    const trimmedGuidance = guidance?.trim() ?? '';
+    return this.performAct(`milestone-${action}`, {
+      action: 'milestone',
+      cwd: this.snapshot.selectedCwd || undefined,
+      taskDir,
+      milestone: {
+        action,
+        'milestone-id': milestoneId,
+        revision,
+        reason: reason.trim(),
+        ...(trimmedGuidance ? { guidance: trimmedGuidance } : {}),
+      },
+    });
+  }
+
   async runInvestigation(): Promise<ControlResponse | undefined> {
     const taskDir = this.snapshot.selectedTaskDir;
     const revision = this.snapshot.state?.investigation?.revision ?? this.snapshot.state?.revision ?? 1;

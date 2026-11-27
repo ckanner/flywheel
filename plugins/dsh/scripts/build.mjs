@@ -19,7 +19,7 @@ for (const output of outputs) await mkdir(output.directory, { recursive: true })
 const moduleFiles = [
   'task-directory.js', 'image-contract.js', 'subscription-controls.js',
   'codex-subscription-proxy.js', 'dsh-activity.js', 'kimi-print-session.js',
-  'planning-control.js', 'session-control.js', 'packet-control.js', 'native-doctor.js',
+  'planning-control.js', 'session-control.js', 'packet-control.js', 'milestone-control.js', 'native-doctor.js',
   'kimi-native-worker.js', 'kimi-native-bridge.js', 'kimi-native-runtime.js',
   'kimi-tower-candidate.js', 'native-jobs.js', 'managed-lcu.js', 'native.js',
   'native-policy.js', 'native-resources.js', 'console-read.js', 'trace-parser.js', 'workspaces.js',

@@ -249,7 +249,8 @@ export function SubSessionTelemetryDock({
   const rawRecords = (state as { sessions?: { records?: Record<string, Record<string, unknown>> } } | null)?.sessions?.records;
   const sessionRec = trace.key && rawRecords ? rawRecords[trace.key] : null;
   const quality = (sessionRec?.quality as Record<string, unknown> | undefined) ?? null;
-  const confirmedTurns = readNum(quality, 'confirmed-turns', 'confirmedTurns') ?? Math.max(1, siblingCount);
+  const rawConfirmedTurns = readNum(quality, 'confirmed-turns', 'confirmedTurns');
+  const confirmedTurns = rawConfirmedTurns ?? (trace.running ? Math.max(0, siblingCount - 1) : Math.max(1, siblingCount));
   const sessionAction = typeof sessionRec?.action === 'string' ? sessionRec.action : '';
   const contextMode = typeof (sessionRec?.context as Record<string, unknown> | undefined)?.mode === 'string'
     ? String((sessionRec?.context as Record<string, unknown>).mode)
@@ -262,8 +263,14 @@ export function SubSessionTelemetryDock({
   const stepCount = blocks.filter(b => b.kind === 'tool_call' || b.kind === 'thinking').length;
 
   // Pill 1: Turns, steps, duration (1:1 DSH native style — model badge already sits in composer bar above;
-  // full model/effort/raw ID details appear in the upward popover).
-  const p1Parts: string[] = [isZh ? `${confirmedTurns} 轮` : `${confirmedTurns}t`];
+  // full model/effort/raw ID details appear in the upward popover). Never render "0 轮".
+  const turnLabel = trace.running
+    ? (isZh ? `第 ${confirmedTurns + 1} 轮` : `Turn ${confirmedTurns + 1}`)
+    : (() => {
+        const displayTurns = confirmedTurns > 0 ? confirmedTurns : Math.max(1, siblingCount);
+        return isZh ? `${displayTurns} 轮` : `${displayTurns}t`;
+      })();
+  const p1Parts: string[] = [turnLabel];
   if (stepCount > 0) p1Parts.push(isZh ? `${stepCount} 步` : `${stepCount} steps`);
   if (durStr) p1Parts.push(durStr);
 

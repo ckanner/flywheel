@@ -29,8 +29,8 @@ const MaxInlineDiffBytes = 24_000
 const MaxFeedbackBytes = 16_000
 
 // MaxProjectContextBytes caps the shared stable project memory file
-// (`planning/project-context.md`) injected into Layer 2.
-const MaxProjectContextBytes = 4_096
+// (`project-context.md` / `planning/project-context.md`) injected into Layer 2.
+const MaxProjectContextBytes = 12_288
 
 func boundText(s string, maxBytes int, suffix string) string {
 	if len(s) <= maxBytes {
@@ -58,7 +58,7 @@ func readProjectContext(taskDir string) string {
 	if text == "" {
 		return ""
 	}
-	return boundText(text, MaxProjectContextBytes, "\n... [project-context truncated at 4096 bytes]")
+	return boundText(text, MaxProjectContextBytes, "\n... [project-context truncated at 12288 bytes]")
 }
 
 // ReadCacheScope 把 cache-scope 声明的文件读进稳定前缀，超限截断（§8.1）。
@@ -167,7 +167,7 @@ func BuildExecutePrompt(packet *contract.Packet, spec *contract.Spec, taskDir st
 		"1. Read the contract and every context file before writing code.",
 		"2. Implement code and its unit/regression tests together. Keep the required 100% coverage gate and meaningful assertions. Do not weaken, delete, or bypass assertions to obtain a green result.",
 		"3. Frozen acceptance oracles are protected by boundaries.must-not-touch and explicit protected-test-patterns. Only the Plan Loop may revise task contracts within its allowed scope; changing an external frozen oracle requires an explicit human task. If the oracle is wrong or scope must change, stop and return concrete evidence to the planner.",
-		"4. Use targeted feedback checks (a reproducer, changed-package tests, or type checks) while iterating. Report exactly which commands you ran and their observed outcomes; do not claim unrun acceptance commands passed. The orchestrator runs every required final gate, including full L1 and coverage, after you exit; a redundant full-suite run is not required solely to prove completion.",
+		"4. Use targeted feedback checks (check:changed discipline: a reproducer, changed-file unit tests, or type checks) while iterating, avoiding repeated serial full-repository builds, e2e suites, or full coverage matrices inside your session. Report exactly which commands you ran and their observed outcomes; do not claim unrun acceptance commands passed. The orchestrator runs every required final gate, including full L1 and coverage, after you exit; a redundant full-suite run is not required solely to prove completion.",
 		"5. NEVER declare the task done. Completion is judged externally by acceptance commands and review.",
 		"6. If reality contradicts the design or the work needs a scope change: STOP and say so. Do not expand or shrink scope on your own.",
 		"7. Do not touch must-not-touch paths; the git diff is checked after you finish.",
@@ -276,6 +276,7 @@ func isReviewReturnFeedback(fb any) bool {
 // defectInjection 为 nil → 无该节。
 type ReviewArgs struct {
 	Packet          *contract.Packet
+	TaskDir         string
 	L1Evidence      any
 	DiffSummary     string
 	DiffText        string
@@ -300,8 +301,8 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"## Your checks",
 		"- Code quality, project conventions, design intent, security hazards.",
 		"- Test assertion quality: coverage proves execution, not assertion validity. Unit/regression test changes are expected; reject weakened assertions, bypassed checks, and changes to protected acceptance oracles.",
-		"- Read-only review: inspect the candidate worktree and report findings. Do not edit files or run mutating commands.",
-		"- Batch inspection (Code Mode efficiency): prefer a single read-only script (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of many serial reads. Keep command stdout concise and bounded (summaries, --stat, targeted slices/assertions) — never dump entire logs, lockfiles, build artifacts, or orchestrator traces to stdout.",
+		"- Read-only review & external memory isolation: inspect ONLY the candidate worktree and the task ledger contract. Do not edit files, run mutating commands, or read/search personal global memory directories outside this repository (such as ~/.codex/memories, ~/.claude, or other user home caches).",
+		"- Batch inspection (Code Mode efficiency): prefer 1–2 batched read-only aggregation scripts (node/python/shell) to verify file exports, symbols, coverage, and assertions in one round-trip instead of dozens of serial small commands. Keep command stdout concise and bounded (summaries, --stat, targeted slices/assertions) — never dump entire logs, lockfiles, build artifacts, or orchestrator traces to stdout.",
 		"- Coverage matrix: every numbered requirement above must have at least one verification + evidence; a missing one means return.",
 		"- Scope: the diff must stay within the packet boundaries; any change to contract files (spec.md / task-packet-*.md) means return.",
 		"- Never block on orchestrator metadata: state.json, ledger directories, and Flywheel delivery receipts are owned by the Go orchestrator (executors are forbidden to edit them). Never fail review because a worktree copy of state.json lacks an updated delivery checkpoint.",
@@ -310,7 +311,7 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"- Test proportionality: unit tests must exercise real behavior and invariants for each requirement rather than tautological stubs; do NOT demand exhaustive meta-tests (tests of tests, mock/assertion-library internals, or speculative edge cases beyond the contract) once behavior and core invariants are genuinely verified.",
 		"- Severity tiering: separate blocking defects (severity:\"blocker\"|\"major\", return/verification-gap) from non-blocking style/polish or optional test-hardening notes (severity:\"minor\" or advisory, never failing pass).",
 		"- Round-2+ scope freeze (delta review): when prior open findings are listed below, focus on verifying closure of those findings and checking for concrete regressions introduced by the fix. Do NOT open new non-regression defects on untouched code that was already acceptable in prior rounds.",
-		"- Monotone convergence (do not move goalposts): across review rounds, verify whether prior blocking defects or verification-gaps are closed and check for real regressions; do NOT endlessly invent hypothetical micro-mutations or test-of-a-test parser edge cases against already-thorough unit tests when every requirement is genuinely verified and the implementation has no defects.",
+		"- Monotone convergence & anti-fuzzing (do not move goalposts): across review rounds, verify whether prior blocking defects or verification-gaps are closed and check for real regressions; do NOT endlessly invent adversarial lexical/syntactic bypass fuzz cases against auxiliary build/gate/verification scripts once contract requirements and original samples genuinely pass — record optional hardening ideas in advisory instead.",
 	}
 	if a.FinalSpec == nil {
 		sections = append(sections,
@@ -334,6 +335,9 @@ func BuildReviewPrompt(a ReviewArgs) string {
 		"## Review rubric (pass line included)",
 		p.ReviewRubric,
 	)
+	if pc := readProjectContext(a.TaskDir); pc != "" {
+		sections = append(sections, "", "## Project context memory (stable)", pc)
+	}
 	if p.InputImages != nil {
 		images, _ := json.MarshalIndent(p.InputImages, "", "  ")
 		sections = append(sections, "", "## Frozen image references",
@@ -474,9 +478,20 @@ func evidenceFlag(ev any, key string, want any, yes, no string) string {
 	return no
 }
 
-// BuildJudgePrompt 里程碑终验提示词（Judge=K3 fresh context）：需求覆盖矩阵
-// （防漏做）+ 门禁结果 + 一致性检查。
-func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets []*contract.Packet, st *state.State, gateLevels map[string]any) string {
+// JudgeOptions supplies stable project memory and optional human guidance for
+// milestone final verification without breaking existing callers.
+type JudgeOptions struct {
+	TaskDir       string
+	HumanGuidance string
+}
+
+// BuildJudgePrompt 里程碑终验提示词（Judge=K3 fresh context，三层前缀缓存排序：
+// Layer 1 全局静态规则与输出契约 → Layer 2 里程碑稳定规格与项目记忆 → Layer 3 需求覆盖矩阵、确定性门禁证据与人工裁决）。
+func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets []*contract.Packet, st *state.State, gateLevels map[string]any, opts ...JudgeOptions) string {
+	var opt JudgeOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 	matrix := []string{}
 	for _, r := range spec.Requirements {
 		if r.Milestone != milestone.ID {
@@ -512,29 +527,51 @@ func BuildJudgePrompt(spec *contract.Spec, milestone contract.Milestone, packets
 	if gateLevels == nil {
 		gateJSON = []byte("{}")
 	}
-	return strings.Join([]string{
+	// Layer 1: Global static instructions & output contract.
+	sections := []string{
 		"You are the judge for a milestone final verification of the Flywheel system. Fresh context, no prior involvement: re-verify what the execution/review loops produced.",
+		"",
+		"## Your checks & milestone judge boundary",
+		"- Read-only & external memory isolation: inspect ONLY this repository and the task ledger. Do not edit files, run mutating commands, or read/search personal global memory directories outside this repository (such as ~/.codex/memories, ~/.claude, or other user home caches).",
+		"- Milestone-level scope: focus on cross-package integration consistency, milestone-level requirement coverage, and coherence across L1/Review/L2/L3 evidence.",
+		"- Every numbered requirement of this milestone has at least one verification with evidence; any gap fails.",
+		"- The delivered work matches the spec intent; nothing outside the milestone scope was built.",
+		"- The evidence is coherent (L1 commands, review verdicts, gate results tell one consistent story).",
+		"- Closed-world DoD: judge strictly against the spec's goal, milestone requirements, delegated decision boundaries, and frozen gates. Treat unstated enhancements or extra hardening ideas as non-blocking advisory notes.",
+		"- Severity tiering: return \"return\" or \"verification-gap\" ONLY for real blocking milestone defects, missing requirements, or broken cross-package integration. Put optional hardening or style ideas in \"advisory\" and return \"pass\".",
+		"- No synthetic adversarial fuzzing of passed scaffolding: do NOT reject a milestone by inventing synthetic adversarial lexical/syntactic corner cases against auxiliary build/gate scaffolding scripts that already passed L1, L2/L3, and unit Review — record such hardening suggestions in \"advisory\".",
+		"",
+		"## Output",
+		"End your reply with a final line containing ONLY this JSON:",
+		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."],"advisory":["optional non-blocking notes"]}`,
+		`Every entry in reasons MUST cite verifiable evidence (command + exit code, or file:line). A verdict without evidence is invalid. Never return "return" for advisory-only notes.`,
 		"",
 		"## Spec",
 		"Goal: " + spec.Goal,
 		"Milestone: " + milestone.ID + " " + milestone.Title,
+	}
+	// Layer 2: Stable project memory (including delegated decision boundaries).
+	if pc := readProjectContext(opt.TaskDir); pc != "" {
+		sections = append(sections, "", "## Project context memory (stable)", pc)
+	}
+	// Layer 3: Volatile milestone evidence & optional human guidance.
+	sections = append(sections,
 		"",
 		"## Requirement coverage matrix (anti-omission)",
 		strings.Join(matrix, "\n"),
 		"",
 		"## Milestone gate results (L2/L3, deterministic)",
 		string(gateJSON),
-		"",
-		"## Your checks",
-		"- Every numbered requirement of this milestone has at least one verification with evidence; any gap fails.",
-		"- The delivered work matches the spec intent; nothing outside the milestone scope was built.",
-		"- The evidence is coherent (L1 commands, review verdicts, gate results tell one consistent story).",
-		"",
-		"## Output",
-		"End your reply with a final line containing ONLY this JSON:",
-		`{"verdict":"pass"|"return"|"verification-gap","score":0.0-1.0,"reasons":["..."]}`,
-		`Every entry in reasons MUST cite verifiable evidence (command + exit code, or file:line). A verdict without evidence is invalid.`,
-	}, "\n")
+	)
+	if guidance := strings.TrimSpace(opt.HumanGuidance); guidance != "" {
+		sections = append(sections,
+			"",
+			"## Human triage guidance (authoritative scope decision)",
+			guidance,
+			"Honor this human scope decision when classifying blocking vs advisory items; do not block on items the human explicitly scoped out or deferred.",
+		)
+	}
+	return strings.Join(sections, "\n")
 }
 
 // ReviewFinding captures one structured execution-review defect with stable ID

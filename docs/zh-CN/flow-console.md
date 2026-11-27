@@ -38,8 +38,10 @@ flowchart LR
 | `sidebar.right.pane.tab` | 右侧边栏实时进度 | 当前运行任务进度条、活跃节点预览、一键跳转工作台与停止控制 |
 | `conversation.chat.commandview` | `/flywheel` 指令卡 | 对话内只读控制摘要卡片，一键跳转主工作台 |
 
-人类专属操作（`planning.approve` 与 `session.abandon`）由宿主 `flywheelConsole.act`
+人类专属操作（`planning.approve`、`session.abandon`、`packet` 与 `milestone`）由宿主 `flywheelConsole.act`
 直接签发宿主侧 `dsh` 人工证明；模型工具（`flywheel_launch` / `flywheel_control`）始终严禁调用。
+
+在主流程聊天流中，阶段 1 仅渲染规划期角色的阻塞横幅；执行/审查/裁决期的中断会话、`inbox` 单元以及里程碑 L2/L3 门禁或 Judge 升级统一收敛至底部**人工处置中心**（包含单行报错摘要、可折叠技术详情、失败命令输出尾部或 Judge 裁决理由，以及一键重试/放行操作）。已完成的历史「执行期计划修订」默认折叠，正在运行的单元卡片（含 `l1-passed` 且正在运行评审 trace 的节点）以主色高亮边框区分，子会话底部遥测栏以 1 为起始显示实时轮次（如 `第 1 轮`），不再显示 `0 轮`。
 
 ## 找到任务，不必填写路径
 

@@ -24,31 +24,32 @@ import (
 )
 
 type controlResponse struct {
-	ModelCatalog    *modelcatalog.Report            `json:"modelCatalog,omitempty"`
-	InputImages     *imageinput.Inspection          `json:"inputImages,omitempty"`
-	PlanningControl *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
-	SessionControl  *SessionControlReceipt          `json:"session-control,omitempty"`
-	PacketControl   *PacketControlReceipt           `json:"packet-control,omitempty"`
-	TaskTitle       string                          `json:"taskTitle,omitempty"`
-	Preparation     *state.PreparationState         `json:"preparation,omitempty"`
-	Projection      string                          `json:"projection,omitempty"`
-	Node            *machine.NodeDetail             `json:"node,omitempty"`
-	Delivery        *machine.DeliverySnapshot       `json:"delivery,omitempty"`
-	History         *machine.SessionHistory         `json:"history,omitempty"`
-	Metrics         *metrics.Report                 `json:"metrics,omitempty"`
-	Runs            []machine.RunRecord             `json:"runs"`
-	Protocol        int                             `json:"protocol"`
-	OK              bool                            `json:"ok"`
-	Running         bool                            `json:"running"`
-	PID             int                             `json:"pid"`
-	TaskDir         string                          `json:"taskDir"`
-	Cwd             string                          `json:"cwd,omitempty"`
-	State           *state.State                    `json:"state"`
-	Sessions        []sessionSummary                `json:"sessions,omitempty"`
-	Error           string                          `json:"error,omitempty"`
-	Configuration   *diagnostic.Configuration       `json:"configuration,omitempty"`
-	Diagnostic      *diagnostic.Report              `json:"diagnostic,omitempty"`
-	Editor          *config.EditorDocument          `json:"editor,omitempty"`
+	ModelCatalog     *modelcatalog.Report            `json:"modelCatalog,omitempty"`
+	InputImages      *imageinput.Inspection          `json:"inputImages,omitempty"`
+	PlanningControl  *machine.PlanningControlReceipt `json:"planning-control,omitempty"`
+	SessionControl   *SessionControlReceipt          `json:"session-control,omitempty"`
+	PacketControl    *PacketControlReceipt           `json:"packet-control,omitempty"`
+	MilestoneControl *MilestoneControlReceipt        `json:"milestone-control,omitempty"`
+	TaskTitle        string                          `json:"taskTitle,omitempty"`
+	Preparation      *state.PreparationState         `json:"preparation,omitempty"`
+	Projection       string                          `json:"projection,omitempty"`
+	Node             *machine.NodeDetail             `json:"node,omitempty"`
+	Delivery         *machine.DeliverySnapshot       `json:"delivery,omitempty"`
+	History          *machine.SessionHistory         `json:"history,omitempty"`
+	Metrics          *metrics.Report                 `json:"metrics,omitempty"`
+	Runs             []machine.RunRecord             `json:"runs"`
+	Protocol         int                             `json:"protocol"`
+	OK               bool                            `json:"ok"`
+	Running          bool                            `json:"running"`
+	PID              int                             `json:"pid"`
+	TaskDir          string                          `json:"taskDir"`
+	Cwd              string                          `json:"cwd,omitempty"`
+	State            *state.State                    `json:"state"`
+	Sessions         []sessionSummary                `json:"sessions,omitempty"`
+	Error            string                          `json:"error,omitempty"`
+	Configuration    *diagnostic.Configuration       `json:"configuration,omitempty"`
+	Diagnostic       *diagnostic.Report              `json:"diagnostic,omitempty"`
+	Editor           *config.EditorDocument          `json:"editor,omitempty"`
 }
 
 // SessionControlReceipt makes an asynchronous session command's semantic
@@ -175,7 +176,7 @@ func controlCmd() *cobra.Command {
 	var revision int64
 	var probe, compact bool
 	cmd := &cobra.Command{
-		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|packet|delivery|deliver|config|config-edit|config-save|doctor|images|models>",
+		Use:   "control <planning|launch|start|step|status|stop|investigate|node|runs|metrics|history|session|packet|milestone|delivery|deliver|config|config-edit|config-save|doctor|images|models>",
 		Short: "桌面/脚本控制接口（protocol 1 JSON）",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -264,6 +265,8 @@ func controlCmd() *cobra.Command {
 					reply, err = startSessionControl(cmd, resolvedTask, resolvedCwd)
 				case "packet":
 					reply, err = startPacketControl(cmd, resolvedTask, resolvedCwd)
+				case "milestone":
+					reply, err = startMilestoneControl(cmd, resolvedTask, resolvedCwd)
 				case "history":
 					reply.History, err = machine.ReadSessionHistory(resolvedTask, sessionKey)
 				case "metrics":

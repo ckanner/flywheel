@@ -28,7 +28,7 @@ func contains(list []string, v string) bool {
 }
 
 func runCmd() *cobra.Command {
-	var only, packet, unit, pauseBefore, mode, retryReason, sessionRequest, sessionDigest, packetRequest, packetDigest string
+	var only, packet, unit, pauseBefore, mode, retryReason, sessionRequest, sessionDigest, packetRequest, packetDigest, milestoneRequest, milestoneDigest string
 	var revision int64
 	var investigate, planningOnly bool
 	cmd := &cobra.Command{
@@ -37,7 +37,7 @@ func runCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if investigate {
-				if revision < 1 || only != "" || packet != "" || unit != "" || mode != "" || pauseBefore != "" || retryReason != "" || sessionRequest != "" || sessionDigest != "" || packetRequest != "" || packetDigest != "" || planningOnly {
+				if revision < 1 || only != "" || packet != "" || unit != "" || mode != "" || pauseBefore != "" || retryReason != "" || sessionRequest != "" || sessionDigest != "" || packetRequest != "" || packetDigest != "" || milestoneRequest != "" || milestoneDigest != "" || planningOnly {
 					return fmt.Errorf("--investigate requires only an observed positive --expect-revision")
 				}
 				dir, err := resolveTaskDir(args[0])
@@ -56,7 +56,7 @@ func runCmd() *cobra.Command {
 				}
 				return err
 			}
-			if planningOnly && (only != "" || packet != "" || unit != "" || pauseBefore != "" || retryReason != "" || sessionRequest != "" || sessionDigest != "" || packetRequest != "" || packetDigest != "") {
+			if planningOnly && (only != "" || packet != "" || unit != "" || pauseBefore != "" || retryReason != "" || sessionRequest != "" || sessionDigest != "" || packetRequest != "" || packetDigest != "" || milestoneRequest != "" || milestoneDigest != "") {
 				return fmt.Errorf("--planning-only applies to a reviewed planning run, without implementation or manual-stage flags")
 			}
 			var expectedRevision *int64
@@ -85,7 +85,7 @@ func runCmd() *cobra.Command {
 					return fmt.Errorf("--planning-only requires a reviewed planning task; migrate a legacy task explicitly")
 				}
 			}
-			if only != "" && only != "session" && only != "packet" && !contains(onlySteps, only) {
+			if only != "" && only != "session" && only != "packet" && only != "milestone" && !contains(onlySteps, only) {
 				return fmt.Errorf("--only 只支持: %s", strings.Join(onlySteps, "|"))
 			}
 			if pauseBefore != "" && pauseBefore != "review" {
@@ -126,6 +126,21 @@ func runCmd() *cobra.Command {
 			} else if packetRequest != "" || packetDigest != "" {
 				return fmt.Errorf("--packet-request requires --only packet")
 			}
+			var milestoneCmd *machine.MilestoneCommand
+			if only == "milestone" {
+				milestoneCmd, err = loadMilestoneInput(taskDir, milestoneRequest, milestoneDigest)
+				if err != nil {
+					return err
+				}
+				if expectedRevision == nil || milestoneCmd.Revision != *expectedRevision {
+					return fmt.Errorf("milestone payload revision does not match admission")
+				}
+				if err := milestoneActionProof(milestoneCmd, taskDir, false); err != nil {
+					return err
+				}
+			} else if milestoneRequest != "" || milestoneDigest != "" {
+				return fmt.Errorf("--milestone-request requires --only milestone")
+			}
 			cwd := machine.ProjectRoot(mustCwd())
 			cfg, err := config.Load(taskDir, cwd)
 			if err != nil {
@@ -151,6 +166,7 @@ func runCmd() *cobra.Command {
 					RetryReason:      retryReason,
 					Session:          session,
 					Packet:           packetCmd,
+					Milestone:        milestoneCmd,
 				})
 			} else {
 				summary, err = machine.RunTask(machine.RunTaskOpts{
@@ -180,6 +196,8 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sessionDigest, "session-request-digest", "", "受管会话请求内容摘要")
 	cmd.Flags().StringVar(&packetRequest, "packet-request", "", "人工处置单元请求文件（由 control packet 创建）")
 	cmd.Flags().StringVar(&packetDigest, "packet-request-digest", "", "人工处置单元请求内容摘要")
+	cmd.Flags().StringVar(&milestoneRequest, "milestone-request", "", "人工处置里程碑请求文件（由 control milestone 创建）")
+	cmd.Flags().StringVar(&milestoneDigest, "milestone-request-digest", "", "人工处置里程碑请求内容摘要")
 	cmd.Flags().BoolVar(&investigate, "investigate", false, "执行已保存的有界调查；不执行实现阶段")
 	cmd.Flags().BoolVar(&planningOnly, "planning-only", false, "仅推进已保存的设计/计划及独立评审；不启动实施")
 	cmd.Flags().StringVar(&sessionRequest, "session-request", "", "受管会话请求文件（由 control session 创建）")

@@ -2217,6 +2217,12 @@
   box-shadow: 0 2px 10px color-mix(in srgb, var(--fw-accent) 9%, transparent);
 }
 
+.subAgentRowCardRunning {
+  border-color: var(--fw-accent);
+  background: color-mix(in srgb, var(--fw-accent) 6%, var(--fw-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fw-accent) 28%, transparent), 0 2px 10px color-mix(in srgb, var(--fw-accent) 12%, transparent);
+}
+
 .subAgentRowCardWarn {
   border-color: var(--fw-warn-border);
   background: color-mix(in srgb, var(--fw-warn) 5%, var(--fw-bg));

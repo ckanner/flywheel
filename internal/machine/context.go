@@ -62,6 +62,7 @@ type Context struct {
 	parallel           *parallelLane
 	sessionCommand     *SessionCommand
 	packetCommand      *PacketCommand
+	milestoneCommand   *MilestoneCommand
 	runID              string
 	consoleRetryReason string
 	phaseParent        string

@@ -322,6 +322,19 @@ When a packet escalates to `inbox` (for example after non-converging review roun
 
 All three actions require verified human proof (`FLYWHEEL_PACKET_USER_ACTION` from the DSH host command boundary or an interactive controlling TTY) and are never exposed to LLM model tools.
 
+## Triaging escalated milestones
+
+When a milestone escalates after an L2/L3 gate failure or a Judge `return` verdict, never edit `state.json` by hand. Use the persistent bottom-of-stream **Human Triage** card in DSH Desktop or the interactive CLI (`flywheel milestone <taskDir> --id <M-01> (--retry|--accept) --reason <text> [--guidance <text>]`):
+
+- **Retry Verification (`retry`)**: persists optional authoritative `human-guidance` on the milestone (injected into the next Judge verification prompt), sets the task back to `paused` so `start` re-runs the L2/L3 gate and Judge, and records an audit trail in `inbox` and `retro.md`.
+- **Accept Milestone (`accept`)**: permitted **only** when every packet in the milestone is `completed` and the deterministic L2/L3 gate (`ms.gate`) passed on the exact current repository `HEAD` candidate fingerprint; records candidate-bound `human-signoff`, closes the milestone, appends an objective delivery record to `project-context.md` (`## Delivered Milestones`), and either finishes the task (`completed`) or pauses for the next milestone.
+
+Both actions require verified human proof (`FLYWHEEL_MILESTONE_USER_ACTION` from the DSH host command boundary or an interactive controlling TTY) and are strictly blocked from LLM tools.
+
+### Review convergence guardrails and bounded grace
+
+Non-converging ordinary code-review returns (`REVIEW_RETURNED`) never automatically trigger a full-milestone Plan Loop rewrite; only `verification-gap` and persistent L1 failures can auto-return to Plan Loop. When a converging review (`review.Converging = true`) has at most 2 open findings remaining at the base attempt limit, the orchestrator grants at most one bounded `+1` `convergence-grace` attempt; if review still returns afterward, the unit routes directly to human `inbox`.
+
 ### Read-only output-limit defense and safe retry
 
 Flywheel maintains a managed `.ignore` file in `docs/<slug>/` (classified in the commit-volatile ledger set) so `rg`/`fd` skip multi-MB `.traces/`, `.sessions/`, and runtime logs, and aligns Pro/native worker bridge `machineOutputBytes` to 16 MiB alongside Go's 16 MiB watchdog buffer. When a verified `read-only` invocation terminates with confirmed process-group cleanup (`cleanup.confirmed = true`) strictly due to an adapter `output-limit` truncation AND both the candidate workspace fingerprint and role guard are unchanged, the orchestrator retires the damaged thread and lets bounded transport retry start a fresh session instead of deadlocking in `blocked`. Write-capable roles or any candidate/guard mutation remain strictly `blocked`.
@@ -335,7 +348,10 @@ Execute and planning roles (`design-plan`, `design-review`, `plan`, `plan-review
 may reuse a confirmed same-role stable contract (or planning Layer 1/2) after Go
 verifies that the consumed receipt proves `dispatched` and `completed`, together
 with the prompt version, current contract (or stable planning authority and
-`project-context.md`) and readable context/cache file digests. Set
+`project-context.md`) and readable context/cache file digests. In worktree mode,
+read-only ledger references under `docs/<slug>/` safely fall back to the main
+workspace checkout (`WorkspaceCwd`) while business source files continue to be
+read strictly from the unit's worktree. Set
 `sessions.context: "full"` to always resend full prompts. A safe admission
 rejection or failed/cancelled turn may preserve the old thread, but cannot prove
 delivery of that turn's newly prepared authority; the next call resends full

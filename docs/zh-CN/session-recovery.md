@@ -268,6 +268,19 @@ PID 推断。回执缺失、超限、损坏、身份不匹配、进程或进程�
 
 以上三项操作均要求经校验的人工证明（DSH 宿主命令边界生成的 `FLYWHEEL_PACKET_USER_ACTION` 或交互式控制终端确认），绝不暴露给 LLM 模型工具。
 
+## 人工处置已升级的里程碑
+
+当里程碑因 L2/L3 门禁失败或 Judge 退回而升级暂停时，严禁手改 `state.json`。可通过 DSH 桌面端主流程底部的**人工处置卡片**或交互式 CLI（`flywheel milestone <taskDir> --id <M-01> (--retry|--accept) --reason <text> [--guidance <text>]`）完成两项一等操作：
+
+- **重新验证（`retry`）**：持久化可选的权威 `human-guidance`（注入下次 Judge 终验提示词），将任务状态置为 `paused` 以便重跑 L2/L3 门禁与 Judge，并在 `inbox` 与 `retro.md` 留痕。
+- **直接通过里程碑（`accept`）**：**仅当**该里程碑全部单元已 `completed`，且确定性 L2/L3 门禁（`ms.gate`）已在**当前主仓库 `HEAD` 精确候选指纹**上通过时允许执行；记录绑定指纹的 `human-signoff`、关闭该里程碑、由 Go 确定性追加一行交付记录到 `project-context.md`（`## Delivered Milestones`），并在全部里程碑关闭时完成任务（`completed`）或 `paused` 继续下一里程碑。
+
+以上两项操作均要求经校验的人工证明（DSH 宿主命令边界生成的 `FLYWHEEL_MILESTONE_USER_ACTION` 或交互式控制终端确认），严禁暴露给 LLM 模型工具。
+
+### 代码评审收敛护栏与有界宽限
+
+普通代码评审退回（`REVIEW_RETURNED`）绝不自动回流 Plan Loop 触发整里程碑契约重写；仅 `verification-gap` 与 L1 持续失败允许自动回流 Plan Loop。当评审处于单调收敛状态（`review.Converging = true`）且剩余未闭合缺陷 `<= 2` 项、恰达基础重试上限时，编排器最多发放 **1 次** 有界 `convergence-grace`（+1 轮宽限）；宽限耗尽仍未通过则直接转人工 `inbox`。
+
 ### 只读调用的输出截断防护与自动自愈
 
 Flywheel 在任务目录 `docs/<slug>/` 自动维护面向 `rg`/`fd` 的运行期 `.ignore`（列入易变账本集，不进入单元提交），避免只读巡检误扫多 MB 级的 `.traces/`、`.sessions/` 与运行日志；同时将 Pro/原生适配器桥接层的 `machineOutputBytes` 与 Go 侧 16 MiB 缓冲对齐。对已证实生效沙箱为 `read-only`、进程组已确认清理（`cleanup.confirmed = true`）、明确因适配器 `output-limit` 截断，且事后核验工作区候选与角色守卫均零变动的调用，编排器将自动废弃受损线程并通过常规受限传输重试新建会话，而不再锁死在 `blocked`；写权限角色或存在任何候选/守卫变更时仍严格保持 `blocked`。
@@ -279,7 +292,8 @@ Flywheel 在任务目录 `docs/<slug>/` 自动维护面向 `rg`/`fd` 的运行�
 默认情况下（`sessions.context` 省略或设为 `"verified-incremental"`），Execute
 与规划角色（`design-plan`、`design-review`、`plan`、`plan-review`）均可复用可信同角色的
 稳定契约（或规划 Layer 1/2）；Go 复核已消费回执明确证明 `dispatched` 且 `completed`，并检查提示词
-版本、当前契约（或规划稳定权威与 `project-context.md`）及可读 context/cache 文件摘要。如需每轮完整重发，可显式配置
+版本、当前契约（或规划稳定权威与 `project-context.md`）及可读 context/cache 文件摘要。在 Worktree 模式下，
+位于 `docs/<slug>/` 内的只读账本引用可安全回退到主仓库工作区（`WorkspaceCwd`）读取并参与同一份哈希指纹校验，而业务源码文件仍严格仅从单元 Worktree 读取。如需每轮完整重发，可显式配置
 `sessions.context: "full"`。安全的启动拒绝或失败／取消调用
 可以保留原线程，但不证明本轮新准备的权威内容已送达；下一次仍须完整重发。
 新输入携带反馈、候选身份、尝试和引用（或规划 Layer 3 易变增量）。权威内容变化或不可用、旧任务缺

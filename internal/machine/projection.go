@@ -99,7 +99,90 @@ func ConsoleProjection(st *state.State, nodes ...*NodeDetail) (*state.State, err
 		}
 	}
 	view.Inbox = compactDiagnostic(view.Inbox).([]any)
+	milestoneIDs := make([]string, 0, len(view.Milestones))
+	for id := range view.Milestones {
+		milestoneIDs = append(milestoneIDs, id)
+	}
+	sort.Strings(milestoneIDs)
+	for _, id := range milestoneIDs {
+		ms := view.Milestones[id]
+		if ms.Gate != nil {
+			ms.Gate = compactMilestoneGate(ms.Gate)
+			view.Milestones[id] = ms
+		}
+	}
 	return view, nil
+}
+
+func compactMilestoneGate(gate any) any {
+	gmap, ok := gate.(map[string]any)
+	if !ok {
+		return compactDiagnostic(gate)
+	}
+	out := map[string]any{}
+	for _, key := range []string{"pass", "at", "identity", "identity-error"} {
+		if val, exists := gmap[key]; exists {
+			out[key] = compactDiagnostic(val)
+		}
+	}
+	if judge, exists := gmap["judge"]; exists {
+		out["judge"] = evidenceSummary(judge, "verdict", "score", "reasons", "advisory", "error", "at")
+	}
+	if levels, ok := gmap["levels"].(map[string]any); ok {
+		compactLevels := map[string]any{}
+		for _, lvlName := range []string{"prepare", "L2", "L3"} {
+			lvlVal, exists := levels[lvlName]
+			if !exists {
+				continue
+			}
+			lvlMap, ok := lvlVal.(map[string]any)
+			if !ok {
+				compactLevels[lvlName] = compactDiagnostic(lvlVal)
+				continue
+			}
+			cl := map[string]any{}
+			for _, k := range []string{"pass", "skipped", "identity-error"} {
+				if v, ok := lvlMap[k]; ok {
+					cl[k] = compactDiagnostic(v)
+				}
+			}
+			if results, ok := lvlMap["results"].([]any); ok {
+				compactResults := make([]any, 0, min(len(results), 10))
+				for _, r := range results[:min(len(results), 10)] {
+					rm, ok := r.(map[string]any)
+					if !ok {
+						compactResults = append(compactResults, compactDiagnostic(r))
+						continue
+					}
+					cr := map[string]any{}
+					for _, rk := range []string{"cmd", "pass", "exitCode", "exit-code", "timedOut", "durationMs"} {
+						if rv, ok := rm[rk]; ok {
+							cr[rk] = rv
+						}
+					}
+					if stderr, ok := rm["stderr"].(string); ok && stderr != "" {
+						cr["stderr"] = compactTail(stderr, 512)
+					}
+					if stdout, ok := rm["stdout"].(string); ok && stdout != "" {
+						cr["stdout"] = compactTail(stdout, 512)
+					}
+					compactResults = append(compactResults, cr)
+				}
+				cl["results"] = compactResults
+			}
+			compactLevels[lvlName] = cl
+		}
+		out["levels"] = compactLevels
+	}
+	return out
+}
+
+func compactTail(value string, maxRunes int) string {
+	text := []rune(value)
+	if len(text) <= maxRunes {
+		return value
+	}
+	return "[truncated] …" + string(text[len(text)-maxRunes:])
 }
 
 func compactDiagnostic(value any) any {

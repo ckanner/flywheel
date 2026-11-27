@@ -278,6 +278,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 	priorFindings := priorOpenReviewFindings(latestPriorReview(ps))
 	promptArgs := prompts.ReviewArgs{
 		Packet:          packet,
+		TaskDir:         c.TaskDir,
 		L1Evidence:      ps.Evidence.L1,
 		DiffSummary:     diffSummary,
 		DiffText:        diffText,
@@ -340,7 +341,7 @@ func (c *Context) reviewStep(packet *contract.Packet, defectInjection any) (out 
 	resolvedCount := countResolvedReviewFindings(r.Verdict.Findings)
 	converging := (len(priorFindings) > 0 && currOpen > 0 && currOpen < len(priorFindings)) ||
 		(len(priorFindings) == 0 && resolvedCount > 0 && currOpen > 0)
-	return reviewOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict, Converging: converging}, nil
+	return reviewOutcome{Pass: r.Verdict.Verdict == "pass", Verdict: r.Verdict, Converging: converging, OpenFindings: currOpen}, nil
 }
 
 func latestPriorReview(ps *state.PacketState) any {
@@ -474,7 +475,10 @@ func (c *Context) judgeStep(milestone contract.Milestone) (out judgeOutcome, err
 	if g, ok := ms.Gate.(map[string]any); ok {
 		gateLevels, _ = g["levels"].(map[string]any)
 	}
-	prompt := prompts.BuildJudgePrompt(c.Spec, milestone, packets, c.State, gateLevels)
+	prompt := prompts.BuildJudgePrompt(c.Spec, milestone, packets, c.State, gateLevels, prompts.JudgeOptions{
+		TaskDir:       c.TaskDir,
+		HumanGuidance: ms.HumanGuidance,
+	})
 
 	binding, err := fallback.ResolveBinding(c.Config, "judge", "")
 	if err != nil {

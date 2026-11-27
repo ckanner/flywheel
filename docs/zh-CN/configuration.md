@@ -712,7 +712,7 @@ unknown 或未消费调用先对账。恢复时删除或改变冻结策略会被
 
 `watchdog` 对能暴露进展的传输使用输出 idle 上限，同时保留绝对的 `wall-timeout-ms` 上限和 `kill-grace-ms` 的 SIGTERM 到 SIGKILL 收尾宽限。默认 idle 300 秒、wall 3600 秒、grace 5 秒；收尾宽限不按角色缩短。Kimi print 没有可靠的输出 idle 信号，因此 driver 不启动 idle 计时器，仍使用 wall 上限和显式取消。
 
-`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；在适用输出 idle 检测的传输上，规划角色默认 900 秒，执行和评审保持 300 秒。这是策略上限，不能证明静默模型已经挂起。示例：
+`watchdog.roles.<role>` 可以只覆盖指定角色的 idle/wall；在适用输出 idle 检测的传输上，规划角色默认 900 秒，`execute` 默认 600 秒（10 分钟，适配重型编码与测试回合），评审等其余角色保持 300 秒。这是策略上限，不能证明静默模型已经挂起。示例：
 
 ```json
 {
@@ -921,6 +921,8 @@ Codex Pro 只有本次调用完整用量进入已知 token 计量，partial／un
 
 验收命令使用受限环境。项目需要 `GOCACHE`、`GOPATH` 等额外工具变量时，把变量名加入
 `verify.env-allowlist` 并确保引擎环境已有该变量；不要将凭证值写入契约或提交的配置。
+
+在 Worktree 模式下，单元 Worktree 内安装的未跟踪依赖目录不会随 `git merge` 进入主仓库。可按需配置可选字段 `verify.prepare-cmd`（长度不超过 1000 字节的非空命令，例如 `npm ci`），由编排器在执行里程碑 L2/L3 门禁并计算 `beforeIdentity` 之前先在主仓库准备一次依赖，避免未跟踪依赖安装触发候选变更误报；若 `prepare-cmd` 失败，门禁记录 `levels.prepare` 并清晰失败。也可让 L2/L3 门禁命令自身对依赖目录保持自包含。
 
 ## 无推理诊断
 

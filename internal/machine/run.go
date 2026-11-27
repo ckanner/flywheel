@@ -581,6 +581,7 @@ func (c *Context) run() (TaskSummary, error) {
 		}
 		c.appendRetro(fmt.Sprintf("- %s milestone %s: closed (gate pass, judge %s)", c.nowISO(), milestone.ID, judgeScore))
 		c.appendRetro(c.milestoneSummaryLine(milestone, budgetStartTokens, budgetStartCost))
+		c.appendDeliveredMilestoneMemory(milestone, fmt.Sprintf("gate pass, judge %s", judgeScore))
 		c.save()
 	}
 
@@ -666,10 +667,11 @@ func (c *Context) milestoneSummaryLine(milestone contract.Milestone, startTokens
 
 // RunSingleStepOpts 手工单步模式入参。
 type RunSingleStepOpts struct {
-	Session *SessionCommand
-	Packet  *PacketCommand
+	Session   *SessionCommand
+	Packet    *PacketCommand
+	Milestone *MilestoneCommand
 	RunOpts
-	Only             string // plan | execute | review | verify | session | packet
+	Only             string // plan | execute | review | verify | session | packet | milestone
 	PacketID         string
 	ExpectedRevision *int64
 	RetryReason      string
@@ -697,6 +699,16 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 		}
 	} else if opts.Packet != nil {
 		return TaskSummary{}, fmt.Errorf("packet payload requires packet stage")
+	}
+	if opts.Only == "milestone" {
+		if opts.Milestone == nil || opts.ExpectedRevision == nil || opts.Milestone.Revision != *opts.ExpectedRevision {
+			return TaskSummary{}, fmt.Errorf("milestone command requires matching revision-bound input")
+		}
+		if err := opts.Milestone.Validate(); err != nil {
+			return TaskSummary{}, err
+		}
+	} else if opts.Milestone != nil {
+		return TaskSummary{}, fmt.Errorf("milestone payload requires milestone stage")
 	}
 
 	if opts.RetryReason != "" && (opts.ExpectedRevision == nil || opts.Only != "execute" || strings.TrimSpace(opts.RetryReason) == "" || len(opts.RetryReason) > 1000) {
@@ -754,6 +766,10 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 		ctx.State.Control.Kind += "." + opts.Packet.Action
 		ctx.State.Control.Packet = opts.Packet.PacketID
 	}
+	if opts.Milestone != nil {
+		ctx.State.Control.Kind += "." + opts.Milestone.Action
+		ctx.State.Control.Packet = opts.Milestone.MilestoneID
+	}
 	ctx.save()
 	var finishRecord func(*error)
 	defer func() {
@@ -776,6 +792,9 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	if opts.Packet != nil {
 		kind += "." + opts.Packet.Action
 	}
+	if opts.Milestone != nil {
+		kind += "." + opts.Milestone.Action
+	}
 	finishRecord, err = ctx.beginRunRecord(opts.IndexDir, kind)
 	if err != nil {
 		clearPid(ctx.TaskDir)
@@ -790,7 +809,8 @@ func RunSingleStep(opts RunSingleStepOpts) (result TaskSummary, runErr error) {
 	ctx.consoleRetryReason = opts.RetryReason
 	ctx.sessionCommand = opts.Session
 	ctx.packetCommand = opts.Packet
-	if opts.ExpectedRevision != nil && opts.Only != "session" && opts.Only != "packet" {
+	ctx.milestoneCommand = opts.Milestone
+	if opts.ExpectedRevision != nil && opts.Only != "session" && opts.Only != "packet" && opts.Only != "milestone" {
 		if ctx.State.Planning != nil && opts.Only == "plan" && opts.PacketID != "" {
 			return ctx.summary(), fmt.Errorf("use control planning scope packet for packet-specific refinement")
 		}
@@ -862,6 +882,12 @@ func (c *Context) runSingle(only, packetID string) (TaskSummary, error) {
 			return c.summary(), fmt.Errorf("missing packet command")
 		}
 		return c.triagePacket(*c.packetCommand)
+	}
+	if only == "milestone" {
+		if c.milestoneCommand == nil {
+			return c.summary(), fmt.Errorf("missing milestone command")
+		}
+		return c.triageMilestone(*c.milestoneCommand)
 	}
 	interrupted := c.markInterruptedUnits()
 	if len(interrupted) > 0 {

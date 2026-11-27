@@ -157,8 +157,10 @@ type MilestoneState struct {
 	Plan   *PlanProgress `json:"plan,omitempty"`
 	Status string        `json:"status"`
 	// Gate 门禁结论对象 {pass,levels,at,judge?}（§4.4/§7；schema 声明对象）。
-	Gate     any     `json:"gate"`
-	ClosedAt *string `json:"closed-at"`
+	Gate          any            `json:"gate"`
+	ClosedAt      *string        `json:"closed-at"`
+	HumanGuidance string         `json:"human-guidance,omitempty"`
+	HumanSignoff  *PacketSignoff `json:"human-signoff,omitempty"`
 }
 
 // BudgetTotals 预算累计。

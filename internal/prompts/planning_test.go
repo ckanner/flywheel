@@ -332,6 +332,21 @@ func TestDecodePlanOutputFencedMultiFileAndPatchMerge(t *testing.T) {
 	assert.Equal(t, existing["spec.md"], inherited.Files["spec.md"])
 	assert.Equal(t, "# New Packet 2", inherited.Files["task-packet-M01-T02.md"])
 
+	// 3b. SPEC-02: patch mode with explicit keep omitting spec.md auto-preserves existing spec.md
+	// unless spec.md is explicitly listed in remove.
+	fencedPatchOmitSpec := "<<<FLYWHEEL_PLAN_META>>>\n{\"mode\":\"patch\",\"keep\":[\"task-packet-M01-T01.md\"]}\n<<<END_FLYWHEEL_PLAN_META>>>\n" +
+		"<<<FLYWHEEL_FILE path=\"task-packet-M01-T02.md\">>>\n# Updated Packet 2\n<<<END_FLYWHEEL_FILE>>>"
+	autoPreserved, err := DecodePlanOutput(fencedPatchOmitSpec, existing)
+	require.NoError(t, err)
+	assert.Equal(t, existing["spec.md"], autoPreserved.Files["spec.md"])
+	assert.Equal(t, "# Updated Packet 2", autoPreserved.Files["task-packet-M01-T02.md"])
+
+	fencedPatchRemoveSpec := "<<<FLYWHEEL_PLAN_META>>>\n{\"mode\":\"patch\",\"keep\":[\"task-packet-M01-T01.md\"],\"remove\":[\"spec.md\"]}\n<<<END_FLYWHEEL_PLAN_META>>>\n" +
+		"<<<FLYWHEEL_FILE path=\"task-packet-M01-T02.md\">>>\n# Updated Packet 2\n<<<END_FLYWHEEL_FILE>>>"
+	removedSpec, err := DecodePlanOutput(fencedPatchRemoveSpec, existing)
+	require.NoError(t, err)
+	assert.NotContains(t, removedSpec.Files, "spec.md")
+
 	// 4. Error paths: >1 MiB, unclosed meta, invalid meta, malformed header, invalid path, duplicate path, unclosed file.
 	_, err = DecodePlanOutput(planFilePrefixTag+"a.md\">>>\n"+strings.Repeat("x", 1<<20)+"\n"+planFileEndTag, nil)
 	require.Error(t, err)

@@ -40,9 +40,11 @@ flowchart LR
 | `sidebar.right.pane.tab` | Compact Live Companion | Active task progress bar, running packet badge, one-click jump to Workbench (`layout.selectPanel('flywheel')`), and Stop control |
 | `conversation.chat.commandview` | `/flywheel` Command Card | Read-only command result summary with one-click jump to Workbench |
 
-Human-only actions (`planning.approve` and `session.abandon`) mint host-owned `dsh`
+Human-only actions (`planning.approve`, `session.abandon`, `packet`, and `milestone`) mint host-owned `dsh`
 proofs directly inside `flywheelConsole.act`; LLM tools (`flywheel_launch` and
 `flywheel_control`) remain strictly blocked from invoking them.
+
+In the main chat stream, Stage 1 renders blocked-session banners only for planning roles, while execution/review/judge interruptions, `inbox` packets, and escalated milestone gates/Judge verdicts converge in the persistent bottom-of-stream **Human Triage** card (with one-line error summaries, collapsible technical details, failed L2/L3 stderr tails or Judge reasons, and one-click retry/accept controls). Completed mid-execution plan revisions collapse by default, actively running packet cards (including `l1-passed` packets with an active review trace) display an accent border highlight, and the sub-session telemetry dock displays 1-based live turn counters (`Turn N`) instead of `0t`.
 
 ## Find a task without entering paths
 

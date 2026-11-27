@@ -124,6 +124,7 @@ type CredentialsConfig struct {
 // VerifyConfig 闸门命令参数（§4.4）。
 type VerifyConfig struct {
 	CommandTimeoutMs      int64    `json:"command-timeout-ms"`
+	PrepareCmd            string   `json:"prepare-cmd,omitempty"`
 	EnvAllowlist          []string `json:"env-allowlist"`
 	TestFilePatterns      []string `json:"test-file-patterns"`
 	ProtectedTestPatterns []string `json:"protected-test-patterns"`
@@ -226,13 +227,15 @@ func Default() Config {
 			WallTimeoutMs: 3_600_000,
 			KillGraceMs:   5_000,
 			// Design and plan calls can legitimately wait for a model or an
-			// observed native subagent without stdout activity. Execute/review
-			// keep the tighter generic hang detector.
+			// observed native subagent without stdout activity. Execute gets a
+			// 10-minute idle allowance for heavy build/test turns while review
+			// and other roles keep the tighter generic hang detector.
 			Roles: map[string]WatchdogRoleConfig{
 				"design-plan":   {IdleTimeoutMs: 900_000},
 				"design-review": {IdleTimeoutMs: 900_000},
 				"plan":          {IdleTimeoutMs: 900_000},
 				"plan-review":   {IdleTimeoutMs: 900_000},
+				"execute":       {IdleTimeoutMs: 600_000},
 			},
 		},
 		Retry: RetryConfig{
@@ -488,6 +491,9 @@ func (c *Config) Validate() error {
 	// >= 1——显式 0 不再被 Normalize 的默认值吞掉（review 修正）。
 	if c.DefectInjection.EveryNUnits != nil && *c.DefectInjection.EveryNUnits < 1 {
 		return errors.New("defect-injection.every-n-units must be an integer >= 1")
+	}
+	if c.Verify.PrepareCmd != "" && (strings.TrimSpace(c.Verify.PrepareCmd) == "" || len(c.Verify.PrepareCmd) > 1000 || strings.ContainsRune(c.Verify.PrepareCmd, 0)) {
+		return errors.New("verify.prepare-cmd must be a non-blank command of at most 1000 bytes without NUL")
 	}
 	for name, patterns := range map[string][]string{
 		"test-file-patterns":      c.Verify.TestFilePatterns,

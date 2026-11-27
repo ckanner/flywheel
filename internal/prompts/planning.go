@@ -143,6 +143,13 @@ func DecodePlanOutput(text string, existingFiles map[string]string) (PlanOutput,
 				}
 			}
 		}
+		if meta.Mode == "patch" && !removed["spec.md"] {
+			if _, kept := files["spec.md"]; !kept {
+				if content, ok := existingFiles["spec.md"]; ok {
+					files["spec.md"] = content
+				}
+			}
+		}
 	}
 	maps.Copy(files, emitted)
 	return PlanOutput{Files: files}, nil
@@ -528,7 +535,7 @@ func BuildPlanningPrompt(p *planning.State, request planning.Request, reviewer b
 			"1. 严格严重度分层：仅当存在需求/已冻结质量门禁漏项、架构矛盾、安全/数据硬边界违规或缺少可验证验收路径时标 blocker；存在带真实反例的正确性/可维护性硬缺陷时标 major；属于实现期微调、罕见理论边界或锦上添花建议的统一标 minor（status 可保持 open），绝不得因 minor 阻断 pass。\n" +
 			"2. 产品取舍交给人：若分歧属于主观产品偏好而非客观工程缺陷，返回 verdict:needs-user-decision 交由用户拍板，不要在 revise 中反复拉锯。\n" +
 			"3. 单调收敛（不挪球门）：第 2 轮及以上重点逐条核对 latest-review / review-history-index 中尚未关闭的 blocker/major 是否真实闭合，以及修订是否引入新的 blocker 回归；不要每轮持续发明新的低优先级吹毛求疵项。pass 时必须以相同 ID 显式返回 resolved 及具体 resolution，不能省略发现或仅降低严重程度。\n" +
-			"4. 已有发现全部关闭不代表新方案自动通过。不要继承或索取Planner私有推理。pass必须没有未解决阻断或待用户决定的必要项。子计划必须对照已批准根设计和累计变化，判断 within-envelope/material-change/unclear；不能弱化验收或扩大权限，改变公共接口/数据安全/费用渠道属于实质变化。审查任务包 acceptance.L1 时：a) 若发现对配置/脚本仅做源码字符串 includes 检查或缺少真实行为断言，标 blocker 补齐；b) 若发现将 Flywheel 编排器内部状态（如 state.json、账本回执）写进业务验收，或在 YAML frontmatter 内联超长（>10 行）JS/Shell 脚本导致契约臃肿易出错，必须标 blocker 要求改由正式单测或独立受保护脚本（oracles/verify-*.mjs）承担。\n" +
+			"4. 已有发现全部关闭不代表新方案自动通过。不要继承或索取Planner私有推理，也严禁读取或搜索仓库外的个人全局记忆目录（如 ~/.codex/memories、~/.claude 等）。pass必须没有未解决阻断或待用户决定的必要项。子计划必须对照已批准根设计和累计变化，判断 within-envelope/material-change/unclear；不能弱化验收或扩大权限，改变公共接口/数据安全/费用渠道属于实质变化。审查任务包 acceptance.L1 时：a) 若发现对配置/脚本仅做源码字符串 includes 检查或缺少真实行为断言，标 blocker 补齐；b) 若发现将 Flywheel 编排器内部状态（如 state.json、账本回执）写进业务验收，或在 YAML frontmatter 内联超长（>10 行）JS/Shell 脚本导致契约臃肿易出错，必须标 blocker 要求改由正式单测或独立受保护脚本（oracles/verify-*.mjs）承担；c) 严禁把微观词法/正则极端边界样例塞进 task-packet-*.md 契约，应聚焦模块边界、公开接口与可验证行为。\n" +
 			"只返回JSON {\"verdict\":\"pass|revise|needs-user-decision|blocked\",\"scope-verdict\":\"within-envelope|material-change|unclear\",\"summary\":\"...\",\"findings\":[{\"id\":\"D-1\",\"severity\":\"blocker|major|minor\",\"target\":\"需求/段落\",\"evidence\":\"事实/反例\",\"impact\":\"影响\",\"status\":\"open|resolved\",\"resolution\":\"关闭证据\"}]}。普通非联合根设计可省略scope-verdict；compact-v1必须包含上述设计、覆盖与范围三个结论字段。" + inputTail
 	}
 	if rootScope {
@@ -540,9 +547,9 @@ func BuildPlanningPrompt(p *planning.State, request planning.Request, reviewer b
 	packetSchema, _ := templates.FS.ReadFile("task-packet.schema.json")
 	specExample, _ := templates.FS.ReadFile("spec.example.md")
 	packetExample, _ := templates.FS.ReadFile("task-packet.example.md")
-	return common + "你负责已批准根设计下的实施计划细化。若输入包含 approved-ui-prototype，必须将已批准的视觉原型（html-file、design-tokens、states）与可量化质量门禁（clarification.selected-gates）完整落入对应 task-packet 的验收条件（L1/L2）与实现步骤。返回完整或增量更新的当前任务投影文件（保留未受影响/已完成packets）。根goal、requirements和milestone目标/验收底线保持；当前scope细化为真实步骤、写入边界/依赖、具体可执行验收。三层验收规范：① YAML acceptance.L1 只写简洁运行命令（如 npm run typecheck / vitest / node docs/<slug>/oracles/verify-<id>.mjs）并在正文写清必须覆盖的行为断言清单，严禁在 YAML 内联超长（>10 行）JS/Shell 脚本，严禁仅用源码字符串 includes 检查敷衍，也严禁将 Flywheel 编排器内部状态（state.json、orchestrator.pid、.sessions/、受管账本回执）写入业务验收；② 需要独立防作弊黑盒校验时，输出独立脚本文件 `oracles/verify-<packet-id>.mjs`（或 `.sh`），Go 会自动做语法预检并锁定只读；③ 普通单测与回归测试由执行器写入正式测试目录并经独立 Review 与缺陷注入核验。每个packet必须有schedule.after及明确schedule.writes且在根implementation-scope内。只有确有2–8个可独立完成、写入范围互不重叠的子任务时，才声明collaboration:{version:1,tasks:[{goal,writes}]}；每项writes必须属于schedule.writes，分工随整份契约受审。此类任务使用Full，不可放入compact/Quick；没有合理分工时省略该字段，不为启用蜂群制造子任务。未来无packet里程碑标记planning: deferred，已有packet标记ready。不要造空packet/true验收，不能改外部oracle或配置，不能写planning-ref（Go会注入）。若批准设计不可行，保留事实供独立review识别material-change，不擅自改变整体约束。\n\n" +
+	return common + "你负责已批准根设计下的实施计划细化。若输入包含 approved-ui-prototype，必须将已批准的视觉原型（html-file、design-tokens、states）与可量化质量门禁（clarification.selected-gates）完整落入对应 task-packet 的验收条件（L1/L2）与实现步骤。返回完整或增量更新的当前任务投影文件（保留未受影响/已完成packets）。根goal、requirements和milestone目标/验收底线保持；当前scope细化为真实步骤、写入边界/依赖、具体可执行验收。契约抽象层级纪律：task-packet-*.md 必须聚焦模块边界、公开接口与可验证行为，禁止把微观词法/正则极端边界样例写进任务包契约。Worktree 依赖约定：Worktree 模式下，跨包 L2/L3 门禁命令在主仓库执行（单元 worktree 中的未跟踪依赖目录不会随 git merge 进入主仓库），因此 L2/L3 门禁命令应对未跟踪依赖自包含（或配合 flywheel.config.json 中的 verify.prepare-cmd 准备主仓库依赖）。三层验收规范：① YAML acceptance.L1 只写简洁运行命令（如 npm run typecheck / vitest / node docs/<slug>/oracles/verify-<id>.mjs）并在正文写清必须覆盖的行为断言清单，严禁在 YAML 内联超长（>10 行）JS/Shell 脚本，严禁仅用源码字符串 includes 检查敷衍，也严禁将 Flywheel 编排器内部状态（state.json、orchestrator.pid、.sessions/、受管账本回执）写入业务验收；② 需要独立防作弊黑盒校验时，输出独立脚本文件 `oracles/verify-<packet-id>.mjs`（或 `.sh`），Go 会自动做语法预检并锁定只读；③ 普通单测与回归测试由执行器写入正式测试目录并经独立 Review 与缺陷注入核验。每个packet必须有schedule.after及明确schedule.writes且在根implementation-scope内。只有确有2–8个可独立完成、写入范围互不重叠的子任务时，才声明collaboration:{version:1,tasks:[{goal,writes}]}；每项writes必须属于schedule.writes，分工随整份契约受审。此类任务使用Full，不可放入compact/Quick；没有合理分工时省略该字段，不为启用蜂群制造子任务。未来无packet里程碑标记planning: deferred，已有packet标记ready。不要造空packet/true验收，不能改外部oracle或配置，不能写planning-ref（Go会注入）。若批准设计不可行，保留事实供独立review识别material-change，不擅自改变整体约束。\n\n" +
 		"## 输出格式（推荐免转义多文件块，零 JSON 转义错误；亦兼容传统 JSON）\n" +
-		"优先使用免转义多文件块输出（增量修订时用 mode:\"patch\" 只输出变更文件，keep 列出沿用的未改动/已完成文件，勿重复输出未改包）：\n" +
+		"优先使用免转义多文件块输出（增量修订时用 mode:\"patch\" 只输出变更文件，keep 列出沿用的未改动/已完成文件，勿重复输出未改包；若 spec.md 无需修改，必须将 \"spec.md\" 放入 keep，禁止从记忆重写未变更的冻结契约）：\n" +
 		"<<<FLYWHEEL_PLAN_META>>>\n{\"mode\":\"patch\",\"keep\":[\"spec.md\",\"task-packet-M01-T01.md\"],\"remove\":[]}\n<<<END_FLYWHEEL_PLAN_META>>>\n" +
 		"<<<FLYWHEEL_FILE path=\"task-packet-M01-T02.md\">>>\n--- ... 完整 Markdown 与 YAML frontmatter，无需任何 JSON 转义 ---\n<<<END_FLYWHEEL_FILE>>>\n" +
 		"（可选独立黑盒验收脚本可用 `<<<FLYWHEEL_FILE path=\"oracles/verify-M01-T02.mjs\">>>` 输出；传统格式 `{\"files\":{\"spec.md\":\"...\"}}` 仍受兼容。）\n\n" +

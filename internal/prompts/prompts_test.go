@@ -157,7 +157,8 @@ func TestBuildReviewPromptSections(t *testing.T) {
 
 	base := BuildReviewPrompt(ReviewArgs{Packet: pkt, L1Evidence: l1, DiffSummary: "- src/a.go"})
 	assert.Contains(t, base, "## Review rubric (pass line included)\nPass line: score >= 0.8.")
-	assert.Contains(t, base, "Monotone convergence (do not move goalposts)")
+	assert.Contains(t, base, "Monotone convergence & anti-fuzzing (do not move goalposts)")
+	assert.Contains(t, base, "~/.codex/memories")
 	assert.Contains(t, base, "Complete enumeration (no drip-feeding)")
 	assert.Contains(t, base, "Never block on orchestrator metadata")
 	assert.Contains(t, base, `Use "verification-gap" ONLY when`)
@@ -254,6 +255,25 @@ func TestBuildJudgePromptCoverageMatrix(t *testing.T) {
 	assert.Contains(t, out, "- R-01 Tokenize -> M01-T01(L1✓/Review—)")
 	assert.Contains(t, out, "- R-02 Parse -> M01-T01(L1✓/Review—)")
 	assert.Contains(t, out, `"cmd": "gate"`)
+	assert.Contains(t, out, "~/.codex/memories")
+	assert.Contains(t, out, "Closed-world DoD")
+	assert.Contains(t, out, "No synthetic adversarial fuzzing")
+	assert.Contains(t, out, `"advisory"`)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "project-context.md"), []byte("# Delegated\nKeep helper scripts minimal.\n"), 0o644))
+	withOpts := BuildJudgePrompt(spec, contract.Milestone{ID: "M-01", Title: "Parser core"}, []*contract.Packet{pkt}, st, nil, JudgeOptions{
+		TaskDir:       dir,
+		HumanGuidance: "Do not reject on synthetic preload imagesrcset edge cases.",
+	})
+	assert.Contains(t, withOpts, "## Project context memory (stable)")
+	assert.Contains(t, withOpts, "Keep helper scripts minimal.")
+	assert.Contains(t, withOpts, "## Human triage guidance (authoritative scope decision)")
+	assert.Contains(t, withOpts, "Do not reject on synthetic preload imagesrcset edge cases.")
+
+	reviewWithMem := BuildReviewPrompt(ReviewArgs{Packet: pkt, TaskDir: dir, L1Evidence: map[string]any{"pass": true}, DiffSummary: "- a.go"})
+	assert.Contains(t, reviewWithMem, "## Project context memory (stable)")
+	assert.Contains(t, reviewWithMem, "Keep helper scripts minimal.")
 
 	// 无证据对象 → 双破折号。
 	st.Packets["M01-T01"].Evidence = state.Evidence{}

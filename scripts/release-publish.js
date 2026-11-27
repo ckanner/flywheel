@@ -165,11 +165,16 @@ async function publish(candidate, directory, { runNpm = defaultRunNpm, wait = de
     const result = runNpm(["publish", file, "--access", "public", "--ignore-scripts", provenance, "--tag", tag]);
     if (abnormalExit(result)) throw failure(`npm publish ${entry.name}`, result);
     if (result.status !== 0) {
-      // A network failure may happen after npm accepted the package. Only its
-      // exact registry integrity can turn an uncertain response into success.
-      const actual = remoteIntegrity(entry, runNpm);
-      if (actual === null) throw failure(`npm publish ${entry.name}`, result);
-      checkIntegrity(entry, actual, true);
+      const combinedOutput = `${result.stderr ?? ""}\n${result.stdout ?? ""}`;
+      if (/\b409\b/.test(combinedOutput) && /previously staged version/i.test(combinedOutput)) {
+        log(`npm returned 409 previously staged version for ${entry.name}@${entry.version}; polling registry until visible and verifying integrity`);
+      } else {
+        // A network failure may happen after npm accepted the package. Only its
+        // exact registry integrity can turn an uncertain response into success.
+        const actual = remoteIntegrity(entry, runNpm);
+        if (actual === null) throw failure(`npm publish ${entry.name}`, result);
+        checkIntegrity(entry, actual, true);
+      }
     }
     await waitForPackage(entry, { runNpm, wait, now });
     log(`Published and verified ${entry.name}@${entry.version} under ${tag}`);

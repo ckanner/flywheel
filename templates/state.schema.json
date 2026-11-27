@@ -522,7 +522,20 @@
               "at": { "type": "string" }
             }
           },
-          "closed-at": { "type": ["string", "null"] }
+          "closed-at": { "type": ["string", "null"] },
+          "human-guidance": { "type": "string", "maxLength": 2000, "description": "Explicit human milestone triage guidance injected into the next Judge verification." },
+          "human-signoff": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "reason", "authority", "source", "candidate"],
+            "properties": {
+              "at": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+              "authority": { "const": "human" },
+              "source": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "candidate": { "type": "string", "minLength": 1 }
+            }
+          }
         }
       }
     },

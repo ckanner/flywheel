@@ -10,6 +10,7 @@ import { ControlNotDispatchedError } from './control.js';
 import { validPlanningCommand } from './planning-control.js';
 import { validSessionAbandonCommand } from './session-control.js';
 import { validPacketTriageCommand } from './packet-control.js';
+import { validMilestoneTriageCommand } from './milestone-control.js';
 import { buildResumeInfo, readTaskTraceDetail, readTaskTraces, unwrapStreamingContractMarkdown } from './trace-parser.js';
 
 export const consoleReadActions = new Set([
@@ -20,7 +21,7 @@ export const consoleReadActions = new Set([
 
 export const consoleActActions = new Set([
   'planning', 'investigate', 'launch', 'start', 'stop', 'step',
-  'config-save', 'session', 'packet', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
+  'config-save', 'session', 'packet', 'milestone', 'deliver', 'open-terminal', 'open-artifact', 'save-attachment',
 ]);
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -634,7 +635,24 @@ export class ConsoleReadService extends Service {
           ...(payload.packet.guidance ? { guidance: payload.packet.guidance } : {}),
         };
       }
-      const value = await this.control(payload, undefined, this._signal(signal), 'ui:' + commandId, humanPlanningAction, humanSessionAction, sessionId, humanPacketAction);
+      let humanMilestoneAction;
+      if (payload.action === 'milestone') {
+        if (!validMilestoneTriageCommand(payload.milestone) || typeof payload.taskDir !== 'string' || !payload.taskDir) {
+          throw new ControlNotDispatchedError('Milestone triage requires a valid milestone command and taskDir');
+        }
+        humanMilestoneAction = {
+          kind: 'dsh',
+          sessionId,
+          commandId,
+          taskDir: payload.taskDir,
+          milestoneId: payload.milestone['milestone-id'],
+          revision: payload.milestone.revision,
+          action: payload.milestone.action,
+          reason: payload.milestone.reason,
+          ...(payload.milestone.guidance ? { guidance: payload.milestone.guidance } : {}),
+        };
+      }
+      const value = await this.control(payload, undefined, this._signal(signal), 'ui:' + commandId, humanPlanningAction, humanSessionAction, sessionId, humanPacketAction, humanMilestoneAction);
       return { result: { kind: 'success', text: JSON.stringify(value) } };
     } catch (error) {
       return { result: { kind: 'error', text: JSON.stringify(this.failure(input, error)) } };

@@ -655,15 +655,29 @@ function parseJsonLine(rawLine, ts, blocks, sessionRef, activitySteps = []) {
   // Capture context window occupancy from ACP usage_update, Codex rollout token_count,
   // Claude native assistant usage, or worker telemetry frames.
   const usageUpdate =
-    (obj.type === 'usage_update' && obj) ||
+    (obj.type === 'usage_update' && (obj.data && typeof obj.data === 'object' ? obj.data : obj)) ||
+    (obj.sessionUpdate === 'usage_update' && obj) ||
     (obj.update?.sessionUpdate === 'usage_update' && obj.update) ||
     (obj.params?.update?.sessionUpdate === 'usage_update' && obj.params.update) ||
+    (obj.event?.update?.sessionUpdate === 'usage_update' && obj.event.update) ||
     (obj.receipt?.contextUsage && typeof obj.receipt.contextUsage === 'object' && obj.receipt.contextUsage) ||
     null;
-  if (usageUpdate && typeof usageUpdate.used === 'number' && typeof usageUpdate.size === 'number' && usageUpdate.size > 0) {
+  const ctxUsed =
+    usageUpdate && typeof usageUpdate.used === 'number'
+      ? usageUpdate.used
+      : usageUpdate && typeof usageUpdate.contextUsed === 'number'
+        ? usageUpdate.contextUsed
+        : null;
+  const ctxSize =
+    usageUpdate && typeof usageUpdate.size === 'number'
+      ? usageUpdate.size
+      : usageUpdate && typeof usageUpdate.contextSize === 'number'
+        ? usageUpdate.contextSize
+        : null;
+  if (ctxUsed !== null && ctxSize !== null && ctxSize > 0) {
     sessionRef.contextUsage = {
-      used: usageUpdate.used,
-      size: usageUpdate.size,
+      used: ctxUsed,
+      size: ctxSize,
       ...(typeof usageUpdate.source === 'string' && usageUpdate.source ? { source: usageUpdate.source } : {}),
     };
   }

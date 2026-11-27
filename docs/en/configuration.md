@@ -772,7 +772,7 @@ cost stay unknown. Workflow, Review/Judge and delivery authorization are separat
 
 `watchdog` provides an output-idle bound where the transport exposes progress, an absolute `wall-timeout-ms` bound, and a `kill-grace-ms` SIGTERM-to-SIGKILL grace. Defaults are 300 seconds idle, 3600 seconds wall, and 5 seconds grace; the kill grace is never shortened per role. Kimi print has no reliable output-idle signal, so its driver uses the wall bound and explicit cancellation without arming the idle timer.
 
-`watchdog.roles.<role>` overrides idle/wall for one role. Where output-idle detection applies, planning roles default to 900 seconds while execute and review keep 300 seconds. These are policy bounds, not proof that a silent model is hung. Example:
+`watchdog.roles.<role>` overrides idle/wall for one role. Where output-idle detection applies, planning roles default to 900 seconds, `execute` defaults to 600 seconds (10 minutes) for heavy coding/test turns, and `review` and other roles keep 300 seconds. These are policy bounds, not proof that a silent model is hung. Example:
 
 ```json
 {
@@ -967,6 +967,8 @@ For Codex Pro, only complete usage for the current run enters known token accoun
 The default token budget is soft, with a daily limit of 2,000,000 tokens. A soft budget reports uncertainty. A hard budget stops when unknown usage makes compliance unverifiable. Disabling enforcement does not turn off accounting or convert unknown values to zero.
 
 Acceptance commands use a restricted environment. If the project requires additional tool variables such as `GOCACHE` or `GOPATH`, add their names to `verify.env-allowlist` and ensure they exist in the engine's environment. Do not put secret values into task contracts or committed configuration.
+
+In worktree mode, untracked dependency directories installed inside a unit's worktree are not carried into the main checkout by `git merge`. Configure optional `verify.prepare-cmd` (a non-blank command up to 1000 bytes, e.g. `npm ci`) to prepare main-checkout dependencies once before milestone L2/L3 gates snapshot `beforeIdentity`, or keep L2/L3 commands self-contained. If `verify.prepare-cmd` fails, Flywheel records `levels.prepare` and fails the milestone gate explicitly.
 
 ## Diagnose without inference
 

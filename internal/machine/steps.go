@@ -162,11 +162,12 @@ type verdictOutcome struct {
 // ---- Review 步骤（§4.3）----
 
 type reviewOutcome struct {
-	Pass       bool
-	Stopped    bool
-	Converging bool
-	Verdict    *prompts.Verdict
-	ErrorCode  errs.ErrorCode
+	Pass         bool
+	Stopped      bool
+	Converging   bool
+	OpenFindings int
+	Verdict      *prompts.Verdict
+	ErrorCode    errs.ErrorCode
 }
 
 // ---- Judge 步骤（§7 里程碑终验）----

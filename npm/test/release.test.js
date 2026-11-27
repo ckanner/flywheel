@@ -460,6 +460,35 @@ test("an uncertain publish response succeeds only when registry bytes match", as
   assert.equal(remote.versions.size, 1);
 });
 
+test("npm 409 previously staged version polls registry until visible and verifies integrity", async (t) => {
+  const { directory, candidate } = candidateFixture(t);
+  const remote = registry(candidate);
+  let postPublishViews = 0;
+  let published = false;
+  remote.override = (args) => {
+    if (args[0] === "publish") {
+      published = true;
+      return {
+        status: 1,
+        stdout: "",
+        stderr: `npm error code E409\nnpm error 409 Conflict - PUT https://registry.npmjs.org/${META} - Cannot publish over previously staged version "${VERSION}".`,
+      };
+    }
+    if (published && args[0] === "view" && args[2] === "dist.integrity") {
+      postPublishViews++;
+      if (postPublishViews >= 2) {
+        const entry = candidate.packages[0];
+        remote.versions.set(entry.name, entry.integrity);
+        return ok(entry.integrity);
+      }
+      return missing();
+    }
+  };
+  await publish(candidate, directory, remote.options);
+  assert.ok(postPublishViews >= 2, "expected waitForPackage polling after 409 staged conflict");
+  assert.equal(remote.versions.get(META), candidate.packages[0].integrity);
+});
+
 test("failed publish with no registry version stops before later packages", async (t) => {
   const { directory, candidate } = candidateFixture(t);
   const remote = registry(candidate);

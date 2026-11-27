@@ -586,10 +586,7 @@ func (c *Context) runExecuteLoop(packet *contract.Packet, manualReason ...string
 		if !c.sessionReplay("execute", packet.PacketID) && c.budgetGate() == "stop" {
 			return execLoopOutcome{Stopped: true}, nil
 		}
-		maxRetries := packet.Escalation.MaxRetries // 每轮重读：planner 可能修订它
-		if cap := c.Config.Guardrails.MaxPacketAttempts; cap != nil && *cap < maxRetries {
-			maxRetries = *cap
-		}
+		maxRetries := c.effectiveMaxRetries(packet, c.State.Packets[packet.PacketID])
 		if manualUsed || (reason == "" && c.State.Packets[packet.PacketID].FailedAttempts >= maxRetries) {
 			return execLoopOutcome{Bounded: true}, nil
 		}
@@ -763,6 +760,11 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 				return "upgrade", nil
 			}
 			if r.Bounded || r.Spun {
+				if r.Bounded && !c.quick() && ps.Status == "review-failed" && lastFeedbackErrorCode(ps) == string(errReviewReturned) {
+					c.escalateToInbox(packet, fmt.Sprintf("packet %s code review did not converge (%d review returns, %d/%d attempts). Human needed.",
+						id, reviewReturnCount(ps), ps.FailedAttempts, c.effectiveMaxRetries(packet, ps)))
+					return "stop", nil
+				}
 				if done, out, err := handleEscalate(); done {
 					return out, err
 				}
@@ -901,13 +903,23 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 			code = review.ErrorCode
 		}
 		outcome := c.failAttempt(packet, code, nil, nil)
+		baseMax := c.packetMaxRetries(packet)
+		if code == errReviewReturned && !c.quick() && outcome != "spin" &&
+			review.Converging && review.OpenFindings > 0 && review.OpenFindings <= 2 &&
+			ps.FailedAttempts == baseMax && !convergenceGraceUsed(ps) {
+			c.recordRetry(ps, "attempt", string(code), "convergence-grace")
+			c.Log(fmt.Sprintf("%s: granting bounded +1 convergence grace (%d open findings, converging)", id, review.OpenFindings))
+			c.save()
+			continue
+		}
+		effectiveMax := c.effectiveMaxRetries(packet, ps)
 		reviewCapReached := code == errReviewReturned && c.Config.Guardrails.MaxReviewRounds != nil && reviewReturnCount(ps) >= *c.Config.Guardrails.MaxReviewRounds && !review.Converging
-		if outcome == "spin" || reviewCapReached {
+		if outcome == "spin" || reviewCapReached || (code == errReviewReturned && !c.quick() && ps.FailedAttempts >= effectiveMax) {
 			if code == errReviewReturned && !c.quick() {
 				// Ordinary code-review defects that failed to converge belong to
 				// human triage (inbox), not a full-milestone Plan Loop rewrite.
-				// Only verification-gap returns to Plan Loop automatically.
-				c.escalateToInbox(packet, fmt.Sprintf("packet %s code review did not converge (%d review returns). Human needed.", id, reviewReturnCount(ps)))
+				// Only verification-gap and persistent L1 failures return to Plan Loop automatically.
+				c.escalateToInbox(packet, fmt.Sprintf("packet %s code review did not converge (%d review returns, %d/%d attempts). Human needed.", id, reviewReturnCount(ps), ps.FailedAttempts, effectiveMax))
 				return "stop", nil
 			}
 			if done, out, err := handleEscalate(); done {
@@ -915,6 +927,47 @@ func (c *Context) processPacket(packet *contract.Packet, opts processOpts) (outc
 			}
 		}
 	}
+}
+
+func (c *Context) packetMaxRetries(packet *contract.Packet) int {
+	maxRetries := packet.Escalation.MaxRetries
+	if cap := c.Config.Guardrails.MaxPacketAttempts; cap != nil && *cap < maxRetries {
+		maxRetries = *cap
+	}
+	return maxRetries
+}
+
+func (c *Context) effectiveMaxRetries(packet *contract.Packet, ps *state.PacketState) int {
+	maxRetries := c.packetMaxRetries(packet)
+	if convergenceGraceUsed(ps) {
+		maxRetries++
+	}
+	return maxRetries
+}
+
+func convergenceGraceUsed(ps *state.PacketState) bool {
+	for i := len(ps.RetryHistory) - 1; i >= 0; i-- {
+		entry, ok := ps.RetryHistory[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["policy"] == "return-to-planner" || entry["policy"] == "human-triage" {
+			break
+		}
+		if entry["policy"] == "convergence-grace" {
+			return true
+		}
+	}
+	return false
+}
+
+func lastFeedbackErrorCode(ps *state.PacketState) string {
+	fb, ok := ps.LastFeedback.(map[string]any)
+	if !ok {
+		return ""
+	}
+	code, _ := fb["error-code"].(string)
+	return code
 }
 
 func l1PassTrue(ps *state.PacketState) bool {

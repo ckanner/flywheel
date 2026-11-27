@@ -12,8 +12,9 @@ func TestWatchdogDefaultsKeepPlanningObservedLonger(t *testing.T) {
 	assert.Equal(t, int64(300_000), d.Watchdog.IdleTimeoutMs)
 	assert.Equal(t, int64(900_000), d.Watchdog.Roles["design-plan"].IdleTimeoutMs)
 	assert.Equal(t, int64(900_000), d.Watchdog.Roles["plan"].IdleTimeoutMs)
-	_, executeOverride := d.Watchdog.Roles["execute"]
-	assert.False(t, executeOverride)
+	assert.Equal(t, int64(600_000), d.Watchdog.Roles["execute"].IdleTimeoutMs)
+	_, reviewOverride := d.Watchdog.Roles["review"]
+	assert.False(t, reviewOverride)
 }
 
 func TestWatchdogRolesFillDefaultsPerRole(t *testing.T) {
@@ -54,11 +55,14 @@ func TestWatchdogRoleOverridesNormalizeAndValidate(t *testing.T) {
 	require.ErrorContains(t, c.Validate(), "requires an idle or wall")
 
 	for name, mutate := range map[string]func(*Config){
-		"global idle too small": func(c *Config) { c.Watchdog.IdleTimeoutMs = 0 },
-		"global wall too large": func(c *Config) { c.Watchdog.WallTimeoutMs = 86_400_001 },
-		"role idle too large":   func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{IdleTimeoutMs: 86_400_001} },
-		"role wall too small":   func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{WallTimeoutMs: 0} },
-		"role wall too large":   func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{WallTimeoutMs: 86_400_001} },
+		"global idle too small":      func(c *Config) { c.Watchdog.IdleTimeoutMs = 0 },
+		"global wall too large":      func(c *Config) { c.Watchdog.WallTimeoutMs = 86_400_001 },
+		"role idle too large":        func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{IdleTimeoutMs: 86_400_001} },
+		"role wall too small":        func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{WallTimeoutMs: 0} },
+		"role wall too large":        func(c *Config) { c.Watchdog.Roles["execute"] = WatchdogRoleConfig{WallTimeoutMs: 86_400_001} },
+		"prepare-cmd blank":          func(c *Config) { c.Verify.PrepareCmd = "   " },
+		"prepare-cmd contains NUL":   func(c *Config) { c.Verify.PrepareCmd = "npm\x00ci" },
+		"prepare-cmd exceeds 1000 B": func(c *Config) { c.Verify.PrepareCmd = string(make([]byte, 1001)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := Default()
@@ -66,4 +70,7 @@ func TestWatchdogRoleOverridesNormalizeAndValidate(t *testing.T) {
 			require.Error(t, c.Validate())
 		})
 	}
+	okCfg := Default()
+	okCfg.Verify.PrepareCmd = "npm ci"
+	require.NoError(t, okCfg.Validate())
 }

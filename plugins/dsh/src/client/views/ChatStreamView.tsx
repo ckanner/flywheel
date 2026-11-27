@@ -213,13 +213,13 @@ function groupPlanningTracesIntoRounds(traces: TraceSummary[], isZh: boolean): T
   return rounds;
 }
 
-function packetTone(status?: string): { dot: string; pill: string; rowExtra: string } {
+function packetTone(status?: string, hasRunningTrace?: boolean): { dot: string; pill: string; rowExtra: string } {
   const s = (status ?? '').toLowerCase();
   if (['done', 'completed', 'passed'].includes(s)) {
     return { dot: styles.statusDotSuccess, pill: styles.pillSuccess, rowExtra: '' };
   }
-  if (['running', 'executing', 'reviewing'].includes(s)) {
-    return { dot: styles.statusDotRunning, pill: styles.pillRunning, rowExtra: '' };
+  if (['running', 'executing', 'reviewing'].includes(s) || (s === 'l1-passed' && hasRunningTrace)) {
+    return { dot: styles.statusDotRunning, pill: styles.pillRunning, rowExtra: styles.subAgentRowCardRunning };
   }
   if (['failed', 'blocked'].includes(s)) {
     return { dot: styles.statusDotDanger, pill: styles.pillDanger, rowExtra: styles.subAgentRowCardDanger };
@@ -345,6 +345,8 @@ export function ChatStreamView({
   const [abandonErrors, setAbandonErrors] = useState<Record<string, string>>({});
   const [triageGuidance, setTriageGuidance] = useState<Record<string, string>>({});
   const [triageErrors, setTriageErrors] = useState<Record<string, string>>({});
+  const [milestoneGuidance, setMilestoneGuidance] = useState<Record<string, string>>({});
+  const [milestoneErrors, setMilestoneErrors] = useState<Record<string, string>>({});
   const mainFileInputRef = useRef<HTMLInputElement | null>(null);
   const mainTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -359,6 +361,24 @@ export function ChatStreamView({
         reason: rec.reason || 'dispatch, outcome, cleanup or terminal candidate is unconfirmed',
       }));
   }, [snap.state]);
+
+  const isPlanningBlockedKey = (key: string) =>
+    key.startsWith('clarify/') ||
+    key.startsWith('design-plan/') ||
+    key.startsWith('design-review/') ||
+    key.startsWith('ui-prototype/') ||
+    key.startsWith('ui-prototype-review/') ||
+    key.startsWith('plan/') ||
+    key.startsWith('plan-review/');
+
+  const planningBlockedSessions = useMemo(
+    () => blockedSessions.filter(item => isPlanningBlockedKey(item.key)),
+    [blockedSessions],
+  );
+  const executionBlockedSessions = useMemo(
+    () => blockedSessions.filter(item => !isPlanningBlockedKey(item.key)),
+    [blockedSessions],
+  );
 
   const effectiveCwd = cwdOverride.trim() || snap.selectedCwd || '';
 
@@ -485,6 +505,77 @@ export function ChatStreamView({
         };
       });
   }, [packets, snap.state, isZh]);
+
+  const escalatedMilestones = useMemo(() => {
+    const rawMilestones = (snap.state as { milestones?: Record<string, Record<string, unknown>> } | null)?.milestones;
+    if (!rawMilestones || typeof rawMilestones !== 'object') return [];
+    const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
+      ? ((snap.state as { inbox?: Array<{ milestone?: string; 'packet-id'?: string | null; reason?: string; action?: string }> }).inbox ?? [])
+      : [];
+    const items: Array<{
+      id: string;
+      gatePassed: boolean;
+      identityError: string;
+      judgeVerdict: string;
+      judgeScore: number | null;
+      judgeReasons: string[];
+      judgeError: string;
+      failedCommands: Array<{ level: string; cmd: string; exitCode: number | null; outputTail: string }>;
+      inboxReason: string;
+      existingGuidance: string;
+    }> = [];
+    for (const id of Object.keys(rawMilestones).sort()) {
+      const ms = rawMilestones[id];
+      if (!ms || typeof ms !== 'object' || ms.status === 'closed') continue;
+      const gate = ms.gate && typeof ms.gate === 'object' ? (ms.gate as Record<string, unknown>) : null;
+      const judge = gate?.judge && typeof gate.judge === 'object' ? (gate.judge as Record<string, unknown>) : null;
+      const judgeVerdict = typeof judge?.verdict === 'string' ? judge.verdict : '';
+      const judgeScore = typeof judge?.score === 'number' && Number.isFinite(judge.score) ? judge.score : null;
+      const judgeReasons = Array.isArray(judge?.reasons)
+        ? (judge!.reasons as unknown[]).filter((r): r is string => typeof r === 'string' && r.trim() !== '')
+        : [];
+      const judgeError = typeof judge?.error === 'string' ? judge.error : '';
+      const latestInbox = [...inboxList].reverse().find(e => e?.milestone === id && !e?.['packet-id'] && !e?.action) ?? null;
+      const gateFailed = gate !== null && gate.pass === false;
+      const judgeFailed = Boolean(judgeVerdict && judgeVerdict !== 'pass') || Boolean(judgeError);
+      if (!gateFailed && !judgeFailed && !latestInbox) continue;
+      const failedCommands: Array<{ level: string; cmd: string; exitCode: number | null; outputTail: string }> = [];
+      const levels = gate?.levels && typeof gate.levels === 'object' ? (gate.levels as Record<string, unknown>) : null;
+      if (levels) {
+        for (const lvl of ['prepare', 'L2', 'L3']) {
+          const lvlObj = levels[lvl] && typeof levels[lvl] === 'object' ? (levels[lvl] as Record<string, unknown>) : null;
+          const results = Array.isArray(lvlObj?.results) ? (lvlObj!.results as Array<Record<string, unknown>>) : [];
+          for (const res of results) {
+            if (res && res.pass === false) {
+              const stderr = typeof res.stderr === 'string' ? res.stderr.trim() : '';
+              const stdout = typeof res.stdout === 'string' ? res.stdout.trim() : '';
+              const rawOut = stderr || stdout;
+              const tail = rawOut.length > 360 ? `…${rawOut.slice(-360)}` : rawOut;
+              failedCommands.push({
+                level: lvl,
+                cmd: typeof res.cmd === 'string' ? res.cmd : lvl,
+                exitCode: typeof res.exitCode === 'number' ? res.exitCode : typeof res['exit-code'] === 'number' ? Number(res['exit-code']) : null,
+                outputTail: tail,
+              });
+            }
+          }
+        }
+      }
+      items.push({
+        id,
+        gatePassed: gate?.pass === true,
+        identityError: typeof gate?.['identity-error'] === 'string' ? String(gate['identity-error']) : '',
+        judgeVerdict,
+        judgeScore,
+        judgeReasons,
+        judgeError,
+        failedCommands,
+        inboxReason: typeof latestInbox?.reason === 'string' ? latestInbox.reason : '',
+        existingGuidance: typeof ms['human-guidance'] === 'string' ? String(ms['human-guidance']) : '',
+      });
+    }
+    return items;
+  }, [snap.state]);
 
   const latestGeneralInboxReason = useMemo(() => {
     const inboxList = Array.isArray((snap.state as { inbox?: unknown } | null)?.inbox)
@@ -1425,10 +1516,10 @@ export function ChatStreamView({
               </div>
 
               <div className={styles.orchIndent}>
-                {/* Human-Friendly Interrupted Session Recovery Card */}
-                {blockedSessions.length > 0 && !snap.running && (
+                {/* Human-Friendly Interrupted Session Recovery Card (Stage 1 planning roles only) */}
+                {planningBlockedSessions.length > 0 && !snap.running && (
                   <div className={styles.blockedBanner} data-testid="main-blocked-sessions">
-                    {blockedSessions.map(item => {
+                    {planningBlockedSessions.map(item => {
                       const val = abandonReasons[item.key] ?? '';
                       const stageName = humanizeBlockedKey(item.key, isZh);
                       const isReadOnlyPlanning =
@@ -2100,8 +2191,12 @@ export function ChatStreamView({
 
                 <div className={styles.orchIndent}>
                   {wave.items.map(packet => {
-                    const tone = packetTone(packet.status);
                     const tr = traceByPacket.get(packet.id) ?? null;
+                    const pktTraces = packetTracesMap.get(packet.id) ?? [];
+                    const hasRunningPacketTrace =
+                      Boolean(tr?.running) ||
+                      pktTraces.some(item => item.running && (item.role === 'review' || item.role === 'frontend-ux-review' || item.role === 'execute'));
+                    const tone = packetTone(packet.status, hasRunningPacketTrace);
                     const needsAttention = ['failed', 'blocked', 'escalated', 'inbox'].includes((packet.status ?? '').toLowerCase());
                     const pktThinking = typeof (packet as Record<string, unknown>).thinking === 'string'
                       ? String((packet as Record<string, unknown>).thinking)
@@ -2113,7 +2208,6 @@ export function ChatStreamView({
                     const inboxEntry = (packet.status ?? '').toLowerCase() === 'inbox'
                       ? [...inboxList].reverse().find(item => item?.['packet-id'] === packet.id) ?? null
                       : null;
-                    const pktTraces = packetTracesMap.get(packet.id) ?? [];
                     const pktRevisions = revisionsByPacket.get(packet.id) ?? [];
                     const latestReviewTrace = [...pktTraces]
                       .reverse()
@@ -2290,15 +2384,14 @@ export function ChatStreamView({
 
               <div className={styles.orchIndent}>
                 <div className={styles.roundTimeline}>
-                  {midExecPlanRevisions.map((rev, rIdx) => {
-                    const isLatest = rIdx === midExecPlanRevisions.length - 1;
+                  {midExecPlanRevisions.map(rev => {
                     const durStr = formatDurationShort(rev.totalDurationMs);
                     return (
                       <details
                         key={rev.scope}
                         className={styles.planRevisionCard}
                         data-testid={`plan-revision-card-${rev.requestId}`}
-                        open={isLatest || rev.running}
+                        open={rev.running}
                       >
                         <summary className={styles.roundGroupHead}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2409,7 +2502,8 @@ export function ChatStreamView({
             (snap.state?.status === 'escalated' ||
               snap.state?.status === 'budget-stopped' ||
               inboxTriagePackets.length > 0 ||
-              blockedSessions.length > 0) && (
+              executionBlockedSessions.length > 0 ||
+              escalatedMilestones.length > 0) && (
               <section className={styles.orchBlock} data-testid="main-escalation-summary">
                 <div className={styles.orchBlockHead}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2420,11 +2514,13 @@ export function ChatStreamView({
                     <span className={`${styles.pill} ${styles.pillWarn}`}>
                       {inboxTriagePackets.length > 0
                         ? (isZh ? `${inboxTriagePackets.length} 个单元待裁决` : `${inboxTriagePackets.length} inbox packet(s)`)
-                        : blockedSessions.length > 0
-                          ? (isZh ? `${blockedSessions.length} 个阻塞会话` : `${blockedSessions.length} blocked session(s)`)
-                          : snap.state?.status === 'budget-stopped'
-                            ? (isZh ? '预算护栏暂停' : 'Budget guardrail')
-                            : (isZh ? '已升级至人工' : 'Escalated')}
+                        : executionBlockedSessions.length > 0
+                          ? (isZh ? `${executionBlockedSessions.length} 个阻塞会话` : `${executionBlockedSessions.length} blocked session(s)`)
+                          : escalatedMilestones.length > 0
+                            ? (isZh ? `${escalatedMilestones.length} 个里程碑待处置` : `${escalatedMilestones.length} milestone(s)`)
+                            : snap.state?.status === 'budget-stopped'
+                              ? (isZh ? '预算护栏暂停' : 'Budget guardrail')
+                              : (isZh ? '已升级至人工' : 'Escalated')}
                     </span>
                   </div>
                 </div>
@@ -2640,9 +2736,13 @@ export function ChatStreamView({
                     );
                   })}
 
-                  {inboxTriagePackets.length === 0 && blockedSessions.length > 0 && (
-                    <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-danger-border)', gap: 8 }}>
-                      {blockedSessions.map(item => (
+                  {executionBlockedSessions.length > 0 && (
+                    <div
+                      className={styles.decisionCard}
+                      data-testid="bottom-blocked-sessions"
+                      style={{ borderColor: 'var(--fw-danger-border)', gap: 10 }}
+                    >
+                      {executionBlockedSessions.map(item => (
                         <div key={`bottom-${item.key}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: 12.5 }}>
@@ -2679,6 +2779,32 @@ export function ChatStreamView({
                               {isZh ? '确认安全并重试' : 'Confirm Safe & Retry'}
                             </button>
                           </div>
+                          <div
+                            data-testid={`bottom-blocked-summary-${item.invocation}`}
+                            style={{ fontSize: 12, color: 'var(--fw-text-muted)', lineHeight: 1.5 }}
+                          >
+                            {item.reason}
+                          </div>
+                          <details data-testid={`bottom-blocked-details-${item.invocation}`} style={{ fontSize: 11.5, color: 'var(--fw-text-muted)' }}>
+                            <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
+                              {isZh ? '查看技术详情' : 'Technical details'}
+                            </summary>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                padding: '6px 8px',
+                                borderRadius: 6,
+                                background: 'var(--fw-bg-subtle)',
+                                fontFamily: 'var(--fw-mono)',
+                                fontSize: 11,
+                                lineHeight: 1.5,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                              }}
+                            >
+                              {`Session: ${item.key}\nCall ID: ${item.invocation}\nEngine: ${item.reason}`}
+                            </div>
+                          </details>
                           {abandonErrors[item.key] && (
                             <div style={{ fontSize: 12, color: 'var(--fw-danger)' }}>{abandonErrors[item.key]}</div>
                           )}
@@ -2686,6 +2812,194 @@ export function ChatStreamView({
                       ))}
                     </div>
                   )}
+
+                  {escalatedMilestones.map(ms => {
+                    const guidanceVal = milestoneGuidance[ms.id] ?? ms.existingGuidance;
+                    const errText = milestoneErrors[ms.id] ?? '';
+                    const latestJudgeTrace = [...snap.traces]
+                      .reverse()
+                      .find(tr => tr.role === 'judge' && tr.scope === ms.id) ?? null;
+
+                    const runMilestoneTriage = async (action: 'retry' | 'accept') => {
+                      const defaultReasons: Record<'retry' | 'accept', string> = {
+                        retry: isZh
+                          ? '人工确认后重新执行里程碑 L2/L3 门禁与 Judge 终验'
+                          : 'Human requested milestone gate and Judge re-verification',
+                        accept: isZh
+                          ? '里程碑确定性 L2/L3 门禁已通过当前 HEAD，人工签核关闭里程碑'
+                          : 'Milestone deterministic L2/L3 gate passed on current HEAD; human signed off to accept',
+                      };
+                      const reasonText =
+                        action === 'accept'
+                          ? (guidanceVal.trim() || defaultReasons.accept)
+                          : defaultReasons.retry;
+                      setMilestoneErrors(prev => {
+                        const next = { ...prev };
+                        delete next[ms.id];
+                        return next;
+                      });
+                      const res = await store.triageMilestone(action, ms.id, reasonText, guidanceVal);
+                      const ctrl = res?.['milestone-control'] ?? res?.milestoneControl;
+                      if (res?.ok && (ctrl ? ctrl.applied !== false : true)) {
+                        if (action === 'retry' || res?.state?.status !== 'completed') {
+                          await store.startRun();
+                        }
+                      } else {
+                        const msg =
+                          ctrl?.message ||
+                          (typeof res?.error === 'string' ? res.error : '') ||
+                          (isZh ? '里程碑处置请求未生效，请刷新状态后重试。' : 'Milestone triage action was not applied.');
+                        setMilestoneErrors(prev => ({ ...prev, [ms.id]: msg }));
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={`milestone-${ms.id}`}
+                        className={styles.decisionCard}
+                        data-testid={`milestone-triage-card-${ms.id}`}
+                        style={{ borderColor: 'var(--fw-warn-border)', background: 'var(--fw-warn-soft)', gap: 10 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span className={styles.packetId}>{ms.id}</span>
+                            <strong style={{ fontSize: 13 }}>
+                              {isZh ? `里程碑 ${ms.id} 终验待处置` : `Milestone ${ms.id} Verification Triage`}
+                            </strong>
+                            <span className={`${styles.pill} ${ms.gatePassed ? styles.pillSuccess : styles.pillDanger}`}>
+                              {ms.gatePassed
+                                ? (isZh ? '门禁已通过' : 'Gate Passed')
+                                : (isZh ? '门禁未通过' : 'Gate Failed')}
+                            </span>
+                            {ms.judgeVerdict && (
+                              <span className={`${styles.pill} ${styles.pillWarn}`}>
+                                {`Judge: ${ms.judgeVerdict}${ms.judgeScore !== null ? ` · ${ms.judgeScore.toFixed(2)}` : ''}`}
+                              </span>
+                            )}
+                          </div>
+                          {latestJudgeTrace && (
+                            <button
+                              type="button"
+                              className={styles.linkBtn}
+                              onClick={() =>
+                                store.drillIntoNode(ms.id, {
+                                  traceId: latestJudgeTrace.id,
+                                  sessionKey: latestJudgeTrace.key,
+                                })
+                              }
+                            >
+                              {isZh ? '查看裁决记录 →' : 'Inspect Judge trace →'}
+                            </button>
+                          )}
+                        </div>
+
+                        {ms.inboxReason && (
+                          <div style={{ fontSize: 12.5, color: 'var(--fw-text)', lineHeight: 1.55 }}>
+                            {ms.inboxReason}
+                          </div>
+                        )}
+
+                        {ms.identityError && (
+                          <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                            {ms.identityError}
+                          </div>
+                        )}
+
+                        {ms.failedCommands.length > 0 && (
+                          <div data-testid={`milestone-failed-cmds-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {ms.failedCommands.map((fc, idx) => (
+                              <div key={`${fc.level}-${idx}`} className={styles.findingItem}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <span className={`${styles.pill} ${styles.pillDanger}`}>{fc.level}</span>
+                                  <code style={{ fontSize: 11 }}>{fc.cmd}</code>
+                                  {fc.exitCode !== null && (
+                                    <span style={{ fontSize: 11, color: 'var(--fw-danger)' }}>exit {fc.exitCode}</span>
+                                  )}
+                                </div>
+                                {fc.outputTail && (
+                                  <pre
+                                    style={{
+                                      margin: '4px 0 0',
+                                      fontSize: 11,
+                                      fontFamily: 'var(--fw-mono)',
+                                      whiteSpace: 'pre-wrap',
+                                      wordBreak: 'break-word',
+                                      color: 'var(--fw-text-muted)',
+                                    }}
+                                  >
+                                    {fc.outputTail}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {ms.judgeError && ms.judgeReasons.length === 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--fw-danger)', lineHeight: 1.5 }}>
+                            {isZh ? `Judge 错误：${ms.judgeError}` : `Judge error: ${ms.judgeError}`}
+                          </div>
+                        )}
+
+                        {ms.judgeReasons.length > 0 && (
+                          <div data-testid={`milestone-judge-reasons-${ms.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                            <strong style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                              {isZh ? 'Judge 裁决理由' : 'Judge reasons'}
+                            </strong>
+                            {ms.judgeReasons.map((reason, idx) => (
+                              <div key={idx} className={styles.findingItem}>
+                                {reason}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                              data-testid={`milestone-triage-retry-${ms.id}`}
+                              disabled={snap.busyAction !== null}
+                              onClick={() => void runMilestoneTriage('retry')}
+                            >
+                              {isZh ? '重新验证' : 'Retry Verification'}
+                            </button>
+                            {ms.gatePassed && (
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm}`}
+                                data-testid={`milestone-triage-accept-${ms.id}`}
+                                disabled={snap.busyAction !== null}
+                                onClick={() => void runMilestoneTriage('accept')}
+                              >
+                                {isZh ? '直接通过里程碑' : 'Accept Milestone'}
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            className={styles.input}
+                            style={{ width: '100%' }}
+                            data-testid={`milestone-triage-guidance-${ms.id}`}
+                            value={guidanceVal}
+                            onChange={e => setMilestoneGuidance(prev => ({ ...prev, [ms.id]: e.target.value }))}
+                            placeholder={
+                              isZh
+                                ? '可选：补充给 Judge 的范围指导，或直接通过里程碑的签核说明…'
+                                : 'Optional: scope guidance for Judge re-verification or milestone sign-off note…'
+                            }
+                          />
+                        </div>
+
+                        {errText && (
+                          <div data-testid={`milestone-triage-error-${ms.id}`} style={{ fontSize: 12, color: 'var(--fw-danger)' }}>
+                            {errText}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {(() => {
                     const ctrl = (snap.state as { control?: { status?: string; message?: string } } | null)?.control;
@@ -2703,7 +3017,7 @@ export function ChatStreamView({
                     return null;
                   })()}
 
-                  {inboxTriagePackets.length === 0 && blockedSessions.length === 0 && (
+                  {inboxTriagePackets.length === 0 && executionBlockedSessions.length === 0 && escalatedMilestones.length === 0 && (
                     <div className={styles.decisionCard} style={{ borderColor: 'var(--fw-warn-border)' }}>
                       <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
                         {latestGeneralInboxReason ||
